@@ -215,8 +215,10 @@ jobs:
       - clippy
       - test
       - build
-      - coverage
+      - examples
       - doc-check
+      - matrix
+      - minimal-versions
     if: always()
     steps:
       - name: Check all required jobs passed
