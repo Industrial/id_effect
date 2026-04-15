@@ -18,7 +18,8 @@ name = "effect_tower"
 effect_rs = { path = "../effect_rs" }
 effect_rs_tokio = { path = "../effect_rs_tokio" }
 tokio = { version = "1", features = ["sync"] }
-tower = { version = "0.5", features = ["util"] }
+# 0.5.0 does not build under minimal-version resolution (const / Identity::new).
+tower = { version = "0.5.3", features = ["util"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

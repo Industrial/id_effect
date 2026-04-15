@@ -31,6 +31,8 @@ name = "effect_config"
 [dependencies]
 effect_rs = { path = "../effect_rs" }
 effect_rs_logger = { path = "../effect_rs_logger" }
+# Floor for figment's pear dep: 0.2.0 does not build on current Rust (fmt::Write on InlinableString).
+pear = "0.2.9"
 figment = { version = "0.10.19", default-features = false }
 serde = { version = "1", default-features = false }
 url = { version = "2", default-features = false }
