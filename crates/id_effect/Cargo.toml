@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Effect<A, E, R> (sync + async), context/layers, pipe — interpreter-style, no bundled executor"
 license = "CC-BY-SA-4.0"
-repository = "https://github.com/Industrial/effect-rs"
+repository = "https://github.com/Industrial/id_effect"
 
 # Examples: numbered curriculum `examples/NNN_slug.rs` (auto-discovered). Tokio integration:
 # `id_effect_tokio` (`106_tokio_runtime` … `109_tokio_end_to_end`). See `examples/README.md`.
