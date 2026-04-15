@@ -190,4 +190,88 @@ mod tests {
     assert!(!m.toggle(7));
     assert!(!m.has(&7));
   }
+
+  #[test]
+  fn from_iter_creates_deduplicated_set() {
+    let s = from_iter([1i32, 2, 3, 2, 1]);
+    assert_eq!(size(&s), 3);
+  }
+
+  #[test]
+  fn insert_adds_element() {
+    let s = empty::<i32>();
+    let s = insert(&s, 1);
+    assert!(has(&s, &1));
+    assert_eq!(size(&s), 1);
+  }
+
+  #[test]
+  fn remove_takes_element_out() {
+    let s = from_iter([1i32, 2, 3]);
+    let s2 = remove(&s, &2);
+    assert!(!has(&s2, &2));
+    assert_eq!(size(&s2), 2);
+  }
+
+  #[test]
+  fn remove_absent_element_is_noop() {
+    let s = from_iter([1i32, 2]);
+    let s2 = remove(&s, &99);
+    assert_eq!(size(&s2), 2);
+  }
+
+  #[test]
+  fn union_combines_sets() {
+    let a = from_iter([1i32, 2]);
+    let b = from_iter([2i32, 3]);
+    let u = union(a, b);
+    assert_eq!(size(&u), 3);
+    assert!(has(&u, &1));
+    assert!(has(&u, &2));
+    assert!(has(&u, &3));
+  }
+
+  #[test]
+  fn size_and_is_empty() {
+    let s = empty::<i32>();
+    assert!(is_empty(&s));
+    assert_eq!(size(&s), 0);
+    let s = insert(&s, 42);
+    assert_eq!(size(&s), 1);
+    assert!(!is_empty(&s));
+  }
+
+  #[test]
+  fn values_returns_all_elements() {
+    let s = from_iter([1i32, 2, 3]);
+    let mut v = values(&s);
+    v.sort();
+    assert_eq!(v, vec![1, 2, 3]);
+  }
+
+  #[test]
+  fn mutable_set_new_insert_has() {
+    let mut ms = MutableHashSet::new();
+    assert!(!ms.has(&1i32));
+    ms.insert(1);
+    assert!(ms.has(&1));
+  }
+
+  #[test]
+  fn mutable_set_remove_returns_whether_present() {
+    let mut ms = MutableHashSet::new();
+    ms.insert(5i32);
+    assert!(ms.remove(&5));
+    assert!(!ms.remove(&5));
+  }
+
+  #[test]
+  fn mutable_set_size_and_is_empty() {
+    let mut ms = MutableHashSet::<i32>::new();
+    assert!(ms.is_empty());
+    assert_eq!(ms.size(), 0);
+    ms.insert(10);
+    assert_eq!(ms.size(), 1);
+    assert!(!ms.is_empty());
+  }
 }

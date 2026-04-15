@@ -251,4 +251,103 @@ mod tests {
     assert_eq!(get(&u, "x"), Some(1));
     assert_eq!(get(&u, "y"), Some(2));
   }
+
+  #[test]
+  fn has_returns_correct_membership() {
+    let m = from_iter([(1i32, "a"), (2, "b")]);
+    assert!(has(&m, &1));
+    assert!(!has(&m, &3));
+  }
+
+  #[test]
+  fn remove_returns_old_value_and_shrinks_map() {
+    let m = from_iter([(1i32, "a"), (2, "b")]);
+    let (m2, old) = remove(m, &1);
+    assert_eq!(old, Some("a"));
+    assert!(!has(&m2, &1));
+    let (m3, old2) = remove(m2, &99);
+    assert_eq!(old2, None);
+    assert_eq!(size(&m3), 1);
+  }
+
+  #[test]
+  fn modify_inserts_when_key_missing() {
+    let m = empty::<i32, i32>();
+    let m2 = modify(m, 1, |_| Some(42));
+    assert_eq!(get(&m2, &1), Some(42));
+  }
+
+  #[test]
+  fn modify_removes_key_when_returns_none() {
+    let m = from_iter([(1i32, 10i32)]);
+    let m2 = modify(m, 1, |_| None);
+    assert!(!has(&m2, &1));
+  }
+
+  #[test]
+  fn modify_at_updates_existing_key() {
+    let m = from_iter([(1i32, 10i32)]);
+    let m2 = modify_at(m, &1, 1, |v| Some(v.map(|x| x * 2).unwrap_or(0)));
+    assert_eq!(get(&m2, &1), Some(20));
+  }
+
+  #[test]
+  fn modify_at_removes_key_when_returns_none() {
+    let m = from_iter([(1i32, 10i32)]);
+    let m2 = modify_at(m, &1, 1, |_| None);
+    assert!(!has(&m2, &1));
+  }
+
+  #[test]
+  fn map_values_transforms_all() {
+    let m = from_iter([(1i32, 10i32), (2, 20)]);
+    let m2 = map_values(m, |v| v * 3);
+    assert_eq!(get(&m2, &1), Some(30));
+    assert_eq!(get(&m2, &2), Some(60));
+  }
+
+  #[test]
+  fn filter_keeps_matching_entries() {
+    let m = from_iter([(1i32, 10i32), (2, 20), (3, 30)]);
+    let m2 = filter(m, |k, _v| *k > 1);
+    assert!(!has(&m2, &1));
+    assert!(has(&m2, &2));
+  }
+
+  #[test]
+  fn map_transforms_keys_and_values() {
+    let m = from_iter([(1i32, 10i32), (2, 20)]);
+    let m2 = map(m, |k| k + 10, |v| v * 2);
+    assert_eq!(get(&m2, &11), Some(20));
+    assert_eq!(get(&m2, &12), Some(40));
+  }
+
+  #[test]
+  fn keys_returns_all_keys_sorted() {
+    let m = from_iter([(3i32, "c"), (1, "a"), (2, "b")]);
+    assert_eq!(keys(&m), vec![1, 2, 3]);
+  }
+
+  #[test]
+  fn values_returns_values_in_key_order() {
+    let m = from_iter([(1i32, "a"), (2, "b"), (3, "c")]);
+    assert_eq!(values(&m), vec!["a", "b", "c"]);
+  }
+
+  #[test]
+  fn size_and_is_empty() {
+    let m = empty::<i32, i32>();
+    assert!(is_empty(&m));
+    assert_eq!(size(&m), 0);
+    let m = set(m, 1, 10);
+    assert!(!is_empty(&m));
+    assert_eq!(size(&m), 1);
+  }
+
+  #[test]
+  fn reduce_folds_entries_in_key_order() {
+    let m = from_iter([(1i32, 10i32), (2, 20), (3, 30)]);
+    let sum = reduce(m, 0, |acc, k, v| acc + k + v);
+    assert_eq!(sum, 66);
+  }
 }

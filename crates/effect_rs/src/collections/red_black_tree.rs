@@ -214,4 +214,90 @@ mod tests {
     t.insert(3, 30);
     assert_eq!(t.greater_than(&bound), expected);
   }
+
+  #[test]
+  fn rbt_has_returns_true_when_key_present() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    assert!(t.has(&1));
+    assert!(!t.has(&2));
+  }
+
+  #[test]
+  fn rbt_first_and_last_return_min_and_max() {
+    let mut t = RedBlackTree::empty();
+    t.insert(2i32, "b");
+    t.insert(1, "a");
+    t.insert(3, "c");
+    let (fk, fv) = t.first().unwrap();
+    assert_eq!(fk, 1);
+    assert_eq!(fv, "a");
+    let (lk, lv) = t.last().unwrap();
+    assert_eq!(lk, 3);
+    assert_eq!(lv, "c");
+  }
+
+  #[test]
+  fn rbt_first_and_last_empty_return_none() {
+    let t = RedBlackTree::<i32, &str>::empty();
+    assert_eq!(t.first(), None);
+    assert_eq!(t.last(), None);
+  }
+
+  #[test]
+  fn rbt_less_than_returns_correct_range() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(3, "b");
+    t.insert(5, "c");
+    let lt = t.less_than(&4);
+    assert_eq!(lt, vec![(1, "a"), (3, "b")]);
+  }
+
+  #[test]
+  fn rbt_get_at_returns_correct_element() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(2, "b");
+    t.insert(3, "c");
+    assert_eq!(t.get_at(0), Some((1, "a")));
+    assert_eq!(t.get_at(2), Some((3, "c")));
+    assert_eq!(t.get_at(10), None);
+  }
+
+  #[test]
+  fn rbt_get_at_with_duplicate_keys() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(1, "b");
+    assert_eq!(t.get_at(0), Some((1, "a")));
+    assert_eq!(t.get_at(1), Some((1, "b")));
+  }
+
+  #[test]
+  fn rbt_size_counts_all_values_including_duplicates() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(1, "b");
+    t.insert(2, "c");
+    assert_eq!(t.size(), 3);
+  }
+
+  #[test]
+  fn rbt_entries_returns_all_pairs_in_key_order() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(2, "b");
+    assert_eq!(t.entries(), vec![(1, "a"), (2, "b")]);
+  }
+
+  #[test]
+  fn rbt_keys_and_values_return_ordered_results() {
+    let mut t = RedBlackTree::empty();
+    t.insert(3i32, "c");
+    t.insert(1, "a");
+    t.insert(2, "b");
+    assert_eq!(t.keys(), vec![1, 2, 3]);
+    assert_eq!(t.values(), vec!["a", "b", "c"]);
+  }
 }

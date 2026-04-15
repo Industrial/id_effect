@@ -370,4 +370,113 @@ mod tests {
     assert_eq!(v, "a");
     assert!(is_empty(&rest));
   }
+
+  #[test]
+  fn modify_at_updates_existing_key() {
+    let m = set(&empty(), "a", 1i32);
+    let m2 = modify_at(&m, "a", |v| v + 10);
+    assert_eq!(get(&m2, "a"), Some(&11));
+  }
+
+  #[test]
+  fn modify_at_noop_when_key_missing() {
+    let m = set(&empty(), "a", 1i32);
+    let m2 = modify_at(&m, "b", |v| v + 10);
+    assert_eq!(get(&m2, "b"), None);
+    assert_eq!(get(&m2, "a"), Some(&1));
+  }
+
+  #[test]
+  fn map_values_transforms_all() {
+    let m = from_iter([("a", 1i32), ("b", 2)]);
+    let m2 = map_values(m, |v| v * 2);
+    assert_eq!(get(&m2, "a"), Some(&2));
+    assert_eq!(get(&m2, "b"), Some(&4));
+  }
+
+  #[test]
+  fn filter_keeps_matching_entries() {
+    let m = from_iter([(1i32, 10), (2, 20), (3, 30)]);
+    let m2 = filter(&m, |k, _v| *k > 1);
+    assert!(!has(&m2, &1));
+    assert!(has(&m2, &2));
+    assert!(has(&m2, &3));
+  }
+
+  #[test]
+  fn reduce_sums_values() {
+    let m = from_iter([("a", 1i32), ("b", 2), ("c", 3)]);
+    let total = reduce(&m, 0, |acc, (_, v)| acc + v);
+    assert_eq!(total, 6);
+  }
+
+  #[test]
+  fn keys_and_values_return_all_entries() {
+    let m = from_iter([(1i32, "a"), (2, "b")]);
+    let mut ks = keys(&m);
+    ks.sort();
+    assert_eq!(ks, vec![1, 2]);
+    assert_eq!(values(&m).len(), 2);
+  }
+
+  #[test]
+  fn is_empty_and_size_on_empty_map() {
+    let m = empty::<i32, i32>();
+    assert!(is_empty(&m));
+    assert_eq!(size(&m), 0);
+  }
+
+  #[test]
+  fn mutable_hash_map_modify_at_updates_existing() {
+    let mut m = MutableHashMap::new();
+    m.set("x", 5i32);
+    m.modify_at("x", |v| v + 1);
+    assert_eq!(m.get("x"), Some(&6));
+  }
+
+  #[test]
+  fn mutable_hash_map_modify_at_noop_when_missing() {
+    let mut m = MutableHashMap::<&str, i32>::new();
+    m.modify_at("missing", |v| v + 1);
+    assert_eq!(m.get("missing"), None);
+  }
+
+  #[test]
+  fn mutable_hash_map_has_and_remove() {
+    let mut m = MutableHashMap::new();
+    m.set(1i32, "a");
+    assert!(m.has(&1));
+    assert!(!m.has(&2));
+    let old = m.remove(&1);
+    assert_eq!(old, Some("a"));
+    assert!(!m.has(&1));
+  }
+
+  #[test]
+  fn mutable_hash_map_keys_and_values() {
+    let mut m = MutableHashMap::new();
+    m.set(1i32, "a");
+    m.set(2, "b");
+    let mut ks = m.keys();
+    ks.sort();
+    assert_eq!(ks, vec![1, 2]);
+    assert_eq!(m.values().len(), 2);
+    assert_eq!(m.size(), 2);
+    assert!(!m.is_empty());
+  }
+
+  #[test]
+  fn mutable_hash_map_modify_deletes_when_none() {
+    let mut m = MutableHashMap::new();
+    m.set("k", 10i32);
+    m.modify("k", |_| None);
+    assert!(!m.has("k"));
+  }
+
+  #[test]
+  fn mutable_hash_map_modify_inserts_when_missing() {
+    let mut m = MutableHashMap::<&str, i32>::new();
+    m.modify("k", |_| Some(99));
+    assert_eq!(m.get("k"), Some(&99));
+  }
 }

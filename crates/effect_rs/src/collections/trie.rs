@@ -175,4 +175,85 @@ mod tests {
     assert_eq!(ks, vec!["foo".to_string(), "food".to_string()]);
     assert_eq!(trie.size(), 3);
   }
+
+  #[test]
+  fn trie_default_creates_empty_trie() {
+    let t = Trie::<i32>::default();
+    assert_eq!(t.size(), 0);
+    assert!(!t.has("anything"));
+  }
+
+  #[test]
+  fn trie_insert_returns_previous_value() {
+    let mut t = Trie::empty();
+    assert_eq!(t.insert("foo", 1i32), None);
+    assert_eq!(t.insert("foo", 2), Some(1));
+    assert_eq!(t.get("foo"), Some(&2));
+  }
+
+  #[test]
+  fn trie_remove_existing_key_returns_value() {
+    let mut t = Trie::empty();
+    t.insert("hello", 42i32);
+    assert_eq!(t.remove("hello"), Some(42));
+    assert!(!t.has("hello"));
+    assert_eq!(t.size(), 0);
+  }
+
+  #[test]
+  fn trie_remove_missing_key_returns_none() {
+    let mut t = Trie::<i32>::empty();
+    assert_eq!(t.remove("xyz"), None);
+  }
+
+  #[test]
+  fn trie_has_matches_exact_keys_only() {
+    let mut t = Trie::empty();
+    t.insert("hello", 1i32);
+    assert!(t.has("hello"));
+    assert!(!t.has("hell"));
+    assert!(!t.has("helloo"));
+  }
+
+  #[test]
+  fn trie_longest_prefix_of_returns_longest_match() {
+    let mut t = Trie::empty();
+    t.insert("he", 1i32);
+    t.insert("hello", 2);
+    assert_eq!(t.longest_prefix_of("hello world"), Some("hello"));
+    assert_eq!(t.longest_prefix_of("hel"), Some("he"));
+    assert_eq!(t.longest_prefix_of("xyz"), None);
+  }
+
+  #[test]
+  fn trie_longest_prefix_of_matches_root_value() {
+    let mut t = Trie::empty();
+    t.insert("", 0i32);
+    assert_eq!(t.longest_prefix_of("anything"), Some(""));
+  }
+
+  #[test]
+  fn trie_entries_with_prefix_returns_matching_pairs() {
+    let mut t = Trie::empty();
+    t.insert("foo", 1i32);
+    t.insert("food", 2);
+    t.insert("bar", 3);
+    let mut entries = t.entries_with_prefix("foo");
+    entries.sort_by_key(|(k, _)| k.clone());
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0], ("foo".to_string(), &1));
+    assert_eq!(entries[1], ("food".to_string(), &2));
+  }
+
+  #[test]
+  fn trie_entries_with_prefix_no_match_returns_empty() {
+    let t = Trie::<i32>::empty();
+    assert!(t.entries_with_prefix("xyz").is_empty());
+  }
+
+  #[test]
+  fn trie_keys_with_prefix_no_match_returns_empty() {
+    let t = Trie::<i32>::empty();
+    assert!(t.keys_with_prefix("xyz").is_empty());
+  }
 }

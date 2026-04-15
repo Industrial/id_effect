@@ -138,4 +138,69 @@ mod tests {
     assert!(!q.is_full());
     assert_eq!(q.capacity(), None);
   }
+
+  #[test]
+  fn mutable_queue_is_empty_initially() {
+    let q = MutableQueue::<i32>::unbounded();
+    assert!(q.is_empty());
+    q.offer(1);
+    assert!(!q.is_empty());
+  }
+
+  #[test]
+  fn bounded_is_full_at_capacity() {
+    let q = MutableQueue::<i32>::bounded(2);
+    assert!(!q.is_full());
+    q.offer(1);
+    assert!(!q.is_full());
+    q.offer(2);
+    assert!(q.is_full());
+    assert_eq!(q.capacity(), Some(2));
+  }
+
+  #[test]
+  fn offer_all_stops_at_capacity() {
+    let q = MutableQueue::<i32>::bounded(3);
+    let added = q.offer_all([1, 2, 3, 4, 5]);
+    assert_eq!(added, 3);
+    assert_eq!(q.length(), 3);
+  }
+
+  #[test]
+  fn offer_all_unbounded_adds_all() {
+    let q = MutableQueue::<i32>::unbounded();
+    let added = q.offer_all([1, 2, 3]);
+    assert_eq!(added, 3);
+  }
+
+  #[test]
+  fn poll_dequeues_in_fifo_order() {
+    let q = MutableQueue::<i32>::unbounded();
+    q.offer(10);
+    q.offer(20);
+    q.offer(30);
+    assert_eq!(q.poll(|| 0), 10);
+    assert_eq!(q.poll(|| 0), 20);
+    assert_eq!(q.poll(|| 0), 30);
+    assert_eq!(q.poll(|| -1), -1);
+  }
+
+  #[test]
+  fn poll_up_to_returns_chunk_of_requested_size() {
+    let q = MutableQueue::<i32>::unbounded();
+    q.offer_all([1, 2, 3, 4, 5]);
+    let chunk = q.poll_up_to(3);
+    assert_eq!(chunk.len(), 3);
+    assert_eq!(q.length(), 2);
+  }
+
+  #[test]
+  fn poll_up_to_more_than_available_drains_queue() {
+    let q = MutableQueue::<i32>::unbounded();
+    q.offer(1);
+    q.offer(2);
+    let chunk = q.poll_up_to(10);
+    assert_eq!(chunk.len(), 2);
+    assert!(q.is_empty());
+  }
 }

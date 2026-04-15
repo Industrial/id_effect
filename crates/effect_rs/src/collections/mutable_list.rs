@@ -199,4 +199,79 @@ mod tests {
     b.append(3);
     assert_eq!(b.to_chunk().into_vec(), vec![1, 2, 3]);
   }
+
+  #[test]
+  fn mutable_list_prepend_adds_to_front() {
+    let list = MutableList::<i32>::make();
+    list.append(2);
+    list.prepend(1);
+    assert_eq!(list.head(), Some(1));
+    assert_eq!(list.length(), 2);
+  }
+
+  #[test]
+  fn tail_of_single_element_is_empty() {
+    let list = MutableList::<i32>::make();
+    list.append(42);
+    let t = list.tail();
+    assert_eq!(t.len(), 0);
+  }
+
+  #[test]
+  fn tail_of_empty_list_is_empty() {
+    let list = MutableList::<i32>::make();
+    let t = list.tail();
+    assert_eq!(t.len(), 0);
+  }
+
+  #[test]
+  fn mutable_list_last_and_pop() {
+    let list = MutableList::<i32>::make();
+    list.append(1);
+    list.append(2);
+    list.append(3);
+    assert_eq!(list.last(), Some(3));
+    assert_eq!(list.pop(), Some(3));
+    assert_eq!(list.last(), Some(2));
+    assert_eq!(list.length(), 2);
+  }
+
+  #[test]
+  fn mutable_list_pop_empty_returns_none() {
+    let list = MutableList::<i32>::make();
+    assert_eq!(list.pop(), None);
+  }
+
+  #[test]
+  fn mutable_list_shift_empty_returns_none() {
+    let list = MutableList::<i32>::make();
+    assert_eq!(list.shift(), None);
+  }
+
+  #[test]
+  fn mutable_list_to_chunk_preserves_order() {
+    let list = MutableList::<i32>::make();
+    list.append(10);
+    list.append(20);
+    list.append(30);
+    let c = list.to_chunk();
+    assert_eq!(c.into_vec(), vec![10, 20, 30]);
+  }
+
+  #[test]
+  fn mutable_list_for_each_visits_all_elements() {
+    let list = MutableList::<i32>::make();
+    list.append(1);
+    list.append(2);
+    list.append(3);
+    let mut sum = 0;
+    list.for_each(|x| sum += x);
+    assert_eq!(sum, 6);
+  }
+
+  #[test]
+  fn chunk_builder_default_is_empty() {
+    let b = ChunkBuilder::<i32>::default();
+    assert_eq!(b.to_chunk().len(), 0);
+  }
 }
