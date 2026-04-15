@@ -20,7 +20,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -34,7 +34,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [format, check]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [clippy]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
@@ -117,7 +117,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -151,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
@@ -173,7 +173,7 @@ jobs:
         toolchain: [stable, beta]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@master
         with:
@@ -192,7 +192,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust (nightly for -Z minimal-versions)
         uses: dtolnay/rust-toolchain@nightly
       - name: Install Rust (stable for build)
