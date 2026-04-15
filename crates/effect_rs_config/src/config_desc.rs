@@ -945,11 +945,8 @@ mod tests {
 
     let p = MapConfigProvider::from_pairs([("HOST", "localhost")]);
     let env = config_env(p);
-    let host: String = effect_rs::run_blocking(
-      Config::string("HOST").run::<String, ConfigError, _>(),
-      env,
-    )
-    .unwrap();
+    let host: String =
+      effect_rs::run_blocking(Config::string("HOST").run::<String, ConfigError, _>(), env).unwrap();
     assert_eq!(host, "localhost");
   }
 
@@ -1133,8 +1130,8 @@ mod tests {
 
   #[test]
   fn nested_prefix_provider_seq_delim_delegates() {
-    use crate::provider::ProviderOptions;
     use crate::MapConfigProvider;
+    use crate::provider::ProviderOptions;
 
     let opts = ProviderOptions {
       path_delim: "_",

@@ -582,4 +582,139 @@ mod tests {
       }
     }
   }
+
+  // ── Previously uncovered types ────────────────────────────────────────────
+
+  mod btreemap_monoid {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn empty_is_empty_map() {
+      assert_eq!(BTreeMap::<i32, i32>::empty(), BTreeMap::new());
+    }
+
+    #[test]
+    fn combine_merges_disjoint_maps() {
+      let mut a = BTreeMap::new();
+      a.insert(1, vec![10]);
+      let mut b = BTreeMap::new();
+      b.insert(2, vec![20]);
+      let result = a.combine(b);
+      assert_eq!(result[&1], vec![10]);
+      assert_eq!(result[&2], vec![20]);
+    }
+  }
+
+  mod hashmap_monoid {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn empty_is_empty_map() {
+      assert_eq!(HashMap::<i32, i32>::empty(), HashMap::new());
+    }
+
+    #[test]
+    fn combine_merges_disjoint_maps() {
+      let mut a = HashMap::new();
+      a.insert("x", vec![1]);
+      let mut b = HashMap::new();
+      b.insert("y", vec![2]);
+      let result = a.combine(b);
+      assert_eq!(result["x"], vec![1]);
+      assert_eq!(result["y"], vec![2]);
+    }
+  }
+
+  mod btreeset_monoid {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn empty_is_empty_set() {
+      assert_eq!(BTreeSet::<i32>::empty(), BTreeSet::new());
+    }
+
+    #[test]
+    fn combine_unions_sets() {
+      let a: BTreeSet<i32> = [1, 2, 3].into_iter().collect();
+      let b: BTreeSet<i32> = [3, 4, 5].into_iter().collect();
+      let result = a.combine(b);
+      let expected: BTreeSet<i32> = [1, 2, 3, 4, 5].into_iter().collect();
+      assert_eq!(result, expected);
+    }
+  }
+
+  mod hashset_monoid {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn empty_is_empty_set() {
+      assert_eq!(HashSet::<i32>::empty(), HashSet::new());
+    }
+
+    #[test]
+    fn combine_unions_sets() {
+      let a: HashSet<i32> = [1, 2].into_iter().collect();
+      let b: HashSet<i32> = [2, 3].into_iter().collect();
+      let result = a.combine(b);
+      let expected: HashSet<i32> = [1, 2, 3].into_iter().collect();
+      assert_eq!(result, expected);
+    }
+  }
+
+  mod unit_monoid {
+    use super::*;
+
+    #[test]
+    fn empty_is_unit() {
+      assert_eq!(<()>::empty(), ());
+    }
+
+    #[test]
+    fn combine_is_unit() {
+      assert_eq!(().combine(()), ());
+    }
+  }
+
+  mod triple_tuple_monoid {
+    use super::*;
+
+    #[test]
+    fn empty_is_triple_empty() {
+      let e = <(i32, String, bool)>::empty();
+      assert_eq!(e, (0, String::new(), true));
+    }
+
+    #[test]
+    fn identity_laws() {
+      let t = (5i32, "hi".to_string(), false);
+      assert_eq!(<(i32, String, bool)>::empty().combine(t.clone()), t);
+      assert_eq!(t.clone().combine(<(i32, String, bool)>::empty()), t);
+    }
+  }
+
+  mod concat_ref_fn {
+    use super::*;
+
+    #[test]
+    fn concat_ref_on_strings() {
+      let strs = vec!["hello".to_string(), " ".to_string(), "world".to_string()];
+      assert_eq!(concat_ref(strs.iter()), "hello world");
+    }
+
+    #[test]
+    fn concat_ref_empty_gives_empty() {
+      let empty: Vec<i32> = vec![];
+      assert_eq!(concat_ref(empty.iter()), 0);
+    }
+
+    #[test]
+    fn concat_ref_integers() {
+      let ns = vec![1i32, 2, 3, 4, 5];
+      assert_eq!(concat_ref(ns.iter()), 15);
+    }
+  }
 }

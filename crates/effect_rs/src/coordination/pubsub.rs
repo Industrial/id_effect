@@ -104,7 +104,8 @@ impl<A: Send + Clone + 'static> PubSub<A> {
         let mut guard = inner.tx.lock().await;
         guard.take();
         drop(guard);
-        let _ = inner.shutdown_tx.send(true);
+        // Use send_replace so the value is stored even when no watch receivers exist.
+        inner.shutdown_tx.send_replace(true);
         Ok(())
       })
     })
@@ -337,5 +338,183 @@ mod tests {
       "with sliding capacity 2, value 1 should be evicted before slow subscriber catches up"
     );
     scope.close();
+  }
+
+  // ── unbounded ─────────────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_unbounded_delivers_messages_to_subscriber() {
+    let ps = run_async(PubSub::<u32>::unbounded(), ())
+      .await
+      .expect("pubsub");
+    let scope = Scope::make();
+    let q = run_async(ps.subscribe(), scope.clone())
+      .await
+      .expect("subscribe");
+    assert!(run_async(ps.publish(42), ()).await.expect("pub"));
+    tokio::task::yield_now().await;
+    assert_eq!(run_async(q.take(), ()).await.expect("take"), 42);
+    scope.close();
+  }
+
+  // ── dropping ──────────────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_dropping_rejects_when_buffer_full() {
+    let ps = run_async(PubSub::<u32>::dropping(2), ())
+      .await
+      .expect("pubsub");
+    // No subscribers yet — publish returns false (no receivers)
+    assert!(!run_async(ps.publish(1), ()).await.expect("pub"));
+  }
+
+  // ── capacity ──────────────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_capacity_returns_configured_value() {
+    let ps = run_async(PubSub::<u32>::bounded(16), ()).await.expect("ps");
+    assert_eq!(ps.capacity(), 16);
+  }
+
+  // ── is_shutdown / shutdown / await_shutdown ───────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_shutdown_prevents_publish_and_is_shutdown_returns_true() {
+    let ps = run_async(PubSub::<u32>::bounded(8), ())
+      .await
+      .expect("pubsub");
+    assert!(!ps.is_shutdown());
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    assert!(ps.is_shutdown());
+    assert!(!run_async(ps.publish(1), ()).await.expect("pub after shutdown"));
+  }
+
+  #[tokio::test]
+  async fn pubsub_await_shutdown_returns_immediately_when_already_shut_down() {
+    let ps = run_async(PubSub::<u32>::bounded(4), ())
+      .await
+      .expect("pubsub");
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    assert!(ps.is_shutdown());
+    // await_shutdown should observe the already-set flag immediately;
+    // use a timeout to prevent hanging if the watch-channel borrow races.
+    let result = tokio::time::timeout(
+      std::time::Duration::from_secs(2),
+      run_async(ps.await_shutdown(), ()),
+    )
+    .await;
+    assert!(
+      result.is_ok(),
+      "await_shutdown should complete quickly when hub is already shut down"
+    );
+  }
+
+  #[tokio::test]
+  async fn pubsub_await_shutdown_waits_for_shutdown() {
+    let ps = run_async(PubSub::<u32>::bounded(4), ())
+      .await
+      .expect("pubsub");
+    let ps_clone = ps.clone();
+    let waiter = std::thread::spawn(move || {
+      tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(run_async(ps_clone.await_shutdown(), ()))
+        .expect("await_shutdown");
+    });
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    waiter.join().expect("waiter thread");
+  }
+
+  // ── size / is_empty / is_full ─────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_size_is_empty_is_full_reflect_ring_state() {
+    let ps = run_async(PubSub::<u32>::bounded(2), ())
+      .await
+      .expect("pubsub");
+    assert_eq!(run_async(ps.size(), ()).await.expect("size"), 0);
+    assert!(run_async(ps.is_empty(), ()).await.expect("empty"));
+    assert!(!run_async(ps.is_full(), ()).await.expect("full"));
+  }
+
+  #[tokio::test]
+  async fn pubsub_size_returns_zero_when_shut_down() {
+    let ps = run_async(PubSub::<u32>::bounded(4), ())
+      .await
+      .expect("pubsub");
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    assert_eq!(run_async(ps.size(), ()).await.expect("size"), 0);
+    assert!(run_async(ps.is_empty(), ()).await.expect("empty"));
+    assert!(run_async(ps.is_full(), ()).await.expect("full after shutdown"));
+  }
+
+  // ── publish_all ───────────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_publish_all_returns_undeliverable_when_shut_down() {
+    let ps = run_async(PubSub::<u32>::bounded(4), ())
+      .await
+      .expect("pubsub");
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    let left = run_async(ps.publish_all(vec![1u32, 2, 3]), ())
+      .await
+      .expect("publish_all");
+    assert_eq!(left, vec![1u32, 2, 3]);
+  }
+
+  #[tokio::test]
+  async fn pubsub_publish_all_delivers_messages_when_subscriber_active() {
+    let ps = run_async(PubSub::<u32>::unbounded(), ())
+      .await
+      .expect("pubsub");
+    let scope = Scope::make();
+    let q = run_async(ps.subscribe(), scope.clone())
+      .await
+      .expect("subscribe");
+    let left = run_async(ps.publish_all(vec![10u32, 20, 30]), ())
+      .await
+      .expect("publish_all");
+    assert!(left.is_empty(), "all should be delivered");
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    for want in [10u32, 20, 30] {
+      assert_eq!(run_async(q.take(), ()).await.expect("take"), want);
+    }
+    scope.close();
+  }
+
+  // ── subscribe after shutdown ──────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_subscribe_after_shutdown_gets_shut_down_queue() {
+    let ps = run_async(PubSub::<u32>::bounded(4), ())
+      .await
+      .expect("pubsub");
+    run_async(ps.shutdown(), ()).await.expect("shutdown");
+    let scope = Scope::make();
+    let q = run_async(ps.subscribe(), scope.clone())
+      .await
+      .expect("subscribe");
+    // Queue should report disconnected immediately (shutdown queue)
+    let result = run_async(q.take(), ()).await;
+    assert!(
+      result.is_err(),
+      "queue from post-shutdown subscribe should be disconnected"
+    );
+    scope.close();
+  }
+
+  // ── publish returns false with no receivers ───────────────────────────────
+
+  #[tokio::test]
+  async fn pubsub_publish_returns_false_when_no_subscribers() {
+    let ps = run_async(PubSub::<u32>::bounded(8), ())
+      .await
+      .expect("pubsub");
+    // No subscribers yet
+    assert!(
+      !run_async(ps.publish(1), ()).await.expect("pub"),
+      "should return false with no receivers"
+    );
   }
 }

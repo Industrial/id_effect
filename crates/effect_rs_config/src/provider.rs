@@ -606,10 +606,7 @@ mod tests {
     #[test]
     fn num_u64() {
       let p = provider_from(U64Val { val: 1_000_000 });
-      assert_eq!(
-        p.load_raw(&["val"]).unwrap(),
-        Some("1000000".to_string())
-      );
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("1000000".to_string()));
     }
 
     #[test]
@@ -627,10 +624,7 @@ mod tests {
     #[test]
     fn num_i32() {
       let p = provider_from(I32Val { val: 100_000 });
-      assert_eq!(
-        p.load_raw(&["val"]).unwrap(),
-        Some("100000".to_string())
-      );
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("100000".to_string()));
     }
 
     #[test]

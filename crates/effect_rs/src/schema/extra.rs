@@ -278,9 +278,7 @@ mod tests {
     #[test]
     fn literal_string_decode_unknown_wrong_string_fails() {
       let s = literal_string::<()>("expected");
-      assert!(s
-        .decode_unknown(&Unknown::String("other".into()))
-        .is_err());
+      assert!(s.decode_unknown(&Unknown::String("other".into())).is_err());
     }
 
     #[test]
@@ -316,9 +314,7 @@ mod tests {
     #[test]
     fn literal_i64_decode_unknown_wrong_type_fails() {
       let s = literal_i64::<()>(5);
-      assert!(s
-        .decode_unknown(&Unknown::String("5".into()))
-        .is_err());
+      assert!(s.decode_unknown(&Unknown::String("5".into())).is_err());
     }
 
     #[test]

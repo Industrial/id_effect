@@ -224,4 +224,54 @@ mod tests {
     assert_eq!(b, 6);
     assert_eq!(run_async(s.get(), ()).await.expect("get"), 4);
   }
+
+  // ── update (synchronous transform) ────────────────────────────────────
+
+  #[tokio::test]
+  async fn sync_ref_update_applies_fn_in_place() {
+    let s = run_async(SynchronizedRef::make(5_u32), ()).await.expect("make");
+    run_async(s.update(|n| n * 3), ()).await.expect("update");
+    assert_eq!(run_async(s.get(), ()).await.expect("get"), 15);
+  }
+
+  // ── modify_effect ─────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn sync_ref_modify_effect_returns_computed_value() {
+    use crate::kernel::succeed;
+    let s = run_async(SynchronizedRef::make(10_i32), ()).await.expect("make");
+    let result = run_async(
+      s.modify_effect(|n| succeed::<(i32, i32), core::convert::Infallible, ()>((n * 2, n + 5))),
+      (),
+    )
+    .await
+    .expect("modify_effect");
+    assert_eq!(result, 20); // returned value
+    assert_eq!(run_async(s.get(), ()).await.expect("get"), 15); // new state
+  }
+
+  // ── get_effect ────────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn sync_ref_get_effect_applies_fn_to_current_value() {
+    use crate::kernel::succeed;
+    let s = run_async(SynchronizedRef::make(7_u32), ()).await.expect("make");
+    let result = run_async(
+      s.get_effect(|n| succeed::<u32, core::convert::Infallible, ()>(n * 2)),
+      (),
+    )
+    .await
+    .expect("get_effect");
+    assert_eq!(result, 14); // 7 * 2, returned value
+    // State unchanged
+    assert_eq!(run_async(s.get(), ()).await.expect("get"), 7);
+  }
+
+  // ── SynchronizedRef::new (direct constructor) ─────────────────────────
+
+  #[test]
+  fn sync_ref_new_creates_ref_directly() {
+    let s = SynchronizedRef::new(42_u32);
+    assert_eq!(run_blocking(s.get(), ()).expect("get"), 42);
+  }
 }

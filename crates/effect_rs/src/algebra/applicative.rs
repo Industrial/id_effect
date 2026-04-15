@@ -504,9 +504,8 @@ mod tests {
 
     #[test]
     fn traverse_any_fail() {
-      let r: Result<Vec<i32>, &str> = result::traverse(vec![1, 2, 3], |x| {
-        if x == 2 { Err("two") } else { Ok(x) }
-      });
+      let r: Result<Vec<i32>, &str> =
+        result::traverse(vec![1, 2, 3], |x| if x == 2 { Err("two") } else { Ok(x) });
       assert_eq!(r, Err("two"));
     }
   }

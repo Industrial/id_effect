@@ -165,7 +165,8 @@ impl<A: Send + 'static> FlumeShared<A> {
   async fn shutdown(&self) {
     let mut guard = self.tx.lock().await;
     guard.take();
-    let _ = self.shutdown.send(true);
+    // Use send_replace so the value is stored even when no watch receivers exist.
+    self.shutdown.send_replace(true);
   }
 
   fn is_shutdown(&self) -> bool {
@@ -272,7 +273,8 @@ impl<A: Send + 'static> SlidingShared<A> {
     let mut g = self.state.lock().await;
     g.open = false;
     drop(g);
-    let _ = self.shutdown.send(true);
+    // Use send_replace so the value is stored even when no watch receivers exist.
+    self.shutdown.send_replace(true);
     self.not_empty.notify_waiters();
   }
 
@@ -713,5 +715,172 @@ mod tests {
     let q = drive(Queue::<u32>::sliding(2), ()).unwrap();
     drive(q.offer_all([1u32, 2, 3]), ()).unwrap();
     assert!(drive(q.is_full(), ()).unwrap());
+  }
+
+  // ── QueueError formatting ─────────────────────────────────────────────────
+
+  #[test]
+  fn queue_error_display_and_debug() {
+    let e = QueueError::Disconnected;
+    assert_eq!(format!("{e}"), "queue is disconnected");
+    assert!(format!("{e:?}").contains("Disconnected"));
+    // std::error::Error is implemented (source returns None)
+    use std::error::Error;
+    assert!(e.source().is_none());
+  }
+
+  // ── take_n / take_up_to edge: n == 0 ────────────────────────────────────
+
+  #[test]
+  fn queue_take_n_zero_returns_empty_chunk() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.offer(1u32), ()).unwrap();
+    let c = drive(q.take_n(0), ()).unwrap();
+    assert_eq!(c.len(), 0);
+    // Item stays in queue
+    assert_eq!(drive(q.size(), ()).unwrap(), 1);
+  }
+
+  #[test]
+  fn queue_take_up_to_zero_returns_empty_chunk() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.offer(1u32), ()).unwrap();
+    let c = drive(q.take_up_to(0), ()).unwrap();
+    assert_eq!(c.len(), 0);
+    assert_eq!(drive(q.size(), ()).unwrap(), 1);
+  }
+
+  // ── disconnected / shutdown error paths ────────────────────────────────
+
+  #[test]
+  fn queue_take_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::bounded(2), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.take(), ()), Err(QueueError::Disconnected));
+  }
+
+  #[test]
+  fn queue_take_all_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::unbounded(), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.take_all(), ()), Err(QueueError::Disconnected));
+  }
+
+  #[test]
+  fn queue_take_up_to_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.take_up_to(3), ()), Err(QueueError::Disconnected));
+  }
+
+  #[test]
+  fn queue_take_n_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.take_n(2), ()), Err(QueueError::Disconnected));
+  }
+
+  #[test]
+  fn queue_poll_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.poll(), ()), Err(QueueError::Disconnected));
+  }
+
+  #[test]
+  fn queue_take_between_returns_err_when_shut_down_empty() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert_eq!(drive(q.take_between(1, 3), ()), Err(QueueError::Disconnected));
+  }
+
+  // ── offer after shutdown ─────────────────────────────────────────────────
+
+  #[test]
+  fn queue_offer_after_shutdown_returns_false() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    assert!(!drive(q.offer(99u32), ()).unwrap());
+  }
+
+  #[test]
+  fn queue_offer_all_after_shutdown_silently_drops_items() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    // offer_or_retain returns Ok(()) when sender is gone → items are silently dropped
+    let retained = drive(q.offer_all([1u32, 2, 3]), ()).unwrap();
+    assert!(
+      retained.is_empty(),
+      "items offered after shutdown are silently dropped, not retained"
+    );
+  }
+
+  // ── size / is_full / is_empty on all variants ────────────────────────────
+
+  #[test]
+  fn queue_unbounded_is_never_full() {
+    let q = drive(Queue::<u32>::unbounded(), ()).unwrap();
+    for i in 0u32..100 {
+      drive(q.offer(i), ()).unwrap();
+    }
+    assert!(!drive(q.is_full(), ()).unwrap());
+    assert_eq!(drive(q.size(), ()).unwrap(), 100);
+    assert!(!drive(q.is_empty(), ()).unwrap());
+  }
+
+  #[test]
+  fn queue_dropping_size_and_fullness() {
+    let q = drive(Queue::<u32>::dropping(3), ()).unwrap();
+    assert!(drive(q.is_empty(), ()).unwrap());
+    drive(q.offer_all([10u32, 20, 30, 40]), ()).unwrap();
+    assert_eq!(drive(q.size(), ()).unwrap(), 3);
+    assert!(drive(q.is_full(), ()).unwrap());
+  }
+
+  #[test]
+  fn queue_sliding_size_and_fullness() {
+    let q = drive(Queue::<u32>::sliding(3), ()).unwrap();
+    assert!(drive(q.is_empty(), ()).unwrap());
+    drive(q.offer_all([1u32, 2, 3, 4]), ()).unwrap();
+    // Sliding evicts oldest: queue holds [2, 3, 4]
+    assert_eq!(drive(q.size(), ()).unwrap(), 3);
+    assert!(drive(q.is_full(), ()).unwrap());
+    assert!(!drive(q.is_empty(), ()).unwrap());
+  }
+
+  // ── offer_all on sliding ─────────────────────────────────────────────────
+
+  #[test]
+  fn queue_offer_all_on_sliding_always_accepts() {
+    let q = drive(Queue::<u32>::sliding(2), ()).unwrap();
+    // offer_all on sliding returns empty vec (never retains)
+    let retained = drive(q.offer_all([1u32, 2, 3, 4]), ()).unwrap();
+    assert!(retained.is_empty(), "sliding should not retain items");
+    // Latest 2 items remain
+    let c = drive(q.take_all(), ()).unwrap();
+    assert_eq!(c.into_vec(), vec![3, 4]);
+  }
+
+  // ── is_shutdown state ────────────────────────────────────────────────────
+
+  #[test]
+  fn queue_is_shutdown_before_and_after() {
+    let q = drive(Queue::<u32>::bounded(2), ()).unwrap();
+    assert!(!drive(q.is_shutdown(), ()).unwrap());
+    drive(q.shutdown(), ()).unwrap();
+    assert!(drive(q.is_shutdown(), ()).unwrap());
+  }
+
+  // ── take drains buffered values before disconnecting ────────────────────
+
+  #[test]
+  fn queue_take_drains_buffer_then_errors_after_shutdown() {
+    let q = drive(Queue::<u32>::bounded(4), ()).unwrap();
+    drive(q.offer(42u32), ()).unwrap();
+    drive(q.shutdown(), ()).unwrap();
+    // Buffered item is still readable via `take`
+    assert_eq!(drive(q.take(), ()).unwrap(), 42);
+    // After draining, disconnected
+    assert_eq!(drive(q.take(), ()), Err(QueueError::Disconnected));
   }
 }

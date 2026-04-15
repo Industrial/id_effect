@@ -1210,4 +1210,229 @@ mod tests {
       assert_eq!(run(caught, ()), Ok(5));
     }
   }
+
+  // ── ask / asks ──────────────────────────────────────────────────────────────
+
+  mod reader_operations {
+    use super::*;
+
+    #[test]
+    fn ask_returns_environment() {
+      let eff = ask::<i32>();
+      assert_eq!(run(eff, 42), Ok(42));
+    }
+
+    #[test]
+    fn asks_transforms_environment() {
+      let eff = asks::<String, i32, _>(|n| format!("val={n}"));
+      assert_eq!(run(eff, 7), Ok("val=7".to_string()));
+    }
+  }
+
+  // ── Effect combinators: as_, void, and_then, and_then_discard ───────────────
+
+  mod additional_combinators {
+    use super::*;
+
+    #[test]
+    fn as_replaces_value() {
+      let eff: Effect<i32, (), ()> = succeed(1).as_(99);
+      assert_eq!(run(eff, ()), Ok(99));
+    }
+
+    #[test]
+    fn void_discards_value() {
+      let eff: Effect<(), (), ()> = succeed(42_i32).void();
+      assert_eq!(run(eff, ()), Ok(()));
+    }
+
+    #[test]
+    fn and_then_sequences_effects() {
+      let eff: Effect<i32, (), ()> = succeed(1_i32).and_then(succeed(99_i32));
+      assert_eq!(run(eff, ()), Ok(99));
+    }
+
+    #[test]
+    fn and_then_discard_returns_first() {
+      let eff: Effect<i32, (), ()> = succeed(42_i32).and_then_discard(succeed(99_i32));
+      assert_eq!(run(eff, ()), Ok(42));
+    }
+
+    #[test]
+    fn tap_error_observes_error_but_passes_through() {
+      let observed = Arc::new(Mutex::new(String::new()));
+      let obs_clone = Arc::clone(&observed);
+      let eff: Effect<i32, &str, ()> = fail("oops");
+      let tapped = eff.tap_error(move |msg| {
+        *obs_clone.lock().unwrap() = msg.clone();
+        succeed::<(), &str, ()>(())
+      });
+      assert_eq!(run(tapped, ()), Err("oops"));
+      assert!(observed.lock().unwrap().contains("oops"));
+    }
+
+    #[test]
+    fn catch_all_converts_error_to_never() {
+      let eff: Effect<i32, &str, ()> = fail("bad");
+      let recovered: Effect<i32, Never, ()> = eff.catch_all(|_| 0);
+      assert_eq!(run(recovered, ()), Ok(0));
+    }
+
+    #[test]
+    fn catch_all_ignores_success() {
+      let eff: Effect<i32, &str, ()> = succeed(5);
+      let recovered: Effect<i32, Never, ()> = eff.catch_all(|_| 0);
+      assert_eq!(run(recovered, ()), Ok(5));
+    }
+  }
+
+  // ── union_error / flat_map_union ────────────────────────────────────────────
+
+  mod union_error_ops {
+    use super::*;
+    use crate::Or;
+
+    #[test]
+    fn union_error_wraps_error_in_or() {
+      let eff: Effect<i32, &str, ()> = fail("oops");
+      let unioned: Effect<i32, Or<&str, i32>, ()> = eff.union_error();
+      let result = run(unioned, ());
+      assert!(matches!(result, Err(Or::Left("oops"))));
+    }
+
+    #[test]
+    fn union_error_preserves_success() {
+      let eff: Effect<i32, &str, ()> = succeed(42);
+      let unioned: Effect<i32, Or<&str, i32>, ()> = eff.union_error();
+      assert_eq!(run(unioned, ()), Ok(42));
+    }
+
+    #[test]
+    fn flat_map_union_chains_and_wraps_error() {
+      let eff: Effect<i32, &str, ()> = succeed(10);
+      let result: Effect<String, Or<&str, i32>, ()> =
+        eff.flat_map_union::<String, i32, _>(|n| fail(n + 1));
+      let res = run(result, ());
+      assert!(matches!(res, Err(Or::Right(11))));
+    }
+  }
+
+  // ── acquire_release ─────────────────────────────────────────────────────────
+
+  mod resource_management {
+    use super::*;
+
+    #[test]
+    fn acquire_release_runs_release_after_success() {
+      let released = Arc::new(Mutex::new(false));
+      let rel_clone = Arc::clone(&released);
+      let result = run(
+        acquire_release(
+          succeed::<i32, (), ()>(42),
+          move |_v| {
+            *rel_clone.lock().unwrap() = true;
+            succeed::<(), (), ()>(())
+          },
+        ),
+        (),
+      );
+      assert_eq!(result, Ok(42));
+      assert!(*released.lock().unwrap(), "release should have been called");
+    }
+
+    #[test]
+    fn scope_with_creates_and_closes_scope() {
+      let result = run(
+        scope_with(|_scope| succeed::<i32, (), ()>(7)),
+        (),
+      );
+      assert_eq!(result, Ok(7));
+    }
+
+    #[test]
+    fn scope_with_closes_on_error() {
+      let result = run(
+        scope_with::<i32, &str, (), _>(|_scope| fail("scope_err")),
+        (),
+      );
+      assert_eq!(result, Err("scope_err"));
+    }
+
+    #[test]
+    fn scoped_runs_effect_in_scope() {
+      let result = run(scoped(succeed::<i32, (), ()>(99)), ());
+      assert_eq!(result, Ok(99));
+    }
+
+    #[test]
+    fn scoped_propagates_error() {
+      let result = run(scoped(fail::<i32, &str, ()>("err")), ());
+      assert_eq!(result, Err("err"));
+    }
+  }
+
+  // ── IntoBind / into_bind ────────────────────────────────────────────────────
+
+  mod into_bind_ops {
+    use super::*;
+
+    #[test]
+    fn into_bind_effect_runs_effect() {
+      let eff: Effect<i32, (), ()> = succeed(99);
+      let result = crate::runtime::run_blocking(
+        Effect::<i32, (), ()>::new_async(move |r| into_bind(eff, r)),
+        (),
+      );
+      assert_eq!(result, Ok(99));
+    }
+
+    #[test]
+    fn into_bind_result_ok_returns_immediately() {
+      let r: Result<i32, ()> = Ok(42);
+      let result = crate::runtime::run_blocking(
+        Effect::<i32, (), ()>::new_async(move |env| into_bind(r, env)),
+        (),
+      );
+      assert_eq!(result, Ok(42));
+    }
+
+    #[test]
+    fn into_bind_result_err_returns_error() {
+      let r: Result<i32, &str> = Err("e");
+      let result = crate::runtime::run_blocking(
+        Effect::<i32, &str, ()>::new_async(move |env| into_bind(r, env)),
+        (),
+      );
+      assert_eq!(result, Err("e"));
+    }
+  }
+
+  // ── box_future ──────────────────────────────────────────────────────────────
+
+  mod box_future_fn {
+    use super::*;
+
+    #[test]
+    fn box_future_wraps_ready_future() {
+      use core::future::ready;
+      let fut = box_future(ready(Ok::<i32, ()>(5)));
+      let result = crate::runtime::run_blocking(
+        Effect::<i32, (), ()>::new_async(|_| fut),
+        (),
+      );
+      assert_eq!(result, Ok(5));
+    }
+  }
+
+  // ── unwrap_infallible ───────────────────────────────────────────────────────
+
+  mod unwrap_infallible_fn {
+    use super::*;
+
+    #[test]
+    fn unwrap_infallible_extracts_ok_value() {
+      let r: Result<i32, Infallible> = Ok(42);
+      assert_eq!(unwrap_infallible(r), 42);
+    }
+  }
 }

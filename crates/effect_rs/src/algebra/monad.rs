@@ -301,6 +301,35 @@ mod tests {
       let result = option::iterate(100, |x| if *x >= 2 { Some(x / 2) } else { None });
       assert_eq!(result, 1);
     }
+
+    // ── previously uncovered ──────────────────────────────────────────────
+
+    #[test]
+    fn and_then_discard_some_some() {
+      assert_eq!(option::and_then_discard(Some(1), Some(2)), Some(2));
+    }
+
+    #[test]
+    fn and_then_discard_none() {
+      assert_eq!(option::and_then_discard(None::<i32>, Some(2)), None);
+    }
+
+    #[test]
+    fn filter_map_maps_and_filters() {
+      assert_eq!(option::filter_map(Some(4), |x| if x > 2 { Some(x * 10) } else { None }), Some(40));
+      assert_eq!(option::filter_map(Some(1), |x| if x > 2 { Some(x * 10) } else { None }), None);
+      assert_eq!(option::filter_map(None::<i32>, |x| Some(x)), None);
+    }
+
+    #[test]
+    fn unless_false_executes() {
+      assert_eq!(option::unless(false, || Some(99)), Some(99));
+    }
+
+    #[test]
+    fn unless_true_returns_none() {
+      assert_eq!(option::unless(true, || Some(99)), None);
+    }
   }
 
   mod result_monad {
@@ -358,6 +387,48 @@ mod tests {
     fn ensure_false() {
       assert_eq!(result::ensure(false, || "error"), Err("error"));
     }
+
+    // ── previously uncovered ──────────────────────────────────────────────
+
+    #[test]
+    fn and_then_discard_ok_ok() {
+      let r: Result<i32, &str> = result::and_then_discard(Ok(1), Ok(2));
+      assert_eq!(r, Ok(2));
+    }
+
+    #[test]
+    fn and_then_discard_err() {
+      let r: Result<i32, &str> = result::and_then_discard(Err::<i32, _>("e"), Ok(2));
+      assert_eq!(r, Err("e"));
+    }
+
+    #[test]
+    fn map_err_transforms_error() {
+      let r: Result<i32, &str> = Err("e");
+      let mapped = result::map_err(r, |e| format!("wrapped: {e}"));
+      assert_eq!(mapped, Err("wrapped: e".to_string()));
+    }
+
+    #[test]
+    fn map_err_ok_unchanged() {
+      let r: Result<i32, &str> = Ok(42);
+      assert_eq!(result::map_err(r, |_| "new_err"), Ok(42));
+    }
+
+    #[test]
+    fn when_true_returns_some_ok() {
+      assert_eq!(result::when(true, || Ok::<i32, &str>(99)), Ok(Some(99)));
+    }
+
+    #[test]
+    fn when_false_returns_none_ok() {
+      assert_eq!(result::when::<i32, &str>(false, || Ok(99)), Ok(None));
+    }
+
+    #[test]
+    fn when_true_propagates_err() {
+      assert_eq!(result::when(true, || Err::<i32, &str>("bad")), Err("bad"));
+    }
   }
 
   mod vec_monad {
@@ -398,6 +469,36 @@ mod tests {
     #[test]
     fn replicate_creates_copies() {
       assert_eq!(vec::replicate(3, "x"), vec!["x", "x", "x"]);
+    }
+  }
+
+  // ── free flat_map function ────────────────────────────────────────────────
+
+  mod free_flat_map {
+    use super::*;
+
+    #[test]
+    fn free_flat_map_on_option_some() {
+      let result = flat_map(Some(5), |x| Some(x + 1));
+      assert_eq!(result, Some(6));
+    }
+
+    #[test]
+    fn free_flat_map_on_option_none() {
+      let result = flat_map(None::<i32>, |x| Some(x + 1));
+      assert_eq!(result, None);
+    }
+
+    #[test]
+    fn free_flat_map_on_result_ok() {
+      let r: Result<i32, &str> = Ok(10);
+      assert_eq!(flat_map(r, |x| Ok::<_, &str>(x * 2)), Ok(20));
+    }
+
+    #[test]
+    fn free_flat_map_on_result_err() {
+      let r: Result<i32, &str> = Err("e");
+      assert_eq!(flat_map(r, |x| Ok::<_, &str>(x * 2)), Err("e"));
     }
   }
 

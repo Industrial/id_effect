@@ -1822,4 +1822,192 @@ mod tests {
       assert_eq!(slow_v, (0..30).collect::<Vec<_>>());
     }
   }
+
+  // ── from_effect ──────────────────────────────────────────────────────────
+
+  mod from_effect {
+    use super::*;
+
+    #[test]
+    fn from_effect_wraps_vec_producing_effect() {
+      let eff = succeed::<Vec<i32>, (), ()>(vec![10, 20, 30]);
+      let stream = Stream::from_effect(eff);
+      let out = block_on(stream.run_collect().run(&mut ()));
+      assert_eq!(out, Ok(vec![10, 20, 30]));
+    }
+
+    #[test]
+    fn from_effect_propagates_failure() {
+      let eff = fail::<Vec<i32>, &'static str, ()>("boom");
+      let stream = Stream::from_effect(eff);
+      let out = block_on(stream.run_collect().run(&mut ()));
+      assert_eq!(out, Err("boom"));
+    }
+  }
+
+  // ── run_fold_effect ──────────────────────────────────────────────────────
+
+  mod run_fold_effect {
+    use super::*;
+
+    #[test]
+    fn run_fold_effect_accumulates_with_effectful_step() {
+      let stream = Stream::from_iterable(vec![1_i32, 2, 3]);
+      let out = block_on(
+        stream
+          .run_fold_effect(0, |acc, x| succeed::<i32, (), ()>(acc + x))
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(6));
+    }
+
+    #[test]
+    fn run_fold_effect_propagates_step_failure() {
+      let stream = Stream::<i32, &'static str, ()>::from_effect(succeed::<Vec<i32>, &'static str, ()>(vec![1, 2, 3]));
+      let out = block_on(
+        stream
+          .run_fold_effect(0_i32, |_acc, x| {
+            if x == 2 {
+              fail::<i32, &'static str, ()>("step fail")
+            } else {
+              succeed::<i32, &'static str, ()>(0)
+            }
+          })
+          .run(&mut ()),
+      );
+      assert_eq!(out, Err("step fail"));
+    }
+  }
+
+  // ── scan ─────────────────────────────────────────────────────────────────
+
+  mod scan {
+    use super::*;
+
+    #[test]
+    fn scan_emits_running_state_per_element() {
+      let stream = Stream::from_iterable(vec![1_i32, 2, 3, 4]);
+      let out = block_on(
+        stream
+          .scan(0_i32, |acc, x| {
+            *acc += x;
+            *acc
+          })
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![1, 3, 6, 10]));
+    }
+
+    #[test]
+    fn scan_with_empty_stream_produces_empty_output() {
+      let stream = Stream::<i32, (), ()>::from_iterable(vec![]);
+      let out = block_on(
+        stream
+          .scan(0_i32, |acc, x| {
+            *acc += x;
+            *acc
+          })
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![]));
+    }
+  }
+
+  mod run_for_each_effect_direct {
+    use super::*;
+
+    #[test]
+    fn run_for_each_effect_collects_side_effects() {
+      use std::sync::{Arc, Mutex};
+      let collected = Arc::new(Mutex::new(vec![]));
+      let c = Arc::clone(&collected);
+      let stream = Stream::from_iterable(vec![1_i32, 2, 3]);
+      let result = block_on(
+        stream
+          .run_for_each_effect(move |x| {
+            c.lock().unwrap().push(x);
+            succeed::<(), (), ()>(())
+          })
+          .run(&mut ()),
+      );
+      assert_eq!(result, Ok(()));
+      assert_eq!(*collected.lock().unwrap(), vec![1, 2, 3]);
+    }
+  }
+
+  mod stream_channel_full_error {
+    use super::*;
+
+    #[test]
+    fn stream_channel_full_display() {
+      let e = StreamChannelFull;
+      let s = format!("{e}");
+      assert!(s.contains("full"), "display: {s}");
+    }
+
+    #[test]
+    fn stream_channel_full_debug() {
+      let _ = format!("{:?}", StreamChannelFull);
+    }
+
+    #[test]
+    fn stream_channel_full_is_error_trait() {
+      let e: &dyn std::error::Error = &StreamChannelFull;
+      let _ = format!("{e}");
+    }
+
+    #[test]
+    fn send_chunk_fail_policy_returns_err_when_full() {
+      let (stream, sender) =
+        stream_from_channel_with_policy::<i32, (), ()>(1, BackpressurePolicy::Fail);
+      // Fill the queue
+      let r1 = block_on(send_chunk(&sender, Chunk::from_vec(vec![1])).run(&mut ()));
+      assert_eq!(r1, Ok(()));
+      // Queue is now full (capacity = 1) - sending again should fail
+      let r2 = block_on(send_chunk(&sender, Chunk::from_vec(vec![2])).run(&mut ()));
+      assert_eq!(r2, Err(StreamChannelFull));
+      // Clean up
+      let _ = block_on(end_stream(sender).run(&mut ()));
+      let _ = block_on(stream.run_collect().run(&mut ()));
+    }
+  }
+
+  mod range_tests {
+    use super::*;
+
+    #[test]
+    fn range_empty_when_start_equals_end() {
+      let out = block_on(
+        Stream::<i64, (), ()>::range(5, 5).run_collect().run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![]));
+    }
+
+    #[test]
+    fn range_empty_when_start_greater_than_end() {
+      let out = block_on(
+        Stream::<i64, (), ()>::range(10, 5).run_collect().run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![]));
+    }
+  }
+
+  mod stream_sender_fail_error {
+    use super::*;
+
+    #[test]
+    fn stream_sender_fail_error_propagates_to_stream() {
+      let (stream, sender) =
+        stream_from_channel_with_policy::<i32, &'static str, ()>(8, BackpressurePolicy::BoundedBlock);
+      let s = sender.clone();
+      let _ = block_on(send_chunk(&s, Chunk::from_vec(vec![1, 2])).run(&mut ()));
+      // Send an error through the stream
+      let msg = ChannelMessage::Fail("stream error");
+      let _ = crate::runtime::run_blocking(sender.queue.offer(msg), ());
+      let out = block_on(stream.run_collect().run(&mut ()));
+      assert_eq!(out, Err("stream error"));
+    }
+  }
 }

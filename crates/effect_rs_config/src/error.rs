@@ -135,8 +135,8 @@ impl std::error::Error for ConfigError {
 
 #[cfg(test)]
 mod tests {
-  use std::error::Error;
   use super::*;
+  use std::error::Error;
 
   #[test]
   fn config_error_matcher_all_variants_covered() {
@@ -221,9 +221,7 @@ mod tests {
 
   #[test]
   fn config_error_source_non_figment_variants_return_none() {
-    let missing = ConfigError::Missing {
-      path: "x".into(),
-    };
+    let missing = ConfigError::Missing { path: "x".into() };
     assert!(missing.source().is_none());
 
     let invalid = ConfigError::Invalid {
@@ -233,9 +231,7 @@ mod tests {
     };
     assert!(invalid.source().is_none());
 
-    let utf8 = ConfigError::InvalidUtf8 {
-      var: "VAR".into(),
-    };
+    let utf8 = ConfigError::InvalidUtf8 { var: "VAR".into() };
     assert!(utf8.source().is_none());
   }
 }

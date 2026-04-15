@@ -849,4 +849,136 @@ mod tests {
     assert_eq!(a.distance_millis(&b), 5000);
     assert_eq!(b.distance_millis(&a), -5000);
   }
+
+  // ── New tests: AnyDateTime ──────────────────────────────────────────────
+
+  #[test]
+  fn any_datetime_utc_variant() {
+    let u = UtcDateTime::unsafe_make(1_700_000_000_000);
+    let any = AnyDateTime::Utc(u.clone());
+    match any {
+      AnyDateTime::Utc(inner) => assert_eq!(inner.to_epoch_millis(), u.to_epoch_millis()),
+      AnyDateTime::Zoned(_) => panic!("expected Utc"),
+    }
+  }
+
+  #[test]
+  fn any_datetime_zoned_variant() {
+    let z = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let any = AnyDateTime::Zoned(z.clone());
+    match any {
+      AnyDateTime::Zoned(inner) => assert_eq!(inner.to_epoch_millis(), z.to_epoch_millis()),
+      AnyDateTime::Utc(_) => panic!("expected Zoned"),
+    }
+  }
+
+  // ── New tests: ZonedDateTime comparison helpers ─────────────────────────
+
+  #[test]
+  fn zoned_less_than_greater_than_between() {
+    let a = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let b = ZonedDateTime::unsafe_make(1_700_000_001_000, TimeZone::UTC);
+    assert!(a.less_than(&b));
+    assert!(!b.less_than(&a));
+    assert!(b.greater_than(&a));
+    assert!(!a.greater_than(&b));
+    assert!(b.between(&a, &b));
+    assert!(!a.between(&b, &b));
+  }
+
+  // ── New tests: ZonedDateTime::distance_duration ─────────────────────────
+
+  #[test]
+  fn zoned_distance_duration_absolute() {
+    let a = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let b = ZonedDateTime::unsafe_make(1_700_000_005_000, TimeZone::UTC);
+    let d = a.distance_duration(&b);
+    assert_eq!(d, std::time::Duration::from_secs(5));
+    // Also reversed (absolute)
+    let d2 = b.distance_duration(&a);
+    assert_eq!(d2, std::time::Duration::from_secs(5));
+  }
+
+  // ── New tests: TimeZoneError Display ───────────────────────────────────
+
+  #[test]
+  fn timezone_error_display_and_error_trait() {
+    let err = timezone::TimeZoneError { id: "Bad/Zone".into() };
+    let s = format!("{err}");
+    assert!(s.contains("Bad/Zone"), "display should mention the id: {s}");
+    use std::error::Error;
+    assert!(err.source().is_none());
+  }
+
+  // ── New tests: from_epoch_millis out-of-range ───────────────────────────
+
+  #[test]
+  fn utc_from_epoch_millis_out_of_range_returns_none() {
+    // i64::MAX is past jiff's supported range
+    assert!(UtcDateTime::from_epoch_millis(i64::MAX).is_none());
+    assert!(UtcDateTime::from_epoch_millis(i64::MIN).is_none());
+  }
+
+  #[test]
+  fn zoned_from_epoch_millis_out_of_range_returns_none() {
+    assert!(ZonedDateTime::from_epoch_millis(i64::MAX, TimeZone::UTC).is_none());
+    assert!(ZonedDateTime::from_epoch_millis(i64::MIN, TimeZone::UTC).is_none());
+  }
+
+  // ── New tests: parse_fixed_offset_time_zone edge cases ─────────────────
+
+  #[test]
+  fn timezone_from_str_fixed_offset_edge_cases() {
+    // Explicit zero offset
+    assert!(timezone::from_str("+00:00").is_some());
+    assert!(timezone::from_str("-00:00").is_some());
+    // Hour only (no minutes)
+    assert!(timezone::from_str("+05").is_some());
+    assert!(timezone::from_str("-09").is_some());
+    // With seconds component
+    assert!(timezone::from_str("+01:30:00").is_some());
+    // Empty after sign → None
+    assert!(timezone::from_str("+").is_none());
+    assert!(timezone::from_str("-").is_none());
+    // Too many colons → None
+    assert!(timezone::from_str("+01:00:00:00").is_none());
+    // Non-numeric hour → None
+    assert!(timezone::from_str("+xx:00").is_none());
+  }
+
+  // ── New tests: named timezone success path ──────────────────────────────
+
+  #[test]
+  fn named_timezone_succeeds_on_valid_id() {
+    let exit = run_test(timezone::named("UTC"), ());
+    assert!(
+      matches!(exit, Exit::Success(_)),
+      "expected success for UTC: {exit:?}"
+    );
+  }
+
+  // ── New tests: ZonedDateTime start/end/nearest broader units ───────────
+
+  #[test]
+  fn zoned_start_end_nearest_all_units() {
+    use crate::scheduling::datetime::TimeUnit::*;
+    let z = ZonedDateTime::unsafe_make(1_720_000_000_000, TimeZone::UTC);
+    for unit in [Second, Minute, Hour, Day, Week, Month, Year] {
+      let _ = z.start_of(unit);
+      let _ = z.end_of(unit);
+      let _ = z.nearest(unit);
+    }
+  }
+
+  // ── New tests: UtcDateTime end_of ──────────────────────────────────────
+
+  #[test]
+  fn utc_end_of_basic_units() {
+    use crate::scheduling::datetime::TimeUnit::*;
+    let u = UtcDateTime::unsafe_make(1_720_000_000_000);
+    for unit in [Second, Minute, Hour, Day] {
+      let e = u.end_of(unit);
+      assert!(e.greater_than(&u.start_of(unit)));
+    }
+  }
 }

@@ -361,4 +361,59 @@ mod tests {
     run_blocking(fr.reset(), ()).unwrap();
     assert_eq!(run_blocking(fr.get(), ()).unwrap(), 7);
   }
+
+  // ── update ────────────────────────────────────────────────────────────────
+
+  #[test]
+  fn fiber_ref_update_applies_function_to_current_value() {
+    let fr = run_blocking(FiberRef::make(|| 10u32), ()).unwrap();
+    run_blocking(fr.update(|v| v * 2), ()).unwrap();
+    assert_eq!(run_blocking(fr.get(), ()).unwrap(), 20);
+  }
+
+  #[test]
+  fn fiber_ref_update_uses_initial_when_no_value_set() {
+    let fr = run_blocking(FiberRef::make(|| 5u32), ()).unwrap();
+    // Reset first so no value is set, then update
+    run_blocking(fr.reset(), ()).unwrap();
+    run_blocking(fr.update(|v| v + 1), ()).unwrap();
+    assert_eq!(run_blocking(fr.get(), ()).unwrap(), 6);
+  }
+
+  // ── modify ────────────────────────────────────────────────────────────────
+
+  #[test]
+  fn fiber_ref_modify_returns_output_and_stores_new_value() {
+    let fr = run_blocking(FiberRef::make(|| 100u32), ()).unwrap();
+    let out = run_blocking(fr.modify(|v| (v.to_string(), v + 1)), ()).unwrap();
+    assert_eq!(out, "100");
+    assert_eq!(run_blocking(fr.get(), ()).unwrap(), 101);
+  }
+
+  #[test]
+  fn fiber_ref_modify_uses_initial_when_unset() {
+    let fr = run_blocking(FiberRef::make(|| 50u32), ()).unwrap();
+    run_blocking(fr.reset(), ()).unwrap();
+    let out = run_blocking(fr.modify(|v| (v * 2, v + 10)), ()).unwrap();
+    assert_eq!(out, 100u32);
+    assert_eq!(run_blocking(fr.get(), ()).unwrap(), 60);
+  }
+
+  // ── locally_with ──────────────────────────────────────────────────────────
+
+  #[test]
+  fn fiber_ref_locally_with_computes_override_at_entry_and_restores() {
+    let fr = run_blocking(FiberRef::make(|| 3u32), ()).unwrap();
+    run_blocking(fr.set(3), ()).unwrap();
+    let inner = fr.clone().locally_with(|| 42u32, {
+      let g = fr.clone();
+      g.get().flat_map(|v| {
+        assert_eq!(v, 42u32);
+        succeed(())
+      })
+    });
+    assert!(run_blocking(inner, ()).is_ok());
+    // Original value should be restored
+    assert_eq!(run_blocking(fr.get(), ()).unwrap(), 3);
+  }
 }

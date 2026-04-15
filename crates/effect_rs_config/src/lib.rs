@@ -618,11 +618,8 @@ bad = [1, 2]
 
     let p = MapConfigProvider::from_pairs([("K", "v")]);
     let env = config_env(p);
-    let result: String = run_blocking(
-      Config::string("K").run::<String, ConfigError, _>(),
-      env,
-    )
-    .unwrap();
+    let result: String =
+      run_blocking(Config::string("K").run::<String, ConfigError, _>(), env).unwrap();
     assert_eq!(result, "v");
   }
 

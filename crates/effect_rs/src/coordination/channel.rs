@@ -1011,4 +1011,154 @@ mod tests {
     let got = block_on_effect(stream.run_collect()).expect("collect");
     assert_eq!(got, vec![1, 2]);
   }
+
+  // ── from_fold / fold_state / consume_stream ───────────────────────────────
+
+  #[test]
+  fn channel_from_fold_accumulates_writes_and_fold_state_returns_current() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    block_on_effect(ch.write(3)).expect("w1");
+    block_on_effect(ch.write(7)).expect("w2");
+    let state = block_on_effect(ch.fold_state()).expect("fold_state");
+    assert_eq!(state, 10);
+  }
+
+  #[test]
+  fn channel_from_fold_read_returns_snapshots_in_order() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    block_on_effect(ch.write(1)).expect("w1");
+    block_on_effect(ch.write(2)).expect("w2");
+    let s1 = block_on_effect(ch.read()).expect("r1");
+    let s2 = block_on_effect(ch.read()).expect("r2");
+    assert_eq!(s1, Some(1));
+    assert_eq!(s2, Some(3));
+  }
+
+  #[test]
+  fn channel_consume_stream_drains_into_fold_and_returns_final_value() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    let stream = Stream::from_iterable(vec![1, 2, 3, 4]);
+    let total = block_on_effect(ch.consume_stream(stream)).expect("consume");
+    assert_eq!(total, 10);
+  }
+
+  // ── from_sink ─────────────────────────────────────────────────────────────
+
+  #[test]
+  fn channel_from_sink_writes_accumulate_and_fold_state_returns_sum() {
+    use crate::streaming::sink::Sink;
+    let sink: Sink<i32, i32, (), ()> = Sink::fold_left(0, |acc, x| acc + x);
+    let ch = Channel::<i32, i32, (), (), ()>::from_sink(sink);
+    block_on_effect(ch.write(5)).expect("w");
+    block_on_effect(ch.write(10)).expect("w");
+    let state = block_on_effect(ch.fold_state()).expect("state");
+    assert_eq!(state, 15);
+  }
+
+  // ── map_in ────────────────────────────────────────────────────────────────
+
+  #[test]
+  fn channel_map_in_transforms_written_values() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x: i32| x);
+    let ch2 = ch.map_in(|s: &str| s.len() as i32);
+    block_on_effect(ch2.write("hello")).expect("w");
+    assert_eq!(block_on_effect(ch2.read()).expect("r"), Some(5));
+  }
+
+  // ── map_out ───────────────────────────────────────────────────────────────
+
+  #[test]
+  fn channel_map_out_on_queue_channel_transforms_read_values() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
+    let ch = ch.map_out(|x| x * 2);
+    block_on_effect(ch.write(7)).expect("w");
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(14));
+  }
+
+  #[test]
+  fn channel_map_out_on_fold_channel_transforms_snapshots() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    let ch = ch.map_out(|x| x * 10);
+    block_on_effect(ch.write(3)).expect("w");
+    // For SinkAccum, post_read is applied at write (snapshot: 3*10=30)
+    // and again at read (30*10=300) — f is applied twice.
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(300));
+  }
+
+  #[test]
+  fn channel_map_out_on_from_stream_transforms_elements() {
+    let inner = Stream::from_iterable(vec![2_i32, 4]);
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
+    let ch = ch.map_out(|x| x + 100);
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(102));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(104));
+  }
+
+  // ── flat_map_out ──────────────────────────────────────────────────────────
+
+  #[test]
+  fn channel_flat_map_out_expands_each_element_into_multiple() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
+    let ch = ch.flat_map_out(|x| vec![x, x * 10]);
+    block_on_effect(ch.write(3)).expect("w");
+    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(3));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(30));
+  }
+
+  #[test]
+  fn channel_flat_map_out_empty_result_is_skipped() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
+    let ch = ch.flat_map_out(|x| if x == 0 { vec![] } else { vec![x] });
+    block_on_effect(ch.write(0)).expect("w0");
+    block_on_effect(ch.write(5)).expect("w5");
+    // 0 is skipped; 5 arrives
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(5));
+  }
+
+  #[test]
+  fn channel_flat_map_out_on_fold_channel_expands_snapshots() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    let ch = ch.flat_map_out(|x| vec![x, -x]);
+    block_on_effect(ch.write(4)).expect("w");
+    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(4));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(-4));
+  }
+
+  #[test]
+  fn channel_flat_map_out_on_from_stream_expands_elements() {
+    let inner = Stream::from_iterable(vec![1_i32]);
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
+    let ch = ch.flat_map_out(|x| vec![x, x + 100]);
+    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(1));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(101));
+  }
+
+  // ── to_sink ───────────────────────────────────────────────────────────────
+
+  #[test]
+  fn channel_to_sink_writes_stream_elements_into_channel_queue() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), QueueError, ()>::from_queue_and_map(q, |x| x);
+    let sink = ch.to_sink();
+    let source = Stream::<i32, QueueError, ()>::from_effect(crate::kernel::succeed(vec![10_i32, 20, 30]));
+    block_on_effect(sink.run(source)).expect("run sink");
+    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(10));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(20));
+    assert_eq!(block_on_effect(ch.read()).expect("r3"), Some(30));
+  }
+
+  // ── write on from_stream is a no-op ──────────────────────────────────────
+
+  #[test]
+  fn channel_write_on_from_stream_is_noop() {
+    let inner = Stream::from_iterable(vec![1_i32]);
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
+    block_on_effect(ch.write(())).expect("write noop");
+    // Stream still readable
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(1));
+  }
 }

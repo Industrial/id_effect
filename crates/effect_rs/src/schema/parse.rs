@@ -724,7 +724,9 @@ mod tests {
       let mut m = BTreeMap::new();
       m.insert("name".into(), Unknown::String("alice".into()));
       // "age" is missing
-      let err = s.decode_unknown(&Unknown::Object(m)).expect_err("missing age");
+      let err = s
+        .decode_unknown(&Unknown::Object(m))
+        .expect_err("missing age");
       assert!(err.path.contains("age"), "path was {:?}", err.path);
     }
 
@@ -1036,9 +1038,11 @@ mod tests {
 
     #[test]
     fn i64_decode_unknown_non_null_non_i64_fails() {
-      assert!(i64::<()>()
-        .decode_unknown(&Unknown::String("x".into()))
-        .is_err());
+      assert!(
+        i64::<()>()
+          .decode_unknown(&Unknown::String("x".into()))
+          .is_err()
+      );
     }
 
     #[test]
@@ -1068,9 +1072,7 @@ mod tests {
     #[test]
     fn i64_unknown_wire_decode_unknown_non_i64_fails() {
       let s = i64_unknown_wire::<()>();
-      assert!(s
-        .decode_unknown(&Unknown::String("x".into()))
-        .is_err());
+      assert!(s.decode_unknown(&Unknown::String("x".into())).is_err());
     }
   }
 
@@ -1079,9 +1081,7 @@ mod tests {
 
     #[test]
     fn string_decode_unknown_non_null_non_string_fails() {
-      assert!(string::<()>()
-        .decode_unknown(&Unknown::I64(1))
-        .is_err());
+      assert!(string::<()>().decode_unknown(&Unknown::I64(1)).is_err());
     }
   }
 
@@ -1103,10 +1103,7 @@ mod tests {
     #[test]
     fn optional_decode_unknown_non_null_returns_some() {
       let s = optional(i64::<()>());
-      assert_eq!(
-        s.decode_unknown(&Unknown::I64(42)).unwrap(),
-        Some(42_i64)
-      );
+      assert_eq!(s.decode_unknown(&Unknown::I64(42)).unwrap(), Some(42_i64));
     }
   }
 
@@ -1166,9 +1163,7 @@ mod tests {
     #[test]
     fn tuple4_decode_wire_success() {
       let s = tuple4(i64::<()>(), bool_::<()>(), string::<()>(), f64::<()>());
-      let got = s
-        .decode((1_i64, true, "z".to_string(), 2.5_f64))
-        .unwrap();
+      let got = s.decode((1_i64, true, "z".to_string(), 2.5_f64)).unwrap();
       assert_eq!(got, (1_i64, true, "z".to_string(), 2.5_f64));
     }
 
@@ -1203,6 +1198,140 @@ mod tests {
       let wire = (1_i64, 2_i64, 3_i64);
       let got = s.decode(wire).unwrap();
       assert_eq!(s.encode(got), (1_i64, 2_i64, 3_i64));
+    }
+  }
+
+  mod struct4_codec_extra {
+    use super::*;
+
+    #[test]
+    fn struct4_decode_wire_success() {
+      let s = struct4("a", i64::<()>(), "b", bool_::<()>(), "c", string::<()>(), "d", f64::<()>());
+      let got = s.decode((1_i64, true, "x".to_string(), 2.5_f64)).unwrap();
+      assert_eq!(got, (1_i64, true, "x".to_string(), 2.5_f64));
+    }
+
+    #[test]
+    fn struct4_encode_round_trip() {
+      let s = struct4("a", i64::<()>(), "b", i64::<()>(), "c", i64::<()>(), "d", i64::<()>());
+      let val = (1_i64, 2_i64, 3_i64, 4_i64);
+      let encoded = s.encode(val);
+      assert_eq!(encoded, (1_i64, 2_i64, 3_i64, 4_i64));
+    }
+
+    #[test]
+    fn struct4_decode_unknown_missing_field_errors() {
+      let s = struct4("a", i64::<()>(), "b", i64::<()>(), "c", i64::<()>(), "d", i64::<()>());
+      let mut m = BTreeMap::new();
+      m.insert("a".into(), Unknown::I64(1));
+      m.insert("b".into(), Unknown::I64(2));
+      // "c" and "d" missing
+      assert!(s.decode_unknown(&Unknown::Object(m)).is_err());
+    }
+  }
+
+  mod union_codec_extra {
+    use super::*;
+
+    #[test]
+    fn union_decode_wire_uses_primary_first() {
+      let primary = filter(i64_unknown_wire::<()>(), |n| *n > 0, "positive");
+      let fallback = i64_unknown_wire::<()>();
+      let s = union_(primary, fallback);
+      assert_eq!(s.decode(Unknown::I64(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn union_decode_wire_falls_back_when_primary_fails() {
+      let primary = filter(i64_unknown_wire::<()>(), |n| *n < 0, "negative");
+      let fallback = i64_unknown_wire::<()>();
+      let s = union_(primary, fallback);
+      assert_eq!(s.decode(Unknown::I64(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn union_encode_uses_primary_encoder() {
+      let primary = filter(i64_unknown_wire::<()>(), |n| *n > 0, "positive");
+      let fallback = i64_unknown_wire::<()>();
+      let s = union_(primary, fallback);
+      assert_eq!(s.encode(42_i64), Unknown::I64(42));
+    }
+  }
+
+  mod refine_tests {
+    use super::*;
+
+    #[test]
+    fn refine_accepts_valid_value() {
+      let s = refine(i64::<()>(), |n| *n >= 0, "non-negative");
+      assert_eq!(s.decode(5_i64).unwrap(), 5);
+    }
+
+    #[test]
+    fn refine_rejects_invalid_value() {
+      let s = refine(i64::<()>(), |n| *n >= 0, "non-negative");
+      assert!(s.decode(-1_i64).is_err());
+    }
+
+    #[test]
+    fn refine_encode_passes_through() {
+      let s = refine(i64::<()>(), |n| *n >= 0, "non-negative");
+      assert_eq!(s.encode(7_i64), 7_i64);
+    }
+  }
+
+  mod parse_error_display {
+    use super::*;
+    use std::fmt::Display;
+
+    #[test]
+    fn parse_error_new_fields_accessible() {
+      let e = ParseError::new("user.name", "too short");
+      assert_eq!(e.path, "user.name");
+      assert_eq!(e.message, "too short");
+    }
+
+    #[test]
+    fn parse_error_prefix_prepends_segment() {
+      let e = ParseError::new("age", "invalid");
+      let prefixed = e.prefix("user");
+      assert_eq!(prefixed.path, "user.age");
+    }
+
+    #[test]
+    fn parse_error_prefix_empty_path_becomes_segment() {
+      let e = ParseError::new("", "invalid");
+      let prefixed = e.prefix("name");
+      assert_eq!(prefixed.path, "name");
+    }
+  }
+
+  mod unknown_display_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_null_debug() {
+      let _ = format!("{:?}", Unknown::Null);
+    }
+
+    #[test]
+    fn unknown_f64_variant_accessible() {
+      let u = Unknown::F64(3.14);
+      if let Unknown::F64(v) = u {
+        assert!((v - 3.14).abs() < 1e-9);
+      } else {
+        panic!("not F64");
+      }
+    }
+
+    #[test]
+    fn unknown_array_and_object_roundtrip_debug() {
+      let arr = Unknown::Array(vec![Unknown::Bool(true), Unknown::I64(1)]);
+      let _ = format!("{:?}", arr);
+      let mut m = BTreeMap::new();
+      m.insert("k".to_string(), Unknown::String("v".to_string()));
+      let obj = Unknown::Object(m);
+      let _ = format!("{:?}", obj);
     }
   }
 }

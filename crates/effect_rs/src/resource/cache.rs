@@ -449,4 +449,60 @@ mod tests {
     assert_eq!(cache.get(5).run(&mut env).await.expect("b"), 500);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
   }
+
+  // ── stats: misses / loads / evictions ────────────────────────────────────
+
+  #[tokio::test]
+  async fn cache_stats_tracks_misses_and_loads() {
+    let cache = run_async(
+      Cache::make(8, None, |k: u8| succeed::<i32, (), ()>(k as i32)),
+      (),
+    )
+    .await
+    .expect("make");
+
+    let mut env = ();
+    let _ = cache.get(1).run(&mut env).await.expect("miss1");
+    let _ = cache.get(1).run(&mut env).await.expect("hit1");
+    let _ = cache.get(2).run(&mut env).await.expect("miss2");
+
+    let st = cache.stats().run(&mut ()).await.expect("stats");
+    assert!(st.misses >= 2, "at least 2 misses (keys 1 and 2)");
+    assert!(st.loads >= 2, "at least 2 loads");
+    assert!(st.hits >= 1, "at least 1 hit (second get for key 1)");
+  }
+
+  #[tokio::test]
+  async fn cache_lru_evicts_oldest_entry_when_capacity_exceeded() {
+    let cache = run_async(Cache::make(2, None, |k: u8| succeed::<u8, (), ()>(k)), ())
+      .await
+      .expect("make");
+
+    let mut env = ();
+    let _ = cache.get(1).run(&mut env).await.expect("k1");
+    let _ = cache.get(2).run(&mut env).await.expect("k2");
+    // Inserting key 3 should evict key 1 (LRU)
+    let _ = cache.get(3).run(&mut env).await.expect("k3");
+
+    let st = cache.stats().run(&mut ()).await.expect("stats");
+    assert!(st.evictions >= 1, "at least one eviction expected");
+  }
+
+  // ── load failure path ─────────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn cache_get_propagates_load_failure() {
+    let cache = run_async(
+      Cache::make(8, None, |_k: u8| {
+        crate::kernel::fail::<i32, &'static str, ()>("load_error")
+      }),
+      (),
+    )
+    .await
+    .expect("make");
+
+    let mut env = ();
+    let result = cache.get(42).run(&mut env).await;
+    assert!(result.is_err(), "load failure should propagate");
+  }
 }

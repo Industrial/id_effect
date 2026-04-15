@@ -201,4 +201,80 @@ mod tests {
     scope_m.close();
     th.join().expect("thread");
   }
+
+  // ── acquire_owned ─────────────────────────────────────────────────────
+
+  #[test]
+  fn semaphore_acquire_owned_returns_permit() {
+    let sem = crate::runtime::run_blocking(Semaphore::make(1), ()).unwrap();
+    let permit = pollster::block_on(run_async(sem.acquire_owned(), ())).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
+      0,
+      "permit should consume the slot"
+    );
+    drop(permit);
+    assert_eq!(
+      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
+      1,
+      "permit release should restore the slot"
+    );
+  }
+
+  // ── available ────────────────────────────────────────────────────────
+
+  #[test]
+  fn semaphore_available_tracks_permits() {
+    let sem = crate::runtime::run_blocking(Semaphore::make(3), ()).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
+      3
+    );
+    let p = pollster::block_on(run_async(sem.acquire_owned(), ())).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
+      2
+    );
+    drop(p);
+  }
+
+  // ── free-function wrappers ─────────────────────────────────────────────
+
+  #[test]
+  fn semaphore_free_fn_make_and_acquire_owned() {
+    let sem = crate::runtime::run_blocking(make(2), ()).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
+      2
+    );
+    let p1 = pollster::block_on(run_async(acquire_owned(&sem), ())).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
+      1
+    );
+    let p2 = crate::runtime::run_blocking(try_acquire(&sem), ()).unwrap();
+    assert!(p2.is_some());
+    assert_eq!(
+      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
+      0
+    );
+    drop(p1);
+    drop(p2);
+  }
+
+  #[test]
+  fn semaphore_free_fn_acquire_with_scope() {
+    let sem = crate::runtime::run_blocking(make(1), ()).unwrap();
+    let scope = Scope::make();
+    pollster::block_on(run_async(acquire(&sem), scope.clone())).unwrap();
+    assert_eq!(
+      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
+      0
+    );
+    scope.close();
+    assert_eq!(
+      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
+      1
+    );
+  }
 }

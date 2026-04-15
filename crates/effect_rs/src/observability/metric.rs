@@ -327,4 +327,73 @@ mod tests {
     assert_eq!(obs.len(), 1);
     assert!(obs[0] > Duration::ZERO);
   }
+
+  // ── make (module-level alias) ─────────────────────────────────────────────
+
+  #[test]
+  fn make_creates_counter_with_zero_initial_value() {
+    let m = make("requests", Vec::<(String, String)>::new());
+    assert_eq!(m.snapshot_count(), 0);
+    run_blocking(m.apply(5), ()).unwrap();
+    assert_eq!(m.snapshot_count(), 5);
+  }
+
+  // ── name / tags ───────────────────────────────────────────────────────────
+
+  #[test]
+  fn metric_name_returns_configured_name() {
+    let m = Metric::counter("my_counter", Vec::<(String, String)>::new());
+    assert_eq!(m.name(), "my_counter");
+  }
+
+  #[test]
+  fn metric_tags_returns_configured_pairs() {
+    let pairs = vec![
+      ("region".to_owned(), "us-east".to_owned()),
+      ("service".to_owned(), "api".to_owned()),
+    ];
+    let m = Metric::counter("req", pairs.clone());
+    assert_eq!(m.tags(), pairs.as_slice());
+  }
+
+  #[test]
+  fn metric_tags_empty_when_no_pairs_given() {
+    let m = Metric::gauge("g", Vec::<(String, String)>::new());
+    assert!(m.tags().is_empty());
+  }
+
+  // ── gauge ─────────────────────────────────────────────────────────────────
+
+  #[test]
+  fn gauge_apply_sets_value_and_snapshot_returns_it() {
+    let m = Metric::gauge("cpu", Vec::<(String, String)>::new());
+    assert_eq!(m.snapshot_value(), 0);
+    run_blocking(m.apply(75), ()).unwrap();
+    assert_eq!(m.snapshot_value(), 75);
+    run_blocking(m.apply(-10), ()).unwrap();
+    assert_eq!(m.snapshot_value(), -10);
+  }
+
+  #[test]
+  fn gauge_name_accessible() {
+    let m = Metric::gauge("memory_bytes", Vec::<(String, String)>::new());
+    assert_eq!(m.name(), "memory_bytes");
+  }
+
+  // ── summary ───────────────────────────────────────────────────────────────
+
+  #[test]
+  fn summary_records_duration_observations() {
+    let m = Metric::summary("latency_p99", Vec::<(String, String)>::new());
+    run_blocking(m.apply(Duration::from_millis(5)), ()).unwrap();
+    run_blocking(m.apply(Duration::from_millis(15)), ()).unwrap();
+    let obs = m.snapshot_durations();
+    assert_eq!(obs.len(), 2);
+  }
+
+  #[test]
+  fn summary_name_accessible() {
+    let m = Metric::summary("request_duration", Vec::<(String, String)>::new());
+    assert_eq!(m.name(), "request_duration");
+  }
 }

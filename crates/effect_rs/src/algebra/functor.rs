@@ -441,4 +441,88 @@ mod tests {
       }
     }
   }
+
+  // ── map_to free function ───────────────────────────────────────────────────
+
+  mod map_to_fn {
+    use super::*;
+
+    #[test]
+    fn map_to_applies_to_some() {
+      let f = map_to(|x: i32| x * 3);
+      assert_eq!(f(Some(4)), Some(12));
+    }
+
+    #[test]
+    fn map_to_applies_to_none() {
+      let f = map_to(|x: i32| x + 1);
+      assert_eq!(f(None), None);
+    }
+  }
+
+  // ── Functor trait for [A; N] ──────────────────────────────────────────────
+
+  mod array_functor {
+    use super::*;
+
+    #[test]
+    fn array_map_single_element() {
+      let arr: [i32; 1] = [5];
+      let result = arr.map(|x| x * 2);
+      assert_eq!(result, [10]);
+    }
+
+    #[test]
+    fn array_zero_size_map() {
+      let arr: [i32; 0] = [];
+      let result: [String; 0] = arr.map(|x| x.to_string());
+      assert_eq!(result, [] as [String; 0]);
+    }
+  }
+
+  // ── Functor trait for Vec<A> (single-element, FnOnce path) ──────────────
+
+  mod vec_functor_trait {
+    use super::*;
+
+    #[test]
+    fn vec_map_single_element_via_trait() {
+      let v: Vec<i32> = vec![7];
+      let result = Functor::map(v, |x| x + 10);
+      assert_eq!(result, vec![17]);
+    }
+
+    #[test]
+    fn vec_empty_map_via_trait() {
+      let v: Vec<i32> = vec![];
+      let result = Functor::map(v, |x: i32| x * 2);
+      assert_eq!(result, Vec::<i32>::new());
+    }
+  }
+
+  // ── Free function map / as_ ───────────────────────────────────────────────
+
+  mod free_functions_result {
+    use super::*;
+
+    #[test]
+    fn free_map_ok_result() {
+      let r: Result<i32, &str> = Ok(10);
+      assert_eq!(map(r, |x| x + 1), Ok(11));
+    }
+
+    #[test]
+    fn free_map_err_result() {
+      let r: Result<i32, &str> = Err("fail");
+      let mapped = map(r, |x: i32| x + 1);
+      assert_eq!(mapped, Err("fail"));
+    }
+
+    #[test]
+    fn free_as_replaces_ok_value() {
+      let r: Result<i32, &str> = Ok(42);
+      let result = as_(r, "replaced");
+      assert_eq!(result, Ok("replaced"));
+    }
+  }
 }

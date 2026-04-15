@@ -488,4 +488,97 @@ mod tests {
     sa2.close();
     assert_eq!(fc.load(Ordering::SeqCst), 2, "reuse for key a");
   }
+
+  // ── Pool::make_with_ttl ───────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn pool_make_with_ttl_evicts_stale_idle_slot() {
+    let fc = Arc::new(AtomicUsize::new(0));
+    let fc2 = fc.clone();
+    let pool = run_blocking(
+      Pool::make_with_ttl(2, Duration::from_millis(20), move || {
+        fc2.fetch_add(1, Ordering::SeqCst);
+        succeed::<u32, (), ()>(fc2.load(Ordering::SeqCst) as u32)
+      }),
+      (),
+    )
+    .expect("pool with ttl");
+
+    let s1 = Scope::make();
+    let _ = run_async(pool.get(), s1.clone()).await.expect("get1");
+    s1.close();
+
+    // Wait for TTL to expire
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let s2 = Scope::make();
+    let _ = run_async(pool.get(), s2.clone()).await.expect("get2");
+    s2.close();
+
+    assert_eq!(
+      fc.load(Ordering::SeqCst),
+      2,
+      "stale idle slot should be discarded, factory called again"
+    );
+  }
+
+  // ── KeyedPool::make_with_ttl ──────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn keyed_pool_make_with_ttl_evicts_stale_idle_slot() {
+    let fc = Arc::new(AtomicUsize::new(0));
+    let fc2 = fc.clone();
+    let pool = run_blocking(
+      KeyedPool::make_with_ttl(4, Duration::from_millis(20), move |_k: &'static str| {
+        fc2.fetch_add(1, Ordering::SeqCst);
+        succeed::<u32, (), ()>(fc2.load(Ordering::SeqCst) as u32)
+      }),
+      (),
+    )
+    .expect("keyed pool with ttl");
+
+    let s1 = Scope::make();
+    let _ = run_async(pool.get("key"), s1.clone()).await.expect("get1");
+    s1.close();
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let s2 = Scope::make();
+    let _ = run_async(pool.get("key"), s2.clone()).await.expect("get2");
+    s2.close();
+
+    assert_eq!(
+      fc.load(Ordering::SeqCst),
+      2,
+      "stale idle slot for keyed pool should be discarded"
+    );
+  }
+
+  // ── KeyedPool::invalidate ─────────────────────────────────────────────────
+
+  #[tokio::test]
+  async fn keyed_pool_invalidate_forces_factory_on_next_get() {
+    let fc = Arc::new(AtomicUsize::new(0));
+    let fc2 = fc.clone();
+    let pool = run_blocking(
+      KeyedPool::make(4, move |k: &'static str| {
+        fc2.fetch_add(1, Ordering::SeqCst);
+        succeed::<String, (), ()>(format!("{}-{}", k, fc2.load(Ordering::SeqCst)))
+      }),
+      (),
+    )
+    .expect("keyed pool");
+
+    let s1 = Scope::make();
+    let v = run_async(pool.get("x"), s1.clone()).await.expect("get1");
+    run_blocking(pool.invalidate("x", v.clone()), ()).expect("invalidate");
+    s1.close();
+
+    let s2 = Scope::make();
+    let v2 = run_async(pool.get("x"), s2.clone()).await.expect("get2");
+    s2.close();
+
+    assert_ne!(v, v2, "invalidated item should not be reused");
+    assert_eq!(fc.load(Ordering::SeqCst), 2, "factory should run twice");
+  }
 }
