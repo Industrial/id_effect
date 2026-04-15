@@ -40,7 +40,7 @@ tasks:
       cache: true
       outputStyle: buffer-only-failure
   test:
-    deps: ['^:test']
+    deps: ['^:test', '~:clippy']
     command:
       - cargo
       - nextest

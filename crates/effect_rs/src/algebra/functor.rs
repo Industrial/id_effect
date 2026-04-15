@@ -463,8 +463,6 @@ mod tests {
   // ── Functor trait for [A; N] ──────────────────────────────────────────────
 
   mod array_functor {
-    use super::*;
-
     #[test]
     fn array_map_single_element() {
       let arr: [i32; 1] = [5];

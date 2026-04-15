@@ -52,11 +52,8 @@ pub fn effect_body_contains_bind(tokens: TokenStream) -> bool {
   for tt in tokens {
     match tt {
       TokenTree::Punct(p) if p.as_char() == '~' => return true,
-      TokenTree::Group(g) => {
-        if effect_body_contains_bind(g.stream()) {
-          return true;
-        }
-      }
+      TokenTree::Group(g) if effect_body_contains_bind(g.stream()) => return true,
+      TokenTree::Group(_) => {}
       _ => {}
     }
   }
@@ -100,11 +97,10 @@ pub fn effect_body_contains_await(tokens: TokenStream) -> bool {
                 }
               }
             }
-            Some(TokenTree::Group(g)) => {
-              if walk(g.stream().into_iter().peekable(), false) {
-                return true;
-              }
+            Some(TokenTree::Group(g)) if walk(g.stream().into_iter().peekable(), false) => {
+              return true;
             }
+            Some(TokenTree::Group(_)) => {}
             Some(_) => {}
             None => {}
           }

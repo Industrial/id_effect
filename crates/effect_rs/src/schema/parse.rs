@@ -1309,7 +1309,6 @@ mod tests {
 
   mod parse_error_display {
     use super::*;
-    use std::fmt::Display;
 
     #[test]
     fn parse_error_new_fields_accessible() {

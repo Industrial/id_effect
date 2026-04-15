@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn concat_ref_on_strings() {
-      let strs = vec!["hello".to_string(), " ".to_string(), "world".to_string()];
+      let strs = ["hello".to_string(), " ".to_string(), "world".to_string()];
       assert_eq!(concat_ref(strs.iter()), "hello world");
     }
 
@@ -713,7 +713,7 @@ mod tests {
 
     #[test]
     fn concat_ref_integers() {
-      let ns = vec![1i32, 2, 3, 4, 5];
+      let ns = [1i32, 2, 3, 4, 5];
       assert_eq!(concat_ref(ns.iter()), 15);
     }
   }
