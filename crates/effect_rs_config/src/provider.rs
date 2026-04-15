@@ -381,3 +381,270 @@ impl<P: ConfigProvider> ConfigProvider for ScopedConfigProvider<P> {
     self.inner.seq_delim()
   }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+  use std::collections::HashMap;
+  use std::sync::Arc;
+
+  use super::*;
+
+  fn pairs(entries: &[(&str, &str)]) -> MapConfigProvider {
+    MapConfigProvider::from_pairs(entries.iter().copied())
+  }
+
+  // ── ConfigProviderService Debug ───────────────────────────────────────────
+
+  #[test]
+  fn config_provider_service_debug_format() {
+    let p = pairs(&[("K", "v")]);
+    let svc = ConfigProviderService(Arc::new(p));
+    let s = format!("{svc:?}");
+    assert!(s.contains("ConfigProviderService"));
+  }
+
+  // ── ConfigProvider default seq_delim ─────────────────────────────────────
+
+  #[test]
+  fn default_seq_delim_is_comma() {
+    struct MinimalProvider;
+    impl ConfigProvider for MinimalProvider {
+      fn load_raw(&self, _path: &[&str]) -> Result<Option<String>, ConfigError> {
+        Ok(None)
+      }
+      // seq_delim not overridden → default impl returns ","
+    }
+    assert_eq!(MinimalProvider.seq_delim(), ",");
+  }
+
+  // ── ConfigProvider::within ────────────────────────────────────────────────
+
+  #[test]
+  fn within_scopes_lookup() {
+    let p = pairs(&[("SERVER_HOST", "localhost")]);
+    let scoped = p.within("SERVER");
+    assert_eq!(
+      scoped.load_raw(&["HOST"]).unwrap(),
+      Some("localhost".to_string())
+    );
+  }
+
+  // ── ConfigProvider::or_else (trait method) ────────────────────────────────
+
+  #[test]
+  fn or_else_trait_method_falls_back() {
+    let a = MapConfigProvider::from_map(HashMap::new());
+    let b = pairs(&[("K", "from-b")]);
+    let composed = a.or_else(b);
+    assert_eq!(
+      composed.load_raw(&["K"]).unwrap(),
+      Some("from-b".to_string())
+    );
+  }
+
+  // ── EnvConfigProvider::from_env ───────────────────────────────────────────
+
+  #[test]
+  fn env_config_provider_from_env_has_comma_seq_delim() {
+    let p = EnvConfigProvider::from_env();
+    assert_eq!(p.seq_delim(), ",");
+  }
+
+  // ── EnvConfigProvider::new with custom options ────────────────────────────
+
+  #[test]
+  fn env_config_provider_new_custom_options() {
+    let opts = ProviderOptions {
+      path_delim: ".",
+      seq_delim: ";",
+    };
+    let p = EnvConfigProvider::new(opts);
+    assert_eq!(p.seq_delim(), ";");
+  }
+
+  // ── ProviderOptions::default ───────────────────────────────────────────────
+
+  #[test]
+  fn provider_options_default_values() {
+    let opts = ProviderOptions::default();
+    assert_eq!(opts.path_delim, "_");
+    assert_eq!(opts.seq_delim, ",");
+  }
+
+  // ── FigmentConfigProvider::figment() accessor ─────────────────────────────
+
+  #[test]
+  fn figment_config_provider_figment_accessor() {
+    let fig = Figment::new();
+    let p = FigmentConfigProvider::new(fig);
+    // just verify it doesn't panic and returns a reference
+    let _ = p.figment();
+  }
+
+  // ── OrElseConfigProvider: primary found ───────────────────────────────────
+
+  #[test]
+  fn or_else_provider_primary_found_returns_primary() {
+    let a = pairs(&[("K", "from-a")]);
+    let b = pairs(&[("K", "from-b")]);
+    let composed = OrElseConfigProvider::new(a, b);
+    assert_eq!(
+      composed.load_raw(&["K"]).unwrap(),
+      Some("from-a".to_string())
+    );
+  }
+
+  // ── OrElseConfigProvider::seq_delim delegates to primary ─────────────────
+
+  #[test]
+  fn or_else_provider_seq_delim_uses_primary() {
+    let a = MapConfigProvider::with_options(
+      HashMap::new(),
+      ProviderOptions {
+        path_delim: "_",
+        seq_delim: ";",
+      },
+    );
+    let b = pairs(&[("K", "v")]);
+    let composed = OrElseConfigProvider::new(a, b);
+    assert_eq!(composed.seq_delim(), ";");
+  }
+
+  // ── ScopedConfigProvider::seq_delim delegates to inner ───────────────────
+
+  #[test]
+  fn scoped_provider_seq_delim_delegates_to_inner() {
+    let p = MapConfigProvider::with_options(
+      HashMap::new(),
+      ProviderOptions {
+        path_delim: "_",
+        seq_delim: "|",
+      },
+    );
+    let scoped = ScopedConfigProvider::new(p, "NS");
+    assert_eq!(scoped.seq_delim(), "|");
+  }
+
+  // ── join_path: empty path returns error ───────────────────────────────────
+
+  #[test]
+  fn map_provider_empty_path_returns_error() {
+    let p = MapConfigProvider::from_map(HashMap::new());
+    let err = p.load_raw(&[]).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── FigmentConfigProvider: various Num variants via Serialized ────────────
+
+  #[cfg(feature = "toml")]
+  mod figment_num_variants {
+    use super::*;
+    use ::figment::providers::Serialized;
+    use serde::Serialize;
+
+    fn provider_from<T: Serialize>(value: T) -> FigmentConfigProvider {
+      FigmentConfigProvider::new(Figment::from(Serialized::defaults(value)))
+    }
+
+    #[derive(Serialize)]
+    struct U8Val {
+      val: u8,
+    }
+    #[derive(Serialize)]
+    struct U16Val {
+      val: u16,
+    }
+    #[derive(Serialize)]
+    struct U32Val {
+      val: u32,
+    }
+    #[derive(Serialize)]
+    struct U64Val {
+      val: u64,
+    }
+    #[derive(Serialize)]
+    struct I8Val {
+      val: i8,
+    }
+    #[derive(Serialize)]
+    struct I16Val {
+      val: i16,
+    }
+    #[derive(Serialize)]
+    struct I32Val {
+      val: i32,
+    }
+    #[derive(Serialize)]
+    struct F32Val {
+      val: f32,
+    }
+    #[derive(Serialize)]
+    struct CharVal {
+      val: char,
+    }
+
+    #[test]
+    fn num_u8() {
+      let p = provider_from(U8Val { val: 200 });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("200".to_string()));
+    }
+
+    #[test]
+    fn num_u16() {
+      let p = provider_from(U16Val { val: 1000 });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("1000".to_string()));
+    }
+
+    #[test]
+    fn num_u32() {
+      let p = provider_from(U32Val { val: 70000 });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("70000".to_string()));
+    }
+
+    #[test]
+    fn num_u64() {
+      let p = provider_from(U64Val { val: 1_000_000 });
+      assert_eq!(
+        p.load_raw(&["val"]).unwrap(),
+        Some("1000000".to_string())
+      );
+    }
+
+    #[test]
+    fn num_i8() {
+      let p = provider_from(I8Val { val: -5 });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("-5".to_string()));
+    }
+
+    #[test]
+    fn num_i16() {
+      let p = provider_from(I16Val { val: -300 });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("-300".to_string()));
+    }
+
+    #[test]
+    fn num_i32() {
+      let p = provider_from(I32Val { val: 100_000 });
+      assert_eq!(
+        p.load_raw(&["val"]).unwrap(),
+        Some("100000".to_string())
+      );
+    }
+
+    #[test]
+    fn num_f32() {
+      let p = provider_from(F32Val { val: 1.5 });
+      let s = p.load_raw(&["val"]).unwrap().unwrap();
+      let v: f64 = s.parse().unwrap();
+      assert!((v - 1.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn char_variant() {
+      let p = provider_from(CharVal { val: 'x' });
+      assert_eq!(p.load_raw(&["val"]).unwrap(), Some("x".to_string()));
+    }
+  }
+}

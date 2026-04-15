@@ -919,4 +919,233 @@ mod tests {
     let v = go(Config::repeat("ITEMS"), &p).unwrap();
     assert_eq!(v, vec!["a", "b", "c"]);
   }
+
+  // ── Debug / Clone ──────────────────────────────────────────────────────────
+
+  #[test]
+  fn config_debug_contains_type_name() {
+    let c = Config::<String>::string("X");
+    let s = format!("{c:?}");
+    assert!(s.contains("Config"));
+  }
+
+  #[test]
+  fn config_clone_independent_from_original() {
+    let p = map_provider(&[("X", "hello")]);
+    let c = Config::string("X");
+    let c2 = c.clone();
+    assert_eq!(go(c2, &p).unwrap(), "hello");
+  }
+
+  // ── Config::run ────────────────────────────────────────────────────────────
+
+  #[test]
+  fn config_run_via_effect() {
+    use crate::{MapConfigProvider, config_env};
+
+    let p = MapConfigProvider::from_pairs([("HOST", "localhost")]);
+    let env = config_env(p);
+    let host: String = effect_rs::run_blocking(
+      Config::string("HOST").run::<String, ConfigError, _>(),
+      env,
+    )
+    .unwrap();
+    assert_eq!(host, "localhost");
+  }
+
+  #[test]
+  fn config_run_error_propagated() {
+    use crate::{MapConfigProvider, config_env};
+
+    let p = MapConfigProvider::from_pairs::<[(&str, &str); 0], _, _>([]);
+    let env = config_env(p);
+    let result: Result<String, ConfigError> = effect_rs::run_blocking(
+      Config::string("MISSING").run::<String, ConfigError, _>(),
+      env,
+    );
+    assert!(result.is_err());
+  }
+
+  // ── Config::load_current ───────────────────────────────────────────────────
+
+  #[test]
+  fn load_current_no_ambient_returns_missing() {
+    let err = Config::<String>::string("X").load_current().unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  #[test]
+  fn load_current_with_ambient_provider() {
+    use crate::ambient::with_config_provider;
+    use std::sync::Arc;
+
+    let p = Arc::new(map_provider(&[("X", "from-ambient")]));
+    let eff = with_config_provider(
+      effect_rs::Effect::new(|_| Config::string("X").load_current()),
+      p,
+    );
+    assert_eq!(effect_rs::run_blocking(eff, ()).unwrap(), "from-ambient");
+  }
+
+  // ── with_default non-missing error propagation ─────────────────────────────
+
+  #[test]
+  fn with_default_propagates_invalid_error() {
+    let p = map_provider(&[("PORT", "not_a_number")]);
+    let err = go(Config::integer("PORT").with_default(3000), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── optional_string ────────────────────────────────────────────────────────
+
+  #[test]
+  fn optional_string_present() {
+    let p = map_provider(&[("OPT", "value")]);
+    assert_eq!(
+      go(Config::optional_string("OPT"), &p).unwrap(),
+      Some("value".to_string())
+    );
+  }
+
+  #[test]
+  fn optional_string_absent() {
+    let p = map_provider(&[]);
+    assert_eq!(go(Config::optional_string("OPT"), &p).unwrap(), None);
+  }
+
+  #[test]
+  fn optional_string_dotted_path() {
+    let p = map_provider(&[("SERVER_HOST", "localhost")]);
+    assert_eq!(
+      go(Config::optional_string("SERVER.HOST"), &p).unwrap(),
+      Some("localhost".to_string())
+    );
+  }
+
+  // ── boolean yes/no variants ────────────────────────────────────────────────
+
+  #[test]
+  fn boolean_yes_no_variants() {
+    let p = map_provider(&[("A", "yes"), ("B", "no"), ("C", "YES"), ("D", "NO")]);
+    assert!(go(Config::boolean("A"), &p).unwrap());
+    assert!(!go(Config::boolean("B"), &p).unwrap());
+    assert!(go(Config::boolean("C"), &p).unwrap());
+    assert!(!go(Config::boolean("D"), &p).unwrap());
+  }
+
+  #[test]
+  fn boolean_invalid_string_is_error() {
+    let p = map_provider(&[("FLAG", "maybe")]);
+    let err = go(Config::boolean("FLAG"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  #[test]
+  fn boolean_missing_is_error() {
+    let p = map_provider(&[]);
+    let err = go(Config::boolean("FLAG"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  // ── map_attempt failure ───────────────────────────────────────────────────
+
+  #[test]
+  fn map_attempt_failure_propagates_error() {
+    let p = map_provider(&[("VAL", "not-a-number")]);
+    let err = go(
+      Config::string("VAL").map_attempt(|s| {
+        s.parse::<i32>().map_err(|e| ConfigError::Invalid {
+          path: "VAL".into(),
+          value: s,
+          reason: e.to_string(),
+        })
+      }),
+      &p,
+    )
+    .unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── number missing/invalid ────────────────────────────────────────────────
+
+  #[test]
+  fn number_missing_is_error() {
+    let p = map_provider(&[]);
+    let err = go(Config::number("N"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  #[test]
+  fn number_invalid_is_error() {
+    let p = map_provider(&[("N", "not_a_float")]);
+    let err = go(Config::number("N"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── integer missing/invalid ───────────────────────────────────────────────
+
+  #[test]
+  fn integer_missing_is_error() {
+    let p = map_provider(&[]);
+    let err = go(Config::integer("N"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  #[test]
+  fn integer_invalid_is_error() {
+    let p = map_provider(&[("N", "not_an_int")]);
+    let err = go(Config::integer("N"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── string_list missing ───────────────────────────────────────────────────
+
+  #[test]
+  fn string_list_missing_is_error() {
+    let p = map_provider(&[]);
+    let err = go(Config::string_list("TAGS"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  // ── repeat missing ────────────────────────────────────────────────────────
+
+  #[test]
+  fn repeat_missing_is_error() {
+    let p = map_provider(&[]);
+    let err = go(Config::repeat("ITEMS"), &p).unwrap_err();
+    assert!(matches!(err, ConfigError::Missing { .. }));
+  }
+
+  // ── or_else propagates non-missing error ──────────────────────────────────
+
+  #[test]
+  fn or_else_propagates_invalid_error() {
+    let p = map_provider(&[("PORT", "bad")]);
+    let err = go(
+      or_else(Config::integer("PORT"), Config::integer("FALLBACK_PORT")),
+      &p,
+    )
+    .unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── prefix provider seq_delim ─────────────────────────────────────────────
+
+  #[test]
+  fn nested_prefix_provider_seq_delim_delegates() {
+    use crate::provider::ProviderOptions;
+    use crate::MapConfigProvider;
+
+    let opts = ProviderOptions {
+      path_delim: "_",
+      seq_delim: "|",
+    };
+    let map: std::collections::HashMap<String, String> =
+      [("NS_ITEMS".to_string(), "a|b|c".to_string())]
+        .into_iter()
+        .collect();
+    let p = MapConfigProvider::with_options(map, opts);
+    let items = go(Config::string_list("ITEMS").nested("NS"), &p).unwrap();
+    assert_eq!(items, vec!["a", "b", "c"]);
+  }
 }

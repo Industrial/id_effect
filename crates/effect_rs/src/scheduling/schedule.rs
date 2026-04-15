@@ -771,6 +771,166 @@ mod tests {
     }
   }
 
+  mod debug_format {
+    use super::*;
+
+    #[test]
+    fn spaced_debug_contains_interval() {
+      let s = Schedule::spaced(duration::millis(50));
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("Spaced"), "got: {dbg}");
+    }
+
+    #[test]
+    fn exponential_debug_contains_base_and_step() {
+      let s = Schedule::exponential(duration::millis(10));
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("Exponential"), "got: {dbg}");
+    }
+
+    #[test]
+    fn compose_debug_contains_both_sides() {
+      let s = Schedule::recurs(1).compose(Schedule::recurs(2));
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("Compose"), "got: {dbg}");
+    }
+
+    #[test]
+    fn jittered_debug_shows_inner() {
+      let s = Schedule::spaced(duration::millis(5)).jittered();
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("Jittered"), "got: {dbg}");
+    }
+
+    #[test]
+    fn recurs_while_debug_is_non_exhaustive() {
+      let s = Schedule::recurs_while(Box::new(|_: &ScheduleInput| true));
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("RecursWhile"), "got: {dbg}");
+    }
+
+    #[test]
+    fn recurs_until_debug_is_non_exhaustive() {
+      let s = Schedule::recurs_until(Box::new(|_: &ScheduleInput| false));
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("RecursUntil"), "got: {dbg}");
+    }
+
+    #[test]
+    fn map_delay_debug_shows_fn_placeholder() {
+      let s = Schedule::spaced(duration::millis(5)).map(|d| d * 2);
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("MapDelay"), "got: {dbg}");
+    }
+
+    #[test]
+    fn contramap_input_debug_shows_fn_placeholder() {
+      let s =
+        Schedule::recurs(3).contramap(|i: ScheduleInput| ScheduleInput { attempt: i.attempt });
+      let dbg = format!("{:?}", s);
+      assert!(dbg.contains("ContramapInput"), "got: {dbg}");
+    }
+  }
+
+  mod nested_map_and_contramap {
+    use super::*;
+
+    #[test]
+    fn double_map_composes_both_functions() {
+      // Apply map twice: first double, then add 1ms. Should produce 2*d + 1ms.
+      let mut s = Schedule::spaced(duration::millis(10))
+        .map(|d| d * 2) // 20ms
+        .map(|d| d + duration::millis(1)); // 21ms
+      let decision = s.next(ScheduleInput::default()).unwrap();
+      assert_eq!(decision.delay, duration::millis(21));
+    }
+
+    #[test]
+    fn double_contramap_composes_both_input_transforms() {
+      // Two contramaps: first add 10 to attempt, then subtract 5.
+      // Net effect: attempt += 5. So if input.attempt = 0, inner sees 5.
+      // recurs_until stops when attempt >= 3; with +5 offset, always stops immediately.
+      let mut s = Schedule::recurs_until(Box::new(|i: &ScheduleInput| i.attempt >= 3))
+        .contramap(|mut i: ScheduleInput| {
+          i.attempt = i.attempt.saturating_add(10);
+          i
+        })
+        .contramap(|mut i: ScheduleInput| {
+          i.attempt = i.attempt.saturating_sub(5);
+          i
+        });
+      // Input attempt=0 → subtract 5 → 0 → add 10 → 10 >= 3 → stop
+      assert_eq!(s.next(ScheduleInput { attempt: 0 }), None);
+    }
+  }
+
+  mod repeat_with_interrupt {
+    use super::*;
+
+    #[test]
+    fn repeat_with_clock_and_interrupt_runs_normally_when_not_cancelled() {
+      let token = CancellationToken::new();
+      let calls = Arc::new(AtomicUsize::new(0));
+      let calls_c = Arc::clone(&calls);
+      let eff = repeat_with_clock_and_interrupt(
+        move || {
+          let c = Arc::clone(&calls_c);
+          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
+        },
+        Schedule::recurs(2),
+        TestClock::new(std::time::Instant::now()),
+        token,
+        None,
+      );
+      let out = block_on(eff.run(&mut ()));
+      assert_eq!(out, Ok(3));
+      assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn repeat_with_clock_and_interrupt_stops_when_cancelled_between_attempts() {
+      let token = CancellationToken::new();
+      token.cancel();
+      let calls = Arc::new(AtomicUsize::new(0));
+      let calls_c = Arc::clone(&calls);
+      let eff = repeat_with_clock_and_interrupt(
+        move || {
+          let c = Arc::clone(&calls_c);
+          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
+        },
+        Schedule::recurs(5),
+        TestClock::new(std::time::Instant::now()),
+        token,
+        None,
+      );
+      let out = block_on(eff.run(&mut ()));
+      // First run completes, then the loop checks the token and breaks
+      assert_eq!(out, Ok(1));
+      assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn repeat_with_clock_and_interrupt_with_metric_increments_counter() {
+      use crate::observability::metric::Metric;
+      let token = CancellationToken::new();
+      let counter = Metric::counter("repeat_interrupt_attempts", []);
+      let calls = Arc::new(AtomicUsize::new(0));
+      let calls_c = Arc::clone(&calls);
+      let eff = repeat_with_clock_and_interrupt(
+        move || {
+          let c = Arc::clone(&calls_c);
+          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
+        },
+        Schedule::recurs(1),
+        TestClock::new(std::time::Instant::now()),
+        token,
+        Some(counter.clone()),
+      );
+      let _ = block_on(eff.run(&mut ()));
+      assert!(counter.snapshot_count() >= 1);
+    }
+  }
+
   mod retry {
     use super::*;
     use crate::observability::metric::Metric;

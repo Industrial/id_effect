@@ -196,6 +196,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decode_wire_map_success() {
+      let s = record(i64::<()>());
+      let mut m = std::collections::BTreeMap::new();
+      m.insert("x".to_string(), 10_i64);
+      m.insert("y".to_string(), 20_i64);
+      let got = s.decode(m.clone()).expect("decode");
+      assert_eq!(got, m);
+    }
+
+    #[test]
+    fn decode_wire_map_error_prefixes_key() {
+      use crate::schema::parse::filter;
+      let s = record(filter(i64::<()>(), |n| *n > 0, "must be positive"));
+      let mut m = std::collections::BTreeMap::new();
+      m.insert("k".to_string(), -1_i64);
+      let err = s.decode(m).expect_err("negative should fail");
+      assert!(err.path.contains("k"), "path was {:?}", err.path);
+    }
+
+    #[test]
     fn decode_unknown_object_to_map() {
       let s = record(i64::<()>());
       let mut m = BTreeMap::new();
@@ -232,6 +252,76 @@ mod tests {
     }
 
     #[test]
+    fn literal_string_decode_wire_error_on_wrong_value() {
+      let s = literal_string::<()>("hello");
+      assert!(s.decode("world").is_err());
+    }
+
+    #[test]
+    fn literal_string_decode_wire_success_on_exact_value() {
+      let s = literal_string::<()>("exact");
+      assert_eq!(s.decode("exact").unwrap(), "exact");
+    }
+
+    #[test]
+    fn literal_string_encode_returns_value() {
+      let s = literal_string::<()>("hi");
+      assert_eq!(s.encode("hi"), "hi");
+    }
+
+    #[test]
+    fn literal_string_decode_unknown_null_fails() {
+      let s = literal_string::<()>("x");
+      assert!(s.decode_unknown(&Unknown::Null).is_err());
+    }
+
+    #[test]
+    fn literal_string_decode_unknown_wrong_string_fails() {
+      let s = literal_string::<()>("expected");
+      assert!(s
+        .decode_unknown(&Unknown::String("other".into()))
+        .is_err());
+    }
+
+    #[test]
+    fn literal_i64_accepts_exact_match() {
+      let s = literal_i64::<()>(42);
+      assert_eq!(s.decode(42).unwrap(), 42);
+    }
+
+    #[test]
+    fn literal_i64_decode_wire_error_on_wrong_value() {
+      let s = literal_i64::<()>(10);
+      assert!(s.decode(11).is_err());
+    }
+
+    #[test]
+    fn literal_i64_encode_returns_value() {
+      let s = literal_i64::<()>(7);
+      assert_eq!(s.encode(7), 7);
+    }
+
+    #[test]
+    fn literal_i64_decode_unknown_exact_match() {
+      let s = literal_i64::<()>(5);
+      assert_eq!(s.decode_unknown(&Unknown::I64(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn literal_i64_decode_unknown_null_fails() {
+      let s = literal_i64::<()>(5);
+      assert!(s.decode_unknown(&Unknown::Null).is_err());
+    }
+
+    #[test]
+    fn literal_i64_decode_unknown_wrong_type_fails() {
+      let s = literal_i64::<()>(5);
+      assert!(s
+        .decode_unknown(&Unknown::String("5".into()))
+        .is_err());
+    }
+
+    #[test]
     fn literal_i64_rejects_wrong_number() {
       let s = literal_i64::<()>(42);
       assert!(s.decode_unknown(&Unknown::I64(41)).is_err());
@@ -256,6 +346,34 @@ mod tests {
     }
   }
 
+  mod null_or_codec {
+    use super::*;
+
+    #[test]
+    fn null_or_decodes_null_as_none() {
+      let s = null_or(i64::<()>());
+      assert_eq!(s.decode_unknown(&Unknown::Null).unwrap(), None);
+    }
+
+    #[test]
+    fn null_or_decodes_value_as_some() {
+      let s = null_or(i64::<()>());
+      assert_eq!(s.decode_unknown(&Unknown::I64(99)).unwrap(), Some(99_i64));
+    }
+
+    #[test]
+    fn null_or_encode_none_is_none() {
+      let s = null_or(i64::<()>());
+      assert_eq!(s.encode(None), None);
+    }
+
+    #[test]
+    fn null_or_encode_some_is_some() {
+      let s = null_or(i64::<()>());
+      assert_eq!(s.encode(Some(3_i64)), Some(3_i64));
+    }
+  }
+
   mod union_chain_codec {
     use super::*;
     use crate::schema::parse::{filter, i64_unknown_wire};
@@ -268,6 +386,35 @@ mod tests {
       ]);
       assert_eq!(s.decode_unknown(&Unknown::I64(5)).expect("second arm"), 5);
       assert_eq!(s.decode_unknown(&Unknown::I64(99)).expect("first arm"), 99);
+    }
+
+    #[test]
+    fn union_chain_decode_wire_uses_first_matching_arm() {
+      let s = union_chain(vec![
+        filter(i64_unknown_wire::<()>(), |n| *n > 0, "positive"),
+        i64_unknown_wire::<()>(),
+      ]);
+      // decode wire (Unknown input)
+      assert_eq!(s.decode(Unknown::I64(10)).expect("first arm"), 10);
+      assert_eq!(s.decode(Unknown::I64(-5)).expect("second arm"), -5);
+    }
+
+    #[test]
+    fn union_chain_encode_uses_first_schema() {
+      let s = union_chain(vec![i64_unknown_wire::<()>()]);
+      assert_eq!(s.encode(42_i64), Unknown::I64(42));
+    }
+
+    #[test]
+    fn union_chain_decode_unknown_all_fail_returns_error() {
+      let s = union_chain(vec![filter(i64_unknown_wire::<()>(), |_| false, "never")]);
+      assert!(s.decode_unknown(&Unknown::I64(1)).is_err());
+    }
+
+    #[test]
+    fn union_chain_decode_wire_all_fail_returns_error() {
+      let s = union_chain(vec![filter(i64_unknown_wire::<()>(), |_| false, "never")]);
+      assert!(s.decode(Unknown::I64(1)).is_err());
     }
   }
 

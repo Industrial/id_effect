@@ -135,6 +135,7 @@ impl std::error::Error for ConfigError {
 
 #[cfg(test)]
 mod tests {
+  use std::error::Error;
   use super::*;
 
   #[test]
@@ -209,5 +210,32 @@ mod tests {
       utf8.to_string(),
       "environment variable \"WEIRD\" is not valid UTF-8"
     );
+  }
+
+  #[test]
+  fn config_error_source_figment_variant_has_source() {
+    let fig_err = figment::Figment::new().extract::<i32>().unwrap_err();
+    let e = ConfigError::Figment(fig_err);
+    assert!(e.source().is_some());
+  }
+
+  #[test]
+  fn config_error_source_non_figment_variants_return_none() {
+    let missing = ConfigError::Missing {
+      path: "x".into(),
+    };
+    assert!(missing.source().is_none());
+
+    let invalid = ConfigError::Invalid {
+      path: "x".into(),
+      value: "v".into(),
+      reason: "r".into(),
+    };
+    assert!(invalid.source().is_none());
+
+    let utf8 = ConfigError::InvalidUtf8 {
+      var: "VAR".into(),
+    };
+    assert!(utf8.source().is_none());
   }
 }

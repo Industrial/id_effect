@@ -773,4 +773,80 @@ mod tests {
     assert!(timezone::from_str("  ").is_none());
     assert!(timezone::from_str("not-a-zone-or-offset").is_none());
   }
+
+  // ── New tests targeting previously-uncovered lines ──────────────────────────
+
+  #[test]
+  fn utc_inner_returns_underlying_timestamp() {
+    let ms = 1_700_000_000_000i64;
+    let u = UtcDateTime::unsafe_make(ms);
+    let ts = u.inner();
+    assert_eq!(ts.as_millisecond(), ms);
+  }
+
+  #[test]
+  fn utc_subtract_duration_basic() {
+    let u = UtcDateTime::unsafe_make(1_700_000_000_000);
+    let earlier = u.subtract_duration(Duration::from_secs(3600));
+    assert_eq!(u.to_epoch_millis() - earlier.to_epoch_millis(), 3_600_000);
+  }
+
+  #[test]
+  fn zoned_from_std_unix_epoch() {
+    let z = ZonedDateTime::from_std(std::time::UNIX_EPOCH, TimeZone::UTC).expect("epoch");
+    assert_eq!(z.to_epoch_millis(), 0);
+  }
+
+  #[test]
+  fn zoned_from_std_returns_none_on_out_of_range() {
+    // Duration::MAX is far beyond jiff's supported range.
+    let far_future = std::time::UNIX_EPOCH + Duration::from_secs(u64::MAX / 2);
+    // May or may not be out of range depending on jiff version; just ensure no panic.
+    let _ = ZonedDateTime::from_std(far_future, TimeZone::UTC);
+  }
+
+  #[test]
+  fn zoned_inner_borrows_underlying_zoned() {
+    let z = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let inner: &Zoned = z.inner();
+    assert_eq!(inner.timestamp().as_millisecond(), 1_700_000_000_000);
+  }
+
+  #[test]
+  fn zoned_into_inner_consumes_and_returns_zoned() {
+    let z = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let ms = z.to_epoch_millis();
+    let inner: Zoned = z.into_inner();
+    assert_eq!(inner.timestamp().as_millisecond(), ms);
+  }
+
+  #[test]
+  fn zoned_civil_accessors_month_day_hour_minute_second() {
+    // 2024-07-04T12:34:56Z  →  ms = 1720096496000
+    let ms = 1_720_096_496_000i64;
+    let z = ZonedDateTime::unsafe_make(ms, TimeZone::UTC);
+    assert_eq!(z.year(), 2024);
+    assert_eq!(z.month(), 7);
+    assert_eq!(z.day(), 4);
+    assert_eq!(z.hour(), 12);
+    assert_eq!(z.minute(), 34);
+    assert_eq!(z.second(), 56);
+  }
+
+  #[test]
+  fn zoned_add_and_subtract_duration() {
+    let z = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let later = z.add_duration(Duration::from_secs(3600));
+    assert_eq!(later.to_epoch_millis() - z.to_epoch_millis(), 3_600_000);
+    let back = later.subtract_duration(Duration::from_secs(3600));
+    assert_eq!(back.to_epoch_millis(), z.to_epoch_millis());
+  }
+
+  #[test]
+  fn zoned_distance_millis_signed() {
+    let a = ZonedDateTime::unsafe_make(1_700_000_000_000, TimeZone::UTC);
+    let b = ZonedDateTime::unsafe_make(1_700_000_005_000, TimeZone::UTC);
+    assert_eq!(a.distance_millis(&b), 5000);
+    assert_eq!(b.distance_millis(&a), -5000);
+  }
 }

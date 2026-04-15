@@ -537,6 +537,105 @@ mod tests {
     }
   }
 
+  mod btreemap_semigroup {
+    use super::*;
+
+    #[test]
+    fn combine_merges_disjoint_maps() {
+      let mut a = BTreeMap::new();
+      a.insert("x", 1_i32);
+      let mut b = BTreeMap::new();
+      b.insert("y", 2_i32);
+      let result = a.combine(b);
+      assert_eq!(result.get("x"), Some(&1));
+      assert_eq!(result.get("y"), Some(&2));
+    }
+
+    #[test]
+    fn combine_merges_duplicate_keys_with_inner_semigroup() {
+      let mut a = BTreeMap::new();
+      a.insert("k", 10_i32);
+      let mut b = BTreeMap::new();
+      b.insert("k", 5_i32);
+      let result = a.combine(b);
+      assert_eq!(result.get("k"), Some(&15));
+    }
+  }
+
+  mod hashmap_semigroup {
+    use super::*;
+
+    #[test]
+    fn combine_merges_disjoint_maps() {
+      let mut a = HashMap::new();
+      a.insert("a", 1_i32);
+      let mut b = HashMap::new();
+      b.insert("b", 2_i32);
+      let result = a.combine(b);
+      assert_eq!(result.get("a"), Some(&1));
+      assert_eq!(result.get("b"), Some(&2));
+    }
+
+    #[test]
+    fn combine_merges_duplicate_keys_with_inner_semigroup() {
+      let mut a = HashMap::new();
+      a.insert("k", 3_i32);
+      let mut b = HashMap::new();
+      b.insert("k", 7_i32);
+      let result = a.combine(b);
+      assert_eq!(result.get("k"), Some(&10));
+    }
+  }
+
+  mod float_semigroups {
+    use super::*;
+
+    #[test]
+    fn f32_combine_adds() {
+      assert_eq!(1.5_f32.combine(2.5_f32), 4.0_f32);
+    }
+
+    #[test]
+    fn f64_combine_adds() {
+      assert_eq!(1.0_f64.combine(2.0_f64), 3.0_f64);
+    }
+  }
+
+  mod combine_ref_fn {
+    use super::*;
+
+    #[test]
+    fn combine_ref_borrows_both_sides() {
+      let a = 5_i32;
+      let b = 10_i32;
+      assert_eq!(a.combine_ref(&b), 15);
+    }
+
+    #[test]
+    fn combine_ref_string_concatenates() {
+      let a = "hello".to_string();
+      let b = " world".to_string();
+      assert_eq!(a.combine_ref(&b), "hello world");
+    }
+  }
+
+  mod combine_free_fn {
+    use super::*;
+
+    #[test]
+    fn combine_fn_delegates_to_semigroup() {
+      assert_eq!(combine(3_i32, 7_i32), 10);
+    }
+
+    #[test]
+    fn combine_fn_for_string() {
+      assert_eq!(
+        combine("ab".to_string(), "cd".to_string()),
+        "abcd".to_string()
+      );
+    }
+  }
+
   mod laws {
     use super::*;
 

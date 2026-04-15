@@ -703,6 +703,32 @@ mod tests {
     }
 
     #[test]
+    fn decode_unknown_success_returns_tuple() {
+      let s = person_schema();
+      let mut m = BTreeMap::new();
+      m.insert("name".into(), Unknown::String("bob".into()));
+      m.insert("age".into(), Unknown::I64(25));
+      let got = s.decode_unknown(&Unknown::Object(m)).expect("ok");
+      assert_eq!(got, ("bob".to_string(), 25_i64));
+    }
+
+    #[test]
+    fn decode_unknown_non_object_fails() {
+      let s = person_schema();
+      assert!(s.decode_unknown(&Unknown::I64(1)).is_err());
+    }
+
+    #[test]
+    fn decode_unknown_missing_second_field_fails() {
+      let s = person_schema();
+      let mut m = BTreeMap::new();
+      m.insert("name".into(), Unknown::String("alice".into()));
+      // "age" is missing
+      let err = s.decode_unknown(&Unknown::Object(m)).expect_err("missing age");
+      assert!(err.path.contains("age"), "path was {:?}", err.path);
+    }
+
+    #[test]
     fn decode_unknown_when_nested_field_wrong_type_prefixes_path() {
       let inner = struct_("street", string::<()>(), "zip", string::<()>());
       let s = struct_("user", inner, "id", i64::<()>());
@@ -947,7 +973,23 @@ mod tests {
     fn filter_decode_unknown_checks_predicate() {
       let s = filter(i64::<()>(), |n| *n == 7, "seven");
       assert_eq!(s.decode_unknown(&Unknown::I64(7)).unwrap(), 7);
-      assert!(s.decode_unknown(&Unknown::I64(8)).is_err());
+      assert_eq!(s.decode_unknown(&Unknown::I64(8)).is_err(), true);
+    }
+
+    #[test]
+    fn filter_encode_returns_value() {
+      let s = filter(i64::<()>(), |n| *n > 0, "positive");
+      assert_eq!(s.encode(5), 5);
+    }
+
+    #[test]
+    fn transform_encode_path() {
+      let s = transform(
+        i64::<()>(),
+        |n| Ok(n.to_string()),
+        |t: String| t.parse::<i64>().unwrap(),
+      );
+      assert_eq!(s.encode("42".to_string()), 42_i64);
     }
 
     #[test]
@@ -968,6 +1010,199 @@ mod tests {
       let s = union_(primary, fallback);
       assert_eq!(s.decode_unknown(&Unknown::I64(-1)).unwrap(), -1);
       assert_eq!(s.decode_unknown(&Unknown::I64(5)).unwrap(), 5);
+    }
+  }
+
+  mod parse_error_tests {
+    use super::*;
+
+    #[test]
+    fn prefix_index_prepends_numeric_index() {
+      let e = ParseError::new("field", "bad value");
+      let prefixed = e.prefix_index(3);
+      assert_eq!(prefixed.path, "3.field");
+    }
+
+    #[test]
+    fn prefix_index_on_empty_path() {
+      let e = ParseError::new("", "bad value");
+      let prefixed = e.prefix_index(0);
+      assert_eq!(prefixed.path, "0");
+    }
+  }
+
+  mod i64_codec_extra {
+    use super::*;
+
+    #[test]
+    fn i64_decode_unknown_non_null_non_i64_fails() {
+      assert!(i64::<()>()
+        .decode_unknown(&Unknown::String("x".into()))
+        .is_err());
+    }
+
+    #[test]
+    fn i64_unknown_wire_decode_wire_success() {
+      let s = i64_unknown_wire::<()>();
+      assert_eq!(s.decode(Unknown::I64(7)).unwrap(), 7);
+    }
+
+    #[test]
+    fn i64_unknown_wire_decode_wire_null_fails() {
+      let s = i64_unknown_wire::<()>();
+      assert!(s.decode(Unknown::Null).is_err());
+    }
+
+    #[test]
+    fn i64_unknown_wire_decode_wire_non_i64_fails() {
+      let s = i64_unknown_wire::<()>();
+      assert!(s.decode(Unknown::String("x".into())).is_err());
+    }
+
+    #[test]
+    fn i64_unknown_wire_decode_unknown_null_fails() {
+      let s = i64_unknown_wire::<()>();
+      assert!(s.decode_unknown(&Unknown::Null).is_err());
+    }
+
+    #[test]
+    fn i64_unknown_wire_decode_unknown_non_i64_fails() {
+      let s = i64_unknown_wire::<()>();
+      assert!(s
+        .decode_unknown(&Unknown::String("x".into()))
+        .is_err());
+    }
+  }
+
+  mod string_codec_extra {
+    use super::*;
+
+    #[test]
+    fn string_decode_unknown_non_null_non_string_fails() {
+      assert!(string::<()>()
+        .decode_unknown(&Unknown::I64(1))
+        .is_err());
+    }
+  }
+
+  mod optional_codec_extra {
+    use super::*;
+
+    #[test]
+    fn optional_encode_some() {
+      let s = optional(i64::<()>());
+      assert_eq!(s.encode(Some(5_i64)), Some(5_i64));
+    }
+
+    #[test]
+    fn optional_encode_none() {
+      let s = optional(i64::<()>());
+      assert_eq!(s.encode(None), None);
+    }
+
+    #[test]
+    fn optional_decode_unknown_non_null_returns_some() {
+      let s = optional(i64::<()>());
+      assert_eq!(
+        s.decode_unknown(&Unknown::I64(42)).unwrap(),
+        Some(42_i64)
+      );
+    }
+  }
+
+  mod array_codec_extra {
+    use super::*;
+
+    #[test]
+    fn array_decode_error_prefixes_index() {
+      let s = array(filter(i64::<()>(), |n| *n > 0, "positive"));
+      let wire = vec![1_i64, -1_i64, 3_i64];
+      let err = s.decode(wire).expect_err("negative should fail");
+      assert!(err.path.contains("1"), "path was {:?}", err.path);
+    }
+
+    #[test]
+    fn array_decode_unknown_non_array_fails() {
+      let s = array(i64::<()>());
+      assert!(s.decode_unknown(&Unknown::I64(1)).is_err());
+    }
+
+    #[test]
+    fn array_decode_unknown_success() {
+      let s = array(i64::<()>());
+      let u = Unknown::Array(vec![Unknown::I64(10), Unknown::I64(20)]);
+      assert_eq!(s.decode_unknown(&u).unwrap(), vec![10_i64, 20_i64]);
+    }
+  }
+
+  mod tuple_codec_extra {
+    use super::*;
+
+    #[test]
+    fn tuple_decode_wire_success() {
+      let s = tuple(i64::<()>(), string::<()>());
+      assert_eq!(
+        s.decode((5_i64, "hi".to_string())).unwrap(),
+        (5_i64, "hi".to_string())
+      );
+    }
+
+    #[test]
+    fn tuple_encode_wire() {
+      let s = tuple(i64::<()>(), string::<()>());
+      assert_eq!(s.encode((3_i64, "x".to_string())), (3_i64, "x".to_string()));
+    }
+
+    #[test]
+    fn tuple_decode_unknown_non_array_of_2_fails() {
+      let s = tuple(i64::<()>(), bool_::<()>());
+      assert!(s.decode_unknown(&Unknown::I64(1)).is_err());
+    }
+  }
+
+  mod tuple4_codec_extra {
+    use super::*;
+
+    #[test]
+    fn tuple4_decode_wire_success() {
+      let s = tuple4(i64::<()>(), bool_::<()>(), string::<()>(), f64::<()>());
+      let got = s
+        .decode((1_i64, true, "z".to_string(), 2.5_f64))
+        .unwrap();
+      assert_eq!(got, (1_i64, true, "z".to_string(), 2.5_f64));
+    }
+
+    #[test]
+    fn tuple4_encode_wire() {
+      let s = tuple4(i64::<()>(), bool_::<()>(), string::<()>(), f64::<()>());
+      let encoded = s.encode((2_i64, false, "q".to_string(), 0.5_f64));
+      assert_eq!(encoded, (2_i64, false, "q".to_string(), 0.5_f64));
+    }
+
+    #[test]
+    fn tuple4_decode_unknown_wrong_length_fails() {
+      let s = tuple4(i64::<()>(), bool_::<()>(), string::<()>(), f64::<()>());
+      let u = Unknown::Array(vec![Unknown::I64(1), Unknown::Bool(true)]);
+      assert!(s.decode_unknown(&u).is_err());
+    }
+  }
+
+  mod struct3_codec_extra {
+    use super::*;
+
+    #[test]
+    fn struct3_decode_wire_success() {
+      let s = struct3("a", i64::<()>(), "b", string::<()>(), "c", bool_::<()>());
+      let got = s.decode((1_i64, "x".to_string(), true)).unwrap();
+      assert_eq!(got, (1_i64, "x".to_string(), true));
+    }
+
+    #[test]
+    fn struct3_decode_wire_encode_round_trip() {
+      let s = struct3("x", i64::<()>(), "y", i64::<()>(), "z", i64::<()>());
+      let wire = (1_i64, 2_i64, 3_i64);
+      let got = s.decode(wire).unwrap();
+      assert_eq!(s.encode(got), (1_i64, 2_i64, 3_i64));
     }
   }
 }

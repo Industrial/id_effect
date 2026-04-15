@@ -609,4 +609,178 @@ bad = [1, 2]
     assert!((config::number(&p, "pi").unwrap() - 2.5).abs() < f64::EPSILON);
     assert!(config::string(&p, "bad").is_err());
   }
+
+  // ── config_env ────────────────────────────────────────────────────────────
+
+  #[test]
+  fn config_env_runs_effect() {
+    use effect_rs::run_blocking;
+
+    let p = MapConfigProvider::from_pairs([("K", "v")]);
+    let env = config_env(p);
+    let result: String = run_blocking(
+      Config::string("K").run::<String, ConfigError, _>(),
+      env,
+    )
+    .unwrap();
+    assert_eq!(result, "v");
+  }
+
+  // ── config::optional_string ───────────────────────────────────────────────
+
+  #[test]
+  fn config_optional_string_present_and_absent() {
+    let p = MapConfigProvider::from_pairs([("PRESENT", "yes")]);
+    assert_eq!(
+      config::optional_string(&p, "PRESENT").unwrap(),
+      Some("yes".to_string())
+    );
+    assert_eq!(config::optional_string(&p, "ABSENT").unwrap(), None);
+  }
+
+  // ── config::number ────────────────────────────────────────────────────────
+
+  #[test]
+  fn config_number_scalar() {
+    let p = MapConfigProvider::from_pairs([("PI", "3.14")]);
+    let v = config::number(&p, "PI").unwrap();
+    assert!((v - 3.14).abs() < f64::EPSILON);
+  }
+
+  // ── config::integer ───────────────────────────────────────────────────────
+
+  #[test]
+  fn config_integer_scalar() {
+    let p = MapConfigProvider::from_pairs([("N", "99")]);
+    assert_eq!(config::integer(&p, "N").unwrap(), 99);
+  }
+
+  // ── config::boolean ───────────────────────────────────────────────────────
+
+  #[test]
+  fn config_boolean_scalar() {
+    let p = MapConfigProvider::from_pairs([("F", "true")]);
+    assert!(config::boolean(&p, "F").unwrap());
+  }
+
+  // ── config::nested_optional_string ───────────────────────────────────────
+
+  #[test]
+  fn config_nested_optional_string() {
+    let p = MapConfigProvider::from_pairs([("NS_KEY", "val")]);
+    assert_eq!(
+      config::nested_optional_string(&p, "NS", "KEY").unwrap(),
+      Some("val".to_string())
+    );
+    assert_eq!(
+      config::nested_optional_string(&p, "NS", "MISSING").unwrap(),
+      None
+    );
+  }
+
+  // ── config::nested_number / nested_integer / nested_boolean ──────────────
+
+  #[test]
+  fn config_nested_number() {
+    let p = MapConfigProvider::from_pairs([("SRV_RATE", "1.5")]);
+    let v = config::nested_number(&p, "SRV", "RATE").unwrap();
+    assert!((v - 1.5).abs() < f64::EPSILON);
+  }
+
+  #[test]
+  fn config_nested_integer() {
+    let p = MapConfigProvider::from_pairs([("SRV_PORT", "5432")]);
+    assert_eq!(config::nested_integer(&p, "SRV", "PORT").unwrap(), 5432);
+  }
+
+  #[test]
+  fn config_nested_boolean() {
+    let p = MapConfigProvider::from_pairs([("SRV_TLS", "true")]);
+    assert!(config::nested_boolean(&p, "SRV", "TLS").unwrap());
+  }
+
+  // ── config::nested_string_list ────────────────────────────────────────────
+
+  #[test]
+  fn config_nested_string_list() {
+    let p = MapConfigProvider::from_pairs([("NS_TAGS", "a,b,c")]);
+    let tags = config::nested_string_list(&p, "NS", "TAGS").unwrap();
+    assert_eq!(tags, vec!["a", "b", "c"]);
+  }
+
+  // ── config::string_list ───────────────────────────────────────────────────
+
+  #[test]
+  fn config_string_list_free_fn() {
+    let p = MapConfigProvider::from_pairs([("HOSTS", "h1,h2")]);
+    let hosts = config::string_list(&p, "HOSTS").unwrap();
+    assert_eq!(hosts, vec!["h1", "h2"]);
+  }
+
+  // ── config::with_default ──────────────────────────────────────────────────
+
+  #[test]
+  fn config_with_default_missing_uses_default() {
+    let p = MapConfigProvider::from_pairs::<[(&str, &str); 0], _, _>([]);
+    let v = config::with_default(config::string(&p, "MISSING"), "fallback".to_string()).unwrap();
+    assert_eq!(v, "fallback");
+  }
+
+  #[test]
+  fn config_with_default_present_ignores_default() {
+    let p = MapConfigProvider::from_pairs([("K", "real")]);
+    let v = config::with_default(config::string(&p, "K"), "fallback".to_string()).unwrap();
+    assert_eq!(v, "real");
+  }
+
+  #[test]
+  fn config_with_default_invalid_propagates() {
+    let p = MapConfigProvider::from_pairs([("N", "bad")]);
+    let err = config::with_default(config::integer(&p, "N"), 0_i64).unwrap_err();
+    assert!(matches!(err, ConfigError::Invalid { .. }));
+  }
+
+  // ── FigmentLayer::from_shared / figment() ─────────────────────────────────
+
+  #[test]
+  fn figment_layer_from_shared_and_figment_accessor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("shared.toml");
+    std::fs::write(&path, "n = 3\ns = \"hi\"").expect("write");
+    let shared = Arc::new(figment::from_toml_file(&path));
+    let layer = FigmentLayer::<Cfg>::from_shared(Arc::clone(&shared));
+    // figment() accessor
+    let _ = layer.figment();
+    // build still works
+    let cfg = Layer::build(&layer).expect("build");
+    assert_eq!(cfg.n, 3);
+  }
+
+  // ── FigmentProviderLayer::from_shared / figment() ─────────────────────────
+
+  #[test]
+  fn figment_provider_layer_from_shared_and_figment_accessor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("ps.toml");
+    std::fs::write(&path, "k = \"shared\"").expect("write");
+    let shared = Arc::new(figment::from_toml_file(&path));
+    let layer = FigmentProviderLayer::from_shared(Arc::clone(&shared));
+    let _ = layer.figment();
+    let prov = Layer::build(&layer).expect("infallible");
+    assert_eq!(config::string(&prov, "k").unwrap(), "shared");
+  }
+
+  // ── EnvProviderLayer::new / options() ────────────────────────────────────
+
+  #[test]
+  fn env_provider_layer_new_and_options_accessor() {
+    let opts = ProviderOptions {
+      path_delim: ".",
+      seq_delim: ";",
+    };
+    let layer = EnvProviderLayer::new(opts.clone());
+    assert_eq!(layer.options().seq_delim, ";");
+    let p = Layer::build(&layer).expect("infallible");
+    assert_eq!(p.seq_delim(), ";");
+  }
 }
