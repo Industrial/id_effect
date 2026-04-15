@@ -36,7 +36,7 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/v}"
           else
             # workflow_dispatch: infer from proc-macro Cargo.toml
-            TAG=$(grep -m1 '^version' crates/effect_rs_proc_macro/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+            TAG=$(grep -m1 '^version' crates/id_effect_proc_macro/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
           echo "Publishing version: $TAG"
@@ -44,15 +44,15 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           CRATES=(
-            crates/effect_rs_proc_macro/Cargo.toml
-            crates/effect_rs_macro/Cargo.toml
-            crates/effect_rs/Cargo.toml
-            crates/effect_rs_tokio/Cargo.toml
-            crates/effect_rs_logger/Cargo.toml
-            crates/effect_rs_config/Cargo.toml
-            crates/effect_rs_axum/Cargo.toml
-            crates/effect_rs_reqwest/Cargo.toml
-            crates/effect_rs_tower/Cargo.toml
+            crates/id_effect_proc_macro/Cargo.toml
+            crates/id_effect_macro/Cargo.toml
+            crates/id_effect/Cargo.toml
+            crates/id_effect_tokio/Cargo.toml
+            crates/id_effect_logger/Cargo.toml
+            crates/id_effect_config/Cargo.toml
+            crates/id_effect_axum/Cargo.toml
+            crates/id_effect_reqwest/Cargo.toml
+            crates/id_effect_tower/Cargo.toml
           )
           MISMATCH=0
           for toml in "${CRATES[@]}"; do
@@ -102,27 +102,27 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Publish effect_rs_proc_macro
+      - name: Publish id_effect_proc_macro
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_proc_macro --no-verify)
+          args=(--package id_effect_proc_macro --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish effect_rs_macro
+      - name: Publish id_effect_macro
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_macro --no-verify)
+          args=(--package id_effect_macro --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────
-  # Publish level-1: effect_rs (depends on proc-macro + macro)
+  # Publish level-1: id_effect (depends on proc-macro + macro)
   # ──────────────────────────────────────────────────────────────────────────
   publish-level-1:
-    name: Publish level-1 (effect_rs)
+    name: Publish level-1 (id_effect)
     runs-on: ubuntu-latest
     needs: [publish-level-0]
     environment: crates-io
@@ -134,15 +134,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Wait for crates.io index
         run: sleep 30
-      - name: Publish effect_rs
+      - name: Publish id_effect
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs --no-verify)
+          args=(--package id_effect --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────
-  # Publish level-2: tokio + logger (depend only on effect_rs)
+  # Publish level-2: tokio + logger (depend only on id_effect)
   # ──────────────────────────────────────────────────────────────────────────
   publish-level-2:
     name: Publish level-2 (tokio, logger)
@@ -157,25 +157,25 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Wait for crates.io index
         run: sleep 30
-      - name: Publish effect_rs_tokio
+      - name: Publish id_effect_tokio
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_tokio --no-verify)
+          args=(--package id_effect_tokio --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish effect_rs_logger
+      - name: Publish id_effect_logger
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_logger --no-verify)
+          args=(--package id_effect_logger --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-3: integrations (axum, config, reqwest, tower)
-  # axum + tower depend on effect_rs_tokio; config depends on effect_rs_logger.
+  # axum + tower depend on id_effect_tokio; config depends on id_effect_logger.
   # ──────────────────────────────────────────────────────────────────────────
   publish-level-3:
     name: Publish level-3 (axum, config, reqwest, tower)
@@ -190,38 +190,38 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Wait for crates.io index
         run: sleep 30
-      - name: Publish effect_rs_config
+      - name: Publish id_effect_config
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_config --no-verify)
+          args=(--package id_effect_config --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish effect_rs_axum
+      - name: Publish id_effect_axum
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_axum --no-verify)
+          args=(--package id_effect_axum --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish effect_rs_reqwest
+      - name: Publish id_effect_reqwest
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_reqwest --no-verify)
+          args=(--package id_effect_reqwest --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish effect_rs_tower
+      - name: Publish id_effect_tower
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package effect_rs_tower --no-verify)
+          args=(--package id_effect_tower --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────

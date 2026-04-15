@@ -49,7 +49,7 @@ jobs:
       - name: Assemble Pages site
         run: |
           mkdir -p site/api
-          cp -r crates/effect_rs/book/book/. site/
+          cp -r crates/id_effect/book/book/. site/
           cp -r target/doc/. site/api/
       - name: Upload Pages artefact
         if: github.ref == 'refs/heads/main'

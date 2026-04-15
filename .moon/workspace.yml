@@ -2,15 +2,15 @@
 $schema: https://moonrepo.dev/schemas/workspace.json
 projects:
   effect: '.'
-  effect_rs_lib: crates/effect_rs
-  effect_rs_axum: crates/effect_rs_axum
-  effect_rs_config: crates/effect_rs_config
-  effect_rs_logger: crates/effect_rs_logger
-  effect_rs_macro: crates/effect_rs_macro
-  effect_rs_proc_macro: crates/effect_rs_proc_macro
-  effect_rs_reqwest: crates/effect_rs_reqwest
-  effect_rs_tokio: crates/effect_rs_tokio
-  effect_rs_tower: crates/effect_rs_tower
+  id_effect_lib: crates/id_effect
+  id_effect_axum: crates/id_effect_axum
+  id_effect_config: crates/id_effect_config
+  id_effect_logger: crates/id_effect_logger
+  id_effect_macro: crates/id_effect_macro
+  id_effect_proc_macro: crates/id_effect_proc_macro
+  id_effect_reqwest: crates/id_effect_reqwest
+  id_effect_tokio: crates/id_effect_tokio
+  id_effect_tower: crates/id_effect_tower
 vcs:
   defaultBranch: main
   provider: github

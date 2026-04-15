@@ -1,2 +1,2 @@
 [workspace.metadata.dylint]
-libraries = [{ path = "crates/effect_rs_lint" }]
+libraries = [{ path = "crates/id_effect_lint" }]

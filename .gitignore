@@ -3,7 +3,7 @@
 !.tool-llm-git-context/vault/
 !.tool-llm-git-context/vault/Logs/
 !.vscode/settings.json
-!crates/effect_rs-dylint-rules/Cargo.lock
+!crates/id_effect-dylint-rules/Cargo.lock
 # forge-cli scaffold templates may run `cargo` / `bun` locally (not covered by root `/target/`)
 **/*.rs.bk
 **/.obsidian/graph.json
@@ -59,7 +59,7 @@
 /data/
 /target/
 /tmp/
-crates/effect_rs/book/book/
+crates/id_effect/book/book/
 Cargo.lock
 Thumbs.db
 \!logs/.gitkeep

@@ -49,7 +49,7 @@
     doCheck = false;
   };
 in {
-  name = "effect_rs";
+  name = "id_effect";
 
   dotenv = {
     enable = true;
@@ -93,7 +93,7 @@ in {
 
   languages.rust = {
     enable = true;
-    # Nightly + rustc-dev allows the effect_rs_lint Dylint crate to access
+    # Nightly + rustc-dev allows the id_effect_lint Dylint crate to access
     # rustc internals (rustc_private).  The Dylint crate carries no
     # rust-toolchain pin so it always uses whatever nightly devenv provides.
     channel = "nightly";

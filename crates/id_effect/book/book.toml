@@ -1,0 +1,24 @@
+[book]
+title = "Typed Effects in Rust"
+authors = ["id_effect contributors"]
+description = "Learn to build composable, testable async programs with id_effect"
+language = "en"
+multilingual = false
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/Industrial/id_effect"
+edit-url-template = "https://github.com/Industrial/id_effect/edit/main/crates/id_effect/book/{path}"
+
+[output.html.playground]
+editable = true
+line-numbers = true
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-hierarchical-titles = true

@@ -1,0 +1,23 @@
+[package]
+name = "id_effect_proc_macro"
+version = "0.1.0"
+edition = "2024"
+description = "Procedural `effect!` macro for the `effect` crate (proc-macro only; declarative macros live in `id_effect_macro`)"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/effect-rs"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = [
+  'cfg(coverage)',
+  'cfg(feature, values("mock"))',
+] }
+
+[lib]
+name = "id_effect_proc_macro"
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }

@@ -117,12 +117,12 @@ tasks:
   book:
     description: 'Build the Effect.rs mdBook HTML documentation'
     command: 'mdbook'
-    args: ['build', 'crates/effect_rs/book']
+    args: ['build', 'crates/id_effect/book']
     inputs:
-      - 'crates/effect_rs/book/book.toml'
-      - 'crates/effect_rs/book/src/**/*'
+      - 'crates/id_effect/book/book.toml'
+      - 'crates/id_effect/book/src/**/*'
     outputs:
-      - 'crates/effect_rs/book/book'
+      - 'crates/id_effect/book/book'
     options:
       cache: true
       outputStyle: buffer-only-failure

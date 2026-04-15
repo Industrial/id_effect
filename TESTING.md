@@ -450,7 +450,7 @@ For tests that require external services (database, NATS, RPC):
 3. Use `-- --ignored` to run manually
 
 ```rust
-use effect_rs::run_async;
+use id_effect::run_async;
 
 /// Integration test: requires DATABASE_URL pointing to running PostgreSQL.
 /// Run with: `cargo test -p my-crate integration_test_name -- --ignored`
@@ -473,7 +473,7 @@ async fn example_db_integration_requires_postgres() {
 cargo test
 
 # Run tests for a specific crate
-cargo test -p effect_rs
+cargo test -p id_effect
 
 # Run tests matching a pattern
 cargo test quote_from_config
