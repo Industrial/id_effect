@@ -1,6 +1,6 @@
 # Root-level workspace tasks
 # https://moonrepo.dev/docs/config/project
-id: 'effect_rs'
+id: 'effect'
 language: 'rust'
 layer: 'application'
 workspace:
@@ -58,6 +58,7 @@ tasks:
       - 'Cargo.toml'
       - 'Cargo.lock'
     options:
+      cache: false
       outputStyle: buffer-only-failure
   coverage:
     description: >-
@@ -156,4 +157,5 @@ tasks:
       - 'Cargo.lock'
       - '**/*.rs'
     options:
+      cache: false
       outputStyle: buffer-only-failure

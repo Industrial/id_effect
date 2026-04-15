@@ -799,8 +799,12 @@ mod tests {
 
   #[test]
   fn zoned_from_std_returns_none_on_out_of_range() {
-    // Duration::MAX is far beyond jiff's supported range.
-    let far_future = std::time::UNIX_EPOCH + Duration::from_secs(u64::MAX / 2);
+    // Far-future instants are not representable on every OS `SystemTime` (e.g. Windows
+    // FILETIME); `SystemTime + Duration` panics on overflow — use `checked_add`.
+    let huge = Duration::from_secs(u64::MAX / 2);
+    let Some(far_future) = std::time::UNIX_EPOCH.checked_add(huge) else {
+      return;
+    };
     // May or may not be out of range depending on jiff version; just ensure no panic.
     let _ = ZonedDateTime::from_std(far_future, TimeZone::UTC);
   }

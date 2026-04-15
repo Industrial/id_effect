@@ -1,7 +1,7 @@
 # https://moonrepo.dev/docs/config/workspace
 $schema: https://moonrepo.dev/schemas/workspace.json
 projects:
-  effect_rs: '.'
+  effect: '.'
   effect_rs_lib: crates/effect_rs
   effect_rs_axum: crates/effect_rs_axum
   effect_rs_config: crates/effect_rs_config
