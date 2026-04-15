@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Declarative macros for the `effect` crate (`ctx!`, `pipe!`, …). Procedural `effect!` is in `id_effect_proc_macro` — Rust cannot mix both in one proc-macro crate."
 license = "CC-BY-SA-4.0"
-repository = "https://github.com/Industrial/effect-rs"
+repository = "https://github.com/Industrial/id_effect"
 
 [lints.rust]
 unsafe_code = "forbid"

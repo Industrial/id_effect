@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Tower Service bridge for `effect` programs (runs effects via id_effect_tokio)"
 license = "CC-BY-SA-4.0"
-repository = "https://github.com/Industrial/effect-rs"
+repository = "https://github.com/Industrial/id_effect"
 
 [lints.rust]
 unsafe_code = "forbid"

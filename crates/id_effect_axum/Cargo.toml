@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "CC-BY-SA-4.0"
 description = "Axum integration for the workspace `effect` crate — run Effect handlers on Tokio"
-repository = "https://github.com/Industrial/effect-rs"
+repository = "https://github.com/Industrial/id_effect"
 
 [lints.rust]
 unsafe_code = "forbid"
