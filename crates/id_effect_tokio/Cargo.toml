@@ -17,7 +17,7 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 name = "id_effect_tokio"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.1.0" }
+id_effect = { path = "../id_effect", version = "0.1.1" }
 tokio = { version = "1.50.0", features = ["rt", "time", "sync"] }
 
 [dev-dependencies]
