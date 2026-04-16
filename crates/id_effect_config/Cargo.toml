@@ -30,7 +30,7 @@ dotenv = ["dep:dotenvy"]
 name = "id_effect_config"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.1.0" }
+id_effect = { path = "../id_effect", version = "0.1.1" }
 id_effect_logger = { path = "../id_effect_logger", version = "0.1.1" }
 # Floor for figment's pear dep: 0.2.0 does not build on current Rust (fmt::Write on InlinableString).
 pear = "0.2.9"

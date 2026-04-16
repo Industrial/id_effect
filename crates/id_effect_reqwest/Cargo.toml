@@ -18,15 +18,16 @@ name = "id_effect_reqwest"
 
 [dependencies]
 bytes = "1"
-id_effect = { path = "../id_effect", version = "0.1.0", features = [
+id_effect = { path = "../id_effect", version = "0.1.1", features = [
   "schema-serde",
 ] }
-# `default-features = false` + `rustls-tls`: avoid `native-tls` → ancient `openssl-sys`
+# `default-features = false` + `rustls`: avoid `native-tls` → ancient `openssl-sys`
 # lower bounds that break `cargo update -Z minimal-versions` on OpenSSL 3 (CI / modern Linux).
-reqwest = { version = "0.12", default-features = false, features = [
+# reqwest 0.13 renamed `rustls-tls` → `rustls`.
+reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "gzip",
-  "rustls-tls",
+  "rustls",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
