@@ -61,7 +61,27 @@ impl TokioRuntime {
     })
   }
 
-  /// Run a future on the owned runtime when this adapter was built with [`Self::new_current_thread`].
+  /// Owns a multi-thread Tokio runtime (typical for CLIs and servers without `#[tokio::main]`).
+  pub fn new_multi_thread() -> Result<Self, std::io::Error> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()?;
+    let runtime = Arc::new(runtime);
+    let handle = runtime.handle().clone();
+    Ok(Self {
+      _owned: Some(runtime),
+      _handle: handle,
+    })
+  }
+
+  /// Tokio handle for this adapter (same underlying runtime as [`Self::block_on`] when owned).
+  #[inline]
+  pub fn handle(&self) -> tokio::runtime::Handle {
+    self._handle.clone()
+  }
+
+  /// Run a future on the owned runtime when this adapter was built with [`Self::new_current_thread`]
+  /// or [`Self::new_multi_thread`].
   ///
   /// When constructed with [`Self::from_handle`] / [`Self::current`], this panics — use the
   /// surrounding runtime’s `block_on` instead.
@@ -69,7 +89,7 @@ impl TokioRuntime {
     match &self._owned {
       Some(rt) => rt.block_on(f),
       None => panic!(
-        "TokioRuntime::block_on requires TokioRuntime::new_current_thread(); \
+        "TokioRuntime::block_on requires TokioRuntime::new_current_thread() or new_multi_thread(); \
          otherwise use your Runtime::block_on / #[tokio::main] with from_handle"
       ),
     }
