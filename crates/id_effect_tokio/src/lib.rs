@@ -18,8 +18,8 @@
 //! [`Runtime::spawn_with`] on [`TokioRuntime`] therefore drives the interpreter with [`run_blocking`],
 //! which is wrong for effects that need a real async driver (I/O, timers). For those, use
 //! [`spawn_blocking_run_async`] (or [`TokioRuntime::spawn_blocking_run_async`]): run the effect on
-//! Tokio’s **blocking pool** and drive it with [`run_async`] inside [`Handle::block_on`] — the same
-//! pattern as manually pairing [`Handle::spawn_blocking`] with `block_on(run_async(..))`.
+//! Tokio’s **blocking pool** and drive it with [`run_async`] inside [`tokio::runtime::Handle::block_on`] — the same
+//! pattern as manually pairing [`tokio::runtime::Handle::spawn_blocking`] with `block_on(run_async(..))`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -33,7 +33,7 @@ use id_effect::{Effect, FiberHandle, FiberId, Never, Runtime, from_async};
 pub use id_effect::{run_async, run_blocking, run_fork, yield_now};
 
 /// Run an [`Effect`] on Tokio’s **blocking thread pool**, driving it with [`run_async`] via
-/// [`Handle::block_on`] on the same runtime.
+/// [`tokio::runtime::Handle::block_on`] on the same runtime.
 ///
 /// Use this when the async effect graph is **not** [`Send`] and therefore cannot be scheduled with
 /// [`tokio::spawn`], but still needs the real async interpreter (unlike [`run_fork`], which uses

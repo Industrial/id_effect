@@ -14,9 +14,9 @@
 //! For **`@effect/platform`-style** boundaries—typed `HttpClient` in `R` instead of raw
 //! [`reqwest::Client`]—add the workspace crate **`id_effect_platform`** and use its
 //! `http` module (`HttpClientKey`, `execute`, `ReqwestHttpClient`, …). This crate remains the home
-//! for **reqwest-specific** helpers (pools, JSON+[`Schema`](id_effect::schema::Schema), …). Prefer the
-//! platform HTTP layer for new application code; keep [`send`](send) when you already have a
-//! [`RequestBuilder`](RequestBuilder) pipeline.
+//! for **reqwest-specific** helpers (pools, JSON+[`id_effect::schema::Schema`], …). Prefer the
+//! platform HTTP layer for new application code; keep [`send`] when you already have a
+//! [`RequestBuilder`] pipeline.
 //!
 //! ## Relation to `id_effect_tokio`
 //!
