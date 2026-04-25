@@ -3,18 +3,19 @@ $schema: https://moonrepo.dev/schemas/workspace.json
 projects:
   cli_minimal: examples/cli-minimal
   effect: '.'
-  id_effect_lib: crates/id_effect
-  id_effect_cli: crates/id_effect_cli
-  id_effect_platform: crates/id_effect_platform
   id_effect_axum: crates/id_effect_axum
-  id_effect_rpc: crates/id_effect_rpc
+  id_effect_cli: crates/id_effect_cli
   id_effect_config: crates/id_effect_config
+  id_effect_lib: crates/id_effect
   id_effect_logger: crates/id_effect_logger
   id_effect_macro: crates/id_effect_macro
+  id_effect_platform: crates/id_effect_platform
   id_effect_proc_macro: crates/id_effect_proc_macro
   id_effect_reqwest: crates/id_effect_reqwest
+  id_effect_rpc: crates/id_effect_rpc
   id_effect_tokio: crates/id_effect_tokio
   id_effect_tower: crates/id_effect_tower
+  id_effect_workflow: crates/id_effect_workflow
 vcs:
   defaultBranch: main
   provider: github

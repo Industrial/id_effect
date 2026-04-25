@@ -1,0 +1,63 @@
+# https://moonrepo.dev/docs/config/project
+language: 'rust'
+layer: 'library'
+tasks:
+  check:
+    deps: ['effect:ci-format', '^:check']
+    command:
+      - cargo
+      - check
+      - -p
+      - id_effect_workflow
+      - --all-targets
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  clippy:
+    deps: ['^:clippy', '~:check']
+    command:
+      - cargo
+      - clippy
+      - -p
+      - id_effect_workflow
+      - --all-targets
+      - --
+      - -D
+      - warnings
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  test:
+    deps: ['^:test', '~:clippy']
+    command:
+      - cargo
+      - nextest
+      - run
+      - -p
+      - id_effect_workflow
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  build:
+    deps: ['^:build', '~:test']
+    command:
+      - cargo
+      - build
+      - -p
+      - id_effect_workflow
+      - --all-targets
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
