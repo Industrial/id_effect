@@ -3,7 +3,7 @@
 //!
 //! Design matches [Phase E — CLI ergonomics](https://github.com/Industrial/id_effect/blob/main/docs/effect-ts-parity/phases/phase-e-cli.md):
 //! embrace **`clap`** for parsing, run the effect with [`id_effect::runtime::run_blocking`], map
-//! [`Result`](std::result::Result) / [`id_effect::Exit`] / [`id_effect::Cause`] to
+//! [`Result`] / [`id_effect::Exit`] / [`id_effect::Cause`] to
 //! [`std::process::ExitCode`] for `fn main() -> ExitCode`.
 //!
 //! [`clap`]: https://docs.rs/clap
