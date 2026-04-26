@@ -8,6 +8,8 @@
 //! - Optional: [`layer_reqwest_pool`] + [`send_pooled`] to keep a [`Pool`] of [`PooledClient`] with TTL.
 //! - Optional: [`json_schema`] decodes JSON bodies via [`Schema::decode_unknown`](id_effect::schema::Schema::decode_unknown)
 //!   so [`id_effect::schema::ParseError`] carries field paths.
+//! - For many independent body buffers, [`decode_json_schema_bodies_par`] runs the same schema decode
+//!   in parallel with rayon.
 //!
 //! ## Relation to `id_effect_platform` (portable HTTP)
 //!
@@ -60,6 +62,7 @@ use ::id_effect::{
 };
 use id_effect::data::EffectData;
 use id_effect::schema::{ParseError, Unknown};
+use rayon::prelude::*;
 use serde_json::Value;
 
 pub use reqwest::{Client, ClientBuilder, Error, RequestBuilder, Response, StatusCode};
@@ -216,6 +219,28 @@ where
   let v: Value = serde_json::from_slice(bytes).map_err(|e| JsonSchemaError::Json(e.to_string()))?;
   let u = unknown_from_json_value(v);
   schema.decode_unknown(&u).map_err(JsonSchemaError::Schema)
+}
+
+/// Decode many JSON response bodies with the same [`Schema`] in parallel; results match `bodies` order.
+///
+/// Each entry is decoded like [`json_schema`]'s body path: JSON parse, then
+/// [`Schema::decode_unknown`](id_effect::schema::Schema::decode_unknown). This is CPU-bound
+/// (useful for cached or prefetched response bytes); it does not perform HTTP.
+#[inline]
+pub fn decode_json_schema_bodies_par<A, I, Es>(
+  schema: &Schema<A, I, Es>,
+  bodies: &[&[u8]],
+) -> Vec<Result<A, JsonSchemaError>>
+where
+  Es: EffectData + Send + Sync + 'static,
+  A: Send + 'static,
+  I: Send + Sync + 'static,
+  Schema<A, I, Es>: Sync,
+{
+  bodies
+    .par_iter()
+    .map(|bytes| decode_response_schema(schema, bytes))
+    .collect()
 }
 
 /// [`send`] then decode the response body as JSON through `schema` ([`Schema::decode_unknown`]).
@@ -716,6 +741,17 @@ mod tests {
     let e = JsonSchemaError::Json("bad json".to_string());
     let s = format!("{e:?}");
     assert!(s.contains("bad json"), "debug: {s}");
+  }
+
+  #[test]
+  fn decode_json_schema_bodies_par_preserves_order_mixed() {
+    let sch = schema::i64::<()>();
+    let bodies: [&[u8]; 3] = [b"1", b"not json", b"3"];
+    let out = decode_json_schema_bodies_par(&sch, &bodies);
+    assert_eq!(out.len(), 3);
+    assert_eq!(out[0].as_ref().ok(), Some(&1));
+    assert!(matches!(&out[1], Err(JsonSchemaError::Json(_))));
+    assert_eq!(out[2].as_ref().ok(), Some(&3));
   }
 
   #[test]
