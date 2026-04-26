@@ -22,6 +22,8 @@
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
+//! For composite sinks, [`CompositeLogBackend::emit_all_par`](pipeline::CompositeLogBackend::emit_all_par)
+//! fans out to backends with rayon (see that method for ordering semantics).
 
 #![deny(missing_docs)]
 

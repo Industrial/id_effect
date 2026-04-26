@@ -7,6 +7,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex, RwLock};
 
 use ::id_effect::EffectHashMap;
+use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::{EffectLoggerError, LogLevel};
@@ -73,6 +74,21 @@ impl CompositeLogBackend {
       b.emit(rec)?;
     }
     Ok(())
+  }
+
+  /// Like [`emit_all`], but runs each [`LogBackend::emit`] in parallel.
+  ///
+  /// Use this when sinks are independent and I/O can overlap. **Completion order is not defined**; if
+  /// you rely on a strict call order, keep using [`emit_all`]. The returned [`Result`] matches
+  /// folding `emit` left-to-right by registration index: the first `Err` in that order wins.
+  pub fn emit_all_par(&self, rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+    let bs: Vec<_> = self
+      .backends
+      .read()
+      .map_err(|e| EffectLoggerError::Sink(format!("composite read lock: {e}")))?
+      .clone();
+    let results: Vec<_> = bs.par_iter().map(|b| b.emit(rec)).collect();
+    results.into_iter().collect()
   }
 }
 
@@ -315,6 +331,52 @@ mod tests {
     let rec = make_record(crate::LogLevel::Info, "hello");
     composite.emit(&rec).unwrap();
     assert_eq!(*buf.lock().unwrap(), vec!["hello"]);
+  }
+
+  #[test]
+  fn composite_emit_all_par_reaches_all_backends() {
+    let a: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let b: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
+    let a2 = a.clone();
+    let b2 = b.clone();
+    struct Capturing(Arc<Mutex<Vec<String>>>);
+    impl LogBackend for Capturing {
+      fn emit(&self, rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+        self.0.lock().unwrap().push(rec.message.to_string());
+        Ok(())
+      }
+    }
+    let composite = CompositeLogBackend::new();
+    composite.add(Arc::new(Capturing(a2))).unwrap();
+    composite.add(Arc::new(Capturing(b2))).unwrap();
+    let rec = make_record(crate::LogLevel::Info, "par");
+    composite.emit_all_par(&rec).unwrap();
+    assert_eq!(*a.lock().unwrap(), vec!["par".to_string()]);
+    assert_eq!(*b.lock().unwrap(), vec!["par".to_string()]);
+  }
+
+  #[test]
+  fn composite_emit_all_par_error_order_matches_registration_index() {
+    struct OkBackend;
+    impl LogBackend for OkBackend {
+      fn emit(&self, _rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+        Ok(())
+      }
+    }
+    struct FailBackend;
+    impl LogBackend for FailBackend {
+      fn emit(&self, _rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+        Err(EffectLoggerError::Sink("second".into()))
+      }
+    }
+    let composite = CompositeLogBackend::new();
+    composite.add(Arc::new(OkBackend)).unwrap();
+    composite.add(Arc::new(FailBackend)).unwrap();
+    let rec = make_record(crate::LogLevel::Info, "x");
+    let err = composite
+      .emit_all_par(&rec)
+      .expect_err("second backend fails");
+    assert_eq!(err.to_string(), "log sink error: second");
   }
 
   #[test]
