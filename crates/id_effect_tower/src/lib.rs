@@ -17,6 +17,9 @@
 //! (typically a [`Metric::timer`](id_effect::Metric::timer)) and increments an error counter when the
 //! handler effect fails.
 //!
+//! For independent **CPU-bound** per-item work on a slice, [`map_slice_par`] (rayon) is
+//! available; run it from [`tokio::task::spawn_blocking`], not on the async worker pool.
+//!
 //! ## Examples
 //!
 //! See `examples/` (e.g. `cargo run -p id_effect_tower --example 001_effect_service`) or
@@ -34,8 +37,24 @@ use std::task::{Context, Poll};
 use id_effect::duration::Duration;
 use id_effect::{Effect, Metric, QueueError, SynchronizedRef, box_future};
 use id_effect_tokio::run_async as run_effect_async;
+use rayon::prelude::*;
 use tokio::sync::{AcquireError, OwnedSemaphorePermit, Semaphore};
 use tower::Service;
+
+/// Map `f` over `items` in parallel with [rayon]; the output vector matches `items` order.
+///
+/// This is for **CPU-bound** work. From async code, run it inside
+/// [`tokio::task::spawn_blocking`](tokio::task::spawn_blocking) (or otherwise off the
+/// async runtime’s default worker pool) so you do not block the executor.
+#[inline]
+pub fn map_slice_par<T, R, F>(items: &[T], f: F) -> Vec<R>
+where
+  T: Sync,
+  R: Send,
+  F: Fn(&T) -> R + Sync + Send,
+{
+  items.par_iter().map(f).collect()
+}
 
 type AcquireFuture =
   Pin<Box<dyn Future<Output = Result<OwnedSemaphorePermit, AcquireError>> + Send>>;
@@ -389,6 +408,11 @@ mod tests {
   use id_effect::succeed;
   use std::time::Duration;
   use tower::{Service, ServiceExt};
+
+  #[test]
+  fn map_slice_par_smoke() {
+    assert_eq!(map_slice_par(&[1_u32, 2, 3], |&x| x * 2), vec![2, 4, 6]);
+  }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn tower_channel_service_returns_response() {
