@@ -11,6 +11,9 @@
 //! [`run_async`], [`run_blocking`], [`run_fork`], and [`yield_now`] from `id_effect` for use at the
 //! async boundary alongside [`TokioRuntime`].
 //!
+//! For many independent **CPU-bound** per-element transforms, [`map_slice_par`] (rayon) is
+//! available; run it from [`tokio::task::spawn_blocking`] rather than on the async worker pool.
+//!
 //! ## Async effects that are not [`Send`] ([`spawn_blocking_run_async`])
 //!
 //! [`tokio::spawn`] requires a [`Send`] future; the future produced by [`run_async`] often is **not**
@@ -28,9 +31,25 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use id_effect::{Effect, FiberHandle, FiberId, Never, Runtime, from_async};
+use rayon::prelude::*;
 
 /// Commonly used at the async boundary together with [`TokioRuntime`].
 pub use id_effect::{run_async, run_blocking, run_fork, yield_now};
+
+/// Map `f` over `items` in parallel with [rayon]; the output vector matches `items` order.
+///
+/// This is for **CPU-bound** work. From async code, run it inside
+/// [`tokio::task::spawn_blocking`](tokio::task::spawn_blocking) (or otherwise off the
+/// async runtime’s default worker pool) so you do not block the executor.
+#[inline]
+pub fn map_slice_par<T, R, F>(items: &[T], f: F) -> Vec<R>
+where
+  T: Sync,
+  R: Send,
+  F: Fn(&T) -> R + Sync + Send,
+{
+  items.par_iter().map(f).collect()
+}
 
 /// Run an [`Effect`] on Tokio’s **blocking thread pool**, driving it with [`run_async`] via
 /// [`tokio::runtime::Handle::block_on`] on the same runtime.
@@ -204,6 +223,13 @@ mod tests {
   use id_effect::Effect;
   use id_effect::kernel::succeed;
   use std::time::Duration;
+
+  #[test]
+  fn map_slice_par_preserves_order() {
+    let items = [1_u32, 2, 3, 4];
+    let out = map_slice_par(&items, |&x| x * 2);
+    assert_eq!(out, vec![2, 4, 6, 8]);
+  }
 
   #[test]
   fn spawn_blocking_run_async_runs_async_effect_to_completion() {

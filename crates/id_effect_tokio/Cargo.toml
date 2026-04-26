@@ -18,6 +18,7 @@ name = "id_effect_tokio"
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.2.0" }
+rayon = "1.12"
 tokio = { version = "1.50.0", features = [
   "rt",
   "rt-multi-thread",
