@@ -3,6 +3,9 @@
 //! This is the Phase **G2** spike from `docs/effect-ts-parity/phases/phase-g-cluster-workflow.md`:
 //! persist completed step outputs keyed by `(workflow_id, seq)` so a restarted process can skip
 //! re-execution. See the crate `README.md` and the mdBook chapter on durable workflow.
+//!
+//! For many independent JSON strings (e.g. batch validation of `output_json` blobs), use
+//! [`parse_json_strs_par`] (rayon).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -20,10 +23,25 @@ mod error;
 
 pub use error::WorkflowError;
 
+use rayon::prelude::*;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Deserialize many JSON text blobs in parallel; results are in the same order as `strs`.
+///
+/// This does not touch the durable log. Use for CPU-bound batch decode of step outputs or
+/// other JSON payloads. [`WorkflowError::Json`] wraps [`serde_json`] failures.
+pub fn parse_json_strs_par<T>(strs: &[&str]) -> Vec<Result<T, WorkflowError>>
+where
+  T: DeserializeOwned + Send,
+{
+  strs
+    .par_iter()
+    .map(|s| serde_json::from_str(s).map_err(WorkflowError::from))
+    .collect()
+}
 
 fn now_ms() -> i64 {
   SystemTime::now()
@@ -198,6 +216,20 @@ mod tests {
 
   fn fresh_log() -> DurableWorkflowLog {
     DurableWorkflowLog::open_in_memory().expect("memory db")
+  }
+
+  mod parse_json_strs_par {
+    use super::*;
+
+    #[test]
+    fn preserves_order_mixed_ok_err() {
+      let s: &[&str] = &["1", "nope", "3"];
+      let out: Vec<Result<i32, WorkflowError>> = parse_json_strs_par(s);
+      assert_eq!(out.len(), 3);
+      assert_eq!(out[0].as_ref().ok().copied(), Some(1));
+      assert!(matches!(&out[1], Err(WorkflowError::Json(_))));
+      assert_eq!(out[2].as_ref().ok().copied(), Some(3));
+    }
   }
 
   mod register_workflow {
