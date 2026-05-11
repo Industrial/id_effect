@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.2.0" }
-opentelemetry = { version = "0.31", default-features = false, features = [
+opentelemetry = { version = "0.32", default-features = false, features = [
   "trace",
   "metrics",
 ] }
