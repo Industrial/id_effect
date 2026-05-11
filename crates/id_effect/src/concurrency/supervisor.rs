@@ -178,10 +178,7 @@ where
               SupervisorPolicy::Restart { schedule } => {
                 let sched = schedule_restart.get_or_insert_with(|| schedule.clone());
                 if let Some(sleep_eff) = sched.next_sleep(&clock, ScheduleInput { attempt }) {
-                  match sleep_eff.run(&mut ()).await {
-                    Ok(()) => {}
-                    Err(never) => match never {},
-                  }
+                  sleep_eff.run(&mut ()).await.unwrap();
                   attempt = attempt.saturating_add(1);
                   continue;
                 } else {
@@ -201,10 +198,7 @@ where
                 });
                 let sched = schedule_limited.get_or_insert_with(|| schedule.clone());
                 if let Some(sleep_eff) = sched.next_sleep(&clock, ScheduleInput { attempt }) {
-                  match sleep_eff.run(&mut ()).await {
-                    Ok(()) => {}
-                    Err(never) => match never {},
-                  }
+                  sleep_eff.run(&mut ()).await.unwrap();
                   restarts_used = restarts_used.saturating_add(1);
                   attempt = attempt.saturating_add(1);
                   continue;
