@@ -50,6 +50,7 @@
   - [Configuration (`id_effect_config`)](./part2/ch07-10-config.md)
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
   - [RPC boundaries (`id_effect_rpc`)](./part2/ch07-12-rpc-boundaries.md)
+  - [Durable workflow spike (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 
