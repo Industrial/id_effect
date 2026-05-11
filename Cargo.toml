@@ -3,17 +3,18 @@ resolver = "2"
 exclude = [".tmp", "tmp", "crates/id_effect_lint"]
 members = [
   "crates/id_effect",
-  "crates/id_effect_cli",
-  "crates/id_effect_platform",
   "crates/id_effect_axum",
-  "crates/id_effect_rpc",
+  "crates/id_effect_cli",
   "crates/id_effect_config",
   "crates/id_effect_logger",
   "crates/id_effect_macro",
+  "crates/id_effect_platform",
   "crates/id_effect_proc_macro",
   "crates/id_effect_reqwest",
+  "crates/id_effect_rpc",
   "crates/id_effect_tokio",
   "crates/id_effect_tower",
+  "crates/id_effect_workflow",
   "examples/cli-minimal",
 ]
 
