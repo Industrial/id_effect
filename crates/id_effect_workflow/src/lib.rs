@@ -437,6 +437,38 @@ mod tests {
     }
   }
 
+  mod completed_step_count {
+    use super::*;
+
+    mod with_unknown_workflow {
+      use super::*;
+
+      #[test]
+      fn returns_unknown_workflow() {
+        let log = fresh_log();
+        let err = log.completed_step_count("no-such").unwrap_err();
+        assert!(matches!(err, WorkflowError::UnknownWorkflow(_)));
+      }
+    }
+  }
+
+  mod register_workflow_sqlite_error {
+    use super::*;
+
+    #[test]
+    fn other_sqlite_error_is_forwarded_as_sqlite_variant() {
+      let mut log = fresh_log();
+      // Drop the backing table so any INSERT raises a generic SQLite error
+      // (not a ConstraintViolation), exercising the `other => other.into()` branch.
+      log
+        .conn
+        .execute_batch("DROP TABLE IF EXISTS workflows;")
+        .expect("drop table");
+      let err = log.register_workflow("wf-x").unwrap_err();
+      assert!(matches!(err, WorkflowError::Sqlite(_)));
+    }
+  }
+
   mod stress {
     use super::*;
 
