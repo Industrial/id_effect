@@ -49,7 +49,8 @@
   - [Tower service (`id_effect_tower`)](./part2/ch07-09-tower-service.md)
   - [Configuration (`id_effect_config`)](./part2/ch07-10-config.md)
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
-  - [OpenTelemetry (`id_effect_opentelemetry`)](./part2/ch07-12-opentelemetry.md)
+  - [RPC boundaries (`id_effect_rpc`)](./part2/ch07-12-rpc-boundaries.md)
+  - [Durable workflow spike (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 
@@ -74,6 +75,9 @@
   - [Built-in Schedules](./part3/ch11-02-builtin-schedules.md)
   - [retry and repeat](./part3/ch11-03-retry-repeat.md)
   - [Clock Injection](./part3/ch11-04-clock-injection.md)
+- [CLI with clap](./part3/ch16-00-cli-with-clap.md)
+  - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
+  - [Config + `Secret` from flags](./part3/ch16-02-cli-config-secret.md)
 
 # Part IV: Advanced
 
