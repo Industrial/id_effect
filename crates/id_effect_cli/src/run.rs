@@ -1,4 +1,4 @@
-//! `run_main` — tracing (optional), [`run_blocking`](id_effect::runtime::run_blocking), stderr, [`ExitCode`](std::process::ExitCode).
+//! `run_main` — tracing (optional), [`run_blocking`](id_effect::runtime::run_blocking), stderr, [`ExitCode`].
 
 use std::fmt::Debug;
 use std::process::ExitCode;
