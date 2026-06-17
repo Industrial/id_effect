@@ -1,39 +1,34 @@
 {
+	"version": 1,
 	"hooks": {
-		"afterAgentResponse": [
-			{
-				"command": ".cursor/hooks/llm-git-context-append.sh",
-				"timeout": 30
-			}
-		],
-		"afterFileEdit": [
-			{
-				"command": ".cursor/hooks/format-after-edit.sh",
-				"timeout": 5
-			}
-		],
 		"beforeShellExecution": [
 			{
 				"command": ".cursor/hooks/enforce-devenv.sh",
 				"timeout": 5
 			}
 		],
-		"beforeSubmitPrompt": [
+		"afterFileEdit": [
 			{
-				"command": ".cursor/hooks/llm-git-context-append.sh",
+				"command": ".cursor/hooks/format-after-edit.sh",
 				"timeout": 30
 			}
 		],
-		"sessionStart": [
+		"preToolUse": [
 			{
-				"command": ".cursor/hooks/session-run-activate.sh",
+				"command": ".cursor/hooks/block-native-web-search.sh",
+				"matcher": "WebSearch|WebFetch",
 				"timeout": 5
 			},
 			{
-				"command": ".cursor/hooks/session-register-tool-agent-forum.sh",
-				"timeout": 30
+				"command": ".cursor/hooks/block-native-read-search.sh",
+				"matcher": "Read|Grep",
+				"timeout": 5
+			},
+			{
+				"command": ".cursor/hooks/block-native-code-search.sh",
+				"matcher": "SemanticSearch",
+				"timeout": 5
 			}
 		]
-	},
-	"version": 1
+	}
 }
