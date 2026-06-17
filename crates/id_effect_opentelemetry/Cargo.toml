@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_opentelemetry"
-version = "0.2.0"
+version = "2.0.0"
 edition = "2024"
 license = "CC-BY-SA-4.0"
 description = "OpenTelemetry tracing and metrics integration for id_effect (Phase B / @effect/opentelemetry parity)"
@@ -14,7 +14,7 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.2.0" }
+id_effect = { path = "../id_effect", version = "2.0.0" }
 opentelemetry = { version = "0.31", default-features = false, features = [
   "trace",
   "metrics",

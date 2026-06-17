@@ -1,4 +1,5 @@
 //! **Stratum 3 — Environment & context** ([`Tag`], [`Tagged`], [`Cons`] / [`Nil`], paths, [`Get`] / [`GetMut`], [`Context`]).
+#![allow(dead_code, unused_imports)] // v1 internal HList engine; retained for macro expansions and regression tests
 //!
 //! Built only from lower strata (phantom data, products, type-level wiring). Lookup is **compile-time**;
 //! missing tags or wrong paths are **type errors**.

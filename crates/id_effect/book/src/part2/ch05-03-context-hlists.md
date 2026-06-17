@@ -1,82 +1,71 @@
-# Context and HLists — The Heterogeneous Stack
+# `Env` — The Runtime Capability Container
 
-`Context` is the concrete data structure that `R` resolves to at runtime. It's a *heterogeneous list* (HList) — a stack where each element has a different type, and the compiler tracks all of them.
+In v2, multi-capability effects use [`Env`](../../src/capability/env.rs): a map from capability identity to service value. Unlike the old HList `Context`, **insertion order does not matter**.
 
-## The Structure: Cons / Nil
-
-`Context` is built from two constructors:
+## Structure
 
 ```rust
-use id_effect::{Context, Cons, Nil, Tagged};
+use id_effect::Env;
 
-// An empty context
-type Empty = Nil;
+let mut env = Env::new();
+env.insert::<DatabaseKey>(pool);
+env.insert::<LoggerKey>(logger);
 
-// A context with one item
-type WithDb = Cons<Tagged<DatabaseKey>, Nil>;
-
-// A context with two items
-type WithDbAndLogger = Cons<Tagged<DatabaseKey>, Cons<Tagged<LoggerKey>, Nil>>;
+assert!(env.has::<DatabaseKey>());
+let pool = env.get::<DatabaseKey>();
 ```
 
-`Cons<Head, Tail>` prepends one item to a list. `Nil` is the empty list. It's the same idea as linked-list types in functional languages, but expressed as Rust type parameters.
+`Env` stores cloneable, `Send + Sync` values keyed by [`CapabilityId`](../../src/capability/id.rs) (derived from the key type). Lookups are O(1); there is no positional indexing.
 
-## Building Context Values
+## Building `Env`
 
-Manually building `Cons` chains is verbose. The `ctx!` macro handles it:
+Three common paths:
+
+**1. Application entry — providers + graph**
 
 ```rust
-use id_effect::ctx;
-
-let env: Context<Cons<Tagged<DatabaseKey>, Cons<Tagged<LoggerKey>, Nil>>> = ctx!(
-    tagged::<DatabaseKey>(my_pool),
-    tagged::<LoggerKey>(my_logger),
-);
+run_with([provide!(ConfigLive), provide!(DatabaseLive)], app())?;
 ```
 
-Or use `prepend_cell` manually if you need to add to an existing context:
+**2. Providers only — reuse in tests**
 
 ```rust
-use id_effect::prepend_cell;
-
-let base = ctx!(tagged::<LoggerKey>(my_logger));
-let full = prepend_cell(tagged::<DatabaseKey>(my_pool), base);
+let env = build_env([provide!(MockDatabaseLive)])?;
 ```
 
-Both produce the same type. `ctx!` is preferred for clarity.
-
-## Why HLists and Not HashMap?
-
-A `HashMap<TypeId, Box<dyn Any>>` would also store heterogeneous values. But it trades type safety for flexibility — lookups return `Box<dyn Any>`, and you have to downcast.
-
-`Context` gives:
-- **Compile-time lookup**: if you ask for `DatabaseKey` and it's not in the context, you get a compile error
-- **Zero-cost access**: no hashing, no downcast, no `Option` unwrapping
-- **Type preservation**: `Get<DatabaseKey>` returns `&Pool`, not `&dyn Any`
-
-The cost is that the type of a `Context` encodes all its elements in the type parameter — which is why you see signatures like `Cons<Tagged<A>, Cons<Tagged<B>, Nil>>`. It's verbose, but it's verifiable at compile time.
-
-## Order Doesn't Matter for Access
-
-Unlike tuples, adding an element to a `Context` doesn't break existing lookups. `Get<DatabaseKey>` finds the `Tagged<DatabaseKey>` wherever it is in the list:
+**3. Manual — fast unit tests**
 
 ```rust
-// These two contexts both support Get<DatabaseKey>
-type C1 = Cons<Tagged<DatabaseKey>, Cons<Tagged<LoggerKey>, Nil>>;
-type C2 = Cons<Tagged<LoggerKey>, Cons<Tagged<DatabaseKey>, Nil>>;
-
-// Both work — order doesn't matter for tag-based access
-fn use_db<R: NeedsDatabase>(r: &R) { ... }
+let mut env = Env::new();
+env.insert::<DatabaseKey>(MockPool::new());
 ```
 
-This is what makes `R` stable under refactoring: adding a new service to the context doesn't change how existing services are accessed.
+## Why not a plain `HashMap<TypeId, Box<dyn Any>>`?
 
-## R in Practice
+You could store `dyn Any` and downcast. `Env` + `CapabilityKey` keeps:
 
-In real application code, you rarely construct `Context` directly. Layers (Chapter 6) build it for you. Services (Chapter 7) access it through `NeedsX` bounds. You interact with `Context` directly mostly in:
+- **Compile-time requirements** via `Needs<K>` bounds
+- **Typed access** — `get::<DatabaseKey>()` returns `&Pool`, not `&dyn Any`
+- **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](../../src/capability/error.rs) with the key name
 
-- Manual test environments (constructing a test `Context` with mock services)
-- Integration points where you're bridging an existing application to id_effect
-- Internal library utilities that manipulate context directly
+The HList `Cons` / `Nil` machinery still exists internally for legacy paths, but **application code should think in `Env` and keys**, not list types.
 
-For everything else, the layer and service machinery handles construction automatically.
+## Order independence
+
+These two sequences produce equivalent lookup behaviour:
+
+```rust
+env.insert::<DatabaseKey>(db).insert::<LoggerKey>(log);
+// vs
+env.insert::<LoggerKey>(log).insert::<DatabaseKey>(db);
+```
+
+Adding a new capability never changes how existing keys are accessed — refactor-safe in a way tuples never were.
+
+## When you touch `Env` directly
+
+- Test fixtures with one or two mocks
+- Tokio/async examples that pass `Env` to [`run_async`](../../src/runtime/mod.rs)
+- Bridging from non-effect code that already has concrete handles
+
+Production apps usually list [`provide!(…)`](../../src/capability/provider.rs) values once at the top level and let [`CapabilityGraph`](../../src/capability/graph.rs) assemble `Env`.

@@ -1,8 +1,8 @@
 [package]
 name = "id_effect"
-version = "0.2.0"
+version = "2.0.0"
 edition = "2024"
-description = "Effect<A, E, R> (sync + async), context/layers, pipe — interpreter-style, no bundled executor"
+description = "Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor"
 license = "CC-BY-SA-4.0"
 repository = "https://github.com/Industrial/id_effect"
 
@@ -30,8 +30,8 @@ schema-serde = ["dep:serde_json"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
-id_effect_macro = { path = "../id_effect_macro", version = "0.2.0" }
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.2.0" }
+id_effect_macro = { path = "../id_effect_macro", version = "2.0.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "2.0.0" }
 flume = "0.12"
 im = "15"
 # 0.2.0 lacks APIs we use (`SignedDuration::from_nanos_i128`, `Error::from_args`).

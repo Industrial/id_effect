@@ -95,7 +95,7 @@ pub fn check_effect_fn_where_clause<'tcx>(
       span,
       "Effect-returning function has generic parameters but no `where` clause",
       None,
-      "add `where A: …, E: From<…> + 'static, R: NeedsX + 'static`",
+      "add `where A: …, E: From<…> + 'static, R: Needs<Key> + 'static`",
     );
   }
 }
@@ -161,7 +161,7 @@ pub fn check_no_concrete_context<'tcx>(
                   span,
                   "public API exposes concrete `Context<Cons<…>>` as `R` type",
                   None,
-                  "use `impl NeedsX` or a generic `R: NeedsX + 'static` bound",
+                  "use `impl NeedsX` or a generic `R: Needs<Key> + 'static` bound",
                 );
               }
             }
@@ -189,9 +189,9 @@ pub fn check_prefer_needs_x<'tcx>(
       cx,
       PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
       span,
-      "Effect-returning function uses raw `Get<Key, …>` bounds",
+      "Effect-returning function uses raw `Get<Key, …>` bounds; prefer `Needs<Key>`",
       None,
-      "define a `NeedsX: Get<XKey>` supertrait and use `R: NeedsX + 'static` instead",
+      "define a `NeedsX: Get<XKey>` supertrait and use `R: Needs<Key> + 'static` instead",
     );
   }
 }

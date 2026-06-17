@@ -1,19 +1,13 @@
-//! Build the logger layer with [`id_effect_logger::layer_effect_logger`]
-//! ([`id_effect::layer_service`] / Effect.ts `Layer.succeed`), then assemble a
-//! [`Context`] and run an effect that extracts `EffectLogger` via `~EffectLogger`.
+//! Build a capability [`Env`] with [`id_effect_logger::EffectLoggerLive`], then run an
+//! effect that extracts `EffectLogger` via `~EffectLogger`.
 //!
-//! Run: `devenv shell -- cargo run -p logger --example layer_build`
+//! Run: `devenv shell -- cargo run -p id_effect_logger --example layer_build`
 
-use ::id_effect::{Cons, Context, Effect, Layer, Nil, Service, effect, run_blocking};
-use id_effect_logger::{EffectLogKey, EffectLogger, EffectLoggerError, layer_effect_logger};
+use ::id_effect::{Effect, Env, build_env, effect, provide, run_blocking};
+use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
 
-type LogEnv = Context<Cons<Service<EffectLogKey, EffectLogger>, Nil>>;
-
-fn build_env() -> LogEnv {
-  let cell = layer_effect_logger()
-    .build()
-    .expect("layer_effect_logger is infallible");
-  Context::new(Cons(cell, Nil))
+fn logger_env() -> Env {
+  build_env([provide!(EffectLoggerLive)]).expect("EffectLoggerLive is infallible")
 }
 
 fn main() {
@@ -21,11 +15,11 @@ fn main() {
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let prog: Effect<(), EffectLoggerError, LogEnv> = effect!(|_r: &mut LogEnv| {
+  let prog: Effect<(), EffectLoggerError, Env> = effect!(|_r: &mut Env| {
     let logger = ~EffectLogger;
-    ~logger.info("logger provided via layer_effect_logger build");
+    ~logger.info("logger provided via EffectLoggerLive provider");
   });
 
-  let result: Result<(), EffectLoggerError> = run_blocking(prog, build_env());
+  let result: Result<(), EffectLoggerError> = run_blocking(prog, logger_env());
   println!("{result:?}");
 }

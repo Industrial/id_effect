@@ -2,14 +2,17 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use id_effect::kernel::Effect;
+use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::ProcessError;
 
-id_effect::service_key!(
-  /// Tag for the active [`ProcessRuntime`] in `R`.
-  pub struct ProcessRuntimeKey
+id_effect::define_capability!(
+  /// Tag for the active [`ProcessRuntime`] in the capability environment.
+  ProcessRuntimeKey,
+  Arc<dyn ProcessRuntime>
 );
 
 /// Specification for spawning a child process (minimal MVP).
@@ -75,41 +78,30 @@ impl ProcessRuntime for TokioProcessRuntime {
   }
 }
 
-/// [`id_effect::Service`] cell for [`ProcessRuntimeKey`].
-pub type ProcessRuntimeService<P> = id_effect::Service<ProcessRuntimeKey, P>;
+/// Default [`ProviderSpec`] for a Tokio-backed [`ProcessRuntime`].
+pub struct TokioProcessRuntimeProvider;
 
-/// Install a [`ProcessRuntime`].
-#[inline]
-pub fn layer_process_runtime<P>(
-  p: P,
-) -> id_effect::layer::LayerFn<
-  impl Fn() -> Result<ProcessRuntimeService<P>, std::convert::Infallible>,
->
-where
-  P: Clone + ProcessRuntime + 'static,
-{
-  id_effect::layer_service::<ProcessRuntimeKey, _>(p)
-}
+impl ProviderSpec for TokioProcessRuntimeProvider {
+  type Key = ProcessRuntimeKey;
+  type Output = Arc<dyn ProcessRuntime>;
 
-/// Supertrait: `R` exposes [`ProcessRuntimeKey`].
-pub trait NeedsProcessRuntime<P>:
-  id_effect::Get<ProcessRuntimeKey, id_effect::Here, Target = P>
-{
-}
-impl<R, P> NeedsProcessRuntime<P> for R where
-  R: id_effect::Get<ProcessRuntimeKey, id_effect::Here, Target = P>
-{
+  fn provider_id() -> &'static str {
+    "platform/process/tokio"
+  }
+
+  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
+    Ok(Arc::new(TokioProcessRuntime))
+  }
 }
 
 /// Spawn-wait using [`ProcessRuntimeKey`].
 #[inline]
-pub fn spawn_wait<R, P>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
+pub fn spawn_wait<R>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
 where
-  R: NeedsProcessRuntime<P> + 'static,
-  P: ProcessRuntime + Clone + 'static,
+  R: Needs<ProcessRuntimeKey> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
-    let rt = id_effect::Get::<ProcessRuntimeKey>::get(r).clone();
+    let rt = r.need().clone();
     let inner = rt.spawn_wait(cmd);
     Box::pin(async move { inner.run(&mut ()).await })
   })

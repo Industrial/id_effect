@@ -1,11 +1,9 @@
-//! Unified interpreter-style effects, piping, and **build-time** context wiring.
+//! Unified interpreter-style effects, piping, and **capability-first** dependency injection.
 //!
 //! - **[`mod@kernel`]** — unified [`Effect<A, E, R>`] plus [`into_bind`].
 //! - **[`effect!`](macro@effect)** — procedural do-notation (`x ~ expr` bind, `~ expr` discard), tail `Ok(expr)`; see [`macros`].
-//! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`ctx!`](macro@ctx), …).
-//! - **[`context`]** — [`Tag`], [`Tagged`], [`Cons`] / [`Nil`], [`Get`] / [`GetMut`].
-//! - **[`layer`]** — [`Layer`], [`Stack`], [`StackThen`], [`LayerFn`].
-//! - **[`mod@service`]** — [`Service`], [`ServiceEnv`], [`service_env`], [`service_key!`](macro@service_key), [`layer_service`] (Effect.ts-style DI).
+//! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`require!`](macro@require), …).
+//! - **[`mod@capability`]** — trait-first DI: [`Env`], [`ProviderSpec`], [`CapabilityGraph`], [`run_with`].
 //! - **[`mod@piping`]** — [`Pipe`] trait (macro: [`pipe!`](macro@pipe)).
 //! - **[`schedule`]** — Effect.ts-style repeat/retry policies.
 //! - **[`stream`]** — Effect.ts-inspired stream combinators.
@@ -54,18 +52,30 @@
 // Lets `::id_effect::…` in `id_effect_macro` expansions resolve when those macros are used inside this crate.
 extern crate self as id_effect;
 
-pub use id_effect_macro::{ctx, err, layer_graph, layer_node, pipe, req, service_def, service_key};
+pub use id_effect_macro::{caps, define_capability, err, pipe, provide, require};
+#[allow(unused_imports)] // macros used via `service_key!` etc. in submodule tests
+pub(crate) use id_effect_macro::{ctx, layer_graph, layer_node, req, service_def, service_key};
+
+// v1 DI symbols kept `pub(crate)` for macro expansions and internal tests only.
+#[allow(unused_imports)]
+pub(crate) use context::{Cons, Context, Get, GetMut, Here, Nil, Tag, Tagged, ThereHere};
 pub use id_effect_proc_macro::{EffectData, effect, effect_tagged};
+#[allow(unused_imports)]
+pub(crate) use layer::{
+  Layer, LayerFn, LayerGraph, LayerNode, Service, layer_service, provide_service, service,
+  service_env,
+};
 
 pub mod algebra;
+pub mod capability;
 pub mod collections;
 pub mod concurrency;
-pub mod context;
+pub(crate) mod context;
 pub mod coordination;
 pub mod failure;
 pub mod foundation;
 pub mod kernel;
-pub mod layer;
+pub(crate) mod layer;
 pub mod macros;
 pub mod observability;
 pub mod resource;
@@ -76,9 +86,16 @@ pub mod stm;
 pub mod streaming;
 pub mod testing;
 
+pub use crate::context::{HasTag, Matcher};
 pub use crate::kernel::{
   BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, from_async, into_bind, pure,
   scope_with, scoped, succeed,
+};
+pub use capability::{
+  Capability, CapabilityDiagnostic, CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey,
+  CapabilityPlannerError, CapabilitySet, Caps, Env, HasCap, Needs, NoCaps, PlannerNode,
+  PlannerPlan, Provider, ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError,
+  build_env, plan_topological, run, run_with,
 };
 pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
@@ -87,10 +104,6 @@ pub use collections::{
 pub use concurrency::{
   CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, Supervisor, SupervisorPolicy,
   check_interrupt, fiber_all, fiber_never, fiber_succeed, interrupt_all, supervised, with_fiber_id,
-};
-pub use context::{
-  Cons, Context, Get, GetMut, HasTag, Here, Matcher, Nil, Skip0, Skip1, Skip2, Skip3, Skip4, Tag,
-  Tagged, There, ThereHere, prepend_cell, tagged,
 };
 pub use coordination::semaphore::Permit;
 pub use coordination::{
@@ -105,11 +118,6 @@ pub use foundation::func::{
 pub use foundation::mutable_ref::MutableRef;
 pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
-pub use layer::{
-  Layer, LayerDiagnostic, LayerEffect, LayerExt, LayerFn, LayerFnFrom, LayerFrom, LayerGraph,
-  LayerNode, LayerPlan, LayerPlannerError, Service, ServiceEnv, Stack, StackThen, layer_service,
-  layer_service_env, merge_all, provide_service, service, service_env,
-};
 pub use observability::{
   AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, EffectEvent, FiberEvent, LogSpan, Metric,
   SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot, annotate_current_span,
@@ -144,7 +152,7 @@ pub use testing::{
 
 // ─── Backward-compatible module re-exports ────────────────────────────────────
 // External crates that use `id_effect::channel::Channel` etc. keep working.
-pub use context::match_;
+pub use crate::context::match_;
 pub use coordination::channel;
 pub use coordination::ref_;
 pub use foundation::either;

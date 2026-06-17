@@ -80,3 +80,12 @@ wallet.*.json
 wallet.json
 yarn-debug.log*
 yarn-error.log*
+
+# Maestro runtime state
+.maestro/missions/*
+!.maestro/missions/*.md
+!.maestro/missions/.gitkeep
+.maestro/sessions/
+.maestro/tasks/local-history/
+.maestro/evidence/
+.maestro/runs/

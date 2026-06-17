@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_lint"
-version = "0.2.0"
+version = "2.0.0"
 description = "Custom rustc lints for idiomatic Effect.rs code (dynamic plugin; nightly rustc_private)"
 edition = "2024"
 license = "CC-BY-SA-4.0"

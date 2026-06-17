@@ -1,8 +1,6 @@
-use ::id_effect::context::Tagged;
-use ::id_effect::layer::{Layer, LayerFn, Stack};
 use ::id_effect::scheduling::schedule::{Schedule, retry};
 use ::id_effect::streaming::stream::Stream;
-use ::id_effect::{fail, pure, succeed};
+use ::id_effect::{Env, fail, pure, succeed};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -68,20 +66,19 @@ fn bench_schedule_retry_overhead(c: &mut Criterion) {
   });
 }
 
-#[derive(Debug)]
-struct DbKey;
-#[derive(Debug)]
-struct ClockKey;
+#[derive(Copy, Clone)]
+struct BenchKey;
 
-fn bench_layer_build_overhead(c: &mut Criterion) {
-  c.bench_function("phase0/bench_layer_build_overhead", |b| {
+impl ::id_effect::CapabilityKey for BenchKey {
+  type Value = i32;
+}
+
+fn bench_env_insert_overhead(c: &mut Criterion) {
+  c.bench_function("phase0/bench_env_insert_overhead", |b| {
     b.iter(|| {
-      let layer = Stack(
-        LayerFn(|| Ok::<_, ()>(Tagged::<DbKey, _>::new(7i32))),
-        LayerFn(|| Ok::<_, ()>(Tagged::<ClockKey, _>::new(11u64))),
-      );
-      let out = layer.build().expect("layer build should succeed");
-      std::hint::black_box(out)
+      let mut env = Env::new();
+      env.insert::<BenchKey>(7i32);
+      std::hint::black_box(env);
     });
   });
 }
@@ -92,6 +89,6 @@ criterion_group!(
   bench_effect_flat_map_chain,
   bench_stream_throughput_collect,
   bench_schedule_retry_overhead,
-  bench_layer_build_overhead
+  bench_env_insert_overhead
 );
 criterion_main!(phase0_baseline);

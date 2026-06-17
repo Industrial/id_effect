@@ -1,14 +1,14 @@
 //! Low-level reads against the injected [`crate::ConfigProvider`] service.
 //!
-//! Every public function returns `Effect<A, E, R>` where `R: NeedsConfigProvider`.
+//! Every public function returns `Effect<A, E, R>` where `R: Needs<ConfigProviderKey>`.
 //! The provider is extracted synchronously from the environment via
-//! `Get::<ConfigProviderKey, Here>::get(r)` so all effects stay non-async and
+//! `Needs::<ConfigProviderKey>::need(r)` so all effects stay non-async and
 //! the `EFFECT_PREFER_FROM_ASYNC_OVER_NEW_ASYNC` lint is never triggered.
 
-use ::id_effect::{Effect, Get, Here, effect};
+use ::id_effect::{Effect, Needs, effect};
 
 use crate::error::ConfigError;
-use crate::provider::{ConfigProviderKey, NeedsConfigProvider};
+use crate::provider::ConfigProviderKey;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,11 +50,11 @@ pub fn read_string<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<String> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     match provider.0.load_raw(&refs) {
@@ -70,11 +70,11 @@ pub fn read_string_opt<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<Option<String>> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     match provider.0.load_raw(&refs) {
       Err(e) => return Err(E::from(e)),
@@ -88,11 +88,11 @@ pub fn read_number<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<f64> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     let s = match provider.0.load_raw(&refs) {
@@ -120,11 +120,11 @@ pub fn read_i64<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<i64> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     let s = match provider.0.load_raw(&refs) {
@@ -152,11 +152,11 @@ pub fn read_bool<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<bool> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     let s = match provider.0.load_raw(&refs) {
@@ -188,11 +188,11 @@ pub fn read_string_list<A, E, R>(path: &[&str]) -> Effect<A, E, R>
 where
   A: From<Vec<String>> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned: Vec<String> = path.iter().map(|s| s.to_string()).collect();
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     let s = match provider.0.load_raw(&refs) {
@@ -218,11 +218,11 @@ pub fn read_nested_string<A, E, R>(namespace: &str, leaf: &[&str]) -> Effect<A, 
 where
   A: From<String> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned = nested_path(namespace, leaf);
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     match provider.0.load_raw(&refs) {
@@ -238,11 +238,11 @@ pub fn read_nested_string_list<A, E, R>(namespace: &str, leaf: &[&str]) -> Effec
 where
   A: From<Vec<String>> + 'static,
   E: From<ConfigError> + 'static,
-  R: NeedsConfigProvider + 'static,
+  R: Needs<ConfigProviderKey> + 'static,
 {
   let path_owned = nested_path(namespace, leaf);
   effect!(|r: &mut R| {
-    let provider = Get::<ConfigProviderKey, Here>::get(r);
+    let provider = r.need();
     let refs: Vec<&str> = path_owned.iter().map(String::as_str).collect();
     let path_str = refs.join(".");
     let s = match provider.0.load_raw(&refs) {

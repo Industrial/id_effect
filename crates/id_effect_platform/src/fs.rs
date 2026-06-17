@@ -16,12 +16,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use id_effect::kernel::Effect;
+use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::FsError;
 
-id_effect::service_key!(
-  /// Tag for the active [`FileSystem`] implementation in `R`.
-  pub struct FileSystemKey
+id_effect::define_capability!(
+  /// Tag for the active [`FileSystem`] in the capability environment.
+  FileSystemKey,
+  Arc<dyn FileSystem>
 );
 
 /// Capability: portable filesystem operations as [`Effect`] values.
@@ -251,36 +253,30 @@ impl FileSystem for TestFileSystem {
   }
 }
 
-/// [`id_effect::Service`] cell for [`FileSystemKey`].
-pub type FileSystemService<F> = id_effect::Service<FileSystemKey, F>;
+/// Default [`ProviderSpec`] for a Tokio-backed live [`FileSystem`].
+pub struct LiveFileSystemProvider;
 
-/// Install a [`FileSystem`] implementation.
-#[inline]
-pub fn layer_file_system<F>(
-  fs: F,
-) -> id_effect::layer::LayerFn<impl Fn() -> Result<FileSystemService<F>, std::convert::Infallible>>
-where
-  F: Clone + FileSystem + 'static,
-{
-  id_effect::layer_service::<FileSystemKey, _>(fs)
-}
+impl ProviderSpec for LiveFileSystemProvider {
+  type Key = FileSystemKey;
+  type Output = Arc<dyn FileSystem>;
 
-/// Supertrait: `R` exposes [`FileSystemKey`].
-pub trait NeedsFileSystem<F>: id_effect::Get<FileSystemKey, id_effect::Here, Target = F> {}
-impl<R, F> NeedsFileSystem<F> for R where
-  R: id_effect::Get<FileSystemKey, id_effect::Here, Target = F>
-{
+  fn provider_id() -> &'static str {
+    "platform/fs/live"
+  }
+
+  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
+    Ok(Arc::new(LiveFileSystem::new()))
+  }
 }
 
 /// Read via [`FileSystemKey`].
 #[inline]
-pub fn read<R, F>(path: PathBuf) -> Effect<Vec<u8>, FsError, R>
+pub fn read<R>(path: PathBuf) -> Effect<Vec<u8>, FsError, R>
 where
-  R: NeedsFileSystem<F> + 'static,
-  F: FileSystem + Clone + 'static,
+  R: Needs<FileSystemKey> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
-    let fs = id_effect::Get::<FileSystemKey>::get(r).clone();
+    let fs = r.need().clone();
     let inner = fs.read(&path);
     Box::pin(async move { inner.run(&mut ()).await })
   })

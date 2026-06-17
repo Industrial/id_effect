@@ -1,16 +1,15 @@
-//! Ex 109 — End-to-end: Tokio [`TokioRuntime`], typed [`req!`] context, `effect!`, streams, and `catch`.
+//! Ex 109 — End-to-end: Tokio [`TokioRuntime`], capability DI, `effect!`, streams, and `catch`.
 //!
 //! Run: `cargo run -p id_effect_tokio --example 109_tokio_end_to_end`
 
-use id_effect::{Effect, Runtime, Skip1, Skip2, Stream, ctx, effect, req, run_async, succeed};
+use id_effect::Runtime;
+use id_effect::{Effect, Env, Stream, define_capability, effect, require, run_async, succeed};
 use id_effect_tokio::{TokioRuntime, yield_now};
 use std::time::Duration;
 
-id_effect::service_key!(struct ApiBaseUrlKey);
-id_effect::service_key!(struct ApiTokenKey);
-id_effect::service_key!(struct MinPriceKey);
-
-type Env = req!(ApiBaseUrlKey: &'static str | ApiTokenKey: &'static str | MinPriceKey: f64);
+define_capability!(ApiBaseUrlKey, &'static str);
+define_capability!(ApiTokenKey, &'static str);
+define_capability!(MinPriceKey, f64);
 
 #[derive(Debug, Clone, PartialEq)]
 struct Quote {
@@ -29,11 +28,19 @@ enum AppError {
   MissingApiToken,
 }
 
+fn app_env(base_url: &'static str, token: &'static str, min_price: f64) -> Env {
+  let mut env = Env::new();
+  env.insert::<ApiBaseUrlKey>(base_url);
+  env.insert::<ApiTokenKey>(token);
+  env.insert::<MinPriceKey>(min_price);
+  env
+}
+
 fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
   Effect::new_async(|r: &mut Env| {
     Box::pin(async move {
-      let _api_base_url = *r.get::<ApiBaseUrlKey>();
-      let token = *r.get_path::<ApiTokenKey, Skip1>();
+      let _api_base_url = *require!(r, ApiBaseUrlKey);
+      let token = *require!(r, ApiTokenKey);
       if token.is_empty() {
         return Err(AppError::MissingApiToken);
       }
@@ -60,7 +67,7 @@ fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
 
 fn market_report() -> Effect<Report, AppError, Env> {
   effect!(|r: &mut Env| {
-    let min_price = ~Ok::<f64, AppError>(*r.get_path::<MinPriceKey, Skip2>());
+    let min_price = ~Ok::<f64, AppError>(*require!(r, MinPriceKey));
 
     let filtered: Vec<Quote> = ~Stream::from_effect(fetch_quotes_async())
       .filter(Box::new(move |q: &Quote| q.price >= min_price))
@@ -88,18 +95,15 @@ fn main() {
   tokio_rt.block_on(async {
     let t1 = rt.now();
     assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
-    assert_eq!(
-      run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-      Ok(())
+    assert!(
+      run_async(rt.sleep(Duration::from_millis(0)), ())
+        .await
+        .is_ok()
     );
     assert!(rt.now() >= t1);
   });
 
-  let env_ok = ctx!(
-    ApiBaseUrlKey => "https://api.exchange.local",
-    ApiTokenKey => "secret-token",
-    MinPriceKey => 1.0_f64,
-  );
+  let env_ok = app_env("https://api.exchange.local", "secret-token", 1.0_f64);
 
   let report_ok = pollster::block_on(run_async(market_report(), env_ok));
   assert_eq!(
@@ -110,11 +114,7 @@ fn main() {
     })
   );
 
-  let env_missing_token = ctx!(
-    ApiBaseUrlKey => "https://api.exchange.local",
-    ApiTokenKey => "",
-    MinPriceKey => 1.0_f64,
-  );
+  let env_missing_token = app_env("https://api.exchange.local", "", 1.0_f64);
   let recovered = pollster::block_on(run_async(
     market_report().catch(|err| match err {
       AppError::MissingApiToken => succeed::<Report, AppError, Env>(Report {

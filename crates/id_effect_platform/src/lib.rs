@@ -3,24 +3,21 @@
 //!
 //! The crate ships **one** build: [`http`], [`fs`], [`process`], and [`uri`] are always available.
 //!
-//! ## Example (HTTP, with Tokio)
+//! ## Example (HTTP, capability DI v2)
 //!
 //! ```ignore
-//! use id_effect::{ctx, run_async, Context, Cons, Nil};
-//! use id_effect_platform::http::{HttpRequest, ReqwestHttpClient, execute, layer_http_client};
+//! use id_effect::{RunError, build_env, provide, run_with};
+//! use id_effect_platform::http::{HttpRequest, ReqwestHttpClientProvider, execute};
 //!
-//! type Env = Context<Cons<
-//!   id_effect::Service<id_effect_platform::http::HttpClientKey, ReqwestHttpClient>,
-//!   Nil,
-//! >>;
-//!
-//! # async fn demo() -> Result<(), id_effect_platform::error::HttpError> {
-//! let env = Context::new(Cons(
-//!   id_effect::service(id_effect_platform::http::HttpClientKey, ReqwestHttpClient::default_client()),
-//!   Nil,
-//! ));
-//! let eff = execute::<Env, _>(HttpRequest::get("https://example.com"));
-//! let res = run_async(eff, env).await?;
+//! # fn demo() -> Result<(), id_effect_platform::error::HttpError> {
+//! let res = run_with(
+//!   [provide!(ReqwestHttpClientProvider)],
+//!   execute(HttpRequest::get("https://example.com")),
+//! )
+//! .map_err(|e| match e {
+//!   RunError::Effect(e) => e,
+//!   e => panic!("run failed: {e}"),
+//! })?;
 //! assert_eq!(res.status, 200);
 //! # Ok(())
 //! # }

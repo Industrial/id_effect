@@ -14,8 +14,9 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 003–005 | `003_map` … `005_pipe` | `map`, `flat_map`, `pipe!` |
 | 006–010 | `006_effect_macro_binds` … `010_one_effect_macro_per_fn` | `effect!` / `Result` bind |
 | 011–018 | `011_map_error` … `018_exit_type` | errors, `Or`, `Cause`, `Exit` |
-| 019–025 | `019_tagged_cell` … `025_req_type` | context, `ctx!`, `req!`, `Get` / `get_mut` |
-| 026–036 | `026_layer_fn` … `036_layer_graph_diagnostics` | `Layer`, `Stack`, services, graphs |
+| 040 | `040_capability_app.rs` | capability DI v2: `define_capability!`, `ProviderSpec`, `run_with` |
+| 008 | `008_effect_macro_env.rs` | `effect!` + `require!` with capability [`Env`] |
+| 034–036 | `034_provide_service` … `036_layer_graph_diagnostics` | multi-capability apps + provider graph planning |
 | 037–042 | `037_from_async_basic` … `042_yield_now` | async effects, `Runtime`, yield |
 | 043–052 | `043_cancellation_token` … `052_schedule_repeat_n` | cancellation, fibers (`FiberRef`, `fiber_all`), `repeat_n` |
 | 053–059 | `053_schedule_repeat` … `059_schedule_interrupt` | `Schedule`, clocks, interrupts |
@@ -33,6 +34,6 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 106 | `106_tokio_runtime.rs` | `TokioRuntime`, `sleep`, `yield_now` |
 | 107 | `107_tokio_fork_contract.rs` | `run_fork` contract |
 | 108 | `108_tokio_clock.rs` | `now` / time with external Tokio runtime |
-| 109 | `109_tokio_end_to_end.rs` | `req!`, streams, `catch`, full pipeline |
+| 109 | `109_tokio_end_to_end.rs` | capability DI, streams, `catch`, full pipeline |
 
 Curriculum work is tracked with **tool-tasks** (see `.cursor/rules/tool-tasks.mdc`).

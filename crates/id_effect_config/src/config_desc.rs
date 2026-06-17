@@ -42,14 +42,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::{Effect, Get, Here, effect};
+use ::id_effect::{Effect, Needs, effect};
 use id_effect::duration::duration;
 use id_effect_logger::LogLevel;
 use url::Url;
 
 use crate::ambient::current_config_provider;
 use crate::error::ConfigError;
-use crate::provider::{ConfigProvider, ConfigProviderKey, NeedsConfigProvider};
+use crate::provider::{ConfigProvider, ConfigProviderKey};
 use crate::secret::Secret;
 
 // Shared loading function: takes a provider reference, returns a Result.
@@ -119,17 +119,17 @@ impl<T: Send + Sync + 'static> Config<T> {
 
   /// Evaluate this descriptor as an [`Effect`], pulling the provider from the environment.
   ///
-  /// `R` only needs to satisfy `NeedsConfigProvider`; callers compose whatever layer stack
+  /// `R` only needs to satisfy `Needs<ConfigProviderKey>`; callers compose whatever provider stack
   /// they like.  See [`config_env`](crate::config_env) for building a minimal context.
   pub fn run<A, E, R>(&self) -> Effect<A, E, R>
   where
     A: From<T> + 'static,
     E: From<ConfigError> + 'static,
-    R: NeedsConfigProvider + 'static,
+    R: Needs<ConfigProviderKey> + 'static,
   {
     let loader = self.loader.clone();
     effect!(|r: &mut R| {
-      let service = Get::<ConfigProviderKey, Here>::get(r);
+      let service = r.need();
       let t = (loader)(service.0.as_ref()).map_err(E::from)?;
       A::from(t)
     })

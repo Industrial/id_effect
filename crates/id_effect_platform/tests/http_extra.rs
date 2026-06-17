@@ -1,20 +1,20 @@
 //! Extra HTTP integration tests (verbs, validation, body cap) for [`ReqwestHttpClient`].
 
-use id_effect::{Cons, Context, Layer, Nil, run_async};
+use std::sync::Arc;
+
+use id_effect::{Env, build_env, provide, run_async};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClientKey, HttpMethod, HttpRequest, ReqwestHttpClient, execute, layer_http_client,
-  layer_reqwest_http_client,
+  HttpClient, HttpClientKey, HttpMethod, HttpRequest, ReqwestHttpClient, ReqwestHttpClientProvider,
+  execute,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-type Env = Context<Cons<id_effect::Service<HttpClientKey, ReqwestHttpClient>, Nil>>;
-
 fn env_with_client(client: ReqwestHttpClient) -> Env {
-  let stack = layer_http_client(client);
-  let svc = stack.build().unwrap();
-  Context::new(Cons(svc, Nil))
+  let mut env = build_env([provide!(ReqwestHttpClientProvider)]).expect("providers");
+  env.insert::<HttpClientKey>(Arc::new(client) as Arc<dyn HttpClient>);
+  env
 }
 
 #[tokio::test]
@@ -39,9 +39,7 @@ async fn execute_put_patch_delete_round_trip() {
     timeout: None,
     max_body_bytes: None,
   };
-  let r = run_async(execute::<Env, _>(put_req), env.clone())
-    .await
-    .expect("put");
+  let r = run_async(execute(put_req), env.clone()).await.expect("put");
   assert_eq!(r.status, 204);
 
   let patch_req = HttpRequest {
@@ -52,7 +50,7 @@ async fn execute_put_patch_delete_round_trip() {
     timeout: None,
     max_body_bytes: None,
   };
-  let r = run_async(execute::<Env, _>(patch_req), env.clone())
+  let r = run_async(execute(patch_req), env.clone())
     .await
     .expect("patch");
   assert_eq!(r.status, 204);
@@ -65,9 +63,7 @@ async fn execute_put_patch_delete_round_trip() {
     timeout: None,
     max_body_bytes: None,
   };
-  let r = run_async(execute::<Env, _>(del_req), env)
-    .await
-    .expect("delete");
+  let r = run_async(execute(del_req), env).await.expect("delete");
   assert_eq!(r.status, 204);
 }
 
@@ -83,7 +79,7 @@ async fn execute_rejects_invalid_header_name() {
     timeout: None,
     max_body_bytes: None,
   };
-  let err = run_async(execute::<Env, _>(req), env)
+  let err = run_async(execute(req), env)
     .await
     .expect_err("invalid header");
   assert!(matches!(err, HttpError::InvalidRequest(_)));
@@ -107,18 +103,14 @@ async fn execute_rejects_body_larger_than_max() {
     timeout: None,
     max_body_bytes: Some(8),
   };
-  let err = run_async(execute::<Env, _>(req), env)
-    .await
-    .expect_err("body cap");
+  let err = run_async(execute(req), env).await.expect_err("body cap");
   assert!(matches!(err, HttpError::BodyTooLarge { .. }));
 }
 
 #[tokio::test]
-async fn layer_reqwest_http_client_builds_service() {
-  let client = reqwest::Client::new();
-  let stack = layer_reqwest_http_client(client);
-  let svc = stack.build().unwrap();
-  let _env = Context::new(Cons(svc, Nil));
+async fn reqwest_http_client_provider_builds_env() {
+  let env = build_env([provide!(ReqwestHttpClientProvider)]).expect("providers");
+  assert!(env.has::<HttpClientKey>());
 }
 
 #[tokio::test]
@@ -133,7 +125,7 @@ async fn execute_rejects_invalid_header_value() {
     timeout: None,
     max_body_bytes: None,
   };
-  let err = run_async(execute::<Env, _>(req), env)
+  let err = run_async(execute(req), env)
     .await
     .expect_err("header value");
   assert!(matches!(err, HttpError::InvalidRequest(_)));
@@ -143,8 +135,6 @@ async fn execute_rejects_invalid_header_value() {
 async fn execute_connection_error_surfaces_as_reqwest() {
   let env = env_with_client(ReqwestHttpClient::default_client());
   let req = HttpRequest::get("http://127.0.0.1:1/connection-refused");
-  let err = run_async(execute::<Env, _>(req), env)
-    .await
-    .expect_err("refused");
+  let err = run_async(execute(req), env).await.expect_err("refused");
   assert!(matches!(err, HttpError::Reqwest(_)));
 }

@@ -1,27 +1,49 @@
-//! Ex 034 — `provide_service` fixes the head tag using a value and shortens `R`.
+//! Ex 034 — conditional logic with multiple capabilities in one [`Env`].
+
 use id_effect::{
-  Cons, Context, Get, Nil, ThereHere, ctx, effect, provide_service, run_blocking, service_key,
+  Effect, Env, ProviderError, ProviderSpec, define_capability, effect, provide, require, run_with,
+  succeed,
 };
 
-service_key!(struct GateKey);
-service_key!(struct ValueKey);
+define_capability!(GateKey, bool);
+define_capability!(ValueKey, i32);
 
-type Full =
-  Context<Cons<id_effect::Service<GateKey, bool>, Cons<id_effect::Service<ValueKey, i32>, Nil>>>;
-type Short = Context<Cons<id_effect::Service<ValueKey, i32>, Nil>>;
+struct GateLive;
+struct ValueLive;
+
+impl ProviderSpec for GateLive {
+  type Key = GateKey;
+  type Output = bool;
+
+  fn provider_id() -> &'static str {
+    "gate-live"
+  }
+
+  fn provide(_deps: &Env) -> Result<bool, ProviderError> {
+    Ok(true)
+  }
+}
+
+impl ProviderSpec for ValueLive {
+  type Key = ValueKey;
+  type Output = i32;
+
+  fn provider_id() -> &'static str {
+    "value-live"
+  }
+
+  fn provide(_deps: &Env) -> Result<i32, ProviderError> {
+    Ok(42)
+  }
+}
 
 fn main() {
-  let program = effect!(|r: &mut Full| {
-    let on = ~Ok::<_, ()>(*Get::<GateKey>::get(r));
-    let v = ~Ok::<_, ()>(*r.get_path::<ValueKey, ThereHere>());
-    if on {
-      v
-    } else {
-      0
-    }
+  let program: Effect<i32, (), Env> = effect!(|env: &mut Env| {
+    let on = ~succeed(*require!(env, GateKey));
+    let v = ~succeed(*require!(env, ValueKey));
+    if on { v } else { 0 }
   });
-  let short: Short = ctx!(ValueKey => 42);
-  let peeled = provide_service(program, true);
-  assert_eq!(run_blocking(peeled, short), Ok::<i32, ()>(42));
+  let n = run_with([provide!(GateLive), provide!(ValueLive)], program).expect("run");
+  assert_eq!(n, 42);
   println!("034_provide_service ok");
 }

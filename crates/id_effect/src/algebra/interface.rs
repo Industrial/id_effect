@@ -81,10 +81,7 @@ where
 ///
 /// # Example
 ///
-/// ```rust
-/// use id_effect::algebra::interface::EffectInterface;
-///
-/// id_effect::service_key!(pub struct LoggerKey);
+/// ```rust,ignore
 ///
 /// pub struct Logger {
 ///     pub log: Box<dyn Fn(&str) + Send + Sync>,

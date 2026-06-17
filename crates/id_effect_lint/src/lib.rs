@@ -49,13 +49,13 @@ declare_lint! {
 declare_lint! {
     pub NO_CONCRETE_CONTEXT_IN_PUB_API,
     Deny,
-    "public APIs must not expose `Context<Cons<…>>` as `R`; use `impl NeedsX` instead"
+    "public APIs must not expose concrete `Context<Cons<…>>` or `Env` as `R`; use `impl Needs<Key>` instead"
 }
 
 declare_lint! {
     pub PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
     Warn,
-    "use `NeedsX` supertrait aliases instead of raw `Get<Key, Here, Target = T>` bounds"
+    "use `Needs<Key>` instead of raw `Get<Key, Here, Target = T>` bounds"
 }
 
 declare_lint! {
@@ -125,7 +125,7 @@ declare_lint! {
 declare_lint! {
     pub NO_STATIC_SERVICE_GLOBALS,
     Deny,
-    "service types must not live in `static` globals; use `service_key!` + `NeedsX` + `R`"
+    "service types must not live in `static` globals; use `define_capability!` + `Needs<Key>` + `R`"
 }
 
 declare_lint! {

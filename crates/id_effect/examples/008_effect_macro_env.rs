@@ -1,16 +1,33 @@
-//! Ex 008 — `effect!` closure receives `&mut R` (the environment).
-use id_effect::{Cons, Context, Get, Nil, Tagged, ctx, effect, run_blocking, service_key, succeed};
+//! Ex 008 — `effect!` with capability DI: `require!` reads from [`Env`].
 
-service_key!(struct CounterKey);
+use id_effect::{
+  Effect, Env, ProviderError, ProviderSpec, define_capability, effect, provide, require, run_with,
+  succeed,
+};
 
-type Env = Context<Cons<Tagged<CounterKey, i32>, Nil>>;
+define_capability!(CounterKey, i32);
+
+struct CounterLive;
+
+impl ProviderSpec for CounterLive {
+  type Key = CounterKey;
+  type Output = i32;
+
+  fn provider_id() -> &'static str {
+    "counter-live"
+  }
+
+  fn provide(_deps: &Env) -> Result<i32, ProviderError> {
+    Ok(41)
+  }
+}
 
 fn main() {
-  let program = effect!(|r: &mut Env| {
-    let n = ~succeed(*Get::<CounterKey>::get(r));
+  let program: Effect<i32, (), Env> = effect!(|env: &mut Env| {
+    let n = ~succeed(*require!(env, CounterKey));
     n + 1
   });
-  let env = ctx!(CounterKey => 41_i32);
-  assert_eq!(run_blocking(program, env), Ok::<i32, ()>(42));
+  let n = run_with([provide!(CounterLive)], program).expect("run");
+  assert_eq!(n, 42);
   println!("008_effect_macro_env ok");
 }

@@ -1,16 +1,15 @@
-//! Ex 036 — Invalid graphs yield `LayerPlannerError` and diagnostics.
-use id_effect::{LayerDiagnostic, LayerPlannerError, layer_graph};
+//! Ex 036 — invalid provider graphs yield [`CapabilityPlannerError`] and diagnostics.
+
+use id_effect::{CapabilityDiagnostic, CapabilityPlannerError, PlannerNode, plan_topological};
 
 fn main() {
-  let bad = layer_graph! {
-    x : [Missing] => [X];
-  };
-  let err = bad.plan_topological().unwrap_err();
+  let bad = vec![PlannerNode::new("x", ["Missing"], "X")];
+  let err = plan_topological(&bad).unwrap_err();
   assert!(
-    matches!(err, LayerPlannerError::MissingProvider { .. }),
+    matches!(err, CapabilityPlannerError::MissingProvider { .. }),
     "{err:?}"
   );
-  let diags: Vec<LayerDiagnostic> = bad.diagnostics();
+  let diags: Vec<CapabilityDiagnostic> = vec![err.to_diagnostic()];
   assert!(!diags.is_empty());
   println!("036_layer_graph_diagnostics ok");
 }

@@ -2,10 +2,10 @@
 //!
 //! ## Model
 //!
-//! - Treat [`reqwest::Client`] as a **service** keyed by [`ReqwestClientKey`] (Effect.ts-style tag).
-//! - Build it at the composition root with [`layer_reqwest_client`] or [`layer_reqwest_client_with`].
+//! - Treat [`reqwest::Client`] as a **capability** keyed by [`ReqwestClientKey`].
+//! - Build it at the composition root with [`provide_reqwest_client`] or [`ReqwestClientLive`].
 //! - Express HTTP calls as [`Effect`] values using [`send`], [`text`], [`bytes`](crate::bytes), or [`json`].
-//! - Optional: [`layer_reqwest_pool`] + [`send_pooled`] to keep a [`Pool`] of [`PooledClient`] with TTL.
+//! - Optional: [`provide_reqwest_pool`] + [`send_pooled`] to keep a [`Pool`] of [`PooledClient`] with TTL.
 //! - Optional: [`json_schema`] decodes JSON bodies via [`Schema::decode_unknown`](id_effect::schema::Schema::decode_unknown)
 //!   so [`id_effect::schema::ParseError`] carries field paths.
 //!
@@ -51,54 +51,22 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+use ::id_effect::{Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect};
 use std::sync::Arc;
-use std::time::Duration;
 
-use ::id_effect::{
-  Here, Never, Pool, Schema, Scope, context::Get, effect, fail, from_async, kernel::Effect,
-  layer_service, service, succeed,
-};
+mod providers;
 use id_effect::data::EffectData;
 use id_effect::schema::{ParseError, Unknown};
+pub use providers::{ReqwestClientLive, provide_reqwest_client, provide_reqwest_pool};
 use serde_json::Value;
 
 pub use reqwest::{Client, ClientBuilder, Error, RequestBuilder, Response, StatusCode};
 
-id_effect::service_key!(
-  /// Tag for the default [`reqwest::Client`] service in the environment `R`.
-  pub struct ReqwestClientKey
+id_effect::define_capability!(
+  /// Tag for the default [`reqwest::Client`] in the capability environment.
+  ReqwestClientKey,
+  reqwest::Client
 );
-
-/// [`id_effect::Service`] cell holding a [`reqwest::Client`].
-pub type ReqwestClientService = id_effect::Service<ReqwestClientKey, reqwest::Client>;
-
-/// [`id_effect::Layer`](id_effect::layer::Layer) that provides a cloneable [`reqwest::Client`].
-#[inline]
-pub fn layer_reqwest_client(
-  client: reqwest::Client,
-) -> id_effect::layer::LayerFn<impl Fn() -> Result<ReqwestClientService, std::convert::Infallible>>
-{
-  layer_service::<ReqwestClientKey, _>(client)
-}
-
-/// Same as [`layer_reqwest_client`], using [`reqwest::Client::new`].
-#[inline]
-pub fn layer_reqwest_client_default()
--> id_effect::layer::LayerFn<impl Fn() -> Result<ReqwestClientService, std::convert::Infallible>> {
-  layer_reqwest_client(reqwest::Client::new())
-}
-
-/// Build a client from [`reqwest::ClientBuilder`] and expose it as a layer.
-#[inline]
-pub fn layer_reqwest_client_with(
-  builder: reqwest::ClientBuilder,
-) -> Result<
-  id_effect::layer::LayerFn<impl Fn() -> Result<ReqwestClientService, std::convert::Infallible>>,
-  reqwest::Error,
-> {
-  let client = builder.build()?;
-  Ok(layer_reqwest_client(client))
-}
 
 /// Wraps [`Client`] in an [`Arc`] so it can live in [`Pool`] ([`PartialEq`] uses pointer identity).
 #[derive(Clone, Debug)]
@@ -128,38 +96,11 @@ impl PartialEq for PooledClient {
 
 impl Eq for PooledClient {}
 
-id_effect::service_key!(
-  /// Tag for [`Pool`]`<`[`PooledClient`]`, `[`Never`]`>` in `R`.
-  pub struct ReqwestPoolKey
+id_effect::define_capability!(
+  /// Tag for [`Pool`]`<`[`PooledClient`]`, `[`Never`]`>` in the capability environment.
+  ReqwestPoolKey,
+  Pool<PooledClient, Never>
 );
-
-/// [`id_effect::Service`] cell holding a [`Pool`] of [`PooledClient`].
-pub type ReqwestPoolService = id_effect::Service<ReqwestPoolKey, Pool<PooledClient, Never>>;
-
-/// Supertrait for environments that expose a [`reqwest::Client`] at [`ReqwestClientKey`].
-pub trait NeedsReqwestClient: Get<ReqwestClientKey, Here, Target = Client> {}
-impl<R: Get<ReqwestClientKey, Here, Target = Client>> NeedsReqwestClient for R {}
-
-/// Supertrait for environments that expose a [`Pool`] of [`PooledClient`] at [`ReqwestPoolKey`].
-pub trait NeedsReqwestPool: Get<ReqwestPoolKey, Here, Target = Pool<PooledClient, Never>> {}
-impl<R: Get<ReqwestPoolKey, Here, Target = Pool<PooledClient, Never>>> NeedsReqwestPool for R {}
-
-/// Layer that installs a [`Pool::make_with_ttl`] of [`PooledClient`] (factory: fresh [`Client::new`] per slot).
-///
-/// The pool is materialized on first [`::id_effect::layer::Layer::build`] via [`::id_effect::run_blocking`]
-/// inside [`::id_effect::layer::LayerEffect`], not in this crate’s library surface.
-#[inline]
-pub fn layer_reqwest_pool(
-  capacity: usize,
-  ttl: Duration,
-) -> ::id_effect::layer::LayerEffect<ReqwestPoolService, Never, ()> {
-  ::id_effect::layer::effect(
-    Pool::make_with_ttl(capacity, ttl, || {
-      succeed::<PooledClient, Never, ()>(PooledClient(Arc::new(Client::new())))
-    })
-    .map(service::<ReqwestPoolKey, _>),
-  )
-}
 
 /// [`send`] with a client checked out from [`ReqwestPoolKey`]; returns to the pool when the inner scope closes.
 #[inline]
@@ -167,11 +108,11 @@ pub fn send_pooled<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestPool + 'static,
+  R: Needs<ReqwestPoolKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let pool = Get::<ReqwestPoolKey>::get(r).clone();
+    let pool = Needs::<ReqwestPoolKey>::need(r).clone();
     let (pooled, scope) = ~from_async(move |_r| async move {
       let mut scope = Scope::make();
       let pooled = pool
@@ -225,14 +166,14 @@ pub fn json_schema<R, F, A, I, Es>(
   build: F,
 ) -> Effect<A, JsonSchemaError, R>
 where
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   Es: EffectData + 'static,
   A: 'static,
   I: 'static,
 {
   effect!(|r: &mut R| {
-    let client = Get::<ReqwestClientKey>::get(r).clone();
+    let client = Needs::<ReqwestClientKey>::need(r).clone();
     let schema_arc = Arc::clone(&schema);
     let resp = ~from_async(move |_r| async move {
       build(&client).send().await.map_err(JsonSchemaError::Http)
@@ -253,11 +194,11 @@ pub fn send<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Get::<ReqwestClientKey>::get(r).clone();
+    let client = Needs::<ReqwestClientKey>::need(r).clone();
     ~from_async(move |_r| async move {
       build(&client)
         .send()
@@ -274,11 +215,11 @@ pub fn text<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<String> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Get::<ReqwestClientKey>::get(r).clone();
+    let client = Needs::<ReqwestClientKey>::need(r).clone();
     let resp = ~from_async(move |_r| async move {
       build(&client).send().await.map_err(E::from)
     });
@@ -295,11 +236,11 @@ pub fn bytes<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<bytes::Bytes> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Get::<ReqwestClientKey>::get(r).clone();
+    let client = Needs::<ReqwestClientKey>::need(r).clone();
     let resp = ~from_async(move |_r| async move {
       build(&client).send().await.map_err(E::from)
     });
@@ -316,12 +257,12 @@ pub fn json<A, E, R, F, T>(build: F) -> Effect<A, E, R>
 where
   A: From<T> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   T: serde::de::DeserializeOwned + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Get::<ReqwestClientKey>::get(r).clone();
+    let client = Needs::<ReqwestClientKey>::need(r).clone();
     let resp = ~from_async(move |_r| async move {
       build(&client).send().await.map_err(E::from)
     });
@@ -338,7 +279,7 @@ pub fn get<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.get(url));
@@ -352,7 +293,7 @@ pub fn post<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.post(url));
@@ -366,7 +307,7 @@ pub fn put<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.put(url));
@@ -380,7 +321,7 @@ pub fn delete<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.delete(url));
@@ -394,7 +335,7 @@ pub fn head<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.head(url));
@@ -408,7 +349,7 @@ pub fn patch<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: NeedsReqwestClient + 'static,
+  R: Needs<ReqwestClientKey> + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send(move |c| c.patch(url));
@@ -420,9 +361,10 @@ where
 mod tests {
   use super::*;
   use id_effect::schema;
-  use id_effect::{Layer, Scope, run_async, run_blocking, service_env, succeed};
+  use id_effect::{Scope, build_env, provide, run_async, run_blocking, succeed};
   use serde::{Deserialize, Serialize};
   use std::sync::atomic::{AtomicUsize, Ordering};
+  use std::time::Duration;
   use wiremock::matchers::{method, path};
   use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -436,7 +378,7 @@ mod tests {
       .await;
 
     let url = format!("{}/ping", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(text::<String, Error, _, _>(move |c| c.get(url)), env)
       .await
       .unwrap();
@@ -458,7 +400,7 @@ mod tests {
       .await;
 
     let url = format!("{}/data", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let msg = run_async(json::<Msg, Error, _, _, Msg>(move |c| c.get(url)), env)
       .await
       .unwrap();
@@ -466,10 +408,10 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn layer_builds_service_cell() {
-    let layer = layer_reqwest_client_default();
-    let cell = layer.build().unwrap();
-    assert!(cell.value.get("https://example.com").build().is_ok());
+  async fn provider_builds_client() {
+    let env = build_env([provide!(ReqwestClientLive)]).expect("env");
+    let client = env.get::<ReqwestClientKey>();
+    assert!(client.get("https://example.com").build().is_ok());
   }
 
   #[tokio::test]
@@ -516,7 +458,7 @@ mod tests {
       "age",
       schema::i64::<()>(),
     ));
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let err = run_async(json_schema(sch, move |c| c.get(url)), env)
       .await
       .expect_err("schema");
@@ -540,7 +482,7 @@ mod tests {
       .await;
 
     let url = format!("{}/data", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(bytes::<bytes::Bytes, Error, _, _>(move |c| c.get(url)), env)
       .await
       .unwrap();
@@ -557,7 +499,7 @@ mod tests {
       .await;
 
     let url = format!("{}/hello", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(
       get::<Response, Error, _>(url).flat_map(|resp: Response| {
         id_effect::from_async(move |_r: &mut _| async move { resp.text().await })
@@ -579,7 +521,7 @@ mod tests {
       .await;
 
     let url = format!("{}/echo", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(
       post::<Response, Error, _>(url).flat_map(|resp: Response| {
         id_effect::from_async(move |_r: &mut _| async move { resp.text().await })
@@ -601,7 +543,7 @@ mod tests {
       .await;
 
     let url = format!("{}/item", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(
       put::<Response, Error, _>(url).flat_map(|resp: Response| {
         id_effect::from_async(move |_r: &mut _| async move { resp.text().await })
@@ -623,7 +565,7 @@ mod tests {
       .await;
 
     let url = format!("{}/item", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let resp = run_async(delete::<Response, Error, _>(url), env)
       .await
       .unwrap();
@@ -640,7 +582,7 @@ mod tests {
       .await;
 
     let url = format!("{}/item", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let body = run_async(
       patch::<Response, Error, _>(url).flat_map(|resp: Response| {
         id_effect::from_async(move |_r: &mut _| async move { resp.text().await })
@@ -662,7 +604,7 @@ mod tests {
       .await;
 
     let url = format!("{}/status", server.uri());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let resp = run_async(head::<Response, Error, _>(url), env)
       .await
       .unwrap();
@@ -670,26 +612,32 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn layer_reqwest_client_with_custom_client() {
-    let layer = layer_reqwest_client(Client::new());
-    let cell = layer.build().unwrap();
-    assert!(cell.value.get("https://example.com").build().is_ok());
+  async fn provide_reqwest_client_registers_client() {
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
+    let client = env.get::<ReqwestClientKey>();
+    assert!(client.get("https://example.com").build().is_ok());
   }
 
   #[tokio::test]
-  async fn layer_reqwest_client_with_builder() {
+  async fn provide_reqwest_client_with_builder() {
     let builder = Client::builder().timeout(Duration::from_secs(30));
-    let layer = layer_reqwest_client_with(builder).unwrap();
-    let cell = layer.build().unwrap();
-    assert!(cell.value.get("https://example.com").build().is_ok());
+    let client = builder.build().unwrap();
+    let env = build_env([provide_reqwest_client(client)]).expect("env");
+    assert!(
+      env
+        .get::<ReqwestClientKey>()
+        .get("https://example.com")
+        .build()
+        .is_ok()
+    );
   }
 
   #[tokio::test]
-  async fn layer_reqwest_pool_builds_pool() {
-    let layer = layer_reqwest_pool(2, Duration::from_secs(60));
-    let cell = layer.build().expect("pool layer build");
+  async fn provide_reqwest_pool_builds_pool() {
+    let env = build_env([provide_reqwest_pool(2, Duration::from_secs(60))]).expect("env");
+    let pool = env.get::<ReqwestPoolKey>().clone();
     let s = Scope::make();
-    let client = run_async(cell.value.get(), s.clone()).await.expect("get");
+    let client = run_async(pool.get(), s.clone()).await.expect("get");
     let _ = client.allocation_ptr();
     s.close();
   }
@@ -757,7 +705,8 @@ mod tests {
       (),
     )
     .expect("pool");
-    let env = service_env::<ReqwestPoolKey, _>(pool);
+    let mut env = build_env([]).expect("env");
+    env.insert::<ReqwestPoolKey>(pool);
     let resp = run_async(
       send_pooled::<Response, Error, _, _>(move |c| c.get(url)),
       env,
@@ -778,7 +727,7 @@ mod tests {
 
     let url = format!("{}/badjson", server.uri());
     let sch = Arc::new(schema::i64::<()>());
-    let env = service_env::<ReqwestClientKey, _>(Client::new());
+    let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
     let err = run_async(json_schema(sch, move |c| c.get(url)), env)
       .await
       .expect_err("should fail");

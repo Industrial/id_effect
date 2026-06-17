@@ -57,7 +57,7 @@
   note: |
     BAD:  fn build<A, E, R>(…) -> Effect<A, E, R> { … }
     GOOD: fn build<A, E, R>(…) -> Effect<A, E, R>
-          where A: 'static, E: From<SvcError> + 'static, R: NeedsX + 'static
+          where A: 'static, E: From<SvcError> + 'static, R: Needs<Key> + 'static
           { … }
   rule:
     all:

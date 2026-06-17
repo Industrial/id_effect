@@ -1,4 +1,5 @@
 //! **Stratum 5 — Layers & Dependency Injection**
+#![allow(dead_code, unused_imports)] // v1 internal layer engine; retained for regression tests
 //!
 //! Compositional construction of service environments, built from Strata 0–4.
 //!

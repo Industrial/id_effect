@@ -1,16 +1,19 @@
 //! Portable HTTP client ([`HttpClient`]) and reqwest-backed [`ReqwestHttpClient`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
 use id_effect::kernel::Effect;
+use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 use reqwest::header::{HeaderName, HeaderValue};
 
 use crate::error::HttpError;
 
-id_effect::service_key!(
-  /// Tag for the default [`HttpClient`] implementation in `R`.
-  pub struct HttpClientKey
+id_effect::define_capability!(
+  /// Tag for the default [`HttpClient`] in the capability environment.
+  HttpClientKey,
+  Arc<dyn HttpClient>
 );
 
 /// HTTP verb for [`HttpRequest`].
@@ -172,54 +175,30 @@ impl HttpClient for ReqwestHttpClient {
   }
 }
 
-/// [`id_effect::Service`] cell for [`HttpClientKey`].
-pub type HttpClientService<H> = id_effect::Service<HttpClientKey, H>;
+/// Default [`ProviderSpec`] for a reqwest-backed [`HttpClient`].
+pub struct ReqwestHttpClientProvider;
 
-/// [`id_effect::layer_service`] for any cloneable [`HttpClient`] implementation.
+impl ProviderSpec for ReqwestHttpClientProvider {
+  type Key = HttpClientKey;
+  type Output = Arc<dyn HttpClient>;
+
+  fn provider_id() -> &'static str {
+    "platform/http/reqwest-default"
+  }
+
+  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
+    Ok(Arc::new(ReqwestHttpClient::default_client()))
+  }
+}
+
+/// Execute using the [`HttpClient`] registered for [`HttpClientKey`].
 #[inline]
-pub fn layer_http_client<H>(
-  client: H,
-) -> id_effect::layer::LayerFn<impl Fn() -> Result<HttpClientService<H>, std::convert::Infallible>>
+pub fn execute<R>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
 where
-  H: Clone + HttpClient + 'static,
-{
-  id_effect::layer_service::<HttpClientKey, _>(client)
-}
-
-/// Same as [`layer_http_client`] with [`ReqwestHttpClient::default_client`].
-#[inline]
-pub fn layer_reqwest_http_client_default() -> id_effect::layer::LayerFn<
-  impl Fn() -> Result<HttpClientService<ReqwestHttpClient>, std::convert::Infallible>,
-> {
-  layer_http_client(ReqwestHttpClient::default_client())
-}
-
-/// [`layer_http_client`] with an explicit [`reqwest::Client`].
-#[inline]
-pub fn layer_reqwest_http_client(
-  client: reqwest::Client,
-) -> id_effect::layer::LayerFn<
-  impl Fn() -> Result<HttpClientService<ReqwestHttpClient>, std::convert::Infallible>,
-> {
-  layer_http_client(ReqwestHttpClient::new(client))
-}
-
-/// Supertrait: `R` provides an [`HttpClient`] at [`HttpClientKey`].
-pub trait NeedsHttpClient<H>: id_effect::Get<HttpClientKey, id_effect::Here, Target = H> {}
-impl<R, H> NeedsHttpClient<H> for R where
-  R: id_effect::Get<HttpClientKey, id_effect::Here, Target = H>
-{
-}
-
-/// Execute using the [`HttpClient`] installed at [`HttpClientKey`].
-#[inline]
-pub fn execute<R, H>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
-where
-  R: NeedsHttpClient<H> + 'static,
-  H: HttpClient + Clone + 'static,
+  R: Needs<HttpClientKey> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
-    let client = id_effect::Get::<HttpClientKey>::get(r).clone();
+    let client = r.need().clone();
     let inner = client.execute(req);
     Box::pin(async move { inner.run(&mut ()).await })
   })

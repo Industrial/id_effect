@@ -35,18 +35,19 @@
 //! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
 //! [`FigmentLayer`] — good for structured config files.
 //!
-//! ## 3. Low-level Effect reads via `load::read_*` with `NeedsConfigProvider`
+//! ## 3. Low-level Effect reads via `load::read_*` with `Needs<ConfigProviderKey>`
 //!
 //! Inject the provider via the effect environment and call the free functions directly:
 //!
 //! ```ignore
-//! use id_effect_config::{read_string, NeedsConfigProvider, ConfigError};
+//! use id_effect_config::{read_string, ConfigError};
+//! use id_effect::Needs;
 //!
 //! fn load_host<A, E, R>() -> ::id_effect::Effect<A, E, R>
 //! where
 //!   A: From<String> + 'static,
 //!   E: From<ConfigError> + 'static,
-//!   R: NeedsConfigProvider + 'static,
+//!   R: id_effect::Needs<id_effect_config::ConfigProviderKey> + 'static,
 //! {
 //!   read_string(&["HOST"])
 //! }
@@ -60,6 +61,7 @@ mod config_desc;
 mod error;
 mod load;
 mod provider;
+mod providers;
 mod secret;
 
 pub use ambient::{current_config_provider, with_config_provider};
@@ -71,8 +73,12 @@ pub use load::{
 };
 pub use provider::{
   ConfigProvider, ConfigProviderKey, ConfigProviderService, EnvConfigProvider,
-  FigmentConfigProvider, MapConfigProvider, NeedsConfigProvider, OrElseConfigProvider,
-  ProviderOptions, ScopedConfigProvider,
+  FigmentConfigProvider, MapConfigProvider, OrElseConfigProvider, ProviderOptions,
+  ScopedConfigProvider,
+};
+pub use providers::{
+  EnvConfigProviderLive, provide_config_provider, provide_env_config_provider,
+  provide_figment_config_provider,
 };
 pub use secret::Secret;
 
@@ -80,21 +86,15 @@ pub use secret::Secret;
 
 use std::sync::Arc;
 
-/// Type alias for a minimal effect context containing only [`ConfigProviderService`].
+/// Type alias for a minimal capability environment containing only [`ConfigProviderService`].
 ///
 /// Use with [`config_env`] and `run_blocking` to evaluate `Config<T>::run()` or `read_*` effects
 /// in tests and CLI entry points.
-pub type ConfigEnv = ::id_effect::Context<
-  ::id_effect::Cons<
-    ::id_effect::Service<ConfigProviderKey, ConfigProviderService>,
-    ::id_effect::Nil,
-  >,
->;
+pub type ConfigEnv = ::id_effect::Env;
 
 /// Build a minimal [`ConfigEnv`] wrapping `provider`.
 ///
 /// ```rust
-/// use std::sync::Arc;
 /// use id_effect_config::{Config, MapConfigProvider, config_env, ConfigError};
 /// use id_effect::run_blocking;
 ///
@@ -107,11 +107,9 @@ pub type ConfigEnv = ::id_effect::Context<
 /// assert_eq!(host, "localhost");
 /// ```
 pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
-  use ::id_effect::{Cons, Context, Nil, Service};
-  Context::new(Cons(
-    Service::<ConfigProviderKey, _>::new(ConfigProviderService(Arc::new(provider))),
-    Nil,
-  ))
+  let mut env = ::id_effect::Env::new();
+  env.insert::<ConfigProviderKey>(ConfigProviderService(Arc::new(provider)));
+  env
 }
 
 /// Mirrors `import { Config } from "effect"` — scalars, combinators, and free functions.
@@ -128,14 +126,14 @@ pub mod config {
 
   /// Required string at a single-segment path.
   #[inline]
-  pub fn string(p: &impl ConfigProvider, name: &str) -> Result<String, ConfigError> {
+  pub fn string(p: &dyn ConfigProvider, name: &str) -> Result<String, ConfigError> {
     Config::string(name).load(p)
   }
 
   /// Optional string at a single-segment path.
   #[inline]
   pub fn optional_string(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     name: &str,
   ) -> Result<Option<String>, ConfigError> {
     Config::optional_string(name).load(p)
@@ -143,26 +141,26 @@ pub mod config {
 
   /// Floating-point scalar.
   #[inline]
-  pub fn number(p: &impl ConfigProvider, name: &str) -> Result<f64, ConfigError> {
+  pub fn number(p: &dyn ConfigProvider, name: &str) -> Result<f64, ConfigError> {
     Config::number(name).load(p)
   }
 
   /// Signed integer scalar.
   #[inline]
-  pub fn integer(p: &impl ConfigProvider, name: &str) -> Result<i64, ConfigError> {
+  pub fn integer(p: &dyn ConfigProvider, name: &str) -> Result<i64, ConfigError> {
     Config::integer(name).load(p)
   }
 
   /// Boolean scalar.
   #[inline]
-  pub fn boolean(p: &impl ConfigProvider, name: &str) -> Result<bool, ConfigError> {
+  pub fn boolean(p: &dyn ConfigProvider, name: &str) -> Result<bool, ConfigError> {
     Config::boolean(name).load(p)
   }
 
   /// String under `namespace` / `name` (two path segments).
   #[inline]
   pub fn nested_string(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<String, ConfigError> {
@@ -172,7 +170,7 @@ pub mod config {
   /// Optional string under `namespace` / `name`.
   #[inline]
   pub fn nested_optional_string(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<Option<String>, ConfigError> {
@@ -182,7 +180,7 @@ pub mod config {
   /// Floating-point under `namespace` / `name`.
   #[inline]
   pub fn nested_number(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<f64, ConfigError> {
@@ -192,7 +190,7 @@ pub mod config {
   /// Signed integer under `namespace` / `name`.
   #[inline]
   pub fn nested_integer(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<i64, ConfigError> {
@@ -202,7 +200,7 @@ pub mod config {
   /// Boolean under `namespace` / `name`.
   #[inline]
   pub fn nested_boolean(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<bool, ConfigError> {
@@ -211,14 +209,14 @@ pub mod config {
 
   /// Delimiter-separated string list.
   #[inline]
-  pub fn string_list(p: &impl ConfigProvider, name: &str) -> Result<Vec<String>, ConfigError> {
+  pub fn string_list(p: &dyn ConfigProvider, name: &str) -> Result<Vec<String>, ConfigError> {
     Config::string_list(name).load(p)
   }
 
   /// String list under `namespace` / `name`.
   #[inline]
   pub fn nested_string_list(
-    p: &impl ConfigProvider,
+    p: &dyn ConfigProvider,
     namespace: &str,
     name: &str,
   ) -> Result<Vec<String>, ConfigError> {
@@ -239,7 +237,6 @@ pub mod config {
 use std::marker::PhantomData;
 
 use ::figment::Figment;
-use id_effect::{Layer, Never};
 use serde::de::DeserializeOwned;
 
 /// Deserialize `T` from a prepared [`Figment`].
@@ -254,7 +251,7 @@ pub fn try_extract<T: DeserializeOwned>(figment: &Figment) -> Result<T, ConfigEr
   extract(figment)
 }
 
-/// [`Layer`] that deserializes `T` from a shared [`Figment`] on each [`Layer::build`].
+/// Deserializes `T` from a shared [`Figment`] on each [`build`](Self::build).
 #[derive(Debug)]
 pub struct FigmentLayer<T> {
   figment: Arc<Figment>,
@@ -285,86 +282,14 @@ impl<T> FigmentLayer<T> {
   pub fn figment(&self) -> &Figment {
     self.figment.as_ref()
   }
-}
 
-impl<T: DeserializeOwned + Send + Sync + 'static> Layer for FigmentLayer<T> {
-  type Output = T;
-  type Error = ConfigError;
-
-  fn build(&self) -> Result<Self::Output, Self::Error> {
+  /// Deserialize `T` from the wrapped [`Figment`].
+  #[inline]
+  pub fn build(&self) -> Result<T, ConfigError>
+  where
+    T: DeserializeOwned,
+  {
     extract(self.figment.as_ref())
-  }
-}
-
-/// Infallible [`Layer`] that builds a [`FigmentConfigProvider`] sharing the same merged [`Figment`].
-#[derive(Clone, Debug)]
-pub struct FigmentProviderLayer {
-  figment: Arc<Figment>,
-}
-
-impl FigmentProviderLayer {
-  /// Infailable layer wrapping an owned [`Figment`] as a [`FigmentConfigProvider`].
-  #[inline]
-  pub fn new(figment: Figment) -> Self {
-    Self {
-      figment: Arc::new(figment),
-    }
-  }
-
-  /// Share an existing [`Arc<Figment>`] with the built provider.
-  #[inline]
-  pub fn from_shared(figment: Arc<Figment>) -> Self {
-    Self { figment }
-  }
-
-  /// Borrow the underlying [`Figment`].
-  #[inline]
-  pub fn figment(&self) -> &Figment {
-    self.figment.as_ref()
-  }
-}
-
-impl Layer for FigmentProviderLayer {
-  type Output = FigmentConfigProvider;
-  type Error = Never;
-
-  fn build(&self) -> Result<Self::Output, Self::Error> {
-    Ok(FigmentConfigProvider::from_shared(self.figment.clone()))
-  }
-}
-
-/// Infallible [`Layer`] that yields [`EnvConfigProvider`] with fixed [`ProviderOptions`].
-#[derive(Clone, Debug)]
-pub struct EnvProviderLayer {
-  options: ProviderOptions,
-}
-
-impl EnvProviderLayer {
-  /// Layer using [`ProviderOptions::default`] and `std::env`.
-  #[inline]
-  pub fn from_env() -> Self {
-    Self::new(ProviderOptions::default())
-  }
-
-  /// Layer with explicit env path and list delimiter options.
-  #[inline]
-  pub fn new(options: ProviderOptions) -> Self {
-    Self { options }
-  }
-
-  /// Delimiters used when the built [`EnvConfigProvider`] flattens paths and splits lists.
-  #[inline]
-  pub fn options(&self) -> &ProviderOptions {
-    &self.options
-  }
-}
-
-impl Layer for EnvProviderLayer {
-  type Output = EnvConfigProvider;
-  type Error = Never;
-
-  fn build(&self) -> Result<Self::Output, Self::Error> {
-    Ok(EnvConfigProvider::new(self.options.clone()))
   }
 }
 
@@ -491,7 +416,7 @@ mod tests {
     std::fs::write(&path, "n = 1\ns = \"a\"").expect("write");
 
     let layer = FigmentLayer::<Cfg>::new(figment::from_toml_file(&path));
-    let cfg = Layer::build(&layer).expect("build");
+    let cfg = layer.build().expect("build");
     assert_eq!(cfg.n, 1);
     assert_eq!(cfg.s, "a");
   }
@@ -566,18 +491,23 @@ port = 3000
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("d.toml");
     std::fs::write(&path, "k = \"v\"").expect("write");
-    let layer = FigmentProviderLayer::new(figment::from_toml_file(&path));
-    let prov = Layer::build(&layer).expect("infallible");
-    assert_eq!(config::string(&prov, "k").unwrap(), "v");
+    let env = ::id_effect::build_env([provide_figment_config_provider(figment::from_toml_file(
+      &path,
+    ))])
+    .expect("env");
+    let v: String =
+      ::id_effect::run_blocking(Config::string("k").run::<String, ConfigError, _>(), env).unwrap();
+    assert_eq!(v, "v");
   }
 
   #[test]
-  fn env_provider_layer() {
+  fn env_provider_live() {
+    use ::id_effect::{build_env, provide, run_blocking};
     let key = "EFFECT_CONFIG_TEST_LAYER_X";
     with_var(key, Some("42"), || {
-      let layer = EnvProviderLayer::from_env();
-      let p = Layer::build(&layer).expect("infallible");
-      assert_eq!(config::integer(&p, key).unwrap(), 42);
+      let env = build_env([provide!(EnvConfigProviderLive)]).expect("env");
+      let n: i64 = run_blocking(Config::integer(key).run::<i64, ConfigError, _>(), env).unwrap();
+      assert_eq!(n, 42);
     });
   }
 
@@ -751,7 +681,7 @@ bad = [1, 2]
     // figment() accessor
     let _ = layer.figment();
     // build still works
-    let cfg = Layer::build(&layer).expect("build");
+    let cfg = layer.build().expect("build");
     assert_eq!(cfg.n, 3);
   }
 
@@ -763,23 +693,26 @@ bad = [1, 2]
     let path = dir.path().join("ps.toml");
     std::fs::write(&path, "k = \"shared\"").expect("write");
     let shared = Arc::new(figment::from_toml_file(&path));
-    let layer = FigmentProviderLayer::from_shared(Arc::clone(&shared));
-    let _ = layer.figment();
-    let prov = Layer::build(&layer).expect("infallible");
-    assert_eq!(config::string(&prov, "k").unwrap(), "shared");
+    let env = ::id_effect::build_env([provide_config_provider(
+      FigmentConfigProvider::from_shared(Arc::clone(&shared)),
+    )])
+    .expect("env");
+    let v: String =
+      ::id_effect::run_blocking(Config::string("k").run::<String, ConfigError, _>(), env).unwrap();
+    assert_eq!(v, "shared");
   }
 
   // ── EnvProviderLayer::new / options() ────────────────────────────────────
 
   #[test]
-  fn env_provider_layer_new_and_options_accessor() {
+  fn env_provider_with_custom_options() {
+    use ::id_effect::build_env;
     let opts = ProviderOptions {
       path_delim: ".",
       seq_delim: ";",
     };
-    let layer = EnvProviderLayer::new(opts.clone());
-    assert_eq!(layer.options().seq_delim, ";");
-    let p = Layer::build(&layer).expect("infallible");
-    assert_eq!(p.seq_delim(), ";");
+    let env = build_env([provide_env_config_provider(opts)]).expect("env");
+    let p = id_effect::Needs::<ConfigProviderKey>::need(&env);
+    assert_eq!(p.0.seq_delim(), ";");
   }
 }

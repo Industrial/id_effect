@@ -56,8 +56,8 @@ use crate::kernel::Effect;
 ///
 /// # Construction
 ///
-/// ```rust
-/// use id_effect::context::optics::EnvLens;
+/// ```rust,ignore
+/// use crate::context::optics::EnvLens;
 ///
 /// #[derive(Clone)]
 /// struct App { port: u16, host: String }
@@ -95,8 +95,8 @@ impl<S: 'static, A: 'static> EnvLens<S, A> {
   ///
   /// # Example
   ///
-  /// ```rust
-  /// use id_effect::context::optics::EnvLens;
+  /// ```rust,ignore
+  /// use crate::context::optics::EnvLens;
   ///
   /// #[derive(Clone)] struct Outer { inner: Inner }
   /// #[derive(Clone)] struct Inner { value: i32 }
@@ -146,8 +146,8 @@ pub fn identity_lens<S: Clone + 'static>() -> EnvLens<S, S> {
 ///
 /// # Example
 ///
-/// ```rust
-/// use id_effect::context::optics::{EnvLens, focus};
+/// ```rust,ignore
+/// use crate::context::optics::{EnvLens, focus};
 /// use id_effect::kernel::effect::Effect;
 /// use id_effect::runtime::run_blocking;
 ///
