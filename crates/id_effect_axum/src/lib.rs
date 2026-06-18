@@ -5,7 +5,7 @@
 //!
 //! - Axum already drives request handling as `async` futures on Tokio.
 //! - Your domain stays in `Effect<A, E, R>` with environment `R` (often clone-cheap state with
-//!   `Arc` fields, or a [`id_effect::Context`] stack).
+//!   `Arc` fields, or an [`id_effect::Env`] with `caps!(…)`).
 //! - This crate **bridges** `State<R>` → `&mut R` for one build step, then runs the effect with
 //!   [`id_effect_tokio::run_async`] so pending effect steps compose with Tokio I/O.
 //!

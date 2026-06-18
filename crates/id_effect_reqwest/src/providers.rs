@@ -11,7 +11,7 @@ use ::id_effect::{
 
 use crate::{Client, PooledClient, ReqwestClientKey, ReqwestPoolKey};
 
-/// Default [`ProviderSpec`] for [`reqwest::Client::new`].
+/// Default [`id_effect::ProviderSpec`] for [`reqwest::Client::new`].
 #[derive(::id_effect::ProviderSpecDerive)]
 #[provides(ReqwestClientKey)]
 pub struct ReqwestClientLive;

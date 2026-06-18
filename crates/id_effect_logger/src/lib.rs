@@ -115,7 +115,7 @@ fn test_clear_all_logger_tls() {
   test_clear_log_metadata_fiber_refs();
 }
 
-/// Log sink for use as [`id_effect::Service<EffectLoggerKey, Self>`](id_effect::Service); forwards to [`tracing`].
+/// Log sink registered as [`EffectLoggerKey`](EffectLoggerKey) via capability DI; forwards to [`tracing`].
 ///
 /// Extracted from the environment with `require!(EffectLoggerKey)` inside [`id_effect::effect!`].
 /// After extraction its methods return `Effect<(), EffectLoggerError, R>` and
