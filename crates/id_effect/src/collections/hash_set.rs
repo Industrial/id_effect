@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::hash::Hash;
 
+use crate::Parallelism;
 use rayon::prelude::*;
 
 /// Persistent hash set — backed by [`im::HashSet`].
@@ -96,27 +97,43 @@ where
   set.is_empty()
 }
 
-/// All elements as a cloned vector (order unspecified).
-#[inline]
+/// All elements as a cloned vector (default [`Parallelism`] policy; order unspecified).
 pub fn values<A>(set: &EffectHashSet<A>) -> Vec<A>
+where
+  A: Hash + Eq + Clone + Send + Sync,
+{
+  values_with(Parallelism::default(), set)
+}
+
+/// All elements sequentially.
+#[inline]
+pub fn values_serial<A>(set: &EffectHashSet<A>) -> Vec<A>
 where
   A: Hash + Eq + Clone,
 {
   set.iter().cloned().collect()
 }
 
-/// Like [`values`], but clones elements in parallel (Rayon). Output order is unspecified; sort if
-/// a deterministic order is required.
+/// All elements with an explicit [`Parallelism`] policy.
+pub fn values_with<A>(policy: Parallelism, set: &EffectHashSet<A>) -> Vec<A>
+where
+  A: Hash + Eq + Clone + Send + Sync,
+{
+  let vec: Vec<A> = set.iter().cloned().collect();
+  if policy.should_parallelize(vec.len()) {
+    vec.into_par_iter().collect()
+  } else {
+    vec
+  }
+}
+
+/// Like [`values_with`] with [`Parallelism::ForceParallel`].
+#[deprecated(note = "use values or values_with(Parallelism::ForceParallel)")]
 pub fn values_par<A>(set: &EffectHashSet<A>) -> Vec<A>
 where
   A: Hash + Eq + Clone + Send + Sync,
 {
-  set
-    .iter()
-    .cloned()
-    .collect::<Vec<_>>()
-    .into_par_iter()
-    .collect()
+  values_with(Parallelism::ForceParallel, set)
 }
 
 // ── MutableHashSet ───────────────────────────────────────────────────────────

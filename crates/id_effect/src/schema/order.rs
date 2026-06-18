@@ -56,6 +56,7 @@ pub mod ordering {
 #[allow(clippy::module_inception)]
 pub mod order {
   use super::{DynOrder, Ordering};
+  use crate::Parallelism;
   use rayon::prelude::*;
   use std::time::Duration;
 
@@ -167,17 +168,37 @@ pub mod order {
     ord(value, minimum) != Ordering::Less && ord(value, maximum) != Ordering::Greater
   }
 
-  /// Sort a `Vec<A>` using `ord` and return the sorted vec.
-  pub fn sort_with<A: Clone>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
+  /// Sort using the default [`Parallelism`] policy.
+  pub fn sort_with<A: Clone + Send + Sync>(ord: &DynOrder<A>, arr: Vec<A>) -> Vec<A> {
+    sort_with_policy(Parallelism::default(), ord, arr)
+  }
+
+  /// Sort sequentially.
+  /// Sort sequentially.
+  pub fn sort_with_serial<A: Clone>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
     arr.sort_by(|a, b| ord(a, b));
     arr
   }
 
-  /// Like [`sort_with`], but uses a parallel sort (Rayon) — best for large inputs when `ord` is
-  /// hot enough to amortize thread overhead.
-  pub fn sort_with_par<A: Clone + Send + Sync>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
-    arr.par_sort_by(|a, b| ord(a, b));
+  /// Sort with an explicit [`Parallelism`] policy.
+  /// Sort with an explicit [`Parallelism`] policy.
+  pub fn sort_with_policy<A: Clone + Send + Sync>(
+    policy: Parallelism,
+    ord: &DynOrder<A>,
+    mut arr: Vec<A>,
+  ) -> Vec<A> {
+    if policy.should_parallelize(arr.len()) {
+      arr.par_sort_by(|a, b| ord(a, b));
+    } else {
+      arr.sort_by(|a, b| ord(a, b));
+    }
     arr
+  }
+
+  /// Like [`sort_with_policy`] with [`Parallelism::ForceParallel`].
+  #[deprecated(note = "use sort_with or sort_with_policy(Parallelism::ForceParallel)")]
+  pub fn sort_with_par<A: Clone + Send + Sync>(ord: &DynOrder<A>, arr: Vec<A>) -> Vec<A> {
+    sort_with_policy(Parallelism::ForceParallel, ord, arr)
   }
 }
 
@@ -507,12 +528,12 @@ mod tests {
     }
 
     #[test]
-    fn sort_with_par_matches_sort_with() {
+    fn default_sort_with_matches_serial() {
       let ord = order::number_i64();
       let data = vec![3_i64, 1, 4, 1, 5, 9, 2];
       assert_eq!(
-        order::sort_with_par(&ord, data.clone()),
-        order::sort_with(&ord, data)
+        order::sort_with(&ord, data.clone()),
+        order::sort_with_serial(&ord, data)
       );
     }
   }

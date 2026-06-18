@@ -68,6 +68,7 @@ pub mod kernel;
 pub mod macros;
 pub mod match_;
 pub mod observability;
+pub mod parallelism;
 pub mod resource;
 pub mod runtime;
 pub mod scheduling;
@@ -115,6 +116,7 @@ pub use observability::{
   emit_effect_event, emit_fiber_event, install_tracing_layer, metric_make, snapshot_tracing,
   with_span,
 };
+pub use parallelism::Parallelism;
 pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};
 pub use runtime::{
   Never, Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now,

@@ -91,6 +91,7 @@
   - [Chunks](./part4/ch13-02-chunks.md)
   - [Backpressure Policies](./part4/ch13-03-backpressure.md)
   - [Sinks](./part4/ch13-04-sinks.md)
+  - [Parallelism (Rayon)](./part4/ch13-05-parallelism.md)
 - [Schema](./part4/ch14-00-schema.md)
   - [The Unknown Type](./part4/ch14-01-unknown.md)
   - [Schema Combinators](./part4/ch14-02-combinators.md)

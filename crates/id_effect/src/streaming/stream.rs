@@ -17,7 +17,7 @@ use crate::coordination::semaphore::Semaphore;
 use crate::observability::metric::Metric;
 use crate::resource::scope::Scope;
 use crate::runtime::CancellationToken;
-use crate::{Chunk, Effect, Or, Predicate};
+use crate::{Chunk, Effect, Or, Parallelism, Predicate};
 use core::any::Any;
 use core::fmt;
 use futures::stream::{self, StreamExt};
@@ -633,9 +633,20 @@ where
     })
   }
 
-  /// Maps each element (pulls upstream to completion, then emits mapped chunks).
+  /// Maps each element using the default [`Parallelism`] policy (pulls upstream to completion).
   #[inline]
-  pub fn map<B, F>(self, mut f: F) -> Stream<B, E, R>
+  pub fn map<B, F>(self, f: F) -> Stream<B, E, R>
+  where
+    A: Send,
+    B: Send + 'static,
+    F: Fn(A) -> B + Send + Sync + 'static,
+  {
+    self.map_with(Parallelism::default(), f)
+  }
+
+  /// Maps each element sequentially (`FnMut`).
+  #[inline]
+  pub fn map_serial<B, F>(self, mut f: F) -> Stream<B, E, R>
   where
     B: Send + 'static,
     F: FnMut(A) -> B + 'static,
@@ -655,29 +666,9 @@ where
     })
   }
 
-  /// Retains elements satisfying `p`.
+  /// Maps each element with an explicit [`Parallelism`] policy per chunk.
   #[inline]
-  pub fn filter(self, p: Predicate<A>) -> Stream<A, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          out.extend(chunk.into_vec().into_iter().filter(|item| p(item)));
-        }
-        Ok(out)
-      })
-    })
-  }
-
-  /// Like [`Stream::map`], but maps each **chunk** in parallel (Rayon). `f` must be
-  /// [`Sync`] (shared by worker threads) — for effectful or mutable per-chunk work, use
-  /// [`Stream::map_par_n`].
-  #[inline]
-  pub fn map_par<B, F>(self, f: F) -> Stream<B, E, R>
+  pub fn map_with<B, F>(self, policy: Parallelism, f: F) -> Stream<B, E, R>
   where
     A: Send,
     B: Send + 'static,
@@ -693,7 +684,12 @@ where
           let Some(chunk) = upstream.poll_next_chunk(r).await? else {
             break;
           };
-          let mapped: Vec<B> = chunk.into_vec().into_par_iter().map(|a| f(a)).collect();
+          let vec = chunk.into_vec();
+          let mapped: Vec<B> = if policy.should_parallelize(vec.len()) {
+            vec.into_par_iter().map(|a| f(a)).collect()
+          } else {
+            vec.into_iter().map(|a| f(a)).collect()
+          };
           out.extend(mapped);
         }
         Ok(out)
@@ -701,9 +697,49 @@ where
     })
   }
 
-  /// Like [`Stream::filter`], but tests each **chunk** in parallel.
+  /// Like [`Self::map_with`] with [`Parallelism::ForceParallel`]. For effectful steps use
+  /// [`Stream::map_par_n`].
   #[inline]
-  pub fn filter_par(self, p: Predicate<A>) -> Stream<A, E, R>
+  #[deprecated(note = "use map or map_with(Parallelism::ForceParallel); effectful: map_par_n")]
+  pub fn map_par<B, F>(self, f: F) -> Stream<B, E, R>
+  where
+    A: Send,
+    B: Send + 'static,
+    F: Fn(A) -> B + Send + Sync + 'static,
+  {
+    self.map_with(Parallelism::ForceParallel, f)
+  }
+
+  /// Retains elements satisfying `p` (default [`Parallelism`]).
+  #[inline]
+  pub fn filter(self, p: Predicate<A>) -> Stream<A, E, R>
+  where
+    A: Send,
+  {
+    self.filter_with(Parallelism::default(), p)
+  }
+
+  /// Retains elements satisfying `p`, sequentially.
+  #[inline]
+  pub fn filter_serial(self, p: Predicate<A>) -> Stream<A, E, R> {
+    Stream::new(move |r: &mut R| {
+      Box::pin(async move {
+        let mut upstream = self;
+        let mut out = Vec::new();
+        loop {
+          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
+            break;
+          };
+          out.extend(chunk.into_vec().into_iter().filter(|item| p(item)));
+        }
+        Ok(out)
+      })
+    })
+  }
+
+  /// Retains elements with an explicit [`Parallelism`] policy per chunk.
+  #[inline]
+  pub fn filter_with(self, policy: Parallelism, p: Predicate<A>) -> Stream<A, E, R>
   where
     A: Send,
   {
@@ -715,16 +751,27 @@ where
           let Some(chunk) = upstream.poll_next_chunk(r).await? else {
             break;
           };
-          let kept: Vec<_> = chunk
-            .into_vec()
-            .into_par_iter()
-            .filter(|item| p(item))
-            .collect();
+          let vec = chunk.into_vec();
+          let kept: Vec<A> = if policy.should_parallelize(vec.len()) {
+            vec.into_par_iter().filter(|item| p(item)).collect()
+          } else {
+            vec.into_iter().filter(|item| p(item)).collect()
+          };
           out.extend(kept);
         }
         Ok(out)
       })
     })
+  }
+
+  /// Like [`Self::filter_with`] with [`Parallelism::ForceParallel`].
+  #[inline]
+  #[deprecated(note = "use filter or filter_with(Parallelism::ForceParallel)")]
+  pub fn filter_par(self, p: Predicate<A>) -> Stream<A, E, R>
+  where
+    A: Send,
+  {
+    self.filter_with(Parallelism::ForceParallel, p)
   }
 
   /// Yields elements from the start of the stream while `p` holds; ends before the first failure.
@@ -1556,7 +1603,7 @@ mod tests {
     }
 
     #[test]
-    fn map_par_matches_map_for_from_iterable() {
+    fn default_map_matches_serial_for_from_iterable() {
       let a = block_on(
         Stream::from_iterable(1..=20i32)
           .map(|n| n * 2)
@@ -1565,7 +1612,7 @@ mod tests {
       );
       let b = block_on(
         Stream::from_iterable(1..=20i32)
-          .map_par(|n| n * 2)
+          .map_serial(|n| n * 2)
           .run_collect()
           .run(&mut ()),
       );
@@ -1573,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    fn filter_par_matches_filter_for_from_iterable() {
+    fn default_filter_matches_serial_for_from_iterable() {
       let p = Box::new(|n: &i32| *n % 2 == 0);
       let a = block_on(
         Stream::from_iterable(0..=30i32)
@@ -1583,7 +1630,7 @@ mod tests {
       );
       let b = block_on(
         Stream::from_iterable(0..=30i32)
-          .filter_par(p)
+          .filter_serial(p)
           .run_collect()
           .run(&mut ()),
       );

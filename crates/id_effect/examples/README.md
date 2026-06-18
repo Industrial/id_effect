@@ -23,7 +23,7 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 043 | `043_named_variant_providers.rs` | `#[named]` primary/replica variants |
 | 043–052 | `043_cancellation_token` … `052_schedule_repeat_n` | cancellation, fibers (`FiberRef`, `fiber_all`), `repeat_n` |
 | 053–059 | `053_schedule_repeat` … `059_schedule_interrupt` | `Schedule`, clocks, interrupts |
-| 060–076 | `060_stream_range` … `076_stream_duplex_queue` | `Stream`, `from_iterable`, duplex queue, backpressure |
+| 060–076 | `060_stream_range` … `076_stream_duplex_queue`, `071_stream_map_serial` | `Stream`, `from_iterable`, duplex queue, backpressure |
 | 077–082 | `077_stm_tref` … `082_stm_tsemaphore` | STM (`atomically`, `TRef`, `TMap`, …) |
 | 083–088 | `083_schema_primitive` … `088_brand_equal_hash` | `Schema`, `EffectData`, `Brand` |
 | 089–092 | `089_ensuring` … `092_scoped` | `ensuring`, acquire/release, `scope_with`, `scoped` |

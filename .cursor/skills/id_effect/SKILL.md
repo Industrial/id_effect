@@ -53,11 +53,22 @@ Authoritative patterns for **id_effect 3.0** capability DI. Do not use removed A
 | `id_effect_axum` | `run_with_caps`, routing helpers |
 | `id_effect_reqwest` | reqwest client capability |
 
+## Parallelism (Rayon default)
+
+- **`Parallelism`** — `Auto { threshold: 1024 }` (default), `ForceParallel`, `Serial`
+- Primary bulk APIs (`vec::map`, `HashMap::map_values`, `Stream::map`, …) dispatch through default policy
+- **`effect!` stays sequential** — no parallel binds
+- **`Stream::map_par_n`** — bounded async effect concurrency; not Rayon
+- Escape hatches: `*_serial` for `FnMut` / non-`Send` closures
+- Explicit: `*_with(Parallelism::…, …)`; deprecated `*_par` → `ForceParallel`
+- ADR: `docs/adrs/0006-parallel-by-default.md`
+
+
 ## Docs & migration
 
 - Book: `crates/id_effect/book/`
 - Migration: `book/src/appendix-b-migration.md` (1.x → 3.0)
-- ADRs: `docs/adrs/0002-*`, `0003-*`, `0004-*`, `0005-*`
+- ADRs: `docs/adrs/0002-*`, `0003-*`, `0004-*`, `0005-*`, `0006-*`
 
 ## Verify
 

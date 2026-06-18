@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — Parallel-by-default (Rayon)
+
+Bulk pure transforms on collections and stream chunks now use Rayon when input length meets the default threshold (`Parallelism::Auto { threshold: 1024 }`). See [ADR 0006](docs/adrs/0006-parallel-by-default.md).
+
+### Added
+
+- `Parallelism` policy type and `*_with(policy, …)` dispatch on collections, `vec`, `order`, and `Stream`
+- `*_serial` escape hatches for non-`Send` / captured-mut closures
+- Book: [Parallelism (Rayon)](crates/id_effect/book/src/part4/ch13-05-parallelism.md)
+- Example: `071_stream_map_serial.rs`
+
+### Changed
+
+- Primary `map`, `filter`, `map_values`, `sort_with`, and related bulk APIs parallelize by default on large inputs
+- `Effect` / `effect!` remain sequential
+
+### Deprecated
+
+- `*_par` methods — use primary API or `*_with(Parallelism::ForceParallel, …)`
+
 ## 3.0.0 — DI maturity (breaking)
 
 Semver-major release completing capability-first DI adoption. See [appendix-b-migration.md](crates/id_effect/book/src/appendix-b-migration.md) and [ADR 0004](docs/adrs/0004-provider-parity-and-cap-subtyping.md).

@@ -131,24 +131,51 @@ pub mod result {
 
 /// Functor operations for `Vec<A>`.
 pub mod vec {
+  use crate::Parallelism;
   use rayon::prelude::*;
 
-  /// Map a function over each element.
+  /// Map each element using the default [`Parallelism`] policy.
   #[inline]
-  pub fn map<A, B>(fa: Vec<A>, f: impl FnMut(A) -> B) -> Vec<B> {
+  pub fn map<A, B, F>(fa: Vec<A>, f: F) -> Vec<B>
+  where
+    A: Send,
+    B: Send,
+    F: Fn(A) -> B + Send + Sync,
+  {
+    map_with(Parallelism::default(), fa, f)
+  }
+
+  /// Map each element sequentially (`FnMut` — no `Send` required on `A`).
+  #[inline]
+  pub fn map_serial<A, B>(fa: Vec<A>, f: impl FnMut(A) -> B) -> Vec<B> {
     fa.into_iter().map(f).collect()
   }
 
-  /// Like [`map`], but applies `f` in parallel (Rayon). `A` and `B` must be `Send`, and `f` must be
-  /// `Sync` (shared by worker threads).
+  /// Map with an explicit [`Parallelism`] policy.
   #[inline]
+  pub fn map_with<A, B, F>(policy: Parallelism, fa: Vec<A>, f: F) -> Vec<B>
+  where
+    A: Send,
+    B: Send,
+    F: Fn(A) -> B + Send + Sync,
+  {
+    if policy.should_parallelize(fa.len()) {
+      fa.into_par_iter().map(f).collect()
+    } else {
+      fa.into_iter().map(f).collect()
+    }
+  }
+
+  /// Like [`map_with`] with [`Parallelism::ForceParallel`].
+  #[inline]
+  #[deprecated(note = "use map or map_with(Parallelism::ForceParallel)")]
   pub fn map_par<A, B, F>(fa: Vec<A>, f: F) -> Vec<B>
   where
     A: Send,
     B: Send,
     F: Fn(A) -> B + Send + Sync,
   {
-    fa.into_par_iter().map(f).collect()
+    map_with(Parallelism::ForceParallel, fa, f)
   }
 
   /// Replace all elements with a constant.
@@ -347,6 +374,7 @@ mod tests {
 
   mod vec_module {
     use super::*;
+    use crate::Parallelism;
 
     #[test]
     fn map_transforms_elements() {
@@ -355,7 +383,11 @@ mod tests {
 
     #[test]
     fn map_par_transforms_elements() {
-      assert_eq!(vec::map_par(vec![1, 2, 3, 4], |x| x * 2), vec![2, 4, 6, 8]);
+      assert_eq!(vec::map(vec![1, 2, 3, 4], |x| x * 2), vec![2, 4, 6, 8]);
+      assert_eq!(
+        vec::map_with(Parallelism::ForceParallel, vec![1, 2, 3, 4], |x| x * 2),
+        vec![2, 4, 6, 8]
+      );
     }
 
     #[test]

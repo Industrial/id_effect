@@ -1,5 +1,6 @@
 //! String-key trie (prefix tree).
 
+use crate::Parallelism;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 
@@ -102,18 +103,47 @@ impl<V> Trie<V> {
     end.map(|e| &key[..e])
   }
 
-  /// Count of stored keys (nodes with a value).
-  pub fn size(&self) -> usize {
+  /// Count of stored keys using the default [`Parallelism`] policy.
+  pub fn size(&self) -> usize
+  where
+    V: Sync,
+  {
+    self.size_with(Parallelism::default())
+  }
+
+  /// Count of stored keys sequentially.
+  /// Count keys sequentially.
+  pub fn size_serial(&self) -> usize {
     Self::count_nodes(&self.root)
   }
 
-  /// Like [`Self::size`], but sums key counts in parallel per subtree. Requires `V: Sync` so child
-  /// nodes can be read from multiple Rayon workers.
+  /// Count with an explicit [`Parallelism`] policy.
+  /// Count keys with explicit policy.
+  pub fn size_with(&self, policy: Parallelism) -> usize
+  where
+    V: Sync,
+  {
+    match policy {
+      Parallelism::Serial => Self::count_nodes(&self.root),
+      Parallelism::ForceParallel => Self::count_nodes_par(&self.root),
+      Parallelism::Auto { threshold } => {
+        let n = Self::count_nodes(&self.root);
+        if n >= threshold {
+          Self::count_nodes_par(&self.root)
+        } else {
+          n
+        }
+      }
+    }
+  }
+
+  /// Like [`Self::size_with`] with [`Parallelism::ForceParallel`].
+  #[deprecated(note = "use size or size_with(Parallelism::ForceParallel)")]
   pub fn size_par(&self) -> usize
   where
     V: Sync,
   {
-    Self::count_nodes_par(&self.root)
+    self.size_with(Parallelism::ForceParallel)
   }
 
   fn count_nodes(node: &Node<V>) -> usize {
@@ -198,7 +228,7 @@ mod tests {
     ks.sort();
     assert_eq!(ks, vec!["foo".to_string(), "food".to_string()]);
     assert_eq!(trie.size(), 3);
-    assert_eq!(trie.size(), trie.size_par());
+    assert_eq!(trie.size(), trie.size_serial());
   }
 
   #[test]
