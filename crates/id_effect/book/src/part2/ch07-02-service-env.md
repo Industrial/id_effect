@@ -1,18 +1,15 @@
-# Accessing Services — `Needs` and `require!`
+# Accessing Services — `Needs` and `~Key`
 
-v2 replaces `service_env`, `ServiceEnv`, and `~ ServiceKey` with [`Needs<K>`](../../src/capability/needs.rs) bounds and [`require!`](../../src/capability/run.rs).
+Application effects access services with [`Needs<K>`](../../src/capability/needs.rs) bounds, [`caps!`](../../src/capability/set.rs) in `R`, and `~Key` (or [`require!`](../../src/capability/require.rs)) inside `effect!`.
 
 ## Single service
 
 ```rust
-use id_effect::{effect, require, Needs};
+use id_effect::{effect, require, caps, succeed};
 
-fn get_user(id: u64) -> Effect<User, DbError, Env>
-where
-    Env: Needs<UserRepoKey>,
-{
-    effect!(|env: &mut Env| {
-        let repo = require!(env, UserRepoKey);
+fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepoKey)> {
+    effect!(|r| {
+        let repo = ~UserRepoKey;
         ~ repo.get_user(id)
     })
 }
@@ -24,19 +21,21 @@ Generic over any environment that implements the bound:
 fn get_user<R>(id: u64) -> Effect<User, DbError, R>
 where
     R: Needs<UserRepoKey> + 'static,
-{ /* same body */ }
+{
+    effect!(|r: &mut R| {
+        let repo = ~UserRepoKey;
+        ~ repo.get_user(id)
+    })
+}
 ```
 
 ## Multiple services
 
 ```rust
-fn notify_user(id: u64, message: &str) -> Effect<(), AppError, Env>
-where
-    Env: Needs<UserRepoKey> + Needs<EmailKey>,
-{
-    effect!(|env: &mut Env| {
-        let repo = require!(env, UserRepoKey);
-        let email = require!(env, EmailKey);
+fn notify_user(id: u64, message: &str) -> Effect<(), AppError, caps!(UserRepoKey, EmailKey)> {
+    effect!(|r| {
+        let repo = ~UserRepoKey;
+        let email = ~EmailKey;
         let user = ~ repo.get_user(id).map_error(AppError::Db);
         ~ email.send(&user.email, message).map_error(AppError::Email);
         ()
@@ -46,20 +45,14 @@ where
 
 ## Direct `Env` access
 
-Outside `effect!`, use `Needs::need` or `Env::get`:
+Prefer `effect!` + `~ConfigKey` in application code. For small sync helpers outside `effect!`, `Needs::<ConfigKey>::need(env)` is available.
 
-```rust
-fn pool_url(env: &Env) -> &str {
-    require!(env, ConfigKey).database_url()
-}
-```
-
-## `Env` vs generic `R`
+## `caps!` vs generic `R`
 
 | Style | When |
 |-------|------|
-| `Effect<_, _, Env>` | Application modules, examples |
+| `Effect<_, _, caps!(K)>` | Application modules, examples |
 | `Effect<_, _, R> where R: Needs<K>` | Library code that should not fix the env type |
-| `caps!(K1, K2)` in docs/signatures | Documents required keys; runtime type is still `Env` |
+| `Env` at HTTP boundaries | Axum `State<Env>`, then `run_with_caps` |
 
-All styles run against the same [`Env`](../../src/capability/env.rs) built by [`run_with`](../../src/capability/run.rs).
+All styles run against the same [`Env`](../../src/capability/env.rs) built by [`run_with`](../../src/capability/run.rs) or [`build_env`](../../src/capability/run.rs).

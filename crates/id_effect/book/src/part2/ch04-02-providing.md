@@ -1,31 +1,30 @@
 # Providing Dependencies — `run_with` and `Env`
 
-An effect with `R = Env` (or a generic `R: Needs<K>`) cannot run until its capabilities exist. In v2 you **provide at the edge**, not inside library code.
+An effect with `R = caps!(…)` cannot run until its capabilities exist. **Provide at the edge**, not inside library code.
 
 ## `run_with` — the main entrypoint
 
 ```rust
-use id_effect::{Effect, Env, ProviderError, ProviderSpec, define_capability, provide, require, run_with};
+use id_effect::{Effect, ProviderSpecDerive, caps, effect, provide, require, run_with, succeed};
 
-define_capability!(CounterKey, Counter);
+#[::id_effect::capability(Counter)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Counter(pub u32);
 
+#[derive(ProviderSpecDerive)]
+#[provides(CounterKey)]
 struct CounterLive;
 
-impl ProviderSpec for CounterLive {
-    type Key = CounterKey;
-    type Output = Counter;
-
-    fn provider_id() -> &'static str { "counter-live" }
-
-    fn provide(_deps: &Env) -> Result<Counter, ProviderError> {
-        Ok(Counter(42))
+impl CounterLive {
+    fn new() -> Counter {
+        Counter(42)
     }
 }
 
-fn app() -> Effect<u32, (), Env> {
-    Effect::new(|env: &mut Env| {
-        let counter = require!(env, CounterKey);
-        Ok(counter.0)
+fn app() -> Effect<u32, (), caps!(CounterKey)> {
+    effect!(|r| {
+        let counter = ~CounterKey;
+        counter.0
     })
 }
 
@@ -83,10 +82,7 @@ pub fn process_order(order: Order) -> Effect<Receipt, AppError, ()> {
 }
 
 // GOOD — library declares needs; caller wires them
-pub fn process_order(order: Order) -> Effect<Receipt, AppError, Env>
-where
-    Env: Needs<DatabaseKey> + Needs<LoggerKey>,
-{
+pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(DatabaseKey, LoggerKey)> {
     // ...
 }
 ```

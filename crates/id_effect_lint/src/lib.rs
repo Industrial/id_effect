@@ -49,7 +49,13 @@ declare_lint! {
 declare_lint! {
     pub NO_CONCRETE_CONTEXT_IN_PUB_API,
     Deny,
-    "public APIs must not expose concrete `Context<Cons<…>>` or `Env` as `R`; use `impl Needs<Key>` instead"
+    "public APIs must not expose concrete `Context<Cons<…>>` as `R`; use `impl Needs<Key>` instead"
+}
+
+declare_lint! {
+    pub NO_CONCRETE_ENV_IN_PUB_API,
+    Deny,
+    "public APIs must not expose concrete `Env` as `R`; use `R: Needs<Key> + 'static`"
 }
 
 declare_lint! {
@@ -125,7 +131,7 @@ declare_lint! {
 declare_lint! {
     pub NO_STATIC_SERVICE_GLOBALS,
     Deny,
-    "service types must not live in `static` globals; use `define_capability!` + `Needs<Key>` + `R`"
+    "service types must not live in `static` globals; use `#[capability]` + `Needs<Key>` + `R`"
 }
 
 declare_lint! {
@@ -252,6 +258,7 @@ declare_lint_pass!(EffectRsPass => [
     EFFECT_FN_REQUIRES_WHERE_CLAUSE,
     EFFECT_ERROR_BOUND_MUST_USE_FROM,
     NO_CONCRETE_CONTEXT_IN_PUB_API,
+    NO_CONCRETE_ENV_IN_PUB_API,
     PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
     NO_EFFECT_SUFFIX_ON_GRAPH_BUILDERS,
     BLOCKING_SUFFIX_RESERVED_FOR_RUNNERS,
@@ -415,6 +422,7 @@ pub fn register_lints(_sess: &Session, store: &mut LintStore) {
     &EFFECT_FN_REQUIRES_WHERE_CLAUSE,
     &EFFECT_ERROR_BOUND_MUST_USE_FROM,
     &NO_CONCRETE_CONTEXT_IN_PUB_API,
+    &NO_CONCRETE_ENV_IN_PUB_API,
     &PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
     &NO_EFFECT_SUFFIX_ON_GRAPH_BUILDERS,
     &BLOCKING_SUFFIX_RESERVED_FOR_RUNNERS,

@@ -12,20 +12,19 @@ Read this section **before** [Platform I/O](./ch07-06-platform-services.md), [HT
 
 ## Capability DI with Tokio
 
-Build [`Env`](../../src/capability/env.rs) manually or via [`run_with`](../../src/capability/run.rs), then pass it to `run_async`:
+Build [`Env`](../../src/capability/env.rs) manually or via [`run_with`](../../src/capability/run.rs) / [`build_env`](../../src/capability/run.rs), then pass it to `run_async`:
 
 ```rust
-use id_effect::{Env, define_capability, require, run_async};
+use id_effect::{Env, caps, effect, require, run_async, succeed};
 
-define_capability!(ApiTokenKey, &'static str);
+#[::id_effect::capability(&'static str)]
+struct ApiToken;
 
-fn fetch() -> Effect<Vec<Quote>, AppError, Env> {
-    Effect::new_async(|env: &mut Env| {
-        Box::pin(async move {
-            let token = *require!(env, ApiTokenKey);
-            // async steps…
-            Ok(quotes)
-        })
+fn fetch() -> Effect<Vec<Quote>, AppError, caps!(ApiTokenKey)> {
+    effect!(|r| {
+        let token = ~ApiTokenKey;
+        // async steps…
+        Ok(quotes)
     })
 }
 
@@ -37,7 +36,7 @@ async fn main() {
 }
 ```
 
-For provider-based apps, use `run_with` at the sync boundary or `build_env` + `run_async`:
+For provider-based apps, use `build_env` + `run_async`:
 
 ```rust
 let env = build_env([provide!(ConfigLive), provide!(HttpClientLive)])?;
@@ -49,7 +48,7 @@ let res = run_async(my_handler(), env).await?;
 | Concern | Where it lives |
 |---------|----------------|
 | Describing work | `Effect<A, E, R>` |
-| Capabilities | `Env` + `Needs<K>` + `run_with` / `build_env` |
+| Capabilities | `caps!(…)` + `Needs<K>` + `run_with` / `build_env` |
 | Blocking / tests | `run_blocking(effect, env)` |
 | Async I/O on Tokio | `id_effect_tokio::run_async(effect, env)` |
 

@@ -4,36 +4,33 @@ Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`*
 
 ## Why separate from `id_effect`?
 
-- **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe *what* you need; [`ProviderSpec`](../../src/capability/provider.rs) impls install live or test doubles.
+- **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe *what* you need; provider impls install live or test doubles.
 - **Test doubles** — `TestFileSystem` is in-memory; production uses `LiveFileSystemProvider`.
-- **Stable HTTP boundary** — domain code depends on `HttpClientKey` + `execute`, not `reqwest::RequestBuilder`.
+- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait + `execute`, not `reqwest::RequestBuilder` (the capability key is crate-private).
 
 ## Modules
 
 | Module | Responsibility |
 |--------|----------------|
 | `error` | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
-| `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClientProvider`, `execute` |
+| `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClientProvider`, `execute` (key is internal) |
 | `fs` | `FileSystem`, `LiveFileSystemProvider`, `TestFileSystem`, `read` |
 | `process` | `CommandSpec`, `ProcessRuntime`, `spawn_wait` |
 | `uri` | URI helpers |
 
-## Wiring pattern (v2)
+## Wiring pattern
 
-Each module declares a key via `define_capability!` and ships a default provider:
+Each module declares a capability key and ships a default provider:
 
 ```rust
-// in id_effect_platform::http (simplified)
-define_capability!(HttpClientKey, Arc<dyn HttpClient>);
-
+// in id_effect_platform::http (simplified; HttpClientKey is pub(crate))
+#[derive(ProviderSpecDerive)]
+#[provides(HttpClientKey)]
 pub struct ReqwestHttpClientProvider;
 
-impl ProviderSpec for ReqwestHttpClientProvider {
-    type Key = HttpClientKey;
-    type Output = Arc<dyn HttpClient>;
-    fn provider_id() -> &'static str { "platform/http/reqwest-default" }
-    fn provide(_deps: &Env) -> Result<Arc<dyn HttpClient>, ProviderError> {
-        Ok(Arc::new(ReqwestHttpClient::default_client()))
+impl ReqwestHttpClientProvider {
+    fn new() -> Arc<dyn HttpClient> {
+        Arc::new(ReqwestHttpClient::default_client())
     }
 }
 ```
@@ -41,11 +38,11 @@ impl ProviderSpec for ReqwestHttpClientProvider {
 Application entry:
 
 ```rust
-use id_effect::{provide, run_with, RunError};
-use id_effect_platform::http::{HttpRequest, ReqwestHttpClientProvider, execute};
+use id_effect::{run_with, RunError};
+use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
 
 let res = run_with(
-    [provide!(ReqwestHttpClientProvider)],
+    [provide_reqwest_http_client()],
     execute(HttpRequest::get("https://example.com")),
 )
 .map_err(|e| match e {
@@ -54,7 +51,7 @@ let res = run_with(
 })?;
 ```
 
-Effects that call `execute` require `R: Needs<HttpClientKey>`. Use [`require!`](../../src/capability/run.rs) inside handlers or rely on helper functions that already bound `Needs`.
+Effects returned by `execute` carry the correct `Needs` bound internally; application code usually calls `run_with([provide_reqwest_http_client()], execute(req))` without naming the key.
 
 Drive async platform effects with **`id_effect_tokio::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
 

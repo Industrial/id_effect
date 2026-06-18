@@ -2,18 +2,18 @@
 
 use std::sync::Arc;
 
-use id_effect::{Env, build_env, provide, run_async};
+use id_effect::{Env, build_env, run_async};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClient, HttpClientKey, HttpMethod, HttpRequest, ReqwestHttpClient, ReqwestHttpClientProvider,
-  execute,
+  HttpClient, HttpMethod, HttpRequest, ReqwestHttpClient, env_has_http_client, env_set_http_client,
+  execute, provide_reqwest_http_client,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn env_with_client(client: ReqwestHttpClient) -> Env {
-  let mut env = build_env([provide!(ReqwestHttpClientProvider)]).expect("providers");
-  env.insert::<HttpClientKey>(Arc::new(client) as Arc<dyn HttpClient>);
+  let mut env = build_env([provide_reqwest_http_client()]).expect("providers");
+  env_set_http_client(&mut env, Arc::new(client) as Arc<dyn HttpClient>);
   env
 }
 
@@ -109,8 +109,8 @@ async fn execute_rejects_body_larger_than_max() {
 
 #[tokio::test]
 async fn reqwest_http_client_provider_builds_env() {
-  let env = build_env([provide!(ReqwestHttpClientProvider)]).expect("providers");
-  assert!(env.has::<HttpClientKey>());
+  let env = build_env([provide_reqwest_http_client()]).expect("providers");
+  assert!(env_has_http_client(&env));
 }
 
 #[tokio::test]

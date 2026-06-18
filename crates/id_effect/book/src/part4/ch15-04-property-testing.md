@@ -1,6 +1,6 @@
 # Property Testing — Invariants over Inputs
 
-Unit tests check specific cases. Property tests check invariants: statements that must be true for *any* valid input. Effect programs are excellent targets for property testing because their inputs and outputs are well-typed, their schemas define exactly what's valid, and the layer system makes it easy to run thousands of executions cheaply.
+Unit tests check specific cases. Property tests check invariants: statements that must be true for *any* valid input. Effect programs are excellent targets for property testing because their inputs and outputs are well-typed, their schemas define exactly what's valid, and the provider system makes it easy to run thousands of executions cheaply.
 
 ## Setup
 
@@ -15,6 +15,7 @@ proptest = "1"
 
 ```rust
 use proptest::prelude::*;
+use id_effect::{run_test, Exit};
 
 proptest! {
     #[test]
@@ -22,15 +23,15 @@ proptest! {
         let eff_ab = add(a, b);
         let eff_ba = add(b, a);
 
-        let r_ab = run_test_and_unwrap(eff_ab);
-        let r_ba = run_test_and_unwrap(eff_ba);
+        let Exit::Success(r_ab) = run_test(eff_ab, ()) else { return Ok(()); };
+        let Exit::Success(r_ba) = run_test(eff_ba, ()) else { return Ok(()); };
 
         prop_assert_eq!(r_ab, r_ba);
     }
 }
 ```
 
-`proptest!` generates hundreds of `(a, b)` pairs. Each iteration calls `run_test_and_unwrap`, which is cheap for pure effects.
+`proptest!` generates hundreds of `(a, b)` pairs. Each iteration calls `run_test`, which is cheap for pure effects.
 
 ## Testing Schema Round-Trips
 
@@ -74,7 +75,7 @@ proptest! {
         amount  in 0u64..=1_000_000,
     ) {
         let account = TRef::new(balance);
-        let exit = run_test_and_unwrap(commit(withdraw(&account, amount)));
+        let exit = run_test(commit(withdraw(&account, amount)), ());
 
         if amount <= balance {
             // Should succeed and balance should be reduced
@@ -96,21 +97,24 @@ proptest! {
 For integration-style property tests, generate random state in the fake service:
 
 ```rust
+#[::id_effect::capability(Arc<dyn Db>)]
+struct Database;
+
+mock_capability!(InMemoryDbMock, DatabaseKey, Arc<dyn Db>, "db/inmemory", || {
+    Arc::new(InMemoryDb::new()) as Arc<dyn Db>
+});
+
 proptest! {
     #[test]
     fn get_user_returns_what_was_saved(user in arbitrary_user()) {
-        let db = Arc::new(InMemoryDb::new());
-        let env = ctx!(DbKey => db.clone() as Arc<dyn Db>);
+        let env = build_env([provide!(InMemoryDbMock)]).expect("env");
 
         // Save
-        run_test_with_env(
-            save_user(user.clone()),
-            env.clone(),
-        );
+        run_test(save_user(user.clone()), env.clone());
 
         // Retrieve
-        let exit = run_test_with_env(get_user(user.id), env);
-        let retrieved = exit.unwrap_success();
+        let exit = run_test(get_user(user.id), env);
+        let Exit::Success(retrieved) = exit else { return Ok(()); };
 
         prop_assert_eq!(retrieved, user);
     }

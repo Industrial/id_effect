@@ -1,32 +1,42 @@
 use quote::quote;
 
+use crate::infer_caps;
 use crate::parse::EffectKind;
 use crate::transform::{
   effect_body_contains_await, effect_body_contains_bind, expand_bare_body, expand_closure_body,
 };
 
-pub fn expand(kind: EffectKind) -> proc_macro2::TokenStream {
+pub fn expand(kind: EffectKind) -> syn::Result<proc_macro2::TokenStream> {
   let path = crate_path();
-  match kind {
+  let out = match kind {
     EffectKind::DoNotation {
       param,
       env_ty,
       body,
     } => {
       let r = &param;
-      let env_ty = *env_ty;
+      let body_keys = infer_caps::collect_capability_keys(&body);
+      if let Some(ref explicit) = env_ty
+        && !matches!(explicit.as_ref(), syn::Type::Macro(_))
+      {
+        infer_caps::validate_explicit_caps(explicit, &body_keys)?;
+      }
+      let param_binding = match env_ty {
+        Some(ref ty) => quote! { #r: &mut #ty },
+        None => quote! { #r },
+      };
       let needs_async =
         effect_body_contains_bind(body.clone()) || effect_body_contains_await(body.clone());
       let expanded = expand_closure_body(body, r, &path);
       if needs_async {
         quote! {
-          #path::Effect::new_async(move | #r: &mut #env_ty | {
+          #path::Effect::new_async(move | #param_binding | {
             #path::box_future(async move { #expanded })
           })
         }
       } else {
         quote! {
-          #path::Effect::new(move | #r: &mut #env_ty | {
+          #path::Effect::new(move | #param_binding | {
             #expanded
           })
         }
@@ -50,7 +60,8 @@ pub fn expand(kind: EffectKind) -> proc_macro2::TokenStream {
         }
       }
     }
-  }
+  };
+  Ok(out)
 }
 
 /// We always use `::id_effect::…` so the generated code resolves in the caller's crate.
@@ -76,7 +87,7 @@ mod tests {
   fn bind_free_do_notation_uses_effect_new_not_async() {
     let input = quote! { |_r: &mut ()| { let x = 1; let y = 2; x + y } };
     let kind = parse_effect_input(input).expect("parse");
-    let out = expand(kind);
+    let out = expand(kind).unwrap();
     assert!(
       !expanded_contains_new_async(&out),
       "expected Effect::new, got: {out}"
@@ -91,7 +102,7 @@ mod tests {
   fn bind_in_do_notation_uses_new_async() {
     let input = quote! { |_r: &mut ()| { ~fail::<(), (), ()>(()) } };
     let kind = parse_effect_input(input).expect("parse");
-    let out = expand(kind);
+    let out = expand(kind).unwrap();
     assert!(
       expanded_contains_new_async(&out),
       "expected new_async: {out}"
@@ -103,7 +114,7 @@ mod tests {
   fn bind_free_bare_effect_uses_effect_new() {
     let input = quote! { 41 };
     let kind = parse_effect_input(input).expect("parse");
-    let out = expand(kind);
+    let out = expand(kind).unwrap();
     assert!(
       !expanded_contains_new_async(&out),
       "expected Effect::new: {out}"

@@ -1,15 +1,16 @@
-# Mocking Services — Test Doubles via Layers
+# Mocking Services — Test Doubles via Providers
 
-In id_effect, "mocking" isn't a special testing concept — it's just providing a different `Layer`. Production code gets a `PostgresDb` layer. Test code gets an `InMemoryDb` layer. Business logic never knows the difference.
+In id_effect, "mocking" isn't a special testing concept — it's just providing a different `ProviderSpec`. Production code gets `PostgresDbLive`. Test code gets `InMemoryDbMock`. Business logic never knows the difference.
 
-No mock frameworks. No `#[automock]`. No `vi.mock()` equivalent. Just layers.
+No mock frameworks. No `#[automock]`. No `vi.mock()` equivalent. Just providers.
 
 ## The Pattern
 
-Define a service trait (or use a service key with a trait object):
+Declare a capability key and a trait object (or concrete type):
 
 ```rust
-service_key!(DbKey: Arc<dyn Db>);
+#[::id_effect::capability(Arc<dyn Db>)]
+struct Database;
 
 trait Db: Send + Sync {
     fn get_user(&self, id: UserId) -> Effect<User, DbError, ()>;
@@ -21,6 +22,10 @@ Provide two implementations — one for production, one for tests:
 
 ```rust
 // Production
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(DatabaseKey)]
+struct PostgresDbLive;
+
 struct PostgresDb { pool: PgPool }
 impl Db for PostgresDb { /* real SQL queries */ }
 
@@ -40,6 +45,10 @@ impl Db for InMemoryDb {
         succeed(())
     }
 }
+
+mock_capability!(InMemoryDbMock, DatabaseKey, Arc<dyn Db>, "db/inmemory", || {
+    Arc::new(InMemoryDb::new()) as Arc<dyn Db>
+});
 ```
 
 ## Injecting the Test Double
@@ -47,22 +56,21 @@ impl Db for InMemoryDb {
 ```rust
 #[test]
 fn get_user_returns_saved_user() {
-    let db = Arc::new(InMemoryDb::new());
-    let env = ctx!(DbKey => db.clone() as Arc<dyn Db>);
+    let env = build_env([provide!(InMemoryDbMock)]).expect("env");
 
-    let eff = effect!(|r: &mut Deps| {
-        let db = ~ DbKey;
+    let eff = effect!(|r| {
+        let db = ~DatabaseKey;
         ~ db.save_user(User { id: UserId::new(1), name: "Alice".into() });
         ~ db.get_user(UserId::new(1))
     });
 
-    let exit = run_test_with_env(eff, env);
-    let user = exit.unwrap_success();
+    let exit = run_test(eff, env);
+    let Exit::Success(user) = exit else { panic!("expected success") };
     assert_eq!(user.name, "Alice");
 }
 ```
 
-The business logic (`save_user` then `get_user`) is identical to production. Only the environment differs.
+The business logic (`save_user` then `get_user`) is identical to production. Only the provider list differs.
 
 ## Asserting on Calls
 
@@ -80,12 +88,19 @@ impl Mailer for SpyMailer {
     }
 }
 
+#[::id_effect::capability(Arc<dyn Mailer>)]
+struct MailerCap;
+
+mock_capability!(SpyMailerMock, MailerCapKey, Arc<dyn Mailer>, "mailer/spy", || {
+    Arc::new(SpyMailer::new()) as Arc<dyn Mailer>
+});
+
 #[test]
 fn registration_sends_welcome_email() {
-    let spy = Arc::new(SpyMailer::new());
-    let env = ctx!(MailerKey => spy.clone() as Arc<dyn Mailer>);
+    let env = build_env([provide!(SpyMailerMock)]).expect("env");
+    let spy = env.get::<MailerCapKey>().clone();
 
-    let exit = run_test_with_env(register_user("alice@example.com"), env);
+    let exit = run_test(register_user("alice@example.com"), env);
     assert!(matches!(exit, Exit::Success(_)));
 
     let sent = spy.sent.lock().unwrap();
@@ -109,34 +124,41 @@ impl Db for FailingDb {
     }
 }
 
+mock_capability!(FailingDbMock, DatabaseKey, Arc<dyn Db>, "db/failing", || {
+    Arc::new(FailingDb) as Arc<dyn Db>
+});
+
 #[test]
 fn get_user_propagates_db_errors() {
-    let env = ctx!(DbKey => Arc::new(FailingDb) as Arc<dyn Db>);
-    let exit = run_test_with_env(get_user(UserId::new(1)), env);
+    let env = build_env([provide!(FailingDbMock)]).expect("env");
+    let exit = run_test(get_user(UserId::new(1)), env);
     assert!(matches!(exit, Exit::Failure(Cause::Fail(DbError::ConnectionLost))));
 }
 ```
 
-## Layer-Based Test Setup
+## Provider-Based Test Setup
 
-For more complex scenarios, build a test layer:
+For more complex scenarios, build a shared test env:
 
 ```rust
-fn test_layer() -> Layer<Deps, (), ()> {
-    Layer::provide(DbKey, Arc::new(InMemoryDb::new()) as Arc<dyn Db>)
-        .stack(Layer::provide(MailerKey, Arc::new(SpyMailer::new()) as Arc<dyn Mailer>))
-        .stack(Layer::provide(ClockKey, Arc::new(TestClock::new()) as Arc<dyn Clock>))
+fn test_env() -> Env {
+    build_env([
+        provide!(InMemoryDbMock),
+        provide!(SpyMailerMock),
+        provide!(TestClockLive),
+    ])
+    .expect("test env")
 }
 
 #[test]
 fn full_registration_flow() {
-    let env = test_layer().build().unwrap();
-    let exit = run_test_with_env(full_registration_flow(), env);
+    let env = test_env();
+    let exit = run_test(full_registration_flow(), env);
     assert!(matches!(exit, Exit::Success(_)));
 }
 ```
 
-The test layer mirrors your production layer in structure but with test implementations. Add new services in one place and all tests pick them up.
+The test provider list mirrors your production wiring in structure but with test implementations. Add new providers in one place and all tests pick them up.
 
 ## What You Don't Need
 
@@ -145,4 +167,4 @@ The test layer mirrors your production layer in structure but with test implemen
 - No `Box<dyn Fn(…)>` callback injection patterns
 - No global state reset between tests
 
-The `Layer` system is the mock framework.
+The capability provider graph is the mock framework.

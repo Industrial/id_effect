@@ -1,0 +1,5 @@
+error[E0425]: cannot find type `CapEnv3` in crate `id_effect`
+ --> tests/ui/into_bind_removed.rs:3:21
+  |
+3 |   let _: id_effect::CapEnv3<(), (), ()>;
+  |                     ^^^^^^^ not found in `id_effect`

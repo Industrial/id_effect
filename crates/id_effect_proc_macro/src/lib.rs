@@ -5,10 +5,13 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
+mod capability_attr;
 mod effect_data;
 mod effect_tagged;
 mod expand;
+mod infer_caps;
 mod parse;
+mod provider_spec;
 mod transform;
 
 use proc_macro::TokenStream;
@@ -31,6 +34,18 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
 }
 
+/// Generates a capability key struct and [`id_effect::CapabilityKey`] impl for a trait or struct.
+#[proc_macro_attribute]
+pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
+  capability_attr::expand(attr, item)
+}
+
+/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(CapabilityKey)]`.
+#[proc_macro_derive(ProviderSpec, attributes(provides, named))]
+pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
+  provider_spec::derive(input)
+}
+
 /// Procedural do-notation macro for [`id_effect::Effect`].
 ///
 /// See the `effect` crate documentation for usage.
@@ -41,5 +56,8 @@ pub fn effect(input: TokenStream) -> TokenStream {
     Ok(k) => k,
     Err(e) => return e.to_compile_error().into(),
   };
-  expand::expand(kind).into()
+  match expand::expand(kind) {
+    Ok(ts) => ts.into(),
+    Err(e) => e.to_compile_error().into(),
+  }
 }

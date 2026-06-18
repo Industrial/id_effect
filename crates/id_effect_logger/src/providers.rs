@@ -1,56 +1,44 @@
 //! Capability DI v2 providers for [`EffectLogger`] and thread-local logger runtime.
 
+#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::sync::Arc;
 
 use ::id_effect::collections::hash_map;
 use ::id_effect::{
   CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
-  ProviderSpec, run_blocking,
+  run_blocking,
 };
 
 use crate::{
-  CompositeLogBackend, EffectLogKey, EffectLogMinLevelKey, EffectLogger, LogLevel,
+  CompositeLogBackend, EffectLogMinLevelKey, EffectLogger, EffectLoggerKey, LogLevel,
   install_composite_log_backend, install_log_annotations_fiber_ref, install_log_spans_fiber_ref,
   install_min_log_level_fiber_ref,
 };
 
 /// Default [`EffectLogger`] provider (tracing-backed).
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(EffectLoggerKey)]
 pub struct EffectLoggerLive;
 
-impl ProviderSpec for EffectLoggerLive {
-  type Key = EffectLogKey;
-  type Output = EffectLogger;
-
-  fn provider_id() -> &'static str {
-    "effect-logger-live"
-  }
-
-  fn provide(_deps: &Env) -> Result<EffectLogger, ProviderError> {
-    Ok(EffectLogger)
+impl EffectLoggerLive {
+  fn new() -> EffectLogger {
+    EffectLogger
   }
 }
 
 /// Marker capability: fiber-local log annotation / span metadata installed.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct EffectLogMetadataKey;
-
-impl ::id_effect::CapabilityKey for EffectLogMetadataKey {
-  type Value = ();
-}
+#[::id_effect::capability(())]
+#[allow(dead_code)]
+pub struct EffectLogMetadata;
 
 /// Installs fiber-local annotation and span-stack refs used by [`crate::annotate_logs`] and
 /// [`crate::with_log_span`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(EffectLogMetadataKey)]
 pub struct LogMetadataLive;
 
-impl ProviderSpec for LogMetadataLive {
-  type Key = EffectLogMetadataKey;
-  type Output = ();
-
-  fn provider_id() -> &'static str {
-    "effect-logger-metadata"
-  }
-
-  fn provide(_deps: &Env) -> Result<(), ProviderError> {
+impl LogMetadataLive {
+  fn new() -> () {
     let ann = run_blocking(
       FiberRef::make_with(
         hash_map::empty::<String, String>,
@@ -59,31 +47,21 @@ impl ProviderSpec for LogMetadataLive {
       ),
       (),
     )
-    .map_err(|e| ProviderError {
-      provider: Self::provider_id(),
-      message: format!("annotation FiberRef: {e:?}"),
-    })?;
+    .expect("annotation FiberRef");
     let sp = run_blocking(
       FiberRef::make_with(Vec::<String>::new, |v| v.clone(), |p, _c| p.clone()),
       (),
     )
-    .map_err(|e| ProviderError {
-      provider: Self::provider_id(),
-      message: format!("span FiberRef: {e:?}"),
-    })?;
+    .expect("span FiberRef");
     install_log_annotations_fiber_ref(ann);
     install_log_spans_fiber_ref(sp);
-    Ok(())
   }
 }
 
 /// Marker capability: composite log backend installed on this thread.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct EffectLogCompositeKey;
-
-impl ::id_effect::CapabilityKey for EffectLogCompositeKey {
-  type Value = ();
-}
+#[::id_effect::capability(())]
+#[allow(dead_code)]
+pub struct EffectLogComposite;
 
 /// Build a provider that registers `composite` for [`EffectLogger::log`] on this thread.
 #[inline]

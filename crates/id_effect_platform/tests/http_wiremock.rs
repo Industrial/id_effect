@@ -1,7 +1,7 @@
-use id_effect::{build_env, provide, run_async};
+use id_effect::{build_env, run_async};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpRequest, ReqwestHttpClientProvider, execute, response_body_chunk,
+  HttpRequest, execute, provide_reqwest_http_client, response_body_chunk,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,7 +15,7 @@ async fn execute_hits_mock_server() {
     .mount(&server)
     .await;
 
-  let env = build_env([provide!(ReqwestHttpClientProvider)]).expect("providers");
+  let env = build_env([provide_reqwest_http_client()]).expect("providers");
   let url = format!("{}/hello", server.uri());
   let res = run_async(execute(HttpRequest::get(url)), env)
     .await

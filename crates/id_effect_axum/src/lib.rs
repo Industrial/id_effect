@@ -74,8 +74,21 @@ pub use channel_bridge::{exchange, exchange_into_response};
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use id_effect::Effect;
+use id_effect::{Effect, Env};
 use id_effect_tokio::run_async;
+
+/// Run `build` with capability [`State<Env>`](axum::extract::State).
+///
+/// Build router state with [`id_effect::build_env`] or bootstrap via [`id_effect::run_with`].
+#[inline]
+pub async fn run_with_caps<A, E, F>(State(env): State<Env>, build: F) -> Result<A, E>
+where
+  A: 'static,
+  E: 'static,
+  F: FnOnce(&mut Env) -> Effect<A, E, Env>,
+{
+  run_with_env(env, build).await
+}
 
 /// Run `build(&mut env)` to obtain an effect, then drive it to completion with the **same** `env`.
 ///
@@ -207,11 +220,11 @@ mod tests {
       .route(
         "/",
         axum::routing::get(|State(s): State<St>, req: Request<Body>| async move {
-          let ch = QueueChannel::<HttpResponse<Bytes>, Request<Bytes>, ()>::from_queue_and_map(
+          let ch = QueueChannel::<HttpResponse<Bytes>, Request<Bytes>, Env>::from_queue_and_map(
             s.q.clone(),
             |req| HttpResponse::new(req.into_body()),
           );
-          exchange_into_response((), ch, req).await
+          exchange_into_response(Env::new(), ch, req).await
         }),
       )
       .with_state(St { q });
@@ -231,21 +244,43 @@ mod tests {
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-  async fn execute_handler() {
+  async fn fiber_scoped_cap_override_per_request() {
+    use id_effect::{build_env, provide, succeed};
+
+    #[::id_effect::capability(u32)]
+    #[expect(dead_code)]
+    struct RequestId;
+
+    #[derive(::id_effect::ProviderSpecDerive)]
+    #[provides(RequestIdKey)]
+    struct RequestIdDefault;
+
+    impl RequestIdDefault {
+      #[allow(clippy::new_ret_no_self)]
+      fn new() -> u32 {
+        0
+      }
+    }
+
+    let base = build_env([provide!(RequestIdDefault)]).expect("env");
+
     let app = Router::new()
       .route(
-        "/x",
-        axum::routing::get(|st: State<AppState>| async move {
-          execute(st, |_env| {
-            succeed::<_, std::convert::Infallible, _>("42".to_string())
-          })
-          .await
+        "/",
+        crate::routing::get(|env: &mut Env| {
+          env.insert::<RequestIdKey>(42u32);
+          succeed::<_, std::convert::Infallible, _>(env.get::<RequestIdKey>().to_string())
         }),
       )
-      .with_state(AppState::default());
+      .with_state(base);
 
-    let req = Request::builder().uri("/x").body(Body::empty()).unwrap();
+    let req = Request::builder().uri("/").body(Body::empty()).unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let bytes = http_body_util::BodyExt::collect(res.into_body())
+      .await
+      .unwrap()
+      .to_bytes();
+    assert_eq!(&bytes[..], b"42");
   }
 }

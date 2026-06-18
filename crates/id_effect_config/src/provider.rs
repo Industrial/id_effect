@@ -5,13 +5,10 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::future::ready;
 use std::sync::Arc;
 
 use ::figment::Figment;
 use ::figment::value::{Num, Value};
-
-use ::id_effect::{BoxFuture, IntoBind, Needs};
 
 use crate::error::ConfigError;
 
@@ -19,8 +16,9 @@ use crate::error::ConfigError;
 
 /// Injectable wrapper around an `Arc<dyn ConfigProvider>`.
 ///
-/// Extract it with `Needs::<ConfigProviderKey>::need(r)` inside an `effect!`
-/// body, or use `~ConfigProviderService` for the async variant.
+/// Extract it with `require!(ConfigProviderKey)` inside an `effect!` body,
+/// or `Needs::<ConfigProviderKey>::need(r)` elsewhere.
+#[::id_effect::capability(ConfigProviderService)]
 #[derive(Clone)]
 pub struct ConfigProviderService(pub Arc<dyn ConfigProvider>);
 
@@ -32,21 +30,7 @@ impl fmt::Debug for ConfigProviderService {
   }
 }
 
-#[allow(missing_docs)]
-mod config_provider_key {
-  use super::ConfigProviderService;
-  ::id_effect::define_capability!(ConfigProviderKey, ConfigProviderService);
-}
-pub use config_provider_key::ConfigProviderKey;
-
-impl<'a, R> IntoBind<'a, R, ConfigProviderService, ConfigError> for ConfigProviderService
-where
-  R: Needs<ConfigProviderKey> + 'a,
-{
-  fn into_bind(self, r: &'a mut R) -> BoxFuture<'a, Result<ConfigProviderService, ConfigError>> {
-    Box::pin(ready(Ok(r.need().clone())))
-  }
-}
+pub use self::ConfigProviderServiceKey as ConfigProviderKey;
 
 /// Options aligned with Effect `ConfigProvider.fromEnv` (`pathDelim`, `seqDelim`).
 #[derive(Clone, Debug)]

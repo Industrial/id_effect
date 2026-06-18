@@ -1,25 +1,21 @@
 //! Build a capability [`Env`] with [`id_effect_logger::EffectLoggerLive`], then run an
-//! effect that extracts `EffectLogger` via `~EffectLogger`.
+//! effect that extracts `EffectLogger` via `~EffectLoggerKey`.
 //!
 //! Run: `devenv shell -- cargo run -p id_effect_logger --example layer_build`
 
-use ::id_effect::{Effect, Env, build_env, effect, provide, run_blocking};
-use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
-
-fn logger_env() -> Env {
-  build_env([provide!(EffectLoggerLive)]).expect("EffectLoggerLive is infallible")
-}
+use ::id_effect::{Effect, caps, effect, provide, run_with};
+use id_effect_logger::{EffectLoggerError, EffectLoggerKey, EffectLoggerLive};
 
 fn main() {
   tracing_subscriber::fmt()
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let prog: Effect<(), EffectLoggerError, Env> = effect!(|_r: &mut Env| {
-    let logger = ~EffectLogger;
-    ~logger.info("logger provided via EffectLoggerLive provider");
+  let prog: Effect<(), EffectLoggerError, caps!(EffectLoggerKey)> = effect!(|r| {
+    let logger = *~EffectLoggerKey;
+    ~logger.info::<caps!(EffectLoggerKey)>("logger provided via EffectLoggerLive provider");
   });
 
-  let result: Result<(), EffectLoggerError> = run_blocking(prog, logger_env());
+  let result = run_with([provide!(EffectLoggerLive)], prog);
   println!("{result:?}");
 }

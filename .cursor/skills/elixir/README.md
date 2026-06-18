@@ -15,3 +15,5 @@ Project skills grounded in the Elixir canon (*Programming Elixir*, *Elixir in Ac
 | [elixir-review](elixir-review/SKILL.md) | PR review, idiomaticity check, pre-merge gate |
 
 Skills cross-link at boundaries. OTP layering lives in `elixir-otp-design`; Phoenix contexts in `elixir-phoenix`; LiveView UI rules in `elixir-liveview`.
+
+For **id_effect Rust** capability DI (not Elixir), use [`../id_effect/SKILL.md`](../id_effect/SKILL.md).

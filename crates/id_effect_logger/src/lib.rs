@@ -2,12 +2,12 @@
 //!
 //! # Service/Tag pattern
 //!
-//! Extract the logger from the environment once with `~EffectLogger`, then call
+//! Extract the logger from the environment once with `require!(EffectLoggerKey)`, then call
 //! its methods as regular effectful steps:
 //!
 //! ```ignore
 //! effect!(|_r: &mut R| {
-//!     let logger = ~EffectLogger;
+//!     let logger = require!(EffectLoggerKey);
 //!     ~logger.warn("something suspicious");
 //!     ~logger.info("all good");
 //!     result
@@ -15,10 +15,10 @@
 //! ```
 //!
 //! The environment `R` only needs to satisfy
-//! `R: Get<EffectLogKey, Here, Target = EffectLogger>`.  The caller composes
+//! `R: Get<EffectLoggerKey, Here, Target = EffectLogger>`.  The caller composes
 //! layers at the top of the program. For a minimal stack that only provides
 //! [`EffectLogger`], build `Context::new(Cons(layer_effect_logger().build().expect(\"…\"), Nil))`
-//! or `Context::new(Cons(Service::<EffectLogKey, _>::new(EffectLogger), Nil))` at the program edge.
+//! or `Context::new(Cons(Service::<EffectLoggerKey, _>::new(EffectLogger), Nil))` at the program edge.
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
@@ -28,10 +28,9 @@
 use core::convert::Infallible;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::future::ready;
 use std::sync::Arc;
 
-use ::id_effect::{BoxFuture, Effect, EffectHashMap, FiberRef, IntoBind, Needs, box_future};
+use ::id_effect::{Effect, EffectHashMap, FiberRef, box_future};
 
 mod pipeline;
 mod providers;
@@ -116,21 +115,18 @@ fn test_clear_all_logger_tls() {
   test_clear_log_metadata_fiber_refs();
 }
 
-/// Log sink for use as [`id_effect::Service<EffectLogKey, Self>`](id_effect::Service); forwards to [`tracing`].
+/// Log sink for use as [`id_effect::Service<EffectLoggerKey, Self>`](id_effect::Service); forwards to [`tracing`].
 ///
-/// Extracted from the environment with `~EffectLogger` inside [`id_effect::effect!`].
+/// Extracted from the environment with `require!(EffectLoggerKey)` inside [`id_effect::effect!`].
 /// After extraction its methods return `Effect<(), EffectLoggerError, R>` and
 /// are themselves awaited with `~`.
+#[::id_effect::capability(EffectLogger)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLogger;
 
-#[allow(missing_docs)]
-mod effect_log_keys {
-  use super::{EffectLogger, FiberRef, LogLevel};
-  id_effect::define_capability!(EffectLogKey, EffectLogger);
-  id_effect::define_capability!(EffectLogMinLevelKey, FiberRef<LogLevel>);
-}
-pub use effect_log_keys::{EffectLogKey, EffectLogMinLevelKey};
+/// Fiber-local minimum log level installed by [`provide_minimum_log_level`].
+#[::id_effect::capability(FiberRef<LogLevel>)]
+pub struct EffectLogMinLevel;
 
 /// Errors that a log sink may produce.
 ///
@@ -393,24 +389,6 @@ impl EffectLogger {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Service extraction: `~EffectLogger` inside `effect!`
-// ---------------------------------------------------------------------------
-
-/// Implementing [`IntoBind`] for [`EffectLogger`] makes `~EffectLogger` valid
-/// inside any `effect!` whose environment `R` holds an `EffectLogger` under
-/// [`EffectLogKey`].  The zero-sized struct acts as its own "request token":
-/// passing it to `~` copies the concrete value out of `R` and binds it as a
-/// local variable.
-impl<'a, R> IntoBind<'a, R, EffectLogger, EffectLoggerError> for EffectLogger
-where
-  R: Needs<EffectLogKey> + 'a,
-{
-  fn into_bind(self, r: &'a mut R) -> BoxFuture<'a, Result<EffectLogger, EffectLoggerError>> {
-    Box::pin(ready(Ok(*r.need())))
-  }
-}
-
 /// Run `inner` with `key=value` merged into the fiber-local annotation map (restored afterward).
 pub fn annotate_logs<A, E, R>(
   key: impl Into<String> + Send + 'static,
@@ -465,11 +443,12 @@ where
 
 #[cfg(test)]
 mod tests {
+  use ::id_effect::Needs;
   use rstest::rstest;
 
   use super::*;
   use crate::{EffectLoggerLive, provide_minimum_log_level};
-  use ::id_effect::{Env, Needs, build_env, provide, run_blocking};
+  use ::id_effect::{Env, build_env, provide, run_blocking};
 
   // ========== Fixtures ==========
 
@@ -760,15 +739,14 @@ mod tests {
 
   // ========== into_bind_extraction ==========
 
-  mod into_bind_extraction {
+  mod needs_extraction {
     use super::*;
+    use ::id_effect::Needs;
 
     #[test]
     fn extracts_logger_copy_from_context() {
       let effect: ::id_effect::Effect<EffectLogger, EffectLoggerError, LogCtx> =
-        ::id_effect::Effect::new_async(move |r| {
-          Box::pin(async move { IntoBind::into_bind(EffectLogger, r).await })
-        });
+        ::id_effect::Effect::new(move |r: &mut LogCtx| Ok(*Needs::<EffectLoggerKey>::need(r)));
       let result = run_blocking(effect, test_ctx());
       assert!(result.is_ok());
     }
@@ -777,9 +755,7 @@ mod tests {
     fn extracted_logger_can_emit_log_via_run_blocking() {
       init_subscriber();
       let effect: ::id_effect::Effect<EffectLogger, EffectLoggerError, LogCtx> =
-        ::id_effect::Effect::new_async(move |r| {
-          Box::pin(async move { IntoBind::into_bind(EffectLogger, r).await })
-        });
+        ::id_effect::Effect::new(move |r: &mut LogCtx| Ok(*Needs::<EffectLoggerKey>::need(r)));
       let logger = run_blocking(effect, test_ctx()).expect("extraction is infallible");
       assert_eq!(run_blocking(logger.info::<()>("extracted"), ()), Ok(()));
     }

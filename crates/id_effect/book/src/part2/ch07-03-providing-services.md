@@ -1,11 +1,11 @@
 # Providing Services — `ProviderSpec` Implementations
 
-You have a trait and an implementation. A [`ProviderSpec`](../../src/capability/provider.rs) wires the impl into [`Env`](../../src/capability/env.rs).
+You have a trait and an implementation. A provider wires the impl into [`Env`](../../src/capability/env.rs).
 
 ## Production provider
 
 ```rust
-use id_effect::{Env, ProviderError, ProviderSpec, define_capability, provide, run_with};
+use id_effect::{Env, ProviderSpecDerive, caps, effect, provide, run_with};
 use std::sync::Arc;
 
 struct PostgresUserRepository { pool: Pool }
@@ -16,17 +16,14 @@ impl UserRepository for PostgresUserRepository {
     }
 }
 
+#[derive(ProviderSpecDerive)]
+#[provides(UserRepoKey)]
 struct UserRepoLive;
 
-impl ProviderSpec for UserRepoLive {
-    type Key = UserRepoKey;
-    type Output = Arc<dyn UserRepository>;
-
-    fn provider_id() -> &'static str { "user-repo-postgres" }
-
-    fn provide(deps: &Env) -> Result<Arc<dyn UserRepository>, ProviderError> {
+impl UserRepoLive {
+    fn new(deps: &Env) -> Arc<dyn UserRepository> {
         let pool = deps.get::<DatabaseKey>().clone();
-        Ok(Arc::new(PostgresUserRepository { pool }))
+        Arc::new(PostgresUserRepository { pool })
     }
 }
 ```
@@ -53,16 +50,13 @@ run_blocking(get_user(1), env)?;
 For a fixed zero-config mock, use a unit struct:
 
 ```rust
+#[derive(ProviderSpecDerive)]
+#[provides(UserRepoKey)]
 struct MockUserRepoLive;
 
-impl ProviderSpec for MockUserRepoLive {
-    type Key = UserRepoKey;
-    type Output = Arc<dyn UserRepository>;
-
-    fn provider_id() -> &'static str { "user-repo-mock" }
-
-    fn provide(_deps: &Env) -> Result<Arc<dyn UserRepository>, ProviderError> {
-        Ok(Arc::new(MockUserRepository::default_fixture()))
+impl MockUserRepoLive {
+    fn new() -> Arc<dyn UserRepository> {
+        Arc::new(MockUserRepository::default_fixture())
     }
 }
 ```
@@ -77,4 +71,4 @@ run_with([provide!(DatabaseLive), provide!(UserRepoLive)], app())?;
 run_with([provide!(MockUserRepoLive)], get_user(1))?;
 ```
 
-Application code using `Needs<UserRepoKey>` and `require!(env, UserRepoKey)` stays identical.
+Application code using `caps!(UserRepoKey)` and `~UserRepoKey` stays identical.

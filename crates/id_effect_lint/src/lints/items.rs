@@ -20,7 +20,7 @@ pub fn check_no_static_service_globals(cx: &LateContext<'_>, item: &rustc_hir::I
         item.span,
         "`static` item found; services must not live in global statics",
         None,
-        "declare capabilities with `define_capability!` + `Needs<Key>` and access via `require!` or `r.need()`",
+        "declare capabilities with `#[capability]` + `Needs<Key>` and access via `require!` or `r.need()`",
       );
     }
   }

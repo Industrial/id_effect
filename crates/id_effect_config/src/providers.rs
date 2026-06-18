@@ -1,11 +1,11 @@
 //! Capability DI v2 providers for [`ConfigProviderService`].
 
+#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
+
 use std::sync::Arc;
 
 use ::figment::Figment;
-use ::id_effect::{
-  CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode, ProviderSpec,
-};
+use ::id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 
 use crate::provider::{
   ConfigProvider, ConfigProviderKey, ConfigProviderService, EnvConfigProvider,
@@ -13,20 +13,13 @@ use crate::provider::{
 };
 
 /// `std::env` [`ConfigProvider`] with default [`ProviderOptions`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(ConfigProviderKey)]
 pub struct EnvConfigProviderLive;
 
-impl ProviderSpec for EnvConfigProviderLive {
-  type Key = ConfigProviderKey;
-  type Output = ConfigProviderService;
-
-  fn provider_id() -> &'static str {
-    "env-config-provider"
-  }
-
-  fn provide(_deps: &Env) -> Result<ConfigProviderService, ProviderError> {
-    Ok(ConfigProviderService(Arc::new(
-      EnvConfigProvider::from_env(),
-    )))
+impl EnvConfigProviderLive {
+  fn new() -> ConfigProviderService {
+    ConfigProviderService(Arc::new(EnvConfigProvider::from_env()))
   }
 }
 

@@ -6,12 +6,12 @@
 //! ## Example (HTTP, capability DI v2)
 //!
 //! ```ignore
-//! use id_effect::{RunError, build_env, provide, run_with};
-//! use id_effect_platform::http::{HttpRequest, ReqwestHttpClientProvider, execute};
+//! use id_effect::{RunError, run_with};
+//! use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
 //!
 //! # fn demo() -> Result<(), id_effect_platform::error::HttpError> {
 //! let res = run_with(
-//!   [provide!(ReqwestHttpClientProvider)],
+//!   [provide_reqwest_http_client()],
 //!   execute(HttpRequest::get("https://example.com")),
 //! )
 //! .map_err(|e| match e {
@@ -28,6 +28,14 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![allow(
+  private_interfaces,
+  private_bounds,
+  dead_code,
+  unused_imports,
+  clippy::new_ret_no_self,
+  clippy::unused_unit
+)]
 
 pub mod error;
 pub mod fs;

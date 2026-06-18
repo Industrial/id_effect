@@ -1,84 +1,60 @@
-# Layer Graphs — Automatic Dependency Resolution
+# Capability Graphs — Automatic Dependency Resolution
 
-For small applications, manually stacking layers in the right order is fine. For larger ones with dozens of services and complex inter-dependencies, it gets tedious and error-prone. `LayerGraph` automates it.
+For small applications, passing a short provider list to [`run_with`](../../src/capability/run.rs) is enough. For larger apps, [`CapabilityGraph`](../../src/capability/graph.rs) plans build order from each provider's `requires()` / `provides()` metadata and surfaces diagnostics via [`CapabilityGraph::diagnostics`](../../src/capability/graph.rs).
 
-## Declaring a Layer Graph
-
-```rust
-use id_effect::{LayerGraph, LayerNode};
-
-let graph = LayerGraph::new()
-    .add(LayerNode::new("config",  config_layer))
-    .add(LayerNode::new("db",      db_layer)
-             .requires("config"))
-    .add(LayerNode::new("cache",   cache_layer)
-             .requires("config"))
-    .add(LayerNode::new("mailer",  mailer_layer)
-             .requires("config"))
-    .add(LayerNode::new("service", service_layer)
-             .requires("db")
-             .requires("cache"))
-    .add(LayerNode::new("app",     app_layer)
-             .requires("service")
-             .requires("mailer"));
-```
-
-Each `LayerNode` has a name and declares its dependencies with `.requires()`. The `LayerGraph` figures out the build order automatically.
-
-## Planning and Building
+## Declaring a provider graph
 
 ```rust
-// Compute the build plan (topological sort)
-let plan: LayerPlan = graph.plan()?;
+use id_effect::{CapabilityGraph, provide};
 
-// Build according to the plan (parallelises where possible)
-let env = plan.build(()).await?;
+let graph = CapabilityGraph::new()
+    .add(provide!(ConfigLive).0)
+    .add(provide!(DatabaseLive).0)
+    .add(provide!(CacheLive).0);
 ```
 
-`LayerPlan` is the computed ordering. It runs independent layers concurrently and sequential layers in order. The graph in the example above would:
-1. Build `config` first
-2. Build `db`, `cache`, and `mailer` concurrently (all need `config`, none need each other)
-3. Build `service` (needs `db` + `cache`)
-4. Build `app` (needs `service` + `mailer`)
+Each `ProviderSpec` declares dependencies via `requires()`; `CapabilityGraph` topologically sorts providers before calling `build` / `build_from`.
 
-## Cycle Detection
+## Planning and building
+
+```rust
+let order = graph.plan()?;
+let env = graph.build()?;
+```
+
+The planner returns node indices in dependency order. Independent branches may appear in any stable topological order.
+
+## Cycle detection
 
 `graph.plan()` returns an error if there are circular dependencies:
 
 ```rust
-let bad_graph = LayerGraph::new()
-    .add(LayerNode::new("a", layer_a).requires("b"))
-    .add(LayerNode::new("b", layer_b).requires("a"));  // circular!
-
-let err = bad_graph.plan();  // Err(LayerGraphError::Cycle { ... })
+let diags = bad_graph.diagnostics();
+assert!(!diags.is_empty()); // e.g. cycle-detected
 ```
 
-Cycles are detected at plan time, before any work begins. The error message identifies the cycle.
+Cycles and missing providers are detected at plan time via [`CapabilityPlannerError::to_diagnostic`](../../src/capability/error.rs). Use `cargo run -p id_effect_cli --bin id-effect-diagnose -- example cycle` to print a sample report.
 
-## Conditional Layers
+## Conditional providers
 
 Layers can be added conditionally:
 
 ```rust
-let mut graph = LayerGraph::new()
-    .add(LayerNode::new("config", config_layer));
-
+let mut providers = vec![provide!(ConfigLive)];
 if cfg!(feature = "metrics") {
-    graph = graph.add(LayerNode::new("metrics", metrics_layer)
-        .requires("config"));
+    providers.push(provide!(MetricsLive));
 }
+let env = build_env(providers)?;
 ```
 
 Feature flags and environment-based configuration compose naturally with the graph API.
 
-## When to Use LayerGraph vs Stack
+## When to use graphs vs hand-built `Env`
 
 | Situation | Prefer |
 |-----------|--------|
-| < 5 layers, clear order | `.stack()` |
-| > 5 layers, complex deps | `LayerGraph` |
-| Need cycle detection | `LayerGraph` |
-| Conditional/pluggable services | `LayerGraph` |
-| Tests with minimal deps | `.stack()` |
-
-`LayerGraph` is overkill for small programs. For anything approaching production scale, the automatic resolution and parallelism are worth it.
+| < 5 capabilities, tests | `build_env([...])` |
+| Complex `requires()` graphs | `CapabilityGraph` |
+| Need diagnostics / cycles | `CapabilityGraph::diagnostics` |
+| Request-local overrides | `Env::scoped` |
+| CLI troubleshooting | `id-effect-diagnose` |

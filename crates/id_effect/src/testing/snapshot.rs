@@ -7,9 +7,9 @@
 //! For map/set keys or explicit “data” typing, prefer also implementing
 //! [`crate::schema::data::EffectData`] (typically via `#[derive(id_effect::EffectData)]` plus `Hash`).
 
-use crate::context::{Cons, Context, Nil, Tagged, ThereHere};
+use crate::capability::build_env;
 use crate::kernel::{Effect, fail, pure, succeed};
-use crate::layer::{Layer, LayerFn, Stack};
+use crate::provide;
 use crate::scheduling::duration::duration;
 use crate::scheduling::schedule::Schedule;
 use crate::schema::equal::equals;
@@ -52,16 +52,11 @@ impl SnapshotAssertion {
 pub const SNAPSHOT_CORPUS: [&str; 6] = [
   "snapshot_effect_map_flat_map",
   "snapshot_effect_catch_map_error",
-  "snapshot_layer_merge_provide",
+  "snapshot_capability_env_lookup",
   "snapshot_schedule_recurs_exponential",
   "snapshot_stream_map_filter_grouped",
   "snapshot_scope_finalizer_order_placeholder",
 ];
-
-#[derive(Debug)]
-struct DbKey;
-#[derive(Debug)]
-struct ClockKey;
 
 /// Snapshots map/flat_map value propagation.
 pub fn snapshot_effect_map_flat_map() -> Effect<SnapshotAssertion, (), ()> {
@@ -87,32 +82,50 @@ pub fn snapshot_effect_catch_map_error() -> Effect<SnapshotAssertion, (), ()> {
     })
 }
 
-/// Snapshots layer stack build + typed lookup as current merge/provide baseline.
-pub fn snapshot_layer_merge_provide() -> Effect<SnapshotAssertion, (), ()> {
-  Effect::new_async(move |_unit: &mut ()| {
-    Box::pin(async move {
-      let layer = Stack(
-        LayerFn(|| Ok::<_, ()>(Tagged::<DbKey, _>::new(7i32))),
-        LayerFn(|| Ok::<_, ()>(Tagged::<ClockKey, _>::new(11u64))),
-      );
+/// Snapshot corpus db capability key.
+#[allow(missing_docs)]
+#[allow(dead_code)]
+#[::id_effect::capability(i32)]
+struct SnapshotDb;
 
-      match layer.build() {
-        Ok(Cons(db, Cons(clock, Nil))) => {
-          let ctx = Context::new(Cons(db, Cons(clock, Nil)));
-          let got_db = *ctx.get::<DbKey>();
-          let got_clock = *ctx.get_path::<ClockKey, ThereHere>();
-          Ok(SnapshotAssertion {
-            name: "snapshot_layer_merge_provide",
-            observed: format!("{got_db}:{got_clock}"),
-            expected: "7:11",
-          })
-        }
-        Err(()) => Ok(SnapshotAssertion {
-          name: "snapshot_layer_merge_provide",
-          observed: "layer-build-failed".to_owned(),
-          expected: "7:11",
-        }),
-      }
+/// Snapshot corpus clock capability key.
+#[allow(missing_docs)]
+#[allow(dead_code)]
+#[::id_effect::capability(u64)]
+struct SnapshotClock;
+
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(SnapshotDbKey)]
+struct SnapshotDbLive;
+
+#[allow(clippy::new_ret_no_self)]
+impl SnapshotDbLive {
+  fn new() -> i32 {
+    7
+  }
+}
+
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(SnapshotClockKey)]
+struct SnapshotClockLive;
+
+#[allow(clippy::new_ret_no_self)]
+impl SnapshotClockLive {
+  fn new() -> u64 {
+    11
+  }
+}
+
+/// Snapshots capability env build + typed lookup as merge/provide baseline.
+pub fn snapshot_capability_env_lookup() -> Effect<SnapshotAssertion, (), ()> {
+  Effect::new(|_| {
+    let env = build_env([provide!(SnapshotDbLive), provide!(SnapshotClockLive)]).map_err(|_| ())?;
+    let got_db = *env.get::<SnapshotDbKey>();
+    let got_clock = *env.get::<SnapshotClockKey>();
+    Ok(SnapshotAssertion {
+      name: "snapshot_capability_env_lookup",
+      observed: format!("{got_db}:{got_clock}"),
+      expected: "7:11",
     })
   })
 }
@@ -155,7 +168,7 @@ pub fn snapshot_suite() -> [Effect<SnapshotAssertion, (), ()>; 6] {
   [
     snapshot_effect_map_flat_map(),
     snapshot_effect_catch_map_error(),
-    snapshot_layer_merge_provide(),
+    snapshot_capability_env_lookup(),
     snapshot_schedule_recurs_exponential(),
     snapshot_stream_map_filter_grouped(),
     snapshot_scope_finalizer_order_placeholder(),
@@ -263,7 +276,7 @@ mod tests {
         [
           "snapshot_effect_map_flat_map",
           "snapshot_effect_catch_map_error",
-          "snapshot_layer_merge_provide",
+          "snapshot_capability_env_lookup",
           "snapshot_schedule_recurs_exponential",
           "snapshot_stream_map_filter_grouped",
           "snapshot_scope_finalizer_order_placeholder",
@@ -300,7 +313,10 @@ mod tests {
       snapshot_effect_catch_map_error(),
       "snapshot_effect_catch_map_error"
     )]
-    #[case::layer_merge_provide(snapshot_layer_merge_provide(), "snapshot_layer_merge_provide")]
+    #[case::capability_env_lookup(
+      snapshot_capability_env_lookup(),
+      "snapshot_capability_env_lookup"
+    )]
     #[case::schedule_recurs_exponential(
       snapshot_schedule_recurs_exponential(),
       "snapshot_schedule_recurs_exponential"

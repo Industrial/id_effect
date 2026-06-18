@@ -3,7 +3,7 @@
 An `Effect` describes a computation that *needs* an environment. A [`ProviderSpec`](../../src/capability/provider.rs) describes *how to build* one capability and register it in [`Env`](../../src/capability/env.rs).
 
 ```
-Effect<User, DbError, Env>  where Env: Needs<DatabaseKey>
+Effect<User, DbError, caps!(DatabaseKey)>
   └── "I need DatabaseKey to produce a User"
 
 ProviderSpec for DatabaseLive

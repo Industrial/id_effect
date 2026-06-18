@@ -1,72 +1,53 @@
-# `Needs` and `require!` — Reading from `Env`
+# `Needs` and `~Key` — Reading from `Env`
 
-To use a capability inside an effect, bound `R` with [`Needs<K>`](../../src/capability/needs.rs) and borrow with [`require!`](../../src/capability/run.rs) or `Needs::need`.
+To use a capability inside an effect, declare required keys in `R` with [`caps!`](../../src/capability/set.rs) and borrow with `~Key`, [`require!`](../../src/capability/run.rs), or `Needs::need`.
 
-## `Needs<K>` — the trait bound
+## Declaring requirements with `caps!`
+
+Put the keys your effect needs in the third type parameter:
 
 ```rust
-use id_effect::{Effect, Env, Needs};
-
-fn use_database<R>(env: &R) -> &Pool
-where
-    R: Needs<DatabaseKey>,
-{
-    Needs::<DatabaseKey>::need(env)
-}
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
+fn notify_user(id: u64, msg: &str) -> Effect<(), AppError, caps!(UserRepoKey, EmailServiceKey)> { ... }
 ```
 
-For [`Env`](../../src/capability/env.rs), `Needs<K>::need` delegates to `env.get::<K>()`. Effect signatures typically write:
+Library helpers can stay generic when callers supply a wider `Env`:
 
 ```rust
 fn get_user<R>(id: u64) -> Effect<User, DbError, R>
 where
-    R: Needs<DatabaseKey> + 'static,
-{ ... }
-```
-
-Compose requirements with `+`:
-
-```rust
-fn notify_user<R>(id: u64, msg: &str) -> Effect<(), AppError, R>
-where
-    R: Needs<UserRepoKey> + Needs<EmailServiceKey> + 'static,
-{ ... }
-```
-
-## `require!` — inside effect bodies
-
-```rust
-use id_effect::{effect, require};
-
-fn get_user(id: u64) -> Effect<User, DbError, Env> {
-    effect!(|env: &mut Env| {
-        let db = require!(env, DatabaseKey);
-        ~ db.fetch_user(id)
+    R: id_effect::Needs<DatabaseKey> + 'static,
+{
+    effect!(|r: &mut R| {
+        let db = ~DatabaseKey;
+        db.fetch_user(id)
     })
 }
 ```
 
-With [`Effect::new`](../../src/kernel/effect.rs) closures:
+## `~Key` — capability lookup inside effect bodies
 
 ```rust
-Effect::new(|env: &mut Env| {
-    let db = require!(env, DatabaseKey);
-    db.fetch_user(id)
-})
+use id_effect::{effect, require, caps};
+
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        db.fetch_user(id)
+    })
+}
 ```
 
-`require!` expands to `Needs::<K>::need(env)` — the v2 replacement for tag-based `Get` + `~ ServiceKey` lookup.
+`~Key` inside `effect!` expands to a typed borrow from `r`. `require!(K)` is equivalent sugar.
 
-## Compile-time guarantees
-
-If `get_user` requires `DatabaseKey` but you run it with an empty `Env`, you get a **runtime** missing-capability error when the effect executes — not a silent `None`. For static verification, keep `Needs<K>` bounds on public APIs so callers must wire providers before `run_with`.
+If `get_user` requires `DatabaseKey` but you run it with an empty `Env`, you get a **runtime** missing-capability error when the effect executes — not a silent `None`. For static verification, keep `caps!(…)` or `Needs<K>` bounds on public APIs so callers must wire providers before `run_with`.
 
 When building tests manually:
 
 ```rust
 let mut env = Env::new();
 // forgot env.insert::<DatabaseKey>(...)
-run_blocking(get_user(42), env); // panics on require! / get
+run_blocking(get_user(42), env); // panics on ~Key / get
 ```
 
 Prefer `build_env` or typed test helpers so incomplete wiring fails at setup time.
@@ -75,8 +56,8 @@ Prefer `build_env` or typed test helpers so incomplete wiring fails at setup tim
 
 | Tool | Use |
 |------|-----|
-| `R: Needs<K>` | Declare dependency in signature |
-| `require!(env, K)` | Borrow inside `effect!` / `Effect::new` |
+| `caps!(K1, K2, …)` | Declare dependencies in `R` |
+| `~Key` / `require!(K)` | Borrow inside `effect!` |
 | `env.get::<K>()` | Direct access when you hold `&Env` |
 | `env.try_get::<K>()` | Fallible lookup without panic |
 

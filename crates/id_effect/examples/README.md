@@ -14,10 +14,13 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 003–005 | `003_map` … `005_pipe` | `map`, `flat_map`, `pipe!` |
 | 006–010 | `006_effect_macro_binds` … `010_one_effect_macro_per_fn` | `effect!` / `Result` bind |
 | 011–018 | `011_map_error` … `018_exit_type` | errors, `Or`, `Cause`, `Exit` |
-| 040 | `040_capability_app.rs` | capability DI v2: `define_capability!`, `ProviderSpec`, `run_with` |
+| 040 | `040_capability_app.rs` | capability DI: `#[capability]`, `ProviderSpec`, `run_with` |
+| 041 | `041_scoped_config_provider.rs` | `Env::scoped` config override (replaces ambient) |
 | 008 | `008_effect_macro_env.rs` | `effect!` + `require!` with capability [`Env`] |
-| 034–036 | `034_provide_service` … `036_layer_graph_diagnostics` | multi-capability apps + provider graph planning |
-| 037–042 | `037_from_async_basic` … `042_yield_now` | async effects, `Runtime`, yield |
+| 034, 036 | archived — legacy layer examples in `archived/` |
+| 037–041 | `037_from_async_basic` … `041_scoped_config_provider` | async effects, scoped config |
+| 042 | `042_effectful_config_provider.rs` | effectful `provide_effect` provider |
+| 043 | `043_named_variant_providers.rs` | `#[named]` primary/replica variants |
 | 043–052 | `043_cancellation_token` … `052_schedule_repeat_n` | cancellation, fibers (`FiberRef`, `fiber_all`), `repeat_n` |
 | 053–059 | `053_schedule_repeat` … `059_schedule_interrupt` | `Schedule`, clocks, interrupts |
 | 060–076 | `060_stream_range` … `076_stream_duplex_queue` | `Stream`, `from_iterable`, duplex queue, backpressure |

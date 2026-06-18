@@ -2,9 +2,7 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-/// Capability DI macros (`define_capability!`, `caps!`, `provide!`, `require!`).
+/// Capability DI macros (`caps!`, `provide!`, `providers!`, `require!`).
 pub mod capability;
-pub mod context;
-pub mod layer;
+pub mod err;
 pub mod pipe;
-pub mod service;

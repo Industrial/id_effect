@@ -13,7 +13,7 @@ enum AppError { Db(DbError), Notify(NotifyError) }
 ## Three service traits + keys
 
 ```rust
-use id_effect::{Effect, define_capability};
+use id_effect::Effect;
 use std::sync::Arc;
 
 pub trait UserRepository: Send + Sync {
@@ -28,36 +28,35 @@ pub trait NotificationService: Send + Sync {
     fn send_welcome(&self, to: &str) -> Effect<(), NotifyError, ()>;
 }
 
-define_capability!(UserRepoKey, Arc<dyn UserRepository>);
-define_capability!(PostRepoKey, Arc<dyn PostRepository>);
-define_capability!(NotifierKey, Arc<dyn NotificationService>);
+#[::id_effect::capability(Arc<dyn UserRepository>)]
+struct UserRepo;
+
+#[::id_effect::capability(Arc<dyn PostRepository>)]
+struct PostRepo;
+
+#[::id_effect::capability(Arc<dyn NotificationService>)]
+struct Notifier;
 ```
 
 ## Business logic
 
 ```rust
-use id_effect::{effect, require, Needs};
+use id_effect::{effect, require, caps, succeed};
 
-fn get_author_feed(author_id: u64) -> Effect<(User, Vec<Post>), AppError, Env>
-where
-    Env: Needs<UserRepoKey> + Needs<PostRepoKey>,
-{
-    effect!(|env: &mut Env| {
-        let user_repo = require!(env, UserRepoKey);
-        let post_repo = require!(env, PostRepoKey);
+fn get_author_feed(author_id: u64) -> Effect<(User, Vec<Post>), AppError, caps!(UserRepoKey, PostRepoKey)> {
+    effect!(|r| {
+        let user_repo = ~UserRepoKey;
+        let post_repo = ~PostRepoKey;
         let user  = ~ user_repo.get_user(author_id).map_error(AppError::Db);
         let posts = ~ post_repo.get_posts_by_author(author_id).map_error(AppError::Db);
         (user, posts)
     })
 }
 
-fn register_user(name: &str, email: &str) -> Effect<User, AppError, Env>
-where
-    Env: Needs<UserRepoKey> + Needs<NotifierKey>,
-{
-    effect!(|env: &mut Env| {
-        let repo     = require!(env, UserRepoKey);
-        let notifier = require!(env, NotifierKey);
+fn register_user(name: &str, email: &str) -> Effect<User, AppError, caps!(UserRepoKey, NotifierKey)> {
+    effect!(|r| {
+        let repo = ~UserRepoKey;
+        let notifier = ~NotifierKey;
         let user = ~ repo.create_user(name, email).map_error(AppError::Db);
         ~ notifier.send_welcome(&user.email).map_error(AppError::Notify);
         user
@@ -85,7 +84,7 @@ fn main() {
 }
 ```
 
-[`CapabilityGraph`](../../src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that call `deps.get::<DatabaseKey>()`.
+[`CapabilityGraph`](../../src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that read `DatabaseKey` from `Env`.
 
 ## Test wiring
 
@@ -104,8 +103,8 @@ fn feed_includes_authors_posts() {
 
 ## What this demonstrates
 
-- Business logic declares `Needs<K>` and uses `require!` — no Postgres, SMTP, or concrete types in domain code.
+- Business logic declares `caps!(…)` and uses `~Key` — no Postgres, SMTP, or concrete types in domain code.
 - Providers swap at the edge via `provide!(…)`.
-- The dependency graph is explicit in provider `requires()` + the effect's `Needs` bounds.
+- The dependency graph is explicit in provider `requires()` + the effect's capability list.
 
-That's compile-time dependency injection in v2: requirements are typed; wiring is centralized at `main` and in tests.
+That's compile-time dependency injection: requirements are typed; wiring is centralized at `main` and in tests.

@@ -67,38 +67,40 @@ pools.with_resource("read-replica", |conn| { ... })
 
 Each key has its own independently bounded pool.
 
-## Pool as a Service
+## Pool as a capability
 
-In practice, pools live in the effect environment as services:
+In practice, pools live in [`Env`](../../src/capability/env.rs) and are wired at the program edge:
 
 ```rust
-service_key!(DbPoolKey: Pool<Connection>);
+use id_effect::{Effect, caps, effect, provide, require, run_with, Needs, ProviderSpecDerive};
 
-fn query_users() -> Effect<Vec<User>, DbError, impl NeedsDbPool> {
-    effect! {
-        let pool = ~ DbPoolKey;
-        ~ pool.with_resource(|conn| {
-            effect! {
-                let rows = ~ conn.query("SELECT * FROM users");
-                rows.iter().map(User::from_row).collect::<Vec<_>>()
-            }
-        })
+#[::id_effect::capability(Pool<Connection>)]
+struct DbPool;
+
+#[derive(ProviderSpecDerive)]
+#[provides(DbPoolKey)]
+struct DbPoolLive;
+
+impl DbPoolLive {
+    fn new(config: &Config) -> Pool<Connection> {
+        Pool::new(|| Connection::open(config.db_url()), config.pool_size())
     }
 }
+
+fn query_users() -> Effect<Vec<User>, DbError, caps!(DbPoolKey)> {
+    effect!(|r| {
+        let pool = ~DbPoolKey;
+        ~ pool.with_resource(|conn| {
+            effect!(|r| {
+                let rows = ~ conn.query("SELECT * FROM users");
+                rows.iter().map(User::from_row).collect::<Vec<_>>()
+            })
+        })
+    })
+}
+
+// main or test
+run_with([provide!(ConfigLive), provide!(DbPoolLive)], query_users())?;
 ```
 
-The pool is provided via a Layer:
-
-```rust
-let pool_layer = LayerFn::new(|config: &Tagged<ConfigKey>| {
-    effect! {
-        let pool = Pool::new(
-            || Connection::open(config.value().db_url()),
-            config.value().pool_size(),
-        );
-        tagged::<DbPoolKey>(pool)
-    }
-});
-```
-
-Pool creation, lifecycle, and cleanup are all handled by the Layer. Business code sees only `NeedsDbPool`.
+Pool creation runs in the provider graph; business code declares `caps!(DbPoolKey)` and uses `~DbPoolKey` inside `effect!`.

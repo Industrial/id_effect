@@ -36,13 +36,13 @@ The point is not that `async fn` is “eager.” It is that **effects give you a
 Because effects are values, you can build an entire program before running any of it:
 
 ```rust
-fn load_dashboard(user_id: u64) -> Effect<DashboardPage, AppError, (Database, Cache, Logger)> {
-    effect! {
+fn load_dashboard(user_id: u64) -> Effect<DashboardPage, AppError, caps!(DatabaseKey, CacheKey, LoggerKey)> {
+    effect!(|r| {
         let user    = ~ fetch_user(user_id).map_error(AppError::Db);
         let posts   = ~ fetch_posts(user.id).map_error(AppError::Db);
         let profile = ~ build_profile(&user, &posts).map_error(AppError::Render);
         profile
-    }
+    })
 }
 
 // Nothing has run yet. We have a value.
@@ -51,8 +51,11 @@ let page = load_dashboard(42);
 // Chain more work onto it — still nothing runs
 let logged_page = page.flat_map(|p| log_view(p));
 
-// Only now does any of this execute
-run_blocking(logged_page.provide(env));
+// Only now does any of this execute — wire every key once at the edge
+run_with(
+    [provide!(DatabaseLive), provide!(CacheLive), provide!(LoggerLive)],
+    logged_page,
+)?;
 ```
 
 Every line before `run_blocking` is pure data manipulation. You're assembling a pipeline. The pipeline can be inspected, transformed, passed to other functions, stored in a struct. The laws of composition apply cleanly because there are no side-effects sneaking in.
@@ -107,10 +110,10 @@ There are exactly three places where an `Effect` executes:
 
 ```rust
 // In a binary or application entry point
-run_blocking(program.provide(env));
+run_blocking(program, ());
 
 // In an async context
-run_async(program.provide(env)).await;
+run_async(program, ()).await;
 
 // In tests
 run_test(program, test_env);

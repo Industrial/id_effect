@@ -1,7 +1,7 @@
 //! GET a URL via [`id_effect_platform::http`] + Tokio (`id_effect_tokio::run_async`).
 
-use id_effect::{RunError, provide, run_with};
-use id_effect_platform::http::{HttpRequest, ReqwestHttpClientProvider, execute};
+use id_effect::{Env, RunError, run_with};
+use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
 
 #[tokio::main]
 async fn main() -> Result<(), id_effect_platform::error::HttpError> {
@@ -9,8 +9,8 @@ async fn main() -> Result<(), id_effect_platform::error::HttpError> {
     .nth(1)
     .unwrap_or_else(|| "https://example.com".to_string());
   let res = run_with(
-    [provide!(ReqwestHttpClientProvider)],
-    execute(HttpRequest::get(url)),
+    [provide_reqwest_http_client()],
+    execute::<Env>(HttpRequest::get(url)),
   )
   .map_err(|e| match e {
     RunError::Effect(e) => e,

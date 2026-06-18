@@ -1,0 +1,29 @@
+warning: unused import: `CapWiden`
+ --> tests/ui/cap_widen_invalid.rs:1:26
+  |
+1 | use id_effect::{CapList, CapWiden, Env};
+  |                          ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0599]: no associated function or constant named `from_env` found for struct `CapList<(DbKey,)>` in the current scope
+  --> tests/ui/cap_widen_invalid.rs:13:35
+   |
+13 |   let wide = CapList::<(DbKey,)>::from_env(env);
+   |                                   ^^^^^^^^ associated function or constant not found in `CapList<(DbKey,)>`
+   |
+note: if you're trying to build a new `CapList<(DbKey,)>`, consider using `CapList::<Ks>::new` which returns `CapList<_>`
+  --> src/capability/set.rs
+   |
+   |   pub fn new(inner: Env) -> Self {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: items from traits can only be used if the trait is in scope
+help: trait `FromEnv` which provides `from_env` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use id_effect::FromEnv;
+   |
+help: there is an associated function `from` with a similar name
+   |
+13 -   let wide = CapList::<(DbKey,)>::from_env(env);
+13 +   let wide = CapList::<(DbKey,)>::from(env);
+   |

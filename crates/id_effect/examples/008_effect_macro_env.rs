@@ -1,30 +1,25 @@
-//! Ex 008 — `effect!` with capability DI: `require!` reads from [`Env`].
+#![allow(dead_code, clippy::new_ret_no_self)]
 
-use id_effect::{
-  Effect, Env, ProviderError, ProviderSpec, define_capability, effect, provide, require, run_with,
-  succeed,
-};
+//! Ex 008 — `effect!` with capability DI: `~Key` reads from the environment.
 
-define_capability!(CounterKey, i32);
+use id_effect::{Effect, caps, effect, provide, run_with};
 
+#[::id_effect::capability(i32)]
+struct Counter;
+
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(CounterKey)]
 struct CounterLive;
 
-impl ProviderSpec for CounterLive {
-  type Key = CounterKey;
-  type Output = i32;
-
-  fn provider_id() -> &'static str {
-    "counter-live"
-  }
-
-  fn provide(_deps: &Env) -> Result<i32, ProviderError> {
-    Ok(41)
+impl CounterLive {
+  fn new() -> i32 {
+    41
   }
 }
 
 fn main() {
-  let program: Effect<i32, (), Env> = effect!(|env: &mut Env| {
-    let n = ~succeed(*require!(env, CounterKey));
+  let program: Effect<i32, (), caps!(CounterKey)> = effect!(|r| {
+    let n = *~CounterKey;
     n + 1
   });
   let n = run_with([provide!(CounterLive)], program).expect("run");

@@ -1,3 +1,4 @@
+#![allow(clippy::new_ret_no_self, unused_imports)]
 //! Capability DI v2 providers for [`reqwest::Client`] and connection pools.
 
 use std::sync::Arc;
@@ -5,24 +6,19 @@ use std::time::Duration;
 
 use ::id_effect::{
   CapabilityId, CapabilityKey, Env, Never, Pool, ProviderBox, ProviderError, ProviderNode,
-  ProviderSpec, run_blocking, succeed,
+  run_blocking, succeed,
 };
 
 use crate::{Client, PooledClient, ReqwestClientKey, ReqwestPoolKey};
 
 /// Default [`ProviderSpec`] for [`reqwest::Client::new`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(ReqwestClientKey)]
 pub struct ReqwestClientLive;
 
-impl ProviderSpec for ReqwestClientLive {
-  type Key = ReqwestClientKey;
-  type Output = Client;
-
-  fn provider_id() -> &'static str {
-    "reqwest/client-default"
-  }
-
-  fn provide(_deps: &Env) -> Result<Client, ProviderError> {
-    Ok(Client::new())
+impl ReqwestClientLive {
+  fn new() -> Client {
+    Client::new()
   }
 }
 

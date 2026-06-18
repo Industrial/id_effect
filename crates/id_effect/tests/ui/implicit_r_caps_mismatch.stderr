@@ -1,0 +1,13 @@
+error[E0282]: type annotations needed for `id_effect::Effect<(), _, CapList<(DatabaseKey,)>>`
+  --> tests/ui/implicit_r_caps_mismatch.rs:9:7
+   |
+ 9 |     let _ = id_effect::effect!(|r: &mut id_effect::caps!(DatabaseKey)| {
+   |  _______^___-
+10 | |     let _ = ~LoggerKey;
+11 | |   });
+   | |____- type must be known at this point
+   |
+help: consider giving this pattern a type, where the placeholders `_` are specified
+   |
+ 9 |   let _: id_effect::Effect<_, _, CapList<(DatabaseKey,)>> = id_effect::effect!(|r: &mut id_effect::caps!(DatabaseKey)| {
+   |        ++++++++++++++++++++++++++++++++++++++++++++++++++

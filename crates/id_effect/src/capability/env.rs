@@ -1,7 +1,9 @@
 //! [`Env`] — order-independent capability container.
 
-use super::error::CapabilityError;
+use super::error::{CapabilityError, CapabilityPlannerError};
+use super::graph::CapabilityGraph;
 use super::key::CapabilityKey;
+use super::provider::ProviderBox;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;
@@ -88,6 +90,37 @@ impl Env {
   #[inline]
   pub fn is_empty(&self) -> bool {
     self.cells.is_empty()
+  }
+
+  /// Insert a generic cell keyed by `TypeId::of::<T>()` (non-object-safe traits).
+  pub fn insert_any<T: Send + Sync + 'static>(&mut self, value: Arc<T>) -> &mut Self {
+    self.cells.insert(TypeId::of::<T>(), value);
+    self
+  }
+
+  /// Borrow a generic cell inserted via [`Self::insert_any`].
+  pub fn get_any<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, CapabilityError> {
+    let id = TypeId::of::<T>();
+    let cell = self
+      .cells
+      .get(&id)
+      .ok_or(CapabilityError::Missing(super::id::CapabilityId::of::<T>()))?;
+    cell
+      .clone()
+      .downcast::<T>()
+      .map_err(|_| CapabilityError::Missing(super::id::CapabilityId::of::<T>()))
+  }
+
+  /// Build additional providers on a clone of this environment (scoped child).
+  pub fn scoped<I>(&self, providers: I) -> Result<Env, CapabilityPlannerError>
+  where
+    I: IntoIterator<Item = ProviderBox>,
+  {
+    let mut graph = CapabilityGraph::new();
+    for p in providers {
+      graph = graph.add(p.0);
+    }
+    graph.build_from(self.clone())
   }
 }
 

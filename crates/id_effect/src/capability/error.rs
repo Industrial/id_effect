@@ -115,13 +115,19 @@ impl CapabilityPlannerError {
       },
       Self::ConflictingProvider { cap, first, second } => CapabilityDiagnostic {
         code: self.code(),
-        message: format!("Multiple providers for capability `{cap}` (`{first}`, `{second}`)."),
-        suggestion: String::from("Provide one canonical implementation per capability."),
+        message: format!("Conflicting providers for capability `{cap}`: `{first}` and `{second}`."),
+        suggestion: format!(
+          "Use #[named(\"variant\")] on one provider or remove provide!({second}). See appendix-b-migration.md."
+        ),
       },
       Self::MissingProvider { provider, cap } => CapabilityDiagnostic {
         code: self.code(),
-        message: format!("Provider `{provider}` requires `{cap}` but none is registered."),
-        suggestion: String::from("Add a provider for the missing capability."),
+        message: format!(
+          "Provider `{provider}` requires capability `{cap}` but none is registered."
+        ),
+        suggestion: format!(
+          "Add `provide!(Your{cap}Live)` to your provider list. See appendix-b-migration.md."
+        ),
       },
       Self::CycleDetected { nodes } => CapabilityDiagnostic {
         code: self.code(),

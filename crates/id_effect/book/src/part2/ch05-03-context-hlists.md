@@ -1,6 +1,6 @@
 # `Env` — The Runtime Capability Container
 
-In v2, multi-capability effects use [`Env`](../../src/capability/env.rs): a map from capability identity to service value. Unlike the old HList `Context`, **insertion order does not matter**.
+Multi-capability effects use [`Env`](../../src/capability/env.rs) at runtime: a map from capability identity to service value. **Insertion order does not matter**.
 
 ## Structure
 
@@ -44,11 +44,11 @@ env.insert::<DatabaseKey>(MockPool::new());
 
 You could store `dyn Any` and downcast. `Env` + `CapabilityKey` keeps:
 
-- **Compile-time requirements** via `Needs<K>` bounds
+- **Compile-time requirements** via `Needs<K>` bounds and `caps!`
 - **Typed access** — `get::<DatabaseKey>()` returns `&Pool`, not `&dyn Any`
 - **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](../../src/capability/error.rs) with the key name
 
-The HList `Cons` / `Nil` machinery still exists internally for legacy paths, but **application code should think in `Env` and keys**, not list types.
+Application code should think in **`Env` and capability keys**, not positional tuples.
 
 ## Order independence
 
@@ -66,6 +66,6 @@ Adding a new capability never changes how existing keys are accessed — refacto
 
 - Test fixtures with one or two mocks
 - Tokio/async examples that pass `Env` to [`run_async`](../../src/runtime/mod.rs)
-- Bridging from non-effect code that already has concrete handles
+- HTTP hosts that store `State<Env>` (see [Axum host](./ch07-08-axum-host.md))
 
 Production apps usually list [`provide!(…)`](../../src/capability/provider.rs) values once at the top level and let [`CapabilityGraph`](../../src/capability/graph.rs) assemble `Env`.

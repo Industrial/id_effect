@@ -34,7 +34,6 @@ pub mod applicative;
 pub mod bifunctor;
 pub mod contravariant;
 pub mod functor;
-pub mod interface;
 pub mod monad;
 pub mod monoid;
 pub mod selective;

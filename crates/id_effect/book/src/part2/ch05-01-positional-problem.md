@@ -52,4 +52,4 @@ Each dependency needs a **compile-time name** independent of position:
 
 Different keys, same underlying type — the compiler catches swaps.
 
-That's what [`define_capability!`](../../src/capability/key.rs) generates in v2.
+That's what [`#[capability]`](../../src/capability/key.rs) generates.

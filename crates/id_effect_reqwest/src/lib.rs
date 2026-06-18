@@ -48,10 +48,18 @@
 //!
 //! See `examples/` (e.g. `cargo run -p id_effect_reqwest --example 010_wiremock_get_text`).
 
+#![allow(
+  clippy::new_ret_no_self,
+  clippy::unused_unit,
+  dead_code,
+  unused_imports
+)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use ::id_effect::{Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect};
+use ::id_effect::{
+  CapBindR, Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect,
+};
 use std::sync::Arc;
 
 mod providers;
@@ -62,11 +70,12 @@ use serde_json::Value;
 
 pub use reqwest::{Client, ClientBuilder, Error, RequestBuilder, Response, StatusCode};
 
-id_effect::define_capability!(
+mod reqwest_client_cap {
   /// Tag for the default [`reqwest::Client`] in the capability environment.
-  ReqwestClientKey,
-  reqwest::Client
-);
+  #[::id_effect::capability(::reqwest::Client)]
+  pub struct ReqwestClient;
+}
+pub use reqwest_client_cap::ReqwestClientKey;
 
 /// Wraps [`Client`] in an [`Arc`] so it can live in [`Pool`] ([`PartialEq`] uses pointer identity).
 #[derive(Clone, Debug)]
@@ -96,11 +105,14 @@ impl PartialEq for PooledClient {
 
 impl Eq for PooledClient {}
 
-id_effect::define_capability!(
+mod reqwest_pool_cap {
+  use super::{Never, PooledClient};
+  use ::id_effect::Pool;
   /// Tag for [`Pool`]`<`[`PooledClient`]`, `[`Never`]`>` in the capability environment.
-  ReqwestPoolKey,
-  Pool<PooledClient, Never>
-);
+  #[::id_effect::capability(Pool<PooledClient, Never>)]
+  pub struct ReqwestPool;
+}
+pub use reqwest_pool_cap::ReqwestPoolKey;
 
 /// [`send`] with a client checked out from [`ReqwestPoolKey`]; returns to the pool when the inner scope closes.
 #[inline]
@@ -108,12 +120,12 @@ pub fn send_pooled<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestPoolKey> + 'static,
+  R: Needs<ReqwestPoolKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
     let pool = Needs::<ReqwestPoolKey>::need(r).clone();
-    let (pooled, scope) = ~from_async(move |_r| async move {
+    let (pooled, scope) = ~from_async(move |_r: &mut R| async move {
       let mut scope = Scope::make();
       let pooled = pool
         .get()
@@ -122,7 +134,7 @@ where
         .expect("pool factory is infallible");
       Ok::<(PooledClient, Scope), E>((pooled, scope))
     });
-    let resp = ~from_async(move |_r| async move {
+    let resp = ~from_async(move |_r: &mut R| async move {
       build(&pooled).send().await.map_err(E::from)
     });
     scope.close();
@@ -166,7 +178,7 @@ pub fn json_schema<R, F, A, I, Es>(
   build: F,
 ) -> Effect<A, JsonSchemaError, R>
 where
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   Es: EffectData + 'static,
   A: 'static,
@@ -175,10 +187,10 @@ where
   effect!(|r: &mut R| {
     let client = Needs::<ReqwestClientKey>::need(r).clone();
     let schema_arc = Arc::clone(&schema);
-    let resp = ~from_async(move |_r| async move {
+    let resp = ~from_async(move |_r: &mut R| async move {
       build(&client).send().await.map_err(JsonSchemaError::Http)
     });
-    let buf = ~from_async(move |_r| async move {
+    let buf = ~from_async(move |_r: &mut R| async move {
       resp.bytes().await.map_err(JsonSchemaError::Http)
     });
     match decode_response_schema(&schema_arc, &buf) {
@@ -194,12 +206,12 @@ pub fn send<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
     let client = Needs::<ReqwestClientKey>::need(r).clone();
-    ~from_async(move |_r| async move {
+    ~from_async(move |_r: &mut R| async move {
       build(&client)
         .send()
         .await
@@ -215,15 +227,15 @@ pub fn text<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<String> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
     let client = Needs::<ReqwestClientKey>::need(r).clone();
-    let resp = ~from_async(move |_r| async move {
+    let resp = ~from_async(move |_r: &mut R| async move {
       build(&client).send().await.map_err(E::from)
     });
-    let body = ~from_async(move |_r| async move {
+    let body = ~from_async(move |_r: &mut R| async move {
       resp.text().await.map_err(E::from)
     });
     A::from(body)
@@ -236,15 +248,15 @@ pub fn bytes<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<bytes::Bytes> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
     let client = Needs::<ReqwestClientKey>::need(r).clone();
-    let resp = ~from_async(move |_r| async move {
+    let resp = ~from_async(move |_r: &mut R| async move {
       build(&client).send().await.map_err(E::from)
     });
-    let body = ~from_async(move |_r| async move {
+    let body = ~from_async(move |_r: &mut R| async move {
       resp.bytes().await.map_err(E::from)
     });
     A::from(body)
@@ -257,16 +269,16 @@ pub fn json<A, E, R, F, T>(build: F) -> Effect<A, E, R>
 where
   A: From<T> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   T: serde::de::DeserializeOwned + 'static,
 {
   effect!(|r: &mut R| {
     let client = Needs::<ReqwestClientKey>::need(r).clone();
-    let resp = ~from_async(move |_r| async move {
+    let resp = ~from_async(move |_r: &mut R| async move {
       build(&client).send().await.map_err(E::from)
     });
-    let value = ~from_async(move |_r| async move {
+    let value = ~from_async(move |_r: &mut R| async move {
       resp.json::<T>().await.map_err(E::from)
     });
     A::from(value)
@@ -279,10 +291,10 @@ pub fn get<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.get(url));
+    let x = ~send::<A, E, R, _>(move |c| c.get(url));
     x
   })
 }
@@ -293,10 +305,10 @@ pub fn post<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.post(url));
+    let x = ~send::<A, E, R, _>(move |c| c.post(url));
     x
   })
 }
@@ -307,10 +319,10 @@ pub fn put<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.put(url));
+    let x = ~send::<A, E, R, _>(move |c| c.put(url));
     x
   })
 }
@@ -321,10 +333,10 @@ pub fn delete<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.delete(url));
+    let x = ~send::<A, E, R, _>(move |c| c.delete(url));
     x
   })
 }
@@ -335,10 +347,10 @@ pub fn head<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.head(url));
+    let x = ~send::<A, E, R, _>(move |c| c.head(url));
     x
   })
 }
@@ -349,10 +361,10 @@ pub fn patch<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + 'static,
+  R: Needs<ReqwestClientKey> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
-    let x = ~send(move |c| c.patch(url));
+    let x = ~send::<A, E, R, _>(move |c| c.patch(url));
     x
   })
 }

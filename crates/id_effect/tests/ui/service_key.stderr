@@ -1,0 +1,5 @@
+error[E0433]: cannot find `service_key` in `id_effect`
+ --> tests/ui/service_key.rs:3:14
+  |
+3 |   id_effect::service_key!(struct PublicDbKey);
+  |              ^^^^^^^^^^^ could not find `service_key` in `id_effect`

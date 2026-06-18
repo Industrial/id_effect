@@ -152,9 +152,8 @@ pub fn check_no_concrete_context<'tcx>(
           if let Some(args) = last.args {
             // Third generic arg is R.
             if let Some(rustc_hir::GenericArg::Type(r_ty)) = args.args.get(2) {
-              if ty_last_segment_is(r_ty.as_unambig_ty(), "Context")
-                || ty_last_segment_is(r_ty.as_unambig_ty(), "Cons")
-              {
+              let r = r_ty.as_unambig_ty();
+              if ty_last_segment_is(r, "Context") || ty_last_segment_is(r, "Cons") {
                 span_lint_and_help(
                   cx,
                   NO_CONCRETE_CONTEXT_IN_PUB_API,
@@ -162,6 +161,15 @@ pub fn check_no_concrete_context<'tcx>(
                   "public API exposes concrete `Context<Cons<…>>` as `R` type",
                   None,
                   "use `impl NeedsX` or a generic `R: Needs<Key> + 'static` bound",
+                );
+              } else if ty_last_segment_is(r, "Env") {
+                span_lint_and_help(
+                  cx,
+                  NO_CONCRETE_ENV_IN_PUB_API,
+                  span,
+                  "public API exposes concrete `Env` as `R` type",
+                  None,
+                  "use a generic `R: Needs<Key> + 'static` bound instead of bare `Env`",
                 );
               }
             }

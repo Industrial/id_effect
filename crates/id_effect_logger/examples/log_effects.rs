@@ -1,14 +1,10 @@
-//! Extract [`EffectLogger`] once with `~EffectLogger`, then call its methods
+//! Extract [`EffectLogger`] once with `~EffectLoggerKey`, then call its methods
 //! as `~logger.level(…)` steps — each returns `Effect<(), EffectLoggerError, R>`.
 //!
 //! Run: `RUST_LOG=trace devenv shell -- cargo run -p id_effect_logger --example log_effects`
 
-use ::id_effect::{Effect, Env, build_env, effect, provide, run_blocking};
-use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
-
-fn logger_env() -> Env {
-  build_env([provide!(EffectLoggerLive)]).expect("EffectLoggerLive is infallible")
-}
+use ::id_effect::{Effect, caps, effect, provide, run_with};
+use id_effect_logger::{EffectLoggerError, EffectLoggerKey, EffectLoggerLive};
 
 fn main() {
   tracing_subscriber::fmt()
@@ -18,15 +14,15 @@ fn main() {
     )
     .init();
 
-  let prog: Effect<(), EffectLoggerError, Env> = effect!(|_r: &mut Env| {
-    let logger = ~EffectLogger;
-    ~logger.trace("trace step");
-    ~logger.debug("debug step");
-    ~logger.info("info step");
-    ~logger.warn("warn step");
-    ~logger.error("error step");
+  let prog: Effect<(), EffectLoggerError, caps!(EffectLoggerKey)> = effect!(|r| {
+    let logger = *~EffectLoggerKey;
+    ~logger.trace::<caps!(EffectLoggerKey)>("trace step");
+    ~logger.debug::<caps!(EffectLoggerKey)>("debug step");
+    ~logger.info::<caps!(EffectLoggerKey)>("info step");
+    ~logger.warn::<caps!(EffectLoggerKey)>("warn step");
+    ~logger.error::<caps!(EffectLoggerKey)>("error step");
   });
 
-  run_blocking(prog, logger_env()).expect("logging should not fail");
-  println!("ran all five log levels via ~EffectLogger");
+  run_with([provide!(EffectLoggerLive)], prog).expect("logging should not fail");
+  println!("ran all five log levels via ~EffectLoggerKey");
 }

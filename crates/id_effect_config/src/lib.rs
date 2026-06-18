@@ -55,8 +55,6 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-
-mod ambient;
 mod config_desc;
 mod error;
 mod load;
@@ -64,7 +62,6 @@ mod provider;
 mod providers;
 mod secret;
 
-pub use ambient::{current_config_provider, with_config_provider};
 pub use config_desc::{Config, all, all_vec, all3, nest, or_else as or_else_config, zip_with};
 pub use error::ConfigError;
 pub use load::{
@@ -117,12 +114,10 @@ pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
 /// The *descriptor* ([`Config`]) and *free functions* ([`all`], [`zip_with`], …) are
 /// re-exported here so call sites can write `config::all(…)` and `config::Config::string(…)`.
 pub mod config {
-  pub use crate::config_desc::{Config, all, all_vec, all3, nest, or_else, zip_with};
-  pub use crate::secret::Secret;
-  pub use crate::{current_config_provider, with_config_provider};
-
   use crate::ConfigError;
   use crate::ConfigProvider;
+  pub use crate::config_desc::{Config, all, all_vec, all3, nest, or_else, zip_with};
+  pub use crate::secret::Secret;
 
   /// Required string at a single-segment path.
   #[inline]

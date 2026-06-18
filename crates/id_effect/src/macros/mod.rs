@@ -11,4 +11,4 @@ pub mod effect {
   pub use id_effect_proc_macro::effect;
 }
 
-pub use id_effect_macro::{caps, define_capability, err, pipe, provide, require};
+pub use id_effect_macro::{caps, err, pipe, provide, require};

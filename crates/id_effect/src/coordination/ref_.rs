@@ -28,7 +28,7 @@ impl<A: Clone + Send + 'static> Ref<A> {
   /// Allocates a cell with `value` without running an [`Effect`] (same inner state as [`Ref::make`]).
   ///
   /// Use this at composition boundaries when you need a [`Ref`] synchronously (e.g. building a
-  /// [`Context`](crate::context::Context)) and cannot call [`crate::runtime::run_blocking`].
+  /// [`Env`](crate::capability::Env)) and cannot call [`crate::runtime::run_blocking`].
   #[inline]
   pub fn from_value(value: A) -> Self {
     Self(Arc::new(Mutex::new(value)))

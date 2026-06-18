@@ -1,15 +1,19 @@
+#![allow(dead_code)]
 //! Ex 109 — End-to-end: Tokio [`TokioRuntime`], capability DI, `effect!`, streams, and `catch`.
 //!
 //! Run: `cargo run -p id_effect_tokio --example 109_tokio_end_to_end`
 
 use id_effect::Runtime;
-use id_effect::{Effect, Env, Stream, define_capability, effect, require, run_async, succeed};
+use id_effect::{Effect, Env, Needs, Stream, effect, run_async, succeed};
 use id_effect_tokio::{TokioRuntime, yield_now};
 use std::time::Duration;
 
-define_capability!(ApiBaseUrlKey, &'static str);
-define_capability!(ApiTokenKey, &'static str);
-define_capability!(MinPriceKey, f64);
+#[::id_effect::capability(&'static str)]
+struct ApiBaseUrl;
+#[::id_effect::capability(&'static str)]
+struct ApiToken;
+#[::id_effect::capability(f64)]
+struct MinPrice;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Quote {
@@ -39,8 +43,8 @@ fn app_env(base_url: &'static str, token: &'static str, min_price: f64) -> Env {
 fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
   Effect::new_async(|r: &mut Env| {
     Box::pin(async move {
-      let _api_base_url = *require!(r, ApiBaseUrlKey);
-      let token = *require!(r, ApiTokenKey);
+      let _api_base_url = *Needs::<ApiBaseUrlKey>::need(r);
+      let token = *Needs::<ApiTokenKey>::need(r);
       if token.is_empty() {
         return Err(AppError::MissingApiToken);
       }
@@ -67,7 +71,7 @@ fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
 
 fn market_report() -> Effect<Report, AppError, Env> {
   effect!(|r: &mut Env| {
-    let min_price = ~Ok::<f64, AppError>(*require!(r, MinPriceKey));
+    let min_price = ~Ok::<f64, AppError>(*~MinPriceKey);
 
     let filtered: Vec<Quote> = ~Stream::from_effect(fetch_quotes_async())
       .filter(Box::new(move |q: &Quote| q.price >= min_price))

@@ -52,31 +52,21 @@
 // Lets `::id_effect::…` in `id_effect_macro` expansions resolve when those macros are used inside this crate.
 extern crate self as id_effect;
 
-pub use id_effect_macro::{caps, define_capability, err, pipe, provide, require};
-#[allow(unused_imports)] // macros used via `service_key!` etc. in submodule tests
-pub(crate) use id_effect_macro::{ctx, layer_graph, layer_node, req, service_def, service_key};
-
-// v1 DI symbols kept `pub(crate)` for macro expansions and internal tests only.
-#[allow(unused_imports)]
-pub(crate) use context::{Cons, Context, Get, GetMut, Here, Nil, Tag, Tagged, ThereHere};
-pub use id_effect_proc_macro::{EffectData, effect, effect_tagged};
-#[allow(unused_imports)]
-pub(crate) use layer::{
-  Layer, LayerFn, LayerGraph, LayerNode, Service, layer_service, provide_service, service,
-  service_env,
+pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
+pub use id_effect_proc_macro::{
+  EffectData, ProviderSpec as ProviderSpecDerive, capability, effect, effect_tagged,
 };
 
 pub mod algebra;
 pub mod capability;
 pub mod collections;
 pub mod concurrency;
-pub(crate) mod context;
 pub mod coordination;
 pub mod failure;
 pub mod foundation;
 pub mod kernel;
-pub(crate) mod layer;
 pub mod macros;
+pub mod match_;
 pub mod observability;
 pub mod resource;
 pub mod runtime;
@@ -86,16 +76,17 @@ pub mod stm;
 pub mod streaming;
 pub mod testing;
 
-pub use crate::context::{HasTag, Matcher};
 pub use crate::kernel::{
   BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, from_async, into_bind, pure,
   scope_with, scoped, succeed,
 };
+pub use crate::match_::{HasTag, Matcher};
 pub use capability::{
-  Capability, CapabilityDiagnostic, CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey,
-  CapabilityPlannerError, CapabilitySet, Caps, Env, HasCap, Needs, NoCaps, PlannerNode,
-  PlannerPlan, Provider, ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError,
-  build_env, plan_topological, run, run_with,
+  CapBind, CapBindR, CapBindWide, CapKeys, CapList, CapWiden, Capability, CapabilityDiagnostic,
+  CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey, CapabilityPlannerError,
+  CapabilitySet, Caps, Env, FromEnv, HasCap, Needs, NoCaps, PlannerNode, PlannerPlan, Provider,
+  ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError, build_env, cap_into_bind,
+  plan_topological, run, run_with, with_fiber_and_override, with_override,
 };
 pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
@@ -152,7 +143,6 @@ pub use testing::{
 
 // ─── Backward-compatible module re-exports ────────────────────────────────────
 // External crates that use `id_effect::channel::Channel` etc. keep working.
-pub use crate::context::match_;
 pub use coordination::channel;
 pub use coordination::ref_;
 pub use foundation::either;

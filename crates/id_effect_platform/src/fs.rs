@@ -12,6 +12,7 @@
 //!   sandboxed apps should canonicalize or jail paths at a higher layer.
 //! - **Symlinks:** No special symlink policy here; treat remote paths as untrusted unless you control the tree.
 
+#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -20,13 +21,8 @@ use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::FsError;
 
-id_effect::define_capability!(
-  /// Tag for the active [`FileSystem`] in the capability environment.
-  FileSystemKey,
-  Arc<dyn FileSystem>
-);
-
 /// Capability: portable filesystem operations as [`Effect`] values.
+#[::id_effect::capability(Arc<dyn FileSystem>)]
 pub trait FileSystem: Send + Sync + 'static {
   /// Read entire file into a byte vector.
   fn read(&self, path: &Path) -> Effect<Vec<u8>, FsError, ()>;
@@ -254,18 +250,13 @@ impl FileSystem for TestFileSystem {
 }
 
 /// Default [`ProviderSpec`] for a Tokio-backed live [`FileSystem`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(FileSystemKey)]
 pub struct LiveFileSystemProvider;
 
-impl ProviderSpec for LiveFileSystemProvider {
-  type Key = FileSystemKey;
-  type Output = Arc<dyn FileSystem>;
-
-  fn provider_id() -> &'static str {
-    "platform/fs/live"
-  }
-
-  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
-    Ok(Arc::new(LiveFileSystem::new()))
+impl LiveFileSystemProvider {
+  fn new() -> Arc<dyn FileSystem> {
+    Arc::new(LiveFileSystem::new())
   }
 }
 

@@ -1,0 +1,16 @@
+error[E0277]: the trait bound `(): Needs<CounterKey>` is not satisfied
+ --> tests/ui/cap_mismatch.rs:8:39
+  |
+8 |     let _ = Needs::<CounterKey>::need(r);
+  |             ------------------------- ^ the trait `Deref` is not implemented for `()`
+  |             |
+  |             required by a bound introduced by this call
+  |
+help: the trait `Needs<K>` is implemented for `Env`
+ --> src/capability/needs.rs
+  |
+  | / impl<K> Needs<K> for Env
+  | | where
+  | |   K: CapabilityKey,
+  | |___________________^
+  = note: required for `()` to implement `Needs<CounterKey>`

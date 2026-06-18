@@ -11,11 +11,27 @@ A condensed reference for the most commonly used types and functions in id_effec
 | `Stm<A>` | A transactional computation that produces `A` |
 | `Exit<A, E>` | The result of running an effect: `Success(A)` or `Failure(Cause<E>)` |
 | `Cause<E>` | `Fail(E)`, `Die(Box<dyn Any>)`, or `Interrupt` |
-| `Context<R>` | A heterogeneous map of services, the `R` at runtime |
-| `Layer<Out, In, E>` | A recipe for building `Out` from `In`, can fail with `E` |
+| `Env` | Runtime capability map; built with `build_env` or manual `insert` |
+| `caps!(K1, K2, …)` | Typed required-capability set for `Effect<A, E, caps!(…)>` |
+| `CapList<(K1, K2, …)>` | Runtime representation of a fixed capability set |
 | `Chunk<A>` | A contiguous, reference-counted batch of `A` values |
 | `Unknown` | Unvalidated wire data; input type for schemas |
 | `ParseErrors` | Accumulated parse failures with paths |
+
+## Capability DI
+
+| Item | Notes |
+|------|-------|
+| `#[::id_effect::capability(T)] struct Name;` | Declares a capability key; generates `NameKey` |
+| `#[derive(::id_effect::ProviderSpecDerive)]` | Derive a provider struct |
+| `#[provides(NameKey)]` | Marks which key a provider satisfies |
+| `~NameKey` / `require!(NameKey)` | Borrow a capability inside `effect!` |
+| `Needs::<NameKey>::need(env)` | Advanced: borrow outside `effect!` (prefer `~Key` inside `effect!`) |
+| `provide!(LiveProvider)` | Box a provider for wiring |
+| `run_with([…], effect)` | Build env from providers and run |
+| `build_env([…])` | Build an `Env` without running |
+| `Env::insert::<K>(value)` | Manual test override on an existing env |
+| `mock_capability!(…)` | Generate a test `ProviderSpec` with a closure body |
 
 ## Constructors
 
@@ -110,10 +126,10 @@ A condensed reference for the most commonly used types and functions in id_effec
 |----------|-------|
 | `run_blocking(eff, env)` | Synchronous runner (main/binaries) |
 | `run_async(eff, env)` | Async runner (tokio integration) |
-| `run_test(eff)` | Test harness; detects leaks |
-| `run_test_and_unwrap(eff)` | Test harness; panics on failure |
-| `run_test_with_env(eff, env)` | Test with custom environment |
-| `run_test_with_clock(f)` | Test with controlled `TestClock` |
+| `run_with([…], eff)` | Build env from providers and run |
+| `build_env([…])` | Build an `Env` from providers |
+| `run_test(eff, env)` | Test harness; detects leaks |
+| `run_test_with_clock(eff, env, clock)` | Test with an explicit `TestClock` |
 
 ## Schema
 
@@ -136,8 +152,10 @@ A condensed reference for the most commonly used types and functions in id_effec
 | Macro | Notes |
 |-------|-------|
 | `effect!(…)` | Do-notation for effects; use `~expr` to bind |
-| `ctx!(Key => value, …)` | Build a `Context` from key-value pairs |
-| `service_key!(Name: Type)` | Declare a service key |
+| `~Key` / `require!(Key)` | Borrow a capability inside `effect!` (alias) |
+| `caps!(K1, K2, …)` | Typed capability set for `Effect<_, _, caps!(…)>` |
+| `provide!(Provider)` | Box a provider for wiring |
+| `mock_capability!(…)` | Generate a test provider |
 | `pipe!(v, f, g, …)` | Pipeline for pure values |
 
 ## Workspace crates (beyond `id_effect`)
@@ -148,12 +166,12 @@ A condensed reference for the most commonly used types and functions in id_effec
 | `id_effect_tokio` | Tokio `Runtime`, `run_async` wiring, `spawn_blocking_run_async` | [Tokio bridge](./part2/ch07-05-tokio-bridge.md) | `cargo doc -p id_effect_tokio` |
 | `id_effect_platform` | HTTP / FS / process **ports** + live + test impls | [Platform I/O](./part2/ch07-06-platform-services.md) | `cargo doc -p id_effect_platform` |
 | `id_effect_reqwest` | `reqwest::Client` as a service; pools; JSON + schema | [HTTP via reqwest](./part2/ch07-07-reqwest-http.md) | `cargo doc -p id_effect_reqwest` |
-| `id_effect_axum` | Axum handlers + `State<R>` bridge | [Axum host](./part2/ch07-08-axum-host.md) | `cargo doc -p id_effect_axum` |
+| `id_effect_axum` | Axum handlers + capability env bridge | [Axum host](./part2/ch07-08-axum-host.md) | `cargo doc -p id_effect_axum` |
 | `id_effect_rpc` | RPC-style JSON errors, correlation ids, tracing spans | [RPC boundaries](./part2/ch07-12-rpc-boundaries.md) | `cargo doc -p id_effect_rpc` |
 | `id_effect_tower` | `tower::Service` over effects | [Tower service](./part2/ch07-09-tower-service.md) | `cargo doc -p id_effect_tower` |
 | `id_effect_config` | Config descriptors, Figment, provider in `R` | [Configuration](./part2/ch07-10-config.md) | `cargo doc -p id_effect_config` |
 | `id_effect_logger` | Injectable `EffectLogger` | [Logging](./part2/ch07-11-logger.md) | `cargo doc -p id_effect_logger` |
-| `id_effect_macro` / `id_effect_proc_macro` | `effect!` implementation split | [Workspace tooling](./appendix-d-workspace-tooling.md) | `cargo doc -p id_effect_macro` |
+| `id_effect_macro` / `id_effect_proc_macro` | `effect!` and capability DI macros | [Workspace tooling](./appendix-d-workspace-tooling.md) | `cargo doc -p id_effect_macro` |
 | `id_effect_lint` | Custom rustc lint (excluded from default workspace) | [Workspace tooling](./appendix-d-workspace-tooling.md) | build crate explicitly |
 
-For a single local index, run `cargo doc --workspace --no-deps` from the repository root (see each crate’s `README` for optional examples).
+For a single local index, run `cargo doc --workspace --no-deps` from the repository root (see each crate's `README` for optional examples).

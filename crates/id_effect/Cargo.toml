@@ -1,6 +1,6 @@
 [package]
 name = "id_effect"
-version = "2.0.0"
+version = "3.0.0"
 edition = "2024"
 description = "Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor"
 license = "CC-BY-SA-4.0"
@@ -21,6 +21,10 @@ name = "phase0_baseline"
 harness = false
 
 [[bench]]
+name = "env_lookup"
+harness = false
+
+[[bench]]
 name = "effect_macro_bind_free"
 harness = false
 
@@ -30,8 +34,8 @@ schema-serde = ["dep:serde_json"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
-id_effect_macro = { path = "../id_effect_macro", version = "2.0.0" }
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "2.0.0" }
+id_effect_macro = { path = "../id_effect_macro", version = "3.0.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "3.0.0" }
 flume = "0.12"
 im = "15"
 # 0.2.0 lacks APIs we use (`SignedDuration::from_nanos_i128`, `Error::from_args`).
@@ -41,6 +45,8 @@ serde_json = { version = "1", optional = true }
 tokio = { version = "1.50.0", features = ["macros", "rt", "time", "sync"] }
 
 [dev-dependencies]
+id_effect_config = { path = "../id_effect_config", version = "3.0.0" }
+trybuild = "1"
 criterion = "0.8.2"
 pollster = "0.4"
 proptest = "1"

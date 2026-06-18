@@ -1,33 +1,27 @@
-//! Capability DI v2: `define_capability!`, `ProviderSpec`, `run_with`.
+#![allow(dead_code, clippy::new_ret_no_self)]
 
-use id_effect::{
-  Effect, Env, ProviderError, ProviderSpec, define_capability, provide, require, run_with,
-};
+//! Capability DI: `#[capability]`, `ProviderSpec`, `run_with`.
 
-define_capability!(CounterKey, Counter);
+use id_effect::{Effect, caps, effect, provide, run_with};
 
+#[::id_effect::capability(Counter)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(CounterKey)]
 struct CounterLive;
 
-impl ProviderSpec for CounterLive {
-  type Key = CounterKey;
-  type Output = Counter;
-
-  fn provider_id() -> &'static str {
-    "counter-live"
-  }
-
-  fn provide(_deps: &Env) -> Result<Counter, ProviderError> {
-    Ok(Counter(42))
+impl CounterLive {
+  fn new() -> Counter {
+    Counter(42)
   }
 }
 
-fn app() -> Effect<u32, (), id_effect::Env> {
-  Effect::new(|env: &mut id_effect::Env| {
-    let counter = require!(env, CounterKey);
-    Ok(counter.0)
+fn app() -> Effect<u32, (), caps!(CounterKey)> {
+  effect!(|r| {
+    let counter = ~CounterKey;
+    counter.0
   })
 }
 

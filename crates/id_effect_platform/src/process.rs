@@ -1,5 +1,6 @@
 //! Portable process spawning ([`ProcessRuntime`]) with Tokio implementation.
 
+#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -8,12 +9,6 @@ use id_effect::kernel::Effect;
 use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::ProcessError;
-
-id_effect::define_capability!(
-  /// Tag for the active [`ProcessRuntime`] in the capability environment.
-  ProcessRuntimeKey,
-  Arc<dyn ProcessRuntime>
-);
 
 /// Specification for spawning a child process (minimal MVP).
 #[derive(Clone, Debug)]
@@ -53,6 +48,7 @@ impl CommandSpec {
 }
 
 /// Capability: spawn and await child processes as [`Effect`] values.
+#[::id_effect::capability(Arc<dyn ProcessRuntime>)]
 pub trait ProcessRuntime: Send + Sync + 'static {
   /// Spawn and wait for exit status (stdout/stderr inherited by host).
   fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()>;
@@ -79,18 +75,13 @@ impl ProcessRuntime for TokioProcessRuntime {
 }
 
 /// Default [`ProviderSpec`] for a Tokio-backed [`ProcessRuntime`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(ProcessRuntimeKey)]
 pub struct TokioProcessRuntimeProvider;
 
-impl ProviderSpec for TokioProcessRuntimeProvider {
-  type Key = ProcessRuntimeKey;
-  type Output = Arc<dyn ProcessRuntime>;
-
-  fn provider_id() -> &'static str {
-    "platform/process/tokio"
-  }
-
-  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
-    Ok(Arc::new(TokioProcessRuntime))
+impl TokioProcessRuntimeProvider {
+  fn new() -> Arc<dyn ProcessRuntime> {
+    Arc::new(TokioProcessRuntime)
   }
 }
 

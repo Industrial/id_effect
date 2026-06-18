@@ -1,33 +1,36 @@
 # Changelog
 
+## 3.0.0 — DI maturity (breaking)
+
+Semver-major release completing capability-first DI adoption. See [appendix-b-migration.md](crates/id_effect/book/src/appendix-b-migration.md) and [ADR 0004](docs/adrs/0004-provider-parity-and-cap-subtyping.md).
+
+### Removed
+
+- `CapEnv1…CapEnv6` — use `CapList` / `caps!(K0, K1, …)` only
+- `define_capability!` — use `#[capability]` attribute
+- `require!(env, K)` — use `require!(K)` inside `effect!` or `Needs::<K>::need(env)`
+- `ctx!`, `req!`, `service_key!`, `Layer`, `Stack`, `Effect::provide`, `IntoBind` (legacy paths)
+- `id_effect_config::ambient` — use `Env::scoped` / `build_env`
+
+### Added
+
+- `CapList` + unbounded `caps!` arity
+- `#[capability]`, `#[derive(ProviderSpec)]`, `#[named("variant")]`
+- `CapWiden` for capability-set subtyping
+- `ProviderSpec::optional_requires`, `shared()`, `refresh_interval()`, `on_refresh()`
+- Fiber/request scoped overrides: `with_override`, `with_fiber_and_override`
+- `id-effect-diagnose manifest` with TOML/JSON + `--json`
+- Examples: `042_effectful_config_provider`, `043_named_variant_providers`, `id_effect_axum` `020_capability_run_with`
+- Expanded trybuild corpus (12 cases) under `tests/ui/`
+
+### Version alignment
+
+| Crate | Version |
+|-------|---------|
+| `id_effect` | **3.0.0** |
+| `id_effect_platform` | **4.0.0** |
+| workspace adapters | **3.0.0** |
+
 ## 2.0.0 — Capability-first DI (breaking)
 
-Semver-major release removing v1 Effect.ts-style dependency injection in favor of trait-first capability DI. See [ADR 0002](docs/adrs/0002-capability-di-v2.md).
-
-### Removed (public API)
-
-- HList context types: `Cons`, `Nil`, `Tag`, `Tagged`, `Context`, `Get`, `GetMut`, `Here`, `Skip*`, `There*`
-- Layer stack: `Layer`, `Stack`, `LayerFn`, `LayerGraph`, `layer_service`, `provide_service`, `service`, `Service`, `ServiceEnv`
-- Macros: `ctx!`, `req!`, `service_key!`, `service_def!`, `layer_graph!`, `layer_node!`
-- Public `context` and `layer` modules (now `pub(crate)`; HList engine remains internal)
-
-### Added / retained (v2 public API)
-
-- `define_capability!`, `caps!`, `provide!`, `require!`
-- `Env`, `ProviderSpec`, `ProviderBox`, `CapabilityGraph`, `Needs`, `run`, `run_with`, `build_env`
-- `Matcher` / `HasTag` (pattern matching; not part of DI)
-
-### v1 → v2 migration
-
-| v1 (removed) | v2 (public) |
-|--------------|-------------|
-| `service_key!` + `Tag<K>` | `define_capability!(Trait)` |
-| `Service<K,V>` / `Tagged<K,V>` | `Env::get::<K>()` / `require!(env, K)` |
-| `req!(K: V \| …)` | `caps!(Trait, …)` |
-| `ctx!(K => v)` | `build_env([provide!(Live), …])` or `Env::insert` |
-| `Layer` / `Stack` / `layer_service` | `ProviderSpec` + `CapabilityGraph` |
-| `Effect::provide` / `provide_service` | `run_with(providers, effect)` |
-| `NeedsHttpClient` + `Get` | `Needs<Trait>` |
-| `~EffectLogger` + `IntoBind` | `require!(Trait)` in `effect!` |
-
-Workspace crates (`id_effect_platform`, `id_effect_config`, `id_effect_reqwest`, …) ship v2 providers in this release.
+See prior entry for v2 initial capability DI release.

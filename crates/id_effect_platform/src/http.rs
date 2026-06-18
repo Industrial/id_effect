@@ -1,3 +1,5 @@
+#![allow(private_bounds, clippy::new_ret_no_self, clippy::unused_unit)]
+
 //! Portable HTTP client ([`HttpClient`]) and reqwest-backed [`ReqwestHttpClient`].
 
 use std::sync::Arc;
@@ -5,16 +7,10 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use id_effect::kernel::Effect;
-use id_effect::{Env, Needs, ProviderError, ProviderSpec};
+use id_effect::{Env, Needs, ProviderBox, ProviderError, ProviderSpec, provide};
 use reqwest::header::{HeaderName, HeaderValue};
 
 use crate::error::HttpError;
-
-id_effect::define_capability!(
-  /// Tag for the default [`HttpClient`] in the capability environment.
-  HttpClientKey,
-  Arc<dyn HttpClient>
-);
 
 /// HTTP verb for [`HttpRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -97,6 +93,7 @@ pub fn response_body_chunk(resp: &HttpResponse) -> id_effect::Chunk<u8> {
 }
 
 /// Capability: execute portable HTTP requests as [`Effect`] values.
+#[::id_effect::capability(Arc<dyn HttpClient>)]
 pub trait HttpClient: Send + Sync + 'static {
   /// Execute `req` and return a buffered response.
   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()>;
@@ -175,23 +172,36 @@ impl HttpClient for ReqwestHttpClient {
   }
 }
 
-/// Default [`ProviderSpec`] for a reqwest-backed [`HttpClient`].
-pub struct ReqwestHttpClientProvider;
+/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`]).
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(HttpClientKey)]
+pub(crate) struct ReqwestHttpClientProvider;
 
-impl ProviderSpec for ReqwestHttpClientProvider {
-  type Key = HttpClientKey;
-  type Output = Arc<dyn HttpClient>;
-
-  fn provider_id() -> &'static str {
-    "platform/http/reqwest-default"
-  }
-
-  fn provide(_deps: &Env) -> Result<Self::Output, ProviderError> {
-    Ok(Arc::new(ReqwestHttpClient::default_client()))
+impl ReqwestHttpClientProvider {
+  fn new() -> Arc<dyn HttpClient> {
+    Arc::new(ReqwestHttpClient::default_client())
   }
 }
 
-/// Execute using the [`HttpClient`] registered for [`HttpClientKey`].
+/// Whether `env` includes an HTTP client capability.
+#[inline]
+pub fn env_has_http_client(env: &Env) -> bool {
+  env.has::<HttpClientKey>()
+}
+
+/// Replace the HTTP client in `env` (tests and custom wiring).
+#[inline]
+pub fn env_set_http_client(env: &mut Env, client: Arc<dyn HttpClient>) {
+  env.insert::<HttpClientKey>(client);
+}
+
+/// Register the default reqwest-backed [`HttpClient`] provider.
+#[inline]
+pub fn provide_reqwest_http_client() -> ProviderBox {
+  provide!(ReqwestHttpClientProvider)
+}
+
+/// Execute using the installed [`HttpClient`] capability.
 #[inline]
 pub fn execute<R>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
 where

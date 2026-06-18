@@ -1,0 +1,5 @@
+error[E0433]: cannot find `ctx` in `id_effect`
+ --> tests/ui/ctx_macro.rs:2:14
+  |
+2 |   id_effect::ctx!(Db => ());
+  |              ^^^ could not find `ctx` in `id_effect`

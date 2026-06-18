@@ -1,8 +1,12 @@
 # Migrating from `async fn` to effects
 
+> **2.x → 3.0:** See [Migrating 2.x → 3.0](#migrating-2x--30) for the DI maturity breaking changes.
+
+
+
 This appendix is a practical guide for converting existing async Rust code to id_effect. It covers common patterns and their id_effect equivalents, with migration steps for each.
 
-> **Capability DI v2:** If you are migrating from id_effect v1's tag/HList DI (`service_key!`, `ctx!`, `Layer`/`Stack`), skip to [Migrating v1 DI to capability DI v2](#migrating-v1-di-to-capability-di-v2) first.
+> **1.x DI:** If you are migrating from id_effect 1.x tag/HList DI (`service_key!`, `ctx!`, `Layer`/`Stack`), skip to [Migrating 1.x DI to id_effect 3.0](#migrating-1x-di-to-id_effect-30) first.
 
 ## The Mental Model Shift
 
@@ -17,19 +21,19 @@ async fn get_user(id: u64, db: &DbClient) -> Result<User, DbError> {
 In id_effect, domain functions return an **`Effect`** — a description you run later with an environment:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, Env>
-where
-    Env: Needs<DatabaseKey>,
-{
-    effect!(|env: &mut Env| {
-        let db = require!(env, DatabaseKey);
+#[::id_effect::capability(Arc<dyn DbClient>)]
+struct Database;
+
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r: &mut caps!(DatabaseKey)| {
+        let db = require!(DatabaseKey);
         let user = ~ db.get_user(id);
         user
     })
 }
 ```
 
-The database client is no longer a function parameter. It's declared via `Needs<DatabaseKey>` and retrieved with `require!`. The business logic is identical; what changes is how dependencies are supplied at `run_with` / `main`.
+The database client is no longer a function parameter. It is declared via `caps!(DatabaseKey)` and retrieved with `require!`. The business logic is identical; what changes is how dependencies are supplied at `run_with` / `main`.
 
 ## Pattern 1: async fn → fn returning Effect
 
@@ -51,13 +55,16 @@ pub async fn process_order(
 **After**
 
 ```rust
-pub fn process_order(order_id: OrderId) -> Effect<Receipt, AppError, Env>
-where
-    Env: Needs<DatabaseKey> + Needs<MailerKey>,
-{
-    effect!(|env: &mut Env| {
-        let db     = require!(env, DatabaseKey);
-        let mailer = require!(env, MailerKey);
+#[::id_effect::capability(Arc<dyn DbClient>)]
+struct Database;
+
+#[::id_effect::capability(Arc<dyn MailClient>)]
+struct Mailer;
+
+pub fn process_order(order_id: OrderId) -> Effect<Receipt, AppError, caps!(DatabaseKey, MailerKey)> {
+    effect!(|r: &mut caps!(DatabaseKey, MailerKey)| {
+        let db     = require!(DatabaseKey);
+        let mailer = require!(MailerKey);
         let order   = ~ db.get_order(order_id);
         let receipt = ~ db.complete_order(order);
         ~ mailer.send_receipt(&receipt);
@@ -69,11 +76,12 @@ where
 **Migration steps:**
 
 1. Remove dependency parameters (`db`, `mailer`)
-2. Add `where Env: Needs<K> + …` (or generic `R: Needs<K>`)
-3. Replace `async move { … }` with `effect!(|env: &mut Env| { … })`
-4. Replace `.await?` with `~ ` prefix
-5. Use `require!(env, K)` for each service
-6. Wire providers at the edge with `run_with([provide!(…), …], effect)`
+2. Declare capability keys with `#[capability(T)] struct Name;`
+3. Use `Effect<_, _, caps!(K1, K2)>` (or `where Env: Needs<K> + …` when generic)
+4. Replace `async move { … }` with `effect!(|r: &mut caps!(…)| { … })`
+5. Replace `.await?` with `~ ` prefix
+6. Use `require!(K)` for each capability inside `effect!`
+7. Wire providers at the edge with `run_with([provide!(…), …], effect)`
 
 ## Pattern 2: Wrapping Third-Party Async
 
@@ -125,10 +133,15 @@ enum AppError {
 ```rust
 #[derive(Debug)] struct NotFoundError(String);
 
-fn get_user(id: u64) -> Effect<User, DbError, Env>
-where
-    Env: Needs<DatabaseKey>,
-{ /* … */ }
+#[::id_effect::capability(Arc<dyn DbClient>)]
+struct Database;
+
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r: &mut caps!(DatabaseKey)| {
+        let db = require!(DatabaseKey);
+        ~ db.get_user(id)
+    })
+}
 ```
 
 You still need an `AppError` at the top level (in `main` or your HTTP handler), but individual functions no longer need unrelated error variants.
@@ -148,14 +161,12 @@ async fn handler(state: Arc<Mutex<AppState>>) -> Response {
 **After** — shared state as a capability
 
 ```rust
-define_capability!(AppStateKey, Arc<Mutex<AppState>>);
+#[::id_effect::capability(Arc<Mutex<AppState>>)]
+struct AppStateCap;
 
-fn handler() -> Effect<Response, AppError, Env>
-where
-    Env: Needs<AppStateKey>,
-{
-    effect!(|env: &mut Env| {
-        let state = require!(env, AppStateKey);
+fn handler() -> Effect<Response, AppError, caps!(AppStateCapKey)> {
+    effect!(|r: &mut caps!(AppStateCapKey)| {
+        let state = require!(AppStateCapKey);
         let mut s = state.lock().unwrap();
         s.request_count += 1;
         // …
@@ -182,15 +193,17 @@ where F: AsyncFnOnce(&Connection) -> Result<T, DbError>
 **After** — explicit `Scope`
 
 ```rust
-fn with_connection<F, A, E>(f: F) -> Effect<A, E, Env>
+#[::id_effect::capability(Arc<Pool>)]
+struct PoolCap;
+
+fn with_connection<F, A, E>(f: F) -> Effect<A, E, caps!(PoolCapKey)>
 where
-    F: FnOnce(&Connection) -> Effect<A, E, Env> + 'static,
-    Env: Needs<PoolKey>,
+    F: FnOnce(&Connection) -> Effect<A, E, caps!(PoolCapKey)> + 'static,
     E: From<DbError> + 'static,
     A: 'static,
 {
-    effect!(|env: &mut Env| {
-        let pool = require!(env, PoolKey);
+    effect!(|r: &mut caps!(PoolCapKey)| {
+        let pool = require!(PoolCapKey);
         ~ scope.acquire(
             pool.get(),
             |conn| pool.release(conn),
@@ -224,19 +237,36 @@ You can mix async functions and effects during the transition: wrap async with `
 
 ---
 
-## Migrating v1 DI to capability DI v2
 
-id_effect v2 replaces the Effect.ts-style tag/HList stack with **capability keys**, **`Env`**, and **`ProviderSpec`**. v1 symbols (`service_key!`, `ctx!`, `req!`, `Layer`/`Stack`, `.provide()` on effects) are removed from the public DI path.
+## Migrating 2.x → 3.0
+
+| Removed (2.x) | Replacement (3.0) |
+|---------------|-------------------|
+| `CapEnv1…6` | `caps!(K0, K1, …)` / `CapList<(K0, K1, …)>` |
+| `define_capability!(Key, T)` | `#[capability(T)] struct Key;` |
+| `require!(env, K)` | `require!(K)` in `effect!` or `Needs::<K>::need(env)` |
+| `ctx!`, `req!`, `service_key!` | `#[capability]`, `caps!`, `build_env` |
+| `Layer` / `Stack` / `Effect::provide` | `ProviderSpec` + `run_with` |
+| `IntoBind` | `Needs<K>` + `require!(K)` |
+| config `ambient` | `Env::scoped` / `build_env` |
+| `Effect<_, _, Env>` (multi-cap public API) | `Effect<_, _, caps!(…)>` |
+
+Run `cargo test -p id_effect --test ui_compile_fail` to see compile-fail examples for each removed symbol.
+
+
+## Migrating 1.x DI to id_effect 3.0
+
+id_effect 3.0 replaces the Effect.ts-style tag/HList stack with **capability keys**, **`Env`**, and **`ProviderSpec`**. 1.x symbols (`service_key!`, `ctx!`, `req!`, `Layer`/`Stack`, `.provide()` on effects) are removed from the public DI path.
 
 ### Symbol mapping
 
-| v1 (removed from DI path) | v2 |
+| 1.x (removed from DI path) | 3.0 |
 |---------------------------|-----|
-| `service_key!(K: V)` | `define_capability!(K, V)` |
+| `service_key!(K: V)` | `#[capability(V)] struct K;` → `KKey` |
 | `Tagged<K>` / `tagged(v)` | `Env::insert::<K>(v)` |
 | `Context` / `Cons` / `Nil` / `ctx!(…)` | `Env` (order-independent) |
 | `Get<K>` / `NeedsX` supertraits | `Needs<K>` |
-| `~ ServiceKey` in `effect!` | `require!(env, K)` |
+| `~ ServiceKey` in `effect!` | `require!(K)` |
 | `req!(K: V \| …)` | `caps!(…)` + `Needs<K>` bounds |
 | `Layer` / `Stack` / `layer_service` | `ProviderSpec` + `provide!(P)` |
 | `effect.provide(ctx)` | `run_with([provide!(…)], effect)` |
@@ -244,7 +274,7 @@ id_effect v2 replaces the Effect.ts-style tag/HList stack with **capability keys
 
 ### Example: service key → capability key
 
-**v1**
+**1.x**
 
 ```rust
 service_key!(UserRepoKey: Arc<dyn UserRepository>);
@@ -259,17 +289,15 @@ fn get_user<R: NeedsUserRepo>(id: u64) -> Effect<User, DbError, R> {
 run_blocking(get_user(1).provide(ctx!(tagged::<UserRepoKey>(repo))))?;
 ```
 
-**v2**
+**3.0**
 
 ```rust
-define_capability!(UserRepoKey, Arc<dyn UserRepository>);
+#[::id_effect::capability(Arc<dyn UserRepository>)]
+struct UserRepo;
 
-fn get_user(id: u64) -> Effect<User, DbError, Env>
-where
-    Env: Needs<UserRepoKey>,
-{
-    effect!(|env: &mut Env| {
-        let repo = require!(env, UserRepoKey);
+fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepoKey)> {
+    effect!(|r: &mut caps!(UserRepoKey)| {
+        let repo = require!(UserRepoKey);
         ~ repo.get_user(id)
     })
 }
@@ -279,7 +307,7 @@ run_with([provide!(UserRepoLive)], get_user(1))?;
 
 ### Example: layer stack → provider list
 
-**v1**
+**1.x**
 
 ```rust
 let app_layer = config_layer
@@ -289,7 +317,7 @@ let app_layer = config_layer
 run_blocking(my_app().provide_layer(app_layer))?;
 ```
 
-**v2**
+**3.0**
 
 ```rust
 run_with(
@@ -306,32 +334,32 @@ Each `*Live` type implements `ProviderSpec`. Dependencies are declared in `requi
 
 ### Test environments
 
-**v1**
+**1.x**
 
 ```rust
 let env = ctx!(tagged::<DatabaseKey>(mock_db), tagged::<LoggerKey>(mock_log));
 run_blocking(effect.provide(env))?;
 ```
 
-**v2**
+**3.0**
 
 ```rust
-let mut env = Env::new();
+let mut env = build_env([provide!(DatabaseLive), provide!(LoggerLive)])?;
 env.insert::<DatabaseKey>(mock_db);
-env.insert::<LoggerKey>(mock_log);
+
 run_blocking(effect, env)?;
 
-// or
-run_with([provide!(MockDatabaseLive), provide!(MockLoggerLive)], effect)?;
+// or swap providers entirely
+run_with([provide!(MockDatabase), provide!(MockLogger)], effect)?;
 ```
 
 ### Migration checklist
 
-1. Replace each `service_key!` with `define_capability!(K, V)`.
-2. Change `NeedsX` / `Get<K>` bounds to `Needs<K>`.
-3. Replace `~ K` with `require!(env, K)` (add `|env: &mut Env|` to `effect!` when needed).
+1. Replace each `service_key!` with `#[capability(T)] struct Name;`.
+2. Change `NeedsX` / `Get<K>` bounds to `Needs<K>` or `caps!(…)`.
+3. Replace `~ K` with `require!(K)` (use `|r: &mut caps!(…)|` on `effect!` when needed).
 4. Replace layer stacks with `ProviderSpec` impls + `provide!(…)`.
 5. Replace `.provide()` / `.provide_layer()` with `run_with` or manual `Env` + `run_blocking`.
-6. Update `main`, tests, and workspace crate providers (`id_effect_platform`, `id_effect_config`, etc.) in the same release — v2 is a clean break.
+6. Update `main`, tests, and workspace crate providers (`id_effect_platform`, `id_effect_config`, etc.) in the same release — 3.0 is a clean break.
 
-See Part II (chapters 4–7) for the full v2 narrative.
+See Part II (chapters 4–7) for the full capability DI narrative.

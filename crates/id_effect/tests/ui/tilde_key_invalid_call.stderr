@@ -1,0 +1,12 @@
+error[E0618]: expected function, found struct `DatabaseKey`
+ --> tests/ui/tilde_key_invalid_call.rs:8:14
+  |
+3 |   #[::id_effect::capability(u32)]
+  |   ------------------------------- struct `DatabaseKey` defined here
+...
+7 |     let _ = id_effect::effect!(|r: &mut id_effect::caps!(DatabaseKey)| {
+  |  ___________-
+8 | |     let _ = ~DatabaseKey();
+  | |              ^^^^^^^^^^^
+9 | |   });
+  | |____- call expression requires function

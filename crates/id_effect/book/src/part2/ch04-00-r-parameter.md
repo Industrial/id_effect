@@ -2,33 +2,45 @@
 
 Chapter 1 introduced `R` as "what an effect needs to run." We kept it vague on purpose — you needed to understand effects before worrying about their environment.
 
-In **capability DI v2**, `R` is almost always [`Env`](../../src/capability/env.rs): an order-independent runtime container keyed by capability identity. Pure effects use `R = ()`.
+For effects that use dependencies, `R` is written with [`caps!`](../../src/capability/set.rs): a compile-time list of **capability keys**. Pure effects use `R = ()`.
 
-## What R means in v2
+## What R means
 
 ```rust
-use id_effect::{Effect, Env, Needs};
+use id_effect::{Effect, caps, effect, require};
 
-fn get_user(id: u64) -> Effect<User, DbError, Env>
-where
-    Env: Needs<DatabaseKey>,
-{ ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        Ok(db.fetch_user(id))
+    })
+}
 ```
 
-Or keep the environment generic:
+
+## Implicit `|r|`
+
+When the enclosing function already returns `Effect<_, _, caps!(…)>` , you can write `effect!(|r| { … })` and omit the environment type on `r`. Rust infers `&mut caps!(…)` from the return type. Use an explicit `|r: &mut caps!(…)|` when you want the macro to validate that body keys (`~Key`, `require!(Key)`) match that list.
+
+Library code can stay generic over any `R` that exposes the same keys:
 
 ```rust
 fn get_user<R>(id: u64) -> Effect<User, DbError, R>
 where
-    R: Needs<DatabaseKey> + 'static,
-{ ... }
+    R: id_effect::Needs<DatabaseKey> + 'static,
+{
+    effect!(|r: &mut R| {
+        let db = ~DatabaseKey;
+        Ok(db.fetch_user(id))
+    })
+}
 ```
 
-`R` is a *promise to the compiler*: this effect may only run where `DatabaseKey` is available. The [`caps!`](../../src/capability/set.rs) macro documents which capabilities an effect touches; at runtime every multi-capability effect still uses `Env`.
+`R` is a *promise to the compiler*: this effect may only run where `DatabaseKey` is available. [`caps!`](../../src/capability/set.rs) documents which keys the effect touches; at runtime [`run_with`](../../src/capability/run.rs) builds an [`Env`](../../src/capability/env.rs) that satisfies them.
 
 ## How requirements are satisfied
 
-v2 does **not** call `.provide()` on effects. Wire dependencies at the program edge with [`run_with`](../../src/capability/run.rs):
+Library code does **not** wire dependencies. Provide at the program edge with [`run_with`](../../src/capability/run.rs):
 
 ```rust
 use id_effect::{provide, run_with};
@@ -44,9 +56,11 @@ run_with(
 For tests you can skip the graph and build `Env` directly:
 
 ```rust
+use id_effect::{Env, caps, run_blocking};
+
 let mut env = Env::new();
 env.insert::<DatabaseKey>(mock_db);
-run_blocking(get_user(42), env)?;
+run_blocking(get_user(42), caps!(DatabaseKey)::from_env(env))?;
 ```
 
 Or use [`build_env`](../../src/capability/run.rs) when you still want provider types but not a full app run.
