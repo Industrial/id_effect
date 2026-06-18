@@ -18,6 +18,7 @@
 *.sqlite
 *.suo
 *.sw?
+*.profraw
 *.swo
 *.swp
 *.tsbuildinfo
