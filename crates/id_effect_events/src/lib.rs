@@ -1,12 +1,12 @@
 //! Event sourcing, projections, and CQRS boundaries for
 //! [`id_effect`](https://github.com/Industrial/id_effect) programs.
 //!
-//! | Module | Role |
-//! |--------|------|
-//! | [`event_store`] | [`EventStore`], [`MemoryEventStore`], [`FileJournal`] |
-//! | [`envelope`] | [`EventEnvelope`] with [`Schema`] wire bridging |
-//! | [`projection`] | [`run_projection`] fold over event streams |
-//! | [`cqrs`] | [`CommandHandler`] / [`QueryHandler`] dispatch helpers |
+//! | Type / fn | Role |
+//! |-----------|------|
+//! | [`EventStore`], [`MemoryEventStore`], [`FileJournal`] | append/read event journals |
+//! | [`EventEnvelope`] | versioned payload with wire bridging via [`id_effect::schema::Schema`] |
+//! | [`run_projection`] | fold streams or stores through a [`Projection`] |
+//! | [`CommandHandler`] / [`QueryHandler`] | CQRS dispatch helpers |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

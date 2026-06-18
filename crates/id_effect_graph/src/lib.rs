@@ -1,10 +1,10 @@
 //! Directed acyclic graphs and topological sorting.
 //!
-//! | Module | Role |
-//! |--------|------|
-//! | [`dag`] | [`Dag`] with explicit dependency edges |
-//! | [`topological_sort`] | [`DependencyNode`] + capability-style [`topological_sort`] |
-//! | [`error`] | [`GraphError`] |
+//! | Type / fn | Role |
+//! |-----------|------|
+//! | [`Dag`] | DAG with explicit dependency edges |
+//! | [`DependencyNode`] + [`topological_sort`] | capability-style topological sort |
+//! | [`GraphError`] | planning errors |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

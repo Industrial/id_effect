@@ -5,7 +5,7 @@
 //! | [`circuit_breaker`] | Fail fast after repeated failures |
 //! | [`rate_limiter`] | Token-bucket admission control |
 //! | [`bulkhead`] | Limit concurrent in-flight effects |
-//! | [`hedged`] | Race primary and backup effects |
+//! | [`hedged()`] | Race primary and backup effects |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

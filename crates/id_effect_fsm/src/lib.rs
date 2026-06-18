@@ -1,13 +1,13 @@
 //! Typed **finite-state machines**, **sagas**, and **linear session types** for
 //! [`id_effect`](https://github.com/Industrial/id_effect) programs.
 //!
-//! - [`machine`] — pure transition tables and [`StateMachine::step`]
-//! - [`interpreter`] — run transition hooks via [`id_effect::run_blocking`]
-//! - [`visualize`] — export Mermaid `stateDiagram-v2` charts
-//! - [`matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
-//! - [`saga`] — forward steps with LIFO compensation
-//! - [`session`] — linear [`SessionSend`] / [`SessionRecv`] protocol markers
-//! - [`workflow`] — persist FSM snapshots through [`id_effect_workflow`]
+//! - [`StateMachine`] / [`TransitionTable`] — pure transition tables and [`StateMachine::step`]
+//! - [`Interpreter`] — run transition hooks via [`id_effect::run_blocking`]
+//! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
+//! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
+//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation
+//! - [`SessionSend`] / [`SessionRecv`] — linear session protocol markers
+//! - [`register_fsm`] / [`step_durable`] — persist FSM snapshots through [`id_effect_workflow`]
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

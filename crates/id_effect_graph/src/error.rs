@@ -42,7 +42,7 @@ pub enum GraphError {
 }
 
 impl GraphError {
-  /// Human-readable summary (mirrors [`fmt::Display`]).
+  /// Human-readable summary (mirrors [`Display`](std::fmt::Display)).
   pub fn message(&self) -> String {
     self.to_string()
   }
