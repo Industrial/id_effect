@@ -109,3 +109,31 @@
 - [Migrating from `async fn` to effects](./appendix-b-migration.md)
 - [Glossary](./appendix-c-glossary.md)
 - [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
+
+# Part V: Functional Patterns
+
+- [Optics (`id_effect_optics`)](./part5/ch18-00-optics.md)
+  - [Lenses](./part5/ch18-01-lenses.md)
+  - [Prisms and Optionals](./part5/ch18-02-prisms-optionals.md)
+  - [Traversals and schema bridge](./part5/ch18-03-traversals-schema.md)
+
+- [State Machines (`id_effect_fsm`)](./part5/ch19-00-state-machines.md)
+  - [Transition tables](./part5/ch19-01-transition-tables.md)
+  - [Effect interpreter](./part5/ch19-02-effect-interpreter.md)
+  - [Sagas and session types](./part5/ch19-03-saga-session.md)
+  - [Workflow bridge](./part5/ch19-04-workflow-bridge.md)
+
+- [Parser Combinators](./part5/ch20-00-parser-combinators.md)
+
+- [Advanced Streaming](./part5/ch22-00-advanced-streaming.md)
+  - [Windowing](./part5/ch22-01-windowing.md)
+  - [Stream joins](./part5/ch22-02-joins.md)
+  - [Replay fanout](./part5/ch22-03-replay-fanout.md)
+  - [state_scan FSM stepping](./part5/ch22-04-state-scan.md)
+  - [Transducers on streams](./part5/ch22-05-transducers.md)
+
+- [Runtime Resilience](./part5/ch21-00-runtime-resilience.md)
+
+- [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
+
+- [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)

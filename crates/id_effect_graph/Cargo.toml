@@ -1,0 +1,21 @@
+[package]
+name = "id_effect_graph"
+version = "3.0.0"
+edition = "2024"
+description = "Directed acyclic graphs and topological sorting for id_effect programs"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/id_effect"
+readme = "README.md"
+keywords = ["dag", "graph", "topological-sort", "dependencies"]
+categories = ["data-structures"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"
+rstest = "0.26"

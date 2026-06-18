@@ -27,6 +27,7 @@ pub mod has_schema;
 pub mod order;
 pub mod parse;
 pub mod parse_errors;
+pub mod redacted;
 
 #[cfg(feature = "schema-serde")]
 pub mod json_schema_export;
@@ -44,6 +45,7 @@ pub use parse::{
   string, struct_, struct3, struct4, transform, tuple, tuple3, tuple4, union_,
 };
 pub use parse_errors::ParseErrors;
+pub use redacted::Redacted;
 
 #[cfg(feature = "schema-serde")]
 pub use json_schema_export::{

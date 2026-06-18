@@ -20,8 +20,19 @@ Quick reference for **id_effect 3.0**. For depth, read the specialized skill for
 | Fibers, scopes, Schedule | [id_effect-concurrency](id_effect-concurrency/SKILL.md) |
 | Stream, Sink, Parallelism | [id_effect-streams](id_effect-streams/SKILL.md) |
 | Schema / Unknown parsing | [id_effect-schema](id_effect-schema/SKILL.md) |
+| Optics (Lens, Prism) | [id_effect-optics](id_effect-optics/SKILL.md) |
+| Parser combinators / Codec | [id_effect-parse](id_effect-parse/SKILL.md) |
+| Resilience / batching / breakers | [id_effect-resilience](id_effect-resilience/SKILL.md) |
 | `run_test`, mocks | [id_effect-testing](id_effect-testing/SKILL.md) |
 | Tokio, Axum, CLI | [id_effect-integration](id_effect-integration/SKILL.md) |
+| FSM, saga, session types | [id_effect-fsm](id_effect-fsm/SKILL.md) |
+| Event sourcing, projections, DAG | [id_effect-events](id_effect-events/SKILL.md) |
+| Algebra / Foldable | [id_effect-algebra](id_effect-algebra/SKILL.md) |
+| Optics | [id_effect-optics](id_effect-optics/SKILL.md) |
+| FSM / saga | [id_effect-fsm](id_effect-fsm/SKILL.md) |
+| Parse / codec | [id_effect-parse](id_effect-parse/SKILL.md) |
+| Resilience | [id_effect-resilience](id_effect-resilience/SKILL.md) |
+| Events / CQRS | [id_effect-events](id_effect-events/SKILL.md) |
 | PR review | [id_effect-review](id_effect-review/SKILL.md) |
 
 ## Effect core (cheat sheet)

@@ -54,7 +54,8 @@ extern crate self as id_effect;
 
 pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
 pub use id_effect_proc_macro::{
-  EffectData, ProviderSpec as ProviderSpecDerive, capability, effect, effect_tagged,
+  EffectData, Fsm, Optics, ProviderSpec as ProviderSpecDerive, SchemaParser, capability, effect,
+  effect_tagged, match_effect,
 };
 
 pub mod algebra;
@@ -99,10 +100,12 @@ pub use concurrency::{
 };
 pub use coordination::semaphore::Permit;
 pub use coordination::{
-  Channel, ChannelReadError, Deferred, Latch, PubSub, Queue, QueueChannel, QueueError, Ref,
-  Semaphore, SynchronizedRef,
+  Channel, ChannelReadError, Deferred, FnRequestResolver, Latch, MissingKey, PubSub, Queue,
+  QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
+  SynchronizedRef, batching, make_request_resolver,
 };
 pub use failure::{Cause, Exit, Or};
+#[doc(inline)]
 pub use foundation::either::Either;
 pub use foundation::func::{
   always, compose, const_, flip, identity, memoize, pipe1, pipe2, pipe3, tupled, untupled,
@@ -131,12 +134,13 @@ pub use schema::brand::Brand;
 pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDataTrait};
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
-pub use schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
+pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
 pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, commit};
 pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender, StreamV1};
 pub use streaming::{
-  BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, backpressure_decision, end_stream,
-  send_chunk, stream_from_channel, stream_from_channel_with_policy,
+  BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, Transducer, backpressure_decision,
+  broadcast_with_replay, combine_latest, end_stream, keyed_join, send_chunk, state_scan,
+  stream_from_channel, stream_from_channel_with_policy, transducer_filter, transducer_map,
 };
 pub use testing::{
   assert_no_leaked_fibers, assert_no_unclosed_scopes, record_leaked_fiber, record_unclosed_scope,
@@ -161,3 +165,5 @@ pub use testing::snapshot;
 // adding a separate `im` dependency, and they're guaranteed version-compatible
 // with all `id_effect::collections` types (which are type aliases of `im` types).
 pub use im;
+
+pub use algebra::{Alternative, Foldable, Invariant, sequence_vec, traverse_option, traverse_vec};

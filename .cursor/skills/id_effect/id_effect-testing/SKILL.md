@@ -87,3 +87,49 @@ cargo test -p id_effect --test ui_compile_fail
 ## Next
 
 - Review checklist: [id_effect-review](../id_effect-review/SKILL.md)
+
+## Property testing helpers (Part V ch24)
+
+Core helpers (always available):
+
+```rust
+use id_effect::{run_effect, exit_success_value, assert_exit_success, succeed};
+
+let exit = run_effect(succeed(42), ());
+assert_exit_success(&exit, &42);
+```
+
+Enable `id_effect` feature `proptest` for `success_value`, `prop_assert_exit_success`, and `arb_exit_*` strategies.
+
+## Law tests
+
+```rust
+use id_effect::law_test;
+
+law_test! {
+  monad option_i32 {
+    pure = option::pure,
+    flat_map = option::flat_map,
+    fa = Some(3),
+    a = 7,
+    f = my_inc_fn,   // fn items, not closures
+    g = my_double_fn,
+  }
+}
+```
+
+## Golden snapshots
+
+```rust
+use id_effect::{assert_golden_effect, GoldenBuilder, snapshot_effect_map_flat_map};
+
+assert_golden_effect(snapshot_effect_map_flat_map(), ());
+GoldenBuilder::new("name", "expected").assert_observed("observed");
+```
+
+## Pretty failures
+
+```rust
+use id_effect::{pretty_cause, pretty_exit};
+println!("{}", pretty_exit(&exit));
+```

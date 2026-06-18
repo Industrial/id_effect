@@ -29,8 +29,11 @@ name = "effect_macro_bind_free"
 harness = false
 
 [features]
+# Property-testing helpers in `testing::proptest`.
+proptest = ["dep:proptest"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
+algebra = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
@@ -42,6 +45,7 @@ im = "15"
 jiff = "0.2.23"
 rayon = "1.12"
 serde_json = { version = "1", optional = true }
+proptest = { version = "1", optional = true }
 tokio = { version = "1.50.0", features = ["macros", "rt", "time", "sync"] }
 
 [dev-dependencies]

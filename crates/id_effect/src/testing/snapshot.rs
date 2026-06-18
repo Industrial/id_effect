@@ -285,6 +285,21 @@ mod tests {
     }
   }
 
+  mod golden_helpers {
+    use super::*;
+
+    #[test]
+    fn golden_builder_assert_observed_passes_on_match() {
+      GoldenBuilder::new("case", "9").assert_observed("9");
+    }
+
+    #[test]
+    fn assert_golden_effect_runs_snapshot_contract() {
+      let snapshot = assert_golden_effect(snapshot_effect_map_flat_map(), ());
+      assert_eq!(snapshot.name, "snapshot_effect_map_flat_map");
+    }
+  }
+
   mod snapshot_suite_contract {
     use super::*;
 
@@ -338,4 +353,89 @@ mod tests {
       assert!(snapshot.matches());
     }
   }
+}
+
+/// Builder for golden snapshot assertions with fluent expected-value wiring.
+#[derive(Clone, Debug)]
+pub struct GoldenBuilder {
+  name: &'static str,
+  expected: &'static str,
+}
+
+impl GoldenBuilder {
+  /// Start a golden assertion for `name`.
+  #[inline]
+  pub fn new(name: &'static str, expected: &'static str) -> Self {
+    Self { name, expected }
+  }
+
+  /// Build a [`SnapshotAssertion`] from an observed string.
+  #[inline]
+  pub fn build(self, observed: impl Into<String>) -> SnapshotAssertion {
+    SnapshotAssertion {
+      name: self.name,
+      observed: observed.into(),
+      expected: self.expected,
+    }
+  }
+
+  /// Assert `observed` matches the frozen expected value.
+  #[inline]
+  pub fn assert_observed(self, observed: impl Into<String>) {
+    self.build(observed).assert_matches();
+  }
+}
+
+impl SnapshotAssertion {
+  /// Panics unless `observed` equals `expected` per [`crate::Equal`].
+  #[inline]
+  pub fn assert_matches(&self) {
+    assert!(
+      self.matches(),
+      "golden snapshot mismatch for `{}`:\n  observed: {}\n  expected: {}",
+      self.name,
+      self.observed,
+      self.expected
+    );
+  }
+
+  /// Assert this snapshot's name is in [`SNAPSHOT_CORPUS`].
+  #[inline]
+  pub fn assert_corpus_member(&self) {
+    assert!(
+      SNAPSHOT_CORPUS.contains(&self.name),
+      "snapshot `{}` is not listed in SNAPSHOT_CORPUS",
+      self.name
+    );
+  }
+}
+
+/// Assert a pre-built snapshot matches its expected value.
+#[inline]
+pub fn assert_golden(snapshot: &SnapshotAssertion) {
+  snapshot.assert_matches();
+}
+
+/// Assert `observed` matches a frozen golden string for `name`.
+#[inline]
+pub fn assert_golden_matches(
+  name: &'static str,
+  expected: &'static str,
+  observed: impl Into<String>,
+) {
+  GoldenBuilder::new(name, expected).assert_observed(observed);
+}
+
+/// Run an effect and assert the resulting snapshot matches its expected value.
+pub fn assert_golden_effect<E, R>(
+  effect: Effect<SnapshotAssertion, E, R>,
+  env: R,
+) -> SnapshotAssertion
+where
+  E: std::fmt::Debug + 'static,
+  R: 'static,
+{
+  let snapshot = crate::runtime::run_blocking(effect, env).expect("golden effect failed");
+  assert_golden(&snapshot);
+  snapshot
 }

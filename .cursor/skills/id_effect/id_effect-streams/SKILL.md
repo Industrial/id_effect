@@ -70,6 +70,31 @@ Use when each element runs an `Effect`; use Rayon bulk APIs for pure transforms.
 | Rayon for IO-bound effects | `map_par_n` with bounded concurrency |
 | Collecting unbounded streams without sink | explicit sink + backpressure policy |
 
+
+## Advanced streaming (Part V ch22)
+
+Modules under `id_effect::streaming`:
+
+| Combinator | Module | Use |
+|------------|--------|-----|
+| `tumbling` / `sliding` / `session_by_gap` | `window` | Count/time/session windows → `Stream<Vec<A>>` |
+| `merge` | `join` | Fair element interleave of two streams |
+| `combine_latest` | `join` | Latest pair when either side updates |
+| `keyed_join` | `join` | Inner join on latest per key |
+| `broadcast_with_replay` | `replay` | Fanout + replay tail buffer |
+| `state_scan` | `state_scan` | FSM step with optional output |
+| `via_transducer` | `transducer` | Optics-compatible map/filter pipeline |
+
+```rust
+use id_effect::{Stream, combine_latest, state_scan, transducer_map, Transducer};
+
+Stream::from_iterable(events).tumbling(100);
+combine_latest(temperatures, setpoints);
+Stream::from_iterable(inputs).via_transducer(transducer_map(|x| x * 2));
+```
+
+Transducers mirror `id_effect_optics::Transducer` but live in `id_effect` to avoid a dependency cycle.
+
 ## Verify
 
 ```bash

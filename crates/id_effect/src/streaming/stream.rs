@@ -40,7 +40,7 @@ pub fn merge_time_bucket<A: Clone>(
 }
 
 #[allow(clippy::type_complexity)]
-enum StreamState<A, E, R>
+pub(crate) enum StreamState<A, E, R>
 where
   A: Send + 'static,
   E: Send + 'static,
@@ -70,7 +70,7 @@ where
 }
 
 #[derive(Clone)]
-enum ChannelMessage<A, E> {
+pub(crate) enum ChannelMessage<A, E> {
   Chunk(Chunk<A>),
   End,
   Fail(E),
@@ -182,6 +182,31 @@ pub type StreamV1<A, E = (), R = ()> = Stream<A, E, R>;
 
 /// `(consumer streams, pump effect)` from [`Stream::broadcast`].
 pub type StreamBroadcastFanout<A, E, R> = (Vec<Stream<A, E, R>>, Effect<(), E, R>);
+
+/// Build a pull stream from a [`Queue`] subscription (used by broadcast / replay fanout).
+#[inline]
+pub(crate) fn stream_from_direct_queue<A, E, R>(
+  queue: Queue<A>,
+  scope: Option<Scope>,
+  shared_fail: Arc<Mutex<Option<E>>>,
+  initial_buffered: VecDeque<A>,
+) -> Stream<A, E, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  R: 'static,
+{
+  Stream {
+    state: Arc::new(Mutex::new(StreamState::DirectQueue {
+      queue,
+      buffered: initial_buffered,
+      closed: false,
+      scope,
+      shared_fail,
+    })),
+    throughput: None,
+  }
+}
 
 impl<A, E, R> Stream<A, E, R>
 where
@@ -918,16 +943,12 @@ where
             Ok(q) => q,
             Err(e) => match e {},
           };
-          outs.push(Stream {
-            state: Arc::new(Mutex::new(StreamState::DirectQueue {
-              queue: q,
-              buffered: VecDeque::new(),
-              closed: false,
-              scope: Some(child),
-              shared_fail: Arc::clone(&shared_fail),
-            })),
-            throughput: None,
-          });
+          outs.push(stream_from_direct_queue(
+            q,
+            Some(child),
+            Arc::clone(&shared_fail),
+            VecDeque::new(),
+          ));
         }
 
         let upstream = self;

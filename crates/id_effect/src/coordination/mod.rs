@@ -23,7 +23,9 @@ pub mod latch;
 pub mod pubsub;
 pub mod queue;
 pub mod ref_;
+pub mod request_resolver;
 pub mod semaphore;
+pub mod subscription_ref;
 pub mod synchronized_ref;
 
 pub use channel::{Channel, ChannelReadError, QueueChannel};
@@ -32,5 +34,10 @@ pub use latch::Latch;
 pub use pubsub::PubSub;
 pub use queue::{Queue, QueueError};
 pub use ref_::Ref;
+pub use request_resolver::{
+  FnRequestResolver, MissingKey, RequestEntry, RequestResolver, batching,
+  make as make_request_resolver,
+};
 pub use semaphore::{Permit, Semaphore};
+pub use subscription_ref::SubscriptionRef;
 pub use synchronized_ref::SynchronizedRef;

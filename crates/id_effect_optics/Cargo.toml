@@ -1,0 +1,33 @@
+[package]
+name = "id_effect_optics"
+version = "3.0.0"
+edition = "2024"
+description = "Functional optics — Lens, Prism, Traversal, JSON patch, and schema field paths for id_effect"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/id_effect"
+readme = "README.md"
+keywords = ["optics", "lens", "prism", "traversal", "effect"]
+categories = ["data-structures"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_optics"
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "3.0.0", features = [
+  "schema-serde",
+] }
+im = "15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+rstest = "0.26"
+
+[[example]]
+name = "010_lens"
+path = "examples/010_lens.rs"
