@@ -126,6 +126,29 @@ mod tests {
   use std::sync::{Arc, Mutex};
 
   #[tokio::test]
+  async fn batching_empty_keys() {
+    let resolver = batching(|keys: Vec<u32>| {
+      Effect::<HashMap<u32, String>, (), ()>::new(move |_| {
+        let map: std::collections::HashMap<u32, String> =
+          keys.into_iter().map(|k| (k, format!("v{k}"))).collect();
+        Ok(map)
+      })
+    });
+    run_async(resolver.run_all(vec![vec![]]), ())
+      .await
+      .expect("empty inner batch");
+  }
+
+  #[tokio::test]
+  async fn make_resolver_empty_batches() {
+    let resolver =
+      make(|_batches: Vec<Vec<RequestEntry<u32, String, ()>>>| Effect::new(|_| Ok(())));
+    run_async(resolver.run_all(vec![]), ())
+      .await
+      .expect("run_all");
+  }
+
+  #[tokio::test]
   async fn batching_resolver_fetches_deduped_keys() {
     let calls = Arc::new(Mutex::new(Vec::<Vec<u32>>::new()));
     let calls_c = Arc::clone(&calls);

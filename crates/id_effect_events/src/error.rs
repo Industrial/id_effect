@@ -29,3 +29,40 @@ pub enum EventStoreError {
   #[error("schema error: {0}")]
   Schema(String),
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn display_formats_all_variants() {
+    let cases = [
+      (
+        EventStoreError::StreamNotFound {
+          stream_id: "s".into(),
+        },
+        "stream `s` not found",
+      ),
+      (
+        EventStoreError::VersionConflict {
+          stream_id: "s".into(),
+          expected: 2,
+          actual: 3,
+        },
+        "expected version 2, found 3 on stream `s`",
+      ),
+      (EventStoreError::Io("disk".into()), "io error: disk"),
+      (
+        EventStoreError::Serde("bad json".into()),
+        "serde error: bad json",
+      ),
+      (
+        EventStoreError::Schema("bad field".into()),
+        "schema error: bad field",
+      ),
+    ];
+    for (err, expected) in cases {
+      assert_eq!(err.to_string(), expected);
+    }
+  }
+}

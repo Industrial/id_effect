@@ -309,4 +309,124 @@ mod tests {
     let read = run_blocking(store.read("acct", 1), ()).expect("read");
     assert_eq!(read[0].payload, CounterEvt(10));
   }
+
+  #[test]
+  fn memory_default_store_is_empty() {
+    let store = MemoryEventStore::<CounterEvt>::default();
+    assert_eq!(
+      run_blocking(store.latest_version("any"), ()).expect("latest"),
+      0
+    );
+  }
+
+  #[test]
+  fn append_empty_returns_no_stored_events() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let stored = run_blocking(store.append("s", &[]), ()).expect("append");
+    assert!(stored.is_empty());
+  }
+
+  #[test]
+  fn read_filters_by_from_version() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    run_blocking(
+      store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)]),
+      (),
+    )
+    .expect("append");
+    let read = run_blocking(store.read("s", 2), ()).expect("read");
+    assert_eq!(read.len(), 2);
+    assert_eq!(read[0].version, 2);
+  }
+
+  #[test]
+  fn memory_read_empty_stream_returns_empty() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let read = run_blocking(store.read("missing", 1), ()).expect("read");
+    assert!(read.is_empty());
+  }
+
+  #[test]
+  fn memory_latest_version_zero_when_empty() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let latest = run_blocking(store.latest_version("missing"), ()).expect("latest");
+    assert_eq!(latest, 0);
+  }
+
+  #[test]
+  fn file_journal_latest_version_and_read_filter() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("nested/events.jsonl");
+    let store = FileJournal::<CounterEvt>::open(&path).expect("open");
+    run_blocking(
+      store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)]),
+      (),
+    )
+    .expect("append");
+    assert_eq!(
+      run_blocking(store.latest_version("s"), ()).expect("latest"),
+      3
+    );
+    let read = run_blocking(store.read("s", 2), ()).expect("read");
+    assert_eq!(read.len(), 2);
+    assert_eq!(read[0].version, 2);
+  }
+
+  #[test]
+  fn file_journal_multiple_streams_and_blank_lines() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("multi.jsonl");
+    std::fs::write(
+      &path, "
+
+",
+    )
+    .expect("write blanks");
+    let store = FileJournal::<CounterEvt>::open(&path).expect("open");
+    run_blocking(store.append("a", &[CounterEvt(1)]), ()).expect("a");
+    run_blocking(store.append("b", &[CounterEvt(2)]), ()).expect("b");
+    let a = run_blocking(store.read("a", 1), ()).expect("read a");
+    let b = run_blocking(store.read("b", 1), ()).expect("read b");
+    assert_eq!(a[0].payload, CounterEvt(1));
+    assert_eq!(b[0].payload, CounterEvt(2));
+  }
+
+  #[test]
+  fn stored_event_clone_and_debug() {
+    let evt = StoredEvent {
+      event_id: "e1".into(),
+      version: 1,
+      payload: CounterEvt(7),
+    };
+    let cloned = evt.clone();
+    assert_eq!(format!("{cloned:?}"), format!("{evt:?}"));
+  }
+
+  #[test]
+  fn file_journal_read_missing_stream_returns_empty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("empty.jsonl");
+    let store = FileJournal::<CounterEvt>::open(&path).expect("open");
+    let read = run_blocking(store.read("missing", 1), ()).expect("read");
+    assert!(read.is_empty());
+    assert_eq!(
+      run_blocking(store.latest_version("missing"), ()).expect("latest"),
+      0
+    );
+  }
+
+  #[test]
+  fn file_journal_rejects_invalid_json_line() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("bad.jsonl");
+    std::fs::write(
+      &path,
+      "not-json
+",
+    )
+    .expect("write");
+    let store = FileJournal::<CounterEvt>::open(&path).expect("open");
+    let err = run_blocking(store.read("s", 1), ()).expect_err("serde");
+    assert!(matches!(err, EventStoreError::Serde(_)));
+  }
 }

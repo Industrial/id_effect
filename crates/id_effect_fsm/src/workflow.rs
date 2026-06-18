@@ -101,11 +101,11 @@ where
     )));
   }
   let latest_seq = count - 1;
-  let snap: FsmSnapshot<S> = log
-    .run_step_typed(workflow_id, latest_seq, "fsm_restore", || {
-      Err(WorkflowError::InvalidWorkflowId)
-    })
-    .map_err(WorkflowFsmError::Workflow)?;
+  let json = log
+    .completed_json(workflow_id, latest_seq)?
+    .ok_or(WorkflowFsmError::Workflow(WorkflowError::InvalidWorkflowId))?;
+  let snap: FsmSnapshot<S> =
+    serde_json::from_str(&json).map_err(|e| WorkflowFsmError::Workflow(WorkflowError::Json(e)))?;
   machine.set_state(snap.state);
   Ok(snap)
 }

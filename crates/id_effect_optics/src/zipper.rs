@@ -137,6 +137,26 @@ mod tests {
     }
   }
 
+  mod rebuild {
+    use super::*;
+
+    #[test]
+    fn rebuild_round_trip() {
+      let root = TrieNode::leaf("v");
+      let zipper = TrieZipper::new(root).set_value("new");
+      let rebuilt = zipper.rebuild();
+      assert_eq!(rebuilt.value, Some("new"));
+    }
+
+    #[test]
+    fn trie_node_child_lookup() {
+      let mut node = TrieNode::new();
+      node.children.insert('x', TrieNode::leaf(1));
+      assert_eq!(node.child('x').unwrap().value, Some(1));
+      assert!(node.child('y').is_none());
+    }
+  }
+
   mod set_value {
     use super::*;
 

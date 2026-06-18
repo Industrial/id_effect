@@ -67,6 +67,12 @@ mod tests {
   use crate::runtime::run_blocking;
 
   #[test]
+  fn traverse_vec_empty_input() {
+    let eff = traverse_vec(Vec::<i32>::new(), |n| crate::succeed::<i32, (), ()>(n));
+    assert_eq!(run_blocking(eff, ()), Ok(vec![]));
+  }
+
+  #[test]
   fn traverse_vec_collects() {
     let xs = vec![1, 2, 3];
     let eff = traverse_vec(xs, |n| crate::succeed::<i32, (), ()>(n * 2));
@@ -74,9 +80,21 @@ mod tests {
   }
 
   #[test]
+  fn sequence_vec_empty() {
+    let xs: Vec<crate::Effect<i32, (), ()>> = vec![];
+    assert_eq!(run_blocking(sequence_vec(xs), ()), Ok(vec![]));
+  }
+
+  #[test]
   fn sequence_vec_runs_all() {
     let xs: Vec<crate::Effect<i32, (), ()>> = vec![crate::succeed(1), crate::succeed(2)];
     assert_eq!(run_blocking(sequence_vec(xs), ()), Ok(vec![1, 2]));
+  }
+
+  #[test]
+  fn traverse_option_some() {
+    let eff = traverse_option(Some(4i32), |n| crate::succeed::<i32, (), ()>(n + 1));
+    assert_eq!(run_blocking(eff, ()), Ok(Some(5)));
   }
 
   #[test]

@@ -72,4 +72,30 @@ mod tests {
       11
     );
   }
+
+  mod bitraverse_tests {
+    use crate::algebra::bifoldable::bitraverse::bitraverse;
+    use crate::foundation::either::Either;
+    use crate::{Exit, pure, run_test};
+
+    #[test]
+    fn traverses_left_branch() {
+      let e: Either<(), i32> = Err(5);
+      let exit: Exit<Either<(), String>, ()> = run_test(
+        bitraverse(e, |l| pure(l.to_string()), |_r: ()| pure(())),
+        (),
+      );
+      assert_eq!(exit, Exit::succeed(Err("5".into())));
+    }
+
+    #[test]
+    fn traverses_right_branch() {
+      let e: Either<i32, ()> = Ok(7);
+      let exit: Exit<Either<String, ()>, ()> = run_test(
+        bitraverse(e, |_l: ()| pure(()), |r| pure(r.to_string())),
+        (),
+      );
+      assert_eq!(exit, Exit::succeed(Ok("7".into())));
+    }
+  }
 }

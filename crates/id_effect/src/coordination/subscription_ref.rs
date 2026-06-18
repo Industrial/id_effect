@@ -94,6 +94,14 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn subscription_ref_get_reads_current() {
+    let sr = run_async(SubscriptionRef::make(99u32), ())
+      .await
+      .expect("make");
+    assert_eq!(run_async(sr.get(), ()).await.expect("get"), 99);
+  }
+
+  #[tokio::test]
   async fn subscription_ref_update_publishes() {
     let sr = run_async(SubscriptionRef::make(10u32), ())
       .await

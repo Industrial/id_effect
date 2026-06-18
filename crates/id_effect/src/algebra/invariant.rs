@@ -43,4 +43,29 @@ mod tests {
     let s = imap(42i32, |n| n.to_string(), |s| s.parse().unwrap());
     assert_eq!(s, "42");
   }
+
+  use super::Invariant;
+
+  struct IdentityWrap<A>(A);
+
+  impl<A> Invariant for IdentityWrap<A> {
+    type Inner = A;
+    type Output<B> = IdentityWrap<B>;
+
+    fn imap_f<B>(self, f: impl FnOnce(A) -> B) -> IdentityWrap<B> {
+      IdentityWrap(f(self.0))
+    }
+  }
+
+  #[test]
+  fn imap_f_maps_directly() {
+    let mapped = IdentityWrap("x".to_string()).imap_f(|s| s.len());
+    assert_eq!(mapped.0, 1);
+  }
+
+  #[test]
+  fn default_imap_delegates_to_imap_f() {
+    let mapped = IdentityWrap(1).imap(|n| n + 1, |n| n - 1);
+    assert_eq!(mapped.0, 2);
+  }
 }

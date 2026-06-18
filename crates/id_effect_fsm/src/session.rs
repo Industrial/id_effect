@@ -92,3 +92,28 @@ pub type ClientPing = SessionSend<PingStep>;
 
 /// Server-side linear ping session starting in receive phase.
 pub type ServerPing = SessionRecv<PingStep>;
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn defaults_construct_tokens() {
+    let _: SessionSend<PingStep> = SessionSend::default();
+    let _: SessionRecv<PingStep> = SessionRecv::default();
+    let _ = SessionSend::<PingStep>::new();
+    let _ = SessionRecv::<PingStep>::new();
+  }
+
+  #[test]
+  fn server_ping_pong_linear() {
+    let recv = ServerPing::new();
+    let (_ping, send) = recv.recv::<PingPong, PongStep>(PingPong::Ping);
+    let (_pong, _end) = send.send::<PingPong, SessionEnd>(PingPong::Pong);
+  }
+
+  #[test]
+  fn ping_pong_debug() {
+    assert_eq!(format!("{:?}", PingPong::Ping), "Ping");
+  }
+}

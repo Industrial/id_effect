@@ -193,12 +193,74 @@ mod tests {
   }
 
   #[test]
+  fn event_envelope_new_sets_fields() {
+    let env = EventEnvelope::new("stream", 7, "Evt", 3_i64);
+    assert_eq!(env.stream_id, "stream");
+    assert_eq!(env.version, 7);
+    assert_eq!(env.event_type, "Evt");
+    assert_eq!(env.payload, 3);
+    assert!(!env.event_id.is_empty());
+    assert!(env.occurred_at_ms >= 0);
+  }
+
+  #[test]
   fn envelope_schema_round_trip() {
     let env = EventEnvelope::new("acct-1", 1, "CounterIncreased", 5_i64);
     let wire = envelope_to_wire::<CounterIncreased>(&env).expect("to_wire");
     let back = envelope_from_wire::<CounterIncreased>(wire).expect("from_wire");
     assert_eq!(back.payload, 5);
     assert_eq!(back.stream_id, "acct-1");
+  }
+
+  #[test]
+  fn schema_error_maps_parse_error() {
+    let err = ParseError::new("field", "bad");
+    assert_eq!(schema_error(err).to_string(), "schema error: bad");
+  }
+
+  #[test]
+  fn envelope_schema_decode_unknown_payload() {
+    let schema = envelope_schema(CounterIncreased::schema());
+    let unknown = id_effect::Unknown::I64(3);
+    let env = schema.decode_unknown(&unknown).expect("decode_unknown");
+    assert_eq!(env.payload, 3);
+  }
+
+  #[test]
+  fn envelope_schema_encode_round_trip() {
+    let schema = envelope_schema(CounterIncreased::schema());
+    let env = EventEnvelope::new("s", 3, "CounterIncreased", 12_i64);
+    let wire = schema.encode(env.clone());
+    let decoded = schema.decode(wire).expect("decode");
+    assert_eq!(decoded.payload, 12);
+    assert_eq!(decoded.stream_id, "s");
+  }
+
+  #[test]
+  fn composite_schema_decode_fails_on_bad_version() {
+    let schema = envelope_schema(CounterIncreased::schema());
+    let wire = WireEventEnvelope {
+      event_id: "e".into(),
+      stream_id: "s".into(),
+      version: 0,
+      occurred_at_ms: 0,
+      event_type: "t".into(),
+      payload: serde_json::json!(null),
+    };
+    assert!(schema.decode(wire).is_err());
+  }
+
+  #[test]
+  fn envelope_from_wire_rejects_bad_payload() {
+    let wire = WireEventEnvelope {
+      event_id: "e".into(),
+      stream_id: "s".into(),
+      version: 1,
+      occurred_at_ms: 0,
+      event_type: "CounterIncreased".into(),
+      payload: serde_json::json!("not-a-number"),
+    };
+    assert!(envelope_from_wire::<CounterIncreased>(wire).is_err());
   }
 
   #[test]

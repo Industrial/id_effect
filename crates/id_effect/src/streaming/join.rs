@@ -202,6 +202,14 @@ mod tests {
       let out = block_on(a.merge(b).run_collect().run(&mut ())).expect("collect");
       assert_eq!(out, vec![1, 10, 2, 20]);
     }
+
+    #[test]
+    fn drains_remaining_when_one_side_finishes_first() {
+      let a = Stream::from_iterable([1]);
+      let b = Stream::from_iterable([10, 20, 30]);
+      let out = block_on(a.merge(b).run_collect().run(&mut ())).expect("collect");
+      assert_eq!(out, vec![1, 10, 20, 30]);
+    }
   }
 
   mod combine_latest {

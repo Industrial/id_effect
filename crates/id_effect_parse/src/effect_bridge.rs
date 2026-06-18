@@ -75,3 +75,45 @@ where
       }
     })
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn parse_stream_success() {
+    use id_effect::{Chunk, Stream};
+    let parser = crate::parser::Parser::new(|input: Vec<u8>| {
+      if input == b"ab" {
+        Ok((2usize, Vec::new()))
+      } else {
+        Err(crate::parser::ParseFailure::new("bad"))
+      }
+    });
+    let stream = Stream::from_iterable([
+      Chunk::from_vec(b"a".to_vec()),
+      Chunk::from_vec(b"b".to_vec()),
+    ]);
+    let len = id_effect::run_blocking(parse_stream(parser, stream), ()).expect("parse");
+    assert_eq!(len, 2);
+  }
+
+  #[test]
+  fn parse_text_stream_success() {
+    use id_effect::{Chunk, Stream};
+    let parser = crate::parser::Parser::new(|s: String| Ok((s.len(), String::new())));
+    let stream = Stream::from_iterable([Chunk::from_vec(b"abc".to_vec())]);
+    let len = id_effect::run_blocking(parse_text_stream(parser, stream), ()).expect("parse");
+    assert_eq!(len, 3);
+  }
+
+  #[test]
+  fn parse_stream_error_display_variants() {
+    let stream = ParseStreamError::<&str, &str>::Stream("boom");
+    assert_eq!(stream.to_string(), "stream error: \"boom\"");
+    let parse = ParseStreamError::<(), &str>::Parse("bad");
+    assert_eq!(parse.to_string(), "parse error: \"bad\"");
+    let utf8 = ParseStreamError::<(), ()>::Utf8("invalid".into());
+    assert_eq!(utf8.to_string(), "utf8 error: invalid");
+  }
+}

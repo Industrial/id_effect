@@ -142,3 +142,51 @@ impl fmt::Display for Doc {
     f.write_str(&self.render(80))
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn doc_render_variants() {
+    let doc = Doc::text("hi")
+      .cat(Doc::line())
+      .cat(Doc::text("there"))
+      .nest(2)
+      .group();
+    let rendered = doc.render(80);
+    assert!(rendered.contains("hi"));
+    assert!(rendered.contains("there"));
+  }
+
+  #[test]
+  fn pretty_string_type() {
+    let s = String::from("hello");
+    assert_eq!(s.pretty().render(40), "hello");
+  }
+
+  #[test]
+  fn pretty_trait_for_primitives() {
+    assert_eq!(42i64.pretty().render(40), "42");
+    assert_eq!("x".pretty().render(40), "x");
+    assert_eq!("[1, 2]".pretty().render(40), "[1, 2]");
+  }
+
+  #[test]
+  fn doc_group_flat_when_fits() {
+    let doc = Doc::group(Doc::text("short"));
+    assert_eq!(doc.render(80), "short");
+    assert_eq!(Doc::nil().render(10), "");
+    assert_eq!(
+      Doc::line().render(10),
+      "
+"
+    );
+  }
+
+  #[test]
+  fn display_uses_render() {
+    let doc = Doc::text("ok").cat(Doc::break_());
+    assert!(format!("{doc}").contains("ok"));
+  }
+}

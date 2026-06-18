@@ -203,6 +203,111 @@ mod tests {
       .unwrap_err();
       assert!(matches!(err, PatchError::Path(_)));
     }
+
+    #[test]
+    fn add_replaces_existing_field() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Add {
+          path: "name".into(),
+          value: Unknown::String("New".into()),
+        },
+      )
+      .unwrap();
+      assert_eq!(
+        get_at_path(&updated, "name").unwrap(),
+        &Unknown::String("New".into())
+      );
+    }
+
+    #[test]
+    fn add_empty_path_replaces_document() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Add {
+          path: String::new(),
+          value: Unknown::Bool(false),
+        },
+      )
+      .unwrap();
+      assert_eq!(updated, Unknown::Bool(false));
+    }
+
+    #[test]
+    fn remove_root_is_rejected() {
+      let err = apply_patch(
+        doc(),
+        &PatchOp::Remove {
+          path: String::new(),
+        },
+      )
+      .unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn remove_missing_field_errors() {
+      let err = apply_patch(
+        doc(),
+        &PatchOp::Remove {
+          path: "missing".into(),
+        },
+      )
+      .unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn remove_array_element_by_index() {
+      let arr = Unknown::Array(vec![Unknown::I64(1), Unknown::I64(2)]);
+      let updated = apply_patch(arr, &PatchOp::Remove { path: "0".into() }).unwrap();
+      assert_eq!(updated, Unknown::Array(vec![Unknown::I64(2)]));
+    }
+
+    #[test]
+    fn remove_invalid_array_index_errors() {
+      let arr = Unknown::Array(vec![Unknown::I64(1)]);
+      let err = apply_patch(
+        arr,
+        &PatchOp::Remove {
+          path: "nope".into(),
+        },
+      )
+      .unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn remove_out_of_bounds_index_errors() {
+      let arr = Unknown::Array(vec![Unknown::I64(1)]);
+      let err = apply_patch(arr, &PatchOp::Remove { path: "5".into() }).unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn remove_nested_array_element() {
+      let doc = object([(
+        "items",
+        Unknown::Array(vec![Unknown::I64(1), Unknown::I64(2)]),
+      )]);
+      let updated = apply_patch(
+        doc,
+        &PatchOp::Remove {
+          path: "items.0".into(),
+        },
+      )
+      .unwrap();
+      assert_eq!(
+        get_at_path(&updated, "items").unwrap(),
+        &Unknown::Array(vec![Unknown::I64(2)])
+      );
+    }
+
+    fn remove_from_scalar_errors() {
+      let err =
+        apply_patch(Unknown::Bool(true), &PatchOp::Remove { path: "0".into() }).unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
   }
 
   mod apply_patches {

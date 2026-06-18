@@ -198,6 +198,31 @@ mod tests {
     use id_effect_workflow::DurableWorkflowLog;
 
     #[test]
+    fn register_fsm_duplicate_errors() {
+      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
+      let m = door_machine();
+      register_fsm(&mut log, "wf", &m).unwrap();
+      let err = register_fsm(&mut log, "wf", &m).unwrap_err();
+      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
+    }
+
+    #[test]
+    fn step_durable_unknown_workflow_errors() {
+      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
+      let mut m = door_machine();
+      let err = step_durable(&mut log, "missing", &mut m, DoorEvt::Open, "open").unwrap_err();
+      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
+    }
+
+    #[test]
+    fn restore_unknown_workflow_errors() {
+      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
+      let mut m = door_machine();
+      let err = restore_state(&mut log, "missing", &mut m).unwrap_err();
+      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
+    }
+
+    #[test]
     fn durable_step_persists_state() {
       let mut log = DurableWorkflowLog::open_in_memory().unwrap();
       let mut m = door_machine();

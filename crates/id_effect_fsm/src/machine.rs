@@ -118,3 +118,40 @@ where
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+  enum S {
+    A,
+    B,
+  }
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+  enum E {
+    Go,
+  }
+
+  fn table() -> TransitionTable<S, E> {
+    TransitionTable::new().on(S::A, E::Go, S::B)
+  }
+
+  #[test]
+  fn table_metadata_and_reset() {
+    let t = table();
+    assert_eq!(t.len(), 1);
+    assert!(!t.is_empty());
+    let edges: Vec<_> = t.edges().collect();
+    assert_eq!(edges, vec![(S::A, E::Go, S::B)]);
+    let mut m = StateMachine::new(S::A, t);
+    assert_eq!(m.initial(), S::A);
+    assert_eq!(m.table().len(), 1);
+    m.step(E::Go).unwrap();
+    assert_eq!(m.state(), S::B);
+    m.reset();
+    assert_eq!(m.state(), S::A);
+    m.set_state(S::B);
+    assert_eq!(m.state(), S::B);
+  }
+}

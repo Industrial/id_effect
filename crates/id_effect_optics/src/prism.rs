@@ -130,6 +130,41 @@ mod tests {
     }
   }
 
+  mod compose {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq)]
+    enum Outer {
+      Inner(Inner),
+      Other,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    enum Inner {
+      Num(i32),
+    }
+
+    #[test]
+    fn compose_nested_prisms() {
+      let outer = Prism::new(
+        |s: &Outer| match s {
+          Outer::Inner(i) => Some(i.clone()),
+          Outer::Other => None,
+        },
+        Outer::Inner,
+      );
+      let inner = Prism::new(
+        |i: &Inner| match i {
+          Inner::Num(n) => Some(*n),
+        },
+        Inner::Num,
+      );
+      let composed = outer.compose(inner);
+      assert_eq!(composed.preview(&Outer::Inner(Inner::Num(4))), Some(4));
+      assert_eq!(composed.review(7), Outer::Inner(Inner::Num(7)));
+    }
+  }
+
   mod some_prism {
     use super::*;
 
@@ -138,6 +173,12 @@ mod tests {
       let p = some_prism::<i32>();
       assert_eq!(p.preview(&Some(7)), Some(7));
       assert_eq!(p.preview(&None), None);
+    }
+
+    #[test]
+    fn review_wraps_value_in_some() {
+      let p = some_prism::<i32>();
+      assert_eq!(p.review(9), Some(9));
     }
   }
 }

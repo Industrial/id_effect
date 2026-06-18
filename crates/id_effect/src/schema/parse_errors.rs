@@ -59,6 +59,12 @@ mod tests {
   }
 
   #[test]
+  fn error_trait_is_implemented() {
+    let err = ParseErrors::one(ParseError::new("f", "msg"));
+    let _: &dyn std::error::Error = &err;
+  }
+
+  #[test]
   fn display_empty_path_omits_path_prefix() {
     let e = ParseErrors::one(ParseError::new("", "bare error"));
     assert_eq!(e.to_string(), "bare error");

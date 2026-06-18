@@ -153,4 +153,88 @@ mod tests {
       CircuitState::Open
     );
   }
+
+  #[tokio::test]
+  async fn success_resets_failures_and_closes() {
+    use id_effect::kernel::succeed;
+    let cb = run_async(CircuitBreaker::make(2, Duration::from_millis(100)), ())
+      .await
+      .expect("make");
+    assert!(matches!(
+      run_async(cb.call(fail::<(), &str, ()>("boom")), ()).await,
+      Err(Or::Right(_))
+    ));
+    assert_eq!(
+      run_async(cb.call(succeed::<i32, &str, ()>(42)), ())
+        .await
+        .expect("success"),
+      42
+    );
+    assert_eq!(
+      run_async(cb.state(), ()).await.expect("state"),
+      CircuitState::Closed
+    );
+  }
+
+  #[tokio::test]
+  async fn half_open_recovers_after_reset() {
+    use id_effect::kernel::succeed;
+    let cb = run_async(CircuitBreaker::make(1, Duration::from_millis(1)), ())
+      .await
+      .expect("make");
+    assert!(matches!(
+      run_async(cb.call(fail::<(), &str, ()>("boom")), ()).await,
+      Err(Or::Right(_))
+    ));
+    assert_eq!(
+      run_async(cb.state(), ()).await.expect("state"),
+      CircuitState::Open
+    );
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert_eq!(
+      run_async(cb.call(succeed::<i32, &str, ()>(7)), ())
+        .await
+        .expect("probe"),
+      7
+    );
+    assert_eq!(
+      run_async(cb.state(), ()).await.expect("state"),
+      CircuitState::Closed
+    );
+  }
+
+  #[tokio::test]
+  async fn failure_below_threshold_stays_closed() {
+    let cb = run_async(CircuitBreaker::make(3, Duration::from_secs(60)), ())
+      .await
+      .expect("make");
+    assert!(matches!(
+      run_async(cb.call(fail::<(), &str, ()>("once")), ()).await,
+      Err(Or::Right(_))
+    ));
+    assert_eq!(
+      run_async(cb.state(), ()).await.expect("state"),
+      CircuitState::Closed
+    );
+  }
+
+  #[tokio::test]
+  async fn half_open_failure_reopens() {
+    let cb = run_async(CircuitBreaker::make(1, Duration::from_millis(1)), ())
+      .await
+      .expect("make");
+    assert!(matches!(
+      run_async(cb.call(fail::<(), &str, ()>("boom")), ()).await,
+      Err(Or::Right(_))
+    ));
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert!(matches!(
+      run_async(cb.call(fail::<(), &str, ()>("probe fail")), ()).await,
+      Err(Or::Right(_))
+    ));
+    assert_eq!(
+      run_async(cb.state(), ()).await.expect("state"),
+      CircuitState::Open
+    );
+  }
 }

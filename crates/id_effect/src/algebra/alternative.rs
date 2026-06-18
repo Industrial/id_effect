@@ -53,4 +53,18 @@ mod tests {
   fn alt_falls_back() {
     assert_eq!(alt(None, Some(2)), Some(2));
   }
+
+  mod vec_alt {
+    use super::super::vec::{alt, empty};
+
+    #[test]
+    fn empty_vec_is_empty() {
+      assert!(empty::<i32>().is_empty());
+    }
+
+    #[test]
+    fn alt_concatenates_vectors() {
+      assert_eq!(alt(vec![1], vec![2, 3]), vec![1, 2, 3]);
+    }
+  }
 }

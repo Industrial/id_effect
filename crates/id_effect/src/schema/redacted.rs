@@ -75,4 +75,12 @@ mod tests {
     let r = Redacted::new(42u32);
     assert_eq!(*r.expose(), 42);
   }
+
+  #[test]
+  fn clone_eq_and_into_inner() {
+    let a = Redacted::new("secret".to_string());
+    let b = a.clone();
+    assert_eq!(a, b);
+    assert_eq!(a.into_inner(), "secret");
+  }
 }

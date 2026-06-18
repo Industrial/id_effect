@@ -75,4 +75,41 @@ mod tests {
       assert_eq!(fold_right(vec![1, 2, 3], 0, |a, b| a + b), 6);
     }
   }
+
+  mod effect_vector_fold {
+    use super::effect_vector::fold_right;
+    use crate::collections::EffectVector;
+
+    #[test]
+    fn sums_persistent_vector() {
+      let v: EffectVector<i32> = [1, 2, 3].into_iter().collect();
+      assert_eq!(fold_right(v, 0, |a, b| a + b), 6);
+    }
+  }
+
+  struct ListFoldable(Vec<i32>);
+
+  impl Foldable for ListFoldable {
+    type Item = i32;
+
+    fn fold_right<B>(self, init: B, mut f: impl FnMut(Self::Item, B) -> B) -> B {
+      self.0.into_iter().rev().fold(init, |acc, x| f(x, acc))
+    }
+  }
+
+  #[test]
+  fn free_fold_right_delegates_to_trait() {
+    assert_eq!(
+      super::fold_right(ListFoldable(vec![1, 2]), 0, |a, b| a + b),
+      3
+    );
+  }
+
+  #[test]
+  fn fold_left_accumulates_in_order() {
+    assert_eq!(
+      ListFoldable(vec![1, 2, 3]).fold_left(0, |acc, x| acc + x),
+      6
+    );
+  }
 }

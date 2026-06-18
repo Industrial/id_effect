@@ -189,8 +189,36 @@ mod unit_tests {
   }
 
   #[test]
+  fn assert_exit_eq_failure_branch() {
+    let left = Exit::<(), &str>::fail("same");
+    let right = Exit::<(), &str>::fail("same");
+    assert_exit_eq(&left, &right);
+  }
+
+  #[test]
   fn assert_exit_success_passes_for_matching_value() {
     let exit = Exit::<&str, ()>::succeed("ok");
     assert_exit_success(&exit, &"ok");
+  }
+
+  #[test]
+  fn exit_success_value_returns_none_on_failure() {
+    use crate::fail;
+    let exit = run_effect(fail::<(), &str, ()>("nope"), ());
+    assert_eq!(exit_success_value(exit), None);
+  }
+
+  #[test]
+  #[should_panic(expected = "exit mismatch")]
+  fn assert_exit_eq_panics_on_kind_mismatch() {
+    let ok = Exit::<i32, &str>::succeed(1);
+    let err = Exit::<i32, &str>::fail("boom");
+    assert_exit_eq(&ok, &err);
+  }
+
+  #[test]
+  #[should_panic(expected = "success value mismatch")]
+  fn assert_exit_eq_panics_on_value_mismatch() {
+    assert_exit_eq(&Exit::<i32, ()>::succeed(1), &Exit::<i32, ()>::succeed(2));
   }
 }

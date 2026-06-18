@@ -101,3 +101,27 @@ pub fn expand(input: TokenStream) -> TokenStream {
 
   expanded.into()
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use syn::parse_quote;
+
+  #[test]
+  fn qualify_pat_handles_unit_and_struct_forms() {
+    let path = parse_quote!(MyEnum);
+    let unit = parse_quote!(Variant);
+    let tuple = parse_quote!(Tuple(x, y));
+    let strukt = parse_quote!(Record { field });
+    let wild: syn::Pat = parse_quote!(_);
+    assert!(matches!(qualify_pat(&path, &unit), syn::Pat::Path(_)));
+    assert!(matches!(
+      qualify_pat(&path, &tuple),
+      syn::Pat::TupleStruct(_)
+    ));
+    assert!(matches!(qualify_pat(&path, &strukt), syn::Pat::Struct(_)));
+    assert!(matches!(qualify_pat(&path, &wild), syn::Pat::Wild(_)));
+    let already: syn::Pat = parse_quote!(MyEnum::Variant);
+    assert!(matches!(qualify_pat(&path, &already), syn::Pat::Path(_)));
+  }
+}

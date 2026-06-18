@@ -95,6 +95,12 @@ mod tests {
   use crate::{Exit, pure, run_test};
 
   #[test]
+  fn lift_interprets_directly() {
+    let exit: Exit<i32, ()> = run_test(FreeAp::lift(pure(7)).interpret(), ());
+    assert_eq!(exit, Exit::succeed(7));
+  }
+
+  #[test]
   fn pure_interprets_to_success() {
     let exit: Exit<i32, ()> = run_test(FreeAp::<i32, (), ()>::pure(9).interpret(), ());
     assert_eq!(exit, Exit::succeed(9));
@@ -116,5 +122,35 @@ mod tests {
     let free = FreeAp::pure(4).map(|n| n * 2);
     let exit: Exit<i32, ()> = run_test(free.interpret(), ());
     assert_eq!(exit, Exit::succeed(8));
+  }
+
+  #[test]
+  fn map_transforms_lifted_effect() {
+    let free = FreeAp::lift(pure(3)).map(|n| n + 1);
+    let exit: Exit<i32, ()> = run_test(free.interpret(), ());
+    assert_eq!(exit, Exit::succeed(4));
+  }
+
+  #[test]
+  fn map_on_ap2() {
+    let ap2 = FreeAp::ap2(|a: i32, b: i32| a + b, FreeAp::pure(2), FreeAp::pure(3));
+    let free = ap2.map(|n| n * 10);
+    let exit: Exit<i32, ()> = run_test(free.interpret(), ());
+    assert_eq!(exit, Exit::succeed(50));
+  }
+
+  #[test]
+  fn debug_formats_all_variants() {
+    assert_eq!(
+      format!("{:?}", FreeAp::<i32, (), ()>::pure(1)),
+      r#"Pure("...")"#
+    );
+    assert_eq!(format!("{:?}", FreeAp::lift(pure(1))), r#"Lift("...")"#);
+    let ap2 = FreeAp::ap2(
+      |a: i32, b: i32| a + b,
+      FreeAp::<i32, (), ()>::pure(1),
+      FreeAp::<i32, (), ()>::pure(2),
+    );
+    assert_eq!(format!("{ap2:?}"), "Ap2(...)");
   }
 }

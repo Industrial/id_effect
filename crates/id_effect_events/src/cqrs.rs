@@ -159,6 +159,14 @@ mod tests {
   }
 
   #[test]
+  fn command_reject_display() {
+    assert_eq!(
+      CommandReject("amount must be positive").to_string(),
+      "amount must be positive"
+    );
+  }
+
+  #[test]
   fn dispatch_command_persists_and_projects() {
     let store = MemoryEventStore::new();
     let state = dispatch_command(
@@ -184,6 +192,36 @@ mod tests {
     )
     .expect_err("reject");
     assert!(matches!(err, DispatchError::Command(_)));
+  }
+
+  struct FailQueryHandler;
+  impl QueryHandler<BalanceQuery, i32> for FailQueryHandler {
+    type Error = std::io::Error;
+    fn query(&self, _query: BalanceQuery) -> Effect<i32, Self::Error, ()> {
+      id_effect::fail(std::io::Error::other("query fail"))
+    }
+  }
+
+  #[test]
+  fn query_handler_error() {
+    let store = MemoryEventStore::new();
+    dispatch_command(
+      &DepositHandler,
+      &store,
+      "acct",
+      &BalanceProjection,
+      Deposit { amount: 5 },
+    )
+    .expect("seed");
+    let err = query_projection(
+      &FailQueryHandler,
+      &store,
+      "acct",
+      &BalanceProjection,
+      BalanceQuery,
+    )
+    .expect_err("fail");
+    assert!(matches!(err, QueryDispatchError::Query(_)));
   }
 
   #[test]

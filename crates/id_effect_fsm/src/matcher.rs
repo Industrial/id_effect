@@ -71,3 +71,24 @@ pub fn classify_event<E: 'static, A: 'static>(
   let dispatch = matcher.exhaustive();
   dispatch(TaggedEvent::new(tag, event))
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn tagged_state_routes_by_tag() {
+    let m = state_matcher::<i32, i32>()
+      .tag("idle", |t| t.state)
+      .or_else(|_| 0);
+    let got = m.exhaustive()(TaggedState::new("idle", 7));
+    assert_eq!(got, 7);
+  }
+
+  #[test]
+  fn tagged_event_has_tag() {
+    let te = TaggedEvent::new("evt", 1u8);
+    assert_eq!(te.tag(), "evt");
+    assert_eq!(te.event, 1);
+  }
+}

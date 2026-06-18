@@ -136,6 +136,14 @@ mod tests {
   }
 
   #[test]
+  fn duplicate_node_errors() {
+    let mut dag = Dag::new();
+    dag.add_node("a").unwrap();
+    let err = dag.add_node("a").unwrap_err();
+    assert!(matches!(err, GraphError::DuplicateNode { .. }));
+  }
+
+  #[test]
   fn unknown_edge_endpoint_errors() {
     let mut dag = Dag::new();
     dag.add_node("a").unwrap();

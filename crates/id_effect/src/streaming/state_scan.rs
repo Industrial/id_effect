@@ -64,6 +64,7 @@ where
 
 #[cfg(test)]
 mod tests {
+  use super::state_scan;
   use super::*;
 
   fn block_on<F: core::future::Future>(fut: F) -> F::Output {
@@ -85,6 +86,30 @@ mod tests {
     });
     let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
     assert_eq!(out, vec![1, 1]);
+  }
+
+  #[test]
+  fn state_scan_no_transition_skips_emit() {
+    let stream = Stream::from_iterable([1u8, 1, 1])
+      .state_scan(0u8, |st, x| if x == st { (st, None) } else { (x, Some(x)) });
+    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
+    assert_eq!(out, vec![1]);
+  }
+
+  #[test]
+  fn state_scan_emits_each_change() {
+    let stream = Stream::from_iterable([1u8, 2, 3]).state_scan(0u8, |_st, x| (x, Some(x)));
+    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
+    assert_eq!(out, vec![1, 2, 3]);
+  }
+
+  #[test]
+  fn free_state_scan_function() {
+    let stream = state_scan(Stream::from_iterable([1u8, 2]), 0u32, |s, x| {
+      (s + x as u32, Some(s))
+    });
+    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
+    assert_eq!(out, vec![0, 1]);
   }
 
   #[test]

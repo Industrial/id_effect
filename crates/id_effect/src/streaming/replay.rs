@@ -152,7 +152,35 @@ mod tests {
   }
 
   #[tokio::test]
-  #[ignore = "replay/live overlap — tracked in fp-streaming"]
+  async fn zero_branches_drains_upstream_without_fanout() {
+    let src = Stream::from_iterable(vec![1u32, 2]);
+    let (streams, pump) = run_async(broadcast_with_replay(src, 4, 1, 0), ())
+      .await
+      .expect("zero branches");
+    assert!(streams.is_empty());
+    run_async(pump, ()).await.expect("pump");
+  }
+
+  #[tokio::test]
+  async fn multi_branch_replay_fanout() {
+    let src = Stream::from_iterable(vec![7u32, 8]);
+    let (mut streams, pump) = run_async(broadcast_with_replay(src, 8, 1, 2), ())
+      .await
+      .expect("two branches");
+    assert_eq!(streams.len(), 2);
+    let a = streams.remove(0);
+    let b = streams.remove(0);
+    let (pr, ca, cb) = tokio::join!(
+      run_async(pump, ()),
+      run_async(a.run_collect(), ()),
+      run_async(b.run_collect(), ()),
+    );
+    pr.expect("pump");
+    assert_eq!(ca.expect("a"), vec![7, 8]);
+    assert_eq!(cb.expect("b"), vec![7, 8]);
+  }
+
+  #[tokio::test]
   async fn broadcast_replay_delegates_to_helper() {
     let src = Stream::from_iterable(vec![10u32, 20]);
     let (mut streams, pump) = run_async(src.broadcast_replay(4, 1), ())

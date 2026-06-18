@@ -107,6 +107,15 @@ mod tests {
   }
 
   #[test]
+  fn pretty_cause_fail_then_interrupt() {
+    let cause = Cause::then(Cause::fail("a"), Cause::interrupt(FiberId(9)));
+    let rendered = pretty_cause(&cause);
+    assert!(rendered.contains("Then("));
+    assert!(rendered.contains("Interrupt"));
+    assert_eq!(pretty_fiber_id(FiberId(9)), "fiber-9");
+  }
+
+  #[test]
   fn pretty_cause_inline_matches_cause_pretty() {
     let cause = Cause::then(Cause::fail("a"), Cause::die("b"));
     assert_eq!(pretty_cause_inline(&cause), cause.pretty());

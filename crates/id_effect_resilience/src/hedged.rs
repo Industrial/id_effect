@@ -50,4 +50,26 @@ mod tests {
     .expect("hedged");
     assert_eq!(out, 1);
   }
+
+  #[tokio::test]
+  async fn hedged_returns_backup_when_primary_is_slow() {
+    use id_effect::kernel::{Effect, box_future};
+    let primary = Effect::new_async(|_| {
+      box_future(async {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok(1u32)
+      })
+    });
+    let out = run_async(
+      hedged(
+        primary,
+        succeed::<u32, (), ()>(2u32),
+        Duration::from_millis(5),
+      ),
+      (),
+    )
+    .await
+    .expect("hedged");
+    assert_eq!(out, 2);
+  }
 }

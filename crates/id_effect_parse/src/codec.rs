@@ -102,3 +102,52 @@ fn escape(value: &str) -> String {
     .replace('\n', "\\n")
     .replace('\t', "\\t")
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn codec_parser_accessor() {
+    let codec = quoted_string();
+    let (text, _) = codec.parser().parse("\"z\"".into()).expect("parse");
+    assert_eq!(text, "z");
+  }
+
+  #[test]
+  fn codec_map_round_trip() {
+    let codec = quoted_string().map(|s| s.len(), |n| "x".repeat(*n));
+    let (len, _) = codec.parse("\"ab\"".into()).expect("parse");
+    assert_eq!(len, 2);
+    assert_eq!(codec.print(&2), "\"xx\"");
+  }
+
+  #[test]
+  fn rejects_unquoted_input() {
+    assert!(quoted_string().parse("nope".to_string()).is_err());
+  }
+
+  #[test]
+  fn rejects_unterminated_string() {
+    assert!(quoted_string().parse("\"open".to_string()).is_err());
+  }
+
+  #[test]
+  fn parses_escaped_tab() {
+    let (text, _) = quoted_string().parse("\"a\tb\"".into()).expect("parse");
+    assert_eq!(text, "a	b");
+  }
+
+  #[test]
+  fn parses_escaped_newline() {
+    let (text, _) = quoted_string().parse("\"a\\nb\"".into()).expect("parse");
+    assert_eq!(text, "a\nb");
+  }
+
+  #[test]
+  fn print_escapes_special_characters() {
+    let wire = quoted_string().print(&"line\tquote\"".to_string());
+    assert!(wire.contains("\\t"));
+    assert!(wire.contains("\\\""));
+  }
+}

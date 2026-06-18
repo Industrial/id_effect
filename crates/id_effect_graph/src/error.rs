@@ -47,3 +47,49 @@ impl GraphError {
     self.to_string()
   }
 }
+
+#[cfg(test)]
+mod graph_error_tests {
+  use super::*;
+
+  #[test]
+  fn message_matches_display_for_all_variants() {
+    let cases: Vec<(GraphError, &str)> = vec![
+      (
+        GraphError::DuplicateNode { id: "x".into() },
+        "duplicate node id `x`",
+      ),
+      (
+        GraphError::MissingDependency {
+          node: "repo".into(),
+          dependency: "db".into(),
+        },
+        "node `repo` requires missing dependency `db`",
+      ),
+      (
+        GraphError::ConflictingProvider {
+          capability: "Cap".into(),
+          first: "a".into(),
+          second: "b".into(),
+        },
+        "conflicting providers for `Cap`: `a` and `b`",
+      ),
+      (
+        GraphError::CycleDetected {
+          nodes: vec!["a".into(), "b".into()],
+        },
+        "cycle detected among nodes: [\"a\", \"b\"]",
+      ),
+      (
+        GraphError::UnknownNode {
+          id: "missing".into(),
+        },
+        "unknown node `missing`",
+      ),
+    ];
+    for (err, expected) in cases {
+      assert_eq!(err.message(), expected);
+      assert_eq!(err.to_string(), expected);
+    }
+  }
+}

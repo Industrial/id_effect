@@ -122,3 +122,92 @@ where
     self.steps.is_empty()
   }
 }
+
+#[cfg(test)]
+mod saga_tests {
+  use super::*;
+  use id_effect::succeed;
+
+  type TestSaga = Saga<(), (), String, ()>;
+
+  #[test]
+  fn step_name_is_preserved() {
+    let step = SagaStep::<(), (), String, ()>::forward("reserve", || succeed(()));
+    assert_eq!(step.name(), "reserve");
+    let saga = Saga::<(), (), String, ()>::new().step(step);
+    assert_eq!(saga.len(), 1);
+    assert!(!saga.is_empty());
+  }
+
+  #[test]
+  fn empty_saga_succeeds() {
+    let saga = TestSaga::new();
+    assert!(saga.is_empty());
+    saga.run(()).expect("empty run");
+  }
+
+  #[test]
+  fn forward_failure_triggers_compensation() {
+    use id_effect::fail;
+    use std::sync::{Arc, Mutex};
+    let compensated = Arc::new(Mutex::new(false));
+    let flag = Arc::clone(&compensated);
+    let saga = TestSaga::new()
+      .step(SagaStep::with_compensate(
+        "reserve",
+        || succeed::<(), String, ()>(()),
+        move || {
+          *flag.lock().unwrap() = true;
+          succeed::<(), String, ()>(())
+        },
+      ))
+      .step(SagaStep::forward("charge", || {
+        fail::<(), String, ()>("declined".into())
+      }));
+    let err = saga.run(()).expect_err("forward fail");
+    assert!(matches!(err, SagaError::Forward(_)));
+    assert!(*compensated.lock().unwrap());
+  }
+
+  #[test]
+  fn successful_multi_step_run() {
+    let saga = TestSaga::new()
+      .step(SagaStep::forward("a", || succeed::<(), String, ()>(())))
+      .step(SagaStep::forward("b", || succeed::<(), String, ()>(())));
+    saga.run(()).expect("run all");
+    assert_eq!(saga.len(), 2);
+  }
+
+  #[test]
+  fn compensate_indices_empty_ok() {
+    let saga = TestSaga::new();
+    saga.compensate_indices(&[], &()).expect("noop");
+  }
+
+  #[test]
+  fn compensate_indices_runs_in_reverse() {
+    use std::sync::{Arc, Mutex};
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let o1 = Arc::clone(&order);
+    let o2 = Arc::clone(&order);
+    let saga = TestSaga::new()
+      .step(SagaStep::with_compensate(
+        "a",
+        || succeed::<(), String, ()>(()),
+        move || {
+          o1.lock().unwrap().push(1);
+          succeed::<(), String, ()>(())
+        },
+      ))
+      .step(SagaStep::with_compensate(
+        "b",
+        || succeed::<(), String, ()>(()),
+        move || {
+          o2.lock().unwrap().push(2);
+          succeed::<(), String, ()>(())
+        },
+      ));
+    saga.compensate_indices(&[0, 1], &()).expect("compensate");
+    assert_eq!(*order.lock().unwrap(), vec![2, 1]);
+  }
+}
