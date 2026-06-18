@@ -148,4 +148,15 @@ mod tests {
     assert!(out.to_string().contains("requires"));
     assert!(out.to_string().contains("provides"));
   }
+
+  #[test]
+  fn derive_with_named_variant() {
+    let input = quote! {
+      #[provides(DbKey)]
+      #[named("replica")]
+      struct DbReplicaLive;
+    };
+    let out = derive2(input).to_string();
+    assert!(out.contains("replica"));
+  }
 }

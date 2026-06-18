@@ -494,6 +494,70 @@ mod tests {
   }
 
   #[test]
+  fn no_caps_and_unit_from_env() {
+    assert!(NoCaps::verify(&Env::new()).is_ok());
+    assert!(<() as CapabilitySet>::verify(&Env::new()).is_ok());
+    let _ = NoCaps::from_env(Env::new());
+    let _ = <() as FromEnv>::from_env(Env::new());
+  }
+
+  #[test]
+  fn env_as_capability_set() {
+    let env = Env::new();
+    assert!(Env::verify(&env).is_ok());
+    assert_eq!(Env::from_env(env.clone()).len(), env.len());
+  }
+
+  #[test]
+  fn cap_list_accessors_and_deref() {
+    let mut env = Env::new();
+    env.insert::<TestKeyKey>(3u32);
+    let mut caps = CapList::<(TestKeyKey,)>::from_env(env);
+    assert_eq!(caps.env().len(), 1);
+    caps.env_mut().insert::<TestKeyKey>(4u32);
+    assert_eq!(*caps.get::<TestKeyKey>(), 4);
+  }
+
+  #[test]
+  fn cap_list_project_four_through_eight() {
+    #[::id_effect::capability(u8)]
+    struct A;
+    #[::id_effect::capability(u8)]
+    struct B;
+    #[::id_effect::capability(u8)]
+    struct C;
+    #[::id_effect::capability(u8)]
+    struct D;
+    #[::id_effect::capability(u8)]
+    struct E;
+    #[::id_effect::capability(u8)]
+    struct F;
+    #[::id_effect::capability(u8)]
+    struct G;
+    #[::id_effect::capability(u8)]
+    struct H;
+    let mut env = Env::new();
+    env.insert::<AKey>(1);
+    env.insert::<BKey>(2);
+    env.insert::<CKey>(3);
+    env.insert::<DKey>(4);
+    env.insert::<EKey>(5);
+    env.insert::<FKey>(6);
+    env.insert::<GKey>(7);
+    env.insert::<HKey>(8);
+    CapList::<(AKey, BKey, CKey, DKey, EKey)>::verify(&env).unwrap();
+    let wide8 = CapList::<(AKey, BKey, CKey, DKey, EKey, FKey, GKey, HKey)>::from_env(env.clone());
+    let _ = wide8.clone().project_at_4();
+    let _ = wide8.clone().project_at_5();
+    let _ = wide8.clone().project_at_6();
+    let _ = wide8.clone().project_at_7();
+    let four = CapList::<(AKey, BKey, CKey, DKey)>::from_env(env);
+    let _ = four.clone().project_at_0();
+    let _ = four.clone().project_at_1();
+    let _ = four.clone().project_at_2();
+    let _ = four.project_at_3();
+  }
+  #[test]
   fn cap_widen_subset() {
     #[::id_effect::capability(u32)]
     struct Db;

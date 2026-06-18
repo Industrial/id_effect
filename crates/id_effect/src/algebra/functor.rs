@@ -379,6 +379,7 @@ mod tests {
     #[test]
     fn map_transforms_elements() {
       assert_eq!(vec::map(vec![1, 2, 3], |x| x * 2), vec![2, 4, 6]);
+      assert_eq!(vec::map_serial(vec![1, 2, 3], |x| x + 1), vec![2, 3, 4]);
     }
 
     #[test]
@@ -420,6 +421,18 @@ mod tests {
     #[test]
     fn as_works_on_option() {
       assert_eq!(as_(Some(3), "const"), Some("const"));
+    }
+
+    #[test]
+    fn functor_module_helpers_smoke() {
+      use super::super::{as_ as lift_as, map as lift_map, map_to, option, result, vec};
+      assert_eq!(lift_map(Some(2), |x| x + 1), Some(3));
+      assert_eq!(lift_as(Some(2), 0), Some(0));
+      assert_eq!(map_to(|x: i32| x * 2)(Some(3)), Some(6));
+      assert_eq!(option::void(Some(1)), Some(()));
+      assert_eq!(option::tap(Some(2), |x| *x + 1), Some((2, 3)));
+      assert_eq!(result::void(Ok::<(), &str>(())), Ok(()));
+      assert_eq!(vec::void(vec![1, 2]), vec![(), ()]);
     }
   }
 

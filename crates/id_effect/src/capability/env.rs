@@ -126,3 +126,82 @@ impl Env {
 
 /// Effect environment type alias (runtime container).
 pub type Caps = Env;
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::provide;
+
+  #[::id_effect::capability(u32)]
+  #[expect(dead_code)]
+  struct Counter;
+  #[::id_effect::capability(String)]
+  #[expect(dead_code)]
+  struct Name;
+
+  #[derive(::id_effect::ProviderSpecDerive)]
+  #[provides(CounterKey)]
+  struct CounterLive;
+  impl CounterLive {
+    #[allow(clippy::new_ret_no_self)]
+    fn new() -> u32 {
+      1
+    }
+  }
+
+  #[test]
+  fn env_insert_get_and_has() {
+    let mut env = Env::new();
+    assert!(env.is_empty());
+    env.insert::<CounterKey>(42);
+    assert_eq!(env.len(), 1);
+    assert!(env.has::<CounterKey>());
+    assert_eq!(*env.get::<CounterKey>(), 42);
+  }
+
+  #[test]
+  fn env_try_get_missing() {
+    let env = Env::new();
+    let err = env.try_get::<CounterKey>().unwrap_err();
+    assert!(matches!(err, CapabilityError::Missing(_)));
+  }
+
+  #[test]
+  fn env_get_and_try_get_after_insert() {
+    let mut env = Env::new();
+    env.insert::<CounterKey>(7u32);
+    assert_eq!(*env.get::<CounterKey>(), 7);
+    assert_eq!(*env.try_get::<CounterKey>().unwrap(), 7);
+  }
+
+  #[test]
+  fn env_debug_and_eq() {
+    let mut a = Env::new();
+    a.insert::<CounterKey>(1);
+    let mut b = Env::new();
+    b.insert::<CounterKey>(2);
+    assert_eq!(format!("{a:?}"), "Env { len: 1 }");
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn env_insert_any_roundtrip() {
+    let mut env = Env::new();
+    env.insert_any(Arc::new(99_i64));
+    let v = env.get_any::<i64>().unwrap();
+    assert_eq!(*v, 99);
+  }
+
+  #[test]
+  fn env_scoped_builds_child() {
+    let parent = Env::new();
+    let child = parent.scoped([provide!(CounterLive)]).unwrap();
+    assert!(child.has::<CounterKey>());
+  }
+
+  #[test]
+  fn env_get_any_missing() {
+    let env = Env::new();
+    assert!(env.get_any::<i64>().is_err());
+  }
+}

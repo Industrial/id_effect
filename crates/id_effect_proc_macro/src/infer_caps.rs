@@ -126,3 +126,97 @@ pub fn validate_explicit_caps(env_ty: &Type, body_keys: &[Type]) -> syn::Result<
   }
   Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use quote::quote;
+  use syn::parse2;
+
+  #[test]
+  fn collect_capability_keys_from_tilde_and_require() {
+    let body = quote! {
+      let _a = ~AlphaKey;
+      let _b = require!(BetaKey);
+    };
+    let keys = collect_capability_keys(&body);
+    assert_eq!(keys.len(), 2);
+  }
+
+  #[test]
+  fn collect_keys_ignores_non_capability_tilde() {
+    let body = quote! { let x = ~42; };
+    assert!(collect_capability_keys(&body).is_empty());
+  }
+
+  #[test]
+  fn extract_keys_from_cap_list() {
+    let ty: Type = parse2(quote! { CapList<(AlphaKey, BetaKey)> }).unwrap();
+    let keys = extract_keys_from_env_ty(&ty).unwrap();
+    assert_eq!(keys.len(), 2);
+  }
+
+  #[test]
+  fn extract_keys_from_env_and_unit() {
+    assert!(
+      extract_keys_from_env_ty(&parse2(quote! { () }).unwrap())
+        .unwrap()
+        .is_empty()
+    );
+    assert!(
+      extract_keys_from_env_ty(&parse2(quote! { Env }).unwrap())
+        .unwrap()
+        .is_empty()
+    );
+  }
+
+  #[test]
+  fn extract_keys_from_invalid_env_ty_errors() {
+    let ty: Type = parse2(quote! { String }).unwrap();
+    assert!(extract_keys_from_env_ty(&ty).is_err());
+  }
+
+  #[test]
+  fn validate_explicit_caps_accepts_subset() {
+    let env_ty: Type = parse2(quote! { CapList<(AlphaKey, BetaKey)> }).unwrap();
+    let body_keys = vec![parse2(quote! { AlphaKey }).unwrap()];
+    validate_explicit_caps(&env_ty, &body_keys).unwrap();
+  }
+
+  #[test]
+  fn validate_explicit_caps_rejects_unknown_key() {
+    let env_ty: Type = parse2(quote! { CapList<(AlphaKey,)> }).unwrap();
+    let body_keys = vec![parse2(quote! { OtherKey }).unwrap()];
+    assert!(validate_explicit_caps(&env_ty, &body_keys).is_err());
+  }
+
+  #[test]
+  fn collect_capability_keys_dedupes_by_name() {
+    let body = quote! {
+      let _a = ~AlphaKey;
+      let _b = require!(AlphaKey);
+    };
+    assert_eq!(collect_capability_keys(&body).len(), 1);
+  }
+
+  #[test]
+  fn collect_capability_keys_in_nested_group() {
+    let body = quote! { { let _ = require!(BetaKey); } };
+    let keys = collect_capability_keys(&body);
+    assert_eq!(keys.len(), 1);
+  }
+
+  #[test]
+  fn extract_keys_from_sixteen_tuple_cap_list() {
+    let ty: Type = parse2(quote! {
+      CapList<(K0Key, K1Key, K2Key, K3Key, K4Key, K5Key, K6Key, K7Key, K8Key, K9Key, K10Key, K11Key, K12Key, K13Key, K14Key, K15Key)>
+    }).unwrap();
+    assert_eq!(extract_keys_from_env_ty(&ty).unwrap().len(), 16);
+  }
+
+  #[test]
+  fn validate_explicit_caps_empty_body_ok() {
+    let env_ty: Type = parse2(quote! { CapList<(AlphaKey,)> }).unwrap();
+    validate_explicit_caps(&env_ty, &[]).unwrap();
+  }
+}

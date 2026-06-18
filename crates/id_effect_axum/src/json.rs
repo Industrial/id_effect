@@ -142,5 +142,11 @@ mod tests {
     assert!(matches!(err, JsonSchemaError::Syntax(_)));
     let resp = err.into_response();
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let n = decode_json_schema(&schema::i64::<()>(), b"42").expect("ok");
+    assert_eq!(n, 42);
+    let schema_err = decode_json_schema(schema.as_ref(), b"42").expect_err("type");
+    assert!(matches!(schema_err, JsonSchemaError::Schema(_)));
+    let _ = unknown_from_json(serde_json::json!("x"));
   }
 }

@@ -710,4 +710,43 @@ bad = [1, 2]
     let p = id_effect::Needs::<ConfigProviderKey>::need(&env);
     assert_eq!(p.0.seq_delim(), ";");
   }
+  #[test]
+  fn config_env_wraps_provider() {
+    use ::id_effect::Needs;
+    let p = MapConfigProvider::from_pairs([("K", "v")]);
+    let env = config_env(p);
+    let svc = Needs::<ConfigProviderKey>::need(&env);
+    assert_eq!(config::string(&*svc.0, "K").unwrap(), "v");
+  }
+
+  #[test]
+  fn config_optional_boolean_and_nested_helpers() {
+    let p = MapConfigProvider::from_pairs([("FLAG", "true"), ("A_B", "x")]);
+    assert!(config::boolean(&p, "FLAG").unwrap());
+    assert_eq!(config::optional_string(&p, "MISSING").unwrap(), None);
+    assert_eq!(
+      config::nested_optional_string(&p, "A", "B").unwrap(),
+      Some("x".into())
+    );
+    assert!(config::nested_boolean(&p, "A", "FLAG").is_err());
+  }
+
+  #[test]
+  fn nested_string_list_and_number_helpers() {
+    let opts = ProviderOptions {
+      path_delim: "_",
+      seq_delim: ",",
+    };
+    let p = MapConfigProvider::with_options(
+      [("A_B".into(), "1,2".into()), ("N".into(), "3.5".into())]
+        .into_iter()
+        .collect(),
+      opts,
+    );
+    assert_eq!(config::number(&p, "N").unwrap(), 3.5);
+    assert_eq!(
+      config::nested_string_list(&p, "A", "B").unwrap(),
+      vec!["1", "2"]
+    );
+  }
 }

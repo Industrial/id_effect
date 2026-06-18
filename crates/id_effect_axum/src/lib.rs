@@ -283,4 +283,24 @@ mod tests {
       .to_bytes();
     assert_eq!(&bytes[..], b"42");
   }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn run_with_env_and_caps_helpers() {
+    #[derive(Clone, Default)]
+    struct St;
+    let out = run_with_env(St, |s: &mut St| {
+      let _ = s;
+      succeed::<_, std::convert::Infallible, _>(11_u32)
+    })
+    .await
+    .expect("run_with_env");
+    assert_eq!(out, 11);
+    let env = id_effect::Env::new();
+    let out2 = run_with_caps(axum::extract::State(env), |_e: &mut id_effect::Env| {
+      succeed::<_, std::convert::Infallible, _>(22_u32)
+    })
+    .await
+    .expect("run_with_caps");
+    assert_eq!(out2, 22);
+  }
 }

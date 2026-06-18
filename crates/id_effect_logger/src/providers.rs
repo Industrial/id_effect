@@ -133,3 +133,36 @@ pub fn provide_minimum_log_level(initial: LogLevel) -> ProviderBox {
 
   ProviderBox(Arc::new(Node(initial)))
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::sync::Arc;
+
+  #[test]
+  fn provide_composite_logger_installs_capability() {
+    let composite = Arc::new(CompositeLogBackend::new());
+    let node = provide_composite_logger(composite);
+    let env = node.0.build(&Env::new()).expect("build");
+    assert!(env.try_get::<EffectLogCompositeKey>().is_ok());
+
+    let logger_env = ProviderBox::new::<EffectLoggerLive>()
+      .0
+      .build(&Env::new())
+      .expect("logger live");
+    assert!(logger_env.try_get::<EffectLoggerKey>().is_ok());
+
+    let meta_env = ProviderBox::new::<LogMetadataLive>()
+      .0
+      .build(&Env::new())
+      .expect("metadata live");
+    assert!(meta_env.try_get::<EffectLogMetadataKey>().is_ok());
+  }
+
+  #[test]
+  fn provide_minimum_log_level_installs_fiber_ref() {
+    let node = provide_minimum_log_level(LogLevel::Warn);
+    let env = node.0.build(&Env::new()).expect("build");
+    assert!(env.try_get::<EffectLogMinLevelKey>().is_ok());
+  }
+}

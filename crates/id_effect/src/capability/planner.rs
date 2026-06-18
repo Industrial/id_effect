@@ -154,3 +154,54 @@ mod tests {
     ));
   }
 }
+
+#[cfg(test)]
+mod planner_tests {
+  use super::*;
+
+  #[test]
+  fn duplicate_provider_id_in_topological_plan() {
+    let nodes = vec![
+      PlannerNode::new("a", Vec::<&str>::new(), "A"),
+      PlannerNode::new("a", Vec::<&str>::new(), "B"),
+    ];
+    let err = plan_topological(&nodes).unwrap_err();
+    assert!(matches!(
+      err,
+      CapabilityPlannerError::DuplicateProviderId { .. }
+    ));
+  }
+
+  #[test]
+  fn conflicting_providers_in_topological_plan() {
+    let nodes = vec![
+      PlannerNode::new("a", Vec::<&str>::new(), "Cap"),
+      PlannerNode::new("b", Vec::<&str>::new(), "Cap"),
+    ];
+    let err = plan_topological(&nodes).unwrap_err();
+    assert!(matches!(
+      err,
+      CapabilityPlannerError::ConflictingProvider { .. }
+    ));
+  }
+
+  #[test]
+  fn missing_dependency_in_topological_plan() {
+    let nodes = vec![PlannerNode::new("db", ["Config"], "Database")];
+    let err = plan_topological(&nodes).unwrap_err();
+    assert!(matches!(
+      err,
+      CapabilityPlannerError::MissingProvider { .. }
+    ));
+  }
+
+  #[test]
+  fn cycle_in_topological_plan() {
+    let nodes = vec![
+      PlannerNode::new("a", ["B"], "A"),
+      PlannerNode::new("b", ["A"], "B"),
+    ];
+    let err = plan_topological(&nodes).unwrap_err();
+    assert!(matches!(err, CapabilityPlannerError::CycleDetected { .. }));
+  }
+}

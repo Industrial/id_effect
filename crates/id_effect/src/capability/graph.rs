@@ -247,4 +247,65 @@ mod graph_feature_tests {
       CapabilityPlannerError::ConflictingProvider { .. }
     ));
   }
+  #[test]
+  fn build_runs_refresh_interval_branch() {
+    struct RefreshDb;
+    impl ProviderSpec for RefreshDb {
+      type Key = DbKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "refresh-db"
+      }
+      fn refresh_interval() -> Option<std::time::Duration> {
+        Some(std::time::Duration::from_millis(1))
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(99)
+      }
+    }
+    let env = CapabilityGraph::new()
+      .add(provide!(RefreshDb).0)
+      .build()
+      .expect("build");
+    assert_eq!(*env.get::<DbKey>(), 99);
+  }
+
+  #[test]
+  fn build_from_parent_env() {
+    let parent = Env::new();
+    #[derive(::id_effect::ProviderSpecDerive)]
+    #[provides(DbKey)]
+    struct DbLive;
+    impl DbLive {
+      fn new() -> u32 {
+        5
+      }
+    }
+    let g = CapabilityGraph::new().add(provide!(DbLive).0);
+    let child = g.build_from(parent).expect("build_from");
+    assert_eq!(*child.get::<DbKey>(), 5);
+  }
+
+  #[test]
+  fn diagnostics_reports_missing_required() {
+    struct NeedsCfg;
+    impl ProviderSpec for NeedsCfg {
+      type Key = DbKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "db-needs-cfg"
+      }
+      fn requires() -> &'static [CapabilityId] {
+        static R: std::sync::LazyLock<Vec<CapabilityId>> =
+          std::sync::LazyLock::new(|| vec![OptionalCfgKey::id()]);
+        R.as_slice()
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(1)
+      }
+    }
+    let g = CapabilityGraph::new().add(provide!(NeedsCfg).0);
+    let diags = g.diagnostics();
+    assert!(!diags.is_empty() || g.plan().is_err());
+  }
 }

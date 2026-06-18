@@ -303,307 +303,178 @@ mod tests {
   mod option_applicative {
     use super::*;
 
+    fn double(x: i32) -> i32 {
+      x * 2
+    }
+    fn add2(a: i32, b: i32) -> i32 {
+      a + b
+    }
+    fn sum3(a: i32, b: i32, c: i32) -> i32 {
+      a + b + c
+    }
+
     #[test]
-    fn pure_creates_some() {
+    fn option_applicative_smoke() {
       assert_eq!(option::pure(42), Some(42));
-    }
-
-    #[test]
-    fn ap_some_some_applies() {
-      let ff = Some(|x: i32| x * 2);
-      let fa = Some(5);
-      assert_eq!(option::ap(ff, fa), Some(10));
-    }
-
-    #[test]
-    fn ap_none_some_returns_none() {
-      let ff: Option<fn(i32) -> i32> = None;
-      let fa = Some(5);
-      assert_eq!(option::ap(ff, fa), None);
-    }
-
-    #[test]
-    fn ap_some_none_returns_none() {
-      let ff = Some(|x: i32| x * 2);
-      let fa: Option<i32> = None;
-      assert_eq!(option::ap(ff, fa), None);
-    }
-
-    #[test]
-    fn map2_both_some() {
-      assert_eq!(option::map2(Some(2), Some(3), |a, b| a + b), Some(5));
-    }
-
-    #[test]
-    fn map2_any_none_returns_none() {
-      assert_eq!(option::map2(None::<i32>, Some(3), |a, b| a + b), None);
-      assert_eq!(option::map2(Some(2), None::<i32>, |a, b| a + b), None);
-    }
-
-    #[test]
-    fn map3_all_some() {
-      assert_eq!(
-        option::map3(Some(1), Some(2), Some(3), |a, b, c| a + b + c),
-        Some(6)
-      );
-    }
-
-    #[test]
-    fn map3_any_none_returns_none() {
-      assert_eq!(
-        option::map3(None::<i32>, Some(2), Some(3), |a, b, c| a + b + c),
-        None
-      );
-    }
-
-    #[test]
-    fn zip_right_both_some() {
+      assert_eq!(option::ap(Some(double), Some(5)), Some(10));
+      assert_eq!(option::ap(None::<fn(i32) -> i32>, Some(5)), None);
+      assert_eq!(option::ap(Some(double), None), None);
+      assert_eq!(option::map2(Some(2), Some(3), add2), Some(5));
+      assert_eq!(option::map2(None::<i32>, Some(3), add2), None);
+      assert_eq!(option::map2(Some(2), None::<i32>, add2), None);
+      assert_eq!(option::map3(Some(1), Some(2), Some(3), sum3), Some(6));
+      assert_eq!(option::map3(None, Some(2), Some(3), sum3), None);
       assert_eq!(option::zip_right(Some(1), Some("x")), Some("x"));
-    }
-
-    #[test]
-    fn zip_right_none_returns_none() {
       assert_eq!(option::zip_right(None::<i32>, Some("x")), None);
-    }
-
-    #[test]
-    fn zip_left_both_some() {
       assert_eq!(option::zip_left(Some(1), Some("x")), Some(1));
-    }
-
-    #[test]
-    fn zip_left_none_returns_none() {
-      assert_eq!(option::zip_left(Some(1), None::<i32>), None);
-    }
-
-    #[test]
-    fn zip_both_some() {
+      assert_eq!(option::zip_left(Some(1), None::<&str>), None);
       assert_eq!(option::zip(Some(1), Some("a")), Some((1, "a")));
-    }
-
-    #[test]
-    fn zip_any_none_returns_none() {
       assert_eq!(option::zip(None::<i32>, Some("a")), None);
       assert_eq!(option::zip(Some(1), None::<&str>), None);
-    }
-
-    #[test]
-    fn sequence_all_some() {
       assert_eq!(
         option::sequence(vec![Some(1), Some(2), Some(3)]),
         Some(vec![1, 2, 3])
       );
-    }
-
-    #[test]
-    fn sequence_any_none_returns_none() {
       assert_eq!(option::sequence(vec![Some(1), None, Some(3)]), None);
-    }
-
-    #[test]
-    fn traverse_all_succeed() {
-      let result = option::traverse(vec![1, 2, 3], |x| Some(x * 2));
-      assert_eq!(result, Some(vec![2, 4, 6]));
-    }
-
-    #[test]
-    fn traverse_any_fail() {
-      let result = option::traverse(vec![1, 2, 3], |x| if x == 2 { None } else { Some(x) });
-      assert_eq!(result, None);
+      assert_eq!(
+        option::traverse(vec![1, 2, 3], |x| Some(double(x))),
+        Some(vec![2, 4, 6])
+      );
+      assert_eq!(
+        option::traverse(vec![1, 2, 3], |x| if x == 2 { None } else { Some(x) }),
+        None
+      );
     }
   }
 
   mod result_applicative {
     use super::*;
 
+    fn double(x: i32) -> i32 {
+      x * 2
+    }
+    fn add2(a: i32, b: i32) -> i32 {
+      a + b
+    }
+
     #[test]
-    fn pure_creates_ok() {
+    fn result_applicative_smoke() {
       assert_eq!(result::pure::<_, &str>(42), Ok(42));
-    }
-
-    #[test]
-    fn ap_ok_ok_applies() {
-      let ff: Result<fn(i32) -> i32, &str> = Ok(|x| x * 2);
-      let fa: Result<i32, &str> = Ok(5);
-      assert_eq!(result::ap(ff, fa), Ok(10));
-    }
-
-    #[test]
-    fn ap_err_ok_returns_err() {
-      let ff: Result<fn(i32) -> i32, &str> = Err("error");
-      let fa: Result<i32, &str> = Ok(5);
-      assert_eq!(result::ap(ff, fa), Err("error"));
-    }
-
-    #[test]
-    fn ap_ok_err_returns_err() {
-      let ff: Result<fn(i32) -> i32, &str> = Ok(|x| x * 2);
-      let fa: Result<i32, &str> = Err("value error");
-      assert_eq!(result::ap(ff, fa), Err("value error"));
-    }
-
-    #[test]
-    fn map2_both_ok() {
-      let fa: Result<i32, &str> = Ok(2);
-      let fb: Result<i32, &str> = Ok(3);
-      assert_eq!(result::map2(fa, fb, |a, b| a + b), Ok(5));
-    }
-
-    #[test]
-    fn map2_first_err_returns_err() {
-      let fa: Result<i32, &str> = Err("e1");
-      let fb: Result<i32, &str> = Ok(3);
-      assert_eq!(result::map2(fa, fb, |a, b| a + b), Err("e1"));
-    }
-
-    #[test]
-    fn map2_second_err_returns_err() {
-      let fa: Result<i32, &str> = Ok(2);
-      let fb: Result<i32, &str> = Err("e2");
-      assert_eq!(result::map2(fa, fb, |a, b| a + b), Err("e2"));
-    }
-
-    #[test]
-    fn zip_both_ok() {
-      let fa: Result<i32, &str> = Ok(1);
-      let fb: Result<i32, &str> = Ok(2);
-      assert_eq!(result::zip(fa, fb), Ok((1, 2)));
-    }
-
-    #[test]
-    fn zip_first_err() {
-      let fa: Result<i32, &str> = Err("e");
-      let fb: Result<i32, &str> = Ok(2);
-      assert_eq!(result::zip(fa, fb), Err("e"));
-    }
-
-    #[test]
-    fn zip_second_err() {
-      let fa: Result<i32, &str> = Ok(1);
-      let fb: Result<i32, &str> = Err("e2");
-      assert_eq!(result::zip(fa, fb), Err("e2"));
-    }
-
-    #[test]
-    fn sequence_all_ok() {
-      let results: Vec<Result<i32, &str>> = vec![Ok(1), Ok(2), Ok(3)];
-      assert_eq!(result::sequence(results), Ok(vec![1, 2, 3]));
-    }
-
-    #[test]
-    fn sequence_any_err_returns_first_err() {
-      let results: Vec<Result<i32, &str>> = vec![Ok(1), Err("e1"), Err("e2")];
-      assert_eq!(result::sequence(results), Err("e1"));
-    }
-
-    #[test]
-    fn traverse_all_succeed() {
-      let r: Result<Vec<i32>, &str> = result::traverse(vec![1, 2, 3], |x| Ok(x * 2));
-      assert_eq!(r, Ok(vec![2, 4, 6]));
-    }
-
-    #[test]
-    fn traverse_any_fail() {
-      let r: Result<Vec<i32>, &str> =
-        result::traverse(vec![1, 2, 3], |x| if x == 2 { Err("two") } else { Ok(x) });
-      assert_eq!(r, Err("two"));
+      assert_eq!(
+        result::ap(Ok::<_, &str>(double), Ok::<i32, &str>(5)),
+        Ok(10)
+      );
+      assert_eq!(
+        result::ap(Err::<fn(i32) -> i32, &str>("error"), Ok::<i32, &str>(5)),
+        Err("error")
+      );
+      assert_eq!(
+        result::ap(Ok::<_, &str>(double), Err("value error")),
+        Err("value error")
+      );
+      assert_eq!(
+        result::map2(Ok::<i32, &str>(2), Ok::<i32, &str>(3), add2),
+        Ok(5)
+      );
+      assert_eq!(
+        result::map2(Err::<i32, &str>("e1"), Ok::<i32, &str>(3), add2),
+        Err("e1")
+      );
+      assert_eq!(
+        result::map2(Ok::<i32, &str>(2), Err::<i32, &str>("e2"), add2),
+        Err("e2")
+      );
+      assert_eq!(
+        result::zip(Ok::<i32, &str>(1), Ok::<i32, &str>(2)),
+        Ok((1, 2))
+      );
+      assert_eq!(
+        result::zip(Err::<i32, &str>("e"), Ok::<i32, &str>(2)),
+        Err("e")
+      );
+      assert_eq!(
+        result::zip(Ok::<i32, &str>(1), Err::<i32, &str>("e2")),
+        Err("e2")
+      );
+      assert_eq!(
+        result::sequence(vec![Ok::<i32, &str>(1), Ok(2), Ok(3)]),
+        Ok(vec![1, 2, 3])
+      );
+      assert_eq!(
+        result::sequence(vec![Ok::<i32, &str>(1), Err("e1"), Err("e2")]),
+        Err("e1")
+      );
+      assert_eq!(
+        result::traverse(vec![1, 2, 3], |x| Ok::<i32, &str>(double(x))),
+        Ok(vec![2, 4, 6])
+      );
+      assert_eq!(
+        result::traverse(vec![1, 2, 3], |x| if x == 2 {
+          Err::<i32, &str>("two")
+        } else {
+          Ok(x)
+        }),
+        Err("two")
+      );
     }
   }
 
   mod vec_applicative {
     use super::*;
 
+    fn inc(x: i32) -> i32 {
+      x + 1
+    }
+    fn dbl(x: i32) -> i32 {
+      x * 2
+    }
+    fn add(a: i32, b: i32) -> i32 {
+      a + b
+    }
+
     #[test]
-    fn pure_creates_singleton() {
+    fn vec_applicative_smoke() {
       assert_eq!(vec::pure(42), vec![42]);
-    }
-
-    #[test]
-    fn ap_cartesian_product() {
-      let ff: Vec<fn(i32) -> i32> = vec![|x| x + 1, |x| x * 2];
-      let fa = vec![1, 2];
-      // [f1(1), f1(2), f2(1), f2(2)] = [2, 3, 2, 4]
-      assert_eq!(vec::ap(ff, fa), vec![2, 3, 2, 4]);
-    }
-
-    #[test]
-    fn map2_cartesian_product() {
-      let result = vec::map2(vec![1, 2], vec![10, 20], |a, b| a + b);
-      assert_eq!(result, vec![11, 21, 12, 22]);
-    }
-
-    #[test]
-    fn zip_with_element_wise() {
-      let result = vec::zip_with(vec![1, 2, 3], vec![10, 20, 30], |a, b| a + b);
-      assert_eq!(result, vec![11, 22, 33]);
-    }
-
-    #[test]
-    fn zip_with_truncates_to_shorter() {
-      let result = vec::zip_with(vec![1, 2], vec![10, 20, 30], |a, b| a + b);
-      assert_eq!(result, vec![11, 22]);
-    }
-
-    #[test]
-    fn vec_traverse_all_succeed() {
-      let result: Option<Vec<i32>> = vec![1, 2, 3].into_iter().map(|x| Some(x * 2)).collect();
-      assert_eq!(result, Some(vec![2, 4, 6]));
+      assert_eq!(vec::ap(vec![inc, dbl], vec![1, 2]), vec![2, 3, 2, 4]);
+      assert_eq!(
+        vec::map2(vec![1, 2], vec![10, 20], add),
+        vec![11, 21, 12, 22]
+      );
+      assert_eq!(
+        vec::zip_with(vec![1, 2, 3], vec![10, 20, 30], add),
+        vec![11, 22, 33]
+      );
+      assert_eq!(
+        vec::zip_with(vec![1, 2], vec![10, 20, 30], add),
+        vec![11, 22]
+      );
     }
   }
 
   mod trait_impls {
     use super::*;
 
-    #[test]
-    fn option_trait_pure() {
-      let v: Option<i32> = Applicative::pure(5);
-      assert_eq!(v, Some(5));
+    fn inc(x: i32) -> i32 {
+      x + 1
+    }
+    fn triple(x: i32) -> i32 {
+      x * 3
     }
 
     #[test]
-    fn option_trait_ap_some_some() {
-      let fa = Some(10_i32);
-      let ff = Some(|x: i32| x + 1);
-      let result = fa.ap(ff);
-      assert_eq!(result, Some(11));
-    }
-
-    #[test]
-    fn option_trait_ap_none_returns_none() {
-      let fa: Option<i32> = None;
-      let ff = Some(|x: i32| x + 1);
-      let result = fa.ap(ff);
-      assert_eq!(result, None);
-    }
-
-    #[test]
-    fn result_trait_pure() {
-      let v: Result<i32, &str> = Applicative::pure(5);
-      assert_eq!(v, Ok(5));
-    }
-
-    #[test]
-    fn result_trait_ap_ok_ok() {
-      let fa: Result<i32, &str> = Ok(5);
-      let ff: Result<fn(i32) -> i32, &str> = Ok(|x| x * 3);
-      let result = fa.ap(ff);
-      assert_eq!(result, Ok(15));
-    }
-
-    #[test]
-    fn result_trait_ap_err_returns_err() {
-      let fa: Result<i32, &str> = Err("e");
-      let ff: Result<fn(i32) -> i32, &str> = Ok(|x| x * 3);
-      let result = fa.ap(ff);
-      assert_eq!(result, Err("e"));
-    }
-
-    #[test]
-    fn result_trait_ap_ff_err_returns_ff_err() {
-      let fa: Result<i32, &str> = Ok(5);
-      let ff: Result<fn(i32) -> i32, &str> = Err("ff-err");
-      let result = fa.ap(ff);
-      assert_eq!(result, Err("ff-err"));
+    fn trait_impls_smoke() {
+      let opt: Option<i32> = Applicative::pure(5);
+      assert_eq!(opt, Some(5));
+      assert_eq!(Some(10_i32).ap(Some(inc)), Some(11));
+      assert_eq!(None::<i32>.ap(Some(inc)), None);
+      let res: Result<i32, &str> = Applicative::pure(5);
+      assert_eq!(res, Ok(5));
+      assert_eq!(Ok::<i32, &str>(5).ap(Ok::<_, &str>(triple)), Ok(15));
+      assert_eq!(Err::<i32, &str>("e").ap(Ok::<_, &str>(triple)), Err("e"));
+      assert_eq!(
+        Ok::<i32, &str>(5).ap(Err::<fn(i32) -> i32, &str>("ff-err")),
+        Err("ff-err")
+      );
     }
   }
 
@@ -644,6 +515,55 @@ mod tests {
       let left: Result<i32, &str> = result::ap(Ok(f), Ok(a));
       let right: Result<i32, &str> = Ok(f(a));
       assert_eq!(left, right);
+    }
+
+    #[test]
+    fn vec_product_and_map2_smoke() {
+      use super::super::{option, pure as lift, result, vec};
+      assert_eq!(lift::<Option<_>>(7), Some(7));
+      assert_eq!(lift::<Result<_, &str>>(7), Ok(7));
+      assert_eq!(option::pure(3), Some(3));
+      assert_eq!(option::ap(Some(|x: i32| x + 1), Some(2)), Some(3));
+      assert_eq!(result::pure::<i32, &str>(9), Ok(9));
+      assert_eq!(
+        result::ap(Ok::<_, &str>(|x: i32| x * 2), Ok::<i32, &str>(3)),
+        Ok(6)
+      );
+      assert_eq!(vec::pure(7), vec![7]);
+      assert_eq!(
+        vec::map2(vec![1, 2], vec![3, 4], |a, b| a + b),
+        vec![4, 5, 5, 6]
+      );
+      assert_eq!(
+        vec::zip_with(vec![1, 2], vec![3, 4], |a, b| a + b),
+        vec![4, 6]
+      );
+      assert_eq!(vec::ap(vec![|x: i32| x + 1], vec![1, 2]), vec![2, 3]);
+      assert_eq!(
+        option::map3(Some(1), Some(2), Some(3), |a, b, c| a + b + c),
+        Some(6)
+      );
+      assert_eq!(option::zip_right(Some(1), Some(2)), Some(2));
+      assert_eq!(option::zip_left(Some(1), Some(2)), Some(1));
+      assert_eq!(option::zip(Some(1), Some(2)), Some((1, 2)));
+      assert_eq!(option::sequence(vec![Some(1), Some(2)]), Some(vec![1, 2]));
+      assert_eq!(
+        option::traverse(vec![1, 2], |x| Some(x * 2)),
+        Some(vec![2, 4])
+      );
+      assert_eq!(result::map2(Ok::<i32, &str>(1), Ok(2), |a, b| a + b), Ok(3));
+      assert_eq!(
+        result::zip(Ok::<i32, &str>(1), Ok::<i32, &str>(2)),
+        Ok((1, 2))
+      );
+      assert_eq!(
+        result::sequence(vec![Ok::<i32, &str>(1), Ok(2)]),
+        Ok(vec![1, 2])
+      );
+      assert_eq!(
+        result::traverse(vec![1, 2], |x| Ok::<i32, &str>(x * 2)),
+        Ok(vec![2, 4])
+      );
     }
 
     #[rstest]

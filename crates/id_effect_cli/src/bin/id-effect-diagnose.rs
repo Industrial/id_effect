@@ -296,4 +296,24 @@ requires = ["Config"]
     assert_eq!(diagnose_manifest(&path, true), 0);
     let _ = fs::remove_file(path);
   }
+  #[test]
+  fn print_provider_graph_json_and_text() {
+    assert_eq!(print_provider_graph(true), ());
+    assert_eq!(print_provider_graph(false), ());
+  }
+
+  #[test]
+  fn print_planner_examples_all_kinds() {
+    use ExampleKind::*;
+    assert_eq!(print_planner_example(Ok, false), 0);
+    assert_eq!(print_planner_example(Missing, true), 1);
+    assert_eq!(print_planner_example(Cycle, false), 1);
+  }
+
+  #[test]
+  fn emit_graph_report_on_empty_graph() {
+    let g = CapabilityGraph::new();
+    emit_graph_report(&g, true);
+    emit_graph_report(&g, false);
+  }
 }

@@ -54,3 +54,18 @@ impl fmt::Debug for CapabilityId {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn capability_id_of_and_variant() {
+    let id = CapabilityId::of::<u32>();
+    assert_eq!(id.type_id(), TypeId::of::<u32>());
+    assert_eq!(id.variant(), None);
+    let named = id.with_variant(Some("live"));
+    assert_eq!(named.variant(), Some("live"));
+    assert_eq!(format!("{named:?}"), format!("{:?}", named));
+  }
+}

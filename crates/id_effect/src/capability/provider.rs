@@ -237,3 +237,223 @@ impl ProviderBox {
     Self(Arc::new(Provider::<P>::default()))
   }
 }
+
+#[cfg(test)]
+mod provider_tests {
+  use super::*;
+  use crate::provide;
+
+  #[::id_effect::capability(u32)]
+  #[expect(dead_code)]
+  struct Svc;
+
+  struct EffectfulSvc;
+  impl ProviderSpec for EffectfulSvc {
+    type Key = SvcKey;
+    type Output = u32;
+    fn provider_id() -> &'static str {
+      "effectful"
+    }
+    fn effectful_build() -> bool {
+      true
+    }
+    fn provide(_: &Env) -> Result<u32, ProviderError> {
+      Err(ProviderError {
+        provider: "EffectfulSvc",
+        message: "sync".into(),
+      })
+    }
+    fn provide_effect(_: &Env) -> Effect<u32, ProviderError, Env> {
+      Effect::new(|_| Ok(7))
+    }
+  }
+
+  #[test]
+  fn provider_box_builds_effectful() {
+    use crate::run_blocking;
+    let node = ProviderBox::new::<EffectfulSvc>();
+    assert!(node.0.uses_effectful_build());
+    let env = run_blocking(node.0.build_effect(&Env::new()), Env::new()).expect("effect build");
+    assert_eq!(*env.get::<SvcKey>(), 7);
+  }
+
+  #[test]
+  fn provider_node_metadata() {
+    let node = provide!(EffectfulSvc).0;
+    assert_eq!(node.id(), "effectful");
+    assert_eq!(node.cap_name(), SvcKey::name());
+    assert_eq!(node.provides(), SvcKey::id());
+    let hook = node.shutdown_hook().expect("shutdown hook");
+    hook.shutdown();
+  }
+
+  #[test]
+  fn provider_error_display() {
+    let err = ProviderError {
+      provider: "P",
+      message: "m".into(),
+    };
+    assert!(err.to_string().contains("P"));
+  }
+
+  #[test]
+  fn shared_provider_build_is_idempotent() {
+    struct SharedDb;
+    impl ProviderSpec for SharedDb {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "shared-svc"
+      }
+      fn shared() -> bool {
+        true
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(42)
+      }
+    }
+    let node = provide!(SharedDb).0;
+    let e1 = node.build(&Env::new()).expect("first");
+    let e2 = node.build(&Env::new()).expect("second");
+    assert_eq!(*e1.get::<SvcKey>(), 42);
+    assert_eq!(*e2.get::<SvcKey>(), 42);
+  }
+  #[test]
+  fn refresh_provider_hooks_and_optional_requires() {
+    struct RefreshSvc;
+    impl ProviderSpec for RefreshSvc {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "refresh-svc"
+      }
+      fn refresh_interval() -> Option<std::time::Duration> {
+        Some(std::time::Duration::from_secs(1))
+      }
+      fn on_refresh(output: &mut Self::Output) {
+        *output += 1;
+      }
+      fn on_shutdown(_output: &Self::Output) {}
+      fn optional_requires() -> &'static [CapabilityId] {
+        static O: std::sync::LazyLock<Vec<CapabilityId>> =
+          std::sync::LazyLock::new(|| vec![SvcKey::id()]);
+        O.as_slice()
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(1)
+      }
+    }
+    let node = provide!(RefreshSvc).0;
+    assert!(!node.optional_requires().is_empty());
+    assert!(node.refresh_interval().is_some());
+    let env = node.build(&Env::new()).expect("build");
+    assert_eq!(*env.get::<SvcKey>(), 1);
+    let mut out = 1_u32;
+    RefreshSvc::on_refresh(&mut out);
+    assert_eq!(out, 2);
+    RefreshSvc::on_shutdown(&1);
+    node.shutdown_hook().expect("hook").shutdown();
+  }
+
+  #[test]
+  fn provider_spec_default_hooks_are_exercised() {
+    struct DefaultsOnly;
+    impl ProviderSpec for DefaultsOnly {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "defaults-only"
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(0)
+      }
+    }
+    assert_eq!(DefaultsOnly::variant(), None);
+    assert!(DefaultsOnly::requires().is_empty());
+    assert!(!DefaultsOnly::effectful_build());
+    assert!(!DefaultsOnly::shared());
+    assert!(DefaultsOnly::refresh_interval().is_none());
+    assert!(DefaultsOnly::optional_requires().is_empty());
+    let mut v = 0_u32;
+    DefaultsOnly::on_refresh(&mut v);
+    DefaultsOnly::on_shutdown(&0);
+    use crate::run_blocking;
+    let value =
+      run_blocking(DefaultsOnly::provide_effect(&Env::new()), Env::new()).expect("effect");
+    assert_eq!(value, 0);
+  }
+
+  #[test]
+  fn provider_node_default_build_effect_surfaces_sync_error() {
+    struct FailSync;
+    impl ProviderSpec for FailSync {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "fail-sync"
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Err(ProviderError {
+          provider: "FailSync",
+          message: "no".into(),
+        })
+      }
+    }
+    let node = ProviderBox::new::<FailSync>().0;
+    assert!(node.build(&Env::new()).is_err());
+    use crate::run_blocking;
+    assert!(run_blocking(node.build_effect(&Env::new()), Env::new()).is_err());
+    assert!(!node.uses_effectful_build());
+    assert!(!node.shared());
+    assert!(node.refresh_interval().is_none());
+    assert!(node.optional_requires().is_empty());
+  }
+
+  #[test]
+  fn shared_provider_shutdown_hook_invokes_on_shutdown() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static LAST: AtomicU32 = AtomicU32::new(0);
+    struct SharedShutdown;
+    impl ProviderSpec for SharedShutdown {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "shared-shutdown"
+      }
+      fn shared() -> bool {
+        true
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(42)
+      }
+      fn on_shutdown(value: &Self::Output) {
+        LAST.store(*value, Ordering::SeqCst);
+      }
+    }
+    let node = ProviderBox::new::<SharedShutdown>().0;
+    let env = node.build(&Env::new()).expect("build");
+    assert_eq!(*env.get::<SvcKey>(), 42);
+    node.shutdown_hook().expect("hook").shutdown();
+    assert_eq!(LAST.load(Ordering::SeqCst), 42);
+  }
+
+  #[test]
+  fn sync_provider_build_effect_delegates_to_provide() {
+    struct SyncSvc;
+    impl ProviderSpec for SyncSvc {
+      type Key = SvcKey;
+      type Output = u32;
+      fn provider_id() -> &'static str {
+        "sync-svc"
+      }
+      fn provide(_: &Env) -> Result<u32, ProviderError> {
+        Ok(99)
+      }
+    }
+    use crate::run_blocking;
+    let node = ProviderBox::new::<SyncSvc>();
+    assert!(!node.0.uses_effectful_build());
+    let env = run_blocking(node.0.build_effect(&Env::new()), Env::new()).expect("build");
+    assert_eq!(*env.get::<SvcKey>(), 99);
+  }
+}

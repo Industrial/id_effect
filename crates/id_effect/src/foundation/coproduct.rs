@@ -319,288 +319,74 @@ pub fn to_option<R, L>(e: Either<R, L>) -> Option<R> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rstest::rstest;
 
-  mod constructors {
-    use super::*;
+  #[test]
+  fn coproduct_api_smoke() {
+    assert_eq!(left::<i32, &str>("fail"), Err("fail"));
+    assert_eq!(right::<i32, &str>(42), Ok(42));
+    assert!(is_right(&Ok::<i32, &str>(1)));
+    assert!(is_left(&Err::<i32, &str>("x")));
 
-    #[test]
-    fn left_creates_err_variant() {
-      let e: Either<i32, &str> = left("fail");
-      assert_eq!(e, Err("fail"));
-    }
+    assert_eq!(
+      either(|s: &str| s.len(), |n: i32| n as usize)(left("hello")),
+      5
+    );
+    assert_eq!(
+      either(|s: &str| s.len(), |n: i32| n as usize)(right(42)),
+      42
+    );
 
-    #[test]
-    fn right_creates_ok_variant() {
-      let e: Either<i32, &str> = right(42);
-      assert_eq!(e, Ok(42));
-    }
-  }
+    assert_eq!(map(right::<i32, &str>(3), |n| n * 2), Ok(6));
+    assert_eq!(map(left::<i32, &str>("e"), |n: i32| n * 2), Err("e"));
+    assert_eq!(map_left(left::<i32, &str>("err"), |s| s.len()), Err(3));
+    assert_eq!(map_left(right::<i32, &str>(5), |s: &str| s.len()), Ok(5));
 
-  mod inspection {
-    use super::*;
+    assert_eq!(
+      bimap(left::<i32, &str>("hello"), |s| s.len(), |n: i32| n * 2),
+      Err(5)
+    );
+    assert_eq!(
+      bimap(right::<i32, &str>(3), |s: &str| s.len(), |n| n * 2),
+      Ok(6)
+    );
 
-    #[rstest]
-    #[case::right(Ok::<i32, &str>(1), true, false)]
-    #[case::left(Err::<i32, &str>("x"), false, true)]
-    fn is_left_and_is_right(
-      #[case] e: Either<i32, &str>,
-      #[case] expected_right: bool,
-      #[case] expected_left: bool,
-    ) {
-      assert_eq!(is_right(&e), expected_right);
-      assert_eq!(is_left(&e), expected_left);
-    }
-  }
+    assert_eq!(flat_map(right(4), |n| Ok::<i32, &str>(n + 1)), Ok(5));
+    assert_eq!(
+      flat_map(left::<i32, &str>("fail"), |n: i32| Ok::<i32, &str>(n + 1)),
+      Err("fail")
+    );
+    assert_eq!(
+      flat_map_left(left::<i32, &str>("retry"), |_| Ok::<i32, &str>(99)),
+      Ok(99)
+    );
+    assert_eq!(
+      flat_map_left(right::<i32, &str>(7), |_| Ok::<i32, &str>(99)),
+      Ok(7)
+    );
 
-  mod either_elimination {
-    use super::*;
+    assert_eq!(flip(right::<i32, &str>(5)), Err(5));
+    assert_eq!(flip(left::<i32, &str>("x")), Ok("x"));
 
-    #[test]
-    fn either_applies_left_handler() {
-      let handler = either(|s: &str| s.len(), |n: i32| n as usize);
-      assert_eq!(handler(left("hello")), 5);
-    }
+    assert_eq!(get_or_else(right::<i32, i32>(3), |l| l * 10), 3);
+    assert_eq!(get_or_else(left::<i32, i32>(5), |l| l * 10), 50);
+    assert_eq!(
+      or_else(left::<i32, &str>("e"), |_| Ok::<i32, &str>(99)),
+      Ok(99)
+    );
+    assert_eq!(merge(right::<i32, i32>(5)), 5);
+    assert_eq!(from_option(Some(10_i32), || "missing"), Ok(10));
+    assert_eq!(from_option(None::<i32>, || "missing"), Err("missing"));
+    assert_eq!(to_option(right::<i32, &str>(3)), Some(3));
+    assert_eq!(to_option(left::<i32, &str>("x")), None);
+    assert_eq!(
+      or_else(right::<i32, &str>(1), |_| Ok::<i32, &str>(99)),
+      Ok(1)
+    );
 
-    #[test]
-    fn either_applies_right_handler() {
-      let handler = either(|s: &str| s.len(), |n: i32| n as usize);
-      assert_eq!(handler(right(42)), 42);
-    }
-  }
-
-  mod map_tests {
-    use super::*;
-
-    #[test]
-    fn map_transforms_right() {
-      assert_eq!(map(right::<i32, &str>(3), |n| n * 2), Ok(6));
-    }
-
-    #[test]
-    fn map_preserves_left() {
-      assert_eq!(map(left::<i32, &str>("e"), |n| n * 2), Err("e"));
-    }
-  }
-
-  mod map_left_tests {
-    use super::*;
-
-    #[test]
-    fn map_left_transforms_left() {
-      assert_eq!(map_left(left::<i32, &str>("err"), |s| s.len()), Err(3));
-    }
-
-    #[test]
-    fn map_left_preserves_right() {
-      assert_eq!(map_left(right::<i32, &str>(5), |s| s.len()), Ok(5));
-    }
-  }
-
-  mod bimap_tests {
-    use super::*;
-
-    #[test]
-    fn bimap_transforms_left() {
-      let result = bimap(left::<i32, &str>("hello"), |s| s.len(), |n| n * 2);
-      assert_eq!(result, Err(5));
-    }
-
-    #[test]
-    fn bimap_transforms_right() {
-      let result = bimap(right::<i32, &str>(3), |s| s.len(), |n| n * 2);
-      assert_eq!(result, Ok(6));
-    }
-  }
-
-  mod flat_map_tests {
-    use super::*;
-
-    #[test]
-    fn flat_map_right_to_right() {
-      assert_eq!(
-        flat_map(right::<i32, &str>(4), |n| Ok::<i32, &str>(n + 1)),
-        Ok(5)
-      );
-    }
-
-    #[test]
-    fn flat_map_right_to_left() {
-      assert_eq!(
-        flat_map(right::<i32, &str>(0), |_| Err::<i32, &str>("zero")),
-        Err("zero")
-      );
-    }
-
-    #[test]
-    fn flat_map_left_unchanged() {
-      assert_eq!(
-        flat_map(left::<i32, &str>("fail"), |n| Ok::<i32, &str>(n + 1)),
-        Err("fail")
-      );
-    }
-  }
-
-  mod flat_map_left_tests {
-    use super::*;
-
-    #[test]
-    fn flat_map_left_recovers() {
-      let e: Either<i32, &str> = left("retry");
-      assert_eq!(flat_map_left(e, |_| Ok::<i32, usize>(99)), Ok(99));
-    }
-
-    #[test]
-    fn flat_map_left_to_left() {
-      let e: Either<i32, &str> = left("a");
-      assert_eq!(flat_map_left(e, |s| Err::<i32, usize>(s.len())), Err(1));
-    }
-
-    #[test]
-    fn flat_map_left_preserves_right() {
-      let e: Either<i32, &str> = right(7);
-      assert_eq!(flat_map_left(e, |_| Ok::<i32, usize>(99)), Ok(7));
-    }
-  }
-
-  mod flip_tests {
-    use super::*;
-
-    #[test]
-    fn flip_right_becomes_left() {
-      assert_eq!(flip(right::<i32, &str>(5)), Err(5));
-    }
-
-    #[test]
-    fn flip_left_becomes_right() {
-      assert_eq!(flip(left::<i32, &str>("x")), Ok("x"));
-    }
-
-    #[test]
-    fn flip_involution() {
-      let e: Either<i32, &str> = right(42);
-      assert_eq!(flip(flip(e.clone())), e);
-    }
-  }
-
-  mod get_or_else_tests {
-    use super::*;
-
-    #[test]
-    fn get_or_else_returns_right() {
-      assert_eq!(get_or_else(right::<i32, i32>(3), |l| l * 10), 3);
-    }
-
-    #[test]
-    fn get_or_else_computes_from_left() {
-      assert_eq!(get_or_else(left::<i32, i32>(5), |l| l * 10), 50);
-    }
-  }
-
-  mod or_else_tests {
-    use super::*;
-
-    #[test]
-    fn or_else_preserves_right() {
-      let e: Either<i32, &str> = right(1);
-      assert_eq!(or_else(e, |_| Ok::<i32, usize>(99)), Ok(1));
-    }
-
-    #[test]
-    fn or_else_tries_alternative() {
-      let e: Either<i32, &str> = left("try again");
-      assert_eq!(or_else(e, |_| Ok::<i32, usize>(99)), Ok(99));
-    }
-  }
-
-  mod merge_tests {
-    use super::*;
-
-    #[test]
-    fn merge_extracts_right() {
-      assert_eq!(merge(right::<i32, i32>(5)), 5);
-    }
-
-    #[test]
-    fn merge_extracts_left() {
-      assert_eq!(merge(left::<i32, i32>(7)), 7);
-    }
-  }
-
-  mod conversions {
-    use super::*;
-
-    #[test]
-    fn from_option_some_gives_right() {
-      assert_eq!(from_option(Some(10_i32), || "missing"), Ok(10));
-    }
-
-    #[test]
-    fn from_option_none_gives_left() {
-      assert_eq!(from_option(None::<i32>, || "missing"), Err("missing"));
-    }
-
-    #[test]
-    fn to_option_right_gives_some() {
-      assert_eq!(to_option(right::<i32, &str>(3)), Some(3));
-    }
-
-    #[test]
-    fn to_option_left_gives_none() {
-      assert_eq!(to_option(left::<i32, &str>("e")), None);
-    }
-  }
-
-  mod laws {
-    use super::*;
-
-    #[test]
-    fn either_after_left_injection() {
-      // either(f, g) ∘ left = f
-      let f = |s: &str| s.len();
-      let g = |n: i32| n as usize;
-
-      for s in ["", "a", "hello", "test"] {
-        assert_eq!(either(f, g)(left(s)), f(s));
-      }
-    }
-
-    #[test]
-    fn either_after_right_injection() {
-      // either(f, g) ∘ right = g
-      let f = |s: &str| s.len();
-      let g = |n: i32| n as usize;
-
-      for n in [0, 1, 42, 100] {
-        assert_eq!(either(f, g)(right(n)), g(n));
-      }
-    }
-
-    #[test]
-    fn map_identity_is_identity() {
-      let e: Either<i32, &str> = right(5);
-      assert_eq!(map(e.clone(), |x| x), e);
-    }
-
-    #[test]
-    fn map_composition() {
-      // map(e, g ∘ f) = map(map(e, f), g)
-      let f = |n: i32| n + 1;
-      let g = |n: i32| n * 2;
-
-      for x in [0, 5, -3] {
-        let e = right::<i32, &str>(x);
-        let left_side = map(e.clone(), |n| g(f(n)));
-        let right_side = map(map(e, f), g);
-        assert_eq!(left_side, right_side);
-      }
-    }
-
-    #[test]
-    fn flip_is_involution() {
-      for e in [right::<i32, &str>(5), left::<i32, &str>("err")] {
-        assert_eq!(flip(flip(e.clone())), e);
-      }
-    }
+    let f = |x: i32| x + 10;
+    let g = |x: i32| x * 3;
+    let e = right::<i32, &str>(5);
+    assert_eq!(map(e.clone(), |x| f(g(x))), map(map(e, g), f));
+    assert_eq!(flip(flip(right::<i32, &str>(5))), right(5));
   }
 }

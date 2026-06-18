@@ -96,4 +96,30 @@ mod tests {
     });
     assert_eq!(*base.get::<CounterKey>(), 1);
   }
+  #[test]
+  fn active_env_returns_none_without_overlay() {
+    assert!(active_env().is_none());
+  }
+
+  #[test]
+  fn active_env_sees_pushed_overlay() {
+    let mut base = Env::new();
+    base.insert::<CounterKey>(1u32);
+    with_override::<CounterKey, _, _>(&base, 5u32, |_env| {
+      let active = active_env().expect("overlay");
+      assert_eq!(*active.get::<CounterKey>(), 5);
+    });
+    assert!(active_env().is_none());
+  }
+
+  #[test]
+  fn with_fiber_and_override_scopes_to_fiber() {
+    let mut base = Env::new();
+    base.insert::<CounterKey>(0u32);
+    let fid = FiberId::new(99);
+    let got = with_fiber_and_override::<CounterKey, _, _>(fid, &base, 7u32, |env| {
+      *Needs::<CounterKey>::need(env)
+    });
+    assert_eq!(got, 7);
+  }
 }

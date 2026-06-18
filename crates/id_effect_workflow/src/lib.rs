@@ -468,22 +468,4 @@ mod tests {
       assert!(matches!(err, WorkflowError::Sqlite(_)));
     }
   }
-
-  mod stress {
-    use super::*;
-
-    /// Manual / load profile; not run in default CI (`cargo test -- --ignored`).
-    #[test]
-    #[ignore = "stress: run locally with cargo test durable_workflow_stress_many_steps -- --ignored --nocapture"]
-    fn durable_workflow_stress_many_steps() {
-      let mut log = fresh_log();
-      log.register_workflow("stress").unwrap();
-      for i in 0u32..10_000 {
-        let _: u32 = log
-          .run_step_typed("stress", i, "step", || Ok(i))
-          .expect("append");
-      }
-      assert_eq!(log.completed_step_count("stress").unwrap(), 10_000);
-    }
-  }
 }

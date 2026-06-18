@@ -234,4 +234,21 @@ mod tests {
     let utf8 = ConfigError::InvalidUtf8 { var: "VAR".into() };
     assert!(utf8.source().is_none());
   }
+
+  #[test]
+  fn config_error_disp_from_all_variants() {
+    let fig = ConfigError::Figment(figment::Figment::new().extract::<i32>().unwrap_err());
+    let missing = ConfigError::Missing { path: "p".into() };
+    let invalid = ConfigError::Invalid {
+      path: "p".into(),
+      value: "v".into(),
+      reason: "r".into(),
+    };
+    let utf8 = ConfigError::InvalidUtf8 { var: "V".into() };
+    for err in [fig, missing, invalid, utf8] {
+      let _disp = ConfigErrorDisp::from(&err);
+      let rendered = err.to_string();
+      assert!(!rendered.is_empty());
+    }
+  }
 }

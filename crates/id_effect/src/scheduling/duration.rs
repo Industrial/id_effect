@@ -327,6 +327,7 @@ mod tests {
     #[test]
     fn infinity_constant_is_max_duration() {
       assert_eq!(duration::INFINITY, Duration::MAX);
+      assert!(!duration::is_finite(duration::INFINITY));
     }
 
     #[test]

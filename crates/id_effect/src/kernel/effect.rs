@@ -1352,6 +1352,43 @@ mod tests {
 
   // ── unwrap_infallible ───────────────────────────────────────────────────────
 
+  mod ask_and_flat_map_union {
+    use super::*;
+
+    #[test]
+    fn ask_reads_environment() {
+      let eff = ask::<i32>();
+      let out = crate::runtime::run_blocking(eff, 99_i32).unwrap();
+      assert_eq!(out, 99);
+    }
+
+    #[test]
+    fn asks_projects_environment() {
+      let eff = asks(|r: &i32| *r + 1);
+      let out = crate::runtime::run_blocking(eff, 10_i32).unwrap();
+      assert_eq!(out, 11);
+    }
+
+    #[test]
+    fn flat_map_union_routes_left_and_right() {
+      use crate::Or;
+      let eff = succeed::<i32, &str, ()>(1).flat_map_union(|n| {
+        if n == 1 {
+          succeed::<i32, &str, ()>(2)
+        } else {
+          fail::<i32, &str, ()>("left")
+        }
+      });
+      assert_eq!(crate::runtime::run_blocking(eff, ()).unwrap(), 2);
+
+      let eff2 = fail::<i32, &str, ()>("boom").flat_map_union(|_: i32| succeed::<i32, &str, ()>(0));
+      assert_eq!(
+        crate::runtime::run_blocking(eff2, ()),
+        Err(Or::Left("boom"))
+      );
+    }
+  }
+
   mod unwrap_infallible_fn {
     use super::*;
 

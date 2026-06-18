@@ -168,3 +168,62 @@ impl<E: std::error::Error + 'static> std::error::Error for RunError<E> {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn capability_error_display_variants() {
+    let missing = CapabilityError::Missing(CapabilityId::of::<u32>());
+    assert!(missing.to_string().contains("missing capability"));
+    let conflict = CapabilityError::Conflicting {
+      cap: CapabilityId::of::<u32>(),
+      first: "a".into(),
+      second: "b".into(),
+    };
+    assert!(conflict.to_string().contains("conflicting providers"));
+  }
+
+  #[test]
+  fn planner_error_codes_and_diagnostics() {
+    let dup = CapabilityPlannerError::DuplicateProviderId { id: "x".into() };
+    assert_eq!(dup.code(), "duplicate-provider-id");
+    assert_eq!(dup.to_diagnostic().code, "duplicate-provider-id");
+
+    let conflict = CapabilityPlannerError::ConflictingProvider {
+      cap: "Db".into(),
+      first: "a".into(),
+      second: "b".into(),
+    };
+    assert!(conflict.to_diagnostic().message.contains("Conflicting"));
+
+    let missing = CapabilityPlannerError::MissingProvider {
+      provider: "db".into(),
+      cap: "Config".into(),
+    };
+    assert!(missing.to_diagnostic().suggestion.contains("provide!"));
+
+    let cycle = CapabilityPlannerError::CycleDetected {
+      nodes: vec!["a".into(), "b".into()],
+    };
+    assert!(cycle.to_diagnostic().message.contains("cycle"));
+  }
+
+  #[test]
+  fn run_error_display_and_source() {
+    #[derive(Debug)]
+    struct Boom;
+    impl std::fmt::Display for Boom {
+      fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "boom")
+      }
+    }
+    impl std::error::Error for Boom {}
+    let cap = RunError::<Boom>::Capability(CapabilityError::Missing(CapabilityId::of::<u32>()));
+    assert!(cap.to_string().contains("missing"));
+    let eff: RunError<Boom> = RunError::Effect(Boom);
+    assert_eq!(eff.to_string(), "boom");
+    assert!(std::error::Error::source(&eff).is_some());
+  }
+}
