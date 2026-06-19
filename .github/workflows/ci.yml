@@ -154,6 +154,7 @@ jobs:
           cargo update -p semver@1.0.0 --precise 1.0.20
           # minimal-versions resolves openssl-sys 0.9.55 whose expando probe fails on OpenSSL 3.x
           cargo update -p openssl-sys --precise 0.9.117
+          cargo update -p openssl --precise 0.10.81
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
