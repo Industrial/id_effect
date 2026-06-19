@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-de4c65",
+	"taskId": "tsk-mqk3v82n-cbmz83",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:28.042Z",
+	"lockedAt": "2026-06-18T23:25:28.042Z",
+	"intent": "Auth Oauth Trait",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-3ed4d0",
+			"text": "id_effect_host crate: lifecycle, graceful shutdown, config bootstrap",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-ffafb4",
+			"text": "Session and JWT/OAuth trait surfaces; CSRF/CSP security middleware",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-768d1c",
+			"text": "Part VI ch30 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-3c194b",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uw14-l2rehg",
+	"riskClass": "medium"
+}

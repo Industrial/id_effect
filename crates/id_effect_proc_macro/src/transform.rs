@@ -5,7 +5,7 @@
 //! `~expr` is a unary prefix "run-effect" operator — analogous to unary `-`. It expands to:
 //!
 //! ```text
-//! (::id_effect::into_bind(expr, r).await?)
+//! (::id_effect::cap_into_bind(expr, r).await?)
 //! ```
 //!
 //! `~` can appear anywhere a Rust expression can appear: in `let` bindings, conditions,
@@ -17,7 +17,7 @@
 //! tail expression. `~` is expanded recursively in every chunk. The tail is wrapped in
 //! `Result::Ok(...)`. If the body contains no `~`, the proc macro uses `Effect::new` (sync
 //! `FnOnce(&mut R) -> Result<...>`); otherwise it uses `Effect::new_async` with
-//! `Box::pin(async move { ... })` so `.await` on `into_bind` is valid.
+//! `Box::pin(async move { ... })` so `.await` on `cap_into_bind` is valid.
 //!
 //! Nested `{ }` blocks have their `~` expanded in-place but are **not** given an additional
 //! `Ok(tail)` wrapper — they are plain Rust blocks, not effect blocks.
@@ -43,6 +43,8 @@
 
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use quote::quote;
+use syn::parse::{Parse, ParseStream};
+use syn::{Expr, Type};
 
 /// Returns `true` if the `effect!` body uses effect bind (`~`) anywhere (including nested groups).
 ///
@@ -68,7 +70,7 @@ pub fn effect_body_contains_bind(tokens: TokenStream) -> bool {
 /// sync (`Effect::new`). Misclassifying those bodies as async breaks `Send` on streams that close
 /// over non-`Send` effect HTTP futures.
 ///
-/// Top-level `.await` (Drift connect, `into_bind`, etc.) must use [`Effect::new_async`].
+/// Top-level `.await` (Drift connect, `cap_into_bind`, etc.) must use [`Effect::new_async`].
 pub fn effect_body_contains_await(tokens: TokenStream) -> bool {
   fn walk(
     mut iter: std::iter::Peekable<impl Iterator<Item = TokenTree>>,
@@ -154,7 +156,7 @@ fn try_expand_tail_as_into_bind_await(
     return None;
   }
   let expanded_operand = expand_tilde(operand, r, path);
-  Some(quote! { #path::into_bind(#expanded_operand, #r).await })
+  Some(quote! { #path::cap_into_bind(#expanded_operand, #r).await })
 }
 
 /// Split the outermost body on top-level `;`, expand `~` in each chunk, wrap tail in `Ok(...)`.
@@ -214,8 +216,71 @@ fn desugar_ident_tilde_bind(chunk: TokenStream) -> TokenStream {
   }
 }
 
+struct RequireArgs {
+  env: Option<Expr>,
+  key: Type,
+}
+
+impl Parse for RequireArgs {
+  fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+    let fork = input.fork();
+    if fork.parse::<Expr>().is_ok() && fork.parse::<syn::Token![,]>().is_ok() {
+      let env = input.parse::<Expr>()?;
+      input.parse::<syn::Token![,]>()?;
+      let key = input.parse::<Type>()?;
+      Ok(RequireArgs {
+        env: Some(env),
+        key,
+      })
+    } else {
+      let key = input.parse::<Type>()?;
+      Ok(RequireArgs { env: None, key })
+    }
+  }
+}
+
+/// Expand `require!(Key)` to `Needs::<Key>::need(env)`.
+fn expand_require_invocation(
+  iter: &mut std::iter::Peekable<impl Iterator<Item = TokenTree>>,
+  r: &syn::Ident,
+  path: &TokenStream,
+) -> TokenStream {
+  match iter.next() {
+    Some(TokenTree::Punct(p)) if p.as_char() == '!' => {}
+    _ => return quote! { require },
+  }
+
+  let group = match iter.next() {
+    Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => g,
+    other => {
+      return syn::Error::new_spanned(
+        other.unwrap_or_else(|| {
+          TokenTree::Punct(proc_macro2::Punct::new('!', proc_macro2::Spacing::Alone))
+        }),
+        "effect!: `require!` expects `require!(Key)` — `require!(env, Key)` was removed in 3.0",
+      )
+      .to_compile_error();
+    }
+  };
+
+  match syn::parse2::<RequireArgs>(group.stream()) {
+    Ok(args) => {
+      if args.env.is_some() {
+        return syn::Error::new_spanned(
+          group,
+          "require!(env, Key) was removed in id_effect 3.0; use require!(Key) inside effect!",
+        )
+        .to_compile_error();
+      }
+      let key = args.key;
+      expand_tilde(quote! { #path::Needs::<#key>::need(#r) }, r, path)
+    }
+    Err(e) => e.to_compile_error(),
+  }
+}
+
 /// Recursively walk `tokens`, rewriting every `~primary` as
-/// `(::id_effect::into_bind(primary, r).await?)`.
+/// `(::id_effect::cap_into_bind(primary, r).await?)` and `require!(Key)` as env lookup.
 ///
 /// Recurses into `{ }`, `( )`, and `[ ]` groups so `~` is expanded at any nesting depth.
 /// Nested groups are **not** given `Ok(tail)` wrapping — that is only for the outermost body.
@@ -226,14 +291,29 @@ fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> Toke
   // Operand collection calls `next`/`peek` on the same `Peekable` as this advance.
   #[allow(clippy::while_let_on_iterator)]
   while let Some(tt) = iter.next() {
-    match tt {
-      TokenTree::Punct(ref p) if p.as_char() == '~' => {
+    match &tt {
+      TokenTree::Ident(i)
+        if i == "require"
+          && matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '!') =>
+      {
+        out.extend(expand_require_invocation(&mut iter, r, path));
+      }
+
+      TokenTree::Punct(p) if p.as_char() == '~' => {
         let operand = collect_tilde_operand(&mut iter);
-        // Recurse so nested `~` inside the operand is also expanded.
-        let expanded_operand = expand_tilde(operand, r, path);
-        let bound = quote! { #path::into_bind(#expanded_operand, #r).await? };
-        let group = proc_macro2::Group::new(Delimiter::Parenthesis, bound);
-        out.push(TokenTree::Group(group));
+        if is_capability_key_operand(&operand) {
+          out.extend(expand_tilde(
+            quote! { #path::Needs::<#operand>::need(#r) },
+            r,
+            path,
+          ));
+        } else {
+          // Recurse so nested `~` inside the operand is also expanded.
+          let expanded_operand = expand_tilde(operand, r, path);
+          let bound = quote! { #path::cap_into_bind(#expanded_operand, #r).await? };
+          let group = proc_macro2::Group::new(Delimiter::Parenthesis, bound);
+          out.push(TokenTree::Group(group));
+        }
       }
 
       TokenTree::Group(g) => {
@@ -242,11 +322,46 @@ fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> Toke
         out.push(TokenTree::Group(new_group));
       }
 
-      other => out.push(other),
+      other => out.push(other.clone()),
     }
   }
 
   TokenStream::from_iter(out)
+}
+
+/// True when `~operand` is capability lookup (`~DatabaseKey`), not effect bind (`~query(1)`).
+pub fn is_capability_key_operand(operand: &TokenStream) -> bool {
+  if operand_has_top_level_call(operand) {
+    return false;
+  }
+  let Ok(ty) = syn::parse2::<syn::Type>(operand.clone()) else {
+    return false;
+  };
+  type_path_last_segment_ends_with_key(&ty)
+}
+
+fn operand_has_top_level_call(operand: &TokenStream) -> bool {
+  let mut depth = 0usize;
+  for tt in operand.clone() {
+    match tt {
+      TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis && depth == 0 => return true,
+      TokenTree::Punct(p) if p.as_char() == '<' => depth += 1,
+      TokenTree::Punct(p) if p.as_char() == '>' && depth > 0 => depth -= 1,
+      _ => {}
+    }
+  }
+  false
+}
+
+fn type_path_last_segment_ends_with_key(ty: &syn::Type) -> bool {
+  let path = match ty {
+    syn::Type::Path(p) => &p.path,
+    _ => return false,
+  };
+  let Some(seg) = path.segments.last() else {
+    return false;
+  };
+  seg.ident.to_string().ends_with("Key")
 }
 
 /// Collect the operand of a `~` prefix operator.
@@ -265,7 +380,7 @@ fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> Toke
 /// - `~succeed(40)` → `succeed(40)`
 /// - `~raw.parse::<i32>().map_err(|e| ...)` → `raw.parse::<i32>().map_err(|e| ...)`
 /// - `~parse_i32(s).map_error(f).catch(g)` → `parse_i32(s).map_error(f).catch(g)`
-fn collect_tilde_operand(
+pub fn collect_tilde_operand(
   iter: &mut std::iter::Peekable<impl Iterator<Item = TokenTree>>,
 ) -> TokenStream {
   let mut result = Vec::new();
@@ -600,11 +715,11 @@ mod tests {
       use super::*;
 
       #[test]
-      fn desugars_to_let_and_into_bind() {
+      fn desugars_to_let_and_cap_into_bind() {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { k ~ foo ( ) ; 1 }, &path);
         let expected = quote! {
-          let k = (::id_effect::into_bind(foo(), __effect_r).await?) ;
+          let k = (::id_effect::cap_into_bind(foo(), __effect_r).await?) ;
           ::core::result::Result::Ok(1)
         };
         assert_ts_eq!(out, expected);
@@ -620,22 +735,22 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { k ~ foo ( ) }, &path);
         let expected = quote! {
-          ::core::result::Result::Ok(let k = (::id_effect::into_bind(foo(), __effect_r).await?))
+          ::core::result::Result::Ok(let k = (::id_effect::cap_into_bind(foo(), __effect_r).await?))
         };
         assert_ts_eq!(out, expected);
       }
     }
 
-    /// Syntax: prefix `~` only on tail — `into_bind(..., __effect_r)`.
+    /// Syntax: prefix `~` only on tail — `cap_into_bind(..., __effect_r)`.
     mod with_prefix_tilde_on_tail_simple_call {
       use super::*;
 
       #[test]
-      fn expands_tilde_tail_to_into_bind_await_without_ok_wrap() {
+      fn expands_tilde_tail_to_cap_into_bind_await_without_ok_wrap() {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { ~ foo ( ) }, &path);
         let expected = quote! {
-          ::id_effect::into_bind(foo(), __effect_r).await
+          ::id_effect::cap_into_bind(foo(), __effect_r).await
         };
         assert_ts_eq!(out, expected);
       }
@@ -650,7 +765,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { ~ bar :: baz ( ) }, &path);
         let expected = quote! {
-          ::id_effect::into_bind(bar::baz(), __effect_r).await
+          ::id_effect::cap_into_bind(bar::baz(), __effect_r).await
         };
         assert_ts_eq!(out, expected);
       }
@@ -660,7 +775,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { ~ x }, &path);
         let expected = quote! {
-          ::id_effect::into_bind(x, __effect_r).await
+          ::id_effect::cap_into_bind(x, __effect_r).await
         };
         assert_ts_eq!(out, expected);
       }
@@ -678,7 +793,7 @@ mod tests {
           &path,
         );
         let expected = quote! {
-          ::id_effect::into_bind(raw.parse::<i32>().map_err(|e| e), __effect_r).await
+          ::id_effect::cap_into_bind(raw.parse::<i32>().map_err(|e| e), __effect_r).await
         };
         assert_ts_eq!(out, expected);
       }
@@ -693,7 +808,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { ( ~ x , y ) }, &r, &path);
-        let expected = quote! { ((::id_effect::into_bind(x, __effect_r).await?), y) };
+        let expected = quote! { ((::id_effect::cap_into_bind(x, __effect_r).await?), y) };
         assert_ts_eq!(out, expected);
       }
     }
@@ -708,7 +823,7 @@ mod tests {
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { ~ ~ foo ( ) }, &r, &path);
         let expected = quote! {
-          (::id_effect::into_bind((::id_effect::into_bind(foo(), __effect_r).await?), __effect_r).await?)
+          (::id_effect::cap_into_bind((::id_effect::cap_into_bind(foo(), __effect_r).await?), __effect_r).await?)
         };
         assert_ts_eq!(out, expected);
       }
@@ -723,7 +838,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { { ~ a ( ) } }, &r, &path);
-        let expected = quote! { { (::id_effect::into_bind(a(), __effect_r).await?) } };
+        let expected = quote! { { (::id_effect::cap_into_bind(a(), __effect_r).await?) } };
         assert_ts_eq!(out, expected);
       }
 
@@ -732,7 +847,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { ( ~ b ( ) ) }, &r, &path);
-        let expected = quote! { ((::id_effect::into_bind(b(), __effect_r).await?)) };
+        let expected = quote! { ((::id_effect::cap_into_bind(b(), __effect_r).await?)) };
         assert_ts_eq!(out, expected);
       }
 
@@ -741,28 +856,28 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { [ ~ c ( ) ] }, &r, &path);
-        let expected = quote! { [(::id_effect::into_bind(c(), __effect_r).await?)] };
+        let expected = quote! { [(::id_effect::cap_into_bind(c(), __effect_r).await?)] };
         assert_ts_eq!(out, expected);
       }
     }
 
-    /// Permutation: non-`::effect` `path` token tree — `into_bind` uses provided path prefix.
+    /// Permutation: non-`::effect` `path` token tree — `cap_into_bind` uses provided path prefix.
     mod with_custom_crate_path_token_stream {
       use super::*;
 
       #[test]
-      fn uses_path_prefix_in_into_bind() {
+      fn uses_path_prefix_in_cap_into_bind() {
         let path = quote! { ::my_effect };
         let out = expand_bare_body(quote! { ~ z ( ) }, &path);
         let expected = quote! {
-          ::my_effect::into_bind(z(), __effect_r).await
+          ::my_effect::cap_into_bind(z(), __effect_r).await
         };
         assert_ts_eq!(out, expected);
       }
     }
 
     /// Two separate `>` tokens: collection stops after the first closing `>`, leaving `> ()` outside
-    /// the `into_bind` operand (see module docs on turbofish / `>>`).
+    /// the `cap_into_bind` operand (see module docs on turbofish / `>>`).
     mod with_double_angle_bracket_turbofish_limitation {
       use super::*;
 
@@ -771,7 +886,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { ~ v :: < u8 > > ( ) }, &path);
         let expected = quote! {
-          ::core::result::Result::Ok((::id_effect::into_bind(v::<u8>, __effect_r).await?) > ())
+          ::core::result::Result::Ok((::id_effect::cap_into_bind(v::<u8>, __effect_r).await?) > ())
         };
         assert_ts_eq!(out, expected);
       }
@@ -788,7 +903,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { if cond { ~ f ( ) ; } A :: default ( ) }, &path);
         let expected = quote! {
-          if cond { (::id_effect::into_bind(f(), __effect_r).await?) ; } ;
+          if cond { (::id_effect::cap_into_bind(f(), __effect_r).await?) ; } ;
           ::core::result::Result::Ok(A :: default ())
         };
         assert_ts_eq!(out, expected);
@@ -804,8 +919,8 @@ mod tests {
         );
         let expected = quote! {
           if n < 2 {
-            (::id_effect::into_bind(log_warn("msg"), __effect_r).await?) ;
-            (::id_effect::into_bind(fail(err), __effect_r).await?) ;
+            (::id_effect::cap_into_bind(log_warn("msg"), __effect_r).await?) ;
+            (::id_effect::cap_into_bind(fail(err), __effect_r).await?) ;
           } ;
           ::core::result::Result::Ok(A :: default ())
         };
@@ -834,7 +949,7 @@ mod tests {
       }
     }
 
-    /// Same as bare literal tail; closure `r` appears in `into_bind` when `~` is present.
+    /// Same as bare literal tail; closure `r` appears in `cap_into_bind` when `~` is present.
     mod with_tail_having_no_tilde_operator {
       use super::*;
 
@@ -875,7 +990,7 @@ mod tests {
         let r = r_custom();
         let out = expand_closure_body(quote! { ~ g ( ) }, &r, &path);
         let expected = quote! {
-          ::id_effect::into_bind(g(), my_r).await
+          ::id_effect::cap_into_bind(g(), my_r).await
         };
         assert_ts_eq!(out, expected);
       }
@@ -1249,7 +1364,7 @@ mod tests {
         let r = r_env();
         let path = path_effect();
         let out = expand_tilde(quote! { ~ foo ( ) }, &r, &path);
-        let expected = quote! { (::id_effect::into_bind(foo(), r_env).await?) };
+        let expected = quote! { (::id_effect::cap_into_bind(foo(), r_env).await?) };
         assert_ts_eq!(out, expected);
       }
     }
@@ -1265,13 +1380,13 @@ mod tests {
         // `;` is not an operand boundary for `collect_tilde_operand`; `,` at depth 0 is.
         let out = expand_tilde(quote! { ~ f ( ) , ~ g ( ) }, &r, &path);
         let expected = quote! {
-          (::id_effect::into_bind(f(), r_env).await?) , (::id_effect::into_bind(g(), r_env).await?)
+          (::id_effect::cap_into_bind(f(), r_env).await?) , (::id_effect::cap_into_bind(g(), r_env).await?)
         };
         assert_ts_eq!(out, expected);
       }
 
       /// Two `~` separated by `;` inside a brace group — each should expand independently.
-      /// Both `~f()` and `~g()` must become separate `into_bind` calls; the `;` is a
+      /// Both `~f()` and `~g()` must become separate `cap_into_bind` calls; the `;` is a
       /// statement separator, not part of either operand.
       ///
       /// Currently FAILS: `;` is not a stop character in `collect_tilde_operand`, so the
@@ -1282,7 +1397,7 @@ mod tests {
         let path = path_effect();
         let out = expand_tilde(quote! { { ~ f ( ) ; ~ g ( ) } }, &r, &path);
         let expected = quote! {
-          { (::id_effect::into_bind(f(), r_env).await?) ; (::id_effect::into_bind(g(), r_env).await?) }
+          { (::id_effect::cap_into_bind(f(), r_env).await?) ; (::id_effect::cap_into_bind(g(), r_env).await?) }
         };
         assert_ts_eq!(out, expected);
       }
@@ -1297,8 +1412,41 @@ mod tests {
         let r = r_env();
         let path = path_effect();
         let out = expand_tilde(quote! { { ~ a ( ) } }, &r, &path);
-        let expected = quote! { { (::id_effect::into_bind(a(), r_env).await?) } };
+        let expected = quote! { { (::id_effect::cap_into_bind(a(), r_env).await?) } };
         assert_ts_eq!(out, expected);
+      }
+    }
+
+    /// `require!(Key)` inside an effect body desugars to `Needs::<Key>::need(env)`.
+    mod bare_require_in_effect_body {
+      use super::*;
+
+      #[test]
+      fn expands_to_needs_need_with_closure_env() {
+        let path = quote! { ::id_effect };
+        let r = syn::Ident::new("env", proc_macro2::Span::call_site());
+        let out = expand_closure_body(
+          quote! { let n = * require ! ( CounterKey ) ; n + 1 },
+          &r,
+          &path,
+        );
+        let expected = quote! {
+          let n = * ::id_effect::Needs::<CounterKey>::need(env) ;
+          ::core::result::Result::Ok(n + 1)
+        };
+        assert_ts_eq!(out, expected);
+      }
+
+      #[test]
+      fn legacy_two_arg_form_is_compile_error() {
+        let path = quote! { ::id_effect };
+        let r = syn::Ident::new("env", proc_macro2::Span::call_site());
+        let out = expand_tilde(quote! { require ! ( env , CounterKey ) }, &r, &path);
+        let s = out.to_string();
+        assert!(
+          s.contains("compile_error"),
+          "expected compile_error for legacy require!(env, Key), got: {s}"
+        );
       }
     }
 
@@ -1311,7 +1459,7 @@ mod tests {
         let r = r_env();
         let path = path_effect();
         let out = expand_tilde(quote! { ( ~ b ( ) ) }, &r, &path);
-        let expected = quote! { ((::id_effect::into_bind(b(), r_env).await?)) };
+        let expected = quote! { ((::id_effect::cap_into_bind(b(), r_env).await?)) };
         assert_ts_eq!(out, expected);
       }
     }
@@ -1325,7 +1473,7 @@ mod tests {
         let r = r_env();
         let path = path_effect();
         let out = expand_tilde(quote! { [ ~ c ( ) ] }, &r, &path);
-        let expected = quote! { [(::id_effect::into_bind(c(), r_env).await?)] };
+        let expected = quote! { [(::id_effect::cap_into_bind(c(), r_env).await?)] };
         assert_ts_eq!(out, expected);
       }
     }
@@ -1340,7 +1488,7 @@ mod tests {
         let path = path_effect();
         let out = expand_tilde(quote! { { ~ u ( ) , ~ v ( ) } }, &r, &path);
         let expected = quote! {
-          { (::id_effect::into_bind(u(), r_env).await?) , (::id_effect::into_bind(v(), r_env).await?) }
+          { (::id_effect::cap_into_bind(u(), r_env).await?) , (::id_effect::cap_into_bind(v(), r_env).await?) }
         };
         assert_ts_eq!(out, expected);
       }

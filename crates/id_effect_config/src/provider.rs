@@ -5,27 +5,20 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::future::ready;
 use std::sync::Arc;
 
 use ::figment::Figment;
 use ::figment::value::{Num, Value};
 
-use ::id_effect::{BoxFuture, Get, Here, IntoBind};
-
 use crate::error::ConfigError;
 
-// ── Service tag, struct, and NeedsConfigProvider ──────────────────────────────
-
-::id_effect::service_key!(
-  /// Tag for [`ConfigProviderService`] in an [`id_effect::Context`] stack.
-  pub struct ConfigProviderKey
-);
+// ── Capability key and service wrapper ───────────────────────────────────────
 
 /// Injectable wrapper around an `Arc<dyn ConfigProvider>`.
 ///
-/// Extract it with `Get::<ConfigProviderKey, Here>::get(r)` inside an `effect!`
-/// body, or use `~ConfigProviderService` for the async variant.
+/// Extract it with `require!(ConfigProviderKey)` inside an `effect!` body,
+/// or `Needs::<ConfigProviderKey>::need(r)` elsewhere.
+#[::id_effect::capability(ConfigProviderService)]
 #[derive(Clone)]
 pub struct ConfigProviderService(pub Arc<dyn ConfigProvider>);
 
@@ -37,21 +30,7 @@ impl fmt::Debug for ConfigProviderService {
   }
 }
 
-impl<'a, R> IntoBind<'a, R, ConfigProviderService, ConfigError> for ConfigProviderService
-where
-  R: Get<ConfigProviderKey, Here, Target = ConfigProviderService> + 'a,
-{
-  fn into_bind(self, r: &'a mut R) -> BoxFuture<'a, Result<ConfigProviderService, ConfigError>> {
-    Box::pin(ready(Ok(Get::<ConfigProviderKey, Here>::get(r).clone())))
-  }
-}
-
-/// Supertrait alias — write `R: NeedsConfigProvider` instead of the full `Get<…>` bound.
-pub trait NeedsConfigProvider:
-  Get<ConfigProviderKey, Here, Target = ConfigProviderService>
-{
-}
-impl<R: Get<ConfigProviderKey, Here, Target = ConfigProviderService>> NeedsConfigProvider for R {}
+pub use self::ConfigProviderServiceKey as ConfigProviderKey;
 
 /// Options aligned with Effect `ConfigProvider.fromEnv` (`pathDelim`, `seqDelim`).
 #[derive(Clone, Debug)]

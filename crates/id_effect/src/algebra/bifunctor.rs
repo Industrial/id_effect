@@ -390,6 +390,32 @@ mod tests {
     }
   }
 
+  mod result_module_smoke {
+    use super::*;
+
+    #[test]
+    fn result_bimap_and_swaps() {
+      assert_eq!(
+        result::bimap(Ok::<i32, &str>(1), |x| x + 1, |e: &str| e.len()),
+        Ok(2)
+      );
+      assert_eq!(
+        result::bimap(Err::<i32, &str>("ab"), |x| x + 1, |e: &str| e.len()),
+        Err(2)
+      );
+      assert_eq!(
+        result::map_second(Err::<i32, &str>("ab"), |s| s.len()),
+        Err(2)
+      );
+      assert_eq!(result::swap(Ok::<i32, &str>(3)), Err(3));
+      assert_eq!(result::map_first(Ok::<i32, &str>(1), |x| x + 1), Ok(2));
+      assert_eq!(tuple::map_first((1, 2), |x| x + 1), (2, 2));
+      assert_eq!(tuple::map_second((1, 2), |y| y * 2), (1, 4));
+      assert_eq!(tuple::bimap((1, 2), |x| x + 1, |y| y * 2), (2, 4));
+      assert_eq!(tuple::swap((1, 2)), (2, 1));
+    }
+  }
+
   mod laws {
     use super::*;
 

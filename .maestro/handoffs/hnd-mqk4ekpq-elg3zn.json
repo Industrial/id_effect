@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4ekpq-elg3zn",
+	"task_id": "tsk-mqk3vbj0-zkkim4",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:17:52.862Z",
+	"agent_id": "composer-subagent",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-data.md",
+	"to_agent": "cli"
+}

@@ -297,12 +297,23 @@ mod tests {
     let rec = make_record(crate::LogLevel::Info, "msg");
     assert!(c1.emit_all(&rec).is_ok());
     assert!(c2.emit_all(&rec).is_ok());
+    assert!(c1.emit(&rec).is_ok());
+  }
+
+  #[test]
+  fn json_backend_empty_spans_and_fields_omit_serialization() {
+    let buf: Vec<u8> = Vec::new();
+    let backend = JsonLogBackend::new(buf);
+    let rec = make_record(crate::LogLevel::Info, "plain");
+    backend.emit(&rec).unwrap();
+    let out = String::from_utf8(backend.writer_arc().lock().unwrap().clone()).unwrap();
+    assert!(!out.contains("spans"), "output: {out}");
+    assert!(out.contains("plain"), "output: {out}");
   }
 
   #[test]
   fn composite_add_and_emit_all() {
     let buf: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
-    let buf2 = buf.clone();
     struct Capturing(Arc<Mutex<Vec<String>>>);
     impl LogBackend for Capturing {
       fn emit(&self, rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
@@ -311,10 +322,11 @@ mod tests {
       }
     }
     let composite = CompositeLogBackend::new();
-    composite.add(Arc::new(Capturing(buf2))).unwrap();
+    composite.add(Arc::new(Capturing(buf.clone()))).unwrap();
     let rec = make_record(crate::LogLevel::Info, "hello");
+    assert!(composite.emit_all(&rec).is_ok());
     composite.emit(&rec).unwrap();
-    assert_eq!(*buf.lock().unwrap(), vec!["hello"]);
+    assert_eq!(*buf.lock().unwrap(), vec!["hello", "hello"]);
   }
 
   #[test]
@@ -344,6 +356,15 @@ mod tests {
     assert!(composite.remove(99).is_err());
     assert!(composite.remove(0).is_ok());
     assert!(composite.remove(0).is_err());
+  }
+
+  #[test]
+  fn tracing_backend_trace_with_spans_and_annotations() {
+    let backend = TracingLogBackend;
+    let mut rec = make_record(crate::LogLevel::Trace, "trace-msg");
+    rec.annotations.insert("key".into(), "val".into());
+    rec.spans = vec!["outer".into(), "inner".into()];
+    backend.emit(&rec).unwrap();
   }
 
   #[test]
@@ -519,5 +540,34 @@ mod tests {
         .contains("structured write fail"),
       "unexpected error message"
     );
+  }
+  #[test]
+  fn json_backend_writer_arc_is_shared() {
+    let backend = JsonLogBackend::new(Vec::<u8>::new());
+    let arc1 = backend.writer_arc();
+    let arc2 = backend.writer_arc();
+    assert!(Arc::ptr_eq(&arc1, &arc2));
+  }
+
+  #[test]
+  fn structured_backend_writer_arc_is_shared() {
+    let backend = StructuredLogBackend::new(Vec::<u8>::new());
+    let arc1 = backend.writer_arc();
+    let arc2 = backend.writer_arc();
+    assert!(Arc::ptr_eq(&arc1, &arc2));
+  }
+
+  #[test]
+  fn composite_emit_all_propagates_backend_error() {
+    struct Fail;
+    impl LogBackend for Fail {
+      fn emit(&self, _rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+        Err(EffectLoggerError::Sink("fail".into()))
+      }
+    }
+    let composite = CompositeLogBackend::new();
+    composite.add(Arc::new(Fail)).unwrap();
+    let rec = make_record(crate::LogLevel::Info, "x");
+    assert!(composite.emit_all(&rec).is_err());
   }
 }

@@ -13,7 +13,7 @@ pub enum EffectKind {
   /// `effect!(|env: &mut R| { ... })` or `effect!(move |env: &mut R| { ... })` — do-notation; outer closure is always `move` in the expansion.
   DoNotation {
     param: Ident,
-    env_ty: Box<Type>,
+    env_ty: Option<Box<Type>>,
     body: TokenStream,
   },
   /// `effect! { ... }` — do-notation with implicit `__effect_r: &mut ()`.
@@ -67,7 +67,7 @@ pub fn parse_effect_input(input: TokenStream) -> Result<EffectKind> {
     }
     return Ok(EffectKind::DoNotation {
       param,
-      env_ty: Box::new(env_ty),
+      env_ty: env_ty.map(Box::new),
       body,
     });
   }
@@ -121,9 +121,10 @@ fn peek_pipe(iter: &mut std::iter::Peekable<impl Iterator<Item = TokenTree>>) ->
   matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '|')
 }
 
+#[allow(clippy::collapsible_if)]
 fn parse_closure_param(
   iter: &mut std::iter::Peekable<impl Iterator<Item = TokenTree>>,
-) -> Result<(Ident, Type)> {
+) -> Result<(Ident, Option<Type>)> {
   match iter.next() {
     Some(TokenTree::Punct(p)) if p.as_char() == '|' => {}
     Some(other) => {
@@ -154,10 +155,15 @@ fn parse_closure_param(
     }
   }
 
+  if between.len() == 1 {
+    if let TokenTree::Ident(name) = &between[0] {
+      return Ok((name.clone(), None));
+    }
+  }
   let param_stream = TokenStream::from_iter(between);
   let param_and_ty: ClosureParam = syn::parse2(param_stream)?;
   let env_ty = strip_mut_ref_env_type(&param_and_ty.ty)?;
-  Ok((param_and_ty.name, env_ty))
+  Ok((param_and_ty.name, Some(env_ty)))
 }
 
 struct ClosureParam {
@@ -247,6 +253,52 @@ mod tests {
           parse_effect_input(ts).unwrap(),
           EffectKind::Bare { .. }
         ));
+      }
+    }
+
+    mod additional_error_paths {
+      use super::*;
+
+      #[test]
+      fn unclosed_pipe_in_params_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32 { 1 } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn non_mut_env_type_errors() {
+        let ts: TokenStream = quote! { |r: u32| { r } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn unexpected_tokens_after_closure_body_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32| { r } extra };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn move_without_closure_errors() {
+        let ts: TokenStream = quote! { move { 1 } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn pipe_without_brace_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32| };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn single_ident_param_without_type_works() {
+        let ts: TokenStream = quote! { |r| { r } };
+        match parse_effect_input(ts).unwrap() {
+          EffectKind::DoNotation { param, env_ty, .. } => {
+            assert_eq!(param.to_string(), "r");
+            assert!(env_ty.is_none());
+          }
+          _ => panic!("expected do notation"),
+        }
       }
     }
 

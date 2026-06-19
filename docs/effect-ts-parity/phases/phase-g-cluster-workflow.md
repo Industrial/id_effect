@@ -120,6 +120,19 @@ iep-g-011 → iep-g-020 → iep-g-021 → iep-g-022 → (optional) iep-g-030 →
 
 ---
 
+## Deliverables (implemented in-tree)
+
+| Slug | Artifact |
+|------|-----------|
+| `iep-g-010` | [`phase-g/iep-g-010-charter.md`](./phase-g/iep-g-010-charter.md) |
+| `iep-g-011` | [`phase-g/adr-iep-g-011-temporal-vs-saga-vs-out-of-scope.md`](./phase-g/adr-iep-g-011-temporal-vs-saga-vs-out-of-scope.md) |
+| `iep-g-012` | [`phase-g/iep-g-012-security-replay.md`](./phase-g/iep-g-012-security-replay.md) |
+| `iep-g-020`–`021` | Crate [`id_effect_workflow`](../../../crates/id_effect_workflow) (SQLite append-only log + resume; restart integration test) |
+| `iep-g-022` | [`phase-g/iep-g-022-retrospective.md`](./phase-g/iep-g-022-retrospective.md) |
+| `iep-g-030`–`032` | Experimental **0.1.x** API + mdBook chapter [`ch07-12-durable-workflow.md`](../../../crates/id_effect/book/src/part2/ch07-12-durable-workflow.md); stress test gated `#[ignore]` per `TESTING.md` |
+
+---
+
 ## Beads import recipe
 
 1. Keep **`EPIC_G`** at **P4** until leadership promotes workflow work.

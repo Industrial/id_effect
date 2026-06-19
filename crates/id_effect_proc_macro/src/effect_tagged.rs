@@ -49,3 +49,25 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
   }
   .into()
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use syn::{Fields, ItemStruct};
+
+  #[test]
+  fn tag_arg_parses_string_literal() {
+    let arg = syn::parse_str::<TagArg>(r#""my-tag""#).expect("parse");
+    assert_eq!(arg.0.value(), "my-tag");
+  }
+
+  #[test]
+  fn named_fields_accepted_by_parser() {
+    let s: ItemStruct = syn::parse_quote!(
+      struct Foo {
+        x: u32,
+      }
+    );
+    assert!(matches!(s.fields, Fields::Named(_)));
+  }
+}

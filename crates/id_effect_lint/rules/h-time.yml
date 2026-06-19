@@ -61,7 +61,7 @@
     Inject time through the `Clock` service.
   note: |
     BAD:  let now = SystemTime::now();
-    GOOD: fn fetch_expiry() -> Effect<DateTime, ClockError, impl NeedsClock> {
+    GOOD: fn fetch_expiry() -> Effect<DateTime, ClockError, Needs<ClockKey>> {
               effect! { let now = ~ ClockKey; … }
           }
   rule:

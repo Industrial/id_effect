@@ -1,0 +1,42 @@
+{
+	"schemaVersion": 2,
+	"id": "c-96c332",
+	"taskId": "tsk-mqk3uq7l-3jl1bb",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:32.465Z",
+	"lockedAt": "2026-06-18T23:25:32.465Z",
+	"intent": "Upstream version bump",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-d53fe9",
+			"text": "Upstream Effect.ts CHECKLIST automated in CI or documented runner",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-cdd5fc",
+			"text": "Parity dashboard doc in docs/platform/",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-2f0b8d",
+			"text": "UPSTREAM-VERSION bump process documented",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3tuel-6cy7au",
+	"riskClass": "low"
+}

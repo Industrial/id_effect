@@ -5,7 +5,7 @@
 //!
 //! - Axum already drives request handling as `async` futures on Tokio.
 //! - Your domain stays in `Effect<A, E, R>` with environment `R` (often clone-cheap state with
-//!   `Arc` fields, or a [`id_effect::Context`] stack).
+//!   `Arc` fields, or an [`id_effect::Env`] with `caps!(…)`).
 //! - This crate **bridges** `State<R>` → `&mut R` for one build step, then runs the effect with
 //!   [`id_effect_tokio::run_async`] so pending effect steps compose with Tokio I/O.
 //!
@@ -67,15 +67,33 @@
 #![allow(effect_no_async_fn_application)]
 
 pub mod channel_bridge;
+pub mod health;
 pub mod json;
 pub mod routing;
 
 pub use channel_bridge::{exchange, exchange_into_response};
+pub use health::{
+  ReadinessCheck, ReadinessState, health, health_router, observability_routes,
+  observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
+};
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use id_effect::Effect;
+use id_effect::{Effect, Env};
 use id_effect_tokio::run_async;
+
+/// Run `build` with capability [`State<Env>`](axum::extract::State).
+///
+/// Build router state with [`id_effect::build_env`] or bootstrap via [`id_effect::run_with`].
+#[inline]
+pub async fn run_with_caps<A, E, F>(State(env): State<Env>, build: F) -> Result<A, E>
+where
+  A: 'static,
+  E: 'static,
+  F: FnOnce(&mut Env) -> Effect<A, E, Env>,
+{
+  run_with_env(env, build).await
+}
 
 /// Run `build(&mut env)` to obtain an effect, then drive it to completion with the **same** `env`.
 ///
@@ -207,11 +225,11 @@ mod tests {
       .route(
         "/",
         axum::routing::get(|State(s): State<St>, req: Request<Body>| async move {
-          let ch = QueueChannel::<HttpResponse<Bytes>, Request<Bytes>, ()>::from_queue_and_map(
+          let ch = QueueChannel::<HttpResponse<Bytes>, Request<Bytes>, Env>::from_queue_and_map(
             s.q.clone(),
             |req| HttpResponse::new(req.into_body()),
           );
-          exchange_into_response((), ch, req).await
+          exchange_into_response(Env::new(), ch, req).await
         }),
       )
       .with_state(St { q });
@@ -231,21 +249,63 @@ mod tests {
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-  async fn execute_handler() {
+  async fn fiber_scoped_cap_override_per_request() {
+    use id_effect::{build_env, provide, succeed};
+
+    #[::id_effect::capability(u32)]
+    #[expect(dead_code)]
+    struct RequestId;
+
+    #[derive(::id_effect::ProviderSpecDerive)]
+    #[provides(RequestIdKey)]
+    struct RequestIdDefault;
+
+    impl RequestIdDefault {
+      #[allow(clippy::new_ret_no_self)]
+      fn new() -> u32 {
+        0
+      }
+    }
+
+    let base = build_env([provide!(RequestIdDefault)]).expect("env");
+
     let app = Router::new()
       .route(
-        "/x",
-        axum::routing::get(|st: State<AppState>| async move {
-          execute(st, |_env| {
-            succeed::<_, std::convert::Infallible, _>("42".to_string())
-          })
-          .await
+        "/",
+        crate::routing::get(|env: &mut Env| {
+          env.insert::<RequestIdKey>(42u32);
+          succeed::<_, std::convert::Infallible, _>(env.get::<RequestIdKey>().to_string())
         }),
       )
-      .with_state(AppState::default());
+      .with_state(base);
 
-    let req = Request::builder().uri("/x").body(Body::empty()).unwrap();
+    let req = Request::builder().uri("/").body(Body::empty()).unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let bytes = http_body_util::BodyExt::collect(res.into_body())
+      .await
+      .unwrap()
+      .to_bytes();
+    assert_eq!(&bytes[..], b"42");
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn run_with_env_and_caps_helpers() {
+    #[derive(Clone, Default)]
+    struct St;
+    let out = run_with_env(St, |s: &mut St| {
+      let _ = s;
+      succeed::<_, std::convert::Infallible, _>(11_u32)
+    })
+    .await
+    .expect("run_with_env");
+    assert_eq!(out, 11);
+    let env = id_effect::Env::new();
+    let out2 = run_with_caps(axum::extract::State(env), |_e: &mut id_effect::Env| {
+      succeed::<_, std::convert::Infallible, _>(22_u32)
+    })
+    .await
+    .expect("run_with_caps");
+    assert_eq!(out2, 22);
   }
 }

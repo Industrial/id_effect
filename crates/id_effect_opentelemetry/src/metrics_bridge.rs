@@ -82,12 +82,8 @@ impl DurationHistogramBridge {
   }
 }
 
-/// Test helper: meter provider with periodic export to memory.
-///
-/// This is primarily for tests and local spikes; it is not referenced from non-test library code,
-/// so it may trigger `dead_code` in `cargo check` of the library target alone.
-#[allow(dead_code)]
-pub fn test_meter_provider_with_in_memory_exporter(
+/// Builds an [`SdkMeterProvider`] that exports metrics to an in-memory buffer (tests and spikes).
+pub fn sdk_meter_provider_with_in_memory_exporter(
   exporter: &InMemoryMetricExporter,
 ) -> SdkMeterProvider {
   let reader = PeriodicReader::builder(exporter.clone()).build();
@@ -106,7 +102,7 @@ mod tests {
     #[test]
     fn apply_updates_local_and_emits_otel_metric_after_flush() {
       let exporter = InMemoryMetricExporter::default();
-      let mp = test_meter_provider_with_in_memory_exporter(&exporter);
+      let mp = sdk_meter_provider_with_in_memory_exporter(&exporter);
       let meter = mp.meter("test");
       let local = Metric::counter("requests", Vec::<(String, String)>::new());
       let bridge = CounterBridge::new(local.clone(), &meter, "requests_otel");
@@ -128,7 +124,7 @@ mod tests {
     #[test]
     fn apply_records_on_both_sides() {
       let exporter = InMemoryMetricExporter::default();
-      let mp = test_meter_provider_with_in_memory_exporter(&exporter);
+      let mp = sdk_meter_provider_with_in_memory_exporter(&exporter);
       let meter = mp.meter("test");
       let local = Metric::histogram("latency", Vec::<(String, String)>::new());
       let bridge = DurationHistogramBridge::new(local.clone(), &meter, "latency_ms");
@@ -148,7 +144,7 @@ mod tests {
     #[test]
     fn forwards_tag_pairs_as_otel_attributes() {
       let exporter = InMemoryMetricExporter::default();
-      let mp = test_meter_provider_with_in_memory_exporter(&exporter);
+      let mp = sdk_meter_provider_with_in_memory_exporter(&exporter);
       let meter = mp.meter("test");
       let pairs = vec![("svc".to_string(), "api".to_string())];
       let local = Metric::counter("c", pairs);

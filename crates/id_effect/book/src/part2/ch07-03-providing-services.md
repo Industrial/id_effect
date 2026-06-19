@@ -1,89 +1,74 @@
-# Providing Services via Layers
+# Providing Services — `ProviderSpec` Implementations
 
-You have a trait. You have an implementation. Now you need a Layer that wires them together.
+You have a trait and an implementation. A provider wires the impl into [`Env`](../../src/capability/env.rs).
 
-## The Minimal Service Layer
+## Production provider
 
 ```rust
-use id_effect::{LayerFn, tagged, effect};
+use id_effect::{Env, ProviderSpecDerive, caps, effect, provide, run_with};
+use std::sync::Arc;
 
-// The production implementation
-struct PostgresUserRepository {
-    pool: Pool,
-}
+struct PostgresUserRepository { pool: Pool }
 
 impl UserRepository for PostgresUserRepository {
     fn get_user(&self, id: u64) -> Effect<User, DbError, ()> {
-        effect! {
-            let row = ~ query(&self.pool, "SELECT * FROM users WHERE id = $1", id);
-            User::from_row(row)
-        }
+        effect! { /* query via self.pool */ }
     }
-    // ...
 }
 
-// The layer that builds the implementation from the database pool
-let user_repo_layer = LayerFn::new(|env: &Tagged<DatabaseKey>| {
-    effect! {
-        let repo = PostgresUserRepository { pool: env.value().clone() };
-        tagged::<UserRepositoryTag>(Arc::new(repo) as Arc<dyn UserRepository>)
+#[derive(ProviderSpecDerive)]
+#[provides(UserRepoKey)]
+struct UserRepoLive;
+
+impl UserRepoLive {
+    fn new(deps: &Env) -> Arc<dyn UserRepository> {
+        let pool = deps.get::<DatabaseKey>().clone();
+        Arc::new(PostgresUserRepository { pool })
     }
-});
+}
 ```
 
-The layer takes `Tagged<DatabaseKey>` (the database pool) and produces `Tagged<UserRepositoryTag>` (the repository wrapped as `Arc<dyn UserRepository>`).
-
-## Composition with Other Layers
-
-The repository layer needs the database. Wire them:
+Register alongside dependencies:
 
 ```rust
-let app_layer = config_layer
-    .stack(db_layer)
-    .stack(user_repo_layer);  // db_layer output feeds into user_repo_layer
+run_with(
+    [provide!(ConfigLive), provide!(DatabaseLive), provide!(UserRepoLive)],
+    get_user_profile(42),
+)?;
 ```
 
-Now `app_layer` produces an environment containing `ConfigKey`, `DatabaseKey`, and `UserRepositoryTag` — everything `get_user_profile` needs.
+## Mock provider
 
-## Test Layer with Mock
+[`provide!`](../../src/capability/provider.rs) takes a **type** (`provide!(MockUserRepoLive)`), not a value. For custom fixture data, insert into `Env` directly:
 
 ```rust
-struct MockUserRepository {
-    users: HashMap<u64, User>,
-}
-
-impl UserRepository for MockUserRepository {
-    fn get_user(&self, id: u64) -> Effect<User, DbError, ()> {
-        match self.users.get(&id) {
-            Some(u) => succeed(u.clone()),
-            None    => fail(DbError::NotFound),
-        }
-    }
-    // ...
-}
-
-let test_repo_layer = LayerFn::new(|_: &Nil| {
-    let repo = MockUserRepository {
-        users: [(1, alice()), (2, bob())].into(),
-    };
-    succeed(tagged::<UserRepositoryTag>(Arc::new(repo) as Arc<dyn UserRepository>))
-});
+let mut env = Env::new();
+env.insert::<UserRepoKey>(Arc::new(MockUserRepository { users: test_data() }));
+run_blocking(get_user(1), env)?;
 ```
 
-The test layer needs nothing (no real database), produces the same `Tagged<UserRepositoryTag>`, and can be stacked in place of the production layer.
+For a fixed zero-config mock, use a unit struct:
 
-## The Swap
+```rust
+#[derive(ProviderSpecDerive)]
+#[provides(UserRepoKey)]
+struct MockUserRepoLive;
+
+impl MockUserRepoLive {
+    fn new() -> Arc<dyn UserRepository> {
+        Arc::new(MockUserRepository::default_fixture())
+    }
+}
+```
+
+Same `UserRepoKey`, no real database — swap at the edge:
 
 ```rust
 // Production
-run_blocking(my_app().provide_layer(
-    config_layer.stack(db_layer).stack(user_repo_layer)
-));
+run_with([provide!(DatabaseLive), provide!(UserRepoLive)], app())?;
 
-// Test
-run_test(my_app().provide_layer(
-    test_repo_layer  // no config or db needed
-));
+// Test (fixed fixture)
+run_with([provide!(MockUserRepoLive)], get_user(1))?;
 ```
 
-The application code doesn't change. Only the layer stack changes. The type system ensures both stacks satisfy the effect's requirements.
+Application code using `caps!(UserRepoKey)` and `~UserRepoKey` stays identical.

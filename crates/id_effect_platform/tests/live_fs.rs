@@ -47,3 +47,13 @@ async fn live_create_dir_all_nested_then_write_under() {
   let got = run_async(fs.read(&file), ()).await.expect("read");
   assert_eq!(got, b"x");
 }
+
+#[tokio::test]
+async fn live_exists_reflects_file_presence() {
+  let dir = tempfile::tempdir().expect("tempdir");
+  let path = dir.path().join("probe.txt");
+  let fs = LiveFileSystem::new();
+  assert!(!run_async(fs.exists(&path), ()).await.expect("exists"));
+  run_async(fs.write(&path, b"x"), ()).await.expect("write");
+  assert!(run_async(fs.exists(&path), ()).await.expect("exists"));
+}

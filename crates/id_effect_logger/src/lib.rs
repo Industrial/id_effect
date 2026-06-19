@@ -2,12 +2,12 @@
 //!
 //! # Service/Tag pattern
 //!
-//! Extract the logger from the environment once with `~EffectLogger`, then call
+//! Extract the logger from the environment once with `require!(EffectLoggerKey)`, then call
 //! its methods as regular effectful steps:
 //!
 //! ```ignore
 //! effect!(|_r: &mut R| {
-//!     let logger = ~EffectLogger;
+//!     let logger = require!(EffectLoggerKey);
 //!     ~logger.warn("something suspicious");
 //!     ~logger.info("all good");
 //!     result
@@ -15,10 +15,10 @@
 //! ```
 //!
 //! The environment `R` only needs to satisfy
-//! `R: Get<EffectLogKey, Here, Target = EffectLogger>`.  The caller composes
+//! `R: Get<EffectLoggerKey, Here, Target = EffectLogger>`.  The caller composes
 //! layers at the top of the program. For a minimal stack that only provides
 //! [`EffectLogger`], build `Context::new(Cons(layer_effect_logger().build().expect(\"…\"), Nil))`
-//! or `Context::new(Cons(Service::<EffectLogKey, _>::new(EffectLogger), Nil))` at the program edge.
+//! or `Context::new(Cons(Service::<EffectLoggerKey, _>::new(EffectLogger), Nil))` at the program edge.
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
@@ -28,39 +28,24 @@
 use core::convert::Infallible;
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::future::ready;
 use std::sync::Arc;
 
-use ::id_effect::{BoxFuture, Effect, EffectHashMap, FiberRef, Get, Here, IntoBind, box_future};
+use ::id_effect::{Effect, EffectHashMap, FiberRef, box_future};
 
 mod pipeline;
+mod providers;
 
 pub use pipeline::{
   CompositeLogBackend, JsonLogBackend, LogBackend, LogRecord, Logger, StructuredLogBackend,
   TracingLogBackend,
 };
 
+pub use providers::{
+  EffectLogCompositeKey, EffectLogMetadataKey, EffectLoggerLive, LogMetadataLive,
+  provide_composite_logger, provide_minimum_log_level,
+};
+
 use pipeline::TracingLogBackend as TracingSink;
-
-/// Supertrait alias for `Get<EffectLogKey, Here, Target = EffectLogger>`.
-///
-/// Use `R: NeedsEffectLogger` in `where` clauses instead of the full bound:
-///
-/// ```ignore
-/// fn my_fn<R: NeedsEffectLogger + 'static>(...) -> Effect<..., R> { ... }
-/// ```
-pub trait NeedsEffectLogger: Get<EffectLogKey, Here, Target = EffectLogger> {}
-impl<R: Get<EffectLogKey, Here, Target = EffectLogger>> NeedsEffectLogger for R {}
-
-id_effect::service_key!(
-  /// Tag for [`EffectLogger`] in an [`id_effect::Context`] stack.
-  pub struct EffectLogKey
-);
-
-id_effect::service_key!(
-  /// Tag for the fiber-local minimum [`LogLevel`] used by [`EffectLogger::log`].
-  pub struct EffectLogMinLevelKey
-);
 
 thread_local! {
   static MIN_LOG_LEVEL_FIBER_REF: RefCell<Option<FiberRef<LogLevel>>> = const { RefCell::new(None) };
@@ -130,13 +115,18 @@ fn test_clear_all_logger_tls() {
   test_clear_log_metadata_fiber_refs();
 }
 
-/// Log sink for use as [`id_effect::Service<EffectLogKey, Self>`](id_effect::Service); forwards to [`tracing`].
+/// Log sink registered as [`EffectLoggerKey`](EffectLoggerKey) via capability DI; forwards to [`tracing`].
 ///
-/// Extracted from the environment with `~EffectLogger` inside [`id_effect::effect!`].
+/// Extracted from the environment with `require!(EffectLoggerKey)` inside [`id_effect::effect!`].
 /// After extraction its methods return `Effect<(), EffectLoggerError, R>` and
 /// are themselves awaited with `~`.
+#[::id_effect::capability(EffectLogger)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLogger;
+
+/// Fiber-local minimum log level installed by [`provide_minimum_log_level`].
+#[::id_effect::capability(FiberRef<LogLevel>)]
+pub struct EffectLogMinLevel;
 
 /// Errors that a log sink may produce.
 ///
@@ -281,7 +271,7 @@ impl EffectLogger {
   /// to [`tracing`].  The environment `R` is ignored — the logger is
   /// self-contained after extraction.
   ///
-  /// When [`layer_minimum_log_level`] has been built on this thread, messages below the current
+  /// When [`provide_minimum_log_level`] has been built on this thread, messages below the current
   /// fiber’s minimum [`LogLevel`] (from that [`FiberRef`]) are dropped without calling [`tracing`].
   ///
   /// `msg` may be a `&'static str`, `String`, or other `Into<Cow<'static, str>>`.
@@ -399,85 +389,6 @@ impl EffectLogger {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Service extraction: `~EffectLogger` inside `effect!`
-// ---------------------------------------------------------------------------
-
-/// Implementing [`IntoBind`] for [`EffectLogger`] makes `~EffectLogger` valid
-/// inside any `effect!` whose environment `R` holds an `EffectLogger` under
-/// [`EffectLogKey`].  The zero-sized struct acts as its own "request token":
-/// passing it to `~` copies the concrete value out of `R` and binds it as a
-/// local variable.
-impl<'a, R> IntoBind<'a, R, EffectLogger, EffectLoggerError> for EffectLogger
-where
-  R: Get<EffectLogKey, Here, Target = EffectLogger> + 'a,
-{
-  fn into_bind(self, r: &'a mut R) -> BoxFuture<'a, Result<EffectLogger, EffectLoggerError>> {
-    Box::pin(ready(Ok(*Get::<EffectLogKey, Here>::get(r))))
-  }
-}
-
-/// [`id_effect::layer_service`] constructor for [`EffectLogger`].
-#[inline]
-pub fn layer_effect_logger() -> id_effect::layer::LayerFn<
-  impl Fn() -> Result<id_effect::Service<EffectLogKey, EffectLogger>, Infallible>,
-> {
-  id_effect::layer_service(EffectLogger)
-}
-
-/// Layer that allocates a [`FiberRef`]`<`[`LogLevel`]`>` (default `initial`) and registers it in a
-/// thread-local slot consulted by [`EffectLogger::log`].
-#[inline]
-pub fn layer_minimum_log_level(
-  initial: LogLevel,
-) -> id_effect::layer::LayerEffect<
-  id_effect::Service<EffectLogMinLevelKey, FiberRef<LogLevel>>,
-  (),
-  (),
-> {
-  id_effect::layer::effect(FiberRef::make(move || initial).flat_map(|fr| {
-    Effect::new(move |_r: &mut ()| {
-      install_min_log_level_fiber_ref(fr.clone());
-      Ok(id_effect::service::<EffectLogMinLevelKey, _>(fr))
-    })
-  }))
-}
-
-/// Layer: install a [`CompositeLogBackend`] on this thread so [`EffectLogger::log`] fans out to all
-/// registered [`LogBackend`]s (see [`Logger::add`], [`Logger::replace`], [`Logger::remove`]).
-#[inline]
-pub fn layer_composite_logger(
-  composite: Arc<CompositeLogBackend>,
-) -> id_effect::layer::LayerEffect<(), (), ()> {
-  let c = composite.clone();
-  id_effect::layer::effect(Effect::new(move |_r: &mut ()| {
-    install_composite_log_backend(c.clone());
-    Ok(())
-  }))
-}
-
-/// Layer: allocate fiber-local annotation and span-stack [`FiberRef`]s used by [`annotate_logs`] and
-/// [`with_log_span`].
-#[inline]
-pub fn layer_log_metadata() -> id_effect::layer::LayerEffect<(), (), ()> {
-  use ::id_effect::collections::hash_map;
-  let eff = FiberRef::make_with(
-    hash_map::empty::<String, String>,
-    |m| m.clone(),
-    |p, _c| p.clone(),
-  )
-  .flat_map(|ann| {
-    FiberRef::make_with(Vec::<String>::new, |v| v.clone(), |p, _c| p.clone()).flat_map(move |sp| {
-      Effect::new(move |_r: &mut ()| {
-        install_log_annotations_fiber_ref(ann.clone());
-        install_log_spans_fiber_ref(sp.clone());
-        Ok(())
-      })
-    })
-  });
-  id_effect::layer::effect(eff)
-}
-
 /// Run `inner` with `key=value` merged into the fiber-local annotation map (restored afterward).
 pub fn annotate_logs<A, E, R>(
   key: impl Into<String> + Send + 'static,
@@ -532,31 +443,28 @@ where
 
 #[cfg(test)]
 mod tests {
+  use ::id_effect::Needs;
   use rstest::rstest;
 
   use super::*;
-  use ::id_effect::{Cons, Context, Layer, Nil, Service, run_blocking};
+  use crate::{EffectLoggerLive, provide_minimum_log_level};
+  use ::id_effect::{Env, build_env, provide, run_blocking};
 
   // ========== Fixtures ==========
 
-  type LogCtx = Context<Cons<Service<EffectLogKey, EffectLogger>, Nil>>;
-
-  type LogCtxMin = Context<
-    Cons<
-      Service<EffectLogKey, EffectLogger>,
-      Cons<Service<EffectLogMinLevelKey, FiberRef<LogLevel>>, Nil>,
-    >,
-  >;
+  type LogCtx = Env;
 
   fn test_ctx() -> LogCtx {
-    Context::new(Cons(Service::<EffectLogKey, _>::new(EffectLogger), Nil))
+    build_env([provide!(EffectLoggerLive)]).expect("logger env")
   }
 
-  fn test_ctx_with_min(initial: LogLevel) -> LogCtxMin {
+  fn test_ctx_with_min(initial: LogLevel) -> Env {
     test_clear_all_logger_tls();
-    let logger = layer_effect_logger().build().expect("logger layer");
-    let min = layer_minimum_log_level(initial).build().expect("min layer");
-    Context::new(Cons(logger, Cons(min, Nil)))
+    build_env([
+      provide!(EffectLoggerLive),
+      provide_minimum_log_level(initial),
+    ])
+    .expect("logger env with min level")
   }
 
   fn init_subscriber() {
@@ -600,9 +508,9 @@ mod tests {
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
       let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = ctx.0.1.0.value.clone();
+      let fr = Needs::<EffectLogMinLevelKey>::need(&ctx).clone();
       run_blocking(fr.set(LogLevel::Warn), ()).expect("set min");
-      run_blocking(EffectLogger.info::<LogCtxMin>("filtered-info"), ctx).expect("log");
+      run_blocking(EffectLogger.info::<Env>("filtered-info"), ctx).expect("log");
 
       let got = levels.lock().expect("capture");
       assert!(
@@ -618,8 +526,8 @@ mod tests {
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
       let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = ctx.0.1.0.value.clone();
-      let inner = EffectLogger.info::<LogCtxMin>("inside-scope");
+      let fr = Needs::<EffectLogMinLevelKey>::need(&ctx).clone();
+      let inner = EffectLogger.info::<Env>("inside-scope");
       run_blocking(
         EffectLogger::with_minimum_log_level(fr.clone(), LogLevel::Warn, inner),
         ctx,
@@ -636,7 +544,7 @@ mod tests {
 
       levels.lock().expect("capture").clear();
       let ctx = test_ctx_with_min(LogLevel::Trace);
-      run_blocking(EffectLogger.info::<LogCtxMin>("outside-scope"), ctx).expect("outer");
+      run_blocking(EffectLogger.info::<Env>("outside-scope"), ctx).expect("outer");
 
       assert!(
         levels
@@ -654,12 +562,12 @@ mod tests {
         tracing::subscriber::set_default(subscriber_with_capture(Arc::new(Mutex::new(Vec::new()))));
 
       let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = ctx.0.1.0.value.clone();
+      let fr = Needs::<EffectLogMinLevelKey>::need(&ctx).clone();
       run_blocking(fr.set(LogLevel::Debug), ()).expect("set");
       assert_eq!(run_blocking(fr.get::<()>(), ()), Ok(LogLevel::Debug));
 
       let scoped =
-        EffectLogger::with_minimum_log_level(fr.clone(), LogLevel::Warn, fr.get::<LogCtxMin>());
+        EffectLogger::with_minimum_log_level(fr.clone(), LogLevel::Warn, fr.get::<Env>());
       assert_eq!(run_blocking(scoped, ctx), Ok(LogLevel::Warn));
       assert_eq!(run_blocking(fr.get::<()>(), ()), Ok(LogLevel::Debug));
     }
@@ -831,15 +739,14 @@ mod tests {
 
   // ========== into_bind_extraction ==========
 
-  mod into_bind_extraction {
+  mod needs_extraction {
     use super::*;
+    use ::id_effect::Needs;
 
     #[test]
     fn extracts_logger_copy_from_context() {
       let effect: ::id_effect::Effect<EffectLogger, EffectLoggerError, LogCtx> =
-        ::id_effect::Effect::new_async(move |r| {
-          Box::pin(async move { IntoBind::into_bind(EffectLogger, r).await })
-        });
+        ::id_effect::Effect::new(move |r: &mut LogCtx| Ok(*Needs::<EffectLoggerKey>::need(r)));
       let result = run_blocking(effect, test_ctx());
       assert!(result.is_ok());
     }
@@ -848,30 +755,27 @@ mod tests {
     fn extracted_logger_can_emit_log_via_run_blocking() {
       init_subscriber();
       let effect: ::id_effect::Effect<EffectLogger, EffectLoggerError, LogCtx> =
-        ::id_effect::Effect::new_async(move |r| {
-          Box::pin(async move { IntoBind::into_bind(EffectLogger, r).await })
-        });
+        ::id_effect::Effect::new(move |r: &mut LogCtx| Ok(*Needs::<EffectLoggerKey>::need(r)));
       let logger = run_blocking(effect, test_ctx()).expect("extraction is infallible");
       assert_eq!(run_blocking(logger.info::<()>("extracted"), ()), Ok(()));
     }
   }
 
-  // ========== layer_effect_logger ==========
+  // ========== EffectLoggerLive provider ==========
 
-  mod layer_effect_logger_fn {
+  mod effect_logger_live_provider {
     use super::*;
 
     #[test]
     fn builds_without_error() {
-      let result = layer_effect_logger().build();
-      assert!(result.is_ok());
+      let env = build_env([provide!(EffectLoggerLive)]);
+      assert!(env.is_ok());
     }
 
     #[test]
     fn produced_service_can_be_placed_in_context() {
-      let cell = layer_effect_logger().build().expect("infallible");
-      let ctx: LogCtx = Context::new(Cons(cell, Nil));
-      let result = run_blocking(EffectLogger.info::<LogCtx>("layer build ok"), ctx);
+      let ctx = build_env([provide!(EffectLoggerLive)]).expect("infallible");
+      let result = run_blocking(EffectLogger.info::<LogCtx>("provider build ok"), ctx);
       assert_eq!(result, Ok(()));
     }
   }
@@ -921,11 +825,12 @@ mod tests {
   mod wave5_full_logger {
     use std::sync::{Arc, Mutex};
 
-    use ::id_effect::{Layer, run_blocking};
+    use ::id_effect::{build_env, provide, run_blocking};
 
     use crate::{
       CompositeLogBackend, EffectLogger, EffectLoggerError, JsonLogBackend, LogBackend, LogLevel,
-      LogRecord, Logger, StructuredLogBackend, annotate_logs, with_log_span,
+      LogMetadataLive, LogRecord, Logger, StructuredLogBackend, annotate_logs,
+      provide_composite_logger, with_log_span,
     };
 
     struct MsgCap(Arc<Mutex<Vec<String>>>);
@@ -943,10 +848,8 @@ mod tests {
       let buf = jb.writer_arc();
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(jb)).expect("add json");
-      crate::layer_log_metadata().build().expect("metadata layer");
-      crate::layer_composite_logger(comp)
-        .build()
-        .expect("composite layer");
+      build_env([provide!(LogMetadataLive), provide_composite_logger(comp)])
+        .expect("logger pipeline");
       buf
     }
 
@@ -975,7 +878,11 @@ mod tests {
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(MsgCap(a.clone()))).unwrap();
       comp.add(Arc::new(MsgCap(b.clone()))).unwrap();
-      crate::layer_composite_logger(comp.clone()).build().unwrap();
+      build_env([
+        provide!(LogMetadataLive),
+        provide_composite_logger(comp.clone()),
+      ])
+      .unwrap();
       run_blocking(EffectLogger.info::<()>("m1"), ()).unwrap();
       assert_eq!(*a.lock().unwrap(), vec!["m1".to_string()]);
       assert_eq!(*b.lock().unwrap(), vec!["m1".to_string()]);
@@ -1006,8 +913,7 @@ mod tests {
       let buf = structured.writer_arc();
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(structured)).unwrap();
-      crate::layer_log_metadata().build().unwrap();
-      crate::layer_composite_logger(comp).build().unwrap();
+      build_env([provide!(LogMetadataLive), provide_composite_logger(comp)]).unwrap();
       run_blocking(
         annotate_logs("trace_id", "abc", EffectLogger.info::<()>("done")),
         (),

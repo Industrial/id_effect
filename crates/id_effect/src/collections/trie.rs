@@ -1,5 +1,7 @@
 //! String-key trie (prefix tree).
 
+use crate::Parallelism;
+use rayon::prelude::*;
 use std::collections::BTreeMap;
 
 struct Node<V> {
@@ -101,14 +103,66 @@ impl<V> Trie<V> {
     end.map(|e| &key[..e])
   }
 
-  /// Count of stored keys (nodes with a value).
-  pub fn size(&self) -> usize {
+  /// Count of stored keys using the default [`Parallelism`] policy.
+  pub fn size(&self) -> usize
+  where
+    V: Sync,
+  {
+    self.size_with(Parallelism::default())
+  }
+
+  /// Count of stored keys sequentially.
+  /// Count keys sequentially.
+  pub fn size_serial(&self) -> usize {
     Self::count_nodes(&self.root)
+  }
+
+  /// Count with an explicit [`Parallelism`] policy.
+  /// Count keys with explicit policy.
+  pub fn size_with(&self, policy: Parallelism) -> usize
+  where
+    V: Sync,
+  {
+    match policy {
+      Parallelism::Serial => Self::count_nodes(&self.root),
+      Parallelism::ForceParallel => Self::count_nodes_par(&self.root),
+      Parallelism::Auto { threshold } => {
+        let n = Self::count_nodes(&self.root);
+        if n >= threshold {
+          Self::count_nodes_par(&self.root)
+        } else {
+          n
+        }
+      }
+    }
+  }
+
+  /// Like [`Self::size_with`] with [`Parallelism::ForceParallel`].
+  #[deprecated(note = "use size or size_with(Parallelism::ForceParallel)")]
+  pub fn size_par(&self) -> usize
+  where
+    V: Sync,
+  {
+    self.size_with(Parallelism::ForceParallel)
   }
 
   fn count_nodes(node: &Node<V>) -> usize {
     let here = if node.value.is_some() { 1 } else { 0 };
     here + node.children.values().map(Self::count_nodes).sum::<usize>()
+  }
+
+  fn count_nodes_par(node: &Node<V>) -> usize
+  where
+    V: Sync,
+  {
+    let here = if node.value.is_some() { 1 } else { 0 };
+    let rest: usize = node
+      .children
+      .values()
+      .par_bridge()
+      .map(Self::count_nodes_par)
+      .sum();
+    here + rest
   }
 
   fn collect_keys(node: &Node<V>, prefix: &str, out: &mut Vec<String>) {
@@ -174,6 +228,7 @@ mod tests {
     ks.sort();
     assert_eq!(ks, vec!["foo".to_string(), "food".to_string()]);
     assert_eq!(trie.size(), 3);
+    assert_eq!(trie.size(), trie.size_serial());
   }
 
   #[test]

@@ -1,97 +1,73 @@
-# Stacking Layers — Composition Patterns
+# Composing Providers — `CapabilityGraph` and `run_with`
 
-Individual layers do one thing. A real application needs them composed. id_effect provides two composition patterns: sequential stacking and parallel merging.
+Individual providers build one capability. Applications pass a **list** to [`run_with`](../../src/capability/run.rs); [`CapabilityGraph`](../../src/capability/graph.rs) plans build order from each provider's `requires()` and `provides()`.
 
-## Sequential Stacking with .stack()
-
-```rust
-use id_effect::Stack;
-
-let app_env = config_layer
-    .stack(db_layer)       // Config → (Config, Database)
-    .stack(logger_layer)   // → (Config, Database, Logger)
-    .stack(service_layer); // → (Config, Database, Logger, Service)
-```
-
-Each `.stack()` takes the output of the previous layer and combines it with the new layer's output. The final type accumulates everything.
-
-`.stack()` implies sequential ordering: `db_layer` runs after `config_layer` completes, because `db_layer` needs what `config_layer` produces.
-
-## Parallel Merging with merge_all
-
-When layers don't depend on each other, they can be built in parallel:
+## Basic composition
 
 ```rust
-use id_effect::merge_all;
+use id_effect::{provide, run_with};
 
-// These three layers are independent — build them concurrently
-let monitoring = merge_all!(
-    metrics_layer,
-    tracing_layer,
-    health_check_layer,
-);
+run_with(
+    [
+        provide!(ConfigLive),
+        provide!(DatabaseLive),
+        provide!(LoggerLive),
+        provide!(UserRepoLive),
+    ],
+    my_application(),
+)?;
 ```
 
-`merge_all!` takes a list of layers with the same input type and merges their outputs. If the inputs are available, all three build concurrently.
+The array order is irrelevant — the graph topologically sorts providers. Cycles or missing dependencies surface as [`CapabilityPlannerError`](../../src/capability/error.rs) with diagnostics from [`CapabilityGraph::diagnostics`](../../src/capability/graph.rs).
 
-## Combining Stack and merge_all
-
-In practice, you mix both:
+## Building `Env` without running
 
 ```rust
-let app_env = config_layer
-    .stack(db_layer)
-    .stack(
-        // cache and redis are independent of each other but both need config+db
-        merge_all!(cache_layer, redis_layer)
-    )
-    .stack(service_layer);
+let env = build_env([
+    provide!(ConfigLive),
+    provide!(DatabaseLive),
+    provide!(UserRepoLive),
+])?;
+
+run_test(get_user(1), env)?;
 ```
 
-The build graph:
-1. Build config
-2. Build db (needs config)
-3. Build cache and redis concurrently (both need config + db)
-4. Build service (needs all of the above)
-
-## Building and Providing
-
-Once you have a composed layer, build it and provide it to an effect:
+Or inspect the plan explicitly:
 
 ```rust
-// Build all layers, get back a Context with everything
-let env = app_env.build(()).await?;
-
-// Provide to the effect and run
-run_blocking(my_application().provide(env));
+let mut graph = CapabilityGraph::new();
+graph = graph.add(provide!(ConfigLive).0);
+graph = graph.add(provide!(DatabaseLive).0);
+let order = graph.plan()?;
+let env = graph.build()?;
 ```
 
-Or use `.provide_layer()` directly on an effect:
+## Production vs test stacks
 
 ```rust
-run_blocking(
-    my_application()
-        .provide_layer(app_env)
-);
+// Production
+run_with(
+    [provide!(ConfigLive), provide!(DatabaseLive), provide!(UserRepoLive)],
+    my_app(),
+)?;
+
+// Test — swap implementations, same keys
+run_with([provide!(MockUserRepoLive)], get_user(1))?;
 ```
 
-`.provide_layer()` builds the layer and provides its output in one step. This is the most common pattern at the application entry point.
+Application code is unchanged. Only the provider list differs. `Needs<K>` bounds ensure each effect's requirements are met.
 
-## The type_only Pattern for Tests
+## Subset wiring in tests
 
-Tests often want a subset of services. You can stack only what the test needs:
+Tests need not mirror the full production graph — only the capabilities the effect under test requires:
 
 ```rust
 #[test]
-fn test_user_service() {
-    let test_layer = config_layer.stack(mock_db_layer);
-
-    let result = run_test(
-        get_user(1)
-            .provide_layer(test_layer)
-    );
-    assert!(result.is_ok());
+fn test_get_user() {
+    let env = build_env([provide!(MockUserRepoLive)]).unwrap();
+    let user = run_test(get_user(1), env).unwrap();
+    assert_eq!(user.name, "Alice");
 }
 ```
 
-No need to build the full application stack. The test provides exactly what `get_user` requires — the type system enforces completeness.
+If `get_user` also needs `LoggerKey`, the test must include `provide!(TestLoggerLive)` or insert that key manually — incomplete wiring fails when the effect runs.

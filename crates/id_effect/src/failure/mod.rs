@@ -14,8 +14,10 @@
 
 pub mod cause;
 pub mod exit;
+pub mod pretty;
 pub mod union;
 
 pub use cause::Cause;
 pub use exit::Exit;
+pub use pretty::{pretty_cause, pretty_cause_inline, pretty_exit, pretty_fiber_id};
 pub use union::Or;

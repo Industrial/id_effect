@@ -15,7 +15,7 @@ use axum::http::{Request, Response, StatusCode};
 use axum::response::{IntoResponse, Response as AxumResponse};
 use http_body_util::BodyExt;
 use id_effect::channel::QueueChannel;
-use id_effect::{Effect, QueueError, box_future, effect};
+use id_effect::{CapBindR, Effect, QueueError, box_future, effect};
 
 #[inline]
 fn map_queue_error(e: QueueError) -> StatusCode {
@@ -33,7 +33,7 @@ pub fn exchange<A, E, R>(
 where
   A: From<Response<Bytes>> + 'static,
   E: From<StatusCode> + 'static,
-  R: 'static,
+  R: CapBindR + 'static,
 {
   effect!(|r: &mut R| {
     let ch = ch.clone();
@@ -53,7 +53,7 @@ where
 /// Buffer `req`'s body to [`Bytes`], run [`exchange`], then map the wire response to Axum's
 /// [`Body`].
 #[inline]
-pub async fn exchange_into_response<R: Send + 'static>(
+pub async fn exchange_into_response<R: CapBindR + Send + 'static>(
   env: R,
   ch: QueueChannel<Response<Bytes>, Request<Bytes>, R>,
   req: Request<Body>,

@@ -95,7 +95,7 @@ pub fn check_effect_fn_where_clause<'tcx>(
       span,
       "Effect-returning function has generic parameters but no `where` clause",
       None,
-      "add `where A: …, E: From<…> + 'static, R: NeedsX + 'static`",
+      "add `where A: …, E: From<…> + 'static, R: Needs<Key> + 'static`",
     );
   }
 }
@@ -152,16 +152,24 @@ pub fn check_no_concrete_context<'tcx>(
           if let Some(args) = last.args {
             // Third generic arg is R.
             if let Some(rustc_hir::GenericArg::Type(r_ty)) = args.args.get(2) {
-              if ty_last_segment_is(r_ty.as_unambig_ty(), "Context")
-                || ty_last_segment_is(r_ty.as_unambig_ty(), "Cons")
-              {
+              let r = r_ty.as_unambig_ty();
+              if ty_last_segment_is(r, "Context") || ty_last_segment_is(r, "Cons") {
                 span_lint_and_help(
                   cx,
                   NO_CONCRETE_CONTEXT_IN_PUB_API,
                   span,
                   "public API exposes concrete `Context<Cons<…>>` as `R` type",
                   None,
-                  "use `impl NeedsX` or a generic `R: NeedsX + 'static` bound",
+                  "use `impl NeedsX` or a generic `R: Needs<Key> + 'static` bound",
+                );
+              } else if ty_last_segment_is(r, "Env") {
+                span_lint_and_help(
+                  cx,
+                  NO_CONCRETE_ENV_IN_PUB_API,
+                  span,
+                  "public API exposes concrete `Env` as `R` type",
+                  None,
+                  "use a generic `R: Needs<Key> + 'static` bound instead of bare `Env`",
                 );
               }
             }
@@ -189,9 +197,9 @@ pub fn check_prefer_needs_x<'tcx>(
       cx,
       PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
       span,
-      "Effect-returning function uses raw `Get<Key, …>` bounds",
+      "Effect-returning function uses raw `Get<Key, …>` bounds; prefer `Needs<Key>`",
       None,
-      "define a `NeedsX: Get<XKey>` supertrait and use `R: NeedsX + 'static` instead",
+      "define a `NeedsX: Get<XKey>` supertrait and use `R: Needs<Key> + 'static` instead",
     );
   }
 }

@@ -1,0 +1,7 @@
+error: require!(Key) is only valid inside effect! bodies; use Needs::<Key>::need(env) elsewhere
+ --> tests/ui/tilde_key_outside_effect.rs:5:11
+  |
+5 |   let _ = id_effect::require!(DatabaseKey);
+  |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `id_effect::require` (in Nightly builds, run with -Z macro-backtrace for more info)

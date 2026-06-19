@@ -1,16 +1,15 @@
 //! Portable process spawning ([`ProcessRuntime`]) with Tokio implementation.
 
+#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use id_effect::kernel::Effect;
+use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::ProcessError;
-
-id_effect::service_key!(
-  /// Tag for the active [`ProcessRuntime`] in `R`.
-  pub struct ProcessRuntimeKey
-);
 
 /// Specification for spawning a child process (minimal MVP).
 #[derive(Clone, Debug)]
@@ -49,8 +48,18 @@ impl CommandSpec {
   }
 }
 
+/// Handle to a running child process (supports [`child_kill`] before [`child_wait`]).
+#[derive(Clone)]
+pub struct ChildHandle {
+  inner: Arc<Mutex<tokio::process::Child>>,
+}
+
 /// Capability: spawn and await child processes as [`Effect`] values.
+#[::id_effect::capability(Arc<dyn ProcessRuntime>)]
 pub trait ProcessRuntime: Send + Sync + 'static {
+  /// Spawn without waiting; use [`child_wait`] or [`child_kill`].
+  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, ()>;
+
   /// Spawn and wait for exit status (stdout/stderr inherited by host).
   fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()>;
 }
@@ -60,7 +69,7 @@ pub trait ProcessRuntime: Send + Sync + 'static {
 pub struct TokioProcessRuntime;
 
 impl ProcessRuntime for TokioProcessRuntime {
-  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()> {
+  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, ()> {
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
         let mut c = tokio::process::Command::new(&cmd.program);
@@ -68,50 +77,89 @@ impl ProcessRuntime for TokioProcessRuntime {
         if let Some(dir) = &cmd.current_dir {
           c.current_dir(dir);
         }
-        let status = c.status().await.map_err(ProcessError::from)?;
-        Ok(status)
+        let child = c.spawn().map_err(ProcessError::from)?;
+        Ok(ChildHandle {
+          inner: Arc::new(Mutex::new(child)),
+        })
+      })
+    })
+  }
+
+  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()> {
+    let this = *self;
+    Effect::new_async(move |_r: &mut ()| {
+      Box::pin(async move {
+        let handle = this.spawn(cmd).run(&mut ()).await?;
+        child_wait(handle).run(&mut ()).await
       })
     })
   }
 }
 
-/// [`id_effect::Service`] cell for [`ProcessRuntimeKey`].
-pub type ProcessRuntimeService<P> = id_effect::Service<ProcessRuntimeKey, P>;
+/// Default [`ProviderSpec`] for a Tokio-backed [`ProcessRuntime`].
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(ProcessRuntimeKey)]
+pub struct TokioProcessRuntimeProvider;
 
-/// Install a [`ProcessRuntime`].
+impl TokioProcessRuntimeProvider {
+  fn new() -> Arc<dyn ProcessRuntime> {
+    Arc::new(TokioProcessRuntime)
+  }
+}
+
+/// Spawn using [`ProcessRuntimeKey`].
 #[inline]
-pub fn layer_process_runtime<P>(
-  p: P,
-) -> id_effect::layer::LayerFn<
-  impl Fn() -> Result<ProcessRuntimeService<P>, std::convert::Infallible>,
->
+pub fn spawn<R>(cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, R>
 where
-  P: Clone + ProcessRuntime + 'static,
+  R: Needs<ProcessRuntimeKey> + 'static,
 {
-  id_effect::layer_service::<ProcessRuntimeKey, _>(p)
-}
-
-/// Supertrait: `R` exposes [`ProcessRuntimeKey`].
-pub trait NeedsProcessRuntime<P>:
-  id_effect::Get<ProcessRuntimeKey, id_effect::Here, Target = P>
-{
-}
-impl<R, P> NeedsProcessRuntime<P> for R where
-  R: id_effect::Get<ProcessRuntimeKey, id_effect::Here, Target = P>
-{
+  Effect::new_async(move |r: &mut R| {
+    let rt = r.need().clone();
+    let inner = rt.spawn(cmd);
+    Box::pin(async move { inner.run(&mut ()).await })
+  })
 }
 
 /// Spawn-wait using [`ProcessRuntimeKey`].
 #[inline]
-pub fn spawn_wait<R, P>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
+pub fn spawn_wait<R>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
 where
-  R: NeedsProcessRuntime<P> + 'static,
-  P: ProcessRuntime + Clone + 'static,
+  R: Needs<ProcessRuntimeKey> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
-    let rt = id_effect::Get::<ProcessRuntimeKey>::get(r).clone();
+    let rt = r.need().clone();
     let inner = rt.spawn_wait(cmd);
     Box::pin(async move { inner.run(&mut ()).await })
+  })
+}
+
+/// Await child exit (after optional [`child_kill`]).
+#[inline]
+pub fn child_wait<R>(handle: ChildHandle) -> Effect<std::process::ExitStatus, ProcessError, R>
+where
+  R: 'static,
+{
+  Effect::new_async(move |_r: &mut R| {
+    Box::pin(async move {
+      let mut guard = handle.inner.lock().await;
+      let status = guard.wait().await.map_err(ProcessError::from)?;
+      Ok(status)
+    })
+  })
+}
+
+/// Send kill signal to a running child (`iep-a-041` cancellation hook).
+#[inline]
+pub fn child_kill<R>(handle: ChildHandle) -> Effect<(), ProcessError, R>
+where
+  R: 'static,
+{
+  Effect::new_async(move |_r: &mut R| {
+    Box::pin(async move {
+      let mut guard = handle.inner.lock().await;
+      guard.kill().await.map_err(ProcessError::from)?;
+      Ok(())
+    })
   })
 }
 

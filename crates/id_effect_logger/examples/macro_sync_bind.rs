@@ -1,33 +1,24 @@
-//! Log inside `effect!` using `~EffectLogger` extraction and `~logger.level(…)` steps,
-//! then compute a return value — demonstrating the full service/tag pattern.
+//! Log inside `effect!` using `~EffectLoggerKey` and `~logger.level(…)` steps.
 //!
-//! Run: `devenv shell -- cargo run -p logger --example macro_sync_bind`
+//! Run: `devenv shell -- cargo run -p id_effect_logger --example macro_sync_bind`
 
-use ::id_effect::{Cons, Context, Effect, Nil, Service, effect, run_blocking, succeed};
-use id_effect_logger::{EffectLogKey, EffectLogger, EffectLoggerError};
-
-type LogCtx = Context<Cons<Service<EffectLogKey, EffectLogger>, Nil>>;
-
-fn build_ctx() -> LogCtx {
-  Context::new(Cons(Service::<EffectLogKey, _>::new(EffectLogger), Nil))
-}
+use ::id_effect::{Effect, Env, caps, effect, provide, run_with, succeed};
+use id_effect_logger::{EffectLoggerError, EffectLoggerKey, EffectLoggerLive};
 
 fn main() {
   tracing_subscriber::fmt()
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  // Extract the logger once, then use it across multiple steps.
-  // ~succeed(...) binds a pure value; ~logger.info(...) logs as an effect step.
-  let program: Effect<i32, EffectLoggerError, LogCtx> = effect!(|_r: &mut LogCtx| {
-    let logger = ~EffectLogger;
-    ~logger.info("first step: log_info via ~logger");
-    ~logger.warn("second step: log_warn via ~logger");
-    let n = ~succeed::<i32, EffectLoggerError, LogCtx>(21);
-    let m = ~succeed::<i32, EffectLoggerError, LogCtx>(n * 2);
-    m
+  let program: Effect<i32, EffectLoggerError, caps!(EffectLoggerKey)> = effect!(|r| {
+    let logger = *~EffectLoggerKey;
+    ~logger.info::<caps!(EffectLoggerKey)>("first step: log_info via ~logger");
+    ~logger.warn::<caps!(EffectLoggerKey)>("second step: log_warn via ~logger");
+    let n = ~succeed::<i32, EffectLoggerError, Env>(21);
+    n + 1
   });
 
-  let out = run_blocking(program, build_ctx()).expect("tracing never fails");
-  println!("effect! tail value: {out}");
+  let n = run_with([provide!(EffectLoggerLive)], program).expect("run");
+  assert_eq!(n, 22);
+  println!("macro_sync_bind ok: {n}");
 }

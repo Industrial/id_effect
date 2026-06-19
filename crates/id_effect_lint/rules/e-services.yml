@@ -9,7 +9,7 @@
     Services must be provided through the `R` type parameter at the program edge.
   note: |
     BAD:  static DB: Lazy<Arc<dyn Database>> = Lazy::new(|| Arc::new(PgDatabase::new()));
-    GOOD: service_key!(DatabaseKey => dyn Database);
+    GOOD: define_capability!(DatabaseKey, Arc<dyn Database>);
           // Inject at program edge: Layer::new(…).provide_as::<DatabaseKey>(db)
   rule:
     all:
@@ -46,7 +46,7 @@
     BAD:  fn get_user(id: Uuid) -> Effect<User, DbError, ()> {
               fetch_user(id).provide(default_db_layer())
           }
-    GOOD: // In main: my_effect().provide(db_layer).provide(cache_layer)
+    GOOD: // In main: run_with([provide!(DatabaseLive), provide!(CacheLive)], app())
   rule:
     all:
       - pattern: $RECV.provide($$$)

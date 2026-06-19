@@ -5,12 +5,12 @@
 ## Basic Usage
 
 ```rust
-use id_effect::{run_test, succeed};
+use id_effect::{run_test, succeed, Exit};
 
 #[test]
 fn simple_effect_succeeds() {
-    let result = run_test(succeed(42));
-    assert_eq!(result, Exit::Success(42));
+    let exit = run_test(succeed(42), ());
+    assert_eq!(exit, Exit::Success(42));
 }
 ```
 
@@ -35,7 +35,7 @@ Fiber leaks — effects that spawn children and don't join them — are silent i
 #[test]
 fn division_by_zero_fails() {
     let eff = divide(10, 0);
-    let exit = run_test(eff);
+    let exit = run_test(eff, ());
 
     // Assert specific failure
     assert!(matches!(exit, Exit::Failure(Cause::Fail(DivError::DivisionByZero))));
@@ -46,7 +46,7 @@ fn effect_that_panics_is_a_defect() {
     let eff = effect!(|_r: &mut ()| {
         panic!("oops");
     });
-    let exit = run_test(eff);
+    let exit = run_test(eff, ());
 
     assert!(matches!(exit, Exit::Failure(Cause::Die(_))));
 }
@@ -59,37 +59,47 @@ fn effect_that_panics_is_a_defect() {
 
 ## run_test with an Environment
 
-When your effect needs services, provide a test environment:
+When your effect needs capabilities, build a test environment with `build_env` or manual `Env::insert`:
 
 ```rust
+#[::id_effect::capability(Arc<dyn Db>)]
+struct Database;
+
+mock_capability!(MockDb, DatabaseKey, Arc<dyn Db>, "db/mock", || {
+    Arc::new(FakeDatabase::new()) as Arc<dyn Db>
+});
+
 #[test]
 fn create_user_inserts_into_db() {
-    let fake_db = FakeDatabase::new();
-    let env = ctx!(DbKey => Arc::new(fake_db.clone()));
+    let env = build_env([provide!(MockDb)]).expect("env");
+    let fake_db = env.get::<DatabaseKey>().clone();
 
     let eff = create_user(NewUser { name: "Alice".into(), age: 30 });
-    let exit = run_test_with_env(eff, env);
+    let exit = run_test(eff, env);
 
     assert!(matches!(exit, Exit::Success(_)));
     assert_eq!(fake_db.users().len(), 1);
 }
 ```
 
-`run_test_with_env(effect, env)` is the full version. `run_test(effect)` is shorthand for `run_test_with_env(effect, ())` when the effect requires no environment.
+`run_test(effect, env)` is the full signature. Pass `()` as the second argument when the effect requires no environment.
 
-## run_test_and_unwrap
+## Unwrapping success in tests
 
-When you're confident an effect succeeds and just want the value:
+When you're confident an effect succeeds and just want the value, match on `Exit`:
 
 ```rust
 #[test]
 fn addition_works() {
-    let result: i32 = run_test_and_unwrap(succeed(1 + 1));
+    let exit = run_test(succeed(1 + 1), ());
+    let Exit::Success(result) = exit else {
+        panic!("expected success, got {exit:?}");
+    };
     assert_eq!(result, 2);
 }
 ```
 
-`run_test_and_unwrap` panics on any non-success `Exit`, with a descriptive message. Use it for happy-path tests where a failure is a bug in the test setup.
+Explicit matching keeps failure variants visible in the test — useful when a non-success `Exit` indicates a bug in the test setup.
 
 ## Fiber Leak Detection
 
@@ -103,7 +113,7 @@ fn this_test_will_fail_due_to_leak() {
     });
 
     // run_test detects the leaked fiber and fails the test
-    let exit = run_test(eff);
+    let exit = run_test(eff, ());
     // exit: Exit::Failure(Cause::Die("fiber leak detected: 1 fiber(s) not joined"))
 }
 ```

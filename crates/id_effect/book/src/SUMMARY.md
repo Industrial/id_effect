@@ -27,20 +27,20 @@
   - [Providing Dependencies](./part2/ch04-02-providing.md)
   - [Widening and Narrowing](./part2/ch04-03-widening-narrowing.md)
   - [R as Documentation](./part2/ch04-04-r-as-docs.md)
-- [Tags and Context](./part2/ch05-00-tags-context.md)
+- [Capability Keys](./part2/ch05-00-tags-context.md)
   - [The Problem with Positional Types](./part2/ch05-01-positional-problem.md)
-  - [Tags](./part2/ch05-02-tags.md)
-  - [Context and HLists](./part2/ch05-03-context-hlists.md)
+  - [Capability Keys](./part2/ch05-02-tags.md)
+  - [`Env`](./part2/ch05-03-context-hlists.md)
   - [Get and GetMut](./part2/ch05-04-get-getmut.md)
-- [Layers](./part2/ch06-00-layers.md)
-  - [What Is a Layer?](./part2/ch06-01-what-is-layer.md)
-  - [Building Layers](./part2/ch06-02-building-layers.md)
-  - [Stacking Layers](./part2/ch06-03-stacking.md)
-  - [Layer Graphs](./part2/ch06-04-layer-graphs.md)
+- [Providers](./part2/ch06-00-layers.md)
+  - [What Is a Provider?](./part2/ch06-01-what-is-layer.md)
+  - [Building Providers](./part2/ch06-02-building-layers.md)
+  - [Composing Providers](./part2/ch06-03-stacking.md)
+  - [Capability Graphs](./part2/ch06-04-layer-graphs.md)
 - [Services](./part2/ch07-00-services.md)
   - [Service Traits](./part2/ch07-01-service-traits.md)
-  - [ServiceEnv and service_env](./part2/ch07-02-service-env.md)
-  - [Providing Services via Layers](./part2/ch07-03-providing-services.md)
+  - [Needs and ~Key](./part2/ch07-02-service-env.md)
+  - [ProviderSpec](./part2/ch07-03-providing-services.md)
   - [A Complete DI Example](./part2/ch07-04-complete-example.md)
   - [Tokio bridge (`id_effect_tokio`)](./part2/ch07-05-tokio-bridge.md)
   - [Platform I/O (`id_effect_platform`)](./part2/ch07-06-platform-services.md)
@@ -49,7 +49,8 @@
   - [Tower service (`id_effect_tower`)](./part2/ch07-09-tower-service.md)
   - [Configuration (`id_effect_config`)](./part2/ch07-10-config.md)
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
-  - [OpenTelemetry (`id_effect_opentelemetry`)](./part2/ch07-12-opentelemetry.md)
+  - [RPC boundaries (`id_effect_rpc`)](./part2/ch07-12-rpc-boundaries.md)
+  - [Durable workflow spike (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 
@@ -74,6 +75,9 @@
   - [Built-in Schedules](./part3/ch11-02-builtin-schedules.md)
   - [retry and repeat](./part3/ch11-03-retry-repeat.md)
   - [Clock Injection](./part3/ch11-04-clock-injection.md)
+- [CLI with clap](./part3/ch16-00-cli-with-clap.md)
+  - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
+  - [Config + `Secret` from flags](./part3/ch16-02-cli-config-secret.md)
 
 # Part IV: Advanced
 
@@ -87,6 +91,7 @@
   - [Chunks](./part4/ch13-02-chunks.md)
   - [Backpressure Policies](./part4/ch13-03-backpressure.md)
   - [Sinks](./part4/ch13-04-sinks.md)
+  - [Parallelism (Rayon)](./part4/ch13-05-parallelism.md)
 - [Schema](./part4/ch14-00-schema.md)
   - [The Unknown Type](./part4/ch14-01-unknown.md)
   - [Schema Combinators](./part4/ch14-02-combinators.md)
@@ -104,3 +109,47 @@
 - [Migrating from `async fn` to effects](./appendix-b-migration.md)
 - [Glossary](./appendix-c-glossary.md)
 - [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
+
+# Part V: Functional Patterns
+
+- [Optics (`id_effect_optics`)](./part5/ch18-00-optics.md)
+  - [Lenses](./part5/ch18-01-lenses.md)
+  - [Prisms and Optionals](./part5/ch18-02-prisms-optionals.md)
+  - [Traversals and schema bridge](./part5/ch18-03-traversals-schema.md)
+
+- [State Machines (`id_effect_fsm`)](./part5/ch19-00-state-machines.md)
+  - [Transition tables](./part5/ch19-01-transition-tables.md)
+  - [Effect interpreter](./part5/ch19-02-effect-interpreter.md)
+  - [Sagas and session types](./part5/ch19-03-saga-session.md)
+  - [Workflow bridge](./part5/ch19-04-workflow-bridge.md)
+
+- [Parser Combinators](./part5/ch20-00-parser-combinators.md)
+
+- [Advanced Streaming](./part5/ch22-00-advanced-streaming.md)
+  - [Windowing](./part5/ch22-01-windowing.md)
+  - [Stream joins](./part5/ch22-02-joins.md)
+  - [Replay fanout](./part5/ch22-03-replay-fanout.md)
+  - [state_scan FSM stepping](./part5/ch22-04-state-scan.md)
+  - [Transducers on streams](./part5/ch22-05-transducers.md)
+
+- [Runtime Resilience](./part5/ch21-00-runtime-resilience.md)
+
+- [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
+
+- [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)
+
+# Part VI: Application Platform
+
+- [Platform introduction](./part6/ch26-00-platform-introduction.md)
+- [Observability and health](./part6/ch27-00-observability.md)
+- [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
+- [API boundaries (`id_effect_rpc`)](./part6/ch29-00-api-boundaries.md)
+- [Application host](./part6/ch30-00-application.md)
+- [Async messaging and jobs](./part6/ch31-00-async-messaging.md)
+- [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
+- [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
+- [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
+
+# Part VII: Full-stack UI
+
+- [Dioxus SSR and realtime](./part7/ch33-00-ui-realtime.md)

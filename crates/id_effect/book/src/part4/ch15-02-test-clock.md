@@ -20,31 +20,22 @@ Multiply this by dozens of tests and your suite is unusable. `TestClock` makes i
 ## run_test_with_clock
 
 ```rust
-use id_effect::{run_test_with_clock, TestClock};
+use id_effect::{run_test_with_clock, TestClock, Exit};
 
 #[test]
 fn retry_exhaustion_fast() {
-    let result = run_test_with_clock(|clock| {
-        let eff = failing_call()
-            .retry(Schedule::exponential(Duration::from_secs(1)).take(3));
+    let clock = TestClock::new();
+    let eff = failing_call()
+        .retry(Schedule::exponential(Duration::from_secs(1)).take(3));
 
-        // Fork the effect
-        let handle = eff.fork();
+    // run_test_with_clock runs the effect with the supplied clock handle
+    let exit = run_test_with_clock(eff, (), clock.clone());
 
-        // Drive time forward to trigger each retry
-        clock.advance(Duration::from_secs(1));
-        clock.advance(Duration::from_secs(2));
-        clock.advance(Duration::from_secs(4));
-
-        // Collect the result
-        handle.join()
-    });
-
-    assert!(matches!(result, Exit::Failure(_)));
+    assert!(matches!(exit, Exit::Failure(_)));
 }
 ```
 
-`run_test_with_clock` creates a `TestClock`, injects it into the effect environment, and calls your closure with a handle to the clock. You advance time; the runtime processes sleep effects that become due.
+`run_test_with_clock(effect, env, clock)` runs an effect in the deterministic test harness with an explicit `TestClock`. Inject a clock capability via your provider graph when the effect reads time from `Env`.
 
 ## TestClock API
 
@@ -71,26 +62,23 @@ let pending: usize = clock.pending_sleeps();
 ```rust
 #[test]
 fn cron_job_runs_every_minute() {
-    run_test_with_clock(|clock| {
-        let counter = Arc::new(AtomicU32::new(0));
-        let c = counter.clone();
+    let counter = Arc::new(AtomicU32::new(0));
+    let c = counter.clone();
 
-        let job = effect!(|_r: &mut ()| {
-            c.fetch_add(1, Ordering::Relaxed);
-        })
-        .repeat(Schedule::fixed(Duration::from_secs(60)));
+    let job = effect!(|_r: &mut ()| {
+        c.fetch_add(1, Ordering::Relaxed);
+    })
+    .repeat(Schedule::fixed(Duration::from_secs(60)));
 
-        let _handle = job.fork();
+    let clock = TestClock::new();
+    let _handle = job.fork();
 
-        // Advance through 3 minutes
-        clock.advance(Duration::from_secs(60));
-        clock.advance(Duration::from_secs(60));
-        clock.advance(Duration::from_secs(60));
+    // Advance through 3 minutes
+    clock.advance(Duration::from_secs(60));
+    clock.advance(Duration::from_secs(60));
+    clock.advance(Duration::from_secs(60));
 
-        succeed(counter.load(Ordering::Relaxed))
-    });
-
-    // Verify 3 executions happened
+    assert_eq!(counter.load(Ordering::Relaxed), 3);
 }
 ```
 
@@ -103,30 +91,23 @@ If your effect spawns multiple fibers that all sleep, advancing time wakes all f
 ## Combining TestClock with Fake Services
 
 ```rust
+#[::id_effect::capability(Arc<dyn RateLimitStore>)]
+struct RateLimitStoreCap;
+
+mock_capability!(MockRateLimitStore, RateLimitStoreCapKey, Arc<dyn RateLimitStore>, "ratelimit/mock", || {
+    Arc::new(InMemoryRateLimitStore::new()) as Arc<dyn RateLimitStore>
+});
+
 #[test]
 fn rate_limiter_enforces_window() {
-    let fake_store = InMemoryRateLimitStore::new();
-    let env = ctx!(RateLimitStoreKey => Arc::new(fake_store));
+    let env = build_env([provide!(MockRateLimitStore)]).expect("env");
+    let clock = TestClock::new();
 
-    run_test_with_clock_and_env(env, |clock| {
-        let eff = effect!(|_r: &mut Deps| {
-            // Should succeed (first request in window)
-            ~ check_rate_limit("alice");
+    let eff = check_rate_limit_flow("alice");
+    let exit = run_test_with_clock(eff, env, clock.clone());
 
-            // Exhaust the limit
-            for _ in 0..9 {
-                ~ check_rate_limit("alice");
-            }
-
-            // Advance past the window
-            // (clock advance happens outside the effect, so we fork here)
-        });
-
-        let handle = eff.fork();
-        clock.advance(Duration::from_secs(61));
-        handle.join()
-    });
+    assert!(matches!(exit, Exit::Success(_)));
 }
 ```
 
-`run_test_with_clock_and_env` combines both: a controlled clock and a custom service environment.
+Build the capability env with `build_env([provide!(…), …])`, then pass it to `run_test_with_clock` alongside your `TestClock`.

@@ -2,8 +2,8 @@
 //!
 //! Run: `cargo run -p id_effect_reqwest --example 020_wiremock_json`
 
-use id_effect::service_env;
-use id_effect_reqwest::{Client, Error, ReqwestClientKey, json};
+use id_effect::build_env;
+use id_effect_reqwest::{Client, Error, json, provide_reqwest_client};
 use id_effect_tokio::run_async;
 use serde::{Deserialize, Serialize};
 use wiremock::matchers::{method, path};
@@ -24,7 +24,7 @@ async fn main() {
     .await;
 
   let url = format!("{}/data", server.uri());
-  let env = service_env::<ReqwestClientKey, _>(Client::new());
+  let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
   let msg = run_async(json::<Msg, Error, _, _, Msg>(move |c| c.get(url)), env)
     .await
     .unwrap();

@@ -2,7 +2,9 @@
 //!
 //! Effect.ts “red-black” style duplicate-key semantics without exposing a separate RBT implementation.
 
+use crate::Parallelism;
 use im::OrdMap;
+use rayon::prelude::*;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 
@@ -85,8 +87,18 @@ impl<K: Ord + Clone, V: Clone> RedBlackTree<K, V> {
       .and_then(|(k, vs)| vs.first().map(|v| (k.clone(), v.clone())))
   }
 
-  /// All `(key, value)` pairs with `key > bound`, ascending.
+  /// All `(key, value)` pairs with `key > bound`, ascending (default [`Parallelism`]).
   pub fn greater_than<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    self.greater_than_with(Parallelism::default(), bound)
+  }
+
+  /// Like [`Self::greater_than`], sequentially.
+  pub fn greater_than_serial<Q>(&self, bound: &Q) -> Vec<(K, V)>
   where
     Q: Ord + ?Sized,
     K: Borrow<Q> + Ord + Clone,
@@ -102,8 +114,71 @@ impl<K: Ord + Clone, V: Clone> RedBlackTree<K, V> {
       .collect()
   }
 
-  /// All `(key, value)` pairs with `key < bound`, ascending.
+  fn greater_than_parallel<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    let rows: Vec<(K, Vec<V>)> = self
+      .inner
+      .iter()
+      .filter(|(k, _)| Borrow::<Q>::borrow(*k).cmp(bound) == Ordering::Greater)
+      .map(|(k, vs)| (k.clone(), vs.clone()))
+      .collect();
+    rows
+      .into_par_iter()
+      .flat_map(|(k, vs)| {
+        let kc = k;
+        vs.into_par_iter().map(move |v| (kc.clone(), v))
+      })
+      .collect()
+  }
+
+  /// [`Self::greater_than`] with explicit policy.
+  pub fn greater_than_with<Q>(&self, policy: Parallelism, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    let serial = self.greater_than_serial(bound);
+    if policy.should_parallelize(serial.len()) {
+      self.greater_than_parallel(bound)
+    } else {
+      serial
+    }
+  }
+
+  /// Like [`Self::greater_than_with`] with [`Parallelism::ForceParallel`].
+  /// Deprecated parallel alias.
+  /// Deprecated parallel alias.
+  /// Deprecated parallel alias.
+  /// Deprecated parallel alias.
+  /// Deprecated parallel alias.
+  /// Deprecated; use [`Self::greater_than_with`](Parallelism::ForceParallel).
+  #[deprecated(note = "use greater_than or greater_than_with(Parallelism::ForceParallel)")]
+  pub fn greater_than_par<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    self.greater_than_with(Parallelism::ForceParallel, bound)
+  }
+
+  /// All `(key, value)` pairs with `key < bound`, ascending (default [`Parallelism`]).
   pub fn less_than<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    self.less_than_with(Parallelism::default(), bound)
+  }
+
+  /// Like [`Self::less_than`], sequentially.
+  pub fn less_than_serial<Q>(&self, bound: &Q) -> Vec<(K, V)>
   where
     Q: Ord + ?Sized,
     K: Borrow<Q> + Ord + Clone,
@@ -117,6 +192,53 @@ impl<K: Ord + Clone, V: Clone> RedBlackTree<K, V> {
         vs.iter().cloned().map(move |v| (k.clone(), v))
       })
       .collect()
+  }
+
+  fn less_than_parallel<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    let rows: Vec<(K, Vec<V>)> = self
+      .inner
+      .iter()
+      .filter(|(k, _)| Borrow::<Q>::borrow(*k).cmp(bound) == Ordering::Less)
+      .map(|(k, vs)| (k.clone(), vs.clone()))
+      .collect();
+    rows
+      .into_par_iter()
+      .flat_map(|(k, vs)| {
+        let kc = k;
+        vs.into_par_iter().map(move |v| (kc.clone(), v))
+      })
+      .collect()
+  }
+
+  /// [`Self::less_than`] with explicit policy.
+  pub fn less_than_with<Q>(&self, policy: Parallelism, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    let serial = self.less_than_serial(bound);
+    if policy.should_parallelize(serial.len()) {
+      self.less_than_parallel(bound)
+    } else {
+      serial
+    }
+  }
+
+  /// Deprecated parallel alias.
+  #[deprecated(note = "use less_than or less_than_with(Parallelism::ForceParallel)")]
+  pub fn less_than_par<Q>(&self, bound: &Q) -> Vec<(K, V)>
+  where
+    Q: Ord + ?Sized + Sync,
+    K: Borrow<Q> + Ord + Clone + Send + Sync,
+    V: Clone + Send + Sync,
+  {
+    self.less_than_with(Parallelism::ForceParallel, bound)
   }
 
   /// `n`th pair in ascending key order with values expanded left-to-right per key (0-based).
@@ -133,15 +255,54 @@ impl<K: Ord + Clone, V: Clone> RedBlackTree<K, V> {
     None
   }
 
-  /// Total number of stored values (sum of list lengths).
-  #[inline]
+  /// Total stored values (default [`Parallelism`]).
   pub fn size(&self) -> usize {
+    self.size_with(Parallelism::default())
+  }
+
+  #[inline]
+  /// Total stored values, sequentially.
+  pub fn size_serial(&self) -> usize {
     self.inner.values().map(Vec::len).sum()
   }
 
-  /// All `(key, value)` pairs in ascending key order, values per key left-to-right.
-  #[inline]
-  pub fn entries(&self) -> Vec<(K, V)> {
+  fn size_parallel(&self) -> usize {
+    self
+      .inner
+      .values()
+      .map(Vec::len)
+      .collect::<Vec<_>>()
+      .into_par_iter()
+      .sum()
+  }
+
+  /// Total stored values with explicit policy.
+  pub fn size_with(&self, policy: Parallelism) -> usize {
+    let serial = self.size_serial();
+    if policy.should_parallelize(serial) {
+      self.size_parallel()
+    } else {
+      serial
+    }
+  }
+
+  /// Deprecated parallel alias.
+  #[deprecated(note = "use size or size_with(Parallelism::ForceParallel)")]
+  pub fn size_par(&self) -> usize {
+    self.size_with(Parallelism::ForceParallel)
+  }
+
+  /// All `(key, value)` pairs in ascending key order (default [`Parallelism`]).
+  pub fn entries(&self) -> Vec<(K, V)>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    self.entries_with(Parallelism::default())
+  }
+
+  /// All pairs, sequentially.
+  pub fn entries_serial(&self) -> Vec<(K, V)> {
     self
       .inner
       .iter()
@@ -152,20 +313,94 @@ impl<K: Ord + Clone, V: Clone> RedBlackTree<K, V> {
       .collect()
   }
 
+  fn entries_parallel(&self) -> Vec<(K, V)>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    let rows: Vec<(K, Vec<V>)> = self
+      .inner
+      .iter()
+      .map(|(k, vs)| (k.clone(), vs.clone()))
+      .collect();
+    rows
+      .into_par_iter()
+      .flat_map(|(k, vs)| {
+        let kc = k;
+        vs.into_par_iter().map(move |v| (kc.clone(), v))
+      })
+      .collect()
+  }
+
+  /// All pairs with explicit policy.
+  pub fn entries_with(&self, policy: Parallelism) -> Vec<(K, V)>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    let serial = self.entries_serial();
+    if policy.should_parallelize(serial.len()) {
+      self.entries_parallel()
+    } else {
+      serial
+    }
+  }
+
+  /// Deprecated parallel alias.
+  #[deprecated(note = "use entries or entries_with(Parallelism::ForceParallel)")]
+  pub fn entries_par(&self) -> Vec<(K, V)>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    self.entries_with(Parallelism::ForceParallel)
+  }
+
   /// Distinct keys in ascending order.
   #[inline]
   pub fn keys(&self) -> Vec<K> {
     self.inner.keys().cloned().collect()
   }
 
-  /// All values in key order, each key’s values left-to-right.
-  #[inline]
-  pub fn values(&self) -> Vec<V> {
+  /// All values in key order (default [`Parallelism`]).
+  pub fn values(&self) -> Vec<V>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    self.values_with(Parallelism::default())
+  }
+
+  /// All values, sequentially.
+  pub fn values_serial(&self) -> Vec<V> {
     self
       .inner
       .values()
       .flat_map(|vs| vs.iter().cloned())
       .collect()
+  }
+
+  /// All values with explicit policy.
+  pub fn values_with(&self, policy: Parallelism) -> Vec<V>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    self
+      .entries_with(policy)
+      .into_iter()
+      .map(|(_, v)| v)
+      .collect()
+  }
+
+  /// Deprecated parallel alias.
+  #[deprecated(note = "use values or values_with(Parallelism::ForceParallel)")]
+  pub fn values_par(&self) -> Vec<V>
+  where
+    K: Send + Sync + Clone,
+    V: Send + Sync + Clone,
+  {
+    self.values_with(Parallelism::ForceParallel)
   }
 }
 
@@ -289,6 +524,17 @@ mod tests {
     t.insert(1i32, "a");
     t.insert(2, "b");
     assert_eq!(t.entries(), vec![(1, "a"), (2, "b")]);
+  }
+
+  #[test]
+  fn rbt_default_entries_matches_serial() {
+    let mut t = RedBlackTree::empty();
+    t.insert(1i32, "a");
+    t.insert(2, "b");
+    t.insert(1, "b");
+    assert_eq!(t.entries(), t.entries_serial());
+    assert_eq!(t.values(), t.values_serial());
+    assert_eq!(t.size(), t.size_serial());
   }
 
   #[test]

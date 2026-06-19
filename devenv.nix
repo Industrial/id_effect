@@ -129,7 +129,7 @@ in {
         export MOON_CONCURRENCY=1
         mkdir -p "$DEVENV_ROOT/tmp"
         export TMPDIR="$DEVENV_ROOT/tmp"
-        moon run :format :check :build :test :coverage :audit :check-docs
+        moon run :format :check :build :test :coverage :audit :check-docs :docs
       '';
     };
   };

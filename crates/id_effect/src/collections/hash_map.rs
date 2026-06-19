@@ -6,6 +6,9 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
+use crate::Parallelism;
+use rayon::prelude::*;
+
 /// Persistent hash map — mirrors Effect.ts-style immutable maps; backed by [`im::HashMap`].
 pub type EffectHashMap<K, V> = im::HashMap<K, V>;
 
@@ -98,9 +101,21 @@ where
   }
 }
 
-/// Maps every value in place (consumes the map, produces a new one).
+/// Maps every value using the default [`Parallelism`] policy.
 #[inline]
-pub fn map_values<K, V, W, F>(map: EffectHashMap<K, V>, mut f: F) -> EffectHashMap<K, W>
+pub fn map_values<K, V, W, F>(map: EffectHashMap<K, V>, f: F) -> EffectHashMap<K, W>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  W: Clone + Send,
+  F: Fn(V) -> W + Send + Sync,
+{
+  map_values_with(Parallelism::default(), map, f)
+}
+
+/// Maps every value sequentially (`FnMut`).
+#[inline]
+pub fn map_values_serial<K, V, W, F>(map: EffectHashMap<K, V>, mut f: F) -> EffectHashMap<K, W>
 where
   K: Hash + Eq + Clone,
   V: Clone,
@@ -110,9 +125,57 @@ where
   map.into_iter().map(|(k, v)| (k, f(v))).collect()
 }
 
-/// Keeps entries where `pred(key, value)` is true.
+/// Maps values with an explicit [`Parallelism`] policy.
+pub fn map_values_with<K, V, W, F>(
+  policy: Parallelism,
+  map: EffectHashMap<K, V>,
+  f: F,
+) -> EffectHashMap<K, W>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  W: Clone + Send,
+  F: Fn(V) -> W + Send + Sync,
+{
+  let pairs: Vec<(K, V)> = map.into_iter().collect();
+  if policy.should_parallelize(pairs.len()) {
+    let out: Vec<(K, W)> = pairs.into_par_iter().map(|(k, v)| (k, f(v))).collect();
+    from_iter(out)
+  } else {
+    from_iter(
+      pairs
+        .into_iter()
+        .map(|(k, v)| (k, f(v)))
+        .collect::<Vec<(K, W)>>(),
+    )
+  }
+}
+
+/// Like [`map_values_with`] with [`Parallelism::ForceParallel`].
+#[deprecated(note = "use map_values or map_values_with(Parallelism::ForceParallel)")]
+pub fn map_values_par<K, V, W, F>(map: EffectHashMap<K, V>, f: F) -> EffectHashMap<K, W>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  W: Clone + Send,
+  F: Fn(V) -> W + Send + Sync,
+{
+  map_values_with(Parallelism::ForceParallel, map, f)
+}
+
+/// Keeps entries where `pred` holds, using the default [`Parallelism`] policy.
+pub fn filter<K, V, F>(map: &EffectHashMap<K, V>, pred: F) -> EffectHashMap<K, V>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  F: Fn(&K, &V) -> bool + Send + Sync,
+{
+  filter_with(Parallelism::default(), map, pred)
+}
+
+/// Keeps entries where `pred` holds, sequentially.
 #[inline]
-pub fn filter<K, V, F>(map: &EffectHashMap<K, V>, mut pred: F) -> EffectHashMap<K, V>
+pub fn filter_serial<K, V, F>(map: &EffectHashMap<K, V>, mut pred: F) -> EffectHashMap<K, V>
 where
   K: Hash + Eq + Clone,
   V: Clone,
@@ -123,6 +186,42 @@ where
     .filter(|(k, v)| pred(k, v))
     .map(|(k, v)| (k.clone(), v.clone()))
     .collect()
+}
+
+/// Keeps entries with an explicit [`Parallelism`] policy.
+pub fn filter_with<K, V, F>(
+  policy: Parallelism,
+  map: &EffectHashMap<K, V>,
+  pred: F,
+) -> EffectHashMap<K, V>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  F: Fn(&K, &V) -> bool + Send + Sync,
+{
+  let pairs: Vec<(K, V)> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+  if policy.should_parallelize(pairs.len()) {
+    let kept: Vec<(K, V)> = pairs.into_par_iter().filter(|(k, v)| pred(k, v)).collect();
+    from_iter(kept)
+  } else {
+    from_iter(
+      pairs
+        .into_iter()
+        .filter(|(k, v)| pred(k, v))
+        .collect::<Vec<(K, V)>>(),
+    )
+  }
+}
+
+/// Like [`filter_with`] with [`Parallelism::ForceParallel`].
+#[deprecated(note = "use filter or filter_with(Parallelism::ForceParallel)")]
+pub fn filter_par<K, V, F>(map: &EffectHashMap<K, V>, pred: F) -> EffectHashMap<K, V>
+where
+  K: Hash + Eq + Clone + Send + Sync,
+  V: Clone + Send,
+  F: Fn(&K, &V) -> bool + Send + Sync,
+{
+  filter_with(Parallelism::ForceParallel, map, pred)
 }
 
 /// Folds over `(key, value)` pairs (iterator order).
@@ -395,12 +494,28 @@ mod tests {
   }
 
   #[test]
+  fn default_map_values_matches_serial() {
+    let m = from_iter([("a", 1i32), ("b", 2), ("c", 3)]);
+    let a = map_values(m.clone(), |v| v * 2);
+    let b = map_values_serial(m, |v| v * 2);
+    assert_eq!(a, b);
+  }
+
+  #[test]
   fn filter_keeps_matching_entries() {
     let m = from_iter([(1i32, 10), (2, 20), (3, 30)]);
     let m2 = filter(&m, |k, _v| *k > 1);
     assert!(!has(&m2, &1));
     assert!(has(&m2, &2));
     assert!(has(&m2, &3));
+  }
+
+  #[test]
+  fn default_filter_matches_serial() {
+    let m = from_iter([(1i32, 10), (2, 20), (3, 30), (4, 40)]);
+    let a = filter(&m, |k, _v| *k > 1);
+    let b = filter_serial(&m, |k, _v| *k > 1);
+    assert_eq!(a, b);
   }
 
   #[test]

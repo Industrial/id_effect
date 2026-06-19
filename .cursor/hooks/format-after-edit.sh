@@ -9,6 +9,6 @@ input=$(cat)
 workspace_root=$(echo "$input" | jq -r '.workspace_roots[0] // ""')
 
 if [[ -n "$workspace_root" && -d "$workspace_root" ]]; then
-    (cd "$workspace_root" && moon run :format 2>/dev/null) || true
+    (cd "$workspace_root" && devenv shell -- bun run format 2>/dev/null) || true
 fi
 exit 0

@@ -1,88 +1,64 @@
-# Get and GetMut — Extracting from Context
+# `Needs` and `~Key` — Reading from `Env`
 
-Once you have a `Context`, you need to extract values from it. The `Get` and `GetMut` traits define the interface for type-safe lookup by tag.
+To use a capability inside an effect, declare required keys in `R` with [`caps!`](../../src/capability/set.rs) and borrow with `~Key`, [`require!`](../../src/capability/run.rs), or `Needs::need`.
 
-## Get: Read-Only Access
+## Declaring requirements with `caps!`
+
+Put the keys your effect needs in the third type parameter:
 
 ```rust
-use id_effect::Get;
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
+fn notify_user(id: u64, msg: &str) -> Effect<(), AppError, caps!(UserRepoKey, EmailServiceKey)> { ... }
+```
 
-fn use_database<R>(env: &R) -> &Pool
+Library helpers can stay generic when callers supply a wider `Env`:
+
+```rust
+fn get_user<R>(id: u64) -> Effect<User, DbError, R>
 where
-    R: Get<DatabaseKey>,
+    R: id_effect::Needs<DatabaseKey> + 'static,
 {
-    env.get::<DatabaseKey>()
+    effect!(|r: &mut R| {
+        let db = ~DatabaseKey;
+        db.fetch_user(id)
+    })
 }
 ```
 
-`Get<K>` is the trait bound that says "this environment contains a value tagged with `K`." The `get::<K>()` method returns a reference to that value.
-
-The compiler finds the right element in the `Cons` chain automatically. Position doesn't matter — it searches by tag identity.
-
-## GetMut: Mutable Access
+## `~Key` — capability lookup inside effect bodies
 
 ```rust
-use id_effect::GetMut;
+use id_effect::{effect, require, caps};
 
-fn increment_counter<R>(env: &mut R)
-where
-    R: GetMut<CounterKey>,
-{
-    let counter: &mut Counter = env.get_mut::<CounterKey>();
-    counter.increment();
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        db.fetch_user(id)
+    })
 }
 ```
 
-`GetMut` is the mutable variant. It's less commonly needed in effect code (effects generally avoid shared mutable state in favour of `TRef` or services), but it's there for integration scenarios.
+`~Key` inside `effect!` expands to a typed borrow from `r`. `require!(K)` is equivalent sugar.
 
-## The ~ Operator Uses Get Internally
+If `get_user` requires `DatabaseKey` but you run it with an empty `Env`, you get a **runtime** missing-capability error when the effect executes — not a silent `None`. For static verification, keep `caps!(…)` or `Needs<K>` bounds on public APIs so callers must wire providers before `run_with`.
 
-Inside an `effect!` block, the `~` operator is what calls `get::<K>()`:
-
-```rust
-effect! {
-    let db = ~ DatabaseKey;  // equivalent to env.get::<DatabaseKey>()
-    let user = ~ db.fetch_user(id);
-    user
-}
-```
-
-The `~ ServiceKey` form binds the service to a local name. This is the primary way you access services in effect code — you rarely call `get()` directly.
-
-## NeedsX Supertraits (Recap)
-
-Rather than writing `Get<DatabaseKey>` in every function bound, define a `NeedsDatabase` supertrait:
+When building tests manually:
 
 ```rust
-pub trait NeedsDatabase: Get<DatabaseKey> {}
-impl<R: Get<DatabaseKey>> NeedsDatabase for R {}
+let mut env = Env::new();
+// forgot env.insert::<DatabaseKey>(...)
+run_blocking(get_user(42), env); // panics on ~Key / get
 ```
 
-Then use it:
+Prefer `build_env` or typed test helpers so incomplete wiring fails at setup time.
 
-```rust
-fn get_user<R: NeedsDatabase>(id: u64) -> Effect<User, DbError, R> { ... }
-fn get_posts<R: NeedsDatabase>(uid: u64) -> Effect<Vec<Post>, DbError, R> { ... }
+## Summary
 
-// Composed: still just NeedsDatabase (same requirement)
-fn get_user_with_posts<R: NeedsDatabase>(id: u64) -> Effect<(User, Vec<Post>), DbError, R> { ... }
-```
+| Tool | Use |
+|------|-----|
+| `caps!(K1, K2, …)` | Declare dependencies in `R` |
+| `~Key` / `require!(K)` | Borrow inside `effect!` |
+| `env.get::<K>()` | Direct access when you hold `&Env` |
+| `env.try_get::<K>()` | Fallible lookup without panic |
 
-The `NeedsX` pattern keeps signatures readable. Define one per service in your application.
-
-## Compile-Time Guarantees
-
-The key property: if you write `Get<DatabaseKey>` in a bound, and the caller tries to run the effect without providing `DatabaseKey`, you get a **compile error**, not a runtime panic.
-
-```rust
-// Missing DatabaseKey in the context
-let bad_env = ctx!(tagged::<LoggerKey>(my_logger));
-
-// This won't compile — bad_env doesn't satisfy NeedsDatabase
-run_blocking(get_user(42).provide(bad_env));
-// ERROR: the trait bound `Context<Cons<Tagged<LoggerKey>, Nil>>: NeedsDatabase` is not satisfied
-```
-
-The error message tells you exactly what's missing. No runtime "service not found" exceptions. No defensive `unwrap`s in service lookup code.
-
-This is the payoff of the whole Tags/Context system: an application that compiles is an application where every service dependency is satisfied.
+An application that satisfies all `Needs` bounds at the edge and passes a complete provider list to `run_with` is an application where every dependency is explicit — no service-locator globals.

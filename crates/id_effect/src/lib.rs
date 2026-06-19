@@ -1,11 +1,9 @@
-//! Unified interpreter-style effects, piping, and **build-time** context wiring.
+//! Unified interpreter-style effects, piping, and **capability-first** dependency injection.
 //!
 //! - **[`mod@kernel`]** — unified [`Effect<A, E, R>`] plus [`into_bind`].
 //! - **[`effect!`](macro@effect)** — procedural do-notation (`x ~ expr` bind, `~ expr` discard), tail `Ok(expr)`; see [`macros`].
-//! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`ctx!`](macro@ctx), …).
-//! - **[`context`]** — [`Tag`], [`Tagged`], [`Cons`] / [`Nil`], [`Get`] / [`GetMut`].
-//! - **[`layer`]** — [`Layer`], [`Stack`], [`StackThen`], [`LayerFn`].
-//! - **[`mod@service`]** — [`Service`], [`ServiceEnv`], [`service_env`], [`service_key!`](macro@service_key), [`layer_service`] (Effect.ts-style DI).
+//! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`require!`](macro@require), …).
+//! - **[`mod@capability`]** — trait-first DI: [`Env`], [`ProviderSpec`], [`CapabilityGraph`], [`run_with`].
 //! - **[`mod@piping`]** — [`Pipe`] trait (macro: [`pipe!`](macro@pipe)).
 //! - **[`schedule`]** — Effect.ts-style repeat/retry policies.
 //! - **[`stream`]** — Effect.ts-inspired stream combinators.
@@ -54,20 +52,24 @@
 // Lets `::id_effect::…` in `id_effect_macro` expansions resolve when those macros are used inside this crate.
 extern crate self as id_effect;
 
-pub use id_effect_macro::{ctx, err, layer_graph, layer_node, pipe, req, service_def, service_key};
-pub use id_effect_proc_macro::{EffectData, effect, effect_tagged};
+pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
+pub use id_effect_proc_macro::{
+  EffectData, Fsm, Optics, ProviderSpec as ProviderSpecDerive, SchemaParser, capability, effect,
+  effect_tagged, match_effect,
+};
 
 pub mod algebra;
+pub mod capability;
 pub mod collections;
 pub mod concurrency;
-pub mod context;
 pub mod coordination;
 pub mod failure;
 pub mod foundation;
 pub mod kernel;
-pub mod layer;
 pub mod macros;
+pub mod match_;
 pub mod observability;
+pub mod parallelism;
 pub mod resource;
 pub mod runtime;
 pub mod scheduling;
@@ -80,6 +82,14 @@ pub use crate::kernel::{
   BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, from_async, into_bind, pure,
   scope_with, scoped, succeed,
 };
+pub use crate::match_::{HasTag, Matcher};
+pub use capability::{
+  CapBind, CapBindR, CapBindWide, CapKeys, CapList, CapWiden, Capability, CapabilityDiagnostic,
+  CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey, CapabilityPlannerError,
+  CapabilitySet, Caps, Env, FromEnv, HasCap, Needs, NoCaps, PlannerNode, PlannerPlan, Provider,
+  ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError, build_env, cap_into_bind,
+  plan_topological, run, run_with, with_fiber_and_override, with_override,
+};
 pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
   MutableHashMap, MutableHashSet, MutableList, MutableQueue, RedBlackTree, Trie,
@@ -88,16 +98,14 @@ pub use concurrency::{
   CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, Supervisor, SupervisorPolicy,
   check_interrupt, fiber_all, fiber_never, fiber_succeed, interrupt_all, supervised, with_fiber_id,
 };
-pub use context::{
-  Cons, Context, Get, GetMut, HasTag, Here, Matcher, Nil, Skip0, Skip1, Skip2, Skip3, Skip4, Tag,
-  Tagged, There, ThereHere, prepend_cell, tagged,
-};
 pub use coordination::semaphore::Permit;
 pub use coordination::{
-  Channel, ChannelReadError, Deferred, Latch, PubSub, Queue, QueueChannel, QueueError, Ref,
-  Semaphore, SynchronizedRef,
+  Channel, ChannelReadError, Deferred, FnRequestResolver, Latch, MissingKey, PubSub, Queue,
+  QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
+  SynchronizedRef, batching, make_request_resolver,
 };
 pub use failure::{Cause, Exit, Or};
+#[doc(inline)]
 pub use foundation::either::Either;
 pub use foundation::func::{
   always, compose, const_, flip, identity, memoize, pipe1, pipe2, pipe3, tupled, untupled,
@@ -105,17 +113,13 @@ pub use foundation::func::{
 pub use foundation::mutable_ref::MutableRef;
 pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
-pub use layer::{
-  Layer, LayerDiagnostic, LayerEffect, LayerExt, LayerFn, LayerFnFrom, LayerFrom, LayerGraph,
-  LayerNode, LayerPlan, LayerPlannerError, Service, ServiceEnv, Stack, StackThen, layer_service,
-  layer_service_env, merge_all, provide_service, service, service_env,
-};
 pub use observability::{
   AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, EffectEvent, FiberEvent, LogSpan, Metric,
   SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot, annotate_current_span,
   emit_effect_event, emit_fiber_event, install_tracing_layer, metric_make, snapshot_tracing,
   with_span,
 };
+pub use parallelism::Parallelism;
 pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};
 pub use runtime::{
   Never, Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now,
@@ -130,12 +134,13 @@ pub use schema::brand::Brand;
 pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDataTrait};
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
-pub use schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
+pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
 pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, commit};
 pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender, StreamV1};
 pub use streaming::{
-  BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, backpressure_decision, end_stream,
-  send_chunk, stream_from_channel, stream_from_channel_with_policy,
+  BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, Transducer, backpressure_decision,
+  broadcast_with_replay, combine_latest, end_stream, keyed_join, send_chunk, state_scan,
+  stream_from_channel, stream_from_channel_with_policy, transducer_filter, transducer_map,
 };
 pub use testing::{
   assert_no_leaked_fibers, assert_no_unclosed_scopes, record_leaked_fiber, record_unclosed_scope,
@@ -144,7 +149,6 @@ pub use testing::{
 
 // ─── Backward-compatible module re-exports ────────────────────────────────────
 // External crates that use `id_effect::channel::Channel` etc. keep working.
-pub use context::match_;
 pub use coordination::channel;
 pub use coordination::ref_;
 pub use foundation::either;
@@ -161,3 +165,5 @@ pub use testing::snapshot;
 // adding a separate `im` dependency, and they're guaranteed version-compatible
 // with all `id_effect::collections` types (which are type aliases of `im` types).
 pub use im;
+
+pub use algebra::{Alternative, Foldable, Invariant, sequence_vec, traverse_option, traverse_vec};

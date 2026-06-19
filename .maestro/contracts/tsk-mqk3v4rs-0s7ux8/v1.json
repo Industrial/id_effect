@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-a8740c",
+	"taskId": "tsk-mqk3v4rs-0s7ux8",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:38.530Z",
+	"lockedAt": "2026-06-18T23:25:38.530Z",
+	"intent": "Ai Streaming",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-6c3a1b",
+			"text": "id_effect_ai crate: LLM client traits and streaming",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-3822d6",
+			"text": "MCP server template example",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-3e39ba",
+			"text": "Part VI ch35 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-fda811",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "platform-leaves-subagent",
+	"lockedBy": "platform-leaves-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uu83-9z30eo",
+	"riskClass": "medium"
+}

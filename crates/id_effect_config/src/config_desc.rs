@@ -42,14 +42,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::{Effect, Get, Here, effect};
+use ::id_effect::{Effect, Needs, effect};
 use id_effect::duration::duration;
 use id_effect_logger::LogLevel;
 use url::Url;
 
-use crate::ambient::current_config_provider;
 use crate::error::ConfigError;
-use crate::provider::{ConfigProvider, ConfigProviderKey, NeedsConfigProvider};
+use crate::provider::{ConfigProvider, ConfigProviderKey};
 use crate::secret::Secret;
 
 // Shared loading function: takes a provider reference, returns a Result.
@@ -119,34 +118,20 @@ impl<T: Send + Sync + 'static> Config<T> {
 
   /// Evaluate this descriptor as an [`Effect`], pulling the provider from the environment.
   ///
-  /// `R` only needs to satisfy `NeedsConfigProvider`; callers compose whatever layer stack
+  /// `R` only needs to satisfy `Needs<ConfigProviderKey>`; callers compose whatever provider stack
   /// they like.  See [`config_env`](crate::config_env) for building a minimal context.
   pub fn run<A, E, R>(&self) -> Effect<A, E, R>
   where
     A: From<T> + 'static,
     E: From<ConfigError> + 'static,
-    R: NeedsConfigProvider + 'static,
+    R: Needs<ConfigProviderKey> + 'static,
   {
     let loader = self.loader.clone();
     effect!(|r: &mut R| {
-      let service = Get::<ConfigProviderKey, Here>::get(r);
+      let service = r.need();
       let t = (loader)(service.0.as_ref()).map_err(E::from)?;
       A::from(t)
     })
-  }
-
-  /// Like [`load`](Self::load), using the innermost ambient provider from
-  /// [`with_config_provider`](crate::with_config_provider).
-  ///
-  /// Runs eagerly when called (reads the thread-local immediately).
-  #[inline]
-  pub fn load_current(&self) -> Result<T, ConfigError> {
-    match current_config_provider() {
-      Some(p) => (self.loader)(p.as_ref()),
-      None => Err(ConfigError::Missing {
-        path: "<ambient ConfigProvider>".into(),
-      }),
-    }
   }
 
   /// Transform the loaded value (Effect `Config.map`).
@@ -963,25 +948,28 @@ mod tests {
     assert!(result.is_err());
   }
 
-  // ── Config::load_current ───────────────────────────────────────────────────
+  // ── Config::run with scoped Env ───────────────────────────────────────────
 
   #[test]
-  fn load_current_no_ambient_returns_missing() {
-    let err = Config::<String>::string("X").load_current().unwrap_err();
-    assert!(matches!(err, ConfigError::Missing { .. }));
-  }
+  fn config_run_with_scoped_env_override() {
+    use crate::{MapConfigProvider, provide_config_provider};
+    use id_effect::build_env;
 
-  #[test]
-  fn load_current_with_ambient_provider() {
-    use crate::ambient::with_config_provider;
-    use std::sync::Arc;
-
-    let p = Arc::new(map_provider(&[("X", "from-ambient")]));
-    let eff = with_config_provider(
-      id_effect::Effect::new(|_| Config::string("X").load_current()),
-      p,
-    );
-    assert_eq!(id_effect::run_blocking(eff, ()).unwrap(), "from-ambient");
+    let base = build_env([provide_config_provider(MapConfigProvider::from_pairs([(
+      "REGION", "us-east",
+    )]))])
+    .expect("base env");
+    let scoped = base
+      .scoped([provide_config_provider(MapConfigProvider::from_pairs([(
+        "REGION", "eu-west",
+      )]))])
+      .expect("scoped env");
+    let region: String = id_effect::run_blocking(
+      Config::string("REGION").run::<String, ConfigError, _>(),
+      scoped,
+    )
+    .unwrap();
+    assert_eq!(region, "eu-west");
   }
 
   // ── with_default non-missing error propagation ─────────────────────────────

@@ -1,105 +1,73 @@
-# Tags — Branding Values with Identity
+# Capability Keys — `#[capability]`
 
-A `Tag` is a zero-sized type that acts as a compile-time name for a value. It associates an identifier with a value type, so two values of the same underlying type can be distinguished by their tag.
+A **capability key** is a zero-sized type that identifies a service in [`Env`](../../src/capability/env.rs). The [`#[capability]`](../../src/capability/key.rs) attribute generates the key and wires it to a stored value type.
 
-## What Is a Tag?
+## Declaring a key
 
 ```rust
-use id_effect::{Tag, Tagged, tagged};
+// Key + concrete value type
+#[::id_effect::capability(Counter)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Counter(pub u32);
 
-// A Tag is a zero-sized type with an associated Value type
-struct DatabaseTag;
-impl Tag for DatabaseTag {
-    type Value = Pool;
+// Key for a trait object (typical for services)
+#[::id_effect::capability(Pool)]
+struct Database;
+
+#[::id_effect::capability(Pool)]
+struct Cache; // same Pool, different identity
+
+#[::id_effect::capability(Arc<dyn UserRepository>)]
+struct UserRepo;
+```
+
+Each key implements [`CapabilityKey`](../../src/capability/key.rs) with an associated `Value` type. `DatabaseKey` and `CacheKey` both store `Pool` but are unrelated types — you cannot pass one where the other is expected.
+
+## Registering values
+
+At runtime, values live in `Env`:
+
+```rust
+use id_effect::Env;
+
+let mut env = Env::new();
+env.insert::<DatabaseKey>(main_pool);
+env.insert::<CacheKey>(cache_pool);
+```
+
+Or let a [`ProviderSpec`](../../src/capability/provider.rs) insert them during `run_with`.
+
+## Why keys help the compiler
+
+```rust
+fn needs_database() -> Effect<A, E, caps!(DatabaseKey)> { ... }
+fn needs_cache() -> Effect<A, E, caps!(CacheKey)> { ... }
+```
+
+Providing the wrong key is a type error at the call site, not a silent runtime swap.
+
+## Service traits
+
+Define a focused trait, then a key for its handle:
+
+```rust
+pub trait UserRepository: Send + Sync {
+    fn get_user(&self, id: u64) -> Effect<User, DbError, ()>;
 }
 
-struct CacheTag;
-impl Tag for CacheTag {
-    type Value = Pool;  // Same underlying type, different identity
-}
+#[::id_effect::capability(Arc<dyn UserRepository>)]
+struct UserRepo;
 ```
 
-`Tagged<DatabaseTag>` is "a `Pool` identified as the database." `Tagged<CacheTag>` is "a `Pool` identified as the cache." They're different types even though both wrap `Pool`.
-
-## Creating Tagged Values
-
-```rust
-let db_pool: Pool = connect_database();
-let cache_pool: Pool = connect_cache();
-
-// Wrap with identity
-let db:    Tagged<DatabaseTag> = tagged(db_pool);
-let cache: Tagged<CacheTag>    = tagged(cache_pool);
-```
-
-`tagged(value)` is a simple wrapper constructor. It moves the value inside a `Tagged<T>` newtype.
-
-To get the value back:
-
-```rust
-let pool: &Pool = db.value();
-let pool_owned: Pool = db.into_value();
-```
-
-## Why Tags Make the Compiler Your Friend
-
-Now the swap problem from the previous section becomes a compile error:
-
-```rust
-// These are DIFFERENT types
-fn needs_database<R: NeedsDatabase>() -> Effect<A, E, R> { ... }
-fn needs_cache<R: NeedsCache>() -> Effect<A, E, R> { ... }
-
-// Providing the wrong one fails to compile
-effect.provide(tagged::<CacheTag>(pool))
-// ERROR: expected Tagged<DatabaseTag>, got Tagged<CacheTag>
-```
-
-The compiler distinguishes them. You can't accidentally swap the database and cache connections.
-
-## The service_key! Macro
-
-In practice, you don't implement `Tag` by hand. The `service_key!` macro generates the boilerplate:
-
-```rust
-use id_effect::service_key;
-
-service_key!(DatabaseKey: Pool);
-service_key!(CacheKey: Pool);
-service_key!(LoggerKey: Logger);
-```
-
-Each call creates a tag type with the right `Tag` implementation. Use these as your service keys.
-
-## NeedsX Supertraits
-
-When you write a function that needs a `DatabaseKey` service, you want the bound expressed cleanly. The `NeedsX` supertrait pattern does this:
-
-```rust
-// Low-level (verbose)
-pub fn get_user<R>(id: u64) -> Effect<User, DbError, R>
-where
-    R: Get<DatabaseKey, Target = Pool>
-{ ... }
-
-// High-level (idiomatic) — define NeedsDatabase once
-pub trait NeedsDatabase: Get<DatabaseKey, Target = Pool> {}
-impl<R: Get<DatabaseKey, Target = Pool>> NeedsDatabase for R {}
-
-// Now use it
-pub fn get_user<R: NeedsDatabase>(id: u64) -> Effect<User, DbError, R> { ... }
-```
-
-The `NeedsX` trait is just a named alias for the `Get<Key>` bound. It makes function signatures readable and allows you to change the key implementation without updating every call site.
+Trait methods keep `R = ()` — the *caller* carries `DatabaseKey` / `UserRepoKey` in its `caps!` list.
 
 ## Summary
 
-| Concept | Purpose |
-|---------|---------|
-| `Tag` | Zero-sized type acting as a compile-time name |
-| `Tagged<T>` | A value wrapped with a tag identity |
-| `tagged(v)` | Wrap a value with its tag |
-| `service_key!(K: V)` | Macro to generate a tag type |
-| `NeedsX` | Supertrait alias for `Get<XKey>` bounds |
+| Item | Role |
+|------|------|
+| `#[capability(V)]` on a struct | Generate `StructKey: CapabilityKey` with `Value = V` |
+| `Env::insert::<K>(v)` | Register a service |
+| `Needs<K>` | Bound: environment contains `K` |
+| `K::Value` | Concrete type stored for `K` |
 
-Tags eliminate the position problem. The next section shows how they're assembled into `Context` — the heterogeneous list that forms the `R` of a running effect.
+Keys eliminate the positional problem. The next section introduces `Env` — how those keys are stored at runtime.

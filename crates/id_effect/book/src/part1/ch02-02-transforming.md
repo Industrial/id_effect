@@ -54,7 +54,7 @@ let effect = succeed(42)
 // At this point: nothing has printed, nothing has computed.
 // We have a description of three steps.
 
-let result = run_blocking(effect.provide(()));
+let result = run_blocking(effect, ());
 // NOW the effect runs. "mapping!" prints once. Result is 86.
 ```
 

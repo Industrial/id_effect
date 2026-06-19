@@ -1,34 +1,63 @@
 # Platform I/O (`id_effect_platform`)
 
-Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**, **filesystem**, and **process** capabilities as **typed services in `R`**, not as ad hoc `reqwest` / `std::fs` / `tokio::process` calls scattered through domain code.
-
-The crate is a **single build**: HTTP (`reqwest` + `http` + `bytes`), Tokio fs/process, and URI helpers ship together—no Cargo feature matrix to toggle when learning or publishing docs.
+Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**, **filesystem**, and **process** as typed capabilities in [`Env`](../../src/capability/env.rs), not ad hoc `reqwest` / `std::fs` calls in domain code.
 
 ## Why separate from `id_effect`?
 
-- **Ports, not drivers** — traits like [`HttpClient`](https://docs.rs/id_effect_platform/latest/id_effect_platform/http/trait.HttpClient.html), [`FileSystem`](https://docs.rs/id_effect_platform/latest/id_effect_platform/fs/trait.FileSystem.html), and [`ProcessRuntime`](https://docs.rs/id_effect_platform/latest/id_effect_platform/process/trait.ProcessRuntime.html) describe *what* your program needs; production stacks install concrete implementations via **layers** (same pattern as [Layers](./ch06-00-layers.md)).
-- **Test doubles** — [`TestFileSystem`](https://docs.rs/id_effect_platform/latest/id_effect_platform/fs/struct.TestFileSystem.html) is an in-memory `FileSystem` for fast, deterministic tests; production uses [`LiveFileSystem`](https://docs.rs/id_effect_platform/latest/id_effect_platform/fs/struct.LiveFileSystem.html) backed by Tokio.
-- **Stable HTTP boundary** — domain code depends on **`HttpClientKey`** + `execute`, not on `reqwest::RequestBuilder`. The default implementation is **`ReqwestHttpClient`**, swappable in tests.
+- **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe *what* you need; provider impls install live or test doubles.
+- **Test doubles** — `TestFileSystem` is in-memory; production uses `LiveFileSystemProvider`.
+- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait + `execute`, not `reqwest::RequestBuilder` (the capability key is crate-private).
 
-## Modules at a glance
+## Modules
 
 | Module | Responsibility |
-|--------|------------------|
-| `error` | `HttpError`, `FsError`, `ProcessError`, unified [`PlatformError`](https://docs.rs/id_effect_platform/latest/id_effect_platform/error/enum.PlatformError.html) |
-| `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClient`, `layer_http_client`, `execute` |
-| `fs` | `FileSystem`, live + test impls, `FileSystemKey`, `read` helper |
-| `process` | `CommandSpec`, `ProcessRuntime`, `TokioProcessRuntime`, `spawn_wait` |
-| `uri` | Small helpers around `http::Uri` |
+|--------|----------------|
+| `error` | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
+| `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClientProvider`, `execute` (key is internal) |
+| `fs` | `FileSystem`, `LiveFileSystemProvider`, `TestFileSystem`, `read` |
+| `process` | `CommandSpec`, `ProcessRuntime`, `spawn_wait` |
+| `uri` | URI helpers |
 
 ## Wiring pattern
 
-1. Declare **`R`** that includes `Service<HttpClientKey, …>` (or fs/process keys) via `Context` / `Cons` as in [A Complete DI Example](./ch07-04-complete-example.md).
-2. Build a **`Layer`** from `layer_http_client`, `layer_file_system`, or `layer_process_runtime`.
-3. Call **`execute`**, **`read`**, or **`spawn_wait`** from handlers; drive with **`id_effect_tokio::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
+Each module declares a capability key and ships a default provider:
+
+```rust
+// in id_effect_platform::http (simplified; HttpClientKey is pub(crate))
+#[derive(ProviderSpecDerive)]
+#[provides(HttpClientKey)]
+pub struct ReqwestHttpClientProvider;
+
+impl ReqwestHttpClientProvider {
+    fn new() -> Arc<dyn HttpClient> {
+        Arc::new(ReqwestHttpClient::default_client())
+    }
+}
+```
+
+Application entry:
+
+```rust
+use id_effect::{run_with, RunError};
+use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
+
+let res = run_with(
+    [provide_reqwest_http_client()],
+    execute(HttpRequest::get("https://example.com")),
+)
+.map_err(|e| match e {
+    RunError::Effect(e) => e,
+    e => panic!("planner: {e}"),
+})?;
+```
+
+Effects returned by `execute` carry the correct `Needs` bound internally; application code usually calls `run_with([provide_reqwest_http_client()], execute(req))` without naming the key.
+
+Drive async platform effects with **`id_effect_tokio::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
 
 ## Security note (filesystem)
 
-[`TestFileSystem`](https://docs.rs/id_effect_platform/latest/id_effect_platform/fs/struct.TestFileSystem.html) rejects path keys containing `..`. Live I/O follows OS semantics—**sandbox or canonicalize** untrusted paths at a higher layer when exposing file access.
+`TestFileSystem` rejects paths containing `..`. Live I/O follows OS semantics — sandbox untrusted paths at a higher layer.
 
 ## Runnable example
 
@@ -36,11 +65,6 @@ The crate is a **single build**: HTTP (`reqwest` + `http` + `bytes`), Tokio fs/p
 cargo run -p id_effect_platform --example 010_platform_http_get
 ```
 
-## Spec and parity
-
-- RFC: `docs/effect-ts-parity/rfcs/0001-id-effect-platform.md`
-- Crate README: `crates/id_effect_platform/README.md`
-
 ## Next
 
-For **reqwest-shaped** APIs (pools, `RequestBuilder`, schema-decoded JSON helpers), see [HTTP via reqwest](./ch07-07-reqwest-http.md) and decide when to prefer platform **ports** vs **reqwest** adapters.
+For reqwest-specific pools and JSON helpers, see [HTTP via reqwest](./ch07-07-reqwest-http.md).

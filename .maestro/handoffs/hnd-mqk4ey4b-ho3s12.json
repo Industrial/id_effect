@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4ey4b-ho3s12",
+	"task_id": "tsk-mqk3v9vf-gjjsj7",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:18:10.235Z",
+	"agent_id": "composer-subagent",
+	"worktree_path": "/home/tom/Code/rust/id_effect-tsk-mqk3v9vf-gjjsj7",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-async-messaging.md"
+}

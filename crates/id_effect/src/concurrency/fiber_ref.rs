@@ -35,8 +35,9 @@ pub fn with_fiber_id<R>(fiber: FiberId, f: impl FnOnce() -> R) -> R {
   })
 }
 
+/// Current logical fiber id for this thread.
 #[inline]
-fn current_fiber_id() -> FiberId {
+pub fn current_fiber_id() -> FiberId {
   CURRENT_FIBER.with(|c| c.get())
 }
 

@@ -1,34 +1,27 @@
 # Widening and Narrowing — Environment Transformations
 
-Sometimes your effect needs *part* of an environment, but you have the whole thing. Or you need to thread an effect through a context that provides more than required. This is where `zoom_env` and `contramap_env` come in.
+Sometimes your effect needs *part* of an environment, but you have the whole thing. Or you need to thread an effect through a context that provides more than required. This is where `zoom_env`, `contramap_env`, and capability subtyping come in.
 
 ## The Mismatch Problem
 
-Imagine your application has a large environment type:
+Imagine your application needs several capabilities:
 
 ```rust
-struct AppEnv {
-    db: Database,
-    logger: Logger,
-    config: Config,
-    metrics: MetricsClient,
-}
+// Effect needs only LoggerKey
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)> { ... }
+
+// Caller has DatabaseKey + LoggerKey + ConfigKey
+fn process(data: Data) -> Effect<(), AppError, caps!(DatabaseKey, LoggerKey, ConfigKey)> { ... }
 ```
 
-You have a utility function that only needs a `Logger`:
-
-```rust
-fn log_event(msg: &str) -> Effect<(), LogError, Logger> { ... }
-```
-
-You can't call this inside an `effect!` block that has `AppEnv` in scope — the types don't match. You need to *narrow* the environment down.
+You can't call `log_event` inside `process` without adapting the environment — the `R` types don't match. You need to *narrow* or *widen*.
 
 ## zoom_env: Narrow the Environment
 
 `zoom_env` adapts an effect to work with a *larger* environment by providing a lens from the larger type to the smaller one:
 
 ```rust
-// Adapt log_event to work with AppEnv
+// Adapt log_event to work with a struct holding logger + other fields
 let app_log = log_event("hello").zoom_env(|env: &AppEnv| &env.logger);
 ```
 
@@ -37,12 +30,12 @@ Now `app_log` has type `Effect<(), LogError, AppEnv>`. The function extracts the
 Inside `effect!`, the pattern looks like:
 
 ```rust
-fn process(data: Data) -> Effect<(), AppError, AppEnv> {
-    effect! {
-        ~ log_event("start").zoom_env(|e: &AppEnv| &e.logger).map_error(AppError::Log);
-        ~ db_query(data).zoom_env(|e: &AppEnv| &e.db).map_error(AppError::Db);
+fn process(data: Data) -> Effect<(), AppError, caps!(DatabaseKey, LoggerKey, ConfigKey)> {
+    effect!(|r| {
+        ~ log_event("start").zoom_env(|e| extract_logger(e)).map_error(AppError::Log);
+        ~ db_query(data).zoom_env(|e| extract_db(e)).map_error(AppError::Db);
         Ok(())
-    }
+    })
 }
 ```
 
@@ -61,15 +54,65 @@ let with_config = connect_raw.contramap_env(|cfg: &Config| cfg.db_url.clone());
 
 `contramap_env` is the formal name for "adapt the environment type." In practice, most code uses `zoom_env` for the common case of extracting a field.
 
+## caps! and automatic subtyping
+
+For capability DI, prefer [`caps!`](../../src/capability/set.rs) and the `~` bind operator inside `effect!`. A wider runtime environment satisfies a narrower `R`: every [`CapList`](../../src/capability/set.rs) shares one [`Env`](../../src/capability/env.rs); [`cap_into_bind`](../../src/capability/cap_bind.rs) clones that env and verifies the inner keys (see ADR 0005).
+
+```rust
+use id_effect::{Effect, caps, effect, run_with, provide};
+
+fn query(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        db.fetch_user(id)
+    })
+}
+
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)> {
+    effect!(|r| {
+        let log = ~LoggerKey;
+        log.info(msg);
+    })
+}
+
+fn app() -> Effect<User, AppError, caps!(DatabaseKey, LoggerKey)> {
+    effect!(|r| {
+        ~log_event("start");
+        ~query(42)
+    })
+}
+
+run_with(
+    [provide!(DatabaseLive), provide!(LoggerLive)],
+    app(),
+)?;
+```
+
+**Automatic binding with `~`:** when the inner effect needs any single key from the outer `caps!(…)` list, `effect!` expands `~inner(...)` to [`cap_into_bind`](../../src/capability/cap_bind.rs) — no manual projection.
+
+**Capability lookup:** `~DatabaseKey` inside `effect!` borrows that capability from `r` (same as [`require!(DatabaseKey)`](../../src/capability/require.rs)).
+
+**Implicit `|r|`:** write `effect!(|r| { … })`; Rust infers `&mut caps!(…)` from the enclosing function's `Effect<_, _, caps!(…)>` return type. You still declare `caps!(…)` once on the signature.
+
+**Outside `effect!`**, narrow explicitly with [`CapWiden::widen`](../../src/capability/set.rs) or [`project_at_*`](../../src/capability/set.rs):
+
+```rust
+let wide: caps!(DatabaseKey, LoggerKey) = /* from build_env or run_with */;
+let narrow: caps!(DatabaseKey) = wide.widen();
+run_blocking(query(1), narrow)?;
+```
+
+When an inner function declares `caps!(DatabaseKey)` and the caller holds `caps!(DatabaseKey, LoggerKey)`, the compiler checks that every required key is present — no positional tuple indexing, no runtime downcasts.
+
 ## R as Documentation Revisited
 
 These combinators highlight why `R` is valuable as documentation. When you see:
 
 ```rust
-fn log_event(msg: &str) -> Effect<(), LogError, Logger>
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)>
 ```
 
-You know *exactly* what this function needs. You don't need to read its body to see if it also touches the database. The `zoom_env` call at the use site makes the adaptation explicit — it's not hidden.
+You know *exactly* what this function needs. You don't need to read its body to see if it also touches the database. Adaptation at the call site stays explicit.
 
 Compare to the pre-effect alternative:
 
@@ -78,10 +121,10 @@ Compare to the pre-effect alternative:
 fn log_event(env: &AppEnv, msg: &str) -> Result<(), LogError> { ... }
 ```
 
-With `R`, the function declares what it needs. With `zoom_env`, the caller declares how to satisfy it.
+With `R`, the function declares what it needs. With `zoom_env` or `CapWiden`, the caller declares how to satisfy it.
 
 ## When to Use These
 
-In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses Layers and service tags (Chapters 5–6) which avoid the need for explicit projection.
+In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](../../src/capability/set.rs) / [`CapWiden`](../../src/capability/set.rs) and named capability keys (Chapters 5–6), which avoid the need for explicit projection.
 
-Think of `zoom_env` as the manual fallback when the automatic layer-based wiring isn't the right fit.
+Think of `zoom_env` as the manual fallback when automatic capability subtyping isn't the right fit.

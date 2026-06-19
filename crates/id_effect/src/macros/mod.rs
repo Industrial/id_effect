@@ -1,4 +1,4 @@
-//! Declarative macros (`pipe!`, `ctx!`, …).
+//! Declarative macros (`pipe!`, `provide!`, …).
 //!
 //! They are implemented in the **`id_effect_macro`** crate and re-exported at the `id_effect` crate
 //! root. Procedural **`effect!`** is implemented in **`id_effect_proc_macro`** (Rust cannot combine
@@ -11,4 +11,4 @@ pub mod effect {
   pub use id_effect_proc_macro::effect;
 }
 
-pub use id_effect_macro::{ctx, err, layer_graph, layer_node, pipe, req, service_def, service_key};
+pub use id_effect_macro::{caps, err, pipe, provide, require};

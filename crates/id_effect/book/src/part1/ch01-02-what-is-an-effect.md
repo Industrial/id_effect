@@ -99,10 +99,10 @@ You're not adding retry logic to running code. You're modifying the *description
 **Dependencies** become part of the type signature. When you write:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, Database>
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)>
 ```
 
-That `Database` in the type says "this recipe requires a Database to execute." The compiler enforces it. You can't run the effect without providing a Database. No runtime surprises.
+That `caps!(DatabaseKey)` in the type says "this recipe requires a database capability to execute." The compiler enforces it. You can't run the effect without wiring `DatabaseKey` at the edge. No runtime surprises.
 
 **Structured concurrency** becomes possible because the runtime knows what each effect intends to do before it does it. Spawning an effect doesn't fire and forget — it creates a handle to a structured task with clear ownership and cancellation semantics.
 
@@ -120,11 +120,11 @@ We'll explore all three in the next section. For now, just notice that an Effect
 // This type signature tells the whole story:
 fn process_payment(
     amount: Money
-) -> Effect<Receipt, PaymentError, (PaymentGateway, Logger)>
+) -> Effect<Receipt, PaymentError, caps!(PaymentGatewayKey, LoggerKey)>
 
 // - Produces a Receipt on success
 // - Can fail with PaymentError
-// - Requires a PaymentGateway and Logger to run
+// - Requires PaymentGatewayKey and LoggerKey to run
 ```
 
 No need to read the function body to know what resources it needs or what errors it can produce. The type *is* the documentation.

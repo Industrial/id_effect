@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-07f803",
+	"taskId": "tsk-mqk3v6fi-o0eecp",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:14:56.823Z",
+	"lockedAt": "2026-06-18T23:14:56.823Z",
+	"intent": "Openapi Emit",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-089213",
+			"text": "id_effect_rpc D3 codegen; OpenAPI emit; API versioning middleware",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4a12ed",
+			"text": "RPC tracing examples wired to OTEL",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-5bebec",
+			"text": "Part VI ch29 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-07aecd",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "maestro",
+	"lockedBy": "maestro",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uv7g-4r9v0a",
+	"riskClass": "medium"
+}

@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4obxp-1u631e",
+	"task_id": "tsk-mqk3v82n-cbmz83",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:25:28.045Z",
+	"agent_id": "cursor",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-application.md",
+	"to_agent": "cli"
+}

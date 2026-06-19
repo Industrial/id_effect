@@ -1,25 +1,19 @@
 {
 	"mcpServers": {
-		"solana": {
-			"command": "./scripts/solana-mcp-wrapper.sh",
-			"args": [],
-			"disabled": false
-		},
 		"context7": {
-			"command": "npx",
-			"args": ["-y", "@upstash/context7-mcp@latest"],
+			"command": "bunx",
+			"args": ["@upstash/context7-mcp@latest"],
 			"disabled": false
 		},
-		"ferroscope": {
-			"command": "ferroscope",
-			"args": [],
-			"env": {},
-			"description": "Rust debugging via LLDB/GDB"
+		"figma-mcp-go": {
+			"command": "bunx",
+			"args": ["@vkhanhqui/figma-mcp-go"],
+			"disabled": false,
+			"description": "Figma via plugin bridge (https://github.com/vkhanhqui/figma-mcp-go) \u2014 run the companion plugin in Figma Desktop"
 		},
 		"mcp-debugger": {
-			"command": "npx",
+			"command": "bunx",
 			"args": [
-				"-y",
 				"@debugmcp/mcp-debugger",
 				"stdio",
 				"--log-level",
@@ -31,53 +25,82 @@
 			"autoApprove": ["create_debug_session", "set_breakpoint", "get_variables"]
 		},
 		"playwright": {
-			"command": "npx",
-			"args": ["-y", "@playwright/mcp@latest"],
-			"disabled": false
-		},
-		"filesystem": {
-			"command": "npx",
-			"args": ["-y", "@modelcontextprotocol/server-filesystem@latest"],
-			"disabled": false
-		},
-		"memory": {
-			"command": "npx",
-			"args": ["-y", "@modelcontextprotocol/server-memory@latest"],
-			"disabled": false
-		},
-		"sequential-thinking": {
-			"command": "npx",
-			"args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
-			"disabled": false
-		},
-		"fetch": {
-			"command": "uvx",
-			"args": ["mcp-server-fetch"],
-			"disabled": false
-		},
-		"git": {
-			"command": "uvx",
-			"args": ["mcp-server-git"],
-			"disabled": false
-		},
-		"time": {
-			"command": "uvx",
-			"args": ["mcp-server-time"],
+			"command": "bunx",
+			"args": ["@playwright/mcp@latest"],
 			"disabled": false
 		},
 		"github": {
-			"command": "npx",
-			"args": ["-y", "@modelcontextprotocol/server-github@latest"],
+			"command": "bunx",
+			"args": ["@modelcontextprotocol/server-github@latest"],
 			"disabled": false
 		},
 		"chrome-devtools": {
-			"command": "npx",
-			"args": ["-y", "chrome-devtools-mcp@latest"]
+			"command": "bunx",
+			"args": ["chrome-devtools-mcp@latest"]
 		},
 		"postgres": {
-			"command": "./scripts/postgres-mcp-wrapper.sh",
-			"args": [],
+			"command": "bun",
+			"args": ["run", "apps/risk-calculator/scripts/run-postgres-mcp.ts"],
 			"disabled": false
+		},
+		"temporal": {
+			"command": "uvx",
+			"args": [
+				"temporal-mcp-server",
+				"--host",
+				"127.0.0.1:7233",
+				"--namespace",
+				"default",
+				"--tls-enabled",
+				"false"
+			],
+			"disabled": false,
+			"description": "Temporal workflows/schedules via MCP (temporal-mcp-server; see https://github.com/GethosTheWalrus/temporal-mcp)"
+		},
+		"maestro": {
+			"command": "maestro",
+			"args": ["mcp", "serve"],
+			"disabled": false,
+			"description": "Maestro MCP via stdio (`maestro mcp serve`; see https://github.com/ReinaMacCredy/maestro#mcp-server)"
+		},
+		"lean-ctx": {
+			"command": "./.devenv/profile/bin/lean-ctx",
+			"args": [],
+			"disabled": false,
+			"description": "lean-ctx MCP (context compression); run devenv shell once so .devenv/profile exists"
+		},
+		"serena": {
+			"type": "stdio",
+			"command": "./.devenv/state/venv/bin/serena",
+			"args": ["start-mcp-server"],
+			"disabled": false,
+			"description": "Serena MCP (@oraios/serena); run devenv shell once so .devenv/state/venv exists"
+		},
+		"roam-code": {
+			"type": "stdio",
+			"command": "./.devenv/profile/bin/roam",
+			"args": ["mcp"],
+			"disabled": false,
+			"description": "roam-code MCP (fastmcp); run devenv shell once so .devenv/profile exists"
+		},
+		"searxng": {
+			"command": "bunx",
+			"args": ["mcp-searxng"],
+			"env": {
+				"SEARXNG_URL": "http://localhost:4001"
+			},
+			"disabled": false,
+			"description": "Web search via local SearXNG at http://localhost:4001 (mcp-searxng)"
+		},
+		"definitively": {
+			"command": "./definitively/definitively",
+			"args": ["mcp", "serve"],
+			"disabled": false,
+			"env": {
+				"DEFINITIVELY_WORKSPACE": "${workspaceFolder}",
+				"DEFINITIVELY_LOG_LEVEL": "WARN"
+			},
+			"description": "Definitively workflow MCP (stdio via in-repo escript)"
 		}
 	}
 }

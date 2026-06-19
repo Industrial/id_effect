@@ -5,10 +5,17 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
+mod capability_attr;
+mod derive_fsm;
+mod derive_optics;
+mod derive_schema_parser;
 mod effect_data;
 mod effect_tagged;
 mod expand;
+mod infer_caps;
+mod match_effect;
 mod parse;
+mod provider_spec;
 mod transform;
 
 use proc_macro::TokenStream;
@@ -31,6 +38,32 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
 }
 
+/// Generates a capability key struct and [`id_effect::CapabilityKey`] impl for a trait or struct.
+#[proc_macro_attribute]
+pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
+  capability_attr::expand(attr, item)
+}
+
+/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(CapabilityKey)]`.
+#[proc_macro_derive(ProviderSpec, attributes(provides, named))]
+pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
+  provider_spec::derive(input)
+}
+
+/// Enum match helper — prefix variant patterns with `EnumPath` for exhaustiveness checking.
+///
+/// ```ignore
+/// match_effect!(Color, value, {
+///     Red(n) => n,
+///     Green => 0,
+///     Blue => 1,
+/// })
+/// ```
+#[proc_macro]
+pub fn match_effect(input: TokenStream) -> TokenStream {
+  match_effect::expand(input)
+}
+
 /// Procedural do-notation macro for [`id_effect::Effect`].
 ///
 /// See the `effect` crate documentation for usage.
@@ -41,5 +74,26 @@ pub fn effect(input: TokenStream) -> TokenStream {
     Ok(k) => k,
     Err(e) => return e.to_compile_error().into(),
   };
-  expand::expand(kind).into()
+  match expand::expand(kind) {
+    Ok(ts) => ts.into(),
+    Err(e) => e.to_compile_error().into(),
+  }
+}
+
+/// Stub derive for future optics codegen (`id_effect_optics`).
+#[proc_macro_derive(Optics, attributes(lens, prism, optional))]
+pub fn derive_optics(input: TokenStream) -> TokenStream {
+  derive_optics::derive_optics(input)
+}
+
+/// Stub derive for future FSM transition tables (`id_effect_fsm`).
+#[proc_macro_derive(Fsm, attributes(state, transition, initial))]
+pub fn derive_fsm(input: TokenStream) -> TokenStream {
+  derive_fsm::derive_fsm(input)
+}
+
+/// Stub derive for future schema-driven parser codegen (`id_effect_parse`).
+#[proc_macro_derive(SchemaParser, attributes(schema, parser))]
+pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
+  derive_schema_parser::derive_schema_parser(input)
 }

@@ -63,112 +63,98 @@ Unlike traditional error handling where you sprinkle `.map_err()` everywhere, wi
 
 ## R: The Requirements
 
-Here's where effects get interesting. The `R` parameter represents the **environment** — the dependencies this effect needs in order to run.
+Here is where effects get interesting. The `R` parameter represents the **environment** — the dependencies this effect needs in order to run.
+
+When an effect needs services, express `R` with [`caps!`](../part2/ch04-00-r-parameter.md) and capability **keys** (Chapter 5 names keys fully; use `DatabaseKey`, not a bare `Database` type):
 
 ```rust
-// This effect needs nothing to run — R is ()
+use id_effect::{Effect, caps, effect, provide, require, run_with, succeed};
+
+// Self-contained — R is ()
 let standalone: Effect<i32, String, ()> = succeed(42);
 
-// This effect needs a Database to run
-fn get_user(id: u64) -> Effect<User, DbError, Database> {
-    // ... implementation that uses the database
+// Needs DatabaseKey at the edge
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        Ok(db.fetch_user(id))
+    })
 }
 
-// This effect needs both a Database AND a Logger
-fn get_user_logged(id: u64) -> Effect<User, DbError, (Database, Logger)> {
-    // ... implementation that uses both
+// Needs two keys
+fn get_user_logged(id: u64) -> Effect<User, DbError, caps!(DatabaseKey, LoggerKey)> {
+    effect!(|r| {
+        let db = ~DatabaseKey;
+        let log = ~LoggerKey;
+        let user = db.fetch_user(id)?;
+        log.info(&format!("fetched {}", user.id));
+        Ok(user)
+    })
 }
 ```
 
-The key insight: **you cannot run an effect unless you provide its requirements.**
+**You cannot run an effect until its capabilities exist.** Satisfy them at the program edge with [`run_with`](../part2/ch04-02-providing.md), not inside library code:
 
 ```rust
-let needs_db: Effect<User, DbError, Database> = get_user(42);
-
-// This won't compile! We haven't satisfied the Database requirement.
-// run_blocking(needs_db);  // ERROR: Database not provided
-
-// We need to provide what it needs first
-let satisfied: Effect<User, DbError, ()> = needs_db.provide(my_database);
-
-// Now we can run it
-let user = run_blocking(satisfied)?;
+run_with([provide!(DatabaseLive)], get_user(42))?;
 ```
 
-The `.provide()` method takes a requirement and satisfies it, changing the `R` type. When `R` becomes `()`, the effect needs nothing more and can be executed.
+There is no `.provide()` on effects. [`run_with`](../part2/ch04-02-providing.md) builds an [`Env`](../part2/ch05-03-context-hlists.md) and executes the program.
 
-## Why R Matters
+## Why R matters
 
-The `R` parameter is why id_effect can offer compile-time dependency injection.
-
-Consider this function signature:
+The `R` parameter is why id_effect offers compile-time dependency injection.
 
 ```rust
-fn process_order(order: Order) -> Effect<Receipt, OrderError, (Database, PaymentGateway, EmailService, Logger)>
+fn process_order(order: Order) -> Effect<
+    Receipt,
+    OrderError,
+    caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey),
+>
 ```
 
-Just from the type, you know:
-- This produces a `Receipt` on success
-- It can fail with `OrderError`
-- It requires four services to run
+Just from the type you know success, error, and **which capability keys** must be wired before `run_with`.
 
-You don't need to read the implementation. You don't need to trace through function calls. The type tells you exactly what dependencies are involved.
-
-And the compiler enforces it. If you try to run this effect without providing all four services, you get a compile error. No runtime "service not found" exceptions. No forgetting to initialize something.
-
-## R Flows Through Composition
-
-When you combine effects, their requirements combine too:
+## R flows through composition
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, Database> { ... }
-fn send_email(to: &str, body: &str) -> Effect<(), EmailError, EmailService> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
+fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(EmailServiceKey)> { ... }
 
-fn notify_user(id: u64) -> Effect<(), AppError, (Database, EmailService)> {
-    effect! {
+fn notify_user(id: u64) -> Effect<(), AppError, caps!(DatabaseKey, EmailServiceKey)> {
+    effect!(|r| {
         let user = ~ get_user(id).map_error(AppError::Db);
         ~ send_email(&user.email, "Hello!").map_error(AppError::Email);
-        Ok(())
-    }
+        ()
+    })
 }
 ```
 
-The `notify_user` function needs both `Database` (from `get_user`) and `EmailService` (from `send_email`). The compiler infers this automatically — you don't have to manually track which dependencies flow where.
+## The unit environment: ()
 
-## The Unit Environment: ()
-
-When `R = ()`, the effect is self-contained. It doesn't need anything from the outside world to run:
+When `R = ()`, the effect is self-contained:
 
 ```rust
 let standalone: Effect<i32, String, ()> = succeed(42);
-
-// Can run immediately — no dependencies
-let result = run_blocking(standalone);
+let result = run_blocking(standalone, ());
 ```
 
-Most effects start with requirements and gradually have them satisfied as you move toward the "edge" of your program:
+Effects with dependencies keep `caps!(…)` on the type until the edge:
 
 ```rust
-// Deep in your code: many requirements
-fn business_logic() -> Effect<Result, Error, (Db, Cache, Logger, Config)>
-
-// At the edge: provide everything
-fn main() {
-    let db = connect_database();
-    let cache = connect_cache();
-    let logger = setup_logger();
-    let config = load_config();
-
-    let effect = business_logic()
-        .provide(db)
-        .provide(cache)
-        .provide(logger)
-        .provide(config);
-    // Now R = ()
-
-    run_blocking(effect);
+fn main() -> Result<(), AppError> {
+    run_with(
+        [
+            provide!(DatabaseLive),
+            provide!(CacheLive),
+            provide!(LoggerLive),
+            provide!(ConfigLive),
+        ],
+        business_logic(),
+    )
 }
 ```
+
 
 ## Reading Effect Signatures
 
@@ -181,11 +167,11 @@ Effect<String, Never, ()>
 // Produces i32, can fail with ParseError, needs nothing
 Effect<i32, ParseError, ()>
 
-// Produces User, can fail with DbError, needs Database
-Effect<User, DbError, Database>
+// Produces User, can fail with DbError, needs DatabaseKey
+Effect<User, DbError, caps!(DatabaseKey)>
 
-// Produces (), can fail with AppError, needs Database, Cache, and Logger
-Effect<(), AppError, (Database, Cache, Logger)>
+// Produces (), can fail with AppError, needs four capability keys
+Effect<(), AppError, caps!(DatabaseKey, CacheKey, LoggerKey)>
 ```
 
 With practice, you'll read these as fluently as you read `Result<T, E>`. The extra `R` parameter becomes second nature.

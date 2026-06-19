@@ -2,13 +2,11 @@
 
 use std::path::PathBuf;
 
-use id_effect::{Cons, Context, Layer, Nil, run_async};
-use id_effect_platform::fs::{FileSystem, FileSystemKey, LiveFileSystem, layer_file_system, read};
-
-type Env = Context<Cons<id_effect::Service<FileSystemKey, LiveFileSystem>, Nil>>;
+use id_effect::{build_env, provide, run_async};
+use id_effect_platform::fs::{FileSystem, LiveFileSystem, LiveFileSystemProvider, read};
 
 #[tokio::test]
-async fn read_via_layer_and_live_fs() {
+async fn read_via_provider_and_live_fs() {
   let dir = tempfile::tempdir().expect("tempdir");
   let rel = PathBuf::from("layer-read.txt");
   let abs = dir.path().join(&rel);
@@ -17,11 +15,7 @@ async fn read_via_layer_and_live_fs() {
     .await
     .expect("seed");
 
-  let stack = layer_file_system(fs);
-  let svc = stack.build().unwrap();
-  let env = Context::new(Cons(svc, Nil));
-  let bytes = run_async(read::<Env, _>(abs), env)
-    .await
-    .expect("read via layer");
+  let env = build_env([provide!(LiveFileSystemProvider)]).expect("providers");
+  let bytes = run_async(read(abs), env).await.expect("read via provider");
   assert_eq!(bytes, b"layered");
 }

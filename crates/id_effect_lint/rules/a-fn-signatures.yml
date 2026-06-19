@@ -57,7 +57,7 @@
   note: |
     BAD:  fn build<A, E, R>(…) -> Effect<A, E, R> { … }
     GOOD: fn build<A, E, R>(…) -> Effect<A, E, R>
-          where A: 'static, E: From<SvcError> + 'static, R: NeedsX + 'static
+          where A: 'static, E: From<SvcError> + 'static, R: Needs<Key> + 'static
           { … }
   rule:
     all:
@@ -100,3 +100,16 @@
       - pattern: fn $NAME($$$) -> Effect<$$$> { $$$BODY }
       - regex: "_blocking$"
         field: name
+# ──────────────────────────────────────────────────────────────────────────────
+# A-09  Public APIs must not expose concrete `Env` as `R`
+# ──────────────────────────────────────────────────────────────────────────────
+- id: id_effect-no-concrete-env-pub-fn
+  language: Rust
+  severity: error
+  message: |
+    Public functions must not return `Effect<A, E, Env>`; use `R: Needs<Key> + 'static`.
+  note: |
+    BAD:  pub fn load() -> Effect<String, E, Env> { … }
+    GOOD: pub fn load<R>() -> Effect<String, E, R> where R: Needs<ConfigProviderKey> + 'static { … }
+  rule:
+    pattern: pub fn $NAME($$$) -> Effect<$A, $E, Env> { $$$BODY }

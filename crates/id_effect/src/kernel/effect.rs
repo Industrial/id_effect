@@ -39,7 +39,6 @@ use core::future::{Future, ready};
 use core::marker::PhantomData;
 use core::pin::Pin;
 
-use crate::context::{Cons, Context, Nil};
 use crate::failure::exit::Exit;
 use crate::failure::union::Or;
 use crate::runtime::Never;
@@ -426,17 +425,6 @@ where
 
   // ── Environment Operations ────────────────────────────────────────────
 
-  /// Provide the environment, eliminating the `R` parameter.
-  #[inline]
-  pub fn provide(self, ctx: R) -> Effect<A, E, ()> {
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let mut ctx = ctx;
-        self.run(&mut ctx).await
-      })
-    })
-  }
-
   /// **MTL `MonadReader.local`** — run this effect with a *modified* environment.
   ///
   /// Haskell analogue:
@@ -548,52 +536,6 @@ where
         }
       })
     })
-  }
-}
-
-// ── Context-aware Effect methods ────────────────────────────────────────────
-
-impl<A, E, K: ?Sized, V, Tail>
-  Effect<A, E, Context<Cons<crate::layer::service::Service<K, V>, Tail>>>
-where
-  A: 'static,
-  E: 'static,
-  V: Clone + 'static,
-  Tail: Clone + 'static,
-{
-  /// Supply the head service value and shrink the context.
-  #[inline]
-  pub fn provide_head(self, value: V) -> Effect<A, E, Context<Tail>> {
-    Effect::new_async(move |tail: &mut Context<Tail>| {
-      box_future(async move {
-        let mut full = Context::new(Cons(
-          crate::layer::service::Service::<K, _>::new(value.clone()),
-          tail.as_ref().clone(),
-        ));
-        self.run(&mut full).await
-      })
-    })
-  }
-
-  /// Like [`Self::provide_head`] but takes a full service cell.
-  #[inline]
-  pub fn provide_service(
-    self,
-    svc: crate::layer::service::Service<K, V>,
-  ) -> Effect<A, E, Context<Tail>> {
-    self.provide_head(svc.value)
-  }
-}
-
-impl<A, E> Effect<A, E, Context<Nil>>
-where
-  A: 'static,
-  E: 'static,
-{
-  /// Run with an empty context.
-  #[inline]
-  pub async fn run_provided(self) -> Result<A, E> {
-    self.run(&mut Context::new(Nil)).await
   }
 }
 
@@ -959,13 +901,6 @@ mod tests {
 
   mod environment_operations {
     use super::*;
-
-    #[test]
-    fn provide_fixes_environment() {
-      let eff: Effect<i32, (), i32> = Effect::new(|env| Ok(*env * 2));
-      let provided = eff.provide(21);
-      assert_eq!(run(provided, ()), Ok(42));
-    }
 
     // ── local (MTL MonadReader.local) ──────────────────────────────────────
 
@@ -1416,6 +1351,43 @@ mod tests {
   }
 
   // ── unwrap_infallible ───────────────────────────────────────────────────────
+
+  mod ask_and_flat_map_union {
+    use super::*;
+
+    #[test]
+    fn ask_reads_environment() {
+      let eff = ask::<i32>();
+      let out = crate::runtime::run_blocking(eff, 99_i32).unwrap();
+      assert_eq!(out, 99);
+    }
+
+    #[test]
+    fn asks_projects_environment() {
+      let eff = asks(|r: &i32| *r + 1);
+      let out = crate::runtime::run_blocking(eff, 10_i32).unwrap();
+      assert_eq!(out, 11);
+    }
+
+    #[test]
+    fn flat_map_union_routes_left_and_right() {
+      use crate::Or;
+      let eff = succeed::<i32, &str, ()>(1).flat_map_union(|n| {
+        if n == 1 {
+          succeed::<i32, &str, ()>(2)
+        } else {
+          fail::<i32, &str, ()>("left")
+        }
+      });
+      assert_eq!(crate::runtime::run_blocking(eff, ()).unwrap(), 2);
+
+      let eff2 = fail::<i32, &str, ()>("boom").flat_map_union(|_: i32| succeed::<i32, &str, ()>(0));
+      assert_eq!(
+        crate::runtime::run_blocking(eff2, ()),
+        Err(Or::Left("boom"))
+      );
+    }
+  }
 
   mod unwrap_infallible_fn {
     use super::*;

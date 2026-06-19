@@ -1,0 +1,5 @@
+error[E0433]: cannot find `req` in `id_effect`
+ --> tests/ui/req_macro.rs:2:14
+  |
+2 |   id_effect::req!(Db: String);
+  |              ^^^ could not find `req` in `id_effect`

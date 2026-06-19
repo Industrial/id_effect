@@ -74,19 +74,33 @@ fn exponential_retry_makes_three_attempts() {
 
 The test runs in microseconds despite testing multi-second retry behaviour. No `tokio::time::pause()` hacks. No `sleep(Duration::ZERO)` workarounds.
 
-## Clock in the Environment
+## Clock in the environment
 
-Like all services, `Clock` lives in the effect environment:
+Like other dependencies, `Clock` is a capability in [`Env`](../../src/capability/env.rs):
 
 ```rust
-service_key!(ClockKey: Arc<dyn Clock>);
+use id_effect::{Effect, Clock, LiveClock, TestClock, caps, effect, provide, require, run_with};
+use std::sync::Arc;
 
-fn now() -> Effect<UtcDateTime, Never, impl NeedsClock> {
-    effect! {
-        let clock = ~ ClockKey;
-        clock.now()
+#[::id_effect::capability(Arc<dyn Clock>)]
+struct AppClock;
+
+#[derive(::id_effect::ProviderSpecDerive)]
+#[provides(AppClockKey)]
+struct LiveClockLive;
+
+impl LiveClockLive {
+    fn new() -> Arc<dyn Clock> {
+        Arc::new(LiveClock::new())
     }
+}
+
+fn now() -> Effect<UtcDateTime, Never, caps!(AppClockKey)> {
+    effect!(|r| {
+        let clock = ~AppClockKey;
+        ~ clock.now()
+    })
 }
 ```
 
-The production Layer provides `LiveClock`; test code provides `TestClock`. Business logic is identical in both contexts.
+Production uses `provide!(LiveClockLive)`; tests insert `Arc::new(TestClock::new(...))` via `build_env` or a mock provider. Business logic is identical in both contexts.

@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-a59445",
+	"taskId": "tsk-mqk3v9vf-gjjsj7",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:18:10.233Z",
+	"lockedAt": "2026-06-18T23:18:10.233Z",
+	"intent": "Jobs Runner",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-54fad3",
+			"text": "id_effect_jobs runner; transactional outbox pattern",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-732dd9",
+			"text": "Kafka adapter stub; id_effect_events SQL journal hardening",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-27fdd2",
+			"text": "Part VI ch31 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-367958",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "composer-subagent",
+	"lockedBy": "composer-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3ux00-wrxxug",
+	"riskClass": "medium"
+}

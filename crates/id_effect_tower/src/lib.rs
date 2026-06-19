@@ -507,6 +507,36 @@ mod tests {
   }
 
   #[tokio::test(flavor = "current_thread")]
+  async fn effect_service_state_accessors() {
+    #[derive(Clone, Default)]
+    struct St {
+      v: u32,
+    }
+    let mut svc: EffectService<St, _, u32> =
+      EffectService::new(St { v: 10 }, |s: &mut St, _x: u32| {
+        succeed::<u32, (), St>(s.v)
+      });
+    assert_eq!(svc.state().v, 10);
+    svc.state_mut().v = 20;
+    assert_eq!(svc.state().v, 20);
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn channel_service_state_accessors() {
+    #[derive(Clone, Default)]
+    struct St {
+      n: u32,
+    }
+    let ch = run_effect_async(QueueChannel::<u32, u32, St>::duplex_unbounded(), ())
+      .await
+      .expect("channel");
+    let mut svc = ChannelService::new(St { n: 7 }, ch);
+    assert_eq!(svc.state().n, 7);
+    svc.state_mut().n = 8;
+    assert_eq!(svc.state().n, 8);
+  }
+
+  #[tokio::test(flavor = "current_thread")]
   async fn in_flight_counter_none_when_no_limit() {
     let svc: EffectService<(), _, u32> =
       EffectService::new((), |_env: &mut (), x: u32| succeed::<u32, (), ()>(x));

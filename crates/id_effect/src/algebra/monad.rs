@@ -577,5 +577,39 @@ mod tests {
       let result = option::flat_map(fa.clone(), Some);
       assert_eq!(result, fa);
     }
+
+    #[test]
+    fn module_helpers_smoke() {
+      use super::super::flat_map as m_flat_map;
+      assert_eq!(m_flat_map(Some(1_i32), |x| Some(x + 1)), Some(2));
+      assert_eq!(option::flatten(Some(Some(3))), Some(3));
+      assert_eq!(option::and_then_discard(Some(1), Some(2)), Some(2));
+      assert_eq!(option::filter_map(Some(3), |x| Some(x * 2)), Some(6));
+      assert_eq!(option::when(true, || Some(1)), Some(1));
+      assert_eq!(option::when(false, || Some(1)), None);
+      assert_eq!(option::unless(false, || Some(1)), Some(1));
+      assert_eq!(option::unless(true, || Some(1)), None);
+      assert_eq!(
+        option::iterate(1, |x| if *x < 2 { Some(x + 1) } else { None }),
+        2
+      );
+      assert_eq!(result::flatten(Ok(Ok::<i32, &str>(3))), Ok(3));
+      assert_eq!(result::and_then_discard(Ok::<i32, &str>(1), Ok(2)), Ok(2));
+      assert_eq!(
+        result::or_else(Err::<i32, &str>("e"), |_| Ok::<i32, &str>(9)),
+        Ok(9)
+      );
+      assert_eq!(result::map_err(Err::<i32, &str>("e"), |s| s.len()), Err(1));
+      assert_eq!(result::when(true, || Ok::<i32, &str>(1)), Ok(Some(1)));
+      assert_eq!(result::ensure(true, || "nope"), Ok(()));
+      assert_eq!(
+        vec::flat_map(vec![1, 2], |x| vec![x, x * 10]),
+        vec![1, 10, 2, 20]
+      );
+      assert_eq!(vec::flatten(vec![vec![1, 2], vec![3]]), vec![1, 2, 3]);
+      assert_eq!(vec::filter(vec![1, 2, 3], |x| *x > 1), vec![2, 3]);
+      assert_eq!(vec::filter_map(vec![1, 2], |x| Some(x * 2)), vec![2, 4]);
+      assert_eq!(vec::replicate(3, 7), vec![7, 7, 7]);
+    }
   }
 }

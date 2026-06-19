@@ -1,0 +1,5 @@
+error[E0433]: cannot find `define_capability` in `id_effect`
+ --> tests/ui/define_capability_macro.rs:2:14
+  |
+2 |   id_effect::define_capability!(MyKey, u32);
+  |              ^^^^^^^^^^^^^^^^^ could not find `define_capability` in `id_effect`

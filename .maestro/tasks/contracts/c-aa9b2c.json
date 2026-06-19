@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-aa9b2c",
+	"taskId": "tsk-mqk3v9vf-8kby6c",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:29.059Z",
+	"lockedAt": "2026-06-18T23:25:29.059Z",
+	"intent": "Broker Kafka Adapter",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-c7f130",
+			"text": "id_effect_jobs runner; transactional outbox pattern",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-f7ff41",
+			"text": "Kafka adapter stub; id_effect_events SQL journal hardening",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-848436",
+			"text": "Part VI ch31 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-899ced",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3ux00-wrxxug",
+	"riskClass": "medium"
+}

@@ -414,6 +414,24 @@ mod tests {
     }
   }
 
+  mod literal_schemas {
+    use super::*;
+
+    #[test]
+    fn literal_string_schema() {
+      let s = literal_string::<()>("fixed");
+      assert_eq!(s.decode("fixed").unwrap(), "fixed");
+      assert!(s.decode("other").is_err());
+    }
+
+    #[test]
+    fn literal_i64_schema() {
+      let s = literal_i64::<()>(7);
+      assert_eq!(s.decode(7).unwrap(), 7);
+      assert!(s.decode(8).is_err());
+    }
+  }
+
   mod wire_equal_fn {
     use super::*;
 

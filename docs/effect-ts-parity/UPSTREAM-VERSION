@@ -1,8 +1,7 @@
 # Pin the Effect.ts / effect package version used for the last parity review.
 # Format: one line, e.g.
-#   effect@3.12.0
-# or a git SHA of Effect-TS/effect if you track mainline.
+#   effect@3.14.0
 #
-# Last reviewed: (unset)
+# Last reviewed: 2026-06-19 (platform-parity-hygiene leaf-upstream-version-bump)
 
-effect@TBD
+effect@3.14.0

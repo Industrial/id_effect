@@ -1,32 +1,27 @@
 //! Mix `~` effect steps with ordinary Rust control flow inside `effect!`.
-//! Extract the logger once, then use it inside an `if` block — demonstrating
-//! that `~` works anywhere as an expression.
 //!
-//! Run: `devenv shell -- cargo run -p logger --example macro_block_tail`
+//! Run: `devenv shell -- cargo run -p id_effect_logger --example macro_block_tail`
 
-use ::id_effect::{Cons, Context, Effect, Nil, Service, effect, run_blocking, succeed};
-use id_effect_logger::{EffectLogKey, EffectLogger, EffectLoggerError};
-
-type LogCtx = Context<Cons<Service<EffectLogKey, EffectLogger>, Nil>>;
-
-fn build_ctx() -> LogCtx {
-  Context::new(Cons(Service::<EffectLogKey, _>::new(EffectLogger), Nil))
-}
+use ::id_effect::{Effect, Env, caps, effect, provide, run_with, succeed};
+use id_effect_logger::{EffectLoggerError, EffectLoggerKey, EffectLoggerLive};
 
 fn main() {
   tracing_subscriber::fmt()
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let program: Effect<i32, EffectLoggerError, LogCtx> = effect!(|_r: &mut LogCtx| {
-    let logger = ~EffectLogger;
-    let seed = ~succeed::<i32, EffectLoggerError, LogCtx>(6);
+  let program: Effect<i32, EffectLoggerError, caps!(EffectLoggerKey)> = effect!(|r| {
+    let logger = *~EffectLoggerKey;
+    let seed = ~succeed::<i32, EffectLoggerError, Env>(6);
     if seed > 0 {
-      ~logger.info("seed is positive");
+      ~logger.info::<caps!(EffectLoggerKey)>("seed is positive");
+      seed * 2
+    } else {
+      0
     }
-    seed * 7
   });
 
-  let out = run_blocking(program, build_ctx()).expect("tracing never fails");
-  println!("block tail value: {out}");
+  let n = run_with([provide!(EffectLoggerLive)], program).expect("run");
+  assert_eq!(n, 12);
+  println!("macro_block_tail ok: {n}");
 }

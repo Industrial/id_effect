@@ -1,13 +1,10 @@
-use id_effect::{Cons, Context, Layer, Nil, run_async};
+use id_effect::{build_env, run_async};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClientKey, HttpRequest, ReqwestHttpClient, execute, layer_reqwest_http_client_default,
-  response_body_chunk,
+  HttpRequest, execute, provide_reqwest_http_client, response_body_chunk,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
-
-type Env = Context<Cons<id_effect::Service<HttpClientKey, ReqwestHttpClient>, Nil>>;
 
 #[tokio::test]
 async fn execute_hits_mock_server() {
@@ -18,11 +15,9 @@ async fn execute_hits_mock_server() {
     .mount(&server)
     .await;
 
-  let stack = layer_reqwest_http_client_default();
-  let svc = stack.build().unwrap();
-  let env = Context::new(Cons(svc, Nil));
+  let env = build_env([provide_reqwest_http_client()]).expect("providers");
   let url = format!("{}/hello", server.uri());
-  let res = run_async(execute::<Env, _>(HttpRequest::get(url)), env)
+  let res = run_async(execute(HttpRequest::get(url)), env)
     .await
     .expect("http ok");
   assert_eq!(res.status, 200);

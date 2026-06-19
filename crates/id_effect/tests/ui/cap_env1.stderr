@@ -1,0 +1,5 @@
+error[E0425]: cannot find type `CapEnv1` in crate `id_effect`
+ --> tests/ui/cap_env1.rs:2:21
+  |
+2 |   let _: id_effect::CapEnv1<id_effect::Env>;
+  |                     ^^^^^^^ not found in `id_effect`

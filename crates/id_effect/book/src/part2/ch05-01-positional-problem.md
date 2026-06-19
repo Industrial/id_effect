@@ -1,10 +1,10 @@
 # The Problem with Positional Types
 
-If you've used tuples as `R` for a while, you've probably already hit the wall. Let's make it explicit.
+Early effect code sometimes used tuples as `R`. That works briefly, then becomes fragile.
 
-## The Tuple Explosion
+## The tuple explosion
 
-Two dependencies: perfectly readable.
+Two dependencies: readable.
 
 ```rust
 Effect<A, E, (Database, Logger)>
@@ -14,49 +14,42 @@ Five dependencies: which is which?
 
 ```rust
 Effect<A, E, (Pool, Pool, Logger, Config, HttpClient)>
-//            ^^^^ two Pools — which is the main DB and which is the cache?
+//            ^^^^ two Pools — main DB or cache?
 ```
 
-Tuples are positional. `(Pool, Pool, ...)` is ambiguous — both fields have the same type. There's no way to distinguish them except by index, and index-based access is error-prone and breaks silently when you reorder the tuple.
+Tuples are positional. `(Pool, Pool, …)` is ambiguous when both fields share a type.
 
-## The Fragility Problem
-
-Positional types are fragile under change. Say your function started with:
+## Fragility under change
 
 ```rust
 fn foo() -> Effect<A, E, (Database, Logger)>
 //                        0         1
 ```
 
-Now a teammate adds `Config` between them:
+A teammate inserts `Config`:
 
 ```rust
 fn foo() -> Effect<A, E, (Database, Config, Logger)>
 //                        0         1       2
 ```
 
-Every caller that was providing a tuple `(db, log)` must be updated to `(db, config, log)`. The change in position is invisible to the type system — the compiler won't tell you where the old index references are. It's a silent bomb.
+Every caller that built `(db, log)` must become `(db, config, log)`. The type system does not point at stale indices — it's a silent refactor hazard.
 
-## The Same-Type Collision
+## Same-type collision
 
-The deeper problem: Rust can't distinguish `Pool` for the main database from `Pool` for the cache. They're the same type. Positional tuples just accept both:
+Rust cannot distinguish a main-database `Pool` from a cache `Pool` in a tuple:
 
 ```rust
-// V1: provide (main_pool, cache_pool)
-// V2: accidentally swap them
-effect.provide((cache_pool, main_pool))  // compiles, wrong at runtime
+run_blocking(effect, (cache_pool, main_pool)); // compiles, wrong at runtime
 ```
 
-No compile error. Wrong behaviour. Possibly wrong for months before you notice.
+## What we need
 
-## What We Actually Need
+Each dependency needs a **compile-time name** independent of position:
 
-We need a way to give each dependency a *name* — a compile-time identifier that's independent of its type and its position in any list.
+- `DatabaseKey` → the primary `Pool`
+- `CacheKey` → the cache `Pool`
 
-What if:
-- `Database` meant "the tagged Pool known as DatabaseTag"
-- `Cache` meant "the tagged Pool known as CacheTag"
+Different keys, same underlying type — the compiler catches swaps.
 
-Then you couldn't accidentally swap them — they'd be different types even though both are `Pool` underneath.
-
-That's exactly what Tags provide.
+That's what [`#[capability]`](../../src/capability/key.rs) generates.

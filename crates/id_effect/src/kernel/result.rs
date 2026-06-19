@@ -710,5 +710,26 @@ mod tests {
       let right = map(ra, |x| f(g(x)));
       assert_eq!(left, right);
     }
+
+    #[test]
+    fn get_or_else_returns_default_on_err() {
+      let ok: Result<i32, &str> = succeed(1);
+      assert_eq!(get_or_else(ok, |_: &str| 0), 1);
+      assert_eq!(get_or_else(fail::<i32, &str>("e"), |_: &str| 9), 9);
+    }
+
+    #[test]
+    fn map3_combines_three_ok_values() {
+      assert_eq!(
+        map3(
+          succeed::<i32, &str>(1),
+          succeed(2),
+          succeed(3),
+          |a, b, c| a + b + c
+        )
+        .unwrap(),
+        6
+      );
+    }
   }
 }
