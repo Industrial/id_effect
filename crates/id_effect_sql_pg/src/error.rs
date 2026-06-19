@@ -1,4 +1,4 @@
-//! Map deadpool / tokio-postgres failures into [`SqlError`](id_effect_sql::SqlError).
+//! Map sqlx failures into [`SqlError`](id_effect_sql::SqlError).
 
 use id_effect_sql::SqlError;
 
@@ -6,33 +6,21 @@ use id_effect_sql::SqlError;
 #[derive(Debug)]
 pub struct PgSqlError(pub SqlError);
 
-impl From<deadpool_postgres::CreatePoolError> for PgSqlError {
-  fn from(err: deadpool_postgres::CreatePoolError) -> Self {
-    Self(SqlError::Unsupported(err.to_string()))
-  }
-}
-
 impl PgSqlError {
   #[inline]
-  pub(crate) fn from_build(err: deadpool_postgres::BuildError) -> Self {
-    Self(SqlError::Unsupported(err.to_string()))
+  pub(crate) fn from_sqlx(err: sqlx::Error) -> Self {
+    Self(sqlx_error(err))
   }
 }
 
-pub(crate) fn pool_error(err: deadpool_postgres::PoolError) -> SqlError {
+pub(crate) fn sqlx_error(err: sqlx::Error) -> SqlError {
   match err {
-    deadpool_postgres::PoolError::Backend(e) => SqlError::QueryFailed {
+    sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => SqlError::NotConnected,
+    sqlx::Error::Configuration(msg) => SqlError::Unsupported(msg.to_string()),
+    other => SqlError::QueryFailed {
       sql: String::new(),
-      message: e.to_string(),
+      message: other.to_string(),
     },
-    _ => SqlError::NotConnected,
-  }
-}
-
-pub(crate) fn pg_error(err: tokio_postgres::Error) -> SqlError {
-  SqlError::QueryFailed {
-    sql: String::new(),
-    message: err.to_string(),
   }
 }
 
@@ -42,24 +30,8 @@ mod tests {
   use id_effect_sql::SqlError;
 
   #[test]
-  fn pool_error_non_backend_is_not_connected() {
-    let err = pool_error(deadpool_postgres::PoolError::Closed);
+  fn pool_closed_maps_to_not_connected() {
+    let err = sqlx_error(sqlx::Error::PoolClosed);
     assert!(matches!(err, SqlError::NotConnected));
-  }
-
-  #[test]
-  fn pg_error_maps_to_query_failed() {
-    let err = pg_error(tokio_postgres::Error::__private_api_timeout());
-    assert!(matches!(err, SqlError::QueryFailed { .. }));
-    assert!(!err.to_string().is_empty());
-  }
-
-  #[test]
-  fn pg_sql_error_from_create_pool_error() {
-    let build_err = deadpool_postgres::Config::new()
-      .create_pool(None, tokio_postgres::NoTls)
-      .unwrap_err();
-    let mapped = PgSqlError::from(build_err);
-    assert!(matches!(mapped.0, SqlError::Unsupported(_)));
   }
 }

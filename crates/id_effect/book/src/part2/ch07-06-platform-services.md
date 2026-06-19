@@ -53,7 +53,7 @@ let res = run_with(
 
 Effects returned by `execute` carry the correct `Needs` bound internally; application code usually calls `run_with([provide_reqwest_http_client()], execute(req))` without naming the key.
 
-Drive async platform effects with **`id_effect_tokio::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
+Drive async platform effects with **`id_effect::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
 
 ## Security note (filesystem)
 

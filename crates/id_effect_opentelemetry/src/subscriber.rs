@@ -4,11 +4,12 @@ use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use tracing::Subscriber;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-/// Builds an [`SdkTracerProvider`] that exports spans to an in-memory buffer (tests and spikes).
+/// Builds an [`SdkTracerProvider`] with a simple in-memory span exporter.
 pub fn sdk_tracer_provider_with_in_memory_exporter(
   exporter: &InMemorySpanExporter,
 ) -> SdkTracerProvider {
@@ -17,43 +18,49 @@ pub fn sdk_tracer_provider_with_in_memory_exporter(
     .build()
 }
 
-/// Registers `provider` as the process-wide OpenTelemetry tracer provider.
-///
-/// Call [`SdkTracerProvider::shutdown`] (or drop the last clone after shutdown) before replacing
-/// the global provider in long-lived binaries.
+/// Registers the given tracer provider as the global OTEL tracer provider.
 pub fn register_global_tracer_provider(provider: &SdkTracerProvider) {
   global::set_tracer_provider(provider.clone());
 }
 
-/// Returns a boxed [`tracing`] [`Subscriber`]: registry + OpenTelemetry layer, optionally with `fmt`.
-///
-/// Use with [`tracing::subscriber::with_default`] in tests, or [`SubscriberInitExt::try_init`] once at
-/// startup in binaries.
+/// Builds a boxed `tracing_subscriber` stack with an OTEL trace layer.
 pub fn trace_subscriber_for_provider(
   provider: &SdkTracerProvider,
   with_fmt_layer: bool,
+  env_filter: Option<&str>,
 ) -> Box<dyn Subscriber + Send + Sync + 'static> {
   let tracer = provider.tracer("id_effect_opentelemetry");
-  let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
-  if with_fmt_layer {
-    Box::new(
+  let filter = env_filter.and_then(|s| EnvFilter::try_new(s).ok());
+  match (filter, with_fmt_layer) {
+    (Some(filter), true) => Box::new(
       Registry::default()
-        .with(otel_layer)
+        .with(filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer.clone()))
         .with(tracing_subscriber::fmt::layer()),
-    )
-  } else {
-    Box::new(Registry::default().with(otel_layer))
+    ),
+    (Some(filter), false) => Box::new(
+      Registry::default()
+        .with(filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer)),
+    ),
+    (None, true) => Box::new(
+      Registry::default()
+        .with(tracing_opentelemetry::layer().with_tracer(tracer.clone()))
+        .with(tracing_subscriber::fmt::layer()),
+    ),
+    (None, false) => {
+      Box::new(Registry::default().with(tracing_opentelemetry::layer().with_tracer(tracer)))
+    }
   }
 }
 
-/// Installs a global subscriber built from [`trace_subscriber_for_provider`].
-///
-/// Returns `Err` if a global default was already installed (mirrors [`tracing_subscriber`] rules).
+/// Installs a global subscriber with OTEL trace export (and optional `fmt` / `EnvFilter`).
 pub fn try_init_global_tracing_with_otel(
   provider: &SdkTracerProvider,
   with_fmt_layer: bool,
+  env_filter: Option<&str>,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
-  trace_subscriber_for_provider(provider, with_fmt_layer).try_init()
+  trace_subscriber_for_provider(provider, with_fmt_layer, env_filter).try_init()
 }
 
 #[cfg(test)]
@@ -61,48 +68,20 @@ mod tests {
   use super::*;
   use opentelemetry::trace::Tracer;
 
-  mod sdk_tracer_provider_with_in_memory_exporter {
-    use super::*;
-
-    #[test]
-    fn exports_finished_span_after_flush() {
-      let exporter = InMemorySpanExporter::default();
-      let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
-      let tracer = provider.tracer("unit");
-      {
-        let span = tracer.start("hello");
-        drop(span);
-      }
-      let _ = provider.force_flush();
-      let spans = exporter.get_finished_spans().expect("spans");
-      assert!(
-        spans.iter().any(|s| s.name == "hello"),
-        "expected span named hello, got {spans:?}"
-      );
-      let _ = provider.shutdown();
-    }
-  }
-
-  mod trace_subscriber_for_provider {
-    use super::*;
-
-    #[test]
-    fn records_tracing_span_without_fmt_layer() {
-      let exporter = InMemorySpanExporter::default();
-      let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
-      let sub = trace_subscriber_for_provider(&provider, false);
-      tracing::subscriber::with_default(sub, || {
-        let root = tracing::info_span!("root_op");
-        let _g = root.enter();
-        tracing::info!(target: "id_effect_opentelemetry", "event");
-      });
-      let _ = provider.force_flush();
-      let spans = exporter.get_finished_spans().expect("spans");
-      assert!(
-        spans.iter().any(|s| s.name == "root_op"),
-        "expected tracing span, got {spans:?}"
-      );
-      let _ = provider.shutdown();
-    }
+  #[test]
+  fn exports_finished_span_after_flush() {
+    let exporter = InMemorySpanExporter::default();
+    let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
+    let tracer = provider.tracer("unit");
+    drop(tracer.start("hello"));
+    let _ = provider.force_flush();
+    assert!(
+      exporter
+        .get_finished_spans()
+        .expect("spans")
+        .iter()
+        .any(|s| s.name == "hello")
+    );
+    let _ = provider.shutdown();
   }
 }

@@ -30,7 +30,6 @@ FP meta: `pln-mqjykoig-a58dfk`
 | [platform_application](../../.cursor/plans/platform_application.plan.md) | `pln-mqk3uw14-l2rehg` | platform-application | Part VI ch30 |
 | [platform_async_messaging](../../.cursor/plans/platform_async_messaging.plan.md) | `pln-mqk3ux00-wrxxug` | platform-async-messaging | Part VI ch31 |
 | [platform_workflow_cluster](../../.cursor/plans/platform_workflow_cluster.plan.md) | `pln-mqk3v34c-c8b55j` | platform-workflow-cluster | Part VI ch32 |
-| [platform_ui_realtime](../../.cursor/plans/platform_ui_realtime.plan.md) | `pln-mqk3v2du-i1jila` | platform-ui-realtime | Part VII ch33 |
 | [platform_dx_ship](../../.cursor/plans/platform_dx_ship.plan.md) | `pln-mqk3uymr-cb8ftt` | platform-dx-ship | Part VI ch34 |
 | [platform_ai](../../.cursor/plans/platform_ai.plan.md) | `pln-mqk3uu83-9z30eo` | platform-ai | Part VI ch35 |
 | [platform_parity_hygiene](../../.cursor/plans/platform_parity_hygiene.plan.md) | `pln-mqk3tuel-6cy7au` | platform-parity-hygiene | — |
@@ -45,9 +44,8 @@ Platform meta: `pln-mqk3v0l4-66d3zl`
 4. `platform_application`
 5. `platform_async_messaging`
 6. `platform_workflow_cluster`
-7. `platform_ui_realtime`
-8. `platform_dx_ship` ∥ UI once application host ready
-9. `platform_ai`
+7. `platform_dx_ship`
+8. `platform_ai`
 
 ## Dependency graph
 
@@ -61,14 +59,12 @@ flowchart TD
   P5[platform_application]
   P6[platform_async_messaging]
   P7[platform_workflow_cluster]
-  P8[platform_ui_realtime]
   P11[platform_parity_hygiene]
   FP --> P1
   P1 --> P2
   P1 --> P5
   P3 --> P4
   P3 --> P6
-  P5 --> P8
   P6 --> P7
   P11 -.-> P1
 ```

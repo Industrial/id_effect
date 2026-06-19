@@ -14,11 +14,13 @@ pub trait MessageBroker: Send + Sync {
 }
 
 /// In-memory FIFO per topic (tests).
+#[cfg(feature = "memory")]
 #[derive(Clone, Default)]
 pub struct MemoryBroker {
   topics: Arc<Mutex<std::collections::HashMap<String, VecDeque<Vec<u8>>>>>,
 }
 
+#[cfg(feature = "memory")]
 impl MemoryBroker {
   /// Empty broker.
   pub fn new() -> Self {
@@ -36,6 +38,7 @@ impl MemoryBroker {
   }
 }
 
+#[cfg(feature = "memory")]
 impl MessageBroker for MemoryBroker {
   fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()> {
     let topic = topic.to_owned();
@@ -50,12 +53,14 @@ impl MessageBroker for MemoryBroker {
 }
 
 /// Kafka adapter stub — logs intent and delegates to memory queue until rdkafka wiring lands.
+#[cfg(feature = "memory")]
 #[derive(Clone)]
 pub struct KafkaBrokerStub {
   inner: MemoryBroker,
   bootstrap: String,
 }
 
+#[cfg(feature = "memory")]
 impl KafkaBrokerStub {
   /// Stub targeting `bootstrap_servers`.
   pub fn new(bootstrap_servers: impl Into<String>) -> Self {
@@ -71,6 +76,7 @@ impl KafkaBrokerStub {
   }
 }
 
+#[cfg(feature = "memory")]
 impl MessageBroker for KafkaBrokerStub {
   fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()> {
     tracing::debug!(bootstrap = %self.bootstrap, topic, bytes = payload.len(), "kafka stub publish");
@@ -78,7 +84,7 @@ impl MessageBroker for KafkaBrokerStub {
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
   use id_effect::run_blocking;

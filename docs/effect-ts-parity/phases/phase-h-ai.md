@@ -131,3 +131,9 @@ bd create "Add Anthropic backend" -t feature -p 4 --deps discovered-from:EPIC_H.
 ```
 
 4. Keep **network tests** behind explicit CI job to avoid flakes.
+
+
+## ADRs
+
+- [adr-ai-vendor-layout.md](../../platform/adrs/adr-ai-vendor-layout.md)
+- [adr-ai-threat-model.md](../../platform/adrs/adr-ai-threat-model.md)

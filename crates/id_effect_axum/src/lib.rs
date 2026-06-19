@@ -7,7 +7,7 @@
 //! - Your domain stays in `Effect<A, E, R>` with environment `R` (often clone-cheap state with
 //!   `Arc` fields, or an [`id_effect::Env`] with `caps!(…)`).
 //! - This crate **bridges** `State<R>` → `&mut R` for one build step, then runs the effect with
-//!   [`id_effect_tokio::run_async`] so pending effect steps compose with Tokio I/O.
+//!   [`id_effect::run_async`] so pending effect steps compose with Tokio I/O.
 //!
 //! ## Runtime requirements
 //!
@@ -23,7 +23,7 @@
 //!
 //! **Yes — this crate is built on `id_effect_tokio`** (workspace crate `crates/id_effect_tokio`).
 //! [`crate::routing`] and [`run_with_env`]/[`execute`] all drive effects via
-//! [`id_effect_tokio::run_async`], so async steps inside `Effect` run on the **same** Tokio runtime as
+//! [`id_effect::run_async`], so async steps inside `Effect` run on the **same** Tokio runtime as
 //! `#[tokio::main]` / `axum::serve`.
 //!
 //! ## Quick start
@@ -70,8 +70,16 @@ pub mod channel_bridge;
 pub mod health;
 pub mod json;
 pub mod routing;
+pub mod server;
 
 pub use channel_bridge::{exchange, exchange_into_response};
+pub use server::{
+  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, Host, HostBuilder, HostConfig, HostDrain,
+  HostError, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware, drain_with_timeout,
+  load_host_config, provide_host_config_env, serve_router, set_csrf_header, socket_addr,
+  wait_for_shutdown,
+};
+
 pub use health::{
   ReadinessCheck, ReadinessState, health, health_router, observability_routes,
   observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
@@ -79,8 +87,8 @@ pub use health::{
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
+use id_effect::run_async;
 use id_effect::{Effect, Env};
-use id_effect_tokio::run_async;
 
 /// Run `build` with capability [`State<Env>`](axum::extract::State).
 ///

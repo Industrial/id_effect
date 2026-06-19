@@ -220,7 +220,7 @@ The `Scope` finalizer runs whether the inner effect succeeds, fails, or is cance
 After effects replace bare `async fn`, move HTTP edges toward **typed capabilities**:
 
 1. **`id_effect_platform`** — `HttpClientKey` + `ReqwestHttpClientProvider` + `execute` for portable requests.
-2. **`id_effect_reqwest`** — `reqwest::Client` keyed in `Env`, pools, `json_schema` — see [HTTP via reqwest](./part2/ch07-07-reqwest-http.md).
+2. **`id_effect_platform::http::reqwest`** — `reqwest::Client` keyed in `Env`, pools, `json_schema` — see [HTTP via reqwest](./part2/ch07-07-reqwest-http.md).
 
 Host either style under **Axum** with **`id_effect_axum`** ([Axum host](./part2/ch07-08-axum-host.md)).
 

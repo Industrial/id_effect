@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_events"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 description = "Event sourcing, projections, and CQRS boundaries for id_effect programs"
 license = "CC-BY-SA-4.0"
@@ -17,12 +17,41 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 id_effect = { path = "../id_effect", version = "3.0.0", features = [
   "schema-serde",
 ] }
+id_effect_graph = { path = "../id_effect_graph", version = "3.0.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
-
 [dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
 rstest = "0.26"
 tempfile = "3"
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[features]
+default = []
+es-entity = ["dep:sqlx", "dep:id_effect_sql_pg", "dep:tokio", "dep:es-entity"]
+
+[dependencies.sqlx]
+version = "0.8"
+default-features = false
+features = ["runtime-tokio", "postgres"]
+optional = true
+
+[dependencies.id_effect_sql_pg]
+path = "../id_effect_sql_pg"
+version = "0.2.0"
+optional = true
+
+[dependencies.es-entity]
+version = "0.10.40"
+optional = true
+
+[dependencies.tokio]
+version = "1.50.0"
+features = ["rt"]
+optional = true
+
+[[test]]
+name = "es_entity_journal"
+required-features = ["es-entity"]

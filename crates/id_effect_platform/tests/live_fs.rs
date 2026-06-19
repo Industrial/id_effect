@@ -1,8 +1,8 @@
 //! Integration tests for [`id_effect_platform::fs::LiveFileSystem`] (Tokio-backed I/O).
 
+use id_effect::run_async;
 use id_effect_platform::error::FsError;
 use id_effect_platform::fs::{FileSystem, LiveFileSystem};
-use id_effect_tokio::run_async;
 use tempfile::tempdir;
 
 #[tokio::test]

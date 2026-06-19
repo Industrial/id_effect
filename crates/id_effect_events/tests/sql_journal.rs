@@ -3,18 +3,11 @@
 use std::sync::Arc;
 
 use id_effect::run_blocking;
-use id_effect_events::{
-  EventStore, POSTGRES_JOURNAL_DDL, SqlEventJournal, SqlJournalBackend, TestSqlJournalBackend,
-};
+use id_effect_events::{EventStore, SqlEventJournal, SqlJournalBackend, TestSqlJournalBackend};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 struct Ping {
   n: u32,
-}
-
-#[test]
-fn postgres_ddl_is_non_empty() {
-  assert!(POSTGRES_JOURNAL_DDL.contains("event_journal"));
 }
 
 #[test]

@@ -37,11 +37,17 @@
   clippy::unused_unit
 )]
 
+pub mod auth;
 pub mod error;
 pub mod fs;
 pub mod http;
 pub mod process;
 pub mod uri;
+
+pub use auth::{
+  MemoryOAuthClient, MemorySessionStore, OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo,
+  SessionData, SessionError, SessionStore,
+};
 
 #[cfg(test)]
 mod tests {

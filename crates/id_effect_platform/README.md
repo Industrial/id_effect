@@ -11,6 +11,7 @@ Cross-cutting **platform** traits (HTTP, filesystem, process) for [`id_effect`](
 | [`fs`](src/fs.rs) | `FileSystem`, `LiveFileSystem`, `TestFileSystem`, `FileSystemKey` |
 | [`process`](src/process.rs) | `ProcessRuntime`, `TokioProcessRuntime`, `ProcessRuntimeKey` |
 | [`uri`](src/uri.rs) | `http::Uri` parse / build helpers |
+| [`auth`](src/auth/mod.rs) | `SessionStore`, `OAuthClient` capability traits |
 
 ## Design
 
@@ -20,14 +21,16 @@ See RFC [0001-id-effect-platform.md](../../docs/effect-ts-parity/rfcs/0001-id-ef
 
 Unit and integration tests follow the repository root **[`TESTING.md`](../../TESTING.md)** (BDD-style names, nested `#[cfg(test)]` modules beside implementation, `rstest` where inputs form a table). Integration tests under `tests/` complement wire/process scenarios; run `cargo test -p id_effect_platform`.
 
-## Relation to `id_effect_reqwest`
+## HTTP modules
 
-- **`id_effect_reqwest`** remains the place for **reqwest-specific helpers** (pools, JSON+Schema, etc.).
-- Prefer **`id_effect_platform`** for **portable** HTTP calls keyed by [`HttpClientKey`](src/http.rs), so tests can swap [`HttpClient`](src/http.rs) implementations.
-- Low-level `send(|c| c.get(...))` in `id_effect_reqwest` can coexist; new code should gravitate toward [`http::execute`](src/http.rs) + layers.
+| Module | Role |
+|--------|------|
+| [`http`](src/http/mod.rs) | Portable `HttpClient`, `execute`, `execute_stream` |
+| [`http::reqwest`](src/http/reqwest.rs) | `send`, `json`, `json_schema`, pools (`provide_reqwest_pool`) |
 
-## Runnable example
+## Runnable examples
 
 ```bash
 cargo run -p id_effect_platform --example 010_platform_http_get
+cargo run -p id_effect_platform --example 010_wiremock_get_text
 ```

@@ -58,7 +58,6 @@ When working on **Part VI–VII** or `platform-*` Maestro missions, start with [
 | `platform-application` | `id_effect-integration`, `id_effect-capabilities` |
 | `platform-async-messaging` | `id_effect-events`, `id_effect-concurrency` |
 | `platform-workflow-cluster` | `id_effect-fsm`, `id_effect-resilience` |
-| `platform-ui-realtime` | `id_effect-integration` |
 | `platform-dx-ship` | `id_effect-integration` |
 | `platform-ai` | `id_effect-integration`, `id_effect-streams` |
 | `platform-parity-hygiene` | `id_effect-review` |

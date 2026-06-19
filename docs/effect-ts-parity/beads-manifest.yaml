@@ -78,7 +78,7 @@ tasks:
     depends_on: [iep-a-021]
   - slug: iep-a-024
     phase: A
-    title: "Deprecation/shim plan for direct id_effect_reqwest in examples"
+    title: "Deprecation/shim plan for direct id_effect_platform::http::reqwest in examples"
     type: chore
     priority: 3
     depends_on: [iep-a-021]

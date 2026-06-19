@@ -80,8 +80,8 @@ pub fn effect(input: TokenStream) -> TokenStream {
   }
 }
 
-/// Stub derive for future optics codegen (`id_effect_optics`).
-#[proc_macro_derive(Optics, attributes(lens, prism, optional))]
+/// Derive field lenses and enum prisms for [`id_effect_optics`].
+#[proc_macro_derive(Optics, attributes(lens, prism, optional, optics))]
 pub fn derive_optics(input: TokenStream) -> TokenStream {
   derive_optics::derive_optics(input)
 }

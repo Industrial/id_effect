@@ -1,12 +1,12 @@
 [package]
 name = "id_effect_workflow"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
-description = "Experimental durable step log (SQLite) with resume semantics — Phase G spike for Effect.ts parity"
+description = "Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics"
 license = "CC-BY-SA-4.0"
 repository = "https://github.com/Industrial/id_effect"
 readme = "README.md"
-keywords = ["effect", "workflow", "durable", "sqlite", "saga"]
+keywords = ["effect", "workflow", "durable", "sqlite", "saga", "duroxide"]
 categories = ["database"]
 
 [lints.rust]
@@ -15,11 +15,56 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "3.0.0" }
-rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 
 [dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
 rstest = "0.26"
 tempfile = "3"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+
+[features]
+default = ["memory"]
+memory = ["dep:rusqlite"]
+duroxide = [
+  "dep:duroxide",
+  "dep:duroxide-pg",
+  "dep:sqlx",
+  "dep:tokio",
+  "dep:id_effect_sql_pg",
+]
+
+[dependencies.rusqlite]
+version = "0.32"
+features = ["bundled"]
+optional = true
+
+[dependencies.duroxide]
+version = "0.1.29"
+optional = true
+
+[dependencies.duroxide-pg]
+version = "0.1.34"
+optional = true
+
+[dependencies.sqlx]
+version = "0.8"
+default-features = false
+features = ["runtime-tokio", "postgres"]
+optional = true
+
+[dependencies.id_effect_sql_pg]
+path = "../id_effect_sql_pg"
+version = "0.2.0"
+optional = true
+
+[dependencies.tokio]
+version = "1.50.0"
+features = ["rt-multi-thread"]
+optional = true
+
+[[test]]
+name = "duroxide_journal"
+required-features = ["duroxide"]

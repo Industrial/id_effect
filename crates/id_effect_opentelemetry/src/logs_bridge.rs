@@ -92,23 +92,37 @@ pub fn trace_and_log_subscriber_for_providers(
   tracer_provider: &SdkTracerProvider,
   logger_provider: &SdkLoggerProvider,
   with_fmt_layer: bool,
+  env_filter: Option<&str>,
 ) -> Box<dyn Subscriber + Send + Sync + 'static> {
+  use tracing_subscriber::EnvFilter;
   let tracer = tracer_provider.tracer("id_effect_opentelemetry");
-  let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
   let otel_log_layer = tracing_logs_layer_for_provider(logger_provider);
-  if with_fmt_layer {
-    Box::new(
+  let filter = env_filter.and_then(|s| EnvFilter::try_new(s).ok());
+  match (filter, with_fmt_layer) {
+    (Some(filter), true) => Box::new(
       Registry::default()
-        .with(otel_trace_layer)
+        .with(filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer.clone()))
         .with(otel_log_layer)
         .with(tracing_subscriber::fmt::layer()),
-    )
-  } else {
-    Box::new(
+    ),
+    (Some(filter), false) => Box::new(
       Registry::default()
-        .with(otel_trace_layer)
+        .with(filter)
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .with(otel_log_layer),
-    )
+    ),
+    (None, true) => Box::new(
+      Registry::default()
+        .with(tracing_opentelemetry::layer().with_tracer(tracer.clone()))
+        .with(otel_log_layer)
+        .with(tracing_subscriber::fmt::layer()),
+    ),
+    (None, false) => Box::new(
+      Registry::default()
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
+        .with(otel_log_layer),
+    ),
   }
 }
 
@@ -117,9 +131,15 @@ pub fn try_init_global_tracing_with_otel_logs(
   tracer_provider: &SdkTracerProvider,
   logger_provider: &SdkLoggerProvider,
   with_fmt_layer: bool,
+  env_filter: Option<&str>,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
-  trace_and_log_subscriber_for_providers(tracer_provider, logger_provider, with_fmt_layer)
-    .try_init()
+  trace_and_log_subscriber_for_providers(
+    tracer_provider,
+    logger_provider,
+    with_fmt_layer,
+    env_filter,
+  )
+  .try_init()
 }
 
 #[cfg(test)]
@@ -196,7 +216,7 @@ mod tests {
       let tracer_provider = sdk_tracer_provider_with_in_memory_exporter(&span_exporter);
       let logger_provider = sdk_logger_provider_with_in_memory_exporter(&log_exporter);
       let subscriber =
-        trace_and_log_subscriber_for_providers(&tracer_provider, &logger_provider, false);
+        trace_and_log_subscriber_for_providers(&tracer_provider, &logger_provider, false, None);
       tracing::subscriber::with_default(subscriber, || {
         let span = tracing::info_span!("work");
         let _g = span.enter();

@@ -6,14 +6,14 @@
 
 ## Executive summary
 
-Today, `id_effect` integrates at the edges via **`id_effect_reqwest`**, **`id_effect_axum`**, **`id_effect_tokio`**, etc. Effect.ts instead centralizes **cross-cutting platform contracts** in `@effect/platform` and swaps implementations per host.
+Today, `id_effect` integrates at the edges via **`id_effect_platform::http::reqwest`**, **`id_effect_axum`**, **`id_effect_tokio`**, etc. Effect.ts instead centralizes **cross-cutting platform contracts** in `@effect/platform` and swaps implementations per host.
 
 Phase A introduces a **cohesive `id_effect_platform` (name TBD)** story:
 
 1. **Service traits** (or small trait groups) for `HttpClient`, `FileSystem`, `Path`/`FilePath` helpers, `Command`/`Process`, and optionally `Terminal` / `Clipboard` (lower priority).
 2. **Tagged services** in `R` consistent with existing `Tag` / `Layer` patterns.
 3. **Reference implementations** backed by Tokio + `reqwest` (HTTP), `tokio::fs` + `std::fs` where appropriate, `tokio::process`.
-4. **Migration path** for existing crates: `id_effect_reqwest` becomes an implementation detail or thin adapter over the platform HTTP service.
+4. **Migration path** for existing crates: `id_effect_platform::http::reqwest` becomes an implementation detail or thin adapter over the platform HTTP service.
 5. **Documentation and examples** in the mdBook showing Axum handlers that only require platform traits in `R`.
 
 ## Non-goals (for Phase A)
@@ -26,7 +26,7 @@ Phase A introduces a **cohesive `id_effect_platform` (name TBD)** story:
 
 | Existing crate / module | Role today |
 |-------------------------|------------|
-| `crates/id_effect_reqwest` | HTTP client calls |
+| `crates/id_effect_platform` | HTTP client calls |
 | `crates/id_effect_axum` | HTTP server integration |
 | `crates/id_effect_tokio` | Runtime bridge |
 | `crates/id_effect_config` | Config + secrets |
@@ -164,7 +164,7 @@ Each subsection is one **Beads issue** candidate. Copy the title line to `bd cre
 | `iep-a-012` | Define `PlatformError` / `HttpError` / `FsError` hierarchy and `From` bridges | feature | 1 | `iep-a-011` |
 | `iep-a-013` | Book stub chapter “Platform services” + glossary entries | chore | 2 | `iep-a-010` |
 
-**Acceptance (`iep-a-010`):** RFC merged in repo (`docs/effect-ts-parity/rfcs/` or `crates/id_effect_platform/README.md`) covering: trait list, naming, dependency surface (single build including HTTP/FS/process/URI), MSRV implications, and relation to `id_effect_reqwest`.
+**Acceptance (`iep-a-010`):** RFC merged in repo (`docs/effect-ts-parity/rfcs/` or `crates/id_effect_platform/README.md`) covering: trait list, naming, dependency surface (single build including HTTP/FS/process/URI), MSRV implications, and relation to `id_effect_platform::http::reqwest`.
 
 **Acceptance (`iep-a-011`):** `cargo check -p id_effect_platform` passes in workspace; README lists intended modules.
 
@@ -178,7 +178,7 @@ Each subsection is one **Beads issue** candidate. Copy the title line to `bd cre
 | `iep-a-021` | Reqwest-backed `HttpClient` implementation + `Layer` constructor | feature | 1 | `iep-a-020` |
 | `iep-a-022` | Map streaming/chunked responses into `Stream`/`Chunk` (MVP: bounded body buffer) | task | 2 | `iep-a-021` |
 | `iep-a-023` | Integration tests: mock server (e.g. `wiremock` or local `hyper`) + effect graph | task | 2 | `iep-a-021` |
-| `iep-a-024` | Deprecation/shim plan for direct `id_effect_reqwest` usage in examples | chore | 3 | `iep-a-021` |
+| `iep-a-024` | Deprecation/shim plan for direct `id_effect_platform::http::reqwest` usage in examples | chore | 3 | `iep-a-021` |
 
 **Acceptance (`iep-a-020`):** At least GET/POST with headers + body; explicit error channel; no hidden global client.
 
@@ -240,7 +240,7 @@ iep-a-060 depends on iep-a-021 + iep-a-031 (task-level)
 | Risk | Mitigation |
 |------|------------|
 | Trait object `Send` pitfalls | Prefer generic associated types or small `impl Trait` constructors per call site where needed. |
-| Duplication with `id_effect_reqwest` | Make reqwest a **private** dependency of the HTTP live impl first; public re-export only where necessary. |
+| Duplication with `id_effect_platform::http::reqwest` | Make reqwest a **private** dependency of the HTTP live impl first; public re-export only where necessary. |
 | Scope creep (full HTTP server abstraction) | Defer “server platform” to Axum crate; Phase A focuses on **client + OS** primitives. |
 
 ---

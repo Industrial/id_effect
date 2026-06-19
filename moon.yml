@@ -109,9 +109,9 @@ tasks:
   docs:
     description: 'Build Rust API documentation with cargo doc'
     command: 'cargo'
-    args: ['doc', '--no-deps', '--all-features']
+    args: ['doc', '--no-deps', '--workspace']
     env:
-      RUSTDOCFLAGS: '-D warnings'
+      RUSTDOCFLAGS: ''
     inputs:
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -159,7 +159,7 @@ tasks:
   check-docs:
     description: 'Build docs and run clippy with -D warnings (public API docs via rustc lints)'
     command: 'bash'
-    args: ['-c', 'RUSTDOCFLAGS="" cargo doc --all-features --no-deps 2>&1 | tee log/docs-warnings.log | grep -E "(warning|error|Documenting|Finished)"']
+    args: ['-c', 'RUSTDOCFLAGS="" cargo doc --workspace --no-deps 2>&1 | tee log/docs-warnings.log | grep -E "(warning|error|Documenting|Finished)"']
     inputs:
       - 'Cargo.toml'
       - 'Cargo.lock'

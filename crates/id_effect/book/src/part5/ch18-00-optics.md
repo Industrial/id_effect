@@ -4,14 +4,16 @@
 
 The [`id_effect_optics`](../../../../id_effect_optics/) crate provides:
 
-- **Lens** — total field access (`get`, `set`, `modify`, `compose`)
+- **Lens** — total field access (`get`, `set`, `modify`, `compose`, `as_traversal`)
 - **Prism** — partial variant access (`preview`, `review`)
 - **Optional** — helpers for `Option<T>` fields
-- **Traversal** — map over every element in `Vec` / `im::Vector`
+- **Traversal** — map over vectors, optional fields, and composed optics
+- **Iso** — bidirectional isomorphisms
 - **Transducer** — composable reducer transforms
-- **Schema bridge** — dot-path read/write on [`Unknown`](../../src/schema/parse.rs)
-- **JSON Patch** — RFC 6902 subset (`add`, `replace`, `remove`)
-- **TrieZipper** — navigable trie stub
+- **Schema bridge** — dot-path and JSON Pointer access on [`Unknown`](../../src/schema/parse.rs)
+- **JSON Patch** — RFC 6902 operations on `Unknown`
+- **TrieZipper** — navigable persistent trie with rebuild
+- **`#[derive(Optics)]`** — codegen via `id_effect_proc_macro`
 
 ## When to reach for optics
 
@@ -22,6 +24,7 @@ Use optics when you need **composable, reusable focus** into nested data — esp
 
 ```bash
 cargo run -p id_effect_optics --example 010_lens
+cargo run -p id_effect_optics --example 030_schema_patch
 ```
 
 ## Sections

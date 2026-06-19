@@ -1,4 +1,4 @@
-//! `Effect::new_async` with `tokio::time::sleep` under [`id_effect_tokio::run_async`] (via routing).
+//! `Effect::new_async` with `tokio::time::sleep` under [`id_effect::run_async`] (via routing).
 //!
 //! Run: `cargo run -p id_effect_axum --example 020_async_effect`
 

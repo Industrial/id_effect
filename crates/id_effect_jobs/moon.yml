@@ -10,13 +10,25 @@ tasks:
       - -p
       - id_effect_jobs
       - --all-targets
-      - --all-features
     inputs:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
     options:
       cache: true
+      outputStyle: buffer-only-failure
+  check-all-features:
+    description: 'Check optional postgres/apalis/obix/kafka (requires DATABASE_URL)'
+    deps: ['~:check']
+    command:
+      - cargo
+      - check
+      - -p
+      - id_effect_jobs
+      - --all-targets
+      - --all-features
+    options:
+      cache: false
       outputStyle: buffer-only-failure
   clippy:
     deps: ['^:clippy', '~:check']
@@ -26,7 +38,6 @@ tasks:
       - -p
       - id_effect_jobs
       - --all-targets
-      - --all-features
       - --
       - -D
       - warnings
@@ -60,7 +71,6 @@ tasks:
       - -p
       - id_effect_jobs
       - --all-targets
-      - --all-features
     inputs:
       - 'Cargo.toml'
       - 'src/**/*.rs'

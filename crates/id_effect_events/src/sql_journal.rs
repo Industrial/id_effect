@@ -9,21 +9,9 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 /// One persisted journal row: `(version, event_id, payload_json)`.
-type JournalRow = (u64, String, String);
+pub(crate) type JournalRow = (u64, String, String);
 /// Per-stream journal rows keyed by `stream_id`.
 type JournalStore = HashMap<String, Vec<JournalRow>>;
-
-/// DDL for PostgreSQL event journal (apply in your migration runner).
-pub const POSTGRES_JOURNAL_DDL: &str = r#"
-CREATE TABLE IF NOT EXISTS event_journal (
-  stream_id TEXT NOT NULL,
-  version BIGINT NOT NULL,
-  event_id TEXT NOT NULL,
-  payload JSONB NOT NULL,
-  PRIMARY KEY (stream_id, version)
-);
-CREATE INDEX IF NOT EXISTS event_journal_stream_idx ON event_journal (stream_id, version);
-"#;
 
 /// Low-level SQL journal operations (implement with `id_effect_sql` in apps).
 /// SQL journal persistence port.

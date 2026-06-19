@@ -5,7 +5,7 @@ Workspace crate **`id_effect_axum`** runs **`Effect<A, E, R>`** programs inside 
 ## Mental model
 
 - Axum stays **`async fn`** at the **wire edge**; your **domain** stays in **`Effect`** with environment **`R`** (often `caps!(…)` or `State<Env>` at the boundary).
-- The bridge takes **`State<Env>`**, **builds** an effect from `&mut Env`, then drives it to completion with **`id_effect_tokio::run_async`** using **`tokio::task::block_in_place`** + **`Handle::block_on`** so the **`Effect` value never crosses a `Send` async boundary** incorrectly.
+- The bridge takes **`State<Env>`**, **builds** an effect from `&mut Env`, then drives it to completion with **`id_effect::run_async`** using **`tokio::task::block_in_place`** + **`Handle::block_on`** so the **`Effect` value never crosses a `Send` async boundary** incorrectly.
 
 ## Runtime requirements
 

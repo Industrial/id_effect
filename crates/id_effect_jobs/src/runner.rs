@@ -78,17 +78,20 @@ struct MemoryJobRunnerInner {
 }
 
 /// In-memory FIFO job runner (single-process; mutex-backed).
+#[cfg(feature = "memory")]
 #[derive(Clone)]
 pub struct MemoryJobRunner {
   inner: MemoryJobRunnerInner,
 }
 
+#[cfg(feature = "memory")]
 impl Default for MemoryJobRunner {
   fn default() -> Self {
     Self::new()
   }
 }
 
+#[cfg(feature = "memory")]
 impl MemoryJobRunner {
   /// Empty queue.
   pub fn new() -> Self {
@@ -101,6 +104,7 @@ impl MemoryJobRunner {
   }
 }
 
+#[cfg(feature = "memory")]
 impl JobRunner for MemoryJobRunner {
   fn enqueue(&self, mut spec: JobSpec) -> Effect<JobRecord, JobError, ()> {
     if spec.id.is_empty() {
@@ -169,6 +173,7 @@ impl JobRunner for MemoryJobRunner {
   }
 }
 
+#[cfg(feature = "memory")]
 /// Drain up to `limit` pending jobs, running `handler` for each.
 ///
 /// Returns the number of jobs processed. Handler failures mark the job failed but do not
@@ -196,7 +201,7 @@ where
   })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
   use id_effect::{fail, succeed};

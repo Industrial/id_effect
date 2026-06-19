@@ -161,26 +161,167 @@ pub fn tag(literal: &'static str) -> Parser<String, String, ParseFailure> {
   })
 }
 
-/// Parse a non-empty run of ASCII digits into `i64`.
+/// Parse a signed integer (`+`/`-` optional) into `i64`.
 #[must_use]
 pub fn int() -> Parser<String, i64, ParseFailure> {
+  signed_int()
+}
+
+/// Parse a signed integer (`+`/`-` optional) into `i64`.
+#[must_use]
+pub fn signed_int() -> Parser<String, i64, ParseFailure> {
   Parser::new(|input: String| {
-    let mut len = 0usize;
-    for (idx, ch) in input.char_indices() {
+    let mut idx = 0usize;
+    if input.starts_with('-') || input.starts_with('+') {
+      idx = 1;
+    }
+    let start = idx;
+    for (pos, ch) in input[idx..].char_indices() {
       if ch.is_ascii_digit() {
-        len = idx + ch.len_utf8();
+        idx = start + pos + ch.len_utf8();
       } else {
         break;
       }
     }
-    if len == 0 {
+    if idx == start {
       return Err(ParseFailure::new("expected integer"));
     }
-    let (digits, tail) = input.split_at(len);
+    let (digits, tail) = input.split_at(idx);
     let value = digits
       .parse::<i64>()
       .map_err(|err| ParseFailure::new(format!("invalid integer: {err}")))?;
     Ok((value, tail.to_string()))
+  })
+}
+
+/// Parse `true` or `false`.
+#[must_use]
+pub fn bool_lit() -> Parser<String, bool, ParseFailure> {
+  tag("true").map(|_| true).alt(tag("false").map(|_| false))
+}
+
+/// Parse a floating-point literal into `f64`.
+#[must_use]
+pub fn float() -> Parser<String, f64, ParseFailure> {
+  Parser::new(|input: String| {
+    let mut idx = 0usize;
+    if input.starts_with('-') || input.starts_with('+') {
+      idx = 1;
+    }
+    let start = idx;
+    let mut saw_dot = false;
+    for (pos, ch) in input[idx..].char_indices() {
+      if ch.is_ascii_digit() {
+        idx = start + pos + ch.len_utf8();
+      } else if ch == '.' && !saw_dot {
+        saw_dot = true;
+        idx = start + pos + ch.len_utf8();
+      } else {
+        break;
+      }
+    }
+    if idx == start {
+      return Err(ParseFailure::new("expected float"));
+    }
+    let (digits, tail) = input.split_at(idx);
+    let value = digits
+      .parse::<f64>()
+      .map_err(|err| ParseFailure::new(format!("invalid float: {err}")))?;
+    Ok((value, tail.to_string()))
+  })
+}
+
+/// Discard a parser's output value.
+#[must_use]
+pub fn void<O, E>(parser: Parser<String, O, E>) -> Parser<String, (), E>
+where
+  O: Send + Sync + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  parser.map(|_| ())
+}
+
+/// Parse zero or one occurrence; succeeds with `None` without consuming on failure.
+#[must_use]
+pub fn optional<O, E>(inner: Parser<String, O, E>) -> Parser<String, Option<O>, E>
+where
+  O: Send + Sync + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  Parser::new(move |input: String| match inner.parse(input.clone()) {
+    Ok((value, rest)) => Ok((Some(value), rest)),
+    Err(_) => Ok((None, input)),
+  })
+}
+
+/// Parse one or more occurrences of `inner`.
+#[must_use]
+pub fn many1<O, E>(inner: Parser<String, O, E>) -> Parser<String, Vec<O>, E>
+where
+  O: Send + Sync + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  Parser::new(move |input| {
+    let (first, mut rest) = inner.parse(input)?;
+    let mut out = vec![first];
+    loop {
+      let checkpoint = rest.clone();
+      match inner.parse(rest) {
+        Ok((item, next)) => {
+          out.push(item);
+          rest = next;
+        }
+        Err(_) => return Ok((out, checkpoint)),
+      }
+    }
+  })
+}
+
+/// Parse values separated by `separator`.
+#[must_use]
+pub fn sep_by<O, E>(
+  value: Parser<String, O, E>,
+  separator: Parser<String, (), E>,
+) -> Parser<String, Vec<O>, E>
+where
+  O: Send + Sync + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  Parser::new(move |input| {
+    let (first, mut rest) = value.parse(input)?;
+    let mut out = vec![first];
+    loop {
+      let checkpoint = rest.clone();
+      match separator.parse(rest.clone()) {
+        Ok(((), after_sep)) => match value.parse(after_sep) {
+          Ok((item, next)) => {
+            out.push(item);
+            rest = next;
+          }
+          Err(err) => return Err(err),
+        },
+        Err(_) => return Ok((out, checkpoint)),
+      }
+    }
+  })
+}
+
+/// Parse `inner` surrounded by `open` and `close`.
+#[must_use]
+pub fn between<O, E>(
+  open: Parser<String, (), E>,
+  close: Parser<String, (), E>,
+  inner: Parser<String, O, E>,
+) -> Parser<String, O, E>
+where
+  O: Send + Sync + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  Parser::new(move |input| {
+    let ((), rest) = open.parse(input)?;
+    let (out, rest) = inner.parse(rest)?;
+    let ((), rest) = close.parse(rest)?;
+    Ok((out, rest))
   })
 }
 

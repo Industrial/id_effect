@@ -1,94 +1,61 @@
-# Background jobs and reliable messaging
+# Async messaging (production)
 
-HTTP handlers should stay fast. Work that can fail, retry, or run later—sending email, charging a card, fan-out notifications—belongs on a **background path** with clear delivery semantics.
+Platform async messaging stacks on **sqlx `PgPool`** ([`PgPoolKey`](../../../id_effect_sql_pg)), with production adapters in [`id_effect_jobs`](../../../id_effect_jobs) and [`id_effect_events`](../../../id_effect_events).
 
-This chapter introduces `id_effect_jobs` for in-process job queues and transactional outbox relay, and ties them to `id_effect_events` when you need a durable audit trail.
+## SQL platform
 
-## What you'll learn
+[`id_effect_sql_pg`](../../../id_effect_sql_pg) replaces the deadpool era with sqlx:
 
-- How to enqueue work with `MemoryJobRunner` and drain it in tests or a worker loop.
-- The transactional outbox pattern and the crate's `MemoryOutbox` + `relay_outbox` MVP.
-- When the in-memory `KafkaBrokerStub` is appropriate versus a real broker.
-- How `SqlEventJournal` persists domain events for projections and replay.
+- [`PgSqlClient`](../../../id_effect_sql_pg/struct.PgSqlClient.html) implements [`SqlClient`](../../../id_effect_sql/trait.SqlClient.html)
+- [`provide_pg_sql_client`](../../../id_effect_sql_pg/fn.provide_pg_sql_client.html) registers `PgPoolKey` + `SqlClientKey`
+- Set `DATABASE_URL` (devenv provides `postgresql://postgres@127.0.0.1:5432/id_effect`)
 
-## Prerequisites
+## Jobs — Apalis (pull workers)
 
-- [Application host](./ch30-00-application.md) — where HTTP and process lifecycle live.
-- [Error handling](../part3/ch08-00-error-handling.md) — modeling failures in effectful job handlers.
+[`ApalisJobQueue`](../../../id_effect_jobs/struct.ApalisJobQueue.html) is **enqueue-only**. Workers pull tasks via Apalis `WorkerBuilder` + `PostgresStorage::poll` — there is no FIFO `dequeue` on the storage side.
 
-## Why not `spawn` from every handler?
+```rust,ignore
+use id_effect_jobs::{ApalisJobQueue, JobSpec};
+use id_effect::run_async;
 
-Fire-and-forget `tokio::spawn` loses **backpressure**, **retry policy**, and **at-least-once** guarantees. A job runner lets you:
-
-- Run the same handler in tests synchronously (`drain_jobs`).
-- Attach logging and metrics at one boundary.
-- Evolve toward outbox + broker without rewriting domain code.
-
-## In-process jobs
-
-`MemoryJobRunner` stores pending jobs; `drain_jobs` executes them on the current thread—ideal for unit tests and single-node prototypes:
-
-```rust,no_run
-use id_effect_jobs::{MemoryJobRunner, drain_jobs};
-
-let runner = MemoryJobRunner::new();
-// enqueue from an Effect step or handler...
-drain_jobs(&runner)?;
+ApalisJobQueue::setup(&pool).await?;
+let queue = ApalisJobQueue::new(&pool, "app_jobs");
+run_async(queue.enqueue(JobSpec::new("notify", b"payload")), ()).await?;
 ```
 
-Model each job as an `Effect` that receives capabilities in `R` (database, HTTP client) so production uses the same code path with a different runner implementation later.
+Enable: `id_effect_jobs` features `apalis` (+ `postgres`).
 
-## Transactional outbox
+## Transactional outbox — obix
 
-When a database commit and a message publish must succeed together, write the message to an **outbox table** in the same transaction, then relay asynchronously:
+[`ObixOutbox`](../../../id_effect_jobs/struct.ObixOutbox.html) persists [`OutboxRecord`](../../../id_effect_jobs/struct.OutboxRecord.html) rows through [obix](https://docs.rs/obix) on the shared pool. Relay progress uses a sequence cursor (obix has no `published` flag).
 
-```rust,no_run
-use id_effect_jobs::{MemoryOutbox, relay_outbox};
+For unit tests only: `memory` feature + [`MemoryOutbox`](../../../id_effect_jobs/struct.MemoryOutbox.html) + [`relay_outbox`](../../../id_effect_jobs/fn.relay_outbox.html).
 
-let outbox = MemoryOutbox::new();
-// application writes row + outbox entry atomically in your DB layer
-relay_outbox(&outbox, |topic, payload| {
-    // publish to broker
-    Ok(())
-})?;
-```
+## Idempotent inbox — obix + job
 
-`MemoryOutbox` documents the API; production swaps in SQL-backed storage and a real broker client.
+[`ObixInbox`](../../../id_effect_jobs/struct.ObixInbox.html) wires obix [`Inbox`](https://docs.rs/obix/latest/obix/struct.Inbox.html) to the [`job`](https://docs.rs/job) poller for idempotent consumers.
 
-## Kafka adapter stub
+## Kafka — rdkafka
 
-`KafkaBrokerStub` implements `MessageBroker` with in-memory fan-out until you add `rdkafka`:
-
-```rust
-use id_effect::run_blocking;
-use id_effect_jobs::{KafkaBrokerStub, MessageBroker};
-
-let broker = KafkaBrokerStub::new("localhost:9092");
-run_blocking(broker.publish("orders.created", br"{}", ()), ())?;
-```
-
-Use it to teach topic naming and payload contracts in CI without a cluster. Replace the stub when you need partitioning, consumer groups, or cross-service delivery guarantees.
+[`RdKafkaBroker`](../../../id_effect_jobs/struct.RdKafkaBroker.html) implements [`MessageBroker`](../../../id_effect_jobs/trait.MessageBroker.html) with [rdkafka](https://docs.rs/rdkafka). [`KafkaBrokerStub`](../../../id_effect_jobs/struct.KafkaBrokerStub.html) remains **memory-only** (`memory` feature) for tests.
 
 ## SQL event journal
 
-`SqlEventJournal` persists append-only domain events. Apply `POSTGRES_JOURNAL_DDL` once, then append from effectful command handlers. Tests use `TestSqlJournalBackend` without PostgreSQL when you only need persistence semantics.
+[`EsEntityPgBackend`](../../../id_effect_events/struct.EsEntityPgBackend.html) (`id_effect_events` feature `es-entity`) implements [`SqlJournalBackend`](../../../id_effect_events/trait.SqlJournalBackend.html) on the same `PgPool`.
 
-Pair journals with [Events and projections](../part5/ch23-00-events-and-projections.md) when building read models.
+Apply [`ES_ENTITY_EVENT_JOURNAL_DDL`](../../../id_effect_events/constant.ES_ENTITY_EVENT_JOURNAL_DDL.html) via [`apply_es_entity_journal_ddl`](../../../id_effect_events/fn.apply_es_entity_journal_ddl.html).
 
-## Putting it together
+## Feature matrix
 
-A minimal order flow:
+| Crate | Feature | Adapter |
+|-------|---------|---------|
+| `id_effect_jobs` | `memory` (default) | in-process stubs |
+| `id_effect_jobs` | `apalis` | Apalis PostgreSQL queue |
+| `id_effect_jobs` | `obix` | obix outbox + inbox |
+| `id_effect_jobs` | `kafka` | rdkafka broker |
+| `id_effect_events` | `postgres` | `EsEntityPgBackend` |
 
-1. HTTP handler commits order + outbox row in one transaction.
-2. Background task calls `relay_outbox` to publish `orders.created`.
-3. A consumer job updates a read model or calls an external API, with retries via [Scheduling](../part3/ch11-00-scheduling.md).
+## See also
 
-Start with `MemoryJobRunner` and `MemoryOutbox` in tests; promote to SQL + real broker when load and durability require it.
-
-## Summary
-
-Treat **jobs** as effect programs with a runner boundary, and **messaging** as either in-process stubs or outbox-backed delivery—not ad hoc spawns from handlers. The crates here are MVPs that encode the pattern; infrastructure choices stay yours.
-
-## Next steps
-
-- [Workflow and cluster](./ch32-00-workflow-cluster.md) — durable multi-step processes when jobs are not enough.
+- ADR: `docs/platform/adrs/adr-sql-driver-choice.md`
+- Plan: `.cursor/plans/platform_messaging_production.plan.md`

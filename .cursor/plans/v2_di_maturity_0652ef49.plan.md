@@ -206,7 +206,7 @@ v2 DI Completion built the runtime and macros; **the workspace still codes again
 
 **AC:** `rg 'IntoBind' crates/` → 0 matches; remove `IntoBind` trait from [`kernel/effect.rs`](crates/id_effect/src/kernel/effect.rs) if no longer needed
 
-**Gates:** `cargo test -p id_effect_logger -p id_effect_config -p id_effect_reqwest` | witness: witnessed-by-ci
+**Gates:** `cargo test -p id_effect_logger -p id_effect_config -p id_effect_platform::http::reqwest` | witness: witnessed-by-ci
 
 ---
 
@@ -214,7 +214,7 @@ v2 DI Completion built the runtime and macros; **the workspace still codes again
 
 **Context:** Lint `NO_CONCRETE_ENV_IN_PUB_API` exists but under-enforced; many public `Effect<_,_,Env>` signatures.
 
-**Modify:** Audit + migrate public effect fns in `id_effect_platform`, `id_effect_config`, `id_effect_logger`, `id_effect_reqwest` to `caps!(…)` or `R: Needs<K> + 'static` without concrete `Env`.
+**Modify:** Audit + migrate public effect fns in `id_effect_platform`, `id_effect_config`, `id_effect_logger`, `id_effect_platform::http::reqwest` to `caps!(…)` or `R: Needs<K> + 'static` without concrete `Env`.
 
 **AC:** `rg 'Effect<[^>]+Env>' crates/ --glob '*.rs'` → 0 hits (including examples and tests — all migrate to `caps!(…)>`)
 

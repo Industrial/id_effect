@@ -11,7 +11,7 @@ use opentelemetry_sdk::trace::InMemorySpanExporter;
 fn main() {
   let exporter = InMemorySpanExporter::default();
   let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
-  let subscriber = trace_subscriber_for_provider(&provider, true);
+  let subscriber = trace_subscriber_for_provider(&provider, true, None);
   let _guard = tracing::subscriber::set_default(subscriber);
 
   let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());

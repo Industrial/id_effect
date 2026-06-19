@@ -1,59 +1,70 @@
-//! [`PgSqlClient`] — [`SqlClient`](id_effect_sql::SqlClient) over deadpool-postgres.
+//! [`PgSqlClient`] — [`SqlClient`](id_effect_sql::SqlClient) over sqlx [`PgPool`].
 
 use std::sync::Arc;
 
-use deadpool_postgres::Pool;
 use id_effect::kernel::Effect;
 use id_effect_sql::{SqlClient, SqlError, SqlParam, SqlRow, SqlTransaction};
-use tokio_postgres::types::ToSql;
+use sqlx::{PgPool, Row as _};
 
-use crate::error::{pg_error, pool_error};
+use crate::error::sqlx_error;
 use crate::transaction::PgSqlTransaction;
 
-/// PostgreSQL [`SqlClient`] backed by a deadpool connection pool.
+/// PostgreSQL [`SqlClient`] backed by a sqlx connection pool.
 #[derive(Clone)]
 pub struct PgSqlClient {
-  pool: Pool,
+  pool: PgPool,
 }
 
 impl PgSqlClient {
-  /// Wrap an existing deadpool [`Pool`].
+  /// Wrap an existing sqlx [`PgPool`].
   #[inline]
-  pub fn new(pool: Pool) -> Self {
+  pub fn new(pool: PgPool) -> Self {
     Self { pool }
   }
 
-  /// Borrow the underlying pool (for advanced wiring).
+  /// Borrow the underlying pool (for Apalis, obix, and other adapters).
   #[inline]
-  pub fn pool(&self) -> &Pool {
+  pub fn pool(&self) -> &PgPool {
     &self.pool
   }
 }
 
-fn bind_params(params: &[SqlParam]) -> Vec<Box<dyn ToSql + Sync + Send>> {
-  params
-    .iter()
-    .map(|p| match p {
-      SqlParam::Null => Box::new(None::<i32>) as Box<dyn ToSql + Sync + Send>,
-      SqlParam::Bool(v) => Box::new(*v),
-      SqlParam::Int(v) => Box::new(*v),
-      SqlParam::Text(v) => Box::new(v.clone()),
-      SqlParam::Bytes(v) => Box::new(v.clone()),
-    })
-    .collect()
+fn bind_query<'q>(
+  mut query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
+  params: &'q [SqlParam],
+) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
+  for param in params {
+    query = match param {
+      SqlParam::Null => query.bind(None::<i32>),
+      SqlParam::Bool(v) => query.bind(*v),
+      SqlParam::Int(v) => query.bind(*v),
+      SqlParam::Text(v) => query.bind(v.clone()),
+      SqlParam::Bytes(v) => query.bind(v.clone()),
+    };
+  }
+  query
 }
 
-fn row_to_sql_row(row: &tokio_postgres::Row) -> SqlRow {
+fn row_to_sql_row(row: &sqlx::postgres::PgRow) -> SqlRow {
   let cells = (0..row.len())
     .map(|idx| {
-      if let Ok(v) = row.try_get::<_, Option<String>>(idx) {
-        return v.unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<_, Option<i64>>(idx) {
+      if let Ok(v) = row.try_get::<Option<i32>, _>(idx) {
         return v.map(|n| n.to_string()).unwrap_or_default();
       }
-      if let Ok(v) = row.try_get::<_, Option<bool>>(idx) {
+      if let Ok(v) = row.try_get::<Option<i64>, _>(idx) {
+        return v.map(|n| n.to_string()).unwrap_or_default();
+      }
+      if let Ok(v) = row.try_get::<Option<bool>, _>(idx) {
         return v.map(|b| b.to_string()).unwrap_or_default();
+      }
+      if let Ok(v) = row.try_get::<Option<f64>, _>(idx) {
+        return v.map(|f| f.to_string()).unwrap_or_default();
+      }
+      if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
+        return v.unwrap_or_default();
+      }
+      if let Ok(v) = row.try_get::<Option<Vec<u8>>, _>(idx) {
+        return v.map(|b| format!("{b:?}")).unwrap_or_default();
       }
       String::new()
     })
@@ -66,8 +77,11 @@ impl SqlClient for PgSqlClient {
     let pool = self.pool.clone();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = pool.get().await.map_err(pool_error)?;
-        drop(client);
+        let mut conn = pool.acquire().await.map_err(sqlx_error)?;
+        sqlx::query("SELECT 1")
+          .execute(&mut *conn)
+          .await
+          .map_err(sqlx_error)?;
         Ok(())
       })
     })
@@ -79,13 +93,8 @@ impl SqlClient for PgSqlClient {
     let params = params.to_vec();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = pool.get().await.map_err(pool_error)?;
-        let binds = bind_params(&params);
-        let refs: Vec<&(dyn ToSql + Sync)> = binds
-          .iter()
-          .map(|b| b.as_ref() as &(dyn ToSql + Sync))
-          .collect();
-        let rows = client.query(&sql, &refs).await.map_err(pg_error)?;
+        let query = bind_query(sqlx::query(&sql), &params);
+        let rows = query.fetch_all(&pool).await.map_err(sqlx_error)?;
         Ok(rows.iter().map(row_to_sql_row).collect())
       })
     })
@@ -97,14 +106,9 @@ impl SqlClient for PgSqlClient {
     let params = params.to_vec();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = pool.get().await.map_err(pool_error)?;
-        let binds = bind_params(&params);
-        let refs: Vec<&(dyn ToSql + Sync)> = binds
-          .iter()
-          .map(|b| b.as_ref() as &(dyn ToSql + Sync))
-          .collect();
-        let n = client.execute(&sql, &refs).await.map_err(pg_error)?;
-        Ok(n)
+        let query = bind_query(sqlx::query(&sql), &params);
+        let result = query.execute(&pool).await.map_err(sqlx_error)?;
+        Ok(result.rows_affected())
       })
     })
   }
@@ -113,29 +117,13 @@ impl SqlClient for PgSqlClient {
     let pool = self.pool.clone();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = pool.get().await.map_err(pool_error)?;
-        client.execute("BEGIN", &[]).await.map_err(pg_error)?;
-        Ok(Arc::new(PgSqlTransaction::new(client)) as Arc<dyn SqlTransaction>)
+        let mut conn = pool.acquire().await.map_err(sqlx_error)?;
+        sqlx::query("BEGIN")
+          .execute(&mut *conn)
+          .await
+          .map_err(sqlx_error)?;
+        Ok(Arc::new(PgSqlTransaction::new(conn)) as Arc<dyn SqlTransaction>)
       })
     })
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::{PgPoolConfig, pg_pool_from_config};
-
-  #[test]
-  fn pool_config_rejects_invalid_url() {
-    let err = pg_pool_from_config(PgPoolConfig::from_url("not-a-url")).unwrap_err();
-    assert!(matches!(err.0, SqlError::Unsupported(_)));
-  }
-  #[test]
-  fn pg_sql_client_exposes_pool() {
-    let pool = pg_pool_from_config(PgPoolConfig::from_url("postgres://localhost:5432/postgres"))
-      .expect("pool");
-    let client = PgSqlClient::new(pool);
-    assert!(client.pool().status().max_size > 0);
   }
 }

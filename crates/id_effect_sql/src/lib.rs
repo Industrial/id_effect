@@ -1,7 +1,7 @@
 //! **SQL client** traits for `id_effect` — driver-agnostic database access inspired by
 //! Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction).
 //!
-//! Production PostgreSQL support is provided by the forthcoming `id_effect_sql_pg` crate.
+//! Production PostgreSQL support is provided by the `id_effect_sql_pg` crate (sqlx `PgPool`).
 //! See [`docs/platform/adrs/adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md).
 
 #![forbid(unsafe_code)]

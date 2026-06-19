@@ -109,7 +109,7 @@ Workspace crate providing **`@effect/platform`-style** HTTP, filesystem, and pro
 
 ---
 
-**`id_effect_reqwest`**
+**`id_effect_platform::http::reqwest`**
 Workspace crate: **`reqwest::Client`** as a keyed service, `send` / JSON helpers, optional pools; complements portable HTTP via **`id_effect_platform`**. See [HTTP via reqwest](./part2/ch07-07-reqwest-http.md).
 
 ---

@@ -7,9 +7,8 @@
 //!
 //! ## Examples
 //!
-//! See `examples/` (e.g. `109_tokio_end_to_end`). Re-exports
-//! [`run_async`], [`run_blocking`], [`run_fork`], and [`yield_now`] from `id_effect` for use at the
-//! async boundary alongside [`TokioRuntime`].
+//! See `examples/` (e.g. `109_tokio_end_to_end`). Import [`run_async`], [`run_blocking`],
+//! [`run_fork`], and [`yield_now`] from `id_effect` at the async boundary alongside [`TokioRuntime`].
 //!
 //! ## Async effects that are not [`Send`] ([`spawn_blocking_run_async`])
 //!
@@ -27,10 +26,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use id_effect::{Effect, FiberHandle, FiberId, Never, Runtime, from_async};
+use id_effect::{
+  Effect, FiberHandle, FiberId, Never, Runtime, from_async, run_async, run_blocking,
+};
 
-/// Commonly used at the async boundary together with [`TokioRuntime`].
-pub use id_effect::{run_async, run_blocking, run_fork, yield_now};
+pub use id_effect::yield_now;
 
 /// Run an [`Effect`] on Tokio’s **blocking thread pool**, driving it with [`run_async`] via
 /// [`tokio::runtime::Handle::block_on`] on the same runtime.
@@ -197,6 +197,9 @@ fn instant_now_blocking() -> Instant {
   // helpers (`*_blocking`); `Runtime::now` is the Tokio clock boundary for `LiveClock` / scheduling.
   Instant::now()
 }
+
+#[cfg(test)]
+use id_effect::run_fork;
 
 #[cfg(test)]
 mod tests {

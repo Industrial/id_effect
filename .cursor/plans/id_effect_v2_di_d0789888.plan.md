@@ -380,7 +380,7 @@ fn main() {
 
 ### leaf-migrate-workspace
 
-**Modify remaining ~65 files:** examples (21), `id_effect_reqwest`, `id_effect_tower`, `id_effect_tokio` example, `id_effect_lint`, book chapters part 2 ch04–ch07.
+**Modify remaining ~65 files:** examples (21), `id_effect_platform::http::reqwest`, `id_effect_tower`, `id_effect_tokio` example, `id_effect_lint`, book chapters part 2 ch04–ch07.
 
 **AC:** `rg 'service_key!|Context<Cons|req!|ctx!' crates/` returns 0 matches outside `di/internal` and migration notes.
 

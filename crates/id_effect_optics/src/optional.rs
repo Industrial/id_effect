@@ -44,6 +44,31 @@ impl<S: 'static, T: 'static> Optional<S, T> {
   pub fn set(&self, source: S, value: Option<T>) -> S {
     self.lens.set(source, value)
   }
+
+  /// Compose with an inner lens on the optional inner value.
+  pub fn compose<U>(&self, inner: crate::lens::Lens<T, U>) -> Optional<S, U>
+  where
+    S: Clone + 'static,
+    T: Clone + 'static,
+    U: Clone + 'static,
+  {
+    let outer_read = self.lens.clone();
+    let outer_write = self.lens.clone();
+    let inner_read = inner.clone();
+    let inner_write = inner;
+    Optional::new(crate::lens::Lens::new(
+      move |s| match outer_read.get(s) {
+        None => None,
+        Some(value) => Some(inner_read.get(&value)),
+      },
+      move |s, value: Option<U>| match value {
+        None => outer_write.set(s, None),
+        Some(inner_value) => {
+          outer_write.modify(s, |opt| opt.map(|item| inner_write.set(item, inner_value)))
+        }
+      },
+    ))
+  }
 }
 
 #[cfg(test)]
@@ -105,6 +130,46 @@ mod tests {
       };
       let updated = nickname_opt().set_none(profile);
       assert_eq!(updated.nickname, None);
+    }
+  }
+
+  mod compose {
+    use super::*;
+    use crate::lens::field;
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct Inner {
+      value: String,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct Profile {
+      nickname: Option<Inner>,
+    }
+
+    #[test]
+    fn composes_into_inner_field() {
+      let outer = Optional::new(field(
+        |p: &Profile| &p.nickname,
+        |mut p, nickname| {
+          p.nickname = nickname;
+          p
+        },
+      ));
+      let inner = field(
+        |i: &Inner| &i.value,
+        |mut i, value| {
+          i.value = value;
+          i
+        },
+      );
+      let profile = Profile {
+        nickname: Some(Inner {
+          value: "ada".into(),
+        }),
+      };
+      let updated = outer.compose(inner).modify(profile, |v| v.to_uppercase());
+      assert_eq!(updated.nickname.unwrap().value, "ADA");
     }
   }
 

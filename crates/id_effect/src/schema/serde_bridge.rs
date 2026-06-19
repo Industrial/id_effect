@@ -1,6 +1,6 @@
 //! Convert [`serde_json::Value`] to [`crate::schema::parse::Unknown`] for schema decoding.
 //!
-//! Enabled with the **`schema-serde`** crate feature. HTTP adapters (`id_effect_axum`, `id_effect_reqwest`)
+//! Enabled with the **`schema-serde`** crate feature. HTTP adapters (`id_effect_axum`, `id_effect_platform`)
 //! should use this instead of duplicating conversion logic.
 //!
 //! See [`TESTING.md`](../../../../TESTING.md) for validation policy.

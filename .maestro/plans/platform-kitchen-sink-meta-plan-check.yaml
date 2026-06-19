@@ -6,7 +6,6 @@ intendedFiles:
   - crates/id_effect/book/src/SUMMARY.md
   - crates/id_effect/book/src/part6/ch26-00-platform-introduction.md
   - crates/id_effect/book/src/part6/ch27-00-observability.md
-  - crates/id_effect/book/src/part7/ch33-00-ui-realtime.md
   - .cursor/skills/id_effect/README.md
   - .maestro/specs/platform-kitchen-sink-meta.md
   - .maestro/specs/platform-foundation.md
@@ -16,7 +15,6 @@ intendedFiles:
   - .maestro/specs/platform-application.md
   - .maestro/specs/platform-async-messaging.md
   - .maestro/specs/platform-workflow-cluster.md
-  - .maestro/specs/platform-ui-realtime.md
   - .maestro/specs/platform-dx-ship.md
   - .maestro/specs/platform-ai.md
   - .maestro/specs/platform-parity-hygiene.md
@@ -28,7 +26,6 @@ intendedFiles:
   - .maestro/missions/platform-application.execution.md
   - .maestro/missions/platform-async-messaging.execution.md
   - .maestro/missions/platform-workflow-cluster.execution.md
-  - .maestro/missions/platform-ui-realtime.execution.md
   - .maestro/missions/platform-dx-ship.execution.md
   - .maestro/missions/platform-ai.execution.md
   - .maestro/missions/platform-parity-hygiene.execution.md
@@ -40,7 +37,6 @@ intendedFiles:
   - .cursor/plans/platform_application.plan.md
   - .cursor/plans/platform_async_messaging.plan.md
   - .cursor/plans/platform_workflow_cluster.plan.md
-  - .cursor/plans/platform_ui_realtime.plan.md
   - .cursor/plans/platform_dx_ship.plan.md
   - .cursor/plans/platform_ai.plan.md
   - .cursor/plans/platform_parity_hygiene.plan.md

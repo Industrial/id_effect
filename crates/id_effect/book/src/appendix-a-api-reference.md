@@ -165,7 +165,7 @@ A condensed reference for the most commonly used types and functions in id_effec
 | `id_effect` | Core `Effect`, `Stream`, `Stm`, schema, fibers, … | Parts I–IV | `cargo doc -p id_effect` |
 | `id_effect_tokio` | Tokio `Runtime`, `run_async` wiring, `spawn_blocking_run_async` | [Tokio bridge](./part2/ch07-05-tokio-bridge.md) | `cargo doc -p id_effect_tokio` |
 | `id_effect_platform` | HTTP / FS / process **ports** + live + test impls | [Platform I/O](./part2/ch07-06-platform-services.md) | `cargo doc -p id_effect_platform` |
-| `id_effect_reqwest` | `reqwest::Client` as a service; pools; JSON + schema | [HTTP via reqwest](./part2/ch07-07-reqwest-http.md) | `cargo doc -p id_effect_reqwest` |
+| `id_effect_platform::http::reqwest` | `reqwest::Client` as a service; pools; JSON + schema | [HTTP via reqwest](./part2/ch07-07-reqwest-http.md) | `cargo doc -p id_effect_platform` |
 | `id_effect_axum` | Axum handlers + capability env bridge | [Axum host](./part2/ch07-08-axum-host.md) | `cargo doc -p id_effect_axum` |
 | `id_effect_rpc` | RPC-style JSON errors, correlation ids, tracing spans | [RPC boundaries](./part2/ch07-12-rpc-boundaries.md) | `cargo doc -p id_effect_rpc` |
 | `id_effect_tower` | `tower::Service` over effects | [Tower service](./part2/ch07-09-tower-service.md) | `cargo doc -p id_effect_tower` |

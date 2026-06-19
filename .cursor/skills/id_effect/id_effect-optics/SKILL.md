@@ -2,7 +2,7 @@
 name: id_effect-optics
 description: >-
   Teaches id_effect_optics: Lens, Prism, Optional, Traversal, transducers,
-  schema field paths on Unknown, JSON patch subset, TrieZipper stub. Use when
+  schema field paths on Unknown, JSON patch (add/replace/remove/move/copy/test), TrieZipper navigation/rebuild. Use when
   focusing/updating nested immutable data or schema documents — Part V ch18.
 ---
 
@@ -49,7 +49,7 @@ let nick = Optional::new(nickname_lens).set_some(profile, "ada".into());
 ## Schema paths
 
 ```rust
-use id_effect_optics::{get_at_path, set_at_path, apply_patch, PatchOp};
+use id_effect_optics::{get_at_path, create_at_path, apply_patch, PatchOp};
 
 let name = get_at_path(&doc, "user.name")?;
 let patched = apply_patch(doc, &PatchOp::Replace { path: "count".into(), value: Unknown::I64(2) })?;
@@ -61,7 +61,18 @@ let patched = apply_patch(doc, &PatchOp::Replace { path: "count".into(), value: 
 |----------|----------|
 | Manual clone-and-rebuild helpers | `Lens::modify` / `Traversal::over` |
 | String paths in domain logic | Optics in core; paths only at `Unknown` boundary |
-| Full RFC 6902 in v1 | `add` / `replace` / `remove` subset in `json_patch` |
+| String paths in domain logic | Optics in core; paths only at `Unknown` boundary |
+
+## Derive
+
+```rust
+use id_effect_proc_macro::Optics;
+
+#[derive(Optics)]
+struct Point { x: i32, y: i32 }
+
+let lens = Point::x_lens();
+```
 
 ## Crate & example
 

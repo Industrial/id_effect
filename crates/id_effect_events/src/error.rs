@@ -28,6 +28,9 @@ pub enum EventStoreError {
   /// Schema decode failure.
   #[error("schema error: {0}")]
   Schema(String),
+  /// Projection graph planning failure.
+  #[error("graph error: {0}")]
+  Graph(String),
 }
 
 #[cfg(test)]
@@ -60,6 +63,7 @@ mod tests {
         EventStoreError::Schema("bad field".into()),
         "schema error: bad field",
       ),
+      (EventStoreError::Graph("cycle".into()), "graph error: cycle"),
     ];
     for (err, expected) in cases {
       assert_eq!(err.to_string(), expected);

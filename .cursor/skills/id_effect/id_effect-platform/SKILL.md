@@ -1,6 +1,6 @@
 ---
 name: id_effect-platform
-description: Platform capabilities — HttpClient, FileSystem, ProcessRuntime in id_effect_platform. Use when editing crates/id_effect_platform, platform Maestro missions, or migrating from id_effect_reqwest.
+description: Platform capabilities — HttpClient, FileSystem, ProcessRuntime in id_effect_platform. Use when editing crates/id_effect_platform, platform Maestro missions, or migrating from id_effect_platform::http::reqwest.
 ---
 
 # id_effect-platform
@@ -9,11 +9,12 @@ description: Platform capabilities — HttpClient, FileSystem, ProcessRuntime in
 
 - Editing `crates/id_effect_platform` (HTTP, FS, process, URI)
 - `platform-foundation` or Phase A parity work
-- Migrating examples from `id_effect_reqwest` to portable HTTP
+- Using `id_effect_platform::http::reqwest` to `id_effect_platform::http::reqwest`
 
 ## Key APIs
 
-- HTTP: `HttpClientKey`, `execute`, `execute_stream`, `provide_reqwest_http_client`
+- HTTP (portable): `HttpClientKey`, `execute`, `execute_stream`, `provide_reqwest_http_client`
+- HTTP (reqwest): `http::reqwest::{send, json_schema, provide_reqwest_client, provide_reqwest_pool}`
 - FS: `FileSystemKey`, `read`, `exists`, `LiveFileSystem`, `TestFileSystem`
 - Process: `ProcessRuntimeKey`, `spawn`, `spawn_wait`, `child_kill`, `child_wait`
 

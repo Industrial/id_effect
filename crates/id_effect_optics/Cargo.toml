@@ -31,3 +31,19 @@ rstest = "0.26"
 [[example]]
 name = "010_lens"
 path = "examples/010_lens.rs"
+
+[[example]]
+name = "020_prism"
+path = "examples/020_prism.rs"
+
+[[example]]
+name = "030_schema_patch"
+path = "examples/030_schema_patch.rs"
+
+[[example]]
+name = "040_traversal"
+path = "examples/040_traversal.rs"
+
+[[example]]
+name = "050_zipper"
+path = "examples/050_zipper.rs"

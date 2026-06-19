@@ -2,25 +2,37 @@
 
 Phase G delivers **durable workflow** without a full distributed cluster runtime.
 
-## `id_effect_workflow`
+## Production: duroxide-pg
 
-`DurableWorkflowLog` is an append-only SQLite journal keyed by `(workflow_id, seq)`. Completed steps replay cached JSON on restart — side effects are skipped.
+Enable `id_effect_workflow` feature **`duroxide`**. [`DuroxideStepJournal`](../../../id_effect_workflow/struct.DuroxideStepJournal.html) persists completed steps on the shared PostgreSQL pool; duroxide-pg migrations run via [`bootstrap_duroxide_schema`](../../../id_effect_workflow/fn.bootstrap_duroxide_schema.html).
 
 ```rust
-use id_effect_workflow::DurableWorkflowLog;
-let mut log = DurableWorkflowLog::open(path)?;
-log.register_workflow("order-42")?;
-let out: String = log.run_step_typed("order-42", 0, "validate", || Ok("ok".into()))?;
+use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
+bootstrap_duroxide_schema(&pool).await?;
+let mut journal = DuroxideStepJournal::new(pool);
+journal.register_workflow("order-42")?;
+let out: String = journal.run_step_typed("order-42", 0, "validate", || Ok("ok".into()))?;
 ```
 
-Run `cargo run -p id_effect_workflow --example 001_restart_resume`.
+Register providers with [`provide_duroxide_pg`](../../../id_effect_workflow/fn.provide_duroxide_pg.html).
 
-## Pluggable journals
+## Dev / tests: SQLite (`memory` feature)
 
-`StepJournal` abstracts storage; `NetworkJournalStub` documents the distributed spike. Multi-node production should prefer Temporal or transactional outbox (`id_effect_jobs`).
+[`DurableWorkflowLog`](../../../id_effect_workflow/struct.DurableWorkflowLog.html) (default `memory` feature) uses bundled SQLite for local demos.
 
 ## FSM integration
 
-`register_fsm`, `step_durable`, and `restore_state` in `id_effect_fsm::workflow` persist typed snapshots. Run `cargo run -p id_effect_fsm --example 002_durable_door_fsm`.
+`register_fsm`, `step_durable`, and `restore_state` are generic over [`StepJournal`](../../../id_effect_workflow/trait.StepJournal.html).
+
+```bash
+cargo run -p id_effect_fsm --example 002_durable_door_fsm
+# with PostgreSQL journal (requires DATABASE_URL):
+cargo run -p id_effect_fsm --example 002_durable_door_fsm \
+  -p id_effect_workflow --features duroxide
+```
+
+## External orchestrators
+
+**Temporal** (and similar) remain the recommended path for multi-region cluster workflow — documented, not reimplemented in-crate.
 
 Charter ADR: `docs/platform/adrs/adr-workflow-charter.md`.
