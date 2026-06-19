@@ -3,7 +3,7 @@
 //!
 //! | Type / fn | Role |
 //! |-----------|------|
-//! | [`JobRunner`], [`MemoryJobRunner`] | FIFO job queue as [`Effect`] values |
+//! | [`JobRunner`], [`MemoryJobRunner`] | FIFO job queue as [`Effect`](id_effect::Effect) values |
 //! | [`OutboxTable`], [`MemoryOutbox`] | transactional outbox insert + relay stub |
 //! | [`drain_jobs`] / [`relay_outbox`] | process loops for in-memory adapters |
 
