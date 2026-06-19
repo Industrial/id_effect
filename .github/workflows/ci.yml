@@ -156,6 +156,7 @@ jobs:
           cargo update -p openssl-sys --precise 0.9.117
           cargo update -p openssl --precise 0.10.81
           cargo update -p metrics --precise 0.24.6
+          cargo update -p async-trait --precise 0.1.89
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
