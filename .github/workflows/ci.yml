@@ -146,7 +146,7 @@ jobs:
         run: |
           cargo +nightly update -Z minimal-versions
           # crc32fast 1.1.x build.rs needs semver >= 1.0.20 for Version::from((u64,u64,u64))
-          cargo update semver --precise 1.0.20
+          cargo update -p semver@1.0.0 --precise 1.0.20
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
