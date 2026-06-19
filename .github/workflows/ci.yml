@@ -95,14 +95,7 @@ jobs:
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - name: Generate coverage (lcov)
-        run: |
-          cargo llvm-cov nextest \
-            --workspace \
-            --lcov \
-            --output-path lcov.info \
-            --fail-under-lines 95 \
-            --fail-under-regions 95 \
-            --fail-under-functions 95
+        run: bash scripts/llvm-cov-nextest.sh --workspace --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6
         with:
@@ -150,7 +143,10 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
       - name: Generate minimal versions lock
-        run: cargo +nightly update -Z minimal-versions
+        run: |
+          cargo +nightly update -Z minimal-versions
+          # crc32fast 1.1.x build.rs needs semver >= 1.0.20 for Version::from((u64,u64,u64))
+          cargo update semver --precise 1.0.20
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────

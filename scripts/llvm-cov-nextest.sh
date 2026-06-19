@@ -9,4 +9,5 @@ exec cargo llvm-cov nextest \
     --ignore-filename-regex "${IGNORE_REGEX}" \
     --fail-under-lines 95 \
     --fail-under-regions 95 \
-    --fail-under-functions 95
+    --fail-under-functions 95 \
+    "$@"
