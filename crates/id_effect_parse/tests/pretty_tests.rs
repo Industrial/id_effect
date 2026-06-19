@@ -24,5 +24,5 @@ fn group_breaks_when_too_wide() {
     .cat(Doc::break_())
     .cat(Doc::text("ghij"))
     .group();
-  assert!(doc.render(5).contains(' '));
+  assert!(doc.render(5).contains('\n'));
 }

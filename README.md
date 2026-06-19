@@ -58,7 +58,6 @@ For depth beyond this README, use the mdBook [**Typed Effects in Rust**](https:/
 | [`id_effect_config`](crates/id_effect_config) | [![crates.io](https://img.shields.io/crates/v/id_effect_config.svg)](https://crates.io/crates/id_effect_config) | `ConfigProvider` + Figment/serde layers |
 | [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI edge: `run_main`, `Exit` / `Cause` → `ExitCode`, optional `clap` ([book](https://industrial.github.io/id_effect/part3/ch16-00-cli-with-clap.html)) |
 | [`id_effect_platform`](crates/id_effect_platform) | (publish with core) | Platform traits: HTTP, FS, process (`@effect/platform` parity) |
-| [`id_effect_reqwest`](crates/id_effect_reqwest) | [![crates.io](https://img.shields.io/crates/v/id_effect_reqwest.svg)](https://crates.io/crates/id_effect_reqwest) | HTTP via reqwest |
 | [`id_effect_tower`](crates/id_effect_tower) | [![crates.io](https://img.shields.io/crates/v/id_effect_tower.svg)](https://crates.io/crates/id_effect_tower) | Tower `Service` bridge |
 
 ---

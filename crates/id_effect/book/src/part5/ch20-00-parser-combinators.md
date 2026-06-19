@@ -79,9 +79,29 @@ let value = run_blocking(parse_text_stream(&parser, stream), ()).unwrap();
 assert_eq!(value, "ping");
 ```
 
-## Schema bridge (stub)
+## Schema bridge
 
-Boundary validation for external data still belongs to **`id_effect::schema`** (Part IV). `SchemaBridgeStub` reserves a future path from `Schema` values to parsers; until then, keep schema at the edge and parsers for internal/text protocols.
+[`SchemaBridge`](https://docs.rs/id_effect_parse/latest/id_effect_parse/struct.SchemaBridge.html) connects [`Schema`](../../src/schema/parse.rs) values to text parsers:
+
+- `parser_for_json` — parse JSON text, then `decode_unknown`
+- `parser_for_string_wire` — when the wire type is `String`
+- `parser_for::<T>()` — for types implementing [`HasSchema`](../../src/schema/has_schema.rs)
+
+Boundary validation for external data still belongs to **`id_effect::schema`** (Part IV). Use schema at the edge; use `SchemaBridge` when a text protocol should reuse the same schema.
+
+```rust
+use id_effect::schema::{HasSchema, i64, string, struct_};
+use id_effect_parse::SchemaBridge;
+
+let schema = struct_("name", string(), "age", i64());
+let parser = SchemaBridge::parser_for_json(schema);
+let (person, _) = parser.parse(r#"{"name":"Ada","age":36}"#.to_string()).unwrap();
+assert_eq!(person, ("Ada".to_string(), 36));
+```
+
+## `#[derive(SchemaParser)]`
+
+The proc macro generates `schema()`, `parser()`, and `HasSchema` for structs with named fields (see Part V chapter 24).
 
 ## Next steps
 

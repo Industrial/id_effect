@@ -9,7 +9,7 @@ Part V closes with tools that keep functional patterns honest: law checks, prope
 - **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
 - **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
 - **[`FreeAp`](../../src/algebra/free_ap.rs)** — free applicative over `Effect`
-- **`id_effect_proc_macro` stubs** — `#[derive(Optics)]`, `#[derive(Fsm)]`, `#[derive(SchemaParser)]`
+- **`id_effect_proc_macro` derives** — `#[derive(Optics)]`, `#[derive(Fsm)]` (stubs); `#[derive(SchemaParser)]` (full codegen in `id_effect_parse`)
 
 ## Property tests with `Exit`
 
@@ -88,7 +88,7 @@ assert_eq!(exit, Exit::succeed(5));
 
 ## Derive stubs (proc macros)
 
-`id_effect_proc_macro` ships minimal compiles-today derives reserved for future crates:
+`id_effect_proc_macro` ships derives for optics, FSM, and schema parser codegen:
 
 | Derive | Reserved for |
 |--------|----------------|
@@ -109,4 +109,4 @@ enum Light { Red, Green }
 struct User { name: String }
 ```
 
-Each derive emits a hidden stub constant so callers can opt in before full codegen lands.
+`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. FSM and SchemaParser derives remain stubs until their crates land.

@@ -1,15 +1,16 @@
-//! [`PgSqlTransaction`] — commit/rollback over a pooled connection with `BEGIN`.
+//! [`PgSqlTransaction`] — commit/rollback over a pooled sqlx connection.
 
 use std::sync::{Arc, Mutex};
 
-use deadpool_postgres::Object;
 use id_effect::kernel::Effect;
 use id_effect_sql::{SqlError, SqlTransaction};
+use sqlx::Postgres;
+use sqlx::pool::PoolConnection;
 
-use crate::error::pg_error;
+use crate::error::sqlx_error;
 
 struct PgSqlTransactionInner {
-  client: Mutex<Option<Object>>,
+  conn: Mutex<Option<PoolConnection<Postgres>>>,
   finished: Mutex<bool>,
 }
 
@@ -19,16 +20,16 @@ pub struct PgSqlTransaction {
 }
 
 impl PgSqlTransaction {
-  pub(crate) fn new(client: Object) -> Self {
+  pub(crate) fn new(conn: PoolConnection<Postgres>) -> Self {
     Self {
       inner: Arc::new(PgSqlTransactionInner {
-        client: Mutex::new(Some(client)),
+        conn: Mutex::new(Some(conn)),
         finished: Mutex::new(false),
       }),
     }
   }
 
-  fn take_client(inner: &PgSqlTransactionInner) -> Result<Object, SqlError> {
+  fn take_conn(inner: &PgSqlTransactionInner) -> Result<PoolConnection<Postgres>, SqlError> {
     let mut finished = inner.finished.lock().expect("tx finished mutex poisoned");
     if *finished {
       return Err(SqlError::TransactionFailed(
@@ -37,7 +38,7 @@ impl PgSqlTransaction {
     }
     *finished = true;
     drop(finished);
-    let mut guard = inner.client.lock().expect("tx client mutex poisoned");
+    let mut guard = inner.conn.lock().expect("tx conn mutex poisoned");
     guard
       .take()
       .ok_or_else(|| SqlError::TransactionFailed("connection already released".into()))
@@ -49,8 +50,11 @@ impl SqlTransaction for PgSqlTransaction {
     let inner = Arc::clone(&self.inner);
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = Self::take_client(&inner)?;
-        client.execute("COMMIT", &[]).await.map_err(pg_error)?;
+        let mut conn = Self::take_conn(&inner)?;
+        sqlx::query("COMMIT")
+          .execute(&mut *conn)
+          .await
+          .map_err(sqlx_error)?;
         Ok(())
       })
     })
@@ -60,8 +64,11 @@ impl SqlTransaction for PgSqlTransaction {
     let inner = Arc::clone(&self.inner);
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let client = Self::take_client(&inner)?;
-        client.execute("ROLLBACK", &[]).await.map_err(pg_error)?;
+        let mut conn = Self::take_conn(&inner)?;
+        sqlx::query("ROLLBACK")
+          .execute(&mut *conn)
+          .await
+          .map_err(sqlx_error)?;
         Ok(())
       })
     })

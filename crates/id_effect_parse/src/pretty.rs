@@ -68,11 +68,11 @@ impl Doc {
   #[must_use]
   pub fn render(&self, width: usize) -> String {
     let mut out = String::new();
-    self.render_impl(width, 0, &mut out);
+    self.render_impl(width, 0, Mode::Broken, &mut out);
     out
   }
 
-  fn render_impl(&self, width: usize, indent: usize, out: &mut String) {
+  fn render_impl(&self, width: usize, indent: usize, mode: Mode, out: &mut String) {
     match self {
       Doc::Nil => {}
       Doc::Text(text) => out.push_str(text),
@@ -80,23 +80,49 @@ impl Doc {
         out.push('\n');
         out.push_str(&" ".repeat(indent));
       }
-      Doc::Break => out.push(' '),
+      Doc::Break => match mode {
+        Mode::Flat => out.push(' '),
+        Mode::Broken => {
+          out.push('\n');
+          out.push_str(&" ".repeat(indent));
+        }
+      },
       Doc::Cat(left, right) => {
-        left.render_impl(width, indent, out);
-        right.render_impl(width, indent, out);
+        left.render_impl(width, indent, mode, out);
+        right.render_impl(width, indent, mode, out);
       }
-      Doc::Nest(spaces, inner) => inner.render_impl(width, indent + spaces, out),
+      Doc::Nest(spaces, inner) => inner.render_impl(width, indent + spaces, mode, out),
       Doc::Group(inner) => {
         let mut flat = String::new();
-        inner.render_impl(usize::MAX, indent, &mut flat);
+        inner.render_impl(usize::MAX, indent, Mode::Flat, &mut flat);
         if flat.contains('\n') || flat.len() > width {
-          inner.render_impl(width, indent, out);
+          inner.render_impl(width, indent, Mode::Broken, out);
         } else {
           out.push_str(&flat);
         }
       }
     }
   }
+
+  /// Fill a line with repeated documents separated by soft breaks.
+  #[must_use]
+  pub fn fill(docs: impl IntoIterator<Item = Doc>) -> Doc {
+    let mut iter = docs.into_iter();
+    let Some(first) = iter.next() else {
+      return Self::nil();
+    };
+    let mut doc = first;
+    for next in iter {
+      doc = doc.cat(Doc::break_()).cat(next);
+    }
+    doc.group()
+  }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode {
+  Flat,
+  Broken,
 }
 
 /// Values that can be turned into a [`Doc`].

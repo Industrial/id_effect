@@ -1,5 +1,5 @@
 //! Minimal [`id_effect_tower::EffectService`]: map a request to an [`id_effect::Effect`] and run it with
-//! [`id_effect_tokio::run_async`] inside Tower’s [`tower::Service::call`].
+//! [`id_effect::run_async`] inside Tower’s [`tower::Service::call`].
 //!
 //! Uses `#[tokio::main(flavor = "current_thread")]` because the response future from
 //! [`EffectService`](id_effect_tower::EffectService) is not `Send` (see crate docs).

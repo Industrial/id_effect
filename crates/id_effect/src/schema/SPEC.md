@@ -70,7 +70,7 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 
 - **Arity:** `struct_` / `tuple` cover **two** components; `struct3` / `tuple3` cover **three**. Effect.ts allows **arbitrary** arity—**derive** / **macros** / **HList** still needed for general structs and longer tuples without combinator explosion.
 - **Primitives:** Core exposes **`i64`**, **`String`**, **`bool_`**, **`f64`** (see tests in `parse.rs` per **`TESTING.md`**). **Integer width** policy for JSON (`I64` only in `Unknown`) is unchanged; very large integers may still stringify at the JSON bridge.
-- **`Unknown`:** Has **`Null`**, **`Bool`**, **`I64`**, **`F64`**, **`String`**, **`Array`**, **`Object`**. JSON bridges (`id_effect_axum`, `id_effect_reqwest`) map non-integer **`serde_json::Number`** values to **`F64`**.
+- **`Unknown`:** Has **`Null`**, **`Bool`**, **`I64`**, **`F64`**, **`String`**, **`Array`**, **`Object`**. JSON bridges (`id_effect_axum`, `id_effect_platform::http::reqwest`) map non-integer **`serde_json::Number`** values to **`F64`**.
 - **Unions:** `union_` is **binary try/fallback** with the **same semantic type** and **`Unknown` wire**—not a general **sum type** or **discriminated union**.
 - **Recursion:** No **`suspend`** / lazy schema for recursive ADTs.
 - **Async / `Effect`:** Decoders are **synchronous** `Result`; Effect.ts supports **async** / **`Effect`-returning** `transformOrFail`.

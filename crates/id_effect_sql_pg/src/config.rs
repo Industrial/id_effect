@@ -1,17 +1,21 @@
-//! Pool configuration and construction.
+//! Pool configuration and construction via sqlx.
 
-use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod, Runtime};
-use tokio_postgres::NoTls;
+use std::time::Duration;
+
+use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 use crate::error::PgSqlError;
 
-/// deadpool-postgres pool sizing and connection string.
+/// sqlx PostgreSQL pool sizing and connection string.
 #[derive(Clone, Debug)]
 pub struct PgPoolConfig {
   /// PostgreSQL connection URL (`postgres://…`).
   pub url: String,
   /// Maximum pooled connections.
-  pub max_size: usize,
+  pub max_size: u32,
+  /// Pool acquire timeout (default 2s).
+  pub acquire_timeout: Duration,
 }
 
 impl PgPoolConfig {
@@ -21,34 +25,38 @@ impl PgPoolConfig {
     Self {
       url: url.into(),
       max_size: 16,
+      acquire_timeout: Duration::from_secs(2),
     }
   }
 
   /// Override maximum pool size.
   #[inline]
-  pub fn with_max_size(mut self, max_size: usize) -> Self {
+  pub fn with_max_size(mut self, max_size: u32) -> Self {
     self.max_size = max_size;
     self
   }
+
+  fn options(&self) -> PgPoolOptions {
+    PgPoolOptions::new()
+      .max_connections(self.max_size)
+      .acquire_timeout(self.acquire_timeout)
+      .idle_timeout(None)
+  }
 }
 
-/// Create a [`Pool`] from `config` (synchronous — pool acquire is async).
-pub fn pg_pool_from_config(config: PgPoolConfig) -> Result<Pool, PgSqlError> {
-  let pg_config = config.url.parse::<tokio_postgres::Config>().map_err(|e| {
-    PgSqlError(id_effect_sql::SqlError::Unsupported(format!(
-      "invalid postgres url: {e}"
-    )))
-  })?;
-  let manager = Manager::from_config(
-    pg_config,
-    NoTls,
-    ManagerConfig {
-      recycling_method: RecyclingMethod::Fast,
-    },
-  );
-  Pool::builder(manager)
-    .max_size(config.max_size)
-    .runtime(Runtime::Tokio1)
-    .build()
-    .map_err(PgSqlError::from_build)
+/// Create a [`PgPool`] from `config` (connects eagerly).
+pub async fn pg_pool_from_config(config: PgPoolConfig) -> Result<PgPool, PgSqlError> {
+  config
+    .options()
+    .connect(&config.url)
+    .await
+    .map_err(PgSqlError::from_sqlx)
+}
+
+/// Lazy pool for unit tests and provider wiring without immediate connect.
+pub fn pg_pool_from_config_lazy(config: PgPoolConfig) -> Result<PgPool, PgSqlError> {
+  config
+    .options()
+    .connect_lazy(&config.url)
+    .map_err(PgSqlError::from_sqlx)
 }

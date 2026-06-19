@@ -1,4 +1,4 @@
-//! GET a URL via [`id_effect_platform::http`] + Tokio (`id_effect_tokio::run_async`).
+//! GET a URL via [`id_effect_platform::http`] + Tokio (`id_effect::run_async`).
 
 use id_effect::{Env, RunError, run_with};
 use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};

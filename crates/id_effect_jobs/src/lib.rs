@@ -1,11 +1,11 @@
-//! Background jobs and transactional outbox stubs for
-//! [`id_effect`](https://github.com/Industrial/id_effect) platform async messaging.
+//! Production async messaging for [`id_effect`](https://github.com/Industrial/id_effect).
 //!
-//! | Type / fn | Role |
-//! |-----------|------|
-//! | [`JobRunner`], [`MemoryJobRunner`] | FIFO job queue as [`Effect`](id_effect::Effect) values |
-//! | [`OutboxTable`], [`MemoryOutbox`] | transactional outbox insert + relay stub |
-//! | [`drain_jobs`] / [`relay_outbox`] | process loops for in-memory adapters |
+//! | Feature | Types |
+//! |---------|-------|
+//! | `memory` (default) | [`MemoryJobRunner`], [`MemoryOutbox`], [`MemoryBroker`] |
+//! | `apalis` | [`ApalisJobQueue`], [`JobQueue`] |
+//! | `obix` | [`ObixOutbox`], [`ObixInbox`] |
+//! | `kafka` | [`RdKafkaBroker`] |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -23,7 +23,34 @@ mod error;
 mod outbox;
 mod runner;
 
-pub use broker::{KafkaBrokerStub, MemoryBroker, MessageBroker};
+#[cfg(feature = "apalis")]
+mod apalis;
+#[cfg(feature = "kafka")]
+mod kafka;
+#[cfg(feature = "obix")]
+mod obix_inbox;
+#[cfg(feature = "obix")]
+mod obix_outbox;
+
+pub use broker::MessageBroker;
 pub use error::{JobError, OutboxError};
-pub use outbox::{MemoryOutbox, OutboxRecord, OutboxTable, relay_outbox};
-pub use runner::{JobRecord, JobRunner, JobSpec, JobState, MemoryJobRunner, drain_jobs};
+pub use outbox::{OutboxRecord, OutboxTable};
+pub use runner::{JobRecord, JobRunner, JobSpec, JobState};
+
+#[cfg(feature = "memory")]
+pub use broker::{KafkaBrokerStub, MemoryBroker};
+#[cfg(feature = "memory")]
+pub use outbox::{MemoryOutbox, relay_outbox};
+#[cfg(feature = "memory")]
+pub use runner::{MemoryJobRunner, drain_jobs};
+
+#[cfg(feature = "apalis")]
+pub use apalis::{ApalisJobPayload, ApalisJobQueue, JobQueue};
+
+#[cfg(feature = "obix")]
+pub use obix_inbox::{InboxPersistResult, ObixInbox};
+#[cfg(feature = "obix")]
+pub use obix_outbox::{JobsOutboxEvent, ObixOutbox};
+
+#[cfg(feature = "kafka")]
+pub use kafka::{RdKafkaBroker, RdKafkaConfig};

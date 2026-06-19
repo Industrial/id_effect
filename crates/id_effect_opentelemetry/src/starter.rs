@@ -7,14 +7,23 @@ use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLoggerProvider};
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
+use crate::config::OtelConfig;
+use crate::error::OtelError;
 use crate::logs_bridge::{
   sdk_logger_provider_with_in_memory_exporter, try_init_global_tracing_with_otel_logs,
 };
 use crate::metrics_bridge::sdk_meter_provider_with_in_memory_exporter;
-use crate::propagation::install_w3c_trace_context_propagator;
+use crate::propagation::install_w3c_propagators;
 use crate::subscriber::{
   register_global_tracer_provider, sdk_tracer_provider_with_in_memory_exporter,
 };
+
+#[cfg(feature = "otlp")]
+use crate::otlp::build_otlp_providers;
+
+fn leak_meter_scope(name: String) -> &'static str {
+  Box::leak(name.into_boxed_str())
+}
 
 /// In-memory exporters for tests and local spikes (all three signals).
 #[derive(Default)]
@@ -47,22 +56,32 @@ impl OtelProviders {
       logger: sdk_logger_provider_with_in_memory_exporter(&exporters.logs),
     }
   }
+
+  /// Builds production providers exporting via OTLP (requires `otlp` feature).
+  #[cfg(feature = "otlp")]
+  pub fn from_otlp_config(config: &OtelConfig) -> Result<Self, OtelError> {
+    build_otlp_providers(config)
+  }
 }
 
 /// Options for [`install_otel_starter`].
+#[derive(Clone, Debug)]
 pub struct OtelStarterConfig {
   /// Meter / tracer instrument scope name.
-  pub service_name: &'static str,
+  pub service_name: String,
   /// Include `tracing_subscriber::fmt` on stdout.
   pub with_fmt_layer: bool,
+  /// Optional `EnvFilter` directive (e.g. `info,id_effect=debug`).
+  pub env_filter: Option<String>,
 }
 
 impl OtelStarterConfig {
   /// Defaults: no stdout `fmt` layer.
-  pub fn new(service_name: &'static str) -> Self {
+  pub fn new(service_name: impl Into<String>) -> Self {
     Self {
-      service_name,
+      service_name: service_name.into(),
       with_fmt_layer: false,
+      env_filter: None,
     }
   }
 
@@ -71,13 +90,31 @@ impl OtelStarterConfig {
     self.with_fmt_layer = enabled;
     self
   }
+
+  /// Set an explicit `EnvFilter` directive.
+  pub fn with_env_filter(mut self, directive: impl Into<String>) -> Self {
+    self.env_filter = Some(directive.into());
+    self
+  }
+}
+
+impl From<&OtelConfig> for OtelStarterConfig {
+  fn from(config: &OtelConfig) -> Self {
+    Self {
+      service_name: config.service_name.clone(),
+      with_fmt_layer: config.with_fmt_layer,
+      env_filter: config.env_filter.clone(),
+    }
+  }
 }
 
 /// Handle returned after a successful [`install_otel_starter`]; call [`force_flush`](Self::force_flush)
 /// before shutdown and [`shutdown`](Self::shutdown) on graceful exit.
+#[derive(Clone)]
 pub struct OtelStarterGuard {
   providers: OtelProviders,
-  service_name: &'static str,
+  service_name: String,
+  meter_scope: &'static str,
 }
 
 impl OtelStarterGuard {
@@ -86,9 +123,14 @@ impl OtelStarterGuard {
     &self.providers
   }
 
+  /// Configured service / instrumentation scope name.
+  pub fn service_name(&self) -> &str {
+    &self.service_name
+  }
+
   /// OpenTelemetry [`Meter`] scoped to the configured service name.
   pub fn meter(&self) -> Meter {
-    self.providers.meter.meter(self.service_name)
+    self.providers.meter.meter(self.meter_scope)
   }
 
   /// Flushes pending trace, metric, and log batches.
@@ -106,25 +148,32 @@ impl OtelStarterGuard {
   }
 }
 
+/// Build OTLP providers from `config` and install globals + tracing subscriber.
+#[cfg(feature = "otlp")]
+pub fn install_from_config(config: OtelConfig) -> Result<OtelStarterGuard, OtelError> {
+  let providers = build_otlp_providers(&config)?;
+  let starter = OtelStarterConfig::from(&config);
+  install_otel_starter(&providers, &starter).map_err(OtelError::from)
+}
+
 /// Installs global tracer + meter providers, W3C propagation, and a tracing subscriber with OTEL trace + log layers.
-///
-/// Returns a guard that owns provider clones for flush/shutdown. Prefer
-/// [`tracing::subscriber::with_default`] in tests when the global dispatcher must not be claimed.
 pub fn install_otel_starter(
   providers: &OtelProviders,
   config: &OtelStarterConfig,
 ) -> Result<OtelStarterGuard, tracing_subscriber::util::TryInitError> {
   register_global_tracer_provider(&providers.tracer);
   global::set_meter_provider(providers.meter.clone());
-  install_w3c_trace_context_propagator();
+  install_w3c_propagators();
   try_init_global_tracing_with_otel_logs(
     &providers.tracer,
     &providers.logger,
     config.with_fmt_layer,
+    config.env_filter.as_deref(),
   )?;
   Ok(OtelStarterGuard {
     providers: providers.clone(),
-    service_name: config.service_name,
+    service_name: config.service_name.clone(),
+    meter_scope: leak_meter_scope(config.service_name.clone()),
   })
 }
 
@@ -134,86 +183,50 @@ mod tests {
   use crate::CounterBridge;
   use crate::logs_bridge::trace_and_log_subscriber_for_providers;
   use id_effect::run_blocking;
-  use opentelemetry::KeyValue;
   use opentelemetry::logs::AnyValue;
   use opentelemetry::metrics::MeterProvider;
 
-  mod install_otel_starter {
-    use super::*;
+  #[test]
+  fn exports_traces_metrics_and_logs_via_scoped_subscriber() {
+    let exporters = OtelInMemoryExporters::default();
+    let providers = OtelProviders::with_in_memory_exporters(&exporters);
+    let subscriber =
+      trace_and_log_subscriber_for_providers(&providers.tracer, &providers.logger, false, None);
+    tracing::subscriber::with_default(subscriber, || {
+      register_global_tracer_provider(&providers.tracer);
+      global::set_meter_provider(providers.meter.clone());
+      install_w3c_propagators();
 
-    #[test]
-    fn exports_traces_metrics_and_logs_via_scoped_subscriber() {
-      let exporters = OtelInMemoryExporters::default();
-      let providers = OtelProviders::with_in_memory_exporters(&exporters);
-      let subscriber =
-        trace_and_log_subscriber_for_providers(&providers.tracer, &providers.logger, false);
-      tracing::subscriber::with_default(subscriber, || {
-        register_global_tracer_provider(&providers.tracer);
-        global::set_meter_provider(providers.meter.clone());
-        install_w3c_trace_context_propagator();
+      let meter = providers.meter.meter("starter_test");
+      let local = id_effect::Metric::counter("req", Vec::<(String, String)>::new());
+      let bridge = CounterBridge::new(local, &meter, "req_otel");
+      let _ = run_blocking(bridge.apply(2), ());
 
-        let meter = providers.meter.meter("starter_test");
-        let local = id_effect::Metric::counter("req", Vec::<(String, String)>::new());
-        let bridge = CounterBridge::new(local, &meter, "req_otel");
-        let _ = run_blocking(bridge.apply(2), ());
+      let span = tracing::info_span!("starter_span");
+      let _g = span.enter();
+      tracing::info!(target: "id_effect_opentelemetry", "starter log");
+    });
 
-        let span = tracing::info_span!("starter_span");
-        let _g = span.enter();
-        tracing::info!(target: "id_effect_opentelemetry", "starter log");
-      });
+    let _ = providers.tracer.force_flush();
+    let _ = providers.meter.force_flush();
+    let _ = providers.logger.force_flush();
 
-      let _ = providers.tracer.force_flush();
-      let _ = providers.meter.force_flush();
-      let _ = providers.logger.force_flush();
+    let spans = exporters.spans.get_finished_spans().expect("spans");
+    assert!(spans.iter().any(|s| s.name == "starter_span"));
 
-      let spans = exporters.spans.get_finished_spans().expect("spans");
-      assert!(
-        spans.iter().any(|s| s.name == "starter_span"),
-        "expected starter_span, got {spans:?}"
-      );
+    let metrics = exporters.metrics.get_finished_metrics().expect("metrics");
+    assert!(!metrics.is_empty());
 
-      let metrics = exporters.metrics.get_finished_metrics().expect("metrics");
-      assert!(
-        !metrics.is_empty(),
-        "expected metric export after flush, got {metrics:?}"
-      );
+    let logs = exporters.logs.get_emitted_logs().expect("logs");
+    assert!(logs.iter().any(|l| {
+      matches!(
+        &l.record.body(),
+        Some(AnyValue::String(body)) if body.as_str() == "starter log"
+      )
+    }));
 
-      let logs = exporters.logs.get_emitted_logs().expect("logs");
-      assert!(
-        logs.iter().any(|l| {
-          matches!(
-            &l.record.body(),
-            Some(AnyValue::String(body)) if body.as_str() == "starter log"
-          )
-        }),
-        "expected starter log, got {logs:?}"
-      );
-
-      let _ = providers.tracer.shutdown();
-      let _ = providers.meter.shutdown();
-      let _ = providers.logger.shutdown();
-    }
-  }
-
-  mod otel_starter_guard {
-    use super::*;
-
-    #[test]
-    fn meter_returns_instruments_for_service_name() {
-      let exporters = OtelInMemoryExporters::default();
-      let providers = OtelProviders::with_in_memory_exporters(&exporters);
-      let guard = OtelStarterGuard {
-        providers,
-        service_name: "my_service",
-      };
-      let meter = guard.meter();
-      let counter = meter
-        .u64_counter("health_checks")
-        .with_description("liveness probes")
-        .build();
-      counter.add(1, &[KeyValue::new("probe", "health")]);
-      guard.force_flush();
-      guard.shutdown();
-    }
+    let _ = providers.tracer.shutdown();
+    let _ = providers.meter.shutdown();
+    let _ = providers.logger.shutdown();
   }
 }

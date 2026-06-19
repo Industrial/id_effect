@@ -44,7 +44,7 @@
   - [A Complete DI Example](./part2/ch07-04-complete-example.md)
   - [Tokio bridge (`id_effect_tokio`)](./part2/ch07-05-tokio-bridge.md)
   - [Platform I/O (`id_effect_platform`)](./part2/ch07-06-platform-services.md)
-  - [HTTP via reqwest (`id_effect_reqwest`)](./part2/ch07-07-reqwest-http.md)
+  - [HTTP via reqwest (`id_effect_platform::http::reqwest`)](./part2/ch07-07-reqwest-http.md)
   - [Axum host (`id_effect_axum`)](./part2/ch07-08-axum-host.md)
   - [Tower service (`id_effect_tower`)](./part2/ch07-09-tower-service.md)
   - [Configuration (`id_effect_config`)](./part2/ch07-10-config.md)
@@ -103,6 +103,13 @@
   - [Mocking Services](./part4/ch15-03-mocking.md)
   - [Property Testing](./part4/ch15-04-property-testing.md)
 
+# Appendices
+
+- [API Quick Reference](./appendix-a-api-reference.md)
+- [Migrating from `async fn` to effects](./appendix-b-migration.md)
+- [Glossary](./appendix-c-glossary.md)
+- [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
+
 # Part V: Functional Patterns
 
 - [Optics (`id_effect_optics`)](./part5/ch18-00-optics.md)
@@ -142,10 +149,6 @@
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
 - [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
-
-# Part VII: Full-stack UI
-
-- [Dioxus SSR and realtime](./part7/ch33-00-ui-realtime.md)
 
 # Appendices
 

@@ -52,7 +52,7 @@ jobs:
             crates/id_effect_logger/Cargo.toml
             crates/id_effect_config/Cargo.toml
             crates/id_effect_axum/Cargo.toml
-            crates/id_effect_reqwest/Cargo.toml
+            crates/id_effect_platform/Cargo.toml
             crates/id_effect_tower/Cargo.toml
           )
           MISMATCH=0
@@ -218,11 +218,11 @@ jobs:
           cargo publish "${args[@]}"
       - name: Wait for crates.io index
         run: sleep 20
-      - name: Publish id_effect_reqwest
+      - name: Publish id_effect_platform::http::reqwest
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_reqwest --no-verify)
+          args=(--package id_effect_platform::http::reqwest --no-verify)
           [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
           cargo publish "${args[@]}"
       - name: Wait for crates.io index

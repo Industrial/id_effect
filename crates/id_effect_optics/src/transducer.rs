@@ -52,6 +52,25 @@ pub fn map<A: 'static, Acc: 'static>(
   })
 }
 
+/// Keep at most `count` items.
+pub fn take<A: 'static, Acc: 'static>(count: usize) -> Transducer<A, Acc> {
+  use std::sync::Arc;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let remaining = Arc::new(AtomicUsize::new(count));
+  Transducer::new(move |mut rf| {
+    let remaining = remaining.clone();
+    Box::new(move |acc, item| {
+      let left = remaining.load(Ordering::Relaxed);
+      if left == 0 {
+        acc
+      } else {
+        remaining.store(left - 1, Ordering::Relaxed);
+        rf(acc, item)
+      }
+    })
+  })
+}
+
 /// Keep only items matching `pred`.
 pub fn filter<A: 'static, Acc: 'static>(
   pred: impl Fn(&A) -> bool + Send + Sync + 'static,
@@ -90,6 +109,17 @@ mod tests {
       let xf = filter(|n: &i32| n % 2 == 0);
       let sum = xf.transduce([1, 2, 3, 4], Box::new(|acc, n| acc + n), 0);
       assert_eq!(sum, 6);
+    }
+  }
+
+  mod take {
+    use super::*;
+
+    #[test]
+    fn limits_items_before_sum() {
+      let xf = take::<i32, i32>(2);
+      let sum = xf.transduce([1, 2, 3], Box::new(|acc, n| acc + n), 0);
+      assert_eq!(sum, 3);
     }
   }
 

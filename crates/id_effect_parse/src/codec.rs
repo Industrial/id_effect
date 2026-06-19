@@ -103,6 +103,73 @@ fn escape(value: &str) -> String {
     .replace('\t', "\\t")
 }
 
+/// Integer codec using [`crate::parser::signed_int`].
+#[must_use]
+pub fn int_codec() -> Codec<String, i64, ParseFailure> {
+  let parser = crate::parser::signed_int();
+  Codec::new(parser, |value| value.to_string())
+}
+
+/// Boolean literal codec (`true` / `false`).
+#[must_use]
+pub fn bool_codec() -> Codec<String, bool, ParseFailure> {
+  let parser = crate::parser::bool_lit();
+  Codec::new(parser, |value| {
+    if *value {
+      "true".into()
+    } else {
+      "false".into()
+    }
+  })
+}
+
+/// Floating-point codec.
+#[must_use]
+pub fn float_codec() -> Codec<String, f64, ParseFailure> {
+  let parser = crate::parser::float();
+  Codec::new(parser, |value| value.to_string())
+}
+
+/// Pair two codecs in sequence.
+#[must_use]
+pub fn pair<A, B, E>(
+  left: Codec<String, A, E>,
+  right: Codec<String, B, E>,
+) -> Codec<String, (A, B), E>
+where
+  A: Send + Sync + Clone + 'static,
+  B: Send + Sync + Clone + 'static,
+  E: Send + Sync + Clone + 'static,
+{
+  let lp = left.parser().clone();
+  let rp = right.parser().clone();
+  let lprint = left.print.clone();
+  let rprint = right.print.clone();
+  let parser = lp.and_then(move |a| rp.clone().map(move |b| (a.clone(), b)));
+  Codec::new(parser, move |(a, b)| {
+    format!("{}{}", (lprint)(a), (rprint)(b))
+  })
+}
+
+/// Comma-separated list codec.
+#[must_use]
+pub fn list<A>(item: Codec<String, A, ParseFailure>) -> Codec<String, Vec<A>, ParseFailure>
+where
+  A: Send + Sync + Clone + 'static,
+{
+  let ip = item.parser().clone();
+  let iprint = item.print.clone();
+  let comma = crate::parser::void(crate::parser::char(','));
+  let parser = crate::parser::sep_by(ip, comma);
+  Codec::new(parser, move |items| {
+    items
+      .iter()
+      .map(|item| (iprint)(item))
+      .collect::<Vec<_>>()
+      .join(",")
+  })
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

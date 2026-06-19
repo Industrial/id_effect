@@ -22,11 +22,11 @@ The crate is a **single** build: it always depends on `reqwest`, `http`, `bytes`
 
 Matches workspace **Rust 2024** / stable as used by `id_effect`.
 
-## Relation to `id_effect_reqwest`
+## Relation to `id_effect_platform::http::reqwest`
 
-- **`id_effect_reqwest`** remains the **low-level** reqwest + schema helpers crate.
-- **`id_effect_platform`** provides the **portable** `HttpClient` abstraction; the reqwest-backed type is one implementation.
-- Migration: new code prefers `id_effect_platform` + `HttpClientKey`; existing code can adopt incrementally (see `id_effect_reqwest` README “Platform migration”).
+- Reqwest helpers (`send`, `json_schema`, pools) live in **`id_effect_platform::http::reqwest`**.
+- **`id_effect_platform::http::reqwest`** is a thin **compatibility re-export** crate (`pub use id_effect_platform::http::reqwest::*`).
+- Portable boundaries use **`id_effect_platform::http`** (`HttpClientKey`, `execute`).
 
 ## Security (filesystem)
 

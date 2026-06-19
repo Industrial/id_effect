@@ -84,7 +84,14 @@ in {
     ast-grep
   ];
 
+  services.postgres = {
+    enable = true;
+    initialDatabases = [{name = "id_effect";}];
+    listen_addresses = "127.0.0.1";
+  };
+
   env = {
+    DATABASE_URL = "postgresql://postgres@127.0.0.1:5432/id_effect";
     CARGO_TERM_COLOR = "always";
     MOON_TOOLCHAIN_FORCE_GLOBALS = "rust";
     NEXTEST_NO_TESTS = "pass";

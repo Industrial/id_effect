@@ -1,6 +1,6 @@
-//! JSON Patch ([RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)) subset: add, replace, remove.
+//! JSON Patch ([RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)) for [`Unknown`](id_effect::schema::Unknown).
 
-use crate::schema_bridge::{SchemaPathError, get_at_path, set_at_path};
+use crate::schema_bridge::{SchemaPathError, create_at_path, get_at_path, set_at_path};
 use id_effect::schema::Unknown;
 use thiserror::Error;
 
@@ -9,7 +9,7 @@ use thiserror::Error;
 pub enum PatchOp {
   /// Insert or create a value at `path`.
   Add {
-    /// JSON Pointer-style path (dot-separated here).
+    /// Dot-separated or JSON Pointer path.
     path: String,
     /// Value to insert.
     value: Unknown,
@@ -26,6 +26,27 @@ pub enum PatchOp {
     /// Target path.
     path: String,
   },
+  /// Move a value from `from` to `path`.
+  Move {
+    /// Source path.
+    from: String,
+    /// Destination path.
+    path: String,
+  },
+  /// Copy a value from `from` to `path`.
+  Copy {
+    /// Source path.
+    from: String,
+    /// Destination path.
+    path: String,
+  },
+  /// Assert a value at `path` equals `value`.
+  Test {
+    /// Target path.
+    path: String,
+    /// Expected value.
+    value: Unknown,
+  },
 }
 
 /// Patch application failure.
@@ -34,10 +55,10 @@ pub enum PatchError {
   /// Path resolution failed.
   #[error(transparent)]
   Path(#[from] SchemaPathError),
-  /// Remove/replace targeted a missing path.
+  /// Remove/replace/test targeted a missing path or mismatched value.
   #[error("patch path {path}: {message}")]
   Missing {
-    /// Path that was missing.
+    /// Path that failed.
     path: String,
     /// Reason.
     message: String,
@@ -50,6 +71,9 @@ pub fn apply_patch(doc: Unknown, op: &PatchOp) -> Result<Unknown, PatchError> {
     PatchOp::Add { path, value } => apply_add(doc, path, value.clone()),
     PatchOp::Replace { path, value } => apply_replace(doc, path, value.clone()),
     PatchOp::Remove { path } => apply_remove(doc, path),
+    PatchOp::Move { from, path } => apply_move(doc, from, path),
+    PatchOp::Copy { from, path } => apply_copy(doc, from, path),
+    PatchOp::Test { path, value } => apply_test(doc, path, value),
   }
 }
 
@@ -65,7 +89,7 @@ fn apply_add(doc: Unknown, path: &str, value: Unknown) -> Result<Unknown, PatchE
   if get_at_path(&doc, path).is_ok() {
     return apply_replace(doc, path, value);
   }
-  set_at_path(doc, path, value).map_err(PatchError::from)
+  create_at_path(doc, path, value).map_err(PatchError::from)
 }
 
 fn apply_replace(doc: Unknown, path: &str, value: Unknown) -> Result<Unknown, PatchError> {
@@ -80,11 +104,18 @@ fn apply_remove(doc: Unknown, path: &str) -> Result<Unknown, PatchError> {
       message: "cannot remove document root".into(),
     });
   }
-  let mut segments: Vec<&str> = path.split('.').collect();
-  let last = segments.pop().expect("non-empty path");
-  let parent_path = segments.join(".");
+  let segments = crate::path::parse_path(path).map_err(PatchError::from)?;
+  if segments.is_empty() {
+    return Err(PatchError::Missing {
+      path: path.to_string(),
+      message: "cannot remove document root".into(),
+    });
+  }
+  let parent_segments = &segments[..segments.len() - 1];
+  let last = segments.last().expect("non-empty segments");
+  let parent_path = crate::path::segments_to_dot(parent_segments);
 
-  let parent = if parent_path.is_empty() {
+  let parent = if parent_segments.is_empty() {
     doc.clone()
   } else {
     get_at_path(&doc, &parent_path)
@@ -92,43 +123,61 @@ fn apply_remove(doc: Unknown, path: &str) -> Result<Unknown, PatchError> {
       .clone()
   };
 
-  match parent {
-    Unknown::Object(mut map) => {
-      if map.remove(last).is_none() {
+  let updated_parent = match (parent, last) {
+    (Unknown::Object(mut map), crate::path::PathSegment::Field(name)) => {
+      if map.remove(name).is_none() {
         return Err(PatchError::Missing {
           path: path.to_string(),
-          message: format!("missing field `{last}`"),
+          message: format!("missing field `{name}`"),
         });
       }
-      if parent_path.is_empty() {
-        Ok(Unknown::Object(map))
-      } else {
-        set_at_path(doc, &parent_path, Unknown::Object(map)).map_err(PatchError::from)
-      }
+      Unknown::Object(map)
     }
-    Unknown::Array(mut items) => {
-      let index: usize = last.parse().map_err(|_| PatchError::Missing {
-        path: path.to_string(),
-        message: format!("invalid index `{last}`"),
-      })?;
-      if index >= items.len() {
+    (Unknown::Array(mut items), crate::path::PathSegment::Index(index)) => {
+      if *index >= items.len() {
         return Err(PatchError::Missing {
           path: path.to_string(),
           message: format!("index {index} out of bounds"),
         });
       }
-      items.remove(index);
-      if parent_path.is_empty() {
-        Ok(Unknown::Array(items))
-      } else {
-        set_at_path(doc, &parent_path, Unknown::Array(items)).map_err(PatchError::from)
-      }
+      items.remove(*index);
+      Unknown::Array(items)
     }
-    other => Err(PatchError::Missing {
-      path: path.to_string(),
-      message: format!("cannot remove from {other:?}"),
-    }),
+    (other, segment) => {
+      return Err(PatchError::Missing {
+        path: path.to_string(),
+        message: format!("cannot remove {segment:?} from {other:?}"),
+      });
+    }
+  };
+
+  if parent_segments.is_empty() {
+    Ok(updated_parent)
+  } else {
+    set_at_path(doc, &parent_path, updated_parent).map_err(PatchError::from)
   }
+}
+
+fn apply_move(doc: Unknown, from: &str, path: &str) -> Result<Unknown, PatchError> {
+  let value = get_at_path(&doc, from).map_err(PatchError::from)?.clone();
+  let without = apply_remove(doc, from)?;
+  apply_add(without, path, value)
+}
+
+fn apply_copy(doc: Unknown, from: &str, path: &str) -> Result<Unknown, PatchError> {
+  let value = get_at_path(&doc, from).map_err(PatchError::from)?.clone();
+  apply_add(doc, path, value)
+}
+
+fn apply_test(doc: Unknown, path: &str, value: &Unknown) -> Result<Unknown, PatchError> {
+  let current = get_at_path(&doc, path).map_err(PatchError::from)?;
+  if current != value {
+    return Err(PatchError::Missing {
+      path: path.to_string(),
+      message: "test value mismatch".into(),
+    });
+  }
+  Ok(doc)
 }
 
 #[cfg(test)]
@@ -177,6 +226,19 @@ mod tests {
         get_at_path(&updated, "extra").unwrap(),
         &Unknown::Bool(true)
       );
+    }
+
+    #[test]
+    fn add_creates_nested_path() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Add {
+          path: "b.c".into(),
+          value: Unknown::I64(2),
+        },
+      )
+      .unwrap();
+      assert_eq!(get_at_path(&updated, "b.c").unwrap(), &Unknown::I64(2));
     }
 
     #[test]
@@ -303,10 +365,91 @@ mod tests {
       );
     }
 
+    #[test]
     fn remove_from_scalar_errors() {
       let err =
         apply_patch(Unknown::Bool(true), &PatchOp::Remove { path: "0".into() }).unwrap_err();
       assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn move_value_between_paths() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Move {
+          from: "name".into(),
+          path: "alias".into(),
+        },
+      )
+      .unwrap();
+      assert_eq!(
+        get_at_path(&updated, "alias").unwrap(),
+        &Unknown::String("Ada".into())
+      );
+      assert!(get_at_path(&updated, "name").is_err());
+    }
+
+    #[test]
+    fn copy_value_to_new_path() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Copy {
+          from: "name".into(),
+          path: "alias".into(),
+        },
+      )
+      .unwrap();
+      assert_eq!(
+        get_at_path(&updated, "alias").unwrap(),
+        &Unknown::String("Ada".into())
+      );
+      assert_eq!(
+        get_at_path(&updated, "name").unwrap(),
+        &Unknown::String("Ada".into())
+      );
+    }
+
+    #[test]
+    fn test_passes_on_matching_value() {
+      let updated = apply_patch(
+        doc(),
+        &PatchOp::Test {
+          path: "count".into(),
+          value: Unknown::I64(1),
+        },
+      )
+      .unwrap();
+      assert_eq!(get_at_path(&updated, "count").unwrap(), &Unknown::I64(1));
+    }
+
+    #[test]
+    fn test_errors_on_mismatch() {
+      let err = apply_patch(
+        doc(),
+        &PatchOp::Test {
+          path: "count".into(),
+          value: Unknown::I64(9),
+        },
+      )
+      .unwrap_err();
+      assert!(matches!(err, PatchError::Missing { .. }));
+    }
+
+    #[test]
+    fn add_appends_array_element() {
+      let arr = Unknown::Array(vec![Unknown::I64(1)]);
+      let updated = apply_patch(
+        arr,
+        &PatchOp::Add {
+          path: "-".into(),
+          value: Unknown::I64(2),
+        },
+      )
+      .unwrap();
+      assert_eq!(
+        updated,
+        Unknown::Array(vec![Unknown::I64(1), Unknown::I64(2)])
+      );
     }
   }
 

@@ -84,6 +84,8 @@ jobs:
     needs: [moon-ci]
     steps:
       - uses: actions/checkout@v6
+      - name: Install system deps (OpenSSL for rdkafka)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -136,6 +138,8 @@ jobs:
     needs: [moon-ci]
     steps:
       - uses: actions/checkout@v6
+      - name: Install system deps (OpenSSL for rdkafka)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
       - name: Install Rust (nightly for -Z minimal-versions)
         uses: dtolnay/rust-toolchain@nightly
       - name: Install Rust (stable for build)
@@ -148,6 +152,11 @@ jobs:
           # minimal-versions resolves crc32fast 1.1.x whose build.rs needs modern semver
           cargo update -p crc32fast@1.1.0 --precise 1.4.2
           cargo update -p semver@1.0.0 --precise 1.0.20
+          # minimal-versions resolves openssl-sys 0.9.55 whose expando probe fails on OpenSSL 3.x
+          cargo update -p openssl-sys --precise 0.9.117
+          cargo update -p openssl --precise 0.10.81
+          cargo update -p metrics --precise 0.24.6
+          cargo update -p async-trait --precise 0.1.89
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ use opentelemetry_sdk::trace::InMemorySpanExporter;
 
 let exporter = InMemorySpanExporter::default();
 let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
-let subscriber = trace_subscriber_for_provider(&provider, false);
+let subscriber = trace_subscriber_for_provider(&provider, false, None);
 
 tracing::subscriber::with_default(subscriber, || {
   let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
@@ -84,3 +84,64 @@ high-cardinality user IDs in metric attributes.
 4. On graceful shutdown, call `force_flush` / `shutdown` on providers (mirror `Scope` finalizer patterns from `id_effect`).
 
 See also: `docs/effect-ts-parity/phases/phase-b-opentelemetry.md` in the repository for the full task breakdown and Beads slug map.
+
+
+## Production OTLP
+
+Enable the default `otlp` feature (or pass `--features otlp` explicitly). At process start:
+
+```rust
+use id_effect_opentelemetry::{OtelConfig, install_from_config, graceful_otel_shutdown};
+
+let guard = install_from_config(OtelConfig::from_env()?)?;
+// register Axum routes, run effects, etc.
+guard.force_flush();
+graceful_otel_shutdown(guard);
+```
+
+[`OtelStarterGuard`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/struct.OtelStarterGuard.html) exposes
+[`meter()`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/struct.OtelStarterGuard.html#method.meter),
+[`force_flush`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/struct.OtelStarterGuard.html#method.force_flush),
+and [`shutdown`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/struct.OtelStarterGuard.html#method.shutdown).
+
+### Capability DI
+
+Register the runtime handle for programs that need flush/shutdown in domain code:
+
+```rust
+use std::sync::Arc;
+use id_effect_opentelemetry::{provide_otel_runtime, OtelRuntimeKey};
+
+let guard = Arc::new(install_from_config(OtelConfig::from_env()?)?);
+let provider = provide_otel_runtime(guard);
+// env.insert via provider.build(...)
+```
+
+### Graceful shutdown (Tokio)
+
+```rust
+use id_effect_opentelemetry::shutdown_otel_on_signal;
+
+shutdown_otel_on_signal(guard).await;
+```
+
+### Logs
+
+[`install_otel_starter`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/fn.install_otel_starter.html) installs a
+`tracing_subscriber` stack with both OTEL trace and log export layers. Use structured
+`tracing::info!(target: "id_effect_opentelemetry", ...)` events or wire
+[`OtelLogBackend`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/struct.OtelLogBackend.html) into
+[`id_effect_logger`](https://docs.rs/id_effect_logger).
+
+### `id_effect_config` keys (`config` feature)
+
+| Key | Maps to |
+|-----|---------|
+| `otel.endpoint` | OTLP endpoint |
+| `otel.protocol` | `grpc` or `http` |
+| `otel.service_name` | `service.name` |
+| `otel.service_version` | `service.version` |
+| `otel.headers` | OTLP request headers |
+
+Use [`load_otel_config`](https://docs.rs/id_effect_opentelemetry/latest/id_effect_opentelemetry/fn.load_otel_config.html) when a
+[`ConfigProvider`](https://docs.rs/id_effect_config) is already available.

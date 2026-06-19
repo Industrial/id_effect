@@ -1,0 +1,3 @@
+# Transitive sqlx-mysql pulls rsa; workspace sqlx deps use postgres only.
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]

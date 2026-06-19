@@ -2,6 +2,8 @@
 
 use crate::error::EventStoreError;
 use crate::event_store::EventStore;
+#[cfg(feature = "es-entity")]
+use crate::projection::run_projection;
 use crate::projection::{Projection, run_projection_from_store};
 use id_effect::{Effect, run_blocking};
 
@@ -89,6 +91,38 @@ pub enum QueryDispatchError<E: std::error::Error + Send + Sync + 'static> {
   /// Event store failed while loading events.
   #[error("event store: {0}")]
   Store(#[from] EventStoreError),
+}
+
+/// Persist command-generated events via es-entity (async PG I/O) then project.
+#[cfg(feature = "es-entity")]
+pub async fn dispatch_command_es_entity<Cmd, Ev, S, P, H, Store>(
+  handler: &H,
+  store: &Store,
+  stream_id: &str,
+  projection: &P,
+  command: Cmd,
+) -> Result<S, DispatchError<H::Error>>
+where
+  H: CommandHandler<Cmd, Ev>,
+  Store: EventStore<Ev>,
+  P: Projection<S, Ev>,
+  Cmd: Send + 'static,
+  Ev: Clone + Send + Sync + 'static,
+  S: Send + 'static,
+{
+  use id_effect::run_async;
+
+  let events = run_async(handler.handle(command), ())
+    .await
+    .map_err(DispatchError::Command)?;
+  run_async(store.append(stream_id, &events), ())
+    .await
+    .map_err(DispatchError::Store)?;
+  let stored = run_async(store.read(stream_id, 1), ())
+    .await
+    .map_err(DispatchError::Store)?;
+  let payloads = stored.into_iter().map(|s| s.payload);
+  Ok(run_projection(projection, payloads))
 }
 
 #[cfg(test)]

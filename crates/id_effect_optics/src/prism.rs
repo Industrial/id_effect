@@ -26,7 +26,7 @@ impl<S: 'static, A: 'static> Prism<S, A> {
   where
     A: Clone,
   {
-    (self.preview)(source).map(|a| a)
+    (self.preview)(source)
   }
 
   /// Inject an `A` as `S`.

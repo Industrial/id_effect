@@ -50,7 +50,7 @@ let res = run_async(my_handler(), env).await?;
 | Describing work | `Effect<A, E, R>` |
 | Capabilities | `caps!(…)` + `Needs<K>` + `run_with` / `build_env` |
 | Blocking / tests | `run_blocking(effect, env)` |
-| Async I/O on Tokio | `id_effect_tokio::run_async(effect, env)` |
+| Async I/O on Tokio | `id_effect::run_async(effect, env)` |
 
 ## Sharp edges
 

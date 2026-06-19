@@ -23,7 +23,7 @@
 | `@effect/cli` | CLI | *Planned Phase E* | |
 | Supervision | Fiber supervision | `crates/id_effect/src/concurrency/supervisor.rs`, mdBook §9.5 | Reviewed |
 | Cluster / workflow | Distributed | *Planned Phase G* | |
-| `@effect/ai` | LLM clients | *Planned Phase H* | |
+| `@effect/ai` | LLM clients | Partial — traits + OpenAI/Anthropic/Cursor HTTP | tool-calling backlog |
 
 ## Review log
 

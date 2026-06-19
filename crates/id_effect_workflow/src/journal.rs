@@ -4,11 +4,14 @@
 //! the `(workflow_id, seq)` contract so a future Postgres or RPC-backed journal can swap in
 //! without changing FSM or saga call sites.
 
-use crate::DurableWorkflowLog;
 use crate::error::WorkflowError;
+
+#[cfg(feature = "memory")]
+use crate::DurableWorkflowLog;
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::fmt::Debug;
+#[cfg(feature = "memory")]
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -39,6 +42,7 @@ pub trait StepJournal: Send {
   fn completed_step_count(&self, workflow_id: &str) -> Result<u32, WorkflowError>;
 }
 
+#[cfg(feature = "memory")]
 impl StepJournal for DurableWorkflowLog {
   fn register_workflow(&mut self, id: &str) -> Result<(), WorkflowError> {
     DurableWorkflowLog::register_workflow(self, id)
@@ -124,6 +128,7 @@ impl NetworkJournalStub {
   }
 
   /// Opens a SQLite-backed journal at `path` for side-by-side comparison in spikes.
+  #[cfg(feature = "memory")]
   #[inline]
   pub fn open_sqlite(path: &Path) -> Result<DurableWorkflowLog, WorkflowError> {
     DurableWorkflowLog::open(path)

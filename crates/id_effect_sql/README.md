@@ -14,7 +14,7 @@ Driver-agnostic **SQL client** traits for [`id_effect`](../id_effect), aligned w
 
 See ADR [`adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md) and Phase C spec [`phase-c-sql.md`](../../docs/effect-ts-parity/phases/phase-c-sql.md).
 
-Production PostgreSQL support lives in the forthcoming `id_effect_sql_pg` crate (`tokio-postgres` + `deadpool-postgres`).
+Production PostgreSQL support lives in `id_effect_sql_pg` (sqlx `PgPool`).
 
 ## Testing
 

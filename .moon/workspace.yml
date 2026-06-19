@@ -12,14 +12,11 @@ projects:
   id_effect_opentelemetry: crates/id_effect_opentelemetry
   id_effect_platform: crates/id_effect_platform
   id_effect_proc_macro: crates/id_effect_proc_macro
-  id_effect_reqwest: crates/id_effect_reqwest
   id_effect_rpc: crates/id_effect_rpc
   id_effect_sql: crates/id_effect_sql
   id_effect_sql_pg: crates/id_effect_sql_pg
-  id_effect_host: crates/id_effect_host
   id_effect_jobs: crates/id_effect_jobs
   id_effect_ai: crates/id_effect_ai
-  id_effect_dioxus: crates/id_effect_dioxus
   id_effect_tokio: crates/id_effect_tokio
   id_effect_tower: crates/id_effect_tower
   id_effect_workflow: crates/id_effect_workflow

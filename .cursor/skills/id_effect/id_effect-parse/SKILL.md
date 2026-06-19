@@ -48,7 +48,20 @@ let (value, rest) = parse_str(&pair, "(42)").unwrap();
 | `alt` | fallback parser |
 | `many` | zero-or-more repeat |
 
-Built-ins: `char`, `tag`, `int`, `ws`.
+Built-ins: `char`, `tag`, `int`, `signed_int`, `bool_lit`, `float`, `ws`, `optional`, `sep_by`, `between`.
+
+## Schema bridge
+
+```rust
+use id_effect::SchemaParser;
+use id_effect_parse::SchemaBridge;
+
+#[derive(SchemaParser)]
+struct User { name: String, age: i64 }
+
+let user = User::parser().parse(r#"{"name":"Ada","age":36}"#.into()).unwrap().0;
+let via_bridge = SchemaBridge::parser_for_json(User::schema());
+```
 
 ## Codec (invertible)
 

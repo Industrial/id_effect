@@ -115,7 +115,7 @@ Epics (`type: epic`) are created first per phase; other tasks use `--parent <tha
 
 When filing Beads issues, include pointers to:
 
-- Crate paths: `crates/id_effect/…`, `crates/id_effect_reqwest/…`, etc.
+- Crate paths: `crates/id_effect/…`, `crates/id_effect_platform/…`, etc.
 - Phase markdown: `docs/effect-ts-parity/phases/phase-*.md`
 - Stable slug in the first line of the description: `Slug: iep-a-010`
 

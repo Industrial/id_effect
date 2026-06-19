@@ -13,12 +13,52 @@ categories = ["api-bindings", "asynchronous"]
 unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
+[features]
+default = []
+openai = []
+anthropic = []
+cursor = []
+full = ["openai", "anthropic", "cursor"]
+
 [dependencies]
 id_effect = { path = "../id_effect", version = "3.0.0" }
+id_effect_config = { path = "../id_effect_config", version = "3.0.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "4.0.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+base64 = "0.22"
+tokio = { version = "1.50.0", features = ["time"] }
 
 [dev-dependencies]
-tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
 id_effect_tokio = { path = "../id_effect_tokio", version = "3.0.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "3.0.0", features = [
+  "clap",
+] }
+wiremock = "0.6"
+clap = { version = "4", features = ["derive"] }
+
+[[example]]
+name = "mcp_server_template"
+path = "examples/mcp_server_template.rs"
+
+[[example]]
+name = "010_openai_once"
+path = "examples/010_openai_once.rs"
+required-features = ["openai"]
+
+[[example]]
+name = "011_anthropic_once"
+path = "examples/011_anthropic_once.rs"
+required-features = ["anthropic"]
+
+[[example]]
+name = "ask_once"
+path = "examples/ask_once.rs"
+required-features = ["openai", "anthropic"]
+
+[[example]]
+name = "020_cursor_agent_once"
+path = "examples/020_cursor_agent_once.rs"
+required-features = ["cursor"]

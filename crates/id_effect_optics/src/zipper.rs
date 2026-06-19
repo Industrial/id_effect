@@ -1,4 +1,4 @@
-//! [`TrieZipper`] — navigable zipper over an immutable trie (stub for Part V ch18).
+//! [`TrieZipper`] — navigable zipper over an immutable trie.
 
 use im::HashMap;
 
@@ -11,7 +11,20 @@ pub struct TrieNode<V> {
   pub children: HashMap<char, TrieNode<V>>,
 }
 
-impl<V> TrieNode<V> {
+impl<V: Clone> TrieNode<V> {
+  /// Default empty node.
+  pub fn default_node() -> Self {
+    Self::new()
+  }
+}
+
+impl<V: Clone> Default for TrieNode<V> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl<V: Clone> TrieNode<V> {
   /// Empty trie node.
   pub fn new() -> Self {
     Self {
@@ -32,9 +45,24 @@ impl<V> TrieNode<V> {
   pub fn child(&self, key: char) -> Option<&TrieNode<V>> {
     self.children.get(&key)
   }
+
+  /// Insert or replace a child edge.
+  pub fn with_child(&self, key: char, child: TrieNode<V>) -> Self {
+    let mut node = self.clone();
+    node.children.insert(key, child);
+    node
+  }
+
+  /// Remove a child edge when present.
+  pub fn without_child(&self, key: char) -> Option<Self> {
+    self.children.get(&key)?;
+    let mut node = self.clone();
+    node.children.remove(&key);
+    Some(node)
+  }
 }
 
-/// Zipper focus into a [`TrieNode`] with a breadcrumb path (stub API).
+/// Zipper focus into a [`TrieNode`] with a breadcrumb path.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrieZipper<V> {
   focus: TrieNode<V>,
@@ -73,9 +101,15 @@ impl<V: Clone> TrieZipper<V> {
     })
   }
 
-  /// Rebuild the trie from the zipper focus (stub: returns focus subtree only).
+  /// Rebuild the full trie from the current focus and breadcrumbs.
   pub fn rebuild(&self) -> TrieNode<V> {
-    self.focus.clone()
+    self
+      .path
+      .iter()
+      .rev()
+      .fold(self.focus.clone(), |child, (key, parent)| {
+        parent.with_child(*key, child)
+      })
   }
 
   /// Insert or replace a value at the focused node.
@@ -87,6 +121,22 @@ impl<V: Clone> TrieZipper<V> {
       path: self.path.clone(),
     }
   }
+
+  /// Insert or replace a child edge at the focused node.
+  pub fn insert_child(&self, key: char, child: TrieNode<V>) -> Self {
+    Self {
+      focus: self.focus.with_child(key, child),
+      path: self.path.clone(),
+    }
+  }
+
+  /// Remove a child edge at the focused node.
+  pub fn remove_child(&self, key: char) -> Option<Self> {
+    Some(Self {
+      focus: self.focus.without_child(key)?,
+      path: self.path.clone(),
+    })
+  }
 }
 
 #[cfg(test)]
@@ -94,12 +144,10 @@ mod tests {
   use super::*;
 
   fn sample_trie() -> TrieNode<&'static str> {
-    let mut root = TrieNode::new();
-    let mut a = TrieNode::leaf("root-a");
-    let b = TrieNode::leaf("root-a-b");
-    a.children.insert('b', b);
-    root.children.insert('a', a);
-    root
+    TrieNode::new().with_child(
+      'a',
+      TrieNode::leaf("root-a").with_child('b', TrieNode::leaf("root-a-b")),
+    )
   }
 
   mod descend {
@@ -141,7 +189,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rebuild_round_trip() {
+    fn rebuilds_full_trie_after_nested_edit() {
+      let root = sample_trie();
+      let updated = TrieZipper::new(root)
+        .descend('a')
+        .unwrap()
+        .descend('b')
+        .unwrap()
+        .set_value("changed")
+        .rebuild();
+      assert_eq!(
+        updated.child('a').unwrap().child('b').unwrap().value,
+        Some("changed")
+      );
+    }
+
+    #[test]
+    fn rebuild_round_trip_at_root() {
       let root = TrieNode::leaf("v");
       let zipper = TrieZipper::new(root).set_value("new");
       let rebuilt = zipper.rebuild();
@@ -150,8 +214,7 @@ mod tests {
 
     #[test]
     fn trie_node_child_lookup() {
-      let mut node = TrieNode::new();
-      node.children.insert('x', TrieNode::leaf(1));
+      let node = TrieNode::new().with_child('x', TrieNode::leaf(1));
       assert_eq!(node.child('x').unwrap().value, Some(1));
       assert!(node.child('y').is_none());
     }
@@ -164,6 +227,33 @@ mod tests {
     fn updates_focused_node() {
       let zipper = TrieZipper::new(sample_trie()).set_value("root");
       assert_eq!(zipper.focus().value, Some("root"));
+    }
+  }
+
+  mod insert_child {
+    use super::*;
+
+    #[test]
+    fn adds_child_and_rebuilds() {
+      let rebuilt = TrieZipper::new(TrieNode::new())
+        .insert_child('a', TrieNode::leaf("leaf"))
+        .rebuild();
+      assert_eq!(rebuilt.child('a').unwrap().value, Some("leaf"));
+    }
+  }
+
+  mod remove_child {
+    use super::*;
+
+    #[test]
+    fn removes_child_and_rebuilds() {
+      let rebuilt = TrieZipper::new(sample_trie())
+        .descend('a')
+        .unwrap()
+        .remove_child('b')
+        .unwrap()
+        .rebuild();
+      assert!(rebuilt.child('a').unwrap().child('b').is_none());
     }
   }
 }

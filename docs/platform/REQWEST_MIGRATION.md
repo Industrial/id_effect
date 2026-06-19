@@ -1,27 +1,25 @@
-# Reqwest → `id_effect_platform` HTTP migration
+# Reqwest HTTP — `id_effect_platform::http::reqwest`
 
-**Bead:** `iep-a-024` / `leaf-reqwest-migration`
+**Bead:** `iep-a-024` / `leaf-reqwest-migration` — **completed** (logic lives in `id_effect_platform`).
 
-## When to use which crate
+## Where HTTP lives now
 
-| Need | Crate | Capability |
-|------|-------|------------|
-| Portable HTTP in `R` (`HttpClientKey`) | `id_effect_platform` | `execute`, `execute_stream` |
-| Reqwest pools, JSON+Schema helpers | `id_effect_reqwest` | `ReqwestClientKey`, `send`, `json_schema` |
-| Tokio services (both) | Register both providers at the composition root |
+| Need | Import path |
+|------|-------------|
+| Portable HTTP in `R` (`HttpClientKey`) | `id_effect_platform::http::{execute, execute_stream, provide_reqwest_http_client}` |
+| Reqwest `RequestBuilder` pipelines, pools, JSON+Schema | `id_effect_platform::http::reqwest::{send, json_schema, provide_reqwest_client, …}` |
 
 ## Migration steps
 
-1. Replace `Needs<ReqwestClientKey>` + `send(|c| c.get(url))` with `Needs<HttpClientKey>` + `execute(HttpRequest::get(url))`.
-2. Register `provide_reqwest_http_client()` from `id_effect_platform::http` instead of (or alongside) `provide_reqwest_client`.
-3. For streaming bodies use `execute_stream` → `Stream<u8, HttpError>` (chunked wire reads).
-4. Keep `id_effect_reqwest` when you need `json_schema`, connection pools (`provide_reqwest_pool`), or direct `RequestBuilder` pipelines.
-
-## Example provider graph
+1. Import reqwest helpers from `id_effect_platform::http::reqwest` and reqwest types from `reqwest` directly.
+2. For new portable boundaries, prefer `HttpClientKey` + `execute(HttpRequest::get(url))`.
+3. Register providers at the composition root:
 
 ```rust
 use id_effect::{build_env, provide};
-use id_effect_platform::http::{provide_reqwest_http_client, TokioProcessRuntimeProvider};
+use id_effect_platform::http::{provide_reqwest_http_client, HttpRequest, execute};
+use id_effect_platform::http::reqwest::{provide_reqwest_client, send};
+use id_effect_platform::process::TokioProcessRuntimeProvider;
 
 let env = build_env([
   provide_reqwest_http_client(),
@@ -29,7 +27,10 @@ let env = build_env([
 ])?;
 ```
 
-## Non-goals
+## Examples
 
-- Removing `id_effect_reqwest` (stays for reqwest-specific ergonomics).
-- Auto-migrating every example in one pass — migrate incrementally per example crate.
+```bash
+cargo run -p id_effect_platform --example 010_wiremock_get_text
+cargo run -p id_effect_platform --example 020_wiremock_json
+cargo run -p id_effect_platform --example 030_layer_default_env
+```

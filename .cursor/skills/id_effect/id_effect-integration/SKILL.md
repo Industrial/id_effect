@@ -2,7 +2,7 @@
 name: id_effect-integration
 description: >-
   Teaches id_effect workspace integration: id_effect_tokio run_async, id_effect_platform
-  I/O, id_effect_reqwest HTTP, id_effect_axum hosting, id_effect_config, id_effect_logger,
+  I/O, id_effect_platform::http::reqwest HTTP, id_effect_axum hosting, id_effect_config, id_effect_logger,
   id_effect_rpc, id_effect_cli exit codes. Use when wiring binaries, HTTP servers, or
   platform capabilities at the application edge.
 ---
@@ -20,7 +20,7 @@ description: >-
 | `id_effect` | Core |
 | `id_effect_tokio` | `run_async` on Tokio runtime |
 | `id_effect_platform` | FS, process, platform I/O capabilities |
-| `id_effect_reqwest` | HTTP client capability |
+| `id_effect_platform::http::reqwest` | HTTP client capability |
 | `id_effect_axum` | `run_with_caps`, Axum host helpers |
 | `id_effect_tower` | Tower service integration |
 | `id_effect_config` | Figment/config providers |

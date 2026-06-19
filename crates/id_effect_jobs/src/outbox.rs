@@ -68,17 +68,20 @@ pub trait OutboxTable: Send + Sync {
 }
 
 /// In-memory outbox table (tests and local demos).
+#[cfg(feature = "memory")]
 #[derive(Clone)]
 pub struct MemoryOutbox {
   rows: Arc<Mutex<BTreeMap<String, OutboxRecord>>>,
 }
 
+#[cfg(feature = "memory")]
 impl Default for MemoryOutbox {
   fn default() -> Self {
     Self::new()
   }
 }
 
+#[cfg(feature = "memory")]
 impl MemoryOutbox {
   /// Empty table.
   pub fn new() -> Self {
@@ -88,6 +91,7 @@ impl MemoryOutbox {
   }
 }
 
+#[cfg(feature = "memory")]
 impl OutboxTable for MemoryOutbox {
   fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()> {
     let rows = Arc::clone(&self.rows);
@@ -137,6 +141,7 @@ impl OutboxTable for MemoryOutbox {
 /// Relay stub: fetch unpublished rows, invoke `publish`, then mark published.
 ///
 /// Returns the number of rows relayed. Publish failures leave rows unpublished.
+#[cfg(feature = "memory")]
 pub fn relay_outbox<O, P>(outbox: O, limit: usize, publish: P) -> Effect<usize, OutboxError, ()>
 where
   O: OutboxTable + 'static,
@@ -157,7 +162,7 @@ where
   })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
   use id_effect::succeed;

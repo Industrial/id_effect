@@ -14,6 +14,7 @@ The [`id_effect_platform`](https://github.com/Industrial/id_effect/tree/main/cra
 | `fs` | `FileSystem` | Read/write/append/exists/metadata |
 | `process` | `ProcessRuntime` | Spawn, wait, kill child processes |
 | `uri` | — | Portable URI parsing |
+| `auth` | `SessionStore`, `OAuthClient` | Session and OAuth capability traits |
 
 Capabilities are registered with `provide_reqwest_http_client()`, `LiveFileSystemProvider`, and `TokioProcessRuntimeProvider`.
 
@@ -34,7 +35,7 @@ Prefer platform HTTP over raw `reqwest::Client` in application `R` types. See [R
 | ch27 | Observability | `id_effect_opentelemetry` |
 | ch28 | Data | `id_effect_sql` |
 | ch29 | API boundaries | `id_effect_rpc` |
-| ch30 | Application host | `id_effect_host` |
+| ch30 | Application host | `id_effect_axum` + `id_effect_platform::auth` |
 
 Mission index: [docs/platform/ROADMAP.md](../../../docs/platform/ROADMAP.md).
 

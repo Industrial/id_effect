@@ -46,6 +46,47 @@ impl<S: 'static, A: 'static> Lens<S, A> {
     self.set(source, f(value))
   }
 
+  /// View this lens as a traversal over exactly one focus.
+  pub fn as_traversal(&self) -> crate::traversal::Traversal<S, A>
+  where
+    S: Clone,
+    A: Clone,
+  {
+    let read = self.clone();
+    let write = self.clone();
+    crate::traversal::Traversal::new(
+      move |s, f| write.modify(s, f),
+      move |s, visit| visit(read.get(s)),
+    )
+  }
+
+  /// Compose with a traversal on the focused value.
+  pub fn compose_traversal<B>(
+    self,
+    inner: crate::traversal::Traversal<A, B>,
+  ) -> crate::traversal::Traversal<S, B>
+  where
+    S: Clone + 'static,
+    A: Clone + 'static,
+    B: Clone + 'static,
+  {
+    let read_for_modify = self.clone();
+    let read_for_fold = self.clone();
+    let write = self;
+    let inner_for_modify = inner.clone();
+    let inner_for_fold = inner;
+    crate::traversal::Traversal::new(
+      move |s, f| {
+        let focused = read_for_modify.get(&s);
+        let updated = inner_for_modify.over(focused, f);
+        write.set(s, updated)
+      },
+      move |s, visit| {
+        inner_for_fold.fold_each(&read_for_fold.get(&s), |item| visit(item));
+      },
+    )
+  }
+
   /// Compose with an inner lens: focus `S → A → B`.
   pub fn compose<B>(self, inner: Lens<A, B>) -> Lens<S, B>
   where
@@ -193,6 +234,24 @@ mod tests {
       assert_eq!(city.get(&person), "London");
       let updated = city.set(person, "Paris".into());
       assert_eq!(updated.address.city, "Paris");
+    }
+  }
+
+  mod as_traversal {
+    use super::*;
+
+    #[test]
+    fn maps_single_focus() {
+      let person = Person {
+        name: "Ada".into(),
+        address: Address {
+          city: "London".into(),
+        },
+      };
+      let updated = person_lens()
+        .as_traversal()
+        .over(person, |n| n.to_uppercase());
+      assert_eq!(updated.name, "ADA");
     }
   }
 

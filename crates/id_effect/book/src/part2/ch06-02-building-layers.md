@@ -65,7 +65,7 @@ When a test needs custom data, use `Env::insert` instead of `provide!`. Business
 
 ## Custom values
 
-Workspace crates expose helpers that return [`ProviderBox`](../../src/capability/provider.rs) directly — e.g. `id_effect_config::provide_config_provider`, `id_effect_reqwest::provide_reqwest_client`. Use these when you already hold a concrete handle and don't need a zero-sized `ProviderSpec` type.
+Workspace crates expose helpers that return [`ProviderBox`](../../src/capability/provider.rs) directly — e.g. `id_effect_config::provide_config_provider`, `id_effect_platform::http::reqwest::provide_reqwest_client`. Use these when you already hold a concrete handle and don't need a zero-sized `ProviderSpec` type.
 
 ## The pattern in practice
 

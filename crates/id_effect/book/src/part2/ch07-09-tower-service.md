@@ -1,6 +1,6 @@
 # Tower service (`id_effect_tower`)
 
-Workspace crate **`id_effect_tower`** implements **[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Effects are driven with **`id_effect_tokio::run_async`**, so you can compose **Tower middleware** (timeouts, retries, load balancing, …) around the same domain style as Axum, without tying to Axum’s router first.
+Workspace crate **`id_effect_tower`** implements **[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Effects are driven with **`id_effect::run_async`**, so you can compose **Tower middleware** (timeouts, retries, load balancing, …) around the same domain style as Axum, without tying to Axum’s router first.
 
 ## When to use it
 

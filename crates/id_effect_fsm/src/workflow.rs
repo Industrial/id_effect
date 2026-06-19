@@ -1,8 +1,8 @@
-//! Bridge FSM stepping to [`id_effect_workflow::DurableWorkflowLog`].
+//! Bridge FSM stepping to any [`id_effect_workflow::StepJournal`].
 
 use crate::error::FsmError;
 use crate::machine::StateMachine;
-use id_effect_workflow::{DurableWorkflowLog, WorkflowError};
+use id_effect_workflow::{StepJournal, WorkflowError};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -28,14 +28,15 @@ pub enum WorkflowFsmError<S, E> {
 }
 
 /// Registers `workflow_id` and persists the initial [`StateMachine::state`] at seq `0`.
-pub fn register_fsm<S, Ev>(
-  log: &mut DurableWorkflowLog,
+pub fn register_fsm<S, Ev, J>(
+  log: &mut J,
   workflow_id: &str,
   machine: &StateMachine<S, Ev>,
 ) -> Result<FsmSnapshot<S>, WorkflowFsmError<S, Ev>>
 where
   S: Copy + Eq + Hash + Serialize + for<'de> Deserialize<'de>,
   Ev: Copy + Eq + Hash,
+  J: StepJournal + ?Sized,
 {
   log.register_workflow(workflow_id)?;
   let snapshot = FsmSnapshot {
@@ -49,8 +50,8 @@ where
 }
 
 /// Applies one event, persists the new snapshot at the next seq, and updates `machine`.
-pub fn step_durable<S, Ev>(
-  log: &mut DurableWorkflowLog,
+pub fn step_durable<S, Ev, J>(
+  log: &mut J,
   workflow_id: &str,
   machine: &mut StateMachine<S, Ev>,
   event: Ev,
@@ -59,6 +60,7 @@ pub fn step_durable<S, Ev>(
 where
   S: Copy + Eq + Hash + Debug + Serialize + for<'de> Deserialize<'de>,
   Ev: Copy + Eq + Hash,
+  J: StepJournal + ?Sized,
 {
   if !log.has_workflow(workflow_id)? {
     return Err(WorkflowFsmError::Workflow(WorkflowError::UnknownWorkflow(
@@ -85,14 +87,15 @@ where
 }
 
 /// Restores `machine` current state from the latest durable snapshot.
-pub fn restore_state<S, Ev>(
-  log: &mut DurableWorkflowLog,
+pub fn restore_state<S, Ev, J>(
+  log: &mut J,
   workflow_id: &str,
   machine: &mut StateMachine<S, Ev>,
 ) -> Result<FsmSnapshot<S>, WorkflowFsmError<S, Ev>>
 where
   S: Copy + Eq + Hash + Serialize + for<'de> Deserialize<'de>,
   Ev: Copy + Eq + Hash,
+  J: StepJournal + ?Sized,
 {
   let count = log.completed_step_count(workflow_id)?;
   if count == 0 {
