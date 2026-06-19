@@ -17,8 +17,10 @@
 )]
 
 mod error;
+mod journal;
 
 pub use error::WorkflowError;
+pub use journal::{DistributedJournalConfig, NetworkJournalStub, StepJournal};
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};

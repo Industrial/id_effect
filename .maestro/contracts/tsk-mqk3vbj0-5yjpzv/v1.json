@@ -1,0 +1,52 @@
+{
+	"schemaVersion": 2,
+	"id": "c-8c0fd2",
+	"taskId": "tsk-mqk3vbj0-5yjpzv",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:13:33.490Z",
+	"lockedAt": "2026-06-18T23:13:33.490Z",
+	"intent": "Sql Core Trait",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-ddd2fb",
+			"text": "id_effect_sql core traits; id_effect_sql_pg PostgreSQL driver",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-7cb2d3",
+			"text": "Transactions via Scope; Axum integration example",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-0295f4",
+			"text": "ADR for driver choice in docs/platform/adrs/",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-62504f",
+			"text": "Part VI ch28 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-08ed45",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor-subagent",
+	"lockedBy": "cursor-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uxtf-055tfk",
+	"riskClass": "medium"
+}

@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4eycq-7tj79f",
+	"task_id": "tsk-mqk3vdbv-vzq5q8",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:18:10.538Z",
+	"agent_id": "composer-subagent",
+	"worktree_path": "/home/tom/Code/rust/id_effect-tsk-mqk3vdbv-vzq5q8",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-dx-ship.md"
+}

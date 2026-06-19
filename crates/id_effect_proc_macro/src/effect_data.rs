@@ -199,3 +199,56 @@ fn gen_enum_hash(ident: &syn::Ident, data: &syn::DataEnum) -> proc_macro2::Token
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use quote::ToTokens;
+  use syn::parse_quote;
+
+  #[test]
+  fn struct_partial_eq_and_hash_codegen() {
+    let input: syn::DeriveInput = parse_quote!(
+      struct Point {
+        x: i32,
+        y: String,
+      }
+    );
+    let fields = match &input.data {
+      syn::Data::Struct(s) => &s.fields,
+      _ => panic!("struct"),
+    };
+    let pe = gen_struct_partial_eq(fields);
+    let h = gen_struct_hash(fields);
+    assert!(!pe.to_string().is_empty());
+    assert!(!h.to_string().is_empty());
+  }
+
+  #[test]
+  fn enum_partial_eq_and_hash_codegen() {
+    let input: syn::DeriveInput = parse_quote!(
+      enum Color {
+        Red(u8),
+        Green,
+      }
+    );
+    let ident = &input.ident;
+    let data = match &input.data {
+      syn::Data::Enum(e) => e,
+      _ => panic!("enum"),
+    };
+    let pe = gen_enum_partial_eq(ident, data);
+    let h = gen_enum_hash(ident, data);
+    assert!(pe.to_string().contains("Color"));
+    assert!(!h.to_string().is_empty());
+  }
+
+  #[test]
+  fn add_bounds_for_generic_type_param() {
+    let mut generics: syn::Generics = parse_quote!(<T>);
+    add_effect_data_bounds(&mut generics);
+    let g = generics.to_token_stream().to_string();
+    assert!(g.contains("Hash"));
+    assert!(g.contains("Eq"));
+  }
+}

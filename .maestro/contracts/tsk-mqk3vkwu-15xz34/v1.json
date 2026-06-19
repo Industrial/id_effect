@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-5cdc7b",
+	"taskId": "tsk-mqk3vkwu-15xz34",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:37.610Z",
+	"lockedAt": "2026-06-18T23:25:37.610Z",
+	"intent": "Leptos Alternate Doc",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-80e20f",
+			"text": "id_effect_dioxus SSR bridge crate",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-ee2e6f",
+			"text": "SSE/WebSocket realtime channels; forms at HTTP edge",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-783860",
+			"text": "Leptos alternate documented; Part VII ch33 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-d9c7b9",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "platform-leaves-subagent",
+	"lockedBy": "platform-leaves-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3v2du-i1jila",
+	"riskClass": "medium"
+}

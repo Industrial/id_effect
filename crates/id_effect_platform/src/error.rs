@@ -45,6 +45,19 @@ impl From<reqwest::Error> for HttpError {
   }
 }
 
+impl Clone for HttpError {
+  fn clone(&self) -> Self {
+    match self {
+      HttpError::Reqwest(e) => HttpError::InvalidRequest(e.to_string()),
+      HttpError::BodyTooLarge { len, max } => HttpError::BodyTooLarge {
+        len: *len,
+        max: *max,
+      },
+      HttpError::InvalidRequest(s) => HttpError::InvalidRequest(s.clone()),
+    }
+  }
+}
+
 /// Filesystem failures.
 #[derive(Debug)]
 pub enum FsError {

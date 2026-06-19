@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4oia6-yp2h92",
+	"task_id": "tsk-mqk3vkwu-e25jzb",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:25:36.270Z",
+	"agent_id": "platform-leaves-subagent",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-ui-realtime.md",
+	"to_agent": "cli"
+}

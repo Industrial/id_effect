@@ -23,10 +23,14 @@ id_effect = { path = "../id_effect", version = "3.0.0", features = [
 id_effect_axum = { path = "../id_effect_axum", version = "3.0.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "3.0.0" }
+
 [dev-dependencies]
+syn = { version = "2", features = ["full"] }
 http-body-util = "0.1"
 rstest = "0.26"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -35,3 +39,7 @@ tower = { version = "0.5", features = ["util"] }
 [[example]]
 name = "010_json_greet"
 path = "examples/010_json_greet.rs"
+
+[[example]]
+name = "020_rpc_tracing"
+path = "examples/020_rpc_tracing.rs"

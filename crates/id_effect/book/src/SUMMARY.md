@@ -137,3 +137,19 @@
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
 - [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)
+
+# Part VI: Application Platform
+
+- [Platform introduction](./part6/ch26-00-platform-introduction.md)
+- [Observability and health](./part6/ch27-00-observability.md)
+- [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
+- [API boundaries (`id_effect_rpc`)](./part6/ch29-00-api-boundaries.md)
+- [Application host](./part6/ch30-00-application.md)
+- [Async messaging and jobs](./part6/ch31-00-async-messaging.md)
+- [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
+- [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
+- [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
+
+# Part VII: Full-stack UI
+
+- [Dioxus SSR and realtime](./part7/ch33-00-ui-realtime.md)

@@ -28,5 +28,6 @@
 ## Review log
 
 | Date | Upstream version | Reviewer | Notes / link |
+| 2026-06-19 | effect@3.14.0 | platform-parity-hygiene | UPSTREAM-VERSION bump |
 |------|------------------|----------|--------------|
 | | | | |

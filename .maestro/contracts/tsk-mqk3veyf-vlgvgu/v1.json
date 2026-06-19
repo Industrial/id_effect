@@ -1,0 +1,42 @@
+{
+	"schemaVersion": 2,
+	"id": "c-c4c36b",
+	"taskId": "tsk-mqk3veyf-vlgvgu",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:21:44.375Z",
+	"lockedAt": "2026-06-18T23:21:44.375Z",
+	"intent": "Platform Skill",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-5b5135",
+			"text": "id_effect_platform Phase A complete: HTTP streaming bodies, FS gaps, process cancellation, reqwest migration",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-d538bd",
+			"text": "Part VI ch26 book chapter and platform skill stub",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-0033eb",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uzlz-ffz1p1",
+	"riskClass": "medium"
+}

@@ -1,0 +1,57 @@
+{
+	"schemaVersion": 2,
+	"id": "c-38380c",
+	"taskId": "tsk-mqk3vwnv-y2liu3",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:07:19.590Z",
+	"lockedAt": "2026-06-18T23:07:19.590Z",
+	"intent": "Platform meta plan check",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-289b55",
+			"text": "Eleven domain specs platform-foundation through platform-parity-hygiene authored and validated",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-d9bdac",
+			"text": "Twelve plan files in .cursor/plans/ including meta",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-b4588e",
+			"text": "Twelve execution overlays in .maestro/missions/",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-468b91",
+			"text": "docs/platform/ROADMAP.md merges FP Part V and Platform Part VI–VII",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-74fe80",
+			"text": "Book SUMMARY Part VI and Part VII stubs; ch26 placeholder",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-14e8d3",
+			"text": "id_effect skills README prerequisite graph updated for platform missions",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3v0l4-66d3zl",
+	"riskClass": "low"
+}

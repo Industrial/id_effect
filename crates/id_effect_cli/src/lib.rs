@@ -20,5 +20,8 @@ pub use exit_code::{
 pub use run::{RunMainConfig, run_main};
 
 #[cfg(feature = "clap")]
+pub mod generator;
+
+#[cfg(feature = "clap")]
 #[doc(inline)]
 pub use clap;

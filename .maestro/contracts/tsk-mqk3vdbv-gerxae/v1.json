@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-5b87cd",
+	"taskId": "tsk-mqk3vdbv-gerxae",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:32.128Z",
+	"lockedAt": "2026-06-18T23:25:32.128Z",
+	"intent": "Dx Book Ch34",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-6d0ff5",
+			"text": "id_effect_cli Phase E parity completion",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-5a2275",
+			"text": "id_effect new app generator; Kamal/Docker deploy templates",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-947fe2",
+			"text": "Admin scaffold stub; Part VI ch34 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-bbe82c",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uymr-cb8ftt",
+	"riskClass": "medium"
+}

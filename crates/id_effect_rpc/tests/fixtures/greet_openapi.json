@@ -1,0 +1,49 @@
+{
+	"openapi": "3.0.3",
+	"info": {
+		"title": "Greet API",
+		"version": "1.0.0"
+	},
+	"paths": {
+		"/greet": {
+			"post": {
+				"operationId": "greet",
+				"summary": "Say hello",
+				"requestBody": {
+					"required": true,
+					"content": {
+						"application/json": {
+							"schema": {
+								"$ref": "#/components/schemas/GreetRequest"
+							}
+						}
+					}
+				},
+				"responses": {
+					"200": {
+						"description": "Success",
+						"content": {
+							"application/json": {
+								"schema": {
+									"$ref": "#/components/schemas/GreetResponse"
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	},
+	"components": {
+		"schemas": {
+			"GreetRequest": {
+				"type": "object",
+				"title": "GreetRequest"
+			},
+			"GreetResponse": {
+				"type": "object",
+				"title": "GreetResponse"
+			}
+		}
+	}
+}

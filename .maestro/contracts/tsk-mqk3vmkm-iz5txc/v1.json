@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-066d6c",
+	"taskId": "tsk-mqk3vmkm-iz5txc",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:25:34.488Z",
+	"lockedAt": "2026-06-18T23:25:34.488Z",
+	"intent": "Workflow Distributed Spike",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-292355",
+			"text": "Workflow charter ADR aligned with phase-g docs",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-97ada7",
+			"text": "Distributed workflow spike beyond SQLite-only log",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4f1d45",
+			"text": "FSM integration examples; Part VI ch32 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-182149",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "platform-leaves-subagent",
+	"lockedBy": "platform-leaves-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3v34c-c8b55j",
+	"riskClass": "medium"
+}

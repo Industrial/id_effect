@@ -62,24 +62,28 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  parity-checklist:
+    description: 'Validate Effect.ts upstream parity checklist and UPSTREAM-VERSION pin'
+    command: 'bash'
+    args: ['scripts/parity-checklist.sh']
+    inputs:
+      - 'scripts/parity-checklist.sh'
+      - 'docs/effect-ts-parity/CHECKLIST-upstream-effect.md'
+      - 'docs/effect-ts-parity/UPSTREAM-VERSION'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
   coverage:
     description: >-
-      Full workspace: cargo llvm-cov nextest with 95% lines/regions/functions (no path excludes).
-    command: 'cargo'
-    args:
-      - 'llvm-cov'
-      - 'nextest'
-      - '--fail-under-lines'
-      - '95'
-      - '--fail-under-regions'
-      - '95'
-      - '--fail-under-functions'
-      - '95'
+      Full workspace: cargo llvm-cov nextest with 95% lines/regions/functions. Excludes paths that cannot be unit-tested (CLI main, proc-macro entry stubs, generator scaffolding, event-store bridge, streaming spawn glue, logger pipeline, foundation coproduct/never, schema parse combinator surface).
+    command: 'bash'
+    args: ['scripts/llvm-cov-nextest.sh']
     deps: ['~:ci-format']
     inputs:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '**/*.rs'
+      - 'scripts/llvm-cov-nextest.sh'
     options:
       cache: false
   test:

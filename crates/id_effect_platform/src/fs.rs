@@ -36,6 +36,8 @@ pub trait FileSystem: Send + Sync + 'static {
   fn remove_file(&self, path: &Path) -> Effect<(), FsError, ()>;
   /// Metadata: file length if a regular file.
   fn metadata_len(&self, path: &Path) -> Effect<u64, FsError, ()>;
+  /// Whether `path` exists (file or directory).
+  fn exists(&self, path: &Path) -> Effect<bool, FsError, ()>;
 }
 
 /// Tokio-backed live filesystem.
@@ -110,6 +112,13 @@ impl FileSystem for LiveFileSystem {
         let m = tokio::fs::metadata(&path).await.map_err(FsError::from)?;
         Ok(m.len())
       })
+    })
+  }
+
+  fn exists(&self, path: &Path) -> Effect<bool, FsError, ()> {
+    let path = path.to_path_buf();
+    Effect::new_async(move |_r: &mut ()| {
+      Box::pin(async move { tokio::fs::try_exists(&path).await.map_err(FsError::from) })
     })
   }
 }
@@ -247,6 +256,20 @@ impl FileSystem for TestFileSystem {
       Ok(v.len() as u64)
     })
   }
+
+  fn exists(&self, path: &Path) -> Effect<bool, FsError, ()> {
+    let key = match Self::key(path) {
+      Ok(k) => k,
+      Err(e) => return id_effect::fail(e),
+    };
+    let inner = Arc::clone(&self.inner);
+    Effect::new(move |_r: &mut ()| {
+      let map = inner
+        .lock()
+        .map_err(|e| FsError::PathNotAllowed(e.to_string()))?;
+      Ok(map.contains_key(&key))
+    })
+  }
 }
 
 /// Default [`ProviderSpec`] for a Tokio-backed live [`FileSystem`].
@@ -269,6 +292,19 @@ where
   Effect::new_async(move |r: &mut R| {
     let fs = r.need().clone();
     let inner = fs.read(&path);
+    Box::pin(async move { inner.run(&mut ()).await })
+  })
+}
+
+/// Exists check via [`FileSystemKey`].
+#[inline]
+pub fn exists<R>(path: PathBuf) -> Effect<bool, FsError, R>
+where
+  R: Needs<FileSystemKey> + 'static,
+{
+  Effect::new_async(move |r: &mut R| {
+    let fs = r.need().clone();
+    let inner = fs.exists(&path);
     Box::pin(async move { inner.run(&mut ()).await })
   })
 }
@@ -302,6 +338,28 @@ mod tests {
         let p = PathBuf::from(OsString::from_vec(vec![0xFF, 0xFE]));
         let err = run_blocking(fs.write(&p, b"x"), ()).unwrap_err();
         assert!(matches!(err, FsError::PathNotAllowed(_)));
+      }
+    }
+
+    mod exists {
+      use super::*;
+
+      #[test]
+      fn false_before_write_true_after() {
+        let fs = TestFileSystem::new();
+        let p = Path::new("probe.txt");
+        assert!(!run_blocking(fs.exists(p), ()).unwrap());
+        run_blocking(fs.write(p, b"x"), ()).unwrap();
+        assert!(run_blocking(fs.exists(p), ()).unwrap());
+      }
+
+      #[test]
+      fn false_after_remove() {
+        let fs = TestFileSystem::new();
+        let p = Path::new("gone.txt");
+        run_blocking(fs.write(p, b"x"), ()).unwrap();
+        run_blocking(fs.remove_file(p), ()).unwrap();
+        assert!(!run_blocking(fs.exists(p), ()).unwrap());
       }
     }
 
@@ -398,6 +456,14 @@ mod tests {
         let fs = TestFileSystem::new();
         fs.poison_inner_mutex();
         let err = run_blocking(fs.metadata_len(Path::new("ok.txt")), ()).unwrap_err();
+        assert!(matches!(err, FsError::PathNotAllowed(_)));
+      }
+
+      #[test]
+      fn exists_maps_lock_poison_to_path_not_allowed() {
+        let fs = TestFileSystem::new();
+        fs.poison_inner_mutex();
+        let err = run_blocking(fs.exists(Path::new("ok.txt")), ()).unwrap_err();
         assert!(matches!(err, FsError::PathNotAllowed(_)));
       }
     }

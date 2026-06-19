@@ -1,0 +1,9 @@
+//! Admin stub routes for {{name}}
+
+use axum::{Router, routing::get};
+
+pub fn admin_router() -> Router {
+  Router::new()
+    .route("/admin", get(|| async { "admin home (stub)" }))
+    .route("/admin/health", get(|| async { "ok" }))
+}

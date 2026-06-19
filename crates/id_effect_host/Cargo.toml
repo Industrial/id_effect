@@ -1,0 +1,31 @@
+[package]
+name = "id_effect_host"
+version = "0.1.0"
+edition = "2024"
+license = "CC-BY-SA-4.0"
+description = "Application host shell for id_effect — lifecycle, config bootstrap, graceful shutdown"
+repository = "https://github.com/Industrial/id_effect"
+readme = "README.md"
+keywords = ["effect", "async", "host", "axum", "platform"]
+categories = ["asynchronous", "web-programming"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[dependencies]
+axum = { version = "0.8" }
+id_effect = { path = "../id_effect", version = "3.0.0" }
+id_effect_config = { path = "../id_effect_config", version = "3.0.0" }
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt",
+  "signal",
+  "sync",
+  "time",
+] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+id_effect_tokio = { path = "../id_effect_tokio", version = "3.0.0" }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }

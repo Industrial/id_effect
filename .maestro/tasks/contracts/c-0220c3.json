@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-0220c3",
+	"taskId": "tsk-mqk3vif7-3tuxq8",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:14:42.663Z",
+	"lockedAt": "2026-06-18T23:14:42.663Z",
+	"intent": "Otel Starter Layer",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-e07842",
+			"text": "id_effect_opentelemetry workspace member; logs bridge; OTEL starter layer",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-ddc375",
+			"text": "Health and readiness endpoints; Axum middleware integration",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a7baac",
+			"text": "Part VI ch27 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-bbd0f6",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "cursor",
+	"lockedBy": "cursor",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3v1k9-6c8qcj",
+	"riskClass": "medium"
+}

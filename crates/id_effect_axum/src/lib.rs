@@ -67,10 +67,15 @@
 #![allow(effect_no_async_fn_application)]
 
 pub mod channel_bridge;
+pub mod health;
 pub mod json;
 pub mod routing;
 
 pub use channel_bridge::{exchange, exchange_into_response};
+pub use health::{
+  ReadinessCheck, ReadinessState, health, health_router, observability_routes,
+  observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
+};
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};

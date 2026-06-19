@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mqk4obex-vq5dwm",
+	"task_id": "tsk-mqk3v6fi-ofmn5b",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-06-18T23:25:27.369Z",
+	"agent_id": "cursor",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/platform-api-boundaries.md",
+	"to_agent": "cli"
+}

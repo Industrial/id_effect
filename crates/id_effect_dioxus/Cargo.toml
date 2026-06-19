@@ -1,0 +1,38 @@
+[package]
+name = "id_effect_dioxus"
+version = "0.1.0"
+edition = "2024"
+license = "CC-BY-SA-4.0"
+description = "Thin Dioxus SSR bridge for id_effect — realtime and forms at the HTTP edge"
+repository = "https://github.com/Industrial/id_effect"
+readme = "README.md"
+keywords = ["effect", "dioxus", "ssr", "axum", "realtime"]
+categories = ["web-programming", "asynchronous"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[features]
+default = []
+dioxus = ["dep:dioxus-ssr"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "3.0.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "3.0.0" }
+axum = { version = "0.8", features = ["ws"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1.50.0", features = ["sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+
+dioxus-ssr = { version = "0.6", optional = true }
+
+[dev-dependencies]
+id_effect_tokio = { path = "../id_effect_tokio", version = "3.0.0" }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "net"] }
+tokio-tungstenite = "0.29"

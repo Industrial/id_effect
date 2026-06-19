@@ -1,0 +1,24 @@
+[package]
+name = "id_effect_jobs"
+version = "3.0.0"
+edition = "2024"
+description = "Background job runner and transactional outbox stubs for id_effect platform async messaging"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/id_effect"
+readme = "README.md"
+keywords = ["effect", "jobs", "queue", "outbox", "messaging"]
+categories = ["asynchronous"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "3.0.0" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+rstest = "0.26"

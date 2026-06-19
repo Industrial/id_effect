@@ -1,0 +1,47 @@
+{
+	"schemaVersion": 2,
+	"id": "c-c3059f",
+	"taskId": "tsk-mqk3vdbv-vzq5q8",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-06-18T23:18:10.537Z",
+	"lockedAt": "2026-06-18T23:18:10.537Z",
+	"intent": "Cli Parity",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-f3b554",
+			"text": "id_effect_cli Phase E parity completion",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4c892b",
+			"text": "id_effect new app generator; Kamal/Docker deploy templates",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4089ba",
+			"text": "Admin scaffold stub; Part VI ch34 book chapter",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-8a2c88",
+			"text": "Workspace tests clippy coverage book pass",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "composer-subagent",
+	"lockedBy": "composer-subagent",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mqk3uymr-cb8ftt",
+	"riskClass": "medium"
+}

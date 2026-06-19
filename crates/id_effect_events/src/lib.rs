@@ -24,6 +24,7 @@ mod envelope;
 mod error;
 mod event_store;
 mod projection;
+mod sql_journal;
 
 pub use cqrs::{
   CommandHandler, DispatchError, QueryDispatchError, QueryHandler, dispatch_command,
@@ -35,4 +36,8 @@ pub use envelope::{
 };
 pub use error::EventStoreError;
 pub use event_store::{EventStore, FileJournal, MemoryEventStore, StoredEvent};
+pub use sql_journal::{
+  POSTGRES_JOURNAL_DDL, SqlEventJournal, SqlJournalBackend, TestSqlJournalBackend,
+};
+
 pub use projection::{Projection, run_projection, run_projection_from_store};

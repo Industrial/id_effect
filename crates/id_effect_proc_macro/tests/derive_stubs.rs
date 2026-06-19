@@ -1,4 +1,4 @@
-use id_effect_proc_macro::{Fsm, Optics, SchemaParser};
+use id_effect_proc_macro::{EffectData, Fsm, Optics, SchemaParser};
 
 #[derive(Optics)]
 struct Point {
@@ -12,7 +12,7 @@ enum Traffic {
   Green,
 }
 
-#[derive(SchemaParser)]
+#[derive(EffectData, SchemaParser)]
 struct User {
   name: String,
 }
@@ -24,4 +24,9 @@ fn derive_stubs_compile() {
   assert!(matches!(Traffic::Red, Traffic::Red));
   assert!(matches!(Traffic::Green, Traffic::Green));
   assert_eq!(User { name: "ada".into() }.name, "ada");
+  use std::collections::hash_map::DefaultHasher;
+  use std::hash::{Hash, Hasher};
+  let mut h = DefaultHasher::new();
+  User { name: "bob".into() }.hash(&mut h);
+  assert_ne!(h.finish(), 0);
 }

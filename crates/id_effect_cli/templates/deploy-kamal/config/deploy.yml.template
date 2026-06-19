@@ -1,0 +1,22 @@
+# Kamal 2 deploy config for {{name}}
+service: {{name}}
+image: ghcr.io/example/{{name}}
+
+servers:
+  web:
+    - 192.0.2.1
+
+registry:
+  username: KAMAL_REGISTRY_USER
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  clear:
+    PORT: "8080"
+    HOST: "0.0.0.0"
+  secret:
+    - DATABASE_URL
+
+builder:
+  dockerfile: Dockerfile

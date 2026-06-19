@@ -44,3 +44,24 @@ Skills cross-link at boundaries. Capability DI lives in `id_effect-capabilities`
 - Examples: `crates/id_effect/examples/` — numbered progression 001–085+
 - Migration: `book/src/appendix-b-migration.md` (async fn, 1.x DI, 2.x → 3.0)
 - ADRs: `docs/adrs/0002-*` through `0006-*`
+
+## Platform Kitchen Sink missions
+
+When working on **Part VI–VII** or `platform-*` Maestro missions, start with [docs/platform/ROADMAP.md](../../../docs/platform/ROADMAP.md).
+
+| Mission | Primary skills |
+|---------|----------------|
+| `platform-foundation` | `id_effect-integration`, `id_effect-streams` |
+| `platform-observability` | `id_effect-integration` |
+| `platform-data` | `id_effect-integration`, `id_effect-schema` |
+| `platform-api-boundaries` | `id_effect-schema`, `id_effect-integration` |
+| `platform-application` | `id_effect-integration`, `id_effect-capabilities` |
+| `platform-async-messaging` | `id_effect-events`, `id_effect-concurrency` |
+| `platform-workflow-cluster` | `id_effect-fsm`, `id_effect-resilience` |
+| `platform-ui-realtime` | `id_effect-integration` |
+| `platform-dx-ship` | `id_effect-integration` |
+| `platform-ai` | `id_effect-integration`, `id_effect-streams` |
+| `platform-parity-hygiene` | `id_effect-review` |
+
+Prerequisites: `id_effect-fundamentals` → `id_effect-capabilities` → `id_effect-integration`.
+| [id_effect-platform](id_effect-platform/SKILL.md) | `id_effect_platform` HTTP/FS/process — Part VI ch26 |

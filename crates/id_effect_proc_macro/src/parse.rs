@@ -256,6 +256,52 @@ mod tests {
       }
     }
 
+    mod additional_error_paths {
+      use super::*;
+
+      #[test]
+      fn unclosed_pipe_in_params_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32 { 1 } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn non_mut_env_type_errors() {
+        let ts: TokenStream = quote! { |r: u32| { r } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn unexpected_tokens_after_closure_body_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32| { r } extra };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn move_without_closure_errors() {
+        let ts: TokenStream = quote! { move { 1 } };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn pipe_without_brace_errors() {
+        let ts: TokenStream = quote! { |r: &mut u32| };
+        assert!(parse_effect_input(ts).is_err());
+      }
+
+      #[test]
+      fn single_ident_param_without_type_works() {
+        let ts: TokenStream = quote! { |r| { r } };
+        match parse_effect_input(ts).unwrap() {
+          EffectKind::DoNotation { param, env_ty, .. } => {
+            assert_eq!(param.to_string(), "r");
+            assert!(env_ty.is_none());
+          }
+          _ => panic!("expected do notation"),
+        }
+      }
+    }
+
     mod rejects_async_closure {
       use super::*;
 

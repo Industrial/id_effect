@@ -125,3 +125,22 @@ fn manifest_json_cycle_fails() {
   assert!(!out.status.success());
   let _ = std::fs::remove_file(path);
 }
+
+#[test]
+fn example_ok_json_outputs_success() {
+  let out = diagnose()
+    .args(["--json", "example", "ok"])
+    .output()
+    .expect("spawn");
+  assert!(out.status.success());
+  assert!(String::from_utf8_lossy(&out.stdout).contains("ok"));
+}
+
+#[test]
+fn manifest_missing_file_fails() {
+  let out = diagnose()
+    .args(["manifest", "/nonexistent/path/manifest.json"])
+    .output()
+    .expect("spawn");
+  assert!(!out.status.success());
+}
