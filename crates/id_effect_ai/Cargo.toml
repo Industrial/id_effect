@@ -32,8 +32,8 @@ tokio = { version = "1.50.0", features = ["time"] }
 
 [dev-dependencies]
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
-id_effect_tokio = { path = "../id_effect_tokio", version = "3.0.0" }
-id_effect_cli = { path = "../id_effect_cli", version = "3.0.0", features = [
+id_effect_tokio = { path = "../id_effect_tokio" }
+id_effect_cli = { path = "../id_effect_cli", features = [
   "clap",
 ] }
 wiremock = "0.6"

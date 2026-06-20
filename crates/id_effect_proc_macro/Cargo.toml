@@ -18,10 +18,10 @@ name = "id_effect_proc_macro"
 proc-macro = true
 
 [dev-dependencies]
-id_effect = { path = "../id_effect", version = "3.0.0", features = [
+id_effect = { path = "../id_effect", features = [
   "schema-serde",
 ] }
-id_effect_optics = { path = "../id_effect_optics", version = "3.0.0" }
+id_effect_optics = { path = "../id_effect_optics" }
 
 [dependencies]
 proc-macro2 = "1.0"

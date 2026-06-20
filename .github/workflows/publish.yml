@@ -36,14 +36,14 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/v}"
           else
             # workflow_dispatch: infer from proc-macro Cargo.toml
-            TAG=$(grep -m1 '^version' crates/id_effect_proc_macro/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+            TAG=$(grep -m1 '^version = ' crates/id_effect_proc_macro/Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
           fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
           echo "Publishing version: $TAG"
       - name: Check all crate versions match
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          CRATES=(
+          CORE_CRATES=(
             crates/id_effect_proc_macro/Cargo.toml
             crates/id_effect_macro/Cargo.toml
             crates/id_effect/Cargo.toml
@@ -52,22 +52,34 @@ jobs:
             crates/id_effect_logger/Cargo.toml
             crates/id_effect_config/Cargo.toml
             crates/id_effect_axum/Cargo.toml
-            crates/id_effect_platform/Cargo.toml
             crates/id_effect_tower/Cargo.toml
           )
           MISMATCH=0
-          for toml in "${CRATES[@]}"; do
-            CRATE_VER=$(grep -m1 '^version' "$toml" | sed 's/version = "\(.*\)"/\1/')
+          for toml in "${CORE_CRATES[@]}"; do
+            CRATE_VER=$(grep -m1 '^version = ' "$toml" | sed 's/^version = "\(.*\)"/\1/')
             if [ "$CRATE_VER" != "$VERSION" ]; then
               echo "MISMATCH: $toml has version $CRATE_VER, expected $VERSION"
               MISMATCH=1
             fi
           done
+          PLATFORM_VER=$(grep -m1 '^version = ' crates/id_effect_platform/Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
+          case "$VERSION" in
+            3.0.0)
+              EXPECTED_PLATFORM="4.0.0"
+              ;;
+            *)
+              EXPECTED_PLATFORM="$VERSION"
+              ;;
+          esac
+          if [ "$PLATFORM_VER" != "$EXPECTED_PLATFORM" ]; then
+            echo "MISMATCH: crates/id_effect_platform/Cargo.toml has version $PLATFORM_VER, expected $EXPECTED_PLATFORM for release $VERSION"
+            MISMATCH=1
+          fi
           if [ "$MISMATCH" -eq 1 ]; then
             echo "Version mismatch detected — aborting publish."
             exit 1
           fi
-          echo "All crates are at version $VERSION"
+          echo "Core crates at $VERSION; id_effect_platform at $PLATFORM_VER"
   # ──────────────────────────────────────────────────────────────────────────
   # Run the full test suite before publishing anything.
   # ──────────────────────────────────────────────────────────────────────────
@@ -107,18 +119,16 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_proc_macro --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_proc_macro
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_macro
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_macro --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_macro
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-1: id_effect (depends on proc-macro + macro)
   # ──────────────────────────────────────────────────────────────────────────
@@ -139,18 +149,16 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_cli --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_cli
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-2: tokio + logger (depend only on id_effect)
   # ──────────────────────────────────────────────────────────────────────────
@@ -171,18 +179,16 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_tokio --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_tokio
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_logger
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_logger --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_logger
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-3: integrations (axum, config, reqwest, tower)
   # axum + tower depend on id_effect_tokio; config depends on id_effect_logger.
@@ -204,36 +210,32 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_config --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_config
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_axum
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_axum --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_axum
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_platform::http::reqwest
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_platform::http::reqwest --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh 'id_effect_platform::http::reqwest'
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_tower
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          args=(--package id_effect_tower --no-verify)
-          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
-          cargo publish "${args[@]}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          .github/scripts/publish-crate.sh id_effect_tower
   # ──────────────────────────────────────────────────────────────────────────
   # Create a GitHub Release with auto-generated notes.
   # ──────────────────────────────────────────────────────────────────────────
