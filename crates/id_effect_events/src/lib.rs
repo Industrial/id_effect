@@ -4,7 +4,7 @@
 //! | Type / fn | Role |
 //! |-----------|------|
 //! | [`EventStore`], [`MemoryEventStore`], [`FileJournal`] | append/read event journals |
-//! | [`EsEntityEventStore`] (feature `es-entity`) | production PG journal via es-entity |
+//! | `EsEntityEventStore` (feature `es-entity`) | production PG journal via es-entity |
 //! | [`ProjectionRunner`] | multi-projection rebuild order via [`id_effect_graph`] |
 //! | [`EventEnvelope`] | versioned payload with wire bridging via [`id_effect::schema::Schema`] |
 //! | [`run_projection`] | fold streams or stores through a [`Projection`] |

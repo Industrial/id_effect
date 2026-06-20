@@ -1,4 +1,4 @@
-//! **PostgreSQL driver** for [`id_effect_sql`] — sqlx [`PgPool`] and
+//! **PostgreSQL driver** for [`id_effect_sql`] — sqlx [`PgPool`](sqlx::PgPool) and
 //! [`PgSqlClient`] implementing [`SqlClient`](id_effect_sql::SqlClient).
 //!
 //! See ADR [`adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md).
