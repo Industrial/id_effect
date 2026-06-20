@@ -16,7 +16,7 @@ echo "$output"
 if [ "$code" -eq 0 ]; then
   exit 0
 fi
-if echo "$output" | grep -qi 'already uploaded'; then
+if echo "$output" | grep -qiE 'already (uploaded|exists)'; then
   echo "$pkg already on crates.io — skipping"
   exit 0
 fi
