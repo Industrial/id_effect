@@ -118,17 +118,15 @@ jobs:
       - name: Publish id_effect_proc_macro
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_proc_macro
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_proc_macro
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_macro
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_macro
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_macro
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-1: id_effect (depends on proc-macro + macro)
   # ──────────────────────────────────────────────────────────────────────────
@@ -148,17 +146,15 @@ jobs:
       - name: Publish id_effect
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_cli
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_cli
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-2: tokio + logger (depend only on id_effect)
   # ──────────────────────────────────────────────────────────────────────────
@@ -178,17 +174,15 @@ jobs:
       - name: Publish id_effect_tokio
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_tokio
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_tokio
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_logger
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_logger
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_logger
   # ──────────────────────────────────────────────────────────────────────────
   # Publish level-3: integrations (axum, config, reqwest, tower)
   # axum + tower depend on id_effect_tokio; config depends on id_effect_logger.
@@ -209,33 +203,29 @@ jobs:
       - name: Publish id_effect_config
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_config
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_config
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_platform
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_platform
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_platform
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_axum
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_axum
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_axum
       - name: Wait for crates.io index
         run: sleep 20
       - name: Publish id_effect_tower
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          DRY_RUN="${{ inputs.dry_run }}"
-          .github/scripts/publish-crate.sh id_effect_tower
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: .github/scripts/publish-crate.sh id_effect_tower
   # ──────────────────────────────────────────────────────────────────────────
   # Create a GitHub Release with auto-generated notes.
   # ──────────────────────────────────────────────────────────────────────────
