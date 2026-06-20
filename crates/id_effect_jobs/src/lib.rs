@@ -3,9 +3,9 @@
 //! | Feature | Types |
 //! |---------|-------|
 //! | `memory` (default) | [`MemoryJobRunner`], [`MemoryOutbox`], [`MemoryBroker`] |
-//! | `apalis` | [`ApalisJobQueue`], [`JobQueue`] |
-//! | `obix` | [`ObixOutbox`], [`ObixInbox`] |
-//! | `kafka` | [`RdKafkaBroker`] |
+//! | `apalis` | `ApalisJobQueue`, `JobQueue` |
+//! | `obix` | `ObixOutbox`, `ObixInbox` |
+//! | `kafka` | `RdKafkaBroker` |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

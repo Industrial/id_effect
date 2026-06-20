@@ -1,4 +1,4 @@
-//! JSON Patch ([RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)) for [`Unknown`](id_effect::schema::Unknown).
+//! JSON Patch ([RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)) for [`Unknown`].
 
 use crate::schema_bridge::{SchemaPathError, create_at_path, get_at_path, set_at_path};
 use id_effect::schema::Unknown;
