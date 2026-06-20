@@ -3,7 +3,7 @@
 //! | Feature | Backend |
 //! |---------|---------|
 //! | `memory` (default) | SQLite [`DurableWorkflowLog`] |
-//! | `duroxide` | [`DuroxideStepJournal`] on shared PostgreSQL + duroxide-pg |
+//! | `duroxide` | `DuroxideStepJournal` on shared PostgreSQL + duroxide-pg |
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

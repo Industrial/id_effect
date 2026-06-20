@@ -4,13 +4,13 @@
 //! ## Modules
 //!
 //! - [`parser`] — [`Parser`] with `map`, `and_then`, `alt`, `many`
-//! - [`byte`] — byte-buffer parsers
+//! - [`mod@byte`] — byte-buffer parsers
 //! - [`json`] — JSON text → [`id_effect::schema::Unknown`]
 //! - [`pretty`] — [`Doc`] documents and the [`Pretty`] trait
 //! - [`codec`] — invertible parse/print [`Codec`]
 //! - [`diff`] — [`Diff`] for value comparisons
 //! - [`effect_bridge`] — parse from [`id_effect::Stream`] chunks
-//! - [`schema_bridge`] — [`Schema`] ↔ text [`Parser`] bridge
+//! - [`schema_bridge`] — [`Schema`](id_effect::Schema) ↔ text [`Parser`] bridge
 //!
 //! ## Book
 //!

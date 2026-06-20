@@ -8,7 +8,7 @@
 //! ## Examples
 //!
 //! See `examples/` (e.g. `109_tokio_end_to_end`). Import [`run_async`], [`run_blocking`],
-//! [`run_fork`], and [`yield_now`] from `id_effect` at the async boundary alongside [`TokioRuntime`].
+//! [`run_fork`](id_effect::run_fork), and [`yield_now`] from `id_effect` at the async boundary alongside [`TokioRuntime`].
 //!
 //! ## Async effects that are not [`Send`] ([`spawn_blocking_run_async`])
 //!
@@ -36,7 +36,7 @@ pub use id_effect::yield_now;
 /// [`tokio::runtime::Handle::block_on`] on the same runtime.
 ///
 /// Use this when the async effect graph is **not** [`Send`] and therefore cannot be scheduled with
-/// [`tokio::spawn`], but still needs the real async interpreter (unlike [`run_fork`], which uses
+/// [`tokio::spawn`], but still needs the real async interpreter (unlike [`run_fork`](id_effect::run_fork), which uses
 /// [`run_blocking`] and only cooperates correctly for sync / spin‑pollable graphs).
 ///
 /// `f` is [`Send`] and runs **on the blocking worker**; it constructs `(Effect, env)` there, matching

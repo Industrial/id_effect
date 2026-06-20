@@ -1,4 +1,4 @@
-//! [`reqwest`](https://docs.rs/reqwest) helpers: [`send`], JSON/schema decode, and client pools.
+//! [`reqwest`](https://docs.rs/reqwest) helpers: `send`, JSON/schema decode, and client pools.
 //!
 //! For portable [`HttpClient`] / [`HttpRequest`] boundaries, use the parent [`super`] module
 //! (`execute`, `execute_stream`, [`ReqwestHttpClient`]).
