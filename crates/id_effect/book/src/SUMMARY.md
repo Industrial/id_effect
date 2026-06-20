@@ -103,13 +103,6 @@
   - [Mocking Services](./part4/ch15-03-mocking.md)
   - [Property Testing](./part4/ch15-04-property-testing.md)
 
-# Appendices
-
-- [API Quick Reference](./appendix-a-api-reference.md)
-- [Migrating from `async fn` to effects](./appendix-b-migration.md)
-- [Glossary](./appendix-c-glossary.md)
-- [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
-
 # Part V: Functional Patterns
 
 - [Optics (`id_effect_optics`)](./part5/ch18-00-optics.md)
