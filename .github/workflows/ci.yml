@@ -128,7 +128,14 @@ jobs:
         with:
           key: ${{ matrix.toolchain }}-${{ matrix.os }}
       - name: cargo test (workspace)
-        run: cargo test --workspace --all-features
+        shell: bash
+        run: |
+          # rdkafka (kafka feature) does not build on Windows — skip optional features there.
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cargo test --workspace
+          else
+            cargo test --workspace --all-features
+          fi
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────
