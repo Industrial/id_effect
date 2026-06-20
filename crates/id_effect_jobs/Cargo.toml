@@ -51,9 +51,7 @@ rdkafka = { version = "0.37", optional = true, default-features = false, feature
 ] }
 
 [dev-dependencies]
-id_effect_events = { path = "../id_effect_events", features = [
-  "es-entity",
-] }
+id_effect_events = { path = "../id_effect_events", features = ["es-entity"] }
 id_effect_workflow = { path = "../id_effect_workflow", default-features = false, features = [
   "duroxide",
 ] }
