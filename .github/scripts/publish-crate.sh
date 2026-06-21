@@ -21,11 +21,15 @@ if echo "$output" | grep -qiE 'already (uploaded|exists)'; then
     exit 0
 fi
 if echo "$output" | grep -qi 'required permissions'; then
-    echo "::warning::$pkg publish denied (403) — token may lack publish-new scope or crate allowlist entry"
-    exit 0
+    echo "::error::$pkg publish denied (403) — token lacks publish-new scope or crate allowlist entry"
+    exit 1
+fi
+if echo "$output" | grep -qi 'readme .* does not appear to exist'; then
+    echo "::error::$pkg missing readme declared in Cargo.toml"
+    exit 1
 fi
 if echo "$output" | grep -qi 'no matching package named'; then
-    echo "::warning::$pkg publish skipped — registry dependency not published yet"
-    exit 0
+    echo "::error::$pkg publish blocked — internal dependency not on crates.io yet (check publish level order)"
+    exit 1
 fi
 exit "$code"
