@@ -27,4 +27,4 @@ Per-index projection methods on `CapList` (arities 1–8): `project_at_0` … `p
 ## Consequences
 
 - Book/examples drop `zoom_env` + `CapWidenSecond` for common composition
-- Pre-publish 3.0.0 ships with automatic single-key subtyping
+- Pre-publish 0.3.0 ships with automatic single-key subtyping
