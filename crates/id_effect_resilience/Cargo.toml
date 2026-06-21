@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_resilience"
-version = "3.0.0"
+version = "0.3.0"
 edition = "2024"
 description = "Resilience patterns — circuit breaker, rate limiter, bulkhead, hedged requests — for id_effect"
 license = "CC-BY-SA-4.0"
@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 name = "id_effect_resilience"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "3.0.0" }
+id_effect = { path = "../id_effect", version = "0.3.0" }
 tokio = { version = "1.50.0", features = ["sync", "time"] }
 
 [dev-dependencies]

@@ -63,14 +63,7 @@ jobs:
             fi
           done
           PLATFORM_VER=$(grep -m1 '^version = ' crates/id_effect_platform/Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
-          case "$VERSION" in
-            3.0.0)
-              EXPECTED_PLATFORM="4.0.0"
-              ;;
-            *)
-              EXPECTED_PLATFORM="$VERSION"
-              ;;
-          esac
+          EXPECTED_PLATFORM="$VERSION"
           if [ "$PLATFORM_VER" != "$EXPECTED_PLATFORM" ]; then
             echo "MISMATCH: crates/id_effect_platform/Cargo.toml has version $PLATFORM_VER, expected $EXPECTED_PLATFORM for release $VERSION"
             MISMATCH=1

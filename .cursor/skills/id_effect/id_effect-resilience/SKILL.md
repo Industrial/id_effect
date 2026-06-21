@@ -75,7 +75,7 @@ let n = match_effect!(Msg, msg, {
 ## id_effect_resilience
 
 ```toml
-id_effect_resilience = { path = "../id_effect_resilience", version = "3.0.0" }
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.3.0" }
 ```
 
 ```rust

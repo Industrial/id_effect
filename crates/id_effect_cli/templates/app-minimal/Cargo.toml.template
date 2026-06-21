@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
-id_effect = { path = "{{id_effect_path}}", version = "3.0.0" }
-id_effect_cli = { path = "{{id_effect_cli_path}}", version = "3.0.0" }
+id_effect = { path = "{{id_effect_path}}", version = "0.3.0" }
+id_effect_cli = { path = "{{id_effect_cli_path}}", version = "0.3.0" }
