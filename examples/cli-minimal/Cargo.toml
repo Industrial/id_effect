@@ -23,8 +23,8 @@ clap = { version = "4.5", default-features = false, features = [
   "usage",
   "error-context",
 ] }
-id_effect = { path = "../../crates/id_effect", version = "3.0.0" }
-id_effect_cli = { path = "../../crates/id_effect_cli", version = "3.0.0", features = [
+id_effect = { path = "../../crates/id_effect", version = "0.3.0" }
+id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.3.0", features = [
   "clap",
 ] }
-id_effect_config = { path = "../../crates/id_effect_config", version = "3.0.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.3.0" }

@@ -24,7 +24,7 @@ acceptance_criteria:
   - id-effect-diagnose reads provider manifests with JSON CI mode
   - capability error diagnostics with call-site context and snapshots
   - proptest fuzz for CapabilityGraph invariants
-  - id_effect 3.0.0 and id_effect_platform 4.0.0 release with migration guide
+  - id_effect 0.3.0 and id_effect_platform 4.0.0 release with migration guide
 non_goals:
   - Backwards compatibility shims or deprecation periods
   - CapEnv alias types alongside CapList
@@ -35,4 +35,4 @@ non_goals:
 
 # id_effect v2 DI Maturity
 
-Clean-break adoption of v2 DI: mandatory compile-time caps, delete all v1/legacy APIs, production provider patterns, expanded quality gates, and coordinated id_effect 3.0.0 release.
+Clean-break adoption of v2 DI: mandatory compile-time caps, delete all v1/legacy APIs, production provider patterns, expanded quality gates, and coordinated id_effect 0.3.0 release.

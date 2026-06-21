@@ -51,5 +51,5 @@ Blanket: `CapList<(A, B, …)>` widens to `CapList<(A,)>` when `A` is the first 
 ## Consequences
 
 - `CapEnv1…6` deleted; migration: `CapEnv3<A,B,C>` → `CapList<(A,B,C)>`.
-- Semver **3.0.0** for `id_effect`; **4.0.0** for `id_effect_platform`.
+- Semver **0.3.0** for `id_effect`; **4.0.0** for `id_effect_platform`.
 - Optional/refresh/shared semantics documented for cookbook examples in waves 4–5.

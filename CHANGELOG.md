@@ -20,7 +20,7 @@ Bulk pure transforms on collections and stream chunks now use Rayon when input l
 
 - `*_par` methods — use primary API or `*_with(Parallelism::ForceParallel, …)`
 
-## 3.0.0 — DI maturity (breaking)
+## 0.3.0 — DI maturity (breaking)
 
 Semver-major release completing capability-first DI adoption. See [appendix-b-migration.md](crates/id_effect/book/src/appendix-b-migration.md) and [ADR 0004](docs/adrs/0004-provider-parity-and-cap-subtyping.md).
 
@@ -47,9 +47,9 @@ Semver-major release completing capability-first DI adoption. See [appendix-b-mi
 
 | Crate | Version |
 |-------|---------|
-| `id_effect` | **3.0.0** |
+| `id_effect` | **0.3.0** |
 | `id_effect_platform` | **4.0.0** |
-| workspace adapters | **3.0.0** |
+| workspace adapters | **0.3.0** |
 
 ## 2.0.0 — Capability-first DI (breaking)
 

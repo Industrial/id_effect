@@ -19,7 +19,7 @@ non_goals:
   - Multi-key combinatorial subset CapBind
   - Function attribute effect for return-type R inference
   - caps macro key-order normalization
-  - Semver fork; pre-publish 3.0.0 only
+  - Semver fork; pre-publish 0.3.0 only
 ---
 
 # id_effect Cap DI Ergonomics

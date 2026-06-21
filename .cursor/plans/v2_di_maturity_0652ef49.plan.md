@@ -1,6 +1,6 @@
 ---
 name: v2 DI maturity
-overview: "Maestro heavy-mode mission `id-effect-v2-di-maturity`: clean-break adoption of v2 DI—mandatory compile-time caps, delete all v1/legacy APIs (no shims), production provider patterns, expanded quality gates, and a coordinated id_effect 3.0.0 release."
+overview: "Maestro heavy-mode mission `id-effect-v2-di-maturity`: clean-break adoption of v2 DI—mandatory compile-time caps, delete all v1/legacy APIs (no shims), production provider patterns, expanded quality gates, and a coordinated id_effect 0.3.0 release."
 todos:
   - id: leaf-spec-di-maturity
     content: "Wave 0: Author + validate .maestro/specs/id-effect-v2-di-maturity.md; mission_from_spec + decompose 20 tasks"
@@ -63,7 +63,7 @@ todos:
     content: "Wave 7 (#19): Proptest/fuzz for CapabilityGraph invariants"
     status: completed
   - id: leaf-release-3-0-0
-    content: "Wave 8 (#20): Release id_effect 3.0.0 + CHANGELOG + migration guide (no compat shims)"
+    content: "Wave 8 (#20): Release id_effect 0.3.0 + CHANGELOG + migration guide (no compat shims)"
     status: pending
 isProject: false
 ---
@@ -95,7 +95,7 @@ isProject: false
 | **7** `IntoBind` refs in logger/config; v1 `context/`/`layer/` still **public** via `HasTag`, `Matcher`, `Effect::provide` | Blast-radius subagent | Leaves #5,#9 blocked until migration (#5 first) |
 | trybuild: **2** cases only | `crates/id_effect/tests/ui/` | Leaf #11 expands corpus |
 | `ambient.rs` deprecated, **16** internal refs in config only | Config map | Leaf #10 is low-risk, isolated |
-| `id_effect` **2.0.0** vs `id_effect_platform` **3.0.0** | Cargo.toml | Leaf #20 coordinates semver |
+| `id_effect` **2.0.0** vs `id_effect_platform` **0.3.0** | Cargo.toml | Leaf #20 coordinates semver |
 | No successor spec after `id-effect-v2-di-completion` | Maestro state subagent | New slug: **`id-effect-v2-di-maturity`** |
 | `maestro_setup_check` **ok**; handoffs **empty** | Maestro MCP Phase 0 | Ready to plan |
 
@@ -105,7 +105,7 @@ isProject: false
 
 1. **Scope:** All 20 post-completion directions — one heavy mission, 20 leaves, 10 waves.
 2. **No backwards compatibility:** No deprecation periods, alias types, dual APIs, or `#[deprecated]` retention. Remove legacy symbols in the same release that introduces replacements. Workspace migrates atomically.
-3. **Semver:** **id_effect 3.0.0** semver-major (leaf #20); **id_effect_platform 4.0.0** (depends on id_effect 3.0). No 2.1.x intermediate.
+3. **Semver:** **id_effect 0.3.0** semver-major (leaf #20); **id_effect_platform 4.0.0** (depends on id_effect 3.0). No 2.1.x intermediate.
 4. **Compile-time caps:** **Mandatory** from Wave 2 — all multi-capability public effects use `caps!(…)`; proc-macro infers required caps from `require!(K)` in `effect!`. **Ban** public `Effect<_, _, Env>` and bare `Effect<_, _, ()>` when body uses capabilities.
 5. **Cap typing:** **Delete** `CapEnv1…CapEnv6`; single model: const-generic `CapList` + `caps!` only (#2).
 6. **Macro surface:** **Delete** `define_capability!`, `require!(env, K)`, manual `impl ProviderSpec` in workspace crates — only `#[capability]`, `require!(K)`, `#[derive(ProviderSpec)]`.
@@ -124,7 +124,7 @@ isProject: false
 
 ## Executive summary
 
-v2 DI Completion built the runtime and macros; **the workspace still codes against v1 patterns** (`IntoBind`, bare `Env`, hand-written `ProviderSpec`). This mission is a **second clean break**: typed caps become the **only** public contract, all legacy APIs are **deleted** (not deprecated), v1 modules are removed entirely, and **3.0.0** ships with a breaking-change migration guide.
+v2 DI Completion built the runtime and macros; **the workspace still codes against v1 patterns** (`IntoBind`, bare `Env`, hand-written `ProviderSpec`). This mission is a **second clean break**: typed caps become the **only** public contract, all legacy APIs are **deleted** (not deprecated), v1 modules are removed entirely, and **0.3.0** ships with a breaking-change migration guide.
 
 ---
 
@@ -395,7 +395,7 @@ v2 DI Completion built the runtime and macros; **the workspace still codes again
 
 ### leaf-release-3-0-0 *(#20)*
 
-**Modify:** Workspace `Cargo.toml` versions → **id_effect 3.0.0**, **id_effect_platform 4.0.0**; [`CHANGELOG.md`](CHANGELOG.md) breaking section; book [`appendix-b-migration.md`](crates/id_effect/book/src/appendix-b-migration.md) 2.x→3.0 mapping table.
+**Modify:** Workspace `Cargo.toml` versions → **id_effect 0.3.0**, **id_effect_platform 4.0.0**; [`CHANGELOG.md`](CHANGELOG.md) breaking section; book [`appendix-b-migration.md`](crates/id_effect/book/src/appendix-b-migration.md) 2.x→3.0 mapping table.
 
 **AC:**
 - All workspace crates version-aligned; no `2.x` compat re-exports
@@ -500,7 +500,7 @@ flowchart TB
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| 3.0.0 breaks downstream users | High | Explicit CHANGELOG + appendix-b mapping; no shim layer (user choice) |
+| 0.3.0 breaks downstream users | High | Explicit CHANGELOG + appendix-b mapping; no shim layer (user choice) |
 | Compile-time caps macro complexity | High | Wave 2 blocked until CapList lands; trybuild gates every leaf |
 | context/layer deletion breaks matchers | High | Relocate `HasTag`/`Matcher` in same PR as deletion |
 | CapList const-generic complexity | Medium | ADR 0004 documents encoding; falsify with integration tests, not alias fallback |
