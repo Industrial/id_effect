@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_ai"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2024"
 license = "CC-BY-SA-4.0"
 description = "Vendor-neutral LLM client traits and streaming for id_effect"

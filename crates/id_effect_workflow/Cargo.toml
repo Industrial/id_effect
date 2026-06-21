@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_workflow"
-version = "0.3.1"
+version = "0.3.0"
 edition = "2024"
 description = "Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics"
 license = "CC-BY-SA-4.0"
@@ -57,7 +57,7 @@ optional = true
 
 [dependencies.id_effect_sql_pg]
 path = "../id_effect_sql_pg"
-version = "0.2.0"
+version = "0.3.0"
 optional = true
 
 [dependencies.tokio]

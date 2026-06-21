@@ -1,6 +1,6 @@
 [package]
 name = "id_effect_sql_pg"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "CC-BY-SA-4.0"
 description = "PostgreSQL driver for id_effect_sql — sqlx pool and PgSqlClient"
@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.3.0" }
-id_effect_sql = { path = "../id_effect_sql", version = "0.1.0" }
+id_effect_sql = { path = "../id_effect_sql", version = "0.3.0" }
 sqlx = { version = "0.8", default-features = false, features = [
   "runtime-tokio",
   "postgres",

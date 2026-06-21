@@ -15,7 +15,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.3.0" }
-id_effect_workflow = { path = "../id_effect_workflow", version = "0.3.1", default-features = false, features = [
+id_effect_workflow = { path = "../id_effect_workflow", version = "0.3.0", default-features = false, features = [
   "memory",
 ] }
 serde = { version = "1", features = ["derive"] }
