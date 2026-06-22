@@ -33,7 +33,7 @@ default = []
 es-entity = ["dep:sqlx", "dep:id_effect_sql_pg", "dep:tokio", "dep:es-entity"]
 
 [dependencies.sqlx]
-version = "0.8"
+version = "0.9"
 default-features = false
 features = ["runtime-tokio", "postgres"]
 optional = true

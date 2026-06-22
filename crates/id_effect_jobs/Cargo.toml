@@ -29,7 +29,7 @@ thiserror = "2"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
-sqlx = { version = "0.8", optional = true, default-features = false, features = [
+sqlx = { version = "0.9", optional = true, default-features = false, features = [
   "runtime-tokio",
   "postgres",
   "uuid",
