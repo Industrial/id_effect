@@ -46,7 +46,7 @@ apalis-postgres = { version = "1.0.0-rc.8", optional = true, default-features = 
 ] }
 obix = { version = "0.2.28", optional = true, default-features = true }
 job = { version = "0.6", optional = true, default-features = true }
-rdkafka = { version = "0.37", optional = true, default-features = false, features = [
+rdkafka = { version = "0.39", optional = true, default-features = false, features = [
   "tokio",
 ] }
 
