@@ -6,7 +6,7 @@ description = "Durable step log with SQLite (memory) or duroxide-pg (production)
 license = "CC-BY-SA-4.0"
 repository = "https://github.com/Industrial/id_effect"
 readme = "README.md"
-keywords = ["effect", "workflow", "durable", "sqlite", "saga", "duroxide"]
+keywords = ["effect", "workflow", "durable", "sqlite", "saga"]
 categories = ["database"]
 
 [lints.rust]
