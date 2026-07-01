@@ -53,6 +53,13 @@ impl OutboxRecord {
 }
 
 /// Transactional outbox persistence (append + mark-published).
+///
+/// Implemented by [`MemoryOutbox`] for tests and local demos. The obix-backed
+/// [`ObixOutbox`](crate::ObixOutbox) deliberately does **not** implement this trait:
+/// its relay path is driven by obix's native
+/// [`Outbox::register_event_handler`](obix::Outbox::register_event_handler),
+/// which persists the cursor in `job_executions.execution_state_json` rather than
+/// mutating a `published` flag on rows.
 pub trait OutboxTable: Send + Sync {
   /// Insert a row (typically in the same DB transaction as domain writes).
   fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()>;

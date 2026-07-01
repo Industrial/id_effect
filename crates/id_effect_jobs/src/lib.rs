@@ -4,7 +4,7 @@
 //! |---------|-------|
 //! | `memory` (default) | [`MemoryJobRunner`], [`MemoryOutbox`], [`MemoryBroker`] |
 //! | `apalis` | `ApalisJobQueue`, `JobQueue` |
-//! | `obix` | `ObixOutbox`, `ObixInbox` |
+//! | `obix` | `ObixOutbox` (relay via `register_event_handler`), `ObixInbox` |
 //! | `kafka` | `RdKafkaBroker` |
 
 #![forbid(unsafe_code)]
