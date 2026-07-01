@@ -1,13 +1,4 @@
 //! Transactional outbox backed by [obix](https://docs.rs/obix) on a shared [`PgPool`](sqlx::PgPool).
-//!
-//! `insert` persists a [`JobsOutboxEvent`] row through obix; the relay path is driven by
-//! obix's native [`Outbox::register_event_handler`], which persists the per-consumer cursor
-//! in `job_executions.execution_state_json`. Restarts resume from the last acknowledged
-//! [`obix::EventSequence`].
-//!
-//! `ObixOutbox` deliberately does not implement [`OutboxTable`]: `OutboxTable`'s
-//! `fetch_unpublished` / `mark_published` / `unpublished_count` presume a mutable
-//! `published` flag on rows, which obix does not model.
 
 use id_effect::Effect;
 use obix::{MailboxConfig, Outbox, OutboxEventHandler, OutboxEventJobConfig};
@@ -73,9 +64,7 @@ impl ObixOutbox {
     &self.pool
   }
 
-  /// Append an outbox row in its own transaction (obix `publish_persisted_in_op`).
-  ///
-  /// Inherent counterpart to [`OutboxTable::insert`]; same signature.
+  /// Append an outbox row in its own transaction.
   pub fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()> {
     let inner = self.inner.clone();
     let stored = record.clone();
@@ -99,10 +88,6 @@ impl ObixOutbox {
   }
 
   /// Register an obix-native relay handler.
-  ///
-  /// obix persists the relay cursor in `job_executions.execution_state_json`, so restarts
-  /// resume from the last acknowledged [`obix::EventSequence`]. Each event invocation gets
-  /// a fresh [`es_entity::DbOp`] so downstream writes acknowledge the cursor atomically.
   pub async fn register_event_handler<H>(
     &self,
     jobs: &mut ::job::Jobs,

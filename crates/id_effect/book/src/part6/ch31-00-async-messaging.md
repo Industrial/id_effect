@@ -27,7 +27,7 @@ Enable: `id_effect_jobs` features `apalis` (+ `postgres`).
 
 ## Transactional outbox — obix
 
-[`ObixOutbox`](../../../id_effect_jobs/struct.ObixOutbox.html) persists [`OutboxRecord`](../../../id_effect_jobs/struct.OutboxRecord.html) rows through [obix](https://docs.rs/obix) on the shared pool. Relay is driven by obix's native [`register_event_handler`](https://docs.rs/obix/latest/obix/struct.Outbox.html#method.register_event_handler), which persists the per-consumer cursor in `job_executions.execution_state_json` — restarts resume from the last acknowledged `EventSequence`. `ObixOutbox` does not implement `OutboxTable` because obix's append-only log has no shared `published` flag.
+[`ObixOutbox`](../../../id_effect_jobs/struct.ObixOutbox.html) persists [`OutboxRecord`](../../../id_effect_jobs/struct.OutboxRecord.html) rows through [obix](https://docs.rs/obix) on the shared pool. Relay is driven by obix's [`register_event_handler`](https://docs.rs/obix/latest/obix/struct.Outbox.html#method.register_event_handler); the per-consumer cursor lives in `job_executions.execution_state_json`.
 
 For unit tests only: `memory` feature + [`MemoryOutbox`](../../../id_effect_jobs/struct.MemoryOutbox.html) + [`relay_outbox`](../../../id_effect_jobs/fn.relay_outbox.html).
 

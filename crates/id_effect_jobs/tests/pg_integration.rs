@@ -28,7 +28,6 @@ async fn apalis_enqueue_smoke() {
   assert_eq!(record.spec.name, "smoke");
 }
 
-/// Handler used only to prove the native relay wiring compiles and registers.
 struct NoopHandler;
 
 impl OutboxEventHandler<JobsOutboxEvent> for NoopHandler {
@@ -56,8 +55,6 @@ async fn obix_outbox_smoke() {
   assert_eq!(stored.event_type, "SmokeEvent");
   assert!(!stored.id.is_empty());
 
-  // Wiring smoke: registering an obix-native handler through the new API path.
-  // End-to-end drain coverage lives in obix's own `outbox_event_handler` tests.
   let job_config = ::job::JobSvcConfig::builder()
     .pool(pool.clone())
     .build()
