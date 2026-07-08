@@ -130,22 +130,21 @@ pub type Caps = Env;
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::Cap;
   use crate::provide;
-
-  #[::id_effect::capability(u32)]
-  #[expect(dead_code)]
-  struct Counter;
-  #[::id_effect::capability(String)]
-  #[expect(dead_code)]
+  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+  struct Counter(pub u32);
+  #[derive(Clone, Copy)]
+  #[allow(dead_code)]
   struct Name;
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(CounterKey)]
+  #[provides(Counter)]
   struct CounterLive;
   impl CounterLive {
     #[allow(clippy::new_ret_no_self)]
-    fn new() -> u32 {
-      1
+    fn new() -> Counter {
+      Counter(1)
     }
   }
 
@@ -153,33 +152,33 @@ mod tests {
   fn env_insert_get_and_has() {
     let mut env = Env::new();
     assert!(env.is_empty());
-    env.insert::<CounterKey>(42);
+    env.insert::<Cap<Counter>>(Counter(42));
     assert_eq!(env.len(), 1);
-    assert!(env.has::<CounterKey>());
-    assert_eq!(*env.get::<CounterKey>(), 42);
+    assert!(env.has::<Cap<Counter>>());
+    assert_eq!(env.get::<Cap<Counter>>().0, 42);
   }
 
   #[test]
   fn env_try_get_missing() {
     let env = Env::new();
-    let err = env.try_get::<CounterKey>().unwrap_err();
+    let err = env.try_get::<Cap<Counter>>().unwrap_err();
     assert!(matches!(err, CapabilityError::Missing(_)));
   }
 
   #[test]
   fn env_get_and_try_get_after_insert() {
     let mut env = Env::new();
-    env.insert::<CounterKey>(7u32);
-    assert_eq!(*env.get::<CounterKey>(), 7);
-    assert_eq!(*env.try_get::<CounterKey>().unwrap(), 7);
+    env.insert::<Cap<Counter>>(Counter(7));
+    assert_eq!(env.get::<Cap<Counter>>().0, 7);
+    assert_eq!(env.try_get::<Cap<Counter>>().unwrap().0, 7);
   }
 
   #[test]
   fn env_debug_and_eq() {
     let mut a = Env::new();
-    a.insert::<CounterKey>(1);
+    a.insert::<Cap<Counter>>(Counter(1));
     let mut b = Env::new();
-    b.insert::<CounterKey>(2);
+    b.insert::<Cap<Counter>>(Counter(2));
     assert_eq!(format!("{a:?}"), "Env { len: 1 }");
     assert_eq!(a, b);
   }
@@ -196,7 +195,7 @@ mod tests {
   fn env_scoped_builds_child() {
     let parent = Env::new();
     let child = parent.scoped([provide!(CounterLive)]).unwrap();
-    assert!(child.has::<CounterKey>());
+    assert!(child.has::<Cap<Counter>>());
   }
 
   #[test]

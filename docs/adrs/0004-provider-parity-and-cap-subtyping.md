@@ -18,7 +18,7 @@ Replace fixed `CapEnvN` wrappers with a single generic:
 pub struct CapList<Ks>(Env, PhantomData<Ks>);
 ```
 
-`Ks` is a tuple of `CapabilityKey` types `(K0, K1, …)`. The `cap_keys!` macro generates `CapKeys` impls for arities 0–16. `caps!(K0, K1, …)` expands to `CapList<(K0, K1, …)>`. `caps!()` remains `Env`.
+`Ks` is a tuple of `Capability` types `(K0, K1, …)`. The `cap_keys!` macro generates `CapKeys` impls for arities 0–16. `caps!(K0, K1, …)` expands to `CapList<(K0, K1, …)>`. `caps!()` remains `Env`.
 
 ### Capability-set subtyping (`CapWiden`)
 

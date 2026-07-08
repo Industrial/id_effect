@@ -39,7 +39,7 @@ pub use propagation::{
   extract_trace_context_from_headers, inject_current_trace_context,
   inject_trace_context_into_headers, install_w3c_propagators, install_w3c_trace_context_propagator,
 };
-pub use providers::{OtelRuntimeKey, provide_otel_runtime};
+pub use providers::{OtelRuntime, provide_otel_runtime};
 pub use shutdown::{
   graceful_otel_shutdown, run_until_shutdown, shutdown_otel_on_signal,
   shutdown_otel_on_signal_with_timeout,

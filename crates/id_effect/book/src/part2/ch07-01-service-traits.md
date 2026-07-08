@@ -15,27 +15,26 @@ pub trait UserRepository: Send + Sync {
 
 Conventions:
 
-- Methods return `Effect<_, _, ()>` — the service method itself has no extra environment; callers carry `UserRepoKey` in `caps!`.
+- Methods return `Effect<_, _, ()>` — the service method itself has no extra environment; callers carry `UserRepo` in `caps!`.
 - `Send + Sync` on the trait so handles like `Arc<dyn UserRepository>` work across fibers.
 - Small, verb-oriented methods (`get_user`, not `users`).
 
-## Define the capability key
+## Define the capability service
 
 ```rust
-#[::id_effect::capability(Arc<dyn UserRepository>)]
 struct UserRepo;
 ```
 
-This generates `UserRepoKey: CapabilityKey` with `Value = Arc<dyn UserRepository>`.
+This generates `UserRepo: Capability` with `Value = Arc<dyn UserRepository>`.
 
 ## Use `~Key` in callers
 
 ```rust
 use id_effect::{effect, require, caps, succeed};
 
-fn get_user_profile(id: u64) -> Effect<UserProfile, AppError, caps!(UserRepoKey)> {
+fn get_user_profile(id: u64) -> Effect<UserProfile, AppError, caps!(UserRepo)> {
     effect!(|r| {
-        let repo = ~UserRepoKey;
+        let repo = ~UserRepo;
         let user = ~ repo.get_user(id).map_error(AppError::Db);
         UserProfile::from(user)
     })
@@ -54,12 +53,8 @@ trait AppService {
 // GOOD — separate capabilities
 trait UserRepository { /* … */ }
 trait EmailService { /* … */ }
-
-#[::id_effect::capability(Arc<dyn UserRepository>)]
 struct UserRepo;
-
-#[::id_effect::capability(Arc<dyn EmailService>)]
 struct Email;
 ```
 
-Functions declare exactly what they need: `caps!(UserRepoKey, EmailKey)`.
+Functions declare exactly what they need: `caps!(UserRepo, Email)`.

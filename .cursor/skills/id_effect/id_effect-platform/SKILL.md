@@ -13,10 +13,10 @@ description: Platform capabilities — HttpClient, FileSystem, ProcessRuntime in
 
 ## Key APIs
 
-- HTTP (portable): `HttpClientKey`, `execute`, `execute_stream`, `provide_reqwest_http_client`
+- HTTP (portable): `HttpClientService`, `execute`, `execute_stream`, `provide_reqwest_http_client`
 - HTTP (reqwest): `http::reqwest::{send, json_schema, provide_reqwest_client, provide_reqwest_pool}`
-- FS: `FileSystemKey`, `read`, `exists`, `LiveFileSystem`, `TestFileSystem`
-- Process: `ProcessRuntimeKey`, `spawn`, `spawn_wait`, `child_kill`, `child_wait`
+- FS: `FileSystemService`, `read`, `exists`, `LiveFileSystem`, `TestFileSystem`
+- Process: `ProcessRuntimeService`, `spawn`, `spawn_wait`, `child_kill`, `child_wait`
 
 ## Related skills
 

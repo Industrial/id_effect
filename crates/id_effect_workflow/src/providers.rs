@@ -3,40 +3,23 @@
 #[cfg(feature = "duroxide")]
 mod duroxide_provider {
   use crate::duroxide_journal::{DuroxideStepJournal, DuroxideWorkflowRuntime};
-  use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+  use id_effect::{
+    Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode,
+  };
   use sqlx::PgPool;
   use std::sync::Arc;
 
-  mod step_journal_cap {
-    use std::sync::Arc;
+  /// Shared duroxide step journal on PostgreSQL.
+  pub type DuroxideProvider = Arc<DuroxideStepJournal>;
 
-    use crate::duroxide_journal::DuroxideStepJournal;
-
-    /// Shared duroxide step journal on PostgreSQL.
-    #[::id_effect::capability(Arc<DuroxideStepJournal>)]
-    #[allow(dead_code)]
-    pub struct DuroxideJournal;
-  }
-
-  mod runtime_cap {
-    use std::sync::Arc;
-
-    use crate::duroxide_journal::DuroxideWorkflowRuntime;
-
-    /// duroxide runtime configuration handle.
-    #[::id_effect::capability(Arc<DuroxideWorkflowRuntime>)]
-    #[allow(dead_code)]
-    pub struct WorkflowRuntime;
-  }
-
-  pub use runtime_cap::WorkflowRuntimeKey;
-  pub use step_journal_cap::DuroxideJournalKey as DuroxideProviderKey;
+  /// duroxide runtime configuration handle.
+  pub type WorkflowRuntime = Arc<DuroxideWorkflowRuntime>;
 
   /// Register step journal + runtime metadata providers.
   pub fn provide_duroxide_pg(pool: PgPool, database_url: impl Into<String>) -> ProviderBox {
     struct Node {
-      journal: Arc<DuroxideStepJournal>,
-      runtime: Arc<DuroxideWorkflowRuntime>,
+      journal: DuroxideProvider,
+      runtime: WorkflowRuntime,
     }
 
     impl ProviderNode for Node {
@@ -49,17 +32,17 @@ mod duroxide_provider {
       }
 
       fn provides(&self) -> CapabilityId {
-        DuroxideProviderKey::id()
+        Cap::<DuroxideProvider>::id()
       }
 
       fn cap_name(&self) -> &str {
-        "DuroxideProviderKey"
+        "DuroxideProvider"
       }
 
       fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
         let mut out = deps.clone();
-        out.insert::<DuroxideProviderKey>(Arc::clone(&self.journal));
-        out.insert::<WorkflowRuntimeKey>(Arc::clone(&self.runtime));
+        out.insert::<Cap<DuroxideProvider>>(Arc::clone(&self.journal));
+        out.insert::<Cap<WorkflowRuntime>>(Arc::clone(&self.runtime));
         Ok(out)
       }
     }
@@ -72,4 +55,4 @@ mod duroxide_provider {
 }
 
 #[cfg(feature = "duroxide")]
-pub use duroxide_provider::{DuroxideProviderKey, WorkflowRuntimeKey, provide_duroxide_pg};
+pub use duroxide_provider::{DuroxideProvider, WorkflowRuntime, provide_duroxide_pg};

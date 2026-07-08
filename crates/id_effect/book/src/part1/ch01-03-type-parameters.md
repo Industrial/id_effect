@@ -65,7 +65,7 @@ Unlike traditional error handling where you sprinkle `.map_err()` everywhere, wi
 
 Here is where effects get interesting. The `R` parameter represents the **environment** — the dependencies this effect needs in order to run.
 
-When an effect needs services, express `R` with [`caps!`](../part2/ch04-00-r-parameter.md) and capability **keys** (Chapter 5 names keys fully; use `DatabaseKey`, not a bare `Database` type):
+When an effect needs services, express `R` with [`caps!`](../part2/ch04-00-r-parameter.md) and capability **keys** (Chapter 5 names keys fully; use `Database`, not a bare `Database` type):
 
 ```rust
 use id_effect::{Effect, caps, effect, provide, require, run_with, succeed};
@@ -73,19 +73,19 @@ use id_effect::{Effect, caps, effect, provide, require, run_with, succeed};
 // Self-contained — R is ()
 let standalone: Effect<i32, String, ()> = succeed(42);
 
-// Needs DatabaseKey at the edge
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+// Needs Database at the edge
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
     effect!(|r| {
-        let db = ~DatabaseKey;
+        let db = ~Database;
         Ok(db.fetch_user(id))
     })
 }
 
 // Needs two keys
-fn get_user_logged(id: u64) -> Effect<User, DbError, caps!(DatabaseKey, LoggerKey)> {
+fn get_user_logged(id: u64) -> Effect<User, DbError, caps!(Database, EffectLogger)> {
     effect!(|r| {
-        let db = ~DatabaseKey;
-        let log = ~LoggerKey;
+        let db = ~Database;
+        let log = ~EffectLogger;
         let user = db.fetch_user(id)?;
         log.info(&format!("fetched {}", user.id));
         Ok(user)
@@ -109,19 +109,19 @@ The `R` parameter is why id_effect offers compile-time dependency injection.
 fn process_order(order: Order) -> Effect<
     Receipt,
     OrderError,
-    caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey),
+    caps!(Database, PaymentGateway, EmailService, EffectLogger),
 >
 ```
 
-Just from the type you know success, error, and **which capability keys** must be wired before `run_with`.
+Just from the type you know success, error, and **which capability services** must be wired before `run_with`.
 
 ## R flows through composition
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
-fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(EmailServiceKey)> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
+fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(EmailService)> { ... }
 
-fn notify_user(id: u64) -> Effect<(), AppError, caps!(DatabaseKey, EmailServiceKey)> {
+fn notify_user(id: u64) -> Effect<(), AppError, caps!(Database, EmailService)> {
     effect!(|r| {
         let user = ~ get_user(id).map_error(AppError::Db);
         ~ send_email(&user.email, "Hello!").map_error(AppError::Email);
@@ -167,11 +167,11 @@ Effect<String, Never, ()>
 // Produces i32, can fail with ParseError, needs nothing
 Effect<i32, ParseError, ()>
 
-// Produces User, can fail with DbError, needs DatabaseKey
-Effect<User, DbError, caps!(DatabaseKey)>
+// Produces User, can fail with DbError, needs Database
+Effect<User, DbError, caps!(Database)>
 
-// Produces (), can fail with AppError, needs four capability keys
-Effect<(), AppError, caps!(DatabaseKey, CacheKey, LoggerKey)>
+// Produces (), can fail with AppError, needs four capability services
+Effect<(), AppError, caps!(Database, Cache, EffectLogger)>
 ```
 
 With practice, you'll read these as fluently as you read `Result<T, E>`. The extra `R` parameter becomes second nature.

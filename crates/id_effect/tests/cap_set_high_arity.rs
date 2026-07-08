@@ -2,12 +2,13 @@
 
 //! High-arity `CapList` verification and `project_at_*` coverage.
 
+use id_effect::Cap;
 use id_effect::capability::{CapList, CapWiden, CapabilitySet, Env, FromEnv};
 
 macro_rules! cap {
   ($name:ident) => {
-    #[::id_effect::capability(u8)]
-    struct $name;
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    struct $name(u32);
   };
 }
 
@@ -29,42 +30,42 @@ cap!(C14);
 cap!(C15);
 
 type Keys16 = (
-  C0Key,
-  C1Key,
-  C2Key,
-  C3Key,
-  C4Key,
-  C5Key,
-  C6Key,
-  C7Key,
-  C8Key,
-  C9Key,
-  C10Key,
-  C11Key,
-  C12Key,
-  C13Key,
-  C14Key,
-  C15Key,
+  Cap<C0>,
+  Cap<C1>,
+  Cap<C2>,
+  Cap<C3>,
+  Cap<C4>,
+  Cap<C5>,
+  Cap<C6>,
+  Cap<C7>,
+  Cap<C8>,
+  Cap<C9>,
+  Cap<C10>,
+  Cap<C11>,
+  Cap<C12>,
+  Cap<C13>,
+  Cap<C14>,
+  Cap<C15>,
 );
 
 fn env16() -> Env {
   let mut env = Env::new();
-  env.insert::<C0Key>(0);
-  env.insert::<C1Key>(1);
-  env.insert::<C2Key>(2);
-  env.insert::<C3Key>(3);
-  env.insert::<C4Key>(4);
-  env.insert::<C5Key>(5);
-  env.insert::<C6Key>(6);
-  env.insert::<C7Key>(7);
-  env.insert::<C8Key>(8);
-  env.insert::<C9Key>(9);
-  env.insert::<C10Key>(10);
-  env.insert::<C11Key>(11);
-  env.insert::<C12Key>(12);
-  env.insert::<C13Key>(13);
-  env.insert::<C14Key>(14);
-  env.insert::<C15Key>(15);
+  env.insert::<Cap<C0>>(C0(0));
+  env.insert::<Cap<C1>>(C1(1));
+  env.insert::<Cap<C2>>(C2(2));
+  env.insert::<Cap<C3>>(C3(3));
+  env.insert::<Cap<C4>>(C4(4));
+  env.insert::<Cap<C5>>(C5(5));
+  env.insert::<Cap<C6>>(C6(6));
+  env.insert::<Cap<C7>>(C7(7));
+  env.insert::<Cap<C8>>(C8(8));
+  env.insert::<Cap<C9>>(C9(9));
+  env.insert::<Cap<C10>>(C10(10));
+  env.insert::<Cap<C11>>(C11(11));
+  env.insert::<Cap<C12>>(C12(12));
+  env.insert::<Cap<C13>>(C13(13));
+  env.insert::<Cap<C14>>(C14(14));
+  env.insert::<Cap<C15>>(C15(15));
   env
 }
 
@@ -73,7 +74,16 @@ fn cap_list_high_arity_integration() {
   CapList::<Keys16>::verify(&env16()).unwrap();
   assert!(CapList::<Keys16>::verify(&Env::new()).is_err());
 
-  type Keys8 = (C0Key, C1Key, C2Key, C3Key, C4Key, C5Key, C6Key, C7Key);
+  type Keys8 = (
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+  );
   let wide8 = CapList::<Keys8>::new(env16());
   let _ = wide8.clone().project_at_0();
   let _ = wide8.clone().project_at_1();
@@ -85,159 +95,166 @@ fn cap_list_high_arity_integration() {
   let _ = wide8.project_at_7();
 
   let env = env16();
-  CapList::<(C0Key,)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key, C3Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key, C3Key, C4Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key, C3Key, C4Key, C5Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key, C3Key, C4Key, C5Key, C6Key)>::verify(&env).unwrap();
-  CapList::<(C0Key, C1Key, C2Key, C3Key, C4Key, C5Key, C6Key, C7Key)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>,)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>, Cap<C1>)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>, Cap<C1>, Cap<C2>)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>, Cap<C1>, Cap<C2>, Cap<C3>)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>, Cap<C1>, Cap<C2>, Cap<C3>, Cap<C4>)>::verify(&env).unwrap();
+  CapList::<(Cap<C0>, Cap<C1>, Cap<C2>, Cap<C3>, Cap<C4>, Cap<C5>)>::verify(&env).unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
-    C10Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
-    C10Key,
-    C11Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
+    Cap<C10>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
-    C10Key,
-    C11Key,
-    C12Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
+    Cap<C10>,
+    Cap<C11>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
-    C10Key,
-    C11Key,
-    C12Key,
-    C13Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
+    Cap<C10>,
+    Cap<C11>,
+    Cap<C12>,
   )>::verify(&env)
   .unwrap();
   CapList::<(
-    C0Key,
-    C1Key,
-    C2Key,
-    C3Key,
-    C4Key,
-    C5Key,
-    C6Key,
-    C7Key,
-    C8Key,
-    C9Key,
-    C10Key,
-    C11Key,
-    C12Key,
-    C13Key,
-    C14Key,
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
+    Cap<C10>,
+    Cap<C11>,
+    Cap<C12>,
+    Cap<C13>,
+  )>::verify(&env)
+  .unwrap();
+  CapList::<(
+    Cap<C0>,
+    Cap<C1>,
+    Cap<C2>,
+    Cap<C3>,
+    Cap<C4>,
+    Cap<C5>,
+    Cap<C6>,
+    Cap<C7>,
+    Cap<C8>,
+    Cap<C9>,
+    Cap<C10>,
+    Cap<C11>,
+    Cap<C12>,
+    Cap<C13>,
+    Cap<C14>,
   )>::verify(&env)
   .unwrap();
 
   let mut partial = Env::new();
-  assert!(CapList::<(C0Key,)>::verify(&partial).is_err());
-  partial.insert::<C0Key>(0);
-  assert!(CapList::<(C0Key, C1Key)>::verify(&partial).is_err());
-  partial.insert::<C1Key>(1);
-  assert!(CapList::<(C0Key, C1Key, C2Key)>::verify(&partial).is_err());
+  assert!(CapList::<(Cap<C0>,)>::verify(&partial).is_err());
+  partial.insert::<Cap<C0>>(C0(0));
+  assert!(CapList::<(Cap<C0>, Cap<C1>)>::verify(&partial).is_err());
+  partial.insert::<Cap<C1>>(C1(1));
+  assert!(CapList::<(Cap<C0>, Cap<C1>, Cap<C2>)>::verify(&partial).is_err());
 
   let mut env15 = Env::new();
-  env15.insert::<C0Key>(0);
-  env15.insert::<C1Key>(1);
-  env15.insert::<C2Key>(2);
-  env15.insert::<C3Key>(3);
-  env15.insert::<C4Key>(4);
-  env15.insert::<C5Key>(5);
-  env15.insert::<C6Key>(6);
-  env15.insert::<C7Key>(7);
-  env15.insert::<C8Key>(8);
-  env15.insert::<C9Key>(9);
-  env15.insert::<C10Key>(10);
-  env15.insert::<C11Key>(11);
-  env15.insert::<C12Key>(12);
-  env15.insert::<C13Key>(13);
-  env15.insert::<C14Key>(14);
+  env15.insert::<Cap<C0>>(C0(0));
+  env15.insert::<Cap<C1>>(C1(1));
+  env15.insert::<Cap<C2>>(C2(2));
+  env15.insert::<Cap<C3>>(C3(3));
+  env15.insert::<Cap<C4>>(C4(4));
+  env15.insert::<Cap<C5>>(C5(5));
+  env15.insert::<Cap<C6>>(C6(6));
+  env15.insert::<Cap<C7>>(C7(7));
+  env15.insert::<Cap<C8>>(C8(8));
+  env15.insert::<Cap<C9>>(C9(9));
+  env15.insert::<Cap<C10>>(C10(10));
+  env15.insert::<Cap<C11>>(C11(11));
+  env15.insert::<Cap<C12>>(C12(12));
+  env15.insert::<Cap<C13>>(C13(13));
+  env15.insert::<Cap<C14>>(C14(14));
   assert!(CapList::<Keys16>::verify(&env15).is_err());
 
-  let mut caps = CapList::<(C0Key, C1Key)>::from_env({
+  let mut caps = CapList::<(Cap<C0>, Cap<C1>)>::from_env({
     let mut e = Env::new();
-    e.insert::<C0Key>(10);
-    e.insert::<C1Key>(20);
+    e.insert::<Cap<C0>>(C0(10));
+    e.insert::<Cap<C1>>(C1(20));
     e
   });
-  assert_eq!(*caps.get::<C0Key>(), 10);
-  caps.env_mut().insert::<C1Key>(21);
-  assert_eq!(*caps.get::<C1Key>(), 21);
+  assert_eq!(caps.get::<Cap<C0>>().0, 10);
+  caps.env_mut().insert::<Cap<C1>>(C1(21));
+  assert_eq!(caps.get::<Cap<C1>>().0, 21);
 
-  type Keys3 = (C0Key, C1Key, C2Key);
+  type Keys3 = (Cap<C0>, Cap<C1>, Cap<C2>);
   let wide3 = <CapList<Keys3> as FromEnv>::from_env(env16());
-  let one: CapList<(C0Key,)> = CapWiden::widen(wide3.clone());
-  CapList::<(C0Key,)>::verify(one.env()).unwrap();
-  let two: CapList<(C0Key, C1Key)> = CapWiden::widen(wide3);
-  CapList::<(C0Key, C1Key)>::verify(two.env()).unwrap();
+  let one: CapList<(Cap<C0>,)> = CapWiden::widen(wide3.clone());
+  CapList::<(Cap<C0>,)>::verify(one.env()).unwrap();
+  let two: CapList<(Cap<C0>, Cap<C1>)> = CapWiden::widen(wide3);
+  CapList::<(Cap<C0>, Cap<C1>)>::verify(two.env()).unwrap();
 }

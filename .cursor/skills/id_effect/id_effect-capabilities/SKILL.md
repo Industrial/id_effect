@@ -1,14 +1,14 @@
 ---
 name: id_effect-capabilities
 description: >-
-  Expert in id_effect 3.0 capability DI: #[capability], caps!, Env, Needs, ProviderSpec,
+  Expert in id_effect 3.0 capability DI: Cap<T>, caps!, Env, Needs, ProviderSpec,
   provide!, run_with, provider graphs, and service trait design. Use when wiring dependencies,
   declaring services, composing providers, or migrating from Layer/Stack/ctx! APIs.
 ---
 
 # id_effect Capabilities (DI)
 
-**Part II** of the book. id_effect 3.0 uses **capability keys + providers**, not Layers/Stack.
+**Part II** of the book. id_effect 3.0 uses **service-named capabilities (`Cap<T>`) + providers**, not Layers/Stack.
 
 **Prerequisite**: `id_effect-fundamentals`.
 
@@ -16,31 +16,28 @@ description: >-
 
 | Do | Pattern |
 |----|---------|
-| Declare key | `#[::id_effect::capability(T)] struct Name;` → `NameKey` |
-| Declare provider | `#[derive(ProviderSpecDerive)]` + `#[provides(NameKey)]` |
+| Declare service | `struct Counter(u32);` or `type HttpClientService = Arc<dyn HttpClient>;` |
+| Declare provider | `#[derive(ProviderSpecDerive)]` + `#[provides(Counter)]` |
 | Typed requirements | `Effect<_, _, caps!(K1, K2)>` |
-| Access in `effect!` | `~NameKey` or `require!(NameKey)` with `\|r\|` |
-| Access outside macro | `Needs::<NameKey>::need(env)` |
+| Access in `effect!` | `~Counter` or `require!(Counter)` with `\|r\|` |
+| Access outside macro | `Needs::<Counter>::need(env)` |
 | Wire at edge | `run_with([provide!(Live), …], effect)` |
 | Build env | `build_env([provide!(…), …])?` |
-| Test doubles | `mock_capability!` or `env.insert::<Key>(value)` |
+| Test doubles | `mock_capability!` or `env.insert::<Cap<Counter>>(value)` |
 
-## Declaring keys
+## Declaring services
 
 ```rust
-#[::id_effect::capability(Counter)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
-
-#[::id_effect::capability(Arc<dyn UserRepository>)]
-struct UserRepo;
+pub type UserRepo = Arc<dyn UserRepository>;
 ```
 
-Each key is a **distinct type** — `DatabaseKey` ≠ `CacheKey` even when `Value` is the same.
+Each service is a **distinct type** — `Database` ≠ `Cache` even when the stored value type is the same.
 
 ## Service traits
 
-Trait methods keep **`R = ()`**. Callers carry keys in **`caps!(…)`**:
+Trait methods keep **`R = ()`**. Callers carry services in **`caps!(…)`**:
 
 ```rust
 pub trait UserRepository: Send + Sync {
@@ -54,12 +51,12 @@ Dependencies are resolved **inside the Live provider**, not leaked into the trai
 
 ```rust
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(UserRepoKey)]
+#[provides(UserRepo)]
 struct UserRepoLive;
 
 impl UserRepoLive {
-    fn new(deps: &Env) -> Arc<dyn UserRepository> {
-        let pool = deps.get::<DatabaseKey>().clone();
+    fn new(deps: &Env) -> UserRepo {
+        let pool = deps.get::<Cap<Database>>().clone();
         Arc::new(PostgresUserRepository { pool })
     }
 }
@@ -78,18 +75,18 @@ run_with(
 
 | Not this (removed / wrong) | But that (3.0) |
 |----------------------------|----------------|
-| `define_capability!`, `service_key!` | `#[capability(T)] struct Name;` |
-| `ctx!`, `req!` | `caps!(K1, K2)`, `~Key`, `require!(Key)` |
+| `service_key!`, `ctx!`, `req!` | `caps!(Service)`, `~Service`, `require!(Service)` |
 | `Layer` / `Stack`, `Effect::provide` | `ProviderSpec`, `provide!`, `run_with` |
-| Positional `(Db, Logger)` as `R` | `caps!(DatabaseKey, LoggerKey)` |
+| `#[capability]` / `*Key` types | service type `T` + `Cap<T>` |
+| Positional `(Db, Logger)` as `R` | `caps!(Database, EffectLogger)` |
 
 ## Requirement leakage (avoid)
 
 ```rust
 // BAD — trait method exposes caller's R
-fn get_user(&self, id: u64) -> Effect<User, E, caps!(DatabaseKey)>;
+fn get_user(&self, id: u64) -> Effect<User, E, caps!(Database)>;
 
-// GOOD — trait method R = (); caller carries DatabaseKey
+// GOOD — trait method R = (); caller carries Database
 fn get_user(&self, id: u64) -> Effect<User, E, ()>;
 ```
 

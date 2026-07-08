@@ -81,12 +81,10 @@ Like other dependencies, `Clock` is a capability in [`Env`](../../src/capability
 ```rust
 use id_effect::{Effect, Clock, LiveClock, TestClock, caps, effect, provide, require, run_with};
 use std::sync::Arc;
-
-#[::id_effect::capability(Arc<dyn Clock>)]
 struct AppClock;
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(AppClockKey)]
+#[provides(AppClock)]
 struct LiveClockLive;
 
 impl LiveClockLive {
@@ -95,9 +93,9 @@ impl LiveClockLive {
     }
 }
 
-fn now() -> Effect<UtcDateTime, Never, caps!(AppClockKey)> {
+fn now() -> Effect<UtcDateTime, Never, caps!(AppClock)> {
     effect!(|r| {
-        let clock = ~AppClockKey;
+        let clock = ~AppClock;
         ~ clock.now()
     })
 }

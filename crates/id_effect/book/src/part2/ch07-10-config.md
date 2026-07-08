@@ -11,7 +11,7 @@ Workspace crate **`id_effect_config`** loads configuration in a way aligned with
    Build a **[Figment](https://docs.rs/figment)** (TOML + env + …), then **`extract`** / provider helpers for whole-document deserialization when you prefer serde-shaped config files.
 
 3. **Low-level `read_*` helpers**  
-   Declare `caps!(ConfigProviderKey)` (or the crate's config key) and call **`read_string`**, **`read_integer`**, … for imperative-style reads that still stay inside the effect environment.
+   Declare `caps!(ConfigProviderService)` (or the crate's config key) and call **`read_string`**, **`read_integer`**, … for imperative-style reads that still stay inside the effect environment.
 
 ## Wiring
 

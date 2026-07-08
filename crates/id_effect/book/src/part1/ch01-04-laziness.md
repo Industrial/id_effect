@@ -36,7 +36,7 @@ The point is not that `async fn` is “eager.” It is that **effects give you a
 Because effects are values, you can build an entire program before running any of it:
 
 ```rust
-fn load_dashboard(user_id: u64) -> Effect<DashboardPage, AppError, caps!(DatabaseKey, CacheKey, LoggerKey)> {
+fn load_dashboard(user_id: u64) -> Effect<DashboardPage, AppError, caps!(Database, Cache, EffectLogger)> {
     effect!(|r| {
         let user    = ~ fetch_user(user_id).map_error(AppError::Db);
         let posts   = ~ fetch_posts(user.id).map_error(AppError::Db);

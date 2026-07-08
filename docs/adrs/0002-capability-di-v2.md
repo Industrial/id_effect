@@ -12,9 +12,9 @@ id_effect v1 exposes Effect.ts-style dependency injection via `Tag`, `service_ke
 
 Adopt a **trait-first capability model** with:
 
-1. **`Capability` marker trait** — user traits implement `Database: Capability`.
-2. **`define_capability!(Database)`** — generates internal `DatabaseKey` for type-level lookup (not public).
-3. **`Env`** — order-independent runtime container; HList engine remains `pub(crate)` in `di::internal`.
+1. **`Cap<T>`** — universal capability slot; `T` is the service type used in `caps!(T)`.
+2. **`caps!(Database)`** — expands to `CapList<(Cap<Database>,)>`.
+3. **`Env`** — order-independent runtime container.
 4. **`Provider<P>`** — each live/test impl provides itself, optionally reading deps from `Env`.
 5. **`CapabilityGraph`** — topological provider resolution (extracted from `LayerGraph` planner).
 6. **`run` / `run_with`** — single app entrypoint.
@@ -30,8 +30,8 @@ Non-object-safe traits: use generic env cells (`Env::insert_generic<T>()`) — d
 
 | v1 (removed) | v2 (public) |
 |--------------|-------------|
-| `service_key!` + `Tag<K>` | `define_capability!(Trait)` |
-| `Service<K,V>` / `Tagged<K,V>` | `Env::get::<T>()` |
+| `service_key!` + `Tag<K>` | `caps!(Trait)` |
+| `Service<K,V>` / `Tagged<K,V>` | `Env::get::<Cap<T>>()` |
 | `req!(K: V \| …)` | `caps!(Trait, …)` |
 | `ctx!(K => v)` | `Env::from_providers([…])` |
 | `Layer` / `Stack` / `layer_service` | `Provider<P>` + `CapabilityGraph` |

@@ -85,34 +85,34 @@ pub fn snapshot_effect_catch_map_error() -> Effect<SnapshotAssertion, (), ()> {
 /// Snapshot corpus db capability key.
 #[allow(missing_docs)]
 #[allow(dead_code)]
-#[::id_effect::capability(i32)]
-struct SnapshotDb;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SnapshotDb(i32);
 
 /// Snapshot corpus clock capability key.
 #[allow(missing_docs)]
 #[allow(dead_code)]
-#[::id_effect::capability(u64)]
-struct SnapshotClock;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SnapshotClock(u64);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(SnapshotDbKey)]
+#[provides(SnapshotDb)]
 struct SnapshotDbLive;
 
 #[allow(clippy::new_ret_no_self)]
 impl SnapshotDbLive {
-  fn new() -> i32 {
-    7
+  fn new() -> SnapshotDb {
+    SnapshotDb(7)
   }
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(SnapshotClockKey)]
+#[provides(SnapshotClock)]
 struct SnapshotClockLive;
 
 #[allow(clippy::new_ret_no_self)]
 impl SnapshotClockLive {
-  fn new() -> u64 {
-    11
+  fn new() -> SnapshotClock {
+    SnapshotClock(11)
   }
 }
 
@@ -120,8 +120,8 @@ impl SnapshotClockLive {
 pub fn snapshot_capability_env_lookup() -> Effect<SnapshotAssertion, (), ()> {
   Effect::new(|_| {
     let env = build_env([provide!(SnapshotDbLive), provide!(SnapshotClockLive)]).map_err(|_| ())?;
-    let got_db = *env.get::<SnapshotDbKey>();
-    let got_clock = *env.get::<SnapshotClockKey>();
+    let got_db = env.get::<crate::Cap<SnapshotDb>>().0;
+    let got_clock = env.get::<crate::Cap<SnapshotClock>>().0;
     Ok(SnapshotAssertion {
       name: "snapshot_capability_env_lookup",
       observed: format!("{got_db}:{got_clock}"),

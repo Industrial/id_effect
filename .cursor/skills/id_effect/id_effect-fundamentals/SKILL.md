@@ -93,7 +93,7 @@ effect! {
 }
 ```
 
-Do **not** confuse this with **`~ServiceKey`** capability lookup — services use `~Key` / `require!(Key)`.
+Do **not** confuse this with **`~Service`** capability lookup — services use `~Key` / `require!(Key)`.
 
 ## When to use `effect!` vs combinators
 

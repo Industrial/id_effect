@@ -2,12 +2,13 @@
 
 //! Exercise every `project_at_*` generated for arities 2–8.
 
+use id_effect::Cap;
 use id_effect::capability::{CapList, Env, FromEnv};
 
 macro_rules! cap {
   ($name:ident) => {
-    #[::id_effect::capability(u8)]
-    struct $name;
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    struct $name(u32);
   };
 }
 
@@ -22,26 +23,43 @@ cap!(P7);
 
 fn env8() -> Env {
   let mut env = Env::new();
-  env.insert::<P0Key>(0);
-  env.insert::<P1Key>(1);
-  env.insert::<P2Key>(2);
-  env.insert::<P3Key>(3);
-  env.insert::<P4Key>(4);
-  env.insert::<P5Key>(5);
-  env.insert::<P6Key>(6);
-  env.insert::<P7Key>(7);
+  env.insert::<Cap<P0>>(P0(0));
+  env.insert::<Cap<P1>>(P1(1));
+  env.insert::<Cap<P2>>(P2(2));
+  env.insert::<Cap<P3>>(P3(3));
+  env.insert::<Cap<P4>>(P4(4));
+  env.insert::<Cap<P5>>(P5(5));
+  env.insert::<Cap<P6>>(P6(6));
+  env.insert::<Cap<P7>>(P7(7));
   env
 }
 
 #[test]
 fn project_at_all_arity_two_through_eight() {
-  type K2 = (P0Key, P1Key);
-  type K3 = (P0Key, P1Key, P2Key);
-  type K4 = (P0Key, P1Key, P2Key, P3Key);
-  type K5 = (P0Key, P1Key, P2Key, P3Key, P4Key);
-  type K6 = (P0Key, P1Key, P2Key, P3Key, P4Key, P5Key);
-  type K7 = (P0Key, P1Key, P2Key, P3Key, P4Key, P5Key, P6Key);
-  type K8 = (P0Key, P1Key, P2Key, P3Key, P4Key, P5Key, P6Key, P7Key);
+  type K2 = (Cap<P0>, Cap<P1>);
+  type K3 = (Cap<P0>, Cap<P1>, Cap<P2>);
+  type K4 = (Cap<P0>, Cap<P1>, Cap<P2>, Cap<P3>);
+  type K5 = (Cap<P0>, Cap<P1>, Cap<P2>, Cap<P3>, Cap<P4>);
+  type K6 = (Cap<P0>, Cap<P1>, Cap<P2>, Cap<P3>, Cap<P4>, Cap<P5>);
+  type K7 = (
+    Cap<P0>,
+    Cap<P1>,
+    Cap<P2>,
+    Cap<P3>,
+    Cap<P4>,
+    Cap<P5>,
+    Cap<P6>,
+  );
+  type K8 = (
+    Cap<P0>,
+    Cap<P1>,
+    Cap<P2>,
+    Cap<P3>,
+    Cap<P4>,
+    Cap<P5>,
+    Cap<P6>,
+    Cap<P7>,
+  );
 
   let env = env8();
 

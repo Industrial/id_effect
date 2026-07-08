@@ -110,7 +110,7 @@ Register the runtime handle for programs that need flush/shutdown in domain code
 
 ```rust
 use std::sync::Arc;
-use id_effect_opentelemetry::{provide_otel_runtime, OtelRuntimeKey};
+use id_effect_opentelemetry::{provide_otel_runtime, OtelRuntime};
 
 let guard = Arc::new(install_from_config(OtelConfig::from_env()?)?);
 let provider = provide_otel_runtime(guard);

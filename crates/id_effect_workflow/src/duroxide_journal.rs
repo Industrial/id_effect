@@ -58,7 +58,7 @@ pub struct DuroxideStepJournal {
 }
 
 impl DuroxideStepJournal {
-  /// Wrap a shared [`PgPool`] (typically from [`id_effect_sql_pg::PgPoolKey`]).
+  /// Wrap a shared [`PgPool`] (typically from [`id_effect_sql_pg::PgPool`]).
   pub fn new(pool: PgPool) -> Self {
     Self { pool }
   }

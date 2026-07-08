@@ -38,21 +38,19 @@ Pattern:
 use axum::{Router, extract::State, routing::get};
 use id_effect::{Env, build_env, caps, effect, provide, require, Effect};
 use id_effect_axum::run_with_caps;
-
-#[::id_effect::capability(u32)]
 struct Counter;
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(CounterKey)]
+#[provides(Counter)]
 struct CounterLive;
 
 impl CounterLive {
     fn new() -> u32 { 7 }
 }
 
-fn handler(_env: &mut Env) -> Effect<String, (), caps!(CounterKey)> {
+fn handler(_env: &mut Env) -> Effect<String, (), caps!(Counter)> {
     effect!(|r| {
-        let n = ~CounterKey;
+        let n = ~Counter;
         format!("count={n}")
     })
 }

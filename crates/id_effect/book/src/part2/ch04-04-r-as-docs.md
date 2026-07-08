@@ -18,7 +18,7 @@ async fn process_order(order: Order) -> Result<Receipt, Error> {
 fn process_order(order: Order) -> Effect<
     Receipt,
     OrderError,
-    caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey),
+    caps!(Database, PaymentGateway, EmailService, EffectLogger),
 > {
     // What does this use? Look at the signature.
     // Database ✓, PaymentGateway ✓, EmailService ✓, Logger ✓
@@ -30,11 +30,11 @@ Version B's type is self-describing. You don't need to read the implementation t
 
 ## Code Review Benefits
 
-In a pull request, `R` changes are visible in the diff. If someone adds a call to `send_metrics()` inside `process_order` and `MetricsClientKey` wasn't previously in `R`, the function signature must change:
+In a pull request, `R` changes are visible in the diff. If someone adds a call to `send_metrics()` inside `process_order` and `MetricsClient` wasn't previously in `R`, the function signature must change:
 
 ```diff
-- fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey)>
-+ fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey, MetricsClientKey)>
+- fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, EmailService, EffectLogger)>
++ fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, EmailService, EffectLogger, MetricsClient)>
 ```
 
 This diff is in the function signature — impossible to miss. With traditional parameters or singletons, new dependencies can silently appear in implementation bodies.
@@ -44,7 +44,7 @@ This diff is in the function signature — impossible to miss. With traditional 
 When you refactor and remove a dependency, the compiler finds all the places that were providing the now-unnecessary value. The `R` type shrinks, and provider lists that still register removed keys become visible during review.
 
 ```rust
-// After removing LoggerKey from process_order's caps! list:
+// After removing EffectLogger from process_order's caps! list:
 
 // Callers must drop LoggerLive from run_with when nothing in the graph needs it
 run_with(
@@ -62,13 +62,13 @@ When writing a test, `R` tells you exactly what you need to mock:
 ```rust
 #[test]
 fn test_process_order() {
-    // R = caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey)
+    // R = caps!(Database, PaymentGateway, EmailService, EffectLogger)
     // So the test needs these four keys — no more, no less
     let mut env = Env::new();
-    env.insert::<DatabaseKey>(mock_db());
-    env.insert::<PaymentGatewayKey>(mock_payment());
-    env.insert::<EmailServiceKey>(mock_email());
-    env.insert::<LoggerKey>(test_logger());
+    env.insert::<Cap<Database>>(mock_db());
+    env.insert::<Cap<PaymentGateway>>(mock_payment());
+    env.insert::<Cap<EmailService>>(mock_email());
+    env.insert::<Cap<EffectLogger>>(test_logger());
 
     let result = run_test(process_order(test_order()), env);
     assert!(result.is_ok());
@@ -82,10 +82,10 @@ There's no "I wonder if this also touches the metrics service" uncertainty. The 
 It's important to understand that `R` is just a type parameter. The "compile-time DI" property comes from:
 
 1. Functions declaring what they need in `R` (usually via `caps!`)
-2. Capability keys identifying services in [`Env`](../../src/capability/env.rs)
+2. Capability services identifying services in [`Env`](../../src/capability/env.rs)
 3. Composition automatically merging requirements
 4. Wiring centralized at `run_with` / `build_env` boundaries
 
 There's no reflection, no registration, no framework. Just types.
 
-The next chapter shows how **capability keys** and **`Env`** make this scale beyond simple capability lists — handling large, complex dependency graphs without positional ambiguity.
+The next chapter shows how **capability services** and **`Env`** make this scale beyond simple capability lists — handling large, complex dependency graphs without positional ambiguity.

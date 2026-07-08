@@ -158,7 +158,7 @@ maestro_mission_decompose { mission_id: "pln-...", tasks: [ leaf slugs ] }
 
 | v1 (removed public) | v2 (public) |
 |---------------------|-------------|
-| `service_key!` + `Tag<K>` | `#[capability]` on trait (generates internal key) |
+| `service_key!` + `Tag<K>` | `` on trait (generates internal key) |
 | `Service<K,V>` / `Tagged<K,V>` | `Env::get::<dyn Database>()` or typed `Env::get::<impl Database>()` |
 | `req!(K: V \| …)` | `Capabilities![Database, Logger, …]` type alias |
 | `ctx!(K => v)` | `Env::of([provide(DatabaseLive), …])` or `run_with` |
@@ -307,14 +307,13 @@ where I: IntoIterator<Item = ProviderBox>, ...;
 **Context:** Eliminate "3 ways to do everything" — converge dependency syntax.
 
 **Modify/create in [`id_effect_macro`](crates/id_effect_macro/):**
-- **Create** `capability/capability.rs` — `capability!` / `#[capability]` attribute (generates internal id + `Provider` impl stub)
+- **Create** `capability/capability.rs` — `capability!` / `` attribute (generates internal id + `Provider` impl stub)
 - **Create** `capability/provide.rs` — `provide!(DbLive)` sugar
 - **Create** `capability/caps.rs` — `caps!(Database, Logger)` → `Capabilities![…]`
 - **Modify** [`id_effect_proc_macro`](crates/id_effect_proc_macro/) — extend `effect!` with `require!(Database)` desugaring to env access (replace `~Tag` / `IntoBind` pattern)
 
 **Target author syntax (locked):**
 ```rust
-#[capability]
 trait Database { fn query(&self, sql: &str) -> Effect<Rows, DbError, ()>; }
 
 struct DatabaseLive { pool: Pool }
@@ -364,7 +363,7 @@ fn main() {
 
 **Modify:** [`crates/id_effect_platform/src/{http,fs,process}.rs`](crates/id_effect_platform/src/http.rs)
 - Remove public `HttpClientKey`, `service_key!`, `NeedsHttpClient`, `layer_http_client`
-- Keep `HttpClient` trait; add `#[capability]` + `Provider` impls
+- Keep `HttpClient` trait; add `` + `Provider` impls
 - Update tests to `run_with` + `require!(HttpClient)`
 
 **AC:** Platform crate has zero references to removed v1 symbols; docs updated.

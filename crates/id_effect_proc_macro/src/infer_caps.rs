@@ -93,13 +93,38 @@ pub fn extract_keys_from_env_ty(env_ty: &Type) -> syn::Result<Vec<Type>> {
           _ => None,
         })
         .ok_or_else(|| syn::Error::new_spanned(env_ty, "effect!: expected `CapList<(…,)>`"))?;
-      Ok(tuple.elems.iter().cloned().collect())
+      Ok(
+        tuple
+          .elems
+          .iter()
+          .map(|ty| unwrap_cap_service_type(ty.clone()))
+          .collect::<syn::Result<Vec<_>>>()?,
+      )
     }
     _ => Err(syn::Error::new_spanned(
       env_ty,
       "effect!: closure environment must be `|r: &mut caps!(…)|` or inferred `|r|`",
     )),
   }
+}
+
+fn unwrap_cap_service_type(ty: Type) -> syn::Result<Type> {
+  let Type::Path(ref path) = ty else {
+    return Ok(ty);
+  };
+  let Some(seg) = path.path.segments.last() else {
+    return Ok(ty);
+  };
+  if seg.ident != "Cap" {
+    return Ok(ty);
+  }
+  let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+    return Ok(ty);
+  };
+  let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+    return Ok(ty);
+  };
+  Ok(inner.clone())
 }
 
 fn type_key_name(ty: &Type) -> String {
@@ -136,8 +161,8 @@ mod tests {
   #[test]
   fn collect_capability_keys_from_tilde_and_require() {
     let body = quote! {
-      let _a = ~AlphaKey;
-      let _b = require!(BetaKey);
+      let _a = ~Alpha;
+      let _b = require!(Beta);
     };
     let keys = collect_capability_keys(&body);
     assert_eq!(keys.len(), 2);
@@ -151,7 +176,7 @@ mod tests {
 
   #[test]
   fn extract_keys_from_cap_list() {
-    let ty: Type = parse2(quote! { CapList<(AlphaKey, BetaKey)> }).unwrap();
+    let ty: Type = parse2(quote! { CapList<(Alpha, Beta)> }).unwrap();
     let keys = extract_keys_from_env_ty(&ty).unwrap();
     assert_eq!(keys.len(), 2);
   }
@@ -178,30 +203,30 @@ mod tests {
 
   #[test]
   fn validate_explicit_caps_accepts_subset() {
-    let env_ty: Type = parse2(quote! { CapList<(AlphaKey, BetaKey)> }).unwrap();
-    let body_keys = vec![parse2(quote! { AlphaKey }).unwrap()];
+    let env_ty: Type = parse2(quote! { CapList<(Alpha, Beta)> }).unwrap();
+    let body_keys = vec![parse2(quote! { Alpha }).unwrap()];
     validate_explicit_caps(&env_ty, &body_keys).unwrap();
   }
 
   #[test]
   fn validate_explicit_caps_rejects_unknown_key() {
-    let env_ty: Type = parse2(quote! { CapList<(AlphaKey,)> }).unwrap();
-    let body_keys = vec![parse2(quote! { OtherKey }).unwrap()];
+    let env_ty: Type = parse2(quote! { CapList<(Alpha,)> }).unwrap();
+    let body_keys = vec![parse2(quote! { Other }).unwrap()];
     assert!(validate_explicit_caps(&env_ty, &body_keys).is_err());
   }
 
   #[test]
   fn collect_capability_keys_dedupes_by_name() {
     let body = quote! {
-      let _a = ~AlphaKey;
-      let _b = require!(AlphaKey);
+      let _a = ~Alpha;
+      let _b = require!(Alpha);
     };
     assert_eq!(collect_capability_keys(&body).len(), 1);
   }
 
   #[test]
   fn collect_capability_keys_in_nested_group() {
-    let body = quote! { { let _ = require!(BetaKey); } };
+    let body = quote! { { let _ = require!(Beta); } };
     let keys = collect_capability_keys(&body);
     assert_eq!(keys.len(), 1);
   }
@@ -209,14 +234,15 @@ mod tests {
   #[test]
   fn extract_keys_from_sixteen_tuple_cap_list() {
     let ty: Type = parse2(quote! {
-      CapList<(K0Key, K1Key, K2Key, K3Key, K4Key, K5Key, K6Key, K7Key, K8Key, K9Key, K10Key, K11Key, K12Key, K13Key, K14Key, K15Key)>
-    }).unwrap();
+      CapList<(K0, K1, K2, K3, K4, K5, K6, K7, K8, K9, K10, K11, K12, K13, K14, K15)>
+    })
+    .unwrap();
     assert_eq!(extract_keys_from_env_ty(&ty).unwrap().len(), 16);
   }
 
   #[test]
   fn validate_explicit_caps_empty_body_ok() {
-    let env_ty: Type = parse2(quote! { CapList<(AlphaKey,)> }).unwrap();
+    let env_ty: Type = parse2(quote! { CapList<(Alpha,)> }).unwrap();
     validate_explicit_caps(&env_ty, &[]).unwrap();
   }
 }

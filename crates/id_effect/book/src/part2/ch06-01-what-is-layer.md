@@ -3,11 +3,11 @@
 An `Effect` describes a computation that *needs* an environment. A [`ProviderSpec`](../../src/capability/provider.rs) describes *how to build* one capability and register it in [`Env`](../../src/capability/env.rs).
 
 ```
-Effect<User, DbError, caps!(DatabaseKey)>
-  └── "I need DatabaseKey to produce a User"
+Effect<User, DbError, caps!(Database)>
+  └── "I need Database to produce a User"
 
 ProviderSpec for DatabaseLive
-  └── "I need ConfigKey (via requires) to produce DatabaseKey"
+  └── "I need Config (via requires) to produce Database"
 ```
 
 Effects declare needs; providers declare construction.
@@ -20,19 +20,19 @@ use id_effect::{CapabilityId, Env, ProviderError, ProviderSpec};
 struct DatabaseLive;
 
 impl ProviderSpec for DatabaseLive {
-    type Key = DatabaseKey;
+    type Key = Database;
     type Output = Pool;
 
     fn provider_id() -> &'static str { "database-live" }
 
     fn requires() -> &'static [CapabilityId] {
-        // Declare ConfigKey as a dependency for graph ordering
+        // Declare Config as a dependency for graph ordering
         // (return a static slice of CapabilityId values)
         &[]
     }
 
     fn provide(deps: &Env) -> Result<Pool, ProviderError> {
-        let config = deps.get::<ConfigKey>();
+        let config = deps.get::<Cap<Config>>();
         Ok(connect_pool(config.db_url()))
     }
 }
@@ -40,7 +40,7 @@ impl ProviderSpec for DatabaseLive {
 
 - **`type Key`** — which capability this provider registers
 - **`type Output`** — the concrete value stored in `Env`
-- **`provide(deps)`** — build the value; read dependencies with `deps.get::<K>()`
+- **`provide(deps)`** — build the value; read dependencies with `deps.get::<Cap<K>>()`
 - **`requires()`** — capability ids this provider needs built first (used by [`CapabilityGraph`](../../src/capability/graph.rs))
 
 ## Providers are lazy recipes

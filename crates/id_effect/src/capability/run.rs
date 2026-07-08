@@ -60,33 +60,37 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::Cap;
   use crate::provide;
   use crate::{Effect, caps, effect, run_with};
 
+  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
   #[allow(dead_code)]
-  #[::id_effect::capability(u32)]
-  struct RunCap;
+  struct RunCap(pub u32);
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(RunCapKey)]
+  #[provides(RunCap)]
   struct RunCapLive;
 
   impl RunCapLive {
     #[allow(clippy::new_ret_no_self)]
-    fn new() -> u32 {
-      7
+    fn new() -> RunCap {
+      RunCap(7)
     }
   }
 
   #[test]
   fn build_env_materializes_capability_env() {
     let env = build_env([provide!(RunCapLive)]).expect("env");
-    assert_eq!(*env.get::<RunCapKey>(), 7);
+    assert_eq!(env.get::<Cap<RunCap>>().0, 7);
   }
 
   #[test]
   fn run_with_executes_and_shuts_down() {
-    let app: Effect<u32, (), caps!(RunCapKey)> = effect!(|r| { *~RunCapKey });
+    let app: Effect<u32, (), caps!(RunCap)> = effect!(|r| {
+      let cap = ~RunCap;
+      cap.0
+    });
     assert_eq!(run_with([provide!(RunCapLive)], app).expect("run"), 7);
   }
 }

@@ -84,11 +84,12 @@ pub use crate::kernel::{
 };
 pub use crate::match_::{HasTag, Matcher};
 pub use capability::{
-  CapBind, CapBindR, CapBindWide, CapKeys, CapList, CapWiden, Capability, CapabilityDiagnostic,
-  CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey, CapabilityPlannerError,
-  CapabilitySet, Caps, Env, FromEnv, HasCap, Needs, NoCaps, PlannerNode, PlannerPlan, Provider,
-  ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError, build_env, cap_into_bind,
-  plan_topological, run, run_with, with_fiber_and_override, with_override,
+  Cap, CapBind, CapBindR, CapBindWide, CapKeys, CapList, CapWiden, Capability,
+  CapabilityDiagnostic, CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey,
+  CapabilityPlannerError, CapabilitySet, Caps, Env, FromEnv, HasCap, Needs, NoCaps, PlannerNode,
+  PlannerPlan, Provider, ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError,
+  build_env, cap_into_bind, plan_topological, run, run_with, with_fiber_and_override,
+  with_override,
 };
 pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,

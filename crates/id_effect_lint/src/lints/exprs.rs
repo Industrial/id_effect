@@ -343,7 +343,7 @@ pub fn check_no_system_time_now(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_>
         "direct time access (`SystemTime::now()` / `Utc::now()`) in domain code",
         None,
         "inject time through the `Clock` service: add `R: NeedsClock + 'static` \
-                 and use `~ ClockKey` inside `effect!`",
+                 and use `~ Clock` inside `effect!`",
       );
     }
   }

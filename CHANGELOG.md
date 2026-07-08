@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Cap service names
+
+### Changed
+
+- Capability API uses **service type names** directly: `caps!(Counter)`, `require!(Counter)`, `#[provides(Counter)]`.
+- `Cap<T>` replaces generated `*Key` types; `#[capability]` is a no-op (removed from public flow).
+- Trait-backed services use type aliases (`HttpClientService`, `ConfigProviderService`, …).
+
+### Removed
+
+- Public `*Key` types and `define_capability!`.
+
 ## Unreleased — Parallel-by-default (Rayon)
 
 Bulk pure transforms on collections and stream chunks now use Rayon when input length meets the default threshold (`Parallelism::Auto { threshold: 1024 }`). See [ADR 0006](docs/adrs/0006-parallel-by-default.md).
@@ -27,7 +39,7 @@ Semver-major release completing capability-first DI adoption. See [appendix-b-mi
 ### Removed
 
 - `CapEnv1…CapEnv6` — use `CapList` / `caps!(K0, K1, …)` only
-- `define_capability!` — use `#[capability]` attribute
+- `#[capability]` / `*Key` types — use service names with `Cap<T>`
 - `require!(env, K)` — use `require!(K)` inside `effect!` or `Needs::<K>::need(env)`
 - `ctx!`, `req!`, `service_key!`, `Layer`, `Stack`, `Effect::provide`, `IntoBind` (legacy paths)
 - `id_effect_config::ambient` — use `Env::scoped` / `build_env`
@@ -35,7 +47,7 @@ Semver-major release completing capability-first DI adoption. See [appendix-b-mi
 ### Added
 
 - `CapList` + unbounded `caps!` arity
-- `#[capability]`, `#[derive(ProviderSpec)]`, `#[named("variant")]`
+- `Cap<T>`, `#[derive(ProviderSpecDerive)]`, `#[provides(Service)]`, `#[named("variant")]`
 - `CapWiden` for capability-set subtyping
 - `ProviderSpec::optional_requires`, `shared()`, `refresh_interval()`, `on_refresh()`
 - Fiber/request scoped overrides: `with_override`, `with_fiber_and_override`

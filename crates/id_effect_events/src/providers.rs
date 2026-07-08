@@ -3,28 +3,20 @@
 #[cfg(feature = "es-entity")]
 mod es_entity_provider {
   use crate::es_entity::EsEntityPgBackend;
-  use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+  use id_effect::{
+    Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode,
+  };
   use sqlx::PgPool;
   use std::sync::Arc;
 
-  mod event_journal_cap {
-    use std::sync::Arc;
+  /// Shared es-entity PostgreSQL event journal backend.
+  pub type EventJournalBackend = Arc<EsEntityPgBackend>;
 
-    use crate::es_entity::EsEntityPgBackend;
-
-    /// Shared es-entity PostgreSQL event journal backend.
-    #[::id_effect::capability(Arc<EsEntityPgBackend>)]
-    #[allow(dead_code)]
-    pub struct EventJournalBackend;
-  }
-
-  pub use event_journal_cap::EventJournalBackendKey as EventStoreKey;
-
-  /// Register `backend` as [`EventStoreKey`].
+  /// Register `backend` as [`EventJournalBackend`].
   #[inline]
   pub fn provide_es_entity_events(backend: EsEntityPgBackend) -> ProviderBox {
     struct Node {
-      backend: Arc<EsEntityPgBackend>,
+      backend: EventJournalBackend,
     }
 
     impl ProviderNode for Node {
@@ -37,16 +29,16 @@ mod es_entity_provider {
       }
 
       fn provides(&self) -> CapabilityId {
-        EventStoreKey::id()
+        Cap::<EventJournalBackend>::id()
       }
 
       fn cap_name(&self) -> &str {
-        "EventStoreKey"
+        "EventJournalBackend"
       }
 
       fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
         let mut out = deps.clone();
-        out.insert::<EventStoreKey>(Arc::clone(&self.backend));
+        out.insert::<Cap<EventJournalBackend>>(Arc::clone(&self.backend));
         Ok(out)
       }
     }
@@ -65,5 +57,5 @@ mod es_entity_provider {
 
 #[cfg(feature = "es-entity")]
 pub use es_entity_provider::{
-  EventStoreKey, provide_es_entity_events, provide_es_entity_events_from_pool,
+  EventJournalBackend, provide_es_entity_events, provide_es_entity_events_from_pool,
 };

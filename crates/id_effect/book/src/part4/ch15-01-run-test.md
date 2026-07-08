@@ -62,17 +62,16 @@ fn effect_that_panics_is_a_defect() {
 When your effect needs capabilities, build a test environment with `build_env` or manual `Env::insert`:
 
 ```rust
-#[::id_effect::capability(Arc<dyn Db>)]
 struct Database;
 
-mock_capability!(MockDb, DatabaseKey, Arc<dyn Db>, "db/mock", || {
+mock_capability!(MockDb, Database, Arc<dyn Db>, "db/mock", || {
     Arc::new(FakeDatabase::new()) as Arc<dyn Db>
 });
 
 #[test]
 fn create_user_inserts_into_db() {
     let env = build_env([provide!(MockDb)]).expect("env");
-    let fake_db = env.get::<DatabaseKey>().clone();
+    let fake_db = env.get::<Cap<Database>>().clone();
 
     let eff = create_user(NewUser { name: "Alice".into(), age: 30 });
     let exit = run_test(eff, env);

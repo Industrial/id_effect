@@ -5,16 +5,17 @@
 use std::sync::Arc;
 
 use ::figment::Figment;
-use ::id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use ::id_effect::{
+  Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode,
+};
 
 use crate::provider::{
-  ConfigProvider, ConfigProviderKey, ConfigProviderService, EnvConfigProvider,
-  FigmentConfigProvider, ProviderOptions,
+  ConfigProvider, ConfigProviderService, EnvConfigProvider, FigmentConfigProvider, ProviderOptions,
 };
 
 /// `std::env` [`ConfigProvider`] with default [`ProviderOptions`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ConfigProviderKey)]
+#[provides(ConfigProviderService)]
 pub struct EnvConfigProviderLive;
 
 impl EnvConfigProviderLive {
@@ -23,7 +24,7 @@ impl EnvConfigProviderLive {
   }
 }
 
-/// Register `provider` as the [`ConfigProviderKey`] capability.
+/// Register `provider` as the [`ConfigProvider`] capability.
 #[inline]
 pub fn provide_config_provider<P>(provider: P) -> ProviderBox
 where
@@ -41,16 +42,16 @@ where
     }
 
     fn provides(&self) -> CapabilityId {
-      ConfigProviderKey::id()
+      Cap::<ConfigProviderService>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "ConfigProviderKey"
+      "ConfigProvider"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<ConfigProviderKey>(ConfigProviderService(Arc::clone(&self.0)));
+      out.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::clone(&self.0)));
       Ok(out)
     }
   }

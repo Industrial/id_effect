@@ -44,7 +44,7 @@ pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
   capability_attr::expand(attr, item)
 }
 
-/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(CapabilityKey)]`.
+/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(Capability)]`.
 #[proc_macro_derive(ProviderSpec, attributes(provides, named))]
 pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
   provider_spec::derive(input)

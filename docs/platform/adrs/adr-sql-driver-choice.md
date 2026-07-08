@@ -12,7 +12,7 @@ Remove **deadpool-postgres** and **tokio-postgres** from the platform crate enti
 
 ## Rationale
 
-1. **One pool type workspace-wide** — `sqlx::PgPool` via [`PgPoolKey`](../../../crates/id_effect_sql_pg/src/pool_key.rs) feeds Apalis, obix, and `EsEntityPgBackend` without adapter layers.
+1. **One pool type workspace-wide** — `sqlx::PgPool` via [`PgPool`](../../../crates/id_effect_sql_pg/src/pool_key.rs) feeds Apalis, obix, and `EsEntityPgBackend` without adapter layers.
 2. **Ecosystem alignment** — Apalis-postgres, obix, and sqlx migrations share the same driver stack.
 3. **Effect integration** — `SqlClient` / `SqlTransaction` remain thin `Effect` facades over sqlx query/transaction APIs.
 

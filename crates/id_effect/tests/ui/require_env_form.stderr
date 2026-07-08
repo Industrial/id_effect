@@ -1,8 +1,8 @@
 error: require!(env, Key) was removed in id_effect 3.0; use require!(Key) inside effect! or Needs::<Key>::need(env)
- --> tests/ui/require_env_form.rs:8:13
+ --> tests/ui/require_env_form.rs:6:13
   |
-8 |     let _ = id_effect::require!(env, CounterKey);
-  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+6 |     let _ = id_effect::require!(env, Counter);
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
   = note: this error originates in the macro `id_effect::require` (in Nightly builds, run with -Z macro-backtrace for more info)
 

@@ -6,7 +6,7 @@ use id_effect::Needs;
 use id_effect::kernel::Effect;
 use id_effect::{Env, ProviderBox};
 use id_effect_config::{
-  Config, ConfigError, ConfigProviderKey, config, config_env, provide_env_config_provider,
+  Config, ConfigError, ConfigProviderService, config, config_env, provide_env_config_provider,
 };
 
 /// Host bind and shutdown settings loaded from the environment.
@@ -55,11 +55,11 @@ impl HostConfig {
   }
 }
 
-/// Load [`HostConfig`] using the installed [`ConfigProviderKey`] capability.
+/// Load [`HostConfig`] using the installed [`ConfigProvider`] capability.
 #[inline]
 pub fn load_host_config<R>() -> Effect<HostConfig, ConfigError, R>
 where
-  R: Needs<ConfigProviderKey> + 'static,
+  R: Needs<ConfigProviderService> + 'static,
 {
   HostConfig::descriptor()
     .map_attempt(HostConfig::from_tuple)

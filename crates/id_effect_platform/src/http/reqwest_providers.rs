@@ -5,24 +5,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::id_effect::{
-  CapabilityId, CapabilityKey, Env, Never, Pool, ProviderBox, ProviderError, ProviderNode,
+  Cap, CapabilityId, CapabilityKey, Env, Never, Pool, ProviderBox, ProviderError, ProviderNode,
   run_blocking, succeed,
 };
 
-use super::{Client, PooledClient, ReqwestClientKey, ReqwestPoolKey};
+use super::{Client, PooledClient, ReqwestClient, ReqwestPool};
 
 /// Default [`id_effect::ProviderSpec`] for [`reqwest::Client::new`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ReqwestClientKey)]
+#[provides(ReqwestClient)]
 pub struct ReqwestClientLive;
 
 impl ReqwestClientLive {
-  fn new() -> Client {
-    Client::new()
+  fn new() -> ReqwestClient {
+    ReqwestClient(Client::new())
   }
 }
 
-/// Register `client` as the [`ReqwestClientKey`] capability.
+/// Register `client` as the [`ReqwestClient`] capability.
 #[inline]
 pub fn provide_reqwest_client(client: Client) -> ProviderBox {
   struct Node(Client);
@@ -37,16 +37,16 @@ pub fn provide_reqwest_client(client: Client) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      ReqwestClientKey::id()
+      Cap::<ReqwestClient>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "ReqwestClientKey"
+      "ReqwestClient"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<ReqwestClientKey>(self.0.clone());
+      out.insert::<Cap<ReqwestClient>>(ReqwestClient(self.0.clone()));
       Ok(out)
     }
   }
@@ -72,11 +72,11 @@ pub fn provide_reqwest_pool(capacity: usize, ttl: Duration) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      ReqwestPoolKey::id()
+      Cap::<ReqwestPool>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "ReqwestPoolKey"
+      "ReqwestPool"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
@@ -91,7 +91,7 @@ pub fn provide_reqwest_pool(capacity: usize, ttl: Duration) -> ProviderBox {
         message: format!("Pool::make_with_ttl: {e:?}"),
       })?;
       let mut out = deps.clone();
-      out.insert::<ReqwestPoolKey>(pool);
+      out.insert::<Cap<ReqwestPool>>(pool);
       Ok(out)
     }
   }

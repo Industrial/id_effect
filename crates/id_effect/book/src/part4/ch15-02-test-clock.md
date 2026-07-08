@@ -91,10 +91,9 @@ If your effect spawns multiple fibers that all sleep, advancing time wakes all f
 ## Combining TestClock with Fake Services
 
 ```rust
-#[::id_effect::capability(Arc<dyn RateLimitStore>)]
 struct RateLimitStoreCap;
 
-mock_capability!(MockRateLimitStore, RateLimitStoreCapKey, Arc<dyn RateLimitStore>, "ratelimit/mock", || {
+mock_capability!(MockRateLimitStore, RateLimitStoreCap, Arc<dyn RateLimitStore>, "ratelimit/mock", || {
     Arc::new(InMemoryRateLimitStore::new()) as Arc<dyn RateLimitStore>
 });
 

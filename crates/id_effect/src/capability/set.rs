@@ -436,59 +436,60 @@ impl<K0: CapabilityKey, K1: CapabilityKey, K2: CapabilityKey> CapWiden<CapList<(
 #[allow(dead_code, clippy::new_ret_no_self)]
 mod tests {
   use super::*;
-  #[::id_effect::capability(u32)]
-  struct TestKey;
+  use crate::Cap;
+  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+  struct Test(pub u32);
 
   #[test]
   fn cap_list_verify_missing() {
     let env = Env::new();
-    let err = CapList::<(TestKeyKey,)>::verify(&env).unwrap_err();
+    let err = CapList::<(Cap<Test>,)>::verify(&env).unwrap_err();
     assert!(matches!(err, CapabilityError::Missing(_)));
   }
 
   #[test]
   fn cap_list_verify_ok() {
     let mut env = Env::new();
-    env.insert::<TestKeyKey>(7u32);
-    CapList::<(TestKeyKey,)>::verify(&env).unwrap();
+    env.insert::<Cap<Test>>(Test(7u32));
+    CapList::<(Cap<Test>,)>::verify(&env).unwrap();
   }
 
   #[test]
   fn cap_list_eight_keys() {
-    #[::id_effect::capability(u8)]
-    struct Cap0;
-    #[::id_effect::capability(u8)]
-    struct Cap1;
-    #[::id_effect::capability(u8)]
-    struct Cap2;
-    #[::id_effect::capability(u8)]
-    struct Cap3;
-    #[::id_effect::capability(u8)]
-    struct Cap4;
-    #[::id_effect::capability(u8)]
-    struct Cap5;
-    #[::id_effect::capability(u8)]
-    struct Cap6;
-    #[::id_effect::capability(u8)]
-    struct Cap7;
+    #[derive(Clone, Copy)]
+    struct Cap0(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap1(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap2(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap3(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap4(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap5(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap6(pub u8);
+    #[derive(Clone, Copy)]
+    struct Cap7(pub u8);
     let mut env = Env::new();
-    env.insert::<Cap0Key>(0u8);
-    env.insert::<Cap1Key>(1u8);
-    env.insert::<Cap2Key>(2u8);
-    env.insert::<Cap3Key>(3u8);
-    env.insert::<Cap4Key>(4u8);
-    env.insert::<Cap5Key>(5u8);
-    env.insert::<Cap6Key>(6u8);
-    env.insert::<Cap7Key>(7u8);
+    env.insert::<Cap<Cap0>>(Cap0(0u8));
+    env.insert::<Cap<Cap1>>(Cap1(1u8));
+    env.insert::<Cap<Cap2>>(Cap2(2u8));
+    env.insert::<Cap<Cap3>>(Cap3(3u8));
+    env.insert::<Cap<Cap4>>(Cap4(4u8));
+    env.insert::<Cap<Cap5>>(Cap5(5u8));
+    env.insert::<Cap<Cap6>>(Cap6(6u8));
+    env.insert::<Cap<Cap7>>(Cap7(7u8));
     CapList::<(
-      Cap0Key,
-      Cap1Key,
-      Cap2Key,
-      Cap3Key,
-      Cap4Key,
-      Cap5Key,
-      Cap6Key,
-      Cap7Key,
+      Cap<Cap0>,
+      Cap<Cap1>,
+      Cap<Cap2>,
+      Cap<Cap3>,
+      Cap<Cap4>,
+      Cap<Cap5>,
+      Cap<Cap6>,
+      Cap<Cap7>,
     )>::verify(&env)
     .unwrap();
   }
@@ -511,47 +512,56 @@ mod tests {
   #[test]
   fn cap_list_accessors_and_deref() {
     let mut env = Env::new();
-    env.insert::<TestKeyKey>(3u32);
-    let mut caps = CapList::<(TestKeyKey,)>::from_env(env);
+    env.insert::<Cap<Test>>(Test(3u32));
+    let mut caps = CapList::<(Cap<Test>,)>::from_env(env);
     assert_eq!(caps.env().len(), 1);
-    caps.env_mut().insert::<TestKeyKey>(4u32);
-    assert_eq!(*caps.get::<TestKeyKey>(), 4);
+    caps.env_mut().insert::<Cap<Test>>(Test(4u32));
+    assert_eq!(caps.get::<Cap<Test>>().0, 4);
   }
 
   #[test]
   fn cap_list_project_four_through_eight() {
-    #[::id_effect::capability(u8)]
-    struct A;
-    #[::id_effect::capability(u8)]
-    struct B;
-    #[::id_effect::capability(u8)]
-    struct C;
-    #[::id_effect::capability(u8)]
-    struct D;
-    #[::id_effect::capability(u8)]
-    struct E;
-    #[::id_effect::capability(u8)]
-    struct F;
-    #[::id_effect::capability(u8)]
-    struct G;
-    #[::id_effect::capability(u8)]
-    struct H;
+    #[derive(Clone, Copy)]
+    struct A(pub i32);
+    #[derive(Clone, Copy)]
+    struct B(pub i32);
+    #[derive(Clone, Copy)]
+    struct C(pub i32);
+    #[derive(Clone, Copy)]
+    struct D(pub i32);
+    #[derive(Clone, Copy)]
+    struct E(pub i32);
+    #[derive(Clone, Copy)]
+    struct F(pub i32);
+    #[derive(Clone, Copy)]
+    struct G(pub i32);
+    #[derive(Clone, Copy)]
+    struct H(pub i32);
     let mut env = Env::new();
-    env.insert::<AKey>(1);
-    env.insert::<BKey>(2);
-    env.insert::<CKey>(3);
-    env.insert::<DKey>(4);
-    env.insert::<EKey>(5);
-    env.insert::<FKey>(6);
-    env.insert::<GKey>(7);
-    env.insert::<HKey>(8);
-    CapList::<(AKey, BKey, CKey, DKey, EKey)>::verify(&env).unwrap();
-    let wide8 = CapList::<(AKey, BKey, CKey, DKey, EKey, FKey, GKey, HKey)>::from_env(env.clone());
+    env.insert::<Cap<A>>(A(1));
+    env.insert::<Cap<B>>(B(2));
+    env.insert::<Cap<C>>(C(3));
+    env.insert::<Cap<D>>(D(4));
+    env.insert::<Cap<E>>(E(5));
+    env.insert::<Cap<F>>(F(6));
+    env.insert::<Cap<G>>(G(7));
+    env.insert::<Cap<H>>(H(8));
+    CapList::<(Cap<A>, Cap<B>, Cap<C>, Cap<D>, Cap<E>)>::verify(&env).unwrap();
+    let wide8 = CapList::<(
+      Cap<A>,
+      Cap<B>,
+      Cap<C>,
+      Cap<D>,
+      Cap<E>,
+      Cap<F>,
+      Cap<G>,
+      Cap<H>,
+    )>::from_env(env.clone());
     let _ = wide8.clone().project_at_4();
     let _ = wide8.clone().project_at_5();
     let _ = wide8.clone().project_at_6();
     let _ = wide8.clone().project_at_7();
-    let four = CapList::<(AKey, BKey, CKey, DKey)>::from_env(env);
+    let four = CapList::<(Cap<A>, Cap<B>, Cap<C>, Cap<D>)>::from_env(env);
     let _ = four.clone().project_at_0();
     let _ = four.clone().project_at_1();
     let _ = four.clone().project_at_2();
@@ -559,14 +569,14 @@ mod tests {
   }
   #[test]
   fn cap_widen_subset() {
-    #[::id_effect::capability(u32)]
-    struct Db;
-    #[::id_effect::capability(u32)]
-    struct Log;
+    #[derive(Clone, Copy)]
+    struct Db(pub u32);
+    #[derive(Clone, Copy)]
+    struct Log(pub u32);
     let mut env = Env::new();
-    env.insert::<DbKey>(1u32);
-    env.insert::<LogKey>(2u32);
-    let wide = CapList::<(DbKey, LogKey)>::from_env(env);
-    let _narrow: CapList<(DbKey,)> = wide.widen();
+    env.insert::<Cap<Db>>(Db(1u32));
+    env.insert::<Cap<Log>>(Log(2u32));
+    let wide = CapList::<(Cap<Db>, Cap<Log>)>::from_env(env);
+    let _narrow: CapList<(Cap<Db>,)> = wide.widen();
   }
 }

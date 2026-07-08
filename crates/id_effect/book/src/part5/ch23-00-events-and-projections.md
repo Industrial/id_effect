@@ -1,6 +1,6 @@
 # Events and Projections
 
-Event sourcing keeps the **write model** as an append-only log of domain events. **Projections** fold that log into query-friendly read models. Production PostgreSQL persistence uses **es-entity** on the shared [`PgPoolKey`](../../id_effect_sql_pg/struct.PgPoolKey.html); multi-projection rebuild order uses **`id_effect_graph`**.
+Event sourcing keeps the **write model** as an append-only log of domain events. **Projections** fold that log into query-friendly read models. Production PostgreSQL persistence uses **es-entity** on the shared [`PgPool`](../../id_effect_sql_pg/struct.PgPool.html); multi-projection rebuild order uses **`id_effect_graph`**.
 
 ## What This Chapter Covers
 
@@ -15,7 +15,7 @@ Event sourcing keeps the **write model** as an append-only log of domain events.
 
 ```rust
 use id_effect_events::{EsEntityEventStore, EsEntityPgBackend, EventStore};
-// pool from id_effect_sql_pg::PgPoolKey
+// pool from id_effect_sql_pg::PgPool
 let store = EsEntityEventStore::new(EsEntityPgBackend::new(pool));
 ```
 

@@ -28,8 +28,8 @@ Synthesis gate across all id_effect skills. Read changed files, then apply this 
 
 ## DI violations (Critical)
 
-- [ ] Uses removed APIs: `Layer`, `Stack`, `ctx!`, `req!`, `define_capability!`, `.provide()`
-- [ ] Positional `(Db, Logger)` as `R` instead of `caps!(DatabaseKey, LoggerKey)`
+- [ ] Uses removed APIs: `Layer`, `Stack`, `ctx!`, `req!`, `caps!`, `.provide()`
+- [ ] Positional `(Db, Logger)` as `R` instead of `caps!(Database, EffectLogger)`
 - [ ] Service trait methods with `R != ()` (requirement leakage)
 - [ ] Constructs platform clients inside domain instead of `caps!(…)`
 - [ ] `require!(env, Key)` old arity

@@ -4,33 +4,32 @@
 
 use id_effect::{Effect, Needs, caps, provide, run_with};
 
-#[::id_effect::capability(&'static str)]
-struct Database;
+type Database = &'static str;
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(DatabaseKey)]
+#[provides(Database)]
 #[named("primary")]
 struct DbPrimaryLive;
 
 impl DbPrimaryLive {
-  fn new() -> &'static str {
+  fn new() -> Database {
     "postgres://primary"
   }
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(DatabaseKey)]
+#[provides(Database)]
 #[named("replica")]
 struct DbReplicaLive;
 
 impl DbReplicaLive {
-  fn new() -> &'static str {
+  fn new() -> Database {
     "postgres://replica"
   }
 }
 
-fn app() -> Effect<&'static str, (), caps!(DatabaseKey)> {
-  Effect::new(|env: &mut caps!(DatabaseKey)| Ok(*Needs::<DatabaseKey>::need(env)))
+fn app() -> Effect<Database, (), caps!(Database)> {
+  Effect::new(|env: &mut caps!(Database)| Ok(*Needs::<Database>::need(env)))
 }
 
 fn main() {

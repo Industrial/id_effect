@@ -1,10 +1,10 @@
 # Services — The Complete DI Pattern
 
-The previous chapters established the building blocks: capability keys (identities), `Env` (the runtime container), and providers (constructors). Now we put them together into the complete *Service* pattern.
+The previous chapters established the building blocks: capability services (identities), `Env` (the runtime container), and providers (constructors). Now we put them together into the complete *Service* pattern.
 
 A Service in id_effect is the combination of:
 1. A **trait** defining the interface
-2. A **capability key** identifying it in the environment
+2. A **capability service** identifying it in the environment
 3. One or more **implementations** (production and test)
 4. A **provider** that wires an implementation into `Env`
 

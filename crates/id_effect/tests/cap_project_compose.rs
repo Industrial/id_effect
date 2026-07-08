@@ -1,51 +1,51 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code, clippy::new_ret_no_self, clippy::type_complexity)]
 
-//! Integration: automatic cap_into_bind + implicit `|r|` + `~Key`.
+//! Integration: automatic cap_into_bind + implicit `|r|` + `~Service`.
 
 use id_effect::{Effect, caps, effect, provide, run_with};
 
-#[::id_effect::capability(u32)]
-struct Database;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Database(pub u32);
 
-#[::id_effect::capability(u32)]
-struct Logger;
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Logger(pub u32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(DatabaseKey)]
+#[provides(Database)]
 struct DatabaseLive;
 
 impl DatabaseLive {
-  fn new() -> u32 {
-    10
+  fn new() -> Database {
+    Database(10)
   }
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(LoggerKey)]
+#[provides(Logger)]
 struct LoggerLive;
 
 impl LoggerLive {
-  fn new() -> u32 {
-    99
+  fn new() -> Logger {
+    Logger(99)
   }
 }
 
-fn query(_id: u64) -> Effect<u32, (), caps!(DatabaseKey)> {
+fn query(_id: u64) -> Effect<u32, (), caps!(Database)> {
   effect!(|r| {
-    let db = ~DatabaseKey;
-    *db
+    let db = ~Database;
+    db.0
   })
 }
 
-fn log_event(_msg: &str) -> Effect<(), (), caps!(LoggerKey)> {
+fn log_event(_msg: &str) -> Effect<(), (), caps!(Logger)> {
   effect!(|r| {
-    let _log = ~LoggerKey;
+    let _log = ~Logger;
   })
 }
 
 #[test]
 fn bind_narrow_effects_in_wider_caps() {
-  let program: Effect<u32, (), caps!(DatabaseKey, LoggerKey)> = effect!(|r| {
+  let program: Effect<u32, (), caps!(Database, Logger)> = effect!(|r| {
     ~log_event("start");
     let n = ~query(1);
     n

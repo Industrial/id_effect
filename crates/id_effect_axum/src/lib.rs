@@ -258,20 +258,18 @@ mod tests {
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn fiber_scoped_cap_override_per_request() {
-    use id_effect::{build_env, provide, succeed};
-
-    #[::id_effect::capability(u32)]
-    #[expect(dead_code)]
-    struct RequestId;
+    use id_effect::{Cap, build_env, provide, succeed};
+    #[derive(Clone, Copy)]
+    struct RequestId(u32);
 
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(RequestIdKey)]
+    #[provides(RequestId)]
     struct RequestIdDefault;
 
     impl RequestIdDefault {
       #[allow(clippy::new_ret_no_self)]
-      fn new() -> u32 {
-        0
+      fn new() -> RequestId {
+        RequestId(0)
       }
     }
 
@@ -281,8 +279,8 @@ mod tests {
       .route(
         "/",
         crate::routing::get(|env: &mut Env| {
-          env.insert::<RequestIdKey>(42u32);
-          succeed::<_, std::convert::Infallible, _>(env.get::<RequestIdKey>().to_string())
+          env.insert::<Cap<RequestId>>(RequestId(42));
+          succeed::<_, std::convert::Infallible, _>(env.get::<Cap<RequestId>>().0.to_string())
         }),
       )
       .with_state(base);

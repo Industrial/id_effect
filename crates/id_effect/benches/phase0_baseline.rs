@@ -1,6 +1,6 @@
 use ::id_effect::scheduling::schedule::{Schedule, retry};
 use ::id_effect::streaming::stream::Stream;
-use ::id_effect::{Env, fail, pure, succeed};
+use ::id_effect::{Cap, Env, fail, pure, succeed};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -67,17 +67,14 @@ fn bench_schedule_retry_overhead(c: &mut Criterion) {
 }
 
 #[derive(Copy, Clone)]
-struct BenchKey;
-
-impl ::id_effect::CapabilityKey for BenchKey {
-  type Value = i32;
-}
+#[allow(dead_code)]
+struct Bench(i32);
 
 fn bench_env_insert_overhead(c: &mut Criterion) {
   c.bench_function("phase0/bench_env_insert_overhead", |b| {
     b.iter(|| {
       let mut env = Env::new();
-      env.insert::<BenchKey>(7i32);
+      env.insert::<Cap<Bench>>(Bench(7));
       std::hint::black_box(env);
     });
   });

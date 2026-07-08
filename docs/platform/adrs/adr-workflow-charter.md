@@ -9,7 +9,7 @@
 Ship **durable step logs** with two tiers:
 
 1. **`id_effect_workflow`** — `StepJournal` trait + Effect providers.
-2. **Production (PostgreSQL)** — **duroxide** + **duroxide-pg** via `DuroxideStepJournal` and `DuroxideWorkflowRuntime` on [`PgPoolKey`](../../../crates/id_effect_sql_pg/src/pool_key.rs). duroxide-pg migrations run idempotently at provider startup.
+2. **Production (PostgreSQL)** — **duroxide** + **duroxide-pg** via `DuroxideStepJournal` and `DuroxideWorkflowRuntime` on [`PgPool`](../../../crates/id_effect_sql_pg/src/pool_key.rs). duroxide-pg migrations run idempotently at provider startup.
 3. **Dev / tests only** — SQLite via feature **`memory`** (`DurableWorkflowLog`, bundled rusqlite).
 4. **`id_effect_fsm::workflow`** — bridge typed FSM snapshots into any `impl StepJournal`.
 5. **External orchestrators** (Temporal, Cadence, Hatchet) remain the recommended path for multi-region, multi-tenant cluster workflow — documented, not reimplemented.
@@ -42,7 +42,7 @@ Minimal spike hardened into `id_effect_workflow` + `step_durable` / `register_fs
 
 ### C — duroxide-pg on shared pool (chosen production path)
 
-Microsoft-maintained durable orchestration; sqlx PostgreSQL provider; fits `PgPoolKey` ecosystem.
+Microsoft-maintained durable orchestration; sqlx PostgreSQL provider; fits `PgPool` ecosystem.
 
 **Accepted:** Production default; adapter crate isolates API churn.
 

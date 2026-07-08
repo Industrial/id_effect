@@ -14,7 +14,7 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 003–005 | `003_map` … `005_pipe` | `map`, `flat_map`, `pipe!` |
 | 006–010 | `006_effect_macro_binds` … `010_one_effect_macro_per_fn` | `effect!` / `Result` bind |
 | 011–018 | `011_map_error` … `018_exit_type` | errors, `Or`, `Cause`, `Exit` |
-| 040 | `040_capability_app.rs` | capability DI: `#[capability]`, `ProviderSpec`, `run_with` |
+| 040 | `040_capability_app.rs` | capability DI: ``, `ProviderSpec`, `run_with` |
 | 041 | `041_scoped_config_provider.rs` | `Env::scoped` config override (replaces ambient) |
 | 008 | `008_effect_macro_env.rs` | `effect!` + `require!` with capability [`Env`] |
 | 034, 036 | archived — legacy layer examples in `archived/` |

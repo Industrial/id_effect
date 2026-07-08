@@ -6,13 +6,13 @@
 
 | Need | Import path |
 |------|-------------|
-| Portable HTTP in `R` (`HttpClientKey`) | `id_effect_platform::http::{execute, execute_stream, provide_reqwest_http_client}` |
+| Portable HTTP in `R` (`HttpClientService`) | `id_effect_platform::http::{execute, execute_stream, provide_reqwest_http_client}` |
 | Reqwest `RequestBuilder` pipelines, pools, JSON+Schema | `id_effect_platform::http::reqwest::{send, json_schema, provide_reqwest_client, …}` |
 
 ## Migration steps
 
 1. Import reqwest helpers from `id_effect_platform::http::reqwest` and reqwest types from `reqwest` directly.
-2. For new portable boundaries, prefer `HttpClientKey` + `execute(HttpRequest::get(url))`.
+2. For new portable boundaries, prefer `HttpClientService` + `execute(HttpRequest::get(url))`.
 3. Register providers at the composition root:
 
 ```rust

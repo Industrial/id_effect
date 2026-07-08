@@ -8,7 +8,7 @@ Project skills grounded in the **id_effect book** (`crates/id_effect/book/`), wo
 |-------|----------|
 | [id_effect](SKILL.md) | Quick router — 3.0 DI cheat sheet, removed APIs, verify commands |
 | [id_effect-fundamentals](id_effect-fundamentals/SKILL.md) | `Effect<A,E,R>`, laziness, `effect!`, `~`, map/flat_map, composition |
-| [id_effect-capabilities](id_effect-capabilities/SKILL.md) | `#[capability]`, `caps!`, `ProviderSpec`, `run_with`, provider graphs |
+| [id_effect-capabilities](id_effect-capabilities/SKILL.md) | ``, `caps!`, `ProviderSpec`, `run_with`, provider graphs |
 | [id_effect-errors](id_effect-errors/SKILL.md) | `Exit`, `Cause`, recovery, error accumulation, CLI exit codes |
 | [id_effect-concurrency](id_effect-concurrency/SKILL.md) | Fibers, `fiber_all`, cancellation, `FiberRef`, scopes, `Schedule` |
 | [id_effect-streams](id_effect-streams/SKILL.md) | `Stream`, `Sink`, chunks, backpressure, Rayon `Parallelism` |

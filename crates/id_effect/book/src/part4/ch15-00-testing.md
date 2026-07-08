@@ -11,7 +11,7 @@ This chapter covers the testing tools id_effect provides.
 Three properties make effect programs easy to test:
 
 **1. Services are injected, not ambient.**
-Your code doesn't call `DatabaseClient::global()`. It declares `caps!(DatabaseKey)` and uses `~DatabaseKey` inside `effect!`. In tests, you provide a different environment — one with a fake database.
+Your code doesn't call `DatabaseClient::global()`. It declares `caps!(Database)` and uses `~Database` inside `effect!`. In tests, you provide a different environment — one with a fake database.
 
 **2. Time is injectable.**
 Code that uses `Clock` instead of `std::time::SystemTime::now()` can be tested with `TestClock`, which advances only when you tell it to.

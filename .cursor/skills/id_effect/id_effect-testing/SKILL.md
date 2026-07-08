@@ -43,7 +43,7 @@ Prefer explicit `Exit` matching over `.unwrap()` — non-success often means bro
 ## Mock capabilities
 
 ```rust
-mock_capability!(MockDb, DatabaseKey, Arc<dyn Db>, "db/mock", || {
+mock_capability!(MockDb, Database, Arc<dyn Db>, "db/mock", || {
     Arc::new(FakeDatabase::new()) as Arc<dyn Db>
 });
 
@@ -55,9 +55,9 @@ fn create_user() {
 }
 ```
 
-Swap **`provide!(Mock…)`** at the edge; domain code using `caps!(DatabaseKey)` stays unchanged.
+Swap **`provide!(Mock…)`** at the edge; domain code using `caps!(Database)` stays unchanged.
 
-Custom fixtures: `env.insert::<UserRepoKey>(Arc::new(mock))`.
+Custom fixtures: `env.insert::<Cap<UserRepo>>(Arc::new(mock))`.
 
 ## TestClock
 

@@ -3,12 +3,25 @@
 #![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use id_effect::kernel::Effect;
 
 use crate::error::SqlError;
 use crate::transaction::{SqlTransaction, TestSqlTransaction, with_transaction};
+
+/// Injectable wrapper around `Arc<dyn SqlClient>`.
+#[derive(Clone)]
+pub struct SqlClientService(pub Arc<dyn SqlClient>);
+
+impl fmt::Debug for SqlClientService {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_tuple("SqlClientService")
+      .field(&"<dyn SqlClient>")
+      .finish()
+  }
+}
 
 /// One bound parameter for a SQL statement (MVP: textual cells).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,7 +54,6 @@ impl SqlRow {
 }
 
 /// Capability: portable SQL operations as [`Effect`] values.
-#[::id_effect::capability(Arc<dyn SqlClient>)]
 pub trait SqlClient: Send + Sync + 'static {
   /// Establish connectivity (pool warm-up / health check).
   fn connect(&self) -> Effect<(), SqlError, ()>;

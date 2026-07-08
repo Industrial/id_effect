@@ -22,15 +22,15 @@ A condensed reference for the most commonly used types and functions in id_effec
 
 | Item | Notes |
 |------|-------|
-| `#[::id_effect::capability(T)] struct Name;` | Declares a capability key; generates `NameKey` |
+| `#[::id_effect::capability(T)] struct Name;` | Declares a capability service; generates `Name` |
 | `#[derive(::id_effect::ProviderSpecDerive)]` | Derive a provider struct |
-| `#[provides(NameKey)]` | Marks which key a provider satisfies |
-| `~NameKey` / `require!(NameKey)` | Borrow a capability inside `effect!` |
-| `Needs::<NameKey>::need(env)` | Advanced: borrow outside `effect!` (prefer `~Key` inside `effect!`) |
+| `#[provides(Name)]` | Marks which key a provider satisfies |
+| `~Name` / `require!(Name)` | Borrow a capability inside `effect!` |
+| `Needs::<Name>::need(env)` | Advanced: borrow outside `effect!` (prefer `~Key` inside `effect!`) |
 | `provide!(LiveProvider)` | Box a provider for wiring |
 | `run_with([…], effect)` | Build env from providers and run |
 | `build_env([…])` | Build an `Env` without running |
-| `Env::insert::<K>(value)` | Manual test override on an existing env |
+| `Env::insert::<Cap<K>>(value)` | Manual test override on an existing env |
 | `mock_capability!(…)` | Generate a test `ProviderSpec` with a closure body |
 
 ## Constructors

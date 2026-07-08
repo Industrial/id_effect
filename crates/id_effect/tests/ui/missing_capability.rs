@@ -1,10 +1,10 @@
 use id_effect::{Effect, Needs};
 
-struct MissingCapKey;
+struct MissingCap;
 
 fn bad() -> Effect<(), (), ()> {
   Effect::new(|r: &mut ()| {
-    let _ = Needs::<MissingCapKey>::need(r);
+    let _ = Needs::<MissingCap>::need(r);
     Ok(())
   })
 }

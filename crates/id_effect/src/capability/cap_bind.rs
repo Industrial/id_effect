@@ -102,6 +102,7 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::Cap;
   use crate::kernel::succeed;
   use pollster::FutureExt;
 
@@ -123,18 +124,17 @@ mod tests {
 
   #[test]
   fn cap_into_bind_runs_through_cap_list() {
-    #[::id_effect::capability(u32)]
-    #[expect(dead_code)]
-    struct BindKey;
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    struct Bind(pub u32);
     let mut env = Env::new();
-    env.insert::<BindKeyKey>(5u32);
-    let mut caps = CapList::<(BindKeyKey,)>::from_env(env);
-    let eff = succeed::<u32, (), CapList<(BindKeyKey,)>>(*caps.get::<BindKeyKey>());
+    env.insert::<Cap<Bind>>(Bind(5u32));
+    let mut caps = CapList::<(Cap<Bind>,)>::from_env(env);
+    let eff = succeed::<u32, (), CapList<(Cap<Bind>,)>>(caps.get::<Cap<Bind>>().0);
     let out = cap_into_bind(eff, &mut caps).block_on().unwrap();
     assert_eq!(out, 5);
 
     let eff =
-      Effect::new(|caps: &mut CapList<(BindKeyKey,)>| Ok::<u32, ()>(*caps.get::<BindKeyKey>()));
+      Effect::new(|caps: &mut CapList<(Cap<Bind>,)>| Ok::<u32, ()>(caps.get::<Cap<Bind>>().0));
     assert_eq!(eff.cap_bind(&mut caps).block_on().unwrap(), 5);
   }
 }

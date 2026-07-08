@@ -21,7 +21,7 @@ todos:
     content: "Wave 3 (#6): Audit public Effect signatures; replace concrete Env with caps! or Needs bounds"
     status: completed
   - id: leaf-provider-derive-migration
-    content: "Wave 3 (#8): Migrate all workspace providers to #[capability] + #[derive(ProviderSpec)]; delete define_capability!"
+    content: "Wave 3 (#8): Migrate all workspace providers to  + #[derive(ProviderSpec)]; delete caps!"
     status: completed
   - id: leaf-axum-e2e-reference
     content: "Wave 4 (#7): Axum + tokio E2E reference example + book chapter"
@@ -91,7 +91,7 @@ isProject: false
 | Finding | Source | Implication |
 |---------|--------|-------------|
 | Completion mission **shipped**; infra exists (`CapEnv*`, `caps!`, `require!`, derive, scoped env) | [`.maestro/missions/id-effect-v2-di-completion.execution.md`](.maestro/missions/id-effect-v2-di-completion.execution.md) | This mission is **adoption + hardening**, not greenfield |
-| **0** live `caps!(…)` call sites; **0** `#[capability]` / `derive(ProviderSpec)` user adoption | Codebase map subagent | Leaves #1,#2,#6,#8 are the critical path |
+| **0** live `caps!(…)` call sites; **0** `` / `derive(ProviderSpec)` user adoption | Codebase map subagent | Leaves #1,#2,#6,#8 are the critical path |
 | **7** `IntoBind` refs in logger/config; v1 `context/`/`layer/` still **public** via `HasTag`, `Matcher`, `Effect::provide` | Blast-radius subagent | Leaves #5,#9 blocked until migration (#5 first) |
 | trybuild: **2** cases only | `crates/id_effect/tests/ui/` | Leaf #11 expands corpus |
 | `ambient.rs` deprecated, **16** internal refs in config only | Config map | Leaf #10 is low-risk, isolated |
@@ -108,7 +108,7 @@ isProject: false
 3. **Semver:** **id_effect 0.3.0** semver-major (leaf #20); **id_effect_platform 4.0.0** (depends on id_effect 3.0). No 2.1.x intermediate.
 4. **Compile-time caps:** **Mandatory** from Wave 2 — all multi-capability public effects use `caps!(…)`; proc-macro infers required caps from `require!(K)` in `effect!`. **Ban** public `Effect<_, _, Env>` and bare `Effect<_, _, ()>` when body uses capabilities.
 5. **Cap typing:** **Delete** `CapEnv1…CapEnv6`; single model: const-generic `CapList` + `caps!` only (#2).
-6. **Macro surface:** **Delete** `define_capability!`, `require!(env, K)`, manual `impl ProviderSpec` in workspace crates — only `#[capability]`, `require!(K)`, `#[derive(ProviderSpec)]`.
+6. **Macro surface:** **Delete** `caps!`, `require!(env, K)`, manual `impl ProviderSpec` in workspace crates — only ``, `require!(K)`, `#[derive(ProviderSpec)]`.
 7. **context/layer:** **Full delete** of `context/`, `layer/`, `id_effect_macro/src/layer/`, `IntoBind`, `Effect::provide` — no `di_internal` HList engine (#9). `HasTag`/`Matcher` move to standalone module first.
 8. **config ambient:** **Delete** `ambient.rs` and all call sites in same PR — no deprecated stub (#10).
 
@@ -118,7 +118,7 @@ isProject: false
 
 - Deprecation periods or `#[deprecated]` stubs for removed APIs
 - `CapEnv1…6` alias types alongside `CapList`
-- `define_capability!`, `require!(env, K)`, `IntoBind`, `Effect::provide`, config `ambient`
+- `caps!`, `require!(env, K)`, `IntoBind`, `Effect::provide`, config `ambient`
 - Public `Effect<_, _, Env>` for multi-capability handlers
 - `di_internal` HList retention "for macros only"
 
@@ -226,9 +226,9 @@ v2 DI Completion built the runtime and macros; **the workspace still codes again
 
 **Context:** **13** manual `impl ProviderSpec`; **0** derives.
 
-**Modify:** Migrate **all** workspace `impl ProviderSpec` to `#[capability]` + `#[derive(ProviderSpec)]`. **Delete** [`define_capability!`](crates/id_effect_macro/src/capability/define.rs) macro and public re-export.
+**Modify:** Migrate **all** workspace `impl ProviderSpec` to `` + `#[derive(ProviderSpec)]`. **Delete** [`caps!`](crates/id_effect_macro/src/capability/define.rs) macro and public re-export.
 
-**AC:** `rg 'define_capability!|impl ProviderSpec for' crates/ --glob '*.rs'` → 0 matches outside proc-macro internals; `040_capability_app.rs` uses attribute + derive only
+**AC:** `rg 'caps!|impl ProviderSpec for' crates/ --glob '*.rs'` → 0 matches outside proc-macro internals; `040_capability_app.rs` uses attribute + derive only
 
 **Gates:** `cargo test -p id_effect_platform -p id_effect_logger` | witness: agent-claimed-locally
 
@@ -490,7 +490,7 @@ flowchart TB
 | IntoBind | `rg 'IntoBind' crates/` | 0 |
 | v1 public | `rg 'pub use.*layer|pub.*Cons' crates/id_effect/src/lib.rs` | 0 |
 | caps adoption | `rg 'caps!' crates/ --glob '*.rs'` | ≥10 call sites |
-| legacy APIs | `rg 'CapEnv|define_capability!|IntoBind|ambient|service_key!' crates/` | 0 |
+| legacy APIs | `rg 'CapEnv|caps!|IntoBind|ambient|service_key!' crates/` | 0 |
 | trybuild | `cargo test -p id_effect --test ui_compile_fail` | pass |
 | Book | `mdbook build` | success |
 

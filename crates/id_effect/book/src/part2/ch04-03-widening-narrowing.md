@@ -7,11 +7,11 @@ Sometimes your effect needs *part* of an environment, but you have the whole thi
 Imagine your application needs several capabilities:
 
 ```rust
-// Effect needs only LoggerKey
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)> { ... }
+// Effect needs only EffectLogger
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> { ... }
 
-// Caller has DatabaseKey + LoggerKey + ConfigKey
-fn process(data: Data) -> Effect<(), AppError, caps!(DatabaseKey, LoggerKey, ConfigKey)> { ... }
+// Caller has Database + EffectLogger + Config
+fn process(data: Data) -> Effect<(), AppError, caps!(Database, EffectLogger, Config)> { ... }
 ```
 
 You can't call `log_event` inside `process` without adapting the environment — the `R` types don't match. You need to *narrow* or *widen*.
@@ -30,7 +30,7 @@ Now `app_log` has type `Effect<(), LogError, AppEnv>`. The function extracts the
 Inside `effect!`, the pattern looks like:
 
 ```rust
-fn process(data: Data) -> Effect<(), AppError, caps!(DatabaseKey, LoggerKey, ConfigKey)> {
+fn process(data: Data) -> Effect<(), AppError, caps!(Database, EffectLogger, Config)> {
     effect!(|r| {
         ~ log_event("start").zoom_env(|e| extract_logger(e)).map_error(AppError::Log);
         ~ db_query(data).zoom_env(|e| extract_db(e)).map_error(AppError::Db);
@@ -61,21 +61,21 @@ For capability DI, prefer [`caps!`](../../src/capability/set.rs) and the `~` bin
 ```rust
 use id_effect::{Effect, caps, effect, run_with, provide};
 
-fn query(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+fn query(id: u64) -> Effect<User, DbError, caps!(Database)> {
     effect!(|r| {
-        let db = ~DatabaseKey;
+        let db = ~Database;
         db.fetch_user(id)
     })
 }
 
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)> {
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> {
     effect!(|r| {
-        let log = ~LoggerKey;
+        let log = ~EffectLogger;
         log.info(msg);
     })
 }
 
-fn app() -> Effect<User, AppError, caps!(DatabaseKey, LoggerKey)> {
+fn app() -> Effect<User, AppError, caps!(Database, EffectLogger)> {
     effect!(|r| {
         ~log_event("start");
         ~query(42)
@@ -90,26 +90,26 @@ run_with(
 
 **Automatic binding with `~`:** when the inner effect needs any single key from the outer `caps!(…)` list, `effect!` expands `~inner(...)` to [`cap_into_bind`](../../src/capability/cap_bind.rs) — no manual projection.
 
-**Capability lookup:** `~DatabaseKey` inside `effect!` borrows that capability from `r` (same as [`require!(DatabaseKey)`](../../src/capability/require.rs)).
+**Capability lookup:** `~Database` inside `effect!` borrows that capability from `r` (same as [`require!(Database)`](../../src/capability/require.rs)).
 
 **Implicit `|r|`:** write `effect!(|r| { … })`; Rust infers `&mut caps!(…)` from the enclosing function's `Effect<_, _, caps!(…)>` return type. You still declare `caps!(…)` once on the signature.
 
 **Outside `effect!`**, narrow explicitly with [`CapWiden::widen`](../../src/capability/set.rs) or [`project_at_*`](../../src/capability/set.rs):
 
 ```rust
-let wide: caps!(DatabaseKey, LoggerKey) = /* from build_env or run_with */;
-let narrow: caps!(DatabaseKey) = wide.widen();
+let wide: caps!(Database, EffectLogger) = /* from build_env or run_with */;
+let narrow: caps!(Database) = wide.widen();
 run_blocking(query(1), narrow)?;
 ```
 
-When an inner function declares `caps!(DatabaseKey)` and the caller holds `caps!(DatabaseKey, LoggerKey)`, the compiler checks that every required key is present — no positional tuple indexing, no runtime downcasts.
+When an inner function declares `caps!(Database)` and the caller holds `caps!(Database, EffectLogger)`, the compiler checks that every required key is present — no positional tuple indexing, no runtime downcasts.
 
 ## R as Documentation Revisited
 
 These combinators highlight why `R` is valuable as documentation. When you see:
 
 ```rust
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)>
+fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)>
 ```
 
 You know *exactly* what this function needs. You don't need to read its body to see if it also touches the database. Adaptation at the call site stays explicit.
@@ -125,6 +125,6 @@ With `R`, the function declares what it needs. With `zoom_env` or `CapWiden`, th
 
 ## When to Use These
 
-In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](../../src/capability/set.rs) / [`CapWiden`](../../src/capability/set.rs) and named capability keys (Chapters 5–6), which avoid the need for explicit projection.
+In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](../../src/capability/set.rs) / [`CapWiden`](../../src/capability/set.rs) and named capability services (Chapters 5–6), which avoid the need for explicit projection.
 
 Think of `zoom_env` as the manual fallback when automatic capability subtyping isn't the right fit.

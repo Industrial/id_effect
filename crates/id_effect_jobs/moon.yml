@@ -19,7 +19,7 @@ tasks:
       outputStyle: buffer-only-failure
   check-all-features:
     description: 'Check optional postgres/apalis/obix/kafka (requires DATABASE_URL)'
-    deps: ['~:check']
+    deps: ['effect:ci-format', '~:check']
     command:
       - cargo
       - check
@@ -31,7 +31,7 @@ tasks:
       cache: false
       outputStyle: buffer-only-failure
   clippy:
-    deps: ['^:clippy', '~:check']
+    deps: ['effect:ci-format', '^:clippy', '~:check']
     command:
       - cargo
       - clippy
@@ -48,8 +48,16 @@ tasks:
     options:
       cache: true
       outputStyle: buffer-only-failure
+  lint:
+    description: 'Alias for ~:clippy (format-gated)'
+    deps: ['effect:ci-format', '~:clippy']
+    command: 'bash'
+    args: ['-c', ':']
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
   test:
-    deps: ['^:test', '~:clippy']
+    deps: ['effect:ci-format', '^:test', '~:clippy']
     command:
       - cargo
       - nextest
@@ -64,7 +72,7 @@ tasks:
       cache: true
       outputStyle: buffer-only-failure
   build:
-    deps: ['^:build', '~:test']
+    deps: ['effect:ci-format', '^:build', '~:test']
     command:
       - cargo
       - build

@@ -46,19 +46,19 @@ Quick reference for **id_effect 3.0**. For depth, read the specialized skill for
 
 | Do | Pattern |
 |----|---------|
-| Declare key | `#[::id_effect::capability(T)] struct Name;` → `NameKey` |
-| Declare provider | `#[derive(ProviderSpecDerive)]` + `#[provides(NameKey)]` |
+| Declare key | `#[::id_effect::capability(T)] struct Name;` → `Name` |
+| Declare provider | `#[derive(ProviderSpecDerive)]` + `#[provides(Name)]` |
 | Typed requirements | `Effect<_, _, caps!(K1, K2)>` |
-| Access in `effect!` | `~NameKey` with `|r|` |
+| Access in `effect!` | `~Name` with `|r|` |
 | Wire at edge | `run_with([provide!(Live), …], effect)` |
-| Test doubles | `mock_capability!` or `env.insert::<Key>(value)` |
+| Test doubles | `mock_capability!` or `env.insert::<Cap<Key>>(value)` |
 
 ## Removed (do not use)
 
-- `define_capability!`, `service_key!`, `ctx!`, `req!`
+- `caps!`, `service_key!`, `ctx!`, `req!`
 - `Layer` / `Stack`, `Effect::provide`, `CapEnv1…6`
 - `require!(env, Key)`, config `ambient`
-- Service `IntoBind` (`~ServiceKey`) for DI — use `~Key`
+- Service `IntoBind` (`~Service`) for DI — use `~Key`
 
 ## Parallelism (Rayon default)
 

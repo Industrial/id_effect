@@ -3,31 +3,31 @@
 You've seen `R` in function signatures:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)>
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
 ```
 
-It looks like "this needs `DatabaseKey`." But what does that mean precisely?
+It looks like "this needs `Database`." But what does that mean precisely?
 
 ## R as a contract
 
 `R` is a *promise to the compiler*. When you write:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> {
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
     effect!(|r| {
-        let db = ~DatabaseKey;
+        let db = ~Database;
         Ok(db.fetch_user(id))
     })
 }
 ```
 
-You are declaring: "To run this effect, you must supply `DatabaseKey` in the environment." The compiler holds you to that promise. You cannot call `run_with` without a provider for `DatabaseKey`.
+You are declaring: "To run this effect, you must supply `Database` in the environment." The compiler holds you to that promise. You cannot call `run_with` without a provider for `Database`.
 
 ```rust
 // Missing DatabaseLive in the provider list → runtime CapabilityError at run_with
 // run_with([], get_user(1))?;
 
-// Correct — graph builds DatabaseKey before the effect runs
+// Correct — graph builds Database before the effect runs
 run_with([provide!(DatabaseLive)], get_user(1))?;
 ```
 
@@ -38,11 +38,11 @@ The contract is not a comment. It is enforced by `caps!(…)` on the effect type
 When you combine effects with `effect!`, their capability requirements merge:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
-fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(DatabaseKey)> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
+fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { ... }
 
-// Combined: still caps!(DatabaseKey) — both needed the same key
-fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(DatabaseKey)> {
+// Combined: still caps!(Database) — both needed the same key
+fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Database)> {
     effect!(|r| {
         let user = ~ get_user(id);
         let posts = ~ get_posts(user.id);
@@ -54,11 +54,11 @@ fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Data
 When effects need *different* keys:
 
 ```rust
-fn log(msg: &str) -> Effect<(), LogError, caps!(LoggerKey)> { ... }
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
+fn log(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
 
-// Combined: caps!(DatabaseKey, LoggerKey) — needs BOTH
-fn get_user_logged(id: u64) -> Effect<User, AppError, caps!(DatabaseKey, LoggerKey)> {
+// Combined: caps!(Database, EffectLogger) — needs BOTH
+fn get_user_logged(id: u64) -> Effect<User, AppError, caps!(Database, EffectLogger)> {
     effect!(|r| {
         ~ log(&format!("Fetching user {id}")).map_error(AppError::Log);
         let user = ~ get_user(id).map_error(AppError::Db);
@@ -84,7 +84,7 @@ As functions grow, they naturally accumulate keys:
 fn process_order(order: Order) -> Effect<
     Receipt,
     AppError,
-    caps!(DatabaseKey, PaymentGatewayKey, EmailServiceKey, LoggerKey),
+    caps!(Database, PaymentGateway, EmailService, EffectLogger),
 > {
     effect!(|r| {
         ~ log("Processing order").map_error(AppError::Log);
@@ -96,7 +96,7 @@ fn process_order(order: Order) -> Effect<
 }
 ```
 
-Just from the type signature you know this function touches four capability keys. No need to read the implementation.
+Just from the type signature you know this function touches four capability services. No need to read the implementation.
 
 ## Why R instead of parameters?
 
@@ -116,6 +116,6 @@ That works, but it forces every layer of your call stack to accept and forward d
 
 ## Foreshadowing
 
-You may be wondering: how does the runtime store `DatabaseKey` and `LoggerKey` in one place?
+You may be wondering: how does the runtime store `Database` and `EffectLogger` in one place?
 
-[`Env`](../../src/capability/env.rs) is an order-independent map keyed by capability identity — not a positional tuple. Chapter 5 shows how `#[capability]` generates each `*Key` type. For now: **`R = caps!(…)` is the compile-time list; `Env` is the runtime container.**
+[`Env`](../../src/capability/env.rs) is an order-independent map keyed by capability identity — not a positional tuple. Chapter 5 shows how `` generates each `*Key` type. For now: **`R = caps!(…)` is the compile-time list; `Env` is the runtime container.**

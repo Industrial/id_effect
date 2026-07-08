@@ -27,14 +27,8 @@ pub trait PostRepository: Send + Sync {
 pub trait NotificationService: Send + Sync {
     fn send_welcome(&self, to: &str) -> Effect<(), NotifyError, ()>;
 }
-
-#[::id_effect::capability(Arc<dyn UserRepository>)]
 struct UserRepo;
-
-#[::id_effect::capability(Arc<dyn PostRepository>)]
 struct PostRepo;
-
-#[::id_effect::capability(Arc<dyn NotificationService>)]
 struct Notifier;
 ```
 
@@ -43,20 +37,20 @@ struct Notifier;
 ```rust
 use id_effect::{effect, require, caps, succeed};
 
-fn get_author_feed(author_id: u64) -> Effect<(User, Vec<Post>), AppError, caps!(UserRepoKey, PostRepoKey)> {
+fn get_author_feed(author_id: u64) -> Effect<(User, Vec<Post>), AppError, caps!(UserRepo, PostRepo)> {
     effect!(|r| {
-        let user_repo = ~UserRepoKey;
-        let post_repo = ~PostRepoKey;
+        let user_repo = ~UserRepo;
+        let post_repo = ~PostRepo;
         let user  = ~ user_repo.get_user(author_id).map_error(AppError::Db);
         let posts = ~ post_repo.get_posts_by_author(author_id).map_error(AppError::Db);
         (user, posts)
     })
 }
 
-fn register_user(name: &str, email: &str) -> Effect<User, AppError, caps!(UserRepoKey, NotifierKey)> {
+fn register_user(name: &str, email: &str) -> Effect<User, AppError, caps!(UserRepo, Notifier)> {
     effect!(|r| {
-        let repo = ~UserRepoKey;
-        let notifier = ~NotifierKey;
+        let repo = ~UserRepo;
+        let notifier = ~Notifier;
         let user = ~ repo.create_user(name, email).map_error(AppError::Db);
         ~ notifier.send_welcome(&user.email).map_error(AppError::Notify);
         user
@@ -84,7 +78,7 @@ fn main() {
 }
 ```
 
-[`CapabilityGraph`](../../src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that read `DatabaseKey` from `Env`.
+[`CapabilityGraph`](../../src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that read `Database` from `Env`.
 
 ## Test wiring
 
@@ -92,8 +86,8 @@ fn main() {
 #[test]
 fn feed_includes_authors_posts() {
     let mut env = Env::new();
-    env.insert::<UserRepoKey>(Arc::new(mock_user_repo(&[alice(), bob()])));
-    env.insert::<PostRepoKey>(Arc::new(mock_post_repo(&[alice_post()])));
+    env.insert::<Cap<UserRepo>>(Arc::new(mock_user_repo(&[alice(), bob()])));
+    env.insert::<Cap<PostRepo>>(Arc::new(mock_post_repo(&[alice_post()])));
 
     let (_user, posts) = run_test(get_author_feed(1), env).unwrap();
     assert_eq!(posts.len(), 1);

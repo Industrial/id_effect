@@ -1,56 +1,56 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code, clippy::new_ret_no_self, clippy::type_complexity)]
 
 //! Compile-time coverage for `effect!` / implicit `|r|` / `~Key` macro paths.
 
 use id_effect::{Effect, caps, effect, provide, run_with};
 
-#[::id_effect::capability(u32)]
-struct Alpha;
-#[::id_effect::capability(u32)]
-struct Beta;
-#[::id_effect::capability(String)]
-struct Gamma;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Alpha(u32);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Beta(u32);
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Gamma(String);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(AlphaKey)]
+#[provides(Alpha)]
 struct AlphaLive;
 impl AlphaLive {
-  fn new() -> u32 {
-    1
+  fn new() -> Alpha {
+    Alpha(1)
   }
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(BetaKey)]
+#[provides(Beta)]
 struct BetaLive;
 impl BetaLive {
-  fn new() -> u32 {
-    2
+  fn new() -> Beta {
+    Beta(2)
   }
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(GammaKey)]
+#[provides(Gamma)]
 struct GammaLive;
 impl GammaLive {
-  fn new() -> String {
-    "g".into()
+  fn new() -> Gamma {
+    Gamma("g".into())
   }
 }
 
 #[test]
 fn effect_macro_paths_integration() {
-  let single: Effect<u32, (), caps!(AlphaKey)> = effect!(|r| {
-    let a = ~AlphaKey;
-    *a
+  let single: Effect<u32, (), caps!(Alpha)> = effect!(|r| {
+    let a = ~Alpha;
+    a.0
   });
   assert_eq!(run_with([provide!(AlphaLive)], single).unwrap(), 1);
 
-  let multi: Effect<String, (), caps!(AlphaKey, BetaKey, GammaKey)> = effect!(|r| {
-    let _a = ~AlphaKey;
-    let _b = ~BetaKey;
-    let g = ~GammaKey;
-    g.clone()
+  let multi: Effect<String, (), caps!(Alpha, Beta, Gamma)> = effect!(|r| {
+    let _a = ~Alpha;
+    let _b = ~Beta;
+    let g = ~Gamma;
+    g.0.clone()
   });
   assert_eq!(
     run_with(
@@ -61,13 +61,12 @@ fn effect_macro_paths_integration() {
     "g"
   );
 
-  let explicit: Effect<u32, (), caps!(AlphaKey)> =
-    effect!(|r: &mut caps!(AlphaKey)| { *~AlphaKey });
+  let explicit: Effect<u32, (), caps!(Alpha)> = effect!(|r: &mut caps!(Alpha)| { (~Alpha).0 });
   assert_eq!(run_with([provide!(AlphaLive)], explicit).unwrap(), 1);
 
-  let require_alias: Effect<u32, (), caps!(AlphaKey)> = effect!(|r| {
-    let a = require!(AlphaKey);
-    *a
+  let require_alias: Effect<u32, (), caps!(Alpha)> = effect!(|r| {
+    let a = require!(Alpha);
+    a.0
   });
   assert_eq!(run_with([provide!(AlphaLive)], require_alias).unwrap(), 1);
 }

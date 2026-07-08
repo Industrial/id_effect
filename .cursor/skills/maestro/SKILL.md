@@ -74,7 +74,7 @@ First claim: `tsk-mpsu3z87-xy3w58` (`domain-spec`).
 
 ## id_effect Rust (capability DI)
 
-For `id_effect` / `crates/id_effect*` work, load **`.cursor/skills/id_effect/SKILL.md`** — 3.0 patterns (`#[capability]`, `caps!`, `require!`, `run_with`). Do not document removed Layer/ctx/service_key APIs.
+For `id_effect` / `crates/id_effect*` work, load **`.cursor/skills/id_effect/SKILL.md`** — 3.0 patterns (``, `caps!`, `require!`, `run_with`). Do not document removed Layer/ctx/service_key APIs.
 
 ## Elixir implementation coupling
 
