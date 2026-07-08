@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     EsEntityEventStore, EsEntityPgBackend, EventStore, Projection, ProjectionNode,
     ProjectionRunner, apply_es_entity_journal_ddl,
   };
-  use id_effect_jobs::{ObixOutbox, OutboxTable};
+  use id_effect_jobs::ObixOutbox;
   use id_effect_sql_pg::{PgPoolConfig, pg_pool_from_config};
   use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
   use obix::MailboxConfig;
