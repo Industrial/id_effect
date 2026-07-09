@@ -30,6 +30,13 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  ci:
+    description: 'Local/CI parity gate (mirrors .github/workflows/ci.yml moon-ci job)'
+    command: 'bash'
+    args: ['scripts/ci-local.sh', 'auto']
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
   ci-format:
     description: >-
       Repo-wide format *check* (treefmt CI mode + fail-on-change). Always runs (never cached): package :check/:clippy/:test/:build depend on it. Use :format to write formatted files.

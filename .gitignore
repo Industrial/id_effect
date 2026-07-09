@@ -90,3 +90,5 @@ yarn-error.log*
 .maestro/tasks/local-history/
 .maestro/evidence/
 .maestro/runs/
+target-ci-stable/
+.cargo-ci-stable/

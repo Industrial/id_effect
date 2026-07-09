@@ -1,5 +1,5 @@
-error[E0599]: no associated function or constant named `provide` found for struct `id_effect::Effect<A, E, R>` in the current scope
+error[E0599]: no function or associated item named `provide` found for struct `id_effect::Effect<A, E, R>` in the current scope
  --> tests/ui/effect_concrete_env.rs:3:65
   |
 3 |   let _: fn(id_effect::Effect<(), (), ()>) = id_effect::Effect::provide;
-  |                                                                 ^^^^^^^ associated function or constant not found in `id_effect::Effect<_, _, _>`
+  |                                                                 ^^^^^^^ function or associated item not found in `id_effect::Effect<_, _, _>`
