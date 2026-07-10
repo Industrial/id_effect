@@ -108,3 +108,56 @@ fn find_named_variant(input: &DeriveInput) -> Option<syn::LitStr> {
   }
   None
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use quote::quote;
+  use syn::parse_quote;
+
+  #[test]
+  fn provider_id_strips_live_suffix() {
+    assert_eq!(
+      provider_id_from_ident(&parse_quote!(CounterLive)),
+      "counter-live"
+    );
+    assert_eq!(provider_id_from_ident(&parse_quote!(DbPool)), "db-pool");
+  }
+
+  #[test]
+  fn derive_emits_provider_spec_impl() {
+    let input = quote! {
+      #[provides(Counter)]
+      #[derive(Default)]
+      struct CounterLive;
+    };
+    let out = derive2(input);
+    let out = out.to_string();
+    assert!(out.contains("impl :: id_effect :: ProviderSpec for CounterLive"));
+    assert!(out.contains("type Key = :: id_effect :: Cap < Counter >"));
+    assert!(out.contains("type Output = Counter"));
+    assert!(out.contains("counter-live"));
+    assert!(out.contains("Self :: default ()"));
+  }
+
+  #[test]
+  fn missing_provides_attr_errors() {
+    let input = quote! {
+      struct CounterLive;
+    };
+    let out = derive2(input);
+    assert!(out.to_string().contains("requires"));
+    assert!(out.to_string().contains("provides"));
+  }
+
+  #[test]
+  fn derive_with_named_variant() {
+    let input = quote! {
+      #[provides(Db)]
+      #[named("replica")]
+      struct DbReplicaLive;
+    };
+    let out = derive2(input).to_string();
+    assert!(out.contains("replica"));
+  }
+}

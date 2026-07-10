@@ -41,4 +41,5 @@ fn capability_runtime_entrypoints() {
     run_with([], fail_app),
     Err(RunError::Capability(_))
   ));
+  assert!(Cap::<GateAlpha>::slot_name().contains("GateAlpha"));
 }

@@ -52,3 +52,19 @@ where
 /// Marker implemented by all capability service traits.
 pub trait Capability: Send + Sync + 'static {}
 impl<T: Send + Sync + 'static> Capability for T {}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+  struct Sample(u8);
+
+  #[test]
+  fn cap_slot_name_and_marker_traits() {
+    assert!(Cap::<Sample>::slot_name().contains("Sample"));
+    let cap: Cap<Sample> = Default::default();
+    let _ = cap.clone();
+    let _ = cap;
+  }
+}
