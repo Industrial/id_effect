@@ -2,10 +2,8 @@
 
 use crate::error::WorkflowError;
 use crate::journal::StepJournal;
-use duroxide_pg::migrations::MigrationRunner;
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{AssertSqlSafe, ConnectOptions, PgPool};
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_ms() -> i64 {
@@ -44,14 +42,8 @@ pub async fn bootstrap_duroxide_schema(pool: &PgPool) -> Result<(), WorkflowErro
       .await
       .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
   }
-  // duroxide-pg 0.1.34 is built against sqlx 0.8; use a short-lived pool for its migrations.
   let database_url = pool.connect_options().to_url_lossy().to_string();
-  let duroxide_pool = sqlx_duroxide::PgPool::connect(&database_url)
-    .await
-    .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-  let runner = MigrationRunner::new(Arc::new(duroxide_pool), "public".to_string());
-  runner
-    .migrate()
+  duroxide_pg::PostgresProvider::new_with_schema(&database_url, Some("public"))
     .await
     .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
   Ok(())
