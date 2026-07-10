@@ -264,4 +264,14 @@ mod tests {
     let inner = unwrap_cap_service_type(cap).unwrap();
     assert!(inner.to_token_stream().to_string().contains("Alpha"));
   }
+
+  #[test]
+  fn unwrap_cap_service_type_non_path_and_bare_cap() {
+    let tuple: Type = parse2(quote! { (Alpha, Beta) }).unwrap();
+    let out = unwrap_cap_service_type(tuple).unwrap();
+    assert!(out.to_token_stream().to_string().contains("Alpha"));
+    let bare_cap: Type = parse2(quote! { Cap }).unwrap();
+    let out = unwrap_cap_service_type(bare_cap).unwrap();
+    assert_eq!(out.to_token_stream().to_string(), "Cap");
+  }
 }

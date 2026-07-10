@@ -272,6 +272,7 @@ mod provider_tests {
     use crate::run_blocking;
     let node = ProviderBox::new::<EffectfulSvc>();
     assert!(node.0.uses_effectful_build());
+    assert!(EffectfulSvc::provide(&Env::new()).is_err());
     let env = run_blocking(node.0.build_effect(&Env::new()), Env::new()).expect("effect build");
     assert_eq!(env.get::<Cap<Svc>>().0, 7);
   }

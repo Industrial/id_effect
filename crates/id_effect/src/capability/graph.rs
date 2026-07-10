@@ -200,6 +200,7 @@ mod graph_feature_tests {
 
   #[test]
   fn optional_dep_absent_builds() {
+    assert!(!DbWithOptional::optional_requires().is_empty());
     let env = CapabilityGraph::new()
       .add(provide!(DbWithOptional).0)
       .build()
@@ -249,6 +250,8 @@ mod graph_feature_tests {
     let g = CapabilityGraph::new()
       .add(provide!(DbA).0)
       .add(provide!(DbB).0);
+    assert_eq!(DbA::new().0, 1);
+    assert_eq!(DbB::new().0, 2);
     let err = g.plan().expect_err("conflict");
     assert!(matches!(
       err,

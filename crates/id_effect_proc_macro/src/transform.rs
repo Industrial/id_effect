@@ -1666,6 +1666,10 @@ mod tests {
     #[test]
     fn rejects_qualified_paths() {
       assert!(!is_capability_key_operand(&quote! { <dyn Database> }));
+      assert!(!is_capability_key_operand(
+        &quote! { <Self as Trait>::Database }
+      ));
+      assert!(!is_capability_key_operand(&quote! { (Alpha, Beta) }));
     }
   }
 }

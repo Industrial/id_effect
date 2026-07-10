@@ -318,6 +318,12 @@ mod tests {
   use id_effect::run_blocking;
   use std::path::Path;
 
+  #[test]
+  fn filesystem_service_type_alias_is_object_safe() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<FileSystemService>();
+  }
+
   mod test_file_system {
     use super::*;
 
