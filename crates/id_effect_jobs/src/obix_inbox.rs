@@ -3,7 +3,7 @@
 use id_effect::Effect;
 use job::Jobs;
 use obix::prelude::es_entity;
-use obix::{Inbox, InboxConfig, InboxError as ObixInboxError, InboxHandler, InboxIdempotency};
+use obix::{Inbox, InboxConfig, InboxError as ObixInboxError, InboxHandler, InboxIdempotencyKey};
 use serde::Serialize;
 use sqlx::PgPool;
 
@@ -47,7 +47,7 @@ impl ObixInbox {
   /// Persist an inbound event idempotently and queue processing.
   pub fn persist<P>(
     &self,
-    idempotency_key: impl Into<InboxIdempotency>,
+    idempotency_key: impl Into<InboxIdempotencyKey>,
     event: P,
   ) -> Effect<InboxPersistResult, JobError, ()>
   where
