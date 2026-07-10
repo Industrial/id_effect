@@ -16,6 +16,8 @@ pub struct RdKafkaConfig {
   pub bootstrap_servers: String,
   /// Optional `message.timeout.ms` (default 5000).
   pub message_timeout_ms: Option<u64>,
+  /// Enable idempotent producer (`enable.idempotence=true`, `acks=all`).
+  pub enable_idempotence: bool,
 }
 
 impl RdKafkaConfig {
@@ -24,6 +26,7 @@ impl RdKafkaConfig {
     Self {
       bootstrap_servers: bootstrap_servers.into(),
       message_timeout_ms: Some(5_000),
+      enable_idempotence: true,
     }
   }
 }
@@ -41,6 +44,10 @@ impl RdKafkaBroker {
     client.set("bootstrap.servers", &config.bootstrap_servers);
     if let Some(ms) = config.message_timeout_ms {
       client.set("message.timeout.ms", ms.to_string());
+    }
+    if config.enable_idempotence {
+      client.set("enable.idempotence", "true");
+      client.set("acks", "all");
     }
     let producer: FutureProducer = client
       .create()
