@@ -12,11 +12,11 @@ warning: unused import: `CapWiden`
   |
   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
 
-error[E0599]: no function or associated item named `from_env` found for struct `CapList<Ks>` in the current scope
+error[E0599]: no associated function or constant named `from_env` found for struct `CapList<Ks>` in the current scope
   --> tests/ui/cap_widen_invalid.rs:10:32
    |
 10 |   let wide = CapList::<(Db,)>::from_env(env);
-   |                                ^^^^^^^^ function or associated item not found in `CapList<(Db,)>`
+   |                                ^^^^^^^^ associated function or constant not found in `CapList<(Db,)>`
    |
 help: there is an associated function `from` with a similar name
    |

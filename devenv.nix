@@ -7,7 +7,7 @@
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [inputs.rust-overlay.overlays.default];
   };
-  rustStable = pkgsWithRust.rust-bin.stable.latest.default;
+  rustStable = pkgsWithRust.rust-bin.stable."1.97.0".default;
 
   # Moon from GitHub releases (x86_64-linux). See https://moonrepo.dev/docs/install
   moon = pkgs.stdenv.mkDerivation {
