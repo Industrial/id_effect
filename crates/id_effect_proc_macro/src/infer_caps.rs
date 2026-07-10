@@ -245,4 +245,23 @@ mod tests {
     let env_ty: Type = parse2(quote! { CapList<(Alpha,)> }).unwrap();
     validate_explicit_caps(&env_ty, &[]).unwrap();
   }
+
+  #[test]
+  fn extract_keys_unwraps_cap_wrappers() {
+    let ty: Type = parse2(quote! { CapList<(::id_effect::Cap<Alpha>, Beta)> }).unwrap();
+    let keys = extract_keys_from_env_ty(&ty).unwrap();
+    assert_eq!(keys.len(), 2);
+    assert!(keys[0].to_token_stream().to_string().contains("Alpha"));
+    assert!(keys[1].to_token_stream().to_string().contains("Beta"));
+  }
+
+  #[test]
+  fn unwrap_cap_service_type_passthrough_non_cap() {
+    let plain: Type = parse2(quote! { Alpha }).unwrap();
+    let out = unwrap_cap_service_type(plain.clone()).unwrap();
+    assert_eq!(out.to_token_stream().to_string(), "Alpha");
+    let cap: Type = parse2(quote! { ::id_effect::Cap<Alpha> }).unwrap();
+    let inner = unwrap_cap_service_type(cap).unwrap();
+    assert!(inner.to_token_stream().to_string().contains("Alpha"));
+  }
 }

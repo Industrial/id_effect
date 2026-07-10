@@ -1650,4 +1650,22 @@ mod tests {
       }
     }
   }
+
+  mod is_service_lookup_type_tests {
+    use super::*;
+    use quote::quote;
+
+    #[test]
+    fn recognizes_service_and_cap_types() {
+      assert!(is_capability_key_operand(&quote! { Database }));
+      assert!(is_capability_key_operand(&quote! { Cap<Database> }));
+      assert!(!is_capability_key_operand(&quote! { foo() }));
+      assert!(!is_capability_key_operand(&quote! { 42 }));
+    }
+
+    #[test]
+    fn rejects_qualified_paths() {
+      assert!(!is_capability_key_operand(&quote! { <dyn Database> }));
+    }
+  }
 }

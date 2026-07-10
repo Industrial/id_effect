@@ -231,9 +231,18 @@ impl SqlClient for TestSqlClient {
 mod tests {
   use std::sync::Arc;
 
-  use super::{SqlClient, SqlParam, SqlRow, TestSqlClient, transaction_scope};
+  use super::{SqlClient, SqlClientService, SqlParam, SqlRow, TestSqlClient, transaction_scope};
   use crate::error::SqlError;
   use id_effect::{kernel::Effect, run_blocking};
+
+  #[test]
+  fn sql_client_service_debug_formats_dyn() {
+    let client: Arc<dyn SqlClient> = Arc::new(TestSqlClient::new());
+    let svc = SqlClientService(client);
+    let rendered = format!("{svc:?}");
+    assert!(rendered.contains("SqlClientService"));
+    assert!(rendered.contains("dyn SqlClient"));
+  }
 
   #[test]
   fn connect_then_query_returns_scripted_rows() {

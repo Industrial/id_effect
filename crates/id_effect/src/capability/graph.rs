@@ -199,6 +199,15 @@ mod graph_feature_tests {
   }
 
   #[test]
+  fn optional_dep_absent_builds() {
+    let env = CapabilityGraph::new()
+      .add(provide!(DbWithOptional).0)
+      .build()
+      .expect("build");
+    assert_eq!(env.get::<Cap<Db>>().0, 9);
+  }
+
+  #[test]
   fn shared_provider_builds() {
     struct SharedDb;
     impl ProviderSpec for SharedDb {
