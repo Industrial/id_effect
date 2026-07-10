@@ -28,6 +28,10 @@ members = [
   "examples/cli-minimal",
 ]
 
+[patch.crates-io]
+# rc.8 pins sqlx 0.8; main tracks sqlx 0.9 (required for workspace sqlx 0.9 bump).
+apalis-postgres = { git = "https://github.com/apalis-dev/apalis-postgres" }
+
 # More stable / comparable Criterion numbers than default bench profile (inherits release).
 [profile.bench]
 lto = "thin"

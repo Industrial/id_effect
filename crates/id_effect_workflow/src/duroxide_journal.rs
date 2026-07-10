@@ -2,10 +2,8 @@
 
 use crate::error::WorkflowError;
 use crate::journal::StepJournal;
-use duroxide_pg::migrations::MigrationRunner;
 use serde::{Serialize, de::DeserializeOwned};
-use sqlx::PgPool;
-use std::sync::Arc;
+use sqlx::{AssertSqlSafe, ConnectOptions, PgPool};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn now_ms() -> i64 {
@@ -39,14 +37,13 @@ pub async fn bootstrap_duroxide_schema(pool: &PgPool) -> Result<(), WorkflowErro
     .map(str::trim)
     .filter(|s| !s.is_empty())
   {
-    sqlx::query(statement)
+    sqlx::query(AssertSqlSafe(statement))
       .execute(pool)
       .await
       .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
   }
-  let runner = MigrationRunner::new(Arc::new(pool.clone()), "public".to_string());
-  runner
-    .migrate()
+  let database_url = pool.connect_options().to_url_lossy().to_string();
+  duroxide_pg::PostgresProvider::new_with_schema(&database_url, Some("public"))
     .await
     .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
   Ok(())

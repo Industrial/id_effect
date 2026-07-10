@@ -50,10 +50,11 @@ version = "0.1.34"
 optional = true
 
 [dependencies.sqlx]
-version = "0.8"
+version = "0.9"
 default-features = false
 features = ["runtime-tokio", "postgres"]
 optional = true
+
 
 [dependencies.id_effect_sql_pg]
 path = "../id_effect_sql_pg"
