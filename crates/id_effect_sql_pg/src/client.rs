@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use id_effect::kernel::Effect;
 use id_effect_sql::{SqlClient, SqlError, SqlParam, SqlRow, SqlTransaction};
-use sqlx::{PgPool, Row as _};
+use sqlx::{AssertSqlSafe, PgPool, Row as _};
 
 use crate::error::sqlx_error;
 use crate::transaction::PgSqlTransaction;
@@ -93,7 +93,7 @@ impl SqlClient for PgSqlClient {
     let params = params.to_vec();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let query = bind_query(sqlx::query(&sql), &params);
+        let query = bind_query(sqlx::query(AssertSqlSafe(sql)), &params);
         let rows = query.fetch_all(&pool).await.map_err(sqlx_error)?;
         Ok(rows.iter().map(row_to_sql_row).collect())
       })
@@ -106,7 +106,7 @@ impl SqlClient for PgSqlClient {
     let params = params.to_vec();
     Effect::new_async(move |_r: &mut ()| {
       Box::pin(async move {
-        let query = bind_query(sqlx::query(&sql), &params);
+        let query = bind_query(sqlx::query(AssertSqlSafe(sql)), &params);
         let result = query.execute(&pool).await.map_err(sqlx_error)?;
         Ok(result.rows_affected())
       })

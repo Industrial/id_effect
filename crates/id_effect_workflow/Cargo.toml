@@ -32,6 +32,7 @@ duroxide = [
   "dep:duroxide",
   "dep:duroxide-pg",
   "dep:sqlx",
+  "dep:sqlx-duroxide",
   "dep:tokio",
   "dep:id_effect_sql_pg",
 ]
@@ -51,6 +52,15 @@ optional = true
 
 [dependencies.sqlx]
 version = "0.9"
+default-features = false
+features = ["runtime-tokio", "postgres"]
+optional = true
+
+
+# duroxide-pg 0.1.34 still pins sqlx 0.8; bridge until upstream upgrades.
+[dependencies.sqlx-duroxide]
+package = "sqlx"
+version = "0.8"
 default-features = false
 features = ["runtime-tokio", "postgres"]
 optional = true
