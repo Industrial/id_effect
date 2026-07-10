@@ -1,10 +1,11 @@
 !.cargo/audit.toml
+!.maestro/missions/*.md
+!.maestro/missions/.gitkeep
 !.tool-llm-git-context/
 !.tool-llm-git-context/vault/
 !.tool-llm-git-context/vault/Logs/
 !.vscode/settings.json
 !crates/id_effect-dylint-rules/Cargo.lock
-# forge-cli scaffold templates may run `cargo` / `bun` locally (not covered by root `/target/`)
 **/*.rs.bk
 **/.obsidian/graph.json
 **/.obsidian/workspace.json
@@ -14,16 +15,17 @@
 *.log
 *.njsproj
 *.ntvs*
+*.profraw
 *.sln
 *.sqlite
 *.suo
 *.sw?
-*.profraw
 *.swo
 *.swp
 *.tsbuildinfo
 .DS_Store
 .beads/
+.cargo-ci-stable/
 .cargo/*
 .devenv*
 .direnv
@@ -45,6 +47,11 @@
 .env.local
 .idea
 .idea/
+.maestro/evidence/
+.maestro/missions/*
+.maestro/runs/
+.maestro/sessions/
+.maestro/tasks/local-history/
 .moon/cache/
 .paper_state.json
 .roam/
@@ -58,9 +65,9 @@
 /.tmp/
 /charts/
 /data/
+/state
 /target/
 /tmp/
-crates/id_effect/book/book/
 Cargo.lock
 Thumbs.db
 \!logs/.gitkeep
@@ -68,6 +75,7 @@ config.json
 config.toml
 config.yaml
 crates/forge-cli/templates/**/target/
+crates/id_effect/book/book/
 dev-debug.log
 devenv.local.nix
 lib/
@@ -76,19 +84,9 @@ logs
 logs/
 node_modules/
 npm-debug.log*
+target-ci-stable/
 test-ledger/
 wallet.*.json
 wallet.json
 yarn-debug.log*
 yarn-error.log*
-
-# Maestro runtime state
-.maestro/missions/*
-!.maestro/missions/*.md
-!.maestro/missions/.gitkeep
-.maestro/sessions/
-.maestro/tasks/local-history/
-.maestro/evidence/
-.maestro/runs/
-target-ci-stable/
-.cargo-ci-stable/
