@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-06-17  
-**Context:** The fp-events initiative replaces the bespoke `PgSqlJournalBackend` / `event_journal` DDL path with a library-backed persistence layer on the shared [`PgPoolKey`](../../../crates/id_effect_sql_pg/src/pool_key.rs). obix already depends on **es-entity** 0.10.x via the messaging stack.
+**Context:** The fp-events initiative replaces the bespoke `PgSqlJournalBackend` / `event_journal` DDL path with a library-backed persistence layer on the shared [`PgPool`](../../../crates/id_effect_sql_pg/src/pool_key.rs). obix already depends on **es-entity** 0.10.x via the messaging stack.
 
 ## Decision
 
@@ -16,7 +16,7 @@ Do **not** adopt `esrs`, `eventastic`, `fmodel-rust`, or `autumn-harvest` for th
 
 ## Rationale
 
-1. **Shared pool model** — Same `PgPoolKey` as Apalis, obix, and duroxide-pg migrations.
+1. **Shared pool model** — Same `PgPool` as Apalis, obix, and duroxide-pg migrations.
 2. **Transactional `DbOp`** — Command handlers can persist events in one commit boundary (optional obix outbox in the same transaction).
 3. **Ecosystem alignment** — obix inbox/outbox already uses es-entity idempotency types.
 

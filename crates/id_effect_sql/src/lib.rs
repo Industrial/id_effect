@@ -17,6 +17,6 @@ pub mod client;
 pub mod error;
 pub mod transaction;
 
-pub use client::{SqlClient, SqlClientKey, SqlParam, SqlRow, TestSqlClient, transaction_scope};
+pub use client::{SqlClient, SqlClientService, SqlParam, SqlRow, TestSqlClient, transaction_scope};
 pub use error::SqlError;
 pub use transaction::{SqlTransaction, with_transaction};

@@ -17,12 +17,12 @@ impl UserRepository for PostgresUserRepository {
 }
 
 #[derive(ProviderSpecDerive)]
-#[provides(UserRepoKey)]
+#[provides(UserRepo)]
 struct UserRepoLive;
 
 impl UserRepoLive {
     fn new(deps: &Env) -> Arc<dyn UserRepository> {
-        let pool = deps.get::<DatabaseKey>().clone();
+        let pool = deps.get::<Cap<Database>>().clone();
         Arc::new(PostgresUserRepository { pool })
     }
 }
@@ -43,7 +43,7 @@ run_with(
 
 ```rust
 let mut env = Env::new();
-env.insert::<UserRepoKey>(Arc::new(MockUserRepository { users: test_data() }));
+env.insert::<Cap<UserRepo>>(Arc::new(MockUserRepository { users: test_data() }));
 run_blocking(get_user(1), env)?;
 ```
 
@@ -51,7 +51,7 @@ For a fixed zero-config mock, use a unit struct:
 
 ```rust
 #[derive(ProviderSpecDerive)]
-#[provides(UserRepoKey)]
+#[provides(UserRepo)]
 struct MockUserRepoLive;
 
 impl MockUserRepoLive {
@@ -61,7 +61,7 @@ impl MockUserRepoLive {
 }
 ```
 
-Same `UserRepoKey`, no real database — swap at the edge:
+Same `UserRepo`, no real database — swap at the edge:
 
 ```rust
 // Production
@@ -71,4 +71,4 @@ run_with([provide!(DatabaseLive), provide!(UserRepoLive)], app())?;
 run_with([provide!(MockUserRepoLive)], get_user(1))?;
 ```
 
-Application code using `caps!(UserRepoKey)` and `~UserRepoKey` stays identical.
+Application code using `caps!(UserRepo)` and `~UserRepo` stays identical.

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::kernel::Effect;
-use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
 use serde_json::json;
@@ -18,8 +18,10 @@ use crate::retry::retry_transient_ai_http;
 /// Cursor Agents API failures.
 pub type CursorAgentsError = AiError;
 
+/// Injectable Cursor Agents client service.
+pub type CursorAgentsClientService = Arc<dyn CursorAgentsClient>;
+
 /// Capability: Cursor Cloud Agents orchestration.
-#[::id_effect::capability(Arc<dyn CursorAgentsClient>)]
 pub trait CursorAgentsClient: Send + Sync + 'static {
   /// `GET /v1/models` — list recommended models.
   fn list_models(&self) -> Effect<Vec<crate::cursor::types::CursorModel>, AiError, ()>;
@@ -265,14 +267,14 @@ pub fn provide_cursor_agents_client(
       &[]
     }
     fn provides(&self) -> CapabilityId {
-      CursorAgentsClientKey::id()
+      Cap::<CursorAgentsClientService>::id()
     }
     fn cap_name(&self) -> &str {
-      "CursorAgentsClientKey"
+      "CursorAgentsClient"
     }
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<CursorAgentsClientKey>(Arc::clone(&self.client));
+      out.insert::<Cap<CursorAgentsClientService>>(Arc::clone(&self.client));
       Ok(out)
     }
   }

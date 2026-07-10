@@ -77,24 +77,24 @@ where
 #[cfg(test)]
 #[allow(dead_code, clippy::new_ret_no_self)]
 mod tests {
+  use super::super::key::Cap;
   use super::super::needs::Needs;
   use super::*;
-
-  #[::id_effect::capability(u32)]
-  struct Counter;
+  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+  struct Counter(pub u32);
 
   #[test]
   fn nested_override_restores_parent() {
     let mut base = Env::new();
-    base.insert::<CounterKey>(1u32);
-    with_override::<CounterKey, _, _>(&base, 9u32, |env| {
-      assert_eq!(*Needs::<CounterKey>::need(env), 9);
-      with_override::<CounterKey, _, _>(env, 3u32, |inner| {
-        assert_eq!(*Needs::<CounterKey>::need(inner), 3);
+    base.insert::<Cap<Counter>>(Counter(1));
+    with_override::<Cap<Counter>, _, _>(&base, Counter(9), |env| {
+      assert_eq!(Needs::<Counter>::need(env).0, 9);
+      with_override::<Cap<Counter>, _, _>(env, Counter(3), |inner| {
+        assert_eq!(Needs::<Counter>::need(inner).0, 3);
       });
-      assert_eq!(*Needs::<CounterKey>::need(env), 9);
+      assert_eq!(Needs::<Counter>::need(env).0, 9);
     });
-    assert_eq!(*base.get::<CounterKey>(), 1);
+    assert_eq!(base.get::<Cap<Counter>>().0, 1);
   }
   #[test]
   fn active_env_returns_none_without_overlay() {
@@ -104,10 +104,10 @@ mod tests {
   #[test]
   fn active_env_sees_pushed_overlay() {
     let mut base = Env::new();
-    base.insert::<CounterKey>(1u32);
-    with_override::<CounterKey, _, _>(&base, 5u32, |_env| {
+    base.insert::<Cap<Counter>>(Counter(1));
+    with_override::<Cap<Counter>, _, _>(&base, Counter(5), |_env| {
       let active = active_env().expect("overlay");
-      assert_eq!(*active.get::<CounterKey>(), 5);
+      assert_eq!(active.get::<Cap<Counter>>().0, 5);
     });
     assert!(active_env().is_none());
   }
@@ -115,10 +115,10 @@ mod tests {
   #[test]
   fn with_fiber_and_override_scopes_to_fiber() {
     let mut base = Env::new();
-    base.insert::<CounterKey>(0u32);
+    base.insert::<Cap<Counter>>(Counter(0));
     let fid = FiberId::new(99);
-    let got = with_fiber_and_override::<CounterKey, _, _>(fid, &base, 7u32, |env| {
-      *Needs::<CounterKey>::need(env)
+    let got = with_fiber_and_override::<Cap<Counter>, _, _>(fid, &base, Counter(7), |env| {
+      Needs::<Counter>::need(env).0
     });
     assert_eq!(got, 7);
   }

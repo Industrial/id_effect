@@ -1,1 +1,0 @@
-I want you to use `bd` centric development. As you run `bun run ci:pre-push`, for each problem found create simple small `bd` tasks. Include problems, type errors etc found in other libraries and places around the monorepo. Finish the `bd` tasks one by one.

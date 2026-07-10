@@ -23,12 +23,23 @@ tasks:
       - '**/*.{yml,yaml}'
       - '**/*.toml'
       - '.github/workflows/*.yml'
+      # Cargo/moon scratch — must not salt task hashes (esp. target/.rustc_info.json).
+      - '!target/**/*'
+      - '!**/.moon/cache/**/*'
+      - '!**/node_modules/**/*'
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
+  ci:
+    description: 'Local/CI parity gate (mirrors .github/workflows/ci.yml moon-ci job)'
+    command: 'bash'
+    args: ['scripts/ci-local.sh', 'auto']
     options:
       cache: false
       outputStyle: buffer-only-failure
   ci-format:
     description: >-
-      Repo-wide format *check* (treefmt CI mode + fail-on-change). Cached so :check/:test can cache-hit; use :format to actually write formatted files.
+      Repo-wide format *check* (treefmt CI mode + fail-on-change). Always runs (never cached): package :check/:clippy/:test/:build depend on it. Use :format to write formatted files.
     command: 'bash'
     args: ['scripts/treefmt-moon.sh', '--ci', '--config-file', 'treefmt.ci.toml']
     inputs:
@@ -40,16 +51,13 @@ tasks:
       - '**/*.{yml,yaml}'
       - '**/*.toml'
       - '.github/workflows/*.yml'
+      # Exclude build artifacts from the hash so dependents stay cacheable while
+      # this task itself remains uncached (options.cache: false).
+      - '!target/**/*'
+      - '!**/.moon/cache/**/*'
+      - '!**/node_modules/**/*'
     options:
-      cache: true
-      outputStyle: buffer-only-failure
-  clippy:
-    description: 'Gate after ci-format: member crates have run clippy (anchor for workspace lint ~:clippy)'
-    deps: ['~:ci-format', '^:clippy']
-    command: 'bash'
-    args: ['-c', ':']
-    options:
-      cache: true
+      cache: false
       outputStyle: buffer-only-failure
   audit:
     description: 'Run cargo audit for known Rust security advisories'
@@ -86,17 +94,9 @@ tasks:
       - 'scripts/llvm-cov-nextest.sh'
     options:
       cache: false
-  test:
-    description: 'Gate: member crates have run tests (anchor for workspace ~:test)'
-    deps: ['^:test']
-    command: 'bash'
-    args: ['-c', ':']
-    options:
-      cache: true
-      outputStyle: buffer-only-failure
   build:
     description: 'Build the workspace with cargo'
-    deps: ['^:build', '~:test']
+    deps: ['~:ci-format', '^:build']
     command: 'cargo'
     args: ['build']
     inputs:

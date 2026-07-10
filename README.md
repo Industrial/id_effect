@@ -140,8 +140,11 @@ devenv shell -- moon run :audit
 # API docs + mdBook
 devenv shell -- moon run :docs :book
 
-# Pre-push checks
-devenv shell -- moon run :format :check :build :test :coverage :audit :check-docs
+# CI parity (same as GitHub moon-ci job)
+devenv shell -- bash scripts/ci-local.sh affected
+
+# Pre-push checks (ci-local + coverage + audit)
+devenv shell -- pre-push
 ```
 
 ### Continuous integration

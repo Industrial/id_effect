@@ -134,10 +134,8 @@ pub mod option {
   pub fn sequence<A>(opts: Vec<Option<A>>) -> Option<Vec<A>> {
     let mut result = Vec::with_capacity(opts.len());
     for opt in opts {
-      match opt {
-        Some(a) => result.push(a),
-        None => return None,
-      }
+      let a = opt?;
+      result.push(a);
     }
     Some(result)
   }
@@ -194,10 +192,8 @@ pub mod result {
   pub fn sequence<A, E>(results: Vec<Result<A, E>>) -> Result<Vec<A>, E> {
     let mut output = Vec::with_capacity(results.len());
     for result in results {
-      match result {
-        Ok(a) => output.push(a),
-        Err(e) => return Err(e),
-      }
+      let a = result?;
+      output.push(a);
     }
     Ok(output)
   }

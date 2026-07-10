@@ -1,13 +1,72 @@
-error[E0282]: type annotations needed for `id_effect::Effect<(), _, CapList<(DatabaseKey,)>>`
-  --> tests/ui/implicit_r_caps_mismatch.rs:9:7
-   |
- 9 |     let _ = id_effect::effect!(|r: &mut id_effect::caps!(DatabaseKey)| {
-   |  _______^___-
-10 | |     let _ = ~LoggerKey;
-11 | |   });
-   | |____- type must be known at this point
-   |
-help: consider giving this pattern a type, where the placeholders `_` are specified
-   |
- 9 |   let _: id_effect::Effect<_, _, CapList<(DatabaseKey,)>> = id_effect::effect!(|r: &mut id_effect::caps!(DatabaseKey)| {
-   |        ++++++++++++++++++++++++++++++++++++++++++++++++++
+error[E0277]: the trait bound `Logger: Clone` is not satisfied
+ --> tests/ui/implicit_r_caps_mismatch.rs:7:14
+  |
+7 |     let _ = ~Logger;
+  |              ^^^^^^ the trait `Clone` is not implemented for `Logger`
+  |
+note: required by a bound in `need`
+ --> src/capability/needs.rs
+  |
+  |   T: Clone + Send + Sync + 'static,
+  |      ^^^^^ required by this bound in `Needs::need`
+...
+  |   fn need(&self) -> &T;
+  |      ---- required by a bound in this associated function
+help: consider annotating `Logger` with `#[derive(Clone)]`
+  |
+3 + #[derive(Clone)]
+4 | struct Logger;
+  |
+
+error[E0277]: the trait bound `Logger: Clone` is not satisfied
+ --> tests/ui/implicit_r_caps_mismatch.rs:6:31
+  |
+6 |     let _ = id_effect::effect!(|r: &mut id_effect::caps!(Database)| {
+  |             -                   ^ the trait `Clone` is not implemented for `Logger`
+  |  ___________|
+  | |
+7 | |     let _ = ~Logger;
+8 | |   });
+  | |____- required by a bound introduced by this call
+  |
+help: the trait `Needs<T>` is implemented for `Env`
+ --> src/capability/needs.rs
+  |
+  | / impl<T> Needs<T> for Env
+  | | where
+  | |   T: Clone + Send + Sync + 'static,
+  | |___________________________________^
+  = note: required for `CapList<(Cap<Database>,)>` to implement `Needs<Logger>`
+help: consider annotating `Logger` with `#[derive(Clone)]`
+  |
+3 + #[derive(Clone)]
+4 | struct Logger;
+  |
+
+error[E0277]: the trait bound `Database: Clone` is not satisfied
+ --> tests/ui/implicit_r_caps_mismatch.rs:6:31
+  |
+6 |     let _ = id_effect::effect!(|r: &mut id_effect::caps!(Database)| {
+  |             -                   ^ the trait `Clone` is not implemented for `Database`
+  |  ___________|
+  | |
+7 | |     let _ = ~Logger;
+8 | |   });
+  | |____- required by a bound introduced by this call
+  |
+help: the trait `Needs<T>` is implemented for `Env`
+ --> src/capability/needs.rs
+  |
+  | / impl<T> Needs<T> for Env
+  | | where
+  | |   T: Clone + Send + Sync + 'static,
+  | |___________________________________^
+  = note: required for `Cap<Database>` to implement `CapabilityKey`
+  = note: required for `(Cap<Database>,)` to implement `CapKeys`
+  = note: required for `CapList<(Cap<Database>,)>` to implement `Deref`
+  = note: required for `CapList<(Cap<Database>,)>` to implement `Needs<Logger>`
+help: consider annotating `Database` with `#[derive(Clone)]`
+  |
+2 + #[derive(Clone)]
+3 | struct Database;
+  |

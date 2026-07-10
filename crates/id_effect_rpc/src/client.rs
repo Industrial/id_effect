@@ -4,7 +4,7 @@ use id_effect::Effect;
 use id_effect::Needs;
 use id_effect::data::EffectData;
 use id_effect::schema::Schema;
-use id_effect_platform::http::{HttpClientKey, HttpMethod, HttpRequest};
+use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
 
 use crate::protocol::{RPC_DISPATCH_PATH, RpcWireRequest, RpcWireResponse};
 use crate::serialization::{
@@ -59,7 +59,7 @@ impl RpcClientConfig {
   }
 }
 
-/// Typed RPC client using [`HttpClientKey`] ([`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) `RpcClient` parity).
+/// Typed RPC client using [`HttpClient`] ([`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) `RpcClient` parity).
 #[derive(Clone, Debug)]
 pub struct RpcClient {
   config: RpcClientConfig,
@@ -98,7 +98,7 @@ impl RpcClient {
     EB: EffectData + 'static,
     IA: Send + Sync + 'static + StructWireJson,
     IB: Send + Sync + 'static,
-    R: Needs<HttpClientKey> + Send + 'static,
+    R: Needs<HttpClientService> + Send + 'static,
   {
     let tag = tag.into();
     let config = self.config.clone();

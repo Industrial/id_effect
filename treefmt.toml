@@ -10,6 +10,8 @@
 
 # Exclude vendor/submodule directories that have their own formatting conventions
 excludes = [
+  "target/**",
+  "target-ci-stable/**",
   ".cursor/agency-agents/**",
   ".cursor/microsoft-rust-training/**",
   ".cursor/vendor/**",

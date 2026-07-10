@@ -38,5 +38,5 @@ Optional `ProviderSpec::provide_effect` returns `Effect<T, E, Env>`. `run_with` 
 
 ## Consequences
 
-- Semver 2.1.0 for `id_effect`; `id_effect_platform` 0.3.0 when hiding `HttpClientKey`.
+- Semver 2.1.0 for `id_effect`; `id_effect_platform` 0.3.0 when hiding `HttpClientService`.
 - `EffectInterface` in `algebra/interface.rs` removed in favor of `Needs<K>` + `ProviderSpec`.

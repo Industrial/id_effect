@@ -41,4 +41,4 @@ pub use duroxide_journal::{
 };
 
 #[cfg(feature = "duroxide")]
-pub use providers::{DuroxideProviderKey, WorkflowRuntimeKey, provide_duroxide_pg};
+pub use providers::{DuroxideProvider, WorkflowRuntime, provide_duroxide_pg};

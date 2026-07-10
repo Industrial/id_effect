@@ -9,8 +9,8 @@ use ::reqwest::header::{HeaderName, HeaderValue};
 use bytes::Bytes;
 use id_effect::kernel::Effect;
 use id_effect::{
-  Chunk, Env, Needs, ProviderBox, ProviderError, ProviderSpec, end_stream, provide, send_chunk,
-  stream_from_channel,
+  Cap, Chunk, Env, Needs, ProviderBox, ProviderError, ProviderSpec, end_stream, provide,
+  send_chunk, stream_from_channel,
 };
 
 use crate::error::HttpError;
@@ -133,7 +133,6 @@ pub fn response_body_chunk(resp: &HttpResponse) -> id_effect::Chunk<u8> {
 }
 
 /// Capability: execute portable HTTP requests as [`Effect`] values.
-#[::id_effect::capability(Arc<dyn HttpClient>)]
 pub trait HttpClient: Send + Sync + 'static {
   /// Execute `req` and return a buffered response.
   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()>;
@@ -292,13 +291,16 @@ impl HttpClient for ReqwestHttpClient {
   }
 }
 
+/// Capability service handle for [`HttpClient`].
+pub type HttpClientService = Arc<dyn HttpClient>;
+
 /// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`]).
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(HttpClientKey)]
+#[provides(HttpClientService)]
 pub(crate) struct ReqwestHttpClientProvider;
 
 impl ReqwestHttpClientProvider {
-  fn new() -> Arc<dyn HttpClient> {
+  fn new() -> HttpClientService {
     Arc::new(ReqwestHttpClient::default_client())
   }
 }
@@ -306,13 +308,13 @@ impl ReqwestHttpClientProvider {
 /// Whether `env` includes an HTTP client capability.
 #[inline]
 pub fn env_has_http_client(env: &Env) -> bool {
-  env.has::<HttpClientKey>()
+  env.has::<Cap<HttpClientService>>()
 }
 
 /// Replace the HTTP client in `env` (tests and custom wiring).
 #[inline]
 pub fn env_set_http_client(env: &mut Env, client: Arc<dyn HttpClient>) {
-  env.insert::<HttpClientKey>(client);
+  env.insert::<Cap<HttpClientService>>(client);
 }
 
 /// Register the default reqwest-backed [`HttpClient`] provider.
@@ -325,7 +327,7 @@ pub fn provide_reqwest_http_client() -> ProviderBox {
 #[inline]
 pub fn execute<R>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
 where
-  R: Needs<HttpClientKey> + 'static,
+  R: Needs<HttpClientService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let client = r.need().clone();
@@ -338,7 +340,7 @@ where
 #[inline]
 pub fn execute_stream<R>(req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, R>
 where
-  R: Needs<HttpClientKey> + 'static,
+  R: Needs<HttpClientService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let client = r.need().clone();

@@ -1,13 +1,13 @@
 # Async messaging (production)
 
-Platform async messaging stacks on **sqlx `PgPool`** ([`PgPoolKey`](../../../id_effect_sql_pg)), with production adapters in [`id_effect_jobs`](../../../id_effect_jobs) and [`id_effect_events`](../../../id_effect_events).
+Platform async messaging stacks on **sqlx `PgPool`** ([`PgPool`](../../../id_effect_sql_pg)), with production adapters in [`id_effect_jobs`](../../../id_effect_jobs) and [`id_effect_events`](../../../id_effect_events).
 
 ## SQL platform
 
 [`id_effect_sql_pg`](../../../id_effect_sql_pg) replaces the deadpool era with sqlx:
 
 - [`PgSqlClient`](../../../id_effect_sql_pg/struct.PgSqlClient.html) implements [`SqlClient`](../../../id_effect_sql/trait.SqlClient.html)
-- [`provide_pg_sql_client`](../../../id_effect_sql_pg/fn.provide_pg_sql_client.html) registers `PgPoolKey` + `SqlClientKey`
+- [`provide_pg_sql_client`](../../../id_effect_sql_pg/fn.provide_pg_sql_client.html) registers `PgPool` + `SqlClientService`
 - Set `DATABASE_URL` (devenv provides `postgresql://postgres@127.0.0.1:5432/id_effect`)
 
 ## Jobs — Apalis (pull workers)

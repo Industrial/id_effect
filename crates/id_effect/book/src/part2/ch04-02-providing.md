@@ -6,13 +6,11 @@ An effect with `R = caps!(…)` cannot run until its capabilities exist. **Provi
 
 ```rust
 use id_effect::{Effect, ProviderSpecDerive, caps, effect, provide, require, run_with, succeed};
-
-#[::id_effect::capability(Counter)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
 #[derive(ProviderSpecDerive)]
-#[provides(CounterKey)]
+#[provides(Counter)]
 struct CounterLive;
 
 impl CounterLive {
@@ -21,9 +19,9 @@ impl CounterLive {
     }
 }
 
-fn app() -> Effect<u32, (), caps!(CounterKey)> {
+fn app() -> Effect<u32, (), caps!(Counter)> {
     effect!(|r| {
-        let counter = ~CounterKey;
+        let counter = ~Counter;
         counter.0
     })
 }
@@ -57,8 +55,8 @@ When you only need a handful of values, build `Env` by hand:
 
 ```rust
 let mut env = Env::new();
-env.insert::<DatabaseKey>(mock_pool);
-env.insert::<LoggerKey>(test_logger);
+env.insert::<Cap<Database>>(mock_pool);
+env.insert::<Cap<EffectLogger>>(test_logger);
 
 let user = run_blocking(get_user(42), env)?;
 ```
@@ -82,7 +80,7 @@ pub fn process_order(order: Order) -> Effect<Receipt, AppError, ()> {
 }
 
 // GOOD — library declares needs; caller wires them
-pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(DatabaseKey, LoggerKey)> {
+pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(Database, EffectLogger)> {
     // ...
 }
 ```
@@ -93,7 +91,7 @@ pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(DatabaseKe
 |-----|---------|
 | `run_with([provide!(P), …], effect)` | Build graph + run |
 | `build_env([provide!(P), …])` | Build `Env` only |
-| `Env::insert::<K>(value)` | Manual test wiring |
+| `Env::insert::<Cap<K>>(value)` | Manual test wiring |
 | `run_blocking(effect, env)` | Run when `Env` is already built |
 
 None of these execute effect steps until `run_with` / `run_blocking` / `run_async` is called — wiring stays lazy until the boundary.

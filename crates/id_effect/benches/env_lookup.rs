@@ -2,199 +2,136 @@
 //! Env insert/get/has microbenchmarks at N = 4, 16, 64 capabilities.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use id_effect::Env;
-
-#[::id_effect::capability(u32)]
-struct Cap0;
-
-#[::id_effect::capability(u32)]
-struct Cap1;
-
-#[::id_effect::capability(u32)]
-struct Cap2;
-
-#[::id_effect::capability(u32)]
-struct Cap3;
-
-#[::id_effect::capability(u32)]
-struct Cap4;
-
-#[::id_effect::capability(u32)]
-struct Cap5;
-
-#[::id_effect::capability(u32)]
-struct Cap6;
-
-#[::id_effect::capability(u32)]
-struct Cap7;
-
-#[::id_effect::capability(u32)]
-struct Cap8;
-
-#[::id_effect::capability(u32)]
-struct Cap9;
-
-#[::id_effect::capability(u32)]
-struct Cap10;
-
-#[::id_effect::capability(u32)]
-struct Cap11;
-
-#[::id_effect::capability(u32)]
-struct Cap12;
-
-#[::id_effect::capability(u32)]
-struct Cap13;
-
-#[::id_effect::capability(u32)]
-struct Cap14;
-
-#[::id_effect::capability(u32)]
-struct Cap15;
-
-#[::id_effect::capability(u32)]
-struct Cap16;
-
-#[::id_effect::capability(u32)]
-struct Cap17;
-
-#[::id_effect::capability(u32)]
-struct Cap18;
-
-#[::id_effect::capability(u32)]
-struct Cap19;
-
-#[::id_effect::capability(u32)]
-struct Cap20;
-
-#[::id_effect::capability(u32)]
-struct Cap21;
-
-#[::id_effect::capability(u32)]
-struct Cap22;
-
-#[::id_effect::capability(u32)]
-struct Cap23;
-
-#[::id_effect::capability(u32)]
-struct Cap24;
-
-#[::id_effect::capability(u32)]
-struct Cap25;
-
-#[::id_effect::capability(u32)]
-struct Cap26;
-
-#[::id_effect::capability(u32)]
-struct Cap27;
-
-#[::id_effect::capability(u32)]
-struct Cap28;
-
-#[::id_effect::capability(u32)]
-struct Cap29;
-
-#[::id_effect::capability(u32)]
-struct Cap30;
-
-#[::id_effect::capability(u32)]
-struct Cap31;
-
-#[::id_effect::capability(u32)]
-struct Cap32;
-
-#[::id_effect::capability(u32)]
-struct Cap33;
-
-#[::id_effect::capability(u32)]
-struct Cap34;
-
-#[::id_effect::capability(u32)]
-struct Cap35;
-
-#[::id_effect::capability(u32)]
-struct Cap36;
-
-#[::id_effect::capability(u32)]
-struct Cap37;
-
-#[::id_effect::capability(u32)]
-struct Cap38;
-
-#[::id_effect::capability(u32)]
-struct Cap39;
-
-#[::id_effect::capability(u32)]
-struct Cap40;
-
-#[::id_effect::capability(u32)]
-struct Cap41;
-
-#[::id_effect::capability(u32)]
-struct Cap42;
-
-#[::id_effect::capability(u32)]
-struct Cap43;
-
-#[::id_effect::capability(u32)]
-struct Cap44;
-
-#[::id_effect::capability(u32)]
-struct Cap45;
-
-#[::id_effect::capability(u32)]
-struct Cap46;
-
-#[::id_effect::capability(u32)]
-struct Cap47;
-
-#[::id_effect::capability(u32)]
-struct Cap48;
-
-#[::id_effect::capability(u32)]
-struct Cap49;
-
-#[::id_effect::capability(u32)]
-struct Cap50;
-
-#[::id_effect::capability(u32)]
-struct Cap51;
-
-#[::id_effect::capability(u32)]
-struct Cap52;
-
-#[::id_effect::capability(u32)]
-struct Cap53;
-
-#[::id_effect::capability(u32)]
-struct Cap54;
-
-#[::id_effect::capability(u32)]
-struct Cap55;
-
-#[::id_effect::capability(u32)]
-struct Cap56;
-
-#[::id_effect::capability(u32)]
-struct Cap57;
-
-#[::id_effect::capability(u32)]
-struct Cap58;
-
-#[::id_effect::capability(u32)]
-struct Cap59;
-
-#[::id_effect::capability(u32)]
-struct Cap60;
-
-#[::id_effect::capability(u32)]
-struct Cap61;
-
-#[::id_effect::capability(u32)]
-struct Cap62;
-
-#[::id_effect::capability(u32)]
-struct Cap63;
+use id_effect::{Cap, Env};
+
+#[derive(Clone, Copy)]
+struct Cap0(u32);
+#[derive(Clone, Copy)]
+struct Cap1(u32);
+#[derive(Clone, Copy)]
+struct Cap2(u32);
+#[derive(Clone, Copy)]
+struct Cap3(u32);
+#[derive(Clone, Copy)]
+struct Cap4(u32);
+#[derive(Clone, Copy)]
+struct Cap5(u32);
+#[derive(Clone, Copy)]
+struct Cap6(u32);
+#[derive(Clone, Copy)]
+struct Cap7(u32);
+#[derive(Clone, Copy)]
+struct Cap8(u32);
+#[derive(Clone, Copy)]
+struct Cap9(u32);
+#[derive(Clone, Copy)]
+struct Cap10(u32);
+#[derive(Clone, Copy)]
+struct Cap11(u32);
+#[derive(Clone, Copy)]
+struct Cap12(u32);
+#[derive(Clone, Copy)]
+struct Cap13(u32);
+#[derive(Clone, Copy)]
+struct Cap14(u32);
+#[derive(Clone, Copy)]
+struct Cap15(u32);
+#[derive(Clone, Copy)]
+struct Cap16(u32);
+#[derive(Clone, Copy)]
+struct Cap17(u32);
+#[derive(Clone, Copy)]
+struct Cap18(u32);
+#[derive(Clone, Copy)]
+struct Cap19(u32);
+#[derive(Clone, Copy)]
+struct Cap20(u32);
+#[derive(Clone, Copy)]
+struct Cap21(u32);
+#[derive(Clone, Copy)]
+struct Cap22(u32);
+#[derive(Clone, Copy)]
+struct Cap23(u32);
+#[derive(Clone, Copy)]
+struct Cap24(u32);
+#[derive(Clone, Copy)]
+struct Cap25(u32);
+#[derive(Clone, Copy)]
+struct Cap26(u32);
+#[derive(Clone, Copy)]
+struct Cap27(u32);
+#[derive(Clone, Copy)]
+struct Cap28(u32);
+#[derive(Clone, Copy)]
+struct Cap29(u32);
+#[derive(Clone, Copy)]
+struct Cap30(u32);
+#[derive(Clone, Copy)]
+struct Cap31(u32);
+#[derive(Clone, Copy)]
+struct Cap32(u32);
+#[derive(Clone, Copy)]
+struct Cap33(u32);
+#[derive(Clone, Copy)]
+struct Cap34(u32);
+#[derive(Clone, Copy)]
+struct Cap35(u32);
+#[derive(Clone, Copy)]
+struct Cap36(u32);
+#[derive(Clone, Copy)]
+struct Cap37(u32);
+#[derive(Clone, Copy)]
+struct Cap38(u32);
+#[derive(Clone, Copy)]
+struct Cap39(u32);
+#[derive(Clone, Copy)]
+struct Cap40(u32);
+#[derive(Clone, Copy)]
+struct Cap41(u32);
+#[derive(Clone, Copy)]
+struct Cap42(u32);
+#[derive(Clone, Copy)]
+struct Cap43(u32);
+#[derive(Clone, Copy)]
+struct Cap44(u32);
+#[derive(Clone, Copy)]
+struct Cap45(u32);
+#[derive(Clone, Copy)]
+struct Cap46(u32);
+#[derive(Clone, Copy)]
+struct Cap47(u32);
+#[derive(Clone, Copy)]
+struct Cap48(u32);
+#[derive(Clone, Copy)]
+struct Cap49(u32);
+#[derive(Clone, Copy)]
+struct Cap50(u32);
+#[derive(Clone, Copy)]
+struct Cap51(u32);
+#[derive(Clone, Copy)]
+struct Cap52(u32);
+#[derive(Clone, Copy)]
+struct Cap53(u32);
+#[derive(Clone, Copy)]
+struct Cap54(u32);
+#[derive(Clone, Copy)]
+struct Cap55(u32);
+#[derive(Clone, Copy)]
+struct Cap56(u32);
+#[derive(Clone, Copy)]
+struct Cap57(u32);
+#[derive(Clone, Copy)]
+struct Cap58(u32);
+#[derive(Clone, Copy)]
+struct Cap59(u32);
+#[derive(Clone, Copy)]
+struct Cap60(u32);
+#[derive(Clone, Copy)]
+struct Cap61(u32);
+#[derive(Clone, Copy)]
+struct Cap62(u32);
+#[derive(Clone, Copy)]
+struct Cap63(u32);
 
 fn bench_env_n(c: &mut Criterion, name: &str, setup: impl Fn() -> Env, get: fn(&Env) -> u32) {
   c.bench_function(name, |b| {
@@ -209,13 +146,13 @@ fn bench_env_lookup(c: &mut Criterion) {
     "env_get_n4",
     || {
       let mut env = Env::new();
-      env.insert::<Cap0Key>(0);
-      env.insert::<Cap1Key>(0);
-      env.insert::<Cap2Key>(0);
-      env.insert::<Cap3Key>(0);
+      env.insert::<Cap<Cap0>>(Cap0(0));
+      env.insert::<Cap<Cap1>>(Cap1(0));
+      env.insert::<Cap<Cap2>>(Cap2(0));
+      env.insert::<Cap<Cap3>>(Cap3(0));
       env
     },
-    |e| *e.get::<Cap3Key>(),
+    |e| e.get::<Cap<Cap3>>().0,
   );
 
   bench_env_n(
@@ -223,25 +160,25 @@ fn bench_env_lookup(c: &mut Criterion) {
     "env_get_n16",
     || {
       let mut env = Env::new();
-      env.insert::<Cap0Key>(0);
-      env.insert::<Cap1Key>(0);
-      env.insert::<Cap2Key>(0);
-      env.insert::<Cap3Key>(0);
-      env.insert::<Cap4Key>(0);
-      env.insert::<Cap5Key>(0);
-      env.insert::<Cap6Key>(0);
-      env.insert::<Cap7Key>(0);
-      env.insert::<Cap8Key>(0);
-      env.insert::<Cap9Key>(0);
-      env.insert::<Cap10Key>(0);
-      env.insert::<Cap11Key>(0);
-      env.insert::<Cap12Key>(0);
-      env.insert::<Cap13Key>(0);
-      env.insert::<Cap14Key>(0);
-      env.insert::<Cap15Key>(0);
+      env.insert::<Cap<Cap0>>(Cap0(0));
+      env.insert::<Cap<Cap1>>(Cap1(0));
+      env.insert::<Cap<Cap2>>(Cap2(0));
+      env.insert::<Cap<Cap3>>(Cap3(0));
+      env.insert::<Cap<Cap4>>(Cap4(0));
+      env.insert::<Cap<Cap5>>(Cap5(0));
+      env.insert::<Cap<Cap6>>(Cap6(0));
+      env.insert::<Cap<Cap7>>(Cap7(0));
+      env.insert::<Cap<Cap8>>(Cap8(0));
+      env.insert::<Cap<Cap9>>(Cap9(0));
+      env.insert::<Cap<Cap10>>(Cap10(0));
+      env.insert::<Cap<Cap11>>(Cap11(0));
+      env.insert::<Cap<Cap12>>(Cap12(0));
+      env.insert::<Cap<Cap13>>(Cap13(0));
+      env.insert::<Cap<Cap14>>(Cap14(0));
+      env.insert::<Cap<Cap15>>(Cap15(0));
       env
     },
-    |e| *e.get::<Cap15Key>(),
+    |e| e.get::<Cap<Cap15>>().0,
   );
 
   bench_env_n(
@@ -249,73 +186,73 @@ fn bench_env_lookup(c: &mut Criterion) {
     "env_get_n64",
     || {
       let mut env = Env::new();
-      env.insert::<Cap0Key>(0);
-      env.insert::<Cap1Key>(0);
-      env.insert::<Cap2Key>(0);
-      env.insert::<Cap3Key>(0);
-      env.insert::<Cap4Key>(0);
-      env.insert::<Cap5Key>(0);
-      env.insert::<Cap6Key>(0);
-      env.insert::<Cap7Key>(0);
-      env.insert::<Cap8Key>(0);
-      env.insert::<Cap9Key>(0);
-      env.insert::<Cap10Key>(0);
-      env.insert::<Cap11Key>(0);
-      env.insert::<Cap12Key>(0);
-      env.insert::<Cap13Key>(0);
-      env.insert::<Cap14Key>(0);
-      env.insert::<Cap15Key>(0);
-      env.insert::<Cap16Key>(0);
-      env.insert::<Cap17Key>(0);
-      env.insert::<Cap18Key>(0);
-      env.insert::<Cap19Key>(0);
-      env.insert::<Cap20Key>(0);
-      env.insert::<Cap21Key>(0);
-      env.insert::<Cap22Key>(0);
-      env.insert::<Cap23Key>(0);
-      env.insert::<Cap24Key>(0);
-      env.insert::<Cap25Key>(0);
-      env.insert::<Cap26Key>(0);
-      env.insert::<Cap27Key>(0);
-      env.insert::<Cap28Key>(0);
-      env.insert::<Cap29Key>(0);
-      env.insert::<Cap30Key>(0);
-      env.insert::<Cap31Key>(0);
-      env.insert::<Cap32Key>(0);
-      env.insert::<Cap33Key>(0);
-      env.insert::<Cap34Key>(0);
-      env.insert::<Cap35Key>(0);
-      env.insert::<Cap36Key>(0);
-      env.insert::<Cap37Key>(0);
-      env.insert::<Cap38Key>(0);
-      env.insert::<Cap39Key>(0);
-      env.insert::<Cap40Key>(0);
-      env.insert::<Cap41Key>(0);
-      env.insert::<Cap42Key>(0);
-      env.insert::<Cap43Key>(0);
-      env.insert::<Cap44Key>(0);
-      env.insert::<Cap45Key>(0);
-      env.insert::<Cap46Key>(0);
-      env.insert::<Cap47Key>(0);
-      env.insert::<Cap48Key>(0);
-      env.insert::<Cap49Key>(0);
-      env.insert::<Cap50Key>(0);
-      env.insert::<Cap51Key>(0);
-      env.insert::<Cap52Key>(0);
-      env.insert::<Cap53Key>(0);
-      env.insert::<Cap54Key>(0);
-      env.insert::<Cap55Key>(0);
-      env.insert::<Cap56Key>(0);
-      env.insert::<Cap57Key>(0);
-      env.insert::<Cap58Key>(0);
-      env.insert::<Cap59Key>(0);
-      env.insert::<Cap60Key>(0);
-      env.insert::<Cap61Key>(0);
-      env.insert::<Cap62Key>(0);
-      env.insert::<Cap63Key>(0);
+      env.insert::<Cap<Cap0>>(Cap0(0));
+      env.insert::<Cap<Cap1>>(Cap1(0));
+      env.insert::<Cap<Cap2>>(Cap2(0));
+      env.insert::<Cap<Cap3>>(Cap3(0));
+      env.insert::<Cap<Cap4>>(Cap4(0));
+      env.insert::<Cap<Cap5>>(Cap5(0));
+      env.insert::<Cap<Cap6>>(Cap6(0));
+      env.insert::<Cap<Cap7>>(Cap7(0));
+      env.insert::<Cap<Cap8>>(Cap8(0));
+      env.insert::<Cap<Cap9>>(Cap9(0));
+      env.insert::<Cap<Cap10>>(Cap10(0));
+      env.insert::<Cap<Cap11>>(Cap11(0));
+      env.insert::<Cap<Cap12>>(Cap12(0));
+      env.insert::<Cap<Cap13>>(Cap13(0));
+      env.insert::<Cap<Cap14>>(Cap14(0));
+      env.insert::<Cap<Cap15>>(Cap15(0));
+      env.insert::<Cap<Cap16>>(Cap16(0));
+      env.insert::<Cap<Cap17>>(Cap17(0));
+      env.insert::<Cap<Cap18>>(Cap18(0));
+      env.insert::<Cap<Cap19>>(Cap19(0));
+      env.insert::<Cap<Cap20>>(Cap20(0));
+      env.insert::<Cap<Cap21>>(Cap21(0));
+      env.insert::<Cap<Cap22>>(Cap22(0));
+      env.insert::<Cap<Cap23>>(Cap23(0));
+      env.insert::<Cap<Cap24>>(Cap24(0));
+      env.insert::<Cap<Cap25>>(Cap25(0));
+      env.insert::<Cap<Cap26>>(Cap26(0));
+      env.insert::<Cap<Cap27>>(Cap27(0));
+      env.insert::<Cap<Cap28>>(Cap28(0));
+      env.insert::<Cap<Cap29>>(Cap29(0));
+      env.insert::<Cap<Cap30>>(Cap30(0));
+      env.insert::<Cap<Cap31>>(Cap31(0));
+      env.insert::<Cap<Cap32>>(Cap32(0));
+      env.insert::<Cap<Cap33>>(Cap33(0));
+      env.insert::<Cap<Cap34>>(Cap34(0));
+      env.insert::<Cap<Cap35>>(Cap35(0));
+      env.insert::<Cap<Cap36>>(Cap36(0));
+      env.insert::<Cap<Cap37>>(Cap37(0));
+      env.insert::<Cap<Cap38>>(Cap38(0));
+      env.insert::<Cap<Cap39>>(Cap39(0));
+      env.insert::<Cap<Cap40>>(Cap40(0));
+      env.insert::<Cap<Cap41>>(Cap41(0));
+      env.insert::<Cap<Cap42>>(Cap42(0));
+      env.insert::<Cap<Cap43>>(Cap43(0));
+      env.insert::<Cap<Cap44>>(Cap44(0));
+      env.insert::<Cap<Cap45>>(Cap45(0));
+      env.insert::<Cap<Cap46>>(Cap46(0));
+      env.insert::<Cap<Cap47>>(Cap47(0));
+      env.insert::<Cap<Cap48>>(Cap48(0));
+      env.insert::<Cap<Cap49>>(Cap49(0));
+      env.insert::<Cap<Cap50>>(Cap50(0));
+      env.insert::<Cap<Cap51>>(Cap51(0));
+      env.insert::<Cap<Cap52>>(Cap52(0));
+      env.insert::<Cap<Cap53>>(Cap53(0));
+      env.insert::<Cap<Cap54>>(Cap54(0));
+      env.insert::<Cap<Cap55>>(Cap55(0));
+      env.insert::<Cap<Cap56>>(Cap56(0));
+      env.insert::<Cap<Cap57>>(Cap57(0));
+      env.insert::<Cap<Cap58>>(Cap58(0));
+      env.insert::<Cap<Cap59>>(Cap59(0));
+      env.insert::<Cap<Cap60>>(Cap60(0));
+      env.insert::<Cap<Cap61>>(Cap61(0));
+      env.insert::<Cap<Cap62>>(Cap62(0));
+      env.insert::<Cap<Cap63>>(Cap63(0));
       env
     },
-    |e| *e.get::<Cap63Key>(),
+    |e| e.get::<Cap<Cap63>>().0,
   );
 }
 

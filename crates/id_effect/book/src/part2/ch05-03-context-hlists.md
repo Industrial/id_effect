@@ -8,11 +8,11 @@ Multi-capability effects use [`Env`](../../src/capability/env.rs) at runtime: a 
 use id_effect::Env;
 
 let mut env = Env::new();
-env.insert::<DatabaseKey>(pool);
-env.insert::<LoggerKey>(logger);
+env.insert::<Cap<Database>>(pool);
+env.insert::<Cap<EffectLogger>>(logger);
 
-assert!(env.has::<DatabaseKey>());
-let pool = env.get::<DatabaseKey>();
+assert!(env.has::<Cap<Database>>());
+let pool = env.get::<Cap<Database>>();
 ```
 
 `Env` stores cloneable, `Send + Sync` values keyed by [`CapabilityId`](../../src/capability/id.rs) (derived from the key type). Lookups are O(1); there is no positional indexing.
@@ -37,27 +37,27 @@ let env = build_env([provide!(MockDatabaseLive)])?;
 
 ```rust
 let mut env = Env::new();
-env.insert::<DatabaseKey>(MockPool::new());
+env.insert::<Cap<Database>>(MockPool::new());
 ```
 
 ## Why not a plain `HashMap<TypeId, Box<dyn Any>>`?
 
-You could store `dyn Any` and downcast. `Env` + `CapabilityKey` keeps:
+You could store `dyn Any` and downcast. `Env` + `Capability` keeps:
 
 - **Compile-time requirements** via `Needs<K>` bounds and `caps!`
-- **Typed access** — `get::<DatabaseKey>()` returns `&Pool`, not `&dyn Any`
+- **Typed access** — `get::<Cap<Database>>()` returns `&Pool`, not `&dyn Any`
 - **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](../../src/capability/error.rs) with the key name
 
-Application code should think in **`Env` and capability keys**, not positional tuples.
+Application code should think in **`Env` and capability services**, not positional tuples.
 
 ## Order independence
 
 These two sequences produce equivalent lookup behaviour:
 
 ```rust
-env.insert::<DatabaseKey>(db).insert::<LoggerKey>(log);
+env.insert::<Cap<Database>>(db).insert::<Cap<EffectLogger>>(log);
 // vs
-env.insert::<LoggerKey>(log).insert::<DatabaseKey>(db);
+env.insert::<Cap<EffectLogger>>(log).insert::<Cap<Database>>(db);
 ```
 
 Adding a new capability never changes how existing keys are accessed — refactor-safe in a way tuples never were.

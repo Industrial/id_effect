@@ -23,7 +23,7 @@ pub use config::AiConfig;
 pub use error::AiError;
 pub use http_util::{bearer_header, cursor_basic_auth_header, join_url};
 pub use model::{
-  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelKey,
+  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService,
   MockLanguageModel, complete, provide_mock_language_model,
 };
 pub use retry::{default_ai_retry_schedule, retry_transient_ai_http};
@@ -38,7 +38,7 @@ pub use vendors::{OpenAiLanguageModel, provide_openai_language_model};
 
 #[cfg(feature = "cursor")]
 pub use cursor::{
-  CreateAgentRequest, CursorAgent, CursorAgentStatus, CursorAgentsClient, CursorAgentsClientKey,
-  CursorAgentsError, CursorModel, CursorRepo, CursorRun, CursorRunStatus, HttpCursorAgentsClient,
-  provide_cursor_agents_client,
+  CreateAgentRequest, CursorAgent, CursorAgentStatus, CursorAgentsClient,
+  CursorAgentsClientService, CursorAgentsError, CursorModel, CursorRepo, CursorRun,
+  CursorRunStatus, HttpCursorAgentsClient, provide_cursor_agents_client,
 };

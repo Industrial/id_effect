@@ -2,17 +2,12 @@
 
 use std::sync::Arc;
 
-use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 
 use crate::starter::OtelStarterGuard;
 
-/// Capability key for a process-wide OpenTelemetry runtime handle (flush/shutdown + meter access).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct OtelRuntimeKey;
-
-impl CapabilityKey for OtelRuntimeKey {
-  type Value = Arc<OtelStarterGuard>;
-}
+/// OpenTelemetry runtime handle (flush/shutdown + meter access).
+pub type OtelRuntime = Arc<OtelStarterGuard>;
 
 /// Register `guard` in the capability environment for domain programs that need OTEL flush/shutdown.
 #[inline]
@@ -29,16 +24,16 @@ pub fn provide_otel_runtime(guard: Arc<OtelStarterGuard>) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      OtelRuntimeKey::id()
+      Cap::<OtelRuntime>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "OtelRuntimeKey"
+      "OtelRuntime"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<OtelRuntimeKey>(Arc::clone(&self.0));
+      out.insert::<Cap<OtelRuntime>>(Arc::clone(&self.0));
       Ok(out)
     }
   }

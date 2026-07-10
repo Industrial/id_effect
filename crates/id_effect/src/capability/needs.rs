@@ -1,32 +1,35 @@
-//! [`Needs`] — borrow a capability from the environment.
+//! [`Needs`] — borrow a capability service from the environment.
 
 use super::env::Env;
-use super::key::CapabilityKey;
+use super::key::Cap;
 use std::ops::Deref;
 
-/// Environment `R` provides capability `K`.
-pub trait Needs<K: CapabilityKey> {
-  /// Borrow the service registered for `K`.
-  fn need(&self) -> &K::Value;
+/// Environment `R` provides service `T`.
+pub trait Needs<T>
+where
+  T: Clone + Send + Sync + 'static,
+{
+  /// Borrow the service registered for `T`.
+  fn need(&self) -> &T;
 }
 
-impl<K> Needs<K> for Env
+impl<T> Needs<T> for Env
 where
-  K: CapabilityKey,
+  T: Clone + Send + Sync + 'static,
 {
   #[inline]
-  fn need(&self) -> &K::Value {
-    self.get::<K>()
+  fn need(&self) -> &T {
+    self.get::<Cap<T>>()
   }
 }
 
-impl<K, T> Needs<K> for T
+impl<T, R> Needs<T> for R
 where
-  K: CapabilityKey,
-  T: Deref<Target = Env>,
+  T: Clone + Send + Sync + 'static,
+  R: Deref<Target = Env>,
 {
   #[inline]
-  fn need(&self) -> &K::Value {
-    self.deref().get::<K>()
+  fn need(&self) -> &T {
+    self.deref().get::<Cap<T>>()
   }
 }

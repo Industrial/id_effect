@@ -55,7 +55,6 @@ pub struct ChildHandle {
 }
 
 /// Capability: spawn and await child processes as [`Effect`] values.
-#[::id_effect::capability(Arc<dyn ProcessRuntime>)]
 pub trait ProcessRuntime: Send + Sync + 'static {
   /// Spawn without waiting; use [`child_wait`] or [`child_kill`].
   fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, ()>;
@@ -97,21 +96,24 @@ impl ProcessRuntime for TokioProcessRuntime {
 }
 
 /// Default [`ProviderSpec`] for a Tokio-backed [`ProcessRuntime`].
+pub type ProcessRuntimeService = Arc<dyn ProcessRuntime>;
+
+/// Tokio-backed [`ProcessRuntime`] provider.
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ProcessRuntimeKey)]
+#[provides(ProcessRuntimeService)]
 pub struct TokioProcessRuntimeProvider;
 
 impl TokioProcessRuntimeProvider {
-  fn new() -> Arc<dyn ProcessRuntime> {
+  fn new() -> ProcessRuntimeService {
     Arc::new(TokioProcessRuntime)
   }
 }
 
-/// Spawn using [`ProcessRuntimeKey`].
+/// Spawn using [`ProcessRuntime`].
 #[inline]
 pub fn spawn<R>(cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, R>
 where
-  R: Needs<ProcessRuntimeKey> + 'static,
+  R: Needs<ProcessRuntimeService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let rt = r.need().clone();
@@ -120,11 +122,11 @@ where
   })
 }
 
-/// Spawn-wait using [`ProcessRuntimeKey`].
+/// Spawn-wait using [`ProcessRuntime`].
 #[inline]
 pub fn spawn_wait<R>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
 where
-  R: Needs<ProcessRuntimeKey> + 'static,
+  R: Needs<ProcessRuntimeService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let rt = r.need().clone();

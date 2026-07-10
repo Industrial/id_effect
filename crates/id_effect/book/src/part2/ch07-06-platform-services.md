@@ -6,7 +6,7 @@ Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`*
 
 - **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe *what* you need; provider impls install live or test doubles.
 - **Test doubles** — `TestFileSystem` is in-memory; production uses `LiveFileSystemProvider`.
-- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait + `execute`, not `reqwest::RequestBuilder` (the capability key is crate-private).
+- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait + `execute`, not `reqwest::RequestBuilder` (the capability service is crate-private).
 
 ## Modules
 
@@ -20,12 +20,12 @@ Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`*
 
 ## Wiring pattern
 
-Each module declares a capability key and ships a default provider:
+Each module declares a capability service and ships a default provider:
 
 ```rust
-// in id_effect_platform::http (simplified; HttpClientKey is pub(crate))
+// in id_effect_platform::http (simplified; HttpClientService is pub(crate))
 #[derive(ProviderSpecDerive)]
-#[provides(HttpClientKey)]
+#[provides(HttpClientService)]
 pub struct ReqwestHttpClientProvider;
 
 impl ReqwestHttpClientProvider {

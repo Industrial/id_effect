@@ -55,8 +55,10 @@ pub struct ChatResponse {
   pub tokens_used: u32,
 }
 
+/// Injectable language model service.
+pub type LanguageModelService = Arc<dyn LanguageModel>;
+
 /// Vendor-neutral language model capability.
-#[::id_effect::capability(Arc<dyn LanguageModel>)]
 pub trait LanguageModel: Send + Sync + 'static {
   /// Buffered completion.
   fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError, ()>;
@@ -122,11 +124,11 @@ impl LanguageModel for MockLanguageModel {
 }
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(LanguageModelKey)]
+#[provides(LanguageModelService)]
 struct MockLanguageModelProvider;
 
 impl MockLanguageModelProvider {
-  fn new() -> Arc<dyn LanguageModel> {
+  fn new() -> LanguageModelService {
     Arc::new(MockLanguageModel::echo())
   }
 }
@@ -141,7 +143,7 @@ pub fn provide_mock_language_model() -> ProviderBox {
 #[inline]
 pub fn complete<R>(req: ChatRequest) -> Effect<ChatResponse, AiError, R>
 where
-  R: Needs<LanguageModelKey> + 'static,
+  R: Needs<LanguageModelService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let model = r.need().clone();

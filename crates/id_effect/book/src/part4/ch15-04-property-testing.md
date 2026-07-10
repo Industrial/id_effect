@@ -97,10 +97,9 @@ proptest! {
 For integration-style property tests, generate random state in the fake service:
 
 ```rust
-#[::id_effect::capability(Arc<dyn Db>)]
 struct Database;
 
-mock_capability!(InMemoryDbMock, DatabaseKey, Arc<dyn Db>, "db/inmemory", || {
+mock_capability!(InMemoryDbMock, Database, Arc<dyn Db>, "db/inmemory", || {
     Arc::new(InMemoryDb::new()) as Arc<dyn Db>
 });
 

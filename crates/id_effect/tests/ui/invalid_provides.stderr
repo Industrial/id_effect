@@ -1,4 +1,4 @@
-error: derive(ProviderSpec) requires #[provides(Key)] on the struct
+error: derive(ProviderSpec) requires #[provides(Service)] on the struct
  --> tests/ui/invalid_provides.rs:2:8
   |
 2 | struct BadLive;

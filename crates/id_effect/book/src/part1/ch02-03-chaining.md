@@ -7,7 +7,7 @@
 Say you want to fetch a user and then fetch their posts:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(DatabaseKey)> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
 fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, Database> { ... }
 ```
 
@@ -52,7 +52,7 @@ The `effect!` macro turns `flat_map` chains into readable sequential code using 
 ```rust
 use id_effect::effect;
 
-let program: Effect<Page, AppError, caps!(DatabaseKey)> = effect!(|r| {
+let program: Effect<Page, AppError, caps!(Database)> = effect!(|r| {
     let user  = ~ get_user(1).map_error(AppError::Db);
     let posts = ~ get_posts(user.id).map_error(AppError::Db);
     let page  = render_page(user, posts);
@@ -69,7 +69,7 @@ Note that `render_page` (a pure function with no `~`) is just a normal Rust expr
 Like `?` in `Result`, if any `~` step fails, the whole `effect!` exits early with that error:
 
 ```rust
-let program: Effect<Page, AppError, caps!(DatabaseKey)> = effect!(|r| {
+let program: Effect<Page, AppError, caps!(Database)> = effect!(|r| {
     let user = ~ get_user(999).map_error(AppError::Db);
     // If get_user fails, execution stops here.
     // The rest never runs.

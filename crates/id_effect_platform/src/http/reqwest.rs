@@ -11,7 +11,7 @@
 )]
 
 use ::id_effect::{
-  CapBindR, Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect,
+  Cap, CapBindR, Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect,
 };
 use std::sync::Arc;
 
@@ -24,11 +24,20 @@ pub use reqwest_providers::{ReqwestClientLive, provide_reqwest_client, provide_r
 use serde_json::Value;
 
 mod reqwest_client_cap {
-  /// Tag for the default [`reqwest::Client`] in the capability environment.
-  #[::id_effect::capability(::reqwest::Client)]
-  pub struct ReqwestClient;
+  use super::Client;
+  /// Injectable [`reqwest::Client`] in the capability environment.
+  #[derive(Clone, Debug)]
+  pub struct ReqwestClient(pub Client);
+
+  impl std::ops::Deref for ReqwestClient {
+    type Target = Client;
+
+    fn deref(&self) -> &Self::Target {
+      &self.0
+    }
+  }
 }
-pub use reqwest_client_cap::ReqwestClientKey;
+pub use reqwest_client_cap::ReqwestClient;
 
 /// Wraps [`Client`] in an [`Arc`] so it can live in [`Pool`] ([`PartialEq`] uses pointer identity).
 #[derive(Clone, Debug)]
@@ -61,23 +70,22 @@ impl Eq for PooledClient {}
 mod reqwest_pool_cap {
   use super::{Never, PooledClient};
   use ::id_effect::Pool;
-  /// Tag for [`Pool`]`<`[`PooledClient`]`, `[`Never`]`>` in the capability environment.
-  #[::id_effect::capability(Pool<PooledClient, Never>)]
-  pub struct ReqwestPool;
+  /// Injectable [`Pool`] of [`PooledClient`] in the capability environment.
+  pub type ReqwestPool = Pool<PooledClient, Never>;
 }
-pub use reqwest_pool_cap::ReqwestPoolKey;
+pub use reqwest_pool_cap::ReqwestPool;
 
-/// [`send`] with a client checked out from [`ReqwestPoolKey`]; returns to the pool when the inner scope closes.
+/// [`send`] with a client checked out from [`ReqwestPool`]; returns to the pool when the inner scope closes.
 #[inline]
 pub fn send_pooled<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestPoolKey> + CapBindR + 'static,
+  R: Needs<ReqwestPool> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let pool = Needs::<ReqwestPoolKey>::need(r).clone();
+    let pool = Needs::<ReqwestPool>::need(r).clone();
     let (pooled, scope) = ~from_async(move |_r: &mut R| async move {
       let mut scope = Scope::make();
       let pooled = pool
@@ -131,17 +139,17 @@ pub fn json_schema<R, F, A, I, Es>(
   build: F,
 ) -> Effect<A, JsonSchemaError, R>
 where
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   Es: EffectData + 'static,
   A: 'static,
   I: 'static,
 {
   effect!(|r: &mut R| {
-    let client = Needs::<ReqwestClientKey>::need(r).clone();
+    let client = Needs::<ReqwestClient>::need(r).clone();
     let schema_arc = Arc::clone(&schema);
     let resp = ~from_async(move |_r: &mut R| async move {
-      build(&client).send().await.map_err(JsonSchemaError::Http)
+      build(&*client).send().await.map_err(JsonSchemaError::Http)
     });
     let buf = ~from_async(move |_r: &mut R| async move {
       resp.bytes().await.map_err(JsonSchemaError::Http)
@@ -159,13 +167,13 @@ pub fn send<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Needs::<ReqwestClientKey>::need(r).clone();
+    let client = Needs::<ReqwestClient>::need(r).clone();
     ~from_async(move |_r: &mut R| async move {
-      build(&client)
+      build(&*client)
         .send()
         .await
         .map_err(E::from)
@@ -180,13 +188,13 @@ pub fn text<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<String> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Needs::<ReqwestClientKey>::need(r).clone();
+    let client = Needs::<ReqwestClient>::need(r).clone();
     let resp = ~from_async(move |_r: &mut R| async move {
-      build(&client).send().await.map_err(E::from)
+      build(&*client).send().await.map_err(E::from)
     });
     let body = ~from_async(move |_r: &mut R| async move {
       resp.text().await.map_err(E::from)
@@ -201,13 +209,13 @@ pub fn bytes<A, E, R, F>(build: F) -> Effect<A, E, R>
 where
   A: From<bytes::Bytes> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Needs::<ReqwestClientKey>::need(r).clone();
+    let client = Needs::<ReqwestClient>::need(r).clone();
     let resp = ~from_async(move |_r: &mut R| async move {
-      build(&client).send().await.map_err(E::from)
+      build(&*client).send().await.map_err(E::from)
     });
     let body = ~from_async(move |_r: &mut R| async move {
       resp.bytes().await.map_err(E::from)
@@ -222,14 +230,14 @@ pub fn json<A, E, R, F, T>(build: F) -> Effect<A, E, R>
 where
   A: From<T> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
   F: FnOnce(&Client) -> RequestBuilder + Send + 'static,
   T: serde::de::DeserializeOwned + 'static,
 {
   effect!(|r: &mut R| {
-    let client = Needs::<ReqwestClientKey>::need(r).clone();
+    let client = Needs::<ReqwestClient>::need(r).clone();
     let resp = ~from_async(move |_r: &mut R| async move {
-      build(&client).send().await.map_err(E::from)
+      build(&*client).send().await.map_err(E::from)
     });
     let value = ~from_async(move |_r: &mut R| async move {
       resp.json::<T>().await.map_err(E::from)
@@ -244,7 +252,7 @@ pub fn get<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.get(url));
@@ -258,7 +266,7 @@ pub fn post<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.post(url));
@@ -272,7 +280,7 @@ pub fn put<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.put(url));
@@ -286,7 +294,7 @@ pub fn delete<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.delete(url));
@@ -300,7 +308,7 @@ pub fn head<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.head(url));
@@ -314,7 +322,7 @@ pub fn patch<A, E, R>(url: String) -> Effect<A, E, R>
 where
   A: From<Response> + 'static,
   E: From<Error> + 'static,
-  R: Needs<ReqwestClientKey> + CapBindR + 'static,
+  R: Needs<ReqwestClient> + CapBindR + 'static,
 {
   effect!(|_r: &mut R| {
     let x = ~send::<A, E, R, _>(move |c| c.patch(url));
@@ -375,7 +383,7 @@ mod tests {
   #[tokio::test]
   async fn provider_builds_client() {
     let env = build_env([provide!(ReqwestClientLive)]).expect("env");
-    let client = env.get::<ReqwestClientKey>();
+    let client = env.get::<Cap<ReqwestClient>>();
     assert!(client.get("https://example.com").build().is_ok());
   }
 
@@ -579,7 +587,7 @@ mod tests {
   #[tokio::test]
   async fn provide_reqwest_client_registers_client() {
     let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
-    let client = env.get::<ReqwestClientKey>();
+    let client = env.get::<Cap<ReqwestClient>>();
     assert!(client.get("https://example.com").build().is_ok());
   }
 
@@ -590,7 +598,7 @@ mod tests {
     let env = build_env([provide_reqwest_client(client)]).expect("env");
     assert!(
       env
-        .get::<ReqwestClientKey>()
+        .get::<Cap<ReqwestClient>>()
         .get("https://example.com")
         .build()
         .is_ok()
@@ -600,7 +608,7 @@ mod tests {
   #[tokio::test]
   async fn provide_reqwest_pool_builds_pool() {
     let env = build_env([provide_reqwest_pool(2, Duration::from_secs(60))]).expect("env");
-    let pool = env.get::<ReqwestPoolKey>().clone();
+    let pool = env.get::<Cap<ReqwestPool>>().clone();
     let s = Scope::make();
     let client = run_async(pool.get(), s.clone()).await.expect("get");
     let _ = client.allocation_ptr();
@@ -671,7 +679,7 @@ mod tests {
     )
     .expect("pool");
     let mut env = build_env([]).expect("env");
-    env.insert::<ReqwestPoolKey>(pool);
+    env.insert::<Cap<ReqwestPool>>(pool);
     let resp = run_async(
       send_pooled::<Response, Error, _, _>(move |c| c.get(url)),
       env,

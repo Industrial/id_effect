@@ -3,7 +3,7 @@
 use id_effect::run_async;
 use id_effect_sql::{SqlClient, SqlParam};
 use id_effect_sql_pg::{
-  PgPoolConfig, PgPoolKey, PgSqlClient, pg_pool_from_config, pg_pool_from_config_lazy,
+  PgPool, PgPoolConfig, PgSqlClient, pg_pool_from_config, pg_pool_from_config_lazy,
   provide_pg_sql_client,
 };
 
@@ -116,16 +116,16 @@ async fn live_postgres_round_trip_when_available() {
 
 #[test]
 fn provider_builds_env_with_sql_client() {
-  use id_effect::build_env;
-  use id_effect_sql::client::SqlClientKey;
+  use id_effect::{Cap, build_env};
+  use id_effect_sql::SqlClientService;
   let rt = tokio::runtime::Builder::new_current_thread()
     .enable_all()
     .build()
     .expect("rt");
   let pool = rt.block_on(async { lazy_pool() });
   let env = build_env([provide_pg_sql_client(pool)]).expect("env");
-  assert!(env.has::<SqlClientKey>());
-  assert!(env.has::<PgPoolKey>());
+  assert!(env.has::<Cap<SqlClientService>>());
+  assert!(env.has::<Cap<PgPool>>());
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 //! Streaming completion chunks as `id_effect::Stream`.
 
 use crate::error::AiError;
-use crate::model::{ChatRequest, LanguageModelKey};
+use crate::model::{ChatRequest, LanguageModelService};
 use id_effect::kernel::Effect;
 use id_effect::{Chunk, Needs, end_stream, send_chunk, stream_from_channel};
 use serde::{Deserialize, Serialize};
@@ -21,7 +21,7 @@ pub fn complete_stream<R>(
   req: ChatRequest,
 ) -> Effect<id_effect::Stream<CompletionChunk, AiError, ()>, AiError, R>
 where
-  R: Needs<LanguageModelKey> + 'static,
+  R: Needs<LanguageModelService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let model = r.need().clone();

@@ -199,7 +199,7 @@ pub fn check_prefer_needs_x<'tcx>(
       span,
       "Effect-returning function uses raw `Get<Key, …>` bounds; prefer `Needs<Key>`",
       None,
-      "define a `NeedsX: Get<XKey>` supertrait and use `R: Needs<Key> + 'static` instead",
+      "define a `NeedsX: Get<X>` supertrait and use `R: Needs<Key> + 'static` instead",
     );
   }
 }

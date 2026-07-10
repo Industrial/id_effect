@@ -73,12 +73,10 @@ In practice, pools live in [`Env`](../../src/capability/env.rs) and are wired at
 
 ```rust
 use id_effect::{Effect, caps, effect, provide, require, run_with, Needs, ProviderSpecDerive};
-
-#[::id_effect::capability(Pool<Connection>)]
 struct DbPool;
 
 #[derive(ProviderSpecDerive)]
-#[provides(DbPoolKey)]
+#[provides(DbPool)]
 struct DbPoolLive;
 
 impl DbPoolLive {
@@ -87,9 +85,9 @@ impl DbPoolLive {
     }
 }
 
-fn query_users() -> Effect<Vec<User>, DbError, caps!(DbPoolKey)> {
+fn query_users() -> Effect<Vec<User>, DbError, caps!(DbPool)> {
     effect!(|r| {
-        let pool = ~DbPoolKey;
+        let pool = ~DbPool;
         ~ pool.with_resource(|conn| {
             effect!(|r| {
                 let rows = ~ conn.query("SELECT * FROM users");
@@ -103,4 +101,4 @@ fn query_users() -> Effect<Vec<User>, DbError, caps!(DbPoolKey)> {
 run_with([provide!(ConfigLive), provide!(DbPoolLive)], query_users())?;
 ```
 
-Pool creation runs in the provider graph; business code declares `caps!(DbPoolKey)` and uses `~DbPoolKey` inside `effect!`.
+Pool creation runs in the provider graph; business code declares `caps!(DbPool)` and uses `~DbPool` inside `effect!`.

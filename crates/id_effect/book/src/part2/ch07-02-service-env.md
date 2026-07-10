@@ -7,9 +7,9 @@ Application effects access services with [`Needs<K>`](../../src/capability/needs
 ```rust
 use id_effect::{effect, require, caps, succeed};
 
-fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepoKey)> {
+fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepo)> {
     effect!(|r| {
-        let repo = ~UserRepoKey;
+        let repo = ~UserRepo;
         ~ repo.get_user(id)
     })
 }
@@ -20,10 +20,10 @@ Generic over any environment that implements the bound:
 ```rust
 fn get_user<R>(id: u64) -> Effect<User, DbError, R>
 where
-    R: Needs<UserRepoKey> + 'static,
+    R: Needs<UserRepo> + 'static,
 {
     effect!(|r: &mut R| {
-        let repo = ~UserRepoKey;
+        let repo = ~UserRepo;
         ~ repo.get_user(id)
     })
 }
@@ -32,10 +32,10 @@ where
 ## Multiple services
 
 ```rust
-fn notify_user(id: u64, message: &str) -> Effect<(), AppError, caps!(UserRepoKey, EmailKey)> {
+fn notify_user(id: u64, message: &str) -> Effect<(), AppError, caps!(UserRepo, Email)> {
     effect!(|r| {
-        let repo = ~UserRepoKey;
-        let email = ~EmailKey;
+        let repo = ~UserRepo;
+        let email = ~Email;
         let user = ~ repo.get_user(id).map_error(AppError::Db);
         ~ email.send(&user.email, message).map_error(AppError::Email);
         ()
@@ -45,7 +45,7 @@ fn notify_user(id: u64, message: &str) -> Effect<(), AppError, caps!(UserRepoKey
 
 ## Direct `Env` access
 
-Prefer `effect!` + `~ConfigKey` in application code. For small sync helpers outside `effect!`, `Needs::<ConfigKey>::need(env)` is available.
+Prefer `effect!` + `~Config` in application code. For small sync helpers outside `effect!`, `Needs::<Config>::need(env)` is available.
 
 ## `caps!` vs generic `R`
 

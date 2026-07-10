@@ -1,11 +1,11 @@
-# Capability Keys and `Env` — Compile-Time Service Lookup
+# Capability services and `Env` — Compile-Time Service Lookup
 
-Chapter 4 showed how `R` encodes dependencies. For small programs a single key in `caps!(K)` is enough. As the graph grows you need **named capability keys** so the compiler can distinguish services — even when they share the same Rust type.
+Chapter 4 showed how `R` encodes dependencies. For small programs a single service in `caps!(T)` is enough. As the graph grows you need **named capability services** so the compiler can distinguish dependencies — even when they share the same Rust type.
 
 This chapter covers:
 
 - Why positional/tuple `R` breaks down
-- [`#[capability]`](../../src/capability/key.rs) — declaring key types
+- [``](../../src/capability/key.rs) — declaring key types
 - [`Env`](../../src/capability/env.rs) — the order-independent runtime container
 - [`Needs<K>`](../../src/capability/needs.rs) and `~Key` — accessing services inside effects
 

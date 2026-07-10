@@ -6,10 +6,9 @@ No mock frameworks. No `#[automock]`. No `vi.mock()` equivalent. Just providers.
 
 ## The Pattern
 
-Declare a capability key and a trait object (or concrete type):
+Declare a capability service and a trait object (or concrete type):
 
 ```rust
-#[::id_effect::capability(Arc<dyn Db>)]
 struct Database;
 
 trait Db: Send + Sync {
@@ -23,7 +22,7 @@ Provide two implementations — one for production, one for tests:
 ```rust
 // Production
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(DatabaseKey)]
+#[provides(Database)]
 struct PostgresDbLive;
 
 struct PostgresDb { pool: PgPool }
@@ -46,7 +45,7 @@ impl Db for InMemoryDb {
     }
 }
 
-mock_capability!(InMemoryDbMock, DatabaseKey, Arc<dyn Db>, "db/inmemory", || {
+mock_capability!(InMemoryDbMock, Database, Arc<dyn Db>, "db/inmemory", || {
     Arc::new(InMemoryDb::new()) as Arc<dyn Db>
 });
 ```
@@ -59,7 +58,7 @@ fn get_user_returns_saved_user() {
     let env = build_env([provide!(InMemoryDbMock)]).expect("env");
 
     let eff = effect!(|r| {
-        let db = ~DatabaseKey;
+        let db = ~Database;
         ~ db.save_user(User { id: UserId::new(1), name: "Alice".into() });
         ~ db.get_user(UserId::new(1))
     });
@@ -87,18 +86,16 @@ impl Mailer for SpyMailer {
         succeed(())
     }
 }
-
-#[::id_effect::capability(Arc<dyn Mailer>)]
 struct MailerCap;
 
-mock_capability!(SpyMailerMock, MailerCapKey, Arc<dyn Mailer>, "mailer/spy", || {
+mock_capability!(SpyMailerMock, MailerCap, Arc<dyn Mailer>, "mailer/spy", || {
     Arc::new(SpyMailer::new()) as Arc<dyn Mailer>
 });
 
 #[test]
 fn registration_sends_welcome_email() {
     let env = build_env([provide!(SpyMailerMock)]).expect("env");
-    let spy = env.get::<MailerCapKey>().clone();
+    let spy = env.get::<Cap<MailerCap>>().clone();
 
     let exit = run_test(register_user("alice@example.com"), env);
     assert!(matches!(exit, Exit::Success(_)));
@@ -124,7 +121,7 @@ impl Db for FailingDb {
     }
 }
 
-mock_capability!(FailingDbMock, DatabaseKey, Arc<dyn Db>, "db/failing", || {
+mock_capability!(FailingDbMock, Database, Arc<dyn Db>, "db/failing", || {
     Arc::new(FailingDb) as Arc<dyn Db>
 });
 

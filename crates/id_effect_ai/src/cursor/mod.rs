@@ -5,7 +5,7 @@ pub mod models;
 pub mod types;
 
 pub use agents::{
-  CursorAgentsClient, CursorAgentsClientKey, CursorAgentsError, HttpCursorAgentsClient,
+  CursorAgentsClient, CursorAgentsClientService, CursorAgentsError, HttpCursorAgentsClient,
   provide_cursor_agents_client,
 };
 pub use types::{

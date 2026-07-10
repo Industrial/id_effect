@@ -4,9 +4,9 @@ Trait-first DI: [`Env`](env.rs), [`ProviderSpec`](provider.rs), [`CapabilityGrap
 
 ## Author flow
 
-1. `#[capability(T)]` on a struct or trait → `{Name}Key`
-2. `#[derive(ProviderSpecDerive)]` + `#[provides(MyKey)]` on a provider struct
-3. `fn app() -> Effect<_, _, caps!(MyKey)>` with `require!(MyKey)` inside `effect!`
+1. Declare a service type (trait or struct) — no generated key types.
+2. `#[derive(ProviderSpecDerive)]` + `#[provides(MyService)]` on a provider struct
+3. `fn app() -> Effect<_, _, caps!(MyService)>` with `require!(MyService)` or `~MyService` inside `effect!`
 4. `run_with([provide!(MyLive)], app())`
 
 Typed capability sets use [`CapList`](set.rs) via the [`caps!`](../../id_effect_macro/src/capability/caps.rs) macro.

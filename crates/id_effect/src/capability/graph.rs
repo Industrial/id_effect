@@ -162,34 +162,33 @@ mod graph_feature_tests {
   use super::*;
   use crate::capability::Env;
   use crate::capability::error::ProviderError;
-  use crate::capability::key::CapabilityKey;
+  use crate::capability::key::{Cap, CapabilityKey};
   use crate::capability::provider::ProviderSpec;
   use crate::provide;
-
-  #[::id_effect::capability(u32)]
+  #[derive(Clone, Copy)]
   struct OptionalCfg;
-  #[::id_effect::capability(u32)]
-  struct Db;
+  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+  struct Db(pub u32);
 
   struct DbWithOptional;
   impl ProviderSpec for DbWithOptional {
-    type Key = DbKey;
-    type Output = u32;
+    type Key = Cap<Db>;
+    type Output = Db;
     fn provider_id() -> &'static str {
       "db"
     }
     fn requires() -> &'static [CapabilityId] {
       static R: std::sync::LazyLock<Vec<CapabilityId>> =
-        std::sync::LazyLock::new(|| vec![OptionalCfgKey::id()]);
+        std::sync::LazyLock::new(|| vec![Cap::<OptionalCfg>::id()]);
       R.as_slice()
     }
     fn optional_requires() -> &'static [CapabilityId] {
       static O: std::sync::LazyLock<Vec<CapabilityId>> =
-        std::sync::LazyLock::new(|| vec![OptionalCfgKey::id()]);
+        std::sync::LazyLock::new(|| vec![Cap::<OptionalCfg>::id()]);
       O.as_slice()
     }
-    fn provide(_: &Env) -> Result<u32, ProviderError> {
-      Ok(9)
+    fn provide(_: &Env) -> Result<Db, ProviderError> {
+      Ok(Db(9))
     }
   }
 
@@ -200,47 +199,59 @@ mod graph_feature_tests {
   }
 
   #[test]
+  fn optional_dep_absent_builds() {
+    assert!(!DbWithOptional::optional_requires().is_empty());
+    let env = CapabilityGraph::new()
+      .add(provide!(DbWithOptional).0)
+      .build()
+      .expect("build");
+    assert_eq!(env.get::<Cap<Db>>().0, 9);
+  }
+
+  #[test]
   fn shared_provider_builds() {
     struct SharedDb;
     impl ProviderSpec for SharedDb {
-      type Key = DbKey;
-      type Output = u32;
+      type Key = Cap<Db>;
+      type Output = Db;
       fn provider_id() -> &'static str {
         "shared-db"
       }
       fn shared() -> bool {
         true
       }
-      fn provide(_: &Env) -> Result<u32, ProviderError> {
-        Ok(42)
+      fn provide(_: &Env) -> Result<Db, ProviderError> {
+        Ok(Db(42))
       }
     }
     let g = CapabilityGraph::new().add(provide!(SharedDb).0);
     let env = g.build().expect("build");
-    assert_eq!(*env.get::<DbKey>(), 42);
+    assert_eq!(env.get::<Cap<Db>>().0, 42);
   }
 
   #[test]
   fn conflicting_providers_error() {
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(DbKey)]
+    #[provides(Db)]
     struct DbA;
     impl DbA {
-      fn new() -> u32 {
-        1
+      fn new() -> Db {
+        Db(1)
       }
     }
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(DbKey)]
+    #[provides(Db)]
     struct DbB;
     impl DbB {
-      fn new() -> u32 {
-        2
+      fn new() -> Db {
+        Db(2)
       }
     }
     let g = CapabilityGraph::new()
       .add(provide!(DbA).0)
       .add(provide!(DbB).0);
+    assert_eq!(DbA::new().0, 1);
+    assert_eq!(DbB::new().0, 2);
     let err = g.plan().expect_err("conflict");
     assert!(matches!(
       err,
@@ -251,57 +262,57 @@ mod graph_feature_tests {
   fn build_runs_refresh_interval_branch() {
     struct RefreshDb;
     impl ProviderSpec for RefreshDb {
-      type Key = DbKey;
-      type Output = u32;
+      type Key = Cap<Db>;
+      type Output = Db;
       fn provider_id() -> &'static str {
         "refresh-db"
       }
       fn refresh_interval() -> Option<std::time::Duration> {
         Some(std::time::Duration::from_millis(1))
       }
-      fn provide(_: &Env) -> Result<u32, ProviderError> {
-        Ok(99)
+      fn provide(_: &Env) -> Result<Db, ProviderError> {
+        Ok(Db(99))
       }
     }
     let env = CapabilityGraph::new()
       .add(provide!(RefreshDb).0)
       .build()
       .expect("build");
-    assert_eq!(*env.get::<DbKey>(), 99);
+    assert_eq!(env.get::<Cap<Db>>().0, 99);
   }
 
   #[test]
   fn build_from_parent_env() {
     let parent = Env::new();
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(DbKey)]
+    #[provides(Db)]
     struct DbLive;
     impl DbLive {
-      fn new() -> u32 {
-        5
+      fn new() -> Db {
+        Db(5)
       }
     }
     let g = CapabilityGraph::new().add(provide!(DbLive).0);
     let child = g.build_from(parent).expect("build_from");
-    assert_eq!(*child.get::<DbKey>(), 5);
+    assert_eq!(child.get::<Cap<Db>>().0, 5);
   }
 
   #[test]
   fn diagnostics_reports_missing_required() {
     struct NeedsCfg;
     impl ProviderSpec for NeedsCfg {
-      type Key = DbKey;
-      type Output = u32;
+      type Key = Cap<Db>;
+      type Output = Db;
       fn provider_id() -> &'static str {
         "db-needs-cfg"
       }
       fn requires() -> &'static [CapabilityId] {
         static R: std::sync::LazyLock<Vec<CapabilityId>> =
-          std::sync::LazyLock::new(|| vec![OptionalCfgKey::id()]);
+          std::sync::LazyLock::new(|| vec![Cap::<OptionalCfg>::id()]);
         R.as_slice()
       }
-      fn provide(_: &Env) -> Result<u32, ProviderError> {
-        Ok(1)
+      fn provide(_: &Env) -> Result<Db, ProviderError> {
+        Ok(Db(1))
       }
     }
     let g = CapabilityGraph::new().add(provide!(NeedsCfg).0);

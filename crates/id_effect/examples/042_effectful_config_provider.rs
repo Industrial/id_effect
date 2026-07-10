@@ -1,15 +1,13 @@
 //! Ex 042 — effectful provider builds config via [`Effect`] before the app runs.
 
-use id_effect::{Effect, Env, Needs, ProviderError, ProviderSpec, caps, provide, run_with};
+use id_effect::{Cap, Effect, Env, Needs, ProviderError, ProviderSpec, caps, provide, run_with};
 
-#[::id_effect::capability(String)]
-#[expect(dead_code)]
-struct AppConfig;
+type AppConfig = String;
 
 struct ConfigLoaderLive;
 
 impl ProviderSpec for ConfigLoaderLive {
-  type Key = AppConfigKey;
+  type Key = Cap<AppConfig>;
   type Output = String;
 
   fn provider_id() -> &'static str {
@@ -32,8 +30,8 @@ impl ProviderSpec for ConfigLoaderLive {
   }
 }
 
-fn app() -> Effect<String, (), caps!(AppConfigKey)> {
-  Effect::new(|env: &mut caps!(AppConfigKey)| Ok(Needs::<AppConfigKey>::need(env).clone()))
+fn app() -> Effect<String, (), caps!(AppConfig)> {
+  Effect::new(|env: &mut caps!(AppConfig)| Ok(Needs::<AppConfig>::need(env).clone()))
 }
 
 fn main() {
@@ -45,10 +43,11 @@ fn main() {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use id_effect::build_env;
 
   #[test]
   fn effectful_provider_runs_before_app() {
     let env = build_env([provide!(ConfigLoaderLive)]).expect("build");
-    assert_eq!(env.get::<AppConfigKey>(), "loaded-from-effect");
+    assert_eq!(env.get::<Cap<AppConfig>>(), "loaded-from-effect");
   }
 }

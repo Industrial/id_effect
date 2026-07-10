@@ -47,9 +47,9 @@ run_blocking(effect, (cache_pool, main_pool)); // compiles, wrong at runtime
 
 Each dependency needs a **compile-time name** independent of position:
 
-- `DatabaseKey` → the primary `Pool`
-- `CacheKey` → the cache `Pool`
+- `Database` → the primary `Pool`
+- `Cache` → the cache `Pool`
 
 Different keys, same underlying type — the compiler catches swaps.
 
-That's what [`#[capability]`](../../src/capability/key.rs) generates.
+That's what [``](../../src/capability/key.rs) generates.

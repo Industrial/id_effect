@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::kernel::Effect;
-use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
 use serde_json::json;
@@ -11,7 +11,9 @@ use serde_json::json;
 use crate::config::AiConfig;
 use crate::error::AiError;
 use crate::http_util::{bearer_header, join_url};
-use crate::model::{ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel};
+use crate::model::{
+  ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService,
+};
 use crate::retry::retry_transient_ai_http;
 use crate::sse::SseParser;
 use crate::streaming::CompletionChunk;
@@ -264,14 +266,14 @@ pub fn provide_openai_language_model(
       &[]
     }
     fn provides(&self) -> CapabilityId {
-      crate::model::LanguageModelKey::id()
+      Cap::<LanguageModelService>::id()
     }
     fn cap_name(&self) -> &str {
-      "LanguageModelKey"
+      "LanguageModel"
     }
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<crate::model::LanguageModelKey>(Arc::clone(&self.model));
+      out.insert::<Cap<LanguageModelService>>(Arc::clone(&self.model));
       Ok(out)
     }
   }

@@ -1,26 +1,18 @@
-//! Shared [`PgPool`](sqlx::PgPool) capability for Apalis, obix, and event journal adapters.
+//! Shared [`sqlx::PgPool`](sqlx::PgPool) capability for Apalis, obix, and event journal adapters.
 
 use std::sync::Arc;
 
-use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use sqlx::PgPool;
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use sqlx::PgPool as SqlxPgPool;
 
-mod pg_pool_cap {
-  use std::sync::Arc;
+/// Shared PostgreSQL pool in the capability environment.
+pub type PgPool = Arc<SqlxPgPool>;
 
-  /// Tag for the shared sqlx PostgreSQL pool in the capability environment.
-  #[::id_effect::capability(Arc<sqlx::PgPool>)]
-  #[allow(dead_code)]
-  pub struct PgPool;
-}
-
-pub use pg_pool_cap::PgPoolKey;
-
-/// Register `pool` as the workspace-wide [`PgPoolKey`] capability.
+/// Register `pool` as the workspace-wide [`PgPool`] capability.
 #[inline]
-pub fn provide_pg_pool(pool: PgPool) -> ProviderBox {
+pub fn provide_pg_pool(pool: SqlxPgPool) -> ProviderBox {
   struct Node {
-    pool: Arc<PgPool>,
+    pool: PgPool,
   }
 
   impl ProviderNode for Node {
@@ -33,16 +25,16 @@ pub fn provide_pg_pool(pool: PgPool) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      PgPoolKey::id()
+      Cap::<PgPool>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "PgPoolKey"
+      "PgPool"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<PgPoolKey>(Arc::clone(&self.pool));
+      out.insert::<Cap<PgPool>>(Arc::clone(&self.pool));
       Ok(out)
     }
   }

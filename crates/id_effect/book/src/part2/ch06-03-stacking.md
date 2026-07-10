@@ -70,4 +70,4 @@ fn test_get_user() {
 }
 ```
 
-If `get_user` also needs `LoggerKey`, the test must include `provide!(TestLoggerLive)` or insert that key manually — incomplete wiring fails when the effect runs.
+If `get_user` also needs `EffectLogger`, the test must include `provide!(TestLoggerLive)` or insert that key manually — incomplete wiring fails when the effect runs.

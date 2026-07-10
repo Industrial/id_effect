@@ -5,19 +5,18 @@ use std::sync::Arc;
 
 use ::id_effect::collections::hash_map;
 use ::id_effect::{
-  CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
+  Cap, CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
   run_blocking,
 };
 
 use crate::{
-  CompositeLogBackend, EffectLogMinLevelKey, EffectLogger, EffectLoggerKey, LogLevel,
-  install_composite_log_backend, install_log_annotations_fiber_ref, install_log_spans_fiber_ref,
-  install_min_log_level_fiber_ref,
+  CompositeLogBackend, EffectLogMinLevel, EffectLogger, LogLevel, install_composite_log_backend,
+  install_log_annotations_fiber_ref, install_log_spans_fiber_ref, install_min_log_level_fiber_ref,
 };
 
 /// Default [`EffectLogger`] provider (tracing-backed).
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLoggerKey)]
+#[provides(EffectLogger)]
 pub struct EffectLoggerLive;
 
 impl EffectLoggerLive {
@@ -27,18 +26,18 @@ impl EffectLoggerLive {
 }
 
 /// Marker capability: fiber-local log annotation / span metadata installed.
-#[::id_effect::capability(())]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[allow(dead_code)]
 pub struct EffectLogMetadata;
 
 /// Installs fiber-local annotation and span-stack refs used by [`crate::annotate_logs`] and
 /// [`crate::with_log_span`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLogMetadataKey)]
+#[provides(EffectLogMetadata)]
 pub struct LogMetadataLive;
 
 impl LogMetadataLive {
-  fn new() -> () {
+  fn new() -> EffectLogMetadata {
     let ann = run_blocking(
       FiberRef::make_with(
         hash_map::empty::<String, String>,
@@ -55,11 +54,12 @@ impl LogMetadataLive {
     .expect("span FiberRef");
     install_log_annotations_fiber_ref(ann);
     install_log_spans_fiber_ref(sp);
+    EffectLogMetadata
   }
 }
 
 /// Marker capability: composite log backend installed on this thread.
-#[::id_effect::capability(())]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[allow(dead_code)]
 pub struct EffectLogComposite;
 
@@ -78,17 +78,17 @@ pub fn provide_composite_logger(composite: Arc<CompositeLogBackend>) -> Provider
     }
 
     fn provides(&self) -> CapabilityId {
-      EffectLogCompositeKey::id()
+      Cap::<EffectLogComposite>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "EffectLogCompositeKey"
+      "EffectLogComposite"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       install_composite_log_backend(self.0.clone());
       let mut out = deps.clone();
-      out.insert::<EffectLogCompositeKey>(());
+      out.insert::<Cap<EffectLogComposite>>(EffectLogComposite);
       Ok(out)
     }
   }
@@ -111,11 +111,11 @@ pub fn provide_minimum_log_level(initial: LogLevel) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      EffectLogMinLevelKey::id()
+      Cap::<EffectLogMinLevel>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "EffectLogMinLevelKey"
+      "EffectLogMinLevel"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
@@ -126,7 +126,7 @@ pub fn provide_minimum_log_level(initial: LogLevel) -> ProviderBox {
       })?;
       install_min_log_level_fiber_ref(fr.clone());
       let mut out = deps.clone();
-      out.insert::<EffectLogMinLevelKey>(fr);
+      out.insert::<Cap<EffectLogMinLevel>>(fr);
       Ok(out)
     }
   }
@@ -144,25 +144,25 @@ mod tests {
     let composite = Arc::new(CompositeLogBackend::new());
     let node = provide_composite_logger(composite);
     let env = node.0.build(&Env::new()).expect("build");
-    assert!(env.try_get::<EffectLogCompositeKey>().is_ok());
+    assert!(env.try_get::<Cap<EffectLogComposite>>().is_ok());
 
     let logger_env = ProviderBox::new::<EffectLoggerLive>()
       .0
       .build(&Env::new())
       .expect("logger live");
-    assert!(logger_env.try_get::<EffectLoggerKey>().is_ok());
+    assert!(logger_env.try_get::<Cap<EffectLogger>>().is_ok());
 
     let meta_env = ProviderBox::new::<LogMetadataLive>()
       .0
       .build(&Env::new())
       .expect("metadata live");
-    assert!(meta_env.try_get::<EffectLogMetadataKey>().is_ok());
+    assert!(meta_env.try_get::<Cap<EffectLogMetadata>>().is_ok());
   }
 
   #[test]
   fn provide_minimum_log_level_installs_fiber_ref() {
     let node = provide_minimum_log_level(LogLevel::Warn);
     let env = node.0.build(&Env::new()).expect("build");
-    assert!(env.try_get::<EffectLogMinLevelKey>().is_ok());
+    assert!(env.try_get::<Cap<EffectLogMinLevel>>().is_ok());
   }
 }

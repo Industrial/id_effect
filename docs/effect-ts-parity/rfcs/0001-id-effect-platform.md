@@ -9,9 +9,9 @@ Introduce **`id_effect_platform`**: capability traits and Tokio-backed implement
 | Module | Contents |
 |--------|----------|
 | `error` | `HttpError`, `FsError`, `ProcessError`, `PlatformError`, `From` bridges |
-| `http` | `HttpRequest`, `HttpResponse`, `HttpClient` trait, `ReqwestHttpClient`, `HttpClientKey`, layers |
-| `fs` | `FileSystem` trait, `LiveFileSystem`, `TestFileSystem`, `FileSystemKey`, layers |
-| `process` | `CommandSpec`, `ProcessRuntime` trait, `TokioProcessRuntime`, `ProcessRuntimeKey`, layers |
+| `http` | `HttpRequest`, `HttpResponse`, `HttpClient` trait, `ReqwestHttpClient`, `HttpClientService`, layers |
+| `fs` | `FileSystem` trait, `LiveFileSystem`, `TestFileSystem`, `FileSystemService`, layers |
+| `process` | `CommandSpec`, `ProcessRuntime` trait, `TokioProcessRuntime`, `ProcessRuntimeService`, layers |
 | `uri` | Helpers to build `http::Uri` / validate URLs for HTTP |
 
 ## Dependency surface
@@ -26,7 +26,7 @@ Matches workspace **Rust 2024** / stable as used by `id_effect`.
 
 - Reqwest helpers (`send`, `json_schema`, pools) live in **`id_effect_platform::http::reqwest`**.
 - **`id_effect_platform::http::reqwest`** is a thin **compatibility re-export** crate (`pub use id_effect_platform::http::reqwest::*`).
-- Portable boundaries use **`id_effect_platform::http`** (`HttpClientKey`, `execute`).
+- Portable boundaries use **`id_effect_platform::http`** (`HttpClientService`, `execute`).
 
 ## Security (filesystem)
 

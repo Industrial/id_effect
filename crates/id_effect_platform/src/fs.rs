@@ -22,7 +22,6 @@ use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 use crate::error::FsError;
 
 /// Capability: portable filesystem operations as [`Effect`] values.
-#[::id_effect::capability(Arc<dyn FileSystem>)]
 pub trait FileSystem: Send + Sync + 'static {
   /// Read entire file into a byte vector.
   fn read(&self, path: &Path) -> Effect<Vec<u8>, FsError, ()>;
@@ -272,22 +271,25 @@ impl FileSystem for TestFileSystem {
   }
 }
 
+/// Capability service handle for [`FileSystem`].
+pub type FileSystemService = Arc<dyn FileSystem>;
+
 /// Default [`ProviderSpec`] for a Tokio-backed live [`FileSystem`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(FileSystemKey)]
+#[provides(FileSystemService)]
 pub struct LiveFileSystemProvider;
 
 impl LiveFileSystemProvider {
-  fn new() -> Arc<dyn FileSystem> {
+  fn new() -> FileSystemService {
     Arc::new(LiveFileSystem::new())
   }
 }
 
-/// Read via [`FileSystemKey`].
+/// Read via [`FileSystemService`].
 #[inline]
 pub fn read<R>(path: PathBuf) -> Effect<Vec<u8>, FsError, R>
 where
-  R: Needs<FileSystemKey> + 'static,
+  R: Needs<FileSystemService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let fs = r.need().clone();
@@ -296,11 +298,11 @@ where
   })
 }
 
-/// Exists check via [`FileSystemKey`].
+/// Exists check via [`FileSystemService`].
 #[inline]
 pub fn exists<R>(path: PathBuf) -> Effect<bool, FsError, R>
 where
-  R: Needs<FileSystemKey> + 'static,
+  R: Needs<FileSystemService> + 'static,
 {
   Effect::new_async(move |r: &mut R| {
     let fs = r.need().clone();
@@ -315,6 +317,12 @@ mod tests {
 
   use id_effect::run_blocking;
   use std::path::Path;
+
+  #[test]
+  fn filesystem_service_type_alias_is_object_safe() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<FileSystemService>();
+  }
 
   mod test_file_system {
     use super::*;

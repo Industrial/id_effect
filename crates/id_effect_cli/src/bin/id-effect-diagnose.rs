@@ -139,26 +139,26 @@ fn print_planner_example(kind: ExampleKind, json: bool) -> i32 {
 }
 
 fn print_provider_graph(json: bool) {
-  #[::id_effect::capability(String)]
-  struct ExampleConfig;
-  #[::id_effect::capability(String)]
-  struct ExampleDb;
+  #[derive(Clone)]
+  struct ExampleConfig(String);
+  #[derive(Clone)]
+  struct ExampleDb(String);
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(ExampleConfigKey)]
+  #[provides(ExampleConfig)]
   struct ExampleConfigLive;
   impl ExampleConfigLive {
-    fn new() -> String {
-      "cfg".into()
+    fn new() -> ExampleConfig {
+      ExampleConfig("cfg".into())
     }
   }
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(ExampleDbKey)]
+  #[provides(ExampleDb)]
   struct ExampleDbLive;
   impl ExampleDbLive {
-    fn new() -> String {
-      "db".into()
+    fn new() -> ExampleDb {
+      ExampleDb("db".into())
     }
   }
 

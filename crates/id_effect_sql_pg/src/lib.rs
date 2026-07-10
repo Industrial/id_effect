@@ -17,6 +17,6 @@ mod transaction;
 pub use client::PgSqlClient;
 pub use config::{PgPoolConfig, pg_pool_from_config, pg_pool_from_config_lazy};
 pub use error::PgSqlError;
-pub use pool_key::{PgPoolKey, provide_pg_pool};
+pub use pool_key::{PgPool, provide_pg_pool};
 pub use providers::provide_pg_sql_client;
 pub use transaction::PgSqlTransaction;

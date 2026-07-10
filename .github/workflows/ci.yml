@@ -67,13 +67,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            moon run :ci-format :check :clippy :test :build :docs \
-              --affected \
-              --include-relations \
-              --base "origin/${{ github.base_ref }}" \
-              --head HEAD
+            CI_BASE="origin/${{ github.base_ref }}" bash scripts/ci-local.sh affected
           else
-            moon run :ci-format :check :clippy :test :build :docs
+            bash scripts/ci-local.sh full
           fi
   # ──────────────────────────────────────────────────────────────────────────
   # Workspace coverage (llvm-cov cannot be expressed per-crate easily; run full)

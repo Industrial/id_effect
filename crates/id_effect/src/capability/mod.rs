@@ -23,7 +23,7 @@ pub use error::{
 pub use fiber_caps::{active_env, with_fiber_and_override, with_override};
 pub use graph::CapabilityGraph;
 pub use id::CapabilityId;
-pub use key::{Capability, CapabilityKey};
+pub use key::{Cap, Capability, CapabilityKey};
 pub use needs::Needs;
 pub use planner::{PlannerNode, PlannerPlan, plan_topological};
 pub use provider::{Provider, ProviderBox, ProviderNode, ProviderSpec};

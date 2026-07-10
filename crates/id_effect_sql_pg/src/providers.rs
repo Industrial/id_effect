@@ -2,19 +2,19 @@
 
 use std::sync::Arc;
 
-use id_effect::{CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use sqlx::PgPool;
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use sqlx::PgPool as SqlxPgPool;
 
 use crate::PgSqlClient;
-use crate::pool_key::PgPoolKey;
-use id_effect_sql::client::SqlClientKey;
+use crate::pool_key::PgPool;
+use id_effect_sql::client::{SqlClient, SqlClientService};
 
-/// Register `pool` as both [`PgPoolKey`] and [`SqlClient`](id_effect_sql::SqlClient).
+/// Register `pool` as both [`PgPool`] and [`SqlClient`](id_effect_sql::SqlClient).
 #[inline]
-pub fn provide_pg_sql_client(pool: PgPool) -> ProviderBox {
+pub fn provide_pg_sql_client(pool: SqlxPgPool) -> ProviderBox {
   struct Node {
-    pool: Arc<PgPool>,
-    client: Arc<dyn id_effect_sql::SqlClient>,
+    pool: PgPool,
+    client: SqlClientService,
   }
 
   impl ProviderNode for Node {
@@ -27,23 +27,24 @@ pub fn provide_pg_sql_client(pool: PgPool) -> ProviderBox {
     }
 
     fn provides(&self) -> CapabilityId {
-      SqlClientKey::id()
+      Cap::<SqlClientService>::id()
     }
 
     fn cap_name(&self) -> &str {
-      "SqlClientKey"
+      "SqlClient"
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
       let mut out = deps.clone();
-      out.insert::<PgPoolKey>(Arc::clone(&self.pool));
-      out.insert::<SqlClientKey>(Arc::clone(&self.client));
+      out.insert::<Cap<PgPool>>(Arc::clone(&self.pool));
+      out.insert::<Cap<SqlClientService>>(self.client.clone());
       Ok(out)
     }
   }
 
   let pool_arc = Arc::new(pool);
-  let client: Arc<dyn id_effect_sql::SqlClient> = Arc::new(PgSqlClient::new((*pool_arc).clone()));
+  let client =
+    SqlClientService(Arc::new(PgSqlClient::new((*pool_arc).clone())) as Arc<dyn SqlClient>);
   ProviderBox(Arc::new(Node {
     pool: pool_arc,
     client,

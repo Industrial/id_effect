@@ -1,16 +1,58 @@
-error[E0277]: the trait bound `(): Needs<CounterKey>` is not satisfied
- --> tests/ui/cap_mismatch.rs:8:39
+error[E0277]: the trait bound `Counter: Clone` is not satisfied
+ --> tests/ui/cap_mismatch.rs:6:21
   |
-8 |     let _ = Needs::<CounterKey>::need(r);
-  |             ------------------------- ^ the trait `Deref` is not implemented for `()`
+6 |     let _ = Needs::<Counter>::need(r);
+  |                     ^^^^^^^ the trait `Clone` is not implemented for `Counter`
+  |
+note: required by a bound in `need`
+ --> src/capability/needs.rs
+  |
+  |   T: Clone + Send + Sync + 'static,
+  |      ^^^^^ required by this bound in `Needs::need`
+...
+  |   fn need(&self) -> &T;
+  |      ---- required by a bound in this associated function
+help: consider annotating `Counter` with `#[derive(Clone)]`
+  |
+2 + #[derive(Clone)]
+3 | struct Counter;
+  |
+
+error[E0277]: the trait bound `Counter: Clone` is not satisfied
+ --> tests/ui/cap_mismatch.rs:6:36
+  |
+6 |     let _ = Needs::<Counter>::need(r);
+  |             ---------------------- ^ the trait `Clone` is not implemented for `Counter`
   |             |
   |             required by a bound introduced by this call
   |
-help: the trait `Needs<K>` is implemented for `Env`
+help: the trait `Needs<T>` is implemented for `Env`
  --> src/capability/needs.rs
   |
-  | / impl<K> Needs<K> for Env
+  | / impl<T> Needs<T> for Env
   | | where
-  | |   K: CapabilityKey,
-  | |___________________^
-  = note: required for `()` to implement `Needs<CounterKey>`
+  | |   T: Clone + Send + Sync + 'static,
+  | |___________________________________^
+  = note: required for `()` to implement `Needs<Counter>`
+help: consider annotating `Counter` with `#[derive(Clone)]`
+  |
+2 + #[derive(Clone)]
+3 | struct Counter;
+  |
+
+error[E0277]: the trait bound `(): Needs<Counter>` is not satisfied
+ --> tests/ui/cap_mismatch.rs:6:36
+  |
+6 |     let _ = Needs::<Counter>::need(r);
+  |             ---------------------- ^ the trait `Deref` is not implemented for `()`
+  |             |
+  |             required by a bound introduced by this call
+  |
+help: the trait `Needs<T>` is implemented for `Env`
+ --> src/capability/needs.rs
+  |
+  | / impl<T> Needs<T> for Env
+  | | where
+  | |   T: Clone + Send + Sync + 'static,
+  | |___________________________________^
+  = note: required for `()` to implement `Needs<Counter>`

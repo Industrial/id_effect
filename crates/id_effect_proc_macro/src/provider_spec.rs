@@ -1,4 +1,4 @@
-//! `#[derive(ProviderSpec)]` with `#[provides(Key)]`.
+//! `#[derive(ProviderSpec)]` with `#[provides(Service)]`.
 
 use proc_macro::TokenStream as ProcTokenStream;
 use proc_macro2::TokenStream;
@@ -16,8 +16,8 @@ fn derive2(input: TokenStream) -> TokenStream {
   };
   let struct_name = &input.ident;
 
-  let key_ty = match find_provides_key(&input) {
-    Ok(key) => key,
+  let service_ty = match find_provides_service(&input) {
+    Ok(ty) => ty,
     Err(e) => return e.to_compile_error(),
   };
 
@@ -35,8 +35,8 @@ fn derive2(input: TokenStream) -> TokenStream {
 
   quote! {
     impl ::id_effect::ProviderSpec for #struct_name {
-      type Key = #key_ty;
-      type Output = <#key_ty as ::id_effect::CapabilityKey>::Value;
+      type Key = ::id_effect::Cap<#service_ty>;
+      type Output = #service_ty;
 
       fn provider_id() -> &'static str {
         #provider_id
@@ -53,7 +53,7 @@ fn derive2(input: TokenStream) -> TokenStream {
   }
 }
 
-fn find_provides_key(input: &DeriveInput) -> syn::Result<Type> {
+fn find_provides_service(input: &DeriveInput) -> syn::Result<Type> {
   for attr in &input.attrs {
     if attr.path().is_ident("provides") {
       return attr.parse_args::<Type>();
@@ -61,7 +61,7 @@ fn find_provides_key(input: &DeriveInput) -> syn::Result<Type> {
   }
   Err(syn::Error::new_spanned(
     &input.ident,
-    "derive(ProviderSpec) requires #[provides(Key)] on the struct",
+    "derive(ProviderSpec) requires #[provides(Service)] on the struct",
   ))
 }
 
@@ -98,7 +98,7 @@ fn provider_id_from_ident(ident: &syn::Ident) -> String {
   }
 }
 
-fn find_named_variant(input: &syn::DeriveInput) -> Option<syn::LitStr> {
+fn find_named_variant(input: &DeriveInput) -> Option<syn::LitStr> {
   for attr in &input.attrs {
     if attr.path().is_ident("named")
       && let Ok(lit) = attr.parse_args::<syn::LitStr>()
@@ -127,14 +127,15 @@ mod tests {
   #[test]
   fn derive_emits_provider_spec_impl() {
     let input = quote! {
-      #[provides(CounterKey)]
+      #[provides(Counter)]
       #[derive(Default)]
       struct CounterLive;
     };
     let out = derive2(input);
     let out = out.to_string();
     assert!(out.contains("impl :: id_effect :: ProviderSpec for CounterLive"));
-    assert!(out.contains("type Key = CounterKey"));
+    assert!(out.contains("type Key = :: id_effect :: Cap < Counter >"));
+    assert!(out.contains("type Output = Counter"));
     assert!(out.contains("counter-live"));
     assert!(out.contains("Self :: default ()"));
   }
@@ -152,7 +153,7 @@ mod tests {
   #[test]
   fn derive_with_named_variant() {
     let input = quote! {
-      #[provides(DbKey)]
+      #[provides(Db)]
       #[named("replica")]
       struct DbReplicaLive;
     };

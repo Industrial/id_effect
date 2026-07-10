@@ -35,7 +35,7 @@
 //! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
 //! [`FigmentLayer`] — good for structured config files.
 //!
-//! ## 3. Low-level Effect reads via `load::read_*` with `Needs<ConfigProviderKey>`
+//! ## 3. Low-level Effect reads via `load::read_*` with `Needs<ConfigProvider>`
 //!
 //! Inject the provider via the effect environment and call the free functions directly:
 //!
@@ -47,7 +47,7 @@
 //! where
 //!   A: From<String> + 'static,
 //!   E: From<ConfigError> + 'static,
-//!   R: id_effect::Needs<id_effect_config::ConfigProviderKey> + 'static,
+//!   R: id_effect::Needs<id_effect_config::ConfigProvider> + 'static,
 //! {
 //!   read_string(&["HOST"])
 //! }
@@ -69,9 +69,8 @@ pub use load::{
   read_number, read_string, read_string_list, read_string_opt,
 };
 pub use provider::{
-  ConfigProvider, ConfigProviderKey, ConfigProviderService, EnvConfigProvider,
-  FigmentConfigProvider, MapConfigProvider, OrElseConfigProvider, ProviderOptions,
-  ScopedConfigProvider,
+  ConfigProvider, ConfigProviderService, EnvConfigProvider, FigmentConfigProvider,
+  MapConfigProvider, OrElseConfigProvider, ProviderOptions, ScopedConfigProvider,
 };
 pub use providers::{
   EnvConfigProviderLive, provide_config_provider, provide_env_config_provider,
@@ -105,7 +104,7 @@ pub type ConfigEnv = ::id_effect::Env;
 /// ```
 pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
   let mut env = ::id_effect::Env::new();
-  env.insert::<ConfigProviderKey>(ConfigProviderService(Arc::new(provider)));
+  env.insert::<::id_effect::Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(provider)));
   env
 }
 
@@ -707,7 +706,7 @@ bad = [1, 2]
       seq_delim: ";",
     };
     let env = build_env([provide_env_config_provider(opts)]).expect("env");
-    let p = id_effect::Needs::<ConfigProviderKey>::need(&env);
+    let p = id_effect::Needs::<ConfigProviderService>::need(&env);
     assert_eq!(p.0.seq_delim(), ";");
   }
   #[test]
@@ -715,7 +714,7 @@ bad = [1, 2]
     use ::id_effect::Needs;
     let p = MapConfigProvider::from_pairs([("K", "v")]);
     let env = config_env(p);
-    let svc = Needs::<ConfigProviderKey>::need(&env);
+    let svc = Needs::<ConfigProviderService>::need(&env);
     assert_eq!(config::string(&*svc.0, "K").unwrap(), "v");
   }
 

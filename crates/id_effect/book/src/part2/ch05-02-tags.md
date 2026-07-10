@@ -1,73 +1,64 @@
-# Capability Keys — `#[capability]`
+# Capability services
 
-A **capability key** is a zero-sized type that identifies a service in [`Env`](../../src/capability/env.rs). The [`#[capability]`](../../src/capability/key.rs) attribute generates the key and wires it to a stored value type.
+A **capability service** is a Rust type that names a dependency in [`Env`](../../src/capability/env.rs). The [`Cap<T>`](../../src/capability/key.rs) wrapper implements [`CapabilityKey`](../../src/capability/key.rs) for any cloneable `T`, so you use the service type directly in `caps!`, `require!`, and `#[provides]`.
 
-## Declaring a key
+## Declaring a service
 
 ```rust
-// Key + concrete value type
-#[::id_effect::capability(Counter)]
+// Concrete value type
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
-// Key for a trait object (typical for services)
-#[::id_effect::capability(Pool)]
-struct Database;
-
-#[::id_effect::capability(Pool)]
-struct Cache; // same Pool, different identity
-
-#[::id_effect::capability(Arc<dyn UserRepository>)]
-struct UserRepo;
+// Trait-backed service (typical for ports/adapters)
+pub type Database = Arc<dyn DbClient>;
+pub type UserRepo = Arc<dyn UserRepository>;
 ```
 
-Each key implements [`CapabilityKey`](../../src/capability/key.rs) with an associated `Value` type. `DatabaseKey` and `CacheKey` both store `Pool` but are unrelated types — you cannot pass one where the other is expected.
+`Database` and `Cache` can both wrap a `Pool` but remain **distinct capability identities** — you cannot pass one where the other is required.
 
 ## Registering values
 
 At runtime, values live in `Env`:
 
 ```rust
-use id_effect::Env;
+use id_effect::{Cap, Env};
 
 let mut env = Env::new();
-env.insert::<DatabaseKey>(main_pool);
-env.insert::<CacheKey>(cache_pool);
+env.insert::<Cap<Database>>(main_pool);
+env.insert::<Cap<Cache>>(cache_pool);
 ```
 
 Or let a [`ProviderSpec`](../../src/capability/provider.rs) insert them during `run_with`.
 
-## Why keys help the compiler
+## Why named services help the compiler
 
 ```rust
-fn needs_database() -> Effect<A, E, caps!(DatabaseKey)> { ... }
-fn needs_cache() -> Effect<A, E, caps!(CacheKey)> { ... }
+fn needs_database() -> Effect<A, E, caps!(Database)> { ... }
+fn needs_cache() -> Effect<A, E, caps!(Cache)> { ... }
 ```
 
-Providing the wrong key is a type error at the call site, not a silent runtime swap.
+Providing the wrong service is a type error at the call site, not a silent runtime swap.
 
 ## Service traits
 
-Define a focused trait, then a key for its handle:
+Define a focused trait, then a type alias for the handle stored in `Env`:
 
 ```rust
 pub trait UserRepository: Send + Sync {
     fn get_user(&self, id: u64) -> Effect<User, DbError, ()>;
 }
-
-#[::id_effect::capability(Arc<dyn UserRepository>)]
-struct UserRepo;
+pub type UserRepo = Arc<dyn UserRepository>;
 ```
 
-Trait methods keep `R = ()` — the *caller* carries `DatabaseKey` / `UserRepoKey` in its `caps!` list.
+Trait methods keep `R = ()` — the *caller* carries `Database` / `UserRepo` in its `caps!` list.
 
 ## Summary
 
 | Item | Role |
 |------|------|
-| `#[capability(V)]` on a struct | Generate `StructKey: CapabilityKey` with `Value = V` |
-| `Env::insert::<K>(v)` | Register a service |
-| `Needs<K>` | Bound: environment contains `K` |
-| `K::Value` | Concrete type stored for `K` |
+| Service type `T` | Name used in `caps!(T)` and `require!(T)` |
+| `Cap<T>` | Internal `CapabilityKey` with `Value = T` |
+| `Env::insert::<Cap<T>>(v)` | Register a service |
+| `Needs<T>` | Bound: environment contains `T` |
 
-Keys eliminate the positional problem. The next section introduces `Env` — how those keys are stored at runtime.
+Named services eliminate the positional problem. The next section introduces `Env` — how those services are stored at runtime.

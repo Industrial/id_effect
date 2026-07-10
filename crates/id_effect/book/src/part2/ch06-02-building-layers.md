@@ -6,7 +6,7 @@
 struct ConfigLive;
 
 impl ProviderSpec for ConfigLive {
-    type Key = ConfigKey;
+    type Key = Config;
     type Output = Config;
 
     fn provider_id() -> &'static str { "config-from-env" }
@@ -28,19 +28,19 @@ Read already-built capabilities from `deps`:
 struct UserRepoLive;
 
 impl ProviderSpec for UserRepoLive {
-    type Key = UserRepoKey;
+    type Key = UserRepo;
     type Output = Arc<dyn UserRepository>;
 
     fn provider_id() -> &'static str { "user-repo-postgres" }
 
     fn provide(deps: &Env) -> Result<Arc<dyn UserRepository>, ProviderError> {
-        let pool = deps.get::<DatabaseKey>().clone();
+        let pool = deps.get::<Cap<Database>>().clone();
         Ok(Arc::new(PostgresUserRepository { pool }))
     }
 }
 ```
 
-Override `requires()` to return `[DatabaseKey::id(), …]` so the graph builds the database before the repository.
+Override `requires()` to return `[Database::id(), …]` so the graph builds the database before the repository.
 
 ## Test doubles
 
@@ -50,7 +50,7 @@ Same key, different provider type:
 struct MockUserRepoLive;
 
 impl ProviderSpec for MockUserRepoLive {
-    type Key = UserRepoKey;
+    type Key = UserRepo;
     type Output = Arc<dyn UserRepository>;
 
     fn provider_id() -> '&'static str { "user-repo-mock" }
@@ -61,7 +61,7 @@ impl ProviderSpec for MockUserRepoLive {
 }
 ```
 
-When a test needs custom data, use `Env::insert` instead of `provide!`. Business logic still uses `Needs<UserRepoKey>` — only the wiring at the edge changes.
+When a test needs custom data, use `Env::insert` instead of `provide!`. Business logic still uses `Needs<UserRepo>` — only the wiring at the edge changes.
 
 ## Custom values
 
@@ -71,9 +71,9 @@ Workspace crates expose helpers that return [`ProviderBox`](../../src/capability
 
 ```
 ConfigLive          (no deps)
-  → DatabaseLive    (needs ConfigKey)
-  → CacheLive       (needs ConfigKey)
-  → UserRepoLive    (needs DatabaseKey)
+  → DatabaseLive    (needs Config)
+  → CacheLive       (needs Config)
+  → UserRepoLive    (needs Database)
 ```
 
 The next section shows how [`CapabilityGraph`](../../src/capability/graph.rs) wires the list together.

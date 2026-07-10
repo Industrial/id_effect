@@ -16,13 +16,11 @@ Build [`Env`](../../src/capability/env.rs) manually or via [`run_with`](../../sr
 
 ```rust
 use id_effect::{Env, caps, effect, require, run_async, succeed};
-
-#[::id_effect::capability(&'static str)]
 struct ApiToken;
 
-fn fetch() -> Effect<Vec<Quote>, AppError, caps!(ApiTokenKey)> {
+fn fetch() -> Effect<Vec<Quote>, AppError, caps!(ApiToken)> {
     effect!(|r| {
-        let token = ~ApiTokenKey;
+        let token = ~ApiToken;
         // async steps…
         Ok(quotes)
     })
@@ -31,7 +29,7 @@ fn fetch() -> Effect<Vec<Quote>, AppError, caps!(ApiTokenKey)> {
 #[tokio::main]
 async fn main() {
     let mut env = Env::new();
-    env.insert::<ApiTokenKey>("secret");
+    env.insert::<Cap<ApiToken>>("secret");
     let quotes = run_async(fetch(), env).await?;
 }
 ```

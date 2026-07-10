@@ -3,22 +3,22 @@
 # Keep pre-commit moon gate in sync with devenv.nix `git-hooks.hooks.pre-commit`.
 default_install_hook_types: [pre-commit, pre-push, commit-msg]
 repos:
-  # Commit: format + check + test  (see scripts/devenv-pre-commit-moon.sh)
+  # Commit: format + ci-local affected (see scripts/devenv-pre-commit-moon.sh)
   - repo: local
     hooks:
       - id: devenv-pre-commit
-        name: devenv pre-commit (moon :format :check :test)
+        name: devenv pre-commit (format + ci-local affected)
         # Script avoids prek/exec splitting; unsets hook GIT_* for nested git.
         entry: bash scripts/devenv-pre-commit-moon.sh
         language: system
         stages: [pre-commit]
         pass_filenames: false
         always_run: true
-  # Pre-push: full gate — format, check, lint, build, test, coverage, audit, docs
+  # Pre-push: ci-local (CI parity) + coverage + audit
   - repo: local
     hooks:
       - id: pre-push
-        name: pre-push (moon full pipeline)
+        name: pre-push (ci-local + coverage + audit)
         entry: devenv shell -- pre-push
         language: system
         stages: [pre-push]

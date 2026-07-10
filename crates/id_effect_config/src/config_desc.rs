@@ -48,7 +48,7 @@ use id_effect_logger::LogLevel;
 use url::Url;
 
 use crate::error::ConfigError;
-use crate::provider::{ConfigProvider, ConfigProviderKey};
+use crate::provider::{ConfigProvider, ConfigProviderService};
 use crate::secret::Secret;
 
 // Shared loading function: takes a provider reference, returns a Result.
@@ -118,13 +118,13 @@ impl<T: Send + Sync + 'static> Config<T> {
 
   /// Evaluate this descriptor as an [`Effect`], pulling the provider from the environment.
   ///
-  /// `R` only needs to satisfy `Needs<ConfigProviderKey>`; callers compose whatever provider stack
+  /// `R` only needs to satisfy `Needs<ConfigProviderService>`; callers compose whatever provider stack
   /// they like.  See [`config_env`](crate::config_env) for building a minimal context.
   pub fn run<A, E, R>(&self) -> Effect<A, E, R>
   where
     A: From<T> + 'static,
     E: From<ConfigError> + 'static,
-    R: Needs<ConfigProviderKey> + 'static,
+    R: Needs<ConfigProviderService> + 'static,
   {
     let loader = self.loader.clone();
     effect!(|r: &mut R| {

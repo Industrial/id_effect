@@ -329,7 +329,7 @@ fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> Toke
   TokenStream::from_iter(out)
 }
 
-/// True when `~operand` is capability lookup (`~DatabaseKey`), not effect bind (`~query(1)`).
+/// True when `~operand` is capability lookup (`~Database`), not effect bind (`~query(1)`).
 pub fn is_capability_key_operand(operand: &TokenStream) -> bool {
   if operand_has_top_level_call(operand) {
     return false;
@@ -337,7 +337,7 @@ pub fn is_capability_key_operand(operand: &TokenStream) -> bool {
   let Ok(ty) = syn::parse2::<syn::Type>(operand.clone()) else {
     return false;
   };
-  type_path_last_segment_ends_with_key(&ty)
+  is_service_lookup_type(&ty)
 }
 
 fn operand_has_top_level_call(operand: &TokenStream) -> bool {
@@ -353,15 +353,22 @@ fn operand_has_top_level_call(operand: &TokenStream) -> bool {
   false
 }
 
-fn type_path_last_segment_ends_with_key(ty: &syn::Type) -> bool {
-  let path = match ty {
-    syn::Type::Path(p) => &p.path,
-    _ => return false,
-  };
-  let Some(seg) = path.segments.last() else {
-    return false;
-  };
-  seg.ident.to_string().ends_with("Key")
+fn is_service_lookup_type(ty: &syn::Type) -> bool {
+  match ty {
+    syn::Type::Path(p) => {
+      if p.qself.is_some() {
+        return false;
+      }
+      let Some(seg) = p.path.segments.last() else {
+        return false;
+      };
+      if seg.ident == "Cap" {
+        return true;
+      }
+      !p.path.segments.is_empty()
+    }
+    _ => false,
+  }
 }
 
 /// Collect the operand of a `~` prefix operator.
@@ -808,7 +815,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("__effect_r", proc_macro2::Span::call_site());
         let out = expand_tilde(quote! { ( ~ x , y ) }, &r, &path);
-        let expected = quote! { ((::id_effect::cap_into_bind(x, __effect_r).await?), y) };
+        let expected = quote! { (::id_effect::Needs::<x>::need(__effect_r), y) };
         assert_ts_eq!(out, expected);
       }
     }
@@ -886,7 +893,7 @@ mod tests {
         let path = quote! { ::id_effect };
         let out = expand_bare_body(quote! { ~ v :: < u8 > > ( ) }, &path);
         let expected = quote! {
-          ::core::result::Result::Ok((::id_effect::cap_into_bind(v::<u8>, __effect_r).await?) > ())
+          ::core::result::Result::Ok(::id_effect::Needs::<v :: < u8 > >::need(__effect_r) > ())
         };
         assert_ts_eq!(out, expected);
       }
@@ -1426,12 +1433,12 @@ mod tests {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("env", proc_macro2::Span::call_site());
         let out = expand_closure_body(
-          quote! { let n = * require ! ( CounterKey ) ; n + 1 },
+          quote! { let n = * require ! ( Counter ) ; n + 1 },
           &r,
           &path,
         );
         let expected = quote! {
-          let n = * ::id_effect::Needs::<CounterKey>::need(env) ;
+          let n = * ::id_effect::Needs::<Counter>::need(env) ;
           ::core::result::Result::Ok(n + 1)
         };
         assert_ts_eq!(out, expected);
@@ -1441,7 +1448,7 @@ mod tests {
       fn legacy_two_arg_form_is_compile_error() {
         let path = quote! { ::id_effect };
         let r = syn::Ident::new("env", proc_macro2::Span::call_site());
-        let out = expand_tilde(quote! { require ! ( env , CounterKey ) }, &r, &path);
+        let out = expand_tilde(quote! { require ! ( env , Counter ) }, &r, &path);
         let s = out.to_string();
         assert!(
           s.contains("compile_error"),
@@ -1641,6 +1648,28 @@ mod tests {
           quote! { v :: < u8 > }
         );
       }
+    }
+  }
+
+  mod is_service_lookup_type_tests {
+    use super::*;
+    use quote::quote;
+
+    #[test]
+    fn recognizes_service_and_cap_types() {
+      assert!(is_capability_key_operand(&quote! { Database }));
+      assert!(is_capability_key_operand(&quote! { Cap<Database> }));
+      assert!(!is_capability_key_operand(&quote! { foo() }));
+      assert!(!is_capability_key_operand(&quote! { 42 }));
+    }
+
+    #[test]
+    fn rejects_qualified_paths() {
+      assert!(!is_capability_key_operand(&quote! { <dyn Database> }));
+      assert!(!is_capability_key_operand(
+        &quote! { <Self as Trait>::Database }
+      ));
+      assert!(!is_capability_key_operand(&quote! { (Alpha, Beta) }));
     }
   }
 }

@@ -4,16 +4,16 @@
 //! Run: `cargo run -p id_effect_tokio --example 109_tokio_end_to_end`
 
 use id_effect::Runtime;
-use id_effect::{Effect, Env, Needs, Stream, effect, run_async, succeed};
+use id_effect::{Cap, Effect, Env, Needs, Stream, effect, run_async, succeed};
 use id_effect_tokio::{TokioRuntime, yield_now};
 use std::time::Duration;
 
-#[::id_effect::capability(&'static str)]
-struct ApiBaseUrl;
-#[::id_effect::capability(&'static str)]
-struct ApiToken;
-#[::id_effect::capability(f64)]
-struct MinPrice;
+#[derive(Clone, Copy)]
+struct ApiBaseUrl(&'static str);
+#[derive(Clone, Copy)]
+struct ApiToken(&'static str);
+#[derive(Clone, Copy)]
+struct MinPrice(f64);
 
 #[derive(Debug, Clone, PartialEq)]
 struct Quote {
@@ -34,17 +34,17 @@ enum AppError {
 
 fn app_env(base_url: &'static str, token: &'static str, min_price: f64) -> Env {
   let mut env = Env::new();
-  env.insert::<ApiBaseUrlKey>(base_url);
-  env.insert::<ApiTokenKey>(token);
-  env.insert::<MinPriceKey>(min_price);
+  env.insert::<Cap<ApiBaseUrl>>(ApiBaseUrl(base_url));
+  env.insert::<Cap<ApiToken>>(ApiToken(token));
+  env.insert::<Cap<MinPrice>>(MinPrice(min_price));
   env
 }
 
 fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
   Effect::new_async(|r: &mut Env| {
     Box::pin(async move {
-      let _api_base_url = *Needs::<ApiBaseUrlKey>::need(r);
-      let token = *Needs::<ApiTokenKey>::need(r);
+      let _api_base_url = Needs::<ApiBaseUrl>::need(r).0;
+      let token = Needs::<ApiToken>::need(r).0;
       if token.is_empty() {
         return Err(AppError::MissingApiToken);
       }
@@ -71,7 +71,7 @@ fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
 
 fn market_report() -> Effect<Report, AppError, Env> {
   effect!(|r: &mut Env| {
-    let min_price = ~Ok::<f64, AppError>(*~MinPriceKey);
+    let min_price = Needs::<MinPrice>::need(r).0;
 
     let filtered: Vec<Quote> = ~Stream::from_effect(fetch_quotes_async())
       .filter(Box::new(move |q: &Quote| q.price >= min_price))

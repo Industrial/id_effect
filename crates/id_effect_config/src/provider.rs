@@ -16,9 +16,8 @@ use crate::error::ConfigError;
 
 /// Injectable wrapper around an `Arc<dyn ConfigProvider>`.
 ///
-/// Extract it with `require!(ConfigProviderKey)` inside an `effect!` body,
-/// or `Needs::<ConfigProviderKey>::need(r)` elsewhere.
-#[::id_effect::capability(ConfigProviderService)]
+/// Extract it with `require!(ConfigProviderService)` inside an `effect!` body,
+/// or `Needs::<ConfigProviderService>::need(r)` elsewhere.
 #[derive(Clone)]
 pub struct ConfigProviderService(pub Arc<dyn ConfigProvider>);
 
@@ -29,8 +28,6 @@ impl fmt::Debug for ConfigProviderService {
       .finish()
   }
 }
-
-pub use self::ConfigProviderServiceKey as ConfigProviderKey;
 
 /// Options aligned with Effect `ConfigProvider.fromEnv` (`pathDelim`, `seqDelim`).
 #[derive(Clone, Debug)]
