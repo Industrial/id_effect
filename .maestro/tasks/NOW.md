@@ -1,10 +1,10 @@
 # NOW
-Updated: 2026-06-18T23:25:39.763Z
+Updated: 2026-07-11T00:03:34.497Z
 
 ## In flight (0)
 None.
 
-## Ready to pick up (89)
+## Ready to pick up (90)
 ### tsk-mqimsbaw-metjs4 . Wave 0: Author spec and mission bootstrap
 Mission: pln-mqims7yh-8ycnlo
 Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
@@ -25,7 +25,7 @@ Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
 Mission: pln-mqims7yh-8ycnlo
 Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
 
-(and 84 more)
+(and 85 more)
 
 
 ## Ready to ship (0)

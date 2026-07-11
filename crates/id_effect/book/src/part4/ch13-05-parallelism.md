@@ -1,6 +1,8 @@
 # Parallelism — Rayon by Default
 
-Bulk **pure** transforms on collections and stream chunks use Rayon when the input is large enough. **`Effect` and `effect!` stay sequential** — ordering and capability borrows are unchanged.
+Bulk **pure** transforms on collections and stream chunks use Rayon when the input is large enough. **`Effect` and `effect!` stay sequential** for capability borrows — except that the Effect Dependency Graph may parallelize **independent** `~` binds when no data dependency exists (see [Compute Fabric](../part3/ch12-00-compute-fabric.md)).
+
+When [**Compute Fabric**](../part3/ch12-00-compute-fabric.md) is installed, [`Parallelism::Auto`](../src/parallelism.rs) uses [`AdaptiveContext`](../src/compute/adaptive.rs) instead of the fixed 1024 threshold, and [`Stream::map_par_adaptive`](../src/streaming/stream.rs) caps effect concurrency from the admission budget.
 
 ## `Parallelism` policy
 
@@ -83,4 +85,4 @@ Deprecated `*_par` methods are aliases to `ForceParallel`. Prefer:
 | `filter_par(p)` | `filter(p)` or `filter_with(Parallelism::ForceParallel, p)` |
 | serial `map` / `filter` (pre-3.x) | `map_serial` / `filter_serial` |
 
-See [ADR 0006](../../../../docs/adrs/0006-parallel-by-default.md) and example `071_stream_map_serial.rs`.
+See [ADR 0006](../../../../docs/adrs/0006-parallel-by-default.md) and example `071_stream_map_serial.rs`. For hardware-aware thresholds and `map_par_adaptive`, see [Compute Fabric](../part3/ch12-00-compute-fabric.md) and example `122_compute_fabric_effect_parallel.rs`.

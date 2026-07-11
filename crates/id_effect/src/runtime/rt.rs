@@ -52,13 +52,42 @@ pub trait Runtime {
   fn yield_now(&self) -> Effect<(), Never, ()>;
 }
 
-/// [`Runtime`] that sleeps and yields using OS threads (no async driver).
+/// [`Runtime`] that sleeps and yields using a Compute Fabric fiber pool.
 ///
-/// Suitable for [`crate::scheduling::schedule::repeat`] / [`crate::scheduling::schedule::retry`] defaults and other
-/// synchronous drivers. For Tokio-friendly delays inside an async runtime, use the `TokioRuntime`
-/// type from workspace crate `id_effect_tokio`.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ThreadSleepRuntime;
+/// Fibers are admitted through [`crate::compute::ComputeFabric`] and executed on a shared worker
+/// pool instead of one OS thread per spawn.
+#[derive(Clone, Debug)]
+pub struct ThreadSleepRuntime {
+  fabric: std::sync::Arc<crate::compute::ComputeFabric<crate::compute::SysinfoTelemetry>>,
+}
+
+impl Default for ThreadSleepRuntime {
+  fn default() -> Self {
+    let fabric = std::sync::Arc::new(crate::compute::ComputeFabric::with_policy(
+      crate::compute::ResourcePolicy::memory_cap_max_cpu(1.0),
+    ));
+    crate::compute::install_fabric(std::sync::Arc::clone(&fabric));
+    Self { fabric }
+  }
+}
+
+impl ThreadSleepRuntime {
+  /// Run fibers through the given [`ComputeFabric`].
+  #[inline]
+  pub fn with_fabric(
+    fabric: crate::compute::ComputeFabric<crate::compute::SysinfoTelemetry>,
+  ) -> Self {
+    let fabric = std::sync::Arc::new(fabric);
+    crate::compute::install_fabric(std::sync::Arc::clone(&fabric));
+    Self { fabric }
+  }
+
+  /// Access the installed fabric (policy, admission, pool).
+  #[inline]
+  pub fn fabric(&self) -> &crate::compute::ComputeFabric<crate::compute::SysinfoTelemetry> {
+    &self.fabric
+  }
+}
 
 impl Runtime for ThreadSleepRuntime {
   fn spawn_with<A, E, R, F>(&self, f: F) -> FiberHandle<A, E>
@@ -70,11 +99,24 @@ impl Runtime for ThreadSleepRuntime {
   {
     let handle = FiberHandle::pending(FiberId::fresh());
     let complete = handle.clone();
-    std::thread::spawn(move || {
+    let fabric = std::sync::Arc::clone(&self.fabric);
+    fabric.spawn_admitted(move || {
       let (effect, env) = f();
       complete.mark_completed(run_blocking(effect, env));
     });
     handle
+  }
+
+  fn spawn_scoped_with<A, E, R, F>(&self, f: F, parent: FiberId) -> FiberHandle<A, E>
+  where
+    A: Clone + Send + Sync + 'static,
+    E: Clone + Send + Sync + 'static,
+    R: 'static,
+    F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
+  {
+    let _ = parent;
+    self.fabric.tick();
+    self.spawn_with(f)
   }
 
   fn sleep(&self, duration: Duration) -> Effect<(), Never, ()> {
@@ -140,7 +182,7 @@ mod tests {
       R: 'static,
       F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
     {
-      ThreadSleepRuntime.spawn_with(f)
+      ThreadSleepRuntime::default().spawn_with(f)
     }
 
     fn sleep(&self, duration: Duration) -> Effect<(), Never, ()> {
@@ -203,7 +245,7 @@ mod tests {
 
     #[test]
     fn when_constructed_runs_sleep_and_yield_effects_under_pollster() {
-      let rt = ThreadSleepRuntime;
+      let rt = ThreadSleepRuntime::default();
       let slept = pollster::block_on(rt.sleep(Duration::from_millis(0)).run(&mut ()));
       let yielded = pollster::block_on(rt.yield_now().run(&mut ()));
       assert_eq!(slept, Ok(()));
@@ -212,7 +254,7 @@ mod tests {
 
     #[test]
     fn run_fork_when_effect_succeeds_join_returns_value() {
-      let rt = ThreadSleepRuntime;
+      let rt = ThreadSleepRuntime::default();
       let h = run_fork(&rt, || (succeed::<u8, (), ()>(42), ()));
       assert_eq!(pollster::block_on(h.join()), Ok(42));
       assert_eq!(h.status(), FiberStatus::Succeeded);
@@ -220,7 +262,7 @@ mod tests {
 
     #[test]
     fn run_fork_when_effect_fails_join_returns_fail_cause() {
-      let rt = ThreadSleepRuntime;
+      let rt = ThreadSleepRuntime::default();
       let h = run_fork(&rt, || (fail::<u8, &str, ()>("nope"), ()));
       assert_eq!(pollster::block_on(h.join()), Err(Cause::Fail("nope")));
       assert_eq!(h.status(), FiberStatus::Failed);
@@ -228,7 +270,7 @@ mod tests {
 
     #[test]
     fn thread_sleep_runtime_now_returns_valid_instant() {
-      let rt = ThreadSleepRuntime;
+      let rt = ThreadSleepRuntime::default();
       let t = rt.now();
       assert!(t.elapsed().as_secs() < 5, "should be very recent");
     }

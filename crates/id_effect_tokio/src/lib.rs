@@ -26,6 +26,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use id_effect::compute::{ComputeFabric, SysinfoTelemetry, install_fabric};
 use id_effect::{
   Effect, FiberHandle, FiberId, Never, Runtime, from_async, run_async, run_blocking,
 };
@@ -66,30 +67,58 @@ where
   })
 }
 
-/// Tokio-backed [`Runtime`] adapter (async `sleep` / `yield_now`).
+/// Tokio-backed [`Runtime`] adapter (async `sleep` / `yield_now`) with Compute Fabric admission.
 pub struct TokioRuntime {
   _owned: Option<Arc<tokio::runtime::Runtime>>,
   _handle: tokio::runtime::Handle,
+  fabric: Arc<ComputeFabric<SysinfoTelemetry>>,
 }
 
 impl TokioRuntime {
+  fn new_with_handle(
+    owned: Option<Arc<tokio::runtime::Runtime>>,
+    handle: tokio::runtime::Handle,
+  ) -> Self {
+    let fabric = default_fabric();
+    Self {
+      _owned: owned,
+      _handle: handle,
+      fabric,
+    }
+  }
+
   /// Adapter for the current Tokio context.
   pub fn current() -> Result<Self, std::io::Error> {
     let handle = tokio::runtime::Handle::try_current()
       .map_err(|e| std::io::Error::other(format!("no current tokio runtime: {e}")))?;
-    Ok(Self {
-      _owned: None,
-      _handle: handle,
-    })
+    Ok(Self::new_with_handle(None, handle))
   }
 
   /// Adapter from an explicit Tokio handle (e.g. `axum::serve` / `#[tokio::main]`).
   #[inline]
   pub fn from_handle(handle: tokio::runtime::Handle) -> Self {
+    Self::new_with_handle(None, handle)
+  }
+
+  /// Run fibers through the given [`ComputeFabric`] on Tokio's blocking pool.
+  #[inline]
+  pub fn with_fabric(
+    handle: tokio::runtime::Handle,
+    fabric: ComputeFabric<SysinfoTelemetry>,
+  ) -> Self {
+    let fabric = Arc::new(fabric);
+    install_fabric(Arc::clone(&fabric));
     Self {
       _owned: None,
       _handle: handle,
+      fabric,
     }
+  }
+
+  /// Access the installed fabric (policy, admission, supervisor).
+  #[inline]
+  pub fn fabric(&self) -> &ComputeFabric<SysinfoTelemetry> {
+    &self.fabric
   }
 
   /// Owns a single-threaded Tokio runtime (tests, examples, `main` without `#[tokio::main]`).
@@ -99,10 +128,7 @@ impl TokioRuntime {
       .build()?;
     let runtime = Arc::new(runtime);
     let handle = runtime.handle().clone();
-    Ok(Self {
-      _owned: Some(runtime),
-      _handle: handle,
-    })
+    Ok(Self::new_with_handle(Some(runtime), handle))
   }
 
   /// Owns a multi-thread Tokio runtime (typical for CLIs and servers without `#[tokio::main]`).
@@ -112,10 +138,7 @@ impl TokioRuntime {
       .build()?;
     let runtime = Arc::new(runtime);
     let handle = runtime.handle().clone();
-    Ok(Self {
-      _owned: Some(runtime),
-      _handle: handle,
-    })
+    Ok(Self::new_with_handle(Some(runtime), handle))
   }
 
   /// Tokio handle for this adapter (same underlying runtime as [`Self::block_on`] when owned).
@@ -160,15 +183,30 @@ impl Runtime for TokioRuntime {
     R: 'static,
     F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
   {
+    self.fabric.tick();
     let handle = FiberHandle::pending(FiberId::fresh());
     let h = handle.clone();
     let rt = self._handle.clone();
+    let fabric = Arc::clone(&self.fabric);
     // `run_async` is not `Send`; drive the effect with `run_blocking` on Tokio's blocking pool.
     let _join = rt.spawn_blocking(move || {
+      fabric.admission().acquire_blocking();
       let (effect, env) = f();
       h.mark_completed(run_blocking(effect, env));
+      fabric.admission().release();
     });
     handle
+  }
+
+  fn spawn_scoped_with<A, E, R, F>(&self, f: F, parent: FiberId) -> FiberHandle<A, E>
+  where
+    A: Clone + Send + Sync + 'static,
+    E: Clone + Send + Sync + 'static,
+    R: 'static,
+    F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
+  {
+    let _ = parent;
+    self.spawn_with(f)
   }
 
   fn sleep(&self, duration: Duration) -> Effect<(), Never, ()> {
@@ -189,6 +227,13 @@ impl Runtime for TokioRuntime {
       Ok::<(), Never>(())
     })
   }
+}
+
+#[inline]
+fn default_fabric() -> Arc<ComputeFabric<SysinfoTelemetry>> {
+  let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
+  install_fabric(Arc::clone(&fabric));
+  fabric
 }
 
 #[inline]

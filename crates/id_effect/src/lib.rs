@@ -61,6 +61,7 @@ pub use id_effect_proc_macro::{
 pub mod algebra;
 pub mod capability;
 pub mod collections;
+pub mod compute;
 pub mod concurrency;
 pub mod coordination;
 pub mod failure;
@@ -79,8 +80,8 @@ pub mod streaming;
 pub mod testing;
 
 pub use crate::kernel::{
-  BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, from_async, into_bind, pure,
-  scope_with, scoped, succeed,
+  BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, flatten_or, from_async,
+  into_bind, join_binds2, join_binds3, pure, scope_with, scoped, succeed,
 };
 pub use crate::match_::{HasTag, Matcher};
 pub use capability::{
@@ -94,6 +95,13 @@ pub use capability::{
 pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
   MutableHashMap, MutableHashSet, MutableList, MutableQueue, RedBlackTree, Trie,
+};
+pub use compute::{
+  AdaptiveContext, AdmissionController, ClusterResourcePolicy, ComputeFabric, ComputeSupervisor,
+  CpuSpreadBucket, FabricJobSpec, FiberPool, MetricMode, MetricPolicy, MockTelemetry,
+  PlacementMode, RebalanceStrategy, ResourcePolicy, SysinfoTelemetry, TelemetryEngine,
+  TelemetrySnapshot, WorkProfile, configure_rayon_threads, effective_threshold, ensure_run_context,
+  install_fabric, install_parallel, refresh_adaptive_context,
 };
 pub use concurrency::{
   CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, Supervisor, SupervisorPolicy,
@@ -115,10 +123,10 @@ pub use foundation::mutable_ref::MutableRef;
 pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
 pub use observability::{
-  AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, EffectEvent, FiberEvent, LogSpan, Metric,
-  SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot, annotate_current_span,
-  emit_effect_event, emit_fiber_event, install_tracing_layer, metric_make, snapshot_tracing,
-  with_span,
+  AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, ComputeEvent, EffectEvent, FiberEvent,
+  LogSpan, Metric, SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot,
+  annotate_current_span, emit_compute_event, emit_effect_event, emit_fiber_event,
+  install_tracing_layer, metric_make, record_compute_event, snapshot_tracing, with_span,
 };
 pub use parallelism::Parallelism;
 pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};

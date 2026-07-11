@@ -5,6 +5,7 @@ use super::error::{CapabilityPlannerError, RunError};
 use super::graph::CapabilityGraph;
 use super::provider::{ProviderBox, ShutdownHook};
 use super::set::FromEnv;
+use crate::compute::{ComputeFabric, install_fabric};
 use crate::kernel::Effect;
 use crate::runtime::run_blocking;
 use std::sync::Arc;
@@ -16,6 +17,10 @@ pub fn run<A, E>(app: Effect<A, E, ()>) -> Result<A, RunError<E>> {
 }
 
 /// Run `app` after building capabilities from `providers`.
+///
+/// Installs a default [`ComputeFabric`] (memory cap 100%, max CPU) for the duration of the run
+/// so adaptive parallelism and admission follow live telemetry. Provide an explicit fabric via
+/// [`crate::compute::install_fabric`] before calling when you need a custom [`crate::compute::ResourcePolicy`].
 pub fn run_with<A, E, R, I>(providers: I, app: Effect<A, E, R>) -> Result<A, RunError<E>>
 where
   I: IntoIterator<Item = ProviderBox>,
@@ -24,6 +29,8 @@ where
   let (env, hooks) = build_env_with_hooks(providers).map_err(RunError::Planner)?;
   R::verify(&env).map_err(RunError::Capability)?;
   let runtime = R::from_env(env);
+  let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
+  install_fabric(Arc::clone(&fabric));
   let result = run_blocking(app, runtime).map_err(RunError::Effect);
   for hook in hooks.into_iter().rev() {
     hook.shutdown();

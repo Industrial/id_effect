@@ -46,6 +46,8 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, Type};
 
+use crate::effect_graph;
+
 /// Returns `true` if the `effect!` body uses effect bind (`~`) anywhere (including nested groups).
 ///
 /// Bind-free bodies expand to `Effect::new` instead of `Effect::new_async`, avoiding an `async`
@@ -168,13 +170,28 @@ fn expand_block(body: TokenStream, r: &syn::Ident, path: &TokenStream) -> TokenS
 
   let n = chunks.len();
   let mut stmts = Vec::new();
-  for chunk in &chunks[..n - 1] {
-    if chunk.is_empty() {
-      continue;
+  let stmt_plans = effect_graph::plan_statement_chunks(&chunks[..n.saturating_sub(1)]);
+  for plan in stmt_plans {
+    match plan {
+      effect_graph::StmtPlan::ParallelPair {
+        var0,
+        operand0,
+        var1,
+        operand1,
+      } => {
+        stmts.push(effect_graph::emit_parallel_pair(
+          &var0, &operand0, &var1, &operand1, r, path,
+        ));
+      }
+      effect_graph::StmtPlan::Sequential(chunk) => {
+        if chunk.is_empty() {
+          continue;
+        }
+        let chunk = desugar_ident_tilde_bind(chunk);
+        let expanded = expand_tilde(chunk, r, path);
+        stmts.push(quote! { #expanded ; });
+      }
     }
-    let chunk = desugar_ident_tilde_bind(chunk.clone());
-    let expanded = expand_tilde(chunk, r, path);
-    stmts.push(quote! { #expanded ; });
   }
 
   let tail = &chunks[n - 1];
@@ -201,7 +218,7 @@ fn expand_block(body: TokenStream, r: &syn::Ident, path: &TokenStream) -> TokenS
 }
 
 /// `name ~ rest…` at chunk start → `let name = ~ rest…` (then [`expand_tilde`] handles `~`).
-fn desugar_ident_tilde_bind(chunk: TokenStream) -> TokenStream {
+pub(crate) fn desugar_ident_tilde_bind(chunk: TokenStream) -> TokenStream {
   let v: Vec<TokenTree> = chunk.into_iter().collect();
   if v.len() < 2 {
     return TokenStream::from_iter(v);
@@ -284,7 +301,7 @@ fn expand_require_invocation(
 ///
 /// Recurses into `{ }`, `( )`, and `[ ]` groups so `~` is expanded at any nesting depth.
 /// Nested groups are **not** given `Ok(tail)` wrapping — that is only for the outermost body.
-fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> TokenStream {
+pub(crate) fn expand_tilde(tokens: TokenStream, r: &syn::Ident, path: &TokenStream) -> TokenStream {
   let mut out = Vec::new();
   let mut iter = tokens.into_iter().peekable();
 

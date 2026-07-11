@@ -42,6 +42,22 @@ pub trait StepJournal: Send {
   fn completed_step_count(&self, workflow_id: &str) -> Result<u32, WorkflowError>;
 }
 
+/// Future hook: durable distributed step execution via Compute Fabric cluster workers.
+///
+/// When `DistributedJournalConfig` points at a remote endpoint, long-running effect steps
+/// offloaded by [`id_effect::compute::ComputeSupervisor::scale_out`] should append here instead
+/// of calling `compute` locally. Not yet wired to RPC — see [`NetworkJournalStub`].
+#[allow(dead_code)]
+pub trait DistributedStepJournal: StepJournal {
+  /// Records that step `seq` executed on cluster node `node_id`.
+  fn record_distributed_step(
+    &mut self,
+    workflow_id: &str,
+    seq: u32,
+    node_id: &str,
+  ) -> Result<(), WorkflowError>;
+}
+
 #[cfg(feature = "memory")]
 impl StepJournal for DurableWorkflowLog {
   fn register_workflow(&mut self, id: &str) -> Result<(), WorkflowError> {

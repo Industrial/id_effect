@@ -1086,6 +1086,20 @@ where
     })
   }
 
+  /// Like [`Self::map_par_n`] but `n` follows the current Compute Fabric admission budget.
+  #[inline]
+  pub fn map_par_adaptive<B, F>(self, f: F) -> Stream<B, E, R>
+  where
+    A: Send,
+    B: Send + 'static,
+    E: Send,
+    R: Clone + Send + Sync,
+    F: Fn(A) -> Effect<B, E, R> + Send + Sync + 'static,
+  {
+    let n = crate::compute::current_adaptive_context().admission_budget;
+    self.map_par_n(n.max(1), f)
+  }
+
   /// Optional binary reduction over the stream (`None` if empty).
   #[inline]
   pub fn run_reduce<F>(self, mut f: F) -> Effect<Option<A>, E, R>

@@ -1,5 +1,7 @@
 //! Execution policy for bulk data-parallel operations (Rayon).
 
+use crate::compute::AdaptiveContext;
+
 /// Controls when collection and stream chunk operations use Rayon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Parallelism {
@@ -27,6 +29,28 @@ impl Parallelism {
       Self::Auto { threshold } => len >= threshold,
     }
   }
+
+  /// Hardware-aware threshold from an [`AdaptiveContext`] snapshot.
+  #[inline]
+  pub fn effective_threshold(self, ctx: &AdaptiveContext) -> usize {
+    ctx.apply_threshold(self)
+  }
+
+  /// Whether to parallelize `len` elements using fabric-aware thresholds.
+  #[inline]
+  pub fn should_parallelize_adaptive(self, len: usize, ctx: &AdaptiveContext) -> bool {
+    match self {
+      Self::Serial => false,
+      Self::ForceParallel => true,
+      Self::Auto { .. } => len >= self.effective_threshold(ctx),
+    }
+  }
+
+  /// Like [`Self::should_parallelize`] but reads the thread-local adaptive context.
+  #[inline]
+  pub fn should_parallelize_current(self, len: usize) -> bool {
+    self.should_parallelize_adaptive(len, &crate::compute::current_adaptive_context())
+  }
 }
 
 impl Default for Parallelism {
@@ -40,6 +64,7 @@ impl Default for Parallelism {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::compute::AdaptiveContext;
 
   #[test]
   fn auto_below_threshold_is_serial() {
@@ -67,5 +92,16 @@ mod tests {
       Parallelism::default(),
       Parallelism::Auto { threshold: 1024 }
     );
+  }
+
+  #[test]
+  fn adaptive_lowers_threshold_under_headroom() {
+    let ctx = AdaptiveContext {
+      admission_budget: 8,
+      parallelism_threshold: 256,
+      rayon_threads: 8,
+    };
+    assert!(Parallelism::default().should_parallelize_adaptive(300, &ctx));
+    assert!(!Parallelism::default().should_parallelize_adaptive(100, &ctx));
   }
 }

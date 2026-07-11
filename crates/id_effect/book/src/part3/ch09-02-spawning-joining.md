@@ -75,6 +75,16 @@ let handle = run_fork(runtime, || (my_effect, my_env));
 
 `run_fork` is the low-level primitive. `effect.fork()` is syntactic sugar over it when you're already inside an effect context.
 
+## Compute Fabric placement
+
+When you pass a [`ThreadSleepRuntime`](../../src/runtime/rt.rs) or [`TokioRuntime`](../../id_effect_tokio/src/lib.rs) that holds a [`ComputeFabric`](../../src/compute/fabric.rs), every `run_fork` / `spawn_with` call:
+
+1. Runs a supervisor **tick** (telemetry vs [`ResourcePolicy`](../../src/compute/policy.rs))
+2. **Acquires** an admission permit before starting the worker
+3. **Releases** the permit when the fiber completes
+
+Under memory pressure the supervisor throttles permits; under headroom it admits up to the pool size. See [Compute Fabric](./ch12-00-compute-fabric.md) and example `120_compute_fabric_memory_cap.rs`.
+
 ## Error Behaviour
 
 | Combinator | On any failure |

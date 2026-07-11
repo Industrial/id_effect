@@ -85,6 +85,32 @@ pub enum FiberEvent {
   },
 }
 
+/// Compute Fabric supervisor signals (opt-in via [`record_compute_event`] / [`emit_compute_event`]).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ComputeEvent {
+  /// Supervisor control-loop tick with live telemetry and admission state.
+  SupervisorTick {
+    /// Process CPU utilization fraction.
+    cpu_pct: f32,
+    /// Process memory utilization fraction.
+    mem_pct: f32,
+    /// Admission permits after rebalance.
+    admission_permits: usize,
+    /// Auto-parallel element threshold for this tick.
+    parallelism_threshold: usize,
+  },
+  /// Admission was throttled to `permits` concurrent workers.
+  AdmissionThrottle {
+    /// Remaining admission permits.
+    permits: usize,
+  },
+  /// Local fabric offloaded work to the cluster queue.
+  ScaleOut {
+    /// Logical job / handler name.
+    job_name: String,
+  },
+}
+
 /// Aggregated span metadata keyed by span name.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct SpanRecord {
@@ -102,12 +128,14 @@ pub struct LogSpan {
 }
 
 /// Point-in-time copy of recorded tracing buffers.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TracingSnapshot {
   /// Ordered [`EffectEvent`] stream since last install.
   pub effect_events: Vec<EffectEvent>,
   /// Ordered [`FiberEvent`] stream since last install.
   pub fiber_events: Vec<FiberEvent>,
+  /// Ordered [`ComputeEvent`] stream since last install.
+  pub compute_events: Vec<ComputeEvent>,
   /// Span records with merged annotations.
   pub spans: Vec<SpanRecord>,
 }
@@ -117,6 +145,7 @@ struct TraceState {
   config: TracingConfig,
   effect_events: Vec<EffectEvent>,
   fiber_events: Vec<FiberEvent>,
+  compute_events: Vec<ComputeEvent>,
   spans: Vec<SpanRecord>,
 }
 
@@ -196,6 +225,7 @@ pub fn install_tracing_layer(config: TracingConfig) -> Effect<(), Never, ()> {
     guard.config = config.clone();
     guard.effect_events.clear();
     guard.fiber_events.clear();
+    guard.compute_events.clear();
     guard.spans.clear();
     Ok(())
   })
@@ -222,6 +252,21 @@ pub fn emit_fiber_event(event: FiberEvent) -> Effect<(), Never, ()> {
     });
     Ok(())
   })
+}
+
+/// Appends a compute fabric event when tracing is enabled.
+pub fn emit_compute_event(event: ComputeEvent) -> Effect<(), Never, ()> {
+  Effect::new(move |_env| {
+    record_compute_event(event);
+    Ok(())
+  })
+}
+
+/// Synchronous compute event append (supervisor ticks).
+pub fn record_compute_event(event: ComputeEvent) {
+  with_state_mut(|state| {
+    state.compute_events.push(event);
+  });
 }
 
 /// Adds `key` → `value` to the current span’s annotation map (fiber-local).
@@ -375,6 +420,7 @@ pub fn snapshot_tracing() -> TracingSnapshot {
   TracingSnapshot {
     effect_events: guard.effect_events.clone(),
     fiber_events: guard.fiber_events.clone(),
+    compute_events: guard.compute_events.clone(),
     spans: guard.spans.clone(),
   }
 }

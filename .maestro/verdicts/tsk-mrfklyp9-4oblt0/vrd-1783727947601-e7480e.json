@@ -1,0 +1,58 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1783727947601-e7480e",
+	"taskId": "tsk-mrfklyp9-4oblt0",
+	"contractVersion": 1,
+	"computedAt": "2026-07-10T23:59:07.601Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "high",
+	"effectiveRiskClass": "high",
+	"reasons": [
+		{
+			"category": "policy",
+			"code": "auto-merge-not-allowed",
+			"message": "Auto-merge is opt-in and not enabled for risk class \"high\" in autopilot.yaml; the task can still complete via human review (run `maestro handoff emit`, or set autoMergeAllowed.high: true — note: enabling auto-merge is a \"loosening\" and soaks for 30 days before taking effect; run `maestro policy pending` to see in-flight changes)."
+		},
+		{
+			"category": "evidence",
+			"code": "proof-map-incomplete",
+			"message": "9 acceptance criterion/criteria lack covering evidence: dw-81524f (\"ADR 0007 compute-fabric documents core principle and ADR 0006 relationship\"); dw-c050c3 (\"compute module with ResourcePolicy MetricMode WorkProfile TelemetryEngine and ComputeSupervisor skeleton\"); dw-c8cc4c (\"FiberPool work-stealing executor replaces one-thread-per-fiber ThreadSleepRuntime\"); dw-efda6b (\"AdmissionController throttles fibers from live telemetry vs ResourcePolicy\"); dw-15b870 (\"spawn_scoped_with parent budget inheritance and TokioRuntime ComputeFabric wrapper\"); dw-8dbf17 (\"Effect Dependency Graph auto-parallelizes independent effect binds with safety gates\"); dw-b4b951 (\"Parallelism and Stream map_par_adaptive use supervisor-driven thresholds and CPU spread mode\"); dw-63d25e (\"ClusterResourcePolicy scale_out via jobs workflow with worker Fabric executor\"); dw-711084 (\"Fabric installed by default at run boundaries with book skills examples and ADR 0006 migration\"). Record covering evidence with `maestro evidence record --task <id> --criterion dw-81524f --command \"...\" --exit 0` (criterion id matches the spec's acceptance_criteria — see `maestro spec show <slug>` or the spec frontmatter)."
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1783727946726-9eb170",
+		"evd-1783727946833-3697bd",
+		"evd-1783727947213-3b1cde"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between db63b1d0bb25821daa465ded5442b95cb14f3e99 and db63b1d0bb25821daa465ded5442b95cb14f3e99 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "902acb370f3918975dfff453ee4829efec933df5"
+	}
+}
