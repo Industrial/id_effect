@@ -70,3 +70,48 @@ impl Default for FiberPool {
     Self::new(Self::default_size())
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  use std::sync::{Arc, mpsc};
+  use std::time::Duration;
+
+  #[test]
+  fn default_size_is_at_least_one() {
+    assert!(FiberPool::default_size() >= 1);
+  }
+
+  #[test]
+  fn spawn_runs_job_on_worker() {
+    let pool = FiberPool::new(2);
+    let (tx, rx) = mpsc::channel();
+    pool.spawn(move || tx.send(()).unwrap());
+    rx.recv_timeout(Duration::from_secs(2)).expect("job ran");
+  }
+
+  #[test]
+  fn target_size_tracks_updates() {
+    let pool = FiberPool::new(2);
+    assert_eq!(pool.target_size(), 2);
+    pool.set_target_size(5);
+    assert_eq!(pool.target_size(), 5);
+    pool.set_target_size(0);
+    assert_eq!(pool.target_size(), 1);
+  }
+
+  #[test]
+  fn default_pool_executes_multiple_jobs() {
+    let pool = FiberPool::default();
+    let done = Arc::new(AtomicUsize::new(0));
+    for _ in 0..4 {
+      let done = Arc::clone(&done);
+      pool.spawn(move || {
+        done.fetch_add(1, Ordering::SeqCst);
+      });
+    }
+    std::thread::sleep(Duration::from_millis(50));
+    assert_eq!(done.load(Ordering::SeqCst), 4);
+  }
+}

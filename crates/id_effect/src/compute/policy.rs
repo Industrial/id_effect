@@ -116,4 +116,63 @@ mod tests {
     assert!(!mode.is_within(0.90));
     assert_eq!(mode.headroom(0.90), 0.0);
   }
+
+  #[test]
+  fn target_within_setpoint_band() {
+    let mode = MetricMode::Target { setpoint: 0.5 };
+    assert!(mode.is_within(0.52));
+    assert!(!mode.is_within(0.60));
+    assert!((mode.headroom(0.4) - 0.1).abs() < 0.001);
+  }
+
+  #[test]
+  fn spread_respects_per_worker_share() {
+    let mode = MetricMode::Spread { per_worker: 0.25 };
+    assert!(mode.is_within(0.20));
+    assert!(!mode.is_within(0.30));
+    assert!((mode.headroom(0.10) - 0.15).abs() < 0.001);
+  }
+
+  #[test]
+  fn unlimited_always_within() {
+    let mode = MetricMode::Unlimited;
+    assert!(mode.is_within(1.0));
+    assert_eq!(mode.headroom(0.9), 1.0);
+  }
+
+  #[test]
+  fn cpu_spread_policy_constructor() {
+    let policy = ResourcePolicy::unlimited_memory_cpu_spread(0.25);
+    assert_eq!(policy.rebalance, RebalanceStrategy::ThrottleAdmission);
+    assert!(matches!(policy.cpu.mode, MetricMode::Spread { .. }));
+    assert!(matches!(policy.memory.mode, MetricMode::Unlimited));
+  }
+
+  #[test]
+  fn work_profile_default_is_mixed() {
+    assert_eq!(WorkProfile::default(), WorkProfile::Mixed);
+  }
+
+  #[test]
+  fn metric_policy_new_stores_mode() {
+    let policy = MetricPolicy::new(MetricMode::Unlimited);
+    assert_eq!(policy.mode, MetricMode::Unlimited);
+  }
+
+  #[test]
+  fn rebalance_strategy_default_throttles_admission() {
+    assert_eq!(
+      RebalanceStrategy::default(),
+      RebalanceStrategy::ThrottleAdmission
+    );
+  }
+
+  #[test]
+  fn memory_cap_policy_sets_cpu_unbounded() {
+    let policy = ResourcePolicy::memory_cap_max_cpu(0.75);
+    assert!(
+      matches!(policy.memory.mode, MetricMode::Max { ceiling } if (ceiling - 0.75).abs() < 0.001)
+    );
+    assert!(matches!(policy.cpu.mode, MetricMode::Max { ceiling: 1.0 }));
+  }
 }

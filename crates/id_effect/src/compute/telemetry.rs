@@ -111,4 +111,14 @@ mod tests {
     assert!(snap.satisfies(&policy));
     assert!(snap.min_headroom(&policy) > 0.2);
   }
+
+  #[test]
+  fn snapshot_rejects_breach_and_mock_set_updates() {
+    let engine = MockTelemetry::new(0.4, 0.61);
+    engine.set(0.95, 0.95);
+    let snap = engine.snapshot();
+    let policy = crate::compute::policy::ResourcePolicy::memory_cap_max_cpu(0.85);
+    assert!(!snap.satisfies(&policy));
+    assert_eq!(snap.min_headroom(&policy), 0.0);
+  }
 }

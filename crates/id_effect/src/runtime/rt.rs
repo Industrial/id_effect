@@ -274,6 +274,16 @@ mod tests {
       let t = rt.now();
       assert!(t.elapsed().as_secs() < 5, "should be very recent");
     }
+
+    #[test]
+    fn with_fabric_exposes_policy_and_spawn_scoped() {
+      let fabric = crate::compute::ComputeFabric::memory_cap_max_cpu(0.9);
+      let rt = ThreadSleepRuntime::with_fabric(fabric);
+      assert!(rt.fabric().policy().cpu.mode.is_within(1.0));
+      let parent = FiberId::fresh();
+      let h = rt.spawn_scoped_with(|| (succeed::<u8, (), ()>(9), ()), parent);
+      assert_eq!(pollster::block_on(h.join()), Ok(9));
+    }
   }
 
   mod run_fork {

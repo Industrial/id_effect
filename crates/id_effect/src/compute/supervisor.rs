@@ -80,3 +80,43 @@ impl<E: TelemetryEngine> ComputeSupervisor<E> {
     snap
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::compute::telemetry::MockTelemetry;
+  use std::sync::Arc;
+
+  #[test]
+  fn tick_updates_snapshot_under_memory_cap() {
+    let telemetry = MockTelemetry::new(0.4, 0.61);
+    let admission = Arc::new(AdmissionController::new(4, 8));
+    let policy = ResourcePolicy::memory_cap_max_cpu(0.85);
+    let sup = ComputeSupervisor::new(policy, telemetry, admission);
+    let snap = sup.tick();
+    assert!(snap.cpu_pct > 0.0);
+    assert_eq!(sup.snapshot().mem_pct, snap.mem_pct);
+  }
+
+  #[test]
+  fn spread_policy_tick_respects_cpu_bucket() {
+    let telemetry = MockTelemetry::new(0.1, 0.1);
+    let admission = Arc::new(AdmissionController::new(8, 8));
+    let policy = ResourcePolicy::unlimited_memory_cpu_spread(0.5);
+    let sup = ComputeSupervisor::new(policy, telemetry, admission);
+    let _ = sup.tick();
+    let snap = sup.tick();
+    assert!(snap.cpu_pct >= 0.0);
+    assert!(sup.admission().available() >= 1);
+  }
+
+  #[test]
+  fn accessors_return_live_handles() {
+    let telemetry = MockTelemetry::new(0.2, 0.3);
+    let admission = Arc::new(AdmissionController::new(2, 4));
+    let policy = ResourcePolicy::memory_cap_max_cpu(0.85);
+    let sup = ComputeSupervisor::new(policy.clone(), telemetry, admission);
+    assert_eq!(sup.policy(), &policy);
+    assert_eq!(sup.admission().max_permits(), 4);
+  }
+}

@@ -183,4 +183,41 @@ mod tests {
     assert!(ctx.admission_budget >= 1);
     assert!(ctx.rayon_threads >= 1);
   }
+
+  #[test]
+  fn apply_threshold_respects_parallelism_policy() {
+    let ctx = AdaptiveContext::standalone();
+    assert_eq!(ctx.apply_threshold(Parallelism::Serial), usize::MAX);
+    assert_eq!(ctx.apply_threshold(Parallelism::ForceParallel), 0);
+    let auto = ctx.apply_threshold(Parallelism::Auto { threshold: 4 });
+    assert!(auto <= 4);
+  }
+
+  #[test]
+  fn effective_threshold_reads_thread_local_context() {
+    let ctx = AdaptiveContext {
+      admission_budget: 8,
+      parallelism_threshold: 2,
+      rayon_threads: 8,
+    };
+    with_adaptive_context(ctx, || {
+      assert_eq!(effective_threshold(Parallelism::Auto { threshold: 100 }), 2);
+    });
+  }
+
+  #[test]
+  fn from_fabric_matches_admission_budget() {
+    let fabric = ComputeFabric::with_mock(ResourcePolicy::memory_cap_max_cpu(0.85), 0.2, 0.3);
+    fabric.supervisor().tick();
+    let ctx = AdaptiveContext::from_fabric(&fabric);
+    assert!(ctx.admission_budget >= 1);
+    assert!(ctx.rayon_threads >= 1);
+  }
+
+  #[test]
+  fn ensure_run_context_refreshes_without_panic() {
+    ensure_run_context();
+    let ctx = current_adaptive_context();
+    assert!(ctx.rayon_threads >= 1);
+  }
 }

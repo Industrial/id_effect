@@ -44,4 +44,21 @@ mod tests {
     let threads = install_parallel(|| rayon::current_num_threads());
     assert_eq!(threads, 2);
   }
+
+  #[test]
+  fn install_parallel_without_pool_runs_inline() {
+    *pool_slot().lock().expect("rayon pool mutex") = None;
+    let out = install_parallel(|| 42);
+    assert_eq!(out, 42);
+  }
+
+  #[test]
+  fn configure_rebuilds_pool_for_new_thread_count() {
+    configure_rayon_threads(3);
+    let first = install_parallel(|| rayon::current_num_threads());
+    configure_rayon_threads(1);
+    let second = install_parallel(|| rayon::current_num_threads());
+    assert_eq!(first, 3);
+    assert_eq!(second, 1);
+  }
 }

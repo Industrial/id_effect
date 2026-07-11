@@ -120,4 +120,32 @@ mod tests {
     admission.rebalance(&*engine, &policy, 1);
     assert!(admission.available() >= 2);
   }
+
+  #[test]
+  fn try_acquire_fails_when_empty() {
+    let admission = AdmissionController::new(0, 4);
+    assert!(!admission.try_acquire());
+  }
+
+  #[test]
+  fn release_caps_at_max_permits() {
+    let admission = AdmissionController::new(4, 4);
+    admission.release();
+    assert_eq!(admission.available(), 4);
+  }
+
+  #[test]
+  fn acquire_blocking_obtains_permit() {
+    let admission = AdmissionController::new(0, 2);
+    admission.release();
+    admission.acquire_blocking();
+    assert_eq!(admission.available(), 0);
+  }
+
+  #[test]
+  fn default_matches_host_parallelism() {
+    let admission = AdmissionController::default();
+    assert!(admission.max_permits() >= 1);
+    assert!(admission.available() >= 1);
+  }
 }

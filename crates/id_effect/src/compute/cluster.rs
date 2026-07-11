@@ -85,5 +85,15 @@ mod tests {
     );
     assert_eq!(job.name, "remote-work");
     assert_eq!(job.work_profile, WorkProfile::CpuIntensive);
+    assert_eq!(job.payload, b"payload");
+  }
+
+  #[test]
+  fn local_first_policy_clones_caps() {
+    let policy = ResourcePolicy::memory_cap_max_cpu(0.85);
+    let cluster = ClusterResourcePolicy::local_first(policy.clone());
+    assert_eq!(cluster.global, policy);
+    assert_eq!(cluster.per_node, policy);
+    assert_eq!(cluster.placement, PlacementMode::LocalFirst);
   }
 }
