@@ -173,15 +173,8 @@ fn expand_block(body: TokenStream, r: &syn::Ident, path: &TokenStream) -> TokenS
   let stmt_plans = effect_graph::plan_statement_chunks(&chunks[..n.saturating_sub(1)]);
   for plan in stmt_plans {
     match plan {
-      effect_graph::StmtPlan::ParallelPair {
-        var0,
-        operand0,
-        var1,
-        operand1,
-      } => {
-        stmts.push(effect_graph::emit_parallel_pair(
-          &var0, &operand0, &var1, &operand1, r, path,
-        ));
+      effect_graph::StmtPlan::ParallelSet(steps) => {
+        stmts.push(effect_graph::emit_parallel_set(&steps, r, path));
       }
       effect_graph::StmtPlan::Sequential(chunk) => {
         if chunk.is_empty() {

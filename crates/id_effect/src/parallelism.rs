@@ -2,9 +2,10 @@
 
 use crate::compute::AdaptiveContext;
 
-/// Controls when collection and stream chunk operations use Rayon.
+/// Internal Fabric-aware parallelism policy (crate-private since 0.4.0).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Parallelism {
+pub(crate) enum Parallelism {
   /// Use parallel execution when `len >= threshold`.
   Auto {
     /// Minimum element count before switching to Rayon.
@@ -21,6 +22,7 @@ impl Parallelism {
   pub const DEFAULT_THRESHOLD: usize = 1024;
 
   /// Returns whether to use a parallel code path for `len` elements.
+  #[allow(dead_code)]
   #[inline]
   pub fn should_parallelize(self, len: usize) -> bool {
     match self {

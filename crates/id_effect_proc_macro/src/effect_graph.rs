@@ -6,20 +6,18 @@ use syn::Ident;
 
 use crate::transform::{desugar_ident_tilde_bind, expand_tilde, is_capability_key_operand};
 
-/// Planned expansion for one statement chunk (or a parallel pair).
+const MAX_PARALLEL_BINDS: usize = 4;
+
+/// Planned expansion for one statement chunk (or a parallel bind set).
 pub enum StmtPlan {
-  /// Two independent binds emitted via [`join_binds2`].
-  ParallelPair {
-    var0: Ident,
-    operand0: TokenStream,
-    var1: Ident,
-    operand1: TokenStream,
-  },
-  /// Sequential chunk (non-bind, serial opt-out, dependency, or group > 2).
+  /// Maximal independent bind set (len >= 2) via [`join_binds2`] / [`join_binds3`] / [`join_binds4`].
+  ParallelSet(Vec<BindStep>),
+  /// Sequential chunk (non-bind, serial opt-out, dependency, or singleton bind).
   Sequential(TokenStream),
 }
 
-struct BindStep {
+#[derive(Clone)]
+pub(crate) struct BindStep {
   var: Ident,
   operand: TokenStream,
 }
@@ -60,55 +58,93 @@ pub fn plan_statement_chunks(chunks: &[TokenStream]) -> Vec<StmtPlan> {
       continue;
     }
 
-    if i + 1 < chunks.len() {
-      let next = chunks[i + 1].clone();
-      if !next.is_empty() {
-        let next_desugared = desugar_ident_tilde_bind(next.clone());
-        if !chunk_has_serial_attr(&next)
-          && !chunk_has_serial_attr(&next_desugared)
-          && let Some(step1) = parse_bind_step(&next_desugared)
-        {
-          let mut deps = bound.clone();
-          deps.push(step0.var.clone());
-          if !bind_depends_on(&step1, &deps) {
-            plans.push(StmtPlan::ParallelPair {
-              var0: step0.var.clone(),
-              operand0: step0.operand,
-              var1: step1.var.clone(),
-              operand1: step1.operand,
-            });
-            bound.push(step0.var);
-            bound.push(step1.var);
-            i += 2;
-            continue;
-          }
-        }
+    let mut group = vec![step0];
+    let mut j = i + 1;
+    while j < chunks.len() {
+      let next = chunks[j].clone();
+      if next.is_empty() {
+        break;
       }
+      let next_desugared = desugar_ident_tilde_bind(next.clone());
+      if chunk_has_serial_attr(&next) || chunk_has_serial_attr(&next_desugared) {
+        break;
+      }
+      if let Some(step) = parse_bind_step(&next_desugared) {
+        let mut deps = bound.clone();
+        for prior in &group {
+          deps.push(prior.var.clone());
+        }
+        if bind_depends_on(&step, &deps) {
+          break;
+        }
+        group.push(step);
+      } else {
+        break;
+      }
+      if group.len() == MAX_PARALLEL_BINDS {
+        j += 1;
+        break;
+      }
+      j += 1;
+    }
+
+    if group.len() >= 2 {
+      plans.push(StmtPlan::ParallelSet(group.clone()));
+      bound.extend(group.into_iter().map(|step| step.var));
+      i = j;
+      continue;
     }
 
     plans.push(StmtPlan::Sequential(chunk));
-    bound.push(step0.var);
+    bound.push(group[0].var.clone());
     i += 1;
   }
 
   plans
 }
 
-/// Emit `join_binds2` codegen for a parallel pair.
-pub fn emit_parallel_pair(
-  var0: &Ident,
-  operand0: &TokenStream,
-  var1: &Ident,
-  operand1: &TokenStream,
-  r: &Ident,
-  path: &TokenStream,
-) -> TokenStream {
-  let expanded0 = expand_tilde(operand0.clone(), r, path);
-  let expanded1 = expand_tilde(operand1.clone(), r, path);
-  quote! {
-    let (#var0, #var1) = #path::join_binds2(#expanded0, #expanded1, #r.clone())
-      .await
-      .map_err(#path::flatten_or)? ;
+/// Emit `join_bindsN` codegen for a parallel bind set.
+pub fn emit_parallel_set(steps: &[BindStep], r: &Ident, path: &TokenStream) -> TokenStream {
+  match steps.len() {
+    2 => {
+      let expanded0 = expand_tilde(steps[0].operand.clone(), r, path);
+      let expanded1 = expand_tilde(steps[1].operand.clone(), r, path);
+      let var0 = &steps[0].var;
+      let var1 = &steps[1].var;
+      quote! {
+        let (#var0, #var1) = #path::join_binds2(#expanded0, #expanded1, #r.clone())
+          .await
+          .map_err(#path::flatten_or)? ;
+      }
+    }
+    3 => {
+      let expanded0 = expand_tilde(steps[0].operand.clone(), r, path);
+      let expanded1 = expand_tilde(steps[1].operand.clone(), r, path);
+      let expanded2 = expand_tilde(steps[2].operand.clone(), r, path);
+      let var0 = &steps[0].var;
+      let var1 = &steps[1].var;
+      let var2 = &steps[2].var;
+      quote! {
+        let (#var0, #var1, #var2) = #path::join_binds3(#expanded0, #expanded1, #expanded2, #r.clone())
+          .await? ;
+      }
+    }
+    4 => {
+      let expanded0 = expand_tilde(steps[0].operand.clone(), r, path);
+      let expanded1 = expand_tilde(steps[1].operand.clone(), r, path);
+      let expanded2 = expand_tilde(steps[2].operand.clone(), r, path);
+      let expanded3 = expand_tilde(steps[3].operand.clone(), r, path);
+      let var0 = &steps[0].var;
+      let var1 = &steps[1].var;
+      let var2 = &steps[2].var;
+      let var3 = &steps[3].var;
+      quote! {
+        let (#var0, #var1, #var2, #var3) =
+          #path::join_binds4(#expanded0, #expanded1, #expanded2, #expanded3, #r.clone())
+            .await? ;
+      }
+    }
+    _ => panic!("emit_parallel_set expects 2..=4 binds, got {}", steps.len()),
   }
 }
 
@@ -219,6 +255,13 @@ mod tests {
   use super::*;
   use quote::quote;
 
+  fn parallel_set_len(plan: &StmtPlan) -> Option<usize> {
+    match plan {
+      StmtPlan::ParallelSet(steps) => Some(steps.len()),
+      StmtPlan::Sequential(_) => None,
+    }
+  }
+
   #[test]
   fn independent_consecutive_binds_form_pair() {
     let chunks = vec![
@@ -227,7 +270,48 @@ mod tests {
     ];
     let plan = plan_statement_chunks(&chunks);
     assert_eq!(plan.len(), 1);
-    assert!(matches!(plan[0], StmtPlan::ParallelPair { .. }));
+    assert_eq!(parallel_set_len(&plan[0]), Some(2));
+  }
+
+  #[test]
+  fn three_independent_binds_form_set() {
+    let chunks = vec![
+      quote! { let a = ~ fetch_a() },
+      quote! { let b = ~ fetch_b() },
+      quote! { let c = ~ fetch_c() },
+    ];
+    let plan = plan_statement_chunks(&chunks);
+    assert_eq!(plan.len(), 1);
+    assert_eq!(parallel_set_len(&plan[0]), Some(3));
+  }
+
+  #[test]
+  fn four_independent_binds_form_set() {
+    let chunks = vec![
+      quote! { let a = ~ fetch_a() },
+      quote! { let b = ~ fetch_b() },
+      quote! { let c = ~ fetch_c() },
+      quote! { let d = ~ fetch_d() },
+    ];
+    let plan = plan_statement_chunks(&chunks);
+    assert_eq!(plan.len(), 1);
+    assert_eq!(parallel_set_len(&plan[0]), Some(4));
+  }
+
+  #[test]
+  fn five_independent_binds_split_at_four() {
+    let chunks = vec![
+      quote! { let a = ~ fetch_a() },
+      quote! { let b = ~ fetch_b() },
+      quote! { let c = ~ fetch_c() },
+      quote! { let d = ~ fetch_d() },
+      quote! { let e = ~ fetch_e() },
+    ];
+    let plan = plan_statement_chunks(&chunks);
+    assert_eq!(plan.len(), 2);
+    assert_eq!(parallel_set_len(&plan[0]), Some(4));
+    assert_eq!(parallel_set_len(&plan[1]), None);
+    assert!(matches!(plan[1], StmtPlan::Sequential(_)));
   }
 
   #[test]
@@ -252,6 +336,38 @@ mod tests {
     assert_eq!(plan.len(), 2);
     assert!(matches!(plan[0], StmtPlan::Sequential(_)));
     assert!(matches!(plan[1], StmtPlan::Sequential(_)));
+  }
+
+  #[test]
+  fn serial_attr_splits_parallel_groups() {
+    let chunks = vec![
+      quote! { let a = ~ fetch_a() },
+      quote! { let b = ~ fetch_b() },
+      quote! { #[effect(serial)] let c = ~ fetch_c() },
+      quote! { let d = ~ fetch_d() },
+      quote! { let e = ~ fetch_e() },
+    ];
+    let plan = plan_statement_chunks(&chunks);
+    assert_eq!(plan.len(), 3);
+    assert_eq!(parallel_set_len(&plan[0]), Some(2));
+    assert!(matches!(plan[1], StmtPlan::Sequential(_)));
+    assert_eq!(parallel_set_len(&plan[2]), Some(2));
+  }
+
+  #[test]
+  fn serial_attr_on_non_bind_splits_groups() {
+    let chunks = vec![
+      quote! { let a = ~ fetch_a() },
+      quote! { let b = ~ fetch_b() },
+      quote! { #[effect(serial)] println!("checkpoint") },
+      quote! { let c = ~ fetch_c() },
+      quote! { let d = ~ fetch_d() },
+    ];
+    let plan = plan_statement_chunks(&chunks);
+    assert_eq!(plan.len(), 3);
+    assert_eq!(parallel_set_len(&plan[0]), Some(2));
+    assert!(matches!(plan[1], StmtPlan::Sequential(_)));
+    assert_eq!(parallel_set_len(&plan[2]), Some(2));
   }
 
   #[test]

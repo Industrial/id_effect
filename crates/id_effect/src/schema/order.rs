@@ -56,8 +56,6 @@ pub mod ordering {
 #[allow(clippy::module_inception)]
 pub mod order {
   use super::{DynOrder, Ordering};
-  use crate::Parallelism;
-  use rayon::prelude::*;
   use std::time::Duration;
 
   // ── Primitive constructors ────────────────────────────────────────────────
@@ -168,37 +166,24 @@ pub mod order {
     ord(value, minimum) != Ordering::Less && ord(value, maximum) != Ordering::Greater
   }
 
-  /// Sort using the default [`Parallelism`] policy.
-  pub fn sort_with<A: Clone + Send + Sync>(ord: &DynOrder<A>, arr: Vec<A>) -> Vec<A> {
-    sort_with_policy(Parallelism::default(), ord, arr)
-  }
+  /// Sort using Fabric-aware implicit parallelism.
+  pub fn sort_with<A: Clone + Send + Sync>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
+    use crate::compute::install_parallel;
+    use crate::parallelism::Parallelism;
+    use rayon::prelude::*;
 
-  /// Sort sequentially.
-  /// Sort sequentially.
-  pub fn sort_with_serial<A: Clone>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
-    arr.sort_by(|a, b| ord(a, b));
-    arr
-  }
-
-  /// Sort with an explicit [`Parallelism`] policy.
-  /// Sort with an explicit [`Parallelism`] policy.
-  pub fn sort_with_policy<A: Clone + Send + Sync>(
-    policy: Parallelism,
-    ord: &DynOrder<A>,
-    mut arr: Vec<A>,
-  ) -> Vec<A> {
-    if policy.should_parallelize(arr.len()) {
-      arr.par_sort_by(|a, b| ord(a, b));
+    if Parallelism::default().should_parallelize_current(arr.len()) {
+      install_parallel(|| arr.par_sort_by(|a, b| ord(a, b)));
     } else {
       arr.sort_by(|a, b| ord(a, b));
     }
     arr
   }
 
-  /// Like [`sort_with_policy`] with [`Parallelism::ForceParallel`].
-  #[deprecated(note = "use sort_with or sort_with_policy(Parallelism::ForceParallel)")]
-  pub fn sort_with_par<A: Clone + Send + Sync>(ord: &DynOrder<A>, arr: Vec<A>) -> Vec<A> {
-    sort_with_policy(Parallelism::ForceParallel, ord, arr)
+  /// Sort sequentially.
+  pub fn sort_with_serial<A: Clone>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
+    arr.sort_by(|a, b| ord(a, b));
+    arr
   }
 }
 

@@ -1,6 +1,6 @@
 //! Ex 122 — Adaptive stream parallelism via Compute Fabric admission budget.
 //!
-//! `Stream::map_par_adaptive` caps concurrent effect mappers from the supervisor snapshot.
+//! `Stream::map_effect` caps concurrent effect mappers from the supervisor snapshot.
 
 use id_effect::compute::{ComputeFabric, ResourcePolicy, install_fabric};
 use id_effect::streaming::Stream;
@@ -19,7 +19,7 @@ fn main() {
   println!("admission budget = {budget}");
 
   let stream = Stream::from_iterable((0u32..8).collect::<Vec<_>>());
-  let mapped = stream.map_par_adaptive(|n| succeed(n * 2));
+  let mapped = stream.map_effect(|n| succeed::<u32, (), ()>(n * 2));
   let values = run_blocking(mapped.run_collect(), ()).expect("collect");
   println!("mapped = {values:?}");
   assert_eq!(values.len(), 8);

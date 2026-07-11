@@ -81,7 +81,7 @@ pub mod testing;
 
 pub use crate::kernel::{
   BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, flatten_or, from_async,
-  into_bind, join_binds2, join_binds3, pure, scope_with, scoped, succeed,
+  into_bind, join_binds2, join_binds3, join_binds4, pure, scope_with, scoped, succeed,
 };
 pub use crate::match_::{HasTag, Matcher};
 pub use capability::{
@@ -100,8 +100,8 @@ pub use compute::{
   AdaptiveContext, AdmissionController, ClusterResourcePolicy, ComputeFabric, ComputeSupervisor,
   CpuSpreadBucket, FabricJobSpec, FiberPool, MetricMode, MetricPolicy, MockTelemetry,
   PlacementMode, RebalanceStrategy, ResourcePolicy, SysinfoTelemetry, TelemetryEngine,
-  TelemetrySnapshot, WorkProfile, configure_rayon_threads, effective_threshold, ensure_run_context,
-  install_fabric, install_parallel, refresh_adaptive_context,
+  TelemetrySnapshot, WorkProfile, configure_rayon_threads, ensure_run_context, install_fabric,
+  install_parallel, refresh_adaptive_context,
 };
 pub use concurrency::{
   CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, Supervisor, SupervisorPolicy,
@@ -128,7 +128,6 @@ pub use observability::{
   annotate_current_span, emit_compute_event, emit_effect_event, emit_fiber_event,
   install_tracing_layer, metric_make, record_compute_event, snapshot_tracing, with_span,
 };
-pub use parallelism::Parallelism;
 pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};
 pub use runtime::{
   Never, Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now,

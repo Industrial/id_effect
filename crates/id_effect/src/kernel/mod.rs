@@ -14,4 +14,4 @@ pub use self::effect::{
   BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, from_async, into_bind, pure,
   scope_with, scoped, succeed, unwrap_infallible,
 };
-pub use self::par_bind::{flatten_or, join_binds2, join_binds3};
+pub use self::par_bind::{flatten_or, join_binds2, join_binds3, join_binds4};

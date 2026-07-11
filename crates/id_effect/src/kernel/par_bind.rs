@@ -22,6 +22,21 @@ where
   futures::future::join3(f0, f1, f2).await
 }
 
+async fn join4<F0, F1, F2, F3>(
+  f0: F0,
+  f1: F1,
+  f2: F2,
+  f3: F3,
+) -> (F0::Output, F1::Output, F2::Output, F3::Output)
+where
+  F0: Future,
+  F1: Future,
+  F2: Future,
+  F3: Future,
+{
+  futures::future::join4(f0, f1, f2, f3).await
+}
+
 fn merge_pair<A, B, E0, E1>(r0: Result<A, E0>, r1: Result<B, E1>) -> Result<(A, B), Or<E0, E1>> {
   match (r0, r1) {
     (Ok(a), Ok(b)) => Ok((a, b)),
@@ -39,6 +54,19 @@ fn merge_triple<A, B, C, E>(
   let b = r1?;
   let c = r2?;
   Ok((a, b, c))
+}
+
+fn merge_quad<A, B, C, D, E>(
+  r0: Result<A, E>,
+  r1: Result<B, E>,
+  r2: Result<C, E>,
+  r3: Result<D, E>,
+) -> Result<(A, B, C, D), E> {
+  let a = r0?;
+  let b = r1?;
+  let c = r2?;
+  let d = r3?;
+  Ok((a, b, c, d))
 }
 
 /// Join two effect binds against cloned environments (parallel `cap_into_bind`).
@@ -105,6 +133,49 @@ where
   )
   .await;
   merge_triple(a, b, c)
+}
+
+/// Join four effect binds against cloned environments (parallel `cap_into_bind`).
+pub async fn join_binds4<A0, A1, A2, A3, E, R>(
+  e0: Effect<A0, E, R>,
+  e1: Effect<A1, E, R>,
+  e2: Effect<A2, E, R>,
+  e3: Effect<A3, E, R>,
+  r: R,
+) -> Result<(A0, A1, A2, A3), E>
+where
+  R: Clone,
+  A0: 'static,
+  A1: 'static,
+  A2: 'static,
+  A3: 'static,
+  E: 'static,
+  R: 'static,
+{
+  let r0 = r.clone();
+  let r1 = r.clone();
+  let r2 = r.clone();
+  let r3 = r;
+  let (a, b, c, d) = join4(
+    async move {
+      let mut env = r0;
+      e0.run(&mut env).await
+    },
+    async move {
+      let mut env = r1;
+      e1.run(&mut env).await
+    },
+    async move {
+      let mut env = r2;
+      e2.run(&mut env).await
+    },
+    async move {
+      let mut env = r3;
+      e3.run(&mut env).await
+    },
+  )
+  .await;
+  merge_quad(a, b, c, d)
 }
 
 /// Flatten `Or<E, E>` for parallel bind error propagation when both arms share `E`.

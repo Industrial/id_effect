@@ -5,7 +5,7 @@ use id_effect::streaming::stream::{
   BackpressureDecision, BackpressurePolicy, Stream, backpressure_decision, end_stream,
   merge_time_bucket, send_chunk, stream_from_channel,
 };
-use id_effect::{Parallelism, run_blocking, succeed};
+use id_effect::{run_blocking, succeed};
 use std::time::Instant;
 
 #[test]
@@ -66,7 +66,7 @@ fn stream_ops_integration() {
 
   let filtered = run_blocking(
     Stream::from_iterable(0..10_i32)
-      .filter_with(Parallelism::Serial, Box::new(|n: &i32| n % 2 == 0))
+      .filter_serial(Box::new(|n: &i32| n % 2 == 0))
       .take_while(Box::new(|n: &i32| *n < 6))
       .drop_while(Box::new(|n: &i32| *n < 2))
       .run_collect(),

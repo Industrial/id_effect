@@ -1,6 +1,5 @@
 //! String-key trie (prefix tree).
 
-use crate::Parallelism;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 
@@ -103,47 +102,20 @@ impl<V> Trie<V> {
     end.map(|e| &key[..e])
   }
 
-  /// Count of stored keys using the default [`Parallelism`] policy.
+  /// Count of stored keys using Fabric-aware implicit parallelism.
   pub fn size(&self) -> usize
   where
     V: Sync,
   {
-    self.size_with(Parallelism::default())
+    use crate::compute::parallel_if_profitable;
+
+    let serial = Self::count_nodes(&self.root);
+    parallel_if_profitable(serial, || serial, || Self::count_nodes_par(&self.root))
   }
 
   /// Count of stored keys sequentially.
-  /// Count keys sequentially.
   pub fn size_serial(&self) -> usize {
     Self::count_nodes(&self.root)
-  }
-
-  /// Count with an explicit [`Parallelism`] policy.
-  /// Count keys with explicit policy.
-  pub fn size_with(&self, policy: Parallelism) -> usize
-  where
-    V: Sync,
-  {
-    match policy {
-      Parallelism::Serial => Self::count_nodes(&self.root),
-      Parallelism::ForceParallel => Self::count_nodes_par(&self.root),
-      Parallelism::Auto { threshold } => {
-        let n = Self::count_nodes(&self.root);
-        if n >= threshold {
-          Self::count_nodes_par(&self.root)
-        } else {
-          n
-        }
-      }
-    }
-  }
-
-  /// Like [`Self::size_with`] with [`Parallelism::ForceParallel`].
-  #[deprecated(note = "use size or size_with(Parallelism::ForceParallel)")]
-  pub fn size_par(&self) -> usize
-  where
-    V: Sync,
-  {
-    self.size_with(Parallelism::ForceParallel)
   }
 
   fn count_nodes(node: &Node<V>) -> usize {

@@ -56,22 +56,25 @@ See example `120_compute_fabric_memory_cap.rs`.
 
 ## Adaptive parallelism
 
-[`AdaptiveContext`](../../src/compute/adaptive.rs) holds the current admission budget, Rayon thread count, and auto-parallel element threshold. [`Parallelism::should_parallelize_adaptive`](../../src/parallelism.rs) consults it instead of the fixed 1024 default when fabric is installed.
+[`AdaptiveContext`](../../src/compute/adaptive.rs) holds the current admission budget, Rayon thread count, and auto-parallel element threshold. Bulk dispatch via [`parallel_if_profitable`](../../src/compute/dispatch.rs) consults `should_parallelize_current(len)` instead of a fixed 1024 default when Fabric is installed.
 
 - [`configure_rayon_threads`](../../src/compute/rayon_pool.rs) — supervisor-sized Rayon pool
 - [`CpuSpreadBucket`](../../src/compute/spread.rs) — token bucket for `MetricMode::Spread`
 - Example: `121_compute_fabric_cpu_spread.rs`
 
+See also [Implicit Parallelism](../part4/ch13-05-parallelism.md) for the full 0.4.0 API surface (`map` / `map_effect` + `*_serial`).
+
 ## Effect binds
 
 Independent `~` steps in an `effect!` block may run concurrently when the Effect Dependency Graph finds no data or capability conflict. Dependent steps stay ordered. Use `#[effect(serial)]` to opt out.
 
-Example: `122_compute_fabric_effect_parallel.rs` (adaptive `Stream::map_par_adaptive`).
+Example: `122_compute_fabric_effect_parallel.rs` (`Stream::map_effect` under admission budget).
 
 ## Streams and collections
 
-- `Parallelism::Auto` threshold follows [`AdaptiveContext`](../../src/compute/adaptive.rs)
-- [`Stream::map_par_adaptive`](../../src/streaming/stream.rs) uses current admission budget as concurrency cap
+- Element threshold and Rayon pool size follow [`AdaptiveContext`](../../src/compute/adaptive.rs)
+- [`Stream::map_effect`](../../src/streaming/stream.rs) caps concurrent effect mappers from the admission budget
+- Pure chunk ops (`map`, `filter`, …) use the same Fabric snapshot via `parallel_if_profitable`
 - CPU spread mode caps per-worker share via [`CpuSpreadBucket`](../../src/compute/spread.rs)
 
 ## Cluster
@@ -85,5 +88,7 @@ Example: `123_compute_fabric_cluster.rs` (two-node offload with `MemoryJobRunner
 ## Further reading
 
 - [ADR 0007](../../../../docs/adrs/0007-compute-fabric.md)
+- [ADR 0008](../../../../docs/adrs/0008-implicit-parallelism.md) — Fabric-only parallelism (0.4.0)
+- [Implicit Parallelism](../part4/ch13-05-parallelism.md)
 - [Concurrency](./ch09-00-concurrency.md)
 - [Scheduling](./ch11-00-scheduling.md) — temporal vs compute scheduling

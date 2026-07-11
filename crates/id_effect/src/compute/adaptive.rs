@@ -5,7 +5,7 @@ use std::sync::{Arc, OnceLock};
 
 use super::fabric::ComputeFabric;
 use super::telemetry::TelemetryEngine;
-use crate::Parallelism;
+use crate::parallelism::Parallelism;
 
 /// Snapshot of admission budget and parallelism knobs for the current run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,14 +53,15 @@ impl AdaptiveContext {
 
 /// Effective auto-parallel threshold for `policy` using the thread-local context.
 #[inline]
-pub fn effective_threshold(policy: Parallelism) -> usize {
+#[allow(dead_code)]
+pub(crate) fn effective_threshold(policy: Parallelism) -> usize {
   current_adaptive_context().apply_threshold(policy)
 }
 
 impl AdaptiveContext {
   /// Threshold for `policy` given this context.
   #[inline]
-  pub fn apply_threshold(self, policy: Parallelism) -> usize {
+  pub(crate) fn apply_threshold(self, policy: Parallelism) -> usize {
     match policy {
       Parallelism::Serial => usize::MAX,
       Parallelism::ForceParallel => 0,

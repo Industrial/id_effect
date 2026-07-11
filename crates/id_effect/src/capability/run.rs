@@ -10,9 +10,15 @@ use crate::kernel::Effect;
 use crate::runtime::run_blocking;
 use std::sync::Arc;
 
+fn install_default_fabric() {
+  let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
+  install_fabric(fabric);
+}
+
 /// Run a pure effect (no capabilities).
 #[inline]
 pub fn run<A, E>(app: Effect<A, E, ()>) -> Result<A, RunError<E>> {
+  install_default_fabric();
   run_blocking(app, ()).map_err(RunError::Effect)
 }
 
@@ -29,8 +35,7 @@ where
   let (env, hooks) = build_env_with_hooks(providers).map_err(RunError::Planner)?;
   R::verify(&env).map_err(RunError::Capability)?;
   let runtime = R::from_env(env);
-  let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
-  install_fabric(Arc::clone(&fabric));
+  install_default_fabric();
   let result = run_blocking(app, runtime).map_err(RunError::Effect);
   for hook in hooks.into_iter().rev() {
     hook.shutdown();

@@ -57,3 +57,23 @@ fn replay_zero_branches_drains_upstream() {
   assert!(outs.is_empty());
   run_blocking(pump, ()).expect("pump");
 }
+
+#[test]
+fn map_effect_adaptive_collects() {
+  use id_effect::compute::{ComputeFabric, install_fabric};
+  use id_effect::streaming::Stream;
+  use id_effect::{runtime::run_blocking, succeed};
+  use std::sync::Arc;
+
+  install_fabric(Arc::new(ComputeFabric::memory_cap_max_cpu(1.0)));
+  let out = run_blocking(
+    Stream::from_iterable(0..2048_i32)
+      .map_effect(|n| succeed::<i32, (), ()>(n * 2))
+      .run_collect(),
+    (),
+  )
+  .expect("collect");
+  assert_eq!(out.len(), 2048);
+  assert_eq!(out[0], 0);
+  assert_eq!(out[2047], 4094);
+}

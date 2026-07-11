@@ -12,25 +12,50 @@
 
 - Public `*Key` types and `define_capability!`.
 
-## Unreleased — Parallel-by-default (Rayon)
+## 0.4.0 — Implicit parallelism (breaking)
 
-Bulk pure transforms on collections and stream chunks now use Rayon when input length meets the default threshold (`Parallelism::Auto { threshold: 1024 }`). See [ADR 0006](docs/adrs/0006-parallel-by-default.md).
+Semver-major release collapsing caller-facing parallelism policy into **Compute Fabric**. See [ADR 0008](docs/adrs/0008-implicit-parallelism.md) and [book ch13-05](crates/id_effect/book/src/part4/ch13-05-parallelism.md).
+
+### Breaking
+
+- **Removed public `Parallelism`** and all `*_with(policy, …)` dispatch on collections, `vec`, `order`, and `Stream`
+- **Removed deprecated `*_par`**, `Stream::map_par_n`, `Stream::map_par_adaptive`, and public `compute::effective_threshold`
+- Bulk and stream-chunk ops no longer accept caller policy — Fabric's `should_parallelize_current` is the sole threshold
 
 ### Added
 
-- `Parallelism` policy type and `*_with(policy, …)` dispatch on collections, `vec`, `order`, and `Stream`
-- `*_serial` escape hatches for non-`Send` / captured-mut closures
-- Book: [Parallelism (Rayon)](crates/id_effect/book/src/part4/ch13-05-parallelism.md)
-- Example: `071_stream_map_serial.rs`
+- `compute::dispatch::parallel_if_profitable` — central Fabric-aware Rayon dispatch
+- `Stream::map_effect` — admission-bounded concurrent effect mapping per chunk
+- EDG parallel codegen for independent bind sets (`join_binds2` / `join_binds3` / `join_binds4`)
+- Default Compute Fabric installation in `run()` and `run_with()`; `ensure_run_context()` at run boundaries
+- Book rewrite: [Implicit Parallelism](crates/id_effect/book/src/part4/ch13-05-parallelism.md); Compute Fabric cross-refs in [ch12](crates/id_effect/book/src/part3/ch12-00-compute-fabric.md)
+- Example: `122_compute_fabric_effect_parallel.rs` (`Stream::map_effect` under Fabric)
 
 ### Changed
 
-- Primary `map`, `filter`, `map_values`, `sort_with`, and related bulk APIs parallelize by default on large inputs
-- `Effect` / `effect!` remain sequential
+- Primary `map`, `filter`, `map_values`, `sort_with`, and related bulk APIs parallelize implicitly when Fabric says it is profitable
+- `effect!` may run independent `~` binds concurrently when the EDG finds no data or capability conflict
+- `*_serial` and `#[effect(serial)]` remain the explicit escape hatches for `FnMut`, non-`Send`, and ordering
 
-### Deprecated
+### Migration (from 0.3.x parallel-by-default)
 
-- `*_par` methods — use primary API or `*_with(Parallelism::ForceParallel, …)`
+| Old | New |
+|-----|-----|
+| `Parallelism::…` | removed — trust Fabric |
+| `map_with(Parallelism::Serial, f)` | `map_serial(f)` |
+| `map_with(Parallelism::ForceParallel, f)` | `map(f)` |
+| `*_par(f)` | `map(f)` |
+| `Stream::map_par_n(n, f)` | `map_effect(f)` |
+| `Stream::map_par_adaptive(f)` | `map_effect(f)` |
+
+Prior [ADR 0006](docs/adrs/0006-parallel-by-default.md) bulk behavior is retained internally; the public policy surface is superseded by [ADR 0008](docs/adrs/0008-implicit-parallelism.md).
+
+### Version alignment
+
+| Crate | Version |
+|-------|---------|
+| `id_effect` | **0.4.0** |
+| workspace adapters | **0.4.0** |
 
 ## 0.3.0 — DI maturity (breaking)
 

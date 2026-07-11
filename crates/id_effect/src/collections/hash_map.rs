@@ -6,9 +6,6 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use crate::Parallelism;
-use rayon::prelude::*;
-
 /// Persistent hash map — mirrors Effect.ts-style immutable maps; backed by [`im::HashMap`].
 pub type EffectHashMap<K, V> = im::HashMap<K, V>;
 
@@ -101,16 +98,39 @@ where
   }
 }
 
-/// Maps every value using the default [`Parallelism`] policy.
+/// Maps every value using Fabric-aware implicit parallelism.
 #[inline]
 pub fn map_values<K, V, W, F>(map: EffectHashMap<K, V>, f: F) -> EffectHashMap<K, W>
 where
   K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  W: Clone + Send,
+  V: Clone + Send + Sync,
+  W: Clone + Send + Sync,
   F: Fn(V) -> W + Send + Sync,
 {
-  map_values_with(Parallelism::default(), map, f)
+  use rayon::prelude::*;
+  use std::sync::Arc;
+
+  let pairs: Vec<(K, V)> = map.into_iter().collect();
+  let len = pairs.len();
+  let f = Arc::new(f);
+  if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
+    let f = Arc::clone(&f);
+    crate::compute::install_parallel(|| {
+      from_iter(
+        pairs
+          .into_par_iter()
+          .map(|(k, v)| (k, f(v)))
+          .collect::<Vec<(K, W)>>(),
+      )
+    })
+  } else {
+    from_iter(
+      pairs
+        .into_iter()
+        .map(|(k, v)| (k, f(v)))
+        .collect::<Vec<(K, W)>>(),
+    )
+  }
 }
 
 /// Maps every value sequentially (`FnMut`).
@@ -125,52 +145,37 @@ where
   map.into_iter().map(|(k, v)| (k, f(v))).collect()
 }
 
-/// Maps values with an explicit [`Parallelism`] policy.
-pub fn map_values_with<K, V, W, F>(
-  policy: Parallelism,
-  map: EffectHashMap<K, V>,
-  f: F,
-) -> EffectHashMap<K, W>
+/// Keeps entries where `pred` holds, using Fabric-aware implicit parallelism.
+pub fn filter<K, V, F>(map: &EffectHashMap<K, V>, pred: F) -> EffectHashMap<K, V>
 where
   K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  W: Clone + Send,
-  F: Fn(V) -> W + Send + Sync,
+  V: Clone + Send + Sync,
+  F: Fn(&K, &V) -> bool + Send + Sync,
 {
-  let pairs: Vec<(K, V)> = map.into_iter().collect();
-  if policy.should_parallelize(pairs.len()) {
-    let out: Vec<(K, W)> = pairs.into_par_iter().map(|(k, v)| (k, f(v))).collect();
-    from_iter(out)
+  use rayon::prelude::*;
+  use std::sync::Arc;
+
+  let pairs: Vec<(K, V)> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+  let len = pairs.len();
+  let pred = Arc::new(pred);
+  if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
+    let pred = Arc::clone(&pred);
+    crate::compute::install_parallel(|| {
+      from_iter(
+        pairs
+          .into_par_iter()
+          .filter(|(k, v)| pred(k, v))
+          .collect::<Vec<(K, V)>>(),
+      )
+    })
   } else {
     from_iter(
       pairs
         .into_iter()
-        .map(|(k, v)| (k, f(v)))
-        .collect::<Vec<(K, W)>>(),
+        .filter(|(k, v)| pred(k, v))
+        .collect::<Vec<(K, V)>>(),
     )
   }
-}
-
-/// Like [`map_values_with`] with [`Parallelism::ForceParallel`].
-#[deprecated(note = "use map_values or map_values_with(Parallelism::ForceParallel)")]
-pub fn map_values_par<K, V, W, F>(map: EffectHashMap<K, V>, f: F) -> EffectHashMap<K, W>
-where
-  K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  W: Clone + Send,
-  F: Fn(V) -> W + Send + Sync,
-{
-  map_values_with(Parallelism::ForceParallel, map, f)
-}
-
-/// Keeps entries where `pred` holds, using the default [`Parallelism`] policy.
-pub fn filter<K, V, F>(map: &EffectHashMap<K, V>, pred: F) -> EffectHashMap<K, V>
-where
-  K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  F: Fn(&K, &V) -> bool + Send + Sync,
-{
-  filter_with(Parallelism::default(), map, pred)
 }
 
 /// Keeps entries where `pred` holds, sequentially.
@@ -186,42 +191,6 @@ where
     .filter(|(k, v)| pred(k, v))
     .map(|(k, v)| (k.clone(), v.clone()))
     .collect()
-}
-
-/// Keeps entries with an explicit [`Parallelism`] policy.
-pub fn filter_with<K, V, F>(
-  policy: Parallelism,
-  map: &EffectHashMap<K, V>,
-  pred: F,
-) -> EffectHashMap<K, V>
-where
-  K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  F: Fn(&K, &V) -> bool + Send + Sync,
-{
-  let pairs: Vec<(K, V)> = map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-  if policy.should_parallelize(pairs.len()) {
-    let kept: Vec<(K, V)> = pairs.into_par_iter().filter(|(k, v)| pred(k, v)).collect();
-    from_iter(kept)
-  } else {
-    from_iter(
-      pairs
-        .into_iter()
-        .filter(|(k, v)| pred(k, v))
-        .collect::<Vec<(K, V)>>(),
-    )
-  }
-}
-
-/// Like [`filter_with`] with [`Parallelism::ForceParallel`].
-#[deprecated(note = "use filter or filter_with(Parallelism::ForceParallel)")]
-pub fn filter_par<K, V, F>(map: &EffectHashMap<K, V>, pred: F) -> EffectHashMap<K, V>
-where
-  K: Hash + Eq + Clone + Send + Sync,
-  V: Clone + Send,
-  F: Fn(&K, &V) -> bool + Send + Sync,
-{
-  filter_with(Parallelism::ForceParallel, map, pred)
 }
 
 /// Folds over `(key, value)` pairs (iterator order).
