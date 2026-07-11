@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Superseded — public `Parallelism` surface removed in favor of Fabric-only implicit dispatch ([ADR 0008](0008-implicit-parallelism.md)). Bulk parallel-by-default behavior is retained under Compute Fabric control.
+
+Previously: **Accepted** (Rayon parallel-by-default via caller `Parallelism` policy; see decision below).
 
 ## Context
 

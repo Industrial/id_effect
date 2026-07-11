@@ -2,9 +2,18 @@
 //!
 //! These are the lowest-level interpreters for [`crate::kernel::Effect`], composing directly
 //! from Stratum 2 primitives without any fiber or runtime-trait dependency.
+//!
+//! ## Compute Fabric
+//!
+//! [`run_blocking`] and [`run_async`] call [`crate::compute::ensure_run_context`] so
+//! hardware-aware [`crate::Parallelism`] thresholds and Rayon pool sizing follow the installed
+//! [`crate::compute::ComputeFabric`] supervisor. Install fabric via
+//! [`crate::compute::install_fabric`] or use [`crate::capability::run_with`], which installs a
+//! default fabric for the duration of the run.
 
 use core::convert::Infallible;
 
+use crate::compute::ensure_run_context;
 use crate::kernel::{BoxFuture, Effect};
 
 /// Effect.ts-style uninhabited error marker for infallible runtime operations.
@@ -16,6 +25,9 @@ pub type Never = Infallible;
 /// `Poll::Pending`, this implementation calls `std::thread::yield_now` and polls again — there is
 /// no real async driver, so effects that genuinely need to await I/O or other wakeups may spin or
 /// stall. For those cases use [`run_async`] (or an executor) instead.
+///
+/// Refreshes the thread-local [`crate::compute::AdaptiveContext`] from any installed
+/// [`crate::compute::ComputeFabric`] before polling begins.
 #[inline]
 pub fn run_blocking<A, E, R>(effect: Effect<A, E, R>, mut env: R) -> Result<A, E>
 where
@@ -23,6 +35,7 @@ where
   E: 'static,
   R: 'static,
 {
+  ensure_run_context();
   // `Effect::run` already returns `Pin<Box<dyn Future>>`; poll it directly — do not `Box::pin`
   // again (that would allocate a second box around the first).
   let mut fut: BoxFuture<'_, Result<A, E>> = effect.run(&mut env);
@@ -37,6 +50,8 @@ where
 }
 
 /// Run an effect to completion using the async executor (`.await` on [`Effect::run`]).
+///
+/// Refreshes the thread-local [`crate::compute::AdaptiveContext`] before the first poll.
 #[inline]
 pub async fn run_async<A, E, R>(effect: Effect<A, E, R>, mut env: R) -> Result<A, E>
 where
@@ -44,6 +59,7 @@ where
   E: 'static,
   R: 'static,
 {
+  ensure_run_context();
   effect.run(&mut env).await
 }
 

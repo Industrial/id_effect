@@ -17,7 +17,7 @@ use crate::coordination::semaphore::Semaphore;
 use crate::observability::metric::Metric;
 use crate::resource::scope::Scope;
 use crate::runtime::CancellationToken;
-use crate::{Chunk, Effect, Or, Parallelism, Predicate};
+use crate::{Chunk, Effect, Or, Predicate};
 use core::any::Any;
 use core::fmt;
 use futures::stream::{self, StreamExt};
@@ -658,7 +658,7 @@ where
     })
   }
 
-  /// Maps each element using the default [`Parallelism`] policy (pulls upstream to completion).
+  /// Maps each element using Fabric-aware implicit parallelism (pulls upstream to completion).
   #[inline]
   pub fn map<B, F>(self, f: F) -> Stream<B, E, R>
   where
@@ -666,7 +666,29 @@ where
     B: Send + 'static,
     F: Fn(A) -> B + Send + Sync + 'static,
   {
-    self.map_with(Parallelism::default(), f)
+    let f = Arc::new(f);
+    Stream::new(move |r: &mut R| {
+      let f = Arc::clone(&f);
+      Box::pin(async move {
+        let mut upstream = self;
+        let mut out = Vec::new();
+        loop {
+          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
+            break;
+          };
+          let vec = chunk.into_vec();
+          let len = vec.len();
+          let mapped: Vec<B> =
+            if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
+              crate::compute::install_parallel(|| vec.into_par_iter().map(|a| f(a)).collect())
+            } else {
+              vec.into_iter().map(|a| f(a)).collect()
+            };
+          out.extend(mapped);
+        }
+        Ok(out)
+      })
+    })
   }
 
   /// Maps each element sequentially (`FnMut`).
@@ -691,17 +713,13 @@ where
     })
   }
 
-  /// Maps each element with an explicit [`Parallelism`] policy per chunk.
+  /// Retains elements satisfying `p` (Fabric-aware implicit parallelism).
   #[inline]
-  pub fn map_with<B, F>(self, policy: Parallelism, f: F) -> Stream<B, E, R>
+  pub fn filter(self, p: Predicate<A>) -> Stream<A, E, R>
   where
     A: Send,
-    B: Send + 'static,
-    F: Fn(A) -> B + Send + Sync + 'static,
   {
-    let f = Arc::new(f);
     Stream::new(move |r: &mut R| {
-      let f = Arc::clone(&f);
       Box::pin(async move {
         let mut upstream = self;
         let mut out = Vec::new();
@@ -710,38 +728,20 @@ where
             break;
           };
           let vec = chunk.into_vec();
-          let mapped: Vec<B> = if policy.should_parallelize(vec.len()) {
-            vec.into_par_iter().map(|a| f(a)).collect()
-          } else {
-            vec.into_iter().map(|a| f(a)).collect()
-          };
-          out.extend(mapped);
+          let len = vec.len();
+          let kept: Vec<A> =
+            if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
+              crate::compute::install_parallel(|| {
+                vec.into_par_iter().filter(|item| p(item)).collect()
+              })
+            } else {
+              vec.into_iter().filter(|item| p(item)).collect()
+            };
+          out.extend(kept);
         }
         Ok(out)
       })
     })
-  }
-
-  /// Like [`Self::map_with`] with [`Parallelism::ForceParallel`]. For effectful steps use
-  /// [`Stream::map_par_n`].
-  #[inline]
-  #[deprecated(note = "use map or map_with(Parallelism::ForceParallel); effectful: map_par_n")]
-  pub fn map_par<B, F>(self, f: F) -> Stream<B, E, R>
-  where
-    A: Send,
-    B: Send + 'static,
-    F: Fn(A) -> B + Send + Sync + 'static,
-  {
-    self.map_with(Parallelism::ForceParallel, f)
-  }
-
-  /// Retains elements satisfying `p` (default [`Parallelism`]).
-  #[inline]
-  pub fn filter(self, p: Predicate<A>) -> Stream<A, E, R>
-  where
-    A: Send,
-  {
-    self.filter_with(Parallelism::default(), p)
   }
 
   /// Retains elements satisfying `p`, sequentially.
@@ -760,43 +760,6 @@ where
         Ok(out)
       })
     })
-  }
-
-  /// Retains elements with an explicit [`Parallelism`] policy per chunk.
-  #[inline]
-  pub fn filter_with(self, policy: Parallelism, p: Predicate<A>) -> Stream<A, E, R>
-  where
-    A: Send,
-  {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          let vec = chunk.into_vec();
-          let kept: Vec<A> = if policy.should_parallelize(vec.len()) {
-            vec.into_par_iter().filter(|item| p(item)).collect()
-          } else {
-            vec.into_iter().filter(|item| p(item)).collect()
-          };
-          out.extend(kept);
-        }
-        Ok(out)
-      })
-    })
-  }
-
-  /// Like [`Self::filter_with`] with [`Parallelism::ForceParallel`].
-  #[inline]
-  #[deprecated(note = "use filter or filter_with(Parallelism::ForceParallel)")]
-  pub fn filter_par(self, p: Predicate<A>) -> Stream<A, E, R>
-  where
-    A: Send,
-  {
-    self.filter_with(Parallelism::ForceParallel, p)
   }
 
   /// Yields elements from the start of the stream while `p` holds; ends before the first failure.
@@ -994,25 +957,70 @@ where
     })
   }
 
-  /// Maps with an effect per element; errors widen to [`Or<E, E2>`].
+  /// Maps with an effect per element using Fabric admission-bounded concurrency per chunk.
+  ///
+  /// Processes one upstream chunk at a time (no unbounded prefetch). Output order matches stream order.
   #[inline]
-  pub fn map_effect<B, E2, F>(self, mut f: F) -> Stream<B, Or<E, E2>, R>
+  pub fn map_effect<B, E2, F>(self, f: F) -> Stream<B, Or<E, E2>, R>
   where
+    A: Send,
     B: Send + 'static,
     E2: Send + 'static,
-    F: FnMut(A) -> Effect<B, E2, R> + 'static,
+    R: Clone + Send + Sync + 'static,
+    F: Fn(A) -> Effect<B, E2, R> + Send + Sync + 'static,
   {
+    let permits = crate::compute::current_adaptive_context()
+      .admission_budget
+      .max(1);
+    let f = Arc::new(f);
     Stream::new(move |r: &mut R| {
+      let f = Arc::clone(&f);
+      let r_env = r.clone();
       Box::pin(async move {
+        let sem = Arc::new(
+          crate::runtime::run_async(Semaphore::make(permits), ())
+            .await
+            .expect("semaphore make"),
+        );
         let mut upstream = self;
         let mut out = Vec::new();
         loop {
           let Some(chunk) = upstream.poll_next_chunk(r).await.map_err(Or::Left)? else {
             break;
           };
-          for item in chunk.into_vec() {
-            out.push(f(item).run(r).await.map_err(|e2| Or::Right(e2))?);
+          let vec = chunk.into_vec();
+          let base = out.len();
+          let f_chunk = Arc::clone(&f);
+          let r_chunk = r_env.clone();
+          let sem_chunk = Arc::clone(&sem);
+          let results: Vec<Result<(usize, B), E2>> =
+            stream::iter(vec.into_iter().enumerate().map(move |(idx, item)| {
+              let sem = Arc::clone(&sem_chunk);
+              let f = Arc::clone(&f_chunk);
+              let mut env = r_chunk.clone();
+              async move {
+                let _permit = crate::runtime::run_async(sem.acquire_owned(), ())
+                  .await
+                  .unwrap_or_else(|e| match e {});
+                f(item).run(&mut env).await.map(|b| (idx, b))
+              }
+            }))
+            .buffer_unordered(permits)
+            .collect()
+            .await;
+          let mut pairs = Vec::with_capacity(results.len());
+          for res in results {
+            match res {
+              Ok(pair) => pairs.push(pair),
+              Err(e) => return Err(Or::Right(e)),
+            }
           }
+          pairs.sort_by_key(|(i, _)| *i);
+          let chunk_len = pairs.len();
+          for (_, b) in pairs {
+            out.push(b);
+          }
+          debug_assert_eq!(out.len() - base, chunk_len);
         }
         Ok(out)
       })
@@ -1024,8 +1032,9 @@ where
   /// Drains the upstream stream first, then runs mappers in parallel with a permit cap of
   /// `max(n, 1)`. Output order matches the original stream order. Each mapper receives a **clone**
   /// of the environment `R`, so `R` must be [`Clone`], [`Send`], and [`Sync`].
+  #[cfg(test)]
   #[inline]
-  pub fn map_par_n<B, F>(self, n: usize, f: F) -> Stream<B, E, R>
+  pub(crate) fn map_par_n<B, F>(self, n: usize, f: F) -> Stream<B, E, R>
   where
     A: Send,
     B: Send + 'static,
@@ -1084,6 +1093,21 @@ where
         Ok(out)
       })
     })
+  }
+
+  /// Like [`Self::map_par_n`] but `n` follows the current Compute Fabric admission budget.
+  #[cfg(test)]
+  #[inline]
+  pub(crate) fn map_par_adaptive<B, F>(self, f: F) -> Stream<B, E, R>
+  where
+    A: Send,
+    B: Send + 'static,
+    E: Send,
+    R: Clone + Send + Sync,
+    F: Fn(A) -> Effect<B, E, R> + Send + Sync + 'static,
+  {
+    let n = crate::compute::current_adaptive_context().admission_budget;
+    self.map_par_n(n.max(1), f)
   }
 
   /// Optional binary reduction over the stream (`None` if empty).
@@ -1843,13 +1867,13 @@ mod tests {
     }
   }
 
-  mod map_par_n {
+  mod map_effect_parallel {
     use super::*;
     use crate::run_async;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
-    async fn map_par_n_preserves_order() {
+    async fn map_effect_preserves_order() {
       let stream = Stream::from_iterable([1, 2, 3, 4, 5]);
       let out = run_async(
         stream
@@ -1870,7 +1894,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn map_par_n_limits_concurrency() {
+    async fn map_effect_limits_concurrency() {
       let current = Arc::new(AtomicUsize::new(0));
       let max_seen = Arc::new(AtomicUsize::new(0));
       let stream = Stream::from_iterable(0..12usize);
@@ -1911,7 +1935,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn map_par_n_propagates_error_from_inner() {
+    async fn map_par_adaptive_collects() {
+      use crate::compute::{ComputeFabric, install_fabric};
+      use std::sync::Arc;
+
+      install_fabric(Arc::new(ComputeFabric::memory_cap_max_cpu(1.0)));
+      let stream = Stream::from_iterable([1, 2, 3, 4]);
+      let out = run_async(
+        stream
+          .map_par_adaptive(|x: i32| Effect::new(move |_r: &mut ()| Ok(x * 2)))
+          .run_collect(),
+        (),
+      )
+      .await
+      .expect("collect");
+      assert_eq!(out, vec![2, 4, 6, 8]);
+    }
+
+    #[tokio::test]
+    async fn map_effect_propagates_error_from_inner() {
       let stream = Stream::from_iterable([1, 2, 3]);
       let res = run_async(
         stream

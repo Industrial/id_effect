@@ -14,14 +14,14 @@ use crate::server::shutdown::{HostDrain, drain_with_timeout, wait_for_shutdown};
 #[derive(Debug)]
 pub enum HostError {
   /// Config could not be loaded.
-  Config(id_effect_config::ConfigError),
+  Config(Box<id_effect_config::ConfigError>),
   /// The serve future failed.
   Serve(String),
 }
 
 impl From<id_effect_config::ConfigError> for HostError {
   fn from(err: id_effect_config::ConfigError) -> Self {
-    Self::Config(err)
+    Self::Config(Box::new(err))
   }
 }
 
@@ -74,7 +74,7 @@ impl HostBuilder {
       .unwrap_or_else(|| bootstrap_env(id_effect_config::EnvConfigProvider::from_env()));
     let config = id_effect::run_async(load_host_config(), env.clone())
       .await
-      .map_err(HostError::Config)?;
+      .map_err(|e| HostError::Config(Box::new(e)))?;
     Ok(Host {
       config,
       env,

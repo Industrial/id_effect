@@ -523,7 +523,7 @@ mod tests {
 
     #[test]
     fn spawn_runs_supervised_body_on_runtime_worker() {
-      let rt = ThreadSleepRuntime;
+      let rt = ThreadSleepRuntime::default();
       let sup = Supervisor::detached();
       let h = sup.spawn(
         &rt,

@@ -302,7 +302,12 @@ where
   R: 'static,
   F: FnMut() -> Effect<A, E, R> + 'static,
 {
-  repeat_with_clock(make, schedule, LiveClock::new(ThreadSleepRuntime), None)
+  repeat_with_clock(
+    make,
+    schedule,
+    LiveClock::new(ThreadSleepRuntime::default()),
+    None,
+  )
 }
 
 /// Repeat using an explicit clock service so delay handling is runtime-mediated and non-blocking.
@@ -410,7 +415,12 @@ where
   R: 'static,
   F: FnMut() -> Effect<A, E, R> + 'static,
 {
-  retry_with_clock(make, schedule, LiveClock::new(ThreadSleepRuntime), None)
+  retry_with_clock(
+    make,
+    schedule,
+    LiveClock::new(ThreadSleepRuntime::default()),
+    None,
+  )
 }
 
 /// Retry using an explicit clock service for runtime-mediated delays.

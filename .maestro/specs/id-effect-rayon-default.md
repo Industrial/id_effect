@@ -15,11 +15,14 @@ acceptance_criteria:
   - "Book SKILL example 071 and CHANGELOG updated"
   - "Workspace tests clippy mdbook pass"
 non_goals:
-  - Parallel effect binds in effect macro
+  - Parallel effect binds in effect macro (deferred to id-effect-implicit-parallelism; see ADR 0008)
   - WASM serial-only crate feature
-  - Changing map_par_n semantics
+  - Changing map_par_n semantics (deferred to id-effect-implicit-parallelism; unified Stream::map in 0.4.0)
+  - Removing public Parallelism surface (deferred to id-effect-implicit-parallelism; see ADR 0008)
 ---
 
 # id_effect Rayon parallel-by-default
 
 Flip bulk pure transforms to parallel-by-default via `Parallelism` policy. See ADR 0006.
+
+**Superseded (public API):** ADR 0008 and [id-effect-implicit-parallelism](id-effect-implicit-parallelism.md) collapse caller-facing `Parallelism` / `*_with` / `*_par` into Fabric-only implicit dispatch. Bulk parallel-by-default behavior is retained; EDG parallel binds and Stream map unification move to that initiative.

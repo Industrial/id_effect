@@ -10,6 +10,7 @@ mod derive_fsm;
 mod derive_optics;
 mod derive_schema_parser;
 mod effect_data;
+mod effect_graph;
 mod effect_tagged;
 mod expand;
 mod infer_caps;

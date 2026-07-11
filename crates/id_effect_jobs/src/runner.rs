@@ -3,7 +3,19 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use id_effect::compute::{FabricJobSpec, WorkProfile};
 use id_effect::{Effect, runtime::run_blocking};
+
+fn work_profile_label(profile: WorkProfile) -> String {
+  match profile {
+    WorkProfile::CpuIntensive => "cpu_intensive".to_string(),
+    WorkProfile::IoBound => "io_bound".to_string(),
+    WorkProfile::MemoryHeavy => "memory_heavy".to_string(),
+    WorkProfile::Remote => "remote".to_string(),
+    WorkProfile::Mixed => "mixed".to_string(),
+  }
+}
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,6 +43,9 @@ pub struct JobSpec {
   pub name: String,
   /// Opaque payload bytes.
   pub payload: Vec<u8>,
+  /// Optional Compute Fabric work profile label for cluster placement.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub work_profile: Option<String>,
 }
 
 impl JobSpec {
@@ -40,6 +55,17 @@ impl JobSpec {
       id: Uuid::new_v4().to_string(),
       name: name.into(),
       payload: payload.into(),
+      work_profile: None,
+    }
+  }
+
+  /// Build a job from a Compute Fabric scale-out payload.
+  pub fn from_fabric(spec: FabricJobSpec) -> Self {
+    Self {
+      id: Uuid::new_v4().to_string(),
+      name: spec.name,
+      payload: spec.payload,
+      work_profile: Some(work_profile_label(spec.work_profile)),
     }
   }
 }
@@ -51,6 +77,15 @@ pub struct JobRecord {
   pub spec: JobSpec,
   /// Current lifecycle state.
   pub state: JobState,
+}
+
+/// Optional runner hook for Compute Fabric cluster offload (stub for Kafka/Apalis wiring).
+#[allow(dead_code)]
+pub trait FabricJobRunner: JobRunner {
+  /// Enqueue a fabric-produced scale-out job.
+  fn enqueue_fabric(&self, spec: FabricJobSpec) -> Effect<JobRecord, JobError, ()> {
+    self.enqueue(JobSpec::from_fabric(spec))
+  }
 }
 
 /// Background job queue abstraction.
@@ -276,6 +311,7 @@ mod tests {
       id: "fixed-id".into(),
       name: "job".into(),
       payload: b"x".to_vec(),
+      work_profile: None,
     };
     let rec = run_blocking(runner.enqueue(spec), ()).unwrap();
     assert_eq!(rec.spec.id, "fixed-id");

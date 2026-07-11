@@ -2,7 +2,7 @@
 use id_effect::{ThreadSleepRuntime, run_blocking, yield_now};
 
 fn main() {
-  let rt = ThreadSleepRuntime;
+  let rt = ThreadSleepRuntime::default();
   assert_eq!(run_blocking(yield_now(&rt), ()), Ok(()));
   println!("042_yield_now ok");
 }

@@ -215,7 +215,7 @@ mod tests {
       Env: 'static,
       F: FnOnce() -> (Effect<A, E, Env>, Env) + Send + 'static,
     {
-      crate::runtime::ThreadSleepRuntime.spawn_with(f)
+      crate::runtime::ThreadSleepRuntime::default().spawn_with(f)
     }
 
     fn sleep(&self, duration: Duration) -> Effect<(), Never, ()> {
