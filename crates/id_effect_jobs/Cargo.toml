@@ -51,14 +51,16 @@ rdkafka = { version = "0.39", optional = true, default-features = false, feature
 ] }
 
 [dev-dependencies]
-id_effect_events = { path = "../id_effect_events", features = ["es-entity"] }
-id_effect_workflow = { path = "../id_effect_workflow", default-features = false, features = [
+id_effect_events = { path = "../id_effect_events", version = "0.4.0", features = [
+  "es-entity",
+] }
+id_effect_workflow = { path = "../id_effect_workflow", version = "0.4.0", default-features = false, features = [
   "duroxide",
 ] }
 rstest = "0.26"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
-id_effect_tokio = { path = "../id_effect_tokio" }
-id_effect_sql_pg = { path = "../id_effect_sql_pg" }
+id_effect_tokio = { path = "../id_effect_tokio", version = "0.4.0" }
+id_effect_sql_pg = { path = "../id_effect_sql_pg", version = "0.4.0" }
 
 [[test]]
 name = "integration"
