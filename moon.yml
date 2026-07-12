@@ -111,7 +111,8 @@ tasks:
     command: 'cargo'
     args: ['doc', '--no-deps', '--workspace']
     env:
-      RUSTDOCFLAGS: ''
+      # Match Docs & Pages (`RUSTDOCFLAGS: -D warnings`) so PR CI catches rustdoc failures.
+      RUSTDOCFLAGS: '-D warnings'
     inputs:
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -157,9 +158,9 @@ tasks:
       cache: false
       outputStyle: buffer-only-failure
   check-docs:
-    description: 'Build docs and run clippy with -D warnings (public API docs via rustc lints)'
+    description: 'Build docs with -D warnings (same bar as Docs & Pages)'
     command: 'bash'
-    args: ['-c', 'RUSTDOCFLAGS="" cargo doc --workspace --no-deps 2>&1 | tee log/docs-warnings.log | grep -E "(warning|error|Documenting|Finished)"']
+    args: ['-c', 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps 2>&1 | tee log/docs-warnings.log | grep -E "(warning|error|Documenting|Finished)"']
     inputs:
       - 'Cargo.toml'
       - 'Cargo.lock'

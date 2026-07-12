@@ -28,8 +28,8 @@ if echo "$output" | grep -qi 'readme .* does not appear to exist'; then
     echo "::error::$pkg missing readme declared in Cargo.toml"
     exit 1
 fi
-if echo "$output" | grep -qi 'no matching package named'; then
-    echo "::error::$pkg publish blocked — internal dependency not on crates.io yet (check publish level order)"
+if echo "$output" | grep -qi 'no matching package named\|didn't match\|failed to select a version for the requirement'; then
+    echo "::error::$pkg publish blocked — dependency version not on crates.io yet (check publish level order / path-only dev-deps)"
     exit 1
 fi
 exit "$code"
