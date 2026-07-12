@@ -55,7 +55,7 @@ impl HostConfig {
   }
 }
 
-/// Load [`HostConfig`] using the installed [`ConfigProvider`] capability.
+/// Load [`HostConfig`] using the installed [`id_effect_config::ConfigProvider`] capability.
 #[inline]
 pub fn load_host_config<R>() -> Effect<HostConfig, ConfigError, R>
 where

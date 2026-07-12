@@ -163,6 +163,22 @@ jobs:
       - name: cargo check (minimal versions, stable)
         run: cargo +stable check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
+  # crates.io packaging / publish-order (same script as publish.yml)
+  # Catches path+version chicken-and-egg before a tag publish fails mid-wave.
+  # ──────────────────────────────────────────────────────────────────────────
+  validate-packaging:
+    name: Validate crate packaging
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Validate crate packaging
+        run: bash scripts/validate-crate-packaging.sh
+  # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
   ci-pass:
@@ -173,6 +189,7 @@ jobs:
       - coverage
       - matrix
       - minimal-versions
+      - validate-packaging
     if: always()
     steps:
       - name: Check all required jobs passed

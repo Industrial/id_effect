@@ -59,7 +59,7 @@ impl RpcClientConfig {
   }
 }
 
-/// Typed RPC client using [`HttpClient`] ([`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) `RpcClient` parity).
+/// Typed RPC client using [`id_effect_platform::http::HttpClient`] ([`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) `RpcClient` parity).
 #[derive(Clone, Debug)]
 pub struct RpcClient {
   config: RpcClientConfig,
