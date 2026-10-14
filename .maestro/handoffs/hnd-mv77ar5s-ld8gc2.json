@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77ar5s-ld8gc2",
+	"task_id": "tsk-mrl7cxu3-uri4cs",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:36:24.833Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/id-effect-process-mesh-release.md",
+	"to_agent": "cli"
+}
