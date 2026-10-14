@@ -239,6 +239,34 @@ fn sleeping_fibers_are_parked_not_spinning() {
   );
 }
 
+/// Falsifier R1 probe: two layers that both read `ConfigSource` cannot be `merge`d side by side
+/// (E0283, tests/ui/duplicate_capability_layer.rs), but stacking them as strata with
+/// `provide_merge` compiles with no annotation, because each layer's input is then embedded from
+/// an env that holds `ConfigSource` once.
+#[test]
+fn layers_sharing_an_input_compose_as_strata() {
+  use kernel_a::{Layer, hlist};
+  use spike_corpus::{AppError, ConfigSource, Db, Mailer};
+  fn db_layer() -> Layer<caps!(Db), AppError, caps!(ConfigSource)> {
+    Layer::from_effect(effect!({
+      let _url = ~ConfigSource.get_string("db_url")?;
+      hlist![Db::with_rows("users", 2)]
+    }))
+  }
+  fn mail_layer() -> Layer<caps!(Mailer), AppError, caps!(ConfigSource)> {
+    Layer::from_effect(effect!({
+      let _relay = ~ConfigSource.get_string("smtp")?;
+      hlist![Mailer::default()]
+    }))
+  }
+  let cfg = ConfigSource::from_pairs([("db_url", "mem://"), ("smtp", "relay")]);
+  let base: Layer<caps!(ConfigSource), AppError, HNil> = Layer::succeed(hlist![cfg]);
+  let app = mail_layer().provide_merge(db_layer().provide_merge(base));
+  let env = app.build().block_on().unwrap();
+  let db: &Db = kernel_a::Selector::<Db, _>::get(&env);
+  assert_eq!(db.committed_rows("users"), 2);
+}
+
 #[test]
 fn local_effect_holds_non_send_state_across_awaits() {
   use std::rc::Rc;
