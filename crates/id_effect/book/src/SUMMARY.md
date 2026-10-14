@@ -106,6 +106,13 @@
 
 # Part V: Functional Patterns
 
+- [Introduction](./part5/ch17-00-introduction.md)
+
+- [Algebra type classes](./part5/ch17-00-algebra-type-classes.md)
+  - [Foldable and Alternative](./part5/ch17-01-foldable-alternative.md)
+  - [Traversable](./part5/ch17-02-traversable.md)
+  - [Bifoldable and Invariant](./part5/ch17-03-bifoldable-invariant.md)
+
 - [Optics (`id_effect_optics`)](./part5/ch18-00-optics.md)
   - [Lenses](./part5/ch18-01-lenses.md)
   - [Prisms and Optionals](./part5/ch18-02-prisms-optionals.md)

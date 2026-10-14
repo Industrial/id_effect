@@ -1,6 +1,6 @@
 # Verification and Metaprogramming
 
-Part V closes with tools that keep functional patterns honest: law checks, property tests, golden snapshots, and derive stubs that will grow into full codegen.
+Part V closes with tools that keep functional patterns honest: law checks, property tests, golden snapshots, and derive macros.
 
 ## What This Chapter Covers
 
@@ -9,7 +9,7 @@ Part V closes with tools that keep functional patterns honest: law checks, prope
 - **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
 - **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
 - **[`FreeAp`](../../src/algebra/free_ap.rs)** — free applicative over `Effect`
-- **`id_effect_proc_macro` derives** — `#[derive(Optics)]`, `#[derive(Fsm)]` (stubs); `#[derive(SchemaParser)]` (full codegen in `id_effect_parse`)
+- **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(SchemaParser)]` (`schema()`, `parser()`, `HasSchema`)
 
 ## Property tests with `Exit`
 
@@ -86,7 +86,7 @@ let exit = run_test(free.interpret(), ());
 assert_eq!(exit, Exit::succeed(5));
 ```
 
-## Derive stubs (proc macros)
+## Derive macros
 
 `id_effect_proc_macro` ships derives for optics, FSM, and schema parser codegen:
 
@@ -109,4 +109,4 @@ enum Light { Red, Green }
 struct User { name: String }
 ```
 
-`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. FSM and SchemaParser derives remain stubs until their crates land.
+`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(SchemaParser)]` generates `schema()`, `parser()` and a `HasSchema` impl.
