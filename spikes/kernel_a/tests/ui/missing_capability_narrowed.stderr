@@ -1,0 +1,21 @@
+error[E0277]: the environment `HCons<Logger, HNil>` does not contain every capability of `HCons<spike_corpus::Db, HNil>`
+  --> tests/ui/missing_capability_narrowed.rs:11:14
+   |
+11 |     let n = ~count_users();
+   |              ^^^^^^^^^^^ cannot narrow `HCons<Logger, HNil>` to `HCons<spike_corpus::Db, HNil>`
+   |
+   = help: the trait `Selector<spike_corpus::Db, There<_>>` is not implemented for `HCons<Logger, HNil>`
+help: the trait `Selector<T, Here>` is implemented for `HCons<T, Tl>`
+  --> src/hlist.rs
+   |
+   | impl<T, Tl> Selector<T, Here> for HCons<T, Tl> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: required for `HCons<Logger, HNil>` to implement `Embed<HCons<spike_corpus::Db, HNil>, HCons<There<_>, HNil>>`
+note: required by a bound in `Ctx::<R>::bind`
+  --> src/effect.rs
+   |
+   |   pub fn bind<B, E2, Sub, Is>(&self, eff: Effect<B, E2, Sub>) -> BindFuture<B, E2>
+   |          ---- required by a bound in this associated function
+...
+   |     R: Embed<Sub, Is>,
+   |        ^^^^^^^^^^^^^^ required by this bound in `Ctx::<R>::bind`

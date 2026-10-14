@@ -1,0 +1,27 @@
+error: capability `ConfigSource` appears twice in `caps!(..)`; an environment holds each capability once
+ --> tests/ui/duplicate_capability_caps.rs:5:63
+  |
+5 | fn handler() -> Effect<String, Never, caps!(ConfigSource, Db, ConfigSource)> {
+  |                                                               ^^^^^^^^^^^^
+
+warning: unused import: `Db`
+ --> tests/ui/duplicate_capability_caps.rs:3:34
+  |
+3 | use spike_corpus::{ConfigSource, Db};
+  |                                  ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: capability `ConfigSource` is not in this effect's environment
+ --> tests/ui/duplicate_capability_caps.rs:6:14
+  |
+6 |   effect!({ ~ConfigSource.get_string("x").unwrap_or_default() })
+  |              ^^^^^^^^^^^^ `ConfigSource` is required here
+  |
+  = help: the trait `Selector<ConfigSource, _>` is not implemented for `()`
+  = note: add `ConfigSource` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
+help: the trait `Selector<T, Here>` is implemented for `HCons<T, Tl>`
+ --> src/hlist.rs
+  |
+  | impl<T, Tl> Selector<T, Here> for HCons<T, Tl> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

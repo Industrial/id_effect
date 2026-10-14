@@ -1,0 +1,23 @@
+error[E0283]: type annotations needed
+  --> tests/ui/duplicate_capability_layer.rs:22:27
+   |
+22 |   let _infra = db_layer().merge(mail_layer());
+   |                           ^^^^^ cannot infer type of the type parameter `Is1` declared on the method `merge`
+   |
+   = note: multiple `impl`s satisfying `HCons<ConfigSource, HCons<ConfigSource, HNil>>: Selector<ConfigSource, _>` found in the `kernel_a` crate:
+           - impl<T, H, Tl, I> Selector<T, There<I>> for HCons<H, Tl>
+             where Tl: Selector<T, I>;
+           - impl<T, Tl> Selector<T, Here> for HCons<T, Tl>;
+   = note: required for `HCons<ConfigSource, HCons<ConfigSource, HNil>>` to implement `Embed<HCons<ConfigSource, HNil>, HCons<_, HNil>>`
+note: required by a bound in `Layer::<Out, E, In>::merge`
+  --> src/layer.rs
+   |
+   |   pub fn merge<O2, I2, Is1, Is2>(
+   |          ----- required by a bound in this associated function
+...
+   |     <In as Concat<I2>>::Out: Embed<In, Is1> + Embed<I2, Is2>,
+   |                              ^^^^^^^^^^^^^^ required by this bound in `Layer::<Out, E, In>::merge`
+help: consider specifying the generic arguments
+   |
+22 |   let _infra = db_layer().merge::<HCons<Mailer, HNil>, HCons<ConfigSource, HNil>, HCons<I, HNil>, HCons<I, HNil>>(mail_layer());
+   |                                ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
