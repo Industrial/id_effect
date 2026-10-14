@@ -1,12 +1,19 @@
-//! Typed **finite-state machines**, **sagas**, and **linear session types** for
-//! [`id_effect`](https://github.com/Industrial/id_effect) programs.
+//! Typed **finite-state machines** and **sagas** for
+//! [`id_effect`](https://github.com/Industrial/id_effect) programs, plus a `gen_statem`-style
+//! process behaviour.
 //!
 //! - [`StateMachine`] / [`TransitionTable`] — pure transition tables and [`StateMachine::step`]
-//! - [`Interpreter`] — run transition hooks via [`id_effect::run_blocking`]
+//! - [`Fsm`] / `#[derive(Fsm)]` — declare states, events and edges on an enum
+//! - [`Interpreter`] — Effect-valued transition actions ([`Interpreter::step`] returns an
+//!   [`id_effect::Effect`])
+//! - [`FsmProcess`] / [`FsmHandle`] — host a machine in a supervised
+//!   [`id_effect_process`] process: events are mailbox messages, state is queryable
 //! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
-//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation
-//! - [`SessionSend`] / [`SessionRecv`] — linear session protocol markers
+//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one [`id_effect::Effect`]
+//!
+//! Durable snapshots of a [`StateMachine`] live in the unpublished labs crate
+//! `id_effect_workflow::fsm`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -19,24 +26,33 @@
   )
 )]
 
+// Lets `#[derive(Fsm)]` (which names `::id_effect_fsm`) work inside this crate's own tests.
+extern crate self as id_effect_fsm;
+
+mod behaviour;
+mod definition;
 mod error;
 mod interpreter;
 mod machine;
 mod matcher;
 mod saga;
-mod session;
 mod visualize;
 
+pub use behaviour::{FsmCall, FsmHandle, FsmProcess, FsmReply, FsmSpec, Unhandled};
+pub use definition::Fsm;
 pub use error::{FsmError, SagaError};
+/// `#[derive(Fsm)]` — see the [`Fsm`](trait@Fsm) trait docs for the attribute syntax.
+pub use id_effect_proc_macro::Fsm;
 pub use interpreter::{Interpreter, RunError, TransitionEffect};
 pub use machine::{StateMachine, TransitionTable};
 pub use matcher::{TaggedEvent, TaggedState, classify_event, event_matcher, state_matcher};
 pub use saga::{Saga, SagaStep};
-pub use session::{
-  ClientPing, PingPong, PingStep, PongStep, ServerPing, SessionEnd, SessionProtocol, SessionRecv,
-  SessionSend,
-};
 pub use visualize::{table_to_mermaid, to_mermaid, to_mermaid_display};
+
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 #[cfg(test)]
 mod tests {
@@ -45,7 +61,7 @@ mod tests {
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
   enum Door {
     Closed,
     Open,
@@ -104,7 +120,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_blocking_executes_transition_effect() {
+    fn step_effect_runs_transition_action_then_commits() {
       let counter = Arc::new(AtomicU32::new(0));
       let interp = Interpreter::<Door, DoorEvt, (), (), ()>::new().on_transition(
         Door::Closed,
@@ -120,8 +136,9 @@ mod tests {
           }
         },
       );
-      let mut m = door_machine();
-      interp.run(&mut m, [DoorEvt::Open], ()).expect("run");
+      let program = interp.step(door_machine(), DoorEvt::Open);
+      assert_eq!(counter.load(Ordering::SeqCst), 0, "effects are lazy");
+      let m = run_blocking(program, ()).expect("run");
       assert_eq!(m.state(), Door::Open);
       assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
@@ -173,20 +190,43 @@ mod tests {
           },
         ))
         .step(SagaStep::forward("b", || fail("boom")));
-      let err = saga.run(()).unwrap_err();
+      let err = run_blocking(saga.run(), ()).unwrap_err();
       assert!(matches!(err, SagaError::Forward("boom")));
       assert_eq!(log.load(Ordering::SeqCst), 11);
     }
   }
 
-  mod session_tests {
+  mod derive_tests {
     use super::*;
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum Light {
+      Tick,
+      Fault,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Fsm)]
+    #[fsm(event = Light)]
+    enum Signal {
+      #[fsm(on(Tick => Green, Fault => Blinking))]
+      Red,
+      #[fsm(on(Tick => Amber))]
+      Green,
+      #[fsm(on(Tick => Red))]
+      Amber,
+      Blinking,
+    }
+
     #[test]
-    fn client_ping_pong_linear() {
-      let send = ClientPing::new();
-      let (_ping, recv) = send.send::<PingPong, PongStep>(PingPong::Ping);
-      let (_pong, _end) = recv.recv::<PingPong, SessionEnd>(PingPong::Pong);
+    fn derived_machine_cycles_and_defaults_initial_to_first_variant() {
+      assert_eq!(Signal::initial(), Signal::Red);
+      let mut m = Signal::state_machine();
+      for expected in [Signal::Green, Signal::Amber, Signal::Red] {
+        assert_eq!(m.step(Light::Tick), Ok(expected));
+      }
+      assert_eq!(m.step(Light::Fault), Ok(Signal::Blinking));
+      assert!(m.step(Light::Tick).is_err(), "Blinking is terminal");
+      assert_eq!(Signal::transition_table().len(), 4);
     }
   }
 

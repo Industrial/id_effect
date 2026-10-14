@@ -22,7 +22,8 @@ declare -A LEVEL=(
     [id_effect_proc_macro]=0
     [id_effect]=1
     [id_effect_cli]=2
-    [id_effect_fsm]=2
+    [id_effect_fp]=2
+    [id_effect_fsm]=3
     [id_effect_logger]=2
     [id_effect_optics]=2
     [id_effect_platform]=2
@@ -43,9 +44,9 @@ declare -A LEVEL=(
 declare -a ORDER=(
     id_effect_macro id_effect_proc_macro
     id_effect
-    id_effect_cli id_effect_fsm id_effect_logger id_effect_optics id_effect_platform
+    id_effect_cli id_effect_fp id_effect_logger id_effect_optics id_effect_platform
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
-    id_effect_config id_effect_sql_pg
+    id_effect_config id_effect_fsm id_effect_sql_pg
     id_effect_node id_effect_axum id_effect_opentelemetry
     id_effect_tower
 )

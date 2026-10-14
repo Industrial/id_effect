@@ -1,29 +1,45 @@
 //! **Platform capabilities** for `id_effect` — HTTP, filesystem, and OS subprocess abstractions
 //! inspired by Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 //!
-//! The crate ships **one** build: [`http`], [`fs`], [`command`], and [`uri`] are always available.
+//! [`http`], [`fs`], [`command`], and [`uri`] are always available.
 //!
-//! Enable the `test-util` feature for in-memory test doubles such as
-//! `MemoryOAuthClient`.
+//! ## Features
 //!
-//! ## Example (HTTP, capability DI v2)
+//! - `auth` (off by default since 0.6) — session store and OAuth client capability traits
+//!   (`auth` module). This is web-framework material and will move to a web crate.
+//! - `test-util` (implies `auth`) — in-memory test doubles such as `MemoryOAuthClient`.
 //!
-//! ```ignore
-//! use id_effect::{RunError, run_with};
-//! use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
+//! ## Example (HTTP capability with a test double)
 //!
-//! # fn demo() -> Result<(), id_effect_platform::error::HttpError> {
-//! let res = run_with(
-//!   [provide_reqwest_http_client()],
-//!   execute(HttpRequest::get("https://example.com")),
-//! )
-//! .map_err(|e| match e {
-//!   RunError::Effect(e) => e,
-//!   e => panic!("run failed: {e}"),
-//! })?;
+//! Production code registers [`http::provide_reqwest_http_client`] (e.g. with
+//! [`id_effect::run_with`]); tests swap the same capability for a canned client.
+//!
+//! ```rust
+//! use std::sync::Arc;
+//!
+//! use id_effect::{Effect, Env, fail, run_blocking, succeed};
+//! use id_effect_platform::error::HttpError;
+//! use id_effect_platform::http::{
+//!   HttpClient, HttpRequest, HttpResponse, StreamingHttpResponse, env_set_http_client, execute,
+//! };
+//!
+//! struct Canned;
+//!
+//! impl HttpClient for Canned {
+//!   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()> {
+//!     succeed(HttpResponse { status: 200, headers: vec![], body: req.url.into_bytes() })
+//!   }
+//!
+//!   fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, ()> {
+//!     fail(HttpError::InvalidRequest("no streaming in this double".into()))
+//!   }
+//! }
+//!
+//! let mut env = Env::new();
+//! env_set_http_client(&mut env, Arc::new(Canned));
+//! let res = run_blocking(execute::<Env>(HttpRequest::get("https://example.com/hi")), env).unwrap();
 //! assert_eq!(res.status, 200);
-//! # Ok(())
-//! # }
+//! assert_eq!(res.body, b"https://example.com/hi");
 //! ```
 //!
 //! See the crate [`README.md`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_platform/README.md)
@@ -38,6 +54,7 @@
   clippy::unused_unit
 )]
 
+#[cfg(feature = "auth")]
 pub mod auth;
 pub mod command;
 pub mod error;
@@ -51,8 +68,9 @@ pub mod process {
   pub use super::command::*;
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(feature = "test-util")]
 pub use auth::MemoryOAuthClient;
+#[cfg(feature = "auth")]
 pub use auth::{
   MemorySessionStore, OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo, SessionData,
   SessionError, SessionStore,

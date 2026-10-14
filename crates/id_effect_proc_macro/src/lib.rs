@@ -6,6 +6,7 @@
 #![deny(missing_docs)]
 
 mod capability_attr;
+mod derive_fsm;
 mod derive_optics;
 mod derive_schema_parser;
 mod distributed_behavior;
@@ -20,6 +21,11 @@ mod provider_spec;
 mod transform;
 
 use proc_macro::TokenStream;
+
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 /// Derive macro: structural [`PartialEq`], [`Eq`], and [`Hash`] for Effect.ts-style data types.
 ///
@@ -85,6 +91,43 @@ pub fn effect(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Optics, attributes(lens, prism, optional, optics))]
 pub fn derive_optics(input: TokenStream) -> TokenStream {
   derive_optics::derive_optics(input)
+}
+
+/// Derive `id_effect_fsm::Fsm` (initial state + transition table) for a fieldless state enum.
+///
+/// Use it through the re-export `id_effect_fsm::Fsm`; the generated impl names
+/// `::id_effect_fsm` unless overridden with `crate = path`.
+///
+/// - Container: `#[fsm(event = EventType, initial = Variant, crate = path)]` — `event` is
+///   required; `initial` defaults to the first variant.
+/// - Variant: `#[fsm(on(Event => Target, ..))]`, repeatable. A bare `Event` resolves to
+///   `EventType::Event`; a multi-segment path is used as written.
+///
+/// Unknown targets, unknown `initial`, data-carrying variants, generic enums, and duplicate
+/// `(state, event)` edges are compile errors.
+///
+/// ```ignore
+/// use id_effect_fsm::Fsm;
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// enum DoorEvent { Open, Close }
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Fsm)]
+/// #[fsm(event = DoorEvent, initial = Closed)]
+/// enum Door {
+///   #[fsm(on(Open => Opened))]
+///   Closed,
+///   #[fsm(on(Close => Closed))]
+///   Opened,
+/// }
+///
+/// let mut door = Door::state_machine();
+/// door.step(DoorEvent::Open).unwrap();
+/// assert_eq!(door.state(), Door::Opened);
+/// ```
+#[proc_macro_derive(Fsm, attributes(fsm))]
+pub fn derive_fsm(input: TokenStream) -> TokenStream {
+  derive_fsm::derive(input)
 }
 
 /// Derive an inherent `schema()` constructor and an [`id_effect::schema::HasSchema`] impl for a

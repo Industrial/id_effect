@@ -8,8 +8,6 @@
 use core::fmt;
 
 use crate::Matcher;
-use crate::algebra::semigroup::Semigroup;
-use crate::foundation::option_::option;
 use crate::runtime::FiberId;
 
 /// Effect failure algebra: typed errors, defects, fiber interrupts, and composite causes.
@@ -77,13 +75,11 @@ impl<E> Cause<E> {
   }
 
   /// [`Cause::Fail`] payload as `Some`, every other variant as `None`.
-  ///
-  /// Uses [`crate::foundation::option_::option::from_predicate`] on the failure value.
   #[inline]
   pub fn fail_option(self) -> Option<E> {
     match self {
-      Cause::Fail(e) => option::from_predicate(e, |_| true),
-      _ => option::none(),
+      Cause::Fail(e) => Some(e),
+      _ => None,
     }
   }
 
@@ -160,16 +156,6 @@ impl<E> Cause<Cause<E>> {
       Cause::Both(l, r) => Cause::both(l.flatten(), r.flatten()),
       Cause::Then(l, r) => Cause::then(l.flatten(), r.flatten()),
     }
-  }
-}
-
-/// `Cause<E>` with [`Cause::both`] forms a **commutative semigroup**.
-///
-/// Law: `combine(combine(a, b), c) ≡ combine(a, combine(b, c))`  (Both is associative).
-impl<E: Clone + 'static> Semigroup for Cause<E> {
-  #[inline]
-  fn combine(self, other: Self) -> Self {
-    Cause::both(self, other)
   }
 }
 
@@ -436,45 +422,6 @@ mod tests {
         nested.flatten(),
         Cause::then(Cause::fail(3u8), Cause::<u8>::die("d"))
       );
-    }
-  }
-
-  mod semigroup {
-    use super::*;
-    use crate::algebra::semigroup::Semigroup;
-
-    #[test]
-    fn combine_two_causes_returns_both_variant() {
-      let a = Cause::fail("a");
-      let b = Cause::fail("b");
-      assert_eq!(
-        a.clone().combine(b.clone()),
-        Cause::both(Cause::fail("a"), Cause::fail("b"))
-      );
-    }
-
-    #[test]
-    fn combine_is_associative_law() {
-      let a = Cause::fail(1u8);
-      let b = Cause::fail(2u8);
-      let c = Cause::fail(3u8);
-      let lhs = a.clone().combine(b.clone()).combine(c.clone());
-      let rhs = a.clone().combine(b.clone().combine(c.clone()));
-      assert_eq!(
-        lhs,
-        Cause::both(
-          Cause::both(Cause::fail(1u8), Cause::fail(2u8)),
-          Cause::fail(3u8)
-        )
-      );
-      assert_eq!(
-        rhs,
-        Cause::both(
-          Cause::fail(1u8),
-          Cause::both(Cause::fail(2u8), Cause::fail(3u8))
-        )
-      );
-      let _ = (lhs, rhs);
     }
   }
 }

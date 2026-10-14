@@ -2,6 +2,10 @@
 
 This directory implements the **lowest stratum** of the `effect` crate: small, law-abiding building blocks (products, coproducts, morphisms) that every higher layer assumes. Nothing here performs I/O or knows about `Effect`; it is pure structure and utilities.
 
+> Since 0.6 only `either`, `func`, `piping`, `predicate` and `mutable_ref` remain here; `unit`,
+> `never`, `function`, `product`, `coproduct`, `isomorphism` and `option_` moved to
+> `id_effect_fp::foundation`, and `algebra` to `id_effect_fp::algebra`.
+
 ## What lives here
 
 | Module | Construct | Role |

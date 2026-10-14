@@ -1,12 +1,43 @@
 //! [`ProcessNode`] — the node-local process runtime: spawning, links,
 //! monitors, exit signals, and the name registry.
+//!
+//! ## Where this crate blocks (`run_blocking` audit)
+//!
+//! Message passing between processes is effect-native ([`Addr::call`],
+//! [`Addr::cast`], [`Addr::send`] return effects). The synchronous entry
+//! points — [`ProcessNode::spawn`], [`ProcessNode::link`], monitors,
+//! [`ProcessNode::exit`], [`Addr::send_now`] — interpret a few effects in
+//! place, all through the crate-private `run_mailbox_op`:
+//!
+//! - creating a mailbox ([`Queue::unbounded`]) or a one-shot exit cell
+//!   (`Deferred::make`): pure constructors that complete on the first poll;
+//! - enqueueing into / closing an **unbounded** mailbox: completes on the
+//!   first poll unless another thread is inside the mailbox's internal lock,
+//!   whose critical section never awaits — the spin then lasts only as long
+//!   as that other thread's non-blocking enqueue.
+//!
+//! None of them waits for another *process* to make progress, which is what
+//! makes them usable from inside a current-thread async runtime (covered by
+//! the `current_thread_runtime` tests). Known residual hazard: the mailbox
+//! lock is fair, so if an *async* [`Addr::send`] / [`Addr::cast`] for the same
+//! mailbox is already parked on it on the **same** current-thread runtime
+//! (which needs a third thread holding the lock at that instant), the lock is
+//! handed to that parked task and this thread spins until the runtime polls
+//! it — which it cannot, so it deadlocks. From async code prefer the
+//! effect-returning APIs, which never spin. (A non-async `try_offer` on
+//! `id_effect::Queue` would remove the hazard; tracked for core.)
+//!
+//! The one long-running interpretation is the process loop itself: the job
+//! handed to the [`Spawner`] drives the whole loop with `run_blocking`, so it
+//! must run on a worker dedicated to that process (an OS thread for
+//! [`ProcessNode::threads`], a fiber for [`ProcessNode::on_runtime`]).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use id_effect::runtime::Never;
 use id_effect::scheduling::Clock;
-use id_effect::{CancellationToken, Queue, Runtime, run_blocking, succeed};
+use id_effect::{CancellationToken, Effect, Queue, Runtime, run_blocking, succeed};
 
 use crate::addr::Addr;
 use crate::cell::{MonitorSink, ProcessCell, ProcessTable, RegistryEntry};
@@ -15,6 +46,12 @@ use crate::exit::ExitReason;
 use crate::msg::{ProcMsg, SysMsg};
 use crate::pid::{MonitorRef, NodeName, Pid};
 use crate::process::{Process, ProcessCtx, process_loop};
+
+/// Interpret a short, non-waiting mailbox/cell effect in place (see the
+/// module docs for why this is bounded and when it is not).
+pub(crate) fn run_mailbox_op<A: 'static, E: 'static>(op: Effect<A, E, ()>) -> Result<A, E> {
+  run_blocking(op, ())
+}
 
 /// A unit of work executed on some worker (one long-lived job per process).
 pub type Job = Box<dyn FnOnce() + Send>;
@@ -136,19 +173,19 @@ impl ProcessNode {
     let id = self.inner.next_pid.fetch_add(1, Ordering::Relaxed);
     let pid = Pid::new(self.inner.name.clone(), id, self.inner.incarnation);
 
-    let mailbox: Queue<ProcMsg<P>> = run_blocking(Queue::unbounded(), ())
+    let mailbox: Queue<ProcMsg<P>> = run_mailbox_op(Queue::unbounded())
       .unwrap_or_else(|_| unreachable!("Queue::unbounded is infallible"));
 
     let deliver = {
       let mailbox = mailbox.clone();
       Box::new(move |sys: SysMsg| {
-        run_blocking(mailbox.offer(ProcMsg::<P>::Info(sys.into())), ()).unwrap_or(false)
+        run_mailbox_op(mailbox.offer(ProcMsg::<P>::Info(sys.into()))).unwrap_or(false)
       })
     };
     let close = {
       let mailbox = mailbox.clone();
       Box::new(move || {
-        let _ = run_blocking(mailbox.shutdown(), ());
+        let _ = run_mailbox_op(mailbox.shutdown());
       })
     };
 
@@ -167,6 +204,8 @@ impl ProcessNode {
     let ctx = ProcessCtx::new(pid.clone(), self.clone());
     let addr = Addr::new(pid, mailbox.clone(), self.clone());
 
+    // The only long-running interpretation: the spawner dedicates a worker
+    // to this job for the lifetime of the process (see the module docs).
     let job: Job = Box::new(move || {
       let effect = process_loop::<P>(args, ctx, mailbox);
       let _ = run_blocking(effect, env);

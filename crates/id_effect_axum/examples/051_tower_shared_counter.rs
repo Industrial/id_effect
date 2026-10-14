@@ -1,8 +1,8 @@
 //! Per-request, [`EffectService`] clones handler state (`S: Clone`). To share mutable state across
 //! calls, keep it behind something like [`std::sync::Arc`] (here an [`std::sync::atomic::AtomicU32`]).
 //!
-//! Prefer a current-thread Tokio runtime when awaiting this crate’s service futures (see
-//! `001_effect_service.rs`).
+//! Service futures are `Send` and work on any Tokio runtime flavour (see
+//! `050_tower_effect_service.rs`).
 //!
 //! Run: `cargo run -p id_effect_axum --features tower --example 051_tower_shared_counter`
 //! Or: `moon run effect-tower:examples`

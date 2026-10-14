@@ -3,9 +3,10 @@ name = "id_effect_macro"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Declarative macros for the `effect` crate (`ctx!`, `pipe!`, …). Procedural `effect!` is in `id_effect_proc_macro` — Rust cannot mix both in one proc-macro crate."
+description = "Declarative macros re-exported by id_effect: pipe!, err!, caps!, provide!, providers!, mock_capability!"
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -16,7 +17,11 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 
 [lib]
 name = "id_effect_macro"
-# Normal library: `macro_rules!` only. Expansions use `::id_effect::…` paths (no dependency on `effect`).
+# Normal library: `macro_rules!` only. Expansions use `::id_effect::…` paths (no dependency on `id_effect`).
+
+[dev-dependencies]
+# Tests and examples exercise the expansions against the real `::id_effect` paths.
+id_effect = { path = "../id_effect" }
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh

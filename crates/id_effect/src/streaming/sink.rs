@@ -8,7 +8,8 @@ use std::sync::Arc;
 /// Shared predicate for sinks that need [`Clone`] (e.g. [`Sink::collect_all_while`]).
 type SharedPredicate<In> = Arc<dyn Fn(&In) -> bool + Send + Sync>;
 
-use crate::collections::hash_map::EffectHashMap;
+use std::collections::HashMap;
+
 use crate::coordination::channel::{Channel, consume_sink_accum_stream};
 use crate::coordination::queue::Queue;
 use crate::foundation::predicate::Predicate;
@@ -277,25 +278,26 @@ where
   }
 }
 
-impl<K, V, E, R> Sink<EffectHashMap<K, V>, (K, V), E, R>
+impl<K, V, E, R> Sink<HashMap<K, V>, (K, V), E, R>
 where
   K: std::hash::Hash + Eq + Clone + Send + Sync + 'static,
   V: Clone + Send + Sync + 'static,
   E: Send + 'static,
   R: 'static,
 {
-  /// Collect stream elements `(K, V)` into an [`EffectHashMap`].
+  /// Collect stream elements `(K, V)` into a [`HashMap`] (later values win).
   #[inline]
   pub fn collect_to_map() -> Self {
-    use crate::collections::hash_map;
-    Sink::fold_left(hash_map::empty(), |m, (k, v)| hash_map::set(&m, k, v))
+    Sink::fold_left(HashMap::new(), |mut m, (k, v)| {
+      m.insert(k, v);
+      m
+    })
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::collections::hash_map;
   use crate::runtime::run_blocking;
   use std::sync::Arc;
 
@@ -373,8 +375,8 @@ mod tests {
     let stream = Stream::from_iterable([("a", 1i32), ("b", 2), ("a", 10)]);
     let out = pollster::block_on(Sink::collect_to_map().run(stream).run(&mut ()));
     let m = out.expect("sink");
-    assert_eq!(hash_map::get(&m, "a"), Some(&10));
-    assert_eq!(hash_map::get(&m, "b"), Some(&2));
+    assert_eq!(m.get("a"), Some(&10));
+    assert_eq!(m.get("b"), Some(&2));
   }
 
   #[test]

@@ -11,9 +11,16 @@
 //! certificate; peers accept any certificate and authentication is done
 //! by the cookie handshake on top ([`crate::handshake`]). This gives
 //! confidentiality + integrity from TLS and node authentication from the
-//! cookie — equivalent to BEAM's TLS distribution with cookie auth. Full
-//! mTLS pinning (provide a CA, verify peers against it) plugs into
-//! [`QuicConfig::with_client_verification`].
+//! cookie — equivalent to BEAM's TLS distribution with cookie auth.
+//!
+//! To verify servers against your own roots instead, use
+//! [`QuicConfig::with_client_verification`]. The dialer then checks the
+//! peer certificate against [`QuicConfig::server_name`] (default
+//! [`DEFAULT_SERVER_NAME`], `"cluster"`), so every node's certificate must
+//! carry that name as a subject alternative name — either issue all node
+//! certificates for `"cluster"`, or set the name with
+//! [`QuicConfig::with_server_name`] to match the certificates you issue
+//! (e.g. [`QuicConfig::self_signed`] certifies the `host` it is given).
 
 use std::sync::Arc;
 
@@ -31,7 +38,12 @@ pub struct QuicConfig {
   /// Roots used to verify peers; `None` = accept any cert (cookie auth
   /// on top provides node authentication).
   roots: Option<rustls::RootCertStore>,
+  /// TLS server name the dialer presents and verifies the peer against.
+  server_name: String,
 }
+
+/// Server name used when none is configured (backward compatible).
+pub const DEFAULT_SERVER_NAME: &str = "cluster";
 
 impl QuicConfig {
   /// Self-signed certificate for `host` — the zero-config cluster mode.
@@ -46,13 +58,27 @@ impl QuicConfig {
       cert_chain: vec![cert],
       key,
       roots: None,
+      server_name: DEFAULT_SERVER_NAME.to_string(),
     })
   }
 
-  /// Verify peers against the given roots (full mTLS pinning).
+  /// Verify the servers this node dials against the given roots. Peer
+  /// certificates must be valid for [`QuicConfig::server_name`].
   pub fn with_client_verification(mut self, roots: rustls::RootCertStore) -> Self {
     self.roots = Some(roots);
     self
+  }
+
+  /// Set the TLS server name dialed connections present and verify
+  /// (default [`DEFAULT_SERVER_NAME`]).
+  pub fn with_server_name(mut self, name: impl Into<String>) -> Self {
+    self.server_name = name.into();
+    self
+  }
+
+  /// The TLS server name dialed connections present and verify.
+  pub fn server_name(&self) -> &str {
+    &self.server_name
   }
 }
 
@@ -204,15 +230,25 @@ impl QuicTransport {
     }
   }
 
-  fn client_config(&self) -> Result<ClientConfig, TransportError> {
-    let provider = rustls::crypto::CryptoProvider::get_default()
+  /// The process default provider if one is installed, else ring. Configs
+  /// are always built with an explicit provider: rustls' implicit default
+  /// panics when both `ring` and `aws-lc-rs` are compiled in.
+  fn provider() -> Arc<rustls::crypto::CryptoProvider> {
+    rustls::crypto::CryptoProvider::get_default()
       .cloned()
-      .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()));
+      .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()))
+  }
+
+  fn client_config(&self) -> Result<ClientConfig, TransportError> {
+    let provider = Self::provider();
+    let builder = rustls::ClientConfig::builder_with_provider(Arc::clone(&provider))
+      .with_protocol_versions(&[&rustls::version::TLS13])
+      .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
     let tls = match &self.config.roots {
-      Some(roots) => rustls::ClientConfig::builder()
+      Some(roots) => builder
         .with_root_certificates(roots.clone())
         .with_no_client_auth(),
-      None => rustls::ClientConfig::builder()
+      None => builder
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(AcceptAnyCert(provider)))
         .with_no_client_auth(),
@@ -223,7 +259,9 @@ impl QuicTransport {
   }
 
   fn server_config(&self) -> Result<ServerConfig, TransportError> {
-    let tls = rustls::ServerConfig::builder()
+    let tls = rustls::ServerConfig::builder_with_provider(Self::provider())
+      .with_protocol_versions(&[&rustls::version::TLS13])
+      .map_err(|e| TransportError::Io(format!("tls: {e}")))?
       .with_no_client_auth()
       .with_single_cert(self.config.cert_chain.clone(), self.config.key.clone_key())
       .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
@@ -248,7 +286,7 @@ impl Transport for QuicTransport {
       Endpoint::client(bind).map_err(|e| TransportError::Connect(e.to_string()))?;
     endpoint.set_default_client_config(self.client_config()?);
     let conn = endpoint
-      .connect(remote, "cluster")
+      .connect(remote, &self.config.server_name)
       .map_err(|e| TransportError::Connect(e.to_string()))?
       .await
       .map_err(|e| TransportError::Connect(e.to_string()))?;
@@ -277,5 +315,96 @@ impl Transport for QuicTransport {
       endpoint,
       addr: local,
     }))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn server_name_defaults_to_cluster() {
+    let config = QuicConfig::self_signed("node-a").expect("cert");
+    assert_eq!(config.server_name(), DEFAULT_SERVER_NAME);
+    assert_eq!(DEFAULT_SERVER_NAME, "cluster");
+  }
+
+  #[test]
+  fn server_name_is_configurable() {
+    let config = QuicConfig::self_signed("node-a")
+      .expect("cert")
+      .with_server_name("node-a.cluster.local");
+    assert_eq!(config.server_name(), "node-a.cluster.local");
+  }
+
+  fn roots_for(config: &QuicConfig) -> rustls::RootCertStore {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(config.cert_chain[0].clone()).expect("root");
+    roots
+  }
+
+  /// Dial `server` with `client`; on success, check one frame crosses.
+  async fn dial(server: QuicConfig, client: QuicConfig) -> Result<(), TransportError> {
+    let listener = QuicTransport::new(server)
+      .listen("127.0.0.1:0")
+      .await
+      .expect("bind");
+    let addr = listener.local_addr();
+    let server_side = tokio::spawn(async move {
+      let conn = listener.accept().await?;
+      conn.recv().await
+    });
+    let dialed = async {
+      let conn = QuicTransport::new(client).connect(&addr).await?;
+      conn.send(Bytes::from_static(b"hi")).await?;
+      Ok::<_, TransportError>(conn)
+    }
+    .await;
+    let conn = match dialed {
+      Ok(conn) => conn,
+      Err(e) => {
+        server_side.abort();
+        return Err(e);
+      }
+    };
+    let frame = server_side.await.expect("join")?;
+    assert_eq!(frame, Bytes::from_static(b"hi"));
+    drop(conn);
+    Ok(())
+  }
+
+  #[tokio::test]
+  async fn default_mode_accepts_any_server_certificate() {
+    let server = QuicConfig::self_signed("node-b").expect("cert");
+    let client = QuicConfig::self_signed("node-a").expect("cert");
+    dial(server, client).await.expect("handshake");
+  }
+
+  #[tokio::test]
+  async fn pinned_roots_verify_against_the_configured_server_name() {
+    let server = QuicConfig::self_signed("node-b").expect("cert");
+    let roots = roots_for(&server);
+    let client = QuicConfig::self_signed("node-a")
+      .expect("cert")
+      .with_client_verification(roots)
+      .with_server_name("node-b");
+    dial(server, client)
+      .await
+      .expect("handshake with matching name");
+  }
+
+  /// Regression: the dialer always presented "cluster", so pinning failed
+  /// for any certificate not issued for that exact name.
+  #[tokio::test]
+  async fn pinned_roots_reject_a_mismatched_server_name() {
+    let server = QuicConfig::self_signed("node-b").expect("cert");
+    let roots = roots_for(&server);
+    let client = QuicConfig::self_signed("node-a")
+      .expect("cert")
+      .with_client_verification(roots);
+    assert!(matches!(
+      dial(server, client).await,
+      Err(TransportError::Connect(_))
+    ));
   }
 }

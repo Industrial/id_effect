@@ -5,11 +5,11 @@
 //! outstanding monitors fire [`ExitReason::NoConnection`].
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::{ClusterResourcePolicy, Deferred, LoadReport, place, run_blocking};
+use id_effect::{Deferred, run_blocking};
 use id_effect_process::{ExitReason, MonitorRef, MonitorSink, Pid, ProcessNode};
 
 use crate::envelope::{
@@ -17,6 +17,7 @@ use crate::envelope::{
   encode_envelope,
 };
 use crate::id::NodeId;
+use crate::placement::{ClusterResourcePolicy, LoadReport, place};
 use crate::registry::BehaviorRegistry;
 use crate::session::Session;
 use crate::wire::Frame;
@@ -43,15 +44,32 @@ impl MeshFabric {
   }
 
   /// Deliver an envelope to the named peer synchronously.
+  ///
+  /// The sender is unknown, so replies the envelope provokes are broadcast;
+  /// meshes attached to the fabric route through `deliver_from` instead.
   pub fn deliver(&self, to_node: &str, envelope: ProcessEnvelope) -> Result<(), RemoteFault> {
-    let peer = self
+    self.peer(to_node)?.handle_envelope(envelope)
+  }
+
+  fn deliver_from(
+    &self,
+    from_node: &NodeId,
+    to_node: &str,
+    envelope: ProcessEnvelope,
+  ) -> Result<(), RemoteFault> {
+    self
+      .peer(to_node)?
+      .handle_envelope_from(from_node, envelope)
+  }
+
+  fn peer(&self, node: &str) -> Result<Arc<Mesh>, RemoteFault> {
+    self
       .peers
       .lock()
       .expect("fabric")
-      .get(to_node)
+      .get(node)
       .cloned()
-      .ok_or(RemoteFault::NoProc)?;
-    peer.handle_envelope(envelope)
+      .ok_or(RemoteFault::NoProc)
   }
 }
 
@@ -68,6 +86,27 @@ struct RemoteMonitor {
   target: Pid,
 }
 
+/// Removes a pending request entry on every exit path (reply, send failure,
+/// timeout). After a reply the entry is already gone and this is a no-op.
+struct PendingEntry<'a, T> {
+  map: &'a Mutex<HashMap<u64, T>>,
+  id: u64,
+}
+
+impl<T> Drop for PendingEntry<'_, T> {
+  fn drop(&mut self) {
+    if let Ok(mut map) = self.map.lock() {
+      map.remove(&self.id);
+    }
+  }
+}
+
+/// Key of a monitor a peer holds on one of our processes: the origin node
+/// identity (name **and** incarnation, so a restarted node never collides
+/// with its previous life) and the origin-side monitor reference carried on
+/// the wire. `None` when the sender is unknown.
+type InboundKey = (Option<NodeId>, u64);
+
 struct MeshInner {
   node_id: NodeId,
   process: ProcessNode,
@@ -80,12 +119,12 @@ struct MeshInner {
   pending_spawns: Mutex<HashMap<u64, PendingSpawn>>,
   /// Local monitor refs allocated for remote targets.
   remote_monitors: Mutex<HashMap<u64, RemoteMonitor>>,
-  /// Monitors peers hold on our local processes (reserved for session routing).
-  #[allow(dead_code)]
-  inbound_monitors: Mutex<HashMap<(u64, Pid), String>>,
+  /// Monitors peers hold on our local processes: (origin, origin ref) →
+  /// (target, local ref). Lets `Demonitor` find the local registration.
+  inbound_monitors: Mutex<HashMap<InboundKey, (Pid, MonitorRef)>>,
   /// Per-node load telemetry for placement (node name -> (cpu_pct, mem_pct)).
   /// Populated by a telemetry/gossip loop (or directly in tests); read by
-  /// [`Mesh::load_reports`] to feed [`id_effect::place`].
+  /// [`Mesh::load_reports`] to feed [`crate::placement::place`].
   loads: Mutex<HashMap<String, (f32, f32)>>,
 }
 
@@ -149,22 +188,45 @@ impl Mesh {
       .insert(node_name.into(), sender);
   }
 
-  /// Notify that a peer node is down: fire remote monitors with noconnection.
+  /// Notify that a peer node is down: fire our monitors on its processes
+  /// with `noconnection`, and drop the monitors it held on ours (every
+  /// incarnation of that node name).
   pub fn peer_down(&self, peer_name: &str) {
-    let mut monitors = self.inner.remote_monitors.lock().expect("monitors");
-    let doomed: Vec<_> = monitors
-      .iter()
-      .filter(|(_, m)| m.target.node().as_str() == peer_name)
-      .map(|(k, _)| *k)
-      .collect();
-    for key in doomed {
-      if let Some(m) = monitors.remove(&key) {
-        (m.sink)(
-          MonitorRef::from_inner(key),
-          m.target,
-          ExitReason::NoConnection,
-        );
-      }
+    // Collect under the lock, invoke after releasing it: a sink may
+    // re-enter the mesh (e.g. `remote_monitor`).
+    let doomed: Vec<(u64, RemoteMonitor)> = {
+      let mut monitors = self.inner.remote_monitors.lock().expect("monitors");
+      let keys: Vec<u64> = monitors
+        .iter()
+        .filter(|(_, m)| m.target.node().as_str() == peer_name)
+        .map(|(k, _)| *k)
+        .collect();
+      keys
+        .into_iter()
+        .filter_map(|k| monitors.remove(&k).map(|m| (k, m)))
+        .collect()
+    };
+    for (key, m) in doomed {
+      (m.sink)(
+        MonitorRef::from_inner(key),
+        m.target,
+        ExitReason::NoConnection,
+      );
+    }
+    let held: Vec<(Pid, MonitorRef)> = {
+      let mut inbound = self.inner.inbound_monitors.lock().expect("inbound");
+      let keys: Vec<InboundKey> = inbound
+        .keys()
+        .filter(|(origin, _)| origin.as_ref().is_some_and(|o| o.name() == peer_name))
+        .cloned()
+        .collect();
+      keys
+        .into_iter()
+        .filter_map(|k| inbound.remove(&k))
+        .collect()
+    };
+    for (pid, local) in held {
+      self.inner.process.demonitor(&pid, local);
     }
     self.inner.peers.lock().expect("peers").remove(peer_name);
   }
@@ -178,7 +240,7 @@ impl Mesh {
       return sender(envelope);
     }
     if let Some(fabric) = &self.inner.fabric {
-      return fabric.deliver(node_name, envelope);
+      return fabric.deliver_from(&self.inner.node_id, node_name, envelope);
     }
     Err(RemoteFault::NoProc)
   }
@@ -217,6 +279,10 @@ impl Mesh {
         reply: reply.clone(),
       },
     );
+    let _pending = PendingEntry {
+      map: &self.inner.pending_spawns,
+      id: spawn_id,
+    };
     self.send_to(
       node_name,
       ProcessEnvelope::Spawn {
@@ -330,6 +396,10 @@ impl Mesh {
         reply: reply.clone(),
       },
     );
+    let _pending = PendingEntry {
+      map: &self.inner.pending_calls,
+      id: call_id,
+    };
     self.send_to(
       to.node().as_str(),
       ProcessEnvelope::Call {
@@ -356,18 +426,87 @@ impl Mesh {
         target: target.clone(),
       },
     );
-    let _ = self.send_to(
+    let sent = self.send_to(
       target.node().as_str(),
       ProcessEnvelope::Monitor {
         monitor: key,
         target: PidWire::from(target),
       },
     );
+    if sent.is_err() {
+      // Unreachable node: fire immediately, like BEAM's `noconnection`.
+      let doomed = self
+        .inner
+        .remote_monitors
+        .lock()
+        .expect("monitors")
+        .remove(&key);
+      if let Some(m) = doomed {
+        (m.sink)(
+          MonitorRef::from_inner(key),
+          m.target,
+          ExitReason::NoConnection,
+        );
+      }
+    }
     MonitorRef::from_inner(key)
   }
 
-  /// Handle an inbound envelope (from fabric or session reader).
+  /// Cancel a monitor set up with [`Mesh::remote_monitor`]. After this
+  /// returns the sink never fires. Idempotent; unknown refs are ignored.
+  pub fn remote_demonitor(&self, target: &Pid, monitor: MonitorRef) {
+    if target.node().as_str() == self.node_name() {
+      self.inner.process.demonitor(target, monitor);
+      return;
+    }
+    let key = monitor.into_inner();
+    let removed = self
+      .inner
+      .remote_monitors
+      .lock()
+      .expect("monitors")
+      .remove(&key);
+    if removed.is_some() {
+      // Best effort: if the peer is unreachable its registration dies with
+      // the connection anyway.
+      let _ = self.send_to(
+        target.node().as_str(),
+        ProcessEnvelope::Demonitor {
+          monitor: key,
+          target: PidWire::from(target),
+        },
+      );
+    }
+  }
+
+  /// Handle an inbound envelope whose sender is unknown.
+  ///
+  /// Replies it provokes (`Reply`, `SpawnReply`, `Down`) are broadcast to
+  /// every peer. Prefer [`Mesh::handle_envelope_from`] whenever the sending
+  /// node is known, so replies reach only the caller.
   pub fn handle_envelope(&self, envelope: ProcessEnvelope) -> Result<(), RemoteFault> {
+    self.dispatch(None, envelope)
+  }
+
+  /// Handle an inbound envelope sent by the node `origin` (as authenticated
+  /// by the session handshake). Replies are routed back to `origin` only,
+  /// and state kept on its behalf is keyed by its full identity, so a
+  /// restarted node (same name, new incarnation) never collides with its
+  /// previous life.
+  pub fn handle_envelope_from(
+    &self,
+    origin: &NodeId,
+    envelope: ProcessEnvelope,
+  ) -> Result<(), RemoteFault> {
+    self.dispatch(Some(origin), envelope)
+  }
+
+  fn dispatch(
+    &self,
+    origin: Option<&NodeId>,
+    envelope: ProcessEnvelope,
+  ) -> Result<(), RemoteFault> {
+    let origin_name = origin.map(NodeId::name);
     match envelope {
       ProcessEnvelope::Cast { to, msg, .. } => {
         let pid = to.to_pid();
@@ -385,22 +524,15 @@ impl Mesh {
           run_blocking(Deferred::make(), ()).unwrap_or_else(|_| unreachable!("Deferred::make"));
         let bridge = reply.clone();
         let mesh = self.clone();
-        let from = pid.node().as_str().to_string();
-        // Caller node is the one we reply to — encoded in nothing; for fabric
-        // we need the origin. Use Call's implicit: reply goes back via fabric
-        // looking up from pending... We encode origin in call by returning to
-        // the peer that sent us the frame. Fabric deliver is same-process so
-        // we capture `from` from to.node? No — reply should go to caller.
-        // For MeshFabric tests both sides share; we stash reply target as the
-        // node that isn't us? Call envelope should carry from. Quick fix:
-        // look at pending on peer via SpawnReply pattern — add `from` field.
-        // Until then: for fabric, deliver Reply by broadcasting to other node
-        // names is wrong. Use caller's node from a thread-local? Better:
-        // ProcessEnvelope::Call includes from: PidWire optional.
-        // For now, encode from in call_id high bits? Ugly.
-        // Practical v1: reply by sending to every peer except self if one peer.
+        let origin = origin_name.map(str::to_string);
         if let Err(fault) = self.inner.registry.deliver_call(&pid, &msg, reply) {
-          let _ = mesh.send_reply_to_caller(&from, call_id, Err(fault));
+          mesh.reply(
+            origin.as_deref(),
+            ProcessEnvelope::Reply {
+              call_id,
+              result: Err(fault),
+            },
+          );
           return Ok(());
         }
         std::thread::spawn(move || {
@@ -409,7 +541,10 @@ impl Mesh {
             Err(id_effect::Cause::Fail(f)) => Err(f),
             Err(_) => Err(RemoteFault::Down(ExitReasonWire::Interrupted)),
           };
-          mesh.reply_call_best_effort(call_id, result);
+          mesh.reply(
+            origin.as_deref(),
+            ProcessEnvelope::Reply { call_id, result },
+          );
         });
         Ok(())
       }
@@ -444,8 +579,10 @@ impl Mesh {
           .registry
           .spawn(&self.inner.process, &behavior, &args, link.as_ref())
           .map(|pid| PidWire::from(&pid));
-        // Reply to the other fabric peer(s) — spawn reply needs caller node.
-        self.reply_spawn_best_effort(spawn_id, result);
+        self.reply(
+          origin_name,
+          ProcessEnvelope::SpawnReply { spawn_id, result },
+        );
         Ok(())
       }
       ProcessEnvelope::SpawnReply { spawn_id, result } => {
@@ -470,24 +607,47 @@ impl Mesh {
       ProcessEnvelope::Monitor { monitor, target } => {
         let pid = target.to_pid();
         let mesh = self.clone();
-        // Record who is monitoring so Down can route back — unknown peer in
-        // fabric; fire Down via fabric broadcast of Down envelope.
-        let sink: MonitorSink = Box::new(move |_m, target_pid, reason| {
-          mesh.broadcast_except_self(ProcessEnvelope::Down {
-            monitor,
-            target: PidWire::from(&target_pid),
-            reason: ExitReasonWire::from(&reason),
-          });
-        });
-        let _ = self.inner.process.monitor_with_sink(&pid, sink);
+        let key: InboundKey = (origin.cloned(), monitor);
+        let fired = Arc::new(AtomicBool::new(false));
+        let sink: MonitorSink = {
+          let (key, fired) = (key.clone(), Arc::clone(&fired));
+          Box::new(move |_m, target_pid, reason| {
+            fired.store(true, Ordering::SeqCst);
+            mesh
+              .inner
+              .inbound_monitors
+              .lock()
+              .expect("inbound")
+              .remove(&key);
+            mesh.reply(
+              key.0.as_ref().map(NodeId::name),
+              ProcessEnvelope::Down {
+                monitor,
+                target: PidWire::from(&target_pid),
+                reason: ExitReasonWire::from(&reason),
+              },
+            );
+          })
+        };
+        let local = self.inner.process.monitor_with_sink(&pid, sink);
+        let mut inbound = self.inner.inbound_monitors.lock().expect("inbound");
+        // A sink that already fired (dead target) must not leave an entry.
+        if !fired.load(Ordering::SeqCst) {
+          inbound.insert(key, (pid, local));
+        }
         Ok(())
       }
-      ProcessEnvelope::Demonitor { monitor, target } => {
-        let pid = target.to_pid();
-        self
+      ProcessEnvelope::Demonitor { monitor, .. } => {
+        let key: InboundKey = (origin.cloned(), monitor);
+        let entry = self
           .inner
-          .process
-          .demonitor(&pid, MonitorRef::from_inner(monitor));
+          .inbound_monitors
+          .lock()
+          .expect("inbound")
+          .remove(&key);
+        if let Some((pid, local)) = entry {
+          self.inner.process.demonitor(&pid, local);
+        }
         Ok(())
       }
       ProcessEnvelope::Down {
@@ -495,13 +655,14 @@ impl Mesh {
         target,
         reason,
       } => {
-        if let Some(m) = self
+        // Release the lock before invoking the sink: it may re-enter.
+        let fired = self
           .inner
           .remote_monitors
           .lock()
           .expect("monitors")
-          .remove(&monitor)
-        {
+          .remove(&monitor);
+        if let Some(m) = fired {
           (m.sink)(
             MonitorRef::from_inner(monitor),
             target.to_pid(),
@@ -544,24 +705,15 @@ impl Mesh {
     }
   }
 
-  fn reply_call_best_effort(&self, call_id: u64, result: Result<Vec<u8>, RemoteFault>) {
-    let env = ProcessEnvelope::Reply { call_id, result };
-    self.broadcast_except_self(env);
-  }
-
-  fn reply_spawn_best_effort(&self, spawn_id: u64, result: Result<PidWire, RemoteFault>) {
-    let env = ProcessEnvelope::SpawnReply { spawn_id, result };
-    self.broadcast_except_self(env);
-  }
-
-  fn send_reply_to_caller(
-    &self,
-    _caller: &str,
-    call_id: u64,
-    result: Result<Vec<u8>, RemoteFault>,
-  ) -> Result<(), RemoteFault> {
-    self.reply_call_best_effort(call_id, result);
-    Ok(())
+  /// Route a reply to the requesting node, or broadcast when it is unknown.
+  /// Best effort: a lost reply surfaces as a timeout at the caller.
+  fn reply(&self, origin: Option<&str>, envelope: ProcessEnvelope) {
+    match origin {
+      Some(node) => {
+        let _ = self.send_to(node, envelope);
+      }
+      None => self.broadcast_except_self(envelope),
+    }
   }
 
   fn broadcast_except_self(&self, envelope: ProcessEnvelope) {
@@ -623,7 +775,7 @@ impl Mesh {
     match frame {
       Frame::Data(bytes) => {
         let envelope = decode_envelope(&bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-        self.handle_envelope(envelope)
+        self.handle_envelope_from(session.peer(), envelope)
       }
       Frame::Close(_) => Err(RemoteFault::NoProc),
       _ => Ok(()),
@@ -640,5 +792,287 @@ impl Mesh {
       .send(&Frame::Data(bytes))
       .await
       .map_err(|e| RemoteFault::Decode(e.to_string()))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use id_effect::runtime::Never;
+  use id_effect::{Effect, succeed};
+  use id_effect_process::{Next, NodeName, Process, ProcessCtx};
+
+  use super::*;
+
+  struct Idle;
+
+  impl Process for Idle {
+    type Args = ();
+    type Env = ();
+    type Call = ();
+    type Reply = ();
+    type Cast = ();
+    type Info = ();
+    type Error = Never;
+
+    fn init(_: (), _: ProcessCtx) -> Effect<Self, Never, ()> {
+      succeed(Idle)
+    }
+
+    fn handle_call(self, _: (), _: ProcessCtx) -> Effect<((), Next<Self>), Never, ()> {
+      succeed(((), Next::Continue(self)))
+    }
+  }
+
+  fn mesh(name: &str) -> Mesh {
+    let mut registry = BehaviorRegistry::new();
+    registry.register::<Idle>("idle");
+    Mesh::new(
+      NodeId::from_parts(name, 1),
+      ProcessNode::threads(NodeName::new(name)),
+      registry,
+    )
+  }
+
+  fn unit() -> Vec<u8> {
+    postcard::to_allocvec(&()).expect("unit")
+  }
+
+  /// Peer sender that accepts and drops everything (an unresponsive node).
+  fn black_hole() -> PeerSender {
+    Arc::new(|_| Ok(()))
+  }
+
+  /// Peer sender for a node whose connection is gone.
+  fn dead_link() -> PeerSender {
+    Arc::new(|_| Err(RemoteFault::NoProc))
+  }
+
+  fn pending(mesh: &Mesh) -> (usize, usize) {
+    (
+      mesh.inner.pending_spawns.lock().expect("spawns").len(),
+      mesh.inner.pending_calls.lock().expect("calls").len(),
+    )
+  }
+
+  #[test]
+  fn failed_send_leaves_no_pending_request() {
+    let a = mesh("a@test");
+    a.add_peer("z@test", dead_link());
+    let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
+    let wait = Duration::from_secs(5);
+    assert_eq!(
+      a.remote_spawn("z@test", "idle", unit(), None, wait),
+      Err(RemoteFault::NoProc)
+    );
+    assert_eq!(
+      a.remote_call(&target, unit(), wait),
+      Err(RemoteFault::NoProc)
+    );
+    assert_eq!(pending(&a), (0, 0));
+  }
+
+  // A zero timeout expires on the first check, so the timeout path is
+  // exercised without waiting.
+  #[test]
+  fn timed_out_request_leaves_no_pending_entry() {
+    let a = mesh("a@test");
+    a.add_peer("z@test", black_hole());
+    let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
+    assert_eq!(
+      a.remote_spawn("z@test", "idle", unit(), None, Duration::ZERO),
+      Err(RemoteFault::Timeout)
+    );
+    assert_eq!(
+      a.remote_call(&target, unit(), Duration::ZERO),
+      Err(RemoteFault::Timeout)
+    );
+    assert_eq!(pending(&a), (0, 0));
+  }
+
+  #[test]
+  fn answered_request_leaves_no_pending_entry() {
+    let fabric = MeshFabric::new();
+    let a = mesh("a@test").with_fabric(fabric.clone());
+    let _b = mesh("b@test").with_fabric(fabric);
+    let pid = a
+      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
+      .expect("spawn");
+    a.remote_call(&pid, unit(), Duration::from_secs(5))
+      .expect("call");
+    assert_eq!(pending(&a), (0, 0));
+  }
+
+  #[test]
+  fn demonitor_removes_the_target_side_registration() {
+    let fabric = MeshFabric::new();
+    let a = mesh("a@test").with_fabric(fabric.clone());
+    let b = mesh("b@test").with_fabric(fabric);
+    let pid = a
+      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
+      .expect("spawn");
+    let monitor = a.remote_monitor(&pid, Box::new(|_, _, _| {}));
+    assert_eq!(
+      b.inner.inbound_monitors.lock().expect("inbound").len(),
+      1,
+      "b tracks a's monitor under a's reference"
+    );
+    a.remote_demonitor(&pid, monitor);
+    assert!(b.inner.inbound_monitors.lock().expect("inbound").is_empty());
+    assert!(a.inner.remote_monitors.lock().expect("monitors").is_empty());
+  }
+
+  fn monitor_env(monitor: u64, target: &Pid) -> ProcessEnvelope {
+    ProcessEnvelope::Monitor {
+      monitor,
+      target: PidWire::from(target),
+    }
+  }
+
+  /// A peer sender that reports every `Down` it is asked to deliver.
+  fn down_recorder() -> (PeerSender, flume::Receiver<(u64, PidWire)>) {
+    let (tx, rx) = flume::unbounded();
+    let sender: PeerSender = Arc::new(move |envelope| {
+      if let ProcessEnvelope::Down {
+        monitor, target, ..
+      } = envelope
+      {
+        let _ = tx.send((monitor, target));
+      }
+      Ok(())
+    });
+    (sender, rx)
+  }
+
+  /// Regression: inbound monitors were keyed by origin *name*, so a
+  /// restarted origin reusing a reference number overwrote its previous
+  /// life's entry, and the stale sink later removed the new one.
+  #[test]
+  fn restarted_origin_does_not_collide_with_its_previous_life() {
+    let b = mesh("b@test");
+    let (sink, downs) = down_recorder();
+    b.add_peer("a@test", sink);
+    let p1 = b.spawn_local("idle", &unit(), None).expect("p1");
+    let p2 = b.spawn_local("idle", &unit(), None).expect("p2");
+    let old = NodeId::from_parts("a@test", 1);
+    let new = NodeId::from_parts("a@test", 2);
+
+    // Both lives use reference 7 (independent counters).
+    b.handle_envelope_from(&old, monitor_env(7, &p1))
+      .expect("old");
+    b.handle_envelope_from(&new, monitor_env(7, &p2))
+      .expect("new");
+    assert_eq!(b.inner.inbound_monitors.lock().expect("inbound").len(), 2);
+
+    // The old life's monitor fires for p1 — and only removes its own entry.
+    b.process().exit(&p1, ExitReason::Killed);
+    let (monitor, target) = downs.recv_timeout(Duration::from_secs(5)).expect("down");
+    assert_eq!((monitor, target), (7, PidWire::from(&p1)));
+    let inbound = b.inner.inbound_monitors.lock().expect("inbound");
+    assert_eq!(
+      inbound.keys().cloned().collect::<Vec<_>>(),
+      vec![(Some(new.clone()), 7)]
+    );
+    drop(inbound);
+
+    // The new life can still cancel its monitor.
+    b.handle_envelope_from(
+      &new,
+      ProcessEnvelope::Demonitor {
+        monitor: 7,
+        target: PidWire::from(&p2),
+      },
+    )
+    .expect("demonitor");
+    assert!(b.inner.inbound_monitors.lock().expect("inbound").is_empty());
+  }
+
+  #[test]
+  fn peer_down_purges_monitors_the_peer_held() {
+    let b = mesh("b@test");
+    b.add_peer("a@test", black_hole());
+    b.add_peer("c@test", black_hole());
+    let p = b.spawn_local("idle", &unit(), None).expect("p");
+    let a1 = NodeId::from_parts("a@test", 1);
+    let a2 = NodeId::from_parts("a@test", 2);
+    let c = NodeId::from_parts("c@test", 1);
+    b.handle_envelope_from(&a1, monitor_env(1, &p)).expect("a1");
+    b.handle_envelope_from(&a2, monitor_env(2, &p)).expect("a2");
+    b.handle_envelope_from(&c, monitor_env(3, &p)).expect("c");
+
+    b.peer_down("a@test");
+
+    let inbound = b.inner.inbound_monitors.lock().expect("inbound");
+    assert_eq!(
+      inbound.keys().cloned().collect::<Vec<_>>(),
+      vec![(Some(c), 3)],
+      "every incarnation of a is purged, c is kept"
+    );
+  }
+
+  /// Runs `f` on a helper thread and fails (instead of hanging) if it does
+  /// not finish — the symptom of a sink re-entering a held lock.
+  fn finishes(f: impl FnOnce() + Send + 'static) -> bool {
+    let (tx, rx) = flume::bounded(1);
+    std::thread::spawn(move || {
+      f();
+      let _ = tx.send(());
+    });
+    rx.recv_timeout(Duration::from_secs(5)).is_ok()
+  }
+
+  /// Regression: `peer_down` invoked sinks while holding the monitor lock.
+  #[test]
+  fn sink_may_re_enter_the_mesh_from_peer_down() {
+    let a = mesh("a@test");
+    a.add_peer("z@test", black_hole());
+    let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
+    let reentrant = a.clone();
+    let again = target.clone();
+    a.remote_monitor(
+      &target,
+      Box::new(move |_, _, _| {
+        // Both calls take the monitor lock that used to be held here.
+        let m = reentrant.remote_monitor(&again, Box::new(|_, _, _| {}));
+        reentrant.remote_demonitor(&again, m);
+      }),
+    );
+    let mesh = a.clone();
+    assert!(finishes(move || mesh.peer_down("z@test")), "deadlocked");
+  }
+
+  /// Regression: the `Down` handler invoked the sink under the monitor lock.
+  #[test]
+  fn sink_may_re_enter_the_mesh_from_a_down() {
+    let fabric = MeshFabric::new();
+    let a = mesh("a@test").with_fabric(fabric.clone());
+    let b = mesh("b@test").with_fabric(fabric);
+    let pid = a
+      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
+      .expect("spawn");
+    let (tx, rx) = flume::bounded(1);
+    let reentrant = Arc::clone(&a);
+    a.remote_monitor(
+      &pid,
+      Box::new(move |_, who, _| {
+        // The target is dead now, so this monitor fires immediately.
+        reentrant.remote_monitor(&who, Box::new(|_, _, _| {}));
+        let _ = tx.send(());
+      }),
+    );
+    b.process().exit(&pid, ExitReason::Killed);
+    assert!(
+      rx.recv_timeout(Duration::from_secs(5)).is_ok(),
+      "sink never completed (deadlock)"
+    );
+  }
+
+  #[test]
+  fn monitor_of_a_dead_target_leaves_no_inbound_entry() {
+    let fabric = MeshFabric::new();
+    let a = mesh("a@test").with_fabric(fabric.clone());
+    let b = mesh("b@test").with_fabric(fabric);
+    let ghost = Pid::from_parts(NodeName::new("b@test"), 9_999, 1);
+    a.remote_monitor(&ghost, Box::new(|_, _, _| {}));
+    assert!(b.inner.inbound_monitors.lock().expect("inbound").is_empty());
   }
 }

@@ -3,6 +3,37 @@
 //!
 //! Production PostgreSQL support is behind the `pg` feature ([`pg`] module, sqlx `PgPool`).
 //! See [`docs/platform/adrs/adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md).
+//!
+//! ## Example
+//!
+//! ```rust
+//! use std::sync::Arc;
+//!
+//! use id_effect::{Effect, run_blocking};
+//! use id_effect_sql::{SqlClient, SqlError, SqlParam, SqlRow, TestSqlClient, transaction_scope};
+//!
+//! fn count_users(db: Arc<dyn SqlClient>) -> Effect<usize, SqlError, ()> {
+//!   db.query("SELECT id FROM users WHERE active = $1", &[SqlParam::Bool(true)])
+//!     .map(|rows| rows.len())
+//! }
+//!
+//! let test = TestSqlClient::new();
+//! test.script_query(
+//!   "SELECT id FROM users WHERE active = $1",
+//!   vec![SqlRow::new(vec!["1".into()]), SqlRow::new(vec!["2".into()])],
+//! );
+//! let db: Arc<dyn SqlClient> = Arc::new(test.clone());
+//! run_blocking(db.connect(), ()).unwrap();
+//! assert_eq!(run_blocking(count_users(db.clone()), ()), Ok(2));
+//!
+//! let n = run_blocking(
+//!   transaction_scope(db, |_tx| Effect::new(|_r: &mut ()| Ok::<u32, SqlError>(0))),
+//!   (),
+//! )
+//! .unwrap();
+//! assert_eq!(n, 0);
+//! assert_eq!(test.open_transactions(), 0);
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

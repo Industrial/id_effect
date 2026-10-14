@@ -7,6 +7,18 @@
 //! - **[`mod@piping`]** — [`Pipe`] trait (macro: [`pipe!`](macro@pipe)).
 //! - **[`schedule`]** — Effect.ts-style repeat/retry policies.
 //! - **[`stream`]** — Effect.ts-inspired stream combinators.
+//!
+//! ## Cargo features
+//!
+//! - **`compute`** (default) — the Compute Fabric ([`mod@compute`]): admission control, adaptive
+//!   Rayon parallelism for bulk stream/sort operations and `sysinfo` host telemetry. Without it,
+//!   [`run`] / [`run_with`] install no fabric, bulk operations run serially and
+//!   [`ThreadSleepRuntime`] spawns one OS thread per fiber; `rayon` and `sysinfo` are not built.
+//! - **`proptest`** — property-testing helpers in `testing::proptest`.
+//! - **`schema-serde`** — `serde_json::Value` ↔ [`Unknown`] and JSON Schema helpers.
+//!
+//! Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
+//! `id_effect_fp` crate.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -58,9 +70,8 @@ pub use id_effect_proc_macro::{
   effect_tagged, match_effect,
 };
 
-pub mod algebra;
 pub mod capability;
-pub mod collections;
+#[cfg(feature = "compute")]
 pub mod compute;
 pub mod concurrency;
 pub mod coordination;
@@ -70,12 +81,12 @@ pub mod kernel;
 pub mod macros;
 pub mod match_;
 pub mod observability;
+#[cfg(feature = "compute")]
 pub mod parallelism;
 pub mod resource;
 pub mod runtime;
 pub mod scheduling;
 pub mod schema;
-pub mod stm;
 pub mod streaming;
 pub mod testing;
 
@@ -92,19 +103,17 @@ pub use capability::{
   build_env, cap_into_bind, plan_topological, run, run_with, with_fiber_and_override,
   with_override,
 };
-pub use collections::{
-  ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
-  MutableHashMap, MutableHashSet, MutableList, MutableQueue, RedBlackTree, Trie,
-};
+#[cfg(feature = "compute")]
 #[allow(deprecated)]
 pub use compute::ComputeSupervisor;
+#[cfg(feature = "compute")]
 pub use compute::{
-  AdaptiveContext, AdmissionController, ClusterResourcePolicy, ComputeFabric, CpuSpreadBucket,
-  FabricGovernor, FabricJobSpec, FiberPool, LoadReport, MetricMode, MetricPolicy, MockTelemetry,
-  PlacementMode, RebalanceStrategy, ResourcePolicy, SysinfoTelemetry, TelemetryEngine,
-  TelemetrySnapshot, WorkProfile, configure_rayon_threads, ensure_default_fabric,
-  ensure_run_context, install_fabric, install_parallel, installed_fabric, is_fabric_installed,
-  place, refresh_adaptive_context, uninstall_fabric,
+  AdaptiveContext, AdmissionController, ComputeFabric, CpuSpreadBucket, FabricGovernor,
+  FabricJobSpec, FiberPool, MetricMode, MetricPolicy, MockTelemetry, RebalanceStrategy,
+  ResourcePolicy, SysinfoTelemetry, TelemetryEngine, TelemetrySnapshot, WorkProfile,
+  configure_rayon_threads, ensure_default_fabric, ensure_run_context, install_fabric,
+  install_parallel, installed_fabric, is_fabric_installed, refresh_adaptive_context,
+  uninstall_fabric,
 };
 pub use concurrency::{
   CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, RestartIntensity, Supervisor,
@@ -147,7 +156,6 @@ pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDat
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
 pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
-pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, commit};
 pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender, StreamV1};
 pub use streaming::{
   BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, Transducer, backpressure_decision,
@@ -171,11 +179,3 @@ pub use scheduling::schedule;
 pub use schema::data;
 pub use streaming::stream;
 pub use testing::snapshot;
-
-// ─── Re-export the im crate ───────────────────────────────────────────────────
-// Callers can use `id_effect::im::Vector`, `id_effect::im::OrdSet`, etc. without
-// adding a separate `im` dependency, and they're guaranteed version-compatible
-// with all `id_effect::collections` types (which are type aliases of `im` types).
-pub use im;
-
-pub use algebra::{Alternative, Foldable, Invariant, sequence_vec, traverse_option, traverse_vec};

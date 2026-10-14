@@ -3,7 +3,8 @@
 #![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::sync::Arc;
 
-use ::id_effect::collections::hash_map;
+use std::collections::HashMap;
+
 use ::id_effect::{
   Cap, CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
   run_blocking,
@@ -40,7 +41,7 @@ impl LogMetadataLive {
   fn new() -> EffectLogMetadata {
     let ann = run_blocking(
       FiberRef::make_with(
-        hash_map::empty::<String, String>,
+        HashMap::<String, String>::new,
         |m| m.clone(),
         |p, _c| p.clone(),
       ),

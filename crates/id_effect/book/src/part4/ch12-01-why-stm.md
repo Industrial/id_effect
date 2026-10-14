@@ -27,7 +27,7 @@ STM operates on the assumption that conflicts are rare. Instead of locking, it:
 If anything changed between step 1 and step 3, the transaction *retries* automatically from step 1.
 
 ```rust
-use id_effect::{TRef, stm, commit};
+use id_effect_fp::{TRef, commit, stm};
 
 fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64)
 -> Effect<(), TransferError, ()>

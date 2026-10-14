@@ -58,6 +58,7 @@ fn replay_zero_branches_drains_upstream() {
   run_blocking(pump, ()).expect("pump");
 }
 
+#[cfg(feature = "compute")]
 #[test]
 fn map_effect_adaptive_collects() {
   use id_effect::compute::{ComputeFabric, install_fabric};

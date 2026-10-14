@@ -14,11 +14,8 @@
 //! })
 //! ```
 //!
-//! The environment `R` only needs to satisfy
-//! `R: Get<EffectLogger, Here, Target = EffectLogger>`.  The caller composes
-//! layers at the top of the program. For a minimal stack that only provides
-//! [`EffectLogger`], build `Context::new(Cons(layer_effect_logger().build().expect(\"…\"), Nil))`
-//! or `Context::new(Cons(Service::<EffectLogger, _>::new(EffectLogger), Nil))` at the program edge.
+//! The environment only needs the `EffectLogger` capability (`caps!(EffectLogger)`). Provide it at
+//! the program edge with `run_with([provide!(EffectLoggerLive)], program)`.
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
@@ -30,7 +27,8 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use ::id_effect::{Effect, EffectHashMap, FiberRef, box_future};
+use ::id_effect::{Effect, FiberRef, box_future};
+use std::collections::HashMap;
 
 mod pipeline;
 mod providers;
@@ -56,7 +54,7 @@ thread_local! {
 }
 
 thread_local! {
-  static LOG_ANNOTATIONS_FIBER_REF: RefCell<Option<FiberRef<EffectHashMap<String, String>>>> =
+  static LOG_ANNOTATIONS_FIBER_REF: RefCell<Option<FiberRef<HashMap<String, String>>>> =
     const { RefCell::new(None) };
 }
 
@@ -76,7 +74,7 @@ fn install_composite_log_backend(c: Arc<CompositeLogBackend>) {
   });
 }
 
-fn install_log_annotations_fiber_ref(fr: FiberRef<EffectHashMap<String, String>>) {
+fn install_log_annotations_fiber_ref(fr: FiberRef<HashMap<String, String>>) {
   LOG_ANNOTATIONS_FIBER_REF.with(|c| {
     *c.borrow_mut() = Some(fr);
   });
@@ -341,7 +339,8 @@ where
       Ok(m) => m,
       Err(_) => return box_future(async move { inner.run(r).await }),
     };
-    let next = ::id_effect::collections::hash_map::set(&cur, key, value);
+    let mut next = cur;
+    next.insert(key, value);
     let fr = fr.clone();
     box_future(async move { fr.locally(next, inner).run(r).await })
   })

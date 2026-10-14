@@ -115,4 +115,94 @@ mod tests {
   fn garbage_fails_cleanly() {
     assert!(decode(&[0xff, 0xff, 0xff, 0xff, 0xff]).is_err());
   }
+
+  #[test]
+  fn every_handshake_message_round_trips() {
+    let node = NodeId::from_parts("b@host", u128::MAX);
+    let msgs = vec![
+      HandshakeMsg::Challenge {
+        version: PROTOCOL_VERSION,
+        node: node.clone(),
+        nonce: u64::MAX,
+      },
+      HandshakeMsg::ChallengeReply {
+        digest: [7; 32],
+        nonce: 0,
+      },
+      HandshakeMsg::Welcome { digest: [0xab; 32] },
+      HandshakeMsg::Rejected {
+        reason: "bad cookie".to_string(),
+      },
+    ];
+    for msg in msgs {
+      let frame = Frame::Handshake(msg);
+      assert_eq!(
+        decode(&encode(&frame).expect("encode")).expect("decode"),
+        frame
+      );
+    }
+  }
+
+  #[test]
+  fn empty_input_is_an_error() {
+    assert!(decode(&[]).is_err());
+  }
+
+  #[test]
+  fn truncated_frame_is_an_error() {
+    let bytes = encode(&Frame::Data(vec![1, 2, 3, 4, 5, 6, 7, 8])).expect("encode");
+    assert!(decode(&bytes[..bytes.len() - 1]).is_err());
+  }
+
+  #[test]
+  fn empty_data_payload_round_trips() {
+    let frame = Frame::Data(Vec::new());
+    assert_eq!(
+      decode(&encode(&frame).expect("encode")).expect("decode"),
+      frame
+    );
+  }
+
+  #[test]
+  fn wire_error_display_names_the_codec() {
+    let err = decode(&[]).expect_err("empty input");
+    assert!(err.to_string().starts_with("wire codec error: "), "{err}");
+  }
+
+  #[test]
+  fn protocol_version_is_one() {
+    assert_eq!(PROTOCOL_VERSION, 1);
+  }
+
+  fn arb_frame() -> impl proptest::strategy::Strategy<Value = Frame> {
+    use proptest::prelude::*;
+    prop_oneof![
+      proptest::collection::vec(any::<u8>(), 0..256).prop_map(Frame::Data),
+      any::<u64>().prop_map(Frame::Ping),
+      any::<u64>().prop_map(Frame::Pong),
+      ".{0,64}".prop_map(Frame::Close),
+      (any::<u16>(), ".{0,32}", any::<u128>()).prop_map(|(version, name, inc)| {
+        Frame::Handshake(HandshakeMsg::Hello {
+          version,
+          node: NodeId::from_parts(name, inc),
+        })
+      }),
+      (any::<[u8; 32]>(), any::<u64>()).prop_map(|(digest, nonce)| {
+        Frame::Handshake(HandshakeMsg::ChallengeReply { digest, nonce })
+      }),
+    ]
+  }
+
+  proptest::proptest! {
+    #[test]
+    fn any_frame_round_trips(frame in arb_frame()) {
+      let bytes = encode(&frame).expect("encode");
+      proptest::prop_assert_eq!(decode(&bytes).expect("decode"), frame);
+    }
+
+    #[test]
+    fn arbitrary_bytes_never_panic(bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..128)) {
+      let _ = decode(&bytes);
+    }
+  }
 }

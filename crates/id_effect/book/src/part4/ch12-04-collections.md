@@ -49,7 +49,7 @@ fn consumer(queue: Arc<TQueue<Job>>) -> Effect<Never, Never, ()> {
 ## TMap: Transactional Hash Map
 
 ```rust
-use id_effect::TMap;
+use id_effect_fp::TMap;
 
 let map: TMap<String, User> = TMap::new();
 

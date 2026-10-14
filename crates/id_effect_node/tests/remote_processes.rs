@@ -87,12 +87,9 @@ fn remote_spawn_cast_call_round_trip() {
     .expect("spawn");
   assert_eq!(pid.node().as_str(), "b@test");
 
-  // Allow init to finish.
-  std::thread::sleep(Duration::from_millis(50));
-
+  // The mailbox is FIFO, so the call below is handled after this cast.
   let cast = postcard::to_allocvec(&CounterCast::Add(5)).unwrap();
   a.remote_cast(&pid, cast).expect("cast");
-  std::thread::sleep(Duration::from_millis(20));
 
   let call = postcard::to_allocvec(&CounterCall::Get).unwrap();
   let reply = a
@@ -121,13 +118,12 @@ fn remote_monitor_fires_noconnection_on_peer_down() {
     }),
   );
 
+  // peer_down fires remote monitors synchronously.
   a.peer_down("b@test");
-  assert!(wait_until(2_000, || {
-    matches!(
-      seen.lock().unwrap().as_ref(),
-      Some(ExitReason::NoConnection)
-    )
-  }));
+  assert!(matches!(
+    seen.lock().unwrap().as_ref(),
+    Some(ExitReason::NoConnection)
+  ));
   let _ = b;
 }
 
@@ -138,17 +134,6 @@ fn unknown_behavior_is_rejected() {
     .remote_spawn("b@test", "nope", vec![], None, Duration::from_secs(1))
     .unwrap_err();
   assert!(matches!(err, RemoteFault::UnknownBehavior(_)));
-}
-
-fn wait_until(deadline_ms: u64, mut check: impl FnMut() -> bool) -> bool {
-  let deadline = std::time::Instant::now() + Duration::from_millis(deadline_ms);
-  while std::time::Instant::now() < deadline {
-    if check() {
-      return true;
-    }
-    std::thread::sleep(Duration::from_millis(5));
-  }
-  check()
 }
 
 #[allow(dead_code)]

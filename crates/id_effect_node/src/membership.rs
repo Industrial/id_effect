@@ -313,3 +313,206 @@ impl TimerWheel {
     self.pending.is_empty()
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use foca::Identity as _;
+
+  use super::*;
+
+  fn member(name: &str, incarnation: u128) -> Member {
+    Member::new(NodeId::from_parts(name, incarnation), name)
+  }
+
+  fn config() -> Config {
+    let mut config = Config::new_lan(std::num::NonZeroU32::new(3).expect("nonzero"));
+    config.notify_down_members = true;
+    config
+  }
+
+  /// Deliver every packet in `out` (and the replies it provokes) between
+  /// `a` and `b` until the wire is quiet. Returns the events each saw.
+  fn shuttle(
+    a: &mut Membership,
+    b: &mut Membership,
+    first: Output,
+    from_a: bool,
+  ) -> (Vec<MembershipEvent>, Vec<MembershipEvent>) {
+    let (mut seen_a, mut seen_b) = (Vec::new(), Vec::new());
+    let mut wire: Vec<(bool, Bytes)> = Vec::new();
+    let mut absorb = |out: Output, at_a: bool, wire: &mut Vec<(bool, Bytes)>| {
+      if at_a {
+        seen_a.extend(out.events);
+      } else {
+        seen_b.extend(out.events);
+      }
+      // Packets produced at A travel to B and vice versa.
+      wire.extend(out.packets.into_iter().map(|(_, bytes)| (!at_a, bytes)));
+    };
+    absorb(first, from_a, &mut wire);
+    while let Some((to_a, bytes)) = (!wire.is_empty()).then(|| wire.remove(0)) {
+      let out = if to_a {
+        a.handle_packet(&bytes)
+      } else {
+        b.handle_packet(&bytes)
+      };
+      if let Ok(out) = out {
+        absorb(out, to_a, &mut wire);
+      }
+    }
+    (seen_a, seen_b)
+  }
+
+  #[test]
+  fn fresh_engine_knows_only_itself() {
+    let engine = Membership::new(member("a", 1), 3);
+    assert_eq!(engine.me(), &member("a", 1));
+    assert!(engine.members().is_empty());
+  }
+
+  #[test]
+  fn announce_targets_the_peer() {
+    let mut a = Membership::deterministic(member("a", 1), config(), 1);
+    let out = a.announce(member("b", 2)).expect("announce");
+    assert_eq!(out.packets.len(), 1);
+    assert_eq!(out.packets[0].0.addr, "b");
+  }
+
+  #[test]
+  fn join_emits_node_up_on_both_sides() {
+    let mut a = Membership::deterministic(member("a", 1), config(), 1);
+    let mut b = Membership::deterministic(member("b", 2), config(), 2);
+    let out = a.announce(b.me().clone()).expect("announce");
+    let (seen_a, seen_b) = shuttle(&mut a, &mut b, out, true);
+    assert!(
+      seen_a
+        .iter()
+        .any(|e| matches!(e, MembershipEvent::NodeUp(m) if m.addr == "b"))
+    );
+    assert!(
+      seen_b
+        .iter()
+        .any(|e| matches!(e, MembershipEvent::NodeUp(m) if m.addr == "a"))
+    );
+    assert_eq!(a.members(), vec![b.me().clone()]);
+  }
+
+  #[test]
+  fn graceful_leave_emits_node_down_at_the_peer() {
+    let mut a = Membership::deterministic(member("a", 1), config(), 1);
+    let mut b = Membership::deterministic(member("b", 2), config(), 2);
+    let out = a.announce(b.me().clone()).expect("announce");
+    shuttle(&mut a, &mut b, out, true);
+
+    let out = b.leave().expect("leave");
+    let (seen_a, _) = shuttle(&mut a, &mut b, out, false);
+    assert!(
+      seen_a
+        .iter()
+        .any(|e| matches!(e, MembershipEvent::NodeDown(m) if m.addr == "b")),
+      "a must see b leave: {seen_a:?}"
+    );
+    assert!(a.members().is_empty());
+  }
+
+  #[test]
+  fn gossip_with_no_peers_sends_nothing() {
+    let mut a = Membership::deterministic(member("a", 1), config(), 1);
+    let out = a.gossip().expect("gossip");
+    assert!(out.packets.is_empty());
+    assert!(out.events.is_empty());
+  }
+
+  #[test]
+  fn garbage_packet_is_a_membership_error() {
+    let mut a = Membership::deterministic(member("a", 1), config(), 1);
+    let err = a.handle_packet(&[0xff; 8]).err().expect("garbage");
+    assert!(err.to_string().starts_with("membership: "), "{err}");
+  }
+
+  #[test]
+  fn renewed_identity_keeps_name_and_address() {
+    let me = member("a", 1);
+    let renewed = me.renew().expect("renewable");
+    assert_eq!(renewed.id.name(), "a");
+    assert_eq!(renewed.addr, "a");
+    assert_eq!(renewed.addr(), "a");
+  }
+
+  #[test]
+  fn newer_boot_wins_the_address_conflict() {
+    let old = member("a", 1);
+    let new = member("a", 2);
+    assert!(new.win_addr_conflict(&old));
+    assert!(!old.win_addr_conflict(&new));
+  }
+
+  #[test]
+  fn monitors_deliver_to_every_subscriber_in_order() {
+    let monitors = NodeMonitors::new();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    for tag in ["first", "second"] {
+      let log = Arc::clone(&log);
+      monitors.subscribe(Arc::new(move |event: &MembershipEvent| {
+        if let MembershipEvent::Rejoined(m) = event {
+          log.lock().expect("log").push(format!("{tag}:{}", m.addr));
+        }
+      }));
+    }
+    monitors.publish(&[MembershipEvent::Rejoined(member("x", 1))]);
+    assert_eq!(*log.lock().expect("log"), vec!["first:x", "second:x"]);
+  }
+
+  #[test]
+  fn timer_wheel_fires_in_deadline_order() {
+    let mut wheel = TimerWheel::new();
+    assert!(wheel.is_empty());
+    wheel.schedule(vec![
+      (Timer::PeriodicGossip(3), Duration::from_millis(300)),
+      (Timer::PeriodicGossip(1), Duration::from_millis(100)),
+      (Timer::PeriodicGossip(2), Duration::from_millis(200)),
+    ]);
+    assert!(wheel.advance(Duration::from_millis(50)).is_empty());
+    assert_eq!(
+      wheel.advance(Duration::from_millis(150)),
+      vec![Timer::PeriodicGossip(1), Timer::PeriodicGossip(2)]
+    );
+    assert!(!wheel.is_empty());
+    assert_eq!(
+      wheel.advance(Duration::from_millis(100)),
+      vec![Timer::PeriodicGossip(3)]
+    );
+    assert!(wheel.is_empty());
+  }
+
+  #[test]
+  fn timer_wheel_keeps_equal_deadlines_stable() {
+    let mut wheel = TimerWheel::new();
+    let at = Duration::from_millis(10);
+    wheel.schedule(vec![
+      (Timer::ProbeRandomMember(1), at),
+      (Timer::ProbeRandomMember(2), at),
+    ]);
+    wheel.schedule(vec![(Timer::ProbeRandomMember(3), at)]);
+    assert_eq!(
+      wheel.advance(at),
+      vec![
+        Timer::ProbeRandomMember(1),
+        Timer::ProbeRandomMember(2),
+        Timer::ProbeRandomMember(3),
+      ]
+    );
+  }
+
+  #[test]
+  fn timer_wheel_measures_from_current_virtual_time() {
+    let mut wheel = TimerWheel::new();
+    wheel.advance(Duration::from_secs(10));
+    wheel.schedule(vec![(Timer::PeriodicAnnounce(1), Duration::from_secs(1))]);
+    assert!(wheel.advance(Duration::from_millis(999)).is_empty());
+    assert_eq!(
+      wheel.advance(Duration::from_millis(1)),
+      vec![Timer::PeriodicAnnounce(1)]
+    );
+  }
+}

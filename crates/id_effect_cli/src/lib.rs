@@ -6,6 +6,38 @@
 //! [`Result`] / [`id_effect::Exit`] / [`id_effect::Cause`] to
 //! [`std::process::ExitCode`] for `fn main() -> ExitCode`.
 //!
+//! ## Example
+//!
+//! ```rust
+//! use std::process::ExitCode;
+//!
+//! use id_effect::{Cause, Effect, Exit, FiberId, fail, succeed};
+//! use id_effect_cli::{RunMainConfig, exit_code_for_exit, run_main};
+//!
+//! fn greet(name: &str) -> Effect<(), String, ()> {
+//!   if name.is_empty() {
+//!     fail("name must not be empty".to_string())
+//!   } else {
+//!     let line = format!("hello, {name}");
+//!     succeed(()).map(move |()| println!("{line}"))
+//!   }
+//! }
+//!
+//! assert_eq!(run_main(greet("ada"), (), RunMainConfig::minimal()), ExitCode::SUCCESS);
+//! assert_eq!(run_main(greet(""), (), RunMainConfig::minimal()), ExitCode::from(1));
+//! assert_eq!(
+//!   exit_code_for_exit(Exit::<(), String>::Failure(Cause::die("bug"))),
+//!   ExitCode::from(101)
+//! );
+//! assert_eq!(
+//!   exit_code_for_exit(Exit::<(), String>::Failure(Cause::interrupt(FiberId::new(1)))),
+//!   ExitCode::from(130)
+//! );
+//! ```
+//!
+//! [`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal)
+//! is the starter template for new CLIs.
+//!
 //! [`clap`]: https://docs.rs/clap
 
 #![forbid(unsafe_code)]

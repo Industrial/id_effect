@@ -4,8 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Effect-logging service (forwards to tracing) for effect! / AsyncEffect programs"
+description = "EffectLogger capability for id_effect: log levels, annotations and pluggable backends over tracing"
 repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"

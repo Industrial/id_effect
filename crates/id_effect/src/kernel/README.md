@@ -1,6 +1,9 @@
 # `kernel` — Stratum 2: `Effect` and supporting kernel
 
-The **core** of the interpreter model: [`Effect<A, E, R>`](effect.rs) as a lazy computation over environment `R`, plus [`Thunk`](thunk.rs), [`Result`](result.rs) helpers, and [`Reader`](reader.rs)-style environment threading.
+The **core** of the interpreter model: [`Effect<A, E, R>`](effect.rs) as a lazy computation over environment `R`, plus parallel binds ([`par_bind`](par_bind.rs)).
+
+> Since 0.6 the pure `thunk`, `result` and `reader` modules described below live in the
+> maintenance-tier `id_effect_fp` crate (`id_effect_fp::{thunk, result, reader}`).
 
 ## What lives here
 

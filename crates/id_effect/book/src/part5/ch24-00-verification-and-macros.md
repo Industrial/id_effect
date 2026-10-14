@@ -5,10 +5,10 @@ Part V closes with tools that keep functional patterns honest: law checks, prope
 ## What This Chapter Covers
 
 - **[`testing::proptest`](../../src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
-- **[`law_test!`](../../src/algebra/law_test.rs)** — monad law checks for concrete type constructors
+- **[`law_test!`](../../../../id_effect_fp/src/algebra/law_test.rs)** — monad law checks for concrete type constructors
 - **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
 - **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
-- **[`FreeAp`](../../src/algebra/free_ap.rs)** — free applicative over `Effect`
+- **[`FreeAp`](../../../../id_effect_fp/src/algebra/free_ap.rs)** — free applicative over `Effect`
 - **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(Schema)]` (`schema()`, `HasSchema`)
 
 ## Property tests with `Exit`
@@ -34,11 +34,11 @@ With `proptest`, use `success_value` and `prop_assert_exit_success` inside `prop
 
 ## Monad law checks
 
-Use [`law_test!`](../../src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
+Use [`law_test!`](../../../../id_effect_fp/src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
 
 ```rust
 use id_effect::law_test;
-use id_effect::algebra::monad::option;
+use id_effect_fp::algebra::monad::option;
 
 fn inc(x: i32) -> Option<i32> { Some(x + 1) }
 fn double(x: i32) -> Option<i32> { Some(x * 2) }
@@ -72,7 +72,7 @@ GoldenBuilder::new("my_case", "expected").assert_observed("observed");
 
 ## Free applicative
 
-[`FreeAp`](../../src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](../../src/algebra/free_ap.rs) runs it as a concrete `Effect`:
+[`FreeAp`](../../../../id_effect_fp/src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](../../../../id_effect_fp/src/algebra/free_ap.rs) runs it as a concrete `Effect`:
 
 ```rust
 use id_effect::{FreeAp, pure, run_test, Exit};
@@ -110,4 +110,4 @@ struct User { #[schema("user_name")] name: String }
 
 `#[derive(SchemaParser)]` is kept as a deprecated alias for one release. It no longer generates a `parser()` method (that tied a published derive to the unpublished `id_effect_parse` crate). Derive macros cannot carry `#[deprecated]`, so there is no compiler warning — switch to `#[derive(Schema)]`.
 
-There is no `#[derive(Fsm)]` in 0.6: the earlier placeholder emitted no transition table and was removed. Build machines with the `id_effect_fsm` API directly.
+`#[derive(Fsm)]` lives in `id_effect_fsm` (re-exported from `id_effect_proc_macro`): annotate a state enum with `#[fsm(event = …, initial = …)]` and `#[fsm(on(Event => Target, …))]` per variant to generate its transition table. Unknown targets and duplicate edges are compile errors. See the [state machines chapter](./ch19-00-state-machines.md).

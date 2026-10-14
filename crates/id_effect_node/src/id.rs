@@ -67,3 +67,59 @@ impl fmt::Display for NodeId {
     write!(f, "{}#{:x}", self.name, self.incarnation)
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn fresh_keeps_the_logical_name() {
+    let id = NodeId::fresh(&NodeName::new("a@host"));
+    assert_eq!(id.name(), "a@host");
+  }
+
+  #[test]
+  fn two_boots_never_share_an_identity() {
+    let name = NodeName::new("a@host");
+    let first = NodeId::fresh(&name);
+    let second = NodeId::fresh(&name);
+    assert_ne!(first, second);
+    assert!(first.same_node(&second));
+  }
+
+  #[test]
+  fn from_parts_exposes_its_parts() {
+    let id = NodeId::from_parts("b@host", 42);
+    assert_eq!(id.name(), "b@host");
+    assert_eq!(id.incarnation(), 42);
+    assert_eq!(id, NodeId::from_parts("b@host", 42));
+  }
+
+  #[test]
+  fn same_node_ignores_incarnation_only() {
+    let a1 = NodeId::from_parts("a@host", 1);
+    assert!(a1.same_node(&NodeId::from_parts("a@host", 2)));
+    assert!(!a1.same_node(&NodeId::from_parts("b@host", 1)));
+  }
+
+  #[test]
+  fn display_is_name_hash_hex_incarnation() {
+    assert_eq!(NodeId::from_parts("a@host", 255).to_string(), "a@host#ff");
+  }
+
+  #[test]
+  fn incarnation_high_bits_are_boot_time() {
+    // 2020-01-01T00:00:00Z in nanoseconds: any sane boot clock is past it.
+    const JAN_2020_NANOS: u64 = 1_577_836_800_000_000_000;
+    let id = NodeId::fresh(&NodeName::new("a@host"));
+    assert!((id.incarnation() >> 64) as u64 > JAN_2020_NANOS);
+  }
+
+  #[test]
+  fn serde_round_trip_preserves_identity() {
+    let id = NodeId::from_parts("a@host", u128::MAX - 1);
+    let bytes = postcard::to_allocvec(&id).expect("encode");
+    let back: NodeId = postcard::from_bytes(&bytes).expect("decode");
+    assert_eq!(back, id);
+  }
+}

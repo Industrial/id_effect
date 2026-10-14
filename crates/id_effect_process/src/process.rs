@@ -12,13 +12,22 @@
 //!    `handle_info`. Handler failure exits the process abnormally
 //!    (**without** running `terminate` — the state was consumed by the
 //!    failing handler; this is the honest Rust-ownership variant of
-//!    BEAM's crash semantics).
+//!    BEAM's crash semantics). A panic in `init`, a handler, or `terminate`
+//!    is caught and treated the same way, with reason
+//!    `ExitReason::Error("panic: <message>")`.
 //! 3. A cooperative kill (link cascade, `exit/2`, supervisor shutdown)
 //!    closes the mailbox; the loop notices at the next message boundary
 //!    and runs `terminate` with the intact state.
-//! 4. On every exit path the process is finalized exactly once: exit
+//! 4. On every exit path the mailbox is closed (later sends fail with
+//!    `SendError::Rejected`) and the process is finalized exactly once: exit
 //!    signals fan out to links, monitors fire, and registered names are
 //!    dropped.
+
+use std::any::Any;
+use std::future::Future;
+use std::panic::{self, AssertUnwindSafe};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use id_effect::runtime::Never;
 use id_effect::{Effect, Queue, box_future, succeed};
@@ -172,6 +181,33 @@ impl ProcessCtx {
   }
 }
 
+/// Polls the inner future, converting a panic during any poll into `Err`.
+struct CatchUnwind<F>(F);
+
+impl<F: Future + Unpin> Future for CatchUnwind<F> {
+  type Output = Result<F::Output, Box<dyn Any + Send>>;
+
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let inner = &mut self.0;
+    match panic::catch_unwind(AssertUnwindSafe(|| Pin::new(inner).poll(cx))) {
+      Ok(Poll::Ready(out)) => Poll::Ready(Ok(out)),
+      Ok(Poll::Pending) => Poll::Pending,
+      Err(payload) => Poll::Ready(Err(payload)),
+    }
+  }
+}
+
+/// Best-effort text of a panic payload (`&str` / `String` payloads).
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+  if let Some(s) = payload.downcast_ref::<&str>() {
+    (*s).to_string()
+  } else if let Some(s) = payload.downcast_ref::<String>() {
+    s.clone()
+  } else {
+    "non-string panic payload".to_string()
+  }
+}
+
 /// Build the complete process-loop effect for behavior `P`.
 ///
 /// The effect never fails (`E = Never`); every failure mode is converted
@@ -194,72 +230,86 @@ pub(crate) fn process_loop<P: Process>(
           .unwrap_or(fallback)
       };
 
-      let reason: ExitReason = match P::init(args, ctx.clone()).run(env).await {
-        Err(e) => ExitReason::error(e),
-        Ok(mut state) => {
-          let exit: ExitReason;
-          loop {
-            // Kill checkpoint: a cooperative kill may have arrived while a
-            // handler ran or while messages were still buffered.
-            if let Some(c) = cell.as_ref()
-              && let Some(r) = c.recorded_kill()
-            {
-              let _ = P::terminate(state, &r, ctx.clone()).run(env).await;
-              exit = r;
-              break;
-            }
-            let msg = match mailbox.take().run(&mut ()).await {
-              Ok(m) => m,
-              Err(_) => {
-                // Mailbox closed: either a kill (reason recorded) or all
-                // senders dropped (treated as a graceful stop).
-                let r = recorded(ExitReason::Normal);
+      let body = async {
+        match P::init(args, ctx.clone()).run(env).await {
+          Err(e) => ExitReason::error(e),
+          Ok(mut state) => {
+            let exit: ExitReason;
+            loop {
+              // Kill checkpoint: a cooperative kill may have arrived while a
+              // handler ran or while messages were still buffered.
+              if let Some(c) = cell.as_ref()
+                && let Some(r) = c.recorded_kill()
+              {
                 let _ = P::terminate(state, &r, ctx.clone()).run(env).await;
                 exit = r;
                 break;
               }
-            };
-            let next = match msg {
-              ProcMsg::Call(m, reply) => {
-                match P::handle_call(state, m, ctx.clone()).run(env).await {
-                  Ok((rep, next)) => {
-                    reply.try_succeed(rep);
-                    next
+              let msg = match mailbox.take().run(&mut ()).await {
+                Ok(m) => m,
+                Err(_) => {
+                  // Mailbox closed: either a kill (reason recorded) or all
+                  // senders dropped (treated as a graceful stop).
+                  let r = recorded(ExitReason::Normal);
+                  let _ = P::terminate(state, &r, ctx.clone()).run(env).await;
+                  exit = r;
+                  break;
+                }
+              };
+              let next = match msg {
+                ProcMsg::Call(m, reply) => {
+                  match P::handle_call(state, m, ctx.clone()).run(env).await {
+                    Ok((rep, next)) => {
+                      reply.try_succeed(rep);
+                      next
+                    }
+                    Err(e) => {
+                      exit = ExitReason::error(e);
+                      break;
+                    }
                   }
+                }
+                ProcMsg::Cast(m) => match P::handle_cast(state, m, ctx.clone()).run(env).await {
+                  Ok(next) => next,
                   Err(e) => {
                     exit = ExitReason::error(e);
                     break;
                   }
-                }
-              }
-              ProcMsg::Cast(m) => match P::handle_cast(state, m, ctx.clone()).run(env).await {
-                Ok(next) => next,
-                Err(e) => {
-                  exit = ExitReason::error(e);
+                },
+                ProcMsg::Info(i) => match P::handle_info(state, i, ctx.clone()).run(env).await {
+                  Ok(next) => next,
+                  Err(e) => {
+                    exit = ExitReason::error(e);
+                    break;
+                  }
+                },
+              };
+              match next {
+                Next::Continue(s) => state = s,
+                Next::Stop(r, s) => {
+                  let _ = P::terminate(s, &r, ctx.clone()).run(env).await;
+                  exit = r;
                   break;
                 }
-              },
-              ProcMsg::Info(i) => match P::handle_info(state, i, ctx.clone()).run(env).await {
-                Ok(next) => next,
-                Err(e) => {
-                  exit = ExitReason::error(e);
-                  break;
-                }
-              },
-            };
-            match next {
-              Next::Continue(s) => state = s,
-              Next::Stop(r, s) => {
-                let _ = P::terminate(s, &r, ctx.clone()).run(env).await;
-                exit = r;
-                break;
               }
             }
+            exit
           }
-          exit
         }
       };
+      // A panic in `init`, a handler, or `terminate` is a crash like any
+      // other: the state is gone, and the process still exits through the
+      // same close-and-finalize path so links, monitors, pending calls, and
+      // supervisors all observe it.
+      let reason = match CatchUnwind(Box::pin(body)).await {
+        Ok(reason) => reason,
+        Err(payload) => ExitReason::Error(format!("panic: {}", panic_message(&*payload))),
+      };
 
+      // Close the mailbox on every exit path (graceful stops, init failures
+      // and panics do not go through `kill`), so later sends to this pid are
+      // rejected instead of silently queueing into a dead mailbox.
+      let _ = mailbox.shutdown().run(&mut ()).await;
       node.finalize_process(&pid, reason);
       Ok(())
     })

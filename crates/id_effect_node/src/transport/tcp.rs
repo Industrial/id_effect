@@ -132,3 +132,156 @@ impl Transport for TcpTransport {
     }))
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  async fn connected() -> (Box<dyn Connection>, Box<dyn Connection>) {
+    let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr();
+    let (dial, accepted) = tokio::join!(TcpTransport.connect(&addr), listener.accept());
+    (dial.expect("dial"), accepted.expect("accept"))
+  }
+
+  #[tokio::test]
+  async fn listener_reports_the_resolved_ephemeral_port() {
+    let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+    let addr: std::net::SocketAddr = listener.local_addr().parse().expect("socket addr");
+    assert_ne!(addr.port(), 0);
+  }
+
+  #[tokio::test]
+  async fn frames_arrive_in_order_both_ways() {
+    let (dial, accepted) = connected().await;
+    for i in 0..50u32 {
+      dial
+        .send(Bytes::from(i.to_be_bytes().to_vec()))
+        .await
+        .expect("send");
+    }
+    for i in 0..50u32 {
+      assert_eq!(
+        accepted.recv().await.expect("recv"),
+        Bytes::from(i.to_be_bytes().to_vec())
+      );
+    }
+    accepted
+      .send(Bytes::from_static(b"back"))
+      .await
+      .expect("send");
+    assert_eq!(
+      dial.recv().await.expect("recv"),
+      Bytes::from_static(b"back")
+    );
+  }
+
+  #[tokio::test]
+  async fn empty_frames_are_preserved() {
+    let (dial, accepted) = connected().await;
+    dial.send(Bytes::new()).await.expect("send");
+    dial.send(Bytes::from_static(b"x")).await.expect("send");
+    assert!(accepted.recv().await.expect("recv").is_empty());
+    assert_eq!(
+      accepted.recv().await.expect("recv"),
+      Bytes::from_static(b"x")
+    );
+  }
+
+  #[tokio::test]
+  async fn large_frames_cross_intact() {
+    let (dial, accepted) = connected().await;
+    let payload: Vec<u8> = (0..1_000_000u32).map(|i| i as u8).collect();
+    let sent = Bytes::from(payload);
+    let (send, recv) = tokio::join!(dial.send(sent.clone()), accepted.recv());
+    send.expect("send");
+    assert_eq!(recv.expect("recv"), sent);
+  }
+
+  #[tokio::test]
+  async fn oversized_frames_are_refused_before_writing() {
+    let (dial, _accepted) = connected().await;
+    let huge = Bytes::from(vec![0u8; MAX_FRAME_BYTES as usize + 1]);
+    assert!(matches!(dial.send(huge).await, Err(TransportError::Io(_))));
+  }
+
+  #[tokio::test]
+  async fn hostile_length_prefix_is_rejected_without_allocating() {
+    let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr();
+    let (raw, accepted) = tokio::join!(TcpStream::connect(&addr), listener.accept());
+    let mut raw = raw.expect("raw dial");
+    let accepted = accepted.expect("accept");
+    raw
+      .write_all(&u32::MAX.to_be_bytes())
+      .await
+      .expect("write prefix");
+    assert!(matches!(
+      accepted.recv().await,
+      Err(TransportError::Io(m)) if m.contains("MAX_FRAME_BYTES")
+    ));
+  }
+
+  #[tokio::test]
+  async fn close_is_observed_as_closed_by_the_peer() {
+    let (dial, accepted) = connected().await;
+    dial.close().await;
+    assert!(matches!(accepted.recv().await, Err(TransportError::Closed)));
+  }
+
+  #[tokio::test]
+  async fn truncated_frame_is_closed_not_partial() {
+    let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr();
+    let (raw, accepted) = tokio::join!(TcpStream::connect(&addr), listener.accept());
+    let mut raw = raw.expect("raw dial");
+    let accepted = accepted.expect("accept");
+    raw.write_all(&10u32.to_be_bytes()).await.expect("prefix");
+    raw.write_all(b"abc").await.expect("partial body");
+    drop(raw);
+    assert!(matches!(accepted.recv().await, Err(TransportError::Closed)));
+  }
+
+  #[tokio::test]
+  async fn peer_addr_is_the_remote_socket() {
+    let (dial, accepted) = connected().await;
+    assert!(dial.peer_addr().starts_with("127.0.0.1:"));
+    assert!(accepted.peer_addr().starts_with("127.0.0.1:"));
+    assert_ne!(dial.peer_addr(), accepted.peer_addr());
+  }
+
+  #[tokio::test]
+  async fn bad_bind_address_is_a_bind_error() {
+    let err = TcpTransport
+      .listen("not-an-address")
+      .await
+      .err()
+      .expect("bad addr");
+    assert!(matches!(err, TransportError::Bind(_)));
+  }
+
+  #[tokio::test]
+  async fn dial_to_a_closed_port_is_a_connect_error() {
+    let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr();
+    drop(listener);
+    let err = TcpTransport.connect(&addr).await.err().expect("refused");
+    assert!(matches!(err, TransportError::Connect(_)));
+  }
+
+  #[test]
+  fn io_errors_convert_to_transport_io() {
+    let err: TransportError = std::io::Error::other("disk on fire").into();
+    assert!(matches!(&err, TransportError::Io(m) if m == "disk on fire"));
+    assert_eq!(err.to_string(), "io: disk on fire");
+    assert_eq!(TransportError::Closed.to_string(), "connection closed");
+    assert_eq!(
+      TransportError::Connect("x".into()).to_string(),
+      "connect failed: x"
+    );
+    assert_eq!(
+      TransportError::Bind("y".into()).to_string(),
+      "bind failed: y"
+    );
+  }
+}

@@ -108,7 +108,6 @@ fn fanout_cast_reaches_all_group_members() {
   let p2 = a
     .remote_spawn("b@test", "sink", args, None, Duration::from_secs(2))
     .expect("spawn 2");
-  std::thread::sleep(Duration::from_millis(50));
 
   let mut groups = ProcessGroups::new("a@test");
   groups.join("sinks", &p1);
@@ -118,9 +117,11 @@ fn fanout_cast_reaches_all_group_members() {
   let delivered = fanout_cast(&a, &groups, "sinks", &msg).expect("fanout");
   assert_eq!(delivered, 2, "cast reached both members");
 
-  let deadline = std::time::Instant::now() + Duration::from_secs(2);
-  while HITS.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < deadline {
-    std::thread::sleep(Duration::from_millis(5));
+  // Mailboxes are FIFO: once each sink answers a call, its cast is handled.
+  let call = postcard::to_allocvec(&()).unwrap();
+  for pid in [&p1, &p2] {
+    a.remote_call(pid, call.clone(), Duration::from_secs(2))
+      .expect("sync call");
   }
   assert_eq!(HITS.load(Ordering::SeqCst), 2, "both sinks ticked");
 }

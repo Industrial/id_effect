@@ -92,6 +92,119 @@ Narrows the workspace to its core purpose and hardens what remains. See
   (`scripts/validate-crate-packaging.sh --print-order`), and `publish.yml` loops over
   it.
 
+### Slimmer core and the new `id_effect_fp` crate (breaking)
+
+- New maintenance-tier crate **`id_effect_fp`**. It takes the code core does not use
+  itself: `algebra`, `collections` (persistent structures), `stm`,
+  `kernel::{result, reader, thunk}`, and the unused `foundation` pieces (`unit`,
+  `never`, `function`, `product`, `coproduct`, `isomorphism`, `option_`). These paths
+  move:
+  - `id_effect::{algebra, collections, stm}` → `id_effect_fp::{algebra, collections, stm}`
+  - `id_effect::kernel::{result, reader, thunk}` → `id_effect_fp::{result, reader, thunk}`
+  - Root re-exports such as `EffectHashMap`, `EffectVector`, `RedBlackTree`, `Trie`,
+    `MutableList`, `ChunkBuilder`, `Stm`, `TRef`, `TMap`, `atomically`, `Foldable`,
+    `Alternative` and `traverse_vec` → `id_effect_fp::…`
+- Placement moves to **`id_effect_node::placement`**: `PlacementMode`,
+  `ClusterResourcePolicy`, `NodeCandidate`, `LoadReport`, `place`,
+  `pick_placement`, `score_candidate` and `ClusterTelemetry`.
+  `FabricGovernor::scale_out_placed` becomes the free function
+  `id_effect_node::scale_out_placed`.
+- New default-on **`compute`** feature: it gates `compute::*` and parallelism, and
+  brings in rayon and sysinfo. With `--no-default-features`, core builds without
+  rayon, sysinfo or im, and streams, sorts and runtimes run serially.
+- `im` is no longer a dependency. The following now use std collections:
+  `SpanRecord::annotations`, `TracingFiberRefs::span_annotations`,
+  `Metric::snapshot_frequencies`, `Sink::collect_to_map` (`HashMap`) and
+  `TimeBucketMap` (`BTreeMap`).
+- tokio stays a required dependency (features `macros`, `rt`, `sync` only), because
+  the coordination primitives are built on `tokio::sync`.
+- Core no longer has a dev-dependency on `id_effect_config`.
+
+### Hardened runtime crates
+
+- **`id_effect_process`:**
+  - A stopped process's mailbox is closed on every exit path. Sending to a dead pid
+    now returns `SendError::Rejected`; it used to succeed silently.
+  - A panic in a handler, `init` or `terminate` is caught. The process exits with
+    `ExitReason::Error("panic: …")` and goes through the normal exit path:
+    links and monitors fire, pending calls fail with `CallError::Down`, and the
+    supervisor restarts it. Before, it never finalized and callers timed out.
+  - New `Addr<DynamicSupervisor>::terminate_dyn_child`.
+  - Tests went from 23 to 80.
+- **`id_effect_fsm` (breaking):**
+  - `Interpreter::step` and `run` take the machine by value and return an `Effect`
+    yielding the updated machine. The new state is kept only if the action succeeds.
+  - `Saga::run` and `compensate_indices` return `Effect`s.
+  - Session types are removed (`SessionSend`, `SessionRecv`, `PingPong`, …).
+  - `#[derive(Fsm)]` rejects duplicate edges even when the same event is spelled
+    two ways (`Go` and `E::Go`).
+  - New: a real `#[derive(Fsm)]` (`#[fsm(event = …, initial = …)]`,
+    `#[fsm(on(Ev => Target))]`) with compile-time checks, and a gen_statem-style
+    process behaviour (`FsmProcess`, `FsmSpec`, `FsmHandle`). fsm now depends on
+    `id_effect_process`.
+- **`id_effect_node`** (tests went from 30 to 203; bugs found while testing):
+  - Call/spawn replies and monitor `Down` messages were broadcast to every peer, so
+    one node's reply could complete another node's request. They now go only to the
+    sender (new `Mesh::handle_envelope_from`).
+  - Monitoring an unreachable node now fires `NoConnection`. Demonitor works (new
+    `Mesh::remote_demonitor`). Pending requests are cleaned up on failure or timeout.
+  - A child whose takeover fails is kept as orphaned and retried instead of being
+    dropped (`DistributedSupervisor::orphaned` / `retry_orphaned`).
+    - Placement tries the preferred node and then the local node.
+    - Retries run in the background (`on_membership` now returns
+      `Option<RetryHandle>`) and skip the departed node until it rejoins.
+  - Monitors that peers hold on our processes are keyed by the peer's name and boot
+    incarnation, and are removed when the peer goes down. A restarted node can no
+    longer receive another incarnation's `Down`.
+  - Monitor sinks run after the lock is released, so a sink can call
+    `remote_monitor` or `remote_demonitor` without deadlocking.
+  - In-memory transport:
+    - `close()` closes both ends, and a dropped listener frees its address.
+    - Frames that already arrived are delivered after a close or partition.
+    - Connections killed by a partition stay dead after `heal`.
+  - QUIC: it used to panic whenever it built a TLS config (two crypto providers were
+    linked). It now uses an explicit provider and TLS 1.3 only. The server name is
+    configurable (`QuicConfig::with_server_name`, default `"cluster"`).
+  - **Breaking:** `PgAdvisoryLease` lock keys are now derived with SHA-256 (they
+    used to come from std's hasher, which can change between Rust versions). Do not
+    run old and new builds against the same singleton.
+
+### Integrations
+
+- **`id_effect_axum` (breaking):**
+  - Effects run on an `EffectExecutor`, which replaces `block_in_place`. It is an
+    elastic pool of dedicated threads: each in-flight request gets its own thread with
+    a private single-threaded runtime. Handler futures are `Send`, a blocking effect
+    stalls only its own request, and current-thread runtimes work.
+    - Bounded admission: `max_threads` (default 512) plus `queue_capacity` (default
+      1024).
+    - `SaturationPolicy::Wait` (default) or `Reject`, which answers 503 with
+      `Retry-After`.
+    - `DropPolicy::RunToCompletion` (default): an effect finishes even if the client
+      disconnects. `DropPolicy::Cancel` is opt-in.
+    - Configure it with `EffectExecutor::builder()`. A service can take its own
+      executor via `EffectService::with_executor`.
+  - `run_with_env` and `run_with_caps` now require `Send + 'static` closures and
+    `Send` result and error types.
+  - `tokio::spawn` inside an effect runs on an executor worker.
+  - New request-scoped capability overrides: `CapOverrideLayer`, `RequestCaps`,
+    `execute_with_request_caps`.
+- **`id_effect_platform`:** the `auth` module is behind an opt-in `auth` feature.
+  reqwest 0.13 only.
+- **`id_effect_sql`:** live Postgres tests fail when `ID_EFFECT_REQUIRE_PG=1` and no
+  database is available (CI's new `pg-integration` job sets it). Otherwise they print
+  `SKIP`; they no longer pass silently.
+- **`id_effect_cli`:** new example `010_exit_codes`. `examples/cli-minimal` is the
+  template, and `scripts/check-version-drift.sh` (run in CI) catches stale
+  `id_effect` version pins.
+- **`id_effect_resilience`:**
+  - New `retry_with_breaker`: retries on a `Schedule` but fails fast when the breaker
+    is open.
+  - Clock injection: `CircuitBreaker::make_with_clock`, `RateLimiter::make_with_clock`.
+  - Bulkhead's docs now explain that it rejects instead of waiting.
+- Every published crate has a README with an example and passes the
+  quality-bar check for its tier (`scripts/tier-conformance.sh`).
+
 ### Tooling
 
 - MSRV is declared: `rust-version = "1.94"`, checked by a CI `msrv` job.

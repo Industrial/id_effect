@@ -72,4 +72,45 @@ mod tests {
     .expect("hedged");
     assert_eq!(out, 2);
   }
+
+  #[tokio::test]
+  async fn hedged_fast_primary_failure_wins_the_race() {
+    use id_effect::kernel::fail;
+    let out = run_async(
+      hedged(
+        fail::<u32, &str, ()>("primary down"),
+        succeed::<u32, &str, ()>(2u32),
+        Duration::from_secs(60),
+      ),
+      (),
+    )
+    .await;
+    assert_eq!(out, Err("primary down"));
+  }
+
+  #[tokio::test]
+  async fn hedged_backup_is_not_started_before_delay() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let started = Arc::new(AtomicBool::new(false));
+    let backup = {
+      let started = Arc::clone(&started);
+      Effect::new(move |_r: &mut ()| {
+        started.store(true, Ordering::SeqCst);
+        Ok::<u32, ()>(2)
+      })
+    };
+    let out = run_async(
+      hedged(
+        succeed::<u32, (), ()>(1u32),
+        backup,
+        Duration::from_secs(60),
+      ),
+      (),
+    )
+    .await
+    .expect("hedged");
+    assert_eq!(out, 1);
+    assert!(!started.load(Ordering::SeqCst));
+  }
 }

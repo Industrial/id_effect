@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::{Effect, run_blocking, succeed};
 use id_effect_process::{
   ChildSpec, Next, NodeName, Process, ProcessCtx, ProcessNode, Strategy, SupervisorSpec,
 };
@@ -33,9 +33,11 @@ fn main() {
   let handle = SupervisorSpec::new(Strategy::OneForOne)
     .child(ChildSpec::worker::<Ping, _>("ping", || ((), ())))
     .start(&node);
-  std::thread::sleep(Duration::from_millis(50));
+  // A supervisor call is answered only after `init` started every child.
+  let children =
+    run_blocking(handle.which_children(Duration::from_secs(5)), ()).expect("supervisor answers");
   println!(
-    "supervisor pid {} children={:?}",
+    "supervisor pid {} children={children:?} live processes={}",
     handle.pid(),
     node.table().len()
   );

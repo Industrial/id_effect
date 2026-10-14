@@ -3,7 +3,9 @@
 //! Tower middleware stacks.
 //!
 //! Enabled by the `tower` feature. Formerly the `id_effect_tower` crate (merged in 0.6, ADR 0010).
-//! Effects run via [`id_effect::run_async`] on the ambient Tokio runtime.
+//! Effects run via [`id_effect::run_async`] on the global [`EffectExecutor`] — the crate's single
+//! [Send strategy](crate#send-strategy) — so service futures are [`Send`] and work on any Tokio
+//! runtime flavour.
 //!
 //! ## Concurrency
 //!
@@ -33,6 +35,8 @@ use id_effect::{Effect, Metric, QueueError, SynchronizedRef, box_future};
 use tokio::sync::{AcquireError, OwnedSemaphorePermit, Semaphore};
 use tower::Service;
 
+use crate::EffectExecutor;
+
 type AcquireFuture =
   Pin<Box<dyn Future<Output = Result<OwnedSemaphorePermit, AcquireError>> + Send>>;
 
@@ -41,6 +45,16 @@ type AcquireFuture =
 struct RequestMetrics {
   latency: Metric<Duration, ()>,
   errors: Metric<u64, ()>,
+}
+
+/// Decrements the in-flight counter on every exit path (completion, error, panic, cancellation).
+struct InFlightGuard(SynchronizedRef<u64>);
+
+impl Drop for InFlightGuard {
+  fn drop(&mut self) {
+    // Uncontended in practice; `run_blocking` keeps `Drop` synchronous.
+    let _ = id_effect::run_blocking(self.0.update(|n| n.saturating_sub(1)), ());
+  }
 }
 
 /// Shared limiter for [`EffectService::with_max_in_flight`].
@@ -73,6 +87,7 @@ pub struct EffectService<S, F, Req> {
   /// [`Service::call`](tower::Service::call) when a concurrency limit is set.
   ready_permit: Option<OwnedSemaphorePermit>,
   pending_acquire: Option<AcquireFuture>,
+  executor: Option<EffectExecutor>,
   _pd: PhantomData<fn(Req) -> ()>,
 }
 
@@ -87,6 +102,7 @@ impl<S, F, Req> EffectService<S, F, Req> {
       request_metrics: None,
       ready_permit: None,
       pending_acquire: None,
+      executor: None,
       _pd: PhantomData,
     }
   }
@@ -122,8 +138,18 @@ impl<S, F, Req> EffectService<S, F, Req> {
       request_metrics: None,
       ready_permit: None,
       pending_acquire: None,
+      executor: None,
       _pd: PhantomData,
     }
+  }
+
+  /// Run handler effects on `executor` instead of [`EffectExecutor::global`] (e.g. one configured
+  /// with [`crate::DropPolicy::Cancel`]). Service calls always wait for executor admission.
+  #[must_use]
+  #[inline]
+  pub fn with_executor(mut self, executor: EffectExecutor) -> Self {
+    self.executor = Some(executor);
+    self
   }
 
   /// Current in-flight count when this service was created with [`Self::with_max_in_flight`].
@@ -195,6 +221,7 @@ where
       request_metrics: self.request_metrics.clone(),
       ready_permit: None,
       pending_acquire: None,
+      executor: self.executor.clone(),
       _pd: PhantomData,
     }
   }
@@ -210,10 +237,9 @@ where
 {
   type Response = Res;
   type Error = E;
-  /// Not `Send`: [`id_effect::Effect`] uses non-`Send` [`id_effect::BoxFuture`]
-  /// so it can support single-threaded / `!Send` environments. Use a single-thread Tokio runtime
-  /// (`current_thread`) or `spawn_local` if you need `!Send` futures on Tokio.
-  type Future = Pin<Box<dyn Future<Output = Result<Res, E>> + 'static>>;
+  /// [`Send`]: the effect runs on the global [`EffectExecutor`] (see
+  /// [crate docs](crate#send-strategy)), so this future works on any Tokio runtime flavour.
+  type Future = Pin<Box<dyn Future<Output = Result<Res, E>> + Send + 'static>>;
 
   fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
     let lim = self.limit.clone();
@@ -235,20 +261,28 @@ where
     let mut env = self.state.clone();
     let f = self.f.clone();
     let metrics = self.request_metrics.clone();
+    let executor = self
+      .executor
+      .clone()
+      .unwrap_or_else(|| EffectExecutor::global().clone());
     match &self.limit {
       None => Box::pin(async move {
-        let eff = f(&mut env, req);
-        let eff = match &metrics {
-          Some(m) => m.latency.track_duration(eff),
-          None => eff,
-        };
-        let result = run_effect_async(eff, env).await;
-        if result.is_err()
-          && let Some(m) = metrics
-        {
-          let _ = run_effect_async(m.errors.apply(1), ()).await;
-        }
-        result
+        executor
+          .run_local(move || async move {
+            let eff = f(&mut env, req);
+            let eff = match &metrics {
+              Some(m) => m.latency.track_duration(eff),
+              None => eff,
+            };
+            let result = run_effect_async(eff, env).await;
+            if result.is_err()
+              && let Some(m) = metrics
+            {
+              let _ = run_effect_async(m.errors.apply(1), ()).await;
+            }
+            result
+          })
+          .await
       }),
       Some(lim) => {
         let permit = self
@@ -257,25 +291,28 @@ where
           .expect("EffectService::call without successful poll_ready");
         let in_flight = lim.in_flight.clone();
         Box::pin(async move {
-          run_effect_async(in_flight.update(|n| n.saturating_add(1)), ())
+          executor
+            .run_local(move || async move {
+              // The concurrency permit lives as long as the effect (also when detached).
+              let _permit = permit;
+              run_effect_async(in_flight.update(|n| n.saturating_add(1)), ())
+                .await
+                .expect("in_flight increment");
+              let _in_flight = InFlightGuard(in_flight);
+              let eff = f(&mut env, req);
+              let eff = match &metrics {
+                Some(m) => m.latency.track_duration(eff),
+                None => eff,
+              };
+              let result = run_effect_async(eff, env.clone()).await;
+              if result.is_err()
+                && let Some(m) = metrics
+              {
+                let _ = run_effect_async(m.errors.apply(1), ()).await;
+              }
+              result
+            })
             .await
-            .expect("in_flight increment");
-          let eff = f(&mut env, req);
-          let eff = match &metrics {
-            Some(m) => m.latency.track_duration(eff),
-            None => eff,
-          };
-          let result = run_effect_async(eff, env.clone()).await;
-          if result.is_err()
-            && let Some(m) = metrics
-          {
-            let _ = run_effect_async(m.errors.apply(1), ()).await;
-          }
-          run_effect_async(in_flight.update(|n| n.saturating_sub(1)), ())
-            .await
-            .expect("in_flight decrement");
-          drop(permit);
-          result
         })
       }
     }
@@ -349,7 +386,7 @@ where
 {
   type Response = Res;
   type Error = QueueError;
-  type Future = Pin<Box<dyn Future<Output = Result<Res, QueueError>> + 'static>>;
+  type Future = Pin<Box<dyn Future<Output = Result<Res, QueueError>> + Send + 'static>>;
 
   fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
     Poll::Ready(Ok(()))
@@ -358,21 +395,22 @@ where
   fn call(&mut self, req: Req) -> Self::Future {
     let env = self.state.clone();
     let ch = self.channel.clone();
+    let executor = EffectExecutor::global().clone();
     Box::pin(async move {
-      run_effect_async(
-        Effect::new_async(move |r: &mut S| {
-          box_future(async move {
-            ch.write(req).run(r).await.unwrap();
-            match ch.read().run(r).await {
-              Ok(Some(x)) => Ok(x),
-              Ok(None) => Err(QueueError::Disconnected),
-              Err(e) => Err(e),
-            }
+      executor
+        .run(env, move |_env: &mut S| {
+          Effect::new_async(move |r: &mut S| {
+            box_future(async move {
+              ch.write(req).run(r).await.unwrap();
+              match ch.read().run(r).await {
+                Ok(Some(x)) => Ok(x),
+                Ok(None) => Err(QueueError::Disconnected),
+                Err(e) => Err(e),
+              }
+            })
           })
-        }),
-        env,
-      )
-      .await
+        })
+        .await
     })
   }
 }
@@ -537,5 +575,84 @@ mod tests {
     let svc: EffectService<(), _, u32> =
       EffectService::new((), |_env: &mut (), x: u32| succeed::<u32, (), ()>(x));
     assert!(svc.in_flight_counter().is_none());
+  }
+
+  async fn wait_for_zero(ctr: SynchronizedRef<u64>) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+      let n = run_effect_async(ctr.get(), ()).await.expect("read");
+      if n == 0 {
+        return;
+      }
+      assert!(
+        std::time::Instant::now() < deadline,
+        "in_flight stuck at {n}"
+      );
+      tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn in_flight_counter_released_when_cancelled_effect_is_dropped() {
+    let exec = EffectExecutor::builder()
+      .drop_policy(crate::DropPolicy::Cancel)
+      .build();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+    let started = Arc::new(std::sync::Mutex::new(Some(started_tx)));
+    let mut svc = EffectService::with_max_in_flight((), 1_usize, move |_env: &mut (), _x: u32| {
+      let started = started.clone();
+      Effect::new_async(move |_r: &mut ()| {
+        id_effect::box_future(async move {
+          if let Some(tx) = started.lock().unwrap().take() {
+            let _ = tx.send(());
+          }
+          tokio::time::sleep(Duration::from_secs(3600)).await;
+          Ok::<u32, ()>(0)
+        })
+      })
+    })
+    .with_executor(exec);
+    let ctr = svc.in_flight_counter().expect("counter");
+    svc.ready().await.unwrap();
+    let call = tokio::spawn(svc.call(1));
+    started_rx.await.unwrap();
+    assert_eq!(run_effect_async(ctr.get(), ()).await, Ok(1));
+    call.abort();
+    wait_for_zero(ctr).await;
+    // The permit came back too: the next call is admitted.
+    tokio::time::timeout(Duration::from_secs(10), svc.ready())
+      .await
+      .expect("permit released")
+      .unwrap();
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn in_flight_counter_released_when_handler_panics() {
+    let mut svc = EffectService::with_max_in_flight((), 1_usize, |_env: &mut (), _x: u32| {
+      Effect::new(|_r: &mut ()| -> Result<u32, ()> { panic!("handler boom") })
+    });
+    let ctr = svc.in_flight_counter().expect("counter");
+    svc.ready().await.unwrap();
+    let joined = tokio::spawn(svc.call(1)).await;
+    assert!(joined.unwrap_err().is_panic());
+    wait_for_zero(ctr).await;
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn service_futures_are_send_and_spawnable() {
+    let mut svc = EffectService::with_max_in_flight((), 2_usize, |_env: &mut (), x: u32| {
+      succeed::<u32, (), ()>(x * 3)
+    });
+    svc.ready().await.unwrap();
+    let fut = svc.call(5);
+    // `tokio::spawn` requires `Send`: this would not compile with the pre-0.6 `!Send` future.
+    assert_eq!(tokio::spawn(fut).await.unwrap(), Ok(15));
+
+    let ch = run_effect_async(QueueChannel::<u32, u32, ()>::duplex_unbounded(), ())
+      .await
+      .expect("duplex channel");
+    let mut chan = ChannelService::new((), ch);
+    let fut = chan.ready().await.unwrap().call(9);
+    assert_eq!(tokio::spawn(fut).await.unwrap(), Ok(9));
   }
 }

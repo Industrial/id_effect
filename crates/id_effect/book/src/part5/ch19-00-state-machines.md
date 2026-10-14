@@ -1,21 +1,20 @@
 # State Machines (`id_effect_fsm`)
 
-The **`id_effect_fsm`** crate adds typed finite-state machines, sagas, and linear session types on top of `id_effect`. It is the Phase **FP FSM** slice from the [FP Kitchen Sink roadmap](../../../../docs/fp-patterns/ROADMAP.md).
+The **`id_effect_fsm`** crate adds typed finite-state machines and sagas on top of `id_effect`, plus a `gen_statem`-style process behaviour for running a machine under supervision.
 
 ## Why FSMs in an effect library?
 
-Business logic often has **explicit states** (order lifecycle, connection handshake, approval gates). A pure transition table keeps routing **declarative**; `Effect` programs attach **side effects** at the edges via `run_blocking`.
+Business logic often has **explicit states** (order lifecycle, connection handshake, approval gates). A pure transition table keeps routing **declarative**; `Effect` values attach **side effects** to the edges, and the whole transition is itself an `Effect` you compose and interpret like any other.
 
 ## Crate layout
 
-- [`TransitionTable`](../../id_effect_fsm/src/machine.rs) — immutable edge map
-- [`StateMachine`](../../id_effect_fsm/src/machine.rs) — mutable current state + `step`
-- [`Interpreter`](../../id_effect_fsm/src/interpreter.rs) — effectful stepping
-- [`to_mermaid`](../../id_effect_fsm/src/visualize.rs) — documentation diagrams
-- [`Saga`](../../id_effect_fsm/src/saga.rs) — compensate on failure
-- [`SessionSend` / `SessionRecv`](../../id_effect_fsm/src/session.rs) — linear protocols
-- [`step_durable`](../../id_effect_fsm/src/workflow.rs) — SQLite snapshots via `id_effect_workflow`
+- `TransitionTable` / `StateMachine` — immutable edge map, current state + pure `step`
+- `Fsm` + `#[derive(Fsm)]` — declare the initial state and edges on an enum
+- `Interpreter` — Effect-valued transition actions; `step` / `run` return an `Effect`
+- `FsmProcess` / `FsmHandle` — host a machine in an `id_effect_process` process (events are mailbox messages)
+- `Saga` / `SagaStep` — forward steps with LIFO compensation, as one `Effect`
+- `to_mermaid` — documentation diagrams
 
-## When to use workflow bridge
+## Durable state machines
 
-For **single-process restart resume**, pair FSM stepping with [`id_effect_workflow`](../part2/ch07-12-durable-workflow.md). For multi-service orchestration, prefer an external engine (Temporal, Step Functions).
+Persisting machine snapshots across restarts is labs functionality: the unpublished `id_effect_workflow::fsm` module (see [Workflow bridge](./ch19-04-workflow-bridge.md)). For multi-service orchestration, prefer an external engine (Temporal, Step Functions).

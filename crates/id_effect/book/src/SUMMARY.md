@@ -120,9 +120,9 @@
 
 - [State Machines (`id_effect_fsm`)](./part5/ch19-00-state-machines.md)
   - [Transition tables](./part5/ch19-01-transition-tables.md)
-  - [Effect interpreter](./part5/ch19-02-effect-interpreter.md)
-  - [Sagas and session types](./part5/ch19-03-saga-session.md)
-  - [Workflow bridge](./part5/ch19-04-workflow-bridge.md)
+  - [Effect interpreter and FsmProcess](./part5/ch19-02-effect-interpreter.md)
+  - [Sagas](./part5/ch19-03-saga-session.md)
+  - [Workflow bridge (labs)](./part5/ch19-04-workflow-bridge.md)
 
 - [Parser Combinators](./part5/ch20-00-parser-combinators.md)
 

@@ -78,6 +78,23 @@ tier = "core"   # core | runtime | integration | maintenance | labs | merge | ex
 - `id_effect_fsm`'s durable bridge (`fsm/src/workflow.rs`) moves into
   `labs/id_effect_workflow`, so the runtime-tier fsm crate has no labs dependency.
 
+#### Amendment 2 (2026-10-14, after w2-core-slim)
+
+- `id_effect_fp` exists (maintenance tier). It holds `algebra`, `collections`,
+  `stm`, `kernel::{result, reader, thunk}` and the `foundation` pieces core does not
+  use. The `foundation` parts core uses throughout (`either`, `func`, `piping`,
+  `predicate`, `mutable_ref`) stay in core.
+- Placement (`compute/cluster.rs`) moved into `id_effect_node::placement`; core
+  never used it.
+- **Deviation:** tokio remains a required core dependency. The coordination
+  primitives (Queue, Deferred, Semaphore, PubSub, …) are built on `tokio::sync`, and
+  `FiberHandle` combinators spawn on Tokio. The features are cut to
+  `macros, rt, sync`. Making tokio optional would mean a runtime-agnostic
+  coordination layer, which is post-gate extension work.
+- `im` was removed from core rather than made optional. One consequence is that
+  `Cache` now clones a std map on every modify, where `im` used structural sharing.
+  This is tracked as a performance follow-up.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 

@@ -124,4 +124,31 @@ mod tests {
     let ext = VecHeadersExtractor::new(&headers);
     assert!(ext.get("traceparent").is_some());
   }
+
+  #[test]
+  fn injector_replaces_existing_header_case_insensitively() {
+    let mut headers = vec![
+      ("TRACEPARENT".to_string(), "stale".to_string()),
+      ("x-request-id".to_string(), "abc".to_string()),
+    ];
+    VecHeadersInjector(&mut headers).set("traceparent", "fresh".to_string());
+    assert_eq!(
+      headers,
+      vec![
+        ("x-request-id".to_string(), "abc".to_string()),
+        ("traceparent".to_string(), "fresh".to_string()),
+      ]
+    );
+  }
+
+  #[test]
+  fn extracting_without_trace_headers_yields_invalid_span_context() {
+    install_w3c_propagators();
+    let headers = vec![("x-request-id".to_string(), "abc".to_string())];
+    let ext = VecHeadersExtractor::new(&headers);
+    assert_eq!(ext.keys(), vec!["x-request-id"]);
+    assert!(ext.get("traceparent").is_none());
+    let extracted = extract_trace_context_from_headers(&Context::new(), &headers);
+    assert!(!extracted.span().span_context().is_valid());
+  }
 }

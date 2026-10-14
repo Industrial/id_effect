@@ -57,6 +57,7 @@ sqlx = { version = "0.8", default-features = false, features = [
 
 [dev-dependencies]
 pollster = "0.4"
+proptest = "1"
 tokio = { version = "1.50", features = [
   "rt",
   "rt-multi-thread",

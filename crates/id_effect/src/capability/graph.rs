@@ -4,9 +4,8 @@ use super::error::{CapabilityDiagnostic, CapabilityPlannerError, ProviderError};
 use super::id::CapabilityId;
 use super::planner::{PlannerNode, plan_topological};
 use super::provider::ProviderNode;
-use crate::collections::EffectHashMap;
-use crate::collections::hash_map;
 use crate::runtime::run_blocking;
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -41,10 +40,9 @@ impl CapabilityGraph {
   pub fn plan(&self) -> Result<Vec<usize>, CapabilityPlannerError> {
     self.check_provider_conflicts()?;
 
-    let mut cap_name_by_id = EffectHashMap::<CapabilityId, String>::new();
+    let mut cap_name_by_id = HashMap::<CapabilityId, String>::new();
     for node in &self.nodes {
-      cap_name_by_id = hash_map::set(
-        &cap_name_by_id,
+      cap_name_by_id.insert(
         node.provides(),
         planner_cap_key(node.provides(), node.cap_name()),
       );
@@ -64,7 +62,8 @@ impl CapabilityGraph {
           .iter()
           .filter(|cap_id| provided_caps.contains(cap_id) || !optional.contains(cap_id))
           .map(|cap_id| {
-            hash_map::get(&cap_name_by_id, cap_id)
+            cap_name_by_id
+              .get(cap_id)
               .cloned()
               .unwrap_or_else(|| planner_cap_key(*cap_id, &format!("{cap_id:?}")))
           })
@@ -122,21 +121,17 @@ impl CapabilityGraph {
   }
 
   fn check_provider_conflicts(&self) -> Result<(), CapabilityPlannerError> {
-    let mut provider_by_cap = EffectHashMap::<CapabilityId, (String, String)>::new();
+    let mut provider_by_cap = HashMap::<CapabilityId, (String, String)>::new();
     for node in &self.nodes {
       let cap = node.provides();
-      if let Some((first_id, first_name)) = hash_map::get(&provider_by_cap, &cap) {
+      if let Some((first_id, first_name)) = provider_by_cap.get(&cap) {
         return Err(CapabilityPlannerError::ConflictingProvider {
           cap: first_name.clone(),
           first: first_id.clone(),
           second: node.id().to_string(),
         });
       }
-      provider_by_cap = hash_map::set(
-        &provider_by_cap,
-        cap,
-        (node.id().to_string(), node.cap_name().to_string()),
-      );
+      provider_by_cap.insert(cap, (node.id().to_string(), node.cap_name().to_string()));
     }
     Ok(())
   }

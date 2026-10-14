@@ -1,4 +1,9 @@
 //! Unit and integration tests for the `pg` feature (formerly `id_effect_sql_pg`).
+//!
+//! `live_postgres_*` tests need a database at `DATABASE_URL`. When CI provides a Postgres service
+//! it also sets `ID_EFFECT_REQUIRE_PG=1`, which turns a missing or unreachable database into a test
+//! **failure**. Without it, those tests print an explicit `SKIP` line to stderr and return — they
+//! never silently pass with a database that is present but misbehaving.
 
 use id_effect::run_async;
 use id_effect_sql::pg::{
@@ -10,6 +15,36 @@ use id_effect_sql::{SqlClient, SqlParam};
 fn lazy_pool() -> sqlx::PgPool {
   pg_pool_from_config_lazy(PgPoolConfig::from_url("postgres://localhost:5432/postgres"))
     .expect("pool")
+}
+
+fn pg_required() -> bool {
+  std::env::var("ID_EFFECT_REQUIRE_PG").is_ok_and(|v| v == "1")
+}
+
+/// Fail (when `ID_EFFECT_REQUIRE_PG=1`) or loudly skip a live test that has no database.
+fn unavailable(test: &str, why: &str) -> Option<PgSqlClient> {
+  assert!(
+    !pg_required(),
+    "{test}: ID_EFFECT_REQUIRE_PG=1 but Postgres is unavailable: {why}"
+  );
+  eprintln!("SKIP {test}: {why} (set DATABASE_URL, and ID_EFFECT_REQUIRE_PG=1 to require it)");
+  None
+}
+
+/// Connected client for a live test, or `None` after [`unavailable`] decided to skip.
+async fn live_client(test: &str) -> Option<PgSqlClient> {
+  let Ok(url) = std::env::var("DATABASE_URL") else {
+    return unavailable(test, "DATABASE_URL is not set");
+  };
+  let pool = match pg_pool_from_config(PgPoolConfig::from_url(url).with_max_size(2)).await {
+    Ok(p) => p,
+    Err(e) => return unavailable(test, &format!("cannot build pool: {}", e.0)),
+  };
+  let client = PgSqlClient::new(pool);
+  if let Err(e) = run_async(client.connect(), ()).await {
+    return unavailable(test, &format!("cannot connect: {e:?}"));
+  }
+  Some(client)
 }
 
 #[tokio::test]
@@ -82,38 +117,6 @@ async fn begin_fails_when_server_unreachable() {
   assert!(run_async(client.begin(), ()).await.is_err());
 }
 
-#[tokio::test]
-async fn live_postgres_round_trip_when_available() {
-  let url = std::env::var("DATABASE_URL")
-    .unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/postgres".into());
-  let pool = match pg_pool_from_config(PgPoolConfig::from_url(url).with_max_size(2)).await {
-    Ok(p) => p,
-    Err(_) => return,
-  };
-  let client = PgSqlClient::new(pool);
-  if run_async(client.connect(), ()).await.is_err() {
-    return;
-  }
-  let rows = match run_async(
-    client.query("SELECT $1::int AS n", &[SqlParam::Int(42)]),
-    (),
-  )
-  .await
-  {
-    Ok(r) => r,
-    Err(_) => return,
-  };
-  if rows[0].cells.first().map(String::as_str) != Some("42") {
-    return;
-  }
-  assert!(run_async(client.execute("SELECT 1", &[]), ()).await.is_ok());
-  let tx = match run_async(client.begin(), ()).await {
-    Ok(t) => t,
-    Err(_) => return,
-  };
-  assert!(run_async(tx.commit(), ()).await.is_ok());
-}
-
 #[test]
 fn provider_builds_env_with_sql_client() {
   use id_effect::{Cap, build_env};
@@ -129,42 +132,41 @@ fn provider_builds_env_with_sql_client() {
 }
 
 #[tokio::test]
-async fn live_postgres_transaction_commit() {
-  let url = std::env::var("DATABASE_URL")
-    .unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/postgres".into());
-  let pool = match pg_pool_from_config(PgPoolConfig::from_url(url).with_max_size(2)).await {
-    Ok(p) => p,
-    Err(_) => return,
-  };
-  let client = PgSqlClient::new(pool);
-  if run_async(client.connect(), ()).await.is_err() {
+async fn live_postgres_round_trip() {
+  let Some(client) = live_client("live_postgres_round_trip").await else {
     return;
-  }
-  let tx = match run_async(client.begin(), ()).await {
-    Ok(t) => t,
-    Err(_) => return,
   };
-  assert!(run_async(tx.commit(), ()).await.is_ok());
-  let tx2 = match run_async(client.begin(), ()).await {
-    Ok(t) => t,
-    Err(_) => return,
+  let rows = run_async(
+    client.query("SELECT $1::int AS n", &[SqlParam::Int(42)]),
+    (),
+  )
+  .await
+  .expect("query");
+  assert_eq!(rows[0].cells.first().map(String::as_str), Some("42"));
+  run_async(client.execute("SELECT 1", &[]), ())
+    .await
+    .expect("execute");
+  let tx = run_async(client.begin(), ()).await.expect("begin");
+  run_async(tx.commit(), ()).await.expect("commit");
+}
+
+#[tokio::test]
+async fn live_postgres_transaction_commit_and_rollback() {
+  let Some(client) = live_client("live_postgres_transaction_commit_and_rollback").await else {
+    return;
   };
-  assert!(run_async(tx2.rollback(), ()).await.is_ok());
+  let tx = run_async(client.begin(), ()).await.expect("begin");
+  run_async(tx.commit(), ()).await.expect("commit");
+  let tx2 = run_async(client.begin(), ()).await.expect("begin 2");
+  run_async(tx2.rollback(), ()).await.expect("rollback");
 }
 
 #[tokio::test]
 async fn live_postgres_all_param_types_and_row_decode() {
-  let url = std::env::var("DATABASE_URL")
-    .unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/postgres".into());
-  let pool = match pg_pool_from_config(PgPoolConfig::from_url(url).with_max_size(2)).await {
-    Ok(p) => p,
-    Err(_) => return,
-  };
-  let client = PgSqlClient::new(pool);
-  if run_async(client.connect(), ()).await.is_err() {
+  let Some(client) = live_client("live_postgres_all_param_types_and_row_decode").await else {
     return;
-  }
-  let rows = match run_async(
+  };
+  let rows = run_async(
     client.query(
       "SELECT $1::bool AS b, $2::text AS t, $3::bytea AS bytes, $4::int AS n, NULL::int AS nil, 3.14::float AS f",
       &[
@@ -177,51 +179,30 @@ async fn live_postgres_all_param_types_and_row_decode() {
     (),
   )
   .await
-  {
-    Ok(r) => r,
-    Err(_) => return,
-  };
-  if rows[0].cells.get(1).map(String::as_str) != Some("hello")
-    || rows[0].cells.get(3).map(String::as_str) != Some("99")
-    || rows[0].cells.get(4).map(String::as_str) != Some("")
-    || !rows[0].cells.get(5).is_some_and(|c| c.starts_with("3.14"))
-  {
-    return;
-  }
-  let null_rows = match run_async(client.query("SELECT $1::int", &[SqlParam::Null]), ()).await {
-    Ok(r) => r,
-    Err(_) => return,
-  };
-  if null_rows.len() != 1 {
-    return;
-  }
-  if run_async(client.execute("SELECT FROM", &[]), ())
+  .expect("typed query");
+  assert_eq!(rows[0].cells.get(1).map(String::as_str), Some("hello"));
+  assert_eq!(rows[0].cells.get(3).map(String::as_str), Some("99"));
+  assert_eq!(rows[0].cells.get(4).map(String::as_str), Some(""));
+  assert!(rows[0].cells.get(5).is_some_and(|c| c.starts_with("3.14")));
+  let null_rows = run_async(client.query("SELECT $1::int", &[SqlParam::Null]), ())
     .await
-    .is_ok()
-  {
-    return;
-  }
+    .expect("null param query");
+  assert_eq!(null_rows.len(), 1);
+  assert!(
+    run_async(client.execute("SELECT FROM", &[]), ())
+      .await
+      .is_err(),
+    "malformed SQL must fail"
+  );
 }
 
 #[tokio::test]
 async fn live_postgres_double_finish_fails() {
-  let url = std::env::var("DATABASE_URL")
-    .unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/postgres".into());
-  let pool = match pg_pool_from_config(PgPoolConfig::from_url(url).with_max_size(2)).await {
-    Ok(p) => p,
-    Err(_) => return,
-  };
-  let client = PgSqlClient::new(pool);
-  if run_async(client.connect(), ()).await.is_err() {
+  let Some(client) = live_client("live_postgres_double_finish_fails").await else {
     return;
-  }
-  let tx = match run_async(client.begin(), ()).await {
-    Ok(t) => t,
-    Err(_) => return,
   };
-  if run_async(tx.commit(), ()).await.is_err() {
-    return;
-  }
+  let tx = run_async(client.begin(), ()).await.expect("begin");
+  run_async(tx.commit(), ()).await.expect("first commit");
   assert!(run_async(tx.commit(), ()).await.is_err());
   assert!(run_async(tx.rollback(), ()).await.is_err());
 }

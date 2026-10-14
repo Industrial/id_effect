@@ -6,6 +6,9 @@
 //! [`get_with_metrics`] (and siblings) increment a request [`Metric`]
 //! counter and record handler wall time in a latency [`Metric`] (histogram / summary / timer) via
 //! [`id_effect::Metric::track_duration`].
+//!
+//! Effects run on the global [`crate::EffectExecutor`]; when it is saturated and configured with
+//! [`crate::SaturationPolicy::Reject`], handlers answer `503` ([`crate::Saturated`]).
 
 use axum::extract::State;
 use axum::response::IntoResponse;
@@ -20,17 +23,19 @@ async fn run_with_axum_metrics<S, A, E, F>(
   request_counter: Metric<u64, ()>,
   latency: Metric<Duration, ()>,
   f: F,
-) -> Result<A, E>
+) -> Result<Result<A, E>, crate::Saturated>
 where
   S: Send + 'static,
-  A: 'static,
-  E: 'static,
-  F: FnOnce(&mut S) -> Effect<A, E, S>,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
 {
-  tokio::task::block_in_place(|| {
+  crate::try_run_effect_from_state(env, move |e| {
+    // Counter increments are synchronous; run them on the executor worker with the request.
     run_blocking(request_counter.apply(1), ()).expect("request counter");
-  });
-  crate::run_effect_from_state(env, |e| latency.track_duration(f(e))).await
+    latency.track_duration(f(e))
+  })
+  .await
 }
 
 /// `GET` — `f` is invoked per request; use [`Clone`] on `f` when the router stores it (e.g. closure
@@ -47,10 +52,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -77,10 +79,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -98,10 +97,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -125,10 +121,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -146,10 +139,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -173,10 +163,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -194,10 +181,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -221,10 +205,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -242,10 +223,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -269,10 +247,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -290,10 +265,7 @@ where
     let f = f.clone();
     async move {
       let State(env) = st;
-      match crate::run_effect_from_state(env, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
     }
   })
 }
@@ -318,10 +290,7 @@ where
     let lat = latency.clone();
     async move {
       let State(env) = st;
-      match run_with_axum_metrics(env, ctr, lat, |e| f(e)).await {
-        Ok(a) => a.into_response(),
-        Err(e) => e.into_response(),
-      }
+      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
     }
   })
 }
@@ -350,7 +319,7 @@ mod tests {
     fail((StatusCode::INTERNAL_SERVER_ERROR, "nope"))
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn get_post_put_patch_delete_and_error_paths() {
     let app = Router::new()
       .route("/g", get(ok))
@@ -389,7 +358,7 @@ mod tests {
     assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn on_and_metrics_variants_execute() {
     let ctr = Metric::counter("c", []);
     let lat = Metric::<Duration, ()>::histogram("h", []);

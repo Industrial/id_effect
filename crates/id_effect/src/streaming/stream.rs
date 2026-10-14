@@ -23,7 +23,6 @@
 //! incremental `StreamState` arm is deferred while `Stream` stays generic over `E` without a
 //! `QueueError` error channel.
 
-use crate::collections::sorted_map::EffectSortedMap;
 use crate::coordination::pubsub::PubSub;
 use crate::coordination::queue::{Queue, QueueError};
 use crate::coordination::semaphore::Semaphore;
@@ -34,13 +33,24 @@ use crate::{Chunk, Effect, Or, Predicate};
 use core::any::Any;
 use core::fmt;
 use futures::stream::{self, StreamExt};
+#[cfg(feature = "compute")]
 use rayon::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// Ordered window-start → aggregation state, for time-keyed stream operators (tumbling / sliding).
-pub type TimeBucketMap<A> = EffectSortedMap<Instant, A>;
+pub type TimeBucketMap<A> = BTreeMap<Instant, A>;
+
+/// Concurrency budget for admission-bounded stream stages: the Compute Fabric admission budget
+/// when `compute` is enabled, otherwise the host's available parallelism.
+fn admission_budget() -> usize {
+  #[cfg(feature = "compute")]
+  let n = crate::compute::current_adaptive_context().admission_budget;
+  #[cfg(not(feature = "compute"))]
+  let n = std::thread::available_parallelism().map_or(4, |n| n.get());
+  n.max(1)
+}
 
 /// Update the bucket at `window_start` with `f` (`None` if the bucket did not exist yet).
 #[inline]
@@ -49,7 +59,10 @@ pub fn merge_time_bucket<A: Clone>(
   window_start: Instant,
   f: impl FnOnce(Option<A>) -> A,
 ) -> TimeBucketMap<A> {
-  crate::collections::sorted_map::modify(map, window_start, |old| Some(f(old)))
+  let mut map = map;
+  let next = f(map.remove(&window_start));
+  map.insert(window_start, next);
+  map
 }
 
 /// One pull of a [`Stream::from_pull`] source: `(env, requested_chunk_size) -> next items`.
@@ -881,13 +894,14 @@ where
       let Some(vec) = input else {
         return StageStep::Emit(Vec::new());
       };
-      let len = vec.len();
-      let mapped: Vec<B> =
-        if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
-          crate::compute::install_parallel(|| vec.into_par_iter().map(&f).collect())
-        } else {
-          vec.into_iter().map(&f).collect()
-        };
+      #[cfg(feature = "compute")]
+      let mapped: Vec<B> = if crate::compute::should_parallelize(vec.len()) {
+        crate::compute::install_parallel(|| vec.into_par_iter().map(&f).collect())
+      } else {
+        vec.into_iter().map(&f).collect()
+      };
+      #[cfg(not(feature = "compute"))]
+      let mapped: Vec<B> = vec.into_iter().map(&f).collect();
       StageStep::Emit(mapped)
     })
   }
@@ -914,13 +928,14 @@ where
       let Some(vec) = input else {
         return StageStep::Emit(Vec::new());
       };
-      let len = vec.len();
-      let kept: Vec<A> =
-        if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
-          crate::compute::install_parallel(|| vec.into_par_iter().filter(|item| p(item)).collect())
-        } else {
-          vec.into_iter().filter(|item| p(item)).collect()
-        };
+      #[cfg(feature = "compute")]
+      let kept: Vec<A> = if crate::compute::should_parallelize(vec.len()) {
+        crate::compute::install_parallel(|| vec.into_par_iter().filter(|item| p(item)).collect())
+      } else {
+        vec.into_iter().filter(|item| p(item)).collect()
+      };
+      #[cfg(not(feature = "compute"))]
+      let kept: Vec<A> = vec.into_iter().filter(|item| p(item)).collect();
       StageStep::Emit(kept)
     })
   }
@@ -1093,7 +1108,7 @@ where
                     // `Effect` steps often complete in one poll; without yielding, `tokio::join!`
                     // on the current-thread runtime may run the pump to `hub.close()` before
                     // consumer branches are polled.
-                    tokio::task::yield_now().await;
+                    crate::runtime::yield_once().await;
                   }
                 }
                 Ok(None) => {
@@ -1124,7 +1139,7 @@ where
   ///
   /// **Cluster dispatch:** wrap each element in an `Effect` that casts/calls a process-group
   /// member (see `id_effect_node::fanout_cast` + `ProcessGroups`) or a pinned remote pid from
-  /// [`crate::compute::pick_placement`]. Concurrency stays admission-bounded locally;
+  /// `id_effect_node::placement::pick_placement`. Concurrency stays admission-bounded locally;
   /// cross-node backpressure is the remote mailbox full / `RemoteFault::Timeout` path.
   #[inline]
   pub fn map_effect<B, E2, F>(self, f: F) -> Stream<B, Or<E, E2>, R>
@@ -1135,9 +1150,7 @@ where
     R: Clone + Send + Sync + 'static,
     F: Fn(A) -> Effect<B, E2, R> + Send + Sync + 'static,
   {
-    let permits = crate::compute::current_adaptive_context()
-      .admission_budget
-      .max(1);
+    let permits = admission_budget();
     let f = Arc::new(f);
     // Created on the first pull, so building the stream never runs an effect.
     let sem_slot: Arc<Mutex<Option<Arc<Semaphore>>>> = Arc::new(Mutex::new(None));
@@ -1262,7 +1275,7 @@ where
   }
 
   /// Like [`Self::map_par_n`] but `n` follows the current Compute Fabric admission budget.
-  #[cfg(test)]
+  #[cfg(all(test, feature = "compute"))]
   #[inline]
   pub(crate) fn map_par_adaptive<B, F>(self, f: F) -> Stream<B, E, R>
   where
@@ -1272,8 +1285,7 @@ where
     R: Clone + Send + Sync,
     F: Fn(A) -> Effect<B, E, R> + Send + Sync + 'static,
   {
-    let n = crate::compute::current_adaptive_context().admission_budget;
-    self.map_par_n(n.max(1), f)
+    self.map_par_n(admission_budget(), f)
   }
 
   /// Optional binary reduction over the stream (`None` if empty).
@@ -1561,7 +1573,6 @@ mod tests {
 
   mod time_window_buckets {
     use super::*;
-    use crate::collections::sorted_map;
     use std::time::Duration;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1575,18 +1586,18 @@ mod tests {
       let t0 = Instant::now();
       let t1 = t0 + Duration::from_secs(1);
       let t2 = t0 + Duration::from_secs(2);
-      let m = sorted_map::empty();
+      let m = TimeBucketMap::new();
       let m = merge_time_bucket(m, t2, |_| AggState { sum: 2, cnt: 1 });
       let m = merge_time_bucket(m, t0, |_| AggState { sum: 0, cnt: 1 });
       let m = merge_time_bucket(m, t1, |_| AggState { sum: 1, cnt: 1 });
-      let keys: Vec<Instant> = m.iter().map(|(k, _)| *k).collect();
+      let keys: Vec<Instant> = m.keys().copied().collect();
       assert_eq!(keys, vec![t0, t1, t2]);
     }
 
     #[test]
     fn merge_time_bucket_accumulates_same_window() {
       let t0 = Instant::now();
-      let m = sorted_map::empty();
+      let m = TimeBucketMap::new();
       let m = merge_time_bucket(m, t0, |_| AggState { sum: 3, cnt: 1 });
       let m = merge_time_bucket(m, t0, |o| {
         let a = o.expect("prior");
@@ -2102,6 +2113,7 @@ mod tests {
       );
     }
 
+    #[cfg(feature = "compute")]
     #[tokio::test]
     async fn map_par_adaptive_collects() {
       use crate::compute::{ComputeFabric, install_fabric};

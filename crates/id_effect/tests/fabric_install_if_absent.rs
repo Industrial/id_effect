@@ -3,6 +3,8 @@
 //! The fabric slot is process-global, so every scenario lives in one `#[test]` to stay
 //! deterministic under both `cargo test` (shared process) and nextest.
 
+#![cfg(feature = "compute")]
+
 use std::sync::Arc;
 
 use id_effect::compute::{

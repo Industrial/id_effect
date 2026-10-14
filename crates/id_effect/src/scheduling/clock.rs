@@ -1,10 +1,10 @@
 //! Runtime-mediated clock services.
 
-use crate::collections::sorted_map::{self, EffectSortedMap};
 use crate::runtime::{Never, Runtime};
 use crate::scheduling::datetime::UtcDateTime;
 use crate::{Effect, succeed};
 use jiff::Timestamp;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -82,7 +82,7 @@ impl<R: Runtime> Clock for LiveClock<R> {
 pub struct TestClock {
   now: Arc<Mutex<Instant>>,
   /// Deadline → number of pending sleeps registered for that instant (sorted map keys iterate in order).
-  pending: Arc<Mutex<EffectSortedMap<Instant, usize>>>,
+  pending: Arc<Mutex<BTreeMap<Instant, usize>>>,
 }
 
 impl TestClock {
@@ -91,7 +91,7 @@ impl TestClock {
   pub fn new(now: Instant) -> Self {
     Self {
       now: Arc::new(Mutex::new(now)),
-      pending: Arc::new(Mutex::new(sorted_map::empty())),
+      pending: Arc::new(Mutex::new(BTreeMap::new())),
     }
   }
 
@@ -127,16 +127,15 @@ impl TestClock {
       .pending
       .lock()
       .expect("test clock pending mutex poisoned");
-    *map = sorted_map::filter(map.clone(), |deadline, _| *deadline > now);
+    map.retain(|deadline, _| *deadline > now);
   }
 }
 
-fn add_pending_deadline(map: &mut EffectSortedMap<Instant, usize>, deadline: Instant) {
-  let n = sorted_map::get(map, &deadline).unwrap_or(0);
-  *map = sorted_map::set(map.clone(), deadline, n + 1);
+fn add_pending_deadline(map: &mut BTreeMap<Instant, usize>, deadline: Instant) {
+  *map.entry(deadline).or_insert(0) += 1;
 }
 
-fn expand_pending_deadlines(map: &EffectSortedMap<Instant, usize>) -> Vec<Instant> {
+fn expand_pending_deadlines(map: &BTreeMap<Instant, usize>) -> Vec<Instant> {
   let mut v = Vec::new();
   for (deadline, count) in map.iter() {
     v.extend(std::iter::repeat_n(*deadline, *count));

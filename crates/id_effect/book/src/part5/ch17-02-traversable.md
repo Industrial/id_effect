@@ -3,7 +3,7 @@
 **Traverse** runs effectful functions over structures while preserving shape.
 
 ```rust
-use id_effect::algebra::traversable::traverse_vec;
+use id_effect_fp::algebra::traversable::traverse_vec;
 use id_effect::Effect;
 use id_effect::runtime::run_blocking;
 

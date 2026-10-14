@@ -97,7 +97,7 @@ pub struct JobRecord {
 
 /// Runner extension for Compute Fabric cluster offload.
 ///
-/// Scale-out jobs produced by [`id_effect::compute::FabricGovernor::scale_out_placed`]
+/// Scale-out jobs produced by `id_effect_node::placement::scale_out_placed`
 /// carry a [`FabricJobSpec::target_node`] chosen by placement scoring. A
 /// `FabricJobRunner` routes each job to a worker on that node: [`dequeue_for`]
 /// only hands a job to its target node (or to any node when the job is
@@ -439,9 +439,9 @@ mod tests {
   #[test]
   fn scale_out_placed_target_is_consumed_by_runner() {
     use id_effect::compute::{
-      AdmissionController, ClusterResourcePolicy, FabricGovernor, MockTelemetry, NodeCandidate,
-      ResourcePolicy, TelemetrySnapshot,
+      AdmissionController, FabricGovernor, MockTelemetry, ResourcePolicy, TelemetrySnapshot,
     };
+    use id_effect_node::placement::{ClusterResourcePolicy, NodeCandidate, scale_out_placed};
 
     // Two candidates; b has far more headroom, so placement chooses it.
     let policy = ResourcePolicy::memory_cap_max_cpu(0.95);
@@ -468,7 +468,8 @@ mod tests {
       Arc::new(AdmissionController::new(1, 4)),
     );
 
-    let job = sup.scale_out_placed(
+    let job = scale_out_placed(
+      &sup,
       "heavy",
       b"payload".to_vec(),
       WorkProfile::CpuIntensive,

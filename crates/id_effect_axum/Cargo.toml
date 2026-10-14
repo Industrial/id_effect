@@ -4,8 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Axum integration for the workspace `effect` crate — run Effect handlers on Tokio"
+description = "Axum and Tower integration for id_effect — Send-safe Effect handlers, request-scoped capabilities, host lifecycle"
 repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -45,11 +46,14 @@ tokio = { version = "1", features = [
 ] }
 # 0.5.0 does not build under minimal-version resolution (const / Identity::new).
 tower = { version = "0.5.3", features = ["util"], optional = true }
+# `CapOverrideLayer` (request-scoped capabilities); already in axum's dependency tree.
+tower-layer = "0.3.3"
+tower-service = "0.3.3"
 
 [dev-dependencies]
-reqwest = { version = "0.12", default-features = false, features = [
-  "rustls-tls",
-] }
+# Example 040_app_host demos the session store behind platform's opt-in `auth` feature.
+# Path-only: cargo publish resolves path+version dev-deps on crates.io.
+id_effect_platform = { path = "../id_effect_platform", features = ["auth"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
 

@@ -400,20 +400,17 @@ mod tests {
 
     #[test]
     fn poll_result_can_chain_with_option_helpers() {
-      use crate::foundation::option_::option;
-
       let pending = FiberHandle::<u8, ()>::pending(FiberId::fresh());
-      let mapped = option::map(pending.poll_result(), |r| r.map(|v| v + 1));
+      let mapped = pending.poll_result().map(|r| r.map(|v| v + 1));
       assert_eq!(mapped, None);
 
       let done = FiberHandle::completed(FiberId::fresh(), Ok::<u8, ()>(3));
-      let doubled = option::map(done.poll_result(), |r| r.map(|v| v * 2));
+      let doubled = done.poll_result().map(|r| r.map(|v| v * 2));
       assert_eq!(doubled, Some(Ok(6_u8)));
 
-      let fallback = option::get_or_else(
-        FiberHandle::<u8, ()>::pending(FiberId::fresh()).poll_result(),
-        || Ok(0_u8),
-      );
+      let fallback = FiberHandle::<u8, ()>::pending(FiberId::fresh())
+        .poll_result()
+        .unwrap_or(Ok(0_u8));
       assert_eq!(fallback, Ok(0_u8));
     }
 

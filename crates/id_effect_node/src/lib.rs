@@ -16,6 +16,7 @@ pub mod handshake;
 pub mod id;
 pub mod membership;
 pub mod mesh;
+pub mod placement;
 pub mod registry;
 pub mod session;
 pub mod singleton;
@@ -39,6 +40,10 @@ pub use membership::{
   Member, Membership, MembershipError, MembershipEvent, NodeMonitors, Output, TimerWheel,
 };
 pub use mesh::{Mesh, MeshFabric, PeerSender};
+pub use placement::{
+  ClusterResourcePolicy, ClusterTelemetry, LoadReport, NodeCandidate, PlacementMode,
+  pick_placement, place, scale_out_placed, score_candidate,
+};
 pub use registry::{BehaviorEntry, BehaviorRegistry};
 pub use session::{Session, SessionError};
 #[cfg(feature = "pg")]
@@ -50,3 +55,8 @@ pub use transport::memory::{InMemoryTransport, MemoryNetwork};
 pub use transport::tcp::TcpTransport;
 pub use transport::{Connection, Listener, Transport, TransportError};
 pub use wire::{Frame, PROTOCOL_VERSION, WireError};
+
+/// Compiles and runs the README's quick start as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

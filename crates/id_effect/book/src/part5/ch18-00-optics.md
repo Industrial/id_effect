@@ -18,7 +18,7 @@ The [`id_effect_optics`](../../../../id_effect_optics/) crate provides:
 ## When to reach for optics
 
 Use optics when you need **composable, reusable focus** into nested data — especially persistent
-[`im`](../../src/collections/mod.rs) structures or [`Unknown`](../../src/schema/parse.rs) documents at boundaries.
+[`im`](../../../../id_effect_fp/src/collections/mod.rs) structures or [`Unknown`](../../src/schema/parse.rs) documents at boundaries.
 
 ## Example
 

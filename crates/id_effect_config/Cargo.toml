@@ -4,8 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Effect.ts-style ConfigProvider + Figment/serde layers for the workspace `effect` crate"
+description = "Configuration for id_effect: Config descriptors, ConfigProvider and Figment/serde loading"
 repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"

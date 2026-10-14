@@ -87,3 +87,48 @@ impl Discovery for ChainedDiscovery {
     Vec::new()
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[tokio::test]
+  async fn empty_static_list_means_first_node() {
+    let none: [&str; 0] = [];
+    assert!(StaticDiscovery::new(none).candidates().await.is_empty());
+  }
+
+  #[tokio::test]
+  async fn chain_returns_the_first_non_empty_answer() {
+    let none: [&str; 0] = [];
+    let strategies: Vec<Box<dyn Discovery>> = vec![
+      Box::new(StaticDiscovery::new(none)),
+      Box::new(StaticDiscovery::new(["b:1"])),
+      Box::new(StaticDiscovery::new(["c:1"])),
+    ];
+    let chain = ChainedDiscovery::new(strategies);
+    assert_eq!(chain.candidates().await, vec!["b:1"]);
+  }
+
+  #[tokio::test]
+  async fn chain_of_nothing_is_empty() {
+    assert!(
+      ChainedDiscovery::new(Vec::new())
+        .candidates()
+        .await
+        .is_empty()
+    );
+  }
+
+  #[tokio::test]
+  async fn dns_resolves_literal_addresses_without_a_lookup() {
+    let found = DnsDiscovery::new("127.0.0.1:4000").candidates().await;
+    assert_eq!(found, vec!["127.0.0.1:4000"]);
+  }
+
+  #[tokio::test]
+  async fn dns_failure_yields_no_candidates() {
+    // Missing port: rejected before any network I/O.
+    assert!(DnsDiscovery::new("no-port").candidates().await.is_empty());
+  }
+}

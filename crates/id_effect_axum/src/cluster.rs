@@ -98,7 +98,7 @@ mod tests {
   use id_effect_node::MemberView;
   use tower::ServiceExt;
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn status_endpoint_returns_members() {
     let mut st = ClusterStatus::new();
     st.members.push(MemberView {

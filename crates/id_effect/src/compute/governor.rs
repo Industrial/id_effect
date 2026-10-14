@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 
 use super::adaptive;
 use super::admission::AdmissionController;
-use super::policy::{MetricMode, ResourcePolicy};
+use super::policy::{MetricMode, ResourcePolicy, WorkProfile};
 use super::rayon_pool;
 use super::spread::CpuSpreadBucket;
 use super::telemetry::{TelemetryEngine, TelemetrySnapshot};
@@ -89,6 +89,37 @@ impl<E: TelemetryEngine> FabricGovernor<E> {
 
     snap
   }
+
+  /// Build a cluster offload job when local Fabric is saturated.
+  ///
+  /// The job carries no target node; cluster placement (choosing a node from mesh load reports)
+  /// lives in `id_effect_node::placement`.
+  pub fn scale_out(
+    &self,
+    name: impl Into<String>,
+    payload: Vec<u8>,
+    profile: WorkProfile,
+  ) -> FabricJobSpec {
+    FabricJobSpec {
+      name: name.into(),
+      payload,
+      work_profile: profile,
+      target_node: None,
+    }
+  }
+}
+
+/// Serializable job payload produced by [`FabricGovernor::scale_out`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FabricJobSpec {
+  /// Handler dispatch key.
+  pub name: String,
+  /// Opaque effect / env bytes.
+  pub payload: Vec<u8>,
+  /// Work classification for worker placement.
+  pub work_profile: WorkProfile,
+  /// Optional target node from placement scoring.
+  pub target_node: Option<String>,
 }
 
 #[cfg(test)]
@@ -96,6 +127,23 @@ mod tests {
   use super::*;
   use crate::compute::telemetry::MockTelemetry;
   use std::sync::Arc;
+
+  #[test]
+  fn scale_out_returns_fabric_job_spec() {
+    let telemetry = MockTelemetry::new(0.9, 0.9);
+    let admission = Arc::new(AdmissionController::new(1, 4));
+    let policy = ResourcePolicy::memory_cap_max_cpu(0.85);
+    let sup = FabricGovernor::new(policy, telemetry, admission);
+    let job = sup.scale_out(
+      "remote-work",
+      b"payload".to_vec(),
+      WorkProfile::CpuIntensive,
+    );
+    assert_eq!(job.name, "remote-work");
+    assert_eq!(job.work_profile, WorkProfile::CpuIntensive);
+    assert_eq!(job.payload, b"payload");
+    assert!(job.target_node.is_none());
+  }
 
   #[test]
   fn tick_updates_snapshot_under_memory_cap() {

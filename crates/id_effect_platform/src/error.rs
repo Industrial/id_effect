@@ -128,7 +128,6 @@ impl From<std::io::Error> for ProcessError {
 #[derive(Debug)]
 pub enum PlatformError {
   /// Reserved for application boundaries that report an unsupported operation.
-  #[allow(dead_code)]
   Unsupported(&'static str),
   /// HTTP failures.
   Http(HttpError),

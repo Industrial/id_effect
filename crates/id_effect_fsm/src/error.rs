@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Errors from pure transition lookup or effectful interpretation.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum FsmError<S, E> {
   /// No edge exists for `(state, event)`.
   #[error("no transition from {state:?} on event {event:?}")]
@@ -16,7 +16,7 @@ pub enum FsmError<S, E> {
 }
 
 /// Errors from saga forward or compensation phases.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum SagaError<E> {
   /// A forward step failed before completion.
   #[error("forward step failed: {0}")]

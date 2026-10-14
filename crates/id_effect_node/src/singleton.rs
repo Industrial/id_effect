@@ -16,12 +16,17 @@ use id_effect_process::Pid;
 /// Production `SingletonLease` backends run:
 /// `SELECT pg_try_advisory_lock($1, $2)` / `pg_advisory_unlock` with these keys
 /// against `id_effect_sql` (`pg` feature) pools (ADR 0009 CP path).
+///
+/// The keys are the first 8 bytes of `SHA-256(name)`, so every node derives
+/// the same pair regardless of Rust version or build (std's `DefaultHasher`
+/// gives no such guarantee, and a mismatch would let two nodes hold the
+/// "same" singleton).
 pub fn advisory_lock_keys(name: &str) -> (i32, i32) {
-  use std::hash::{Hash, Hasher};
-  let mut h = std::collections::hash_map::DefaultHasher::new();
-  name.hash(&mut h);
-  let v = h.finish();
-  ((v >> 32) as i32, v as i32)
+  use sha2::{Digest, Sha256};
+  let digest = Sha256::digest(name.as_bytes());
+  let k1 = i32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
+  let k2 = i32::from_be_bytes([digest[4], digest[5], digest[6], digest[7]]);
+  (k1, k2)
 }
 
 /// Why a singleton acquire failed.
@@ -463,5 +468,163 @@ mod tests {
     a.resign().unwrap();
     b.try_become(&pid).unwrap();
     assert!(b.is_holder());
+  }
+
+  const LONG: Duration = Duration::from_secs(3600);
+
+  fn pid() -> Pid {
+    Pid::from_parts(NodeName::new("a@t"), 1, 1)
+  }
+
+  #[test]
+  fn acquire_by_the_same_holder_is_reentrant() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("first");
+    lease.try_acquire("job", "a", LONG).expect("re-acquire");
+    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+  }
+
+  #[test]
+  fn contender_learns_who_holds_the_lease() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("a");
+    assert_eq!(
+      lease.try_acquire("job", "b", LONG),
+      Err(SingletonError::HeldBy("a".into()))
+    );
+  }
+
+  #[test]
+  fn leases_are_independent_per_name() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("one", "a", LONG).expect("one");
+    lease.try_acquire("two", "b", LONG).expect("two");
+    assert_eq!(lease.holder("one").as_deref(), Some("a"));
+    assert_eq!(lease.holder("two").as_deref(), Some("b"));
+  }
+
+  #[test]
+  fn renew_keeps_the_holder() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("acquire");
+    lease.renew("job", "a", LONG).expect("renew");
+    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+  }
+
+  #[test]
+  fn renew_by_a_non_holder_is_refused() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("acquire");
+    assert_eq!(
+      lease.renew("job", "b", LONG),
+      Err(SingletonError::HeldBy("a".into()))
+    );
+  }
+
+  #[test]
+  fn renew_without_a_lease_is_unavailable() {
+    let lease = MemoryLease::new();
+    assert!(matches!(
+      lease.renew("job", "a", LONG),
+      Err(SingletonError::Unavailable(_))
+    ));
+  }
+
+  #[test]
+  fn release_by_a_non_holder_is_refused_and_keeps_the_lease() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("acquire");
+    assert_eq!(
+      lease.release("job", "b"),
+      Err(SingletonError::HeldBy("a".into()))
+    );
+    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+  }
+
+  #[test]
+  fn release_of_an_absent_lease_is_ok() {
+    assert_eq!(MemoryLease::new().release("job", "a"), Ok(()));
+  }
+
+  // A zero TTL is expired the moment it is granted (deadline == grant
+  // instant, and the monotonic clock never runs backwards), so expiry is
+  // tested without sleeping.
+  #[test]
+  fn expired_lease_has_no_holder_and_can_be_taken_over() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", Duration::ZERO).expect("a");
+    assert_eq!(lease.holder("job"), None);
+    lease.try_acquire("job", "b", LONG).expect("b takes over");
+    assert_eq!(lease.holder("job").as_deref(), Some("b"));
+  }
+
+  #[test]
+  fn expired_lease_cannot_be_renewed() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", Duration::ZERO).expect("a");
+    assert!(matches!(
+      lease.renew("job", "a", LONG),
+      Err(SingletonError::Unavailable(_))
+    ));
+  }
+
+  #[test]
+  fn renew_extends_a_lease_that_would_have_expired() {
+    let lease = MemoryLease::new();
+    lease.try_acquire("job", "a", LONG).expect("a");
+    lease.renew("job", "a", Duration::ZERO).expect("shrink");
+    assert_eq!(lease.holder("job"), None, "renewal sets a new deadline");
+  }
+
+  #[test]
+  fn singleton_tracks_its_local_pid() {
+    let lease: Arc<dyn SingletonLease> = Arc::new(MemoryLease::new());
+    let single = ClusterSingleton::new("leader", "a", lease, LONG);
+    assert_eq!(single.local_pid(), None);
+    assert!(!single.is_holder());
+    single.try_become(&pid()).expect("become");
+    assert_eq!(single.local_pid(), Some(pid()));
+    single.heartbeat().expect("heartbeat");
+    single.resign().expect("resign");
+    assert_eq!(single.local_pid(), None);
+    assert!(!single.is_holder());
+  }
+
+  #[test]
+  fn failed_takeover_records_no_pid() {
+    let lease = Arc::new(MemoryLease::new());
+    let a = ClusterSingleton::new("leader", "a", Arc::clone(&lease) as _, LONG);
+    let b = ClusterSingleton::new("leader", "b", lease as _, LONG);
+    a.try_become(&pid()).expect("a");
+    assert!(b.try_become(&pid()).is_err());
+    assert_eq!(b.local_pid(), None);
+    assert!(matches!(b.heartbeat(), Err(SingletonError::HeldBy(h)) if h == "a"));
+  }
+
+  #[test]
+  fn singleton_error_display() {
+    assert_eq!(SingletonError::HeldBy("a".into()).to_string(), "held by a");
+    assert_eq!(
+      SingletonError::Unavailable("pool down".into()).to_string(),
+      "unavailable: pool down"
+    );
+    let boxed: Box<dyn std::error::Error> = Box::new(SingletonError::HeldBy("a".into()));
+    assert_eq!(boxed.to_string(), "held by a");
+  }
+
+  #[test]
+  fn advisory_keys_are_pinned_to_sha256() {
+    // Golden values: SHA-256("leader") = 4d5b6609 43625c0a …
+    assert_eq!(advisory_lock_keys("leader"), (0x4d5b_6609, 0x4362_5c0a));
+    // SHA-256("") = e3b0c442 98fc1c14 … (high bit set → negative i32).
+    assert_eq!(
+      advisory_lock_keys(""),
+      (0xe3b0_c442_u32 as i32, 0x98fc_1c14_u32 as i32)
+    );
+  }
+
+  #[test]
+  fn advisory_keys_differ_per_name() {
+    assert_ne!(advisory_lock_keys("leader"), advisory_lock_keys("leader2"));
   }
 }

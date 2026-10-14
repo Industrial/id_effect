@@ -61,6 +61,8 @@ id_effect_workflow = { path = "../id_effect_workflow", default-features = false,
 rstest = "0.26"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 id_effect_tokio = { path = "../../crates/id_effect_tokio" }
+# Cluster placement (`scale_out_placed`) moved from id_effect::compute to id_effect_node (0.6).
+id_effect_node = { path = "../../crates/id_effect_node" }
 id_effect_sql = { path = "../../crates/id_effect_sql", features = ["pg"] }
 
 [[test]]

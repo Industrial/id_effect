@@ -3,9 +3,10 @@ name = "id_effect_tokio"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Tokio runtime adapter and re-exports for the workspace `effect` crate"
+description = "Tokio runtime adapter for id_effect: TokioRuntime (sleep, yield, fork on the blocking pool)"
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"

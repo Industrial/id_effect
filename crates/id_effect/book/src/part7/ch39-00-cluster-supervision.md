@@ -12,8 +12,8 @@ advisory lock on a dedicated worker connection so the lock releases with the ses
 takeover) using the behavior registry + mesh placement. It honors each child's
 `prefer` hint and excludes downed nodes when choosing a takeover target.
 
-Fabric placement routes every decision through the single [`place`](../../src/compute/cluster.rs)
-scorer, fed by [`LoadReport`](../../src/compute/cluster.rs) telemetry and bounded by
+Fabric placement routes every decision through the single [`place`](../../../../id_effect_node/src/placement.rs)
+scorer, fed by [`LoadReport`](../../../../id_effect_node/src/placement.rs) telemetry and bounded by
 `ClusterResourcePolicy`. `scale_out_placed` records the chosen `target_node` so the
 job runner dispatches work to the right node.
 

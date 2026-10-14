@@ -1,8 +1,8 @@
 //! Minimal [`id_effect_axum::service::EffectService`]: map a request to an [`id_effect::Effect`] and run it with
 //! [`id_effect::run_async`] inside Tower’s [`tower::Service::call`].
 //!
-//! Uses `#[tokio::main(flavor = "current_thread")]` because the response future from
-//! [`EffectService`](id_effect_axum::service::EffectService) is not `Send` (see crate docs).
+//! The response future is `Send` (the effect runs on the crate's `EffectExecutor`), so any runtime
+//! flavour works; this example uses `current_thread` to show that no worker pool is required.
 //!
 //! Run: `cargo run -p id_effect_axum --features tower --example 050_tower_effect_service`
 //! Or: `moon run effect-tower:examples`

@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish = false
-description = "Phase E minimal CLI — clap + id_effect_cli + id_effect_config (Secret)"
+description = "Starter template for id_effect CLIs — clap + id_effect_cli + id_effect_config (Secret)"
 
 [lints.rust]
 unsafe_code = "forbid"

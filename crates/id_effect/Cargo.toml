@@ -32,8 +32,26 @@ harness = false
 [[bench]]
 name = "startup_run_with"
 harness = false
+required-features = ["compute"]
+
+# Compute Fabric examples (auto-discovered otherwise; listed only to gate on `compute`).
+[[example]]
+name = "120_compute_fabric_memory_cap"
+required-features = ["compute"]
+
+[[example]]
+name = "121_compute_fabric_cpu_spread"
+required-features = ["compute"]
+
+[[example]]
+name = "122_compute_fabric_effect_parallel"
+required-features = ["compute"]
 
 [features]
+default = ["compute"]
+# Compute Fabric (`compute` module): admission, adaptive Rayon parallelism for bulk ops, sysinfo
+# telemetry. Off → serial bulk ops, no fabric at `run`/`run_with`, no rayon/sysinfo deps.
+compute = ["dep:rayon", "dep:sysinfo"]
 # Property-testing helpers in `testing::proptest`.
 proptest = ["dep:proptest"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
@@ -44,19 +62,19 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 id_effect_macro = { path = "../id_effect_macro", version = "0.5.0" }
 id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.5.0" }
 flume = "0.12"
-im = "15"
 # 0.2.0 lacks APIs we use (`SignedDuration::from_nanos_i128`, `Error::from_args`).
 jiff = "0.2.23"
-rayon = "1.12"
+rayon = { version = "1.12", optional = true }
 # 0.39+ needs rustc ≥1.95 (cfg_select); pin until devenv rustc catches up.
-sysinfo = "0.33"
+sysinfo = { version = "0.33", optional = true }
 serde_json = { version = "1", optional = true }
 proptest = { version = "1", optional = true }
-tokio = { version = "1.50.0", features = ["macros", "rt", "time", "sync"] }
+# Required: `coordination` is built on tokio::sync (Notify, Semaphore, Mutex, watch, broadcast) and
+# FiberHandle::{map, zip, or_else, interrupt_fork} / PubSub spawn onto the ambient Tokio runtime.
+# No timer driver (`time`) is needed by library code.
+tokio = { version = "1.50.0", features = ["macros", "rt", "sync"] }
 
 [dev-dependencies]
-# Path-only workspace test deps: version pins would require later publish levels on crates.io.
-id_effect_config = { path = "../id_effect_config" }
 trybuild = "1"
 criterion = "0.8.2"
 pollster = "1.0"

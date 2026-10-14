@@ -15,8 +15,10 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
+# Session store + OAuth client capability traits (web-framework material; opt-in since 0.6).
+auth = []
 # In-memory test doubles (`MemoryOAuthClient`) for downstream tests.
-test-util = []
+test-util = ["auth"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.5.0", features = [
@@ -48,6 +50,9 @@ rstest = "0.26"
 tempfile = "3"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 wiremock = "0.6"
+
+[package.metadata.docs.rs]
+all-features = true
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh

@@ -6,7 +6,7 @@ use id_effect_cli::{RunMainConfig, run_main};
 #[derive(Parser, Debug)]
 #[command(
   name = "cli-minimal",
-  about = "Phase E example (see mdBook CLI chapter)"
+  about = "id_effect CLI template (see mdBook CLI chapter)"
 )]
 struct Cli {
   /// API token (loaded into config as `API_TOKEN`, then wrapped as [`id_effect_config::Secret`]).

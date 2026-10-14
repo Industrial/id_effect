@@ -55,3 +55,8 @@ pub use supervisor::{
   ChildKind, ChildSpec, RestartPolicy, ShutdownPolicy, StartFn, Strategy, SupCall, SupError,
   SupReply, SupervisorHandle, SupervisorProcess, SupervisorSpec,
 };
+
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

@@ -226,6 +226,14 @@ impl Addr<DynamicSupervisor> {
       })
   }
 
+  /// Stop a dynamic child per the spec's shutdown policy and forget it
+  /// (`false` if `pid` is not a child of this supervisor).
+  pub fn terminate_dyn_child(&self, pid: Pid, timeout: Duration) -> Effect<bool, CallError, ()> {
+    self
+      .call(DynCall::TerminateChild(pid), timeout)
+      .map(|reply| matches!(reply, DynReply::Terminated(true)))
+  }
+
   /// Number of live dynamic children.
   pub fn count_dyn_children(&self, timeout: Duration) -> Effect<usize, CallError, ()> {
     self.call(DynCall::Count, timeout).map(|reply| match reply {

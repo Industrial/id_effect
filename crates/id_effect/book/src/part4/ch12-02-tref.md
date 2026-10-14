@@ -18,7 +18,7 @@ let balance: TRef<f64> = TRef::new(1000.0);
 All TRef operations return `Stm<_>` — transactional descriptions, not effects. They only work inside `stm!` (or when run through `commit`/`atomically`):
 
 ```rust
-use id_effect::{TRef, stm};
+use id_effect_fp::{TRef, stm};
 
 let counter = TRef::new(0);
 
@@ -39,7 +39,7 @@ These are descriptions. Nothing happens until they're committed.
 The `stm!` macro provides do-notation for composing `Stm` operations, exactly like `effect!` does for `Effect`:
 
 ```rust
-use id_effect::{stm, TRef};
+use id_effect_fp::{TRef, stm};
 
 let counter = TRef::new(0_i32);
 let total   = TRef::new(0_i32);

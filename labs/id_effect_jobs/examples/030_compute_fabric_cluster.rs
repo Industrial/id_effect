@@ -5,22 +5,22 @@
 //! enqueues through `id_effect_jobs`, and a worker node drains the job with its own Fabric.
 
 use id_effect::compute::{
-  ClusterResourcePolicy, ComputeFabric, MetricMode, MetricPolicy, RebalanceStrategy,
-  ResourcePolicy, WorkProfile,
+  ComputeFabric, MetricMode, MetricPolicy, RebalanceStrategy, ResourcePolicy, WorkProfile,
 };
 use id_effect::kernel::succeed;
 use id_effect::runtime::run_blocking;
 use id_effect_jobs::{JobRunner, JobSpec, MemoryJobRunner, drain_jobs};
 
 fn main() {
-  let cluster = ClusterResourcePolicy::local_first(ResourcePolicy {
+  // Same per-node caps on both nodes (cluster placement lives in `id_effect_node::placement`).
+  let policy = ResourcePolicy {
     memory: MetricPolicy::new(MetricMode::Max { ceiling: 0.85 }),
     cpu: MetricPolicy::new(MetricMode::Max { ceiling: 1.0 }),
     rebalance: RebalanceStrategy::ScaleOut,
-  });
+  };
 
   // Node A — saturated; supervisor would choose ScaleOut.
-  let node_a = ComputeFabric::with_mock(cluster.global.clone(), 0.95, 0.92);
+  let node_a = ComputeFabric::with_mock(policy.clone(), 0.95, 0.92);
   node_a.governor().tick();
   let permits_a = node_a.admission().available();
   assert_eq!(permits_a, 1, "saturated node throttles to min permits");
@@ -36,7 +36,7 @@ fn main() {
   assert!(enqueued.spec.work_profile.is_some());
 
   // Node B — worker with headroom executes the offloaded job.
-  let node_b = ComputeFabric::with_mock(cluster.per_node.clone(), 0.35, 0.55);
+  let node_b = ComputeFabric::with_mock(policy, 0.35, 0.55);
   node_b.governor().tick();
   let worker_permits = node_b.admission().available();
   assert!(worker_permits > permits_a);

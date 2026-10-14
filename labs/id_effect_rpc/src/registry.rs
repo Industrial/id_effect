@@ -99,7 +99,7 @@ impl RpcGroup {
       let success_fields = success_fields;
       Box::pin(async move {
         let input = decode_payload(payload_schema.as_ref(), &payload)?;
-        let result = run_with_env(env, |e| handler(input, e)).await;
+        let result = run_with_env(env, move |e| handler(input, e)).await;
         match result {
           Ok(value) => success_wire(&tag, success_schema.as_ref(), success_fields, value),
           Err(err) => Ok(rpc_error_to_wire(&tag, err)),

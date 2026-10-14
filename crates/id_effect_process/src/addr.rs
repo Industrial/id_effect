@@ -5,11 +5,11 @@ use std::pin::pin;
 use std::task::Poll;
 use std::time::Duration;
 
-use id_effect::{Cause, Deferred, Effect, Queue, box_future, run_blocking};
+use id_effect::{Cause, Deferred, Effect, Queue, box_future};
 
 use crate::exit::ExitReason;
 use crate::msg::{CallError, Info, ProcMsg, SendError};
-use crate::node::ProcessNode;
+use crate::node::{ProcessNode, run_mailbox_op};
 use crate::pid::Pid;
 use crate::process::Process;
 
@@ -65,8 +65,12 @@ impl<P: Process> Addr<P> {
 
   /// Non-effect variant of [`Addr::send`] for use from plain code
   /// (timers, transports). Returns `false` if the mailbox is closed.
+  ///
+  /// Never waits for the receiving process (the mailbox is unbounded); see
+  /// the `node` module docs for the one async-context caveat — from async
+  /// code prefer [`Addr::send`].
   pub fn send_now(&self, msg: P::Info) -> bool {
-    run_blocking(self.mailbox.offer(ProcMsg::Info(Info::User(msg))), ()).unwrap_or(false)
+    run_mailbox_op(self.mailbox.offer(ProcMsg::Info(Info::User(msg)))).unwrap_or(false)
   }
 
   fn offer(&self, msg: ProcMsg<P>) -> Effect<(), SendError, ()> {

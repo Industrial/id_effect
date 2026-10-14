@@ -1,4 +1,4 @@
-#![allow(clippy::new_ret_no_self, unused_imports)]
+#![allow(clippy::new_ret_no_self)]
 //! Capability DI providers for [`reqwest::Client`] and connection pools.
 
 use std::sync::Arc;

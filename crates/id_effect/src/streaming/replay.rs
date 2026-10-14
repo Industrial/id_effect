@@ -91,7 +91,7 @@ where
                     }
                   }
                   let _ = runtime::run_async(ps_pump.publish(a), ()).await;
-                  tokio::task::yield_now().await;
+                  crate::runtime::yield_once().await;
                 }
               }
               Ok(None) => {

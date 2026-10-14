@@ -22,13 +22,10 @@ Register providers with [`provide_duroxide_pg`](../../../id_effect_workflow/fn.p
 
 ## FSM integration
 
-`register_fsm`, `step_durable`, and `restore_state` are generic over [`StepJournal`](../../../id_effect_workflow/trait.StepJournal.html).
+`id_effect_workflow::fsm::{register_fsm, step_durable, restore_state}` are generic over `StepJournal`. `id_effect_workflow` is a **labs** crate (unpublished, no API guarantees; see ADR 0010), so run it from the labs workspace:
 
 ```bash
-cargo run -p id_effect_fsm --example 002_durable_door_fsm
-# with PostgreSQL journal (requires DATABASE_URL):
-cargo run -p id_effect_fsm --example 002_durable_door_fsm \
-  -p id_effect_workflow --features duroxide
+cargo run --manifest-path labs/Cargo.toml -p id_effect_workflow --example 030_durable_door_fsm
 ```
 
 ## External orchestrators

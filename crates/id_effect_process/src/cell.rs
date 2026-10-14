@@ -21,10 +21,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use id_effect::runtime::Never;
-use id_effect::{CancellationToken, Deferred, run_blocking};
+use id_effect::{CancellationToken, Deferred};
 
 use crate::exit::ExitReason;
 use crate::msg::SysMsg;
+use crate::node::run_mailbox_op;
 use crate::pid::{MonitorRef, Pid};
 
 /// Callback fired when a monitored process exits. Public so distribution
@@ -76,7 +77,8 @@ impl ProcessCell {
     close_mailbox: MailboxClose,
     cancel: CancellationToken,
   ) -> Self {
-    let exited = run_blocking(Deferred::<ExitReason, Never>::make(), ())
+    // Pure constructor: completes on the first poll (see `node` module docs).
+    let exited = run_mailbox_op(Deferred::<ExitReason, Never>::make())
       .unwrap_or_else(|_| unreachable!("Deferred::make is infallible"));
     Self {
       pid,

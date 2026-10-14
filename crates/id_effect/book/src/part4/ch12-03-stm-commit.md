@@ -5,7 +5,8 @@ The `stm!` macro produces `Stm<A>` values — descriptions of transactional comp
 ## commit: Lift Stm into Effect
 
 ```rust
-use id_effect::{commit, Stm, Effect};
+use id_effect::Effect;
+use id_effect_fp::{Stm, commit};
 
 let transaction: Stm<i32> = stm! {
     let a = ~ ref_a.read_stm();
@@ -41,7 +42,7 @@ let value: i32 = atomically(stm! {
 Transactions can fail with typed errors:
 
 ```rust
-use id_effect::stm;
+use id_effect_fp::stm;
 
 fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64> {
     stm! {

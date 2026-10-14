@@ -296,4 +296,129 @@ mod tests {
       assert_eq!(decode_envelope(&bytes).expect("decode"), envelope);
     }
   }
+
+  fn wire_pid(id: u64) -> PidWire {
+    PidWire {
+      node: "b@host".to_string(),
+      id,
+      incarnation: 3,
+    }
+  }
+
+  #[test]
+  fn control_envelopes_round_trip() {
+    let cases = vec![
+      ProcessEnvelope::Info {
+        to: wire_pid(1),
+        msg: vec![9],
+        trace: empty_trace(),
+      },
+      ProcessEnvelope::Spawn {
+        spawn_id: 2,
+        behavior: "counter".to_string(),
+        args: vec![0],
+        link_to: Some(wire_pid(5)),
+      },
+      ProcessEnvelope::SpawnReply {
+        spawn_id: 2,
+        result: Ok(wire_pid(6)),
+      },
+      ProcessEnvelope::SpawnReply {
+        spawn_id: 3,
+        result: Err(RemoteFault::UnknownBehavior("nope".to_string())),
+      },
+      ProcessEnvelope::Monitor {
+        monitor: 8,
+        target: wire_pid(1),
+      },
+      ProcessEnvelope::Demonitor {
+        monitor: 8,
+        target: wire_pid(1),
+      },
+      ProcessEnvelope::Link {
+        from: wire_pid(1),
+        to: wire_pid(2),
+      },
+      ProcessEnvelope::Unlink {
+        from: wire_pid(1),
+        to: wire_pid(2),
+      },
+      ProcessEnvelope::ExitSignal {
+        from: wire_pid(1),
+        to: wire_pid(2),
+        reason: ExitReasonWire::Error("boom".to_string()),
+      },
+      ProcessEnvelope::Reply {
+        call_id: 4,
+        result: Ok(vec![1, 2, 3]),
+      },
+    ];
+    for envelope in cases {
+      let bytes = encode_envelope(&envelope).expect("encode");
+      assert_eq!(decode_envelope(&bytes).expect("decode"), envelope);
+    }
+  }
+
+  #[test]
+  fn garbage_envelope_fails_cleanly() {
+    assert!(decode_envelope(&[0xff, 0xff, 0xff]).is_err());
+    assert!(decode_envelope(&[]).is_err());
+  }
+
+  #[test]
+  fn pid_wire_round_trips_through_pid() {
+    let pid = Pid::from_parts(NodeName::new("a@host"), 42, 7);
+    let wire = PidWire::from(&pid);
+    assert_eq!(wire.node, "a@host");
+    assert_eq!(wire.id, 42);
+    assert_eq!(wire.incarnation, 7);
+    assert_eq!(wire.to_pid(), pid);
+  }
+
+  #[test]
+  fn exit_reasons_round_trip_through_wire() {
+    let reasons = [
+      ExitReason::Normal,
+      ExitReason::Shutdown,
+      ExitReason::Error("boom".to_string()),
+      ExitReason::Killed,
+      ExitReason::Interrupted,
+      ExitReason::NoProc,
+      ExitReason::NoConnection,
+    ];
+    for reason in reasons {
+      let wire = ExitReasonWire::from(&reason);
+      assert_eq!(ExitReason::from(&wire), reason);
+    }
+  }
+
+  #[test]
+  fn remote_fault_display_covers_every_variant() {
+    let cases = [
+      (RemoteFault::NoProc, "noproc"),
+      (
+        RemoteFault::UnknownBehavior("w".to_string()),
+        "unknown behavior: w",
+      ),
+      (RemoteFault::Decode("eof".to_string()), "decode: eof"),
+      (RemoteFault::Down(ExitReasonWire::Killed), "down: Killed"),
+      (RemoteFault::Timeout, "timeout"),
+      (
+        RemoteFault::SpawnFailed("init".to_string()),
+        "spawn failed: init",
+      ),
+    ];
+    for (fault, text) in cases {
+      assert_eq!(fault.to_string(), text);
+    }
+  }
+
+  #[test]
+  fn trace_helpers_build_header_bags() {
+    assert!(empty_trace().is_empty());
+    assert_eq!(
+      trace_pair("traceparent", "00-abc"),
+      vec![("traceparent".to_string(), "00-abc".to_string())]
+    );
+  }
 }

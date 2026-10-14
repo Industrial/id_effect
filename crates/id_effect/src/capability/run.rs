@@ -5,10 +5,16 @@ use super::error::{CapabilityPlannerError, RunError};
 use super::graph::CapabilityGraph;
 use super::provider::{ProviderBox, ShutdownHook};
 use super::set::FromEnv;
-use crate::compute::ensure_default_fabric;
 use crate::kernel::Effect;
 use crate::runtime::run_blocking;
 use std::sync::Arc;
+
+/// Install a default Compute Fabric only if none is installed (no-op without `compute`).
+#[inline]
+fn ensure_default_fabric() {
+  #[cfg(feature = "compute")]
+  let _ = crate::compute::ensure_default_fabric();
+}
 
 /// Run a pure effect (no capabilities).
 ///
