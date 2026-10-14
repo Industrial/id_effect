@@ -1,0 +1,79 @@
+# D9 benchmark gates for 0.7 against the v0.6 baseline (see README.md).
+#
+# Read by scripts/bench-compare.sh, which supports only this flat subset of TOML:
+# top-level `key = value` lines, then `[[gate]]` tables with `id`, `kind` and `limit`.
+#
+# ratio = new / base on `metric` (time per iteration, so lower is better).
+#   kind = "budget"   passes when ratio <= limit
+#   kind = "improve"  passes when ratio <  limit
+#   kind = "report"   never fails on its ratio; listed so its presence is required
+# A ratio that misses its limit by at most `noise` (absolute) is NOISE, not FAIL (Q7).
+# Every listed id must exist in both files; a missing id is a FAIL.
+
+metric = "median"
+noise = 0.05
+
+# --- bind/map hot path: may regress by at most 25 % ---------------------------------
+
+[[gate]]
+id = "phase0/bench_effect_map_chain"
+kind = "budget"
+limit = 1.25
+
+[[gate]]
+id = "phase0/bench_effect_flat_map_chain"
+kind = "budget"
+limit = 1.25
+
+[[gate]]
+id = "gate/flat_map_depth_10k"
+kind = "budget"
+limit = 1.25
+
+[[gate]]
+id = "gate/async_bind_64"
+kind = "budget"
+limit = 1.25
+
+# --- fibers and the axum request path: must improve ----------------------------------
+
+[[gate]]
+id = "gate/spawn_join_10k"
+kind = "improve"
+limit = 1.00
+
+[[gate]]
+id = "gate/sleep_cpu_1k_x_1ms"
+kind = "improve"
+limit = 1.00
+
+[[gate]]
+id = "gate/axum_request_oneshot"
+kind = "improve"
+limit = 1.00
+
+# --- report only ---------------------------------------------------------------------
+
+[[gate]]
+id = "gate/sleep_1k_x_1ms"
+kind = "report"
+
+[[gate]]
+id = "gate/axum_request_caps"
+kind = "report"
+
+[[gate]]
+id = "stream/pull_map_10k"
+kind = "report"
+
+[[gate]]
+id = "stream/map_effect_1k"
+kind = "report"
+
+[[gate]]
+id = "coord/channel_spsc_10k"
+kind = "report"
+
+[[gate]]
+id = "coord/queue_bounded_10k"
+kind = "report"
