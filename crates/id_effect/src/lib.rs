@@ -126,7 +126,7 @@ pub use coordination::{
   QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
   SynchronizedRef, batching, make_request_resolver,
 };
-pub use failure::{Cause, Exit, Or};
+pub use failure::{Cause, Defect, Exit, Or};
 #[doc(inline)]
 pub use foundation::either::Either;
 pub use foundation::func::{
