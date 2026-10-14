@@ -25,7 +25,8 @@ bash scripts/tier-conformance.sh id_effect  # one or more packages by name
 | L | Lives under `labs/` and has `publish = false` | — | — | — | — | ✔ | — |
 
 `merge` and `example` packages are reported but not failed. A `merge` crate should
-not exist at the end of the consolidation mission.
+not exist at the end of the consolidation mission. As of 0.7 none does (ADR 0010,
+Amendment 3).
 
 ## Workspace checks (CI)
 

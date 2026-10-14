@@ -3,7 +3,8 @@
 ## Status
 
 Accepted (2026-10-14). Executed by mission `id-effect-consolidation-0-6`
-(`.maestro/missions/id-effect-consolidation-0-6.plan.md`).
+(`.maestro/missions/id-effect-consolidation-0-6.plan.md`). Amended for 0.7 on
+2026-10-15 (see [Amendment 3](#amendment-3-2026-10-15-for-07)).
 
 ## Context
 
@@ -94,6 +95,41 @@ tier = "core"   # core | runtime | integration | maintenance | labs | merge | ex
 - `im` was removed from core rather than made optional. One consequence is that
   `Cache` now clones a std map on every modify, where `im` used structural sharing.
   This is tracked as a performance follow-up.
+
+#### Amendment 3 (2026-10-15, for 0.7)
+
+Records the 0.7 state (mission `id-effect-runtime-0-7`, task `w2-adr-0010-amend`;
+release plan §9, rulings R4–R6). Where earlier sections disagree with this one,
+this one wins.
+
+- **The `merge` tier is empty.** `id_effect_tower` and `id_effect_sql_pg` are
+  deleted (commit `683ea84`), as rule 3 prescribes after their one minor release of
+  shims. Use `id_effect_axum` with the `tower` feature and `id_effect_sql` with the
+  `pg` feature.
+- **17 published crates:** 7 core, 3 runtime, 5 integration and 2 maintenance, as in
+  the table above minus the `merge` row. No tier changes.
+- **tokio stays mandatory (R6).** This closes the Amendment 2 deferral ("making
+  tokio optional … is post-gate extension work") as *not doing it*:
+  - The 0.7 fiber runtime runs on an `Executor` trait, and its default backend is
+    tokio. Core, the coordination primitives and the integration crates all assume
+    that backend.
+  - An optional tokio would need a cfg matrix (with and without tokio) across core
+    and every dependent crate, in CI and in the docs, for no current consumer.
+  - The `Executor` trait keeps the door open. Another backend can be added behind
+    it later without making tokio optional first.
+- **Labs migrate to 0.7 (R5).** Every labs crate moves to the 0.7 kernel with the
+  rest of the workspace. They get no new features, and they stay unpublished under
+  rule 4.
+- **`spikes/` is temporary.** It is a standalone Cargo workspace like `labs/`, not a
+  root-workspace member, and its crates are `publish = false`. It holds the two
+  kernel design spikes for 0.7 and is deleted once the chosen kernel lands. It has no
+  tier.
+- **`examples/http-showcase` is tier `example`** (`publish = false`), alongside
+  `examples/cli-minimal`.
+- **The coverage floor rises to 96 % (R4)** on core, runtime and integration crates.
+  It replaces the 95 % in rule 4. The script and `docs/QUALITY_BAR.md` switch to
+  96 % at the end of the 0.7 migration, once the old and new kernels no longer
+  coexist (task `r-coverage-floor`).
 
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
