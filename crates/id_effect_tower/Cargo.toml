@@ -18,7 +18,7 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 name = "id_effect_tower"
 
 [dependencies]
-id_effect_axum = { path = "../id_effect_axum", version = "0.5.0", features = [
+id_effect_axum = { path = "../id_effect_axum", version = "0.6.0", features = [
   "tower",
 ] }
 

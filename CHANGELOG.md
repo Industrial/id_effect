@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.6.0 consolidation (breaking)
+## 0.6.0 — 2026-10-14 — Consolidation (breaking)
 
 Narrows the workspace to its core purpose and hardens what remains. See
 [ADR 0010](docs/adrs/0010-crate-tiers.md) and [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).

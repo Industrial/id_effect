@@ -15,7 +15,7 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
-id_effect_sql = { path = "../id_effect_sql", version = "0.5.0", features = [
+id_effect_sql = { path = "../id_effect_sql", version = "0.6.0", features = [
   "pg",
 ] }
 
