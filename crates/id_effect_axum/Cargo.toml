@@ -21,7 +21,7 @@ name = "id_effect_axum"
 [features]
 default = []
 cluster = ["dep:id_effect_node"]
-# Tower `Service` bridge (`service` module); formerly the id_effect_tower crate.
+# Tower `Service` bridge (`service` module).
 tower = ["dep:tower"]
 
 [dependencies]
