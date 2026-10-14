@@ -1,3 +1,6 @@
 [submodule ".cursor"]
 	path = .cursor
 	url = git@github.com:Industrial/cursor-setup.git
+[submodule ".claude-setup"]
+	path = .claude-setup
+	url = https://github.com/Industrial/claude-setup
