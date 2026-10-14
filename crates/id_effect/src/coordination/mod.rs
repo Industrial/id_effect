@@ -35,7 +35,7 @@ pub use pubsub::PubSub;
 pub use queue::{Queue, QueueError};
 pub use ref_::Ref;
 pub use request_resolver::{
-  FnRequestResolver, MissingKey, RequestEntry, RequestResolver, batching,
+  BatchError, FnRequestResolver, RequestEntry, RequestResolver, batching,
   make as make_request_resolver,
 };
 pub use semaphore::{Permit, Semaphore};

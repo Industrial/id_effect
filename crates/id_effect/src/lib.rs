@@ -122,7 +122,7 @@ pub use concurrency::{
 };
 pub use coordination::semaphore::Permit;
 pub use coordination::{
-  Channel, ChannelReadError, Deferred, FnRequestResolver, Latch, MissingKey, PubSub, Queue,
+  BatchError, Channel, ChannelReadError, Deferred, FnRequestResolver, Latch, PubSub, Queue,
   QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
   SynchronizedRef, batching, make_request_resolver,
 };
