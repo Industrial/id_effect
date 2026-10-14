@@ -1,0 +1,17 @@
+[package]
+name = "kernel_a"
+description = "0.7 kernel spike A: typed R via HList + index inference (unpublished, temporary)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+spike_corpus.workspace = true
+
+[lints]
+workspace = true

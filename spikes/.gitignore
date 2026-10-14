@@ -1,0 +1,2 @@
+# Standalone spike workspace: its own build dir (generated gen-caps crates land in target/gen/).
+/target/

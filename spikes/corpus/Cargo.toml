@@ -1,0 +1,16 @@
+[package]
+name = "spike_corpus"
+description = "Kernel-agnostic services, errors and request type for the 0.7 spike handler corpus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+# No dependencies on purpose: both spikes must see byte-identical services, and neither kernel's
+# executor may leak in through this crate.
+[dependencies]
+
+[lints]
+workspace = true

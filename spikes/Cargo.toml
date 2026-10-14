@@ -1,0 +1,26 @@
+# Spike workspace (0.7.0 W2, release-plan R1): the two kernel design spikes plus the shared,
+# kernel-agnostic handler corpus they are both measured against. Unpublished and temporary:
+# `k-rebuild` deletes `spikes/**` once the chosen kernel lands in `id_effect::next`.
+#
+# Deliberately its own workspace (like labs/), not a root-workspace member, so the root
+# `cargo check --workspace`, coverage and moon CI never build half-finished spike code:
+#   cd spikes && cargo check --workspace
+[workspace]
+resolver = "2"
+exclude = ["target"]
+members = ["corpus", "kernel_a", "kernel_b"]
+
+# Keep edition and MSRV in lockstep with the root [workspace.package].
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.94"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/id_effect"
+publish = false
+
+[workspace.dependencies]
+spike_corpus = { path = "corpus" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
