@@ -2,6 +2,7 @@
 name = "id_effect_config"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Effect.ts-style ConfigProvider + Figment/serde layers for the workspace `effect` crate"
 repository.workspace = true
@@ -43,3 +44,7 @@ dotenvy = { version = "0.15", optional = true }
 serde = { version = "1", features = ["derive"] }
 temp-env = "0.3"
 tempfile = "3"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

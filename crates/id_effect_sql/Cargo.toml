@@ -2,6 +2,7 @@
 name = "id_effect_sql"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries"
 repository.workspace = true
@@ -30,3 +31,7 @@ rstest = "0.26"
 [[example]]
 name = "010_axum_sql"
 path = "examples/010_axum_sql.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

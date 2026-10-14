@@ -2,6 +2,7 @@
 name = "id_effect_opentelemetry"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "OpenTelemetry tracing and metrics integration for id_effect (Phase B / @effect/opentelemetry parity)"
 repository.workspace = true
@@ -75,3 +76,7 @@ tokio = { version = "1.50.0", features = [
   "rt-multi-thread",
   "signal",
 ] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

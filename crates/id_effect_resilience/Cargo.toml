@@ -2,6 +2,7 @@
 name = "id_effect_resilience"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Resilience patterns — circuit breaker, rate limiter, bulkhead, hedged requests — for id_effect"
 license.workspace = true
 repository.workspace = true
@@ -21,3 +22,7 @@ tokio = { version = "1.50.0", features = ["sync", "time"] }
 [dev-dependencies]
 rstest = "0.26"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

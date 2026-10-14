@@ -2,6 +2,7 @@
 name = "id_effect_tower"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Tower Service bridge for `effect` programs (runs effects via id_effect_tokio)"
 license.workspace = true
 repository.workspace = true
@@ -25,3 +26,8 @@ tower = { version = "0.5.3", features = ["util"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "merge"
+merge_into = "id_effect_axum"

@@ -161,6 +161,7 @@ mod tests {
       );
       let composed = outer.compose(inner);
       assert_eq!(composed.preview(&Outer::Inner(Inner::Num(4))), Some(4));
+      assert_eq!(composed.preview(&Outer::Other), None);
       assert_eq!(composed.review(7), Outer::Inner(Inner::Num(7)));
     }
   }

@@ -2,6 +2,7 @@
 name = "cli_minimal"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 publish = false
 description = "Phase E minimal CLI — clap + id_effect_cli + id_effect_config (Secret)"
 
@@ -28,3 +29,7 @@ id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.5.0", featur
   "clap",
 ] }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.5.0" }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "example"

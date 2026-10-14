@@ -2,6 +2,7 @@
 name = "id_effect_cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing init, run_main"
 repository.workspace = true
@@ -43,3 +44,7 @@ required-features = ["clap"]
 name = "id-effect-diagnose"
 path = "src/bin/id-effect-diagnose.rs"
 required-features = ["clap"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

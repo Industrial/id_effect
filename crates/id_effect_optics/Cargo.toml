@@ -2,6 +2,7 @@
 name = "id_effect_optics"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Functional optics — Lens, Prism, Traversal, JSON patch, and schema field paths for id_effect"
 license.workspace = true
 repository.workspace = true
@@ -47,3 +48,7 @@ path = "examples/040_traversal.rs"
 [[example]]
 name = "050_zipper"
 path = "examples/050_zipper.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "maintenance"

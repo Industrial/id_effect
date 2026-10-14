@@ -2,6 +2,7 @@
 name = "id_effect_jobs"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Production async messaging — Apalis jobs, obix outbox/inbox, Kafka broker"
 license.workspace = true
 repository.workspace = true
@@ -79,3 +80,7 @@ required-features = ["memory", "apalis", "obix"]
 name = "020_events_workflow_e2e"
 path = "examples/020_events_workflow_e2e.rs"
 required-features = ["memory", "obix", "postgres"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

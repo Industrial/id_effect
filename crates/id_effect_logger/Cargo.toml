@@ -2,6 +2,7 @@
 name = "id_effect_logger"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Effect-logging service (forwards to tracing) for effect! / AsyncEffect programs"
 repository.workspace = true
@@ -49,3 +50,7 @@ path = "examples/macro_sync_bind.rs"
 [[example]]
 name = "macro_block_tail"
 path = "examples/macro_block_tail.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

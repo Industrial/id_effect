@@ -2,6 +2,7 @@
 name = "id_effect_sql_pg"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "PostgreSQL driver for id_effect_sql — sqlx pool and PgSqlClient"
 repository.workspace = true
@@ -26,3 +27,8 @@ tokio = { version = "1.50.0", features = ["rt", "sync"] }
 [dev-dependencies]
 id_effect_tokio = { path = "../id_effect_tokio" }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "merge"
+merge_into = "id_effect_sql"

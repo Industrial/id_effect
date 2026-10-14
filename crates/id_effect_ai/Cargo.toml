@@ -2,6 +2,7 @@
 name = "id_effect_ai"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Vendor-neutral LLM client traits and streaming for id_effect"
 repository.workspace = true
@@ -60,3 +61,7 @@ required-features = ["openai", "anthropic"]
 name = "020_cursor_agent_once"
 path = "examples/020_cursor_agent_once.rs"
 required-features = ["cursor"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

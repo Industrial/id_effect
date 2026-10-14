@@ -2,6 +2,7 @@
 name = "id_effect_axum"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Axum integration for the workspace `effect` crate — run Effect handlers on Tokio"
 repository.workspace = true
@@ -46,3 +47,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

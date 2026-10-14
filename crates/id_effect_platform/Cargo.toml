@@ -2,6 +2,7 @@
 name = "id_effect_platform"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "Platform capability traits (HTTP, FS, process) for id_effect — @effect/platform-style boundaries"
 repository.workspace = true
@@ -41,3 +42,7 @@ rstest = "0.26"
 tempfile = "3"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 wiremock = "0.6"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "integration"

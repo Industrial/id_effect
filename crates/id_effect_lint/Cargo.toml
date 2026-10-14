@@ -19,3 +19,7 @@ crate-type = ["cdylib"]
 
 [package.metadata.rust-analyzer]
 rustc_private = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

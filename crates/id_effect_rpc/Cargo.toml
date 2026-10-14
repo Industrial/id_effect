@@ -2,6 +2,7 @@
 name = "id_effect_rpc"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity)"
 repository.workspace = true
@@ -45,3 +46,7 @@ path = "examples/010_json_greet.rs"
 [[example]]
 name = "020_rpc_tracing"
 path = "examples/020_rpc_tracing.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

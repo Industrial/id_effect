@@ -2,6 +2,7 @@
 name = "id_effect_workflow"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics"
 license.workspace = true
 repository.workspace = true
@@ -68,3 +69,7 @@ optional = true
 [[test]]
 name = "duroxide_journal"
 required-features = ["duroxide"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

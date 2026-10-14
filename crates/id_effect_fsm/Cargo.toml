@@ -2,6 +2,7 @@
 name = "id_effect_fsm"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Typed finite-state machines, sagas, and session types for id_effect programs"
 license.workspace = true
 repository.workspace = true
@@ -25,3 +26,7 @@ thiserror = "2"
 [dev-dependencies]
 rstest = "0.26"
 tempfile = "3"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "runtime"

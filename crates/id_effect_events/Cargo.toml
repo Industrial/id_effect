@@ -2,6 +2,7 @@
 name = "id_effect_events"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Event sourcing, projections, and CQRS boundaries for id_effect programs"
 license.workspace = true
 repository.workspace = true
@@ -55,3 +56,7 @@ optional = true
 [[test]]
 name = "es_entity_journal"
 required-features = ["es-entity"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

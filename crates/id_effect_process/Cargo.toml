@@ -2,6 +2,7 @@
 name = "id_effect_process"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "BEAM/OTP-style processes, links, monitors, and supervision trees for id_effect"
 license.workspace = true
 repository.workspace = true
@@ -27,3 +28,7 @@ tokio = { version = "1.50.0", features = [
   "time",
   "sync",
 ] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "runtime"
