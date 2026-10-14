@@ -29,7 +29,7 @@ struct ReadmeDoctests;
 
 /// Derive macro: structural [`PartialEq`], [`Eq`], and [`Hash`] for Effect.ts-style data types.
 ///
-/// Types implementing these impls automatically satisfy [`id_effect::data::EffectData`] via the
+/// Types implementing these impls automatically satisfy [`id_effect::schema::data::EffectData`] via the
 /// blanket implementation in the `effect` crate.
 #[proc_macro_derive(EffectData)]
 pub fn derive_effect_data(input: TokenStream) -> TokenStream {

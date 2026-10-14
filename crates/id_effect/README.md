@@ -57,10 +57,9 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 | Module / construct | When / how to use |
 |---------------------|-------------------|
 | **`either`** (alias + `either::either::*`) | Use when you want **Effect.ts naming** (`right`/`left`, `map_left`, `get_or_else`, …) over inherent `Result` methods. |
-| **`func`** (`identity`, `compose`, `memoize`, `pipe*`, `tupled`, …) | Use for morphism algebra on pure functions, plus **`memoize`** for pure, keyed memoization of expensive functions (mind memory). |
+| **`func`** (`identity`, `always`, `compose`, `absurd`) | Use for small function plumbing; the wider `Function` set (`pipe*`, `flip`, `tupled`, …) is in `id_effect_fp::foundation::function`. |
 | **`piping`** (`Pipe` trait) | Use for fluent `x.pipe(f).pipe(g)` on any value; pairs with `Effect::map` / `pipe!` at boundaries. |
 | **`predicate`** (`Predicate`, `predicate::*`) | Use when boolean logic gets gnarly: store composable `Send + Sync` predicates (`and`/`or`/`not`, `contramap`, builtins). |
-| **`mutable_ref`** (`MutableRef`) | Use **sparingly** at synchronous edges for shared mutable cells; prefer `FiberRef` / `TRef` / services inside effect graphs. |
 
 ---
 
@@ -238,5 +237,5 @@ internally and in its public types (`SpanRecord::annotations`, `Metric::snapshot
 ## Cross-cutting pointers
 
 - **Boundaries:** describe work with `Effect`; **run** with `runtime::*`; wire dependencies with `layer`/`context`/`service`; validate external inputs with `schema`.
-- **Imperative sync state:** prefer `coordination`/`FiberRef` (or `id_effect_fp::stm`) over `foundation::MutableRef` except at thin integration edges.
+- **Imperative sync state:** prefer `coordination`/`FiberRef` (or `id_effect_fp::stm`) over ad hoc shared mutable cells.
 - **Deeper docs:** `src/kernel/README.md`, `src/context/README.md`, `src/layer/README.md`, `src/schema/README.md`, etc., expand the “why” beyond this cheat-sheet.

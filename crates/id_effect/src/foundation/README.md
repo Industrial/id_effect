@@ -2,9 +2,10 @@
 
 This directory implements the **lowest stratum** of the `effect` crate: small, law-abiding building blocks (products, coproducts, morphisms) that every higher layer assumes. Nothing here performs I/O or knows about `Effect`; it is pure structure and utilities.
 
-> Since 0.6 only `either`, `func`, `piping`, `predicate` and `mutable_ref` remain here; `unit`,
+> Since 0.6 only `either`, `func`, `piping` and `predicate` remain here; `unit`,
 > `never`, `function`, `product`, `coproduct`, `isomorphism` and `option_` moved to
-> `id_effect_fp::foundation`, and `algebra` to `id_effect_fp::algebra`.
+> `id_effect_fp::foundation`, and `algebra` to `id_effect_fp::algebra`. 0.7 removed
+> `mutable_ref` and trimmed `func` to `identity`, `always`, `compose`, `absurd`.
 
 ## What lives here
 
@@ -17,11 +18,10 @@ This directory implements the **lowest stratum** of the `effect` crate: small, l
 | `coproduct` | `Either`, `left`, `right`, `either` | Coproduct / sum types (aligned with `Result`/`Either` conventions). |
 | `isomorphism` | `Iso<A, B>` | Witnesses structure-preserving back-and-forth maps. |
 | `either` | Effect.ts–style helpers on `Either` | Ergonomic combinators over the coproduct. |
-| `func` | Extended utilities (`memoize`, `tupled`, `untupled`, …) | Higher-level function algebra. |
+| `func` | `identity`, `always`, `compose`, `absurd` | Function plumbing core relies on. |
 | `option_` | Free functions over `Option<T>` | Shared `Option` vocabulary. |
 | `piping` | `Pipe` trait | Method-style piping: `x.pipe(f)` (mirrors fluent style). |
 | `predicate` | `Predicate<A>` | Composable `A -> bool` wrappers. |
-| `mutable_ref` | `MutableRef<A>` | Synchronous interior mutability for **non-`Effect`** shared state (use sparingly at boundaries). |
 
 ## What it is used for
 
@@ -33,7 +33,7 @@ This directory implements the **lowest stratum** of the `effect` crate: small, l
 
 1. **Prefer these primitives** over ad hoc tuples and closures when the same pattern appears twice—keeps laws and tests centralized.
 2. **Do not import `foundation` for I/O**; environment and effects live in `kernel`, `context`, and `runtime`.
-3. **Keep `MutableRef` at the edge**—inside `Effect` graphs, prefer `FiberRef`, `TRef`, or explicit `R` services instead of hidden global mutable cells.
+3. **No hidden global mutable cells**—inside `Effect` graphs, prefer `FiberRef`, `TRef`, or explicit `R` services.
 4. **Preserve isomorphism round-trips** when extending `Iso`; add tests `iso.to(iso.from(x)) ≈ x` for new witnesses.
 5. **Use `Predicate`** when you need combinators (`and`, `or`, `not`) over plain `fn(&A) -> bool` to avoid boolean soup.
 

@@ -7,10 +7,9 @@
 //! | Module | Construct |
 //! |--------|-----------|
 //! | [`either`] | `Either<R,L>` alias + Effect.ts-named combinators |
-//! | [`func`] | `identity`, `compose`, `memoize`, `tupled` (full set) |
+//! | [`func`] | `identity`, `compose`, `always`, `absurd` |
 //! | [`piping`] | [`Pipe`] trait (`x.pipe(f)`) |
 //! | [`predicate`] | [`Predicate<A>`] composable boolean functions |
-//! | [`mutable_ref`] | [`MutableRef<A>`] synchronous interior-mutable cell |
 //!
 //! ## Laws
 //!
@@ -19,13 +18,11 @@
 
 pub mod either;
 pub mod func;
-pub mod mutable_ref;
 pub mod piping;
 pub mod predicate;
 
 pub use either::Either;
 pub use either::either::{left, right};
-pub use func::{always, compose, const_, flip, identity, pipe1, pipe2, pipe3};
-pub use mutable_ref::MutableRef;
+pub use func::{always, compose, identity};
 pub use piping::Pipe;
 pub use predicate::Predicate;

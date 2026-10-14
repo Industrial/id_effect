@@ -2,8 +2,8 @@
 
 use id_effect::Effect;
 use id_effect::Needs;
-use id_effect::data::EffectData;
 use id_effect::schema::Schema;
+use id_effect::schema::data::EffectData;
 use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
 
 use crate::protocol::{RPC_DISPATCH_PATH, RpcWireRequest, RpcWireResponse};

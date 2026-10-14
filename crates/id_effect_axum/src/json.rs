@@ -4,7 +4,7 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use id_effect::data::EffectData;
+use id_effect::schema::data::EffectData;
 use id_effect::schema::serde_bridge::unknown_from_serde_json;
 use id_effect::schema::{ParseError, Schema, Unknown};
 use serde::Serialize;

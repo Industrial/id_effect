@@ -2,7 +2,7 @@
 //! [`id_effect::run_async`], so handlers stay in the Effect interpreter while composing with
 //! Tower middleware stacks.
 //!
-//! Enabled by the `tower` feature. Formerly the `id_effect_tower` crate (merged in 0.6, ADR 0010).
+//! Enabled by the `tower` feature (merged into this crate in 0.6, ADR 0010).
 //! Effects run via [`id_effect::run_async`] on the global [`EffectExecutor`] — the crate's single
 //! [Send strategy](crate#send-strategy) — so service futures are [`Send`] and work on any Tokio
 //! runtime flavour.
@@ -29,8 +29,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use id_effect::duration::Duration;
 use id_effect::run_async as run_effect_async;
+use id_effect::scheduling::duration::Duration;
 use id_effect::{Effect, Metric, QueueError, SynchronizedRef, box_future};
 use tokio::sync::{AcquireError, OwnedSemaphorePermit, Semaphore};
 use tower::Service;
@@ -319,9 +319,9 @@ where
   }
 }
 
-/// Tower [`Service`] shaped like a queue-backed [`id_effect::channel::QueueChannel`]: each
-/// [`Service::call`] runs [`QueueChannel::write`](id_effect::channel::QueueChannel::write) with the
-/// request, then [`QueueChannel::read`](id_effect::channel::QueueChannel::read) for the response.
+/// Tower [`Service`] shaped like a queue-backed [`id_effect::coordination::channel::QueueChannel`]: each
+/// [`Service::call`] runs [`QueueChannel::write`](id_effect::coordination::channel::QueueChannel::write) with the
+/// request, then [`QueueChannel::read`](id_effect::coordination::channel::QueueChannel::read) for the response.
 /// Read errors are [`QueueError`].
 pub struct ChannelService<S, Req, Res>
 where
@@ -330,7 +330,7 @@ where
   S: 'static,
 {
   state: S,
-  channel: id_effect::channel::QueueChannel<Res, Req, S>,
+  channel: id_effect::coordination::channel::QueueChannel<Res, Req, S>,
 }
 
 impl<S, Req, Res> ChannelService<S, Req, Res>
@@ -341,7 +341,10 @@ where
 {
   /// Queue-backed service with environment `state` and shared `channel`.
   #[inline]
-  pub fn new(state: S, channel: id_effect::channel::QueueChannel<Res, Req, S>) -> Self {
+  pub fn new(
+    state: S,
+    channel: id_effect::coordination::channel::QueueChannel<Res, Req, S>,
+  ) -> Self {
     Self { state, channel }
   }
 
@@ -357,9 +360,9 @@ where
     &mut self.state
   }
 
-  /// Borrow the underlying [`id_effect::channel::QueueChannel`].
+  /// Borrow the underlying [`id_effect::coordination::channel::QueueChannel`].
   #[inline]
-  pub fn channel(&self) -> &id_effect::channel::QueueChannel<Res, Req, S> {
+  pub fn channel(&self) -> &id_effect::coordination::channel::QueueChannel<Res, Req, S> {
     &self.channel
   }
 }
@@ -419,7 +422,7 @@ where
 mod tests {
   use super::*;
   use id_effect::Metric;
-  use id_effect::channel::QueueChannel;
+  use id_effect::coordination::channel::QueueChannel;
   use id_effect::succeed;
   use std::time::Duration;
   use tower::{Service, ServiceExt};
@@ -458,7 +461,7 @@ mod tests {
     assert_eq!(svc.ready().await.unwrap().call(0).await, Ok(7));
     let obs = timer.snapshot_durations();
     assert_eq!(obs.len(), 1);
-    assert!(obs[0] > id_effect::duration::Duration::ZERO);
+    assert!(obs[0] > id_effect::scheduling::duration::Duration::ZERO);
     assert_eq!(errors.snapshot_count(), 0);
   }
 

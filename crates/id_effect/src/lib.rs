@@ -5,8 +5,8 @@
 //! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`require!`](macro@require), …).
 //! - **[`mod@capability`]** — trait-first DI: [`Env`], [`ProviderSpec`], [`CapabilityGraph`], [`run_with`].
 //! - **[`mod@piping`]** — [`Pipe`] trait (macro: [`pipe!`](macro@pipe)).
-//! - **[`schedule`]** — Effect.ts-style repeat/retry policies.
-//! - **[`stream`]** — Effect.ts-inspired stream combinators.
+//! - **[`scheduling::schedule`]** — Effect.ts-style repeat/retry policies.
+//! - **[`streaming::stream`]** — Effect.ts-inspired stream combinators.
 //!
 //! ## Cargo features
 //!
@@ -129,10 +129,7 @@ pub use coordination::{
 pub use failure::{Cause, Defect, Exit, Or};
 #[doc(inline)]
 pub use foundation::either::Either;
-pub use foundation::func::{
-  always, compose, const_, flip, identity, memoize, pipe1, pipe2, pipe3, tupled, untupled,
-};
-pub use foundation::mutable_ref::MutableRef;
+pub use foundation::func::{always, compose, identity};
 pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
 pub use observability::{
@@ -166,16 +163,3 @@ pub use testing::{
   assert_no_leaked_fibers, assert_no_unclosed_scopes, record_leaked_fiber, record_unclosed_scope,
   run_test, run_test_with_clock,
 };
-
-// ─── Backward-compatible module re-exports ────────────────────────────────────
-// External crates that use `id_effect::channel::Channel` etc. keep working.
-pub use coordination::channel;
-pub use coordination::ref_;
-pub use foundation::either;
-pub use foundation::func;
-pub use scheduling::clock;
-pub use scheduling::duration;
-pub use scheduling::schedule;
-pub use schema::data;
-pub use streaming::stream;
-pub use testing::snapshot;

@@ -1,4 +1,4 @@
-//! Bridge a queue-backed [`id_effect::channel::QueueChannel`] to Axum: one HTTP exchange is
+//! Bridge a queue-backed [`id_effect::coordination::channel::QueueChannel`] to Axum: one HTTP exchange is
 //! `write(Request)` then `read()` for the response.
 //!
 //! [`QueueChannel`] clones outbound elements when offering to the queue; use
@@ -7,14 +7,14 @@
 //! before the round-trip).
 //!
 //! Queue reads surface [`QueueError`] and are mapped to [`StatusCode`] here.
-//! ([`QueueChannel`] is used instead of full [`id_effect::channel::Channel`] so the handle
+//! ([`QueueChannel`] is used instead of full [`id_effect::coordination::channel::Channel`] so the handle
 //! stays [`Send`] inside Axum [`axum::handler::Handler`] futures.)
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, Response, StatusCode};
 use axum::response::{IntoResponse, Response as AxumResponse};
 use http_body_util::BodyExt;
-use id_effect::channel::QueueChannel;
+use id_effect::coordination::channel::QueueChannel;
 use id_effect::{CapBindR, Effect, QueueError, box_future, effect};
 
 #[inline]

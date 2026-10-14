@@ -267,7 +267,7 @@ mod tests {
     use axum::body::Bytes;
     use axum::extract::State;
     use axum::http::Response as HttpResponse;
-    use id_effect::channel::QueueChannel;
+    use id_effect::coordination::channel::QueueChannel;
     use id_effect::{Queue, run_blocking};
 
     let q = run_blocking(Queue::unbounded(), ()).expect("queue");

@@ -15,8 +15,8 @@ use axum::response::IntoResponse;
 use axum::routing::{MethodFilter, MethodRouter};
 use id_effect::Effect;
 use id_effect::Metric;
-use id_effect::duration::Duration;
 use id_effect::runtime::run_blocking;
+use id_effect::scheduling::duration::Duration;
 
 async fn run_with_axum_metrics<S, A, E, F>(
   env: S,
@@ -302,7 +302,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::{Method, Request, StatusCode};
   use axum::routing::{MethodFilter, Router};
-  use id_effect::duration::Duration;
+  use id_effect::scheduling::duration::Duration;
   use id_effect::{Effect, Metric, fail, succeed};
   use tower::ServiceExt;
 

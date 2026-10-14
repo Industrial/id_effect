@@ -1,7 +1,7 @@
 //! JSON serialization and [`id_effect::schema`] bridging for RPC wire messages.
 
-use id_effect::data::EffectData;
 use id_effect::schema::Schema;
+use id_effect::schema::data::EffectData;
 use id_effect::schema::serde_bridge::unknown_from_serde_json;
 use serde::Serialize;
 use serde_json::Value;

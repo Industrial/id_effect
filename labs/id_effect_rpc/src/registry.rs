@@ -13,8 +13,8 @@ use crate::protocol::RpcWireResponse;
 use crate::serialization::{
   RpcSerializationError, decode_payload, rpc_error_to_wire, success_wire,
 };
-use id_effect::data::EffectData;
 use id_effect::schema::Schema;
+use id_effect::schema::data::EffectData;
 use id_effect_axum::run_with_env;
 use serde_json::Value;
 

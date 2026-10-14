@@ -44,7 +44,7 @@ use std::time::Duration;
 
 use ::id_effect::{Effect, Needs, effect};
 use id_effect::LogLevel;
-use id_effect::duration::duration;
+use id_effect::scheduling::duration::duration;
 use url::Url;
 
 use crate::error::ConfigError;
@@ -445,7 +445,7 @@ fn split_csv_list(s: &str) -> Vec<String> {
 }
 
 impl Config<Duration> {
-  /// Load a [`Duration`] using [`id_effect::duration::duration::decode`] (Effect.ts `Duration` decode).
+  /// Load a [`Duration`] using [`id_effect::scheduling::duration::duration::decode`] (Effect.ts `Duration` decode).
   ///
   /// ```rust
   /// use std::time::Duration;

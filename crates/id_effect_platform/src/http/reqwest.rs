@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 #[path = "reqwest_providers.rs"]
 mod reqwest_providers;
-use id_effect::data::EffectData;
+use id_effect::schema::data::EffectData;
 use id_effect::schema::{ParseError, Unknown};
 use reqwest::{Client, Error, RequestBuilder, Response};
 pub use reqwest_providers::{ReqwestClientLive, provide_reqwest_client, provide_reqwest_pool};
