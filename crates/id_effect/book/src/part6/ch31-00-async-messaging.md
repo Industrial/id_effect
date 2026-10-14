@@ -12,7 +12,7 @@ feature `pg`), with adapters in the labs crates
 
 ## SQL platform
 
-[`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) (feature `pg`; formerly the `id_effect_sql_pg` crate, now a deprecated shim) is built on sqlx:
+[`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) (feature `pg`) is built on sqlx:
 
 - `PgSqlClient` implements [`SqlClient`](https://docs.rs/id_effect_sql/latest/id_effect_sql/trait.SqlClient.html)
 - `provide_pg_sql_client` registers `PgPool` + `SqlClientService`

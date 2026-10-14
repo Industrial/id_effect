@@ -15,7 +15,7 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
-# PostgreSQL driver (sqlx pool + PgSqlClient); formerly the id_effect_sql_pg crate.
+# PostgreSQL driver (sqlx pool + PgSqlClient).
 pg = ["dep:sqlx", "dep:tokio"]
 
 [dependencies]

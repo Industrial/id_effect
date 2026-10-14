@@ -1,4 +1,4 @@
-//! Unit and integration tests for the `pg` feature (formerly `id_effect_sql_pg`).
+//! Unit and integration tests for the `pg` feature.
 //!
 //! `live_postgres_*` tests need a database at `DATABASE_URL`. When CI provides a Postgres service
 //! it also sets `ID_EFFECT_REQUIRE_PG=1`, which turns a missing or unreachable database into a test

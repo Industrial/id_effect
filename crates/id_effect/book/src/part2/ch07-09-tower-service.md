@@ -1,6 +1,6 @@
-# Tower service (`id_effect_tower`)
+# Tower service (`id_effect_axum::service`)
 
-Workspace crate **`id_effect_tower`** implements **[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Effects are driven with **`id_effect::run_async`**, so you can compose **Tower middleware** (timeouts, retries, load balancing, …) around the same domain style as Axum, without tying to Axum’s router first.
+The **`service`** module of **`id_effect_axum`** (feature **`tower`**) implements **[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Effects are driven with **`id_effect::run_async`**, so you can compose **Tower middleware** (timeouts, retries, load balancing, …) around the same domain style as Axum, without tying to Axum’s router first.
 
 ## When to use it
 
@@ -15,10 +15,10 @@ Workspace crate **`id_effect_tower`** implements **[`tower::Service`](https://do
 
 ## Dependencies
 
-The crate depends on **`id_effect_tokio`** for the async driver; it does not re-export **`TokioRuntime`**—compose runtime and layers at your application root.
+The module depends on **`id_effect_tokio`** for the async driver; it does not re-export **`TokioRuntime`**—compose runtime and layers at your application root.
 
 ## Further reading
 
-- `cargo doc --open -p id_effect_tower`
-- `moon run effect-tower:examples` or `cargo run -p id_effect_tower --example 001_effect_service`
+- `cargo doc --open -p id_effect_axum --features tower`
+- `cargo run -p id_effect_axum --features tower --example 050_tower_effect_service`
 - [Axum host](./ch07-08-axum-host.md) if you are on Axum specifically; [Tokio bridge](./ch07-05-tokio-bridge.md) for `Send` and runtime caveats.

@@ -50,7 +50,7 @@ With the `pg` feature, swap `TestSqlClient` for `id_effect_sql::pg::PgSqlClient:
 | [`error`](src/error.rs) | `SqlError` |
 | [`client`](src/client.rs) | `SqlClient`, `SqlRow`, `SqlParam`, `TestSqlClient`, `transaction_scope` |
 | [`transaction`](src/transaction.rs) | `SqlTransaction`, `with_transaction` transaction scope |
-| [`pg`](src/pg/mod.rs) (feature `pg`) | `PgSqlClient`, `PgPoolConfig`, `pg_pool_from_config`, `provide_pg_sql_client` (formerly `id_effect_sql_pg`) |
+| [`pg`](src/pg/mod.rs) (feature `pg`) | `PgSqlClient`, `PgPoolConfig`, `pg_pool_from_config`, `provide_pg_sql_client` |
 
 ## Design
 

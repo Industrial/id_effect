@@ -119,13 +119,13 @@ Workspace crate: **Tokio-backed** `Runtime` integration, re-exports `run_async` 
 
 ---
 
-**`id_effect_axum::service`** (formerly `id_effect_tower`)
-**`tower::Service`** implementations over effects, with optional **concurrency limits** and **request metrics**, behind `id_effect_axum`'s `tower` feature. The `id_effect_tower` crate is a deprecated re-export shim for 0.6 only. See [Tower service](./part2/ch07-09-tower-service.md).
+**`id_effect_axum::service`**
+**`tower::Service`** implementations over effects, with optional **concurrency limits** and **request metrics**, behind `id_effect_axum`'s `tower` feature. See [Tower service](./part2/ch07-09-tower-service.md).
 
 ---
 
 **`id_effect_sql`**
-Workspace crate for driver-agnostic SQL as effects (`SqlClient`, `with_transaction`, `TestSqlClient`). Postgres lives in `id_effect_sql::pg` behind the `pg` feature (formerly the `id_effect_sql_pg` crate). See [Data access](./part6/ch28-00-data.md).
+Workspace crate for driver-agnostic SQL as effects (`SqlClient`, `with_transaction`, `TestSqlClient`). Postgres lives in `id_effect_sql::pg` behind the `pg` feature. See [Data access](./part6/ch28-00-data.md).
 
 ---
 

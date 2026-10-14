@@ -14,9 +14,7 @@ projects:
   id_effect_platform: crates/id_effect_platform
   id_effect_proc_macro: crates/id_effect_proc_macro
   id_effect_sql: crates/id_effect_sql
-  id_effect_sql_pg: crates/id_effect_sql_pg
   id_effect_tokio: crates/id_effect_tokio
-  id_effect_tower: crates/id_effect_tower
   id_effect_fsm: crates/id_effect_fsm
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node

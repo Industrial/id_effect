@@ -32,12 +32,9 @@ declare -A LEVEL=(
     [id_effect_sql]=2
     [id_effect_tokio]=2
     [id_effect_config]=3
-    [id_effect_sql_pg]=3
     [id_effect_node]=4
     [id_effect_axum]=4
     [id_effect_opentelemetry]=4
-    # Deprecated re-export shims (removed in 0.7) publish after their new homes.
-    [id_effect_tower]=5
 )
 
 # Publish order (levels ascending; within a level, dependencies first).
@@ -46,9 +43,8 @@ declare -a ORDER=(
     id_effect
     id_effect_cli id_effect_fp id_effect_logger id_effect_optics id_effect_platform
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
-    id_effect_config id_effect_fsm id_effect_sql_pg
+    id_effect_config id_effect_fsm
     id_effect_node id_effect_axum id_effect_opentelemetry
-    id_effect_tower
 )
 
 if [[ "${1:-}" == "--print-order" ]]; then

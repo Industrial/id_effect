@@ -118,7 +118,7 @@ fn app(base: Env) -> Router {
 
 | Feature | Description |
 |---------|-------------|
-| `tower` | `service::{EffectService, ChannelService}` — Tower `Service`s backed by effects (formerly `id_effect_tower`). |
+| `tower` | `service::{EffectService, ChannelService}` — Tower `Service`s backed by effects. |
 | `cluster` | `cluster::ClusterControl` — Process Mesh control-plane routes (`id_effect_node`). |
 
 ## Breaking changes in 0.6

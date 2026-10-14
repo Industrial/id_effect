@@ -1,7 +1,7 @@
 # Migrating from `async fn` to effects
 
 > **Upgrading id_effect 0.4 / 0.5 → 0.6:** crates moved to `labs/`, merged crates
-> (`id_effect_tower`, `id_effect_sql_pg`), paths moved to `id_effect_fp` and
+> (Tower bridge into `id_effect_axum::service`, Postgres into `id_effect_sql::pg`), paths moved to `id_effect_fp` and
 > `id_effect_node::placement`, renames, pull-based streams and the axum executor are covered in the
 > [0.6 migration guide](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.6.md).
 

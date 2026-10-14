@@ -186,7 +186,6 @@ Crates are grouped by tier ([ADR 0010](https://github.com/Industrial/id_effect/b
 | `id_effect_cli` | integration | `run_main`, `Exit`/`Cause` → `ExitCode` | [CLI with clap](./part3/ch16-00-cli-with-clap.md) |
 | `id_effect_fp` | maintenance | algebra, persistent collections, STM | [Part V](./part5/ch17-00-algebra-type-classes.md), [STM](./part4/ch12-00-stm.md) |
 | `id_effect_optics` | maintenance | Lenses, prisms, traversals | [Optics](./part5/ch18-00-optics.md) |
-| `id_effect_tower`, `id_effect_sql_pg` | shim (0.6 only) | Deprecated re-exports of `id_effect_axum::service` / `id_effect_sql::pg` | — |
 | `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`, `id_effect_workflow`, `id_effect_events`, `id_effect_jobs`, `id_effect_graph` | labs (unpublished) | Experimental; path/git dependency on `labs/`, built with `--manifest-path labs/Cargo.toml` | Part VI chapters marked "labs" |
 
 For a single local index, run `cargo doc --workspace --no-deps` from the repository root (see each crate's `README` for optional examples). Labs crates: `cargo doc --manifest-path labs/Cargo.toml --workspace --no-deps`.

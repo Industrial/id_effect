@@ -8,7 +8,7 @@
 - [`with_transaction`](https://docs.rs/id_effect_sql/latest/id_effect_sql/fn.with_transaction.html) — commit/rollback scope
 - [`TestSqlClient`](https://docs.rs/id_effect_sql/latest/id_effect_sql/struct.TestSqlClient.html) — scriptable in-memory double
 
-PostgreSQL production access lives in [`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) behind the `pg` feature: `PgPool`, `PgSqlClient` (a sqlx-backed `SqlClient`) and `provide_pg_sql_client`. It was the separate `id_effect_sql_pg` crate before 0.6; that crate is now a deprecated re-export shim, removed in 0.7.
+PostgreSQL production access lives in [`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) behind the `pg` feature: `PgPool`, `PgSqlClient` (a sqlx-backed `SqlClient`) and `provide_pg_sql_client`.
 
 ```toml
 id_effect_sql = { version = "0.6", features = ["pg"] }

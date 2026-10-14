@@ -1,8 +1,7 @@
 //! **PostgreSQL driver** (feature `pg`) — sqlx [`PgPool`](sqlx::PgPool) and
 //! [`PgSqlClient`] implementing [`SqlClient`](crate::SqlClient).
 //!
-//! Formerly the `id_effect_sql_pg` crate (merged in 0.6, ADR 0010). See
-//! `docs/platform/adrs/adr-sql-driver-choice.md`.
+//! See `docs/platform/adrs/adr-sql-driver-choice.md`.
 
 #![allow(clippy::unused_unit)]
 
