@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Platform capability traits (HTTP, FS, process) for id_effect — @effect/platform-style boundaries"
+description = "Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries"
 repository.workspace = true
 readme = "README.md"
 keywords = ["effect", "async", "http", "filesystem", "platform"]
@@ -13,6 +13,10 @@ categories = ["asynchronous", "network-programming"]
 [lints.rust]
 unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[features]
+# In-memory test doubles (`MemoryOAuthClient`) for downstream tests.
+test-util = []
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.5.0", features = [
@@ -37,6 +41,8 @@ tokio = { version = "1.50.0", features = [
 ] }
 
 [dev-dependencies]
+# Self dev-dep so integration tests see `test-util` doubles.
+id_effect_platform = { path = ".", features = ["test-util"] }
 id_effect_tokio = { path = "../id_effect_tokio" }
 rstest = "0.26"
 tempfile = "3"

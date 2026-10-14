@@ -19,7 +19,7 @@
 use id_effect::{build_env, provide};
 use id_effect_platform::http::{provide_reqwest_http_client, HttpRequest, execute};
 use id_effect_platform::http::reqwest::{provide_reqwest_client, send};
-use id_effect_platform::process::TokioProcessRuntimeProvider;
+use id_effect_platform::command::TokioProcessRuntimeProvider;
 
 let env = build_env([
   provide_reqwest_http_client(),

@@ -1,0 +1,91 @@
+[package]
+publish = false
+name = "id_effect_jobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Production async messaging — Apalis jobs, obix outbox/inbox, Kafka broker"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "jobs", "queue", "outbox", "messaging"]
+categories = ["asynchronous"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[features]
+default = ["memory"]
+memory = []
+postgres = ["dep:sqlx", "dep:tokio"]
+apalis = ["postgres", "dep:apalis", "dep:apalis-core", "dep:apalis-postgres"]
+obix = ["postgres", "dep:obix", "dep:job"]
+kafka = ["dep:rdkafka", "dep:tokio"]
+
+[dependencies]
+id_effect = { path = "../../crates/id_effect", version = "0.5.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+sqlx = { version = "0.8", optional = true, default-features = false, features = [
+  "runtime-tokio",
+  "postgres",
+  "uuid",
+  "chrono",
+  "json",
+] }
+tokio = { version = "1.50.0", optional = true, features = ["sync"] }
+# Stable 1.0 family (the 1.0.0-rc releases are not mutually compatible with 1.0.0).
+apalis = { version = "1", optional = true, default-features = false }
+apalis-core = { version = "1", optional = true, default-features = false }
+apalis-postgres = { version = "1", optional = true, default-features = false, features = [
+  "migrate",
+  "tokio-comp",
+] }
+obix = { version = "0.2.28", optional = true, default-features = true }
+job = { version = "0.6", optional = true, default-features = true }
+rdkafka = { version = "0.39", optional = true, default-features = false, features = [
+  "tokio",
+] }
+
+[dev-dependencies]
+# Path-only: these crates publish after id_effect_jobs (or later in the same level).
+id_effect_events = { path = "../id_effect_events", features = ["es-entity"] }
+id_effect_workflow = { path = "../id_effect_workflow", default-features = false, features = [
+  "duroxide",
+] }
+rstest = "0.26"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+id_effect_tokio = { path = "../../crates/id_effect_tokio" }
+id_effect_sql = { path = "../../crates/id_effect_sql", features = ["pg"] }
+
+[[test]]
+name = "integration"
+required-features = ["memory"]
+
+[[test]]
+name = "pg_integration"
+path = "tests/pg_integration.rs"
+required-features = ["apalis", "obix"]
+
+[[example]]
+name = "030_compute_fabric_cluster"
+required-features = ["memory"]
+
+[[example]]
+name = "010_messaging_e2e"
+path = "examples/010_messaging_e2e.rs"
+required-features = ["memory", "apalis", "obix"]
+
+[[example]]
+name = "020_events_workflow_e2e"
+path = "examples/020_events_workflow_e2e.rs"
+required-features = ["memory", "obix", "postgres"]
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

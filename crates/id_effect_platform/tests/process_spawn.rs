@@ -1,5 +1,5 @@
 use id_effect::{build_env, provide, run_async};
-use id_effect_platform::process::{CommandSpec, TokioProcessRuntimeProvider, spawn_wait};
+use id_effect_platform::command::{CommandSpec, TokioProcessRuntimeProvider, spawn_wait};
 
 #[cfg(unix)]
 #[tokio::test]

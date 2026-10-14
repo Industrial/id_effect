@@ -18,6 +18,3 @@ pub use exit_code::{
   cause_max_exit_byte, exit_code_for_cause, exit_code_for_exit, exit_code_for_result,
 };
 pub use run::{RunMainConfig, run_main};
-
-#[cfg(feature = "clap")]
-pub mod generator;

@@ -54,7 +54,7 @@ extern crate self as id_effect;
 
 pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
 pub use id_effect_proc_macro::{
-  EffectData, Fsm, Optics, ProviderSpec as ProviderSpecDerive, SchemaParser, capability, effect,
+  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, SchemaParser, capability, effect,
   effect_tagged, match_effect,
 };
 
@@ -96,9 +96,11 @@ pub use collections::{
   ChunkBuilder, EffectHashMap, EffectHashSet, EffectSortedMap, EffectSortedSet, EffectVector,
   MutableHashMap, MutableHashSet, MutableList, MutableQueue, RedBlackTree, Trie,
 };
+#[allow(deprecated)]
+pub use compute::ComputeSupervisor;
 pub use compute::{
-  AdaptiveContext, AdmissionController, ClusterResourcePolicy, ComputeFabric, ComputeSupervisor,
-  CpuSpreadBucket, FabricJobSpec, FiberPool, LoadReport, MetricMode, MetricPolicy, MockTelemetry,
+  AdaptiveContext, AdmissionController, ClusterResourcePolicy, ComputeFabric, CpuSpreadBucket,
+  FabricGovernor, FabricJobSpec, FiberPool, LoadReport, MetricMode, MetricPolicy, MockTelemetry,
   PlacementMode, RebalanceStrategy, ResourcePolicy, SysinfoTelemetry, TelemetryEngine,
   TelemetrySnapshot, WorkProfile, configure_rayon_threads, ensure_default_fabric,
   ensure_run_context, install_fabric, install_parallel, installed_fabric, is_fabric_installed,
@@ -126,7 +128,7 @@ pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
 pub use observability::{
   AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, ComputeEvent, EffectEvent, FiberEvent,
-  LogSpan, Metric, SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot,
+  LogLevel, LogSpan, Metric, SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot,
   annotate_current_span, emit_compute_event, emit_effect_event, emit_fiber_event,
   install_tracing_layer, metric_make, record_compute_event, snapshot_tracing, with_span,
 };

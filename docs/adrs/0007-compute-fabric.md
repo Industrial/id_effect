@@ -26,7 +26,7 @@ id_effect has structured concurrency (fibers, scopes, supervision) but no unifie
 |-----------|------|
 | `ResourcePolicy` | Declarative CPU/memory rules (`MetricMode`: Max, Target, Spread, Unlimited) |
 | `TelemetryEngine` | Live CPU/memory feedback (sysinfo; cluster aggregation later) |
-| `ComputeSupervisor` | Control loop: monitor → admit → place → rebalance |
+| `FabricGovernor` (was `ComputeSupervisor`) | Control loop: monitor → admit → place → rebalance |
 | `AdmissionController` | Global/per-metric semaphores driven by telemetry vs policy |
 | `WorkProfile` | Placement hint: CpuIntensive, IoBound, MemoryHeavy, Remote, Mixed |
 | `ComputeFabric` | Capability installed at `run_with` / `run_async` boundary |

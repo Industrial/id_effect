@@ -1,7 +1,11 @@
 //! OAuth2 authorization-code trait surface (no IdP implementation in v1).
+//!
+//! Enable the `test-util` feature for `MemoryOAuthClient`, an in-memory test double.
 
 use id_effect::Effect;
+#[cfg(any(test, feature = "test-util"))]
 use std::collections::HashMap;
+#[cfg(any(test, feature = "test-util"))]
 use std::sync::{Arc, Mutex};
 
 /// Tokens returned from the token endpoint.
@@ -29,7 +33,7 @@ pub struct OAuthUserInfo {
 pub enum OAuthError {
   /// Configuration or wire error.
   Protocol(String),
-  /// Unknown authorization code (stub).
+  /// The IdP rejected or did not recognise the authorization code.
   InvalidCode,
 }
 
@@ -52,15 +56,19 @@ pub trait OAuthClient: Send + Sync {
   fn exchange_code(&self, code: &str) -> Effect<(OAuthTokens, OAuthUserInfo), OAuthError, ()>;
 }
 
-/// Deterministic stub for tests — maps registered codes to profiles.
+/// Deterministic in-memory test double — maps registered codes to profiles.
+///
+/// Requires the `test-util` feature.
+#[cfg(any(test, feature = "test-util"))]
 #[derive(Clone, Default)]
 pub struct MemoryOAuthClient {
   base_url: String,
   codes: Arc<Mutex<HashMap<String, OAuthUserInfo>>>,
 }
 
+#[cfg(any(test, feature = "test-util"))]
 impl MemoryOAuthClient {
-  /// Create stub with issuer base URL.
+  /// Create a test double with issuer base URL.
   pub fn new(base_url: impl Into<String>) -> Self {
     Self {
       base_url: base_url.into(),
@@ -75,6 +83,7 @@ impl MemoryOAuthClient {
   }
 }
 
+#[cfg(any(test, feature = "test-util"))]
 impl OAuthClient for MemoryOAuthClient {
   fn authorization_url(&self, state: &str) -> String {
     format!("{}/authorize?state={state}", self.base_url)

@@ -16,8 +16,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use id_effect::Needs;
 use id_effect::kernel::Effect;
-use id_effect::{Env, Needs, ProviderError, ProviderSpec};
 
 use crate::error::FsError;
 
@@ -274,7 +274,7 @@ impl FileSystem for TestFileSystem {
 /// Capability service handle for [`FileSystem`].
 pub type FileSystemService = Arc<dyn FileSystem>;
 
-/// Default [`ProviderSpec`] for a Tokio-backed live [`FileSystem`].
+/// Default [`ProviderSpec`](id_effect::ProviderSpec) for a Tokio-backed live [`FileSystem`].
 #[derive(::id_effect::ProviderSpecDerive)]
 #[provides(FileSystemService)]
 pub struct LiveFileSystemProvider;

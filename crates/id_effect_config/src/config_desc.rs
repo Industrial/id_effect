@@ -43,8 +43,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::id_effect::{Effect, Needs, effect};
+use id_effect::LogLevel;
 use id_effect::duration::duration;
-use id_effect_logger::LogLevel;
 use url::Url;
 
 use crate::error::ConfigError;
@@ -478,7 +478,7 @@ impl Config<Duration> {
 }
 
 impl Config<LogLevel> {
-  /// Load a [`LogLevel`] (case-insensitive; see [`LogLevel`](id_effect_logger::LogLevel)).
+  /// Load a [`LogLevel`] (case-insensitive; see [`LogLevel`](id_effect::LogLevel)).
   pub fn log_level(path: impl Into<String>) -> Self {
     let segs = split_dotted(&path.into());
     Self::new(move |p| {
@@ -625,7 +625,7 @@ mod tests {
   use std::time::Duration;
 
   use crate::MapConfigProvider;
-  use id_effect_logger::LogLevel;
+  use id_effect::LogLevel;
 
   use super::*;
 

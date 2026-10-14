@@ -99,9 +99,9 @@ let (person, _) = parser.parse(r#"{"name":"Ada","age":36}"#.to_string()).unwrap(
 assert_eq!(person, ("Ada".to_string(), 36));
 ```
 
-## `#[derive(SchemaParser)]`
+## `#[derive(Schema)]`
 
-The proc macro generates `schema()`, `parser()`, and `HasSchema` for structs with named fields (see Part V chapter 24).
+The core derive generates `schema()` and `HasSchema` for structs with named fields (see Part V chapter 24); `SchemaBridge::parser_for::<T>()` turns any `HasSchema` type into a JSON text parser. `#[derive(SchemaParser)]` is a deprecated alias that no longer emits `parser()`.
 
 ## Next steps
 

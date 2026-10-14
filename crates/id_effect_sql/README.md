@@ -14,7 +14,7 @@ Driver-agnostic **SQL client** traits for [`id_effect`](../id_effect), aligned w
 
 See ADR [`adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md) and Phase C spec [`phase-c-sql.md`](../../docs/effect-ts-parity/phases/phase-c-sql.md).
 
-Production PostgreSQL support lives in `id_effect_sql_pg` (sqlx `PgPool`).
+Production PostgreSQL support lives behind the `pg` feature (`id_effect_sql::pg`, sqlx `PgPool`).
 
 ## Testing
 

@@ -52,6 +52,46 @@ Narrows the workspace to its core purpose and hardens what remains. See
 - `map_effect` runs nothing until the first pull.
 - New test helper `id_effect::testing::assert_bounded_memory`.
 
+### Workspace restructure (ADR 0010)
+
+- **Labs:** `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`,
+  `id_effect_workflow`, `id_effect_events`, `id_effect_jobs` and `id_effect_graph` move
+  to `labs/`. This is a separate Cargo workspace with `publish = false`. These crates
+  are no longer published. They are built and tested by their own CI job, and main CI
+  no longer builds rdkafka, OpenSSL, bundled SQLite or apalis.
+  - `id_effect_jobs` now uses the stable apalis 1.0 family.
+- **Merged:** `id_effect_tower` becomes `id_effect_axum::service` (feature `tower`).
+  `id_effect_sql_pg` becomes `id_effect_sql::pg` (feature `pg`). The old crates are
+  re-export shims for 0.6 only and will be removed in 0.7.
+- `id_effect_fsm` no longer depends on `id_effect_workflow`. The durable bridge
+  (`register_fsm`, `step_durable`, `restore_state`, `FsmSnapshot`, `WorkflowFsmError`)
+  moves to `id_effect_workflow::fsm` (labs).
+- `LogLevel` moves into core (`id_effect::LogLevel`); `id_effect_logger` re-exports
+  it, and `id_effect_config` no longer depends on `id_effect_logger`.
+- `id_effect_optics::transducer` re-exports core's transducer instead of keeping a
+  duplicate. Core gains `transducer::take`.
+- **Removed:**
+  - `#[derive(Fsm)]` and `id_effect::Fsm` (a stub)
+  - the generated `T::parser()` from the schema derive (use `id_effect_parse`'s
+    `SchemaBridge::parser_for::<T>()`)
+  - the empty `algebra` feature
+  - the `id-effect` scaffolder binary and `id_effect_cli::generator` (stubs; the
+    `id-effect-diagnose` binary stays)
+- **Added:**
+  - `#[derive(Schema)]` / `id_effect::Schema`. It now also supports `Option<T>` and
+    `Vec<T>` fields.
+  - `id_effect_platform` feature `test-util`, which `MemoryOAuthClient` now requires.
+- **Renamed (old names deprecated):**
+  - `ComputeSupervisor` is now `FabricGovernor`, and `ComputeFabric::supervisor()` is
+    now `governor()`
+  - `id_effect_platform::process` is now `command`
+  - `SchemaParser` is now a deprecated alias of `Schema`
+- **Changed:** `Monad::flatten` has a real default implementation and no longer calls
+  `unimplemented!`.
+- **Publishing:** publish order lives in one place
+  (`scripts/validate-crate-packaging.sh --print-order`), and `publish.yml` loops over
+  it.
+
 ### Tooling
 
 - MSRV is declared: `rust-version = "1.94"`, checked by a CI `msrv` job.

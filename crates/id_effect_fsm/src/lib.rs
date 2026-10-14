@@ -7,7 +7,6 @@
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
 //! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation
 //! - [`SessionSend`] / [`SessionRecv`] — linear session protocol markers
-//! - [`register_fsm`] / [`step_durable`] — persist FSM snapshots through [`id_effect_workflow`]
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -27,7 +26,6 @@ mod matcher;
 mod saga;
 mod session;
 mod visualize;
-mod workflow;
 
 pub use error::{FsmError, SagaError};
 pub use interpreter::{Interpreter, RunError, TransitionEffect};
@@ -39,7 +37,6 @@ pub use session::{
   SessionSend,
 };
 pub use visualize::{table_to_mermaid, to_mermaid, to_mermaid_display};
-pub use workflow::{FsmSnapshot, WorkflowFsmError, register_fsm, restore_state, step_durable};
 
 #[cfg(test)]
 mod tests {
@@ -193,60 +190,14 @@ mod tests {
     }
   }
 
-  mod workflow_tests {
-    use super::*;
-    use id_effect_workflow::DurableWorkflowLog;
-
-    #[test]
-    fn register_fsm_duplicate_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let m = door_machine();
-      register_fsm(&mut log, "wf", &m).unwrap();
-      let err = register_fsm(&mut log, "wf", &m).unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
-    }
-
-    #[test]
-    fn step_durable_unknown_workflow_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      let err = step_durable(&mut log, "missing", &mut m, DoorEvt::Open, "open").unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
-    }
-
-    #[test]
-    fn restore_unknown_workflow_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      let err = restore_state(&mut log, "missing", &mut m).unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
-    }
-
-    #[test]
-    fn durable_step_persists_state() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      register_fsm(&mut log, "door", &m).unwrap();
-      let snap = step_durable(&mut log, "door", &mut m, DoorEvt::Open, "open").unwrap();
-      assert_eq!(snap.state, Door::Open);
-      let mut m2 = door_machine();
-      let restored = restore_state(&mut log, "door", &mut m2).unwrap();
-      assert_eq!(restored.state, Door::Open);
-      assert_eq!(m2.state(), Door::Open);
-    }
-  }
-
   mod effect_integration {
     use super::*;
-    use id_effect_workflow::DurableWorkflowLog;
 
     #[test]
     fn effect_program_steps_door() {
-      let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>, ()> = effect! {
-        let mut log = ~DurableWorkflowLog::open_in_memory();
+      let program: Effect<Door, FsmError<Door, DoorEvt>, ()> = effect! {
         let mut m = door_machine();
-        ~register_fsm(&mut log, "wf", &m);
-        ~step_durable(&mut log, "wf", &mut m, DoorEvt::Open, "open");
+        ~m.step(DoorEvt::Open);
         m.state()
       };
       let final_state = run_blocking(program, ()).expect("run");

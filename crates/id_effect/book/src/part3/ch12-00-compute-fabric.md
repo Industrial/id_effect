@@ -28,7 +28,7 @@ let policy = ResourcePolicy::unlimited_memory_cpu_spread(0.25);
 
 ## Supervisor loop
 
-`ComputeSupervisor` polls `TelemetryEngine` (live sysinfo on host; mock in tests) and compares readings to policy:
+`FabricGovernor` (formerly `ComputeSupervisor`) polls `TelemetryEngine` (live sysinfo on host; mock in tests) and compares readings to policy:
 
 1. **Monitor** — `TelemetrySnapshot { cpu_pct, mem_pct }`
 2. **Admit** — `AdmissionController` adjusts permit count
@@ -79,9 +79,7 @@ Example: `122_compute_fabric_effect_parallel.rs` (`Stream::map_effect` under adm
 
 ## Cluster
 
-When local Fabric saturates, `RebalanceStrategy::ScaleOut` builds a [`FabricJobSpec`](../../src/compute/cluster.rs) via [`ComputeSupervisor::scale_out`](../../src/compute/cluster.rs) (or `scale_out_placed`, which records a `target_node`). Convert with `id_effect_jobs::JobSpec::from_fabric` and enqueue on a [`FabricJobRunner`](../../id_effect_jobs/src/runner.rs), which routes each job to its `target_node` via `dequeue_for` / `pending_for`. Durable cross-node steps hook through [`DistributedStepJournal`](../../id_effect_workflow/src/journal.rs), backed by a real `RemoteStepJournal` over a `JournalTransport` (0.5.0).
-
-Example: `123_compute_fabric_cluster.rs` (two-node offload with `MemoryJobRunner`).
+When local Fabric saturates, `RebalanceStrategy::ScaleOut` builds a [`FabricJobSpec`](../../src/compute/cluster.rs) via [`FabricGovernor::scale_out`](../../src/compute/cluster.rs) (or `scale_out_placed`, which records a `target_node`). The labs crate `id_effect_jobs` (unpublished, see [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)) can convert one with `JobSpec::from_fabric` and enqueue it on a `FabricJobRunner`, which routes each job to its `target_node`; its example `labs/id_effect_jobs/examples/030_compute_fabric_cluster.rs` shows a two-node offload. Within the published crates, cross-node placement goes through `id_effect_node` (Part VII).
 
 [`ClusterResourcePolicy`](../../src/compute/cluster.rs) combines global and per-node caps with [`PlacementMode`](../../src/compute/cluster.rs). All placement decisions flow through one pure entry point, [`place`](../../src/compute/cluster.rs), fed by [`LoadReport`](../../src/compute/cluster.rs) telemetry (adapted to `NodeCandidate`):
 

@@ -9,7 +9,7 @@ Cross-cutting **platform** traits (HTTP, filesystem, process) for [`id_effect`](
 | [`error`](src/error.rs) | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
 | [`http`](src/http.rs) | `HttpClient`, `ReqwestHttpClient`, `HttpClientKey`, portable request/response |
 | [`fs`](src/fs.rs) | `FileSystem`, `LiveFileSystem`, `TestFileSystem`, `FileSystemKey` |
-| [`process`](src/process.rs) | `ProcessRuntime`, `TokioProcessRuntime`, `ProcessRuntimeKey` |
+| [`command`](src/command.rs) (was `process`) | `ProcessRuntime`, `TokioProcessRuntime`, `ProcessRuntimeKey` |
 | [`uri`](src/uri.rs) | `http::Uri` parse / build helpers |
 | [`auth`](src/auth/mod.rs) | `SessionStore`, `OAuthClient` capability traits |
 

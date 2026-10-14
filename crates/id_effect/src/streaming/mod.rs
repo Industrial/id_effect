@@ -35,4 +35,6 @@ pub use stream::{
   BackpressureDecision, BackpressurePolicy, Stream, backpressure_decision, end_stream, send_chunk,
   stream_from_channel, stream_from_channel_with_policy,
 };
-pub use transducer::{Transducer, filter as transducer_filter, map as transducer_map};
+pub use transducer::{
+  Transducer, filter as transducer_filter, map as transducer_map, take as transducer_take,
+};

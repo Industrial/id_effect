@@ -14,7 +14,7 @@ fn main() {
     0.50,
   ));
   install_fabric(Arc::clone(&fabric));
-  fabric.supervisor().tick();
+  fabric.governor().tick();
   let budget = fabric.admission().available();
   println!("admission budget = {budget}");
 

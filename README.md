@@ -76,7 +76,7 @@ For depth beyond this README, use the mdBook [**Typed Effects in Rust**](https:/
 | [`id_effect_axum`](crates/id_effect_axum) | [![crates.io](https://img.shields.io/crates/v/id_effect_axum.svg)](https://crates.io/crates/id_effect_axum) | Axum integration for the workspace `effect` crate — run Effect handlers on Tokio |
 | [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing init, run_main |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing and metrics integration for id_effect (Phase B / @effect/opentelemetry parity) |
-| [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, process) for id_effect — @effect/platform-style boundaries |
+| [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
 
 **Maintenance (frozen API)**
@@ -89,13 +89,13 @@ For depth beyond this README, use the mdBook [**Typed Effects in Rust**](https:/
 
 | Crate | Version | Description |
 |-------|---------|-------------|
-| [`id_effect_ai`](crates/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
-| [`id_effect_events`](crates/id_effect_events) | unpublished | Event sourcing, projections, and CQRS boundaries for id_effect programs |
-| [`id_effect_graph`](crates/id_effect_graph) | unpublished | Directed acyclic graphs and topological sorting for id_effect programs |
-| [`id_effect_jobs`](crates/id_effect_jobs) | unpublished | Production async messaging — Apalis jobs, obix outbox/inbox, Kafka broker |
-| [`id_effect_parse`](crates/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
-| [`id_effect_rpc`](crates/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
-| [`id_effect_workflow`](crates/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |
+| [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
+| [`id_effect_events`](labs/id_effect_events) | unpublished | Event sourcing, projections, and CQRS boundaries for id_effect programs |
+| [`id_effect_graph`](labs/id_effect_graph) | unpublished | Directed acyclic graphs and topological sorting for id_effect programs |
+| [`id_effect_jobs`](labs/id_effect_jobs) | unpublished | Production async messaging — Apalis jobs, obix outbox/inbox, Kafka broker |
+| [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
+| [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
+| [`id_effect_workflow`](labs/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |
 
 Tiers and their quality bar: [ADR 0010](docs/adrs/0010-crate-tiers.md), [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
 <!-- crates:end -->

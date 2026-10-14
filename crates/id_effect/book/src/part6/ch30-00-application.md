@@ -23,7 +23,7 @@ See `cargo run -p id_effect_axum --example 040_app_host`.
 Trait-only v1 — bring your own store/IdP via `id_effect_platform::auth`:
 
 - [`SessionStore`](https://docs.rs/id_effect_platform/latest/id_effect_platform/trait.SessionStore.html) + [`MemorySessionStore`](https://docs.rs/id_effect_platform/latest/id_effect_platform/struct.MemorySessionStore.html)
-- [`OAuthClient`](https://docs.rs/id_effect_platform/latest/id_effect_platform/trait.OAuthClient.html) + [`MemoryOAuthClient`](https://docs.rs/id_effect_platform/latest/id_effect_platform/struct.MemoryOAuthClient.html)
+- [`OAuthClient`](https://docs.rs/id_effect_platform/latest/id_effect_platform/trait.OAuthClient.html) + `MemoryOAuthClient` (in-memory test double, feature `test-util`)
 
 ## Security middleware
 

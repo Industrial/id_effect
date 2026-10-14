@@ -20,6 +20,8 @@ name = "id_effect_axum"
 [features]
 default = []
 cluster = ["dep:id_effect_node"]
+# Tower `Service` bridge (`service` module); formerly the id_effect_tower crate.
+tower = ["dep:tower"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.5.0", features = [
@@ -38,8 +40,11 @@ tokio = { version = "1", features = [
   "rt-multi-thread",
   "signal",
   "net",
+  "sync",
   "time",
 ] }
+# 0.5.0 does not build under minimal-version resolution (const / Identity::new).
+tower = { version = "0.5.3", features = ["util"], optional = true }
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = [
@@ -47,6 +52,17 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
+
+[[example]]
+name = "050_tower_effect_service"
+required-features = ["tower"]
+
+[[example]]
+name = "051_tower_shared_counter"
+required-features = ["tower"]
+
+[package.metadata.docs.rs]
+all-features = true
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh

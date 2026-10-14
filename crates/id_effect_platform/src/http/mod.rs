@@ -9,8 +9,7 @@ use ::reqwest::header::{HeaderName, HeaderValue};
 use bytes::Bytes;
 use id_effect::kernel::Effect;
 use id_effect::{
-  Cap, Chunk, Env, Needs, ProviderBox, ProviderError, ProviderSpec, end_stream, provide,
-  send_chunk, stream_from_channel,
+  Cap, Chunk, Env, Needs, ProviderBox, end_stream, provide, send_chunk, stream_from_channel,
 };
 
 use crate::error::HttpError;
@@ -294,7 +293,7 @@ impl HttpClient for ReqwestHttpClient {
 /// Capability service handle for [`HttpClient`].
 pub type HttpClientService = Arc<dyn HttpClient>;
 
-/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`]).
+/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`](id_effect::ProviderSpec)).
 #[derive(::id_effect::ProviderSpecDerive)]
 #[provides(HttpClientService)]
 pub(crate) struct ReqwestHttpClientProvider;

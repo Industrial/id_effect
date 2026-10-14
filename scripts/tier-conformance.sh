@@ -14,6 +14,11 @@ for tool in cargo jq rg; do
 done
 
 meta="$(cargo metadata --no-deps --format-version 1)"
+if [[ -f labs/Cargo.toml ]]; then
+    # Labs is a separate workspace (ADR 0010 Amendment 1); merge its packages in.
+    labs_meta="$(cargo metadata --no-deps --format-version 1 --manifest-path labs/Cargo.toml)"
+    meta="$(jq -s '{packages: (.[0].packages + .[1].packages)}' <<<"$meta"$'\n'"$labs_meta")"
+fi
 filter=("$@")
 
 # Sum `rg -c` counts; rg exits 1 on no match, which must not trip pipefail.

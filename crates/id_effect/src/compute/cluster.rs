@@ -1,7 +1,7 @@
 //! Cluster placement scoring and ScaleOut job specs.
 
+use super::governor::FabricGovernor;
 use super::policy::{ResourcePolicy, WorkProfile};
-use super::supervisor::ComputeSupervisor;
 use super::telemetry::{TelemetryEngine, TelemetrySnapshot};
 
 /// How work is placed across cluster nodes.
@@ -182,7 +182,7 @@ pub fn place(reports: &[LoadReport], policy: &ClusterResourcePolicy) -> Option<S
   pick_placement(candidates.iter(), policy).map(|c| c.name.clone())
 }
 
-/// Serializable job payload produced by [`ComputeSupervisor::scale_out`].
+/// Serializable job payload produced by [`FabricGovernor::scale_out`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FabricJobSpec {
   /// Handler dispatch key.
@@ -195,7 +195,7 @@ pub struct FabricJobSpec {
   pub target_node: Option<String>,
 }
 
-impl<E: TelemetryEngine> ComputeSupervisor<E> {
+impl<E: TelemetryEngine> FabricGovernor<E> {
   /// Build a cluster offload job when local Fabric is saturated.
   pub fn scale_out(
     &self,
@@ -240,7 +240,7 @@ mod tests {
     let telemetry = MockTelemetry::new(0.9, 0.9);
     let admission = std::sync::Arc::new(AdmissionController::new(1, 4));
     let policy = ResourcePolicy::memory_cap_max_cpu(0.85);
-    let sup = ComputeSupervisor::new(policy, telemetry, admission);
+    let sup = FabricGovernor::new(policy, telemetry, admission);
     let job = sup.scale_out(
       "remote-work",
       b"payload".to_vec(),

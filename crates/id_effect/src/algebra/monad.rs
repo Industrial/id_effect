@@ -54,14 +54,21 @@ pub trait Monad: Applicative {
   /// Flatten a nested monadic structure.
   ///
   /// `flatten(mma) = flat_map(mma, |ma| ma)`
-  fn flatten(self) -> Self::Inner
+  ///
+  /// Available whenever the inner value is itself `Self::Output<B>` (e.g. `Option<Option<B>>`).
+  ///
+  /// ```rust
+  /// use id_effect::algebra::monad::Monad;
+  ///
+  /// assert_eq!(Monad::flatten(Some(Some(3))), Some(3));
+  /// assert_eq!(Monad::flatten(Some(None::<i32>)), None);
+  /// assert_eq!(Monad::flatten(Ok::<Result<i32, &str>, &str>(Err("e"))), Err("e"));
+  /// ```
+  fn flatten<B>(self) -> Self::Output<B>
   where
-    Self: Sized,
-    Self::Inner: Sized,
+    Self: Sized + Applicative<Inner = <Self as super::functor::Functor>::Output<B>>,
   {
-    // This default requires Inner to be the same as Output<Inner::Inner>,
-    // which is hard to express in Rust. Implementors should override.
-    unimplemented!("flatten requires specific implementation")
+    self.flat_map(|ma| ma)
   }
 }
 

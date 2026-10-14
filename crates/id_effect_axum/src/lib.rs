@@ -73,6 +73,8 @@ pub mod health;
 pub mod json;
 pub mod routing;
 pub mod server;
+#[cfg(feature = "tower")]
+pub mod service;
 
 pub use channel_bridge::{exchange, exchange_into_response};
 pub use server::{

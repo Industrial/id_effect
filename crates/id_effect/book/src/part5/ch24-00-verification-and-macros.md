@@ -9,7 +9,7 @@ Part V closes with tools that keep functional patterns honest: law checks, prope
 - **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
 - **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
 - **[`FreeAp`](../../src/algebra/free_ap.rs)** — free applicative over `Effect`
-- **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(SchemaParser)]` (`schema()`, `parser()`, `HasSchema`)
+- **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(Schema)]` (`schema()`, `HasSchema`)
 
 ## Property tests with `Exit`
 
@@ -88,25 +88,26 @@ assert_eq!(exit, Exit::succeed(5));
 
 ## Derive macros
 
-`id_effect_proc_macro` ships derives for optics, FSM, and schema parser codegen:
+`id_effect_proc_macro` ships derives for optics and schema codegen:
 
-| Derive | Reserved for |
-|--------|----------------|
-| `Optics` | `id_effect_optics` lens/prism codegen |
-| `Fsm` | `id_effect_fsm` transition tables |
-| `SchemaParser` | `id_effect_parse` schema-driven parsers |
+| Derive | Generates |
+|--------|-----------|
+| `Optics` | `id_effect_optics` field lenses and enum prisms |
+| `Schema` | inherent `schema()` + `HasSchema` over the JSON-shaped `Unknown` wire |
+| `SchemaParser` | deprecated alias of `Schema` (identical output) |
 
 ```rust
-use id_effect_proc_macro::{Optics, Fsm, SchemaParser};
+use id_effect_proc_macro::{Optics, Schema};
 
 #[derive(Optics)]
 struct Point { x: i32, y: i32 }
 
-#[derive(Fsm)]
-enum Light { Red, Green }
-
-#[derive(SchemaParser)]
-struct User { name: String }
+#[derive(Clone, Schema)]
+struct User { #[schema("user_name")] name: String }
 ```
 
-`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(SchemaParser)]` generates `schema()`, `parser()` and a `HasSchema` impl.
+`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(Schema)]` generates `schema()` and a `HasSchema` impl; `#[schema("wire")]` renames a field on the wire. For a JSON text parser, pass the type to `id_effect_parse::SchemaBridge::parser_for::<User>()`.
+
+`#[derive(SchemaParser)]` is kept as a deprecated alias for one release. It no longer generates a `parser()` method (that tied a published derive to the unpublished `id_effect_parse` crate). Derive macros cannot carry `#[deprecated]`, so there is no compiler warning — switch to `#[derive(Schema)]`.
+
+There is no `#[derive(Fsm)]` in 0.6: the earlier placeholder emitted no transition table and was removed. Build machines with the `id_effect_fsm` API directly.

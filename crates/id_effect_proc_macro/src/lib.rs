@@ -6,7 +6,6 @@
 #![deny(missing_docs)]
 
 mod capability_attr;
-mod derive_fsm;
 mod derive_optics;
 mod derive_schema_parser;
 mod distributed_behavior;
@@ -88,16 +87,43 @@ pub fn derive_optics(input: TokenStream) -> TokenStream {
   derive_optics::derive_optics(input)
 }
 
-/// Stub derive for future FSM transition tables (`id_effect_fsm`).
-#[proc_macro_derive(Fsm, attributes(state, transition, initial))]
-pub fn derive_fsm(input: TokenStream) -> TokenStream {
-  derive_fsm::derive_fsm(input)
+/// Derive an inherent `schema()` constructor and an [`id_effect::schema::HasSchema`] impl for a
+/// struct with named fields (JSON-shaped [`id_effect::schema::Unknown`] wire).
+///
+/// Rename a field on the wire with `#[schema("wire_name")]`.
+///
+/// ```
+/// use id_effect::Schema;
+/// use id_effect::schema::{HasSchema, Unknown};
+///
+/// #[derive(Clone, Debug, PartialEq, Schema)]
+/// struct User {
+///   #[schema("user_name")]
+///   name: String,
+///   age: i64,
+/// }
+///
+/// let wire = User::schema().encode(User { name: "Ada".into(), age: 36 });
+/// let back = <User as HasSchema>::schema().decode_unknown(&wire).unwrap();
+/// assert_eq!(back.name, "Ada");
+/// assert!(matches!(wire, Unknown::Object(_)));
+/// ```
+#[proc_macro_derive(Schema, attributes(schema))]
+pub fn derive_schema(input: TokenStream) -> TokenStream {
+  derive_schema_parser::derive_schema(input)
 }
 
-/// Stub derive for future schema-driven parser codegen (`id_effect_parse`).
+/// Deprecated alias of [`macro@Schema`]; expands to exactly the same code.
+///
+/// Earlier releases also generated a `parser()` method backed by the unpublished `id_effect_parse`
+/// crate; that method is gone. Build a text parser with
+/// `id_effect_parse::SchemaBridge::parser_for::<T>()` instead.
+///
+/// Derive macros cannot carry `#[deprecated]`, so the compiler will not warn on use — migrate to
+/// `#[derive(Schema)]`. This alias will be removed in a future minor release.
 #[proc_macro_derive(SchemaParser, attributes(schema, parser))]
 pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
-  derive_schema_parser::derive_schema_parser(input)
+  derive_schema_parser::derive_schema(input)
 }
 
 /// Mark a process struct as a remotely spawnable behavior.

@@ -38,7 +38,6 @@ harness = false
 proptest = ["dep:proptest"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
-algebra = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
@@ -58,7 +57,6 @@ tokio = { version = "1.50.0", features = ["macros", "rt", "time", "sync"] }
 [dev-dependencies]
 # Path-only workspace test deps: version pins would require later publish levels on crates.io.
 id_effect_config = { path = "../id_effect_config" }
-id_effect_jobs = { path = "../id_effect_jobs", features = ["memory"] }
 trybuild = "1"
 criterion = "0.8.2"
 pollster = "1.0"

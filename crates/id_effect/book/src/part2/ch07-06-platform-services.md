@@ -15,7 +15,7 @@ Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`*
 | `error` | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
 | `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClientProvider`, `execute` (key is internal) |
 | `fs` | `FileSystem`, `LiveFileSystemProvider`, `TestFileSystem`, `read` |
-| `process` | `CommandSpec`, `ProcessRuntime`, `spawn_wait` |
+| `command` (was `process`) | `CommandSpec`, `ProcessRuntime`, `spawn_wait` |
 | `uri` | URI helpers |
 
 ## Wiring pattern

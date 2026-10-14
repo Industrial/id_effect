@@ -257,7 +257,7 @@ mod tests {
       0.4,
       0.61,
     ));
-    fabric.supervisor().tick();
+    fabric.governor().tick();
     install_fabric(Arc::clone(&fabric));
     let ctx = current_adaptive_context();
     assert!(ctx.admission_budget >= 1);
@@ -288,7 +288,7 @@ mod tests {
   #[test]
   fn from_fabric_matches_admission_budget() {
     let fabric = ComputeFabric::with_mock(ResourcePolicy::memory_cap_max_cpu(0.85), 0.2, 0.3);
-    fabric.supervisor().tick();
+    fabric.governor().tick();
     let ctx = AdaptiveContext::from_fabric(&fabric);
     assert!(ctx.admission_budget >= 1);
     assert!(ctx.rayon_threads >= 1);

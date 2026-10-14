@@ -12,7 +12,7 @@ The [`id_effect_platform`](https://github.com/Industrial/id_effect/tree/main/cra
 |--------|-------|---------|
 | `http` | `HttpClient` | Buffered and streaming HTTP (`execute`, `execute_stream`) |
 | `fs` | `FileSystem` | Read/write/append/exists/metadata |
-| `process` | `ProcessRuntime` | Spawn, wait, kill child processes |
+| `command` (was `process`) | `ProcessRuntime` | Spawn, wait, kill OS child processes |
 | `uri` | — | Portable URI parsing |
 | `auth` | `SessionStore`, `OAuthClient` | Session and OAuth capability traits |
 

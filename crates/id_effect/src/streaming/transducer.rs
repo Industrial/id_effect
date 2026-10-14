@@ -1,6 +1,7 @@
-//! Transducer bridge — [`Stream::transduce_items`] applies `id_effect_optics`-compatible transducers.
+//! Transducers — composable reducing-function transforms, and [`Stream::transduce_items`] to
+//! apply them incrementally to streams.
 //!
-//! API-compatible with [`id_effect_optics::Transducer`] when that crate is used separately.
+//! This is the single implementation; `id_effect_optics::transducer` re-exports it.
 
 use std::sync::Arc;
 
@@ -9,7 +10,7 @@ use crate::streaming::stream::{StageStep, Stream};
 /// Stateful reducer step: `(accumulator, item) -> accumulator`.
 pub type Reducer<A, Acc> = Box<dyn FnMut(Acc, A) -> Acc + Send>;
 
-/// A transducer transforms a reducing function (same shape as `id_effect_optics::Transducer`).
+/// A transducer transforms a reducing function.
 pub struct Transducer<A, Acc> {
   step: Arc<dyn Fn(Reducer<A, Acc>) -> Reducer<A, Acc> + Send + Sync>,
 }
@@ -53,6 +54,25 @@ pub fn map<A: 'static, Acc: 'static>(
   Transducer::new(move |mut rf| {
     let f = f.clone();
     Box::new(move |acc, item| rf(acc, f(item)))
+  })
+}
+
+/// Keep at most `count` items (per transducer instance; the count is shared across clones of
+/// the reducer it builds).
+pub fn take<A: 'static, Acc: 'static>(count: usize) -> Transducer<A, Acc> {
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let remaining = Arc::new(AtomicUsize::new(count));
+  Transducer::new(move |mut rf| {
+    let remaining = remaining.clone();
+    Box::new(move |acc, item| {
+      let left = remaining.load(Ordering::Relaxed);
+      if left == 0 {
+        acc
+      } else {
+        remaining.store(left - 1, Ordering::Relaxed);
+        rf(acc, item)
+      }
+    })
   })
 }
 
@@ -148,6 +168,13 @@ mod tests {
       64,
     );
     assert_eq!(out, vec![0, 20, 40]);
+  }
+
+  #[test]
+  fn take_limits_items() {
+    let xf = take::<i32, i32>(2);
+    let sum = xf.transduce([1, 2, 3], Box::new(|acc, n| acc + n), 0);
+    assert_eq!(sum, 3);
   }
 
   #[test]

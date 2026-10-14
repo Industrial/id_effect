@@ -1,7 +1,10 @@
-//! **Platform capabilities** for `id_effect` — HTTP, filesystem, and process abstractions
+//! **Platform capabilities** for `id_effect` — HTTP, filesystem, and OS subprocess abstractions
 //! inspired by Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 //!
-//! The crate ships **one** build: [`http`], [`fs`], [`process`], and [`uri`] are always available.
+//! The crate ships **one** build: [`http`], [`fs`], [`command`], and [`uri`] are always available.
+//!
+//! Enable the `test-util` feature for in-memory test doubles such as
+//! `MemoryOAuthClient`.
 //!
 //! ## Example (HTTP, capability DI v2)
 //!
@@ -31,22 +34,28 @@
 #![allow(
   private_interfaces,
   private_bounds,
-  dead_code,
-  unused_imports,
   clippy::new_ret_no_self,
   clippy::unused_unit
 )]
 
 pub mod auth;
+pub mod command;
 pub mod error;
 pub mod fs;
 pub mod http;
-pub mod process;
 pub mod uri;
 
+/// Deprecated alias of [`command`] (OS subprocess spawning).
+#[deprecated(since = "0.6.0", note = "renamed to `id_effect_platform::command`")]
+pub mod process {
+  pub use super::command::*;
+}
+
+#[cfg(any(test, feature = "test-util"))]
+pub use auth::MemoryOAuthClient;
 pub use auth::{
-  MemoryOAuthClient, MemorySessionStore, OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo,
-  SessionData, SessionError, SessionStore,
+  MemorySessionStore, OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo, SessionData,
+  SessionError, SessionStore,
 };
 
 #[cfg(test)]

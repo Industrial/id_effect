@@ -1,6 +1,6 @@
 #[cfg(unix)]
 use id_effect::{build_env, provide, run_async};
-use id_effect_platform::process::{
+use id_effect_platform::command::{
   CommandSpec, TokioProcessRuntimeProvider, child_kill, child_wait, spawn,
 };
 

@@ -10,7 +10,7 @@ Living view of **Effect.ts parity** vs **id_effect** platform crates.
 | B | `@effect/opentelemetry` | `id_effect_opentelemetry` | Shipped — OTLP, logs bridge, W3C+baggage, DI, shutdown |
 | C | `@effect/sql` | `id_effect_sql` | Missing |
 | D | `@effect/rpc` | `id_effect_rpc` | Partial — codegen pending |
-| E | `@effect/cli` | `id_effect_cli` | Partial — wave 0: `id-effect version/new` |
+| E | `@effect/cli` | `id_effect_cli` | Partial — exit-code mapping, `run_main`, `id-effect-diagnose` (no generator) |
 | F | Supervision | `id_effect::concurrency::supervisor` | Shipped |
 | G | Cluster / workflow | `id_effect_workflow` | Partial — SQLite spike |
 | H | `@effect/ai` | `id_effect_ai` | Partial — OpenAI, Anthropic, Cursor vendors |

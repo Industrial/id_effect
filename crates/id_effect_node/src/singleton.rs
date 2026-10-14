@@ -1,7 +1,7 @@
 //! CP [`ClusterSingleton`] — at most one holder cluster-wide.
 //!
 //! Netsplit story (ADR 0009): unavailable without quorum. Production path
-//! uses Postgres advisory-lock leases (`pg` feature via `id_effect_sql_pg`).
+//! uses Postgres advisory-lock leases (`pg` feature via `id_effect_sql` (`pg` feature)).
 //! This module ships an **in-memory lease** suitable for single-process
 //! tests and as the interface the PG backend implements.
 
@@ -15,7 +15,7 @@ use id_effect_process::Pid;
 ///
 /// Production `SingletonLease` backends run:
 /// `SELECT pg_try_advisory_lock($1, $2)` / `pg_advisory_unlock` with these keys
-/// against `id_effect_sql_pg` pools (ADR 0009 CP path).
+/// against `id_effect_sql` (`pg` feature) pools (ADR 0009 CP path).
 pub fn advisory_lock_keys(name: &str) -> (i32, i32) {
   use std::hash::{Hash, Hasher};
   let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -325,8 +325,8 @@ impl PgAdvisoryLease {
     }
   }
 
-  /// Open a lease using an [`id_effect_sql_pg::PgPoolConfig`]'s connection URL.
-  pub fn from_pool_config(config: id_effect_sql_pg::PgPoolConfig) -> Result<Self, SingletonError> {
+  /// Open a lease using an [`id_effect_sql::pg::PgPoolConfig`]'s connection URL.
+  pub fn from_pool_config(config: id_effect_sql::pg::PgPoolConfig) -> Result<Self, SingletonError> {
     Self::connect(config.url)
   }
 

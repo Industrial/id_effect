@@ -14,45 +14,62 @@ cd "$root"
 
 skip=id_effect_lint
 
-# Publish levels from .github/workflows/publish.yml (lower = earlier).
+# Publish levels (lower = earlier). This file is the single source of truth for publish
+# order: .github/workflows/publish.yml runs `$0 --print-order` and publishes in that order.
+# Labs crates (labs/, publish = false) are never listed (ADR 0010).
 declare -A LEVEL=(
-    [id_effect_graph]=0
     [id_effect_macro]=0
     [id_effect_proc_macro]=0
     [id_effect]=1
-    [id_effect_process]=2
     [id_effect_cli]=2
-    [id_effect_jobs]=2
+    [id_effect_fsm]=2
     [id_effect_logger]=2
     [id_effect_optics]=2
-    [id_effect_parse]=2
     [id_effect_platform]=2
+    [id_effect_process]=2
     [id_effect_resilience]=2
     [id_effect_sql]=2
     [id_effect_tokio]=2
     [id_effect_config]=3
     [id_effect_sql_pg]=3
-    [id_effect_tower]=3
-    [id_effect_ai]=4
     [id_effect_node]=4
     [id_effect_axum]=4
-    [id_effect_events]=4
     [id_effect_opentelemetry]=4
-    [id_effect_workflow]=4
-    [id_effect_fsm]=5
-    [id_effect_rpc]=5
+    # Deprecated re-export shims (removed in 0.7) publish after their new homes.
+    [id_effect_tower]=5
 )
 
-# Same-wave publish order (must match .github/workflows/publish.yml step order).
+# Publish order (levels ascending; within a level, dependencies first).
 declare -a ORDER=(
-    id_effect_graph id_effect_macro id_effect_proc_macro
+    id_effect_macro id_effect_proc_macro
     id_effect
-    id_effect_cli id_effect_jobs id_effect_logger id_effect_optics
-    id_effect_parse id_effect_platform id_effect_resilience id_effect_sql id_effect_tokio id_effect_process
-    id_effect_config id_effect_sql_pg id_effect_tower
-    id_effect_ai id_effect_node id_effect_axum id_effect_events id_effect_opentelemetry id_effect_workflow
-    id_effect_fsm id_effect_rpc
+    id_effect_cli id_effect_fsm id_effect_logger id_effect_optics id_effect_platform
+    id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
+    id_effect_config id_effect_sql_pg
+    id_effect_node id_effect_axum id_effect_opentelemetry
+    id_effect_tower
 )
+
+if [[ "${1:-}" == "--print-order" ]]; then
+    printf '%s\n' "${ORDER[@]}"
+    exit 0
+fi
+
+# Every publishable workspace crate must have a level, and vice versa.
+while IFS= read -r toml; do
+    crate=$(grep -m1 '^name = ' "$toml" | sed 's/^name = "\(.*\)"/\1/')
+    grep -q '^publish = false' "$toml" && continue
+    if [[ -z "${LEVEL[$crate]:-}" ]]; then
+        echo "ERROR: publishable crate $crate has no publish level in $0"
+        exit 1
+    fi
+done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml | sort)
+for crate in "${ORDER[@]}"; do
+    if [[ ! -f "crates/$crate/Cargo.toml" ]]; then
+        echo "ERROR: $crate is in the publish order but crates/$crate does not exist"
+        exit 1
+    fi
+done
 declare -A ORD_IDX=()
 for i in "${!ORDER[@]}"; do ORD_IDX["${ORDER[$i]}"]=$i; done
 

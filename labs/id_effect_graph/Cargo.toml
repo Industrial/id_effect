@@ -1,0 +1,27 @@
+[package]
+publish = false
+name = "id_effect_graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Directed acyclic graphs and topological sorting for id_effect programs"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["dag", "graph", "topological-sort", "dependencies"]
+categories = ["data-structures"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+proptest = "1"
+rstest = "0.26"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"
