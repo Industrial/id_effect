@@ -153,7 +153,11 @@ jobs:
         with:
           key: msrv
       - name: cargo check (workspace, MSRV)
-        run: cargo check --workspace --all-targets --locked
+        # No committed Cargo.lock (library workspace): resolve with the MSRV-aware
+        # resolver so dependencies compatible with rust-version are selected.
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo check --workspace --all-targets
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────
