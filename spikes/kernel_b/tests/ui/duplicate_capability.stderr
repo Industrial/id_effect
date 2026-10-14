@@ -1,0 +1,6 @@
+error: `Db` is provided twice in `AppEnv` (fields `primary`, `replica`)
+       help: wrap one in a newtype (`struct ReplicaDb(Db);`)
+ --> tests/ui/duplicate_capability.rs:8:12
+  |
+8 |   replica: Db,
+  |            ^^

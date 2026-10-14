@@ -1,0 +1,27 @@
+error[E0119]: conflicting implementations of trait `Has<Logger>` for type `AppEnv`
+  --> tests/ui/duplicate_via_flatten.rs:6:17
+   |
+ 6 | #[derive(Clone, Env)]
+   |                 ^^^ conflicting implementation for `AppEnv`
+...
+12 | #[derive(Clone, Env)]
+   |                 ---
+   |                 |
+   |                 first implementation here
+   |                 in this derive macro expansion
+   |
+   = note: this error originates in the macro `__kernel_b_forward_BaseEnv` which comes from the expansion of the derive macro `Env` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `Replace<Logger>` for type `AppEnv`
+  --> tests/ui/duplicate_via_flatten.rs:6:17
+   |
+ 6 | #[derive(Clone, Env)]
+   |                 ^^^ conflicting implementation for `AppEnv`
+...
+12 | #[derive(Clone, Env)]
+   |                 ---
+   |                 |
+   |                 first implementation here
+   |                 in this derive macro expansion
+   |
+   = note: this error originates in the macro `__kernel_b_forward_BaseEnv` which comes from the expansion of the derive macro `Env` (in Nightly builds, run with -Z macro-backtrace for more info)

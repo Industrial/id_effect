@@ -1,0 +1,20 @@
+error[E0277]: effect environment `AppEnv` does not provide capability `Mailer`
+  --> tests/ui/missing_capability.rs:19:11
+   |
+19 |   let _ = notify().provide(env).block_on();
+   |           ^^^^^^^^ `Mailer` is required here
+   |
+   = note: add a `Mailer` field to your `#[derive(Env)]` struct, or add `Has<Mailer>` to the `R: …` bounds
+help: the trait `Has<Mailer>` is not implemented for `AppEnv`
+      but trait `Has<spike_corpus::Db>` is implemented for it
+  --> tests/ui/missing_capability.rs:12:17
+   |
+12 | #[derive(Clone, Env)]
+   |                 ^^^
+   = help: for that trait implementation, expected `spike_corpus::Db`, found `Mailer`
+note: required by a bound in `notify`
+  --> tests/ui/missing_capability.rs:5:24
+   |
+ 5 | fn notify<R: Has<Db> + Has<Mailer>>() -> Effect<(), AppError, R> {
+   |                        ^^^^^^^^^^^ required by this bound in `notify`
+   = note: this error originates in the derive macro `Env` (in Nightly builds, run with -Z macro-backtrace for more info)
