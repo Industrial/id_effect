@@ -1,104 +1,102 @@
 {
-  "schemaVersion": 2,
-  "id": "c-43d0f6",
-  "taskId": "tsk-mv799sew-79rx00",
-  "repoRoot": ".",
-  "status": "locked",
-  "createdAt": "2026-10-14T02:33:23.236Z",
-  "lockedAt": "2026-10-14T02:33:23.236Z",
-  "intent": "W3: Harden id_effect_process - tests, README, run_blocking audit, gen_statem via fsm",
-  "scope": {
-    "filesExpected": [
-      "**/*"
-    ],
-    "filesForbidden": []
-  },
-  "doneWhen": [
-    {
-      "id": "dw-dc7604",
-      "text": "Workspace declares rust-version in workspace.package inherited by every crate, CI has a green MSRV job on that toolchain, and dependabot ignores sysinfo >= 0.34",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-f4a72d",
-      "text": "ADR-0010 records the vision and crate tier table, docs/QUALITY_BAR.md defines per-tier requirements, and scripts/tier-conformance.sh reports per-crate pass/fail from package.metadata.id_effect.tier",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-0e963d",
-      "text": "A pre-installed ComputeFabric survives run, run_with, ThreadSleepRuntime and id_effect_tokio default runtime, proven by regression tests",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-3a4bdd",
-      "text": "SysinfoTelemetry is not sampled until a placement decision needs it and a criterion startup bench for run_with stays under 50 ms",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-44de2f",
-      "text": "Stream is pull-based over bounded chunks; window, join, state_scan, transducer and map_effect emit incrementally on infinite sources; an assert_bounded_memory test helper exists and a proptest shows infinite source plus take(n) terminates",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-80e153",
-      "text": "ADR-0008 and code agree on run_blocking_serial and stream mapping (implemented or ADR amended)",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-ab98be",
-      "text": "rpc, ai, parse, lint and a new id_effect_durable (workflow + events + jobs outbox/broker adapters) live under labs/ with publish = false, are excluded from publish.yml, the coverage floor and the default CI matrix, and main CI no longer needs rdkafka, OpenSSL or the Windows all-features special case",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-a29ad1",
-      "text": "tower is merged into axum, sql_pg into sql as a pg feature, graph into the core capability planner, jobs split (fabric runner to node, adapters to durable), each with one release of deprecated re-export shims",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-a11e1c",
-      "text": "Core id_effect is slimmed — algebra, foundation, collections and stm move to a maintenance-tier id_effect_fp crate; compute is behind a feature with cluster placement moved to node; tokio, rayon, sysinfo and im are optional; core has no dev-deps on config or jobs",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-2f199b",
-      "text": "No stub, spike, unimplemented! or todo! is reachable from the public API of any tier 0, 1 or 2 crate",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-2d2f99",
-      "text": "ComputeSupervisor is renamed FabricGovernor and platform::process is renamed platform::command with deprecated aliases, and the book documents one supervision layering (core primitive, process, node)",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-a0f6ce",
-      "text": "id_effect_process, id_effect_fsm, id_effect_axum, id_effect_platform, id_effect_sql, id_effect_cli and id_effect_resilience pass tier-conformance at their tier, including Effect-native fsm with real derive(Fsm), one documented axum Send strategy, and resilience retry/breaker integrated with Schedule",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-4fbafa",
-      "text": "README crate table is generated from package metadata and checked in CI; book, PARITY_DASHBOARD, ROADMAPs and CHANGELOG match the code; cookbook recipes and a 0.5 to 0.6 migration guide exist",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-d4fe0f",
-      "text": "Capability boilerplate reduced (infallible error helper, turbofish-free logger calls, provider derive without clippy allows) and capability diagnostics carry call-site context",
-      "kind": "manual"
-    },
-    {
-      "id": "dw-c3a1c1",
-      "text": "0.6.0 is published lockstep for all non-labs crates, templates and examples pin the workspace version under a CI check, and assay and solana-yield-optimizer build against crates.io 0.6.0",
-      "kind": "manual"
-    }
-  ],
-  "amendments": [],
-  "createdBy": "id-implementer-e",
-  "lockedBy": "id-implementer-e",
-  "configSnapshot": {
-    "strict": false,
-    "overlapPolicy": "annotate",
-    "rebaseFallback": "best-effort",
-    "staleReclaimContractPolicy": "inherit"
-  },
-  "missionId": "pln-mv799j4f-1r1u6b",
-  "riskClass": "high"
+	"schemaVersion": 2,
+	"id": "c-43d0f6",
+	"taskId": "tsk-mv799sew-79rx00",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-14T02:33:23.236Z",
+	"lockedAt": "2026-10-14T02:33:23.236Z",
+	"intent": "W3: Harden id_effect_process - tests, README, run_blocking audit, gen_statem via fsm",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-dc7604",
+			"text": "Workspace declares rust-version in workspace.package inherited by every crate, CI has a green MSRV job on that toolchain, and dependabot ignores sysinfo >= 0.34",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-f4a72d",
+			"text": "ADR-0010 records the vision and crate tier table, docs/QUALITY_BAR.md defines per-tier requirements, and scripts/tier-conformance.sh reports per-crate pass/fail from package.metadata.id_effect.tier",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-0e963d",
+			"text": "A pre-installed ComputeFabric survives run, run_with, ThreadSleepRuntime and id_effect_tokio default runtime, proven by regression tests",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-3a4bdd",
+			"text": "SysinfoTelemetry is not sampled until a placement decision needs it and a criterion startup bench for run_with stays under 50 ms",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-44de2f",
+			"text": "Stream is pull-based over bounded chunks; window, join, state_scan, transducer and map_effect emit incrementally on infinite sources; an assert_bounded_memory test helper exists and a proptest shows infinite source plus take(n) terminates",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-80e153",
+			"text": "ADR-0008 and code agree on run_blocking_serial and stream mapping (implemented or ADR amended)",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-ab98be",
+			"text": "rpc, ai, parse, lint and a new id_effect_durable (workflow + events + jobs outbox/broker adapters) live under labs/ with publish = false, are excluded from publish.yml, the coverage floor and the default CI matrix, and main CI no longer needs rdkafka, OpenSSL or the Windows all-features special case",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a29ad1",
+			"text": "tower is merged into axum, sql_pg into sql as a pg feature, graph into the core capability planner, jobs split (fabric runner to node, adapters to durable), each with one release of deprecated re-export shims",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a11e1c",
+			"text": "Core id_effect is slimmed — algebra, foundation, collections and stm move to a maintenance-tier id_effect_fp crate; compute is behind a feature with cluster placement moved to node; tokio, rayon, sysinfo and im are optional; core has no dev-deps on config or jobs",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-2f199b",
+			"text": "No stub, spike, unimplemented! or todo! is reachable from the public API of any tier 0, 1 or 2 crate",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-2d2f99",
+			"text": "ComputeSupervisor is renamed FabricGovernor and platform::process is renamed platform::command with deprecated aliases, and the book documents one supervision layering (core primitive, process, node)",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a0f6ce",
+			"text": "id_effect_process, id_effect_fsm, id_effect_axum, id_effect_platform, id_effect_sql, id_effect_cli and id_effect_resilience pass tier-conformance at their tier, including Effect-native fsm with real derive(Fsm), one documented axum Send strategy, and resilience retry/breaker integrated with Schedule",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4fbafa",
+			"text": "README crate table is generated from package metadata and checked in CI; book, PARITY_DASHBOARD, ROADMAPs and CHANGELOG match the code; cookbook recipes and a 0.5 to 0.6 migration guide exist",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-d4fe0f",
+			"text": "Capability boilerplate reduced (infallible error helper, turbofish-free logger calls, provider derive without clippy allows) and capability diagnostics carry call-site context",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-c3a1c1",
+			"text": "0.6.0 is published lockstep for all non-labs crates, templates and examples pin the workspace version under a CI check, and assay and solana-yield-optimizer build against crates.io 0.6.0",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "id-implementer-e",
+	"lockedBy": "id-implementer-e",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mv799j4f-1r1u6b",
+	"riskClass": "high"
 }

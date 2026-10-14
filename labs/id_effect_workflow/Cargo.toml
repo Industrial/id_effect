@@ -36,7 +36,8 @@ duroxide = [
   "dep:duroxide-pg",
   "dep:sqlx",
   "dep:tokio",
-  "dep:id_effect_sql", "id_effect_sql/pg",
+  "dep:id_effect_sql",
+  "id_effect_sql/pg",
 ]
 
 [dependencies.rusqlite]
