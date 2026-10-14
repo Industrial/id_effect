@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, amended 2026-10-14 (see [Amendment 1](#amendment-1-2026-10-14))
 
 ## Context
 
@@ -45,3 +45,20 @@ Independent bind **sets** (not only pairs) codegen via `join_binds2` / `join_bin
 - **Breaking:** 0.4.0 removes deprecated and policy APIs.
 - `*_serial` and `#[effect(serial)]` remain for `FnMut`, non-`Send`, and ordering.
 - Remote/cluster placement unchanged (deferred).
+
+## Amendment 1 (2026-10-14)
+
+Reconciles this ADR with the code as of the 0.6 consolidation (mission
+`id-effect-consolidation-0-6`, task `w1-adr0008-reconcile`). Where the table above
+disagrees with this section, this section wins.
+
+| Original decision | As built |
+|---|---|
+| Effectful stream via `Stream::map(f)` when `f: Fn(A) -> Effect<B, E, R>` (one unified `map`) | **Not built.** `Stream::map` takes pure `Fn(A) -> B` (Fabric-parallel per chunk). The effectful operator is `Stream::map_effect` (serial, ordered, `Or<E, E2>` errors). A unifying `StreamMapper` trait is dropped: two clearly named methods are simpler than overloading one name on closure return type. |
+| `run_blocking_serial` for determinism and tests | **Not built, dropped.** Rayon paths preserve output order, so results are already deterministic. When side-effect *order* inside closures matters, use the `*_serial` operators or `#[effect(serial)]`. |
+| `run()` and `run_with()` install the default Fabric | **Changed:** they call `ensure_default_fabric()`, which installs the default **only if no fabric is installed**. A caller-installed fabric is never replaced (downstream-reported defect, fixed in `w1-run-with`). `install_default_fabric()` still overwrites, and its docs say so. |
+| Telemetry sampled when the Fabric is built | **Changed:** `SysinfoTelemetry` is lazy; nothing samples CPU until a placement or scale decision needs it (`w1-lazy-telemetry`). |
+| Stream operators drain upstream per call | **Changed:** `Stream` is pull-based (`StreamState::Pull`, `Stream::from_pull`). Each operator pulls one upstream chunk per downstream pull, so the Fabric parallel branch applies per chunk and infinite sources work (`w1-pull-streams`). |
+
+`parallel_if_profitable`, `ensure_run_context`, the EDG `join_binds2/3/4` codegen and
+`#[effect(serial)]` exist as described.

@@ -9,7 +9,7 @@
 //! hardware-aware [`crate::Parallelism`] thresholds and Rayon pool sizing follow the installed
 //! [`crate::compute::ComputeFabric`] supervisor. Install fabric via
 //! [`crate::compute::install_fabric`] or use [`crate::capability::run_with`], which installs a
-//! default fabric for the duration of the run.
+//! default fabric only when none is installed ([`crate::compute::ensure_default_fabric`]).
 
 use core::convert::Infallible;
 

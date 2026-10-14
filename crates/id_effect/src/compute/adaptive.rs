@@ -1,10 +1,11 @@
 //! Hardware-aware parallelism context driven by Compute Fabric.
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
 use super::fabric::ComputeFabric;
-use super::telemetry::TelemetryEngine;
+use super::telemetry::{SysinfoTelemetry, TelemetryEngine};
 use crate::parallelism::Parallelism;
 
 /// Snapshot of admission budget and parallelism knobs for the current run.
@@ -80,13 +81,29 @@ fn effective_threshold_for_budget(budget: usize) -> usize {
   }
 }
 
-static FABRIC: OnceLock<std::sync::Mutex<Option<Arc<dyn FabricSource>>>> = OnceLock::new();
+/// The process-wide installed fabric: erased for adaptive refresh, plus `Any` for typed lookup.
+struct InstalledFabric {
+  source: Arc<dyn FabricSource>,
+  any: Arc<dyn Any + Send + Sync>,
+}
+
+impl InstalledFabric {
+  fn new<E: TelemetryEngine + 'static>(fabric: Arc<ComputeFabric<E>>) -> Self {
+    let any: Arc<dyn Any + Send + Sync> = Arc::clone(&fabric) as Arc<dyn Any + Send + Sync>;
+    Self {
+      source: fabric,
+      any,
+    }
+  }
+}
+
+static FABRIC: OnceLock<std::sync::Mutex<Option<InstalledFabric>>> = OnceLock::new();
 
 thread_local! {
   static ADAPTIVE_CTX: RefCell<AdaptiveContext> = RefCell::new(AdaptiveContext::standalone());
 }
 
-fn fabric_slot() -> &'static std::sync::Mutex<Option<Arc<dyn FabricSource>>> {
+fn fabric_slot() -> &'static std::sync::Mutex<Option<InstalledFabric>> {
   FABRIC.get_or_init(|| std::sync::Mutex::new(None))
 }
 
@@ -102,10 +119,72 @@ impl<E: TelemetryEngine + 'static> FabricSource for ComputeFabric<E> {
 }
 
 /// Install fabric for adaptive parallelism.
+///
+/// **Overwrites** any fabric already installed. Entry points that only need *a* fabric
+/// ([`crate::run`], [`crate::run_with`], [`crate::ThreadSleepRuntime::default`]) use
+/// [`ensure_default_fabric`] instead, which keeps a fabric you installed first.
 pub fn install_fabric<E: TelemetryEngine + 'static>(fabric: Arc<ComputeFabric<E>>) {
-  let erased: Arc<dyn FabricSource> = fabric;
-  *fabric_slot().lock().expect("fabric slot mutex") = Some(erased);
+  *fabric_slot().lock().expect("fabric slot mutex") = Some(InstalledFabric::new(fabric));
   refresh_adaptive_context();
+}
+
+/// Install a default [`ComputeFabric`] (memory cap 100%, max CPU) **only if no fabric is
+/// installed**, and return a [`SysinfoTelemetry`] fabric for callers that need a concrete pool.
+///
+/// - Nothing installed: builds the default fabric, installs it, returns it.
+/// - A `ComputeFabric<SysinfoTelemetry>` is installed: returns that fabric unchanged.
+/// - A fabric with another telemetry engine is installed: leaves it installed (it keeps driving
+///   adaptive context) and returns a fresh, **uninstalled** default fabric for the caller's pool.
+///
+/// Building the default fabric does not sample telemetry (see [`SysinfoTelemetry`]).
+pub fn ensure_default_fabric() -> Arc<ComputeFabric<SysinfoTelemetry>> {
+  let fabric = {
+    let mut guard = fabric_slot().lock().expect("fabric slot mutex");
+    match guard.as_ref() {
+      Some(installed) => {
+        match Arc::clone(&installed.any).downcast::<ComputeFabric<SysinfoTelemetry>>() {
+          Ok(existing) => existing,
+          Err(_) => Arc::new(ComputeFabric::memory_cap_max_cpu(1.0)),
+        }
+      }
+      None => {
+        let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
+        *guard = Some(InstalledFabric::new(Arc::clone(&fabric)));
+        fabric
+      }
+    }
+  };
+  refresh_adaptive_context();
+  fabric
+}
+
+/// Whether a fabric is currently installed.
+pub fn is_fabric_installed() -> bool {
+  fabric_slot()
+    .lock()
+    .map(|guard| guard.is_some())
+    .unwrap_or(false)
+}
+
+/// The installed fabric, if one is installed and its telemetry engine is `E`.
+pub fn installed_fabric<E: TelemetryEngine + 'static>() -> Option<Arc<ComputeFabric<E>>> {
+  let guard = fabric_slot().lock().ok()?;
+  let installed = guard.as_ref()?;
+  Arc::clone(&installed.any)
+    .downcast::<ComputeFabric<E>>()
+    .ok()
+}
+
+/// Remove the installed fabric (adaptive context falls back to [`AdaptiveContext::standalone`]).
+/// Returns whether a fabric was installed.
+pub fn uninstall_fabric() -> bool {
+  let removed = fabric_slot()
+    .lock()
+    .expect("fabric slot mutex")
+    .take()
+    .is_some();
+  refresh_adaptive_context();
+  removed
 }
 
 /// Refresh thread-local context from the installed fabric (call after supervisor ticks).
@@ -114,7 +193,7 @@ pub fn refresh_adaptive_context() {
   let ctx = fabric_slot()
     .lock()
     .ok()
-    .and_then(|guard| guard.as_ref().map(|f| f.adaptive_context()))
+    .and_then(|guard| guard.as_ref().map(|f| f.source.adaptive_context()))
     .unwrap_or_else(AdaptiveContext::standalone);
   ADAPTIVE_CTX.with(|c| *c.borrow_mut() = ctx);
 }

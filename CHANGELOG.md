@@ -1,6 +1,65 @@
 # Changelog
 
-## 0.5.0 — Process Mesh & distributed runtime
+## Unreleased — 0.6.0 consolidation (breaking)
+
+Narrows the workspace to its core purpose and hardens what remains. See
+[ADR 0010](docs/adrs/0010-crate-tiers.md) and [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
+0.5.0 was never published; 0.6.0 is the next crates.io release after 0.4.0.
+
+### Runtime fixes
+
+- `run`, `run_with`, `ThreadSleepRuntime::default()` and the default `TokioRuntime`
+  keep a caller-installed Compute Fabric. They used to replace it. They now call the
+  new `ensure_default_fabric()`. `install_default_fabric()` still overwrites, and its
+  docs say so.
+- Telemetry is lazy and never sleeps. `SysinfoTelemetry` creates its
+  `sysinfo::System` on the first snapshot, which returns a neutral CPU reading.
+  Later samples reuse the cached reading until enough real time has passed. A cold
+  `run_with` takes about 1 ms (was about 400 ms); the first Tokio spawn takes about
+  3 ms (was about 200 ms).
+- New: `ensure_default_fabric`, `installed_fabric::<E>()`, `is_fabric_installed`,
+  `uninstall_fabric`, `SysinfoTelemetry::new` / `is_initialized`,
+  `ComputeFabric::telemetry`.
+- **Breaking:** `SysinfoTelemetry` is no longer a unit struct. Use
+  `SysinfoTelemetry::new()`.
+
+### Streams are pull-based
+
+- `map`, `map_serial`, `filter`, `filter_serial`, `take`, `take_while`, `drop_while`,
+  `grouped`, `scan`, `map_effect`, `state_scan`, `transduce_items` /
+  `via_transducer`, all windows, and `merge` / `combine_latest` / `keyed_join` now
+  emit incrementally and work on infinite sources. Previously each one collected its
+  whole input first.
+- `from_iterable`, `range`, `unfold` and `unfold_effect` produce lazily.
+- **Breaking:** `Stream::from_iterable` requires `I::IntoIter: 'static`.
+- New `Stream::from_pull` constructor and `PullFn` alias. `Stream::new` and
+  `Stream::from_effect` are documented as single-batch.
+- `take(n)` never asks upstream for more than it still needs. `take_while` stops at
+  the first false.
+- Streams end at the first error: the next poll returns `Ok(None)`. This includes
+  `chain`, which used to re-poll the failed side.
+- `from_channel` and `from_duplex_queue_channel` read one item per pull.
+- Fixed: `merge` dropped the rest of the longer side after 64+ elements.
+- `combine_latest` takes one chunk from each side per pull. It used to drain the
+  whole left side first.
+- `keyed_join`'s memory grows with the number of distinct keys, as documented.
+- Time windows emit once the largest timestamp seen passes the window end.
+  - `tumbling_by_time`: an item arriving after its bucket was emitted forms a new
+    bucket.
+  - `sliding_by_time`: items older than an already-emitted window start are dropped.
+- Pulls respect a cancelled `CancellationToken` and yield to the executor while
+  upstream keeps returning empty batches.
+- `map_effect` runs nothing until the first pull.
+- New test helper `id_effect::testing::assert_bounded_memory`.
+
+### Tooling
+
+- MSRV is declared: `rust-version = "1.94"`, checked by a CI `msrv` job.
+- Every crate declares its tier in `[package.metadata.id_effect]`.
+  `scripts/tier-conformance.sh` checks the quality bar for that tier.
+- `scripts/readme-crates.sh` generates the README crate table.
+
+## 0.5.0 — Process Mesh & distributed runtime (never published)
 
 Semver-minor release introducing the **Process Mesh**: a BEAM/OTP-style local
 process runtime (`id_effect_process`) and a distribution layer (`id_effect_node`)
@@ -140,6 +199,7 @@ Semver-major release completing capability-first DI adoption. See [appendix-b-mi
 | `id_effect_platform` | **4.0.0** |
 | workspace adapters | **0.3.0** |
 
-## 2.0.0 — Capability-first DI (breaking)
+## Pre-0.3 history — "2.0.0" capability-first DI
 
-See prior entry for v2 initial capability DI release.
+Internal milestone numbered "2.0.0" before the workspace settled on 0.x semver. It was
+never published under that number; its changes shipped as part of 0.3.0 above.

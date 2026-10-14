@@ -15,17 +15,18 @@ pub struct ComputeSupervisor<E: TelemetryEngine> {
   policy: ResourcePolicy,
   telemetry: Arc<E>,
   admission: Arc<AdmissionController>,
-  last_snapshot: RwLock<TelemetrySnapshot>,
+  last_snapshot: RwLock<Option<TelemetrySnapshot>>,
   spread: Option<Arc<CpuSpreadBucket>>,
 }
 
 impl<E: TelemetryEngine> ComputeSupervisor<E> {
+  /// Build a supervisor. Does not sample telemetry; the first [`Self::snapshot`] or
+  /// [`Self::tick`] does.
   pub fn new(
     policy: ResourcePolicy,
     telemetry: Arc<E>,
     admission: Arc<AdmissionController>,
   ) -> Self {
-    let snap = telemetry.snapshot();
     let spread = match policy.cpu.mode {
       MetricMode::Spread { per_worker } => Some(Arc::new(CpuSpreadBucket::new(per_worker))),
       _ => None,
@@ -34,7 +35,7 @@ impl<E: TelemetryEngine> ComputeSupervisor<E> {
       policy,
       telemetry,
       admission,
-      last_snapshot: RwLock::new(snap),
+      last_snapshot: RwLock::new(None),
       spread,
     }
   }
@@ -47,8 +48,16 @@ impl<E: TelemetryEngine> ComputeSupervisor<E> {
     &self.admission
   }
 
+  /// Last telemetry snapshot; samples telemetry once if no tick has run yet.
   pub fn snapshot(&self) -> TelemetrySnapshot {
-    *self.last_snapshot.read().expect("supervisor snapshot lock")
+    if let Some(snap) = *self.last_snapshot.read().expect("supervisor snapshot lock") {
+      return snap;
+    }
+    let mut slot = self
+      .last_snapshot
+      .write()
+      .expect("supervisor snapshot lock");
+    *slot.get_or_insert_with(|| self.telemetry.snapshot())
   }
 
   pub fn tick(&self) -> TelemetrySnapshot {
@@ -64,7 +73,7 @@ impl<E: TelemetryEngine> ComputeSupervisor<E> {
     *self
       .last_snapshot
       .write()
-      .expect("supervisor snapshot lock") = snap;
+      .expect("supervisor snapshot lock") = Some(snap);
 
     adaptive::refresh_adaptive_context();
     let ctx = adaptive::current_adaptive_context();

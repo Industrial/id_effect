@@ -56,7 +56,7 @@ When local Fabric saturates, `RebalanceStrategy::ScaleOut` enqueues `JobSpec` vi
 
 ## Consequences
 
-- Default `run_blocking` / `run_async` install Fabric layer (escape hatch: `run_blocking_serial` for tests)
+- Default `run_blocking` / `run_async` install Fabric layer (escape hatch: `run_blocking_serial` for tests — never built; see [ADR 0008 Amendment 1](0008-implicit-parallelism.md#amendment-1-2026-10-14))
 - Orthogonal to failure `Supervisor` — Fabric wraps spawn/placement; supervision unchanged
 - Non-Send parallel groups clone `R` on worker threads (`R: Clone + Send + Sync`)
 - Supervisor poll interval configurable; fast-path when policy is `Unlimited`

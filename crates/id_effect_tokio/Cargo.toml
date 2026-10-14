@@ -2,6 +2,7 @@
 name = "id_effect_tokio"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Tokio runtime adapter and re-exports for the workspace `effect` crate"
 license.workspace = true
 repository.workspace = true
@@ -25,5 +26,14 @@ tokio = { version = "1.50.0", features = [
   "sync",
 ] }
 
+[[bench]]
+name = "startup_first_spawn"
+harness = false
+
 [dev-dependencies]
+criterion = "0.8.2"
 pollster = "1.0"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

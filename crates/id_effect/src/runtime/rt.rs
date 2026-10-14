@@ -62,12 +62,12 @@ pub struct ThreadSleepRuntime {
 }
 
 impl Default for ThreadSleepRuntime {
+  /// Reuse the installed fabric, or install a default one if none is installed (see
+  /// [`crate::compute::ensure_default_fabric`]). Never replaces a fabric you installed.
   fn default() -> Self {
-    let fabric = std::sync::Arc::new(crate::compute::ComputeFabric::with_policy(
-      crate::compute::ResourcePolicy::memory_cap_max_cpu(1.0),
-    ));
-    crate::compute::install_fabric(std::sync::Arc::clone(&fabric));
-    Self { fabric }
+    Self {
+      fabric: crate::compute::ensure_default_fabric(),
+    }
   }
 }
 

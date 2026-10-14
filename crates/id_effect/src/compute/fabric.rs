@@ -22,7 +22,7 @@ impl ComputeFabric<SysinfoTelemetry> {
   pub fn with_policy(policy: ResourcePolicy) -> Self {
     let pool = Arc::new(FiberPool::new(FiberPool::default_size()));
     let admission = Arc::new(AdmissionController::default());
-    let telemetry = Arc::new(SysinfoTelemetry);
+    let telemetry = Arc::new(SysinfoTelemetry::new());
     let supervisor = Arc::new(ComputeSupervisor::new(
       policy.clone(),
       Arc::clone(&telemetry),
@@ -59,11 +59,17 @@ impl<E: TelemetryEngine + 'static> ComputeFabric<E> {
     &self.supervisor
   }
 
+  /// Telemetry engine feeding the supervisor.
+  pub fn telemetry(&self) -> &E {
+    &self.telemetry
+  }
+
   pub fn tick(&self) -> super::telemetry::TelemetrySnapshot {
     self.supervisor.tick()
   }
 
-  /// Install this fabric as the process-wide adaptive context source.
+  /// Install this fabric as the process-wide adaptive context source, replacing any fabric
+  /// already installed (see [`super::install_fabric`]).
   pub fn install(self: &Arc<Self>) {
     super::adaptive::install_fabric(Arc::clone(self));
   }
@@ -156,6 +162,22 @@ mod tests {
         .mode
         .is_within(snap.cpu_pct)
     );
+  }
+
+  #[test]
+  fn constructing_default_fabric_does_not_sample_telemetry() {
+    let fabric = ComputeFabric::memory_cap_max_cpu(1.0);
+    assert!(!fabric.telemetry().is_initialized());
+    let _ = adaptive::AdaptiveContext::from_fabric(&fabric);
+    assert!(!fabric.telemetry().is_initialized());
+    let started = std::time::Instant::now();
+    let _ = fabric.tick();
+    let elapsed = started.elapsed();
+    assert!(
+      elapsed < Duration::from_millis(50),
+      "first tick blocked for {elapsed:?}"
+    );
+    assert!(fabric.telemetry().is_initialized());
   }
 
   #[test]

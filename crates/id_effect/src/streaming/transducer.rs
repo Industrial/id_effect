@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use crate::streaming::stream::Stream;
+use crate::streaming::stream::{StageStep, Stream};
 
 /// Stateful reducer step: `(accumulator, item) -> accumulator`.
 pub type Reducer<A, Acc> = Box<dyn FnMut(Acc, A) -> Acc + Send>;
@@ -81,25 +81,17 @@ where
   #[inline]
   pub fn transduce_items(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
     let step = xf.step.clone();
-    Stream::new(move |r: &mut R| {
-      let step = step.clone();
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            let mut pushed = (step)(Box::new(|mut acc: Vec<A>, x: A| {
-              acc.push(x);
-              acc
-            }));
-            out.extend(pushed(Vec::new(), item));
-          }
-        }
-        Ok(out)
-      })
+    // Incremental: one upstream chunk per pull, transformed item by item.
+    self.stage(move |input| {
+      let mut out = Vec::new();
+      for item in input.unwrap_or_default() {
+        let mut pushed = (step)(Box::new(|mut acc: Vec<A>, x: A| {
+          acc.push(x);
+          acc
+        }));
+        out.extend(pushed(Vec::new(), item));
+      }
+      StageStep::Emit(out)
     })
   }
 
@@ -146,6 +138,16 @@ mod tests {
       vec![],
     );
     assert_eq!(out, vec![1, 2]);
+  }
+
+  #[test]
+  fn transducer_on_infinite_source_is_incremental() {
+    let out = crate::testing::assert_bounded_memory(
+      |s| s.via_transducer(map(|n: u64| n * 10).compose(filter(|n: &u64| n.is_multiple_of(20)))),
+      3,
+      64,
+    );
+    assert_eq!(out, vec![0, 20, 40]);
   }
 
   #[test]

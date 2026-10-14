@@ -2,6 +2,7 @@
 name = "id_effect"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor"
 license.workspace = true
 repository.workspace = true
@@ -26,6 +27,10 @@ harness = false
 
 [[bench]]
 name = "effect_macro_bind_free"
+harness = false
+
+[[bench]]
+name = "startup_run_with"
 harness = false
 
 [features]
@@ -66,3 +71,7 @@ tokio = { version = "1.50.0", features = [
   "sync",
   "time",
 ] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

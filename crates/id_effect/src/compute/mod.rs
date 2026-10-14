@@ -18,8 +18,9 @@ mod supervisor;
 mod telemetry;
 
 pub use adaptive::{
-  AdaptiveContext, current_adaptive_context, ensure_run_context, install_fabric,
-  refresh_adaptive_context,
+  AdaptiveContext, current_adaptive_context, ensure_default_fabric, ensure_run_context,
+  install_fabric, installed_fabric, is_fabric_installed, refresh_adaptive_context,
+  uninstall_fabric,
 };
 pub use admission::AdmissionController;
 pub use cluster::{
