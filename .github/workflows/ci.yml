@@ -182,7 +182,7 @@ jobs:
         with:
           key: pg
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.86.5
+        uses: taiki-e/install-action@v2.87.27
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
@@ -206,7 +206,7 @@ jobs:
         with:
           workspaces: labs
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.86.5
+        uses: taiki-e/install-action@v2.87.27
         with:
           tool: cargo-nextest
       - name: Test labs workspace
