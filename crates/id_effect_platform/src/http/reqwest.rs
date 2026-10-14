@@ -105,7 +105,7 @@ pub enum JsonSchemaError {
   Http(Error),
   /// Invalid JSON (syntax); see message.
   Json(String),
-  /// Response body did not match the expected [`Schema`].
+  /// Response body did not match the expected [`Schema`](struct@id_effect::schema::Schema).
   Schema(ParseError),
 }
 
