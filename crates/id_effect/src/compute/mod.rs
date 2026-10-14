@@ -31,7 +31,3 @@ pub use policy::{MetricMode, MetricPolicy, RebalanceStrategy, ResourcePolicy, Wo
 pub use rayon_pool::{configure_rayon_threads, install_parallel};
 pub use spread::CpuSpreadBucket;
 pub use telemetry::{MockTelemetry, SysinfoTelemetry, TelemetryEngine, TelemetrySnapshot};
-
-/// Deprecated name of [`FabricGovernor`].
-#[deprecated(since = "0.6.0", note = "renamed to FabricGovernor")]
-pub type ComputeSupervisor<E> = FabricGovernor<E>;

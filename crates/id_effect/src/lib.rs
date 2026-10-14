@@ -104,9 +104,6 @@ pub use capability::{
   with_override,
 };
 #[cfg(feature = "compute")]
-#[allow(deprecated)]
-pub use compute::ComputeSupervisor;
-#[cfg(feature = "compute")]
 pub use compute::{
   AdaptiveContext, AdmissionController, ComputeFabric, CpuSpreadBucket, FabricGovernor,
   FabricJobSpec, FiberPool, MetricMode, MetricPolicy, MockTelemetry, RebalanceStrategy,
@@ -153,7 +150,7 @@ pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDat
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
 pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
-pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender, StreamV1};
+pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender};
 pub use streaming::{
   BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, Transducer, backpressure_decision,
   broadcast_with_replay, combine_latest, end_stream, keyed_join, send_chunk, state_scan,

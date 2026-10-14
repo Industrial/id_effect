@@ -60,12 +60,6 @@ impl<E: TelemetryEngine + 'static> ComputeFabric<E> {
     &self.governor
   }
 
-  /// Deprecated name of [`Self::governor`].
-  #[deprecated(since = "0.6.0", note = "renamed to `governor()`")]
-  pub fn supervisor(&self) -> &FabricGovernor<E> {
-    self.governor()
-  }
-
   /// Telemetry engine feeding the governor.
   pub fn telemetry(&self) -> &E {
     &self.telemetry

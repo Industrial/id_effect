@@ -1,7 +1,7 @@
 //! Portable OS subprocess spawning ([`ProcessRuntime`]) with Tokio implementation.
 //!
 //! Formerly `id_effect_platform::process`; renamed to avoid confusion with the actor processes of
-//! `id_effect_process`. The old path remains as a deprecated alias.
+//! `id_effect_process`. The deprecated `process` alias was removed in 0.7.
 
 #![allow(clippy::unused_unit)]
 use std::ffi::OsString;

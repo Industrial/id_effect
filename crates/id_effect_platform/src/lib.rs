@@ -57,12 +57,6 @@ pub mod fs;
 pub mod http;
 pub mod uri;
 
-/// Deprecated alias of [`command`] (OS subprocess spawning).
-#[deprecated(since = "0.6.0", note = "renamed to `id_effect_platform::command`")]
-pub mod process {
-  pub use super::command::*;
-}
-
 #[cfg(feature = "test-util")]
 pub use auth::MemoryOAuthClient;
 #[cfg(feature = "auth")]

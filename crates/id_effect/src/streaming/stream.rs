@@ -225,9 +225,6 @@ where
   throughput: Option<Metric<u64, ()>>,
 }
 
-/// Compatibility facade preserving the v1 public stream type name.
-pub type StreamV1<A, E = (), R = ()> = Stream<A, E, R>;
-
 /// `(consumer streams, pump effect)` from [`Stream::broadcast`].
 pub type StreamBroadcastFanout<A, E, R> = (Vec<Stream<A, E, R>>, Effect<(), E, R>);
 
