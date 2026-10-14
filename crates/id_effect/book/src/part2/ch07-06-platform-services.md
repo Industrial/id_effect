@@ -1,6 +1,6 @@
 # Platform I/O (`id_effect_platform`)
 
-Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**, **filesystem**, and **process** as typed capabilities in [`Env`](../../src/capability/env.rs), not ad hoc `reqwest` / `std::fs` calls in domain code.
+Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**, **filesystem**, and **process** as typed capabilities in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs), not ad hoc `reqwest` / `std::fs` calls in domain code.
 
 ## Why separate from `id_effect`?
 
@@ -25,14 +25,8 @@ Each module declares a capability service and ships a default provider:
 ```rust
 // in id_effect_platform::http (simplified; HttpClientService is pub(crate))
 #[derive(ProviderSpecDerive)]
-#[provides(HttpClientService)]
+#[provides(HttpClientService, with = || Arc::new(ReqwestHttpClient::default_client()))]
 pub struct ReqwestHttpClientProvider;
-
-impl ReqwestHttpClientProvider {
-    fn new() -> Arc<dyn HttpClient> {
-        Arc::new(ReqwestHttpClient::default_client())
-    }
-}
 ```
 
 Application entry:

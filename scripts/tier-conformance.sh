@@ -87,8 +87,9 @@ while IFS=$'\t' read -r name manifest tier publish; do
     fi
 
     if strict_tier "$tier" || [[ "$tier" == maintenance ]]; then
-        # A: crate-wide allow(dead_code|unused*)
-        if [[ -f "$root_rs" ]] && rg -q '^#!\[allow\([^]]*(dead_code|unused)' "$root_rs"; then
+        # A: crate-wide allow(dead_code|unused*) — rustc lints only; `clippy::unused_unit`
+        # and friends are not dead-code suppression.
+        if [[ -f "$root_rs" ]] && rg -q '^#!\[allow\(([^]]*[,[:space:]])?(dead_code|unused[a-z_]*)\b' "$root_rs"; then
             fails+=("A:crate-wide-allow")
         fi
     fi

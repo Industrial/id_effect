@@ -1,6 +1,6 @@
 # `Needs` and `~Key` — Reading from `Env`
 
-To use a capability inside an effect, declare required keys in `R` with [`caps!`](../../src/capability/set.rs) and borrow with `~Key`, [`require!`](../../src/capability/run.rs), or `Needs::need`.
+To use a capability inside an effect, declare required keys in `R` with [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and borrow with `~Key`, [`require!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), or `Needs::need`.
 
 ## Declaring requirements with `caps!`
 
@@ -48,6 +48,22 @@ When building tests manually:
 let mut env = Env::new();
 // forgot env.insert::<Cap<Database>>(...)
 run_blocking(get_user(42), env); // panics on ~Key / get
+```
+
+The lookups are `#[track_caller]`, so the panic points at **your** code, not at `id_effect` internals:
+
+```text
+missing capability `my_app::Database` (required at src/users.rs:14:19)
+  hint: register a provider with `provide!(…)` in `run_with` / `build_env`, and list the service in the effect's `caps!(…)` so `run_with` verifies it up front
+```
+
+`Env::try_get` returns the same information as [`CapabilityError::MissingAt`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs) (`err.location()` is the caller's `file:line:column`), and binding a narrower effect with `~inner()` names the `~` call site when the wider environment lacks a key. `run_with` reports an unprovided service before the program starts as `RunError::Capability(CapabilityError::Missing(…))`, displayed as ``missing capability `my_app::Database` ``.
+
+Compile-time mistakes get targeted messages too — for example, looking up a service in an effect whose environment is `()`:
+
+```text
+error[E0277]: environment `()` cannot provide capability `Database`
+  = note: run the effect in a capability environment: `Effect<_, _, caps!(Database)>` (or `Env`), not `()`
 ```
 
 Prefer `build_env` or typed test helpers so incomplete wiring fails at setup time.

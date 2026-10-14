@@ -4,7 +4,7 @@ Platform DX ships deploy templates and CLI parity documented under `docs/platfor
 
 ## Starting an app
 
-There is no `id-effect new` generator in 0.6 (the earlier placeholder scaffolder was removed). Start from the [`examples/cli-minimal`](../../../../examples/cli-minimal/) template, which uses `id_effect_cli::run_main`. See [PHASE_E_CLI_PARITY.md](../../../../docs/platform/PHASE_E_CLI_PARITY.md).
+There is no `id-effect new` generator in 0.6 (the earlier placeholder scaffolder was removed). Start from the [`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal) template, which uses `id_effect_cli::run_main`. See [PHASE_E_CLI_PARITY.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/PHASE_E_CLI_PARITY.md).
 
 ## Kamal deploy template
 
@@ -22,4 +22,4 @@ Copy to your app root and replace the `{{name}}` placeholders with your binary n
 ## See also
 
 - Mission: `platform-dx-ship`
-- [ROADMAP.md](../../../../docs/platform/ROADMAP.md)
+- [ROADMAP.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/ROADMAP.md)

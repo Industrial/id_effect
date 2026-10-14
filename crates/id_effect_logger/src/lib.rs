@@ -2,17 +2,28 @@
 //!
 //! # Service/Tag pattern
 //!
-//! Extract the logger from the environment once with `require!(EffectLogger)`, then call
-//! its methods as regular effectful steps:
+//! Extract the logger from the environment once with `~EffectLogger`, then call
+//! its methods as regular effectful steps — no turbofish:
 //!
-//! ```ignore
-//! effect!(|_r: &mut R| {
-//!     let logger = require!(EffectLogger);
+//! ```
+//! use id_effect::{Effect, caps, effect, provide, run_with};
+//! use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
+//!
+//! fn program() -> Effect<u32, EffectLoggerError, caps!(EffectLogger)> {
+//!   effect!(|r| {
+//!     let logger = *~EffectLogger;
 //!     ~logger.warn("something suspicious");
 //!     ~logger.info("all good");
-//!     result
-//! })
+//!     7
+//!   })
+//! }
+//!
+//! assert_eq!(run_with([provide!(EffectLoggerLive)], program()).unwrap(), 7);
 //! ```
+//!
+//! Log methods return `Effect<(), EffectLoggerError>` (no environment): `~` binds them in any
+//! `effect!` environment. In combinator chains, lift them with
+//! [`Effect::into_env`](id_effect::Effect::into_env).
 //!
 //! The environment only needs the `EffectLogger` capability (`caps!(EffectLogger)`). Provide it at
 //! the program edge with `run_with([provide!(EffectLoggerLive)], program)`.
@@ -115,9 +126,9 @@ fn test_clear_all_logger_tls() {
 
 /// Log sink registered as [`EffectLogger`] via capability DI; forwards to [`tracing`].
 ///
-/// Extracted from the environment with `require!(EffectLogger)` inside [`id_effect::effect!`].
-/// After extraction its methods return `Effect<(), EffectLoggerError, R>` and
-/// are themselves awaited with `~`.
+/// Extracted from the environment with `~EffectLogger` inside [`id_effect::effect!`].
+/// After extraction its methods return `Effect<(), EffectLoggerError>` (no environment) and
+/// are themselves bound with `~` — in any `effect!` environment, without a turbofish.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLogger;
 
@@ -196,23 +207,27 @@ impl EffectLogger {
   }
 
   /// Emit a log line at `level`.  Returns an effect that, when run, forwards
-  /// to [`tracing`].  The environment `R` is ignored — the logger is
-  /// self-contained after extraction.
+  /// to [`tracing`].  The logger is self-contained after extraction, so the effect needs no
+  /// environment (`R = ()`):
+  ///
+  /// - inside [`id_effect::effect!`], `~logger.log(…)` binds in any environment — no turbofish;
+  /// - in combinator chains over an environment `R`, lift it with
+  ///   [`Effect::into_env`](id_effect::Effect::into_env).
   ///
   /// When [`provide_minimum_log_level`] has been built on this thread, messages below the current
   /// fiber’s minimum [`LogLevel`] (from that [`FiberRef`]) are dropped without calling [`tracing`].
   ///
   /// `msg` may be a `&'static str`, `String`, or other `Into<Cow<'static, str>>`.
-  pub fn log<R: 'static>(
+  pub fn log(
     &self,
     level: LogLevel,
     msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  ) -> Effect<(), EffectLoggerError> {
     let msg = msg.into();
     if level == LogLevel::None {
-      return Effect::new(|_r: &mut R| Ok(()));
+      return Effect::new(|_r: &mut ()| Ok(()));
     }
-    Effect::new(move |_r: &mut R| {
+    Effect::new(move |_r: &mut ()| {
       let emit = MIN_LOG_LEVEL_FIBER_REF.with(|c| match c.borrow().as_ref() {
         None => true,
         Some(fr) => ::id_effect::run_blocking(fr.get(), ())
@@ -260,59 +275,37 @@ impl EffectLogger {
 
   /// Same as [`Self::log`]; kept for call sites that already hold a [`String`].
   #[inline]
-  pub fn log_string<R: 'static>(
-    &self,
-    level: LogLevel,
-    msg: String,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn log_string(&self, level: LogLevel, msg: String) -> Effect<(), EffectLoggerError> {
     self.log(level, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Trace`].
-  pub fn trace<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn trace(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Trace, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Debug`].
-  pub fn debug<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn debug(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Debug, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Info`].
-  pub fn info<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn info(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Info, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Warn`].
-  pub fn warn<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn warn(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Warn, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Error`].
-  pub fn error<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn error(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Error, msg)
   }
 
   /// Shorthand for [`Self::log`] at [`LogLevel::Fatal`].
-  pub fn fatal<R: 'static>(
-    &self,
-    msg: impl Into<Cow<'static, str>>,
-  ) -> Effect<(), EffectLoggerError, R> {
+  pub fn fatal(&self, msg: impl Into<Cow<'static, str>>) -> Effect<(), EffectLoggerError> {
     self.log(LogLevel::Fatal, msg)
   }
 }
@@ -439,7 +432,7 @@ mod tests {
       let ctx = test_ctx_with_min(LogLevel::Trace);
       let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
       run_blocking(fr.set(LogLevel::Warn), ()).expect("set min");
-      run_blocking(EffectLogger.info::<Env>("filtered-info"), ctx).expect("log");
+      run_blocking(EffectLogger.info("filtered-info").into_env(), ctx).expect("log");
 
       let got = levels.lock().expect("capture");
       assert!(
@@ -456,7 +449,7 @@ mod tests {
 
       let ctx = test_ctx_with_min(LogLevel::Trace);
       let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
-      let inner = EffectLogger.info::<Env>("inside-scope");
+      let inner = EffectLogger.info("inside-scope").into_env();
       run_blocking(
         EffectLogger::with_minimum_log_level(fr.clone(), LogLevel::Warn, inner),
         ctx,
@@ -473,7 +466,7 @@ mod tests {
 
       levels.lock().expect("capture").clear();
       let ctx = test_ctx_with_min(LogLevel::Trace);
-      run_blocking(EffectLogger.info::<Env>("outside-scope"), ctx).expect("outer");
+      run_blocking(EffectLogger.info("outside-scope").into_env(), ctx).expect("outer");
 
       assert!(
         levels
@@ -544,7 +537,7 @@ mod tests {
       #[case::fatal(LogLevel::Fatal)]
       fn returns_ok_for_every_level(#[case] level: LogLevel) {
         init_subscriber();
-        let result = run_blocking(EffectLogger.log::<()>(level, "msg"), ());
+        let result = run_blocking(EffectLogger.log(level, "msg"), ());
         assert_eq!(result, Ok(()));
       }
     }
@@ -561,7 +554,7 @@ mod tests {
       #[case::fatal(LogLevel::Fatal)]
       fn returns_ok_for_every_level(#[case] level: LogLevel) {
         init_subscriber();
-        let result = run_blocking(EffectLogger.log::<LogCtx>(level, "msg"), test_ctx());
+        let result = run_blocking(EffectLogger.log(level, "msg").into_env(), test_ctx());
         assert_eq!(result, Ok(()));
       }
     }
@@ -600,31 +593,31 @@ mod tests {
     #[test]
     fn trace_delegates_to_log_at_trace_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.trace::<()>("t"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.trace("t"), ()), Ok(()));
     }
 
     #[test]
     fn debug_delegates_to_log_at_debug_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.debug::<()>("d"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.debug("d"), ()), Ok(()));
     }
 
     #[test]
     fn info_delegates_to_log_at_info_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.info::<()>("i"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.info("i"), ()), Ok(()));
     }
 
     #[test]
     fn warn_delegates_to_log_at_warn_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.warn::<()>("w"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.warn("w"), ()), Ok(()));
     }
 
     #[test]
     fn error_delegates_to_log_at_error_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.error::<()>("e"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.error("e"), ()), Ok(()));
     }
 
     #[test]
@@ -632,7 +625,7 @@ mod tests {
       init_subscriber();
       assert_eq!(
         run_blocking(
-          EffectLogger.log_string::<()>(LogLevel::Info, "owned msg".to_string()),
+          EffectLogger.log_string(LogLevel::Info, "owned msg".to_string()),
           (),
         ),
         Ok(()),
@@ -644,7 +637,7 @@ mod tests {
       init_subscriber();
       let n = 42u32;
       assert_eq!(
-        run_blocking(EffectLogger.info::<()>(format!("n={n}")), ()),
+        run_blocking(EffectLogger.info(format!("n={n}")), ()),
         Ok(()),
       );
     }
@@ -652,14 +645,14 @@ mod tests {
     #[test]
     fn fatal_delegates_to_log_at_fatal_level() {
       init_subscriber();
-      assert_eq!(run_blocking(EffectLogger.fatal::<()>("f"), ()), Ok(()));
+      assert_eq!(run_blocking(EffectLogger.fatal("f"), ()), Ok(()));
     }
 
     #[test]
     fn log_none_level_returns_ok_without_side_effects() {
       init_subscriber();
       assert_eq!(
-        run_blocking(EffectLogger.log::<()>(LogLevel::None, "silenced"), ()),
+        run_blocking(EffectLogger.log(LogLevel::None, "silenced"), ()),
         Ok(())
       );
     }
@@ -685,7 +678,7 @@ mod tests {
       let effect: ::id_effect::Effect<EffectLogger, EffectLoggerError, LogCtx> =
         ::id_effect::Effect::new(move |r: &mut LogCtx| Ok(*Needs::<EffectLogger>::need(r)));
       let logger = run_blocking(effect, test_ctx()).expect("extraction is infallible");
-      assert_eq!(run_blocking(logger.info::<()>("extracted"), ()), Ok(()));
+      assert_eq!(run_blocking(logger.info("extracted"), ()), Ok(()));
     }
   }
 
@@ -703,7 +696,7 @@ mod tests {
     #[test]
     fn produced_service_can_be_placed_in_context() {
       let ctx = build_env([provide!(EffectLoggerLive)]).expect("infallible");
-      let result = run_blocking(EffectLogger.info::<LogCtx>("provider build ok"), ctx);
+      let result = run_blocking(EffectLogger.info("provider build ok").into_env(), ctx);
       assert_eq!(result, Ok(()));
     }
   }
@@ -784,11 +777,7 @@ mod tests {
     #[test]
     fn logger_json_backend_produces_valid_json() {
       let buf = setup_json();
-      run_blocking(
-        annotate_logs("k", "v", EffectLogger.info::<()>("hello")),
-        (),
-      )
-      .expect("log");
+      run_blocking(annotate_logs("k", "v", EffectLogger.info("hello")), ()).expect("log");
       let bytes = buf.lock().expect("buf");
       let line = std::str::from_utf8(bytes.as_slice()).expect("utf8");
       let line = line.trim();
@@ -811,7 +800,7 @@ mod tests {
         provide_composite_logger(comp.clone()),
       ])
       .unwrap();
-      run_blocking(EffectLogger.info::<()>("m1"), ()).unwrap();
+      run_blocking(EffectLogger.info("m1"), ()).unwrap();
       assert_eq!(*a.lock().unwrap(), vec!["m1".to_string()]);
       assert_eq!(*b.lock().unwrap(), vec!["m1".to_string()]);
 
@@ -819,7 +808,7 @@ mod tests {
       comp.replace(0, Arc::new(MsgCap(c.clone()))).unwrap();
       a.lock().unwrap().clear();
       b.lock().unwrap().clear();
-      run_blocking(EffectLogger.info::<()>("m2"), ()).unwrap();
+      run_blocking(EffectLogger.info("m2"), ()).unwrap();
       assert!(a.lock().unwrap().is_empty());
       assert_eq!(*b.lock().unwrap(), vec!["m2".to_string()]);
       assert_eq!(*c.lock().unwrap(), vec!["m2".to_string()]);
@@ -843,7 +832,7 @@ mod tests {
       comp.add(Arc::new(structured)).unwrap();
       build_env([provide!(LogMetadataLive), provide_composite_logger(comp)]).unwrap();
       run_blocking(
-        annotate_logs("trace_id", "abc", EffectLogger.info::<()>("done")),
+        annotate_logs("trace_id", "abc", EffectLogger.info("done")),
         (),
       )
       .unwrap();
@@ -857,11 +846,7 @@ mod tests {
     #[test]
     fn with_log_span_visible_in_json() {
       let buf = setup_json();
-      run_blocking(
-        with_log_span("outer", EffectLogger.warn::<()>("inside")),
-        (),
-      )
-      .unwrap();
+      run_blocking(with_log_span("outer", EffectLogger.warn("inside")), ()).unwrap();
       let bytes = buf.lock().unwrap().clone();
       let line = std::str::from_utf8(&bytes).unwrap().trim();
       let v: serde_json::Value = serde_json::from_str(line).unwrap();

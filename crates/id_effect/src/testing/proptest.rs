@@ -175,6 +175,34 @@ mod tests {
     let right = Exit::<i32, ()>::succeed(2);
     assert!(prop_assert_exit_eq(&left, &right).is_err());
   }
+
+  #[test]
+  fn prop_assert_exit_eq_accepts_equal_exits() {
+    assert!(prop_assert_exit_eq(&Exit::<i32, ()>::succeed(3), &Exit::succeed(3)).is_ok());
+    assert!(prop_assert_exit_eq(&Exit::<(), &str>::fail("e"), &Exit::fail("e")).is_ok());
+    assert!(prop_assert_exit_eq(&Exit::<(), &str>::fail("e"), &Exit::fail("f")).is_err());
+  }
+
+  #[test]
+  fn prop_assert_exit_success_reports_each_mismatch() {
+    assert!(prop_assert_exit_success(&Exit::<i32, ()>::succeed(1), &1).is_ok());
+    let wrong = prop_assert_exit_success(&Exit::<i32, ()>::succeed(1), &2).unwrap_err();
+    assert!(
+      wrong.to_string().contains("success value mismatch"),
+      "{wrong}"
+    );
+    let failed = prop_assert_exit_success(&Exit::<i32, &str>::fail("boom"), &1).unwrap_err();
+    assert!(failed.to_string().contains("Exit::Failure"), "{failed}");
+  }
+
+  #[test]
+  fn arb_exit_fail_generates_failure_variants() {
+    use proptest::strategy::ValueTree;
+    let tree = arb_exit_fail(any::<u8>())
+      .new_tree(&mut proptest::test_runner::TestRunner::default())
+      .unwrap();
+    assert!(matches!(tree.current(), Exit::Failure(_)));
+  }
 }
 
 #[cfg(test)]
@@ -214,6 +242,18 @@ mod unit_tests {
     let ok = Exit::<i32, &str>::succeed(1);
     let err = Exit::<i32, &str>::fail("boom");
     assert_exit_eq(&ok, &err);
+  }
+
+  #[test]
+  #[should_panic(expected = "success value mismatch: got 1, expected 2")]
+  fn assert_exit_success_panics_on_wrong_value() {
+    assert_exit_success(&Exit::<i32, ()>::succeed(1), &2);
+  }
+
+  #[test]
+  #[should_panic(expected = "got Exit::Failure")]
+  fn assert_exit_success_panics_on_failure() {
+    assert_exit_success(&Exit::<i32, &str>::fail("boom"), &1);
   }
 
   #[test]

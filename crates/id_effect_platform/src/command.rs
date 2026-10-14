@@ -3,7 +3,7 @@
 //! Formerly `id_effect_platform::process`; renamed to avoid confusion with the actor processes of
 //! `id_effect_process`. The old path remains as a deprecated alias.
 
-#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
+#![allow(clippy::unused_unit)]
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -103,14 +103,8 @@ pub type ProcessRuntimeService = Arc<dyn ProcessRuntime>;
 
 /// Tokio-backed [`ProcessRuntime`] provider.
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ProcessRuntimeService)]
+#[provides(ProcessRuntimeService, with = || Arc::new(TokioProcessRuntime))]
 pub struct TokioProcessRuntimeProvider;
-
-impl TokioProcessRuntimeProvider {
-  fn new() -> ProcessRuntimeService {
-    Arc::new(TokioProcessRuntime)
-  }
-}
 
 /// Spawn using [`ProcessRuntime`].
 #[inline]

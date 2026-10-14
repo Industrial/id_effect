@@ -52,4 +52,4 @@ Each dependency needs a **compile-time name** independent of position:
 
 Different keys, same underlying type — the compiler catches swaps.
 
-That's what [``](../../src/capability/key.rs) generates.
+That's what [``](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) generates.

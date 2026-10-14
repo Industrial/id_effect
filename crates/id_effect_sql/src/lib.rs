@@ -37,12 +37,7 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-#![allow(
-  private_interfaces,
-  private_bounds,
-  clippy::new_ret_no_self,
-  clippy::unused_unit
-)]
+#![allow(private_interfaces, private_bounds, clippy::unused_unit)]
 
 pub mod client;
 pub mod error;

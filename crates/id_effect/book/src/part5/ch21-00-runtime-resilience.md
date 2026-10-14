@@ -4,17 +4,17 @@ Production services need more than happy-path effects. Timeouts, overload, and f
 
 ## What This Chapter Covers
 
-- **[`RequestResolver`](../../src/coordination/request_resolver.rs)** — batch parallel lookups through a single fetch
-- **[`SubscriptionRef`](../../src/coordination/subscription_ref.rs)** — shared state plus change notifications
-- **[`Redacted`](../../src/schema/redacted.rs)** — schema-layer secrets with masked `Debug`
-- **[`match_effect!`](../../src/match_effect.rs)** — enum match helper with path-prefixed arms
+- **[`RequestResolver`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/coordination/request_resolver.rs)** — batch parallel lookups through a single fetch
+- **[`SubscriptionRef`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/coordination/subscription_ref.rs)** — shared state plus change notifications
+- **[`Redacted`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/redacted.rs)** — schema-layer secrets with masked `Debug`
+- **[`match_effect!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_proc_macro/src/lib.rs)** — enum match helper with path-prefixed arms
 - **`id_effect_resilience`** — circuit breaker, rate limiter, bulkhead, hedged requests
 
 ## RequestResolver
 
 Effect.ts batches data-source lookups so N parallel `getUser(id)` calls become one SQL `WHERE id IN (…)`. In id_effect, each pending lookup is a [`RequestEntry`] with a [`Deferred`] result slot. A [`RequestResolver::run_all`] receives sequential batches; entries inside a batch may run in parallel.
 
-[`batching`](../../src/coordination/request_resolver.rs) deduplicates keys per batch and calls your fetch function once:
+[`batching`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/coordination/request_resolver.rs) deduplicates keys per batch and calls your fetch function once:
 
 ```rust
 use id_effect::{Deferred, RequestEntry, batching, run_async};
@@ -27,7 +27,7 @@ let resolver = batching(|keys| Effect::new(move |_r| {
 
 ## SubscriptionRef
 
-[`SubscriptionRef`] combines [`Ref`] with [`PubSub`]. Every `set` / `update` publishes the new value; [`subscribe`](../../src/coordination/subscription_ref.rs) returns a [`Queue`] that receives the current value first, then every subsequent change.
+[`SubscriptionRef`] combines [`Ref`] with [`PubSub`]. Every `set` / `update` publishes the new value; [`subscribe`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/coordination/subscription_ref.rs) returns a [`Queue`] that receives the current value first, then every subsequent change.
 
 ```rust
 use id_effect::{Scope, SubscriptionRef, run_async};
@@ -39,11 +39,11 @@ let changes = run_async(cell.subscribe(), scope.clone()).await?;
 
 ## Redacted values
 
-Use [`Redacted<T>`] anywhere a schema or domain type might reach logs. `Debug` and `Display` print `<redacted>`; call [`expose`](../../src/schema/redacted.rs) only at trust boundaries.
+Use [`Redacted<T>`] anywhere a schema or domain type might reach logs. `Debug` and `Display` print `<redacted>`; call [`expose`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/redacted.rs) only at trust boundaries.
 
 ## match_effect!
 
-The [`match_effect!`](../../src/lib.rs) proc macro prefixes variant names so the compiler checks exhaustiveness without repeating the enum path:
+The [`match_effect!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/lib.rs) proc macro prefixes variant names so the compiler checks exhaustiveness without repeating the enum path:
 
 ```rust
 use id_effect::match_effect;
@@ -74,4 +74,4 @@ let breaker = run_async(CircuitBreaker::make(5, Duration::from_secs(30)), ()).aw
 let out = run_async(breaker.call(fetch_user(id)), ()).await?;
 ```
 
-Pair resilience primitives with [`Schedule`](../../src/scheduling/schedule.rs) retry policies from Part III — breakers shed load, schedules handle transient faults.
+Pair resilience primitives with [`Schedule`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/scheduling/schedule.rs) retry policies from Part III — breakers shed load, schedules handle transient faults.

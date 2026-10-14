@@ -12,7 +12,7 @@ Read this section **before** [Platform I/O](./ch07-06-platform-services.md), [HT
 
 ## Capability DI with Tokio
 
-Build [`Env`](../../src/capability/env.rs) manually or via [`run_with`](../../src/capability/run.rs) / [`build_env`](../../src/capability/run.rs), then pass it to `run_async`:
+Build [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) manually or via [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) / [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), then pass it to `run_async`:
 
 ```rust
 use id_effect::{Env, caps, effect, require, run_async, succeed};

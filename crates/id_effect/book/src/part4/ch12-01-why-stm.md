@@ -2,11 +2,11 @@
 
 Consider transferring money between two accounts. With mutexes:
 
-```rust
+```rust,ignore
 fn transfer(from: &Mutex<Account>, to: &Mutex<Account>, amount: u64) {
-    let from_guard = from.lock().unwrap();
+    let mut from_guard = from.lock().unwrap();
     // Thread B might be doing transfer(to, from, ...) right here
-    let to_guard = to.lock().unwrap();
+    let mut to_guard = to.lock().unwrap();
     // DEADLOCK: Thread A holds from, waiting for to.
     //           Thread B holds to, waiting for from.
     from_guard.balance -= amount;
@@ -18,36 +18,46 @@ The standard fix (always lock in a consistent order) requires global coordinatio
 
 ## STM: Optimistic Concurrency
 
-STM operates on the assumption that conflicts are rare. Instead of locking, it:
+STM assumes conflicts are rare. Instead of locking, a transaction:
 
-1. Reads current values into a local transaction log
-2. Computes new values based on those reads
-3. Attempts to commit: checks that nothing changed since the reads, then atomically writes
+1. reads current values into a private transaction log,
+2. computes new values from those reads (writes stay in the log),
+3. commits: checks that nothing it read has changed, then applies its writes atomically.
 
-If anything changed between step 1 and step 3, the transaction *retries* automatically from step 1.
+If something changed between step 1 and step 3, the transaction restarts from step 1.
 
-```rust
-use id_effect_fp::{TRef, commit, stm};
+```rust,ignore
+use id_effect_fp::{Stm, TRef, commit};
 
-fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64)
--> Effect<(), TransferError, ()>
-{
-    commit(stm! {
-        let from_acct = ~ from.read_stm();
-        let to_acct   = ~ to.read_stm();
-
-        if from_acct.balance < amount {
-            ~ stm::fail(TransferError::InsufficientFunds);
-        }
-
-        ~ from.write_stm(Account { balance: from_acct.balance - amount, ..from_acct });
-        ~ to.write_stm(Account { balance: to_acct.balance + amount, ..to_acct });
-        ()
+fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64) -> Stm<(), TransferError> {
+  let (from, to) = (from.clone(), to.clone());
+  from.read_stm().flat_map(move |src: Account| {
+    if src.balance < amount {
+      return Stm::fail(TransferError::InsufficientFunds);
+    }
+    let (from, to) = (from.clone(), to.clone());
+    to.read_stm().flat_map(move |dst: Account| {
+      let debit = Account { balance: src.balance - amount, ..src.clone() };
+      let credit = Account { balance: dst.balance + amount, ..dst };
+      let to = to.clone();
+      from.write_stm(debit).flat_map(move |()| to.write_stm(credit.clone()))
     })
+  })
 }
+
+// Run it: `commit` lifts the transaction into an Effect.
+run_blocking(commit::<_, _, ()>(transfer(&a, &b, 1)), ())?;
 ```
 
-No locks. No deadlock risk. The transaction retries automatically if another transaction modified either account between our read and our write.
+No locks and no lock ordering. The runnable example starts two threads that make 50 transfers each
+between the same two accounts in opposite directions, the case that deadlocks with two mutexes, and
+asserts the balances at the end. A transfer that fails with `InsufficientFunds` writes nothing.
+
+Full example: [`crates/id_effect_fp/examples/083_stm_transfer.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/083_stm_transfer.rs) (`cargo run -p id_effect_fp --example 083_stm_transfer`).
+
+Transactions are plain values built with `flat_map`; there is no `stm!` do-notation macro. Clone the
+`TRef` handles you need into each closure (they are cheap `Arc` clones). The closures are `Fn`
+because a transaction may run more than once.
 
 ## When STM Wins
 
@@ -55,13 +65,13 @@ No locks. No deadlock risk. The transaction retries automatically if another tra
 |-----------|-------|-----|
 | Single shared value | ✓ simple | ✓ fine |
 | Multiple related values | ✗ deadlock risk | ✓ composable |
-| Read-heavy workloads | ✗ blocks writers | ✓ reads never block |
-| Composing two existing operations | ✗ requires coordination | ✓ just nest in stm! |
-| Long operations with I/O | ✓ (STM would retry too much) | ✗ wrong tool |
+| Composing two existing operations | ✗ requires coordination | ✓ `flat_map` them into one transaction |
+| Long operations with I/O | ✓ (STM would restart too much) | ✗ wrong tool |
 
 STM shines when:
-- You need to update multiple values atomically
-- You're composing smaller transactional operations into larger ones
-- Contention is low (retries are cheap)
+- you need to update multiple values atomically,
+- you are composing smaller transactional operations into larger ones,
+- contention is low (restarts are cheap).
 
-Avoid STM for long-running operations that do I/O — transactions should be short and pure. The `stm!` macro is for read-modify-write, not for network calls.
+Avoid STM for long-running operations that do I/O. A transaction body may run several times, so it
+must be short and free of side effects: read-modify-write only, no network calls.

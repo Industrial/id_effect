@@ -39,4 +39,14 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 | 108 | `108_tokio_clock.rs` | `now` / time with external Tokio runtime |
 | 109 | `109_tokio_end_to_end.rs` | capability DI, streams, `catch`, full pipeline |
 
+## Cookbook (150–154, book "Cookbook" part)
+
+| # | Package / file | Topic |
+|---|----------------|-------|
+| 150 | `150_cookbook_retry_test_clock.rs` | `retry_with_clock` + `Schedule`, backoff asserted on `TestClock` |
+| 151 | `151_cookbook_streaming_etl.rs` | pull-based ETL, `tumbling`, `assert_bounded_memory` (has `#[test]`s: `cargo test -p id_effect --example 151_cookbook_streaming_etl`) |
+| 152 | `id_effect_platform` · `152_cookbook_bounded_command_pool.rs` | N commands, at most K in flight (`Semaphore` + `platform::command`) |
+| 153 | `cli_minimal` · `153_cookbook_cli_edge.rs` | `run_main`, config from env, capabilities at the edge |
+| 154 | `id_effect_process` · `154_cookbook_supervised_daemon.rs` | supervisor restart + graceful shutdown |
+
 Curriculum work is tracked with **tool-tasks** (see `.cursor/rules/tool-tasks.mdc`).

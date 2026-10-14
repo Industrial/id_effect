@@ -1,102 +1,94 @@
 # Stm and commit — Building Transactions
 
-The `stm!` macro produces `Stm<A>` values — descriptions of transactional computations. To execute them, you use `commit` or `atomically`.
+An `Stm<A, E>` describes a transaction. Build one from `TRef` operations and the constructors
+below, compose with `map` / `flat_map` / `or_else`, and execute it with `commit`.
+
+| Constructor | Meaning |
+|-------------|---------|
+| `Stm::succeed(a)` | finish with `a` |
+| `Stm::fail(e)` | abort with error `e`; nothing is written, no restart |
+| `Stm::retry()` | restart the transaction |
+| `Stm::check(cond)` | continue if `cond`, otherwise retry |
 
 ## commit: Lift Stm into Effect
 
-```rust
-use id_effect::Effect;
-use id_effect_fp::{Stm, commit};
+```rust,ignore
+use id_effect::{Effect, run_blocking};
+use id_effect_fp::{Stm, TRef, commit};
 
-let transaction: Stm<i32> = stm! {
-    let a = ~ ref_a.read_stm();
-    let b = ~ ref_b.read_stm();
-    a + b
-};
-
-// Lift into Effect
-let effect: Effect<i32, Never, ()> = commit(transaction);
-
-// Now run it
-let result = run_blocking(effect)?;
+let effect: Effect<u64, InsufficientFunds, ()> = commit(withdraw(&account, 70));
+let left = run_blocking(effect, ())?;
 ```
 
-`commit` wraps a `Stm` in an effect that, when run, executes the transaction and retries if there's a conflict. The `E` type of `commit(stm)` is `Never` unless the `Stm` can fail (see `stm::fail`).
+`commit(stm)` returns an `Effect<A, E, R>`, generic over any environment `R`. Its error type is the
+transaction's `E`. Running the effect executes the transaction; if commit-time validation finds a
+cell it read has changed, it starts again. `atomically` is an alias of `commit` (the Effect.ts
+name). It also returns an `Effect`, so run either one with `run_blocking` / `run_async`.
 
-## atomically: Direct Execution
+## Stm::fail: Transactional Errors
 
-```rust
-use id_effect::atomically;
+```rust,ignore
+#[derive(Clone, Debug, PartialEq)]
+struct InsufficientFunds;
 
-// Run a transaction immediately in the current context
-let value: i32 = atomically(stm! {
-    ~ counter.modify_stm(|n| n + 1);
-    ~ counter.read_stm()
-});
-```
-
-`atomically` is the synchronous equivalent of `commit` + `run_blocking`. Use it when you're already outside the effect system and need a quick transactional update.
-
-## stm::fail: Transactional Errors
-
-Transactions can fail with typed errors:
-
-```rust
-use id_effect_fp::stm;
-
-fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64> {
-    stm! {
-        let balance = ~ account.read_stm();
-        if balance < amount {
-            ~ stm::fail(InsufficientFunds);  // abort the transaction
-        }
-        ~ account.write_stm(balance - amount);
-        balance - amount
+fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64, InsufficientFunds> {
+  let acct = account.clone();
+  account.read_stm().flat_map(move |balance| {
+    if balance < amount {
+      return Stm::fail(InsufficientFunds);
     }
-}
-
-// commit propagates the error into E
-let effect: Effect<u64, InsufficientFunds, ()> = commit(withdraw(&account, 100));
-```
-
-`stm::fail(e)` aborts the current transaction with error `e`. The transaction is *not* retried — it fails immediately with the given error.
-
-## stm::retry: Block Until Condition
-
-Sometimes a transaction should wait until a condition is true rather than failing:
-
-```rust
-// Block (retry) until the queue has items
-fn dequeue(queue: &TRef<Vec<Item>>) -> Stm<Item> {
-    stm! {
-        let items = ~ queue.read_stm();
-        if items.is_empty() {
-            ~ stm::retry();  // block until queue changes, then retry
-        }
-        let item = items[0].clone();
-        ~ queue.write_stm(items[1..].to_vec());
-        item
-    }
+    acct.write_stm(balance - amount).map(move |()| balance - amount)
+  })
 }
 ```
 
-`stm::retry()` doesn't mean "try again immediately." It means "block until any `TRef` I read has changed, then try again." This is how `TQueue` implements blocking dequeue without busy-waiting.
+`Stm::fail(e)` aborts with `e`. The transaction is *not* restarted and none of its writes are
+applied; `commit` surfaces `e` as the effect's error.
+
+## Retry: wait for a condition
+
+A transaction can wait until a condition holds instead of failing:
+
+```rust,ignore
+/// Restarts until the balance covers `amount`.
+fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
+  let acct = account.clone();
+  account.read_stm().flat_map(move |balance| {
+    let acct = acct.clone();
+    Stm::<(), ()>::check(balance >= amount)
+      .flat_map(move |()| acct.write_stm(balance - amount).map(move |()| balance - amount))
+  })
+}
+```
+
+On retry, `commit` discards the attempt, yields the thread (`std::thread::yield_now`) and runs the
+transaction again. It keeps doing so until another thread's commit makes the condition true. This
+is a yielding spin, not a wake-on-change wait: the waiting thread is blocked the whole time, so keep
+retry for short waits. `TQueue::take` and `TSemaphore::acquire` work this way.
+
+## or_else: try an alternative
+
+`a.or_else(b)` runs `b` when `a` retries. It turns a would-block transaction into a non-blocking
+try:
+
+```rust,ignore
+let try_now = withdraw_when_available(&account, 80).or_else(Stm::succeed(u64::MAX));
+// Ok(u64::MAX) means "not now" instead of waiting.
+```
 
 ## Composing Transactions
 
-Transactions compose by sequencing `stm!` blocks:
+Transactions compose with `flat_map`. The result commits as one unit:
 
-```rust
-let big_transaction: Stm<()> = stm! {
-    // Sub-transaction 1
-    let _ = ~ transfer_funds(&from, &to, amount);
-    // Sub-transaction 2
-    let _ = ~ record_audit_log(&from, &to, amount);
-    ()
+```rust,ignore
+let audited = {
+  let audit = audit.clone();
+  withdraw(&account, 5).flat_map(move |left| audit.update_stm(|n| n + 1).map(move |()| left))
 };
-
-// Both operations commit atomically or neither does
-let effect = commit(big_transaction);
+run_blocking(commit::<_, _, ()>(audited), ())?;
 ```
 
-The composed transaction retries as a unit — if either sub-operation sees a conflict, the whole thing restarts from the beginning.
+If either part sees a conflict, the whole transaction restarts. If the withdrawal fails, the audit
+counter is not incremented either.
+
+Full example, including a waiter thread released by a deposit: [`crates/id_effect_fp/examples/085_stm_fail_retry.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/085_stm_fail_retry.rs) (`cargo run -p id_effect_fp --example 085_stm_fail_retry`).

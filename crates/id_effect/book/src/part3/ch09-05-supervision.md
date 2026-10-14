@@ -1,13 +1,13 @@
 # Supervision — Restart Policies and Scope
 
-Raw [`run_fork`](../appendix-a-api-reference.md) gives you a [`FiberHandle`](../appendix-a-api-reference.md) and full control. Long-lived servers usually need **policies**: when a child effect fails, should you **retry**, **back off**, **give up**, or **substitute a default**? Effect.ts encodes these ideas in **supervisors**. `id_effect` provides the same vocabulary wired to [`Scope`](./ch10-02-scopes-finalizers.md), [`CancellationToken`](./ch09-03-cancellation.md), and [`Schedule`](../ch11-01-schedule.md).
+Raw [`run_fork`](../appendix-a-api-reference.md) gives you a [`FiberHandle`](../appendix-a-api-reference.md) and full control. Long-lived servers usually need **policies**: when a child effect fails, should you **retry**, **back off**, **give up**, or **substitute a default**? Effect.ts encodes these ideas in **supervisors**. `id_effect` provides the same vocabulary wired to [`Scope`](./ch10-02-scopes-finalizers.md), [`CancellationToken`](./ch09-03-cancellation.md), and [`Schedule`](./ch11-01-schedule.md).
 
 ## Why not only `retry`?
 
-[`retry`](../ch11-03-retry-repeat.md) re-runs an `Effect<A, E, R>` until success or the schedule stops. Supervision adds:
+[`retry`](./ch11-03-retry-repeat.md) re-runs an `Effect<A, E, R>` until success or the schedule stops. Supervision adds:
 
 - A **stable shutdown channel** ([`CancellationToken`]) installed when a **child [`Scope`]** closes, so cooperative loops exit with [`Cause::Interrupt`](./ch08-02-exit.md) instead of spinning forever.
-- **Declarative policies** (`Terminate`, `Restart`, `RestartWithLimit`, `Escalate`, `Ignore`) that compose with **virtual time** ([`TestClock`](../ch15-02-test-clock.md)) for deterministic tests.
+- **Declarative policies** (`Terminate`, `Restart`, `RestartWithLimit`, `Escalate`, `Ignore`) that compose with **virtual time** ([`TestClock`](../part4/ch15-02-test-clock.md)) for deterministic tests.
 
 ## `Supervisor` and `Scope`
 
@@ -59,7 +59,7 @@ let body = supervised(
 // run `body` with your environment; close `parent` to cancel via token.
 ```
 
-For production delays, prefer a non-zero [`Schedule`] and a real [`Clock`](../ch11-04-clock-injection.md) (for example the Tokio bridge clock in server code).
+For production delays, prefer a non-zero [`Schedule`] and a real [`Clock`](./ch11-04-clock-injection.md) (for example the Tokio bridge clock in server code).
 
 ## Supervision layering
 
@@ -77,5 +77,5 @@ Pick the lowest layer that covers your failure domain: a flaky effect → layer 
 
 ## See also
 
-- [Phase F parity doc](../../../../../docs/effect-ts-parity/phases/phase-f-supervision.md) — epic breakdown and acceptance notes.
-- [`supervisor.rs`](../../../src/concurrency/supervisor.rs) — full API and unit tests.
+- [Phase F parity doc](https://github.com/Industrial/id_effect/blob/main/docs/effect-ts-parity/phases/phase-f-supervision.md) — epic breakdown and acceptance notes.
+- [`supervisor.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/concurrency/supervisor.rs) — full API and unit tests.

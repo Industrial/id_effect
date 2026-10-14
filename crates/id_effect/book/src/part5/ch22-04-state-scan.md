@@ -1,8 +1,8 @@
 # state_scan — FSM stepping
 
-[`state_scan`](../../src/streaming/state_scan.rs) folds state while emitting **only when the step returns `Some`**.
+[`state_scan`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/state_scan.rs) folds state while emitting **only when the step returns `Some`**.
 
-Contrast with [`Stream::scan`](../../src/streaming/stream.rs), which emits on every element:
+Contrast with [`Stream::scan`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs), which emits on every element:
 
 ```rust
 use id_effect::Stream;

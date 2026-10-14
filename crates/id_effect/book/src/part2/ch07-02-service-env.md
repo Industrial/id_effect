@@ -1,6 +1,6 @@
 # Accessing Services — `Needs` and `~Key`
 
-Application effects access services with [`Needs<K>`](../../src/capability/needs.rs) bounds, [`caps!`](../../src/capability/set.rs) in `R`, and `~Key` (or [`require!`](../../src/capability/require.rs)) inside `effect!`.
+Application effects access services with [`Needs<K>`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/needs.rs) bounds, [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) in `R`, and `~Key` (or [`require!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_macro/src/capability/require.rs)) inside `effect!`.
 
 ## Single service
 
@@ -55,4 +55,4 @@ Prefer `effect!` + `~Config` in application code. For small sync helpers outside
 | `Effect<_, _, R> where R: Needs<K>` | Library code that should not fix the env type |
 | `Env` at HTTP boundaries | Axum `State<Env>`, then `run_with_caps` |
 
-All styles run against the same [`Env`](../../src/capability/env.rs) built by [`run_with`](../../src/capability/run.rs) or [`build_env`](../../src/capability/run.rs).
+All styles run against the same [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) built by [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) or [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs).

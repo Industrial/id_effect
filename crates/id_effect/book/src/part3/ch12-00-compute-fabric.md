@@ -1,6 +1,6 @@
 # Compute Fabric
 
-Every effect in id_effect passes through **Compute Fabric** at the runtime boundary. You write lazy `Effect` descriptions and declare a [`ResourcePolicy`](../../src/compute/policy.rs); Fabric decides where, when, and how concurrently work runs.
+Every effect in id_effect passes through **Compute Fabric** at the runtime boundary. You write lazy `Effect` descriptions and declare a [`ResourcePolicy`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/policy.rs); Fabric decides where, when, and how concurrently work runs.
 
 ## Declarative policy
 
@@ -35,7 +35,7 @@ let policy = ResourcePolicy::unlimited_memory_cpu_spread(0.25);
 3. **Place** — fibers on `FiberPool`, collections via Rayon, I/O via Tokio
 4. **Rebalance** — throttle, shed, scale-out, or scale-in
 
-Each tick emits a [`ComputeEvent`](../../src/observability/tracing.rs) (`SupervisorTick`) for observability alongside [`FiberEvent`](../../src/observability/tracing.rs).
+Each tick emits a [`ComputeEvent`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/observability/tracing.rs) (`SupervisorTick`) for observability alongside [`FiberEvent`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/observability/tracing.rs).
 
 Example: memory at 61% with an 85% ceiling → headroom → admit many fibers. Memory at 86% → throttle admission.
 
@@ -50,16 +50,16 @@ let rt = ThreadSleepRuntime::with_fabric(fabric);
 // fibers spawned via rt use the shared pool + admission
 ```
 
-[`run_with`](../../src/capability/run.rs) installs a default fabric for the duration of each application run. [`run_blocking`](../../src/runtime/execute.rs) refreshes the thread-local [`AdaptiveContext`](../../src/compute/adaptive.rs) on every entry.
+[`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) installs a default fabric for the duration of each application run. [`run_blocking`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/execute.rs) refreshes the thread-local [`AdaptiveContext`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/adaptive.rs) on every entry.
 
 See example `120_compute_fabric_memory_cap.rs`.
 
 ## Adaptive parallelism
 
-[`AdaptiveContext`](../../src/compute/adaptive.rs) holds the current admission budget, Rayon thread count, and auto-parallel element threshold. Bulk dispatch via [`parallel_if_profitable`](../../src/compute/dispatch.rs) consults `should_parallelize_current(len)` instead of a fixed 1024 default when Fabric is installed.
+[`AdaptiveContext`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/adaptive.rs) holds the current admission budget, Rayon thread count, and auto-parallel element threshold. Bulk dispatch via [`parallel_if_profitable`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/dispatch.rs) consults `should_parallelize_current(len)` instead of a fixed 1024 default when Fabric is installed.
 
-- [`configure_rayon_threads`](../../src/compute/rayon_pool.rs) — supervisor-sized Rayon pool
-- [`CpuSpreadBucket`](../../src/compute/spread.rs) — token bucket for `MetricMode::Spread`
+- [`configure_rayon_threads`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/rayon_pool.rs) — supervisor-sized Rayon pool
+- [`CpuSpreadBucket`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/spread.rs) — token bucket for `MetricMode::Spread`
 - Example: `121_compute_fabric_cpu_spread.rs`
 
 See also [Implicit Parallelism](../part4/ch13-05-parallelism.md) for the full 0.4.0 API surface (`map` / `map_effect` + `*_serial`).
@@ -72,16 +72,16 @@ Example: `122_compute_fabric_effect_parallel.rs` (`Stream::map_effect` under adm
 
 ## Streams and collections
 
-- Element threshold and Rayon pool size follow [`AdaptiveContext`](../../src/compute/adaptive.rs)
-- [`Stream::map_effect`](../../src/streaming/stream.rs) caps concurrent effect mappers from the admission budget
+- Element threshold and Rayon pool size follow [`AdaptiveContext`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/adaptive.rs)
+- [`Stream::map_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) caps concurrent effect mappers from the admission budget
 - Pure chunk ops (`map`, `filter`, …) use the same Fabric snapshot via `parallel_if_profitable`
-- CPU spread mode caps per-worker share via [`CpuSpreadBucket`](../../src/compute/spread.rs)
+- CPU spread mode caps per-worker share via [`CpuSpreadBucket`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/spread.rs)
 
 ## Cluster
 
-When local Fabric saturates, `RebalanceStrategy::ScaleOut` builds a [`FabricJobSpec`](../../src/compute/governor.rs) via [`FabricGovernor::scale_out`](../../src/compute/governor.rs) (or `id_effect_node::placement::scale_out_placed`, which records a `target_node`). The labs crate `id_effect_jobs` (unpublished, see [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)) can convert one with `JobSpec::from_fabric` and enqueue it on a `FabricJobRunner`, which routes each job to its `target_node`; its example `labs/id_effect_jobs/examples/030_compute_fabric_cluster.rs` shows a two-node offload. Within the published crates, cross-node placement goes through `id_effect_node` (Part VII).
+When local Fabric saturates, `RebalanceStrategy::ScaleOut` builds a [`FabricJobSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/governor.rs) via [`FabricGovernor::scale_out`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/governor.rs) (or `id_effect_node::placement::scale_out_placed`, which records a `target_node`). The labs crate `id_effect_jobs` (unpublished, see [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)) can convert one with `JobSpec::from_fabric` and enqueue it on a `FabricJobRunner`, which routes each job to its `target_node`; its example `labs/id_effect_jobs/examples/030_compute_fabric_cluster.rs` shows a two-node offload. Within the published crates, cross-node placement goes through `id_effect_node` (Part VII).
 
-Cluster placement lives in `id_effect_node::placement` (moved out of core `compute` in 0.6). [`ClusterResourcePolicy`](../../../../id_effect_node/src/placement.rs) combines global and per-node caps with [`PlacementMode`](../../../../id_effect_node/src/placement.rs). All placement decisions flow through one pure entry point, [`place`](../../../../id_effect_node/src/placement.rs), fed by [`LoadReport`](../../../../id_effect_node/src/placement.rs) telemetry (adapted to `NodeCandidate`):
+Cluster placement lives in `id_effect_node::placement` (moved out of core `compute` in 0.6). [`ClusterResourcePolicy`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_node/src/placement.rs) combines global and per-node caps with [`PlacementMode`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_node/src/placement.rs). All placement decisions flow through one pure entry point, [`place`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_node/src/placement.rs), fed by [`LoadReport`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_node/src/placement.rs) telemetry (adapted to `NodeCandidate`):
 
 | `PlacementMode` | Chooses |
 |-----------------|---------|
@@ -94,8 +94,8 @@ As of 0.5.0 `LocalFirst` and `Spread` diverge — previously they scored identic
 
 ## Further reading
 
-- [ADR 0007](../../../../docs/adrs/0007-compute-fabric.md)
-- [ADR 0008](../../../../docs/adrs/0008-implicit-parallelism.md) — Fabric-only parallelism (0.4.0)
+- [ADR 0007](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0007-compute-fabric.md)
+- [ADR 0008](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0008-implicit-parallelism.md) — Fabric-only parallelism (0.4.0)
 - [Implicit Parallelism](../part4/ch13-05-parallelism.md)
 - [Concurrency](./ch09-00-concurrency.md)
 - [Scheduling](./ch11-00-scheduling.md) — temporal vs compute scheduling

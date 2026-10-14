@@ -627,4 +627,208 @@ mod tests {
   fn advisory_keys_differ_per_name() {
     assert_ne!(advisory_lock_keys("leader"), advisory_lock_keys("leader2"));
   }
+
+  // No database needed: an unparseable URL fails inside the worker before any I/O, so the
+  // connect error is reported through the ready channel deterministically.
+  #[cfg(feature = "pg")]
+  #[test]
+  fn pg_lease_connect_failure_is_unavailable() {
+    match PgAdvisoryLease::connect("not-a-postgres-url") {
+      Err(SingletonError::Unavailable(msg)) => assert!(msg.starts_with("connect:"), "{msg}"),
+      Err(other) => panic!("unexpected error: {other}"),
+      Ok(_) => panic!("connect to a bogus url must fail"),
+    }
+  }
+
+  // The lease bookkeeping (held map, ping-based liveness, error mapping) is exercised against a
+  // scripted worker that speaks the same `LeaseCmd` protocol; the SQL itself is covered by the
+  // `singleton_pg` integration test against a live database.
+  #[cfg(feature = "pg")]
+  mod pg_protocol {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[derive(Clone, Default)]
+    struct Script {
+      /// Keys another session already holds (`pg_try_advisory_lock` returns false).
+      contested: Vec<(i32, i32)>,
+      /// SQL error returned for every acquire.
+      acquire_err: Option<String>,
+      /// Drop response senders instead of answering.
+      drop_responses: bool,
+    }
+
+    struct Fake {
+      lease: PgAdvisoryLease,
+      session_alive: Arc<AtomicBool>,
+      unlocked: Arc<Mutex<Vec<(i32, i32)>>>,
+    }
+
+    fn fake(script: Script) -> Fake {
+      let (commands, rx) = flume::unbounded::<LeaseCmd>();
+      let session_alive = Arc::new(AtomicBool::new(true));
+      let unlocked = Arc::new(Mutex::new(Vec::new()));
+      let (alive, log) = (Arc::clone(&session_alive), Arc::clone(&unlocked));
+      std::thread::spawn(move || {
+        while let Ok(cmd) = rx.recv() {
+          if script.drop_responses {
+            continue;
+          }
+          match cmd {
+            LeaseCmd::Acquire { k1, k2, resp } => {
+              let outcome = match &script.acquire_err {
+                Some(e) => Err(e.clone()),
+                None => Ok(!script.contested.contains(&(k1, k2))),
+              };
+              let _ = resp.send(outcome);
+            }
+            LeaseCmd::Unlock { k1, k2, resp } => {
+              log.lock().unwrap().push((k1, k2));
+              let _ = resp.send(Ok(true));
+            }
+            LeaseCmd::Ping { resp } => {
+              let outcome = if alive.load(Ordering::SeqCst) {
+                Ok(())
+              } else {
+                Err("connection reset".to_string())
+              };
+              let _ = resp.send(outcome);
+            }
+          }
+        }
+      });
+      Fake {
+        lease: PgAdvisoryLease {
+          commands,
+          held: Mutex::new(HashMap::new()),
+        },
+        session_alive,
+        unlocked,
+      }
+    }
+
+    fn worker_gone() -> PgAdvisoryLease {
+      let (commands, rx) = flume::unbounded::<LeaseCmd>();
+      drop(rx);
+      PgAdvisoryLease {
+        commands,
+        held: Mutex::new(HashMap::from([("job".to_string(), "a".to_string())])),
+      }
+    }
+
+    #[test]
+    fn acquire_is_reentrant_and_exclusive_per_process() {
+      let f = fake(Script::default());
+      f.lease.try_acquire("job", "a", LONG).expect("acquire");
+      f.lease.try_acquire("job", "a", LONG).expect("re-acquire");
+      assert_eq!(
+        f.lease.try_acquire("job", "b", LONG),
+        Err(SingletonError::HeldBy("a".into()))
+      );
+      assert_eq!(f.lease.holder("job").as_deref(), Some("a"));
+      assert_eq!(f.lease.holder("other"), None);
+    }
+
+    #[test]
+    fn lock_held_by_another_session_is_refused() {
+      let f = fake(Script {
+        contested: vec![advisory_lock_keys("job")],
+        ..Script::default()
+      });
+      assert_eq!(
+        f.lease.try_acquire("job", "a", LONG),
+        Err(SingletonError::HeldBy("another session".into()))
+      );
+      assert_eq!(f.lease.holder("job"), None);
+      f.lease.try_acquire("free", "a", LONG).expect("other key");
+    }
+
+    #[test]
+    fn acquire_sql_error_is_unavailable() {
+      let f = fake(Script {
+        acquire_err: Some("permission denied".into()),
+        ..Script::default()
+      });
+      assert_eq!(
+        f.lease.try_acquire("job", "a", LONG),
+        Err(SingletonError::Unavailable("permission denied".into()))
+      );
+    }
+
+    #[test]
+    fn renew_tracks_session_liveness() {
+      let f = fake(Script::default());
+      assert_eq!(
+        f.lease.renew("job", "a", LONG),
+        Err(SingletonError::Unavailable("no lease".into()))
+      );
+      f.lease.try_acquire("job", "a", LONG).expect("acquire");
+      f.lease.renew("job", "a", LONG).expect("renew");
+      assert_eq!(
+        f.lease.renew("job", "b", LONG),
+        Err(SingletonError::HeldBy("a".into()))
+      );
+      f.session_alive.store(false, Ordering::SeqCst);
+      assert_eq!(
+        f.lease.renew("job", "a", LONG),
+        Err(SingletonError::Unavailable("connection reset".into()))
+      );
+      assert_eq!(f.lease.holder("job"), None, "a dead session holds nothing");
+    }
+
+    #[test]
+    fn release_unlocks_only_for_the_holder() {
+      let f = fake(Script::default());
+      assert_eq!(f.lease.release("job", "a"), Ok(()));
+      f.lease.try_acquire("job", "a", LONG).expect("acquire");
+      assert_eq!(
+        f.lease.release("job", "b"),
+        Err(SingletonError::HeldBy("a".into()))
+      );
+      assert!(f.unlocked.lock().unwrap().is_empty());
+      f.lease.release("job", "a").expect("release");
+      assert_eq!(*f.unlocked.lock().unwrap(), vec![advisory_lock_keys("job")]);
+      f.lease
+        .try_acquire("job", "b", LONG)
+        .expect("b after release");
+    }
+
+    #[test]
+    fn missing_worker_is_unavailable() {
+      let lease = worker_gone();
+      let gone = SingletonError::Unavailable("lease worker gone".into());
+      assert_eq!(lease.try_acquire("other", "a", LONG), Err(gone.clone()));
+      assert_eq!(lease.renew("job", "a", LONG), Err(gone));
+      assert_eq!(lease.holder("job"), None);
+    }
+
+    #[test]
+    fn dropped_response_is_unavailable() {
+      let f = fake(Script {
+        drop_responses: true,
+        ..Script::default()
+      });
+      let dropped = SingletonError::Unavailable("lease worker dropped response".into());
+      assert_eq!(f.lease.try_acquire("job", "a", LONG), Err(dropped.clone()));
+      f.lease
+        .held
+        .lock()
+        .unwrap()
+        .insert("job".into(), "a".into());
+      assert_eq!(f.lease.renew("job", "a", LONG), Err(dropped));
+      // Release still clears local state even if the unlock reply is lost.
+      assert_eq!(f.lease.release("job", "a"), Ok(()));
+      assert!(f.lease.held.lock().unwrap().is_empty());
+    }
+  }
+
+  #[cfg(feature = "pg")]
+  #[test]
+  fn pg_lease_from_pool_config_uses_its_url() {
+    let config = id_effect_sql::pg::PgPoolConfig::from_url("not-a-postgres-url");
+    assert!(matches!(
+      PgAdvisoryLease::from_pool_config(config),
+      Err(SingletonError::Unavailable(_))
+    ));
+  }
 }

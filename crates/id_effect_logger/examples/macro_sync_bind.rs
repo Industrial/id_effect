@@ -12,8 +12,8 @@ fn main() {
 
   let program: Effect<i32, EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
     let logger = *~EffectLogger;
-    ~logger.info::<caps!(EffectLogger)>("first step: log_info via ~logger");
-    ~logger.warn::<caps!(EffectLogger)>("second step: log_warn via ~logger");
+    ~logger.info("first step: log_info via ~logger");
+    ~logger.warn("second step: log_warn via ~logger");
     let n = ~succeed::<i32, EffectLoggerError, Env>(21);
     n + 1
   });

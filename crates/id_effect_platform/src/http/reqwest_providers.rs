@@ -1,4 +1,3 @@
-#![allow(clippy::new_ret_no_self)]
 //! Capability DI providers for [`reqwest::Client`] and connection pools.
 
 use std::sync::Arc;
@@ -13,14 +12,8 @@ use super::{Client, PooledClient, ReqwestClient, ReqwestPool};
 
 /// Default [`id_effect::ProviderSpec`] for [`reqwest::Client::new`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ReqwestClient)]
+#[provides(ReqwestClient, with = || ReqwestClient(Client::new()))]
 pub struct ReqwestClientLive;
-
-impl ReqwestClientLive {
-  fn new() -> ReqwestClient {
-    ReqwestClient(Client::new())
-  }
-}
 
 /// Register `client` as the [`ReqwestClient`] capability.
 #[inline]

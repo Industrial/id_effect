@@ -253,6 +253,45 @@ mod tests {
         .over(person, |n| n.to_uppercase());
       assert_eq!(updated.name, "ADA");
     }
+
+    #[test]
+    fn folds_single_focus() {
+      let person = Person {
+        name: "Ada".into(),
+        address: Address {
+          city: "London".into(),
+        },
+      };
+      assert_eq!(person_lens().as_traversal().to_vec(&person), vec!["Ada"]);
+    }
+  }
+
+  mod compose_traversal {
+    use super::*;
+    use crate::traversal::vector_each;
+
+    fn tags_lens() -> Lens<(u8, Vec<i32>), Vec<i32>> {
+      Lens::new(
+        |s: &(u8, Vec<i32>)| s.1.clone(),
+        |s: (u8, Vec<i32>), v| (s.0, v),
+      )
+    }
+
+    #[test]
+    fn modifies_every_inner_focus_and_keeps_the_rest() {
+      let each = tags_lens().compose_traversal(vector_each::<i32>());
+      assert_eq!(
+        each.over((7, vec![1, 2, 3]), |n| n * 10),
+        (7, vec![10, 20, 30])
+      );
+    }
+
+    #[test]
+    fn folds_every_inner_focus() {
+      let each = tags_lens().compose_traversal(vector_each::<i32>());
+      assert_eq!(each.to_vec(&(7, vec![4, 5])), vec![4, 5]);
+      assert!(each.to_vec(&(7, vec![])).is_empty());
+    }
   }
 
   mod identity_lens {

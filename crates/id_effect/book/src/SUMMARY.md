@@ -46,11 +46,11 @@
   - [Platform I/O (`id_effect_platform`)](./part2/ch07-06-platform-services.md)
   - [HTTP via reqwest (`id_effect_platform::http::reqwest`)](./part2/ch07-07-reqwest-http.md)
   - [Axum host (`id_effect_axum`)](./part2/ch07-08-axum-host.md)
-  - [Tower service (`id_effect_tower`)](./part2/ch07-09-tower-service.md)
+  - [Tower service (`id_effect_axum::service`)](./part2/ch07-09-tower-service.md)
   - [Configuration (`id_effect_config`)](./part2/ch07-10-config.md)
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
-  - [RPC boundaries (`id_effect_rpc`)](./part2/ch07-12-rpc-boundaries.md)
-  - [Durable workflow spike (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
+  - [RPC boundaries (`id_effect_rpc`, labs)](./part2/ch07-12-rpc-boundaries.md)
+  - [Durable workflow (`id_effect_workflow`, labs)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 
@@ -137,19 +137,19 @@
 
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
-- [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)
+- [Events and projections (`id_effect_events`, labs)](./part5/ch23-00-events-and-projections.md)
 
 # Part VI: Application Platform
 
 - [Platform introduction](./part6/ch26-00-platform-introduction.md)
 - [Observability and health](./part6/ch27-00-observability.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
-- [API boundaries (`id_effect_rpc`)](./part6/ch29-00-api-boundaries.md)
+- [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
 - [Application host](./part6/ch30-00-application.md)
-- [Async messaging and jobs](./part6/ch31-00-async-messaging.md)
+- [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
-- [AI and MCP (`id_effect_ai`)](./part6/ch35-00-ai.md)
+- [AI and MCP (`id_effect_ai`, labs)](./part6/ch35-00-ai.md)
 
 # Part VII: Process Mesh
 
@@ -157,6 +157,15 @@
 - [Processes and supervision](./part7/ch37-00-processes-supervision.md)
 - [Distribution and membership](./part7/ch38-00-distribution.md)
 - [Cluster groups and takeover](./part7/ch39-00-cluster-supervision.md)
+
+# Cookbook
+
+- [Cookbook](./cookbook/ch40-00-cookbook.md)
+  - [Retry with TestClock](./cookbook/ch40-01-retry-test-clock.md)
+  - [Bounded subprocess pool](./cookbook/ch40-02-bounded-subprocess-pool.md)
+  - [A run_blocking CLI](./cookbook/ch40-03-cli-run-main.md)
+  - [Supervised daemon skeleton](./cookbook/ch40-04-supervised-daemon.md)
+  - [Streaming ETL with bounded memory](./cookbook/ch40-05-streaming-etl.md)
 
 # Appendices
 

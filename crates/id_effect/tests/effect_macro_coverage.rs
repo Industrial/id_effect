@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self, clippy::type_complexity)]
+#![allow(dead_code, clippy::type_complexity)]
 
 //! Compile-time coverage for `effect!` / implicit `|r|` / `~Key` macro paths.
 
@@ -12,31 +12,16 @@ struct Beta(u32);
 struct Gamma(String);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Alpha)]
+#[provides(Alpha, with = || Alpha(1))]
 struct AlphaLive;
-impl AlphaLive {
-  fn new() -> Alpha {
-    Alpha(1)
-  }
-}
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Beta)]
+#[provides(Beta, with = || Beta(2))]
 struct BetaLive;
-impl BetaLive {
-  fn new() -> Beta {
-    Beta(2)
-  }
-}
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Gamma)]
+#[provides(Gamma, with = || Gamma("g".into()))]
 struct GammaLive;
-impl GammaLive {
-  fn new() -> Gamma {
-    Gamma("g".into())
-  }
-}
 
 #[test]
 fn effect_macro_paths_integration() {

@@ -9,15 +9,8 @@ use tower::ServiceExt;
 struct Counter(u32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Counter)]
+#[provides(Counter, with = || Counter(7))]
 struct CounterLive;
-
-impl CounterLive {
-  #[allow(clippy::new_ret_no_self)]
-  fn new() -> Counter {
-    Counter(7)
-  }
-}
 
 fn handler(_env: &mut Env) -> Effect<String, (), Env> {
   effect!(|r: &mut Env| { format!("count={}", Needs::<Counter>::need(r).0) })

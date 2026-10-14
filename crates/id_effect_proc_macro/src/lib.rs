@@ -45,13 +45,37 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
 }
 
-/// Generates a capability key struct and [`id_effect::CapabilityKey`] impl for a trait or struct.
+/// **Deprecated no-op** (since 0.3; removed in 0.7): returns the item unchanged.
+///
+/// Capability keys are no longer generated — use the service type itself in `caps!(Service)`,
+/// `Needs::<Service>` and `#[provides(Service)]`. Delete the attribute. (Attribute macros
+/// cannot carry `#[deprecated]`, so there is no compiler warning.)
 #[proc_macro_attribute]
 pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
   capability_attr::expand(attr, item)
 }
 
 /// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(Capability)]`.
+///
+/// The service value comes from, in order of precedence:
+///
+/// - `#[provides(Service, with = <constructor>)]` — `|| expr`, `|deps: &Env| expr` (reads
+///   already-built capabilities), or a path such as `Self::build` called with no arguments.
+///   This is the recommended form: no `fn new() -> Service` (which trips
+///   `clippy::new_ret_no_self`) is needed.
+/// - `Self::default()` when the struct derives `Default` (the provider is its own service).
+/// - `Self::new()` otherwise.
+///
+/// Add `#[named("variant")]` for a named variant of the same capability.
+///
+/// ```ignore
+/// #[derive(Clone)]
+/// struct Counter(u32);
+///
+/// #[derive(ProviderSpecDerive)]
+/// #[provides(Counter, with = || Counter(42))]
+/// struct CounterLive;
+/// ```
 #[proc_macro_derive(ProviderSpec, attributes(provides, named))]
 pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
   provider_spec::derive(input)

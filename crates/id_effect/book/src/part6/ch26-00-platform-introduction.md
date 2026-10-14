@@ -14,7 +14,7 @@ The [`id_effect_platform`](https://github.com/Industrial/id_effect/tree/main/cra
 | `fs` | `FileSystem` | Read/write/append/exists/metadata |
 | `command` (was `process`) | `ProcessRuntime` | Spawn, wait, kill OS child processes |
 | `uri` | — | Portable URI parsing |
-| `auth` | `SessionStore`, `OAuthClient` | Session and OAuth capability traits |
+| `auth` (feature `auth`) | `SessionStore`, `OAuthClient` | Session and OAuth capability traits; `MemoryOAuthClient` needs feature `test-util` |
 
 Capabilities are registered with `provide_reqwest_http_client()`, `LiveFileSystemProvider`, and `TokioProcessRuntimeProvider`.
 
@@ -26,7 +26,7 @@ let env = build_env([provide_reqwest_http_client()]).expect("providers");
 let resp = run_async(execute(HttpRequest::get("https://example.com")), env).await?;
 ```
 
-Prefer platform HTTP over raw `reqwest::Client` in application `R` types. See [Reqwest migration](../../../docs/platform/REQWEST_MIGRATION.md).
+Prefer platform HTTP over raw `reqwest::Client` in application `R` types. See [Reqwest migration](https://github.com/Industrial/id_effect/blob/main/docs/platform/REQWEST_MIGRATION.md).
 
 ## Portfolio map
 
@@ -34,10 +34,11 @@ Prefer platform HTTP over raw `reqwest::Client` in application `R` types. See [R
 |---------|---------|-------|
 | ch27 | Observability | `id_effect_opentelemetry` |
 | ch28 | Data | `id_effect_sql` |
-| ch29 | API boundaries | `id_effect_rpc` |
-| ch30 | Application host | `id_effect_axum` + `id_effect_platform::auth` |
+| ch29 | API boundaries | `id_effect_rpc` (labs, unpublished) |
+| ch30 | Application host | `id_effect_axum` + `id_effect_platform::auth` (feature `auth`) |
+| ch31, ch32, ch35 | Messaging, workflow, AI | `id_effect_jobs`, `id_effect_events`, `id_effect_workflow`, `id_effect_ai` (labs, unpublished) |
 
-Mission index: [docs/platform/ROADMAP.md](../../../docs/platform/ROADMAP.md).
+Mission index: [docs/platform/ROADMAP.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/ROADMAP.md).
 
 ## Prerequisites
 

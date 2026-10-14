@@ -23,7 +23,7 @@ let handle = SupervisorSpec::new(Strategy::OneForOne)
 
 Restart intensity is measured on the injected `Clock` — use `TestClock` for
 deterministic restart-storm tests. The sliding-window accounting is the shared
-[`concurrency::RestartIntensity`](../../src/concurrency/supervisor.rs) primitive
+[`concurrency::RestartIntensity`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/concurrency/supervisor.rs) primitive
 (a max number of restarts within a rolling period), distinct from
 `RestartWithLimit`'s total-count cap. The OTP supervisor delegates to it so the
 local and clustered supervisors share one intensity definition.

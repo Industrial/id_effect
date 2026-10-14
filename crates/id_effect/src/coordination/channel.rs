@@ -378,49 +378,24 @@ where
               if let Some(v) = drain_pending(&pending, &post) {
                 return Ok(Some(v));
               }
-              let wire = {
+              let chunk = {
                 let mut guard = stream.lock().await;
-                loop {
-                  match guard.poll_next_chunk(env).await {
-                    Ok(None) => break None,
-                    Ok(Some(chunk)) => {
-                      let mut v = chunk.into_vec();
-                      if v.is_empty() {
-                        continue;
-                      }
-                      if v.len() == 1 {
-                        break Some(v.pop().expect("len checked"));
-                      }
-                      let first = v.remove(0);
-                      let mut g = pending.lock().expect("pending mutex poisoned");
-                      for x in v {
-                        g.push_back(x);
-                      }
-                      break Some(first);
-                    }
-                    Err(e) => return Err(Or::Right(e)),
-                  }
+                match guard.poll_next_chunk(env).await {
+                  Ok(None) => return Ok(None),
+                  Ok(Some(chunk)) => chunk.into_vec(),
+                  Err(e) => return Err(Or::Right(e)),
                 }
               };
-              let Some(wire) = wire else {
-                return Ok(None);
-              };
-              let mut buf: Vec<OutElem> = if let Some(f) = flat.as_ref() {
-                f(wire)
-              } else {
-                vec![wire]
-              };
-              if buf.is_empty() {
-                continue;
-              }
-              let first = buf.remove(0);
-              if !buf.is_empty() {
-                let mut g = pending.lock().expect("channel pending mutex poisoned");
-                for x in buf {
-                  g.push_back(x);
+              // Expand every wire element of the chunk before buffering, so elements after the
+              // first still go through `flat_map_out` (only `post_read` runs at drain time).
+              let mut g = pending.lock().expect("channel pending mutex poisoned");
+              for wire in chunk {
+                match flat.as_ref() {
+                  Some(f) => g.extend(f(wire)),
+                  None => g.push_back(wire),
                 }
               }
-              return Ok(Some(post(first)));
+              drop(g);
             }
           }
         }
@@ -1161,5 +1136,149 @@ mod tests {
     block_on_effect(ch.write(())).expect("write noop");
     // Stream still readable
     assert_eq!(block_on_effect(ch.read()).expect("r"), Some(1));
+  }
+
+  // ── disconnect / end of source ───────────────────────────────────────────
+
+  #[test]
+  fn channel_read_after_queue_shutdown_drains_then_ends() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q.clone(), |x| x);
+    block_on_effect(ch.write(1)).expect("w");
+    run_blocking(q.shutdown(), ()).expect("shutdown");
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(1));
+    assert_eq!(block_on_effect(ch.read()).expect("end"), None);
+  }
+
+  #[test]
+  fn channel_from_stream_ends_with_none() {
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(Stream::from_iterable(Vec::<i32>::new()));
+    assert_eq!(block_on_effect(ch.read()).expect("end"), None);
+  }
+
+  #[test]
+  fn channel_from_stream_buffers_multi_element_chunks() {
+    let inner = Stream::<i32, (), ()>::from_effect(succeed(vec![1, 2, 3]));
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
+    let got: Vec<_> = (0..4)
+      .map(|_| block_on_effect(ch.read()).expect("r"))
+      .collect();
+    assert_eq!(got, vec![Some(1), Some(2), Some(3), None]);
+  }
+
+  // ── chained / empty flat_map_out ─────────────────────────────────────────
+
+  #[test]
+  fn chained_flat_map_out_composes_on_queue_channels() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x)
+      .flat_map_out(|x| vec![x, x + 1])
+      .flat_map_out(|x| vec![x * 10]);
+    block_on_effect(ch.write(1)).expect("w");
+    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(10));
+    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(20));
+  }
+
+  #[test]
+  fn chained_flat_map_out_on_fold_skips_empty_expansions() {
+    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x))
+      .flat_map_out(|x| vec![x])
+      .flat_map_out(|x| if x % 2 == 1 { vec![] } else { vec![x] });
+    block_on_effect(ch.write(1)).expect("w1"); // snapshot 1 — dropped
+    block_on_effect(ch.write(1)).expect("w2"); // snapshot 2 — kept
+    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(2));
+  }
+
+  #[test]
+  fn chained_flat_map_out_on_stream_skips_empty_expansions() {
+    let ch = Channel::<i32, (), (), (), ()>::from_stream(Stream::from_iterable(vec![1_i32, 2, 3]))
+      .flat_map_out(|x| vec![x])
+      .flat_map_out(|x| if x == 2 { vec![] } else { vec![x, -x] });
+    let got: Vec<_> = (0..5)
+      .map(|_| block_on_effect(ch.read()).expect("r"))
+      .collect();
+    assert_eq!(got, vec![Some(1), Some(-1), Some(3), Some(-3), None]);
+  }
+
+  // ── fold channels ────────────────────────────────────────────────────────
+
+  #[test]
+  fn consume_stream_stops_when_interrupted() {
+    let token = crate::runtime::CancellationToken::new();
+    token.cancel();
+    let ch = Channel::<i32, i32, (), (), crate::runtime::CancellationToken>::from_fold(
+      5,
+      Arc::new(|acc, x| acc + x),
+    );
+    let source =
+      Stream::<i32, (), crate::runtime::CancellationToken>::from_effect(succeed(vec![1, 2, 3]));
+    let total = run_blocking(ch.consume_stream(source), token).expect("consume");
+    assert_eq!(total, 5, "a cancelled env drains nothing");
+  }
+
+  #[test]
+  fn consume_stream_propagates_upstream_failure() {
+    let ch = Channel::<i32, i32, (), &'static str, ()>::from_fold(0, Arc::new(|acc, x| acc + x));
+    let bad = Stream::<i32, &'static str, ()>::new(|_env| box_future(async move { Err("boom") }));
+    assert_eq!(block_on_effect(ch.consume_stream(bad)), Err("boom"));
+  }
+
+  #[test]
+  fn to_sink_propagates_upstream_failure() {
+    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
+    let ch = Channel::<i32, i32, (), QueueError, ()>::from_queue_and_map(q, |x| x);
+    let bad = Stream::<i32, QueueError, ()>::new(|_env| {
+      box_future(async move { Err(QueueError::Disconnected) })
+    });
+    assert_eq!(
+      block_on_effect(ch.to_sink().run(bad)),
+      Err(QueueError::Disconnected)
+    );
+  }
+
+  // ── unsupported shapes panic with a clear message ────────────────────────
+
+  fn fold_channel() -> Channel<i32, i32, (), (), ()> {
+    Channel::from_fold(0, Arc::new(|acc, x| acc + x))
+  }
+
+  fn queue_channel() -> Channel<i32, i32, (), (), ()> {
+    Channel::from_queue_and_map(run_blocking(Queue::unbounded(), ()).expect("q"), |x| x)
+  }
+
+  #[test]
+  #[should_panic(expected = "map_in is only supported on queue-backed channels")]
+  fn map_in_on_fold_channel_panics() {
+    let _ = fold_channel().map_in(|x: i32| x);
+  }
+
+  #[test]
+  #[should_panic(expected = "requires a queue-backed left channel")]
+  fn pipe_with_fold_left_panics() {
+    let _ = fold_channel().pipe(queue_channel());
+  }
+
+  #[test]
+  #[should_panic(expected = "requires a queue-backed right channel")]
+  fn pipe_with_fold_right_panics() {
+    let _ = queue_channel().pipe(fold_channel());
+  }
+
+  #[test]
+  #[should_panic(expected = "to_sink requires a queue-backed channel")]
+  fn to_sink_on_fold_channel_panics() {
+    let _ = fold_channel().to_sink();
+  }
+
+  #[test]
+  #[should_panic(expected = "fold_state requires a fold")]
+  fn fold_state_on_queue_channel_panics() {
+    let _ = block_on_effect(queue_channel().fold_state());
+  }
+
+  #[test]
+  #[should_panic(expected = "sink_accum_inner requires a fold")]
+  fn consume_stream_on_queue_channel_panics() {
+    let _ = queue_channel().consume_stream(Stream::from_iterable(vec![1]));
   }
 }

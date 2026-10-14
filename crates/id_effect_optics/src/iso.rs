@@ -83,4 +83,20 @@ mod tests {
     assert_eq!(lens.get(&5), 5);
     assert_eq!(lens.set(5, 9), 9);
   }
+
+  #[test]
+  fn compose_chains_both_directions() {
+    let to_u64 = Iso::new(|n: i32| n as u64, |n: u64| n as i32);
+    let to_string = Iso::new(|n: u64| n.to_string(), |s: String| s.parse().unwrap());
+    let iso = to_u64.compose(to_string);
+    assert_eq!(iso.to(42), "42");
+    assert_eq!(iso.from("17".into()), 17);
+  }
+
+  #[test]
+  fn identity_iso_is_a_no_op() {
+    let iso = identity_iso::<String>();
+    assert_eq!(iso.to("a".into()), "a");
+    assert_eq!(iso.from("b".into()), "b");
+  }
 }

@@ -1,77 +1,80 @@
 # TRef — Transactional References
 
-`TRef<T>` is the fundamental mutable cell in id_effect's STM system. It wraps a value that can be read and written inside transactions.
+`TRef<T>` is the fundamental mutable cell in `id_effect_fp`'s STM. It holds a value that
+transactions read and write.
 
 ## Creating a TRef
 
-```rust
-use id_effect::TRef;
+`TRef::make(value)` is itself a transaction (`Stm<TRef<T>, ()>`). Create long-lived cells once by
+committing it, then share the handle:
 
-let counter: TRef<i32> = TRef::new(0);
-let balance: TRef<f64> = TRef::new(1000.0);
+```rust,ignore
+use id_effect::run_blocking;
+use id_effect_fp::{TRef, commit};
+
+let counter: TRef<i32> = run_blocking(commit(TRef::make(0_i32)), ()).expect("cell");
+let total: TRef<i32> = run_blocking(commit(TRef::make(0_i32)), ()).expect("cell");
 ```
 
-`TRef::new(value)` creates a transactional reference with an initial value. TRefs are typically created once (at startup or when initialising shared state) and then shared across fibers via `Arc`.
+Creating a cell *inside* a larger transaction (`TRef::make(0).flat_map(|cell| …)`) also works, but
+the cell is then local to that transaction: each restart creates a fresh one.
 
 ## Transactional Operations
 
-All TRef operations return `Stm<_>` — transactional descriptions, not effects. They only work inside `stm!` (or when run through `commit`/`atomically`):
+Every `TRef` operation returns an `Stm` (a description, not an effect). Nothing happens until it
+is committed:
 
-```rust
-use id_effect_fp::{TRef, stm};
+| Operation | Type | Meaning |
+|-----------|------|---------|
+| `cell.read_stm()` | `Stm<T, E>` | read (repeated reads in one transaction see the same snapshot) |
+| `cell.write_stm(v)` | `Stm<(), E>` | write, applied at commit |
+| `cell.update_stm(f)` | `Stm<(), E>` | read, apply `f: Fn(T) -> T`, write |
+| `cell.modify_stm(f)` | `Stm<B, E>` | `f: Fn(T) -> (B, T)`: write the new state, return `B` |
 
-let counter = TRef::new(0);
+The error type `E` is chosen by the surrounding transaction. When a `TRef` operation runs on its
+own, name it with a turbofish (`read_stm::<()>()`).
 
-// Read inside a transaction
-let read_op: Stm<i32> = counter.read_stm();
+## Composing operations
 
-// Write inside a transaction
-let write_op: Stm<()> = counter.write_stm(42);
+Sequence operations with `flat_map`; the whole chain commits atomically:
 
-// Modify (read-write atomically)
-let modify_op: Stm<()> = counter.modify_stm(|n| n + 1);
-```
+```rust,ignore
+/// Increment `counter` and add its old value to `total`, atomically.
+fn bump(counter: &TRef<i32>, total: &TRef<i32>) -> Stm<(), ()> {
+  let (counter, total) = (counter.clone(), total.clone());
+  counter.read_stm().flat_map(move |count| {
+    let (counter, total) = (counter.clone(), total.clone());
+    total.read_stm().flat_map(move |sum| {
+      let total = total.clone();
+      counter.write_stm(count + 1).flat_map(move |()| total.write_stm(sum + count))
+    })
+  })
+}
 
-These are descriptions. Nothing happens until they're committed.
-
-## Running Inside stm!
-
-The `stm!` macro provides do-notation for composing `Stm` operations, exactly like `effect!` does for `Effect`:
-
-```rust
-use id_effect_fp::{TRef, stm};
-
-let counter = TRef::new(0_i32);
-let total   = TRef::new(0_i32);
-
-let transaction: Stm<()> = stm! {
-    let count = ~ counter.read_stm();
-    let sum   = ~ total.read_stm();
-    ~ counter.write_stm(count + 1);
-    ~ total.write_stm(sum + count);
-    ()
-};
+// modify_stm returns something computed from the old value (here: the previous count).
+let previous = run_blocking(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10))), ());
 ```
 
 ## Sharing TRefs
 
-TRefs are `Clone + Send + Sync`. Wrap in `Arc` to share across fibers:
+`TRef` is `Clone + Send + Sync`, and a clone is another handle to the same cell. Clone it into
+each thread or fiber; no `Arc<Mutex<_>>` is needed:
 
-```rust
-use std::sync::Arc;
-
-let shared: Arc<TRef<i32>> = Arc::new(TRef::new(0));
-
-// Clone for each fiber
-let clone1 = Arc::clone(&shared);
-let clone2 = Arc::clone(&shared);
-
-fiber_all(vec![
-    increment_n_times(clone1, 1000),
-    increment_n_times(clone2, 1000),
-])
-// Result: counter = 2000 (atomically, without locks)
+```rust,ignore
+let hits = run_blocking(commit(TRef::make(0_u32)), ()).expect("cell");
+let handles: Vec<_> = (0..2).map(|_| {
+  let hits = hits.clone();
+  std::thread::spawn(move || {
+    for _ in 0..1_000 {
+      run_blocking(commit(hits.update_stm::<(), _>(|n| n + 1)), ()).expect("update");
+    }
+  })
+}).collect();
+for h in handles { h.join().expect("join"); }
+assert_eq!(run_blocking(commit(hits.read_stm::<()>()), ()), Ok(2_000));
 ```
+
+Full example: [`crates/id_effect_fp/examples/084_stm_tref_compose.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/084_stm_tref_compose.rs) (`cargo run -p id_effect_fp --example 084_stm_tref_compose`); the minimal read/write version is `077_stm_tref`.
 
 ## TRef vs. Mutex<T>
 
@@ -79,8 +82,7 @@ fiber_all(vec![
 |----------|------|-------|
 | Composable across updates | ✓ | ✗ |
 | Deadlock-free | ✓ | ✗ |
-| Blocking read | ✗ never | ✓ blocks writers |
-| Works with I/O | ✗ | ✓ |
-| Overhead | retry cost | lock/unlock cost |
+| Works with I/O inside | ✗ | ✓ |
+| Overhead | restart cost under contention; commits serialise on one global lock | lock/unlock cost |
 
 Use `TRef` for short, composable state mutations. Use `Mutex` when you need to hold a lock across I/O (though ideally you redesign to avoid that).

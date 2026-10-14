@@ -423,6 +423,40 @@ where
       .flat_map(move |a| h(a).map_error(Or::Right))
   }
 
+  /// Lift an effect that does not fail into **any** error type `E2`.
+  ///
+  /// Available when `E` is [`Infallible`] / [`Never`] or `()` (see [`InfallibleError`]). Replaces
+  /// `.map_error(|()| -> MyError { unreachable!() })` at call sites that compose an infallible
+  /// service with a fallible program.
+  ///
+  /// For `Infallible` / `Never` the conversion is a no-op proof. A `()` error carries no
+  /// information, so it is treated as "declared infallible": if such an effect does fail anyway,
+  /// it panics as a defect, naming the `widen_error` call site.
+  ///
+  /// ```rust
+  /// use id_effect::{Effect, Never, run_blocking, succeed};
+  ///
+  /// #[derive(Debug, PartialEq)]
+  /// enum AppError { NotFound }
+  ///
+  /// let greeting: Effect<&str, Never, ()> = succeed("hello");
+  /// let unit_err: Effect<u8, (), ()> = succeed(1);
+  ///
+  /// let a: Effect<&str, AppError, ()> = greeting.widen_error();
+  /// assert_eq!(run_blocking(a, ()), Ok("hello"));
+  /// assert_eq!(run_blocking(unit_err.widen_error::<AppError>(), ()), Ok(1));
+  /// ```
+  #[inline]
+  #[track_caller]
+  pub fn widen_error<E2>(self) -> Effect<A, E2, R>
+  where
+    E: InfallibleError,
+    E2: 'static,
+  {
+    let at = core::panic::Location::caller();
+    self.map_error(move |e| e.absurd(at))
+  }
+
   // ── Environment Operations ────────────────────────────────────────────
 
   /// **MTL `MonadReader.local`** — run this effect with a *modified* environment.
@@ -536,6 +570,31 @@ where
         }
       })
     })
+  }
+}
+
+impl<A, E> Effect<A, E, ()>
+where
+  A: 'static,
+  E: 'static,
+{
+  /// Run an environment-free effect inside **any** environment `R2` (the environment is ignored).
+  ///
+  /// Use it to compose `Effect<_, _, ()>` steps (for example `EffectLogger` calls) with
+  /// combinators such as [`Effect::flat_map`] on an effect that needs `R2`. Inside `effect!`
+  /// no lift is needed: `~step` binds `()`-environment effects in any environment.
+  ///
+  /// ```rust
+  /// use id_effect::{Effect, Env, run_blocking, succeed};
+  ///
+  /// let pure_step: Effect<u8, (), ()> = succeed(1);
+  /// let needs_env: Effect<u8, (), Env> = succeed(41);
+  /// let program = needs_env.flat_map(|n| pure_step.into_env().map(move |m| n + m));
+  /// assert_eq!(run_blocking(program, Env::new()), Ok(42));
+  /// ```
+  #[inline]
+  pub fn into_env<R2: 'static>(self) -> Effect<A, E, R2> {
+    self.zoom_env(|_: &mut R2| ())
   }
 }
 
@@ -689,6 +748,43 @@ pub fn unwrap_infallible<A>(r: Result<A, Infallible>) -> A {
   match r {
     Ok(a) => a,
     Err(e) => match e {},
+  }
+}
+
+mod sealed {
+  pub trait Sealed {}
+  impl Sealed for core::convert::Infallible {}
+  impl Sealed for () {}
+}
+
+/// Error types that mean "this effect does not fail" — the bound of [`Effect::widen_error`].
+///
+/// Implemented for [`Infallible`] (= [`Never`]) and `()`. Sealed: the set is closed so
+/// `widen_error` never hides a real error type.
+#[diagnostic::on_unimplemented(
+  message = "`{Self}` is a real error type; `widen_error` only lifts `Never`/`Infallible` or `()` errors",
+  label = "this effect can fail with `{Self}`",
+  note = "convert the error explicitly with `.map_error(Into::into)` or `.map_error(|e| ...)`"
+)]
+pub trait InfallibleError: sealed::Sealed + 'static {
+  /// Eliminate the (impossible) error into any type; `at` names the `widen_error` call site.
+  fn absurd<T>(self, at: &'static core::panic::Location<'static>) -> T;
+}
+
+impl InfallibleError for Infallible {
+  #[inline]
+  fn absurd<T>(self, _at: &'static core::panic::Location<'static>) -> T {
+    match self {}
+  }
+}
+
+impl InfallibleError for () {
+  #[cold]
+  fn absurd<T>(self, at: &'static core::panic::Location<'static>) -> T {
+    panic!(
+      "effect lifted with `widen_error` at {at} failed with `()`; \
+       a `()` error is treated as \"declared infallible\" — use `map_error` to handle it"
+    )
   }
 }
 
@@ -1396,6 +1492,48 @@ mod tests {
     fn unwrap_infallible_extracts_ok_value() {
       let r: Result<i32, Infallible> = Ok(42);
       assert_eq!(unwrap_infallible(r), 42);
+    }
+  }
+
+  mod widen_error_and_into_env {
+    use super::*;
+
+    #[derive(Debug, PartialEq)]
+    enum AppError {
+      #[allow(dead_code)]
+      Boom,
+    }
+
+    #[test]
+    fn widen_error_lifts_never_into_any_error() {
+      let eff: Effect<i32, Never, ()> = succeed(7);
+      let lifted: Effect<i32, AppError, ()> = eff.widen_error();
+      assert_eq!(run(lifted, ()), Ok(7));
+    }
+
+    #[test]
+    fn widen_error_lifts_unit_error_on_success() {
+      let eff: Effect<&str, (), ()> = succeed("ok");
+      assert_eq!(run(eff.widen_error::<AppError>(), ()), Ok("ok"));
+    }
+
+    #[test]
+    fn widen_error_unit_failure_panics_with_call_site() {
+      let eff: Effect<i32, (), ()> = fail(());
+      let lifted = eff.widen_error::<AppError>();
+      let line = line!() - 1;
+      let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run(lifted, ())))
+        .expect_err("a failing `()` effect must panic");
+      let msg = panic.downcast_ref::<String>().cloned().unwrap_or_default();
+      assert!(msg.contains(&format!("{}:{line}", file!())), "{msg}");
+      assert!(msg.contains("widen_error"), "{msg}");
+    }
+
+    #[test]
+    fn into_env_runs_unit_env_effect_in_any_env() {
+      let step: Effect<i32, (), ()> = succeed(1);
+      let wide: Effect<i32, (), String> = step.into_env();
+      assert_eq!(run(wide, String::from("ignored")), Ok(1));
     }
   }
 }

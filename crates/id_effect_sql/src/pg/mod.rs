@@ -4,7 +4,7 @@
 //! Formerly the `id_effect_sql_pg` crate (merged in 0.6, ADR 0010). See
 //! `docs/platform/adrs/adr-sql-driver-choice.md`.
 
-#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
+#![allow(clippy::unused_unit)]
 
 mod client;
 mod config;

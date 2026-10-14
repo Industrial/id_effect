@@ -109,6 +109,9 @@ pub struct EffectExecutorBuilder {
   idle_timeout: Duration,
   drop_policy: DropPolicy,
   saturation: SaturationPolicy,
+  /// Test hook: receives a worker's thread id once it has retired.
+  #[cfg(test)]
+  retired: Option<std::sync::mpsc::Sender<std::thread::ThreadId>>,
 }
 
 impl Default for EffectExecutorBuilder {
@@ -119,6 +122,8 @@ impl Default for EffectExecutorBuilder {
       idle_timeout: Duration::from_secs(10),
       drop_policy: DropPolicy::RunToCompletion,
       saturation: SaturationPolicy::Wait,
+      #[cfg(test)]
+      retired: None,
     }
   }
 }
@@ -156,6 +161,12 @@ impl EffectExecutorBuilder {
   #[must_use]
   pub fn saturation(mut self, p: SaturationPolicy) -> Self {
     self.saturation = p;
+    self
+  }
+
+  #[cfg(test)]
+  fn on_retire(mut self, tx: std::sync::mpsc::Sender<std::thread::ThreadId>) -> Self {
+    self.retired = Some(tx);
     self
   }
 
@@ -367,6 +378,9 @@ impl EffectExecutor {
           }
         })
       }));
+      // Admission is released once the effect has really finished — and before the caller can
+      // observe the result, so a follow-up request is never rejected by this one's permit.
+      drop(permit);
       match outcome {
         Ok(Some(out)) => {
           let _ = tx.send(Ok(out));
@@ -376,8 +390,6 @@ impl EffectExecutor {
           let _ = tx.send(Err(payload));
         }
       }
-      // Admission is released only when the effect has really finished.
-      drop(permit);
     }));
     match rx.await {
       Ok(Ok(out)) => out,
@@ -464,12 +476,21 @@ fn retire(shared: &Shared) {
 }
 
 fn worker(shared: Arc<Shared>, first: Job) {
+  worker_loop(&shared, first);
+  // `worker_loop` has already removed this thread from the pool's count.
+  #[cfg(test)]
+  if let Some(tx) = &shared.config.retired {
+    let _ = tx.send(std::thread::current().id());
+  }
+}
+
+fn worker_loop(shared: &Shared, first: Job) {
   let rt = match tokio::runtime::Builder::new_current_thread()
     .enable_all()
     .build()
   {
     Ok(rt) => rt,
-    Err(_) => return retire(&shared), // `first` is dropped; its caller sees a stopped worker
+    Err(_) => return retire(shared), // `first` is dropped; its caller sees a stopped worker
   };
   let mut job = first;
   loop {
@@ -495,7 +516,7 @@ fn worker(shared: Arc<Shared>, first: Job) {
         let idle_timeout = shared.config.idle_timeout;
         match rt.block_on(async { tokio::time::timeout(idle_timeout, rx.recv()).await }) {
           Ok(Some(next)) => next,
-          Ok(None) => return retire(&shared), // executor dropped
+          Ok(None) => return retire(shared), // executor dropped
           Err(_) => {
             let mut st = shared.lock();
             if let Some(pos) = st.idle.iter().position(|(i, _)| *i == id) {
@@ -507,7 +528,7 @@ fn worker(shared: Arc<Shared>, first: Job) {
             // A dispatcher claimed this worker just as it timed out: take that job.
             match rt.block_on(rx.recv()) {
               Some(next) => next,
-              None => return retire(&shared),
+              None => return retire(shared),
             }
           }
         }
@@ -743,23 +764,67 @@ mod tests {
     assert_eq!(waiting.await.unwrap(), Ok(Ok(2)));
   }
 
+  /// Thread id of the worker that built the effect.
+  async fn run_on_thread(exec: &EffectExecutor) -> std::thread::ThreadId {
+    exec
+      .run((), |_: &mut ()| {
+        succeed::<_, (), _>(std::thread::current().id())
+      })
+      .await
+      .unwrap()
+  }
+
   #[tokio::test(flavor = "current_thread")]
-  async fn threads_are_reused_and_retire_when_idle() {
+  async fn sequential_requests_reuse_the_cached_thread() {
+    // One thread, effectively no idle expiry: every request must land on the same thread,
+    // whatever the scheduling (a busy worker means the request queues for it).
     let exec = EffectExecutor::builder()
-      .idle_timeout(Duration::from_millis(20))
+      .max_threads(1)
+      .idle_timeout(Duration::from_secs(24 * 3600))
       .build();
-    for i in 0..5_u32 {
-      assert_eq!(
-        exec.run(i, |n: &mut u32| succeed::<_, (), _>(*n)).await,
-        Ok(i)
-      );
+    let first = run_on_thread(&exec).await;
+    for _ in 0..10 {
+      assert_eq!(run_on_thread(&exec).await, first);
     }
-    assert!(exec.threads() <= 1, "sequential requests reuse one thread");
-    let deadline = std::time::Instant::now() + PATIENCE;
-    while exec.threads() > 0 {
-      assert!(std::time::Instant::now() < deadline, "idle thread retires");
-      tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    assert_eq!(exec.threads(), 1);
+    assert_ne!(first, std::thread::current().id());
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn idle_thread_retires_and_a_fresh_one_serves_the_next_request() {
+    let (retired_tx, retired_rx) = std::sync::mpsc::channel();
+    let exec = EffectExecutor::builder()
+      .max_threads(1)
+      .idle_timeout(Duration::ZERO)
+      .on_retire(retired_tx)
+      .build();
+    let first = run_on_thread(&exec).await;
+    // Block (off the runtime thread) until the hook reports the retirement — no deadline guess.
+    let retired = tokio::task::spawn_blocking(move || {
+      let id = retired_rx.recv().expect("retire signal");
+      (id, retired_rx)
+    })
+    .await
+    .unwrap();
+    let (retired_id, retired_rx) = retired;
+    assert_eq!(retired_id, first);
+    assert_eq!(
+      exec.threads(),
+      0,
+      "the hook fires after the pool count drops"
+    );
+
+    let second = run_on_thread(&exec).await;
+    assert_ne!(
+      second, first,
+      "thread ids are never reused within a process"
+    );
+    drop(exec);
+    // Dropping the executor retires the remaining idle worker as well.
+    let last = tokio::task::spawn_blocking(move || retired_rx.recv().expect("retire on drop"))
+      .await
+      .unwrap();
+    assert_eq!(last, second);
   }
 
   #[tokio::test(flavor = "current_thread")]

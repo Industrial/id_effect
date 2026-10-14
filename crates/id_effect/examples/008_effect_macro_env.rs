@@ -1,5 +1,3 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
-
 //! Ex 008 — `effect!` with capability DI: `~Service` reads from the environment.
 
 use id_effect::{Effect, caps, effect, provide, run_with};
@@ -8,14 +6,8 @@ use id_effect::{Effect, caps, effect, provide, run_with};
 struct Counter(pub i32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Counter)]
+#[provides(Counter, with = || Counter(41))]
 struct CounterLive;
-
-impl CounterLive {
-  fn new() -> Counter {
-    Counter(41)
-  }
-}
 
 fn main() {
   let program: Effect<i32, (), caps!(Counter)> = effect!(|r| {

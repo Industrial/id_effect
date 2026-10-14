@@ -2,6 +2,16 @@
 
 Single index for **FP Kitchen Sink** (Part V) and **Platform Kitchen Sink** (Part VI–VII).
 
+> **Status (0.6): all missions below are completed.** They are kept as a historical index. What
+> happens next is set by the 0.6 consolidation plan,
+> [`.maestro/missions/id-effect-consolidation-0-6.plan.md`](../../.maestro/missions/id-effect-consolidation-0-6.plan.md),
+> and [ADR 0010](../adrs/0010-crate-tiers.md): several crates these missions produced moved to the
+> unpublished `labs/` workspace (`id_effect_rpc`, `id_effect_ai`, `id_effect_parse`,
+> `id_effect_workflow`, `id_effect_events`, `id_effect_jobs`, `id_effect_graph`), `id_effect_tower`
+> merged into `id_effect_axum`, and `id_effect_sql_pg` merged into `id_effect_sql` (feature `pg`).
+> New extension work resumes only after the consolidation exit gate. Current per-area status:
+> [PARITY_DASHBOARD.md](./PARITY_DASHBOARD.md).
+
 ## Part V — Functional patterns (shipped)
 
 See [fp-patterns/ROADMAP.md](../fp-patterns/ROADMAP.md).
@@ -19,20 +29,20 @@ See [fp-patterns/ROADMAP.md](../fp-patterns/ROADMAP.md).
 
 FP meta: `pln-mqjykoig-a58dfk`
 
-## Part VI–VII — Application platform
+## Part VI–VII — Application platform (completed)
 
-| Execution overlay | Mission ID | Spec | Book |
-|------|------------|------|------|
-| [platform_foundation](../../.maestro/missions/platform-foundation.execution.md) | `pln-mqk3uzlz-ffz1p1` | platform-foundation | Part VI ch26 |
-| [platform_observability](../../.maestro/missions/platform-observability.execution.md) | `pln-mqk3v1k9-6c8qcj` | platform-observability | Part VI ch27 |
-| [platform_data](../../.maestro/missions/platform-data.execution.md) | `pln-mqk3uxtf-055tfk` | platform-data | Part VI ch28 |
-| [platform_api_boundaries](../../.maestro/missions/platform-api-boundaries.execution.md) | `pln-mqk3uv7g-4r9v0a` | platform-api-boundaries | Part VI ch29 |
-| [platform_application](../../.maestro/missions/platform-application.execution.md) | `pln-mqk3uw14-l2rehg` | platform-application | Part VI ch30 |
-| [platform_async_messaging](../../.maestro/missions/platform-async-messaging.execution.md) | `pln-mqk3ux00-wrxxug` | platform-async-messaging | Part VI ch31 |
-| [platform_workflow_cluster](../../.maestro/missions/platform-workflow-cluster.execution.md) | `pln-mqk3v34c-c8b55j` | platform-workflow-cluster | Part VI ch32 |
-| [platform_dx_ship](../../.maestro/missions/platform-dx-ship.execution.md) | `pln-mqk3uymr-cb8ftt` | platform-dx-ship | Part VI ch34 |
-| [platform_ai](../../.maestro/missions/platform-ai.execution.md) | `pln-mqk3uu83-9z30eo` | platform-ai | Part VI ch35 |
-| [platform_parity_hygiene](../../.maestro/missions/platform-parity-hygiene.execution.md) | `pln-mqk3tuel-6cy7au` | platform-parity-hygiene | — |
+| Execution overlay | Mission ID | Spec | Book | 0.6 status |
+|------|------------|------|------|------------|
+| [platform_foundation](../../.maestro/missions/platform-foundation.execution.md) | `pln-mqk3uzlz-ffz1p1` | platform-foundation | Part VI ch26 | done — `id_effect_platform` (integration); `auth` now opt-in |
+| [platform_observability](../../.maestro/missions/platform-observability.execution.md) | `pln-mqk3v1k9-6c8qcj` | platform-observability | Part VI ch27 | done — `id_effect_opentelemetry` (integration) |
+| [platform_data](../../.maestro/missions/platform-data.execution.md) | `pln-mqk3uxtf-055tfk` | platform-data | Part VI ch28 | done — `id_effect_sql` (integration), Postgres as feature `pg` |
+| [platform_api_boundaries](../../.maestro/missions/platform-api-boundaries.execution.md) | `pln-mqk3uv7g-4r9v0a` | platform-api-boundaries | Part VI ch29 | done — `id_effect_rpc` moved to labs |
+| [platform_application](../../.maestro/missions/platform-application.execution.md) | `pln-mqk3uw14-l2rehg` | platform-application | Part VI ch30 | done — `id_effect_axum` (integration), absorbs tower |
+| [platform_async_messaging](../../.maestro/missions/platform-async-messaging.execution.md) | `pln-mqk3ux00-wrxxug` | platform-async-messaging | Part VI ch31 | done — `id_effect_jobs` / `id_effect_events` moved to labs |
+| [platform_workflow_cluster](../../.maestro/missions/platform-workflow-cluster.execution.md) | `pln-mqk3v34c-c8b55j` | platform-workflow-cluster | Part VI ch32 | done — `id_effect_workflow` moved to labs; cluster runtime is the Process Mesh |
+| [platform_dx_ship](../../.maestro/missions/platform-dx-ship.execution.md) | `pln-mqk3uymr-cb8ftt` | platform-dx-ship | Part VI ch34 | done — scaffolder stub removed; `examples/cli-minimal` template |
+| [platform_ai](../../.maestro/missions/platform-ai.execution.md) | `pln-mqk3uu83-9z30eo` | platform-ai | Part VI ch35 | done — `id_effect_ai` moved to labs |
+| [platform_parity_hygiene](../../.maestro/missions/platform-parity-hygiene.execution.md) | `pln-mqk3tuel-6cy7au` | platform-parity-hygiene | — | continuous |
 
 Platform meta: `pln-mqk3v0l4-66d3zl`
 

@@ -1,6 +1,17 @@
 //! `caps!` macro.
 
 /// Required capability set for `Effect<_, _, caps!(…)>` (runtime: [`CapList`](::id_effect::CapList)).
+///
+/// `caps!(…)` expands to a type, so a feature can name its environment once and reuse the alias
+/// everywhere — signatures, the `effect!` closure annotation and tests:
+///
+/// ```ignore
+/// type HelloCaps = caps!(Hello, EffectLogger);
+///
+/// fn hello() -> Effect<String, HelloError, HelloCaps> {
+///   effect!(|r: &mut HelloCaps| { /* ~Hello, ~EffectLogger … */ })
+/// }
+/// ```
 #[macro_export]
 macro_rules! caps {
   () => {

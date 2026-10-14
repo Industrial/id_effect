@@ -1,4 +1,4 @@
-#![allow(clippy::new_ret_no_self, dead_code)]
+#![allow(dead_code)]
 //! Print [`CapabilityGraph`] diagnostics; load provider manifests (TOML/JSON).
 
 use std::fs;
@@ -145,22 +145,12 @@ fn print_provider_graph(json: bool) {
   struct ExampleDb(String);
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(ExampleConfig)]
+  #[provides(ExampleConfig, with = || ExampleConfig("cfg".into()))]
   struct ExampleConfigLive;
-  impl ExampleConfigLive {
-    fn new() -> ExampleConfig {
-      ExampleConfig("cfg".into())
-    }
-  }
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(ExampleDb)]
+  #[provides(ExampleDb, with = || ExampleDb("db".into()))]
   struct ExampleDbLive;
-  impl ExampleDbLive {
-    fn new() -> ExampleDb {
-      ExampleDb("db".into())
-    }
-  }
 
   let graph = CapabilityGraph::new()
     .add(provide!(ExampleConfigLive).0)

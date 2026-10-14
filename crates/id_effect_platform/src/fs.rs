@@ -12,7 +12,7 @@
 //!   sandboxed apps should canonicalize or jail paths at a higher layer.
 //! - **Symlinks:** No special symlink policy here; treat remote paths as untrusted unless you control the tree.
 
-#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
+#![allow(clippy::unused_unit)]
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -276,14 +276,8 @@ pub type FileSystemService = Arc<dyn FileSystem>;
 
 /// Default [`ProviderSpec`](id_effect::ProviderSpec) for a Tokio-backed live [`FileSystem`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(FileSystemService)]
+#[provides(FileSystemService, with = || Arc::new(LiveFileSystem::new()))]
 pub struct LiveFileSystemProvider;
-
-impl LiveFileSystemProvider {
-  fn new() -> FileSystemService {
-    Arc::new(LiveFileSystem::new())
-  }
-}
 
 /// Read via [`FileSystemService`].
 #[inline]

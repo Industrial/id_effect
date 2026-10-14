@@ -3,12 +3,7 @@
 //! For portable [`HttpClient`] / [`HttpRequest`] boundaries, use the parent [`super`] module
 //! (`execute`, `execute_stream`, [`ReqwestHttpClient`]).
 
-#![allow(
-  clippy::new_ret_no_self,
-  clippy::unused_unit,
-  dead_code,
-  unused_imports
-)]
+#![allow(clippy::unused_unit, dead_code, unused_imports)]
 
 use ::id_effect::{
   Cap, CapBindR, Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect,

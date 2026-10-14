@@ -131,9 +131,24 @@ fn type_key_name(ty: &Type) -> String {
   ty.to_token_stream().to_string().replace(' ', "")
 }
 
+/// A path type that is neither `CapList<…>` nor `Env` — typically a `type AppCaps = caps!(…);`
+/// alias. Its keys are not visible to the macro, so the type checker validates it instead.
+fn is_opaque_env_alias(env_ty: &Type) -> bool {
+  match env_ty {
+    Type::Path(p) => p
+      .path
+      .segments
+      .last()
+      .is_some_and(|seg| seg.ident != "CapList" && seg.ident != "Env"),
+    _ => false,
+  }
+}
+
 /// When the user wrote an explicit `caps!(…)` on `r`, ensure body keys are a subset.
+///
+/// Type aliases (`|r: &mut AppCaps|`) are accepted as-is (see [`is_opaque_env_alias`]).
 pub fn validate_explicit_caps(env_ty: &Type, body_keys: &[Type]) -> syn::Result<()> {
-  if body_keys.is_empty() {
+  if body_keys.is_empty() || is_opaque_env_alias(env_ty) {
     return Ok(());
   }
   let explicit = extract_keys_from_env_ty(env_ty)?;
@@ -238,6 +253,22 @@ mod tests {
     })
     .unwrap();
     assert_eq!(extract_keys_from_env_ty(&ty).unwrap().len(), 16);
+  }
+
+  #[test]
+  fn validate_explicit_caps_accepts_type_alias() {
+    let env_ty: Type = parse2(quote! { HelloCaps }).unwrap();
+    let body_keys = vec![parse2(quote! { Hello }).unwrap()];
+    validate_explicit_caps(&env_ty, &body_keys).unwrap();
+    let env_ty: Type = parse2(quote! { crate::caps::AppCaps }).unwrap();
+    validate_explicit_caps(&env_ty, &body_keys).unwrap();
+  }
+
+  #[test]
+  fn validate_explicit_caps_still_checks_written_out_cap_list() {
+    let env_ty: Type = parse2(quote! { ::id_effect::CapList<(::id_effect::Cap<Alpha>,)> }).unwrap();
+    let body_keys = vec![parse2(quote! { Other }).unwrap()];
+    assert!(validate_explicit_caps(&env_ty, &body_keys).is_err());
   }
 
   #[test]

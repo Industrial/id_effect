@@ -3,7 +3,7 @@
 Rust’s standard answer for parsing is **[`clap`](https://docs.rs/clap)**. For **id_effect**, treat the binary as a **thin shell**:
 
 1. **Parse** argv into a struct (`#[derive(clap::Parser)]`).
-2. **Assemble** layers / `MapConfigProvider` / other `R` values from flags and environment.
+2. **Assemble** providers / `MapConfigProvider` / other `R` values from flags and environment.
 3. **Run** your program `Effect<A, E, R>` with [`run_blocking`](https://docs.rs/id_effect/latest/id_effect/runtime/fn.run_blocking.html) (or an async driver when you integrate Tokio).
 4. **Exit** with [`std::process::ExitCode`] using [`id_effect_cli`](https://docs.rs/id_effect_cli) helpers (see the next sections).
 
@@ -30,7 +30,7 @@ fn main() -> std::process::ExitCode {
 }
 ```
 
-`my_app` returns an `Effect<…>`; `my_env()` is whatever `R` your effect needs (often a [`Context`](https://docs.rs/id_effect/latest/id_effect/context/struct.Context.html) built from [`Layer`](https://docs.rs/id_effect/latest/id_effect/layer/struct.Layer.html) stacks).
+`my_app` returns an `Effect<…>`; `my_env()` is whatever `R` your effect needs (usually an [`Env`](https://docs.rs/id_effect/latest/id_effect/struct.Env.html) built with `build_env([provide!(…), …])` or by inserting capabilities directly). A complete version of this shape, with configuration from the environment and tests, is the [A `run_blocking` CLI](../cookbook/ch40-03-cli-run-main.md) cookbook recipe.
 
 ## Workspace helpers
 

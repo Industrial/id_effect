@@ -10,14 +10,8 @@ use id_effect::{Effect, ProviderSpecDerive, caps, effect, provide, require, run_
 pub struct Counter(pub u32);
 
 #[derive(ProviderSpecDerive)]
-#[provides(Counter)]
+#[provides(Counter, with = || Counter(42))]
 struct CounterLive;
-
-impl CounterLive {
-    fn new() -> Counter {
-        Counter(42)
-    }
-}
 
 fn app() -> Effect<u32, (), caps!(Counter)> {
     effect!(|r| {
@@ -31,7 +25,40 @@ fn main() {
 }
 ```
 
-[`provide!`](../../src/capability/provider.rs) wraps a [`ProviderSpec`](../../src/capability/provider.rs) as a [`ProviderBox`](../../src/capability/provider.rs). [`run_with`](../../src/capability/run.rs) collects providers, plans build order via [`CapabilityGraph`](../../src/capability/graph.rs), and runs the effect.
+[`provide!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) wraps a [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) as a [`ProviderBox`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs). [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) collects providers, plans build order via [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs), and runs the effect.
+
+## Provider constructors — `with = …`
+
+`#[provides(Service, with = …)]` tells the derive how to build the service:
+
+| `with =` | Generated body |
+|----------|----------------|
+| `\|\| expr` | `expr` |
+| `\|deps: &Env\| expr` | `expr`, with `deps` bound to the already-built capabilities |
+| `Self::build` (any path) | `Self::build()` |
+
+Without `with`, the derive falls back to `Self::default()` (when the struct derives `Default`) or `Self::new()`. That older form needs `impl CounterLive { fn new() -> Counter { … } }` — a `new` that does not return `Self`, which trips `clippy::new_ret_no_self`:
+
+```rust
+// Before (0.5): an impl block and a clippy allow per provider
+#[derive(ProviderSpecDerive)]
+#[provides(Counter)]
+struct CounterLive;
+
+impl CounterLive {
+    #[allow(clippy::new_ret_no_self)]
+    fn new() -> Counter {
+        Counter(42)
+    }
+}
+
+// After (0.6): no impl block, nothing to allow
+#[derive(ProviderSpecDerive)]
+#[provides(Counter, with = || Counter(42))]
+struct CounterLive;
+```
+
+Longer constructors keep their own function, named for what it does: `#[provides(Pool, with = Self::connect)]` plus `impl PoolLive { fn connect() -> Pool { … } }`. Provider structs are unit markers referenced only as types (`provide!(CounterLive)`); they do not need `#[allow(dead_code)]`.
 
 ## Multiple providers
 
@@ -61,7 +88,7 @@ env.insert::<Cap<EffectLogger>>(test_logger);
 let user = run_blocking(get_user(42), env)?;
 ```
 
-[`build_env`](../../src/capability/run.rs) is the middle ground — same provider types as production, but you get the `Env` back without running an effect:
+[`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) is the middle ground — same provider types as production, but you get the `Env` back without running an effect:
 
 ```rust
 let env = build_env([provide!(MockUserRepoLive)])?;

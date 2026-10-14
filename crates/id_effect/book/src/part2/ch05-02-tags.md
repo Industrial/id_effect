@@ -1,6 +1,6 @@
 # Capability services
 
-A **capability service** is a Rust type that names a dependency in [`Env`](../../src/capability/env.rs). The [`Cap<T>`](../../src/capability/key.rs) wrapper implements [`CapabilityKey`](../../src/capability/key.rs) for any cloneable `T`, so you use the service type directly in `caps!`, `require!`, and `#[provides]`.
+A **capability service** is a Rust type that names a dependency in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs). The [`Cap<T>`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) wrapper implements [`CapabilityKey`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) for any cloneable `T`, so you use the service type directly in `caps!`, `require!`, and `#[provides]`.
 
 ## Declaring a service
 
@@ -28,7 +28,7 @@ env.insert::<Cap<Database>>(main_pool);
 env.insert::<Cap<Cache>>(cache_pool);
 ```
 
-Or let a [`ProviderSpec`](../../src/capability/provider.rs) insert them during `run_with`.
+Or let a [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) insert them during `run_with`.
 
 ## Why named services help the compiler
 

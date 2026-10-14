@@ -1,6 +1,6 @@
 # Composing Providers — `CapabilityGraph` and `run_with`
 
-Individual providers build one capability. Applications pass a **list** to [`run_with`](../../src/capability/run.rs); [`CapabilityGraph`](../../src/capability/graph.rs) plans build order from each provider's `requires()` and `provides()`.
+Individual providers build one capability. Applications pass a **list** to [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs); [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order from each provider's `requires()` and `provides()`.
 
 ## Basic composition
 
@@ -18,7 +18,7 @@ run_with(
 )?;
 ```
 
-The array order is irrelevant — the graph topologically sorts providers. Cycles or missing dependencies surface as [`CapabilityPlannerError`](../../src/capability/error.rs) with diagnostics from [`CapabilityGraph::diagnostics`](../../src/capability/graph.rs).
+The array order is irrelevant — the graph topologically sorts providers. Cycles or missing dependencies surface as [`CapabilityPlannerError`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs) with diagnostics from [`CapabilityGraph::diagnostics`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs).
 
 ## Building `Env` without running
 

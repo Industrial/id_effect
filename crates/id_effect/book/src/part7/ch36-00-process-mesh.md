@@ -21,4 +21,4 @@ multi-node distribution to `id_effect` (ADR 0009).
 | Process groups | Eventually consistent |
 | Singleton | At most one holder (CP via lease) |
 
-See [ADR 0009](../../../docs/adrs/0009-process-mesh.md) for netsplit stories.
+See [ADR 0009](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0009-process-mesh.md) for netsplit stories.

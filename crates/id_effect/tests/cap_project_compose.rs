@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self, clippy::type_complexity)]
+#![allow(dead_code, clippy::type_complexity)]
 
 //! Integration: automatic cap_into_bind + implicit `|r|` + `~Service`.
 
@@ -11,24 +11,12 @@ struct Database(pub u32);
 struct Logger(pub u32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Database)]
+#[provides(Database, with = || Database(10))]
 struct DatabaseLive;
 
-impl DatabaseLive {
-  fn new() -> Database {
-    Database(10)
-  }
-}
-
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Logger)]
+#[provides(Logger, with = || Logger(99))]
 struct LoggerLive;
-
-impl LoggerLive {
-  fn new() -> Logger {
-    Logger(99)
-  }
-}
 
 fn query(_id: u64) -> Effect<u32, (), caps!(Database)> {
   effect!(|r| {

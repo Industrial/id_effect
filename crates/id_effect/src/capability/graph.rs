@@ -65,7 +65,7 @@ impl CapabilityGraph {
             cap_name_by_id
               .get(cap_id)
               .cloned()
-              .unwrap_or_else(|| planner_cap_key(*cap_id, &format!("{cap_id:?}")))
+              .unwrap_or_else(|| planner_cap_key(*cap_id, cap_id.name()))
           })
           .collect::<Vec<_>>();
         PlannerNode::new(
@@ -152,7 +152,7 @@ fn map_provider_err(provider: &str) -> impl Fn(ProviderError) -> CapabilityPlann
 }
 
 #[cfg(test)]
-#[allow(dead_code, clippy::new_ret_no_self)]
+#[allow(dead_code)]
 mod graph_feature_tests {
   use super::*;
   use crate::capability::Env;
@@ -227,26 +227,16 @@ mod graph_feature_tests {
   #[test]
   fn conflicting_providers_error() {
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(1))]
     struct DbA;
-    impl DbA {
-      fn new() -> Db {
-        Db(1)
-      }
-    }
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(2))]
     struct DbB;
-    impl DbB {
-      fn new() -> Db {
-        Db(2)
-      }
-    }
     let g = CapabilityGraph::new()
       .add(provide!(DbA).0)
       .add(provide!(DbB).0);
-    assert_eq!(DbA::new().0, 1);
-    assert_eq!(DbB::new().0, 2);
+    assert_eq!(DbA::provide(&Env::new()).expect("DbA").0, 1);
+    assert_eq!(DbB::provide(&Env::new()).expect("DbB").0, 2);
     let err = g.plan().expect_err("conflict");
     assert!(matches!(
       err,
@@ -280,13 +270,8 @@ mod graph_feature_tests {
   fn build_from_parent_env() {
     let parent = Env::new();
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(5))]
     struct DbLive;
-    impl DbLive {
-      fn new() -> Db {
-        Db(5)
-      }
-    }
     let g = CapabilityGraph::new().add(provide!(DbLive).0);
     let child = g.build_from(parent).expect("build_from");
     assert_eq!(child.get::<Cap<Db>>().0, 5);

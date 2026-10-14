@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code)]
 
 //! High-arity `CapList` verification and `project_at_*` coverage.
 

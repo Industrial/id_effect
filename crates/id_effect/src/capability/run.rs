@@ -100,15 +100,8 @@ mod tests {
   struct RunCap(pub u32);
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(RunCap)]
+  #[provides(RunCap, with = || RunCap(7))]
   struct RunCapLive;
-
-  impl RunCapLive {
-    #[allow(clippy::new_ret_no_self)]
-    fn new() -> RunCap {
-      RunCap(7)
-    }
-  }
 
   #[test]
   fn build_env_materializes_capability_env() {

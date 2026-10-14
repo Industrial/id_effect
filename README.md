@@ -1,8 +1,8 @@
 # id_effect
 
-**id_effect** brings [`Effect<A, E, R>`](https://docs.rs/id_effect): structured effects, typed errors, and composable services in Rust. The design is heavily inspired by [Effect](https://effect.website) (Effect-TS): programs describe work as lazy values, wire dependencies through the type system, and run under an explicit runtime.
+**id_effect** is a typed effect runtime for Rust: `Effect<A, E, R>`, capability-based dependency injection, structured concurrency, resilience, pull-based streams and a first-class testing kit — plus OTP-grade supervision and distribution for **long-running supervised services, daemons and CLIs**. The design is inspired by [Effect](https://effect.website) (Effect-TS) and Erlang/OTP: programs describe work as lazy values, wire dependencies through the type system, run under an explicit runtime, and recover under supervision.
 
-If you have written async Rust—`Future`s, `Pin`, long `.await?` chains—and want clearer dependency boundaries, recoverable errors, and tests that do not rely on global mocks, this workspace is for you.
+It is not a batteries-included web framework: there is an Axum integration for the HTTP edge of a service, but no ORM, auth or migrations layer.
 
 <!-- Badge row 1: CI & quality -->
 [![CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/ci.yml)
@@ -17,31 +17,34 @@ If you have written async Rust—`Future`s, `Pin`, long `.await?` chains—and w
 
 <!-- Badge row 3: repository health -->
 [![License](https://img.shields.io/badge/license-CC--BY--SA--4.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/MSRV-1.94-orange.svg)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![GitHub Stars](https://img.shields.io/github/stars/Industrial/id_effect?style=social)](https://github.com/Industrial/id_effect/stargazers)
 
 ### Start with the book
 
-**[Typed Effects in Rust](https://industrial.github.io/id_effect/)** is the main way to learn **id_effect**: it walks the same story as the library—from `Effect<A, E, R>` and the `effect!` macro, through context, layers, and services, to concurrency, resources, STM, streams, schema, and testing. The API docs answer “what does this type do?”; the book answers “how do I think in effects?” and ties the pieces together.
+**[Typed Effects in Rust](https://industrial.github.io/id_effect/)** is the main way to learn **id_effect**: from `Effect<A, E, R>` and the `effect!` macro, through capabilities and providers, to concurrency, resources, scheduling, streams, schema, testing and supervision. The API docs answer “what does this type do?”; the book answers “how do I think in effects?”.
 
 - **Read online:** [Typed Effects in Rust](https://industrial.github.io/id_effect/) (GitHub Pages)
-- **Terminology:** [Glossary](https://industrial.github.io/id_effect/appendix-c-glossary.html) — quick definitions for `Effect`, `Cause`, `Layer`, `Fiber`, `Stm`, and the rest of the vocabulary
-- **Source:** [`crates/id_effect/book/`](crates/id_effect/book/) (build locally with `moon run :book`)
+- **Terminology:** [Glossary](https://industrial.github.io/id_effect/appendix-c-glossary.html)
+- **Upgrading:** [Migration guide to 0.6](docs/MIGRATION-0.6.md) and the [CHANGELOG](CHANGELOG.md)
+- **Source:** [`crates/id_effect/book/`](crates/id_effect/book/) (build locally with `mdbook build crates/id_effect/book`)
 
 ---
 
 ## Overview
 
-**id_effect** models programs as **descriptions** of work (`Effect` values) rather than immediate side effects. You compose them, attach requirements to the type signature, and run them when you choose. That buys:
+**id_effect** models programs as **descriptions** of work (`Effect` values) rather than immediate side effects. You compose them, attach requirements to the type signature, and run them when you choose:
 
-- **`Effect<A, E, R>`** — success type `A`, error type `E`, environment/requirements `R`.
-- **Context and layers** — typed dependency injection: declare what an effect needs, provide it once at the edge.
-- **`pipe!` and `effect!`** — ergonomic composition and do-notation-style blocks without hiding what the types mean.
-- **Streams, STM, schema** — pull-based streams, software transactional memory, and structural validation for larger systems.
-- **No bundled async executor** — the core stays portable; Tokio and other runtimes live in separate integration crates (see below).
+- **`Effect<A, E, R>`** — success type `A`, error type `E`, requirements `R`.
+- **Capabilities and providers** — typed dependency injection: declare what an effect needs (`caps!`, `Needs`), provide it once at the edge (`#[derive(ProviderSpecDerive)]`, `build_env`).
+- **`pipe!` and `effect!`** — composition and do-notation-style blocks without hiding what the types mean.
+- **Structured concurrency and resilience** — fibers, scopes, cancellation, `Schedule`-driven retry, circuit breakers.
+- **Pull-based streams** — bounded-memory, incremental operators that work on infinite sources.
+- **Supervision and distribution** — `id_effect_process` (processes, links, monitors, supervision trees, gen_statem-style FSMs) and `id_effect_node` (Process Mesh across nodes).
+- **Testing kit** — `run_test`, `TestClock`, capability mocks, golden snapshots, `assert_bounded_memory`.
 
-For depth beyond this README, use the mdBook [**Typed Effects in Rust**](https://industrial.github.io/id_effect/) (see **Start with the book** above). It follows the same arc as the library: foundations, environment and dependencies, production concerns (errors, concurrency, resources, scheduling), then advanced topics (STM, streams, schema, testing).
+The core crate runs effects on its own interpreter (`run_blocking`, `run_async`); the default `compute` feature adds the parallel Compute Fabric. Tokio integration lives in `id_effect_tokio`.
 
 ---
 
@@ -109,25 +112,25 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.1"
+id_effect = "0.6"
 ```
 
 ```rust
-use id_effect::Effect;
+use id_effect::{Effect, run_blocking, succeed};
 
 fn greet(name: &str) -> Effect<String, (), ()> {
-    Effect::succeed(format!("Hello, {name}!"))
+    succeed(format!("Hello, {name}!"))
 }
 
 fn main() {
-    let result = id_effect::run_blocking(greet("world"), ());
+    let result = run_blocking(greet("world"), ());
     println!("{result:?}");
 }
 ```
 
 For a guided path through the API, read [**Typed Effects in Rust**](https://industrial.github.io/id_effect/) first, then use the numbered examples under [`crates/id_effect/examples/`](crates/id_effect/examples/) and [docs.rs](https://docs.rs/id_effect).
 
-**CLI template:** [`examples/cli-minimal/`](examples/cli-minimal/) shows `clap` + [`id_effect_cli`](crates/id_effect_cli) + [`id_effect_config`](crates/id_effect_config) (`Secret`). Run:
+**CLI template:** [`examples/cli-minimal/`](examples/cli-minimal/) is the project template: `clap` + [`id_effect_cli`](crates/id_effect_cli) + [`id_effect_config`](crates/id_effect_config) (`Secret`). Run:
 
 ```bash
 devenv shell -- cargo run -p cli_minimal -- --token dummy
@@ -192,7 +195,7 @@ devenv shell -- pre-push
 
 | Workflow | Triggers | What it does |
 |----------|----------|--------------|
-| [CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml) | push/PR → `main` | Format, check, clippy, test, build, coverage, doc-check, matrix (stable+beta × linux+mac+win) |
+| [CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml) | push/PR → `main` | Format, clippy, nextest, coverage (≥ 95 %), MSRV (1.94), Postgres integration, labs workspace, minimal versions, packaging, version drift, matrix (stable+beta × linux+mac+win) |
 | [Docs & Pages](https://github.com/Industrial/id_effect/actions/workflows/docs.yml) | push/PR → `main` | API docs + mdBook → GitHub Pages |
 | [Security Audit](https://github.com/Industrial/id_effect/actions/workflows/audit.yml) | daily + `Cargo.lock` changes | `cargo audit` |
 | [Publish](https://github.com/Industrial/id_effect/actions/workflows/publish.yml) | `v*.*.*` tag | Test, then publish crates in dependency order |
@@ -200,12 +203,15 @@ devenv shell -- pre-push
 ### Releases
 
 ```bash
-# 1. Bump versions in the workspace Cargo.toml files
-# 2. Commit and push
-# 3. Tag and push — CI publishes
-git tag v0.2.0
+# 1. Bump [workspace.package] version in the root Cargo.toml (all crates inherit it;
+#    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
+# 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
+# 3. Commit, push, then tag — CI publishes in dependency order
+git tag v0.6.0
 git push --tags
 ```
+
+The publish order has one source: `scripts/validate-crate-packaging.sh --print-order`. Labs crates are never published.
 
 Publishing expects `CARGO_REGISTRY_TOKEN` on crates.io; `CODECOV_TOKEN` is optional for coverage uploads. The publish workflow can use a `crates-io` GitHub environment for approval gates.
 

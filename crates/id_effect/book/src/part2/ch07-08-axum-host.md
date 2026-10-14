@@ -41,12 +41,8 @@ use id_effect_axum::run_with_caps;
 struct Counter;
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Counter)]
+#[provides(Counter, with = || 7)]
 struct CounterLive;
-
-impl CounterLive {
-    fn new() -> u32 { 7 }
-}
 
 fn handler(_env: &mut Env) -> Effect<String, (), caps!(Counter)> {
     effect!(|r| {

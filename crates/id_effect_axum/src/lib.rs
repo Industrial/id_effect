@@ -311,15 +311,8 @@ mod tests {
     struct RequestId(u32);
 
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(RequestId)]
+    #[provides(RequestId, with = || RequestId(0))]
     struct RequestIdDefault;
-
-    impl RequestIdDefault {
-      #[allow(clippy::new_ret_no_self)]
-      fn new() -> RequestId {
-        RequestId(0)
-      }
-    }
 
     let base = build_env([provide!(RequestIdDefault)]).expect("env");
 

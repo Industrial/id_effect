@@ -1075,4 +1075,133 @@ mod tests {
     a.remote_monitor(&ghost, Box::new(|_, _, _| {}));
     assert!(b.inner.inbound_monitors.lock().expect("inbound").is_empty());
   }
+
+  /// A peer sender that forwards every envelope it is asked to deliver.
+  fn recorder() -> (PeerSender, flume::Receiver<ProcessEnvelope>) {
+    let (tx, rx) = flume::unbounded();
+    let sender: PeerSender = Arc::new(move |envelope| {
+      let _ = tx.send(envelope);
+      Ok(())
+    });
+    (sender, rx)
+  }
+
+  /// Exit reason of a local pid, observed through a raw monitor sink.
+  fn exit_of(mesh: &Mesh, pid: &Pid) -> flume::Receiver<ExitReason> {
+    let (tx, rx) = flume::unbounded();
+    mesh.process().monitor_with_sink(
+      pid,
+      Box::new(move |_, _, reason| {
+        let _ = tx.send(reason);
+      }),
+    );
+    rx
+  }
+
+  #[test]
+  fn inbound_link_forwards_local_exit_as_exit_signal() {
+    let b = mesh("b@test");
+    let (sink, sent) = recorder();
+    b.add_peer("a@test", sink);
+    let local = b.spawn_local("idle", &unit(), None).expect("local");
+    let remote = Pid::from_parts(NodeName::new("a@test"), 5, 1);
+    b.handle_envelope(ProcessEnvelope::Link {
+      from: PidWire::from(&remote),
+      to: PidWire::from(&local),
+    })
+    .expect("link");
+    b.process().exit(&local, ExitReason::Killed);
+    match sent
+      .recv_timeout(Duration::from_secs(5))
+      .expect("exit signal")
+    {
+      ProcessEnvelope::ExitSignal { from, to, reason } => {
+        assert_eq!(from, PidWire::from(&local));
+        assert_eq!(to, PidWire::from(&remote));
+        assert_eq!(ExitReason::from(&reason), ExitReason::Killed);
+      }
+      _ => panic!("expected an ExitSignal"),
+    }
+  }
+
+  #[test]
+  fn link_and_exit_signal_for_foreign_pids_are_ignored() {
+    let b = mesh("b@test");
+    let (sink, sent) = recorder();
+    b.add_peer("a@test", sink);
+    let foreign = PidWire::from(&Pid::from_parts(NodeName::new("c@test"), 1, 1));
+    let remote = PidWire::from(&Pid::from_parts(NodeName::new("a@test"), 1, 1));
+    b.handle_envelope(ProcessEnvelope::Link {
+      from: remote.clone(),
+      to: foreign.clone(),
+    })
+    .expect("link");
+    b.handle_envelope(ProcessEnvelope::Unlink {
+      from: remote.clone(),
+      to: foreign.clone(),
+    })
+    .expect("unlink");
+    b.handle_envelope(ProcessEnvelope::ExitSignal {
+      from: remote,
+      to: foreign,
+      reason: ExitReasonWire::from(&ExitReason::Killed),
+    })
+    .expect("exit signal");
+    assert!(sent.try_recv().is_err(), "nothing is forwarded");
+  }
+
+  #[test]
+  fn inbound_exit_signal_kills_the_local_target() {
+    let b = mesh("b@test");
+    let local = b.spawn_local("idle", &unit(), None).expect("local");
+    let exit = exit_of(&b, &local);
+    b.handle_envelope(ProcessEnvelope::ExitSignal {
+      from: PidWire::from(&Pid::from_parts(NodeName::new("a@test"), 1, 1)),
+      to: PidWire::from(&local),
+      reason: ExitReasonWire::from(&ExitReason::Shutdown),
+    })
+    .expect("exit signal");
+    assert_eq!(
+      exit.recv_timeout(Duration::from_secs(5)).expect("exit"),
+      ExitReason::Shutdown
+    );
+  }
+
+  #[test]
+  fn replies_to_an_unknown_origin_are_broadcast_to_every_peer() {
+    let fabric = MeshFabric::new();
+    let b = mesh("b@test").with_fabric(fabric.clone());
+    let _c = mesh("c@test").with_fabric(fabric.clone());
+    let (sink, sent) = recorder();
+    b.add_peer("a@test", sink);
+    // Through the fabric's sender-less path, so the spawn reply has no known origin.
+    fabric
+      .deliver(
+        "b@test",
+        ProcessEnvelope::Spawn {
+          spawn_id: 41,
+          behavior: "idle".into(),
+          args: unit(),
+          link_to: None,
+        },
+      )
+      .expect("spawn");
+    match sent.recv_timeout(Duration::from_secs(5)).expect("reply") {
+      ProcessEnvelope::SpawnReply { spawn_id, result } => {
+        assert_eq!(spawn_id, 41);
+        assert!(result.is_ok(), "{result:?}");
+      }
+      _ => panic!("expected a SpawnReply"),
+    }
+    assert_eq!(
+      fabric.deliver(
+        "nowhere@test",
+        ProcessEnvelope::Unlink {
+          from: PidWire::from(&Pid::from_parts(NodeName::new("a@test"), 1, 1)),
+          to: PidWire::from(&Pid::from_parts(NodeName::new("a@test"), 1, 1)),
+        }
+      ),
+      Err(RemoteFault::NoProc)
+    );
+  }
 }

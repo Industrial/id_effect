@@ -1,6 +1,6 @@
 # Windowing
 
-[`window`](../../src/streaming/window.rs) adds count- and time-based grouping on [`Stream`](../../src/streaming/stream.rs).
+[`window`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/window.rs) adds count- and time-based grouping on [`Stream`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs).
 
 ## Count windows
 
@@ -12,7 +12,7 @@ let sums = Stream::from_iterable(1..=10)
     .map(|chunk| chunk.iter().sum::<i32>());
 ```
 
-- **`tumbling(n)`** — alias of [`grouped`](../../src/streaming/stream.rs); last chunk may be short.
+- **`tumbling(n)`** — alias of [`grouped`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs); last chunk may be short.
 - **`sliding(size, step)`** — overlapping windows; `size == 0` or `step == 0` yields an empty stream.
 
 ## Time and session windows
@@ -31,4 +31,4 @@ let sessions = Stream::from_iterable(events)
 - **`tumbling_by_time(duration, ts)`** — fixed-width buckets aligned to `Instant::UNIX_EPOCH`.
 - **`sliding_by_time(duration, step, ts)`** — overlapping time ranges stepped by `step`.
 
-Time buckets use [`merge_time_bucket`](../../src/streaming/stream.rs) helpers internally for ordered aggregation maps.
+Time buckets use [`merge_time_bucket`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) helpers internally for ordered aggregation maps.

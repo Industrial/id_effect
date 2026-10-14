@@ -31,7 +31,7 @@ You are declaring: "To run this effect, you must supply `Database` in the enviro
 run_with([provide!(DatabaseLive)], get_user(1))?;
 ```
 
-The contract is not a comment. It is enforced by `caps!(…)` on the effect type and by [`run_with`](../../src/capability/run.rs) at the edge.
+The contract is not a comment. It is enforced by `caps!(…)` on the effect type and by [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) at the edge.
 
 ## R flows through composition
 
@@ -112,10 +112,10 @@ fn process_order(
 ) -> Result<Receipt, AppError> { ... }
 ```
 
-That works, but it forces every layer of your call stack to accept and forward dependencies it may not directly use. The `R` parameter encodes the same information in the *return type* — and [`caps!(…)`](../../src/capability/set.rs) names each dependency so two services of the same Rust type remain distinct.
+That works, but it forces every layer of your call stack to accept and forward dependencies it may not directly use. The `R` parameter encodes the same information in the *return type* — and [`caps!(…)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) names each dependency so two services of the same Rust type remain distinct.
 
 ## Foreshadowing
 
 You may be wondering: how does the runtime store `Database` and `EffectLogger` in one place?
 
-[`Env`](../../src/capability/env.rs) is an order-independent map keyed by capability identity — not a positional tuple. Chapter 5 shows how `` generates each `*Key` type. For now: **`R = caps!(…)` is the compile-time list; `Env` is the runtime container.**
+[`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) is an order-independent map keyed by capability identity — not a positional tuple. Chapter 5 shows how `` generates each `*Key` type. For now: **`R = caps!(…)` is the compile-time list; `Env` is the runtime container.**

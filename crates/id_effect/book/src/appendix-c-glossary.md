@@ -35,7 +35,7 @@ A trait abstracting time. `LiveClock` uses real system time; `TestClock` advance
 ---
 
 **`commit`**
-The function that lifts a `Stm<A>` into an `Effect<A, Never, ()>`. Executing the effect runs the STM transaction and retries on conflict. See [Stm and commit](./part4/ch12-03-stm-commit.md).
+The `id_effect_fp` function that lifts a `Stm<A>` into an `Effect`. Executing the effect runs the STM transaction and retries on conflict. See [Stm and commit](./part4/ch12-03-stm-commit.md).
 
 ---
 
@@ -119,13 +119,43 @@ Workspace crate: **Tokio-backed** `Runtime` integration, re-exports `run_async` 
 
 ---
 
-**`id_effect_tower`**
-Workspace crate: **`tower::Service`** implementations over effects, with optional **concurrency limits** and **request metrics**. See [Tower service](./part2/ch07-09-tower-service.md).
+**`id_effect_axum::service`** (formerly `id_effect_tower`)
+**`tower::Service`** implementations over effects, with optional **concurrency limits** and **request metrics**, behind `id_effect_axum`'s `tower` feature. The `id_effect_tower` crate is a deprecated re-export shim for 0.6 only. See [Tower service](./part2/ch07-09-tower-service.md).
 
 ---
 
-**`id_effect_lint`**
-Custom **rustc lint** crate for id_effect-specific rules; excluded from the default workspace `members` list. See [Workspace tooling](./appendix-d-workspace-tooling.md).
+**`id_effect_sql`**
+Workspace crate for driver-agnostic SQL as effects (`SqlClient`, `with_transaction`, `TestSqlClient`). Postgres lives in `id_effect_sql::pg` behind the `pg` feature (formerly the `id_effect_sql_pg` crate). See [Data access](./part6/ch28-00-data.md).
+
+---
+
+**`id_effect_resilience`**
+Workspace crate for circuit breakers, rate limiters, bulkheads, hedged requests and `retry_with_breaker`, all clock-injectable. See [Runtime resilience](./part5/ch21-00-runtime-resilience.md).
+
+---
+
+**`id_effect_process` / `id_effect_node`**
+The Process Mesh: OTP-style local processes and supervision trees (`id_effect_process`), plus distribution, membership and cluster placement (`id_effect_node`). See [Process Mesh overview](./part7/ch36-00-process-mesh.md).
+
+---
+
+**`id_effect_fp`**
+Maintenance-tier crate holding the functional-programming layer core does not use itself: `algebra`, persistent `collections` and `stm`. Moved out of `id_effect` in 0.6. See [Algebra type classes](./part5/ch17-00-algebra-type-classes.md).
+
+---
+
+**Crate tier**
+Every workspace crate declares a tier (`core`, `runtime`, `integration`, `maintenance`, `labs`, `merge`, `example`) in `[package.metadata.id_effect]`; `scripts/tier-conformance.sh` checks the quality bar for that tier. See [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md).
+
+---
+
+**Labs**
+Unpublished crates with no API guarantees, kept in the separate `labs/` Cargo workspace: `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`, `id_effect_workflow`, `id_effect_events`, `id_effect_jobs`, `id_effect_graph`. Use them via path or git dependencies; build with `--manifest-path labs/Cargo.toml`.
+
+---
+
+**`id_effect_lint`** (labs)
+Custom **rustc lint** crate for id_effect-specific rules, in the labs workspace. See [Workspace tooling](./appendix-d-workspace-tooling.md).
 
 ---
 
@@ -135,7 +165,7 @@ The **`effect!`** do-notation is split between a **proc-macro** crate and a **us
 ---
 
 **`ProviderSpec`**
-A type that declares how to build one capability value. Providers list dependencies in `requires()` and are wired with `provide!(P)`, `build_env`, or `run_with`. [`CapabilityGraph`](../../src/capability/graph.rs) plans build order. See [Providers and Wiring](./part2/ch06-01-what-is-layer.md).
+A type that declares how to build one capability value. Providers list dependencies in `requires()` and are wired with `provide!(P)`, `build_env`, or `run_with`. [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order. See [Providers and Wiring](./part2/ch06-01-what-is-layer.md).
 
 ---
 
@@ -195,7 +225,7 @@ A consumer of `Stream` elements. Receives `Chunk`s via `on_chunk` and a completi
 ---
 
 **`Stm<A>`**
-A transactional computation over `TRef` values. Compose with `stm!`; execute with `commit` or `atomically`. Retries automatically on conflict; aborts on `stm::fail`. See [Stm and commit](./part4/ch12-03-stm-commit.md).
+An `id_effect_fp` transactional computation over `TRef` values (`Stm<A, E>`). Compose with `map` / `flat_map` / `or_else`; execute with `commit` (alias `atomically`). Restarts automatically on conflict or `Stm::retry`; aborts on `Stm::fail`. See [Stm and commit](./part4/ch12-03-stm-commit.md).
 
 ---
 

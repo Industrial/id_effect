@@ -253,3 +253,239 @@ where
     .expect("routes")
     .insert(pid, Route { cast, info, call });
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use id_effect::runtime::Never;
+  use id_effect::{Cause, Effect, succeed};
+  use id_effect_process::{Next, NodeName, ProcessCtx};
+
+  struct Echo {
+    n: u32,
+  }
+
+  impl Process for Echo {
+    type Args = u32;
+    type Env = ();
+    type Call = u32;
+    type Reply = u32;
+    type Cast = u32;
+    type Info = u32;
+    type Error = Never;
+
+    fn init(args: u32, _ctx: ProcessCtx) -> Effect<Self, Never, ()> {
+      succeed(Echo { n: args })
+    }
+
+    fn handle_call(mut self, msg: u32, _ctx: ProcessCtx) -> Effect<(u32, Next<Self>), Never, ()> {
+      Effect::new(move |_| {
+        self.n += msg;
+        Ok((self.n, Next::Continue(self)))
+      })
+    }
+  }
+
+  fn pid(n: u64) -> Pid {
+    Pid::from_parts(NodeName::new("t@test"), n, 1)
+  }
+
+  fn registry() -> BehaviorRegistry {
+    let mut reg = BehaviorRegistry::new();
+    reg.register::<Echo>("echo");
+    reg
+  }
+
+  fn mailbox() -> Queue<ProcMsg<Echo>> {
+    run_blocking(Queue::unbounded(), ()).expect("queue")
+  }
+
+  fn reply_slot() -> Deferred<Vec<u8>, RemoteFault> {
+    run_blocking(Deferred::make(), ()).expect("deferred")
+  }
+
+  fn enc(n: u32) -> Vec<u8> {
+    postcard::to_allocvec(&n).expect("encode")
+  }
+
+  /// Adopt a bare mailbox, deliver a call, then complete the typed reply with `typed_outcome`.
+  fn call_outcome(
+    typed_outcome: impl FnOnce(&Deferred<u32, CallError>),
+  ) -> Result<Vec<u8>, Cause<RemoteFault>> {
+    let reg = registry();
+    let q = mailbox();
+    reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
+    let reply = reply_slot();
+    reg
+      .deliver_call(&pid(1), &enc(3), reply.clone())
+      .expect("deliver");
+    match run_blocking(q.take(), ()).expect("take") {
+      ProcMsg::Call(msg, typed) => {
+        assert_eq!(msg, 3);
+        typed_outcome(&typed);
+      }
+      _ => panic!("expected a call"),
+    }
+    run_blocking(reply.wait(), ())
+  }
+
+  #[test]
+  fn unknown_behavior_and_unrouted_pids_are_refused() {
+    let reg = registry();
+    let node = ProcessNode::threads(NodeName::new("t@test"));
+    assert!(matches!(
+      reg.spawn(&node, "nope", &enc(0), None),
+      Err(RemoteFault::UnknownBehavior(n)) if n == "nope"
+    ));
+    assert!(reg.get("echo").is_some_and(|e| e.name == "echo"));
+    assert_eq!(reg.deliver_cast(&pid(9), &enc(1)), Err(RemoteFault::NoProc));
+    assert_eq!(reg.deliver_info(&pid(9), &enc(1)), Err(RemoteFault::NoProc));
+    assert_eq!(
+      reg.deliver_call(&pid(9), &enc(1), reply_slot()),
+      Err(RemoteFault::NoProc)
+    );
+  }
+
+  #[test]
+  fn register_counter_like_is_register() {
+    let mut reg = BehaviorRegistry::new();
+    reg.register_counter_like::<Echo>("counter");
+    assert!(reg.get("counter").is_some());
+    assert!(reg.get("echo").is_none());
+  }
+
+  #[test]
+  fn spawn_rejects_undecodable_args() {
+    let reg = registry();
+    let node = ProcessNode::threads(NodeName::new("t@test"));
+    assert!(matches!(
+      reg.spawn(&node, "echo", &[], None),
+      Err(RemoteFault::Decode(_))
+    ));
+  }
+
+  #[test]
+  fn spawned_behavior_answers_wire_calls() {
+    let reg = registry();
+    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let pid = reg.spawn(&node, "echo", &enc(10), None).expect("spawn");
+    assert!(reg.has_route(&pid));
+    reg.deliver_cast(&pid, &enc(1)).expect("cast");
+    reg.deliver_info(&pid, &enc(1)).expect("info");
+    let reply = reply_slot();
+    reg
+      .deliver_call(&pid, &enc(5), reply.clone())
+      .expect("call");
+    let bytes = run_blocking(reply.wait(), ()).expect("reply");
+    assert_eq!(postcard::from_bytes::<u32>(&bytes).unwrap(), 15);
+    reg.forget(&pid);
+    assert!(!reg.has_route(&pid));
+    assert_eq!(reg.deliver_cast(&pid, &enc(1)), Err(RemoteFault::NoProc));
+  }
+
+  #[test]
+  fn spawn_linked_to_a_parent_installs_a_route() {
+    let reg = registry();
+    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let parent = reg.spawn(&node, "echo", &enc(0), None).expect("parent");
+    let child = reg
+      .spawn(&node, "echo", &enc(0), Some(&parent))
+      .expect("child");
+    assert_ne!(parent, child);
+    assert!(reg.has_route(&child));
+  }
+
+  #[test]
+  fn adopt_local_requires_a_registered_behavior() {
+    let reg = registry();
+    reg.adopt_local::<Echo>("other", &pid(1), mailbox());
+    assert!(!reg.has_route(&pid(1)));
+    reg.adopt_local::<Echo>("echo", &pid(1), mailbox());
+    assert!(reg.has_route(&pid(1)));
+  }
+
+  #[test]
+  fn adopted_mailbox_receives_typed_cast_and_info() {
+    let reg = registry();
+    let q = mailbox();
+    reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
+    reg.deliver_cast(&pid(1), &enc(4)).expect("cast");
+    reg.deliver_info(&pid(1), &enc(6)).expect("info");
+    assert!(matches!(
+      run_blocking(q.take(), ()).expect("take"),
+      ProcMsg::Cast(4)
+    ));
+    assert!(matches!(
+      run_blocking(q.take(), ()).expect("take"),
+      ProcMsg::Info(Info::User(6))
+    ));
+  }
+
+  #[test]
+  fn undecodable_wire_bytes_fail_at_the_boundary() {
+    let reg = registry();
+    reg.adopt_local::<Echo>("echo", &pid(1), mailbox());
+    assert!(matches!(
+      reg.deliver_cast(&pid(1), &[]),
+      Err(RemoteFault::Decode(_))
+    ));
+    assert!(matches!(
+      reg.deliver_info(&pid(1), &[]),
+      Err(RemoteFault::Decode(_))
+    ));
+    assert!(matches!(
+      reg.deliver_call(&pid(1), &[], reply_slot()),
+      Err(RemoteFault::Decode(_))
+    ));
+  }
+
+  #[test]
+  fn closed_mailbox_is_noproc() {
+    let reg = registry();
+    let q = mailbox();
+    reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
+    run_blocking(q.shutdown(), ()).expect("shutdown");
+    assert_eq!(reg.deliver_cast(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
+    assert_eq!(reg.deliver_info(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
+    assert_eq!(
+      reg.deliver_call(&pid(1), &enc(1), reply_slot()),
+      Err(RemoteFault::NoProc)
+    );
+  }
+
+  #[test]
+  fn typed_reply_is_encoded_onto_the_wire() {
+    let bytes = call_outcome(|typed| {
+      assert!(typed.try_succeed(42));
+    })
+    .expect("reply");
+    assert_eq!(postcard::from_bytes::<u32>(&bytes).unwrap(), 42);
+  }
+
+  #[test]
+  fn call_errors_map_to_remote_faults() {
+    let cases = [
+      (CallError::Timeout, RemoteFault::Timeout),
+      (CallError::MailboxClosed, RemoteFault::NoProc),
+      (
+        CallError::Down(ExitReason::Shutdown),
+        RemoteFault::Down((&ExitReason::Shutdown).into()),
+      ),
+    ];
+    for (err, want) in cases {
+      let got = call_outcome(move |typed| {
+        assert!(typed.try_fail_cause(Cause::fail(err)));
+      });
+      assert!(matches!(got, Err(Cause::Fail(f)) if f == want));
+    }
+  }
+
+  #[test]
+  fn call_defect_maps_to_interrupted_down() {
+    let got = call_outcome(|typed| {
+      assert!(typed.try_fail_cause(Cause::die("boom")));
+    });
+    let want = RemoteFault::Down((&ExitReason::Interrupted).into());
+    assert!(matches!(got, Err(Cause::Fail(f)) if f == want));
+  }
+}

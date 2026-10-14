@@ -14,7 +14,7 @@ fn main() {
     let logger = *~EffectLogger;
     let seed = ~succeed::<i32, EffectLoggerError, Env>(6);
     if seed > 0 {
-      ~logger.info::<caps!(EffectLogger)>("seed is positive");
+      ~logger.info("seed is positive");
       seed * 2
     } else {
       0

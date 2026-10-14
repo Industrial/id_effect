@@ -315,3 +315,186 @@ pub(crate) fn process_loop<P: Process>(
     })
   })
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::sync::mpsc;
+  use std::time::Duration;
+
+  use id_effect::run_blocking;
+
+  use crate::pid::NodeName;
+
+  const WAIT: Duration = Duration::from_secs(10);
+
+  /// Behavior that drives [`ProcessCtx`] operations from inside its own callbacks.
+  struct Probe {
+    downs: i64,
+  }
+
+  enum ProbeCall {
+    Downs,
+    LinkThenUnlink(Pid),
+    MonitorThenDemonitor(Pid),
+    SpawnSibling,
+    IsKilled,
+  }
+
+  impl Process for Probe {
+    type Args = ();
+    type Env = ();
+    type Call = ProbeCall;
+    type Reply = i64;
+    /// `true` makes the handler fail.
+    type Cast = bool;
+    /// `true` makes the handler fail.
+    type Info = bool;
+    type Error = String;
+
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, ()> {
+      succeed(Probe { downs: 0 })
+    }
+
+    fn handle_call(self, msg: ProbeCall, ctx: ProcessCtx) -> Effect<(i64, Next<Self>), String, ()> {
+      Effect::new(move |_| {
+        let reply = match msg {
+          ProbeCall::Downs => self.downs,
+          ProbeCall::LinkThenUnlink(peer) => {
+            ctx.link(&peer);
+            ctx.unlink(&peer);
+            0
+          }
+          ProbeCall::MonitorThenDemonitor(peer) => {
+            let monitor = ctx.monitor(&peer);
+            ctx.demonitor(&peer, monitor);
+            0
+          }
+          ProbeCall::SpawnSibling => {
+            let sibling = ctx.spawn::<Probe>((), ());
+            i64::from(sibling.pid() != ctx.pid() && sibling.is_alive())
+          }
+          ProbeCall::IsKilled => i64::from(ctx.is_killed()),
+        };
+        Ok((reply, Next::Continue(self)))
+      })
+    }
+
+    fn handle_cast(self, fail: bool, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
+      Effect::new(move |_| {
+        if fail {
+          Err("cast boom".to_string())
+        } else {
+          Ok(Next::Continue(self))
+        }
+      })
+    }
+
+    fn handle_info(mut self, msg: Info<bool>, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
+      Effect::new(move |_| match msg {
+        Info::User(true) => Err("info boom".to_string()),
+        Info::Down { .. } => {
+          self.downs += 1;
+          Ok(Next::Continue(self))
+        }
+        _ => Ok(Next::Continue(self)),
+      })
+    }
+  }
+
+  fn node() -> ProcessNode {
+    ProcessNode::threads(NodeName::new("probe@local"))
+  }
+
+  fn call(addr: &Addr<Probe>, msg: ProbeCall) -> i64 {
+    run_blocking(addr.call(msg, WAIT), ()).expect("call")
+  }
+
+  /// Exit reason of `pid`, observed through a raw monitor sink (no polling).
+  fn exit_watch(node: &ProcessNode, pid: &Pid) -> mpsc::Receiver<ExitReason> {
+    let (tx, rx) = mpsc::channel();
+    let tx = std::sync::Mutex::new(tx);
+    node.monitor_with_sink(
+      pid,
+      Box::new(move |_m, _p, reason| {
+        let _ = tx.lock().expect("tx").send(reason);
+      }),
+    );
+    rx
+  }
+
+  #[test]
+  fn unlinked_peer_exit_does_not_propagate() {
+    let node = node();
+    let probe = node.spawn::<Probe>((), ());
+    let peer = node.spawn::<Probe>((), ());
+    call(&probe, ProbeCall::LinkThenUnlink(peer.pid().clone()));
+    let peer_exit = exit_watch(&node, peer.pid());
+    node.exit(peer.pid(), ExitReason::Error("peer died".into()));
+    assert_eq!(
+      peer_exit.recv_timeout(WAIT).expect("peer exit"),
+      ExitReason::Error("peer died".into())
+    );
+    // Link exits fan out before monitors fire, so a surviving link would already have killed us.
+    assert_eq!(call(&probe, ProbeCall::IsKilled), 0);
+  }
+
+  #[test]
+  fn demonitored_peer_exit_sends_no_down() {
+    let node = node();
+    let probe = node.spawn::<Probe>((), ());
+    let peer = node.spawn::<Probe>((), ());
+    call(&probe, ProbeCall::MonitorThenDemonitor(peer.pid().clone()));
+    let peer_exit = exit_watch(&node, peer.pid());
+    node.exit(peer.pid(), ExitReason::Shutdown);
+    peer_exit.recv_timeout(WAIT).expect("peer exit");
+    assert_eq!(call(&probe, ProbeCall::Downs), 0);
+  }
+
+  #[test]
+  fn ctx_spawn_starts_an_unlinked_sibling() {
+    let node = node();
+    let probe = node.spawn::<Probe>((), ());
+    assert_eq!(call(&probe, ProbeCall::SpawnSibling), 1);
+    assert_eq!(call(&probe, ProbeCall::IsKilled), 0);
+  }
+
+  #[test]
+  fn cast_handler_failure_exits_with_its_error() {
+    let node = node();
+    let probe = node.spawn::<Probe>((), ());
+    let exit = exit_watch(&node, probe.pid());
+    run_blocking(probe.cast(true), ()).expect("cast");
+    match exit.recv_timeout(WAIT).expect("exit") {
+      ExitReason::Error(msg) => assert!(msg.contains("cast boom"), "{msg}"),
+      other => panic!("unexpected exit: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn info_handler_failure_exits_with_its_error() {
+    let node = node();
+    let probe = node.spawn::<Probe>((), ());
+    let exit = exit_watch(&node, probe.pid());
+    run_blocking(probe.send(true), ()).expect("send");
+    match exit.recv_timeout(WAIT).expect("exit") {
+      ExitReason::Error(msg) => assert!(msg.contains("info boom"), "{msg}"),
+      other => panic!("unexpected exit: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn ctx_for_a_dead_pid_reports_killed() {
+    let node = node();
+    let ctx = ProcessCtx::new(Pid::from_parts(NodeName::new("probe@local"), 999, 1), node);
+    ctx.trap_exit(true); // no cell: a no-op rather than a panic
+    assert!(ctx.is_killed());
+  }
+
+  #[test]
+  fn panic_message_renders_common_payloads() {
+    assert_eq!(panic_message(&"static"), "static");
+    assert_eq!(panic_message(&String::from("owned")), "owned");
+    assert_eq!(panic_message(&42_u8), "non-string panic payload");
+  }
+}

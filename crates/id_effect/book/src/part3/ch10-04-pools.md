@@ -69,7 +69,7 @@ Each key has its own independently bounded pool.
 
 ## Pool as a capability
 
-In practice, pools live in [`Env`](../../src/capability/env.rs) and are wired at the program edge:
+In practice, pools live in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) and are wired at the program edge:
 
 ```rust
 use id_effect::{Effect, caps, effect, provide, require, run_with, Needs, ProviderSpecDerive};

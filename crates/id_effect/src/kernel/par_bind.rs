@@ -189,7 +189,7 @@ pub fn flatten_or<E>(or: Or<E, E>) -> E {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::kernel::succeed;
+  use crate::kernel::{fail, succeed};
   use pollster::FutureExt;
 
   #[test]
@@ -198,6 +198,69 @@ mod tests {
     let b = succeed::<i32, (), ()>(2);
     let out = join_binds2(a, b, ()).block_on().unwrap();
     assert_eq!(out, (1, 2));
+  }
+
+  #[test]
+  fn join_binds2_reports_which_side_failed() {
+    let left = join_binds2(fail::<i32, &str, ()>("l"), succeed::<i32, u8, ()>(2), ()).block_on();
+    assert!(matches!(left, Err(Or::Left("l"))));
+    let right = join_binds2(succeed::<i32, &str, ()>(1), fail::<i32, u8, ()>(9), ()).block_on();
+    assert!(matches!(right, Err(Or::Right(9))));
+  }
+
+  #[test]
+  fn join_binds_share_a_cloned_environment() {
+    let read = || Effect::new(|env: &mut i32| Ok::<i32, ()>(*env));
+    assert_eq!(
+      join_binds3(read(), read(), read(), 5).block_on(),
+      Ok((5, 5, 5))
+    );
+    assert_eq!(
+      join_binds4(read(), read(), read(), read(), 6).block_on(),
+      Ok((6, 6, 6, 6))
+    );
+  }
+
+  #[test]
+  fn join_binds3_propagates_the_first_failure() {
+    let out = join_binds3(
+      succeed::<i32, &str, ()>(1),
+      fail::<i32, &str, ()>("b"),
+      fail::<i32, &str, ()>("c"),
+      (),
+    )
+    .block_on();
+    assert_eq!(out, Err("b"));
+    let last = join_binds3(
+      succeed::<i32, &str, ()>(1),
+      succeed::<i32, &str, ()>(2),
+      fail::<i32, &str, ()>("c"),
+      (),
+    )
+    .block_on();
+    assert_eq!(last, Err("c"));
+  }
+
+  #[test]
+  fn join_binds4_propagates_failures_in_order() {
+    let ok = || succeed::<i32, &str, ()>(0);
+    let bad = |e| fail::<i32, &str, ()>(e);
+    assert_eq!(
+      join_binds4(bad("a"), bad("b"), ok(), ok(), ()).block_on(),
+      Err("a")
+    );
+    assert_eq!(
+      join_binds4(ok(), bad("b"), ok(), ok(), ()).block_on(),
+      Err("b")
+    );
+    assert_eq!(
+      join_binds4(ok(), ok(), bad("c"), ok(), ()).block_on(),
+      Err("c")
+    );
+    assert_eq!(
+      join_binds4(ok(), ok(), ok(), bad("d"), ()).block_on(),
+      Err("d")
+    );
   }
 
   #[test]

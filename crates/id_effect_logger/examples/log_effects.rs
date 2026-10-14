@@ -1,5 +1,5 @@
 //! Extract [`EffectLogger`] once with `~EffectLogger`, then call its methods
-//! as `~logger.level(…)` steps — each returns `Effect<(), EffectLoggerError, R>`.
+//! as `~logger.level(…)` steps — each returns `Effect<(), EffectLoggerError>`.
 //!
 //! Run: `RUST_LOG=trace devenv shell -- cargo run -p id_effect_logger --example log_effects`
 
@@ -16,11 +16,11 @@ fn main() {
 
   let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
     let logger = *~EffectLogger;
-    ~logger.trace::<caps!(EffectLogger)>("trace step");
-    ~logger.debug::<caps!(EffectLogger)>("debug step");
-    ~logger.info::<caps!(EffectLogger)>("info step");
-    ~logger.warn::<caps!(EffectLogger)>("warn step");
-    ~logger.error::<caps!(EffectLogger)>("error step");
+    ~logger.trace("trace step");
+    ~logger.debug("debug step");
+    ~logger.info("info step");
+    ~logger.warn("warn step");
+    ~logger.error("error step");
   });
 
   run_with([provide!(EffectLoggerLive)], prog).expect("logging should not fail");

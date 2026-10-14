@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code)]
 
 //! Exercise every `project_at_*` generated for arities 2–8.
 

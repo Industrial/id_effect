@@ -84,4 +84,60 @@ mod tests {
     );
     let _ = provider.shutdown();
   }
+
+  /// Emit one `info` span through the subscriber stack and report whether OTEL exported it.
+  fn exports_tracing_span(with_fmt_layer: bool, env_filter: Option<&str>) -> bool {
+    let exporter = InMemorySpanExporter::default();
+    let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
+    let subscriber = trace_subscriber_for_provider(&provider, with_fmt_layer, env_filter);
+    tracing::subscriber::with_default(subscriber, || {
+      tracing::info_span!("bridged").in_scope(|| tracing::info!("inside"));
+    });
+    let _ = provider.force_flush();
+    let found = exporter
+      .get_finished_spans()
+      .expect("spans")
+      .iter()
+      .any(|s| s.name == "bridged");
+    let _ = provider.shutdown();
+    found
+  }
+
+  #[test]
+  fn subscriber_without_filter_or_fmt_exports_spans() {
+    assert!(exports_tracing_span(false, None));
+  }
+
+  #[test]
+  fn subscriber_with_fmt_layer_exports_spans() {
+    assert!(exports_tracing_span(true, None));
+  }
+
+  #[test]
+  fn subscriber_with_filter_and_fmt_exports_enabled_spans() {
+    assert!(exports_tracing_span(true, Some("info")));
+  }
+
+  #[test]
+  fn subscriber_filter_suppresses_disabled_spans() {
+    assert!(!exports_tracing_span(false, Some("off")));
+  }
+
+  #[test]
+  fn invalid_filter_is_ignored() {
+    assert!(exports_tracing_span(false, Some("[[[not a filter")));
+  }
+
+  #[test]
+  fn global_registration_is_one_shot() {
+    let exporter = InMemorySpanExporter::default();
+    let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
+    register_global_tracer_provider(&provider);
+    let _ = try_init_global_tracing_with_otel(&provider, false, None);
+    assert!(
+      try_init_global_tracing_with_otel(&provider, false, None).is_err(),
+      "a global subscriber can only be installed once"
+    );
+    let _ = provider.shutdown();
+  }
 }

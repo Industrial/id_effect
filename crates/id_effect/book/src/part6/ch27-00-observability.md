@@ -1,6 +1,6 @@
 # Observability and health
 
-Part VI observability centers on [`id_effect_opentelemetry`](../../../id_effect_opentelemetry) and Axum health routes in [`id_effect_axum`](../../../id_effect_axum).
+Part VI observability centers on [`id_effect_opentelemetry`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_opentelemetry) and Axum health routes in [`id_effect_axum`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_axum).
 
 ## Starter layer
 
@@ -39,7 +39,7 @@ use id_effect_opentelemetry::trace_request;
 let app = router.layer(middleware::from_fn(trace_request));
 ```
 
-Pair with [`id_effect_rpc::span`](../../../id_effect_rpc/src/span.rs) helpers for RPC-shaped routes.
+Pair with [`id_effect_rpc::span`](https://github.com/Industrial/id_effect/blob/main/labs/id_effect_rpc/src/span.rs) helpers for RPC-shaped routes (`id_effect_rpc` is an unpublished labs crate; see [API boundaries](./ch29-00-api-boundaries.md)).
 
 ## See also
 

@@ -5,6 +5,7 @@
 Narrows the workspace to its core purpose and hardens what remains. See
 [ADR 0010](docs/adrs/0010-crate-tiers.md) and [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
 0.5.0 was never published; 0.6.0 is the next crates.io release after 0.4.0.
+Upgrading from 0.4 or 0.5: see the [0.6 migration guide](docs/MIGRATION-0.6.md).
 
 ### Runtime fixes
 
@@ -40,6 +41,9 @@ Narrows the workspace to its core purpose and hardens what remains. See
   `chain`, which used to re-poll the failed side.
 - `from_channel` and `from_duplex_queue_channel` read one item per pull.
 - Fixed: `merge` dropped the rest of the longer side after 64+ elements.
+- Fixed: `Channel::from_stream` applied `flat_map_out` only to the first element of
+  each chunk. The rest were buffered unchanged, so `[1,2,3]` through
+  `x ↦ [x,-x]` read as `1,2,3,-1`.
 - `combine_latest` takes one chunk from each side per pull. It used to drain the
   whole left side first.
 - `keyed_join`'s memory grows with the number of distinct keys, as documented.
@@ -168,6 +172,32 @@ Narrows the workspace to its core purpose and hardens what remains. See
   - **Breaking:** `PgAdvisoryLease` lock keys are now derived with SHA-256 (they
     used to come from std's hasher, which can change between Rust versions). Do not
     run old and new builds against the same singleton.
+
+### Capability ergonomics
+
+- New `Effect::widen_error::<E>()`: lifts an effect whose error is `()`, `Never` or
+  `Infallible` into any error type `E`, with no `map_error(|()| unreachable!())`. On a
+  real error type it is a compile error (sealed `kernel::InfallibleError`).
+- New `Effect::into_env::<R>()` for `R = ()` effects. `~` binds any `()`-environment
+  effect in any environment.
+- **Breaking:** `EffectLogger` methods (`info`, `debug`, …) no longer take a type
+  parameter. They return `Effect<(), EffectLoggerError>`, so write
+  `~logger.info("…")` inside `effect!`, or `.into_env()` elsewhere. An explicit
+  turbofish no longer compiles.
+- `#[provides(Service, with = || …)]` (or `with = |deps: &Env| …`, or
+  `with = Self::build`) defines a provider without a hand-written constructor, so
+  `#[allow(clippy::new_ret_no_self)]` is no longer needed.
+- `type AppCaps = caps!(A, B);` aliases work in `effect!(|r: &mut AppCaps| …)`.
+- Capability diagnostics:
+  - `#[track_caller]` on `Env::get`, `try_get`, `get_any`, `Needs::need`.
+  - **Breaking:** `try_get` and `get_any` misses return
+    `CapabilityError::MissingAt { cap, location }`. Match both shapes with
+    `err.missing_capability()`.
+  - `CapabilityId::name()` and `Display` show service names.
+  - `#[diagnostic::on_unimplemented]` hints on `Needs`, `CapabilityKey`,
+    `CapabilitySet`, `FromEnv`, `CapKeys`, `HasCap`, `CapWiden` and `CapBind`.
+- `#[capability]` is documented as the deprecated no-op it has been since 0.3. It
+  will be removed in 0.7.
 
 ### Integrations
 

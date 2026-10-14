@@ -4,11 +4,11 @@ Part V closes with tools that keep functional patterns honest: law checks, prope
 
 ## What This Chapter Covers
 
-- **[`testing::proptest`](../../src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
-- **[`law_test!`](../../../../id_effect_fp/src/algebra/law_test.rs)** — monad law checks for concrete type constructors
-- **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
-- **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
-- **[`FreeAp`](../../../../id_effect_fp/src/algebra/free_ap.rs)** — free applicative over `Effect`
+- **[`testing::proptest`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
+- **[`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs)** — monad law checks for concrete type constructors
+- **[`failure::pretty`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
+- **[`testing::snapshot`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
+- **[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs)** — free applicative over `Effect`
 - **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(Schema)]` (`schema()`, `HasSchema`)
 
 ## Property tests with `Exit`
@@ -34,7 +34,7 @@ With `proptest`, use `success_value` and `prop_assert_exit_success` inside `prop
 
 ## Monad law checks
 
-Use [`law_test!`](../../../../id_effect_fp/src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
+Use [`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
 
 ```rust
 use id_effect::law_test;
@@ -57,11 +57,11 @@ law_test! {
 
 ## Pretty failures
 
-[`pretty_cause`](../../src/failure/pretty.rs) renders indented trees; [`pretty_exit`](../../src/failure/pretty.rs) labels success vs failure branches for logs and test output.
+[`pretty_cause`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) renders indented trees; [`pretty_exit`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) labels success vs failure branches for logs and test output.
 
 ## Golden snapshots
 
-[`GoldenBuilder`](../../src/testing/snapshot.rs) freezes expected strings; [`assert_golden_effect`](../../src/testing/snapshot.rs) runs an effect and asserts the snapshot contract.
+[`GoldenBuilder`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) freezes expected strings; [`assert_golden_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) runs an effect and asserts the snapshot contract.
 
 ```rust
 use id_effect::{GoldenBuilder, snapshot_effect_map_flat_map, assert_golden_effect};
@@ -72,7 +72,7 @@ GoldenBuilder::new("my_case", "expected").assert_observed("observed");
 
 ## Free applicative
 
-[`FreeAp`](../../../../id_effect_fp/src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](../../../../id_effect_fp/src/algebra/free_ap.rs) runs it as a concrete `Effect`:
+[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) runs it as a concrete `Effect`:
 
 ```rust
 use id_effect::{FreeAp, pure, run_test, Exit};

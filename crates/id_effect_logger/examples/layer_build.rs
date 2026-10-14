@@ -13,7 +13,7 @@ fn main() {
 
   let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
     let logger = *~EffectLogger;
-    ~logger.info::<caps!(EffectLogger)>("logger provided via EffectLoggerLive provider");
+    ~logger.info("logger provided via EffectLoggerLive provider");
   });
 
   let result = run_with([provide!(EffectLoggerLive)], prog);

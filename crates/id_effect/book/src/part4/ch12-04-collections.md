@@ -1,112 +1,88 @@
 # TQueue, TMap, TSemaphore — Transactional Collections
 
-id_effect provides STM-aware versions of common collection types. They compose with other STM operations and integrate with `stm!`.
+`id_effect_fp` builds three collections on top of `TRef`. Their operations return `Stm` values, so
+they compose with `TRef` operations in the same transaction. Each constructor is a transaction
+too: commit it once and share the handle (all three are `Clone + Send + Sync`).
 
-## TQueue: Bounded Transactional Queue
+| Type | Constructor | Operations |
+|------|-------------|------------|
+| `TQueue<A>` | `TQueue::bounded(n)`, `TQueue::unbounded()` | `offer(a) -> Stm<bool, E>` (`false` when full), `take() -> Stm<A, E>` (retries while empty) |
+| `TMap<K, V>` | `TMap::make()` | `get(&k) -> Stm<Option<V>, E>`, `set(k, v)`, `delete(&k)` |
+| `TSemaphore` | `TSemaphore::make(n)` | `acquire()` (retries while no permit), `release()` |
 
-```rust
-use id_effect::TQueue;
+## TQueue: producer / consumer
 
-let queue: TQueue<Job> = TQueue::bounded(100);
+`take` waits (retries) while the queue is empty. `offer` on a full bounded queue does *not* wait:
+it returns `false`. Add `Stm::check` to make a waiting offer:
 
-// Enqueue (blocks/retries if full)
-let offer: Stm<()> = queue.offer_stm(job);
+```rust,ignore
+use id_effect_fp::{Stm, TQueue, commit};
 
-// Dequeue (blocks/retries if empty)
-let take: Stm<Job> = queue.take_stm();
-
-// Peek without removing
-let peek: Stm<Option<Job>> = queue.peek_stm();
-
-// Non-blocking try
-let try_take: Stm<Option<Job>> = queue.try_take_stm();
-```
-
-`TQueue::bounded(n)` creates a queue with capacity `n`. `offer_stm` blocks (via `stm::retry`) when full; `take_stm` blocks when empty. Both integrate naturally with `stm!`.
-
-### Producer-Consumer Pattern
-
-```rust
-fn producer(queue: Arc<TQueue<Job>>, jobs: Vec<Job>) -> Effect<(), Never, ()> {
-    effect! {
-        for job in jobs {
-            ~ commit(queue.offer_stm(job));
-        }
-        Ok(())
-    }
+fn offer_blocking(queue: &TQueue<u32>, job: u32) -> Stm<(), ()> {
+  queue.offer(job).flat_map(Stm::<(), ()>::check) // retry while full
 }
 
-fn consumer(queue: Arc<TQueue<Job>>) -> Effect<Never, Never, ()> {
-    effect! {
-        loop {
-            let job = ~ commit(queue.take_stm());  // blocks if empty
-            ~ process_job(job);
-        }
+let queue = run_blocking(commit(TQueue::<u32>::bounded(2)), ()).expect("queue");
+let producer = {
+  let queue = queue.clone();
+  std::thread::spawn(move || {
+    for job in 1..=10 {
+      run_blocking(commit(offer_blocking(&queue, job)), ()).expect("offer");
     }
-}
+  })
+};
+let sum: u32 = (0..10)
+  .map(|_| run_blocking(commit(queue.take::<()>()), ()).expect("take")) // waits while empty
+  .sum();
+producer.join().expect("join");
+assert_eq!(sum, 55);
 ```
 
-## TMap: Transactional Hash Map
+## TMap: atomic with other cells
 
-```rust
-use id_effect_fp::TMap;
+Reads and writes on a `TMap` and a `TRef` in one transaction commit together:
 
-let map: TMap<String, User> = TMap::new();
+```rust,ignore
+let users = run_blocking(commit(TMap::<String, String>::make()), ()).expect("map");
+let reads = run_blocking(commit(TRef::make(0_u32)), ()).expect("cell");
 
-// Inside stm!:
-let insert: Stm<()> = map.insert_stm("alice".into(), alice_user);
-let get:    Stm<Option<User>> = map.get_stm("alice");
-let remove: Stm<Option<User>> = map.remove_stm("alice");
-let update: Stm<()> = map.modify_stm("alice", |u| { u.name = "ALICE".into(); u });
+let lookup = {
+  let reads = reads.clone();
+  users
+    .get::<()>(&"alice".to_string())
+    .flat_map(move |user| reads.update_stm(|n| n + 1).map(move |()| user.clone()))
+};
+// Either the map read AND the counter increment happen, or neither does.
+let user: Option<String> = run_blocking(commit(lookup), ())?;
 ```
 
-`TMap` is a concurrent hash map where all operations participate in STM transactions. Reading from `TMap` and `TRef` in the same transaction is atomic:
+## TSemaphore: transactional permits
 
-```rust
-commit(stm! {
-    let user = ~ user_map.get_stm("alice");
-    let count = ~ access_counter.read_stm();
-    ~ access_counter.write_stm(count + 1);
-    user
-})
-// Either the map read AND the counter increment happen, or neither does
+```rust,ignore
+let sem = run_blocking(commit(TSemaphore::make(1)), ()).expect("sem");
+run_blocking(commit(sem.acquire::<()>()), ())?; // takes the only permit
+
+// Non-blocking try: `or_else` runs when `acquire` would retry.
+let try_acquire = sem.acquire::<()>().map(|()| true).or_else(Stm::succeed(false));
+assert_eq!(run_blocking(commit(try_acquire.clone()), ()), Ok(false));
+
+run_blocking(commit(sem.release::<()>()), ())?;
+assert_eq!(run_blocking(commit(try_acquire), ()), Ok(true));
 ```
 
-## TSemaphore: Transactional Semaphore
+Because `acquire` and `release` are `Stm`s, you can combine taking a permit with other state
+changes in one transaction. To bound concurrent *effects* (permits held across I/O), use core
+`id_effect::Semaphore` instead; STM transactions must not span I/O.
 
-```rust
-use id_effect::TSemaphore;
-
-// Create a semaphore with 10 permits
-let sem: TSemaphore = TSemaphore::new(10);
-
-// Acquire 1 permit (blocks if none available)
-let acquire: Stm<()> = sem.acquire_stm(1);
-
-// Release 1 permit
-let release: Stm<()> = sem.release_stm(1);
-```
-
-`TSemaphore` limits concurrent access to a resource. Use it with `acquire_release` for resource pools where you want transactional semantics:
-
-```rust
-commit(stm! {
-    ~ sem.acquire_stm(1);  // blocks until permit available
-    ()
-}).flat_map(|()| {
-    do_limited_work().flat_map(|result| {
-        commit(sem.release_stm(1)).map(|()| result)
-    })
-})
-```
+Full example: [`crates/id_effect_fp/examples/086_stm_collections.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/086_stm_collections.rs) (`cargo run -p id_effect_fp --example 086_stm_collections`); minimal per-type examples are `080_stm_tmap`, `081_stm_tqueue`, `082_stm_tsemaphore`.
 
 ## Summary
 
 | Type | Purpose |
 |------|---------|
 | `TRef<T>` | Single mutable value |
-| `TQueue<T>` | Blocking FIFO queue |
-| `TMap<K, V>` | Concurrent hash map |
-| `TSemaphore` | Concurrency limiter |
+| `TQueue<T>` | FIFO queue; `take` waits while empty |
+| `TMap<K, V>` | Transactional hash map |
+| `TSemaphore` | Transactional permit counter |
 
-All compose inside `stm!` and commit atomically with other STM operations.
+All compose with `flat_map` and commit atomically with other STM operations.

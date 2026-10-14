@@ -1,5 +1,3 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
-
 //! Ex 043 — primary/replica DB providers via `#[named]` variants.
 
 use id_effect::{Effect, Needs, caps, provide, run_with};
@@ -7,26 +5,14 @@ use id_effect::{Effect, Needs, caps, provide, run_with};
 type Database = &'static str;
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Database)]
+#[provides(Database, with = || "postgres://primary")]
 #[named("primary")]
 struct DbPrimaryLive;
 
-impl DbPrimaryLive {
-  fn new() -> Database {
-    "postgres://primary"
-  }
-}
-
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Database)]
+#[provides(Database, with = || "postgres://replica")]
 #[named("replica")]
 struct DbReplicaLive;
-
-impl DbReplicaLive {
-  fn new() -> Database {
-    "postgres://replica"
-  }
-}
 
 fn app() -> Effect<Database, (), caps!(Database)> {
   Effect::new(|env: &mut caps!(Database)| Ok(*Needs::<Database>::need(env)))
@@ -35,7 +21,9 @@ fn app() -> Effect<Database, (), caps!(Database)> {
 fn main() {
   let url = run_with([provide!(DbPrimaryLive)], app()).expect("run");
   assert_eq!(url, "postgres://primary");
-  println!("043_named_variant_providers ok: {url}");
+  let replica = run_with([provide!(DbReplicaLive)], app()).expect("run replica");
+  assert_eq!(replica, "postgres://replica");
+  println!("043_named_variant_providers ok: {url}, {replica}");
 }
 
 #[cfg(test)]

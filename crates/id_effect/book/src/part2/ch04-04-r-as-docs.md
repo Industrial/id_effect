@@ -82,7 +82,7 @@ There's no "I wonder if this also touches the metrics service" uncertainty. The 
 It's important to understand that `R` is just a type parameter. The "compile-time DI" property comes from:
 
 1. Functions declaring what they need in `R` (usually via `caps!`)
-2. Capability services identifying services in [`Env`](../../src/capability/env.rs)
+2. Capability services identifying services in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs)
 3. Composition automatically merging requirements
 4. Wiring centralized at `run_with` / `build_env` boundaries
 

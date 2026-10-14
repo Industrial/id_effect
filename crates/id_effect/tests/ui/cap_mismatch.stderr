@@ -40,14 +40,17 @@ help: consider annotating `Counter` with `#[derive(Clone)]`
 3 | struct Counter;
   |
 
-error[E0277]: the trait bound `(): Needs<Counter>` is not satisfied
+error[E0277]: environment `()` cannot provide capability `Counter`
  --> tests/ui/cap_mismatch.rs:6:36
   |
 6 |     let _ = Needs::<Counter>::need(r);
-  |             ---------------------- ^ the trait `Deref` is not implemented for `()`
+  |             ---------------------- ^ `Counter` is looked up here, but `()` is not a capability environment
   |             |
   |             required by a bound introduced by this call
   |
+  = help: the trait `Deref` is not implemented for `()`
+  = note: run the effect in a capability environment: `Effect<_, _, caps!(Counter)>` (or `Env`), not `()`
+  = note: a service type must be `Clone + Send + Sync + 'static`
 help: the trait `Needs<T>` is implemented for `Env`
  --> src/capability/needs.rs
   |
