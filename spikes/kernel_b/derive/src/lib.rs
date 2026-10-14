@@ -104,9 +104,10 @@ fn expand_env(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
   let mut generics = input.generics.clone();
   for tp in generics.type_params_mut() {
-    tp.bounds.push(syn::parse_quote!(
-      ::core::clone::Clone + ::core::marker::Send + ::core::marker::Sync + 'static
-    ));
+    tp.bounds.push(syn::parse_quote!(::core::clone::Clone));
+    tp.bounds.push(syn::parse_quote!(::core::marker::Send));
+    tp.bounds.push(syn::parse_quote!(::core::marker::Sync));
+    tp.bounds.push(syn::parse_quote!('static));
   }
   let (impl_g, ty_g, where_c) = generics.split_for_impl();
   let is_generic = !input.generics.params.is_empty();
@@ -170,10 +171,12 @@ fn expand_env(input: &DeriveInput) -> syn::Result<TokenStream2> {
       FieldKind::Base(list) => {
         for t in &list {
           provide(t, &format!("{fname} (forward)"))?;
+          let mut has_preds = where_preds.clone();
+          has_preds.push(syn::parse_quote!(#fty: ::kernel_b::Has<#t>));
           let mut preds = where_preds.clone();
           preds.push(syn::parse_quote!(#fty: ::kernel_b::Replace<#t>));
           out.extend(quote! {
-            impl #impl_g ::kernel_b::Has<#t> for #name #ty_g where #(#preds,)* {
+            impl #impl_g ::kernel_b::Has<#t> for #name #ty_g where #(#has_preds,)* {
               #[inline]
               fn get(&self) -> &#t { ::kernel_b::Has::<#t>::get(&self.#fname) }
             }
