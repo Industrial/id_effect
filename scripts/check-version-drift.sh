@@ -13,12 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-ws_version="$(awk '
-  /^\[/ { in_pkg = ($0 ~ /^\[workspace\.package\][[:space:]]*$/); next }
-  in_pkg && /^[[:space:]]*version[[:space:]]*=/ {
-    if (match($0, /"[^"]*"/)) { print substr($0, RSTART + 1, RLENGTH - 2); exit }
-}
-' Cargo.toml)"
+ws_version="$(sed -n '/^\[workspace\.package\]/,/^\[/ s/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -n1)"
 if [[ -z "$ws_version" ]]; then
     echo "check-version-drift: no [workspace.package].version in Cargo.toml" >&2
     exit 2
@@ -35,81 +30,15 @@ mapfile -t manifests < <(
     } | { grep -v '/target/' || true; } | sort
 )
 
-# Prints one line per stale pin and a final "#checked N" line; exits 1 if any pin is stale.
-read -r -d '' AWK_CHECK <<'AWK' || true
-function check(dep, ver, line) {
-  checked++
-  sub(/^[=^]/, "", ver)
-  if (ver ~ /\{\{/) return # template placeholder
-  if (ver != want) {
-    printf "%s:%d: %s pins version \"%s\" (workspace is %s)\n", file, line, dep, ver, want
-    bad++
-  }
-}
-function version_in(s,   m) {
-  if (match(s, /version[[:space:]]*=[[:space:]]*"[^"]*"/)) {
-    m = substr(s, RSTART, RLENGTH)
-    sub(/^[^"]*"/, "", m)
-    sub(/"$/, "", m)
-    return m
-  }
-  return ""
-}
-BEGIN { bad = 0; checked = 0; depth = 0 }
-{
-  line = $0
-  sub(/#.*/, "", line)
-  if (depth > 0) { # continuation of a multi-line inline table
-    acc = acc " " line
-    depth += gsub(/\{/, "{", line) - gsub(/\}/, "}", line)
-    if (depth <= 0) {
-      v = version_in(acc)
-      if (v != "") check(acc_dep, v, acc_line)
-      depth = 0
-    }
-    next
-  }
-  if (line ~ /^[[:space:]]*\[/) {
-    table_dep = ""
-    if (match(line, /dependencies\.id_effect[A-Za-z0-9_-]*\]/)) {
-      table_dep = substr(line, RSTART + 13, RLENGTH - 14)
-    }
-    in_deps = (line ~ /dependencies\][[:space:]]*$/)
-    next
-  }
-  if (table_dep != "" && line ~ /^[[:space:]]*version[[:space:]]*=/) {
-    check(table_dep, version_in(line), NR)
-    next
-  }
-  if (in_deps && match(line, /^[[:space:]]*id_effect[A-Za-z0-9_-]*[[:space:]]*=/)) {
-    dep = substr(line, RSTART, RLENGTH)
-    sub(/=$/, "", dep)
-    gsub(/[[:space:]]/, "", dep)
-    rest = substr(line, RSTART + RLENGTH)
-    if (rest ~ /^[[:space:]]*"/) {
-      v = rest
-      sub(/^[[:space:]]*"/, "", v)
-      sub(/".*/, "", v)
-      check(dep, v, NR)
-    } else if (rest ~ /^[[:space:]]*\{/) {
-      depth = gsub(/\{/, "{", rest) - gsub(/\}/, "}", rest)
-      if (depth > 0) {
-        acc = rest; acc_dep = dep; acc_line = NR
-      } else {
-        v = version_in(rest)
-        if (v != "") check(dep, v, NR)
-      }
-    }
-  }
-}
-END { printf "#checked %d\n", checked; exit (bad > 0 ? 1 : 0) }
-AWK
+# The per-manifest checker lives in check-version-drift.awk (prints one line per stale pin
+# and a final "#checked N" line; exits 1 if any pin is stale).
+AWK_CHECK="$ROOT/scripts/check-version-drift.awk"
 
 drift=0
 checked=0
 for manifest in "${manifests[@]}"; do
     status=0
-    out="$(awk -v want="$ws_version" -v file="$manifest" "$AWK_CHECK" "$manifest")" || status=$?
+    out="$(awk -v want="$ws_version" -v file="$manifest" -f "$AWK_CHECK" "$manifest")" || status=$?
     n="$(sed -n 's/^#checked //p' <<<"$out")"
     checked=$((checked + ${n:-0}))
     grep -v '^#checked ' <<<"$out" || true
