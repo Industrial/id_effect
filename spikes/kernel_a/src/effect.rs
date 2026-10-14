@@ -13,7 +13,8 @@ use crate::cause::{Cause, Defect, Exit, ExitKind, InterruptSignal, Never};
 use crate::executor::Runtime;
 use crate::fiber::{FiberContext, FiberHandle, spawn_fiber};
 use crate::hlist::{Embed, HList, HNil, Plucker, Sculptor, Selector};
-use crate::runloop::{AnyBox, AnyEnv, AnyExit, Instr, MaskOp, Runloop};
+pub(crate) use crate::runloop::unbox;
+use crate::runloop::{AnyEnv, AnyExit, Instr, MaskOp, Runloop, erase};
 
 /// How many `map`/`flat_map` steps fuse into one synchronous closure before the chain spills into
 /// runloop frames. Bounds native stack use (fusion nests calls).
@@ -47,17 +48,10 @@ impl<A, E, R> std::fmt::Debug for Effect<A, E, R> {
   }
 }
 
-pub(crate) fn unbox<T: 'static>(b: AnyBox) -> T {
-  match b.downcast::<T>() {
-    Ok(t) => *t,
-    Err(_) => panic!("kernel_a: erased value type mismatch (kernel bug)"),
-  }
-}
-
 pub(crate) fn erase_exit<A: Send + 'static, E: Send + 'static>(r: Exit<A, E>) -> AnyExit {
   match r {
-    Ok(a) => Ok(Box::new(a)),
-    Err(c) => Err(c.map(|e| Box::new(e) as AnyBox)),
+    Ok(a) => Ok(erase(a)),
+    Err(c) => Err(c.map(erase)),
   }
 }
 
@@ -127,9 +121,10 @@ where
   F: FnOnce() -> Fut + Send + 'static,
   Fut: Future<Output = Result<A, E>> + Send + 'static,
 {
-  Effect::from_instr(Instr::Async(Box::new(move |_, _| {
-    let fut = f();
-    Box::pin(async move { erase_exit(fut.await.map_err(Cause::Fail)) })
+  // One allocation: the boxed async block is lazy (`f` runs on first poll), so it needs no
+  // separate builder closure.
+  Effect::from_instr(Instr::Future(Box::pin(async move {
+    erase_exit(f().await.map_err(Cause::Fail))
   })))
 }
 
@@ -139,7 +134,7 @@ pub fn sleep<E: Send + 'static, R: Send + Sync + 'static>(d: Duration) -> Effect
     let s = fiber.executor().sleep(d);
     Box::pin(async move {
       s.await;
-      Ok(Box::new(()) as AnyBox)
+      Ok(erase(()))
     })
   })))
 }
@@ -149,7 +144,7 @@ pub fn yield_now<E: Send + 'static, R: Send + Sync + 'static>() -> Effect<(), E,
   Effect::from_instr(Instr::Async(Box::new(|_, _| {
     Box::pin(async {
       YieldOnce(false).await;
-      Ok(Box::new(()) as AnyBox)
+      Ok(erase(()))
     })
   })))
 }
@@ -376,10 +371,9 @@ where
         1,
       ),
       Node::Sync(g, d) if d < FUSE_MAX => Effect::sync_node(move |r| g(r).map_now(f), d + 1),
-      node => Effect::from_instr(Instr::FlatMap(
-        Box::new(Self { node }.into_instr()),
-        Box::new(move |v| Instr::Pure(Ok(Box::new(f(unbox::<A>(v)))))),
-      )),
+      node => Effect::from_instr(
+        Self { node }.seq(Box::new(move |v| Instr::Pure(Ok(erase(f(unbox::<A>(v))))))),
+      ),
     }
   }
 
@@ -402,10 +396,20 @@ where
         node: Node::Pure(Err(c)),
       },
       Node::Sync(g, d) if d < FUSE_MAX => Effect::sync_node(move |r| g(r).flat_map_now(f), d + 1),
-      node => Effect::from_instr(Instr::FlatMap(
-        Box::new(Self { node }.into_instr()),
-        Box::new(move |v| f(unbox::<A>(v)).into_instr()),
-      )),
+      node => {
+        Effect::from_instr(Self { node }.seq(Box::new(move |v| f(unbox::<A>(v)).into_instr())))
+      }
+    }
+  }
+
+  /// Append an erased continuation: pushes onto an existing `Seq` (no box per step).
+  fn seq(self, k: Box<dyn FnOnce(crate::runloop::AnyBox) -> Instr + Send>) -> Instr {
+    match self.node {
+      Node::Op(Instr::Seq(inner, mut ks)) => {
+        ks.push(k);
+        Instr::Seq(inner, ks)
+      }
+      node => Instr::Seq(Box::new(Self { node }.into_instr()), vec![k]),
     }
   }
 
@@ -442,7 +446,7 @@ where
         Box::new(Self { node }.into_instr()),
         Box::new(move |exit| match exit {
           Ok(v) => Instr::Pure(Ok(v)),
-          Err(c) => Instr::Pure(Err(c.map(|e| Box::new(f(unbox::<E>(e))) as AnyBox))),
+          Err(c) => Instr::Pure(Err(c.map(|e| erase(f(unbox::<E>(e)))))),
         }),
       )),
     }
@@ -478,7 +482,7 @@ where
       Node::Pure(r) => succeed(r),
       node => Effect::from_instr(Instr::Fold(
         Box::new(Self { node }.into_instr()),
-        Box::new(|exit| Instr::Pure(Ok(Box::new(unerase_exit::<A, E>(exit))))),
+        Box::new(|exit| Instr::Pure(Ok(erase(unerase_exit::<A, E>(exit))))),
       )),
     }
   }
@@ -611,7 +615,7 @@ where
         Some(fiber),
         fiber.executor(),
       );
-      Instr::Pure(Ok(Box::new(FiberHandle::<A, E>::new(ctx, cell))))
+      Instr::Pure(Ok(erase(FiberHandle::<A, E>::new(ctx, cell))))
     })))
   }
 
@@ -619,7 +623,7 @@ where
   pub fn fork_daemon(self) -> Effect<FiberHandle<A, E>, Never, R> {
     Effect::from_instr(Instr::WithFiber(Box::new(move |env, fiber| {
       let (ctx, cell) = spawn_fiber(self.into_instr(), Arc::clone(env), None, fiber.executor());
-      Instr::Pure(Ok(Box::new(FiberHandle::<A, E>::new(ctx, cell))))
+      Instr::Pure(Ok(erase(FiberHandle::<A, E>::new(ctx, cell))))
     })))
   }
 

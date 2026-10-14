@@ -11,7 +11,7 @@ use std::time::Duration;
 use crate::cause::Cause;
 use crate::effect::{Effect, fail, succeed, unbox};
 use crate::fiber::{Cell, FiberContext, spawn_fiber};
-use crate::runloop::{AnyBox, AnyExit, BoxFuture, Instr};
+use crate::runloop::{AnyBox, AnyExit, BoxFuture, Instr, erase};
 
 /// How `fork_all` schedules its children.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,7 +79,7 @@ impl Future for AllFut {
       .iter_mut()
       .map(|r| r.take().expect("child result"))
       .collect();
-    Poll::Ready(Ok(Box::new(vals)))
+    Poll::Ready(Ok(erase(vals)))
   }
 }
 
@@ -137,7 +137,7 @@ where
       let instrs = effects.into_iter().map(Effect::into_instr).collect();
       Effect::from_instr(Instr::FlatMap(
         Box::new(fork_wave(instrs)),
-        Box::new(move |v| Instr::Pure(Ok(Box::new(unbox_all(v))))),
+        Box::new(move |v| Instr::Pure(Ok(erase(unbox_all(v))))),
       ))
     }
     Concurrency::Bounded(n) => {
@@ -176,7 +176,7 @@ where
         let mut it = unbox::<Vec<AnyBox>>(v).into_iter();
         let a = unbox::<A>(it.next().expect("zip_par left"));
         let b = unbox::<B>(it.next().expect("zip_par right"));
-        Instr::Pure(Ok(Box::new((a, b))))
+        Instr::Pure(Ok(erase((a, b))))
       }),
     ))
   }
@@ -231,7 +231,7 @@ impl<A: Send + 'static> Future for TimeoutFut<A> {
     if !this.timed_out {
       if let Poll::Ready(exit) = this.kid.1.poll_take(cx) {
         this.finished = true;
-        return Poll::Ready(exit.map(|v| Box::new(Some(unbox::<A>(v))) as AnyBox));
+        return Poll::Ready(exit.map(|v| erase(Some(unbox::<A>(v)))));
       }
       if this.sleep.as_mut().poll(cx).is_pending() {
         return Poll::Pending;
@@ -242,7 +242,7 @@ impl<A: Send + 'static> Future for TimeoutFut<A> {
     match this.kid.1.poll_take(cx) {
       Poll::Ready(_) => {
         this.finished = true;
-        Poll::Ready(Ok(Box::new(None::<A>)))
+        Poll::Ready(Ok(erase(None::<A>)))
       }
       Poll::Pending => Poll::Pending,
     }

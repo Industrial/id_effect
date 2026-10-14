@@ -12,7 +12,62 @@ use std::task::{Context, Poll};
 use crate::cause::{Cause, cause_from_panic};
 use crate::fiber::FiberContext;
 
-pub(crate) type AnyBox = Box<dyn Any + Send>;
+/// An erased runloop value. Design A §5 R2 mitigation ("SmallBox"), in safe Rust: `()` and a
+/// fixed set of word-sized primitives (recognised by `TypeId`) travel inline; every other type,
+/// including small user structs, is boxed.
+pub(crate) enum AnyBox {
+  Unit,
+  Word(u64),
+  Boxed(Box<dyn Any + Send>),
+}
+
+pub(crate) fn erase<T: Send + 'static>(t: T) -> AnyBox {
+  let mut slot = Some(t);
+  let any: &mut dyn Any = &mut slot;
+  if any.is::<Option<()>>() {
+    return AnyBox::Unit;
+  }
+  macro_rules! word {
+    ($($ty:ty),*) => {$(
+      if let Some(s) = any.downcast_mut::<Option<$ty>>() {
+        return AnyBox::Word(s.take().map_or(0, |v| v as u64));
+      }
+    )*};
+  }
+  word!(u64, usize, u32, i64, i32, bool);
+  AnyBox::Boxed(Box::new(slot.take().expect("kernel_a: erase slot")))
+}
+
+pub(crate) fn unbox<T: 'static>(v: AnyBox) -> T {
+  let mut out: Option<T> = None;
+  let any: &mut dyn Any = &mut out;
+  match v {
+    AnyBox::Boxed(b) => match b.downcast::<T>() {
+      Ok(t) => return *t,
+      Err(_) => panic!("kernel_a: erased value type mismatch (kernel bug)"),
+    },
+    AnyBox::Unit => {
+      if let Some(o) = any.downcast_mut::<Option<()>>() {
+        *o = Some(());
+      }
+    }
+    AnyBox::Word(w) => {
+      macro_rules! word {
+        ($($ty:ty),*) => {$(
+          if let Some(o) = any.downcast_mut::<Option<$ty>>() {
+            *o = Some(w as $ty);
+          }
+        )*};
+      }
+      word!(u64, usize, u32, i64, i32);
+      if let Some(o) = any.downcast_mut::<Option<bool>>() {
+        *o = Some(w != 0);
+      }
+    }
+  }
+  out.expect("kernel_a: erased value type mismatch (kernel bug)")
+}
+
 pub(crate) type AnyExit = Result<AnyBox, Cause<AnyBox>>;
 pub(crate) type AnyEnv = Arc<dyn Any + Send + Sync>;
 
@@ -36,7 +91,12 @@ pub(crate) enum Instr {
   WithFiber(WithFiberFn),
   /// Suspend on a `'static` future built from the env (the env is borrowed synchronously only).
   Async(AsyncFn),
+  /// A lazy future that needs neither env nor fiber (`from_async`).
+  Future(BoxFuture<'static, AnyExit>),
   FlatMap(Box<Instr>, Cont),
+  /// `inner` followed by `conts` in order: repeated `flat_map`/`map` on an erased effect push
+  /// onto the vector instead of nesting a box per step.
+  Seq(Box<Instr>, Vec<Cont>),
   /// Runs on success *and* failure (typed `catch`, `exit`, `ensuring`, finalizers).
   Fold(Box<Instr>, Handler),
   /// Run the inner instruction under a different env (`provide*`, `narrow`).
@@ -159,8 +219,15 @@ impl Future for Runloop {
             Err(p) => this.cur = Some(Instr::Pure(Err(cause_from_panic(p)))),
           }
         }
+        Instr::Future(fut) => this.fut = Some(fut),
         Instr::FlatMap(inner, k) => {
           this.stack.push(Frame::FlatMap(k));
+          this.cur = Some(*inner);
+        }
+        Instr::Seq(inner, conts) => {
+          this
+            .stack
+            .extend(conts.into_iter().rev().map(Frame::FlatMap));
           this.cur = Some(*inner);
         }
         Instr::Fold(inner, h) => {
