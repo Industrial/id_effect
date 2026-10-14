@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code)]
 
 //! Proptest: `project_at_*` + `CapList` verification matches inserted keys.
 

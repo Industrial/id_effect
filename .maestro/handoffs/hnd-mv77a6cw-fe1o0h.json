@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77a6cw-fe1o0h",
+	"task_id": "tsk-mqjyks37-v7jv2v",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:35:57.872Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/fp-algebra.md",
+	"to_agent": "cli"
+}

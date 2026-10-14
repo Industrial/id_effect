@@ -1,5 +1,10 @@
 # Migrating from `async fn` to effects
 
+> **Upgrading id_effect 0.4 / 0.5 → 0.6:** crates moved to `labs/`, merged crates
+> (`id_effect_tower`, `id_effect_sql_pg`), paths moved to `id_effect_fp` and
+> `id_effect_node::placement`, renames, pull-based streams and the axum executor are covered in the
+> [0.6 migration guide](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.6.md).
+
 > **2.x → 3.0:** See [Migrating 2.x → 3.0](#migrating-2x--30) for the DI maturity breaking changes.
 
 
@@ -321,7 +326,7 @@ run_with(
 )?;
 ```
 
-Each `*Live` type implements `ProviderSpec`. Dependencies are declared in `requires()` and satisfied via `deps.get::<Cap<K>>()` inside `provide()`. [`CapabilityGraph`](../../src/capability/graph.rs) plans build order — no manual stacking.
+Each `*Live` type implements `ProviderSpec`. Dependencies are declared in `requires()` and satisfied via `deps.get::<Cap<K>>()` inside `provide()`. [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order — no manual stacking.
 
 ### Test environments
 

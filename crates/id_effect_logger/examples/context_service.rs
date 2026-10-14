@@ -13,8 +13,8 @@ fn main() {
 
   let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
     let logger = *~EffectLogger;
-    ~logger.info::<caps!(EffectLogger)>("resolved EffectLogger via Env + EffectLoggerLive");
-    ~logger.warn::<caps!(EffectLogger)>("warn from the same extracted logger");
+    ~logger.info("resolved EffectLogger via Env + EffectLoggerLive");
+    ~logger.warn("warn from the same extracted logger");
   });
 
   run_with([provide!(EffectLoggerLive)], prog)

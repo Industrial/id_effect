@@ -40,14 +40,17 @@ help: consider annotating `MissingCap` with `#[derive(Clone)]`
 4 | struct MissingCap;
   |
 
-error[E0277]: the trait bound `(): Needs<MissingCap>` is not satisfied
+error[E0277]: environment `()` cannot provide capability `MissingCap`
  --> tests/ui/missing_capability.rs:7:39
   |
 7 |     let _ = Needs::<MissingCap>::need(r);
-  |             ------------------------- ^ the trait `Deref` is not implemented for `()`
+  |             ------------------------- ^ `MissingCap` is looked up here, but `()` is not a capability environment
   |             |
   |             required by a bound introduced by this call
   |
+  = help: the trait `Deref` is not implemented for `()`
+  = note: run the effect in a capability environment: `Effect<_, _, caps!(MissingCap)>` (or `Env`), not `()`
+  = note: a service type must be `Clone + Send + Sync + 'static`
 help: the trait `Needs<T>` is implemented for `Env`
  --> src/capability/needs.rs
   |

@@ -1,15 +1,15 @@
 # Verification and Metaprogramming
 
-Part V closes with tools that keep functional patterns honest: law checks, property tests, golden snapshots, and derive stubs that will grow into full codegen.
+Part V closes with tools that keep functional patterns honest: law checks, property tests, golden snapshots, and derive macros.
 
 ## What This Chapter Covers
 
-- **[`testing::proptest`](../../src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
-- **[`law_test!`](../../src/algebra/law_test.rs)** — monad law checks for concrete type constructors
-- **[`failure::pretty`](../../src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
-- **[`testing::snapshot`](../../src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
-- **[`FreeAp`](../../src/algebra/free_ap.rs)** — free applicative over `Effect`
-- **`id_effect_proc_macro` derives** — `#[derive(Optics)]`, `#[derive(Fsm)]` (stubs); `#[derive(SchemaParser)]` (full codegen in `id_effect_parse`)
+- **[`testing::proptest`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
+- **[`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs)** — monad law checks for concrete type constructors
+- **[`failure::pretty`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
+- **[`testing::snapshot`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
+- **[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs)** — free applicative over `Effect`
+- **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(Schema)]` (`schema()`, `HasSchema`)
 
 ## Property tests with `Exit`
 
@@ -34,11 +34,11 @@ With `proptest`, use `success_value` and `prop_assert_exit_success` inside `prop
 
 ## Monad law checks
 
-Use [`law_test!`](../../src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
+Use [`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
 
 ```rust
 use id_effect::law_test;
-use id_effect::algebra::monad::option;
+use id_effect_fp::algebra::monad::option;
 
 fn inc(x: i32) -> Option<i32> { Some(x + 1) }
 fn double(x: i32) -> Option<i32> { Some(x * 2) }
@@ -57,11 +57,11 @@ law_test! {
 
 ## Pretty failures
 
-[`pretty_cause`](../../src/failure/pretty.rs) renders indented trees; [`pretty_exit`](../../src/failure/pretty.rs) labels success vs failure branches for logs and test output.
+[`pretty_cause`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) renders indented trees; [`pretty_exit`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) labels success vs failure branches for logs and test output.
 
 ## Golden snapshots
 
-[`GoldenBuilder`](../../src/testing/snapshot.rs) freezes expected strings; [`assert_golden_effect`](../../src/testing/snapshot.rs) runs an effect and asserts the snapshot contract.
+[`GoldenBuilder`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) freezes expected strings; [`assert_golden_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) runs an effect and asserts the snapshot contract.
 
 ```rust
 use id_effect::{GoldenBuilder, snapshot_effect_map_flat_map, assert_golden_effect};
@@ -72,7 +72,7 @@ GoldenBuilder::new("my_case", "expected").assert_observed("observed");
 
 ## Free applicative
 
-[`FreeAp`](../../src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](../../src/algebra/free_ap.rs) runs it as a concrete `Effect`:
+[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) runs it as a concrete `Effect`:
 
 ```rust
 use id_effect::{FreeAp, pure, run_test, Exit};
@@ -86,27 +86,28 @@ let exit = run_test(free.interpret(), ());
 assert_eq!(exit, Exit::succeed(5));
 ```
 
-## Derive stubs (proc macros)
+## Derive macros
 
-`id_effect_proc_macro` ships derives for optics, FSM, and schema parser codegen:
+`id_effect_proc_macro` ships derives for optics and schema codegen:
 
-| Derive | Reserved for |
-|--------|----------------|
-| `Optics` | `id_effect_optics` lens/prism codegen |
-| `Fsm` | `id_effect_fsm` transition tables |
-| `SchemaParser` | `id_effect_parse` schema-driven parsers |
+| Derive | Generates |
+|--------|-----------|
+| `Optics` | `id_effect_optics` field lenses and enum prisms |
+| `Schema` | inherent `schema()` + `HasSchema` over the JSON-shaped `Unknown` wire |
+| `SchemaParser` | deprecated alias of `Schema` (identical output) |
 
 ```rust
-use id_effect_proc_macro::{Optics, Fsm, SchemaParser};
+use id_effect_proc_macro::{Optics, Schema};
 
 #[derive(Optics)]
 struct Point { x: i32, y: i32 }
 
-#[derive(Fsm)]
-enum Light { Red, Green }
-
-#[derive(SchemaParser)]
-struct User { name: String }
+#[derive(Clone, Schema)]
+struct User { #[schema("user_name")] name: String }
 ```
 
-`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. FSM and SchemaParser derives remain stubs until their crates land.
+`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(Schema)]` generates `schema()` and a `HasSchema` impl; `#[schema("wire")]` renames a field on the wire. For a JSON text parser, pass the type to `id_effect_parse::SchemaBridge::parser_for::<User>()`.
+
+`#[derive(SchemaParser)]` is kept as a deprecated alias for one release. It no longer generates a `parser()` method (that tied a published derive to the unpublished `id_effect_parse` crate). Derive macros cannot carry `#[deprecated]`, so there is no compiler warning — switch to `#[derive(Schema)]`.
+
+`#[derive(Fsm)]` lives in `id_effect_fsm` (re-exported from `id_effect_proc_macro`): annotate a state enum with `#[fsm(event = …, initial = …)]` and `#[fsm(on(Event => Target, …))]` per variant to generate its transition table. Unknown targets and duplicate edges are compile errors. See the [state machines chapter](./ch19-00-state-machines.md).

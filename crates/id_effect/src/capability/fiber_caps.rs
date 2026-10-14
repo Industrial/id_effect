@@ -75,7 +75,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(dead_code, clippy::new_ret_no_self)]
+#[allow(dead_code)]
 mod tests {
   use super::super::key::Cap;
   use super::super::needs::Needs;

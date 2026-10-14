@@ -4,9 +4,8 @@ use super::error::{CapabilityDiagnostic, CapabilityPlannerError, ProviderError};
 use super::id::CapabilityId;
 use super::planner::{PlannerNode, plan_topological};
 use super::provider::ProviderNode;
-use crate::collections::EffectHashMap;
-use crate::collections::hash_map;
 use crate::runtime::run_blocking;
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -41,10 +40,9 @@ impl CapabilityGraph {
   pub fn plan(&self) -> Result<Vec<usize>, CapabilityPlannerError> {
     self.check_provider_conflicts()?;
 
-    let mut cap_name_by_id = EffectHashMap::<CapabilityId, String>::new();
+    let mut cap_name_by_id = HashMap::<CapabilityId, String>::new();
     for node in &self.nodes {
-      cap_name_by_id = hash_map::set(
-        &cap_name_by_id,
+      cap_name_by_id.insert(
         node.provides(),
         planner_cap_key(node.provides(), node.cap_name()),
       );
@@ -64,9 +62,10 @@ impl CapabilityGraph {
           .iter()
           .filter(|cap_id| provided_caps.contains(cap_id) || !optional.contains(cap_id))
           .map(|cap_id| {
-            hash_map::get(&cap_name_by_id, cap_id)
+            cap_name_by_id
+              .get(cap_id)
               .cloned()
-              .unwrap_or_else(|| planner_cap_key(*cap_id, &format!("{cap_id:?}")))
+              .unwrap_or_else(|| planner_cap_key(*cap_id, cap_id.name()))
           })
           .collect::<Vec<_>>();
         PlannerNode::new(
@@ -122,21 +121,17 @@ impl CapabilityGraph {
   }
 
   fn check_provider_conflicts(&self) -> Result<(), CapabilityPlannerError> {
-    let mut provider_by_cap = EffectHashMap::<CapabilityId, (String, String)>::new();
+    let mut provider_by_cap = HashMap::<CapabilityId, (String, String)>::new();
     for node in &self.nodes {
       let cap = node.provides();
-      if let Some((first_id, first_name)) = hash_map::get(&provider_by_cap, &cap) {
+      if let Some((first_id, first_name)) = provider_by_cap.get(&cap) {
         return Err(CapabilityPlannerError::ConflictingProvider {
           cap: first_name.clone(),
           first: first_id.clone(),
           second: node.id().to_string(),
         });
       }
-      provider_by_cap = hash_map::set(
-        &provider_by_cap,
-        cap,
-        (node.id().to_string(), node.cap_name().to_string()),
-      );
+      provider_by_cap.insert(cap, (node.id().to_string(), node.cap_name().to_string()));
     }
     Ok(())
   }
@@ -157,7 +152,7 @@ fn map_provider_err(provider: &str) -> impl Fn(ProviderError) -> CapabilityPlann
 }
 
 #[cfg(test)]
-#[allow(dead_code, clippy::new_ret_no_self)]
+#[allow(dead_code)]
 mod graph_feature_tests {
   use super::*;
   use crate::capability::Env;
@@ -232,26 +227,16 @@ mod graph_feature_tests {
   #[test]
   fn conflicting_providers_error() {
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(1))]
     struct DbA;
-    impl DbA {
-      fn new() -> Db {
-        Db(1)
-      }
-    }
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(2))]
     struct DbB;
-    impl DbB {
-      fn new() -> Db {
-        Db(2)
-      }
-    }
     let g = CapabilityGraph::new()
       .add(provide!(DbA).0)
       .add(provide!(DbB).0);
-    assert_eq!(DbA::new().0, 1);
-    assert_eq!(DbB::new().0, 2);
+    assert_eq!(DbA::provide(&Env::new()).expect("DbA").0, 1);
+    assert_eq!(DbB::provide(&Env::new()).expect("DbB").0, 2);
     let err = g.plan().expect_err("conflict");
     assert!(matches!(
       err,
@@ -285,13 +270,8 @@ mod graph_feature_tests {
   fn build_from_parent_env() {
     let parent = Env::new();
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(Db)]
+    #[provides(Db, with = || Db(5))]
     struct DbLive;
-    impl DbLive {
-      fn new() -> Db {
-        Db(5)
-      }
-    }
     let g = CapabilityGraph::new().add(provide!(DbLive).0);
     let child = g.build_from(parent).expect("build_from");
     assert_eq!(child.get::<Cap<Db>>().0, 5);

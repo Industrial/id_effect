@@ -4,21 +4,11 @@ use crate::coordination::latch::Latch;
 use crate::failure::exit::Exit;
 use crate::kernel::Effect;
 use crate::runtime::{Never, run_blocking};
-use crate::stm::{Outcome, Stm, TRef, commit};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 /// One-shot cleanup hook run when a [`Scope`] closes; receives the close [`Exit`] and returns an effect.
 pub type Finalizer = Box<dyn FnOnce(Exit<(), Never>) -> Effect<(), Never, ()> + Send + 'static>;
-
-type FinalizerCell = Arc<Mutex<Option<Finalizer>>>;
-
-/// [`Finalizer`] is [`FnOnce`]; cells are [`Arc`] so [`TRef`] transactions can retry idempotently
-/// (see `add_finalizer`).
-#[derive(Clone, Default)]
-struct FinalizerBucket {
-  entries: Vec<FinalizerCell>,
-}
 
 /// Hierarchical resource scope: parent close cascades to children; supports finalizers and awaitable close.
 #[derive(Clone)]
@@ -32,22 +22,21 @@ struct ScopeInner {
   close_latch: Latch,
   parent: Mutex<Option<Weak<ScopeInner>>>,
   children: Mutex<Vec<Weak<ScopeInner>>>,
-  finalizers: TRef<FinalizerBucket>,
+  /// Registered finalizers in registration order (run LIFO on close).
+  finalizers: Mutex<Vec<Finalizer>>,
 }
 
 impl Scope {
   /// Creates a new root scope (open, no parent).
   pub fn make() -> Self {
     let close_latch = run_blocking(Latch::make(), ()).expect("Latch::make");
-    let finalizers =
-      run_blocking(commit(TRef::make(FinalizerBucket::default())), ()).expect("finalizers tref");
     Self {
       inner: Arc::new(ScopeInner {
         closed: AtomicBool::new(false),
         close_latch,
         parent: Mutex::new(None),
         children: Mutex::new(Vec::new()),
-        finalizers,
+        finalizers: Mutex::new(Vec::new()),
       }),
     }
   }
@@ -55,15 +44,13 @@ impl Scope {
   /// Child scope linked under `self`; inherits close if the parent is already closed.
   pub fn fork(&self) -> Self {
     let close_latch = run_blocking(Latch::make(), ()).expect("Latch::make");
-    let finalizers =
-      run_blocking(commit(TRef::make(FinalizerBucket::default())), ()).expect("finalizers tref");
     let child = Self {
       inner: Arc::new(ScopeInner {
         closed: AtomicBool::new(false),
         close_latch,
         parent: Mutex::new(Some(Arc::downgrade(&self.inner))),
         children: Mutex::new(Vec::new()),
-        finalizers,
+        finalizers: Mutex::new(Vec::new()),
       }),
     };
     self
@@ -120,31 +107,13 @@ impl Scope {
       child.close_with_exit(exit.clone());
     }
 
-    let drained = run_blocking(
-      commit({
-        let tr = self.inner.finalizers.clone();
-        Stm::from_fn(move |txn| {
-          let mut bucket = match tr.read_stm::<()>().run_on(txn) {
-            Outcome::Done(b) => b,
-            Outcome::Fail(e) => return Outcome::Fail(e),
-            Outcome::Retry => return Outcome::Retry,
-          };
-          let mut drained = Vec::new();
-          for cell in bucket.entries.drain(..) {
-            if let Some(f) = cell.lock().expect("finalizer cell poisoned").take() {
-              drained.push(f);
-            }
-          }
-          match tr.write_stm(FinalizerBucket::default()).run_on(txn) {
-            Outcome::Done(()) => Outcome::Done(drained),
-            Outcome::Fail(e) => Outcome::Fail(e),
-            Outcome::Retry => Outcome::Retry,
-          }
-        })
-      }),
-      (),
-    )
-    .expect("drain finalizers");
+    let drained = std::mem::take(
+      &mut *self
+        .inner
+        .finalizers
+        .lock()
+        .expect("scope finalizers mutex poisoned"),
+    );
     for finalizer in drained.into_iter().rev() {
       let _ = run_blocking(finalizer(exit.clone()), ());
     }
@@ -157,30 +126,12 @@ impl Scope {
     if self.is_closed() {
       return false;
     }
-    let cell: FinalizerCell = Arc::new(Mutex::new(Some(finalizer)));
-    run_blocking(
-      commit({
-        let tr = self.inner.finalizers.clone();
-        let cell = Arc::clone(&cell);
-        Stm::from_fn(move |txn| {
-          let mut bucket = match tr.read_stm::<()>().run_on(txn) {
-            Outcome::Done(b) => b,
-            Outcome::Fail(e) => return Outcome::Fail(e),
-            Outcome::Retry => return Outcome::Retry,
-          };
-          if !bucket.entries.iter().any(|e| Arc::ptr_eq(e, &cell)) {
-            bucket.entries.push(Arc::clone(&cell));
-          }
-          match tr.write_stm(bucket).run_on(txn) {
-            Outcome::Done(()) => Outcome::Done(()),
-            Outcome::Fail(e) => Outcome::Fail(e),
-            Outcome::Retry => Outcome::Retry,
-          }
-        })
-      }),
-      (),
-    )
-    .expect("push finalizer");
+    self
+      .inner
+      .finalizers
+      .lock()
+      .expect("scope finalizers mutex poisoned")
+      .push(finalizer);
     true
   }
 
@@ -388,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_stm_finalizers_atomic_under_concurrent_add() {
+    fn scope_finalizers_atomic_under_concurrent_add() {
       concurrent_finalizer_add_stress();
     }
 

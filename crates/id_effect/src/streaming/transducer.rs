@@ -1,15 +1,16 @@
-//! Transducer bridge — [`Stream::transduce_items`] applies `id_effect_optics`-compatible transducers.
+//! Transducers — composable reducing-function transforms, and [`Stream::transduce_items`] to
+//! apply them incrementally to streams.
 //!
-//! API-compatible with [`id_effect_optics::Transducer`] when that crate is used separately.
+//! This is the single implementation; `id_effect_optics::transducer` re-exports it.
 
 use std::sync::Arc;
 
-use crate::streaming::stream::Stream;
+use crate::streaming::stream::{StageStep, Stream};
 
 /// Stateful reducer step: `(accumulator, item) -> accumulator`.
 pub type Reducer<A, Acc> = Box<dyn FnMut(Acc, A) -> Acc + Send>;
 
-/// A transducer transforms a reducing function (same shape as `id_effect_optics::Transducer`).
+/// A transducer transforms a reducing function.
 pub struct Transducer<A, Acc> {
   step: Arc<dyn Fn(Reducer<A, Acc>) -> Reducer<A, Acc> + Send + Sync>,
 }
@@ -56,6 +57,25 @@ pub fn map<A: 'static, Acc: 'static>(
   })
 }
 
+/// Keep at most `count` items (per transducer instance; the count is shared across clones of
+/// the reducer it builds).
+pub fn take<A: 'static, Acc: 'static>(count: usize) -> Transducer<A, Acc> {
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let remaining = Arc::new(AtomicUsize::new(count));
+  Transducer::new(move |mut rf| {
+    let remaining = remaining.clone();
+    Box::new(move |acc, item| {
+      let left = remaining.load(Ordering::Relaxed);
+      if left == 0 {
+        acc
+      } else {
+        remaining.store(left - 1, Ordering::Relaxed);
+        rf(acc, item)
+      }
+    })
+  })
+}
+
 /// Keep only items matching `pred`.
 pub fn filter<A: 'static, Acc: 'static>(
   pred: impl Fn(&A) -> bool + Send + Sync + 'static,
@@ -81,25 +101,17 @@ where
   #[inline]
   pub fn transduce_items(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
     let step = xf.step.clone();
-    Stream::new(move |r: &mut R| {
-      let step = step.clone();
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            let mut pushed = (step)(Box::new(|mut acc: Vec<A>, x: A| {
-              acc.push(x);
-              acc
-            }));
-            out.extend(pushed(Vec::new(), item));
-          }
-        }
-        Ok(out)
-      })
+    // Incremental: one upstream chunk per pull, transformed item by item.
+    self.stage(move |input| {
+      let mut out = Vec::new();
+      for item in input.unwrap_or_default() {
+        let mut pushed = (step)(Box::new(|mut acc: Vec<A>, x: A| {
+          acc.push(x);
+          acc
+        }));
+        out.extend(pushed(Vec::new(), item));
+      }
+      StageStep::Emit(out)
     })
   }
 
@@ -146,6 +158,23 @@ mod tests {
       vec![],
     );
     assert_eq!(out, vec![1, 2]);
+  }
+
+  #[test]
+  fn transducer_on_infinite_source_is_incremental() {
+    let out = crate::testing::assert_bounded_memory(
+      |s| s.via_transducer(map(|n: u64| n * 10).compose(filter(|n: &u64| n.is_multiple_of(20)))),
+      3,
+      64,
+    );
+    assert_eq!(out, vec![0, 20, 40]);
+  }
+
+  #[test]
+  fn take_limits_items() {
+    let xf = take::<i32, i32>(2);
+    let sum = xf.transduce([1, 2, 3], Box::new(|acc, n| acc + n), 0);
+    assert_eq!(sum, 3);
   }
 
   #[test]

@@ -80,4 +80,4 @@ scoped(|outer| {
 // Execution order: cleanup_inner(), then cleanup_outer()
 ```
 
-Layers use scopes internally — every resource a Layer builds can register its own finalizer, and the whole graph tears down cleanly when the application shuts down.
+Providers can use scopes the same way — every resource a provider builds can register its own finalizer, so the whole capability graph tears down cleanly when the application shuts down.

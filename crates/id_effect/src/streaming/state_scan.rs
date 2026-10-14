@@ -3,7 +3,7 @@
 //! Unlike [`Stream::scan`], which emits on every element, `state_scan` only yields when the
 //! step function returns `Some(output)`.
 
-use crate::streaming::stream::Stream;
+use crate::streaming::stream::{StageStep, Stream};
 
 /// Step function for [`state_scan`]: `(state, item) -> (next_state, optional_output)`.
 pub type StateStep<S, A, B> = Box<dyn FnMut(S, A) -> (S, Option<B>) + Send>;
@@ -22,25 +22,16 @@ where
   E: Send + 'static,
   R: 'static,
 {
-  Stream::new(move |r: &mut R| {
-    Box::pin(async move {
-      let mut upstream = stream;
-      let mut state = init;
-      let mut out = Vec::new();
-      loop {
-        let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-          break;
-        };
-        for item in chunk.into_vec() {
-          let (next, maybe) = step(state, item);
-          state = next;
-          if let Some(b) = maybe {
-            out.push(b);
-          }
-        }
-      }
-      Ok(out)
-    })
+  // Incremental: one upstream chunk per pull; `state` is `None` only transiently inside `step`.
+  let mut state = Some(init);
+  stream.stage(move |input| {
+    let mut out = Vec::new();
+    for item in input.unwrap_or_default() {
+      let (next, maybe) = step(state.take().expect("state_scan state present"), item);
+      state = Some(next);
+      out.extend(maybe);
+    }
+    StageStep::Emit(out)
   })
 }
 
@@ -110,6 +101,22 @@ mod tests {
     });
     let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
     assert_eq!(out, vec![0, 1]);
+  }
+
+  #[test]
+  fn state_scan_on_infinite_source_is_incremental() {
+    // Emit the running sum every time it crosses another multiple of 10.
+    let out = crate::testing::assert_bounded_memory(
+      |s| {
+        s.state_scan(0_u64, |sum, x| {
+          let next = sum + x;
+          (next, (next / 10 > sum / 10).then_some(next))
+        })
+      },
+      3,
+      64,
+    );
+    assert_eq!(out, vec![10, 21, 36]);
   }
 
   #[test]

@@ -6,7 +6,6 @@ use std::fmt::Write as _;
 use std::io::Write;
 use std::sync::{Arc, Mutex, RwLock};
 
-use ::id_effect::EffectHashMap;
 use serde::Serialize;
 
 use crate::{EffectLoggerError, LogLevel};
@@ -19,7 +18,7 @@ pub struct LogRecord<'a> {
   /// Human-readable message body.
   pub message: Cow<'a, str>,
   /// Structured key/value fields merged into the formatted line or JSON row.
-  pub annotations: EffectHashMap<String, String>,
+  pub annotations: HashMap<String, String>,
   /// Active span names from outermost to innermost (for nesting display).
   pub spans: Vec<String>,
 }

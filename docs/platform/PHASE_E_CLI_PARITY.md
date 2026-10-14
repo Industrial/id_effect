@@ -17,8 +17,8 @@ Reference: [phase-e-cli.md](../effect-ts-parity/phases/phase-e-cli.md)
 
 | Gap | Resolution |
 |-----|------------|
-| No unified developer CLI entrypoint | **Closed** — `id-effect` binary with `version` subcommand |
-| No app generator | **Closed (stub)** — `id-effect new <name>` scaffolds `templates/app-minimal/` |
+| No unified developer CLI entrypoint | **Open** — the placeholder `id-effect` binary (`version`/`new`) was removed in 0.6; `id-effect-diagnose` remains |
+| No app generator | **Open** — start from `examples/cli-minimal`; the placeholder `id-effect new` scaffolder was removed in 0.6 |
 
 ## Remaining (future waves)
 
@@ -31,6 +31,6 @@ Reference: [phase-e-cli.md](../effect-ts-parity/phases/phase-e-cli.md)
 ## Verify
 
 ```bash
-cargo run -p id_effect_cli --features clap --bin id-effect -- version
-cargo run -p id_effect_cli --features clap --bin id-effect -- new demo --dest /tmp/demo-check
+cargo run -p id_effect_cli --features clap --bin id-effect-diagnose -- --help
+cargo nextest run -p id_effect_cli
 ```

@@ -32,13 +32,8 @@ fn stream_ops_integration() {
   );
 
   let start = Instant::now();
-  let map = merge_time_bucket(id_effect::collections::sorted_map::empty(), start, |_| {
-    1_i32
-  });
-  assert_eq!(
-    id_effect::collections::sorted_map::get(&map, &start),
-    Some(1)
-  );
+  let map = merge_time_bucket(std::collections::BTreeMap::new(), start, |_| 1_i32);
+  assert_eq!(map.get(&start), Some(&1));
 
   let s1 = Stream::from_iterable(vec![1_i32, 2, 3]);
   let s2 = Stream::from_iterable(vec![4_i32, 5]);

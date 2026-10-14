@@ -1,32 +1,37 @@
 [workspace]
 resolver = "2"
-exclude = [".tmp", "tmp", "crates/id_effect_lint"]
+# labs/ is a separate workspace of unpublished crates (ADR 0010 Amendment 1).
+exclude = [".tmp", "tmp", "labs"]
 members = [
   "crates/id_effect",
   "crates/id_effect_axum",
   "crates/id_effect_cli",
   "crates/id_effect_config",
+  "crates/id_effect_fp",
   "crates/id_effect_logger",
   "crates/id_effect_macro",
   "crates/id_effect_opentelemetry",
   "crates/id_effect_optics",
   "crates/id_effect_platform",
   "crates/id_effect_proc_macro",
+  "crates/id_effect_process",
+  "crates/id_effect_node",
   "crates/id_effect_resilience",
-  "crates/id_effect_rpc",
   "crates/id_effect_sql",
   "crates/id_effect_sql_pg",
   "crates/id_effect_tokio",
   "crates/id_effect_tower",
-  "crates/id_effect_parse",
-  "crates/id_effect_workflow",
   "crates/id_effect_fsm",
-  "crates/id_effect_events",
-  "crates/id_effect_graph",
-  "crates/id_effect_jobs",
-  "crates/id_effect_ai",
   "examples/cli-minimal",
 ]
+
+[workspace.package]
+version = "0.6.0"
+edition = "2024"
+# MSRV. Verified by the CI `msrv` job; bumping it is a deliberate, CHANGELOG-noted change.
+rust-version = "1.94"
+license = "CC-BY-SA-4.0"
+repository = "https://github.com/Industrial/id_effect"
 
 # More stable / comparable Criterion numbers than default bench profile (inherits release).
 [profile.bench]

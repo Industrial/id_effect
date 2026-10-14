@@ -1,9 +1,9 @@
 //! Named metrics: counters, gauges, histograms, summaries, frequency, timers.
 
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-use crate::collections::hash_map::{self, EffectHashMap};
 use crate::kernel::{Effect, box_future};
 use crate::runtime::Never;
 use crate::scheduling::duration::Duration;
@@ -34,7 +34,7 @@ enum Inner {
   },
   Frequency {
     tags: Tags,
-    counts: Arc<Mutex<EffectHashMap<String, u64>>>,
+    counts: Arc<Mutex<HashMap<String, u64>>>,
   },
   Timer {
     tags: Tags,
@@ -256,7 +256,7 @@ impl Metric<String, ()> {
   ) -> Self {
     Self::new(Inner::Frequency {
       tags: tags(name, tag_pairs),
-      counts: Arc::new(Mutex::new(hash_map::empty())),
+      counts: Arc::new(Mutex::new(HashMap::new())),
     })
   }
 
@@ -268,14 +268,14 @@ impl Metric<String, ()> {
     });
     Effect::new(move |_env| {
       let mut g = counts.lock().expect("mutex");
-      let cur = hash_map::get(&*g, key.as_str()).copied().unwrap_or(0);
-      *g = hash_map::set(&*g, key.clone(), cur.saturating_add(1));
+      let n = g.entry(key.clone()).or_insert(0);
+      *n = n.saturating_add(1);
       Ok(())
     })
   }
 
   /// Snapshot of all key counts (for tests or debugging).
-  pub fn snapshot_frequencies(&self) -> EffectHashMap<String, u64> {
+  pub fn snapshot_frequencies(&self) -> HashMap<String, u64> {
     let Inner::Frequency { counts, .. } = &self.inner else {
       unreachable!();
     };
@@ -313,8 +313,8 @@ mod tests {
     run_blocking(m.apply("b".into()), ()).unwrap();
     run_blocking(m.apply("a".into()), ()).unwrap();
     let snap = m.snapshot_frequencies();
-    assert_eq!(hash_map::get(&snap, "a"), Some(&2));
-    assert_eq!(hash_map::get(&snap, "b"), Some(&1));
+    assert_eq!(snap.get("a"), Some(&2));
+    assert_eq!(snap.get("b"), Some(&1));
   }
 
   #[tokio::test]

@@ -2,12 +2,23 @@
 
 use super::id::CapabilityId;
 use std::fmt;
+use std::panic::Location;
 
 /// Missing or invalid capability in an environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CapabilityError {
-  /// No provider registered for this capability.
+  /// No provider registered for this capability (environment verification, e.g. in `run_with`).
   Missing(CapabilityId),
+  /// A lookup at a known call site found no value for this capability.
+  ///
+  /// Produced by the `#[track_caller]` lookups ([`Env::try_get`](super::Env::try_get),
+  /// [`Env::get_any`](super::Env::get_any)); `location` is the caller's `file:line:column`.
+  MissingAt {
+    /// Capability id.
+    cap: CapabilityId,
+    /// Call site that requested the capability.
+    location: &'static Location<'static>,
+  },
   /// Two providers supply the same capability.
   Conflicting {
     /// Capability id.
@@ -19,12 +30,35 @@ pub enum CapabilityError {
   },
 }
 
+impl CapabilityError {
+  /// The capability that is missing, for both [`Self::Missing`] and [`Self::MissingAt`].
+  #[inline]
+  pub fn missing_capability(&self) -> Option<CapabilityId> {
+    match self {
+      Self::Missing(cap) | Self::MissingAt { cap, .. } => Some(*cap),
+      Self::Conflicting { .. } => None,
+    }
+  }
+
+  /// Call site of a [`Self::MissingAt`] lookup.
+  #[inline]
+  pub fn location(&self) -> Option<&'static Location<'static>> {
+    match self {
+      Self::MissingAt { location, .. } => Some(location),
+      _ => None,
+    }
+  }
+}
+
 impl fmt::Display for CapabilityError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      Self::Missing(id) => write!(f, "missing capability {id:?}"),
+      Self::Missing(id) => write!(f, "missing capability `{id}`"),
+      Self::MissingAt { cap, location } => {
+        write!(f, "missing capability `{cap}` (required at {location})")
+      }
       Self::Conflicting { cap, first, second } => {
-        write!(f, "conflicting providers for {cap:?}: {first} and {second}")
+        write!(f, "conflicting providers for `{cap}`: {first} and {second}")
       }
     }
   }
@@ -183,6 +217,29 @@ mod tests {
       second: "b".into(),
     };
     assert!(conflict.to_string().contains("conflicting providers"));
+    assert_eq!(conflict.missing_capability(), None);
+    assert_eq!(conflict.location(), None);
+  }
+
+  #[test]
+  fn missing_display_names_the_capability_and_call_site() {
+    let missing = CapabilityError::Missing(CapabilityId::of::<u32>());
+    assert_eq!(missing.to_string(), "missing capability `u32`");
+    assert_eq!(missing.location(), None);
+
+    let here = Location::caller();
+    let at = CapabilityError::MissingAt {
+      cap: CapabilityId::of::<u32>(),
+      location: here,
+    };
+    let shown = at.to_string();
+    assert!(shown.contains("`u32`"), "{shown}");
+    assert!(
+      shown.contains(&format!("{}:{}", file!(), here.line())),
+      "{shown}"
+    );
+    assert_eq!(at.missing_capability(), Some(CapabilityId::of::<u32>()));
+    assert_eq!(at.location(), Some(here));
   }
 
   #[test]

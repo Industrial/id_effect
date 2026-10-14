@@ -1,0 +1,53 @@
+[package]
+publish = false
+name = "id_effect_rpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity)"
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_rpc"
+
+[dependencies]
+axum = { version = "0.8", features = ["json"] }
+http = "1"
+id_effect = { path = "../../crates/id_effect", version = "0.6.0", features = [
+  "schema-serde",
+] }
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.6.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.6.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry" }
+id_effect_tokio = { path = "../../crates/id_effect_tokio" }
+syn = { version = "2", features = ["full"] }
+http-body-util = "0.1"
+rstest = "0.26"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+
+[[example]]
+name = "010_json_greet"
+path = "examples/010_json_greet.rs"
+
+[[example]]
+name = "020_rpc_tracing"
+path = "examples/020_rpc_tracing.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "labs"

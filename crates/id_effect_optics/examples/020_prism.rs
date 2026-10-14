@@ -19,4 +19,10 @@ fn main() {
 
   let updated = circle.modify(Shape::Circle(2.0), |r| r * 3.0);
   println!("{updated:?}");
+
+  // A prism leaves non-matching variants untouched.
+  let rect = circle.modify(Shape::Rect { w: 2.0, h: 3.0 }, |r| r * 3.0);
+  if let Shape::Rect { w, h } = rect {
+    println!("rect unchanged: {w} x {h}");
+  }
 }

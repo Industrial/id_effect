@@ -2,6 +2,13 @@
 
 use crate::parallelism::Parallelism;
 
+/// Whether a bulk operation over `len` elements should take its Rayon path, using the default
+/// auto threshold adjusted by the current thread's [`super::AdaptiveContext`].
+#[inline]
+pub fn should_parallelize(len: usize) -> bool {
+  Parallelism::default().should_parallelize_current(len)
+}
+
 /// Run `parallel` when Fabric-aware policy says the input length warrants Rayon; else `serial`.
 pub fn parallel_if_profitable<T, S, P>(len: usize, serial: S, parallel: P) -> T
 where
@@ -9,7 +16,7 @@ where
   S: FnOnce() -> T,
   P: FnOnce() -> T + Send,
 {
-  if Parallelism::default().should_parallelize_current(len) {
+  if should_parallelize(len) {
     super::rayon_pool::install_parallel(parallel)
   } else {
     serial()

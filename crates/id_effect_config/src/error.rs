@@ -145,45 +145,64 @@ mod tests {
     let fig_display =
       ConfigError::from(figment::Figment::new().extract::<i32>().unwrap_err()).to_string();
     let fig_for_match = ConfigError::from(figment::Figment::new().extract::<i32>().unwrap_err());
-    let via_matcher = Matcher::<ConfigError, String>::new()
-      .when(
-        Box::new(|c: &ConfigError| matches!(c, ConfigError::Figment(_))),
-        |c: ConfigError| match c {
-          ConfigError::Figment(e) => format!("{e}"),
-          _ => unreachable!(),
-        },
-      )
-      .when(
-        Box::new(|c: &ConfigError| matches!(c, ConfigError::Missing { .. })),
-        |c: ConfigError| match c {
-          ConfigError::Missing { path } => format!("missing configuration at path {path:?}"),
-          _ => unreachable!(),
-        },
-      )
-      .when(
-        Box::new(|c: &ConfigError| matches!(c, ConfigError::Invalid { .. })),
-        |c: ConfigError| match c {
-          ConfigError::Invalid {
-            path,
-            value,
-            reason,
-          } => format!("invalid configuration at path {path:?} (value={value:?}): {reason}"),
-          _ => unreachable!(),
-        },
-      )
-      .when(
-        Box::new(|c: &ConfigError| matches!(c, ConfigError::InvalidUtf8 { .. })),
-        |c: ConfigError| match c {
-          ConfigError::InvalidUtf8 { var } => {
-            format!("environment variable {var:?} is not valid UTF-8")
-          }
-          _ => unreachable!(),
-        },
-      )
-      .or_else(|c| format!("configuration error: {c:?}"))
-      .run_exhaustive(fig_for_match);
+    let render = |err: ConfigError| {
+      Matcher::<ConfigError, String>::new()
+        .when(
+          Box::new(|c: &ConfigError| matches!(c, ConfigError::Figment(_))),
+          |c: ConfigError| match c {
+            ConfigError::Figment(e) => format!("{e}"),
+            _ => unreachable!(),
+          },
+        )
+        .when(
+          Box::new(|c: &ConfigError| matches!(c, ConfigError::Missing { .. })),
+          |c: ConfigError| match c {
+            ConfigError::Missing { path } => format!("missing configuration at path {path:?}"),
+            _ => unreachable!(),
+          },
+        )
+        .when(
+          Box::new(|c: &ConfigError| matches!(c, ConfigError::Invalid { .. })),
+          |c: ConfigError| match c {
+            ConfigError::Invalid {
+              path,
+              value,
+              reason,
+            } => format!("invalid configuration at path {path:?} (value={value:?}): {reason}"),
+            _ => unreachable!(),
+          },
+        )
+        .when(
+          Box::new(|c: &ConfigError| matches!(c, ConfigError::InvalidUtf8 { .. })),
+          |c: ConfigError| match c {
+            ConfigError::InvalidUtf8 { var } => {
+              format!("environment variable {var:?} is not valid UTF-8")
+            }
+            _ => unreachable!(),
+          },
+        )
+        .or_else(|c| format!("configuration error: {c:?}"))
+        .run_exhaustive(err)
+    };
+    let via_matcher = render(fig_for_match);
     assert!(!via_matcher.is_empty());
     assert_eq!(via_matcher, fig_display);
+
+    // A user-side Matcher over every variant agrees with `Display`.
+    let variants = || {
+      [
+        ConfigError::Missing { path: "a".into() },
+        ConfigError::Invalid {
+          path: "b".into(),
+          value: "v".into(),
+          reason: "r".into(),
+        },
+        ConfigError::InvalidUtf8 { var: "C".into() },
+      ]
+    };
+    for (err, same) in variants().into_iter().zip(variants()) {
+      assert_eq!(render(err), same.to_string());
+    }
 
     let missing = ConfigError::Missing {
       path: "db.url".into(),

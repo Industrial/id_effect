@@ -3,12 +3,7 @@
 //! For portable [`HttpClient`] / [`HttpRequest`] boundaries, use the parent [`super`] module
 //! (`execute`, `execute_stream`, [`ReqwestHttpClient`]).
 
-#![allow(
-  clippy::new_ret_no_self,
-  clippy::unused_unit,
-  dead_code,
-  unused_imports
-)]
+#![allow(clippy::unused_unit, dead_code, unused_imports)]
 
 use ::id_effect::{
   Cap, CapBindR, Needs, Never, Pool, Schema, Scope, effect, fail, from_async, kernel::Effect,
@@ -110,7 +105,7 @@ pub enum JsonSchemaError {
   Http(Error),
   /// Invalid JSON (syntax); see message.
   Json(String),
-  /// Response body did not match the expected [`Schema`].
+  /// Response body did not match the expected [`Schema`](struct@id_effect::schema::Schema).
   Schema(ParseError),
 }
 

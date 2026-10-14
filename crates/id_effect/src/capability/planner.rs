@@ -1,10 +1,7 @@
 //! Shared topological planner for provider graphs.
 
 use super::error::CapabilityPlannerError;
-use crate::collections::EffectHashMap;
-use crate::collections::hash_map;
-use crate::collections::mutable_list::MutableList;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 /// One node in a provider dependency graph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,31 +47,28 @@ pub fn plan_topological(nodes: &[PlannerNode]) -> Result<PlannerPlan, Capability
     }
   }
 
-  let mut provider_by_cap = EffectHashMap::<String, String>::new();
+  let mut provider_by_cap = HashMap::<String, String>::new();
   for node in nodes {
-    if hash_map::has(&provider_by_cap, &node.provides) {
-      let existing = hash_map::get(&provider_by_cap, &node.provides)
-        .expect("key present")
-        .clone();
+    if let Some(existing) = provider_by_cap.get(&node.provides) {
       return Err(CapabilityPlannerError::ConflictingProvider {
         cap: node.provides.clone(),
-        first: existing,
+        first: existing.clone(),
         second: node.id.clone(),
       });
     }
-    provider_by_cap = hash_map::set(&provider_by_cap, node.provides.clone(), node.id.clone());
+    provider_by_cap.insert(node.provides.clone(), node.id.clone());
   }
 
-  let mut indegree = EffectHashMap::<String, usize>::new();
-  let mut edges = EffectHashMap::<String, Vec<String>>::new();
+  let mut indegree = HashMap::<String, usize>::new();
+  let mut edges = HashMap::<String, Vec<String>>::new();
   for node in nodes {
-    indegree = hash_map::modify(&indegree, node.id.clone(), |opt| Some(opt.unwrap_or(0)));
-    edges = hash_map::modify(&edges, node.id.clone(), |opt| Some(opt.unwrap_or_default()));
+    indegree.entry(node.id.clone()).or_insert(0);
+    edges.entry(node.id.clone()).or_default();
   }
 
   for node in nodes {
     for required in &node.requires {
-      let Some(provider) = hash_map::get(&provider_by_cap, required) else {
+      let Some(provider) = provider_by_cap.get(required) else {
         return Err(CapabilityPlannerError::MissingProvider {
           provider: node.id.clone(),
           cap: required.clone(),
@@ -84,38 +78,30 @@ pub fn plan_topological(nodes: &[PlannerNode]) -> Result<PlannerPlan, Capability
       if provider == node.id {
         continue;
       }
-      edges = hash_map::modify(&edges, provider.clone(), |opt| {
-        let mut v = opt.unwrap_or_default();
-        v.push(node.id.clone());
-        Some(v)
-      });
-      indegree = hash_map::modify(&indegree, node.id.clone(), |opt| Some(opt.unwrap_or(0) + 1));
+      edges.entry(provider).or_default().push(node.id.clone());
+      *indegree.entry(node.id.clone()).or_insert(0) += 1;
     }
   }
 
-  let queue = MutableList::<String>::make();
+  let mut queue = VecDeque::<String>::new();
   for (id, &deg) in indegree.iter() {
     if deg == 0 {
-      queue.append(id.clone());
+      queue.push_back(id.clone());
     }
   }
-  let order = MutableList::<String>::make();
-  while let Some(next) = queue.shift() {
-    order.append(next.clone());
-    let dependents = hash_map::get(&edges, &next).cloned().unwrap_or_default();
+  let mut order_vec = Vec::<String>::with_capacity(nodes.len());
+  while let Some(next) = queue.pop_front() {
+    let dependents = edges.get(&next).cloned().unwrap_or_default();
+    order_vec.push(next);
     for dependent in dependents {
-      indegree = hash_map::modify(&indegree, dependent.clone(), |opt| {
-        let mut d = opt.expect("indegree exists");
-        d -= 1;
-        Some(d)
-      });
-      if hash_map::get(&indegree, &dependent) == Some(&0) {
-        queue.append(dependent);
+      let d = indegree.get_mut(&dependent).expect("indegree exists");
+      *d -= 1;
+      if *d == 0 {
+        queue.push_back(dependent);
       }
     }
   }
 
-  let order_vec = order.to_chunk().into_vec();
   if order_vec.len() != nodes.len() {
     let cycle_nodes = indegree
       .iter()

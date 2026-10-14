@@ -1,6 +1,7 @@
 //! Live hardware feedback for Compute Fabric.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use super::policy::ResourcePolicy;
 
@@ -28,36 +29,95 @@ pub trait TelemetryEngine: Send + Sync {
   fn snapshot(&self) -> TelemetrySnapshot;
 }
 
+/// Host telemetry backed by [`sysinfo`].
+///
+/// Never blocks to sample:
+///
+/// - Construction is free; the underlying [`sysinfo::System`] is created on the first
+///   [`TelemetryEngine::snapshot`].
+/// - That first snapshot records a CPU baseline and reports real memory but a neutral CPU
+///   reading (`cpu_pct == 0.0`): CPU usage needs two refreshes spaced by
+///   [`sysinfo::MINIMUM_CPU_UPDATE_INTERVAL`], and this engine never sleeps to get them.
+/// - Later snapshots refresh only once at least that interval has elapsed since the previous
+///   refresh (CPU usage then covers the real elapsed time); earlier calls reuse the cached
+///   reading.
 #[derive(Debug, Default)]
-pub struct SysinfoTelemetry;
+pub struct SysinfoTelemetry {
+  state: Mutex<Option<SysinfoState>>,
+}
 
-impl TelemetryEngine for SysinfoTelemetry {
-  fn snapshot(&self) -> TelemetrySnapshot {
-    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+#[derive(Debug)]
+struct SysinfoState {
+  sys: sysinfo::System,
+  last_refresh: Instant,
+  last: TelemetrySnapshot,
+}
 
-    let mut sys = System::new_with_specifics(
-      RefreshKind::nothing()
-        .with_memory(MemoryRefreshKind::everything())
-        .with_cpu(sysinfo::CpuRefreshKind::everything()),
-    );
-    sys.refresh_memory();
-    sys.refresh_cpu_usage();
-    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    sys.refresh_cpu_usage();
+impl SysinfoTelemetry {
+  /// Telemetry engine that samples lazily on first [`TelemetryEngine::snapshot`].
+  pub fn new() -> Self {
+    Self::default()
+  }
 
+  /// Whether the underlying [`sysinfo::System`] has been created (i.e. a sample was taken).
+  pub fn is_initialized(&self) -> bool {
+    self
+      .state
+      .lock()
+      .map(|guard| guard.is_some())
+      .unwrap_or(false)
+  }
+
+  fn read(sys: &sysinfo::System, cpu_known: bool) -> TelemetrySnapshot {
     let mem_pct = if sys.total_memory() > 0 {
       sys.used_memory() as f32 / sys.total_memory() as f32
     } else {
       0.0
     };
     let cpus = sys.cpus();
-    let cpu_pct = if cpus.is_empty() {
+    let cpu_pct = if !cpu_known || cpus.is_empty() {
       0.0
     } else {
       cpus.iter().map(|c| c.cpu_usage()).sum::<f32>() / (cpus.len() as f32 * 100.0)
     };
-
     TelemetrySnapshot { cpu_pct, mem_pct }
+  }
+}
+
+impl TelemetryEngine for SysinfoTelemetry {
+  fn snapshot(&self) -> TelemetrySnapshot {
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+
+    let mut guard = self
+      .state
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match guard.as_mut() {
+      Some(state) => {
+        if state.last_refresh.elapsed() >= sysinfo::MINIMUM_CPU_UPDATE_INTERVAL {
+          state.sys.refresh_memory();
+          state.sys.refresh_cpu_usage();
+          state.last_refresh = Instant::now();
+          state.last = Self::read(&state.sys, true);
+        }
+        state.last
+      }
+      None => {
+        // Creating the System refreshes memory and records the CPU baseline; no sleep.
+        let sys = System::new_with_specifics(
+          RefreshKind::nothing()
+            .with_memory(MemoryRefreshKind::everything())
+            .with_cpu(sysinfo::CpuRefreshKind::everything()),
+        );
+        let last = Self::read(&sys, false);
+        *guard = Some(SysinfoState {
+          sys,
+          last_refresh: Instant::now(),
+          last,
+        });
+        last
+      }
+    }
   }
 }
 
@@ -95,6 +155,25 @@ mod tests {
     let snap = engine.snapshot();
     assert!((snap.cpu_pct - 0.4).abs() < 0.001);
     assert!((snap.mem_pct - 0.61).abs() < 0.001);
+  }
+
+  #[test]
+  fn sysinfo_telemetry_is_lazy_until_first_snapshot() {
+    let engine = SysinfoTelemetry::new();
+    assert!(!engine.is_initialized());
+    let started = Instant::now();
+    let first = engine.snapshot();
+    let elapsed = started.elapsed();
+    assert!(
+      elapsed < std::time::Duration::from_millis(50),
+      "first snapshot blocked for {elapsed:?}"
+    );
+    assert!(engine.is_initialized());
+    assert!(first.mem_pct >= 0.0);
+    // No CPU baseline yet: neutral CPU reading.
+    assert_eq!(first.cpu_pct, 0.0);
+    // Within MINIMUM_CPU_UPDATE_INTERVAL the cached reading is reused.
+    assert_eq!(engine.snapshot(), first);
   }
 
   #[test]

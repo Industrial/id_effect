@@ -1,4 +1,8 @@
 //! Bulkhead — cap concurrent in-flight effects with a semaphore.
+//!
+//! Admission is **fail-fast**: when every permit is taken, [`Bulkhead::with_permit`] rejects with
+//! [`BulkheadError`] immediately instead of queueing. Use the core
+//! [`Semaphore`] directly when callers should *wait* for a permit.
 
 use id_effect::coordination::Semaphore;
 use id_effect::failure::Or;
@@ -56,5 +60,45 @@ mod tests {
       .await
       .expect("run");
     assert_eq!(out, 42);
+  }
+
+  type Admission = Result<u32, Or<BulkheadError, ()>>;
+
+  /// Run `bh.with_permit(succeed(1))` from *inside* a held permit.
+  fn nested(bh: &Bulkhead) -> Effect<Admission, Or<BulkheadError, ()>, ()> {
+    let inner = bh.clone();
+    bh.with_permit(Effect::new_async(move |_r: &mut ()| {
+      box_future(
+        async move { Ok(run_async(inner.with_permit(succeed::<u32, (), ()>(1u32)), ()).await) },
+      )
+    }))
+  }
+
+  #[tokio::test]
+  async fn bulkhead_rejects_when_full() {
+    let bh = run_async(Bulkhead::make(1), ()).await.expect("make");
+    let inner = run_async(nested(&bh), ()).await.expect("outer admitted");
+    assert_eq!(inner, Err(Or::Left(BulkheadError)));
+  }
+
+  #[tokio::test]
+  async fn bulkhead_admits_up_to_capacity() {
+    let bh = run_async(Bulkhead::make(2), ()).await.expect("make");
+    let inner = run_async(nested(&bh), ()).await.expect("outer admitted");
+    assert_eq!(inner, Ok(1));
+  }
+
+  #[tokio::test]
+  async fn bulkhead_releases_permit_after_failure() {
+    use id_effect::kernel::fail;
+    let bh = run_async(Bulkhead::make(1), ()).await.expect("make");
+    assert_eq!(
+      run_async(bh.with_permit(fail::<u32, &str, ()>("boom")), ()).await,
+      Err(Or::Right("boom"))
+    );
+    let out = run_async(bh.with_permit(succeed::<u32, (), ()>(7u32)), ())
+      .await
+      .expect("permit released");
+    assert_eq!(out, 7);
   }
 }

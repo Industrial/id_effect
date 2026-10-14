@@ -9,12 +9,42 @@
 //! hardware-aware [`crate::Parallelism`] thresholds and Rayon pool sizing follow the installed
 //! [`crate::compute::ComputeFabric`] supervisor. Install fabric via
 //! [`crate::compute::install_fabric`] or use [`crate::capability::run_with`], which installs a
-//! default fabric for the duration of the run.
+//! default fabric only when none is installed ([`crate::compute::ensure_default_fabric`]).
 
 use core::convert::Infallible;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 
-use crate::compute::ensure_run_context;
 use crate::kernel::{BoxFuture, Effect};
+
+/// Sync the thread-local adaptive context from the installed fabric (no-op without `compute`).
+#[inline]
+fn ensure_run_context() {
+  #[cfg(feature = "compute")]
+  crate::compute::ensure_run_context();
+}
+
+/// Executor-agnostic cooperative yield: `Pending` once (waking itself), then `Ready`.
+///
+/// Lets other tasks on a single-threaded executor run between tight `Effect` steps without
+/// depending on a particular runtime's `yield_now`.
+pub(crate) fn yield_once() -> impl Future<Output = ()> {
+  struct YieldOnce(bool);
+  impl Future for YieldOnce {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+      if self.0 {
+        Poll::Ready(())
+      } else {
+        self.0 = true;
+        cx.waker().wake_by_ref();
+        Poll::Pending
+      }
+    }
+  }
+  YieldOnce(false)
+}
 
 /// Effect.ts-style uninhabited error marker for infallible runtime operations.
 pub type Never = Infallible;

@@ -56,7 +56,7 @@ let with_config = connect_raw.contramap_env(|cfg: &Config| cfg.db_url.clone());
 
 ## caps! and automatic subtyping
 
-For capability DI, prefer [`caps!`](../../src/capability/set.rs) and the `~` bind operator inside `effect!`. A wider runtime environment satisfies a narrower `R`: every [`CapList`](../../src/capability/set.rs) shares one [`Env`](../../src/capability/env.rs); [`cap_into_bind`](../../src/capability/cap_bind.rs) clones that env and verifies the inner keys (see ADR 0005).
+For capability DI, prefer [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and the `~` bind operator inside `effect!`. A wider runtime environment satisfies a narrower `R`: every [`CapList`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) shares one [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs); [`cap_into_bind`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/cap_bind.rs) clones that env and verifies the inner keys (see ADR 0005).
 
 ```rust
 use id_effect::{Effect, caps, effect, run_with, provide};
@@ -88,13 +88,13 @@ run_with(
 )?;
 ```
 
-**Automatic binding with `~`:** when the inner effect needs any single key from the outer `caps!(…)` list, `effect!` expands `~inner(...)` to [`cap_into_bind`](../../src/capability/cap_bind.rs) — no manual projection.
+**Automatic binding with `~`:** when the inner effect needs any single key from the outer `caps!(…)` list, `effect!` expands `~inner(...)` to [`cap_into_bind`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/cap_bind.rs) — no manual projection.
 
-**Capability lookup:** `~Database` inside `effect!` borrows that capability from `r` (same as [`require!(Database)`](../../src/capability/require.rs)).
+**Capability lookup:** `~Database` inside `effect!` borrows that capability from `r` (same as [`require!(Database)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_macro/src/capability/require.rs)).
 
 **Implicit `|r|`:** write `effect!(|r| { … })`; Rust infers `&mut caps!(…)` from the enclosing function's `Effect<_, _, caps!(…)>` return type. You still declare `caps!(…)` once on the signature.
 
-**Outside `effect!`**, narrow explicitly with [`CapWiden::widen`](../../src/capability/set.rs) or [`project_at_*`](../../src/capability/set.rs):
+**Outside `effect!`**, narrow explicitly with [`CapWiden::widen`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) or [`project_at_*`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs):
 
 ```rust
 let wide: caps!(Database, EffectLogger) = /* from build_env or run_with */;
@@ -103,6 +103,50 @@ run_blocking(query(1), narrow)?;
 ```
 
 When an inner function declares `caps!(Database)` and the caller holds `caps!(Database, EffectLogger)`, the compiler checks that every required key is present — no positional tuple indexing, no runtime downcasts.
+
+## Writing `caps!(…)` once
+
+A feature that touches more than one service used to repeat its capability list — on the signature, on the closure, and as a turbofish on every log call — and needed a closure with `unreachable!()` to compose an infallible service:
+
+```rust
+// Before (0.5)
+fn hello() -> Effect<HelloView, HelloError, caps!(Hello, EffectLogger)> {
+    effect!(|r: &mut caps!(Hello, EffectLogger)| {
+        let logger = *~EffectLogger;
+        ~logger
+            .info::<caps!(Hello, EffectLogger)>("running hello program")
+            .map_error(HelloError::Log);
+        let hello = ~Hello;
+        HelloView {
+            greeting: ~hello.greeting().map_error(|()| -> HelloError { unreachable!() }),
+        }
+    })
+}
+```
+
+```rust
+// After (0.6)
+type HelloCaps = caps!(Hello, EffectLogger);
+
+fn hello() -> Effect<HelloView, HelloError, HelloCaps> {
+    effect!(|r: &mut HelloCaps| {
+        let logger = *~EffectLogger;
+        ~logger.info("running hello program").map_error(HelloError::Log);
+        let hello = ~Hello;
+        HelloView {
+            greeting: ~hello.greeting().widen_error::<HelloError>(),
+        }
+    })
+}
+```
+
+Three things changed:
+
+- **`type HelloCaps = caps!(…);`** is a plain type alias, usable anywhere `caps!(…)` is — return types, the `effect!` closure annotation, tests, `run_blocking(…, HelloCaps::from_env(env))`. As with an inline `caps!(…)`, `run_with` verifies the listed services before the program starts; a `~Key` that is *not* in the list panics when reached, naming the service and the `~Key` call site.
+- **Log steps need no environment.** `EffectLogger::info` and friends return `Effect<(), EffectLoggerError>` (`R = ()`), and `~` binds an environment-free effect inside any `effect!` — so no `::<R>` turbofish. In combinator chains, lift one with [`Effect::into_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/kernel/effect.rs): `program.flat_map(|x| logger.info("…").into_env().map(move |()| x))`.
+- **[`widen_error`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/kernel/effect.rs) lifts infallible errors.** An `Effect<A, Never, R>` (or `Infallible`) lifts into any error type as a proof; an `Effect<A, (), R>` is treated as "declared infallible" and panics, naming the `widen_error` call site, if it ever fails. In tail position `E2` is inferred; elsewhere in `effect!` (where `~` converts errors with `From`) name it: `.widen_error::<HelloError>()`. Prefer `Never` as the error type of services that cannot fail.
+
+`crates/id_effect_logger/examples/capability_ergonomics.rs` is the complete feature, with a mock provider in its tests.
 
 ## R as Documentation Revisited
 
@@ -125,6 +169,6 @@ With `R`, the function declares what it needs. With `zoom_env` or `CapWiden`, th
 
 ## When to Use These
 
-In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](../../src/capability/set.rs) / [`CapWiden`](../../src/capability/set.rs) and named capability services (Chapters 5–6), which avoid the need for explicit projection.
+In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) / [`CapWiden`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and named capability services (Chapters 5–6), which avoid the need for explicit projection.
 
 Think of `zoom_env` as the manual fallback when automatic capability subtyping isn't the right fit.

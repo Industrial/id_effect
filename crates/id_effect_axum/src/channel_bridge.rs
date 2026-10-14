@@ -64,15 +64,16 @@ pub async fn exchange_into_response<R: CapBindR + Send + 'static>(
     Err(_) => return StatusCode::BAD_REQUEST.into_response(),
   };
   let req_b = Request::from_parts(parts, bytes);
-  match crate::run_effect_from_state(env, move |_e| {
+  match crate::try_run_effect_from_state(env, move |_e| {
     exchange::<Response<Bytes>, StatusCode, R>(ch, req_b)
   })
   .await
   {
-    Ok(r) => {
+    Ok(Ok(r)) => {
       let (parts, b) = r.into_parts();
       AxumResponse::from_parts(parts, Body::from(b))
     }
-    Err(s) => s.into_response(),
+    Ok(Err(s)) => s.into_response(),
+    Err(saturated) => saturated.into_response(),
   }
 }

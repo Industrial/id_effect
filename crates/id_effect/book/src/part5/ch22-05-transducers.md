@@ -1,6 +1,6 @@
 # Transducers on streams
 
-[`transducer`](../../src/streaming/transducer.rs) provides [`Transducer`](../../src/streaming/transducer.rs) with the same shape as [`id_effect_optics::Transducer`](../../../../id_effect_optics/src/transducer.rs) (kept local to avoid a crate dependency cycle).
+[`transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) provides [`Transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) with the same shape as [`id_effect_optics::Transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_optics/src/transducer.rs) (kept local to avoid a crate dependency cycle).
 
 ```rust
 use id_effect::{Stream, Transducer, transducer_filter, transducer_map};

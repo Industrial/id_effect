@@ -4,12 +4,15 @@
 //!
 //! | Submodule | Provides | Depends on |
 //! |-----------|----------|------------|
+//! | [`log_level`] | [`LogLevel`] | — |
 //! | [`metric`] | [`Metric`], counters/gauges/histograms | Stratum 14 (`collections::hash_map`), Stratum 10 (`scheduling::duration`), Stratum 2 (`kernel`) |
 //! | [`tracing`] | [`TracingConfig`], span/fiber/compute hooks | Stratum 7 (`concurrency::fiber_ref`), Stratum 14 (`collections::hash_map`), Stratum 2 (`kernel`) |
 
+pub mod log_level;
 pub mod metric;
 pub mod tracing;
 
+pub use log_level::LogLevel;
 pub use metric::{Metric, make as metric_make};
 pub use tracing::{
   AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, ComputeEvent, EffectEvent, FiberEvent,

@@ -22,6 +22,7 @@
 pub mod execute;
 pub mod rt;
 
+pub(crate) use execute::yield_once;
 pub use execute::{Never, run_async, run_blocking};
 pub use rt::{Runtime, ThreadSleepRuntime, run_fork, yield_now};
 

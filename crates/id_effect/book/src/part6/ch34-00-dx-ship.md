@@ -1,14 +1,10 @@
 # DX and deploy
 
-Platform DX ships generators, deploy templates, and CLI parity documented under `docs/platform/`.
+Platform DX ships deploy templates and CLI parity documented under `docs/platform/`.
 
-## CLI and app generator
+## Starting an app
 
-```bash
-id-effect new my-app --template minimal
-```
-
-See [`id_effect_cli::generator`](../../../id_effect_cli/src/generator.rs) and [PHASE_E_CLI_PARITY.md](../../../../docs/platform/PHASE_E_CLI_PARITY.md).
+There is no `id-effect new` generator in 0.6 (the earlier placeholder scaffolder was removed). Start from the [`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal) template, which uses `id_effect_cli::run_main`. See [PHASE_E_CLI_PARITY.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/PHASE_E_CLI_PARITY.md).
 
 ## Kamal deploy template
 
@@ -17,7 +13,7 @@ Scaffold under `crates/id_effect_cli/templates/deploy-kamal/`:
 - `config/deploy.yml.template` — Kamal 2 service definition
 - `Dockerfile.template` — multi-stage Rust release build
 
-Copy to your app root and replace `{{name}}` placeholders (same tokens as `id-effect new`).
+Copy to your app root and replace the `{{name}}` placeholders with your binary name.
 
 ## Admin scaffold stub
 
@@ -26,4 +22,4 @@ Copy to your app root and replace `{{name}}` placeholders (same tokens as `id-ef
 ## See also
 
 - Mission: `platform-dx-ship`
-- [ROADMAP.md](../../../../docs/platform/ROADMAP.md)
+- [ROADMAP.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/ROADMAP.md)

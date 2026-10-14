@@ -78,7 +78,7 @@ fn main() {
 }
 ```
 
-[`CapabilityGraph`](../../src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that read `Database` from `Env`.
+[`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) ensures `DatabaseLive` runs before repo providers that read `Database` from `Env`.
 
 ## Test wiring
 

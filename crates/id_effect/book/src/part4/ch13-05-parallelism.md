@@ -6,12 +6,12 @@ Use the **primary method name** (`map`, `filter`, `sort_with`, …). Opt out wit
 
 ## How dispatch works
 
-Every `run_blocking` / `run_async` / `run_with` boundary refreshes the thread-local [`AdaptiveContext`](../src/compute/adaptive.rs) from the installed supervisor. Bulk paths call [`parallel_if_profitable`](../src/compute/dispatch.rs), which consults `should_parallelize_current(len)` and runs Rayon via [`install_parallel`](../src/compute/rayon_pool.rs) when the snapshot says it pays off.
+Every `run_blocking` / `run_async` / `run_with` boundary refreshes the thread-local [`AdaptiveContext`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/adaptive.rs) from the installed supervisor. Bulk paths call [`parallel_if_profitable`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/dispatch.rs), which consults `should_parallelize_current(len)` and runs Rayon via [`install_parallel`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/rayon_pool.rs) when the snapshot says it pays off.
 
 | Workload | API | Parallelism model |
 |----------|-----|-------------------|
 | Pure bulk (`Vec`, `HashMap`, stream chunks, …) | `map`, `filter`, `sort_with`, … | Rayon per chunk when profitable |
-| Effectful stream | [`Stream::map_effect`](../src/streaming/stream.rs) | Admission-bounded async concurrency per chunk |
+| Effectful stream | [`Stream::map_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) | Admission-bounded async concurrency per chunk |
 | `effect!` binds | primary `~` syntax | EDG parallelizes **independent** bind sets |
 | Deterministic tests | `*_serial`, `#[effect(serial)]` | explicit opt-out |
 
@@ -61,7 +61,7 @@ See example `071_stream_map_serial.rs`.
 
 ## Streams — effectful steps
 
-When each element runs an `Effect`, use [`Stream::map_effect`](../src/streaming/stream.rs). Concurrency is capped by the current admission budget (at least one permit):
+When each element runs an `Effect`, use [`Stream::map_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs). Concurrency is capped by the current admission budget (at least one permit):
 
 ```rust
 use id_effect::{Stream, succeed};
@@ -102,4 +102,4 @@ Example: `122_compute_fabric_effect_parallel.rs` (stream effect mapping under Fa
 | `Stream::map_par_adaptive(f)` | `map_effect(f)` |
 | `compute::effective_threshold` | removed (internal to Fabric) |
 
-See [ADR 0008](../../../../docs/adrs/0008-implicit-parallelism.md) (supersedes the public surface of [ADR 0006](../../../../docs/adrs/0006-parallel-by-default.md)).
+See [ADR 0008](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0008-implicit-parallelism.md) (supersedes the public surface of [ADR 0006](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0006-parallel-by-default.md)).

@@ -3,7 +3,8 @@
 use proc_macro::TokenStream as ProcTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, Path, Type, punctuated::Punctuated, token::Comma};
+use syn::parse::{Parse, ParseStream};
+use syn::{DeriveInput, Expr, Path, Token, Type, punctuated::Punctuated, token::Comma};
 
 pub fn derive(input: ProcTokenStream) -> ProcTokenStream {
   derive2(input.into()).into()
@@ -16,8 +17,11 @@ fn derive2(input: TokenStream) -> TokenStream {
   };
   let struct_name = &input.ident;
 
-  let service_ty = match find_provides_service(&input) {
-    Ok(ty) => ty,
+  let ProvidesArgs {
+    service: service_ty,
+    with,
+  } = match find_provides_service(&input) {
+    Ok(args) => args,
     Err(e) => return e.to_compile_error(),
   };
 
@@ -27,10 +31,10 @@ fn derive2(input: TokenStream) -> TokenStream {
     Some(lit) => quote! { Some(#lit) },
     None => quote! { None },
   };
-  let construct = if has_derive_default(&input.attrs) {
-    quote! { Self::default() }
-  } else {
-    quote! { Self::new() }
+  let construct = match with {
+    Some(expr) => construct_with(expr),
+    None if has_derive_default(&input.attrs) => quote! { Self::default() },
+    None => quote! { Self::new() },
   };
 
   quote! {
@@ -53,16 +57,70 @@ fn derive2(input: TokenStream) -> TokenStream {
   }
 }
 
-fn find_provides_service(input: &DeriveInput) -> syn::Result<Type> {
+/// `#[provides(Service)]` or `#[provides(Service, with = <constructor>)]`.
+struct ProvidesArgs {
+  service: Type,
+  with: Option<Expr>,
+}
+
+impl Parse for ProvidesArgs {
+  fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+    let service = input.parse::<Type>()?;
+    let mut with = None;
+    if input.parse::<Option<Token![,]>>()?.is_some() && !input.is_empty() {
+      let key = input.parse::<syn::Ident>()?;
+      if key != "with" {
+        return Err(syn::Error::new_spanned(
+          key,
+          "expected `with = <constructor>` (e.g. `#[provides(Counter, with = || Counter(0))]`)",
+        ));
+      }
+      input.parse::<Token![=]>()?;
+      with = Some(input.parse::<Expr>()?);
+      let _ = input.parse::<Option<Token![,]>>()?;
+    }
+    if !input.is_empty() {
+      return Err(input.error("unexpected tokens after `#[provides(Service, with = …)]`"));
+    }
+    Ok(Self { service, with })
+  }
+}
+
+fn find_provides_service(input: &DeriveInput) -> syn::Result<ProvidesArgs> {
   for attr in &input.attrs {
     if attr.path().is_ident("provides") {
-      return attr.parse_args::<Type>();
+      return attr.parse_args::<ProvidesArgs>();
     }
   }
   Err(syn::Error::new_spanned(
     &input.ident,
     "derive(ProviderSpec) requires #[provides(Service)] on the struct",
   ))
+}
+
+/// Expression building the service from a `with = …` constructor.
+///
+/// - `|| expr` → `expr` (inlined, so no closure call is generated)
+/// - `|deps| expr` / `|deps: &Env| expr` → `{ let deps = _deps; expr }` (reads already-built deps)
+/// - any other expression (`Self::build`, `make_counter`) → called with no arguments
+fn construct_with(expr: Expr) -> TokenStream {
+  match expr {
+    Expr::Closure(closure) if closure.inputs.is_empty() => {
+      let body = closure.body;
+      quote! { #body }
+    }
+    Expr::Closure(closure) if closure.inputs.len() == 1 => {
+      let pat = &closure.inputs[0];
+      let body = &closure.body;
+      quote! { { let #pat = _deps; #body } }
+    }
+    Expr::Closure(closure) => syn::Error::new_spanned(
+      &closure.inputs,
+      "`with` closure takes no arguments or one `&Env` argument",
+    )
+    .to_compile_error(),
+    other => quote! { (#other)() },
+  }
 }
 
 fn has_derive_default(attrs: &[syn::Attribute]) -> bool {
@@ -159,5 +217,59 @@ mod tests {
     };
     let out = derive2(input).to_string();
     assert!(out.contains("replica"));
+  }
+
+  #[test]
+  fn with_zero_arg_closure_inlines_body() {
+    let input = quote! {
+      #[provides(Counter, with = || Counter(42))]
+      struct CounterLive;
+    };
+    let out = derive2(input).to_string();
+    assert!(out.contains("Ok (Counter (42))"), "{out}");
+    assert!(!out.contains("Self :: new"), "{out}");
+  }
+
+  #[test]
+  fn with_deps_closure_binds_env() {
+    let input = quote! {
+      #[provides(Repo, with = |deps: &Env| Repo::new(deps))]
+      struct RepoLive;
+    };
+    let out = derive2(input).to_string();
+    assert!(out.contains("let deps : & Env = _deps"), "{out}");
+  }
+
+  #[test]
+  fn with_path_is_called() {
+    let input = quote! {
+      #[provides(Counter, with = Self::build,)]
+      struct CounterLive;
+    };
+    let out = derive2(input).to_string();
+    assert!(out.contains("(Self :: build) ()"), "{out}");
+  }
+
+  #[test]
+  fn provides_rejects_unknown_key_and_multi_arg_closure() {
+    let bad_key = quote! {
+      #[provides(Counter, make = Self::build)]
+      struct CounterLive;
+    };
+    assert!(derive2(bad_key).to_string().contains("expected `with"));
+    let bad_closure = quote! {
+      #[provides(Counter, with = |a, b| a)]
+      struct CounterLive;
+    };
+    assert!(
+      derive2(bad_closure)
+        .to_string()
+        .contains("no arguments or one")
+    );
+    let trailing = quote! {
+      #[provides(Counter, with = Self::build, extra)]
+      struct CounterLive;
+    };
+    assert!(derive2(trailing).to_string().contains("unexpected tokens"));
   }
 }

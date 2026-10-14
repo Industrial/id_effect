@@ -1,6 +1,6 @@
 //! Driver-agnostic SQL client trait and in-memory test double.
 
-#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
+#![allow(clippy::unused_unit)]
 
 use std::collections::HashMap;
 use std::fmt;

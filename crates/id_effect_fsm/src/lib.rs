@@ -1,13 +1,19 @@
-//! Typed **finite-state machines**, **sagas**, and **linear session types** for
-//! [`id_effect`](https://github.com/Industrial/id_effect) programs.
+//! Typed **finite-state machines** and **sagas** for
+//! [`id_effect`](https://github.com/Industrial/id_effect) programs, plus a `gen_statem`-style
+//! process behaviour.
 //!
 //! - [`StateMachine`] / [`TransitionTable`] — pure transition tables and [`StateMachine::step`]
-//! - [`Interpreter`] — run transition hooks via [`id_effect::run_blocking`]
+//! - [`Fsm`] / `#[derive(Fsm)]` — declare states, events and edges on an enum
+//! - [`Interpreter`] — Effect-valued transition actions ([`Interpreter::step`] returns an
+//!   [`id_effect::Effect`])
+//! - [`FsmProcess`] / [`FsmHandle`] — host a machine in a supervised
+//!   [`id_effect_process`] process: events are mailbox messages, state is queryable
 //! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
-//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation
-//! - [`SessionSend`] / [`SessionRecv`] — linear session protocol markers
-//! - [`register_fsm`] / [`step_durable`] — persist FSM snapshots through [`id_effect_workflow`]
+//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one [`id_effect::Effect`]
+//!
+//! Durable snapshots of a [`StateMachine`] live in the unpublished labs crate
+//! `id_effect_workflow::fsm`.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -20,26 +26,33 @@
   )
 )]
 
+// Lets `#[derive(Fsm)]` (which names `::id_effect_fsm`) work inside this crate's own tests.
+extern crate self as id_effect_fsm;
+
+mod behaviour;
+mod definition;
 mod error;
 mod interpreter;
 mod machine;
 mod matcher;
 mod saga;
-mod session;
 mod visualize;
-mod workflow;
 
+pub use behaviour::{FsmCall, FsmHandle, FsmProcess, FsmReply, FsmSpec, Unhandled};
+pub use definition::Fsm;
 pub use error::{FsmError, SagaError};
+/// `#[derive(Fsm)]` — see the [`Fsm`](trait@Fsm) trait docs for the attribute syntax.
+pub use id_effect_proc_macro::Fsm;
 pub use interpreter::{Interpreter, RunError, TransitionEffect};
 pub use machine::{StateMachine, TransitionTable};
 pub use matcher::{TaggedEvent, TaggedState, classify_event, event_matcher, state_matcher};
 pub use saga::{Saga, SagaStep};
-pub use session::{
-  ClientPing, PingPong, PingStep, PongStep, ServerPing, SessionEnd, SessionProtocol, SessionRecv,
-  SessionSend,
-};
 pub use visualize::{table_to_mermaid, to_mermaid, to_mermaid_display};
-pub use workflow::{FsmSnapshot, WorkflowFsmError, register_fsm, restore_state, step_durable};
+
+/// Compiles and runs the README examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
 
 #[cfg(test)]
 mod tests {
@@ -48,7 +61,7 @@ mod tests {
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
-  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+  #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
   enum Door {
     Closed,
     Open,
@@ -107,7 +120,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_blocking_executes_transition_effect() {
+    fn step_effect_runs_transition_action_then_commits() {
       let counter = Arc::new(AtomicU32::new(0));
       let interp = Interpreter::<Door, DoorEvt, (), (), ()>::new().on_transition(
         Door::Closed,
@@ -123,8 +136,9 @@ mod tests {
           }
         },
       );
-      let mut m = door_machine();
-      interp.run(&mut m, [DoorEvt::Open], ()).expect("run");
+      let program = interp.step(door_machine(), DoorEvt::Open);
+      assert_eq!(counter.load(Ordering::SeqCst), 0, "effects are lazy");
+      let m = run_blocking(program, ()).expect("run");
       assert_eq!(m.state(), Door::Open);
       assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
@@ -176,77 +190,54 @@ mod tests {
           },
         ))
         .step(SagaStep::forward("b", || fail("boom")));
-      let err = saga.run(()).unwrap_err();
+      let err = run_blocking(saga.run(), ()).unwrap_err();
       assert!(matches!(err, SagaError::Forward("boom")));
       assert_eq!(log.load(Ordering::SeqCst), 11);
     }
   }
 
-  mod session_tests {
+  mod derive_tests {
     use super::*;
 
-    #[test]
-    fn client_ping_pong_linear() {
-      let send = ClientPing::new();
-      let (_ping, recv) = send.send::<PingPong, PongStep>(PingPong::Ping);
-      let (_pong, _end) = recv.recv::<PingPong, SessionEnd>(PingPong::Pong);
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    enum Light {
+      Tick,
+      Fault,
     }
-  }
 
-  mod workflow_tests {
-    use super::*;
-    use id_effect_workflow::DurableWorkflowLog;
-
-    #[test]
-    fn register_fsm_duplicate_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let m = door_machine();
-      register_fsm(&mut log, "wf", &m).unwrap();
-      let err = register_fsm(&mut log, "wf", &m).unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Fsm)]
+    #[fsm(event = Light)]
+    enum Signal {
+      #[fsm(on(Tick => Green, Fault => Blinking))]
+      Red,
+      #[fsm(on(Tick => Amber))]
+      Green,
+      #[fsm(on(Tick => Red))]
+      Amber,
+      Blinking,
     }
 
     #[test]
-    fn step_durable_unknown_workflow_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      let err = step_durable(&mut log, "missing", &mut m, DoorEvt::Open, "open").unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
-    }
-
-    #[test]
-    fn restore_unknown_workflow_errors() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      let err = restore_state(&mut log, "missing", &mut m).unwrap_err();
-      assert!(matches!(err, WorkflowFsmError::Workflow(_)));
-    }
-
-    #[test]
-    fn durable_step_persists_state() {
-      let mut log = DurableWorkflowLog::open_in_memory().unwrap();
-      let mut m = door_machine();
-      register_fsm(&mut log, "door", &m).unwrap();
-      let snap = step_durable(&mut log, "door", &mut m, DoorEvt::Open, "open").unwrap();
-      assert_eq!(snap.state, Door::Open);
-      let mut m2 = door_machine();
-      let restored = restore_state(&mut log, "door", &mut m2).unwrap();
-      assert_eq!(restored.state, Door::Open);
-      assert_eq!(m2.state(), Door::Open);
+    fn derived_machine_cycles_and_defaults_initial_to_first_variant() {
+      assert_eq!(Signal::initial(), Signal::Red);
+      let mut m = Signal::state_machine();
+      for expected in [Signal::Green, Signal::Amber, Signal::Red] {
+        assert_eq!(m.step(Light::Tick), Ok(expected));
+      }
+      assert_eq!(m.step(Light::Fault), Ok(Signal::Blinking));
+      assert!(m.step(Light::Tick).is_err(), "Blinking is terminal");
+      assert_eq!(Signal::transition_table().len(), 4);
     }
   }
 
   mod effect_integration {
     use super::*;
-    use id_effect_workflow::DurableWorkflowLog;
 
     #[test]
     fn effect_program_steps_door() {
-      let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>, ()> = effect! {
-        let mut log = ~DurableWorkflowLog::open_in_memory();
+      let program: Effect<Door, FsmError<Door, DoorEvt>, ()> = effect! {
         let mut m = door_machine();
-        ~register_fsm(&mut log, "wf", &m);
-        ~step_durable(&mut log, "wf", &mut m, DoorEvt::Open, "open");
+        ~m.step(DoorEvt::Open);
         m.state()
       };
       let final_state = run_blocking(program, ()).expect("run");

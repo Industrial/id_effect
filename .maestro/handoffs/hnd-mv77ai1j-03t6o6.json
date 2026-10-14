@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77ai1j-03t6o6",
+	"task_id": "tsk-mqimsbaw-9svxng",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:36:13.015Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md",
+	"to_agent": "cli"
+}

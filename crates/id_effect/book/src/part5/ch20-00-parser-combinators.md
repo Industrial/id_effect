@@ -1,5 +1,10 @@
 # Parser Combinators
 
+> **Labs crate — unpublished, no API guarantees ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)).**
+> `id_effect_parse` lives in [`labs/id_effect_parse`](https://github.com/Industrial/id_effect/tree/main/labs/id_effect_parse).
+> Use it via a path or git dependency on `labs/`; it is not on crates.io, so the `docs.rs` links
+> below point at the last published (0.4) documentation.
+
 `id_effect_parse` brings small, composable parsers to the workspace — the same functional pattern as schema combinators in Part IV, but oriented toward **text and byte streams** rather than JSON `Unknown` values.
 
 ## The `Parser` type
@@ -81,11 +86,11 @@ assert_eq!(value, "ping");
 
 ## Schema bridge
 
-[`SchemaBridge`](https://docs.rs/id_effect_parse/latest/id_effect_parse/struct.SchemaBridge.html) connects [`Schema`](../../src/schema/parse.rs) values to text parsers:
+[`SchemaBridge`](https://docs.rs/id_effect_parse/latest/id_effect_parse/struct.SchemaBridge.html) connects [`Schema`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/parse.rs) values to text parsers:
 
 - `parser_for_json` — parse JSON text, then `decode_unknown`
 - `parser_for_string_wire` — when the wire type is `String`
-- `parser_for::<T>()` — for types implementing [`HasSchema`](../../src/schema/has_schema.rs)
+- `parser_for::<T>()` — for types implementing [`HasSchema`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/has_schema.rs)
 
 Boundary validation for external data still belongs to **`id_effect::schema`** (Part IV). Use schema at the edge; use `SchemaBridge` when a text protocol should reuse the same schema.
 
@@ -99,12 +104,12 @@ let (person, _) = parser.parse(r#"{"name":"Ada","age":36}"#.to_string()).unwrap(
 assert_eq!(person, ("Ada".to_string(), 36));
 ```
 
-## `#[derive(SchemaParser)]`
+## `#[derive(Schema)]`
 
-The proc macro generates `schema()`, `parser()`, and `HasSchema` for structs with named fields (see Part V chapter 24).
+The core derive generates `schema()` and `HasSchema` for structs with named fields (see Part V chapter 24); `SchemaBridge::parser_for::<T>()` turns any `HasSchema` type into a JSON text parser. `#[derive(SchemaParser)]` is a deprecated alias that no longer emits `parser()`.
 
 ## Next steps
 
 - Part IV [`Schema`](../part4/ch14-00-schema.md) for JSON and API boundaries
 - Part IV [`Streams`](../part4/ch13-00-streams.md) for chunk backpressure and collection
-- Workspace crate: `crates/id_effect_parse/`
+- Labs crate: `labs/id_effect_parse/` (`cargo run --manifest-path labs/Cargo.toml -p id_effect_parse --example 010_schema_parser`)

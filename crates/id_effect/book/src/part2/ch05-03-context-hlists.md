@@ -1,6 +1,6 @@
 # `Env` — The Runtime Capability Container
 
-Multi-capability effects use [`Env`](../../src/capability/env.rs) at runtime: a map from capability identity to service value. **Insertion order does not matter**.
+Multi-capability effects use [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) at runtime: a map from capability identity to service value. **Insertion order does not matter**.
 
 ## Structure
 
@@ -15,7 +15,7 @@ assert!(env.has::<Cap<Database>>());
 let pool = env.get::<Cap<Database>>();
 ```
 
-`Env` stores cloneable, `Send + Sync` values keyed by [`CapabilityId`](../../src/capability/id.rs) (derived from the key type). Lookups are O(1); there is no positional indexing.
+`Env` stores cloneable, `Send + Sync` values keyed by [`CapabilityId`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/id.rs) (derived from the key type). Lookups are O(1); there is no positional indexing.
 
 ## Building `Env`
 
@@ -46,7 +46,7 @@ You could store `dyn Any` and downcast. `Env` + `Capability` keeps:
 
 - **Compile-time requirements** via `Needs<K>` bounds and `caps!`
 - **Typed access** — `get::<Cap<Database>>()` returns `&Pool`, not `&dyn Any`
-- **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](../../src/capability/error.rs) with the key name
+- **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs) with the key name
 
 Application code should think in **`Env` and capability services**, not positional tuples.
 
@@ -65,7 +65,7 @@ Adding a new capability never changes how existing keys are accessed — refacto
 ## When you touch `Env` directly
 
 - Test fixtures with one or two mocks
-- Tokio/async examples that pass `Env` to [`run_async`](../../src/runtime/mod.rs)
+- Tokio/async examples that pass `Env` to [`run_async`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/mod.rs)
 - HTTP hosts that store `State<Env>` (see [Axum host](./ch07-08-axum-host.md))
 
-Production apps usually list [`provide!(…)`](../../src/capability/provider.rs) values once at the top level and let [`CapabilityGraph`](../../src/capability/graph.rs) assemble `Env`.
+Production apps usually list [`provide!(…)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) values once at the top level and let [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) assemble `Env`.

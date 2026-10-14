@@ -27,6 +27,12 @@ impl<T> Cap<T> {
 }
 
 /// Associates a capability slot with the concrete service value stored in [`super::Env`].
+#[diagnostic::on_unimplemented(
+  message = "`{Self}` is not a capability key",
+  label = "not a capability key",
+  note = "use the service type directly — `caps!(MyService)` / `#[provides(MyService)]` wrap it as `Cap<MyService>`",
+  note = "a service type must be `Clone + Send + Sync + 'static` (wrap trait objects as `Arc<dyn Trait>`)"
+)]
 pub trait CapabilityKey: Copy + Send + Sync + 'static {
   /// Concrete service type (cloneable handle stored in the environment).
   type Value: Clone + Send + Sync + 'static;
@@ -47,6 +53,15 @@ where
   T: Clone + Send + Sync + 'static,
 {
   type Value = T;
+
+  /// Same identity as `CapabilityId::of::<Cap<T>>()`, named after the service type `T`.
+  fn id() -> CapabilityId {
+    CapabilityId::of::<Self>().with_name(std::any::type_name::<T>())
+  }
+
+  fn name() -> &'static str {
+    std::any::type_name::<T>()
+  }
 }
 
 /// Marker implemented by all capability service traits.

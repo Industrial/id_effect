@@ -76,7 +76,7 @@ The test runs in microseconds despite testing multi-second retry behaviour. No `
 
 ## Clock in the environment
 
-Like other dependencies, `Clock` is a capability in [`Env`](../../src/capability/env.rs):
+Like other dependencies, `Clock` is a capability in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs):
 
 ```rust
 use id_effect::{Effect, Clock, LiveClock, TestClock, caps, effect, provide, require, run_with};

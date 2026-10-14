@@ -55,22 +55,30 @@ pub trait Runtime {
 /// [`Runtime`] that sleeps and yields using a Compute Fabric fiber pool.
 ///
 /// Fibers are admitted through [`crate::compute::ComputeFabric`] and executed on a shared worker
-/// pool instead of one OS thread per spawn.
+/// pool instead of one OS thread per spawn. Without the `compute` feature each fiber runs on its
+/// own OS thread.
 #[derive(Clone, Debug)]
 pub struct ThreadSleepRuntime {
+  #[cfg(feature = "compute")]
   fabric: std::sync::Arc<crate::compute::ComputeFabric<crate::compute::SysinfoTelemetry>>,
+  #[cfg(not(feature = "compute"))]
+  _priv: (),
 }
 
 impl Default for ThreadSleepRuntime {
+  /// Reuse the installed fabric, or install a default one if none is installed (see
+  /// [`crate::compute::ensure_default_fabric`]). Never replaces a fabric you installed.
   fn default() -> Self {
-    let fabric = std::sync::Arc::new(crate::compute::ComputeFabric::with_policy(
-      crate::compute::ResourcePolicy::memory_cap_max_cpu(1.0),
-    ));
-    crate::compute::install_fabric(std::sync::Arc::clone(&fabric));
-    Self { fabric }
+    Self {
+      #[cfg(feature = "compute")]
+      fabric: crate::compute::ensure_default_fabric(),
+      #[cfg(not(feature = "compute"))]
+      _priv: (),
+    }
   }
 }
 
+#[cfg(feature = "compute")]
 impl ThreadSleepRuntime {
   /// Run fibers through the given [`ComputeFabric`].
   #[inline]
@@ -99,11 +107,14 @@ impl Runtime for ThreadSleepRuntime {
   {
     let handle = FiberHandle::pending(FiberId::fresh());
     let complete = handle.clone();
-    let fabric = std::sync::Arc::clone(&self.fabric);
-    fabric.spawn_admitted(move || {
+    let job = move || {
       let (effect, env) = f();
       complete.mark_completed(run_blocking(effect, env));
-    });
+    };
+    #[cfg(feature = "compute")]
+    std::sync::Arc::clone(&self.fabric).spawn_admitted(job);
+    #[cfg(not(feature = "compute"))]
+    std::thread::spawn(job);
     handle
   }
 
@@ -115,6 +126,7 @@ impl Runtime for ThreadSleepRuntime {
     F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
   {
     let _ = parent;
+    #[cfg(feature = "compute")]
     self.fabric.tick();
     self.spawn_with(f)
   }
@@ -275,6 +287,7 @@ mod tests {
       assert!(t.elapsed().as_secs() < 5, "should be very recent");
     }
 
+    #[cfg(feature = "compute")]
     #[test]
     fn with_fabric_exposes_policy_and_spawn_scoped() {
       let fabric = crate::compute::ComputeFabric::memory_cap_max_cpu(0.9);

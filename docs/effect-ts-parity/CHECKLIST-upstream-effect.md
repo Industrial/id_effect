@@ -11,7 +11,7 @@
 | `Scope` / `Release` | Resource safety | `crates/id_effect/src/resource/scope.rs` | |
 | `Schedule` / retry | Scheduling policies | `crates/id_effect/src/scheduling/schedule.rs` | |
 | `Stream` / `Sink` | Streaming | `crates/id_effect/src/streaming/` | |
-| `STM` | `STM` module | `crates/id_effect/src/stm/` | |
+| `STM` | `STM` module | `crates/id_effect_fp/src/stm/` | |
 | `Schema` | Parse/encode | `crates/id_effect/src/schema/` | |
 | `Fiber` / interruption | Concurrency | `crates/id_effect/src/concurrency/` | |
 | `FiberRef` | Fiber-local state | `fiber_ref.rs` | |

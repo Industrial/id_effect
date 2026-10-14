@@ -2,7 +2,7 @@
 
 **Part V · Chapter 18** — functional optics for immutable focus and update.
 
-The [`id_effect_optics`](../../../../id_effect_optics/) crate provides:
+The [`id_effect_optics`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_optics) crate provides:
 
 - **Lens** — total field access (`get`, `set`, `modify`, `compose`, `as_traversal`)
 - **Prism** — partial variant access (`preview`, `review`)
@@ -10,7 +10,7 @@ The [`id_effect_optics`](../../../../id_effect_optics/) crate provides:
 - **Traversal** — map over vectors, optional fields, and composed optics
 - **Iso** — bidirectional isomorphisms
 - **Transducer** — composable reducer transforms
-- **Schema bridge** — dot-path and JSON Pointer access on [`Unknown`](../../src/schema/parse.rs)
+- **Schema bridge** — dot-path and JSON Pointer access on [`Unknown`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/parse.rs)
 - **JSON Patch** — RFC 6902 operations on `Unknown`
 - **TrieZipper** — navigable persistent trie with rebuild
 - **`#[derive(Optics)]`** — codegen via `id_effect_proc_macro`
@@ -18,7 +18,7 @@ The [`id_effect_optics`](../../../../id_effect_optics/) crate provides:
 ## When to reach for optics
 
 Use optics when you need **composable, reusable focus** into nested data — especially persistent
-[`im`](../../src/collections/mod.rs) structures or [`Unknown`](../../src/schema/parse.rs) documents at boundaries.
+[`im`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/collections/mod.rs) structures or [`Unknown`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/schema/parse.rs) documents at boundaries.
 
 ## Example
 

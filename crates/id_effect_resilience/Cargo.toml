@@ -1,10 +1,11 @@
 [package]
 name = "id_effect_resilience"
-version = "0.4.0"
-edition = "2024"
-description = "Resilience patterns — circuit breaker, rate limiter, bulkhead, hedged requests — for id_effect"
-license = "CC-BY-SA-4.0"
-repository = "https://github.com/Industrial/id_effect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Resilience patterns for id_effect: circuit breaker, Schedule-driven retry, rate limiter, bulkhead, hedged requests"
+license.workspace = true
+repository.workspace = true
 readme = "README.md"
 
 [lints.rust]
@@ -15,9 +16,13 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 name = "id_effect_resilience"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.4.0" }
+id_effect = { path = "../id_effect", version = "0.6.0" }
 tokio = { version = "1.50.0", features = ["sync", "time"] }
 
 [dev-dependencies]
 rstest = "0.26"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

@@ -1,4 +1,40 @@
-# `effect` — construct catalog (`src/`)
+# `id_effect`
+
+`Effect<A, E, R>` (sync + async), capability-first dependency injection and `pipe!` —
+interpreter-style, no bundled executor. Tier: **core** ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).
+
+## Quick start
+
+```rust
+use id_effect::{Effect, effect, fail, run, succeed};
+
+fn parse_port(raw: &str) -> Effect<u16, String, ()> {
+  match raw.parse::<u16>() {
+    Ok(port) => succeed(port),
+    Err(e) => fail(format!("bad port {raw:?}: {e}")),
+  }
+}
+
+fn next_port(raw: &str) -> Effect<u16, String, ()> {
+  let parsed = parse_port(raw);
+  effect! {
+    let port = ~parsed;
+    port + 1
+  }
+}
+
+assert_eq!(run(next_port("8080")).ok(), Some(8081));
+assert!(run(next_port("http")).is_err());
+```
+
+Cargo features: `compute` (default — Compute Fabric, adaptive Rayon bulk ops, `sysinfo`
+telemetry), `proptest`, `schema-serde`. `--no-default-features` drops `rayon` and `sysinfo`.
+Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
+[`id_effect_fp`](../id_effect_fp) crate.
+
+---
+
+## Construct catalog (`src/`)
 
 Single-page index of modules and primary APIs under `crates/id_effect/src/`. Each line states **when** to reach for it and **how** it fits the system (lazy `Effect` graphs, compile-time `R`, boundaries at `run_*`). For stratum notes and design detail, see `src/**/README.md` where present.
 
@@ -10,37 +46,21 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 |-----------|-------------------|
 | **Public re-exports** | Prefer `use id_effect::{Effect, …}` for the supported surface; module paths (`effect::kernel::…`) remain for precision and older call sites. |
 | **`extern crate self as effect`** | Lets proc-macros emit `::id_effect::…` paths reliably when expanding inside this crate. |
-| **`im` re-export** | Use `effect::im` so `effect::collections` aliases and your code share one `im` version without extra deps. |
 
 ---
 
-## `foundation/` — pure categorical bedrock (no `Effect`, no I/O)
+## `foundation/` — pure helpers core is built on (no `Effect`, no I/O)
+
+`unit`, `never`, `function`, `product`, `coproduct`, `isomorphism` and `option_` moved to
+`id_effect_fp::foundation`.
 
 | Module / construct | When / how to use |
 |---------------------|-------------------|
-| **`unit`** (`Unit`, `unit`, `discard`, `extend`) | Use for typed “no information” results, ignoring values in pipelines, and `() -> A` plumbing at pure boundaries. |
-| **`never`** (`Never`, `absurd`) | Use when a branch is statically unreachable (`Result<T, Never>`, exhaustive matches) to delete fake `unreachable!` noise. |
-| **`function`** (`identity`, `compose`, `const_`, `always`, `flip`, `pipe1/2/3`, `absurd`, `tupled`, `untupled`, `and_then`) | Use for morphism algebra on **pure** functions: composition, flipping argument order, tuple/untuple for APIs, and left-to-right piping without macros. |
-| **`product`** (`fst`, `snd`, `pair`, `swap`, `bimap_product`, `map_fst/snd`, `dup`, `assoc_l/r`) | Use to work categorically with pairs: projections, fanout, swapping tuple order, and re-associating nested pairs. |
-| **`coproduct`** (`Either`, `left`/`right`, `either`, `bimap`, `merge`, `from_option`, …) | Use for sum types / `Result` with categorical names: inject, eliminate, map one or both sides, recover from left. |
 | **`either`** (alias + `either::either::*`) | Use when you want **Effect.ts naming** (`right`/`left`, `map_left`, `get_or_else`, …) over inherent `Result` methods. |
-| **`isomorphism`** (`Iso`, `identity`, `swap`, `unit_left/right`, `assoc_product`, `uncurry`) | Use to witness bijections you rely on (round-trip tests), reassociate products, or uncurry pure functions. |
-| **`func`** (`identity`, `compose`, `memoize`, `pipe*`, `tupled`, …) | Use like `function`, plus **`memoize`** for pure, keyed memoization of expensive functions (mind memory). |
-| **`option_::option`** | Use for **Effect.ts-style** `Option` helpers (`zip`, `lift_predicate`, `to_result`) when method chains read worse. |
+| **`func`** (`identity`, `compose`, `memoize`, `pipe*`, `tupled`, …) | Use for morphism algebra on pure functions, plus **`memoize`** for pure, keyed memoization of expensive functions (mind memory). |
 | **`piping`** (`Pipe` trait) | Use for fluent `x.pipe(f).pipe(g)` on any value; pairs with `Effect::map` / `pipe!` at boundaries. |
 | **`predicate`** (`Predicate`, `predicate::*`) | Use when boolean logic gets gnarly: store composable `Send + Sync` predicates (`and`/`or`/`not`, `contramap`, builtins). |
 | **`mutable_ref`** (`MutableRef`) | Use **sparingly** at synchronous edges for shared mutable cells; prefer `FiberRef` / `TRef` / services inside effect graphs. |
-
----
-
-## `algebra/` — type-class-shaped traits (structure, not effects)
-
-| Module / trait | When / how to use |
-|----------------|-------------------|
-| **`semigroup` / `monoid`** | Use to abstract “combine values” (`append`, `empty`) for pure summaries (often mirrored conceptually by logs/metrics elsewhere). |
-| **`functor` / `bifunctor` / `contravariant`** | Use to document/map laws over a type constructor; concrete `Option`/`Result`/`Effect` usage often stays at the value API. |
-| **`applicative` / `monad` / `selective`** | Use for generic combinators / law tests; application code usually uses `Effect`’s direct methods instead of these traits. |
-| **`interface`** | Use for shared algebraic interfaces where the trait layer adds clarity (see module docs). |
 
 ---
 
@@ -49,9 +69,9 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 | Module / construct | When / how to use |
 |--------------------|-------------------|
 | **`effect`** (`Effect`, `BoxFuture`, `IntoBind`, `succeed`/`fail`/`pure`, `from_async`, `scoped`/`scope_with`, `acquire_release`, …) | **Primary abstraction:** describe async/env work as a lazy graph; **run only** via `run_blocking` / `run_async` / test harnesses; bind inside `effect!` with `~`. |
-| **`thunk`** | Use for delayed suspension mechanics underpinning `Effect` (advanced / internal patterns—prefer `Effect::new` / `effect!`). |
-| **`result`** | Use for `Result` helpers in the kernel layer (bridge between `Effect` and pure success/failure). |
-| **`reader`** | Use for environment-threading helpers paired with `Effect`’s `R` parameter (advanced composition). |
+| **`par_bind`** (`join_binds2/3/4`, `flatten_or`) | Use to run independent binds concurrently and join their results. |
+
+The pure `thunk`, `result` and `reader` helpers moved to `id_effect_fp::{thunk, result, reader}`.
 
 ---
 
@@ -186,18 +206,6 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 
 ---
 
-## `stm/` — software transactional memory
-
-| Construct | When / how to use |
-|-----------|-------------------|
-| **`Stm` / `Outcome`** | Use to compose **optimistic** transactional reads/writes with retry (`Outcome::Retry`) for blocking queues/semaphores. |
-| **`commit` / `atomically`** | Use to turn a finished `Stm` program into an `Effect` (runs under STM’s global commit protocol). |
-| **`TRef`** | Use for transactional mutable cells (`read_stm`/`write_stm`/`update_stm`/`modify_stm`). |
-| **`TQueue` / `TMap` / `TSemaphore`** | Use for transactional structures built on `TRef` (bounded queues, maps, permit counters). |
-| **`Txn`** | Advanced/introspection—most code uses `Stm` combinators instead of touching transactions directly. |
-
----
-
 ## `streaming/` — chunked streams & sinks
 
 | Module / construct | When / how to use |
@@ -208,17 +216,13 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 
 ---
 
-## `collections/` — persistent & mutable structures
+## Moved to `id_effect_fp`
 
-| Module / type | When / how to use |
-|---------------|-------------------|
-| **`hash_map` / `hash_set`** (`EffectHashMap`/`Set`, `MutableHashMap`/`Set`) | Use **persistent** HAMT maps/sets for cheap structural sharing in pure snapshots; **mutable** variants for shared concurrent caches. |
-| **`sorted_map` / `sorted_set`** (`EffectSortedMap`/`Set`) | Use when you need ordered iteration / log-time btree behavior on immutable maps/sets. |
-| **`vector`** (`EffectVector`) | Use for persistent vectors (RRB) when you clone/update large sequences frequently. |
-| **`red_black_tree`** (`RedBlackTree`) | Use for ordered multimaps / specialized ordered indexes (see module). |
-| **`mutable_list`** (`MutableList`, `ChunkBuilder`) | Use for append-heavy shared buffers (e.g., stream assembly) with mutex-backed growth. |
-| **`mutable_queue`** (`MutableQueue`) | Use for bounded/unbounded FIFOs that must be shared across fibers with simple mutex semantics. |
-| **`trie`** (`Trie`) | Use for prefix-keyed maps (`str` paths) where prefix search matters. |
+`algebra/` (type classes), `stm/` (`TRef`, `TMap`, `commit`, …) and `collections/`
+(`EffectHashMap`, `EffectVector`, `RedBlackTree`, `MutableList`, `ChunkBuilder`, `Trie`, …) live in
+the maintenance-tier [`id_effect_fp`](../id_effect_fp) crate. Core uses `std` collections
+internally and in its public types (`SpanRecord::annotations`, `Metric::snapshot_frequencies`,
+`Sink::collect_to_map`, `TimeBucketMap` are `std::collections::{HashMap, BTreeMap}`).
 
 ---
 
@@ -234,5 +238,5 @@ Single-page index of modules and primary APIs under `crates/id_effect/src/`. Eac
 ## Cross-cutting pointers
 
 - **Boundaries:** describe work with `Effect`; **run** with `runtime::*`; wire dependencies with `layer`/`context`/`service`; validate external inputs with `schema`.
-- **Imperative sync state:** prefer `stm`/`coordination`/`FiberRef` over `foundation::MutableRef` except at thin integration edges.
+- **Imperative sync state:** prefer `coordination`/`FiberRef` (or `id_effect_fp::stm`) over `foundation::MutableRef` except at thin integration edges.
 - **Deeper docs:** `src/kernel/README.md`, `src/context/README.md`, `src/layer/README.md`, `src/schema/README.md`, etc., expand the “why” beyond this cheat-sheet.

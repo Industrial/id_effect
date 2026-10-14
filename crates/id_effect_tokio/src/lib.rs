@@ -26,7 +26,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use id_effect::compute::{ComputeFabric, SysinfoTelemetry, install_fabric};
+use id_effect::compute::{ComputeFabric, SysinfoTelemetry, ensure_default_fabric, install_fabric};
 use id_effect::{
   Effect, FiberHandle, FiberId, Never, Runtime, from_async, run_async, run_blocking,
 };
@@ -229,11 +229,11 @@ impl Runtime for TokioRuntime {
   }
 }
 
+/// Reuse the installed fabric, or install a default one if none is installed; never replaces a
+/// fabric the caller installed (see [`ensure_default_fabric`]).
 #[inline]
 fn default_fabric() -> Arc<ComputeFabric<SysinfoTelemetry>> {
-  let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(1.0));
-  install_fabric(Arc::clone(&fabric));
-  fabric
+  ensure_default_fabric()
 }
 
 #[inline]

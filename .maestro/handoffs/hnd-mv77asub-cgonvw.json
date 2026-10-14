@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77asub-cgonvw",
+	"task_id": "tsk-mqjykvsk-13j9ne",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:36:27.011Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/fp-runtime.md",
+	"to_agent": "cli"
+}

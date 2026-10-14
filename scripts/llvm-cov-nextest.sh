@@ -10,7 +10,12 @@ export NEXTEST_TEST_THREADS="${NEXTEST_TEST_THREADS:-1}"
 # toward error-only paths and depresses the coverage gate; integration runs set it explicitly.
 unset DATABASE_URL
 
-IGNORE_REGEX='crates/id_effect_cli/src/bin/id-effect|crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_effect|lib)\.rs|crates/id_effect_cli/src/generator\.rs|crates/id_effect_events/src/(bridge|event_store)\.rs|crates/id_effect_ai/src/streaming\.rs|crates/id_effect_logger/src/pipeline\.rs|crates/id_effect/src/foundation/(coproduct|never)\.rs|crates/id_effect/src/schema/parse\.rs|crates/id_effect_events/src/es_entity/|crates/id_effect_events/src/providers\.rs|crates/id_effect_events/src/projection_runner\.rs|crates/id_effect_workflow/src/duroxide_journal\.rs|crates/id_effect_workflow/src/providers\.rs|crates/id_effect_sql_pg/src/(pool_key|client|transaction)\.rs|crates/id_effect_jobs/src/(apalis|obix_inbox|obix_outbox|kafka)\.rs|crates/id_effect_rpc/src/(serialization|server)\.rs|crates/id_effect_opentelemetry/src/(otlp|providers|shutdown|testing|error|config|starter)\.rs|crates/id_effect_ai/src/(http_util|tracing_util|config)\.rs|crates/id_effect_proc_macro/src/derive_(schema_parser|optics)\.rs|crates/id_effect_axum/src/server/lifecycle\.rs|crates/id_effect_parse/src/byte\.rs'
+# Each entry needs a justification; w3-conformance reviews this list (ADR 0010 / QUALITY_BAR).
+#   sql/src/pg/{pool_key,client,transaction}: need a live database; exercised by the CI
+#     `pg-integration` job (Postgres service, ID_EFFECT_REQUIRE_PG=1), not this unit run.
+#   fp/src/foundation/never: every function takes the uninhabited `Infallible`, so its bodies
+#     can never execute (moved from id_effect/src/foundation in W2; coproduct.rs is tested).
+IGNORE_REGEX='crates/id_effect_cli/src/bin/id-effect-diagnose\.rs|crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_effect|lib)\.rs|crates/id_effect_logger/src/pipeline\.rs|crates/id_effect_fp/src/foundation/never\.rs|crates/id_effect/src/schema/parse\.rs|crates/id_effect_sql/src/pg/(pool_key|client|transaction)\.rs|crates/id_effect_opentelemetry/src/(otlp|providers|shutdown|testing|error|config|starter)\.rs|crates/id_effect_proc_macro/src/derive_(schema_parser|optics)\.rs|crates/id_effect_axum/src/server/lifecycle\.rs'
 
 exec cargo llvm-cov nextest \
     --ignore-filename-regex "${IGNORE_REGEX}" \

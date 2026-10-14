@@ -403,6 +403,90 @@ mod tests {
     );
   }
 
+  fn write_file(dir: &tempfile::TempDir, name: &str, body: &str) -> std::path::PathBuf {
+    let path = dir.path().join(name);
+    std::fs::write(&path, body).expect("write");
+    path
+  }
+
+  #[test]
+  fn try_extract_matches_extract() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = write_file(&dir, "a.toml", "n = 3\ns = \"t\"");
+    let fig = figment::from_toml_file(&path);
+    let cfg: Cfg = try_extract(&fig).expect("try_extract");
+    assert_eq!(cfg.n, 3);
+    assert!(matches!(
+      try_extract::<Cfg>(&::figment::Figment::new()),
+      Err(ConfigError::Figment(_))
+    ));
+  }
+
+  #[test]
+  fn merge_toml_overrides_earlier_layers() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let base = write_file(&dir, "base.toml", "n = 1\ns = \"base\"");
+    let local = write_file(&dir, "local.toml", "s = \"local\"");
+    let fig = figment::merge_toml(figment::from_toml_file(&base), &local);
+    let cfg: Cfg = extract(&fig).expect("extract");
+    assert_eq!((cfg.n, cfg.s.as_str()), (1, "local"));
+  }
+
+  #[cfg(feature = "json")]
+  #[test]
+  fn merge_json_overrides_toml() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let base = write_file(&dir, "base.toml", "n = 1\ns = \"base\"");
+    let json = write_file(&dir, "o.json", r#"{"n": 2}"#);
+    let cfg: Cfg = extract(&figment::merge_json(figment::from_toml_file(&base), &json)).unwrap();
+    assert_eq!((cfg.n, cfg.s.as_str()), (2, "base"));
+  }
+
+  #[cfg(feature = "yaml")]
+  #[test]
+  fn merge_yaml_overrides_toml() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let base = write_file(&dir, "base.toml", "n = 1\ns = \"base\"");
+    let yaml = write_file(&dir, "o.yaml", "s: yaml\n");
+    let cfg: Cfg = extract(&figment::merge_yaml(figment::from_toml_file(&base), &yaml)).unwrap();
+    assert_eq!((cfg.n, cfg.s.as_str()), (1, "yaml"));
+  }
+
+  #[cfg(feature = "env")]
+  #[test]
+  fn env_figments_read_process_environment() {
+    temp_env::with_vars(
+      [
+        ("IDCFGT_N", Some("5")),
+        ("IDCFGT_S", Some("env")),
+        ("IDCFGT_RAW_MARKER", Some("raw")),
+      ],
+      || {
+        let cfg: Cfg = extract(&figment::from_env_prefixed("IDCFGT_")).expect("prefixed");
+        assert_eq!((cfg.n, cfg.s.as_str()), (5, "env"));
+
+        #[derive(Deserialize)]
+        struct Raw {
+          idcfgt_raw_marker: String,
+        }
+        let raw: Raw = extract(&figment::from_env_raw()).expect("raw");
+        assert_eq!(raw.idcfgt_raw_marker, "raw");
+      },
+    );
+  }
+
+  #[cfg(feature = "env")]
+  #[test]
+  fn layered_toml_env_applies_env_last() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let default = write_file(&dir, "default.toml", "n = 1\ns = \"default\"");
+    let local = write_file(&dir, "local.toml", "n = 2");
+    with_var("IDCFGL_S", Some("from-env"), || {
+      let cfg: Cfg = extract(&figment::layered_toml_env(&default, &local, "IDCFGL_")).unwrap();
+      assert_eq!((cfg.n, cfg.s.as_str()), (2, "from-env"));
+    });
+  }
+
   #[test]
   fn figment_layer_build() {
     let dir = tempfile::tempdir().expect("tempdir");

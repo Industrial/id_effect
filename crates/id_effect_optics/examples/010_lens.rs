@@ -1,6 +1,6 @@
 //! Lens composition over nested records.
 
-use id_effect_optics::{Lens, field};
+use id_effect_optics::field;
 
 #[derive(Clone, Debug)]
 struct Address {
@@ -37,5 +37,5 @@ fn main() {
   };
 
   let updated = city.modify(person, |c| format!("{c}, UK"));
-  println!("city = {}", updated.address.city);
+  println!("{} lives in {}", updated.name, updated.address.city);
 }

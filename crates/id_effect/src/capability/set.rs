@@ -7,18 +7,33 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 /// Marker: effect requires capabilities listed in the `caps!` macro.
+#[diagnostic::on_unimplemented(
+  message = "`{Self}` is not a capability environment",
+  label = "expected `caps!(…)`, `Env`, or `()` here",
+  note = "declare the effect's environment with `caps!(ServiceA, ServiceB)` (or a `type AppCaps = caps!(…);` alias)"
+)]
 pub trait CapabilitySet {
   /// Verify `env` contains all required capabilities.
   fn verify(env: &Env) -> Result<(), CapabilityError>;
 }
 
 /// Build runtime `R` from a constructed [`Env`].
+#[diagnostic::on_unimplemented(
+  message = "`run_with` / `build_env` cannot build the effect environment `{Self}`",
+  label = "the effect's `R` must be `caps!(…)`, `Env`, or `()`",
+  note = "declare the effect as `Effect<A, E, caps!(ServiceA, ServiceB)>` and provide each service with `provide!(…)`"
+)]
 pub trait FromEnv: CapabilitySet + Sized {
   /// Wrap or pass through `env` for effect execution.
   fn from_env(env: Env) -> Self;
 }
 
 /// Tuple of capability keys — used as `CapList` type parameter.
+#[diagnostic::on_unimplemented(
+  message = "`{Self}` is not a tuple of capability keys",
+  label = "expected `(Cap<A>, Cap<B>, …)` (at most 16)",
+  note = "build capability lists with `caps!(A, B, …)` rather than naming `CapList` directly"
+)]
 pub trait CapKeys {
   /// Verify all keys in this tuple are present in `env`.
   fn verify_all(env: &Env) -> Result<(), CapabilityError>;
@@ -71,7 +86,7 @@ macro_rules! impl_cap_keys {
   ($($k:ident),*) => {
     impl<$($k: CapabilityKey),*> CapKeys for ($($k,)*) {
       fn verify_all(env: &Env) -> Result<(), CapabilityError> {
-        $( env.try_get::<$k>()?; )*
+        $( env.lookup::<$k>().ok_or(CapabilityError::Missing($k::id()))?; )*
         Ok(())
       }
     }
@@ -156,6 +171,11 @@ impl<Ks: CapKeys> FromEnv for CapList<Ks> {
 }
 
 /// Helper trait: environment `R` exposes capability `K`.
+#[diagnostic::on_unimplemented(
+  message = "environment `{Self}` does not expose capability `{K}`",
+  label = "not a capability environment",
+  note = "use `caps!(…)` or `Env` as the effect environment"
+)]
 pub trait HasCap<K: CapabilityKey> {}
 
 impl<K: CapabilityKey> HasCap<K> for Env {}
@@ -163,6 +183,12 @@ impl<K: CapabilityKey> HasCap<K> for Env {}
 impl<K: CapabilityKey, T: Deref<Target = Env>> HasCap<K> for T {}
 
 /// Widen a capability set to a subset (subtyping).
+#[diagnostic::on_unimplemented(
+  message = "cannot narrow capability list `{Self}` to `{Target}`",
+  label = "`{Target}` is not a supported subset of `{Self}`",
+  note = "`widen` only drops capabilities (a leading subset); it can never add one",
+  note = "inside `effect!`, bind the narrower effect with `~inner()` instead — it narrows automatically"
+)]
 pub trait CapWiden<Target> {
   /// Widen to a capability subset (structural subtyping).
   fn widen(self) -> Target;
@@ -433,7 +459,7 @@ impl<K0: CapabilityKey, K1: CapabilityKey, K2: CapabilityKey> CapWiden<CapList<(
 }
 
 #[cfg(test)]
-#[allow(dead_code, clippy::new_ret_no_self)]
+#[allow(dead_code)]
 mod tests {
   use super::*;
   use crate::Cap;

@@ -1,4 +1,4 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
+#![allow(dead_code)]
 
 //! Targeted integration tests to exercise uncovered capability and runtime paths.
 
@@ -9,14 +9,8 @@ use id_effect::{Cap, Effect, caps, effect, provide, run, run_with};
 struct GateAlpha(u32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(GateAlpha)]
+#[provides(GateAlpha, with = || GateAlpha(42))]
 struct GateAlphaLive;
-
-impl GateAlphaLive {
-  fn new() -> GateAlpha {
-    GateAlpha(42)
-  }
-}
 
 #[test]
 fn capability_runtime_entrypoints() {

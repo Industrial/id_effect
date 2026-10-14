@@ -1,6 +1,6 @@
 # Providing Services — `ProviderSpec` Implementations
 
-You have a trait and an implementation. A provider wires the impl into [`Env`](../../src/capability/env.rs).
+You have a trait and an implementation. A provider wires the impl into [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs).
 
 ## Production provider
 
@@ -17,11 +17,11 @@ impl UserRepository for PostgresUserRepository {
 }
 
 #[derive(ProviderSpecDerive)]
-#[provides(UserRepo)]
+#[provides(UserRepo, with = |deps: &Env| UserRepoLive::build(deps))]
 struct UserRepoLive;
 
 impl UserRepoLive {
-    fn new(deps: &Env) -> Arc<dyn UserRepository> {
+    fn build(deps: &Env) -> Arc<dyn UserRepository> {
         let pool = deps.get::<Cap<Database>>().clone();
         Arc::new(PostgresUserRepository { pool })
     }
@@ -39,7 +39,7 @@ run_with(
 
 ## Mock provider
 
-[`provide!`](../../src/capability/provider.rs) takes a **type** (`provide!(MockUserRepoLive)`), not a value. For custom fixture data, insert into `Env` directly:
+[`provide!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) takes a **type** (`provide!(MockUserRepoLive)`), not a value. For custom fixture data, insert into `Env` directly:
 
 ```rust
 let mut env = Env::new();
@@ -51,14 +51,8 @@ For a fixed zero-config mock, use a unit struct:
 
 ```rust
 #[derive(ProviderSpecDerive)]
-#[provides(UserRepo)]
+#[provides(UserRepo, with = || Arc::new(MockUserRepository::default_fixture()) as UserRepo)]
 struct MockUserRepoLive;
-
-impl MockUserRepoLive {
-    fn new() -> Arc<dyn UserRepository> {
-        Arc::new(MockUserRepository::default_fixture())
-    }
-}
 ```
 
 Same `UserRepo`, no real database — swap at the edge:

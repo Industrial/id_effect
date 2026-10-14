@@ -85,6 +85,8 @@ logs/
 node_modules/
 npm-debug.log*
 target-ci-stable/
+target-labs/
+labs/target/
 test-ledger/
 wallet.*.json
 wallet.json

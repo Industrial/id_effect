@@ -77,9 +77,9 @@ let handle = run_fork(runtime, || (my_effect, my_env));
 
 ## Compute Fabric placement
 
-When you pass a [`ThreadSleepRuntime`](../../src/runtime/rt.rs) or [`TokioRuntime`](../../id_effect_tokio/src/lib.rs) that holds a [`ComputeFabric`](../../src/compute/fabric.rs), every `run_fork` / `spawn_with` call:
+When you pass a [`ThreadSleepRuntime`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/rt.rs) or [`TokioRuntime`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_tokio/src/lib.rs) that holds a [`ComputeFabric`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/fabric.rs), every `run_fork` / `spawn_with` call:
 
-1. Runs a supervisor **tick** (telemetry vs [`ResourcePolicy`](../../src/compute/policy.rs))
+1. Runs a supervisor **tick** (telemetry vs [`ResourcePolicy`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/policy.rs))
 2. **Acquires** an admission permit before starting the worker
 3. **Releases** the permit when the fiber completes
 

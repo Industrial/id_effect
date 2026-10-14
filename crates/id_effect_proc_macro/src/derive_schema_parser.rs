@@ -1,11 +1,12 @@
-//! `#[derive(SchemaParser)]` — schema + JSON text parser codegen for `id_effect_parse`.
+//! `#[derive(Schema)]` (and its deprecated alias `#[derive(SchemaParser)]`) — `schema()` +
+//! `HasSchema` codegen over the JSON-shaped `Unknown` wire.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Data, DeriveInput, Fields, Ident, LitStr, Type, parse_macro_input};
 
-/// Expand `#[derive(SchemaParser)]` into `HasSchema`, `schema()`, and `parser()`.
-pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
+/// Expand `#[derive(Schema)]` into an inherent `schema()` and a `HasSchema` impl.
+pub fn derive_schema(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   let ident = &input.ident;
   let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -16,14 +17,14 @@ pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
       _ => {
         return syn::Error::new_spanned(
           &input.ident,
-          "SchemaParser supports structs with named fields only",
+          "derive(Schema) supports structs with named fields only",
         )
         .to_compile_error()
         .into();
       }
     },
     _ => {
-      return syn::Error::new_spanned(&input.ident, "SchemaParser supports structs only")
+      return syn::Error::new_spanned(&input.ident, "derive(Schema) supports structs only")
         .to_compile_error()
         .into();
     }
@@ -104,17 +105,6 @@ pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
           },
         )
       }
-
-      /// Text parser that accepts JSON objects for this type.
-      #[must_use]
-      pub fn parser(
-      ) -> ::id_effect_parse::Parser<
-        String,
-        Self,
-        ::id_effect::schema::ParseError,
-      > {
-        ::id_effect_parse::SchemaBridge::parser_for_json(Self::schema())
-      }
     }
 
     impl #impl_generics ::id_effect::schema::HasSchema for #ident #ty_generics #where_clause {
@@ -191,7 +181,7 @@ fn schema_decode_expr(
           .map_err(|e| e.prefix(#wire_lit))?;
       };
     }
-    if path.path.is_ident("Option")
+    if last_segment_is(path, "Option")
       && let Some(inner) = extract_generic(ty, 0)
     {
       let inner_ident = format_ident!("__opt_{}", field_ident);
@@ -206,7 +196,7 @@ fn schema_decode_expr(
         };
       };
     }
-    if path.path.is_ident("Vec")
+    if last_segment_is(path, "Vec")
       && let Some(inner) = extract_generic(ty, 0)
     {
       let inner_schema = schema_for_type(inner);
@@ -229,7 +219,7 @@ fn schema_decode_expr(
         .map_err(|e| e.prefix(#wire_lit))?;
     };
   }
-  syn::Error::new_spanned(ty, "unsupported SchemaParser field type").to_compile_error()
+  syn::Error::new_spanned(ty, "unsupported derive(Schema) field type").to_compile_error()
 }
 
 fn schema_decode_from_unknown(
@@ -315,12 +305,12 @@ fn schema_encode_expr(
         (#wire_lit.to_string(), ::id_effect::schema::Unknown::F64(value.#field_ident))
       };
     }
-    if path.path.is_ident("Option")
+    if last_segment_is(path, "Option")
       && let Some(inner) = extract_generic(ty, 0)
     {
       return schema_encode_option(inner, field_ident, wire_lit);
     }
-    if path.path.is_ident("Vec")
+    if last_segment_is(path, "Vec")
       && let Some(inner) = extract_generic(ty, 0)
     {
       return schema_encode_vec(inner, field_ident, wire_lit);
@@ -333,7 +323,7 @@ fn schema_encode_expr(
       )
     };
   }
-  syn::Error::new_spanned(ty, "unsupported SchemaParser field type").to_compile_error()
+  syn::Error::new_spanned(ty, "unsupported derive(Schema) field type").to_compile_error()
 }
 
 fn schema_encode_option(
@@ -394,6 +384,15 @@ fn schema_for_type(ty: &Type) -> proc_macro2::TokenStream {
   }
   let ty_tokens = quote! { #ty };
   quote! { <#ty_tokens as ::id_effect::schema::HasSchema>::schema() }
+}
+
+/// `Option<T>` / `Vec<T>` carry generic args, so `Path::is_ident` never matches them.
+fn last_segment_is(path: &syn::TypePath, name: &str) -> bool {
+  path
+    .path
+    .segments
+    .last()
+    .is_some_and(|seg| seg.ident == name)
 }
 
 fn extract_generic(ty: &Type, index: usize) -> Option<&Type> {

@@ -1,10 +1,12 @@
 [package]
 name = "id_effect_logger"
-version = "0.4.0"
-edition = "2024"
-license = "CC-BY-SA-4.0"
-description = "Effect-logging service (forwards to tracing) for effect! / AsyncEffect programs"
-repository = "https://github.com/Industrial/id_effect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "EffectLogger capability for id_effect: log levels, annotations and pluggable backends over tracing"
+repository.workspace = true
+readme = "README.md"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -17,7 +19,7 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 name = "id_effect_logger"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.4.0" }
+id_effect = { path = "../id_effect", version = "0.6.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
@@ -49,3 +51,7 @@ path = "examples/macro_sync_bind.rs"
 [[example]]
 name = "macro_block_tail"
 path = "examples/macro_block_tail.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "core"

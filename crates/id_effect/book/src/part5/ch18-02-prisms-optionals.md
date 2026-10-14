@@ -1,6 +1,6 @@
 # Prisms and Optionals
 
-A [`Prism<S, A>`](../../../../id_effect_optics/src/prism.rs) focuses a **sum-type** variant:
+A [`Prism<S, A>`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_optics/src/prism.rs) focuses a **sum-type** variant:
 
 ```rust
 use id_effect_optics::Prism;
@@ -13,6 +13,6 @@ let circle = Prism::new(
 );
 ```
 
-[`Optional`](../../../../id_effect_optics/src/optional.rs) wraps a `Lens<S, Option<T>>` for fallible inner access (`set_some`, `set_none`, `modify`).
+[`Optional`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_optics/src/optional.rs) wraps a `Lens<S, Option<T>>` for fallible inner access (`set_some`, `set_none`, `modify`).
 
-> **Stub:** prism composition with schema tagged unions — ch20 parse codecs.
+`#[derive(Optics)]` generates a prism per enum variant. Composing prisms with schema tagged unions is not provided by the published crates.

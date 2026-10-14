@@ -1,13 +1,12 @@
-use id_effect::{CapList, CapWiden, Env};
+//! `CapWiden` may only drop capabilities (subset); widening must never add one.
+use id_effect::{Cap, CapList, CapWiden, Env};
+
+#[derive(Clone)]
 struct Db;
+#[derive(Clone)]
 struct Log;
 
-fn narrow(_: CapList<(Db,)>) {}
-
 fn main() {
-  let mut env = Env::new();
-  env.insert::<Cap<Db>>(1u32);
-  let wide = CapList::<(Db,)>::from_env(env);
-  narrow(wide); // should use widen for subset; direct assign of wrong arity
-  let _: CapList<(Db, Log)> = wide;
+  let narrow = CapList::<(Cap<Db>,)>::new(Env::new());
+  let _wide: CapList<(Cap<Db>, Cap<Log>)> = narrow.widen();
 }

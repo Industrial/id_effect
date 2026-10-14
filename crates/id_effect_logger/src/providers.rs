@@ -1,9 +1,9 @@
 //! Capability DI v2 providers for [`EffectLogger`] and thread-local logger runtime.
 
-#![allow(clippy::new_ret_no_self, clippy::unused_unit)]
 use std::sync::Arc;
 
-use ::id_effect::collections::hash_map;
+use std::collections::HashMap;
+
 use ::id_effect::{
   Cap, CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
   run_blocking,
@@ -16,31 +16,24 @@ use crate::{
 
 /// Default [`EffectLogger`] provider (tracing-backed).
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLogger)]
+#[provides(EffectLogger, with = || EffectLogger)]
 pub struct EffectLoggerLive;
-
-impl EffectLoggerLive {
-  fn new() -> EffectLogger {
-    EffectLogger
-  }
-}
 
 /// Marker capability: fiber-local log annotation / span metadata installed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct EffectLogMetadata;
 
 /// Installs fiber-local annotation and span-stack refs used by [`crate::annotate_logs`] and
 /// [`crate::with_log_span`].
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLogMetadata)]
+#[provides(EffectLogMetadata, with = Self::install)]
 pub struct LogMetadataLive;
 
 impl LogMetadataLive {
-  fn new() -> EffectLogMetadata {
+  fn install() -> EffectLogMetadata {
     let ann = run_blocking(
       FiberRef::make_with(
-        hash_map::empty::<String, String>,
+        HashMap::<String, String>::new,
         |m| m.clone(),
         |p, _c| p.clone(),
       ),
@@ -60,7 +53,6 @@ impl LogMetadataLive {
 
 /// Marker capability: composite log backend installed on this thread.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct EffectLogComposite;
 
 /// Build a provider that registers `composite` for [`EffectLogger::log`] on this thread.

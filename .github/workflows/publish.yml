@@ -31,7 +31,8 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             TAG="${GITHUB_REF#refs/tags/v}"
           else
-            TAG=$(grep -m1 '^version = ' crates/id_effect_proc_macro/Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
+            # Members inherit version.workspace = true, so read the workspace root.
+            TAG=$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
           fi
           echo "version=$TAG" >> "$GITHUB_OUTPUT"
           echo "Publishing version: $TAG"
@@ -39,27 +40,31 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           MISMATCH=0
-          for toml in crates/id_effect_*/Cargo.toml; do
+          # The workspace root is the single source of truth for the version.
+          WS_VER=$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
+          if [ "$WS_VER" != "$VERSION" ]; then
+            echo "MISMATCH: [workspace.package] version $WS_VER, expected $VERSION"
+            MISMATCH=1
+          fi
+          # Every publishable member must inherit version.workspace = true so the
+          # workspace bump propagates atomically. Excluded crates are skipped.
+          for toml in crates/*/Cargo.toml; do
             CRATE=$(grep -m1 '^name = ' "$toml" | sed 's/^name = "\(.*\)"/\1/')
             if [ "$CRATE" = "id_effect_lint" ]; then
               continue
             fi
-            CRATE_VER=$(grep -m1 '^version = ' "$toml" | sed 's/^version = "\(.*\)"/\1/')
-            if [ "$CRATE_VER" != "$VERSION" ]; then
-              echo "MISMATCH: $toml ($CRATE) has version $CRATE_VER, expected $VERSION"
-              MISMATCH=1
+            if grep -q '^version.workspace = true' "$toml"; then
+              continue
             fi
-          done
-          CORE_VER=$(grep -m1 '^version = ' crates/id_effect/Cargo.toml | sed 's/^version = "\(.*\)"/\1/')
-          if [ "$CORE_VER" != "$VERSION" ]; then
-            echo "MISMATCH: crates/id_effect/Cargo.toml has version $CORE_VER, expected $VERSION"
+            CRATE_VER=$(grep -m1 '^version = ' "$toml" | sed 's/^version = "\(.*\)"/\1/')
+            echo "MISMATCH: $toml ($CRATE) does not inherit version.workspace (found: ${CRATE_VER:-none})"
             MISMATCH=1
-          fi
+          done
           if [ "$MISMATCH" -eq 1 ]; then
             echo "Version mismatch detected — aborting publish."
             exit 1
           fi
-          echo "All publishable crates at $VERSION"
+          echo "All publishable crates inherit workspace version $VERSION"
   test:
     name: Pre-publish tests
     runs-on: ubuntu-latest
@@ -90,8 +95,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Validate all crates can package for publish
         run: ./scripts/validate-crate-packaging.sh
-  publish-level-0:
-    name: Publish level-0 (graph, macro, proc_macro)
+  publish:
+    name: Publish crates (dependency order)
     runs-on: ubuntu-latest
     needs: [validate-packaging]
     environment: crates-io
@@ -101,226 +106,25 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Cache
         uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect_graph
+      - name: Publish in order
+        # Single source of truth for the order: scripts/validate-crate-packaging.sh.
+        # Labs crates (publish = false, labs/ workspace) are never published (ADR 0010).
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_graph
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_macro
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_macro
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_proc_macro
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_proc_macro
-  publish-level-1:
-    name: Publish level-1 (id_effect)
-    runs-on: ubuntu-latest
-    needs: [publish-level-0]
-    environment: crates-io
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect
-  publish-level-2:
-    name: Publish level-2 (cli, jobs, logger, ...)
-    runs-on: ubuntu-latest
-    needs: [publish-level-1]
-    environment: crates-io
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect_cli
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_cli
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_jobs
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_jobs
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_logger
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_logger
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_optics
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_optics
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_parse
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_parse
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_platform
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_platform
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_resilience
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_resilience
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_sql
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_sql
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_tokio
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_tokio
-  publish-level-3:
-    name: Publish level-3 (config, sql_pg, tower)
-    runs-on: ubuntu-latest
-    needs: [publish-level-2]
-    environment: crates-io
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect_config
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_config
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_sql_pg
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_sql_pg
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_tower
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_tower
-  publish-level-4:
-    name: Publish level-4 (ai, axum, events, ...)
-    runs-on: ubuntu-latest
-    needs: [publish-level-3]
-    environment: crates-io
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect_ai
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_ai
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_axum
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_axum
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_events
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_events
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_opentelemetry
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_opentelemetry
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_workflow
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_workflow
-  publish-level-5:
-    name: Publish level-5 (fsm, rpc)
-    runs-on: ubuntu-latest
-    needs: [publish-level-4]
-    environment: crates-io
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache
-        uses: Swatinem/rust-cache@v2
-      - name: Wait for crates.io index
-        run: sleep 30
-      - name: Publish id_effect_fsm
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_fsm
-      - name: Wait for crates.io index
-        run: sleep 20
-      - name: Publish id_effect_rpc
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
-        run: .github/scripts/publish-crate.sh id_effect_rpc
+        run: |
+          set -euo pipefail
+          for crate in $(./scripts/validate-crate-packaging.sh --print-order); do
+            echo "::group::publish $crate"
+            .github/scripts/publish-crate.sh "$crate"
+            echo "::endgroup::"
+            # Give the crates.io index time to see the crate before dependents publish.
+            [ "$DRY_RUN" = "true" ] || sleep 25
+          done
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
-    needs: [publish-level-5]
+    needs: [publish]
     if: github.event_name == 'push' && inputs.dry_run != 'true'
     permissions:
       contents: write

@@ -1,6 +1,6 @@
 # What Is a Provider?
 
-An `Effect` describes a computation that *needs* an environment. A [`ProviderSpec`](../../src/capability/provider.rs) describes *how to build* one capability and register it in [`Env`](../../src/capability/env.rs).
+An `Effect` describes a computation that *needs* an environment. A [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) describes *how to build* one capability and register it in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs).
 
 ```
 Effect<User, DbError, caps!(Database)>
@@ -41,19 +41,19 @@ impl ProviderSpec for DatabaseLive {
 - **`type Key`** — which capability this provider registers
 - **`type Output`** — the concrete value stored in `Env`
 - **`provide(deps)`** — build the value; read dependencies with `deps.get::<Cap<K>>()`
-- **`requires()`** — capability ids this provider needs built first (used by [`CapabilityGraph`](../../src/capability/graph.rs))
+- **`requires()`** — capability ids this provider needs built first (used by [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs))
 
 ## Providers are lazy recipes
 
-Implementing `ProviderSpec` does nothing by itself. Construction runs when you call [`run_with`](../../src/capability/run.rs), [`build_env`](../../src/capability/run.rs), or [`CapabilityGraph::build`](../../src/capability/graph.rs).
+Implementing `ProviderSpec` does nothing by itself. Construction runs when you call [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), or [`CapabilityGraph::build`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs).
 
 ## The key insight
 
 - **Effects** are programs — *what to do* with capabilities
 - **Providers** are constructors — *how to build* capabilities
 
-[`provide!(DatabaseLive)`](../../src/capability/provider.rs) registers the recipe; [`run_with`](../../src/capability/run.rs) executes the graph and passes the resulting `Env` to your effect.
+[`provide!(DatabaseLive)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) registers the recipe; [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) executes the graph and passes the resulting `Env` to your effect.
 
 ## Lifecycle and cleanup
 
-Providers run synchronously at startup. For resources with async teardown, build handles in `provide` and register finalizers in effect [`Scope`](../../src/resource/scope.rs) code (see Chapter 10). The provider graph itself focuses on *construction order*, not fiber lifetimes.
+Providers run synchronously at startup. For resources with async teardown, build handles in `provide` and register finalizers in effect [`Scope`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/resource/scope.rs) code (see Chapter 10). The provider graph itself focuses on *construction order*, not fiber lifetimes.

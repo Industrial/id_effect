@@ -1,4 +1,5 @@
-use id_effect_proc_macro::{EffectData, Fsm, Optics};
+use id_effect::schema::{HasSchema, Unknown};
+use id_effect_proc_macro::{EffectData, Optics, Schema, SchemaParser};
 
 #[derive(Optics)]
 struct Point {
@@ -12,10 +13,17 @@ enum Traffic {
   Green(i32),
 }
 
-#[derive(Fsm)]
-enum Light {
-  Red,
-  Green,
+#[derive(Clone, Debug, PartialEq, Schema)]
+struct Account {
+  #[schema("account_id")]
+  id: i64,
+  tags: Vec<String>,
+  note: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, SchemaParser)]
+struct LegacyAccount {
+  id: i64,
 }
 
 #[derive(EffectData)]
@@ -31,12 +39,41 @@ fn derive_stubs_compile() {
   assert_eq!(Point::y_lens().set(p, 3).y, 3);
   assert_eq!(Traffic::green_prism().preview(&Traffic::Green(4)), Some(4));
   assert!(matches!(Traffic::Red, Traffic::Red));
-  assert!(matches!(Light::Red, Light::Red));
-  assert!(matches!(Light::Green, Light::Green));
   assert_eq!(User { name: "ada".into() }.name, "ada");
   use std::collections::hash_map::DefaultHasher;
   use std::hash::{Hash, Hasher};
   let mut h = DefaultHasher::new();
   User { name: "bob".into() }.hash(&mut h);
   assert_ne!(h.finish(), 0);
+}
+
+#[test]
+fn derive_schema_round_trips_with_wire_rename() {
+  let account = Account {
+    id: 7,
+    tags: vec!["a".into()],
+    note: None,
+  };
+  let wire = Account::schema().encode(account.clone());
+  let Unknown::Object(map) = &wire else {
+    panic!("expected object wire, got {wire:?}");
+  };
+  assert_eq!(map.get("account_id"), Some(&Unknown::I64(7)));
+  assert_eq!(
+    <Account as HasSchema>::schema()
+      .decode_unknown(&wire)
+      .unwrap(),
+    account
+  );
+}
+
+#[test]
+fn derive_schema_parser_alias_matches_schema() {
+  let wire = LegacyAccount::schema().encode(LegacyAccount { id: 3 });
+  assert_eq!(
+    <LegacyAccount as HasSchema>::schema()
+      .decode_unknown(&wire)
+      .unwrap(),
+    LegacyAccount { id: 3 }
+  );
 }

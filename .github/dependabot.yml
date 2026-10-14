@@ -28,6 +28,11 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     rebase-strategy: auto
+    ignore:
+      # sysinfo >= 0.34 requires a newer rustc than workspace rust-version (see 0b47791).
+      # Lift together with an intentional MSRV bump.
+      - dependency-name: sysinfo
+        versions: [">=0.34"]
     # Group all patch and minor Cargo updates into a single PR
     groups:
       patch-updates:

@@ -1,5 +1,3 @@
-#![allow(dead_code, clippy::new_ret_no_self)]
-
 //! Capability DI: `Cap<T>`, `ProviderSpec`, `run_with`.
 
 use id_effect::{Effect, caps, effect, provide, run_with};
@@ -7,14 +5,8 @@ use id_effect::{Effect, caps, effect, provide, run_with};
 pub struct Counter(pub u32);
 
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Counter)]
+#[provides(Counter, with = || Counter(42))]
 struct CounterLive;
-
-impl CounterLive {
-  fn new() -> Counter {
-    Counter(42)
-  }
-}
 
 fn app() -> Effect<u32, (), caps!(Counter)> {
   effect!(|r| {

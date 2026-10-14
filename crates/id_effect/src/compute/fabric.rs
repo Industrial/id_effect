@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use super::admission::AdmissionController;
 use super::fiber_pool::FiberPool;
+use super::governor::FabricGovernor;
 use super::policy::ResourcePolicy;
-use super::supervisor::ComputeSupervisor;
 use super::telemetry::{MockTelemetry, SysinfoTelemetry, TelemetryEngine};
 
 /// Shared Compute Fabric state for a program run.
@@ -14,7 +14,7 @@ pub struct ComputeFabric<E: TelemetryEngine = SysinfoTelemetry> {
   policy: ResourcePolicy,
   pool: Arc<FiberPool>,
   admission: Arc<AdmissionController>,
-  supervisor: Arc<ComputeSupervisor<E>>,
+  governor: Arc<FabricGovernor<E>>,
   telemetry: Arc<E>,
 }
 
@@ -22,8 +22,8 @@ impl ComputeFabric<SysinfoTelemetry> {
   pub fn with_policy(policy: ResourcePolicy) -> Self {
     let pool = Arc::new(FiberPool::new(FiberPool::default_size()));
     let admission = Arc::new(AdmissionController::default());
-    let telemetry = Arc::new(SysinfoTelemetry);
-    let supervisor = Arc::new(ComputeSupervisor::new(
+    let telemetry = Arc::new(SysinfoTelemetry::new());
+    let governor = Arc::new(FabricGovernor::new(
       policy.clone(),
       Arc::clone(&telemetry),
       Arc::clone(&admission),
@@ -32,7 +32,7 @@ impl ComputeFabric<SysinfoTelemetry> {
       policy,
       pool,
       admission,
-      supervisor,
+      governor,
       telemetry,
     }
   }
@@ -55,15 +55,28 @@ impl<E: TelemetryEngine + 'static> ComputeFabric<E> {
     &self.admission
   }
 
-  pub fn supervisor(&self) -> &ComputeSupervisor<E> {
-    &self.supervisor
+  /// Resource governor (monitor → admit → rebalance control loop) for this fabric.
+  pub fn governor(&self) -> &FabricGovernor<E> {
+    &self.governor
+  }
+
+  /// Deprecated name of [`Self::governor`].
+  #[deprecated(since = "0.6.0", note = "renamed to `governor()`")]
+  pub fn supervisor(&self) -> &FabricGovernor<E> {
+    self.governor()
+  }
+
+  /// Telemetry engine feeding the governor.
+  pub fn telemetry(&self) -> &E {
+    &self.telemetry
   }
 
   pub fn tick(&self) -> super::telemetry::TelemetrySnapshot {
-    self.supervisor.tick()
+    self.governor.tick()
   }
 
-  /// Install this fabric as the process-wide adaptive context source.
+  /// Install this fabric as the process-wide adaptive context source, replacing any fabric
+  /// already installed (see [`super::install_fabric`]).
   pub fn install(self: &Arc<Self>) {
     super::adaptive::install_fabric(Arc::clone(self));
   }
@@ -108,7 +121,7 @@ impl ComputeFabric<MockTelemetry> {
     let pool = Arc::new(FiberPool::new(FiberPool::default_size()));
     let admission = Arc::new(AdmissionController::default());
     let telemetry = MockTelemetry::new(cpu_pct, mem_pct);
-    let supervisor = Arc::new(ComputeSupervisor::new(
+    let governor = Arc::new(FabricGovernor::new(
       policy.clone(),
       Arc::clone(&telemetry),
       Arc::clone(&admission),
@@ -117,7 +130,7 @@ impl ComputeFabric<MockTelemetry> {
       policy,
       pool,
       admission,
-      supervisor,
+      governor,
       telemetry,
     }
   }
@@ -134,7 +147,7 @@ mod tests {
   use std::time::Duration;
 
   #[test]
-  fn memory_cap_factory_wires_supervisor() {
+  fn memory_cap_factory_wires_governor() {
     let fabric = ComputeFabric::memory_cap_max_cpu(0.85);
     assert_eq!(
       fabric.policy().rebalance,
@@ -148,14 +161,23 @@ mod tests {
     let fabric = ComputeFabric::with_policy(ResourcePolicy::memory_cap_max_cpu(0.7));
     let snap = fabric.tick();
     assert!(snap.mem_pct >= 0.0);
+    assert!(fabric.governor().policy().cpu.mode.is_within(snap.cpu_pct));
+  }
+
+  #[test]
+  fn constructing_default_fabric_does_not_sample_telemetry() {
+    let fabric = ComputeFabric::memory_cap_max_cpu(1.0);
+    assert!(!fabric.telemetry().is_initialized());
+    let _ = adaptive::AdaptiveContext::from_fabric(&fabric);
+    assert!(!fabric.telemetry().is_initialized());
+    let started = std::time::Instant::now();
+    let _ = fabric.tick();
+    let elapsed = started.elapsed();
     assert!(
-      fabric
-        .supervisor()
-        .policy()
-        .cpu
-        .mode
-        .is_within(snap.cpu_pct)
+      elapsed < Duration::from_millis(50),
+      "first tick blocked for {elapsed:?}"
     );
+    assert!(fabric.telemetry().is_initialized());
   }
 
   #[test]

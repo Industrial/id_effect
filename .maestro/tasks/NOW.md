@@ -1,31 +1,17 @@
 # NOW
-Updated: 2026-07-11T12:00:58.003Z
+Updated: 2026-10-14T06:31:39.238Z
 
-## In flight (0)
-None.
+## In flight (1)
+### tsk-mv799sew-lozgp9 . W5: Release 0.6.0 lockstep, tag, publish (outward-facing; explicit go required)
+State: claimed
+Owner: claude (claimed 1h ago)
+Mission: pln-mv799j4f-1r1u6b
 
-## Ready to pick up (98)
-### tsk-mqimsbaw-metjs4 . Wave 0: Author spec and mission bootstrap
-Mission: pln-mqims7yh-8ycnlo
-Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
 
-### tsk-mqimsbaw-wc438x . Wave 1: ADR 0004 provider parity and cap subtyping
-Mission: pln-mqims7yh-8ycnlo
-Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
-
-### tsk-mqimsbaw-xbwowl . Wave 2: CapList const-generic unbounded caps
-Mission: pln-mqims7yh-8ycnlo
-Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
-
-### tsk-mqimsbaw-mgl8ot . Wave 2: Compile-time caps enforcement
-Mission: pln-mqims7yh-8ycnlo
-Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
-
-### tsk-mqimsbaw-m8psts . Wave 3: Migrate IntoBind crates
-Mission: pln-mqims7yh-8ycnlo
-Spec: /home/tom/Code/rust/id_effect/.maestro/specs/id-effect-v2-di-maturity.md
-
-(and 93 more)
+## Ready to pick up (1)
+### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
+Mission: pln-mv799j4f-1r1u6b
+Spec: /data/Code/rust/id_effect/.maestro/specs/id-effect-consolidation-0-6.md
 
 
 ## Ready to ship (0)

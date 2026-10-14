@@ -15,14 +15,13 @@ fn main() {
   assert!(bucket.try_acquire());
   assert!(bucket.try_acquire() || bucket.available() < 0.25);
 
-  fabric.supervisor().tick();
+  fabric.governor().tick();
   let permits = fabric.admission().available();
   println!("spread mode admission permits = {permits}");
 
-  let job =
-    fabric
-      .supervisor()
-      .scale_out("spread-work", b"step".to_vec(), WorkProfile::CpuIntensive);
+  let job = fabric
+    .governor()
+    .scale_out("spread-work", b"step".to_vec(), WorkProfile::CpuIntensive);
   println!(
     "scale-out job = {} profile {:?}",
     job.name, job.work_profile

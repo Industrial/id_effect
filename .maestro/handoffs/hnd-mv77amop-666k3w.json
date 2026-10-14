@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77amop-666k3w",
+	"task_id": "tsk-mrgbcnf5-49ezob",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:36:19.033Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/id-effect-implicit-parallelism.md",
+	"to_agent": "cli"
+}

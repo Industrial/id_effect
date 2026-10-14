@@ -3,6 +3,7 @@
 use super::env::Env;
 use super::set::{CapKeys, CapList, CapabilitySet, FromEnv};
 use crate::kernel::effect::{BoxFuture, Effect, box_future};
+use std::panic::Location;
 
 /// Environments that expose a shared [`Env`] for [`CapBind`].
 pub trait CapBindWide {
@@ -30,6 +31,12 @@ impl CapBindR for Env {}
 impl<Ks: CapKeys> CapBindR for CapList<Ks> {}
 
 /// Bind an [`Effect`] against a (possibly wider) runtime environment.
+#[diagnostic::on_unimplemented(
+  message = "`~` cannot bind `{Self}` inside an `effect!` whose environment is `{Wide}`",
+  label = "cannot bind this step in `{Wide}`",
+  note = "`~` binds an `Effect<_, _, R>` where `R` is `()`, `Env`, or a `caps!(…)` list, or a `Result`",
+  note = "if `R` cannot be inferred, annotate the step's type (e.g. `let x: Effect<_, _, caps!(…)> = …`)"
+)]
 pub trait CapBind<'a, Wide> {
   /// Success value type of the bound effect.
   type A;
@@ -37,9 +44,29 @@ pub trait CapBind<'a, Wide> {
   type E;
   /// Run `self` against `wide`, narrowing the environment when required.
   fn cap_bind(self, wide: &'a mut Wide) -> BoxFuture<'a, Result<Self::A, Self::E>>;
+
+  /// Like [`Self::cap_bind`], with the `~` call site used in missing-capability panics.
+  ///
+  /// The default ignores `at`; the narrowing impl reports it.
+  #[inline]
+  fn cap_bind_at(
+    self,
+    wide: &'a mut Wide,
+    at: &'static Location<'static>,
+  ) -> BoxFuture<'a, Result<Self::A, Self::E>>
+  where
+    Self: Sized,
+  {
+    let _ = at;
+    self.cap_bind(wide)
+  }
 }
 
-impl<'a, A, E> CapBind<'a, ()> for Effect<A, E, ()>
+/// Environment-free effects (`R = ()`) bind in **any** environment — the environment is ignored.
+///
+/// This is what lets `~logger.info("…")` (an `Effect<(), _, ()>`) appear in an `effect!` body
+/// whose environment is `caps!(…)` or `Env` without a turbofish.
+impl<'a, Wide, A, E> CapBind<'a, Wide> for Effect<A, E, ()>
 where
   A: 'a,
   E: 'a,
@@ -48,8 +75,8 @@ where
   type E = E;
 
   #[inline]
-  fn cap_bind(self, r: &'a mut ()) -> BoxFuture<'a, Result<A, E>> {
-    self.run(r)
+  fn cap_bind(self, _wide: &'a mut Wide) -> BoxFuture<'a, Result<A, E>> {
+    box_future(async move { self.run(&mut ()).await })
   }
 }
 
@@ -80,10 +107,24 @@ where
   type E = E;
 
   #[inline]
+  #[track_caller]
   fn cap_bind(self, wide: &'a mut Wide) -> BoxFuture<'a, Result<A, E>> {
+    self.cap_bind_at(wide, Location::caller())
+  }
+
+  fn cap_bind_at(
+    self,
+    wide: &'a mut Wide,
+    at: &'static Location<'static>,
+  ) -> BoxFuture<'a, Result<A, E>> {
     box_future(async move {
       let env = wide.bind_env().clone();
-      R::verify(&env).expect("capability environment missing required keys");
+      if let Err(err) = R::verify(&env) {
+        panic!(
+          "{err}; required by `~` at {at} (narrowing to `{}`)",
+          std::any::type_name::<R>()
+        );
+      }
       let mut narrow = R::from_env(env);
       self.run(&mut narrow).await
     })
@@ -91,12 +132,15 @@ where
 }
 
 /// Bind helper used by the `effect!` macro (`~` desugars to this).
+///
+/// `#[track_caller]`: a missing capability while narrowing panics naming the `~` call site.
 #[inline]
+#[track_caller]
 pub fn cap_into_bind<'a, Wide, T>(t: T, wide: &'a mut Wide) -> BoxFuture<'a, Result<T::A, T::E>>
 where
   T: CapBind<'a, Wide>,
 {
-  t.cap_bind(wide)
+  t.cap_bind_at(wide, Location::caller())
 }
 
 #[cfg(test)]

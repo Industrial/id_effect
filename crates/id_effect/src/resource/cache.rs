@@ -7,7 +7,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::collections::hash_map::{self, EffectHashMap};
 use crate::coordination::deferred::Deferred;
 use crate::coordination::synchronized_ref::SynchronizedRef;
 use crate::failure::cause::Cause;
@@ -44,7 +43,7 @@ where
   V: Clone,
   E: Clone,
 {
-  entries: EffectHashMap<K, Cached<V>>,
+  entries: HashMap<K, Cached<V>>,
   in_flight: HashMap<K, Deferred<V, E>>,
   lru: VecDeque<K>,
   stats: CacheStats,
@@ -58,7 +57,7 @@ where
 {
   fn default() -> Self {
     Self {
-      entries: hash_map::empty(),
+      entries: HashMap::new(),
       in_flight: HashMap::new(),
       lru: VecDeque::new(),
       stats: CacheStats::default(),
@@ -95,14 +94,14 @@ where
     while self.entries.len() >= capacity {
       if let Some(victim) = self.lru.pop_front() {
         if self.entries.contains_key(&victim) {
-          self.entries = hash_map::remove(&self.entries, &victim);
+          self.entries.remove(&victim);
           self.stats.evictions = self.stats.evictions.saturating_add(1);
         }
         continue;
       }
       // LRU desynced — drop one arbitrary entry.
       if let Some(k) = self.entries.keys().next().cloned() {
-        self.entries = hash_map::remove(&self.entries, &k);
+        self.entries.remove(&k);
         remove_lru(&mut self.lru, &k);
         self.stats.evictions = self.stats.evictions.saturating_add(1);
       } else {
@@ -117,8 +116,7 @@ where
       self.evict_lru(capacity);
     }
     remove_lru(&mut self.lru, &key);
-    self.entries = hash_map::set(
-      &self.entries,
+    self.entries.insert(
       key.clone(),
       Cached {
         value,
@@ -202,7 +200,7 @@ where
           .modify({
             let key = key.clone();
             move |mut s| {
-              if let Some(c) = hash_map::get(&s.entries, &key).filter(|c| is_fresh(ttl, c)) {
+              if let Some(c) = s.entries.get(&key).filter(|c| is_fresh(ttl, c)) {
                 s.stats.hits = s.stats.hits.saturating_add(1);
                 touch_lru(&mut s.lru, &key);
                 return (Phase1::Hit(c.value.clone()), s);
@@ -231,7 +229,7 @@ where
             let key = key.clone();
             let d_leader = d_leader.clone();
             move |mut s| {
-              if let Some(c) = hash_map::get(&s.entries, &key).filter(|c| is_fresh(ttl, c)) {
+              if let Some(c) = s.entries.get(&key).filter(|c| is_fresh(ttl, c)) {
                 s.stats.hits = s.stats.hits.saturating_add(1);
                 touch_lru(&mut s.lru, &key);
                 return (Phase2::Hit(c.value.clone()), s);
@@ -309,7 +307,7 @@ where
           .modify({
             let key = key;
             move |mut s| {
-              s.entries = hash_map::remove(&s.entries, &key);
+              s.entries.remove(&key);
               remove_lru(&mut s.lru, &key);
               let d = s.in_flight.remove(&key);
               (d, s)

@@ -3,5 +3,7 @@
 pub mod oauth;
 pub mod session;
 
-pub use oauth::{MemoryOAuthClient, OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo};
+#[cfg(any(test, feature = "test-util"))]
+pub use oauth::MemoryOAuthClient;
+pub use oauth::{OAuthClient, OAuthError, OAuthTokens, OAuthUserInfo};
 pub use session::{MemorySessionStore, SessionData, SessionError, SessionStore};

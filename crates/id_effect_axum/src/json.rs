@@ -98,7 +98,7 @@ mod tests {
   use std::sync::Arc;
   use tower::ServiceExt;
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn axum_handler_returns_422_with_field_path_on_bad_body() {
     let person = Arc::new(schema::struct_(
       "name",

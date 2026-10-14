@@ -1,4 +1,4 @@
-#![allow(private_bounds, clippy::new_ret_no_self, clippy::unused_unit)]
+#![allow(private_bounds, clippy::unused_unit)]
 
 //! Portable HTTP client ([`HttpClient`]) and reqwest-backed [`ReqwestHttpClient`].
 
@@ -9,8 +9,7 @@ use ::reqwest::header::{HeaderName, HeaderValue};
 use bytes::Bytes;
 use id_effect::kernel::Effect;
 use id_effect::{
-  Cap, Chunk, Env, Needs, ProviderBox, ProviderError, ProviderSpec, end_stream, provide,
-  send_chunk, stream_from_channel,
+  Cap, Chunk, Env, Needs, ProviderBox, end_stream, provide, send_chunk, stream_from_channel,
 };
 
 use crate::error::HttpError;
@@ -294,16 +293,10 @@ impl HttpClient for ReqwestHttpClient {
 /// Capability service handle for [`HttpClient`].
 pub type HttpClientService = Arc<dyn HttpClient>;
 
-/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`]).
+/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`](id_effect::ProviderSpec)).
 #[derive(::id_effect::ProviderSpecDerive)]
-#[provides(HttpClientService)]
+#[provides(HttpClientService, with = || Arc::new(ReqwestHttpClient::default_client()))]
 pub(crate) struct ReqwestHttpClientProvider;
-
-impl ReqwestHttpClientProvider {
-  fn new() -> HttpClientService {
-    Arc::new(ReqwestHttpClient::default_client())
-  }
-}
 
 /// Whether `env` includes an HTTP client capability.
 #[inline]
@@ -424,6 +417,71 @@ mod tests {
       };
       let c = response_body_chunk(&resp);
       assert_eq!(c.len(), 2);
+    }
+  }
+
+  mod response_body_stream {
+    use super::*;
+
+    #[test]
+    fn streams_the_buffered_body() {
+      let resp = HttpResponse {
+        status: 200,
+        headers: vec![],
+        body: vec![1, 2, 3],
+      };
+      let collected =
+        id_effect::run_blocking(response_body_stream(&resp, 0).run_collect(), ()).unwrap();
+      assert_eq!(collected, vec![1, 2, 3]);
+    }
+  }
+
+  // Header validation happens before any I/O, so these never touch the network.
+  mod execute_stream_invalid_headers {
+    use super::*;
+
+    fn request(method: HttpMethod, header: (&str, &str)) -> HttpRequest {
+      let mut req = HttpRequest::get("http://127.0.0.1:9/");
+      req.method = method;
+      req.timeout = Some(std::time::Duration::from_secs(1));
+      req.headers = vec![(header.0.to_string(), header.1.to_string())];
+      req
+    }
+
+    #[test]
+    fn bad_header_name_is_invalid_request_for_every_method() {
+      let client = ReqwestHttpClient::default_client();
+      for method in [
+        HttpMethod::Get,
+        HttpMethod::Post,
+        HttpMethod::Put,
+        HttpMethod::Delete,
+        HttpMethod::Patch,
+      ] {
+        let out = id_effect::run_blocking(
+          client.execute_stream(request(method, ("bad name", "v"))),
+          (),
+        );
+        assert!(
+          matches!(&out, Err(HttpError::InvalidRequest(m)) if m.contains("bad header name")),
+          "{:?}",
+          out.err()
+        );
+      }
+    }
+
+    #[test]
+    fn bad_header_value_is_invalid_request() {
+      let client = ReqwestHttpClient::default_client();
+      let out = id_effect::run_blocking(
+        client.execute_stream(request(HttpMethod::Get, ("x-ok", "line\nbreak"))),
+        (),
+      );
+      assert!(
+        matches!(&out, Err(HttpError::InvalidRequest(m)) if m.contains("bad header value")),
+        "{:?}",
+        out.err()
+      );
     }
   }
 }

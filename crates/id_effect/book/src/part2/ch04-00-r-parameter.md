@@ -2,7 +2,7 @@
 
 Chapter 1 introduced `R` as "what an effect needs to run." We kept it vague on purpose — you needed to understand effects before worrying about their environment.
 
-For effects that use dependencies, `R` is written with [`caps!`](../../src/capability/set.rs): a compile-time list of **capability services**. Pure effects use `R = ()`.
+For effects that use dependencies, `R` is written with [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs): a compile-time list of **capability services**. Pure effects use `R = ()`.
 
 ## What R means
 
@@ -36,11 +36,11 @@ where
 }
 ```
 
-`R` is a *promise to the compiler*: this effect may only run where `Database` is available. [`caps!`](../../src/capability/set.rs) documents which keys the effect touches; at runtime [`run_with`](../../src/capability/run.rs) builds an [`Env`](../../src/capability/env.rs) that satisfies them.
+`R` is a *promise to the compiler*: this effect may only run where `Database` is available. [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) documents which keys the effect touches; at runtime [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) builds an [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) that satisfies them.
 
 ## How requirements are satisfied
 
-Library code does **not** wire dependencies. Provide at the program edge with [`run_with`](../../src/capability/run.rs):
+Library code does **not** wire dependencies. Provide at the program edge with [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs):
 
 ```rust
 use id_effect::{provide, run_with};
@@ -51,7 +51,7 @@ run_with(
 )?;
 ```
 
-`run_with` builds a [`CapabilityGraph`](../../src/capability/graph.rs), constructs an `Env`, and runs the effect with [`run_blocking`](../../src/runtime/mod.rs).
+`run_with` builds a [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs), constructs an `Env`, and runs the effect with [`run_blocking`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/mod.rs).
 
 For tests you can skip the graph and build `Env` directly:
 
@@ -63,6 +63,6 @@ env.insert::<Cap<Database>>(mock_db);
 run_blocking(get_user(42), caps!(Database)::from_env(env))?;
 ```
 
-Or use [`build_env`](../../src/capability/run.rs) when you still want provider types but not a full app run.
+Or use [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) when you still want provider types but not a full app run.
 
 The next sections cover how `R` flows through composition, how to wire dependencies at the edge, and how capability services replace positional tuples.

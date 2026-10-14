@@ -1,6 +1,6 @@
 # `id_effect_opentelemetry`
 
-Phase B integration: **OpenTelemetry** traces, metrics, and logs alongside `id_effect`'s built-in
+**OpenTelemetry** traces, metrics, and logs alongside `id_effect`'s built-in
 [`with_span`](https://docs.rs/id_effect/latest/id_effect/fn.with_span.html) and
 [`Metric`](https://docs.rs/id_effect/latest/id_effect/struct.Metric.html) helpers.
 

@@ -1,6 +1,6 @@
 # Replay fanout
 
-[`broadcast_with_replay`](../../src/streaming/replay.rs) extends [`Stream::broadcast`](../../src/streaming/stream.rs) with a sliding replay tail.
+[`broadcast_with_replay`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/replay.rs) extends [`Stream::broadcast`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) with a sliding replay tail.
 
 ```rust
 use id_effect::{Stream, broadcast_with_replay, run_async};
@@ -15,7 +15,7 @@ let (mut branches, pump) = run_async(
 // Run `pump` concurrently with pulls on each branch (same pattern as `broadcast`).
 ```
 
-- **`hub_capacity`** — sliding [`PubSub`](../../src/coordination/pubsub.rs) ring size.
+- **`hub_capacity`** — sliding [`PubSub`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/coordination/pubsub.rs) ring size.
 - **`replay_len`** — number of recent items retained in the shared replay buffer (also seeded into each branch buffer as the pump runs).
 - **`Stream::broadcast_replay(cap, branches)`** — convenience wrapper using `replay_len == cap`.
 

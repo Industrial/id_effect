@@ -74,18 +74,18 @@ proptest! {
         balance in 0u64..=1_000_000,
         amount  in 0u64..=1_000_000,
     ) {
-        let account = TRef::new(balance);
+        // `withdraw` is the `Stm<u64, InsufficientFunds>` from the STM chapter (id_effect_fp).
+        let account = run_blocking(commit(TRef::make(balance)), ()).expect("cell");
         let exit = run_test(commit(withdraw(&account, amount)), ());
+        let new_balance = run_blocking(commit(account.read_stm::<()>()), ()).expect("read");
 
         if amount <= balance {
             // Should succeed and balance should be reduced
             assert!(matches!(exit, Exit::Success(_)));
-            let new_balance = atomically(account.read_stm());
             assert_eq!(new_balance, balance - amount);
         } else {
             // Should fail — balance must not go negative
             assert!(matches!(exit, Exit::Failure(Cause::Fail(InsufficientFunds))));
-            let new_balance = atomically(account.read_stm());
             assert_eq!(new_balance, balance);  // unchanged
         }
     }

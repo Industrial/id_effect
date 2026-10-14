@@ -49,27 +49,45 @@ impl Env {
   }
 
   /// Borrow capability `K`.
+  ///
+  /// # Panics
+  ///
+  /// When `K` is absent. The message names the capability and the caller's `file:line`
+  /// (`#[track_caller]`); use [`Self::try_get`] to handle absence.
   #[inline]
+  #[track_caller]
   pub fn get<K>(&self) -> &K::Value
   where
     K: CapabilityKey,
   {
-    self.try_get::<K>().expect("capability missing in Env")
+    match self.try_get::<K>() {
+      Ok(value) => value,
+      Err(err) => missing_capability_panic(&err),
+    }
   }
 
-  /// Fallible lookup.
+  /// Fallible lookup; the error records the caller's location ([`CapabilityError::MissingAt`]).
+  #[track_caller]
   pub fn try_get<K>(&self) -> Result<&K::Value, CapabilityError>
   where
     K: CapabilityKey,
   {
-    let id = K::id().type_id();
-    let cell = self
+    let location = std::panic::Location::caller();
+    self.lookup::<K>().ok_or(CapabilityError::MissingAt {
+      cap: K::id(),
+      location,
+    })
+  }
+
+  /// Lookup without call-site context (environment verification).
+  pub(crate) fn lookup<K>(&self) -> Option<&K::Value>
+  where
+    K: CapabilityKey,
+  {
+    self
       .cells
-      .get(&id)
-      .ok_or(CapabilityError::Missing(K::id()))?;
-    cell
+      .get(&K::id().type_id())?
       .downcast_ref::<K::Value>()
-      .ok_or(CapabilityError::Missing(K::id()))
   }
 
   /// Whether capability `K` is present.
@@ -99,16 +117,14 @@ impl Env {
   }
 
   /// Borrow a generic cell inserted via [`Self::insert_any`].
+  #[track_caller]
   pub fn get_any<T: Send + Sync + 'static>(&self) -> Result<Arc<T>, CapabilityError> {
-    let id = TypeId::of::<T>();
-    let cell = self
-      .cells
-      .get(&id)
-      .ok_or(CapabilityError::Missing(super::id::CapabilityId::of::<T>()))?;
-    cell
-      .clone()
-      .downcast::<T>()
-      .map_err(|_| CapabilityError::Missing(super::id::CapabilityId::of::<T>()))
+    let missing = CapabilityError::MissingAt {
+      cap: super::id::CapabilityId::of::<T>(),
+      location: std::panic::Location::caller(),
+    };
+    let cell = self.cells.get(&TypeId::of::<T>()).ok_or(missing.clone())?;
+    cell.clone().downcast::<T>().map_err(|_| missing)
   }
 
   /// Build additional providers on a clone of this environment (scoped child).
@@ -127,6 +143,16 @@ impl Env {
 /// Effect environment type alias (runtime container).
 pub type Caps = Env;
 
+/// Panic for a capability lookup that must succeed ([`Env::get`], [`super::Needs::need`]).
+#[cold]
+#[track_caller]
+pub(crate) fn missing_capability_panic(err: &CapabilityError) -> ! {
+  panic!(
+    "{err}\n  hint: register a provider with `provide!(…)` in `run_with` / `build_env`, \
+     and list the service in the effect's `caps!(…)` so `run_with` verifies it up front"
+  )
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -139,14 +165,8 @@ mod tests {
   struct Name;
 
   #[derive(::id_effect::ProviderSpecDerive)]
-  #[provides(Counter)]
+  #[provides(Counter, with = || Counter(1))]
   struct CounterLive;
-  impl CounterLive {
-    #[allow(clippy::new_ret_no_self)]
-    fn new() -> Counter {
-      Counter(1)
-    }
-  }
 
   #[test]
   fn env_insert_get_and_has() {
@@ -162,7 +182,26 @@ mod tests {
   fn env_try_get_missing() {
     let env = Env::new();
     let err = env.try_get::<Cap<Counter>>().unwrap_err();
-    assert!(matches!(err, CapabilityError::Missing(_)));
+    let line = line!() - 1;
+    assert!(matches!(err, CapabilityError::MissingAt { .. }));
+    let loc = err.location().expect("call site");
+    assert_eq!((loc.file(), loc.line()), (file!(), line));
+    assert!(err.to_string().contains("Counter"), "{err}");
+  }
+
+  #[test]
+  fn env_get_missing_panics_with_service_name_and_call_site() {
+    let env = Env::new();
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      let _ = env.get::<Cap<Counter>>();
+    }))
+    .expect_err("missing capability must panic");
+    let line = line!() - 3;
+    let msg = panic.downcast_ref::<String>().cloned().unwrap_or_default();
+    assert!(msg.contains("missing capability"), "{msg}");
+    assert!(msg.contains("Counter"), "{msg}");
+    assert!(msg.contains(&format!("{}:{line}", file!())), "{msg}");
+    assert!(msg.contains("provide!"), "{msg}");
   }
 
   #[test]

@@ -1,6 +1,6 @@
 //! OpenTelemetry integration for `id_effect`: tracing spans, W3C propagation, and metric bridges.
 //!
-//! Phase B (`@effect/opentelemetry` parity) integration layer — opt-in at the dependency boundary.
+//! Opt-in at the dependency boundary: core `id_effect` has no OpenTelemetry dependency.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

@@ -1,27 +1,26 @@
 [package]
 name = "id_effect_fsm"
-version = "0.4.0"
-edition = "2024"
-description = "Typed finite-state machines, sagas, and session types for id_effect programs"
-license = "CC-BY-SA-4.0"
-repository = "https://github.com/Industrial/id_effect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Typed finite-state machines with Effect-valued transitions, derive(Fsm), sagas, and a gen_statem-style process behaviour for id_effect"
+license.workspace = true
+repository.workspace = true
 readme = "README.md"
-keywords = ["effect", "fsm", "state-machine", "saga", "session-types"]
-categories = ["data-structures"]
+keywords = ["effect", "fsm", "state-machine", "saga", "gen_statem"]
+categories = ["data-structures", "asynchronous"]
 
 [lints.rust]
 unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.4.0" }
-id_effect_workflow = { path = "../id_effect_workflow", version = "0.4.0", default-features = false, features = [
-  "memory",
-] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+id_effect = { path = "../id_effect", version = "0.6.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.6.0" }
+# FsmProcess behaviour (publish level 3: after id_effect_process).
+id_effect_process = { path = "../id_effect_process", version = "0.6.0" }
 thiserror = "2"
 
-[dev-dependencies]
-rstest = "0.26"
-tempfile = "3"
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "runtime"

@@ -1,6 +1,6 @@
 # Capability Graphs — Automatic Dependency Resolution
 
-For small applications, passing a short provider list to [`run_with`](../../src/capability/run.rs) is enough. For larger apps, [`CapabilityGraph`](../../src/capability/graph.rs) plans build order from each provider's `requires()` / `provides()` metadata and surfaces diagnostics via [`CapabilityGraph::diagnostics`](../../src/capability/graph.rs).
+For small applications, passing a short provider list to [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) is enough. For larger apps, [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order from each provider's `requires()` / `provides()` metadata and surfaces diagnostics via [`CapabilityGraph::diagnostics`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs).
 
 ## Declaring a provider graph
 
@@ -33,7 +33,7 @@ let diags = bad_graph.diagnostics();
 assert!(!diags.is_empty()); // e.g. cycle-detected
 ```
 
-Cycles and missing providers are detected at plan time via [`CapabilityPlannerError::to_diagnostic`](../../src/capability/error.rs). Use `cargo run -p id_effect_cli --bin id-effect-diagnose -- example cycle` to print a sample report.
+Cycles and missing providers are detected at plan time via [`CapabilityPlannerError::to_diagnostic`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs). Use `cargo run -p id_effect_cli --bin id-effect-diagnose -- example cycle` to print a sample report.
 
 ## Conditional providers
 

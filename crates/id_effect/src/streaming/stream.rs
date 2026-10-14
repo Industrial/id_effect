@@ -1,6 +1,19 @@
 //! Effect.ts-inspired `Stream` API.
 //!
-//! Stream v2 adds a pull contract (`poll_next_chunk`) while preserving the existing facade.
+//! A [`Stream`] is **pull-based over bounded chunks**: nothing runs until a consumer calls
+//! [`Stream::poll_next_chunk`] (directly or via `run_*`), and each pull yields at most one chunk
+//! (default 64 items). Sources ([`Stream::from_pull`], [`Stream::from_iterable`],
+//! [`Stream::unfold`], [`Stream::unfold_effect`], [`Stream::range`], [`Stream::from_channel`])
+//! produce lazily, and transforming operators (`map`, `filter`, `take`, `scan`, `grouped`,
+//! `map_effect`, windows, joins, …) pull one upstream chunk per downstream pull. Memory therefore
+//! stays proportional to the chunk size (plus any operator-specific state that is documented on
+//! the operator), and pipelines over infinite sources emit incrementally; `take(n)` stops pulling
+//! its upstream once `n` items have been produced.
+//!
+//! [`Stream::new`] / [`Stream::from_effect`] are the exception: they resolve a whole `Vec` in one
+//! effect run by definition. Use [`Stream::from_pull`] or [`Stream::unfold_effect`] for incremental
+//! effectful sources.
+//!
 //! Wave 7: the **output** side of any [`crate::coordination::channel::Channel`]`<A, …, …, E, R>` is
 //! consumed as a stream of `A` with upstream/read failures [`crate::ChannelReadError`] via
 //! [`Stream::from_channel`] / [`crate::coordination::channel::Channel::to_stream`].
@@ -10,7 +23,6 @@
 //! incremental `StreamState` arm is deferred while `Stream` stays generic over `E` without a
 //! `QueueError` error channel.
 
-use crate::collections::sorted_map::EffectSortedMap;
 use crate::coordination::pubsub::PubSub;
 use crate::coordination::queue::{Queue, QueueError};
 use crate::coordination::semaphore::Semaphore;
@@ -21,13 +33,24 @@ use crate::{Chunk, Effect, Or, Predicate};
 use core::any::Any;
 use core::fmt;
 use futures::stream::{self, StreamExt};
+#[cfg(feature = "compute")]
 use rayon::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 /// Ordered window-start → aggregation state, for time-keyed stream operators (tumbling / sliding).
-pub type TimeBucketMap<A> = EffectSortedMap<Instant, A>;
+pub type TimeBucketMap<A> = BTreeMap<Instant, A>;
+
+/// Concurrency budget for admission-bounded stream stages: the Compute Fabric admission budget
+/// when `compute` is enabled, otherwise the host's available parallelism.
+fn admission_budget() -> usize {
+  #[cfg(feature = "compute")]
+  let n = crate::compute::current_adaptive_context().admission_budget;
+  #[cfg(not(feature = "compute"))]
+  let n = std::thread::available_parallelism().map_or(4, |n| n.get());
+  n.max(1)
+}
 
 /// Update the bucket at `window_start` with `f` (`None` if the bucket did not exist yet).
 #[inline]
@@ -36,7 +59,26 @@ pub fn merge_time_bucket<A: Clone>(
   window_start: Instant,
   f: impl FnOnce(Option<A>) -> A,
 ) -> TimeBucketMap<A> {
-  crate::collections::sorted_map::modify(map, window_start, |old| Some(f(old)))
+  let mut map = map;
+  let next = f(map.remove(&window_start));
+  map.insert(window_start, next);
+  map
+}
+
+/// One pull of a [`Stream::from_pull`] source: `(env, requested_chunk_size) -> next items`.
+///
+/// `Ok(None)` ends the stream; `Ok(Some(vec![]))` is allowed and simply triggers another pull.
+pub type PullFn<A, E, R> = Box<
+  dyn for<'a> FnMut(&'a mut R, usize) -> crate::kernel::BoxFuture<'a, Result<Option<Vec<A>>, E>>
+    + 'static,
+>;
+
+/// Result of one synchronous [`Stream::pull_stage`] step over an upstream chunk.
+pub(crate) enum StageStep<B> {
+  /// Emit these items and keep pulling upstream.
+  Emit(Vec<B>),
+  /// Emit these items and stop: upstream is dropped and never polled again.
+  Last(Vec<B>),
 }
 
 #[allow(clippy::type_complexity)]
@@ -47,6 +89,12 @@ where
   R: 'static,
 {
   Pending(Option<Box<dyn FnOnce(&mut R) -> crate::kernel::BoxFuture<'_, Result<Vec<A>, E>>>>),
+  /// Incremental source ([`Stream::from_pull`]); `buffered` holds the overflow when a pull
+  /// returned more items than the caller's requested chunk size.
+  Pull {
+    pull: PullFn<A, E, R>,
+    buffered: VecDeque<A>,
+  },
   Channel {
     queue: Queue<ChannelMessage<A, E>>,
     buffered: VecDeque<A>,
@@ -214,7 +262,12 @@ where
   E: Send + 'static,
   R: 'static,
 {
-  /// Stream that resolves its first pull from `f` once, buffers the remainder, then exhausts.
+  /// **Single-batch** stream: the first pull runs `f` once to obtain *all* elements as a `Vec`,
+  /// buffers them, and serves them in chunks until exhausted.
+  ///
+  /// The whole batch is materialized before the first chunk is emitted, so this is only suitable
+  /// for finite, reasonably small sources. For incremental or unbounded sources use
+  /// [`Stream::from_pull`] or [`Stream::unfold_effect`].
   #[inline]
   pub fn new<F>(f: F) -> Self
   where
@@ -224,6 +277,118 @@ where
       state: Arc::new(Mutex::new(StreamState::Pending(Some(Box::new(f))))),
       throughput: None,
     }
+  }
+
+  /// Incremental stream driven by a pull function.
+  ///
+  /// Each downstream pull calls `f(env, chunk_size)` once (more if it returns an empty batch);
+  /// `chunk_size` is the number of items the consumer asked for and is a hint — larger batches are
+  /// buffered and served over subsequent pulls. Return `Ok(None)` to end the stream. The returned
+  /// future must not borrow `f` itself (only `env`), so state that the future needs should be
+  /// moved/cloned into it.
+  ///
+  /// ```
+  /// use id_effect::Stream;
+  ///
+  /// let mut next = 0_u64;
+  /// let naturals = Stream::<u64, (), ()>::from_pull(move |_env: &mut (), n| {
+  ///   let batch: Vec<u64> = (next..next + n as u64).collect();
+  ///   next += n as u64;
+  ///   Box::pin(async move { Ok(Some(batch)) })
+  /// });
+  /// let first = pollster::block_on(naturals.take(3).run_collect().run(&mut ()));
+  /// assert_eq!(first, Ok(vec![0, 1, 2]));
+  /// ```
+  #[inline]
+  pub fn from_pull<F>(f: F) -> Self
+  where
+    F: for<'a> FnMut(&'a mut R, usize) -> crate::kernel::BoxFuture<'a, Result<Option<Vec<A>>, E>>
+      + 'static,
+  {
+    Self {
+      state: Arc::new(Mutex::new(StreamState::Pull {
+        pull: Box::new(f),
+        buffered: VecDeque::new(),
+      })),
+      throughput: None,
+    }
+  }
+
+  /// Stream that yields no elements.
+  #[inline]
+  pub(crate) fn empty() -> Self {
+    Self {
+      state: Arc::new(Mutex::new(StreamState::Exhausted)),
+      throughput: None,
+    }
+  }
+
+  /// Pull stage over `self`: every downstream pull fetches **one** upstream chunk (of
+  /// `want(&state, chunk_size)` items) and feeds it to `step` (`None` once upstream ends, so the
+  /// step can flush). After [`StageStep::Last`] or upstream end, upstream is dropped and never
+  /// polled again. Memory is one upstream chunk plus whatever `state` retains.
+  pub(crate) fn pull_stage<B, S, W, F>(self, state: S, want: W, step: F) -> Stream<B, E, R>
+  where
+    B: Send + 'static,
+    S: 'static,
+    W: Fn(&S, usize) -> usize + 'static,
+    F: FnMut(&mut S, Option<Vec<A>>) -> StageStep<B> + 'static,
+  {
+    struct Inner<A, E, R, S, W, F>
+    where
+      A: Send + 'static,
+      E: Send + 'static,
+      R: 'static,
+    {
+      upstream: Option<Stream<A, E, R>>,
+      state: S,
+      want: W,
+      step: F,
+    }
+    let inner = Arc::new(Mutex::new(Inner {
+      upstream: Some(self),
+      state,
+      want,
+      step,
+    }));
+    Stream::from_pull(move |r: &mut R, n| {
+      let inner = Arc::clone(&inner);
+      Box::pin(async move {
+        let next = {
+          let mut g = inner.lock().expect("stream stage mutex poisoned");
+          let want = (g.want)(&g.state, n).max(1);
+          match g.upstream.as_mut() {
+            Some(up) => up.poll_next_chunk_with_size(r, want),
+            None => return Ok(None),
+          }
+        };
+        let input = next.await?.map(Chunk::into_vec);
+        let ended = input.is_none();
+        let mut g = inner.lock().expect("stream stage mutex poisoned");
+        let g = &mut *g;
+        match (g.step)(&mut g.state, input) {
+          StageStep::Emit(out) => {
+            if ended {
+              g.upstream = None;
+            }
+            Ok(Some(out))
+          }
+          StageStep::Last(out) => {
+            g.upstream = None;
+            Ok(Some(out))
+          }
+        }
+      })
+    })
+  }
+
+  /// [`Stream::pull_stage`] without explicit state; requests the caller's chunk size upstream.
+  pub(crate) fn stage<B, F>(self, mut step: F) -> Stream<B, E, R>
+  where
+    B: Send + 'static,
+    F: FnMut(Option<Vec<A>>) -> StageStep<B> + 'static,
+  {
+    self.pull_stage((), |_, n| n, move |_, input| step(input))
   }
 
   /// Attach a counter incremented by the item count of every chunk successfully returned from [`Stream::poll_next_chunk`].
@@ -243,7 +408,9 @@ where
     self.poll_next_chunk_with_size(env, 64)
   }
 
-  fn poll_next_chunk_with_size<'a>(
+  /// [`Stream::poll_next_chunk`] with an explicit maximum chunk size (`0` yields `Ok(None)`
+  /// without consuming anything).
+  pub(crate) fn poll_next_chunk_with_size<'a>(
     &mut self,
     env: &'a mut R,
     chunk_size: usize,
@@ -381,10 +548,8 @@ where
                   return Ok(Some(chunk));
                 }
                 Err(e) => {
-                  let mut g = state.lock().expect("stream state mutex poisoned");
-                  if let StreamState::Chaining { first, .. } = &mut *g {
-                    *first = Some(fs);
-                  }
+                  // Fuse: a failed stream ends (`fs` and `second` are dropped).
+                  *state.lock().expect("stream state mutex poisoned") = StreamState::Exhausted;
                   return Err(e);
                 }
                 Ok(None) => {
@@ -403,10 +568,10 @@ where
                   }
                 }
               }
-              Ok(None) => {
+              // Fuse on error as well as on end.
+              Ok(None) | Err(_) => {
                 *guard = StreamState::Exhausted;
               }
-              Err(_) => {}
             }
             return out;
           }
@@ -435,6 +600,57 @@ where
             return Ok(Some(Chunk::from_vec(out)));
           }
           StreamState::Exhausted => return Ok(None),
+          StreamState::Pull { pull, buffered } => {
+            let out: Vec<A> = if buffered.is_empty() {
+              let next = pull(&mut *env, chunk_size);
+              drop(guard);
+              match next.await {
+                // Fuse: after an error (or the end) the pull fn is dropped and every later
+                // poll yields `Ok(None)`.
+                Err(e) => {
+                  *state.lock().expect("stream state mutex poisoned") = StreamState::Exhausted;
+                  return Err(e);
+                }
+                Ok(None) => {
+                  *state.lock().expect("stream state mutex poisoned") = StreamState::Exhausted;
+                  return Ok(None);
+                }
+                // Empty batches are never surfaced to callers: pull again, but honour
+                // cancellation and let cooperative executors run in between.
+                Ok(Some(items)) if items.is_empty() => {
+                  if interruption_requested(&*env) {
+                    return Ok(None);
+                  }
+                  yield_once().await;
+                  continue;
+                }
+                Ok(Some(mut items)) => {
+                  if items.len() > chunk_size {
+                    let rest = items.split_off(chunk_size);
+                    if let StreamState::Pull { buffered, .. } =
+                      &mut *state.lock().expect("stream state mutex poisoned")
+                    {
+                      buffered.extend(rest);
+                    }
+                  }
+                  items
+                }
+              }
+            } else {
+              let count = buffered.len().min(chunk_size);
+              let out = buffered.drain(..count).collect();
+              drop(guard);
+              out
+            };
+            let n = out.len() as u64;
+            if let Some(m) = &throughput {
+              match m.apply(n).run(&mut ()).await {
+                Ok(()) => {}
+                Err(never) => match never {},
+              }
+            }
+            return Ok(Some(Chunk::from_vec(out)));
+          }
           StreamState::Pending(make) => {
             let make = make.take();
             drop(guard);
@@ -476,7 +692,9 @@ where
     })
   }
 
-  /// Eagerly runs `effect` to obtain all elements (same shape as [`Stream::new`]).
+  /// **Single-batch** stream: the first pull runs `effect` once to obtain *all* elements (same
+  /// shape as [`Stream::new`]). For incremental effectful sources use [`Stream::unfold_effect`] or
+  /// [`Stream::from_pull`].
   #[inline]
   pub fn from_effect(effect: Effect<Vec<A>, E, R>) -> Self {
     Self::new(move |r| effect.run(r))
@@ -498,6 +716,9 @@ where
   /// Any [`Channel`](crate::coordination::channel::Channel) as an output [`Stream`] (Wave 7).
   ///
   /// Drains via [`Channel::read`](crate::coordination::channel::Channel::read). [`Channel::to_stream`](crate::coordination::channel::Channel::to_stream) forwards to this constructor.
+  ///
+  /// Lazy: each pull performs exactly one `read`, so every element is forwarded as soon as it is
+  /// available (no read-ahead, no accumulation).
   #[inline]
   #[must_use]
   pub fn from_channel<InElem, OutDone>(
@@ -509,42 +730,45 @@ where
     OutDone: 'static,
   {
     let ch = ch.clone();
-    Stream::new(move |env: &mut R| {
-      crate::box_future(async move {
-        let mut out = Vec::new();
-        loop {
-          match ch.read().run(env).await {
-            Ok(None) => break,
-            Ok(Some(x)) => out.push(x),
-            Err(e) => return Err(e),
-          }
-        }
-        Ok(out)
-      })
+    Stream::from_pull(move |env: &mut R, _n| {
+      let read = ch.read().run(env);
+      crate::box_future(async move { read.await.map(|next| next.map(|x| vec![x])) })
     })
   }
 
   /// Generates elements by repeatedly running `f` on state until it returns `None`.
+  ///
+  /// Lazy: each pull runs `f` at most `chunk_size` times, so infinite generators are fine.
   #[inline]
-  pub fn unfold_effect<S, F>(init: S, mut f: F) -> Stream<A, E, R>
+  pub fn unfold_effect<S, F>(init: S, f: F) -> Stream<A, E, R>
   where
     S: 'static,
     F: FnMut(S) -> Effect<Option<(A, S)>, E, R> + 'static,
   {
-    Self::new(move |r: &mut R| {
+    // `(seed, generator)`; the seed is `None` once the generator returned `None` (or failed).
+    let shared = Arc::new(Mutex::new((Some(init), f)));
+    Self::from_pull(move |r: &mut R, n| {
+      let shared = Arc::clone(&shared);
       Box::pin(async move {
-        let mut state = Some(init);
         let mut out = Vec::new();
-        while let Some(s) = state.take() {
-          match f(s).run(r).await? {
+        while out.len() < n {
+          let step = {
+            let mut g = shared.lock().expect("unfold_effect mutex poisoned");
+            let (seed, f) = &mut *g;
+            match seed.take() {
+              Some(s) => f(s),
+              None => break,
+            }
+          };
+          match step.run(&mut *r).await? {
             Some((a, s2)) => {
               out.push(a);
-              state = Some(s2);
+              shared.lock().expect("unfold_effect mutex poisoned").0 = Some(s2);
             }
             None => break,
           }
         }
-        Ok(out)
+        Ok(if out.is_empty() { None } else { Some(out) })
       })
     })
   }
@@ -658,7 +882,7 @@ where
     })
   }
 
-  /// Maps each element using Fabric-aware implicit parallelism (pulls upstream to completion).
+  /// Maps each element using Fabric-aware implicit parallelism (per upstream chunk, incremental).
   #[inline]
   pub fn map<B, F>(self, f: F) -> Stream<B, E, R>
   where
@@ -666,28 +890,19 @@ where
     B: Send + 'static,
     F: Fn(A) -> B + Send + Sync + 'static,
   {
-    let f = Arc::new(f);
-    Stream::new(move |r: &mut R| {
-      let f = Arc::clone(&f);
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          let vec = chunk.into_vec();
-          let len = vec.len();
-          let mapped: Vec<B> =
-            if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
-              crate::compute::install_parallel(|| vec.into_par_iter().map(|a| f(a)).collect())
-            } else {
-              vec.into_iter().map(|a| f(a)).collect()
-            };
-          out.extend(mapped);
-        }
-        Ok(out)
-      })
+    self.stage(move |input| {
+      let Some(vec) = input else {
+        return StageStep::Emit(Vec::new());
+      };
+      #[cfg(feature = "compute")]
+      let mapped: Vec<B> = if crate::compute::should_parallelize(vec.len()) {
+        crate::compute::install_parallel(|| vec.into_par_iter().map(&f).collect())
+      } else {
+        vec.into_iter().map(&f).collect()
+      };
+      #[cfg(not(feature = "compute"))]
+      let mapped: Vec<B> = vec.into_iter().map(&f).collect();
+      StageStep::Emit(mapped)
     })
   }
 
@@ -698,173 +913,134 @@ where
     B: Send + 'static,
     F: FnMut(A) -> B + 'static,
   {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          out.extend(chunk.map(&mut f).into_vec());
-        }
-        Ok(out)
-      })
+    self.stage(move |input| {
+      StageStep::Emit(input.map_or_else(Vec::new, |v| v.into_iter().map(&mut f).collect()))
     })
   }
 
-  /// Retains elements satisfying `p` (Fabric-aware implicit parallelism).
+  /// Retains elements satisfying `p` (Fabric-aware implicit parallelism, per upstream chunk).
   #[inline]
   pub fn filter(self, p: Predicate<A>) -> Stream<A, E, R>
   where
     A: Send,
   {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          let vec = chunk.into_vec();
-          let len = vec.len();
-          let kept: Vec<A> =
-            if crate::parallelism::Parallelism::default().should_parallelize_current(len) {
-              crate::compute::install_parallel(|| {
-                vec.into_par_iter().filter(|item| p(item)).collect()
-              })
-            } else {
-              vec.into_iter().filter(|item| p(item)).collect()
-            };
-          out.extend(kept);
-        }
-        Ok(out)
-      })
+    self.stage(move |input| {
+      let Some(vec) = input else {
+        return StageStep::Emit(Vec::new());
+      };
+      #[cfg(feature = "compute")]
+      let kept: Vec<A> = if crate::compute::should_parallelize(vec.len()) {
+        crate::compute::install_parallel(|| vec.into_par_iter().filter(|item| p(item)).collect())
+      } else {
+        vec.into_iter().filter(|item| p(item)).collect()
+      };
+      #[cfg(not(feature = "compute"))]
+      let kept: Vec<A> = vec.into_iter().filter(|item| p(item)).collect();
+      StageStep::Emit(kept)
     })
   }
 
   /// Retains elements satisfying `p`, sequentially.
   #[inline]
   pub fn filter_serial(self, p: Predicate<A>) -> Stream<A, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          out.extend(chunk.into_vec().into_iter().filter(|item| p(item)));
-        }
-        Ok(out)
-      })
+    self.stage(move |input| {
+      StageStep::Emit(
+        input.map_or_else(Vec::new, |v| v.into_iter().filter(|item| p(item)).collect()),
+      )
     })
   }
 
-  /// Yields elements from the start of the stream while `p` holds; ends before the first failure.
+  /// Yields elements from the start of the stream while `p` holds; ends before the first failure
+  /// (upstream is not polled again after that).
   #[inline]
   pub fn take_while(self, p: Predicate<A>) -> Stream<A, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        'drain: loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            if !p(&item) {
-              break 'drain;
-            }
-            out.push(item);
-          }
+    self.stage(move |input| {
+      let Some(vec) = input else {
+        return StageStep::Emit(Vec::new());
+      };
+      let mut out = Vec::with_capacity(vec.len());
+      for item in vec {
+        if !p(&item) {
+          return StageStep::Last(out);
         }
-        Ok(out)
-      })
+        out.push(item);
+      }
+      StageStep::Emit(out)
     })
   }
 
   /// Drops elements from the start while `p` holds, then yields the remainder.
   #[inline]
   pub fn drop_while(self, p: Predicate<A>) -> Stream<A, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut out = Vec::new();
-        let mut skipping = true;
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            if skipping {
-              if p(&item) {
-                continue;
-              }
-              skipping = false;
-              out.push(item);
-            } else {
-              out.push(item);
-            }
-          }
-        }
-        Ok(out)
-      })
+    let mut skipping = true;
+    self.stage(move |input| {
+      let Some(vec) = input else {
+        return StageStep::Emit(Vec::new());
+      };
+      if !skipping {
+        return StageStep::Emit(vec);
+      }
+      let out: Vec<A> = vec.into_iter().skip_while(|item| p(item)).collect();
+      if !out.is_empty() {
+        skipping = false;
+      }
+      StageStep::Emit(out)
     })
   }
 
   /// At most `n` elements from the start of the stream.
+  ///
+  /// Never requests more than the remaining count from upstream, and stops polling upstream as
+  /// soon as `n` elements have been produced (so `take` terminates infinite sources).
   #[inline]
   pub fn take(self, n: usize) -> Stream<A, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut remaining = n;
-        let mut out = Vec::new();
-        while remaining > 0 {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          let mut items = chunk.into_vec();
-          if items.len() > remaining {
-            items.truncate(remaining);
-          }
-          remaining = remaining.saturating_sub(items.len());
-          out.extend(items);
+    if n == 0 {
+      return Stream::empty();
+    }
+    self.pull_stage(
+      n,
+      |remaining: &usize, want| want.min(*remaining),
+      |remaining, input| {
+        let Some(mut items) = input else {
+          return StageStep::Emit(Vec::new());
+        };
+        items.truncate(*remaining);
+        *remaining -= items.len();
+        if *remaining == 0 {
+          StageStep::Last(items)
+        } else {
+          StageStep::Emit(items)
         }
-        Ok(out)
-      })
-    })
+      },
+    )
   }
 
   /// Chunks into vectors of length `size` (last chunk may be shorter; `size == 0` yields empty output).
+  ///
+  /// Incremental: buffers at most one partial group between pulls.
   #[inline]
   pub fn grouped(self, size: usize) -> Stream<Vec<A>, E, R> {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        if size == 0 {
-          return Ok(Vec::new());
+    if size == 0 {
+      return Stream::empty();
+    }
+    let mut cur: Vec<A> = Vec::with_capacity(size);
+    self.stage(move |input| {
+      let Some(vec) = input else {
+        let last = core::mem::take(&mut cur);
+        return StageStep::Emit(if last.is_empty() {
+          Vec::new()
+        } else {
+          vec![last]
+        });
+      };
+      let mut out: Vec<Vec<A>> = Vec::new();
+      for item in vec {
+        cur.push(item);
+        if cur.len() == size {
+          out.push(core::mem::replace(&mut cur, Vec::with_capacity(size)));
         }
-        let mut upstream = self;
-        let mut out: Vec<Vec<A>> = Vec::new();
-        let mut cur: Vec<A> = Vec::with_capacity(size);
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            cur.push(item);
-            if cur.len() == size {
-              out.push(core::mem::take(&mut cur));
-            }
-          }
-        }
-        if !cur.is_empty() {
-          out.push(cur);
-        }
-        Ok(out)
-      })
+      }
+      StageStep::Emit(out)
     })
   }
 
@@ -932,7 +1108,7 @@ where
                     // `Effect` steps often complete in one poll; without yielding, `tokio::join!`
                     // on the current-thread runtime may run the pump to `hub.close()` before
                     // consumer branches are polled.
-                    tokio::task::yield_now().await;
+                    crate::runtime::yield_once().await;
                   }
                 }
                 Ok(None) => {
@@ -960,6 +1136,11 @@ where
   /// Maps with an effect per element using Fabric admission-bounded concurrency per chunk.
   ///
   /// Processes one upstream chunk at a time (no unbounded prefetch). Output order matches stream order.
+  ///
+  /// **Cluster dispatch:** wrap each element in an `Effect` that casts/calls a process-group
+  /// member (see `id_effect_node::fanout_cast` + `ProcessGroups`) or a pinned remote pid from
+  /// `id_effect_node::placement::pick_placement`. Concurrency stays admission-bounded locally;
+  /// cross-node backpressure is the remote mailbox full / `RemoteFault::Timeout` path.
   #[inline]
   pub fn map_effect<B, E2, F>(self, f: F) -> Stream<B, Or<E, E2>, R>
   where
@@ -969,60 +1150,58 @@ where
     R: Clone + Send + Sync + 'static,
     F: Fn(A) -> Effect<B, E2, R> + Send + Sync + 'static,
   {
-    let permits = crate::compute::current_adaptive_context()
-      .admission_budget
-      .max(1);
+    let permits = admission_budget();
     let f = Arc::new(f);
-    Stream::new(move |r: &mut R| {
-      let f = Arc::clone(&f);
-      let r_env = r.clone();
+    // Created on the first pull, so building the stream never runs an effect.
+    let sem_slot: Arc<Mutex<Option<Arc<Semaphore>>>> = Arc::new(Mutex::new(None));
+    let mut upstream = self;
+    Stream::from_pull(move |r: &mut R, n| {
+      let f_chunk = Arc::clone(&f);
+      let sem_slot = Arc::clone(&sem_slot);
+      let r_chunk = r.clone();
+      let next = upstream.poll_next_chunk_with_size(r, n);
       Box::pin(async move {
-        let sem = Arc::new(
-          crate::runtime::run_async(Semaphore::make(permits), ())
-            .await
-            .expect("semaphore make"),
-        );
-        let mut upstream = self;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await.map_err(Or::Left)? else {
-            break;
-          };
-          let vec = chunk.into_vec();
-          let base = out.len();
-          let f_chunk = Arc::clone(&f);
-          let r_chunk = r_env.clone();
-          let sem_chunk = Arc::clone(&sem);
-          let results: Vec<Result<(usize, B), E2>> =
-            stream::iter(vec.into_iter().enumerate().map(move |(idx, item)| {
-              let sem = Arc::clone(&sem_chunk);
-              let f = Arc::clone(&f_chunk);
-              let mut env = r_chunk.clone();
-              async move {
-                let _permit = crate::runtime::run_async(sem.acquire_owned(), ())
-                  .await
-                  .unwrap_or_else(|e| match e {});
-                f(item).run(&mut env).await.map(|b| (idx, b))
-              }
-            }))
-            .buffer_unordered(permits)
-            .collect()
-            .await;
-          let mut pairs = Vec::with_capacity(results.len());
-          for res in results {
-            match res {
-              Ok(pair) => pairs.push(pair),
-              Err(e) => return Err(Or::Right(e)),
+        let Some(chunk) = next.await.map_err(Or::Left)? else {
+          return Ok(None);
+        };
+        let existing = sem_slot.lock().expect("semaphore slot poisoned").clone();
+        let sem_chunk = match existing {
+          Some(sem) => sem,
+          None => {
+            let sem = Arc::new(
+              crate::runtime::run_async(Semaphore::make(permits), ())
+                .await
+                .expect("semaphore make"),
+            );
+            *sem_slot.lock().expect("semaphore slot poisoned") = Some(Arc::clone(&sem));
+            sem
+          }
+        };
+        let vec = chunk.into_vec();
+        let results: Vec<Result<(usize, B), E2>> =
+          stream::iter(vec.into_iter().enumerate().map(move |(idx, item)| {
+            let sem = Arc::clone(&sem_chunk);
+            let f = Arc::clone(&f_chunk);
+            let mut env = r_chunk.clone();
+            async move {
+              let _permit = crate::runtime::run_async(sem.acquire_owned(), ())
+                .await
+                .unwrap_or_else(|e| match e {});
+              f(item).run(&mut env).await.map(|b| (idx, b))
             }
+          }))
+          .buffer_unordered(permits)
+          .collect()
+          .await;
+        let mut pairs = Vec::with_capacity(results.len());
+        for res in results {
+          match res {
+            Ok(pair) => pairs.push(pair),
+            Err(e) => return Err(Or::Right(e)),
           }
-          pairs.sort_by_key(|(i, _)| *i);
-          let chunk_len = pairs.len();
-          for (_, b) in pairs {
-            out.push(b);
-          }
-          debug_assert_eq!(out.len() - base, chunk_len);
         }
-        Ok(out)
+        pairs.sort_by_key(|(i, _)| *i);
+        Ok(Some(pairs.into_iter().map(|(_, b)| b).collect()))
       })
     })
   }
@@ -1096,7 +1275,7 @@ where
   }
 
   /// Like [`Self::map_par_n`] but `n` follows the current Compute Fabric admission budget.
-  #[cfg(test)]
+  #[cfg(all(test, feature = "compute"))]
   #[inline]
   pub(crate) fn map_par_adaptive<B, F>(self, f: F) -> Stream<B, E, R>
   where
@@ -1106,8 +1285,7 @@ where
     R: Clone + Send + Sync,
     F: Fn(A) -> Effect<B, E, R> + Send + Sync + 'static,
   {
-    let n = crate::compute::current_adaptive_context().admission_budget;
-    self.map_par_n(n.max(1), f)
+    self.map_par_n(admission_budget(), f)
   }
 
   /// Optional binary reduction over the stream (`None` if empty).
@@ -1147,23 +1325,31 @@ where
     B: Send + 'static,
     F: FnMut(&mut S, A) -> B + 'static,
   {
-    Stream::new(move |r: &mut R| {
-      Box::pin(async move {
-        let mut upstream = self;
-        let mut s = state;
-        let mut out = Vec::new();
-        loop {
-          let Some(chunk) = upstream.poll_next_chunk(r).await? else {
-            break;
-          };
-          for item in chunk.into_vec() {
-            out.push(f(&mut s, item));
-          }
-        }
-        Ok(out)
-      })
-    })
+    self.pull_stage(
+      state,
+      |_, n| n,
+      move |s, input| {
+        StageStep::Emit(
+          input.map_or_else(Vec::new, |v| v.into_iter().map(|item| f(s, item)).collect()),
+        )
+      },
+    )
   }
+}
+
+/// Yield to the executor once: returns `Pending` after waking itself, so any executor (including
+/// [`crate::runtime::run_blocking`]'s poll loop) re-polls promptly.
+fn yield_once() -> impl core::future::Future<Output = ()> {
+  let mut yielded = false;
+  core::future::poll_fn(move |cx| {
+    if yielded {
+      core::task::Poll::Ready(())
+    } else {
+      yielded = true;
+      cx.waker().wake_by_ref();
+      core::task::Poll::Pending
+    }
+  })
 }
 
 fn interruption_requested<R: 'static>(env: &R) -> bool {
@@ -1174,10 +1360,10 @@ fn interruption_requested<R: 'static>(env: &R) -> bool {
 }
 
 impl Stream<i64, (), ()> {
-  /// Half-open range `[start, end_exclusive)` as a one-shot buffered stream.
+  /// Half-open range `[start, end_exclusive)`, produced lazily one chunk per pull.
   #[inline]
   pub fn range(start: i64, end_exclusive: i64) -> Self {
-    Stream::new(move |_r: &mut ()| Box::pin(async move { Ok((start..end_exclusive).collect()) }))
+    Stream::from_iterable(start..end_exclusive)
   }
 }
 
@@ -1302,61 +1488,55 @@ where
   /// Drains via [`crate::coordination::channel::QueueChannel::read`]; same bootstrap semantics
   /// as [`Stream::from_channel`]. Use [`crate::coordination::channel::QueueChannel::shutdown`]
   /// so the final [`crate::coordination::channel::QueueChannel::read`] returns `None` and collection can complete.
+  /// Lazy: one `read` per pull.
   #[inline]
   #[must_use]
   pub fn from_duplex_queue_channel(
     ch: crate::coordination::channel::QueueChannel<A, A, R>,
   ) -> Self {
     let ch = ch.clone();
-    Stream::new(move |env: &mut R| {
-      crate::box_future(async move {
-        let mut out = Vec::new();
-        loop {
-          match ch.read().run(env).await {
-            Ok(None) => break,
-            Ok(Some(x)) => out.push(x),
-            Err(e) => return Err(e),
-          }
-        }
-        Ok(out)
-      })
+    Stream::from_pull(move |env: &mut R, _n| {
+      let read = ch.read().run(env);
+      crate::box_future(async move { read.await.map(|next| next.map(|x| vec![x])) })
     })
   }
 }
 
 impl<A: Send + 'static> Stream<A, (), ()> {
-  /// Finite stream from any iterator (materialized once).
+  /// Stream over any iterator, pulled lazily (up to one chunk of items per pull).
+  ///
+  /// The iterator is advanced only as the stream is consumed, so infinite iterators are fine.
   #[inline]
   pub fn from_iterable<I>(iter: I) -> Self
   where
     I: IntoIterator<Item = A> + 'static,
+    I::IntoIter: 'static,
   {
-    let v: Vec<A> = iter.into_iter().collect();
-    Stream::new(move |_r: &mut ()| Box::pin(async move { Ok(v) }))
+    let mut iter = iter.into_iter();
+    Stream::from_pull(move |_r: &mut (), n| {
+      let batch: Vec<A> = iter.by_ref().take(n).collect();
+      Box::pin(async move { Ok((!batch.is_empty()).then_some(batch)) })
+    })
   }
 
-  /// Pure [`Stream::unfold_effect`]: expands state with `f` until `None`.
+  /// Pure [`Stream::unfold_effect`]: expands state with `f` until `None` (lazily, one chunk per
+  /// pull).
   #[inline]
   pub fn unfold<S, F>(init: S, mut f: F) -> Self
   where
     S: 'static,
     F: FnMut(S) -> Option<(A, S)> + 'static,
   {
-    Stream::new(move |_r: &mut ()| {
-      Box::pin(async move {
-        let mut state = Some(init);
-        let mut out: Vec<A> = Vec::new();
-        while let Some(s) = state.take() {
-          match f(s) {
-            Some((a, s2)) => {
-              out.push(a);
-              state = Some(s2);
-            }
-            None => break,
-          }
-        }
-        Ok(out)
-      })
+    let mut state = Some(init);
+    Stream::from_pull(move |_r: &mut (), n| {
+      let mut batch: Vec<A> = Vec::new();
+      while batch.len() < n {
+        let Some(s) = state.take() else { break };
+        let Some((a, s2)) = f(s) else { break };
+        batch.push(a);
+        state = Some(s2);
+      }
+      Box::pin(async move { Ok((!batch.is_empty()).then_some(batch)) })
     })
   }
 }
@@ -1393,7 +1573,6 @@ mod tests {
 
   mod time_window_buckets {
     use super::*;
-    use crate::collections::sorted_map;
     use std::time::Duration;
 
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1407,18 +1586,18 @@ mod tests {
       let t0 = Instant::now();
       let t1 = t0 + Duration::from_secs(1);
       let t2 = t0 + Duration::from_secs(2);
-      let m = sorted_map::empty();
+      let m = TimeBucketMap::new();
       let m = merge_time_bucket(m, t2, |_| AggState { sum: 2, cnt: 1 });
       let m = merge_time_bucket(m, t0, |_| AggState { sum: 0, cnt: 1 });
       let m = merge_time_bucket(m, t1, |_| AggState { sum: 1, cnt: 1 });
-      let keys: Vec<Instant> = m.iter().map(|(k, _)| *k).collect();
+      let keys: Vec<Instant> = m.keys().copied().collect();
       assert_eq!(keys, vec![t0, t1, t2]);
     }
 
     #[test]
     fn merge_time_bucket_accumulates_same_window() {
       let t0 = Instant::now();
-      let m = sorted_map::empty();
+      let m = TimeBucketMap::new();
       let m = merge_time_bucket(m, t0, |_| AggState { sum: 3, cnt: 1 });
       let m = merge_time_bucket(m, t0, |o| {
         let a = o.expect("prior");
@@ -1934,6 +2113,7 @@ mod tests {
       );
     }
 
+    #[cfg(feature = "compute")]
     #[tokio::test]
     async fn map_par_adaptive_collects() {
       use crate::compute::{ComputeFabric, install_fabric};
@@ -2288,6 +2468,436 @@ mod tests {
       let _ = crate::runtime::run_blocking(sender.queue.offer(msg), ());
       let out = block_on(stream.run_collect().run(&mut ()));
       assert_eq!(out, Err("stream error"));
+    }
+  }
+
+  // ── pull-based / infinite sources ───────────────────────────────────────
+
+  mod pull_based {
+    use super::*;
+    use crate::testing::assert_bounded_memory;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    /// Infinite counter source that records the total number of items requested from it.
+    fn counting_source(requested: Rc<Cell<usize>>) -> Stream<u64, (), ()> {
+      let mut next = 0_u64;
+      Stream::from_pull(move |_r: &mut (), n| {
+        requested.set(requested.get() + n);
+        let batch: Vec<u64> = (next..next + n as u64).collect();
+        next += n as u64;
+        Box::pin(async move { Ok(Some(batch)) })
+      })
+    }
+
+    #[test]
+    fn from_pull_splits_oversized_batches_to_requested_chunk_size() {
+      let mut done = false;
+      let mut stream = Stream::<i32, (), ()>::from_pull(move |_r: &mut (), _n| {
+        let batch = (!done).then(|| vec![1, 2, 3, 4, 5]);
+        done = true;
+        Box::pin(async move { Ok(batch) })
+      });
+      let mut env = ();
+      assert_eq!(
+        block_on(stream.poll_next_chunk_with_size(&mut env, 2)),
+        Ok(Some(Chunk::from_vec(vec![1, 2])))
+      );
+      assert_eq!(
+        block_on(stream.poll_next_chunk_with_size(&mut env, 2)),
+        Ok(Some(Chunk::from_vec(vec![3, 4])))
+      );
+      assert_eq!(
+        block_on(stream.poll_next_chunk_with_size(&mut env, 2)),
+        Ok(Some(Chunk::from_vec(vec![5])))
+      );
+      assert_eq!(
+        block_on(stream.poll_next_chunk_with_size(&mut env, 2)),
+        Ok(None)
+      );
+    }
+
+    #[test]
+    fn from_pull_skips_empty_batches_and_propagates_errors() {
+      let mut calls = 0;
+      let stream = Stream::<i32, &'static str, ()>::from_pull(move |_r: &mut (), _n| {
+        calls += 1;
+        let res = match calls {
+          1 | 2 => Ok(Some(Vec::new())),
+          3 => Ok(Some(vec![7])),
+          _ => Err("boom"),
+        };
+        Box::pin(async move { res })
+      });
+      let mut stream = stream;
+      assert_eq!(
+        block_on(stream.poll_next_chunk(&mut ())),
+        Ok(Some(Chunk::from_vec(vec![7])))
+      );
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Err("boom"));
+    }
+
+    #[test]
+    fn map_effect_failure_fuses_stream() {
+      let mut stream = Stream::from_iterable(0..200).map_effect(|n: i32| {
+        if n == 0 {
+          fail::<i32, &'static str, ()>("bad")
+        } else {
+          succeed::<i32, &'static str, ()>(n)
+        }
+      });
+      assert_eq!(
+        block_on(stream.poll_next_chunk(&mut ())),
+        Err(Or::Right("bad"))
+      );
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Ok(None));
+    }
+
+    /// Source failing on its first pull and yielding `[1, 2]` on any later pull.
+    fn fail_then_items() -> Stream<i32, &'static str, ()> {
+      let mut calls = 0;
+      Stream::from_pull(move |_r: &mut (), _n| {
+        calls += 1;
+        let res = if calls == 1 {
+          Err("first")
+        } else {
+          Ok(Some(vec![1, 2]))
+        };
+        Box::pin(async move { res })
+      })
+    }
+
+    #[test]
+    fn upstream_failure_fuses_pull_stage() {
+      let mut stream = fail_then_items().map(|n| n * 10);
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Err("first"));
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Ok(None));
+    }
+
+    #[test]
+    fn chain_failure_in_first_fuses_stream() {
+      let second = Stream::<i32, &'static str, ()>::from_effect(succeed(vec![9]));
+      let mut stream = fail_then_items().chain(second);
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Err("first"));
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Ok(None));
+    }
+
+    #[test]
+    fn chain_failure_in_second_fuses_stream() {
+      let first = Stream::<i32, &'static str, ()>::from_effect(succeed(vec![9]));
+      let mut stream = first.chain(fail_then_items());
+      assert_eq!(
+        block_on(stream.poll_next_chunk(&mut ())),
+        Ok(Some(Chunk::from_vec(vec![9])))
+      );
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Err("first"));
+      assert_eq!(block_on(stream.poll_next_chunk(&mut ())), Ok(None));
+    }
+
+    /// Infinite counter source over a [`CancellationToken`] environment.
+    fn token_source() -> Stream<u64, (), CancellationToken> {
+      let mut next = 0_u64;
+      Stream::from_pull(move |_r: &mut CancellationToken, n| {
+        let batch: Vec<u64> = (next..next + n as u64).collect();
+        next += n as u64;
+        Box::pin(async move { Ok(Some(batch)) })
+      })
+    }
+
+    #[test]
+    fn empty_batches_honour_cancellation() {
+      let mut token = CancellationToken::new();
+      token.cancel();
+      let mut stream = token_source().filter(Box::new(|_: &u64| false));
+      // Without the cancellation check this poll would spin forever on empty batches.
+      assert_eq!(block_on(stream.poll_next_chunk(&mut token)), Ok(None));
+      let out = block_on(
+        token_source()
+          .filter(Box::new(|_: &u64| false))
+          .run_collect()
+          .run(&mut token),
+      );
+      assert_eq!(out, Ok(Vec::new()));
+    }
+
+    #[test]
+    fn map_effect_is_lazy_until_first_pull() {
+      use std::sync::atomic::{AtomicUsize, Ordering};
+      let pulls = Arc::new(AtomicUsize::new(0));
+      let p = Arc::clone(&pulls);
+      let stream = Stream::<i32, (), ()>::from_pull(move |_r: &mut (), _n| {
+        p.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move { Ok(Some(vec![1])) })
+      })
+      .map_effect(|n| succeed::<i32, (), ()>(n));
+      assert_eq!(pulls.load(Ordering::SeqCst), 0);
+      let out = block_on(stream.take(1).run_collect().run(&mut ()));
+      assert_eq!(out, Ok(vec![1]));
+      assert_eq!(pulls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn from_pull_counts_throughput() {
+      let m = Metric::counter("stream_pull_throughput", []);
+      let out = block_on(
+        Stream::from_iterable(0..10)
+          .with_throughput_metric(m.clone())
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok((0..10).collect::<Vec<_>>()));
+      assert_eq!(m.snapshot_count(), 10);
+    }
+
+    #[test]
+    fn take_stops_pulling_upstream_once_n_reached() {
+      let requested = Rc::new(Cell::new(0));
+      let out = block_on(
+        counting_source(Rc::clone(&requested))
+          .take(5)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![0, 1, 2, 3, 4]));
+      assert_eq!(requested.get(), 5, "take must not request past n");
+    }
+
+    #[test]
+    fn take_while_stops_pulling_at_first_false() {
+      let requested = Rc::new(Cell::new(0));
+      let out = block_on(
+        counting_source(Rc::clone(&requested))
+          .take_while(Box::new(|n: &u64| *n < 3))
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![0, 1, 2]));
+      assert_eq!(requested.get(), 64, "exactly one upstream chunk pulled");
+    }
+
+    #[test]
+    fn map_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(|s| s.map(|n| n * 3), 5, 64);
+      assert_eq!(out, vec![0, 3, 6, 9, 12]);
+    }
+
+    #[test]
+    fn map_serial_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(|s| s.map_serial(|n| n + 1), 4, 64);
+      assert_eq!(out, vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn filter_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(|s| s.filter(Box::new(|n: &u64| n % 2 == 1)), 4, 64);
+      assert_eq!(out, vec![1, 3, 5, 7]);
+    }
+
+    #[test]
+    fn filter_serial_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(
+        |s| s.filter_serial(Box::new(|n: &u64| n.is_multiple_of(3))),
+        4,
+        64,
+      );
+      assert_eq!(out, vec![0, 3, 6, 9]);
+    }
+
+    #[test]
+    fn take_while_on_infinite_source_terminates() {
+      let out = assert_bounded_memory(|s| s.take_while(Box::new(|n: &u64| *n < 100)), 1000, 64);
+      assert_eq!(out, (0..100).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn drop_while_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(|s| s.drop_while(Box::new(|n: &u64| *n < 70)), 3, 128);
+      assert_eq!(out, vec![70, 71, 72]);
+    }
+
+    #[test]
+    fn take_on_infinite_source_terminates() {
+      let out = assert_bounded_memory(|s| s.take(200), 1000, 64);
+      assert_eq!(out, (0..200).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn grouped_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(|s| s.grouped(3), 2, 64);
+      assert_eq!(out, vec![vec![0, 1, 2], vec![3, 4, 5]]);
+    }
+
+    #[test]
+    fn scan_on_infinite_source_is_incremental() {
+      let out = assert_bounded_memory(
+        |s| {
+          s.scan(0_u64, |acc, x| {
+            *acc += x;
+            *acc
+          })
+        },
+        5,
+        64,
+      );
+      assert_eq!(out, vec![0, 1, 3, 6, 10]);
+    }
+
+    #[test]
+    fn chained_operators_on_infinite_source_stay_bounded() {
+      let out = assert_bounded_memory(
+        |s| {
+          s.map(|n| n * 2)
+            .filter(Box::new(|n: &u64| n.is_multiple_of(3)))
+            .grouped(2)
+            .map(|g| g.iter().sum::<u64>())
+        },
+        3,
+        64,
+      );
+      assert_eq!(out, vec![6, 30, 54]);
+    }
+
+    #[test]
+    fn map_effect_on_infinite_source_is_incremental() {
+      let requested = Rc::new(Cell::new(0));
+      let out = block_on(
+        counting_source(Rc::clone(&requested))
+          .map_effect(|n| succeed::<u64, (), ()>(n + 10))
+          .take(4)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![10, 11, 12, 13]));
+      assert_eq!(requested.get(), 4);
+    }
+
+    #[test]
+    fn from_iterable_over_infinite_iterator_is_lazy() {
+      let out = block_on(
+        Stream::from_iterable(0_u64..)
+          .take(3)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![0, 1, 2]));
+    }
+
+    #[test]
+    fn unfold_infinite_generator_is_lazy() {
+      let out = block_on(
+        Stream::unfold(1_u64, |s| Some((s, s * 2)))
+          .take(5)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![1, 2, 4, 8, 16]));
+    }
+
+    #[test]
+    fn unfold_effect_infinite_generator_is_lazy() {
+      let out = block_on(
+        Stream::unfold_effect(0_u64, |s| {
+          succeed::<Option<(u64, u64)>, (), ()>(Some((s, s + 1)))
+        })
+        .take(4)
+        .run_collect()
+        .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![0, 1, 2, 3]));
+    }
+
+    #[test]
+    fn range_with_huge_bound_is_lazy() {
+      let out = block_on(
+        Stream::range(0, i64::MAX)
+          .take(3)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![0, 1, 2]));
+    }
+
+    #[test]
+    fn from_duplex_queue_channel_reads_only_what_is_pulled() {
+      use crate::coordination::channel::QueueChannel;
+      use crate::runtime::run_blocking;
+      // No shutdown: an eager drain would block forever waiting for a fourth item.
+      let ch = run_blocking(QueueChannel::<i32, i32, ()>::duplex_unbounded(), ()).expect("channel");
+      for i in 1..=3 {
+        run_blocking(ch.write(i), ()).unwrap();
+      }
+      let out = block_on(
+        Stream::from_duplex_queue_channel(ch)
+          .take(3)
+          .run_collect()
+          .run(&mut ()),
+      );
+      assert_eq!(out, Ok(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn from_channel_reads_only_what_is_pulled() {
+      use crate::coordination::channel::Channel;
+      let ch = Channel::<u64, (), (), (), ()>::from_stream(Stream::from_iterable(0_u64..));
+      let out = block_on(Stream::from_channel(ch).take(3).run_collect().run(&mut ()));
+      assert_eq!(out, Ok(vec![0, 1, 2]));
+    }
+  }
+
+  mod pull_based_props {
+    use crate::testing::assert_bounded_memory;
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    enum Op {
+      Add(u64),
+      /// Drop one residue class `x % m == r` (`m >= 5`, so a chain of ≤ 4 filters always keeps
+      /// infinitely many elements).
+      Reject(u64, u64),
+      Take(usize),
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+      prop_oneof![
+        (0_u64..100).prop_map(Op::Add),
+        (5_u64..9)
+          .prop_flat_map(|m| (Just(m), 0..m))
+          .prop_map(|(m, r)| Op::Reject(m, r)),
+        (0_usize..300).prop_map(Op::Take),
+      ]
+    }
+
+    proptest! {
+      #![proptest_config(ProptestConfig::with_cases(64))]
+
+      #[test]
+      fn infinite_source_with_map_filter_take_chain_yields_first_n(
+        ops in proptest::collection::vec(op(), 0..=4),
+        n in 0_usize..200,
+      ) {
+        let mut expected: Box<dyn Iterator<Item = u64>> = Box::new(0_u64..);
+        for o in ops.clone() {
+          expected = match o {
+            Op::Add(k) => Box::new(expected.map(move |x| x + k)),
+            Op::Reject(m, r) => Box::new(expected.filter(move |x| x % m != r)),
+            Op::Take(k) => Box::new(expected.take(k)),
+          };
+        }
+        let expected: Vec<u64> = expected.take(n).collect();
+
+        let out = assert_bounded_memory(
+          move |s| {
+            ops.into_iter().fold(s, |s, o| match o {
+              Op::Add(k) => s.map(move |x| x + k),
+              Op::Reject(m, r) => s.filter(Box::new(move |x: &u64| x % m != r)),
+              Op::Take(k) => s.take(k),
+            })
+          },
+          n,
+          128,
+        );
+        prop_assert_eq!(out, expected);
+      }
     }
   }
 }

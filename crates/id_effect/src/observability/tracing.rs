@@ -1,12 +1,11 @@
 //! Lightweight tracing hooks for effect/fiber observability.
 
 use crate::Effect;
-use crate::collections::EffectHashMap;
-use crate::collections::hash_map;
 use crate::concurrency::fiber_ref::FiberRef;
 use crate::effect;
 use crate::kernel::box_future;
 use crate::runtime::{Never, run_blocking};
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 mod annotate_current_span_seal {
@@ -117,7 +116,7 @@ pub struct SpanRecord {
   /// Span identifier (same string passed to [`with_span`]).
   pub name: String,
   /// Key–value annotations merged from fiber-local state on span end.
-  pub annotations: EffectHashMap<String, String>,
+  pub annotations: HashMap<String, String>,
 }
 
 /// One frame on the fiber-local span stack (`TracingFiberRefs::span_stack`).
@@ -157,7 +156,7 @@ pub struct TracingFiberRefs {
   /// Current span stack for this fiber.
   pub span_stack: FiberRef<Vec<LogSpan>>,
   /// Mutable annotations for the innermost span.
-  pub span_annotations: FiberRef<EffectHashMap<String, String>>,
+  pub span_annotations: FiberRef<HashMap<String, String>>,
 }
 
 static TRACING_FIBER_REFS: OnceLock<TracingFiberRefs> = OnceLock::new();
@@ -189,7 +188,7 @@ fn ensure_span_exists(spans: &mut Vec<SpanRecord>, name: &str) {
   if spans.iter().all(|span| span.name != name) {
     spans.push(SpanRecord {
       name: name.to_owned(),
-      annotations: EffectHashMap::new(),
+      annotations: HashMap::new(),
     });
   }
 }
@@ -209,8 +208,8 @@ pub fn install_tracing_layer(config: TracingConfig) -> Effect<(), Never, ()> {
       .expect("tracing span_stack FiberRef");
       let span_annotations = run_blocking(
         FiberRef::make_with(
-          hash_map::empty::<String, String>,
-          |_parent| hash_map::empty(),
+          HashMap::<String, String>::new,
+          |_parent| HashMap::new(),
           |parent, _child| parent.clone(),
         ),
         (),
@@ -307,9 +306,10 @@ where
     let span_name = stack.last().expect("non-empty span stack").name.clone();
     let val = value.clone();
     run_blocking(
-      refs
-        .span_annotations
-        .update(move |m| hash_map::set(&m, key.to_string(), val)),
+      refs.span_annotations.update(move |mut m| {
+        m.insert(key.to_string(), val);
+        m
+      }),
       (),
     )
     .expect("span_annotations update");
@@ -321,7 +321,7 @@ where
         .rev()
         .find(|span| span.name == span_name)
       {
-        span.annotations = hash_map::set(&span.annotations, key.to_string(), value.clone());
+        span.annotations.insert(key.to_string(), value.clone());
       }
     });
 
@@ -358,7 +358,7 @@ where
       )
       .expect("span_stack push");
 
-      let empty_ann = hash_map::empty::<String, String>();
+      let empty_ann = HashMap::<String, String>::new();
       let refs_for_inner = refs.clone();
       let span_name_inner = span_name.clone();
       let inner = Effect::new_async(move |env: &mut R| {
@@ -428,7 +428,6 @@ pub fn snapshot_tracing() -> TracingSnapshot {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::collections::hash_map;
   use crate::{fail, runtime::run_blocking, succeed};
   use rstest::rstest;
   use std::sync::{Mutex, OnceLock};
@@ -581,11 +580,9 @@ mod tests {
         .iter_mut()
         .find(|s| s.name == "clone.span")
         .expect("span recorded");
-      span.annotations = hash_map::set(
-        &span.annotations,
-        "market".to_string(),
-        "edited".to_string(),
-      );
+      span
+        .annotations
+        .insert("market".to_string(), "edited".to_string());
 
       let orig = snap
         .spans

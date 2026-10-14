@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv77aw99-wssr3l",
+	"task_id": "tsk-mqjykw9n-hnq15w",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-13T21:36:31.437Z",
+	"agent_id": "claude-reconcile",
+	"spec_path": "/home/tom/Code/rust/id_effect/.maestro/specs/fp-streaming.md",
+	"to_agent": "cli"
+}

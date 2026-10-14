@@ -166,17 +166,17 @@ pub mod order {
     ord(value, minimum) != Ordering::Less && ord(value, maximum) != Ordering::Greater
   }
 
-  /// Sort using Fabric-aware implicit parallelism.
+  /// Sort using Fabric-aware implicit parallelism (serial without the `compute` feature).
   pub fn sort_with<A: Clone + Send + Sync>(ord: &DynOrder<A>, mut arr: Vec<A>) -> Vec<A> {
-    use crate::compute::install_parallel;
-    use crate::parallelism::Parallelism;
-    use rayon::prelude::*;
-
-    if Parallelism::default().should_parallelize_current(arr.len()) {
-      install_parallel(|| arr.par_sort_by(|a, b| ord(a, b)));
-    } else {
-      arr.sort_by(|a, b| ord(a, b));
+    #[cfg(feature = "compute")]
+    {
+      use rayon::prelude::*;
+      if crate::compute::should_parallelize(arr.len()) {
+        crate::compute::install_parallel(|| arr.par_sort_by(|a, b| ord(a, b)));
+        return arr;
+      }
     }
+    arr.sort_by(|a, b| ord(a, b));
     arr
   }
 

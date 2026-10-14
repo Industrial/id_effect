@@ -1,5 +1,5 @@
-//! Run [`id_effect::Effect`] programs inside [Axum](https://docs.rs/axum) handlers on the **same Tokio**
-//! runtime as `#[tokio::main]` / `axum::serve`.
+//! Run [`id_effect::Effect`] programs inside [Axum](https://docs.rs/axum) handlers and Tower
+//! services.
 //!
 //! ## Mental model
 //!
@@ -9,41 +9,58 @@
 //! - This crate **bridges** `State<R>` → `&mut R` for one build step, then runs the effect with
 //!   [`id_effect::run_async`] so pending effect steps compose with Tokio I/O.
 //!
-//! ## Runtime requirements
+//! ## Send strategy
 //!
-//! Workspace [`id_effect::Effect`] futures are intentionally **not** [`Send`], while Axum route
-//! handlers must return [`Send`] futures. This crate runs each effect with
-//! [`tokio::task::block_in_place`] and [`tokio::runtime::Handle::block_on`] so the `Effect` value never
-//! crosses an async [`Send`] boundary. That requires a **multi-threaded** Tokio runtime (the default
-//! for `#[tokio::main]`). On a `current_thread` runtime, prefer driving effects outside Axum or use a
-//! dedicated integration. Note that `#[tokio::test]` defaults to **current-thread** and will panic
-//! here; use `#[tokio::test(flavor = "multi_thread", worker_threads = 2)]` for router tests.
+//! [`id_effect::Effect`] futures are intentionally **not** [`Send`], while Axum handlers (and most
+//! Tower stacks) need [`Send`] futures. This crate has exactly one answer, used by
+//! [`crate::routing`], [`execute`], [`run_with_env`], [`run_with_caps`], the request-cap helpers and
+//! the `service` module: the [`EffectExecutor`], an elastic pool of dedicated threads. Each
+//! in-flight request runs on a thread of its own with a private `current_thread` Tokio runtime; the
+//! handler ships a [`Send`] recipe (`env` + build closure) there and awaits the result over a
+//! oneshot channel. See [`executor`] for the full contract.
 //!
-//! ## Relation to `id_effect_tokio`
+//! - Handler futures are [`Send`] and work on **any** runtime flavour, including
+//!   `#[tokio::test]`'s default `current_thread`. No runtime worker is ever blocked.
+//! - A blocking synchronous step (`Effect::new` doing `std::fs`, CPU work, …) occupies only its own
+//!   request's thread.
+//! - `env`, the build closure, `A` and `E` must be [`Send`] + `'static`; the effect need not be.
+//! - Effects **run to completion** even if the client disconnects (result discarded); opt into
+//!   cancel-on-drop with [`executor::DropPolicy::Cancel`]. Panics resurface in the handler.
+//! - Bounded: at most 512 running + 1024 queued requests by default. When saturated, callers wait;
+//!   with [`executor::SaturationPolicy::Reject`] the routing helpers, [`execute`],
+//!   [`execute_with_request_caps`] and [`exchange_into_response`] answer `503` instead
+//!   ([`executor::Saturated`]). [`run_with_env`] / [`run_with_caps`] always wait.
+//! - Inside an effect, `tokio::spawn` / `Handle::current()` refer to the worker thread's runtime.
+//!   Resources created on the application runtime keep working.
 //!
-//! **Yes — this crate is built on `id_effect_tokio`** (workspace crate `crates/id_effect_tokio`).
-//! [`crate::routing`] and [`run_with_env`]/[`execute`] all drive effects via
-//! [`id_effect::run_async`], so async steps inside `Effect` run on the **same** Tokio runtime as
-//! `#[tokio::main]` / `axum::serve`.
+//! Configure the global pool with [`EffectExecutor::install_global`] before serving.
+//!
+//! ## Request-scoped capabilities
+//!
+//! [`CapOverrideLayer`] resolves per-request capability values (tenant, db handle, …) and
+//! [`execute_with_request_caps`] / [`run_with_request_caps`] overlay them on the router's base
+//! [`id_effect::Env`] for that request's effect run only — see [`request_caps`].
 //!
 //! ## Quick start
 //!
-//! ```ignore
-//! use axum::{Router, extract::State};
-//! use id_effect::{succeed, Effect};
+//! ```rust
+//! use axum::Router;
+//! use id_effect::{Effect, succeed};
 //! use id_effect_axum::routing;
 //!
 //! #[derive(Clone)]
-//! struct AppState { /* … */ }
-//!
-//! fn hello(env: &mut AppState) -> Effect<String, std::convert::Infallible, AppState> {
-//!   let _ = env;
-//!   succeed("ok".to_string())
+//! struct AppState {
+//!   greeting: &'static str,
 //! }
 //!
-//! let app = Router::new()
+//! fn hello(env: &mut AppState) -> Effect<String, std::convert::Infallible, AppState> {
+//!   succeed(env.greeting.to_string())
+//! }
+//!
+//! let app: Router = Router::new()
 //!   .route("/hello", routing::get(hello))
-//!   .with_state(AppState { /* … */ });
+//!   .with_state(AppState { greeting: "ok" });
+//! # let _ = app;
 //! ```
 //!
 //! For full control (extra extractors, middleware ordering), use [`execute`].
@@ -67,12 +84,24 @@
 #![allow(effect_no_async_fn_application)]
 
 pub mod channel_bridge;
+#[cfg(feature = "cluster")]
+pub mod cluster;
+pub mod executor;
 pub mod health;
 pub mod json;
+pub mod request_caps;
 pub mod routing;
 pub mod server;
+#[cfg(feature = "tower")]
+pub mod service;
 
 pub use channel_bridge::{exchange, exchange_into_response};
+pub use executor::{
+  DropPolicy, EffectExecutor, EffectExecutorBuilder, Saturated, SaturationPolicy,
+};
+pub use request_caps::{
+  CapOverride, CapOverrideLayer, RequestCaps, execute_with_request_caps, run_with_request_caps,
+};
 pub use server::{
   CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, Host, HostBuilder, HostConfig, HostDrain,
   HostError, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware, drain_with_timeout,
@@ -87,7 +116,6 @@ pub use health::{
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use id_effect::run_async;
 use id_effect::{Effect, Env};
 
 /// Run `build` with capability [`State<Env>`](axum::extract::State).
@@ -96,51 +124,74 @@ use id_effect::{Effect, Env};
 #[inline]
 pub async fn run_with_caps<A, E, F>(State(env): State<Env>, build: F) -> Result<A, E>
 where
-  A: 'static,
-  E: 'static,
-  F: FnOnce(&mut Env) -> Effect<A, E, Env>,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut Env) -> Effect<A, E, Env> + Send + 'static,
 {
   run_with_env(env, build).await
 }
 
 /// Run `build(&mut env)` to obtain an effect, then drive it to completion with the **same** `env`.
 ///
-/// Uses the same [`tokio::task::block_in_place`] / [`tokio::runtime::Handle::block_on`]
-/// strategy as [`crate::routing`] so the returned future is [`Send`] for Axum. See [crate
-/// documentation](crate#runtime-requirements) for runtime requirements.
+/// Runs on the global [`EffectExecutor`] (see [crate docs](crate#send-strategy)), so the returned
+/// future is [`Send`] and works on any Tokio runtime flavour.
 ///
 /// Use this when you already have `State(mut R)` or `&mut R` from custom extractors.
 #[inline]
 pub async fn run_with_env<S, A, E, F>(env: S, build: F) -> Result<A, E>
 where
   S: Send + 'static,
-  A: 'static,
-  E: 'static,
-  F: FnOnce(&mut S) -> Effect<A, E, S>,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
 {
   run_effect_from_state(env, build).await
 }
 
-/// Drives `build(&mut env)` to completion on the current Tokio runtime without storing [`Effect`] in
-/// a [`Send`] async state machine (see [crate docs](crate#runtime-requirements)).
+/// Single internal entry point of the crate's [Send strategy](crate#send-strategy).
 #[inline]
-pub(crate) async fn run_effect_from_state<S, A, E, F>(mut env: S, build: F) -> Result<A, E>
+pub(crate) async fn run_effect_from_state<S, A, E, F>(env: S, build: F) -> Result<A, E>
 where
   S: Send + 'static,
-  A: 'static,
-  E: 'static,
-  F: FnOnce(&mut S) -> Effect<A, E, S>,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
 {
-  tokio::task::block_in_place(move || {
-    tokio::runtime::Handle::current().block_on(async move {
-      let eff = build(&mut env);
-      run_async(eff, env).await
-    })
-  })
+  EffectExecutor::global().run(env, build).await
+}
+
+/// Like [`run_effect_from_state`], honouring the global executor's [`SaturationPolicy`].
+#[inline]
+pub(crate) async fn try_run_effect_from_state<S, A, E, F>(
+  env: S,
+  build: F,
+) -> Result<Result<A, E>, Saturated>
+where
+  S: Send + 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
+{
+  EffectExecutor::global().try_run(env, build).await
+}
+
+/// Map an executor outcome to a response (`Saturated` → `503`).
+#[inline]
+pub(crate) fn respond<A: IntoResponse, E: IntoResponse>(
+  outcome: Result<Result<A, E>, Saturated>,
+) -> Response {
+  match outcome {
+    Ok(Ok(a)) => a.into_response(),
+    Ok(Err(e)) => e.into_response(),
+    Err(saturated) => saturated.into_response(),
+  }
 }
 
 /// Axum handler: extract [`State`]`<S>`, build an effect, map success and
 /// failure through [`IntoResponse`].
+///
+/// Answers `503` when the global executor is saturated and configured with
+/// [`SaturationPolicy::Reject`].
 #[inline]
 pub async fn execute<S, A, E, F>(State(env): State<S>, build: F) -> Response
 where
@@ -149,10 +200,7 @@ where
   E: IntoResponse + Send + 'static,
   F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
 {
-  match run_with_env(env, build).await {
-    Ok(a) => a.into_response(),
-    Err(e) => e.into_response(),
-  }
+  respond(try_run_effect_from_state(env, build).await)
 }
 
 #[cfg(test)]
@@ -170,7 +218,7 @@ mod tests {
     counter: std::sync::Arc<std::sync::atomic::AtomicU32>,
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn routing_get_succeeds() {
     let app = Router::new()
       .route(
@@ -187,7 +235,7 @@ mod tests {
     assert_eq!(res.status(), StatusCode::OK);
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn axum_route_counter_increments_per_request() {
     let ctr = Metric::counter("axum_requests", std::iter::empty());
     let hist = Metric::histogram("axum_latency", std::iter::empty());
@@ -214,7 +262,7 @@ mod tests {
     assert_eq!(hist.snapshot_durations().len(), 2);
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn axum_channel_handler_responds_to_request() {
     use axum::body::Bytes;
     use axum::extract::State;
@@ -256,22 +304,15 @@ mod tests {
     assert_eq!(&bytes[..], b"ping");
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn fiber_scoped_cap_override_per_request() {
     use id_effect::{Cap, build_env, provide, succeed};
     #[derive(Clone, Copy)]
     struct RequestId(u32);
 
     #[derive(::id_effect::ProviderSpecDerive)]
-    #[provides(RequestId)]
+    #[provides(RequestId, with = || RequestId(0))]
     struct RequestIdDefault;
-
-    impl RequestIdDefault {
-      #[allow(clippy::new_ret_no_self)]
-      fn new() -> RequestId {
-        RequestId(0)
-      }
-    }
 
     let base = build_env([provide!(RequestIdDefault)]).expect("env");
 
@@ -295,7 +336,7 @@ mod tests {
     assert_eq!(&bytes[..], b"42");
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  #[tokio::test]
   async fn run_with_env_and_caps_helpers() {
     #[derive(Clone, Default)]
     struct St;
