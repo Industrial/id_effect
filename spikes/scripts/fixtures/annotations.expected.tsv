@@ -1,0 +1,8 @@
+id	status	turbofish	let_ty	closure_ty	marker	total	index	fwd
+H01	ok	1	0	0	0	1	0	0
+H02	ok	1	2	1	0	4	3	0
+H03	ok	0	0	0	1	1	0	3
+H04	unsupported	-	-	-	-	-	-	-	no generic R union in this design
+H05	missing	-	-	-	-	-	-	-
+X01	ok	0	0	0	0	0	0	0
+summary	handlers=6 ported=4 unsupported=1 missing=1 annotated=3 annotated_pct=75.0 total=6 index=3 fwd=5
