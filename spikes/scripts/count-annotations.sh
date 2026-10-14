@@ -26,7 +26,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPIKES_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-AWK_PROG="${SCRIPT_DIR}/lib/count-annotations.awk"
+AWK_PROG="${SCRIPT_DIR}/count-annotations.awk"
 
 usage() {
     sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed -E 's/^# ?//'
