@@ -50,7 +50,12 @@ tower = { version = "0.5.3", features = ["util"], optional = true }
 tower-layer = "0.3.3"
 tower-service = "0.3.3"
 
+[[bench]]
+name = "gate_request"
+harness = false
+
 [dev-dependencies]
+criterion = "0.8.2"
 # Example 040_app_host demos the session store behind platform's opt-in `auth` feature.
 # Path-only: cargo publish resolves path+version dev-deps on crates.io.
 id_effect_platform = { path = "../id_effect_platform", features = ["auth"] }
