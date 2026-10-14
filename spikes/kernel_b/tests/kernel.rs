@@ -25,7 +25,9 @@ fn deep_left_nested_async_chain_runs() {
   for _ in 0..10_000 {
     e = e.flat_map(|n| kernel_b::from_async(async move { Ok(n + 1) }));
   }
-  // 10k nested boxed futures: polled recursively, so this probes stack depth.
+  // 10k nested boxed futures are polled recursively (no trampoline). Measured: this overflows a
+  // 2 MiB stack (the tokio worker default), so the test runs it on a 64 MiB thread. RISK, see
+  // SPIKE-NOTES.md.
   let out = std::thread::Builder::new()
     .stack_size(64 << 20)
     .spawn(move || e.block_on())

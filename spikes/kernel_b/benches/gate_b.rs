@@ -85,7 +85,7 @@ fn bench_flat_map_depth_10k(c: &mut Criterion) {
 fn bench_interrupt_sleeping_fiber(c: &mut Criterion) {
   c.bench_function("b/interrupt_sleeping_fiber", |b| {
     b.iter(|| {
-      let eff: Effect<bool, (), ()> = effect!(|r: &mut ()| {
+      let eff: Effect<bool, (), ()> = effect!(|r| {
         let h = ~ sleep::<(), ()>(Duration::from_secs(10)).fork();
         let exit = ~ h.interrupt();
         exit.is_err()
