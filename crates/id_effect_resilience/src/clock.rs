@@ -1,22 +1,16 @@
 //! Time source shared by the stateful primitives (breaker cooldown, token refill).
 
-use std::sync::Arc;
+use std::future::ready;
 use std::time::Instant;
 
-use id_effect::scheduling::Clock;
+use id_effect::next::{Ctx, Effect};
 
-/// Monotonic "now" used for cooldown and refill arithmetic.
-pub(crate) type NowFn = Arc<dyn Fn() -> Instant + Send + Sync>;
-
-/// Wall-clock time source ([`Instant::now`]).
-pub(crate) fn system_now() -> NowFn {
-  Arc::new(Instant::now)
-}
-
-/// Read time from `clock` (e.g. a [`TestClock`](id_effect::scheduling::TestClock) in tests).
-pub(crate) fn clock_now<C>(clock: C) -> NowFn
+/// The running fiber's executor clock: wall-clock time on `TokioExecutor`, virtual time on
+/// `TestExecutor` (so cooldowns and refills follow `TestExecutor::advance`).
+pub(crate) fn now<E, R>() -> Effect<Instant, E, R>
 where
-  C: Clock + Send + Sync + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  Arc::new(move || clock.now())
+  Effect::from_ctx(|ctx: Ctx<R>| ready(Ok(ctx.fiber().executor().now())))
 }
