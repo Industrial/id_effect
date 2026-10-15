@@ -570,4 +570,37 @@ mod tests {
     ));
     assert!(matches!(p.downcast_ref::<InterruptSignal>(), Some(s) if s.0 == fiber.id()));
   }
+
+  #[test]
+  fn payloads_find_an_interrupt_right_of_a_failure_and_flag_a_cause_without_one() {
+    let fiber = FiberContext::new_root(Arc::new(NoExec));
+    let p = non_fail_payload::<()>(Cause::both(Cause::fail(()), Cause::interrupt(fiber.id())));
+    assert!(matches!(p.downcast_ref::<InterruptSignal>(), Some(s) if s.0 == fiber.id()));
+    // Only typed failures: `surface` never hands such a cause here, so it names a kernel bug.
+    let p = non_fail_payload::<()>(Cause::fail(()));
+    assert!(
+      p.downcast_ref::<String>()
+        .is_some_and(|s| s.contains("kernel bug")),
+      "an all-`Fail` cause has no defect or interrupt to re-raise"
+    );
+  }
+
+  #[test]
+  fn bind_futures_debug_as_ready_or_running() {
+    let fiber = FiberContext::new_root(Arc::new(NoExec));
+    let (tx, _rx) = mpsc::channel();
+    let outer: Effect<(String, String), (), HCons<Cap, HNil>> =
+      Effect::from_ctx(move |ctx| async move {
+        let ready = ctx.bind(Effect::<u8, (), HCons<Cap, HNil>>::from_instr(Instr::Pure(
+          Ok(erase(1_u8)),
+        )));
+        let running = ctx.bind(suspended(tx));
+        Ok((format!("{ready:?}"), format!("{running:?}")))
+      });
+    let exit = pollster::block_on(outer.provide(Cap).run_on(Arc::clone(&fiber)));
+    assert_eq!(
+      exit,
+      Exit::Success(("BindFuture::Ready".into(), "BindFuture::Running".into()))
+    );
+  }
 }

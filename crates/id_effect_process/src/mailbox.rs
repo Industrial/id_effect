@@ -192,4 +192,31 @@ mod tests {
       Poll::Ready(Exit::Failure(id_effect::Cause::Fail(MailboxClosed)))
     ));
   }
+
+  #[test]
+  fn close_wakes_a_waiting_take_and_offer_runs_as_an_effect() {
+    let exec = TestExecutor::new();
+    let rt = Runtime::from_executor(Arc::new(exec.clone()));
+    let mb: Mailbox<u8> = Mailbox::default();
+    let offered = rt.fork(mb.offer::<(), HNil>(7));
+    exec.run_until_stalled();
+    assert!(offered.is_done());
+    assert_eq!(format!("{mb:?}"), "Mailbox { len: 1, closed: false }");
+    // The first take gets the buffered item; the second suspends until the close wakes it.
+    let taker = rt.fork(mb.take::<HNil>().zip(mb.take()));
+    exec.run_until_stalled();
+    assert!(
+      !taker.is_done(),
+      "the second take waits on an empty mailbox"
+    );
+    mb.close();
+    exec.run_until_stalled();
+    let mut cx = Context::from_waker(Waker::noop());
+    let mut fut = std::pin::pin!(taker.join_future());
+    assert!(matches!(
+      fut.as_mut().poll(&mut cx),
+      Poll::Ready(Exit::Failure(id_effect::Cause::Fail(MailboxClosed)))
+    ));
+    assert_eq!(MailboxClosed.to_string(), "mailbox closed");
+  }
 }

@@ -535,3 +535,98 @@ fn the_span_is_restored_after_with_span_and_inherited_by_children() {
     .flatten();
   assert_ne!(a.unwrap().trace_id(), b.unwrap().trace_id());
 }
+
+// ── readings through the `Metric` trait ─────────────────────────────────────────────────────
+
+#[test]
+fn every_kind_reads_back_through_metric_state() {
+  let registry = MetricRegistry::new();
+
+  // An empty histogram: one `+inf` bucket and no moments yet.
+  let h = registry.histogram("h", Boundaries::new(Vec::<f64>::new()));
+  assert!(h.boundaries().is_empty());
+  match h.state() {
+    MetricState::Histogram(s) => {
+      assert_eq!(s.buckets, vec![(f64::INFINITY, 0)]);
+      assert_eq!((s.count, s.min, s.max), (0, None, None));
+    }
+    other => panic!("not a histogram: {other:?}"),
+  }
+
+  // A summary ignores NaN observed in a fiber; its config clamps the window to one sample.
+  let cfg = SummaryConfig::new(Duration::from_secs(5), 0, [0.5]);
+  assert_eq!((cfg.max_age(), cfg.max_size()), (Duration::from_secs(5), 1));
+  let s = registry.summary("s", cfg);
+  let observed: Effect<(), ()> = s
+    .observe(1.0)
+    .then(s.observe(f64::NAN))
+    .then(s.observe(2.0));
+  assert!(matches!(observed.block_on(), Exit::Success(())));
+  match s.state() {
+    MetricState::Summary(snap) => {
+      assert_eq!((snap.count, snap.window_len), (2, 1));
+      assert_eq!(snap.quantiles, vec![(0.5, Some(2.0))]);
+    }
+    other => panic!("not a summary: {other:?}"),
+  }
+
+  let f = registry.frequency("f");
+  f.update_now("x".to_owned());
+  assert_eq!(
+    f.state(),
+    MetricState::Frequency {
+      occurrences: vec![("x".to_owned(), 1)]
+    }
+  );
+
+  assert_eq!((h.name(), s.name(), f.name()), ("h", "s", "f"));
+  assert_eq!(
+    f.registry().snapshot().len(),
+    3,
+    "all three share the registry"
+  );
+}
+
+#[test]
+fn handles_debug_as_their_name_and_tags() {
+  let registry = MetricRegistry::new();
+  let g = registry.gauge("queue_depth").tagged("queue", "jobs");
+  let dbg = format!("{g:?}");
+  assert!(
+    dbg.starts_with("Gauge") && dbg.contains("queue_depth") && dbg.contains("jobs"),
+    "{dbg}"
+  );
+  let f = format!("{:?}", registry.frequency("status"));
+  assert!(f.starts_with("Frequency") && f.contains("status"), "{f}");
+}
+
+#[test]
+fn global_constructors_share_the_global_registry() {
+  let g = id_effect::Gauge::new("metrics_test.global_gauge");
+  g.update_now(3);
+  let s = id_effect::Summary::new(
+    "metrics_test.global_summary",
+    SummaryConfig::new(Duration::from_secs(60), 8, [1.0]),
+  );
+  s.update_now(4.0);
+  let f = id_effect::Frequency::new("metrics_test.global_frequency");
+  f.update_now("hit".to_owned());
+  let global = MetricRegistry::global();
+  assert_eq!(global.gauge("metrics_test.global_gauge").value(), 3);
+  assert_eq!(
+    global
+      .summary(
+        "metrics_test.global_summary",
+        SummaryConfig::new(Duration::from_secs(60), 8, [1.0])
+      )
+      .snapshot()
+      .count,
+    1
+  );
+  assert_eq!(
+    global
+      .frequency("metrics_test.global_frequency")
+      .occurrences(),
+    vec![("hit".to_owned(), 1)]
+  );
+}

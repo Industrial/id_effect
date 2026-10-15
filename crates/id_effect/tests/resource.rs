@@ -475,6 +475,73 @@ fn keyed_pool_shutdown_interrupts_later_checkouts() {
   });
 }
 
+fn keyed_checkout(pool: &KeyedPool<u8, u32>, key: u8) -> Effect<u32, Never> {
+  let p = pool.clone();
+  Effect::scoped(move |s| p.get(key, &s))
+}
+
+#[test]
+fn keyed_pool_release_ttl_and_invalidate_apply_per_key() {
+  let d = Driver::Test;
+  let (calls, released) = (counter(), log());
+  let c = Arc::clone(&calls);
+  let pool: KeyedPool<u8, u32> = KeyedPool::new(1, move |k: u8| {
+    let n = c.fetch_add(1, Ordering::SeqCst) as u32;
+    succeed(u32::from(k) * 100 + n)
+  })
+  .with_ttl(10 * SEC)
+  .with_release(recording(&released));
+  let (p1, p2) = (pool.clone(), pool.clone());
+  let eff =
+    keyed_checkout(&pool, 1) // 100, idle from t=0
+      .zip(sleep(11 * SEC).then(keyed_checkout(&pool, 1))) // t=11: 100 expired, 101 built
+      .zip(keyed_checkout(&pool, 2).flat_map(move |b| p1.invalidate(&2, &b).map(move |()| b)))
+      // A key with no pool yet: nothing to invalidate.
+      .flat_map(move |r| p2.invalidate(&9, &5).map(move |()| r));
+  let exit = d.run(eff);
+  assert!(matches!(exit, Exit::Success(((100, 101), 202))), "{exit:?}");
+  assert_eq!(count(&calls), 3);
+  assert_eq!(
+    entries(&released),
+    [100, 202],
+    "expired, then invalidated while idle"
+  );
+  assert_eq!(
+    (pool.idle_count(&1), pool.idle_count(&2), pool.in_use(&9)),
+    (1, 0, 0)
+  );
+}
+
+#[test]
+fn invalidating_one_idle_item_keeps_the_others() {
+  on_both(|d| {
+    let (calls, released) = (counter(), log());
+    let pool: Pool<u32> = Pool::new(2, numbered(&calls)).with_release(recording(&released));
+    let (p, p2) = (pool.clone(), pool.clone());
+    let both: Effect<(u32, u32), Never> = Effect::scoped(move |s| p.get(&s).zip(p.get(&s)));
+    let eff = both
+      .flat_map(move |(a, _)| p2.invalidate(&a))
+      .then(checkout(&pool));
+    let exit = d.run(eff);
+    assert!(matches!(exit, Exit::Success(2)), "{d:?}: {exit:?}");
+    assert_eq!(entries(&released), [1], "{d:?}");
+    assert_eq!((count(&calls), pool.idle_count()), (2, 1), "{d:?}");
+  });
+}
+
+#[test]
+fn pool_debug_reports_capacity_usage_and_shutdown() {
+  let pool: Pool<u32> = Pool::new(2, numbered(&counter())).with_ttl(SEC);
+  let s = format!("{pool:?}");
+  assert!(
+    s.starts_with("Pool") && s.contains("capacity: 2") && s.contains("shut: false"),
+    "{s}"
+  );
+  let keyed: KeyedPool<u8, u8> = KeyedPool::new(1, succeed).with_ttl(SEC);
+  let s = format!("{keyed:?}");
+  assert!(s.starts_with("KeyedPool") && s.contains("keys: 0"), "{s}");
+}
+
 // ── Cache ─────────────────────────────────────────────────────────────────────────────────
 
 /// A lookup `k -> k * 10` that counts its calls.
