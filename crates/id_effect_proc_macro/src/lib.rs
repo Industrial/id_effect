@@ -15,6 +15,7 @@ mod effect_tagged;
 mod expand;
 mod infer_caps;
 mod match_effect;
+mod next;
 mod parse;
 mod provider_spec;
 mod transform;
@@ -98,6 +99,51 @@ pub fn effect(input: TokenStream) -> TokenStream {
     Ok(ts) => ts.into(),
     Err(e) => e.to_compile_error().into(),
   }
+}
+
+/// Next-kernel effect from an async body (temporary name, re-exported as
+/// `id_effect::next::effect_next`; renamed by `k-retire-sweep`).
+///
+/// `effect_next!({ body })` takes `R` from the expected type; `effect_next!(|r: &Caps| { body })`
+/// fixes `R = Caps` and binds `r: &Caps`. In the body, `~Cap` reads a capability (`&Arc<Cap>`),
+/// and `~expr` runs a sub-effect over a part of `R` on the same fiber, widening its error
+/// (`Never` to anything, else `E: From<E2>`). The body must be `Send`.
+///
+/// ```
+/// use id_effect::Never;
+/// use id_effect::next::{Effect, caps_next, effect_next, succeed};
+///
+/// struct Greeting(&'static str);
+///
+/// fn answer() -> Effect<u32> {
+///   succeed(42)
+/// }
+///
+/// fn hello() -> Effect<String, Never, caps_next!(Greeting)> {
+///   effect_next!({ format!("{}:{}", ~Greeting.0, ~answer()) })
+/// }
+///
+/// let out = hello().provide(Greeting("hi")).block_on();
+/// assert!(matches!(out, id_effect::Exit::Success(ref s) if s == "hi:42"));
+/// ```
+#[proc_macro]
+pub fn effect_next(input: TokenStream) -> TokenStream {
+  next::effect::expand(input, false)
+}
+
+/// Like `effect_next!`, but builds an `id_effect::next::LocalEffect`, whose body may hold
+/// `!Send` values. `~expr` binds a `LocalEffect` or a `Send` `Effect` over a part of `R`.
+#[proc_macro]
+pub fn effect_local_next(input: TokenStream) -> TokenStream {
+  next::effect::expand(input, true)
+}
+
+/// `caps_next!(A, B, C)` is the environment type `HCons<A, HCons<B, HCons<C, HNil>>>` of the next
+/// kernel. A capability listed twice (compared by token) is one compile error at the repeat; the
+/// de-duplicated list is still emitted so no further errors cascade.
+#[proc_macro]
+pub fn caps_next(input: TokenStream) -> TokenStream {
+  next::caps::expand(input)
 }
 
 /// Derive field lenses and enum prisms for [`id_effect_optics`].
