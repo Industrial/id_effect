@@ -75,4 +75,4 @@ Every module's items are re-exported at the crate root (`use id_effect::{Effect,
 
 The 0.6 kernel (runtime capability DI with `Env` / `ProviderSpec` / `run_with`, `run_blocking`,
 `ThreadSleepRuntime`, `CancellationToken`, `TestClock`, `run_test`) was removed in 0.7; see
-[`docs/migration-0.7/k-retire-v1.md`](../../docs/migration-0.7/k-retire-v1.md).
+[`docs/MIGRATION-0.7.md`](../../docs/MIGRATION-0.7.md).

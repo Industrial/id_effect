@@ -139,7 +139,7 @@ let exit = EffectExecutor::global().run_effect(program).await;
 
 ## Migrating from 0.6
 
-See [`docs/migration-0.7/m-axum.md`](../../docs/migration-0.7/m-axum.md).
+See §14.14 (`id_effect_axum`) of [`docs/MIGRATION-0.7.md`](../../docs/MIGRATION-0.7.md).
 
 ## Examples
 
