@@ -1,16 +1,8 @@
-//! Expansion behaviour of the declarative macros against the real `::id_effect` paths.
+//! Expansion behaviour of the kernel-neutral declarative macros (`pipe!`, `err!`) against the
+//! real `::id_effect` paths. The v1 capability-DI macros are covered in `v1_di_macros.rs`.
 
-use id_effect::{Cap, CapList, Env, Or, build_env};
-use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers};
-
-#[derive(Clone, Debug, PartialEq)]
-struct Counter(u32);
-
-#[derive(Clone, Debug, PartialEq)]
-struct Name(&'static str);
-
-mock_capability!(CounterMock, Counter, "counter/mock", || Counter(7));
-mock_capability!(NameMock, Name, "name/mock", || Name("ada"));
+use id_effect::Or;
+use id_effect_macro::{err, pipe};
 
 fn inc(x: i32) -> i32 {
   x + 1
@@ -61,39 +53,4 @@ fn err_union_nests_or_right_associatively() {
   assert!(matches!(first, Or::Left(1)));
   assert!(matches!(middle, Or::Right(Or::Left(ref s)) if s == "io"));
   let _same_type: err!(u8 | String | bool) = last;
-}
-
-#[test]
-fn caps_with_no_keys_is_plain_env() {
-  let env: caps!() = Env::new();
-  assert!(env.is_empty());
-}
-
-#[test]
-fn caps_expands_to_cap_list_of_service_slots() {
-  let list: caps!(Counter, Name) = CapList::new(Env::new());
-  let _same_type: CapList<(Cap<Counter>, Cap<Name>)> = list;
-}
-
-#[test]
-fn provide_and_mock_capability_build_an_env() {
-  let env = build_env([provide!(CounterMock)]).expect("env");
-  assert_eq!(env.get::<Cap<Counter>>(), &Counter(7));
-}
-
-#[test]
-fn providers_expands_to_provider_array() {
-  let bundle = providers!(dev: [CounterMock, NameMock]);
-  assert_eq!(bundle.len(), 2);
-  let env = build_env(bundle).expect("env");
-  assert_eq!(env.get::<Cap<Counter>>(), &Counter(7));
-  assert_eq!(env.get::<Cap<Name>>(), &Name("ada"));
-}
-
-#[test]
-fn providers_accepts_trailing_comma_and_empty_bundle() {
-  let one = providers!(single: [NameMock,]);
-  assert_eq!(one.len(), 1);
-  let none: [id_effect::ProviderBox; 0] = providers!(empty: []);
-  assert!(build_env(none).expect("empty env").is_empty());
 }

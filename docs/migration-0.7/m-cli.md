@@ -18,16 +18,9 @@ let eff: Effect<(), String> = succeed(());
 run_main(eff, HNil, RunMainConfig::minimal())
 ```
 
-A program that is still a v1 effect (for example one built on `id_effect_config` before its
-switch-over) is bridged at the edge with `id_effect::next::compat::IntoNext`:
-
-```rust
-use id_effect::next::HNil;
-use id_effect::next::compat::IntoNext;
-
-run_main(v1_effect.into_next_with(env), HNil, cfg) // a v1 effect over env `R`
-run_main(v1_effect.into_next(), HNil, cfg)         // a v1 effect over `()`
-```
+A program over capabilities passes its typed environment (an `HCons` list) as `env`;
+`examples/cli-minimal` runs an `Effect<(), ConfigError, ConfigEnv>` with its `ConfigEnv`. There
+is no v1 → next bridge any more: a 0.6 program is ported to a `next` effect (k-retire-v1).
 
 ## Behaviour changes
 
@@ -40,7 +33,9 @@ run_main(v1_effect.into_next(), HNil, cfg)         // a v1 effect over `()`
 - The env bound is now `R: Send + Sync + 'static`, the `next` capability list.
 - `exit_code_for_exit`, `exit_code_for_cause`, `cause_max_exit_byte` and `exit_code_for_result`
   are unchanged. `Exit` and `Cause` are the shared root types `id_effect::{Exit, Cause}`.
-- `RunMainConfig::with_tracing()` still installs the v1 tracing layer
-  (`id_effect::install_tracing_layer`). It goes through the v1 → next bridge until the tracing
-  module is ported.
+- `RunMainConfig::with_tracing()` installs the `next` in-process tracing buffer
+  (`id_effect::next::install_tracing_layer`) and runs the program under `tracing_hook()`, so its
+  `with_span`s show up in `snapshot_tracing()` (k-retire-v1 part 1; no bridge).
+- The `id-effect-diagnose` binary is removed (k-retire-v1): it checked the 0.6 runtime provider
+  graph, and a missing capability is a compile error in 0.7.
 - The `ie_cli_probe` test binary gained `--mode die` (exit `101`).
