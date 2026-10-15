@@ -8,19 +8,25 @@
 //!                                 │
 //!                                 ├──►  HostConfig  ──►  server (scoped: bind / graceful drain)
 //!                                 └──►  PgSqlClient pool (scoped, only with DATABASE_URL)
+//!                                         │
+//!                                         └──►  migrate, PgTodoRepo  ──►  router(AppEnv)
 //! ```
 //!
 //! - [`AppConfig::layer`] loads the configuration once, through the `Config<T>` descriptor
 //!   ([`config`] module), and provides it as a capability.
 //! - [`run_until`] reads that capability, builds the server's [`HostConfig`] layer and, when a
-//!   database is configured, the scoped [`PgSqlClient`] pool layer ([`database_layer`]), then
-//!   serves [`router`] until its stop effect completes. Leaving the scope drains the server and
-//!   closes the pool.
-//! - Every request runs as one interruptible fiber on tokio (`id_effect_axum`).
+//!   database is configured, the scoped [`PgSqlClient`] pool layer ([`database_layer`]). Inside
+//!   that scope it reads the pool's [`SqlClientService`], applies the migration
+//!   ([`repo::migrate`]), builds the [`router`] over a [`PgTodoRepo`] and serves it until its
+//!   stop effect completes. Without a database the store is an [`InMemoryTodoRepo`]. Leaving the
+//!   scope drains the server and closes the pool.
+//! - Every request runs as one interruptible fiber on tokio (`id_effect_axum`), in the
+//!   [`AppEnv`] environment: the [`TodoRepoService`] capability and the [`RequestPolicy`]
+//!   (`REQUEST_TIMEOUT`, retries of transient store failures).
 //!
-//! Seams for the following leaves: the domain routes (`app`, `routes`, `repo`, `error` modules)
-//! extend [`router`] and read the [`SqlClientService`](id_effect_sql::SqlClientService) that
-//! [`database_layer`] provides; telemetry (`telemetry` module) wraps [`router`].
+//! Modules: [`config`] (settings), [`error`] ([`AppError`] and its statuses), [`repo`] (the
+//! store capability), [`app`] (environment, policy, use cases), [`routes`] (`/todos`),
+//! [`telemetry`] (one span and one latency observation per request).
 //!
 //! ```rust,no_run
 //! use id_effect::Exit;
@@ -37,16 +43,26 @@
 
 #![deny(missing_docs)]
 
+pub mod app;
 pub mod config;
+pub mod error;
+pub mod repo;
+pub mod routes;
+pub mod telemetry;
+
+use std::sync::Arc;
 
 use axum::Router;
 use id_effect::next::{Effect, Layer, caps_next, effect_next, hlist};
 use id_effect_axum::{HostConfig, HostError, ShutdownReason, health_router, wait_for_shutdown};
 use id_effect_config::{ConfigError, EnvConfigProviderLive};
-use id_effect_sql::SqlError;
 use id_effect_sql::pg::{PgPoolConfig, PgSqlClient, PgSqlEnv};
+use id_effect_sql::{SqlClientService, SqlError};
 
+pub use app::{AppEnv, RequestPolicy, app_env};
 pub use config::{AppConfig, DatabaseConfig};
+pub use error::AppError;
+pub use repo::{InMemoryTodoRepo, PgTodoRepo, Todo, TodoRepo, TodoRepoService};
 
 /// Why the service could not start (or stopped serving).
 #[derive(Debug)]
@@ -89,9 +105,18 @@ impl std::fmt::Display for StartupError {
 
 impl std::error::Error for StartupError {}
 
-/// The HTTP routes: `GET /health` (liveness, always `200 ok`).
-pub fn router() -> Router {
-  Router::new().merge(health_router())
+/// The HTTP routes over `env`: `GET /health` (liveness, always `200 ok`) and the `/todos` CRUD
+/// ([`routes`]).
+pub fn router(env: AppEnv) -> Router {
+  Router::new()
+    .merge(health_router())
+    .merge(routes::todo_routes().with_state(env))
+}
+
+/// Wraps the served [`router`] in request telemetry ([`telemetry::instrument`]: one span and one
+/// latency observation per request, exported when `OTEL_EXPORTER_OTLP_ENDPOINT` is set).
+fn instrument(router: Router) -> Router {
+  telemetry::instrument(router)
 }
 
 /// [`AppConfig`] loaded from the process environment ([`EnvConfigProviderLive`]).
@@ -140,11 +165,42 @@ where
 {
   let host: Layer<caps_next!(HostConfig), StartupError> =
     Layer::succeed(hlist![config.host.clone()]);
-  let serving = id_effect_axum::server::serve_until(router(), stop).map_err(StartupError::from);
+  let policy = RequestPolicy::from_config(config);
   match &config.database {
-    None => serving.provide_layer(host),
-    Some(db) => serving.provide_layer(host.merge(database_layer(db))),
+    None => {
+      let env = app_env(TodoRepoService::new(InMemoryTodoRepo::new()), policy);
+      serve_app(env, stop).provide_layer(host)
+    }
+    Some(db) => serve_with_database(policy, stop).provide_layer(host.merge(database_layer(db))),
   }
+}
+
+/// Serves the [`router`] over `env` until `stop` completes.
+fn serve_app<A>(
+  env: AppEnv,
+  stop: Effect<A, HostError, caps_next!(HostConfig)>,
+) -> Effect<A, StartupError, caps_next!(HostConfig)>
+where
+  A: Send + 'static,
+{
+  id_effect_axum::server::serve_until(instrument(router(env)), stop).map_err(StartupError::from)
+}
+
+/// Inside the pool's scope: migrate the database, then serve the router over a [`PgTodoRepo`]
+/// on the pool's [`SqlClientService`].
+fn serve_with_database<A>(
+  policy: RequestPolicy,
+  stop: Effect<A, HostError, caps_next!(HostConfig)>,
+) -> Effect<A, StartupError, caps_next!(HostConfig, SqlClientService)>
+where
+  A: Send + 'static,
+{
+  effect_next!(|_r: &caps_next!(HostConfig, SqlClientService)| {
+    let sql = SqlClientService::clone(~SqlClientService);
+    ~repo::migrate(Arc::clone(&sql.0));
+    let env = app_env(TodoRepoService::new(PgTodoRepo::new(sql)), policy);
+    ~serve_app(env, stop)
+  })
 }
 
 #[cfg(test)]
@@ -197,7 +253,11 @@ mod tests {
             .map_err(|e| HostError::Serve(e.to_string()))
         })
       });
-    let program = probe.provide_layer(host.provide_to(id_effect_axum::server_layer(router())));
+    let env = app_env(
+      TodoRepoService::new(InMemoryTodoRepo::new()),
+      RequestPolicy::from_config(&local_config(0)),
+    );
+    let program = probe.provide_layer(host.provide_to(id_effect_axum::server_layer(router(env))));
     let Exit::Success(response) = EffectExecutor::global().run_effect(program).await else {
       panic!("server probe failed");
     };
@@ -230,17 +290,22 @@ mod tests {
       .provide_to(AppConfig::layer());
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let stop = from_async(move || async move {
-      get_when_up(addr, "/health")
-        .await
+      let health = get_when_up(addr, "/health").await;
+      // Without DATABASE_URL the todos are served from memory.
+      let todos = get(addr, "/todos").await;
+      health
+        .and_then(|h| todos.map(|t| (h, t)))
         .map_err(|e| HostError::Serve(e.to_string()))
     });
     let exit = EffectExecutor::global()
       .run_effect(run_until(stop).provide_layer(app))
       .await;
-    let Exit::Success(response) = exit else {
+    let Exit::Success((response, todos)) = exit else {
       panic!("health probe failed: {exit:?}");
     };
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    assert!(todos.starts_with("HTTP/1.1 200"), "{todos}");
+    assert!(todos.ends_with("[]"), "{todos}");
     // Released with the scope: the listener is gone.
     assert!(get(addr, "/health").await.is_err());
   }

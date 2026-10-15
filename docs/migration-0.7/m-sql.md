@@ -24,7 +24,7 @@ closes, after the program, however it ends.
 | — | `pg::PgSqlClient::layer::<E>(PgPoolConfig)`: opens the pool and checks it (`SELECT 1`) on build, **closes the pool** when the scope closes |
 | `PgSqlTransaction` over a `PoolConnection` + manual `BEGIN` | over a sqlx `Transaction` (`pool.begin()`): a handle dropped unfinished is rolled back by sqlx |
 | `TestSqlClient` rollback cleared every recorded statement | a transaction's statements are recorded when it commits and discarded when it rolls back; new `commits()`, `rollbacks()`, `closes()`, `is_connected()`, `recorded_executes()`, `fail_commits()` |
-| dev-dependency on axum / `id_effect_axum`, `examples/010_axum_sql.rs` | removed (it ran against the publish order). The example's source is parked, not compiled, at `docs/migration-0.7/m-sql-010_axum_sql.rs.txt` for the showcase leaf **s-domain** to absorb into `examples/http-showcase` |
+| dev-dependency on axum / `id_effect_axum`, `examples/010_axum_sql.rs` | removed (it ran against the publish order). Its axum + SQL wiring now lives in the showcase `examples/http-showcase` (`src/repo.rs`: a `TodoRepo` on the pool's `SqlClientService`, batches in `with_transaction`) |
 
 Unchanged: `SqlError`, `SqlParam`, `SqlRow`, `PgSqlClient::{new, pool}`, `PgPoolConfig`,
 `pg_pool_from_config`, `pg_pool_from_config_lazy`, `PgSqlError`. The live implementations need a

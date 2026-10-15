@@ -11,7 +11,10 @@ use id_effect_axum::EffectExecutor;
 #[tokio::main]
 async fn main() -> ExitCode {
   let program = http_showcase::run_until_shutdown().provide_layer(http_showcase::live_layer());
-  match EffectExecutor::global().run_effect(program).await {
+  let exit = EffectExecutor::global().run_effect(program).await;
+  // Export the last batch of spans and metrics before the process exits.
+  http_showcase::telemetry::Telemetry::global().flush();
+  match exit {
     Exit::Success(reason) => {
       eprintln!("http_showcase: stopped ({reason:?})");
       ExitCode::SUCCESS
