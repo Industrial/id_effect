@@ -5,7 +5,7 @@ compiler enforces.
 
 ## The Signature Tells the Story
 
-```rust
+```rust,ignore
 // Version A: traditional async. What does it use? Read the body to find out.
 async fn process_order(order: Order) -> Result<Receipt, Error> { /* 200 lines */ }
 

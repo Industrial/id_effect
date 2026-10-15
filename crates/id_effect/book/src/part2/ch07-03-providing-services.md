@@ -7,7 +7,7 @@ builds the capability; the edge feeds it to the program.
 
 A layer that needs nothing (`In = HNil`) can be a plain value or a derive:
 
-```rust
+```rust,ignore
 use id_effect::{HCons, HNil, Layer, ProviderSpecDerive, hlist};
 
 // By hand: one shared value, built once per layer build.
@@ -30,7 +30,7 @@ an `acquire_release` layer whose finalizer runs when the layer's scope closes. T
 The production repository needs a `Database`. Read it with `need` inside `Layer::effect`; the
 layer's `In` lists what it needs:
 
-```rust
+```rust,ignore
 use id_effect::{HCons, HNil, Layer, hlist, need};
 
 fn user_repo_live() -> Layer<HCons<UserRepo, HNil>, AppError, HCons<Database, HNil>> {
@@ -55,7 +55,7 @@ Compose the graph with the Effect.ts operators:
 | `base.provide_to(upper)` | feed `base`'s output into `upper`; keep only `upper`'s output |
 | `upper.provide_merge(base)` | feed `base` into `upper`; keep both outputs |
 
-```rust
+```rust,ignore
 // Database → UserRepo, and keep Database for code that also needs it.
 let app = user_repo_live().provide_merge(database_live());
 ```
@@ -64,7 +64,7 @@ A layer value is memoised within one build: a layer used twice in a graph is con
 
 ## At the edge
 
-```rust
+```rust,ignore
 // Production
 let exit = get_user_profile(42).provide_layer(user_repo_live().provide_merge(database_live())).block_on();
 

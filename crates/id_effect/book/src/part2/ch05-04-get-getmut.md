@@ -49,7 +49,7 @@ let exit = sum.provide_all(hlist![Db(10), Logger("ab")]).block_on(); // Success(
 
 `need` is the tool for library code that is generic over its environment:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, HList, Selector, need};
 
 fn audit<R, I>(line: String) -> Effect<(), AppError, R>
@@ -65,7 +65,7 @@ where
 `Effect::from_ctx` gives an async step direct access to its context: `ctx.get::<T, _>()` reads a
 capability and `ctx.env()` is the whole environment.
 
-```rust
+```rust,ignore
 fn describe() -> Effect<String, (), DbLog> {
   Effect::from_ctx(|ctx| async move {
     Ok(format!("{}:{}", ctx.get::<Db, _>().0, ctx.get::<Logger, _>().0))

@@ -1,6 +1,6 @@
 # R Revisited — More Than Just a Type Parameter
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
 ```
 
@@ -11,7 +11,7 @@ It reads "this needs a `Database`". What does that mean precisely?
 `R` is a promise the compiler holds you to. You cannot run `get_user(1)` until a `Database` has
 been provided:
 
-```rust
+```rust,ignore
 // Does not compile: `block_on` needs `Effect<_, _, HNil>`, this is `caps!(Database)`
 // get_user(1).block_on();
 
@@ -31,7 +31,7 @@ error[E0277]: capability `Metrics` is not in this effect's environment
 Inside `effect!`, `~sub_effect` accepts any sub-effect whose `R` is **contained in** the block's
 `R` (in any order). The block declares the union:
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
 fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { /* ... */ }
 
@@ -47,7 +47,7 @@ fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Data
 
 When the steps need different capabilities, the block needs both:
 
-```rust
+```rust,ignore
 fn audit(msg: String) -> Effect<(), AuditError, caps!(AuditLog)> { /* ... */ }
 
 // AppError: From<AuditError> + From<DbError>
@@ -63,7 +63,7 @@ Forgetting `AuditLog` in the block's `caps!` is a compile error at the `~audit(.
 
 ## Multiple requirements
 
-```rust
+```rust,ignore
 fn process_order(order: Order)
   -> Effect<Receipt, AppError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
 {
@@ -81,7 +81,7 @@ From the signature alone you know this function touches four capabilities.
 
 ## Why R instead of parameters?
 
-```rust
+```rust,ignore
 fn process_order(
   order: Order,
   db: &Database,

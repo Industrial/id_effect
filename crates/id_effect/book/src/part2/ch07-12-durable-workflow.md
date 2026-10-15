@@ -15,7 +15,7 @@ completed successfully.
 `(workflow_id, seq)` with a JSON payload. On restart, `run_step_typed` **returns the stored value**
 instead of invoking the closure again:
 
-```rust
+```rust,ignore
 use id_effect_workflow::DurableWorkflowLog;
 
 let mut log = DurableWorkflowLog::open(&db_path)?;

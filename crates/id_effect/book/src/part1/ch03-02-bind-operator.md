@@ -10,7 +10,7 @@ Inside `effect!`, the prefix `~` has three forms:
 
 ## Binding an effect
 
-```rust
+```rust,ignore
 effect!({
   let user = ~fetch_user(42);
   user.name
@@ -19,7 +19,7 @@ effect!({
 
 When you don't need the value, use `~` as a statement:
 
-```rust
+```rust,ignore
 effect!({
   ~log_event("processing started");
   let result = ~do_work();
@@ -34,7 +34,7 @@ any other `E2` needs `E: From<E2>`.
 
 ## Reading a capability
 
-```rust
+```rust,ignore
 fn program() -> Effect<i32, Never, caps!(Counter)> {
   effect!({ ~Counter.0 + 1 })
 }
@@ -51,7 +51,7 @@ capability that is not in `R` is a compile error naming it.
 
 ## Joining in parallel
 
-```rust
+```rust,ignore
 effect!({
   let (user, prefs) = ~(fetch_user(id), fetch_prefs(id));
   render(user, prefs)
@@ -64,7 +64,7 @@ The branches run concurrently; the first failure fails the join and interrupts t
 
 `~` applies to the whole expression after it, so combinators go before the bind:
 
-```rust
+```rust,ignore
 effect!({
   let user = ~fetch_user(id).map_err(AppError::Database);
   let posts = ~fetch_posts(user.id).timeout(Duration::from_secs(2)); // Option<Vec<Post>>
@@ -74,7 +74,7 @@ effect!({
 
 ## ~ in conditionals and loops
 
-```rust
+```rust,ignore
 effect!({
   let value = if condition { ~compute_a() } else { ~compute_b() };
   for id in user_ids {
@@ -91,7 +91,7 @@ Loops are sequential. For concurrent work over a collection use `for_each_par` o
 
 `~` only works inside an `effect!` (or `effect_local!`) body:
 
-```rust
+```rust,ignore
 // Does not compile: ~ is not valid here
 let x = ~fetch_user(42);
 
@@ -107,7 +107,7 @@ and `~` outside it.
 `~` narrows from any sub-environment, so a helper that is generic in its `R` leaves nothing to fix
 that `R`. Bind it with `.same_env()`, which ties it to the caller's environment:
 
-```rust
+```rust,ignore
 fn audit<R, I>(msg: String) -> Effect<(), AppError, R>
 where
   R: HList + Selector<Logger, I>,

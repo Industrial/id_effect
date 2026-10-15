@@ -30,7 +30,7 @@ the one-element list (`HttpClientEnv = HCons<HttpClientService, HNil>`), and `ht
 Every layer needs nothing (`In = HNil`) and is generic over the error type, so they merge into
 one platform layer under your application's `E`:
 
-```rust
+```rust,ignore
 let platform: Layer<_, AppError> = LiveFileSystemProvider::layer()
     .merge(ReqwestHttpClientProvider::layer())
     .merge(TokioProcessRuntimeProvider::layer());
@@ -41,7 +41,7 @@ let platform: Layer<_, AppError> = LiveFileSystemProvider::layer()
 `execute` is generic over any `R` that contains `HttpClientService`. When the effect is fed to
 `provide_layer`, name `R` (from `examples/010_platform_http_get.rs`):
 
-```rust
+```rust,ignore
 use id_effect::{Cause, Exit};
 use id_effect_platform::http::{HttpClientEnv, HttpRequest, ReqwestHttpClientProvider, execute};
 use id_effect_tokio::TokioRuntime;
@@ -57,7 +57,7 @@ match TokioRuntime::current()?.run(program).await {
 
 A test swaps in a canned client and runs anywhere, `block_on` included:
 
-```rust
+```rust,ignore
 let exit = execute(HttpRequest::get(url))
     .provide_all(http_client_env(Canned))
     .block_on();

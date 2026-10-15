@@ -4,14 +4,14 @@ A first attempt at an environment type is a tuple. That works briefly, then beco
 
 ## The tuple explosion
 
-```rust
+```rust,ignore
 Effect<A, E, (Database, Logger)>                           // readable
 Effect<A, E, (Pool, Pool, Logger, Config, HttpClient)>     // which Pool is which?
 ```
 
 ## Fragility under change
 
-```rust
+```rust,ignore
 fn foo() -> Effect<A, E, (Database, Logger)>          // 0, 1
 fn foo() -> Effect<A, E, (Database, Config, Logger)>  // a teammate inserts Config
 ```
@@ -21,7 +21,7 @@ means something else.
 
 ## Same-type collision
 
-```rust
+```rust,ignore
 run((cache_pool, main_pool)); // compiles, wrong at runtime
 ```
 
@@ -42,7 +42,7 @@ the code that reads `Database` or `Logger`.
 The type is the identity, so two capabilities of the same Rust type cannot share an `R`
 (`caps!(Pool, Pool)` is a compile error). Give each a name with a newtype:
 
-```rust
+```rust,ignore
 struct MainDb(Pool);
 struct CacheDb(Pool);
 

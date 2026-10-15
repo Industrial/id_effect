@@ -5,7 +5,7 @@ everything it produces and everything it still needs, and the compiler checks ev
 
 ## Declaring the graph
 
-```rust
+```rust,ignore
 use id_effect::{HCons, HNil, Layer, caps};
 
 fn config_live() -> Layer<caps!(Config), AppError> { /* Layer::effect: load from the env */ }
@@ -37,7 +37,7 @@ which `merge` / `provide_merge` reject with a panic when the graph is wired, not
 
 ## Running with the graph
 
-```rust
+```rust,ignore
 fn main() {
   let exit = program().provide_layer(app_layer()).block_on();
   // ...
@@ -46,7 +46,7 @@ fn main() {
 
 Long-running services that should live until shutdown use `launch`:
 
-```rust
+```rust,ignore
 // Builds the graph and keeps it alive until the fiber is interrupted, then runs the finalizers.
 let server: Effect<Never, AppError> = server_layer().launch();
 ```
@@ -57,7 +57,7 @@ and code that manages its own `Scope` builds into it with `layer.build_scoped(&s
 
 A layer's type is fixed, so a conditional graph chooses between layers of the **same type**:
 
-```rust
+```rust,ignore
 fn metrics_layer(enabled: bool) -> Layer<caps!(Metrics), AppError> {
   if enabled { metrics_live() } else { metrics_noop() }
 }

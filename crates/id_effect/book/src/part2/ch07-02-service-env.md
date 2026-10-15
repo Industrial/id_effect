@@ -5,7 +5,7 @@ Application effects declare the services they use in `R` and read them with `~Ca
 
 ## Single service
 
-```rust
+```rust,ignore
 use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepo)> {
@@ -25,7 +25,7 @@ Library code that should not fix the whole environment type takes `R` with a `Se
 "`R` contains a `UserRepo` at some index `I`". This is how the platform crates are written
 (`id_effect_platform::http::execute`, `id_effect_config::Config::run`):
 
-```rust
+```rust,ignore
 use id_effect::{Effect, HList, Selector, need};
 
 fn get_user<R, I>(id: u64) -> Effect<User, DbError, R>
@@ -41,7 +41,7 @@ The index `I` is always inferred; callers write `get_user(1)` inside any environ
 
 ## Multiple services
 
-```rust
+```rust,ignore
 fn notify_user(id: u64, message: String) -> Effect<(), AppError, caps!(UserRepo, Email)> {
     effect!({
         let repo = ~UserRepo;

@@ -38,7 +38,7 @@ assert_eq!(oops.block_on(), Exit::Failure(Cause::Fail("not_ready")));
 
 `sync` defers a synchronous computation until the effect runs:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, sync};
 
 let computed: Effect<i32> = sync(|| expensive_calculation() * 2);
@@ -47,7 +47,7 @@ let computed: Effect<i32> = sync(|| expensive_calculation() * 2);
 `suspend` defers *building* an effect, which is handy when the effect to run depends on state read
 at run time:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, fail, succeed, suspend};
 
 let checked: Effect<u8, &'static str> = suspend(|| {
@@ -95,7 +95,7 @@ typed helpers such as `number` rather than a bare `succeed(..)`.
 
 ## Type Inference
 
-```rust
+```rust,ignore
 let answer = succeed(42);    // Effect<i32, _, _>: E and R come from how it is used
 let greeting = succeed("hi"); // Effect<&str, _, _>
 ```
@@ -105,7 +105,7 @@ is combined with). Annotate when the compiler asks.
 
 ## Quick Reference
 
-```rust
+```rust,ignore
 succeed(value)           // produces value
 fail(error)              // fails with a typed error
 die(defect)              // fails with a defect

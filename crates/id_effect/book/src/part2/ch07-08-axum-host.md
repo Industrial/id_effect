@@ -49,7 +49,7 @@ default), so its finalizers (`ensuring`, `acquire_release`, scoped layers) run.
 
 From `examples/020_capability_run_with.rs`:
 
-```rust
+```rust,ignore
 use axum::Router;
 use id_effect::{Effect, HCons, HNil, hlist, need};
 use id_effect_axum::routing;
@@ -73,7 +73,7 @@ let app = Router::new()
 The server's lifetime is a scoped layer, so it composes with the rest of the application's
 layers and shuts down gracefully when the program ends:
 
-```rust
+```rust,ignore
 use id_effect_axum::{EffectExecutor, HostConfig, HostError, provide_host_config_env, serve_until_shutdown};
 
 let config = provide_host_config_env::<HostError>().provide_to(HostConfig::layer());

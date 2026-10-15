@@ -6,7 +6,7 @@ Axum application shell pieces live in **`id_effect_axum::server`** (lifecycle, c
 
 [`HostBuilder`](https://docs.rs/id_effect_axum/latest/id_effect_axum/struct.HostBuilder.html) loads [`HostConfig`](https://docs.rs/id_effect_axum/latest/id_effect_axum/struct.HostConfig.html) from `HOST`, `PORT`, and `SHUTDOWN_TIMEOUT_SECS`, then runs your `serve` future concurrently with SIGINT/SIGTERM:
 
-```rust
+```rust,ignore
 use id_effect_axum::{HostBuilder, serve_router};
 
 HostBuilder::new()

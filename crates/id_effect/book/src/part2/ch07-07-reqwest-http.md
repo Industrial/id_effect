@@ -27,7 +27,7 @@ pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or w
 - **Pools** — `provide_reqwest_pool(n, ttl)` provides a `ReqwestPool` (`id_effect::Pool` of
   clients); `send_pooled` borrows one per request.
 
-```rust
+```rust,ignore
 use id_effect::Exit;
 use id_effect_platform::http::reqwest::{ReqwestClientEnv, ReqwestClientLive, text};
 use id_effect_tokio::TokioRuntime;

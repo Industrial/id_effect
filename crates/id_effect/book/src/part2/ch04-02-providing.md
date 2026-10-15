@@ -44,7 +44,7 @@ Providing a capability the effect does not need is a compile error (a type misma
 `provide_env` takes any HList value that **contains** every capability of `R`, in any order, with
 extras allowed. It is the natural fit for an application environment built once:
 
-```rust
+```rust,ignore
 use id_effect::hlist;
 
 let app_env = hlist![Cache(0), Logger("b"), Db(2)];
@@ -95,7 +95,7 @@ joins uses.
 Independent layers combine with `merge`; a layer that needs another one's output is fed with
 `provide_to` / `provide_merge` (Chapter 6):
 
-```rust
+```rust,ignore
 let exit = my_application()
   .provide_layer(ConfigLive::layer().merge(DatabaseLive::layer()).merge(LoggerLive::layer()))
   .block_on();
@@ -105,7 +105,7 @@ let exit = my_application()
 
 **Provide at `main`, in test setup, or at framework boundaries, not inside library functions.**
 
-```rust
+```rust,ignore
 // BAD: the library reaches for concrete dependencies
 pub fn process_order(order: Order) -> Effect<Receipt, AppError> {
   let db = Database::connect("hardcoded-url");

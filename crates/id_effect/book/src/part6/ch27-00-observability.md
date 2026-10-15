@@ -7,7 +7,7 @@ Part VI observability centers on [`id_effect_opentelemetry`](https://github.com/
 Install the OpenTelemetry providers once at process startup: `install_otel_starter(&providers, &config)` registers traces, metrics, logs and the `tracing` subscriber, and bridges `MetricRegistry::global()`. With the `otlp` feature, `install_from_config(OtelConfig::from_env()?)` builds OTLP providers from the environment in one call. Keep the returned guard alive.
 
 ```rust,no_run
-use id_effect::{Counter, Effect, succeed};
+use id_effect::{Counter, Effect, Metric, succeed};
 use id_effect_opentelemetry::{OtelConfig, install_from_config};
 
 # fn demo() -> Result<(), Box<dyn std::error::Error>> {

@@ -9,7 +9,7 @@ type; its type is its identity. Effects that need nothing have `R = HNil`, the d
 
 ## What R means
 
-```rust
+```rust,ignore
 use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
@@ -23,14 +23,15 @@ the macro, [`need::<Database>()`](./ch05-04-get-getmut.md) does the same.
 
 Library code can also stay generic over any environment that contains the capability:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, HList, Selector, need};
 
 fn get_user_in<R, I>(id: u64) -> Effect<User, DbError, R>
 where
   R: HList + Selector<Database, I> + Send + Sync + 'static,
 {
-  need::<Database>().flat_map(move |db| db.fetch_user_effect(id))
+  // `fetch_user_effect` needs nothing (`R = HNil`); `narrow` lifts it into the caller's `R`.
+  need::<Database>().flat_map(move |db| db.fetch_user_effect(id).narrow())
 }
 ```
 
@@ -39,7 +40,7 @@ where
 Library code does **not** wire dependencies. The program edge removes requirements from `R` until
 nothing is left, then runs the effect:
 
-```rust
+```rust,ignore
 use id_effect::hlist;
 
 // One capability at a time

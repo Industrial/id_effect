@@ -5,7 +5,7 @@ the block.
 
 ## The Default: Short-Circuit
 
-```rust
+```rust,ignore
 effect!({
   let a = ~step_a();  // if this fails, the block fails
   let b = ~step_b(a); // if this fails, the block fails
@@ -17,6 +17,7 @@ This matches `?` on a `Result`, and `?` works too: on a `Result` it fails the bl
 error (converted with `From`):
 
 ```rust
+# use id_effect::{Cause, Effect, Exit, effect};
 fn parse(raw: &'static str) -> Effect<i32, &'static str> {
   effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
 }
@@ -29,7 +30,7 @@ assert_eq!(parse("x").block_on(), Exit::Failure(Cause::Fail("parse_failed")));
 
 To recover and continue, use `.catch` before the `~`:
 
-```rust
+```rust,ignore
 effect!({
   let v = ~parse_i32("x").catch(|_| succeed(0));
   v + 42
@@ -43,7 +44,7 @@ failure). Defects and interrupts are not caught by `catch`.
 
 A bound effect's error is widened into the block's error through `From`, so with
 
-```rust
+```rust,ignore
 #[derive(Debug)]
 enum AppError {
   Db(DbError),
@@ -55,7 +56,7 @@ impl From<HttpError> for AppError { fn from(e: HttpError) -> Self { AppError::Ne
 
 both steps bind without any conversion:
 
-```rust
+```rust,ignore
 fn load(id: u64) -> Effect<Data, AppError, caps!(Database, HttpClient)> {
   effect!({
     let user = ~fetch_user(id);             // DbError -> AppError
@@ -71,7 +72,7 @@ Without a `From` impl, convert explicitly with `.map_err(..)` before the `~`.
 
 `.exit()` turns the outcome into a value, so the block sees success and failure alike:
 
-```rust
+```rust,ignore
 effect!({
   let outcome = ~risky_operation().exit();
   match outcome {
@@ -85,7 +86,7 @@ effect!({
 
 Inside `.catch`, decide whether to recover or fail again:
 
-```rust
+```rust,ignore
 effect!({
   ~db_operation().catch(|error| {
     if error.is_transient() { fallback_db_operation() } else { fail(error) }

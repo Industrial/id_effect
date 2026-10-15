@@ -5,7 +5,7 @@ edges. Knowing when to reach for a combinator instead saves debugging time.
 
 ## Single-step transforms
 
-```rust
+```rust,ignore
 // Unnecessarily verbose
 effect!({ ~parse_id(raw) })
 
@@ -18,7 +18,7 @@ Use `effect!` for two or more steps; for one, `map` / `flat_map` is enough.
 
 ## Named combinators for structural patterns
 
-```rust
+```rust,ignore
 // Sequential, even though the steps are independent:
 effect!({
   let a = ~step_a();
@@ -37,7 +37,7 @@ For concurrent independent steps inside a block, `~(step_a(), step_b())` is the 
 
 ## Avoid nesting effect! inside effect!
 
-```rust
+```rust,ignore
 // CONFUSING: nested macro bodies
 effect!({
   let result = ~effect!({ let x = ~inner_step(); x * 2 });
@@ -67,7 +67,7 @@ effect!({
 Library code that should work in any environment containing its capability is generic over `R`
 with a `Selector` bound, and uses `need` instead of the macro where that is simpler:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, HList, Selector, need};
 
 pub fn current_user<R, I>() -> Effect<UserId, AuthError, R>

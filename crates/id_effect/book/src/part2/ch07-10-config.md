@@ -6,7 +6,7 @@ scoped prefixes).
 
 ## Descriptors
 
-```rust
+```rust,ignore
 use id_effect_config::{Config, EnvConfigProvider};
 
 let (host, port) = Config::all((

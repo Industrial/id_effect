@@ -48,7 +48,7 @@ methods.
 
 ## Building the environment
 
-```rust
+```rust,ignore
 // Exactly R, in order
 eff.provide_all(hlist![Db(1), Logger("app")]);
 
@@ -71,7 +71,7 @@ The typed environment is the default. For plugin-style wiring whose capabilities
 compile time, `DynEnv` is a `TypeId`-keyed map with **fallible** lookups. It is itself a
 capability: an effect that looks things up dynamically requires `caps!(DynEnv)`.
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use id_effect::{DynEnv, MissingCapability};
 

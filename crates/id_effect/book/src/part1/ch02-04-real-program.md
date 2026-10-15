@@ -28,7 +28,7 @@ enum AppError {
 
 The user store is a capability: a plain value the program reads from its environment.
 
-```rust
+```rust,ignore
 use std::collections::HashMap;
 
 struct UserStore(HashMap<u64, User>);
@@ -36,7 +36,7 @@ struct UserStore(HashMap<u64, User>);
 
 ## The Individual Steps
 
-```rust
+```rust,ignore
 use id_effect::{Effect, caps, effect, fail, succeed};
 
 fn load_config(raw_name: &str) -> Effect<Config, AppError> {
@@ -61,7 +61,7 @@ fn format_greeting(config: &Config, user: &User) -> String {
 
 ## Composing the Program
 
-```rust
+```rust,ignore
 fn greet_user(app_name: &str, user_id: u64) -> Effect<String, AppError, caps!(UserStore)> {
   let config = load_config(app_name);
   effect!({
@@ -85,7 +85,7 @@ Read it like a recipe:
 
 At the edge of the program, provide the capability and run:
 
-```rust
+```rust,ignore
 use id_effect::{Cause, Exit};
 
 fn main() {

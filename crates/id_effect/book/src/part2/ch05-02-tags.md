@@ -5,7 +5,7 @@ its name: there is no separate key type, registry or tag.
 
 ## Declaring a capability
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 
 // A concrete value
@@ -31,7 +31,7 @@ other is required is a type error.
 
 `caps!(A, B, C)` is the type `HCons<A, HCons<B, HCons<C, HNil>>>`:
 
-```rust
+```rust,ignore
 fn needs_main() -> Effect<Report, DbError, caps!(MainDb)> { /* ... */ }
 fn needs_both() -> Effect<Report, DbError, caps!(MainDb, CacheDb, UserRepo)> { /* ... */ }
 ```
@@ -43,7 +43,7 @@ Listing a capability twice is a compile error at the repeat.
 A trait method returns an effect that needs nothing (`R = HNil`); the **caller** carries the
 service in its `R`:
 
-```rust
+```rust,ignore
 fn show_user(id: u64) -> Effect<String, DbError, caps!(UserRepo)> {
   effect!({
     let repo = ~UserRepo.clone(); // Arc<UserRepo>

@@ -4,7 +4,7 @@ A small blog API with three services, a layer graph, and production vs test wiri
 
 ## Domain
 
-```rust
+```rust,ignore
 struct User { id: u64, name: String, email: String }
 struct Post { id: u64, author_id: u64, title: String, body: String }
 
@@ -15,7 +15,7 @@ impl From<NotifyError> for AppError { fn from(e: NotifyError) -> Self { AppError
 
 ## Three service traits and their capabilities
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use id_effect::Effect;
 
@@ -38,7 +38,7 @@ pub struct Notifier(Arc<dyn NotificationService>);
 
 ## Business logic
 
-```rust
+```rust,ignore
 use id_effect::{caps, effect};
 
 fn get_author_feed(author_id: u64) -> Effect<(User, Vec<Post>), AppError, caps!(UserRepo, PostRepo)> {
@@ -66,7 +66,7 @@ fn register_user(name: String, email: String) -> Effect<User, AppError, caps!(Us
 
 ## Production wiring
 
-```rust
+```rust,ignore
 use id_effect::{HCons, HNil, Layer, hlist, need};
 
 fn pg_user_repo() -> Layer<HCons<UserRepo, HNil>, AppError, HCons<Database, HNil>> {

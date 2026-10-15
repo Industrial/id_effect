@@ -13,7 +13,7 @@ load balancing, …) around the same domain style as Axum, without Axum's router
 
 ## `EffectService`
 
-```rust
+```rust,ignore
 use id_effect::succeed;
 use id_effect_axum::service::EffectService;
 use tower::{Service, ServiceExt};

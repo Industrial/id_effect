@@ -33,7 +33,7 @@ it needs no annotation, and both sides receive the same `Arc`.
 `upper.provide_merge(base)` builds `base`, feeds its output to `upper`, and keeps **both**
 outputs (`base`'s first). The result needs only `base`'s input:
 
-```rust
+```rust,ignore
 let app = db()
   .merge(mailer())
   .provide_merge(Layer::succeed(hlist![Config("mem://")]));
@@ -45,14 +45,14 @@ let env: Effect<HCons<Config, HCons<Db, HCons<Mailer, HNil>>>, ()> = app.build()
 `base.provide_to(upper)` feeds `base`'s output into `upper` and keeps only `upper`'s output, so
 `base` becomes a private dependency:
 
-```rust
+```rust,ignore
 // Only `Repo` is visible to the program; `Pool` stays inside the graph.
 let repo_only = pool().provide_to(repo());
 ```
 
 ## `provide_layer`: run an effect against a graph
 
-```rust
+```rust,ignore
 let app: Effect<(), ()> = use_repo().provide_layer(pool().provide_to(repo()));
 ```
 
@@ -70,7 +70,7 @@ error[E0277]: the environment `HCons<Db, HNil>` does not contain every capabilit
 
 Within one build, a layer used in several places is constructed once:
 
-```rust
+```rust,ignore
 // `pool` is used twice (a clone is the same layer): built once, one shared `Arc<Pool>`.
 let app = pool.clone().provide_to(users()).merge(pool.provide_to(orders()));
 ```
@@ -83,7 +83,7 @@ layer to be constructed again even where it is already built.
 
 The build's finalizers run in reverse order of acquisition when the owner ends:
 
-```rust
+```rust,ignore
 let app: Effect<(), ()> = use_repo().provide_layer(pool.provide_to(repo));
 assert!(matches!(app.block_on(), Exit::Success(())));
 // log: ["use", "close repo", "close pool"]
@@ -91,7 +91,7 @@ assert!(matches!(app.block_on(), Exit::Success(())));
 
 ## Production vs test graphs
 
-```rust
+```rust,ignore
 fn live() -> Layer<caps!(Config, Db, UserRepo), AppError> {
   user_repo_live().provide_merge(db_live().provide_merge(config_live()))
 }

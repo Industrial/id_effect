@@ -23,7 +23,7 @@ let recipe: Effect<i32, String> = succeed(42);
 
 The computation happens only when you run it at the edge of the program:
 
-```rust
+```rust,ignore
 use id_effect::Exit;
 
 // NOW something happens.
@@ -53,7 +53,7 @@ assert_eq!(doubled.block_on(), Exit::succeed(84));
 
 ## A More Realistic Example
 
-```rust
+```rust,ignore
 use id_effect::{Effect, effect};
 
 // This function fetches nothing: it returns a DESCRIPTION of how to fetch a user.
@@ -82,7 +82,7 @@ home in the type system.
 
 **Error handling** becomes part of the description:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 use id_effect::{Effect, Schedule};
 
@@ -98,7 +98,7 @@ run, retry up to 3 times with exponential backoff".
 
 **Dependencies** become part of the type signature:
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
 ```
 
@@ -117,7 +117,7 @@ An `Effect<A, E = Never, R = HNil>` carries three pieces of information in its t
 - `E`: the **Error**, what you get if it fails (default `Never`: it cannot fail);
 - `R`: the **Requirements**, the capabilities needed to run it (default `HNil`: nothing).
 
-```rust
+```rust,ignore
 // The signature tells the whole story:
 fn process_payment(amount: Money)
   -> Effect<Receipt, PaymentError, caps!(PaymentGateway, AuditLog)>

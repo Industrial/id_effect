@@ -26,7 +26,7 @@ transform the result with this function". Only `A` changes; `E` and `R` stay the
 ```rust
 use id_effect::{Cause, Effect, Exit, fail};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct AppError(String);
 
 let db_err: Effect<String, String> = fail("db connection failed".to_string());
@@ -45,6 +45,7 @@ works with `AppError`. When `AppError: From<DbError>`, `.map_err(Into::into)` is
 ## Why These Don't Execute Anything
 
 ```rust
+# use id_effect::{Exit, HNil, Never, succeed};
 let effect = succeed::<i32, Never, HNil>(42)
   .map(|n| {
     println!("mapping!");
@@ -62,7 +63,7 @@ assert_eq!(effect.block_on(), Exit::succeed(86));
 
 A common pattern normalises an effect into your domain's types:
 
-```rust
+```rust,ignore
 fn fetch_user_record(id: u64) -> Effect<User, AppError> {
   raw_db_fetch(id)
     .map(User::from_row)

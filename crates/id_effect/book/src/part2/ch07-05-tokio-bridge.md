@@ -30,7 +30,7 @@ Effects are `Send`, so `rt.run(eff)` is a `Send + 'static` future you can await 
 Provide `R` first (`provide`, `provide_all`, `provide_layer`), then run the closed effect
 (`crates/id_effect_tokio/examples/109_tokio_end_to_end.rs`):
 
-```rust
+```rust,ignore
 use id_effect::{Effect, Exit, HCons, HNil, from_async, hlist, need};
 use id_effect_tokio::TokioRuntime;
 

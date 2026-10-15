@@ -2,7 +2,7 @@
 
 Consider three steps that each depend on the previous result:
 
-```rust
+```rust,ignore
 fn step_a() -> Effect<i32, Err> { succeed(1) }
 fn step_b(n: i32) -> Effect<i32, Err> { succeed(n * 2) }
 fn step_c(n: i32) -> Effect<String, Err> { succeed(n.to_string()) }
@@ -10,7 +10,7 @@ fn step_c(n: i32) -> Effect<String, Err> { succeed(n.to_string()) }
 
 Written with raw `flat_map`:
 
-```rust
+```rust,ignore
 let program = step_a().flat_map(|a| step_b(a).flat_map(|b| step_c(b)));
 ```
 
@@ -32,7 +32,7 @@ do
 Each `←` means "run this effect and bind its result to this name". If any step fails, the whole
 computation short-circuits. id_effect spells `←` as a prefix `~`:
 
-```rust
+```rust,ignore
 effect!({
   let a = ~step_a();
   let b = ~step_b(a);
@@ -47,7 +47,7 @@ The body of `effect!` is compiled into an async block that runs on the effect's 
 `~expr` runs the sub-effect `expr` on that same fiber and evaluates to its success value; a failure
 ends the block with that failure. The result behaves like the hand-written chain:
 
-```rust
+```rust,ignore
 step_a().flat_map(|a| step_b(a).flat_map(step_c))
 ```
 
@@ -59,7 +59,7 @@ the value of the last expression is the success value. The body must be `Send` (
 
 Use **one `effect!` per function** and branch inside it:
 
-```rust
+```rust,ignore
 // BAD: two macro bodies for one computation
 if flag {
   effect!({ ~a() })
@@ -77,7 +77,7 @@ effect!({
 
 Not every line has to be an effect:
 
-```rust
+```rust,ignore
 effect!({
   let user = ~fetch_user(id);
   let name = user.name.to_uppercase(); // pure: no ~

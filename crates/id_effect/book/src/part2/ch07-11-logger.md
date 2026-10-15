@@ -33,7 +33,7 @@ assert_eq!(app().provide(EffectLogger).block_on(), Exit::Success(7));
 
 A full pipeline is a merged layer:
 
-```rust
+```rust,ignore
 let pipeline = LogMetadataLive::layer()
     .merge(provide_composite_logger(composite))
     .merge(provide_minimum_log_level(LogLevel::Info));

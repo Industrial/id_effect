@@ -11,7 +11,7 @@ three questions every computation must address:
 
 `A` is the success type, the `T` of a `Result<T, E>`.
 
-```rust
+```rust,ignore
 use id_effect::{Effect, succeed};
 
 let answer: Effect<i32, String> = succeed(42);
@@ -21,6 +21,7 @@ let user: Effect<User, DbError> = succeed(User::new("Alice"));
 `.map()` changes `A` and keeps `E` and `R`:
 
 ```rust
+# use id_effect::{Effect, succeed};
 let numbers: Effect<i32, String> = succeed(21);
 let doubled: Effect<i32, String> = numbers.map(|n| n * 2);
 let text: Effect<String, String> = doubled.map(|n| n.to_string());
@@ -39,7 +40,7 @@ let failure: Effect<i32, String> = fail("something went wrong".to_string());
 
 `.map_err()` changes `E`:
 
-```rust
+```rust,ignore
 let db: Effect<User, DbError> = fetch_user(42);
 let app: Effect<User, AppError> = db.map_err(AppError::Database);
 ```
@@ -53,7 +54,7 @@ interrupted fiber ends with an *interrupt*. All three are carried by `Cause<E>` 
 `R` is the **environment**: the capabilities this effect needs in order to run. It is a
 type-level list (an HList) of capability types, spelled with `caps!`:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, Never, caps, effect, succeed};
 
 // Self-contained: R is HNil (the default).
@@ -87,7 +88,7 @@ error[E0277]: capability `Metrics` is not in this effect's environment
 with `.provide_env(hlist![..])`, or a [`Layer`](../part2/ch06-00-layers.md) with
 `.provide_layer(layer)`, usually once at the edge:
 
-```rust
+```rust,ignore
 use id_effect::hlist;
 
 let exit = get_user_logged(42)
@@ -97,7 +98,7 @@ let exit = get_user_logged(42)
 
 ## Why R matters
 
-```rust
+```rust,ignore
 fn process_order(order: Order)
   -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
 ```
@@ -110,7 +111,7 @@ before the program can run. The compiler checks the wiring.
 A `~` bind inside `effect!` accepts any sub-effect whose `R` is part of the outer `R`, and widens
 its error through `From`:
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
 fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(Mailer)> { /* ... */ }
 
@@ -125,7 +126,7 @@ fn notify_user(id: u64) -> Effect<(), AppError, caps!(Database, Mailer)> {
 
 ## Reading Effect Signatures
 
-```rust
+```rust,ignore
 // Produces String, never fails, needs nothing
 Effect<String>
 

@@ -8,7 +8,7 @@ This section is not a claim that “async is broken.” It is a concise picture 
 
 A typical async workflow chains several operations. Each step may fail in its own way, so you map errors into a domain type and propagate:
 
-```rust
+```rust,ignore
 async fn process_order(order: Order) -> Result<Receipt, ProcessError> {
     let config = get_config()
         .await
@@ -42,7 +42,7 @@ The business steps are clear, but the `.map_err` noise is repetitive. The domain
 
 Another common shape is the handler that needs many clients and cross-cutting services:
 
-```rust
+```rust,ignore
 async fn handle_request(
     db: &DatabasePool,
     cache: &RedisClient,
@@ -64,7 +64,7 @@ Dependencies are explicit, which is good for honesty, but every layer between he
 
 Fire-and-forget background tasks are easy to start and harder to reason about:
 
-```rust
+```rust,ignore
 fn start_background_worker(db: DatabasePool) {
     tokio::spawn(async move {
         loop {

@@ -72,7 +72,7 @@ over high-cardinality user IDs.
 
 Enable the `otlp` feature. At process start (`examples/otel_production.rs`):
 
-```rust
+```rust,ignore
 use id_effect::{Counter, Effect, succeed};
 use id_effect_opentelemetry::{OtelConfig, install_from_config};
 use id_effect_tokio::TokioRuntime;

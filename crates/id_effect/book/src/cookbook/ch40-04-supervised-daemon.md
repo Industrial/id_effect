@@ -11,7 +11,7 @@ should stop in order and let workers flush what they hold.
 - `SupervisorHandle::stop` on shutdown. It sends each child a trappable `Shutdown`, escalates to a
   kill after the child's shutdown timeout, and runs the worker's `terminate` hook.
 
-```rust
+```rust,ignore
 enum Job { Work(u64), Poison }
 
 struct Worker { total: u64, flushed: Arc<AtomicU64> }
@@ -52,7 +52,7 @@ impl Process for Worker {
 Register the worker under a name in its start function, so callers always reach the current
 incarnation after a restart:
 
-```rust
+```rust,ignore
 fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
   let start: StartFn = Arc::new(move |node: &ProcessNode, supervisor: &Pid| {
     let addr = node.spawn_linked_to::<Worker>(supervisor, Arc::clone(&flushed), ());

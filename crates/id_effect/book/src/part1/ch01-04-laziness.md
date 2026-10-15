@@ -10,7 +10,7 @@ Rust futures are lazy too: calling an `async fn` returns a `Future`, and its bod
 future is polled. The difference is in **what your API returns**: a raw `Future` the caller must
 await, or an `Effect` value it can store, wrap and run later with an explicit environment.
 
-```rust
+```rust,ignore
 // Returns a Future; the HTTP work runs when it is awaited.
 async fn fetch_user_async(id: u64) -> Result<User, HttpError> {
   http_get(&format!("https://api.example.com/users/{id}")).await
@@ -27,7 +27,7 @@ fn fetch_user(id: u64) -> Effect<User, HttpError, caps!(HttpClient)> {
 
 ## Superpower #1: Compose First, Run Later
 
-```rust
+```rust,ignore
 fn load_dashboard(user_id: u64) -> Effect<DashboardPage, AppError, caps!(Database, Cache)> {
   effect!({
     let user = ~fetch_user(user_id);
@@ -54,7 +54,7 @@ transformed.
 Because an effect is a description, you can wrap it with new behaviour without touching the
 original:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 use id_effect::{Effect, Schedule};
 
@@ -93,7 +93,7 @@ value. For code that sleeps or retries, `TestExecutor` runs it on a virtual cloc
 
 An `Effect` executes only at an explicit edge:
 
-```rust
+```rust,ignore
 // In a binary or another synchronous entry point
 let exit = program.block_on();
 

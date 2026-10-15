@@ -5,7 +5,7 @@ want `Effect<Effect<B, E, R>, E, R>`, you want `Effect<B, E, R>`. That's `flat_m
 
 ## The Problem with map for Effects
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
 fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { /* ... */ }
 
@@ -17,7 +17,7 @@ let wrong = get_user(1).map(|user| get_posts(user.id));
 
 `flat_map` takes a function `A → Effect<B, E, R>` and flattens the result:
 
-```rust
+```rust,ignore
 let combined: Effect<Vec<Post>, DbError, caps!(Database)> =
   get_user(1).flat_map(|user| get_posts(user.id));
 ```
@@ -36,7 +36,7 @@ assert_eq!(program.block_on(), Exit::succeed(42));
 
 Deep chains get noisy:
 
-```rust
+```rust,ignore
 let program = get_user(1).flat_map(|user| {
   get_posts(user.id).flat_map(move |posts| render_page(user, posts))
 });
@@ -48,7 +48,7 @@ This is where the `effect!` macro comes in.
 
 `effect!` turns `flat_map` chains into sequential code with the `~` operator:
 
-```rust
+```rust,ignore
 use id_effect::{Effect, caps, effect};
 
 fn page() -> Effect<Page, AppError, caps!(Database)> {
@@ -69,7 +69,7 @@ effect. `render_page` (no `~`) is an ordinary Rust expression that runs as part 
 
 Like `?` on a `Result`, if any `~` step fails, the whole block stops with that error:
 
-```rust
+```rust,ignore
 effect!({
   let user = ~get_user(999); // if this fails, the block ends here
   let posts = ~get_posts(user.id);
@@ -90,7 +90,7 @@ The steps are sequential. To run independent steps concurrently, bind a tuple:
 
 ## The Full Picture
 
-```rust
+```rust,ignore
 // Equivalent:
 
 // 1. Explicit flat_map
