@@ -16,21 +16,17 @@ pub mod macro_support;
 mod resource;
 mod runloop;
 
-#[allow(unused_imports)] // filled by k-core-runloop
+#[allow(unused_imports)] // crate-internal items only (`crate::next::kernel::AnyBox` etc.)
 pub use anybox::*;
 #[allow(unused_imports)] // filled by k-typed-r
 pub use bind::*;
 #[allow(unused_imports)] // filled by k-macros-next
 pub use bind_same::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use cause::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use constructors::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use ctx::*;
 #[allow(unused_imports)] // filled by k-edge
 pub use edge::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use effect::*;
 #[allow(unused_imports)] // filled by k-fiber-tree
 pub use fork::*;
@@ -38,5 +34,4 @@ pub use fork::*;
 pub use local::*;
 #[allow(unused_imports)] // filled by k-fiber-tree
 pub use resource::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use runloop::*;
