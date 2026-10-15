@@ -1,5 +1,7 @@
 //! Create a Cursor Cloud Agent and poll until idle (requires `CURSOR_API_KEY`).
 
+use id_effect::next::HNil;
+use id_effect::next::compat::IntoNext;
 use id_effect::succeed;
 use id_effect_ai::{
   AiConfig, AiError, CreateAgentRequest, CursorAgentsClient, HttpCursorAgentsClient,
@@ -39,5 +41,5 @@ fn main() -> ExitCode {
           succeed::<(), AiError, ()>(())
         })
     });
-  run_main(effect, (), RunMainConfig::minimal())
+  run_main(effect.into_next(), HNil, RunMainConfig::minimal())
 }

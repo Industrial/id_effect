@@ -1,6 +1,8 @@
 //! CLI: ask once via OpenAI or Anthropic (`--vendor`).
 
 use clap::{Parser, ValueEnum};
+use id_effect::next::HNil;
+use id_effect::next::compat::IntoNext;
 use id_effect::{Env, build_env, succeed};
 use id_effect_ai::{
   AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, complete,
@@ -54,5 +56,5 @@ fn main() -> ExitCode {
     println!("{}", resp.content);
     succeed::<(), AiError, Env>(())
   });
-  run_main(effect, env, RunMainConfig::minimal())
+  run_main(effect.into_next_with(env), HNil, RunMainConfig::minimal())
 }

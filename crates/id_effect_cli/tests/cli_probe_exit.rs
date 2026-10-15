@@ -31,3 +31,16 @@ mod ie_cli_probe_when_mode_fail {
     assert_eq!(status.code(), Some(1));
   }
 }
+
+mod ie_cli_probe_when_mode_die {
+  use super::*;
+
+  #[test]
+  fn exits_with_code_101() {
+    let status = probe()
+      .args(["--mode", "die"])
+      .status()
+      .expect("spawn ie_cli_probe");
+    assert_eq!(status.code(), Some(101));
+  }
+}
