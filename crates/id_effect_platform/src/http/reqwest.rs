@@ -1,8 +1,8 @@
 //! [`reqwest`](https://docs.rs/reqwest) helpers: `send`, JSON/schema decode, and client pools.
 //!
-//! For portable [`HttpClient`](super::HttpClient) / [`HttpRequest`](super::HttpRequest)
-//! boundaries, use the parent [`super`] module (`execute`, `execute_stream`,
-//! [`ReqwestHttpClient`](super::ReqwestHttpClient)).
+//! For portable [`HttpClient`](crate::http::HttpClient) /
+//! [`HttpRequest`](crate::http::HttpRequest) boundaries, use the parent [`crate::http`] module
+//! (`execute`, `execute_stream`, [`ReqwestHttpClient`](crate::http::ReqwestHttpClient)).
 //!
 //! The capabilities are [`ReqwestClient`] ([`ReqwestClientLive::layer`],
 //! [`provide_reqwest_client`]) and [`ReqwestPool`] ([`provide_reqwest_pool`]). Each helper reads

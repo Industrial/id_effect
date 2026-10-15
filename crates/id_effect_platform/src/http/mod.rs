@@ -613,5 +613,4 @@ mod tests {
   }
 }
 
-/// Reqwest-specific HTTP helpers (migrated from `id_effect_platform::http::reqwest`).
 pub mod reqwest;
