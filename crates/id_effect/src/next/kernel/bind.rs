@@ -61,7 +61,6 @@ impl<R> Ctx<R> {
 impl<R: Send + Sync + 'static> Ctx<R> {
   /// Binds an effect over exactly this body's environment: shares the `Arc` (no projection).
   /// The building block of the `SameEnv` impl of [`Bindable`] (`kernel/bind_same.rs`).
-  #[allow(dead_code)] // used by k-macros-next (kernel/bind_same.rs)
   pub(crate) fn bind_same_env<B, E2>(&self, eff: Effect<B, E2, R>) -> BindFuture<B, E2>
   where
     B: Send + 'static,
@@ -184,7 +183,7 @@ impl<B: Send + 'static, E: Send + 'static> BindFuture<B, E> {
 
 /// Hands a sub-effect's outcome to the body: the typed error as `Err`, every other cause as a
 /// panic that the enclosing runloop converts back (`cause_from_panic`).
-fn surface<B, E>(r: Result<B, Cause<E>>) -> Result<B, E> {
+pub(crate) fn surface<B, E>(r: Result<B, Cause<E>>) -> Result<B, E> {
   let cause = match r {
     Ok(b) => return Ok(b),
     Err(c) => c,

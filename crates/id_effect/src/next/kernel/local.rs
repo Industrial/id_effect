@@ -501,7 +501,6 @@ where
 
   /// Drives this effect under `ctx`'s env and fiber, as the returned future's own local runloop
   /// (crate hook for `effect_local_next!` binds).
-  #[allow(dead_code)] // used by k-macros-next (`~` binds inside `effect_local_next!`)
   pub(crate) fn run_in(self, ctx: Ctx<R>) -> LocalRunFuture<A, E> {
     let state = match self.node {
       LNode::Ready(r) => LRunState::Ready(Some(r)),
