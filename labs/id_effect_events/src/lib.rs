@@ -61,5 +61,6 @@ pub use es_entity::{
 
 #[cfg(feature = "es-entity")]
 pub use providers::{
-  EventJournalBackend, provide_es_entity_events, provide_es_entity_events_from_pool,
+  EventJournalBackend, EventJournalEnv, provide_es_entity_events,
+  provide_es_entity_events_from_pool,
 };

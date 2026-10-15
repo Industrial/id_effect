@@ -45,7 +45,8 @@ let stored = Runtime::global().run(store.read("acct", 1)).await.into_result()?; 
 
 - **An unmigrated (v1) caller** wraps a store call with the bridge:
   `use id_effect::next::compat::IntoV1; run_async(store.append(..).into_v1::<()>(), ())`.
-- The es-entity `ProviderBox` providers (`provide_es_entity_events*`) are unchanged.
+- The es-entity providers (`provide_es_entity_events*`) are `next::Layer`s since k-retire-v1
+  (last section).
 
 ## `id_effect_parse`: schema bridge unchanged
 
@@ -91,3 +92,30 @@ let err = value.unwrap_err().fail_option(); // Some(ParseStreamError::..) on a t
 ## `id_effect_graph`: unchanged
 
 `id_effect_graph` has no `id_effect` dependency.
+
+## `id_effect_events` (feature `es-entity`): the journal providers are `next::Layer`s (k-retire-v1)
+
+With the v1 capability DI retired, `provide_es_entity_events` and
+`provide_es_entity_events_from_pool` keep their names and arguments but return a
+`next::Layer` instead of a `ProviderBox`. The capability is still `EventJournalBackend`
+(`Arc<EsEntityPgBackend>`); the new alias `EventJournalEnv = HCons<EventJournalBackend, HNil>` names
+the layers' output. They need nothing (`In = HNil`) and never fail, so `E` is the error type of
+the graph they join.
+
+| 0.6 | 0.7 |
+|---|---|
+| `provide_es_entity_events(backend) -> ProviderBox` | `provide_es_entity_events(backend) -> Layer<EventJournalEnv, E>` |
+| `provide_es_entity_events_from_pool(pool) -> ProviderBox` | `provide_es_entity_events_from_pool(pool) -> Layer<EventJournalEnv, E>` |
+| `Needs::<EventJournalBackend>::need(&env)` | `need::<EventJournalBackend>()` in an effect over `R: Selector<EventJournalBackend, I>` |
+
+```rust
+// 0.6
+let env = build_env([provide_es_entity_events_from_pool(pool)])?;
+let backend = Needs::<EventJournalBackend>::need(&env).clone();
+
+// 0.7
+use id_effect::next::{Effect, need};
+let program: Effect<_, MyError, EventJournalEnv> =
+  need::<EventJournalBackend>().flat_map(|slot| use_backend(EventJournalBackend::clone(&slot)));
+let exit = program.provide_layer(provide_es_entity_events_from_pool(pool)).block_on();
+```
