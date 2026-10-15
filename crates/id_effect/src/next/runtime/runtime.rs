@@ -163,15 +163,15 @@ impl fmt::Debug for Runtime {
 }
 
 impl Runtime {
-  /// A runtime that owns a new multi-thread tokio runtime (time driver enabled) and runs fibers
-  /// on its [`TokioExecutor`].
+  /// A runtime that owns a new multi-thread tokio runtime (all drivers enabled: time, plus I/O
+  /// for reqwest, `tokio::process` and sockets) and runs fibers on its [`TokioExecutor`].
   ///
   /// # Errors
   ///
   /// If the tokio runtime cannot be built (for example, worker threads cannot be spawned).
   pub fn new() -> std::io::Result<Self> {
     let rt = ::tokio::runtime::Builder::new_multi_thread()
-      .enable_time()
+      .enable_all()
       .thread_name("id-effect-next")
       .build()?;
     Ok(Self {
