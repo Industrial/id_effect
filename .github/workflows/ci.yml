@@ -27,6 +27,13 @@ jobs:
           fetch-depth: 0
       - name: Version drift (examples/templates pin the workspace version)
         run: bash scripts/check-version-drift.sh
+      - name: Scorecard (validate, METHOD §5.2 self-test, committed results stable)
+        run: |
+          set -euo pipefail
+          bash scripts/scorecard.sh --validate --self-test
+          for v in 0.6.0 0.7.0; do
+            bash scripts/scorecard.sh --json "$v" | diff - "docs/scorecard/results/v$v.json"
+          done
       - name: Install Nix (formatters for treefmt)
         uses: cachix/install-nix-action@v31
         with:

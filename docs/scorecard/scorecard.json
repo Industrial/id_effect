@@ -1,0 +1,1140 @@
+{
+	"schema_version": 1,
+	"method_version": "1.0",
+	"method_doc": "METHOD.md",
+	"competitor_snapshot": {
+		"date": "2026-10-14",
+		"assessor": "Claude Opus 5.5 (expert judgment, see METHOD.md §4)"
+	},
+	"frameworks": [
+		{
+			"id": "id_effect",
+			"name": "id_effect",
+			"scope": "Published crates of the workspace at the scored tag; labs count under the labs cap (METHOD.md §3.2)"
+		},
+		{
+			"id": "effect_ts",
+			"name": "Effect-TS",
+			"scope": "effect + @effect/* packages"
+		},
+		{ "id": "zio", "name": "ZIO", "scope": "ZIO 2 + official zio-* ecosystem" },
+		{ "id": "otp", "name": "OTP", "scope": "Erlang/OTP distribution only" },
+		{
+			"id": "phoenix",
+			"name": "Phoenix",
+			"scope": "Phoenix + standard Elixir stack (Ecto, Oban, Swoosh, LiveView)"
+		},
+		{
+			"id": "spring",
+			"name": "Spring",
+			"scope": "Spring Boot + Spring projects"
+		},
+		{
+			"id": "dotnet",
+			"name": ".NET",
+			"scope": "ASP.NET Core + EF Core + Aspire + Microsoft.Extensions"
+		},
+		{
+			"id": "rails",
+			"name": "Rails",
+			"scope": "Rails 8 defaults + de facto gems (discounted)"
+		},
+		{
+			"id": "django",
+			"name": "Django",
+			"scope": "Django + DRF + de facto packages (discounted)"
+		},
+		{
+			"id": "laravel",
+			"name": "Laravel",
+			"scope": "Laravel + first-party packages"
+		},
+		{
+			"id": "nextjs",
+			"name": "Next.js",
+			"scope": "Next.js + Vercel-adjacent defaults"
+		}
+	],
+	"groups": [
+		{
+			"id": "core",
+			"name": "Core model",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.5
+		},
+		{
+			"id": "conc",
+			"name": "Concurrency",
+			"w_enterprise": 0.75,
+			"w_runtime": 1.5
+		},
+		{
+			"id": "fault",
+			"name": "Fault tolerance",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.5
+		},
+		{
+			"id": "dist",
+			"name": "Distribution",
+			"w_enterprise": 0.75,
+			"w_runtime": 1.25
+		},
+		{ "id": "data", "name": "Data", "w_enterprise": 1.5, "w_runtime": 0.5 },
+		{
+			"id": "web",
+			"name": "Web & API",
+			"w_enterprise": 1.25,
+			"w_runtime": 0.5
+		},
+		{ "id": "sec", "name": "Security", "w_enterprise": 1.5, "w_runtime": 0.5 },
+		{
+			"id": "obs",
+			"name": "Observability",
+			"w_enterprise": 1.25,
+			"w_runtime": 1.0
+		},
+		{
+			"id": "msg",
+			"name": "Messaging & jobs",
+			"w_enterprise": 1.0,
+			"w_runtime": 0.75
+		},
+		{ "id": "ai", "name": "AI", "w_enterprise": 0.5, "w_runtime": 0.25 },
+		{ "id": "test", "name": "Testing", "w_enterprise": 1.0, "w_runtime": 1.0 },
+		{
+			"id": "dx",
+			"name": "Developer experience",
+			"w_enterprise": 1.5,
+			"w_runtime": 0.75
+		},
+		{
+			"id": "eco",
+			"name": "Ecosystem & trust",
+			"w_enterprise": 1.5,
+			"w_runtime": 0.5
+		}
+	],
+	"tracks": {
+		"T0": "Trust & governance",
+		"T1": "First hour (onboarding & DX)",
+		"T2": "Core runtime completeness",
+		"T3": "Data platform",
+		"T4": "Web & API",
+		"T5": "Security",
+		"T6": "Operations & observability",
+		"T7": "Async work (jobs, messaging, mail, events)",
+		"T8": "Distribution & realtime",
+		"T9": "Breadth (AI, GraphQL, admin, i18n, UI)"
+	},
+	"competitor_order": [
+		"effect_ts",
+		"zio",
+		"otp",
+		"phoenix",
+		"spring",
+		"dotnet",
+		"rails",
+		"django",
+		"laravel",
+		"nextjs"
+	],
+	"rows": [
+		{
+			"id": "core.typed-effect",
+			"group": "core",
+			"name": "Typed success / error / requirements",
+			"measures": "Errors and dependencies are tracked in the type of a program value; missing handling is a compile error.",
+			"competitors": [95, 95, 40, 40, 35, 45, 15, 15, 15, 25],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 88, "0.7.0": 92 },
+			"evidence": "Effect<A,E=Never,R=HNil> is Send; typed HList R; compile-fail UI tests in crates/id_effect/tests/ui/.",
+			"targets": { "1.0.0": 95 }
+		},
+		{
+			"id": "core.di",
+			"group": "core",
+			"name": "Typed dependency injection",
+			"measures": "Declaring, providing, overriding and scoping services, checked before run time.",
+			"competitors": [92, 90, 30, 35, 95, 92, 30, 25, 80, 15],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 85, "0.7.0": 91 },
+			"evidence": "crates/id_effect/src/layer.rs (succeed/effect/scoped/merge/provide_to/fresh/launch), caps!/need::<K>(); tests layer*.rs.",
+			"targets": { "0.9.0": 93, "1.0.0": 95 }
+		},
+		{
+			"id": "core.ergonomics",
+			"group": "core",
+			"name": "Composition ergonomics",
+			"measures": "How short and readable everyday sequential/parallel code is.",
+			"competitors": [88, 80, 75, 85, 75, 88, 92, 88, 90, 85],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 68, "0.7.0": 72 },
+			"evidence": "effect! sequential binds, ~(a,b) parallel join; retry/repeat need factories; pipe helpers removed.",
+			"targets": { "0.8.0": 76, "1.0.0": 85 }
+		},
+		{
+			"id": "core.cause",
+			"group": "core",
+			"name": "Failure model (Cause / Exit)",
+			"measures": "Structured failure: expected errors, defects, interruption, composition and rendering.",
+			"competitors": [95, 95, 60, 55, 50, 55, 40, 40, 40, 30],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 85, "0.7.0": 88 },
+			"evidence": "crates/id_effect/src/failure/{cause,exit}.rs; Die(Defect) keeps panic payload; tests/panic.rs.",
+			"targets": { "1.0.0": 92 }
+		},
+		{
+			"id": "core.scope",
+			"group": "core",
+			"name": "Resource safety (Scope / acquire-release)",
+			"measures": "Guaranteed release on success, failure and interruption; scoped lifetimes.",
+			"competitors": [95, 95, 75, 70, 70, 80, 50, 50, 45, 40],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 85, "0.7.0": 88 },
+			"evidence": "kernel/resource.rs acquire_use_release/ensuring; finalizers run on interrupt; Layer::scoped.",
+			"targets": { "1.0.0": 92 }
+		},
+		{
+			"id": "core.interrupt",
+			"group": "core",
+			"name": "Interruption and cancellation",
+			"measures": "Cooperative cancellation, masking, propagation to children, finalizer semantics.",
+			"competitors": [95, 95, 90, 85, 45, 80, 30, 35, 25, 50],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 68, "0.7.0": 85 },
+			"evidence": "uninterruptible/uninterruptible_mask/interruptible (kernel/resource.rs), parent interrupts children; tests/fibers.rs. No on_interrupt.",
+			"targets": { "0.8.0": 90 }
+		},
+		{
+			"id": "core.race",
+			"group": "core",
+			"name": "timeout / race / zip-par combinators",
+			"measures": "First-class timeout, race, parallel zip/for-each with bounded concurrency.",
+			"competitors": [95, 95, 85, 80, 70, 85, 45, 40, 45, 55],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 25, "0.7.0": 88 },
+			"evidence": "crates/id_effect/src/race.rs, par.rs; tests race_timeout.rs, par.rs. No race_with/disconnect.",
+			"targets": { "0.8.0": 92 }
+		},
+
+		{
+			"id": "conc.fibers",
+			"group": "conc",
+			"name": "Lightweight fibers / processes",
+			"measures": "Cost and semantics of spawning, joining and supervising many concurrent tasks.",
+			"competitors": [92, 95, 98, 96, 80, 85, 45, 40, 30, 60],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 78, "0.7.0": 88 },
+			"evidence": "Executor trait, real wakers; spawn_join_10k 6.67s → 17.2ms (docs/benchmarks/REPORT-0.7.md).",
+			"targets": { "1.0.0": 92 }
+		},
+		{
+			"id": "conc.coordination",
+			"group": "conc",
+			"name": "Coordination primitives",
+			"measures": "Queue, PubSub, Deferred, Semaphore, Ref, Latch, channels; no panics on misuse.",
+			"competitors": [95, 95, 70, 75, 80, 85, 40, 35, 35, 35],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 82, "0.7.0": 85 },
+			"evidence": "Waker-based constructors; coordination/channel.rs panic-free; streaming/channel.rs:306 still .expect; queue_bounded 2.55x slower than 0.6.",
+			"targets": { "0.8.0": 90 }
+		},
+		{
+			"id": "conc.stm",
+			"group": "conc",
+			"name": "Software transactional memory",
+			"measures": "Composable transactions over shared memory (TRef/TMap/TQueue) with retry/orElse.",
+			"competitors": [85, 95, 35, 30, 20, 15, 5, 5, 5, 5],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 55, "0.7.0": 62 },
+			"evidence": "crates/id_effect_fp/src/stm/mod.rs parks on wakers; still in maintenance-tier fp crate.",
+			"targets": { "0.11.0": 85 }
+		},
+		{
+			"id": "conc.parallel",
+			"group": "conc",
+			"name": "Parallel CPU compute",
+			"measures": "Built-in data-parallel / CPU-bound execution with admission control.",
+			"competitors": [35, 75, 55, 50, 80, 88, 25, 25, 20, 30],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 88, "0.7.0": 88 },
+			"evidence": "crates/id_effect/src/compute/*; Concurrency::Inherit from Fabric.",
+			"targets": { "1.0.0": 92 }
+		},
+		{
+			"id": "conc.perf",
+			"group": "conc",
+			"name": "Raw performance and footprint",
+			"measures": "Throughput, latency and memory of typical workloads.",
+			"competitors": [50, 70, 60, 65, 72, 86, 35, 35, 45, 55],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 85, "0.7.0": 90 },
+			"evidence": "axum_request_oneshot 52.5 → 7.16µs; schedule_retry_overhead 5.77x regression (REPORT-0.7.md).",
+			"targets": { "1.0.0": 93 }
+		},
+		{
+			"id": "conc.safety",
+			"group": "conc",
+			"name": "Language-level safety",
+			"measures": "Memory and data-race safety guaranteed by language and library policy.",
+			"competitors": [65, 80, 75, 75, 65, 72, 35, 40, 40, 60],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 95, "0.7.0": 96 },
+			"evidence": "#![forbid(unsafe_code)] in every crate; no unsafe blocks in crates/ or labs/.",
+			"targets": {}
+		},
+
+		{
+			"id": "fault.supervision",
+			"group": "fault",
+			"name": "Supervision trees",
+			"measures": "Restart strategies, intensity limits, dynamic children, shutdown policies.",
+			"competitors": [55, 50, 99, 97, 35, 40, 15, 10, 30, 10],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 82, "0.7.0": 84 },
+			"evidence": "crates/id_effect_process/src/supervisor.rs (3 strategies, intensity, DynamicSupervisor); tests/coordination_supervisor.rs.",
+			"targets": { "0.11.0": 90 }
+		},
+		{
+			"id": "fault.actors",
+			"group": "fault",
+			"name": "Actor / process model",
+			"measures": "gen_server equivalent: mailboxes, call/cast/info, links, monitors, timers, selective receive.",
+			"competitors": [45, 45, 99, 97, 30, 65, 10, 10, 10, 5],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 74, "0.7.0": 75 },
+			"evidence": "id_effect_process mailbox.rs, links/monitors/trap_exit. No selective receive, send_after or hibernate.",
+			"targets": { "0.11.0": 88 }
+		},
+		{
+			"id": "fault.fsm",
+			"group": "fault",
+			"name": "State machines (gen_statem)",
+			"measures": "Typed FSMs with state data, timeouts, postpone, enter actions, visualisation.",
+			"competitors": [40, 35, 90, 85, 70, 45, 50, 40, 45, 30],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 62, "0.7.0": 62 },
+			"evidence": "crates/id_effect_fsm (fieldless derive(Fsm), FsmProcess, Mermaid). No state timeouts/postpone/per-state data.",
+			"targets": { "0.11.0": 80 }
+		},
+		{
+			"id": "fault.resilience",
+			"group": "fault",
+			"name": "Resilience patterns",
+			"measures": "Circuit breaker, retry, timeout, rate limit, bulkhead, hedging, fallback as composable policies.",
+			"competitors": [80, 80, 60, 55, 92, 95, 30, 25, 40, 20],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 72, "0.7.0": 78 },
+			"evidence": "id_effect_resilience breaker/bulkhead/rate limiter; hedged is a race; core timeout. No fallback/policy pipeline.",
+			"targets": { "0.8.0": 88 }
+		},
+		{
+			"id": "fault.schedule",
+			"group": "fault",
+			"name": "Retry / repeat schedule algebra",
+			"measures": "Composable schedules: exponential, jitter, fibonacci, union/intersect, cron.",
+			"competitors": [95, 98, 40, 45, 65, 72, 45, 30, 50, 20],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 76, "0.7.0": 83 },
+			"evidence": "Typed Schedule<Out,In> (scheduling/schedule.rs) with fibonacci/union/intersect/jitter. No cron.",
+			"targets": { "0.8.0": 92 }
+		},
+		{
+			"id": "fault.workflows",
+			"group": "fault",
+			"name": "Durable workflows and sagas",
+			"measures": "Persistent, resumable multi-step workflows with compensation.",
+			"competitors": [70, 45, 35, 60, 60, 78, 40, 35, 45, 55],
+			"track": "T7",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"evidence": "In-memory Saga in id_effect_fsm; labs/id_effect_workflow (sqlite, single writer), unpublished.",
+			"targets": { "0.11.0": 78 }
+		},
+		{
+			"id": "fault.reload",
+			"group": "fault",
+			"name": "Live reload and zero-downtime upgrades",
+			"measures": "Dev auto-reload and production upgrades without dropping work.",
+			"competitors": [20, 20, 95, 72, 50, 55, 70, 55, 62, 80],
+			"track": "T1",
+			"stance": "partial-non-goal",
+			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"evidence": "Hot code loading is a non-goal (ADR 0009); HostDrain graceful drain only.",
+			"targets": { "0.10.0": 45, "1.0.0": 55 }
+		},
+
+		{
+			"id": "dist.membership",
+			"group": "dist",
+			"name": "Clustering and node membership",
+			"measures": "Node identity, discovery, failure detection, authenticated join.",
+			"competitors": [65, 60, 92, 90, 72, 75, 15, 10, 15, 20],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 72, "0.7.0": 72 },
+			"evidence": "crates/id_effect_node (SWIM via foca, cookie HMAC, Static/DNS discovery, TCP/QUIC).",
+			"targets": { "0.11.0": 82 }
+		},
+		{
+			"id": "dist.remote",
+			"group": "dist",
+			"name": "Remote spawn / send / monitor",
+			"measures": "Location-transparent messaging, remote spawn, cross-node links/monitors.",
+			"competitors": [65, 55, 95, 92, 40, 70, 10, 10, 10, 5],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 70, "0.7.0": 71 },
+			"evidence": "mesh.rs remote_spawn/call/cast/monitor; at-most-once delivery; node waits are effects.",
+			"targets": { "0.11.0": 82 }
+		},
+		{
+			"id": "dist.placement",
+			"group": "dist",
+			"name": "Singletons, groups and placement",
+			"measures": "Cluster singletons, process groups, global registry, sharding/placement.",
+			"competitors": [72, 65, 72, 78, 55, 82, 10, 10, 15, 5],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 65, "0.7.0": 66 },
+			"evidence": "singleton.rs + PgAdvisoryLease, OrSwot groups, DistributedSupervisor. No global registry.",
+			"targets": { "0.11.0": 82 }
+		},
+		{
+			"id": "dist.tls",
+			"group": "dist",
+			"name": "Transport security",
+			"measures": "Encryption and mutual authentication between nodes.",
+			"competitors": [60, 65, 75, 75, 85, 88, 30, 30, 30, 40],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 50, "0.7.0": 50 },
+			"evidence": "QUIC via rustls (accepts any cert); TCP authenticated but unencrypted.",
+			"targets": { "0.11.0": 85 }
+		},
+
+		{
+			"id": "data.schema",
+			"group": "data",
+			"name": "Schema / validation",
+			"measures": "Declarative decode/encode/validate with derive, refinements, error accumulation.",
+			"competitors": [97, 85, 30, 85, 80, 85, 85, 90, 92, 70],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 75, "0.7.0": 77 },
+			"evidence": "crates/id_effect/src/schema (tuple/struct up to 12, Brand, Redacted, derive fixes).",
+			"targets": { "0.8.0": 82, "0.9.0": 88 }
+		},
+		{
+			"id": "data.jsonschema",
+			"group": "data",
+			"name": "JSON Schema / OpenAPI generation",
+			"measures": "Generate JSON Schema and OpenAPI from the same schemas/routes the code uses.",
+			"competitors": [90, 75, 10, 55, 90, 95, 45, 85, 65, 40],
+			"track": "T4",
+			"stance": "build",
+			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"evidence": "schema/json_schema_export.rs is primitive fragments only; SPEC.md: not implemented.",
+			"targets": { "0.8.0": 70, "0.9.0": 88 }
+		},
+		{
+			"id": "data.sql",
+			"group": "data",
+			"name": "SQL client, pooling, transactions",
+			"measures": "Typed rows/params, pooling, transactions, savepoints, isolation, streaming.",
+			"competitors": [80, 75, 30, 92, 95, 97, 97, 95, 95, 50],
+			"track": "T3",
+			"stance": "build",
+			"id_effect": { "0.6.0": 35, "0.7.0": 42 },
+			"evidence": "id_effect_sql: tx roll back on defect/interrupt, scoped layers; rows are Vec<String> (MVP), few param types.",
+			"targets": { "0.9.0": 85 }
+		},
+		{
+			"id": "data.orm",
+			"group": "data",
+			"name": "ORM / query builder",
+			"measures": "Typed query construction, entity mapping, relations.",
+			"competitors": [55, 65, 10, 92, 95, 97, 98, 97, 97, 40],
+			"track": "T3",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "None.",
+			"targets": { "0.9.0": 65, "0.12.0": 80 }
+		},
+		{
+			"id": "data.migrations",
+			"group": "data",
+			"name": "Migrations",
+			"measures": "Versioned schema migrations with CLI, locking, up/down, CI check.",
+			"competitors": [65, 50, 15, 92, 85, 95, 99, 98, 97, 35],
+			"track": "T3",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "Only an include_str! migration inside unpublished examples/http-showcase.",
+			"targets": { "0.9.0": 85 }
+		},
+		{
+			"id": "data.backends",
+			"group": "data",
+			"name": "Database backend breadth",
+			"measures": "Supported databases (Postgres, MySQL, SQLite, MSSQL, …) behind one API.",
+			"competitors": [85, 75, 30, 85, 97, 95, 90, 90, 90, 50],
+			"track": "T3",
+			"stance": "build",
+			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"evidence": "Postgres only (feature pg via sqlx).",
+			"targets": { "0.9.0": 75 }
+		},
+		{
+			"id": "data.cache",
+			"group": "data",
+			"name": "Caching (local + distributed)",
+			"measures": "In-process and distributed caches, TTL, stampede protection, invalidation.",
+			"competitors": [70, 70, 80, 80, 92, 94, 92, 88, 92, 85],
+			"track": "T3",
+			"stance": "build",
+			"id_effect": { "0.6.0": 42, "0.7.0": 60 },
+			"evidence": "resource/cache.rs capacity/ttl/typed failures; RequestCache + batching. No distributed cache.",
+			"targets": { "0.9.0": 82 }
+		},
+		{
+			"id": "data.events",
+			"group": "data",
+			"name": "Event sourcing / CQRS",
+			"measures": "Event store, projections, command/query handlers, snapshots.",
+			"competitors": [45, 40, 35, 62, 62, 65, 35, 20, 50, 15],
+			"track": "T7",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"evidence": "labs/id_effect_events (unpublished).",
+			"targets": { "0.10.0": 70 }
+		},
+		{
+			"id": "data.fp",
+			"group": "data",
+			"name": "Persistent collections and FP toolkit",
+			"measures": "Immutable collections, typeclasses, optics.",
+			"competitors": [85, 90, 70, 70, 35, 50, 20, 20, 20, 30],
+			"track": "T2",
+			"stance": "maintain",
+			"id_effect": { "0.6.0": 72, "0.7.0": 70 },
+			"evidence": "id_effect_fp/optics maintenance tier; pipe/memoize/flip helpers removed in 0.7.",
+			"targets": {}
+		},
+
+		{
+			"id": "web.server",
+			"group": "web",
+			"name": "HTTP server and routing",
+			"measures": "Routing, typed handlers, lifecycle, request scoping, graceful shutdown.",
+			"competitors": [80, 80, 35, 95, 97, 97, 97, 92, 96, 95],
+			"track": "T4",
+			"stance": "build",
+			"id_effect": { "0.6.0": 60, "0.7.0": 68 },
+			"evidence": "id_effect_axum server_layer/serve*, fiber per request (panic → 500, disconnect → interrupt).",
+			"targets": { "0.9.0": 85 }
+		},
+		{
+			"id": "web.middleware",
+			"group": "web",
+			"name": "Middleware pipeline",
+			"measures": "Composable request/response middleware with typed context.",
+			"competitors": [80, 75, 30, 92, 92, 95, 92, 88, 93, 75],
+			"track": "T4",
+			"stance": "build",
+			"id_effect": { "0.6.0": 65, "0.7.0": 67 },
+			"evidence": "Tower feature of id_effect_axum, CapOverrideLayer, require_ready.",
+			"targets": { "0.9.0": 82 }
+		},
+		{
+			"id": "web.validation",
+			"group": "web",
+			"name": "Request validation",
+			"measures": "Schema-validated path/query/form/header/body extraction with uniform error bodies.",
+			"competitors": [90, 75, 15, 90, 90, 92, 88, 92, 95, 65],
+			"track": "T4",
+			"stance": "build",
+			"id_effect": { "0.6.0": 45, "0.7.0": 47 },
+			"evidence": "decode_json_schema for JSON bodies only (id_effect_axum/src/json.rs).",
+			"targets": { "0.9.0": 85 }
+		},
+		{
+			"id": "web.client",
+			"group": "web",
+			"name": "HTTP client",
+			"measures": "Typed client with timeouts, retries, tracing, pooling, streaming.",
+			"competitors": [85, 80, 50, 75, 92, 95, 55, 50, 85, 75],
+			"track": "T4",
+			"stance": "build",
+			"id_effect": { "0.6.0": 68, "0.7.0": 68 },
+			"evidence": "id_effect_platform HttpClient on reqwest. No built-in retry/breaker.",
+			"targets": { "0.10.0": 85 }
+		},
+		{
+			"id": "web.rpc",
+			"group": "web",
+			"name": "Typed RPC / API contracts",
+			"measures": "Shared typed contracts between client and server, codegen or derive.",
+			"competitors": [90, 70, 75, 60, 80, 92, 30, 40, 35, 85],
+			"track": "T8",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"evidence": "labs/id_effect_rpc (unpublished at 0.7).",
+			"targets": { "0.11.0": 80 }
+		},
+		{
+			"id": "web.realtime",
+			"group": "web",
+			"name": "WebSockets and realtime",
+			"measures": "WebSockets/SSE, channels, presence, cluster-wide broadcast.",
+			"competitors": [70, 70, 70, 99, 80, 95, 85, 70, 88, 50],
+			"track": "T8",
+			"stance": "build",
+			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"evidence": "No first-party support; raw axum only.",
+			"targets": { "0.11.0": 82 }
+		},
+		{
+			"id": "web.graphql",
+			"group": "web",
+			"name": "GraphQL",
+			"measures": "Schema-first or code-first GraphQL server integration.",
+			"competitors": [30, 75, 20, 85, 90, 92, 85, 75, 80, 65],
+			"track": "T9",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"evidence": "None.",
+			"targets": { "0.12.0": 60 }
+		},
+		{
+			"id": "web.ui",
+			"group": "web",
+			"name": "Server-side UI / frontend",
+			"measures": "Rendering HTML/UI from the framework (templates, components, live views).",
+			"competitors": [25, 10, 5, 92, 50, 90, 90, 70, 92, 99],
+			"track": "T9",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"evidence": "None (out of scope).",
+			"targets": { "0.12.0": 40 }
+		},
+		{
+			"id": "web.admin",
+			"group": "web",
+			"name": "Admin / back-office UI",
+			"measures": "Generated CRUD admin over the data model.",
+			"competitors": [5, 5, 10, 65, 45, 50, 75, 99, 92, 40],
+			"track": "T9",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "Template stub only (id_effect_cli/templates/admin-stub).",
+			"targets": { "0.12.0": 55 }
+		},
+		{
+			"id": "web.storage",
+			"group": "web",
+			"name": "File storage abstraction",
+			"measures": "Local + object storage (S3/GCS/Azure) behind one capability, uploads.",
+			"competitors": [60, 50, 20, 65, 75, 85, 95, 85, 95, 60],
+			"track": "T6",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"evidence": "FileSystem trait (Live/Test) only.",
+			"targets": { "0.10.0": 78 }
+		},
+
+		{
+			"id": "sec.authn",
+			"group": "sec",
+			"name": "Authentication",
+			"measures": "Sessions, password hashing, JWT, OAuth2/OIDC with PKCE, passkeys.",
+			"competitors": [30, 30, 15, 85, 98, 95, 82, 92, 97, 75],
+			"track": "T5",
+			"stance": "build",
+			"id_effect": { "0.6.0": 8, "0.7.0": 10 },
+			"evidence": "OAuthClient/SessionStore traits, memory impls only (feature auth, off).",
+			"targets": { "0.9.0": 78, "1.0.0": 85 }
+		},
+		{
+			"id": "sec.authz",
+			"group": "sec",
+			"name": "Authorization (RBAC / policies)",
+			"measures": "Roles, permissions, policy evaluation integrated with handlers and data.",
+			"competitors": [20, 20, 10, 60, 95, 95, 70, 90, 92, 40],
+			"track": "T5",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "None.",
+			"targets": { "0.9.0": 72, "1.0.0": 82 }
+		},
+		{
+			"id": "sec.web",
+			"group": "sec",
+			"name": "Web security defaults (CSRF, CSP, CORS)",
+			"measures": "Secure-by-default headers, CSRF, CORS, CSP, cookie flags.",
+			"competitors": [45, 40, 20, 92, 95, 95, 95, 97, 95, 75],
+			"track": "T5",
+			"stance": "build",
+			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"evidence": "axum/src/server/security.rs:91 static CSRF token compared with ==; CSP builder minimal; no CORS.",
+			"targets": { "0.8.0": 75, "0.9.0": 88 }
+		},
+		{
+			"id": "sec.config",
+			"group": "sec",
+			"name": "Config, secrets and settings",
+			"measures": "Typed config, layered sources, secret redaction, vault/KMS sources, reload.",
+			"competitors": [82, 80, 50, 75, 97, 97, 88, 65, 88, 70],
+			"track": "T5",
+			"stance": "build",
+			"id_effect": { "0.6.0": 60, "0.7.0": 66 },
+			"evidence": "Config<T>, Config::all accumulates errors, Config::layer(), Secret<T>. No vault/KMS/reload.",
+			"targets": { "0.9.0": 85 }
+		},
+		{
+			"id": "sec.supply",
+			"group": "sec",
+			"name": "Supply-chain and security process",
+			"measures": "Advisory scanning, license/ban policy, SECURITY.md, SBOM, signed releases, CVE process.",
+			"competitors": [60, 60, 60, 70, 88, 92, 85, 90, 75, 75],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 45, "0.7.0": 45 },
+			"evidence": "Daily cargo audit + Dependabot. No cargo-deny, SECURITY.md, SBOM.",
+			"targets": { "0.8.0": 78, "1.0.0": 88 }
+		},
+
+		{
+			"id": "obs.logging",
+			"group": "obs",
+			"name": "Structured logging",
+			"measures": "Levels, structured fields, spans, JSON output, redaction, sampling.",
+			"competitors": [85, 85, 85, 85, 92, 95, 80, 80, 85, 60],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 75, "0.7.0": 76 },
+			"evidence": "id_effect_logger rewritten on Layers; JSON/structured/tracing backends.",
+			"targets": { "0.10.0": 86 }
+		},
+		{
+			"id": "obs.metrics",
+			"group": "obs",
+			"name": "Metrics",
+			"measures": "Counters/gauges/histograms, tags, Prometheus/OTLP export, runtime metrics.",
+			"competitors": [85, 85, 70, 88, 97, 95, 55, 50, 70, 60],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 62, "0.7.0": 70 },
+			"evidence": "Atomic metrics in MetricRegistry, with_tags, OTel registry bridge. No Prometheus endpoint.",
+			"targets": { "0.8.0": 85 }
+		},
+		{
+			"id": "obs.tracing",
+			"group": "obs",
+			"name": "Distributed tracing (OpenTelemetry)",
+			"measures": "OTLP traces/metrics/logs, propagation, auto-instrumentation.",
+			"competitors": [90, 80, 75, 85, 95, 97, 70, 65, 60, 80],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 80, "0.7.0": 84 },
+			"evidence": "OtelSpanHook, span_bridge.rs, W3C propagation, OTLP export.",
+			"targets": { "0.10.0": 90 }
+		},
+		{
+			"id": "obs.health",
+			"group": "obs",
+			"name": "Health, readiness, graceful shutdown",
+			"measures": "Liveness/readiness with dependency checks, drain, signals.",
+			"competitors": [60, 60, 70, 72, 97, 97, 75, 50, 75, 55],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 70, "0.7.0": 70 },
+			"evidence": "axum/src/health.rs /health /ready require_ready; drain. No dependency aggregation.",
+			"targets": { "0.8.0": 85 }
+		},
+		{
+			"id": "obs.console",
+			"group": "obs",
+			"name": "Runtime introspection and dashboards",
+			"measures": "Live view of fibers, supervisors, metrics, jobs; remote shell; profiling.",
+			"competitors": [65, 55, 98, 92, 90, 92, 75, 80, 92, 70],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"evidence": "Registry snapshots, snapshot_tracing; cluster control DTOs. No fiber dump or dashboard.",
+			"targets": { "0.10.0": 75, "1.0.0": 85 }
+		},
+
+		{
+			"id": "msg.jobs",
+			"group": "msg",
+			"name": "Background jobs and queues",
+			"measures": "Persistent jobs with retries, uniqueness, priorities, dashboard.",
+			"competitors": [55, 45, 70, 92, 85, 85, 97, 72, 98, 40],
+			"track": "T7",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"evidence": "labs/id_effect_jobs (unpublished); core Queue is in-memory.",
+			"targets": { "0.10.0": 85 }
+		},
+		{
+			"id": "msg.cron",
+			"group": "msg",
+			"name": "Scheduled tasks / cron",
+			"measures": "Cron expressions, single-run across a cluster, missed-run policy.",
+			"competitors": [72, 60, 50, 85, 92, 80, 85, 60, 98, 50],
+			"track": "T7",
+			"stance": "build",
+			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"evidence": "Typed Schedule; no cron expressions.",
+			"targets": { "0.8.0": 70, "0.10.0": 88 }
+		},
+		{
+			"id": "msg.brokers",
+			"group": "msg",
+			"name": "Message brokers (Kafka, AMQP, NATS, SQS)",
+			"measures": "Producer/consumer integrations with backpressure, acks, outbox.",
+			"competitors": [45, 85, 75, 82, 97, 85, 55, 50, 70, 25],
+			"track": "T7",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 12, "0.7.0": 12 },
+			"evidence": "labs/id_effect_jobs kafka.rs stub + outbox (unpublished).",
+			"targets": { "0.10.0": 72 }
+		},
+		{
+			"id": "msg.streams",
+			"group": "msg",
+			"name": "Stream processing",
+			"measures": "Backpressured streams with zip/merge/flat_map/throttle/debounce/group_by/windows.",
+			"competitors": [92, 95, 55, 82, 80, 80, 20, 20, 25, 45],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 72, "0.7.0": 74 },
+			"evidence": "Owned pulls, flat_map, map_effect_par, merge, windows. No zip/throttle/debounce/group_by.",
+			"targets": { "0.8.0": 86 }
+		},
+		{
+			"id": "msg.email",
+			"group": "msg",
+			"name": "Email and notifications",
+			"measures": "Mail sending, templating, previews, inbound mail, notification channels.",
+			"competitors": [10, 10, 20, 85, 85, 70, 97, 85, 98, 40],
+			"track": "T7",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"evidence": "None.",
+			"targets": { "0.10.0": 72 }
+		},
+
+		{
+			"id": "ai.llm",
+			"group": "ai",
+			"name": "LLM / AI integration",
+			"measures": "Provider-neutral LLM API, tool calling, streaming, MCP, embeddings.",
+			"competitors": [78, 35, 15, 50, 90, 92, 45, 40, 78, 95],
+			"track": "T9",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 28, "0.7.0": 28 },
+			"evidence": "labs/id_effect_ai (OpenAI/Anthropic/Cursor, MCP template), unpublished.",
+			"targets": { "0.12.0": 78 }
+		},
+
+		{
+			"id": "test.unit",
+			"group": "test",
+			"name": "Unit test kit and test doubles",
+			"measures": "Test runtime, layer/service mocks, assertions, snapshots.",
+			"competitors": [90, 95, 85, 92, 95, 92, 97, 92, 95, 70],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 80, "0.7.0": 83 },
+			"evidence": "testing/test_executor.rs (advance, run_until_stalled); snapshot/stream helpers removed.",
+			"targets": { "0.8.0": 88 }
+		},
+		{
+			"id": "test.determinism",
+			"group": "test",
+			"name": "Deterministic time and randomness",
+			"measures": "Virtual clock, seeded random, reproducible scheduling.",
+			"competitors": [95, 98, 40, 45, 62, 78, 82, 62, 85, 40],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 55, "0.7.0": 75 },
+			"evidence": "TestExecutor virtual time, testing/test_random.rs. FIFO ordering only.",
+			"targets": { "0.8.0": 85 }
+		},
+		{
+			"id": "test.property",
+			"group": "test",
+			"name": "Property-based testing",
+			"measures": "Generators (incl. derived from schemas), shrinking, effect-aware properties.",
+			"competitors": [90, 90, 85, 75, 50, 55, 40, 50, 30, 50],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.6.0": 62, "0.7.0": 45 },
+			"evidence": "testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108).",
+			"targets": { "0.8.0": 82 }
+		},
+		{
+			"id": "test.integration",
+			"group": "test",
+			"name": "Integration and E2E testing",
+			"measures": "Containers, HTTP test client, DB fixtures, end-to-end harness.",
+			"competitors": [55, 70, 78, 88, 97, 95, 95, 90, 95, 85],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 45, "0.7.0": 50 },
+			"evidence": "examples/http-showcase in live-Postgres CI; no testcontainers/test client.",
+			"targets": { "0.9.0": 70, "0.10.0": 82 }
+		},
+		{
+			"id": "test.chaos",
+			"group": "test",
+			"name": "Fault injection / chaos",
+			"measures": "Injecting latency, failures, partitions at effect and network level.",
+			"competitors": [40, 50, 70, 60, 52, 58, 20, 20, 20, 15],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 60, "0.7.0": 60 },
+			"evidence": "id_effect_node scripted partitions (transport/mod.rs).",
+			"targets": { "0.10.0": 78 }
+		},
+		{
+			"id": "test.qa",
+			"group": "test",
+			"name": "Project QA discipline",
+			"measures": "Coverage gate, OS/toolchain matrix, MSRV, minimal versions, compile-fail tests.",
+			"competitors": [85, 85, 90, 85, 95, 95, 92, 92, 85, 85],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 88, "0.7.0": 90 },
+			"evidence": "96% coverage gate (scripts/llvm-cov-nextest.sh), ~3,232 tests, pinned trybuild toolchain.",
+			"targets": { "0.8.0": 93 }
+		},
+
+		{
+			"id": "dx.scaffold",
+			"group": "dx",
+			"name": "Scaffolding and generators",
+			"measures": "One command to a running project; generators for resources, jobs, migrations.",
+			"competitors": [55, 30, 60, 95, 92, 92, 99, 85, 97, 92],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 4, "0.7.0": 4 },
+			"evidence": "Templates only (id_effect_cli/templates); no generator command.",
+			"targets": { "0.8.0": 65, "0.9.0": 82, "1.0.0": 92 }
+		},
+		{
+			"id": "dx.cli",
+			"group": "dx",
+			"name": "CLI application toolkit",
+			"measures": "Building CLIs: args, exit codes, prompts, progress, config.",
+			"competitors": [85, 75, 50, 70, 70, 85, 70, 75, 88, 20],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 70, "0.7.0": 68 },
+			"evidence": "run_main maps defects → 101, interrupts → 130; id-effect-diagnose removed.",
+			"targets": { "0.8.0": 78 }
+		},
+		{
+			"id": "dx.docs",
+			"group": "dx",
+			"name": "Documentation and learning",
+			"measures": "Tutorials, guides, reference, cookbook, examples, tested snippets.",
+			"competitors": [85, 82, 85, 92, 97, 98, 97, 98, 99, 95],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 68, "0.7.0": 76 },
+			"evidence": "Book updated for 0.7 (140 files), MIGRATION-0.7.md, ADR 0011.",
+			"targets": { "0.8.0": 82, "1.0.0": 92 }
+		},
+		{
+			"id": "dx.diagnostics",
+			"group": "dx",
+			"name": "Compiler / IDE diagnostics",
+			"measures": "Quality of type errors, on_unimplemented hints, doctor tooling.",
+			"competitors": [78, 70, 60, 80, 90, 97, 70, 70, 80, 88],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 55, "0.7.0": 60 },
+			"evidence": "Missing capability is a compile error; 11 on_unimplemented; trybuild ui tests.",
+			"targets": { "0.8.0": 70, "1.0.0": 80 }
+		},
+		{
+			"id": "dx.lint",
+			"group": "dx",
+			"name": "Linting and static analysis",
+			"measures": "Framework-aware lints usable on stable.",
+			"competitors": [78, 55, 70, 80, 85, 95, 88, 72, 82, 85],
+			"track": "T1",
+			"stance": "promote",
+			"id_effect": { "0.6.0": 40, "0.7.0": 40 },
+			"evidence": "clippy -D warnings; labs/id_effect_lint nightly-only, unpublished.",
+			"targets": { "0.10.0": 65, "1.0.0": 75 }
+		},
+		{
+			"id": "dx.compile",
+			"group": "dx",
+			"name": "Edit-compile-run loop speed",
+			"measures": "Cold and incremental build time of a template app.",
+			"competitors": [85, 45, 85, 92, 70, 82, 98, 95, 95, 88],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 38, "0.7.0": 38 },
+			"evidence": "Unmeasured; HList R and typed Schedule likely heavier.",
+			"targets": { "0.8.0": 40, "1.0.0": 55 }
+		},
+		{
+			"id": "dx.repl",
+			"group": "dx",
+			"name": "REPL and local dev environment",
+			"measures": "Interactive console, one-command local services, dev mode.",
+			"competitors": [70, 60, 95, 97, 78, 88, 97, 90, 95, 90],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 42, "0.7.0": 42 },
+			"evidence": "devenv/Nix + moon; no REPL or dev command.",
+			"targets": { "0.10.0": 62 }
+		},
+		{
+			"id": "dx.deploy",
+			"group": "dx",
+			"name": "Deploy and packaging",
+			"measures": "Container images, deploy recipes, release builds, k8s/Kamal.",
+			"competitors": [55, 60, 85, 88, 92, 95, 95, 65, 95, 97],
+			"track": "T6",
+			"stance": "build",
+			"id_effect": { "0.6.0": 50, "0.7.0": 50 },
+			"evidence": "Single binary; deploy-kamal template not wired to a command.",
+			"targets": { "0.8.0": 62, "0.10.0": 82 }
+		},
+		{
+			"id": "dx.coherence",
+			"group": "dx",
+			"name": "Coherence: one stack, one way",
+			"measures": "One dependency, one prelude, one documented way for each concern.",
+			"competitors": [78, 62, 72, 92, 97, 98, 99, 95, 99, 85],
+			"track": "T1",
+			"stance": "build",
+			"id_effect": { "0.6.0": 30, "0.7.0": 45 },
+			"evidence": "One kernel and Layer model since 0.7; labs lag; no umbrella crate/prelude.",
+			"targets": { "0.8.0": 62, "1.0.0": 88 }
+		},
+
+		{
+			"id": "eco.stability",
+			"group": "eco",
+			"name": "Release maturity and API stability",
+			"measures": "Semver discipline, deprecation windows, published crates, cadence.",
+			"competitors": [80, 85, 98, 90, 97, 97, 92, 97, 90, 75],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 18, "0.7.0": 28 },
+			"evidence": "17 crates at 0.7.0 on crates.io; breaking every minor; labs at 0.4.0.",
+			"targets": { "0.8.0": 45, "1.0.0": 85 }
+		},
+		{
+			"id": "eco.backing",
+			"group": "eco",
+			"name": "Backing and long-term support",
+			"measures": "Maintainers, governance, sponsorship, LTS policy.",
+			"competitors": [70, 70, 92, 78, 98, 99, 90, 92, 90, 95],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"evidence": "Effectively one maintainer; no LTS policy.",
+			"targets": { "0.8.0": 15, "1.0.0": 40 }
+		},
+		{
+			"id": "eco.fit",
+			"group": "eco",
+			"name": "Third-party ecosystem fit",
+			"measures": "Ease of using the host language's ecosystem; native integrations.",
+			"competitors": [72, 70, 72, 82, 98, 95, 95, 95, 95, 99],
+			"track": "T9",
+			"stance": "build",
+			"id_effect": { "0.6.0": 50, "0.7.0": 55 },
+			"evidence": "Tokio default executor; axum/tower feature.",
+			"targets": { "1.0.0": 75 }
+		},
+		{
+			"id": "eco.community",
+			"group": "eco",
+			"name": "Community and hiring pool",
+			"measures": "Users, contributors, chat, conference presence, hireability.",
+			"competitors": [40, 35, 45, 52, 99, 98, 85, 92, 90, 97],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "No measurable community.",
+			"targets": { "1.0.0": 25 }
+		},
+		{
+			"id": "eco.production",
+			"group": "eco",
+			"name": "Production track record",
+			"measures": "Public production users and case studies.",
+			"competitors": [58, 70, 99, 88, 99, 99, 97, 96, 88, 95],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"evidence": "Two known consumers (ADR 0010).",
+			"targets": { "1.0.0": 40 }
+		},
+		{
+			"id": "eco.license",
+			"group": "eco",
+			"name": "License and legal clarity",
+			"measures": "OSI software license, LICENSE file, contributor terms.",
+			"competitors": [98, 98, 98, 98, 98, 98, 98, 98, 98, 98],
+			"track": "T0",
+			"stance": "build",
+			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"evidence": "Cargo.toml:32 CC-BY-SA-4.0; no LICENSE file.",
+			"targets": { "0.8.0": 98 }
+		},
+		{
+			"id": "eco.i18n",
+			"group": "eco",
+			"name": "i18n / l10n",
+			"measures": "Message catalogs, pluralisation, locale negotiation, formatting.",
+			"competitors": [10, 10, 30, 85, 90, 95, 95, 97, 92, 80],
+			"track": "T9",
+			"stance": "integrate",
+			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"evidence": "None.",
+			"targets": { "0.12.0": 60 }
+		},
+		{
+			"id": "eco.tenancy",
+			"group": "eco",
+			"name": "Multi-tenancy and audit trails",
+			"measures": "Tenant isolation patterns and tamper-evident audit logging.",
+			"competitors": [10, 10, 10, 62, 75, 80, 70, 70, 75, 30],
+			"track": "T5",
+			"stance": "build",
+			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"evidence": "Per-request capabilities only (axum/src/request_caps.rs).",
+			"targets": { "0.9.0": 45, "0.12.0": 70 }
+		}
+	]
+}

@@ -81,6 +81,16 @@ tasks:
     options:
       cache: true
       outputStyle: buffer-only-failure
+  scorecard:
+    description: 'Validate docs/scorecard/scorecard.json and reproduce METHOD §5.2 (scorecard self-test)'
+    command: 'bash'
+    args: ['scripts/scorecard.sh', '--validate', '--self-test']
+    inputs:
+      - 'scripts/scorecard.sh'
+      - 'docs/scorecard/**/*'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
   coverage:
     description: >-
       Full workspace: cargo llvm-cov nextest with 96% lines/regions/functions. The fixed exclude list (IGNORE_REGEX, with its justifications) lives in scripts/llvm-cov-nextest.sh; see TESTING.md.

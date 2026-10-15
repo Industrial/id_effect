@@ -1,0 +1,143 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "scorecard.schema.json",
+	"title": "id_effect platform scorecard",
+	"description": "Structure of docs/scorecard/scorecard.json (METHOD.md). scripts/scorecard.sh --validate enforces this schema with jq, plus the cross references a schema cannot express: row ids are unique, every row's group is a groups[].id, every row's track is a tracks key, every group has at least one row, frameworks[0] is id_effect and competitor_order lists the other frameworks in order.",
+	"type": "object",
+	"required": [
+		"schema_version",
+		"method_version",
+		"method_doc",
+		"competitor_snapshot",
+		"frameworks",
+		"groups",
+		"tracks",
+		"competitor_order",
+		"rows"
+	],
+	"properties": {
+		"schema_version": { "const": 1 },
+		"method_version": {
+			"type": "string",
+			"description": "METHOD.md version the scores follow (e.g. \"1.0\")."
+		},
+		"method_doc": { "type": "string" },
+		"competitor_snapshot": {
+			"type": "object",
+			"required": ["date"],
+			"properties": {
+				"date": { "type": "string", "format": "date" },
+				"assessor": { "type": "string" }
+			}
+		},
+		"frameworks": {
+			"type": "array",
+			"description": "The 11 columns; the first is id_effect, then the competitors in competitor_order.",
+			"minItems": 11,
+			"maxItems": 11,
+			"prefixItems": [{ "properties": { "id": { "const": "id_effect" } } }],
+			"items": {
+				"type": "object",
+				"required": ["id", "name", "scope"],
+				"properties": {
+					"id": { "type": "string" },
+					"name": { "type": "string" },
+					"scope": { "type": "string" }
+				}
+			}
+		},
+		"groups": {
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"required": ["id", "name", "w_enterprise", "w_runtime"],
+				"properties": {
+					"id": { "type": "string" },
+					"name": { "type": "string" },
+					"w_enterprise": { "type": "number", "minimum": 0 },
+					"w_runtime": { "type": "number", "minimum": 0 }
+				}
+			}
+		},
+		"tracks": {
+			"type": "object",
+			"description": "Track id -> name; rows[].track references a key.",
+			"additionalProperties": { "type": "string" }
+		},
+		"competitor_order": {
+			"type": "array",
+			"description": "Framework ids that rows[].competitors[i] score, in order.",
+			"minItems": 10,
+			"maxItems": 10,
+			"uniqueItems": true,
+			"items": { "type": "string" }
+		},
+		"rows": {
+			"type": "array",
+			"minItems": 1,
+			"items": { "$ref": "#/$defs/row" }
+		}
+	},
+	"$defs": {
+		"score": { "type": "integer", "minimum": 1, "maximum": 100 },
+		"semver": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+		"versionScores": {
+			"type": "object",
+			"description": "Version (x.y.z) -> score.",
+			"propertyNames": { "$ref": "#/$defs/semver" },
+			"additionalProperties": { "$ref": "#/$defs/score" }
+		},
+		"row": {
+			"type": "object",
+			"required": [
+				"id",
+				"group",
+				"name",
+				"measures",
+				"competitors",
+				"track",
+				"stance",
+				"id_effect",
+				"evidence",
+				"targets"
+			],
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Stable row id (<group>.<slug>); never changes."
+				},
+				"group": { "type": "string", "description": "A groups[].id." },
+				"name": { "type": "string" },
+				"measures": { "type": "string" },
+				"competitors": {
+					"type": "array",
+					"minItems": 10,
+					"maxItems": 10,
+					"items": { "$ref": "#/$defs/score" }
+				},
+				"track": { "type": "string", "description": "A tracks key." },
+				"stance": {
+					"enum": [
+						"build",
+						"promote",
+						"integrate",
+						"maintain",
+						"non-goal",
+						"partial-non-goal"
+					]
+				},
+				"id_effect": {
+					"$ref": "#/$defs/versionScores",
+					"description": "Measured id_effect score per release.",
+					"minProperties": 1
+				},
+				"evidence": { "type": "string" },
+				"targets": {
+					"$ref": "#/$defs/versionScores",
+					"description": "Planned id_effect score per release (METHOD.md §5.1)."
+				}
+			}
+		}
+	}
+}
