@@ -27,7 +27,7 @@ It is not a batteries-included web framework: there is an Axum integration for t
 
 - **Read online:** [Typed Effects in Rust](https://industrial.github.io/id_effect/) (GitHub Pages)
 - **Terminology:** [Glossary](https://industrial.github.io/id_effect/appendix-c-glossary.html)
-- **Upgrading:** [Migration guide to 0.6](docs/MIGRATION-0.6.md) and the [CHANGELOG](CHANGELOG.md)
+- **Upgrading:** [Migration guide to 0.7](docs/MIGRATION-0.7.md) (from 0.6), [to 0.6](docs/MIGRATION-0.6.md) (from 0.4 / 0.5), and the [CHANGELOG](CHANGELOG.md)
 - **Source:** [`crates/id_effect/book/`](crates/id_effect/book/) (build locally with `mdbook build crates/id_effect/book`)
 
 ---
