@@ -1,12 +1,8 @@
 # NOW
-Updated: 2026-10-15T17:50:30.987Z
+Updated: 2026-10-15T18:15:35.995Z
 
-## In flight (1)
-### tsk-mv8ohjj3-83nf3k . W7: Bump all workspace + labs crates to 0.7.0, CHANGELOG
-State: claimed
-Owner: claude (claimed 0s ago)
-Mission: pln-mv8oh29m-3zdrrj
-
+## In flight (0)
+None.
 
 ## Ready to pick up (2)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
