@@ -1,6 +1,6 @@
 # Streams: `Stream`, `Sink`, `stream_from_channel`, stream/fold channels
 
-0.7 moves streaming to the fiber kernel as `id_effect::next::{Stream, Sink, …}`. A stream is now
+0.7 moves streaming to the fiber kernel as `id_effect::{Stream, Sink, …}`. A stream is now
 an owned pull: each pull returns one chunk **and the rest of the stream**, so there is no shared
 `Arc<Mutex<StreamState>>` locked on every pull, operators run under the consumer's fiber and
 environment (no `R` clone), and a running stream is interrupted like any other effect. The 0.6
@@ -18,7 +18,7 @@ let out = pollster::block_on(
 )?;
 
 // 0.7
-use id_effect::next::{Stream, succeed};
+use id_effect::{Stream, succeed};
 let out = Stream::<i32, MyErr>::from_iterable(0..10)
   .map(|n| n * 2)
   .filter(|n: &i32| n % 3 == 0)                  // any `Fn(&A) -> bool`, no `Box`
@@ -29,7 +29,7 @@ let out = Stream::<i32, MyErr>::from_iterable(0..10)
 ```
 
 - **Type parameters.** `Stream<A, E = Never, R = HNil>` (0.6: `E = (), R = ()`), like
-  `next::Effect`. Constructors are generic over `E` and `R`; annotate one of them
+  `Effect`. Constructors are generic over `E` and `R`; annotate one of them
   (`Stream::<u32, MyErr>::from_iterable(..)`) when nothing else fixes them.
 - **`map_effect` is sequential** (ADR 0008 Amendment 2): one element's effect finishes before the
   next starts, so side effects happen in stream order. 0.6 ran every element of a chunk
@@ -62,7 +62,7 @@ let out = Stream::<i32, MyErr>::from_iterable(0..10)
   `Channel::from_fold(init, Arc<step>)` → `FoldChannel::from_fold(init, step)`;
   `Channel::from_sink(sink)` → `FoldChannel::from_sink(sink)` (with `write`, `read`,
   `fold_state`, `consume_stream`, `map_out`, `flat_map_out`, `shutdown`). `channel.to_stream()`
-  and `channel.to_sink()` work on the queue-backed `next::Channel`; read errors no longer carry
+  and `channel.to_sink()` work on the queue-backed `Channel`; read errors no longer carry
   `ChannelReadError`.
 - **`Sink`.** `Sink<A, In, E = Never, R = HNil>`; `run(&self, stream)`; predicates are any
   `Fn(&In) -> bool`; new `Sink::new(driver)` and `Sink::for_each(f)`. `to_queue` suspends on a
@@ -71,6 +71,6 @@ let out = Stream::<i32, MyErr>::from_iterable(0..10)
   after each element. `broadcast_with_replay(s, cap, replay, n)` keeps
   `max(cap, replay)` items per branch.
 - **Throughput.** `with_throughput_metric(Metric)` becomes
-  `with_throughput_counter(Arc<AtomicU64>)` until the next-kernel metrics land.
+  `with_throughput_counter(Arc<AtomicU64>)` until the 0.7-kernel metrics land.
 - `Chunk`, `Transducer` (and `transducer_map/filter/take`), the window, join, `state_scan` and
   `scan` operators keep their 0.6 behaviour.

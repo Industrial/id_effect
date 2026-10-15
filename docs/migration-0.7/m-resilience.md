@@ -1,7 +1,7 @@
 # `id_effect_resilience`: on the 0.7 kernel
 
-0.7 moves `id_effect_resilience` to the new kernel (`id_effect::next`). Every operation returns
-a `next::Effect`, generic over its environment `R`. Constructors are plain functions now (they
+0.7 moves `id_effect_resilience` to the new kernel. Every operation returns
+an `Effect`, generic over its environment `R`. Constructors are plain functions now (they
 were effects), and all time — the breaker cooldown, token refill, retry backoff and the hedge
 delay — is read from the running fiber's executor clock, so it is virtual time on
 `TestExecutor`. The `*_with_clock` variants are gone.
@@ -9,10 +9,10 @@ delay — is read from the running fiber's executor clock, so it is virtual time
 | item | 0.6 | 0.7 |
 |---|---|---|
 | `CircuitBreaker` | `CircuitBreaker::make(n, reset)` (an effect), `make_with_clock(.., clock)` | `CircuitBreaker::new(n, reset)` (plain) |
-| `CircuitBreaker::call` / `state` | v1 `Effect<A, Or<CircuitBreakerError, E>, R>` / `Effect<CircuitState>` | `next::Effect<A, Or<CircuitBreakerError, E>, R>` / `next::Effect<CircuitState, E, R>` |
+| `CircuitBreaker::call` / `state` | v1 `Effect<A, Or<CircuitBreakerError, E>, R>` / `Effect<CircuitState>` | `Effect<A, Or<CircuitBreakerError, E>, R>` / `Effect<CircuitState, E, R>` |
 | `RateLimiter` | `RateLimiter::make(rate, cap)` (an effect), `make_with_clock` | `RateLimiter::new(rate, cap)` (plain); `acquire::<R>()` |
-| `Bulkhead` | `Bulkhead::make(n)` (an effect) | `Bulkhead::new(n)` (plain), on `next::Semaphore`; `available()` added |
-| `retry_with_breaker` | `(FnMut() -> Effect, v1 Schedule, &breaker)`; `retry_with_breaker_and_clock` | `(Fn() -> next::Effect + Send + Sync, next::Schedule<Out, E>, &breaker)`, built on `Effect::retry`; the `_and_clock` variant is gone |
+| `Bulkhead` | `Bulkhead::make(n)` (an effect) | `Bulkhead::new(n)` (plain), on `Semaphore`; `available()` added |
+| `retry_with_breaker` | `(FnMut() -> Effect, v1 Schedule, &breaker)`; `retry_with_breaker_and_clock` | `(Fn() -> Effect + Send + Sync, Schedule<Out, E>, &breaker)`, built on `Effect::retry`; the `_and_clock` variant is gone |
 | `hedged` | `tokio::select!`, `R = ()` only: the first *completion* wins | `primary.race(sleep(delay).then(backup))`, any `R`: the first *success* wins |
 
 ```rust
@@ -25,10 +25,10 @@ let out = run_blocking(
 let bh = run_blocking(Bulkhead::make(8), ()).unwrap();
 
 // 0.7
-use id_effect::next::{Effect, Schedule};
+use id_effect::{Effect, Schedule};
 let breaker = CircuitBreaker::new(3, Duration::from_secs(30));
 let out = retry_with_breaker(
-  || call(), // a factory: `next` effects are one-shot, so each attempt builds a fresh one
+  || call(), // a factory: effects are one-shot, so each attempt builds a fresh one
   Schedule::exponential(ms(100)).intersect(Schedule::recurs(5)),
   &breaker,
 )
@@ -48,4 +48,4 @@ let bh = Bulkhead::new(8);
   the effect ends, interrupts included.
 - `RateLimiter` counts refill from its first `acquire` (the bucket starts full).
 - **An unmigrated (v1) caller** wraps the effect with the bridge:
-  `use id_effect::next::compat::IntoV1; cb.call(eff).into_v1::<R>()`.
+  `use id_effect::compat::IntoV1; cb.call(eff).into_v1::<R>()`.

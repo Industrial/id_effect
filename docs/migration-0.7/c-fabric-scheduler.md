@@ -24,4 +24,4 @@ fabric.provide(all(effects, Concurrency::Bounded(8)))      // local window of 8;
   `Inherit` children at a time.
 - `AdmissionController::admit()` / `admit_n(n)` and `ComputeFabric::admit()` are the new async
   admissions (an `Admit` future resolving to an `AdmissionGuard`, which releases on drop). A
-  custom admission implements `next::Admission` and is wrapped with `Fabric::new`.
+  custom admission implements `Admission` and is wrapped with `Fabric::new`.

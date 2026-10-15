@@ -1,6 +1,6 @@
-# `id_effect_config` on the `next` kernel
+# `id_effect_config` on the 0.7 kernel
 
-0.7 ports `id_effect_config` to the fiber kernel (`id_effect::next`). The descriptors
+0.7 ports `id_effect_config` to the fiber kernel. The descriptors
 (`Config<T>`, `config::all`, …), the providers (`EnvConfigProvider`, `MapConfigProvider`,
 `FigmentConfigProvider`, `OrElseConfigProvider`, `ScopedConfigProvider`), `Secret<T>`,
 `ConfigError`, the Figment helpers and the synchronous `Config::load` / `config::*` functions are
@@ -8,9 +8,9 @@ unchanged. What changed is every API that returns an effect or wires the provide
 
 | 0.6 | 0.7 |
 |---|---|
-| `Config::run::<A, E, R>()`, `R: Needs<ConfigProviderService>` | `Config::run::<A, E, R, I>()`, `R: Selector<ConfigProviderService, I>` (a `next::Effect`) |
+| `Config::run::<A, E, R>()`, `R: Needs<ConfigProviderService>` | `Config::run::<A, E, R, I>()`, `R: Selector<ConfigProviderService, I>` (an `Effect`) |
 | `read_string::<A, E, R>(..)` (and every `read_*`) | `read_string::<A, E, R, I>(..)`, same bound |
-| `WithConfigDefault` on a v1 `Effect` | on a `next::Effect` (`A: Clone` no longer needed) |
+| `WithConfigDefault` on a v1 `Effect` | on an `Effect` (`A: Clone` no longer needed) |
 | `ConfigEnv = id_effect::Env` | `ConfigEnv = HCons<ConfigProviderService, HNil>` |
 | `provide_config_provider(p) -> ProviderBox` | `provide_config_provider(p) -> Layer<ConfigEnv, E>` |
 | `provide_env_config_provider(opts)`, `provide_figment_config_provider(fig)` | the same, returning `Layer<ConfigEnv, E>` |
@@ -42,11 +42,11 @@ let exit = Config::integer("PORT")
 Inside a larger typed environment, `R` and `I` are inferred (`Config::string("HOST").run()` in a
 function returning `Effect<String, MyError, R>` with `R: Selector<ConfigProviderService, I>`).
 
-**Code still on the v1 kernel** bridges with `id_effect::next::compat` until it switches:
+**Code still on the v1 kernel** bridges with `id_effect::compat` until it switches:
 
 ```rust
-use id_effect::next::compat::IntoV1With;
-use id_effect::next::{HCons, HNil};
+use id_effect::compat::IntoV1With;
+use id_effect::{HCons, HNil};
 
 fn load_port<R: Needs<ConfigProviderService> + 'static>() -> id_effect::Effect<i64, ConfigError, R> {
   Config::integer("PORT")

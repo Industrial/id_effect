@@ -1,6 +1,6 @@
 # m-node: `id_effect_node` on the 0.7 kernel
 
-Everything in the distribution layer that waits is now an `id_effect::next::Effect`: `Send`,
+Everything in the distribution layer that waits is now an `id_effect::Effect`: `Send`,
 interruptible, and timed on the executor clock. The 0.6 sleep-polling waits
 (`Mesh::await_deferred` looped on `run_blocking(reply.poll())` + `thread::sleep(2ms)`), the
 thread per inbound call that relayed the reply, the thread per orphan retry, and the Postgres
@@ -17,7 +17,7 @@ lease's worker thread with its own tokio runtime are gone: they are fibers now.
 | `BehaviorRegistry::deliver_call(pid, bytes, v1 Deferred)` | `deliver_call::<R>(pid, bytes) -> Result<Effect<Vec<u8>, RemoteFault, R>, RemoteFault>` (enqueued now, the effect awaits the encoded reply); `CallWireFn` returns a `ReplyFuture` |
 | `DistributedSupervisor::start_child(..) -> Result<Pid, RemoteFault>` | `-> Effect<Pid, RemoteFault, R>` (candidates tried in order, each spawn bounded) |
 | `DistributedSupervisor::on_membership(&e) -> Option<RetryHandle>` | `-> Effect<Option<RetryHandle>, Never, R>`: `NodeDown` completes once the takeover is done; `NodeUp`/`Rejoined` fork the orphan retry as a daemon fiber |
-| `RetryHandle = std::thread::JoinHandle<Vec<(String, RemoteFault)>>` | `RetryHandle = next::FiberHandle<Vec<(String, RemoteFault)>, Never>` (`join()` / `interrupt_now()`; an interrupted retry leaves its children orphaned and retryable) |
+| `RetryHandle = std::thread::JoinHandle<Vec<(String, RemoteFault)>>` | `RetryHandle = FiberHandle<Vec<(String, RemoteFault)>, Never>` (`join()` / `interrupt_now()`; an interrupted retry leaves its children orphaned and retryable) |
 | `DistributedSupervisor::retry_orphaned() -> Vec<..>` | `-> Effect<Vec<..>, Never, R>` |
 | `SingletonLease` methods return `Result<_, SingletonError>` / `Option<String>` | return `Effect<(), SingletonError>` / `Effect<Option<String>, Never>` |
 | `ClusterSingleton::{try_become, heartbeat, resign}` → `Result`, `is_holder()` → `bool` | → `Effect<(), SingletonError>`, `is_holder()` → `Effect<bool, Never>` (`local_pid()` stays sync) |
@@ -40,7 +40,7 @@ lease.try_acquire("leader", "a", ttl)?;
 
 ```rust
 // 0.7: compose inside a program …
-use id_effect::next::Effect;
+use id_effect::Effect;
 let program: Effect<Vec<u8>, RemoteFault> = mesh
   .remote_spawn("b@host", "counter", args, None, Duration::from_secs(2))
   .flat_map(move |pid| mesh2.remote_call(&pid, msg, Duration::from_secs(2)));

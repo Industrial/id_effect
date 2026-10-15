@@ -1,6 +1,6 @@
 # Scoped layers: finalizers, `fresh`, `launch`, `derive(ProviderSpec)::layer()`
 
-0.7's `next::Layer` can hold resources (Effect.ts `Layer.scoped`). Each build has one
+0.7's `Layer` can hold resources (Effect.ts `Layer.scoped`). Each build has one
 `Scope`. Layers register their finalizers into it, and they run once, uninterruptibly and in
 reverse order of acquisition, when the scope closes.
 
@@ -12,7 +12,7 @@ impl ProviderSpec for PoolLive {
 }
 
 // 0.7: an async finalizer effect, tied to the layer's scope
-let pool: Layer<caps_next!(Pool), DbError> = Layer::acquire_release(
+let pool: Layer<caps!(Pool), DbError> = Layer::acquire_release(
   || connect(),                      // runs uninterruptibly
   |env, _kind| close(env.0),         // Effect<(), Never, HNil>, may await
 );
@@ -35,8 +35,8 @@ program.provide_layer(pool)          // released after `program`, however it end
   built again even where the same layer is already part of the build. Its finalizers go to the
   same scope.
 - `#[derive(ProviderSpec)]` also emits `Struct::layer::<E>()`, a
-  `next::Layer<HCons<Service, HNil>, E>` that uses the same constructor. The v1 `ProviderSpec`
-  impl is unchanged. Add `release = <fn(Arc<Service>) -> next::Effect<(), Never, HNil>>` to
+  `Layer<HCons<Service, HNil>, E>` that uses the same constructor. The v1 `ProviderSpec`
+  impl is unchanged. Add `release = <fn(Arc<Service>) -> Effect<(), Never, HNil>>` to
   `#[provides(..)]` to give the layer an async finalizer. On the next path this replaces
   `on_shutdown`. A `with = |deps| ..` constructor reads a v1 `Env`, so it gets no `layer()`.
   The derive adds an inherent `layer` function, so a type that already defines its own `layer`

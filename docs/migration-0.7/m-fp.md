@@ -1,16 +1,16 @@
 # `id_effect_fp`: the 0.7 kernel and waker-based STM retry
 
-0.7 moves `id_effect_fp` to the new kernel (`id_effect::next`). The pure parts (`algebra`
+0.7 moves `id_effect_fp` to the new kernel. The pure parts (`algebra`
 traits, `collections`, `foundation`, `result`, `reader`, `thunk`) are unchanged. The items that
-produce or take an `Effect` now use `next::Effect`:
+produce or take an `Effect` now use `Effect`:
 
 | item | 0.6 | 0.7 |
 |---|---|---|
-| `stm::commit`, `stm::atomically` | v1 `Effect<A, E, R>` (a synchronous body, `R: 'static`) | `next::Effect<A, E, R>` (an async step, `R: Send + Sync`) |
-| `traverse_vec`, `sequence_vec`, `traverse_option` | v1 `Effect`, `F: FnMut(A) -> Effect<..> + 'static` | `next::Effect`; `A, B, E: Send`, `R: Send + Sync`, `F: Send` |
-| `select_effect`, `branch_effect` | v1 `Effect` | `next::Effect`; values and handler closures `Send` |
-| `FreeAp<A, E, R>` | over v1 `Effect` | over `next::Effect`; `Ap2` closure is `Send` |
-| `bifoldable::bitraverse::bitraverse` | v1 `Effect` | `next::Effect` |
+| `stm::commit`, `stm::atomically` | v1 `Effect<A, E, R>` (a synchronous body, `R: 'static`) | `Effect<A, E, R>` (an async step, `R: Send + Sync`) |
+| `traverse_vec`, `sequence_vec`, `traverse_option` | v1 `Effect`, `F: FnMut(A) -> Effect<..> + 'static` | `Effect`; `A, B, E: Send`, `R: Send + Sync`, `F: Send` |
+| `select_effect`, `branch_effect` | v1 `Effect` | `Effect`; values and handler closures `Send` |
+| `FreeAp<A, E, R>` | over v1 `Effect` | over `Effect`; `Ap2` closure is `Send` |
+| `bifoldable::bitraverse::bitraverse` | v1 `Effect` | `Effect` |
 
 ```rust
 // 0.6
@@ -46,4 +46,4 @@ assert_eq!(commit(cell.read_stm::<()>()).block_on(), Exit::succeed(1));
   commit only when every cell the attempt read is still at the version it saw; otherwise the
   attempt re-runs on fresh values.
 - **An unmigrated (v1) caller** wraps the committed effect with the bridge:
-  `use id_effect::next::compat::IntoV1; commit(stm).into_v1::<R>()`.
+  `use id_effect::compat::IntoV1; commit(stm).into_v1::<R>()`.

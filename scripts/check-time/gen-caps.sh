@@ -9,7 +9,7 @@
 #   plain  no effect kernel, plain Rust over a struct env: the floor (default)
 #   v06    id_effect 0.6 (`Env` + `Needs<T>`); set ID_EFFECT_PATH to measure a v0.6 export, e.g.
 #          ID_EFFECT_PATH=.tmp/bench-v0.6/crates/id_effect (default: this checkout's crates/id_effect)
-#   next   the 0.7 kernel, `id_effect::next` (`caps_next!` + `effect_next!`; this checkout's crate
+#   next   the 0.7 kernel, `id_effect` (`caps!` + `effect!`; this checkout's crate
 #          unless ID_EFFECT_PATH is set). The spike templates `a` / `b` went with the spikes
 #          (git history at 9cf380e).
 #   FILE   any file implementing the template interface below

@@ -1,7 +1,7 @@
 # m-process: `id_effect_process` on the 0.7 kernel
 
-Every process is now a fiber on an `id_effect::next::Runtime`, and every behaviour callback returns
-an `id_effect::next::Effect`. The 0.6 thread-per-process node, the busy-polling `SpinClock`, and
+Every process is now a fiber on an `id_effect::Runtime`, and every behaviour callback returns
+an `id_effect::Effect`. The 0.6 thread-per-process node, the busy-polling `SpinClock`, and
 the `run_mailbox_op` workaround (mailbox and cell effects interpreted in place with
 `run_blocking`) are gone. Time comes from the runtime's executor clock, so a node on a
 `TestExecutor` runs call timeouts, shutdown deadlines and restart-intensity windows on virtual
@@ -12,14 +12,14 @@ time.
 | 0.6 | 0.7 |
 |---|---|
 | `ProcessNode::threads(name)` | `ProcessNode::new(name)` (fibers on `Runtime::global()`) |
-| `ProcessNode::on_runtime(name, v1_runtime)` | `ProcessNode::on_runtime(name, next::Runtime)` / `ProcessNode::on_executor(name, Arc<dyn Executor>)` |
+| `ProcessNode::on_runtime(name, v1_runtime)` | `ProcessNode::on_runtime(name, Runtime)` / `ProcessNode::on_executor(name, Arc<dyn Executor>)` |
 | `ProcessNode::with_spawner(name, clock, spawner)`, `Job`, `Spawner` | removed (use `on_executor`, e.g. a `TestExecutor`) |
 | `SpinClock`, `ProcessNode::clock()` | removed; `ProcessNode::now()` is the executor clock, `node.runtime()` the runtime |
-| `Process` callbacks return v1 `Effect<_, _, Env>`; `type Env: Send` | `next::Effect<_, _, Env>`; `Process: Send`, `type Env: Send + Sync` (provided once at spawn, `HNil` or any value) |
+| `Process` callbacks return v1 `Effect<_, _, Env>`; `type Env: Send` | `Effect<_, _, Env>`; `Process: Send`, `type Env: Send + Sync` (provided once at spawn, `HNil` or any value) |
 | a panic in a callback was caught with `catch_unwind` | it reaches the loop as a `Defect` (`Cause::Die`); the exit reason is still `Error("panic: <message>")` |
 | `Addr::{call, cast, send}` → `Effect<_, _, ()>` | generic over the environment `R` (`Effect<_, _, R>`); run at the edge with `block_on` / `Runtime::run` |
 | `Addr::clone_mailbox()` → `Queue<ProcMsg<P>>` | → `Mailbox<ProcMsg<P>>` (`offer_now`, `close`, `take`) |
-| `ProcMsg::Call(_, v1 Deferred)`, `ProcessCell::exited()` → v1 `Deferred` | `next::Deferred` |
+| `ProcMsg::Call(_, v1 Deferred)`, `ProcessCell::exited()` → v1 `Deferred` | `Deferred` |
 | `ProcessCell::cancellation()` | removed (kills stay cooperative: reason recorded, mailbox closed) |
 | `SupervisorHandle::stop(..)` was an `async fn` | returns an effect (`Effect<(), E, R>`) |
 | supervisor `Env = ()` | `SupervisorProcess` / `DynamicSupervisor` use `Env = HNil` |
@@ -41,7 +41,7 @@ let kids = run_blocking(tree.which_children(Duration::from_secs(5)), ())?;
 
 ```rust
 // 0.7
-use id_effect::next::{Effect, HNil, succeed};
+use id_effect::{Effect, HNil, succeed};
 let node = ProcessNode::new(NodeName::new("app@local"));
 let tree = SupervisorSpec::new(Strategy::OneForOne).child(spec).start(&node);
 let kids = tree.which_children::<HNil>(Duration::from_secs(5)).block_on().into_result()?;
@@ -59,6 +59,6 @@ exec.advance(Duration::from_secs(5)); // fires shutdown deadlines, slides intens
   actions' v1 env `R` and runs a v1 transition action on the executor's blocking pool until
   `m-fsm`). `FsmProcess::start(node, spec, env)` is unchanged; a raw spawn is
   `spawn_linked_to::<FsmProcess<..>>(sup, (spec, env), HNil)`. `FsmHandle::{state, fire, cast}`
-  return `next` effects.
+  return effects.
 - `id_effect_node`: `BehaviorRegistry::adopt_local` takes a `Mailbox`; wire routes enqueue with
-  `offer_now` and bridge the `next` reply into the v1 wire reply.
+  `offer_now` and bridge the 0.7 reply into the v1 wire reply.

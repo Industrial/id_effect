@@ -1,8 +1,8 @@
 # m-sql: `id_effect_sql` on the 0.7 kernel, client and transactions are scoped Layers
 
-0.7 moves `id_effect_sql` to the new kernel (`id_effect::next`). Every trait method returns a
-`next::Effect<_, SqlError>` (no `R`), the capabilities live in the typed `next` environment, and
-the v1 `ProviderBox` providers are replaced by `next::Layer`s. The client and transactions are
+0.7 moves `id_effect_sql` to the new kernel. Every trait method returns a
+`Effect<_, SqlError>` (no `R`), the capabilities live in the typed environment, and
+the v1 `ProviderBox` providers are replaced by `Layer`s. The client and transactions are
 **scoped layers** (Effect.ts `Layer.scoped`): their resources are released when the layer's scope
 closes, after the program, however it ends.
 
@@ -10,13 +10,13 @@ closes, after the program, however it ends.
 
 | 0.6 | 0.7 |
 |---|---|
-| `SqlClient` methods → v1 `Effect<_, SqlError, ()>` | → `next::Effect<_, SqlError>`; new `close()` (default: no-op) |
+| `SqlClient` methods → v1 `Effect<_, SqlError, ()>` | → `Effect<_, SqlError>`; new `close()` (default: no-op) |
 | `SqlTransaction { commit, rollback }` | adds `query` and `execute`: **statements on the handle run inside the transaction** (on pg: on the transaction's connection; in 0.6 `PgSqlClient` statements always went to the pool, outside the transaction) |
 | `SqlClientService(Arc<dyn SqlClient>)` in a v1 `Env` | `SqlClientService` (derefs to `dyn SqlClient`, `SqlClientService::new(c)`) in `SqlClientEnv = HCons<SqlClientService, HNil>`; `sql_client_env(c)` for `.provide_all` |
 | — | `sql_client_layer::<E>(client)`: connect on build (fails the build with `E::from`), `close` when the scope closes |
 | — | `provide_sql_client::<E>(client)`: `Layer::succeed`, owned by the caller |
 | — | `query(sql, params)` / `execute(sql, params)` read the client from `R` |
-| `with_transaction(client, f)` / `transaction_scope(client, f)` → v1 effect, rollback on failure only | → `next::Effect<A, E>` with `E: From<SqlError>`; commits on success, rolls back on failure, **defect, panic or interrupt** (`acquire_use_release`); `BEGIN` and `COMMIT` run uninterruptibly; a failed `COMMIT` is a typed error. `transaction_scope` stays as an alias |
+| `with_transaction(client, f)` / `transaction_scope(client, f)` → v1 effect, rollback on failure only | → `Effect<A, E>` with `E: From<SqlError>`; commits on success, rolls back on failure, **defect, panic or interrupt** (`acquire_use_release`); `BEGIN` and `COMMIT` run uninterruptibly; a failed `COMMIT` is a typed error. `transaction_scope` stays as an alias |
 | — | `transaction(f)`: the same bracket, reading the client from `R` |
 | — | `transaction_layer::<E>()`: `Layer<SqlTransactionEnv, E, SqlClientEnv>` (`Layer::acquire_release`): `BEGIN` on build; on scope close `COMMIT` when the owner succeeded, `ROLLBACK` on failure, defect or interrupt (reads the release's `ExitKind`). A failed `COMMIT` there cannot be a typed error (a release is `Effect<(), Never>`), so it is a **defect** of the owner: use the brackets when the commit error must be typed |
 | `pg::PgPool = Arc<sqlx::PgPool>`, `provide_pg_pool(pool) -> ProviderBox` | `pg::PgPool(pub sqlx::PgPool)` (derefs to `sqlx::PgPool`), `PgPoolEnv`; `provide_pg_pool::<E>(pool) -> Layer<PgPoolEnv, E>` |

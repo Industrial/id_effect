@@ -12,8 +12,6 @@
 # Paths are the DEFINITION paths (private modules included): clippy does not resolve a method
 # through the glob re-exports (`id_effect::Effect` is `kernel::effect::Effect`). When a type
 # moves, update these; the script fails while any entry "does not refer to a reachable function".
-# (`k-retire-v1` removed the v1 `run_blocking` entry and moved the edges from `id_effect::next::…`
-# to the crate root.)
 
 disallowed-methods = [
   { path = "id_effect::kernel::effect::Effect::block_on", reason = "`Effect::block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },

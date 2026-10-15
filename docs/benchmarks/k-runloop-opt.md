@@ -143,7 +143,7 @@ now runs first; that is 0.5 % of the gate figure.
 ### Measured and not kept
 
 - **Thread-local caches.** A per-thread spare frame buffer (−3 to −5 % at n64) and a per-thread
-  parking waker for `block_on` (−3 % at n1). `tests/next_scope.rs`
+  parking waker for `block_on` (−3 % at n1). `tests/scope.rs`
   `next_has_no_thread_locals` (k-scope-fiberref AC5) forbids `thread_local!` under `src/next`,
   so both were removed (row 8). They are options for `r-bench-report` if that rule is relaxed
   for non-fiber state.

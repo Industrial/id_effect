@@ -1,5 +1,5 @@
 # Kernel subset of gates.toml for the K mission (k-benches-next, k-runloop-opt): the
-# bind/map hot path of the 0.7 kernel (`id_effect::next`) against the v0.6 baseline.
+# bind/map hot path of the 0.7 kernel against the v0.6 baseline.
 #
 # Same format and semantics as gates.toml (read by scripts/bench-compare.sh --gates).
 # Rows match gates.toml exactly; keep them in sync if a limit there changes.

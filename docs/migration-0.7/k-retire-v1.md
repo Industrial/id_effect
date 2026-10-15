@@ -1,9 +1,9 @@
 # Retiring the v1 kernel, part 1: tracing buffer, moved shared types, `id-effect-diagnose` removed
 
-## In-process tracing buffer on the `next` kernel
+## In-process tracing buffer on the 0.7 kernel
 
 The 0.6 tracing buffer (`install_tracing_layer`, `snapshot_tracing`, `EffectEvent`, …) now lives
-in `id_effect::next` (`next::observability::tracing`) and is fed by a span hook instead of a v1
+in `id_effect::observability::tracing` (re-exported at the root) and is fed by a span hook instead of a v1
 `with_span` wrapper:
 
 ```rust
@@ -14,7 +14,7 @@ run_blocking(with_span(program, "request"), env);
 let snap = snapshot_tracing();
 
 // 0.7
-use id_effect::next::{TracingConfig, install_tracing_layer, snapshot_tracing, tracing_hook};
+use id_effect::{TracingConfig, install_tracing_layer, snapshot_tracing, tracing_hook};
 install_tracing_layer(TracingConfig::enabled()); // a plain function now
 let exit = program.with_span("request").with_span_hook(tracing_hook()).block_on();
 let snap = snapshot_tracing();
@@ -39,11 +39,11 @@ let snap = snapshot_tracing();
 |---|---|---|---|
 | `FiberId` | `concurrency::fiber_id` | `failure::fiber_id` (root `id_effect::FiberId`) | still re-exported |
 | `Never` | `runtime::execute` | `failure::never` (root `id_effect::Never`) | still re-exported |
-| `Chunk` | `streaming::chunk` | `next::streaming::chunk` | still re-exported |
-| `Transducer`, `Reducer`, `map`/`filter`/`take` | `streaming::transducer` | `next::streaming::transducer` | still re-exported |
+| `Chunk` | `streaming::chunk` | `streaming::chunk` (the 0.7 `streaming` module) | unchanged |
+| `Transducer`, `Reducer`, `map`/`filter`/`take` | `streaming::transducer` | `streaming::transducer` (the 0.7 `streaming` module) | unchanged |
 
-Import them from the crate root (`id_effect::{FiberId, Never}`) or from `id_effect::next`; the
-`runtime`, `concurrency` and `streaming` paths go away with the old kernel.
+Import them from the crate root (`id_effect::{Chunk, FiberId, Never}`); the 0.6 `runtime` and
+`concurrency` paths go away with the old kernel.
 
 ## `id-effect-diagnose` removed
 
@@ -54,8 +54,8 @@ and is gone, together with `id_effect_cli`'s `serde`, `serde_json` and `toml` de
 
 ## `examples/cli-minimal`
 
-The template is a native `next` program now: `app_effect` returns an
-`id_effect::next::Effect<(), ConfigError, ConfigEnv>` and its `ConfigEnv`, and `main` calls
+The template is a native 0.7 program now: `app_effect` returns an
+`id_effect::Effect<(), ConfigError, ConfigEnv>` and its `ConfigEnv`, and `main` calls
 `run_main(eff, env, RunMainConfig::with_tracing())` with no bridge. `load_token_secret` returns
 `Result<Secret<String>, Cause<ConfigError>>`. The cookbook example (`153_cookbook_cli_edge`)
 runs over an explicit capability list (`HCons<ConfigProviderService, HCons<ConsoleService,
@@ -63,10 +63,10 @@ HNil>>`, `ConsoleService` a newtype over `Arc<dyn Console>`) instead of a v1 `En
 
 # Retiring the v1 kernel, part 2a: the last v1 users outside the core crate
 
-## Providers are `next::Layer`s
+## Providers are `Layer`s
 
 The remaining v1 capability-DI providers (`ProviderBox` / `ProviderNode` / `ProviderSpec`) outside
-`id_effect` are `next::Layer`s now. Names and arguments are unchanged; each layer needs nothing
+`id_effect` are 0.7 `Layer`s now. Names and arguments are unchanged; each layer needs nothing
 (`In = HNil`) and never fails, so its `E` is the error type of the graph it joins.
 
 | crate | 0.6 | 0.7 | details |
@@ -86,11 +86,11 @@ kernel; `pipe!` and `err!` are kernel-neutral and stay.
 
 | macro | ruling | 0.7 replacement |
 |---|---|---|
-| `caps!` | dropped as a `macro_rules!`; the `next` form already exists as the `caps_next!` proc macro (`HCons<A, HCons<B, HNil>>`), which the part-2b root promotion may re-export under the `caps` name | `caps_next!(A, B)` |
-| `provide!` | dropped: there is no `ProviderSpec`/`ProviderBox` to wrap | a `next::Layer` (`P::layer()`, `Layer::succeed(hlist![..])`) |
+| `caps!` | dropped as a `macro_rules!`; the 0.7 `caps!` is a proc macro of `id_effect` that builds `HCons<A, HCons<B, HNil>>` | `caps!(A, B)` |
+| `provide!` | dropped: there is no `ProviderSpec`/`ProviderBox` to wrap | a `Layer` (`P::layer()`, `Layer::succeed(hlist![..])`) |
 | `providers!` | dropped: a bundle of layers is `Layer::merge` | `P::layer().merge(Q::layer())` |
 | `mock_capability!` | dropped: a mock is a plain value in the typed environment | `.provide(mock)` / `.provide_env(hlist![..])` / `Layer::succeed(hlist![mock])` |
-| `require!` | dropped: only v1 `effect!` understood it (`effect_next!` has no `require!`) | `~Key` in `effect_next!`, `need::<Key>()` elsewhere |
+| `require!` | dropped: only v1 `effect!` understood it (the 0.7 `effect!` has no `require!`) | `~Key` in `effect!`, `need::<Key>()` elsewhere |
 
 `id_effect` re-exports these macros at its root and in `id_effect::macros`, and its v1 modules,
 tests and examples use them, so the macro definitions are deleted in part 2b together with the v1
@@ -99,14 +99,14 @@ kernel and those re-exports. Part 2a moves their tests to `id_effect_macro/tests
 
 ## Other
 
-- `id_effect_cli`'s migration note (`m-cli.md`) no longer describes the v1 → next bridge.
+- `id_effect_cli`'s migration note (`m-cli.md`) no longer describes the v1 → 0.7 bridge.
 - The coverage script no longer ignores the removed `id-effect-diagnose` binary.
 
 # Retiring the v1 kernel, part 2b: the root API is the 0.7 kernel
 
 The 0.6 kernel is deleted and the 0.7 kernel (design A, ADR 0011) is the crate root:
-`id_effect::Effect` is the `Effect<A, E = Never, R = HNil>` that lived at `id_effect::next::Effect`,
-`id_effect::effect!` is the macro that was `effect_next!`, and so on for every item.
+`id_effect::Effect` is the 0.7 `Effect<A, E = Never, R = HNil>`, `id_effect::effect!` is the 0.7
+do-notation over a typed `R`, and so on for every item.
 
 ```rust
 // 0.6
@@ -133,8 +133,6 @@ assert_eq!(older(36).block_on(), Exit::succeed(37));
   `observability` is `LogLevel` (unchanged) + metrics, spans and the tracing buffer; `compute` is
   the kernel's `Fabric` (always built) + the Compute Fabric substrate (feature `compute`, as
   before). Their items are re-exported at the root.
-- `id_effect::next::…` keeps compiling: `next` is a hidden alias of the crate root
-  (`pub use crate::*`). `k-retire-sweep` renames the call sites to `id_effect::…` and deletes it.
 - A 0.6 path that names a module which still exists now means the 0.7 module: e.g.
   `id_effect::runtime::Never` no longer resolves (use `id_effect::Never`), and
   `id_effect::kernel::*` / `id_effect::streaming::*` are the 0.7 items.
@@ -143,15 +141,15 @@ assert_eq!(older(36).block_on(), Exit::succeed(37));
 
 | 0.7 root macro | was | notes |
 |---|---|---|
-| `effect!` | `effect_next!` | the 0.6 do-notation expansion is gone; `effect_next!` stays as an alias until `k-retire-sweep` |
-| `effect_local!` | `effect_local_next!` | `effect_local_next!` stays as an alias |
-| `caps!` | `caps_next!` (the 0.6 `caps!` built a `CapList`) | `HCons<A, HCons<B, HNil>>`; `caps_next!` stays as an alias |
+| `effect!` | the 0.6 `effect!` (do-notation over an `Env`) | the 0.6 expansion is gone: `~Cap` reads a capability, `~expr` binds, `~(a, b)` joins, over a typed `R` |
+| `effect_local!` | new | like `effect!`, but builds a `LocalEffect` (`!Send` body) |
+| `caps!` | the 0.6 `caps!` (built a `CapList`) | `HCons<A, HCons<B, HNil>>` |
 | `derive(ProviderSpecDerive)` | the same derive | emits only the inherent `layer()`; the `impl ProviderSpec`, `|deps: &Env|` constructors and `#[named(..)]` variants are compile errors now. Name kept (ruling: no rename churn before the sweep) |
 | `pipe!`, `err!`, `match_effect!`, `effect_tagged`, `EffectData`, `Schema`, `Optics` | unchanged | kernel-neutral |
 
 `provide!`, `providers!`, `require!`, `mock_capability!` and the 0.6 `caps!` (`id_effect_macro`'s
 `capability` module) are deleted, as ruled in part 2a. Macro expansions name root paths
-(`::id_effect::HCons`, `::id_effect::__private::…`), not `::id_effect::next::…`.
+(`::id_effect::HCons`, `::id_effect::__private::…`).
 
 ## Removed with the v1 kernel
 
@@ -182,10 +180,9 @@ of `std::thread::yield_now` (same thread-level semantics).
 
 ## Tests, examples, benches
 
-- Tests of the deleted modules are deleted with them; their 0.7 equivalents are the `tests/next_*`
-  suites. The v1 trybuild suite (`tests/ui`, `ui_compile_fail`) tested v1 DI diagnostics and is
-  deleted; `tests/next_ui` is re-blessed on rustc 1.99.0 (the type paths in its expected stderr
-  lose `next::`).
+- Tests of the deleted modules are deleted with them; their 0.7 equivalents are the
+  kernel suites in `crates/id_effect/tests`. The v1 trybuild suite (`ui_compile_fail`) tested v1
+  DI diagnostics and is deleted; the 0.7 trybuild suite (`tests/ui`) is blessed on rustc 1.99.0.
 - Examples (`crates/id_effect/examples`), on the 0.7 kernel:
   - **Ported** (59): `001`–`013`, `015`, `018`, `037`–`039`, `040_capability_app`, `042`, `048`,
     `049`, `051`, `052`, `054`, `055`, `060`–`075` (with both `071`s), `089`–`091`, `093`–`096`,

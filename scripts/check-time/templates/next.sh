@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-# gen-caps template "next": the 0.7 kernel (`id_effect::next`) in the recommended style
-# (`fn h() -> Effect<_, _, caps_next!(..)>` + `effect_next!({ ~CapNN.0 + .. + ~callee() })`), the
+# gen-caps template "next": the 0.7 kernel in the recommended style
+# (`fn h() -> Effect<_, _, caps!(..)>` + `effect!({ ~CapNN.0 + .. + ~callee() })`), the
 # successor of the spike A template. A composite handler binds its callee with `~`, which narrows
 # the caller's env to the callee's (an `Embed` with inferred indices). The edge builds the app env
 # once and runs every handler with `.provide_env(env.clone()).block_on()` (another `Embed`, from
@@ -12,7 +12,7 @@ tpl_dependencies() {
 }
 
 tpl_prelude() {
-    printf 'use id_effect::next::{Effect, caps_next, effect_next, hlist};\n'
+    printf 'use id_effect::{Effect, caps, effect, hlist};\n'
     printf 'use id_effect::{Exit, Never};\n\n'
     printf 'fn ok(exit: Exit<u64, Never>) -> u64 {\n'
     printf '    match exit {\n        Exit::Success(v) => v,\n'
@@ -27,7 +27,7 @@ tpl_cap() {
 # tpl_env CAP...
 tpl_env() {
     local c i=0 sep=""
-    printf 'pub type AppEnv = caps_next!(%s);\n\n' "$(IFS=,; echo "$*" | sed 's/,/, /g')"
+    printf 'pub type AppEnv = caps!(%s);\n\n' "$(IFS=,; echo "$*" | sed 's/,/, /g')"
     printf 'pub fn app_env() -> AppEnv {\n    hlist!['
     for c in "$@"; do
         printf '%s%s(%d)' "${sep}" "${c}" "${i}"
@@ -41,7 +41,7 @@ tpl_env() {
 tpl_handler() {
     local name=$1 callee=$2 c sep=""
     shift 2
-    printf 'pub fn %s() -> Effect<u64, Never, caps_next!(%s)> {\n    effect_next!({ ' "${name}" "$(IFS=,; echo "$*" | sed 's/,/, /g')"
+    printf 'pub fn %s() -> Effect<u64, Never, caps!(%s)> {\n    effect!({ ' "${name}" "$(IFS=,; echo "$*" | sed 's/,/, /g')"
     for c in "$@"; do
         printf '%s~%s.0' "${sep}" "${c}"
         sep=" + "

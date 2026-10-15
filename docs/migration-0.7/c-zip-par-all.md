@@ -20,5 +20,5 @@ all(effects, Concurrency::Sequential)                      // a left fold, nothi
   Interrupts of siblings stopped by the first failure are not added, so a lone failure is
   exactly that `Cause::Fail(e)`.
 - `Concurrency::Bounded(n)` is a local window. `Concurrency::Inherit` awaits admission from the
-  ambient `next::Fabric` (`Fabric::provide`); with no fabric it behaves as `Unbounded`
+  ambient `Fabric` (`Fabric::provide`); with no fabric it behaves as `Unbounded`
   (see `c-fabric-scheduler.md`).

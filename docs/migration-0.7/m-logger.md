@@ -1,18 +1,18 @@
 # `id_effect_logger`: effects on the 0.7 kernel
 
-0.7 moves `id_effect_logger` to the new kernel (`id_effect::next`). This is a kernel migration
+0.7 moves `id_effect_logger` to the new kernel. This is a kernel migration
 only (R7): the thread-local install API is unchanged. The providers
 (`provide_minimum_log_level`, `LogMetadataLive`, `provide_composite_logger`, `EffectLoggerLive`)
-keep their names but are `next::Layer`s now (see the last section), and the backends (`LogBackend`, `Logger`,
+keep their names but are `Layer`s now (see the last section), and the backends (`LogBackend`, `Logger`,
 `CompositeLogBackend`, `JsonLogBackend`, `StructuredLogBackend`, `TracingLogBackend`) are
 untouched. The public signatures differ only in their kernel types:
 
 | item | 0.6 | 0.7 |
 |---|---|---|
-| `EffectLogger::{log, log_string, trace, debug, info, warn, error, fatal}` | v1 `Effect<(), EffectLoggerError>` (`R = ()`) | `next::Effect<(), EffectLoggerError>` (`R = HNil`) |
-| `annotate_logs`, `with_log_span` | v1 `Effect<A, E, R>`, `R: Send` | `next::Effect<A, E, R>`, `R: Send + Sync` |
-| `EffectLogger::with_minimum_log_level` | v1 `FiberRef<LogLevel>` and v1 `Effect<B, E, R>` | `next::FiberRef<LogLevel>` and `next::Effect<B, E, R>` (`B, E: Send`, `R: Send + Sync`) |
-| `EffectLogMinLevel` | `= v1 FiberRef<LogLevel>` | `= next::FiberRef<LogLevel>` |
+| `EffectLogger::{log, log_string, trace, debug, info, warn, error, fatal}` | v1 `Effect<(), EffectLoggerError>` (`R = ()`) | `Effect<(), EffectLoggerError>` (`R = HNil`) |
+| `annotate_logs`, `with_log_span` | v1 `Effect<A, E, R>`, `R: Send` | `Effect<A, E, R>`, `R: Send + Sync` |
+| `EffectLogger::with_minimum_log_level` | v1 `FiberRef<LogLevel>` and v1 `Effect<B, E, R>` | `FiberRef<LogLevel>` and `Effect<B, E, R>` (`B, E: Send`, `R: Send + Sync`) |
+| `EffectLogMinLevel` | `= v1 FiberRef<LogLevel>` | `= FiberRef<LogLevel>` |
 
 ```rust
 // 0.6
@@ -27,9 +27,9 @@ assert_eq!(run_with([provide!(EffectLoggerLive)], program()).unwrap(), 7);
 run_blocking(EffectLogger.warn("plain value"), ()).unwrap();
 
 // 0.7
-use id_effect::next::{Effect, caps_next, effect_next};
-fn program() -> Effect<u32, EffectLoggerError, caps_next!(EffectLogger)> {
-  effect_next!({
+use id_effect::{Effect, caps, effect};
+fn program() -> Effect<u32, EffectLoggerError, caps!(EffectLogger)> {
+  effect!({
     let logger = ~EffectLogger; // `&Arc<EffectLogger>`
     ~logger.info("all good");
     7
@@ -40,10 +40,10 @@ assert_eq!(EffectLogger.warn("plain value").block_on(), Exit::Success(()));
 ```
 
 - **Lifting a log step** into a combinator chain over another environment: `.into_env()` is
-  now `.narrow()`. Inside `effect_next!`, `~logger.info(..)` binds in any environment as before.
+  now `.narrow()`. Inside `effect!`, `~logger.info(..)` binds in any environment as before.
 - **An unmigrated (v1) caller** wraps a log step with the bridge:
-  `use id_effect::next::compat::IntoV1; logger.info("..").into_v1::<R>()`.
-- **The minimum level is a `next` `FiberRef`.** Its value lives in the running fiber, so
+  `use id_effect::compat::IntoV1; logger.info("..").into_v1::<R>()`.
+- **The minimum level is a `FiberRef`.** Its value lives in the running fiber, so
   `fr.set(level)` affects the rest of the same program (and fibers it forks afterwards), not a
   later `block_on`: each run edge starts a root fiber from the ref's initial value (the level
   given to `provide_minimum_log_level`). In 0.6 a `run_blocking(fr.set(..), ())` call leaked into
@@ -60,14 +60,14 @@ assert_eq!(EffectLogger.warn("plain value").block_on(), Exit::Success(()));
   calling thread, so a program run there sees what that thread installed. Fibers that run on
   executor worker threads (`fork`, `Runtime::run` on tokio) see only what those threads
   installed; without an installed composite backend they fall back to `tracing`.
-- Annotations and the span stack follow `next` `FiberRef` inheritance: a forked child starts
+- Annotations and the span stack follow `FiberRef` inheritance: a forked child starts
   with a copy of its parent's annotations and spans.
 - The providers no longer call `run_blocking` to allocate their fiber refs (`FiberRef::new`
   is synchronous), so building them is non-blocking.
 
-## The providers are `next::Layer`s (k-retire-v1)
+## The providers are `Layer`s (k-retire-v1)
 
-With the v1 capability DI retired, the logger providers are `id_effect::next::Layer`s. The
+With the v1 capability DI retired, the logger providers are `id_effect::Layer`s. The
 names are unchanged; `build_env([...])` / `provide!(..)` / `ProviderBox` are gone. Each layer
 needs nothing (`In = HNil`), never fails (any `E`), and installs its thread-local state when it
 is **built**, on the thread that drives the build. The private thread-local install functions

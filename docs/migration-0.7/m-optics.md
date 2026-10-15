@@ -17,5 +17,5 @@ The crate depends on `id_effect` for two things:
 - the re-export `id_effect_optics::transducer::{Reducer, Transducer, filter, map, take}`. This is
   the same type that `Stream::transduce_items` uses. Today it comes from
   `id_effect::streaming::transducer`. When the v1 `streaming` module is retired, the re-export
-  will point at the `next` streaming module instead. The names and signatures stay the same, so
+  will point at the 0.7 streaming module instead. The names and signatures stay the same, so
   user code does not change.

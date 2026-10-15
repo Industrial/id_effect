@@ -1,4 +1,4 @@
-# Parallel binds: `~(a, b, ..)` in `effect_next!`
+# Parallel binds: `~(a, b, ..)` in `effect!`
 
 0.6's `effect!` ran independent `let x = ~a; let y = ~b;` statements in parallel on its own
 (`join_binds2..4`, opt-out with `#[serial]`). In 0.7 binds are sequential, as in Effect.ts's
@@ -21,7 +21,7 @@ let (user, orders) = ~(load_user(id), load_orders(id));
   body's `?`, a defect or interrupt becomes the body's cause. Genuine sibling failures, which
   `zip_par` adds as `Cause::Both(first, other)`, are not surfaced; bind
   `~zip_par(a, b).exit::<Never>()` to inspect the whole cause.
-- `~(expr)` with no top-level comma is still a plain bind. `effect_local_next!` rejects
+- `~(expr)` with no top-level comma is still a plain bind. `effect_local!` rejects
   `~(a, b, ..)` (its branches would have to be `Send` to fork).
 - Several `ctx.bind(..)` futures awaited at once on the same fiber (a hand-written
   `futures::join!`) now each see an interrupt of the fiber; before, they held it off from each

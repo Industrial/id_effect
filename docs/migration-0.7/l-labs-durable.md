@@ -1,28 +1,28 @@
 # Labs `id_effect_workflow` and `id_effect_jobs` on the 0.7 kernel
 
 0.7 moves the labs crates `id_effect_workflow` and `id_effect_jobs` to the new kernel
-(`id_effect::next`). This is a kernel migration only (R5): no items are added or removed, and the
-public signatures differ only in their kernel types (and the `Send` bounds the `next` kernel needs).
+(`id_effect`). This is a kernel migration only (R5): no items are added or removed, and the
+public signatures differ only in their kernel types (and the `Send` bounds the 0.7 kernel needs).
 `id_effect::compute` (`FabricJobSpec`, `WorkProfile`, …) is kernel-neutral and unchanged.
 
 ## `id_effect_jobs`
 
 | item | 0.6 | 0.7 |
 |---|---|---|
-| `JobRunner::{enqueue, dequeue, complete, fail, pending_count}` | v1 `Effect<A, JobError, ()>` | `next::Effect<A, JobError>` (`R = HNil`) |
-| `FabricJobRunner::{enqueue_fabric, dequeue_for, pending_for}` | v1 `Effect<A, JobError, ()>` | `next::Effect<A, JobError>` |
-| `OutboxTable::{insert, fetch_unpublished, mark_published, unpublished_count}` | v1 `Effect<A, OutboxError, ()>` | `next::Effect<A, OutboxError>` |
-| `MessageBroker::publish` | v1 `Effect<(), JobError, ()>` | `next::Effect<(), JobError>` |
-| `JobQueue::enqueue`, `ApalisJobQueue::enqueue` | v1 `Effect<JobRecord, JobError, ()>` | `next::Effect<JobRecord, JobError>` |
-| `ObixOutbox::insert` / `ObixInbox::persist` | v1 `Effect<_, _, ()>` | `next::Effect<_, _>` |
-| `drain_jobs(runner, limit, handler)` | `handler: Fn(&JobSpec) -> v1 Effect + Copy + 'static`; nested `run_blocking` per job | `handler: Fn(&JobSpec) -> next::Effect + Copy + Send + 'static`; one effect, no thread parking |
-| `relay_outbox(outbox, limit, publish)` | `publish: Fn(&OutboxRecord) -> v1 Effect + 'static`; nested `run_blocking` | `publish: … -> next::Effect + Send + 'static`; one effect |
+| `JobRunner::{enqueue, dequeue, complete, fail, pending_count}` | v1 `Effect<A, JobError, ()>` | `Effect<A, JobError>` (`R = HNil`) |
+| `FabricJobRunner::{enqueue_fabric, dequeue_for, pending_for}` | v1 `Effect<A, JobError, ()>` | `Effect<A, JobError>` |
+| `OutboxTable::{insert, fetch_unpublished, mark_published, unpublished_count}` | v1 `Effect<A, OutboxError, ()>` | `Effect<A, OutboxError>` |
+| `MessageBroker::publish` | v1 `Effect<(), JobError, ()>` | `Effect<(), JobError>` |
+| `JobQueue::enqueue`, `ApalisJobQueue::enqueue` | v1 `Effect<JobRecord, JobError, ()>` | `Effect<JobRecord, JobError>` |
+| `ObixOutbox::insert` / `ObixInbox::persist` | v1 `Effect<_, _, ()>` | `Effect<_, _>` |
+| `drain_jobs(runner, limit, handler)` | `handler: Fn(&JobSpec) -> v1 Effect + Copy + 'static`; nested `run_blocking` per job | `handler: Fn(&JobSpec) -> Effect + Copy + Send + 'static`; one effect, no thread parking |
+| `relay_outbox(outbox, limit, publish)` | `publish: Fn(&OutboxRecord) -> v1 Effect + 'static`; nested `run_blocking` | `publish: … -> Effect + Send + 'static`; one effect |
 
 `MemoryJobRunner`, `MemoryOutbox`, `MemoryBroker`, `KafkaBrokerStub`, `RdKafkaBroker` implement the
-`next` traits. `drain_jobs` still marks a job failed on a **typed** handler failure and goes on; a
+Traits. `drain_jobs` still marks a job failed on a **typed** handler failure and goes on; a
 handler defect or interrupt now propagates out of the drain (0.6 `run_blocking` panicked). The
 sqlx-backed effects (apalis, obix) need a tokio runtime with its IO driver: run them with
-`id_effect_tokio::TokioRuntime` (or `next::Runtime::global()`).
+`id_effect_tokio::TokioRuntime` (or `Runtime::global()`).
 
 ```rust
 // 0.6
@@ -32,7 +32,7 @@ let n = run_blocking(drain_jobs(runner.clone(), 10, |_| succeed::<(), JobError, 
 let row = run_async(obix.insert(record), ()).await?;
 
 // 0.7
-use id_effect::next::succeed;
+use id_effect::succeed;
 use id_effect_tokio::TokioRuntime;
 let rec = runner.enqueue(JobSpec::new("a", b"1")).block_on().into_result()?; // sync edge
 let n = drain_jobs(runner.clone(), 10, |_| succeed::<(), JobError, _>(()))
@@ -42,7 +42,7 @@ let row = TokioRuntime::current()?.run(obix.insert(record)).await.into_result()?
 ```
 
 - **A v1 caller** wraps a call with the bridge:
-  `use id_effect::next::compat::IntoV1; run_async(runner.dequeue().into_v1::<()>(), ())`.
+  `use id_effect::compat::IntoV1; run_async(runner.dequeue().into_v1::<()>(), ())`.
 - `.into_result()` gives `Result<A, Cause<E>>`; `cause.fail_option()` is the typed failure.
 
 ### `apalis` feature: fixed against the locked `apalis-postgres` 1.0.0
@@ -66,15 +66,15 @@ let queue = ApalisJobQueue::new(&apalis_pool, "demo");
 
 | item | 0.6 | 0.7 |
 |---|---|---|
-| `provide_duroxide_pg(pool, url)` | v1 `ProviderBox` (`Cap<DuroxideProvider>`, `Cap<WorkflowRuntime>` in a v1 `Env`) | `provide_duroxide_pg::<E>(pool, url) -> next::Layer<HCons<DuroxideProvider, HCons<WorkflowRuntime, HNil>>, E>` (`Layer::succeed`; the caller owns the pool) |
-| `impl StepJournal for DuroxideStepJournal`, `DuroxideStepJournal::migrate_sync` | tokio `block_in_place` + `Handle::block_on` (needed a multi-thread tokio runtime, called **from inside** it) | the `next` blocking edge: each statement runs on a fiber of `next::Runtime::global()` while the calling thread parks; call it **from a plain thread** |
+| `provide_duroxide_pg(pool, url)` | v1 `ProviderBox` (`Cap<DuroxideProvider>`, `Cap<WorkflowRuntime>` in a v1 `Env`) | `provide_duroxide_pg::<E>(pool, url) -> Layer<HCons<DuroxideProvider, HCons<WorkflowRuntime, HNil>>, E>` (`Layer::succeed`; the caller owns the pool) |
+| `impl StepJournal for DuroxideStepJournal`, `DuroxideStepJournal::migrate_sync` | tokio `block_in_place` + `Handle::block_on` (needed a multi-thread tokio runtime, called **from inside** it) | the blocking edge: each statement runs on a fiber of `Runtime::global()` while the calling thread parks; call it **from a plain thread** |
 
 `StepJournal`, `DurableWorkflowLog` (SQLite), `NetworkJournalStub`, `RemoteStepJournal`,
 `JournalServer`, the `fsm` helpers (`register_fsm`, `step_durable`, `restore_state`) and
 `bootstrap_duroxide_schema` (async) are unchanged: they are synchronous and use no effect.
 
 **Behaviour change.** The synchronous `DuroxideStepJournal` methods are a blocking edge, like
-every `next` blocking edge: inside an async context (a tokio task, `spawn_blocking`, an entered
+every blocking edge: inside an async context (a tokio task, `spawn_blocking`, an entered
 runtime) the run is refused and the call panics with the `BlockOnInAsync` defect. In 0.6 the same
 call had to be made inside a multi-thread tokio runtime. Move the journal work to a thread. A
 `run_step_typed` transaction still spans the lookup, `compute` and the insert; a failed or
@@ -115,7 +115,7 @@ let program = program.provide_layer(provide_duroxide_pg::<AppError>(pool, url));
   test run:
   `devenv shell -- env SQLX_OFFLINE=true ID_EFFECT_REQUIRE_PG=1 cargo nextest run --manifest-path labs/Cargo.toml -p id_effect_jobs -p id_effect_workflow --all-features`.
 - Example `020_events_workflow_e2e` no longer needs the `into_v1` adapter (events and jobs are both
-  on `next`); it runs its journal step on a thread. Verified against the devenv database.
+  on the 0.7 kernel); it runs its journal step on a thread. Verified against the devenv database.
 - Example `030_compute_fabric_cluster` asserted that a saturated node drops to exactly 1 permit;
   the (kernel-neutral) governor floors at half the permits unless the CPU spread bucket is empty,
   so the example panicked (on that assertion, before any jobs code runs). It now asserts the node

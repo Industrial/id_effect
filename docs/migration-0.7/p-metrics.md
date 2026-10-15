@@ -1,4 +1,4 @@
-# Metrics, `MetricRegistry` and span hooks (`id_effect::next`)
+# Metrics, `MetricRegistry` and span hooks
 
 0.7 replaces the v1 `Metric<In, Out>` (state behind `Arc<Mutex<u64>>` / `Mutex<Vec<Duration>>`,
 unbounded sample vectors, no registry) with Effect.ts-style metrics on lock-free state, a keyed
@@ -28,7 +28,7 @@ let pairs = MetricRegistry::global().snapshot();                 // keys with ta
 - Updates are effects through the `Metric` trait (`update`, `track_all`, `track`,
   `track_success_with`, `track_error_with`, `track_exit_with`, `track_duration_with`) or
   `update_now` outside an effect. Durations are recorded in seconds on the fiber's executor clock
-  (virtual on `TestExecutor`). v1 `make(..)` / `apply(..)` have no `next` counterpart.
+  (virtual on `TestExecutor`). v1 `make(..)` / `apply(..)` have no counterpart.
 - `Effect::tag_metrics(k, v)` (a `FiberRef`, inherited by forked children) tags every metric update
   inside.
 - Exporters: `MetricRegistry::snapshot()` (pull) and `MetricListener` via `add_listener` (push).
