@@ -7,9 +7,9 @@
 //!
 //! On a duplicate the macro reports one `compile_error!` at each repeated occurrence **and still
 //! emits the de-duplicated list**, through the identity projection
-//! `<List as __private::CapsChecked<{ compile_error!(..); 0 }>>::Out`. Spike A returned only the
-//! `compile_error!`, whose type position became `()`, so every `~Cap` read of the effect then
-//! cascaded into a second `Selector<Cap, _> is not implemented for ()` error.
+//! `<List as __private::CapsChecked<{ compile_error!(..); 0 }>>::Out`. The prototype returned
+//! only the `compile_error!`, whose type position became `()`, so every `~Cap` read of the
+//! effect then cascaded into a second `Selector<Cap, _> is not implemented for ()` error.
 
 use proc_macro::{Delimiter, Span, TokenStream, TokenTree};
 
