@@ -8,11 +8,9 @@
 //! Exit}`, `crate::failure::{FiberId, Never}`.
 //!
 //! Modules that are still empty were scaffolded by `w3-scaffold` with their glob re-export in
-//! place, so the leaf that fills one never has to touch this file. `compat` is the exception: it
-//! is reached as `next::compat::*` only, so it is not glob re-exported.
+//! place, so the leaf that fills one never has to touch this file.
 
 pub mod capability;
-pub mod compat;
 pub mod compute;
 pub mod concurrency;
 pub mod coordination;
