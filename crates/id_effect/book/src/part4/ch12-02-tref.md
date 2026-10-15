@@ -76,7 +76,7 @@ assert_eq!(run(commit(hits.read_stm::<()>())), Ok(2_000));
 
 Full example: [`crates/id_effect_fp/examples/084_stm_tref_compose.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/084_stm_tref_compose.rs) (`cargo run -p id_effect_fp --example 084_stm_tref_compose`); the minimal read/write version is `077_stm_tref`.
 
-## TRef vs. Mutex<T>
+## `TRef` vs. `Mutex<T>`
 
 | Property | TRef | Mutex |
 |----------|------|-------|
