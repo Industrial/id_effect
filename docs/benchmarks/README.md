@@ -77,3 +77,11 @@ bash scripts/bench-compare.sh --self-test
 It compares `fixtures/base.json` with itself and with `pass.json` (both pass, `pass.json`
 includes `NOISE` rows), and with `fail-budget.json`, `fail-improve.json` and
 `fail-missing.json`. Each of those must fail on exactly its one broken gate.
+
+## Spike gate (historical)
+
+`SPIKE-REPORT.md` and `spike-gate/` were measured on the two kernel spikes under `spikes/`,
+which `k-ui-suite` deleted once design A landed in `id_effect::next`. To reproduce them,
+export the pinned spike tree (`git archive 9cf380e | tar -x -C .tmp/spike-9cf380e`) and run
+the spike's own bench instructions from `spikes/README.md` in that export. The kernel gates
+are now `gates-k.toml`, measured on `id_effect::next` (`k-runloop-opt.md`).
