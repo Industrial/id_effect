@@ -1,17 +1,8 @@
 # NOW
-Updated: 2026-10-15T01:48:01.703Z
+Updated: 2026-10-15T05:04:14.553Z
 
-## In flight (2)
-### tsk-mv8ohjj3-7xjiyu . W3: Kernel rebuild in id_effect::next — placeholder, split after H1
-State: claimed
-Owner: claude (claimed 14m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8vpo06-cu75f3 . K0: k-next-skeleton — next/ stubs, Executor trait, tokio features
-State: claimed
-Owner: claude (claimed 3s ago)
-Mission: pln-mv8oh29m-3zdrrj
-
+## In flight (0)
+None.
 
 ## Ready to pick up (50)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
