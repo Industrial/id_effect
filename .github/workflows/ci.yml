@@ -188,7 +188,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
-        run: cargo nextest run -p id_effect_sql -p id_effect_node --features id_effect_sql/pg,id_effect_node/pg
+        run: cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase --features id_effect_sql/pg,id_effect_node/pg
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
