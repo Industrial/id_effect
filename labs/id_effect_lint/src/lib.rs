@@ -49,19 +49,19 @@ declare_lint! {
 declare_lint! {
     pub NO_CONCRETE_CONTEXT_IN_PUB_API,
     Deny,
-    "public APIs must not expose concrete `Context<Cons<…>>` as `R`; use `impl Needs<Key>` instead"
+    "public APIs must not expose a 0.6 `Context<Cons<…>>` as `R`; spell `R` with `caps!(Key, …)`"
 }
 
 declare_lint! {
     pub NO_CONCRETE_ENV_IN_PUB_API,
     Deny,
-    "public APIs must not expose concrete `Env` as `R`; use `R: Needs<Key> + 'static`"
+    "public APIs must not expose a 0.6 `Env` as `R`; spell `R` with `caps!(Key, …)`"
 }
 
 declare_lint! {
     pub PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
     Warn,
-    "use `Needs<Key>` instead of raw `Get<Key, Here, Target = T>` bounds"
+    "use `caps!(Key, …)` / `R: Selector<Key, I>` instead of 0.6 `Get<Key, Here, Target = T>` bounds"
 }
 
 declare_lint! {
@@ -73,7 +73,7 @@ declare_lint! {
 declare_lint! {
     pub BLOCKING_SUFFIX_RESERVED_FOR_RUNNERS,
     Warn,
-    "`*_blocking` names must call `run_blocking` internally; not return `Effect`"
+    "`*_blocking` names must call `block_on` internally; not return `Effect`"
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ declare_lint! {
 declare_lint! {
     pub MULTI_STEP_MUST_USE_EFFECT_MACRO,
     Warn,
-    "chains of 2+ `.flat_map` calls should use `effect! { ~ … }` do-notation"
+    "chains of 2+ `.flat_map` calls should use `effect!({ ~… })` do-notation"
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -103,25 +103,27 @@ declare_lint! {
 declare_lint! {
     pub RUN_BLOCKING_ONLY_AT_PROGRAM_EDGE,
     Deny,
-    "`run_blocking`/`run_async` must only be called from binary entry points"
+    "`block_on`/`try_block_on` must only be called from binary entry points"
 }
 
+// 0.7 has no `run_test`: `block_on` is the test edge too. Opt-in (Allow) nudge towards a
+// `TestExecutor` for deterministic, virtual-time tests.
 declare_lint! {
     pub TESTS_MUST_USE_RUN_TEST,
-    Deny,
-    "test functions must use `run_test` / `run_test_with_env`, not `run_blocking`"
+    Allow,
+    "time-dependent test effects should run on a `TestExecutor` (virtual time), not `block_on`"
 }
 
 declare_lint! {
     pub NO_TOKIO_SPAWN,
     Deny,
-    "use `run_fork` / `.fork()` instead of `tokio::spawn`"
+    "use `.fork()` / `Runtime::fork` instead of `tokio::spawn`"
 }
 
 declare_lint! {
     pub NO_THREAD_SPAWN,
     Deny,
-    "use `run_fork` / `FiberHandle` instead of `std::thread::spawn`"
+    "use `.fork()` / `FiberHandle` instead of `std::thread::spawn`"
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -131,7 +133,7 @@ declare_lint! {
 declare_lint! {
     pub NO_STATIC_SERVICE_GLOBALS,
     Deny,
-    "service types must not live in `static` globals; require them via `Needs<Key>` in `R` and provide them with a `Layer`"
+    "service types must not live in `static` globals; list them in `R` (`caps!(Key, …)`) and provide them with a `Layer`"
 }
 
 declare_lint! {
@@ -187,7 +189,7 @@ declare_lint! {
 declare_lint! {
     pub NO_MUTEX_FOR_FIBER_COORDINATION,
     Warn,
-    "use `TRef`/`Stm` or `SynchronizedRef` instead of `Arc<Mutex<…>>` across fibers"
+    "use `SynchronizedRef` or `TRef`/`Stm` (`id_effect_fp`) instead of `Arc<Mutex<…>>` across fibers"
 }
 
 declare_lint! {
@@ -209,7 +211,7 @@ declare_lint! {
 declare_lint! {
     pub NO_SYSTEM_TIME_IN_DOMAIN,
     Warn,
-    "inject time through the `Clock` service instead of `SystemTime::now()` etc."
+    "read time from the executor clock (`UtcDateTime::now()`) instead of `SystemTime::now()` etc."
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -219,13 +221,13 @@ declare_lint! {
 declare_lint! {
     pub TEST_MUST_NOT_USE_THREAD_SLEEP,
     Deny,
-    "use `run_test_with_clock` to advance time in tests instead of `std::thread::sleep`"
+    "advance a `TestExecutor`'s virtual clock in tests instead of `std::thread::sleep`"
 }
 
 declare_lint! {
     pub RUN_TEST_RESULT_MUST_BE_MATCHED,
     Warn,
-    "`run_test(…).unwrap()` – use `assert!(matches!(…, Exit::Success(_)))` instead"
+    "`exit.into_result().unwrap()` – use `assert!(matches!(exit, Exit::Success(_)))` instead"
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -340,7 +342,7 @@ impl<'tcx> LateLintPass<'tcx> for EffectRsPass {
     // C-01: .await outside from_async
     exprs::check_no_await_outside_from_async(cx, expr);
 
-    // D-01 + D-02: run_blocking placement
+    // D-01 + D-02: block_on placement
     exprs::check_run_blocking_at_edge(cx, expr, def_id);
     exprs::check_tests_use_run_test(cx, expr, def_id);
 
@@ -368,7 +370,7 @@ impl<'tcx> LateLintPass<'tcx> for EffectRsPass {
     // H-02: SystemTime::now()
     exprs::check_no_system_time_now(cx, expr);
 
-    // I-02: run_test(…).unwrap()
+    // I-02: exit.into_result().unwrap()
     exprs::check_run_test_result_matched(cx, expr);
 
     // J-01: println! in Effect fn
@@ -449,7 +451,7 @@ pub fn register_lints(_sess: &Session, store: &mut LintStore) {
     &NO_PRINTLN_IN_EFFECT_GRAPH,
     &SCHEMA_PARSING_AT_IO_BOUNDARY,
   ]);
-  store.register_late_pass(|_| Box::new(EffectRsPass));
+  store.register_late_lint_pass(Box::new(|_| Box::new(EffectRsPass)));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

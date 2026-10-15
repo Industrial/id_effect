@@ -20,7 +20,7 @@ pub fn check_no_static_service_globals(cx: &LateContext<'_>, item: &rustc_hir::I
         item.span,
         "`static` item found; services must not live in global statics",
         None,
-        "require the service via `Needs<Key>` in `R`, provide it with a `Layer`, and access it via `require!` or `r.need()`",
+        "list the service in `R` (`caps!(Key, …)`), provide it with a `Layer`, and read it with `~Key` in `effect!` or `need::<Key>()`",
       );
     }
   }

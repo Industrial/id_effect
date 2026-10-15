@@ -1,21 +1,22 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# D-01  run_blocking / run_async only at program entry points
+# D-01  block_on / try_block_on only at program entry points
 # ──────────────────────────────────────────────────────────────────────────────
 - id: id_effect-run-blocking-only-at-edge
   language: Rust
   severity: error
   message: |
-    `run_blocking(…)` / `run_async(…)` must only be called from binary entry
-    points (`main`, integration tests) — never from library functions.
+    `effect.block_on()` / `effect.try_block_on()` park the thread and must only be
+    called from binary entry points (`main`, tests) — never from library functions.
+    In async code, `.await` `Runtime::run(effect)` instead.
   note: |
-    BAD:  pub fn execute(e: Effect<…>) -> R { run_blocking(rt, e, env) }
-    GOOD: // In main.rs or integration test:
-          fn main() { run_blocking(rt, my_effect(), env.build()) }
+    BAD:  pub fn execute(e: Effect<A, E>) -> Exit<A, E> { e.block_on() }
+    GOOD: // In main.rs or a test:
+          fn main() { let exit = my_effect().provide_env(env).block_on(); }
   rule:
     all:
       - any:
-          - pattern: run_blocking($$$)
-          - pattern: run_async($$$)
+          - pattern: $EFF.block_on()
+          - pattern: $EFF.try_block_on()
       # Inside a function that is NOT main and NOT a test
       - inside:
           kind: function_item
@@ -40,22 +41,20 @@
               regex: "^main$"
               field: name
 # ──────────────────────────────────────────────────────────────────────────────
-# D-02  Tests must use run_test, not run_blocking
+# D-02  Time-dependent tests run on a TestExecutor (hint)
 # ──────────────────────────────────────────────────────────────────────────────
 - id: id_effect-tests-must-use-run-test
   language: Rust
-  severity: error
+  severity: hint
   message: |
-    Test functions must use `run_test(…)` or `run_test_with_env(…)`, not `run_blocking`.
-    `run_test` enables fiber-leak detection and structured error reporting.
+    `block_on` runs a test on the real clock. Effects that sleep, retry or time out
+    are deterministic on a `TestExecutor` (virtual time, `advance(d)`).
   note: |
-    BAD:  #[test] fn my_test() { run_blocking(rt, my_effect(), env) }
-    GOOD: #[test] fn my_test() {
-              assert!(matches!(run_test(my_effect()), Exit::Success(_)));
-          }
+    OK:   #[test] fn my_test() { assert!(matches!(my_effect().block_on(), Exit::Success(_))); }
+    BETTER (time-dependent): run `my_effect()` on a `TestExecutor` and `advance(d)` its clock.
   rule:
     all:
-      - pattern: run_blocking($$$)
+      - pattern: $EFF.block_on()
       - inside:
           kind: function_item
           has:
@@ -72,9 +71,9 @@
   severity: error
   message: |
     `tokio::spawn(…)` bypasses Effect's structured concurrency.
-    Use `run_fork` / `.fork()` to create tracked fibers.
+    Use `.fork()` / `Runtime::fork` to create tracked fibers.
   note: |
-    BAD:  tokio::spawn(async move { my_effect.run().await });
+    BAD:  tokio::spawn(async move { rt.run(my_effect).await });
     GOOD: let handle = my_effect.fork();
           // later: handle.join()
   rule:
@@ -87,7 +86,7 @@
   severity: error
   message: |
     `std::thread::spawn` bypasses Effect's fiber model.
-    Use `run_fork` / `FiberHandle` for structured concurrency.
+    Use `.fork()` and its `FiberHandle` for structured concurrency.
   note: |
     BAD:  thread::spawn(|| { … });
     GOOD: let handle = my_effect.fork();

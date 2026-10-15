@@ -26,27 +26,27 @@ pub fn check_no_await_outside_from_async(cx: &LateContext<'_>, expr: &rustc_hir:
     // is an async closure by checking parent node kinds.  A simple
     // heuristic: if the span's outer expansion is an async closure,
     // allow it. We emit the lint otherwise – the user must use
-    // `from_async(|_r| async move { … })` to wrap the await.
+    // `from_async(move || async move { … })` to wrap the await.
     span_lint_and_help(
       cx,
       NO_AWAIT_OUTSIDE_FROM_ASYNC,
       expr.span,
       "`.await` used outside of a `from_async` wrapper",
       None,
-      "wrap async calls with `from_async(|_r| async move { expr.await })` \
-             and use `~ from_async(…)` inside `effect!`",
+      "wrap async calls with `from_async(move || async move { expr.await })`, \
+             or bind them with `~` inside an `effect!({ … })` body",
     );
   }
 }
 
-// ─── D-01: run_blocking only at program edge ───────────────────────────────────
+// ─── D-01: block_on only at program edge ───────────────────────────────────────
 
 pub fn check_run_blocking_at_edge(
   cx: &LateContext<'_>,
   expr: &rustc_hir::Expr<'_>,
   def_id: rustc_hir::def_id::LocalDefId,
 ) {
-  if !is_call_to_name(expr, "run_blocking") && !is_call_to_name(expr, "run_async") {
+  if !is_block_on_call(expr) {
     return;
   }
   if in_test_context(cx, def_id) {
@@ -60,20 +60,21 @@ pub fn check_run_blocking_at_edge(
     cx,
     RUN_BLOCKING_ONLY_AT_PROGRAM_EDGE,
     expr.span,
-    "`run_blocking` / `run_async` called outside a binary entry point",
+    "`block_on` / `try_block_on` called outside a binary entry point",
     None,
-    "move this call to `main` or a dedicated runner; library functions must return `Effect`",
+    "move this call to `main` or a dedicated runner; library functions return `Effect` \
+             (or `.await` `Runtime::run(effect)` in async code)",
   );
 }
 
-// ─── D-02: Tests must use run_test ────────────────────────────────────────────
+// ─── D-02: Time-dependent tests run on a TestExecutor ─────────────────────────
 
 pub fn check_tests_use_run_test(
   cx: &LateContext<'_>,
   expr: &rustc_hir::Expr<'_>,
   def_id: rustc_hir::def_id::LocalDefId,
 ) {
-  if !is_call_to_name(expr, "run_blocking") {
+  if !is_block_on_call(expr) {
     return;
   }
   if in_test_context(cx, def_id) {
@@ -81,9 +82,10 @@ pub fn check_tests_use_run_test(
       cx,
       TESTS_MUST_USE_RUN_TEST,
       expr.span,
-      "`run_blocking` used inside a test function",
+      "`block_on` used inside a test function",
       None,
-      "use `run_test(…)` / `run_test_with_env(…)` instead for fiber-leak detection",
+      "run time-dependent effects on a `TestExecutor` (virtual time, `advance(d)`) \
+             for deterministic tests",
     );
   }
 }
@@ -99,7 +101,7 @@ pub fn check_no_tokio_spawn(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_>) {
         expr.span,
         "`tokio::spawn` used in Effect code",
         None,
-        "use `run_fork` / `my_effect.fork()` for structured fiber management",
+        "use `my_effect.fork()` (a `FiberHandle`) or `Runtime::fork` for structured fibers",
       );
     }
   }
@@ -116,7 +118,8 @@ pub fn check_no_thread_spawn(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_>) {
         expr.span,
         "`std::thread::spawn` used in Effect code",
         None,
-        "use `run_fork(rt, || (effect, env))` and `FiberHandle` for structured concurrency",
+        "use `effect.fork()` and its `FiberHandle` (`join` / `interrupt`) for structured \
+                 concurrency",
       );
     }
   }
@@ -195,7 +198,7 @@ pub fn check_no_unwrap_in_effect(
         expr.span,
         format!("`.{name}()` used inside an Effect-returning function"),
         None,
-        "use typed error propagation: `?`, `~ effect.map_error(Into::into)`, \
+        "use typed error propagation: `?`, `~sub` (widens via `From`), `.map_err(…)`, \
                  or `fail(MyError::…)`",
       );
     }
@@ -270,8 +273,8 @@ pub fn check_no_mutex_for_fiber_coordination(
                   ty.span,
                   "`Arc<Mutex<…>>` / `Arc<RwLock<…>>` used in Effect code",
                   None,
-                  "use `TRef` / `Stm` transactions or `SynchronizedRef` \
-                                     for shared state across fibers",
+                  "use `SynchronizedRef` / `Ref`, or `TRef` / `Stm` transactions \
+                                     (`id_effect_fp`), for shared state across fibers",
                 );
               }
             }
@@ -319,9 +322,9 @@ pub fn check_no_thread_sleep(
         "`std::thread::sleep` used in Effect code",
         None,
         if in_test {
-          "use `run_test_with_clock(effect, |clk| clk.advance(…))` for time travel in tests"
+          "run the effect on a `TestExecutor` and `advance(d)` its virtual clock"
         } else {
-          "use `effect.retry(Schedule::exponential(…))` or inject `Clock` via `R`"
+          "use `sleep(d)` or `effect.retry(Schedule::exponential(…))` on the executor clock"
         },
       );
     }
@@ -342,30 +345,30 @@ pub fn check_no_system_time_now(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_>
         expr.span,
         "direct time access (`SystemTime::now()` / `Utc::now()`) in domain code",
         None,
-        "inject time through the `Clock` service: add `R: NeedsClock + 'static` \
-                 and use `~ Clock` inside `effect!`",
+        "read time from the executor clock: `~UtcDateTime::now()` inside `effect!` \
+                 (virtual on a `TestExecutor`)",
       );
     }
   }
 }
 
-// ─── I-02: run_test result must be matched ────────────────────────────────────
+// ─── I-02: a test's Exit must be matched ──────────────────────────────────────
 
 pub fn check_run_test_result_matched(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_>) {
   if let ExprKind::MethodCall(seg, recv, _, _) = &expr.kind {
     if seg.ident.name.as_str() != "unwrap" {
       return;
     }
-    // Check if the receiver is a call to run_test.
-    if is_call_to_name(recv, "run_test") {
+    // Check if the receiver is `exit.into_result()`.
+    if is_call_to_name(recv, "into_result") {
       span_lint_and_help(
         cx,
         RUN_TEST_RESULT_MUST_BE_MATCHED,
         expr.span,
-        "`run_test(…).unwrap()` called",
+        "`exit.into_result().unwrap()` called",
         None,
-        "use `assert!(matches!(run_test(…), Exit::Success(_)))` \
-                 or `run_test_and_unwrap(…)` to distinguish failure variants",
+        "match the `Exit` instead (`assert!(matches!(effect.block_on(), Exit::Success(_)))`) \
+                 to distinguish a typed failure from a defect or an interrupt",
       );
     }
   }
@@ -388,7 +391,7 @@ pub fn check_no_println_in_effect(
       expr.span,
       "`println!` / `eprintln!` inside an Effect-returning function",
       None,
-      "use `with_span(\"step\", …)` or structured tracing hooks; \
+      "use `effect.with_span(\"step\")` or a span hook; \
              remove debug prints before committing",
     );
   }
@@ -420,6 +423,11 @@ pub fn check_schema_parsing_at_boundary(cx: &LateContext<'_>, expr: &rustc_hir::
 }
 
 // ─── Local helpers ────────────────────────────────────────────────────────────
+
+/// `true` for a `block_on` / `try_block_on` call (`Effect`, `LocalEffect` or `Runtime`).
+fn is_block_on_call(expr: &rustc_hir::Expr<'_>) -> bool {
+  is_call_to_name(expr, "block_on") || is_call_to_name(expr, "try_block_on")
+}
 
 /// `true` if the free function / method call is named `name` (last path segment).
 fn is_call_to_name(expr: &rustc_hir::Expr<'_>, name: &str) -> bool {

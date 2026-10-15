@@ -6,10 +6,11 @@
   severity: error
   message: |
     `std::thread::sleep` blocks the OS thread and starves the async runtime.
-    Use `Schedule`-based retry/repeat combinators or the `Clock` service.
+    Use `sleep(d)` or `Schedule`-based retry/repeat combinators on the executor clock.
   note: |
     BAD:  thread::sleep(Duration::from_secs(5));
     GOOD: my_effect.retry(Schedule::spaced(Duration::from_secs(5)).take(3))
+    GOOD: ~sleep(Duration::from_secs(5))   // inside effect!
   rule:
     all:
       - any:
@@ -24,18 +25,19 @@
                 - pattern: "#[test]"
                 - pattern: "#[tokio::test]"
 # ──────────────────────────────────────────────────────────────────────────────
-# H-01b  No thread::sleep in tests (use run_test_with_clock)
+# H-01b  No thread::sleep in tests (use a TestExecutor's virtual clock)
 # ──────────────────────────────────────────────────────────────────────────────
 - id: id_effect-no-thread-sleep-in-tests
   language: Rust
   severity: error
   message: |
     `thread::sleep` in a test function makes the suite slow and non-deterministic.
-    Use `run_test_with_clock(effect, |clk| clk.advance(…))` for time travel.
+    Run the effect on a `TestExecutor` and `advance(d)` its virtual clock.
   note: |
     BAD:  #[test] fn my_test() { thread::sleep(Duration::from_millis(500)); … }
     GOOD: #[test] fn my_test() {
-              run_test_with_clock(my_effect(), |clk| clk.advance(Duration::from_millis(500)));
+              // fork `my_effect()` on a `TestExecutor`, then:
+              exec.advance(Duration::from_millis(500));
           }
   rule:
     all:
@@ -58,11 +60,11 @@
   message: |
     Direct time access (`SystemTime::now()`, `Utc::now()`, `Instant::now()`) in
     domain code is not testable and creates hidden side effects.
-    Inject time through the `Clock` service.
+    Read time from the executor clock (virtual on a `TestExecutor`).
   note: |
     BAD:  let now = SystemTime::now();
-    GOOD: fn fetch_expiry() -> Effect<DateTime, ClockError, Needs<ClockKey>> {
-              effect! { let now = ~ ClockKey; … }
+    GOOD: fn fetch_expiry() -> Effect<UtcDateTime> {
+              effect!({ let now = ~UtcDateTime::now(); … })
           }
   rule:
     any:

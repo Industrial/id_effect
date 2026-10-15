@@ -8,8 +8,8 @@ use rustc_span::Span;
 use crate::{
   BLOCKING_SUFFIX_RESERVED_FOR_RUNNERS, EFFECT_ERROR_BOUND_MUST_USE_FROM,
   EFFECT_FN_REQUIRES_WHERE_CLAUSE, MULTI_STEP_MUST_USE_EFFECT_MACRO, NO_ASYNC_FN_IN_EFFECT_CRATE,
-  NO_CONCRETE_CONTEXT_IN_PUB_API, NO_EFFECT_SUFFIX_ON_GRAPH_BUILDERS, NO_RESULT_RETURN_IN_PUB_FN,
-  PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
+  NO_CONCRETE_CONTEXT_IN_PUB_API, NO_CONCRETE_ENV_IN_PUB_API, NO_EFFECT_SUFFIX_ON_GRAPH_BUILDERS,
+  NO_RESULT_RETURN_IN_PUB_FN, PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
 };
 
 // ─── A-01 ─────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ pub fn check_effect_fn_where_clause<'tcx>(
       span,
       "Effect-returning function has generic parameters but no `where` clause",
       None,
-      "add `where A: …, E: From<…> + 'static, R: Needs<Key> + 'static`",
+      "add `where A: Send + 'static, E: From<…> + Send + 'static, R: Selector<Key, I> + Send + Sync + 'static`",
     );
   }
 }
@@ -134,7 +134,7 @@ pub fn check_effect_error_from_bound<'tcx>(
 
 // ─── A-05 ─────────────────────────────────────────────────────────────────────
 
-/// Flags public functions whose return type contains a concrete `Context<Cons<…>>`.
+/// Flags public functions whose `R` is a 0.6 environment type (`Context<Cons<…>>`, `Env`).
 pub fn check_no_concrete_context<'tcx>(
   cx: &LateContext<'tcx>,
   decl: &'tcx rustc_hir::FnDecl<'tcx>,
@@ -158,18 +158,18 @@ pub fn check_no_concrete_context<'tcx>(
                   cx,
                   NO_CONCRETE_CONTEXT_IN_PUB_API,
                   span,
-                  "public API exposes concrete `Context<Cons<…>>` as `R` type",
+                  "public API exposes a 0.6 `Context<Cons<…>>` as `R` type",
                   None,
-                  "use `impl NeedsX` or a generic `R: Needs<Key> + 'static` bound",
+                  "spell `R` with `caps!(Key, …)` (an `HCons` list), or take a generic `R: Selector<Key, I>`",
                 );
               } else if ty_last_segment_is(r, "Env") {
                 span_lint_and_help(
                   cx,
                   NO_CONCRETE_ENV_IN_PUB_API,
                   span,
-                  "public API exposes concrete `Env` as `R` type",
+                  "public API exposes a 0.6 `Env` as `R` type",
                   None,
-                  "use a generic `R: Needs<Key> + 'static` bound instead of bare `Env`",
+                  "spell `R` with `caps!(Key, …)`, or take a generic `R: Selector<Key, I>`",
                 );
               }
             }
@@ -182,7 +182,7 @@ pub fn check_no_concrete_context<'tcx>(
 
 // ─── A-06 ─────────────────────────────────────────────────────────────────────
 
-/// Flags raw `Get<Key, Here, Target = T>` bounds; prefer `NeedsX` supertraits.
+/// Flags 0.6 `Get<Key, Here, Target = T>` bounds; 0.7 reads a capability with `Selector`.
 pub fn check_prefer_needs_x<'tcx>(
   cx: &LateContext<'tcx>,
   decl: &'tcx rustc_hir::FnDecl<'tcx>,
@@ -197,9 +197,9 @@ pub fn check_prefer_needs_x<'tcx>(
       cx,
       PREFER_NEEDS_X_OVER_RAW_GET_BOUNDS,
       span,
-      "Effect-returning function uses raw `Get<Key, …>` bounds; prefer `Needs<Key>`",
+      "Effect-returning function uses 0.6 `Get<Key, …>` bounds",
       None,
-      "define a `NeedsX: Get<X>` supertrait and use `R: Needs<Key> + 'static` instead",
+      "spell `R` with `caps!(Key, …)` and read with `~Key` / `need::<Key>()`, or bound a generic `R: Selector<Key, I>`",
     );
   }
 }
@@ -250,7 +250,7 @@ pub fn check_blocking_suffix_misuse<'tcx>(
         ident.span,
         "function named `*_blocking` returns `Effect`; the name implies it runs the effect",
         None,
-        "rename, or call `run_blocking(…)` inside and return `Result<_, _>`",
+        "rename, or call `effect.block_on()` inside and return the `Exit` (or a `Result`)",
       );
     }
   }
@@ -274,7 +274,7 @@ pub fn check_multi_step_flat_map(cx: &LateContext<'_>, expr: &rustc_hir::Expr<'_
           expr.span,
           "chained `.flat_map(…).flat_map(…)` found",
           None,
-          "use `effect! { let a = ~ step_a(); let b = ~ step_b(a); … }` instead",
+          "use `effect!({ let a = ~step_a(); let b = ~step_b(a); … })` instead",
         );
       }
     }

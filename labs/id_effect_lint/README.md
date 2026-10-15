@@ -16,7 +16,7 @@ Install the `rust-src` (and typically `rustc-dev`) components for the same night
 
 ## Lint inventory
 
-Rules are declared in `src/lib.rs` (categories A–K): function signatures, `effect!` discipline, async/`from_async`, `run_blocking` / `run_test`, services, errors, concurrency, time, tests, logging, and schema boundaries.
+Rules are declared in `src/lib.rs` (categories A–K): function signatures, `effect!` discipline, async/`from_async`, the `block_on` edge and `TestExecutor` tests, services (typed `R`, `caps!`, `Layer`), errors, concurrency, time, tests, logging, and schema boundaries.
 
 ## Publishing (crate maintainers)
 
