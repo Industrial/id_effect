@@ -10,7 +10,7 @@ Parser combinator toolkit for the [`id_effect`](https://docs.rs/id_effect) works
 - **`Diff`** — value-level change descriptions
 - **`SchemaBridge`** — [`Schema`](https://docs.rs/id_effect/latest/id_effect/schema/struct.Schema.html) ↔ text parsers
 - **`#[derive(Schema)]`** (core `id_effect`) — generates `schema()` and [`HasSchema`](https://docs.rs/id_effect/latest/id_effect/schema/trait.HasSchema.html); pair with `SchemaBridge::parser_for::<T>()` for a JSON text parser
-- **`parse_stream` / `parse_text_stream`** — collect [`Stream`](https://docs.rs/id_effect/latest/id_effect/struct.Stream.html) chunks then parse
+- **`parse_stream` / `parse_text_stream`** — collect [`id_effect::next::Stream`](https://docs.rs/id_effect/latest/id_effect/next/struct.Stream.html) chunks then parse (returns a `next::Effect`)
 
 See mdBook Part V chapter 20 (`crates/id_effect/book/src/part5/ch20-00-parser-combinators.md`).
 

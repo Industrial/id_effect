@@ -9,7 +9,7 @@
 //! - [`pretty`] — [`Doc`] documents and the [`Pretty`] trait
 //! - [`codec`] — invertible parse/print [`Codec`]
 //! - [`diff`] — [`Diff`] for value comparisons
-//! - [`effect_bridge`] — parse from [`id_effect::Stream`] chunks
+//! - [`effect_bridge`] — parse from [`id_effect::next::Stream`] chunks
 //! - [`schema_bridge`] — [`Schema`](id_effect::Schema) ↔ text [`Parser`] bridge
 //!
 //! ## Book

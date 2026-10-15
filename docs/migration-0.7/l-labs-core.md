@@ -47,13 +47,46 @@ let stored = Runtime::global().run(store.read("acct", 1)).await.into_result()?; 
   `use id_effect::next::compat::IntoV1; run_async(store.append(..).into_v1::<()>(), ())`.
 - The es-entity `ProviderBox` providers (`provide_es_entity_events*`) are unchanged.
 
-## `id_effect_parse`: unchanged
+## `id_effect_parse`: schema bridge unchanged
 
-`id_effect_parse` uses `id_effect::schema` (kernel-independent, unchanged) and, in
-`effect_bridge`, the v1 `Stream`. `next` has no `Stream` until `m-streams`, so `parse_stream` /
-`parse_text_stream` keep taking a v1 `Stream<Chunk<_>, E, R>` and returning a v1
-`Effect<_, ParseStreamError<E, P>, R>`. They move to the `next` stream when `k-retire-v1`
-promotes `next` to the crate root.
+`id_effect_parse` uses `id_effect::schema` (kernel-independent, unchanged). Its `effect_bridge`
+first stayed on the v1 `Stream` (`next` had no `Stream` before `m-streams`); the follow-up below
+moves it.
+
+## `id_effect_parse`: stream bridge on `next::Stream` (follow-up)
+
+With `m-streams` landed, `effect_bridge` moves to the `next` stream ahead of `k-retire-v1`.
+`parse_stream` / `parse_text_stream` and `ParseStreamError` keep their names and shapes; only the
+kernel types change (R5, nothing added or removed):
+
+| item | 0.6 | 0.7 |
+|---|---|---|
+| `parse_stream` input | v1 `Stream<Chunk<I>, E, R>` | `next::Stream<Chunk<I>, E, R>` |
+| `parse_stream` output | v1 `Effect<O, ParseStreamError<E, P>, R>` | `next::Effect<O, ParseStreamError<E, P>, R>` |
+| `parse_text_stream` input / output | v1 `Stream<Chunk<u8>, E, R>` / v1 `Effect<..>` | `next::Stream<Chunk<u8>, E, R>` / `next::Effect<..>` |
+| bound on `R` | `R: 'static` | `R: Send + Sync + 'static` (the `next` stream's bound) |
+
+`Chunk` is the same type (`next` re-exports it). Stream failures still surface as
+`ParseStreamError::Stream(e)`; on `next` they arrive as the typed failure of the `Exit`'s `Cause`.
+
+```rust
+// 0.6
+use id_effect::{Chunk, Stream, run_blocking};
+let stream = Stream::from_iterable(vec![Chunk::from_vec(b"hi".to_vec())]);
+let value = run_blocking(parse_text_stream(tag("hi"), stream), ())?;
+
+// 0.7
+use id_effect::next::{Chunk, Stream};
+let stream = Stream::<Chunk<u8>>::from_iterable(vec![Chunk::from_vec(b"hi".to_vec())]);
+let value = parse_text_stream(tag("hi"), stream).block_on().into_result(); // Result<_, Cause<_>>
+let err = value.unwrap_err().fail_option(); // Some(ParseStreamError::..) on a typed failure
+```
+
+- `next::Stream`'s error defaults to `Never`, so a stream that cannot fail needs only the item
+  type (`Stream::<Chunk<u8>>`); E otherwise has no inference source.
+- **A v1 caller** holding a v1 `Stream` has no stream bridge; build the input as a `next::Stream`
+  and convert the result with `id_effect::next::compat::IntoV1` (`.into_v1::<()>()` for
+  `R = HNil`) if a v1 `Effect` is needed. No labs crate calls these functions.
 
 ## `id_effect_graph`: unchanged
 
