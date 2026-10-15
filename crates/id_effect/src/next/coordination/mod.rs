@@ -12,19 +12,26 @@
 //! - **Interruption.** Interrupting a waiting fiber drops its suspended step, which removes the
 //!   waiter; a permit or item handed to it but not yet observed goes back to the primitive.
 
-#[allow(dead_code)] // helpers for the primitives landing in the next commits of this leaf
 mod waiters;
 
+mod channel;
 mod deferred;
 mod latch;
+mod pubsub;
+mod queue;
 mod ref_;
 mod semaphore;
+mod subscription_ref;
 mod supervisor;
 mod synchronized_ref;
 
+pub use channel::*;
 pub use deferred::*;
 pub use latch::*;
+pub use pubsub::*;
+pub use queue::*;
 pub use ref_::*;
 pub use semaphore::*;
+pub use subscription_ref::*;
 pub use supervisor::*;
 pub use synchronized_ref::*;
