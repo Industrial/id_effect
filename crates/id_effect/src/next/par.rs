@@ -15,9 +15,9 @@
 //!   that were stopped because of the first failure are dropped (Effect.ts `Effect.all`);
 //! - interrupting the caller interrupts every child.
 //!
-//! `Concurrency::Bounded(n)` is a purely local window. Only `Concurrency::Inherit` will await
-//! Fabric admission (`c-fabric-scheduler`, at `fork_all`'s single admission point); until then
-//! it behaves as `Unbounded`.
+//! `Concurrency::Bounded(n)` is a purely local window. Only `Concurrency::Inherit` awaits
+//! admission from the ambient [`Fabric`](crate::next::Fabric) (installed with `Fabric::provide`,
+//! at `fork_all`'s single admission point); with no fabric it behaves as `Unbounded`.
 //!
 //! ```
 //! use std::time::Duration;
