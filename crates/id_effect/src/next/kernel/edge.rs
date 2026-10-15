@@ -6,6 +6,10 @@ use crate::failure::Exit;
 use crate::next::capability::HNil;
 use crate::next::runtime::{BlockOnInAsync, Runtime};
 
+#[allow(
+  clippy::disallowed_methods,
+  reason = "G-nb: the convenience blocking edges themselves, delegating to `Runtime`"
+)]
 impl<A: Send + 'static, E: Send + 'static> Effect<A, E, HNil> {
   /// Runs this effect on the process-wide default runtime ([`Runtime::global`]), parking the
   /// calling thread until it completes: a convenience for `Runtime::global().block_on(self)`.

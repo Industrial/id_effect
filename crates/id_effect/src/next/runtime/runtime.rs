@@ -252,6 +252,10 @@ impl Runtime {
 
   /// [`try_block_on`](Self::try_block_on), with [`BlockOnInAsync`] reported as a defect
   /// (`Exit::Failure(Cause::Die(..))`) instead of a separate error.
+  #[allow(
+    clippy::disallowed_methods,
+    reason = "G-nb: the blocking edge itself, delegating to `try_block_on`"
+  )]
   pub fn block_on<A, E>(&self, eff: Effect<A, E, HNil>) -> Exit<A, E>
   where
     A: Send + 'static,
