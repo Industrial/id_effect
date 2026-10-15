@@ -7,11 +7,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
 use id_effect::next::{
   Effect, ExitKind, RestartIntensity, Scope, Supervisor, SupervisorPolicy, TestExecutor, die, fail,
   succeed, supervised,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 fn run_exit<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Exit<A, E> {

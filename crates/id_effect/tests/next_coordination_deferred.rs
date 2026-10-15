@@ -7,10 +7,10 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
+use id_effect::Never;
 use id_effect::next::{
   Deferred, Effect, FiberHandle, Latch, Runtime, TestExecutor, fail, succeed, suspend, yield_fiber,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 fn run<A: Send + 'static>(eff: Effect<A, Never>) -> A {

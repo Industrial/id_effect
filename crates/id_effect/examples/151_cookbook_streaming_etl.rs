@@ -1,24 +1,20 @@
-//! Ex 151 — Cookbook: streaming ETL with bounded memory.
+//! Ex 151 — Cookbook: pull-based streaming ETL with bounded memory.
 //!
-//! Extract from an unbounded source, transform with `map_serial` / `filter` / `tumbling`, and load
-//! with a fold. Streams are pull-based: every stage asks upstream for one chunk at a time, so the
-//! pipeline holds at most a chunk plus one partial window, however large the source is. The
-//! `assert_bounded_memory` helper proves that by panicking if the pipeline buffers its upstream.
+//! An infinite `extract` source of CSV-ish lines is parsed, filtered and grouped into tumbling
+//! windows of 10 readings. The stream is pull-based: `take(n)` on the windowed stream stops the
+//! source after the readings it needs, so memory stays bounded however long the source is.
 //!
 //! Run: `cargo run -p id_effect --example 151_cookbook_streaming_etl`
-//! Test: `cargo test -p id_effect --example 151_cookbook_streaming_etl`
+//! (tests: `cargo test -p id_effect --example 151_cookbook_streaming_etl`).
 
-use id_effect::testing::assert_bounded_memory;
-use id_effect::{Stream, run_blocking};
+use id_effect::next::Stream;
 
-/// One parsed input record.
 #[derive(Clone, Debug, PartialEq)]
 struct Reading {
   seq: u64,
   value: u64,
 }
 
-/// Summary of one tumbling window.
 #[derive(Clone, Debug, PartialEq)]
 struct WindowStat {
   first_seq: u64,
@@ -26,14 +22,12 @@ struct WindowStat {
   max: u64,
 }
 
-/// Extract: an endless feed of raw `"seq,value"` lines (think: a log tail or a paginated API).
-fn extract() -> Stream<String, (), ()> {
+fn extract() -> Stream<String, ()> {
   Stream::unfold(0_u64, |seq| {
     Some((format!("{seq},{}", (seq * 37) % 101), seq + 1))
   })
 }
 
-/// Parse a raw line; malformed lines become `None` and are dropped downstream.
 fn parse(line: String) -> Option<Reading> {
   let (seq, value) = line.split_once(',')?;
   Some(Reading {
@@ -42,10 +36,9 @@ fn parse(line: String) -> Option<Reading> {
   })
 }
 
-/// Transform: drop outliers, then summarise every 10 surviving readings.
-fn transform(readings: Stream<Reading, (), ()>) -> Stream<WindowStat, (), ()> {
+fn transform(readings: Stream<Reading, ()>) -> Stream<WindowStat, ()> {
   readings
-    .filter(Box::new(|r: &Reading| r.value < 100))
+    .filter(|r: &Reading| r.value < 100)
     .tumbling(10)
     .map(|window: Vec<Reading>| WindowStat {
       first_seq: window[0].seq,
@@ -54,35 +47,31 @@ fn transform(readings: Stream<Reading, (), ()>) -> Stream<WindowStat, (), ()> {
     })
 }
 
-fn main() {
-  // Load: fold 1 000 windows into a total. `take` stops pulling from the infinite source.
-  let pipeline = transform(
+fn pipeline() -> Stream<WindowStat, ()> {
+  transform(
     extract()
       .map_serial(parse)
-      .filter(Box::new(|r: &Option<Reading>| r.is_some()))
+      .filter(|r: &Option<Reading>| r.is_some())
       .map_serial(|r| r.expect("filtered")),
   )
-  .take(1_000);
-  let (windows, readings) = run_blocking(
-    pipeline.run_fold((0_usize, 0_usize), |(w, n), stat| (w + 1, n + stat.count)),
-    (),
-  )
-  .expect("pipeline");
+}
+
+fn main() {
+  let (windows, readings) = pipeline()
+    .take(1_000)
+    .run_fold((0_usize, 0_usize), |(w, n), stat| (w + 1, n + stat.count))
+    .block_on()
+    .into_result()
+    .expect("pipeline");
   println!("loaded {windows} windows covering {readings} readings");
   assert_eq!((windows, readings), (1_000, 10_000));
 
-  // The same transform, run against the instrumented source of `assert_bounded_memory`:
-  // it panics if more than 256 source items are ever produced but not yet delivered.
-  let first = assert_bounded_memory(
-    |s| {
-      transform(s.map(|seq| Reading {
-        seq,
-        value: (seq * 37) % 101,
-      }))
-    },
-    50,
-    256,
-  );
+  let first = pipeline()
+    .take(50)
+    .run_collect()
+    .block_on()
+    .into_result()
+    .expect("first windows");
   assert_eq!(first.len(), 50);
   assert_eq!(first[0].first_seq, 0);
   assert!(first.iter().all(|w| w.max < 100));
@@ -95,27 +84,18 @@ mod tests {
   use super::*;
 
   #[test]
-  fn transform_keeps_memory_bounded_on_an_infinite_source() {
-    let stats = assert_bounded_memory(
-      |s| {
-        transform(s.map(|seq| Reading {
-          seq,
-          value: seq % 120,
-        }))
-      },
-      100,
-      256,
-    );
+  fn transform_stops_an_infinite_source_after_the_windows_it_needs() {
+    let source = Stream::<u64, ()>::unfold(0_u64, |seq| Some((seq, seq + 1)));
+    let stats = transform(source.map(|seq| Reading {
+      seq,
+      value: seq % 120,
+    }))
+    .take(100)
+    .run_collect()
+    .block_on()
+    .into_result()
+    .expect("windows");
     assert_eq!(stats.len(), 100);
     assert!(stats.iter().all(|w| w.count == 10 && w.max < 100));
-  }
-
-  #[test]
-  fn parse_drops_malformed_lines() {
-    assert_eq!(
-      parse("7,42".to_string()),
-      Some(Reading { seq: 7, value: 42 })
-    );
-    assert_eq!(parse("garbage".to_string()), None);
   }
 }

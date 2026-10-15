@@ -1,19 +1,19 @@
-//! Ex 101 — `PubSub` broadcast hub with `publish` / `subscribe`.
-use id_effect::{PubSub, Scope, run_async};
+//! Ex 101 — A `PubSub` hub: `subscribe` in a scope, then `publish`.
+use id_effect::next::{Effect, PubSub, QueueError, Scope};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-  let ps = run_async(PubSub::<u32>::bounded(8), ())
-    .await
-    .expect("pubsub");
-  let scope = Scope::make();
-  let q = run_async(ps.subscribe(), scope.clone())
-    .await
-    .expect("subscribe");
-  assert!(run_async(ps.publish(41), ()).await.expect("pub"));
-  assert!(run_async(ps.publish(1), ()).await.expect("pub"));
-  let a = run_async(q.take(), ()).await.expect("take");
-  let b = run_async(q.take(), ()).await.expect("take");
-  assert_eq!(a + b, 42);
+fn main() {
+  let ps = PubSub::<u32>::bounded(8);
+  let scope = Scope::new();
+  let program: Effect<u32, QueueError> = ps.subscribe(&scope).flat_map({
+    let ps = ps.clone();
+    move |q| {
+      ps.publish(41)
+        .then(ps.publish(1))
+        .then(q.take())
+        .zip(q.take())
+        .map(|(a, b)| a + b)
+    }
+  });
+  assert_eq!(program.block_on().into_result().ok(), Some(42));
   println!("101_pubsub ok");
 }

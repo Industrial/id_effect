@@ -1,8 +1,9 @@
-//! Ex 003 — `Effect::map` transforms success without changing the environment.
-use id_effect::{run_blocking, succeed};
+//! Ex 003 — `Effect::map` transforms the success value.
+use id_effect::Exit;
+use id_effect::next::{Effect, succeed};
 
 fn main() {
-  let program = succeed::<i32, (), ()>(21_i32).map(|n| n * 2);
-  assert_eq!(run_blocking(program, ()), Ok(42));
+  let program: Effect<i32> = succeed(21).map(|n: i32| n * 2);
+  assert_eq!(program.block_on(), Exit::succeed(42));
   println!("003_map ok");
 }

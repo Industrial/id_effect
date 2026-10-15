@@ -14,11 +14,11 @@ use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use id_effect::Never;
 use id_effect::next::{
   Effect, ExitKind, FiberContext, FiberHandle, LocalEffect, Runtime, TokioExecutor,
   acquire_use_release, fail, from_async, sleep, succeed, sync,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 // ── drivers ───────────────────────────────────────────────────────────────────────────────

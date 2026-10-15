@@ -1,5 +1,5 @@
 //! `k-macros-next` acceptance tests: `effect_next!`, `effect_local_next!`, `caps_next!`, the H17
-//! generic-helper pattern (`.same_env()`), and v1 `effect!` side by side with `effect_next!`.
+//! generic-helper pattern (`.same_env()`).
 //!
 //! Effects run on `Runtime::global()` through `Effect::block_on` / `LocalEffect::block_on`.
 
@@ -305,30 +305,4 @@ fn h17_inline_need_binds_with_same_env() {
       .block_on(),
     Exit::Success(2)
   ));
-}
-
-// ── coexistence with v1 ─────────────────────────────────────────────────────────────────────
-
-mod coexistence {
-  use super::*;
-
-  fn v1_older(age: i64) -> id_effect::Effect<i64, String, ()> {
-    id_effect::effect! {
-      let a = ~id_effect::succeed::<i64, String, ()>(age + 1);
-      a
-    }
-  }
-
-  fn next_older(age: i64) -> Effect<i64, String, caps_next!(Counter)> {
-    effect_next!({ age + ~Counter.0 as i64 })
-  }
-
-  #[test]
-  fn v1_effect_and_effect_next_run_side_by_side() {
-    assert_eq!(id_effect::run_blocking(v1_older(36), ()), Ok(37));
-    assert_eq!(
-      next_older(36).provide(Counter(1)).block_on(),
-      Exit::Success(37)
-    );
-  }
 }

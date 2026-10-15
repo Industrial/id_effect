@@ -1,10 +1,10 @@
-//! Ex 048 — `run_fork` on [`ThreadSleepRuntime`] runs the effect on a worker thread; [`FiberHandle::join`]
-//! returns the success value.
-use id_effect::{ThreadSleepRuntime, run_fork, succeed};
+//! Ex 048 — `fork` runs an effect on a child fiber; `join` awaits its outcome.
+use id_effect::Exit;
+use id_effect::next::{Effect, succeed};
 
 fn main() {
-  let rt = ThreadSleepRuntime::default();
-  let h = run_fork(&rt, || (succeed::<u8, (), ()>(5_u8), ()));
-  assert_eq!(pollster::block_on(h.join()), Ok(5));
+  let child: Effect<u8, ()> = succeed(5);
+  let program: Effect<u8, ()> = child.fork().widen().flat_map(|h| h.join());
+  assert_eq!(program.block_on(), Exit::succeed(5));
   println!("048_run_fork_join ok");
 }

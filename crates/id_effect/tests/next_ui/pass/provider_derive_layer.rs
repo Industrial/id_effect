@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use id_effect::Never;
 use id_effect::next::{Effect, HCons, HNil, need, sync};
-use id_effect::runtime::Never;
 use id_effect::{Exit, ProviderSpec, ProviderSpecDerive};
 
 #[derive(Clone)]

@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
+use id_effect::Never;
 use id_effect::next::{
   Concurrency, Effect, Executor, Request, RequestResolver, TestExecutor, TokioExecutor, all, fail,
   request, sleep, succeed, sync,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 // ── drivers ───────────────────────────────────────────────────────────────────────────────

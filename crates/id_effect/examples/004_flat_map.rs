@@ -1,8 +1,9 @@
 //! Ex 004 — `Effect::flat_map` sequences another effect (monadic bind).
-use id_effect::{run_blocking, succeed};
+use id_effect::Exit;
+use id_effect::next::{Effect, succeed};
 
 fn main() {
-  let program = succeed::<i32, (), ()>(20_i32).flat_map(|n| succeed::<i32, (), ()>(n + 22));
-  assert_eq!(run_blocking(program, ()), Ok(42));
+  let program: Effect<i32> = succeed(20).flat_map(|n: i32| succeed(n + 22));
+  assert_eq!(program.block_on(), Exit::succeed(42));
   println!("004_flat_map ok");
 }

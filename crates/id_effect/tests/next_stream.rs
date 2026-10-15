@@ -11,11 +11,11 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use id_effect::Never;
 use id_effect::next::{
   Chunk, DEFAULT_CHUNK_SIZE, Effect, HCons, HNil, Stream, fail, need, sleep, succeed, sync,
   yield_fiber,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 fn run<A: Send + 'static, E: Send + std::fmt::Debug + 'static>(eff: Effect<A, E>) -> Result<A, E> {

@@ -1,11 +1,16 @@
-//! Ex 009 — `Result` implements `IntoBind` inside `effect!`.
-use id_effect::{Effect, effect, run_blocking};
+//! Ex 009 — Inside `effect_next!`, a `Result` short-circuits with `?` into the typed error.
+use id_effect::next::{Effect, effect_next};
+use id_effect::{Cause, Exit};
+
+fn parse(raw: &'static str) -> Effect<i32, &'static str> {
+  effect_next!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+}
 
 fn main() {
-  let program: Effect<i32, (), ()> = effect! {
-    let n = ~Ok::<i32, ()>(42);
-    n
-  };
-  assert_eq!(run_blocking(program, ()), Ok(42));
+  assert_eq!(parse("42").block_on(), Exit::succeed(42));
+  assert_eq!(
+    parse("x").block_on(),
+    Exit::Failure(Cause::Fail("parse_failed"))
+  );
   println!("009_result_into_bind ok");
 }

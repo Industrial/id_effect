@@ -22,10 +22,6 @@ name = "phase0_baseline"
 harness = false
 
 [[bench]]
-name = "env_lookup"
-harness = false
-
-[[bench]]
 name = "effect_macro_bind_free"
 harness = false
 
@@ -36,11 +32,6 @@ harness = false
 [[bench]]
 name = "next_kernel"
 harness = false
-
-[[bench]]
-name = "startup_run_with"
-harness = false
-required-features = ["compute"]
 
 # Compute Fabric examples (auto-discovered otherwise; listed only to gate on `compute`).
 [[example]]

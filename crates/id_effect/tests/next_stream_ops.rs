@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
 use id_effect::next::{
   Effect, Stream, Transducer, combine_latest, keyed_join, state_scan, succeed, transducer_filter,
   transducer_map, transducer_take, window_instant,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 fn ok<A: Send + 'static>(eff: Effect<A, Never>) -> A {

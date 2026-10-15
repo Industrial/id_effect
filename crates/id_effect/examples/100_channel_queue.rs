@@ -1,12 +1,14 @@
-//! Ex 100 — Duplex `Channel` backed by a `Queue` (write / read outside `Stream`).
-use id_effect::{Channel, run_blocking};
+//! Ex 100 — A duplex `Channel` backed by a `Queue` (write / read outside a `Stream`).
+use id_effect::next::{Channel, Effect};
 
 fn main() {
-  let ch = run_blocking(Channel::<i32, i32, (), (), ()>::duplex_unbounded(), ()).expect("channel");
-  run_blocking(ch.write(21), ()).expect("write");
-  run_blocking(ch.write(21), ()).expect("write");
-  let a = run_blocking(ch.read(), ()).expect("read").expect("elem");
-  let b = run_blocking(ch.read(), ()).expect("read").expect("elem");
-  assert_eq!(a + b, 42);
+  let ch = Channel::<i32>::duplex_unbounded();
+  let program: Effect<i32, ()> = ch
+    .write(21)
+    .then(ch.write(21))
+    .then(ch.read())
+    .zip(ch.read())
+    .map(|(a, b)| a.expect("elem") + b.expect("elem"));
+  assert_eq!(program.block_on().into_result().ok(), Some(42));
   println!("100_channel_queue ok");
 }

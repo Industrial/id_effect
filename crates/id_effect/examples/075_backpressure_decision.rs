@@ -1,5 +1,5 @@
-//! Ex 075 — `backpressure_decision` maps policy + fill to an action.
-use id_effect::{BackpressureDecision, BackpressurePolicy, backpressure_decision};
+//! Ex 075 — `backpressure_decision` maps a policy and the queue fill to an action.
+use id_effect::next::{BackpressureDecision, BackpressurePolicy, backpressure_decision};
 
 fn main() {
   assert_eq!(

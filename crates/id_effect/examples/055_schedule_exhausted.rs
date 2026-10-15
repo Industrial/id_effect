@@ -1,8 +1,9 @@
-//! Ex 055 — When retries are exhausted, the last error is returned.
-use id_effect::{Schedule, fail, retry, run_blocking};
+//! Ex 055 — When retries are exhausted, the last error is the outcome.
+use id_effect::next::{Effect, Schedule, fail};
+use id_effect::{Cause, Exit};
 
 fn main() {
-  let eff = retry(|| fail::<(), &'static str, ()>("nope"), Schedule::recurs(1));
-  assert_eq!(run_blocking(eff, ()), Err("nope"));
+  let eff: Effect<(), &'static str> = Effect::retry(|| fail("nope"), Schedule::recurs(1));
+  assert_eq!(eff.block_on(), Exit::Failure(Cause::Fail("nope")));
   println!("055_schedule_exhausted ok");
 }

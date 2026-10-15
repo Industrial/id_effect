@@ -1,16 +1,18 @@
-//! Ex 096 — `snapshot_tracing` reads recorded spans and events.
-use id_effect::{
-  EffectEvent, Never, TracingConfig, annotate_current_span, install_tracing_layer, run_blocking,
-  snapshot_tracing, succeed, with_span,
+//! Ex 096 — `snapshot_tracing` reads the recorded spans and events.
+use id_effect::next::{
+  Effect, EffectEvent, TracingConfig, annotate_current_span, install_tracing_layer,
+  snapshot_tracing, succeed, tracing_hook,
 };
+use id_effect::{Exit, Never};
 
 fn main() {
-  let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-  let eff = with_span(
-    annotate_current_span::<(), Never, ()>("k", "v").flat_map(|_| succeed::<u8, Never, ()>(0)),
-    "snap.demo",
-  );
-  assert_eq!(run_blocking(eff, ()), Ok(0));
+  install_tracing_layer(TracingConfig::enabled());
+  let eff: Effect<u8, Never> = annotate_current_span("k", "v").then(succeed(0));
+  let exit = eff
+    .with_span("snap.demo")
+    .with_span_hook(tracing_hook())
+    .block_on();
+  assert_eq!(exit, Exit::succeed(0));
   let snap = snapshot_tracing();
   assert!(
     snap

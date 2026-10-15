@@ -1,14 +1,15 @@
-//! Ex 069 — `map_effect` runs an effect per element (`Or` widens errors).
-use id_effect::{Or, Stream, fail, run_blocking, succeed};
+//! Ex 069 — `map_effect` runs an effect per element; a failure ends the stream with it.
+use id_effect::next::{Stream, fail, succeed};
+use id_effect::{Cause, Exit};
 
 fn main() {
-  let s = Stream::from_iterable([1_i32, 2, 3]).map_effect(|n| succeed::<i32, (), ()>(n * 2));
-  assert_eq!(run_blocking(s.run_collect(), ()), Ok(vec![2, 4, 6]));
+  let s = Stream::<i32, &'static str>::from_iterable([1, 2, 3]).map_effect(|n| succeed(n * 2));
+  assert_eq!(s.run_collect().block_on(), Exit::succeed(vec![2, 4, 6]));
 
-  let bad = Stream::from_iterable([1_i32]).map_effect(|_| {
-    succeed::<i32, &'static str, ()>(0).flat_map(|_| fail::<i32, &'static str, ()>("e"))
-  });
-  let r = run_blocking(bad.run_collect(), ());
-  assert!(matches!(r, Err(Or::Right("e"))));
+  let bad = Stream::<i32, &'static str>::from_iterable([1]).map_effect(|_| fail::<i32, _, _>("e"));
+  assert_eq!(
+    bad.run_collect().block_on(),
+    Exit::Failure(Cause::Fail("e"))
+  );
   println!("069_stream_map_effect ok");
 }

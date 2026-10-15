@@ -1,53 +1,20 @@
-//! Ex 042 — effectful provider builds config via [`Effect`] before the app runs.
+//! Ex 042 — an effectful `Layer` builds the config before the app runs.
+use id_effect::next::{Effect, HCons, HNil, Layer, caps_next, effect_next, hlist, sync};
+use id_effect::{Exit, Never};
 
-use id_effect::{Cap, Effect, Env, Needs, ProviderError, ProviderSpec, caps, provide, run_with};
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppConfig(String);
 
-type AppConfig = String;
-
-struct ConfigLoaderLive;
-
-impl ProviderSpec for ConfigLoaderLive {
-  type Key = Cap<AppConfig>;
-  type Output = String;
-
-  fn provider_id() -> &'static str {
-    "config-loader"
-  }
-
-  fn effectful_build() -> bool {
-    true
-  }
-
-  fn provide(_deps: &Env) -> Result<String, ProviderError> {
-    Err(ProviderError {
-      provider: "ConfigLoaderLive",
-      message: "use provide_effect".into(),
-    })
-  }
-
-  fn provide_effect(_deps: &Env) -> Effect<String, ProviderError, Env> {
-    Effect::new(|_env| Ok("loaded-from-effect".to_string()))
-  }
+fn config_layer() -> Layer<HCons<AppConfig, HNil>, Never> {
+  Layer::effect(|| sync(|| hlist![AppConfig("loaded-from-effect".to_string())]))
 }
 
-fn app() -> Effect<String, (), caps!(AppConfig)> {
-  Effect::new(|env: &mut caps!(AppConfig)| Ok(Needs::<AppConfig>::need(env).clone()))
+fn app() -> Effect<String, Never, caps_next!(AppConfig)> {
+  effect_next!({ ~AppConfig.0.clone() })
 }
 
 fn main() {
-  let cfg = run_with([provide!(ConfigLoaderLive)], app()).expect("run");
-  assert_eq!(cfg, "loaded-from-effect");
-  println!("042_effectful_config_provider ok: {cfg}");
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use id_effect::build_env;
-
-  #[test]
-  fn effectful_provider_runs_before_app() {
-    let env = build_env([provide!(ConfigLoaderLive)]).expect("build");
-    assert_eq!(env.get::<Cap<AppConfig>>(), "loaded-from-effect");
-  }
+  let cfg = app().provide_layer(config_layer()).block_on();
+  assert_eq!(cfg, Exit::succeed("loaded-from-effect".to_string()));
+  println!("042_effectful_config_provider ok");
 }

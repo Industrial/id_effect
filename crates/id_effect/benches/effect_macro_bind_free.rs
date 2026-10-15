@@ -1,24 +1,28 @@
-//! Compare **bind-free** [`effect!`](::id_effect::effect) expansion vs hand-written [`Effect::new`](::id_effect::Effect::new).
+//! Compare a **bind-free** `effect_next!` body vs a hand-written `sync` step on the 0.7 kernel.
 //!
-//! After the proc-macro fast path (no `~` → `Effect::new`), both should compile to very similar
-//! code and show comparable timings. Run:
+//! A body with no `~` still becomes an async `Effect::from_ctx` program, where `sync` is one
+//! lazy synchronous step; the pair shows what the macro costs over the plain constructor. Both
+//! run through `Effect::block_on`. Run:
 //!
 //! ```bash
 //! cargo bench -p id_effect --bench effect_macro_bind_free
 //! ```
 
-use ::id_effect::{Effect, effect};
+use ::id_effect::next::{Effect, HNil, effect_next, sync};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_bind_free_effect_bang(c: &mut Criterion) {
   c.bench_function("effect_macro_bind_free/effect_bang_no_tilde", |b| {
     b.iter(|| {
-      let eff: Effect<usize, (), ()> = effect!(|_r: &mut ()| {
+      let eff: Effect<usize, (), HNil> = effect_next!({
         let x = std::hint::black_box(1usize);
         let y = std::hint::black_box(2usize);
         x.wrapping_add(y).wrapping_add(3)
       });
-      let out = pollster::block_on(eff.run(&mut ())).expect("bind-free effect should succeed");
+      let out = eff
+        .block_on()
+        .into_result()
+        .expect("bind-free effect should succeed");
       std::hint::black_box(out)
     });
   });
@@ -27,12 +31,15 @@ fn bench_bind_free_effect_bang(c: &mut Criterion) {
 fn bench_handwritten_effect_new(c: &mut Criterion) {
   c.bench_function("effect_macro_bind_free/handwritten_effect_new", |b| {
     b.iter(|| {
-      let eff: Effect<usize, (), ()> = Effect::new(move |_r: &mut ()| {
+      let eff: Effect<usize, (), HNil> = sync(move || {
         let x = std::hint::black_box(1usize);
         let y = std::hint::black_box(2usize);
-        Ok(x.wrapping_add(y).wrapping_add(3))
+        x.wrapping_add(y).wrapping_add(3)
       });
-      let out = pollster::block_on(eff.run(&mut ())).expect("hand-written new should succeed");
+      let out = eff
+        .block_on()
+        .into_result()
+        .expect("hand-written sync should succeed");
       std::hint::black_box(out)
     });
   });

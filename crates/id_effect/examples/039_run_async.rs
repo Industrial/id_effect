@@ -1,10 +1,10 @@
-//! Ex 039 — `run_async` polls an effect to completion.
-use id_effect::{run_async, succeed};
+//! Ex 039 — Inside an async program, `Runtime::run` awaits an effect instead of blocking.
+use id_effect::Exit;
+use id_effect::next::{Effect, Runtime, succeed};
 
-fn main() {
-  assert_eq!(
-    pollster::block_on(run_async(succeed::<u8, (), ()>(9_u8), ())),
-    Ok(9)
-  );
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+  let eff: Effect<u8, ()> = succeed(9);
+  assert_eq!(Runtime::global().run(eff).await, Exit::succeed(9));
   println!("039_run_async ok");
 }

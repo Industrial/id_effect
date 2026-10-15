@@ -17,10 +17,12 @@
 //! - `stream/*`: the 0.7 `next::Stream` (`m-streams`), run through `Effect::block_on` (v0.6 ran
 //!   `pollster::block_on(effect.run(&mut ()))`). Same workloads; `map_effect` is now sequential
 //!   (ADR 0008 Amendment 2), where v0.6 ran each chunk concurrently under the admission budget.
-//! - `coord/*`: still the v1 kernel (§7 Q-C) until `c-coordination`.
+//! - `coord/*`: the 0.7 `next::Channel` / `next::Queue` (`c-coordination`): a forked producer
+//!   fiber and the main fiber as consumer, run through `Effect::block_on` (v0.6 ran two
+//!   futures under `tokio::join!` on a current-thread runtime). Same workloads; the bounded
+//!   queue's `offer` now suspends while full instead of the producer polling `yield_now`.
 
 use ::id_effect::next::{self as k, HNil};
-use ::id_effect::{Channel, Queue};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const ASYNC_BINDS: usize = 64;
@@ -29,12 +31,6 @@ const STREAM_PULL_LEN: u64 = 10_000;
 const STREAM_MAP_EFFECT_LEN: u64 = 1_000;
 const COORD_MESSAGES: u64 = 10_000;
 const QUEUE_CAPACITY: usize = 64;
-
-fn current_thread_runtime() -> tokio::runtime::Runtime {
-  tokio::runtime::Builder::new_current_thread()
-    .build()
-    .expect("current_thread runtime should build")
-}
 
 /// 64 sequential binds, each through a real `async` step (`from_async`).
 fn bench_async_bind_64(c: &mut Criterion) {
@@ -102,92 +98,79 @@ fn bench_stream_map_effect_1k(c: &mut Criterion) {
   });
 }
 
-// v1 body until c-coordination
-/// One producer writes 10k elements into a queue-backed `Channel`; one consumer reads them back.
+/// Writes `n..COORD_MESSAGES` into `channel`, one `write` per element.
+fn produce(channel: k::Channel<u64>, n: u64) -> k::Effect<(), (), HNil> {
+  if n == COORD_MESSAGES {
+    return k::succeed(());
+  }
+  channel.write(n).flat_map(move |()| produce(channel, n + 1))
+}
+
+/// Reads `left` elements from `channel`, summing them.
+fn consume(channel: k::Channel<u64>, left: u64, sum: u64) -> k::Effect<u64, (), HNil> {
+  if left == 0 {
+    return k::succeed(sum);
+  }
+  channel.read().flat_map(move |n| {
+    let n = n.expect("channel should not end early");
+    consume(channel, left - 1, sum.wrapping_add(n))
+  })
+}
+
+/// One producer fiber writes 10k elements into a queue-backed `Channel`; the main fiber reads
+/// them back.
 fn bench_channel_spsc_10k(c: &mut Criterion) {
-  let rt = current_thread_runtime();
   c.bench_function("coord/channel_spsc_10k", |b| {
     b.iter(|| {
-      rt.block_on(async {
-        let queue = Queue::<u64>::unbounded()
-          .run(&mut ())
-          .await
-          .expect("unbounded queue should build");
-        let channel: Channel<u64, u64, (), (), ()> = Channel::from_queue_and_map(queue, |n| n);
-        let producer = {
-          let channel = channel.clone();
-          async move {
-            for n in 0..COORD_MESSAGES {
-              channel
-                .write(n)
-                .run(&mut ())
-                .await
-                .expect("channel write should not fail");
-            }
-          }
-        };
-        let consumer = async {
-          let mut sum = 0u64;
-          for _ in 0..COORD_MESSAGES {
-            let n = channel
-              .read()
-              .run(&mut ())
-              .await
-              .expect("channel read should not fail")
-              .expect("channel should not end early");
-            sum = sum.wrapping_add(n);
-          }
-          sum
-        };
-        let ((), sum) = tokio::join!(producer, consumer);
-        std::hint::black_box(sum)
-      })
+      let channel = k::Channel::<u64>::duplex_unbounded();
+      let program = produce(channel.clone(), 0)
+        .fork()
+        .widen()
+        .flat_map(move |_producer| consume(channel, COORD_MESSAGES, 0));
+      let sum = program
+        .block_on()
+        .into_result()
+        .expect("channel spsc should not fail");
+      std::hint::black_box(sum)
     });
   });
 }
 
-// v1 body until c-coordination
-/// One producer offers 10k elements into a bounded queue (capacity 64, yielding when full);
-/// one consumer takes them.
+/// Offers `n..COORD_MESSAGES` into `queue` (each offer suspends while the queue is full).
+fn offer_all(queue: k::Queue<u64>, n: u64) -> k::Effect<(), k::QueueError, HNil> {
+  if n == COORD_MESSAGES {
+    return k::succeed(());
+  }
+  queue
+    .offer(n)
+    .flat_map(move |_stored| offer_all(queue, n + 1))
+}
+
+/// Takes `left` elements from `queue`, summing them.
+fn take_all(queue: k::Queue<u64>, left: u64, sum: u64) -> k::Effect<u64, k::QueueError, HNil> {
+  if left == 0 {
+    return k::succeed(sum);
+  }
+  queue
+    .take()
+    .flat_map(move |n| take_all(queue, left - 1, sum.wrapping_add(n)))
+}
+
+/// One producer fiber offers 10k elements into a bounded queue (capacity 64, suspending while
+/// full); the main fiber takes them.
 fn bench_queue_bounded_10k(c: &mut Criterion) {
-  let rt = current_thread_runtime();
   c.bench_function("coord/queue_bounded_10k", |b| {
     b.iter(|| {
-      rt.block_on(async {
-        let queue = Queue::<u64>::bounded(QUEUE_CAPACITY)
-          .run(&mut ())
-          .await
-          .expect("bounded queue should build");
-        let producer = {
-          let queue = queue.clone();
-          async move {
-            for n in 0..COORD_MESSAGES {
-              while !queue
-                .offer(n)
-                .run(&mut ())
-                .await
-                .expect("queue offer is infallible")
-              {
-                tokio::task::yield_now().await;
-              }
-            }
-          }
-        };
-        let consumer = async {
-          let mut sum = 0u64;
-          for _ in 0..COORD_MESSAGES {
-            let n = queue
-              .take()
-              .run(&mut ())
-              .await
-              .expect("queue take should not fail");
-            sum = sum.wrapping_add(n);
-          }
-          sum
-        };
-        let ((), sum) = tokio::join!(producer, consumer);
-        std::hint::black_box(sum)
-      })
+      let queue = k::Queue::<u64>::bounded(QUEUE_CAPACITY);
+      let program = offer_all(queue.clone(), 0)
+        .fork()
+        .widen()
+        .flat_map(move |_producer| take_all(queue, COORD_MESSAGES, 0));
+      let sum = program
+        .block_on()
+        .into_result()
+        .expect("bounded queue should not fail");
+      std::hint::black_box(sum)
     });
   });
 }

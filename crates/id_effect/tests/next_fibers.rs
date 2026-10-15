@@ -18,8 +18,8 @@ use id_effect::next::{
   TestExecutor, TokioExecutor, acquire_use_release, fail, fork_all, sleep, succeed, suspend, sync,
   uninterruptible_mask, yield_fiber,
 };
-use id_effect::runtime::{FiberId, Never};
 use id_effect::{Cause, Exit};
+use id_effect::{FiberId, Never};
 
 const HOUR: Duration = Duration::from_secs(3600);
 

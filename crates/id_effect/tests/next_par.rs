@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
 use id_effect::next::{
   Concurrency, Effect, Executor, TestExecutor, TokioExecutor, all, die, fail, for_each_par, sleep,
   succeed, suspend, sync, yield_fiber, zip_par, zip_with_par,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 const HOUR: Duration = Duration::from_secs(3600);

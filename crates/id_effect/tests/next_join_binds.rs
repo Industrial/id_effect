@@ -15,11 +15,11 @@ use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
 use id_effect::next::{
   Effect, Executor, HNil, TestExecutor, TokioExecutor, caps_next, die, effect_next, fail, hlist,
   need, sleep, succeed, suspend, sync, yield_fiber, zip_par,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 const HOUR: Duration = Duration::from_secs(3600);

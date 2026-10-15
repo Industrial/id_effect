@@ -10,13 +10,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
 use id_effect::next::{
   BackpressureDecision, BackpressurePolicy, Channel, Chunk, Effect, FoldChannel, HNil, Queue, Sink,
   Stream, StreamChannel, StreamChannelFull, backpressure_decision, broadcast_with_replay,
   end_stream, send_chunk, sleep, stream_from_channel, stream_from_channel_with_policy, succeed,
   sync,
 };
-use id_effect::runtime::Never;
 use id_effect::{Cause, Exit};
 
 fn run<A: Send + 'static, E: Send + std::fmt::Debug + 'static>(eff: Effect<A, E>) -> Result<A, E> {

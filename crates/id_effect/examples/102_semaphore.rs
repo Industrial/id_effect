@@ -1,13 +1,11 @@
-//! Ex 102 — `Semaphore` / `Permit` gate concurrent async work.
-use id_effect::{Semaphore, run_async, run_blocking};
+//! Ex 102 — A `Semaphore` gates concurrent work; a `Permit` is released on drop.
+use id_effect::next::{Effect, Semaphore};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-  let sem = run_blocking(Semaphore::make(1), ()).expect("sem");
-  let p = run_async(sem.try_acquire(), ())
-    .await
-    .expect("try")
-    .expect("permit");
-  drop(p);
+fn main() {
+  let sem = Semaphore::new(1);
+  let first: Effect<bool, ()> = sem.try_acquire().map(|p| p.is_some());
+  assert_eq!(first.block_on().into_result().ok(), Some(true));
+  let guarded: Effect<usize, ()> = sem.with_permit(sem.available());
+  assert_eq!(guarded.block_on().into_result().ok(), Some(0));
   println!("102_semaphore ok");
 }
