@@ -37,11 +37,3 @@ fn capability_runtime_entrypoints() {
   ));
   assert!(Cap::<GateAlpha>::slot_name().contains("GateAlpha"));
 }
-
-#[::id_effect::capability(u32)]
-struct DeprecatedCap;
-
-#[test]
-fn deprecated_capability_attr_is_noop() {
-  let _ = DeprecatedCap;
-}

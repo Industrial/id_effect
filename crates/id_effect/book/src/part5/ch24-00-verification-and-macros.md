@@ -94,7 +94,6 @@ assert_eq!(exit, Exit::succeed(5));
 |--------|-----------|
 | `Optics` | `id_effect_optics` field lenses and enum prisms |
 | `Schema` | inherent `schema()` + `HasSchema` over the JSON-shaped `Unknown` wire |
-| `SchemaParser` | deprecated alias of `Schema` (identical output) |
 
 ```rust
 use id_effect_proc_macro::{Optics, Schema};
@@ -108,6 +107,6 @@ struct User { #[schema("user_name")] name: String }
 
 `#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(Schema)]` generates `schema()` and a `HasSchema` impl; `#[schema("wire")]` renames a field on the wire. For a JSON text parser, pass the type to `id_effect_parse::SchemaBridge::parser_for::<User>()`.
 
-`#[derive(SchemaParser)]` is kept as a deprecated alias for one release. It no longer generates a `parser()` method (that tied a published derive to the unpublished `id_effect_parse` crate). Derive macros cannot carry `#[deprecated]`, so there is no compiler warning — switch to `#[derive(Schema)]`.
+The 0.6 deprecated alias of `Schema` was removed in 0.7; use `#[derive(Schema)]`.
 
 `#[derive(Fsm)]` lives in `id_effect_fsm` (re-exported from `id_effect_proc_macro`): annotate a state enum with `#[fsm(event = …, initial = …)]` and `#[fsm(on(Event => Target, …))]` per variant to generate its transition table. Unknown targets and duplicate edges are compile errors. See the [state machines chapter](./ch19-00-state-machines.md).

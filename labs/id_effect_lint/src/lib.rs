@@ -131,7 +131,7 @@ declare_lint! {
 declare_lint! {
     pub NO_STATIC_SERVICE_GLOBALS,
     Deny,
-    "service types must not live in `static` globals; use `#[capability]` + `Needs<Key>` + `R`"
+    "service types must not live in `static` globals; require them via `Needs<Key>` in `R` and provide them with a `Layer`"
 }
 
 declare_lint! {

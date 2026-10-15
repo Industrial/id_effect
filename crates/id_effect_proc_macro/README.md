@@ -10,10 +10,8 @@ This is a `proc-macro = true` crate: most users depend on `id_effect` (or `id_ef
 |-------|------|------------------|-----------|
 | `effect!` | function-like | `id_effect` | Do-notation for `Effect` (`~expr` binds) |
 | `Schema` | derive | `id_effect` | `schema()` + `HasSchema` for named-field structs |
-| `SchemaParser` | derive | `id_effect` | Deprecated alias of `Schema` |
 | `EffectData` | derive | `id_effect` | Structural `PartialEq` / `Eq` / `Hash` |
 | `effect_tagged` | attribute | `id_effect` | `_tag` field + `HasTag` impl |
-| `capability` | attribute | `id_effect` | Capability key struct + `CapabilityKey` impl |
 | `ProviderSpec` | derive | `id_effect` (as `ProviderSpecDerive`) | `ProviderSpec` impl from `#[provides(..)]` |
 | `match_effect!` | function-like | `id_effect` | Exhaustive enum match helper |
 | `Optics` | derive | `id_effect` | Field lenses and enum prisms for `id_effect_optics` |

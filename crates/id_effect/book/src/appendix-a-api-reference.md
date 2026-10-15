@@ -22,7 +22,7 @@ A condensed reference for the most commonly used types and functions in id_effec
 
 | Item | Notes |
 |------|-------|
-| `#[::id_effect::capability(T)] struct Name;` | Declares a capability service; generates `Name` |
+| `caps!(Name)` / `Needs<Name>` | The service type itself is the capability key |
 | `#[derive(::id_effect::ProviderSpecDerive)]` | Derive a provider struct |
 | `#[provides(Name)]` | Marks which key a provider satisfies |
 | `~Name` / `require!(Name)` | Borrow a capability inside `effect!` |
@@ -150,7 +150,7 @@ Since 0.6 STM lives in the maintenance-tier `id_effect_fp` crate.
 | `struct_(…)` / `tuple(…)` / `union_(…)` | Composite schemas |
 | `refine(s, pred, msg)` | Add a predicate constraint |
 | `schema.decode_unknown(&unknown)` | Run schema; returns `Result<T, ParseError>` |
-| `#[derive(Schema)]` | Generate `schema()` + `HasSchema` for a struct (`SchemaParser` is a deprecated alias) |
+| `#[derive(Schema)]` | Generate `schema()` + `HasSchema` for a struct |
 | `schema::serde_bridge` | `serde_json::Value` → `Unknown` (feature `schema-serde`) |
 
 ## Macros

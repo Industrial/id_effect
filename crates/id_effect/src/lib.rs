@@ -66,8 +66,8 @@ extern crate self as id_effect;
 
 pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
 pub use id_effect_proc_macro::{
-  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, SchemaParser, capability, effect,
-  effect_tagged, match_effect,
+  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, effect, effect_tagged,
+  match_effect,
 };
 
 pub mod capability;

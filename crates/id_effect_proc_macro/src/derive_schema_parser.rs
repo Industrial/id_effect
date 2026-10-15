@@ -1,4 +1,4 @@
-//! `#[derive(Schema)]` (and its deprecated alias `#[derive(SchemaParser)]`) — `schema()` +
+//! `#[derive(Schema)]` — `schema()` +
 //! `HasSchema` codegen over the JSON-shaped `Unknown` wire.
 
 use proc_macro::TokenStream;

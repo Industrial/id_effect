@@ -5,7 +5,6 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-mod capability_attr;
 mod derive_fsm;
 mod derive_optics;
 mod derive_schema_parser;
@@ -43,16 +42,6 @@ pub fn derive_effect_data(input: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
-}
-
-/// **Deprecated no-op** (since 0.3; removed in 0.7): returns the item unchanged.
-///
-/// Capability keys are no longer generated — use the service type itself in `caps!(Service)`,
-/// `Needs::<Service>` and `#[provides(Service)]`. Delete the attribute. (Attribute macros
-/// cannot carry `#[deprecated]`, so there is no compiler warning.)
-#[proc_macro_attribute]
-pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
-  capability_attr::expand(attr, item)
 }
 
 /// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(Capability)]`.
@@ -177,19 +166,6 @@ pub fn derive_fsm(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_derive(Schema, attributes(schema))]
 pub fn derive_schema(input: TokenStream) -> TokenStream {
-  derive_schema_parser::derive_schema(input)
-}
-
-/// Deprecated alias of [`macro@Schema`]; expands to exactly the same code.
-///
-/// Earlier releases also generated a `parser()` method backed by the unpublished `id_effect_parse`
-/// crate; that method is gone. Build a text parser with
-/// `id_effect_parse::SchemaBridge::parser_for::<T>()` instead.
-///
-/// Derive macros cannot carry `#[deprecated]`, so the compiler will not warn on use — migrate to
-/// `#[derive(Schema)]`. This alias will be removed in a future minor release.
-#[proc_macro_derive(SchemaParser, attributes(schema, parser))]
-pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
   derive_schema_parser::derive_schema(input)
 }
 
