@@ -16,22 +16,18 @@
 //! A failing transition action crashes the process with [`ExitReason::Error`] (the state is not
 //! advanced), so a supervisor can restart it from its spec — "let it crash" for state machines.
 //!
-//! `id_effect_process` runs on the 0.7 `next` kernel; the transition actions are still v1
-//! effects over `&mut R` (until `m-fsm`). The process therefore owns `R` and runs an action on
-//! the executor's blocking pool (`on_blocking_pool`), handing the machine and `R` back when it
-//! is done.
+//! The process environment is the actions' environment: `FsmProcess<S, E, Err, R>` has
+//! `Env = R` (provided once at spawn), and a transition action is an
+//! [`id_effect::next::Effect<(), Err, R>`](Effect) sequenced into the handler's effect on the
+//! process fiber, so it can be interrupted with the process like any other step.
 
-use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::time::Duration;
 
-use id_effect::next::{Effect as NextEffect, HNil, die, fail, succeed, sync};
-use id_effect::{Effect, box_future, run_blocking};
+use id_effect::next::{Effect, succeed};
 use id_effect_process::{
-  Addr, CallError, ExitReason, Info, Mailbox, Next, Pid, Process, ProcessCtx, ProcessNode,
-  SendError,
+  Addr, CallError, ExitReason, Info, Next, Pid, Process, ProcessCtx, ProcessNode, SendError,
 };
 
 use crate::definition::Fsm;
@@ -140,7 +136,8 @@ pub enum FsmReply<S, E> {
 
 /// The `gen_statem`-style behaviour (see the module docs). Start it with
 /// [`FsmProcess::start`] / [`FsmProcess::start_linked`], or supervise it with
-/// `ChildSpec::worker::<FsmProcess<S, E, Err, R>, _>(id, || ((spec.clone(), env), HNil))`.
+/// `ChildSpec::worker::<FsmProcess<S, E, Err, R>, _>(id, move || (spec.clone(), env.clone()))`
+/// (`Args` is the [`FsmSpec`], `Env` is the actions' environment `R`).
 pub struct FsmProcess<S, E, Err, R>
 where
   S: Copy + Eq + Hash + 'static,
@@ -149,54 +146,21 @@ where
   R: 'static,
 {
   spec: FsmSpec<S, E, Err, R>,
-  /// The actions' v1 environment, owned by the process.
-  env: R,
 }
 
-type Fired<S, E, Err, R> =
-  NextEffect<(Result<S, FsmError<S, E>>, FsmProcess<S, E, Err, R>), Err, HNil>;
-
-/// Runs `job` on the executor's blocking pool and resumes with its result (a panic in `job` is
-/// re-raised in the fiber, so it becomes a defect). The adapter that lets a `next` process run a
-/// v1 transition action, which needs a thread it may block.
-fn on_blocking_pool<T, Err>(
-  job: impl FnOnce() -> Result<T, Err> + Send + 'static,
-) -> NextEffect<T, Err, HNil>
-where
-  T: Send + 'static,
-  Err: Send + 'static,
-{
-  type Outcome<T, Err> = Result<Result<T, Err>, Box<dyn Any + Send>>;
-  let slot: Mailbox<Outcome<T, Err>> = Mailbox::new();
-  let tx = slot.clone();
-  NextEffect::<(), Err, HNil>::from_ctx(move |ctx| {
-    ctx.fiber().executor().spawn_blocking(Box::new(move || {
-      tx.offer_now(catch_unwind(AssertUnwindSafe(job)));
-    }));
-    async { Ok(()) }
-  })
-  .then(
-    slot
-      .take()
-      .catch(|_| die("fsm: blocking action dropped its result")),
-  )
-  .flat_map(|outcome| match outcome {
-    Ok(Ok(t)) => succeed(t),
-    Ok(Err(e)) => fail(e),
-    Err(payload) => sync(move || resume_unwind(payload)),
-  })
-}
+type Fired<S, E, Err, R> = Effect<(Result<S, FsmError<S, E>>, FsmProcess<S, E, Err, R>), Err, R>;
 
 impl<S, E, Err, R> FsmProcess<S, E, Err, R>
 where
   S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   Err: Debug + Clone + Send + Sync + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  /// Spawn an unlinked state-machine process on `node`.
+  /// Spawn an unlinked state-machine process on `node`; `env` is the transition actions'
+  /// environment.
   pub fn start(node: &ProcessNode, spec: FsmSpec<S, E, Err, R>, env: R) -> FsmHandle<S, E, Err, R> {
-    FsmHandle::from_addr(node.spawn::<Self>((spec, env), HNil))
+    FsmHandle::from_addr(node.spawn::<Self>(spec, env))
   }
 
   /// Spawn a state-machine process linked to the calling process.
@@ -205,45 +169,31 @@ where
     spec: FsmSpec<S, E, Err, R>,
     env: R,
   ) -> FsmHandle<S, E, Err, R> {
-    FsmHandle::from_addr(ctx.spawn_link::<Self>((spec, env), HNil))
+    FsmHandle::from_addr(ctx.spawn_link::<Self>(spec, env))
   }
 
   /// Apply `event`: reject without side effects when there is no edge, otherwise run the
-  /// registered action (if any) and commit the new state.
+  /// registered action (if any) and commit the new state once it succeeds.
   fn fire(mut self, event: E) -> Fired<S, E, Err, R> {
     let from = self.spec.machine.state();
     let Some(to) = self.spec.machine.table().next(from, event) else {
       let rejected = FsmError::NoTransition { state: from, event };
       return succeed((Err(rejected), self));
     };
-    if !self.spec.interpreter.has_action(from, event) {
-      self.spec.machine.set_state(to);
-      return succeed((Ok(to), self));
+    match self.spec.interpreter.action(from, event) {
+      None => {
+        self.spec.machine.set_state(to);
+        succeed((Ok(to), self))
+      }
+      // A failing action fails the handler, which crashes the process (state not advanced).
+      Some(action) => action.map(move |()| {
+        self.spec.machine.set_state(to);
+        (Ok(to), self)
+      }),
     }
-    // The v1 action is built and run on the blocking thread (v1 effects are not `Send`).
-    on_blocking_pool(move || {
-      let FsmProcess { mut spec, env } = self;
-      let env = match spec.interpreter.action(from, event) {
-        // The action borrows `R` mutably; the wrapper owns it and hands it back on success
-        // (on failure the process crashes, so `R` goes with it).
-        Some(action) => run_blocking(
-          Effect::new_async(move |_: &mut ()| {
-            box_future(async move {
-              let mut env = env;
-              action.run(&mut env).await?;
-              Ok(env)
-            })
-          }),
-          (),
-        )?,
-        None => env,
-      };
-      spec.machine.set_state(to);
-      Ok((Ok(to), FsmProcess { spec, env }))
-    })
   }
 
-  fn fire_async(self, event: E) -> NextEffect<Next<Self>, Err, HNil> {
+  fn fire_async(self, event: E) -> Effect<Next<Self>, Err, R> {
     self.fire(event).map(|(outcome, this)| match outcome {
       Err(rejected) if this.spec.unhandled == Unhandled::Stop => {
         Next::Stop(ExitReason::error(rejected), this)
@@ -258,28 +208,25 @@ where
   S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   Err: Debug + Clone + Send + Sync + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  type Args = (FsmSpec<S, E, Err, R>, R);
-  type Env = HNil;
+  type Args = FsmSpec<S, E, Err, R>;
+  type Env = R;
   type Call = FsmCall<E>;
   type Reply = FsmReply<S, E>;
   type Cast = E;
   type Info = E;
   type Error = Err;
 
-  fn init(
-    (spec, env): (FsmSpec<S, E, Err, R>, R),
-    _ctx: ProcessCtx,
-  ) -> NextEffect<Self, Err, HNil> {
-    succeed(FsmProcess { spec, env })
+  fn init(spec: FsmSpec<S, E, Err, R>, _ctx: ProcessCtx) -> Effect<Self, Err, R> {
+    succeed(FsmProcess { spec })
   }
 
   fn handle_call(
     self,
     msg: FsmCall<E>,
     _ctx: ProcessCtx,
-  ) -> NextEffect<(FsmReply<S, E>, Next<Self>), Err, HNil> {
+  ) -> Effect<(FsmReply<S, E>, Next<Self>), Err, R> {
     match msg {
       FsmCall::State => {
         let state = self.spec.machine.state();
@@ -295,11 +242,11 @@ where
     }
   }
 
-  fn handle_cast(self, event: E, _ctx: ProcessCtx) -> NextEffect<Next<Self>, Err, HNil> {
+  fn handle_cast(self, event: E, _ctx: ProcessCtx) -> Effect<Next<Self>, Err, R> {
     self.fire_async(event)
   }
 
-  fn handle_info(self, msg: Info<E>, _ctx: ProcessCtx) -> NextEffect<Next<Self>, Err, HNil> {
+  fn handle_info(self, msg: Info<E>, _ctx: ProcessCtx) -> Effect<Next<Self>, Err, R> {
     match msg {
       Info::User(event) => self.fire_async(event),
       _ => succeed(Next::Continue(self)),
@@ -313,7 +260,7 @@ where
   S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   Err: Debug + Clone + Send + Sync + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
   addr: Addr<FsmProcess<S, E, Err, R>>,
 }
@@ -323,7 +270,7 @@ where
   S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   Err: Debug + Clone + Send + Sync + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
   fn clone(&self) -> Self {
     Self {
@@ -337,7 +284,7 @@ where
   S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
   Err: Debug + Clone + Send + Sync + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
   /// Wrap a typed address (e.g. one obtained from a supervisor start closure or the registry).
   pub fn from_addr(addr: Addr<FsmProcess<S, E, Err, R>>) -> Self {
@@ -355,10 +302,7 @@ where
   }
 
   /// Current state.
-  pub fn state<Rn: Send + Sync + 'static>(
-    &self,
-    timeout: Duration,
-  ) -> NextEffect<S, CallError, Rn> {
+  pub fn state<Rn: Send + Sync + 'static>(&self, timeout: Duration) -> Effect<S, CallError, Rn> {
     self
       .addr
       .call(FsmCall::State, timeout)
@@ -374,7 +318,7 @@ where
     &self,
     event: E,
     timeout: Duration,
-  ) -> NextEffect<Result<S, FsmError<S, E>>, CallError, Rn> {
+  ) -> Effect<Result<S, FsmError<S, E>>, CallError, Rn> {
     self
       .addr
       .call(FsmCall::Fire(event), timeout)
@@ -385,7 +329,7 @@ where
   }
 
   /// Fire-and-forget `event` (applied in mailbox order).
-  pub fn cast<Rn: Send + Sync + 'static>(&self, event: E) -> NextEffect<(), SendError, Rn> {
+  pub fn cast<Rn: Send + Sync + 'static>(&self, event: E) -> Effect<(), SendError, Rn> {
     self.addr.cast(event)
   }
 }

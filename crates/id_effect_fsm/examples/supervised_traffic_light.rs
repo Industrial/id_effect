@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::HNil;
-use id_effect::{Cause, Effect, Exit};
+use id_effect::next::{Effect, HNil, fail, succeed, suspend};
+use id_effect::{Cause, Exit};
 use id_effect_fsm::{Fsm, FsmHandle, FsmProcess, FsmSpec, Interpreter};
 use id_effect_process::{
   CallError, ChildSpec, NodeName, ProcessNode, StartFn, Strategy, SupervisorSpec,
@@ -34,12 +34,10 @@ enum Light {
   Amber,
 }
 
-type Handle = FsmHandle<Light, Tick, String, ()>;
+type Handle = FsmHandle<Light, Tick, String, HNil>;
 
 /// Run a `next` effect (the process API) at the edge.
-fn run<A: Send + 'static, E: Send + 'static>(
-  eff: id_effect::next::Effect<A, E, HNil>,
-) -> Result<A, E> {
+fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E, HNil>) -> Result<A, E> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),
     Exit::Failure(Cause::Fail(e)) => Err(e),
@@ -52,25 +50,22 @@ fn main() -> Result<(), CallError> {
   let flaky = Arc::new(AtomicBool::new(true));
   let actions = Interpreter::new().on_transition(Light::Amber, Tick::Next, move || {
     let flaky = Arc::clone(&flaky);
-    Effect::new(move |_| {
+    suspend(move || {
       if flaky.swap(false, Ordering::SeqCst) {
-        Err("bulb driver timeout".to_string())
+        fail("bulb driver timeout".to_string())
       } else {
-        Ok(())
+        succeed(())
       }
     })
   });
-  let spec: FsmSpec<Light, Tick, String, ()> = FsmSpec::from_fsm().with_interpreter(actions);
+  let spec: FsmSpec<Light, Tick, String, HNil> = FsmSpec::from_fsm().with_interpreter(actions);
 
   // The start closure publishes each incarnation's handle so `main` can talk to it.
   let current: Arc<Mutex<Option<Handle>>> = Arc::default();
   let publish = Arc::clone(&current);
   let start: StartFn = Arc::new(move |node, supervisor| {
-    let addr = node.spawn_linked_to::<FsmProcess<Light, Tick, String, ()>>(
-      supervisor,
-      (spec.clone(), ()),
-      HNil,
-    );
+    let addr =
+      node.spawn_linked_to::<FsmProcess<Light, Tick, String, HNil>>(supervisor, spec.clone(), HNil);
     let pid = addr.pid().clone();
     *publish.lock().unwrap() = Some(FsmHandle::from_addr(addr));
     Ok(pid)

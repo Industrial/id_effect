@@ -20,8 +20,13 @@ Durable FSM snapshots live in the unpublished labs crate `id_effect_workflow::fs
 
 ## Quick example
 
+Transition actions and saga steps are `id_effect::next::Effect`s over a typed environment `R`
+(an HList such as `HCons<Locks, HNil>`, or `HNil`); `step` / `run` / `Saga::run` compose them
+with `flat_map`, so nothing blocks a thread.
+
 ```rust
-use id_effect::{Effect, run_blocking};
+use std::sync::atomic::{AtomicU32, Ordering};
+use id_effect::next::{HCons, HNil, need};
 use id_effect_fsm::{Fsm, Interpreter};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -39,17 +44,20 @@ enum Door {
 }
 
 // Effect-valued action on Closed --Lock--> Locked; the environment is a lock counter.
-let interp = Interpreter::<Door, DoorEvent, (), String, u32>::new()
+let interp = Interpreter::<Door, DoorEvent, (), String, HCons<AtomicU32, HNil>>::new()
   .on_transition(Door::Closed, DoorEvent::Lock, || {
-    Effect::new(|locks: &mut u32| {
-      *locks += 1;
-      Ok(())
+    need::<AtomicU32>().map(|locks| {
+      locks.fetch_add(1, Ordering::SeqCst);
     })
   });
 
-let program = interp.run(Door::state_machine(), [DoorEvent::Lock, DoorEvent::Unlock]);
-let door = run_blocking(program, 0).expect("valid events");
-assert_eq!(door.state(), Door::Closed);
+let program = interp
+  .run(Door::state_machine(), [DoorEvent::Lock, DoorEvent::Unlock])
+  .flat_map(|door| need::<AtomicU32>().map(move |locks| (door.state(), locks.load(Ordering::SeqCst))))
+  .provide(AtomicU32::new(0));
+// Run at the program edge (`block_on`); inside an effect, compose it instead.
+let (state, locks) = program.block_on().into_result().expect("valid events");
+assert_eq!((state, locks), (Door::Closed, 1));
 ```
 
 `#[fsm(event = E, initial = Variant)]` goes on the enum (`initial` defaults to the first
@@ -72,7 +80,8 @@ use id_effect_process::{NodeName, ProcessNode};
 
 // The handle's effects are `id_effect::next` effects: run them at the edge with `block_on`.
 let node = ProcessNode::new(NodeName::new("door@local"));
-let door = FsmProcess::start(&node, FsmSpec::<Door, DoorEvent, String, ()>::from_fsm(), ());
+// The last argument is the actions' environment `R` (the process `Env`).
+let door = FsmProcess::start(&node, FsmSpec::<Door, DoorEvent, String, HNil>::from_fsm(), HNil);
 door.cast::<HNil>(DoorEvent::Open).block_on().into_result().unwrap();
 let state = door.state::<HNil>(Duration::from_secs(1)).block_on().into_result().unwrap();
 assert_eq!(state, Door::Opened);

@@ -1,7 +1,19 @@
 //! `#[derive(Fsm)]` used from a downstream crate, through the `id_effect_fsm` re-export.
 
-use id_effect::{Effect, run_blocking};
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use id_effect::next::{Effect, HCons, HNil, need};
+use id_effect::{Cause, Exit};
 use id_effect_fsm::{Fsm, FsmError, Interpreter, RunError, to_mermaid};
+
+/// Run a `next` effect at the test edge.
+fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died"),
+  }
+}
 
 mod events {
   #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -95,22 +107,29 @@ fn crate_override_resolves_through_a_reexport() {
 
 #[test]
 fn derived_machines_drive_effectful_interpreters() {
-  let refunds = Interpreter::<OrderState, Order, (), String, u32>::new().on_transition(
+  type Refunds = HCons<AtomicU32, HNil>;
+  let refunds = Interpreter::<OrderState, Order, (), String, Refunds>::new().on_transition(
     OrderState::Paid,
     Order::Cancel,
     || {
-      Effect::new(|refunded: &mut u32| {
-        *refunded += 1;
-        Ok(())
+      need::<AtomicU32>().map(|refunded| {
+        refunded.fetch_add(1, Ordering::SeqCst);
       })
     },
   );
   let program = refunds
     .run(OrderState::state_machine(), [Order::Pay, Order::Cancel])
-    .flat_map(|m| Effect::new(move |refunded: &mut u32| Ok((m.state(), *refunded))));
-  assert_eq!(run_blocking(program, 0), Ok((OrderState::Refunded, 1)));
+    .flat_map(|m| {
+      need::<AtomicU32>().map(move |refunded| (m.state(), refunded.load(Ordering::SeqCst)))
+    })
+    .provide(AtomicU32::new(0));
+  assert_eq!(run(program), Ok((OrderState::Refunded, 1)));
 
-  let rejected = run_blocking(refunds.run(OrderState::state_machine(), [Order::Ship]), 0);
+  let rejected = run(
+    refunds
+      .run(OrderState::state_machine(), [Order::Ship])
+      .provide(AtomicU32::new(0)),
+  );
   assert!(matches!(rejected, Err(RunError::Transition(_))));
 }
 

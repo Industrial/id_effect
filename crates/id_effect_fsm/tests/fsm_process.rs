@@ -5,8 +5,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::HNil;
-use id_effect::{Cause, Effect, Exit, fail};
+use id_effect::next::{HCons, HNil, fail, need, sleep};
+use id_effect::{Cause, Exit};
 use id_effect_fsm::{
   Fsm, FsmError, FsmHandle, FsmProcess, FsmSpec, Interpreter, StateMachine, TransitionTable,
   Unhandled,
@@ -66,7 +66,7 @@ fn watch_exit(node: &ProcessNode, pid: &Pid) -> Receiver<ExitReason> {
   rx
 }
 
-fn state<R: Send + 'static>(h: &Handle<R>) -> Turnstile {
+fn state<R: Send + Sync + 'static>(h: &Handle<R>) -> Turnstile {
   run(h.state(T)).expect("state call")
 }
 
@@ -136,23 +136,36 @@ fn rejected_calls_never_stop_the_process_even_with_stop_policy() {
 #[test]
 fn transition_actions_run_in_the_process_environment() {
   let node = node("fsm-env@test");
+  type Audit = HCons<Mutex<Vec<Turnstile>>, HNil>;
   let audit: Arc<Mutex<Vec<Turnstile>>> = Arc::default();
-  let actions = Interpreter::<Turnstile, Ev, (), String, Arc<Mutex<Vec<Turnstile>>>>::new()
-    .on_transition(Turnstile::Locked, Ev::Coin, || {
-      Effect::new(|log: &mut Arc<Mutex<Vec<Turnstile>>>| {
-        log.lock().unwrap().push(Turnstile::Locked);
-        Ok(())
-      })
-    });
+  let actions = Interpreter::<Turnstile, Ev, (), String, Audit>::new().on_transition(
+    Turnstile::Locked,
+    Ev::Coin,
+    || need::<Mutex<Vec<Turnstile>>>().map(|log| log.lock().unwrap().push(Turnstile::Locked)),
+  );
   let h = FsmProcess::start(
     &node,
     FsmSpec::from_fsm().with_interpreter(actions),
-    Arc::clone(&audit),
+    HCons(Arc::clone(&audit), HNil),
   );
   assert_eq!(run(h.fire(Ev::Coin, T)), Ok(Ok(Turnstile::Unlocked)));
   assert_eq!(*audit.lock().unwrap(), vec![Turnstile::Locked]);
   assert_eq!(run(h.fire(Ev::Push, T)), Ok(Ok(Turnstile::Locked)));
   assert_eq!(audit.lock().unwrap().len(), 1, "no action on Push");
+}
+
+#[test]
+fn async_actions_suspend_the_process_fiber_and_then_commit() {
+  let node = node("fsm-async@test");
+  let actions = Interpreter::<Turnstile, Ev, (), String, ()>::new().on_transition(
+    Turnstile::Locked,
+    Ev::Coin,
+    || sleep(Duration::from_millis(5)),
+  );
+  let h = start(&node, FsmSpec::from_fsm().with_interpreter(actions));
+  run(h.cast(Ev::Coin)).unwrap();
+  // The cast's action suspends the process; the call is handled after it, in mailbox order.
+  assert_eq!(state(&h), Turnstile::Unlocked);
 }
 
 #[test]
@@ -194,8 +207,7 @@ fn supervisor_restarts_a_crashed_machine_from_its_initial_state() {
   let current: Arc<Mutex<Option<Handle<()>>>> = Arc::default();
   let publish = Arc::clone(&current);
   let start: StartFn = Arc::new(move |node, sup| {
-    let addr =
-      node.spawn_linked_to::<FsmProcess<Turnstile, Ev, String, ()>>(sup, (spec.clone(), ()), HNil);
+    let addr = node.spawn_linked_to::<FsmProcess<Turnstile, Ev, String, ()>>(sup, spec.clone(), ());
     let pid = addr.pid().clone();
     *publish.lock().unwrap() = Some(FsmHandle::from_addr(addr));
     Ok(pid)

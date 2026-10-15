@@ -5,12 +5,17 @@
 //! - [`StateMachine`] / [`TransitionTable`] — pure transition tables and [`StateMachine::step`]
 //! - [`Fsm`] / `#[derive(Fsm)]` — declare states, events and edges on an enum
 //! - [`Interpreter`] — Effect-valued transition actions ([`Interpreter::step`] returns an
-//!   [`id_effect::Effect`])
+//!   [`id_effect::next::Effect`])
 //! - [`FsmProcess`] / [`FsmHandle`] — host a machine in a supervised
 //!   [`id_effect_process`] process: events are mailbox messages, state is queryable
 //! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
-//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one [`id_effect::Effect`]
+//! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one
+//!   [`id_effect::next::Effect`]
+//!
+//! Transition actions and saga steps are [`id_effect::next::Effect`]s over a typed environment
+//! `R` (an HList, or `HNil`): stepping, running and compensating are plain effect composition,
+//! so nothing here blocks a thread.
 //!
 //! Durable snapshots of a [`StateMachine`] live in the unpublished labs crate
 //! `id_effect_workflow::fsm`.
@@ -55,9 +60,27 @@ pub use visualize::{table_to_mermaid, to_mermaid, to_mermaid_display};
 struct ReadmeDoctests;
 
 #[cfg(test)]
+pub(crate) mod test_support {
+  //! Runs a `next` effect at the test edge.
+
+  use id_effect::next::Effect;
+  use id_effect::{Cause, Exit};
+
+  /// The effect's outcome as a `Result` over its typed error (panics on a defect or interrupt).
+  pub(crate) fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(e)) => Err(e),
+      Exit::Failure(_) => panic!("effect died or was interrupted"),
+    }
+  }
+}
+
+#[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::{Effect, effect, fail, run_blocking};
+  use crate::test_support::run;
+  use id_effect::next::{Effect, HNil, effect_next, fail, sync};
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -122,23 +145,22 @@ mod tests {
     #[test]
     fn step_effect_runs_transition_action_then_commits() {
       let counter = Arc::new(AtomicU32::new(0));
-      let interp = Interpreter::<Door, DoorEvt, (), (), ()>::new().on_transition(
+      let interp = Interpreter::<Door, DoorEvt, (), (), HNil>::new().on_transition(
         Door::Closed,
         DoorEvt::Open,
         {
           let c = counter.clone();
           move || {
             let c = c.clone();
-            Effect::new(move |_| {
+            sync(move || {
               c.fetch_add(1, Ordering::SeqCst);
-              Ok(())
             })
           }
         },
       );
       let program = interp.step(door_machine(), DoorEvt::Open);
       assert_eq!(counter.load(Ordering::SeqCst), 0, "effects are lazy");
-      let m = run_blocking(program, ()).expect("run");
+      let m = run(program).expect("run");
       assert_eq!(m.state(), Door::Open);
       assert_eq!(counter.load(Ordering::SeqCst), 1);
     }
@@ -165,16 +187,15 @@ mod tests {
     #[test]
     fn compensates_on_forward_failure() {
       let log = Arc::new(AtomicU32::new(0));
-      let saga = Saga::new()
+      let saga = Saga::<(), (), &str, HNil>::new()
         .step(SagaStep::with_compensate(
           "a",
           {
             let l = log.clone();
             move || {
               let l = l.clone();
-              Effect::new(move |_| {
+              sync(move || {
                 l.fetch_add(1, Ordering::SeqCst);
-                Ok(())
               })
             }
           },
@@ -182,15 +203,14 @@ mod tests {
             let l2 = log.clone();
             move || {
               let l2 = l2.clone();
-              Effect::new(move |_| {
+              sync(move || {
                 l2.fetch_add(10, Ordering::SeqCst);
-                Ok(())
               })
             }
           },
         ))
         .step(SagaStep::forward("b", || fail("boom")));
-      let err = run_blocking(saga.run(), ()).unwrap_err();
+      let err = run(saga.run()).unwrap_err();
       assert!(matches!(err, SagaError::Forward("boom")));
       assert_eq!(log.load(Ordering::SeqCst), 11);
     }
@@ -235,12 +255,12 @@ mod tests {
 
     #[test]
     fn effect_program_steps_door() {
-      let program: Effect<Door, FsmError<Door, DoorEvt>, ()> = effect! {
+      let program: Effect<Door, FsmError<Door, DoorEvt>> = effect_next!({
         let mut m = door_machine();
-        ~m.step(DoorEvt::Open);
+        m.step(DoorEvt::Open)?;
         m.state()
-      };
-      let final_state = run_blocking(program, ()).expect("run");
+      });
+      let final_state = run(program).expect("run");
       assert_eq!(final_state, Door::Open);
     }
   }
