@@ -16,8 +16,11 @@ use crate::error::ConfigError;
 
 /// Injectable wrapper around an `Arc<dyn ConfigProvider>`.
 ///
-/// Extract it with `require!(ConfigProviderService)` inside an `effect!` body,
-/// or `Needs::<ConfigProviderService>::need(r)` elsewhere.
+/// The capability in a `next` environment `R`: read it with
+/// `need::<ConfigProviderService>()` (`id_effect::next::need`), or let [`Config::run`] /
+/// the `read_*` functions do it.
+///
+/// [`Config::run`]: crate::Config::run
 #[derive(Clone)]
 pub struct ConfigProviderService(pub Arc<dyn ConfigProvider>);
 

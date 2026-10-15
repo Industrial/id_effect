@@ -9,7 +9,12 @@ complementary styles:
    environment that holds a `ConfigProvider`.
 2. **Figment + serde** — layer TOML / JSON / env sources into a `Figment` and `extract` a whole
    struct.
-3. **Low-level reads** — `read_string`, `read_i64`, … as effects over `Needs<ConfigProvider>`.
+3. **Low-level reads** — `read_string`, `read_i64`, … as effects whose environment holds the
+   `ConfigProviderService` capability.
+
+The effects are `id_effect::next` effects (typed environment `R`); the provider capability comes
+from `config_env(provider)` or from a layer (`provide_config_provider`,
+`EnvConfigProviderLive::layer()`, `provide_figment_config_provider`, …).
 
 Providers: `EnvConfigProvider` (process environment), `MapConfigProvider` (in-memory pairs, ideal
 for tests), `FigmentConfigProvider` and `OrElseConfigProvider` (fallback chains). `Secret<T>` keeps
@@ -19,7 +24,7 @@ sensitive values out of `Debug` output. Cargo features `toml` / `env` (default),
 ## Quick start
 
 ```rust
-use id_effect::run_blocking;
+use id_effect::Exit;
 use id_effect_config::{Config, ConfigError, MapConfigProvider, config, config_env};
 
 let provider = MapConfigProvider::from_pairs([("HOST", "localhost"), ("PORT", "8080")]);
@@ -34,8 +39,8 @@ assert_eq!((h.as_str(), p), ("localhost", 8080));
 
 // …or as an Effect with the provider injected through the environment.
 let env = config_env(provider);
-let h2: String = run_blocking(host.run::<String, ConfigError, _>(), env).unwrap();
-assert_eq!(h2, "localhost");
+let h2 = host.run::<String, ConfigError, _, _>().provide_all(env).block_on();
+assert!(matches!(h2, Exit::Success(h) if h == "localhost"));
 ```
 
 ## Examples

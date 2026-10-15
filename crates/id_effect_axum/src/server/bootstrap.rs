@@ -1,13 +1,14 @@
 //! Config bootstrap via [`id_effect_config`].
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::Needs;
 use id_effect::kernel::Effect;
-use id_effect::{Env, ProviderBox};
-use id_effect_config::{
-  Config, ConfigError, ConfigProviderService, config, config_env, provide_env_config_provider,
-};
+use id_effect::next::compat::IntoV1With;
+use id_effect::next::{HCons, HNil};
+use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use id_effect_config::{Config, ConfigEnv, ConfigError, ConfigProviderService, config};
 
 /// Host bind and shutdown settings loaded from the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,21 +62,54 @@ pub fn load_host_config<R>() -> Effect<HostConfig, ConfigError, R>
 where
   R: Needs<ConfigProviderService> + 'static,
 {
+  // m-config: `Config::run` is a `next` effect; bridged to v1 until m-axum (release plan §3b).
   HostConfig::descriptor()
     .map_attempt(HostConfig::from_tuple)
-    .run::<HostConfig, ConfigError, R>()
+    .run::<HostConfig, ConfigError, ConfigEnv, _>()
+    .into_v1_with(|r: &mut R| -> ConfigEnv { HCons(Arc::new(r.need().clone()), HNil) })
 }
 
 /// Register the process environment as the config provider.
 #[inline]
 pub fn provide_host_config_env() -> ProviderBox {
-  provide_env_config_provider(id_effect_config::ProviderOptions::default())
+  // m-config: id_effect_config now provides `next` layers; this v1 node stays until m-axum.
+  struct Node;
+
+  impl ProviderNode for Node {
+    fn id(&self) -> &str {
+      "config-provider"
+    }
+
+    fn requires(&self) -> &[CapabilityId] {
+      &[]
+    }
+
+    fn provides(&self) -> CapabilityId {
+      Cap::<ConfigProviderService>::id()
+    }
+
+    fn cap_name(&self) -> &str {
+      "ConfigProvider"
+    }
+
+    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
+      let mut out = deps.clone();
+      out.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(
+        id_effect_config::EnvConfigProvider::new(id_effect_config::ProviderOptions::default()),
+      )));
+      Ok(out)
+    }
+  }
+
+  ProviderBox(Arc::new(Node))
 }
 
 /// Build a minimal [`Env`] with only the config provider (tests / CLI bootstrap).
 #[inline]
 pub fn bootstrap_env<P: id_effect_config::ConfigProvider + 'static>(provider: P) -> Env {
-  config_env(provider)
+  let mut env = Env::new();
+  env.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(provider)));
+  env
 }
 
 #[cfg(test)]

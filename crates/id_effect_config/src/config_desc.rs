@@ -13,9 +13,8 @@
 //! # Example
 //!
 //! ```rust
-//! use std::sync::Arc;
+//! use id_effect::Exit;
 //! use id_effect_config::{Config, MapConfigProvider, config_env, ConfigError};
-//! use id_effect::run_blocking;
 //!
 //! let p = MapConfigProvider::from_pairs([
 //!   ("HOST", "localhost"),
@@ -23,18 +22,17 @@
 //! ]);
 //! let env = config_env(p);
 //!
-//! let host: String = run_blocking(
-//!   Config::string("HOST").run::<String, ConfigError, _>(),
-//!   env.clone(),
-//! )
-//! .unwrap();
-//! let port: i64 = run_blocking(
-//!   Config::integer("PORT").with_default(3000).run::<i64, ConfigError, _>(),
-//!   env.clone(),
-//! )
-//! .unwrap();
-//! assert_eq!(host, "localhost");
-//! assert_eq!(port, 8080);
+//! let host = Config::string("HOST")
+//!   .run::<String, ConfigError, _, _>()
+//!   .provide_all(env.clone())
+//!   .block_on();
+//! let port = Config::integer("PORT")
+//!   .with_default(3000)
+//!   .run::<i64, ConfigError, _, _>()
+//!   .provide_all(env)
+//!   .block_on();
+//! assert!(matches!(host, Exit::Success(h) if h == "localhost"));
+//! assert!(matches!(port, Exit::Success(8080)));
 //! ```
 
 use std::fmt;
@@ -42,12 +40,13 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::{Effect, Needs, effect};
+use ::id_effect::next::{Effect, Selector};
 use id_effect::LogLevel;
 use id_effect::scheduling::duration::duration;
 use url::Url;
 
 use crate::error::ConfigError;
+use crate::load::with_provider;
 use crate::provider::{ConfigProvider, ConfigProviderService};
 use crate::secret::Secret;
 
@@ -118,20 +117,18 @@ impl<T: Send + Sync + 'static> Config<T> {
 
   /// Evaluate this descriptor as an [`Effect`], pulling the provider from the environment.
   ///
-  /// `R` only needs to satisfy `Needs<ConfigProviderService>`; callers compose whatever provider stack
-  /// they like.  See [`config_env`](crate::config_env) for building a minimal context.
-  pub fn run<A, E, R>(&self) -> Effect<A, E, R>
+  /// `R` only needs to contain [`ConfigProviderService`] (`R: Selector<ConfigProviderService, I>`,
+  /// `I` inferred); callers compose whatever provider stack they like. See
+  /// [`config_env`](crate::config_env) for building a minimal environment and
+  /// [`provide_config_provider`](crate::provide_config_provider) for the layer.
+  pub fn run<A, E, R, I>(&self) -> Effect<A, E, R>
   where
-    A: From<T> + 'static,
-    E: From<ConfigError> + 'static,
-    R: Needs<ConfigProviderService> + 'static,
+    A: From<T> + Send + 'static,
+    E: From<ConfigError> + Send + 'static,
+    R: Selector<ConfigProviderService, I> + Send + Sync + 'static,
   {
     let loader = self.loader.clone();
-    effect!(|r: &mut R| {
-      let service = r.need();
-      let t = (loader)(service.0.as_ref()).map_err(E::from)?;
-      A::from(t)
-    })
+    with_provider(move |provider| (loader)(provider).map(A::from).map_err(E::from))
   }
 
   /// Transform the loaded value (Effect `Config.map`).
@@ -625,6 +622,7 @@ mod tests {
   use std::time::Duration;
 
   use crate::MapConfigProvider;
+  use crate::test_support::run_blocking;
   use id_effect::LogLevel;
 
   use super::*;
@@ -930,8 +928,11 @@ mod tests {
 
     let p = MapConfigProvider::from_pairs([("HOST", "localhost")]);
     let env = config_env(p);
-    let host: String =
-      id_effect::run_blocking(Config::string("HOST").run::<String, ConfigError, _>(), env).unwrap();
+    let host: String = run_blocking(
+      Config::string("HOST").run::<String, ConfigError, _, _>(),
+      env,
+    )
+    .unwrap();
     assert_eq!(host, "localhost");
   }
 
@@ -941,35 +942,36 @@ mod tests {
 
     let p = MapConfigProvider::from_pairs::<[(&str, &str); 0], _, _>([]);
     let env = config_env(p);
-    let result: Result<String, ConfigError> = id_effect::run_blocking(
-      Config::string("MISSING").run::<String, ConfigError, _>(),
+    let result: Result<String, ConfigError> = run_blocking(
+      Config::string("MISSING").run::<String, ConfigError, _, _>(),
       env,
     );
     assert!(result.is_err());
   }
 
-  // ── Config::run with scoped Env ───────────────────────────────────────────
+  // ── Config::run with a scoped provider override ───────────────────────────
 
   #[test]
   fn config_run_with_scoped_env_override() {
-    use crate::{MapConfigProvider, provide_config_provider};
-    use id_effect::build_env;
+    use crate::{ConfigEnv, MapConfigProvider, config_env, provide_config_provider};
+    use id_effect::next::Effect;
 
-    let base = build_env([provide_config_provider(MapConfigProvider::from_pairs([(
-      "REGION", "us-east",
-    )]))])
-    .expect("base env");
-    let scoped = base
-      .scoped([provide_config_provider(MapConfigProvider::from_pairs([(
+    // The outer program reads from the base provider; the inner read is given its own layer.
+    let inner: Effect<String, ConfigError> = Config::string("REGION")
+      .run::<String, ConfigError, ConfigEnv, _>()
+      .provide_layer(provide_config_provider(MapConfigProvider::from_pairs([(
         "REGION", "eu-west",
-      )]))])
-      .expect("scoped env");
-    let region: String = id_effect::run_blocking(
-      Config::string("REGION").run::<String, ConfigError, _>(),
-      scoped,
-    )
-    .unwrap();
-    assert_eq!(region, "eu-west");
+      )])));
+    let program: Effect<(String, String), ConfigError, ConfigEnv> = Config::string("REGION")
+      .run::<String, ConfigError, ConfigEnv, _>()
+      .flat_map(move |outer| {
+        inner
+          .narrow::<ConfigEnv, _>()
+          .map(move |inner| (outer, inner))
+      });
+    let base = config_env(MapConfigProvider::from_pairs([("REGION", "us-east")]));
+    let (outer, inner) = run_blocking(program, base).unwrap();
+    assert_eq!((outer.as_str(), inner.as_str()), ("us-east", "eu-west"));
   }
 
   // ── with_default non-missing error propagation ─────────────────────────────

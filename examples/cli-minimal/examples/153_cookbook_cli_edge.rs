@@ -18,12 +18,12 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use id_effect::next::HNil;
-use id_effect::next::compat::IntoNext;
+use id_effect::next::compat::{IntoNext, IntoV1With};
+use id_effect::next::{HCons, HNil};
 use id_effect::{Cap, Effect, Env, Needs};
 use id_effect_cli::{RunMainConfig, run_main};
 use id_effect_config::{
-  Config, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider, config_env,
+  Config, ConfigEnv, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider,
 };
 
 /// Capability: where the program writes its output.
@@ -76,7 +76,14 @@ where
 {
   Config::integer("GREET_TIMES")
     .with_default(1)
-    .run::<i64, AppError, R>()
+    .run::<i64, AppError, ConfigEnv, _>()
+    // m-config: `Config::run` is a `next` effect; bridged into this v1 program.
+    .into_v1_with(|r: &mut R| -> ConfigEnv {
+      HCons(
+        Arc::new(Needs::<ConfigProviderService>::need(r).clone()),
+        HNil,
+      )
+    })
     .flat_map(move |times| {
       Effect::new(move |r: &mut R| {
         if !(1..=3).contains(&times) {
@@ -93,7 +100,8 @@ where
 
 /// The edge: one place that decides which provider and which console the program gets.
 fn edge_env(config: impl ConfigProvider + 'static, console: ConsoleService) -> Env {
-  let mut env = config_env(config);
+  let mut env = Env::new();
+  env.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(config)));
   env.insert::<Cap<ConsoleService>>(console);
   env
 }

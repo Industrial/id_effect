@@ -7,9 +7,8 @@
 //! (service-injected) or [`Config::load`] (direct provider reference):
 //!
 //! ```rust
-//! use std::sync::Arc;
+//! use id_effect::Exit;
 //! use id_effect_config::{Config, MapConfigProvider, config_env, config, ConfigError};
-//! use id_effect::run_blocking;
 //!
 //! let p = MapConfigProvider::from_pairs([("HOST", "localhost"), ("PORT", "8080")]);
 //!
@@ -22,12 +21,13 @@
 //! assert_eq!(host, "localhost");
 //! assert_eq!(port, 8080);
 //!
-//! // Evaluate as Effect with service injection
+//! // Evaluate as a `next` Effect with the provider capability injected
 //! let env = config_env(p);
-//! let host2: String = run_blocking(host_cfg.run::<String, ConfigError, _>(), env.clone()).unwrap();
-//! let port2: i64 = run_blocking(port_cfg.run::<i64, ConfigError, _>(), env).unwrap();
-//! assert_eq!(host2, "localhost");
-//! assert_eq!(port2, 8080);
+//! let both = host_cfg
+//!   .run::<String, ConfigError, _, _>()
+//!   .zip(port_cfg.run::<i64, ConfigError, _, _>())
+//!   .provide_all(env);
+//! assert!(matches!(both.block_on(), Exit::Success((h, 8080)) if h == "localhost"));
 //! ```
 //!
 //! ## 2. Figment + serde (whole-document extract)
@@ -35,23 +35,26 @@
 //! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
 //! [`FigmentLayer`] — good for structured config files.
 //!
-//! ## 3. Low-level Effect reads via `load::read_*` with `Needs<ConfigProvider>`
+//! ## 3. Low-level Effect reads via `load::read_*` with the `ConfigProviderService` capability
 //!
-//! Inject the provider via the effect environment and call the free functions directly:
+//! Inject the provider via the effect environment `R` (typed, `id_effect::next`) and call the
+//! free functions directly:
 //!
-//! ```ignore
-//! use id_effect_config::{read_string, ConfigError};
-//! use id_effect::Needs;
+//! ```rust
+//! use id_effect::next::{Effect, Selector};
+//! use id_effect_config::{ConfigError, ConfigProviderService, read_string};
 //!
-//! fn load_host<A, E, R>() -> ::id_effect::Effect<A, E, R>
+//! fn load_host<R, I>() -> Effect<String, ConfigError, R>
 //! where
-//!   A: From<String> + 'static,
-//!   E: From<ConfigError> + 'static,
-//!   R: id_effect::Needs<id_effect_config::ConfigProvider> + 'static,
+//!   R: Selector<ConfigProviderService, I> + Send + Sync + 'static,
 //! {
 //!   read_string(&["HOST"])
 //! }
+//! # let _ = load_host::<id_effect_config::ConfigEnv, _>();
 //! ```
+//!
+//! Provide the capability with [`config_env`] (a ready environment value) or with a layer
+//! ([`provide_config_provider`], [`EnvConfigProviderLive::layer`], ...).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -82,30 +85,49 @@ pub use secret::Secret;
 
 use std::sync::Arc;
 
-/// Type alias for a minimal capability environment containing only [`ConfigProviderService`].
+use ::id_effect::next::{HCons, HNil, hlist};
+
+/// The minimal typed environment (`id_effect::next`) containing only [`ConfigProviderService`].
 ///
-/// Use with [`config_env`] and `run_blocking` to evaluate `Config<T>::run()` or `read_*` effects
-/// in tests and CLI entry points.
-pub type ConfigEnv = ::id_effect::Env;
+/// Use with [`config_env`] and `.provide_all(..)` to evaluate `Config<T>::run()` or `read_*`
+/// effects in tests and CLI entry points; it is also the output of the provider layers.
+pub type ConfigEnv = HCons<ConfigProviderService, HNil>;
 
 /// Build a minimal [`ConfigEnv`] wrapping `provider`.
 ///
 /// ```rust
+/// use id_effect::Exit;
 /// use id_effect_config::{Config, MapConfigProvider, config_env, ConfigError};
-/// use id_effect::run_blocking;
 ///
 /// let p = MapConfigProvider::from_pairs([("HOST", "localhost")]);
-/// let host: String = run_blocking(
-///   Config::string("HOST").run::<String, ConfigError, _>(),
-///   config_env(p),
-/// )
-/// .unwrap();
-/// assert_eq!(host, "localhost");
+/// let host = Config::string("HOST")
+///   .run::<String, ConfigError, _, _>()
+///   .provide_all(config_env(p))
+///   .block_on();
+/// assert!(matches!(host, Exit::Success(h) if h == "localhost"));
 /// ```
 pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
-  let mut env = ::id_effect::Env::new();
-  env.insert::<::id_effect::Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(provider)));
-  env
+  hlist![ConfigProviderService(Arc::new(provider))]
+}
+
+#[cfg(test)]
+pub(crate) mod test_support {
+  //! The v1 `run_blocking(effect, env)` shape over the `next` edge, so the tests port mechanically.
+  use ::id_effect::next::{Effect, HList};
+
+  /// Provide `env`, run on the global runtime, and return the typed outcome (panics on a defect).
+  pub(crate) fn run_blocking<A, E, R>(eff: Effect<A, E, R>, env: R) -> Result<A, E>
+  where
+    A: Send + 'static,
+    E: Send + 'static,
+    R: HList,
+  {
+    eff
+      .provide_all(env)
+      .block_on()
+      .into_result()
+      .map_err(|cause| cause.fail_option().expect("no typed failure in the cause"))
+  }
 }
 
 /// Mirrors `import { Config } from "effect"` — scalars, combinators, and free functions.
@@ -374,9 +396,21 @@ pub fn load_dotenv_optional() {
 #[cfg(all(test, feature = "toml"))]
 mod tests {
   use super::*;
+  use crate::test_support::run_blocking;
+  use ::id_effect::Exit;
+  use ::id_effect::Never;
+  use ::id_effect::next::Layer;
   use serde::Deserialize;
   use std::io::Write;
   use temp_env::with_var;
+
+  /// Build a provider layer into its environment value.
+  fn build_layer(layer: Layer<ConfigEnv, Never>) -> ConfigEnv {
+    match layer.build().block_on() {
+      Exit::Success(env) => env,
+      Exit::Failure(_) => unreachable!("provider layers never fail"),
+    }
+  }
 
   #[derive(Debug, Deserialize, PartialEq)]
   struct Cfg {
@@ -569,22 +603,20 @@ port = 3000
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("d.toml");
     std::fs::write(&path, "k = \"v\"").expect("write");
-    let env = ::id_effect::build_env([provide_figment_config_provider(figment::from_toml_file(
+    let env = build_layer(provide_figment_config_provider(figment::from_toml_file(
       &path,
-    ))])
-    .expect("env");
+    )));
     let v: String =
-      ::id_effect::run_blocking(Config::string("k").run::<String, ConfigError, _>(), env).unwrap();
+      run_blocking(Config::string("k").run::<String, ConfigError, _, _>(), env).unwrap();
     assert_eq!(v, "v");
   }
 
   #[test]
   fn env_provider_live() {
-    use ::id_effect::{build_env, provide, run_blocking};
     let key = "EFFECT_CONFIG_TEST_LAYER_X";
     with_var(key, Some("42"), || {
-      let env = build_env([provide!(EnvConfigProviderLive)]).expect("env");
-      let n: i64 = run_blocking(Config::integer(key).run::<i64, ConfigError, _>(), env).unwrap();
+      let env = build_layer(EnvConfigProviderLive::layer());
+      let n: i64 = run_blocking(Config::integer(key).run::<i64, ConfigError, _, _>(), env).unwrap();
       assert_eq!(n, 42);
     });
   }
@@ -622,12 +654,10 @@ bad = [1, 2]
 
   #[test]
   fn config_env_runs_effect() {
-    use id_effect::run_blocking;
-
     let p = MapConfigProvider::from_pairs([("K", "v")]);
     let env = config_env(p);
     let result: String =
-      run_blocking(Config::string("K").run::<String, ConfigError, _>(), env).unwrap();
+      run_blocking(Config::string("K").run::<String, ConfigError, _, _>(), env).unwrap();
     assert_eq!(result, "v");
   }
 
@@ -771,12 +801,11 @@ bad = [1, 2]
     let path = dir.path().join("ps.toml");
     std::fs::write(&path, "k = \"shared\"").expect("write");
     let shared = Arc::new(figment::from_toml_file(&path));
-    let env = ::id_effect::build_env([provide_config_provider(
-      FigmentConfigProvider::from_shared(Arc::clone(&shared)),
-    )])
-    .expect("env");
+    let env = build_layer(provide_config_provider(FigmentConfigProvider::from_shared(
+      Arc::clone(&shared),
+    )));
     let v: String =
-      ::id_effect::run_blocking(Config::string("k").run::<String, ConfigError, _>(), env).unwrap();
+      run_blocking(Config::string("k").run::<String, ConfigError, _, _>(), env).unwrap();
     assert_eq!(v, "shared");
   }
 
@@ -784,21 +813,18 @@ bad = [1, 2]
 
   #[test]
   fn env_provider_with_custom_options() {
-    use ::id_effect::build_env;
     let opts = ProviderOptions {
       path_delim: ".",
       seq_delim: ";",
     };
-    let env = build_env([provide_env_config_provider(opts)]).expect("env");
-    let p = id_effect::Needs::<ConfigProviderService>::need(&env);
-    assert_eq!(p.0.seq_delim(), ";");
+    let env = build_layer(provide_env_config_provider(opts));
+    assert_eq!(env.0.0.seq_delim(), ";");
   }
   #[test]
   fn config_env_wraps_provider() {
-    use ::id_effect::Needs;
     let p = MapConfigProvider::from_pairs([("K", "v")]);
     let env = config_env(p);
-    let svc = Needs::<ConfigProviderService>::need(&env);
+    let svc: &ConfigProviderService = &env.0;
     assert_eq!(config::string(&*svc.0, "K").unwrap(), "v");
   }
 
