@@ -12,6 +12,24 @@ set -euo pipefail
 
 FAILED=0
 
+# Print the comma-separated `required-features` of example <name> in package <pkg> (empty if none).
+example_required_features() {
+    local PKG="$1"
+    local CRATE_DIR="$2"
+    local NAME="$3"
+    cargo metadata --no-deps --format-version 1 --manifest-path "$CRATE_DIR/Cargo.toml" \
+    | python3 -c "
+import json, sys
+pkg, name = sys.argv[1], sys.argv[2]
+for p in json.load(sys.stdin).get('packages', []):
+    if p['name'] != pkg:
+        continue
+    for t in p.get('targets', []):
+        if t['name'] == name and 'example' in t.get('kind', []):
+            print(','.join(t.get('required-features', [])))
+" "$PKG" "$NAME"
+}
+
 run_examples_for_crate() {
     local PKG="$1"
     local CRATE_DIR="$2"
@@ -26,8 +44,16 @@ run_examples_for_crate() {
         [ -f "$ex" ] || continue
         FOUND=1
         NAME="$(basename "$ex" .rs)"
-        echo "  → cargo run -p $PKG --example $NAME"
-        if ! cargo run -p "$PKG" --example "$NAME"; then
+        # Honour `[[example]] required-features` (e.g. id_effect_axum's tower examples):
+        # without them `cargo run --example` refuses to build the target.
+        local FEATURES
+        FEATURES="$(example_required_features "$PKG" "$CRATE_DIR" "$NAME")"
+        local FEATURE_ARGS=()
+        if [ -n "$FEATURES" ]; then
+            FEATURE_ARGS=(--features "$FEATURES")
+        fi
+        echo "  → cargo run -p $PKG --example $NAME ${FEATURE_ARGS[*]:-}"
+        if ! cargo run -p "$PKG" --example "$NAME" "${FEATURE_ARGS[@]}"; then
             echo "  [FAIL] $PKG::$NAME"
             FAILED=1
         fi
