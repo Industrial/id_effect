@@ -729,6 +729,59 @@ impl<A: Send + 'static, E: Send + 'static> LocalEffect<A, E, HNil> {
   }
 }
 
+/// A nested runloop on the enclosing runloop's fiber that holds one mask level while it is
+/// suspended (the local twin of `BindFuture`'s hold, used by `~` binds in `effect_local_next!`
+/// and by [`Effect::local`]).
+///
+/// Without it, an interrupt of a suspended nested runloop is seen first by the enclosing
+/// runloop, which drops the body's future, and the nested runloop with it, so the sub-effect's
+/// finalizers never run. Holding the mask keeps the enclosing runloop polling; the level is
+/// released before every poll, so the nested runloop sees the interrupt itself, unwinds its
+/// frames (running finalizers) and reports `Interrupt`.
+pub(crate) struct HoldMask<F> {
+  fut: F,
+  fiber: Arc<FiberContext>,
+  held: bool,
+}
+
+impl<F> HoldMask<F> {
+  pub(crate) fn new(fut: F, fiber: Arc<FiberContext>) -> Self {
+    Self {
+      fut,
+      fiber,
+      held: false,
+    }
+  }
+}
+
+impl<F: Future + Unpin> Future for HoldMask<F> {
+  type Output = F::Output;
+
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
+    let this = &mut *self;
+    if std::mem::take(&mut this.held) {
+      this.fiber.set_mask(this.fiber.mask().saturating_sub(1));
+    }
+    match Pin::new(&mut this.fut).poll(cx) {
+      Poll::Ready(v) => Poll::Ready(v),
+      Poll::Pending => {
+        this.fiber.set_mask(this.fiber.mask() + 1);
+        this.held = true;
+        Poll::Pending
+      }
+    }
+  }
+}
+
+impl<F> Drop for HoldMask<F> {
+  fn drop(&mut self) {
+    // Dropped while suspended (the body was abandoned): give the mask level back.
+    if self.held {
+      self.fiber.set_mask(self.fiber.mask().saturating_sub(1));
+    }
+  }
+}
+
 /// What `~e` binds inside `effect_local_next!`: a [`LocalEffect`] or a `Send` [`Effect`] over
 /// the same environment.
 pub trait IntoLocal<A, E, R> {
@@ -768,6 +821,7 @@ where
         let instr = Effect { node }.into_instr();
         LocalEffect::from_instr(LInstr::Async(Box::new(move |env, fiber| {
           let rl = Runloop::new(instr, Arc::clone(env), Arc::clone(fiber));
+          let rl = HoldMask::new(rl, Arc::clone(fiber));
           Box::pin(async move { lerase_exit(unerase_exit::<A, E>(rl.await)) })
         })))
       }
