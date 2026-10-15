@@ -1,0 +1,45 @@
+[package]
+name = "http_showcase"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "id_effect 0.7 showcase — an axum HTTP service on the fiber runtime: Config<T> layers, scoped server and pg pool"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# ConfigError is large; config loaders return Result<_, ConfigError> like id_effect_config.
+result_large_err = "allow"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "http_showcase"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8" }
+id_effect = { path = "../../crates/id_effect", version = "0.6.0" }
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.6.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.6.0" }
+id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.6.0", features = [
+  "pg",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+  "time",
+] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh
+tier = "example"

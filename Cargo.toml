@@ -21,6 +21,7 @@ members = [
   "crates/id_effect_tokio",
   "crates/id_effect_fsm",
   "examples/cli-minimal",
+  "examples/http-showcase",
 ]
 
 [workspace.package]
