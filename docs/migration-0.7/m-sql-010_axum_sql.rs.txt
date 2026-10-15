@@ -1,3 +1,9 @@
+// NOT COMPILED. Moved out of `crates/id_effect_sql/examples/010_axum_sql.rs` by m-sql (0.7):
+// id_effect_sql no longer dev-depends on axum (the dev-dep ran against the publish order).
+// The showcase leaf s-domain absorbs it into `examples/http-showcase` (see m-sql.md). This is
+// the 0.6 (v1 kernel) source, verbatim below this header; on 0.7 the client is
+// `sql_client_layer(..)` / `PgSqlClient::layer(..)` and `query(..)` reads it from the env.
+//
 //! Axum + TestSqlClient integration sketch.
 //!
 //! ```bash

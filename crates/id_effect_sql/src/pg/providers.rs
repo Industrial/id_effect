@@ -1,52 +1,21 @@
-//! Capability DI providers for [`PgSqlClient`] and [`PgPool`](sqlx::PgPool).
+//! Layers providing [`PgSqlClient`] as [`SqlClientService`] together with its [`PgPool`].
 
-use std::sync::Arc;
-
-use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use sqlx::PgPool as SqlxPgPool;
+use id_effect::next::{HCons, HNil, Layer, hlist};
 
 use super::PgSqlClient;
 use super::pool_key::PgPool;
-use crate::client::{SqlClient, SqlClientService};
+use crate::client::SqlClientService;
 
-/// Register `pool` as both [`PgPool`] and [`SqlClient`](crate::SqlClient).
+/// The environment of the PostgreSQL layers: the client capability and its pool.
+pub type PgSqlEnv = HCons<SqlClientService, HCons<PgPool, HNil>>;
+
+/// A [`Layer`] providing `pool` as both [`SqlClientService`] (a [`PgSqlClient`]) and
+/// [`PgPool`]. It neither checks nor closes the pool (the caller owns it); use
+/// [`PgSqlClient::layer`] for the scoped variant.
 #[inline]
-pub fn provide_pg_sql_client(pool: SqlxPgPool) -> ProviderBox {
-  struct Node {
-    pool: PgPool,
-    client: SqlClientService,
-  }
-
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "sql-pg/client"
-    }
-
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-
-    fn provides(&self) -> CapabilityId {
-      Cap::<SqlClientService>::id()
-    }
-
-    fn cap_name(&self) -> &str {
-      "SqlClient"
-    }
-
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let mut out = deps.clone();
-      out.insert::<Cap<PgPool>>(Arc::clone(&self.pool));
-      out.insert::<Cap<SqlClientService>>(self.client.clone());
-      Ok(out)
-    }
-  }
-
-  let pool_arc = Arc::new(pool);
-  let client =
-    SqlClientService(Arc::new(PgSqlClient::new((*pool_arc).clone())) as Arc<dyn SqlClient>);
-  ProviderBox(Arc::new(Node {
-    pool: pool_arc,
-    client,
-  }))
+pub fn provide_pg_sql_client<E: Send + 'static>(pool: sqlx::PgPool) -> Layer<PgSqlEnv, E> {
+  Layer::succeed(hlist![
+    SqlClientService::new(PgSqlClient::new(pool.clone())),
+    PgPool(pool)
+  ])
 }

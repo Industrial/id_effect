@@ -28,19 +28,8 @@ sqlx = { version = "0.8", optional = true, default-features = false, features = 
 tokio = { version = "1.50.0", optional = true, features = ["rt", "sync"] }
 
 [dev-dependencies]
-axum = { version = "0.8" }
-# Path-only: id_effect_axum publishes after id_effect_sql.
-id_effect_axum = { path = "../id_effect_axum" }
-tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
-
 id_effect_tokio = { path = "../id_effect_tokio" }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "net"] }
-rstest = "0.26"
-
-[[example]]
-name = "010_axum_sql"
-path = "examples/010_axum_sql.rs"
 
 [[test]]
 name = "pg"
