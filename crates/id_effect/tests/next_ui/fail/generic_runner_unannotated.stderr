@@ -8,10 +8,10 @@ error[E0283]: type annotations needed
 24 |     effect_next!({ format!("n={}", ~Counter.0) })
    |                                     ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
    |
-   = note: multiple `impl`s satisfying `id_effect::next::HCons<Counter, id_effect::next::HNil>: id_effect::next::Embed<_, _>` found in the `id_effect` crate:
-           - impl<S, H, T, I, Is> id_effect::next::Embed<id_effect::next::HCons<H, T>, id_effect::next::HCons<I, Is>> for S
-             where S: id_effect::next::Selector<H, I>, S: id_effect::next::Embed<T, Is>;
-           - impl<S> id_effect::next::Embed<id_effect::next::HNil, id_effect::next::HNil> for S;
+   = note: multiple `impl`s satisfying `id_effect::next::capability::HCons<Counter, id_effect::next::capability::HNil>: id_effect::next::capability::Embed<_, _>` found in the `id_effect` crate:
+           - impl<S, H, T, I, Is> id_effect::next::capability::Embed<id_effect::next::capability::HCons<H, T>, id_effect::next::capability::HCons<I, Is>> for S
+             where S: id_effect::next::capability::Selector<H, I>, S: id_effect::next::capability::Embed<T, Is>;
+           - impl<S> id_effect::next::capability::Embed<id_effect::next::capability::HNil, id_effect::next::capability::HNil> for S;
 note: required by a bound in `execute`
   --> tests/next_ui/fail/generic_runner_unannotated.rs:12:8
    |
@@ -31,10 +31,10 @@ error[E0283]: type annotations needed
 24 |     effect_next!({ format!("n={}", ~Counter.0) })
    |                                     ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
    |
-   = note: multiple `impl`s satisfying `_: id_effect::next::Selector<Counter, _>` found in the `id_effect` crate:
-           - impl<T, H, Tl, I> id_effect::next::Selector<T, id_effect::next::There<I>> for id_effect::next::HCons<H, Tl>
-             where Tl: id_effect::next::Selector<T, I>;
-           - impl<T, Tl> id_effect::next::Selector<T, id_effect::next::Here> for id_effect::next::HCons<T, Tl>;
+   = note: multiple `impl`s satisfying `_: id_effect::next::capability::Selector<Counter, _>` found in the `id_effect` crate:
+           - impl<T, H, Tl, I> id_effect::next::capability::Selector<T, id_effect::next::capability::There<I>> for id_effect::next::capability::HCons<H, Tl>
+             where Tl: id_effect::next::capability::Selector<T, I>;
+           - impl<T, Tl> id_effect::next::capability::Selector<T, id_effect::next::capability::Here> for id_effect::next::capability::HCons<T, Tl>;
 help: consider specifying a concrete type for the type parameter `R`
    |
 24 |     effect_next!({ format!("n={}", ~Counter::</* Type */>.0) })

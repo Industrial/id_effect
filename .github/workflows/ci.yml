@@ -47,8 +47,10 @@ jobs:
           node-version: '22'
       - name: Install Biome (treefmt formatter for JS/JSON)
         run: npm install -g @biomejs/biome
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned (not @stable): the trybuild suites (`tests/next_ui`, `tests/ui`) snapshot rustc
+      # diagnostics, which change between releases. Re-bless next_ui when bumping (see its docs).
+      - name: Install Rust (1.99.0)
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
       - name: Cache
@@ -84,8 +86,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install system deps (OpenSSL for rdkafka)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (1.99.0, same pin as moon-ci)
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: llvm-tools-preview
       - name: Cache

@@ -4,9 +4,9 @@ error[E0277]: capability `Metrics` is not in this effect's environment
 14 |     let m = ~Metrics;
    |              ^^^^^^^ `Metrics` is required here
    |
-   = help: the trait `id_effect::next::Selector<Metrics, id_effect::next::There<id_effect::next::There<_>>>` is not implemented for `id_effect::next::HCons<Db, id_effect::next::HCons<Logger, id_effect::next::HNil>>`
+   = help: the trait `id_effect::next::capability::Selector<Metrics, id_effect::next::capability::There<id_effect::next::capability::There<_>>>` is not implemented for `id_effect::next::capability::HCons<Db, id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>>`
    = note: add `Metrics` to the effect's `caps_next!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
-help: the trait `id_effect::next::Selector<T, id_effect::next::Here>` is implemented for `id_effect::next::HCons<T, Tl>`
+help: the trait `id_effect::next::capability::Selector<T, id_effect::next::capability::Here>` is implemented for `id_effect::next::capability::HCons<T, Tl>`
   --> src/next/capability/hlist.rs
    |
    | impl<T, Tl> Selector<T, Here> for HCons<T, Tl> {

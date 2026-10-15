@@ -8,38 +8,39 @@
 //! `effect_next!` body. The cases were ported from spike A (`spikes/kernel_a/tests/ui`, removed
 //! in `k-ui-suite`; see git history at `9cf380e`).
 //!
-//! The `.stderr` files are generated on the stable toolchain the CI uses:
-//! `TRYBUILD=overwrite PATH="$RUST_STABLE_BIN:$PATH" cargo test -p id_effect --test next_ui`.
+//! # Pinned toolchain
 //!
-//! `missing_capability_narrowed` is stable-only: its trailing `Bindable` help block is worded
-//! differently on nightly ("conditionally implemented", "unsatisfied requirement introduced
-//! here"), while the custom `Embed` message it pins is identical. The other cases agree on both.
+//! rustc's diagnostic wording and type-path trimming change between releases and channels (1.99
+//! prints `id_effect::next::capability::HCons` where 1.97 printed `id_effect::next::HCons`;
+//! nightly words the `Bindable` help block differently). The `.stderr` files are therefore
+//! blessed on exactly [`BLESSED_RUSTC`], the version the CI `moon-ci` job pins, and the suite only
+//! runs there; on any other compiler it is skipped with a note (`NEXT_UI_FORCE=1` runs it anyway).
+//! When CI's pin moves, re-bless on the new version:
+//! `TRYBUILD=overwrite cargo test -p id_effect --test next_ui` with that rustc first on `PATH`.
 
-/// Cases whose `.stderr` depends on the toolchain channel; compiled only on stable.
-const STABLE_ONLY: &[&str] = &["missing_capability_narrowed.rs"];
+/// The exact `rustc -V` prefix the `.stderr` snapshots were blessed with (= CI's pin).
+const BLESSED_RUSTC: &str = "rustc 1.99.0 ";
 
-fn on_nightly() -> bool {
+fn rustc_version() -> String {
   let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
   std::process::Command::new(rustc)
     .arg("-V")
     .output()
-    .map(|o| String::from_utf8_lossy(&o.stdout).contains("nightly"))
-    .unwrap_or(false)
+    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    .unwrap_or_default()
 }
 
 #[test]
 fn next_ui() {
-  let t = trybuild::TestCases::new();
-  let nightly = on_nightly();
-  let mut fail: Vec<_> = std::fs::read_dir("tests/next_ui/fail")
-    .expect("tests/next_ui/fail")
-    .map(|e| e.expect("dir entry").path())
-    .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-    .filter(|p| !(nightly && STABLE_ONLY.iter().any(|s| p.ends_with(s))))
-    .collect();
-  fail.sort();
-  for case in fail {
-    t.compile_fail(case);
+  let version = rustc_version();
+  if !version.starts_with(BLESSED_RUSTC) && std::env::var_os("NEXT_UI_FORCE").is_none() {
+    eprintln!(
+      "next_ui: skipped on `{}`; snapshots are blessed on `{BLESSED_RUSTC}` (NEXT_UI_FORCE=1 runs it)",
+      version.trim()
+    );
+    return;
   }
+  let t = trybuild::TestCases::new();
+  t.compile_fail("tests/next_ui/fail/*.rs");
   t.pass("tests/next_ui/pass/*.rs");
 }
