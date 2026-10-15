@@ -1,16 +1,19 @@
-#![allow(private_bounds, clippy::unused_unit)]
-
 //! Portable HTTP client ([`HttpClient`]) and reqwest-backed [`ReqwestHttpClient`].
+//!
+//! The capability is [`HttpClientService`]; [`ReqwestHttpClientProvider::layer`] (also spelled
+//! [`provide_reqwest_http_client`]) and [`provide_http_client`] are the [`Layer`]s that provide
+//! it ([`HttpClientEnv`]).
+//!
+//! The reqwest client needs a tokio runtime with its IO driver enabled, such as
+//! `id_effect_tokio::TokioRuntime`.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
 use ::reqwest::header::{HeaderName, HeaderValue};
-use bytes::Bytes;
-use id_effect::kernel::Effect;
-use id_effect::{
-  Cap, Chunk, Env, Needs, ProviderBox, end_stream, provide, send_chunk, stream_from_channel,
-};
+use id_effect::next::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need, sync};
+use tokio::sync::Mutex;
 
 use crate::error::HttpError;
 
@@ -75,6 +78,10 @@ impl HttpRequest {
       max_body_bytes: None,
     }
   }
+
+  fn max_body(&self) -> usize {
+    self.max_body_bytes.unwrap_or(Self::DEFAULT_MAX_BODY_BYTES)
+  }
 }
 
 /// Buffered HTTP response (MVP — full body in memory).
@@ -88,60 +95,144 @@ pub struct HttpResponse {
   pub body: Vec<u8>,
 }
 
-/// HTTP response whose body is a pull-based [`id_effect::Stream`] of byte chunks.
+/// Where an [`HttpBody`] pulls its chunks from.
+enum BodySource {
+  /// Ready chunks (test doubles, buffered bodies).
+  Chunks(VecDeque<Vec<u8>>),
+  /// A live reqwest response, read chunk by chunk with a running size cap.
+  Reqwest {
+    resp: ::reqwest::Response,
+    total: usize,
+    max: usize,
+  },
+  /// Exhausted (or failed: a failed body yields no further chunks).
+  Done,
+}
+
+impl BodySource {
+  /// The next chunk, `None` at the end.
+  async fn pull(&mut self) -> Result<Option<Vec<u8>>, HttpError> {
+    let out = match self {
+      Self::Chunks(q) => return Ok(q.pop_front()),
+      Self::Done => return Ok(None),
+      Self::Reqwest { resp, total, max } => match resp.chunk().await {
+        Ok(Some(bytes)) => {
+          *total += bytes.len();
+          if *total > *max {
+            Err(HttpError::BodyTooLarge {
+              len: *total,
+              max: *max,
+            })
+          } else {
+            return Ok(Some(bytes.to_vec()));
+          }
+        }
+        Ok(None) => Ok(None),
+        Err(e) => Err(HttpError::from(e)),
+      },
+    };
+    *self = Self::Done;
+    out
+  }
+}
+
+/// A pull-based HTTP response body: successive byte chunks read on demand as `next` effects.
+///
+/// Reading is lazy and backpressured: a live reqwest body reads one network chunk per
+/// [`next_chunk`](Self::next_chunk), and [`collect`](Self::collect) reads to the end. The
+/// request's [`max_body_bytes`](HttpRequest::max_body_bytes) cap is enforced as chunks arrive
+/// ([`HttpError::BodyTooLarge`]). Until `id_effect::next` has a `Stream`, this is the streaming
+/// body type.
+pub struct HttpBody {
+  src: Arc<Mutex<BodySource>>,
+}
+
+impl std::fmt::Debug for HttpBody {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("HttpBody").finish_non_exhaustive()
+  }
+}
+
+impl HttpBody {
+  fn from_source(src: BodySource) -> Self {
+    Self {
+      src: Arc::new(Mutex::new(src)),
+    }
+  }
+
+  /// A body with no chunks.
+  #[inline]
+  pub fn empty() -> Self {
+    Self::from_source(BodySource::Done)
+  }
+
+  /// A body yielding `chunks` in order (test doubles).
+  #[inline]
+  pub fn from_chunks(chunks: impl IntoIterator<Item = Vec<u8>>) -> Self {
+    Self::from_source(BodySource::Chunks(chunks.into_iter().collect()))
+  }
+
+  /// A buffered body split into chunks of `chunk_size` bytes (at least 1).
+  #[inline]
+  pub fn from_bytes(body: &[u8], chunk_size: usize) -> Self {
+    Self::from_chunks(body.chunks(chunk_size.max(1)).map(<[u8]>::to_vec))
+  }
+
+  fn from_reqwest(resp: ::reqwest::Response, max: usize) -> Self {
+    Self::from_source(BodySource::Reqwest {
+      resp,
+      total: 0,
+      max,
+    })
+  }
+
+  /// The next chunk, or `None` once the body is exhausted.
+  pub fn next_chunk(&self) -> Effect<Option<Vec<u8>>, HttpError> {
+    let src = Arc::clone(&self.src);
+    from_async(move || async move { src.lock().await.pull().await })
+  }
+
+  /// Reads the rest of the body into one buffer.
+  pub fn collect(self) -> Effect<Vec<u8>, HttpError> {
+    from_async(move || async move {
+      let mut src = self.src.lock().await;
+      let mut out = Vec::new();
+      while let Some(chunk) = src.pull().await? {
+        out.extend_from_slice(&chunk);
+      }
+      Ok(out)
+    })
+  }
+}
+
+/// HTTP response whose body is read chunk by chunk ([`HttpBody`]).
+#[derive(Debug)]
 pub struct StreamingHttpResponse {
   /// Status code.
   pub status: u16,
   /// `(name, value)` headers.
   pub headers: Vec<(String, String)>,
-  /// Chunked response body (`Chunk<u8>` items are successive byte runs).
-  pub body: id_effect::Stream<u8, HttpError, ()>,
+  /// Chunked response body.
+  pub body: HttpBody,
 }
 
-/// Split a buffered body into fixed-size chunks as a [`id_effect::Stream`].
+/// A buffered [`HttpResponse`]'s body as an [`HttpBody`] of `chunk_size`-byte chunks.
 #[inline]
-pub fn body_as_chunk_stream(body: Vec<u8>, chunk_size: usize) -> id_effect::Stream<u8, (), ()> {
-  let (stream, sender) = stream_from_channel::<u8, (), ()>(8);
-  let chunk_size = chunk_size.max(1);
-  std::thread::spawn(move || {
-    for offset in (0..body.len()).step_by(chunk_size) {
-      let end = (offset + chunk_size).min(body.len());
-      let chunk = Chunk::from_vec(body[offset..end].to_vec());
-      if id_effect::run_blocking(send_chunk(&sender, chunk), ()).is_err() {
-        return;
-      }
-    }
-    let _ = id_effect::run_blocking(end_stream(sender), ());
-  });
-  stream
-}
-
-/// Map a buffered [`HttpResponse`] to a multi-chunk body stream.
-#[inline]
-pub fn response_body_stream(
-  resp: &HttpResponse,
-  chunk_size: usize,
-) -> id_effect::Stream<u8, (), ()> {
-  body_as_chunk_stream(resp.body.clone(), chunk_size)
-}
-
-/// Map a buffered [`HttpResponse`] body to a single [`id_effect::Chunk`] (MVP for stream interop).
-#[inline]
-pub fn response_body_chunk(resp: &HttpResponse) -> id_effect::Chunk<u8> {
-  id_effect::Chunk::from_vec(resp.body.clone())
+pub fn response_body_stream(resp: &HttpResponse, chunk_size: usize) -> HttpBody {
+  HttpBody::from_bytes(&resp.body, chunk_size)
 }
 
 /// Capability: execute portable HTTP requests as [`Effect`] values.
 pub trait HttpClient: Send + Sync + 'static {
   /// Execute `req` and return a buffered response.
-  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()>;
+  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError>;
 
-  /// Execute `req` and return a streaming body (`Chunk<u8>` chunks).
-  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, ()>;
+  /// Execute `req` and return a response whose body is read on demand.
+  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError>;
 }
 
 /// [`::reqwest::Client`]-backed [`HttpClient`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReqwestHttpClient {
   inner: ::reqwest::Client,
 }
@@ -160,191 +251,182 @@ impl ReqwestHttpClient {
   }
 }
 
+/// The reqwest request for `req` (header validation happens here, before any I/O).
+fn reqwest_request(
+  client: &::reqwest::Client,
+  req: &HttpRequest,
+) -> Result<::reqwest::RequestBuilder, HttpError> {
+  let method = match req.method {
+    HttpMethod::Get => ::reqwest::Method::GET,
+    HttpMethod::Post => ::reqwest::Method::POST,
+    HttpMethod::Put => ::reqwest::Method::PUT,
+    HttpMethod::Delete => ::reqwest::Method::DELETE,
+    HttpMethod::Patch => ::reqwest::Method::PATCH,
+  };
+  let mut rb = client.request(method, &req.url);
+  if let Some(t) = req.timeout {
+    rb = rb.timeout(t);
+  }
+  for (k, v) in &req.headers {
+    let name = HeaderName::from_bytes(k.as_bytes())
+      .map_err(|e| HttpError::InvalidRequest(format!("bad header name {k:?}: {e}")))?;
+    let value = HeaderValue::from_str(v)
+      .map_err(|e| HttpError::InvalidRequest(format!("bad header value for {k:?}: {e}")))?;
+    rb = rb.header(name, value);
+  }
+  if let Some(b) = &req.body {
+    rb = rb.body(b.clone());
+  }
+  Ok(rb)
+}
+
+/// Sends `req` and returns the response with its status and readable headers.
+async fn send(
+  client: &::reqwest::Client,
+  req: &HttpRequest,
+) -> Result<(::reqwest::Response, u16, Vec<(String, String)>), HttpError> {
+  let resp = reqwest_request(client, req)?
+    .send()
+    .await
+    .map_err(HttpError::from)?;
+  let status = resp.status().as_u16();
+  let headers = resp
+    .headers()
+    .iter()
+    .filter_map(|(k, v)| {
+      v.to_str()
+        .ok()
+        .map(|s| (k.as_str().to_string(), s.to_string()))
+    })
+    .collect();
+  Ok((resp, status, headers))
+}
+
 impl HttpClient for ReqwestHttpClient {
-  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()> {
+  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
     let client = self.inner.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      let req = req.clone();
-      Box::pin(async move {
-        let max = req
-          .max_body_bytes
-          .unwrap_or(HttpRequest::DEFAULT_MAX_BODY_BYTES);
-        let method = match req.method {
-          HttpMethod::Get => ::reqwest::Method::GET,
-          HttpMethod::Post => ::reqwest::Method::POST,
-          HttpMethod::Put => ::reqwest::Method::PUT,
-          HttpMethod::Delete => ::reqwest::Method::DELETE,
-          HttpMethod::Patch => ::reqwest::Method::PATCH,
-        };
-        let mut rb = client.request(method, &req.url);
-        if let Some(t) = req.timeout {
-          rb = rb.timeout(t);
-        }
-        for (k, v) in &req.headers {
-          let name = HeaderName::from_bytes(k.as_bytes())
-            .map_err(|e| HttpError::InvalidRequest(format!("bad header name {k:?}: {e}")))?;
-          let value = HeaderValue::from_str(v)
-            .map_err(|e| HttpError::InvalidRequest(format!("bad header value for {k:?}: {e}")))?;
-          rb = rb.header(name, value);
-        }
-        if let Some(b) = &req.body {
-          rb = rb.body(b.clone());
-        }
-        let resp = rb.send().await.map_err(HttpError::from)?;
-        let status = resp.status().as_u16();
-        let mut headers = Vec::new();
-        for (k, v) in resp.headers().iter() {
-          if let Ok(s) = v.to_str() {
-            headers.push((k.as_str().to_string(), s.to_string()));
-          }
-        }
-        let bytes: Bytes = resp.bytes().await.map_err(HttpError::from)?;
-        let len = bytes.len();
-        if len > max {
-          return Err(HttpError::BodyTooLarge { len, max });
-        }
-        Ok(HttpResponse {
-          status,
-          headers,
-          body: bytes.to_vec(),
-        })
+    from_async(move || async move {
+      let max = req.max_body();
+      let (resp, status, headers) = send(&client, &req).await?;
+      let bytes = resp.bytes().await.map_err(HttpError::from)?;
+      let len = bytes.len();
+      if len > max {
+        return Err(HttpError::BodyTooLarge { len, max });
+      }
+      Ok(HttpResponse {
+        status,
+        headers,
+        body: bytes.to_vec(),
       })
     })
   }
 
-  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, ()> {
+  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
     let client = self.inner.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      let req = req.clone();
-      Box::pin(async move {
-        let max = req
-          .max_body_bytes
-          .unwrap_or(HttpRequest::DEFAULT_MAX_BODY_BYTES);
-        let method = match req.method {
-          HttpMethod::Get => ::reqwest::Method::GET,
-          HttpMethod::Post => ::reqwest::Method::POST,
-          HttpMethod::Put => ::reqwest::Method::PUT,
-          HttpMethod::Delete => ::reqwest::Method::DELETE,
-          HttpMethod::Patch => ::reqwest::Method::PATCH,
-        };
-        let mut rb = client.request(method, &req.url);
-        if let Some(t) = req.timeout {
-          rb = rb.timeout(t);
-        }
-        for (k, v) in &req.headers {
-          let name = HeaderName::from_bytes(k.as_bytes())
-            .map_err(|e| HttpError::InvalidRequest(format!("bad header name {k:?}: {e}")))?;
-          let value = HeaderValue::from_str(v)
-            .map_err(|e| HttpError::InvalidRequest(format!("bad header value for {k:?}: {e}")))?;
-          rb = rb.header(name, value);
-        }
-        if let Some(b) = &req.body {
-          rb = rb.body(b.clone());
-        }
-        let mut resp = rb.send().await.map_err(HttpError::from)?;
-        let status = resp.status().as_u16();
-        let mut headers = Vec::new();
-        for (k, v) in resp.headers().iter() {
-          if let Ok(s) = v.to_str() {
-            headers.push((k.as_str().to_string(), s.to_string()));
-          }
-        }
-
-        let (body, sender) = stream_from_channel::<u8, HttpError, ()>(16);
-        tokio::spawn(async move {
-          let mut total = 0usize;
-          loop {
-            let chunk_result = resp.chunk().await;
-            match chunk_result {
-              Ok(Some(bytes)) => {
-                total += bytes.len();
-                if total > max {
-                  sender.fail(HttpError::BodyTooLarge { len: total, max });
-                  return;
-                }
-                let chunk = Chunk::from_vec(bytes.to_vec());
-                let send = send_chunk(&sender, chunk);
-                if id_effect::run_blocking(send, ()).is_err() {
-                  return;
-                }
-              }
-              Ok(None) => {
-                let _ = id_effect::run_blocking(end_stream(sender), ());
-                return;
-              }
-              Err(e) => {
-                sender.fail(HttpError::from(e));
-                return;
-              }
-            }
-          }
-        });
-
-        Ok(StreamingHttpResponse {
-          status,
-          headers,
-          body,
-        })
+    from_async(move || async move {
+      let max = req.max_body();
+      let (resp, status, headers) = send(&client, &req).await?;
+      Ok(StreamingHttpResponse {
+        status,
+        headers,
+        body: HttpBody::from_reqwest(resp, max),
       })
     })
   }
 }
 
-/// Capability service handle for [`HttpClient`].
-pub type HttpClientService = Arc<dyn HttpClient>;
+/// The [`HttpClient`] capability: a shared handle to the installed implementation.
+#[derive(Clone)]
+pub struct HttpClientService(pub Arc<dyn HttpClient>);
 
-/// Default reqwest-backed [`HttpClient`] provider (crate-internal [`ProviderSpec`](id_effect::ProviderSpec)).
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(HttpClientService, with = || Arc::new(ReqwestHttpClient::default_client()))]
-pub(crate) struct ReqwestHttpClientProvider;
-
-/// Whether `env` includes an HTTP client capability.
-#[inline]
-pub fn env_has_http_client(env: &Env) -> bool {
-  env.has::<Cap<HttpClientService>>()
+impl HttpClientService {
+  /// Wrap `client` as the capability.
+  #[inline]
+  pub fn new(client: impl HttpClient) -> Self {
+    Self(Arc::new(client))
+  }
 }
 
-/// Replace the HTTP client in `env` (tests and custom wiring).
-#[inline]
-pub fn env_set_http_client(env: &mut Env, client: Arc<dyn HttpClient>) {
-  env.insert::<Cap<HttpClientService>>(client);
+impl std::ops::Deref for HttpClientService {
+  type Target = dyn HttpClient;
+
+  fn deref(&self) -> &Self::Target {
+    &*self.0
+  }
 }
 
-/// Register the default reqwest-backed [`HttpClient`] provider.
-#[inline]
-pub fn provide_reqwest_http_client() -> ProviderBox {
-  provide!(ReqwestHttpClientProvider)
+impl std::fmt::Debug for HttpClientService {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("HttpClientService")
+      .field(&"<dyn HttpClient>")
+      .finish()
+  }
 }
 
-/// Execute using the installed [`HttpClient`] capability.
+/// The minimal typed environment holding only [`HttpClientService`] (the output of the HTTP
+/// layers).
+pub type HttpClientEnv = HCons<HttpClientService, HNil>;
+
+/// An [`HttpClientEnv`] wrapping `client` (for `.provide_all(..)` in tests and entry points).
 #[inline]
-pub fn execute<R>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
+pub fn http_client_env(client: impl HttpClient) -> HttpClientEnv {
+  hlist![HttpClientService::new(client)]
+}
+
+/// A [`Layer`] providing `client` as the [`HttpClientService`] capability (test doubles, a
+/// configured [`ReqwestHttpClient`]).
+#[inline]
+pub fn provide_http_client<E: Send + 'static>(client: impl HttpClient) -> Layer<HttpClientEnv, E> {
+  Layer::succeed(http_client_env(client))
+}
+
+/// The default reqwest-backed [`HttpClient`] provider.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReqwestHttpClientProvider;
+
+impl ReqwestHttpClientProvider {
+  /// The layer: a [`ReqwestHttpClient::default_client`] built once per layer build.
+  pub fn layer<E: Send + 'static>() -> Layer<HttpClientEnv, E> {
+    Layer::effect(|| sync(|| hlist![HttpClientService::new(ReqwestHttpClient::default_client())]))
+  }
+}
+
+/// The default reqwest-backed [`HttpClient`] layer ([`ReqwestHttpClientProvider::layer`]).
+#[inline]
+pub fn provide_reqwest_http_client<E: Send + 'static>() -> Layer<HttpClientEnv, E> {
+  ReqwestHttpClientProvider::layer()
+}
+
+/// Execute using the [`HttpClientService`] in `R`.
+#[inline]
+pub fn execute<R, I>(req: HttpRequest) -> Effect<HttpResponse, HttpError, R>
 where
-  R: Needs<HttpClientService> + 'static,
+  R: Selector<HttpClientService, I> + HList,
 {
-  Effect::new_async(move |r: &mut R| {
-    let client = r.need().clone();
-    let inner = client.execute(req);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+  need::<HttpClientService>().flat_map(move |client| client.execute(req).narrow())
 }
 
-/// Streamed execute using the installed [`HttpClient`] capability.
+/// Streamed execute using the [`HttpClientService`] in `R`.
 #[inline]
-pub fn execute_stream<R>(req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, R>
+pub fn execute_stream<R, I>(req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, R>
 where
-  R: Needs<HttpClientService> + 'static,
+  R: Selector<HttpClientService, I> + HList,
 {
-  Effect::new_async(move |r: &mut R| {
-    let client = r.need().clone();
-    let inner = client.execute_stream(req);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+  need::<HttpClientService>().flat_map(move |client| client.execute_stream(req).narrow())
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use id_effect::{Cause, Exit};
+
+  fn run_blocking<A: Send + 'static>(eff: Effect<A, HttpError>) -> Result<A, HttpError> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(e)) => Err(e),
+      Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+    }
+  }
 
   mod http_request {
     use super::*;
@@ -382,57 +464,107 @@ mod tests {
     }
   }
 
-  mod body_as_chunk_stream {
+  mod http_body {
     use super::*;
 
     #[test]
-    fn splits_body_into_multiple_chunks() {
-      let body = vec![1, 2, 3, 4, 5];
-      let collected =
-        id_effect::run_blocking(body_as_chunk_stream(body, 2).run_collect(), ()).unwrap();
-      assert_eq!(collected, vec![1, 2, 3, 4, 5]);
-    }
-  }
-
-  mod response_body_chunk {
-    use super::*;
-
-    #[test]
-    fn yields_empty_chunk_when_body_empty() {
-      let resp = HttpResponse {
-        status: 204,
-        headers: vec![],
-        body: vec![],
-      };
-      let c = response_body_chunk(&resp);
-      assert!(c.is_empty());
+    fn from_bytes_splits_into_chunks_in_order() {
+      let body = HttpBody::from_bytes(&[1, 2, 3, 4, 5], 2);
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), Some(vec![1, 2]));
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), Some(vec![3, 4]));
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), Some(vec![5]));
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), None);
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), None);
     }
 
     #[test]
-    fn yields_non_empty_chunk_matching_body() {
-      let resp = HttpResponse {
-        status: 200,
-        headers: vec![],
-        body: vec![7, 8],
-      };
-      let c = response_body_chunk(&resp);
-      assert_eq!(c.len(), 2);
+    fn collect_reads_the_rest() {
+      let body = HttpBody::from_chunks([vec![1], vec![2, 3]]);
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), Some(vec![1]));
+      assert_eq!(run_blocking(body.collect()).unwrap(), vec![2, 3]);
     }
-  }
-
-  mod response_body_stream {
-    use super::*;
 
     #[test]
-    fn streams_the_buffered_body() {
+    fn empty_and_zero_chunk_size() {
+      assert!(
+        run_blocking(HttpBody::empty().collect())
+          .unwrap()
+          .is_empty()
+      );
+      let body = HttpBody::from_bytes(&[9, 8], 0);
+      assert_eq!(run_blocking(body.next_chunk()).unwrap(), Some(vec![9]));
+      assert!(format!("{body:?}").contains("HttpBody"));
+    }
+
+    #[test]
+    fn response_body_stream_streams_the_buffered_body() {
       let resp = HttpResponse {
         status: 200,
         headers: vec![],
         body: vec![1, 2, 3],
       };
-      let collected =
-        id_effect::run_blocking(response_body_stream(&resp, 0).run_collect(), ()).unwrap();
+      let collected = run_blocking(response_body_stream(&resp, 0).collect()).unwrap();
       assert_eq!(collected, vec![1, 2, 3]);
+    }
+  }
+
+  mod capability {
+    use super::*;
+    use id_effect::next::{fail, succeed};
+
+    struct Echo;
+
+    impl HttpClient for Echo {
+      fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
+        succeed(HttpResponse {
+          status: 200,
+          headers: vec![],
+          body: req.url.into_bytes(),
+        })
+      }
+
+      fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
+        if req.url.is_empty() {
+          return fail(HttpError::InvalidRequest("empty url".into()));
+        }
+        succeed(StreamingHttpResponse {
+          status: 200,
+          headers: vec![],
+          body: HttpBody::from_bytes(req.url.as_bytes(), 3),
+        })
+      }
+    }
+
+    #[test]
+    fn execute_and_execute_stream_use_the_provided_service() {
+      let env = http_client_env(Echo);
+      let res = run_blocking(execute(HttpRequest::get("e://x")).provide_all(env.clone())).unwrap();
+      assert_eq!(res.body, b"e://x");
+      let streamed =
+        run_blocking(execute_stream(HttpRequest::get("e://stream")).provide_all(env.clone()))
+          .unwrap();
+      assert_eq!(
+        run_blocking(streamed.body.collect()).unwrap(),
+        b"e://stream"
+      );
+      let err = run_blocking(execute_stream(HttpRequest::get("")).provide_all(env)).unwrap_err();
+      assert!(matches!(err, HttpError::InvalidRequest(_)));
+    }
+
+    #[test]
+    fn provide_http_client_layer_supplies_the_capability() {
+      let program = execute::<HttpClientEnv, _>(HttpRequest::get("e://layer"))
+        .provide_layer(provide_http_client(Echo));
+      assert_eq!(run_blocking(program).unwrap().body, b"e://layer");
+    }
+
+    #[test]
+    fn reqwest_provider_layer_builds_a_fresh_client_per_build() {
+      let layer = provide_reqwest_http_client::<HttpError>();
+      let a = run_blocking(layer.build()).unwrap();
+      let b = run_blocking(layer.build()).unwrap();
+      assert!(!Arc::ptr_eq(&a.0, &b.0));
+      assert!(format!("{:?}", a.0).contains("HttpClientService"));
     }
   }
 
@@ -458,10 +590,7 @@ mod tests {
         HttpMethod::Delete,
         HttpMethod::Patch,
       ] {
-        let out = id_effect::run_blocking(
-          client.execute_stream(request(method, ("bad name", "v"))),
-          (),
-        );
+        let out = run_blocking(client.execute_stream(request(method, ("bad name", "v"))));
         assert!(
           matches!(&out, Err(HttpError::InvalidRequest(m)) if m.contains("bad header name")),
           "{:?}",
@@ -473,10 +602,8 @@ mod tests {
     #[test]
     fn bad_header_value_is_invalid_request() {
       let client = ReqwestHttpClient::default_client();
-      let out = id_effect::run_blocking(
-        client.execute_stream(request(HttpMethod::Get, ("x-ok", "line\nbreak"))),
-        (),
-      );
+      let out =
+        run_blocking(client.execute_stream(request(HttpMethod::Get, ("x-ok", "line\nbreak"))));
       assert!(
         matches!(&out, Err(HttpError::InvalidRequest(m)) if m.contains("bad header value")),
         "{:?}",

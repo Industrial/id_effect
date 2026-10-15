@@ -1,7 +1,14 @@
 //! **Platform capabilities** for `id_effect` — HTTP, filesystem, and OS subprocess abstractions
 //! inspired by Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 //!
-//! [`http`], [`fs`], [`command`], and [`uri`] are always available.
+//! [`http`], [`fs`], [`command`], and [`uri`] are always available. Every effect is an
+//! `id_effect::next::Effect`, and each capability ([`http::HttpClientService`],
+//! [`fs::FileSystemService`], [`command::ProcessRuntimeService`]) is provided by a
+//! `id_effect::next::Layer` (`ReqwestHttpClientProvider::layer()`, `LiveFileSystemProvider::layer()`,
+//! `TokioProcessRuntimeProvider::layer()`, or the `provide_*` layers for a custom implementation).
+//!
+//! The live implementations (reqwest, `tokio::process`) need a tokio runtime with its IO driver
+//! enabled: run them with `id_effect_tokio::TokioRuntime` (or `Runtime::run` inside such a runtime).
 //!
 //! ## Features
 //!
@@ -11,33 +18,34 @@
 //!
 //! ## Example (HTTP capability with a test double)
 //!
-//! Production code registers [`http::provide_reqwest_http_client`] (e.g. with
-//! [`id_effect::run_with`]); tests swap the same capability for a canned client.
+//! Production code provides [`http::ReqwestHttpClientProvider::layer`]; tests swap the same
+//! capability for a canned client.
 //!
 //! ```rust
-//! use std::sync::Arc;
-//!
-//! use id_effect::{Effect, Env, fail, run_blocking, succeed};
+//! use id_effect::Exit;
+//! use id_effect::next::{Effect, fail, succeed};
 //! use id_effect_platform::error::HttpError;
 //! use id_effect_platform::http::{
-//!   HttpClient, HttpRequest, HttpResponse, StreamingHttpResponse, env_set_http_client, execute,
+//!   HttpClient, HttpClientEnv, HttpRequest, HttpResponse, StreamingHttpResponse, execute,
+//!   provide_http_client,
 //! };
 //!
 //! struct Canned;
 //!
 //! impl HttpClient for Canned {
-//!   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()> {
+//!   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
 //!     succeed(HttpResponse { status: 200, headers: vec![], body: req.url.into_bytes() })
 //!   }
 //!
-//!   fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, ()> {
+//!   fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
 //!     fail(HttpError::InvalidRequest("no streaming in this double".into()))
 //!   }
 //! }
 //!
-//! let mut env = Env::new();
-//! env_set_http_client(&mut env, Arc::new(Canned));
-//! let res = run_blocking(execute::<Env>(HttpRequest::get("https://example.com/hi")), env).unwrap();
+//! // `R` is named because a layer may provide more than the effect needs.
+//! let program = execute::<HttpClientEnv, _>(HttpRequest::get("https://example.com/hi"))
+//!   .provide_layer(provide_http_client(Canned));
+//! let Exit::Success(res) = program.block_on() else { panic!("request failed") };
 //! assert_eq!(res.status, 200);
 //! assert_eq!(res.body, b"https://example.com/hi");
 //! ```
@@ -47,7 +55,6 @@
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
-#![allow(private_interfaces, private_bounds)]
 
 #[cfg(feature = "auth")]
 pub mod auth;

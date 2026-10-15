@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::kernel::Effect;
+use id_effect::next::compat::IntoV1;
 use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
@@ -12,7 +13,7 @@ use serde_json::json;
 use crate::config::AiConfig;
 use crate::cursor::types::{CreateAgentRequest, CursorAgent, CursorRun};
 use crate::error::AiError;
-use crate::http_util::{cursor_basic_auth_header, join_url};
+use crate::http_util::{cursor_basic_auth_header, join_url, next_http_runtime};
 use crate::retry::retry_transient_ai_http;
 
 /// Cursor Agents API failures.
@@ -77,6 +78,7 @@ impl HttpCursorAgentsClient {
         let resp = this
           .client
           .execute(req)
+          .into_v1_on(&next_http_runtime())
           .run(&mut ())
           .await
           .map_err(|e| AiError::CursorAgents(format!("http: {e}")))?;
@@ -111,6 +113,7 @@ impl HttpCursorAgentsClient {
           let resp = this
             .client
             .execute(req)
+            .into_v1_on(&next_http_runtime())
             .run(&mut ())
             .await
             .map_err(|e| AiError::CursorAgents(format!("http: {e}")))?;

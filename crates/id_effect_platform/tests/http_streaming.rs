@@ -1,7 +1,12 @@
 //! Streaming HTTP body tests for [`ReqwestHttpClient::execute_stream`].
 
-use id_effect::{build_env, run_async};
-use id_effect_platform::http::{HttpRequest, execute_stream, provide_reqwest_http_client};
+mod common;
+
+use common::run;
+use id_effect_platform::error::HttpError;
+use id_effect_platform::http::{
+  HttpClientEnv, HttpMethod, HttpRequest, execute_stream, provide_reqwest_http_client,
+};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -15,17 +20,35 @@ async fn execute_stream_reads_chunked_body() {
     .mount(&server)
     .await;
 
-  let env = build_env([provide_reqwest_http_client()]).expect("providers");
   let url = format!("{}/stream", server.uri());
-  let streamed = run_async(execute_stream(HttpRequest::get(url)), env)
-    .await
-    .expect("stream ok");
+  let program = execute_stream::<HttpClientEnv, _>(HttpRequest::get(url))
+    .provide_layer(provide_reqwest_http_client());
+  let streamed = run(program).await.expect("stream ok");
   assert_eq!(streamed.status, 200);
 
-  let out = run_async(streamed.body.run_collect(), ())
-    .await
-    .expect("collect");
+  let out = run(streamed.body.collect()).await.expect("collect");
   assert_eq!(out, body);
+}
+
+#[tokio::test]
+async fn execute_stream_reads_chunk_by_chunk() {
+  let server = MockServer::start().await;
+  Mock::given(method("GET"))
+    .and(path("/pull"))
+    .respond_with(ResponseTemplate::new(200).set_body_bytes(b"pulled".to_vec()))
+    .mount(&server)
+    .await;
+
+  let url = format!("{}/pull", server.uri());
+  let program = execute_stream::<HttpClientEnv, _>(HttpRequest::get(url))
+    .provide_layer(provide_reqwest_http_client());
+  let streamed = run(program).await.expect("stream ok");
+  let mut got = Vec::new();
+  while let Some(chunk) = run(streamed.body.next_chunk()).await.expect("chunk") {
+    got.extend(chunk);
+  }
+  assert_eq!(got, b"pulled");
+  assert_eq!(run(streamed.body.next_chunk()).await.expect("end"), None);
 }
 
 #[tokio::test]
@@ -37,23 +60,17 @@ async fn execute_stream_rejects_body_larger_than_max() {
     .mount(&server)
     .await;
 
-  let env = build_env([provide_reqwest_http_client()]).expect("providers");
   let req = HttpRequest {
-    method: id_effect_platform::http::HttpMethod::Get,
+    method: HttpMethod::Get,
     url: format!("{}/big", server.uri()),
     headers: vec![],
     body: None,
     timeout: None,
     max_body_bytes: Some(8),
   };
-  let streamed = run_async(execute_stream(req), env)
-    .await
-    .expect("headers ok");
-  let err = run_async(streamed.body.run_collect(), ())
-    .await
-    .expect_err("body cap");
-  assert!(matches!(
-    err,
-    id_effect_platform::error::HttpError::BodyTooLarge { .. }
-  ));
+  let program =
+    execute_stream::<HttpClientEnv, _>(req).provide_layer(provide_reqwest_http_client());
+  let streamed = run(program).await.expect("headers ok");
+  let err = run(streamed.body.collect()).await.expect_err("body cap");
+  assert!(matches!(err, HttpError::BodyTooLarge { .. }));
 }

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::kernel::Effect;
+use id_effect::next::compat::IntoV1;
 use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
@@ -10,7 +11,7 @@ use serde_json::json;
 
 use crate::config::AiConfig;
 use crate::error::AiError;
-use crate::http_util::join_url;
+use crate::http_util::{join_url, next_http_runtime};
 use crate::model::{
   ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService,
 };
@@ -150,6 +151,7 @@ impl LanguageModel for AnthropicLanguageModel {
             let resp = this
               .client
               .execute(http_req)
+              .into_v1_on(&next_http_runtime())
               .run(&mut ())
               .await
               .map_err(|e| AiError::Upstream(format!("http: {e}")))?;
@@ -207,6 +209,7 @@ impl LanguageModel for AnthropicLanguageModel {
         let resp = this
           .client
           .execute_stream(http_req)
+          .into_v1_on(&next_http_runtime())
           .run(&mut ())
           .await
           .map_err(|e| AiError::Upstream(format!("http: {e}")))?;
@@ -221,7 +224,8 @@ impl LanguageModel for AnthropicLanguageModel {
         }
         let byte_chunks = resp
           .body
-          .run_collect()
+          .collect()
+          .into_v1_on(&next_http_runtime())
           .run(&mut ())
           .await
           .map_err(|e| AiError::Upstream(format!("stream collect: {e}")))?;

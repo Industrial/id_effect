@@ -1,9 +1,9 @@
 //! Session persistence trait for cookie or header-backed sessions.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use id_effect::Effect;
+use id_effect::next::{Effect, fail, succeed, suspend};
 
 /// Session payload stored server-side.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,52 +47,52 @@ impl std::error::Error for SessionError {}
 /// Capability: load and persist authenticated sessions.
 pub trait SessionStore: Send + Sync {
   /// Load session by id.
-  fn get(&self, session_id: &str) -> Effect<Option<SessionData>, SessionError, ()>;
+  fn get(&self, session_id: &str) -> Effect<Option<SessionData>, SessionError>;
   /// Upsert session data.
-  fn put(&self, session_id: &str, data: SessionData) -> Effect<(), SessionError, ()>;
+  fn put(&self, session_id: &str, data: SessionData) -> Effect<(), SessionError>;
   /// Remove session.
-  fn delete(&self, session_id: &str) -> Effect<(), SessionError, ()>;
+  fn delete(&self, session_id: &str) -> Effect<(), SessionError>;
 }
 
+type Sessions = HashMap<String, SessionData>;
+
 /// In-memory session map for tests and local dev.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct MemorySessionStore {
-  inner: Arc<Mutex<HashMap<String, SessionData>>>,
+  inner: Arc<Mutex<Sessions>>,
+}
+
+impl MemorySessionStore {
+  /// A lazy step over the locked map.
+  fn with_map<A: Send + 'static>(
+    &self,
+    f: impl FnOnce(MutexGuard<'_, Sessions>) -> A + Send + 'static,
+  ) -> Effect<A, SessionError> {
+    let inner = Arc::clone(&self.inner);
+    suspend(move || match inner.lock() {
+      Ok(guard) => succeed(f(guard)),
+      Err(e) => fail(SessionError::Storage(e.to_string())),
+    })
+  }
 }
 
 impl SessionStore for MemorySessionStore {
-  fn get(&self, session_id: &str) -> Effect<Option<SessionData>, SessionError, ()> {
+  fn get(&self, session_id: &str) -> Effect<Option<SessionData>, SessionError> {
     let id = session_id.to_owned();
-    let inner = Arc::clone(&self.inner);
-    Effect::new(move |_r| {
-      let guard = inner
-        .lock()
-        .map_err(|e| SessionError::Storage(e.to_string()))?;
-      Ok(guard.get(&id).cloned())
+    self.with_map(move |map| map.get(&id).cloned())
+  }
+
+  fn put(&self, session_id: &str, data: SessionData) -> Effect<(), SessionError> {
+    let id = session_id.to_owned();
+    self.with_map(move |mut map| {
+      map.insert(id, data);
     })
   }
 
-  fn put(&self, session_id: &str, data: SessionData) -> Effect<(), SessionError, ()> {
+  fn delete(&self, session_id: &str) -> Effect<(), SessionError> {
     let id = session_id.to_owned();
-    let inner = Arc::clone(&self.inner);
-    Effect::new(move |_r| {
-      let mut guard = inner
-        .lock()
-        .map_err(|e| SessionError::Storage(e.to_string()))?;
-      guard.insert(id, data);
-      Ok(())
-    })
-  }
-
-  fn delete(&self, session_id: &str) -> Effect<(), SessionError, ()> {
-    let id = session_id.to_owned();
-    let inner = Arc::clone(&self.inner);
-    Effect::new(move |_r| {
-      let mut guard = inner
-        .lock()
-        .map_err(|e| SessionError::Storage(e.to_string()))?;
-      guard.remove(&id);
-      Ok(())
+    self.with_map(move |mut map| {
+      map.remove(&id);
     })
   }
 }
@@ -100,30 +100,51 @@ impl SessionStore for MemorySessionStore {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::run_blocking;
+  use id_effect::{Cause, Exit};
+
+  fn run_blocking<A: Send + 'static>(eff: Effect<A, SessionError>) -> Result<A, SessionError> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(e)) => Err(e),
+      Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+    }
+  }
 
   #[test]
   fn memory_store_round_trip() {
     let store = MemorySessionStore::default();
     let sid = "sess-1";
     let data = SessionData::new("user-42");
-    run_blocking(store.put(sid, data.clone()), ()).unwrap();
-    let loaded = run_blocking(store.get(sid), ()).unwrap().unwrap();
+    run_blocking(store.put(sid, data.clone())).unwrap();
+    let loaded = run_blocking(store.get(sid)).unwrap().unwrap();
     assert_eq!(loaded.user_id, "user-42");
   }
 
   #[test]
   fn delete_removes_session() {
     let store = MemorySessionStore::default();
-    run_blocking(store.put("s", SessionData::new("u")), ()).unwrap();
-    run_blocking(store.delete("s"), ()).unwrap();
-    assert!(run_blocking(store.get("s"), ()).unwrap().is_none());
+    run_blocking(store.put("s", SessionData::new("u"))).unwrap();
+    run_blocking(store.delete("s")).unwrap();
+    assert!(run_blocking(store.get("s")).unwrap().is_none());
   }
 
   #[test]
   fn get_missing_returns_none() {
     let store = MemorySessionStore::default();
-    assert!(run_blocking(store.get("missing"), ()).unwrap().is_none());
+    assert!(run_blocking(store.get("missing")).unwrap().is_none());
+  }
+
+  #[test]
+  fn poisoned_lock_is_a_storage_error() {
+    let store = MemorySessionStore::default();
+    let inner = Arc::clone(&store.inner);
+    let _ = std::thread::spawn(move || {
+      let _guard = inner.lock().expect("lock");
+      panic!("poison");
+    })
+    .join();
+    let err = run_blocking(store.get("s")).unwrap_err();
+    assert!(matches!(err, SessionError::Storage(_)));
   }
 
   #[test]

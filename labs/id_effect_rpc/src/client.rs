@@ -2,6 +2,8 @@
 
 use id_effect::Effect;
 use id_effect::Needs;
+use id_effect::next::compat::IntoV1;
+use id_effect::next::{Runtime, TokioExecutor};
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
 use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
@@ -131,7 +133,13 @@ impl RpcClient {
           max_body_bytes: None,
         };
         let client = r.need().clone();
-        let resp = client.execute(req).run(&mut ()).await?;
+        // m-platform: the platform client is a `next` effect; bridge it onto the ambient tokio
+        // runtime (reqwest needs its IO driver). Removed when this crate switches (l-labs-edge).
+        let rt = match TokioExecutor::current() {
+          Some(exec) => Runtime::from_executor(std::sync::Arc::new(exec)),
+          None => Runtime::global().clone(),
+        };
+        let resp = client.execute(req).into_v1_on(&rt).run(&mut ()).await?;
         if resp.status != 200 {
           return Err(RpcClientError::UnexpectedStatus(resp.status));
         }
@@ -151,9 +159,9 @@ impl RpcClient {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::Env;
   use id_effect::schema;
-  use id_effect_platform::http::{HttpClient, HttpResponse, env_set_http_client};
+  use id_effect::{Cap, Env};
+  use id_effect_platform::http::{HttpClient, HttpResponse};
   use std::sync::Arc;
   use std::sync::Mutex;
 
@@ -166,26 +174,23 @@ mod tests {
     fn execute(
       &self,
       req: HttpRequest,
-    ) -> Effect<HttpResponse, id_effect_platform::error::HttpError, ()> {
+    ) -> id_effect::next::Effect<HttpResponse, id_effect_platform::error::HttpError> {
       let url = req.url.clone();
       *self.last_url.lock().unwrap() = Some(url);
       let resp = self.response.lock().unwrap().clone().expect("response set");
-      Effect::new(move |_r| Ok(resp))
+      id_effect::next::succeed(resp)
     }
 
     fn execute_stream(
       &self,
       _req: HttpRequest,
-    ) -> Effect<
+    ) -> id_effect::next::Effect<
       id_effect_platform::http::StreamingHttpResponse,
       id_effect_platform::error::HttpError,
-      (),
     > {
-      Effect::new(|_r| {
-        Err(id_effect_platform::error::HttpError::InvalidRequest(
-          "mock stream".to_owned(),
-        ))
-      })
+      id_effect::next::fail(id_effect_platform::error::HttpError::InvalidRequest(
+        "mock stream".to_owned(),
+      ))
     }
   }
 
@@ -216,7 +221,7 @@ mod tests {
       last_url: Mutex::new(None),
     });
     let mut env = Env::new();
-    env_set_http_client(&mut env, mock.clone() as Arc<dyn HttpClient>);
+    env.insert::<Cap<HttpClientService>>(HttpClientService(mock.clone() as Arc<dyn HttpClient>));
     let client = RpcClient::new("http://127.0.0.1:8080");
     let out = id_effect::run_async(
       client.call(

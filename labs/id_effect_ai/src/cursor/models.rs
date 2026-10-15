@@ -3,13 +3,14 @@
 use std::sync::Arc;
 
 use id_effect::kernel::Effect;
+use id_effect::next::compat::IntoV1;
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
 
 use crate::config::AiConfig;
 use crate::cursor::types::CursorModel;
 use crate::error::AiError;
-use crate::http_util::{cursor_basic_auth_header, join_url};
+use crate::http_util::{cursor_basic_auth_header, join_url, next_http_runtime};
 
 #[derive(Deserialize)]
 struct ListModelsResponse {
@@ -38,6 +39,7 @@ pub fn list_models(
       };
       let resp = client
         .execute(req)
+        .into_v1_on(&next_http_runtime())
         .run(&mut ())
         .await
         .map_err(|e| AiError::CursorAgents(format!("http: {e}")))?;

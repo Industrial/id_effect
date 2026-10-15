@@ -2,7 +2,9 @@
 //!
 //! Enable the `test-util` feature for `MemoryOAuthClient`, an in-memory test double.
 
-use id_effect::Effect;
+use id_effect::next::Effect;
+#[cfg(any(test, feature = "test-util"))]
+use id_effect::next::{fail, succeed, suspend};
 #[cfg(any(test, feature = "test-util"))]
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-util"))]
@@ -53,14 +55,14 @@ pub trait OAuthClient: Send + Sync {
   /// Authorization redirect URL including `state`.
   fn authorization_url(&self, state: &str) -> String;
   /// Exchange authorization code for tokens and user info.
-  fn exchange_code(&self, code: &str) -> Effect<(OAuthTokens, OAuthUserInfo), OAuthError, ()>;
+  fn exchange_code(&self, code: &str) -> Effect<(OAuthTokens, OAuthUserInfo), OAuthError>;
 }
 
 /// Deterministic in-memory test double — maps registered codes to profiles.
 ///
 /// Requires the `test-util` feature.
 #[cfg(any(test, feature = "test-util"))]
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct MemoryOAuthClient {
   base_url: String,
   codes: Arc<Mutex<HashMap<String, OAuthUserInfo>>>,
@@ -88,20 +90,23 @@ impl OAuthClient for MemoryOAuthClient {
   fn authorization_url(&self, state: &str) -> String {
     format!("{}/authorize?state={state}", self.base_url)
   }
-  fn exchange_code(&self, code: &str) -> Effect<(OAuthTokens, OAuthUserInfo), OAuthError, ()> {
+  fn exchange_code(&self, code: &str) -> Effect<(OAuthTokens, OAuthUserInfo), OAuthError> {
     let code = code.to_owned();
     let codes = Arc::clone(&self.codes);
-    Effect::new(move |_r| {
-      let guard = codes
-        .lock()
-        .map_err(|e| OAuthError::Protocol(e.to_string()))?;
-      let user = guard.get(&code).cloned().ok_or(OAuthError::InvalidCode)?;
+    suspend(move || {
+      let user = match codes.lock() {
+        Ok(guard) => guard.get(&code).cloned(),
+        Err(e) => return fail(OAuthError::Protocol(e.to_string())),
+      };
+      let Some(user) = user else {
+        return fail(OAuthError::InvalidCode);
+      };
       let tokens = OAuthTokens {
         access_token: format!("access-{code}"),
         refresh_token: Some(format!("refresh-{code}")),
         expires_in: Some(3600),
       };
-      Ok((tokens, user))
+      succeed((tokens, user))
     })
   }
 }
@@ -109,6 +114,7 @@ impl OAuthClient for MemoryOAuthClient {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use id_effect::Exit;
 
   #[test]
   fn oauth_error_display_variants() {
@@ -122,7 +128,6 @@ mod tests {
 
   #[test]
   fn memory_client_register_and_exchange() {
-    use id_effect::run_blocking;
     let client = MemoryOAuthClient::new("https://idp.test");
     client.register_code(
       "c",
@@ -131,7 +136,9 @@ mod tests {
         email: None,
       },
     );
-    let (tokens, user) = run_blocking(client.exchange_code("c"), ()).unwrap();
+    let Exit::Success((tokens, user)) = client.exchange_code("c").block_on() else {
+      panic!("exchange failed");
+    };
     assert_eq!(user.sub, "sub");
     assert_eq!(tokens.expires_in, Some(3600));
   }

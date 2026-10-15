@@ -6,7 +6,6 @@ use id_effect_ai::{
   provide_anthropic_language_model,
 };
 use id_effect_config::Secret;
-use id_effect_platform::http::provide_reqwest_http_client;
 use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -34,11 +33,8 @@ async fn anthropic_complete_success() {
 
   let client = Arc::new(id_effect_platform::http::ReqwestHttpClient::default_client());
   let cfg = test_config(&server.uri());
-  let env = build_env([
-    provide_reqwest_http_client(),
-    provide_anthropic_language_model(client, cfg).expect("provider"),
-  ])
-  .expect("env");
+  let env =
+    build_env([provide_anthropic_language_model(client, cfg).expect("provider")]).expect("env");
 
   let req = ChatRequest {
     model: "claude-sonnet-4-20250514".into(),

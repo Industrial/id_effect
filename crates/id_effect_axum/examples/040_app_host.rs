@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use axum::{Router, body::Body, http::Request, middleware};
+use id_effect::next::compat::IntoV1;
 use id_effect::{Effect, run_blocking, succeed};
 use id_effect_axum::{
   CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, HostBuilder, bootstrap_env, csp_middleware,
@@ -19,7 +20,7 @@ struct AppState {
 
 fn session_user(env: &mut AppState) -> Effect<String, std::convert::Infallible, AppState> {
   let store = env.sessions.clone();
-  succeed(match run_blocking(store.get("demo"), ()) {
+  succeed(match run_blocking(store.get("demo").into_v1(), ()) {
     Ok(Some(data)) => format!("user={}", data.user_id),
     _ => "user=none".into(),
   })
@@ -39,7 +40,14 @@ async fn main() {
   let state = AppState {
     sessions: MemorySessionStore::default(),
   };
-  run_blocking(state.sessions.put("demo", SessionData::new("user-1")), ()).expect("seed session");
+  run_blocking(
+    state
+      .sessions
+      .put("demo", SessionData::new("user-1"))
+      .into_v1(),
+    (),
+  )
+  .expect("seed session");
 
   let csp = Arc::new(ContentSecurityPolicy::new().default_src_self());
   let csrf = CsrfConfig::new("demo-token");

@@ -9,7 +9,7 @@ use id_effect_ai::{
   provide_anthropic_language_model, provide_openai_language_model,
 };
 use id_effect_cli::{RunMainConfig, run_main};
-use id_effect_platform::http::{ReqwestHttpClient, provide_reqwest_http_client};
+use id_effect_platform::http::ReqwestHttpClient;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ fn main() -> ExitCode {
     Vendor::Openai => provide_openai_language_model(client, cfg).expect("openai"),
     Vendor::Anthropic => provide_anthropic_language_model(client, cfg).expect("anthropic"),
   };
-  let env = build_env([provide_reqwest_http_client(), provider]).expect("env");
+  let env = build_env([provider]).expect("env");
   let model = match args.vendor {
     Vendor::Openai => args.model.unwrap_or_else(|| "gpt-4o-mini".into()),
     Vendor::Anthropic => args
