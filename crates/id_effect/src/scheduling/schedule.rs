@@ -34,14 +34,14 @@
 //! attempt starts: `Effect::retry(|| fetch(id), schedule)`. There are no free `retry` / `repeat`
 //! functions.
 //!
-//! # Jitter source (seam for `p-random`)
+//! # Jitter source
 //!
-//! [`Schedule::jittered`] needs randomness. Until the `Random` capability lands, it draws from a
-//! small internal SplitMix64 generator seeded per run by a [`JitterSource`]: by default
-//! [`JitterSource::entropy`] (std's randomly keyed hasher, no new dependency); tests pass
-//! [`JitterSource::seeded`] to [`Schedule::jittered_with`] for a reproducible sequence.
-//! `p-random` can plug its generator in through [`JitterSource::from_fn`] (or swap the default
-//! inside `jittered`) without changing the `Schedule` API.
+//! [`Schedule::jittered`] needs randomness. It draws from a small internal SplitMix64 generator
+//! seeded per run by a [`JitterSource`]: by default [`JitterSource::entropy`] (std's randomly
+//! keyed hasher, no new dependency); tests pass [`JitterSource::seeded`] to
+//! [`Schedule::jittered_with`] for a reproducible sequence.
+//! Any other seed source (for example a seeded [`Random`](crate::Random)) plugs in through
+//! [`JitterSource::from_fn`].
 //!
 //! ```
 //! use std::sync::Arc;
@@ -423,8 +423,8 @@ fn scale(d: Duration, factor: f64) -> Duration {
 
 // ── jitter source ───────────────────────────────────────────────────────────────────────────
 
-/// Seeds the generator behind [`Schedule::jittered_with`], once per run. The seam where
-/// `p-random`'s `Random` plugs in (see the [module docs](self)).
+/// Seeds the generator behind [`Schedule::jittered_with`], once per run (see the
+/// [module docs](self)).
 #[derive(Clone)]
 pub struct JitterSource {
   seed: Arc<dyn Fn() -> u64 + Send + Sync>,

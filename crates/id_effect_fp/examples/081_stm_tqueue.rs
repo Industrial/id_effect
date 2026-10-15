@@ -15,7 +15,7 @@ fn main() {
   println!("081_stm_tqueue ok");
 }
 
-/// Runs `eff` on the global next runtime: `Ok` on success, `Err` on a typed failure.
+/// Runs `eff` on the global runtime: `Ok` on success, `Err` on a typed failure.
 fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),

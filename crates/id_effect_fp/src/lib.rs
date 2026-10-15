@@ -81,7 +81,7 @@ pub(crate) mod test_support {
   use id_effect::Effect;
   use id_effect::{Cause, Exit};
 
-  /// Runs `eff` on the global next runtime; typed failures become `Err`, anything else panics.
+  /// Runs `eff` on the global runtime; typed failures become `Err`, anything else panics.
   pub(crate) fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
     match eff.block_on() {
       Exit::Success(a) => Ok(a),
