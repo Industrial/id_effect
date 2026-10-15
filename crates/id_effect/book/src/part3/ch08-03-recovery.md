@@ -1,83 +1,69 @@
-# Recovery Combinators — catch, fold, and Friends
+# Recovery Combinators — catch, map_err and exit
 
-Knowing about `Cause` and `Exit` is only useful if you can act on them. id_effect provides a focused set of recovery combinators.
+Knowing about `Cause` and `Exit` is only useful if you can act on them. The 0.7 kernel keeps the recovery surface deliberately small: three methods on `Effect`, plus ordinary `flat_map` over an observed `Exit`.
 
 ## catch: Handle Expected Errors
 
-`catch` intercepts `Cause::Fail(e)` and gives you a chance to recover:
+`catch` intercepts `Cause::Fail(e)` and gives you a chance to recover (it may also change the error type):
 
-```rust
-let resilient = risky_db_call()
-    .catch(|error: DbError| {
-        match error {
-            DbError::NotFound => succeed(User::anonymous()),
-            other => fail(other),  // re-raise anything else
-        }
-    });
-```
-
-If `risky_db_call` fails with `Cause::Fail(e)`, the closure runs. If it fails with `Cause::Die` or `Cause::Interrupt`, those propagate unchanged — `catch` only handles typed failures.
-
-## catch_all: Handle Everything
-
-`catch_all` intercepts any `Cause`:
-
-```rust
-let bulletproof = my_effect.catch_all(|cause| match cause {
-    Cause::Fail(e)   => handle_expected_error(e),
-    Cause::Die(_)    => succeed(fallback_value()),
-    Cause::Interrupt => succeed(cancelled_gracefully()),
+```rust,ignore
+let resilient: Effect<User, DbError, caps!(Db)> = find_user(id).catch(|error: DbError| match error {
+    DbError::NotFound => succeed(User::anonymous()),
+    other => fail(other), // re-raise anything else
 });
 ```
 
-Use `catch_all` when you genuinely need to handle panics or cancellation — typically at resource boundaries or top-level handlers. Don't use it to swallow defects silently.
-
-## fold: Handle Both Paths
-
-`fold` transforms both success and failure into a uniform success type:
+If `find_user` fails with `Cause::Fail(e)`, the closure runs. `Cause::Die` and `Cause::Interrupt` pass through unchanged — `catch` only handles typed failures. A runnable version (`examples/012_catch.rs`):
 
 ```rust
-let always_string: Effect<String, Never, ()> = risky_call()
-    .fold(
-        |error| format!("Error: {error}"),
-        |value| format!("Success: {value}"),
-    );
+use id_effect::{Effect, Exit, effect, succeed};
+
+fn parse_i32(raw: &'static str) -> Effect<i32, &'static str> {
+    effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+}
+
+let program: Effect<i32, &'static str> = effect!({
+    let v = ~parse_i32("x").catch(|_| succeed(0));
+    v + 42
+});
+assert_eq!(program.block_on(), Exit::succeed(42));
 ```
 
-After `fold`, the effect never fails (`E = Never`). Both arms produce the same type. This is useful for logging, metrics, or converting to a neutral representation.
+## map_err: Rewrite the Error
 
-## or_else: Try an Alternative
+`map_err` transforms the typed error and leaves defects and interrupts alone. Use it to lift a component's error into your application's error type, or into an `Or` union (next section):
 
-`or_else` runs an alternative effect on failure:
-
-```rust
-let with_fallback = primary_source()
-    .or_else(|_err| secondary_source());
+```rust,ignore
+let v = ~parse_i32("nope").map_err(|_| AppError::BadInput);
 ```
 
-If `primary_source` fails, `secondary_source` runs. If that also fails, the combined effect fails with the second error. Useful for fallback chains.
+## exit: Handle Everything
 
-## ignore_error: Discard Failures
+When you genuinely need to react to defects or interruption — at a top-level handler, around a plugin call, in a supervisor — observe the outcome as a value and branch on it:
 
-When you genuinely don't care about an operation's success:
+```rust,ignore
+use id_effect::{Cause, Exit, succeed};
 
-```rust
-// Log "best effort" — failure is acceptable
-let logged_effect = log_metrics()
-    .ignore_error()
-    .flat_map(|_| actual_work());
+let bulletproof = risky().exit().flat_map(|exit| match exit {
+    Exit::Success(v) => succeed(v),
+    Exit::Failure(Cause::Fail(e)) => handle_expected_error(e),
+    Exit::Failure(cause) => {
+        log_defect(cause.pretty());
+        succeed(fallback_value())
+    }
+});
 ```
 
-`ignore_error` converts `Effect<A, E, R>` to `Effect<Option<A>, Never, R>`. The effect always "succeeds" — with `Some(value)` on success or `None` on failure.
+Don't use this to swallow defects silently, and remember that swallowing a `Cause::Interrupt` means your fiber keeps running after someone asked it to stop.
 
-## The Recovery Hierarchy
+## Common recipes
 
-```
-catch(f)      — handles Cause::Fail only
-catch_all(f)  — handles all Cause variants
-fold(on_e, on_a) — transforms both paths to success
-or_else(f)    — runs alternative on failure
-ignore_error  — converts failure to Option
-```
+| Effect.ts / 0.6 name | 0.7 spelling |
+|---|---|
+| `catchAll` / `catch_all` | `.exit().flat_map(\|exit\| ..)` |
+| `orElse(alt)` | `.catch(\|_\| alt())` |
+| `fold(on_e, on_a)` | `.map(on_a).catch(\|e\| succeed(on_e(e)))` |
+| `ignore` / `option` | `.map(Some).catch(\|_\| succeed(None))` |
+| `retry` | `Effect::retry(\|\| eff, schedule)` ([Chapter 11](./ch11-03-retry-repeat.md)) |
 
-Prefer the narrowest combinator that solves your problem. `catch` for expected errors. `catch_all` only when you need to touch panics or cancellation.
+Prefer the narrowest tool that solves your problem: `catch` for expected errors, `.exit()` only when you need to see defects or interrupts.

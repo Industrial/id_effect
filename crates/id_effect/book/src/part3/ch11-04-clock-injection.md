@@ -1,104 +1,109 @@
-# Clock Injection — Testable Time
+# Virtual Time — The Executor Clock
 
-`Schedule::exponential(100.ms()).take(3)` with real retries takes ~700ms to test. Multiply by hundreds of tests and your test suite takes minutes. `Clock` injection solves this.
+`Schedule::exponential(100ms)` intersected with `recurs(3)` takes 700 ms of real time per test run. Multiply by hundreds of tests and your suite takes minutes. In 0.7 the fix is not a clock capability you inject: **time belongs to the executor**.
 
-## The Clock Trait
+## One Clock per Executor
 
-```rust
-use id_effect::{Clock};
+Every fiber runs on an `Executor`, and the executor owns the clock (`Executor::sleep` and `Executor::now`). Everything time-based in id_effect uses the running fiber's executor:
 
-// The Clock trait abstracts time
-trait Clock: Send + Sync {
-    fn now(&self) -> UtcDateTime;
-    fn sleep(&self, duration: Duration) -> Effect<(), Never, ()>;
-}
-```
+- `sleep(d)`, `Effect::timeout` / `timeout_fail`;
+- the delays of `Effect::retry` / `Effect::repeat` and of `supervised` restart policies;
+- `Pool` / `Cache` TTLs.
 
-All time-related operations in id_effect go through the current fiber's `Clock`. Replace the clock, and "time" moves as fast as you drive it.
+In production that is `TokioExecutor` (real tokio timers; it is what `Effect::block_on` and `Runtime::global()` use). In tests it is **`TestExecutor`**, whose clock is virtual: it starts at the wall-clock instant of `TestExecutor::new()` and moves **only** when you call `advance`. Business code is identical in both — it never names a clock.
 
-## Production: LiveClock
+There is no `Clock` trait, `LiveClock` or `TestClock` in 0.7, and no `*_with_clock` variants: they were removed with the 0.6 kernel.
 
-```rust
-use id_effect::LiveClock;
+## Driving a TestExecutor
 
-// Uses real system time and tokio::time::sleep
-let live_clock = LiveClock::new();
-```
-
-In production, inject `LiveClock` through the environment. Effect code never calls `std::time::SystemTime::now()` directly — it uses the injected clock.
-
-## Testing: TestClock
-
-```rust
-use id_effect::TestClock;
-
-let clock = TestClock::new();
-
-// The clock starts at epoch and doesn't advance on its own
-assert_eq!(clock.now(), EPOCH);
-
-// Advance time instantly
-clock.advance(Duration::from_secs(60));
-assert_eq!(clock.now(), EPOCH + 60s);
-```
-
-`TestClock` is deterministic. It advances only when you tell it to. Sleep effects don't wait — they check the clock, and if the clock is past their wake time, they return immediately.
-
-## Test Example
-
-```rust
-#[test]
-fn exponential_retry_makes_three_attempts() {
-    let clock = TestClock::new();
-    let attempts = Arc::new(AtomicU32::new(0));
-
-    let effect = {
-        let attempts = attempts.clone();
-        failing_operation(attempts.clone())
-            .retry(Schedule::exponential(Duration::from_secs(1)).take(3))
-    };
-
-    // Fork the effect with the test clock
-    let handle = effect.fork_with_clock(&clock);
-
-    // Advance time to trigger each retry
-    clock.advance(Duration::from_secs(1));   // retry 1
-    clock.advance(Duration::from_secs(2));   // retry 2
-    clock.advance(Duration::from_secs(4));   // retry 3 (exhausted)
-
-    let exit = handle.join_blocking();
-    assert!(matches!(exit, Exit::Failure(_)));
-    assert_eq!(attempts.load(Ordering::Relaxed), 4);  // initial + 3 retries
-}
-```
-
-The test runs in microseconds despite testing multi-second retry behaviour. No `tokio::time::pause()` hacks. No `sleep(Duration::ZERO)` workarounds.
-
-## Clock in the environment
-
-Like other dependencies, `Clock` is a capability in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs):
-
-```rust
-use id_effect::{Effect, Clock, LiveClock, TestClock, caps, effect, provide, require, run_with};
+```rust,ignore
 use std::sync::Arc;
-struct AppClock;
+use id_effect::TestExecutor;
 
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(AppClock)]
-struct LiveClockLive;
+let exec = TestExecutor::new();
+let handle = program.fork_root(Arc::new(exec.clone())); // spawn the root fiber on it
+exec.run_until_stalled();             // poll every queued task until none is queued
+exec.advance(Duration::from_secs(1)); // move virtual time, firing due sleeps in order
+assert!(handle.is_done());
+```
 
-impl LiveClockLive {
-    fn new() -> Arc<dyn Clock> {
-        Arc::new(LiveClock::new())
-    }
+| Method | What it does |
+|---|---|
+| `TestExecutor::new()` | a fresh single-threaded executor with a virtual clock (clones share it) |
+| `eff.fork_root(Arc::new(exec.clone()))` | start `eff` (with `R = HNil`) as a root fiber; returns its `FiberHandle` |
+| `run_until_stalled()` | poll queued tasks (FIFO) until none is queued; returns how many polls ran |
+| `advance(d)` | move the clock by `d`, firing due sleeps in deadline order and running what they wake |
+| `next_timer_deadline()` / `pending_timers()` | inspect pending sleeps |
+| `now()` (via `Executor`) | the virtual instant |
+
+Nothing busy-polls: a sleeping fiber is a registered timer, so a thousand ten-second sleeps finish on one `advance` in microseconds.
+
+## Example: a Timeout in Virtual Time
+
+From the `Effect::timeout` docs:
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use id_effect::{Effect, TestExecutor, sleep};
+
+let exec = TestExecutor::new();
+let slow: Effect<u8> = sleep(Duration::from_secs(60)).map(|()| 1);
+let h = slow.timeout(Duration::from_secs(10)).fork_root(Arc::new(exec.clone()));
+exec.advance(Duration::from_secs(9));
+assert!(!h.is_done());
+exec.advance(Duration::from_secs(1));
+assert!(h.is_done(), "timed out at virtual 10 s");
+```
+
+## Example: Exact Backoff Timing
+
+From `crates/id_effect/tests/schedule.rs`: exponential(10 ms) with 3 retries is done at exactly 70 ms of virtual time, and not one nanosecond earlier.
+
+```rust,ignore
+let eff: Effect<usize, String> = Effect::retry(
+    flaky(&n, usize::MAX), // always fails, counting attempts in `n`
+    Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)),
+);
+let exec = TestExecutor::new();
+let h = eff.fork_root(Arc::new(exec.clone()));
+exec.run_until_stalled();
+for step in [ms(10), ms(20), ms(40) - Duration::from_nanos(1)] {
+    exec.advance(step);
 }
+assert!(!h.is_done());
+assert_eq!(n.load(Ordering::SeqCst), 3);
+exec.advance(Duration::from_nanos(1));
+assert!(h.is_done());
+assert_eq!(n.load(Ordering::SeqCst), 4); // 1 attempt + 3 retries
+```
 
-fn now() -> Effect<UtcDateTime, Never, caps!(AppClock)> {
-    effect!(|r| {
-        let clock = ~AppClock;
-        ~ clock.now()
-    })
+A handy helper advances from deadline to deadline until the root is done, so tests don't hard-code delays:
+
+```rust,ignore
+fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (FiberHandle<A, E>, Duration) {
+    let exec = TestExecutor::new();
+    let start = exec.now();
+    let h = eff.fork_root(Arc::new(exec.clone()));
+    exec.run_until_stalled();
+    while !h.is_done() {
+        let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+        exec.advance(deadline.saturating_duration_since(exec.now()));
+    }
+    (h, exec.now() - start)
 }
 ```
 
-Production uses `provide!(LiveClockLive)`; tests insert `Arc::new(TestClock::new(...))` via `build_env` or a mock provider. Business logic is identical in both contexts.
+Once `h.is_done()`, `h.join_future()` is ready on its first poll and yields the `Exit`.
+
+## Reading the Time in Your Own Code
+
+If business logic needs "now", read it from the executor so tests control it too:
+
+```rust,ignore
+fn now<E: Send + 'static>() -> Effect<std::time::Instant, E> {
+    Effect::from_ctx(|ctx| async move { Ok(ctx.fiber().executor().now()) })
+}
+```
+
+For wall-clock calendar values (`UtcDateTime`, time zones) see `id_effect::scheduling::datetime`; they are plain data, so pass them in as inputs or capabilities when a test needs to fix them. More on testing with `TestExecutor` in [Testing](../part4/ch15-00-testing.md).

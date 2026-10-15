@@ -1,54 +1,49 @@
 # Exit — Terminal Outcomes
 
-Every effect execution ends with an `Exit`. It's the final word on what happened.
+Every effect run ends with an `Exit`. It's the final word on what happened.
 
 ## The Exit Type
 
-```rust
-use id_effect::Exit;
-
-enum Exit<A, E> {
-    Success(A),         // Effect completed, produced A
-    Failure(Cause<E>),  // Effect failed with Cause<E>
+```rust,ignore
+pub enum Exit<A, E> {
+    Success(A),         // the effect completed with A
+    Failure(Cause<E>),  // the effect failed, died or was interrupted
 }
 ```
 
-`Exit` combines the success type and the full failure taxonomy.
+`Exit` pairs the success type with the full failure taxonomy. It is what the run edges return:
 
-- **`run_blocking`** returns **`Result<A, E>`** — you only see typed **`E`** failures; defects and interrupts are not represented as values there.
-- [`run_test`](../part4/ch15-01-run-test.md) returns **`Exit<A, E>`** and is the right harness for **unit tests** that must assert on defects, interrupts, and typed failures.
+- **`eff.block_on()`** (and `Runtime::block_on`, `Runtime::run(eff).await`) returns **`Exit<A, E>`**, so typed failures, defects and interrupts are all values you can match on — in application code and in tests alike.
+- **`FiberHandle::join_future()`** resolves to the fiber's `Exit`; `FiberHandle::interrupt()` is an effect that succeeds with the interrupted fiber's `Exit`.
+- **`eff.exit()`** turns any effect into one that *succeeds* with its `Exit` (Effect.ts `Effect.exit`), so you can inspect an outcome inside a larger program.
 
-For **CLI / process exit codes**, map an `Exit` with **`id_effect_cli::exit_code_for_exit`** (see [CLI with clap](./ch16-00-cli-with-clap.md)).
+```rust
+use id_effect::{Cause, Effect, Exit, fail, succeed};
+
+let ok: Effect<i32, ()> = succeed(42);
+assert_eq!(ok.block_on(), Exit::succeed(42));
+
+// `.exit()` never fails: the outcome becomes the success value.
+let seen: Effect<Exit<i32, &str>> = fail::<i32, &str, _>("no").exit();
+assert_eq!(seen.block_on(), Exit::succeed(Exit::Failure(Cause::Fail("no"))));
+```
 
 ## Converting Exit to Result
 
-Most application code wants `Result`. The conversion is straightforward:
+`Exit::into_result` gives `Result<A, Cause<E>>`; combine it with `Cause::fail_option` when you only care about typed failures:
 
-```rust
-let result: Result<User, AppError> = exit.into_result(|cause| match cause {
-    Cause::Fail(e) => AppError::Expected(e),
-    Cause::Die(_)  => AppError::Defect,
-    Cause::Interrupt(_) => AppError::Cancelled,
-});
+```rust,ignore
+match program.block_on().into_result() {
+    Ok(value) => println!("got {value}"),
+    Err(cause) => match cause.fail_option() {
+        Some(e) => eprintln!("failed: {e:?}"),
+        None => eprintln!("defect or interrupt"),
+    },
+}
 ```
 
-Or use the convenience method that maps `Cause::Fail(e)` → `Err(e)` and treats other causes as panics:
-
-```rust
-let result: Result<User, DbError> = exit.into_result_or_panic();
-```
-
-## Exit in Fiber Joins
-
-When you join a fiber (Chapter 9), you get an `Exit` back:
-
-```rust
-let fiber = my_effect.fork();
-let exit: Exit<A, E> = fiber.join().await;
-```
-
-This lets you inspect whether the fiber succeeded, failed with a typed error, panicked, or was cancelled — and respond appropriately in the parent fiber.
+`Exit` also has `map`, `map_error` (typed errors only) and `to_either` / `from_either`.
 
 ## Practical Rule
 
-Use **`run_blocking`** (which returns **`Result<A, E>`**) for most application logic. Use **`run_test`** when you need the full **`Exit`** taxonomy in tests. At the **process edge** (binaries), combine **`run_main`** / **`exit_code_for_exit`** from **`id_effect_cli`** with the table in the [CLI exit codes](./ch16-01-cli-exit-codes.md) chapter.
+Run at the edge with `block_on` and match on the `Exit`. In tests, assert on the `Exit` directly (`assert_eq!(eff.block_on(), Exit::succeed(..))`, or `TestExecutor` for virtual time — see [Testing](../part4/ch15-00-testing.md)). At the **process edge** (binaries), use **`run_main`** / **`exit_code_for_exit`** from **`id_effect_cli`**; the mapping is in the [CLI exit codes](./ch16-01-cli-exit-codes.md) chapter.

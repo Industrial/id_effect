@@ -4,59 +4,61 @@
 
 ## Expected vs. Unexpected
 
-```rust
+```rust,ignore
 // Expected: you planned for this
-Effect<User, UserNotFound, Db>
+Effect<User, UserNotFound, caps!(Db)>
 
-// But what if the database panics?
-// What if the fiber is cancelled?
-// What if the process runs out of memory?
-// None of these are UserNotFound.
+// But what if the database driver panics?
+// What if the fiber is interrupted?
+// Neither of these is a UserNotFound.
 ```
 
-Traditional Rust handles unexpected failures through panics, which unwind (or abort) and bypass all your error handling. In async code, panics in tasks can silently swallow errors or leave resources unreleased.
+Traditional Rust handles unexpected failures through panics, which unwind (or abort) and bypass your error handling. In async code a panic in a task can silently swallow errors or leave resources unreleased.
 
 ## The Cause Type
 
-`Cause<E>` is id_effect's complete taxonomy of failure:
+`Cause<E>` is id_effect's complete taxonomy of failure (`id_effect::Cause`):
 
-```rust
-use id_effect::Cause;
-
-enum Cause<E> {
-    Fail(E),                // Your typed, expected error
-    Die(Box<dyn Any>),      // A panic or defect — something that shouldn't happen
-    Interrupt,              // The fiber was cancelled
+```rust,ignore
+pub enum Cause<E> {
+    Fail(E),                            // your typed, expected error
+    Die(Defect),                        // a panic or `die(..)`: a bug
+    Interrupt(FiberId),                 // the fiber was interrupted
+    Both(Box<Cause<E>>, Box<Cause<E>>), // two causes in parallel (e.g. zip_par)
+    Then(Box<Cause<E>>, Box<Cause<E>>), // two causes in sequence (e.g. a dying finalizer)
 }
 ```
 
-Every failure in the effect runtime is one of these three. Together they cover the full space of "things that can go wrong."
+- `Cause::Fail(e)` — an error you declared in `E`, handled with `catch` or `map_err`.
+- `Cause::Die(defect)` — a panic inside an effect step, or an explicit `die("..")`. The runtime catches panics in effect closures and turns them into `Die`; `Defect::message()` is the panic text.
+- `Cause::Interrupt(fiber_id)` — the fiber was interrupted: its parent exited, it lost a race, someone called `FiberHandle::interrupt`, or its supervisor shut down.
+- `Both` / `Then` — composite causes. `Cause::pretty()` renders the tree, `Cause::fail_option()` extracts a `Fail` payload, `Cause::contains(&pred)` searches the tree.
 
-- `Cause::Fail(e)` — an error you declared in `E`, handled with `catch` or `map_error`
-- `Cause::Die(payload)` — a panic, logic bug, or fatal error; should be logged and treated as a defect
-- `Cause::Interrupt` — clean cancellation; the fiber was asked to stop and cooperated
+```rust
+use id_effect::{Cause, Effect, Exit, die, fail};
+
+let failed: Effect<i32, &str> = fail("no");
+assert_eq!(failed.block_on(), Exit::fail("no"));
+
+let died: Effect<i32, &str> = die("boom");
+assert!(matches!(died.block_on(), Exit::Failure(Cause::Die(_))));
+
+assert_eq!(Cause::fail(7_u8).fail_option(), Some(7));
+assert_eq!(Cause::<u8>::die("x").fail_option(), None);
+```
 
 ## Why This Matters
 
-Without `Cause`, you can only handle `Cause::Fail`. The other two propagate invisibly up the fiber tree and may silently swallow logs or leave resources unreleased.
+The typed-error combinators (`catch`, `map_err`) only ever see `Cause::Fail`. Defects and interrupts pass through them untouched, so a bug cannot be "recovered" by accident and an interrupted fiber really stops. Finalizers (Chapter 10) run for *every* cause, so cleanup happens however the fiber ends.
 
-With `Cause`, you can handle *all* failure modes in a structured way:
-
-```rust
-my_effect.catch_all(|cause| match cause {
-    Cause::Fail(e)    => recover_from_expected(e),
-    Cause::Die(panic) => log_defect_and_fail(panic),
-    Cause::Interrupt  => succeed(default_value()),
-})
-```
-
-Resource finalizers (Chapter 10) use this same model — they run on any `Cause`, ensuring cleanup regardless of how the fiber ends.
+When you do need the whole picture — at a top-level handler, in a test, in a supervisor — observe the outcome as a value with `.exit()` (next section).
 
 ## Day-to-Day Usage
 
-In normal application code you rarely inspect `Cause` directly. You use:
-- `.catch(f)` for handling `Cause::Fail`
-- `.catch_all(f)` when you need to handle panics or interruption too
-- `Exit` (next section) when you need to inspect the terminal outcome
+In application code you rarely inspect `Cause` directly. You use:
 
-The `Cause` type is mostly visible at infrastructure boundaries — resource finalizers, fiber supervisors, and top-level error handlers.
+- `.catch(f)` / `.map_err(f)` for `Cause::Fail`;
+- `.exit()` or `block_on()` when you need the terminal [`Exit`](./ch08-02-exit.md);
+- `id_effect_cli::exit_code_for_exit` at the process edge.
+
+`Cause` is mostly visible at infrastructure boundaries: finalizers (which receive an `ExitKind`), supervisors and top-level error reporting.
