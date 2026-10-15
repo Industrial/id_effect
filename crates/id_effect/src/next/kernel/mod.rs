@@ -24,12 +24,11 @@ pub use bind_same::*;
 pub use cause::*;
 pub use constructors::*;
 pub use ctx::*;
-#[allow(unused_imports)] // filled by k-edge
+#[allow(unused_imports)] // impl-only module (`Effect::block_on` / `try_block_on`)
 pub use edge::*;
 pub use effect::*;
 #[allow(unused_imports)] // inherent impls only (`Effect::fork` / `fork_daemon`)
 pub use fork::*;
-#[allow(unused_imports)] // filled by k-edge
 pub use local::*;
 pub use resource::*;
 pub use runloop::*;
