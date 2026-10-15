@@ -2,8 +2,8 @@
 # G-nb: no thread-parking run edges in library code.
 #
 # Lints the lib target of a workspace crate with the disallowed-methods list in
-# scripts/clippy-no-blocking/clippy.toml (v1 `run_blocking`, `next` `block_on` /
-# `try_block_on` on `Effect` and `Runtime`). Tests, benches and examples are not checked.
+# scripts/clippy-no-blocking/clippy.toml (`block_on` / `try_block_on` on `Effect`, `LocalEffect`
+# and `Runtime`, `Runtime::block_on_future`). Tests, benches and examples are not checked.
 # An edge call site is allowlisted in the source with
 # `#[allow(clippy::disallowed_methods, reason = "edge: ...")]`.
 #
@@ -12,7 +12,7 @@
 #   scripts/check-no-run-blocking.sh --report P    # list hits and a count, always exit 0
 #
 # P is a workspace package name (`id_effect_cli`) or a directory / file inside one
-# (`crates/id_effect/src/next/coordination`): a path lints its owning crate and keeps only the
+# (`crates/id_effect/src/coordination`): a path lints its owning crate and keeps only the
 # hits under that path.
 #
 # Lints run in a separate target dir (default `<target>/clippy-no-blocking`, override with

@@ -5,8 +5,8 @@
 //! The end of the stream is a queue shutdown (buffered chunks stay readable), and a failure is
 //! stored in a take-once slot before the shutdown, so the consumer sees every chunk sent before
 //! it and then the error. Neither ever waits for space or spins: [`StreamSender::fail`] and
-//! [`end_stream`] return at once (the 0.6 `fail` busy-looped `run_blocking(offer)` +
-//! `yield_now` while the queue was full). Dropping the last sender ends the stream too.
+//! [`end_stream`] return at once (the 0.6 `fail` busy-looped a blocking offer plus a thread
+//! yield while the queue was full). Dropping the last sender ends the stream too.
 
 use std::collections::VecDeque;
 use std::fmt;

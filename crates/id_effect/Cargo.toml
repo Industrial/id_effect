@@ -3,7 +3,7 @@ name = "id_effect"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor"
+description = "Effect<A, E, R>: lazy Send effects over a typed capability list, run on a fiber runtime (Tokio executor), with layers, streams, schedules and coordination"
 license.workspace = true
 repository.workspace = true
 
@@ -48,11 +48,10 @@ required-features = ["compute"]
 
 [features]
 default = ["compute"]
-# Compute Fabric (`compute` module): admission, adaptive Rayon parallelism for bulk ops, sysinfo
-# telemetry. Off → serial bulk ops, no fabric at `run`/`run_with`, no rayon/sysinfo deps.
+# Compute Fabric (`compute` module): resource-aware admission (`ComputeFabric`), adaptive Rayon
+# parallelism for bulk ops, sysinfo telemetry. Off → serial bulk ops, no rayon/sysinfo deps (the
+# kernel's fiber admission `Fabric` is always built).
 compute = ["dep:rayon", "dep:sysinfo"]
-# Property-testing helpers in `testing::proptest`.
-proptest = ["dep:proptest"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
 
@@ -67,10 +66,8 @@ rayon = { version = "1.12", optional = true }
 # 0.39+ needs rustc ≥1.95 (cfg_select); pin until devenv rustc catches up.
 sysinfo = { version = "0.33", optional = true }
 serde_json = { version = "1", optional = true }
-proptest = { version = "1", optional = true }
-# Required: `coordination` is built on tokio::sync (Notify, Semaphore, Mutex, watch, broadcast) and
-# FiberHandle::{map, zip, or_else, interrupt_fork} / PubSub spawn onto the ambient Tokio runtime.
-# `time` + `rt-multi-thread`: the `next` kernel's `TokioExecutor` (real timers, default runtime).
+# Required (R6): the kernel's default `TokioExecutor` (`time` for real timers, `rt-multi-thread`
+# for the default `Runtime::global`).
 tokio = { version = "1.50.0", features = [
   "macros",
   "rt",

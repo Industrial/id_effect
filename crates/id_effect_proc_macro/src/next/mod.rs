@@ -1,7 +1,8 @@
-//! The temporary next-kernel macros (`effect_next!`, `effect_local_next!`, `caps_next!`), ported
-//! from spike A's token-level macros (no `syn`). They coexist with the v1 `effect!` and are
-//! renamed by `k-retire-sweep`. Expansions only name `::id_effect::next::…` paths (the `id_effect`
-//! crate has `extern crate self as id_effect`, so they also resolve inside it).
+//! The kernel macros `effect!` / `effect_local!` / `caps!` (also under their temporary
+//! side-by-side names `effect_next!`, `effect_local_next!`, `caps_next!`, removed by
+//! `k-retire-sweep`), ported from spike A's token-level macros (no `syn`). Expansions only name
+//! `::id_effect::…` root paths (the `id_effect` crate has `extern crate self as id_effect`, so
+//! they also resolve inside it).
 
 pub(crate) mod caps;
 pub(crate) mod effect;

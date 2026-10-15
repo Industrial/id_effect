@@ -1,1284 +1,196 @@
-//! Bidirectional typed pipeline — generalises one-sided [`Stream`] and
-//! [`Sink`] (§25).
+//! [`Channel`]: a queue-backed duplex pipeline. Ported from the queue-backed half of the v1
+//! `coordination::channel` (`Channel::from_queue_and_map` / `QueueChannel`).
 //!
-//! Queue-backed channels map each [`Channel::write`] through `InElem → OutElem` into a shared
-//! [`Queue`]. [`Channel::read`] suspends until a value is available or the queue disconnects.
+//! [`Channel::write`] maps each input through the write side (`In → Out`, see
+//! [`map_in`](Channel::map_in)) into a shared [`Queue`]; [`Channel::read`] takes the next wire
+//! element, expands it through the read side ([`map_out`](Channel::map_out),
+//! [`flat_map_out`](Channel::flat_map_out)) and returns it, or `None` once the queue is shut down
+//! and drained. The v1 stream-, sink- and fold-backed variants depend on `Stream`/`Sink`, which
+//! are not on the next kernel yet; they move with the streaming leaf (`m-streams`).
 
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-use core::any::Any;
-use tokio::sync::Mutex as TokioMutex;
+use super::queue::{Queue, QueueError};
+use super::waiters::lock;
+use crate::next::kernel::{Effect, from_async};
 
-#[inline]
-fn interruption_requested<R: 'static>(env: &R) -> bool {
-  let any = env as &dyn Any;
-  any
-    .downcast_ref::<crate::runtime::CancellationToken>()
-    .is_some_and(crate::runtime::CancellationToken::is_cancelled)
-}
+type Ingest<In, Out> = Arc<dyn Fn(In) -> Vec<Out> + Send + Sync>;
+type Emit<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
 
-use crate::coordination::queue::{Queue, QueueError};
-use crate::failure::union::Or;
-use crate::kernel::{Effect, box_future, succeed};
-use crate::streaming::sink::Sink;
-use crate::streaming::stream::Stream;
-
-/// Errors from [`Channel::read`] and [`Channel::to_stream`].
+/// A duplex pipeline over a [`Queue`]: writes of `In` come out of reads as `Out`. Cloning yields
+/// another handle on the same queue and read buffer.
 ///
-/// [`Or::Left`] is a queue disconnect (including fold channels backed by a queue).
-/// [`Or::Right`] is an upstream failure when the channel is [`Channel::from_stream`].
-pub type ChannelReadError<E> = Or<QueueError, E>;
-
-type MapIn<In, Out> = Arc<dyn Fn(In) -> Out + Send + Sync>;
-type PostRead<Out> = Arc<dyn Fn(Out) -> Out + Send + Sync>;
-type FlatMapOut<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
-type FoldStep<Acc, In> = Arc<dyn Fn(Acc, In) -> Acc + Send + Sync>;
-/// Phantom for [`Channel`] metadata types (`OutDone`, `OutErr`, `R`) without storing `R`.
-type ChannelMeta<OutDone, OutErr, R> = PhantomData<fn() -> (OutDone, OutErr, R)>;
-
-/// Shared state for [`ChannelState::SinkAccum`]. Split out so [`Sink`] fold drivers can capture
-/// `Arc<SinkAccumInner<…>>` (always `Send`) instead of [`ChannelState`] (not `Send` when `FromStream`
-/// is a variant).
-pub(crate) struct SinkAccumInner<OutElem, InElem>
-where
-  OutElem: Send + 'static,
-  InElem: Send + 'static,
-{
-  pub(crate) acc: Arc<Mutex<OutElem>>,
-  pub(crate) step: FoldStep<OutElem, InElem>,
-  pub(crate) q: Queue<OutElem>,
-  pub(crate) pending: Arc<Mutex<VecDeque<OutElem>>>,
-  pub(crate) flat_map_out: Option<FlatMapOut<OutElem>>,
-  pub(crate) post_read: PostRead<OutElem>,
+/// ```
+/// use id_effect::next::Channel;
+/// use id_effect::Never;
+///
+/// let ch = Channel::<u32>::duplex_unbounded().map_in(|s: &str| s.len() as u32);
+/// let eff = ch.write::<Never, _>("abc").then(ch.read());
+/// assert_eq!(eff.block_on().into_result().ok(), Some(Some(3)));
+/// ```
+pub struct Channel<Out, In = Out> {
+  queue: Queue<Out>,
+  ingest: Ingest<In, Out>,
+  emit: Emit<Out>,
+  pending: Arc<Mutex<VecDeque<Out>>>,
 }
 
-pub(crate) enum ChannelState<OutElem, InElem, E, R>
-where
-  OutElem: Send + 'static,
-  InElem: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  Queue {
-    q: Queue<OutElem>,
-    map_in: MapIn<InElem, OutElem>,
-    pending: Arc<Mutex<VecDeque<OutElem>>>,
-    flat_map_out: Option<FlatMapOut<OutElem>>,
-    post_read: PostRead<OutElem>,
-  },
-  SinkAccum {
-    inner: Arc<SinkAccumInner<OutElem, InElem>>,
-  },
-  FromStream {
-    stream: Arc<TokioMutex<Stream<OutElem, E, R>>>,
-    pending: Arc<Mutex<VecDeque<OutElem>>>,
-    flat_map_out: Option<FlatMapOut<OutElem>>,
-    post_read: PostRead<OutElem>,
-  },
-}
-
-/// Duplex pipeline: [`Channel::write`] enqueues mapped values; [`Channel::read`] dequeues them.
-pub struct Channel<OutElem, InElem, OutDone, OutErr, R: 'static>
-where
-  OutElem: Send + 'static,
-  InElem: Send + 'static,
-  OutErr: Send + 'static,
-{
-  state: Arc<ChannelState<OutElem, InElem, OutErr, R>>,
-  /// Carry `OutDone` / `OutErr` / `R` without storing `R` (only for [`Effect`] typing).
-  ///
-  /// Uses a function pointer phantom so [`Channel`] stays [`Send`] when its element types are
-  /// [`Send`] (unlike `PhantomData<*const R>`, which would make the handle `!Send`).
-  _pd: ChannelMeta<OutDone, OutErr, R>,
-}
-
-/// Drain a stream into a fold channel ([`SinkAccumInner`]) for [`Sink::fold_left`] drivers.
-pub(crate) fn consume_sink_accum_stream<OutElem, InElem, OutErr, R>(
-  inner: Arc<SinkAccumInner<OutElem, InElem>>,
-  mut stream: Stream<InElem, OutErr, R>,
-) -> Effect<OutElem, OutErr, R>
-where
-  OutElem: Send + Clone,
-  InElem: Send + Sync + Clone,
-  OutErr: Send + 'static,
-  R: 'static,
-{
-  let st = inner.clone();
-  Effect::new_async(move |env: &mut R| {
-    box_future(async move {
-      loop {
-        if interruption_requested(env) {
-          break;
-        }
-        match stream.poll_next_chunk(env).await? {
-          None => break,
-          Some(chunk) => {
-            for x in chunk.into_vec() {
-              let ch = Channel::<OutElem, InElem, (), OutErr, R> {
-                state: Arc::new(ChannelState::SinkAccum { inner: st.clone() }),
-                _pd: PhantomData,
-              };
-              ch.write(x)
-                .run(env)
-                .await
-                .expect("channel write is infallible");
-            }
-          }
-        }
-      }
-      let ch = Channel::<OutElem, InElem, (), OutErr, R> {
-        state: Arc::new(ChannelState::SinkAccum { inner: st.clone() }),
-        _pd: PhantomData,
-      };
-      Ok(
-        ch.fold_state()
-          .run(env)
-          .await
-          .expect("fold_state is infallible"),
-      )
-    })
-  })
-}
-
-impl<OutElem, InElem, OutDone, OutErr, R> Clone for Channel<OutElem, InElem, OutDone, OutErr, R>
-where
-  OutElem: Send + 'static,
-  InElem: Send + 'static,
-  OutDone: 'static,
-  OutErr: Send + 'static,
-  R: 'static,
-{
+impl<Out, In> Clone for Channel<Out, In> {
   fn clone(&self) -> Self {
     Self {
-      state: self.state.clone(),
-      _pd: PhantomData,
+      queue: self.queue.clone(),
+      ingest: Arc::clone(&self.ingest),
+      emit: Arc::clone(&self.emit),
+      pending: Arc::clone(&self.pending),
     }
   }
 }
 
-impl<OutElem, InElem, OutDone, OutErr, R> Channel<OutElem, InElem, OutDone, OutErr, R>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-  OutDone: 'static,
-  OutErr: Send + 'static,
-  R: 'static,
-{
-  /// Unbounded duplex where `InElem` and `OutElem` are the same (identity map-in).
-  pub fn duplex_unbounded<T>() -> Effect<Channel<T, T, OutDone, OutErr, R>, (), ()>
-  where
-    T: Send + 'static,
-  {
-    Queue::unbounded().flat_map(|q| {
-      succeed(Channel {
-        state: Arc::new(ChannelState::Queue {
-          q,
-          map_in: Arc::new(|t: T| t),
-          pending: Arc::new(Mutex::new(VecDeque::new())),
-          flat_map_out: None,
-          post_read: Arc::new(|t| t),
-        }),
-        _pd: PhantomData,
-      })
-    })
+impl<Out, In> std::fmt::Debug for Channel<Out, In> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Channel")
+      .field("queue", &self.queue)
+      .field("pending", &lock(&self.pending).len())
+      .finish()
+  }
+}
+
+impl<T: Send + 'static> Channel<T, T> {
+  /// An unbounded duplex channel whose input and output types are the same.
+  pub fn duplex_unbounded() -> Self {
+    Self::from_queue_and_map(Queue::unbounded(), |t| t)
   }
 
-  /// Construct from a queue and an `InElem → OutElem` map (writes map then offer).
+  /// A bounded duplex channel: [`write`](Channel::write) suspends while `capacity` elements are
+  /// unread.
+  pub fn duplex_bounded(capacity: usize) -> Self {
+    Self::from_queue_and_map(Queue::bounded(capacity), |t| t)
+  }
+}
+
+impl<Out: Send + 'static, In: Send + 'static> Channel<Out, In> {
+  /// A channel over `queue`; each written `In` is mapped with `map_in` before it is offered.
   pub fn from_queue_and_map(
-    q: Queue<OutElem>,
-    map_in: impl Fn(InElem) -> OutElem + Send + Sync + 'static,
+    queue: Queue<Out>,
+    map_in: impl Fn(In) -> Out + Send + Sync + 'static,
   ) -> Self {
-    Channel {
-      state: Arc::new(ChannelState::Queue {
-        q,
-        map_in: Arc::new(map_in),
-        pending: Arc::new(Mutex::new(VecDeque::new())),
-        flat_map_out: None,
-        post_read: Arc::new(|o| o),
-      }),
-      _pd: PhantomData,
-    }
-  }
-
-  /// Read-only view of a [`Stream`] — [`Channel::write`] with `()` is a no-op.
-  pub fn from_stream(
-    stream: Stream<OutElem, OutErr, R>,
-  ) -> Channel<OutElem, (), OutDone, OutErr, R> {
-    Channel {
-      state: Arc::new(ChannelState::FromStream {
-        stream: Arc::new(TokioMutex::new(stream)),
-        pending: Arc::new(Mutex::new(VecDeque::new())),
-        flat_map_out: None,
-        post_read: Arc::new(|o| o),
-      }),
-      _pd: PhantomData,
-    }
-  }
-
-  /// Fold-only channel: each [`Channel::write`] updates an internal accumulator (same backing as
-  /// [`Sink::fold_left`] / [`Channel::from_sink`]).
-  #[must_use]
-  pub fn from_fold(
-    init: OutElem,
-    step: Arc<dyn Fn(OutElem, InElem) -> OutElem + Send + Sync>,
-  ) -> Self {
-    let inner = Arc::new(SinkAccumInner {
-      acc: Arc::new(Mutex::new(init)),
-      step,
-      q: crate::runtime::run_blocking(Queue::unbounded(), ()).expect("queue"),
+    Self {
+      queue,
+      ingest: Arc::new(move |i| vec![map_in(i)]),
+      emit: Arc::new(|o| vec![o]),
       pending: Arc::new(Mutex::new(VecDeque::new())),
-      flat_map_out: None,
-      post_read: Arc::new(|o| o),
-    });
-    Channel {
-      state: Arc::new(ChannelState::SinkAccum { inner }),
-      _pd: PhantomData,
     }
   }
 
-  /// Fold sink as a writable channel: each [`Channel::write`] updates the accumulator and enqueues
-  /// a snapshot for [`Channel::read`].
-  ///
-  /// Requires [`Sink::fold_left`] / [`Sink::from_fold`]. Other sinks should use [`Sink::to_queue`]
-  /// plus [`Channel::from_queue_and_map`].
-  pub fn from_sink(sink: Sink<OutElem, InElem, OutErr, R>) -> Self {
-    let fold = sink
-      .fold
-      .expect("Channel::from_sink requires Sink::fold_left / Sink::from_fold");
-    Self::from_fold(fold.init.clone(), fold.f.clone())
+  /// The backing queue.
+  pub fn queue(&self) -> &Queue<Out> {
+    &self.queue
   }
 
-  /// Current accumulator (`SinkAccum` / [`Self::from_fold`] channels only).
-  pub fn fold_state(&self) -> Effect<OutElem, (), R>
+  /// Writes one element (suspending while a bounded queue is full). After
+  /// [`shutdown`](Self::shutdown) the element is dropped.
+  pub fn write<E, R>(&self, value: In) -> Effect<(), E, R>
   where
-    OutElem: Clone,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let st = self.state.clone();
-    Effect::new_async(move |_env: &mut R| {
-      box_future(async move {
-        match &*st {
-          ChannelState::SinkAccum { inner } => {
-            Ok(inner.acc.lock().expect("sink accum mutex poisoned").clone())
-          }
-          _ => panic!("Channel::fold_state requires a fold (SinkAccum) channel"),
-        }
-      })
-    })
-  }
-
-  /// Drain `stream` into this channel via [`Channel::write`] and return the final accumulator
-  /// (`SinkAccum` / [`Self::from_fold`] only).
-  pub fn consume_stream(&self, stream: Stream<InElem, OutErr, R>) -> Effect<OutElem, OutErr, R>
-  where
-    OutElem: Send + Clone,
-    InElem: Send + Sync + Clone,
-  {
-    consume_sink_accum_stream(self.sink_accum_inner(), stream)
-  }
-
-  pub(crate) fn sink_accum_inner(&self) -> Arc<SinkAccumInner<OutElem, InElem>> {
-    match &*self.state {
-      ChannelState::SinkAccum { inner } => inner.clone(),
-      _ => panic!("sink_accum_inner requires a fold (SinkAccum) channel"),
-    }
-  }
-
-  /// Read the next element, or `None` when the source has ended / disconnected.
-  ///
-  /// Queue- and fold-backed channels return only `Ok` / `Ok(None)` today (disconnect maps to `None`).
-  /// [`Channel::from_stream`] propagates stream poll failures as [`Or::Right`] in [`ChannelReadError`].
-  pub fn read(&self) -> Effect<Option<OutElem>, ChannelReadError<OutErr>, R> {
-    let st = self.state.clone();
-    Effect::new_async(move |env: &mut R| {
-      box_future(async move {
-        match &*st {
-          ChannelState::Queue {
-            q,
-            pending,
-            flat_map_out,
-            post_read,
-            ..
-          } => {
-            let q = q.clone();
-            let pending = pending.clone();
-            let flat = flat_map_out.clone();
-            let post = post_read.clone();
-            loop {
-              if let Some(v) = drain_pending(&pending, &post) {
-                return Ok(Some(v));
-              }
-              match q.take().run(&mut ()).await {
-                Ok(wire) => {
-                  let mut buf: Vec<OutElem> = if let Some(f) = flat.as_ref() {
-                    f(wire)
-                  } else {
-                    vec![wire]
-                  };
-                  if buf.is_empty() {
-                    continue;
-                  }
-                  let first = buf.remove(0);
-                  if !buf.is_empty() {
-                    let mut g = pending.lock().expect("channel pending mutex poisoned");
-                    for x in buf {
-                      g.push_back(x);
-                    }
-                  }
-                  return Ok(Some(post(first)));
-                }
-                Err(QueueError::Disconnected) => return Ok(None),
-              }
-            }
-          }
-          ChannelState::SinkAccum { inner } => {
-            let q = inner.q.clone();
-            let pending = inner.pending.clone();
-            let flat = inner.flat_map_out.clone();
-            let post = inner.post_read.clone();
-            loop {
-              if let Some(v) = drain_pending(&pending, &post) {
-                return Ok(Some(v));
-              }
-              match q.take().run(&mut ()).await {
-                Ok(wire) => {
-                  let mut buf: Vec<OutElem> = if let Some(f) = flat.as_ref() {
-                    f(wire)
-                  } else {
-                    vec![wire]
-                  };
-                  if buf.is_empty() {
-                    continue;
-                  }
-                  let first = buf.remove(0);
-                  if !buf.is_empty() {
-                    let mut g = pending.lock().expect("channel pending mutex poisoned");
-                    for x in buf {
-                      g.push_back(x);
-                    }
-                  }
-                  return Ok(Some(post(first)));
-                }
-                Err(QueueError::Disconnected) => return Ok(None),
-              }
-            }
-          }
-          ChannelState::FromStream {
-            stream,
-            pending,
-            flat_map_out,
-            post_read,
-          } => {
-            let stream = stream.clone();
-            let pending = pending.clone();
-            let flat = flat_map_out.clone();
-            let post = post_read.clone();
-            loop {
-              if let Some(v) = drain_pending(&pending, &post) {
-                return Ok(Some(v));
-              }
-              let chunk = {
-                let mut guard = stream.lock().await;
-                match guard.poll_next_chunk(env).await {
-                  Ok(None) => return Ok(None),
-                  Ok(Some(chunk)) => chunk.into_vec(),
-                  Err(e) => return Err(Or::Right(e)),
-                }
-              };
-              // Expand every wire element of the chunk before buffering, so elements after the
-              // first still go through `flat_map_out` (only `post_read` runs at drain time).
-              let mut g = pending.lock().expect("channel pending mutex poisoned");
-              for wire in chunk {
-                match flat.as_ref() {
-                  Some(f) => g.extend(f(wire)),
-                  None => g.push_back(wire),
-                }
-              }
-              drop(g);
-            }
-          }
-        }
-      })
-    })
-  }
-
-  /// Map `In2` into the channel's input type before the map-in step.
-  #[must_use]
-  pub fn map_in<In2: Send>(
-    self,
-    f: impl Fn(In2) -> InElem + Send + Sync + 'static,
-  ) -> Channel<OutElem, In2, OutDone, OutErr, R> {
-    let f = Arc::new(f);
-    match &*self.state {
-      ChannelState::Queue {
-        q,
-        map_in,
-        pending,
-        flat_map_out,
-        post_read,
-      } => Channel {
-        state: Arc::new(ChannelState::Queue {
-          q: q.clone(),
-          map_in: Arc::new({
-            let inner = map_in.clone();
-            let f = f.clone();
-            move |i: In2| inner(f(i))
-          }),
-          pending: pending.clone(),
-          flat_map_out: flat_map_out.clone(),
-          post_read: post_read.clone(),
-        }),
-        _pd: PhantomData,
-      },
-      ChannelState::SinkAccum { .. } | ChannelState::FromStream { .. } => {
-        panic!("Channel::map_in is only supported on queue-backed channels")
+    let queue = self.queue.clone();
+    let ingest = Arc::clone(&self.ingest);
+    from_async(move || async move {
+      for out in ingest(value) {
+        let _ = queue.offer_future(out).await;
       }
-    }
+      Ok(())
+    })
   }
 
-  /// Map each dequeued element before it is returned from [`Channel::read`].
-  #[must_use]
-  pub fn map_out(
-    self,
-    f: impl Fn(OutElem) -> OutElem + Send + Sync + 'static,
-  ) -> Channel<OutElem, InElem, OutDone, OutErr, R> {
-    let f = Arc::new(f);
-    match &*self.state {
-      ChannelState::Queue {
-        q,
-        map_in,
-        pending,
-        flat_map_out,
-        post_read,
-      } => Channel {
-        state: Arc::new(ChannelState::Queue {
-          q: q.clone(),
-          map_in: map_in.clone(),
-          pending: pending.clone(),
-          flat_map_out: flat_map_out.clone(),
-          post_read: Arc::new({
-            let prev = post_read.clone();
-            let f = f.clone();
-            move |x| f(prev(x))
-          }),
-        }),
-        _pd: PhantomData,
-      },
-      ChannelState::SinkAccum { inner } => Channel {
-        state: Arc::new(ChannelState::SinkAccum {
-          inner: Arc::new(SinkAccumInner {
-            acc: inner.acc.clone(),
-            step: inner.step.clone(),
-            q: inner.q.clone(),
-            pending: inner.pending.clone(),
-            flat_map_out: inner.flat_map_out.clone(),
-            post_read: Arc::new({
-              let prev = inner.post_read.clone();
-              let f = f.clone();
-              move |x| f(prev(x))
-            }),
-          }),
-        }),
-        _pd: PhantomData,
-      },
-      ChannelState::FromStream {
-        stream,
-        pending,
-        flat_map_out,
-        post_read,
-      } => Channel {
-        state: Arc::new(ChannelState::FromStream {
-          stream: stream.clone(),
-          pending: pending.clone(),
-          flat_map_out: flat_map_out.clone(),
-          post_read: Arc::new({
-            let prev = post_read.clone();
-            let f = f.clone();
-            move |x| f(prev(x))
-          }),
-        }),
-        _pd: PhantomData,
-      },
-    }
-  }
-
-  /// Expand each dequeued wire element into zero or more outputs (buffered for subsequent reads).
-  #[must_use]
-  pub fn flat_map_out(
-    self,
-    f: impl Fn(OutElem) -> Vec<OutElem> + Send + Sync + 'static,
-  ) -> Channel<OutElem, InElem, OutDone, OutErr, R> {
-    let f = Arc::new(f);
-    match &*self.state {
-      ChannelState::Queue {
-        q,
-        map_in,
-        pending,
-        flat_map_out,
-        post_read,
-      } => Channel {
-        state: Arc::new(ChannelState::Queue {
-          q: q.clone(),
-          map_in: map_in.clone(),
-          pending: pending.clone(),
-          flat_map_out: Some(Arc::new({
-            let prev = flat_map_out.clone();
-            let f = f.clone();
-            move |x| {
-              let mid = if let Some(p) = prev.as_ref() {
-                p(x)
-              } else {
-                vec![x]
-              };
-              let mut out = Vec::new();
-              for y in mid {
-                out.extend(f(y));
-              }
-              out
-            }
-          })),
-          post_read: post_read.clone(),
-        }),
-        _pd: PhantomData,
-      },
-      ChannelState::SinkAccum { inner } => Channel {
-        state: Arc::new(ChannelState::SinkAccum {
-          inner: Arc::new(SinkAccumInner {
-            acc: inner.acc.clone(),
-            step: inner.step.clone(),
-            q: inner.q.clone(),
-            pending: inner.pending.clone(),
-            flat_map_out: Some(Arc::new({
-              let prev = inner.flat_map_out.clone();
-              let f = f.clone();
-              move |x| {
-                let mid = if let Some(p) = prev.as_ref() {
-                  p(x)
-                } else {
-                  vec![x]
-                };
-                let mut out = Vec::new();
-                for y in mid {
-                  out.extend(f(y));
-                }
-                out
-              }
-            })),
-            post_read: inner.post_read.clone(),
-          }),
-        }),
-        _pd: PhantomData,
-      },
-      ChannelState::FromStream {
-        stream,
-        pending,
-        flat_map_out,
-        post_read,
-      } => Channel {
-        state: Arc::new(ChannelState::FromStream {
-          stream: stream.clone(),
-          pending: pending.clone(),
-          flat_map_out: Some(Arc::new({
-            let prev = flat_map_out.clone();
-            let f = f.clone();
-            move |x| {
-              let mid = if let Some(p) = prev.as_ref() {
-                p(x)
-              } else {
-                vec![x]
-              };
-              let mut out = Vec::new();
-              for y in mid {
-                out.extend(f(y));
-              }
-              out
-            }
-          })),
-          post_read: post_read.clone(),
-        }),
-        _pd: PhantomData,
-      },
-    }
-  }
-}
-
-fn drain_pending<OutElem: Send>(
-  pending: &Arc<Mutex<VecDeque<OutElem>>>,
-  post_read: &PostRead<OutElem>,
-) -> Option<OutElem> {
-  let mut g = pending.lock().expect("channel pending mutex poisoned");
-  g.pop_front().map(|x| post_read(x))
-}
-
-impl<OutElem, InElem, OutDone, OutErr, R> Channel<OutElem, InElem, OutDone, OutErr, R>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-  OutDone: 'static,
-  OutErr: Send + 'static,
-  R: 'static,
-{
-  /// Sequential pipeline: downstream input type matches this channel's output element type.
-  #[must_use]
-  pub fn pipe<Out2, D2, E2>(
-    self,
-    other: Channel<Out2, OutElem, D2, E2, R>,
-  ) -> Channel<Out2, InElem, D2, E2, R>
+  /// Reads the next element, suspending while none is available; `None` once the queue is shut
+  /// down and drained.
+  pub fn read<E, R>(&self) -> Effect<Option<Out>, E, R>
   where
-    Out2: Send + Clone + 'static,
-    D2: 'static,
-    E2: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let (map_left, post_left) = match &*self.state {
-      ChannelState::Queue {
-        map_in, post_read, ..
-      } => (map_in.clone(), post_read.clone()),
-      _ => panic!("Channel::pipe requires a queue-backed left channel"),
-    };
-    let ChannelState::Queue {
-      q: q_r,
-      map_in: map_right,
-      pending: p_r,
-      flat_map_out: f_r,
-      post_read: post_r,
-    } = &*other.state
-    else {
-      panic!("Channel::pipe requires a queue-backed right channel");
-    };
-    Channel {
-      state: Arc::new(ChannelState::Queue {
-        q: q_r.clone(),
-        map_in: Arc::new({
-          let ml = map_left.clone();
-          let pl = post_left.clone();
-          let mr = map_right.clone();
-          move |i: InElem| mr(pl(ml(i)))
-        }),
-        pending: p_r.clone(),
-        flat_map_out: f_r.clone(),
-        post_read: post_r.clone(),
-      }),
-      _pd: PhantomData,
-    }
-  }
-
-  /// Enqueue one element (or update a fold sink and publish a snapshot).
-  pub fn write(&self, value: InElem) -> Effect<(), (), R> {
-    let st = self.state.clone();
-    Effect::new_async(move |_env: &mut R| {
-      box_future(async move {
-        match &*st {
-          ChannelState::Queue { q, map_in, .. } => {
-            let out = map_in(value);
-            let q = q.clone();
-            loop {
-              match q.offer(out.clone()).run(&mut ()).await {
-                Ok(true) => return Ok(()),
-                Ok(false) => tokio::task::yield_now().await,
-                Err(()) => unreachable!("Queue::offer is infallible"),
-              }
-            }
-          }
-          ChannelState::SinkAccum { inner } => {
-            let snap = {
-              let mut g = inner.acc.lock().expect("sink accum mutex poisoned");
-              *g = (inner.step)((*g).clone(), value);
-              (inner.post_read)(g.clone())
+    let ch = self.clone();
+    from_async(move || async move {
+      loop {
+        if let Some(v) = lock(&ch.pending).pop_front() {
+          return Ok(Some(v));
+        }
+        match ch.queue.take_future(1, 1).await {
+          Ok(mut wire) => {
+            let Some(w) = wire.pop() else { continue };
+            let mut out: VecDeque<Out> = (ch.emit)(w).into();
+            let Some(first) = out.pop_front() else {
+              continue;
             };
-            let q = inner.q.clone();
-            loop {
-              match q.offer(snap.clone()).run(&mut ()).await {
-                Ok(true) => return Ok(()),
-                Ok(false) => tokio::task::yield_now().await,
-                Err(()) => unreachable!("Queue::offer is infallible"),
-              }
-            }
+            lock(&ch.pending).extend(out);
+            return Ok(Some(first));
           }
-          ChannelState::FromStream { .. } => Ok(()),
+          Err(QueueError::Disconnected) => return Ok(lock(&ch.pending).pop_front()),
         }
-      })
+      }
     })
   }
 
-  /// Convert to a [`Stream`] that pulls until the backing source ends or [`Channel::read`] fails.
-  #[must_use]
-  pub fn to_stream(&self) -> Stream<OutElem, ChannelReadError<OutErr>, R> {
-    Stream::from_channel(self.clone())
+  /// Shuts the backing queue down; elements already written stay readable.
+  pub fn shutdown<E, R>(&self) -> Effect<(), E, R> {
+    self.queue.shutdown()
   }
 
-  /// [`Sink`] that writes every stream element into this channel (queue-backed only).
+  /// Maps `In2` into this channel's input before the write side.
   #[must_use]
-  pub fn to_sink(&self) -> Sink<(), InElem, QueueError, R>
-  where
-    InElem: Send + Sync + Clone + 'static,
-    OutElem: Send + Clone,
-  {
-    match &*self.state {
-      ChannelState::Queue { q, map_in, .. } => {
-        let q = q.clone();
-        let map_in = map_in.clone();
-        Sink::from_driver(Arc::new(
-          move |mut stream: Stream<InElem, QueueError, R>| {
-            let q = q.clone();
-            let map_in = map_in.clone();
-            Effect::new_async(move |env: &mut R| {
-              box_future(async move {
-                loop {
-                  match stream.poll_next_chunk(env).await {
-                    Ok(None) => break,
-                    Ok(Some(chunk)) => {
-                      for x in chunk.into_vec() {
-                        let out = map_in(x);
-                        loop {
-                          match q.offer(out.clone()).run(&mut ()).await {
-                            Ok(true) => break,
-                            Ok(false) => tokio::task::yield_now().await,
-                            Err(()) => unreachable!("Queue::offer is infallible"),
-                          }
-                        }
-                      }
-                    }
-                    Err(e) => return Err(e),
-                  }
-                }
-                Ok(())
-              })
-            })
-          },
-        ))
-      }
-      ChannelState::SinkAccum { .. } | ChannelState::FromStream { .. } => {
-        panic!("Channel::to_sink requires a queue-backed channel (duplex or from_queue_and_map)");
-      }
+  pub fn map_in<In2: Send + 'static>(
+    self,
+    f: impl Fn(In2) -> In + Send + Sync + 'static,
+  ) -> Channel<Out, In2> {
+    let ingest = self.ingest;
+    Channel {
+      queue: self.queue,
+      ingest: Arc::new(move |i| ingest(f(i))),
+      emit: self.emit,
+      pending: self.pending,
     }
   }
-}
 
-// ---------------------------------------------------------------------------
-// Queue-only channel handle (`Send` / `Sync`): safe in Axum `Handler` futures.
-// ---------------------------------------------------------------------------
-
-/// Queue-backed channel without stream or fold variants — always [`Send`] + [`Sync`] when element
-/// types are [`Send`], unlike [`Channel`] (whose `ChannelState` includes stream drivers that are not
-/// `Send`).
-pub struct QueueChannel<OutElem, InElem, R: 'static>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-{
-  inner: Arc<QueueChannelInner<OutElem, InElem>>,
-  _pd: ChannelMeta<(), (), R>,
-}
-
-impl<OutElem, InElem, R> Clone for QueueChannel<OutElem, InElem, R>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-  R: 'static,
-{
-  fn clone(&self) -> Self {
+  /// Maps each element on the read side.
+  #[must_use]
+  pub fn map_out(self, f: impl Fn(Out) -> Out + Send + Sync + 'static) -> Self {
+    let emit = self.emit;
     Self {
-      inner: self.inner.clone(),
-      _pd: PhantomData,
+      emit: Arc::new(move |w| emit(w).into_iter().map(&f).collect()),
+      ..self
     }
   }
-}
 
-struct QueueChannelInner<OutElem, InElem>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-{
-  q: Queue<OutElem>,
-  map_in: MapIn<InElem, OutElem>,
-  pending: Arc<Mutex<VecDeque<OutElem>>>,
-  flat_map_out: Option<FlatMapOut<OutElem>>,
-  post_read: PostRead<OutElem>,
-}
-
-impl<OutElem, InElem, R> QueueChannel<OutElem, InElem, R>
-where
-  OutElem: Send + Clone + 'static,
-  InElem: Send + 'static,
-  R: 'static,
-{
-  /// Same wire shape as [`Channel::from_queue_and_map`], but only the queue implementation exists.
-  pub fn from_queue_and_map(
-    q: Queue<OutElem>,
-    map_in: impl Fn(InElem) -> OutElem + Send + Sync + 'static,
-  ) -> Self {
+  /// Expands each element on the read side into zero or more elements (buffered for the
+  /// following reads; an empty expansion is skipped).
+  #[must_use]
+  pub fn flat_map_out(self, f: impl Fn(Out) -> Vec<Out> + Send + Sync + 'static) -> Self {
+    let emit = self.emit;
     Self {
-      inner: Arc::new(QueueChannelInner {
-        q,
-        map_in: Arc::new(map_in),
-        pending: Arc::new(Mutex::new(VecDeque::new())),
-        flat_map_out: None,
-        post_read: Arc::new(|o| o),
+      emit: Arc::new(move |w| emit(w).into_iter().flat_map(&f).collect()),
+      ..self
+    }
+  }
+
+  /// Feeds this channel's output into `other`'s input: writes go through this channel's write
+  /// and read sides, then `other`'s write side, into `other`'s queue.
+  #[must_use]
+  pub fn pipe<Out2: Send + 'static>(self, other: Channel<Out2, Out>) -> Channel<Out2, In> {
+    let (ingest, emit, next) = (self.ingest, self.emit, other.ingest);
+    Channel {
+      queue: other.queue,
+      ingest: Arc::new(move |i| {
+        ingest(i)
+          .into_iter()
+          .flat_map(&*emit)
+          .flat_map(&*next)
+          .collect()
       }),
-      _pd: PhantomData,
+      emit: other.emit,
+      pending: other.pending,
     }
-  }
-
-  /// Close the backing queue to producers; buffered values remain available to [`Self::read`].
-  pub fn shutdown(&self) -> Effect<(), (), ()> {
-    let q = self.inner.q.clone();
-    Effect::new_async(move |_r: &mut ()| box_future(async move { q.shutdown().run(&mut ()).await }))
-  }
-
-  /// Read the next element, or `None` when the queue has ended / disconnected.
-  pub fn read(&self) -> Effect<Option<OutElem>, QueueError, R> {
-    let inner = self.inner.clone();
-    Effect::new_async(move |_env: &mut R| {
-      let q = inner.q.clone();
-      let pending = inner.pending.clone();
-      let flat = inner.flat_map_out.clone();
-      let post = inner.post_read.clone();
-      box_future(async move {
-        loop {
-          if let Some(v) = drain_pending(&pending, &post) {
-            return Ok(Some(v));
-          }
-          match q.take().run(&mut ()).await {
-            Ok(wire) => {
-              let mut buf: Vec<OutElem> = if let Some(f) = flat.as_ref() {
-                f(wire)
-              } else {
-                vec![wire]
-              };
-              if buf.is_empty() {
-                continue;
-              }
-              let first = buf.remove(0);
-              if !buf.is_empty() {
-                let mut g = pending.lock().expect("channel pending mutex poisoned");
-                for x in buf {
-                  g.push_back(x);
-                }
-              }
-              return Ok(Some(post(first)));
-            }
-            Err(QueueError::Disconnected) => return Ok(None),
-          }
-        }
-      })
-    })
-  }
-
-  /// Enqueue one mapped element.
-  pub fn write(&self, value: InElem) -> Effect<(), (), R> {
-    let inner = self.inner.clone();
-    Effect::new_async(move |_env: &mut R| {
-      let out = (inner.map_in)(value);
-      let q = inner.q.clone();
-      box_future(async move {
-        loop {
-          match q.offer(out.clone()).run(&mut ()).await {
-            Ok(true) => return Ok(()),
-            Ok(false) => tokio::task::yield_now().await,
-            Err(()) => unreachable!("Queue::offer is infallible"),
-          }
-        }
-      })
-    })
-  }
-}
-
-impl<T, R> QueueChannel<T, T, R>
-where
-  T: Send + Clone + 'static,
-  R: 'static,
-{
-  /// Unbounded duplex with identity map-in (same as [`Channel::duplex_unbounded`] for the queue case).
-  pub fn duplex_unbounded() -> Effect<QueueChannel<T, T, R>, (), ()> {
-    Queue::unbounded().flat_map(|q| succeed(QueueChannel::from_queue_and_map(q, |t| t)))
-  }
-
-  /// Same drain semantics as [`Channel::to_stream`]: one bootstrap pull over [`QueueChannel::read`].
-  ///
-  /// Call [`QueueChannel::shutdown`] when no further writes are expected so [`Stream::run_collect`]
-  /// can finish.
-  #[must_use]
-  pub fn to_stream(&self) -> Stream<T, QueueError, R> {
-    Stream::from_duplex_queue_channel(self.clone())
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_blocking;
-  use crate::{Or, box_future};
-
-  fn block_on_effect<A, E>(eff: Effect<A, E, ()>) -> Result<A, E> {
-    run_blocking(eff, ())
-  }
-
-  #[test]
-  fn channel_read_returns_written_elements() {
-    let ch = block_on_effect(Channel::<i32, i32, (), (), ()>::duplex_unbounded()).expect("channel");
-    block_on_effect(ch.write(10)).expect("write");
-    block_on_effect(ch.write(20)).expect("write");
-    assert_eq!(block_on_effect(ch.read()).expect("read"), Some(10));
-    assert_eq!(block_on_effect(ch.read()).expect("read"), Some(20));
-  }
-
-  #[test]
-  fn channel_pipe_composes_two_channels() {
-    let left = Channel::<i32, i32, (), (), ()>::from_queue_and_map(
-      run_blocking(Queue::unbounded(), ()).expect("q"),
-      |x: i32| x * 2,
-    );
-    let right = Channel::<i32, i32, (), (), ()>::from_queue_and_map(
-      run_blocking(Queue::unbounded(), ()).expect("q2"),
-      |x: i32| x + 1,
-    );
-    let both = left.pipe(right);
-    block_on_effect(both.write(5)).expect("write");
-    assert_eq!(block_on_effect(both.read()).expect("read"), Some(11));
-  }
-
-  #[test]
-  fn channel_to_stream_bridges_correctly() {
-    let inner = Stream::from_iterable(vec![1_i32, 2, 3]);
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
-    let stream = ch.to_stream();
-    let collected = block_on_effect(stream.run_collect()).expect("collect");
-    assert_eq!(collected, vec![1, 2, 3]);
-  }
-
-  #[test]
-  fn channel_read_from_stream_preserves_upstream_error() {
-    let inner =
-      Stream::<i32, &'static str, ()>::new(|_env| box_future(async move { Err("upstream") }));
-    let ch = Channel::<i32, (), (), &'static str, ()>::from_stream(inner);
-    assert_eq!(block_on_effect(ch.read()), Err(Or::Right("upstream")));
-  }
-
-  #[test]
-  fn channel_to_stream_preserves_upstream_error() {
-    let inner =
-      Stream::<i32, &'static str, ()>::new(|_env| box_future(async move { Err("upstream") }));
-    let ch = Channel::<i32, (), (), &'static str, ()>::from_stream(inner);
-    assert_eq!(
-      block_on_effect(ch.to_stream().run_collect()),
-      Err(Or::Right("upstream"))
-    );
-  }
-
-  #[test]
-  fn queue_channel_maps_input_and_drains_after_shutdown() {
-    let q = block_on_effect(Queue::<i32>::unbounded()).expect("q");
-    let qc = QueueChannel::from_queue_and_map(q, |x: i32| x * 10);
-    block_on_effect(qc.write(2)).expect("write");
-    assert_eq!(block_on_effect(qc.read()).unwrap(), Some(20));
-    block_on_effect(qc.shutdown()).expect("shutdown");
-    assert_eq!(block_on_effect(qc.read()).unwrap(), None);
-  }
-
-  #[test]
-  fn queue_channel_duplex_to_stream_collects() {
-    let qc = block_on_effect(QueueChannel::<i32, i32, ()>::duplex_unbounded()).expect("qc");
-    block_on_effect(qc.write(1)).expect("w");
-    block_on_effect(qc.write(2)).expect("w");
-    block_on_effect(qc.shutdown()).expect("shutdown");
-    let stream = qc.to_stream();
-    let got = block_on_effect(stream.run_collect()).expect("collect");
-    assert_eq!(got, vec![1, 2]);
-  }
-
-  // ── from_fold / fold_state / consume_stream ───────────────────────────────
-
-  #[test]
-  fn channel_from_fold_accumulates_writes_and_fold_state_returns_current() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    block_on_effect(ch.write(3)).expect("w1");
-    block_on_effect(ch.write(7)).expect("w2");
-    let state = block_on_effect(ch.fold_state()).expect("fold_state");
-    assert_eq!(state, 10);
-  }
-
-  #[test]
-  fn channel_from_fold_read_returns_snapshots_in_order() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    block_on_effect(ch.write(1)).expect("w1");
-    block_on_effect(ch.write(2)).expect("w2");
-    let s1 = block_on_effect(ch.read()).expect("r1");
-    let s2 = block_on_effect(ch.read()).expect("r2");
-    assert_eq!(s1, Some(1));
-    assert_eq!(s2, Some(3));
-  }
-
-  #[test]
-  fn channel_consume_stream_drains_into_fold_and_returns_final_value() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    let stream = Stream::from_iterable(vec![1, 2, 3, 4]);
-    let total = block_on_effect(ch.consume_stream(stream)).expect("consume");
-    assert_eq!(total, 10);
-  }
-
-  // ── from_sink ─────────────────────────────────────────────────────────────
-
-  #[test]
-  fn channel_from_sink_writes_accumulate_and_fold_state_returns_sum() {
-    use crate::streaming::sink::Sink;
-    let sink: Sink<i32, i32, (), ()> = Sink::fold_left(0, |acc, x| acc + x);
-    let ch = Channel::<i32, i32, (), (), ()>::from_sink(sink);
-    block_on_effect(ch.write(5)).expect("w");
-    block_on_effect(ch.write(10)).expect("w");
-    let state = block_on_effect(ch.fold_state()).expect("state");
-    assert_eq!(state, 15);
-  }
-
-  // ── map_in ────────────────────────────────────────────────────────────────
-
-  #[test]
-  fn channel_map_in_transforms_written_values() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x: i32| x);
-    let ch2 = ch.map_in(|s: &str| s.len() as i32);
-    block_on_effect(ch2.write("hello")).expect("w");
-    assert_eq!(block_on_effect(ch2.read()).expect("r"), Some(5));
-  }
-
-  // ── map_out ───────────────────────────────────────────────────────────────
-
-  #[test]
-  fn channel_map_out_on_queue_channel_transforms_read_values() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
-    let ch = ch.map_out(|x| x * 2);
-    block_on_effect(ch.write(7)).expect("w");
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(14));
-  }
-
-  #[test]
-  fn channel_map_out_on_fold_channel_transforms_snapshots() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    let ch = ch.map_out(|x| x * 10);
-    block_on_effect(ch.write(3)).expect("w");
-    // For SinkAccum, post_read is applied at write (snapshot: 3*10=30)
-    // and again at read (30*10=300) — f is applied twice.
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(300));
-  }
-
-  #[test]
-  fn channel_map_out_on_from_stream_transforms_elements() {
-    let inner = Stream::from_iterable(vec![2_i32, 4]);
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
-    let ch = ch.map_out(|x| x + 100);
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(102));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(104));
-  }
-
-  // ── flat_map_out ──────────────────────────────────────────────────────────
-
-  #[test]
-  fn channel_flat_map_out_expands_each_element_into_multiple() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
-    let ch = ch.flat_map_out(|x| vec![x, x * 10]);
-    block_on_effect(ch.write(3)).expect("w");
-    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(3));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(30));
-  }
-
-  #[test]
-  fn channel_flat_map_out_empty_result_is_skipped() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x);
-    let ch = ch.flat_map_out(|x| if x == 0 { vec![] } else { vec![x] });
-    block_on_effect(ch.write(0)).expect("w0");
-    block_on_effect(ch.write(5)).expect("w5");
-    // 0 is skipped; 5 arrives
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(5));
-  }
-
-  #[test]
-  fn channel_flat_map_out_on_fold_channel_expands_snapshots() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    let ch = ch.flat_map_out(|x| vec![x, -x]);
-    block_on_effect(ch.write(4)).expect("w");
-    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(4));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(-4));
-  }
-
-  #[test]
-  fn channel_flat_map_out_on_from_stream_expands_elements() {
-    let inner = Stream::from_iterable(vec![1_i32]);
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
-    let ch = ch.flat_map_out(|x| vec![x, x + 100]);
-    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(1));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(101));
-  }
-
-  // ── to_sink ───────────────────────────────────────────────────────────────
-
-  #[test]
-  fn channel_to_sink_writes_stream_elements_into_channel_queue() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), QueueError, ()>::from_queue_and_map(q, |x| x);
-    let sink = ch.to_sink();
-    let source =
-      Stream::<i32, QueueError, ()>::from_effect(crate::kernel::succeed(vec![10_i32, 20, 30]));
-    block_on_effect(sink.run(source)).expect("run sink");
-    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(10));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(20));
-    assert_eq!(block_on_effect(ch.read()).expect("r3"), Some(30));
-  }
-
-  // ── write on from_stream is a no-op ──────────────────────────────────────
-
-  #[test]
-  fn channel_write_on_from_stream_is_noop() {
-    let inner = Stream::from_iterable(vec![1_i32]);
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
-    block_on_effect(ch.write(())).expect("write noop");
-    // Stream still readable
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(1));
-  }
-
-  // ── disconnect / end of source ───────────────────────────────────────────
-
-  #[test]
-  fn channel_read_after_queue_shutdown_drains_then_ends() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q.clone(), |x| x);
-    block_on_effect(ch.write(1)).expect("w");
-    run_blocking(q.shutdown(), ()).expect("shutdown");
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(1));
-    assert_eq!(block_on_effect(ch.read()).expect("end"), None);
-  }
-
-  #[test]
-  fn channel_from_stream_ends_with_none() {
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(Stream::from_iterable(Vec::<i32>::new()));
-    assert_eq!(block_on_effect(ch.read()).expect("end"), None);
-  }
-
-  #[test]
-  fn channel_from_stream_buffers_multi_element_chunks() {
-    let inner = Stream::<i32, (), ()>::from_effect(succeed(vec![1, 2, 3]));
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(inner);
-    let got: Vec<_> = (0..4)
-      .map(|_| block_on_effect(ch.read()).expect("r"))
-      .collect();
-    assert_eq!(got, vec![Some(1), Some(2), Some(3), None]);
-  }
-
-  // ── chained / empty flat_map_out ─────────────────────────────────────────
-
-  #[test]
-  fn chained_flat_map_out_composes_on_queue_channels() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), (), ()>::from_queue_and_map(q, |x| x)
-      .flat_map_out(|x| vec![x, x + 1])
-      .flat_map_out(|x| vec![x * 10]);
-    block_on_effect(ch.write(1)).expect("w");
-    assert_eq!(block_on_effect(ch.read()).expect("r1"), Some(10));
-    assert_eq!(block_on_effect(ch.read()).expect("r2"), Some(20));
-  }
-
-  #[test]
-  fn chained_flat_map_out_on_fold_skips_empty_expansions() {
-    let ch = Channel::<i32, i32, (), (), ()>::from_fold(0, Arc::new(|acc, x| acc + x))
-      .flat_map_out(|x| vec![x])
-      .flat_map_out(|x| if x % 2 == 1 { vec![] } else { vec![x] });
-    block_on_effect(ch.write(1)).expect("w1"); // snapshot 1 — dropped
-    block_on_effect(ch.write(1)).expect("w2"); // snapshot 2 — kept
-    assert_eq!(block_on_effect(ch.read()).expect("r"), Some(2));
-  }
-
-  #[test]
-  fn chained_flat_map_out_on_stream_skips_empty_expansions() {
-    let ch = Channel::<i32, (), (), (), ()>::from_stream(Stream::from_iterable(vec![1_i32, 2, 3]))
-      .flat_map_out(|x| vec![x])
-      .flat_map_out(|x| if x == 2 { vec![] } else { vec![x, -x] });
-    let got: Vec<_> = (0..5)
-      .map(|_| block_on_effect(ch.read()).expect("r"))
-      .collect();
-    assert_eq!(got, vec![Some(1), Some(-1), Some(3), Some(-3), None]);
-  }
-
-  // ── fold channels ────────────────────────────────────────────────────────
-
-  #[test]
-  fn consume_stream_stops_when_interrupted() {
-    let token = crate::runtime::CancellationToken::new();
-    token.cancel();
-    let ch = Channel::<i32, i32, (), (), crate::runtime::CancellationToken>::from_fold(
-      5,
-      Arc::new(|acc, x| acc + x),
-    );
-    let source =
-      Stream::<i32, (), crate::runtime::CancellationToken>::from_effect(succeed(vec![1, 2, 3]));
-    let total = run_blocking(ch.consume_stream(source), token).expect("consume");
-    assert_eq!(total, 5, "a cancelled env drains nothing");
-  }
-
-  #[test]
-  fn consume_stream_propagates_upstream_failure() {
-    let ch = Channel::<i32, i32, (), &'static str, ()>::from_fold(0, Arc::new(|acc, x| acc + x));
-    let bad = Stream::<i32, &'static str, ()>::new(|_env| box_future(async move { Err("boom") }));
-    assert_eq!(block_on_effect(ch.consume_stream(bad)), Err("boom"));
-  }
-
-  #[test]
-  fn to_sink_propagates_upstream_failure() {
-    let q = run_blocking(Queue::<i32>::unbounded(), ()).expect("q");
-    let ch = Channel::<i32, i32, (), QueueError, ()>::from_queue_and_map(q, |x| x);
-    let bad = Stream::<i32, QueueError, ()>::new(|_env| {
-      box_future(async move { Err(QueueError::Disconnected) })
-    });
-    assert_eq!(
-      block_on_effect(ch.to_sink().run(bad)),
-      Err(QueueError::Disconnected)
-    );
-  }
-
-  // ── unsupported shapes panic with a clear message ────────────────────────
-
-  fn fold_channel() -> Channel<i32, i32, (), (), ()> {
-    Channel::from_fold(0, Arc::new(|acc, x| acc + x))
-  }
-
-  fn queue_channel() -> Channel<i32, i32, (), (), ()> {
-    Channel::from_queue_and_map(run_blocking(Queue::unbounded(), ()).expect("q"), |x| x)
-  }
-
-  #[test]
-  #[should_panic(expected = "map_in is only supported on queue-backed channels")]
-  fn map_in_on_fold_channel_panics() {
-    let _ = fold_channel().map_in(|x: i32| x);
-  }
-
-  #[test]
-  #[should_panic(expected = "requires a queue-backed left channel")]
-  fn pipe_with_fold_left_panics() {
-    let _ = fold_channel().pipe(queue_channel());
-  }
-
-  #[test]
-  #[should_panic(expected = "requires a queue-backed right channel")]
-  fn pipe_with_fold_right_panics() {
-    let _ = queue_channel().pipe(fold_channel());
-  }
-
-  #[test]
-  #[should_panic(expected = "to_sink requires a queue-backed channel")]
-  fn to_sink_on_fold_channel_panics() {
-    let _ = fold_channel().to_sink();
-  }
-
-  #[test]
-  #[should_panic(expected = "fold_state requires a fold")]
-  fn fold_state_on_queue_channel_panics() {
-    let _ = block_on_effect(queue_channel().fold_state());
-  }
-
-  #[test]
-  #[should_panic(expected = "sink_accum_inner requires a fold")]
-  fn consume_stream_on_queue_channel_panics() {
-    let _ = queue_channel().consume_stream(Stream::from_iterable(vec![1]));
   }
 }

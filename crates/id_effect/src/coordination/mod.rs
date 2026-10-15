@@ -1,43 +1,37 @@
-//! **Stratum 9 — Coordination & Communication**
+//! Fiber coordination primitives: `Deferred` (one-shot), `Semaphore`, `Latch`, `Queue`,
+//! `Channel`, `PubSub`, `Ref`, `SynchronizedRef`, `SubscriptionRef` and `Supervisor`.
+//! Filled by `c-coordination`, ported from the v1 root `coordination` module (and
+//! `concurrency::supervisor`) with Effect.ts semantics.
 //!
-//! Primitives for inter-fiber communication and synchronisation, built from Strata 0–8.
-//!
-//! | Submodule | Provides | Depends on |
-//! |-----------|----------|------------|
-//! | [`deferred`] | [`Deferred`] | Stratum 6 (`runtime`), Stratum 4 (`failure`) |
-//! | [`latch`] | [`Latch`] | [`deferred`] |
-//! | [`queue`] | [`Queue`], [`QueueError`] | Stratum 2 (`kernel`) |
-//! | [`semaphore`] | [`Semaphore`], [`Permit`] | Stratum 8 (`resource::Scope`) |
-//! | [`pubsub`] | [`PubSub`] | [`queue`], Stratum 8 (`resource::Scope`) |
-//! | [`channel`] | [`Channel`], [`ChannelReadError`], [`QueueChannel`] | [`queue`], Stratum 11 |
-//! | [`ref_`] | [`Ref`] | Stratum 2 (`kernel`) |
-//! | [`synchronized_ref`] | [`SynchronizedRef`] | Stratum 2 (`kernel`) |
-//!
-//! ## Public API
-//!
-//! Re-exported at the crate root: all public types and functions from each submodule.
+//! - **Plain constructors.** `Ref::new`, `Semaphore::new`, `Queue::bounded`, … build the
+//!   primitive directly (not `make() -> Effect`); the operations are lazy effects, generic over
+//!   their error type and environment where they cannot fail.
+//! - **Real suspensions.** A waiting operation (acquire, take, offer, wait) parks the fiber on a
+//!   waker in the primitive's FIFO wait list; no thread is blocked or spun, and nothing here uses
+//!   a tokio watch channel or a thread-parking run edge (`G-nb` is clean on this directory).
+//! - **Interruption.** Interrupting a waiting fiber drops its suspended step, which removes the
+//!   waiter; a permit or item handed to it but not yet observed goes back to the primitive.
 
-pub mod channel;
-pub mod deferred;
-pub mod latch;
-pub mod pubsub;
-pub mod queue;
-pub mod ref_;
-pub mod request_resolver;
-pub mod semaphore;
-pub mod subscription_ref;
-pub mod synchronized_ref;
+mod waiters;
 
-pub use channel::{Channel, ChannelReadError, QueueChannel};
-pub use deferred::Deferred;
-pub use latch::Latch;
-pub use pubsub::PubSub;
-pub use queue::{Queue, QueueError};
-pub use ref_::Ref;
-pub use request_resolver::{
-  BatchError, FnRequestResolver, RequestEntry, RequestResolver, batching,
-  make as make_request_resolver,
-};
-pub use semaphore::{Permit, Semaphore};
-pub use subscription_ref::SubscriptionRef;
-pub use synchronized_ref::SynchronizedRef;
+mod channel;
+mod deferred;
+mod latch;
+mod pubsub;
+mod queue;
+mod ref_;
+mod semaphore;
+mod subscription_ref;
+mod supervisor;
+mod synchronized_ref;
+
+pub use channel::*;
+pub use deferred::*;
+pub use latch::*;
+pub use pubsub::*;
+pub use queue::*;
+pub use ref_::*;
+pub use semaphore::*;
+pub use subscription_ref::*;
+pub use supervisor::*;
+pub use synchronized_ref::*;

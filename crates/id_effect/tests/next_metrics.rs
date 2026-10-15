@@ -16,9 +16,9 @@ use id_effect::next::{
 use id_effect::{Cause, Exit};
 
 const SOURCES: [&str; 3] = [
-  include_str!("../src/next/observability/metric.rs"),
-  include_str!("../src/next/observability/registry.rs"),
-  include_str!("../src/next/observability/mod.rs"),
+  include_str!("../src/observability/metric.rs"),
+  include_str!("../src/observability/registry.rs"),
+  include_str!("../src/observability/mod.rs"),
 ];
 
 fn ms(n: u64) -> Duration {

@@ -1,283 +1,137 @@
-//! [`tokio::sync::Mutex`]-backed cell with **serialized** async mutations.
+//! [`SynchronizedRef`]: a [`Ref`] whose effectful updates are serialized (Effect.ts
+//! `SynchronizedRef`). Ported from the v1 `coordination::synchronized_ref`, which held a tokio
+//! mutex across the inner effect.
 //!
-//! Unlike [`crate::coordination::ref_::Ref`], [`SynchronizedRef::modify_effect`], [`SynchronizedRef::update_effect`],
-//! and [`SynchronizedRef::get_effect`] keep the mutex locked until the inner [`Effect`] completes,
-//! so concurrent callers cannot interleave.
+//! Every operation runs under a one-permit [`Semaphore`], held until the inner effect completes
+//! and released however it ends (interrupt included), so concurrent callers never interleave.
 
-use std::sync::Arc;
+use super::ref_::Ref;
+use super::semaphore::Semaphore;
+use crate::next::kernel::Effect;
 
-use tokio::sync::Mutex;
-
-use crate::kernel::{Effect, box_future};
-
-// ── SynchronizedRef ─────────────────────────────────────────────────────────
-
-/// Shared mutable cell using an async mutex; effectful updates are strictly serialized.
-#[derive(Clone)]
+/// A shared cell with strictly serialized (effectful) updates. Cloning yields another handle to
+/// the same cell.
 pub struct SynchronizedRef<A> {
-  inner: Arc<Mutex<A>>,
+  cell: Ref<A>,
+  gate: Semaphore,
 }
 
-impl<A: Send + 'static> SynchronizedRef<A> {
-  /// Direct construction (same cell as [`Self::make`], without wrapping in [`Effect`]).
-  #[inline]
+impl<A> Clone for SynchronizedRef<A> {
+  fn clone(&self) -> Self {
+    Self {
+      cell: self.cell.clone(),
+      gate: self.gate.clone(),
+    }
+  }
+}
+
+impl<A: std::fmt::Debug> std::fmt::Debug for SynchronizedRef<A> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("SynchronizedRef").field(&self.cell).finish()
+  }
+}
+
+impl<A: Clone + Send + 'static> SynchronizedRef<A> {
+  /// A new cell holding `initial`.
   pub fn new(initial: A) -> Self {
     Self {
-      inner: Arc::new(Mutex::new(initial)),
+      cell: Ref::new(initial),
+      gate: Semaphore::new(1),
     }
   }
 
-  /// `SynchronizedRef.make(initial)` → `Effect<SynchronizedRef<A>>`
-  pub fn make(initial: A) -> Effect<SynchronizedRef<A>> {
-    Effect::new(move |_r| {
-      Ok(SynchronizedRef {
-        inner: Arc::new(Mutex::new(initial)),
-      })
-    })
-  }
-
-  /// Read the current value (clone).
-  pub fn get(&self) -> Effect<A>
+  fn serialized<B, E, R>(&self, eff: Effect<B, E, R>) -> Effect<B, E, R>
   where
-    A: Clone,
+    B: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let g = inner.lock().await;
-        Ok(g.clone())
-      })
-    })
+    self.gate.with_permit(eff)
   }
 
-  /// Replace the whole value.
-  pub fn set(&self, value: A) -> Effect<()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        *inner.lock().await = value;
-        Ok(())
-      })
-    })
-  }
-
-  /// Synchronous transform while holding the lock (no `.await` inside `f`).
-  pub fn update(&self, f: impl FnOnce(A) -> A + Send + 'static) -> Effect<()>
+  /// Reads the current value (after any update in progress).
+  pub fn get<E, R>(&self) -> Effect<A, E, R>
   where
-    A: Clone,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let mut g = inner.lock().await;
-        let old = g.clone();
-        *g = f(old);
-        Ok(())
-      })
-    })
+    self.serialized(self.cell.get())
   }
 
-  /// Run an effect to compute the next value; mutex stays held until the inner effect finishes.
+  /// Replaces the value.
+  pub fn set<E, R>(&self, value: A) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.serialized(self.cell.set(value))
+  }
+
+  /// Replaces the value with `f(current)`.
+  pub fn update<E, R>(&self, f: impl FnOnce(A) -> A + Send + 'static) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.serialized(self.cell.update(f))
+  }
+
+  /// Computes `(b, new)` from the current value, stores `new` and returns `b`.
+  pub fn modify<B, E, R>(&self, f: impl FnOnce(A) -> (B, A) + Send + 'static) -> Effect<B, E, R>
+  where
+    B: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.serialized(self.cell.modify(f))
+  }
+
+  /// Runs `f`'s effect on the current value and stores its result; the cell stays locked until
+  /// the effect completes. On failure the cell is unchanged.
   pub fn update_effect<E, R>(
     &self,
     f: impl FnOnce(A) -> Effect<A, E, R> + Send + 'static,
   ) -> Effect<(), E, R>
   where
-    A: Clone + Send + 'static,
-    E: 'static,
-    R: 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |r: &mut R| {
-      box_future(async move {
-        let mut guard = inner.lock().await;
-        let current = guard.clone();
-        let new_val = f(current).run(r).await?;
-        *guard = new_val;
-        Ok(())
-      })
-    })
+    let cell = self.cell.clone();
+    let set = self.cell.clone();
+    self.serialized(cell.get().flat_map(f).flat_map(move |a| set.set(a)))
   }
 
-  /// `f` returns `(output, new_state)`; lock held for the whole synchronous `f`.
-  pub fn modify<B>(&self, f: impl FnOnce(A) -> (B, A) + Send + 'static) -> Effect<B>
-  where
-    A: Clone + Send + 'static,
-    B: Send + 'static,
-  {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let mut g = inner.lock().await;
-        let (b, new_a) = f(g.clone());
-        *g = new_a;
-        Ok(b)
-      })
-    })
-  }
-
-  /// Like [`SynchronizedRef::modify`], but `f` returns an [`Effect`]; lock held across `.await`.
+  /// Runs `f`'s effect on the current value; stores the new value it yields and returns its `b`.
+  /// The cell stays locked until the effect completes. On failure the cell is unchanged.
   pub fn modify_effect<B, E, R>(
     &self,
     f: impl FnOnce(A) -> Effect<(B, A), E, R> + Send + 'static,
   ) -> Effect<B, E, R>
   where
-    A: Clone + Send + 'static,
     B: Send + 'static,
-    E: 'static,
-    R: 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |r: &mut R| {
-      box_future(async move {
-        let mut guard = inner.lock().await;
-        let current = guard.clone();
-        let (b, new_a) = f(current).run(r).await?;
-        *guard = new_a;
-        Ok(b)
-      })
-    })
+    let cell = self.cell.clone();
+    let set = self.cell.clone();
+    self.serialized(
+      cell
+        .get()
+        .flat_map(f)
+        .flat_map(move |(b, a)| set.set(a).map(move |()| b)),
+    )
   }
 
-  /// Run an effect from the current value; mutex stays held until completion; stored value unchanged.
+  /// Runs `f`'s effect on the current value and returns its result, leaving the cell unchanged;
+  /// the cell stays locked until the effect completes.
   pub fn get_effect<E, R>(
     &self,
     f: impl FnOnce(A) -> Effect<A, E, R> + Send + 'static,
   ) -> Effect<A, E, R>
   where
-    A: Clone + Send + 'static,
-    E: 'static,
-    R: 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |r: &mut R| {
-      box_future(async move {
-        let _guard = inner.lock().await;
-        let current = _guard.clone();
-        f(current).run(r).await
-      })
-    })
-  }
-}
-
-// ── tests ────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::{run_async, run_blocking};
-  use core::convert::Infallible;
-  use std::time::Duration;
-
-  #[test]
-  fn sync_ref_update_effect_is_sequential_under_concurrency() {
-    let s = run_blocking(SynchronizedRef::make(0_i32), ()).expect("make");
-    let delay = Duration::from_millis(15);
-    let s2 = s.clone();
-    let h1 = std::thread::spawn(move || {
-      run_blocking(
-        s2.update_effect(move |n| {
-          Effect::<i32, Infallible, ()>::new(move |_r: &mut ()| {
-            std::thread::sleep(delay);
-            Ok(n + 1)
-          })
-        }),
-        (),
-      )
-    });
-    let s3 = s.clone();
-    let h2 = std::thread::spawn(move || {
-      run_blocking(
-        s3.update_effect(move |n| {
-          Effect::<i32, Infallible, ()>::new(move |_r: &mut ()| {
-            std::thread::sleep(delay);
-            Ok(n + 1)
-          })
-        }),
-        (),
-      )
-    });
-    h1.join().expect("t1").expect("e1");
-    h2.join().expect("t2").expect("e2");
-    let v = run_blocking(s.get(), ()).expect("get");
-    assert_eq!(v, 2);
-  }
-
-  #[tokio::test]
-  async fn sync_ref_get_returns_current() {
-    let s = run_async(SynchronizedRef::make(10_u32), ())
-      .await
-      .expect("make");
-    assert_eq!(run_async(s.get(), ()).await.expect("get"), 10);
-    run_async(s.set(20), ()).await.expect("set");
-    assert_eq!(run_async(s.get(), ()).await.expect("get 2"), 20);
-  }
-
-  #[tokio::test]
-  async fn sync_ref_modify_returns_computed_value() {
-    let s = run_async(SynchronizedRef::make(3_i64), ())
-      .await
-      .expect("make");
-    let b = run_async(s.modify(|n| (n * 2, n + 1)), ())
-      .await
-      .expect("modify");
-    assert_eq!(b, 6);
-    assert_eq!(run_async(s.get(), ()).await.expect("get"), 4);
-  }
-
-  // ── update (synchronous transform) ────────────────────────────────────
-
-  #[tokio::test]
-  async fn sync_ref_update_applies_fn_in_place() {
-    let s = run_async(SynchronizedRef::make(5_u32), ())
-      .await
-      .expect("make");
-    run_async(s.update(|n| n * 3), ()).await.expect("update");
-    assert_eq!(run_async(s.get(), ()).await.expect("get"), 15);
-  }
-
-  // ── modify_effect ─────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn sync_ref_modify_effect_returns_computed_value() {
-    use crate::kernel::succeed;
-    let s = run_async(SynchronizedRef::make(10_i32), ())
-      .await
-      .expect("make");
-    let result = run_async(
-      s.modify_effect(|n| succeed::<(i32, i32), core::convert::Infallible, ()>((n * 2, n + 5))),
-      (),
-    )
-    .await
-    .expect("modify_effect");
-    assert_eq!(result, 20); // returned value
-    assert_eq!(run_async(s.get(), ()).await.expect("get"), 15); // new state
-  }
-
-  // ── get_effect ────────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn sync_ref_get_effect_applies_fn_to_current_value() {
-    use crate::kernel::succeed;
-    let s = run_async(SynchronizedRef::make(7_u32), ())
-      .await
-      .expect("make");
-    let result = run_async(
-      s.get_effect(|n| succeed::<u32, core::convert::Infallible, ()>(n * 2)),
-      (),
-    )
-    .await
-    .expect("get_effect");
-    assert_eq!(result, 14); // 7 * 2, returned value
-    // State unchanged
-    assert_eq!(run_async(s.get(), ()).await.expect("get"), 7);
-  }
-
-  // ── SynchronizedRef::new (direct constructor) ─────────────────────────
-
-  #[test]
-  fn sync_ref_new_creates_ref_directly() {
-    let s = SynchronizedRef::new(42_u32);
-    assert_eq!(run_blocking(s.get(), ()).expect("get"), 42);
+    self.serialized(self.cell.get().flat_map(f))
   }
 }

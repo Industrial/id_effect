@@ -216,9 +216,9 @@ impl<H: Send + Sync + 'static, T: Concat<Rhs>, Rhs> Concat<Rhs> for HCons<H, T> 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __next_hlist {
-  () => { $crate::next::HNil };
+  () => { $crate::HNil };
   ($head:expr $(, $rest:expr)* $(,)?) => {
-    $crate::next::HCons::new($head, $crate::__next_hlist!($($rest),*))
+    $crate::HCons::new($head, $crate::__next_hlist!($($rest),*))
   };
 }
 

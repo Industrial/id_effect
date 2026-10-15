@@ -1,528 +1,281 @@
-//! Broadcast pub/sub hub backed by [`tokio::sync::broadcast`].
+//! [`PubSub`]: a broadcast hub (Effect.ts `PubSub`). Ported from the v1
+//! `coordination::pubsub`, which forwarded a tokio broadcast channel into a queue from a spawned
+//! task.
 //!
-//! [`PubSub::subscribe`] returns a [`Queue`] filled by a background forwarder. A [`Scope`]
-//! finalizer aborts the task and shuts down the queue when the scope used as the effect
-//! environment closes.
+//! Each [`subscribe`](PubSub::subscribe) registers its own [`Queue`] (same strategy and capacity
+//! as the hub) and ties its lifetime to a [`Scope`]: when the scope closes, the subscription is
+//! removed and its queue shut down. [`publish`](PubSub::publish) offers the message to every
+//! subscriber; on a bounded hub it suspends until each subscriber has room (back-pressure), a
+//! dropping hub refuses it for full subscribers, a sliding hub evicts their oldest message.
 
-use std::sync::Arc;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
-use tokio::sync::Mutex as AsyncMutex;
-use tokio::sync::broadcast;
-use tokio::sync::watch;
-
-use crate::coordination::queue::Queue;
-use crate::kernel::{Effect, box_future, succeed};
-use crate::resource::scope::Scope;
-use crate::runtime::{Never, run_blocking};
+use super::queue::Queue;
+use super::waiters::{Signal, lock};
+use crate::failure::Never;
+use crate::next::kernel::{Effect, from_async, suspend, sync};
+use crate::next::scope::Scope;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PubSubMode {
-  /// [`PubSub::publish`] returns `false` when the buffer is full (`len >= capacity`).
+enum HubStrategy {
   Bounded,
-  /// Same backpressure rule as [`PubSubMode::Bounded`] (incoming value not stored when full).
   Dropping,
-  /// Oldest values are evicted by the broadcast channel when the ring is full.
   Sliding,
-  /// Large internal ring; [`PubSub::publish`] does not fail due to buffer size.
   Unbounded,
 }
 
-struct PubSubInner<A: Send + Clone + 'static> {
-  tx: AsyncMutex<Option<broadcast::Sender<A>>>,
+struct State<A> {
+  subs: BTreeMap<u64, Queue<A>>,
+  next: u64,
+  shutdown: bool,
+}
+
+struct Inner<A> {
+  state: Mutex<State<A>>,
+  strategy: HubStrategy,
   capacity: usize,
-  mode: PubSubMode,
-  shutdown_tx: watch::Sender<bool>,
+  closed: Arc<Signal>,
 }
 
-/// Cloneable broadcast hub: each [`subscribe`](PubSub::subscribe) gets a [`Queue`] of all published
-/// values (within lag / capacity policy).
-#[derive(Clone)]
-pub struct PubSub<A: Send + Clone + 'static> {
-  inner: Arc<PubSubInner<A>>,
+impl<A: Send + 'static> Inner<A> {
+  fn new_queue(&self) -> Queue<A> {
+    match self.strategy {
+      HubStrategy::Bounded => Queue::bounded(self.capacity),
+      HubStrategy::Dropping => Queue::dropping(self.capacity),
+      HubStrategy::Sliding => Queue::sliding(self.capacity),
+      HubStrategy::Unbounded => Queue::unbounded(),
+    }
+  }
+
+  /// The subscriber queues, or `None` when the hub is shut down.
+  fn subscribers(&self) -> Option<Vec<Queue<A>>> {
+    let st = lock(&self.state);
+    (!st.shutdown).then(|| st.subs.values().cloned().collect())
+  }
 }
 
-/// Internal capacity for [`PubSub::unbounded`].
-const UNBOUNDED_CAP: usize = 65_536;
+/// A broadcast hub: every subscriber receives every message published after it subscribed.
+/// Cloning yields another handle to the same hub.
+pub struct PubSub<A> {
+  inner: Arc<Inner<A>>,
+}
 
-impl<A: Send + Clone + 'static> PubSub<A> {
-  fn new(tx: broadcast::Sender<A>, capacity: usize, mode: PubSubMode) -> Self {
-    let shutdown_tx = watch::channel(false).0;
+impl<A> Clone for PubSub<A> {
+  fn clone(&self) -> Self {
     Self {
-      inner: Arc::new(PubSubInner {
-        tx: AsyncMutex::new(Some(tx)),
+      inner: Arc::clone(&self.inner),
+    }
+  }
+}
+
+impl<A> std::fmt::Debug for PubSub<A> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.inner.state);
+    f.debug_struct("PubSub")
+      .field("strategy", &self.inner.strategy)
+      .field("subscribers", &st.subs.len())
+      .field("shutdown", &st.shutdown)
+      .finish()
+  }
+}
+
+impl<A: Clone + Send + 'static> PubSub<A> {
+  fn with(strategy: HubStrategy, capacity: usize) -> Self {
+    Self {
+      inner: Arc::new(Inner {
+        state: Mutex::new(State {
+          subs: BTreeMap::new(),
+          next: 0,
+          shutdown: false,
+        }),
+        strategy,
         capacity,
-        mode,
-        shutdown_tx,
+        closed: Arc::new(Signal::default()),
       }),
     }
   }
 
-  /// Bounded hub: [`PubSub::publish`] returns `false` when the ring already holds `capacity` messages.
-  pub fn bounded(capacity: usize) -> Effect<Self, (), ()> {
-    let cap = capacity.max(1);
-    let (tx, _) = broadcast::channel(cap);
-    succeed(Self::new(tx, cap, PubSubMode::Bounded))
+  /// A bounded hub (`capacity` at least 1 per subscriber): publishing suspends until every
+  /// subscriber has room.
+  pub fn bounded(capacity: usize) -> Self {
+    Self::with(HubStrategy::Bounded, capacity.max(1))
   }
 
-  /// Hub with a large fixed ring; publish does not fail for buffer fullness.
-  pub fn unbounded() -> Effect<Self, (), ()> {
-    let (tx, _) = broadcast::channel(UNBOUNDED_CAP);
-    succeed(Self::new(tx, UNBOUNDED_CAP, PubSubMode::Unbounded))
+  /// An unbounded hub.
+  pub fn unbounded() -> Self {
+    Self::with(HubStrategy::Unbounded, usize::MAX)
   }
 
-  /// Same ring size as [`PubSub::bounded`]; publish rejects when the buffer is full (newest not stored).
-  pub fn dropping(capacity: usize) -> Effect<Self, (), ()> {
-    let cap = capacity.max(1);
-    let (tx, _) = broadcast::channel(cap);
-    succeed(Self::new(tx, cap, PubSubMode::Dropping))
+  /// A bounded hub that drops a message for a subscriber whose buffer is full.
+  pub fn dropping(capacity: usize) -> Self {
+    Self::with(HubStrategy::Dropping, capacity.max(1))
   }
 
-  /// Ring of size `capacity`; when full, oldest messages are dropped on each new publish.
-  pub fn sliding(capacity: usize) -> Effect<Self, (), ()> {
-    let cap = capacity.max(1);
-    let (tx, _) = broadcast::channel(cap);
-    succeed(Self::new(tx, cap, PubSubMode::Sliding))
+  /// A bounded hub that evicts a slow subscriber's oldest message when its buffer is full.
+  pub fn sliding(capacity: usize) -> Self {
+    Self::with(HubStrategy::Sliding, capacity.max(1))
   }
 
-  /// Logical capacity configured for this hub (broadcast ring length).
-  #[inline]
+  /// The per-subscriber capacity (`usize::MAX` for an unbounded hub).
   pub fn capacity(&self) -> usize {
     self.inner.capacity
   }
 
-  /// `true` once [`PubSub::shutdown`] has run.
-  #[inline]
+  /// `true` once [`shutdown`](Self::shutdown) has run.
   pub fn is_shutdown(&self) -> bool {
-    *self.inner.shutdown_tx.borrow()
+    lock(&self.inner.state).shutdown
   }
 
-  /// Close the hub; further [`publish`](PubSub::publish) calls fail and new [`subscribe`](PubSub::subscribe) calls get a shut-down queue.
-  pub fn shutdown(&self) -> Effect<(), (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let mut guard = inner.tx.lock().await;
-        guard.take();
-        drop(guard);
-        // Use send_replace so the value is stored even when no watch receivers exist.
-        inner.shutdown_tx.send_replace(true);
-        Ok(())
-      })
-    })
-  }
-
-  /// Wait until [`PubSub::shutdown`] has been observed.
-  pub fn await_shutdown(&self) -> Effect<(), (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        if *inner.shutdown_tx.borrow() {
-          return Ok(());
-        }
-        let mut rx = inner.shutdown_tx.subscribe();
-        let _ = rx.changed().await;
-        Ok(())
-      })
-    })
-  }
-
-  /// Messages currently retained in the broadcast ring (requires the hub not to be shut down).
-  pub fn size(&self) -> Effect<usize, (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let guard = inner.tx.lock().await;
-        let Some(tx) = guard.as_ref() else {
-          return Ok(0);
-        };
-        Ok(tx.len())
-      })
-    })
-  }
-
-  /// `true` when the broadcast ring has no retained messages (or the hub is shut down).
-  pub fn is_empty(&self) -> Effect<bool, (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let guard = inner.tx.lock().await;
-        let Some(tx) = guard.as_ref() else {
-          return Ok(true);
-        };
-        Ok(tx.is_empty())
-      })
-    })
-  }
-
-  /// `true` when the ring holds [`PubSub::capacity`] messages (same idea as [`Queue::is_full`]).
-  pub fn is_full(&self) -> Effect<bool, (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let guard = inner.tx.lock().await;
-        let Some(tx) = guard.as_ref() else {
-          return Ok(true);
-        };
-        Ok(tx.len() >= inner.capacity)
-      })
-    })
-  }
-
-  /// Enqueue one message for all active subscribers. `false` if shut down, no receivers, or buffer full (bounded/dropping).
-  pub fn publish(&self, value: A) -> Effect<bool, (), ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let guard = inner.tx.lock().await;
-        let Some(tx) = guard.as_ref() else {
-          return Ok(false);
-        };
-        match inner.mode {
-          PubSubMode::Bounded | PubSubMode::Dropping => {
-            if tx.len() >= inner.capacity {
-              return Ok(false);
-            }
-          }
-          PubSubMode::Sliding | PubSubMode::Unbounded => {}
-        }
-        match tx.send(value) {
-          Ok(_) => Ok(true),
-          Err(_) => Ok(false),
-        }
-      })
-    })
-  }
-
-  /// Publish in order; returns values that were not sent (shut down, no receivers, or bounded/dropping full).
-  pub fn publish_all<I>(&self, iter: I) -> Effect<Vec<A>, (), ()>
+  /// Publishes `value` to every current subscriber. `true` when every subscriber accepted it;
+  /// `false` when the hub is shut down, has no subscriber, or a dropping subscriber was full.
+  pub fn publish<E, R>(&self, value: A) -> Effect<bool, E, R>
   where
-    I: IntoIterator<Item = A> + 'static,
-    I::IntoIter: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
   {
     let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let mut left = Vec::new();
-        for v in iter {
-          let guard = inner.tx.lock().await;
-          let Some(tx) = guard.as_ref() else {
-            left.push(v);
-            continue;
-          };
-          let can_send = match inner.mode {
-            PubSubMode::Bounded | PubSubMode::Dropping => tx.len() < inner.capacity,
-            PubSubMode::Sliding | PubSubMode::Unbounded => true,
-          };
-          if !can_send {
-            left.push(v);
-            continue;
-          }
-          match tx.send(v) {
-            Ok(_) => {}
-            Err(e) => left.push(e.0),
-          }
+    from_async(move || async move { Ok(publish_to(&inner, value).await) })
+  }
+
+  /// Publishes every value in order; returns the values that were not accepted by every
+  /// subscriber (see [`publish`](Self::publish)).
+  pub fn publish_all<E, R>(&self, values: impl IntoIterator<Item = A>) -> Effect<Vec<A>, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let values: Vec<A> = values.into_iter().collect();
+    let inner = Arc::clone(&self.inner);
+    from_async(move || async move {
+      let mut left = Vec::new();
+      for v in values {
+        if !publish_to(&inner, v.clone()).await {
+          left.push(v);
         }
-        Ok(left)
+      }
+      Ok(left)
+    })
+  }
+
+  /// Subscribes: the returned [`Queue`] receives every message published from now on. The
+  /// subscription ends when `scope` closes (the queue is shut down, so its takers drain it and
+  /// then see `Disconnected`). Subscribing to a shut-down hub yields a shut-down queue.
+  pub fn subscribe<E, R>(&self, scope: &Scope) -> Effect<Queue<A>, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let inner = Arc::clone(&self.inner);
+    let scope = scope.clone();
+    suspend(move || {
+      let q = inner.new_queue();
+      let id = {
+        let mut st = lock(&inner.state);
+        if st.shutdown {
+          None
+        } else {
+          let id = st.next;
+          st.next += 1;
+          st.subs.insert(id, q.clone());
+          Some(id)
+        }
+      };
+      if id.is_none() {
+        q.shutdown_sync();
+      }
+      let fin_q = q.clone();
+      scope
+        .add_finalizer(sync::<(), Never, _>(move || {
+          if let Some(id) = id {
+            lock(&inner.state).subs.remove(&id);
+          }
+          fin_q.shutdown_sync();
+        }))
+        .map(move |()| q)
+    })
+    .uninterruptible()
+  }
+
+  /// Shuts the hub down: later publishes return `false`, every subscriber queue is shut down
+  /// (buffered messages stay readable). Idempotent.
+  pub fn shutdown<E, R>(&self) -> Effect<(), E, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || {
+      let subs = {
+        let mut st = lock(&inner.state);
+        st.shutdown = true;
+        std::mem::take(&mut st.subs)
+      };
+      for q in subs.into_values() {
+        q.shutdown_sync();
+      }
+      inner.closed.fire();
+    })
+  }
+
+  /// Suspends until the hub is shut down.
+  pub fn await_shutdown<E, R>(&self) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let closed = Arc::clone(&self.inner.closed);
+    from_async(move || async move {
+      closed.wait().await;
+      Ok(())
+    })
+  }
+
+  /// The largest number of messages buffered for one subscriber (`0` when shut down).
+  pub fn size<E, R>(&self) -> Effect<usize, E, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || {
+      inner.subscribers().map_or(0, |subs| {
+        subs.iter().map(Queue::size_now).max().unwrap_or(0)
       })
     })
   }
 
-  /// Subscribe as a [`Queue`]. Run with [`Scope`] as the environment; when that scope closes, the
-  /// broadcast receiver is dropped and the forward task is aborted.
-  pub fn subscribe(&self) -> Effect<Queue<A>, Never, Scope> {
+  /// `true` when no message is buffered for any subscriber (or the hub is shut down).
+  pub fn is_empty<E, R>(&self) -> Effect<bool, E, R> {
     let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |scope: &mut Scope| {
-      let scope_for_fin = scope.clone();
-      box_future(async move {
-        let q = run_blocking(Queue::unbounded(), ()).expect("queue");
-        let brx = {
-          let guard = inner.tx.lock().await;
-          guard.as_ref().map(|tx| tx.subscribe())
-        };
-        let Some(mut brx) = brx else {
-          let _ = run_blocking(q.shutdown(), ());
-          return Ok(q);
-        };
+    sync(move || {
+      inner
+        .subscribers()
+        .is_none_or(|subs| subs.iter().all(|q| q.size_now() == 0))
+    })
+  }
 
-        let q_task = q.clone();
-        let handle = tokio::spawn(async move {
-          loop {
-            match brx.recv().await {
-              Ok(v) => {
-                let _ = run_blocking(q_task.offer(v), ());
-              }
-              Err(broadcast::error::RecvError::Lagged(_)) => continue,
-              Err(broadcast::error::RecvError::Closed) => break,
-            }
-          }
-          let _ = run_blocking(q_task.shutdown(), ());
-        });
-
-        let q_fin = q.clone();
-        let _ = scope_for_fin.add_finalizer(Box::new(move |_exit| {
-          Effect::new_async(move |_r: &mut ()| {
-            let h = handle;
-            let q = q_fin.clone();
-            box_future(async move {
-              h.abort();
-              let _ = run_blocking(q.shutdown(), ());
-              Ok(())
-            })
-          })
-        }));
-
-        Ok(q)
-      })
+  /// `true` when some subscriber's buffer is full (or the hub is shut down).
+  pub fn is_full<E, R>(&self) -> Effect<bool, E, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || {
+      inner
+        .subscribers()
+        .is_none_or(|subs| subs.iter().any(Queue::is_full_now))
     })
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_async;
-  use std::time::Duration;
-
-  #[tokio::test]
-  async fn pubsub_subscriber_receives_all_messages() {
-    let ps = run_async(PubSub::<u32>::bounded(8), ())
-      .await
-      .expect("pubsub");
-    let scope = Scope::make();
-    let q = run_async(ps.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    assert!(run_async(ps.publish(1), ()).await.expect("pub"));
-    assert!(run_async(ps.publish(2), ()).await.expect("pub"));
-    assert!(run_async(ps.publish(3), ()).await.expect("pub"));
-    for want in [1u32, 2, 3] {
-      tokio::task::yield_now().await;
-      assert_eq!(run_async(q.take(), ()).await.expect("take"), want);
-    }
-    scope.close();
+impl<A> PubSub<A> {
+  /// The number of live subscriptions.
+  pub fn subscriber_count(&self) -> usize {
+    lock(&self.inner.state).subs.len()
   }
+}
 
-  #[tokio::test]
-  async fn pubsub_subscribe_auto_unsubscribes_on_scope_close() {
-    let ps = run_async(PubSub::<u32>::bounded(8), ())
-      .await
-      .expect("pubsub");
-    let scope = Scope::make();
-    let _q = run_async(ps.clone().subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    assert!(scope.close());
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(
-      !run_async(ps.publish(99), ()).await.expect("pub"),
-      "no active receivers after scope close"
-    );
+/// Offers `value` to every subscriber in turn (suspending on bounded ones).
+async fn publish_to<A: Clone + Send + 'static>(inner: &Inner<A>, value: A) -> bool {
+  let Some(subs) = inner.subscribers() else {
+    return false;
+  };
+  if subs.is_empty() {
+    return false;
   }
-
-  #[tokio::test]
-  async fn pubsub_sliding_drops_oldest_for_slow_subscriber() {
-    let ps = run_async(PubSub::<u32>::sliding(2), ())
-      .await
-      .expect("pubsub");
-    let scope = Scope::make();
-    let q = run_async(ps.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    for i in 1..=3u32 {
-      assert!(run_async(ps.publish(i), ()).await.expect("pub"));
-    }
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    let first = run_async(q.take(), ()).await.expect("take");
-    assert_ne!(
-      first, 1,
-      "with sliding capacity 2, value 1 should be evicted before slow subscriber catches up"
-    );
-    scope.close();
+  let mut all = true;
+  for q in subs {
+    all &= q.offer_future(value.clone()).await.is_ok();
   }
-
-  // ── unbounded ─────────────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_unbounded_delivers_messages_to_subscriber() {
-    let ps = run_async(PubSub::<u32>::unbounded(), ())
-      .await
-      .expect("pubsub");
-    let scope = Scope::make();
-    let q = run_async(ps.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    assert!(run_async(ps.publish(42), ()).await.expect("pub"));
-    tokio::task::yield_now().await;
-    assert_eq!(run_async(q.take(), ()).await.expect("take"), 42);
-    scope.close();
-  }
-
-  // ── dropping ──────────────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_dropping_rejects_when_buffer_full() {
-    let ps = run_async(PubSub::<u32>::dropping(2), ())
-      .await
-      .expect("pubsub");
-    // No subscribers yet — publish returns false (no receivers)
-    assert!(!run_async(ps.publish(1), ()).await.expect("pub"));
-  }
-
-  // ── capacity ──────────────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_capacity_returns_configured_value() {
-    let ps = run_async(PubSub::<u32>::bounded(16), ()).await.expect("ps");
-    assert_eq!(ps.capacity(), 16);
-  }
-
-  // ── is_shutdown / shutdown / await_shutdown ───────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_shutdown_prevents_publish_and_is_shutdown_returns_true() {
-    let ps = run_async(PubSub::<u32>::bounded(8), ())
-      .await
-      .expect("pubsub");
-    assert!(!ps.is_shutdown());
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    assert!(ps.is_shutdown());
-    assert!(
-      !run_async(ps.publish(1), ())
-        .await
-        .expect("pub after shutdown")
-    );
-  }
-
-  #[tokio::test]
-  async fn pubsub_await_shutdown_returns_immediately_when_already_shut_down() {
-    let ps = run_async(PubSub::<u32>::bounded(4), ())
-      .await
-      .expect("pubsub");
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    assert!(ps.is_shutdown());
-    // await_shutdown should observe the already-set flag immediately;
-    // use a timeout to prevent hanging if the watch-channel borrow races.
-    let result = tokio::time::timeout(
-      std::time::Duration::from_secs(2),
-      run_async(ps.await_shutdown(), ()),
-    )
-    .await;
-    assert!(
-      result.is_ok(),
-      "await_shutdown should complete quickly when hub is already shut down"
-    );
-  }
-
-  #[tokio::test]
-  async fn pubsub_await_shutdown_waits_for_shutdown() {
-    let ps = run_async(PubSub::<u32>::bounded(4), ())
-      .await
-      .expect("pubsub");
-    let ps_clone = ps.clone();
-    let waiter = std::thread::spawn(move || {
-      tokio::runtime::Runtime::new()
-        .expect("rt")
-        .block_on(run_async(ps_clone.await_shutdown(), ()))
-        .expect("await_shutdown");
-    });
-    tokio::time::sleep(Duration::from_millis(10)).await;
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    waiter.join().expect("waiter thread");
-  }
-
-  // ── size / is_empty / is_full ─────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_size_is_empty_is_full_reflect_ring_state() {
-    let ps = run_async(PubSub::<u32>::bounded(2), ())
-      .await
-      .expect("pubsub");
-    assert_eq!(run_async(ps.size(), ()).await.expect("size"), 0);
-    assert!(run_async(ps.is_empty(), ()).await.expect("empty"));
-    assert!(!run_async(ps.is_full(), ()).await.expect("full"));
-  }
-
-  #[tokio::test]
-  async fn pubsub_size_returns_zero_when_shut_down() {
-    let ps = run_async(PubSub::<u32>::bounded(4), ())
-      .await
-      .expect("pubsub");
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    assert_eq!(run_async(ps.size(), ()).await.expect("size"), 0);
-    assert!(run_async(ps.is_empty(), ()).await.expect("empty"));
-    assert!(
-      run_async(ps.is_full(), ())
-        .await
-        .expect("full after shutdown")
-    );
-  }
-
-  // ── publish_all ───────────────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_publish_all_returns_undeliverable_when_shut_down() {
-    let ps = run_async(PubSub::<u32>::bounded(4), ())
-      .await
-      .expect("pubsub");
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    let left = run_async(ps.publish_all(vec![1u32, 2, 3]), ())
-      .await
-      .expect("publish_all");
-    assert_eq!(left, vec![1u32, 2, 3]);
-  }
-
-  #[tokio::test]
-  async fn pubsub_publish_all_delivers_messages_when_subscriber_active() {
-    let ps = run_async(PubSub::<u32>::unbounded(), ())
-      .await
-      .expect("pubsub");
-    let scope = Scope::make();
-    let q = run_async(ps.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    let left = run_async(ps.publish_all(vec![10u32, 20, 30]), ())
-      .await
-      .expect("publish_all");
-    assert!(left.is_empty(), "all should be delivered");
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    for want in [10u32, 20, 30] {
-      assert_eq!(run_async(q.take(), ()).await.expect("take"), want);
-    }
-    scope.close();
-  }
-
-  // ── subscribe after shutdown ──────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_subscribe_after_shutdown_gets_shut_down_queue() {
-    let ps = run_async(PubSub::<u32>::bounded(4), ())
-      .await
-      .expect("pubsub");
-    run_async(ps.shutdown(), ()).await.expect("shutdown");
-    let scope = Scope::make();
-    let q = run_async(ps.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    // Queue should report disconnected immediately (shutdown queue)
-    let result = run_async(q.take(), ()).await;
-    assert!(
-      result.is_err(),
-      "queue from post-shutdown subscribe should be disconnected"
-    );
-    scope.close();
-  }
-
-  // ── publish returns false with no receivers ───────────────────────────────
-
-  #[tokio::test]
-  async fn pubsub_publish_returns_false_when_no_subscribers() {
-    let ps = run_async(PubSub::<u32>::bounded(8), ())
-      .await
-      .expect("pubsub");
-    // No subscribers yet
-    assert!(
-      !run_async(ps.publish(1), ()).await.expect("pub"),
-      "should return false with no receivers"
-    );
-  }
+  all
 }

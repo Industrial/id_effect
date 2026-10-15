@@ -8,11 +8,12 @@ This is a `proc-macro = true` crate: most users depend on `id_effect` (or `id_ef
 
 | Macro | Kind | Re-exported from | Generates |
 |-------|------|------------------|-----------|
-| `effect!` | function-like | `id_effect` | Do-notation for `Effect` (`~expr` binds) |
+| `effect!` / `effect_local!` | function-like | `id_effect` | Do-notation over an async body for `Effect` / `LocalEffect` (`~Cap` reads, `~expr` binds, `~(a, b)` joins) |
+| `caps!` | function-like | `id_effect` | The typed environment `HCons<A, HCons<B, HNil>>` (duplicates rejected) |
 | `Schema` | derive | `id_effect` | `schema()` + `HasSchema` for named-field structs |
 | `EffectData` | derive | `id_effect` | Structural `PartialEq` / `Eq` / `Hash` |
 | `effect_tagged` | attribute | `id_effect` | `_tag` field + `HasTag` impl |
-| `ProviderSpec` | derive | `id_effect` (as `ProviderSpecDerive`) | `ProviderSpec` impl from `#[provides(..)]` |
+| `ProviderSpec` | derive | `id_effect` (as `ProviderSpecDerive`) | An inherent `layer()` (a `Layer` providing the service) from `#[provides(..)]` |
 | `match_effect!` | function-like | `id_effect` | Exhaustive enum match helper |
 | `Optics` | derive | `id_effect` | Field lenses and enum prisms for `id_effect_optics` |
 | `Fsm` | derive | `id_effect_fsm` | `id_effect_fsm::Fsm` impl: initial state + transition table |
@@ -22,7 +23,7 @@ This is a `proc-macro = true` crate: most users depend on `id_effect` (or `id_ef
 
 ```rust
 use id_effect::schema::HasSchema;
-use id_effect::{Effect, Schema, effect, run_blocking, succeed};
+use id_effect::{Effect, Schema, effect, succeed};
 
 #[derive(Clone, Debug, PartialEq, Schema)]
 struct User {
@@ -31,16 +32,20 @@ struct User {
   age: i64,
 }
 
-fn older(user: User) -> Effect<User, String, ()> {
-  effect! {
-    let age = ~succeed::<i64, String, ()>(user.age + 1);
+fn bump(age: i64) -> Effect<i64, String> {
+  succeed(age + 1)
+}
+
+fn older(user: User) -> Effect<User, String> {
+  effect!({
+    let age = ~bump(user.age);
     User { age, ..user }
-  }
+  })
 }
 
 let wire = User::schema().encode(User { name: "Ada".into(), age: 36 });
 let user = <User as HasSchema>::schema().decode_unknown(&wire).unwrap();
-assert_eq!(run_blocking(older(user), ()).unwrap().age, 37);
+assert_eq!(older(user).block_on().into_result().unwrap().age, 37);
 ```
 
 ## `#[derive(Fsm)]`

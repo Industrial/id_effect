@@ -1,4 +1,4 @@
-//! `k-ui-suite`: compile-fail and compile-pass UI tests for the `id_effect::next` typed `R`.
+//! `k-ui-suite`: compile-fail and compile-pass UI tests for the typed `R` of the 0.7 kernel.
 //!
 //! `fail/` pins the diagnostics of the capability traits (`#[diagnostic::on_unimplemented]` on
 //! `Selector`, `Plucker`, `Sculptor`, `Embed`, with `#[diagnostic::do_not_recommend]` on the
@@ -11,7 +11,7 @@
 //! # Pinned toolchain
 //!
 //! rustc's diagnostic wording and type-path trimming change between releases and channels (1.99
-//! prints `id_effect::next::capability::HCons` where 1.97 printed `id_effect::next::HCons`;
+//! prints `id_effect::capability::HCons` where 1.97 printed `id_effect::HCons`;
 //! nightly words the `Bindable` help block differently). The `.stderr` files are therefore
 //! blessed on exactly [`BLESSED_RUSTC`], the version the CI `moon-ci` job pins, and the suite only
 //! runs there; on any other compiler it is skipped with a note (`NEXT_UI_FORCE=1` runs it anyway).

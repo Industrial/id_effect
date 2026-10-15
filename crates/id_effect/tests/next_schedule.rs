@@ -14,7 +14,7 @@ use id_effect::next::{
 };
 use id_effect::{Cause, Exit};
 
-const SOURCE: &str = include_str!("../src/next/scheduling/schedule.rs");
+const SOURCE: &str = include_str!("../src/scheduling/schedule.rs");
 
 fn ms(n: u64) -> Duration {
   Duration::from_millis(n)

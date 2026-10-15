@@ -1,20 +1,20 @@
-//! `effect_next!` / `effect_local_next!`: an async body with `~` reads and binds over a typed `R`.
+//! `effect!` / `effect_local!` (aliases `effect_next!` / `effect_local_next!`): an async body with `~` reads and binds over a typed `R`.
 //!
-//! - `effect_next!({ body })` or `effect_next!(|r: &Caps| { body })` (also `|r|`, `||`). With no
+//! - `effect!({ body })` or `effect!(|r: &Caps| { body })` (also `|r|`, `||`). With no
 //!   type, `R` comes from the expected type (the fn return type). With `: &Caps`, `R = Caps`. A
 //!   named head binds `r: &R` to the environment.
 //! - `~Cap` (an upper-case identifier not followed by `::`, `(`, `{` or `!`) reads capability
 //!   `Cap`: `<_ as Selector<Cap, _>>::get(Ctx::env(&ctx))`, a `&Arc<Cap>` with the HList index
 //!   inferred.
 //! - `~expr` (anything else: a path, call, method chain, group) binds a sub-effect:
-//!   `Ctx::bind(&ctx, expr).await` (`effect_next!`) or `__private::bind_local(&ctx, expr).await`
-//!   (`effect_local_next!`). Its error widens into the body's: `Never` to anything, otherwise
+//!   `Ctx::bind(&ctx, expr).await` (`effect!`) or `__private::bind_local(&ctx, expr).await`
+//!   (`effect_local!`). Its error widens into the body's: `Never` to anything, otherwise
 //!   through `E: From<E2>` (`__private::Lift`).
-//! - `~(a, b, ..)` (a parenthesised list of 2 to 8 effects, `effect_next!` only) joins them in
+//! - `~(a, b, ..)` (a parenthesised list of 2 to 8 effects, `effect!` only) joins them in
 //!   parallel on child fibers: `__private::join_binds(&ctx, (branch(&ctx, a).map_err(..), ..))`,
 //!   yielding the tuple of values; the first failure interrupts the siblings and is the `~`'s
 //!   outcome (`c-join-binds`). `~(expr)` without a top-level comma stays a plain bind.
-//! - The body becomes `async move { Ok({ body }) }` owning a `Ctx<R>`; under `effect_next!` it
+//! - The body becomes `async move { Ok({ body }) }` owning a `Ctx<R>`; under `effect!` it
 //!   must be `Send`.
 
 use proc_macro::{Delimiter, Group, Ident, Spacing, Span, TokenStream, TokenTree};
@@ -74,13 +74,12 @@ pub(crate) fn expand(input: TokenStream, local: bool) -> TokenStream {
   let (head, body) = split_head(&tokens);
   let body = rewrite(&body, local);
 
-  let mut inner = parse(
-    "#[allow(unused_imports)] use ::id_effect::next::__private::{LiftFrom as _, LiftNever as _};",
-  );
+  let mut inner =
+    parse("#[allow(unused_imports)] use ::id_effect::__private::{LiftFrom as _, LiftNever as _};");
   if let Some(name) = head.name {
     inner.extend(parse("#[allow(unused_variables)] let"));
     inner.extend([TokenTree::Ident(name)]);
-    inner.extend(parse("= ::id_effect::next::Ctx::env(&__ctx);"));
+    inner.extend(parse("= ::id_effect::Ctx::env(&__ctx);"));
   }
   inner.extend(parse("::core::result::Result::Ok"));
   inner.extend([group(
@@ -88,11 +87,11 @@ pub(crate) fn expand(input: TokenStream, local: bool) -> TokenStream {
     group(Delimiter::Brace, body).into(),
   )]);
 
-  let mut closure = parse("move |__ctx: ::id_effect::next::Ctx<_>| async move");
+  let mut closure = parse("move |__ctx: ::id_effect::Ctx<_>| async move");
   closure.extend([group(Delimiter::Brace, inner)]);
 
   let kind = if local { "LocalEffect" } else { "Effect" };
-  let mut out = parse(&format!("::id_effect::next::{kind}::<_, _,"));
+  let mut out = parse(&format!("::id_effect::{kind}::<_, _,"));
   out.extend(head.ty.unwrap_or_else(|| parse("_")));
   out.extend(parse(">::from_ctx"));
   out.extend([group(Delimiter::Parenthesis, closure)]);
@@ -188,13 +187,13 @@ fn expr_end(t: &[TokenTree], mut i: usize) -> usize {
   i
 }
 
-/// A nested effect macro (`effect_next!`, `effect_local_next!`, or the v1 `effect!`) owns its own
-/// `~` tokens: its group is copied untouched.
+/// A nested effect macro (`effect!`, `effect_local!` or their temporary `_next` names) owns its
+/// own `~` tokens: its group is copied untouched.
 fn is_nested_effect_macro(out: &[TokenTree]) -> bool {
   let n = out.len();
   n >= 2
     && matches!(&out[n - 1], TokenTree::Punct(p) if p.as_char() == '!')
-    && matches!(&out[n - 2], TokenTree::Ident(id) if matches!(id.to_string().as_str(), "effect_next" | "effect_local_next" | "effect"))
+    && matches!(&out[n - 2], TokenTree::Ident(id) if matches!(id.to_string().as_str(), "effect" | "effect_local" | "effect_next" | "effect_local_next"))
 }
 
 /// The most effects one `~(a, b, ..)` joins (`__private::JoinTuple` impls).
@@ -213,14 +212,14 @@ fn join_branches(t: &TokenTree) -> Option<Vec<Vec<TokenTree>>> {
   (items.len() >= 2).then_some(items)
 }
 
-/// `~(a, b, ..)` in `effect_next!`:
+/// `~(a, b, ..)` in `effect!`:
 /// `match __private::join_binds(&__ctx, (branch(&__ctx, a).map_err(lift), ..)).await { .. }`.
 /// Each branch's error widens into the body's on its own (as `~a` would), so the joined effect
 /// has the body's error and its `Err` is returned as is.
 fn expand_join(branches: Vec<Vec<TokenTree>>, span: Span, local: bool) -> TokenStream {
   if local {
     return compile_error(
-      "a parallel join `~(a, b, ..)` needs `effect_next!` (its branches run on child fibers); bind them one at a time in `effect_local_next!`",
+      "a parallel join `~(a, b, ..)` needs `effect!` (its branches run on child fibers); bind them one at a time in `effect_local!`",
       span,
     );
   }
@@ -235,19 +234,16 @@ fn expand_join(branches: Vec<Vec<TokenTree>>, span: Span, local: bool) -> TokenS
     let bspan = b[0].span();
     let mut args = respan(parse("&__ctx,"), bspan);
     args.extend(rewrite(&b, local));
-    tuple.extend(respan(parse("::id_effect::next::__private::branch"), bspan));
+    tuple.extend(respan(parse("::id_effect::__private::branch"), bspan));
     tuple.extend([group(Delimiter::Parenthesis, args)]);
     tuple.extend(respan(
-      parse(".map_err(|__e| (&&::id_effect::next::__private::Lift::new(__e)).lift()),"),
+      parse(".map_err(|__e| (&&::id_effect::__private::Lift::new(__e)).lift()),"),
       bspan,
     ));
   }
   let mut args = respan(parse("&__ctx,"), span);
   args.extend([group(Delimiter::Parenthesis, tuple)]);
-  let mut m = respan(
-    parse("match ::id_effect::next::__private::join_binds"),
-    span,
-  );
+  let mut m = respan(parse("match ::id_effect::__private::join_binds"), span);
   m.extend([group(Delimiter::Parenthesis, args)]);
   m.extend(respan(parse(".await"), span));
   m.extend([group(
@@ -276,9 +272,9 @@ fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
           };
           // A direct trait call (not `Ctx::get`): a missing capability then reports only the
           // `Selector` diagnostic, without a `required by a bound in Ctx::get` note.
-          let mut call = parse("<_ as ::id_effect::next::Selector<");
+          let mut call = parse("<_ as ::id_effect::Selector<");
           call.extend([TokenTree::Ident(id.clone())]);
-          call.extend(parse(", _>>::get(::id_effect::next::Ctx::env(&__ctx))"));
+          call.extend(parse(", _>>::get(::id_effect::Ctx::env(&__ctx))"));
           out.push(group(Delimiter::Parenthesis, respan(call, id.span())));
           i = start + 1;
           continue;
@@ -302,9 +298,9 @@ fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
         let span = tokens[start].span();
         let expr = rewrite(&tokens[start..end], local);
         let bind = if local {
-          "::id_effect::next::__private::bind_local"
+          "::id_effect::__private::bind_local"
         } else {
-          "::id_effect::next::Ctx::bind"
+          "::id_effect::Ctx::bind"
         };
         let mut call = parse(bind);
         let mut args = parse("&__ctx,");
@@ -320,7 +316,7 @@ fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
             parse(
               "::core::result::Result::Ok(__v) => __v, \
                ::core::result::Result::Err(__e) => return ::core::result::Result::Err(\
-               (&&::id_effect::next::__private::Lift::new(__e)).lift()),",
+               (&&::id_effect::__private::Lift::new(__e)).lift()),",
             ),
             span,
           ),

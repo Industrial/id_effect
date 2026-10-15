@@ -1,15 +1,15 @@
-//! `#[derive(ProviderSpec)]` with `#[provides(Service)]`.
+//! `#[derive(ProviderSpec)]` with `#[provides(Service)]` (re-exported by `id_effect` as
+//! `ProviderSpecDerive`).
 //!
-//! Two emissions:
+//! Emits an inherent `Struct::layer::<E>() -> Layer<HCons<Service, HNil>, E>` building the
+//! service with the constructor. `#[provides(Service, release = <finalizer>)]` makes it an
+//! `acquire_release` layer: `release` is called with the `Arc<Service>` and returns the async
+//! finalizer effect (`Effect<(), Never, HNil>`), run when the layer's scope closes.
 //!
-//! - **v1**: `impl id_effect::ProviderSpec for Struct` (unchanged).
-//! - **`id_effect::next`** (`p-layer-scoped`): an inherent
-//!   `Struct::layer::<E>() -> next::Layer<HCons<Service, HNil>, E>` building the service with the
-//!   same constructor. `#[provides(Service, release = <finalizer>)]` (next path only) makes it an
-//!   `acquire_release` layer: `release` is called with the `Arc<Service>` and returns the async
-//!   finalizer effect (`next::Effect<(), Never, HNil>`), run when the layer's scope closes. This
-//!   replaces the sync `ProviderSpec::on_shutdown`, which the v1 path keeps. A `|deps| ..`
-//!   constructor reads a v1 `Env`, so it gets no `layer()` (and rejects `release`).
+//! The 0.6 `impl id_effect::ProviderSpec` (runtime capability DI) is gone with the v1 kernel, and
+//! so are the forms only it supported: a `|deps| ..` constructor reading a v1 `Env` (a layer
+//! that needs other services is `Layer::effect` over a typed `In`, or `provide_to`) and
+//! `#[named("..")]` variants (give each variant its own service type). Both are compile errors.
 
 use proc_macro::TokenStream as ProcTokenStream;
 use proc_macro2::TokenStream;
@@ -36,86 +36,52 @@ fn derive2(input: TokenStream) -> TokenStream {
     Ok(args) => args,
     Err(e) => return e.to_compile_error(),
   };
-
-  let variant = find_named_variant(&input);
-  let provider_id = provider_id_from_ident(struct_name);
-  let variant_impl = match &variant {
-    Some(lit) => quote! { Some(#lit) },
-    None => quote! { None },
-  };
-  // A `|deps| ..` constructor reads a v1 `Env`, which the next path does not have.
-  let reads_deps = matches!(&with, Some(Expr::Closure(c)) if !c.inputs.is_empty());
+  if let Some(named) = find_named_attr(&input) {
+    return syn::Error::new_spanned(
+      named,
+      "`#[named(..)]` provider variants were removed with the 0.6 runtime capability DI; \
+       give each variant its own service type",
+    )
+    .to_compile_error();
+  }
   let construct = match with {
     Some(expr) => construct_with(expr),
     None if has_derive_default(&input.attrs) => quote! { Self::default() },
     None => quote! { Self::new() },
   };
-  let next_layer = if reads_deps {
-    if let Some(release) = &release {
-      return syn::Error::new_spanned(
-        release,
-        "`release` needs a constructor without `deps` (the `id_effect::next` layer has no v1 `Env`)",
-      )
-      .to_compile_error();
-    }
-    quote! {}
-  } else {
-    next_layer_fn(struct_name, &service_ty, &construct, release.as_ref())
-  };
-
-  quote! {
-    #next_layer
-
-    impl ::id_effect::ProviderSpec for #struct_name {
-      type Key = ::id_effect::Cap<#service_ty>;
-      type Output = #service_ty;
-
-      fn provider_id() -> &'static str {
-        #provider_id
-      }
-
-      fn variant() -> Option<&'static str> {
-        #variant_impl
-      }
-
-      fn provide(_deps: &::id_effect::Env) -> ::core::result::Result<Self::Output, ::id_effect::ProviderError> {
-        Ok(#construct)
-      }
-    }
-  }
+  layer_fn(struct_name, &service_ty, &construct, release.as_ref())
 }
 
-/// The `id_effect::next` path: an inherent `layer()` building the service as a
-/// `next::Layer` (no input, any error type). With `release`, the layer is an
-/// `acquire_release` whose finalizer is the async `release(Arc<Service>)` effect, run when the
-/// layer's scope closes (the next-path replacement for the sync `ProviderSpec::on_shutdown`).
-fn next_layer_fn(
+/// An inherent `layer()` building the service as a `Layer` (no input, any error type). With
+/// `release`, the layer is an `acquire_release` whose finalizer is the async
+/// `release(Arc<Service>)` effect, run when the layer's scope closes.
+fn layer_fn(
   struct_name: &syn::Ident,
   service_ty: &Type,
   construct: &TokenStream,
   release: Option<&Expr>,
 ) -> TokenStream {
   let out = quote! {
-    ::id_effect::next::HCons<#service_ty, ::id_effect::next::HNil>
+    ::id_effect::HCons<#service_ty, ::id_effect::HNil>
   };
   let acquire = quote! {
-    || ::id_effect::next::sync(|| {
+    || ::id_effect::sync(|| {
       // Annotated so an `Arc<Concrete>` constructor coerces to an `Arc<dyn Trait>` service.
       let service: #service_ty = #construct;
-      ::id_effect::next::HCons::new(service, ::id_effect::next::HNil)
+      ::id_effect::HCons::new(service, ::id_effect::HNil)
     })
   };
   let body = match release {
     Some(release) => quote! {
-      ::id_effect::next::Layer::acquire_release(
+      ::id_effect::Layer::acquire_release(
         #acquire,
-        |out: #out, _kind: ::id_effect::next::ExitKind| (#release)(out.0),
+        |out: #out, _kind: ::id_effect::ExitKind| (#release)(out.0),
       )
     },
-    None => quote! { ::id_effect::next::Layer::effect(#acquire) },
+    None => quote! { ::id_effect::Layer::effect(#acquire) },
   };
   let doc = format!(
-    "The `id_effect::next` layer providing `{}` (generated by `derive(ProviderSpec)`).",
+    "The `Layer` providing `{}` (generated by `derive(ProviderSpec)`).",
     quote!(#service_ty).to_string().replace(' ', "")
   );
   quote! {
@@ -123,7 +89,7 @@ fn next_layer_fn(
     impl #struct_name {
       #[doc = #doc]
       #[allow(dead_code)]
-      pub fn layer<E: ::core::marker::Send + 'static>() -> ::id_effect::next::Layer<#out, E> {
+      pub fn layer<E: ::core::marker::Send + 'static>() -> ::id_effect::Layer<#out, E> {
         #body
       }
     }
@@ -135,7 +101,7 @@ fn next_layer_fn(
 struct ProvidesArgs {
   service: Type,
   with: Option<Expr>,
-  /// Next path only: `Fn(Arc<Service>) -> next::Effect<(), Never, HNil>`.
+  /// `Fn(Arc<Service>) -> Effect<(), Never, HNil>`.
   release: Option<Expr>,
 }
 
@@ -196,22 +162,18 @@ fn find_provides_service(input: &DeriveInput) -> syn::Result<ProvidesArgs> {
 /// Expression building the service from a `with = …` constructor.
 ///
 /// - `|| expr` → `expr` (inlined, so no closure call is generated)
-/// - `|deps| expr` / `|deps: &Env| expr` → `{ let deps = _deps; expr }` (reads already-built deps)
 /// - any other expression (`Self::build`, `make_counter`) → called with no arguments
+/// - a closure with arguments is an error (the 0.6 `|deps: &Env|` form has no `Env` to read)
 fn construct_with(expr: Expr) -> TokenStream {
   match expr {
     Expr::Closure(closure) if closure.inputs.is_empty() => {
       let body = closure.body;
       quote! { #body }
     }
-    Expr::Closure(closure) if closure.inputs.len() == 1 => {
-      let pat = &closure.inputs[0];
-      let body = &closure.body;
-      quote! { { let #pat = _deps; #body } }
-    }
     Expr::Closure(closure) => syn::Error::new_spanned(
       &closure.inputs,
-      "`with` closure takes no arguments or one `&Env` argument",
+      "a `with` closure takes no arguments (the 0.6 `|deps: &Env|` form was removed: build a \
+       layer that needs other services with `Layer::effect` over a typed `In`)",
     )
     .to_compile_error(),
     other => quote! { (#other)() },
@@ -234,63 +196,30 @@ fn has_derive_default(attrs: &[syn::Attribute]) -> bool {
   })
 }
 
-fn provider_id_from_ident(ident: &syn::Ident) -> String {
-  let raw = ident.to_string();
-  let base = raw.strip_suffix("Live").unwrap_or(&raw);
-  let mut snake = String::new();
-  for (i, ch) in base.chars().enumerate() {
-    if ch.is_uppercase() && i > 0 {
-      snake.push('-');
-    }
-    snake.push(ch.to_ascii_lowercase());
-  }
-  if raw.ends_with("Live") {
-    format!("{snake}-live")
-  } else {
-    snake
-  }
-}
-
-fn find_named_variant(input: &DeriveInput) -> Option<syn::LitStr> {
-  for attr in &input.attrs {
-    if attr.path().is_ident("named")
-      && let Ok(lit) = attr.parse_args::<syn::LitStr>()
-    {
-      return Some(lit);
-    }
-  }
-  None
+fn find_named_attr(input: &DeriveInput) -> Option<&syn::Attribute> {
+  input
+    .attrs
+    .iter()
+    .find(|attr| attr.path().is_ident("named"))
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use quote::quote;
-  use syn::parse_quote;
 
   #[test]
-  fn provider_id_strips_live_suffix() {
-    assert_eq!(
-      provider_id_from_ident(&parse_quote!(CounterLive)),
-      "counter-live"
-    );
-    assert_eq!(provider_id_from_ident(&parse_quote!(DbPool)), "db-pool");
-  }
-
-  #[test]
-  fn derive_emits_provider_spec_impl() {
+  fn derive_emits_a_layer_fn_with_default_constructor() {
     let input = quote! {
       #[provides(Counter)]
       #[derive(Default)]
       struct CounterLive;
     };
-    let out = derive2(input);
-    let out = out.to_string();
-    assert!(out.contains("impl :: id_effect :: ProviderSpec for CounterLive"));
-    assert!(out.contains("type Key = :: id_effect :: Cap < Counter >"));
-    assert!(out.contains("type Output = Counter"));
-    assert!(out.contains("counter-live"));
-    assert!(out.contains("Self :: default ()"));
+    let out = derive2(input).to_string();
+    assert!(out.contains("impl CounterLive"), "{out}");
+    assert!(out.contains("pub fn layer < E"), "{out}");
+    assert!(out.contains("Self :: default ()"), "{out}");
+    assert!(!out.contains("ProviderSpec for"), "{out}");
   }
 
   #[test]
@@ -304,14 +233,14 @@ mod tests {
   }
 
   #[test]
-  fn derive_with_named_variant() {
+  fn named_variant_is_rejected() {
     let input = quote! {
       #[provides(Db)]
       #[named("replica")]
       struct DbReplicaLive;
     };
     let out = derive2(input).to_string();
-    assert!(out.contains("replica"));
+    assert!(out.contains("own service type"), "{out}");
   }
 
   #[test]
@@ -321,18 +250,21 @@ mod tests {
       struct CounterLive;
     };
     let out = derive2(input).to_string();
-    assert!(out.contains("Ok (Counter (42))"), "{out}");
+    assert!(
+      out.contains("let service : Counter = Counter (42)"),
+      "{out}"
+    );
     assert!(!out.contains("Self :: new"), "{out}");
   }
 
   #[test]
-  fn with_deps_closure_binds_env() {
+  fn with_deps_closure_is_rejected() {
     let input = quote! {
       #[provides(Repo, with = |deps: &Env| Repo::new(deps))]
       struct RepoLive;
     };
     let out = derive2(input).to_string();
-    assert!(out.contains("let deps : & Env = _deps"), "{out}");
+    assert!(out.contains("takes no arguments"), "{out}");
   }
 
   #[test]
@@ -346,21 +278,12 @@ mod tests {
   }
 
   #[test]
-  fn provides_rejects_unknown_key_and_multi_arg_closure() {
+  fn provides_rejects_unknown_key_and_trailing_tokens() {
     let bad_key = quote! {
       #[provides(Counter, make = Self::build)]
       struct CounterLive;
     };
     assert!(derive2(bad_key).to_string().contains("expected `with"));
-    let bad_closure = quote! {
-      #[provides(Counter, with = |a, b| a)]
-      struct CounterLive;
-    };
-    assert!(
-      derive2(bad_closure)
-        .to_string()
-        .contains("no arguments or one")
-    );
     let trailing = quote! {
       #[provides(Counter, with = Self::build, extra)]
       struct CounterLive;
@@ -369,29 +292,19 @@ mod tests {
   }
 
   #[test]
-  fn derive_emits_next_layer_fn() {
+  fn derive_emits_root_layer_paths() {
     let input = quote! {
       #[provides(Counter, with = || Counter(42))]
       struct CounterLive;
     };
     let out = derive2(input).to_string();
-    assert!(out.contains("impl CounterLive"), "{out}");
-    assert!(out.contains("pub fn layer < E"), "{out}");
-    assert!(
-      out.contains(":: id_effect :: next :: Layer :: effect"),
-      "{out}"
-    );
+    assert!(out.contains(":: id_effect :: Layer :: effect"), "{out}");
     // Bound with the service type so a concrete `Arc<T>` coerces to `Arc<dyn Trait>`.
     assert!(
-      out.contains("let service : Counter = Counter (42)"),
+      out.contains(":: id_effect :: HCons :: new (service"),
       "{out}"
     );
-    assert!(
-      out.contains(":: id_effect :: next :: HCons :: new (service"),
-      "{out}"
-    );
-    // The v1 impl is still emitted alongside.
-    assert!(out.contains("impl :: id_effect :: ProviderSpec for CounterLive"));
+    assert!(!out.contains(":: next ::"), "{out}");
   }
 
   #[test]
@@ -402,31 +315,11 @@ mod tests {
     };
     let out = derive2(input).to_string();
     assert!(
-      out.contains(":: id_effect :: next :: Layer :: acquire_release"),
+      out.contains(":: id_effect :: Layer :: acquire_release"),
       "{out}"
     );
     assert!(out.contains("(| p | close (p)) (out . 0)"), "{out}");
     assert!(out.contains("(Self :: open) ()"), "{out}");
-  }
-
-  #[test]
-  fn deps_constructor_emits_no_next_layer_and_rejects_release() {
-    let deps = quote! {
-      #[provides(Repo, with = |deps: &Env| Repo::new(deps))]
-      struct RepoLive;
-    };
-    let out = derive2(deps).to_string();
-    assert!(!out.contains("fn layer"), "{out}");
-    assert!(out.contains("impl :: id_effect :: ProviderSpec for RepoLive"));
-    let with_release = quote! {
-      #[provides(Repo, with = |deps: &Env| Repo::new(deps), release = |r| close(r))]
-      struct RepoLive;
-    };
-    assert!(
-      derive2(with_release)
-        .to_string()
-        .contains("`release` needs a constructor without `deps`")
-    );
   }
 
   #[test]

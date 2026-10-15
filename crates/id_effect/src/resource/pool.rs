@@ -1,584 +1,513 @@
-//! Managed resource pools — capacity gate, idle reuse, optional TTL, invalidation.
+//! `Pool` and `KeyedPool`: bounded, reusable resources checked out into a [`Scope`] (Effect.ts
+//! `Pool` / `KeyedPool`).
 //!
-//! Built from [`crate::coordination::semaphore::Semaphore`], [`crate::coordination::synchronized_ref::SynchronizedRef`], and
-//! [`crate::resource::scope::Scope`] finalizers (check-in on scope close). Waiting for capacity is the
-//! semaphore acquire; an idle slot becomes available when a prior checkout’s scope ends.
+//! A checkout ([`Pool::get`]) waits for capacity, then reuses an idle item or acquires a new
+//! one, and registers a finalizer on the caller's scope that checks the item back in. The
+//! check-in is a scope finalizer, so it runs however the scope closes: success, failure, defect
+//! or **interrupt**. Waiting for capacity is interruptible and never leaks capacity; acquiring
+//! a new item runs uninterruptibly (Effect.ts `acquireRelease`).
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::hash::Hash;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::coordination::semaphore::Semaphore;
-use crate::coordination::synchronized_ref::SynchronizedRef;
-use crate::kernel::{Effect, box_future};
-use crate::resource::scope::Scope;
-use crate::runtime::{Never, run_blocking};
+use super::gate::{Gate, Permit, interrupt_self, lock, under_any_env, with_now};
+use crate::failure::Never;
+use crate::next::capability::HNil;
+use crate::next::kernel::{Effect, succeed, suspend, uninterruptible_mask};
+use crate::next::scope::Scope;
 
-// ── Pool state ──────────────────────────────────────────────────────────────
+type AcquireFn<A, E, R> = Arc<dyn Fn() -> Effect<A, E, R> + Send + Sync>;
+type ReleaseFn<A> = Arc<dyn Fn(A) -> Effect<(), Never, HNil> + Send + Sync>;
 
-#[derive(Clone, Debug)]
-struct IdleSlot<A> {
+/// Runs `release` on each item in order (nothing when there is no release hook). Each hook is
+/// called inside a `Sync` step, so a panic becomes `Die`.
+fn release_all<A: Send + 'static>(
+  release: &Option<ReleaseFn<A>>,
+  items: Vec<A>,
+) -> Effect<(), Never, HNil> {
+  match release {
+    None => succeed(()),
+    Some(rel) => items.into_iter().fold(succeed(()), |acc, item| {
+      let rel = Arc::clone(rel);
+      acc.then(suspend(move || rel(item)))
+    }),
+  }
+}
+
+// ── Pool ────────────────────────────────────────────────────────────────────────────────────
+
+struct Idle<A> {
   value: A,
-  at: Instant,
+  since: Instant,
 }
 
-#[derive(Clone, Debug)]
 struct PoolState<A> {
-  idle: Vec<IdleSlot<A>>,
-  discard: Vec<A>,
+  /// Checked-in items, oldest first.
+  idle: VecDeque<Idle<A>>,
+  /// Checked-out items.
+  out: Vec<A>,
+  /// Checked-out items invalidated while out: released at check-in instead of reused.
+  invalid: Vec<A>,
+  shut: bool,
 }
 
-impl<A> Default for PoolState<A> {
-  fn default() -> Self {
-    Self {
-      idle: Vec::new(),
-      discard: Vec::new(),
-    }
-  }
+struct Shared<A> {
+  gate: Arc<Gate>,
+  state: Mutex<PoolState<A>>,
 }
 
-fn take_idle<A: Clone + PartialEq>(pool: &mut PoolState<A>, ttl: Option<Duration>) -> Option<A> {
-  let now = Instant::now();
-  while !pool.idle.is_empty() {
-    let slot = &pool.idle[0];
-    if ttl.is_some_and(|t| now.duration_since(slot.at) > t) {
-      pool.idle.remove(0);
-      continue;
-    }
-    if pool.discard.iter().any(|d| d == &slot.value) {
-      pool.idle.remove(0);
-      continue;
-    }
-    return Some(pool.idle.remove(0).value);
-  }
-  None
-}
-
-// ── Pool ────────────────────────────────────────────────────────────────────
-
-/// Fixed-capacity pool with reuse of returned values and optional TTL on idle slots.
-#[derive(Clone)]
-pub struct Pool<A: 'static, E: 'static> {
-  sem: Semaphore,
-  state: SynchronizedRef<PoolState<A>>,
-  factory: Arc<dyn Fn() -> Effect<A, E, ()> + Send + Sync>,
+/// A pool of at most `capacity` concurrently checked-out items, reusing checked-in ones
+/// (Effect.ts `Pool`).
+///
+/// Built with a plain constructor; clones share the pool. Items are compared with `PartialEq`
+/// for [`invalidate`](Self::invalidate), and handed out by clone, so a pooled connection is
+/// typically an `Arc` or a cheap handle.
+///
+/// ```
+/// use id_effect::Exit;
+/// use id_effect::next::{Effect, Pool, succeed};
+/// use id_effect::Never;
+///
+/// let pool: Pool<u32> = Pool::new(2, || succeed(7));
+/// let p = pool.clone();
+/// let eff: Effect<u32, Never> = Effect::scoped(move |scope| p.get(&scope));
+/// assert!(matches!(eff.block_on(), Exit::Success(7)));
+/// // The scope closed, so the item was checked back in.
+/// assert_eq!((pool.idle_count(), pool.in_use()), (1, 0));
+/// ```
+pub struct Pool<A, E = Never, R = HNil> {
+  shared: Arc<Shared<A>>,
+  acquire: AcquireFn<A, E, R>,
+  release: Option<ReleaseFn<A>>,
   ttl: Option<Duration>,
 }
 
-impl<A, E> Pool<A, E>
+impl<A, E, R> Clone for Pool<A, E, R> {
+  fn clone(&self) -> Self {
+    Self {
+      shared: Arc::clone(&self.shared),
+      acquire: Arc::clone(&self.acquire),
+      release: self.release.clone(),
+      ttl: self.ttl,
+    }
+  }
+}
+
+impl<A, E, R> std::fmt::Debug for Pool<A, E, R> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.shared.state);
+    f.debug_struct("Pool")
+      .field("capacity", &self.shared.gate.capacity())
+      .field("in_use", &self.shared.gate.in_use())
+      .field("idle", &st.idle.len())
+      .field("ttl", &self.ttl)
+      .field("shut", &st.shut)
+      .finish()
+  }
+}
+
+impl<A, E, R> Pool<A, E, R>
 where
-  A: Clone + PartialEq + Send + Sync + 'static,
-  E: Send + Sync + 'static,
+  A: Clone + PartialEq + Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  /// Build a pool with `capacity` concurrent checkouts and `factory` for new values.
-  pub fn make<F>(capacity: usize, factory: F) -> Effect<Self, Never, ()>
-  where
-    F: Fn() -> Effect<A, E, ()> + Send + Sync + 'static,
-  {
-    Effect::new(move |_r| {
-      let sem = run_blocking(Semaphore::make(capacity), ()).expect("pool semaphore");
-      let state =
-        run_blocking(SynchronizedRef::make(PoolState::default()), ()).expect("pool state");
-      Ok(Pool {
-        sem,
-        state,
-        factory: Arc::new(factory),
-        ttl: None,
+  /// A pool of at most `capacity` checked-out items; `acquire` builds a new item when no idle
+  /// one is available. A plain constructor: nothing is acquired until the first checkout.
+  pub fn new(
+    capacity: usize,
+    acquire: impl Fn() -> Effect<A, E, R> + Send + Sync + 'static,
+  ) -> Self {
+    Self::from_parts(capacity, Arc::new(acquire), None, None)
+  }
+
+  fn from_parts(
+    capacity: usize,
+    acquire: AcquireFn<A, E, R>,
+    release: Option<ReleaseFn<A>>,
+    ttl: Option<Duration>,
+  ) -> Self {
+    Self {
+      shared: Arc::new(Shared {
+        gate: Gate::new(capacity),
+        state: Mutex::new(PoolState {
+          idle: VecDeque::new(),
+          out: Vec::new(),
+          invalid: Vec::new(),
+          shut: false,
+        }),
+      }),
+      acquire,
+      release,
+      ttl,
+    }
+  }
+
+  /// Sets the hook that disposes of an item for good: when it is invalidated, expires, or the
+  /// pool shuts down. It runs uninterruptibly. Configure before cloning the pool.
+  #[must_use]
+  pub fn with_release(
+    mut self,
+    release: impl Fn(A) -> Effect<(), Never, HNil> + Send + Sync + 'static,
+  ) -> Self {
+    self.release = Some(Arc::new(release));
+    self
+  }
+
+  /// Idle items checked in more than `ttl` ago (on the executor clock) are released instead of
+  /// reused at the next checkout. Configure before cloning the pool.
+  #[must_use]
+  pub fn with_ttl(mut self, ttl: Duration) -> Self {
+    self.ttl = Some(ttl);
+    self
+  }
+
+  /// The maximum number of concurrently checked-out items.
+  pub fn capacity(&self) -> usize {
+    self.shared.gate.capacity()
+  }
+
+  /// Items currently checked out (or being acquired).
+  pub fn in_use(&self) -> usize {
+    self.shared.gate.in_use()
+  }
+
+  /// Checked-in items ready for reuse.
+  pub fn idle_count(&self) -> usize {
+    lock(&self.shared.state).idle.len()
+  }
+
+  /// Fibers currently waiting for capacity.
+  pub fn waiting(&self) -> usize {
+    self.shared.gate.waiting()
+  }
+
+  /// `true` once [`shutdown`](Self::shutdown) has run.
+  pub fn is_shutdown(&self) -> bool {
+    lock(&self.shared.state).shut
+  }
+
+  /// Checks an item out into `scope` (Effect.ts `Pool.get`).
+  ///
+  /// Waits (interruptibly) until fewer than `capacity` items are out, then reuses the oldest
+  /// fresh idle item or runs `acquire` (uninterruptibly). When `scope` closes, however it
+  /// closes, interrupt included, the item is checked back in, or released if it was
+  /// [invalidated](Self::invalidate) or the pool has shut down. A failing `acquire` gives the
+  /// capacity back. On a shut-down pool the checkout is interrupted.
+  pub fn get(&self, scope: &Scope) -> Effect<A, E, R> {
+    let pool = self.clone();
+    let scope = scope.clone();
+    uninterruptible_mask(move |restore| {
+      restore
+        .apply(pool.shared.gate.acquire())
+        .flat_map(move |permit| match permit {
+          None => interrupt_self(),
+          Some(permit) => with_now(move |now| pool.checkout(permit, scope, now)),
+        })
+    })
+  }
+
+  /// The masked part of a checkout, holding `permit`.
+  fn checkout(self, permit: Permit, scope: Scope, now: Instant) -> Effect<A, E, R> {
+    let (item, stale, shut) = {
+      let mut st = lock(&self.shared.state);
+      let mut stale = Vec::new();
+      let mut item = None;
+      while let Some(slot) = st.idle.pop_front() {
+        if self
+          .ttl
+          .is_some_and(|ttl| now.saturating_duration_since(slot.since) >= ttl)
+        {
+          stale.push(slot.value);
+        } else {
+          item = Some(slot.value);
+          break;
+        }
+      }
+      (item, stale, st.shut)
+    };
+    if shut {
+      drop(permit);
+      return under_any_env(release_all(
+        &self.release,
+        item.into_iter().chain(stale).collect(),
+      ))
+      .widen()
+      .flat_map(|()| interrupt_self());
+    }
+    let acquire = Arc::clone(&self.acquire);
+    let item_eff: Effect<A, E, R> = match item {
+      Some(a) => succeed(a),
+      None => suspend(move || acquire()),
+    };
+    under_any_env(release_all(&self.release, stale))
+      .widen()
+      .flat_map(move |()| item_eff)
+      .flat_map(move |item| {
+        lock(&self.shared.state).out.push(item.clone());
+        let fin = self.check_in(item.clone(), permit);
+        scope.add_finalizer(fin).map(move |()| item)
       })
-    })
   }
 
-  /// Same as [`Self::make`], but idle slots older than `ttl` are discarded on checkout.
-  pub fn make_with_ttl<F>(capacity: usize, ttl: Duration, factory: F) -> Effect<Self, Never, ()>
-  where
-    F: Fn() -> Effect<A, E, ()> + Send + Sync + 'static,
-  {
-    Pool::make(capacity, factory).map(move |mut p| {
-      p.ttl = Some(ttl);
-      p
-    })
-  }
-
-  /// Mark `item` as not reusable; removes matching entries from the idle list. If the item is
-  /// still checked out, it will not be returned to the idle list when its scope closes.
-  pub fn invalidate(&self, item: A) -> Effect<(), Never, ()> {
-    let state = self.state.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let _ = run_blocking(
-          state.update(move |mut p| {
-            p.discard.push(item.clone());
-            p.idle.retain(|s| s.value != item);
-            p
-          }),
-          (),
-        );
-        Ok(())
-      })
-    })
-  }
-
-  /// Checkout a value: acquires capacity, then reuses an idle slot (respecting TTL) or runs
-  /// `factory`. When the caller’s [`Scope`] closes, the value is returned to the idle list unless
-  /// it was [`Self::invalidate`].
-  pub fn get(&self) -> Effect<A, E, Scope> {
-    let sem = self.sem.clone();
-    let state = self.state.clone();
-    let factory = Arc::clone(&self.factory);
-    let ttl = self.ttl;
-    Effect::new_async(move |scope: &mut Scope| {
-      let scope = scope.clone();
-      box_future(async move {
-        let mut acquire_env = scope.clone();
-        let _p = sem
-          .acquire()
-          .run(&mut acquire_env)
-          .await
-          .expect("semaphore acquire");
-
-        let item = {
-          let taken = run_blocking(
-            state.modify(move |mut st| {
-              let v = take_idle(&mut st, ttl);
-              (v, st)
-            }),
-            (),
-          )
-          .expect("pool modify");
-          match taken {
-            Some(a) => a,
-            None => factory().run(&mut ()).await?,
+  /// The check-in finalizer: back to the idle list, or released when invalidated / shut down.
+  /// The permit is given back last, so a waiter it wakes finds the item idle.
+  fn check_in(&self, item: A, permit: Permit) -> Effect<(), Never, HNil> {
+    let shared = Arc::clone(&self.shared);
+    let release = self.release.clone();
+    with_now(move |now| {
+      let dispose = {
+        let mut st = lock(&shared.state);
+        if let Some(pos) = st.out.iter().position(|a| *a == item) {
+          st.out.swap_remove(pos);
+        }
+        let invalid = match st.invalid.iter().position(|a| *a == item) {
+          Some(pos) => {
+            st.invalid.swap_remove(pos);
+            true
           }
+          None => false,
         };
-
-        let state_fin = state.clone();
-        let item_fin = item.clone();
-        let fin_scope = scope.clone();
-        let _ = fin_scope.add_finalizer(Box::new(move |_exit| {
-          let st = state_fin.clone();
-          let val = item_fin.clone();
-          Effect::new_async(move |_r: &mut ()| {
-            box_future(async move {
-              run_blocking(
-                st.update(move |mut p| {
-                  if !p.discard.iter().any(|d| d == &val) {
-                    p.idle.push(IdleSlot {
-                      value: val,
-                      at: Instant::now(),
-                    });
-                  }
-                  p
-                }),
-                (),
-              )
-              .expect("pool check-in");
-              Ok::<(), Never>(())
-            })
-          })
-        }));
-
-        Ok(item)
-      })
-    })
-  }
-}
-
-// ── Keyed pool ──────────────────────────────────────────────────────────────
-
-#[derive(Clone, Debug)]
-struct KeyedPoolState<K, A> {
-  per_key: HashMap<K, Vec<IdleSlot<A>>>,
-  discard: Vec<(K, A)>,
-}
-
-impl<K, A> Default for KeyedPoolState<K, A> {
-  fn default() -> Self {
-    Self {
-      per_key: HashMap::new(),
-      discard: Vec::new(),
-    }
-  }
-}
-
-fn take_idle_keyed<K: Clone + Eq + std::hash::Hash, A: Clone + PartialEq>(
-  st: &mut KeyedPoolState<K, A>,
-  key: &K,
-  ttl: Option<Duration>,
-) -> Option<A> {
-  let now = Instant::now();
-  let slots = st.per_key.get_mut(key)?;
-  while !slots.is_empty() {
-    let slot = &slots[0];
-    if ttl.is_some_and(|t| now.duration_since(slot.at) > t) {
-      slots.remove(0);
-      continue;
-    }
-    if st.discard.iter().any(|(k, a)| k == key && a == &slot.value) {
-      slots.remove(0);
-      continue;
-    }
-    let v = slots.remove(0).value;
-    if slots.is_empty() {
-      st.per_key.remove(key);
-    }
-    return Some(v);
-  }
-  st.per_key.remove(key);
-  None
-}
-
-/// Pool partitioned by key; total concurrent checkouts across all keys is bounded by `capacity`.
-#[derive(Clone)]
-pub struct KeyedPool<K: 'static, A: 'static, E: 'static> {
-  sem: Semaphore,
-  state: SynchronizedRef<KeyedPoolState<K, A>>,
-  factory: Arc<dyn Fn(K) -> Effect<A, E, ()> + Send + Sync>,
-  ttl: Option<Duration>,
-}
-
-impl<K, A, E> KeyedPool<K, A, E>
-where
-  K: Clone + Eq + std::hash::Hash + Send + Sync + 'static,
-  A: Clone + PartialEq + Send + Sync + 'static,
-  E: Send + Sync + 'static,
-{
-  /// Build a keyed pool with global `capacity` and per-key `factory` for new values.
-  pub fn make<F>(capacity: usize, factory: F) -> Effect<Self, Never, ()>
-  where
-    F: Fn(K) -> Effect<A, E, ()> + Send + Sync + 'static,
-  {
-    Effect::new(move |_r| {
-      let sem = run_blocking(Semaphore::make(capacity), ()).expect("keyed pool semaphore");
-      let state =
-        run_blocking(SynchronizedRef::make(KeyedPoolState::default()), ()).expect("keyed state");
-      Ok(KeyedPool {
-        sem,
-        state,
-        factory: Arc::new(factory),
-        ttl: None,
-      })
+        if invalid || st.shut {
+          Some(item)
+        } else {
+          st.idle.push_back(Idle {
+            value: item,
+            since: now,
+          });
+          None
+        }
+      };
+      release_all(&release, dispose.into_iter().collect()).map(move |()| drop(permit))
     })
   }
 
-  /// Same as [`Self::make`], but idle slots older than `ttl` are discarded on checkout.
-  pub fn make_with_ttl<F>(capacity: usize, ttl: Duration, factory: F) -> Effect<Self, Never, ()>
-  where
-    F: Fn(K) -> Effect<A, E, ()> + Send + Sync + 'static,
-  {
-    KeyedPool::make(capacity, factory).map(move |mut p| {
-      p.ttl = Some(ttl);
-      p
-    })
-  }
-
-  /// Mark `(key, item)` as not reusable for that key; drops matching idle entries.
-  pub fn invalidate(&self, key: K, item: A) -> Effect<(), Never, ()> {
-    let state = self.state.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let _ = run_blocking(
-          state.update(move |mut st| {
-            st.discard.push((key.clone(), item.clone()));
-            if let Some(slots) = st.per_key.get_mut(&key) {
-              slots.retain(|s| s.value != item);
-              if slots.is_empty() {
-                st.per_key.remove(&key);
-              }
+  /// Marks `item` as unusable (Effect.ts `Pool.invalidate`): idle copies are released now, and
+  /// a checked-out copy is released at check-in instead of being reused.
+  pub fn invalidate<E2: Send + 'static, R2: Send + Sync + 'static>(
+    &self,
+    item: &A,
+  ) -> Effect<(), E2, R2> {
+    let shared = Arc::clone(&self.shared);
+    let release = self.release.clone();
+    let item = item.clone();
+    under_any_env(
+      suspend(move || {
+        let dropped = {
+          let mut st = lock(&shared.state);
+          let mut dropped = Vec::new();
+          st.idle.retain(|slot| {
+            if slot.value == item {
+              dropped.push(slot.value.clone());
+              false
+            } else {
+              true
             }
-            st
-          }),
-          (),
-        );
-        Ok(())
+          });
+          if st.out.contains(&item) && !st.invalid.contains(&item) {
+            st.invalid.push(item);
+          }
+          dropped
+        };
+        release_all(&release, dropped)
       })
-    })
+      .widen(),
+    )
   }
 
-  /// Checkout a value for `key`: acquires global capacity, then reuses idle or runs `factory`.
-  pub fn get(&self, key: K) -> Effect<A, E, Scope> {
-    let sem = self.sem.clone();
-    let state = self.state.clone();
-    let factory = Arc::clone(&self.factory);
-    let ttl = self.ttl;
-    Effect::new_async(move |scope: &mut Scope| {
-      let scope = scope.clone();
-      let key_for_fin = key.clone();
-      box_future(async move {
-        let mut acquire_env = scope.clone();
-        let _p = sem
-          .acquire()
-          .run(&mut acquire_env)
-          .await
-          .expect("semaphore acquire");
-
-        let item = {
-          let key_borrow = key.clone();
-          let taken = run_blocking(
-            state.modify(move |mut st| {
-              let v = take_idle_keyed(&mut st, &key_borrow, ttl);
-              (v, st)
-            }),
-            (),
-          )
-          .expect("keyed pool modify");
-          match taken {
-            Some(a) => a,
-            None => factory(key).run(&mut ()).await?,
-          }
-        };
-
-        let state_fin = state.clone();
-        let item_fin = item.clone();
-        let kfin = key_for_fin.clone();
-        let fin_scope = scope.clone();
-        let _ = fin_scope.add_finalizer(Box::new(move |_exit| {
-          let st = state_fin.clone();
-          let val = item_fin.clone();
-          let k = kfin.clone();
-          Effect::new_async(move |_r: &mut ()| {
-            box_future(async move {
-              run_blocking(
-                st.update(move |mut p| {
-                  if !p.discard.iter().any(|(dk, da)| dk == &k && da == &val) {
-                    p.per_key.entry(k.clone()).or_default().push(IdleSlot {
-                      value: val,
-                      at: Instant::now(),
-                    });
-                  }
-                  p
-                }),
-                (),
-              )
-              .expect("keyed pool check-in");
-              Ok::<(), Never>(())
-            })
-          })
-        }));
-
-        Ok(item)
-      })
+  /// Shuts the pool down: idle items are released, waiters and later checkouts are
+  /// interrupted, and items still out are released when they are checked in. Idempotent.
+  ///
+  /// The effect is `HNil` and infallible, so it can be registered as a scope finalizer
+  /// (`scope.add_finalizer(pool.shutdown())`) to tie the pool's lifetime to a scope.
+  pub fn shutdown(&self) -> Effect<(), Never, HNil> {
+    let shared = Arc::clone(&self.shared);
+    let release = self.release.clone();
+    suspend(move || {
+      let idle = {
+        let mut st = lock(&shared.state);
+        st.shut = true;
+        st.idle.drain(..).map(|slot| slot.value).collect()
+      };
+      shared.gate.close();
+      release_all(&release, idle)
     })
+    .uninterruptible()
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::kernel::succeed;
-  use crate::runtime::run_async;
-  use std::sync::atomic::{AtomicUsize, Ordering};
-  use std::sync::mpsc;
-  use std::thread;
+// ── KeyedPool ───────────────────────────────────────────────────────────────────────────────
 
-  #[tokio::test]
-  async fn pool_get_blocks_when_exhausted() {
-    let factory_calls = Arc::new(AtomicUsize::new(0));
-    let fc = factory_calls.clone();
-    let pool = run_blocking(
-      Pool::make(1, move || {
-        fc.fetch_add(1, Ordering::SeqCst);
-        succeed::<u32, (), ()>(7)
-      }),
-      (),
-    )
-    .expect("make pool");
+type KeyedAcquireFn<K, A, E, R> = Arc<dyn Fn(K) -> Effect<A, E, R> + Send + Sync>;
+type CapacityFn<K> = Arc<dyn Fn(&K) -> usize + Send + Sync>;
 
-    let (tx, rx) = mpsc::channel::<()>();
-    let pool_t = pool.clone();
-    let th = thread::spawn(move || {
-      let scope = Scope::make();
-      pollster::block_on(run_async(pool_t.get(), scope.clone())).expect("get");
-      tx.send(()).expect("signal");
-      thread::sleep(Duration::from_millis(120));
-      scope.close();
+struct KeyedState<K, A, E, R> {
+  pools: HashMap<K, Pool<A, E, R>>,
+  shut: bool,
+}
+
+/// A pool partitioned by key: each key has its own [`Pool`] of `capacity` items, created on
+/// first use (Effect.ts `KeyedPool`). Checking out under one key never waits on another.
+///
+/// ```
+/// use id_effect::Exit;
+/// use id_effect::next::{Effect, KeyedPool, succeed};
+/// use id_effect::Never;
+///
+/// let pool: KeyedPool<&str, String> = KeyedPool::new(1, |k: &str| succeed(format!("conn-{k}")));
+/// let p = pool.clone();
+/// let eff: Effect<(String, String), Never> =
+///   Effect::scoped(move |scope| p.get("a", &scope).zip(p.get("b", &scope)));
+/// assert!(matches!(eff.block_on(), Exit::Success((a, b)) if a == "conn-a" && b == "conn-b"));
+/// ```
+pub struct KeyedPool<K, A, E = Never, R = HNil> {
+  state: Arc<Mutex<KeyedState<K, A, E, R>>>,
+  capacity: CapacityFn<K>,
+  acquire: KeyedAcquireFn<K, A, E, R>,
+  release: Option<ReleaseFn<A>>,
+  ttl: Option<Duration>,
+}
+
+impl<K, A, E, R> Clone for KeyedPool<K, A, E, R> {
+  fn clone(&self) -> Self {
+    Self {
+      state: Arc::clone(&self.state),
+      capacity: Arc::clone(&self.capacity),
+      acquire: Arc::clone(&self.acquire),
+      release: self.release.clone(),
+      ttl: self.ttl,
+    }
+  }
+}
+
+impl<K, A, E, R> std::fmt::Debug for KeyedPool<K, A, E, R> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.state);
+    f.debug_struct("KeyedPool")
+      .field("keys", &st.pools.len())
+      .field("ttl", &self.ttl)
+      .field("shut", &st.shut)
+      .finish()
+  }
+}
+
+impl<K, A, E, R> KeyedPool<K, A, E, R>
+where
+  K: Clone + Eq + Hash + Send + Sync + 'static,
+  A: Clone + PartialEq + Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  /// A keyed pool with `capacity` items per key; `acquire(key)` builds a new item for a key.
+  /// A plain constructor: nothing is acquired until the first checkout.
+  pub fn new(
+    capacity: usize,
+    acquire: impl Fn(K) -> Effect<A, E, R> + Send + Sync + 'static,
+  ) -> Self {
+    Self::new_with(move |_| capacity, acquire)
+  }
+
+  /// A keyed pool whose per-key capacity is `capacity(&key)` (Effect.ts `KeyedPool.makeWith`).
+  pub fn new_with(
+    capacity: impl Fn(&K) -> usize + Send + Sync + 'static,
+    acquire: impl Fn(K) -> Effect<A, E, R> + Send + Sync + 'static,
+  ) -> Self {
+    Self {
+      state: Arc::new(Mutex::new(KeyedState {
+        pools: HashMap::new(),
+        shut: false,
+      })),
+      capacity: Arc::new(capacity),
+      acquire: Arc::new(acquire),
+      release: None,
+      ttl: None,
+    }
+  }
+
+  /// See [`Pool::with_release`]; applies to every key. Configure before the first checkout.
+  #[must_use]
+  pub fn with_release(
+    mut self,
+    release: impl Fn(A) -> Effect<(), Never, HNil> + Send + Sync + 'static,
+  ) -> Self {
+    self.release = Some(Arc::new(release));
+    self
+  }
+
+  /// See [`Pool::with_ttl`]; applies to every key. Configure before the first checkout.
+  #[must_use]
+  pub fn with_ttl(mut self, ttl: Duration) -> Self {
+    self.ttl = Some(ttl);
+    self
+  }
+
+  /// The pool for `key`, created on first use (`None` once shut down).
+  fn pool_for(&self, key: &K) -> Option<Pool<A, E, R>> {
+    let mut st = lock(&self.state);
+    if st.shut {
+      return None;
+    }
+    let pool = st.pools.entry(key.clone()).or_insert_with(|| {
+      let acquire = Arc::clone(&self.acquire);
+      let k = key.clone();
+      Pool::from_parts(
+        (self.capacity)(key),
+        Arc::new(move || acquire(k.clone())),
+        self.release.clone(),
+        self.ttl,
+      )
     });
-    rx.recv().expect("peer hold");
-
-    let scope_m = Scope::make();
-    let start = Instant::now();
-    run_async(pool.get(), scope_m.clone())
-      .await
-      .expect("second get");
-    assert!(
-      start.elapsed() >= Duration::from_millis(50),
-      "expected second get to block until first scope closed"
-    );
-    scope_m.close();
-    th.join().expect("thread");
-    assert_eq!(factory_calls.load(Ordering::SeqCst), 1);
+    Some(pool.clone())
   }
 
-  #[tokio::test]
-  async fn pool_item_released_on_scope_close() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      Pool::make(2, move || {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<u32, (), ()>(42)
-      }),
-      (),
-    )
-    .expect("pool");
-
-    let s1 = Scope::make();
-    let _ = run_async(pool.get(), s1.clone()).await.expect("g1");
-    s1.close();
-    let s2 = Scope::make();
-    let _ = run_async(pool.get(), s2.clone()).await.expect("g2");
-    s2.close();
-
-    assert_eq!(
-      fc.load(Ordering::SeqCst),
-      1,
-      "factory should run once; second get reuses idle"
-    );
+  /// Checks an item for `key` out into `scope`; see [`Pool::get`].
+  pub fn get(&self, key: K, scope: &Scope) -> Effect<A, E, R> {
+    let this = self.clone();
+    let scope = scope.clone();
+    suspend(move || match this.pool_for(&key) {
+      Some(pool) => pool.get(&scope),
+      None => interrupt_self(),
+    })
   }
 
-  #[tokio::test]
-  async fn pool_invalidate_forces_remake_on_next_get() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      Pool::make(2, move || {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<u32, (), ()>(100 + fc2.load(Ordering::SeqCst) as u32)
-      }),
-      (),
-    )
-    .expect("pool");
-
-    let s = Scope::make();
-    let v = run_async(pool.get(), s.clone()).await.expect("get");
-    run_blocking(pool.invalidate(v), ()).expect("invalidate");
-    s.close();
-
-    let s2 = Scope::make();
-    let v2 = run_async(pool.get(), s2.clone()).await.expect("get2");
-    assert_ne!(v, v2);
-    assert_eq!(fc.load(Ordering::SeqCst), 2);
-    s2.close();
+  /// Marks `item` of `key` as unusable; see [`Pool::invalidate`].
+  pub fn invalidate<E2: Send + 'static, R2: Send + Sync + 'static>(
+    &self,
+    key: &K,
+    item: &A,
+  ) -> Effect<(), E2, R2> {
+    let pool = lock(&self.state).pools.get(key).cloned();
+    match pool {
+      Some(pool) => pool.invalidate(item),
+      None => succeed(()),
+    }
   }
 
-  #[tokio::test]
-  async fn keyed_pool_isolates_keys_by_factory_calls() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      KeyedPool::make(4, move |k: &'static str| {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<String, (), ()>(format!("{k}-{}", fc2.load(Ordering::SeqCst)))
-      }),
-      (),
-    )
-    .expect("keyed");
-
-    let sa = Scope::make();
-    let sb = Scope::make();
-    let _ = run_async(pool.get("a"), sa.clone()).await.unwrap();
-    let _ = run_async(pool.get("b"), sb.clone()).await.unwrap();
-    sa.close();
-    sb.close();
-
-    assert_eq!(fc.load(Ordering::SeqCst), 2);
-
-    let sa2 = Scope::make();
-    let v = run_async(pool.get("a"), sa2.clone()).await.unwrap();
-    assert!(v.starts_with("a-"));
-    sa2.close();
-    assert_eq!(fc.load(Ordering::SeqCst), 2, "reuse for key a");
+  /// Items of `key` currently checked out.
+  pub fn in_use(&self, key: &K) -> usize {
+    lock(&self.state).pools.get(key).map_or(0, Pool::in_use)
   }
 
-  // ── Pool::make_with_ttl ───────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn pool_make_with_ttl_evicts_stale_idle_slot() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      Pool::make_with_ttl(2, Duration::from_millis(20), move || {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<u32, (), ()>(fc2.load(Ordering::SeqCst) as u32)
-      }),
-      (),
-    )
-    .expect("pool with ttl");
-
-    let s1 = Scope::make();
-    let _ = run_async(pool.get(), s1.clone()).await.expect("get1");
-    s1.close();
-
-    // Wait for TTL to expire
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let s2 = Scope::make();
-    let _ = run_async(pool.get(), s2.clone()).await.expect("get2");
-    s2.close();
-
-    assert_eq!(
-      fc.load(Ordering::SeqCst),
-      2,
-      "stale idle slot should be discarded, factory called again"
-    );
+  /// Idle items of `key`.
+  pub fn idle_count(&self, key: &K) -> usize {
+    lock(&self.state).pools.get(key).map_or(0, Pool::idle_count)
   }
 
-  // ── KeyedPool::make_with_ttl ──────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn keyed_pool_make_with_ttl_evicts_stale_idle_slot() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      KeyedPool::make_with_ttl(4, Duration::from_millis(20), move |_k: &'static str| {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<u32, (), ()>(fc2.load(Ordering::SeqCst) as u32)
-      }),
-      (),
-    )
-    .expect("keyed pool with ttl");
-
-    let s1 = Scope::make();
-    let _ = run_async(pool.get("key"), s1.clone()).await.expect("get1");
-    s1.close();
-
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    let s2 = Scope::make();
-    let _ = run_async(pool.get("key"), s2.clone()).await.expect("get2");
-    s2.close();
-
-    assert_eq!(
-      fc.load(Ordering::SeqCst),
-      2,
-      "stale idle slot for keyed pool should be discarded"
-    );
-  }
-
-  // ── KeyedPool::invalidate ─────────────────────────────────────────────────
-
-  #[tokio::test]
-  async fn keyed_pool_invalidate_forces_factory_on_next_get() {
-    let fc = Arc::new(AtomicUsize::new(0));
-    let fc2 = fc.clone();
-    let pool = run_blocking(
-      KeyedPool::make(4, move |k: &'static str| {
-        fc2.fetch_add(1, Ordering::SeqCst);
-        succeed::<String, (), ()>(format!("{}-{}", k, fc2.load(Ordering::SeqCst)))
-      }),
-      (),
-    )
-    .expect("keyed pool");
-
-    let s1 = Scope::make();
-    let v = run_async(pool.get("x"), s1.clone()).await.expect("get1");
-    run_blocking(pool.invalidate("x", v.clone()), ()).expect("invalidate");
-    s1.close();
-
-    let s2 = Scope::make();
-    let v2 = run_async(pool.get("x"), s2.clone()).await.expect("get2");
-    s2.close();
-
-    assert_ne!(v, v2, "invalidated item should not be reused");
-    assert_eq!(fc.load(Ordering::SeqCst), 2, "factory should run twice");
+  /// Shuts every key's pool down; see [`Pool::shutdown`]. Later checkouts are interrupted.
+  pub fn shutdown(&self) -> Effect<(), Never, HNil> {
+    let state = Arc::clone(&self.state);
+    suspend(move || {
+      let pools: Vec<Pool<A, E, R>> = {
+        let mut st = lock(&state);
+        st.shut = true;
+        st.pools.values().cloned().collect()
+      };
+      pools
+        .iter()
+        .fold(succeed(()), |acc, pool| acc.then(pool.shutdown()))
+    })
+    .uninterruptible()
   }
 }

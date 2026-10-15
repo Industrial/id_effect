@@ -542,9 +542,11 @@ fn fork_daemon_inherits_fiber_refs_at_fork_time() {
 
 /// Fiber state (refs included) never lives in thread-locals. `testing/` is skipped: the
 /// test-only `TestExecutor` keeps its `spawn_local` task table (executor state, not fiber state)
-/// in one, owned by its driving thread.
+/// in one, owned by its driving thread. Of `compute/` only the kernel's `Fabric`
+/// (`kernel_fabric.rs`) is scanned: the feature-gated Compute Fabric substrate keeps its
+/// per-thread adaptive context there (no fiber state).
 #[test]
-fn next_has_no_thread_locals() {
+fn kernel_has_no_thread_locals() {
   fn scan(dir: &std::path::Path, hits: &mut Vec<String>) {
     for entry in std::fs::read_dir(dir).expect("read_dir") {
       let path = entry.expect("entry").path();
@@ -553,6 +555,8 @@ fn next_has_no_thread_locals() {
           continue;
         }
         scan(&path, hits);
+      } else if dir.ends_with("compute") && !path.ends_with("kernel_fabric.rs") {
+        continue;
       } else if path.extension().is_some_and(|e| e == "rs") {
         let src = std::fs::read_to_string(&path).expect("read");
         if src.contains(concat!("thread", "_local")) {
@@ -563,8 +567,8 @@ fn next_has_no_thread_locals() {
   }
   let mut hits = Vec::new();
   scan(
-    &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/next"),
+    &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
     &mut hits,
   );
-  assert!(hits.is_empty(), "thread-locals in next: {hits:?}");
+  assert!(hits.is_empty(), "thread-locals in the kernel: {hits:?}");
 }

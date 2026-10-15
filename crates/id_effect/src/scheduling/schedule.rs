@@ -1,1020 +1,669 @@
-//! Effect.ts-style scheduling policies for `repeat` / `retry`.
+//! The immutable `Schedule<Out, In>` (Effect.ts `Schedule`) and the `retry` / `repeat` family on
+//! [`Effect`]. Filled by `p-schedule`.
 //!
-//! This module keeps API names familiar (`recurs`, `spaced`, `exponential`, `compose`, `jittered`)
-//! while staying runtime-agnostic.
+//! # Model
+//!
+//! A [`Schedule<Out, In>`] is an immutable, cheaply cloneable *description* of a recurrence. It
+//! owns no mutable state: every run starts from [`Schedule::start`] (a fresh, opaque
+//! [`ScheduleState`]) and threads that state through [`Schedule::step`], which takes the current
+//! clock instant and the input (the error for `retry`, the value for `repeat`) and returns a
+//! [`ScheduleStep`]: the next state, an output, and either the delay before the next recurrence
+//! or "done". One schedule value can drive any number of concurrent runs.
+//!
+//! As in Effect.ts:
+//!
+//! - [`Effect::retry`] runs the effect once, and after each typed failure steps the schedule
+//!   with the error: on "continue" it sleeps the delay and tries again, on "done" it fails with
+//!   the last error. Defects and interrupts are never retried.
+//! - [`Effect::repeat`] runs the effect once, and after each success steps the schedule with the
+//!   value: on "continue" it sleeps and runs again, on "done" it succeeds with the schedule's
+//!   last output. A failure stops the repetition.
+//! - `recurs(n)` allows `n` recurrences (so `n + 1` attempts), `exponential(base)` delays
+//!   `base * 2^k` for the `k`-th recurrence (`k = 0, 1, ..`), `union` continues while either side
+//!   does (shorter delay), `intersect` while both do (longer delay).
+//!
+//! Delays are slept on the running fiber's executor clock, so they are virtual time on
+//! `TestExecutor`; a zero delay recurs without touching the timer. Durations are
+//! `std::time::Duration` (Q4).
+//!
+//! # Re-running an effect
+//!
+//! A `next` [`Effect`] is a single-shot value (its steps are `FnOnce`), so it cannot be re-run
+//! as an Effect.ts effect can. `retry` / `repeat` are therefore associated functions on `Effect`
+//! that take the effect's *factory* (`Fn() -> Effect`), called once per attempt and only when the
+//! attempt starts: `Effect::retry(|| fetch(id), schedule)`. There are no free `retry` / `repeat`
+//! functions.
+//!
+//! # Jitter source (seam for `p-random`)
+//!
+//! [`Schedule::jittered`] needs randomness. Until the `Random` capability lands, it draws from a
+//! small internal SplitMix64 generator seeded per run by a [`JitterSource`]: by default
+//! [`JitterSource::entropy`] (std's randomly keyed hasher, no new dependency); tests pass
+//! [`JitterSource::seeded`] to [`Schedule::jittered_with`] for a reproducible sequence.
+//! `p-random` can plug its generator in through [`JitterSource::from_fn`] (or swap the default
+//! inside `jittered`) without changing the `Schedule` API.
+//!
+//! ```
+//! use std::sync::Arc;
+//! use std::sync::atomic::{AtomicU32, Ordering};
+//! use std::time::Duration;
+//!
+//! use id_effect::Exit;
+//! use id_effect::next::{Effect, Schedule, fail, succeed};
+//!
+//! let tries = Arc::new(AtomicU32::new(0));
+//! let t = Arc::clone(&tries);
+//! let eff: Effect<u32, &str> = Effect::retry(
+//!   move || {
+//!     let n = t.fetch_add(1, Ordering::SeqCst);
+//!     if n < 2 { fail("boom") } else { succeed(n) }
+//!   },
+//!   Schedule::exponential(Duration::from_millis(1)).intersect(Schedule::recurs(3)),
+//! );
+//! assert!(matches!(eff.block_on(), Exit::Success(2)));
+//! assert_eq!(tries.load(Ordering::SeqCst), 3);
+//! ```
 
-use core::fmt;
-use core::time::Duration;
+use std::any::Any;
+use std::fmt;
+use std::future::ready;
+use std::hash::{BuildHasher, RandomState};
+use std::marker::PhantomData;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
-use crate::foundation::func::{compose, identity};
-use crate::observability::metric::Metric;
-use crate::runtime::{CancellationToken, ThreadSleepRuntime, check_interrupt};
-use crate::scheduling::duration::duration;
-use crate::schema::order::order;
-use crate::{Clock, Effect, LiveClock, Never, Predicate};
+use crate::next::kernel::{Ctx, Effect, fail, sleep, succeed, suspend};
 
-/// Inputs passed to a [`Schedule`] on each step (e.g. retry / repeat attempt index).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ScheduleInput {
-  /// Monotonic attempt counter (0-based where used by [`repeat`](crate::scheduling::schedule::repeat) / [`retry`](crate::scheduling::schedule::retry)).
-  pub attempt: u64,
-}
+// ── state and step ──────────────────────────────────────────────────────────────────────────
 
-/// One scheduling step: how long to wait before the next iteration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ScheduleDecision {
-  /// Sleep duration before the next attempt (may be zero).
-  pub delay: Duration,
-}
+/// The opaque per-run state of a [`Schedule`], created by [`Schedule::start`] and threaded
+/// through [`Schedule::step`]. It belongs to the schedule that created it.
+pub struct ScheduleState(Box<dyn Any + Send>);
 
-impl ScheduleDecision {
-  /// Decision to continue after sleeping for `delay`.
-  #[inline]
-  pub fn continue_after(delay: Duration) -> Self {
-    Self { delay }
+impl ScheduleState {
+  fn new<S: Send + 'static>(s: S) -> Self {
+    Self(Box::new(s))
+  }
+
+  fn take<S: 'static>(self) -> S {
+    match self.0.downcast::<S>() {
+      Ok(s) => *s,
+      Err(_) => panic!("ScheduleState stepped by a schedule that did not create it"),
+    }
   }
 }
 
-type DelayMap = Arc<dyn Fn(Duration) -> Duration + Send + Sync>;
-type InputMap = Arc<dyn Fn(ScheduleInput) -> ScheduleInput + Send + Sync>;
-type SchedulePred = Arc<dyn Fn(&ScheduleInput) -> bool + Send + Sync>;
-
-/// Scheduling policy for [`repeat`] / [`retry`].
-///
-/// `Predicate`- and `Arc`-backed variants are not compared for equality; use runtime behavior via [`Schedule::next`].
-#[derive(Clone)]
-pub enum Schedule {
-  /// Repeat up to `remaining` more times with zero delay between steps.
-  Recurs {
-    /// Steps left before [`Schedule::next`] returns `None`.
-    remaining: u64,
-  },
-  /// Fixed delay `interval` on every step.
-  Spaced {
-    /// Delay between attempts.
-    interval: Duration,
-  },
-  /// Delays grow as `base * 2^step` per call to [`Schedule::next`] (step tracked internally).
-  Exponential {
-    /// Initial delay; doubled each step (capped).
-    base: Duration,
-    /// Internal exponent counter (starts at 0).
-    step: u32,
-  },
-  /// Combine two schedules: continue while both produce a step; delay is the max of the two.
-  Compose(Box<Schedule>, Box<Schedule>),
-  /// Scale the inner schedule’s delay by 90% (deterministic jitter helper).
-  Jittered(Box<Schedule>),
-  /// Continue emitting steps while the predicate holds on each [`ScheduleInput`].
-  RecursWhile {
-    /// When this returns `false`, the schedule stops.
-    pred: SchedulePred,
-  },
-  /// Continue until the predicate becomes true (stops on the first step where it holds).
-  RecursUntil {
-    /// When this returns `true`, the schedule stops.
-    pred: SchedulePred,
-  },
-  /// Map every produced delay through `f` (composed when nested — see [`Schedule::map`]).
-  MapDelay(Box<Schedule>, DelayMap),
-  /// Contramap the incoming [`ScheduleInput`] before the inner schedule sees it.
-  ContramapInput(Box<Schedule>, InputMap),
-}
-
-impl fmt::Debug for Schedule {
+impl fmt::Debug for ScheduleState {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Schedule::Recurs { remaining } => f
-        .debug_struct("Recurs")
-        .field("remaining", remaining)
-        .finish(),
-      Schedule::Spaced { interval } => f
-        .debug_struct("Spaced")
-        .field("interval", interval)
-        .finish(),
-      Schedule::Exponential { base, step } => f
-        .debug_struct("Exponential")
-        .field("base", base)
-        .field("step", step)
-        .finish(),
-      Schedule::Compose(a, b) => f.debug_tuple("Compose").field(a).field(b).finish(),
-      Schedule::Jittered(inner) => f.debug_tuple("Jittered").field(inner).finish(),
-      Schedule::RecursWhile { .. } => f.debug_struct("RecursWhile").finish_non_exhaustive(),
-      Schedule::RecursUntil { .. } => f.debug_struct("RecursUntil").finish_non_exhaustive(),
-      Schedule::MapDelay(inner, _) => f
-        .debug_tuple("MapDelay")
-        .field(inner)
-        .field(&"<fn>")
-        .finish(),
-      Schedule::ContramapInput(inner, _) => f
-        .debug_tuple("ContramapInput")
-        .field(inner)
-        .field(&"<fn>")
-        .finish(),
+    f.write_str("ScheduleState(..)")
+  }
+}
+
+/// One step of a [`Schedule`]: the next state, the output, and the delay before the next
+/// recurrence (`None` when the schedule is done).
+#[derive(Debug)]
+pub struct ScheduleStep<Out> {
+  state: ScheduleState,
+  out: Out,
+  delay: Option<Duration>,
+}
+
+impl<Out> ScheduleStep<Out> {
+  /// The output of this step.
+  pub fn out(&self) -> &Out {
+    &self.out
+  }
+
+  /// The delay before the next recurrence, or `None` when the schedule is done.
+  pub fn delay(&self) -> Option<Duration> {
+    self.delay
+  }
+
+  /// `true` when the schedule is done (no further recurrence).
+  pub fn is_done(&self) -> bool {
+    self.delay.is_none()
+  }
+
+  /// Splits the step into `(next state, output, delay)`.
+  pub fn into_parts(self) -> (ScheduleState, Out, Option<Duration>) {
+    (self.state, self.out, self.delay)
+  }
+}
+
+// ── the schedule ────────────────────────────────────────────────────────────────────────────
+
+trait Driver<Out, In>: Send + Sync {
+  fn initial(&self) -> ScheduleState;
+  fn step(&self, now: Instant, input: &In, state: ScheduleState) -> ScheduleStep<Out>;
+}
+
+struct FromFn<I, F, S> {
+  init: I,
+  step: F,
+  _state: PhantomData<fn() -> S>,
+}
+
+impl<Out, In, S, I, F> Driver<Out, In> for FromFn<I, F, S>
+where
+  S: Send + 'static,
+  I: Fn() -> S + Send + Sync,
+  F: Fn(Instant, &In, S) -> (S, Out, Option<Duration>) + Send + Sync,
+{
+  fn initial(&self) -> ScheduleState {
+    ScheduleState::new((self.init)())
+  }
+
+  fn step(&self, now: Instant, input: &In, state: ScheduleState) -> ScheduleStep<Out> {
+    let (state, out, delay) = (self.step)(now, input, state.take::<S>());
+    ScheduleStep {
+      state: ScheduleState::new(state),
+      out,
+      delay,
     }
   }
 }
 
-impl Schedule {
-  /// Fixed number of additional iterations (`times` steps with zero delay).
-  #[inline]
-  pub fn recurs(times: u64) -> Self {
-    Self::Recurs { remaining: times }
-  }
+/// An immutable recurrence policy consuming inputs of type `In` and producing outputs of type
+/// `Out` (Effect.ts `Schedule<Out, In>`). See the [module docs](self) for the model.
+///
+/// Cloning is cheap (one `Arc`); a schedule holds no per-run state, so one value can drive many
+/// runs at once.
+pub struct Schedule<Out, In> {
+  driver: Arc<dyn Driver<Out, In>>,
+}
 
-  /// Wait `interval` between attempts.
-  #[inline]
-  pub fn spaced(interval: Duration) -> Self {
-    Self::Spaced { interval }
-  }
-
-  /// Exponential backoff starting at `base`.
-  #[inline]
-  pub fn exponential(base: Duration) -> Self {
-    Self::Exponential { base, step: 0 }
-  }
-
-  /// Combine with `other` using [`Schedule::Compose`].
-  #[inline]
-  pub fn compose(self, other: Schedule) -> Self {
-    Self::Compose(Box::new(self), Box::new(other))
-  }
-
-  /// Wrap in [`Schedule::Jittered`].
-  #[inline]
-  pub fn jittered(self) -> Self {
-    Self::Jittered(Box::new(self))
-  }
-
-  /// Repeat while `pred` holds on each [`ScheduleInput`] (typically `attempt`).
-  #[inline]
-  pub fn recurs_while(pred: Predicate<ScheduleInput>) -> Self {
-    Self::RecursWhile {
-      pred: Arc::from(pred),
+impl<Out, In> Clone for Schedule<Out, In> {
+  fn clone(&self) -> Self {
+    Self {
+      driver: Arc::clone(&self.driver),
     }
   }
+}
 
-  /// Repeat until `pred` becomes true; stops on the first step where `pred` holds.
-  #[inline]
-  pub fn recurs_until(pred: Predicate<ScheduleInput>) -> Self {
-    Self::RecursUntil {
-      pred: Arc::from(pred),
-    }
+impl<Out, In> fmt::Debug for Schedule<Out, In> {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str("Schedule(..)")
   }
+}
 
-  /// Map every delay this schedule produces through `f`. Nested [`Schedule::map`] calls compose with [`compose`].
-  pub fn map<F>(self, f: F) -> Self
+impl<Out: 'static, In: 'static> Schedule<Out, In> {
+  /// A schedule from an initial-state factory and a pure step function
+  /// `(now, input, state) -> (next state, output, delay or None when done)`.
+  pub fn from_fn<S, I, F>(init: I, step: F) -> Self
   where
-    F: Fn(Duration) -> Duration + Send + Sync + 'static,
+    S: Send + 'static,
+    I: Fn() -> S + Send + Sync + 'static,
+    F: Fn(Instant, &In, S) -> (S, Out, Option<Duration>) + Send + Sync + 'static,
   {
-    let f = Arc::new(f);
-    match self {
-      Schedule::MapDelay(inner, existing) => Schedule::MapDelay(
-        inner,
-        Arc::new(compose(
-          {
-            let f = Arc::clone(&f);
-            move |d: Duration| f(d)
-          },
-          {
-            let existing = Arc::clone(&existing);
-            move |d: Duration| existing(d)
-          },
-        )),
-      ),
-      other => Schedule::MapDelay(Box::new(other), f),
+    Self {
+      driver: Arc::new(FromFn {
+        init,
+        step,
+        _state: PhantomData,
+      }),
     }
   }
 
-  /// Contramap the [`ScheduleInput`] before the inner policy runs. Nested calls compose with [`compose`].
-  pub fn contramap<G>(self, g: G) -> Self
-  where
-    G: Fn(ScheduleInput) -> ScheduleInput + Send + Sync + 'static,
-  {
-    let g = Arc::new(g);
-    match self {
-      Schedule::ContramapInput(inner, existing) => Schedule::ContramapInput(
-        inner,
-        Arc::new(compose(
-          {
-            let existing = Arc::clone(&existing);
-            move |i: ScheduleInput| existing(i)
-          },
-          {
-            let g = Arc::clone(&g);
-            move |i: ScheduleInput| g(i)
-          },
-        )),
-      ),
-      other => Schedule::ContramapInput(Box::new(other), g),
-    }
+  /// A fresh state for one run of this schedule.
+  pub fn start(&self) -> ScheduleState {
+    self.driver.initial()
   }
 
-  /// Advance the policy for `input`; `None` means stop repeating / no more backoff.
-  pub fn next(&mut self, input: ScheduleInput) -> Option<ScheduleDecision> {
-    match self {
-      Schedule::Recurs { remaining } => {
-        if *remaining == 0 {
-          None
-        } else {
-          *remaining -= 1;
-          Some(ScheduleDecision::continue_after(duration::ZERO))
-        }
-      }
-      Schedule::Spaced { interval } => Some(ScheduleDecision::continue_after(*interval)),
-      Schedule::Exponential { base, step } => {
-        let mult = 2u128.saturating_pow(*step);
-        let nanos = base.as_nanos().saturating_mul(mult);
-        *step = step.saturating_add(1);
-        let capped = nanos.min(u64::MAX as u128);
-        let candidate = Duration::from_nanos(capped as u64);
-        let ord = order::duration();
-        let delay = order::clamp(&ord, candidate, duration::ZERO, Duration::MAX);
-        Some(ScheduleDecision::continue_after(delay))
-      }
-      Schedule::Compose(a, b) => match (
-        a.next(ScheduleInput::default()),
-        b.next(ScheduleInput::default()),
-      ) {
-        (Some(da), Some(db)) => {
-          let ord = order::duration();
-          let delay = order::max(&ord, da.delay, db.delay);
-          Some(ScheduleDecision::continue_after(delay))
-        }
-        _ => None,
+  /// Steps this schedule at clock instant `now` with `input`.
+  ///
+  /// # Panics
+  ///
+  /// If `state` was not created by this schedule (by [`start`](Self::start) or a previous
+  /// `step`).
+  pub fn step(&self, now: Instant, input: &In, state: ScheduleState) -> ScheduleStep<Out> {
+    self.driver.step(now, input, state)
+  }
+
+  /// Transforms every output with `f` (the delays are unchanged).
+  pub fn map<O2: 'static>(self, f: impl Fn(Out) -> O2 + Send + Sync + 'static) -> Schedule<O2, In> {
+    let first = self.clone();
+    Schedule::from_fn(
+      move || first.start(),
+      move |now, input, s| {
+        let (s, out, delay) = self.step(now, input, s).into_parts();
+        (s, f(out), delay)
       },
-      Schedule::Jittered(inner) => inner
-        .next(ScheduleInput::default())
-        .map(|decision| ScheduleDecision::continue_after(jitter_80_120(decision.delay))),
-      Schedule::RecursWhile { pred } => {
-        if pred(&input) {
-          Some(ScheduleDecision::continue_after(duration::ZERO))
-        } else {
-          None
-        }
-      }
-      Schedule::RecursUntil { pred } => {
-        if pred(&input) {
-          None
-        } else {
-          Some(ScheduleDecision::continue_after(duration::ZERO))
-        }
-      }
-      Schedule::MapDelay(inner, f) => {
-        let f = Arc::clone(f);
-        inner.next(input).map(|decision| {
-          let map_delay = compose(move |d: Duration| f(d), identity);
-          ScheduleDecision::continue_after(map_delay(decision.delay))
-        })
-      }
-      Schedule::ContramapInput(inner, g) => {
-        let mapped = g(input);
-        inner.next(mapped)
-      }
+    )
+  }
+
+  /// Continues while **either** schedule continues, with the shorter delay; outputs both
+  /// outputs.
+  pub fn union<O2: 'static>(self, other: Schedule<O2, In>) -> Schedule<(Out, O2), In> {
+    self.zip_with(other, |a, b| match (a, b) {
+      (Some(a), Some(b)) => Some(a.min(b)),
+      (a, None) => a,
+      (None, b) => b,
+    })
+  }
+
+  /// Continues while **both** schedules continue, with the longer delay; outputs both outputs.
+  pub fn intersect<O2: 'static>(self, other: Schedule<O2, In>) -> Schedule<(Out, O2), In> {
+    self.zip_with(other, |a, b| match (a, b) {
+      (Some(a), Some(b)) => Some(a.max(b)),
+      _ => None,
+    })
+  }
+
+  fn zip_with<O2: 'static>(
+    self,
+    other: Schedule<O2, In>,
+    combine: fn(Option<Duration>, Option<Duration>) -> Option<Duration>,
+  ) -> Schedule<(Out, O2), In> {
+    let (l, r) = (self.clone(), other.clone());
+    Schedule::from_fn(
+      move || (l.start(), r.start()),
+      move |now, input, (sa, sb)| {
+        let (sa, a, da) = self.step(now, input, sa).into_parts();
+        let (sb, b, db) = other.step(now, input, sb).into_parts();
+        ((sa, sb), (a, b), combine(da, db))
+      },
+    )
+  }
+
+  /// Runs this schedule until it is done, then `other` (stepped at once with the same input).
+  pub fn and_then(self, other: Schedule<Out, In>) -> Self {
+    enum Phase {
+      First(ScheduleState),
+      Second(ScheduleState),
     }
-  }
-
-  /// Interpret one schedule step into a non-blocking sleep effect.
-  #[inline]
-  pub fn next_sleep<C>(&mut self, clock: &C, input: ScheduleInput) -> Option<Effect<(), Never, ()>>
-  where
-    C: Clock + Clone + 'static,
-  {
-    self
-      .next(input)
-      .map(|decision| clock.clone().sleep(decision.delay))
-  }
-}
-
-fn jitter_80_120(d: Duration) -> Duration {
-  let ns = d.as_nanos();
-  let jittered = ns.saturating_mul(9).saturating_div(10);
-  let capped = jittered.min(u64::MAX as u128);
-  duration::nanos(capped as u64)
-}
-
-/// Effect.ts-like `Effect.repeat(effect, schedule)` but as a factory because our effects are one-shot.
-pub fn repeat<A, E, R, F>(make: F, schedule: Schedule) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-{
-  repeat_with_clock(
-    make,
-    schedule,
-    LiveClock::new(ThreadSleepRuntime::default()),
-    None,
-  )
-}
-
-/// Repeat using an explicit clock service so delay handling is runtime-mediated and non-blocking.
-pub fn repeat_with_clock<A, E, R, F, C>(
-  mut make: F,
-  mut schedule: Schedule,
-  clock: C,
-  attempt_counter: Option<Metric<u64, ()>>,
-) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-  C: Clock + Clone + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let clock = clock.clone();
-    Box::pin(async move {
-      let mut attempt = 0_u64;
-      if let Some(ref c) = attempt_counter {
-        match c.apply(1).run(&mut ()).await {
-          Ok(()) => {}
-          Err(never) => match never {},
-        }
-      }
-      let mut last = make().run(r).await?;
-      while let Some(sleep_effect) = schedule.next_sleep(&clock, ScheduleInput { attempt }) {
-        match sleep_effect.run(&mut ()).await {
-          Ok(()) => {}
-          Err(never) => match never {},
-        }
-        if let Some(ref c) = attempt_counter {
-          match c.apply(1).run(&mut ()).await {
-            Ok(()) => {}
-            Err(never) => match never {},
+    let first = self.clone();
+    Schedule::from_fn(
+      move || Phase::First(first.start()),
+      move |now, input, phase| {
+        if let Phase::First(s) = phase {
+          let (s, out, delay) = self.step(now, input, s).into_parts();
+          if delay.is_some() {
+            return (Phase::First(s), out, delay);
           }
+          let (s, out, delay) = other.step(now, input, other.start()).into_parts();
+          return (Phase::Second(s), out, delay);
         }
-        last = make().run(r).await?;
-        attempt = attempt.saturating_add(1);
-      }
-      Ok(last)
-    })
-  })
-}
-
-/// Repeat using an explicit clock and interruption token.
-pub fn repeat_with_clock_and_interrupt<A, E, R, F, C>(
-  mut make: F,
-  mut schedule: Schedule,
-  clock: C,
-  token: CancellationToken,
-  attempt_counter: Option<Metric<u64, ()>>,
-) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-  C: Clock + Clone + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let clock = clock.clone();
-    let token = token.clone();
-    Box::pin(async move {
-      let mut attempt = 0_u64;
-      if let Some(ref c) = attempt_counter {
-        match c.apply(1).run(&mut ()).await {
-          Ok(()) => {}
-          Err(never) => match never {},
-        }
-      }
-      let mut last = make().run(r).await?;
-      while let Some(sleep_effect) = schedule.next_sleep(&clock, ScheduleInput { attempt }) {
-        let interrupted = match check_interrupt(&token).run(&mut ()).await {
-          Ok(is_interrupted) => is_interrupted,
-          Err(never) => match never {},
+        let Phase::Second(s) = phase else {
+          unreachable!("the first phase returned above")
         };
-        if interrupted {
-          break;
-        }
-        match sleep_effect.run(&mut ()).await {
-          Ok(()) => {}
-          Err(never) => match never {},
-        }
-        if let Some(ref c) = attempt_counter {
-          match c.apply(1).run(&mut ()).await {
-            Ok(()) => {}
-            Err(never) => match never {},
-          }
-        }
-        last = make().run(r).await?;
-        attempt = attempt.saturating_add(1);
+        let (s, out, delay) = other.step(now, input, s).into_parts();
+        (Phase::Second(s), out, delay)
+      },
+    )
+  }
+
+  /// Continues only while `pred` holds for the input (Effect.ts `whileInput`).
+  pub fn while_input(self, pred: impl Fn(&In) -> bool + Send + Sync + 'static) -> Self {
+    let first = self.clone();
+    Schedule::from_fn(
+      move || first.start(),
+      move |now, input, s| {
+        let (s, out, delay) = self.step(now, input, s).into_parts();
+        (s, out, delay.filter(|_| pred(input)))
+      },
+    )
+  }
+
+  /// Continues only while less than `max` has elapsed since the first step (Effect.ts `upTo`).
+  pub fn up_to(self, max: Duration) -> Self {
+    let first = self.clone();
+    Schedule::from_fn(
+      move || (first.start(), None::<Instant>),
+      move |now, input, (s, start)| {
+        let start = start.unwrap_or(now);
+        let (s, out, delay) = self.step(now, input, s).into_parts();
+        let delay = delay.filter(|_| now.saturating_duration_since(start) < max);
+        ((s, Some(start)), out, delay)
+      },
+    )
+  }
+
+  /// Scales every delay by a random factor in `[0.8, 1.2]` (Effect.ts `jittered`), drawn from
+  /// [`JitterSource::entropy`].
+  pub fn jittered(self) -> Self {
+    self.jittered_with(0.8, 1.2, JitterSource::entropy())
+  }
+
+  /// Scales every delay by a random factor in `[min, max]`, drawn from a generator seeded by
+  /// `source` once per run. A factor that is not positive gives a zero delay; one too large to
+  /// represent gives `Duration::MAX`.
+  pub fn jittered_with(self, min: f64, max: f64, source: JitterSource) -> Self {
+    let first = self.clone();
+    Schedule::from_fn(
+      move || (first.start(), (source.seed)()),
+      move |now, input, (s, mut rng)| {
+        let (s, out, delay) = self.step(now, input, s).into_parts();
+        let delay = delay.map(|d| {
+          let factor = min + (max - min) * unit_f64(splitmix64(&mut rng));
+          scale(d, factor)
+        });
+        ((s, rng), out, delay)
+      },
+    )
+  }
+}
+
+impl<In: 'static> Schedule<u64, In> {
+  /// Recurs forever with no delay; outputs the recurrence count (`0, 1, 2, ..`).
+  pub fn forever() -> Self {
+    Self::from_fn(
+      || 0u64,
+      |_, _, n| (n.saturating_add(1), n, Some(Duration::ZERO)),
+    )
+  }
+
+  /// Recurs `times` times with no delay; outputs the recurrence count.
+  pub fn recurs(times: u64) -> Self {
+    Self::from_fn(
+      || 0u64,
+      move |_, _, n| {
+        (
+          n.saturating_add(1),
+          n,
+          (n < times).then_some(Duration::ZERO),
+        )
+      },
+    )
+  }
+
+  /// Recurs forever, `interval` apart; outputs the recurrence count.
+  pub fn spaced(interval: Duration) -> Self {
+    Self::from_fn(
+      || 0u64,
+      move |_, _, n| (n.saturating_add(1), n, Some(interval)),
+    )
+  }
+}
+
+impl<In: 'static> Schedule<Duration, In> {
+  /// Recurs forever with delays `base * 2^k` (`base`, `2 * base`, `4 * base`, ..); outputs the
+  /// delay. Saturates at `Duration::MAX`.
+  pub fn exponential(base: Duration) -> Self {
+    Self::from_fn(
+      || 0u32,
+      move |_, _, k| {
+        let d = 1u32
+          .checked_shl(k)
+          .map_or(Duration::MAX, |m| base.saturating_mul(m));
+        (k.saturating_add(1), d, Some(d))
+      },
+    )
+  }
+
+  /// Recurs forever with delays `base * factor^k`; outputs the delay (Effect.ts
+  /// `exponential(base, factor)`).
+  pub fn exponential_by(base: Duration, factor: f64) -> Self {
+    Self::from_fn(
+      || 0i32,
+      move |_, _, k| {
+        let d = scale(base, factor.powi(k));
+        (k.saturating_add(1), d, Some(d))
+      },
+    )
+  }
+
+  /// Recurs forever with Fibonacci delays (`one`, `one`, `2 * one`, `3 * one`, `5 * one`, ..);
+  /// outputs the delay.
+  pub fn fibonacci(one: Duration) -> Self {
+    Self::from_fn(
+      move || (one, one),
+      |_, _, (a, b)| ((b, a.saturating_add(b)), a, Some(a)),
+    )
+  }
+}
+
+/// `d * factor`, saturating: not positive gives zero, unrepresentable gives `Duration::MAX`.
+fn scale(d: Duration, factor: f64) -> Duration {
+  if factor.is_nan() || factor <= 0.0 {
+    return Duration::ZERO;
+  }
+  Duration::try_from_secs_f64(d.as_secs_f64() * factor).unwrap_or(Duration::MAX)
+}
+
+// ── jitter source ───────────────────────────────────────────────────────────────────────────
+
+/// Seeds the generator behind [`Schedule::jittered_with`], once per run. The seam where
+/// `p-random`'s `Random` plugs in (see the [module docs](self)).
+#[derive(Clone)]
+pub struct JitterSource {
+  seed: Arc<dyn Fn() -> u64 + Send + Sync>,
+}
+
+impl fmt::Debug for JitterSource {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str("JitterSource(..)")
+  }
+}
+
+impl JitterSource {
+  /// A fresh seed per run from std's randomly keyed hasher (no new dependency).
+  pub fn entropy() -> Self {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    Self::from_fn(|| RandomState::new().hash_one(COUNTER.fetch_add(1, Ordering::Relaxed)))
+  }
+
+  /// The same seed for every run: a reproducible jitter sequence (for tests).
+  pub fn seeded(seed: u64) -> Self {
+    Self::from_fn(move || seed)
+  }
+
+  /// Seeds from `f`, called once per run.
+  pub fn from_fn(f: impl Fn() -> u64 + Send + Sync + 'static) -> Self {
+    Self { seed: Arc::new(f) }
+  }
+}
+
+/// SplitMix64: advances `state` and returns the next output.
+fn splitmix64(state: &mut u64) -> u64 {
+  *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+  let mut z = *state;
+  z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+  z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+  z ^ (z >> 31)
+}
+
+/// The top 53 bits of `x` as a float in `[0, 1)`.
+fn unit_f64(x: u64) -> f64 {
+  (x >> 11) as f64 / (1u64 << 53) as f64
+}
+
+// ── retry / repeat ──────────────────────────────────────────────────────────────────────────
+
+/// The running fiber's executor clock (virtual on `TestExecutor`).
+fn clock_now<E: Send + 'static, R: Send + Sync + 'static>() -> Effect<Instant, E, R> {
+  Effect::from_ctx(|ctx: Ctx<R>| ready(Ok(ctx.fiber().executor().now())))
+}
+
+/// `next` after sleeping `d` (no timer for a zero delay).
+fn after<A, E, R>(d: Duration, next: Effect<A, E, R>) -> Effect<A, E, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  if d.is_zero() {
+    next
+  } else {
+    sleep(d).then(next)
+  }
+}
+
+/// One attempt of `make`, built when the attempt starts.
+fn attempt<A, E, R, F>(make: &Arc<F>) -> Effect<A, E, R>
+where
+  F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
+{
+  let make = Arc::clone(make);
+  suspend(move || make())
+}
+
+fn retry_loop<A, E, E2, R, Out, F, G>(
+  make: Arc<F>,
+  schedule: Schedule<Out, E>,
+  state: ScheduleState,
+  or_else: G,
+) -> Effect<A, E2, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  E2: Send + 'static,
+  R: Send + Sync + 'static,
+  Out: Send + 'static,
+  F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
+  G: FnOnce(E, Out) -> Effect<A, E2, R> + Send + 'static,
+{
+  attempt(&make).catch(move |e| {
+    clock_now::<E2, R>().flat_map(move |now| {
+      let (state, out, delay) = schedule.step(now, &e, state).into_parts();
+      match delay {
+        Some(d) => after(d, retry_loop(make, schedule, state, or_else)),
+        None => or_else(e, out),
       }
-      Ok(last)
     })
   })
 }
 
-/// Effect.ts-like `Effect.retry(effect, schedule)` using a one-shot effect factory.
-pub fn retry<A, E, R, F>(make: F, schedule: Schedule) -> Effect<A, E, R>
+fn repeat_loop<A, E, E2, R, Out, F, G>(
+  make: Arc<F>,
+  schedule: Schedule<Out, A>,
+  state: ScheduleState,
+  last: Option<Out>,
+  or_else: G,
+) -> Effect<Out, E2, R>
 where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  E2: Send + 'static,
+  R: Send + Sync + 'static,
+  Out: Send + 'static,
+  F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
+  G: FnOnce(E, Option<Out>) -> Effect<Out, E2, R> + Send + 'static,
 {
-  retry_with_clock(
-    make,
-    schedule,
-    LiveClock::new(ThreadSleepRuntime::default()),
-    None,
-  )
-}
-
-/// Retry using an explicit clock service for runtime-mediated delays.
-pub fn retry_with_clock<A, E, R, F, C>(
-  mut make: F,
-  mut schedule: Schedule,
-  clock: C,
-  attempt_counter: Option<Metric<u64, ()>>,
-) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-  C: Clock + Clone + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let clock = clock.clone();
-    Box::pin(async move {
-      let mut attempt = 0_u64;
-      loop {
-        if let Some(ref c) = attempt_counter {
-          match c.apply(1).run(&mut ()).await {
-            Ok(()) => {}
-            Err(never) => match never {},
-          }
+  attempt(&make)
+    .map(Ok)
+    .catch(|e| succeed(Err(e)))
+    .flat_map(move |r: Result<A, E>| match r {
+      Err(e) => or_else(e, last),
+      Ok(a) => clock_now::<E2, R>().flat_map(move |now| {
+        let (state, out, delay) = schedule.step(now, &a, state).into_parts();
+        match delay {
+          Some(d) => after(d, repeat_loop(make, schedule, state, Some(out), or_else)),
+          None => succeed(out),
         }
-        match make().run(r).await {
-          Ok(a) => return Ok(a),
-          Err(e) => match schedule.next_sleep(&clock, ScheduleInput { attempt }) {
-            Some(sleep_effect) => {
-              match sleep_effect.run(&mut ()).await {
-                Ok(()) => {}
-                Err(never) => match never {},
-              }
-              attempt = attempt.saturating_add(1);
-            }
-            None => return Err(e),
-          },
-        }
-      }
+      }),
     })
-  })
 }
 
-/// Retry using an explicit clock and interruption token.
-pub fn retry_with_clock_and_interrupt<A, E, R, F, C>(
-  mut make: F,
-  mut schedule: Schedule,
-  clock: C,
-  token: CancellationToken,
-  attempt_counter: Option<Metric<u64, ()>>,
-) -> Effect<A, E, R>
+impl<A, E, R> Effect<A, E, R>
 where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-  C: Clock + Clone + 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  Effect::new_async(move |r: &mut R| {
-    let clock = clock.clone();
-    let token = token.clone();
-    Box::pin(async move {
-      let mut attempt = 0_u64;
-      loop {
-        if let Some(ref c) = attempt_counter {
-          match c.apply(1).run(&mut ()).await {
-            Ok(()) => {}
-            Err(never) => match never {},
-          }
-        }
-        match make().run(r).await {
-          Ok(a) => return Ok(a),
-          Err(e) => {
-            let interrupted = match check_interrupt(&token).run(&mut ()).await {
-              Ok(is_interrupted) => is_interrupted,
-              Err(never) => match never {},
-            };
-            if interrupted {
-              return Err(e);
-            }
-            match schedule.next_sleep(&clock, ScheduleInput { attempt }) {
-              Some(sleep_effect) => {
-                match sleep_effect.run(&mut ()).await {
-                  Ok(()) => {}
-                  Err(never) => match never {},
-                }
-                attempt = attempt.saturating_add(1);
-              }
-              None => return Err(e),
-            }
-          }
-        }
-      }
+  /// Runs `make()` and retries it on typed failure as `schedule` (stepped with each error)
+  /// allows; fails with the last error once the schedule is done. Defects and interrupts are not
+  /// retried. `make` is called once per attempt, when the attempt starts.
+  pub fn retry<Out: Send + 'static>(
+    make: impl Fn() -> Self + Send + Sync + 'static,
+    schedule: Schedule<Out, E>,
+  ) -> Self {
+    Self::retry_or_else(make, schedule, |e, _| fail(e))
+  }
+
+  /// [`retry`](Self::retry), recovering with `or_else(last error, schedule's last output)` once
+  /// the schedule is done.
+  pub fn retry_or_else<Out: Send + 'static, E2: Send + 'static>(
+    make: impl Fn() -> Self + Send + Sync + 'static,
+    schedule: Schedule<Out, E>,
+    or_else: impl FnOnce(E, Out) -> Effect<A, E2, R> + Send + 'static,
+  ) -> Effect<A, E2, R> {
+    let make = Arc::new(make);
+    suspend(move || {
+      let state = schedule.start();
+      retry_loop(make, schedule, state, or_else)
     })
-  })
-}
+  }
 
-/// Effect.ts-like `Effect.forever(effect)` using a one-shot effect factory.
-pub fn forever<E, R, F>(mut make: F) -> Effect<(), E, R>
-where
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<(), E, R> + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    Box::pin(async move {
-      loop {
-        make().run(r).await?;
-      }
+  /// Runs `make()` and runs it again after each success as `schedule` (stepped with each value)
+  /// allows; succeeds with the schedule's last output once it is done. The first failure stops
+  /// the repetition and is returned.
+  pub fn repeat<Out: Send + 'static>(
+    make: impl Fn() -> Self + Send + Sync + 'static,
+    schedule: Schedule<Out, A>,
+  ) -> Effect<Out, E, R> {
+    Self::repeat_or_else(make, schedule, |e, _| fail(e))
+  }
+
+  /// [`repeat`](Self::repeat), recovering from a failure with `or_else(error, schedule's last
+  /// output so far)` (`None` when the first run failed).
+  pub fn repeat_or_else<Out: Send + 'static, E2: Send + 'static>(
+    make: impl Fn() -> Self + Send + Sync + 'static,
+    schedule: Schedule<Out, A>,
+    or_else: impl FnOnce(E, Option<Out>) -> Effect<Out, E2, R> + Send + 'static,
+  ) -> Effect<Out, E2, R> {
+    let make = Arc::new(make);
+    suspend(move || {
+      let state = schedule.start();
+      repeat_loop(make, schedule, state, None, or_else)
     })
-  })
-}
-
-/// Repeat a fixed number of times after a successful first run.
-#[inline]
-pub fn repeat_n<A, E, R, F>(make: F, times: u64) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-  F: FnMut() -> Effect<A, E, R> + 'static,
-{
-  repeat(make, Schedule::recurs(times))
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::foundation::func::identity;
-  use crate::foundation::predicate::predicate;
-  use crate::{TestClock, fail, runtime::run_blocking, succeed};
-  use core::future::Future;
-  use core::task::{Context, Poll, Waker};
-  use rstest::rstest;
-  use std::sync::Arc;
-  use std::sync::atomic::{AtomicUsize, Ordering};
-  use std::task::Wake;
-  use std::thread;
 
-  struct ThreadUnpark(thread::Thread);
-  impl Wake for ThreadUnpark {
-    fn wake(self: Arc<Self>) {
-      self.0.unpark();
+  fn delays<Out: 'static>(s: &Schedule<Out, ()>, n: usize) -> Vec<Option<Duration>> {
+    let now = Instant::now();
+    let mut state = s.start();
+    let mut out = Vec::new();
+    for _ in 0..n {
+      let (next, _, d) = s.step(now, &(), state).into_parts();
+      state = next;
+      out.push(d);
     }
+    out
   }
 
-  fn block_on<F: Future>(fut: F) -> F::Output {
-    let mut fut = Box::pin(fut);
-    let waker = Waker::from(Arc::new(ThreadUnpark(thread::current())));
-    let mut cx = Context::from_waker(&waker);
-    loop {
-      match fut.as_mut().poll(&mut cx) {
-        Poll::Ready(v) => return v,
-        Poll::Pending => thread::park(),
-      }
-    }
+  fn ms(n: u64) -> Option<Duration> {
+    Some(Duration::from_millis(n))
   }
 
-  mod schedule_next {
-    use super::*;
-
-    #[test]
-    fn recurs_with_finite_remaining_stops_after_budget_is_exhausted() {
-      let mut s = Schedule::recurs(2);
-      assert_eq!(
-        s.next(ScheduleInput::default()),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(
-        s.next(ScheduleInput::default()),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(s.next(ScheduleInput::default()), None);
-    }
-
-    #[test]
-    fn spaced_uses_duration_seconds_constructor() {
-      let mut s = Schedule::spaced(duration::seconds(1));
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 0 }),
-        Some(ScheduleDecision::continue_after(duration::seconds(1)))
-      );
-    }
-
-    #[test]
-    fn recurs_until_stops_when_predicate_true() {
-      let pred: Predicate<ScheduleInput> = Box::new(|i: &ScheduleInput| i.attempt >= 2);
-      let mut s = Schedule::recurs_until(pred);
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 0 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 1 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(s.next(ScheduleInput { attempt: 2 }), None);
-    }
-
-    #[test]
-    fn recurs_while_short_circuits_when_predicate_false() {
-      let pred: Predicate<ScheduleInput> = Box::new(|i: &ScheduleInput| i.attempt < 2);
-      let mut s = Schedule::recurs_while(pred);
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 0 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 1 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(s.next(ScheduleInput { attempt: 2 }), None);
-    }
-
-    #[test]
-    fn map_with_identity_preserves_delays() {
-      let mut s = Schedule::spaced(duration::millis(7)).map(identity);
-      assert_eq!(
-        s.next(ScheduleInput::default()),
-        Some(ScheduleDecision::continue_after(duration::millis(7)))
-      );
-    }
-
-    #[test]
-    fn contramap_composes_input_transform_for_attempt_counting() {
-      let mut s =
-        Schedule::recurs_until(Box::new(|i: &ScheduleInput| i.attempt >= 1)).contramap(|mut i| {
-          i.attempt = i.attempt.saturating_add(5);
-          i
-        });
-      assert_eq!(s.next(ScheduleInput { attempt: 0 }), None);
-    }
-
-    #[test]
-    fn compose_preserves_identity_for_recurs_branch() {
-      let mut s = Schedule::recurs(1).compose(Schedule::recurs(1));
-      assert!(s.next(ScheduleInput::default()).is_some());
-      assert_eq!(s.next(ScheduleInput::default()), None);
-    }
-
-    #[test]
-    fn recurs_while_with_composed_predicate_requires_both_clauses() {
-      let lt4: Predicate<ScheduleInput> = Box::new(|i: &ScheduleInput| i.attempt < 4);
-      let ge1: Predicate<ScheduleInput> = Box::new(|i: &ScheduleInput| i.attempt >= 1);
-      let mut s = Schedule::recurs_while(predicate::and(lt4, ge1));
-      assert_eq!(s.next(ScheduleInput { attempt: 0 }), None);
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 1 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(
-        s.next(ScheduleInput { attempt: 3 }),
-        Some(ScheduleDecision::continue_after(duration::ZERO))
-      );
-      assert_eq!(s.next(ScheduleInput { attempt: 4 }), None);
-    }
-
-    #[test]
-    fn compose_with_one_exhausted_side_stops_when_either_schedule_stops() {
-      let mut s = Schedule::recurs(1).compose(Schedule::recurs(3));
-      assert!(s.next(ScheduleInput::default()).is_some());
-      assert_eq!(s.next(ScheduleInput::default()), None);
-    }
-
-    #[rstest]
-    #[case::first(duration::millis(10), duration::millis(20))]
-    #[case::second(duration::millis(50), duration::millis(5))]
-    fn compose_with_two_spaced_schedules_uses_maximum_delay(
-      #[case] a: Duration,
-      #[case] b: Duration,
-    ) {
-      let mut s = Schedule::spaced(a).compose(Schedule::spaced(b));
-      assert_eq!(
-        s.next(ScheduleInput::default()),
-        Some(ScheduleDecision::continue_after(a.max(b)))
-      );
-    }
-
-    #[rstest]
-    #[case::first_step(0, duration::millis(3), duration::millis(3))]
-    #[case::second_step(1, duration::millis(3), duration::millis(6))]
-    #[case::third_step(2, duration::millis(3), duration::millis(12))]
-    fn exponential_with_base_duration_doubles_delay_each_step(
-      #[case] step_index: usize,
-      #[case] base: Duration,
-      #[case] expected: Duration,
-    ) {
-      let mut s = Schedule::exponential(base);
-      let mut observed = None;
-      for _ in 0..=step_index {
-        observed = s.next(ScheduleInput::default()).map(|d| d.delay);
-      }
-      assert_eq!(observed, Some(expected));
-    }
-
-    #[test]
-    fn jittered_with_spaced_schedule_applies_deterministic_ninety_percent_jitter() {
-      let mut s = Schedule::spaced(duration::millis(10)).jittered();
-      let decision = s
-        .next(ScheduleInput::default())
-        .expect("jittered schedule should continue");
-      assert_eq!(decision.delay, duration::millis(9));
-    }
-
-    #[test]
-    fn next_sleep_with_clock_returns_runtime_mediated_non_blocking_sleep_effect() {
-      let start = std::time::Instant::now();
-      let clock = TestClock::new(start);
-      let mut s = Schedule::spaced(duration::millis(5));
-      let sleep = s
-        .next_sleep(&clock, ScheduleInput::default())
-        .expect("spaced should continue");
-      let _ = run_blocking(sleep, ());
-      assert_eq!(clock.pending_sleeps().len(), 1);
-    }
+  #[test]
+  fn exponential_saturates() {
+    let s = Schedule::<Duration, ()>::exponential(Duration::from_secs(1));
+    assert_eq!(delays(&s, 40)[39], Some(Duration::MAX));
   }
 
-  mod repeat {
-    use super::*;
-
-    #[test]
-    fn repeat_n_with_times_runs_initial_plus_requested_repeats() {
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = repeat_n(
-        move || {
-          let c = Arc::clone(&calls_c);
-          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
-        },
-        3,
-      );
-
-      let out = block_on(eff.run(&mut ()));
-      assert_eq!(out, Ok(4));
-      assert_eq!(calls.load(Ordering::SeqCst), 4);
-    }
-
-    #[test]
-    fn repeat_with_clock_uses_runtime_mediated_sleep_effect_between_attempts() {
-      let start = std::time::Instant::now();
-      let clock = TestClock::new(start);
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = repeat_with_clock(
-        move || {
-          let c = Arc::clone(&calls_c);
-          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
-        },
-        Schedule::spaced(duration::millis(5)).compose(Schedule::recurs(1)),
-        clock.clone(),
-        None,
-      );
-      let out = block_on(eff.run(&mut ()));
-      assert_eq!(out, Ok(2));
-      assert_eq!(clock.pending_sleeps().len(), 1);
-    }
+  #[test]
+  fn exponential_by_and_scale_edges() {
+    let s = Schedule::<Duration, ()>::exponential_by(Duration::from_millis(10), 3.0);
+    assert_eq!(delays(&s, 3), vec![ms(10), ms(30), ms(90)]);
+    assert_eq!(scale(Duration::from_secs(1), -1.0), Duration::ZERO);
+    assert_eq!(scale(Duration::from_secs(1), f64::NAN), Duration::ZERO);
+    assert_eq!(scale(Duration::MAX, 1e300), Duration::MAX);
   }
 
-  mod debug_format {
-    use super::*;
-
-    #[test]
-    fn spaced_debug_contains_interval() {
-      let s = Schedule::spaced(duration::millis(50));
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("Spaced"), "got: {dbg}");
-    }
-
-    #[test]
-    fn exponential_debug_contains_base_and_step() {
-      let s = Schedule::exponential(duration::millis(10));
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("Exponential"), "got: {dbg}");
-    }
-
-    #[test]
-    fn compose_debug_contains_both_sides() {
-      let s = Schedule::recurs(1).compose(Schedule::recurs(2));
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("Compose"), "got: {dbg}");
-    }
-
-    #[test]
-    fn jittered_debug_shows_inner() {
-      let s = Schedule::spaced(duration::millis(5)).jittered();
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("Jittered"), "got: {dbg}");
-    }
-
-    #[test]
-    fn recurs_while_debug_is_non_exhaustive() {
-      let s = Schedule::recurs_while(Box::new(|_: &ScheduleInput| true));
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("RecursWhile"), "got: {dbg}");
-    }
-
-    #[test]
-    fn recurs_until_debug_is_non_exhaustive() {
-      let s = Schedule::recurs_until(Box::new(|_: &ScheduleInput| false));
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("RecursUntil"), "got: {dbg}");
-    }
-
-    #[test]
-    fn map_delay_debug_shows_fn_placeholder() {
-      let s = Schedule::spaced(duration::millis(5)).map(|d| d * 2);
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("MapDelay"), "got: {dbg}");
-    }
-
-    #[test]
-    fn contramap_input_debug_shows_fn_placeholder() {
-      let s =
-        Schedule::recurs(3).contramap(|i: ScheduleInput| ScheduleInput { attempt: i.attempt });
-      let dbg = format!("{:?}", s);
-      assert!(dbg.contains("ContramapInput"), "got: {dbg}");
-    }
+  #[test]
+  #[should_panic(expected = "did not create it")]
+  fn foreign_state_panics() {
+    let a = Schedule::<u64, ()>::forever();
+    let b = Schedule::<Duration, ()>::fibonacci(Duration::from_millis(1));
+    let _ = a.step(Instant::now(), &(), b.start());
   }
 
-  mod nested_map_and_contramap {
-    use super::*;
-
-    #[test]
-    fn double_map_composes_both_functions() {
-      // Apply map twice: first double, then add 1ms. Should produce 2*d + 1ms.
-      let mut s = Schedule::spaced(duration::millis(10))
-        .map(|d| d * 2) // 20ms
-        .map(|d| d + duration::millis(1)); // 21ms
-      let decision = s.next(ScheduleInput::default()).unwrap();
-      assert_eq!(decision.delay, duration::millis(21));
-    }
-
-    #[test]
-    fn double_contramap_composes_both_input_transforms() {
-      // Two contramaps: first add 10 to attempt, then subtract 5.
-      // Net effect: attempt += 5. So if input.attempt = 0, inner sees 5.
-      // recurs_until stops when attempt >= 3; with +5 offset, always stops immediately.
-      let mut s = Schedule::recurs_until(Box::new(|i: &ScheduleInput| i.attempt >= 3))
-        .contramap(|mut i: ScheduleInput| {
-          i.attempt = i.attempt.saturating_add(10);
-          i
-        })
-        .contramap(|mut i: ScheduleInput| {
-          i.attempt = i.attempt.saturating_sub(5);
-          i
-        });
-      // Input attempt=0 → subtract 5 → 0 → add 10 → 10 >= 3 → stop
-      assert_eq!(s.next(ScheduleInput { attempt: 0 }), None);
-    }
+  #[test]
+  fn debug_impls() {
+    let s = Schedule::<u64, ()>::forever();
+    assert_eq!(format!("{s:?}"), "Schedule(..)");
+    assert_eq!(format!("{:?}", s.start()), "ScheduleState(..)");
+    assert_eq!(format!("{:?}", JitterSource::seeded(1)), "JitterSource(..)");
   }
 
-  mod repeat_with_interrupt {
-    use super::*;
-
-    #[test]
-    fn repeat_with_clock_and_interrupt_runs_normally_when_not_cancelled() {
-      let token = CancellationToken::new();
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = repeat_with_clock_and_interrupt(
-        move || {
-          let c = Arc::clone(&calls_c);
-          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
-        },
-        Schedule::recurs(2),
-        TestClock::new(std::time::Instant::now()),
-        token,
-        None,
-      );
-      let out = block_on(eff.run(&mut ()));
-      assert_eq!(out, Ok(3));
-      assert_eq!(calls.load(Ordering::SeqCst), 3);
-    }
-
-    #[test]
-    fn repeat_with_clock_and_interrupt_stops_when_cancelled_between_attempts() {
-      let token = CancellationToken::new();
-      token.cancel();
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = repeat_with_clock_and_interrupt(
-        move || {
-          let c = Arc::clone(&calls_c);
-          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
-        },
-        Schedule::recurs(5),
-        TestClock::new(std::time::Instant::now()),
-        token,
-        None,
-      );
-      let out = block_on(eff.run(&mut ()));
-      // First run completes, then the loop checks the token and breaks
-      assert_eq!(out, Ok(1));
-      assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn repeat_with_clock_and_interrupt_with_metric_increments_counter() {
-      use crate::observability::metric::Metric;
-      let token = CancellationToken::new();
-      let counter = Metric::counter("repeat_interrupt_attempts", []);
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = repeat_with_clock_and_interrupt(
-        move || {
-          let c = Arc::clone(&calls_c);
-          succeed::<usize, (), ()>(c.fetch_add(1, Ordering::SeqCst) + 1)
-        },
-        Schedule::recurs(1),
-        TestClock::new(std::time::Instant::now()),
-        token,
-        Some(counter.clone()),
-      );
-      let _ = block_on(eff.run(&mut ()));
-      assert!(counter.snapshot_count() >= 1);
-    }
-  }
-
-  mod retry {
-    use super::*;
-    use crate::observability::metric::Metric;
-
-    #[test]
-    fn schedule_retry_metric_records_each_attempt() {
-      let counter = Metric::counter("schedule_retry_attempts", []);
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = retry_with_clock(
-        move || {
-          let n = calls_c.fetch_add(1, Ordering::SeqCst);
-          if n < 2 {
-            fail::<usize, &'static str, ()>("boom")
-          } else {
-            succeed::<usize, &'static str, ()>(n + 1)
-          }
-        },
-        Schedule::recurs(3),
-        TestClock::new(std::time::Instant::now()),
-        Some(counter.clone()),
-      );
-
-      let out = block_on(eff.run(&mut ()));
-      assert_eq!(out, Ok(3));
-      assert_eq!(calls.load(Ordering::SeqCst), 3);
-      assert_eq!(counter.snapshot_count(), 3);
-    }
-
-    #[test]
-    fn retry_with_eventual_success_returns_first_success_within_schedule_budget() {
-      let calls = Arc::new(AtomicUsize::new(0));
-      let calls_c = Arc::clone(&calls);
-      let eff = retry(
-        move || {
-          let n = calls_c.fetch_add(1, Ordering::SeqCst);
-          if n < 2 {
-            fail::<usize, &'static str, ()>("boom")
-          } else {
-            succeed::<usize, &'static str, ()>(n + 1)
-          }
-        },
-        Schedule::recurs(3),
-      );
-
-      let out = block_on(eff.run(&mut ()));
-      assert_eq!(out, Ok(3));
-      assert_eq!(calls.load(Ordering::SeqCst), 3);
-    }
-
-    #[test]
-    fn retry_with_exhausted_schedule_returns_last_error() {
-      let eff = retry(|| fail::<(), &'static str, ()>("boom"), Schedule::recurs(1));
-      assert_eq!(block_on(eff.run(&mut ())), Err("boom"));
-    }
-
-    #[test]
-    fn retry_with_interrupt_token_stops_retrying_when_token_is_already_cancelled() {
-      let token = CancellationToken::new();
-      token.cancel();
-      let attempts = Arc::new(AtomicUsize::new(0));
-      let attempts_c = Arc::clone(&attempts);
-      let eff = retry_with_clock_and_interrupt(
-        move || {
-          attempts_c.fetch_add(1, Ordering::SeqCst);
-          fail::<(), &'static str, ()>("boom")
-        },
-        Schedule::recurs(5),
-        TestClock::new(std::time::Instant::now()),
-        token,
-        None,
-      );
-      assert_eq!(block_on(eff.run(&mut ())), Err("boom"));
-      assert_eq!(attempts.load(Ordering::SeqCst), 1);
-    }
+  #[test]
+  fn unit_f64_is_in_range() {
+    assert_eq!(unit_f64(0), 0.0);
+    assert!(unit_f64(u64::MAX) < 1.0);
   }
 }

@@ -1,12 +1,12 @@
-// `p-layer-scoped`: `derive(ProviderSpec)` emits `layer()` on the `id_effect::next` path, next to
-// the v1 `ProviderSpec` impl. With `release = ..` the layer carries an async finalizer that runs
+// `p-layer-scoped` / `k-retire-v1`: `derive(ProviderSpec)` emits `layer()` (the 0.6
+// `ProviderSpec` impl is gone). With `release = ..` the layer carries an async finalizer that runs
 // when the scope of `provide_layer` closes, after the effect.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use id_effect::Never;
 use id_effect::next::{Effect, HCons, HNil, need, sync};
-use id_effect::{Exit, ProviderSpec, ProviderSpecDerive};
+use id_effect::{Exit, ProviderSpecDerive};
 
 #[derive(Clone)]
 pub struct Counter(u32);
@@ -40,10 +40,7 @@ fn use_pool() -> Effect<bool, (), HCons<Pool, HNil>> {
 }
 
 fn main() {
-  // The v1 emission still works.
-  assert_eq!(CounterLive::provider_id(), "counter-live");
-
-  // The next emission: `layer()` (any error type, inferred here as `()`).
+  // `layer()`: any error type, inferred here as `()`.
   let read: Effect<u32, ()> = read_counter().provide_layer(CounterLive::layer());
   assert!(matches!(read.block_on(), Exit::Success(42)));
 

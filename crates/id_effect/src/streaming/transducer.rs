@@ -1,88 +1,111 @@
-//! [`Stream::transduce_items`] applies [`Transducer`]s (composable reducing-function
-//! transforms) incrementally to 0.6 streams.
+//! Transducers — composable reducing-function transforms, applied to streams with
+//! [`Stream::transduce_items`](super::Stream::transduce_items).
 //!
-//! [`Transducer`] itself is kernel-independent and lives in `next::streaming::transducer` since
-//! `k-retire-v1`; it is re-exported here so 0.6 paths keep working.
+//! Kernel-independent (no effect or runtime use); `k-retire-v1` moved it here from the 0.6
+//! `streaming::transducer`, which re-exports it. `id_effect_optics::transducer` re-exports it
+//! too.
 
-pub use crate::next::streaming::transducer::{Reducer, Transducer, filter, map, take};
-use crate::streaming::stream::{StageStep, Stream};
+use std::sync::Arc;
 
-impl<A, E, R> Stream<A, E, R>
-where
-  A: Send + Clone + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  /// Apply `xf` to each element, emitting transformed items in order.
-  #[inline]
-  pub fn transduce_items(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
-    // Incremental: one upstream chunk per pull, transformed item by item.
-    self.stage(move |input| {
-      let mut out = Vec::new();
-      for item in input.unwrap_or_default() {
-        let push: Reducer<A, Vec<A>> = Box::new(|mut acc: Vec<A>, x: A| {
-          acc.push(x);
-          acc
-        });
-        out.extend(xf.transduce(std::iter::once(item), push, Vec::new()));
+/// Stateful reducer step: `(accumulator, item) -> accumulator`.
+pub type Reducer<A, Acc> = Box<dyn FnMut(Acc, A) -> Acc + Send>;
+
+/// A transducer transforms a reducing function.
+pub struct Transducer<A, Acc> {
+  step: Arc<dyn Fn(Reducer<A, Acc>) -> Reducer<A, Acc> + Send + Sync>,
+}
+
+impl<A: 'static, Acc: 'static> Transducer<A, Acc> {
+  /// Wrap a step that rewrites an inner reducer.
+  pub fn new(step: impl Fn(Reducer<A, Acc>) -> Reducer<A, Acc> + Send + Sync + 'static) -> Self {
+    Self {
+      step: Arc::new(step),
+    }
+  }
+
+  /// Compose transducers: `inner` runs first, then `self`.
+  pub fn compose(self, inner: Transducer<A, Acc>) -> Transducer<A, Acc> {
+    let outer = self.step.clone();
+    let inner_step = inner.step.clone();
+    Transducer::new(move |rf| outer(inner_step(rf)))
+  }
+
+  /// Run the transducer over an iterator, producing a final accumulator.
+  pub fn transduce<I>(&self, iter: I, rf: Reducer<A, Acc>, init: Acc) -> Acc
+  where
+    I: IntoIterator<Item = A>,
+    A: Send + 'static,
+    Acc: Send + 'static,
+  {
+    let mut rf = (self.step)(rf);
+    let mut acc = init;
+    for item in iter {
+      acc = rf(acc, item);
+    }
+    acc
+  }
+}
+
+/// Map every item before reducing.
+pub fn map<A: 'static, Acc: 'static>(
+  f: impl Fn(A) -> A + Send + Sync + 'static,
+) -> Transducer<A, Acc> {
+  let f = Arc::new(f);
+  Transducer::new(move |mut rf| {
+    let f = f.clone();
+    Box::new(move |acc, item| rf(acc, f(item)))
+  })
+}
+
+/// Keep at most `count` items (per transducer instance; the count is shared across clones of
+/// the reducer it builds).
+pub fn take<A: 'static, Acc: 'static>(count: usize) -> Transducer<A, Acc> {
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  let remaining = Arc::new(AtomicUsize::new(count));
+  Transducer::new(move |mut rf| {
+    let remaining = remaining.clone();
+    Box::new(move |acc, item| {
+      let left = remaining.load(Ordering::Relaxed);
+      if left == 0 {
+        acc
+      } else {
+        remaining.store(left - 1, Ordering::Relaxed);
+        rf(acc, item)
       }
-      StageStep::Emit(out)
     })
-  }
+  })
+}
 
-  /// Alias for [`Self::transduce_items`] — integrates optics-style transducers on streams.
-  #[inline]
-  pub fn via_transducer(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
-    self.transduce_items(xf)
-  }
+/// Keep only items matching `pred`.
+pub fn filter<A: 'static, Acc: 'static>(
+  pred: impl Fn(&A) -> bool + Send + Sync + 'static,
+) -> Transducer<A, Acc> {
+  let pred = Arc::new(pred);
+  Transducer::new(move |mut rf| {
+    let pred = pred.clone();
+    Box::new(
+      move |acc, item| {
+        if pred(&item) { rf(acc, item) } else { acc }
+      },
+    )
+  })
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  fn block_on<F: core::future::Future>(fut: F) -> F::Output {
-    pollster::block_on(fut)
-  }
-
-  #[test]
-  fn map_transducer_doubles_values() {
-    let xf = map(|n: i32| n * 2);
-    let stream = Stream::from_iterable([1, 2, 3]).via_transducer(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4, 6]);
-  }
-
-  #[test]
-  fn filter_transducer_keeps_evens() {
-    let xf = filter(|n: &i32| n % 2 == 0);
-    let stream = Stream::from_iterable([1, 2, 3, 4]).transduce_items(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4]);
+  fn push() -> Reducer<i32, Vec<i32>> {
+    Box::new(|mut acc, x| {
+      acc.push(x);
+      acc
+    })
   }
 
   #[test]
   fn custom_transducer_step() {
     let xf = Transducer::new(|mut rf| Box::new(move |acc, item| rf(acc, item)));
-    let out = xf.transduce(
-      [1, 2],
-      Box::new(|mut acc: Vec<i32>, x| {
-        acc.push(x);
-        acc
-      }),
-      vec![],
-    );
-    assert_eq!(out, vec![1, 2]);
-  }
-
-  #[test]
-  fn transducer_on_infinite_source_is_incremental() {
-    let out = crate::testing::assert_bounded_memory(
-      |s| s.via_transducer(map(|n: u64| n * 10).compose(filter(|n: &u64| n.is_multiple_of(20)))),
-      3,
-      64,
-    );
-    assert_eq!(out, vec![0, 20, 40]);
+    assert_eq!(xf.transduce([1, 2], push(), vec![]), vec![1, 2]);
   }
 
   #[test]
@@ -95,8 +118,6 @@ mod tests {
   #[test]
   fn composed_map_and_filter() {
     let xf = map(|n: i32| n + 1).compose(filter(|n: &i32| n % 2 == 0));
-    let stream = Stream::from_iterable([1, 2, 3]).via_transducer(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4]);
+    assert_eq!(xf.transduce([1, 2, 3], push(), vec![]), vec![2, 4]);
   }
 }

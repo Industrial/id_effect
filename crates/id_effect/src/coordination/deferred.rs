@@ -1,291 +1,241 @@
-//! One-shot async rendezvous — mirrors Effect.ts `Deferred<A, E>`.
+//! [`Deferred`]: a one-shot, multi-reader completion cell (Effect.ts `Deferred<A, E>`). Ported
+//! from the v1 `coordination::deferred`, which was a tokio watch channel.
 //!
-//! Backed by [`tokio::sync::watch`] with `Option<[`Exit`](crate::Exit)>`: `None` until the first
-//! completion, then `Some`. Only the first successful `succeed` / `fail` / … wins; later attempts
-//! return `false` from those `Effect<bool, …>` helpers.
+//! The first completion wins (later attempts return `false`); [`Deferred::wait`] suspends every
+//! waiter on a waker until then and re-raises the stored outcome, cause included.
 
-use tokio::sync::watch;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
-use crate::failure::cause::Cause;
-use crate::failure::exit::Exit;
-use crate::kernel::{Effect, box_future};
-use crate::runtime::{FiberId, Never};
+use super::waiters::{WaitList, from_cause_future, lock, wake_all, with_fiber_id};
+use crate::failure::{Cause, Defect, Exit};
+use crate::next::kernel::{Effect, succeed, sync};
 
-// ── Deferred ─────────────────────────────────────────────────────────────────
+struct State<A, E> {
+  exit: Option<Exit<A, E>>,
+  waiters: WaitList<(), ()>,
+}
 
-/// Shared one-shot cell completed with an [`Exit`] value.
-#[derive(Clone, Debug)]
+struct Inner<A, E> {
+  state: Mutex<State<A, E>>,
+}
+
+impl<A, E> Inner<A, E> {
+  /// Stores `exit` when the cell is still empty (or always, with `force`); wakes every waiter.
+  fn complete(&self, exit: Exit<A, E>, force: bool) -> bool {
+    let ws = {
+      let mut st = lock(&self.state);
+      if st.exit.is_some() && !force {
+        return false;
+      }
+      st.exit = Some(exit);
+      st.waiters.release_all()
+    };
+    wake_all(ws);
+    true
+  }
+}
+
+/// A one-shot completion cell shared by any number of waiters. Cloning yields another handle to
+/// the same cell.
+///
+/// ```
+/// use id_effect::next::Deferred;
+/// use id_effect::Never;
+///
+/// let d = Deferred::<u8, Never>::new();
+/// let waiter = d.wait().fork();
+/// let eff = waiter.flat_map(move |h| d.succeed(7).then(h.join()));
+/// assert_eq!(eff.block_on().into_result().ok(), Some(7));
+/// ```
 pub struct Deferred<A, E> {
-  tx: watch::Sender<Option<Exit<A, E>>>,
-  rx: watch::Receiver<Option<Exit<A, E>>>,
+  inner: Arc<Inner<A, E>>,
+}
+
+impl<A, E> Clone for Deferred<A, E> {
+  fn clone(&self) -> Self {
+    Self {
+      inner: Arc::clone(&self.inner),
+    }
+  }
+}
+
+impl<A, E> std::fmt::Debug for Deferred<A, E> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.inner.state);
+    f.debug_struct("Deferred")
+      .field("done", &st.exit.is_some())
+      .field("waiters", &st.waiters.len())
+      .finish()
+  }
+}
+
+impl<A, E> Default for Deferred<A, E>
+where
+  A: Clone + Send + 'static,
+  E: Clone + Send + 'static,
+{
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl<A, E> Deferred<A, E>
 where
-  A: Clone + Send + Sync + 'static,
-  E: Clone + Send + Sync + 'static,
+  A: Clone + Send + 'static,
+  E: Clone + Send + 'static,
 {
-  /// Create an incomplete deferred (watch value starts at `None`).
-  pub fn make() -> Effect<Deferred<A, E>, Never, ()> {
-    Effect::new(|_r| {
-      let (tx, rx) = watch::channel(None);
-      Ok(Deferred { tx, rx })
-    })
-  }
-
-  /// Suspend until a completion is stored, then return success or the failure [`Cause`].
-  ///
-  /// The error channel is [`Cause<E>`] so interrupt / die / structured failures surface faithfully.
-  pub fn wait(&self) -> Effect<A, Cause<E>, ()> {
-    let mut rx = self.rx.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        loop {
-          if let Some(exit) = rx.borrow().clone() {
-            return match exit {
-              Exit::Success(a) => Ok(a),
-              Exit::Failure(c) => Err(c),
-            };
-          }
-          if rx.changed().await.is_err() {
-            return Err(Cause::die("deferred: all senders dropped"));
-          }
-        }
-      })
-    })
-  }
-
-  /// Like [`Self::wait`], but returns a [`Send`] future for use inside [`tokio::spawn`] and other
-  /// multi-thread executors (the boxed [`Effect`] future from [`Effect::run`] is not [`Send`]).
-  pub fn wait_future(
-    &self,
-  ) -> impl std::future::Future<Output = Result<A, Cause<E>>> + Send + 'static
-  where
-    A: Clone + Send + Sync + 'static,
-    E: Clone + Send + Sync + 'static,
-  {
-    let mut rx = self.rx.clone();
-    async move {
-      loop {
-        if let Some(exit) = rx.borrow().clone() {
-          return match exit {
-            Exit::Success(a) => Ok(a),
-            Exit::Failure(c) => Err(c),
-          };
-        }
-        if rx.changed().await.is_err() {
-          return Err(Cause::die("deferred: all senders dropped"));
-        }
-      }
+  /// A new, incomplete deferred.
+  pub fn new() -> Self {
+    Self {
+      inner: Arc::new(Inner {
+        state: Mutex::new(State {
+          exit: None,
+          waiters: WaitList::default(),
+        }),
+      }),
     }
   }
 
-  /// Try to complete with success (non-blocking). Returns whether this was the first completion.
-  #[inline]
-  pub fn try_succeed(&self, value: A) -> bool
+  /// Suspends until the deferred is completed, then succeeds with its value or re-raises its
+  /// cause (`Fail`, `Die` or `Interrupt`). Interrupting the waiter removes it.
+  pub fn wait<R: Send + Sync + 'static>(&self) -> Effect<A, E, R> {
+    let inner = Arc::clone(&self.inner);
+    from_cause_future(move || async move { Wait { inner, id: None }.await.into_result() })
+  }
+
+  /// [`wait`](Self::wait) as a plain `Send + 'static` future of the stored [`Exit`].
+  pub fn wait_future(&self) -> impl Future<Output = Exit<A, E>> + Send + 'static {
+    Wait {
+      inner: Arc::clone(&self.inner),
+      id: None,
+    }
+  }
+
+  /// Completes with `exit` now (outside an effect). `true` if this was the first completion.
+  pub fn try_done(&self, exit: Exit<A, E>) -> bool {
+    self.inner.complete(exit, false)
+  }
+
+  /// Completes with success now (outside an effect). `true` if this was the first completion.
+  pub fn try_succeed(&self, value: A) -> bool {
+    self.try_done(Exit::Success(value))
+  }
+
+  /// Completes with `cause` now (outside an effect). `true` if this was the first completion.
+  pub fn try_fail_cause(&self, cause: Cause<E>) -> bool {
+    self.try_done(Exit::Failure(cause))
+  }
+
+  /// Completes with `exit`. Succeeds with `true` if this was the first completion.
+  pub fn done<E2, R>(&self, exit: Exit<A, E>) -> Effect<bool, E2, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || inner.complete(exit, false))
+  }
+
+  /// Completes with success.
+  pub fn succeed<E2, R>(&self, value: A) -> Effect<bool, E2, R> {
+    self.done(Exit::Success(value))
+  }
+
+  /// Completes with the typed failure `error`.
+  pub fn fail<E2, R>(&self, error: E) -> Effect<bool, E2, R> {
+    self.done(Exit::Failure(Cause::Fail(error)))
+  }
+
+  /// Completes with an arbitrary `cause`.
+  pub fn fail_cause<E2, R>(&self, cause: Cause<E>) -> Effect<bool, E2, R> {
+    self.done(Exit::Failure(cause))
+  }
+
+  /// Completes with a defect.
+  pub fn die<E2, R>(&self, defect: impl Into<Defect>) -> Effect<bool, E2, R> {
+    self.done(Exit::Failure(Cause::Die(defect.into())))
+  }
+
+  /// Completes with an interrupt by the calling fiber (Effect.ts `Deferred.interrupt`).
+  pub fn interrupt<E2, R>(&self) -> Effect<bool, E2, R>
   where
-    A: Clone,
+    E2: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    self.tx.send_if_modified(|slot| {
-      if slot.is_none() {
-        *slot = Some(Exit::succeed(value.clone()));
-        true
-      } else {
-        false
-      }
-    })
+    let inner = Arc::clone(&self.inner);
+    with_fiber_id(move |id| succeed(inner.complete(Exit::Failure(Cause::Interrupt(id)), false)))
   }
 
-  /// Try to complete with a failure [`Cause`] (non-blocking).
-  #[inline]
-  pub fn try_fail_cause(&self, cause: Cause<E>) -> bool
+  /// Runs `eff` and completes with its outcome, success or failure (Effect.ts
+  /// `Deferred.complete`). Succeeds with `true` if this was the first completion; `eff`'s
+  /// failure is stored, not raised.
+  pub fn complete<E2, R>(&self, eff: Effect<A, E, R>) -> Effect<bool, E2, R>
   where
-    E: Clone,
+    E2: Send + 'static,
+    R: Send + Sync + 'static,
   {
-    self.tx.send_if_modified(|slot| {
-      if slot.is_none() {
-        *slot = Some(Exit::Failure(cause.clone()));
-        true
-      } else {
-        false
-      }
-    })
+    let inner = Arc::clone(&self.inner);
+    eff
+      .exit::<E2>()
+      .map(move |exit| inner.complete(exit, false))
   }
 
-  /// Non-blocking read of the current exit, if any.
-  pub fn poll(&self) -> Effect<Option<Exit<A, E>>, Never, ()> {
-    let rx = self.rx.clone();
-    Effect::new(move |_r| Ok(rx.borrow().clone()))
+  /// Reads the stored outcome without waiting.
+  pub fn poll<E2, R>(&self) -> Effect<Option<Exit<A, E>>, E2, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || lock(&inner.state).exit.clone())
   }
 
-  /// Returns whether this deferred has been completed (watch value is `Some`).
-  pub fn is_done(&self) -> Effect<bool, Never, ()> {
-    let rx = self.rx.clone();
-    Effect::new(move |_r| Ok(rx.borrow().is_some()))
+  /// `true` once completed.
+  pub fn is_done<E2, R>(&self) -> Effect<bool, E2, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || lock(&inner.state).exit.is_some())
   }
 
-  /// Complete with success. Returns `true` if this was the first completion.
-  pub fn succeed(&self, value: A) -> Effect<bool, Never, ()> {
-    let tx = self.tx.clone();
-    Effect::new(move |_r| {
-      Ok(tx.send_if_modified(|slot| {
-        if slot.is_none() {
-          *slot = Some(Exit::succeed(value.clone()));
-          true
-        } else {
-          false
-        }
-      }))
-    })
-  }
-
-  /// Complete with [`Exit::fail`]. Returns `true` if this was the first completion.
-  pub fn fail(&self, error: E) -> Effect<bool, Never, ()> {
-    let tx = self.tx.clone();
-    Effect::new(move |_r| {
-      Ok(tx.send_if_modified(|slot| {
-        if slot.is_none() {
-          *slot = Some(Exit::fail(error.clone()));
-          true
-        } else {
-          false
-        }
-      }))
-    })
-  }
-
-  /// Complete with an arbitrary [`Cause`]. Returns `true` if this was the first completion.
-  pub fn fail_cause(&self, cause: Cause<E>) -> Effect<bool, Never, ()> {
-    let tx = self.tx.clone();
-    Effect::new(move |_r| {
-      Ok(tx.send_if_modified(|slot| {
-        if slot.is_none() {
-          *slot = Some(Exit::Failure(cause.clone()));
-          true
-        } else {
-          false
-        }
-      }))
-    })
-  }
-
-  /// Complete with [`Exit::interrupt`]. Returns `true` if this was the first completion.
-  pub fn interrupt(&self) -> Effect<bool, Never, ()> {
-    let tx = self.tx.clone();
-    Effect::new(move |_r| {
-      Ok(tx.send_if_modified(|slot| {
-        if slot.is_none() {
-          *slot = Some(Exit::interrupt(FiberId::fresh()));
-          true
-        } else {
-          false
-        }
-      }))
-    })
-  }
-
-  /// Run `eff`; on success, complete with [`Exit::succeed`]. Returns whether this was the first
-  /// completion. Effect errors from `eff` are returned as `Err` **without** completing the deferred.
-  pub fn complete<R>(&self, eff: Effect<A, E, R>) -> Effect<bool, E, R> {
-    let tx = self.tx.clone();
-    Effect::new_async(move |r| {
-      box_future(async move {
-        let value = eff.run(r).await?;
-        Ok(tx.send_if_modified(|slot| {
-          if slot.is_none() {
-            *slot = Some(Exit::succeed(value));
-            true
-          } else {
-            false
-          }
-        }))
-      })
-    })
-  }
-
-  /// Force the stored exit, overwriting any prior value (use sparingly).
-  pub fn unsafe_done(&self, exit: Exit<A, E>) -> Effect<(), Never, ()> {
-    let tx = self.tx.clone();
-    Effect::new(move |_r| {
-      let _ = tx.send(Some(exit));
-      Ok(())
+  /// Stores `exit`, overwriting any earlier completion (use sparingly).
+  pub fn unsafe_done<E2, R>(&self, exit: Exit<A, E>) -> Effect<(), E2, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || {
+      inner.complete(exit, true);
     })
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::kernel::succeed;
+/// The suspended wait.
+struct Wait<A, E> {
+  inner: Arc<Inner<A, E>>,
+  id: Option<u64>,
+}
 
-  #[tokio::test]
-  async fn deferred_wait_suspends_until_succeed() {
-    let d = Deferred::<u8, ()>::make().run(&mut ()).await.unwrap();
-    let d2 = d.clone();
-    let (out, _) = tokio::join!(async { d.wait().run(&mut ()).await }, async {
-      tokio::task::yield_now().await;
-      d2.succeed(7).run(&mut ()).await.unwrap();
-    },);
-    assert_eq!(out, Ok(7));
-  }
+impl<A: Clone, E: Clone> Future for Wait<A, E> {
+  type Output = Exit<A, E>;
 
-  #[tokio::test]
-  async fn deferred_second_succeed_returns_false() {
-    let d = Deferred::<i32, ()>::make().run(&mut ()).await.unwrap();
-    assert!(d.succeed(1).run(&mut ()).await.unwrap());
-    assert!(!d.succeed(2).run(&mut ()).await.unwrap());
-  }
-
-  #[tokio::test]
-  async fn deferred_fail_propagates_error() {
-    let d = Deferred::<u8, &str>::make().run(&mut ()).await.unwrap();
-    assert!(d.fail("boom").run(&mut ()).await.unwrap());
-    let out = d.wait().run(&mut ()).await;
-    assert_eq!(out, Err(Cause::fail("boom")));
-  }
-
-  #[tokio::test]
-  async fn deferred_interrupt_delivers_interrupt_cause() {
-    let d = Deferred::<u8, ()>::make().run(&mut ()).await.unwrap();
-    assert!(d.interrupt().run(&mut ()).await.unwrap());
-    let out = d.wait().run(&mut ()).await;
-    match out {
-      Err(Cause::Interrupt(_)) => {}
-      o => panic!("expected interrupt cause, got {o:?}"),
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Exit<A, E>> {
+    let this = &mut *self;
+    let mut st = lock(&this.inner.state);
+    if let Some(exit) = &st.exit {
+      let exit = exit.clone();
+      if let Some(id) = this.id.take() {
+        let _ = st.waiters.take_grant(id);
+      }
+      return Poll::Ready(exit);
     }
+    match this.id {
+      Some(id) => {
+        st.waiters.refresh(id, cx.waker());
+      }
+      None => this.id = Some(st.waiters.push((), cx.waker())),
+    }
+    Poll::Pending
   }
+}
 
-  #[tokio::test]
-  async fn deferred_poll_none_before_complete() {
-    let d = Deferred::<u16, ()>::make().run(&mut ()).await.unwrap();
-    assert_eq!(d.poll().run(&mut ()).await.unwrap(), None);
-    d.succeed(42).run(&mut ()).await.unwrap();
-    assert_eq!(
-      d.poll().run(&mut ()).await.unwrap(),
-      Some(Exit::succeed(42_u16))
-    );
-  }
-
-  #[tokio::test]
-  async fn deferred_second_fail_cause_returns_false() {
-    let d = Deferred::<(), ()>::make().run(&mut ()).await.unwrap();
-    assert!(d.fail_cause(Cause::die("a")).run(&mut ()).await.unwrap());
-    assert!(!d.fail_cause(Cause::die("b")).run(&mut ()).await.unwrap());
-  }
-
-  #[tokio::test]
-  async fn deferred_complete_runs_effect_and_sets_success() {
-    let d = Deferred::<u8, ()>::make().run(&mut ()).await.unwrap();
-    let eff = succeed::<u8, (), ()>(9);
-    assert!(d.complete(eff).run(&mut ()).await.unwrap());
-    assert_eq!(d.wait().run(&mut ()).await, Ok(9));
-  }
-
-  #[tokio::test]
-  async fn deferred_unsafe_done_overwrites_prior() {
-    let d = Deferred::<u8, ()>::make().run(&mut ()).await.unwrap();
-    d.succeed(1).run(&mut ()).await.unwrap();
-    d.unsafe_done(Exit::succeed(2)).run(&mut ()).await.unwrap();
-    assert_eq!(d.wait().run(&mut ()).await, Ok(2));
+impl<A, E> Drop for Wait<A, E> {
+  fn drop(&mut self) {
+    if let Some(id) = self.id.take() {
+      let mut st = lock(&self.inner.state);
+      if st.waiters.take_grant(id).is_none() {
+        st.waiters.remove(id);
+      }
+    }
   }
 }

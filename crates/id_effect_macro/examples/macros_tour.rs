@@ -2,8 +2,8 @@
 //!
 //! Run: `cargo run -p id_effect_macro --example macros_tour`
 //!
-//! The environment of a `next` effect is named with `id_effect::next::caps_next!` (a proc macro);
-//! capabilities are provided with `.provide(..)` / `.provide_env(..)` or `next::Layer`s.
+//! The environment of an effect is named with `id_effect::caps!` (a proc macro); capabilities are
+//! provided with `.provide(..)` / `.provide_env(..)` or `Layer`s.
 
 use id_effect::Or;
 use id_effect_macro::{err, pipe};

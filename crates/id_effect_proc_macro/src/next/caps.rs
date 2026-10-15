@@ -1,4 +1,4 @@
-//! `caps_next!(A, B, C)` → `HCons<A, HCons<B, HCons<C, HNil>>>`, rejecting duplicates by token.
+//! `caps!(A, B, C)` (alias `caps_next!`) → `HCons<A, HCons<B, HCons<C, HNil>>>`, rejecting duplicates by token.
 //!
 //! A capability listed twice makes every later lookup of it ambiguous (E0283), and
 //! `macro_rules!` cannot compare idents, hence a proc-macro. Two items are the same capability
@@ -30,7 +30,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
       let span = item.first().map_or_else(Span::call_site, TokenTree::span);
       errors.extend(compile_error(
         &format!(
-          "capability `{key}` appears twice in `caps_next!(..)`; an environment holds each \
+          "capability `{key}` appears twice in `caps!(..)`; an environment holds each \
            capability once"
         ),
         span,
@@ -42,9 +42,9 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     unique.push(item);
   }
 
-  let mut acc = parse("::id_effect::next::HNil");
+  let mut acc = parse("::id_effect::HNil");
   for item in unique.into_iter().rev() {
-    let mut ts = parse("::id_effect::next::HCons<");
+    let mut ts = parse("::id_effect::HCons<");
     ts.extend(item);
     ts.extend(parse(","));
     ts.extend(acc);
@@ -61,7 +61,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
   block.extend(parse("0usize"));
   let mut out = parse("<");
   out.extend(acc);
-  out.extend(parse("as ::id_effect::next::__private::CapsChecked<"));
+  out.extend(parse("as ::id_effect::__private::CapsChecked<"));
   out.extend([group(Delimiter::Brace, block)]);
   out.extend(parse(">>::Out"));
   out

@@ -14,7 +14,7 @@ help: the return type of this call is `Cache` due to the type of the argument pa
    |                           |
    |                           this argument influences the return type of `provide`
 note: method defined here
-  --> src/next/capability/provide.rs
+  --> src/capability/provide.rs
    |
    |   pub fn provide<T, I>(self, t: T) -> Effect<A, E, <R as Plucker<T, I>>::Rest>
    |          ^^^^^^^

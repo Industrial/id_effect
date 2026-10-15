@@ -1,13 +1,13 @@
-error[E0277]: the environment `id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>` does not contain every capability of `id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>`
+error[E0277]: the environment `HCons<Logger, HNil>` does not contain every capability of `HCons<Db, HNil>`
   --> tests/next_ui/fail/missing_capability_narrowed.rs:26:14
    |
 26 |     let n = ~count_users();
-   |              ^^^^^^^^^^^ cannot narrow `id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>` to `id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>`
+   |              ^^^^^^^^^^^ cannot narrow `HCons<Logger, HNil>` to `HCons<Db, HNil>`
    |
-   = help: the trait `id_effect::next::capability::Embed<id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>, id_effect::next::capability::HCons<id_effect::next::capability::There<_>, id_effect::next::capability::HNil>>` is not implemented for `id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>`
-   = note: a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>` in `id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>`; add the missing ones to the caller's `caps_next!(..)`
-help: the trait `id_effect::next::kernel::Bindable<R, Is>` is conditionally implemented for `id_effect::next::kernel::Effect<B, E2, Sub>`
-  --> src/next/kernel/bind.rs
+   = help: the trait `Embed<HCons<Db, HNil>, HCons<There<_>, HNil>>` is not implemented for `HCons<Logger, HNil>`
+   = note: a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `HCons<Db, HNil>` in `HCons<Logger, HNil>`; add the missing ones to the caller's `caps_next!(..)`
+help: the trait `Bindable<R, Is>` is conditionally implemented for `Effect<B, E2, Sub>`
+  --> src/kernel/bind.rs
    |
    | / impl<B, E2, Sub, R, Is> Bindable<R, Is> for Effect<B, E2, Sub>
    | | where
@@ -17,13 +17,13 @@ help: the trait `id_effect::next::kernel::Bindable<R, Is>` is conditionally impl
    | |   R: Embed<Sub, Is> + Send + Sync + 'static,
    | |______--------------________________________^
    |        |
-   |        unsatisfied requirement introduced here: `id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>: id_effect::next::capability::Embed<id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>, id_effect::next::capability::HCons<id_effect::next::capability::There<_>, id_effect::next::capability::HNil>>`
-   = note: required for `id_effect::next::kernel::Effect<usize, DbError, id_effect::next::capability::HCons<Db, id_effect::next::capability::HNil>>` to implement `id_effect::next::kernel::Bindable<id_effect::next::capability::HCons<Logger, id_effect::next::capability::HNil>, id_effect::next::capability::HCons<id_effect::next::capability::There<_>, id_effect::next::capability::HNil>>`
-note: required by a bound in `id_effect::next::kernel::bind::<impl id_effect::next::kernel::Ctx<R>>::bind`
-  --> src/next/kernel/bind.rs
+   |        unsatisfied requirement introduced here: `HCons<Logger, HNil>: Embed<HCons<Db, HNil>, HCons<There<_>, HNil>>`
+   = note: required for `Effect<usize, DbError, HCons<Db, HNil>>` to implement `Bindable<HCons<Logger, HNil>, HCons<There<_>, HNil>>`
+note: required by a bound in `kernel::bind::<impl Ctx<R>>::bind`
+  --> src/kernel/bind.rs
    |
    |   pub fn bind<X, Is>(&self, sub: X) -> BindFuture<X::Output, X::Error>
    |          ---- required by a bound in this associated function
    |   where
    |     X: Bindable<R, Is>,
-   |        ^^^^^^^^^^^^^^^ required by this bound in `id_effect::next::kernel::bind::<impl Ctx<R>>::bind`
+   |        ^^^^^^^^^^^^^^^ required by this bound in `kernel::bind::<impl Ctx<R>>::bind`

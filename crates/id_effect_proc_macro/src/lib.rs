@@ -10,15 +10,10 @@ mod derive_optics;
 mod derive_schema_parser;
 mod distributed_behavior;
 mod effect_data;
-mod effect_graph;
 mod effect_tagged;
-mod expand;
-mod infer_caps;
 mod match_effect;
 mod next;
-mod parse;
 mod provider_spec;
-mod transform;
 
 use proc_macro::TokenStream;
 
@@ -45,18 +40,21 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
 }
 
-/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(Capability)]`.
+/// Derive an inherent `layer()` (an `id_effect::Layer` providing the service) from
+/// `#[provides(Service)]`. Re-exported by `id_effect` as `ProviderSpecDerive`.
 ///
-/// The service value comes from, in order of precedence:
+/// `Struct::layer::<E>()` is a `Layer<HCons<Service, HNil>, E>` that needs nothing and never
+/// fails. The service value comes from, in order of precedence:
 ///
-/// - `#[provides(Service, with = <constructor>)]` — `|| expr`, `|deps: &Env| expr` (reads
-///   already-built capabilities), or a path such as `Self::build` called with no arguments.
-///   This is the recommended form: no `fn new() -> Service` (which trips
-///   `clippy::new_ret_no_self`) is needed.
+/// - `#[provides(Service, with = <constructor>)]` — `|| expr`, or a path such as `Self::build`
+///   called with no arguments. This is the recommended form: no `fn new() -> Service` (which
+///   trips `clippy::new_ret_no_self`) is needed.
 /// - `Self::default()` when the struct derives `Default` (the provider is its own service).
 /// - `Self::new()` otherwise.
 ///
-/// Add `#[named("variant")]` for a named variant of the same capability.
+/// `#[provides(Service, release = <finalizer>)]` makes it an `acquire_release` layer whose
+/// finalizer `release(Arc<Service>)` (an `Effect<(), Never, HNil>`) runs when the layer's scope
+/// closes. The 0.6 forms `|deps: &Env| ..` and `#[named("..")]` are compile errors.
 ///
 /// ```ignore
 /// #[derive(Clone)]
@@ -65,6 +63,8 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[derive(ProviderSpecDerive)]
 /// #[provides(Counter, with = || Counter(42))]
 /// struct CounterLive;
+///
+/// let program = app().provide_layer(CounterLive::layer());
 /// ```
 #[proc_macro_derive(ProviderSpec, attributes(provides, named))]
 pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
@@ -85,33 +85,16 @@ pub fn match_effect(input: TokenStream) -> TokenStream {
   match_effect::expand(input)
 }
 
-/// Procedural do-notation macro for [`id_effect::Effect`].
+/// Do-notation over an async body, building an `id_effect::Effect`.
 ///
-/// See the `effect` crate documentation for usage.
-#[proc_macro]
-pub fn effect(input: TokenStream) -> TokenStream {
-  let input = proc_macro2::TokenStream::from(input);
-  let kind = match parse::parse_effect_input(input) {
-    Ok(k) => k,
-    Err(e) => return e.to_compile_error().into(),
-  };
-  match expand::expand(kind) {
-    Ok(ts) => ts.into(),
-    Err(e) => e.to_compile_error().into(),
-  }
-}
-
-/// Next-kernel effect from an async body (temporary name, re-exported as
-/// `id_effect::next::effect_next`; renamed by `k-retire-sweep`).
-///
-/// `effect_next!({ body })` takes `R` from the expected type; `effect_next!(|r: &Caps| { body })`
-/// fixes `R = Caps` and binds `r: &Caps`. In the body, `~Cap` reads a capability (`&Arc<Cap>`),
-/// and `~expr` runs a sub-effect over a part of `R` on the same fiber, widening its error
-/// (`Never` to anything, else `E: From<E2>`). The body must be `Send`.
+/// `effect!({ body })` takes `R` from the expected type; `effect!(|r: &Caps| { body })` fixes
+/// `R = Caps` and binds `r: &Caps`. In the body, `~Cap` reads a capability (`&Arc<Cap>`),
+/// `~expr` runs a sub-effect over a part of `R` on the same fiber, widening its error (`Never`
+/// to anything, else `E: From<E2>`), and `~(a, b, ..)` joins up to 8 effects in parallel on
+/// child fibers. `?` on a `Result` fails the effect with its error. The body must be `Send`.
 ///
 /// ```
-/// use id_effect::Never;
-/// use id_effect::next::{Effect, caps_next, effect_next, succeed};
+/// use id_effect::{Effect, Exit, Never, caps, effect, succeed};
 ///
 /// struct Greeting(&'static str);
 ///
@@ -119,28 +102,47 @@ pub fn effect(input: TokenStream) -> TokenStream {
 ///   succeed(42)
 /// }
 ///
-/// fn hello() -> Effect<String, Never, caps_next!(Greeting)> {
-///   effect_next!({ format!("{}:{}", ~Greeting.0, ~answer()) })
+/// fn hello() -> Effect<String, Never, caps!(Greeting)> {
+///   effect!({ format!("{}:{}", ~Greeting.0, ~answer()) })
 /// }
 ///
 /// let out = hello().provide(Greeting("hi")).block_on();
-/// assert!(matches!(out, id_effect::Exit::Success(ref s) if s == "hi:42"));
+/// assert!(matches!(out, Exit::Success(ref s) if s == "hi:42"));
 /// ```
+#[proc_macro]
+pub fn effect(input: TokenStream) -> TokenStream {
+  next::effect::expand(input, false)
+}
+
+/// The side-by-side name of [`effect!`](macro@effect), kept until `k-retire-sweep` renames its
+/// call sites. Same expansion.
 #[proc_macro]
 pub fn effect_next(input: TokenStream) -> TokenStream {
   next::effect::expand(input, false)
 }
 
-/// Like `effect_next!`, but builds an `id_effect::next::LocalEffect`, whose body may hold
-/// `!Send` values. `~expr` binds a `LocalEffect` or a `Send` `Effect` over a part of `R`.
+/// Like `effect!`, but builds an `id_effect::LocalEffect`, whose body may hold `!Send` values.
+/// `~expr` binds a `LocalEffect` or a `Send` `Effect` over a part of `R`.
+#[proc_macro]
+pub fn effect_local(input: TokenStream) -> TokenStream {
+  next::effect::expand(input, true)
+}
+
+/// The side-by-side name of [`effect_local!`](macro@effect_local), kept until `k-retire-sweep`.
 #[proc_macro]
 pub fn effect_local_next(input: TokenStream) -> TokenStream {
   next::effect::expand(input, true)
 }
 
-/// `caps_next!(A, B, C)` is the environment type `HCons<A, HCons<B, HCons<C, HNil>>>` of the next
-/// kernel. A capability listed twice (compared by token) is one compile error at the repeat; the
-/// de-duplicated list is still emitted so no further errors cascade.
+/// `caps!(A, B, C)` is the environment type `HCons<A, HCons<B, HCons<C, HNil>>>`. A capability
+/// listed twice (compared by token) is one compile error at the repeat; the de-duplicated list
+/// is still emitted so no further errors cascade.
+#[proc_macro]
+pub fn caps(input: TokenStream) -> TokenStream {
+  next::caps::expand(input)
+}
+
+/// The side-by-side name of [`caps!`](macro@caps), kept until `k-retire-sweep`.
 #[proc_macro]
 pub fn caps_next(input: TokenStream) -> TokenStream {
   next::caps::expand(input)

@@ -1,21 +1,19 @@
-//! **Stratum 8 — Resource Management**
+//! Managed resources on top of [`Scope`](crate::next::Scope): [`Cache`], [`Pool`] and
+//! [`KeyedPool`] (Effect.ts `Cache`, `Pool`, `KeyedPool`). Filled by `c-resource`.
 //!
-//! Safe acquisition and release of resources, built from Strata 0–7.
+//! Constructors are plain functions (`Pool::new`, `KeyedPool::new`, `Cache::new`), not effects:
+//! building one acquires nothing. A pooled item is checked out into a caller's scope and checked
+//! back in by a scope finalizer, so it returns to the pool however the scope closes, interrupt
+//! included. Time-to-live is measured on the running fiber's executor clock, so a
+//! `TestExecutor`'s virtual time drives expiry. `Scope` itself belongs to the kernel
+//! (`next::scope`).
 //!
-//! | Submodule | Provides | Depends on |
-//! |-----------|----------|------------|
-//! | [`scope`] | [`Scope`], [`Finalizer`] | Stratum 12 (`stm::{TRef, commit}`), Stratum 9 (`latch::Latch`), Stratum 6 (`runtime`), Stratum 4 (`failure`) |
-//! | [`pool`] | [`Pool`], [`KeyedPool`] | [`scope`], Stratum 9 (`coordination`) |
-//! | [`cache`] | [`Cache`], [`CacheStats`] | Stratum 9 (`coordination`), Stratum 14 (`collections`) |
-//!
-//! ## Public API
-//!
-//! Re-exported at the crate root: [`Scope`], [`Finalizer`], [`Pool`], [`KeyedPool`], [`Cache`], [`CacheStats`].
+//! Waiting (for pool capacity, or for a cache lookup in flight) uses this module's own
+//! cancel-safe primitives (`gate`), not `next::coordination`.
 
-pub mod cache;
-pub mod pool;
-pub mod scope;
+mod cache;
+mod gate;
+mod pool;
 
-pub use cache::{Cache, CacheStats};
-pub use pool::{KeyedPool, Pool};
-pub use scope::{Finalizer, Scope};
+pub use cache::*;
+pub use pool::*;

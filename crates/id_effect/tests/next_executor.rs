@@ -327,8 +327,8 @@ fn test_executor_is_usable_as_a_trait_object() {
 #[test]
 fn test_executor_source_does_not_mention_tokio() {
   for src in [
-    include_str!("../src/next/testing/test_executor.rs"),
-    include_str!("../src/next/testing/mod.rs"),
+    include_str!("../src/testing/test_executor.rs"),
+    include_str!("../src/testing/mod.rs"),
   ] {
     assert!(!src.contains("tokio"));
   }

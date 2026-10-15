@@ -1,119 +1,125 @@
-//! Reactive shared cell — Effect.ts `SubscriptionRef`: [`Ref`] plus change notifications via [`PubSub`].
+//! [`SubscriptionRef`]: a [`Ref`] that publishes every new value to its subscribers (Effect.ts
+//! `SubscriptionRef`). Ported from the v1 `coordination::subscription_ref`, which drove its
+//! inner effects with `run_blocking`.
+//!
+//! Writes and subscriptions are serialized by a one-permit [`Semaphore`], so a subscriber sees
+//! the value current at subscription first, then every later value in write order, with no gap
+//! and no duplicate.
 
-use crate::coordination::{PubSub, Queue, Ref};
-use crate::kernel::{Effect, box_future};
-use crate::resource::Scope;
-use crate::runtime::{Never, run_blocking};
+use super::pubsub::PubSub;
+use super::queue::Queue;
+use super::ref_::Ref;
+use super::semaphore::Semaphore;
+use crate::next::kernel::Effect;
+use crate::next::scope::Scope;
 
-/// Shared mutable cell that publishes every new value to subscribers.
-#[derive(Clone)]
-pub struct SubscriptionRef<A: Clone + Send + 'static> {
-  ref_: Ref<A>,
-  pubsub: PubSub<A>,
+/// A shared cell whose changes can be subscribed to. Cloning yields another handle to the same
+/// cell.
+pub struct SubscriptionRef<A> {
+  cell: Ref<A>,
+  hub: PubSub<A>,
+  gate: Semaphore,
 }
 
-impl<A: Clone + Send + Sync + 'static> SubscriptionRef<A> {
-  /// Allocate a cell with `value` and an unbounded change hub.
-  pub fn make(value: A) -> Effect<SubscriptionRef<A>, Never, ()> {
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let ref_ = run_blocking(Ref::make(value), ()).expect("ref");
-        let pubsub = run_blocking(PubSub::<A>::unbounded(), ()).expect("pubsub");
-        Ok(SubscriptionRef { ref_, pubsub })
-      })
-    })
-  }
-
-  /// Read the current value.
-  pub fn get(&self) -> Effect<A> {
-    self.ref_.get()
-  }
-
-  /// Replace the value and notify subscribers.
-  pub fn set(&self, value: A) -> Effect<()> {
-    let ref_ = self.ref_.clone();
-    let pubsub = self.pubsub.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        run_blocking(ref_.set(value.clone()), ()).expect("set");
-        let _ = run_blocking(pubsub.publish(value), ());
-        Ok(())
-      })
-    })
-  }
-
-  /// Apply `f` to the current value and notify subscribers with the new value.
-  pub fn update(&self, f: impl FnOnce(A) -> A + Send + 'static) -> Effect<()> {
-    let ref_ = self.ref_.clone();
-    let pubsub = self.pubsub.clone();
-    Effect::new_async(move |_r: &mut ()| {
-      box_future(async move {
-        let new_val = run_blocking(ref_.update_and_get(f), ()).expect("update");
-        let _ = run_blocking(pubsub.publish(new_val), ());
-        Ok(())
-      })
-    })
-  }
-
-  /// Subscribe to changes. The queue receives the current value first, then every subsequent update.
-  pub fn subscribe(&self) -> Effect<Queue<A>, Never, Scope> {
-    let ref_ = self.ref_.clone();
-    let pubsub = self.pubsub.clone();
-    Effect::new_async(move |scope: &mut Scope| {
-      let scope = scope.clone();
-      box_future(async move {
-        let q = run_blocking(pubsub.subscribe(), scope).expect("subscribe");
-        let current = run_blocking(ref_.get(), ()).expect("get");
-        run_blocking(q.offer(current), ()).expect("offer current");
-        Ok(q)
-      })
-    })
+impl<A> Clone for SubscriptionRef<A> {
+  fn clone(&self) -> Self {
+    Self {
+      cell: self.cell.clone(),
+      hub: self.hub.clone(),
+      gate: self.gate.clone(),
+    }
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_async;
+impl<A: std::fmt::Debug> std::fmt::Debug for SubscriptionRef<A> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("SubscriptionRef")
+      .field("value", &self.cell)
+      .field("subscribers", &self.hub.subscriber_count())
+      .finish()
+  }
+}
 
-  #[tokio::test]
-  async fn subscription_ref_notifies_subscribers() {
-    let sr = run_async(SubscriptionRef::make(0u32), ())
-      .await
-      .expect("make");
-    let scope = Scope::make();
-    let q = run_async(sr.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-
-    assert_eq!(run_async(q.take(), ()).await.expect("current"), 0);
-    run_async(sr.set(1), ()).await.expect("set");
-    tokio::task::yield_now().await;
-    assert_eq!(run_async(q.take(), ()).await.expect("change"), 1);
-    scope.close();
+impl<A: Clone + Send + 'static> SubscriptionRef<A> {
+  /// A new cell holding `value`, with an unbounded change hub.
+  pub fn new(value: A) -> Self {
+    Self {
+      cell: Ref::new(value),
+      hub: PubSub::unbounded(),
+      gate: Semaphore::new(1),
+    }
   }
 
-  #[tokio::test]
-  async fn subscription_ref_get_reads_current() {
-    let sr = run_async(SubscriptionRef::make(99u32), ())
-      .await
-      .expect("make");
-    assert_eq!(run_async(sr.get(), ()).await.expect("get"), 99);
+  /// Reads the current value.
+  pub fn get<E, R>(&self) -> Effect<A, E, R> {
+    self.cell.get()
   }
 
-  #[tokio::test]
-  async fn subscription_ref_update_publishes() {
-    let sr = run_async(SubscriptionRef::make(10u32), ())
-      .await
-      .expect("make");
-    let scope = Scope::make();
-    let q = run_async(sr.subscribe(), scope.clone())
-      .await
-      .expect("subscribe");
-    let _ = run_async(q.take(), ()).await;
-    run_async(sr.update(|n| n + 5), ()).await.expect("update");
-    tokio::task::yield_now().await;
-    assert_eq!(run_async(q.take(), ()).await.expect("change"), 15);
-    scope.close();
+  /// Replaces the value and notifies the subscribers.
+  pub fn set<E, R>(&self, value: A) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let hub = self.hub.clone();
+    let v = value.clone();
+    self
+      .gate
+      .with_permit(self.cell.set(value).then(hub.publish(v)).map(drop))
+  }
+
+  /// Replaces the value with `f(current)` and notifies the subscribers with the new value.
+  pub fn update<E, R>(&self, f: impl FnOnce(A) -> A + Send + 'static) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let hub = self.hub.clone();
+    self.gate.with_permit(
+      self
+        .cell
+        .update_and_get(f)
+        .flat_map(move |new| hub.publish(new))
+        .map(drop),
+    )
+  }
+
+  /// Computes `(b, new)` from the current value, stores `new`, notifies the subscribers and
+  /// returns `b`.
+  pub fn modify<B, E, R>(&self, f: impl FnOnce(A) -> (B, A) + Send + 'static) -> Effect<B, E, R>
+  where
+    B: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let hub = self.hub.clone();
+    self.gate.with_permit(
+      self
+        .cell
+        .modify(move |a| {
+          let (b, new) = f(a);
+          ((b, new.clone()), new)
+        })
+        .flat_map(move |(b, new)| hub.publish(new).map(move |_| b)),
+    )
+  }
+
+  /// Subscribes to changes: the queue receives the current value first, then every later value.
+  /// The subscription ends when `scope` closes.
+  pub fn subscribe<E, R>(&self, scope: &Scope) -> Effect<Queue<A>, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let cell = self.cell.clone();
+    self
+      .gate
+      .with_permit(self.hub.subscribe(scope).flat_map(move |q: Queue<A>| {
+        let q2 = q.clone();
+        cell
+          .get()
+          .flat_map(move |current| q2.offer(current))
+          .map(move |_| q)
+      }))
   }
 }

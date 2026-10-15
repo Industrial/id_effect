@@ -1,131 +1,158 @@
-//! One-shot open gate — waiters block until [`Latch::open`] runs (idempotent).
+//! [`Latch`]: a gate fibers wait on (Effect.ts `Latch`). Ported from the v1
+//! `coordination::latch`, which was a tokio `Notify` plus a flag.
+//!
+//! [`Latch::wait`] suspends while the latch is closed. [`Latch::open`] opens it and wakes every
+//! waiter; [`Latch::release`] wakes the current waiters once without opening; [`Latch::close`]
+//! closes it again.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 
-use tokio::sync::Notify;
+use super::waiters::{WaitList, lock, wake_all};
+use crate::next::kernel::{Effect, from_async, sync};
 
-use crate::kernel::{Effect, box_future};
-use crate::runtime::Never;
-
-// ── Latch ───────────────────────────────────────────────────────────────────
-
-struct LatchInner {
-  open: AtomicBool,
-  notify: Notify,
+struct State {
+  open: bool,
+  waiters: WaitList<(), ()>,
 }
 
-/// A latch that starts closed; [`Latch::open`] wakes all waiters. [`Latch::open`] is idempotent.
+/// A gate. Cloning yields another handle to the same latch.
 #[derive(Clone)]
 pub struct Latch {
-  inner: Arc<LatchInner>,
+  inner: Arc<Mutex<State>>,
+}
+
+impl std::fmt::Debug for Latch {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.inner);
+    f.debug_struct("Latch")
+      .field("open", &st.open)
+      .field("waiters", &st.waiters.len())
+      .finish()
+  }
+}
+
+impl Default for Latch {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl Latch {
-  /// Create a new closed latch.
-  pub fn make() -> Effect<Self> {
-    Effect::new(|_| {
-      Ok(Latch {
-        inner: Arc::new(LatchInner {
-          open: AtomicBool::new(false),
-          notify: Notify::new(),
-        }),
-      })
-    })
+  /// A closed latch.
+  pub fn new() -> Self {
+    Self::with_state(false)
   }
 
-  /// Open the latch and wake every current waiter. No-op if already open.
-  pub fn open(&self) -> Effect<(), Never, ()> {
+  /// A latch that starts open (`true`) or closed (`false`).
+  pub fn with_state(open: bool) -> Self {
+    Self {
+      inner: Arc::new(Mutex::new(State {
+        open,
+        waiters: WaitList::default(),
+      })),
+    }
+  }
+
+  fn set(&self, open: Option<bool>) {
+    let ws = {
+      let mut st = lock(&self.inner);
+      if let Some(open) = open {
+        st.open = open;
+      }
+      st.waiters.release_all()
+    };
+    wake_all(ws);
+  }
+
+  /// Opens the latch and wakes every waiter. Idempotent.
+  pub fn open<E, R>(&self) -> Effect<(), E, R> {
+    let l = self.clone();
+    sync(move || l.set(Some(true)))
+  }
+
+  /// Wakes the fibers waiting right now without opening the latch (later waiters still wait).
+  pub fn release<E, R>(&self) -> Effect<(), E, R> {
+    let l = self.clone();
+    sync(move || l.set(None))
+  }
+
+  /// Closes the latch: later [`wait`](Self::wait)s suspend again.
+  pub fn close<E, R>(&self) -> Effect<(), E, R> {
+    let l = self.clone();
+    sync(move || lock(&l.inner).open = false)
+  }
+
+  /// Suspends until the latch is open (or [`release`](Self::release)d). Interrupting the waiter
+  /// removes it.
+  pub fn wait<E, R>(&self) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
     let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_| {
-      box_future(async move {
-        if inner.open.swap(true, Ordering::SeqCst) {
-          return Ok(());
-        }
-        inner.notify.notify_waiters();
-        Ok(())
-      })
+    from_async(move || async move {
+      LatchWait { inner, id: None }.await;
+      Ok(())
     })
   }
 
-  /// Wait until the latch is open (async).
-  pub fn wait(&self) -> Effect<(), Never, ()> {
+  /// Runs `eff` once the latch is open.
+  pub fn when_open<A, E, R>(&self, eff: Effect<A, E, R>) -> Effect<A, E, R>
+  where
+    A: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.wait().then(eff)
+  }
+
+  /// `true` while the latch is open.
+  pub fn is_open<E, R>(&self) -> Effect<bool, E, R> {
     let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_| {
-      box_future(async move {
-        while !inner.open.load(Ordering::Acquire) {
-          inner.notify.notified().await;
+    sync(move || lock(&inner).open)
+  }
+}
+
+/// The suspended wait.
+struct LatchWait {
+  inner: Arc<Mutex<State>>,
+  id: Option<u64>,
+}
+
+impl Future for LatchWait {
+  type Output = ();
+
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    let this = &mut *self;
+    let mut st = lock(&this.inner);
+    match this.id {
+      Some(id) => {
+        if st.waiters.take_grant(id).is_some() {
+          this.id = None;
+          return Poll::Ready(());
         }
-        Ok(())
-      })
-    })
+        st.waiters.refresh(id, cx.waker());
+        Poll::Pending
+      }
+      None if st.open => Poll::Ready(()),
+      None => {
+        this.id = Some(st.waiters.push((), cx.waker()));
+        Poll::Pending
+      }
+    }
   }
-
-  /// Whether [`Latch::open`] has been called successfully at least once.
-  pub fn is_open(&self) -> Effect<bool, Never, ()> {
-    let v = self.inner.open.load(Ordering::Acquire);
-    Effect::new(move |_| Ok(v))
-  }
 }
 
-/// `Latch.make()`
-pub fn make() -> Effect<Latch> {
-  Latch::make()
-}
-
-/// `Latch.open(l)`
-pub fn open(l: &Latch) -> Effect<(), Never, ()> {
-  l.open()
-}
-
-/// `Latch.wait(l)`
-pub fn wait(l: &Latch) -> Effect<(), Never, ()> {
-  l.wait()
-}
-
-/// `Latch.is_open(l)`
-pub fn is_open(l: &Latch) -> Effect<bool, Never, ()> {
-  l.is_open()
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_async;
-  use tokio::task::LocalSet;
-
-  #[tokio::test]
-  async fn latch_wait_returns_after_open() {
-    let local = LocalSet::new();
-    local
-      .run_until(async {
-        let l = crate::runtime::run_blocking(Latch::make(), ()).unwrap();
-        let l2 = l.clone();
-        let w = tokio::task::spawn_local(async move { run_async(l2.wait(), ()).await.unwrap() });
-        let o = tokio::task::spawn_local(async move {
-          tokio::task::yield_now().await;
-          run_async(l.open(), ()).await.unwrap();
-        });
-        let _ = tokio::join!(w, o);
-      })
-      .await;
-  }
-
-  #[tokio::test]
-  async fn latch_open_is_idempotent() {
-    let l = crate::runtime::run_blocking(Latch::make(), ()).unwrap();
-    run_async(l.open(), ()).await.unwrap();
-    run_async(l.open(), ()).await.unwrap();
-    assert!(run_async(l.is_open(), ()).await.unwrap());
-    run_async(l.wait(), ()).await.unwrap();
-  }
-
-  #[tokio::test]
-  async fn free_functions_work_same_as_methods() {
-    let l = crate::runtime::run_blocking(make(), ()).unwrap();
-    assert!(!run_async(is_open(&l), ()).await.unwrap());
-    run_async(open(&l), ()).await.unwrap();
-    assert!(run_async(is_open(&l), ()).await.unwrap());
-    run_async(wait(&l), ()).await.unwrap(); // already open, returns immediately
+impl Drop for LatchWait {
+  fn drop(&mut self) {
+    if let Some(id) = self.id.take() {
+      let mut st = lock(&self.inner);
+      if st.waiters.take_grant(id).is_none() {
+        st.waiters.remove(id);
+      }
+    }
   }
 }
