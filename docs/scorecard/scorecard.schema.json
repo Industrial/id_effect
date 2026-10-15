@@ -136,6 +136,12 @@
 				"targets": {
 					"$ref": "#/$defs/versionScores",
 					"description": "Planned id_effect score per release (METHOD.md §5.1)."
+				},
+				"adr": {
+					"type": "object",
+					"description": "Optional. Version (x.y.z) -> why the id_effect score may drop by 5 or more at that release (scorecard.sh --diff; PLAN-OF-PLANS §7.3).",
+					"propertyNames": { "$ref": "#/$defs/semver" },
+					"additionalProperties": { "type": "string", "minLength": 1 }
 				}
 			}
 		}

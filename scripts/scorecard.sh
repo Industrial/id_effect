@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
-# Validate the platform scorecard and compute its indices (docs/scorecard/METHOD.md §5 and §5.1).
+# Validate the platform scorecard, compute its indices (docs/scorecard/METHOD.md §5 and §5.1) and
+# publish them (METHOD §6, PLAN-OF-PLANS §7.3 and §7.4).
 #
 # Usage: bash scripts/scorecard.sh [--file FILE] --validate
 #        bash scripts/scorecard.sh [--file FILE] --version V | --targets V
 #        bash scripts/scorecard.sh [--file FILE] --json V [--write]
+#        bash scripts/scorecard.sh [--file FILE] --diff A B | --compare-targets V
+#        bash scripts/scorecard.sh [--file FILE] --report V [--prev P] | --html
 #        bash scripts/scorecard.sh --validate --self-test
 # FILE defaults to docs/scorecard/scorecard.json. --version V scores id_effect with the scores
 # measured at V (planned scores, §5.1, where V has none); --targets V always uses planned scores.
 # Both print U, E and RT with ranks, then ≥80, <40, leader and median gap, in the §5.2 layout.
 # --json V prints the --version result as JSON; --write stores it in docs/scorecard/results/vV.json.
+# --diff A B lists the rows whose measured id_effect score changed from A to B; it FAILs on a drop
+# of 5 or more unless the row has an adr note for B. --compare-targets V sets the indices measured
+# at V beside the planned ones; it FAILs if measured E < planned E − 1.0.
+# --report V writes docs/scorecard/REPORT-V.md, comparing V with P (default: the measured version
+# before V). --html writes docs/scorecard/index.html: docs/scorecard/template.html with the data.
 # --self-test checks the real file against METHOD §5.2 and runs docs/scorecard/fixtures.
-# Exits 1 on any FAIL (invalid scorecard, self-test mismatch), 2 on misuse.
-# Requires: bash ≥ 4, jq ≥ 1.6 (plus awk, which formats numbers with printf "%.1f", and diff).
+# Exits 1 on any FAIL (invalid scorecard, self-test mismatch, missed gate), 2 on misuse.
+# Requires: bash ≥ 4, jq ≥ 1.6 (plus awk, which formats numbers with printf "%.1f", diff, cmp, mktemp).
 set -euo pipefail
 export LC_ALL=C
 
@@ -19,12 +27,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIR="$ROOT/docs/scorecard"
 FIXTURES="$DIR/fixtures"
 
-usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,/^# Requires/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 ((BASH_VERSINFO[0] >= 4)) || { echo "scorecard: bash >= 4 required" >&2; exit 2; }
-for tool in jq awk diff; do
+for tool in jq awk diff cmp mktemp; do
     command -v "$tool" >/dev/null || { echo "scorecard: missing $tool" >&2; exit 2; }
 done
+
+# Generated files are built here first and copied into place whole.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
 
 # One line per rule the scorecard breaks (none = valid). The shape rules mirror
 # scorecard.schema.json; the cross references are the ones a schema cannot express.
@@ -70,20 +82,20 @@ def rules:
         (.group as $g | select(any($gids[]; . == $g) | not) | "\($at): unknown group \($g | tojson)"),
         (.track as $t | select(any($tids[]; . == $t) | not) | "\($at): unknown track \($t | tojson)"),
         (.stance as $s | select(any(stances; . == $s) | not)
-          | "\($at): unknown stance \($s | tojson)"));
+          | "\($at): unknown stance \($s | tojson)"),
+        (select(has("adr") and (.adr | type) != "object") | "\($at): adr must be an object"),
+        (.adr | objects | to_entries[]
+          | (select(.key | semver | not) | "\($at): adr key \(.key | tojson) is not x.y.z"),
+            (select((.value | type) != "string" or .value == "")
+              | "\($at): adr[\(.key)] must be a non-empty string")));
 (select(type != "object") | "top level: must be an object"),
 (objects | [shape] as $e | $e[], (select($e == []) | rules))
 '
 
-# METHOD §5 on a valid scorecard, as raw (unrounded) TSV records:
-#   meta <basis> <method> <snapshot>
-#   fw <id> <name> <U> <E> <RT> <rank U> <rank E> <rank RT> <display position, 0 = id_effect>
-#   grp <framework> <group> <group score>
-#   kpi <≥80> <<40> <leader> <median gap>
+# Definitions shared by the jq programs below.
 # shellcheck disable=SC2016 # jq program, not shell expansions
-COMPUTE_JQ='
+SCORE_JQ='
 def vkey: split(".") | map(tonumber);
-def mean: add / length;
 # §5.1: max(latest measured score at or before $v, max target score at or before $v). A version
 # older than every measured one falls back to the latest measured score.
 def planned($v):
@@ -92,6 +104,23 @@ def planned($v):
   | (([$m[] | select((.key | vkey) <= $k)] | last) // ($m | last) | .value) as $base
   | [$base, (.targets | to_entries[] | select((.key | vkey) <= $k) | .value)] | max;
 def score($v; $mode): (select($mode == "version") | .id_effect[$v]) // planned($v);
+# The versions every row has a measured score for, then the other target versions, ascending.
+def measured:
+  . as $d | [$d.rows[].id_effect | keys[]] | unique
+  | map(select(. as $v | all($d.rows[]; .id_effect[$v] != null))) | sort_by(vkey);
+def target_versions: ([.rows[].targets | keys[]] | unique) - measured | sort_by(vkey);
+# Markdown table cell text.
+def md: gsub("\\\\"; "\\\\") | gsub("\\|"; "\\|") | gsub("<"; "\\<") | gsub("\\*"; "\\*");
+'
+
+# METHOD §5 on a valid scorecard, as raw (unrounded) TSV records:
+#   meta <basis> <method> <snapshot>
+#   fw <id> <name> <U> <E> <RT> <rank U> <rank E> <rank RT> <display position, 0 = id_effect>
+#   grp <framework> <group> <group score>
+#   kpi <≥80> <<40> <leader> <median gap>
+# shellcheck disable=SC2016 # jq program, not shell expansions
+COMPUTE_JQ="$SCORE_JQ"'
+def mean: add / length;
 . as $d
 | (("measured" | select($mode == "version" and all($d.rows[]; .id_effect[$v] != null)))
    // "target") as $basis
@@ -134,10 +163,13 @@ check() {
     return 1
 }
 
-# compute FILE V MODE (version|targets): the COMPUTE_JQ records, indices formatted to one decimal.
+# compute_raw FILE V MODE (version|targets): the COMPUTE_JQ records, unrounded.
+compute_raw() { jq -r --arg v "$2" --arg mode "$3" "$COMPUTE_JQ" "$1"; }
+
+# compute FILE V MODE: the COMPUTE_JQ records, indices formatted to one decimal.
 # awk formats the doubles jq printed (C printf rounding, like the §5.2 reference); jq never rounds.
 compute() {
-    jq -r --arg v "$2" --arg mode "$3" "$COMPUTE_JQ" "$1" | awk -F'\t' -v OFS='\t' '
+    compute_raw "$@" | awk -F'\t' -v OFS='\t' '
         $1 == "fw" { for (i = 4; i <= 6; i++) $i = sprintf("%.1f", $i) }
         $1 == "grp" { $4 = sprintf("%.1f", $4) }
         { print }'
@@ -192,6 +224,295 @@ id_rows() {
     for spec in "$@"; do
         compute "$file" "${spec#*:}" "${spec%%:*}" | render "${spec#*:}" id
     done
+}
+
+# versions FILE KIND (measured|target_versions): one version per line, ascending.
+versions() { jq -r "$SCORE_JQ$2"'[]' "$1"; }
+
+# Exit 2 unless every row of FILE has a measured id_effect score at V.
+require_measured() {
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    jq -e --arg v "$2" "$SCORE_JQ"'any(measured[]; . == $v)' "$1" >/dev/null || {
+        echo "scorecard: $2 has no measured id_effect scores in ${1#"$ROOT"/}" >&2
+        exit 2
+    }
+}
+
+# The rows whose measured id_effect score changed from $a to $b, as markdown ($part: table, the
+# rows that went down, the no-silent-regression gate line) or as FAIL lines ($part: fails). A drop
+# of 5 or more needs an adr note for $b (PLAN-OF-PLANS §7.3).
+# shellcheck disable=SC2016 # jq program, not shell expansions
+CHANGES_JQ="$SCORE_JQ"'
+def signed: if . > 0 then "+\(.)" else tostring end;
+def adr_note: if .adr then " (ADR: \(.adr | md))" else "" end;
+(.rows | length) as $n
+| [.rows[] | select(.id_effect[$a] != .id_effect[$b])
+    | {id, name, evidence, old: .id_effect[$a], new: .id_effect[$b],
+       delta: (.id_effect[$b] - .id_effect[$a]), adr: (.adr[$b] // null)}]
+| map(select(.delta <= -5)) as $drops
+| if $part == "fails" then
+    $drops[] | select(.adr == null)
+    | "row \(.id | tojson): \(.old) at \($a), \(.new) at \($b) (\(.delta)) with no adr note for \($b)"
+  elif $part == "table" then
+    if length == 0 then "No row changed from \($a) to \($b) (\($n) rows)." else
+      "| Row | Capability | \($a) | \($b) | Δ | Evidence |",
+      "|---|---|---|---|---|---|",
+      (.[] | "| `\(.id)` | \(.name | md) | \(.old) | \(.new) | \(.delta | signed) | \(.evidence | md)\(adr_note) |"),
+      "",
+      "\(length) of \($n) rows changed: \(map(select(.delta > 0)) | length) up, \(map(select(.delta < 0)) | length) down."
+    end
+  elif $part == "regressions" then
+    map(select(.delta < 0))
+    | if length == 0 then "No row went down from \($a) to \($b)." else
+        "| Row | Capability | \($a) | \($b) | Δ | ADR note for \($b) |",
+        "|---|---|---|---|---|---|",
+        (.[] | "| `\(.id)` | \(.name | md) | \(.old) | \(.new) | \(.delta) | \(
+          if .adr then .adr | md elif .delta <= -5 then "**none (gate FAIL)**" else "not needed (drop under 5)" end) |")
+      end
+  else
+    "No silent regression (PLAN-OF-PLANS §7.3, no drop of 5 or more without an adr note): \(
+      if any($drops[]; .adr == null) then "FAIL" else "ok" end) (drops of 5 or more: \($drops | length), with an adr note: \(
+      [$drops[] | select(.adr != null)] | length))."
+  end
+'
+
+# changes FILE A B PART (table|regressions|gate|fails): see CHANGES_JQ.
+changes() { jq -r --arg a "$2" --arg b "$3" --arg part "$4" "$CHANGES_JQ" "$1"; }
+
+# compare PLANNED MEASURED (compute_raw output, one version each): the planned versus measured table
+# and the index-target gate line. Returns 1 if measured E < planned E − 1.0.
+compare() {
+    awk -F'\t' '
+        function d1(x, s) { s = sprintf("%+.1f", x); return s == "-0.0" ? "+0.0" : s }
+        function ix(name, i) {
+            printf "| %s | %.1f (#%d) | %.1f (#%d) | %s |\n", name, x[1, i], r[1, i], x[2, i], r[2, i], d1(x[2, i] - x[1, i])
+        }
+        FNR == 1 { f++ }
+        $1 == "fw" && $2 == "id_effect" { for (i = 4; i <= 6; i++) { x[f, i] = $i + 0; r[f, i] = $(i + 3) + 0 } }
+        $1 == "kpi" { for (i = 2; i <= 5; i++) k[f, i] = $i + 0 }
+        END {
+            print "| Index | Planned | Measured | Δ |"
+            print "|---|---|---|---|"
+            ix("U", 4); ix("E", 5); ix("RT", 6)
+            split("≥80|<40|leader|median gap", kpi, "|")
+            for (i = 2; i <= 5; i++) printf "| %s | %d | %d | %+d |\n", kpi[i - 1], k[1, i], k[2, i], k[2, i] - k[1, i]
+            ok = x[2, 5] >= x[1, 5] - 1.0
+            printf "\nIndex target (PLAN-OF-PLANS §7.3, measured E ≥ planned E − 1.0): %s (measured %.1f, planned %.1f).\n", (ok ? "ok" : "FAIL"), x[2, 5], x[1, 5]
+            exit !ok
+        }' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
+}
+
+# The rows measured below their planned score (§5.1) at $v, with the next target they carry over to.
+# shellcheck disable=SC2016 # jq program, not shell expansions
+MISSES_JQ="$SCORE_JQ"'
+[.rows[] | planned($v) as $p | select(.id_effect[$v] < $p)
+  | {id, name, m: .id_effect[$v], p: $p,
+     next: ([.targets | to_entries[] | select((.key | vkey) > ($v | vkey))] | sort_by(.key | vkey) | first)}]
+| if length == 0 then "No row is below its planned score at \($v)." else
+    "| Row | Capability | Planned | Measured | Gap | Carry-over |",
+    "|---|---|---|---|---|---|",
+    (.[] | "| `\(.id)` | \(.name | md) | \(.p) | \(.m) | \(.m - .p) | \(
+      if .next then "\(.next.key) target \(.next.value)" else "none: set a later target or record why" end) |")
+  end
+'
+
+# misses FILE V: see MISSES_JQ.
+misses() { jq -r --arg v "$2" "$MISSES_JQ" "$1"; }
+
+# indices_md P V GROUPS PREV CUR: the report sections on indices, rank movement and group scores.
+# GROUPS is "<id>\t<name>\t<w_enterprise>\t<w_runtime>" lines; PREV and CUR are compute_raw output
+# for P and V.
+indices_md() {
+    awk -F'\t' -v p="$1" -v v="$2" '
+        function d1(x, s) { s = sprintf("%+.1f", x); return s == "-0.0" ? "+0.0" : s }
+        function move(a, b) { return a == b ? "unchanged" : (b < a ? "up " (a - b) : "down " (b - a)) }
+        function add(list, item) { return list == "" ? item : list ", " item }
+        FNR == 1 { f++ }
+        f == 1 { gid[++ng] = $1; gname[$1] = $2; we[$1] = $3 + 0; wr[$1] = $4 + 0; next }
+        $1 == "meta" { basis[f] = $2 }
+        $1 == "fw" {
+            if (f == 2) { fid[++nf] = $2; fname[$2] = $3 }
+            for (i = 4; i <= 6; i++) { x[f, $2, i] = $i + 0; r[f, $2, i] = $(i + 3) + 0 }
+        }
+        $1 == "grp" { gs[f, $2, $3] = $4 + 0 }
+        $1 == "kpi" { for (i = 2; i <= 5; i++) k[f, i] = $i + 0 }
+        END {
+            me = "id_effect"
+            print "## Indices before and after"
+            print ""
+            print "| Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |"
+            print "|---|---|---|---|---|---|---|---|"
+            for (f = 2; f <= 3; f++)
+                printf "| %s %s | %.1f | %.1f (#%d) | %.1f (#%d) | %d | %d | %d | %d |\n", (f == 2 ? p : v), basis[f],
+                    x[f, me, 4], x[f, me, 5], r[f, me, 5], x[f, me, 6], r[f, me, 6], k[f, 2], k[f, 3], k[f, 4], k[f, 5]
+            printf "| Δ | %s | %s | %s | %+d | %+d | %+d | %+d |\n", d1(x[3, me, 4] - x[2, me, 4]), d1(x[3, me, 5] - x[2, me, 5]),
+                d1(x[3, me, 6] - x[2, me, 6]), k[3, 2] - k[2, 2], k[3, 3] - k[2, 3], k[3, 4] - k[2, 4], k[3, 5] - k[2, 5]
+            print ""
+            print "Every Δ in this report is computed from unrounded values (METHOD §5 step 7), so it can differ by 0.1 from the difference of the rounded values shown."
+
+            print ""
+            print "## Rank movement"
+            print ""
+            printf "id_effect among the %d frameworks (1 = best, ties take the better rank).\n\n", nf
+            print "| Index | " p " | " v " | Movement | Passed | Fell behind |"
+            print "|---|---|---|---|---|---|"
+            split("U|E|RT", iname, "|")
+            for (i = 4; i <= 6; i++) {
+                passed = ""
+                behind = ""
+                for (j = 2; j <= nf; j++) {
+                    c = fid[j]
+                    before = x[2, c, i] > x[2, me, i]
+                    after = x[3, c, i] > x[3, me, i]
+                    if (before && !after) passed = add(passed, sprintf("%s (%.1f)", fname[c], x[3, c, i]))
+                    if (!before && after) behind = add(behind, sprintf("%s (%.1f)", fname[c], x[3, c, i]))
+                }
+                printf "| %s | #%d | #%d | %s | %s | %s |\n", iname[i - 3], r[2, me, i], r[3, me, i], move(r[2, me, i], r[3, me, i]),
+                    (passed == "" ? "—" : passed), (behind == "" ? "—" : behind)
+            }
+
+            print ""
+            print "## Group scores"
+            print ""
+            print "| Group | Weight E | Weight RT | " p " | " v " | Δ | Best competitor at " v " |"
+            print "|---|---|---|---|---|---|---|"
+            for (g = 1; g <= ng; g++) {
+                id = gid[g]
+                bv = -1
+                for (j = 2; j <= nf; j++) if (gs[3, fid[j], id] > bv) { bv = gs[3, fid[j], id]; best = fname[fid[j]] }
+                printf "| %s | %g | %g | %.1f | %.1f | %s | %s %.1f |\n", gname[id], we[id], wr[id], gs[2, me, id], gs[3, me, id],
+                    d1(gs[3, me, id] - gs[2, me, id]), best, bv
+            }
+        }' <(printf '%s\n' "$3") <(printf '%s\n' "$4") <(printf '%s\n' "$5")
+}
+
+# report FILE V P: docs/scorecard/REPORT-V.md (PLAN-OF-PLANS §7.4; METHOD §6 step 6) on stdout.
+# shellcheck disable=SC2329 # invoked through generate
+report() {
+    local file="$1" v="$2" p="$3" groups cur prev planned later bench result rows
+    local -a specs=()
+    groups="$(jq -r '.groups[] | [.id, .name, .w_enterprise, .w_runtime] | @tsv' "$file")"
+    cur="$(compute_raw "$file" "$v" version)"
+    prev="$(compute_raw "$file" "$p" version)"
+    planned="$(compute_raw "$file" "$v" targets)"
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    later="$(jq -r --arg v "$v" "$SCORE_JQ"'target_versions[] | select(vkey > ($v | vkey))' "$file")"
+
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    jq -r --arg v "$v" --arg p "$p" --arg src "${file#"$ROOT"/}" '
+        "# Scorecard report: id_effect \($v)",
+        "",
+        "Generated by `bash scripts/scorecard.sh --report \($v) --prev \($p)` from `\($src)` (METHOD.md v\(.method_version), competitor snapshot \(.competitor_snapshot.date)). Do not edit it by hand: change the data and regenerate. It compares the id_effect scores measured at \($v) with those measured at \($p), in the sections of PLAN-OF-PLANS §7.4.",
+        ""' "$file"
+    indices_md "$p" "$v" "$groups" "$prev" "$cur"
+
+    printf '\n## Target versus actual\n\n'
+    echo "The planned indices for $v (METHOD §5.1: per row, the highest target at or before $v, or the latest measured score if higher) beside the measured ones."
+    echo
+    compare "$planned" "$cur" || true
+
+    printf '\n## Rows changed\n\n'
+    changes "$file" "$p" "$v" table
+
+    printf '\n## Regressions\n\n'
+    changes "$file" "$p" "$v" regressions
+    echo
+    changes "$file" "$p" "$v" gate
+
+    printf '\n## Misses and carry-over\n\n'
+    misses "$file" "$v"
+
+    printf '\n## DX KPIs\n\n'
+    if [[ -f "$ROOT/scripts/dx-kpis.sh" ]]; then
+        echo "Not captured in this report: run \`bash scripts/dx-kpis.sh\` and check the $v row of PLAN-OF-PLANS §6."
+    else
+        echo "Not yet measured: \`scripts/dx-kpis.sh\` (PLAN-OF-PLANS §8) is not in the tree yet."
+    fi
+
+    printf '\n## Bench summary\n\n'
+    bench="docs/benchmarks/REPORT-${v%.*}.md"
+    if [[ -f "$ROOT/$bench" ]]; then
+        result="$(grep -m1 '^\*\*Result:' "$ROOT/$bench" || true)"
+        echo "See [\`$bench\`](../benchmarks/${bench##*/}).${result:+ $result}"
+    else
+        echo "Not yet measured: there is no \`$bench\`."
+    fi
+
+    printf '\n## Next release slot\n\n'
+    if [[ -z "$later" ]]; then
+        echo "No target after $v in \`rows[].targets\`: set the next release's targets (PLAN-OF-PLANS §5)."
+        return
+    fi
+    rows="$(jq --arg s "${later%%$'\n'*}" '[.rows[] | select(.targets[$s] != null)] | length' "$file")"
+    echo "The next slot is **${later%%$'\n'*}**, with a target on $rows rows. It stands as planned in \`rows[].targets\`; to adjust it, change the targets and regenerate this report. The planned path from $v (METHOD §5.1, same competitor snapshot):"
+    echo
+    echo "| Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |"
+    echo "|---|---|---|---|---|---|---|---|"
+    mapfile -t specs <<<"$later"
+    id_rows "$file" "version:$v" "${specs[@]/#/targets:}"
+}
+
+# The page data: the scorecard fields the page shows, every view (each measured version, then each
+# later target version) with its --json result, and each row's id_effect score per view. Numbers
+# from scorecard.json are normalised with + 0, so every jq version prints them alike.
+# shellcheck disable=SC2016 # jq program, not shell expansions
+HTML_JQ="$SCORE_JQ"'
+. as $res
+| $doc[0] as $d
+| [$res[] | {version, basis}] as $views
+| {generated_by: "scripts/scorecard.sh --html",
+   method_version: $d.method_version,
+   competitor_snapshot: $d.competitor_snapshot,
+   frameworks: [$d.frameworks[] | {id, name, scope}],
+   groups: [$d.groups[] | {id, name, w_enterprise: (.w_enterprise + 0), w_runtime: (.w_runtime + 0)}],
+   tracks: $d.tracks,
+   views: $views,
+   results: ([$res[] | {key: .version, value: .}] | from_entries),
+   rows: [$d.rows[] | {id, group, name, measures, track, stance, evidence, competitors, targets,
+     adr: (.adr // {}),
+     scores: [$views[] as $w
+       | if $w.basis == "measured" then .id_effect[$w.version] else planned($w.version) end]}]}
+'
+
+# html FILE: docs/scorecard/template.html with its @SCORECARD_DATA@ line replaced by the page data
+# (HTML_JQ, with "</" escaped so it cannot close the script element). The template renders it.
+# shellcheck disable=SC2329 # invoked through generate
+html() {
+    local file="$1" tpl="$DIR/template.html" n v data line
+    local -a list=()
+    [[ -f "$tpl" ]] || { echo "scorecard: no such file: ${tpl#"$ROOT"/}" >&2; exit 2; }
+    n="$(grep -c -x '@SCORECARD_DATA@' "$tpl" || true)"
+    if [[ "$n" != 1 ]]; then
+        echo "scorecard: FAIL ${tpl#"$ROOT"/}: want one @SCORECARD_DATA@ line, found $n" >&2
+        return 1
+    fi
+    : >"$SCRATCH/views.json"
+    data="$(versions "$file" measured)"
+    mapfile -t list <<<"$data"
+    for v in "${list[@]}"; do
+        [[ -n "$v" ]] && compute "$file" "$v" version | render_json "$v" >>"$SCRATCH/views.json"
+    done
+    data="$(versions "$file" target_versions)"
+    mapfile -t list <<<"$data"
+    for v in "${list[@]}"; do
+        [[ -n "$v" ]] && compute "$file" "$v" targets | render_json "$v" >>"$SCRATCH/views.json"
+    done
+    data="$(jq -c -s --slurpfile doc "$file" "$HTML_JQ" "$SCRATCH/views.json" | sed 's#</#<\\/#g')"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "@SCORECARD_DATA@" ]]; then
+            printf '%s\n' "$data"
+        else
+            printf '%s\n' "$line"
+        fi
+    done <"$tpl"
+}
+
+# generate DEST CMD...: run CMD into the scratch directory, then copy the result over DEST whole.
+generate() {
+    local dest="$1"
+    shift
+    "$@" >"$SCRATCH/generated"
+    cat "$SCRATCH/generated" >"$dest"
 }
 
 self_test() {
@@ -261,6 +582,7 @@ EOF
 dup-id duplicate id "core.a"
 bad-score competitors[3] = 101 is not an integer in 1..100
 unknown-group unknown group "nope"
+bad-adr adr key "next" is not x.y.z
 EOF
 
     # Ties take the better rank (§5 step 5); id_effect also ties the best competitor on row core.b,
@@ -281,20 +603,85 @@ EOF
     got="$(id_rows "$file" version:0.1.0 version:0.2.0 targets:0.3.0)"
     expect "fixture valid/tie ranks and fallback" "$want" "$got"
 
+    # --diff 0.1.0 0.2.0: core.a drops 10 (its adr note is for 0.1.0), core.b 4 (under the gate),
+    # core.c exactly 5 (the boundary) and core.d rises 10. regression-with-adr.json adds adr notes
+    # for 0.2.0 to core.a and core.c, which turns the FAIL into ok.
+    read -r -d '' want <<'EOF' || true
+| Row | Capability | 0.1.0 | 0.2.0 | Δ | Evidence |
+|---|---|---|---|---|---|
+| `core.a` | Row A | 50 | 40 | -10 | fixture |
+| `core.b` | Row B | 50 | 46 | -4 | fixture |
+| `core.c` | Row C | 50 | 45 | -5 | fixture |
+| `core.d` | Row D | 50 | 60 | +10 | fixture |
+
+4 of 5 rows changed: 1 up, 3 down.
+EOF
+    expect "fixture valid/regression --diff table" "$want" "$(changes "$FIXTURES/valid/regression.json" 0.1.0 0.2.0 table)"
+    read -r -d '' want <<'EOF' || true
+row "core.a": 50 at 0.1.0, 40 at 0.2.0 (-10) with no adr note for 0.2.0
+row "core.c": 50 at 0.1.0, 45 at 0.2.0 (-5) with no adr note for 0.2.0
+EOF
+    expect "fixture valid/regression --diff FAILs" "$want" "$(changes "$FIXTURES/valid/regression.json" 0.1.0 0.2.0 fails)"
+    expect "fixture valid/regression-with-adr --diff FAILs" "" \
+        "$(changes "$FIXTURES/valid/regression-with-adr.json" 0.1.0 0.2.0 fails)"
+    while read -r name want; do
+        file="$FIXTURES/valid/$name.json"
+        set +e
+        out="$(bash "${BASH_SOURCE[0]}" --file "$file" --validate --diff 0.1.0 0.2.0 2>&1)"
+        rc=$?
+        set -e
+        if [[ "$rc" == "$want" ]]; then
+            echo "self-test: ok   fixture valid/$name --diff 0.1.0 0.2.0 (exit $rc)"
+        else
+            echo "self-test: FAIL fixture valid/$name --diff 0.1.0 0.2.0 (exit $rc, want $want)"
+            printf '%s\n' "$out" | sed 's/^/    /'
+            failed=1
+        fi
+    done <<'EOF'
+regression 1
+regression-with-adr 0
+EOF
+
+    # --html and --report must be byte-identical across runs (CI diffs the committed files).
+    file="$DIR/scorecard.json"
+    html "$file" >"$SCRATCH/a.html"
+    html "$file" >"$SCRATCH/b.html"
+    if cmp -s "$SCRATCH/a.html" "$SCRATCH/b.html" && ! grep -q -x '@SCORECARD_DATA@' "$SCRATCH/a.html"; then
+        echo "self-test: ok   --html deterministic"
+    else
+        echo "self-test: FAIL --html differs between two runs, or kept its @SCORECARD_DATA@ line"
+        failed=1
+    fi
+    report "$file" 0.7.0 0.6.0 >"$SCRATCH/a.md"
+    report "$file" 0.7.0 0.6.0 >"$SCRATCH/b.md"
+    if cmp -s "$SCRATCH/a.md" "$SCRATCH/b.md"; then
+        echo "self-test: ok   --report 0.7.0 deterministic"
+    else
+        echo "self-test: FAIL --report 0.7.0 differs between two runs"
+        failed=1
+    fi
+
     ((failed == 0)) || { echo "scorecard: self-test FAILED"; exit 1; }
     echo "scorecard: self-test passed"
 }
 
 file="$DIR/scorecard.json"
 write=0
+prev=""
 actions=()
 while (($#)); do
     case "$1" in
-        --validate | --self-test) actions+=("${1#--}"); shift ;;
-        --version | --targets | --json)
+        --validate | --self-test | --html) actions+=("${1#--}"); shift ;;
+        --version | --targets | --json | --compare-targets | --report | --prev)
             [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "scorecard: $1 needs a version x.y.z" >&2; exit 2; }
-            actions+=("${1#--}:$2")
+            if [[ "$1" == --prev ]]; then prev="$2"; else actions+=("${1#--}:$2"); fi
             shift 2
+            ;;
+        --diff)
+            [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${3:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+                || { echo "scorecard: --diff needs two versions x.y.z" >&2; exit 2; }
+            actions+=("diff:$2:$3")
+            shift 3
             ;;
         --file)
             [[ -n "${2:-}" ]] || { echo "scorecard: --file needs a path" >&2; exit 2; }
@@ -311,7 +698,13 @@ if ((write)) && [[ " ${actions[*]} " != *" json:"* ]]; then
     echo "scorecard: --write needs --json" >&2
     exit 2
 fi
+if [[ -n "$prev" && " ${actions[*]} " != *" report:"* ]]; then
+    echo "scorecard: --prev needs --report" >&2
+    exit 2
+fi
 
+# --diff and --compare-targets report every result before a missed gate makes the exit status 1.
+status=0
 for action in "${actions[@]}"; do
     case "$action" in
         validate)
@@ -334,5 +727,56 @@ for action in "${actions[@]}"; do
                 printf '%s\n' "$out"
             fi
             ;;
+        diff:*)
+            check "$file"
+            a="${action#diff:}"
+            b="${a#*:}"
+            a="${a%%:*}"
+            require_measured "$file" "$a"
+            require_measured "$file" "$b"
+            printf 'scorecard: diff %s → %s (measured id_effect scores, %s)\n\n' "$a" "$b" "${file#"$ROOT"/}"
+            changes "$file" "$a" "$b" table
+            echo
+            changes "$file" "$a" "$b" gate
+            out="$(changes "$file" "$a" "$b" fails)"
+            if [[ -n "$out" ]]; then
+                while IFS= read -r line; do echo "scorecard: FAIL ${file#"$ROOT"/}: $line" >&2; done <<<"$out"
+                status=1
+            fi
+            ;;
+        compare-targets:*)
+            v="${action#*:}"
+            check "$file"
+            require_measured "$file" "$v"
+            planned="$(compute_raw "$file" "$v" targets)"
+            measured="$(compute_raw "$file" "$v" version)"
+            printf 'scorecard: %s measured vs planned (METHOD §5.1, %s)\n\n' "$v" "${file#"$ROOT"/}"
+            if ! compare "$planned" "$measured"; then
+                echo "scorecard: FAIL ${file#"$ROOT"/}: measured E at $v is more than 1.0 below planned E" >&2
+                status=1
+            fi
+            echo
+            misses "$file" "$v"
+            ;;
+        report:*)
+            v="${action#*:}"
+            check "$file"
+            require_measured "$file" "$v"
+            p="$prev"
+            if [[ -z "$p" ]]; then
+                # shellcheck disable=SC2016 # jq program, not shell expansions
+                p="$(jq -r --arg v "$v" "$SCORE_JQ"'[measured[] | select(vkey < ($v | vkey))] | last // empty' "$file")"
+                [[ -n "$p" ]] || { echo "scorecard: no measured version before $v; pass --prev" >&2; exit 2; }
+            fi
+            require_measured "$file" "$p"
+            generate "$DIR/REPORT-$v.md" report "$file" "$v" "$p"
+            echo "scorecard: wrote docs/scorecard/REPORT-$v.md ($p → $v)"
+            ;;
+        html)
+            check "$file"
+            generate "$DIR/index.html" html "$file"
+            echo "scorecard: wrote docs/scorecard/index.html"
+            ;;
     esac
 done
+exit "$status"

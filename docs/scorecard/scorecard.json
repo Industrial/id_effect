@@ -892,7 +892,10 @@
 			"stance": "build",
 			"id_effect": { "0.6.0": 62, "0.7.0": 45 },
 			"evidence": "testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108).",
-			"targets": { "0.8.0": 82 }
+			"targets": { "0.8.0": 82 },
+			"adr": {
+				"0.7.0": "Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8)."
+			}
 		},
 		{
 			"id": "test.integration",

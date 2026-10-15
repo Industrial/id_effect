@@ -7,8 +7,8 @@ release proves its progress by re-running this method.
 
 - **Data:** `scorecard.json` (single source of truth: rows, competitor scores, id_effect scores per
   version, evidence, tracks, targets).
-- **Rendered view:** the published HTML matrix, `docs/scorecard/index.html` (produced from
-  `scorecard.json` by the `leaf-scorecard-report` task).
+- **Rendered view:** the published HTML matrix, `docs/scorecard/index.html`, generated from
+  `scorecard.json` by `scripts/scorecard.sh --html` (CI checks it is up to date).
 - **Computation:** this document, §5. It must be reproducible with nothing but `scorecard.json`.
   `scripts/scorecard.sh` implements it (bash + jq, same conventions as
   `scripts/bench-compare.sh`); `scripts/scorecard.sh --self-test` checks §5.2.

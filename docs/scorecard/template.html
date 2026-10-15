@@ -1,0 +1,422 @@
+<!doctype html>
+<!-- Template for docs/scorecard/index.html. `bash scripts/scorecard.sh --html` replaces the
+     @SCORECARD_DATA@ line with JSON derived from scorecard.json; the script below renders it.
+     Edit this file, never index.html, and regenerate. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>id_effect Platform Scorecard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: report column (summary → movers → group heatmap → release path → gaps/leads → full matrix), wide tables scroll inside their own frames */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#161a20; --muted:#5b6472; --line:#dde1e7;
+  --accent:#b4532a; --accent-soft:#f6e3d9;
+  --good:#2f8f5b; --bad:#c2412d; --cell:#eef0f3;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1216; --surface:#161b21; --fg:#e7eaee; --muted:#97a1ae; --line:#28303a;
+  --accent:#e07a4a; --accent-soft:#3a2219; --good:#3fae73; --bad:#e0604a; --cell:#1d232b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --surface:#161b21; --fg:#e7eaee; --muted:#97a1ae; --line:#28303a;
+  --accent:#e07a4a; --accent-soft:#3a2219; --good:#3fae73; --bad:#e0604a; --cell:#1d232b; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:32px 64px;display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(28px,4.4vw,44px);line-height:1.08;font-weight:700}
+h2{font-size:24px;font-weight:700}
+h3{font-size:16px;font-weight:600;font-family:var(--f-body)}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+header{display:flex;flex-direction:column;gap:14px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:16px;min-width:0}
+section[hidden]{display:none}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.board{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.bar-row{display:grid;grid-template-columns:110px 1fr 44px;align-items:center;gap:12px;font-size:14px}
+.bar-track{position:relative;height:14px;background:var(--cell);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;background:var(--muted);opacity:.55;border-radius:3px}
+.bar-mark{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);opacity:.45}
+.bar-row.me .bar-fill{background:var(--accent);opacity:1}
+.bar-row.me .lbl{font-weight:600;color:var(--accent)}
+.bar-row .v{text-align:right}
+.kpis{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;margin-top:8px}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.verdict > div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.verdict ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.frame{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);max-width:100%}
+table{border-collapse:separate;border-spacing:0;font-size:13px;width:100%}
+th,td{padding:0;border-bottom:1px solid var(--line)}
+thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:600;font-size:12px;padding:10px 4px;vertical-align:bottom}
+thead th button{all:unset;cursor:pointer;display:block;text-align:center;width:100%;line-height:1.25}
+thead th button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+thead th.sorted button{color:var(--accent)}
+th.cap,td.cap{position:sticky;left:0;background:var(--surface);z-index:1;text-align:left;min-width:280px;max-width:320px;padding:9px 12px;border-right:1px solid var(--line)}
+thead th.cap{z-index:3}
+td.cap .n{font-weight:600;font-size:13.5px}
+td.cap .note{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+td.s{text-align:center;font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;min-width:58px;padding:6px 2px;vertical-align:middle}
+td.s span{display:inline-block;min-width:40px;padding:5px 0;border-radius:4px}
+td.me,th.me{background:var(--accent-soft)}
+td.me span{outline:2px solid var(--accent);outline-offset:-2px;font-weight:600}
+tr.grp td{background:var(--bg);font-family:var(--f-mono);font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:12px 12px 6px}
+tr.grp td.s{text-transform:none;letter-spacing:0;padding:12px 2px 6px}
+td.best span{font-weight:700}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip:focus-visible,select:focus-visible,input:focus-visible,.linkish:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=search],select{font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+input[type=search]{min-width:0;flex:1 1 200px;max-width:320px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:22px;height:12px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.lists > div{min-width:0;display:flex;flex-direction:column;gap:10px}
+.mini-frame{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.mini{width:100%;border-collapse:collapse;font-size:13px}
+.mini td,.mini th{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
+.mini th{font-size:11.5px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.mini td.r,.mini th.r{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.mini tr.cur td{font-weight:600;background:var(--accent-soft)}
+.linkish{all:unset;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.method{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;font-size:14px}
+.method > div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.method ul{margin:0;padding-left:18px}
+code{font-family:var(--f-mono);font-size:.9em}
+@media (max-width:600px){ th.cap,td.cap{min-width:190px;max-width:210px} .bar-row{grid-template-columns:86px 1fr 38px} }
+@media (prefers-reduced-motion:no-preference){ .bar-fill{transition:width .4s ease} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <span class="eyebrow" id="eyebrow"></span>
+  <h1 id="title">id_effect Platform Scorecard</h1>
+  <p class="muted">Each cell scores how well that framework handles that capability out of the box, on a 1–100 scale. 100 means best in class for an enterprise team today. The id_effect column comes from an audit of this repository's source, tests, CI and docs at each release tag; the other columns are expert assessments of each framework's first-party stack and its de facto standard libraries, frozen as a dated snapshot. Each id_effect score is capped by maturity: labs-only work cannot score above 39, and 80 or more requires a published crate with docs, an example and integration tests. The rules are in <code>docs/scorecard/METHOD.md</code> and the data in <code>docs/scorecard/scorecard.json</code>. This page is generated by <code>scripts/scorecard.sh --html</code>, which also computes every index shown here; <code>scripts/scorecard.sh --self-test</code> checks them.</p>
+  <div class="controls">
+    <label class="muted" for="view" style="font-size:13px">Version</label>
+    <select id="view"></select>
+    <span class="muted" id="viewNote" style="font-size:13px"></span>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<section>
+  <h2>Overall standing</h2>
+  <p class="muted">The headline is the enterprise index E: group averages weighted by how much a corporate buyer cares about each group. The unweighted row mean U and the runtime index RT are shown alongside it. <span id="boardNote"></span></p>
+  <div class="board" id="board"></div>
+</section>
+
+<section class="verdict" id="movers">
+  <div>
+    <h3 id="upTitle"></h3>
+    <ul id="up"></ul>
+  </div>
+  <div>
+    <h3 id="downTitle"></h3>
+    <ul id="down"></ul>
+  </div>
+</section>
+
+<section>
+  <h2>Group averages</h2>
+  <p class="muted">The mean score per capability group (METHOD §5 step 1). Click a column header to sort; click it again to reverse.</p>
+  <div class="frame"><table id="groupTable"></table></div>
+</section>
+
+<section>
+  <h2>Release path to 1.0</h2>
+  <p class="muted">Measured releases, then the targets from the plan of plans. A row's planned score at a release is the highest target set for it at or before that release, or its latest measured score if that is higher (METHOD §5.1). Competitors stay at the snapshot. Each release's exit gate compares its measured indices with this table. Click a version to view it.</p>
+  <div class="mini-frame"><table class="mini" id="path"></table></div>
+</section>
+
+<section class="lists">
+  <div>
+    <h2>Largest gaps to best in class</h2>
+    <p class="muted">Best score among the other frameworks, minus id_effect's score.</p>
+    <div class="mini-frame"><table class="mini" id="gaps"></table></div>
+  </div>
+  <div>
+    <h2>Where id_effect ranks top three</h2>
+    <p class="muted">Rows where id_effect is first, second or third of all frameworks.</p>
+    <div class="mini-frame"><table class="mini" id="leads"></table></div>
+  </div>
+</section>
+
+<section>
+  <h2>Full matrix</h2>
+  <div class="controls" id="chips"></div>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Filter capabilities…" aria-label="Filter capabilities">
+    <label class="muted" for="sort" style="font-size:13px">Order</label>
+    <select id="sort">
+      <option value="group">By group</option>
+      <option value="gap">Largest id_effect gap first</option>
+      <option value="me">id_effect score, high to low</option>
+      <option value="delta">id_effect change, largest first</option>
+    </select>
+  </div>
+  <div class="legend">
+    <span><i style="background:color-mix(in oklab,var(--bad) 70%,var(--cell))"></i>1–20</span>
+    <span><i style="background:color-mix(in oklab,var(--bad) 30%,var(--cell))"></i>21–45</span>
+    <span><i style="background:var(--cell)"></i>~50</span>
+    <span><i style="background:color-mix(in oklab,var(--good) 30%,var(--cell))"></i>55–79</span>
+    <span><i style="background:color-mix(in oklab,var(--good) 70%,var(--cell))"></i>80–100</span>
+    <span>Bold = best in row · small number under id_effect = change from the previous version · click a framework header to sort by it</span>
+  </div>
+  <div class="frame" style="max-height:80vh;overflow:auto"><table id="matrix"></table></div>
+</section>
+
+<section>
+  <h2>How to read this</h2>
+  <div class="method">
+    <div>
+      <h3>Scope of each column</h3>
+      <ul id="scopes"></ul>
+    </div>
+    <div>
+      <h3>Scale</h3>
+      <ul>
+        <li>90–100: best in class; first-party, mature, and what enterprises standardise on.</li>
+        <li>70–89: strong, with minor gaps or a third-party standard.</li>
+        <li>40–69: partial, DIY wiring needed, or immature.</li>
+        <li>10–39: primitives only, labs or stub quality.</li>
+        <li>1–9: absent.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Caveats</h3>
+      <ul>
+        <li>Every score is a judgment call. id_effect's are traced to files in this repo (the evidence under each capability is the latest one). The other columns are a dated snapshot and have not been checked line by line.</li>
+        <li>The unweighted index weights every row equally. The runtime index weights core model, concurrency, fault tolerance and distribution more heavily, and id_effect closes much of the gap under that weighting.</li>
+        <li>Target versions show planned scores, not measurements. A drop of 5 or more between measured versions needs an ADR note, shown under the row.</li>
+        <li>Rows are biased toward application-framework features, because the stated goal is a batteries-included corporate stack.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+
+<script type="application/json" id="scorecard-data">
+@SCORECARD_DATA@
+</script>
+<script>
+const D = JSON.parse(document.getElementById('scorecard-data').textContent);
+const FW = D.frameworks.map(f => f.name);
+const GROUPS = D.groups;
+const GNAME = Object.fromEntries(GROUPS.map(g => [g.id, g.name]));
+const VIEWS = D.views;
+const ROWS = D.rows;
+const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+const f1 = x => x.toFixed(1);
+const signed = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
+const short = v => v.replace(/\.0$/, '');
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const label = i => `${VIEWS[i].version} ${VIEWS[i].basis}`;
+function heat(v) {
+  const t = (v - 50) / 50;
+  const p = Math.round(Math.min(1, Math.abs(t)) * 78);
+  return `color-mix(in oklab, ${t < 0 ? 'var(--bad)' : 'var(--good)'} ${p}%, var(--cell))`;
+}
+
+const lastMeasured = VIEWS.map(v => v.basis).lastIndexOf('measured');
+let cur = lastMeasured;
+const fromHash = VIEWS.findIndex(v => location.hash === `#${v.version}`);
+if (fromHash >= 0) cur = fromHash;
+
+const viewSel = document.getElementById('view');
+const opt = i => `<option value="${i}">${esc(label(i))}</option>`;
+const idx = VIEWS.map((_, i) => i);
+viewSel.innerHTML = `<optgroup label="Measured">${idx.filter(i => VIEWS[i].basis === 'measured').map(opt).join('')}</optgroup>` +
+  `<optgroup label="Targets (plan)">${idx.filter(i => VIEWS[i].basis !== 'measured').map(opt).join('')}</optgroup>`;
+viewSel.onchange = e => select(+e.target.value);
+function select(i) {
+  cur = i;
+  viewSel.value = String(i);
+  history.replaceState(null, '', `#${VIEWS[i].version}`);
+  render();
+}
+
+// Row records for the current view: s = scores in FW order, prev = id_effect at the previous view.
+function rowsFor(i) {
+  return ROWS.map(r => {
+    const s = [r.scores[i], ...r.competitors];
+    const others = r.competitors;
+    const best = Math.max(...others);
+    return {r, s, prev: i > 0 ? r.scores[i - 1] : null, best, leader: FW[1 + others.indexOf(best)],
+      gap: best - s[0], rank: 1 + others.filter(x => x > s[0]).length};
+  });
+}
+
+document.getElementById('meta').innerHTML = `<span>${ROWS.length} capabilities</span><span>${GROUPS.length} groups</span>` +
+  `<span>${FW.length} frameworks</span><span>${ROWS.length * FW.length} scores per version</span>` +
+  `<span>method v${esc(D.method_version)}</span><span>competitor snapshot ${esc(D.competitor_snapshot.date)}</span>`;
+document.getElementById('scopes').innerHTML = D.frameworks.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.scope)}.</li>`).join('');
+
+function renderHeader() {
+  const v = VIEWS[cur];
+  const planned = v.basis !== 'measured';
+  document.getElementById('eyebrow').textContent =
+    `Scorecard method v${D.method_version} · id_effect ${v.version} ${v.basis} · competitor snapshot ${D.competitor_snapshot.date}`;
+  document.getElementById('title').textContent =
+    `id_effect ${v.version}${planned ? ' (planned)' : ''} against ${FW.length - 1} frameworks`;
+  document.getElementById('viewNote').textContent = planned
+    ? 'Planned scores from the targets in scorecard.json (METHOD §5.1), not measurements.'
+    : 'Scores measured at this release tag.';
+}
+
+function renderBoard() {
+  const res = D.results[VIEWS[cur].version];
+  const me = res.frameworks[0];
+  const prev = cur > 0 ? D.results[VIEWS[cur - 1].version].frameworks[0] : null;
+  document.getElementById('boardNote').textContent = prev
+    ? `The faint marker on id_effect's bar shows ${label(cur - 1)}.` : '';
+  const order = res.frameworks.map((f, i) => ({...f, i})).sort((a, b) => b.e - a.e || a.i - b.i);
+  const mark = prev ? `<div class="bar-mark" title="${esc(label(cur - 1))}: ${f1(prev.e)}" style="left:${prev.e}%"></div>` : '';
+  const was = (k) => prev ? ` (${esc(VIEWS[cur - 1].version)}: ${f1(prev[k])})` : '';
+  const k = res.id_effect;
+  document.getElementById('board').innerHTML =
+    `<div class="bar-row" style="font-size:12px;color:var(--muted)"><span></span><span>Enterprise index</span><span class="v">E</span></div>` +
+    order.map(o => `<div class="bar-row ${o.i === 0 ? 'me' : ''}"><span class="lbl">${esc(o.name)}</span>` +
+      `<div class="bar-track" role="img" aria-label="${esc(o.name)} enterprise index ${f1(o.e)}"><div class="bar-fill" style="width:${o.e}%"></div>${o.i === 0 ? mark : ''}</div>` +
+      `<span class="v num">${f1(o.e)}</span></div>`).join('') +
+    `<p class="muted num" style="font-size:12px;margin-top:8px">id_effect: E ${f1(me.e)} (#${me.rank.e})${was('e')} · unweighted ${f1(me.u)} (#${me.rank.u})${was('u')} · runtime ${f1(me.rt)} (#${me.rank.rt})${was('rt')}</p>` +
+    `<div class="kpis muted num"><span>rows ≥80: ${k.ge80}</span><span>rows &lt;40: ${k.lt40}</span><span>rows led: ${k.leader}</span><span>median gap to best: ${k.median_gap}</span></div>`;
+}
+
+function renderMovers() {
+  const sec = document.getElementById('movers');
+  if (cur === 0) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const v = VIEWS[cur].version, pv = VIEWS[cur - 1].version;
+  const moved = rowsFor(cur).filter(x => x.s[0] !== x.prev).map(x => ({...x, d: x.s[0] - x.prev}));
+  const up = moved.filter(x => x.d > 0).sort((a, b) => b.d - a.d);
+  const down = moved.filter(x => x.d < 0).sort((a, b) => a.d - b.d);
+  const li = x => `<li><b>${esc(x.r.name)}</b> <span class="num ${x.d > 0 ? 'pos' : 'neg'}">${x.prev} → ${x.s[0]} (${signed(x.d)})</span>` +
+    (x.r.adr[v] ? `<br><span class="muted" style="font-size:13px">ADR note: ${esc(x.r.adr[v])}</span>` : '') + '</li>';
+  document.getElementById('upTitle').textContent = `Largest rises since ${pv}` + (up.length > 10 ? ` (10 of ${up.length})` : ` (${up.length})`);
+  document.getElementById('up').innerHTML = up.slice(0, 10).map(li).join('') || '<li class="muted">No row rose.</li>';
+  document.getElementById('downTitle').textContent = `Every fall since ${pv} (${down.length})`;
+  document.getElementById('down').innerHTML = down.map(li).join('') || '<li class="muted">No row fell.</li>';
+}
+
+let gSort = {col: -1, dir: -1};
+function renderGroups() {
+  const fws = D.results[VIEWS[cur].version].frameworks;
+  let rows = GROUPS.map(g => ({g, n: ROWS.filter(r => r.group === g.id).length, v: fws.map(f => f.groups[g.id])}));
+  if (gSort.col >= 0) rows.sort((a, b) => gSort.dir * (a.v[gSort.col] - b.v[gSort.col]));
+  const head = `<thead><tr><th class="cap">Group <span class="muted" style="font-weight:400">· weight E / RT</span></th>` +
+    FW.map((f, i) => `<th class="${i === 0 ? 'me' : ''} ${gSort.col === i ? 'sorted' : ''}"><button data-gcol="${i}">${esc(f)}</button></th>`).join('') + '</tr></thead>';
+  const body = rows.map(r => {
+    const best = Math.max(...r.v.slice(1)), mx = Math.max(...r.v);
+    return `<tr><td class="cap"><div class="n">${esc(r.g.name)}</div><div class="note">${r.n} capabilities · weight ${r.g.w_enterprise} / ${r.g.w_runtime} · gap to best <span class="num">${f1(best - r.v[0])}</span></div></td>` +
+      r.v.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''} ${v === mx ? 'best' : ''}"><span style="background:${heat(v)}">${f1(v)}</span></td>`).join('') + '</tr>';
+  }).join('');
+  const t = document.getElementById('groupTable');
+  t.innerHTML = head + `<tbody>${body}</tbody>`;
+  t.querySelectorAll('[data-gcol]').forEach(b => b.onclick = () => {
+    const c = +b.dataset.gcol;
+    gSort = gSort.col === c ? {col: c, dir: -gSort.dir} : {col: c, dir: -1};
+    renderGroups();
+  });
+}
+
+function renderPath() {
+  document.getElementById('path').innerHTML =
+    '<tr><th>Release</th><th class="r">U</th><th class="r">E</th><th class="r">Rank</th><th class="r">RT</th><th class="r">Rank</th>' +
+    '<th class="r">Rows ≥80</th><th class="r">Rows &lt;40</th><th class="r">Led</th><th class="r">Median gap</th><th class="r">Rows moved</th></tr>' +
+    VIEWS.map((v, i) => {
+      const me = D.results[v.version].id_effect;
+      const moved = i > 0 ? ROWS.filter(r => r.scores[i] !== r.scores[i - 1]).length : '—';
+      return `<tr class="${i === cur ? 'cur' : ''}"><td><button class="linkish" data-view="${i}">${esc(v.version)}</button> <span class="muted">(${esc(v.basis)})</span></td>` +
+        `<td class="r">${f1(me.u)}</td><td class="r">${f1(me.e)}</td><td class="r">#${me.rank.e}</td><td class="r">${f1(me.rt)}</td><td class="r">#${me.rank.rt}</td>` +
+        `<td class="r">${me.ge80}</td><td class="r">${me.lt40}</td><td class="r">${me.leader}</td><td class="r">${me.median_gap}</td><td class="r">${moved}</td></tr>`;
+    }).join('');
+  document.querySelectorAll('#path [data-view]').forEach(b => b.onclick = () => select(+b.dataset.view));
+}
+
+function renderLists() {
+  const xs = rowsFor(cur);
+  document.getElementById('gaps').innerHTML = '<tr><th>Capability</th><th class="r">id_effect</th><th>Leader</th><th class="r">Gap</th></tr>' +
+    [...xs].sort((a, b) => b.gap - a.gap).slice(0, 15).map(x => `<tr><td>${esc(x.r.name)}</td><td class="r">${x.s[0]}</td>` +
+      `<td>${esc(x.leader)} <span class="num muted">${x.best}</span></td><td class="r ${x.gap > 0 ? 'neg' : 'pos'}">${signed(-x.gap)}</td></tr>`).join('');
+  const leads = xs.filter(x => x.rank <= 3).sort((a, b) => a.rank - b.rank || b.s[0] - a.s[0]);
+  document.getElementById('leads').innerHTML = '<tr><th>Capability</th><th class="r">id_effect</th><th class="r">Rank</th><th>Ahead of it</th></tr>' +
+    (leads.map(x => {
+      const ahead = FW.filter((f, i) => i > 0 && x.s[i] > x.s[0]);
+      return `<tr><td>${esc(x.r.name)}</td><td class="r pos">${x.s[0]}</td><td class="r">#${x.rank}</td><td class="muted">${ahead.length ? esc(ahead.join(', ')) : '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">No row in the top three.</td></tr>');
+}
+
+let active = new Set(), q = '', order = 'group', colSort = -1;
+const chips = document.getElementById('chips');
+chips.innerHTML = '<button class="chip" aria-pressed="true" data-g="*">All groups</button>' +
+  GROUPS.map(g => `<button class="chip" aria-pressed="false" data-g="${esc(g.id)}">${esc(g.name)}</button>`).join('');
+chips.onclick = e => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  const g = b.dataset.g;
+  if (g === '*') active.clear(); else if (active.has(g)) active.delete(g); else active.add(g);
+  chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.g === '*' ? String(active.size === 0) : String(active.has(c.dataset.g))));
+  renderMatrix();
+};
+document.getElementById('q').oninput = e => { q = e.target.value.toLowerCase(); renderMatrix(); };
+document.getElementById('sort').onchange = e => { order = e.target.value; colSort = -1; renderMatrix(); };
+
+function rowHtml(x) {
+  const r = x.r, mx = Math.max(...x.s), d = x.prev === null ? 0 : x.s[0] - x.prev;
+  const tg = Object.entries(r.targets).map(([k, v]) => `${short(k)}→${v}`).join(' · ');
+  const adr = Object.entries(r.adr).map(([k, v]) => `<div class="note">ADR note (${esc(k)}): ${esc(v)}</div>`).join('');
+  return `<tr><td class="cap"><div class="n">${esc(r.name)}</div><div class="note">${esc(r.evidence)}</div>${adr}` +
+    `<div class="note num" style="margin-top:4px">${esc(r.id)} · ${esc(r.track)} · ${esc(r.stance)}${tg ? ` · targets ${esc(tg)}` : ''}</div></td>` +
+    x.s.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''} ${v === mx ? 'best' : ''}"><span style="background:${heat(v)}">${v}</span>` +
+      (i === 0 && d ? `<div class="num ${d > 0 ? 'pos' : 'neg'}" style="font-size:10.5px">${signed(d)}</div>` : '') + '</td>').join('') + '</tr>';
+}
+function renderMatrix() {
+  const xs = rowsFor(cur).filter(x => (active.size === 0 || active.has(x.r.group)) &&
+    (!q || `${x.r.name} ${x.r.evidence} ${x.r.id} ${GNAME[x.r.group]}`.toLowerCase().includes(q)));
+  const head = `<thead><tr><th class="cap">Capability <span class="muted" style="font-weight:400">· id_effect evidence</span></th>` +
+    FW.map((f, i) => `<th class="${i === 0 ? 'me' : ''} ${colSort === i ? 'sorted' : ''}"><button data-col="${i}" title="Sort by ${esc(f)}">${esc(f)}${i === 0 ? `<br><span class="muted" style="font-weight:400">${esc(short(VIEWS[cur].version))}</span>` : ''}</button></th>`).join('') + '</tr></thead>';
+  const delta = x => x.prev === null ? 0 : x.s[0] - x.prev;
+  let body = '';
+  if (colSort >= 0) { xs.sort((a, b) => b.s[colSort] - a.s[colSort]); body = xs.map(rowHtml).join(''); }
+  else if (order === 'gap') { xs.sort((a, b) => b.gap - a.gap); body = xs.map(rowHtml).join(''); }
+  else if (order === 'me') { xs.sort((a, b) => b.s[0] - a.s[0]); body = xs.map(rowHtml).join(''); }
+  else if (order === 'delta') { xs.sort((a, b) => Math.abs(delta(b)) - Math.abs(delta(a))); body = xs.map(rowHtml).join(''); }
+  else {
+    for (const g of GROUPS) {
+      const gs = xs.filter(x => x.r.group === g.id);
+      if (!gs.length) continue;
+      const avg = FW.map((_, i) => Math.round(mean(gs.map(x => x.s[i]))));
+      body += `<tr class="grp"><td class="cap">${esc(g.name)}</td>${avg.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''}">avg ${v}</td>`).join('')}</tr>` + gs.map(rowHtml).join('');
+    }
+  }
+  if (!xs.length) body = '<tr><td colspan="12" style="padding:14px">No capability matches that filter. Clear the search box or pick All groups.</td></tr>';
+  const t = document.getElementById('matrix');
+  t.innerHTML = head + `<tbody>${body}</tbody>`;
+  t.querySelectorAll('[data-col]').forEach(b => b.onclick = () => { colSort = colSort === +b.dataset.col ? -1 : +b.dataset.col; renderMatrix(); });
+}
+
+function render() {
+  renderHeader();
+  renderBoard();
+  renderMovers();
+  renderGroups();
+  renderPath();
+  renderLists();
+  renderMatrix();
+}
+viewSel.value = String(cur);
+render();
+</script>
+</body>
+</html>

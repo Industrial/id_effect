@@ -1,0 +1,422 @@
+<!doctype html>
+<!-- Template for docs/scorecard/index.html. `bash scripts/scorecard.sh --html` replaces the
+     @SCORECARD_DATA@ line with JSON derived from scorecard.json; the script below renders it.
+     Edit this file, never index.html, and regenerate. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>id_effect Platform Scorecard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: report column (summary → movers → group heatmap → release path → gaps/leads → full matrix), wide tables scroll inside their own frames */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --fg:#161a20; --muted:#5b6472; --line:#dde1e7;
+  --accent:#b4532a; --accent-soft:#f6e3d9;
+  --good:#2f8f5b; --bad:#c2412d; --cell:#eef0f3;
+  --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1216; --surface:#161b21; --fg:#e7eaee; --muted:#97a1ae; --line:#28303a;
+  --accent:#e07a4a; --accent-soft:#3a2219; --good:#3fae73; --bad:#e0604a; --cell:#1d232b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1216; --surface:#161b21; --fg:#e7eaee; --muted:#97a1ae; --line:#28303a;
+  --accent:#e07a4a; --accent-soft:#3a2219; --good:#3fae73; --bad:#e0604a; --cell:#1d232b; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:32px 64px;display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(28px,4.4vw,44px);line-height:1.08;font-weight:700}
+h2{font-size:24px;font-weight:700}
+h3{font-size:16px;font-weight:600;font-family:var(--f-body)}
+p{margin:0;max-width:68ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+header{display:flex;flex-direction:column;gap:14px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:16px;min-width:0}
+section[hidden]{display:none}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.board{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.bar-row{display:grid;grid-template-columns:110px 1fr 44px;align-items:center;gap:12px;font-size:14px}
+.bar-track{position:relative;height:14px;background:var(--cell);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;background:var(--muted);opacity:.55;border-radius:3px}
+.bar-mark{position:absolute;top:0;bottom:0;width:2px;background:var(--fg);opacity:.45}
+.bar-row.me .bar-fill{background:var(--accent);opacity:1}
+.bar-row.me .lbl{font-weight:600;color:var(--accent)}
+.bar-row .v{text-align:right}
+.kpis{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;margin-top:8px}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.verdict > div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.verdict ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+.frame{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);max-width:100%}
+table{border-collapse:separate;border-spacing:0;font-size:13px;width:100%}
+th,td{padding:0;border-bottom:1px solid var(--line)}
+thead th{position:sticky;top:0;background:var(--surface);z-index:2;font-weight:600;font-size:12px;padding:10px 4px;vertical-align:bottom}
+thead th button{all:unset;cursor:pointer;display:block;text-align:center;width:100%;line-height:1.25}
+thead th button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+thead th.sorted button{color:var(--accent)}
+th.cap,td.cap{position:sticky;left:0;background:var(--surface);z-index:1;text-align:left;min-width:280px;max-width:320px;padding:9px 12px;border-right:1px solid var(--line)}
+thead th.cap{z-index:3}
+td.cap .n{font-weight:600;font-size:13.5px}
+td.cap .note{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+td.s{text-align:center;font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:13px;min-width:58px;padding:6px 2px;vertical-align:middle}
+td.s span{display:inline-block;min-width:40px;padding:5px 0;border-radius:4px}
+td.me,th.me{background:var(--accent-soft)}
+td.me span{outline:2px solid var(--accent);outline-offset:-2px;font-weight:600}
+tr.grp td{background:var(--bg);font-family:var(--f-mono);font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:12px 12px 6px}
+tr.grp td.s{text-transform:none;letter-spacing:0;padding:12px 2px 6px}
+td.best span{font-weight:700}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font:inherit;font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip:focus-visible,select:focus-visible,input:focus-visible,.linkish:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input[type=search],select{font:inherit;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+input[type=search]{min-width:0;flex:1 1 200px;max-width:320px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted);align-items:center}
+.legend i{display:inline-block;width:22px;height:12px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.lists{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px}
+.lists > div{min-width:0;display:flex;flex-direction:column;gap:10px}
+.mini-frame{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.mini{width:100%;border-collapse:collapse;font-size:13px}
+.mini td,.mini th{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left}
+.mini th{font-size:11.5px;font-family:var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+.mini td.r,.mini th.r{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.mini tr.cur td{font-weight:600;background:var(--accent-soft)}
+.linkish{all:unset;cursor:pointer;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+.method{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;font-size:14px}
+.method > div{display:flex;flex-direction:column;gap:6px;min-width:0}
+.method ul{margin:0;padding-left:18px}
+code{font-family:var(--f-mono);font-size:.9em}
+@media (max-width:600px){ th.cap,td.cap{min-width:190px;max-width:210px} .bar-row{grid-template-columns:86px 1fr 38px} }
+@media (prefers-reduced-motion:no-preference){ .bar-fill{transition:width .4s ease} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <span class="eyebrow" id="eyebrow"></span>
+  <h1 id="title">id_effect Platform Scorecard</h1>
+  <p class="muted">Each cell scores how well that framework handles that capability out of the box, on a 1–100 scale. 100 means best in class for an enterprise team today. The id_effect column comes from an audit of this repository's source, tests, CI and docs at each release tag; the other columns are expert assessments of each framework's first-party stack and its de facto standard libraries, frozen as a dated snapshot. Each id_effect score is capped by maturity: labs-only work cannot score above 39, and 80 or more requires a published crate with docs, an example and integration tests. The rules are in <code>docs/scorecard/METHOD.md</code> and the data in <code>docs/scorecard/scorecard.json</code>. This page is generated by <code>scripts/scorecard.sh --html</code>, which also computes every index shown here; <code>scripts/scorecard.sh --self-test</code> checks them.</p>
+  <div class="controls">
+    <label class="muted" for="view" style="font-size:13px">Version</label>
+    <select id="view"></select>
+    <span class="muted" id="viewNote" style="font-size:13px"></span>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<section>
+  <h2>Overall standing</h2>
+  <p class="muted">The headline is the enterprise index E: group averages weighted by how much a corporate buyer cares about each group. The unweighted row mean U and the runtime index RT are shown alongside it. <span id="boardNote"></span></p>
+  <div class="board" id="board"></div>
+</section>
+
+<section class="verdict" id="movers">
+  <div>
+    <h3 id="upTitle"></h3>
+    <ul id="up"></ul>
+  </div>
+  <div>
+    <h3 id="downTitle"></h3>
+    <ul id="down"></ul>
+  </div>
+</section>
+
+<section>
+  <h2>Group averages</h2>
+  <p class="muted">The mean score per capability group (METHOD §5 step 1). Click a column header to sort; click it again to reverse.</p>
+  <div class="frame"><table id="groupTable"></table></div>
+</section>
+
+<section>
+  <h2>Release path to 1.0</h2>
+  <p class="muted">Measured releases, then the targets from the plan of plans. A row's planned score at a release is the highest target set for it at or before that release, or its latest measured score if that is higher (METHOD §5.1). Competitors stay at the snapshot. Each release's exit gate compares its measured indices with this table. Click a version to view it.</p>
+  <div class="mini-frame"><table class="mini" id="path"></table></div>
+</section>
+
+<section class="lists">
+  <div>
+    <h2>Largest gaps to best in class</h2>
+    <p class="muted">Best score among the other frameworks, minus id_effect's score.</p>
+    <div class="mini-frame"><table class="mini" id="gaps"></table></div>
+  </div>
+  <div>
+    <h2>Where id_effect ranks top three</h2>
+    <p class="muted">Rows where id_effect is first, second or third of all frameworks.</p>
+    <div class="mini-frame"><table class="mini" id="leads"></table></div>
+  </div>
+</section>
+
+<section>
+  <h2>Full matrix</h2>
+  <div class="controls" id="chips"></div>
+  <div class="controls">
+    <input type="search" id="q" placeholder="Filter capabilities…" aria-label="Filter capabilities">
+    <label class="muted" for="sort" style="font-size:13px">Order</label>
+    <select id="sort">
+      <option value="group">By group</option>
+      <option value="gap">Largest id_effect gap first</option>
+      <option value="me">id_effect score, high to low</option>
+      <option value="delta">id_effect change, largest first</option>
+    </select>
+  </div>
+  <div class="legend">
+    <span><i style="background:color-mix(in oklab,var(--bad) 70%,var(--cell))"></i>1–20</span>
+    <span><i style="background:color-mix(in oklab,var(--bad) 30%,var(--cell))"></i>21–45</span>
+    <span><i style="background:var(--cell)"></i>~50</span>
+    <span><i style="background:color-mix(in oklab,var(--good) 30%,var(--cell))"></i>55–79</span>
+    <span><i style="background:color-mix(in oklab,var(--good) 70%,var(--cell))"></i>80–100</span>
+    <span>Bold = best in row · small number under id_effect = change from the previous version · click a framework header to sort by it</span>
+  </div>
+  <div class="frame" style="max-height:80vh;overflow:auto"><table id="matrix"></table></div>
+</section>
+
+<section>
+  <h2>How to read this</h2>
+  <div class="method">
+    <div>
+      <h3>Scope of each column</h3>
+      <ul id="scopes"></ul>
+    </div>
+    <div>
+      <h3>Scale</h3>
+      <ul>
+        <li>90–100: best in class; first-party, mature, and what enterprises standardise on.</li>
+        <li>70–89: strong, with minor gaps or a third-party standard.</li>
+        <li>40–69: partial, DIY wiring needed, or immature.</li>
+        <li>10–39: primitives only, labs or stub quality.</li>
+        <li>1–9: absent.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Caveats</h3>
+      <ul>
+        <li>Every score is a judgment call. id_effect's are traced to files in this repo (the evidence under each capability is the latest one). The other columns are a dated snapshot and have not been checked line by line.</li>
+        <li>The unweighted index weights every row equally. The runtime index weights core model, concurrency, fault tolerance and distribution more heavily, and id_effect closes much of the gap under that weighting.</li>
+        <li>Target versions show planned scores, not measurements. A drop of 5 or more between measured versions needs an ADR note, shown under the row.</li>
+        <li>Rows are biased toward application-framework features, because the stated goal is a batteries-included corporate stack.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+
+<script type="application/json" id="scorecard-data">
+{"generated_by":"scripts/scorecard.sh --html","method_version":"1.0","competitor_snapshot":{"date":"2026-10-14","assessor":"Claude Opus 5.5 (expert judgment, see METHOD.md §4)"},"frameworks":[{"id":"id_effect","name":"id_effect","scope":"Published crates of the workspace at the scored tag; labs count under the labs cap (METHOD.md §3.2)"},{"id":"effect_ts","name":"Effect-TS","scope":"effect + @effect/* packages"},{"id":"zio","name":"ZIO","scope":"ZIO 2 + official zio-* ecosystem"},{"id":"otp","name":"OTP","scope":"Erlang/OTP distribution only"},{"id":"phoenix","name":"Phoenix","scope":"Phoenix + standard Elixir stack (Ecto, Oban, Swoosh, LiveView)"},{"id":"spring","name":"Spring","scope":"Spring Boot + Spring projects"},{"id":"dotnet","name":".NET","scope":"ASP.NET Core + EF Core + Aspire + Microsoft.Extensions"},{"id":"rails","name":"Rails","scope":"Rails 8 defaults + de facto gems (discounted)"},{"id":"django","name":"Django","scope":"Django + DRF + de facto packages (discounted)"},{"id":"laravel","name":"Laravel","scope":"Laravel + first-party packages"},{"id":"nextjs","name":"Next.js","scope":"Next.js + Vercel-adjacent defaults"}],"groups":[{"id":"core","name":"Core model","w_enterprise":1,"w_runtime":1.5},{"id":"conc","name":"Concurrency","w_enterprise":0.75,"w_runtime":1.5},{"id":"fault","name":"Fault tolerance","w_enterprise":1,"w_runtime":1.5},{"id":"dist","name":"Distribution","w_enterprise":0.75,"w_runtime":1.25},{"id":"data","name":"Data","w_enterprise":1.5,"w_runtime":0.5},{"id":"web","name":"Web & API","w_enterprise":1.25,"w_runtime":0.5},{"id":"sec","name":"Security","w_enterprise":1.5,"w_runtime":0.5},{"id":"obs","name":"Observability","w_enterprise":1.25,"w_runtime":1},{"id":"msg","name":"Messaging & jobs","w_enterprise":1,"w_runtime":0.75},{"id":"ai","name":"AI","w_enterprise":0.5,"w_runtime":0.25},{"id":"test","name":"Testing","w_enterprise":1,"w_runtime":1},{"id":"dx","name":"Developer experience","w_enterprise":1.5,"w_runtime":0.75},{"id":"eco","name":"Ecosystem & trust","w_enterprise":1.5,"w_runtime":0.5}],"tracks":{"T0":"Trust & governance","T1":"First hour (onboarding & DX)","T2":"Core runtime completeness","T3":"Data platform","T4":"Web & API","T5":"Security","T6":"Operations & observability","T7":"Async work (jobs, messaging, mail, events)","T8":"Distribution & realtime","T9":"Breadth (AI, GraphQL, admin, i18n, UI)"},"views":[{"version":"0.6.0","basis":"measured"},{"version":"0.7.0","basis":"measured"},{"version":"0.8.0","basis":"target"},{"version":"0.9.0","basis":"target"},{"version":"0.10.0","basis":"target"},{"version":"0.11.0","basis":"target"},{"version":"0.12.0","basis":"target"},{"version":"1.0.0","basis":"target"}],"results":{"0.6.0":{"version":"0.6.0","basis":"measured","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":45.9,"e":44,"rt":55.4,"rank":{"u":11,"e":11,"rt":8},"ge80":12,"lt40":34,"leader":2,"median_gap":47},"frameworks":[{"id":"id_effect","name":"id_effect","u":45.9,"e":44,"rt":55.4,"rank":{"u":11,"e":11,"rt":8},"groups":{"core":72,"conc":80.5,"fault":58.7,"dist":64.2,"data":31.7,"web":32.5,"sec":27.6,"obs":61.8,"msg":27.6,"ai":28,"test":65,"dx":44.1,"eco":12.5}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":5,"e":6,"rt":4},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":7,"e":8,"rt":5},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":9,"e":10,"rt":6},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":2},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":3},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":6,"e":5,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":8,"e":7,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":4,"e":4,"rt":7},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":10,"e":9,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.7.0":{"version":"0.7.0","basis":"measured","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":49.1,"e":46.8,"rt":59.1,"rank":{"u":11,"e":11,"rt":7},"ge80":16,"lt40":31,"leader":3,"median_gap":40},"frameworks":[{"id":"id_effect","name":"id_effect","u":49.1,"e":46.8,"rt":59.1,"rank":{"u":11,"e":11,"rt":7},"groups":{"core":86.3,"conc":84.8,"fault":61,"dist":64.8,"data":34.4,"web":33.7,"sec":29.2,"obs":64.4,"msg":28,"ai":28,"test":67.2,"dx":47,"eco":14.4}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":5,"e":6,"rt":4},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":7,"e":8,"rt":5},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":9,"e":10,"rt":6},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":2},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":3},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":6,"e":5,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":8,"e":7,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":4,"e":4,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":10,"e":9,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.8.0":{"version":"0.8.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":55.8,"e":54.3,"rt":64.3,"rank":{"u":11,"e":11,"rt":7},"ge80":25,"lt40":24,"leader":4,"median_gap":28},"frameworks":[{"id":"id_effect","name":"id_effect","u":55.8,"e":54.3,"rt":64.3,"rank":{"u":11,"e":11,"rt":7},"groups":{"core":88.1,"conc":85.7,"fault":63.7,"dist":64.8,"data":41.1,"web":33.7,"sec":46.4,"obs":70.4,"msg":38.4,"ai":28,"test":76.3,"dx":60.1,"eco":28.6}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":5,"e":6,"rt":4},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":7,"e":8,"rt":5},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":9,"e":10,"rt":6},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":2},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":3},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":6,"e":5,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":8,"e":7,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":4,"e":4,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":10,"e":9,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.9.0":{"version":"0.9.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":63.3,"e":62.8,"rt":68.2,"rank":{"u":8,"e":9,"rt":6},"ge80":35,"lt40":18,"leader":4,"median_gap":20},"frameworks":[{"id":"id_effect","name":"id_effect","u":63.3,"e":62.8,"rt":68.2,"rank":{"u":8,"e":9,"rt":6},"groups":{"core":88.4,"conc":85.7,"fault":63.7,"dist":64.8,"data":73.7,"web":40.7,"sec":80.2,"obs":70.4,"msg":38.4,"ai":28,"test":79.7,"dx":62,"eco":33.9}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":5,"e":6,"rt":4},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":7,"e":8,"rt":5},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":10,"e":11,"rt":7},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":2},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":3},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":6,"e":5,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":9,"e":7,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":4,"e":4,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":11,"e":10,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.10.0":{"version":"0.10.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":69.6,"e":69.4,"rt":74.1,"rank":{"u":4,"e":5,"rt":4},"ge80":41,"lt40":11,"leader":6,"median_gap":15},"frameworks":[{"id":"id_effect","name":"id_effect","u":69.6,"e":69.4,"rt":74.1,"rank":{"u":4,"e":5,"rt":4},"groups":{"core":88.4,"conc":85.7,"fault":68,"dist":64.8,"data":78.7,"web":47.7,"sec":80.2,"obs":84.2,"msg":80.6,"ai":28,"test":84.7,"dx":69.2,"eco":33.9}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":6,"e":7,"rt":5},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":8,"e":9,"rt":6},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":10,"e":11,"rt":7},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":2},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":3},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":7,"e":6,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":9,"e":8,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":5,"e":4,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":11,"e":10,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.11.0":{"version":"0.11.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":73.1,"e":72.3,"rt":78.6,"rank":{"u":4,"e":4,"rt":2},"ge80":50,"lt40":8,"leader":8,"median_gap":12},"frameworks":[{"id":"id_effect","name":"id_effect","u":73.1,"e":72.3,"rt":78.6,"rank":{"u":4,"e":4,"rt":2},"groups":{"core":88.4,"conc":89.5,"fault":80.1,"dist":82.8,"data":78.7,"web":58.4,"sec":80.2,"obs":84.2,"msg":80.6,"ai":28,"test":84.7,"dx":69.2,"eco":33.9}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":6,"e":7,"rt":5},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":8,"e":9,"rt":6},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":10,"e":11,"rt":7},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":3},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":4},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":1},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":7,"e":6,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":9,"e":8,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":5,"e":5,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":11,"e":10,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"0.12.0":{"version":"0.12.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":76.7,"e":76.5,"rt":80.9,"rank":{"u":4,"e":4,"rt":1},"ge80":51,"lt40":3,"leader":8,"median_gap":12},"frameworks":[{"id":"id_effect","name":"id_effect","u":76.7,"e":76.5,"rt":80.9,"rank":{"u":4,"e":4,"rt":1},"groups":{"core":88.4,"conc":89.5,"fault":80.1,"dist":82.8,"data":80.3,"web":73.2,"sec":80.2,"obs":84.2,"msg":80.6,"ai":78,"test":84.7,"dx":69.2,"eco":44.2}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":6,"e":7,"rt":5},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":8,"e":9,"rt":6},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":10,"e":11,"rt":7},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":3,"e":3,"rt":3},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":2,"e":2,"rt":4},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":2},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":7,"e":6,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":9,"e":8,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":5,"e":5,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":11,"e":10,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]},"1.0.0":{"version":"1.0.0","basis":"target","method_version":"1.0","competitor_snapshot":"2026-10-14","id_effect":{"u":80.4,"e":80.4,"rt":83.5,"rank":{"u":2,"e":3,"rt":1},"ge80":59,"lt40":1,"leader":10,"median_gap":11},"frameworks":[{"id":"id_effect","name":"id_effect","u":80.4,"e":80.4,"rt":83.5,"rank":{"u":2,"e":3,"rt":1},"groups":{"core":91.6,"conc":91.3,"fault":81.6,"dist":82.8,"data":80.3,"web":73.2,"sec":85.6,"obs":86.2,"msg":80.6,"ai":78,"test":84.7,"dx":78.2,"eco":61.6}},{"id":"effect_ts","name":"Effect-TS","u":67.9,"e":67.1,"rt":69.8,"rank":{"u":6,"e":7,"rt":5},"groups":{"core":93.6,"conc":70.3,"fault":57.9,"dist":65.5,"data":74.7,"web":61.5,"sec":47.4,"obs":77,"msg":54.8,"ai":78,"test":75.8,"dx":74.3,"eco":54.8}},{"id":"zio","name":"ZIO","u":65.7,"e":63.8,"rt":68.7,"rank":{"u":8,"e":9,"rt":6},"groups":{"core":92.1,"conc":85,"fault":53.3,"dist":61.2,"data":69.4,"web":59,"sec":46,"obs":73,"msg":59,"ai":35,"test":81.3,"dx":59.9,"eco":56}},{"id":"otp","name":"OTP","u":58.9,"e":57.8,"rt":65,"rank":{"u":10,"e":11,"rt":7},"groups":{"core":65,"conc":65.5,"fault":74,"dist":83.5,"data":34.4,"web":33,"sec":31,"obs":79.6,"msg":54,"ai":15,"test":74.7,"dx":73.6,"eco":68}},{"id":"phoenix","name":"Phoenix","u":77.6,"e":77.6,"rt":75.4,"rank":{"u":4,"e":4,"rt":3},"groups":{"core":64.3,"conc":65.2,"fault":73,"dist":83.8,"data":79.2,"web":81.8,"sec":76.4,"obs":84.4,"msg":85.2,"ai":50,"test":74.2,"dx":87.3,"eco":79.4}},{"id":"spring","name":"Spring","u":78.8,"e":81.1,"rt":74.3,"rank":{"u":3,"e":2,"rt":4},"groups":{"core":62.9,"conc":66.2,"fault":57.4,"dist":63,"data":81.2,"web":79.1,"sec":94.6,"obs":94.2,"msg":87.8,"ai":90,"test":75.2,"dx":85.7,"eco":94.2}},{"id":"dotnet","name":".NET","u":83.9,"e":85.4,"rt":80.3,"rank":{"u":1,"e":1,"rt":2},"groups":{"core":75,"conc":71.8,"fault":64.3,"dist":78.8,"data":85.9,"web":88.3,"sec":94.8,"obs":95.2,"msg":80,"ai":92,"test":78.8,"dx":92.2,"eco":95.1}},{"id":"rails","name":"Rails","u":65.9,"e":67.2,"rt":54.3,"rank":{"u":7,"e":6,"rt":9},"groups":{"core":43.1,"conc":30.8,"fault":37.1,"dist":16.2,"data":73.4,"web":79.2,"sec":84,"obs":71,"msg":70.8,"ai":45,"test":71,"dx":90.3,"eco":90.2}},{"id":"django","name":"Django","u":62.9,"e":64.3,"rt":50.8,"rank":{"u":9,"e":8,"rt":10},"groups":{"core":41.9,"conc":30,"fault":29.3,"dist":15,"data":75.9,"web":76.1,"sec":86.8,"obs":65,"msg":57.4,"ai":40,"test":67.7,"dx":82.8,"eco":92.1}},{"id":"laravel","name":"Laravel","u":69.1,"e":71.3,"rt":57.5,"rank":{"u":5,"e":5,"rt":8},"groups":{"core":48.6,"conc":29.2,"fault":40.3,"dist":17.5,"data":77.6,"web":85.1,"sec":89.4,"obs":76.4,"msg":77.8,"ai":78,"test":68.3,"dx":92.2,"eco":89.8}},{"id":"nextjs","name":"Next.js","u":56.9,"e":58.7,"rt":49.2,"rank":{"u":11,"e":10,"rt":11},"groups":{"core":42.9,"conc":40.8,"fault":31.4,"dist":17.5,"data":46.1,"web":70.9,"sec":67,"obs":65,"msg":40,"ai":95,"test":57.5,"dx":82.2,"eco":83.6}}]}},"rows":[{"id":"core.typed-effect","group":"core","name":"Typed success / error / requirements","measures":"Errors and dependencies are tracked in the type of a program value; missing handling is a compile error.","track":"T2","stance":"build","evidence":"Effect<A,E=Never,R=HNil> is Send; typed HList R; compile-fail UI tests in crates/id_effect/tests/ui/.","competitors":[95,95,40,40,35,45,15,15,15,25],"targets":{"1.0.0":95},"adr":{},"scores":[88,92,92,92,92,92,92,95]},{"id":"core.di","group":"core","name":"Typed dependency injection","measures":"Declaring, providing, overriding and scoping services, checked before run time.","track":"T2","stance":"build","evidence":"crates/id_effect/src/layer.rs (succeed/effect/scoped/merge/provide_to/fresh/launch), caps!/need::<K>(); tests layer*.rs.","competitors":[92,90,30,35,95,92,30,25,80,15],"targets":{"0.9.0":93,"1.0.0":95},"adr":{},"scores":[85,91,91,93,93,93,93,95]},{"id":"core.ergonomics","group":"core","name":"Composition ergonomics","measures":"How short and readable everyday sequential/parallel code is.","track":"T1","stance":"build","evidence":"effect! sequential binds, ~(a,b) parallel join; retry/repeat need factories; pipe helpers removed.","competitors":[88,80,75,85,75,88,92,88,90,85],"targets":{"0.8.0":76,"1.0.0":85},"adr":{},"scores":[68,72,76,76,76,76,76,85]},{"id":"core.cause","group":"core","name":"Failure model (Cause / Exit)","measures":"Structured failure: expected errors, defects, interruption, composition and rendering.","track":"T2","stance":"build","evidence":"crates/id_effect/src/failure/{cause,exit}.rs; Die(Defect) keeps panic payload; tests/panic.rs.","competitors":[95,95,60,55,50,55,40,40,40,30],"targets":{"1.0.0":92},"adr":{},"scores":[85,88,88,88,88,88,88,92]},{"id":"core.scope","group":"core","name":"Resource safety (Scope / acquire-release)","measures":"Guaranteed release on success, failure and interruption; scoped lifetimes.","track":"T2","stance":"build","evidence":"kernel/resource.rs acquire_use_release/ensuring; finalizers run on interrupt; Layer::scoped.","competitors":[95,95,75,70,70,80,50,50,45,40],"targets":{"1.0.0":92},"adr":{},"scores":[85,88,88,88,88,88,88,92]},{"id":"core.interrupt","group":"core","name":"Interruption and cancellation","measures":"Cooperative cancellation, masking, propagation to children, finalizer semantics.","track":"T2","stance":"build","evidence":"uninterruptible/uninterruptible_mask/interruptible (kernel/resource.rs), parent interrupts children; tests/fibers.rs. No on_interrupt.","competitors":[95,95,90,85,45,80,30,35,25,50],"targets":{"0.8.0":90},"adr":{},"scores":[68,85,90,90,90,90,90,90]},{"id":"core.race","group":"core","name":"timeout / race / zip-par combinators","measures":"First-class timeout, race, parallel zip/for-each with bounded concurrency.","track":"T2","stance":"build","evidence":"crates/id_effect/src/race.rs, par.rs; tests race_timeout.rs, par.rs. No race_with/disconnect.","competitors":[95,95,85,80,70,85,45,40,45,55],"targets":{"0.8.0":92},"adr":{},"scores":[25,88,92,92,92,92,92,92]},{"id":"conc.fibers","group":"conc","name":"Lightweight fibers / processes","measures":"Cost and semantics of spawning, joining and supervising many concurrent tasks.","track":"T2","stance":"build","evidence":"Executor trait, real wakers; spawn_join_10k 6.67s → 17.2ms (docs/benchmarks/REPORT-0.7.md).","competitors":[92,95,98,96,80,85,45,40,30,60],"targets":{"1.0.0":92},"adr":{},"scores":[78,88,88,88,88,88,88,92]},{"id":"conc.coordination","group":"conc","name":"Coordination primitives","measures":"Queue, PubSub, Deferred, Semaphore, Ref, Latch, channels; no panics on misuse.","track":"T2","stance":"build","evidence":"Waker-based constructors; coordination/channel.rs panic-free; streaming/channel.rs:306 still .expect; queue_bounded 2.55x slower than 0.6.","competitors":[95,95,70,75,80,85,40,35,35,35],"targets":{"0.8.0":90},"adr":{},"scores":[82,85,90,90,90,90,90,90]},{"id":"conc.stm","group":"conc","name":"Software transactional memory","measures":"Composable transactions over shared memory (TRef/TMap/TQueue) with retry/orElse.","track":"T2","stance":"build","evidence":"crates/id_effect_fp/src/stm/mod.rs parks on wakers; still in maintenance-tier fp crate.","competitors":[85,95,35,30,20,15,5,5,5,5],"targets":{"0.11.0":85},"adr":{},"scores":[55,62,62,62,62,85,85,85]},{"id":"conc.parallel","group":"conc","name":"Parallel CPU compute","measures":"Built-in data-parallel / CPU-bound execution with admission control.","track":"T2","stance":"build","evidence":"crates/id_effect/src/compute/*; Concurrency::Inherit from Fabric.","competitors":[35,75,55,50,80,88,25,25,20,30],"targets":{"1.0.0":92},"adr":{},"scores":[88,88,88,88,88,88,88,92]},{"id":"conc.perf","group":"conc","name":"Raw performance and footprint","measures":"Throughput, latency and memory of typical workloads.","track":"T2","stance":"build","evidence":"axum_request_oneshot 52.5 → 7.16µs; schedule_retry_overhead 5.77x regression (REPORT-0.7.md).","competitors":[50,70,60,65,72,86,35,35,45,55],"targets":{"1.0.0":93},"adr":{},"scores":[85,90,90,90,90,90,90,93]},{"id":"conc.safety","group":"conc","name":"Language-level safety","measures":"Memory and data-race safety guaranteed by language and library policy.","track":"T2","stance":"build","evidence":"#![forbid(unsafe_code)] in every crate; no unsafe blocks in crates/ or labs/.","competitors":[65,80,75,75,65,72,35,40,40,60],"targets":{},"adr":{},"scores":[95,96,96,96,96,96,96,96]},{"id":"fault.supervision","group":"fault","name":"Supervision trees","measures":"Restart strategies, intensity limits, dynamic children, shutdown policies.","track":"T8","stance":"build","evidence":"crates/id_effect_process/src/supervisor.rs (3 strategies, intensity, DynamicSupervisor); tests/coordination_supervisor.rs.","competitors":[55,50,99,97,35,40,15,10,30,10],"targets":{"0.11.0":90},"adr":{},"scores":[82,84,84,84,84,90,90,90]},{"id":"fault.actors","group":"fault","name":"Actor / process model","measures":"gen_server equivalent: mailboxes, call/cast/info, links, monitors, timers, selective receive.","track":"T8","stance":"build","evidence":"id_effect_process mailbox.rs, links/monitors/trap_exit. No selective receive, send_after or hibernate.","competitors":[45,45,99,97,30,65,10,10,10,5],"targets":{"0.11.0":88},"adr":{},"scores":[74,75,75,75,75,88,88,88]},{"id":"fault.fsm","group":"fault","name":"State machines (gen_statem)","measures":"Typed FSMs with state data, timeouts, postpone, enter actions, visualisation.","track":"T8","stance":"build","evidence":"crates/id_effect_fsm (fieldless derive(Fsm), FsmProcess, Mermaid). No state timeouts/postpone/per-state data.","competitors":[40,35,90,85,70,45,50,40,45,30],"targets":{"0.11.0":80},"adr":{},"scores":[62,62,62,62,62,80,80,80]},{"id":"fault.resilience","group":"fault","name":"Resilience patterns","measures":"Circuit breaker, retry, timeout, rate limit, bulkhead, hedging, fallback as composable policies.","track":"T2","stance":"build","evidence":"id_effect_resilience breaker/bulkhead/rate limiter; hedged is a race; core timeout. No fallback/policy pipeline.","competitors":[80,80,60,55,92,95,30,25,40,20],"targets":{"0.8.0":88},"adr":{},"scores":[72,78,88,88,88,88,88,88]},{"id":"fault.schedule","group":"fault","name":"Retry / repeat schedule algebra","measures":"Composable schedules: exponential, jitter, fibonacci, union/intersect, cron.","track":"T2","stance":"build","evidence":"Typed Schedule<Out,In> (scheduling/schedule.rs) with fibonacci/union/intersect/jitter. No cron.","competitors":[95,98,40,45,65,72,45,30,50,20],"targets":{"0.8.0":92},"adr":{},"scores":[76,83,92,92,92,92,92,92]},{"id":"fault.workflows","group":"fault","name":"Durable workflows and sagas","measures":"Persistent, resumable multi-step workflows with compensation.","track":"T7","stance":"promote","evidence":"In-memory Saga in id_effect_fsm; labs/id_effect_workflow (sqlite, single writer), unpublished.","competitors":[70,45,35,60,60,78,40,35,45,55],"targets":{"0.11.0":78},"adr":{},"scores":[30,30,30,30,30,78,78,78]},{"id":"fault.reload","group":"fault","name":"Live reload and zero-downtime upgrades","measures":"Dev auto-reload and production upgrades without dropping work.","track":"T1","stance":"partial-non-goal","evidence":"Hot code loading is a non-goal (ADR 0009); HostDrain graceful drain only.","competitors":[20,20,95,72,50,55,70,55,62,80],"targets":{"0.10.0":45,"1.0.0":55},"adr":{},"scores":[15,15,15,15,45,45,45,55]},{"id":"dist.membership","group":"dist","name":"Clustering and node membership","measures":"Node identity, discovery, failure detection, authenticated join.","track":"T8","stance":"build","evidence":"crates/id_effect_node (SWIM via foca, cookie HMAC, Static/DNS discovery, TCP/QUIC).","competitors":[65,60,92,90,72,75,15,10,15,20],"targets":{"0.11.0":82},"adr":{},"scores":[72,72,72,72,72,82,82,82]},{"id":"dist.remote","group":"dist","name":"Remote spawn / send / monitor","measures":"Location-transparent messaging, remote spawn, cross-node links/monitors.","track":"T8","stance":"build","evidence":"mesh.rs remote_spawn/call/cast/monitor; at-most-once delivery; node waits are effects.","competitors":[65,55,95,92,40,70,10,10,10,5],"targets":{"0.11.0":82},"adr":{},"scores":[70,71,71,71,71,82,82,82]},{"id":"dist.placement","group":"dist","name":"Singletons, groups and placement","measures":"Cluster singletons, process groups, global registry, sharding/placement.","track":"T8","stance":"build","evidence":"singleton.rs + PgAdvisoryLease, OrSwot groups, DistributedSupervisor. No global registry.","competitors":[72,65,72,78,55,82,10,10,15,5],"targets":{"0.11.0":82},"adr":{},"scores":[65,66,66,66,66,82,82,82]},{"id":"dist.tls","group":"dist","name":"Transport security","measures":"Encryption and mutual authentication between nodes.","track":"T8","stance":"build","evidence":"QUIC via rustls (accepts any cert); TCP authenticated but unencrypted.","competitors":[60,65,75,75,85,88,30,30,30,40],"targets":{"0.11.0":85},"adr":{},"scores":[50,50,50,50,50,85,85,85]},{"id":"data.schema","group":"data","name":"Schema / validation","measures":"Declarative decode/encode/validate with derive, refinements, error accumulation.","track":"T2","stance":"build","evidence":"crates/id_effect/src/schema (tuple/struct up to 12, Brand, Redacted, derive fixes).","competitors":[97,85,30,85,80,85,85,90,92,70],"targets":{"0.8.0":82,"0.9.0":88},"adr":{},"scores":[75,77,82,88,88,88,88,88]},{"id":"data.jsonschema","group":"data","name":"JSON Schema / OpenAPI generation","measures":"Generate JSON Schema and OpenAPI from the same schemas/routes the code uses.","track":"T4","stance":"build","evidence":"schema/json_schema_export.rs is primitive fragments only; SPEC.md: not implemented.","competitors":[90,75,10,55,90,95,45,85,65,40],"targets":{"0.8.0":70,"0.9.0":88},"adr":{},"scores":[15,15,70,88,88,88,88,88]},{"id":"data.sql","group":"data","name":"SQL client, pooling, transactions","measures":"Typed rows/params, pooling, transactions, savepoints, isolation, streaming.","track":"T3","stance":"build","evidence":"id_effect_sql: tx roll back on defect/interrupt, scoped layers; rows are Vec<String> (MVP), few param types.","competitors":[80,75,30,92,95,97,97,95,95,50],"targets":{"0.9.0":85},"adr":{},"scores":[35,42,42,85,85,85,85,85]},{"id":"data.orm","group":"data","name":"ORM / query builder","measures":"Typed query construction, entity mapping, relations.","track":"T3","stance":"build","evidence":"None.","competitors":[55,65,10,92,95,97,98,97,97,40],"targets":{"0.9.0":65,"0.12.0":80},"adr":{},"scores":[3,3,3,65,65,65,80,80]},{"id":"data.migrations","group":"data","name":"Migrations","measures":"Versioned schema migrations with CLI, locking, up/down, CI check.","track":"T3","stance":"build","evidence":"Only an include_str! migration inside unpublished examples/http-showcase.","competitors":[65,50,15,92,85,95,99,98,97,35],"targets":{"0.9.0":85},"adr":{},"scores":[3,3,3,85,85,85,85,85]},{"id":"data.backends","group":"data","name":"Database backend breadth","measures":"Supported databases (Postgres, MySQL, SQLite, MSSQL, …) behind one API.","track":"T3","stance":"build","evidence":"Postgres only (feature pg via sqlx).","competitors":[85,75,30,85,97,95,90,90,90,50],"targets":{"0.9.0":75},"adr":{},"scores":[15,15,15,75,75,75,75,75]},{"id":"data.cache","group":"data","name":"Caching (local + distributed)","measures":"In-process and distributed caches, TTL, stampede protection, invalidation.","track":"T3","stance":"build","evidence":"resource/cache.rs capacity/ttl/typed failures; RequestCache + batching. No distributed cache.","competitors":[70,70,80,80,92,94,92,88,92,85],"targets":{"0.9.0":82},"adr":{},"scores":[42,60,60,82,82,82,82,82]},{"id":"data.events","group":"data","name":"Event sourcing / CQRS","measures":"Event store, projections, command/query handlers, snapshots.","track":"T7","stance":"promote","evidence":"labs/id_effect_events (unpublished).","competitors":[45,40,35,62,62,65,35,20,50,15],"targets":{"0.10.0":70},"adr":{},"scores":[25,25,25,25,70,70,70,70]},{"id":"data.fp","group":"data","name":"Persistent collections and FP toolkit","measures":"Immutable collections, typeclasses, optics.","track":"T2","stance":"maintain","evidence":"id_effect_fp/optics maintenance tier; pipe/memoize/flip helpers removed in 0.7.","competitors":[85,90,70,70,35,50,20,20,20,30],"targets":{},"adr":{},"scores":[72,70,70,70,70,70,70,70]},{"id":"web.server","group":"web","name":"HTTP server and routing","measures":"Routing, typed handlers, lifecycle, request scoping, graceful shutdown.","track":"T4","stance":"build","evidence":"id_effect_axum server_layer/serve*, fiber per request (panic → 500, disconnect → interrupt).","competitors":[80,80,35,95,97,97,97,92,96,95],"targets":{"0.9.0":85},"adr":{},"scores":[60,68,68,85,85,85,85,85]},{"id":"web.middleware","group":"web","name":"Middleware pipeline","measures":"Composable request/response middleware with typed context.","track":"T4","stance":"build","evidence":"Tower feature of id_effect_axum, CapOverrideLayer, require_ready.","competitors":[80,75,30,92,92,95,92,88,93,75],"targets":{"0.9.0":82},"adr":{},"scores":[65,67,67,82,82,82,82,82]},{"id":"web.validation","group":"web","name":"Request validation","measures":"Schema-validated path/query/form/header/body extraction with uniform error bodies.","track":"T4","stance":"build","evidence":"decode_json_schema for JSON bodies only (id_effect_axum/src/json.rs).","competitors":[90,75,15,90,90,92,88,92,95,65],"targets":{"0.9.0":85},"adr":{},"scores":[45,47,47,85,85,85,85,85]},{"id":"web.client","group":"web","name":"HTTP client","measures":"Typed client with timeouts, retries, tracing, pooling, streaming.","track":"T4","stance":"build","evidence":"id_effect_platform HttpClient on reqwest. No built-in retry/breaker.","competitors":[85,80,50,75,92,95,55,50,85,75],"targets":{"0.10.0":85},"adr":{},"scores":[68,68,68,68,85,85,85,85]},{"id":"web.rpc","group":"web","name":"Typed RPC / API contracts","measures":"Shared typed contracts between client and server, codegen or derive.","track":"T8","stance":"promote","evidence":"labs/id_effect_rpc (unpublished at 0.7).","competitors":[90,70,75,60,80,92,30,40,35,85],"targets":{"0.11.0":80},"adr":{},"scores":[30,30,30,30,30,80,80,80]},{"id":"web.realtime","group":"web","name":"WebSockets and realtime","measures":"WebSockets/SSE, channels, presence, cluster-wide broadcast.","track":"T8","stance":"build","evidence":"No first-party support; raw axum only.","competitors":[70,70,70,99,80,95,85,70,88,50],"targets":{"0.11.0":82},"adr":{},"scores":[25,25,25,25,25,82,82,82]},{"id":"web.graphql","group":"web","name":"GraphQL","measures":"Schema-first or code-first GraphQL server integration.","track":"T9","stance":"integrate","evidence":"None.","competitors":[30,75,20,85,90,92,85,75,80,65],"targets":{"0.12.0":60},"adr":{},"scores":[2,2,2,2,2,2,60,60]},{"id":"web.ui","group":"web","name":"Server-side UI / frontend","measures":"Rendering HTML/UI from the framework (templates, components, live views).","track":"T9","stance":"integrate","evidence":"None (out of scope).","competitors":[25,10,5,92,50,90,90,70,92,99],"targets":{"0.12.0":40},"adr":{},"scores":[2,2,2,2,2,2,40,40]},{"id":"web.admin","group":"web","name":"Admin / back-office UI","measures":"Generated CRUD admin over the data model.","track":"T9","stance":"build","evidence":"Template stub only (id_effect_cli/templates/admin-stub).","competitors":[5,5,10,65,45,50,75,99,92,40],"targets":{"0.12.0":55},"adr":{},"scores":[3,3,3,3,3,3,55,55]},{"id":"web.storage","group":"web","name":"File storage abstraction","measures":"Local + object storage (S3/GCS/Azure) behind one capability, uploads.","track":"T6","stance":"integrate","evidence":"FileSystem trait (Live/Test) only.","competitors":[60,50,20,65,75,85,95,85,95,60],"targets":{"0.10.0":78},"adr":{},"scores":[25,25,25,25,78,78,78,78]},{"id":"sec.authn","group":"sec","name":"Authentication","measures":"Sessions, password hashing, JWT, OAuth2/OIDC with PKCE, passkeys.","track":"T5","stance":"build","evidence":"OAuthClient/SessionStore traits, memory impls only (feature auth, off).","competitors":[30,30,15,85,98,95,82,92,97,75],"targets":{"0.9.0":78,"1.0.0":85},"adr":{},"scores":[8,10,10,78,78,78,78,85]},{"id":"sec.authz","group":"sec","name":"Authorization (RBAC / policies)","measures":"Roles, permissions, policy evaluation integrated with handlers and data.","track":"T5","stance":"build","evidence":"None.","competitors":[20,20,10,60,95,95,70,90,92,40],"targets":{"0.9.0":72,"1.0.0":82},"adr":{},"scores":[3,3,3,72,72,72,72,82]},{"id":"sec.web","group":"sec","name":"Web security defaults (CSRF, CSP, CORS)","measures":"Secure-by-default headers, CSRF, CORS, CSP, cookie flags.","track":"T5","stance":"build","evidence":"axum/src/server/security.rs:91 static CSRF token compared with ==; CSP builder minimal; no CORS.","competitors":[45,40,20,92,95,95,95,97,95,75],"targets":{"0.8.0":75,"0.9.0":88},"adr":{},"scores":[22,22,75,88,88,88,88,88]},{"id":"sec.config","group":"sec","name":"Config, secrets and settings","measures":"Typed config, layered sources, secret redaction, vault/KMS sources, reload.","track":"T5","stance":"build","evidence":"Config<T>, Config::all accumulates errors, Config::layer(), Secret<T>. No vault/KMS/reload.","competitors":[82,80,50,75,97,97,88,65,88,70],"targets":{"0.9.0":85},"adr":{},"scores":[60,66,66,85,85,85,85,85]},{"id":"sec.supply","group":"sec","name":"Supply-chain and security process","measures":"Advisory scanning, license/ban policy, SECURITY.md, SBOM, signed releases, CVE process.","track":"T0","stance":"build","evidence":"Daily cargo audit + Dependabot. No cargo-deny, SECURITY.md, SBOM.","competitors":[60,60,60,70,88,92,85,90,75,75],"targets":{"0.8.0":78,"1.0.0":88},"adr":{},"scores":[45,45,78,78,78,78,78,88]},{"id":"obs.logging","group":"obs","name":"Structured logging","measures":"Levels, structured fields, spans, JSON output, redaction, sampling.","track":"T6","stance":"build","evidence":"id_effect_logger rewritten on Layers; JSON/structured/tracing backends.","competitors":[85,85,85,85,92,95,80,80,85,60],"targets":{"0.10.0":86},"adr":{},"scores":[75,76,76,76,86,86,86,86]},{"id":"obs.metrics","group":"obs","name":"Metrics","measures":"Counters/gauges/histograms, tags, Prometheus/OTLP export, runtime metrics.","track":"T6","stance":"build","evidence":"Atomic metrics in MetricRegistry, with_tags, OTel registry bridge. No Prometheus endpoint.","competitors":[85,85,70,88,97,95,55,50,70,60],"targets":{"0.8.0":85},"adr":{},"scores":[62,70,85,85,85,85,85,85]},{"id":"obs.tracing","group":"obs","name":"Distributed tracing (OpenTelemetry)","measures":"OTLP traces/metrics/logs, propagation, auto-instrumentation.","track":"T6","stance":"build","evidence":"OtelSpanHook, span_bridge.rs, W3C propagation, OTLP export.","competitors":[90,80,75,85,95,97,70,65,60,80],"targets":{"0.10.0":90},"adr":{},"scores":[80,84,84,84,90,90,90,90]},{"id":"obs.health","group":"obs","name":"Health, readiness, graceful shutdown","measures":"Liveness/readiness with dependency checks, drain, signals.","track":"T6","stance":"build","evidence":"axum/src/health.rs /health /ready require_ready; drain. No dependency aggregation.","competitors":[60,60,70,72,97,97,75,50,75,55],"targets":{"0.8.0":85},"adr":{},"scores":[70,70,85,85,85,85,85,85]},{"id":"obs.console","group":"obs","name":"Runtime introspection and dashboards","measures":"Live view of fibers, supervisors, metrics, jobs; remote shell; profiling.","track":"T6","stance":"build","evidence":"Registry snapshots, snapshot_tracing; cluster control DTOs. No fiber dump or dashboard.","competitors":[65,55,98,92,90,92,75,80,92,70],"targets":{"0.10.0":75,"1.0.0":85},"adr":{},"scores":[22,22,22,22,75,75,75,85]},{"id":"msg.jobs","group":"msg","name":"Background jobs and queues","measures":"Persistent jobs with retries, uniqueness, priorities, dashboard.","track":"T7","stance":"promote","evidence":"labs/id_effect_jobs (unpublished); core Queue is in-memory.","competitors":[55,45,70,92,85,85,97,72,98,40],"targets":{"0.10.0":85},"adr":{},"scores":[22,22,22,22,85,85,85,85]},{"id":"msg.cron","group":"msg","name":"Scheduled tasks / cron","measures":"Cron expressions, single-run across a cluster, missed-run policy.","track":"T7","stance":"build","evidence":"Typed Schedule; no cron expressions.","competitors":[72,60,50,85,92,80,85,60,98,50],"targets":{"0.8.0":70,"0.10.0":88},"adr":{},"scores":[30,30,70,70,88,88,88,88]},{"id":"msg.brokers","group":"msg","name":"Message brokers (Kafka, AMQP, NATS, SQS)","measures":"Producer/consumer integrations with backpressure, acks, outbox.","track":"T7","stance":"integrate","evidence":"labs/id_effect_jobs kafka.rs stub + outbox (unpublished).","competitors":[45,85,75,82,97,85,55,50,70,25],"targets":{"0.10.0":72},"adr":{},"scores":[12,12,12,12,72,72,72,72]},{"id":"msg.streams","group":"msg","name":"Stream processing","measures":"Backpressured streams with zip/merge/flat_map/throttle/debounce/group_by/windows.","track":"T2","stance":"build","evidence":"Owned pulls, flat_map, map_effect_par, merge, windows. No zip/throttle/debounce/group_by.","competitors":[92,95,55,82,80,80,20,20,25,45],"targets":{"0.8.0":86},"adr":{},"scores":[72,74,86,86,86,86,86,86]},{"id":"msg.email","group":"msg","name":"Email and notifications","measures":"Mail sending, templating, previews, inbound mail, notification channels.","track":"T7","stance":"integrate","evidence":"None.","competitors":[10,10,20,85,85,70,97,85,98,40],"targets":{"0.10.0":72},"adr":{},"scores":[2,2,2,2,72,72,72,72]},{"id":"ai.llm","group":"ai","name":"LLM / AI integration","measures":"Provider-neutral LLM API, tool calling, streaming, MCP, embeddings.","track":"T9","stance":"promote","evidence":"labs/id_effect_ai (OpenAI/Anthropic/Cursor, MCP template), unpublished.","competitors":[78,35,15,50,90,92,45,40,78,95],"targets":{"0.12.0":78},"adr":{},"scores":[28,28,28,28,28,28,78,78]},{"id":"test.unit","group":"test","name":"Unit test kit and test doubles","measures":"Test runtime, layer/service mocks, assertions, snapshots.","track":"T2","stance":"build","evidence":"testing/test_executor.rs (advance, run_until_stalled); snapshot/stream helpers removed.","competitors":[90,95,85,92,95,92,97,92,95,70],"targets":{"0.8.0":88},"adr":{},"scores":[80,83,88,88,88,88,88,88]},{"id":"test.determinism","group":"test","name":"Deterministic time and randomness","measures":"Virtual clock, seeded random, reproducible scheduling.","track":"T2","stance":"build","evidence":"TestExecutor virtual time, testing/test_random.rs. FIFO ordering only.","competitors":[95,98,40,45,62,78,82,62,85,40],"targets":{"0.8.0":85},"adr":{},"scores":[55,75,85,85,85,85,85,85]},{"id":"test.property","group":"test","name":"Property-based testing","measures":"Generators (incl. derived from schemas), shrinking, effect-aware properties.","track":"T2","stance":"build","evidence":"testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108).","competitors":[90,90,85,75,50,55,40,50,30,50],"targets":{"0.8.0":82},"adr":{"0.7.0":"Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8)."},"scores":[62,45,82,82,82,82,82,82]},{"id":"test.integration","group":"test","name":"Integration and E2E testing","measures":"Containers, HTTP test client, DB fixtures, end-to-end harness.","track":"T6","stance":"build","evidence":"examples/http-showcase in live-Postgres CI; no testcontainers/test client.","competitors":[55,70,78,88,97,95,95,90,95,85],"targets":{"0.9.0":70,"0.10.0":82},"adr":{},"scores":[45,50,50,70,82,82,82,82]},{"id":"test.chaos","group":"test","name":"Fault injection / chaos","measures":"Injecting latency, failures, partitions at effect and network level.","track":"T6","stance":"build","evidence":"id_effect_node scripted partitions (transport/mod.rs).","competitors":[40,50,70,60,52,58,20,20,20,15],"targets":{"0.10.0":78},"adr":{},"scores":[60,60,60,60,78,78,78,78]},{"id":"test.qa","group":"test","name":"Project QA discipline","measures":"Coverage gate, OS/toolchain matrix, MSRV, minimal versions, compile-fail tests.","track":"T0","stance":"build","evidence":"96% coverage gate (scripts/llvm-cov-nextest.sh), ~3,232 tests, pinned trybuild toolchain.","competitors":[85,85,90,85,95,95,92,92,85,85],"targets":{"0.8.0":93},"adr":{},"scores":[88,90,93,93,93,93,93,93]},{"id":"dx.scaffold","group":"dx","name":"Scaffolding and generators","measures":"One command to a running project; generators for resources, jobs, migrations.","track":"T1","stance":"build","evidence":"Templates only (id_effect_cli/templates); no generator command.","competitors":[55,30,60,95,92,92,99,85,97,92],"targets":{"0.8.0":65,"0.9.0":82,"1.0.0":92},"adr":{},"scores":[4,4,65,82,82,82,82,92]},{"id":"dx.cli","group":"dx","name":"CLI application toolkit","measures":"Building CLIs: args, exit codes, prompts, progress, config.","track":"T1","stance":"build","evidence":"run_main maps defects → 101, interrupts → 130; id-effect-diagnose removed.","competitors":[85,75,50,70,70,85,70,75,88,20],"targets":{"0.8.0":78},"adr":{},"scores":[70,68,78,78,78,78,78,78]},{"id":"dx.docs","group":"dx","name":"Documentation and learning","measures":"Tutorials, guides, reference, cookbook, examples, tested snippets.","track":"T1","stance":"build","evidence":"Book updated for 0.7 (140 files), MIGRATION-0.7.md, ADR 0011.","competitors":[85,82,85,92,97,98,97,98,99,95],"targets":{"0.8.0":82,"1.0.0":92},"adr":{},"scores":[68,76,82,82,82,82,82,92]},{"id":"dx.diagnostics","group":"dx","name":"Compiler / IDE diagnostics","measures":"Quality of type errors, on_unimplemented hints, doctor tooling.","track":"T1","stance":"build","evidence":"Missing capability is a compile error; 11 on_unimplemented; trybuild ui tests.","competitors":[78,70,60,80,90,97,70,70,80,88],"targets":{"0.8.0":70,"1.0.0":80},"adr":{},"scores":[55,60,70,70,70,70,70,80]},{"id":"dx.lint","group":"dx","name":"Linting and static analysis","measures":"Framework-aware lints usable on stable.","track":"T1","stance":"promote","evidence":"clippy -D warnings; labs/id_effect_lint nightly-only, unpublished.","competitors":[78,55,70,80,85,95,88,72,82,85],"targets":{"0.10.0":65,"1.0.0":75},"adr":{},"scores":[40,40,40,40,65,65,65,75]},{"id":"dx.compile","group":"dx","name":"Edit-compile-run loop speed","measures":"Cold and incremental build time of a template app.","track":"T1","stance":"build","evidence":"Unmeasured; HList R and typed Schedule likely heavier.","competitors":[85,45,85,92,70,82,98,95,95,88],"targets":{"0.8.0":40,"1.0.0":55},"adr":{},"scores":[38,38,40,40,40,40,40,55]},{"id":"dx.repl","group":"dx","name":"REPL and local dev environment","measures":"Interactive console, one-command local services, dev mode.","track":"T1","stance":"build","evidence":"devenv/Nix + moon; no REPL or dev command.","competitors":[70,60,95,97,78,88,97,90,95,90],"targets":{"0.10.0":62},"adr":{},"scores":[42,42,42,42,62,62,62,62]},{"id":"dx.deploy","group":"dx","name":"Deploy and packaging","measures":"Container images, deploy recipes, release builds, k8s/Kamal.","track":"T6","stance":"build","evidence":"Single binary; deploy-kamal template not wired to a command.","competitors":[55,60,85,88,92,95,95,65,95,97],"targets":{"0.8.0":62,"0.10.0":82},"adr":{},"scores":[50,50,62,62,82,82,82,82]},{"id":"dx.coherence","group":"dx","name":"Coherence: one stack, one way","measures":"One dependency, one prelude, one documented way for each concern.","track":"T1","stance":"build","evidence":"One kernel and Layer model since 0.7; labs lag; no umbrella crate/prelude.","competitors":[78,62,72,92,97,98,99,95,99,85],"targets":{"0.8.0":62,"1.0.0":88},"adr":{},"scores":[30,45,62,62,62,62,62,88]},{"id":"eco.stability","group":"eco","name":"Release maturity and API stability","measures":"Semver discipline, deprecation windows, published crates, cadence.","track":"T0","stance":"build","evidence":"17 crates at 0.7.0 on crates.io; breaking every minor; labs at 0.4.0.","competitors":[80,85,98,90,97,97,92,97,90,75],"targets":{"0.8.0":45,"1.0.0":85},"adr":{},"scores":[18,28,45,45,45,45,45,85]},{"id":"eco.backing","group":"eco","name":"Backing and long-term support","measures":"Maintainers, governance, sponsorship, LTS policy.","track":"T0","stance":"build","evidence":"Effectively one maintainer; no LTS policy.","competitors":[70,70,92,78,98,99,90,92,90,95],"targets":{"0.8.0":15,"1.0.0":40},"adr":{},"scores":[8,8,15,15,15,15,15,40]},{"id":"eco.fit","group":"eco","name":"Third-party ecosystem fit","measures":"Ease of using the host language's ecosystem; native integrations.","track":"T9","stance":"build","evidence":"Tokio default executor; axum/tower feature.","competitors":[72,70,72,82,98,95,95,95,95,99],"targets":{"1.0.0":75},"adr":{},"scores":[50,55,55,55,55,55,55,75]},{"id":"eco.community","group":"eco","name":"Community and hiring pool","measures":"Users, contributors, chat, conference presence, hireability.","track":"T0","stance":"build","evidence":"No measurable community.","competitors":[40,35,45,52,99,98,85,92,90,97],"targets":{"1.0.0":25},"adr":{},"scores":[3,3,3,3,3,3,3,25]},{"id":"eco.production","group":"eco","name":"Production track record","measures":"Public production users and case studies.","track":"T0","stance":"build","evidence":"Two known consumers (ADR 0010).","competitors":[58,70,99,88,99,99,97,96,88,95],"targets":{"1.0.0":40},"adr":{},"scores":[8,8,8,8,8,8,8,40]},{"id":"eco.license","group":"eco","name":"License and legal clarity","measures":"OSI software license, LICENSE file, contributor terms.","track":"T0","stance":"build","evidence":"Cargo.toml:32 CC-BY-SA-4.0; no LICENSE file.","competitors":[98,98,98,98,98,98,98,98,98,98],"targets":{"0.8.0":98},"adr":{},"scores":[8,8,98,98,98,98,98,98]},{"id":"eco.i18n","group":"eco","name":"i18n / l10n","measures":"Message catalogs, pluralisation, locale negotiation, formatting.","track":"T9","stance":"integrate","evidence":"None.","competitors":[10,10,30,85,90,95,95,97,92,80],"targets":{"0.12.0":60},"adr":{},"scores":[2,2,2,2,2,2,60,60]},{"id":"eco.tenancy","group":"eco","name":"Multi-tenancy and audit trails","measures":"Tenant isolation patterns and tamper-evident audit logging.","track":"T5","stance":"build","evidence":"Per-request capabilities only (axum/src/request_caps.rs).","competitors":[10,10,10,62,75,80,70,70,75,30],"targets":{"0.9.0":45,"0.12.0":70},"adr":{},"scores":[3,3,3,45,45,45,70,70]}]}
+</script>
+<script>
+const D = JSON.parse(document.getElementById('scorecard-data').textContent);
+const FW = D.frameworks.map(f => f.name);
+const GROUPS = D.groups;
+const GNAME = Object.fromEntries(GROUPS.map(g => [g.id, g.name]));
+const VIEWS = D.views;
+const ROWS = D.rows;
+const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+const f1 = x => x.toFixed(1);
+const signed = d => (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
+const short = v => v.replace(/\.0$/, '');
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const label = i => `${VIEWS[i].version} ${VIEWS[i].basis}`;
+function heat(v) {
+  const t = (v - 50) / 50;
+  const p = Math.round(Math.min(1, Math.abs(t)) * 78);
+  return `color-mix(in oklab, ${t < 0 ? 'var(--bad)' : 'var(--good)'} ${p}%, var(--cell))`;
+}
+
+const lastMeasured = VIEWS.map(v => v.basis).lastIndexOf('measured');
+let cur = lastMeasured;
+const fromHash = VIEWS.findIndex(v => location.hash === `#${v.version}`);
+if (fromHash >= 0) cur = fromHash;
+
+const viewSel = document.getElementById('view');
+const opt = i => `<option value="${i}">${esc(label(i))}</option>`;
+const idx = VIEWS.map((_, i) => i);
+viewSel.innerHTML = `<optgroup label="Measured">${idx.filter(i => VIEWS[i].basis === 'measured').map(opt).join('')}</optgroup>` +
+  `<optgroup label="Targets (plan)">${idx.filter(i => VIEWS[i].basis !== 'measured').map(opt).join('')}</optgroup>`;
+viewSel.onchange = e => select(+e.target.value);
+function select(i) {
+  cur = i;
+  viewSel.value = String(i);
+  history.replaceState(null, '', `#${VIEWS[i].version}`);
+  render();
+}
+
+// Row records for the current view: s = scores in FW order, prev = id_effect at the previous view.
+function rowsFor(i) {
+  return ROWS.map(r => {
+    const s = [r.scores[i], ...r.competitors];
+    const others = r.competitors;
+    const best = Math.max(...others);
+    return {r, s, prev: i > 0 ? r.scores[i - 1] : null, best, leader: FW[1 + others.indexOf(best)],
+      gap: best - s[0], rank: 1 + others.filter(x => x > s[0]).length};
+  });
+}
+
+document.getElementById('meta').innerHTML = `<span>${ROWS.length} capabilities</span><span>${GROUPS.length} groups</span>` +
+  `<span>${FW.length} frameworks</span><span>${ROWS.length * FW.length} scores per version</span>` +
+  `<span>method v${esc(D.method_version)}</span><span>competitor snapshot ${esc(D.competitor_snapshot.date)}</span>`;
+document.getElementById('scopes').innerHTML = D.frameworks.map(f => `<li><b>${esc(f.name)}</b>: ${esc(f.scope)}.</li>`).join('');
+
+function renderHeader() {
+  const v = VIEWS[cur];
+  const planned = v.basis !== 'measured';
+  document.getElementById('eyebrow').textContent =
+    `Scorecard method v${D.method_version} · id_effect ${v.version} ${v.basis} · competitor snapshot ${D.competitor_snapshot.date}`;
+  document.getElementById('title').textContent =
+    `id_effect ${v.version}${planned ? ' (planned)' : ''} against ${FW.length - 1} frameworks`;
+  document.getElementById('viewNote').textContent = planned
+    ? 'Planned scores from the targets in scorecard.json (METHOD §5.1), not measurements.'
+    : 'Scores measured at this release tag.';
+}
+
+function renderBoard() {
+  const res = D.results[VIEWS[cur].version];
+  const me = res.frameworks[0];
+  const prev = cur > 0 ? D.results[VIEWS[cur - 1].version].frameworks[0] : null;
+  document.getElementById('boardNote').textContent = prev
+    ? `The faint marker on id_effect's bar shows ${label(cur - 1)}.` : '';
+  const order = res.frameworks.map((f, i) => ({...f, i})).sort((a, b) => b.e - a.e || a.i - b.i);
+  const mark = prev ? `<div class="bar-mark" title="${esc(label(cur - 1))}: ${f1(prev.e)}" style="left:${prev.e}%"></div>` : '';
+  const was = (k) => prev ? ` (${esc(VIEWS[cur - 1].version)}: ${f1(prev[k])})` : '';
+  const k = res.id_effect;
+  document.getElementById('board').innerHTML =
+    `<div class="bar-row" style="font-size:12px;color:var(--muted)"><span></span><span>Enterprise index</span><span class="v">E</span></div>` +
+    order.map(o => `<div class="bar-row ${o.i === 0 ? 'me' : ''}"><span class="lbl">${esc(o.name)}</span>` +
+      `<div class="bar-track" role="img" aria-label="${esc(o.name)} enterprise index ${f1(o.e)}"><div class="bar-fill" style="width:${o.e}%"></div>${o.i === 0 ? mark : ''}</div>` +
+      `<span class="v num">${f1(o.e)}</span></div>`).join('') +
+    `<p class="muted num" style="font-size:12px;margin-top:8px">id_effect: E ${f1(me.e)} (#${me.rank.e})${was('e')} · unweighted ${f1(me.u)} (#${me.rank.u})${was('u')} · runtime ${f1(me.rt)} (#${me.rank.rt})${was('rt')}</p>` +
+    `<div class="kpis muted num"><span>rows ≥80: ${k.ge80}</span><span>rows &lt;40: ${k.lt40}</span><span>rows led: ${k.leader}</span><span>median gap to best: ${k.median_gap}</span></div>`;
+}
+
+function renderMovers() {
+  const sec = document.getElementById('movers');
+  if (cur === 0) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const v = VIEWS[cur].version, pv = VIEWS[cur - 1].version;
+  const moved = rowsFor(cur).filter(x => x.s[0] !== x.prev).map(x => ({...x, d: x.s[0] - x.prev}));
+  const up = moved.filter(x => x.d > 0).sort((a, b) => b.d - a.d);
+  const down = moved.filter(x => x.d < 0).sort((a, b) => a.d - b.d);
+  const li = x => `<li><b>${esc(x.r.name)}</b> <span class="num ${x.d > 0 ? 'pos' : 'neg'}">${x.prev} → ${x.s[0]} (${signed(x.d)})</span>` +
+    (x.r.adr[v] ? `<br><span class="muted" style="font-size:13px">ADR note: ${esc(x.r.adr[v])}</span>` : '') + '</li>';
+  document.getElementById('upTitle').textContent = `Largest rises since ${pv}` + (up.length > 10 ? ` (10 of ${up.length})` : ` (${up.length})`);
+  document.getElementById('up').innerHTML = up.slice(0, 10).map(li).join('') || '<li class="muted">No row rose.</li>';
+  document.getElementById('downTitle').textContent = `Every fall since ${pv} (${down.length})`;
+  document.getElementById('down').innerHTML = down.map(li).join('') || '<li class="muted">No row fell.</li>';
+}
+
+let gSort = {col: -1, dir: -1};
+function renderGroups() {
+  const fws = D.results[VIEWS[cur].version].frameworks;
+  let rows = GROUPS.map(g => ({g, n: ROWS.filter(r => r.group === g.id).length, v: fws.map(f => f.groups[g.id])}));
+  if (gSort.col >= 0) rows.sort((a, b) => gSort.dir * (a.v[gSort.col] - b.v[gSort.col]));
+  const head = `<thead><tr><th class="cap">Group <span class="muted" style="font-weight:400">· weight E / RT</span></th>` +
+    FW.map((f, i) => `<th class="${i === 0 ? 'me' : ''} ${gSort.col === i ? 'sorted' : ''}"><button data-gcol="${i}">${esc(f)}</button></th>`).join('') + '</tr></thead>';
+  const body = rows.map(r => {
+    const best = Math.max(...r.v.slice(1)), mx = Math.max(...r.v);
+    return `<tr><td class="cap"><div class="n">${esc(r.g.name)}</div><div class="note">${r.n} capabilities · weight ${r.g.w_enterprise} / ${r.g.w_runtime} · gap to best <span class="num">${f1(best - r.v[0])}</span></div></td>` +
+      r.v.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''} ${v === mx ? 'best' : ''}"><span style="background:${heat(v)}">${f1(v)}</span></td>`).join('') + '</tr>';
+  }).join('');
+  const t = document.getElementById('groupTable');
+  t.innerHTML = head + `<tbody>${body}</tbody>`;
+  t.querySelectorAll('[data-gcol]').forEach(b => b.onclick = () => {
+    const c = +b.dataset.gcol;
+    gSort = gSort.col === c ? {col: c, dir: -gSort.dir} : {col: c, dir: -1};
+    renderGroups();
+  });
+}
+
+function renderPath() {
+  document.getElementById('path').innerHTML =
+    '<tr><th>Release</th><th class="r">U</th><th class="r">E</th><th class="r">Rank</th><th class="r">RT</th><th class="r">Rank</th>' +
+    '<th class="r">Rows ≥80</th><th class="r">Rows &lt;40</th><th class="r">Led</th><th class="r">Median gap</th><th class="r">Rows moved</th></tr>' +
+    VIEWS.map((v, i) => {
+      const me = D.results[v.version].id_effect;
+      const moved = i > 0 ? ROWS.filter(r => r.scores[i] !== r.scores[i - 1]).length : '—';
+      return `<tr class="${i === cur ? 'cur' : ''}"><td><button class="linkish" data-view="${i}">${esc(v.version)}</button> <span class="muted">(${esc(v.basis)})</span></td>` +
+        `<td class="r">${f1(me.u)}</td><td class="r">${f1(me.e)}</td><td class="r">#${me.rank.e}</td><td class="r">${f1(me.rt)}</td><td class="r">#${me.rank.rt}</td>` +
+        `<td class="r">${me.ge80}</td><td class="r">${me.lt40}</td><td class="r">${me.leader}</td><td class="r">${me.median_gap}</td><td class="r">${moved}</td></tr>`;
+    }).join('');
+  document.querySelectorAll('#path [data-view]').forEach(b => b.onclick = () => select(+b.dataset.view));
+}
+
+function renderLists() {
+  const xs = rowsFor(cur);
+  document.getElementById('gaps').innerHTML = '<tr><th>Capability</th><th class="r">id_effect</th><th>Leader</th><th class="r">Gap</th></tr>' +
+    [...xs].sort((a, b) => b.gap - a.gap).slice(0, 15).map(x => `<tr><td>${esc(x.r.name)}</td><td class="r">${x.s[0]}</td>` +
+      `<td>${esc(x.leader)} <span class="num muted">${x.best}</span></td><td class="r ${x.gap > 0 ? 'neg' : 'pos'}">${signed(-x.gap)}</td></tr>`).join('');
+  const leads = xs.filter(x => x.rank <= 3).sort((a, b) => a.rank - b.rank || b.s[0] - a.s[0]);
+  document.getElementById('leads').innerHTML = '<tr><th>Capability</th><th class="r">id_effect</th><th class="r">Rank</th><th>Ahead of it</th></tr>' +
+    (leads.map(x => {
+      const ahead = FW.filter((f, i) => i > 0 && x.s[i] > x.s[0]);
+      return `<tr><td>${esc(x.r.name)}</td><td class="r pos">${x.s[0]}</td><td class="r">#${x.rank}</td><td class="muted">${ahead.length ? esc(ahead.join(', ')) : '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" class="muted">No row in the top three.</td></tr>');
+}
+
+let active = new Set(), q = '', order = 'group', colSort = -1;
+const chips = document.getElementById('chips');
+chips.innerHTML = '<button class="chip" aria-pressed="true" data-g="*">All groups</button>' +
+  GROUPS.map(g => `<button class="chip" aria-pressed="false" data-g="${esc(g.id)}">${esc(g.name)}</button>`).join('');
+chips.onclick = e => {
+  const b = e.target.closest('.chip');
+  if (!b) return;
+  const g = b.dataset.g;
+  if (g === '*') active.clear(); else if (active.has(g)) active.delete(g); else active.add(g);
+  chips.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', c.dataset.g === '*' ? String(active.size === 0) : String(active.has(c.dataset.g))));
+  renderMatrix();
+};
+document.getElementById('q').oninput = e => { q = e.target.value.toLowerCase(); renderMatrix(); };
+document.getElementById('sort').onchange = e => { order = e.target.value; colSort = -1; renderMatrix(); };
+
+function rowHtml(x) {
+  const r = x.r, mx = Math.max(...x.s), d = x.prev === null ? 0 : x.s[0] - x.prev;
+  const tg = Object.entries(r.targets).map(([k, v]) => `${short(k)}→${v}`).join(' · ');
+  const adr = Object.entries(r.adr).map(([k, v]) => `<div class="note">ADR note (${esc(k)}): ${esc(v)}</div>`).join('');
+  return `<tr><td class="cap"><div class="n">${esc(r.name)}</div><div class="note">${esc(r.evidence)}</div>${adr}` +
+    `<div class="note num" style="margin-top:4px">${esc(r.id)} · ${esc(r.track)} · ${esc(r.stance)}${tg ? ` · targets ${esc(tg)}` : ''}</div></td>` +
+    x.s.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''} ${v === mx ? 'best' : ''}"><span style="background:${heat(v)}">${v}</span>` +
+      (i === 0 && d ? `<div class="num ${d > 0 ? 'pos' : 'neg'}" style="font-size:10.5px">${signed(d)}</div>` : '') + '</td>').join('') + '</tr>';
+}
+function renderMatrix() {
+  const xs = rowsFor(cur).filter(x => (active.size === 0 || active.has(x.r.group)) &&
+    (!q || `${x.r.name} ${x.r.evidence} ${x.r.id} ${GNAME[x.r.group]}`.toLowerCase().includes(q)));
+  const head = `<thead><tr><th class="cap">Capability <span class="muted" style="font-weight:400">· id_effect evidence</span></th>` +
+    FW.map((f, i) => `<th class="${i === 0 ? 'me' : ''} ${colSort === i ? 'sorted' : ''}"><button data-col="${i}" title="Sort by ${esc(f)}">${esc(f)}${i === 0 ? `<br><span class="muted" style="font-weight:400">${esc(short(VIEWS[cur].version))}</span>` : ''}</button></th>`).join('') + '</tr></thead>';
+  const delta = x => x.prev === null ? 0 : x.s[0] - x.prev;
+  let body = '';
+  if (colSort >= 0) { xs.sort((a, b) => b.s[colSort] - a.s[colSort]); body = xs.map(rowHtml).join(''); }
+  else if (order === 'gap') { xs.sort((a, b) => b.gap - a.gap); body = xs.map(rowHtml).join(''); }
+  else if (order === 'me') { xs.sort((a, b) => b.s[0] - a.s[0]); body = xs.map(rowHtml).join(''); }
+  else if (order === 'delta') { xs.sort((a, b) => Math.abs(delta(b)) - Math.abs(delta(a))); body = xs.map(rowHtml).join(''); }
+  else {
+    for (const g of GROUPS) {
+      const gs = xs.filter(x => x.r.group === g.id);
+      if (!gs.length) continue;
+      const avg = FW.map((_, i) => Math.round(mean(gs.map(x => x.s[i]))));
+      body += `<tr class="grp"><td class="cap">${esc(g.name)}</td>${avg.map((v, i) => `<td class="s ${i === 0 ? 'me' : ''}">avg ${v}</td>`).join('')}</tr>` + gs.map(rowHtml).join('');
+    }
+  }
+  if (!xs.length) body = '<tr><td colspan="12" style="padding:14px">No capability matches that filter. Clear the search box or pick All groups.</td></tr>';
+  const t = document.getElementById('matrix');
+  t.innerHTML = head + `<tbody>${body}</tbody>`;
+  t.querySelectorAll('[data-col]').forEach(b => b.onclick = () => { colSort = colSort === +b.dataset.col ? -1 : +b.dataset.col; renderMatrix(); });
+}
+
+function render() {
+  renderHeader();
+  renderBoard();
+  renderMovers();
+  renderGroups();
+  renderPath();
+  renderLists();
+  renderMatrix();
+}
+viewSel.value = String(cur);
+render();
+</script>
+</body>
+</html>
