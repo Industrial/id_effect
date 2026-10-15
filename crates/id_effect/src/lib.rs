@@ -80,6 +80,8 @@ pub mod foundation;
 pub mod kernel;
 pub mod macros;
 pub mod match_;
+#[doc(hidden)]
+pub mod next;
 pub mod observability;
 #[cfg(feature = "compute")]
 pub mod parallelism;
