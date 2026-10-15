@@ -9,5 +9,5 @@
 trybuild = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'package(id_effect) & binary(next_ui)'
+filter = 'package(id_effect) & binary(ui)'
 test-group = 'trybuild'

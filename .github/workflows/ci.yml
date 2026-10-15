@@ -47,8 +47,8 @@ jobs:
           node-version: '22'
       - name: Install Biome (treefmt formatter for JS/JSON)
         run: npm install -g @biomejs/biome
-      # Pinned (not @stable): the trybuild suites (`tests/next_ui`, `tests/ui`) snapshot rustc
-      # diagnostics, which change between releases. Re-bless next_ui when bumping (see its docs).
+      # Pinned (not @stable): the trybuild suite (`crates/id_effect/tests/ui`) snapshots rustc
+      # diagnostics, which change between releases. Re-bless it when bumping (see its docs).
       - name: Install Rust (1.99.0)
         uses: dtolnay/rust-toolchain@1.99.0
         with:

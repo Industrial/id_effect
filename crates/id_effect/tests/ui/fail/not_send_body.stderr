@@ -1,0 +1,27 @@
+error: future cannot be sent between threads safely
+  --> tests/ui/fail/not_send_body.rs:18:3
+   |
+18 | /   effect!({
+19 | |     let local = Rc::new(String::from("not send"));
+20 | |     let user = ~Sessions.get("demo").await;
+21 | |     local.len() + user.map_or(0, |u| u.len())
+22 | |   })
+   | |____^ future created by async block is not `Send`
+   |
+   = help: within `{async block@$DIR/tests/ui/fail/not_send_body.rs:18:3: 22:5}`, the trait `Send` is not implemented for `Rc<std::string::String>`
+note: future is not `Send` as this value is used across an await
+  --> tests/ui/fail/not_send_body.rs:20:38
+   |
+19 |     let local = Rc::new(String::from("not send"));
+   |         ----- has type `Rc<std::string::String>` which is not `Send`
+20 |     let user = ~Sessions.get("demo").await;
+   |                                      ^^^^^ await occurs here, with `local` maybe used later
+note: required by a bound in `kernel::constructors::<impl Effect<A, E, R>>::from_ctx`
+  --> src/kernel/constructors.rs
+   |
+   |   pub fn from_ctx<F, Fut>(f: F) -> Self
+   |          -------- required by a bound in this associated function
+...
+   |     Fut: Future<Output = Result<A, E>> + Send + 'static,
+   |                                          ^^^^ required by this bound in `kernel::constructors::<impl Effect<A, E, R>>::from_ctx`
+   = note: this error originates in the macro `effect` (in Nightly builds, run with -Z macro-backtrace for more info)
