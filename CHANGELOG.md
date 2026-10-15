@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — Unreleased — The runtime release (breaking)
+## 0.7.0 — 2026-10-15 — The runtime release (breaking)
 
 Replaces the `!Send`, busy-polled kernel with an owned fiber runtime on an `Executor` trait
 (tokio is the default backend), makes `Effect` `Send` with a typed `R`, adds the Effect.ts
