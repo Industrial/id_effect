@@ -494,14 +494,14 @@ cargo test quote_from_config_skips_when_spread_too_tight
 
 | Metric | Target |
 |--------|--------|
-| Line coverage | 95%+ |
+| Line coverage | 96%+ |
 | Branch coverage | 100% |
 | Function coverage | 100% |
 | Mutation score | 90%+ |
 
 ### Policy (strict)
 
-Meeting the **95%** llvm-cov gates is done by **adding and maintaining real tests** (and refactoring for testability when needed). The following are **not** acceptable ways to “pass” coverage:
+Meeting the **96%** llvm-cov gates is done by **adding and maintaining real tests** (and refactoring for testability when needed). The following are **not** acceptable ways to “pass” coverage:
 
 - Lowering `--fail-under-*` thresholds or removing gates from the `coverage` task
 - Using `cargo llvm-cov` **`--ignore-filename-regex`** (or equivalent) to drop files from the denominator
@@ -510,7 +510,7 @@ Meeting the **95%** llvm-cov gates is done by **adding and maintaining real test
 
 **Do not change this document’s targets or the tooling setup to make the numbers “match.”** The percentages in the table above and the **`moon run :coverage`** / **`cargo llvm-cov nextest`** wiring (workspace scope, nextest filters, fail-under values, absence of excludes) are fixed requirements: improve code and tests until the gates pass—do not edit `TESTING.md`, `moon.yml`, or crate test tasks to relax, reword, or bypass them.
 
-The workspace root **`moon run :coverage`** task runs **`cargo llvm-cov nextest`** on the **entire** workspace with **`--fail-under-lines` / `--fail-under-regions` / `--fail-under-functions` all at 95** and **no** filename excludes.
+The workspace root **`moon run :coverage`** task runs **`cargo llvm-cov nextest`** on the **entire** workspace with **`--fail-under-lines` / `--fail-under-regions` / `--fail-under-functions` all at 96** and **no** filename excludes.
 
 For a local HTML report without failing on thresholds:
 

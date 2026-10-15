@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Workspace coverage gate: llvm-cov nextest at 95% lines/regions/functions.
+# Workspace coverage gate: llvm-cov nextest at 96% lines/regions/functions.
 # Excludes paths that cannot be unit-tested (CLI main, proc-macro entry stubs, etc.).
 set -euo pipefail
 
@@ -19,7 +19,7 @@ IGNORE_REGEX='crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_e
 
 exec cargo llvm-cov nextest \
     --ignore-filename-regex "${IGNORE_REGEX}" \
-    --fail-under-lines 95 \
-    --fail-under-regions 95 \
-    --fail-under-functions 95 \
+    --fail-under-lines 96 \
+    --fail-under-regions 96 \
+    --fail-under-functions 96 \
     "$@"

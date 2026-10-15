@@ -36,7 +36,7 @@ These hold for the whole workspace rather than per crate:
   CI `msrv` job builds on that toolchain.
 - **Lints:** `cargo clippy --workspace --all-targets -- -D warnings`.
 - **Tests:** `cargo nextest run --workspace`.
-- **Coverage:** ≥ 95 % lines/regions/functions on core, runtime and integration
+- **Coverage:** ≥ 96 % lines/regions/functions on core, runtime and integration
   crates (`scripts/llvm-cov-nextest.sh`). Labs crates are excluded.
 - **Packaging:** `scripts/validate-crate-packaging.sh` (publish order, versions).
 - **Minimal versions:** lock resolves and builds with `-Z minimal-versions`.
