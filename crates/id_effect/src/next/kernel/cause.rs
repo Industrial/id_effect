@@ -120,7 +120,6 @@ impl ExitKind {
   }
 
   /// Classifies an internal step outcome.
-  #[allow(dead_code)] // used by k-fiber-tree (acquire_use_release)
   pub(crate) fn of_result<A, E>(r: &Result<A, Cause<E>>) -> Self {
     match r {
       Ok(_) => Self::Success,

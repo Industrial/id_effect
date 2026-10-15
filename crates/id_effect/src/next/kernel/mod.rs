@@ -28,10 +28,9 @@ pub use ctx::*;
 #[allow(unused_imports)] // filled by k-edge
 pub use edge::*;
 pub use effect::*;
-#[allow(unused_imports)] // filled by k-fiber-tree
+#[allow(unused_imports)] // inherent impls only (`Effect::fork` / `fork_daemon`)
 pub use fork::*;
 #[allow(unused_imports)] // filled by k-edge
 pub use local::*;
-#[allow(unused_imports)] // filled by k-fiber-tree
 pub use resource::*;
 pub use runloop::*;

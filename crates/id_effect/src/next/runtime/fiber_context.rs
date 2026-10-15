@@ -6,9 +6,12 @@
 //! interrupt flag, the mask counter and the stored waker. `k-fiber-tree` adds `parent: Weak`,
 //! the children and the done signal (k-rebuild L2: parentage lives here, not in `FiberId`).
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::task::Waker;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::task::{Context, Poll, Waker};
 
 use crate::next::runtime::Executor;
 use crate::runtime::FiberId;
@@ -24,6 +27,12 @@ pub struct FiberContext {
   interrupt: AtomicBool,
   mask: AtomicU32,
   waker: Mutex<Option<Waker>>,
+  /// `None` for roots and daemons.
+  parent: Option<Weak<FiberContext>>,
+  /// Live children (each removes itself when it completes; `finish_children` drains them).
+  children: Mutex<HashMap<FiberId, Arc<FiberContext>>>,
+  done: AtomicBool,
+  done_wakers: Mutex<Vec<Waker>>,
 }
 
 impl std::fmt::Debug for FiberContext {
@@ -32,6 +41,9 @@ impl std::fmt::Debug for FiberContext {
       .field("id", &self.id)
       .field("mask", &self.mask())
       .field("interrupt_requested", &self.is_interrupt_requested())
+      .field("parent", &self.parent().map(|p| p.id()))
+      .field("live_children", &self.live_children())
+      .field("done", &self.is_done())
       .finish_non_exhaustive()
   }
 }
@@ -39,12 +51,27 @@ impl std::fmt::Debug for FiberContext {
 impl FiberContext {
   /// A fresh root fiber (no parent) running on `exec`.
   pub fn new_root(exec: Arc<dyn Executor>) -> Arc<Self> {
+    Self::with_parent(None, exec)
+  }
+
+  /// A fresh child of `parent`, on the parent's executor. The child is not registered in
+  /// `parent`'s children here: the fork path does that when it spawns the child, so a context
+  /// built and never spawned does not hold up the parent's exit.
+  pub fn new_child(parent: &Arc<Self>) -> Arc<Self> {
+    Self::with_parent(Some(parent), Arc::clone(&parent.exec))
+  }
+
+  fn with_parent(parent: Option<&Arc<Self>>, exec: Arc<dyn Executor>) -> Arc<Self> {
     Arc::new(Self {
       id: FiberId::fresh(),
       exec,
       interrupt: AtomicBool::new(false),
       mask: AtomicU32::new(0),
       waker: Mutex::new(None),
+      parent: parent.map(Arc::downgrade),
+      children: Mutex::new(HashMap::new()),
+      done: AtomicBool::new(false),
+      done_wakers: Mutex::new(Vec::new()),
     })
   }
 
@@ -96,5 +123,72 @@ impl FiberContext {
     if let Some(w) = w {
       w.wake();
     }
+  }
+
+  /// The parent fiber while it is alive (`None` for roots and daemons).
+  pub fn parent(&self) -> Option<Arc<FiberContext>> {
+    self.parent.as_ref().and_then(Weak::upgrade)
+  }
+
+  /// How many children are registered and not yet complete.
+  pub fn live_children(&self) -> usize {
+    lock(&self.children).len()
+  }
+
+  /// `true` once the fiber has completed, after its own children.
+  pub fn is_done(&self) -> bool {
+    self.done.load(Ordering::Acquire)
+  }
+
+  pub(crate) fn add_child(&self, child: &Arc<FiberContext>) {
+    lock(&self.children).insert(child.id, Arc::clone(child));
+  }
+
+  pub(crate) fn remove_child(&self, id: FiberId) {
+    lock(&self.children).remove(&id);
+  }
+
+  /// Removes and returns every registered child.
+  pub(crate) fn drain_children(&self) -> Vec<Arc<FiberContext>> {
+    lock(&self.children).drain().map(|(_, c)| c).collect()
+  }
+
+  /// Marks the fiber complete and wakes every [`Done`] waiting on it.
+  pub(crate) fn mark_done(&self) {
+    self.done.store(true, Ordering::Release);
+    let ws = std::mem::take(&mut *lock(&self.done_wakers));
+    for w in ws {
+      w.wake();
+    }
+  }
+
+  fn poll_done(&self, cx: &mut Context<'_>) -> Poll<()> {
+    if self.is_done() {
+      return Poll::Ready(());
+    }
+    {
+      let mut ws = lock(&self.done_wakers);
+      if !ws.iter().any(|w| w.will_wake(cx.waker())) {
+        ws.push(cx.waker().clone());
+      }
+    }
+    // Re-checked after registering, so a `mark_done` in between is not missed.
+    if self.is_done() {
+      Poll::Ready(())
+    } else {
+      Poll::Pending
+    }
+  }
+}
+
+/// Resolves once the fiber has completed (after its own children).
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+pub(crate) struct Done(pub(crate) Arc<FiberContext>);
+
+impl Future for Done {
+  type Output = ();
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    self.0.poll_done(cx)
   }
 }

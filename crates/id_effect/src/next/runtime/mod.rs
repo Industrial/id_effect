@@ -10,7 +10,6 @@ mod runtime;
 mod tokio;
 
 pub use executor::*;
-#[allow(unused_imports)] // filled by k-fiber-tree
 pub use fiber::*;
 pub use fiber_context::*;
 #[allow(unused_imports)] // filled by k-scope-fiberref

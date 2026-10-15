@@ -58,7 +58,6 @@ pub(crate) enum Instr {
 }
 
 /// How an [`Instr::Mask`] region changes the fiber's mask.
-#[allow(dead_code)] // built by k-fiber-tree (uninterruptible, uninterruptible_mask, ensuring)
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum MaskOp {
   /// Enter an uninterruptible region.
