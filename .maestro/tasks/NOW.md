@@ -1,50 +1,40 @@
 # NOW
-Updated: 2026-10-15T10:07:24.243Z
+Updated: 2026-10-15T13:20:46.473Z
 
-## In flight (4)
-### tsk-mv8ohjj3-7136f4 . W5: Migrate id_effect_platform
+## In flight (2)
+### tsk-mv8ohjj3-ttn05l . W5: Retire old kernel and compat bridge
 State: claimed
-Owner: claude (claimed 3h ago)
+Owner: claude (claimed 22m ago)
 Mission: pln-mv8oh29m-3zdrrj
 
-### tsk-mv8ohjj3-2ppwsb . W5: Migrate id_effect_fsm
+### tsk-mv8ohjj3-piyg98 . W6: Showcase Postgres integration tests in pg-integration CI
 State: claimed
-Owner: claude (claimed 48m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-0pbx49 . W5: Migrate id_effect_node
-State: claimed
-Owner: claude (claimed 48m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-63x2ak . W4: Config<T> as sole config API, providable as Layer
-State: claimed
-Owner: claude (claimed 7m ago)
+Owner: claude (claimed 0s ago)
 Mission: pln-mv8oh29m-3zdrrj
 
 
-## Ready to pick up (18)
+## Ready to pick up (9)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
 Mission: pln-mv799j4f-1r1u6b
 Spec: /data/Code/rust/id_effect/.maestro/specs/id-effect-consolidation-0-6.md
 
-### tsk-mv8ohjj3-8n9ofs . W5: Migrate id_effect_opentelemetry
+### tsk-mv8ohjj3-nxsggr . W5: Promote id_effect::next to root paths; sweep references
 Mission: pln-mv8oh29m-3zdrrj
 Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
-### tsk-mv8ohjj3-sdawp4 . W5: Migrate id_effect_axum (native Send handlers)
+### tsk-mv8ohjj3-8qhwew . W7: Raise coverage floor to 96%
 Mission: pln-mv8oh29m-3zdrrj
 Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
-### tsk-mv8ohjj3-525lcg . W5: Migrate labs durable group to 0.7
+### tsk-mv8ohjj3-1rdxav . W7: REPORT-0.7.md bench report vs v0.6 (same session)
 Mission: pln-mv8oh29m-3zdrrj
 Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
-### tsk-mv8ohjj3-6csf87 . W5: Migrate labs edge group to 0.7
+### tsk-mv8ohjj3-9et0cg . W7: Assemble docs/MIGRATION-0.7.md
 Mission: pln-mv8oh29m-3zdrrj
 Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
-(and 13 more)
+(and 4 more)
 
 
 ## Ready to ship (0)
