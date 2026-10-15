@@ -37,6 +37,7 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use super::anybox::{AnyEnv, downcast_env, downcast_env_arc, erase_exit, unerase_exit};
+use super::bind::BindHold;
 use super::cause::{
   cause_from_panic, from_exit, map_fail_mut, map_fail_once, split_failure, to_exit,
 };
@@ -822,7 +823,9 @@ impl<A: Send + 'static, E: Send + 'static> LocalEffect<A, E, HNil> {
 pub(crate) struct HoldMask<F> {
   fut: F,
   fiber: Arc<FiberContext>,
-  held: bool,
+  /// The same hold as `BindFuture`'s, so local and `Send` binds suspended side by side under a
+  /// `join` do not hold an interrupt off each other.
+  hold: BindHold,
 }
 
 impl<F> HoldMask<F> {
@@ -830,7 +833,7 @@ impl<F> HoldMask<F> {
     Self {
       fut,
       fiber,
-      held: false,
+      hold: BindHold::default(),
     }
   }
 }
@@ -840,26 +843,17 @@ impl<F: Future + Unpin> Future for HoldMask<F> {
 
   fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
     let this = &mut *self;
-    if std::mem::take(&mut this.held) {
-      this.fiber.set_mask(this.fiber.mask().saturating_sub(1));
-    }
-    match Pin::new(&mut this.fut).poll(cx) {
-      Poll::Ready(v) => Poll::Ready(v),
-      Poll::Pending => {
-        this.fiber.set_mask(this.fiber.mask() + 1);
-        this.held = true;
-        Poll::Pending
-      }
-    }
+    let outer = this.hold.lift(&this.fiber);
+    let polled = Pin::new(&mut this.fut).poll(cx);
+    this.hold.settle(&this.fiber, outer, polled.is_pending());
+    polled
   }
 }
 
 impl<F> Drop for HoldMask<F> {
   fn drop(&mut self) {
-    // Dropped while suspended (the body was abandoned): give the mask level back.
-    if self.held {
-      self.fiber.set_mask(self.fiber.mask().saturating_sub(1));
-    }
+    // Dropped while suspended (the body was abandoned): give the hold back.
+    self.hold.release(&self.fiber);
   }
 }
 

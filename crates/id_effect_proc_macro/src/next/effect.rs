@@ -10,12 +10,16 @@
 //!   `Ctx::bind(&ctx, expr).await` (`effect_next!`) or `__private::bind_local(&ctx, expr).await`
 //!   (`effect_local_next!`). Its error widens into the body's: `Never` to anything, otherwise
 //!   through `E: From<E2>` (`__private::Lift`).
+//! - `~(a, b, ..)` (a parenthesised list of 2 to 8 effects, `effect_next!` only) joins them in
+//!   parallel on child fibers: `__private::join_binds(&ctx, (branch(&ctx, a).map_err(..), ..))`,
+//!   yielding the tuple of values; the first failure interrupts the siblings and is the `~`'s
+//!   outcome (`c-join-binds`). `~(expr)` without a top-level comma stays a plain bind.
 //! - The body becomes `async move { Ok({ body }) }` owning a `Ctx<R>`; under `effect_next!` it
 //!   must be `Send`.
 
-use proc_macro::{Delimiter, Group, Ident, Spacing, TokenStream, TokenTree};
+use proc_macro::{Delimiter, Group, Ident, Spacing, Span, TokenStream, TokenTree};
 
-use super::{compile_error, group, is_path_sep, is_punct, parse, respan};
+use super::{compile_error, group, is_path_sep, is_punct, parse, respan, split_commas};
 
 struct Head {
   name: Option<Ident>,
@@ -193,6 +197,72 @@ fn is_nested_effect_macro(out: &[TokenTree]) -> bool {
     && matches!(&out[n - 2], TokenTree::Ident(id) if matches!(id.to_string().as_str(), "effect_next" | "effect_local_next" | "effect"))
 }
 
+/// The most effects one `~(a, b, ..)` joins (`__private::JoinTuple` impls).
+const MAX_JOIN: usize = 8;
+
+/// The branches of a parallel join `~(a, b, ..)`: a parenthesised group with at least two
+/// comma-separated items at its top level (`~(expr)` stays a plain bind).
+fn join_branches(t: &TokenTree) -> Option<Vec<Vec<TokenTree>>> {
+  let TokenTree::Group(g) = t else {
+    return None;
+  };
+  if g.delimiter() != Delimiter::Parenthesis {
+    return None;
+  }
+  let items = split_commas(g.stream().into_iter().collect());
+  (items.len() >= 2).then_some(items)
+}
+
+/// `~(a, b, ..)` in `effect_next!`:
+/// `match __private::join_binds(&__ctx, (branch(&__ctx, a).map_err(lift), ..)).await { .. }`.
+/// Each branch's error widens into the body's on its own (as `~a` would), so the joined effect
+/// has the body's error and its `Err` is returned as is.
+fn expand_join(branches: Vec<Vec<TokenTree>>, span: Span, local: bool) -> TokenStream {
+  if local {
+    return compile_error(
+      "a parallel join `~(a, b, ..)` needs `effect_next!` (its branches run on child fibers); bind them one at a time in `effect_local_next!`",
+      span,
+    );
+  }
+  if branches.len() > MAX_JOIN {
+    return compile_error(
+      "`~(..)` joins at most 8 effects; nest a join or use `all`",
+      span,
+    );
+  }
+  let mut tuple = TokenStream::new();
+  for b in branches {
+    let bspan = b[0].span();
+    let mut args = respan(parse("&__ctx,"), bspan);
+    args.extend(rewrite(&b, local));
+    tuple.extend(respan(parse("::id_effect::next::__private::branch"), bspan));
+    tuple.extend([group(Delimiter::Parenthesis, args)]);
+    tuple.extend(respan(
+      parse(".map_err(|__e| (&&::id_effect::next::__private::Lift::new(__e)).lift()),"),
+      bspan,
+    ));
+  }
+  let mut args = respan(parse("&__ctx,"), span);
+  args.extend([group(Delimiter::Parenthesis, tuple)]);
+  let mut m = respan(
+    parse("match ::id_effect::next::__private::join_binds"),
+    span,
+  );
+  m.extend([group(Delimiter::Parenthesis, args)]);
+  m.extend(respan(parse(".await"), span));
+  m.extend([group(
+    Delimiter::Brace,
+    respan(
+      parse(
+        "::core::result::Result::Ok(__v) => __v, \
+         ::core::result::Result::Err(__e) => return ::core::result::Result::Err(__e),",
+      ),
+      span,
+    ),
+  )]);
+  group(Delimiter::Parenthesis, m).into()
+}
+
 fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
   let mut out: Vec<TokenTree> = Vec::with_capacity(tokens.len());
   let mut i = 0;
@@ -214,6 +284,13 @@ fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
           continue;
         }
         let end = expr_end(tokens, start);
+        if end == start + 1
+          && let Some(branches) = join_branches(&tokens[start])
+        {
+          out.extend(expand_join(branches, tokens[start].span(), local));
+          i = end;
+          continue;
+        }
         if end == start {
           out.extend(compile_error(
             "`~` must be followed by a capability type (`~Db`) or an effect expression (`~count_users()`)",

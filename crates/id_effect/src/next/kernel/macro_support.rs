@@ -6,17 +6,95 @@
 //! - [`bind_local`]: what `~expr` expands to inside `effect_local_next!`.
 //! - [`CapsChecked`]: the identity projection `caps_next!` wraps a de-duplicated list in when it
 //!   also reports a duplicate (so the error does not cascade).
+//! - [`branch`] and [`join_binds`]: what a parallel join `~(a, b, ..)` (2 to 8 effects) expands
+//!   to inside `effect_next!`.
+//!
+//! # Parallel joins: `~(a, b, ..)`
+//!
+//! A `~` followed by a parenthesised, comma-separated list of 2 to 8 effects runs them as child
+//! fibers through [`all`](crate::next::all) (one `fork_all`, `Concurrency::Unbounded`) and yields
+//! the tuple of their values, in input order. It shares `zip_par`'s semantics: the first failure
+//! interrupts the siblings still running and the join waits for them (their finalizers run)
+//! before it fails; interrupting the body's fiber interrupts every branch.
+//!
+//! The body sees the **first** failure, the leftmost leaf of `zip_par`'s cause: its typed error
+//! as the `~`'s error (widened like any `~` error, per branch), or its defect or interrupt as the
+//! body's cause. Genuine sibling failures that `zip_par` adds with `Cause::Both` are dropped (one
+//! `?` carries one error); bind `~zip_par(a, b).exit::<Never>()` to keep the whole cause as data.
+//!
+//! Each branch is an effect over a part of the body's environment (narrowed, as `~` does) or a
+//! `.same_env()` one. Binds are statements, so a branch may not refer to another branch's value;
+//! independent `let a = ~x; let b = ~y;` statements stay sequential (no implicit parallelism).
+//!
+//! ```
+//! use id_effect::next::{Effect, effect_next, fail, succeed};
+//! use id_effect::{Cause, Exit};
+//!
+//! fn both() -> Effect<(u8, &'static str), String> {
+//!   effect_next!({ ~(succeed::<u8, String, _>(1), succeed::<_, String, _>("two")) })
+//! }
+//! assert!(matches!(both().block_on(), Exit::Success((1, "two"))));
+//!
+//! fn failing() -> Effect<u8, String> {
+//!   effect_next!({
+//!     let (a, _b) = ~(succeed::<u8, String, _>(1), fail::<u8, &'static str, _>("boom"));
+//!     a
+//!   })
+//! }
+//! assert!(matches!(failing().block_on(), Exit::Failure(Cause::Fail(e)) if e == "boom"));
+//! ```
+//!
+//! More than 8 branches is a compile error (nest a join, or use `all`):
+//!
+//! ```compile_fail
+//! use id_effect::next::{Effect, effect_next, succeed};
+//! use id_effect::Never;
+//!
+//! fn one() -> Effect<u8, Never> {
+//!   succeed(1)
+//! }
+//! fn nine() -> Effect<u8, Never> {
+//!   effect_next!({
+//!     let (a, ..) = ~(one(), one(), one(), one(), one(), one(), one(), one(), one());
+//!     a
+//!   })
+//! }
+//! ```
+//!
+//! So is a join in `effect_local_next!`:
+//!
+//! ```compile_fail
+//! use id_effect::next::{Effect, LocalEffect, effect_local_next, succeed};
+//! use id_effect::Never;
+//!
+//! fn one() -> Effect<u8, Never> {
+//!   succeed(1)
+//! }
+//! fn local() -> LocalEffect<u8, Never> {
+//!   effect_local_next!({
+//!     let (a, b) = ~(one(), one());
+//!     a + b
+//!   })
+//! }
+//! ```
 
+use std::any::Any;
 use std::cell::Cell;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use super::anybox::AnyEnv;
-use super::bind::surface;
+use super::bind::{BindFuture, surface, surface_first};
+use super::bind_same::{SameEnv, SameEnvIndex};
 use super::cause::from_exit;
 use super::ctx::Ctx;
+use super::effect::Effect;
 use super::local::{HoldMask, IntoLocal};
-use crate::next::capability::Embed;
+use crate::next::capability::{Embed, HList};
+use crate::next::concurrency::Concurrency;
+use crate::next::par::all;
 use crate::runtime::Never;
 
 /// A `~` bind's error, waiting to be widened into the body's error type.
@@ -96,6 +174,135 @@ pub trait CapsChecked<const N: usize> {
 
 impl<T, const N: usize> CapsChecked<N> for T {
   type Out = T;
+}
+
+/// One branch of a `~(a, b, ..)` join, as an effect over the body's environment `R`.
+#[diagnostic::on_unimplemented(
+  message = "`{Self}` cannot be a branch of a `~(..)` join in an effect over `{R}`",
+  label = "not an effect over a part of `{R}`",
+  note = "each branch of `~(a, b, ..)` is an `Effect` whose capabilities are all in the enclosing effect's environment"
+)]
+pub trait JoinBranch<R, Is> {
+  /// The branch's success type.
+  type Output;
+  /// The branch's typed error.
+  type Error;
+  /// The branch over `R`.
+  fn into_branch(self) -> Effect<Self::Output, Self::Error, R>;
+}
+
+impl<B, E2, Sub, R, Is> JoinBranch<R, Is> for Effect<B, E2, Sub>
+where
+  B: Send + 'static,
+  E2: Send + 'static,
+  Sub: HList + Send + Sync + 'static,
+  R: Embed<Sub, Is> + HList,
+{
+  type Output = B;
+  type Error = E2;
+
+  fn into_branch(self) -> Effect<B, E2, R> {
+    self.narrow::<R, Is>()
+  }
+}
+
+impl<B, E2, R> JoinBranch<R, SameEnvIndex> for SameEnv<Effect<B, E2, R>> {
+  type Output = B;
+  type Error = E2;
+
+  fn into_branch(self) -> Effect<B, E2, R> {
+    self.into_inner()
+  }
+}
+
+/// A branch of `~(a, b, ..)` over the body's environment (`ctx` fixes `R`); the macro then
+/// widens its error into the body's with `map_err` and [`Lift`].
+pub fn branch<R, X, Is>(_ctx: &Ctx<R>, x: X) -> Effect<X::Output, X::Error, R>
+where
+  X: JoinBranch<R, Is>,
+{
+  x.into_branch()
+}
+
+/// A tuple of 2 to 8 branches over one environment and one error, joined by [`join_binds`].
+#[diagnostic::on_unimplemented(
+  message = "`~(..)` joins 2 to 8 effects over the same environment and error",
+  label = "not a tuple of 2 to 8 effects"
+)]
+pub trait JoinTuple<R> {
+  /// The tuple of the branches' values.
+  type Output;
+  /// The common (already widened) error.
+  type Error;
+  /// The branches as one effect: `all` over their erased values, re-tupled in input order.
+  fn join(self) -> Effect<Self::Output, Self::Error, R>;
+}
+
+/// A branch's value, erased so that one homogeneous `fork_all` runs every branch.
+type Slot = Box<dyn Any + Send>;
+
+fn unslot<A: 'static>(slot: Option<Slot>) -> A {
+  match slot.map(|s| s.downcast::<A>()) {
+    Some(Ok(a)) => *a,
+    _ => unreachable!("next: `~(..)` join lost a branch value (kernel bug)"),
+  }
+}
+
+macro_rules! join_tuple {
+  ($($a:ident $i:tt),+) => {
+    impl<E, R, $($a),+> JoinTuple<R> for ($(Effect<$a, E, R>,)+)
+    where
+      E: Send + 'static,
+      R: Send + Sync + 'static,
+      $($a: Send + 'static,)+
+    {
+      type Output = ($($a,)+);
+      type Error = E;
+
+      fn join(self) -> Effect<Self::Output, E, R> {
+        let branches: Vec<Effect<Slot, E, R>> =
+          vec![$(self.$i.map(|v| Box::new(v) as Slot)),+];
+        all(branches, Concurrency::Unbounded).map(|slots| {
+          let mut slots = slots.into_iter();
+          ($(unslot::<$a>(slots.next()),)+)
+        })
+      }
+    }
+  };
+}
+
+join_tuple!(A0 0, A1 1);
+join_tuple!(A0 0, A1 1, A2 2);
+join_tuple!(A0 0, A1 1, A2 2, A3 3);
+join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4);
+join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5);
+join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5, A6 6);
+join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5, A6 6, A7 7);
+
+/// `~(a, b, ..)` inside `effect_next!`: runs the branches as child fibers (see the
+/// [module docs](self)) and yields their values, or the first failure.
+pub fn join_binds<R, T>(ctx: &Ctx<R>, branches: T) -> JoinFuture<T::Output, T::Error>
+where
+  T: JoinTuple<R>,
+  T::Output: Send + 'static,
+  T::Error: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  JoinFuture(ctx.bind_same_env(branches.join()))
+}
+
+/// The future of a `~(a, b, ..)` join: the bind of the joined effect, surfaced by its first
+/// failure (the leftmost leaf of the cause) rather than its first typed failure.
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+pub struct JoinFuture<B, E>(BindFuture<B, E>);
+
+impl<B: 'static, E: 'static> Future for JoinFuture<B, E> {
+  type Output = Result<B, E>;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<B, E>> {
+    self.get_mut().0.poll_exit(cx).map(surface_first)
+  }
 }
 
 #[cfg(test)]

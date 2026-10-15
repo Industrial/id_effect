@@ -47,9 +47,9 @@ impl<R> Ctx<R> {
   /// Runs `sub` on this fiber, under the part of this body's environment it needs (what `~sub`
   /// expands to). See the [module docs](self) for how failures surface.
   ///
-  /// Await binds one at a time: while a bind is suspended it keeps the fiber's interrupt for its
-  /// own runloop (so the sub-effect's finalizers run), which two binds suspended at once under a
-  /// `join` would hold off from each other.
+  /// Several binds may be suspended at once (under a `join`): each still sees an interrupt of
+  /// the fiber when it is next polled (`BindHold` in `kernel/bind.rs`). They share the fiber,
+  /// so they run interleaved, not in parallel; `~(a, b, ..)` in `effect_next!` forks them.
   pub fn bind<X, Is>(&self, sub: X) -> BindFuture<X::Output, X::Error>
   where
     X: Bindable<R, Is>,
@@ -118,10 +118,83 @@ enum BindState<B, E> {
   Running {
     rl: Box<Runloop>,
     fiber: Arc<FiberContext>,
-    /// `true` while this bind holds one mask level between polls (see `poll`).
-    held: bool,
+    /// This bind's share of the fiber mask between polls.
+    hold: BindHold,
     _out: PhantomData<fn() -> (B, E)>,
   },
+}
+
+/// One suspended bind's share of the fiber mask.
+const HOLD: u32 = 1 << 16;
+/// The mask bits below [`HOLD`]: mask regions (`MaskOp`), which nest far less than 2^16 deep.
+const REGIONS: u32 = HOLD - 1;
+
+/// How a nested runloop on the enclosing runloop's fiber (a `~` bind) holds the fiber mask while
+/// it is suspended.
+///
+/// While suspended, a bind adds [`HOLD`] to the fiber mask so that the enclosing runloop does not
+/// drop the body's future (and the nested runloop with it) on an interrupt: the nested runloop
+/// must see the interrupt itself, unwind its frames (running finalizers) and report `Interrupt`.
+///
+/// Holds count in units of `HOLD`, above the mask-region bits, so a bind can tell them apart:
+/// before it polls its runloop it removes its own hold **and** the holds of every bind that is
+/// not nested inside it (siblings under a `join`, and the binds that enclose it), and puts them
+/// back after the poll. Without that, two binds suspended at once would each see the other's
+/// level and hold an interrupt off each other forever (execution-log follow-up (d)). The holds
+/// of binds nested inside this one (`inner`) stay: they belong to its own runloop.
+///
+/// A mask region a suspended nested runloop is inside still applies to the whole fiber, siblings
+/// included (they share the fiber's mask).
+#[derive(Debug, Default)]
+pub(crate) struct BindHold {
+  /// `true` while this bind holds `HOLD` between polls.
+  held: bool,
+  /// The holds (`HOLD` multiples) its own runloop left at the end of its last poll.
+  inner: u32,
+}
+
+impl BindHold {
+  /// Before a poll: lifts this bind's hold and every hold not nested inside it. Returns what was
+  /// lifted besides its own hold (for [`settle`](Self::settle)).
+  #[inline]
+  pub(crate) fn lift(&mut self, fiber: &FiberContext) -> u32 {
+    let cur = fiber.mask();
+    let m = if std::mem::take(&mut self.held) {
+      cur.saturating_sub(HOLD)
+    } else {
+      cur
+    };
+    let outer = (m & !REGIONS).saturating_sub(self.inner);
+    if m - outer != cur {
+      fiber.set_mask(m - outer);
+    }
+    outer
+  }
+
+  /// After a poll: gives back the `outer` holds and, while still `pending`, takes this bind's own.
+  #[inline]
+  pub(crate) fn settle(&mut self, fiber: &FiberContext, outer: u32, pending: bool) {
+    let after = fiber.mask();
+    if pending {
+      self.inner = after & !REGIONS;
+      self.held = true;
+      fiber.set_mask(after + outer + HOLD);
+    } else {
+      self.inner = 0;
+      if outer != 0 {
+        fiber.set_mask(after + outer);
+      }
+    }
+  }
+
+  /// A bind dropped while suspended (its body was abandoned) gives its hold back. Binds nested
+  /// inside it give theirs back as its runloop is dropped.
+  #[inline]
+  pub(crate) fn release(&mut self, fiber: &FiberContext) {
+    if std::mem::take(&mut self.held) {
+      fiber.set_mask(fiber.mask().saturating_sub(HOLD));
+    }
+  }
 }
 
 // Never pin-projected: the ready value is moved out by `Option::take`, the runloop is boxed.
@@ -175,7 +248,7 @@ impl<B: Send + 'static, E: Send + 'static> BindFuture<B, E> {
         state: BindState::Running {
           rl: Box::new(Runloop::new(rest, sub, Arc::clone(fiber))),
           fiber: Arc::clone(fiber),
-          held: false,
+          hold: BindHold::default(),
           _out: PhantomData,
         },
       },
@@ -227,46 +300,59 @@ fn non_fail_payload<E>(cause: Cause<E>) -> Box<dyn std::any::Any + Send> {
   }
 }
 
-impl<B: 'static, E: 'static> Future for BindFuture<B, E> {
-  type Output = Result<B, E>;
+/// Hands a joined sub-effect's outcome to the body by its **first** failure: the leftmost leaf of
+/// the cause, which `fork_all` puts first (`zip_par`'s shape). A typed failure is `Err`; a first
+/// defect or interrupt resumes as a panic, even when a sibling also failed with a typed error.
+/// Sibling failures combined in with `Both` are dropped: a `Result` holds one error.
+pub(crate) fn surface_first<B, E>(r: Result<B, Cause<E>>) -> Result<B, E> {
+  let mut cause = match r {
+    Ok(b) => return Ok(b),
+    Err(c) => c,
+  };
+  loop {
+    cause = match cause {
+      Cause::Fail(e) => return Err(e),
+      Cause::Both(l, _) | Cause::Then(l, _) => *l,
+      leaf => resume_unwind(non_fail_payload(leaf)),
+    };
+  }
+}
 
-  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<B, E>> {
-    match &mut self.get_mut().state {
+impl<B: 'static, E: 'static> BindFuture<B, E> {
+  /// Polls the sub-effect to its exit (the whole cause, not yet surfaced).
+  #[inline]
+  pub(crate) fn poll_exit(&mut self, cx: &mut Context<'_>) -> Poll<Result<B, Cause<E>>> {
+    match &mut self.state {
       BindState::Ready(r) => match r.take() {
-        Some(r) => Poll::Ready(surface(r)),
+        Some(r) => Poll::Ready(r),
         None => unreachable!("next: bind polled after completion"),
       },
       BindState::Running {
-        rl, fiber, held, ..
+        rl, fiber, hold, ..
       } => {
-        // While suspended, this bind holds one mask level so that the enclosing runloop does
-        // not drop the body's future (and this nested runloop with it) on an interrupt. It is
-        // released before every poll: the nested runloop then sees the interrupt itself,
-        // unwinds its frames (running finalizers) and reports `Interrupt`.
-        if std::mem::take(held) {
-          fiber.set_mask(fiber.mask().saturating_sub(1));
-        }
-        match Pin::new(&mut **rl).poll(cx) {
-          Poll::Ready(exit) => Poll::Ready(surface(unerase_exit::<B, E>(exit))),
-          Poll::Pending => {
-            fiber.set_mask(fiber.mask() + 1);
-            *held = true;
-            Poll::Pending
-          }
-        }
+        // See `BindHold`: the nested runloop is polled without this bind's hold or any hold
+        // outside it, so it sees an interrupt itself and unwinds (running finalizers).
+        let outer = hold.lift(fiber);
+        let polled = Pin::new(&mut **rl).poll(cx);
+        hold.settle(fiber, outer, polled.is_pending());
+        polled.map(unerase_exit::<B, E>)
       }
     }
   }
 }
 
+impl<B: 'static, E: 'static> Future for BindFuture<B, E> {
+  type Output = Result<B, E>;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<B, E>> {
+    self.get_mut().poll_exit(cx).map(surface)
+  }
+}
+
 impl<B, E> Drop for BindFuture<B, E> {
   fn drop(&mut self) {
-    // A bind dropped while suspended (the body was abandoned) gives its mask level back.
-    if let BindState::Running {
-      fiber, held: true, ..
-    } = &self.state
-    {
-      fiber.set_mask(fiber.mask().saturating_sub(1));
+    if let BindState::Running { fiber, hold, .. } = &mut self.state {
+      hold.release(fiber);
     }
   }
 }
@@ -371,10 +457,82 @@ mod tests {
         std::future::poll_fn(|cx| Poll::Ready(Pin::new(&mut b).poll(cx).is_pending())).await;
       let held = ctx.fiber().mask();
       drop(b);
-      Ok(u32::from(pending) * 100 + held * 10 + ctx.fiber().mask())
+      Ok(u32::from(pending) * 100 + u32::from(held == HOLD) * 10 + ctx.fiber().mask())
     });
     let exit = pollster::block_on(outer.provide(Cap).run_on(Arc::clone(&fiber)));
     assert_eq!(exit, Exit::Success(110));
+  }
+
+  /// Execution-log follow-up (d): two binds suspended at once under a `join` each held one
+  /// mask level, so neither nested runloop ever saw an interrupt and the fiber hung.
+  #[test]
+  fn two_binds_suspended_under_a_join_do_not_hold_an_interrupt_off_each_other() {
+    let fiber = FiberContext::new_root(Arc::new(NoExec));
+    let fin_a = Arc::new(AtomicBool::new(false));
+    let fin_b = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+    let a = with_finalizer(suspended(tx.clone()), Arc::clone(&fin_a));
+    let b = with_finalizer(suspended(tx), Arc::clone(&fin_b));
+    let outer: Effect<(u8, u8), (), HCons<Cap, HNil>> = Effect::from_ctx(move |ctx| async move {
+      let (x, y) = futures::future::join(ctx.bind(a), ctx.bind(b)).await;
+      Ok((x?, y?))
+    });
+    let runnable = outer.provide(Cap);
+    let f2 = Arc::clone(&fiber);
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+      let _ = done_tx.send(pollster::block_on(runnable.run_on(f2)));
+    });
+    rx.recv().expect("a started");
+    rx.recv().expect("b started");
+    fiber.request_interrupt();
+    let exit = done_rx
+      .recv_timeout(Duration::from_secs(10))
+      .expect("the interrupt reaches the suspended binds (no hang)");
+    assert!(
+      matches!(exit, Exit::Failure(Cause::Interrupt(id)) if id == fiber.id()),
+      "{exit:?}"
+    );
+    // The first bind polled sees the interrupt and unwinds; its `Interrupt` then unwinds the
+    // body, which drops the sibling (a same-fiber `join` cannot wait for it; `~(a, b)` forks).
+    assert!(fin_a.load(Ordering::SeqCst), "a's finalizer ran");
+    assert_eq!(fiber.mask(), 0, "no hold leaked");
+  }
+
+  /// Hand-polled: a bind lifts its sibling's hold only while it polls its own runloop, and keeps
+  /// the holds of binds nested inside it.
+  #[test]
+  fn a_bind_polls_without_its_siblings_holds_and_with_its_nested_ones() {
+    let fiber = FiberContext::new_root(Arc::new(NoExec));
+    let mut a = BindHold::default();
+    let mut b = BindHold::default();
+    // a and b suspended side by side, a mask region (1) around both.
+    fiber.set_mask(1);
+    let out = a.lift(&fiber);
+    assert_eq!((out, fiber.mask()), (0, 1));
+    a.settle(&fiber, out, true);
+    let out = b.lift(&fiber);
+    assert_eq!((out, fiber.mask()), (HOLD, 1), "b polls without a's hold");
+    b.settle(&fiber, out, true);
+    assert_eq!(fiber.mask(), 1 + 2 * HOLD);
+    // a polls again; a bind nested inside a (c) suspends during that poll.
+    let out = a.lift(&fiber);
+    assert_eq!((out, fiber.mask()), (HOLD, 1));
+    let mut c = BindHold::default();
+    let out_c = c.lift(&fiber);
+    c.settle(&fiber, out_c, true);
+    a.settle(&fiber, out, true);
+    assert_eq!(fiber.mask(), 1 + 3 * HOLD);
+    // The next poll of a keeps c's hold (it is a's own); c then sees only its own.
+    let out = a.lift(&fiber);
+    assert_eq!((out, fiber.mask()), (HOLD, 1 + HOLD));
+    let out_c = c.lift(&fiber);
+    assert_eq!((out_c, fiber.mask()), (0, 1));
+    c.settle(&fiber, out_c, false);
+    a.settle(&fiber, out, false);
+    assert_eq!(fiber.mask(), 1 + HOLD, "only b still holds");
+    b.release(&fiber);
+    assert_eq!(fiber.mask(), 1);
   }
 
   #[test]
