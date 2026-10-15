@@ -99,7 +99,11 @@ fn next_layer_fn(
     ::id_effect::next::HCons<#service_ty, ::id_effect::next::HNil>
   };
   let acquire = quote! {
-    || ::id_effect::next::sync(|| ::id_effect::next::HCons::new(#construct, ::id_effect::next::HNil))
+    || ::id_effect::next::sync(|| {
+      // Annotated so an `Arc<Concrete>` constructor coerces to an `Arc<dyn Trait>` service.
+      let service: #service_ty = #construct;
+      ::id_effect::next::HCons::new(service, ::id_effect::next::HNil)
+    })
   };
   let body = match release {
     Some(release) => quote! {
@@ -377,8 +381,13 @@ mod tests {
       out.contains(":: id_effect :: next :: Layer :: effect"),
       "{out}"
     );
+    // Bound with the service type so a concrete `Arc<T>` coerces to `Arc<dyn Trait>`.
     assert!(
-      out.contains(":: id_effect :: next :: HCons :: new (Counter (42)"),
+      out.contains("let service : Counter = Counter (42)"),
+      "{out}"
+    );
+    assert!(
+      out.contains(":: id_effect :: next :: HCons :: new (service"),
       "{out}"
     );
     // The v1 impl is still emitted alongside.
