@@ -1,17 +1,13 @@
 # NOW
-Updated: 2026-10-15T15:01:57.380Z
+Updated: 2026-10-15T15:33:33.027Z
 
 ## In flight (0)
 None.
 
-## Ready to pick up (9)
+## Ready to pick up (8)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
 Mission: pln-mv799j4f-1r1u6b
 Spec: /data/Code/rust/id_effect/.maestro/specs/id-effect-consolidation-0-6.md
-
-### tsk-mv8ohjj3-nxsggr . W5: Promote id_effect::next to root paths; sweep references
-Mission: pln-mv8oh29m-3zdrrj
-Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
 ### tsk-mv8ohjj3-8qhwew . W7: Raise coverage floor to 96%
 Mission: pln-mv8oh29m-3zdrrj
@@ -25,7 +21,11 @@ Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission
 Mission: pln-mv8oh29m-3zdrrj
 Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
-(and 4 more)
+### tsk-mv8ohjj3-y69kmv . W7: Docs/book/README/parity checklist sweep
+Mission: pln-mv8oh29m-3zdrrj
+Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
+
+(and 3 more)
 
 
 ## Ready to ship (0)
