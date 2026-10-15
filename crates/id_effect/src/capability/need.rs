@@ -1,4 +1,4 @@
-//! Requesting a capability: `need::<T>()` and the `Need` builder. Filled by `k-typed-r`.
+//! Requesting a capability: `need::<T>()` and the `Need` builder.
 //!
 //! `need::<T>()` reads capability `T` from the effect's environment `R`. Presence is checked at
 //! compile time (`R: Selector<T, I>`), so it never fails and never panics (D5). The index `I` is

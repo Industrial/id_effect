@@ -1,4 +1,4 @@
-//! `Effect::fork` and `Effect::fork_daemon`. Filled by `k-fiber-tree`.
+//! `Effect::fork` and `Effect::fork_daemon`.
 //!
 //! Both are built on `Instr::WithFiber`: the child is spawned from the forking fiber's context
 //! and env when the fork step runs, never when the effect is built.

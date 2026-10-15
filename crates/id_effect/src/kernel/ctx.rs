@@ -1,7 +1,7 @@
 //! `Ctx<R>`: the environment (`Arc<R>`) and the current fiber (`Arc<FiberContext>`) seen by a
-//! running effect, with `env()`/`fiber()`. Filled by `k-core-runloop`.
+//! running effect, with `env()`/`fiber()`.
 //!
-//! Typed access (`Ctx::get`, `Ctx::bind`) is added in `kernel/bind.rs` by `k-typed-r`; the fields
+//! Typed access (`Ctx::get`, `Ctx::bind`) lives in `kernel/bind.rs`; the fields
 //! are `pub(crate)` for that.
 
 use std::sync::Arc;

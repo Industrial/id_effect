@@ -1,6 +1,6 @@
 //! Request batching: [`Effect::request`] over a batched [`RequestResolver`] (Effect.ts
-//! `Effect.request(req, resolver)` / `RequestResolver.makeBatched`). Filled by
-//! `p-request-batch`; `p-request-cache` adds caching scoped to a `Layer` or `Scope`.
+//! `Effect.request(req, resolver)` / `RequestResolver.makeBatched`), with request caching
+//! scoped to a `Layer` or `Scope`.
 //!
 //! A [`Request`] is a value that describes one lookup (its key is the value itself, so it is
 //! `Hash + Eq`) and names its typed `Output` and `Error`. A [`RequestResolver`] answers a whole

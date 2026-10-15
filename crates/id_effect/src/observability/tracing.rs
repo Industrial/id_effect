@@ -1,7 +1,7 @@
-//! In-process tracing buffer: the 0.6 `install_tracing_layer` / `snapshot_tracing` API on the
-//! Span hook surface (`k-retire-v1`).
+//! In-process tracing buffer: `install_tracing_layer` / `snapshot_tracing` on the span hook
+//! surface.
 //!
-//! The buffer is process-global (one per process, like 0.6): [`install_tracing_layer`] turns it on
+//! The buffer is process-global (one per process): [`install_tracing_layer`] turns it on
 //! (or off) and clears it, [`snapshot_tracing`] copies it out. Spans reach it through
 //! [`TracingHook`], a [`SpanHook`] installed around the program with
 //! [`Effect::with_span_hook`]`(`[`tracing_hook`]`())` (or `LocalEffect::with_span_hook`): every
@@ -294,7 +294,7 @@ pub fn tracing_hook() -> Arc<dyn SpanHook> {
   Arc::clone(HOOK.get_or_init(|| Arc::new(TracingHook)))
 }
 
-/// Serializes the tests (here and in the 0.6 wrappers) that share the process-global buffer.
+/// Serializes the tests that share the process-global buffer.
 #[cfg(test)]
 pub(crate) fn test_lock() -> MutexGuard<'static, ()> {
   static LOCK: Mutex<()> = Mutex::new(());

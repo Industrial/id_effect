@@ -1,4 +1,4 @@
-//! `FiberRef<T>`: fiber-local values inherited by forked children. Filled by `k-scope-fiberref`.
+//! `FiberRef<T>`: fiber-local values inherited by forked children.
 //!
 //! Design A §1.3: the values live in the `refs` slots of each [`FiberContext`], never in
 //! thread-locals, so they follow the fiber across executor threads. A child forked with

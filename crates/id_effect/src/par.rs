@@ -1,5 +1,5 @@
 //! Parallel combinators on fibers: `zip_par`, `all` and `for_each_par` under a
-//! [`Concurrency`] policy. Filled by `c-zip-par-all`.
+//! [`Concurrency`] policy.
 //!
 //! A failure fails fast and interrupts the siblings; `Bounded(n)` caps the number in flight;
 //! `for_each_par` keeps input order; `Sequential` behaves like a fold.

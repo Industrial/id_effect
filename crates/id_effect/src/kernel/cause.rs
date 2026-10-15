@@ -1,5 +1,5 @@
 //! Bridge to `crate::failure` (`Result<A, Cause<E>>` to and from `Exit`), `InterruptSignal` and
-//! `cause_from_panic`. Filled by `k-core-runloop`.
+//! `cause_from_panic`.
 //!
 //! Inside the kernel every step yields `Result<A, Cause<E>>` (the spike's `Exit` alias); the
 //! public run edges return the root [`Exit`] enum. `Cause`, `Defect` and `Exit` are the root

@@ -1,5 +1,5 @@
 //! Metric keys, the five metric kinds (Effect.ts `Metric`) with their lock-free state, the
-//! [`Metric`] trait and its `track*` effect combinators. Filled by `p-metrics`.
+//! [`Metric`] trait and its `track*` effect combinators.
 //!
 //! # Model
 //!

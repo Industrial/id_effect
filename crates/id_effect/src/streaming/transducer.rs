@@ -1,9 +1,7 @@
 //! Transducers — composable reducing-function transforms, applied to streams with
 //! [`Stream::transduce_items`](super::Stream::transduce_items).
 //!
-//! Kernel-independent (no effect or runtime use); `k-retire-v1` moved it here from the 0.6
-//! `streaming::transducer`, which re-exports it. `id_effect_optics::transducer` re-exports it
-//! too.
+//! Kernel-independent (no effect or runtime use). `id_effect_optics::transducer` re-exports it.
 
 use std::sync::Arc;
 

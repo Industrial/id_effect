@@ -1,5 +1,4 @@
-//! `Scope` (finalizer registry), `Effect::scoped` and `Scope::fork_in`. Filled by
-//! `k-scope-fiberref`.
+//! `Scope` (finalizer registry), `Effect::scoped` and `Scope::fork_in`.
 //!
 //! A [`Scope`] collects finalizers (`Effect<(), Never, HNil>`, optionally fed the closing
 //! [`ExitKind`]) and runs them once, uninterruptibly and in reverse order of registration, when

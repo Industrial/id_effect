@@ -1,5 +1,5 @@
 //! Fibers: the one-shot `ExitCell`, `spawn_fiber`, `finish_children`, `FiberHandle` and
-//! `JoinFuture`. Filled by `k-fiber-tree`.
+//! `JoinFuture`.
 //!
 //! Design A §1.3 / ADR 0011 "Interruption model": every fiber is one runloop future spawned on
 //! its executor. A fiber completes a one-shot [`ExitCell`] (written once by the fiber, taken once

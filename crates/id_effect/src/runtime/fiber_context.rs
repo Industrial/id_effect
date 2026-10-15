@@ -1,11 +1,9 @@
 //! `FiberContext`: per-fiber state (id, interrupt flag, mask, waker, parent and children, fiber
-//! refs). Filled by `k-core-runloop`, then extended by `k-fiber-tree`, `k-scope-fiberref` and
-//! `k-runloop-opt`.
+//! refs).
 //!
-//! `k-core-runloop` lands the minimal state the runloop needs: the id, the executor, the
-//! interrupt flag, the mask counter and the stored waker. `k-fiber-tree` adds `parent: Weak`,
-//! the children and the done signal (k-rebuild L2: parentage lives here, not in `FiberId`).
-//! `k-scope-fiberref` adds the fiber-ref slots (`refs`, design A §1.3): a per-fiber map from
+//! The runloop needs the id, the executor, the interrupt flag, the mask counter and the stored
+//! waker. The fiber tree adds `parent: Weak`, the children and the done signal (parentage lives
+//! here, not in `FiberId`). The fiber-ref slots (`refs`, design A §1.3): a per-fiber map from
 //! [`FiberRef`](crate::runtime::FiberRef) id to value, copied into a child when it is
 //! forked (no thread-locals).
 

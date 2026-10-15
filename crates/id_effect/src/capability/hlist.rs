@@ -1,6 +1,5 @@
 //! Typed environments: `HNil`/`HCons`/`Here`/`There`, `HList` and the
-//! `Selector`/`Plucker`/`Sculptor`/`Embed`/`Concat` traits with their diagnostics. Filled by
-//! `k-core-runloop`, extended by `k-typed-r`.
+//! `Selector`/`Plucker`/`Sculptor`/`Embed`/`Concat` traits with their diagnostics.
 //!
 //! The environment `R` of an `Effect` is an HList of `Arc`ed capabilities. Lookups, provision,
 //! subset projection and concatenation are traits whose index parameters the compiler infers

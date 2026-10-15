@@ -1,7 +1,6 @@
 //! `Layer<Out, E, In>`: lazy, memoised recipes for environment values. `succeed` / `effect` /
 //! `from_effect` / `scoped` / `acquire_release` / `fresh` / `build` / `build_scoped` / `merge` /
-//! `provide_to` / `provide_merge` / `launch` and `Effect::provide_layer`. Filled by
-//! `k-layer-base`, `p-layer-core` and `p-layer-scoped`.
+//! `provide_to` / `provide_merge` / `launch` and `Effect::provide_layer`.
 //!
 //! A [`Layer<Out, E, In>`](Layer) is a lazy recipe that builds the environment value `Out` (an
 //! HList of `Arc`ed capabilities) from the environment `In`, failing with `E` (design A §2.3).
@@ -86,7 +85,7 @@
 //! Every build has one [`Scope`]. A layer made with [`Layer::scoped`] receives it and registers
 //! finalizers into it; [`Layer::acquire_release`] is the common case (acquire uninterruptibly,
 //! register the release). A finalizer is an effect (`Effect<(), Never, HNil>`), so it can be
-//! asynchronous: this replaces v1's synchronous `ProviderSpec::on_shutdown`. A memoised layer
+//! asynchronous: this replaces 0.6's synchronous `ProviderSpec::on_shutdown`. A memoised layer
 //! registers its finalizers once per build.
 //!
 //! The scope closes when its owner ends, running the finalizers once, uninterruptibly and in

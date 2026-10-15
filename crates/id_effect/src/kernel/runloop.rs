@@ -1,5 +1,5 @@
 //! The erased runloop: `Instr`, `Frame`, `MaskOp` and `Runloop` (frame stack, budget, interrupt
-//! checks). Filled by `k-core-runloop`, optimised by `k-runloop-opt`.
+//! checks).
 //!
 //! Design A §1.1/§1.3: an explicit continuation stack over erased instructions, interrupt checks
 //! at every instruction boundary and before every poll of an in-flight future, mask regions, and

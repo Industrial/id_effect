@@ -1,5 +1,5 @@
 //! Managed resources on top of [`Scope`](crate::Scope): [`Cache`], [`Pool`] and
-//! [`KeyedPool`] (Effect.ts `Cache`, `Pool`, `KeyedPool`). Filled by `c-resource`.
+//! [`KeyedPool`] (Effect.ts `Cache`, `Pool`, `KeyedPool`).
 //!
 //! Constructors are plain functions (`Pool::new`, `KeyedPool::new`, `Cache::new`), not effects:
 //! building one acquires nothing. A pooled item is checked out into a caller's scope and checked

@@ -1,5 +1,5 @@
 //! The immutable `Schedule<Out, In>` (Effect.ts `Schedule`) and the `retry` / `repeat` family on
-//! [`Effect`]. Filled by `p-schedule`.
+//! [`Effect`].
 //!
 //! # Model
 //!

@@ -1,13 +1,13 @@
 //! `Runtime` (an executor, optionally owning its tokio runtime) and its run edges: `run` (async),
 //! `try_block_on` / `block_on` (park the calling thread on a real waker), `block_on_future`, and
-//! `BlockOnInAsync`. Filled by `k-edge`.
+//! `BlockOnInAsync`.
 //!
 //! # The blocking edge
 //!
 //! The root fiber of a blocking run is driven **on the calling thread**: the edge polls the
 //! effect's runloop with a [`Waker`] built from [`std::task::Wake`] over [`Thread::unpark`], and
 //! parks the thread between wake-ups. A sleeping or suspended effect costs no CPU (no busy poll
-//! and no yield spin; v1's `runtime/execute.rs:62-79` is what this replaces).
+//! and no yield spin, unlike the 0.6 run edge).
 //!
 //! Parking an executor thread can deadlock (the `request_resolver.rs:102` bug class), so the
 //! blocking edges refuse to run inside an async context and return [`BlockOnInAsync`] instead.

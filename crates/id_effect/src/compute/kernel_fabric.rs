@@ -1,5 +1,4 @@
-//! The Compute Fabric as the fiber admission scheduler (ADR 0007 Amendment 1, D6). Filled by
-//! `c-fabric-scheduler`.
+//! The Compute Fabric as the fiber admission scheduler (ADR 0007 Amendment 1, D6).
 //!
 //! [`Concurrency::Inherit`](crate::Concurrency::Inherit) awaits an asynchronous admission
 //! permit from the ambient [`Fabric`] before each child of
@@ -13,7 +12,7 @@
 //! `Effect.withConcurrency`. Here the ambient fabric is likewise a fiber-local value — a private
 //! [`FiberRef`] set by [`Fabric::provide`] — not a capability in `R`, so any effect can use
 //! `Inherit` whatever its environment, and children inherit the fabric at fork time. The
-//! process-wide v1 fabric (`id_effect::compute::install_fabric`) is not consulted.
+//! process-wide Compute Fabric (`id_effect::compute::install_fabric`) is not consulted.
 //!
 //! # Admission
 //!

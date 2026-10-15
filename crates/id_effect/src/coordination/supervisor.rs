@@ -1,14 +1,13 @@
 //! Fiber supervision: [`supervised`] restart loops under a [`SupervisorPolicy`], the
-//! [`Supervisor`] that owns supervised fibers, and the pure [`RestartIntensity`] limiter. Ported
-//! from the v1 `concurrency::supervisor`.
+//! [`Supervisor`] that owns supervised fibers, and the pure [`RestartIntensity`] limiter.
 //!
-//! v1 stopped a supervised loop cooperatively through a `CancellationToken` checked between
-//! attempts. On the 0.7 kernel a supervised loop is an ordinary fiber: [`Supervisor::shutdown`]
+//! 0.6 stopped a supervised loop cooperatively through a `CancellationToken` checked between
+//! attempts. In 0.7 a supervised loop is an ordinary fiber: [`Supervisor::shutdown`]
 //! closes the supervisor's [`Scope`], which interrupts every fiber forked into it, wherever it is
 //! suspended (inside an attempt or between two). Interruption is never restarted.
 //!
-//! The v1 policies took a `Schedule`; the next `Schedule` is not in place yet (`p-schedule`), so
-//! the restart policies take a fixed `delay` between attempts.
+//! The 0.6 policies took a `Schedule`; the restart policies here take a fixed `delay` between
+//! attempts (wrap the effect in [`Effect::retry`] when it needs a [`Schedule`](crate::Schedule)).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};

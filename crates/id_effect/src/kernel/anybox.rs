@@ -1,10 +1,8 @@
-//! Type erasure for the runloop: `AnyBox` erase/unbox, `AnyExit`, `AnyEnv`. Filled by
-//! `k-core-runloop`, optimised by `k-runloop-opt`.
+//! Type erasure for the runloop: `AnyBox` erase/unbox, `AnyExit`, `AnyEnv`.
 //!
-//! Every value that crosses an erased runloop step travels as an [`AnyBox`]. `k-runloop-opt`
-//! owns making this cheaper (statically known types, no per-value `TypeId` ladder); keep every
+//! Every value that crosses an erased runloop step travels as an [`AnyBox`]. Keep every
 //! erase/unbox call going through [`erase`] / [`unbox`] / [`erase_exit`] / [`unerase_exit`] so
-//! that leaf has a single place to change.
+//! the representation has a single place to change.
 
 use std::any::Any;
 use std::sync::{Arc, LazyLock};

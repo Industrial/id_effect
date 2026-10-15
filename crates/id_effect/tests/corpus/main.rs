@@ -7,9 +7,10 @@
 //! H05's runner ties `R` to the env it is given (as in the spike), and H17 uses the
 //! `.same_env()` pattern (`kernel/bind_same.rs`) instead of the spike's `::<SignupCaps, _>`.
 //!
-//! The kernel had no `zip_par` / `timeout` yet (`c-coordination`): H19 forks and joins, and H20 uses
-//! the [`timeout_fail`] stand-in below (outside the corpus regions; it is library code, not
-//! handler code). Effects run on `Runtime::global()` through `Effect::block_on`.
+//! H19 forks and joins, and H20 uses the [`timeout_fail`] stand-in below (outside the corpus
+//! regions; it is library code, not handler code), as the corpus was written before the kernel
+//! had `zip_par` and `Effect::timeout_fail`; the shapes are kept as written. Effects run on
+//! `Runtime::global()` through `Effect::block_on`.
 
 mod services;
 

@@ -1,5 +1,5 @@
 //! Eliminating requirements from `R`: `provide`, `provide_some`, `provide_all`, `provide_env`
-//! and `narrow`. Filled by `k-typed-r`.
+//! and `narrow`.
 //!
 //! Elimination happens at the type level: `provide::<T>` removes exactly one element from `R`
 //! (`Plucker`), `provide_some` a whole sub-list (`Sculptor`). At run time each compiles to one

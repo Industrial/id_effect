@@ -1,5 +1,5 @@
 //! Racing and timeouts on fibers: [`Effect::race`], [`race_all`], [`Effect::race_first`],
-//! [`Effect::timeout`] and [`Effect::timeout_fail`]. Filled by `c-race-timeout`.
+//! [`Effect::timeout`] and [`Effect::timeout_fail`].
 //!
 //! Every racer runs as a child fiber of the racing fiber (so the racer's interruption reaches
 //! them, and its exit awaits them). Semantics follow Effect.ts:

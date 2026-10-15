@@ -1,5 +1,5 @@
 //! Finalizer and mask combinators: `ensuring`, `uninterruptible`, `uninterruptible_mask`,
-//! `Restore` and `acquire_use_release`. Filled by `k-fiber-tree`.
+//! `Restore` and `acquire_use_release`.
 //!
 //! All of them are `Instr::Mask` regions, built from `Instr::WithFiber` where the current mask
 //! has to be read first. An interrupt requested inside a masked region stays pending and is

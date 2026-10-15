@@ -1,7 +1,6 @@
 //! Fiber coordination primitives: `Deferred` (one-shot), `Semaphore`, `Latch`, `Queue`,
 //! `Channel`, `PubSub`, `Ref`, `SynchronizedRef`, `SubscriptionRef` and `Supervisor`.
-//! Filled by `c-coordination`, ported from the v1 root `coordination` module (and
-//! `concurrency::supervisor`) with Effect.ts semantics.
+//! Effect.ts semantics throughout.
 //!
 //! - **Plain constructors.** `Ref::new`, `Semaphore::new`, `Queue::bounded`, … build the
 //!   primitive directly (not `make() -> Effect`); the operations are lazy effects, generic over

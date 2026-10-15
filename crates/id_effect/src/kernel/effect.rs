@@ -1,6 +1,5 @@
 //! `Effect<A, E = Never, R = HNil>`, its `Node` representation (`Pure`/`Sync`/`Op`), the core
 //! combinators (`map`/`flat_map`/`map_err`/`catch`/`exit`/`then`/`zip`/`widen`) and `ExitKind`.
-//! Filled by `k-core-runloop`.
 //!
 //! Design A §1.1: an inline `Pure` node (no allocation for ready values), lazy synchronous
 //! closures (`Sync`) and erased runloop programs (`Op`). `ExitKind` is defined in
@@ -8,7 +7,7 @@
 //!
 //! Up to `FUSE_MAX` `map`/`flat_map` steps on a ready value fuse into one typed closure; after
 //! that a chain appends continuation frames to an `Instr::Seq` (no box per step for a
-//! capture-free closure). `k-runloop-opt` lowered the cap from 64 to 4: with 64 live boxes of one
+//! capture-free closure). The cap is 4, not 64: with 64 live boxes of one
 //! size class the allocator leaves its thread cache, which cost an async bind chain more than the
 //! fusion saved. The fiber-free prefix of a program still runs without a fiber or executor
 //! (`settle_instr`, used by `block_on` and `~` binds).

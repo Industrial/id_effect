@@ -1,7 +1,7 @@
 //! Transducers on [`Stream`] ([`Stream::transduce_items`]) and the free [`state_scan`].
 //!
-//! [`Transducer`] itself is kernel-independent and shared with the 0.6 API
-//! (`streaming::transducer`, re-exported by `id_effect_optics` and 0.6 `streaming`).
+//! [`Transducer`] itself is kernel-independent (`streaming::transducer`, re-exported by
+//! `id_effect_optics`).
 
 use super::stream::{StageStep, Stream};
 use crate::streaming::transducer::Transducer;

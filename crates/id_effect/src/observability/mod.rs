@@ -1,6 +1,6 @@
 //! Observability: atomic metrics (counter, gauge, histogram, bounded summary, frequency), the
 //! [`MetricRegistry`] with tagged snapshots, and the span / [`FiberRef`] hooks the otel crate
-//! builds on. Filled by `p-metrics`.
+//! builds on.
 //!
 //! # Metrics
 //!
@@ -50,7 +50,7 @@
 //!   back with [`Span::extension`] and end it with the outcome. [`Span::fiber_ref`] /
 //!   [`Span::current_in`] give the current span to other integrations (log correlation).
 //!
-//! - **In-process buffer** — [`tracing`](self::tracing): the 0.6 `install_tracing_layer` /
+//! - **In-process buffer** — [`tracing`](self::tracing): the `install_tracing_layer` /
 //!   `snapshot_tracing` event buffer, fed by the [`TracingHook`] span hook.
 //!
 //! Nothing here uses thread-local storage: all per-fiber state lives in `FiberRef` slots of the

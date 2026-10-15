@@ -1,4 +1,4 @@
-//! Streams on the 0.7 kernel (`m-streams`): a pull-based, chunked [`Stream`], its consumers
+//! Streams: a pull-based, chunked [`Stream`], its consumers
 //! ([`Sink`]), producer-fed streams ([`stream_from_channel`] / [`StreamSender`]), and the
 //! stream-, sink- and fold-backed channels ([`StreamChannel`], [`FoldChannel`],
 //! `Channel::to_stream` / `to_sink`).
@@ -15,7 +15,7 @@
 //!
 //! Every operator pulls one upstream chunk per downstream pull, so memory stays proportional to
 //! the chunk size (plus documented operator state) and infinite sources work. [`Chunk`] and
-//! [`Transducer`] are the kernel-independent 0.6 types, shared.
+//! [`Transducer`] are kernel-independent.
 //!
 //! ```
 //! use id_effect::{Stream, succeed};

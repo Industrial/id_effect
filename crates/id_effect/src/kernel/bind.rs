@@ -1,5 +1,5 @@
 //! Typed capability access from a running effect: `Ctx::get`, `Ctx::bind` via
-//! `Bindable<R, Is>`, and `BindFuture`. Filled by `k-typed-r`.
+//! `Bindable<R, Is>`, and `BindFuture`.
 //!
 //! Inside an async body (`Effect::from_ctx`, the `effect!` target) `ctx.get::<T>()` reads a
 //! capability and `ctx.bind(sub).await` (what `~sub` expands to) runs a sub-effect whose
@@ -8,7 +8,7 @@
 //! finalizers run.
 //!
 //! `bind` takes any [`Bindable`] value, not just an `Effect`, so other binding forms (the
-//! `SameEnv` wrapper of `k-macros-next`) are added as impls in their own files.
+//! `SameEnv` wrapper in `bind_same.rs`) are added as impls in their own files.
 //!
 //! # Outcomes
 //!

@@ -1,30 +1,15 @@
-# `failure` — Stratum 4: structured failure
+# `failure` — causes and exits
 
-Algebraic **failure** and **terminal outcomes**: [`Cause<E>`](cause.rs) (errors with semigroup-style combination), [`Exit<A, E>`](exit.rs) (fiber-level success/failure/interrupt), and [`Or<L, R>`](union.rs) for error unions.
+Kernel-independent failure types, re-exported at the crate root:
 
-## What lives here
+| Module | Items |
+|--------|-------|
+| `cause` | `Cause<E>`: `Fail(E)`, `Die(Defect)`, `Interrupt(FiberId)`, `Both` (parallel) and `Then` (sequential) composites. |
+| `exit` | `Exit<A, E>`: `Success(A)` or `Failure(Cause<E>)`, what `block_on` / `join` return. |
+| `union` | `Or<L, R>`: the error union spelled by `err!(A \| B)`. |
+| `fiber_id` / `never` / `pretty` | `FiberId`, the uninhabited `Never` (the default `E`), cause rendering. |
 
-| Module | Role |
-|--------|------|
-| `cause` | `Cause<E>` — structured failure (e.g. defects, interruptions, failures). |
-| `exit` | `Exit<A, E>` — how a fiber completes (`Success`, `Failure`, `Interrupt`, …). |
-| `union` | `Or<L, R>` — coproduct-style error tagging. |
-
-## What it is used for
-
-- **Uniform handling** of defects vs failures in concurrent and streaming code.
-- **Composing** error contexts where `Cause`’s `Semigroup` instance applies.
-- **Expressing** fiber completion without collapsing everything to `Result` when you need interruption semantics.
-
-## Best practices
-
-1. **Map into your `E`** at service boundaries with `From` / `Into` rather than ad hoc string errors.
-2. **Prefer `fail(…).into()`** in `Effect` for domain errors (see project Effect.rs skill).
-3. **Do not** use `Exit` where a plain `Result` suffices — reserve for fiber/runtime-level completion stories.
-4. **Test both** success and error branches when combinators touch `Cause` or `Exit` (`TESTING.md`).
-
-## See also
-
-- [`SPEC.md`](../../SPEC.md) §Stratum 4.
-- [`concurrency`](../concurrency/README.md) — `Exit` ties to fibers.
-- [`kernel`](../kernel/README.md) — `Effect` error channel `E`.
+A typed failure (`fail(e)`) is a `Cause::Fail`; a panic inside an effect becomes `Cause::Die`;
+interruption is `Cause::Interrupt`. Map into your domain `E` at boundaries with `map_err` /
+`From` rather than strings, and keep `Exit` for run edges and fiber joins (`into_result()`
+when a `Result` is enough).

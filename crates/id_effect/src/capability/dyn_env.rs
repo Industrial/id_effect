@@ -1,5 +1,4 @@
-//! `DynEnv`: a runtime-checked environment, with `MissingCapability` and `try_need`. Filled by
-//! `k-typed-r`.
+//! `DynEnv`: a runtime-checked environment, with `MissingCapability` and `try_need`.
 //!
 //! The typed environment (`R`, an HList) is the default: a missing capability is a compile
 //! error. `DynEnv` is the explicit opt-in for plugin-style wiring whose capabilities are not

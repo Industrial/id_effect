@@ -1,4 +1,4 @@
-//! `fork_all`, `Concurrency` and the `Admission` stub. Filled by `k-fiber-tree`.
+//! `fork_all`, `Concurrency` and the fabric admission of its children.
 //!
 //! `fork_all` is the one choke point every parallel combinator goes through (design A §4, ADR
 //! 0011 "Parallel combinators"): it runs effects as child fibers of the current fiber and

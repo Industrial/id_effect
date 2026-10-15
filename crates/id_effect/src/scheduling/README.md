@@ -1,31 +1,31 @@
-# `scheduling` — Stratum 10: time, clocks & policies
+# `scheduling` — time values and schedules
 
-**Temporal policies** and **wall-clock abstraction**: [`Duration`](duration.rs), [`UtcDateTime` / `ZonedDateTime` / `AnyDateTime`](datetime.rs), [`Clock`](clock.rs) ([`LiveClock`](clock.rs), [`TestClock`](clock.rs)), and [`Schedule`](schedule.rs) with **repeat** / **retry** combinators.
+| Module | Items |
+|--------|-------|
+| `duration` | `Duration` helpers (`millis`, `seconds`, `decode`, `clamp`, …), `DurationParseError`. |
+| `datetime` | `UtcDateTime`, `ZonedDateTime`, `AnyDateTime`, `TimeUnit`, `timezone`. |
+| `schedule` | `Schedule<Out, In>` and `Effect::{retry, retry_or_else, repeat, repeat_or_else}`. |
 
-## What lives here
+A `Schedule` is an immutable value: `start()` gives a fresh state and `step(now, input, state)`
+returns the next state, an output and the delay before the next recurrence (or done). One value
+can drive any number of independent runs. Constructors: `recurs`, `spaced`, `exponential`,
+`exponential_by`, `fibonacci`, `forever`, `from_fn`; combinators: `intersect`, `union`,
+`and_then`, `up_to`, `while_input`, `map`, `jittered` / `jittered_with`.
 
-| Module | Role |
-|--------|------|
-| `duration` | `Duration`, `DurationParseError` — spans and parsing. |
-| `datetime` | Instants, zones, `TimeUnit`, `timezone` helper. |
-| `clock` | `Clock` trait + test/live implementations — inject time in `Effect`. |
-| `schedule` | `Schedule`, `ScheduleDecision`, `repeat`, `retry`, `forever`, clock+interrupt variants. |
+Effects are one-shot, so `retry` and `repeat` take a factory that builds a fresh attempt:
 
-## What it is used for
+```rust
+use id_effect::{Effect, Exit, Schedule, succeed};
+use std::time::Duration;
 
-- **Retries** with backoff and jitter policies (via `retry*`).
-- **Loops** and polling (`repeat*`, `forever`) with optional interrupt integration.
-- **Deterministic tests** by swapping `TestClock` for `LiveClock`.
+let eff: Effect<u8, &'static str> = Effect::retry(
+  || succeed(42),
+  Schedule::exponential(Duration::from_millis(10)).intersect(Schedule::recurs(3)),
+);
+assert_eq!(eff.block_on(), Exit::succeed(42));
+```
 
-## Best practices
-
-1. **Inject `Clock`** through `R` instead of calling `std::time::Instant::now()` deep in library code.
-2. **Combine** `CancellationToken` with `*_and_interrupt` schedule variants for clean shutdown.
-3. **Keep schedules pure** in their decision logic — side effects belong in the `Effect` you pass to `repeat`/`retry`.
-4. **Parse durations** once at config load — surface `DurationParseError` early.
-
-## See also
-
-- [`SPEC.md`](../../SPEC.md) §Stratum 10.
-- [`concurrency`](../concurrency/README.md) — interrupts pair with schedules.
-- [`testing::run_test_with_clock`](../testing/README.md) — harness with clock control.
+Delays sleep on the executor clock, so tests run schedules in virtual time on a
+`TestExecutor` (`advance`, `next_timer_deadline`); see `crates/id_effect/tests/schedule.rs`.
+There is no `Clock` capability: the 0.6 `Clock` / `LiveClock` / `TestClock` and the free
+`retry` / `repeat` / `forever` functions were removed in 0.7.

@@ -1,5 +1,5 @@
 //! `MetricRegistry`: the keyed metric store, its tagged snapshots, the push listener hook and
-//! the fiber metric tags. Filled by `p-metrics`.
+//! the fiber metric tags.
 //!
 //! A registry maps each [`MetricKey`] to its state. [`MetricRegistry::global`] is the process
 //! registry (`Counter::new` and friends); [`MetricRegistry::new`] makes an isolated one (tests,

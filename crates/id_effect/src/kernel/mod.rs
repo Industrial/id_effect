@@ -19,7 +19,7 @@ mod runloop;
 #[allow(unused_imports)] // crate-internal items only (`crate::kernel::AnyBox` etc.)
 pub use anybox::*;
 pub use bind::*;
-#[allow(unused_imports)] // filled by k-macros-next
+#[allow(unused_imports)] // `SameEnv` and its impls only
 pub use bind_same::*;
 pub use cause::*;
 pub use constructors::*;
