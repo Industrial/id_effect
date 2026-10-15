@@ -1,60 +1,76 @@
-# Capability Graphs — Automatic Dependency Resolution
+# Layer Graphs — Wiring a Whole Application
 
-For small applications, passing a short provider list to [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) is enough. For larger apps, [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order from each provider's `requires()` / `provides()` metadata and surfaces diagnostics via [`CapabilityGraph::diagnostics`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs).
+An application graph is an expression built from layers and the three combinators. Its type says
+everything it produces and everything it still needs, and the compiler checks every connection.
 
-## Declaring a provider graph
-
-```rust
-use id_effect::{CapabilityGraph, provide};
-
-let graph = CapabilityGraph::new()
-    .add(provide!(ConfigLive).0)
-    .add(provide!(DatabaseLive).0)
-    .add(provide!(CacheLive).0);
-```
-
-Each `ProviderSpec` declares dependencies via `requires()`; `CapabilityGraph` topologically sorts providers before calling `build` / `build_from`.
-
-## Planning and building
+## Declaring the graph
 
 ```rust
-let order = graph.plan()?;
-let env = graph.build()?;
-```
+use id_effect::{HCons, HNil, Layer, caps};
 
-The planner returns node indices in dependency order. Independent branches may appear in any stable topological order.
+fn config_live() -> Layer<caps!(Config), AppError> { /* Layer::effect: load from the env */ }
+fn db_live() -> Layer<caps!(Db), AppError, caps!(Config)> { /* Layer::acquire_release */ }
+fn cache_live() -> Layer<caps!(Cache), AppError, caps!(Config)> { /* ... */ }
+fn user_repo_live() -> Layer<caps!(UserRepo), AppError, caps!(Db)> { /* ... */ }
 
-## Cycle detection
-
-`graph.plan()` returns an error if there are circular dependencies:
-
-```rust
-let diags = bad_graph.diagnostics();
-assert!(!diags.is_empty()); // e.g. cycle-detected
-```
-
-Cycles and missing providers are detected at plan time via [`CapabilityPlannerError::to_diagnostic`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs). Use `cargo run -p id_effect_cli --bin id-effect-diagnose -- example cycle` to print a sample report.
-
-## Conditional providers
-
-Layers can be added conditionally:
-
-```rust
-let mut providers = vec![provide!(ConfigLive)];
-if cfg!(feature = "metrics") {
-    providers.push(provide!(MetricsLive));
+fn app_layer() -> Layer<caps!(Config, Db, Cache, UserRepo), AppError> {
+  let config = config_live(); // one layer value, shared below
+  let data = db_live().merge(cache_live()).provide_merge(config);
+  user_repo_live().provide_merge(data)
 }
-let env = build_env(providers)?;
 ```
 
-Feature flags and environment-based configuration compose naturally with the graph API.
+There is no separate planner: build order follows the expression (`provide_merge` builds its base
+first, `merge` its left side first), and memoisation makes a shared layer build once.
 
-## When to use graphs vs hand-built `Env`
+## What the compiler checks
+
+- **Missing capabilities**: feeding a layer whose output lacks something the upper layer or the
+  effect needs is an unsatisfied `Embed` bound, a compile error naming both environments.
+- **Cycles**: a layer can only consume capabilities that exist when it is wired, so a cycle cannot
+  be expressed.
+- **Unused inputs**: whatever a graph still needs stays in its `In` type; `provide_layer` on an
+  effect returns an effect that needs exactly that, so you cannot forget to close the graph.
+
+The one check left to run time is **duplicate outputs** (two layers producing the same capability),
+which `merge` / `provide_merge` reject with a panic when the graph is wired, not while it runs.
+
+## Running with the graph
+
+```rust
+fn main() {
+  let exit = program().provide_layer(app_layer()).block_on();
+  // ...
+}
+```
+
+Long-running services that should live until shutdown use `launch`:
+
+```rust
+// Builds the graph and keeps it alive until the fiber is interrupted, then runs the finalizers.
+let server: Effect<Never, AppError> = server_layer().launch();
+```
+
+and code that manages its own `Scope` builds into it with `layer.build_scoped(&scope)`.
+
+## Conditional wiring
+
+A layer's type is fixed, so a conditional graph chooses between layers of the **same type**:
+
+```rust
+fn metrics_layer(enabled: bool) -> Layer<caps!(Metrics), AppError> {
+  if enabled { metrics_live() } else { metrics_noop() }
+}
+```
+
+Both branches produce `Metrics`; the no-op implementation simply records nothing.
+
+## When to use what
 
 | Situation | Prefer |
 |-----------|--------|
-| < 5 capabilities, tests | `build_env([...])` |
-| Complex `requires()` graphs | `CapabilityGraph` |
-| Need diagnostics / cycles | `CapabilityGraph::diagnostics` |
-| Request-local overrides | `Env::scoped` |
-| CLI troubleshooting | `id-effect-diagnose` |
+| one or two values, tests | `.provide(..)` / `.provide_env(hlist![..])` |
+| constructions with inputs, failures or resources | `Layer` graph + `provide_layer` |
+| a service alive until shutdown | `layer.launch()` |
+| a caller-managed lifetime | `layer.build_scoped(&scope)` |
+| capabilities only known at run time (plugins) | `DynEnv` + `try_need` |

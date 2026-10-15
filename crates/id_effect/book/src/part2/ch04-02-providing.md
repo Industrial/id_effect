@@ -1,124 +1,121 @@
-# Providing Dependencies — `run_with` and `Env`
+# Providing Dependencies — provide, provide_env and Layers
 
-An effect with `R = caps!(…)` cannot run until its capabilities exist. **Provide at the edge**, not inside library code.
+An effect with `R = caps!(..)` cannot run until its capabilities are provided. **Provide at the
+edge** (`main`, a test, a request handler), not inside library code. Every `provide*` method
+returns a new effect with a smaller `R`; once `R` is `HNil` the effect can be run.
 
-## `run_with` — the main entrypoint
+## `provide` — one capability
 
 ```rust
-use id_effect::{Effect, ProviderSpecDerive, caps, effect, provide, require, run_with, succeed};
+use id_effect::{Effect, Exit, Never, caps, effect};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Counter(pub i32);
+
+fn program() -> Effect<i32, Never, caps!(Counter)> {
+  effect!({ ~Counter.0 + 1 })
+}
+
+assert_eq!(program().provide(Counter(41)).block_on(), Exit::succeed(42));
+```
+
+`provide::<T>` removes exactly `T` from `R`, wherever it sits; the rest stays required, so you can
+provide step by step:
+
+```rust
+use id_effect::{Effect, HCons, HNil, need};
+
+struct Db(u32);
+struct Logger;
+
+fn query() -> Effect<u32, (), HCons<Db, HCons<Logger, HNil>>> {
+  need::<Db>().map(|db| db.0)
+}
+
+let partly: Effect<u32, (), HCons<Logger, HNil>> = query().provide(Db(7));
+let runnable: Effect<u32, ()> = partly.provide(Logger);
+```
+
+Providing a capability the effect does not need is a compile error (a type mismatch at the
+`.provide(..)` argument).
+
+## `provide_env` — a whole environment
+
+`provide_env` takes any HList value that **contains** every capability of `R`, in any order, with
+extras allowed. It is the natural fit for an application environment built once:
+
+```rust
+use id_effect::hlist;
+
+let app_env = hlist![Cache(0), Logger("b"), Db(2)];
+let exit = describe().provide_env(app_env).block_on(); // describe() needs Db and Logger
+```
+
+Related methods:
+
+| Method | Provides |
+|--------|----------|
+| `.provide(t)` | one capability `T` |
+| `.provide_some(hlist![a, b])` | a sub-list, in any order |
+| `.provide_all(env)` | exactly `R` |
+| `.provide_env(env)` | any environment containing `R` |
+| `.provide_layer(layer)` | the output of a [`Layer`](./ch06-00-layers.md), built around the effect |
+
+## Layers and the provider derive
+
+When capabilities have to be *constructed* (opened, loaded, connected), describe the construction
+as a `Layer` and provide it with `provide_layer`. The derive `ProviderSpecDerive` writes the
+simple ones for you: it emits an inherent `layer()`:
+
+```rust
+use id_effect::{Effect, Exit, Never, caps, effect};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
-#[derive(ProviderSpecDerive)]
+#[derive(::id_effect::ProviderSpecDerive)]
 #[provides(Counter, with = || Counter(42))]
 struct CounterLive;
 
-fn app() -> Effect<u32, (), caps!(Counter)> {
-    effect!(|r| {
-        let counter = ~Counter;
-        counter.0
-    })
+fn app() -> Effect<u32, Never, caps!(Counter)> {
+  effect!({ ~Counter.0 })
 }
 
-fn main() {
-    let n = run_with([provide!(CounterLive)], app()).expect("run");
-}
+let exit = app().provide_layer(CounterLive::layer()).block_on();
+assert_eq!(exit, Exit::succeed(42));
 ```
 
-[`provide!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) wraps a [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) as a [`ProviderBox`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs). [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) collects providers, plans build order via [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs), and runs the effect.
+`#[provides(Service, with = ..)]` takes `|| expr` or a path called with no arguments (such as
+`Self::connect`). Without `with`, the derive uses `Self::default()` (when the struct derives
+`Default`) or `Self::new()`. `#[provides(Service, with = .., release = close)]` adds a finalizer
+`close(Arc<Service>) -> Effect<(), Never, HNil>` that runs when the layer's scope closes.
+`CounterLive::layer()` needs nothing and never fails, so its error type is whatever the graph it
+joins uses.
 
-## Provider constructors — `with = …`
-
-`#[provides(Service, with = …)]` tells the derive how to build the service:
-
-| `with =` | Generated body |
-|----------|----------------|
-| `\|\| expr` | `expr` |
-| `\|deps: &Env\| expr` | `expr`, with `deps` bound to the already-built capabilities |
-| `Self::build` (any path) | `Self::build()` |
-
-Without `with`, the derive falls back to `Self::default()` (when the struct derives `Default`) or `Self::new()`. That older form needs `impl CounterLive { fn new() -> Counter { … } }` — a `new` that does not return `Self`, which trips `clippy::new_ret_no_self`:
+Independent layers combine with `merge`; a layer that needs another one's output is fed with
+`provide_to` / `provide_merge` (Chapter 6):
 
 ```rust
-// Before (0.5): an impl block and a clippy allow per provider
-#[derive(ProviderSpecDerive)]
-#[provides(Counter)]
-struct CounterLive;
-
-impl CounterLive {
-    #[allow(clippy::new_ret_no_self)]
-    fn new() -> Counter {
-        Counter(42)
-    }
-}
-
-// After (0.6): no impl block, nothing to allow
-#[derive(ProviderSpecDerive)]
-#[provides(Counter, with = || Counter(42))]
-struct CounterLive;
-```
-
-Longer constructors keep their own function, named for what it does: `#[provides(Pool, with = Self::connect)]` plus `impl PoolLive { fn connect() -> Pool { … } }`. Provider structs are unit markers referenced only as types (`provide!(CounterLive)`); they do not need `#[allow(dead_code)]`.
-
-## Multiple providers
-
-Pass every provider the app needs in one list — order in the array does not matter; the graph topologically sorts by `requires()`:
-
-```rust
-run_with(
-    [
-        provide!(ConfigLive),
-        provide!(DatabaseLive),
-        provide!(LoggerLive),
-        provide!(UserRepoLive),
-    ],
-    my_application(),
-)?;
-```
-
-## Manual `Env` for tests
-
-When you only need a handful of values, build `Env` by hand:
-
-```rust
-let mut env = Env::new();
-env.insert::<Cap<Database>>(mock_pool);
-env.insert::<Cap<EffectLogger>>(test_logger);
-
-let user = run_blocking(get_user(42), env)?;
-```
-
-[`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) is the middle ground — same provider types as production, but you get the `Env` back without running an effect:
-
-```rust
-let env = build_env([provide!(MockUserRepoLive)])?;
-run_test(get_user(1), env)?;
+let exit = my_application()
+  .provide_layer(ConfigLive::layer().merge(DatabaseLive::layer()).merge(LoggerLive::layer()))
+  .block_on();
 ```
 
 ## Where to provide
 
-**Provide at `main`, test setup, or HTTP/Tokio boundaries — not inside library functions.**
+**Provide at `main`, in test setup, or at framework boundaries, not inside library functions.**
 
 ```rust
-// BAD — library reaches for concrete deps
-pub fn process_order(order: Order) -> Effect<Receipt, AppError, ()> {
-    let db = connect("hardcoded-url");
-    // ...
+// BAD: the library reaches for concrete dependencies
+pub fn process_order(order: Order) -> Effect<Receipt, AppError> {
+  let db = Database::connect("hardcoded-url");
+  // ...
 }
 
-// GOOD — library declares needs; caller wires them
-pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(Database, EffectLogger)> {
-    // ...
+// GOOD: the library declares its needs; the caller wires them
+pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(Database, AuditLog)> {
+  // ...
 }
 ```
 
-## Summary
-
-| API | Purpose |
-|-----|---------|
-| `run_with([provide!(P), …], effect)` | Build graph + run |
-| `build_env([provide!(P), …])` | Build `Env` only |
-| `Env::insert::<Cap<K>>(value)` | Manual test wiring |
-| `run_blocking(effect, env)` | Run when `Env` is already built |
-
-None of these execute effect steps until `run_with` / `run_blocking` / `run_async` is called — wiring stays lazy until the boundary.
+Providing is lazy too: nothing is built or run until the provided effect itself is run.

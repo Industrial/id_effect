@@ -1,68 +1,59 @@
 # The R Parameter — Your Dependencies, Encoded in Types
 
-Chapter 1 introduced `R` as "what an effect needs to run." We kept it vague on purpose — you needed to understand effects before worrying about their environment.
+Chapter 1 introduced `R` as "what an effect needs to run". This chapter makes that precise.
 
-For effects that use dependencies, `R` is written with [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs): a compile-time list of **capability services**. Pure effects use `R = ()`.
+`R` is a **type-level list of capabilities** (an HList): `HNil` is the empty list and
+`HCons<A, HCons<B, HNil>>` is "an `A` and a `B`". [`caps!`](./ch05-02-tags.md) spells it:
+`caps!(A, B)` is exactly `HCons<A, HCons<B, HNil>>`. A capability is any `Send + Sync + 'static`
+type; its type is its identity. Effects that need nothing have `R = HNil`, the default.
 
 ## What R means
 
 ```rust
-use id_effect::{Effect, caps, effect, require};
+use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r| {
-        let db = ~Database;
-        Ok(db.fetch_user(id))
-    })
+  effect!({ ~Database.fetch_user(id)? })
 }
 ```
 
+`R = caps!(Database)` is a promise checked by the compiler: this effect can only run where a
+`Database` has been provided. Inside `effect!`, `~Database` reads it (an `&Arc<Database>`); outside
+the macro, [`need::<Database>()`](./ch05-04-get-getmut.md) does the same.
 
-## Implicit `|r|`
-
-When the enclosing function already returns `Effect<_, _, caps!(…)>` , you can write `effect!(|r| { … })` and omit the environment type on `r`. Rust infers `&mut caps!(…)` from the return type. Use an explicit `|r: &mut caps!(…)|` when you want the macro to validate that body keys (`~Key`, `require!(Key)`) match that list.
-
-Library code can stay generic over any `R` that exposes the same keys:
+Library code can also stay generic over any environment that contains the capability:
 
 ```rust
-fn get_user<R>(id: u64) -> Effect<User, DbError, R>
+use id_effect::{Effect, HList, Selector, need};
+
+fn get_user_in<R, I>(id: u64) -> Effect<User, DbError, R>
 where
-    R: id_effect::Needs<Database> + 'static,
+  R: HList + Selector<Database, I> + Send + Sync + 'static,
 {
-    effect!(|r: &mut R| {
-        let db = ~Database;
-        Ok(db.fetch_user(id))
-    })
+  need::<Database>().flat_map(move |db| db.fetch_user_effect(id))
 }
 ```
-
-`R` is a *promise to the compiler*: this effect may only run where `Database` is available. [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) documents which keys the effect touches; at runtime [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) builds an [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) that satisfies them.
 
 ## How requirements are satisfied
 
-Library code does **not** wire dependencies. Provide at the program edge with [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs):
+Library code does **not** wire dependencies. The program edge removes requirements from `R` until
+nothing is left, then runs the effect:
 
 ```rust
-use id_effect::{provide, run_with};
+use id_effect::hlist;
 
-run_with(
-    [provide!(DatabaseLive), provide!(LoggerLive)],
-    get_user(42),
-)?;
+// One capability at a time
+let exit = get_user(42).provide(Database::connect("mem://")).block_on();
+
+// A whole environment at once (any order, extra capabilities allowed)
+let exit = app().provide_env(hlist![Database::connect("mem://"), AuditLog::stdout()]).block_on();
+
+// From a Layer graph (Chapter 6): built, memoised and released around the effect
+let exit = app().provide_layer(app_layer()).block_on();
 ```
 
-`run_with` builds a [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs), constructs an `Env`, and runs the effect with [`run_blocking`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/mod.rs).
+`block_on` (and `Runtime::run`) only accept `Effect<A, E, HNil>`, so a requirement that was never
+provided is a compile error, not a runtime failure.
 
-For tests you can skip the graph and build `Env` directly:
-
-```rust
-use id_effect::{Env, caps, run_blocking};
-
-let mut env = Env::new();
-env.insert::<Cap<Database>>(mock_db);
-run_blocking(get_user(42), caps!(Database)::from_env(env))?;
-```
-
-Or use [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) when you still want provider types but not a full app run.
-
-The next sections cover how `R` flows through composition, how to wire dependencies at the edge, and how capability services replace positional tuples.
+The next sections cover how `R` flows through composition, how to provide it, how to widen and
+narrow it, and why it doubles as documentation.

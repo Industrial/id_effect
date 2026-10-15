@@ -1,59 +1,66 @@
-# What Is a Provider?
+# What Is a Layer?
 
-An `Effect` describes a computation that *needs* an environment. A [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) describes *how to build* one capability and register it in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs).
+An `Effect` describes a computation that *needs* an environment. A `Layer` describes how to
+*build* part of one.
 
-```
+```text
 Effect<User, DbError, caps!(Database)>
-  └── "I need Database to produce a User"
+  └── "I need a Database to produce a User"
 
-ProviderSpec for DatabaseLive
-  └── "I need Config (via requires) to produce Database"
+Layer<caps!(Database), DbError, caps!(Config)>
+  └── "I need a Config to produce a Database (and may fail with DbError)"
 ```
 
-Effects declare needs; providers declare construction.
+Effects declare needs; layers declare construction.
 
-## The `ProviderSpec` trait
+## The type
+
+`Layer<Out, E, In = HNil>`:
+
+- **`Out`**: the capabilities it produces, an HList such as `caps!(Database)`;
+- **`E`**: the error its construction can fail with;
+- **`In`**: the capabilities its construction needs.
 
 ```rust
-use id_effect::{CapabilityId, Env, ProviderError, ProviderSpec};
+use id_effect::{Effect, HCons, HNil, Layer, hlist, need};
 
-struct DatabaseLive;
+struct Config(&'static str);
+struct Db(&'static str);
 
-impl ProviderSpec for DatabaseLive {
-    type Key = Database;
-    type Output = Pool;
-
-    fn provider_id() -> &'static str { "database-live" }
-
-    fn requires() -> &'static [CapabilityId] {
-        // Declare Config as a dependency for graph ordering
-        // (return a static slice of CapabilityId values)
-        &[]
-    }
-
-    fn provide(deps: &Env) -> Result<Pool, ProviderError> {
-        let config = deps.get::<Cap<Config>>();
-        Ok(connect_pool(config.db_url()))
-    }
+fn db() -> Layer<HCons<Db, HNil>, (), HCons<Config, HNil>> {
+  Layer::effect(|| need::<Config>().map(|c| hlist![Db(c.0)]))
 }
 ```
 
-- **`type Key`** — which capability this provider registers
-- **`type Output`** — the concrete value stored in `Env`
-- **`provide(deps)`** — build the value; read dependencies with `deps.get::<Cap<K>>()`
-- **`requires()`** — capability ids this provider needs built first (used by [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs))
+The construction is an ordinary effect over `In` that returns the `Out` HList.
 
-## Providers are lazy recipes
+## Layers are lazy recipes
 
-Implementing `ProviderSpec` does nothing by itself. Construction runs when you call [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), or [`CapabilityGraph::build`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs).
+Making a layer runs nothing. Construction happens when the layer is **built**:
+
+| Owner | Builds | Releases (finalizers run) |
+|-------|--------|---------------------------|
+| `eff.provide_layer(layer)` | each time the effect runs | after the effect ends (success, failure, defect or interrupt) |
+| `layer.launch()` | when the launched effect runs | when it is interrupted |
+| `layer.build_scoped(&scope)` | into a caller's `Scope` | when the caller closes the scope |
+| `layer.build()` | as an effect returning `Out` | only if the build fails; use an owner above for resources |
+
+## Memoised within one build
+
+A `Layer` is cheap to clone, and every clone is the same layer: within **one build**, a layer
+used in several places is constructed once and everyone receives the same `Arc`s. Separate builds
+construct again, and `layer.fresh()` opts one layer out of the sharing.
+
+## Resources and cleanup
+
+A layer can own a resource: `Layer::acquire_release(acquire, release)` registers `release` in the
+build's scope, and `Layer::scoped(|scope| ..)` registers any finalizers. Finalizers are effects
+(they may be asynchronous) and run once, uninterruptibly, in reverse order of acquisition, when the
+build's owner ends.
 
 ## The key insight
 
-- **Effects** are programs — *what to do* with capabilities
-- **Providers** are constructors — *how to build* capabilities
+- **Effects** are programs: *what to do* with capabilities.
+- **Layers** are constructors: *how to build* capabilities, and how to release them.
 
-[`provide!(DatabaseLive)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) registers the recipe; [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) executes the graph and passes the resulting `Env` to your effect.
-
-## Lifecycle and cleanup
-
-Providers run synchronously at startup. For resources with async teardown, build handles in `provide` and register finalizers in effect [`Scope`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/resource/scope.rs) code (see Chapter 10). The provider graph itself focuses on *construction order*, not fiber lifetimes.
+Both are values, both are typed, and the compiler checks that they fit together.

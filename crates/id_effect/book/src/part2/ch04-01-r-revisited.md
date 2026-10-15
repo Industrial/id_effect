@@ -1,121 +1,104 @@
 # R Revisited — More Than Just a Type Parameter
 
-You've seen `R` in function signatures:
-
 ```rust
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
 ```
 
-It looks like "this needs `Database`." But what does that mean precisely?
+It reads "this needs a `Database`". What does that mean precisely?
 
 ## R as a contract
 
-`R` is a *promise to the compiler*. When you write:
+`R` is a promise the compiler holds you to. You cannot run `get_user(1)` until a `Database` has
+been provided:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r| {
-        let db = ~Database;
-        Ok(db.fetch_user(id))
-    })
-}
+// Does not compile: `block_on` needs `Effect<_, _, HNil>`, this is `caps!(Database)`
+// get_user(1).block_on();
+
+// Compiles: `provide` removes `Database` from `R`
+let exit = get_user(1).provide(Database::connect("mem://")).block_on();
 ```
 
-You are declaring: "To run this effect, you must supply `Database` in the environment." The compiler holds you to that promise. You cannot call `run_with` without a provider for `Database`.
+Reading a capability that is not in `R` fails at compile time too, with a message that names it:
 
-```rust
-// Missing DatabaseLive in the provider list → runtime CapabilityError at run_with
-// run_with([], get_user(1))?;
-
-// Correct — graph builds Database before the effect runs
-run_with([provide!(DatabaseLive)], get_user(1))?;
+```text
+error[E0277]: capability `Metrics` is not in this effect's environment
+   = note: add `Metrics` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
 ```
-
-The contract is not a comment. It is enforced by `caps!(…)` on the effect type and by [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) at the edge.
 
 ## R flows through composition
 
-When you combine effects with `effect!`, their capability requirements merge:
+Inside `effect!`, `~sub_effect` accepts any sub-effect whose `R` is **contained in** the block's
+`R` (in any order). The block declares the union:
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
-fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { ... }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
+fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { /* ... */ }
 
-// Combined: still caps!(Database) — both needed the same key
+// Both need the same capability: still caps!(Database)
 fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Database)> {
-    effect!(|r| {
-        let user = ~ get_user(id);
-        let posts = ~ get_posts(user.id);
-        (user, posts)
-    })
+  effect!({
+    let user = ~get_user(id);
+    let posts = ~get_posts(user.id);
+    (user, posts)
+  })
 }
 ```
 
-When effects need *different* keys:
+When the steps need different capabilities, the block needs both:
 
 ```rust
-fn log(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> { ... }
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
+fn audit(msg: String) -> Effect<(), AuditError, caps!(AuditLog)> { /* ... */ }
 
-// Combined: caps!(Database, EffectLogger) — needs BOTH
-fn get_user_logged(id: u64) -> Effect<User, AppError, caps!(Database, EffectLogger)> {
-    effect!(|r| {
-        ~ log(&format!("Fetching user {id}")).map_error(AppError::Log);
-        let user = ~ get_user(id).map_error(AppError::Db);
-        user
-    })
+// AppError: From<AuditError> + From<DbError>
+fn get_user_logged(id: u64) -> Effect<User, AppError, caps!(Database, AuditLog)> {
+  effect!({
+    ~audit(format!("fetching user {id}"));
+    ~get_user(id)
+  })
 }
 ```
 
-The composed effect's `caps!(…)` list is the union of what each step needs. You wire every key once at `main` or in tests:
-
-```rust
-run_with(
-    [provide!(DatabaseLive), provide!(LoggerLive)],
-    get_user_logged(42),
-)?;
-```
+Forgetting `AuditLog` in the block's `caps!` is a compile error at the `~audit(..)`.
 
 ## Multiple requirements
 
-As functions grow, they naturally accumulate keys:
-
 ```rust
-fn process_order(order: Order) -> Effect<
-    Receipt,
-    AppError,
-    caps!(Database, PaymentGateway, EmailService, EffectLogger),
-> {
-    effect!(|r| {
-        ~ log("Processing order").map_error(AppError::Log);
-        let user = ~ get_user(order.user_id).map_error(AppError::Db);
-        let payment = ~ charge(order.total).map_error(AppError::Payment);
-        ~ send_confirmation(&user.email).map_error(AppError::Email);
-        Receipt::new(payment)
-    })
+fn process_order(order: Order)
+  -> Effect<Receipt, AppError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
+{
+  effect!({
+    ~audit("processing order".into());
+    let user = ~get_user(order.user_id);
+    let payment = ~charge(order.total);
+    ~send_confirmation(&user.email);
+    Receipt::new(payment)
+  })
 }
 ```
 
-Just from the type signature you know this function touches four capability services. No need to read the implementation.
+From the signature alone you know this function touches four capabilities.
 
 ## Why R instead of parameters?
 
-Traditional Rust would thread dependencies as function parameters:
-
 ```rust
 fn process_order(
-    order: Order,
-    db: &Database,
-    pay: &PaymentGateway,
-    email: &EmailService,
-    log: &Logger,
-) -> Result<Receipt, AppError> { ... }
+  order: Order,
+  db: &Database,
+  pay: &PaymentGateway,
+  mail: &Mailer,
+  log: &AuditLog,
+) -> Result<Receipt, AppError> { /* ... */ }
 ```
 
-That works, but it forces every layer of your call stack to accept and forward dependencies it may not directly use. The `R` parameter encodes the same information in the *return type* — and [`caps!(…)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) names each dependency so two services of the same Rust type remain distinct.
+Parameters work, but every layer of the call stack must accept and forward dependencies it may not
+use. `R` carries the same information in the return type, and the edge supplies it once.
 
-## Foreshadowing
+Two capabilities of the same Rust type cannot both be in one `R` (`caps!(Url, Url)` is a compile
+error): the type is the identity, so wrap them in newtypes (`PrimaryDb(Pool)`, `ReplicaDb(Pool)`).
 
-You may be wondering: how does the runtime store `Database` and `EffectLogger` in one place?
+## The runtime side
 
-[`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) is an order-independent map keyed by capability identity — not a positional tuple. Chapter 5 shows how `` generates each `*Key` type. For now: **`R = caps!(…)` is the compile-time list; `Env` is the runtime container.**
+At run time the environment is a value of the `R` type: an `HCons` of `Arc`ed capabilities.
+Providing it is cheap (an `Arc` clone per capability), and reading one is a type-directed field
+access resolved at compile time. Chapter 5 looks at this structure in detail.
