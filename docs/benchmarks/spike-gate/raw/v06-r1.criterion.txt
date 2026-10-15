@@ -1,0 +1,154 @@
+bench-run: baseline 'v06-r1' from /data/Code/rust/id_effect/.tmp/bench-v0.6 @ 4894861156a3 into /data/Code/rust/id_effect/.tmp/target-bench-v06/criterion
+bench-run: id_effect --bench phase0_baseline
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized]]8;;\ target(s) in 0.12s
+[1m[92m     Running[0m benches/phase0_baseline.rs (.tmp/target-bench-v06/release/deps/phase0_baseline-bcd5151859222f92)
+Gnuplot not found, using plotters backend
+Benchmarking phase0/bench_effect_map_chain
+Benchmarking phase0/bench_effect_map_chain: Warming up for 3.0000 s
+Benchmarking phase0/bench_effect_map_chain: Collecting 100 samples in estimated 5.0003 s (73M iterations)
+Benchmarking phase0/bench_effect_map_chain: Analyzing
+phase0/bench_effect_map_chain
+                        time:   [68.938 ns 69.135 ns 69.323 ns]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+
+Benchmarking phase0/bench_effect_flat_map_chain
+Benchmarking phase0/bench_effect_flat_map_chain: Warming up for 3.0000 s
+Benchmarking phase0/bench_effect_flat_map_chain: Collecting 100 samples in estimated 5.0000 s (54M iterations)
+Benchmarking phase0/bench_effect_flat_map_chain: Analyzing
+phase0/bench_effect_flat_map_chain
+                        time:   [91.700 ns 91.879 ns 92.075 ns]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+
+Benchmarking phase0/bench_stream_throughput_collect
+Benchmarking phase0/bench_stream_throughput_collect: Warming up for 3.0000 s
+Benchmarking phase0/bench_stream_throughput_collect: Collecting 100 samples in estimated 5.0097 s (1.2M iterations)
+Benchmarking phase0/bench_stream_throughput_collect: Analyzing
+phase0/bench_stream_throughput_collect
+                        time:   [4.0941 µs 4.1063 µs 4.1198 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking phase0/bench_schedule_retry_overhead
+Benchmarking phase0/bench_schedule_retry_overhead: Warming up for 3.0000 s
+Benchmarking phase0/bench_schedule_retry_overhead: Collecting 100 samples in estimated 5.0002 s (47M iterations)
+Benchmarking phase0/bench_schedule_retry_overhead: Analyzing
+phase0/bench_schedule_retry_overhead
+                        time:   [105.99 ns 106.61 ns 107.22 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking phase0/bench_env_insert_overhead
+Benchmarking phase0/bench_env_insert_overhead: Warming up for 3.0000 s
+Benchmarking phase0/bench_env_insert_overhead: Collecting 100 samples in estimated 5.0002 s (134M iterations)
+Benchmarking phase0/bench_env_insert_overhead: Analyzing
+phase0/bench_env_insert_overhead
+                        time:   [37.414 ns 37.539 ns 37.678 ns]
+Found 5 outliers among 100 measurements (5.00%)
+  5 (5.00%) high mild
+
+bench-run: id_effect --bench gate_core
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized]]8;;\ target(s) in 0.13s
+[1m[92m     Running[0m benches/gate_core.rs (.tmp/target-bench-v06/release/deps/gate_core-70b46061101cdf8e)
+Gnuplot not found, using plotters backend
+Benchmarking gate/async_bind_64
+Benchmarking gate/async_bind_64: Warming up for 3.0000 s
+Benchmarking gate/async_bind_64: Collecting 100 samples in estimated 5.0072 s (3.0M iterations)
+Benchmarking gate/async_bind_64: Analyzing
+gate/async_bind_64      time:   [1.6453 µs 1.6563 µs 1.6678 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  3 (3.00%) high mild
+
+Benchmarking gate/flat_map_depth_10k
+Benchmarking gate/flat_map_depth_10k: Warming up for 3.0000 s
+Benchmarking gate/flat_map_depth_10k: Collecting 100 samples in estimated 7.4325 s (15k iterations)
+Benchmarking gate/flat_map_depth_10k: Analyzing
+gate/flat_map_depth_10k time:   [506.00 µs 511.29 µs 516.96 µs]
+
+Benchmarking stream/pull_map_10k
+Benchmarking stream/pull_map_10k: Warming up for 3.0000 s
+Benchmarking stream/pull_map_10k: Collecting 100 samples in estimated 5.0026 s (278k iterations)
+Benchmarking stream/pull_map_10k: Analyzing
+stream/pull_map_10k     time:   [17.552 µs 17.653 µs 17.766 µs]
+Found 12 outliers among 100 measurements (12.00%)
+  4 (4.00%) high mild
+  8 (8.00%) high severe
+
+Benchmarking stream/map_effect_1k
+Benchmarking stream/map_effect_1k: Warming up for 3.0000 s
+Benchmarking stream/map_effect_1k: Collecting 100 samples in estimated 9.2818 s (200 iterations)
+Benchmarking stream/map_effect_1k: Analyzing
+stream/map_effect_1k    time:   [45.765 ms 46.070 ms 46.404 ms]
+Found 14 outliers among 100 measurements (14.00%)
+  6 (6.00%) high mild
+  8 (8.00%) high severe
+
+Benchmarking coord/channel_spsc_10k
+Benchmarking coord/channel_spsc_10k: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 6.0s, enable flat sampling, or reduce sample count to 60.
+Benchmarking coord/channel_spsc_10k: Collecting 100 samples in estimated 6.0441 s (5050 iterations)
+Benchmarking coord/channel_spsc_10k: Analyzing
+coord/channel_spsc_10k  time:   [1.2061 ms 1.2099 ms 1.2145 ms]
+
+Benchmarking coord/queue_bounded_10k
+Benchmarking coord/queue_bounded_10k: Warming up for 3.0000 s
+Benchmarking coord/queue_bounded_10k: Collecting 100 samples in estimated 7.4344 s (10k iterations)
+Benchmarking coord/queue_bounded_10k: Analyzing
+coord/queue_bounded_10k time:   [754.09 µs 757.76 µs 761.78 µs]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high severe
+
+bench-run: id_effect_tokio --bench gate_fiber
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized]]8;;\ target(s) in 0.08s
+[1m[92m     Running[0m benches/gate_fiber.rs (.tmp/target-bench-v06/release/deps/gate_fiber-d49e59b1664a9d7a)
+Gnuplot not found, using plotters backend
+Benchmarking gate/spawn_join_10k
+Benchmarking gate/spawn_join_10k: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 70.3s.
+Benchmarking gate/spawn_join_10k: Collecting 10 samples in estimated 70.257 s (10 iterations)
+Benchmarking gate/spawn_join_10k: Analyzing
+gate/spawn_join_10k     time:   [6.8092 s 6.8342 s 6.8611 s]
+Found 1 outliers among 10 measurements (10.00%)
+  1 (10.00%) high mild
+Benchmarking gate/sleep_1k_x_1ms
+Benchmarking gate/sleep_1k_x_1ms: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 6.9s.
+Benchmarking gate/sleep_1k_x_1ms: Collecting 10 samples in estimated 6.9265 s (10 iterations)
+Benchmarking gate/sleep_1k_x_1ms: Analyzing
+gate/sleep_1k_x_1ms     time:   [684.54 ms 689.33 ms 694.90 ms]
+
+Benchmarking gate/sleep_cpu_1k_x_1ms
+Benchmarking gate/sleep_cpu_1k_x_1ms: Warming up for 3.0000 s
+
+Warning: Unable to complete 10 samples in 5.0s. You may wish to increase target time to 6.9s.
+Benchmarking gate/sleep_cpu_1k_x_1ms: Collecting 10 samples in estimated 6.9093 s (10 iterations)
+Benchmarking gate/sleep_cpu_1k_x_1ms: Analyzing
+gate/sleep_cpu_1k_x_1ms time:   [6.7709 s cpu 6.7917 s cpu 6.8104 s cpu]
+
+bench-run: id_effect_axum --bench gate_request
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized]]8;;\ target(s) in 0.22s
+[1m[92m     Running[0m benches/gate_request.rs (.tmp/target-bench-v06/release/deps/gate_request-382f606c48b495f6)
+Gnuplot not found, using plotters backend
+Benchmarking gate/axum_request_oneshot
+Benchmarking gate/axum_request_oneshot: Warming up for 3.0000 s
+Benchmarking gate/axum_request_oneshot: Collecting 100 samples in estimated 5.0795 s (96k iterations)
+Benchmarking gate/axum_request_oneshot: Analyzing
+gate/axum_request_oneshot
+                        time:   [52.450 µs 52.702 µs 52.981 µs]
+Found 7 outliers among 100 measurements (7.00%)
+  7 (7.00%) high mild
+Benchmarking gate/axum_request_caps
+Benchmarking gate/axum_request_caps: Warming up for 3.0000 s
+Benchmarking gate/axum_request_caps: Collecting 100 samples in estimated 5.1563 s (96k iterations)
+Benchmarking gate/axum_request_caps: Analyzing
+gate/axum_request_caps  time:   [53.615 µs 54.054 µs 54.560 µs]
+Found 8 outliers among 100 measurements (8.00%)
+  8 (8.00%) high mild
+
+bench-run: done; export with: bash scripts/bench-export.sh v06-r1 OUT.json

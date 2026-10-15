@@ -14,4 +14,4 @@ for r in $(seq "$first" "$last"); do
     MAXWAIT=0 bash $G/round.sh a "a-r$r"
     MAXWAIT=0 bash $G/round.sh b "b-r$r"
 done
-echo DRIVER-DONE | tee -a docs/benchmarks/spike-gate/rounds.log
+echo DRIVER-DONE | tee -a docs/benchmarks/spike-gate/rounds.txt

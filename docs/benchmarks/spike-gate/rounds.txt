@@ -1,0 +1,19 @@
+v0.6 what=v06 rc=0 start=2026-10-15T00:40:29Z end=2026-10-15T00:44:27Z busy_before=0/load=5.18 waited_s=0 busy_at_start=0/load=5.18 max_busy_during=1 (own cargo=1) => quiet
+v06-r1 what=v06 rc=0 start=2026-10-15T00:45:29Z end=2026-10-15T00:49:19Z busy_before=0/load=14.78 waited_s=60 busy_at_start=0/load=7.00 max_busy_during=1 (own cargo=1) => quiet
+a-r1 what=a rc=0 start=2026-10-15T00:49:20Z end=2026-10-15T00:50:33Z busy_before=0/load=11.05 waited_s=0 busy_at_start=0/load=11.05 max_busy_during=1 (own cargo=1) => quiet
+b-r1 what=b rc=0 start=2026-10-15T00:50:35Z end=2026-10-15T00:51:48Z busy_before=0/load=5.29 waited_s=0 busy_at_start=0/load=5.29 max_busy_during=1 (own cargo=1) => quiet
+v06-r2 what=v06 rc=0 start=2026-10-15T00:51:49Z end=2026-10-15T00:55:35Z busy_before=0/load=5.25 waited_s=0 busy_at_start=0/load=5.25 max_busy_during=2 (own cargo=1) => contended
+a-r2 what=a rc=0 start=2026-10-15T00:55:37Z end=2026-10-15T00:56:49Z busy_before=0/load=13.50 waited_s=0 busy_at_start=0/load=13.50 max_busy_during=1 (own cargo=1) => quiet
+b-r2 what=b rc=0 start=2026-10-15T00:56:50Z end=2026-10-15T00:58:00Z busy_before=0/load=7.72 waited_s=0 busy_at_start=0/load=7.72 max_busy_during=1 (own cargo=1) => quiet
+v06-r3 what=v06 rc=0 start=2026-10-15T00:58:02Z end=2026-10-15T01:01:50Z busy_before=0/load=3.95 waited_s=0 busy_at_start=0/load=3.95 max_busy_during=1 (own cargo=1) => quiet
+a-r3 what=a rc=0 start=2026-10-15T01:01:52Z end=2026-10-15T01:03:03Z busy_before=0/load=9.45 waited_s=0 busy_at_start=0/load=8.85 max_busy_during=1 (own cargo=1) => quiet
+b-r3 what=b rc=0 start=2026-10-15T01:03:04Z end=2026-10-15T01:04:15Z busy_before=0/load=6.72 waited_s=0 busy_at_start=0/load=6.72 max_busy_during=1 (own cargo=1) => quiet
+DRIVER-DONE
+v06-r4 what=v06 rc=0 start=2026-10-15T01:05:19Z end=2026-10-15T01:09:09Z busy_before=0/load=3.06 waited_s=0 busy_at_start=0/load=3.06 max_busy_during=1 (own cargo=1) => quiet
+a-r4 what=a rc=0 start=2026-10-15T01:09:10Z end=2026-10-15T01:10:23Z busy_before=0/load=11.58 waited_s=0 busy_at_start=0/load=11.58 max_busy_during=1 (own cargo=1) => quiet
+b-r4 what=b rc=0 start=2026-10-15T01:10:25Z end=2026-10-15T01:11:38Z busy_before=0/load=5.92 waited_s=0 busy_at_start=0/load=5.92 max_busy_during=1 (own cargo=1) => quiet
+v06-r5 what=v06 rc=0 start=2026-10-15T01:11:40Z end=2026-10-15T01:15:27Z busy_before=0/load=4.91 waited_s=0 busy_at_start=0/load=4.91 max_busy_during=1 (own cargo=1) => quiet
+a-r5 what=a rc=0 start=2026-10-15T01:15:29Z end=2026-10-15T01:16:40Z busy_before=0/load=8.58 waited_s=0 busy_at_start=0/load=8.58 max_busy_during=1 (own cargo=1) => quiet
+b-r5 what=b rc=0 start=2026-10-15T01:16:42Z end=2026-10-15T01:17:53Z busy_before=0/load=3.93 waited_s=0 busy_at_start=0/load=3.69 max_busy_during=1 (own cargo=1) => quiet
+DRIVER-DONE
+probe-r1 what=probe rc=0 start=2026-10-15T01:18:13Z end=2026-10-15T01:20:37Z busy_before=0/load=2.46 waited_s=0 busy_at_start=0/load=2.46 max_busy_during=1 (own cargo=1) => quiet

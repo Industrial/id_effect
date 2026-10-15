@@ -1,0 +1,69 @@
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized]]8;;\ target(s) in 0.07s
+[1m[92m     Running[0m benches/gate_b.rs (.tmp/target-spikes/release/deps/gate_b-e238d92b728c6790)
+Gnuplot not found, using plotters backend
+Benchmarking phase0/bench_effect_map_chain
+Benchmarking phase0/bench_effect_map_chain: Warming up for 3.0000 s
+Benchmarking phase0/bench_effect_map_chain: Collecting 100 samples in estimated 5.0000 s (445M iterations)
+Benchmarking phase0/bench_effect_map_chain: Analyzing
+phase0/bench_effect_map_chain
+                        time:   [10.847 ns 10.897 ns 10.952 ns]
+Found 9 outliers among 100 measurements (9.00%)
+  2 (2.00%) high mild
+  7 (7.00%) high severe
+
+Benchmarking phase0/bench_effect_flat_map_chain
+Benchmarking phase0/bench_effect_flat_map_chain: Warming up for 3.0000 s
+Benchmarking phase0/bench_effect_flat_map_chain: Collecting 100 samples in estimated 5.0000 s (843M iterations)
+Benchmarking phase0/bench_effect_flat_map_chain: Analyzing
+phase0/bench_effect_flat_map_chain
+                        time:   [5.9272 ns 5.9496 ns 5.9712 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking gate/async_bind_64
+Benchmarking gate/async_bind_64: Warming up for 3.0000 s
+Benchmarking gate/async_bind_64: Collecting 100 samples in estimated 5.0012 s (1.5M iterations)
+Benchmarking gate/async_bind_64: Analyzing
+gate/async_bind_64      time:   [3.3568 µs 3.3733 µs 3.3922 µs]
+Found 8 outliers among 100 measurements (8.00%)
+  1 (1.00%) low mild
+  3 (3.00%) high mild
+  4 (4.00%) high severe
+
+Benchmarking gate/flat_map_depth_10k
+Benchmarking gate/flat_map_depth_10k: Warming up for 3.0000 s
+Benchmarking gate/flat_map_depth_10k: Collecting 100 samples in estimated 5.0002 s (99M iterations)
+Benchmarking gate/flat_map_depth_10k: Analyzing
+gate/flat_map_depth_10k time:   [51.177 ns 51.588 ns 52.008 ns]
+Found 11 outliers among 100 measurements (11.00%)
+  7 (7.00%) high mild
+  4 (4.00%) high severe
+
+Benchmarking b/interrupt_sleeping_fiber
+Benchmarking b/interrupt_sleeping_fiber: Warming up for 3.0000 s
+Benchmarking b/interrupt_sleeping_fiber: Collecting 100 samples in estimated 5.0009 s (15M iterations)
+Benchmarking b/interrupt_sleeping_fiber: Analyzing
+b/interrupt_sleeping_fiber
+                        time:   [324.16 ns 325.09 ns 326.05 ns]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+
+Benchmarking gate/spawn_join_10k
+Benchmarking gate/spawn_join_10k: Warming up for 3.0000 s
+Benchmarking gate/spawn_join_10k: Collecting 10 samples in estimated 5.0628 s (490 iterations)
+Benchmarking gate/spawn_join_10k: Analyzing
+gate/spawn_join_10k     time:   [7.2492 ms 8.4242 ms 9.6175 ms]
+Benchmarking gate/sleep_1k_x_1ms
+Benchmarking gate/sleep_1k_x_1ms: Warming up for 3.0000 s
+Benchmarking gate/sleep_1k_x_1ms: Collecting 10 samples in estimated 5.0244 s (1500 iterations)
+Benchmarking gate/sleep_1k_x_1ms: Analyzing
+gate/sleep_1k_x_1ms     time:   [3.3263 ms 3.3494 ms 3.3732 ms]
+
+Benchmarking gate/sleep_cpu_1k_x_1ms
+Benchmarking gate/sleep_cpu_1k_x_1ms: Warming up for 3.0000 s
+Benchmarking gate/sleep_cpu_1k_x_1ms: Collecting 10 samples in estimated 5.0136 s (1490 iterations)
+Benchmarking gate/sleep_cpu_1k_x_1ms: Analyzing
+gate/sleep_cpu_1k_x_1ms time:   [12.847 ms cpu 12.920 ms cpu 12.986 ms cpu]
+
