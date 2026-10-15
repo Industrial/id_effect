@@ -9,7 +9,7 @@
 //!
 //! The synchronous entry points ([`ProcessNode::spawn`], [`ProcessNode::link`],
 //! monitors, [`ProcessNode::exit`], [`Addr::send_now`]) never run an effect:
-//! they enqueue into a [`Mailbox`](crate::Mailbox) (a `std` mutex that is never
+//! they enqueue into a [`Mailbox`] (a `std` mutex that is never
 //! held across an await) and spawn fibers, so they are safe from plain code and
 //! from inside any async runtime.
 

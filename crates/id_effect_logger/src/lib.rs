@@ -33,7 +33,7 @@
 //! The thread-local pipeline (minimum level, annotations, spans, composite backend) is still
 //! installed by building the capability providers ([`provide_minimum_log_level`],
 //! [`LogMetadataLive`], [`provide_composite_logger`]) on the thread that runs the program; the
-//! installed refs are `next` [`FiberRef`](id_effect::next::FiberRef)s.
+//! installed refs are `next` [`FiberRef`]s.
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
