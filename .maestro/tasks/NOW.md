@@ -1,5 +1,5 @@
 # NOW
-Updated: 2026-10-15T18:34:35.442Z
+Updated: 2026-10-15T19:00:30.803Z
 
 ## In flight (0)
 None.
@@ -13,10 +13,8 @@ Spec: /data/Code/rust/id_effect/.maestro/specs/id-effect-consolidation-0-6.md
 ## Ready to ship (0)
 None.
 
-## Blocked (1)
-### tsk-mv8ohjj3-btygb9 . W7: Tag v0.7.0 and publish (human gate H3)
-Reason: H3 approved but account lacks repo admin/merge rights: publish.yml dispatch 403, PR merge denied. Needs maintainer to merge #104, tag v0.7.0, approve crates-io env.
-
+## Blocked (0)
+None.
 
 ## Stuck (0)
 None.
