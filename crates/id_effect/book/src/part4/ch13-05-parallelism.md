@@ -1,105 +1,89 @@
-# Implicit Parallelism — Compute Fabric
+# Parallelism — Compute Fabric and Fibers
 
-Bulk transforms and effectful stream steps parallelize **implicitly** through [**Compute Fabric**](../part3/ch12-00-compute-fabric.md). There is no public `Parallelism` type and no `*_with` / `*_par` policy surface — Fabric decides when Rayon or bounded effect concurrency is profitable.
+There are two kinds of parallelism in `id_effect`, and they are controlled differently:
 
-Use the **primary method name** (`map`, `filter`, `sort_with`, …). Opt out with `*_serial` when you need `FnMut`, non-`Send` closures, or deterministic ordering.
+| Workload | API | Parallelism |
+|----------|-----|-------------|
+| Pure bulk work on a chunk (`Stream::map`, `Stream::filter`) | primary method name | Rayon per chunk, when the Compute Fabric says it pays off (feature `compute`) |
+| Pure, ordered or `FnMut` work | `map_serial`, `filter_serial` | none: in order on the pulling fiber |
+| Effectful stream steps | `map_effect` / `map_effect_par(n, f)` | sequential / at most `n` child fibers |
+| Independent effects | `all`, `for_each_par`, `zip_par`, `~(a, b)` in `effect!` | child fibers under a `Concurrency` policy |
 
-## How dispatch works
+## Pure bulk work: Rayon through the Fabric
 
-Every `run_blocking` / `run_async` / `run_with` boundary refreshes the thread-local [`AdaptiveContext`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/adaptive.rs) from the installed supervisor. Bulk paths call [`parallel_if_profitable`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/dispatch.rs), which consults `should_parallelize_current(len)` and runs Rayon via [`install_parallel`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/rayon_pool.rs) when the snapshot says it pays off.
+`Stream::map` and `Stream::filter` take `Fn + Send + Sync` closures and apply them per upstream
+chunk. With the `compute` feature (on by default), each chunk asks
+`id_effect::compute::should_parallelize(len)` (the default threshold adjusted by the current
+`AdaptiveContext`) and runs on Rayon via `install_parallel` when it says yes. Output order is
+preserved either way. Without the feature, bulk operations run serially and `rayon` / `sysinfo`
+are not built.
 
-| Workload | API | Parallelism model |
-|----------|-----|-------------------|
-| Pure bulk (`Vec`, `HashMap`, stream chunks, …) | `map`, `filter`, `sort_with`, … | Rayon per chunk when profitable |
-| Effectful stream | [`Stream::map_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) | Admission-bounded async concurrency per chunk |
-| `effect!` binds | primary `~` syntax | EDG parallelizes **independent** bind sets |
-| Deterministic tests | `*_serial`, `#[effect(serial)]` | explicit opt-out |
-
-Under memory pressure the supervisor lowers admission and raises the element threshold; under headroom it admits more fibers and parallelizes smaller chunks. See example `120_compute_fabric_memory_cap.rs`.
-
-## Collections and `vec`
-
-```rust
-use id_effect::vec;
-
-let doubled = vec::map(vec![1, 2, 3], |x| x * 2);
-// Fabric may use Rayon when len is large enough and headroom allows.
-```
-
-Escape hatch for captured mutable state or non-`Send` closures:
-
-```rust
-use id_effect::vec;
-
-let mut acc = 0;
-vec::map_serial(v, |x| { acc += x; acc });
-```
-
-The same pattern applies to `HashMap::map_values`, `filter`, red-black tree scans, `sort_with`, and similar bulk APIs.
-
-## Streams — pure transforms
-
-`Stream::map` and `Stream::filter` apply Fabric-aware Rayon **per upstream chunk**:
-
-```rust
+```rust,ignore
 use id_effect::Stream;
 
-Stream::from_iterable(0..10_000)
-    .map(|n| n * 2)
-    .filter(|n| *n % 2 == 0)
-    .run_collect();
+let evens = Stream::<i64, ()>::range(0, 10_000)
+  .map(|n| n * 2)
+  .filter(|n: &i64| n % 4 == 0)
+  .run_collect();
 ```
 
-For `FnMut` or ordering-sensitive work, use `map_serial` / `filter_serial`:
+Use `map_serial` / `filter_serial` for `FnMut` closures with captured mutable state or
+order-sensitive side effects (example `071_stream_map_serial`):
 
-```rust
+```rust,ignore
 let mut offset = 0;
-stream.map_serial(move |n| { offset += 1; n + offset });
+let s = Stream::<i32, ()>::from_iterable(1..=8).map_serial(move |n| {
+  offset += 1;
+  n + offset
+});
 ```
 
-See example `071_stream_map_serial.rs`.
+The same rule applies to the bulk `Vec` helpers in `id_effect_fp`
+(`id_effect_fp::algebra::functor::vec::map` / `map_serial`) and to `order::sort_with` /
+`sort_with_serial` in `id_effect::schema::order`.
 
-## Streams — effectful steps
+## Effectful stream steps
 
-When each element runs an `Effect`, use [`Stream::map_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs). Concurrency is capped by the current admission budget (at least one permit):
+`map_effect(f)` is sequential: one element's effect finishes before the next starts, so side
+effects happen in stream order. `map_effect_par(n, f)` runs at most `max(n, 1)` effects at once as
+child fibers of the pulling fiber; output is in stream order, side-effect order is not, and the
+first failure interrupts the chunk's in-flight effects (example `070_stream_map_par_n`).
 
-```rust
-use id_effect::{Stream, succeed};
-
-Stream::from_iterable(items)
-    .map_effect(|item| process(item))
-    .run_collect();
+```rust,ignore
+let fetched = Stream::<u32, ()>::from_iterable(0..8).map_effect_par(4, |n| succeed(n * 2));
 ```
 
-Output order matches stream order. Each mapper receives a **clone** of the environment `R`, so `R` must be `Clone + Send + Sync`.
+## Fiber concurrency and the Fabric's admission
 
-With Compute Fabric installed, a memory cap or throttle directly reduces how many effect mappers run in flight. See example `122_compute_fabric_effect_parallel.rs`.
+`all(effects, concurrency)`, `for_each_par` and `zip_par` fork child fibers under a
+`Concurrency` policy:
 
-## `effect!` and the Effect Dependency Graph
+- `Concurrency::Unbounded` starts every child at once;
+- `Concurrency::Bounded(n)` runs at most `n`;
+- `Concurrency::Inherit` awaits a permit from the ambient `Fabric` before each child starts
+  (with no ambient fabric it behaves like `Unbounded`).
 
-Independent `~` steps with no data or capability conflict may run concurrently when the EDG finds a parallel bind set. Dependent steps and overlapping capability borrows stay sequential.
+Provide a fabric around an effect with `Fabric::with_capacity(n).provide(eff)`, or put a Compute
+Fabric's telemetry-driven admission in front of fibers with `Fabric::from_compute(fabric)`. Under
+memory pressure the governor lowers admission, so fewer `Inherit` children run at once
+(examples `120_compute_fabric_memory_cap`, `122_compute_fabric_effect_parallel`):
 
-Opt out per block:
+```rust,ignore
+use std::sync::Arc;
+use id_effect::compute::ComputeFabric;
+use id_effect::{Concurrency, Effect, Fabric, all, succeed};
 
-```rust
-#[effect(serial)]
-effect! { |r| {
-    ~step_a();
-    ~step_b();
-}}
+let fabric = Arc::new(ComputeFabric::memory_cap_max_cpu(0.85));
+fabric.governor().tick();
+let work: Vec<Effect<u32, ()>> = (0..4).map(|_| succeed(42)).collect();
+let out = Fabric::from_compute(fabric)
+  .provide(all(work, Concurrency::Inherit))
+  .block_on();
 ```
 
-Example: `122_compute_fabric_effect_parallel.rs` (stream effect mapping under Fabric). For multi-step programs, see [Compute Fabric](../part3/ch12-00-compute-fabric.md) § Effect binds.
+Inside `effect!`, `~(a, b)` joins two sub-effects in parallel; plain `~a; ~b` binds run one after
+the other. See [Compute Fabric](../part3/ch12-00-compute-fabric.md) for the admission model and
+the governor.
 
-## Migration from 0.3.x
-
-| Old (0.3.x) | New (0.4.0) |
-|-------------|-------------|
-| `Parallelism::Auto / ForceParallel / Serial` | removed — Fabric decides |
-| `map_with(Parallelism::…, f)` | `map(f)` or `map_serial(f)` |
-| `*_par` (deprecated) | `map(f)` |
-| `Stream::map_par_n(n, f)` | `map_effect(f)` |
-| `Stream::map_par_adaptive(f)` | `map_effect(f)` |
-| `compute::effective_threshold` | removed (internal to Fabric) |
-
-See [ADR 0008](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0008-implicit-parallelism.md) (supersedes the public surface of [ADR 0006](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0006-parallel-by-default.md)).
+See also [ADR 0008](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0008-implicit-parallelism.md)
+(implicit parallelism; Amendment 2 makes `map_effect` sequential).

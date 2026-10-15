@@ -1,167 +1,111 @@
-# Property Testing — Invariants over Inputs
+# Property Testing — Testing Invariants
 
-Unit tests check specific cases. Property tests check invariants: statements that must be true for *any* valid input. Effect programs are excellent targets for property testing because their inputs and outputs are well-typed, their schemas define exactly what's valid, and the provider system makes it easy to run thousands of executions cheaply.
+Unit tests check specific examples. Property tests check that an invariant holds for *all*
+inputs. id_effect has no property-testing module of its own: use the
+[`proptest`](https://docs.rs/proptest) crate as a dev-dependency and run each generated case with
+`block_on`. Pure and fused synchronous effects settle inline without touching an executor, so
+hundreds of cases run in milliseconds.
 
-## Setup
+## Effect Laws
 
-id_effect works with both [`proptest`](https://github.com/proptest-rs/proptest) and [`quickcheck`](https://github.com/BurntSushi/quickcheck). The examples below use `proptest`.
-
-```toml
-[dev-dependencies]
-proptest = "1"
-```
-
-## Testing Pure Effects
-
-```rust
+```rust,ignore
+use id_effect::{Effect, Exit, succeed};
 use proptest::prelude::*;
-use id_effect::{run_test, Exit};
 
 proptest! {
-    #[test]
-    fn addition_is_commutative(a: i64, b: i64) {
-        let eff_ab = add(a, b);
-        let eff_ba = add(b, a);
+  #[test]
+  fn zip_order_does_not_matter(a in any::<i32>(), b in any::<i32>()) {
+    let ab: Effect<(i32, i32)> = succeed(a).zip(succeed(b));
+    let ba: Effect<(i32, i32)> = succeed(b).zip(succeed(a)).map(|(x, y)| (y, x));
+    prop_assert_eq!(ab.block_on(), ba.block_on());
+  }
 
-        let Exit::Success(r_ab) = run_test(eff_ab, ()) else { return Ok(()); };
-        let Exit::Success(r_ba) = run_test(eff_ba, ()) else { return Ok(()); };
-
-        prop_assert_eq!(r_ab, r_ba);
-    }
+  #[test]
+  fn map_fusion(n in any::<i64>()) {
+    let f = |x: i64| x.wrapping_mul(3);
+    let g = |x: i64| x.wrapping_add(1);
+    let twice: Effect<i64> = succeed(n).map(f).map(g);
+    let once: Effect<i64> = succeed(n).map(move |x| g(f(x)));
+    prop_assert_eq!(twice.block_on(), once.block_on());
+  }
 }
 ```
 
-`proptest!` generates hundreds of `(a, b)` pairs. Each iteration calls `run_test`, which is cheap for pure effects.
+Effects are one-shot values, so build a fresh effect for every comparison instead of reusing one.
 
-## Testing Schema Round-Trips
+## Codec Round-Trips
 
-Schemas have a round-trip property: if you serialise a valid value and re-parse it, you get the same value back.
+Every schema combinator is tested this way in `crates/id_effect/tests/schema_roundtrip.rs`:
 
-```rust
-proptest! {
-    #[test]
-    fn user_schema_round_trips(
-        name in "[a-zA-Z]{1,50}",
-        age in 0i64..=120,
-    ) {
-        let original = User {
-            name: name.clone(),
-            age,
-        };
-
-        // Serialise to Unknown
-        let raw = User::schema().encode(&original);
-
-        // Re-parse
-        let parsed = User::schema().run(raw);
-
-        prop_assert!(parsed.is_ok());
-        prop_assert_eq!(parsed.unwrap(), original);
-    }
-}
-```
-
-Round-trip tests catch asymmetries between your serialiser and parser that unit tests often miss.
-
-## Testing Error Invariants
-
-Property tests are excellent for verifying that your error handling is consistent:
-
-```rust
-proptest! {
-    #[test]
-    fn withdraw_never_goes_negative(
-        balance in 0u64..=1_000_000,
-        amount  in 0u64..=1_000_000,
-    ) {
-        // `withdraw` is the `Stm<u64, InsufficientFunds>` from the STM chapter (id_effect_fp).
-        let account = run_blocking(commit(TRef::make(balance)), ()).expect("cell");
-        let exit = run_test(commit(withdraw(&account, amount)), ());
-        let new_balance = run_blocking(commit(account.read_stm::<()>()), ()).expect("read");
-
-        if amount <= balance {
-            // Should succeed and balance should be reduced
-            assert!(matches!(exit, Exit::Success(_)));
-            assert_eq!(new_balance, balance - amount);
-        } else {
-            // Should fail — balance must not go negative
-            assert!(matches!(exit, Exit::Failure(Cause::Fail(InsufficientFunds))));
-            assert_eq!(new_balance, balance);  // unchanged
-        }
-    }
-}
-```
-
-## Generating Arbitrary Service Environments
-
-For integration-style property tests, generate random state in the fake service:
-
-```rust
-struct Database;
-
-mock_capability!(InMemoryDbMock, Database, Arc<dyn Db>, "db/inmemory", || {
-    Arc::new(InMemoryDb::new()) as Arc<dyn Db>
-});
+```rust,ignore
+use id_effect::schema::{array, i64, optional, string};
 
 proptest! {
-    #[test]
-    fn get_user_returns_what_was_saved(user in arbitrary_user()) {
-        let env = build_env([provide!(InMemoryDbMock)]).expect("env");
+  #[test]
+  fn array_roundtrip(v in prop::collection::vec(".*", 0..16)) {
+    let s = array(string::<()>());
+    prop_assert_eq!(s.decode(s.encode(v.clone())), Ok(v));
+  }
 
-        // Save
-        run_test(save_user(user.clone()), env.clone());
-
-        // Retrieve
-        let exit = run_test(get_user(user.id), env);
-        let Exit::Success(retrieved) = exit else { return Ok(()); };
-
-        prop_assert_eq!(retrieved, user);
-    }
+  #[test]
+  fn optional_roundtrip(o in proptest::option::of(any::<i64>())) {
+    let s = optional(i64::<()>());
+    prop_assert_eq!(s.decode(s.encode(o)), Ok(o));
+  }
 }
 ```
 
-Define `arbitrary_user()` as a `proptest` `Strategy`:
+## Business Invariants with STM
 
-```rust
-fn arbitrary_user() -> impl Strategy<Value = User> {
-    (
-        "[a-zA-Z ]{1,50}",
-        0i64..=120,
-        any::<u64>().prop_map(UserId::new),
-    ).prop_map(|(name, age, id)| User { id, name, age })
-}
-```
-
-## Schema-Driven Generation
-
-When a type has `HasSchema`, you can derive a generator that always produces valid inputs:
-
-```rust
-// generate_valid::<User>() produces Users that would pass User::schema()
-let strategy = generate_valid::<User>();
+```rust,ignore
+use id_effect::{Cause, Exit};
+use id_effect_fp::{TRef, commit};
 
 proptest! {
-    #[test]
-    fn valid_users_are_always_accepted(user in generate_valid::<User>()) {
-        let raw = User::schema().encode(&user);
-        prop_assert!(User::schema().run(raw).is_ok());
+  #[test]
+  fn withdraw_never_overdraws(balance in 0_u64..10_000, amount in 0_u64..20_000) {
+    let account = commit(TRef::make(balance)).block_on().into_result().expect("cell");
+    let exit = commit(withdraw(&account, amount)).block_on();
+    let after = commit(account.read_stm::<()>()).block_on().into_result().expect("read");
+
+    match exit {
+      Exit::Success(left) => prop_assert_eq!(after, left),
+      Exit::Failure(Cause::Fail(InsufficientFunds)) => prop_assert_eq!(after, balance),
+      Exit::Failure(other) => prop_assert!(false, "unexpected {other:?}"),
     }
+    prop_assert!(after <= balance);
+  }
 }
 ```
 
-This ensures the generator and schema stay in sync: if you tighten a `refine` constraint, `generate_valid` starts producing inputs that satisfy the new constraint.
+(`withdraw` is the transaction from [Stm and commit](./ch12-03-stm-commit.md).)
+
+## Services with Fakes
+
+Provide a fake capability per case, exactly as in [Mocking](./ch15-03-mocking.md):
+
+```rust,ignore
+proptest! {
+  #[test]
+  fn save_then_find_returns_the_user(user in arb_user()) {
+    let repo = Arc::new(InMemoryUsers::default());
+    let id = user.id;
+    let program = save_user(user.clone()).flat_map(move |()| find_user(id));
+    let exit = program.provide(Users(repo)).block_on();
+    prop_assert_eq!(exit.into_result().ok(), Some(Some(user)));
+  }
+}
+```
+
+## Randomness and Time
+
+For code that draws random numbers through the `Random` capability, provide
+`TestRandom::seeded(seed).random()` and let proptest pick the seed; `feed_u64s` / `feed_f64s`
+queue exact values. For timing properties, generate durations and run the effect with the
+`run_virtual` helper from [Virtual Time with TestExecutor](./ch15-02-test-clock.md), so even long
+schedules stay fast.
 
 ## Shrinking
 
-`proptest` automatically shrinks failing inputs to the smallest example that still fails. Since `run_test` is fast (no I/O, no real timers), shrinking runs quickly even with hundreds of iterations.
-
-When a property fails, you'll see the minimal failing case:
-
-```
-Test failed. Minimal failing input:
-  name = ""
-  age = -1
-Reason: must not be empty (path: name)
-```
-
-This is far more actionable than a raw failure trace from a specific hand-chosen test case.
+`proptest` shrinks failing inputs to the smallest case that still fails. Because these tests do no
+real I/O and wait on no real timers, shrinking stays quick even over many iterations.

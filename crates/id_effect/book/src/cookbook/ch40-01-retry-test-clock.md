@@ -1,90 +1,90 @@
-# Retry with `TestClock`
+# Retry with virtual time
 
 **Problem.** A downstream call fails now and then. You want to retry it with exponential backoff,
 and you want a test that checks the backoff timing without sleeping or depending on wall-clock
 time.
 
-**Recipe.** Describe the policy as a `Schedule`, run the call through `retry_with_clock`, and pass a
-`TestClock`. `TestClock::sleep` records the deadline it was asked for and returns at once, so the
-retry loop runs instantly. `pending_sleeps()` then shows exactly which delays were requested.
+**Recipe.** Describe the policy as a `Schedule` and retry with `Effect::retry`. Effects are
+one-shot, so `retry` takes a *factory* that builds a fresh attempt each time. All delays are read
+from the executor the fiber runs on, so the same program runs on real time in production and on
+virtual time when a test runs it on a `TestExecutor`.
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use id_effect::{Effect, Schedule, TestClock, retry_with_clock, run_blocking};
+use id_effect::{Effect, Schedule, fail, succeed, suspend};
 
 /// Answers `503` for its first `failures` attempts, then `200 OK`.
-fn flaky(calls: &Arc<AtomicU32>, failures: u32) -> Effect<&'static str, &'static str, ()> {
+fn flaky(calls: &Arc<AtomicU32>, failures: u32) -> impl Fn() -> Effect<&'static str, &'static str>
++ Send + Sync + use<> {
   let calls = Arc::clone(calls);
-  Effect::new(move |_r: &mut ()| {
-    if calls.fetch_add(1, Ordering::SeqCst) < failures { Err("503") } else { Ok("200 OK") }
-  })
+  move || {
+    let calls = Arc::clone(&calls);
+    suspend(move || {
+      if calls.fetch_add(1, Ordering::SeqCst) < failures { fail("503") } else { succeed("200 OK") }
+    })
+  }
 }
 
 /// Exponential backoff from 100 ms, at most 4 retries.
-fn backoff() -> Schedule {
-  Schedule::exponential(Duration::from_millis(100)).compose(Schedule::recurs(4))
+fn backoff() -> Schedule<(Duration, u64), &'static str> {
+  Schedule::exponential(Duration::from_millis(100)).intersect(Schedule::recurs(4))
 }
 
-let start = Instant::now();
-let clock = TestClock::new(start);
 let calls = Arc::new(AtomicU32::new(0));
-let c = Arc::clone(&calls);
-
-let out = run_blocking(
-  retry_with_clock(move || flaky(&c, 3), backoff(), clock.clone(), None),
-  (),
-);
-
-assert_eq!(out, Ok("200 OK"));
-assert_eq!(calls.load(Ordering::SeqCst), 4);
-let waited: Vec<Duration> = clock.pending_sleeps().into_iter().map(|d| d - start).collect();
-assert_eq!(waited, [100, 200, 400].map(Duration::from_millis));
+let program = Effect::retry(flaky(&calls, 3), backoff());
 ```
 
-When the schedule runs out, `retry_with_clock` returns the last error (`Err("503")` after five
-attempts). Virtual time moves only when the test calls `clock.advance(…)`.
+In production, run it at the edge: `program.block_on()` waits 100 + 200 + 400 ms of real time.
+In a test, run it on a `TestExecutor` with the `run_virtual` helper from
+[Virtual Time with TestExecutor](../part4/ch15-02-test-clock.md), which advances the virtual clock
+from timer to timer:
 
-In production, pass a live clock (`LiveClock::new(runtime)`), or call `retry(make, schedule)`, which
-uses one for you. The schedule and the effect stay the same.
-
-Full example: [`crates/id_effect/examples/150_cookbook_retry_test_clock.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/examples/150_cookbook_retry_test_clock.rs)
-
-```bash
-cargo run -p id_effect --example 150_cookbook_retry_test_clock
+```rust,ignore
+#[test]
+fn retries_back_off_exponentially() {
+  let calls = Arc::new(AtomicU32::new(0));
+  let (exit, took) = run_virtual(Effect::retry(flaky(&calls, 3), backoff()));
+  assert_eq!(exit, Exit::succeed("200 OK"));
+  assert_eq!(calls.load(Ordering::SeqCst), 4);
+  assert_eq!(took, Duration::from_millis(100 + 200 + 400)); // virtual, not wall-clock
+}
 ```
+
+When the schedule runs out, `retry` fails with the last error (`"503"` after five attempts).
+`Effect::retry_or_else(make, schedule, fallback)` handles exhaustion instead, and
+`Effect::repeat` / `repeat_or_else` drive successful runs on a schedule. The kernel's
+`crates/id_effect/tests/schedule.rs` checks these timings to the nanosecond the same way.
 
 ## Variant: retry behind a circuit breaker
 
-Retrying a dependency that is down makes the outage worse. `id_effect_resilience::retry_with_breaker`
-retries on the same `Schedule` but checks a `CircuitBreaker` before each attempt. Once the breaker
-opens, the loop stops early even if the schedule would allow more attempts. Inject the
-`TestClock` into both the breaker and the retry so that backoff and cooldown are virtual:
+Retrying a dependency that is down makes the outage worse.
+`id_effect_resilience::retry_with_breaker` retries on the same `Schedule` but checks a
+`CircuitBreaker` before each attempt. Once the breaker opens, the loop stops early even if the
+schedule would allow more attempts. The breaker's cooldown also reads the executor clock, so it is
+virtual on a `TestExecutor` too.
 
-```rust
-use id_effect_resilience::{CircuitBreaker, CircuitState, retry_with_breaker_and_clock};
+```rust,ignore
+use id_effect_resilience::{CircuitBreaker, CircuitBreakerError, CircuitState, retry_with_breaker};
 
-let clock = TestClock::new(Instant::now());
-// Opens after 3 consecutive failures, half-opens after a 30 s cooldown.
-let breaker = run_blocking(
-  CircuitBreaker::make_with_clock(3, Duration::from_secs(30), clock.clone()),
-  (),
-).expect("breaker");
+// Opens after 3 consecutive failures, half-opens after the cooldown.
+let breaker = CircuitBreaker::new(3, Duration::from_millis(20));
 
-let out = run_blocking(
-  retry_with_breaker_and_clock(move || downstream_that_is_down(), backoff(), &breaker, clock.clone()),
-  (),
-);
-assert!(out.is_err());
-assert_eq!(run_blocking(breaker.state(), ()).unwrap(), CircuitState::Open);
+let out = retry_with_breaker(flaky(&calls, u32::MAX), backoff(), &breaker).block_on();
+assert!(matches!(out, Exit::Failure(Cause::Fail(Or::Left(CircuitBreakerError)))));
+assert_eq!(breaker.state::<(), _>().block_on(), Exit::succeed(CircuitState::Open));
 
-clock.advance(Duration::from_secs(30)); // cooldown elapsed: the next attempt is a probe
+// After the cooldown the next attempt is a half-open probe; a success closes the breaker.
+let out = sleep(Duration::from_millis(20))
+  .then(retry_with_breaker(flaky(&calls, 0), backoff(), &breaker))
+  .block_on();
 ```
 
-The error type is `Or<CircuitBreakerError, E>`: `Or::Left` means the breaker refused the call
-(or a breaker-level failure), and `Or::Right` is the call's own last error.
+The error type is `Or<CircuitBreakerError, E>`: `Or::Left` means the breaker refused the call, and
+`Or::Right` is the call's own last error. Defects and interrupts are neither counted by the breaker
+nor retried.
 
 Full example: [`crates/id_effect_resilience/examples/010_retry_with_breaker.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_resilience/examples/010_retry_with_breaker.rs)
 
@@ -92,5 +92,6 @@ Full example: [`crates/id_effect_resilience/examples/010_retry_with_breaker.rs`]
 cargo run -p id_effect_resilience --example 010_retry_with_breaker
 ```
 
-See also: [Schedule](../part3/ch11-01-schedule.md), [TestClock](../part4/ch15-02-test-clock.md),
+See also: [Schedule](../part3/ch11-01-schedule.md),
+[Virtual Time with TestExecutor](../part4/ch15-02-test-clock.md),
 [Runtime resilience](../part5/ch21-00-runtime-resilience.md).

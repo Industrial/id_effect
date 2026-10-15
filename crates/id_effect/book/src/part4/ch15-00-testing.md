@@ -1,27 +1,27 @@
 # Testing — Effects Are Easy to Test
 
-Testing async code often means standing up infrastructure, dealing with timing, and wide mocks—then chasing occasional flakes in CI.
+Testing async code is usually painful: real time makes tests slow and flaky, shared state leaks
+between tests, and mocking dependencies takes framework magic.
 
-Effect programs can be tested differently. Because an `Effect` is a description of what to do — not the doing itself — you control everything about how it runs. Swap in a test clock. Provide fake services as capabilities (`mock_capability!`, `Env::insert`). Detect fiber leaks automatically. Run in microseconds instead of seconds.
+Effect programs are different. An `Effect` is a description of what to do, not the doing itself,
+so the test decides how it runs:
 
-This chapter covers the testing tools id_effect provides.
-
-## What Makes Effects Testable
-
-Three properties make effect programs easy to test:
-
-**1. Services are injected, not ambient.**
-Your code doesn't call `DatabaseClient::global()`. It declares `caps!(Database)` and uses `~Database` inside `effect!`. In tests, you provide a different environment — one with a fake database.
-
-**2. Time is injectable.**
-Code that uses `Clock` instead of `std::time::SystemTime::now()` can be tested with `TestClock`, which advances only when you tell it to.
-
-**3. Effects don't run until you run them.**
-An `Effect` is inert. You can inspect, compose, and modify it before running. `run_test` runs it in a harness that adds leak detection and deterministic scheduling.
+- **Run it at the edge.** `eff.block_on()` returns the full `Exit` (success, typed failure,
+  defect or interruption), and you assert on it like any value.
+- **Provide fakes as capabilities.** `R` is a typed list of capabilities. A test provides plain
+  values (`provide`, `provide_env(hlist![..])`, `Layer::succeed`) instead of the production ones;
+  forgetting one is a compile error, not a runtime surprise.
+- **Control time.** Sleeps, timeouts, retries and schedules go through the executor's clock.
+  Run the effect on a `TestExecutor` and its virtual clock moves only when the test calls
+  `advance`, so an hour-long backoff takes microseconds.
+- **Control randomness.** `TestRandom` is a seeded, feedable `Random` capability.
 
 ## What This Chapter Covers
 
-- **`run_test`** — the test harness that replaces `run_blocking` in tests ([next section](./ch15-01-run-test.md))
-- **`TestClock`** — deterministic time control in tests ([ch15-02](./ch15-02-test-clock.md))
-- **Mocking services** — injecting test doubles via layers ([ch15-03](./ch15-03-mocking.md))
-- **Property testing** — generating inputs and checking invariants ([ch15-04](./ch15-04-property-testing.md))
+- **Running effects in tests**: `block_on`, asserting on `Exit` ([next section](./ch15-01-run-test.md))
+- **Virtual time with `TestExecutor`**: deterministic sleeps, timeouts and retries ([ch15-02](./ch15-02-test-clock.md))
+- **Mocking services**: test doubles as capabilities and layers ([ch15-03](./ch15-03-mocking.md))
+- **Property testing**: `proptest` over effect programs ([ch15-04](./ch15-04-property-testing.md))
+
+The kernel's own suites in `crates/id_effect/tests/` (`schedule.rs`, `race_timeout.rs`,
+`layer.rs`, `macros.rs`, …) use exactly these techniques and are good further reading.

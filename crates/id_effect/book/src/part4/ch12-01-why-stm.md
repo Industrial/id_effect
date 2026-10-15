@@ -46,7 +46,7 @@ fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64) -> Stm<(), Tr
 }
 
 // Run it: `commit` lifts the transaction into an Effect.
-run_blocking(commit::<_, _, ()>(transfer(&a, &b, 1)), ())?;
+run(commit(transfer(&a, &b, 1)))?;
 ```
 
 No locks and no lock ordering. The runnable example starts two threads that make 50 transfers each

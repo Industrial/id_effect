@@ -2,74 +2,89 @@
 
 The choice is simple: how many values does your computation produce?
 
-```
+```text
 Effect<A, E, R>  → produces exactly one A (or fails)
 Stream<A, E, R>  → produces zero or more A values over time (or fails)
 ```
 
 ## Concrete Examples
 
-```rust
+```rust,ignore
 // Effect: get one user
-fn get_user(id: u64) -> Effect<User, DbError, Db>
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Db)>;
 
-// Stream: all users, one at a time
-fn all_users() -> Stream<User, DbError, Db>
-
-// Effect: count rows
-fn count_orders() -> Effect<u64, DbError, Db>
-
-// Stream: export all orders for a report
-fn export_orders() -> Stream<Order, DbError, Db>
+// Stream: all users, pulled page by page
+fn all_users() -> Stream<User, DbError, caps!(Db)>;
 ```
 
-If you fetch 10 million rows into a `Vec` and return it as an `Effect`, you'll run out of memory. A `Stream` loads and processes them incrementally.
+If you fetch 10 million rows into a `Vec` and return it as an `Effect`, you'll run out of memory.
+A `Stream` pulls and processes them incrementally.
 
-## Stream Transformations
+## Building Streams
 
-`Stream` has the same transformation API as `Effect`:
+```rust,ignore
+use id_effect::{Exit, Stream, succeed};
 
-```rust
-all_users()
-    .filter(|u| u.is_active())
-    .map(|u| UserSummary::from(u))
-    .take(100)
+Stream::<i64, ()>::range(1, 5);                     // 1, 2, 3, 4
+Stream::<i32, ()>::from_iterable([1, 2, 3]);        // any finite IntoIterator
+Stream::<i32, ()>::unfold(1, |n| (n <= 4).then_some((n, n + 1)));
+Stream::<i32, ()>::from_effect(succeed(vec![1, 2, 3])); // one effect yielding a batch
+Stream::<i32, ()>::succeed(7);                      // one element
+Stream::<i32, &str>::fail("boom");                  // fails on the first pull
 ```
 
-`.map`, `.filter`, `.flat_map`, `.take`, `.drop`, `.zip` — all work on streams. None of them load the whole stream into memory; they process elements as they arrive.
+Constructors are generic over `E` and `R`; annotate one of them (`Stream::<i32, ()>::…`) when
+nothing else fixes them. For incremental sources, `from_pull(|max| effect_of_option_vec)` runs an
+effect per pull (`Ok(None)` ends the stream), `unfold_effect` threads state through an effect, and
+`Stream::from_queue(queue)` drains a `Queue`.
 
-## Collecting a Stream into an Effect
+## Transforming Streams
 
-When you do need all the results:
-
-```rust
-let users: Effect<Vec<User>, DbError, Db> = all_users().collect();
+```rust,ignore
+let s = Stream::<i64, ()>::range(1, 10)
+  .map(|n| n * 2)
+  .filter(|n: &i64| *n % 3 == 0)
+  .run_collect();
+assert_eq!(s.block_on(), Exit::succeed(vec![6, 12, 18]));
 ```
 
-`.collect()` consumes the stream and accumulates into a `Vec`. Use only when the full result fits in memory.
+The operators: `map` / `filter` (pure, `Fn`), `map_serial` / `filter_serial` (`FnMut`, in order),
+`take`, `take_while`, `drop_while`, `scan`, `grouped` / `tumbling` / `sliding`, `flat_map`,
+`chain` / `concat`, `merge`, `map_err`, `widen`, and the effectful `map_effect` (sequential) /
+`map_effect_par(n, f)` (at most `n` in flight, output in stream order). None of them load the
+whole stream into memory.
 
-For large results, prefer a fold or a sink:
+`take(n)` on an infinite source stops pulling after `n` elements, so the source never runs ahead
+of the consumer:
 
-```rust
-let count: Effect<usize, DbError, Db> = all_users().fold(0, |acc, _| acc + 1);
+```rust,ignore
+let first = Stream::<u64, ()>::unfold(0, |n| Some((n, n + 1))).take(3).run_collect();
+assert_eq!(first.block_on(), Exit::succeed(vec![0, 1, 2]));
 ```
 
-## Converting Effect to Stream
+## Consuming a Stream
 
-Wrap an `Effect` in a single-element stream when you need to compose with streaming operators:
+A consumer turns `Stream<A, E, R>` into `Effect<B, E, R>`:
 
-```rust
-use id_effect::Stream;
+```rust,ignore
+let all: Effect<Vec<User>, DbError, caps!(Db)> = all_users().run_collect();
+let count: Effect<usize, DbError, caps!(Db)> = all_users().run_fold(0, |n, _| n + 1);
+```
 
-let single_user_stream: Stream<User, DbError, Db> = Stream::from_effect(get_user(1));
+`run_collect` accumulates into a `Vec`; use it only when the result fits in memory. Prefer
+`run_fold`, `run_for_each(|a| effect)`, `run_drain` or a `Sink` for large streams.
 
-// Now compose with other streams
-let combined = single_user_stream.chain(all_users());
+## Effect to Stream and back
+
+```rust,ignore
+let one: Stream<User, DbError, caps!(Db)> =
+  Stream::from_effect(get_user(1).map(|u| vec![u]));
+let combined = one.chain(all_users());
 ```
 
 ## The Rule
 
 - Need one result: `Effect`
-- Need to process many results without loading all at once: `Stream`
-- Need to compose multiple streams: `Stream` with `chain`, `zip`, `merge`
-- Need all results in memory: `Stream` + `.collect()` (with appropriate size caution)
+- Need to process many results without loading them all at once: `Stream`
+- Need to compose sources: `Stream` with `chain`, `merge`, `combine_latest`, `keyed_join`
+- Need all results in memory: `Stream` + `run_collect()` (mind the size)

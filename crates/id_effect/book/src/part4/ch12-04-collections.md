@@ -22,17 +22,17 @@ fn offer_blocking(queue: &TQueue<u32>, job: u32) -> Stm<(), ()> {
   queue.offer(job).flat_map(Stm::<(), ()>::check) // retry while full
 }
 
-let queue = run_blocking(commit(TQueue::<u32>::bounded(2)), ()).expect("queue");
+let queue = run(commit(TQueue::<u32>::bounded(2))).expect("queue");
 let producer = {
   let queue = queue.clone();
   std::thread::spawn(move || {
     for job in 1..=10 {
-      run_blocking(commit(offer_blocking(&queue, job)), ()).expect("offer");
+      run(commit(offer_blocking(&queue, job))).expect("offer");
     }
   })
 };
 let sum: u32 = (0..10)
-  .map(|_| run_blocking(commit(queue.take::<()>()), ()).expect("take")) // waits while empty
+  .map(|_| run(commit(queue.take::<()>())).expect("take")) // waits while empty
   .sum();
 producer.join().expect("join");
 assert_eq!(sum, 55);
@@ -43,8 +43,8 @@ assert_eq!(sum, 55);
 Reads and writes on a `TMap` and a `TRef` in one transaction commit together:
 
 ```rust,ignore
-let users = run_blocking(commit(TMap::<String, String>::make()), ()).expect("map");
-let reads = run_blocking(commit(TRef::make(0_u32)), ()).expect("cell");
+let users = run(commit(TMap::<String, String>::make())).expect("map");
+let reads = run(commit(TRef::make(0_u32))).expect("cell");
 
 let lookup = {
   let reads = reads.clone();
@@ -53,21 +53,21 @@ let lookup = {
     .flat_map(move |user| reads.update_stm(|n| n + 1).map(move |()| user.clone()))
 };
 // Either the map read AND the counter increment happen, or neither does.
-let user: Option<String> = run_blocking(commit(lookup), ())?;
+let user: Option<String> = run(commit(lookup))?;
 ```
 
 ## TSemaphore: transactional permits
 
 ```rust,ignore
-let sem = run_blocking(commit(TSemaphore::make(1)), ()).expect("sem");
-run_blocking(commit(sem.acquire::<()>()), ())?; // takes the only permit
+let sem = run(commit(TSemaphore::make(1))).expect("sem");
+run(commit(sem.acquire::<()>()))?; // takes the only permit
 
 // Non-blocking try: `or_else` runs when `acquire` would retry.
 let try_acquire = sem.acquire::<()>().map(|()| true).or_else(Stm::succeed(false));
-assert_eq!(run_blocking(commit(try_acquire.clone()), ()), Ok(false));
+assert_eq!(run(commit(try_acquire.clone())), Ok(false));
 
-run_blocking(commit(sem.release::<()>()), ())?;
-assert_eq!(run_blocking(commit(try_acquire), ()), Ok(true));
+run(commit(sem.release::<()>()))?;
+assert_eq!(run(commit(try_acquire)), Ok(true));
 ```
 
 Because `acquire` and `release` are `Stm`s, you can combine taking a permit with other state

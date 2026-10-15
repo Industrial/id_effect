@@ -1,167 +1,127 @@
-# Mocking Services — Test Doubles via Providers
+# Mocking Services — Test Doubles as Capabilities
 
-In id_effect, "mocking" isn't a special testing concept — it's just providing a different `ProviderSpec`. Production code gets `PostgresDbLive`. Test code gets `InMemoryDbMock`. Business logic never knows the difference.
-
-No mock frameworks. No `#[automock]`. No `vi.mock()` equivalent. Just providers.
+In id_effect, "mocking" isn't a special testing concept. An effect names what it needs in `R`;
+production provides the real values (usually through a `Layer`), a test provides fakes. Business
+logic never knows the difference, and there is no macro or registry to set up.
 
 ## The Pattern
 
-Declare a capability service and a trait object (or concrete type):
+Put the service behind a trait and make the capability a newtype over `Arc<dyn Trait>`:
 
-```rust
-struct Database;
+```rust,ignore
+use std::sync::Arc;
+use id_effect::{Effect, caps, effect};
 
-trait Db: Send + Sync {
-    fn get_user(&self, id: UserId) -> Effect<User, DbError, ()>;
-    fn save_user(&self, user: User) -> Effect<(), DbError, ()>;
+pub trait UserRepo: Send + Sync {
+  fn find(&self, id: u64) -> Result<Option<User>, DbError>;
+  fn save(&self, user: &User) -> Result<(), DbError>;
+}
+
+/// The capability effects ask for.
+#[derive(Clone)]
+pub struct Users(pub Arc<dyn UserRepo>);
+
+fn rename(id: u64, name: String) -> Effect<User, AppError, caps!(Users)> {
+  effect!({
+    let mut user = ~Users.0.find(id)?.ok_or(AppError::NotFound(id))?;
+    user.name = name;
+    ~Users.0.save(&user)?;
+    user
+  })
 }
 ```
 
-Provide two implementations — one for production, one for tests:
-
-```rust
-// Production
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(Database)]
-struct PostgresDbLive;
-
-struct PostgresDb { pool: PgPool }
-impl Db for PostgresDb { /* real SQL queries */ }
-
-// Test double
-struct InMemoryDb { users: Mutex<HashMap<UserId, User>> }
-impl Db for InMemoryDb {
-    fn get_user(&self, id: UserId) -> Effect<User, DbError, ()> {
-        let users = self.users.lock().unwrap();
-        match users.get(&id) {
-            Some(u) => succeed(u.clone()),
-            None    => fail(DbError::NotFound(id)),
-        }
-    }
-
-    fn save_user(&self, user: User) -> Effect<(), DbError, ()> {
-        self.users.lock().unwrap().insert(user.id, user);
-        succeed(())
-    }
-}
-
-mock_capability!(InMemoryDbMock, Database, Arc<dyn Db>, "db/inmemory", || {
-    Arc::new(InMemoryDb::new()) as Arc<dyn Db>
-});
-```
+`~Users` reads the capability inside `effect!`; `?` fails the effect with the `Result`'s error,
+converted with `From` (here `From<DbError> for AppError`). Outside `effect!`, `need::<Users>()`
+yields an `Arc<Users>`.
 
 ## Injecting the Test Double
 
-```rust
+```rust,ignore
+#[derive(Default)]
+struct InMemoryUsers(Mutex<HashMap<u64, User>>);
+
+impl UserRepo for InMemoryUsers { /* … */ }
+
 #[test]
-fn get_user_returns_saved_user() {
-    let env = build_env([provide!(InMemoryDbMock)]).expect("env");
-
-    let eff = effect!(|r| {
-        let db = ~Database;
-        ~ db.save_user(User { id: UserId::new(1), name: "Alice".into() });
-        ~ db.get_user(UserId::new(1))
-    });
-
-    let exit = run_test(eff, env);
-    let Exit::Success(user) = exit else { panic!("expected success") };
-    assert_eq!(user.name, "Alice");
+fn rename_saves_the_new_name() {
+  let repo = Arc::new(InMemoryUsers::with([User::new(1, "ada")]));
+  let exit = rename(1, "Ada".into()).provide(Users(repo.clone())).block_on();
+  assert_eq!(exit.into_result().map(|u| u.name).ok(), Some("Ada".to_string()));
+  assert_eq!(repo.get(1).unwrap().name, "Ada");
 }
 ```
 
-The business logic (`save_user` then `get_user`) is identical to production. Only the provider list differs.
+`provide(value)` removes `Users` from `R`. With several capabilities use
+`provide_env(hlist![a, b, c])` or chain `provide` calls. A forgotten capability is a compile
+error, not a test that silently hits production.
 
 ## Asserting on Calls
 
-When you need to verify that a service was called with specific arguments, add tracking to the test double:
+Keep a handle to the fake's shared state and inspect it after the run, like the `Mailer` fixture
+in `crates/id_effect/tests/macros.rs`:
 
-```rust
-struct SpyMailer {
-    sent: Mutex<Vec<Email>>,
+```rust,ignore
+#[derive(Clone, Default)]
+struct RecordingMailer(Arc<Mutex<Vec<String>>>);
+
+impl Mailer for RecordingMailer {
+  fn send(&self, to: &str) -> Result<(), MailError> {
+    self.0.lock().unwrap().push(to.to_string());
+    Ok(())
+  }
 }
-
-impl Mailer for SpyMailer {
-    fn send(&self, email: Email) -> Effect<(), MailError, ()> {
-        self.sent.lock().unwrap().push(email.clone());
-        succeed(())
-    }
-}
-struct MailerCap;
-
-mock_capability!(SpyMailerMock, MailerCap, Arc<dyn Mailer>, "mailer/spy", || {
-    Arc::new(SpyMailer::new()) as Arc<dyn Mailer>
-});
 
 #[test]
-fn registration_sends_welcome_email() {
-    let env = build_env([provide!(SpyMailerMock)]).expect("env");
-    let spy = env.get::<Cap<MailerCap>>().clone();
-
-    let exit = run_test(register_user("alice@example.com"), env);
-    assert!(matches!(exit, Exit::Success(_)));
-
-    let sent = spy.sent.lock().unwrap();
-    assert_eq!(sent.len(), 1);
-    assert_eq!(sent[0].to, "alice@example.com");
+fn signup_sends_one_welcome_mail() {
+  let mailer = RecordingMailer::default();
+  signup("ada@example.com").provide(Mail(Arc::new(mailer.clone()))).block_on();
+  assert_eq!(*mailer.0.lock().unwrap(), vec!["ada@example.com".to_string()]);
 }
 ```
 
 ## Failing Services
 
-Test that your code handles service failures correctly by providing a failing test double:
+A fake that always fails tests the error paths:
 
-```rust
-struct FailingDb;
-impl Db for FailingDb {
-    fn get_user(&self, _id: UserId) -> Effect<User, DbError, ()> {
-        fail(DbError::ConnectionLost)
-    }
-    fn save_user(&self, _user: User) -> Effect<(), DbError, ()> {
-        fail(DbError::ConnectionLost)
-    }
-}
-
-mock_capability!(FailingDbMock, Database, Arc<dyn Db>, "db/failing", || {
-    Arc::new(FailingDb) as Arc<dyn Db>
-});
-
-#[test]
-fn get_user_propagates_db_errors() {
-    let env = build_env([provide!(FailingDbMock)]).expect("env");
-    let exit = run_test(get_user(UserId::new(1)), env);
-    assert!(matches!(exit, Exit::Failure(Cause::Fail(DbError::ConnectionLost))));
-}
-```
-
-## Provider-Based Test Setup
-
-For more complex scenarios, build a shared test env:
-
-```rust
-fn test_env() -> Env {
-    build_env([
-        provide!(InMemoryDbMock),
-        provide!(SpyMailerMock),
-        provide!(TestClockLive),
-    ])
-    .expect("test env")
+```rust,ignore
+struct DownRepo;
+impl UserRepo for DownRepo {
+  fn find(&self, _: u64) -> Result<Option<User>, DbError> { Err(DbError::Unavailable) }
+  fn save(&self, _: &User) -> Result<(), DbError> { Err(DbError::Unavailable) }
 }
 
 #[test]
-fn full_registration_flow() {
-    let env = test_env();
-    let exit = run_test(full_registration_flow(), env);
-    assert!(matches!(exit, Exit::Success(_)));
+fn rename_surfaces_db_errors() {
+  let exit = rename(1, "x".into()).provide(Users(Arc::new(DownRepo))).block_on();
+  assert_eq!(exit, Exit::fail(AppError::Db(DbError::Unavailable)));
 }
 ```
 
-The test provider list mirrors your production wiring in structure but with test implementations. Add new providers in one place and all tests pick them up.
+## Layer-Based Test Setup
+
+When production wires the app with `Layer`s, a test can swap one layer for a fake and keep the
+rest of the graph:
+
+```rust,ignore
+use id_effect::{Layer, hlist};
+
+// `signup_and_rename` needs `caps!(Users, Mail)`; the mailer comes from production wiring.
+let fake_db: Layer<caps!(Users), AppError> =
+  Layer::succeed(hlist![Users(Arc::new(InMemoryUsers::default()))]);
+let app = fake_db.merge(MailerLive::layer()); // Layer<caps!(Users, Mail), AppError>
+let exit = signup_and_rename("ada@example.com").provide_layer(app).block_on();
+```
+
+The layer's output must match the effect's `R` (merge order included); `narrow()` adapts an
+effect that needs only part of a wider environment.
+
+`Layer::succeed` hands out the same values on every build; `Layer::effect(|| ..)` builds them
+lazily; `merge` combines layers and `provide_to` feeds one layer's output into another. Layers are
+memoised within one build and their scoped finalizers run when the program ends.
 
 ## What You Don't Need
 
-- No `mockall`, no `mock!` macros
-- No `#[cfg(test)]` on business logic
-- No `Box<dyn Fn(…)>` callback injection patterns
-- No global state reset between tests
-
-The capability provider graph is the mock framework.
+- no mocking framework and no global registry: a fake is a value of the capability type;
+- no runtime "missing service" errors: `R` is checked at compile time;
+- no special harness: the effect runs with `block_on`, or on a `TestExecutor` when time matters.

@@ -13,17 +13,18 @@ below, compose with `map` / `flat_map` / `or_else`, and execute it with `commit`
 ## commit: Lift Stm into Effect
 
 ```rust,ignore
-use id_effect::{Effect, run_blocking};
+use id_effect::{Effect, Exit};
 use id_effect_fp::{Stm, TRef, commit};
 
-let effect: Effect<u64, InsufficientFunds, ()> = commit(withdraw(&account, 70));
-let left = run_blocking(effect, ())?;
+let effect: Effect<u64, InsufficientFunds> = commit(withdraw(&account, 70));
+assert_eq!(effect.block_on(), Exit::succeed(30));
 ```
 
 `commit(stm)` returns an `Effect<A, E, R>`, generic over any environment `R`. Its error type is the
 transaction's `E`. Running the effect executes the transaction; if commit-time validation finds a
 cell it read has changed, it starts again. `atomically` is an alias of `commit` (the Effect.ts
-name). It also returns an `Effect`, so run either one with `run_blocking` / `run_async`.
+name). It also returns an `Effect`, so run either one with `.block_on()` at the edge, await it
+with `Runtime::run`, or bind it inside `effect!` like any other effect.
 
 ## Stm::fail: Transactional Errors
 
@@ -61,14 +62,17 @@ fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
 }
 ```
 
-On retry, `commit` discards the attempt, yields the thread (`std::thread::yield_now`) and runs the
-transaction again. It keeps doing so until another thread's commit makes the condition true. This
-is a yielding spin, not a wake-on-change wait: the waiting thread is blocked the whole time, so keep
-retry for short waits. `TQueue::take` and `TSemaphore::acquire` work this way.
+On retry, `commit` discards the attempt and parks the fiber on the wait lists of every `TRef` the
+attempt read or wrote. The next commit that writes one of them wakes it, and the transaction runs
+again. Nothing spins and no thread is blocked, so a retry also makes progress on a
+single-threaded executor such as `TestExecutor`. A parked transaction is interruptible;
+interrupting it removes its waker from every cell. A bare `Stm::retry()` that read no `TRef` waits
+until it is interrupted. `TQueue::take` and `TSemaphore::acquire` work this way.
 
 ## or_else: try an alternative
 
-`a.or_else(b)` runs `b` when `a` retries. It turns a would-block transaction into a non-blocking
+`a.or_else(b)` runs `b` when `a` retries. The writes of the retrying branch are rolled back first,
+so `b` sees the values from before `a` ran. It turns a would-block transaction into a non-blocking
 try:
 
 ```rust,ignore
@@ -85,7 +89,7 @@ let audited = {
   let audit = audit.clone();
   withdraw(&account, 5).flat_map(move |left| audit.update_stm(|n| n + 1).map(move |()| left))
 };
-run_blocking(commit::<_, _, ()>(audited), ())?;
+run(commit(audited))?;
 ```
 
 If either part sees a conflict, the whole transaction restarts. If the withdrawal fails, the audit

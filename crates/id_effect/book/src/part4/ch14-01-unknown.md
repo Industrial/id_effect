@@ -1,93 +1,89 @@
 # The Unknown Type — Unvalidated Wire Data
 
-`Unknown` is the type for data that hasn't been validated yet. Think of it as a typed `serde_json::Value` — it can hold any shape of data, but you can't do anything useful with it until you run it through a schema.
+`Unknown` is the type for data that hasn't been validated yet. Think of it as a small,
+dependency-free `serde_json::Value`: it can hold any JSON-like shape, but you can't do anything
+useful with it until you run it through a schema.
 
-## Creating Unknown Values
+```rust,ignore
+pub enum Unknown {
+  Null,
+  Bool(bool),
+  I64(i64),
+  F64(f64),
+  String(String),
+  Array(Vec<Unknown>),
+  Object(BTreeMap<String, Unknown>),
+}
+```
 
-```rust
+## Building Unknown Values
+
+`Unknown` is a plain enum, so you build values with its variants:
+
+```rust,ignore
+use std::collections::BTreeMap;
 use id_effect::schema::Unknown;
 
-// From a JSON string
-let u: Unknown = Unknown::from_json_str(r#"{"name": "Alice", "age": 30}"#)?;
-
-// From a serde_json Value
-let v: serde_json::Value = serde_json::json!({ "name": "Alice" });
-let u: Unknown = Unknown::from_serde_json(v);
-
-// From raw parts
-let u: Unknown = Unknown::object([
-    ("name", Unknown::string("Alice")),
-    ("age",  Unknown::integer(30)),
-]);
-
-// Primitives
-let s: Unknown = Unknown::string("hello");
-let n: Unknown = Unknown::integer(42);
-let b: Unknown = Unknown::boolean(true);
-let null: Unknown = Unknown::null();
-let arr: Unknown = Unknown::array([Unknown::integer(1), Unknown::integer(2)]);
+let user = Unknown::Object(BTreeMap::from([
+  ("name".to_owned(), Unknown::String("Alice".to_owned())),
+  ("age".to_owned(), Unknown::I64(30)),
+]));
+let tags = Unknown::Array(vec![Unknown::String("admin".into()), Unknown::Null]);
 ```
 
-## Why Not serde_json::Value Directly?
+Config trees, form posts and test fixtures are usually built this way. For JSON, enable the
+`schema-serde` feature and convert a `serde_json::Value`:
 
-`serde_json::Value` is an excellent data type, but it's stringly typed: `value["name"]` gives you an `Option<&Value>` and there's no structure around parse errors, path tracking, or accumulation. `Unknown` wraps the same idea but integrates with id_effect's schema parser, which gives you:
+```rust,ignore
+use id_effect::schema::{Unknown, unknown_from_serde_json};
 
-- **Path tracking** — "error at `.users[3].email`"
-- **Accumulated errors** — all failures in one parse, not just the first
-- **Composable schemas** — build complex validators from simple primitives
-
-## Inspecting Unknown Values
-
-You don't normally inspect `Unknown` directly — you run it through a schema. But when debugging:
-
-```rust
-// Check what shape the value has
-match u.kind() {
-    UnknownKind::Object(fields) => { /* … */ }
-    UnknownKind::Array(elems)   => { /* … */ }
-    UnknownKind::String(s)      => { /* … */ }
-    UnknownKind::Integer(n)     => { /* … */ }
-    UnknownKind::Float(f)       => { /* … */ }
-    UnknownKind::Boolean(b)     => { /* … */ }
-    UnknownKind::Null            => { /* … */ }
-}
-
-// Access a field without parsing (returns Option<&Unknown>)
-let name: Option<&Unknown> = u.field("name");
+let value: serde_json::Value = serde_json::from_str(r#"{"name":"Alice","age":30}"#)?;
+let u: Unknown = unknown_from_serde_json(value);
 ```
+
+Integers become `Unknown::I64`, other numbers `Unknown::F64`, objects a `BTreeMap` (so encoding
+order is deterministic). HTTP adapters such as `id_effect_axum` use this bridge instead of their
+own conversion code.
+
+## Decoding
+
+Every `Schema` has two decoders:
+
+- `schema.decode(wire)` takes the schema's typed wire value `I` (for `string()` that is a
+  `String`, for `struct_(..)` a tuple of the field wires);
+- `schema.decode_unknown(&u)` takes an `&Unknown`, checks its shape and reports mismatches with
+  a path.
+
+```rust,ignore
+use id_effect::EffectData;
+use id_effect::schema::{Unknown, string};
+
+#[derive(Clone, Debug, EffectData)]
+struct T;
+
+let s = string::<T>();
+assert!(s.decode_unknown(&Unknown::Null).is_err()); // "expected string, got null"
+assert_eq!(s.decode_unknown(&Unknown::String("hi".into())), Ok("hi".to_owned()));
+```
+
+(Example `085_unknown_decode`.)
 
 ## The Parse Boundary
 
-`Unknown` is your import type. At every IO boundary — HTTP handler, NATS message, config file, database row — convert incoming data to `Unknown` first, then parse it with a schema:
+`Unknown` is your import type. At every I/O boundary (HTTP handler, message consumer, config
+file) convert incoming data to `Unknown`, then decode it with a schema. Decoding is synchronous;
+lift the result into the effect world with `succeed` / `fail`:
 
-```rust
-async fn handle_request(body: Bytes) -> Effect<CreateUserResponse, ApiError, Deps> {
-    effect! {
-        // Convert raw bytes to Unknown
-        let raw = Unknown::from_json_bytes(&body)
-            .map_err(ApiError::InvalidJson)?;
+```rust,ignore
+use id_effect::{Effect, fail, succeed};
+use id_effect::schema::{ParseError, Unknown};
 
-        // Parse Unknown into a typed, validated struct
-        let req: CreateUserRequest = ~ parse_schema(create_user_schema(), raw);
-
-        // Now req is fully trusted — proceed with domain logic
-        ~ create_user(req)
-    }
+fn parse_request(raw: &Unknown) -> Effect<CreateUser, ApiError> {
+  match create_user_schema().decode_unknown(raw) {
+    Ok(req) => succeed(req),
+    Err(e) => fail(ApiError::Validation(e)),
+  }
 }
 ```
 
 Nothing beyond the parse boundary sees `Unknown`. Domain functions only accept validated types.
-
-## Unknown and Serde
-
-If you have existing `serde`-deserializable types, use the serde bridge (requires the `schema-serde` feature):
-
-```rust
-use id_effect::schema::serde_bridge::unknown_from_serde_json;
-
-// Deserialise via serde, then convert to Unknown for schema validation
-let value: serde_json::Value = serde_json::from_str(input)?;
-let u: Unknown = unknown_from_serde_json(value);
-```
-
-This lets you incrementally adopt the schema system without rewriting all your serde impls at once.

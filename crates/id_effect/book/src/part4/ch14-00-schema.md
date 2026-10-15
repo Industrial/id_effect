@@ -6,11 +6,19 @@ The naive approach is to deserialise first and validate later — accept a `User
 
 The better approach is *parse, don't validate*: transform untrusted input into trusted types in one step. If the parse succeeds, you have a valid `User`. If it fails, you have a structured `ParseError` that tells you exactly what was wrong.
 
-id_effect's `schema` module is built on this principle.
+id_effect's `schema` module is built on this principle. A `Schema<A, I, E>` is a bidirectional
+codec: it decodes a wire value `I` (or a tree-shaped `Unknown`) into a semantic `A` and encodes
+`A` back to `I`. `E` is a phantom tag (any `EffectData` type, `()` is fine) that keeps schemas
+of different domains apart. Schemas are synchronous and kernel-independent: `decode` returns a
+plain `Result<A, ParseError>`, and you lift it into an `Effect` at the boundary.
+
+Runnable examples: `083_schema_primitive` … `086_parse_error_paths` in
+`crates/id_effect/examples/`; every combinator is round-trip tested in
+`crates/id_effect/tests/schema_roundtrip.rs`.
 
 ## What This Chapter Covers
 
 - **`Unknown`** — the type for unvalidated wire data ([next section](./ch14-01-unknown.md))
 - **Schema combinators** — the building blocks for describing data shapes ([ch14-02](./ch14-02-combinators.md))
-- **Validation and refinement** — `refine`, `filter`, and `Brand` for domain constraints ([ch14-03](./ch14-03-validation.md))
-- **`ParseErrors`** — structured, accumulating error reports ([ch14-04](./ch14-04-parse-errors.md))
+- **Validation and refinement** — `refine`, `filter`, `transform` and `Brand` for domain constraints ([ch14-03](./ch14-03-validation.md))
+- **`ParseError` / `ParseErrors`** — path-aware error reports ([ch14-04](./ch14-04-parse-errors.md))

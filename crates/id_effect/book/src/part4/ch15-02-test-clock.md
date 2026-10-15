@@ -1,112 +1,143 @@
-# TestClock — Deterministic Time in Tests
-
-`TestClock` was introduced in [Clock Injection](../part3/ch11-04-clock-injection.md) from a scheduling perspective. This section focuses on how to use it in tests — specifically with `run_test_with_clock` and multi-step scenarios.
+# Virtual Time with TestExecutor
 
 ## The Problem with Real Time in Tests
 
-```rust
-// This test takes 7 seconds to run
+```rust,ignore
 #[test]
-fn retry_exhaustion_slow() {
-    let eff = failing_call()
-        .retry(Schedule::exponential(Duration::from_secs(1)).take(3));
-    let exit = run_blocking(eff, ());
-    assert!(matches!(exit, Exit::Failure(_)));
+fn retry_backs_off() {
+  // With real time this takes 10 + 20 + 40 = 70 ms; with a 30 s backoff it takes minutes.
+  let exit = Effect::retry(flaky, Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)))
+    .block_on();
 }
 ```
 
-Multiply this by dozens of tests and your suite is unusable. `TestClock` makes it instant.
+Real-time tests are slow and flaky. In `id_effect` there is no separate clock capability to fake:
+every `sleep`, `timeout`, `retry` / `repeat` delay and schedule reads time from the **executor**
+the fiber runs on. Run the effect on a `TestExecutor` and time becomes virtual.
 
-## run_test_with_clock
+## TestExecutor
 
-```rust
-use id_effect::{run_test_with_clock, TestClock, Exit};
+`TestExecutor` is a single-threaded, deterministic `Executor` with a virtual clock. Nothing runs
+until the test drives it:
+
+| Method | Meaning |
+|--------|---------|
+| `TestExecutor::new()` | a new executor; the virtual clock starts at the current instant |
+| `run_until_stalled()` | poll queued tasks until every task waits on a timer or a wake |
+| `advance(d)` | move the clock forward by `d`, firing due sleeps in deadline order |
+| `now()` (`Executor` trait) | the virtual clock |
+| `pending_timers()`, `next_timer_deadline()`, `queued_tasks()` | inspection |
+
+Start the effect as a root fiber on it with `eff.fork_root(Arc::new(exec.clone()))` (clones share
+the executor) and check the `FiberHandle`:
+
+```rust,ignore
+use std::sync::Arc;
+use std::time::Duration;
+use id_effect::{Effect, TestExecutor, sleep};
 
 #[test]
-fn retry_exhaustion_fast() {
-    let clock = TestClock::new();
-    let eff = failing_call()
-        .retry(Schedule::exponential(Duration::from_secs(1)).take(3));
+fn an_hour_long_sleep_takes_no_time() {
+  let exec = TestExecutor::new();
+  let eff: Effect<&'static str> = sleep(Duration::from_secs(3600)).map(|()| "done");
+  let h = eff.fork_root(Arc::new(exec.clone()));
 
-    // run_test_with_clock runs the effect with the supplied clock handle
-    let exit = run_test_with_clock(eff, (), clock.clone());
+  exec.run_until_stalled();
+  assert!(!h.is_done()); // parked on its timer
 
-    assert!(matches!(exit, Exit::Failure(_)));
+  exec.advance(Duration::from_secs(3599));
+  assert!(!h.is_done());
+  exec.advance(Duration::from_secs(1));
+  assert!(h.is_done());
 }
 ```
 
-`run_test_with_clock(effect, env, clock)` runs an effect in the deterministic test harness with an explicit `TestClock`. Inject a clock capability via your provider graph when the effect reads time from `Env`.
+## Reading the Exit
 
-## TestClock API
+`h.join_future()` is a future of the fiber's `Exit`; once `h.is_done()` it is ready on its first
+poll. The kernel tests use a tiny helper for that, and another one that advances the clock from
+deadline to deadline until the fiber finishes (from `crates/id_effect/tests/schedule.rs`):
 
-```rust
-let clock = TestClock::new();
+```rust,ignore
+use std::future::Future;
+use std::pin::pin;
+use std::task::{Context, Poll, Waker};
+use id_effect::{Effect, Executor, Exit, TestExecutor}; // `Executor` for `exec.now()`
 
-// Read the current (fake) time — starts at Unix epoch
-let now: UtcDateTime = clock.now();
+fn take_ready<F: Future>(fut: F) -> F::Output {
+  match pin!(fut).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+    Poll::Ready(v) => v,
+    Poll::Pending => panic!("root fiber is not done"),
+  }
+}
 
-// Advance by a duration
-clock.advance(Duration::from_millis(500));
-
-// Jump to an absolute time
-clock.set_time(UtcDateTime::from_unix_secs(1_700_000_000));
-
-// How many sleeps are currently waiting?
-let pending: usize = clock.pending_sleeps();
-```
-
-`pending_sleeps()` is useful in tests to assert that an effect is blocked on a timer rather than having silently completed or failed.
-
-## Testing Scheduled Work
-
-```rust
-#[test]
-fn cron_job_runs_every_minute() {
-    let counter = Arc::new(AtomicU32::new(0));
-    let c = counter.clone();
-
-    let job = effect!(|_r: &mut ()| {
-        c.fetch_add(1, Ordering::Relaxed);
-    })
-    .repeat(Schedule::fixed(Duration::from_secs(60)));
-
-    let clock = TestClock::new();
-    let _handle = job.fork();
-
-    // Advance through 3 minutes
-    clock.advance(Duration::from_secs(60));
-    clock.advance(Duration::from_secs(60));
-    clock.advance(Duration::from_secs(60));
-
-    assert_eq!(counter.load(Ordering::Relaxed), 3);
+/// Runs `eff` on a fresh TestExecutor; returns its exit and the virtual time it took.
+fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit<A, E>, Duration) {
+  let exec = TestExecutor::new();
+  let start = exec.now();
+  let h = eff.fork_root(Arc::new(exec.clone()));
+  exec.run_until_stalled();
+  while !h.is_done() {
+    let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+    exec.advance(deadline.saturating_duration_since(exec.now()));
+  }
+  (take_ready(h.join_future()), exec.now() - start)
 }
 ```
 
-## Time and Race Conditions
+## Testing Retries and Schedules
 
-`TestClock` is deterministic — time moves only when you call `advance`. This means tests that use `TestClock` have no time-based race conditions: the scheduler runs wake-up callbacks synchronously when you advance.
-
-If your effect spawns multiple fibers that all sleep, advancing time wakes all fibers whose sleep deadline has passed, in a consistent order.
-
-## Combining TestClock with Fake Services
-
-```rust
-struct RateLimitStoreCap;
-
-mock_capability!(MockRateLimitStore, RateLimitStoreCap, Arc<dyn RateLimitStore>, "ratelimit/mock", || {
-    Arc::new(InMemoryRateLimitStore::new()) as Arc<dyn RateLimitStore>
-});
-
+```rust,ignore
 #[test]
-fn rate_limiter_enforces_window() {
-    let env = build_env([provide!(MockRateLimitStore)]).expect("env");
-    let clock = TestClock::new();
-
-    let eff = check_rate_limit_flow("alice");
-    let exit = run_test_with_clock(eff, env, clock.clone());
-
-    assert!(matches!(exit, Exit::Success(_)));
+fn exponential_10ms_with_3_retries_takes_exactly_70ms() {
+  let n = Arc::new(AtomicUsize::new(0));
+  let eff = Effect::retry(
+    flaky(&n, usize::MAX), // a factory: `Fn() -> Effect<usize, String>`, always failing
+    Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)),
+  );
+  let (exit, took) = run_virtual(eff);
+  assert_eq!(took, ms(70));
+  assert_eq!(n.load(Ordering::SeqCst), 4); // 1 attempt + 3 retries
+  assert!(matches!(exit, Exit::Failure(Cause::Fail(ref e)) if e == "boom 3"));
 }
 ```
 
-Build the capability env with `build_env([provide!(…), …])`, then pass it to `run_test_with_clock` alongside your `TestClock`.
+Effects are one-shot, so `Effect::retry` takes a factory that builds a fresh attempt each time.
+To check timing step by step, drive the executor yourself and assert between `advance` calls:
+
+```rust,ignore
+let h = eff.fork_root(Arc::new(exec.clone()));
+exec.run_until_stalled();
+for step in [ms(10), ms(20), ms(40) - Duration::from_nanos(1)] {
+  exec.advance(step);
+}
+assert!(!h.is_done()); // one nanosecond early
+exec.advance(Duration::from_nanos(1));
+assert!(h.is_done());
+```
+
+## Timeouts and Races
+
+`Effect::timeout(d)` races the effect against a `sleep(d)` on the same clock, so it is
+deterministic under `TestExecutor` too:
+
+```rust,ignore
+let slow: Effect<u32> = sleep(Duration::from_secs(10)).map(|()| 1);
+let (exit, took) = run_virtual(slow.timeout(Duration::from_secs(1)));
+assert_eq!(exit, Exit::succeed(None));
+assert_eq!(took, Duration::from_secs(1));
+```
+
+## Combining Virtual Time with Fake Services
+
+Provide test doubles first, then run on the executor; `fork_root` needs `R = HNil`:
+
+```rust,ignore
+let eff = sync_users().provide(FakeApi::new(vec![user_a(), user_b()]));
+let (exit, _) = run_virtual(eff);
+assert_eq!(exit, Exit::succeed(2));
+```
+
+`TestExecutor` is single-threaded, so ordering is deterministic: tasks run in FIFO order and
+sleeps fire in `(deadline, registration order)`. STM retries, `Deferred` waits and queue takes
+park on wakers rather than spinning, so they make progress on it as well.
