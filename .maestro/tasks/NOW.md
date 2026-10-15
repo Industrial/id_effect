@@ -1,10 +1,15 @@
 # NOW
-Updated: 2026-10-15T01:39:05.928Z
+Updated: 2026-10-15T01:48:01.703Z
 
-## In flight (1)
+## In flight (2)
 ### tsk-mv8ohjj3-7xjiyu . W3: Kernel rebuild in id_effect::next — placeholder, split after H1
 State: claimed
-Owner: claude (claimed 5m ago)
+Owner: claude (claimed 14m ago)
+Mission: pln-mv8oh29m-3zdrrj
+
+### tsk-mv8vpo06-cu75f3 . K0: k-next-skeleton — next/ stubs, Executor trait, tokio features
+State: claimed
+Owner: claude (claimed 3s ago)
 Mission: pln-mv8oh29m-3zdrrj
 
 
