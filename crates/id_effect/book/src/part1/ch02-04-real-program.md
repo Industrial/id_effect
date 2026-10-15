@@ -1,134 +1,134 @@
 # Your First Real Program
 
-Let's build something complete: a small program that loads configuration, connects to a database, queries a user, and formats a greeting. It's simple enough to fit on one page, but real enough to demonstrate the full effect workflow.
+Let's build something complete: a small program that loads configuration, looks up a user and
+formats a greeting. It fits on one page but shows the whole workflow: typed errors, composition with
+`effect!`, a capability in `R`, and one run edge.
 
 ## The Domain
 
 ```rust
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Config {
-    db_url: String,
-    app_name: String,
+  app_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct User {
-    id: u64,
-    name: String,
-    email: String,
+  id: u64,
+  name: String,
+  email: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum AppError {
-    Config(String),
-    Database(String),
+  Config(String),
+  NotFound(u64),
 }
+```
+
+The user store is a capability: a plain value the program reads from its environment.
+
+```rust
+use std::collections::HashMap;
+
+struct UserStore(HashMap<u64, User>);
 ```
 
 ## The Individual Steps
 
-Each step is a focused effect:
-
 ```rust
-use id_effect::{Effect, effect, succeed, fail};
+use id_effect::{Effect, caps, effect, fail, succeed};
 
-fn load_config() -> Effect<Config, AppError, ()> {
-    // In a real app, read from a file or env vars
-    succeed(Config {
-        db_url: "postgres://localhost/myapp".to_string(),
-        app_name: "Greeter".to_string(),
-    })
+fn load_config(raw_name: &str) -> Effect<Config, AppError> {
+  if raw_name.is_empty() {
+    fail(AppError::Config("app name is empty".into()))
+  } else {
+    succeed(Config { app_name: raw_name.to_string() })
+  }
 }
 
-fn connect_db(config: &Config) -> Effect<Database, AppError, ()> {
-    Database::connect(&config.db_url)
-        .map_error(|e| AppError::Database(format!("connect: {e}")))
-}
-
-fn fetch_user(db: &Database, id: u64) -> Effect<User, AppError, ()> {
-    db.query_user(id)
-        .map_error(|e| AppError::Database(format!("query: {e}")))
+fn fetch_user(id: u64) -> Effect<User, AppError, caps!(UserStore)> {
+  effect!({ ~UserStore.0.get(&id).cloned().ok_or(AppError::NotFound(id))? })
 }
 
 fn format_greeting(config: &Config, user: &User) -> String {
-    format!("{}: Hello, {}! ({})", config.app_name, user.name, user.email)
+  format!("{}: Hello, {}! ({})", config.app_name, user.name, user.email)
 }
 ```
 
+`~UserStore` reads the capability; `?` on the `Option`-turned-`Result` fails the effect with
+`AppError::NotFound`.
+
 ## Composing the Program
 
-Now we compose these steps into one effect using `effect!`:
-
 ```rust
-fn greet_user(user_id: u64) -> Effect<String, AppError, ()> {
-    effect! {
-        let config = ~ load_config();
-        let db     = ~ connect_db(&config);
-        let user   = ~ fetch_user(&db, user_id);
-        format_greeting(&config, &user)
-    }
+fn greet_user(app_name: &str, user_id: u64) -> Effect<String, AppError, caps!(UserStore)> {
+  let config = load_config(app_name);
+  effect!({
+    let config = ~config;
+    let user = ~fetch_user(user_id);
+    format_greeting(&config, &user)
+  })
 }
 ```
 
 Read it like a recipe:
-1. Load config — if it fails, stop with `AppError::Config`
-2. Connect to DB — if it fails, stop with `AppError::Database`  
-3. Fetch user — if it fails, stop with `AppError::Database`
-4. Format the greeting — this is pure, always succeeds
 
-Nothing has run yet. `greet_user(42)` is a value.
+1. load the config, and stop with `AppError::Config` if that fails;
+2. fetch the user, and stop with `AppError::NotFound` if there is none;
+3. format the greeting, which always succeeds.
+
+`load_config` needs nothing, `fetch_user` needs a `UserStore`; `~` lifts each into the block's
+`caps!(UserStore)`. Nothing has run yet: `greet_user("Greeter", 42)` is a value.
 
 ## Running It
 
-At the edge of the program — in `main` — we execute:
+At the edge of the program, provide the capability and run:
 
 ```rust
+use id_effect::{Cause, Exit};
+
 fn main() {
-    match run_blocking(greet_user(42)) {
-        Ok(greeting) => println!("{greeting}"),
-        Err(AppError::Config(msg)) => eprintln!("Config error: {msg}"),
-        Err(AppError::Database(msg)) => eprintln!("DB error: {msg}"),
-    }
+  let store = UserStore(HashMap::from([(
+    42,
+    User { id: 42, name: "Alice".into(), email: "alice@example.com".into() },
+  )]));
+
+  match greet_user("Greeter", 42).provide(store).block_on() {
+    Exit::Success(greeting) => println!("{greeting}"),
+    Exit::Failure(Cause::Fail(AppError::Config(msg))) => eprintln!("config error: {msg}"),
+    Exit::Failure(Cause::Fail(AppError::NotFound(id))) => eprintln!("no user {id}"),
+    Exit::Failure(other) => eprintln!("unexpected: {other:?}"),
+  }
 }
 ```
+
+`.provide(store)` removes `UserStore` from `R`; an `Effect<_, _, HNil>` can be run with
+`block_on`. Forgetting the `.provide` is a compile error, not a runtime panic.
 
 ## Testing It
 
-Because the effect is a description, testing is straightforward — just swap out the underlying steps:
+A test provides its own store:
 
 ```rust
 #[test]
-fn test_greeting_format() {
-    let effect = effect! {
-        let config = ~ succeed(Config {
-            db_url: "unused".into(),
-            app_name: "TestApp".into(),
-        });
-        let user = ~ succeed(User {
-            id: 1,
-            name: "Alice".into(),
-            email: "alice@example.com".into(),
-        });
-        format_greeting(&config, &user)
-    };
-
-    let result = run_test(effect);
-    assert_eq!(result.unwrap(), "TestApp: Hello, Alice! (alice@example.com)");
+fn unknown_user_is_not_found() {
+  let exit = greet_user("TestApp", 7)
+    .provide(UserStore(HashMap::new()))
+    .block_on();
+  assert_eq!(exit, Exit::Failure(Cause::Fail(AppError::NotFound(7))));
 }
 ```
 
-No mocking framework. No `Arc<dyn Trait>` plumbing. Just substitute different `succeed` values for the steps you want to control.
+No mocking framework and no `Arc<dyn Trait>` plumbing: the test supplies a different value for the
+capability.
 
 ## What You Just Learned
 
-You've written a complete effect-based program. Along the way you used:
+- `succeed` and `fail` construct effects from values;
+- `effect!({ .. })` with `~` sequences effects and reads capabilities;
+- `caps!(..)` declares what an effect needs, and `.provide(..)` supplies it;
+- `block_on` runs a fully provided effect at the program edge and returns an `Exit`.
 
-- `succeed` and `fail` to construct effects from values
-- `.map` and `.map_error` to transform success and error types
-- `effect! { ~ ... }` to sequence effects without callback nesting
-- `run_blocking` to execute at the program edge
-- `run_test` to verify behaviour in tests
-
-That's the core of 90% of what you'll write day-to-day. The next two chapters go deeper: Chapter 3 explores the `effect!` macro in detail, and Chapter 4 begins the tour of `R` — the environment type that makes dependency injection a compile-time guarantee.
-
-You just wrote your first effect-based program. It won't be your last.
+Chapter 3 explores `effect!` in detail, and Chapter 4 begins the tour of `R`, the environment type
+that makes dependency injection a compile-time guarantee.

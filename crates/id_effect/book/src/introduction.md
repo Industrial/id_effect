@@ -26,6 +26,8 @@ If you want a **typed, compositional** style for async Rust—with explicit requ
 
 **Part IV: Advanced** covers STM, streams, schemas, and testing—read when you need those topics.
 
-Code examples are intended to compile unless marked otherwise.
+This edition describes **id_effect 0.7**: `Effect<A, E, R>` is `Send`, `R` is a typed list of capabilities (a missing one is a compile error), dependencies are built with `Layer`s, and programs run at the edge with `Effect::block_on` (or `Runtime::run(..).await` inside async code). If you are upgrading from 0.6, see [the 0.7 migration guide](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.7.md).
+
+Code examples show the shape of real code; small helpers and domain types they mention are left out. The runnable versions live in the crate's `examples/` and `tests/`.
 
 Let's begin.

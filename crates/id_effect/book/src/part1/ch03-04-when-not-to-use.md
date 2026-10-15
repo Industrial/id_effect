@@ -1,105 +1,95 @@
 # When Not to Use the Macro
 
-`effect!` is the idiomatic choice for most multi-step computations. But it's a macro — which means it has edges. Knowing when to reach for raw `flat_map` instead saves debugging time.
+`effect!` is the idiomatic choice for most multi-step computations, but it is a macro, and it has
+edges. Knowing when to reach for a combinator instead saves debugging time.
 
-## Use Raw flat_map for Single-Step Transforms
-
-When there's exactly one effectful step and you're transforming its result, `flat_map` is cleaner:
+## Single-step transforms
 
 ```rust
 // Unnecessarily verbose
-effect! {
-    let id = ~ parse_id(raw);
-    id
-}
+effect!({ ~parse_id(raw) })
 
 // Clear and direct
-parse_id(raw).flat_map(|id| succeed(id))
-// or just:
 parse_id(raw)
+parse_id(raw).map(UserId)
 ```
 
-Use `effect!` when you have two or more sequential steps. For one, `flat_map` or `.map` is usually enough.
+Use `effect!` for two or more steps; for one, `map` / `flat_map` is enough.
 
-## Use Combinators for Structural Patterns
-
-Some patterns have named combinators that are more expressive than macros:
+## Named combinators for structural patterns
 
 ```rust
-// Instead of:
-effect! {
-    let a = ~ step_a();
-    let b = ~ step_b();
-    (a, b)
-}
+// Sequential, even though the steps are independent:
+effect!({
+  let a = ~step_a();
+  let b = ~step_b();
+  (a, b)
+})
 
-// Consider (when steps are independent):
-step_a().zip(step_b())
+// Says what you mean:
+step_a().zip(step_b())       // sequential pair
+zip_par(step_a(), step_b())  // concurrent pair
 ```
 
-`zip` communicates intent: "I need both, in any order." The `effect!` version implies sequential dependency. For independent steps, prefer explicit combinators. (For *concurrent* independent steps, see `fiber_all` in Chapter 9.)
+For concurrent independent steps inside a block, `~(step_a(), step_b())` is the same join.
+`race`, `timeout`, `all` and `for_each_par` are combinators too
+([Chapter 9](../part3/ch09-00-concurrency.md)).
 
-## Avoid Deep Nesting Within the Block
-
-The macro eliminates nesting between `flat_map` chains. But you can still create nested `effect!` blocks, which gets confusing:
+## Avoid nesting effect! inside effect!
 
 ```rust
-// CONFUSING — nested macro bodies
-effect! {
-    let result = ~ effect! {      // inner macro
-        let x = ~ inner_step();
-        x * 2
-    };
-    result + 1
-}
+// CONFUSING: nested macro bodies
+effect!({
+  let result = ~effect!({ let x = ~inner_step(); x * 2 });
+  result + 1
+})
 
-// BETTER — flatten it
-effect! {
-    let x = ~ inner_step();
-    let result = x * 2;
-    result + 1
-}
+// BETTER: flatten
+effect!({
+  let x = ~inner_step();
+  x * 2 + 1
+})
 ```
 
-If you feel the urge to nest `effect!` inside `effect!`, flatten the outer block instead.
+## The macro and type inference
 
-## The Macro and Type Inference
+`effect!({ .. })` takes `E` and `R` from the **expected type**. If inference fails inside a block:
 
-The macro occasionally confuses the type inferencer, especially when the error type isn't pinned early. If you see cryptic "can't infer type" errors inside `effect!`:
+1. give the enclosing function an explicit return type (`-> Effect<A, E, caps!(..)>`);
+2. bind typed helpers rather than bare constructors (`~number(1)`, not `~succeed(1)`);
+3. pin `R` with the closure form, `effect!(|r: &caps!(Greeting, Counter)| { .. })`, which also
+   binds `r` to the environment;
+4. bind a helper that is generic in `R` with `.same_env()` (see [The ~ Operator](./ch03-02-bind-operator.md));
+5. as a last resort, move the inner logic into a named helper function.
 
-1. Annotate the return type of the enclosing function explicitly
-2. Add a `.map_error(Into::into)` on the first `~` binding to anchor `E`
-3. As a last resort, break out the inner logic into a named helper function
+## Generic code over R
 
-## When Generic Returns Are Needed
-
-Library code with polymorphic `A, E, R` sometimes can't use the macro cleanly:
+Library code that should work in any environment containing its capability is generic over `R`
+with a `Selector` bound, and uses `need` instead of the macro where that is simpler:
 
 ```rust
-// This works fine with explicit function + effect!
-pub fn load_config<A, E, R>() -> Effect<A, E, R>
+use id_effect::{Effect, HList, Selector, need};
+
+pub fn current_user<R, I>() -> Effect<UserId, AuthError, R>
 where
-    A: From<Config> + 'static,
-    E: From<ConfigError> + 'static,
-    R: 'static,
+  R: HList + Selector<Session, I> + Send + Sync + 'static,
 {
-    effect!(|_r: &mut R| {
-        let cfg = read_env_config()?;
-        A::from(cfg)
-    })
+  need::<Session>().map(|s| s.user_id)
 }
 ```
 
-The closure form of `effect!` (with `|_r: &mut R|`) is the right tool for generic graph-builder functions. It's still the macro, just in its raw form.
+## `!Send` state
+
+The body of `effect!` must be `Send`. To hold an `Rc` or a `RefCell` across a bind, use
+`effect_local!`, which builds a `LocalEffect` (run it with its own `block_on`, or `run_on_local`
+on a local worker); a `LocalEffect` body can still bind ordinary `Send` effects.
 
 ## Summary
 
 | Situation | Prefer |
 |-----------|--------|
-| 2+ sequential steps | `effect! { ~ ... }` |
+| 2+ sequential steps | `effect!({ ~ .. })` |
 | 1 step, simple transform | `.map` / `.flat_map` |
-| Independent steps | `.zip` / combinators |
-| Generic `<A, E, R>` graph builder | `effect!(|_r: &mut R| { ... })` |
-| Structural patterns (zip, race, all) | explicit combinators, not macro |
-
-The macro is a tool, not a religion. Use it when it makes the code read like a story; use combinators when they express intent more directly.
+| Independent steps | `.zip`, `zip_par`, `~(a, b)` |
+| Generic over `R` | `need::<T>()` with a `Selector` bound, or `.same_env()` |
+| `!Send` body | `effect_local!` |

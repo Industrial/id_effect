@@ -3,28 +3,25 @@
 Consider three steps that each depend on the previous result:
 
 ```rust
-fn step_a() -> Effect<i32, Err, ()>   { succeed(1) }
-fn step_b(n: i32) -> Effect<i32, Err, ()> { succeed(n * 2) }
-fn step_c(n: i32) -> Effect<String, Err, ()> { succeed(n.to_string()) }
+fn step_a() -> Effect<i32, Err> { succeed(1) }
+fn step_b(n: i32) -> Effect<i32, Err> { succeed(n * 2) }
+fn step_c(n: i32) -> Effect<String, Err> { succeed(n.to_string()) }
 ```
 
 Written with raw `flat_map`:
 
 ```rust
-let program = step_a()
-    .flat_map(|a| step_b(a)
-        .flat_map(|b| step_c(b)));
+let program = step_a().flat_map(|a| step_b(a).flat_map(|b| step_c(b)));
 ```
 
-Two steps: readable. Five steps: a pyramid. Ten steps: indistinguishable from callback hell.
+Two steps: readable. Five steps: a pyramid. Ten steps: callback hell.
 
-Haskell solved this decades ago with *do-notation*. Scala's for-comprehensions do the same thing. Rust doesn't have built-in do-notation, so id_effect provides it via a macro.
+Haskell solved this with *do-notation*, Scala with for-comprehensions. Rust has no built-in
+do-notation for custom types, so id_effect provides it as a macro.
 
 ## Do-Notation as a Concept
 
-Do-notation lets you write sequential effectful code that *looks* like imperative code:
-
-```
+```text
 do
   a ← step_a
   b ← step_b(a)
@@ -32,78 +29,61 @@ do
   return c
 ```
 
-Each `←` means "run this effect and bind its result to this name." If any step fails, the whole computation short-circuits.
-
-Rust can't use the `←` symbol, so id_effect uses `~` (prefix tilde):
-
-```rust
-effect! {
-    let a = ~ step_a();
-    let b = ~ step_b(a);
-    let c = ~ step_c(b);
-    c
-}
-```
-
-Same semantics. Rust syntax. Zero nesting.
-
-## How the Desugaring Works
-
-The macro transforms each `~ expr` into a `flat_map`:
+Each `←` means "run this effect and bind its result to this name". If any step fails, the whole
+computation short-circuits. id_effect spells `←` as a prefix `~`:
 
 ```rust
-// Written:
-effect! {
-    let a = ~ step_a();
-    let b = ~ step_b(a);
-    b.to_string()
-}
-
-// Roughly expands to:
-step_a().flat_map(|a| {
-    step_b(a).flat_map(|b| {
-        succeed(b.to_string())
-    })
+effect!({
+  let a = ~step_a();
+  let b = ~step_b(a);
+  let c = ~step_c(b);
+  c
 })
 ```
 
-The macro generates exactly the nested `flat_map` chain you'd write by hand — just without the visual noise.
+## How It Works
 
-## One Body, One block
-
-One discipline matters: **use one `effect!` block per function**. Don't branch between two macro bodies:
+The body of `effect!` is compiled into an async block that runs on the effect's fiber. Each
+`~expr` runs the sub-effect `expr` on that same fiber and evaluates to its success value; a failure
+ends the block with that failure. The result behaves like the hand-written chain:
 
 ```rust
-// BAD — two separate effect! blocks for one computation
-if flag {
-    effect! { let x = ~ a(); x }
-} else {
-    effect! { let y = ~ b(); y }
-}
-
-// GOOD — one block, branching inside
-effect! {
-    if flag {
-        ~ a()
-    } else {
-        ~ b()
-    }
-}
+step_a().flat_map(|a| step_b(a).flat_map(step_c))
 ```
 
-A single `effect!` block is a single description. Splitting it into multiple blocks loses the composition guarantee.
+Because the body is ordinary async Rust, `if`, `match`, loops and `let` bindings work as usual, and
+the value of the last expression is the success value. The body must be `Send` (use
+`effect_local!` for `!Send` state, which builds a `LocalEffect`).
+
+## One Body, One Block
+
+Use **one `effect!` per function** and branch inside it:
+
+```rust
+// BAD: two macro bodies for one computation
+if flag {
+  effect!({ ~a() })
+} else {
+  effect!({ ~b() })
+}
+
+// GOOD: one block, branching inside
+effect!({
+  if flag { ~a() } else { ~b() }
+})
+```
 
 ## Pure Expressions
 
-Not every line inside `effect!` has to be an effect. Pure Rust expressions work normally:
+Not every line has to be an effect:
 
 ```rust
-effect! {
-    let user = ~ fetch_user(id);
-    let name = user.name.to_uppercase();  // pure — no ~
-    let posts = ~ fetch_posts(user.id);
-    (name, posts)
-}
+effect!({
+  let user = ~fetch_user(id);
+  let name = user.name.to_uppercase(); // pure: no ~
+  let posts = ~fetch_posts(user.id);
+  (name, posts)
+})
 ```
 
-Only use `~` when the expression has type `Effect<_, _, _>`. Pure expressions just run inline.
+Use `~` only on expressions of type `Effect<_, _, _>` (and on capability types, Chapter 4).

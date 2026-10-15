@@ -1,83 +1,116 @@
-# Creating Effects — succeed, fail, and pure
+# Creating Effects — succeed, fail, sync and from_async
 
-Every effect starts as either a success or a failure. The two constructors that express this are `succeed` and `fail`.
+Every effect starts from a constructor. The constructors are free functions at the crate root.
 
 ## succeed
 
-`succeed` wraps a value into an effect that, when run, immediately produces that value:
+`succeed` wraps a value into an effect that, when run, produces that value:
 
 ```rust
 use id_effect::{Effect, succeed};
 
-let answer: Effect<i32, String, ()> = succeed(42);
-let greeting: Effect<String, String, ()> = succeed("Hello, world!".to_string());
+let answer: Effect<i32, String> = succeed(42);
+let greeting: Effect<String> = succeed("Hello, world!".to_string());
 ```
 
-Nothing happens when you call `succeed`. You get back a description — a lazy recipe that says "produce this value when someone asks." The `42` is already there, but no computation has been executed.
+The type parameters:
 
-The type parameters are important:
-- `A = i32` — the value we produce
-- `E = String` — the error type (unused here, but we still have to pick one)
-- `R = ()` — no environment needed
-
-If you prefer the FP vocabulary, `pure` is an alias for `succeed`:
-
-```rust
-use id_effect::pure;
-
-let effect = pure(42_i32);
-```
-
-Both names refer to exactly the same thing. Use whichever feels natural in context.
+- `A = i32`: the value we produce;
+- `E = String`: the error type (unused here, but chosen by the annotation). Leave it out and it
+  is `Never`: the effect cannot fail;
+- `R = HNil` (the default): no environment needed.
 
 ## fail
 
-`fail` wraps an error into an effect that, when run, immediately fails with that error:
+`fail` builds an effect that, when run, fails with a typed error:
 
 ```rust
-use id_effect::{Effect, fail};
+use id_effect::{Cause, Effect, Exit, fail};
 
-let oops: Effect<i32, String, ()> = fail("something went wrong".to_string());
+let oops: Effect<i32, &'static str> = fail("not_ready");
+assert_eq!(oops.block_on(), Exit::Failure(Cause::Fail("not_ready")));
 ```
 
-Again, nothing executes. `oops` is a description of a failure, not the failure itself. You can pass it around, store it, and transform it without triggering any error handling.
+`die(defect)` is the third outcome: an unexpected failure (a *defect*), reported as
+`Cause::Die`. A panic inside an effect becomes a defect too.
 
-The type annotation matters: `Effect<i32, String, ()>` says this would have produced an `i32` on success — we just know it won't.
+## From a closure: sync and suspend
 
-## From a Closure
-
-For cases where you want to capture some computation in an effect (but still defer it):
+`sync` defers a synchronous computation until the effect runs:
 
 ```rust
-use id_effect::{Effect, effect};
+use id_effect::{Effect, sync};
 
-let computed: Effect<i32, String, ()> = effect!(|_r: &mut ()| {
-    let x = expensive_calculation();
-    x * 2
+let computed: Effect<i32> = sync(|| expensive_calculation() * 2);
+```
+
+`suspend` defers *building* an effect, which is handy when the effect to run depends on state read
+at run time:
+
+```rust
+use id_effect::{Effect, fail, succeed, suspend};
+
+let checked: Effect<u8, &'static str> = suspend(|| {
+  if feature_enabled() { succeed(1) } else { fail("disabled") }
 });
 ```
 
-The body of `effect!` runs lazily — only when the effect is executed. This is the workhorse macro we'll cover thoroughly in Chapter 3.
+## From async code: from_async
+
+`from_async` wraps an `async` block that returns a `Result<A, E>`:
+
+```rust
+use id_effect::{Effect, Exit, from_async};
+
+let eff: Effect<u8, ()> = from_async(|| async move {
+  core::future::ready(()).await;
+  Ok(42)
+});
+assert_eq!(eff.block_on(), Exit::succeed(42));
+```
+
+The closure is called when the effect runs, so nothing starts early.
+
+## The effect! macro
+
+`effect!({ .. })` builds an effect from an async-style body; `~expr` inside it runs a sub-effect.
+It is the workhorse of the library, covered in [Chapter 3](./ch03-00-effect-macro.md):
+
+```rust
+use id_effect::{Effect, effect, succeed};
+
+fn number(n: i32) -> Effect<i32> {
+  succeed(n)
+}
+
+let sum: Effect<i32> = effect!({
+  let a = ~number(40);
+  let b = ~number(2);
+  a + b
+});
+```
+
+A bound sub-effect needs a known error and environment type, which is why the examples bind small
+typed helpers such as `number` rather than a bare `succeed(..)`.
 
 ## Type Inference
 
-Rust's type inference often lets you skip the annotations:
-
 ```rust
-// Types inferred from usage
-let answer = succeed(42);      // Effect<i32, _, ()>
-let greeting = succeed("hi"); // Effect<&str, _, ()>
+let answer = succeed(42);    // Effect<i32, _, _>: E and R come from how it is used
+let greeting = succeed("hi"); // Effect<&str, _, _>
 ```
 
-The error type `E` is usually inferred from how the effect is used later — when you chain it with other effects that can fail, the error type propagates. You'll only need to annotate explicitly when the compiler asks.
+`E` and `R` are usually inferred from the surrounding code (a function's return type, the effect it
+is combined with). Annotate when the compiler asks.
 
 ## Quick Reference
 
 ```rust
-succeed(value)    // Effect that produces value
-pure(value)       // Alias for succeed
-fail(error)       // Effect that fails with error
-effect!(|_r| { … }) // Effect from a lazy closure
+succeed(value)           // produces value
+fail(error)              // fails with a typed error
+die(defect)              // fails with a defect
+sync(|| value)           // runs a closure when run
+suspend(|| effect)       // builds the effect when run
+from_async(|| async {..}) // wraps an async block returning Result<A, E>
+effect!({ .. })          // do-notation (Chapter 3)
 ```
-
-These three constructors cover every starting point. Everything else is transformation and composition.

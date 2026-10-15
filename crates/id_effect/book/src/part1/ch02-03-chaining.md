@@ -1,112 +1,107 @@
 # Chaining Effects — flat_map and the Bind
 
-`map` handles the case where your transformation is a pure function: `A → B`. But often the next step is itself an effect. You don't want `Effect<Effect<B, E, R>, E, R>` — you want `Effect<B, E, R>`. That's `flat_map`.
+`map` handles a pure transformation `A → B`. Often the next step is itself an effect: you don't
+want `Effect<Effect<B, E, R>, E, R>`, you want `Effect<B, E, R>`. That's `flat_map`.
 
 ## The Problem with map for Effects
 
-Say you want to fetch a user and then fetch their posts:
-
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
-fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, Database> { ... }
-```
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
+fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { /* ... */ }
 
-If you try to use `map`:
-
-```rust
-// This gives Effect<Effect<Vec<Post>, DbError, Database>, DbError, Database>
-// — a nested effect, not what we want
+// Effect<Effect<Vec<Post>, DbError, _>, DbError, _>: a nested effect, not what we want
 let wrong = get_user(1).map(|user| get_posts(user.id));
 ```
 
-`map`'s function must return a plain value. If it returns an `Effect`, you get nesting.
-
 ## flat_map: Chain Without Nesting
 
-`flat_map` (also known as `and_then` on effects) takes a function `A → Effect<B, E, R>` and "flattens" the result:
+`flat_map` takes a function `A → Effect<B, E, R>` and flattens the result:
 
 ```rust
-let combined: Effect<Vec<Post>, DbError, Database> =
-    get_user(1).flat_map(|user| get_posts(user.id));
+let combined: Effect<Vec<Post>, DbError, caps!(Database)> =
+  get_user(1).flat_map(|user| get_posts(user.id));
 ```
 
-Now you have one flat effect that, when run, first fetches the user, then uses the result to fetch posts. The nesting is gone.
+When run, it fetches the user, then uses the result to fetch the posts. Both sides of a
+`flat_map` have the same `E` and `R`.
+
+```rust
+use id_effect::{Effect, Exit, succeed};
+
+let program: Effect<i32> = succeed(20).flat_map(|n: i32| succeed(n + 22));
+assert_eq!(program.block_on(), Exit::succeed(42));
+```
 
 ## Chaining Multiple Steps
 
-`flat_map` chains read left-to-right, but deep chains get noisy:
+Deep chains get noisy:
 
 ```rust
-// Gets unwieldy quickly
-let program = get_user(1)
-    .flat_map(|user| get_posts(user.id)
-        .flat_map(|posts| render_page(user, posts)));
+let program = get_user(1).flat_map(|user| {
+  get_posts(user.id).flat_map(move |posts| render_page(user, posts))
+});
 ```
 
 This is where the `effect!` macro comes in.
 
 ## The effect! Macro as Syntactic Sugar
 
-The `effect!` macro turns `flat_map` chains into readable sequential code using the `~` operator:
+`effect!` turns `flat_map` chains into sequential code with the `~` operator:
 
 ```rust
-use id_effect::effect;
+use id_effect::{Effect, caps, effect};
 
-let program: Effect<Page, AppError, caps!(Database)> = effect!(|r| {
-    let user  = ~ get_user(1).map_error(AppError::Db);
-    let posts = ~ get_posts(user.id).map_error(AppError::Db);
-    let page  = render_page(user, posts);
-    page
-};
+fn page() -> Effect<Page, AppError, caps!(Database)> {
+  effect!({
+    let user = ~get_user(1);
+    let posts = ~get_posts(user.id);
+    render_page(user, posts)
+  })
+}
 ```
 
-The `~` operator is the bind: "run this effect and give me its success value." Each `~ expr` desugars to a `flat_map`. The whole block is one effect.
-
-Note that `render_page` (a pure function with no `~`) is just a normal Rust expression — it runs inside the macro body during execution.
+`~expr` is the bind: "run this effect and give me its success value". The whole block is one
+effect. `render_page` (no `~`) is an ordinary Rust expression that runs as part of the body.
+`~` also widens each step's error into the block's error (`AppError: From<DbError>` here), so the
+`.map_err` calls disappear.
 
 ## Error Short-Circuiting
 
-Like `?` in `Result`, if any `~` step fails, the whole `effect!` exits early with that error:
+Like `?` on a `Result`, if any `~` step fails, the whole block stops with that error:
 
 ```rust
-let program: Effect<Page, AppError, caps!(Database)> = effect!(|r| {
-    let user = ~ get_user(999).map_error(AppError::Db);
-    // If get_user fails, execution stops here.
-    // The rest never runs.
-    let posts = ~ get_posts(user.id).map_error(AppError::Db);
-    render_page(user, posts)
-};
+effect!({
+  let user = ~get_user(999); // if this fails, the block ends here
+  let posts = ~get_posts(user.id);
+  render_page(user, posts)
+})
 ```
 
-This is sequential, not parallel. Each step waits for the previous.
+The steps are sequential. To run independent steps concurrently, bind a tuple:
+`let (a, b) = ~(fetch_a(), fetch_b());` joins them on child fibers.
 
 ## map vs flat_map — When to Use Each
 
 | Situation | Use |
 |-----------|-----|
 | Transformation returns a plain value | `.map(f)` |
-| Transformation returns an Effect | `.flat_map(f)` or `effect! { ~ ... }` |
-| More than one sequential step | `effect! { ~ ... }` macro |
-
-A rule of thumb: if you find yourself writing `effect.map(|v| another_effect(v))` and noticing the nested type, switch to `flat_map` or the macro.
+| Transformation returns an effect | `.flat_map(f)` or `~` in `effect!` |
+| More than one sequential step | `effect!({ .. })` |
 
 ## The Full Picture
 
 ```rust
-// All equivalent:
+// Equivalent:
 
 // 1. Explicit flat_map
-get_user(1)
-    .flat_map(|user| get_posts(user.id))
+get_user(1).flat_map(|user| get_posts(user.id))
 
-// 2. Using effect! with ~
-effect! {
-    let user = ~ get_user(1);
-    ~ get_posts(user.id)
-}
-
-// 3. Short form for single bind
-effect! { ~ get_user(1).flat_map(|u| get_posts(u.id)) }
+// 2. effect! with ~
+effect!({
+  let user = ~get_user(1);
+  ~get_posts(user.id)
+})
 ```
 
-The `effect!` macro is the idiomatic choice for anything more than one step. Chapter 3 covers it in full detail.
+`effect!` is the idiomatic choice for anything with more than one step. Chapter 3 covers it in
+full.

@@ -1,185 +1,145 @@
 # The Three Type Parameters
 
-Every `Effect` carries three type parameters: `Effect<A, E, R>`. These aren't arbitrary — they answer the three fundamental questions every computation must address:
+Every `Effect` carries three type parameters, `Effect<A, E = Never, R = HNil>`. They answer the
+three questions every computation must address:
 
-- **A** — What do I produce when I succeed?
-- **E** — What do I produce when I fail?
-- **R** — What do I need in order to run?
-
-Let's examine each one.
+- **A**: what do I produce when I succeed?
+- **E**: what do I produce when I fail?
+- **R**: what do I need in order to run?
 
 ## A: The Answer
 
-The `A` parameter is the success type — what you get back when everything goes right.
+`A` is the success type, the `T` of a `Result<T, E>`.
 
 ```rust
 use id_effect::{Effect, succeed};
 
-// This effect produces an i32 on success
-let answer: Effect<i32, String, ()> = succeed(42);
-
-// This effect produces a User on success
-let user_effect: Effect<User, DbError, ()> = succeed(User::new("Alice"));
+let answer: Effect<i32, String> = succeed(42);
+let user: Effect<User, DbError> = succeed(User::new("Alice"));
 ```
 
-If you're familiar with `Result<T, E>`, think of `A` as the `T`. It's what you're hoping to get.
-
-When you transform an effect with `.map()`, you're changing the `A`:
+`.map()` changes `A` and keeps `E` and `R`:
 
 ```rust
-let numbers: Effect<i32, String, ()> = succeed(21);
-let doubled: Effect<i32, String, ()> = numbers.map(|n| n * 2);
-let stringified: Effect<String, String, ()> = doubled.map(|n| n.to_string());
+let numbers: Effect<i32, String> = succeed(21);
+let doubled: Effect<i32, String> = numbers.map(|n| n * 2);
+let text: Effect<String, String> = doubled.map(|n| n.to_string());
 ```
-
-Each `.map()` transforms the success value while preserving the error type and requirements.
 
 ## E: The Error
 
-The `E` parameter is the failure type — what you get back when something goes wrong.
+`E` is the typed failure, the `E` of a `Result<T, E>`. It defaults to
+[`Never`](../appendix-c-glossary.md): an `Effect<A>` cannot fail with a typed error.
 
 ```rust
 use id_effect::{Effect, fail};
 
-// This effect always fails with a String error
-let failure: Effect<i32, String, ()> = fail("something went wrong".to_string());
-
-// This effect can fail with a DbError
-let user: Effect<User, DbError, ()> = fetch_user_from_db(42);
+let failure: Effect<i32, String> = fail("something went wrong".to_string());
 ```
 
-Again, if you know `Result<T, E>`, think of `E` as the `E`. It's what you're worried might happen.
-
-You can transform error types with `.map_error()`:
+`.map_err()` changes `E`:
 
 ```rust
-let db_effect: Effect<User, DbError, ()> = fetch_user(42);
-
-// Convert DbError to a more general AppError
-let app_effect: Effect<User, AppError, ()> = db_effect.map_error(|e| AppError::Database(e));
+let db: Effect<User, DbError> = fetch_user(42);
+let app: Effect<User, AppError> = db.map_err(AppError::Database);
 ```
 
-Unlike traditional error handling where you sprinkle `.map_err()` everywhere, with effects you typically handle error transformation at specific boundaries — when composing larger effects from smaller ones, or when exposing an API.
+Typed failures are not the only way an effect can end: a panic becomes a *defect* and an
+interrupted fiber ends with an *interrupt*. All three are carried by `Cause<E>` inside
+`Exit::Failure` ([Chapter 8](../part3/ch08-00-error-handling.md)).
 
 ## R: The Requirements
 
-Here is where effects get interesting. The `R` parameter represents the **environment** — the dependencies this effect needs in order to run.
-
-When an effect needs services, express `R` with [`caps!`](../part2/ch04-00-r-parameter.md) and capability **keys** (Chapter 5 names keys fully; use `Database`, not a bare `Database` type):
+`R` is the **environment**: the capabilities this effect needs in order to run. It is a
+type-level list (an HList) of capability types, spelled with `caps!`:
 
 ```rust
-use id_effect::{Effect, caps, effect, provide, require, run_with, succeed};
+use id_effect::{Effect, Never, caps, effect, succeed};
 
-// Self-contained — R is ()
-let standalone: Effect<i32, String, ()> = succeed(42);
+// Self-contained: R is HNil (the default).
+let standalone: Effect<i32, String> = succeed(42);
 
-// Needs Database at the edge
+// Needs a `Database`.
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r| {
-        let db = ~Database;
-        Ok(db.fetch_user(id))
-    })
+  effect!({ ~Database.fetch_user(id)? })
 }
 
-// Needs two keys
-fn get_user_logged(id: u64) -> Effect<User, DbError, caps!(Database, EffectLogger)> {
-    effect!(|r| {
-        let db = ~Database;
-        let log = ~EffectLogger;
-        let user = db.fetch_user(id)?;
-        log.info(&format!("fetched {}", user.id));
-        Ok(user)
-    })
+// Needs a `Database` and an `AuditLog`.
+fn get_user_logged(id: u64) -> Effect<User, DbError, caps!(Database, AuditLog)> {
+  effect!({
+    let user = ~Database.fetch_user(id)?;
+    ~AuditLog.record(format!("fetched {}", user.id));
+    user
+  })
 }
 ```
 
-**You cannot run an effect until its capabilities exist.** Satisfy them at the program edge with [`run_with`](../part2/ch04-02-providing.md), not inside library code:
+Inside `effect!`, `~Database` reads the capability (an `&Arc<Database>`). Reading a capability
+that is not in `R` is a compile error that names it:
+
+```text
+error[E0277]: capability `Metrics` is not in this effect's environment
+   = note: add `Metrics` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
+```
+
+**You cannot run an effect until its capabilities are provided.** `block_on` exists only for
+`Effect<A, E, HNil>`, so you remove each requirement with `.provide(value)`, a whole environment
+with `.provide_env(hlist![..])`, or a [`Layer`](../part2/ch06-00-layers.md) with
+`.provide_layer(layer)`, usually once at the edge:
 
 ```rust
-run_with([provide!(DatabaseLive)], get_user(42))?;
-```
+use id_effect::hlist;
 
-There is no `.provide()` on effects. [`run_with`](../part2/ch04-02-providing.md) builds an [`Env`](../part2/ch05-03-context-hlists.md) and executes the program.
+let exit = get_user_logged(42)
+  .provide_env(hlist![Database::connect(), AuditLog::stdout()])
+  .block_on();
+```
 
 ## Why R matters
 
-The `R` parameter is why id_effect offers compile-time dependency injection.
-
 ```rust
-fn process_order(order: Order) -> Effect<
-    Receipt,
-    OrderError,
-    caps!(Database, PaymentGateway, EmailService, EffectLogger),
->
+fn process_order(order: Order)
+  -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
 ```
 
-Just from the type you know success, error, and **which capability services** must be wired before `run_with`.
+From the type alone you know the success value, the error and which capabilities must be wired
+before the program can run. The compiler checks the wiring.
 
 ## R flows through composition
 
-```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
-fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(EmailService)> { ... }
+A `~` bind inside `effect!` accepts any sub-effect whose `R` is part of the outer `R`, and widens
+its error through `From`:
 
-fn notify_user(id: u64) -> Effect<(), AppError, caps!(Database, EmailService)> {
-    effect!(|r| {
-        let user = ~ get_user(id).map_error(AppError::Db);
-        ~ send_email(&user.email, "Hello!").map_error(AppError::Email);
-        ()
-    })
+```rust
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
+fn send_email(to: &str, body: &str) -> Effect<(), EmailError, caps!(Mailer)> { /* ... */ }
+
+// AppError: From<DbError> + From<EmailError>
+fn notify_user(id: u64) -> Effect<(), AppError, caps!(Database, Mailer)> {
+  effect!({
+    let user = ~get_user(id);
+    ~send_email(&user.email, "Hello!");
+  })
 }
 ```
-
-## The unit environment: ()
-
-When `R = ()`, the effect is self-contained:
-
-```rust
-let standalone: Effect<i32, String, ()> = succeed(42);
-let result = run_blocking(standalone, ());
-```
-
-Effects with dependencies keep `caps!(…)` on the type until the edge:
-
-```rust
-fn main() -> Result<(), AppError> {
-    run_with(
-        [
-            provide!(DatabaseLive),
-            provide!(CacheLive),
-            provide!(LoggerLive),
-            provide!(ConfigLive),
-        ],
-        business_logic(),
-    )
-}
-```
-
 
 ## Reading Effect Signatures
 
-Let's practice reading some signatures:
-
 ```rust
 // Produces String, never fails, needs nothing
-Effect<String, Never, ()>
+Effect<String>
 
 // Produces i32, can fail with ParseError, needs nothing
-Effect<i32, ParseError, ()>
+Effect<i32, ParseError>
 
 // Produces User, can fail with DbError, needs Database
 Effect<User, DbError, caps!(Database)>
 
-// Produces (), can fail with AppError, needs four capability services
-Effect<(), AppError, caps!(Database, Cache, EffectLogger)>
+// Produces (), can fail with AppError, needs three capabilities
+Effect<(), AppError, caps!(Database, Cache, AuditLog)>
 ```
-
-With practice, you'll read these as fluently as you read `Result<T, E>`. The extra `R` parameter becomes second nature.
 
 ## What's Next
 
-We've seen that effects are descriptions, not actions. We've seen that `Effect<A, E, R>` encodes success type, error type, and requirements.
-
-But we haven't answered the obvious question: why does this matter? Why is it better to describe computations than to just do them?
-
-The answer is laziness. And laziness, it turns out, is a superpower.
+Effects are descriptions, and `Effect<A, E, R>` encodes success, failure and requirements. Why is
+it better to describe computations than to just do them? Laziness.

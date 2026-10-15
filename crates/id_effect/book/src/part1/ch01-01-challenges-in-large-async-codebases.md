@@ -36,7 +36,7 @@ async fn process_order(order: Order) -> Result<Receipt, ProcessError> {
 
 The business steps are clear, but the `.map_err` noise is repetitive. The domain `ProcessError` enum often grows with every new integration. Policy (retries, fallbacks) may live in callers or ad hoc helpers, which makes behavior harder to see in one place.
 
-**What effects add:** failure and recovery can be expressed as **transformations on a description** (for example `retry`, `map_error`, structured `Exit` types), so policies are easier to reuse and test without rewriting the core flow.
+**What effects add:** failure and recovery can be expressed as **transformations on a description** (for example `Effect::retry`, `map_err`, `timeout`, structured `Exit` values), so policies are easier to reuse and test without rewriting the core flow.
 
 ## Challenge 2: Explicit dependency parameters
 
@@ -88,7 +88,7 @@ Remember: **`async fn` bodies compile to `Future`s; nothing runs until a future 
 
 In practice, hand-written async often **reads** like a straight-line script: await one step, then the next. That is appropriate for many functions. It becomes harder when you want the **same logical workflow** to be inspected, wrapped (retries, timeouts), or tested with a **substituted environment** without threading mocks through every layer.
 
-**Effects** push the “script” into a value: `Effect<A, E, R>` is a description that you **run** with `run_async`, `run_blocking`, or test harnesses—after you have composed and configured it.
+**Effects** push the “script” into a value: `Effect<A, E, R>` is a description that you **run** with `Effect::block_on` at the edge of a binary, `Runtime::run(eff).await` inside async code, or the deterministic `TestExecutor` in tests—after you have composed it and provided its environment.
 
 That does not replace understanding executors or `Future`. It adds a **layer** for domain structure: answer type `A`, error type `E`, requirements `R`, and explicit execution.
 
