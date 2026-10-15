@@ -1,7 +1,7 @@
 //! Fabric governor control loop (monitor → admit → rebalance).
 //!
 //! This is *resource governance* (admission, thread sizing, scale-out), not fault supervision;
-//! restart policies live in [`crate::concurrency::Supervisor`].
+//! restart policies live in the `Supervisor`.
 
 use std::sync::{Arc, RwLock};
 

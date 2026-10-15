@@ -3,7 +3,7 @@
 Thin helpers for building **CLIs whose bodies are [`Effect`](https://docs.rs/id_effect/latest/id_effect/kernel/struct.Effect.html) programs**:
 
 - Map [`Exit`](https://docs.rs/id_effect/latest/id_effect/enum.Exit.html) / [`Cause`](https://docs.rs/id_effect/latest/id_effect/enum.Cause.html) / `Result` to [`std::process::ExitCode`].
-- [`run_main`](https://docs.rs/id_effect_cli/latest/id_effect_cli/fn.run_main.html) — the program edge: optional tracing install, then `block_on` on the default `id_effect::next::Runtime`, then stderr logging and `Exit` → exit code mapping. Takes a `next::Effect` or `next::LocalEffect` plus its environment (`HNil` when it needs nothing).
+- [`run_main`](https://docs.rs/id_effect_cli/latest/id_effect_cli/fn.run_main.html) — the program edge: optional in-process tracing buffer (`RunMainConfig::with_tracing`: `id_effect::next::install_tracing_layer` + its span hook), then `block_on` on the default `id_effect::next::Runtime`, then stderr logging and `Exit` → exit code mapping. Takes a `next::Effect` or `next::LocalEffect` plus its environment (`HNil` when it needs nothing).
 - Optional [`clap`](https://docs.rs/clap) (feature `clap`, on by default).
 
 ## Quick start

@@ -4,7 +4,7 @@
 //!
 //! Every effect passes through Fabric at the runtime boundary. The [`FabricGovernor`] compares
 //! live telemetry against [`ResourcePolicy`] and adjusts admission, pool sizing, and placement.
-//! It governs resources; it does not restart failed work (see [`crate::concurrency::Supervisor`]).
+//! It governs resources; it does not restart failed work (that is the `Supervisor`'s job).
 
 mod adaptive;
 mod admission;

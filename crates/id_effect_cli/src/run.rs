@@ -1,19 +1,19 @@
-//! `run_main` — the CLI run edge: tracing (optional), `block_on`, stderr, [`ExitCode`].
+//! `run_main` — the CLI run edge: tracing buffer (optional), `block_on`, stderr, [`ExitCode`].
 
 use std::fmt::{self, Debug};
 use std::process::ExitCode;
 
-use id_effect::next::IntoLocal;
-use id_effect::next::compat::IntoNext;
-use id_effect::{Cause, Exit, TracingConfig, install_tracing_layer};
+use id_effect::next::{IntoLocal, TracingConfig, install_tracing_layer, tracing_hook};
+use id_effect::{Cause, Exit};
 
 use crate::exit_code_for_cause;
 
 /// Options for [`run_main`].
 #[derive(Clone, Debug)]
 pub struct RunMainConfig {
-  /// When `true`, installs the default tracing layer via [`install_tracing_layer`]
-  /// ([`TracingConfig::enabled`]) before running `effect`.
+  /// When `true`, turns on the in-process tracing buffer ([`install_tracing_layer`] with
+  /// [`TracingConfig::enabled`]) and runs `effect` under its span hook ([`tracing_hook`]), so
+  /// every `with_span` inside is recorded (read it back with `snapshot_tracing`).
   pub install_tracing: bool,
 }
 
@@ -64,26 +64,17 @@ where
   E: Debug + 'static,
   R: Send + Sync + 'static,
 {
+  let mut program = effect.into_local().provide_env(env);
   if config.install_tracing {
-    install_tracing();
+    install_tracing_layer(TracingConfig::enabled());
+    program = program.with_span_hook(tracing_hook());
   }
   #[allow(
     clippy::disallowed_methods,
     reason = "edge: `run_main` is the CLI program edge (called from `main`), the one place that blocks"
   )]
-  let exit = effect.into_local().provide_env(env).block_on();
+  let exit = program.block_on();
   report_exit(exit)
-}
-
-/// Installs the (still v1-backed) tracing layer through the v1 → next bridge.
-fn install_tracing() {
-  #[allow(
-    clippy::disallowed_methods,
-    reason = "edge: tracing install at the CLI program edge, before the program runs"
-  )]
-  let _ = install_tracing_layer(TracingConfig::enabled())
-    .into_next()
-    .block_on();
 }
 
 /// Prints a failed [`Exit`] to stderr and maps it to an [`ExitCode`].
@@ -116,7 +107,9 @@ impl<E: Debug> fmt::Display for CauseLine<'_, E> {
 mod tests {
   use super::*;
   use id_effect::FiberId;
-  use id_effect::next::{Effect, HCons, HNil, LocalEffect, die, fail, need, succeed, sync};
+  use id_effect::next::{
+    Effect, EffectEvent, HCons, HNil, LocalEffect, die, fail, need, snapshot_tracing, succeed, sync,
+  };
 
   mod run_main {
     use super::*;
@@ -177,22 +170,17 @@ mod tests {
     }
 
     #[test]
-    fn runs_a_v1_effect_through_the_bridge() {
-      let v1 = id_effect::fail::<u8, &str, ()>("v1 boom").into_next();
-      assert_eq!(
-        run_main(v1, HNil, RunMainConfig::minimal()),
-        ExitCode::from(1u8)
-      );
-    }
-
-    #[test]
-    fn with_tracing_flag_does_not_panic_on_success() {
-      let code = run_main(
-        succeed::<(), (), HNil>(()),
-        HNil,
-        RunMainConfig::with_tracing(),
-      );
+    fn with_tracing_records_the_program_spans() {
+      let eff = succeed::<(), (), HNil>(()).with_span("cli.main");
+      let code = run_main(eff, HNil, RunMainConfig::with_tracing());
       assert_eq!(code, ExitCode::SUCCESS);
+      let snap = snapshot_tracing();
+      assert!(
+        snap.effect_events.contains(&EffectEvent::Start {
+          span: "cli.main".into()
+        }),
+        "{snap:?}"
+      );
     }
   }
 
