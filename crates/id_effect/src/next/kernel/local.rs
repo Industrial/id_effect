@@ -719,6 +719,10 @@ impl<A: 'static, E: 'static> LocalEffect<A, E, HNil> {
   }
 
   /// [`try_block_on`](Self::try_block_on), with [`BlockOnInAsync`] reported as a defect.
+  #[allow(
+    clippy::disallowed_methods,
+    reason = "G-nb: the convenience blocking edge itself, delegating to `try_block_on`"
+  )]
   pub fn block_on(self) -> Exit<A, E> {
     self
       .try_block_on()

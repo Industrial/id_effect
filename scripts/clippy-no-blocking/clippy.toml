@@ -20,6 +20,8 @@ disallowed-methods = [
   # `next` kernel run edges.
   { path = "id_effect::next::kernel::effect::Effect::block_on", reason = "`next` `Effect::block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
   { path = "id_effect::next::kernel::effect::Effect::try_block_on", reason = "`next` `Effect::try_block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
+  { path = "id_effect::next::kernel::local::LocalEffect::block_on", reason = "`next` `LocalEffect::block_on` parks the thread; `.await` `run_fiber` or return the effect (G-nb)" },
+  { path = "id_effect::next::kernel::local::LocalEffect::try_block_on", reason = "`next` `LocalEffect::try_block_on` parks the thread; `.await` `run_fiber` or return the effect (G-nb)" },
   { path = "id_effect::next::runtime::runtime::Runtime::block_on", reason = "`next` `Runtime::block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
   { path = "id_effect::next::runtime::runtime::Runtime::try_block_on", reason = "`next` `Runtime::try_block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
   { path = "id_effect::next::runtime::runtime::Runtime::block_on_future", reason = "`next` `Runtime::block_on_future` parks the thread; `.await` the future (G-nb)" },
