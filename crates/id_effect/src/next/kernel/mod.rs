@@ -18,7 +18,6 @@ mod runloop;
 
 #[allow(unused_imports)] // crate-internal items only (`crate::next::kernel::AnyBox` etc.)
 pub use anybox::*;
-#[allow(unused_imports)] // filled by k-typed-r
 pub use bind::*;
 #[allow(unused_imports)] // filled by k-macros-next
 pub use bind_same::*;
