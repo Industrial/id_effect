@@ -22,6 +22,7 @@
 )]
 
 mod cqrs;
+mod edge;
 mod envelope;
 mod error;
 mod event_store;

@@ -1,9 +1,9 @@
 //! Multi-projection rebuild planner using [`id_effect_graph`].
 
+use crate::edge::run_async;
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
 use crate::projection::{Projection, run_projection};
-use id_effect::run_async;
 use id_effect_graph::{DependencyNode, topological_sort};
 use std::collections::HashMap;
 
@@ -71,7 +71,7 @@ impl ProjectionRunner {
     S: Send + 'static,
   {
     let order = self.plan()?;
-    let stored: Vec<StoredEvent<E>> = run_async(store.read(stream_id, from_version), ()).await?;
+    let stored: Vec<StoredEvent<E>> = run_async(store.read(stream_id, from_version)).await?;
     let events: Vec<E> = stored.into_iter().map(|s| s.payload).collect();
 
     let mut results = Vec::with_capacity(order.len());
@@ -90,7 +90,6 @@ impl ProjectionRunner {
 mod tests {
   use super::*;
   use crate::event_store::MemoryEventStore;
-  use id_effect::run_blocking;
   use std::collections::HashMap;
 
   #[derive(Clone, Debug, PartialEq, Eq)]
@@ -135,7 +134,9 @@ mod tests {
   #[tokio::test]
   async fn run_all_rebuilds_in_order() {
     let store = MemoryEventStore::new();
-    run_blocking(store.append("s", &[Evt::N(2), Evt::N(3)]), ()).expect("append");
+    run_async(store.append("s", &[Evt::N(2), Evt::N(3)]))
+      .await
+      .expect("append");
 
     let mut runner = ProjectionRunner::new();
     runner.register(ProjectionNode::new("sum", Vec::<&str>::new()));

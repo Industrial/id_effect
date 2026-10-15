@@ -1,7 +1,8 @@
 //! [`EventStore`] trait and in-memory / file-backed implementations.
 
+use crate::edge::attempt;
 use crate::error::EventStoreError;
-use id_effect::Effect;
+use id_effect::next::Effect;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -24,21 +25,17 @@ pub struct StoredEvent<E> {
 /// Append-only event persistence.
 pub trait EventStore<E>: Send + Sync {
   /// Append events to `stream_id`, returning assigned versions.
-  fn append(
-    &self,
-    stream_id: &str,
-    events: &[E],
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()>;
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError>;
 
   /// Read events from `stream_id` starting at `from_version` (inclusive, 1-based).
   fn read(
     &self,
     stream_id: &str,
     from_version: u64,
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()>;
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError>;
 
   /// Latest assigned version, or `0` when the stream is empty.
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError, ()>;
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError>;
 }
 
 /// In-memory append-only store (tests and ephemeral demos).
@@ -62,15 +59,11 @@ impl<E> Default for MemoryEventStore<E> {
 }
 
 impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
-  fn append(
-    &self,
-    stream_id: &str,
-    events: &[E],
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let streams = Arc::clone(&self.streams);
-    Effect::new(move |_r| {
+    attempt(move || {
       let mut guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
@@ -94,10 +87,10 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
     &self,
     stream_id: &str,
     from_version: u64,
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let streams = Arc::clone(&self.streams);
-    Effect::new(move |_r| {
+    attempt(move || {
       let guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
@@ -114,10 +107,10 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
     })
   }
 
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError, ()> {
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let streams = Arc::clone(&self.streams);
-    Effect::new(move |_r| {
+    attempt(move || {
       let guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
@@ -201,15 +194,11 @@ struct JournalRecord<E> {
 impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore<E>
   for FileJournal<E>
 {
-  fn append(
-    &self,
-    stream_id: &str,
-    events: &[E],
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let path = self.path.clone();
-    Effect::new(move |_r| {
+    attempt(move || {
       let journal = FileJournal::<E> {
         path,
         _marker: std::marker::PhantomData,
@@ -244,10 +233,10 @@ impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore
     &self,
     stream_id: &str,
     from_version: u64,
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let path = self.path.clone();
-    Effect::new(move |_r| {
+    attempt(move || {
       let journal = FileJournal::<E> {
         path,
         _marker: std::marker::PhantomData,
@@ -265,10 +254,10 @@ impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore
     })
   }
 
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError, ()> {
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let path = self.path.clone();
-    Effect::new(move |_r| {
+    attempt(move || {
       let journal = FileJournal::<E> {
         path,
         _marker: std::marker::PhantomData,
@@ -282,7 +271,7 @@ impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::run_blocking;
+  use crate::edge::run_sync;
 
   #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
   struct CounterEvt(u32);
@@ -290,13 +279,12 @@ mod tests {
   #[test]
   fn memory_store_appends_and_reads() {
     let store = MemoryEventStore::<CounterEvt>::new();
-    let stored =
-      run_blocking(store.append("s1", &[CounterEvt(1), CounterEvt(2)]), ()).expect("append");
+    let stored = run_sync(store.append("s1", &[CounterEvt(1), CounterEvt(2)])).expect("append");
     assert_eq!(stored[0].version, 1);
     assert_eq!(stored[1].version, 2);
-    let read = run_blocking(store.read("s1", 1), ()).expect("read");
+    let read = run_sync(store.read("s1", 1)).expect("read");
     assert_eq!(read.len(), 2);
-    let latest = run_blocking(store.latest_version("s1"), ()).expect("latest");
+    let latest = run_sync(store.latest_version("s1")).expect("latest");
     assert_eq!(latest, 2);
   }
 
@@ -305,36 +293,29 @@ mod tests {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("events.jsonl");
     let store = FileJournal::<CounterEvt>::open(&path).expect("open");
-    run_blocking(store.append("acct", &[CounterEvt(10)]), ()).expect("append");
-    let read = run_blocking(store.read("acct", 1), ()).expect("read");
+    run_sync(store.append("acct", &[CounterEvt(10)])).expect("append");
+    let read = run_sync(store.read("acct", 1)).expect("read");
     assert_eq!(read[0].payload, CounterEvt(10));
   }
 
   #[test]
   fn memory_default_store_is_empty() {
     let store = MemoryEventStore::<CounterEvt>::default();
-    assert_eq!(
-      run_blocking(store.latest_version("any"), ()).expect("latest"),
-      0
-    );
+    assert_eq!(run_sync(store.latest_version("any")).expect("latest"), 0);
   }
 
   #[test]
   fn append_empty_returns_no_stored_events() {
     let store = MemoryEventStore::<CounterEvt>::new();
-    let stored = run_blocking(store.append("s", &[]), ()).expect("append");
+    let stored = run_sync(store.append("s", &[])).expect("append");
     assert!(stored.is_empty());
   }
 
   #[test]
   fn read_filters_by_from_version() {
     let store = MemoryEventStore::<CounterEvt>::new();
-    run_blocking(
-      store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)]),
-      (),
-    )
-    .expect("append");
-    let read = run_blocking(store.read("s", 2), ()).expect("read");
+    run_sync(store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)])).expect("append");
+    let read = run_sync(store.read("s", 2)).expect("read");
     assert_eq!(read.len(), 2);
     assert_eq!(read[0].version, 2);
   }
@@ -342,14 +323,14 @@ mod tests {
   #[test]
   fn memory_read_empty_stream_returns_empty() {
     let store = MemoryEventStore::<CounterEvt>::new();
-    let read = run_blocking(store.read("missing", 1), ()).expect("read");
+    let read = run_sync(store.read("missing", 1)).expect("read");
     assert!(read.is_empty());
   }
 
   #[test]
   fn memory_latest_version_zero_when_empty() {
     let store = MemoryEventStore::<CounterEvt>::new();
-    let latest = run_blocking(store.latest_version("missing"), ()).expect("latest");
+    let latest = run_sync(store.latest_version("missing")).expect("latest");
     assert_eq!(latest, 0);
   }
 
@@ -358,16 +339,9 @@ mod tests {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("nested/events.jsonl");
     let store = FileJournal::<CounterEvt>::open(&path).expect("open");
-    run_blocking(
-      store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)]),
-      (),
-    )
-    .expect("append");
-    assert_eq!(
-      run_blocking(store.latest_version("s"), ()).expect("latest"),
-      3
-    );
-    let read = run_blocking(store.read("s", 2), ()).expect("read");
+    run_sync(store.append("s", &[CounterEvt(1), CounterEvt(2), CounterEvt(3)])).expect("append");
+    assert_eq!(run_sync(store.latest_version("s")).expect("latest"), 3);
+    let read = run_sync(store.read("s", 2)).expect("read");
     assert_eq!(read.len(), 2);
     assert_eq!(read[0].version, 2);
   }
@@ -383,10 +357,10 @@ mod tests {
     )
     .expect("write blanks");
     let store = FileJournal::<CounterEvt>::open(&path).expect("open");
-    run_blocking(store.append("a", &[CounterEvt(1)]), ()).expect("a");
-    run_blocking(store.append("b", &[CounterEvt(2)]), ()).expect("b");
-    let a = run_blocking(store.read("a", 1), ()).expect("read a");
-    let b = run_blocking(store.read("b", 1), ()).expect("read b");
+    run_sync(store.append("a", &[CounterEvt(1)])).expect("a");
+    run_sync(store.append("b", &[CounterEvt(2)])).expect("b");
+    let a = run_sync(store.read("a", 1)).expect("read a");
+    let b = run_sync(store.read("b", 1)).expect("read b");
     assert_eq!(a[0].payload, CounterEvt(1));
     assert_eq!(b[0].payload, CounterEvt(2));
   }
@@ -407,10 +381,10 @@ mod tests {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("empty.jsonl");
     let store = FileJournal::<CounterEvt>::open(&path).expect("open");
-    let read = run_blocking(store.read("missing", 1), ()).expect("read");
+    let read = run_sync(store.read("missing", 1)).expect("read");
     assert!(read.is_empty());
     assert_eq!(
-      run_blocking(store.latest_version("missing"), ()).expect("latest"),
+      run_sync(store.latest_version("missing")).expect("latest"),
       0
     );
   }
@@ -426,7 +400,7 @@ mod tests {
     )
     .expect("write");
     let store = FileJournal::<CounterEvt>::open(&path).expect("open");
-    let err = run_blocking(store.read("s", 1), ()).expect_err("serde");
+    let err = run_sync(store.read("s", 1)).expect_err("serde");
     assert!(matches!(err, EventStoreError::Serde(_)));
   }
 }

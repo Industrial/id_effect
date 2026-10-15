@@ -1,18 +1,19 @@
 //! CQRS boundary types — command handlers produce events; query handlers read projections.
 
+use crate::edge::run_sync;
 use crate::error::EventStoreError;
 use crate::event_store::EventStore;
 #[cfg(feature = "es-entity")]
 use crate::projection::run_projection;
 use crate::projection::{Projection, run_projection_from_store};
-use id_effect::{Effect, run_blocking};
+use id_effect::next::Effect;
 
 /// Turn a command into zero or more domain events (write side).
 pub trait CommandHandler<Cmd, Ev> {
   /// Error type for rejected commands.
   type Error: std::error::Error + Send + Sync + 'static;
   /// Validate and map `command` to events without persisting.
-  fn handle(&self, command: Cmd) -> Effect<Vec<Ev>, Self::Error, ()>;
+  fn handle(&self, command: Cmd) -> Effect<Vec<Ev>, Self::Error>;
 }
 
 /// Answer a query from a materialized read model (read side).
@@ -20,7 +21,7 @@ pub trait QueryHandler<Qry, Ans> {
   /// Error type for failed queries.
   type Error: std::error::Error + Send + Sync + 'static;
   /// Run the query.
-  fn query(&self, query: Qry) -> Effect<Ans, Self::Error, ()>;
+  fn query(&self, query: Qry) -> Effect<Ans, Self::Error>;
 }
 
 /// Persist command-generated events then return the updated projection state.
@@ -39,8 +40,8 @@ where
   Ev: Clone + Send + Sync + 'static,
   S: Send + 'static,
 {
-  let events = run_blocking(handler.handle(command), ()).map_err(DispatchError::Command)?;
-  run_blocking(store.append(stream_id, &events), ()).map_err(DispatchError::Store)?;
+  let events = run_sync(handler.handle(command)).map_err(DispatchError::Command)?;
+  run_sync(store.append(stream_id, &events)).map_err(DispatchError::Store)?;
   run_projection_from_store(store, stream_id, 1, projection).map_err(DispatchError::Store)
 }
 
@@ -63,11 +64,10 @@ where
 {
   let _state = run_projection_from_store(store, stream_id, 1, projection)
     .map_err(QueryDispatchError::Store)?;
-  run_blocking(
+  run_sync(
     query_handler
       .query(query)
-      .map_error(QueryDispatchError::Query),
-    (),
+      .map_err(QueryDispatchError::Query),
   )
 }
 
@@ -110,15 +110,15 @@ where
   Ev: Clone + Send + Sync + 'static,
   S: Send + 'static,
 {
-  use id_effect::run_async;
+  use crate::edge::run_async;
 
-  let events = run_async(handler.handle(command), ())
+  let events = run_async(handler.handle(command))
     .await
     .map_err(DispatchError::Command)?;
-  run_async(store.append(stream_id, &events), ())
+  run_async(store.append(stream_id, &events))
     .await
     .map_err(DispatchError::Store)?;
-  let stored = run_async(store.read(stream_id, 1), ())
+  let stored = run_async(store.read(stream_id, 1))
     .await
     .map_err(DispatchError::Store)?;
   let payloads = stored.into_iter().map(|s| s.payload);
@@ -129,7 +129,7 @@ where
 mod tests {
   use super::*;
   use crate::event_store::MemoryEventStore;
-  use id_effect::{fail, succeed};
+  use id_effect::next::{fail, succeed};
 
   #[derive(Clone, Debug, PartialEq, Eq)]
   enum Evt {
@@ -158,7 +158,7 @@ mod tests {
   impl CommandHandler<Deposit, Evt> for DepositHandler {
     type Error = CommandReject;
 
-    fn handle(&self, command: Deposit) -> Effect<Vec<Evt>, Self::Error, ()> {
+    fn handle(&self, command: Deposit) -> Effect<Vec<Evt>, Self::Error> {
       if command.amount <= 0 {
         return fail(CommandReject("amount must be positive"));
       }
@@ -187,7 +187,7 @@ mod tests {
   impl QueryHandler<BalanceQuery, i32> for BalanceQueryHandler {
     type Error = std::convert::Infallible;
 
-    fn query(&self, _query: BalanceQuery) -> Effect<i32, Self::Error, ()> {
+    fn query(&self, _query: BalanceQuery) -> Effect<i32, Self::Error> {
       succeed(self.balance)
     }
   }
@@ -231,8 +231,8 @@ mod tests {
   struct FailQueryHandler;
   impl QueryHandler<BalanceQuery, i32> for FailQueryHandler {
     type Error = std::io::Error;
-    fn query(&self, _query: BalanceQuery) -> Effect<i32, Self::Error, ()> {
-      id_effect::fail(std::io::Error::other("query fail"))
+    fn query(&self, _query: BalanceQuery) -> Effect<i32, Self::Error> {
+      fail(std::io::Error::other("query fail"))
     }
   }
 

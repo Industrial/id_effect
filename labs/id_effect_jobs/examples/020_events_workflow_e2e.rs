@@ -16,6 +16,7 @@ fn main() {
 #[cfg(all(feature = "obix", feature = "postgres"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+  use id_effect::next::compat::IntoV1;
   use id_effect::run_async;
   use id_effect_events::{
     EsEntityEventStore, EsEntityPgBackend, EventStore, Projection, ProjectionNode,
@@ -62,12 +63,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let stream = format!("order-{}", uuid::Uuid::new_v4());
   let store = EsEntityEventStore::<OrderEvt>::new(EsEntityPgBackend::new(pool.clone()));
   run_async(
-    store.append(
-      &stream,
-      &[OrderEvt::Placed {
-        sku: "widget".into(),
-      }],
-    ),
+    store
+      .append(
+        &stream,
+        &[OrderEvt::Placed {
+          sku: "widget".into(),
+        }],
+      )
+      .into_v1::<()>(),
     (),
   )
   .await?;
