@@ -1,11 +1,12 @@
-//! The `Layer<Out, E, In>` base: `succeed`/`from_effect`/`build`/`merge`/`provide_merge`/
-//! `provide_layer`, with duplicate handling. Filled by `k-layer-base`, extended by
-//! `p-layer-core`.
+//! `Layer<Out, E, In>`: lazy, memoised recipes for environment values. `succeed` / `effect` /
+//! `from_effect` / `build` / `merge` / `provide_to` / `provide_merge` and
+//! `Effect::provide_layer`. Filled by `k-layer-base` and `p-layer-core`; `p-layer-scoped` adds
+//! `fresh` and scoped (finalized) layers.
 //!
 //! A [`Layer<Out, E, In>`](Layer) is a lazy recipe that builds the environment value `Out` (an
 //! HList of `Arc`ed capabilities) from the environment `In`, failing with `E` (design A §2.3).
-//! The base is not memoised and not scoped (no finalizers, no `fresh`); those belong to
-//! `p-layer-core` / `p-layer-scoped`.
+//! Building it ([`Layer::build`], [`Effect::provide_layer`]) yields an ordinary effect; once every
+//! input is supplied that effect needs nothing (`Effect<_, E, HNil>`) and can be run.
 //!
 //! ```
 //! use id_effect::next::{Effect, HCons, HNil, Layer, hlist, need};
@@ -15,10 +16,10 @@
 //! struct Mailer(&'static str);
 //!
 //! fn db() -> Layer<HCons<Db, HNil>, (), HCons<Config, HNil>> {
-//!   Layer::from_effect(need::<Config>().map(|c| hlist![Db(c.0)]))
+//!   Layer::effect(|| need::<Config>().map(|c| hlist![Db(c.0)]))
 //! }
 //! fn mailer() -> Layer<HCons<Mailer, HNil>, (), HCons<Config, HNil>> {
-//!   Layer::from_effect(need::<Config>().map(|c| hlist![Mailer(c.0)]))
+//!   Layer::effect(|| need::<Config>().map(|c| hlist![Mailer(c.0)]))
 //! }
 //!
 //! // Both sides need `Config`: no annotations, and both see the same `Arc<Config>`.
@@ -27,24 +28,81 @@
 //! # let _ = env;
 //! ```
 //!
+//! # Memoisation (Effect.ts `Layer` semantics)
+//!
+//! A layer is memoised **by reference within one build**: a `Layer` value is cheap to clone (an
+//! `Arc` bump) and every clone is the same layer, so a layer used in several places of one graph
+//! is constructed once and every user receives the same capability `Arc`s. Two separate calls
+//! of a layer-returning function are two layers and build twice, as two `Layer.effect(..)` calls
+//! do in Effect.ts.
+//!
+//! ```
+//! use std::sync::Arc;
+//! use std::sync::atomic::{AtomicUsize, Ordering};
+//! use id_effect::next::{HCons, HNil, Layer, hlist, need, sync};
+//!
+//! struct Pool;
+//! struct Users(Arc<Pool>);
+//! struct Orders(Arc<Pool>);
+//!
+//! let opened = Arc::new(AtomicUsize::new(0));
+//! let seen = Arc::clone(&opened);
+//! let pool: Layer<HCons<Pool, HNil>, ()> = Layer::effect(move || {
+//!   let seen = Arc::clone(&seen);
+//!   sync(move || {
+//!     seen.fetch_add(1, Ordering::SeqCst);
+//!     hlist![Pool]
+//!   })
+//! });
+//! fn users() -> Layer<HCons<Users, HNil>, (), HCons<Pool, HNil>> {
+//!   Layer::effect(|| need::<Pool>().map(|p| hlist![Users(p)]))
+//! }
+//! fn orders() -> Layer<HCons<Orders, HNil>, (), HCons<Pool, HNil>> {
+//!   Layer::effect(|| need::<Pool>().map(|p| hlist![Orders(p)]))
+//! }
+//!
+//! // `pool` is used twice (a clone is the same layer): built once, one `Arc<Pool>`.
+//! let app = pool.clone().provide_to(users()).merge(pool.provide_to(orders()));
+//! let id_effect::Exit::Success(env) = app.build().block_on() else {
+//!   panic!("the build failed")
+//! };
+//! assert!(Arc::ptr_eq(&env.0.0, &env.1.0.0)); // one pool ...
+//! assert_eq!(opened.load(Ordering::SeqCst), 1); // ... opened once
+//! ```
+//!
+//! The memo table lives for one build: each [`Layer::build`] (and each run of an effect from
+//! [`Effect::provide_layer`]) starts empty, so separate builds construct their layers again. A
+//! failed construction is not memoised. The first build of a layer within a build wins: its
+//! result is shared by every later use in that build, whatever environment that use runs in.
+//! Builds are sequential (`merge` builds its left side, then its right side), so an entry is
+//! either absent or complete.
+//!
+//! Room for `p-layer-scoped`: the memo table is the build's private context (`MemoMap`), passed
+//! explicitly to every node, so a scope (for finalizers in reverse acquisition order) and
+//! per-entry release bookkeeping can be added to it without changing a combinator. `fresh()`
+//! is a new node that builds its inner layer under a new, empty `MemoMap` (Effect.ts
+//! `Layer.fresh`): the inner graph is then not shared with the rest of the build.
+//!
 //! # Shared inputs (deduplicated by construction)
 //!
 //! `a.merge(b)` needs `Concat<In_a, In_b>`: a capability both sides need appears twice in the
 //! merged `In`. The merged input is split back **positionally** ([`SplitAt`]), never by type
 //! search, so the duplicate is not ambiguous and needs no annotation (the spike's E0283). Every
-//! way of supplying the merged `In` from one environment (`provide_merge`, `provide_layer`,
-//! `.build().provide_env(..)`) projects it with `Embed`, whose **sub**-list may repeat a
-//! capability: both positions receive the same `Arc`. Only `.provide::<T>(..)` on a merged build
-//! effect stays ambiguous for a repeated `T` (`Plucker` searches by type); use `provide_env`.
+//! way of supplying the merged `In` from one environment (`provide_to`, `provide_merge`,
+//! `provide_layer`, `.build().provide_env(..)`) projects it with `Embed`, whose **sub**-list may
+//! repeat a capability: both positions receive the same `Arc`. Only `.provide::<T>(..)` on a
+//! merged build effect stays ambiguous for a repeated `T` (`Plucker` searches by type); use
+//! `provide_env`.
 //!
-//! # Duplicate outputs (rejected at construction time)
+//! # Duplicate outputs (rejected when the graph is wired)
 //!
 //! Two layers that both **produce** `T` cannot be merged: the merged `Out` would make every
 //! `Selector<T, _>` lookup ambiguous. The compile-time route (a post-monomorphisation
 //! `const { assert!(..) }` over the outputs' `TypeId`s) is not available on stable: probed on
 //! the repo toolchain (rustc 1.99.0-nightly, MSRV 1.94), `TypeId::of` is const but `TypeId ==`
 //! in a const fn is not (`PartialEq` is not yet stable as a const trait, `const_cmp`), and
-//! `std::any::type_name` is not const either (`const_type_name`).
+//! `std::any::type_name` is not const either (`const_type_name`). A trait-level "not equal"
+//! bound would need negative reasoning (auto traits / specialisation), which is unstable too.
 //!
 //! So `merge` and `provide_merge` check the merged `Out` when they are **called** (an O(n²) scan
 //! over its [`TypeIds`], always on, not a `debug_assert`) and panic with
@@ -55,19 +113,33 @@
 //!
 //! (`Layer::provide_merge` in the message for that combinator). Layer graphs are wired once at
 //! startup, so this is a startup-time failure, never a failure inside a running fiber. This is
-//! the residual limitation accepted by `k-rebuild` §7 Q-B.
+//! the residual limitation accepted by `k-rebuild` §7 Q-B, re-examined and kept by
+//! `p-layer-core`. `provide_to` keeps only the upper layer's output, so it cannot duplicate one.
 
-use std::any::{TypeId, type_name};
-use std::sync::Arc;
+use std::any::{Any, TypeId, type_name};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::next::capability::{Concat, Embed, HCons, HList, HNil};
-use crate::next::kernel::{AnyEnv, Effect, Instr, Node, downcast_env, succeed};
+use crate::next::kernel::{AnyEnv, Effect, Instr, Node, die, downcast_env, succeed, suspend};
 
-/// A lazy recipe that builds the environment value `Out` from the environment `In`, failing with
-/// `E`. See the [module docs](self).
+/// One node's construction, given the build's memo table.
+type BuildFn<Out, E, In> = dyn Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync;
+
+/// A lazy, memoised recipe that builds the environment value `Out` from the environment `In`,
+/// failing with `E`. Cloning is an `Arc` bump and yields the same layer (memoised together).
+/// See the [module docs](self).
 #[must_use = "layers are lazy; build them with .build() or feed them to .provide_layer(..)"]
 pub struct Layer<Out, E, In = HNil> {
-  build: Effect<Out, E, In>,
+  node: Arc<BuildFn<Out, E, In>>,
+}
+
+impl<Out, E, In> Clone for Layer<Out, E, In> {
+  fn clone(&self) -> Self {
+    Self {
+      node: Arc::clone(&self.node),
+    }
+  }
 }
 
 impl<Out, E, In> std::fmt::Debug for Layer<Out, E, In> {
@@ -84,11 +156,10 @@ where
   Out: HList,
   E: Send + 'static,
 {
-  /// A layer from a ready environment value. It needs nothing (`In = HNil`).
+  /// A layer from a ready environment value (Effect.ts `Layer.succeed`). It needs nothing
+  /// (`In = HNil`); every build hands out the same `Arc`s.
   pub fn succeed(out: Out) -> Self {
-    Self {
-      build: succeed(out),
-    }
+    Self::from_build(move |_| succeed(out.clone()))
   }
 }
 
@@ -98,17 +169,63 @@ where
   E: Send + 'static,
   In: HList,
 {
-  /// A layer whose construction is an effect over its input `In`.
+  /// A layer whose construction is the effect `make()` over its input `In` (Effect.ts
+  /// `Layer.effect`). `make` is called once per build that needs this layer, so the layer can be
+  /// built any number of times.
+  pub fn effect(make: impl Fn() -> Effect<Out, E, In> + Send + Sync + 'static) -> Self {
+    Self::from_build(move |_| make())
+  }
+
+  /// A layer whose construction is the one-shot effect `build`. Effects run once, so this layer
+  /// can be built once: memoisation shares that one result within a build, and a second build
+  /// dies with a defect. Use [`Layer::effect`] for a layer that is built more than once.
   pub fn from_effect(build: Effect<Out, E, In>) -> Self {
-    Self { build }
+    let slot = Mutex::new(Some(build));
+    Self::from_build(move |_| {
+      let taken = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
+      taken.unwrap_or_else(|| {
+        die(format!(
+          "Layer::from_effect: the layer producing `{}` was already built once; use \
+           Layer::effect to build a layer more than once",
+          type_name::<Out>()
+        ))
+      })
+    })
   }
 
-  /// The construction effect.
-  pub fn build(self) -> Effect<Out, E, In> {
-    self.build
+  /// A new node (its own memo identity) from its construction.
+  fn from_build(build: impl Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync + 'static) -> Self {
+    Self {
+      node: Arc::new(build),
+    }
   }
 
-  /// Side by side: `self` then `other`, outputs and inputs concatenated (`self`'s first).
+  /// The construction effect, under a new memo table (each call builds afresh; within the
+  /// build every layer is constructed at most once).
+  pub fn build(&self) -> Effect<Out, E, In> {
+    self.build_in(&MemoMap::default())
+  }
+
+  /// This layer's construction within the build whose memo table is `memo`: a memoised result
+  /// is reused, otherwise the node is constructed and its result recorded.
+  fn build_in(&self, memo: &MemoMap) -> Effect<Out, E, In> {
+    let node = Arc::clone(&self.node);
+    let memo = memo.clone();
+    suspend(move || {
+      let key = memo_key(&node);
+      if let Some(out) = memo.get::<Out>(key) {
+        return succeed(out);
+      }
+      let construct = node(&memo);
+      construct.map(move |out: Out| {
+        memo.insert(key, Box::new(node), out.clone());
+        out
+      })
+    })
+  }
+
+  /// Side by side (Effect.ts `Layer.merge`): `self` then `other`, outputs and inputs
+  /// concatenated (`self`'s first). A layer used by both sides is built once.
   ///
   /// A capability needed by both sides appears twice in the merged input and is split back by
   /// position, so it needs no annotation; both sides receive the same `Arc` (module docs).
@@ -131,15 +248,33 @@ where
     <In as Concat<I2>>::Out: SplitAt<In, Right = I2>,
   {
     reject_duplicate_outputs::<<Out as Concat<O2>>::Out>("Layer::merge");
-    let left = under(self.build, |m: &<In as Concat<I2>>::Out| {
-      SplitAt::<In>::left(m)
-    });
-    let right = under(other.build, |m: &<In as Concat<I2>>::Out| {
-      SplitAt::<In>::right(m)
-    });
-    Layer {
-      build: left.flat_map(move |o1| right.map(move |o2| o1.concat(o2))),
-    }
+    Layer::from_build(move |memo| {
+      let left = under(self.build_in(memo), |m: &<In as Concat<I2>>::Out| {
+        SplitAt::<In>::left(m)
+      });
+      let right = under(other.build_in(memo), |m: &<In as Concat<I2>>::Out| {
+        SplitAt::<In>::right(m)
+      });
+      left.flat_map(move |o1| right.map(move |o2| o1.concat(o2)))
+    })
+  }
+
+  /// Feeds this layer's output into `upper`'s input and keeps only `upper`'s output (Effect.ts
+  /// `Layer.provide`, with the provider as receiver: `base.provide_to(upper)`). `self` must
+  /// produce every capability of `I2` (any order, extras allowed); the result needs only this
+  /// layer's input.
+  pub fn provide_to<O2, I2, Is>(self, upper: Layer<O2, E, I2>) -> Layer<O2, E, In>
+  where
+    O2: HList,
+    I2: HList,
+    Out: Embed<I2, Is>,
+  {
+    Layer::from_build(move |memo| {
+      let up = upper.build_in(memo);
+      self
+        .build_in(memo)
+        .flat_map(move |out| up.provide_env(out).narrow::<In, HNil>())
+    })
   }
 
   /// Strata: builds `base`, feeds its output into this layer's input, and keeps both outputs
@@ -160,15 +295,15 @@ where
     <O0 as Concat<Out>>::Out: TypeIds,
   {
     reject_duplicate_outputs::<<O0 as Concat<Out>>::Out>("Layer::provide_merge");
-    let upper = self.build;
-    Layer {
-      build: base.build.flat_map(move |o0: O0| {
+    Layer::from_build(move |memo| {
+      let upper = self.build_in(memo);
+      base.build_in(memo).flat_map(move |o0: O0| {
         upper
           .provide_env(o0.clone())
           .narrow::<I0, HNil>()
           .map(move |out| o0.concat(out))
-      }),
-    }
+      })
+    })
   }
 }
 
@@ -179,17 +314,58 @@ where
   R: HList,
 {
   /// Builds `layer` and runs this effect against its output, which must contain every
-  /// capability of `R` (any order, extras allowed). The result needs only the layer's input.
-  /// The layer is built each time the effect runs (the base is not memoised).
+  /// capability of `R` (any order, extras allowed); Effect.ts `Effect.provide(layer)`. The
+  /// result needs only the layer's input: with a closed layer (`In = HNil`) it is runnable.
+  /// Each run builds the layer under a new memo table.
   pub fn provide_layer<Out, In, Is>(self, layer: Layer<Out, E, In>) -> Effect<A, E, In>
   where
     Out: HList + Embed<R, Is>,
     In: HList,
   {
     layer
-      .build
+      .build()
       .flat_map(move |out| self.provide_env(out).narrow::<In, HNil>())
   }
+}
+
+/// The memo table of one build: each constructed node's output, keyed by the node's address.
+/// An entry also holds the node itself, so the address cannot be reused while the table lives.
+/// Clones share the table.
+#[derive(Clone, Default)]
+struct MemoMap {
+  entries: Arc<Mutex<HashMap<usize, MemoEntry>>>,
+}
+
+struct MemoEntry {
+  /// Keeps the node alive (its address is the key).
+  _node: Box<dyn Any + Send + Sync>,
+  /// The node's output (`Out`).
+  out: Box<dyn Any + Send + Sync>,
+}
+
+impl MemoMap {
+  /// The memoised output of the node at `key`.
+  fn get<Out: HList>(&self, key: usize) -> Option<Out> {
+    let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    entries
+      .get(&key)
+      .and_then(|e| e.out.downcast_ref::<Out>())
+      .cloned()
+  }
+
+  /// Records the output of the node at `key` (the first record wins).
+  fn insert<Out: HList>(&self, key: usize, node: Box<dyn Any + Send + Sync>, out: Out) {
+    let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+    entries.entry(key).or_insert(MemoEntry {
+      _node: node,
+      out: Box::new(out),
+    });
+  }
+}
+
+/// A node's memo identity: its address.
+fn memo_key<Out, E, In>(node: &Arc<BuildFn<Out, E, In>>) -> usize {
+  Arc::as_ptr(node).cast::<()>() as usize
 }
 
 /// Positional split of an environment whose first part is `Left` (what `Layer::merge` uses to
@@ -315,5 +491,23 @@ mod tests {
     let dup =
       std::panic::catch_unwind(|| reject_duplicate_outputs::<HCons<A, HCons<A, HNil>>>("t"));
     assert!(dup.is_err());
+  }
+
+  #[test]
+  fn memo_map_keys_by_node_and_keeps_the_first_entry() {
+    let layer: Layer<HCons<A, HNil>, ()> = Layer::succeed(HCons::new(A, HNil));
+    let key = memo_key(&layer.node);
+    assert_eq!(
+      key,
+      memo_key(&layer.clone().node),
+      "clones share the identity"
+    );
+    let memo = MemoMap::default();
+    assert!(memo.get::<HCons<A, HNil>>(key).is_none());
+    let first = HCons::new(A, HNil);
+    memo.insert(key, Box::new(Arc::clone(&layer.node)), first.clone());
+    memo.insert(key, Box::new(Arc::clone(&layer.node)), HCons::new(A, HNil));
+    let got = memo.get::<HCons<A, HNil>>(key).expect("memoised");
+    assert!(Arc::ptr_eq(&got.0, &first.0));
   }
 }
