@@ -8,7 +8,7 @@
 
 Rust’s **de facto** CLI stack is **`clap`**. Phase E should **embrace** it rather than reinvent parsing:
 
-1. **Official pattern:** `clap` derive or builder → parse into a struct → `Effect::from_async` / `run_blocking` entrypoint with `R` assembled from layers.
+1. **Official pattern:** `clap` derive or builder → parse into a struct → `Effect` entrypoint run at the edge (`id_effect_cli::run_main` / `Effect::block_on`) with `R` assembled from layers.
 2. **Optional `id_effect_cli` crate:** Thin wrappers: `run_cli(effect, env)`, stderr/stdout `Sink` adapters (future), consistent **exit code mapping** from `Exit` / `Cause`.
 3. **Templates:** `examples/cli-template/` or cargo-generate style layout documented in the book.
 

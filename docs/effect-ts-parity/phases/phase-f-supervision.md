@@ -2,7 +2,7 @@
 
 **Slug prefix:** `iep-f-*`  
 **Effect.ts reference:** Supervisor patterns in Effect.ts (fiber scopes with restart strategies, retries on failure).  
-**Goal:** Add **declarative supervision** for `FiberHandle` trees: policies that react to **`Exit`** / **`Cause`** (including defects and interruption) by **restarting**, **escalating**, or **terminating**—integrated with **`Scope`** and **`CancellationToken`**.
+**Goal:** Add **declarative supervision** for `FiberHandle` trees: policies that react to **`Exit`** / **`Cause`** (including defects and interruption) by **restarting**, **escalating**, or **terminating**—integrated with **`Scope`** and fiber interruption.
 
 ## Executive summary
 
@@ -20,7 +20,7 @@
 
 ## Implementation (shipped)
 
-Core API lives in `crates/id_effect/src/concurrency/supervisor.rs` (`Supervisor`, `SupervisorPolicy`, `supervised`, `Supervisor::spawn`), with module tests following `TESTING.md` (nested `#[cfg(test)]` trees, BDD-style names, `TestClock` for backoff without flakes). User-facing narrative: mdBook **§9.5 Supervision** (`crates/id_effect/book/src/part3/ch09-05-supervision.md`). Optional lint **iep-f-031** remains a future chore.
+Core API lives in `crates/id_effect/src/coordination/supervisor.rs` (`Supervisor`, `SupervisorPolicy`, `RestartIntensity`, `supervised`, `Supervisor::spawn`; `Supervisor::shutdown` closes its `Scope`, interrupting every supervised fiber), with tests in `crates/id_effect/tests/coordination_supervisor.rs` (the `TestExecutor` virtual clock for backoff without flakes). User-facing narrative: mdBook **§9.5 Supervision** (`crates/id_effect/book/src/part3/ch09-05-supervision.md`). Optional lint **iep-f-031** remains a future chore.
 
 ---
 
@@ -141,4 +141,4 @@ iep-f-011 → iep-f-020 → iep-f-021 → iep-f-022 → iep-f-024
 
 3. **Implementation** can parallelize `iep-f-022` (backoff) vs `iep-f-023` (escalation) **after** `iep-f-021` lands only if interfaces are stable—otherwise keep linear.
 
-4. Acceptance for **`iep-f-024`:** must run under CI without timing flakes (use `TestClock` where applicable).
+4. Acceptance for **`iep-f-024`:** must run under CI without timing flakes (use the `TestExecutor` virtual clock where applicable).

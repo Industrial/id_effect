@@ -9,7 +9,7 @@
 Applications today can use `sqlx` / `tokio-postgres` inside `from_async`. Phase C elevates DB access to a **first-class platform concern**:
 
 1. **`id_effect_sql`** trait module: `Client`, `Transaction`, `Executor` (names illustrative), streaming rows.
-2. **Driver crate** `id_effect_sql_pg` (or feature-gated module) using a single chosen stack.
+2. **PostgreSQL driver** as the feature-gated module `id_effect_sql::pg` (feature `pg`, sqlx). The separate driver crate planned here was folded into `id_effect_sql` in 0.6 and its shim removed in 0.7.
 3. **Layer** constructors: pool acquisition, health checks, graceful shutdown.
 4. **Examples:** Axum handler + transaction + `Stream` of rows.
 
@@ -23,7 +23,7 @@ Applications today can use `sqlx` / `tokio-postgres` inside `from_async`. Phase 
 
 1. **Resource safety:** Connections and transactions must finalize via `Scope` / `acquire_release` patterns already in `id_effect`.
 2. **Error channel:** Map driver errors into `SqlError` and let callers lift into domain `E` via `map_err` / `Effect::map_err`.
-3. **Cancellation:** Long-running queries respect `CancellationToken` where the driver API allows (document limitations).
+3. **Cancellation:** Long-running queries respect fiber interruption where the driver API allows (document limitations).
 4. **Testing:** In-memory or testcontainers-backed integration tests in CI (feature-gated if heavy).
 
 ---
@@ -42,7 +42,7 @@ bd create "Phase C — SQL platform (@effect/sql parity)" -t epic -p 1 --json
 ```bash
 bd create "C — Design & ADR" -t task -p 1 --parent EPIC_C --json
 bd create "C — id_effect_sql core traits" -t feature -p 1 --parent EPIC_C --json
-bd create "C — PostgreSQL driver (id_effect_sql_pg)" -t feature -p 1 --parent EPIC_C --json
+bd create "C — PostgreSQL driver (id_effect_sql::pg)" -t feature -p 1 --parent EPIC_C --json
 bd create "C — Documentation & examples" -t task -p 2 --parent EPIC_C --json
 # WS_C1 … WS_C4
 ```
@@ -75,7 +75,7 @@ bd dep add <c023> <c021>
 **`WS_C3` — Postgres**
 
 ```bash
-bd create "Slug iep-c-030 — id_effect_sql_pg pool + Layer" -t feature -p 1 --parent WS_C3 --json
+bd create "Slug iep-c-030 — id_effect_sql::pg pool + Layer" -t feature -p 1 --parent WS_C3 --json
 bd create "Slug iep-c-031 — Config + Secret redaction for DSN" -t task -p 2 --parent WS_C3 --json
 bd create "Slug iep-c-032 — Integration tests (docker/testcontainers)" -t task -p 2 --parent WS_C3 --json
 bd create "Slug iep-c-033 — Pool acquire timeout observability" -t task -p 3 --parent WS_C3 --json
@@ -125,7 +125,7 @@ bd dep add <c041> <c040>
 
 | Slug | Suggested title | Type | P | Blocked by |
 |------|-----------------|------|---|------------|
-| `iep-c-030` | `id_effect_sql_pg`: connect + pool + `Layer` | feature | 1 | `iep-c-022` |
+| `iep-c-030` | `id_effect_sql::pg`: connect + pool + `Layer` | feature | 1 | `iep-c-022` |
 | `iep-c-031` | Connection string from `id_effect_config` + `Secret` redaction in logs | task | 2 | `iep-c-030` |
 | `iep-c-032` | Integration tests (docker or `testcontainers`) | task | 2 | `iep-c-030` |
 | `iep-c-033` | Pool sizing / acquire timeout observability hooks | task | 3 | `iep-c-030` |
