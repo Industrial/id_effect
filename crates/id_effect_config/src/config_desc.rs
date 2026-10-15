@@ -1,8 +1,17 @@
 //! Effect.ts-style `Config<T>` descriptor — a lazy, composable configuration description.
 //!
-//! Unlike the low-level [`crate::load`] functions, a [`Config<T>`] is a *description* of what to
-//! load.  Compose it with [`Config::with_default`], [`Config::map`], [`all`], [`zip_with`], etc.,
-//! then evaluate with [`Config::run`] (service-injected) or [`Config::load`] (direct provider).
+//! A [`Config<T>`] is a *description* of what to load, and the crate's only reading API (Effect.ts
+//! `Config`). Compose it with [`Config::with_default`], [`Config::map`], [`Config::all`],
+//! [`Config::zip_with`], etc., then evaluate it with [`Config::run`] (an effect reading the
+//! [`ConfigProviderService`] capability), [`Config::layer`] (a layer providing the loaded value as
+//! a capability) or [`Config::load`] (synchronously, against a provider reference).
+//!
+//! # Errors accumulate
+//!
+//! [`Config::all`] (and [`Config::zip`] / [`Config::zip_with`]) loads every component and reports
+//! **every** failure, not only the first, as Effect.ts `Config.all` does: two or more failures
+//! come back as one [`ConfigError::And`]. [`Config::with_default`] and [`Config::or_else`] fall
+//! back only when every failure is a missing key ([`ConfigError::is_missing_only`]).
 //!
 //! # Path conventions
 //!
@@ -40,18 +49,33 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::next::{Effect, Selector};
+use ::id_effect::next::{Effect, HCons, HNil, Layer, Selector, fail, hlist, need, succeed};
 use id_effect::LogLevel;
 use id_effect::scheduling::duration::duration;
 use url::Url;
 
+use crate::ConfigEnv;
 use crate::error::ConfigError;
-use crate::load::with_provider;
 use crate::provider::{ConfigProvider, ConfigProviderService};
 use crate::secret::Secret;
 
 // Shared loading function: takes a provider reference, returns a Result.
 type LoadFn<T> = Arc<dyn Fn(&dyn ConfigProvider) -> Result<T, ConfigError> + Send + Sync>;
+
+/// Runs `f` against the [`ConfigProviderService`] in the environment (a fused synchronous step).
+fn with_provider<A, E, R, I>(
+  f: impl FnOnce(&dyn ConfigProvider) -> Result<A, E> + Send + 'static,
+) -> Effect<A, E, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Selector<ConfigProviderService, I> + Send + Sync + 'static,
+{
+  need::<ConfigProviderService>().flat_map(move |service| match f(service.0.as_ref()) {
+    Ok(a) => succeed(a),
+    Err(e) => fail(e),
+  })
+}
 
 // ── Internal adapter: prepends fixed segments to every path lookup ────────────
 
@@ -129,6 +153,41 @@ impl<T: Send + Sync + 'static> Config<T> {
   {
     let loader = self.loader.clone();
     with_provider(move |provider| (loader)(provider).map(A::from).map_err(E::from))
+  }
+
+  /// A [`Layer`] that loads this descriptor and provides the value as a capability (Effect.ts
+  /// `Layer.effect(Tag, config)`).
+  ///
+  /// The layer needs the [`ConfigProviderService`] capability (`In = `[`ConfigEnv`]); feed it with
+  /// a provider layer ([`provide_config_provider`](crate::provide_config_provider),
+  /// [`ConfigProvider::layer`], ...) through `provide_to` / `provide_merge`. A failed load fails
+  /// the build with `E::from(error)` (every accumulated failure in one [`ConfigError`]). Give the
+  /// value a newtype ([`Config::map`]) so it is a distinct capability.
+  ///
+  /// ```rust
+  /// use id_effect::Exit;
+  /// use id_effect::next::{Effect, HCons, HNil, need};
+  /// use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
+  ///
+  /// struct Port(i64);
+  ///
+  /// let port = Config::integer("PORT").map(Port).layer::<ConfigError>();
+  /// let app = MapConfigProvider::from_pairs([("PORT", "8080")])
+  ///   .layer()
+  ///   .provide_to(port);
+  /// let program: Effect<i64, ConfigError, HCons<Port, HNil>> = need::<Port>().map(|p| p.0);
+  /// assert!(matches!(program.provide_layer(app).block_on(), Exit::Success(8080)));
+  /// ```
+  pub fn layer<E>(&self) -> Layer<HCons<T, HNil>, E, ConfigEnv>
+  where
+    E: From<ConfigError> + Send + 'static,
+  {
+    let config = self.clone();
+    Layer::effect(move || {
+      config
+        .run::<T, E, ConfigEnv, _>()
+        .map(|value| hlist![value])
+    })
   }
 
   /// Transform the loaded value (Effect `Config.map`).
@@ -224,7 +283,9 @@ impl<T: Send + Sync + 'static> Config<T> {
 impl<T: Clone + Send + Sync + 'static> Config<T> {
   /// Fall back to `default` when the key is missing (Effect `Config.withDefault`).
   ///
-  /// Only [`ConfigError::Missing`] triggers the fallback; parse errors still propagate.
+  /// Only missing data triggers the fallback ([`ConfigError::is_missing_only`], so a composite
+  /// [`Config::all`] falls back when all of its failures are missing keys); parse errors still
+  /// propagate.
   ///
   /// ```rust
   /// use id_effect_config::{Config, MapConfigProvider};
@@ -238,7 +299,7 @@ impl<T: Clone + Send + Sync + 'static> Config<T> {
     Self {
       loader: Arc::new(move |p| match (loader)(p) {
         Ok(v) => Ok(v),
-        Err(ConfigError::Missing { .. }) => Ok(default.clone()),
+        Err(e) if e.is_missing_only() => Ok(default.clone()),
         Err(e) => Err(e),
       }),
     }
@@ -522,97 +583,185 @@ impl Config<Url> {
   }
 }
 
-// ── Free-function combinators ─────────────────────────────────────────────────
+// ── Combining descriptors (Effect `Config.all` / `zip` / `zipWith` / `orElse`) ──
 
-/// Combine two configs into a tuple (Effect `Config.all` / `Config.zip`).
+/// Record `r`'s failure in `errors` and keep its value, if any (error accumulation for `all`).
+fn keep<T>(r: Result<T, ConfigError>, errors: &mut Vec<ConfigError>) -> Option<T> {
+  match r {
+    Ok(v) => Some(v),
+    Err(e) => {
+      errors.push(e);
+      None
+    }
+  }
+}
+
+/// A collection of descriptors that [`Config::all`] combines into one: tuples of [`Config`]s
+/// (arity 1–12), `Vec<Config<T>>` and `[Config<T>; N]` (Effect.ts `Config.all` over a tuple or
+/// an array).
 ///
-/// Both are loaded; the first error encountered is returned.
-///
-/// ```rust
-/// use id_effect_config::{config, Config, MapConfigProvider};
-///
-/// let p = MapConfigProvider::from_pairs([("HOST", "0.0.0.0"), ("PORT", "9000")]);
-/// let (host, port) = config::all(Config::string("HOST"), Config::integer("PORT"))
-///   .load(&p)
-///   .unwrap();
-/// assert_eq!(host, "0.0.0.0");
-/// assert_eq!(port, 9000);
-/// ```
-pub fn all<A, B>(a: Config<A>, b: Config<B>) -> Config<(A, B)>
-where
-  A: Send + Sync + 'static,
-  B: Send + Sync + 'static,
-{
-  Config {
-    loader: Arc::new(move |p| {
-      let av = (a.loader)(p)?;
-      let bv = (b.loader)(p)?;
-      Ok((av, bv))
-    }),
+/// Every component is loaded; when any fail, the result is [`ConfigError::and`] of all their
+/// errors (one [`ConfigError::And`] for two or more).
+pub trait ConfigAll {
+  /// The combined value: the tuple of the component values, a `Vec<T>` or a `[T; N]`.
+  type Output: Send + Sync + 'static;
+
+  /// Combine into one descriptor.
+  fn into_config(self) -> Config<Self::Output>;
+}
+
+macro_rules! impl_config_all_tuple {
+  ($($T:ident $c:ident),+) => {
+    impl<$($T: Send + Sync + 'static),+> ConfigAll for ($(Config<$T>,)+) {
+      type Output = ($($T,)+);
+
+      fn into_config(self) -> Config<Self::Output> {
+        let ($($c,)+) = self;
+        Config::new(move |p| {
+          let mut errors = Vec::new();
+          $(let $c = keep(($c.loader)(p), &mut errors);)+
+          match ($($c,)+) {
+            ($(Some($c),)+) => Ok(($($c,)+)),
+            _ => Err(ConfigError::and(errors)),
+          }
+        })
+      }
+    }
+  };
+}
+
+impl_config_all_tuple!(A a);
+impl_config_all_tuple!(A a, B b);
+impl_config_all_tuple!(A a, B b, C c);
+impl_config_all_tuple!(A a, B b, C c, D d);
+impl_config_all_tuple!(A a, B b, C c, D d, F f);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h, J j);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h, J j, K k);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h, J j, K k, L l);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h, J j, K k, L l, M m);
+impl_config_all_tuple!(A a, B b, C c, D d, F f, G g, H h, J j, K k, L l, M m, N n);
+
+/// Load every descriptor of `configs`, accumulating the failures.
+fn load_all<T: Send + Sync + 'static>(
+  configs: &[Config<T>],
+  p: &dyn ConfigProvider,
+) -> Result<Vec<T>, ConfigError> {
+  let mut errors = Vec::new();
+  let values: Vec<T> = configs
+    .iter()
+    .filter_map(|c| keep((c.loader)(p), &mut errors))
+    .collect();
+  if errors.is_empty() {
+    Ok(values)
+  } else {
+    Err(ConfigError::and(errors))
   }
 }
 
-/// Combine three configs into a 3-tuple.
-pub fn all3<A, B, C>(a: Config<A>, b: Config<B>, c: Config<C>) -> Config<(A, B, C)>
-where
-  A: Send + Sync + 'static,
-  B: Send + Sync + 'static,
-  C: Send + Sync + 'static,
-{
-  Config {
-    loader: Arc::new(move |p| {
-      let av = (a.loader)(p)?;
-      let bv = (b.loader)(p)?;
-      let cv = (c.loader)(p)?;
-      Ok((av, bv, cv))
-    }),
+impl<T: Send + Sync + 'static> ConfigAll for Vec<Config<T>> {
+  type Output = Vec<T>;
+
+  fn into_config(self) -> Config<Vec<T>> {
+    Config::new(move |p| load_all(&self, p))
   }
 }
 
-/// Combine two configs and merge the results with `f` (Effect `Config.zipWith`).
-pub fn zip_with<A, B, C>(
-  a: Config<A>,
-  b: Config<B>,
-  f: impl Fn(A, B) -> C + Send + Sync + 'static,
-) -> Config<C>
-where
-  A: Send + Sync + 'static,
-  B: Send + Sync + 'static,
-  C: Send + Sync + 'static,
-{
-  let f = Arc::new(f);
-  Config {
-    loader: Arc::new(move |p| {
-      let av = (a.loader)(p)?;
-      let bv = (b.loader)(p)?;
-      Ok(f(av, bv))
-    }),
+impl<T: Send + Sync + 'static, const N: usize> ConfigAll for [Config<T>; N] {
+  type Output = [T; N];
+
+  fn into_config(self) -> Config<[T; N]> {
+    Config::new(move |p| {
+      load_all(&self, p).map(|values| match <[T; N]>::try_from(values) {
+        Ok(array) => array,
+        Err(_) => unreachable!("one value per descriptor"),
+      })
+    })
   }
 }
 
-/// Try `primary`; fall back to `fallback` on a missing key (Effect `Config.orElse`).
-pub fn or_else<T: Send + Sync + 'static>(primary: Config<T>, fallback: Config<T>) -> Config<T> {
-  Config {
-    loader: Arc::new(move |p| match (primary.loader)(p) {
-      Ok(v) => Ok(v),
-      Err(ConfigError::Missing { .. }) => (fallback.loader)(p),
-      Err(e) => Err(e),
-    }),
+impl<T: Send + Sync + 'static> Config<T> {
+  /// Combine descriptors into one (Effect.ts `Config.all`): a tuple of configs yields a tuple,
+  /// a `Vec` or array of configs a `Vec` or array.
+  ///
+  /// Every component is loaded and **every** failure is reported: with two or more, the error
+  /// is one [`ConfigError::And`] listing them all (in component order).
+  ///
+  /// ```rust
+  /// use id_effect_config::{Config, ConfigError, MapConfigProvider};
+  ///
+  /// let p = MapConfigProvider::from_pairs([("HOST", "0.0.0.0"), ("PORT", "9000")]);
+  /// let (host, port) = Config::all((Config::string("HOST"), Config::integer("PORT")))
+  ///   .load(&p)
+  ///   .unwrap();
+  /// assert_eq!((host.as_str(), port), ("0.0.0.0", 9000));
+  ///
+  /// // Both keys are reported, not only the first.
+  /// let empty = MapConfigProvider::from_pairs::<[(&str, &str); 0], _, _>([]);
+  /// let err = Config::all((Config::string("HOST"), Config::integer("PORT")))
+  ///   .load(&empty)
+  ///   .unwrap_err();
+  /// assert_eq!(err.errors().len(), 2);
+  /// assert!(matches!(err, ConfigError::And(_)));
+  /// ```
+  pub fn all<C: ConfigAll<Output = T>>(configs: C) -> Self {
+    configs.into_config()
   }
-}
 
-/// Load multiple configs and collect results into a `Vec` (Effect `Config.all` on a slice).
-pub fn all_vec<T: Send + Sync + 'static>(configs: Vec<Config<T>>) -> Config<Vec<T>> {
-  let configs = Arc::new(configs);
-  Config {
-    loader: Arc::new(move |p| configs.iter().map(|c| (c.loader)(p)).collect()),
+  /// Load `self` and `that` into a pair, accumulating both failures (Effect `Config.zip`).
+  pub fn zip<U: Send + Sync + 'static>(self, that: Config<U>) -> Config<(T, U)> {
+    Config::all((self, that))
   }
-}
 
-/// Namespace `inner` under `prefix` (same as [`Config::nested`]).
-#[inline]
-pub fn nest<T: Send + Sync + 'static>(prefix: impl Into<String>, inner: Config<T>) -> Config<T> {
-  inner.nested(prefix)
+  /// Load `self` and `that` and merge the values with `f`, accumulating both failures (Effect
+  /// `Config.zipWith`).
+  ///
+  /// ```rust
+  /// use id_effect_config::{Config, MapConfigProvider};
+  ///
+  /// let p = MapConfigProvider::from_pairs([("HOST", "localhost"), ("PORT", "8080")]);
+  /// let addr = Config::string("HOST")
+  ///   .zip_with(Config::integer("PORT"), |h, port| format!("{h}:{port}"))
+  ///   .load(&p)
+  ///   .unwrap();
+  /// assert_eq!(addr, "localhost:8080");
+  /// ```
+  pub fn zip_with<U, V>(
+    self,
+    that: Config<U>,
+    f: impl Fn(T, U) -> V + Send + Sync + 'static,
+  ) -> Config<V>
+  where
+    U: Send + Sync + 'static,
+    V: Send + Sync + 'static,
+  {
+    self.zip(that).map(move |(t, u)| f(t, u))
+  }
+
+  /// Try `self`; when it fails with missing data only ([`ConfigError::is_missing_only`]), load
+  /// `that` instead (Effect `Config.orElse`). Other failures propagate.
+  ///
+  /// ```rust
+  /// use id_effect_config::{Config, MapConfigProvider};
+  ///
+  /// let p = MapConfigProvider::from_pairs([("FALLBACK_PORT", "4000")]);
+  /// let port = Config::integer("PORT")
+  ///   .or_else(Config::integer("FALLBACK_PORT"))
+  ///   .load(&p)
+  ///   .unwrap();
+  /// assert_eq!(port, 4000);
+  /// ```
+  pub fn or_else(self, that: Config<T>) -> Self {
+    let primary = self.loader;
+    Config {
+      loader: Arc::new(move |p| match (primary)(p) {
+        Ok(v) => Ok(v),
+        Err(e) if e.is_missing_only() => (that.loader)(p),
+        Err(e) => Err(e),
+      }),
+    }
+  }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -725,7 +874,11 @@ mod tests {
   #[test]
   fn all_combines_two() {
     let p = map_provider(&[("HOST", "::1"), ("PORT", "9000")]);
-    let (host, port) = go(all(Config::string("HOST"), Config::integer("PORT")), &p).unwrap();
+    let (host, port) = go(
+      Config::all((Config::string("HOST"), Config::integer("PORT"))),
+      &p,
+    )
+    .unwrap();
     assert_eq!(host, "::1");
     assert_eq!(port, 9000);
   }
@@ -734,11 +887,11 @@ mod tests {
   fn all3_combines_three() {
     let p = map_provider(&[("A", "1"), ("B", "2"), ("C", "3")]);
     let (a, b, c) = go(
-      all3(
+      Config::all((
         Config::integer("A"),
         Config::integer("B"),
         Config::integer("C"),
-      ),
+      )),
       &p,
     )
     .unwrap();
@@ -749,9 +902,7 @@ mod tests {
   fn zip_with_merges() {
     let p = map_provider(&[("HOST", "localhost"), ("PORT", "8080")]);
     let addr = go(
-      zip_with(Config::string("HOST"), Config::integer("PORT"), |h, po| {
-        format!("{h}:{po}")
-      }),
+      Config::string("HOST").zip_with(Config::integer("PORT"), |h, po| format!("{h}:{po}")),
       &p,
     )
     .unwrap();
@@ -762,7 +913,7 @@ mod tests {
   fn or_else_falls_back_on_missing() {
     let p = map_provider(&[("FALLBACK_PORT", "4000")]);
     let port = go(
-      or_else(Config::integer("PORT"), Config::integer("FALLBACK_PORT")),
+      Config::integer("PORT").or_else(Config::integer("FALLBACK_PORT")),
       &p,
     )
     .unwrap();
@@ -773,7 +924,7 @@ mod tests {
   fn or_else_uses_primary_when_present() {
     let p = map_provider(&[("PORT", "8080"), ("FALLBACK_PORT", "4000")]);
     let port = go(
-      or_else(Config::integer("PORT"), Config::integer("FALLBACK_PORT")),
+      Config::integer("PORT").or_else(Config::integer("FALLBACK_PORT")),
       &p,
     )
     .unwrap();
@@ -784,7 +935,7 @@ mod tests {
   fn all_vec_collects() {
     let p = map_provider(&[("K0", "10"), ("K1", "20"), ("K2", "30")]);
     let vals = go(
-      all_vec(vec![
+      Config::all(vec![
         Config::integer("K0"),
         Config::integer("K1"),
         Config::integer("K2"),
@@ -892,7 +1043,7 @@ mod tests {
   #[test]
   fn config_nested_prefixes_keys() {
     let p = map_provider(&[("APP_SERVER_HOST", "h")]);
-    let host = go(nest("APP_SERVER", Config::string("HOST")), &p).unwrap();
+    let host = go(Config::string("HOST").nested("APP_SERVER"), &p).unwrap();
     assert_eq!(host, "h");
   }
 
@@ -1109,7 +1260,7 @@ mod tests {
   fn or_else_propagates_invalid_error() {
     let p = map_provider(&[("PORT", "bad")]);
     let err = go(
-      or_else(Config::integer("PORT"), Config::integer("FALLBACK_PORT")),
+      Config::integer("PORT").or_else(Config::integer("FALLBACK_PORT")),
       &p,
     )
     .unwrap_err();

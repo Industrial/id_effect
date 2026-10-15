@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use ::figment::Figment;
 use ::figment::value::{Num, Value};
+use ::id_effect::next::Layer;
 
+use crate::ConfigEnv;
 use crate::error::ConfigError;
 
 // ── Capability key and service wrapper ───────────────────────────────────────
@@ -18,11 +20,33 @@ use crate::error::ConfigError;
 ///
 /// The capability in a `next` environment `R`: read it with
 /// `need::<ConfigProviderService>()` (`id_effect::next::need`), or let [`Config::run`] /
-/// the `read_*` functions do it.
+/// [`Config::layer`] do it. Install it with [`ConfigProvider::layer`],
+/// [`provide_config_provider`](crate::provide_config_provider) or
+/// [`config_env`](crate::config_env).
 ///
 /// [`Config::run`]: crate::Config::run
+/// [`Config::layer`]: crate::Config::layer
 #[derive(Clone)]
 pub struct ConfigProviderService(pub Arc<dyn ConfigProvider>);
+
+impl ConfigProviderService {
+  /// Wrap `provider` as the capability.
+  #[inline]
+  pub fn new<P: ConfigProvider + 'static>(provider: P) -> Self {
+    Self(Arc::new(provider))
+  }
+}
+
+/// The installed provider is itself a provider (delegates to the wrapped one).
+impl ConfigProvider for ConfigProviderService {
+  fn load_raw(&self, path: &[&str]) -> Result<Option<String>, ConfigError> {
+    self.0.load_raw(path)
+  }
+
+  fn seq_delim(&self) -> &'static str {
+    self.0.seq_delim()
+  }
+}
 
 impl fmt::Debug for ConfigProviderService {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -55,7 +79,7 @@ pub trait ConfigProvider: Send + Sync {
   /// Look up a scalar; segments are joined with [`ProviderOptions::path_delim`] (or provider-specific rules).
   fn load_raw(&self, path: &[&str]) -> Result<Option<String>, ConfigError>;
 
-  /// Delimiter used by [`crate::read_string_list`] (Effect `seqDelim`).
+  /// Delimiter used by [`Config::string_list`](crate::Config::string_list) (Effect `seqDelim`).
   fn seq_delim(&self) -> &'static str {
     ","
   }
@@ -87,6 +111,26 @@ pub trait ConfigProvider: Send + Sync {
     Self: Sized + Clone,
   {
     OrElseConfigProvider::new(self, fallback)
+  }
+
+  /// A layer installing this provider as the [`ConfigProviderService`] capability (Effect
+  /// `Layer.setConfigProvider`). It needs nothing and never fails; `E` is the error type of the
+  /// graph it joins. Same as [`provide_config_provider`](crate::provide_config_provider).
+  ///
+  /// ```rust
+  /// use id_effect::Exit;
+  /// use id_effect_config::{Config, ConfigEnv, ConfigError, ConfigProvider, MapConfigProvider};
+  ///
+  /// let program = Config::string("HOST")
+  ///   .run::<String, ConfigError, ConfigEnv, _>()
+  ///   .provide_layer(MapConfigProvider::from_pairs([("HOST", "::1")]).layer());
+  /// assert!(matches!(program.block_on(), Exit::Success(h) if h == "::1"));
+  /// ```
+  fn layer<E: Send + 'static>(self) -> Layer<ConfigEnv, E>
+  where
+    Self: Sized + 'static,
+  {
+    Layer::succeed(crate::config_env(self))
   }
 }
 
@@ -295,7 +339,8 @@ impl<A: ConfigProvider + Clone + 'static, B: ConfigProvider + Clone + 'static> C
     }
   }
 
-  /// Uses the primary provider’s delimiter; keep both providers on the same convention when using [`crate::read_string_list`].
+  /// Uses the primary provider’s delimiter; keep both providers on the same convention when using
+  /// [`Config::string_list`](crate::Config::string_list).
   fn seq_delim(&self) -> &'static str {
     self.primary.seq_delim()
   }
@@ -308,12 +353,12 @@ impl<A: ConfigProvider + Clone + 'static, B: ConfigProvider + Clone + 'static> C
 /// Created via [`ConfigProvider::within`].
 ///
 /// ```rust
-/// use id_effect_config::{ConfigProvider, MapConfigProvider, config};
+/// use id_effect_config::{Config, ConfigProvider, MapConfigProvider};
 ///
 /// let base = MapConfigProvider::from_pairs([("DB_HOST", "localhost"), ("DB_PORT", "5432")]);
 /// let db = base.within("DB");
-/// assert_eq!(config::string(&db, "HOST").unwrap(), "localhost");
-/// assert_eq!(config::integer(&db, "PORT").unwrap(), 5432);
+/// assert_eq!(Config::string("HOST").load(&db).unwrap(), "localhost");
+/// assert_eq!(Config::integer("PORT").load(&db).unwrap(), 5432);
 /// ```
 #[derive(Clone, Debug)]
 pub struct ScopedConfigProvider<P> {

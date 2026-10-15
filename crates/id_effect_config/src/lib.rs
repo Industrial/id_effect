@@ -1,14 +1,22 @@
-//! Configuration loading in three complementary styles, aligned with
-//! [Effect.ts configuration](https://effect.website/docs/configuration):
+//! Configuration aligned with [Effect.ts configuration](https://effect.website/docs/configuration):
+//! one descriptor API, [`Config<T>`], plus Figment helpers for whole-document deserialization.
 //!
-//! ## 1. `Config<T>` descriptor (Effect `Config.string` / `Config.withDefault` / `Config.all`)
+//! ## `Config<T>` (Effect `Config.string` / `Config.withDefault` / `Config.all`)
 //!
-//! The recommended approach.  Compose lazy descriptors, then evaluate with [`Config::run`]
-//! (service-injected) or [`Config::load`] (direct provider reference):
+//! Compose lazy descriptors, then evaluate them one of three ways:
+//!
+//! - [`Config::run`] — a `next` effect reading the [`ConfigProviderService`] capability from its
+//!   environment `R` (`R: Selector<ConfigProviderService, I>`, Effect `yield* config`);
+//! - [`Config::layer`] — a [`Layer`](id_effect::next::Layer) providing the loaded value as a
+//!   capability (Effect `Layer.effect(Tag, config)`);
+//! - [`Config::load`] — synchronously against a provider reference (tests, edges).
+//!
+//! [`Config::all`] accumulates errors: every missing or invalid key is reported (one
+//! [`ConfigError::And`]), not only the first.
 //!
 //! ```rust
 //! use id_effect::Exit;
-//! use id_effect_config::{Config, MapConfigProvider, config_env, config, ConfigError};
+//! use id_effect_config::{Config, ConfigError, MapConfigProvider, config_env};
 //!
 //! let p = MapConfigProvider::from_pairs([("HOST", "localhost"), ("PORT", "8080")]);
 //!
@@ -17,60 +25,62 @@
 //! let port_cfg = Config::integer("PORT").with_default(3000);
 //!
 //! // Evaluate with a direct provider (synchronous)
-//! let (host, port) = config::all(host_cfg.clone(), port_cfg.clone()).load(&p).unwrap();
+//! let (host, port) = Config::all((host_cfg.clone(), port_cfg.clone())).load(&p).unwrap();
 //! assert_eq!(host, "localhost");
 //! assert_eq!(port, 8080);
 //!
 //! // Evaluate as a `next` Effect with the provider capability injected
-//! let env = config_env(p);
-//! let both = host_cfg
-//!   .run::<String, ConfigError, _, _>()
-//!   .zip(port_cfg.run::<i64, ConfigError, _, _>())
-//!   .provide_all(env);
+//! let both = Config::all((host_cfg, port_cfg))
+//!   .run::<(String, i64), ConfigError, _, _>()
+//!   .provide_all(config_env(p));
 //! assert!(matches!(both.block_on(), Exit::Success((h, 8080)) if h == "localhost"));
 //! ```
 //!
-//! ## 2. Figment + serde (whole-document extract)
+//! ## Providers are capabilities
 //!
-//! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
-//! [`FigmentLayer`] — good for structured config files.
-//!
-//! ## 3. Low-level Effect reads via `load::read_*` with the `ConfigProviderService` capability
-//!
-//! Inject the provider via the effect environment `R` (typed, `id_effect::next`) and call the
-//! free functions directly:
+//! A [`ConfigProvider`] (env, map, Figment, fallback chains, scoped) is installed as the
+//! [`ConfigProviderService`] capability: [`ConfigProvider::layer`] (Effect
+//! `Layer.setConfigProvider`), [`provide_config_provider`], [`EnvConfigProviderLive::layer`], or
+//! [`config_env`] for a ready environment value.
 //!
 //! ```rust
-//! use id_effect::next::{Effect, Selector};
-//! use id_effect_config::{ConfigError, ConfigProviderService, read_string};
+//! use id_effect::Exit;
+//! use id_effect::next::{Effect, HCons, HNil, need};
+//! use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
 //!
-//! fn load_host<R, I>() -> Effect<String, ConfigError, R>
-//! where
-//!   R: Selector<ConfigProviderService, I> + Send + Sync + 'static,
-//! {
-//!   read_string(&["HOST"])
+//! #[derive(Debug)]
+//! struct Server {
+//!   host: String,
+//!   port: i64,
 //! }
-//! # let _ = load_host::<id_effect_config::ConfigEnv, _>();
+//!
+//! let server = Config::all((Config::string("HOST"), Config::integer("PORT")))
+//!   .map(|(host, port)| Server { host, port })
+//!   .layer::<ConfigError>();
+//! let app = MapConfigProvider::from_pairs([("HOST", "::1"), ("PORT", "80")])
+//!   .layer()
+//!   .provide_to(server);
+//! let program: Effect<String, ConfigError, HCons<Server, HNil>> =
+//!   need::<Server>().map(|s| format!("{}:{}", s.host, s.port));
+//! assert!(matches!(program.provide_layer(app).block_on(), Exit::Success(a) if a == "::1:80"));
 //! ```
 //!
-//! Provide the capability with [`config_env`] (a ready environment value) or with a layer
-//! ([`provide_config_provider`], [`EnvConfigProviderLive::layer`], ...).
+//! ## Figment + serde (whole-document extract)
+//!
+//! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
+//! [`FigmentLayer`] — good for structured config files. [`FigmentConfigProvider`] exposes a
+//! Figment to `Config<T>` descriptors.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 mod config_desc;
 mod error;
-mod load;
 mod provider;
 mod providers;
 mod secret;
 
-pub use config_desc::{Config, all, all_vec, all3, nest, or_else as or_else_config, zip_with};
+pub use config_desc::{Config, ConfigAll};
 pub use error::ConfigError;
-pub use load::{
-  WithConfigDefault, nested_path, read_bool, read_i64, read_nested_string, read_nested_string_list,
-  read_number, read_string, read_string_list, read_string_opt,
-};
 pub use provider::{
   ConfigProvider, ConfigProviderService, EnvConfigProvider, FigmentConfigProvider,
   MapConfigProvider, OrElseConfigProvider, ProviderOptions, ScopedConfigProvider,
@@ -89,8 +99,9 @@ use ::id_effect::next::{HCons, HNil, hlist};
 
 /// The minimal typed environment (`id_effect::next`) containing only [`ConfigProviderService`].
 ///
-/// Use with [`config_env`] and `.provide_all(..)` to evaluate `Config<T>::run()` or `read_*`
-/// effects in tests and CLI entry points; it is also the output of the provider layers.
+/// Use with [`config_env`] and `.provide_all(..)` to evaluate [`Config::run`] effects in tests
+/// and CLI entry points; it is also the output of the provider layers and the input of
+/// [`Config::layer`].
 pub type ConfigEnv = HCons<ConfigProviderService, HNil>;
 
 /// Build a minimal [`ConfigEnv`] wrapping `provider`.
@@ -127,126 +138,6 @@ pub(crate) mod test_support {
       .block_on()
       .into_result()
       .map_err(|cause| cause.fail_option().expect("no typed failure in the cause"))
-  }
-}
-
-/// Mirrors `import { Config } from "effect"` — scalars, combinators, and free functions.
-///
-/// The *descriptor* ([`Config`]) and *free functions* ([`all`], [`zip_with`], …) are
-/// re-exported here so call sites can write `config::all(…)` and `config::Config::string(…)`.
-pub mod config {
-  use crate::ConfigError;
-  use crate::ConfigProvider;
-  pub use crate::config_desc::{Config, all, all_vec, all3, nest, or_else, zip_with};
-  pub use crate::secret::Secret;
-
-  /// Required string at a single-segment path.
-  #[inline]
-  pub fn string(p: &dyn ConfigProvider, name: &str) -> Result<String, ConfigError> {
-    Config::string(name).load(p)
-  }
-
-  /// Optional string at a single-segment path.
-  #[inline]
-  pub fn optional_string(
-    p: &dyn ConfigProvider,
-    name: &str,
-  ) -> Result<Option<String>, ConfigError> {
-    Config::optional_string(name).load(p)
-  }
-
-  /// Floating-point scalar.
-  #[inline]
-  pub fn number(p: &dyn ConfigProvider, name: &str) -> Result<f64, ConfigError> {
-    Config::number(name).load(p)
-  }
-
-  /// Signed integer scalar.
-  #[inline]
-  pub fn integer(p: &dyn ConfigProvider, name: &str) -> Result<i64, ConfigError> {
-    Config::integer(name).load(p)
-  }
-
-  /// Boolean scalar.
-  #[inline]
-  pub fn boolean(p: &dyn ConfigProvider, name: &str) -> Result<bool, ConfigError> {
-    Config::boolean(name).load(p)
-  }
-
-  /// String under `namespace` / `name` (two path segments).
-  #[inline]
-  pub fn nested_string(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<String, ConfigError> {
-    Config::string(name).nested(namespace).load(p)
-  }
-
-  /// Optional string under `namespace` / `name`.
-  #[inline]
-  pub fn nested_optional_string(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<Option<String>, ConfigError> {
-    Config::optional_string(name).nested(namespace).load(p)
-  }
-
-  /// Floating-point under `namespace` / `name`.
-  #[inline]
-  pub fn nested_number(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<f64, ConfigError> {
-    Config::number(name).nested(namespace).load(p)
-  }
-
-  /// Signed integer under `namespace` / `name`.
-  #[inline]
-  pub fn nested_integer(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<i64, ConfigError> {
-    Config::integer(name).nested(namespace).load(p)
-  }
-
-  /// Boolean under `namespace` / `name`.
-  #[inline]
-  pub fn nested_boolean(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<bool, ConfigError> {
-    Config::boolean(name).nested(namespace).load(p)
-  }
-
-  /// Delimiter-separated string list.
-  #[inline]
-  pub fn string_list(p: &dyn ConfigProvider, name: &str) -> Result<Vec<String>, ConfigError> {
-    Config::string_list(name).load(p)
-  }
-
-  /// String list under `namespace` / `name`.
-  #[inline]
-  pub fn nested_string_list(
-    p: &dyn ConfigProvider,
-    namespace: &str,
-    name: &str,
-  ) -> Result<Vec<String>, ConfigError> {
-    Config::string_list(name).nested(namespace).load(p)
-  }
-
-  /// Fall back to `default` when `r` is [`ConfigError::Missing`].
-  #[inline]
-  pub fn with_default<T>(r: Result<T, ConfigError>, default: T) -> Result<T, ConfigError> {
-    match r {
-      Ok(v) => Ok(v),
-      Err(ConfigError::Missing { .. }) => Ok(default),
-      Err(e) => Err(e),
-    }
   }
 }
 
@@ -538,13 +429,16 @@ mod tests {
     let key = "EFFECT_CONFIG_TEST_SERVER_HOST";
     with_var(key, Some("localhost"), || {
       let p = EnvConfigProvider::from_env();
-      let host = config::nested_string(&p, "EFFECT_CONFIG_TEST_SERVER", "HOST").expect("host");
+      let host = Config::string("HOST")
+        .nested("EFFECT_CONFIG_TEST_SERVER")
+        .load(&p)
+        .expect("host");
       assert_eq!(host, "localhost");
-      let port = config::with_default(
-        config::nested_integer(&p, "EFFECT_CONFIG_TEST_SERVER", "PORT"),
-        9,
-      )
-      .expect("port default");
+      let port = Config::integer("PORT")
+        .nested("EFFECT_CONFIG_TEST_SERVER")
+        .with_default(9)
+        .load(&p)
+        .expect("port default");
       assert_eq!(port, 9);
     });
   }
@@ -558,7 +452,7 @@ mod tests {
       seq_delim: ",",
     };
     let p = MapConfigProvider::with_options(m, opts);
-    let tags = config::string_list(&p, "TAGS").expect("tags");
+    let tags = Config::string_list("TAGS").load(&p).expect("tags");
     assert_eq!(tags, vec!["a", "b", "c"]);
   }
 
@@ -577,17 +471,17 @@ port = 3000
     .expect("write");
     let fig = figment::from_toml_file(&path);
     let p = FigmentConfigProvider::new(fig);
+    assert_eq!(Config::string("server.host").load(&p).unwrap(), "0.0.0.0");
     assert_eq!(
-      config::nested_string(&p, "server", "host").unwrap(),
-      "0.0.0.0"
+      Config::integer("port").nested("server").load(&p).unwrap(),
+      3000
     );
-    assert_eq!(config::nested_integer(&p, "server", "port").unwrap(), 3000);
   }
 
   #[test]
   fn map_from_pairs() {
     let p = MapConfigProvider::from_pairs([("A_B", "x")]);
-    assert_eq!(config::nested_string(&p, "A", "B").unwrap(), "x");
+    assert_eq!(Config::string("B").nested("A").load(&p).unwrap(), "x");
   }
 
   #[test]
@@ -595,7 +489,7 @@ port = 3000
     let a = MapConfigProvider::from_map(std::collections::HashMap::new());
     let b = MapConfigProvider::from_pairs([("K", "from-b")]);
     let p = OrElseConfigProvider::new(a, b);
-    assert_eq!(config::string(&p, "K").unwrap(), "from-b");
+    assert_eq!(Config::string("K").load(&p).unwrap(), "from-b");
   }
 
   #[test]
@@ -626,8 +520,11 @@ port = 3000
     let p = MapConfigProvider::from_pairs([("A_B_C_D", "nested")]);
     let scoped = ScopedConfigProvider::new(p, "A.B");
     assert_eq!(scoped.prefix_segments(), &["A", "B"]);
-    assert_eq!(config::nested_string(&scoped, "C", "D").unwrap(), "nested");
-    assert_eq!(config::string(scoped.inner(), "A_B_C_D").unwrap(), "nested");
+    assert_eq!(Config::string("C.D").load(&scoped).unwrap(), "nested");
+    assert_eq!(
+      Config::string("A_B_C_D").load(scoped.inner()).unwrap(),
+      "nested"
+    );
   }
 
   #[test]
@@ -645,9 +542,9 @@ bad = [1, 2]
     .expect("write");
     let fig = figment::from_toml_file(&path);
     let p = FigmentConfigProvider::new(fig);
-    assert!(config::boolean(&p, "flag").unwrap());
-    assert!((config::number(&p, "pi").unwrap() - 2.5).abs() < f64::EPSILON);
-    assert!(config::string(&p, "bad").is_err());
+    assert!(Config::boolean("flag").load(&p).unwrap());
+    assert!((Config::number("pi").load(&p).unwrap() - 2.5).abs() < f64::EPSILON);
+    assert!(Config::string("bad").load(&p).is_err());
   }
 
   // ── config_env ────────────────────────────────────────────────────────────
@@ -659,122 +556,6 @@ bad = [1, 2]
     let result: String =
       run_blocking(Config::string("K").run::<String, ConfigError, _, _>(), env).unwrap();
     assert_eq!(result, "v");
-  }
-
-  // ── config::optional_string ───────────────────────────────────────────────
-
-  #[test]
-  fn config_optional_string_present_and_absent() {
-    let p = MapConfigProvider::from_pairs([("PRESENT", "yes")]);
-    assert_eq!(
-      config::optional_string(&p, "PRESENT").unwrap(),
-      Some("yes".to_string())
-    );
-    assert_eq!(config::optional_string(&p, "ABSENT").unwrap(), None);
-  }
-
-  // ── config::number ────────────────────────────────────────────────────────
-
-  #[test]
-  fn config_number_scalar() {
-    let p = MapConfigProvider::from_pairs([("PI", "3.14")]);
-    let v = config::number(&p, "PI").unwrap();
-    #[allow(clippy::approx_constant)]
-    let expected = 3.14_f64;
-    assert!((v - expected).abs() < f64::EPSILON);
-  }
-
-  // ── config::integer ───────────────────────────────────────────────────────
-
-  #[test]
-  fn config_integer_scalar() {
-    let p = MapConfigProvider::from_pairs([("N", "99")]);
-    assert_eq!(config::integer(&p, "N").unwrap(), 99);
-  }
-
-  // ── config::boolean ───────────────────────────────────────────────────────
-
-  #[test]
-  fn config_boolean_scalar() {
-    let p = MapConfigProvider::from_pairs([("F", "true")]);
-    assert!(config::boolean(&p, "F").unwrap());
-  }
-
-  // ── config::nested_optional_string ───────────────────────────────────────
-
-  #[test]
-  fn config_nested_optional_string() {
-    let p = MapConfigProvider::from_pairs([("NS_KEY", "val")]);
-    assert_eq!(
-      config::nested_optional_string(&p, "NS", "KEY").unwrap(),
-      Some("val".to_string())
-    );
-    assert_eq!(
-      config::nested_optional_string(&p, "NS", "MISSING").unwrap(),
-      None
-    );
-  }
-
-  // ── config::nested_number / nested_integer / nested_boolean ──────────────
-
-  #[test]
-  fn config_nested_number() {
-    let p = MapConfigProvider::from_pairs([("SRV_RATE", "1.5")]);
-    let v = config::nested_number(&p, "SRV", "RATE").unwrap();
-    assert!((v - 1.5).abs() < f64::EPSILON);
-  }
-
-  #[test]
-  fn config_nested_integer() {
-    let p = MapConfigProvider::from_pairs([("SRV_PORT", "5432")]);
-    assert_eq!(config::nested_integer(&p, "SRV", "PORT").unwrap(), 5432);
-  }
-
-  #[test]
-  fn config_nested_boolean() {
-    let p = MapConfigProvider::from_pairs([("SRV_TLS", "true")]);
-    assert!(config::nested_boolean(&p, "SRV", "TLS").unwrap());
-  }
-
-  // ── config::nested_string_list ────────────────────────────────────────────
-
-  #[test]
-  fn config_nested_string_list() {
-    let p = MapConfigProvider::from_pairs([("NS_TAGS", "a,b,c")]);
-    let tags = config::nested_string_list(&p, "NS", "TAGS").unwrap();
-    assert_eq!(tags, vec!["a", "b", "c"]);
-  }
-
-  // ── config::string_list ───────────────────────────────────────────────────
-
-  #[test]
-  fn config_string_list_free_fn() {
-    let p = MapConfigProvider::from_pairs([("HOSTS", "h1,h2")]);
-    let hosts = config::string_list(&p, "HOSTS").unwrap();
-    assert_eq!(hosts, vec!["h1", "h2"]);
-  }
-
-  // ── config::with_default ──────────────────────────────────────────────────
-
-  #[test]
-  fn config_with_default_missing_uses_default() {
-    let p = MapConfigProvider::from_pairs::<[(&str, &str); 0], _, _>([]);
-    let v = config::with_default(config::string(&p, "MISSING"), "fallback".to_string()).unwrap();
-    assert_eq!(v, "fallback");
-  }
-
-  #[test]
-  fn config_with_default_present_ignores_default() {
-    let p = MapConfigProvider::from_pairs([("K", "real")]);
-    let v = config::with_default(config::string(&p, "K"), "fallback".to_string()).unwrap();
-    assert_eq!(v, "real");
-  }
-
-  #[test]
-  fn config_with_default_invalid_propagates() {
-    let p = MapConfigProvider::from_pairs([("N", "bad")]);
-    let err = config::with_default(config::integer(&p, "N"), 0_i64).unwrap_err();
-    assert!(matches!(err, ConfigError::Invalid { .. }));
   }
 
   // ── FigmentLayer::from_shared / figment() ─────────────────────────────────
@@ -825,37 +606,6 @@ bad = [1, 2]
     let p = MapConfigProvider::from_pairs([("K", "v")]);
     let env = config_env(p);
     let svc: &ConfigProviderService = &env.0;
-    assert_eq!(config::string(&*svc.0, "K").unwrap(), "v");
-  }
-
-  #[test]
-  fn config_optional_boolean_and_nested_helpers() {
-    let p = MapConfigProvider::from_pairs([("FLAG", "true"), ("A_B", "x")]);
-    assert!(config::boolean(&p, "FLAG").unwrap());
-    assert_eq!(config::optional_string(&p, "MISSING").unwrap(), None);
-    assert_eq!(
-      config::nested_optional_string(&p, "A", "B").unwrap(),
-      Some("x".into())
-    );
-    assert!(config::nested_boolean(&p, "A", "FLAG").is_err());
-  }
-
-  #[test]
-  fn nested_string_list_and_number_helpers() {
-    let opts = ProviderOptions {
-      path_delim: "_",
-      seq_delim: ",",
-    };
-    let p = MapConfigProvider::with_options(
-      [("A_B".into(), "1,2".into()), ("N".into(), "3.5".into())]
-        .into_iter()
-        .collect(),
-      opts,
-    );
-    assert_eq!(config::number(&p, "N").unwrap(), 3.5);
-    assert_eq!(
-      config::nested_string_list(&p, "A", "B").unwrap(),
-      vec!["1", "2"]
-    );
+    assert_eq!(Config::string("K").load(&*svc.0).unwrap(), "v");
   }
 }

@@ -8,7 +8,7 @@ use id_effect::kernel::Effect;
 use id_effect::next::compat::IntoV1With;
 use id_effect::next::{HCons, HNil};
 use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use id_effect_config::{Config, ConfigEnv, ConfigError, ConfigProviderService, config};
+use id_effect_config::{Config, ConfigEnv, ConfigError, ConfigProviderService};
 
 /// Host bind and shutdown settings loaded from the environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,11 +25,11 @@ impl HostConfig {
   /// Compose the lazy config descriptor for host settings.
   #[inline]
   pub fn descriptor() -> Config<(String, i64, i64)> {
-    config::all3(
+    Config::all((
       Config::string("HOST").with_default("0.0.0.0".to_string()),
       Config::integer("PORT").with_default(8080),
       Config::integer("SHUTDOWN_TIMEOUT_SECS").with_default(30),
-    )
+    ))
   }
 
   #[allow(clippy::result_large_err)]
