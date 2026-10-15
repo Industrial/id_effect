@@ -102,7 +102,7 @@ Every parallel combinator of the 0.7 kernel goes through one function:
 pub(crate) fn fork_all<A, E, R>(ctx: &Ctx<R>, children: Vec<Effect<A, E, R>>, c: Concurrency)
   -> Effect<Vec<A>, E, R>;
 pub enum Concurrency { Sequential, Bounded(usize), Unbounded, Inherit /* the Fabric decides */ }
-pub trait Admission: Send + Sync { fn admit(&self, w: Weight) -> BoxFuture<'static, Permit>; }
+pub trait Admission: Send + Sync { fn admit(&self, w: u32) -> BoxFuture<'static, AdmissionPermit>; }
 ```
 
 - **Callers.** `zip_par`, `all(…, concurrency)`, `for_each_par`, the `effect!`
@@ -110,11 +110,22 @@ pub trait Admission: Send + Sync { fn admit(&self, w: Weight) -> BoxFuture<'stat
   `fork_all`. It forks the children under the current fiber, so the fiber tree and the
   interruption rules of ADR 0011 apply: on the first failure it interrupts and awaits the
   siblings, then fails.
-- **Admission is asynchronous.** With `Concurrency::Inherit` or `Bounded`, each fork first
-  awaits `fabric.admission().admit(w)`. The returned `Permit` is released when the child
-  exits. A throttled child is a suspended future with a registered waker; it holds no
-  thread. `Inherit` is the hook that hands the concurrency decision to the Fabric's
-  `ResourcePolicy`.
+- **Admission is asynchronous, and only for `Inherit`.** With `Concurrency::Inherit`, each
+  fork first awaits `fabric.admit(w)` on the ambient Fabric. The returned
+  `AdmissionPermit` is released when the child exits. A throttled child is a suspended
+  future with a registered waker; it holds no thread, and interrupting the waiting fiber
+  drops the pending admission without taking a permit. `Inherit` is the hook that hands the
+  concurrency decision to the Fabric's `ResourcePolicy`. `Concurrency::Bounded(n)` is a
+  purely local window and never consults the Fabric (orchestrator ruling, Effect.ts parity:
+  a numeric `concurrency` is local, only `"inherit"` defers). With no ambient Fabric,
+  `Inherit` behaves as `Unbounded`.
+- **The ambient Fabric is a `FiberRef`.** Effect.ts `concurrency: "inherit"` reads the
+  `currentConcurrency` `FiberRef` (set by `Effect.withConcurrency`). Likewise, the 0.7
+  kernel keeps the ambient `next::Fabric` in a private fiber-local slot set by
+  `Fabric::provide(effect)`, inherited by forked children; it is not a capability in `R`,
+  and the v1 process-wide `install_fabric` is not consulted. A fiber that already holds a
+  permit lends it to one of its own `Inherit` children at a time, so nested `Inherit` forks
+  cannot deadlock on a small capacity (task `c-fabric-scheduler`).
 - **`AdmissionController` gains an async `admit`** next to `acquire_blocking`. The
   blocking variant is kept for `spawn_blocking` work only; the 0.7 kernel never calls it
   (`rg acquire_blocking crates/id_effect/src/next` = 0, task `c-fabric-scheduler`).
@@ -127,7 +138,7 @@ pub trait Admission: Send + Sync { fn admit(&self, w: Weight) -> BoxFuture<'stat
 | Phase C (original) | 0.7 |
 |---|---|
 | `Effect::par_all` for EDG parallel groups | **Superseded** by `fork_all` and its public combinators (`zip_par`, `all`, `for_each_par`) |
-| Fabric admission via the thread-blocking `acquire_blocking` | async `Admission::admit` returning a `Permit` |
+| Fabric admission via the thread-blocking `acquire_blocking` | async `Admission::admit` returning an `AdmissionPermit` (`Inherit` only) |
 | "No overlapping `&mut R` capability borrows in parallel groups" | moot: 0.7 effects read `&R`, and children share the env through `Ctx<R>` (`Arc` clones) |
 | Consequence "non-`Send` parallel groups clone `R` on worker threads (`R: Clone + Send + Sync`)" | dropped: effects are `Send` by default, and `R` is shared, not cloned |
 

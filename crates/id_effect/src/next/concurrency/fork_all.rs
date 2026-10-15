@@ -13,10 +13,13 @@
 //! interrupted because of that first failure are dropped: they report nothing the caller did
 //! not cause. So a lone failure stays exactly that failure.
 //!
-//! Admission (D6): `AllFut::start_up_to_limit` is the single point where a child is admitted
-//! and spawned. `Bounded(n)` is a purely local window there; only [`Concurrency::Inherit`] is
-//! meant to await an [`Admission`] permit (from the ambient Fabric) before each spawn, which
-//! `c-fabric-scheduler` wires at that point.
+//! Admission (D6, `c-fabric-scheduler`): `AllFut::start_up_to_limit` is the single point where
+//! a child is admitted and spawned. `Bounded(n)` is a purely local window there; only
+//! [`Concurrency::Inherit`] awaits an [`AdmissionPermit`] from the ambient
+//! [`Fabric`](crate::next::Fabric) before each spawn (asynchronously: a waker, no blocked
+//! thread). The permit lives inside the child's program and is dropped when the child exits.
+//! See [`crate::next::compute`] for how the ambient fabric is found and why a fiber that
+//! already holds a permit may lend it to one child at a time (no nested-admission deadlock).
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -25,6 +28,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Wake, Waker};
 
 use crate::failure::Cause;
+use crate::next::compute::{Ambient, Fabric};
 use crate::next::kernel::{AnyBox, AnyEnv, AnyExit, Effect, Instr, erase, succeed, unbox};
 use crate::next::runtime::{BoxFuture, FiberCell, FiberContext, spawn_fiber};
 
@@ -37,16 +41,47 @@ pub enum Concurrency {
   Bounded(usize),
   /// Every child at once.
   Unbounded,
-  /// Let the compute fabric decide (D6). Until `c-fabric-scheduler` wires [`Admission`], this
-  /// behaves as [`Concurrency::Unbounded`].
+  /// Let the ambient compute [`Fabric`](crate::next::Fabric) decide (D6; Effect.ts
+  /// `concurrency: "inherit"`): every child first awaits one admission permit from the fabric
+  /// the current fiber inherited ([`Fabric::provide`](crate::next::Fabric::provide)). With no
+  /// ambient fabric this behaves as [`Concurrency::Unbounded`].
   Inherit,
 }
 
-/// The compute-fabric admission hook (D6). Declared here, not yet consulted by [`fork_all`]
-/// (k-rebuild L11; wiring is `c-fabric-scheduler`'s).
+/// The compute-fabric admission hook (D6, ADR 0007 Amendment 1): what a
+/// [`Fabric`](crate::next::Fabric) consults before [`fork_all`] starts a child under
+/// [`Concurrency::Inherit`].
 pub trait Admission: Send + Sync {
-  /// Resolves once work of `weight` units may start.
-  fn admit(&self, weight: u32) -> BoxFuture<'static, ()>;
+  /// Resolves once work of `weight` units may start, with the permit that work holds; dropping
+  /// the permit gives the capacity back. Must not block a thread while throttled, and dropping
+  /// the future before it resolves must take nothing (an interrupted waiter leaks no permit).
+  fn admit(&self, weight: u32) -> BoxFuture<'static, AdmissionPermit>;
+}
+
+/// Capacity granted by an [`Admission`]: held for as long as the admitted work runs, released
+/// on drop.
+pub struct AdmissionPermit {
+  _guard: Option<Box<dyn std::any::Any + Send + Sync>>,
+}
+
+impl AdmissionPermit {
+  /// A permit whose release is dropping `guard`.
+  pub fn new(guard: impl Send + Sync + 'static) -> Self {
+    Self {
+      _guard: Some(Box::new(guard)),
+    }
+  }
+
+  /// A permit that holds nothing (an admission without capacity accounting).
+  pub fn unlimited() -> Self {
+    Self { _guard: None }
+  }
+}
+
+impl std::fmt::Debug for AdmissionPermit {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("AdmissionPermit").finish_non_exhaustive()
+  }
 }
 
 /// Runs every effect as a child fiber of the current one and collects the values in input
@@ -78,13 +113,16 @@ where
     .map(Effect::into_instr)
     .enumerate()
     .collect();
+  let inherit = c == Concurrency::Inherit;
   Effect::from_instr(Instr::FlatMap(
     Box::new(Instr::WithFiber(Box::new(move |env, fiber| {
+      let ambient = if inherit { Ambient::of(fiber) } else { None };
       Instr::Future(Box::pin(AllFut::new(
         Arc::clone(fiber),
         Arc::clone(env),
         instrs,
         limit,
+        ambient,
       )))
     }))),
     Box::new(|v| {
@@ -149,6 +187,15 @@ struct AllFut {
   ready: Arc<Ready>,
   results: Vec<Option<AnyBox>>,
   failure: Option<Cause<AnyBox>>,
+  /// `Inherit` with an ambient fabric: children are admitted through it.
+  fabric: Option<Fabric>,
+  /// The forking fiber itself holds a permit of `fabric`: it may lend it to one child at a
+  /// time (it only waits for its children meanwhile).
+  lend: bool,
+  /// The child currently running on the lent permit.
+  lent: Option<usize>,
+  /// The admission being awaited for the next child.
+  pending: Option<BoxFuture<'static, AdmissionPermit>>,
 }
 
 impl AllFut {
@@ -157,8 +204,13 @@ impl AllFut {
     env: AnyEnv,
     queue: VecDeque<(usize, Instr)>,
     limit: usize,
+    ambient: Option<Ambient>,
   ) -> Self {
     let n = queue.len();
+    let (fabric, lend) = match ambient {
+      Some(a) => (Some(a.fabric), a.admitted),
+      None => (None, false),
+    };
     Self {
       parent,
       env,
@@ -169,24 +221,75 @@ impl AllFut {
       ready: Arc::new(Ready::default()),
       results: (0..n).map(|_| None).collect(),
       failure: None,
+      fabric,
+      lend,
+      lent: None,
+      pending: None,
+    }
+  }
+
+  /// Admission for the next child (`Inherit` with a fabric only): `Ready(None)` to start it
+  /// without a permit of its own, `Ready(Some(p))` once the fabric granted `p`, `Pending` while
+  /// the fabric throttles (the admission future has registered `cx`'s waker).
+  fn admit_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<AdmissionPermit>> {
+    let Some(fabric) = self.fabric.as_ref() else {
+      return Poll::Ready(None);
+    };
+    if self.lend && self.lent.is_none() {
+      return Poll::Ready(None);
+    }
+    let fut = self.pending.get_or_insert_with(|| fabric.admit(1));
+    match fut.as_mut().poll(cx) {
+      Poll::Ready(p) => {
+        self.pending = None;
+        Poll::Ready(Some(p))
+      }
+      Poll::Pending => Poll::Pending,
     }
   }
 
   /// Starts queued children while fewer than `limit` are in flight (none after a failure).
   /// A started child is marked ready, so its first poll registers its waker.
   ///
-  /// This is the one admission point: `c-fabric-scheduler` makes `Concurrency::Inherit` await
-  /// an [`Admission`] permit here before each `spawn_fiber` (`Bounded(n)` stays local).
-  fn start_up_to_limit(&mut self) {
+  /// This is the one admission point: under `Concurrency::Inherit` with an ambient fabric each
+  /// child first awaits an [`AdmissionPermit`] here (`Bounded(n)` stays a local window). The
+  /// permit is moved into the child's program and dropped when the child exits.
+  fn start_up_to_limit(&mut self, cx: &mut Context<'_>) {
     if self.failure.is_some() {
       self.queue.clear();
+      self.pending = None;
       return;
     }
     while self.in_flight < self.limit {
+      if self.queue.is_empty() {
+        self.pending = None;
+        return;
+      }
+      let Poll::Ready(permit) = self.admit_next(cx) else {
+        return;
+      };
       let Some((i, instr)) = self.queue.pop_front() else {
         return;
       };
       let ctx = FiberContext::new_child(&self.parent);
+      let instr = match (permit, self.fabric.as_ref()) {
+        (Some(permit), Some(fabric)) => {
+          // The child holds a permit of `fabric`: its own `Inherit` forks may lend it.
+          Ambient::mark_admitted(&ctx, fabric);
+          Instr::Fold(
+            Box::new(instr),
+            Box::new(move |exit| {
+              drop(permit);
+              Instr::Pure(exit)
+            }),
+          )
+        }
+        (None, Some(_)) => {
+          self.lent = Some(i);
+          instr
+        }
+        (_, None) => instr,
+      };
       let cell = spawn_fiber(&ctx, instr, Arc::clone(&self.env));
       let waker = Waker::from(Arc::new(KidWaker {
         slot: i,
@@ -256,7 +359,7 @@ impl Future for AllFut {
       }
     }
     loop {
-      this.start_up_to_limit();
+      this.start_up_to_limit(cx);
       let slots = std::mem::take(&mut *lock(&this.ready.slots));
       if slots.is_empty() && !(this.in_flight == 0 && this.queue.is_empty()) {
         return Poll::Pending;
@@ -269,6 +372,9 @@ impl Future for AllFut {
         if let Poll::Ready(exit) = kid.cell.poll_take(&mut kcx) {
           this.kids[i] = None;
           this.in_flight -= 1;
+          if this.lent == Some(i) {
+            this.lent = None;
+          }
           this.record(i, exit);
         }
       }

@@ -22,7 +22,7 @@ pub use adaptive::{
   install_fabric, installed_fabric, is_fabric_installed, refresh_adaptive_context,
   uninstall_fabric,
 };
-pub use admission::AdmissionController;
+pub use admission::{AdmissionController, AdmissionGuard, Admit};
 pub use dispatch::{parallel_if_profitable, should_parallelize};
 pub use fabric::ComputeFabric;
 pub use fiber_pool::FiberPool;
