@@ -6,8 +6,8 @@
 
 use super::cause::{Cause, Defect};
 use crate::Matcher;
+use crate::failure::FiberId;
 use crate::foundation::either::Either;
-use crate::runtime::FiberId;
 
 /// Final outcome of an effect: either a success value or a structured failure [`Cause`].
 #[derive(Clone, Debug, crate::EffectData)]

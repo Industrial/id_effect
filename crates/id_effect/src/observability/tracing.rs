@@ -6,7 +6,7 @@ use crate::effect;
 use crate::kernel::box_future;
 use crate::runtime::{Never, run_blocking};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 mod annotate_current_span_seal {
   pub(super) trait Success {}
@@ -29,95 +29,16 @@ impl AnnotateCurrentSpanSuccess for () {}
 impl annotate_current_span_seal::Error for Never {}
 impl AnnotateCurrentSpanErr for Never {}
 
-/// Global tracing toggle installed by [`install_tracing_layer`].
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct TracingConfig {
-  /// When `false`, hooks and span recording are no-ops.
-  pub enabled: bool,
-}
-
-impl TracingConfig {
-  /// Config with tracing turned on.
-  #[inline]
-  pub fn enabled() -> Self {
-    Self { enabled: true }
-  }
-}
-
-/// Lifecycle markers for effects wrapped in [`with_span`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EffectEvent {
-  /// Entered a named span.
-  Start {
-    /// Span name (matches [`with_span`] argument).
-    span: String,
-  },
-  /// Effect under the span completed successfully.
-  Success {
-    /// Span name (matches [`with_span`] argument).
-    span: String,
-  },
-  /// Effect under the span failed.
-  Failure {
-    /// Span name (matches [`with_span`] argument).
-    span: String,
-  },
-}
-
-/// Coarse fiber lifecycle signals (opt-in via [`emit_fiber_event`]).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum FiberEvent {
-  /// Fiber started work.
-  Spawn {
-    /// Opaque fiber identifier string.
-    fiber_id: String,
-  },
-  /// Fiber finished normally.
-  Complete {
-    /// Opaque fiber identifier string.
-    fiber_id: String,
-  },
-  /// Fiber was interrupted.
-  Interrupt {
-    /// Opaque fiber identifier string.
-    fiber_id: String,
-  },
-}
-
-/// Compute Fabric supervisor signals (opt-in via [`record_compute_event`] / [`emit_compute_event`]).
-#[derive(Clone, Debug, PartialEq)]
-pub enum ComputeEvent {
-  /// Supervisor control-loop tick with live telemetry and admission state.
-  SupervisorTick {
-    /// Process CPU utilization fraction.
-    cpu_pct: f32,
-    /// Process memory utilization fraction.
-    mem_pct: f32,
-    /// Admission permits after rebalance.
-    admission_permits: usize,
-    /// Auto-parallel element threshold for this tick.
-    parallelism_threshold: usize,
-  },
-  /// Admission was throttled to `permits` concurrent workers.
-  AdmissionThrottle {
-    /// Remaining admission permits.
-    permits: usize,
-  },
-  /// Local fabric offloaded work to the cluster queue.
-  ScaleOut {
-    /// Logical job / handler name.
-    job_name: String,
-  },
-}
-
-/// Aggregated span metadata keyed by span name.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct SpanRecord {
-  /// Span identifier (same string passed to [`with_span`]).
-  pub name: String,
-  /// Key–value annotations merged from fiber-local state on span end.
-  pub annotations: HashMap<String, String>,
-}
+// The buffer, its config and event types are kernel-neutral and live in `next::observability`
+// (`k-retire-v1`); this module keeps only the 0.6 `Effect` wrappers around them.
+pub use crate::next::observability::tracing::{
+  ComputeEvent, EffectEvent, FiberEvent, SpanRecord, TracingConfig, TracingSnapshot,
+  record_compute_event, snapshot_tracing,
+};
+use crate::next::observability::tracing::{
+  record_effect_event, record_fiber_event, record_span_annotation, record_span_annotations,
+  tracing_enabled,
+};
 
 /// One frame on the fiber-local span stack (`TracingFiberRefs::span_stack`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,30 +46,6 @@ pub struct LogSpan {
   /// Name of the active span frame.
   pub name: String,
 }
-
-/// Point-in-time copy of recorded tracing buffers.
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct TracingSnapshot {
-  /// Ordered [`EffectEvent`] stream since last install.
-  pub effect_events: Vec<EffectEvent>,
-  /// Ordered [`FiberEvent`] stream since last install.
-  pub fiber_events: Vec<FiberEvent>,
-  /// Ordered [`ComputeEvent`] stream since last install.
-  pub compute_events: Vec<ComputeEvent>,
-  /// Span records with merged annotations.
-  pub spans: Vec<SpanRecord>,
-}
-
-#[derive(Default)]
-struct TraceState {
-  config: TracingConfig,
-  effect_events: Vec<EffectEvent>,
-  fiber_events: Vec<FiberEvent>,
-  compute_events: Vec<ComputeEvent>,
-  spans: Vec<SpanRecord>,
-}
-
-static TRACE_STATE: OnceLock<Mutex<TraceState>> = OnceLock::new();
 
 /// Fiber-local span stack and current-span annotation map (see beads n48f).
 #[derive(Clone)]
@@ -161,36 +58,12 @@ pub struct TracingFiberRefs {
 
 static TRACING_FIBER_REFS: OnceLock<TracingFiberRefs> = OnceLock::new();
 
-fn trace_state() -> &'static Mutex<TraceState> {
-  TRACE_STATE.get_or_init(|| Mutex::new(TraceState::default()))
-}
-
 fn tracing_enabled_fast() -> bool {
-  trace_state().lock().ok().is_some_and(|g| g.config.enabled)
+  tracing_enabled()
 }
 
 pub(crate) fn fiber_refs() -> Option<&'static TracingFiberRefs> {
   TRACING_FIBER_REFS.get()
-}
-
-fn with_state_mut<F>(f: F)
-where
-  F: FnOnce(&mut TraceState),
-{
-  let mut guard = trace_state().lock().expect("trace state mutex poisoned");
-  if !guard.config.enabled {
-    return;
-  }
-  f(&mut guard);
-}
-
-fn ensure_span_exists(spans: &mut Vec<SpanRecord>, name: &str) {
-  if spans.iter().all(|span| span.name != name) {
-    spans.push(SpanRecord {
-      name: name.to_owned(),
-      annotations: HashMap::new(),
-    });
-  }
 }
 
 /// Installs fiber refs and replaces global trace buffers; clears prior events.
@@ -220,12 +93,7 @@ pub fn install_tracing_layer(config: TracingConfig) -> Effect<(), Never, ()> {
         span_annotations,
       }
     });
-    let mut guard = trace_state().lock().expect("trace state mutex poisoned");
-    guard.config = config.clone();
-    guard.effect_events.clear();
-    guard.fiber_events.clear();
-    guard.compute_events.clear();
-    guard.spans.clear();
+    crate::next::observability::tracing::install_tracing_layer(config.clone());
     Ok(())
   })
 }
@@ -233,12 +101,7 @@ pub fn install_tracing_layer(config: TracingConfig) -> Effect<(), Never, ()> {
 /// Appends an effect lifecycle event when tracing is enabled.
 pub fn emit_effect_event(event: EffectEvent) -> Effect<(), Never, ()> {
   Effect::new(move |_env| {
-    with_state_mut(|state| {
-      if let EffectEvent::Start { span } = &event {
-        ensure_span_exists(&mut state.spans, span);
-      }
-      state.effect_events.push(event.clone());
-    });
+    record_effect_event(event.clone());
     Ok(())
   })
 }
@@ -246,9 +109,7 @@ pub fn emit_effect_event(event: EffectEvent) -> Effect<(), Never, ()> {
 /// Appends a fiber lifecycle event when tracing is enabled.
 pub fn emit_fiber_event(event: FiberEvent) -> Effect<(), Never, ()> {
   Effect::new(move |_env| {
-    with_state_mut(|state| {
-      state.fiber_events.push(event.clone());
-    });
+    record_fiber_event(event.clone());
     Ok(())
   })
 }
@@ -256,16 +117,9 @@ pub fn emit_fiber_event(event: FiberEvent) -> Effect<(), Never, ()> {
 /// Appends a compute fabric event when tracing is enabled.
 pub fn emit_compute_event(event: ComputeEvent) -> Effect<(), Never, ()> {
   Effect::new(move |_env| {
-    record_compute_event(event);
+    record_compute_event(event.clone());
     Ok(())
   })
-}
-
-/// Synchronous compute event append (supervisor ticks).
-pub fn record_compute_event(event: ComputeEvent) {
-  with_state_mut(|state| {
-    state.compute_events.push(event);
-  });
 }
 
 /// Adds `key` → `value` to the current span’s annotation map (fiber-local).
@@ -314,16 +168,7 @@ where
     )
     .expect("span_annotations update");
 
-    with_state_mut(|state| {
-      if let Some(span) = state
-        .spans
-        .iter_mut()
-        .rev()
-        .find(|span| span.name == span_name)
-      {
-        span.annotations.insert(key.to_string(), value.clone());
-      }
-    });
+    record_span_annotation(&span_name, key, value.clone());
 
     A::from(())
   })
@@ -374,12 +219,7 @@ where
           if tracing_enabled_fast() {
             let ann = run_blocking(refs.span_annotations.get(), ())
               .expect("span_annotations get for flush");
-            with_state_mut(|state| {
-              ensure_span_exists(&mut state.spans, &span_name);
-              if let Some(rec) = state.spans.iter_mut().rev().find(|s| s.name == span_name) {
-                rec.annotations = ann;
-              }
-            });
+            record_span_annotations(&span_name, ann);
           }
           let event = match &out {
             Ok(_) => EffectEvent::Success {
@@ -414,32 +254,13 @@ where
   })
 }
 
-/// Clones the current global trace buffers (lock held briefly).
-pub fn snapshot_tracing() -> TracingSnapshot {
-  let guard = trace_state().lock().expect("trace state mutex poisoned");
-  TracingSnapshot {
-    effect_events: guard.effect_events.clone(),
-    fiber_events: guard.fiber_events.clone(),
-    compute_events: guard.compute_events.clone(),
-    spans: guard.spans.clone(),
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::{fail, runtime::run_blocking, succeed};
+  // The buffer is shared with `next::observability::tracing`: serialize on its lock.
+  use crate::next::observability::tracing::test_lock;
   use rstest::rstest;
-  use std::sync::{Mutex, OnceLock};
-
-  static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-  fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-    TEST_LOCK
-      .get_or_init(|| Mutex::new(()))
-      .lock()
-      .expect("test lock mutex poisoned")
-  }
 
   mod with_span_events {
     use super::*;

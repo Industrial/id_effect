@@ -11,7 +11,7 @@ use super::cause::ExitKind;
 use super::effect::Effect;
 use super::runloop::{Instr, MaskOp};
 use crate::failure::Cause;
-use crate::runtime::Never;
+use crate::failure::Never;
 
 /// Runs the finalizer `fin`, then re-raises `exit`. A failing finalizer is sequenced after the
 /// original cause (`Then`), or replaces a success.

@@ -23,7 +23,7 @@
 //! use std::time::Duration;
 //! use id_effect::Exit;
 //! use id_effect::next::{Concurrency, Effect, all, for_each_par, sleep, succeed, zip_par};
-//! use id_effect::runtime::Never;
+//! use id_effect::Never;
 //!
 //! let pair: Effect<(u8, &str), Never> = zip_par(
 //!   sleep(Duration::from_millis(5)).then(succeed(1)),

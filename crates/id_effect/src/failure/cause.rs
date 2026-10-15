@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::Matcher;
-use crate::runtime::FiberId;
+use crate::failure::FiberId;
 
 type Payload = Option<Box<dyn Any + Send>>;
 

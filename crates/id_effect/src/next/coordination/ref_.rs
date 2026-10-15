@@ -19,7 +19,7 @@ use crate::next::kernel::{Effect, suspend, sync};
 ///
 /// ```
 /// use id_effect::next::Ref;
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let r = Ref::new(1_u32);
 /// let eff = r.update::<Never, _>(|n| n + 1).then(r.get());

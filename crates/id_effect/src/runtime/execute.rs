@@ -11,7 +11,6 @@
 //! [`crate::compute::install_fabric`] or use [`crate::capability::run_with`], which installs a
 //! default fabric only when none is installed ([`crate::compute::ensure_default_fabric`]).
 
-use core::convert::Infallible;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -46,8 +45,8 @@ pub(crate) fn yield_once() -> impl Future<Output = ()> {
   YieldOnce(false)
 }
 
-/// Effect.ts-style uninhabited error marker for infallible runtime operations.
-pub type Never = Infallible;
+// Kernel-independent; lives in `failure` since `k-retire-v1` (path kept for 0.6 code).
+pub use crate::failure::Never;
 
 /// Run an effect to completion on the current thread using a tight poll loop.
 ///

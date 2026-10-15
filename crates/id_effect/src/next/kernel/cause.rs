@@ -7,8 +7,8 @@
 
 use std::any::Any;
 
+use crate::failure::FiberId;
 use crate::failure::{Cause, Defect, Exit};
-use crate::runtime::FiberId;
 
 /// Converts the internal step outcome into the public [`Exit`].
 #[inline]

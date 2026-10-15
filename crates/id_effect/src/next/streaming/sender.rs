@@ -14,10 +14,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::stream::{FailSlot, Stream, lock, queue_source};
+use crate::failure::Never;
 use crate::next::coordination::Queue;
 use crate::next::kernel::{Effect, fail, succeed, sync};
-use crate::runtime::Never;
-use crate::streaming::chunk::Chunk;
+use crate::next::streaming::chunk::Chunk;
 
 /// How [`stream_from_channel_with_policy`] behaves when its queue of chunks is full.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -204,7 +204,7 @@ fn flatten_chunks<A>(chunks: Vec<Chunk<A>>) -> Vec<A> {
 ///
 /// ```
 /// use id_effect::next::{Chunk, end_stream, send_chunk, stream_from_channel};
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let (stream, sender) = stream_from_channel::<u8, Never, _>(4);
 /// let eff = send_chunk(&sender, Chunk::from_vec(vec![1, 2]))

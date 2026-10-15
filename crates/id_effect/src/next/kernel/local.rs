@@ -44,13 +44,14 @@ use super::cause::{
 use super::ctx::Ctx;
 use super::effect::{Effect, Node};
 use super::runloop::{Instr, Runloop};
+use crate::failure::Never;
 use crate::failure::{Cause, Defect, Exit};
 use crate::next::capability::{HNil, Plucker};
+use crate::next::observability::{Span, SpanHook};
 use crate::next::runtime::{
   BlockOnInAsync, Executor, FiberContext, LocalBoxFuture, NotLocal, Runtime,
 };
 use crate::next::runtime::{finish_children, in_async_context, park_on};
-use crate::runtime::Never;
 
 /// An erased `!Send` runloop value.
 type LBox = Box<dyn Any>;
@@ -555,6 +556,21 @@ where
   /// Runs this effect uninterruptibly: an interrupt requested inside is honoured when it exits.
   pub fn uninterruptible(self) -> Self {
     LocalEffect::from_instr(LInstr::Mask(Box::new(self.into_instr()), None))
+  }
+
+  /// Runs this effect with `hook` as the fiber's span hook, restoring the previous hook when it
+  /// exits (the `LocalEffect` twin of `Effect::with_span_hook`).
+  pub fn with_span_hook(self, hook: Arc<dyn SpanHook>) -> Self {
+    Self::step(move |_, fiber| {
+      let slot = Span::hook_ref();
+      let prev = slot.get_in(fiber);
+      slot.set_in(fiber, Some(hook));
+      let restore = LocalEffect::<(), Never, R>::step(move |_, fiber| {
+        Span::hook_ref().set_in(fiber, prev);
+        LInstr::Pure(Ok(lerase(())))
+      });
+      self.ensuring(restore).into_instr()
+    })
   }
 
   /// Supplies the capability `T`, removing it from `R` (the `LocalEffect` twin of

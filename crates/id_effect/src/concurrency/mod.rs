@@ -38,7 +38,8 @@
 mod async_notify;
 pub mod cancel;
 pub mod fiber_handle;
-pub mod fiber_id;
+// Kernel-independent; lives in `failure` since `k-retire-v1` (path kept for 0.6 code).
+pub use crate::failure::fiber_id;
 pub mod fiber_ref;
 pub mod supervisor;
 

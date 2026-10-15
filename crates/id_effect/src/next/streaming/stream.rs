@@ -16,12 +16,12 @@ use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::failure::Never;
 use crate::next::capability::HNil;
 use crate::next::concurrency::{Concurrency, fork_all};
 use crate::next::coordination::{Queue, QueueError};
 use crate::next::kernel::{Effect, fail, succeed, suspend, yield_fiber};
-use crate::runtime::Never;
-use crate::streaming::chunk::Chunk;
+use crate::next::streaming::chunk::Chunk;
 
 /// The chunk size a consumer asks for when it does not choose one ([`Stream::next_chunk`] and
 /// the `run_*` consumers).
@@ -49,7 +49,7 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 ///
 /// ```
 /// use id_effect::next::Stream;
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let out = Stream::<u64, Never>::from_iterable(0..)
 ///   .map(|n| n * 3)
@@ -244,7 +244,7 @@ where
   ///
   /// ```
   /// use id_effect::next::{Stream, succeed};
-  /// use id_effect::runtime::Never;
+  /// use id_effect::Never;
   ///
   /// let mut next = 0_u64;
   /// let naturals = Stream::<u64, Never>::from_pull(move |n| {

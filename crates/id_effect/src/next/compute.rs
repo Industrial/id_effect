@@ -31,7 +31,7 @@
 //! ```
 //! use std::sync::Arc;
 //! use id_effect::next::{Concurrency, Effect, Fabric, TestExecutor, all, succeed};
-//! use id_effect::runtime::Never;
+//! use id_effect::Never;
 //!
 //! let fabric = Fabric::with_capacity(2); // at most 2 `Inherit` children run at once
 //! let work: Vec<Effect<u32, Never>> = (0..8).map(succeed).collect();

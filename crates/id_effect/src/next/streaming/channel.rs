@@ -15,10 +15,10 @@ use std::sync::{Arc, Mutex};
 
 use super::sink::Sink;
 use super::stream::{Stream, lock};
+use crate::failure::Never;
 use crate::next::capability::HNil;
 use crate::next::coordination::{Channel, Queue, QueueError};
 use crate::next::kernel::{Effect, succeed, suspend, sync};
-use crate::runtime::Never;
 
 type Emit<A> = Arc<dyn Fn(A) -> Vec<A> + Send + Sync>;
 
@@ -237,7 +237,7 @@ type FoldFn<Acc, In> = Arc<dyn Fn(Acc, In) -> Acc + Send + Sync>;
 ///
 /// ```
 /// use id_effect::next::{FoldChannel, Stream};
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let sum = FoldChannel::from_fold(0_u32, |acc, x: u32| acc + x);
 /// let total = sum.consume_stream(Stream::<u32, Never>::from_iterable([1, 2, 3]));

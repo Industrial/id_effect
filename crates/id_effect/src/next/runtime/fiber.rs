@@ -17,12 +17,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 
 use crate::failure::Exit;
+use crate::failure::FiberId;
 use crate::next::capability::HNil;
 use crate::next::kernel::{
   AnyEnv, AnyExit, Effect, Instr, Runloop, cause_from_panic, from_async, to_exit, unerase_exit,
 };
 use crate::next::runtime::{Done, Executor, FiberContext};
-use crate::runtime::FiberId;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)

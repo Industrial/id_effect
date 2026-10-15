@@ -50,14 +50,19 @@
 //!   back with [`Span::extension`] and end it with the outcome. [`Span::fiber_ref`] /
 //!   [`Span::current_in`] give the current span to other integrations (log correlation).
 //!
+//! - **In-process buffer** — [`tracing`](self::tracing): the 0.6 `install_tracing_layer` /
+//!   `snapshot_tracing` event buffer, fed by the [`TracingHook`] span hook.
+//!
 //! Nothing here uses thread-local storage: all per-fiber state lives in `FiberRef` slots of the
 //! fiber's context (design A §1.3).
 
 pub mod metric;
 pub mod registry;
+pub mod tracing;
 
 pub use metric::*;
 pub use registry::*;
+pub use tracing::*;
 
 use std::any::Any;
 use std::sync::atomic::{AtomicU64, Ordering};

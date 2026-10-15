@@ -5,7 +5,7 @@
 //! across submodules (`ambiguous_glob_reexports` is denied by clippy `-D warnings`).
 //!
 //! Shared, kernel-independent types come from the crate root: `crate::failure::{Cause, Defect,
-//! Exit}`, `crate::runtime::{FiberId, Never}`.
+//! Exit}`, `crate::failure::{FiberId, Never}`.
 //!
 //! Modules that are still empty were scaffolded by `w3-scaffold` with their glob re-export in
 //! place, so the leaf that fills one never has to touch this file. `compat` is the exception: it

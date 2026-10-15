@@ -92,10 +92,10 @@ use super::cause::from_exit;
 use super::ctx::Ctx;
 use super::effect::Effect;
 use super::local::{HoldMask, IntoLocal};
+use crate::failure::Never;
 use crate::next::capability::{Embed, HList};
 use crate::next::concurrency::Concurrency;
 use crate::next::par::all;
-use crate::runtime::Never;
 
 /// A `~` bind's error, waiting to be widened into the body's error type.
 pub struct Lift<E>(Cell<Option<E>>);

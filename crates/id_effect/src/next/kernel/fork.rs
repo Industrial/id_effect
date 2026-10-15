@@ -8,8 +8,8 @@ use std::sync::Arc;
 use super::anybox::erase;
 use super::effect::Effect;
 use super::runloop::Instr;
+use crate::failure::Never;
 use crate::next::runtime::{FiberContext, FiberHandle, spawn_fiber};
-use crate::runtime::Never;
 
 impl<A, E, R> Effect<A, E, R>
 where

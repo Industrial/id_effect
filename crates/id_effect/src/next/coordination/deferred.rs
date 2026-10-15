@@ -43,7 +43,7 @@ impl<A, E> Inner<A, E> {
 ///
 /// ```
 /// use id_effect::next::Deferred;
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let d = Deferred::<u8, Never>::new();
 /// let waiter = d.wait().fork();

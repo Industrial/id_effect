@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::gate::{Slot, lock, with_now};
+use crate::failure::Never;
 use crate::failure::{Cause, Exit};
 use crate::next::capability::HNil;
 use crate::next::kernel::{Effect, ExitKind, Restore, suspend, sync, uninterruptible_mask};
-use crate::runtime::Never;
 
 /// Hit and miss counters and the current size of a [`Cache`] (Effect.ts `CacheStats`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]

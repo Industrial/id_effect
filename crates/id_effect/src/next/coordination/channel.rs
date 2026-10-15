@@ -23,7 +23,7 @@ type Emit<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
 ///
 /// ```
 /// use id_effect::next::Channel;
-/// use id_effect::runtime::Never;
+/// use id_effect::Never;
 ///
 /// let ch = Channel::<u32>::duplex_unbounded().map_in(|s: &str| s.len() as u32);
 /// let eff = ch.write::<Never, _>("abc").then(ch.read());

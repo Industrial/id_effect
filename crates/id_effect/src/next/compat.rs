@@ -77,11 +77,11 @@ use std::panic::resume_unwind;
 use std::sync::Arc;
 
 use crate::failure::{Cause, Defect, Exit};
+use crate::failure::{FiberId, Never};
 use crate::kernel::{BoxFuture as V1BoxFuture, Effect as V1Effect, box_future};
 use crate::next::capability::{HNil, Selector};
 use crate::next::kernel::{Ctx, Effect, InterruptSignal, LocalEffect, Node, split_failure};
 use crate::next::runtime::{Executor, FiberContext, Runtime};
-use crate::runtime::{FiberId, Never};
 
 #[doc(hidden)]
 mod sealed {

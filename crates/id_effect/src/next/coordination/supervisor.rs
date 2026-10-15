@@ -15,11 +15,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::waiters::{fail_cause, hnil_in, lock};
+use crate::failure::Never;
 use crate::failure::{Cause, Exit};
 use crate::next::kernel::{Effect, ExitKind, sleep, succeed, suspend, yield_fiber};
 use crate::next::runtime::FiberHandle;
 use crate::next::scope::Scope;
-use crate::runtime::Never;
 
 /// A sliding-window restart-intensity limiter (OTP `max_restarts` within `within`).
 ///

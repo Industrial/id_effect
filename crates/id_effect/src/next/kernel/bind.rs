@@ -279,7 +279,7 @@ fn non_fail_payload<E>(cause: Cause<E>) -> Box<dyn std::any::Any + Send> {
       _ => None,
     }
   }
-  fn first_interrupt<E>(c: &Cause<E>) -> Option<crate::runtime::FiberId> {
+  fn first_interrupt<E>(c: &Cause<E>) -> Option<crate::failure::FiberId> {
     match c {
       Cause::Interrupt(id) => Some(*id),
       Cause::Both(l, r) | Cause::Then(l, r) => first_interrupt(l).or_else(|| first_interrupt(r)),
@@ -564,7 +564,7 @@ mod tests {
     );
     let p = non_fail_payload::<()>(Cause::then(
       Cause::interrupt(fiber.id()),
-      Cause::interrupt(crate::runtime::FiberId(0)),
+      Cause::interrupt(crate::failure::FiberId(0)),
     ));
     assert!(matches!(p.downcast_ref::<InterruptSignal>(), Some(s) if s.0 == fiber.id()));
   }

@@ -171,12 +171,12 @@ use std::any::{Any, TypeId, type_name};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::failure::Never;
 use crate::next::capability::{Concat, Embed, HCons, HList, HNil};
 use crate::next::kernel::{
   AnyEnv, Effect, ExitKind, Instr, MaskOp, Node, die, downcast_env, from_async, succeed, suspend,
 };
 use crate::next::scope::Scope;
-use crate::runtime::Never;
 
 /// One node's construction, given the build's memo table.
 type BuildFn<Out, E, In> = dyn Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync;

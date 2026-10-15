@@ -115,7 +115,7 @@ pub use compute::{
   uninstall_fabric,
 };
 pub use concurrency::{
-  CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, RestartIntensity, Supervisor,
+  CancellationToken, FiberHandle, FiberRef, FiberStatus, RestartIntensity, Supervisor,
   SupervisorPolicy, check_interrupt, fiber_all, fiber_never, fiber_succeed, interrupt_all,
   supervised, with_fiber_id,
 };
@@ -125,7 +125,7 @@ pub use coordination::{
   QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
   SynchronizedRef, batching, make_request_resolver,
 };
-pub use failure::{Cause, Defect, Exit, Or};
+pub use failure::{Cause, Defect, Exit, FiberId, Never, Or};
 #[doc(inline)]
 pub use foundation::either::Either;
 pub use foundation::func::{always, compose, identity};
@@ -138,9 +138,7 @@ pub use observability::{
   install_tracing_layer, metric_make, record_compute_event, snapshot_tracing, with_span,
 };
 pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};
-pub use runtime::{
-  Never, Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now,
-};
+pub use runtime::{Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now};
 pub use scheduling::{
   AnyDateTime, Clock, Duration, DurationParseError, LiveClock, Schedule, ScheduleDecision,
   ScheduleInput, TestClock, TimeUnit, UtcDateTime, ZonedDateTime, forever, repeat, repeat_n,

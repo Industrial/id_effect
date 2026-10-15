@@ -136,13 +136,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{Context, Poll, Waker};
 
+use crate::failure::Never;
 use crate::failure::{Cause, Exit};
 use crate::next::capability::HNil;
 use crate::next::kernel::{Effect, Instr, erase, erase_exit, succeed, suspend, sync, yield_fiber};
 use crate::next::layer::Layer;
 use crate::next::runtime::{FiberContext, FiberRef, spawn_fiber};
 use crate::next::scope::Scope;
-use crate::runtime::Never;
 
 /// How many yields without a new request close a window that has not settled by sibling count.
 const STABLE_ROUNDS: u32 = 2;

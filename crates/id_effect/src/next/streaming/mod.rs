@@ -19,7 +19,7 @@
 //!
 //! ```
 //! use id_effect::next::{Stream, succeed};
-//! use id_effect::runtime::Never;
+//! use id_effect::Never;
 //!
 //! // Sequential effectful map, then a bounded-concurrency one.
 //! let out = Stream::<u32, Never>::from_iterable(1..=5)
@@ -40,19 +40,12 @@ mod stream;
 mod transduce;
 mod window;
 
-/// Transducers: composable reducing-function transforms ([`Stream::transduce_items`]). The
-/// implementation has no kernel dependency and is shared with the 0.6
-/// `id_effect::streaming::transducer` until `k-retire-v1` moves it here.
-pub mod transducer {
-  pub use crate::streaming::transducer::{Reducer, Transducer, filter, map, take};
-}
+pub mod chunk;
+pub mod transducer;
 
-pub use crate::streaming::chunk::Chunk;
-pub use crate::streaming::transducer::{
-  Reducer, Transducer, filter as transducer_filter, map as transducer_map, take as transducer_take,
-};
 pub use broadcast::{StreamBroadcastFanout, broadcast_with_replay};
 pub use channel::{FoldChannel, StreamChannel};
+pub use chunk::Chunk;
 pub use join::{combine_latest, keyed_join};
 pub use sender::{
   BackpressureDecision, BackpressurePolicy, StreamChannelFull, StreamSender, backpressure_decision,
@@ -61,5 +54,8 @@ pub use sender::{
 pub use sink::Sink;
 pub use stream::{DEFAULT_CHUNK_SIZE, Stream};
 pub use transduce::{StateStep, state_scan};
+pub use transducer::{
+  Reducer, Transducer, filter as transducer_filter, map as transducer_map, take as transducer_take,
+};
 #[doc(hidden)]
 pub use window::window_instant;
