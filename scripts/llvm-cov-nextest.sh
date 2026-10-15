@@ -15,6 +15,14 @@ unset DATABASE_URL
 #     `pg-integration` job (Postgres service, ID_EFFECT_REQUIRE_PG=1), not this unit run.
 #   fp/src/foundation/never: every function takes the uninhabited `Infallible`, so its bodies
 #     can never execute (moved from id_effect/src/foundation in W2; coproduct.rs is tested).
+#   proc_macro/src/{lib,effect_data,effect_tagged,match_effect,derive_*}: proc macros run
+#     inside rustc at compile time, so the instrumented test binaries never execute them
+#     (their behaviour is tested through the expansions, incl. the `ui` trybuild suite).
+#   opentelemetry/src/{otlp,providers,shutdown,starter,config,error,testing}: OTLP exporter
+#     builders and process-global provider install/shutdown need a collector / global state.
+#   axum/src/server/lifecycle: binds sockets and serves until shutdown.
+#   logger/src/pipeline, id_effect/src/schema/parse: carried over from the v3.0 gate (#64)
+#     without a recorded justification; reviewing them is a post-0.7 follow-up.
 IGNORE_REGEX='crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_effect|lib)\.rs|crates/id_effect_logger/src/pipeline\.rs|crates/id_effect_fp/src/foundation/never\.rs|crates/id_effect/src/schema/parse\.rs|crates/id_effect_sql/src/pg/(pool_key|client|transaction)\.rs|crates/id_effect_opentelemetry/src/(otlp|providers|shutdown|testing|error|config|starter)\.rs|crates/id_effect_proc_macro/src/derive_(schema_parser|optics)\.rs|crates/id_effect_axum/src/server/lifecycle\.rs'
 
 exec cargo llvm-cov nextest \
