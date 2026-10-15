@@ -19,7 +19,6 @@ pub mod testing;
 pub use capability::*;
 pub use concurrency::*;
 pub use kernel::*;
-#[allow(unused_imports)] // filled by k-layer-base
 pub use layer::*;
 #[allow(unused_imports)] // filled by k-macros-next
 pub use macros::*;
