@@ -56,13 +56,13 @@ The core crate runs effects on its own interpreter (`run_blocking`, `run_async`)
 
 | Crate | Version | Description |
 |-------|---------|-------------|
-| [`id_effect`](crates/id_effect) | [![crates.io](https://img.shields.io/crates/v/id_effect.svg)](https://crates.io/crates/id_effect) | Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor |
+| [`id_effect`](crates/id_effect) | [![crates.io](https://img.shields.io/crates/v/id_effect.svg)](https://crates.io/crates/id_effect) | Effect<A, E, R>: lazy Send effects over a typed capability list, run on a fiber runtime (Tokio executor), with layers, streams, schedules and coordination |
 | [`id_effect_config`](crates/id_effect_config) | [![crates.io](https://img.shields.io/crates/v/id_effect_config.svg)](https://crates.io/crates/id_effect_config) | Configuration for id_effect: Config descriptors, ConfigProvider and Figment/serde loading |
 | [`id_effect_logger`](crates/id_effect_logger) | [![crates.io](https://img.shields.io/crates/v/id_effect_logger.svg)](https://crates.io/crates/id_effect_logger) | EffectLogger capability for id_effect: log levels, annotations and pluggable backends over tracing |
-| [`id_effect_macro`](crates/id_effect_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_macro.svg)](https://crates.io/crates/id_effect_macro) | Declarative macros re-exported by id_effect: pipe!, err!, caps!, provide!, providers!, mock_capability! |
+| [`id_effect_macro`](crates/id_effect_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_macro.svg)](https://crates.io/crates/id_effect_macro) | Declarative macros re-exported by id_effect: pipe!, err! |
 | [`id_effect_proc_macro`](crates/id_effect_proc_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_proc_macro.svg)](https://crates.io/crates/id_effect_proc_macro) | Procedural `effect!` macro for the `effect` crate (proc-macro only; declarative macros live in `id_effect_macro`) |
 | [`id_effect_resilience`](crates/id_effect_resilience) | [![crates.io](https://img.shields.io/crates/v/id_effect_resilience.svg)](https://crates.io/crates/id_effect_resilience) | Resilience patterns for id_effect: circuit breaker, Schedule-driven retry, rate limiter, bulkhead, hedged requests |
-| [`id_effect_tokio`](crates/id_effect_tokio) | [![crates.io](https://img.shields.io/crates/v/id_effect_tokio.svg)](https://crates.io/crates/id_effect_tokio) | Tokio runtime adapter for id_effect: TokioRuntime (sleep, yield, fork on the blocking pool) |
+| [`id_effect_tokio`](crates/id_effect_tokio) | [![crates.io](https://img.shields.io/crates/v/id_effect_tokio.svg)](https://crates.io/crates/id_effect_tokio) | Tokio runtime adapter for id_effect: TokioRuntime over the 0.7-kernel TokioExecutor (fibers as tokio tasks) |
 
 **Runtime and supervision**
 
@@ -77,7 +77,7 @@ The core crate runs effects on its own interpreter (`run_blocking`, `run_async`)
 | Crate | Version | Description |
 |-------|---------|-------------|
 | [`id_effect_axum`](crates/id_effect_axum) | [![crates.io](https://img.shields.io/crates/v/id_effect_axum.svg)](https://crates.io/crates/id_effect_axum) | Axum and Tower integration for id_effect — Send-safe Effect handlers, request-scoped capabilities, host lifecycle |
-| [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing init, run_main |
+| [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing buffer, run_main |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
