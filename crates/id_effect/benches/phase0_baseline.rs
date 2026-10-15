@@ -9,13 +9,14 @@
 //!   `succeed` binds.
 //! - `phase0/bench_env_insert_overhead`: `id_effect::next::DynEnv::insert` (v0.6: `Env::insert`
 //!   of `Cap<Bench>`), one insert into a fresh environment.
-//! - `phase0/bench_stream_throughput_collect`, `phase0/bench_schedule_retry_overhead`: still the
-//!   v1 kernel (spec k-rebuild §7 Q-C) until `m-streams` / `p-schedule` port them.
+//! - `phase0/bench_schedule_retry_overhead`: the 0.7 kernel, `Effect::retry` with
+//!   `next::Schedule::recurs(3)` through `Effect::block_on` (v0.6: the free `retry` with
+//!   `pollster::block_on`). Same workload: two failures, then a success.
+//! - `phase0/bench_stream_throughput_collect`: still the v1 kernel (spec k-rebuild §7 Q-C) until
+//!   `m-streams` ports it.
 
 use ::id_effect::next::{self as k, DynEnv, Effect, HNil};
-use ::id_effect::scheduling::schedule::{Schedule, retry};
 use ::id_effect::streaming::stream::Stream;
-use ::id_effect::{fail, succeed};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -67,23 +68,25 @@ fn bench_stream_throughput_collect(c: &mut Criterion) {
   });
 }
 
-// v1 body until p-schedule
 fn bench_schedule_retry_overhead(c: &mut Criterion) {
   c.bench_function("phase0/bench_schedule_retry_overhead", |b| {
     b.iter(|| {
       let attempts = AtomicUsize::new(0);
-      let effect = retry(
+      let effect: Effect<usize, &'static str, HNil> = Effect::retry(
         move || {
           let n = attempts.fetch_add(1, Ordering::SeqCst);
           if n < 2 {
-            fail::<usize, &'static str, ()>("boom")
+            k::fail("boom")
           } else {
-            succeed::<usize, &'static str, ()>(n + 1)
+            k::succeed(n + 1)
           }
         },
-        Schedule::recurs(3),
+        k::Schedule::recurs(3),
       );
-      let out = pollster::block_on(effect.run(&mut ())).expect("retry should eventually succeed");
+      let out = effect
+        .block_on()
+        .into_result()
+        .expect("retry should eventually succeed");
       std::hint::black_box(out)
     });
   });
