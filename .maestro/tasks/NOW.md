@@ -1,21 +1,17 @@
 # NOW
-Updated: 2026-10-15T15:59:27.856Z
+Updated: 2026-10-15T16:13:56.224Z
 
 ## In flight (1)
-### tsk-mv8ohjj3-y69kmv . W7: Docs/book/README/parity checklist sweep
+### tsk-mv8ohjj3-1rdxav . W7: REPORT-0.7.md bench report vs v0.6 (same session)
 State: claimed
-Owner: claude (claimed 25m ago)
+Owner: claude (claimed 0s ago)
 Mission: pln-mv8oh29m-3zdrrj
 
 
-## Ready to pick up (5)
+## Ready to pick up (4)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
 Mission: pln-mv799j4f-1r1u6b
 Spec: /data/Code/rust/id_effect/.maestro/specs/id-effect-consolidation-0-6.md
-
-### tsk-mv8ohjj3-1rdxav . W7: REPORT-0.7.md bench report vs v0.6 (same session)
-Mission: pln-mv8oh29m-3zdrrj
-Spec: /data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md
 
 ### tsk-mv8ohjj3-2vklr8 . W7: All release gates green on PR
 Mission: pln-mv8oh29m-3zdrrj
