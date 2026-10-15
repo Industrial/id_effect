@@ -3,7 +3,7 @@
 # (`fn h(r: &mut Env) -> Effect<_, _, Env>` + `Needs::<T>::need(r)`, cf. axum example
 # 020_capability_run_with). This is the "0.6 equivalent" Design A's compile-time falsifier
 # (> 2x) is measured against. ID_EFFECT_PATH selects the crate (default: this checkout).
-# Interface: spikes/README.md, "gen-caps templates". Sourced by gen-caps.sh; not executable.
+# Interface: the gen-caps.sh header. Sourced by gen-caps.sh; not executable.
 
 tpl_dependencies() {
     printf 'id_effect = { path = "%s" }\n' "${ID_EFFECT_PATH}"

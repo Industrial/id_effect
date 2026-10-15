@@ -2,12 +2,14 @@
 # Measure `cargo check` wall time of one crate: the median of N runs (default 3).
 #
 # Usage:
-#   spikes/scripts/check-time.sh CRATE_DIR [--runs N] [--json]
-#   spikes/scripts/check-time.sh --gen TEMPLATE CAPS HANDLERS [--runs N] [--json]
-#   spikes/scripts/check-time.sh --self-test
+#   scripts/check-time/check-time.sh CRATE_DIR [--runs N] [--json]
+#   scripts/check-time/check-time.sh --gen TEMPLATE CAPS HANDLERS [--runs N] [--json]
+#   scripts/check-time/check-time.sh --self-test
 #
 # --gen first runs gen-caps.sh CAPS HANDLERS --template TEMPLATE (default --out), then measures the
-# generated crate, e.g. the spike gate's figure: check-time.sh --gen a 16 100.
+# generated crate, e.g. the 0.7 kernel at the spike gate's size: check-time.sh --gen next 16 100
+# (compare with --gen v06 16 100 and the --gen plain floor). Moved here from the spike harness
+# when k-ui-suite deleted the spikes; the spike-gate figures are in docs/benchmarks/spike-gate/.
 #
 # Method: one untimed warm-up `cargo check` builds the dependencies; then each timed run touches
 # the crate's own sources and re-runs `cargo check` with CARGO_INCREMENTAL=0, so every run

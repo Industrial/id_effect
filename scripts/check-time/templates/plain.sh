@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # gen-caps template "plain": no effect kernel, plain Rust functions over a struct env.
 # The floor every kernel's check time is read against, and the generator's own self-test.
-# Interface: spikes/README.md, "gen-caps templates". Sourced by gen-caps.sh; not executable.
+# Interface: the gen-caps.sh header. Sourced by gen-caps.sh; not executable.
 
 field() {
     printf '%s' "${1,,}"
