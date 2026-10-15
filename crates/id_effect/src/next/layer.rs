@@ -1,7 +1,7 @@
 //! `Layer<Out, E, In>`: lazy, memoised recipes for environment values. `succeed` / `effect` /
-//! `from_effect` / `build` / `merge` / `provide_to` / `provide_merge` and
-//! `Effect::provide_layer`. Filled by `k-layer-base` and `p-layer-core`; `p-layer-scoped` adds
-//! `fresh` and scoped (finalized) layers.
+//! `from_effect` / `scoped` / `acquire_release` / `fresh` / `build` / `build_scoped` / `merge` /
+//! `provide_to` / `provide_merge` / `launch` and `Effect::provide_layer`. Filled by
+//! `k-layer-base`, `p-layer-core` and `p-layer-scoped`.
 //!
 //! A [`Layer<Out, E, In>`](Layer) is a lazy recipe that builds the environment value `Out` (an
 //! HList of `Arc`ed capabilities) from the environment `In`, failing with `E` (design A §2.3).
@@ -77,11 +77,62 @@
 //! Builds are sequential (`merge` builds its left side, then its right side), so an entry is
 //! either absent or complete.
 //!
-//! Room for `p-layer-scoped`: the memo table is the build's private context (`MemoMap`), passed
-//! explicitly to every node, so a scope (for finalizers in reverse acquisition order) and
-//! per-entry release bookkeeping can be added to it without changing a combinator. `fresh()`
-//! is a new node that builds its inner layer under a new, empty `MemoMap` (Effect.ts
-//! `Layer.fresh`): the inner graph is then not shared with the rest of the build.
+//! [`Layer::fresh`] opts a layer out of this sharing (Effect.ts `Layer.fresh`): it builds its
+//! inner graph under a new, empty memo table, so it is constructed again even where the same
+//! layer is already built. Its finalizers still go to the build's scope.
+//!
+//! # Scoped layers (finalizers)
+//!
+//! Every build has one [`Scope`]. A layer made with [`Layer::scoped`] receives it and registers
+//! finalizers into it; [`Layer::acquire_release`] is the common case (acquire uninterruptibly,
+//! register the release). A finalizer is an effect (`Effect<(), Never, HNil>`), so it can be
+//! asynchronous: this replaces v1's synchronous `ProviderSpec::on_shutdown`. A memoised layer
+//! registers its finalizers once per build.
+//!
+//! The scope closes when its owner ends, running the finalizers once, uninterruptibly and in
+//! reverse order of acquisition, with the [`ExitKind`] of the owner:
+//!
+//! - [`Effect::provide_layer`] owns the scope of its build: it closes after the effect completes
+//!   (success, failure, defect or interrupt), as Effect.ts `Effect.provide(layer)` does;
+//! - [`Layer::launch`] builds into a scope that closes only when the launched effect is
+//!   interrupted (Effect.ts `Layer.launch`);
+//! - [`Layer::build_scoped`] builds into a caller's [`Scope`] (Effect.ts `Layer.buildWithScope`).
+//!
+//! [`Layer::build`] has no owner for its scope: it closes it when the build fails or is
+//! interrupted (releasing what was acquired so far), but after a successful build its
+//! finalizers never run. Use one of the owners above for a layer that holds resources.
+//!
+//! ```
+//! use std::sync::{Arc, Mutex};
+//! use id_effect::next::{Effect, HCons, HNil, Layer, hlist, need, sync};
+//!
+//! struct Pool;
+//! struct Repo;
+//!
+//! let log = Arc::new(Mutex::new(Vec::new()));
+//! let (l1, l2, l3) = (Arc::clone(&log), Arc::clone(&log), Arc::clone(&log));
+//! let pool: Layer<HCons<Pool, HNil>, ()> = Layer::acquire_release(
+//!   || sync(|| hlist![Pool]),
+//!   move |_, _| {
+//!     let l = Arc::clone(&l1);
+//!     sync(move || l.lock().unwrap().push("close pool"))
+//!   },
+//! );
+//! let repo: Layer<HCons<Repo, HNil>, (), HCons<Pool, HNil>> = Layer::acquire_release(
+//!   || need::<Pool>().map(|_| hlist![Repo]),
+//!   move |_, _| {
+//!     let l = Arc::clone(&l2);
+//!     sync(move || l.lock().unwrap().push("close repo"))
+//!   },
+//! );
+//!
+//! let use_repo: Effect<(), (), HCons<Repo, HNil>> =
+//!   need::<Repo>().flat_map(move |_| sync(move || l3.lock().unwrap().push("use")));
+//! let app: Effect<(), ()> = use_repo.provide_layer(pool.provide_to(repo));
+//! assert!(matches!(app.block_on(), id_effect::Exit::Success(())));
+//! // Released after the effect, in reverse order of acquisition.
+//! assert_eq!(*log.lock().unwrap(), ["use", "close repo", "close pool"]);
+//! ```
 //!
 //! # Shared inputs (deduplicated by construction)
 //!
@@ -121,7 +172,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::next::capability::{Concat, Embed, HCons, HList, HNil};
-use crate::next::kernel::{AnyEnv, Effect, Instr, Node, die, downcast_env, succeed, suspend};
+use crate::next::kernel::{
+  AnyEnv, Effect, ExitKind, Instr, MaskOp, Node, die, downcast_env, from_async, succeed, suspend,
+};
+use crate::next::scope::Scope;
+use crate::runtime::Never;
 
 /// One node's construction, given the build's memo table.
 type BuildFn<Out, E, In> = dyn Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync;
@@ -193,6 +248,46 @@ where
     })
   }
 
+  /// A layer whose construction `make(scope)` may register finalizers into the build's
+  /// [`Scope`] (Effect.ts `Layer.scoped`). They run when the scope closes: after the effect a
+  /// [`Effect::provide_layer`] runs, when a [`Layer::launch`] is interrupted, or when the caller
+  /// of [`Layer::build_scoped`] closes its scope; in reverse order of registration, with the
+  /// closing [`ExitKind`]. `make` is called once per build that needs this layer.
+  pub fn scoped(make: impl Fn(Scope) -> Effect<Out, E, In> + Send + Sync + 'static) -> Self {
+    Self::from_build(move |memo| make(memo.scope.clone()))
+  }
+
+  /// A resource layer (Effect.ts `Layer.scoped(Effect.acquireRelease(..))`): `acquire()` runs
+  /// uninterruptibly and, when it succeeds, `release(out, kind)` is registered in the build's
+  /// scope as one step, so an interrupt cannot fall between them. `release` is an effect (it may
+  /// be asynchronous) and runs once, when the scope closes, fed the closing [`ExitKind`]. A
+  /// failed `acquire` registers nothing.
+  pub fn acquire_release(
+    acquire: impl Fn() -> Effect<Out, E, In> + Send + Sync + 'static,
+    release: impl Fn(Out, ExitKind) -> Effect<(), Never, HNil> + Send + Sync + 'static,
+  ) -> Self {
+    let release = Arc::new(release);
+    Self::scoped(move |scope| {
+      let release = Arc::clone(&release);
+      acquire()
+        .flat_map(move |out: Out| {
+          let held = out.clone();
+          scope
+            .add_finalizer_exit(move |kind| release(held, kind))
+            .map(move |()| out)
+        })
+        .uninterruptible()
+    })
+  }
+
+  /// This layer, unshared (Effect.ts `Layer.fresh`): its graph is built under a new, empty memo
+  /// table, so it is constructed again even where the same layer is already built in this
+  /// build, and nothing inside it is shared with the rest of the build. Its finalizers still go
+  /// to the build's scope (in acquisition order with the rest).
+  pub fn fresh(self) -> Self {
+    Layer::from_build(move |memo| self.build_in(&memo.fresh()))
+  }
+
   /// A new node (its own memo identity) from its construction.
   fn from_build(build: impl Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync + 'static) -> Self {
     Self {
@@ -200,10 +295,59 @@ where
     }
   }
 
-  /// The construction effect, under a new memo table (each call builds afresh; within the
-  /// build every layer is constructed at most once).
+  /// The construction effect, under a new memo table and a new scope (each call builds afresh;
+  /// within the build every layer is constructed at most once).
+  ///
+  /// Nothing owns that scope: it is closed when the build fails or is interrupted, releasing
+  /// what was acquired so far, but a successful build's finalizers never run. For a layer with
+  /// finalizers use [`Effect::provide_layer`], [`Layer::launch`] or [`Layer::build_scoped`].
   pub fn build(&self) -> Effect<Out, E, In> {
-    self.build_in(&MemoMap::default())
+    let scope = Scope::new();
+    let body = self.build_scoped(&scope);
+    Effect::from_instr(Instr::WithFiber(Box::new(move |_, fiber| {
+      let m = fiber.mask();
+      Instr::Mask(
+        Box::new(Instr::Fold(
+          Box::new(Instr::Mask(Box::new(body.into_instr()), MaskOp::Set(m))),
+          Box::new(move |exit| match exit {
+            Ok(out) => Instr::Pure(Ok(out)),
+            Err(cause) => {
+              let kind = ExitKind::of_cause(&cause);
+              let close = under(scope.close(kind), |_: &In| HNil).into_instr();
+              // `close` cannot fail (finalizer defects aside, which are sequenced after).
+              Instr::Fold(
+                Box::new(close),
+                Box::new(move |fin| {
+                  Instr::Pure(Err(match fin {
+                    Ok(_) => cause,
+                    Err(fc) => crate::failure::Cause::then(cause, fc),
+                  }))
+                }),
+              )
+            }
+          }),
+        )),
+        MaskOp::Inc,
+      )
+    })))
+  }
+
+  /// The construction effect, under a new memo table, registering every finalizer into `scope`
+  /// (Effect.ts `Layer.buildWithScope`). The caller closes `scope`; closing it runs the
+  /// finalizers in reverse order of acquisition.
+  pub fn build_scoped(&self, scope: &Scope) -> Effect<Out, E, In> {
+    self.build_in(&MemoMap::with_scope(scope.clone()))
+  }
+
+  /// Builds this layer and keeps it alive until interrupted (Effect.ts `Layer.launch`): the
+  /// effect never succeeds; interrupting it closes the build's scope, running the finalizers in
+  /// reverse order. A failed build fails the effect (and releases what was acquired).
+  pub fn launch(self) -> Effect<Never, E, In> {
+    Effect::scoped(move |scope| {
+      self
+        .build_scoped(&scope)
+        .flat_map(|_| from_async(std::future::pending::<Result<Never, E>>))
+    })
   }
 
   /// This layer's construction within the build whose memo table is `memo`: a memoised result
@@ -316,24 +460,31 @@ where
   /// Builds `layer` and runs this effect against its output, which must contain every
   /// capability of `R` (any order, extras allowed); Effect.ts `Effect.provide(layer)`. The
   /// result needs only the layer's input: with a closed layer (`In = HNil`) it is runnable.
-  /// Each run builds the layer under a new memo table.
+  ///
+  /// Each run builds the layer under a new memo table and a new [`Scope`], which closes after
+  /// this effect completes (success, failure, defect or interrupt, also when the build itself
+  /// fails or is interrupted): the layers' finalizers run then, in reverse order of acquisition.
   pub fn provide_layer<Out, In, Is>(self, layer: Layer<Out, E, In>) -> Effect<A, E, In>
   where
     Out: HList + Embed<R, Is>,
     In: HList,
   {
-    layer
-      .build()
-      .flat_map(move |out| self.provide_env(out).narrow::<In, HNil>())
+    Effect::scoped(move |scope| {
+      layer
+        .build_scoped(&scope)
+        .flat_map(move |out| self.provide_env(out).narrow::<In, HNil>())
+    })
   }
 }
 
-/// The memo table of one build: each constructed node's output, keyed by the node's address.
-/// An entry also holds the node itself, so the address cannot be reused while the table lives.
-/// Clones share the table.
+/// The memo table of one build: each constructed node's output, keyed by the node's address,
+/// and the build's [`Scope`], which receives every finalizer. An entry also holds the node
+/// itself, so the address cannot be reused while the table lives. Clones share the table and the
+/// scope.
 #[derive(Clone, Default)]
 struct MemoMap {
   entries: Arc<Mutex<HashMap<usize, MemoEntry>>>,
+  scope: Scope,
 }
 
 struct MemoEntry {
@@ -344,6 +495,19 @@ struct MemoEntry {
 }
 
 impl MemoMap {
+  /// An empty table whose finalizers go to `scope`.
+  fn with_scope(scope: Scope) -> Self {
+    Self {
+      entries: Arc::default(),
+      scope,
+    }
+  }
+
+  /// An empty table sharing this one's scope (`Layer::fresh`).
+  fn fresh(&self) -> Self {
+    Self::with_scope(self.scope.clone())
+  }
+
   /// The memoised output of the node at `key`.
   fn get<Out: HList>(&self, key: usize) -> Option<Out> {
     let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
