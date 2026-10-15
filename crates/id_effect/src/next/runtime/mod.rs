@@ -14,7 +14,6 @@ pub use fiber::*;
 pub use fiber_context::*;
 #[allow(unused_imports)] // filled by k-scope-fiberref
 pub use fiber_ref::*;
-#[allow(unused_imports)] // filled by k-edge
 pub use runtime::*;
 // `self::` because the extern crate `tokio` is also in scope; inside `tokio.rs`, name the crate
 // as `::tokio`.
