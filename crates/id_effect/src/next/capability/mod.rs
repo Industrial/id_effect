@@ -7,7 +7,6 @@ mod provide;
 
 #[allow(unused_imports)] // filled by k-typed-r
 pub use dyn_env::*;
-#[allow(unused_imports)] // filled by k-core-runloop
 pub use hlist::*;
 #[allow(unused_imports)] // filled by k-typed-r
 pub use need::*;

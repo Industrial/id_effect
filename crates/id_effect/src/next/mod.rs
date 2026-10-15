@@ -16,7 +16,6 @@ pub mod runtime;
 pub mod scope;
 pub mod testing;
 
-#[allow(unused_imports)] // filled by k-core-runloop (hlist)
 pub use capability::*;
 #[allow(unused_imports)] // filled by k-fiber-tree
 pub use concurrency::*;
