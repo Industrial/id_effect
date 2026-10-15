@@ -156,28 +156,48 @@ fn tracked(
 
 // ── AC1: zip_par over 2×50 ms takes < 80 ms ──────────────────────────────────────────────
 
+/// Checks that two 50 ms branches overlapped.
+///
+/// On the test executor the measurement is virtual time, so the `< 80 ms` bound is exact and
+/// deterministic. On tokio a wall-clock upper bound flakes under machine load (it once took
+/// 99.9 ms at load ~50), so overlap is proven structurally instead: each branch waits at a
+/// rendezvous until both have started (it could never complete if they ran one after the
+/// other), and the wall clock only checks that the sleeps were honoured.
+fn assert_overlapped(d: Driver, took: Duration, ms50: Duration) {
+  assert!(took >= ms50, "{d:?}: took {took:?}");
+  if let Driver::Test = d {
+    assert!(took < Duration::from_millis(80), "{d:?}: took {took:?}");
+  }
+}
+
+/// Bumps `c`, then waits until `n` branches have bumped it.
+fn rendezvous(c: &Arc<AtomicUsize>, n: usize) -> Effect<(), Never> {
+  bump::<Never>(c).then(reached(c, n))
+}
+
 #[test]
 fn zip_par_over_two_50ms_sleeps_takes_under_80ms() {
   let _ = tokio_rt(); // runtime start-up is not part of the measurement
   on_both(|d| {
     let ms50 = Duration::from_millis(50);
+    let met = counter();
     let eff = zip_par(
-      sleep::<Never, _>(ms50).then(succeed(1_u8)),
-      sleep(ms50).then(succeed("two")),
+      rendezvous(&met, 2).then(sleep(ms50)).then(succeed(1_u8)),
+      rendezvous(&met, 2).then(sleep(ms50)).then(succeed("two")),
     );
     let (exit, took) = d.timed(eff);
     assert!(matches!(exit, Exit::Success((1, "two"))), "{d:?}: {exit:?}");
-    assert!(took < Duration::from_millis(80), "{d:?}: took {took:?}");
-    assert!(took >= ms50, "{d:?}: took {took:?}");
+    assert_overlapped(d, took, ms50);
 
+    let met = counter();
     let eff = zip_with_par(
-      sleep::<Never, _>(ms50).then(succeed(20_u32)),
-      sleep(ms50).then(succeed(22_u32)),
+      rendezvous(&met, 2).then(sleep(ms50)).then(succeed(20_u32)),
+      rendezvous(&met, 2).then(sleep(ms50)).then(succeed(22_u32)),
       |a, b| a + b,
     );
     let (exit, took) = d.timed(eff);
     assert!(matches!(exit, Exit::Success(42)), "{d:?}: {exit:?}");
-    assert!(took < Duration::from_millis(80), "{d:?}: took {took:?}");
+    assert_overlapped(d, took, ms50);
   });
 }
 

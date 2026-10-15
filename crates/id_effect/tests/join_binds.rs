@@ -139,46 +139,60 @@ fn ok(v: u64) -> Effect<u64, Never> {
 
 // ── arity, order and concurrency ─────────────────────────────────────────────────────────
 
-fn join2() -> Effect<(u8, &'static str), Never> {
-  effect!({ ~(after(MS50, 1_u8), after(MS50, "two")) })
+/// A branch that waits until all `n` branches sharing `met` have started, then sleeps 50 ms.
+///
+/// The rendezvous can only be passed if the branches run concurrently (run one after the
+/// other, the first would wait forever), which proves concurrency without a wall-clock bound.
+fn met_after<A: Send + 'static>(met: &Arc<AtomicUsize>, n: usize, a: A) -> Effect<A, Never> {
+  bump(met).then(reached(met, n)).then(after(MS50, a))
+}
+
+fn join2(met: &Arc<AtomicUsize>) -> Effect<(u8, &'static str), Never> {
+  let m = Arc::clone(met);
+  effect!({ ~(met_after(&m, 2, 1_u8), met_after(&m, 2, "two")) })
 }
 
 #[allow(clippy::type_complexity)]
-fn join8() -> Effect<(u8, u16, u32, u64, i8, i16, i32, &'static str), Never> {
+fn join8(met: &Arc<AtomicUsize>) -> Effect<(u8, u16, u32, u64, i8, i16, i32, &'static str), Never> {
+  let m = Arc::clone(met);
   effect!({
     ~(
-      after(MS50, 1_u8),
-      after(MS50, 2_u16),
-      after(MS50, 3_u32),
-      after(MS50, 4_u64),
-      after(MS50, 5_i8),
-      after(MS50, 6_i16),
-      after(MS50, 7_i32),
-      after(MS50, "eight"),
+      met_after(&m, 8, 1_u8),
+      met_after(&m, 8, 2_u16),
+      met_after(&m, 8, 3_u32),
+      met_after(&m, 8, 4_u64),
+      met_after(&m, 8, 5_i8),
+      met_after(&m, 8, 6_i16),
+      met_after(&m, 8, 7_i32),
+      met_after(&m, 8, "eight"),
     )
   })
+}
+
+/// The sleeps were honoured, and (in virtual time, where the bound is deterministic) they
+/// overlapped. On tokio a wall-clock upper bound flakes under load (324 ms seen for 8×50 ms),
+/// so there the rendezvous in [`met_after`] is the concurrency proof.
+fn assert_overlapped(d: Driver, took: Duration) {
+  assert!(took >= MS50, "{d:?}: took {took:?}");
+  if let Driver::Test = d {
+    assert!(took < Duration::from_millis(80), "{d:?}: took {took:?}");
+  }
 }
 
 #[test]
 fn a_join_runs_its_branches_concurrently_and_keeps_input_order() {
   let _ = tokio_rt(); // runtime start-up is not part of the measurement
   on_both(|d| {
-    let (exit, took) = d.timed(join2());
+    let (exit, took) = d.timed(join2(&counter()));
     assert!(matches!(exit, Exit::Success((1, "two"))), "{d:?}: {exit:?}");
-    assert!(
-      took >= MS50 && took < Duration::from_millis(80),
-      "{d:?}: took {took:?}"
-    );
+    assert_overlapped(d, took);
 
-    let (exit, took) = d.timed(join8());
+    let (exit, took) = d.timed(join8(&counter()));
     assert!(
       matches!(exit, Exit::Success((1, 2, 3, 4, 5, 6, 7, "eight"))),
       "{d:?}: {exit:?}"
     );
-    assert!(
-      took >= MS50 && took < Duration::from_millis(80),
-      "{d:?}: took {took:?}"
-    );
+    assert_overlapped(d, took);
   });
 }
 
