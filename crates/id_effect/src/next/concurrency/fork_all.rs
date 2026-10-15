@@ -5,6 +5,18 @@
 //! collects their values in input order. On the first failure it interrupts the siblings that
 //! are in flight, starts no further ones, waits until every started child has completed (so
 //! their finalizers have run), and fails with that first cause.
+//!
+//! Failure semantics (Effect.ts `Effect.all` with concurrency; ruling of `c-zip-par-all`): the
+//! first failure is the result's cause. A sibling that also ends in a genuine failure (a `Fail`
+//! or a `Die`, e.g. it failed before it saw the interrupt, or its finalizer died) is combined in
+//! with [`Cause::Both`], first failure leftmost. The `Interrupt` leaves of siblings that were
+//! interrupted because of that first failure are dropped: they report nothing the caller did
+//! not cause. So a lone failure stays exactly that failure.
+//!
+//! Admission (D6): `AllFut::start_up_to_limit` is the single point where a child is admitted
+//! and spawned. `Bounded(n)` is a purely local window there; only [`Concurrency::Inherit`] is
+//! meant to await an [`Admission`] permit (from the ambient Fabric) before each spawn, which
+//! `c-fabric-scheduler` wires at that point.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -39,7 +51,8 @@ pub trait Admission: Send + Sync {
 
 /// Runs every effect as a child fiber of the current one and collects the values in input
 /// order. The first failure interrupts the in-flight siblings, waits for them, and fails with
-/// that cause (try-join). See [`Concurrency`] for the scheduling modes.
+/// that cause (try-join), plus any genuine sibling failure as [`Cause::Both`] (see the module
+/// docs). See [`Concurrency`] for the scheduling modes.
 pub fn fork_all<A, E, R>(effects: Vec<Effect<A, E, R>>, c: Concurrency) -> Effect<Vec<A>, E, R>
 where
   A: Send + 'static,
@@ -161,6 +174,9 @@ impl AllFut {
 
   /// Starts queued children while fewer than `limit` are in flight (none after a failure).
   /// A started child is marked ready, so its first poll registers its waker.
+  ///
+  /// This is the one admission point: `c-fabric-scheduler` makes `Concurrency::Inherit` await
+  /// an [`Admission`] permit here before each `spawn_fiber` (`Bounded(n)` stays local).
   fn start_up_to_limit(&mut self) {
     if self.failure.is_some() {
       self.queue.clear();
@@ -185,16 +201,44 @@ impl AllFut {
   fn record(&mut self, i: usize, exit: AnyExit) {
     match exit {
       Ok(v) => self.results[i] = Some(v),
-      Err(c) => {
-        if self.failure.is_none() {
+      Err(c) => match self.failure.take() {
+        None => {
           self.failure = Some(c);
           self.queue.clear();
           for kid in self.kids.iter().flatten() {
             kid.ctx.request_interrupt();
           }
         }
-      }
+        Some(first) => {
+          self.failure = Some(match without_interrupts(c) {
+            Some(more) => Cause::Both(Box::new(first), Box::new(more)),
+            None => first,
+          });
+        }
+      },
     }
+  }
+}
+
+/// `c` without its `Interrupt` leaves, or `None` when nothing else is left (see the module docs
+/// on failure semantics).
+fn without_interrupts<E>(c: Cause<E>) -> Option<Cause<E>> {
+  match c {
+    Cause::Interrupt(_) => None,
+    Cause::Both(l, r) => join(without_interrupts(*l), without_interrupts(*r), Cause::Both),
+    Cause::Then(l, r) => join(without_interrupts(*l), without_interrupts(*r), Cause::Then),
+    leaf => Some(leaf),
+  }
+}
+
+fn join<E>(
+  l: Option<Cause<E>>,
+  r: Option<Cause<E>>,
+  both: fn(Box<Cause<E>>, Box<Cause<E>>) -> Cause<E>,
+) -> Option<Cause<E>> {
+  match (l, r) {
+    (Some(l), Some(r)) => Some(both(Box::new(l), Box::new(r))),
+    (one, None) | (None, one) => one,
   }
 }
 
