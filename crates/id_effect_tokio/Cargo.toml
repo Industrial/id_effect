@@ -3,7 +3,7 @@ name = "id_effect_tokio"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Tokio runtime adapter for id_effect: TokioRuntime (sleep, yield, fork on the blocking pool)"
+description = "Tokio runtime adapter for id_effect: TokioRuntime over the next-kernel TokioExecutor (fibers as tokio tasks)"
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
@@ -38,7 +38,7 @@ harness = false
 [dev-dependencies]
 cpu-time = "1.0.0"
 criterion = "0.8.2"
-pollster = "1.0"
+tokio = { version = "1.50.0", features = ["macros"] }
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh

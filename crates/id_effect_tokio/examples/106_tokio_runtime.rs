@@ -1,20 +1,28 @@
-//! Ex 106 — `TokioRuntime` implements `id_effect::Runtime` (sleep / yield on the Tokio driver).
+//! Ex 106 — `TokioRuntime` runs `next` effects on the Tokio driver (sleep / yield on tokio timers).
 //!
 //! Run: `cargo run -p id_effect_tokio --example 106_tokio_runtime`
 
-use id_effect::{Runtime, run_async, succeed};
-use id_effect_tokio::{TokioRuntime, yield_now};
 use std::time::Duration;
+
+use id_effect::Exit;
+use id_effect::next::{HNil, sleep, succeed, yield_fiber};
+use id_effect_tokio::TokioRuntime;
 
 fn main() {
   let rt = TokioRuntime::new_current_thread().expect("tokio runtime should build");
   rt.block_on(async {
-    assert_eq!(
-      run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-      Ok(())
-    );
-    assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
-    assert_eq!(run_async(succeed::<u8, (), ()>(42), ()).await, Ok(42));
+    assert!(matches!(
+      rt.run(sleep::<(), HNil>(Duration::from_millis(0))).await,
+      Exit::Success(())
+    ));
+    assert!(matches!(
+      rt.run(yield_fiber::<(), HNil>()).await,
+      Exit::Success(())
+    ));
+    assert!(matches!(
+      rt.run(succeed::<u8, (), HNil>(42)).await,
+      Exit::Success(42)
+    ));
   });
   println!("106_tokio_runtime ok");
 }

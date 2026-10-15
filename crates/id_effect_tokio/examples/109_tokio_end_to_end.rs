@@ -1,19 +1,18 @@
-#![allow(dead_code)]
-//! Ex 109 — End-to-end: Tokio [`TokioRuntime`], capability DI, `effect!`, streams, and `catch`.
+//! Ex 109 — End-to-end on [`TokioRuntime`]: typed capabilities (`need` / `provide_all`), an async
+//! step, `catch`, and concurrent fibers on the Tokio runtime.
 //!
 //! Run: `cargo run -p id_effect_tokio --example 109_tokio_end_to_end`
 
-use id_effect::Runtime;
-use id_effect::{Cap, Effect, Env, Needs, Stream, effect, run_async, succeed};
-use id_effect_tokio::{TokioRuntime, yield_now};
 use std::time::Duration;
 
-#[derive(Clone, Copy)]
-struct ApiBaseUrl(&'static str);
-#[derive(Clone, Copy)]
+use id_effect::Exit;
+use id_effect::next::{Effect, HCons, HNil, from_async, hlist, need, sleep, succeed};
+use id_effect_tokio::TokioRuntime;
+
 struct ApiToken(&'static str);
-#[derive(Clone, Copy)]
 struct MinPrice(f64);
+
+type AppEnv = HCons<ApiToken, HCons<MinPrice, HNil>>;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Quote {
@@ -32,25 +31,15 @@ enum AppError {
   MissingApiToken,
 }
 
-fn app_env(base_url: &'static str, token: &'static str, min_price: f64) -> Env {
-  let mut env = Env::new();
-  env.insert::<Cap<ApiBaseUrl>>(ApiBaseUrl(base_url));
-  env.insert::<Cap<ApiToken>>(ApiToken(token));
-  env.insert::<Cap<MinPrice>>(MinPrice(min_price));
-  env
-}
-
-fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
-  Effect::new_async(|r: &mut Env| {
-    Box::pin(async move {
-      let _api_base_url = Needs::<ApiBaseUrl>::need(r).0;
-      let token = Needs::<ApiToken>::need(r).0;
-      if token.is_empty() {
+/// An async "fetch" that needs the API token.
+fn fetch_quotes() -> Effect<Vec<Quote>, AppError, AppEnv> {
+  need::<ApiToken>().flat_map(|token| {
+    let missing = token.0.is_empty();
+    from_async(move || async move {
+      if missing {
         return Err(AppError::MissingApiToken);
       }
-
-      core::future::ready(()).await;
-
+      tokio::task::yield_now().await;
       Ok(vec![
         Quote {
           symbol: "SOL",
@@ -69,72 +58,58 @@ fn fetch_quotes_async() -> Effect<Vec<Quote>, AppError, Env> {
   })
 }
 
-fn market_report() -> Effect<Report, AppError, Env> {
-  effect!(|r: &mut Env| {
-    let min_price = Needs::<MinPrice>::need(r).0;
-
-    let filtered: Vec<Quote> = ~Stream::from_effect(fetch_quotes_async())
-      .filter(Box::new(move |q: &Quote| q.price >= min_price))
-      .run_collect();
-
-    let kept = ~Ok::<usize, AppError>(filtered.len());
-
-    let total_notional = ~Stream::from_effect(succeed::<Vec<Quote>, AppError, Env>(filtered))
-      .map(|q| q.price)
-      .run_fold(0.0_f64, |acc, px| acc + px);
-
-    Report {
-      kept_quotes: kept,
-      total_notional,
-    }
+fn market_report() -> Effect<Report, AppError, AppEnv> {
+  need::<MinPrice>().flat_map(|min| {
+    fetch_quotes().map(move |quotes| {
+      let kept: Vec<Quote> = quotes
+        .into_iter()
+        .filter(|q| q.price >= min.0 && !q.symbol.is_empty())
+        .collect();
+      Report {
+        kept_quotes: kept.len(),
+        total_notional: kept.iter().map(|q| q.price).sum(),
+      }
+    })
   })
 }
 
 fn main() {
-  let tokio_rt = tokio::runtime::Builder::new_current_thread()
-    .enable_time()
-    .build()
-    .expect("tokio runtime should build");
-  let rt = TokioRuntime::from_handle(tokio_rt.handle().clone());
-  tokio_rt.block_on(async {
-    let t1 = rt.now();
-    assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
-    assert!(
-      run_async(rt.sleep(Duration::from_millis(0)), ())
-        .await
-        .is_ok()
-    );
-    assert!(rt.now() >= t1);
-  });
+  let rt = TokioRuntime::new_multi_thread().expect("tokio runtime should build");
 
-  let env_ok = app_env("https://api.exchange.local", "secret-token", 1.0_f64);
+  let ok = market_report().provide_all(hlist![ApiToken("secret-token"), MinPrice(1.0)]);
+  let report = rt.block_on(rt.run(ok));
+  assert!(matches!(
+    report,
+    Exit::Success(Report { kept_quotes: 2, total_notional }) if total_notional == 64_190.0
+  ));
 
-  let report_ok = pollster::block_on(run_async(market_report(), env_ok));
-  assert_eq!(
-    report_ok,
-    Ok(Report {
-      kept_quotes: 2,
-      total_notional: 64_190.0,
-    })
-  );
-
-  let env_missing_token = app_env("https://api.exchange.local", "", 1.0_f64);
-  let recovered = pollster::block_on(run_async(
-    market_report().catch(|err| match err {
-      AppError::MissingApiToken => succeed::<Report, AppError, Env>(Report {
+  let recovered = market_report()
+    .catch(|AppError::MissingApiToken| {
+      succeed::<_, AppError, AppEnv>(Report {
         kept_quotes: 0,
         total_notional: 0.0,
-      }),
-    }),
-    env_missing_token,
-  ));
-  assert_eq!(
-    recovered,
-    Ok(Report {
-      kept_quotes: 0,
-      total_notional: 0.0,
+      })
     })
-  );
+    .provide_all(hlist![ApiToken(""), MinPrice(1.0)]);
+  assert!(matches!(
+    rt.block_on(rt.run(recovered)),
+    Exit::Success(Report { kept_quotes: 0, .. })
+  ));
+
+  // Fibers are Send tokio tasks: 100 concurrent sleepers park on the tokio timer.
+  let joined = rt.block_on(async {
+    let fibers: Vec<_> = (0..100_u64)
+      .map(|i| rt.fork(sleep::<(), HNil>(Duration::from_millis(5)).map(move |()| i)))
+      .collect();
+    let mut sum = 0;
+    for f in fibers {
+      if let Exit::Success(i) = f.join_future().await {
+        sum += i;
+      }
+    }
+    sum
+  });
+  assert_eq!(joined, (0..100).sum::<u64>());
 
   println!("109_tokio_end_to_end ok");
 }

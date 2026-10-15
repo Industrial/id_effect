@@ -1,10 +1,10 @@
-//! Fiber gate benches (D9) on `TokioRuntime`: fiber spawn/join and fiber sleep, wall clock and
-//! process CPU time.
+//! Fiber gate benches (D9) on `TokioRuntime` (the `next` kernel on `TokioExecutor`): fiber
+//! spawn/join and fiber sleep, wall clock and process CPU time. The bench IDs are the 0.6 ones.
 //!
-//! - `gate/spawn_join_10k` — wall clock to fork 10 000 trivial fibers with `run_fork` and join
-//!   them all.
+//! - `gate/spawn_join_10k` — wall clock to fork 10 000 trivial fibers with `TokioRuntime::fork`
+//!   and join them all.
 //! - `gate/sleep_1k_x_1ms` — wall clock for 1 000 concurrent fibers that each sleep 1 ms through
-//!   `Runtime::sleep`.
+//!   `next::sleep`.
 //! - `gate/sleep_cpu_1k_x_1ms` — the same sleep workload, measured in **process CPU time** (user +
 //!   system, all threads) by the custom criterion `Measurement` [`ProcessCpuTime`]. Values are CPU
 //!   nanoseconds per iteration.
@@ -15,9 +15,9 @@
 //! (the sleep still ends after about 1 ms); CPU time does not, because every spinning thread
 //! burns CPU for the full sleep duration. A kernel with real wakers parks sleeping fibers, so its
 //! CPU time drops to the spawn and timer bookkeeping cost. The D9 gate requires a `sleep_cpu`
-//! ratio below 1.00 against the v0.6 baseline.
+//! ratio below 1.00 against the v0.6 baseline. Since 0.7 (`m-tokio`) every fiber is a tokio task
+//! with a real waker, so this measures `next`.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use cpu_time::ProcessTime;
@@ -25,8 +25,8 @@ use criterion::measurement::{Measurement, ValueFormatter};
 use criterion::{
   BenchmarkGroup, Criterion, SamplingMode, Throughput, criterion_group, criterion_main,
 };
-use id_effect::kernel::succeed;
-use id_effect::{Runtime, run_fork};
+use id_effect::Exit;
+use id_effect::next::{HNil, sleep, succeed};
 use id_effect_tokio::TokioRuntime;
 
 const SPAWN_FIBERS: u32 = 10_000;
@@ -116,21 +116,21 @@ fn configure<M: Measurement>(group: &mut BenchmarkGroup<'_, M>) {
   group.sample_size(10);
 }
 
-fn runtime() -> Arc<TokioRuntime> {
-  Arc::new(TokioRuntime::new_multi_thread().expect("tokio runtime"))
+fn runtime() -> TokioRuntime {
+  TokioRuntime::new_multi_thread().expect("tokio runtime")
 }
 
 /// Fork `SLEEP_FIBERS` fibers that each sleep `SLEEP` on `rt`, then join them all.
-fn sleep_fibers(rt: &Arc<TokioRuntime>) {
+fn sleep_fibers(rt: &TokioRuntime) {
   rt.block_on(async {
     let handles: Vec<_> = (0..SLEEP_FIBERS)
-      .map(|_| {
-        let fiber_rt = Arc::clone(rt);
-        run_fork(&**rt, move || (fiber_rt.sleep(SLEEP), ()))
-      })
+      .map(|_| rt.fork(sleep::<(), HNil>(SLEEP)))
       .collect();
     for handle in handles {
-      assert!(handle.join().await.is_ok(), "sleep fiber failed");
+      assert!(
+        matches!(handle.join_future().await, Exit::Success(())),
+        "sleep fiber failed"
+      );
     }
   });
 }
@@ -144,11 +144,14 @@ fn bench_wall(c: &mut Criterion) {
     b.iter(|| {
       rt.block_on(async {
         let handles: Vec<_> = (0..SPAWN_FIBERS)
-          .map(|i| run_fork(&*rt, move || (succeed::<u32, (), ()>(i), ())))
+          .map(|i| rt.fork(succeed::<u32, (), HNil>(i)))
           .collect();
         let mut sum = 0u64;
         for handle in handles {
-          sum += u64::from(handle.join().await.expect("spawn fiber failed"));
+          match handle.join_future().await {
+            Exit::Success(n) => sum += u64::from(n),
+            Exit::Failure(c) => panic!("spawn fiber failed: {c:?}"),
+          }
         }
         std::hint::black_box(sum)
       })
