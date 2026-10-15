@@ -1,8 +1,6 @@
 //! Minimal CLI: [`clap`] → [`cli_minimal::app_effect`] → [`id_effect_cli::run_main`].
 
 use clap::Parser;
-use id_effect::next::HNil;
-use id_effect::next::compat::IntoNext;
 use id_effect_cli::{RunMainConfig, run_main};
 
 #[derive(Parser, Debug)]
@@ -19,6 +17,5 @@ struct Cli {
 fn main() -> std::process::ExitCode {
   let cli = Cli::parse();
   let (eff, env) = cli_minimal::app_effect(cli.token);
-  // The config program is still a v1 effect: bridge it (with its env) at the edge.
-  run_main(eff.into_next_with(env), HNil, RunMainConfig::with_tracing())
+  run_main(eff, env, RunMainConfig::with_tracing())
 }

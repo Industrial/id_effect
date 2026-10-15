@@ -6,8 +6,8 @@ the old `templates/app-minimal`). It mirrors the mdBook **CLI with clap** chapte
 - Parse flags with [`clap`](https://docs.rs/clap).
 - Load [`Secret`](https://docs.rs/id_effect_config/latest/id_effect_config/struct.Secret.html) configuration via [`id_effect_config`](https://docs.rs/id_effect_config).
 - Finish with [`id_effect_cli::run_main`](https://docs.rs/id_effect_cli) (success → exit `0`, typed error → `1`,
-  defect → `101`). The config program is still a v1 effect in 0.7, so `main` bridges it with
-  `id_effect::next::compat::IntoNext::into_next_with(env)` before handing it to `run_main`.
+  defect → `101`). `app_effect` returns the program (an `id_effect::next::Effect` over
+  `ConfigEnv`) and its environment; `main` hands both to `run_main`.
 
 ## Start a new CLI from it
 

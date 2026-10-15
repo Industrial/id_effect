@@ -1,11 +1,12 @@
-//! Ex 153 — Cookbook: a `run_blocking` CLI with everything wired at the edge.
+//! Ex 153 — Cookbook: a CLI with everything wired at the edge.
 //!
 //! - argv is parsed with `clap`, configuration comes from the process environment
-//!   (`EnvConfigProvider`), and capabilities are inserted into one `Env` in `main`.
-//! - The program itself is a plain `Effect` generic over `Needs<…>`, so tests run it with a
-//!   `MapConfigProvider` and a recording console instead.
-//! - `run_main` drives it at the edge (`block_on` on the `next` runtime, via the v1 → next bridge)
-//!   and maps success → exit 0, a typed failure → exit 1.
+//!   (`EnvConfigProvider`), and the capabilities are put into one environment ([`AppEnv`]) in
+//!   `main`.
+//! - The program itself is a plain `next` [`Effect`] over that capability list, so tests run it
+//!   with a `MapConfigProvider` and a recording console instead.
+//! - `run_main` drives it at the edge (`block_on` on the `next` runtime) and maps success → exit
+//!   0, a typed failure → exit 1.
 //!
 //! Run:
 //! - `cargo run -p cli_minimal --example 153_cookbook_cli_edge -- --name Ada`
@@ -18,12 +19,10 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use id_effect::next::compat::{IntoNext, IntoV1With};
-use id_effect::next::{HCons, HNil};
-use id_effect::{Cap, Effect, Env, Needs};
+use id_effect::next::{Effect, HCons, HNil, fail, need};
 use id_effect_cli::{RunMainConfig, run_main};
 use id_effect_config::{
-  Config, ConfigEnv, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider,
+  Config, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider,
 };
 
 /// Capability: where the program writes its output.
@@ -32,8 +31,12 @@ pub trait Console: Send + Sync {
   fn line(&self, text: String);
 }
 
-/// The service type registered in `Env`.
-pub type ConsoleService = Arc<dyn Console>;
+/// The console capability as it sits in the environment.
+#[derive(Clone)]
+pub struct ConsoleService(pub Arc<dyn Console>);
+
+/// Everything the program needs: a config provider and a console.
+pub type AppEnv = HCons<ConfigProviderService, HCons<ConsoleService, HNil>>;
 
 /// Production console.
 struct Stdout;
@@ -70,44 +73,32 @@ impl fmt::Display for AppError {
 
 /// The program: greet `name` `GREET_TIMES` times (default 1). Pure description — no I/O happens
 /// until it is run with an environment that has both capabilities.
-fn greet<R>(name: String) -> Effect<(), AppError, R>
-where
-  R: Needs<ConfigProviderService> + Needs<ConsoleService> + 'static,
-{
+fn greet(name: String) -> Effect<(), AppError, AppEnv> {
   Config::integer("GREET_TIMES")
     .with_default(1)
-    .run::<i64, AppError, ConfigEnv, _>()
-    // m-config: `Config::run` is a `next` effect; bridged into this v1 program.
-    .into_v1_with(|r: &mut R| -> ConfigEnv {
-      HCons(
-        Arc::new(Needs::<ConfigProviderService>::need(r).clone()),
-        HNil,
-      )
-    })
+    .run::<i64, AppError, AppEnv, _>()
     .flat_map(move |times| {
-      Effect::new(move |r: &mut R| {
-        if !(1..=3).contains(&times) {
-          return Err(AppError::TooManyGreetings(times));
-        }
-        let console = Needs::<ConsoleService>::need(r).clone();
+      if !(1..=3).contains(&times) {
+        return fail(AppError::TooManyGreetings(times));
+      }
+      need::<ConsoleService>().map(move |console| {
         for _ in 0..times {
-          console.line(format!("hello, {name}"));
+          console.0.line(format!("hello, {name}"));
         }
-        Ok(())
       })
     })
 }
 
 /// The edge: one place that decides which provider and which console the program gets.
-fn edge_env(config: impl ConfigProvider + 'static, console: ConsoleService) -> Env {
-  let mut env = Env::new();
-  env.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(config)));
-  env.insert::<Cap<ConsoleService>>(console);
-  env
+fn edge_env(config: impl ConfigProvider + 'static, console: Arc<dyn Console>) -> AppEnv {
+  HCons::new(
+    ConfigProviderService(Arc::new(config)),
+    HCons::new(ConsoleService(console), HNil),
+  )
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "greet", about = "id_effect cookbook: run_blocking CLI")]
+#[command(name = "greet", about = "id_effect cookbook: CLI edge")]
 struct Cli {
   /// Who to greet.
   #[arg(long, default_value = "world")]
@@ -118,9 +109,8 @@ fn main() -> ExitCode {
   let cli = Cli::parse();
   let env = edge_env(EnvConfigProvider::from_env(), Arc::new(Stdout));
   // `run_main` prints `Err` with `Debug`; map to `String` first for a human-readable message.
-  let program = greet(cli.name).map_error(|e| e.to_string());
-  // `greet` is a v1 effect: bridge it, with its `Env`, at the edge.
-  run_main(program.into_next_with(env), HNil, RunMainConfig::minimal())
+  let program = greet(cli.name).map_err(|e| e.to_string());
+  run_main(program, env, RunMainConfig::minimal())
 }
 
 #[cfg(test)]
@@ -128,7 +118,7 @@ mod tests {
   use super::*;
   use std::sync::Mutex;
 
-  use id_effect::run_blocking;
+  use id_effect::Exit;
   use id_effect_cli::exit_code_for_result;
   use id_effect_config::MapConfigProvider;
 
@@ -148,7 +138,10 @@ mod tests {
       MapConfigProvider::from_pairs([("GREET_TIMES", times)]),
       recorder.clone(),
     );
-    let result = run_blocking(greet("Ada".into()), env);
+    let result = match greet("Ada".into()).provide_env(env).block_on() {
+      Exit::Success(()) => Ok(()),
+      Exit::Failure(cause) => Err(cause.fail_option().expect("a typed failure")),
+    };
     let lines = recorder.0.lock().expect("recorder").clone();
     (result, lines)
   }
