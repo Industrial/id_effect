@@ -1,0 +1,13 @@
+# stack probe, DEBUG profile (as cargo test/nextest builds), 2 MiB thread
+v06 async 1000 2048KiB debug -> ok 1000
+v06 async 10000 2048KiB debug -> fatal runtime error: stack overflow, aborting
+v06 sync 1000 2048KiB debug -> ok 1000
+v06 sync 10000 2048KiB debug -> fatal runtime error: stack overflow, aborting
+a async 1000 2048KiB debug -> ok 1000
+a async 10000 2048KiB debug -> ok 10000
+a sync 1000 2048KiB debug -> ok 1000
+a sync 10000 2048KiB debug -> ok 10000
+b async 1000 2048KiB debug -> ok 1000
+b async 10000 2048KiB debug -> fatal runtime error: stack overflow, aborting
+b sync 1000 2048KiB debug -> ok 1000
+b sync 10000 2048KiB debug -> ok 10000

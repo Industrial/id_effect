@@ -1,0 +1,90 @@
+{
+	"schema": 1,
+	"baseline": "probe-r1",
+	"sha": "5078e4db8ededd221bb04399e1de9a61bdf186f9",
+	"created": "2026-10-15T01:27:17Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"probe/async_bind/a/1": {
+			"mean": 121.45310160741667,
+			"median": 121.64321094807894,
+			"std_dev": 1.0051787428150247
+		},
+		"probe/async_bind/a/16": {
+			"mean": 1278.310950648017,
+			"median": 1278.0031189287374,
+			"std_dev": 6.548737494856746
+		},
+		"probe/async_bind/a/256": {
+			"mean": 18140.74507876071,
+			"median": 18048.810707070705,
+			"std_dev": 210.94209009680364
+		},
+		"probe/async_bind/a/64": {
+			"mean": 5277.026734183151,
+			"median": 5271.916781830199,
+			"std_dev": 23.57667956192489
+		},
+		"probe/async_bind/b/1": {
+			"mean": 141.5639862438097,
+			"median": 141.28295688066896,
+			"std_dev": 1.2702264563248276
+		},
+		"probe/async_bind/b/16": {
+			"mean": 862.7516812953301,
+			"median": 859.0494855494281,
+			"std_dev": 18.64702410285837
+		},
+		"probe/async_bind/b/256": {
+			"mean": 14979.144979181012,
+			"median": 14983.49006675143,
+			"std_dev": 192.62126623975064
+		},
+		"probe/async_bind/b/64": {
+			"mean": 3628.7295782476617,
+			"median": 3665.6159146735617,
+			"std_dev": 76.17021884456207
+		},
+		"probe/async_bind/v06/1": {
+			"mean": 37.31525371328007,
+			"median": 37.21602626205516,
+			"std_dev": 0.7652476101697414
+		},
+		"probe/async_bind/v06/16": {
+			"mean": 456.1273482306484,
+			"median": 456.2598455778402,
+			"std_dev": 2.9531531310072707
+		},
+		"probe/async_bind/v06/256": {
+			"mean": 8693.511046040827,
+			"median": 8680.837996559343,
+			"std_dev": 169.70222753635232
+		},
+		"probe/async_bind/v06/64": {
+			"mean": 2103.8446785282304,
+			"median": 2089.863507587702,
+			"std_dev": 51.58812239107776
+		},
+		"probe/flat_map_depth_10k_bb/a": {
+			"mean": 460708.82629821164,
+			"median": 460395.09148426814,
+			"std_dev": 6172.964690375134
+		},
+		"probe/flat_map_depth_10k_bb/b": {
+			"mean": 1851.5774455168178,
+			"median": 1845.267827273296,
+			"std_dev": 18.088732306240797
+		},
+		"probe/flat_map_depth_10k_bb/v06": {
+			"mean": 533498.2744893773,
+			"median": 538344.4538043479,
+			"std_dev": 13232.082616412818
+		}
+	}
+}

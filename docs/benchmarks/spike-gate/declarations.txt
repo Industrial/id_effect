@@ -1,0 +1,2 @@
+spikes/kernel_a/tests/corpus.rs derive_env_structs=0 has_bound_terms=0 caps_type_aliases=8 caps_macro_uses=29 turbofish=2 map_err_calls=1 lines=596
+spikes/kernel_b/tests/corpus.rs derive_env_structs=13 has_bound_terms=32 caps_type_aliases=0 caps_macro_uses=0 turbofish=0 map_err_calls=8 lines=683

@@ -1,0 +1,25 @@
+== kernel_a ui
+test [0m[1mtests/ui/duplicate_capability_caps.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/duplicate_capability_layer.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/generic_helper_bind.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/generic_runner_unannotated.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/missing_capability.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/missing_capability_narrowed.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/not_send_body.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/wrong_provide.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/wrong_provide_multi.rs[0m ... [0m[32mok
+test ui ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.89s
+== kernel_a corpus
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+== kernel_b ui
+test [0m[1mtests/ui/duplicate_capability.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/duplicate_via_flatten.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/missing_capability.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/missing_capability_generic.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/not_send_body.rs[0m ... [0m[32mok
+[0mtest [0m[1mtests/ui/wrong_provide.rs[0m ... [0m[32mok
+test ui ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.15s
+== kernel_b corpus
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s

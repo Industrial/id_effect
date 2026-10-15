@@ -1,0 +1,10 @@
+# interrupt latency: fork(sleep 10 s) -> interrupt -> exit observed, 200 samples
+a interrupt latency (tokio executor, 200 samples) p50=9.291µs p99=19.801µs
+# B: its own test (ParkExecutor, debug profile), spikes/kernel_b/tests/kernel.rs:70
+interrupt latency p50=1.16µs p99=2.75µs
+test interrupt_latency_of_a_sleeping_fiber ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+# B: same test, release profile
+interrupt latency p50=240ns p99=1.98µs
+test interrupt_latency_of_a_sleeping_fiber ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s

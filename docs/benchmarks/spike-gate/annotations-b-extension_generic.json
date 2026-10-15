@@ -1,0 +1,7 @@
+{
+  "files": ["spikes/kernel_b/tests/extension_generic.rs"],
+  "handlers": [
+    {"id": "spikes/kernel_b/tests/extension_generic.rs", "status": "ok", "turbofish": 0, "let_ty": 0, "closure_ty": 0, "marker": 0, "total": 0, "index": 0, "fwd": 12}
+  ],
+  "summary": {"handlers": 1, "ported": 1, "unsupported": 0, "missing": 0, "annotated": 0, "annotated_pct": 0.0, "total": 0, "index": 0, "fwd": 12}
+}

@@ -1,0 +1,55 @@
+{
+	"schema": 1,
+	"baseline": "b-r2",
+	"sha": "ece2333983503182a1c25766fe230dd9e49b6fa5",
+	"created": "2026-10-15T01:18:13Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"b/interrupt_sleeping_fiber": {
+			"mean": 325.071533740744,
+			"median": 324.63942776643955,
+			"std_dev": 3.1561509884541428
+		},
+		"gate/async_bind_64": {
+			"mean": 3379.473364013634,
+			"median": 3368.230211737473,
+			"std_dev": 64.74071370418419
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 50.9775888681695,
+			"median": 50.52097696558252,
+			"std_dev": 1.2149841147376723
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 3349364.7726666667,
+			"median": 3339501.796666667,
+			"std_dev": 40077.32594967299
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 12919700.561744966,
+			"median": 12949421.617449664,
+			"std_dev": 118435.65244847896
+		},
+		"gate/spawn_join_10k": {
+			"mean": 8424244.96122449,
+			"median": 8275272.74489796,
+			"std_dev": 2028899.1188859963
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 5.994237306550961,
+			"median": 5.985500471154633,
+			"std_dev": 0.1185956710507798
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 10.892768708585304,
+			"median": 10.825960129546075,
+			"std_dev": 0.27300370698508397
+		}
+	}
+}
