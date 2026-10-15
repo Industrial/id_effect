@@ -5,10 +5,8 @@ mod hlist;
 mod need;
 mod provide;
 
-#[allow(unused_imports)] // filled by k-typed-r
 pub use dyn_env::*;
 pub use hlist::*;
-#[allow(unused_imports)] // filled by k-typed-r
 pub use need::*;
-#[allow(unused_imports)] // filled by k-typed-r
+#[allow(unused_imports)] // inherent `Effect` methods only: nothing to re-export
 pub use provide::*;

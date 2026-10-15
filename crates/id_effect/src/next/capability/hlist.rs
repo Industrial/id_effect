@@ -5,6 +5,19 @@
 //! The environment `R` of an `Effect` is an HList of `Arc`ed capabilities. Lookups, provision,
 //! subset projection and concatenation are traits whose index parameters the compiler infers
 //! (design A §2.1). A missing capability is a compile error with a custom diagnostic.
+//!
+//! # Diagnostics
+//!
+//! `Selector`, `Plucker`, `Sculptor` and `Embed` carry `#[diagnostic::on_unimplemented]`, so a
+//! missing, superfluous or non-embeddable capability is reported in capability terms. Every
+//! recursive impl (`There<I>` for the single-element traits, `HCons<I, Is>` for the list traits)
+//! is `#[diagnostic::do_not_recommend]`: rustc then reports the failed obligation at the trait the
+//! user's code named, with one `help` line, instead of a `required for ..` chain that grows with
+//! the length of `R`. The `.stderr` shapes are pinned by `k-ui-suite`.
+//!
+//! A capability that appears twice in `R` is ambiguous (E0283, "type annotations needed"):
+//! `on_unimplemented` does not fire on ambiguity. `caps_next!` rejects duplicates at the
+//! declaration, and `Layer::merge` deduplicates shared inputs (`k-layer-base`).
 
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -116,7 +129,8 @@ impl<T, H: Send + Sync + 'static, Tl: Plucker<T, I>, I> Plucker<T, There<I>> for
 /// Remove a whole sub-environment `Sub` (at indices `Is`): what `provide_some` eliminates.
 #[diagnostic::on_unimplemented(
   message = "`{Sub}` is not a part of this effect's environment `{Self}`",
-  label = "cannot provide `{Sub}` here"
+  label = "cannot provide `{Sub}` here",
+  note = "every capability given to `.provide_some(..)` must be in the effect's `R`; provide the others separately or drop them"
 )]
 pub trait Sculptor<Sub, Is>: Sized {
   /// The environment without `Sub`.
@@ -132,6 +146,7 @@ impl<S: HList> Sculptor<HNil, HNil> for S {
   }
 }
 
+#[diagnostic::do_not_recommend]
 impl<S, H, T, I, Is> Sculptor<HCons<H, T>, HCons<I, Is>> for S
 where
   S: Plucker<H, I>,
@@ -148,7 +163,8 @@ where
 /// capability in `Sub`.
 #[diagnostic::on_unimplemented(
   message = "the environment `{Self}` does not contain every capability of `{Sub}`",
-  label = "cannot narrow `{Self}` to `{Sub}`"
+  label = "cannot narrow `{Self}` to `{Sub}`",
+  note = "a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `{Sub}` in `{Self}`; add the missing ones to the caller's `caps_next!(..)`"
 )]
 pub trait Embed<Sub, Is> {
   /// The sub-environment.
@@ -161,6 +177,7 @@ impl<S> Embed<HNil, HNil> for S {
   }
 }
 
+#[diagnostic::do_not_recommend]
 impl<S, H, T, I, Is> Embed<HCons<H, T>, HCons<I, Is>> for S
 where
   S: Selector<H, I> + Embed<T, Is>,
