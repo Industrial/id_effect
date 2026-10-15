@@ -1,7 +1,8 @@
 # D9 benchmark gates for 0.7 against the v0.6 baseline (see README.md).
 #
 # Read by scripts/bench-compare.sh, which supports only this flat subset of TOML:
-# top-level `key = value` lines, then `[[gate]]` tables with `id`, `kind` and `limit`.
+# top-level `key = value` lines, then `[[gate]]` tables with `id`, `kind`, `limit` and an
+# optional `noise` that overrides the global band for that gate.
 #
 # ratio = new / base on `metric` (time per iteration, so lower is better).
 #   kind = "budget"   passes when ratio <= limit
@@ -36,21 +37,26 @@ kind = "budget"
 limit = 1.25
 
 # --- fibers and the axum request path: must improve ----------------------------------
+# "Improve" means a ratio below 0.95 with no noise band (r-bench-report ruling): a
+# same-speed or noise-level result is not an improvement, so it FAILs.
 
 [[gate]]
 id = "gate/spawn_join_10k"
 kind = "improve"
-limit = 1.00
+limit = 0.95
+noise = 0
 
 [[gate]]
 id = "gate/sleep_cpu_1k_x_1ms"
 kind = "improve"
-limit = 1.00
+limit = 0.95
+noise = 0
 
 [[gate]]
 id = "gate/axum_request_oneshot"
 kind = "improve"
-limit = 1.00
+limit = 0.95
+noise = 0
 
 # --- report only ---------------------------------------------------------------------
 

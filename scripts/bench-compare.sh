@@ -19,16 +19,18 @@ for tool in jq awk; do
     command -v "$tool" >/dev/null || { echo "bench-compare: missing $tool" >&2; exit 2; }
 done
 
-# Flatten the gates.toml subset to "metric\t<m>", "noise\t<n>" and "gate\t<id>\t<kind>\t<limit>".
+# Flatten the gates.toml subset to "metric\t<m>", "noise\t<n>" and
+# "gate\t<id>\t<kind>\t<limit>\t<noise>" (a gate's own `noise` overrides the global one; - = unset).
 parse_gates() {
     awk '
         function val(s) { sub(/^[^=]*=[[:space:]]*/, "", s); sub(/[[:space:]]*#.*$/, "", s); gsub(/"/, "", s); return s }
-        function flush() { if (id != "") print "gate\t" id "\t" kind "\t" (limit == "" ? "-" : limit); id = kind = limit = "" }
+        function flush() { if (id != "") print "gate\t" id "\t" kind "\t" (limit == "" ? "-" : limit) "\t" (gnoise == "" ? "-" : gnoise); id = kind = limit = gnoise = "" }
         /^[[:space:]]*(#|$)/ { next }
         /^\[\[gate\]\]/ { flush(); in_gate = 1; next }
         /^[[:space:]]*id[[:space:]]*=/ && in_gate { id = val($0); next }
         /^[[:space:]]*kind[[:space:]]*=/ && in_gate { kind = val($0); next }
         /^[[:space:]]*limit[[:space:]]*=/ && in_gate { limit = val($0); next }
+        /^[[:space:]]*noise[[:space:]]*=/ && in_gate { gnoise = val($0); next }
         /^[[:space:]]*metric[[:space:]]*=/ && !in_gate { print "metric\t" val($0); next }
         /^[[:space:]]*noise[[:space:]]*=/ && !in_gate { print "noise\t" val($0); next }
         { printf "bench-compare: %s:%d: unsupported line: %s\n", FILENAME, NR, $0 > "/dev/stderr"; bad = 1 }
@@ -54,7 +56,7 @@ compare() {
     awk -F'\t' '
         FILENAME == ARGV[1] {
             if ($1 == "noise") noise = $2 + 0
-            if ($1 == "gate") { n++; ids[n] = $2; kinds[n] = $3; limits[n] = $4; listed[$2] = 1 }
+            if ($1 == "gate") { n++; ids[n] = $2; kinds[n] = $3; limits[n] = $4; noises[n] = $5; listed[$2] = 1 }
             next
         }
         FILENAME == ARGV[2] { base[$1] = $2; order[++m] = $1; next }
@@ -77,9 +79,10 @@ compare() {
                 if (kind != "budget" && kind != "improve" || limit == "-") {
                     row(id, kind, limit, rs, "FAIL (bad gate)"); continue
                 }
+                band = (noises[i] != "" && noises[i] != "-") ? noises[i] + 0 : noise
                 ok = kind == "budget" ? r <= limit + 0 : r < limit + 0
                 if (ok) row(id, kind, limit, rs, "PASS")
-                else if (r <= limit + noise) row(id, kind, limit, rs, "NOISE (within " noise ")")
+                else if (band > 0 && r <= limit + band) row(id, kind, limit, rs, "NOISE (within " band ")")
                 else row(id, kind, limit, rs, "FAIL")
             }
             for (j = 1; j <= m; j++) {
@@ -110,7 +113,7 @@ self_test() {
             failed=1
         fi
     done <<'EOF'
-identity base.json 0 -
+identity base.json 1 gate/spawn_join_10k,gate/sleep_cpu_1k_x_1ms,gate/axum_request_oneshot
 pass pass.json 0 -
 fail-budget fail-budget.json 1 gate/async_bind_64
 fail-improve fail-improve.json 1 gate/axum_request_oneshot

@@ -8,6 +8,7 @@ numbers that gates read are exported to JSON and committed here.
 |---|---|
 | `gates.toml` | The D9 gates read by `scripts/bench-compare.sh` |
 | `v0.6.json`, `v0.6.machine.txt` | The v0.6 baseline and the machine it ran on (`b0-baseline-capture`) |
+| `v0.6-rerun.json`, `v0.7.json`, [`REPORT-0.7.md`](REPORT-0.7.md) | The 0.7.0 release comparison: a same-session re-run of `bench/v0.6` against 0.7.0 (`r-bench-report`) |
 | `fixtures/*.json` | Synthetic exports for `bench-compare.sh --self-test` |
 
 ## Gates
@@ -17,12 +18,14 @@ numbers that gates read are exported to JSON and committed here.
 | Kind | Benches | Passes when |
 |---|---|---|
 | `budget` | `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`, `gate/flat_map_depth_10k`, `gate/async_bind_64` | ratio ≤ 1.25 |
-| `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 1.00 |
+| `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 0.95 (no noise band) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
 
-- **Noise (Q7):** a ratio that misses its limit by at most 0.05 is reported as
-  `NOISE` and does not fail. A same-build comparison (ratio 1.00) therefore passes
-  the `improve` gates; a real improvement shows as `PASS`.
+- **Noise (Q7):** a `budget` ratio that misses its limit by at most 0.05 is reported
+  as `NOISE` and does not fail. A gate can set its own `noise`; the `improve` gates set
+  `noise = 0` with a limit of 0.95, so "must improve" is not met by a result within
+  noise of v0.6 (r-bench-report ruling). A same-build comparison (ratio 1.00)
+  therefore FAILs the three `improve` gates and passes the rest.
 - **Presence:** every id in `gates.toml`, `report` ones included, must exist in both
   files. A missing id is a `FAIL`.
 - **Exit code:** `bench-compare.sh` exits 1 on any `FAIL` and 2 on misuse.
@@ -74,8 +77,8 @@ bash scripts/bench-compare.sh docs/benchmarks/v0.6.json .tmp/bench-head.json
 bash scripts/bench-compare.sh --self-test
 ```
 
-It compares `fixtures/base.json` with itself and with `pass.json` (both pass, `pass.json`
-includes `NOISE` rows), and with `fail-budget.json`, `fail-improve.json` and
+It compares `fixtures/base.json` with itself (fails on exactly the three `improve` gates)
+and with `pass.json` (passes, with a `budget` `NOISE` row), and with `fail-budget.json`, `fail-improve.json` and
 `fail-missing.json`. Each of those must fail on exactly its one broken gate.
 
 ## Spike gate (historical)

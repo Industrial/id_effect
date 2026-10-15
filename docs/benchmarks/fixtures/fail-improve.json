@@ -46,14 +46,14 @@
 			"std_dev": 15000
 		},
 		"gate/sleep_cpu_1k_x_1ms": {
-			"mean": 2060000,
-			"median": 2060000,
-			"std_dev": 20600
+			"mean": 1880000,
+			"median": 1880000,
+			"std_dev": 18800
 		},
 		"gate/axum_request_oneshot": {
-			"mean": 22000,
-			"median": 22000,
-			"std_dev": 220
+			"mean": 19400,
+			"median": 19400,
+			"std_dev": 194
 		},
 		"gate/axum_request_caps": {
 			"mean": 25000,

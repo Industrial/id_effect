@@ -7,7 +7,8 @@
 #   --sha SHA           benched commit (default: the one bench-run.sh recorded, else HEAD)
 #   --machine-txt FILE  also write the machine info as plain text (CPU, governor, rustc -V, SHA)
 # OUT.json holds {schema, baseline, sha, created, machine, benches: {<full id>: {mean, median,
-# std_dev}}}, all point estimates in criterion's unit (ns for wall time).
+# std_dev, mean_ci, median_ci}}}: point estimates and criterion's [lower, upper] confidence
+# interval (95 % by default), in criterion's unit (ns for wall time).
 # Requires: jq, find.
 set -euo pipefail
 
@@ -53,7 +54,7 @@ rustc_v="$(rustc -V 2>/dev/null || echo unknown)"
 kernel="$(uname -sr)"
 cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo unknown)"
 
-# One {id: {mean, median, std_dev}} object per benchmark saved under this baseline.
+# One {id: {mean, median, std_dev, mean_ci, median_ci}} object per benchmark saved under this baseline.
 mapfile -t dirs < <(find "$criterion" -type f -path "*/$baseline/benchmark.json" -printf '%h\n' | sort)
 ((${#dirs[@]})) || { echo "bench-export: no benchmarks saved as baseline '$baseline' in $criterion" >&2; exit 1; }
 
@@ -62,7 +63,9 @@ benches="$(
         [[ -f "$d/estimates.json" ]] || continue
         jq -n --slurpfile b "$d/benchmark.json" --slurpfile e "$d/estimates.json" \
             '{($b[0].full_id): {mean: $e[0].mean.point_estimate, median: $e[0].median.point_estimate,
-              std_dev: $e[0].std_dev.point_estimate}}'
+              std_dev: $e[0].std_dev.point_estimate,
+              mean_ci: [$e[0].mean.confidence_interval.lower_bound, $e[0].mean.confidence_interval.upper_bound],
+              median_ci: [$e[0].median.confidence_interval.lower_bound, $e[0].median.confidence_interval.upper_bound]}}'
     done | jq -s 'add // {}'
 )"
 
