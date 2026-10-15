@@ -212,7 +212,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Test labs workspace
-        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace
+        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────
