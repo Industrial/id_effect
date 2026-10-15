@@ -16,8 +16,8 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
-id_effect = { path = "../../crates/id_effect", version = "0.6.0" }
-id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.6.0" }
+id_effect = { path = "../../crates/id_effect", version = "0.7.0" }
+id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.7.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
@@ -61,7 +61,7 @@ optional = true
 
 [dependencies.id_effect_sql]
 path = "../../crates/id_effect_sql"
-version = "0.6.0"
+version = "0.7.0"
 optional = true
 
 [dependencies.tokio]

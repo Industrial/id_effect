@@ -112,7 +112,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.6"
+id_effect = "0.7"
 ```
 
 ```rust
@@ -207,7 +207,7 @@ devenv shell -- pre-push
 #    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
 # 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
 # 3. Commit, push, then tag — CI publishes in dependency order
-git tag v0.6.0
+git tag v0.7.0
 git push --tags
 ```
 

@@ -19,7 +19,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 pg = ["dep:sqlx", "dep:tokio"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.6.0" }
+id_effect = { path = "../id_effect", version = "0.7.0" }
 sqlx = { version = "0.8", optional = true, default-features = false, features = [
   "runtime-tokio",
   "postgres",
