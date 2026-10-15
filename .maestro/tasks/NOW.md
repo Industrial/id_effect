@@ -1,17 +1,8 @@
 # NOW
-Updated: 2026-10-15T13:20:46.473Z
+Updated: 2026-10-15T15:01:57.380Z
 
-## In flight (2)
-### tsk-mv8ohjj3-ttn05l . W5: Retire old kernel and compat bridge
-State: claimed
-Owner: claude (claimed 22m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-piyg98 . W6: Showcase Postgres integration tests in pg-integration CI
-State: claimed
-Owner: claude (claimed 0s ago)
-Mission: pln-mv8oh29m-3zdrrj
-
+## In flight (0)
+None.
 
 ## Ready to pick up (9)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate
