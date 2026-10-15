@@ -1,4 +1,4 @@
-//! Test support for the next kernel: the deterministic `TestExecutor`.
+//! Test support for the 0.7 kernel: the deterministic `TestExecutor`.
 
 mod test_executor;
 mod test_random;

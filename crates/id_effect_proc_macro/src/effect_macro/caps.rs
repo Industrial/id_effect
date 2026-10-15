@@ -1,4 +1,4 @@
-//! `caps!(A, B, C)` (alias `caps_next!`) → `HCons<A, HCons<B, HCons<C, HNil>>>`, rejecting duplicates by token.
+//! `caps!(A, B, C)` → `HCons<A, HCons<B, HCons<C, HNil>>>`, rejecting duplicates by token.
 //!
 //! A capability listed twice makes every later lookup of it ambiguous (E0283), and
 //! `macro_rules!` cannot compare idents, hence a proc-macro. Two items are the same capability

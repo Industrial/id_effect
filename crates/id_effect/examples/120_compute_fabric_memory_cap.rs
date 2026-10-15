@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use id_effect::compute::{ComputeFabric, ResourcePolicy};
-use id_effect::next::{Concurrency, Effect, Fabric, all, succeed};
+use id_effect::{Concurrency, Effect, Fabric, all, succeed};
 
 fn main() {
   // Admission demo with mock telemetry

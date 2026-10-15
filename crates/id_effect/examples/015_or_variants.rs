@@ -1,6 +1,6 @@
 //! Ex 015 — `Or::Left` / `Or::Right` tag the failing branch of an `err!` union.
-use id_effect::next::{Effect, fail};
 use id_effect::{Cause, Exit, Or, err};
+use id_effect::{Effect, fail};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum L {

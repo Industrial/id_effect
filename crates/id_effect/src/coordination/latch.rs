@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use super::waiters::{WaitList, lock, wake_all};
-use crate::next::kernel::{Effect, from_async, sync};
+use crate::kernel::{Effect, from_async, sync};
 
 struct State {
   open: bool,

@@ -1,4 +1,4 @@
-//! Report-only benches for the 0.7 kernel (`id_effect::next`, spec k-rebuild §3.10 AC4). Not in
+//! Report-only benches for the 0.7 kernel (spec k-rebuild §3.10 AC4). Not in
 //! `docs/benchmarks/gates.toml`; `k-runloop-opt` reads them as probes.
 //!
 //! - `kernel_next/need_last_of_16`: a typed-`R` `need` read at depth 16 inside an effect, provided
@@ -10,7 +10,7 @@
 //! Run: `cargo bench -p id_effect --bench next_kernel`.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use id_effect::next::{Effect, HNil, from_async, hlist, need, succeed};
+use id_effect::{Effect, HNil, from_async, hlist, need, succeed};
 
 const PROBE_BINDS: [usize; 4] = [1, 16, 64, 256];
 

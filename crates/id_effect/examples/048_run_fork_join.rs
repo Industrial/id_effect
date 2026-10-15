@@ -1,6 +1,6 @@
 //! Ex 048 — `fork` runs an effect on a child fiber; `join` awaits its outcome.
 use id_effect::Exit;
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 
 fn main() {
   let child: Effect<u8, ()> = succeed(5);

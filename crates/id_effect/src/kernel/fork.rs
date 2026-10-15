@@ -9,7 +9,7 @@ use super::anybox::erase;
 use super::effect::Effect;
 use super::runloop::Instr;
 use crate::failure::Never;
-use crate::next::runtime::{FiberContext, FiberHandle, spawn_fiber};
+use crate::runtime::{FiberContext, FiberHandle, spawn_fiber};
 
 impl<A, E, R> Effect<A, E, R>
 where
@@ -33,7 +33,7 @@ where
   /// forking fiber has exited.
   ///
   /// Like Effect.ts `forkDaemon`, the daemon starts with a copy of the forking fiber's
-  /// [`FiberRef`](crate::next::FiberRef) values at fork time; only its lifetime is detached.
+  /// [`FiberRef`](crate::FiberRef) values at fork time; only its lifetime is detached.
   pub fn fork_daemon(self) -> Effect<FiberHandle<A, E>, Never, R> {
     Effect::from_instr(Instr::WithFiber(Box::new(move |env, fiber| {
       let child = FiberContext::new_detached(fiber);

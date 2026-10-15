@@ -1,20 +1,20 @@
 //! The `SameEnv` wrapper and its `Bindable` impl: the H17 pattern for binding helpers with `~`.
 //!
 //! `~sub` narrows: it runs `sub: Effect<_, _, Sub>` under any `Sub` the caller's `R` embeds. That
-//! is what lets a helper over `caps_next!(Logger)` be bound from a caller over
-//! `caps_next!(Logger, Db)`. It also means nothing fixes `Sub` when the helper is **generic** in
+//! is what lets a helper over `caps!(Logger)` be bound from a caller over
+//! `caps!(Logger, Db)`. It also means nothing fixes `Sub` when the helper is **generic** in
 //! its environment: `~audit(msg)` with `fn audit<R: Selector<Logger, I>, I>` is ambiguous
 //! (E0283), and so is an inline `~need::<Db>().map(..)`. Two forms solve it, both with 0
 //! annotations at the call site.
 //!
-//! # (i) Recommended: helpers over a concrete `caps_next!(..)`
+//! # (i) Recommended: helpers over a concrete `caps!(..)`
 //!
 //! Give the helper exactly the capabilities it uses. `~` narrows the caller's environment to it.
 //!
 //! ```
 //! use std::sync::{Arc, Mutex};
 //!
-//! use id_effect::next::{Effect, caps_next, effect_next, hlist};
+//! use id_effect::{Effect, caps, effect, hlist};
 //! use id_effect::{Exit, Never};
 //!
 //! #[derive(Clone, Default)]
@@ -26,12 +26,12 @@
 //! }
 //! struct Db(usize);
 //!
-//! fn audit(msg: String) -> Effect<(), Never, caps_next!(Logger)> {
-//!   effect_next!({ ~Logger.info(msg) })
+//! fn audit(msg: String) -> Effect<(), Never, caps!(Logger)> {
+//!   effect!({ ~Logger.info(msg) })
 //! }
 //!
-//! fn signup() -> Effect<usize, Never, caps_next!(Logger, Db)> {
-//!   effect_next!({
+//! fn signup() -> Effect<usize, Never, caps!(Logger, Db)> {
+//!   effect!({
 //!     let n = ~Db.0;
 //!     ~audit(format!("signup: {n}"));
 //!     n
@@ -55,7 +55,7 @@
 //! ```
 //! use std::sync::{Arc, Mutex};
 //!
-//! use id_effect::next::{Effect, HList, Selector, caps_next, effect_next, hlist, need};
+//! use id_effect::{Effect, HList, Selector, caps, effect, hlist, need};
 //! use id_effect::{Exit, Never};
 //!
 //! #[derive(Clone, Default)]
@@ -72,19 +72,19 @@
 //! where
 //!   R: HList + Selector<Logger, I>,
 //! {
-//!   effect_next!({ ~Logger.info(msg) })
+//!   effect!({ ~Logger.info(msg) })
 //! }
 //!
-//! fn signup() -> Effect<usize, Never, caps_next!(Logger, Db)> {
-//!   effect_next!({
+//! fn signup() -> Effect<usize, Never, caps!(Logger, Db)> {
+//!   effect!({
 //!     let n = ~need::<Db>().map(|db| db.0).same_env();
 //!     ~audit(format!("signup: {n}")).same_env();
 //!     n
 //!   })
 //! }
 //!
-//! fn notify() -> Effect<(), Never, caps_next!(Mailer, Logger)> {
-//!   effect_next!({ ~audit("notify".to_string()).same_env() })
+//! fn notify() -> Effect<(), Never, caps!(Mailer, Logger)> {
+//!   effect!({ ~audit("notify".to_string()).same_env() })
 //! }
 //!
 //! let logger = Logger::default();
@@ -99,17 +99,17 @@
 //!
 //! ```compile_fail
 //! use id_effect::Never;
-//! use id_effect::next::{Effect, HList, Selector, caps_next, effect_next};
+//! use id_effect::{Effect, HList, Selector, caps, effect};
 //!
 //! struct Logger;
 //! struct Db;
 //!
 //! fn audit<R: HList + Selector<Logger, I>, I>() -> Effect<(), Never, R> {
-//!   effect_next!({ let _ = ~Logger; })
+//!   effect!({ let _ = ~Logger; })
 //! }
 //!
-//! fn signup() -> Effect<(), Never, caps_next!(Logger, Db)> {
-//!   effect_next!({ ~audit() })
+//! fn signup() -> Effect<(), Never, caps!(Logger, Db)> {
+//!   effect!({ ~audit() })
 //! }
 //! ```
 //!

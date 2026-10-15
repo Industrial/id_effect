@@ -1,5 +1,5 @@
 //! Ex 042 — an effectful `Layer` builds the config before the app runs.
-use id_effect::next::{Effect, HCons, HNil, Layer, caps_next, effect_next, hlist, sync};
+use id_effect::{Effect, HCons, HNil, Layer, caps, effect, hlist, sync};
 use id_effect::{Exit, Never};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,8 +9,8 @@ fn config_layer() -> Layer<HCons<AppConfig, HNil>, Never> {
   Layer::effect(|| sync(|| hlist![AppConfig("loaded-from-effect".to_string())]))
 }
 
-fn app() -> Effect<String, Never, caps_next!(AppConfig)> {
-  effect_next!({ ~AppConfig.0.clone() })
+fn app() -> Effect<String, Never, caps!(AppConfig)> {
+  effect!({ ~AppConfig.0.clone() })
 }
 
 fn main() {

@@ -9,7 +9,7 @@
 //! input is supplied that effect needs nothing (`Effect<_, E, HNil>`) and can be run.
 //!
 //! ```
-//! use id_effect::next::{Effect, HCons, HNil, Layer, hlist, need};
+//! use id_effect::{Effect, HCons, HNil, Layer, hlist, need};
 //!
 //! struct Config(&'static str);
 //! struct Db(&'static str);
@@ -39,7 +39,7 @@
 //! ```
 //! use std::sync::Arc;
 //! use std::sync::atomic::{AtomicUsize, Ordering};
-//! use id_effect::next::{HCons, HNil, Layer, hlist, need, sync};
+//! use id_effect::{HCons, HNil, Layer, hlist, need, sync};
 //!
 //! struct Pool;
 //! struct Users(Arc<Pool>);
@@ -104,7 +104,7 @@
 //!
 //! ```
 //! use std::sync::{Arc, Mutex};
-//! use id_effect::next::{Effect, HCons, HNil, Layer, hlist, need, sync};
+//! use id_effect::{Effect, HCons, HNil, Layer, hlist, need, sync};
 //!
 //! struct Pool;
 //! struct Repo;
@@ -171,12 +171,12 @@ use std::any::{Any, TypeId, type_name};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::capability::{Concat, Embed, HCons, HList, HNil};
 use crate::failure::Never;
-use crate::next::capability::{Concat, Embed, HCons, HList, HNil};
-use crate::next::kernel::{
+use crate::kernel::{
   AnyEnv, Effect, ExitKind, Instr, MaskOp, Node, die, downcast_env, from_async, succeed, suspend,
 };
-use crate::next::scope::Scope;
+use crate::scope::Scope;
 
 /// One node's construction, given the build's memo table.
 type BuildFn<Out, E, In> = dyn Fn(&MemoMap) -> Effect<Out, E, In> + Send + Sync;

@@ -3,7 +3,7 @@
 //! from the v1 `concurrency::supervisor`.
 //!
 //! v1 stopped a supervised loop cooperatively through a `CancellationToken` checked between
-//! attempts. On the next kernel a supervised loop is an ordinary fiber: [`Supervisor::shutdown`]
+//! attempts. On the 0.7 kernel a supervised loop is an ordinary fiber: [`Supervisor::shutdown`]
 //! closes the supervisor's [`Scope`], which interrupts every fiber forked into it, wherever it is
 //! suspended (inside an attempt or between two). Interruption is never restarted.
 //!
@@ -17,9 +17,9 @@ use std::time::{Duration, Instant};
 use super::waiters::{fail_cause, hnil_in, lock};
 use crate::failure::Never;
 use crate::failure::{Cause, Exit};
-use crate::next::kernel::{Effect, ExitKind, sleep, succeed, suspend, yield_fiber};
-use crate::next::runtime::FiberHandle;
-use crate::next::scope::Scope;
+use crate::kernel::{Effect, ExitKind, sleep, succeed, suspend, yield_fiber};
+use crate::runtime::FiberHandle;
+use crate::scope::Scope;
 
 /// A sliding-window restart-intensity limiter (OTP `max_restarts` within `within`).
 ///

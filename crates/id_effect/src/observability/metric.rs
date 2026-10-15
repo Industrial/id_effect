@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use super::observe_exit_with_fiber;
 use super::registry::{MetricRegistry, MetricUpdate};
 use crate::failure::Cause;
-use crate::next::kernel::{Effect, ExitKind, Instr, erase};
+use crate::kernel::{Effect, ExitKind, Instr, erase};
 
 /// Tag pairs (`key`, `value`), sorted by key with unique keys.
 pub type MetricTags = Arc<[(String, String)]>;
@@ -844,7 +844,7 @@ macro_rules! handle_common {
           .state
           .get_or_init(|| match self.registry.cell(&self.key) {
             MetricCell::$variant(state) => state,
-            _ => unreachable!("next: metric key kind and cell kind disagree"),
+            _ => unreachable!("id_effect: metric key kind and cell kind disagree"),
           })
       }
     }

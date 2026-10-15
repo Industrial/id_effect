@@ -1,18 +1,19 @@
-//! Support items for the `*_next!` macro expansions, reached as `next::__private`. Not API.
+//! Support items for the `effect!` / `effect_local!` / `caps!` expansions, reached as
+//! `id_effect::__private`. Not API.
 //!
 //! - [`Lift`] with [`LiftNever`] / [`LiftFrom`]: error widening for `~` binds by autoref
 //!   specialisation (spike A `lib.rs:46-84`). `(&&Lift::new(e)).lift()` picks `LiftNever` for a
 //!   `Never` error (widens to anything) and `LiftFrom` otherwise (`E: From<E2>`).
-//! - [`bind_local`]: what `~expr` expands to inside `effect_local_next!`.
-//! - [`CapsChecked`]: the identity projection `caps_next!` wraps a de-duplicated list in when it
+//! - [`bind_local`]: what `~expr` expands to inside `effect_local!`.
+//! - [`CapsChecked`]: the identity projection `caps!` wraps a de-duplicated list in when it
 //!   also reports a duplicate (so the error does not cascade).
 //! - [`branch`] and [`join_binds`]: what a parallel join `~(a, b, ..)` (2 to 8 effects) expands
-//!   to inside `effect_next!`.
+//!   to inside `effect!`.
 //!
 //! # Parallel joins: `~(a, b, ..)`
 //!
 //! A `~` followed by a parenthesised, comma-separated list of 2 to 8 effects runs them as child
-//! fibers through [`all`](crate::next::all) (one `fork_all`, `Concurrency::Unbounded`) and yields
+//! fibers through [`all`](crate::all) (one `fork_all`, `Concurrency::Unbounded`) and yields
 //! the tuple of their values, in input order. It shares `zip_par`'s semantics: the first failure
 //! interrupts the siblings still running and the join waits for them (their finalizers run)
 //! before it fails; interrupting the body's fiber interrupts every branch.
@@ -27,16 +28,16 @@
 //! independent `let a = ~x; let b = ~y;` statements stay sequential (no implicit parallelism).
 //!
 //! ```
-//! use id_effect::next::{Effect, effect_next, fail, succeed};
+//! use id_effect::{Effect, effect, fail, succeed};
 //! use id_effect::{Cause, Exit};
 //!
 //! fn both() -> Effect<(u8, &'static str), String> {
-//!   effect_next!({ ~(succeed::<u8, String, _>(1), succeed::<_, String, _>("two")) })
+//!   effect!({ ~(succeed::<u8, String, _>(1), succeed::<_, String, _>("two")) })
 //! }
 //! assert!(matches!(both().block_on(), Exit::Success((1, "two"))));
 //!
 //! fn failing() -> Effect<u8, String> {
-//!   effect_next!({
+//!   effect!({
 //!     let (a, _b) = ~(succeed::<u8, String, _>(1), fail::<u8, &'static str, _>("boom"));
 //!     a
 //!   })
@@ -47,31 +48,31 @@
 //! More than 8 branches is a compile error (nest a join, or use `all`):
 //!
 //! ```compile_fail
-//! use id_effect::next::{Effect, effect_next, succeed};
+//! use id_effect::{Effect, effect, succeed};
 //! use id_effect::Never;
 //!
 //! fn one() -> Effect<u8, Never> {
 //!   succeed(1)
 //! }
 //! fn nine() -> Effect<u8, Never> {
-//!   effect_next!({
+//!   effect!({
 //!     let (a, ..) = ~(one(), one(), one(), one(), one(), one(), one(), one(), one());
 //!     a
 //!   })
 //! }
 //! ```
 //!
-//! So is a join in `effect_local_next!`:
+//! So is a join in `effect_local!`:
 //!
 //! ```compile_fail
-//! use id_effect::next::{Effect, LocalEffect, effect_local_next, succeed};
+//! use id_effect::{Effect, LocalEffect, effect_local, succeed};
 //! use id_effect::Never;
 //!
 //! fn one() -> Effect<u8, Never> {
 //!   succeed(1)
 //! }
 //! fn local() -> LocalEffect<u8, Never> {
-//!   effect_local_next!({
+//!   effect_local!({
 //!     let (a, b) = ~(one(), one());
 //!     a + b
 //!   })
@@ -92,10 +93,10 @@ use super::cause::from_exit;
 use super::ctx::Ctx;
 use super::effect::Effect;
 use super::local::{HoldMask, IntoLocal};
+use crate::capability::{Embed, HList};
+use crate::concurrency::Concurrency;
 use crate::failure::Never;
-use crate::next::capability::{Embed, HList};
-use crate::next::concurrency::Concurrency;
-use crate::next::par::all;
+use crate::par::all;
 
 /// A `~` bind's error, waiting to be widened into the body's error type.
 pub struct Lift<E>(Cell<Option<E>>);
@@ -117,7 +118,7 @@ impl LiftNever for &Lift<Never> {
   fn lift<E>(&self) -> E {
     match self.0.take() {
       Some(n) => match n {},
-      None => unreachable!("next: `~` error lifted twice (macro bug)"),
+      None => unreachable!("id_effect: `~` error lifted twice (macro bug)"),
     }
   }
 }
@@ -132,12 +133,12 @@ impl<E2> LiftFrom<E2> for Lift<E2> {
   fn lift<E: From<E2>>(&self) -> E {
     match self.0.take() {
       Some(e) => E::from(e),
-      None => unreachable!("next: `~` error lifted twice (macro bug)"),
+      None => unreachable!("id_effect: `~` error lifted twice (macro bug)"),
     }
   }
 }
 
-/// `~sub` inside `effect_local_next!`: runs a [`LocalEffect`](super::LocalEffect) or a `Send`
+/// `~sub` inside `effect_local!`: runs a [`LocalEffect`](super::LocalEffect) or a `Send`
 /// [`Effect`](super::Effect) (via [`IntoLocal`]) whose environment `Sub` is a part of `R`, on
 /// `ctx`'s fiber, as a nested local runloop. Outcomes surface as in [`Ctx::bind`]: the typed error
 /// as `Err`, a defect or an interrupt re-raised in the enclosing runloop.
@@ -166,7 +167,7 @@ where
   async move { surface(from_exit(run.await)) }
 }
 
-/// The identity on `Self`, with a const argument that carries `caps_next!`'s duplicate errors.
+/// The identity on `Self`, with a const argument that carries `caps!`'s duplicate errors.
 pub trait CapsChecked<const N: usize> {
   /// `Self`.
   type Out;
@@ -244,7 +245,7 @@ type Slot = Box<dyn Any + Send>;
 fn unslot<A: 'static>(slot: Option<Slot>) -> A {
   match slot.map(|s| s.downcast::<A>()) {
     Some(Ok(a)) => *a,
-    _ => unreachable!("next: `~(..)` join lost a branch value (kernel bug)"),
+    _ => unreachable!("id_effect: `~(..)` join lost a branch value (kernel bug)"),
   }
 }
 
@@ -279,7 +280,7 @@ join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5);
 join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5, A6 6);
 join_tuple!(A0 0, A1 1, A2 2, A3 3, A4 4, A5 5, A6 6, A7 7);
 
-/// `~(a, b, ..)` inside `effect_next!`: runs the branches as child fibers (see the
+/// `~(a, b, ..)` inside `effect!`: runs the branches as child fibers (see the
 /// [module docs](self)) and yields their values, or the first failure.
 pub fn join_binds<R, T>(ctx: &Ctx<R>, branches: T) -> JoinFuture<T::Output, T::Error>
 where
@@ -314,10 +315,10 @@ mod tests {
   use std::time::{Duration, Instant};
 
   use super::*;
+  use crate::capability::HNil;
   use crate::failure::{Cause, Exit};
-  use crate::next::capability::HNil;
-  use crate::next::kernel::{LocalEffect, from_async, succeed, sync};
-  use crate::next::runtime::{BoxFuture, Executor, FiberContext, LocalBoxFuture, NotLocal};
+  use crate::kernel::{LocalEffect, from_async, succeed, sync};
+  use crate::runtime::{BoxFuture, Executor, FiberContext, LocalBoxFuture, NotLocal};
 
   struct NoExec;
 
@@ -350,7 +351,7 @@ mod tests {
     }
   }
 
-  /// Runs `~sub` (as `effect_local_next!` expands it) until `sub` is suspended, holding one
+  /// Runs `~sub` (as `effect_local!` expands it) until `sub` is suspended, holding one
   /// mask level, then interrupts the fiber and polls again: `sub`'s finalizer runs (checked by
   /// the callers), the body does not continue, and no mask level leaks. Polled by hand, so the
   /// interrupt always lands on an already suspended runloop.

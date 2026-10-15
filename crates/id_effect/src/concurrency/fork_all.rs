@@ -16,9 +16,9 @@
 //! Admission (D6, `c-fabric-scheduler`): `AllFut::start_up_to_limit` is the single point where
 //! a child is admitted and spawned. `Bounded(n)` is a purely local window there; only
 //! [`Concurrency::Inherit`] awaits an [`AdmissionPermit`] from the ambient
-//! [`Fabric`](crate::next::Fabric) before each spawn (asynchronously: a waker, no blocked
+//! [`Fabric`](crate::Fabric) before each spawn (asynchronously: a waker, no blocked
 //! thread). The permit lives inside the child's program and is dropped when the child exits.
-//! See [`crate::next::compute`] for how the ambient fabric is found and why a fiber that
+//! See [`crate::compute`] for how the ambient fabric is found and why a fiber that
 //! already holds a permit may lend it to one child at a time (no nested-admission deadlock).
 
 use std::collections::VecDeque;
@@ -27,10 +27,10 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Wake, Waker};
 
+use crate::compute::{Ambient, Fabric};
 use crate::failure::Cause;
-use crate::next::compute::{Ambient, Fabric};
-use crate::next::kernel::{AnyBox, AnyEnv, AnyExit, Effect, Instr, erase, succeed, unbox};
-use crate::next::runtime::{BoxFuture, FiberCell, FiberContext, spawn_fiber};
+use crate::kernel::{AnyBox, AnyEnv, AnyExit, Effect, Instr, erase, succeed, unbox};
+use crate::runtime::{BoxFuture, FiberCell, FiberContext, spawn_fiber};
 
 /// How [`fork_all`] schedules its children.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -41,15 +41,15 @@ pub enum Concurrency {
   Bounded(usize),
   /// Every child at once.
   Unbounded,
-  /// Let the ambient compute [`Fabric`](crate::next::Fabric) decide (D6; Effect.ts
+  /// Let the ambient compute [`Fabric`](crate::Fabric) decide (D6; Effect.ts
   /// `concurrency: "inherit"`): every child first awaits one admission permit from the fabric
-  /// the current fiber inherited ([`Fabric::provide`](crate::next::Fabric::provide)). With no
+  /// the current fiber inherited ([`Fabric::provide`](crate::Fabric::provide)). With no
   /// ambient fabric this behaves as [`Concurrency::Unbounded`].
   Inherit,
 }
 
 /// The compute-fabric admission hook (D6, ADR 0007 Amendment 1): what a
-/// [`Fabric`](crate::next::Fabric) consults before [`fork_all`] starts a child under
+/// [`Fabric`](crate::Fabric) consults before [`fork_all`] starts a child under
 /// [`Concurrency::Inherit`].
 pub trait Admission: Send + Sync {
   /// Resolves once work of `weight` units may start, with the permit that work holds; dropping
@@ -387,7 +387,7 @@ impl Future for AllFut {
           .iter_mut()
           .map(|r| {
             r.take()
-              .expect("next: fork_all child result missing (kernel bug)")
+              .expect("id_effect: fork_all child result missing (kernel bug)")
           })
           .collect();
         return Poll::Ready(Ok(erase(vals)));

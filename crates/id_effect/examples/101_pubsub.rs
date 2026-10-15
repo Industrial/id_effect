@@ -1,5 +1,5 @@
 //! Ex 101 — A `PubSub` hub: `subscribe` in a scope, then `publish`.
-use id_effect::next::{Effect, PubSub, QueueError, Scope};
+use id_effect::{Effect, PubSub, QueueError, Scope};
 
 fn main() {
   let ps = PubSub::<u32>::bounded(8);

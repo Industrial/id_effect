@@ -1,6 +1,6 @@
 //! Ex 039 — Inside an async program, `Runtime::run` awaits an effect instead of blocking.
 use id_effect::Exit;
-use id_effect::next::{Effect, Runtime, succeed};
+use id_effect::{Effect, Runtime, succeed};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {

@@ -5,7 +5,7 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::next::random::{Random, RandomSource, Xoshiro256, uniform_in, unit_f64};
+use crate::random::{Random, RandomSource, Xoshiro256, uniform_in, unit_f64};
 
 /// A deterministic random source for tests: a seeded xoshiro256** generator plus queues of
 /// values to return first (Effect.ts `TestRandom.feedInts` / `feedDoubles`).
@@ -25,7 +25,7 @@ use crate::next::random::{Random, RandomSource, Xoshiro256, uniform_in, unit_f64
 /// while the effect under test reads another through its [`Random`] capability:
 ///
 /// ```
-/// use id_effect::next::{Effect, HCons, HNil, Random, TestRandom, random_u64};
+/// use id_effect::{Effect, HCons, HNil, Random, TestRandom, random_u64};
 /// use id_effect::Exit;
 ///
 /// let rng = TestRandom::seeded(42);

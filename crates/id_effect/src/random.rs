@@ -1,17 +1,17 @@
 //! The `Random` capability: `next_u64`, `next_f64` in `[0, 1)`, `next_range` and `shuffle`, on
 //! an internal xoshiro256** generator (no new dependency, Q13). The deterministic `TestRandom`
-//! (`seeded`, `feed_u64s`/`feed_f64s`) is exported from [`testing`](crate::next::testing).
+//! (`seeded`, `feed_u64s`/`feed_f64s`) is exported from [`testing`](crate::testing).
 //!
 //! # As a capability
 //!
 //! [`Random`] is an ordinary capability: an effect that draws random numbers names it in its
-//! environment `R` and reads it with [`need`](crate::next::need) (or the accessors
+//! environment `R` and reads it with [`need`](crate::need) (or the accessors
 //! [`random_u64`], [`random_f64`], [`random_range`] and [`random_shuffle`]). The edge provides
 //! [`Random::live`] (seeded from OS entropy) in production and a seeded
-//! [`TestRandom`](crate::next::TestRandom) in tests.
+//! [`TestRandom`](crate::TestRandom) in tests.
 //!
 //! ```
-//! use id_effect::next::{Effect, HCons, HNil, Random, random_range};
+//! use id_effect::{Effect, HCons, HNil, Random, random_range};
 //! use id_effect::Exit;
 //!
 //! fn roll() -> Effect<u64, (), HCons<Random, HNil>> {
@@ -33,7 +33,7 @@
 //!
 //! ```
 //! use std::time::Duration;
-//! use id_effect::next::{Random, RandomSource};
+//! use id_effect::{Random, RandomSource};
 //!
 //! /// `base` scaled by a factor in `[0.8, 1.2)`.
 //! fn jitter(base: Duration, rng: &dyn RandomSource) -> Duration {
@@ -61,8 +61,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::next::capability::{Selector, need};
-use crate::next::kernel::Effect;
+use crate::capability::{Selector, need};
+use crate::kernel::Effect;
 
 // ── generator ───────────────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 //! Ex 094 — `with_span` wraps work in a logical span; `tracing_hook` records it.
-use id_effect::next::{
+use id_effect::{
   Effect, TracingConfig, install_tracing_layer, snapshot_tracing, succeed, tracing_hook,
 };
 use id_effect::{Exit, Never};

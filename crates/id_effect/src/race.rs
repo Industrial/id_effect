@@ -30,8 +30,8 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::time::Duration;
 
 use crate::failure::Cause;
-use crate::next::kernel::{AnyBox, AnyExit, Effect, Instr, die, fail, sleep, succeed};
-use crate::next::runtime::{FiberCell, FiberContext, spawn_fiber};
+use crate::kernel::{AnyBox, AnyExit, Effect, Instr, die, fail, sleep, succeed};
+use crate::runtime::{FiberCell, FiberContext, spawn_fiber};
 
 /// Which outcome ends a race.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,7 +56,7 @@ where
   /// use std::time::Duration;
   ///
   /// use id_effect::Exit;
-  /// use id_effect::next::{Effect, sleep, succeed};
+  /// use id_effect::{Effect, sleep, succeed};
   ///
   /// let slow: Effect<&str> = sleep(Duration::from_secs(3600)).map(|()| "slow");
   /// let fast: Effect<&str> = succeed("fast");
@@ -77,13 +77,13 @@ where
   /// interrupted and awaited, so a masked effect delays the `None`). A failure before the
   /// deadline is re-raised.
   ///
-  /// On a [`TestExecutor`](crate::next::TestExecutor) the deadline is virtual time:
+  /// On a [`TestExecutor`](crate::TestExecutor) the deadline is virtual time:
   ///
   /// ```
   /// use std::sync::Arc;
   /// use std::time::Duration;
   ///
-  /// use id_effect::next::{Effect, TestExecutor, sleep};
+  /// use id_effect::{Effect, TestExecutor, sleep};
   ///
   /// let exec = TestExecutor::new();
   /// let slow: Effect<u8> = sleep(Duration::from_secs(60)).map(|()| 1);
@@ -126,7 +126,7 @@ where
 {
   let effects: Vec<_> = effects.into_iter().collect();
   if effects.is_empty() {
-    return die("next: race_all of no effects");
+    return die("id_effect: race_all of no effects");
   }
   race_with(effects, Mode::FirstSuccess)
 }
@@ -246,7 +246,7 @@ impl RaceFut {
       .into_iter()
       .flatten()
       .reduce(Cause::both)
-      .expect("next: race with no racers (kernel bug)");
+      .expect("id_effect: race with no racers (kernel bug)");
     Err(cause)
   }
 }

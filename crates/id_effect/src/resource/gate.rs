@@ -13,9 +13,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 use std::time::Instant;
 
+use crate::capability::HNil;
 use crate::failure::Cause;
-use crate::next::capability::HNil;
-use crate::next::kernel::{AnyEnv, Effect, Instr};
+use crate::kernel::{AnyEnv, Effect, Instr};
 
 pub(super) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -159,7 +159,7 @@ impl Gate {
     R: Send + Sync + 'static,
   {
     let gate = Arc::clone(self);
-    crate::next::from_async(move || async move {
+    crate::from_async(move || async move {
       Ok(
         Acquire {
           gate: Some(gate),
@@ -198,7 +198,7 @@ impl Future for Acquire {
       self
         .gate
         .as_ref()
-        .expect("next: Acquire polled after completion"),
+        .expect("id_effect: Acquire polled after completion"),
     );
     let mut st = lock(&gate.state);
     match self.id {
@@ -230,7 +230,7 @@ impl Future for Acquire {
           .waiters
           .iter()
           .position(|w| w.id == id)
-          .expect("next: gate waiter registered");
+          .expect("id_effect: gate waiter registered");
         if st.waiters[pos].granted {
           st.waiters.remove(pos);
           drop(st);
@@ -317,7 +317,7 @@ impl<T: Clone + Send + 'static> Slot<T> {
     R: Send + Sync + 'static,
   {
     let slot = Arc::clone(self);
-    crate::next::from_async(move || async move { Ok(SlotWait { slot, id: None }.await) })
+    crate::from_async(move || async move { Ok(SlotWait { slot, id: None }.await) })
   }
 }
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use id_effect::Exit;
-use id_effect::next::{Effect, Schedule, sync};
+use id_effect::{Effect, Schedule, sync};
 
 fn main() {
   let calls = Arc::new(AtomicU32::new(0));

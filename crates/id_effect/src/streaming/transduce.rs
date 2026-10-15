@@ -1,10 +1,10 @@
 //! Transducers on [`Stream`] ([`Stream::transduce_items`]) and the free [`state_scan`].
 //!
 //! [`Transducer`] itself is kernel-independent and shared with the 0.6 API
-//! (`next::streaming::transducer`, re-exported by `id_effect_optics` and 0.6 `streaming`).
+//! (`streaming::transducer`, re-exported by `id_effect_optics` and 0.6 `streaming`).
 
 use super::stream::{StageStep, Stream};
-use crate::next::streaming::transducer::Transducer;
+use crate::streaming::transducer::Transducer;
 
 /// Step function for [`state_scan`]: `(state, item) -> (next_state, optional_output)`.
 pub type StateStep<S, A, B> = Box<dyn FnMut(S, A) -> (S, Option<B>) + Send>;
@@ -37,11 +37,10 @@ where
     self.stage(move |input| {
       let mut out = Vec::new();
       for item in input.unwrap_or_default() {
-        let push: crate::next::streaming::transducer::Reducer<A, Vec<A>> =
-          Box::new(|mut acc, x| {
-            acc.push(x);
-            acc
-          });
+        let push: crate::streaming::transducer::Reducer<A, Vec<A>> = Box::new(|mut acc, x| {
+          acc.push(x);
+          acc
+        });
         out.extend(xf.transduce(std::iter::once(item), push, Vec::new()));
       }
       StageStep::Emit(out)

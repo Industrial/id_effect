@@ -12,7 +12,7 @@ use jiff::tz::{self, TimeZone};
 use jiff::{RoundMode, Timestamp, ToSpan, Unit, Zoned, ZonedRound};
 
 use crate::failure::Never;
-use crate::next::{Effect, fail, succeed, sync};
+use crate::{Effect, fail, succeed, sync};
 
 // ── TimeUnit ─────────────────────────────────────────────────────────────────
 

@@ -4,13 +4,13 @@
 //! Every operation is a lazy synchronous step that holds the cell's mutex only while it runs;
 //! nothing is held across a suspension. [`Ref::modify_effect`] reads a snapshot, runs the inner
 //! effect without the lock and stores the result, so concurrent `modify_effect` calls interleave;
-//! use [`SynchronizedRef`](crate::next::SynchronizedRef) for strictly serialized effectful
+//! use [`SynchronizedRef`](crate::SynchronizedRef) for strictly serialized effectful
 //! updates.
 
 use std::sync::{Arc, Mutex};
 
 use super::waiters::lock;
-use crate::next::kernel::{Effect, suspend, sync};
+use crate::kernel::{Effect, suspend, sync};
 
 /// A shared mutable cell. Cloning yields a second handle to the **same** cell.
 ///
@@ -18,7 +18,7 @@ use crate::next::kernel::{Effect, suspend, sync};
 /// generic over its error type `E` and environment `R` (it never fails and needs nothing).
 ///
 /// ```
-/// use id_effect::next::Ref;
+/// use id_effect::Ref;
 /// use id_effect::Never;
 ///
 /// let r = Ref::new(1_u32);
@@ -141,7 +141,7 @@ impl<A: Send + 'static> Ref<A> {
   /// returns its `b`. When the inner effect fails, the cell is left unchanged.
   ///
   /// The lock is **not** held while the inner effect runs, so concurrent calls interleave (last
-  /// writer wins). Use [`SynchronizedRef`](crate::next::SynchronizedRef) to serialize them.
+  /// writer wins). Use [`SynchronizedRef`](crate::SynchronizedRef) to serialize them.
   pub fn modify_effect<B, E, R>(
     &self,
     f: impl FnOnce(A) -> Effect<(B, A), E, R> + Send + 'static,

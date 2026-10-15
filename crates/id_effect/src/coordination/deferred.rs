@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 
 use super::waiters::{WaitList, from_cause_future, lock, wake_all, with_fiber_id};
 use crate::failure::{Cause, Defect, Exit};
-use crate::next::kernel::{Effect, succeed, sync};
+use crate::kernel::{Effect, succeed, sync};
 
 struct State<A, E> {
   exit: Option<Exit<A, E>>,
@@ -42,7 +42,7 @@ impl<A, E> Inner<A, E> {
 /// the same cell.
 ///
 /// ```
-/// use id_effect::next::Deferred;
+/// use id_effect::Deferred;
 /// use id_effect::Never;
 ///
 /// let d = Deferred::<u8, Never>::new();

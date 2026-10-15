@@ -16,7 +16,7 @@ pub mod macro_support;
 mod resource;
 mod runloop;
 
-#[allow(unused_imports)] // crate-internal items only (`crate::next::kernel::AnyBox` etc.)
+#[allow(unused_imports)] // crate-internal items only (`crate::kernel::AnyBox` etc.)
 pub use anybox::*;
 pub use bind::*;
 #[allow(unused_imports)] // filled by k-macros-next

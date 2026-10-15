@@ -7,7 +7,7 @@
 //! Run: `cargo run -p id_effect --example 151_cookbook_streaming_etl`
 //! (tests: `cargo test -p id_effect --example 151_cookbook_streaming_etl`).
 
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Reading {

@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 
 use super::stream::Stream;
-use crate::next::kernel::{Effect, succeed};
+use crate::kernel::{Effect, succeed};
 
 /// One input of a two-sided combinator: the rest of its stream (`None` once it ended) and its
 /// pulled but not yet consumed items.

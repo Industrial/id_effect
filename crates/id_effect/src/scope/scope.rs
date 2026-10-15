@@ -11,11 +11,11 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
+use crate::capability::HNil;
 use crate::failure::Cause;
 use crate::failure::Never;
-use crate::next::capability::HNil;
-use crate::next::kernel::{AnyBox, AnyEnv, AnyExit, Effect, ExitKind, Instr, MaskOp, erase};
-use crate::next::runtime::{Done, FiberContext, FiberHandle, spawn_fiber};
+use crate::kernel::{AnyBox, AnyEnv, AnyExit, Effect, ExitKind, Instr, MaskOp, erase};
+use crate::runtime::{Done, FiberContext, FiberHandle, spawn_fiber};
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)

@@ -19,7 +19,7 @@
 //! # Children
 //!
 //! The edges run the root on a fresh root [`FiberContext`] through
-//! [`Effect::run_fiber`](crate::next::Effect::run_fiber): when the root's own program finishes,
+//! [`Effect::run_fiber`](crate::Effect::run_fiber): when the root's own program finishes,
 //! its live children are interrupted and awaited before the exit is returned (structured
 //! concurrency). [`Runtime::fork`] starts a daemon root fiber and returns its handle.
 
@@ -30,12 +30,12 @@ use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, Thread};
 
+use crate::capability::HNil;
 use crate::failure::{Cause, Defect, Exit};
-use crate::next::capability::HNil;
-use crate::next::kernel::{
+use crate::kernel::{
   Effect, Node, cause_from_panic, hnil_env, settle_instr, to_exit, unerase_exit,
 };
-use crate::next::runtime::{Executor, FiberContext, FiberHandle, TokioExecutor};
+use crate::runtime::{Executor, FiberContext, FiberHandle, TokioExecutor};
 
 /// A blocking edge (`try_block_on`, `block_on_future`) was called inside an async context, where
 /// parking the thread could block an executor thread and deadlock. Use `Runtime::run(..).await`.
@@ -45,7 +45,7 @@ pub struct BlockOnInAsync;
 impl fmt::Display for BlockOnInAsync {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.write_str(
-      "next: block_on called inside an async context (tokio task or runtime context); \
+      "id_effect: block_on called inside an async context (tokio task or runtime context); \
        use `Runtime::run(..).await` instead",
     )
   }
@@ -181,7 +181,7 @@ impl Runtime {
   }
 
   /// A runtime over an existing executor (a [`TokioExecutor`] on an ambient runtime, a
-  /// [`TestExecutor`](crate::next::TestExecutor), …). It owns nothing.
+  /// [`TestExecutor`](crate::TestExecutor), …). It owns nothing.
   ///
   /// With a `TestExecutor`, the blocking edges only finish effects that need no executor work
   /// (nothing drives the executor while the thread is parked); drive it with
@@ -191,14 +191,15 @@ impl Runtime {
   }
 
   /// The process-wide default runtime (created on first use, never dropped). This is the
-  /// runtime behind [`Effect::block_on`](crate::next::Effect::block_on).
+  /// runtime behind [`Effect::block_on`](crate::Effect::block_on).
   ///
   /// # Panics
   ///
   /// On first use, if the default tokio runtime cannot be started.
   pub fn global() -> &'static Runtime {
     static GLOBAL: OnceLock<Runtime> = OnceLock::new();
-    GLOBAL.get_or_init(|| Runtime::new().expect("next: cannot start the default tokio runtime"))
+    GLOBAL
+      .get_or_init(|| Runtime::new().expect("id_effect: cannot start the default tokio runtime"))
   }
 
   /// The executor fibers run on.

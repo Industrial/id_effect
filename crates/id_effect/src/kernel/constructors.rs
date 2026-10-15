@@ -102,7 +102,7 @@ where
   E: Send + 'static,
   R: Send + Sync + 'static,
 {
-  /// An async body that owns a [`Ctx<R>`] (the `effect_next!` target): the environment and the
+  /// An async body that owns a [`Ctx<R>`] (the `effect!` target): the environment and the
   /// current fiber, cloned once when the step starts.
   pub fn from_ctx<F, Fut>(f: F) -> Self
   where

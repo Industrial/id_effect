@@ -1,9 +1,9 @@
-//! Ex 009 — Inside `effect_next!`, a `Result` short-circuits with `?` into the typed error.
-use id_effect::next::{Effect, effect_next};
+//! Ex 009 — Inside `effect!`, a `Result` short-circuits with `?` into the typed error.
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, effect};
 
 fn parse(raw: &'static str) -> Effect<i32, &'static str> {
-  effect_next!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+  effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
 }
 
 fn main() {

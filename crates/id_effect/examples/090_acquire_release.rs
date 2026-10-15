@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 use id_effect::Exit;
-use id_effect::next::{Effect, ExitKind, acquire_use_release, succeed, sync};
+use id_effect::{Effect, ExitKind, acquire_use_release, succeed, sync};
 
 fn main() {
   let log = Arc::new(Mutex::new(Vec::new()));

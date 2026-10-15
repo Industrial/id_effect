@@ -13,10 +13,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::gate::{Gate, Permit, interrupt_self, lock, under_any_env, with_now};
+use crate::capability::HNil;
 use crate::failure::Never;
-use crate::next::capability::HNil;
-use crate::next::kernel::{Effect, succeed, suspend, uninterruptible_mask};
-use crate::next::scope::Scope;
+use crate::kernel::{Effect, succeed, suspend, uninterruptible_mask};
+use crate::scope::Scope;
 
 type AcquireFn<A, E, R> = Arc<dyn Fn() -> Effect<A, E, R> + Send + Sync>;
 type ReleaseFn<A> = Arc<dyn Fn(A) -> Effect<(), Never, HNil> + Send + Sync>;
@@ -67,7 +67,7 @@ struct Shared<A> {
 ///
 /// ```
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, Pool, succeed};
+/// use id_effect::{Effect, Pool, succeed};
 /// use id_effect::Never;
 ///
 /// let pool: Pool<u32> = Pool::new(2, || succeed(7));
@@ -353,7 +353,7 @@ struct KeyedState<K, A, E, R> {
 ///
 /// ```
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, KeyedPool, succeed};
+/// use id_effect::{Effect, KeyedPool, succeed};
 /// use id_effect::Never;
 ///
 /// let pool: KeyedPool<&str, String> = KeyedPool::new(1, |k: &str| succeed(format!("conn-{k}")));

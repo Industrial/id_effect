@@ -7,7 +7,7 @@
 
 use super::ref_::Ref;
 use super::semaphore::Semaphore;
-use crate::next::kernel::Effect;
+use crate::kernel::Effect;
 
 /// A shared cell with strictly serialized (effectful) updates. Cloning yields another handle to
 /// the same cell.

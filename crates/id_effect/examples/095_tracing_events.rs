@@ -1,5 +1,5 @@
 //! Ex 095 — Emit structured effect and fiber events into the tracing buffer.
-use id_effect::next::{
+use id_effect::{
   Effect, EffectEvent, FiberEvent, TracingConfig, emit_effect_event, emit_fiber_event,
   install_tracing_layer, snapshot_tracing, succeed,
 };

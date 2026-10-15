@@ -10,7 +10,7 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, Metric, MetricRegistry, MetricState, succeed};
+//! use id_effect::{Effect, Metric, MetricRegistry, MetricState, succeed};
 //!
 //! let registry = MetricRegistry::new();
 //! let requests = registry.counter("requests").tagged("route", "/health");
@@ -42,7 +42,7 @@
 //!   each record ([`MetricUpdate`]); histograms map to otel synchronous histograms this way.
 //! - **Metric tags from the fiber** — [`MetricRegistry::fiber_tags`] is the `FiberRef` behind
 //!   [`Effect::tag_metrics`]; a bridge can read it with [`FiberRef::get_in`] from a
-//!   [`FiberContext`](crate::next::FiberContext).
+//!   [`FiberContext`](crate::FiberContext).
 //! - **Spans** — implement [`SpanHook`] and install it around the root effect with
 //!   [`Effect::with_span_hook`] (a `FiberRef`, inherited by every forked child; no global
 //!   state, no thread-locals). In `on_start` create the otel span with the parent taken from
@@ -72,8 +72,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use crate::failure::Cause;
-use crate::next::kernel::{Effect, ExitKind, Instr, MaskOp, erase_exit, sync, unerase_exit};
-use crate::next::runtime::{FiberContext, FiberRef};
+use crate::kernel::{Effect, ExitKind, Instr, MaskOp, erase_exit, sync, unerase_exit};
+use crate::runtime::{FiberContext, FiberRef};
 
 /// Runs `eff`, then `f(&outcome, fiber)` however it ends (success, failure, defect or
 /// interrupt), then re-raises the outcome. `eff` keeps the caller's interruptibility; `f` runs

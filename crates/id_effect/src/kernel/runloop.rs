@@ -31,9 +31,9 @@ use std::task::{Context, Poll};
 use super::anybox::{AnyBox, AnyEnv, AnyExit, hnil_env, unerase_exit};
 use super::cause::{cause_from_panic, to_exit};
 use super::effect::{Effect, Node};
+use crate::capability::HNil;
 use crate::failure::{Cause, Exit};
-use crate::next::capability::HNil;
-use crate::next::runtime::{BoxFuture, FiberContext};
+use crate::runtime::{BoxFuture, FiberContext};
 
 type Cont = Box<dyn FnOnce(AnyBox) -> Instr + Send>;
 type Handler = Box<dyn FnOnce(AnyExit) -> Instr + Send>;
@@ -248,7 +248,7 @@ impl Runloop {
       }
       None => match self.cur.take() {
         Some(i) => i,
-        None => unreachable!("next: runloop polled after completion"),
+        None => unreachable!("id_effect: runloop polled after completion"),
       },
     };
     loop {
@@ -339,7 +339,7 @@ impl Runloop {
     };
     loop {
       let Some(Frame::FlatMap(k)) = self.stack.pop() else {
-        unreachable!("next: checked FlatMap frame (kernel bug)")
+        unreachable!("id_effect: checked FlatMap frame (kernel bug)")
       };
       let next = match k(v) {
         Instr::Pure(e) => take_value(e),
@@ -433,7 +433,7 @@ pub(crate) fn settle_instr(instr: Instr, env: &AnyEnv) -> Result<AnyExit, Instr>
     }
   };
   let Some(rest) = stopped else {
-    unreachable!("next: settle stopped without an instruction (kernel bug)")
+    unreachable!("id_effect: settle stopped without an instruction (kernel bug)")
   };
   if stack.is_empty() {
     return Err(rest);
@@ -461,7 +461,7 @@ fn settle_loop(cur: &mut Option<Instr>, stack: &mut Vec<Frame>, env: &AnyEnv) ->
           },
           Some(Frame::Fold(h)) => break h(exit),
           Some(Frame::Env(_) | Frame::Mask(_)) => {
-            unreachable!("next: settle pushed an env or mask frame (kernel bug)")
+            unreachable!("id_effect: settle pushed an env or mask frame (kernel bug)")
           }
         }
       },
@@ -519,7 +519,8 @@ impl<A: 'static, E: 'static> Future for RunFuture<A, E> {
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Exit<A, E>> {
     match &mut self.get_mut().state {
       RunState::Ready(r) => Poll::Ready(to_exit(
-        r.take().expect("next: RunFuture polled after completion"),
+        r.take()
+          .expect("id_effect: RunFuture polled after completion"),
       )),
       RunState::Running(rl) => Pin::new(rl)
         .poll(cx)
@@ -553,8 +554,8 @@ mod tests {
   use std::time::{Duration, Instant};
 
   use super::*;
-  use crate::next::kernel::{erase, unbox};
-  use crate::next::runtime::{Executor, LocalBoxFuture, NotLocal};
+  use crate::kernel::{erase, unbox};
+  use crate::runtime::{Executor, LocalBoxFuture, NotLocal};
 
   struct NoExec;
 

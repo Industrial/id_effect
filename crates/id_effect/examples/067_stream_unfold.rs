@@ -1,6 +1,6 @@
 //! Ex 067 — `Stream::unfold` expands a state into elements.
 use id_effect::Exit;
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 fn main() {
   let s = Stream::<i32, ()>::unfold(1, |n| if n > 4 { None } else { Some((n, n + 1)) });

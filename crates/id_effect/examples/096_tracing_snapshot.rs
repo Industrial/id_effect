@@ -1,5 +1,5 @@
 //! Ex 096 — `snapshot_tracing` reads the recorded spans and events.
-use id_effect::next::{
+use id_effect::{
   Effect, EffectEvent, TracingConfig, annotate_current_span, install_tracing_layer,
   snapshot_tracing, succeed, tracing_hook,
 };

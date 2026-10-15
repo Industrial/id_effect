@@ -1,12 +1,12 @@
-//! Ex 008 — `effect_next!` reads a capability with `~Service`; `provide` supplies it.
-use id_effect::next::{Effect, caps_next, effect_next};
+//! Ex 008 — `effect!` reads a capability with `~Service`; `provide` supplies it.
+use id_effect::{Effect, caps, effect};
 use id_effect::{Exit, Never};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct Counter(pub i32);
 
-fn program() -> Effect<i32, Never, caps_next!(Counter)> {
-  effect_next!({ ~Counter.0 + 1 })
+fn program() -> Effect<i32, Never, caps!(Counter)> {
+  effect!({ ~Counter.0 + 1 })
 }
 
 fn main() {

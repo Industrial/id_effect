@@ -1,6 +1,5 @@
-//! The kernel macros `effect!` / `effect_local!` / `caps!` (also under their temporary
-//! side-by-side names `effect_next!`, `effect_local_next!`, `caps_next!`, removed by
-//! `k-retire-sweep`), ported from spike A's token-level macros (no `syn`). Expansions only name
+//! The kernel macros `effect!` / `effect_local!` / `caps!`, ported from spike A's token-level
+//! macros (no `syn`). Expansions only name
 //! `::id_effect::…` root paths (the `id_effect` crate has `extern crate self as id_effect`, so
 //! they also resolve inside it).
 

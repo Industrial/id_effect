@@ -16,13 +16,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 
+use crate::capability::HNil;
 use crate::failure::Exit;
 use crate::failure::FiberId;
-use crate::next::capability::HNil;
-use crate::next::kernel::{
+use crate::kernel::{
   AnyEnv, AnyExit, Effect, Instr, Runloop, cause_from_panic, from_async, to_exit, unerase_exit,
 };
-use crate::next::runtime::{Done, Executor, FiberContext};
+use crate::runtime::{Done, Executor, FiberContext};
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -85,7 +85,7 @@ impl<T> ExitCell<T> {
         *s = CellState::Waiting(Some(w));
         Poll::Pending
       }
-      CellState::Taken => panic!("next: fiber exit taken twice (kernel bug)"),
+      CellState::Taken => panic!("id_effect: fiber exit taken twice (kernel bug)"),
     }
   }
 }

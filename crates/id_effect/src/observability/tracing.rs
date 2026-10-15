@@ -1,5 +1,5 @@
 //! In-process tracing buffer: the 0.6 `install_tracing_layer` / `snapshot_tracing` API on the
-//! `next` span hook surface (`k-retire-v1`).
+//! Span hook surface (`k-retire-v1`).
 //!
 //! The buffer is process-global (one per process, like 0.6): [`install_tracing_layer`] turns it on
 //! (or off) and clears it, [`snapshot_tracing`] copies it out. Spans reach it through
@@ -16,7 +16,7 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{
+//! use id_effect::{
 //!   Effect, EffectEvent, TracingConfig, annotate_current_span, install_tracing_layer,
 //!   snapshot_tracing, succeed, tracing_hook,
 //! };
@@ -39,7 +39,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
 use super::{Span, SpanHook};
-use crate::next::kernel::{Effect, ExitKind, sync};
+use crate::kernel::{Effect, ExitKind, sync};
 
 /// Global switch for the tracing buffer, set by [`install_tracing_layer`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -307,7 +307,7 @@ pub(crate) fn test_lock() -> MutexGuard<'static, ()> {
 mod tests {
   use super::*;
   use crate::Exit;
-  use crate::next::{LocalEffect, die, fail, succeed};
+  use crate::{LocalEffect, die, fail, succeed};
 
   fn start(span: &str) -> EffectEvent {
     EffectEvent::Start { span: span.into() }

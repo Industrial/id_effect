@@ -10,8 +10,8 @@ use super::pubsub::PubSub;
 use super::queue::Queue;
 use super::ref_::Ref;
 use super::semaphore::Semaphore;
-use crate::next::kernel::Effect;
-use crate::next::scope::Scope;
+use crate::kernel::Effect;
+use crate::scope::Scope;
 
 /// A shared cell whose changes can be subscribed to. Cloning yields another handle to the same
 /// cell.

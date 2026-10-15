@@ -12,10 +12,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use super::gate::{Slot, lock, with_now};
+use crate::capability::HNil;
 use crate::failure::Never;
 use crate::failure::{Cause, Exit};
-use crate::next::capability::HNil;
-use crate::next::kernel::{Effect, ExitKind, Restore, suspend, sync, uninterruptible_mask};
+use crate::kernel::{Effect, ExitKind, Restore, suspend, sync, uninterruptible_mask};
 
 /// Hit and miss counters and the current size of a [`Cache`] (Effect.ts `CacheStats`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -114,7 +114,7 @@ enum Step<V, E> {
 /// use std::sync::Arc;
 /// use std::sync::atomic::{AtomicUsize, Ordering};
 /// use id_effect::Exit;
-/// use id_effect::next::{Cache, sync};
+/// use id_effect::{Cache, sync};
 ///
 /// let calls = Arc::new(AtomicUsize::new(0));
 /// let c = Arc::clone(&calls);

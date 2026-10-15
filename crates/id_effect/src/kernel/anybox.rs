@@ -10,8 +10,8 @@ use std::any::Any;
 use std::sync::{Arc, LazyLock};
 
 use super::cause::map_fail_mut;
+use crate::capability::HNil;
 use crate::failure::Cause;
-use crate::next::capability::HNil;
 
 /// An erased runloop value (design A §5 R2 mitigation, "SmallBox", in safe Rust): `()` and a
 /// fixed set of word-sized primitives (recognised by `TypeId`) travel inline; every other type,
@@ -40,7 +40,7 @@ pub(crate) fn erase<T: Send + 'static>(t: T) -> AnyBox {
   AnyBox::Boxed(Box::new(
     slot
       .take()
-      .expect("next: erase slot is filled (kernel bug)"),
+      .expect("id_effect: erase slot is filled (kernel bug)"),
   ))
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn unbox<T: 'static>(v: AnyBox) -> T {
   match v {
     AnyBox::Boxed(b) => match b.downcast::<T>() {
       Ok(t) => return *t,
-      Err(_) => panic!("next: erased value type mismatch (kernel bug)"),
+      Err(_) => panic!("id_effect: erased value type mismatch (kernel bug)"),
     },
     AnyBox::Unit => {
       if let Some(o) = any.downcast_mut::<Option<()>>() {
@@ -72,7 +72,7 @@ pub(crate) fn unbox<T: 'static>(v: AnyBox) -> T {
       }
     }
   }
-  out.expect("next: erased value type mismatch (kernel bug)")
+  out.expect("id_effect: erased value type mismatch (kernel bug)")
 }
 
 /// The erased outcome of one runloop step.
@@ -108,7 +108,7 @@ pub(crate) fn unerase_exit<A: 'static, E: 'static>(r: AnyExit) -> Result<A, Caus
 pub(crate) fn downcast_env<R: 'static>(env: &AnyEnv) -> &R {
   match (**env).downcast_ref::<R>() {
     Some(r) => r,
-    None => panic!("next: environment type mismatch (kernel bug)"),
+    None => panic!("id_effect: environment type mismatch (kernel bug)"),
   }
 }
 
@@ -116,7 +116,7 @@ pub(crate) fn downcast_env<R: 'static>(env: &AnyEnv) -> &R {
 pub(crate) fn downcast_env_arc<R: Send + Sync + 'static>(env: &AnyEnv) -> Arc<R> {
   match Arc::clone(env).downcast::<R>() {
     Ok(r) => r,
-    Err(_) => panic!("next: environment type mismatch (kernel bug)"),
+    Err(_) => panic!("id_effect: environment type mismatch (kernel bug)"),
   }
 }
 

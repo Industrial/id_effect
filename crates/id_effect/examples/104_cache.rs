@@ -1,6 +1,6 @@
 //! Ex 104 — A `Cache` memoizes lookups; `CacheStats` tracks hits and misses.
 use id_effect::Never;
-use id_effect::next::{Cache, CacheStats, Effect, succeed};
+use id_effect::{Cache, CacheStats, Effect, succeed};
 
 fn main() {
   let cache = Cache::new(8, None, |k: &'static str| succeed(k.len() as u64));

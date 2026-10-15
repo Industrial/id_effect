@@ -1,6 +1,6 @@
 //! Ex 069 — `map_effect` runs an effect per element; a failure ends the stream with it.
-use id_effect::next::{Stream, fail, succeed};
 use id_effect::{Cause, Exit};
+use id_effect::{Stream, fail, succeed};
 
 fn main() {
   let s = Stream::<i32, &'static str>::from_iterable([1, 2, 3]).map_effect(|n| succeed(n * 2));

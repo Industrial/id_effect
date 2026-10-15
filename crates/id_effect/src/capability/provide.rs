@@ -8,7 +8,7 @@
 //! nothing to run under the new environment.
 //!
 //! ```
-//! use id_effect::next::{Effect, HCons, HNil, need};
+//! use id_effect::{Effect, HCons, HNil, need};
 //!
 //! struct Db(u32);
 //! struct Logger;
@@ -26,8 +26,8 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::next::capability::{Embed, HList, HNil, Plucker, Sculptor};
-use crate::next::kernel::{AnyEnv, Effect, Instr, Node, die, downcast_env};
+use crate::capability::{Embed, HList, HNil, Plucker, Sculptor};
+use crate::kernel::{AnyEnv, Effect, Instr, Node, die, downcast_env};
 
 /// Moves the value out of `slot` as a `Y` when `X` and `Y` are the same type (no allocation).
 fn take_if_same<X: 'static, Y: 'static>(slot: &mut Option<X>) -> Option<Y> {
@@ -125,7 +125,7 @@ where
       return same;
     }
     let Some(this) = slot else {
-      return die("next: narrow lost its effect (kernel bug)");
+      return die("id_effect: narrow lost its effect (kernel bug)");
     };
     match this.node {
       Node::Pure(r) => Effect::pure(r),

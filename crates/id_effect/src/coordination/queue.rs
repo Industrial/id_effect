@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use super::waiters::{Signal, WaitList, lock, wake_all};
-use crate::next::kernel::{Effect, from_async, sync};
+use crate::kernel::{Effect, from_async, sync};
 
 /// A take on a queue that is shut down and drained.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,7 +137,7 @@ pub(crate) struct Inner<A> {
 /// A multi-producer, multi-consumer queue. Cloning yields another handle to the same queue.
 ///
 /// ```
-/// use id_effect::next::{Queue, QueueError};
+/// use id_effect::{Queue, QueueError};
 ///
 /// let q = Queue::<u32>::bounded(2);
 /// let eff = q
@@ -321,7 +321,7 @@ impl<A: Send + 'static> Queue<A> {
   /// Waits for at least one item, then takes at most `n` (`n == 0` returns at once).
   pub fn take_up_to<R: Send + Sync + 'static>(&self, n: usize) -> Effect<Vec<A>, QueueError, R> {
     if n == 0 {
-      return crate::next::kernel::succeed(Vec::new());
+      return crate::kernel::succeed(Vec::new());
     }
     self.take_between_effect(1, n)
   }
@@ -339,7 +339,7 @@ impl<A: Send + 'static> Queue<A> {
     max: usize,
   ) -> Effect<Vec<A>, QueueError, R> {
     if min > max || max == 0 {
-      return crate::next::kernel::succeed(Vec::new());
+      return crate::kernel::succeed(Vec::new());
     }
     self.take_between_effect(min, max)
   }
@@ -361,9 +361,9 @@ impl<A: Send + 'static> Queue<A> {
       wake_all(ws);
       out
     };
-    crate::next::kernel::suspend(move || match step() {
-      Ok(v) => crate::next::kernel::succeed(v),
-      Err(e) => crate::next::kernel::fail(e),
+    crate::kernel::suspend(move || match step() {
+      Ok(v) => crate::kernel::succeed(v),
+      Err(e) => crate::kernel::fail(e),
     })
   }
 
@@ -489,7 +489,7 @@ impl<A> Future for OfferFuture<A> {
             Poll::Pending
           }
         },
-        (None, None) => panic!("next: queue offer polled after completion"),
+        (None, None) => panic!("id_effect: queue offer polled after completion"),
       }
     };
     wake_all(ws);

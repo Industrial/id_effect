@@ -10,7 +10,7 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{Concurrency, Effect, Request, RequestResolver, all, sync};
+//! use id_effect::{Concurrency, Effect, Request, RequestResolver, all, sync};
 //!
 //! #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 //! struct GetUser(u32);
@@ -42,13 +42,13 @@
 //! then keeps yielding while the window is still filling, and closes it when either
 //!
 //! - every requester's parent fiber has as many requesters in the window as it has live
-//!   children (all siblings of a [`fork_all`](crate::next::fork_all) are waiting here; a root
+//!   children (all siblings of a [`fork_all`](crate::fork_all) are waiting here; a root
 //!   requester counts as settled), or
 //! - the window has not grown for 2 yields, or
 //! - 64 yields have passed (a bound on the latency batching adds).
 //!
-//! [`all`](crate::next::all) spawns every child before any of them runs, so on the FIFO
-//! [`TestExecutor`](crate::next::TestExecutor) the children of one `all` always share a window:
+//! [`all`](crate::all) spawns every child before any of them runs, so on the FIFO
+//! [`TestExecutor`](crate::TestExecutor) the children of one `all` always share a window:
 //! batching is deterministic there. On a multi-thread executor the same rule holds in practice
 //! but is timing-dependent; batching is an optimization only, and results never depend on how
 //! requests were grouped. A request made after its window closed opens a new one, so
@@ -84,7 +84,7 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, Request, RequestCache, RequestResolver, sync};
+//! use id_effect::{Effect, Request, RequestCache, RequestResolver, sync};
 //! use std::sync::Arc;
 //! use std::sync::atomic::{AtomicUsize, Ordering};
 //!
@@ -136,13 +136,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{Context, Poll, Waker};
 
+use crate::capability::HNil;
 use crate::failure::Never;
 use crate::failure::{Cause, Exit};
-use crate::next::capability::HNil;
-use crate::next::kernel::{Effect, Instr, erase, erase_exit, succeed, suspend, sync, yield_fiber};
-use crate::next::layer::Layer;
-use crate::next::runtime::{FiberContext, FiberRef, spawn_fiber};
-use crate::next::scope::Scope;
+use crate::kernel::{Effect, Instr, erase, erase_exit, succeed, suspend, sync, yield_fiber};
+use crate::layer::Layer;
+use crate::runtime::{FiberContext, FiberRef, spawn_fiber};
+use crate::scope::Scope;
 
 /// How many yields without a new request close a window that has not settled by sibling count.
 const STABLE_ROUNDS: u32 = 2;
@@ -267,10 +267,10 @@ where
   /// Issues `req` to `resolver` (Effect.ts `Effect.request(req, resolver)`).
   ///
   /// Requests to the same resolver made in one batch window (for example by the children of one
-  /// [`all`](crate::next::all)) are deduplicated and resolved by one resolver call; a request
+  /// [`all`](crate::all)) are deduplicated and resolved by one resolver call; a request
   /// made after the window closed (for example the next step of a sequential chain) starts a
   /// new call. The resolver's typed errors fail the request with `Cause::Fail`. See the
-  /// [module docs](crate::next::request).
+  /// [module docs](crate::request).
   pub fn request<Q>(req: Q, resolver: &RequestResolver<Q, R>) -> Self
   where
     Q: Request<Output = A, Error = E>,
@@ -483,7 +483,7 @@ impl RequestCache {
       })
     });
     let Some(typed) = map.as_any_mut().downcast_mut::<TypedMap<Q>>() else {
-      unreachable!("next: request cache entry of a foreign request type (kernel bug)")
+      unreachable!("id_effect: request cache entry of a foreign request type (kernel bug)")
     };
     if let Some(slot) = typed.slots.get(&req) {
       return (Arc::clone(slot), false);
@@ -669,7 +669,7 @@ impl<Q: Request> Batch<Q> {
       }
       Exit::Success(results) => {
         let msg = format!(
-          "next: request resolver returned {} results for {} requests",
+          "id_effect: request resolver returned {} results for {} requests",
           results.len(),
           slots.len()
         );
@@ -690,7 +690,7 @@ impl<Q: Request> Drop for Batch<Q> {
   fn drop(&mut self) {
     for slot in self.slots.drain(..) {
       slot.complete(Err(Cause::Die(
-        "next: request batch dropped before its resolver finished".into(),
+        "id_effect: request batch dropped before its resolver finished".into(),
       )));
     }
   }

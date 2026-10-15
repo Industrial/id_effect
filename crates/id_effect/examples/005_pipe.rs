@@ -1,5 +1,5 @@
 //! Ex 005 — `.pipe` and `pipe!` for left-to-right composition.
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect::{Exit, Pipe, pipe};
 
 fn add_five(eff: Effect<i32>) -> Effect<i32> {

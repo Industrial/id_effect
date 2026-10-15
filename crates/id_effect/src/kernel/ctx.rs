@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::next::runtime::FiberContext;
+use crate::runtime::FiberContext;
 
 /// What an async effect body owns: the environment (shared) and the current fiber. Cloning costs
 /// two refcount bumps.

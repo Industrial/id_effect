@@ -17,9 +17,6 @@
 //! - **Kernel-independent** — [`failure`] (`Cause`, `Exit`, `Defect`, `Or`), [`foundation`]
 //!   ([`Pipe`], `pipe!`), [`schema`], [`scheduling`] (`Duration`, `UtcDateTime`), [`match_`].
 //!
-//! `id_effect::next::…` paths are a hidden alias of the crate root, kept until the 0.7 rename
-//! sweep; new code imports from the root.
-//!
 //! ## Cargo features
 //!
 //! - **`compute`** (default) — the Compute Fabric ([`mod@compute`]): admission control, adaptive
@@ -81,8 +78,8 @@ struct ReadmeDoctests;
 
 pub use id_effect_macro::{err, pipe};
 pub use id_effect_proc_macro::{
-  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, caps, caps_next, effect,
-  effect_local, effect_local_next, effect_next, effect_tagged, match_effect,
+  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, caps, effect, effect_local,
+  effect_tagged, match_effect,
 };
 
 // ── the 0.7 kernel ──────────────────────────────────────────────────────────────────────────
@@ -148,11 +145,3 @@ pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDat
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
 pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
-
-/// The 0.7 kernel's former side-by-side home: a hidden alias of the crate root, so every
-/// `id_effect::next::…` path keeps compiling until the rename sweep (`k-retire-sweep`) moves
-/// the call sites to `id_effect::…` and deletes it.
-#[doc(hidden)]
-pub mod next {
-  pub use crate::*;
-}

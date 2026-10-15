@@ -24,7 +24,7 @@ use super::metric::{
   Boundaries, Counter, Frequency, Gauge, Histogram, MetricCell, MetricKey, MetricKind, MetricState,
   MetricTags, Summary, SummaryConfig,
 };
-use crate::next::runtime::FiberRef;
+use crate::runtime::FiberRef;
 
 /// One recorded update, as a [`MetricListener`] sees it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -111,7 +111,7 @@ impl MetricRegistry {
 
   /// The fiber-local metric tags (Effect.ts `FiberRef.currentMetricLabels`): merged into the key
   /// of every effect-level update in that fiber, inherited by forked children. Set it with
-  /// [`Effect::tag_metrics`](crate::next::Effect::tag_metrics); read it with
+  /// [`Effect::tag_metrics`](crate::Effect::tag_metrics); read it with
   /// [`FiberRef::get_in`] from a runtime integration.
   pub fn fiber_tags() -> &'static FiberRef<MetricTags> {
     static TAGS: OnceLock<FiberRef<MetricTags>> = OnceLock::new();

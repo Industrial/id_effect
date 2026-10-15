@@ -1,6 +1,6 @@
 //! Ex 061 — `Stream::from_iterable` turns a finite iterator into a pull stream.
 use id_effect::Exit;
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 fn main() {
   let stream = Stream::<i32, ()>::from_iterable([1, 2, 3, 4]);

@@ -1,6 +1,6 @@
 //! Ex 071 — `broadcast` fans one stream out to several branches, driven by a pump effect.
 use id_effect::Exit;
-use id_effect::next::{Concurrency, Effect, Stream, all};
+use id_effect::{Concurrency, Effect, Stream, all};
 
 fn main() {
   let src = Stream::<i32, ()>::from_iterable(vec![1, 2, 3]);

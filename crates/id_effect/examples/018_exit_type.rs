@@ -1,6 +1,6 @@
 //! Ex 018 — `Exit` models a completed run (`Success` / `Failure(Cause)`).
-use id_effect::next::{Effect, die, fail, succeed};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, die, fail, succeed};
 
 fn main() {
   let ok: Effect<i32, ()> = succeed(42);

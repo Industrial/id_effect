@@ -1,4 +1,4 @@
-//! Managed resources on top of [`Scope`](crate::next::Scope): [`Cache`], [`Pool`] and
+//! Managed resources on top of [`Scope`](crate::Scope): [`Cache`], [`Pool`] and
 //! [`KeyedPool`] (Effect.ts `Cache`, `Pool`, `KeyedPool`). Filled by `c-resource`.
 //!
 //! Constructors are plain functions (`Pool::new`, `KeyedPool::new`, `Cache::new`), not effects:
@@ -6,10 +6,10 @@
 //! back in by a scope finalizer, so it returns to the pool however the scope closes, interrupt
 //! included. Time-to-live is measured on the running fiber's executor clock, so a
 //! `TestExecutor`'s virtual time drives expiry. `Scope` itself belongs to the kernel
-//! (`next::scope`).
+//! (`scope`).
 //!
 //! Waiting (for pool capacity, or for a cache lookup in flight) uses this module's own
-//! cancel-safe primitives (`gate`), not `next::coordination`.
+//! cancel-safe primitives (`gate`), not `coordination`.
 
 mod cache;
 mod gate;

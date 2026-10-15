@@ -6,10 +6,10 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use super::stream::Stream;
+use crate::capability::HNil;
+use crate::coordination::Queue;
 use crate::failure::Never;
-use crate::next::capability::HNil;
-use crate::next::coordination::Queue;
-use crate::next::kernel::Effect;
+use crate::kernel::Effect;
 
 type Driver<A, In, E, R> = Arc<dyn Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync>;
 
@@ -24,7 +24,7 @@ pub(crate) struct FoldState<A, In> {
 /// [`Stream::run`]). Cloning shares the driver.
 ///
 /// ```
-/// use id_effect::next::{Sink, Stream};
+/// use id_effect::{Sink, Stream};
 /// use id_effect::Never;
 ///
 /// let sum = Sink::<u32, u32, Never>::fold_left(0, |acc, x| acc + x);

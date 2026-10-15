@@ -1,5 +1,5 @@
 //! Ex 103 — A `KeyedPool` reuses values per key; a checked-out value returns when its scope closes.
-use id_effect::next::{Effect, KeyedPool, Scope, succeed};
+use id_effect::{Effect, KeyedPool, Scope, succeed};
 
 fn main() {
   let pool = KeyedPool::new(2, |k: &'static str| succeed(k.len() as u32));

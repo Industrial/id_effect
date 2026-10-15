@@ -16,9 +16,9 @@
 use super::anybox::{AnyBox, downcast_env, erase, unbox, unerase_exit};
 use super::cause::{map_fail_once, split_failure, to_exit};
 use super::runloop::{Frame, Instr, SeqBody, frame_vec};
+use crate::capability::HNil;
 use crate::failure::Never;
 use crate::failure::{Cause, Exit};
-use crate::next::capability::HNil;
 
 /// How many `map`/`flat_map` steps fuse into one typed synchronous closure before the chain
 /// spills into `Seq` frames. Short ready chains stay typed and allocation-cheap; a long chain must

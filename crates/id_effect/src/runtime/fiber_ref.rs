@@ -2,18 +2,18 @@
 //!
 //! Design A §1.3: the values live in the `refs` slots of each [`FiberContext`], never in
 //! thread-locals, so they follow the fiber across executor threads. A child forked with
-//! [`fork`](crate::next::Effect::fork), `fork_all` or [`Scope::fork_in`](crate::next::Scope)
+//! [`fork`](crate::Effect::fork), `fork_all` or [`Scope::fork_in`](crate::Scope)
 //! starts with a copy of its parent's slots at fork time; after that, each side's
 //! [`set`](FiberRef::set) is invisible to the other. A
-//! [`fork_daemon`](crate::next::Effect::fork_daemon) root inherits the same copy (Effect.ts
+//! [`fork_daemon`](crate::Effect::fork_daemon) root inherits the same copy (Effect.ts
 //! parity); only a fiber started from outside a fiber (`Runtime::fork`, a run edge) starts from
 //! the initial values.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::next::kernel::{Effect, Instr, MaskOp, erase};
-use crate::next::runtime::{FiberContext, RefSlot};
+use crate::kernel::{Effect, Instr, MaskOp, erase};
+use crate::runtime::{FiberContext, RefSlot};
 
 static NEXT_REF_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -67,7 +67,7 @@ impl<T: Clone + Send + Sync + 'static> FiberRef<T> {
     match fiber.ref_get(self.inner.id) {
       Some(slot) => match slot.downcast_ref::<T>() {
         Some(v) => v.clone(),
-        None => unreachable!("next: fiber ref slot holds a foreign type (kernel bug)"),
+        None => unreachable!("id_effect: fiber ref slot holds a foreign type (kernel bug)"),
       },
       None => self.inner.init.clone(),
     }

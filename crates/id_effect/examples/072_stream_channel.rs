@@ -1,7 +1,5 @@
 //! Ex 072 — `stream_from_channel` + `send_chunk` + `end_stream`.
-use id_effect::next::{
-  Chunk, Effect, StreamChannelFull, end_stream, send_chunk, stream_from_channel,
-};
+use id_effect::{Chunk, Effect, StreamChannelFull, end_stream, send_chunk, stream_from_channel};
 use id_effect::{Exit, Never};
 
 fn main() {

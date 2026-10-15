@@ -1,6 +1,6 @@
 //! Ex 049 — `all` runs effects on child fibers and collects their values in order.
 use id_effect::Exit;
-use id_effect::next::{Concurrency, Effect, all, succeed};
+use id_effect::{Concurrency, Effect, all, succeed};
 
 fn main() {
   let work: Vec<Effect<i32, ()>> = vec![succeed(10), succeed(20)];

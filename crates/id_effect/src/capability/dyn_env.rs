@@ -12,7 +12,7 @@
 //!
 //! ```
 //! use std::sync::Arc;
-//! use id_effect::next::{DynEnv, MissingCapability};
+//! use id_effect::{DynEnv, MissingCapability};
 //!
 //! struct Plugin(&'static str);
 //! struct Absent;
@@ -30,8 +30,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::next::capability::{HCons, HNil, need};
-use crate::next::kernel::{Effect, fail, succeed};
+use crate::capability::{HCons, HNil, need};
+use crate::kernel::{Effect, fail, succeed};
 
 type Slot = (&'static str, Arc<dyn Any + Send + Sync>);
 

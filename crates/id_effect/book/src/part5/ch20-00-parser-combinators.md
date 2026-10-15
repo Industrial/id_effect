@@ -75,7 +75,7 @@ When you need lossless serialization with a parser-shaped API, start with `Codec
 Collect stream chunks, flatten, then parse — [`parse_stream`](https://docs.rs/id_effect_parse/latest/id_effect_parse/fn.parse_stream.html) for typed buffers, [`parse_text_stream`](https://docs.rs/id_effect_parse/latest/id_effect_parse/fn.parse_text_stream.html) for UTF-8 text:
 
 ```rust
-use id_effect::next::{Chunk, Stream};
+use id_effect::{Chunk, Stream};
 use id_effect_parse::{parse_text_stream, tag};
 
 let parser = tag("ping");

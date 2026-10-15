@@ -10,9 +10,9 @@ mod derive_optics;
 mod derive_schema_parser;
 mod distributed_behavior;
 mod effect_data;
+mod effect_macro;
 mod effect_tagged;
 mod match_effect;
-mod next;
 mod provider_spec;
 
 use proc_macro::TokenStream;
@@ -111,27 +111,14 @@ pub fn match_effect(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro]
 pub fn effect(input: TokenStream) -> TokenStream {
-  next::effect::expand(input, false)
-}
-
-/// The side-by-side name of [`effect!`](macro@effect), kept until `k-retire-sweep` renames its
-/// call sites. Same expansion.
-#[proc_macro]
-pub fn effect_next(input: TokenStream) -> TokenStream {
-  next::effect::expand(input, false)
+  effect_macro::effect::expand(input, false)
 }
 
 /// Like `effect!`, but builds an `id_effect::LocalEffect`, whose body may hold `!Send` values.
 /// `~expr` binds a `LocalEffect` or a `Send` `Effect` over a part of `R`.
 #[proc_macro]
 pub fn effect_local(input: TokenStream) -> TokenStream {
-  next::effect::expand(input, true)
-}
-
-/// The side-by-side name of [`effect_local!`](macro@effect_local), kept until `k-retire-sweep`.
-#[proc_macro]
-pub fn effect_local_next(input: TokenStream) -> TokenStream {
-  next::effect::expand(input, true)
+  effect_macro::effect::expand(input, true)
 }
 
 /// `caps!(A, B, C)` is the environment type `HCons<A, HCons<B, HCons<C, HNil>>>`. A capability
@@ -139,13 +126,7 @@ pub fn effect_local_next(input: TokenStream) -> TokenStream {
 /// is still emitted so no further errors cascade.
 #[proc_macro]
 pub fn caps(input: TokenStream) -> TokenStream {
-  next::caps::expand(input)
-}
-
-/// The side-by-side name of [`caps!`](macro@caps), kept until `k-retire-sweep`.
-#[proc_macro]
-pub fn caps_next(input: TokenStream) -> TokenStream {
-  next::caps::expand(input)
+  effect_macro::caps::expand(input)
 }
 
 /// Derive field lenses and enum prisms for [`id_effect_optics`].

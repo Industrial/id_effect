@@ -17,7 +17,7 @@ the snapshot corpus, …) are listed in `docs/migration-0.7/k-retire-v1.md`.
 | 001 | `001_effect_value.rs` | `Effect` as a lazy value, `succeed`, `block_on` |
 | 002 | `002_fail_boundary.rs` | `fail`, `Exit::Failure` at the boundary |
 | 003–005 | `003_map` … `005_pipe` | `map`, `flat_map`, `.pipe` / `pipe!` |
-| 006–010 | `006_effect_macro_binds` … `010_one_effect_macro_per_fn` | `effect_next!` binds (`~expr`), `?` on a `Result` |
+| 006–010 | `006_effect_macro_binds` … `010_one_effect_macro_per_fn` | `effect!` binds (`~expr`), `?` on a `Result` |
 | 008 | `008_effect_macro_env.rs` | `~Service` capability read, `provide` |
 | 011–018 | `011_map_error` … `018_exit_type` | `map_err`, `catch`, `From` widening, `err!` / `Or`, `Cause`, `Exit` |
 | 037–039 | `037_from_async_basic` … `039_run_async` | `from_async`, `Runtime::run` |

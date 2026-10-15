@@ -1,5 +1,5 @@
 //! Ex 001 — `Effect` as a lazy value (`succeed`, run at the edge with `block_on`).
-use id_effect::next::{Effect, effect_next, succeed};
+use id_effect::{Effect, effect, succeed};
 use id_effect::{Exit, Never};
 
 fn number(n: i32) -> Effect<i32> {
@@ -7,7 +7,7 @@ fn number(n: i32) -> Effect<i32> {
 }
 
 fn program() -> Effect<i32, Never> {
-  effect_next!({
+  effect!({
     let a = ~number(40);
     let b = ~number(2);
     a + b

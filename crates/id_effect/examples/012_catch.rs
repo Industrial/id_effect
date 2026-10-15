@@ -1,13 +1,13 @@
 //! Ex 012 — `catch` recovers from a typed failure.
 use id_effect::Exit;
-use id_effect::next::{Effect, effect_next, succeed};
+use id_effect::{Effect, effect, succeed};
 
 fn parse_i32(raw: &'static str) -> Effect<i32, &'static str> {
-  effect_next!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+  effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
 }
 
 fn main() {
-  let program: Effect<i32, &'static str> = effect_next!({
+  let program: Effect<i32, &'static str> = effect!({
     let v = ~parse_i32("x").catch(|_| succeed(0));
     v + 42
   });

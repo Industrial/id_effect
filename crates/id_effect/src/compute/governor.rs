@@ -11,7 +11,7 @@ use super::policy::{MetricMode, ResourcePolicy, WorkProfile};
 use super::rayon_pool;
 use super::spread::CpuSpreadBucket;
 use super::telemetry::{TelemetryEngine, TelemetrySnapshot};
-use crate::next::observability::{ComputeEvent, record_compute_event};
+use crate::observability::{ComputeEvent, record_compute_event};
 
 /// Resource governor for a [`super::ComputeFabric`]: compares telemetry to [`ResourcePolicy`]
 /// and throttles admission, resizes Rayon, or emits scale-out jobs.

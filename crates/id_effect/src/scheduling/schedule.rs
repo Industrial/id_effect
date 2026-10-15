@@ -28,7 +28,7 @@
 //!
 //! # Re-running an effect
 //!
-//! A `next` [`Effect`] is a single-shot value (its steps are `FnOnce`), so it cannot be re-run
+//! An [`Effect`] is a single-shot value (its steps are `FnOnce`), so it cannot be re-run
 //! as an Effect.ts effect can. `retry` / `repeat` are therefore associated functions on `Effect`
 //! that take the effect's *factory* (`Fn() -> Effect`), called once per attempt and only when the
 //! attempt starts: `Effect::retry(|| fetch(id), schedule)`. There are no free `retry` / `repeat`
@@ -49,7 +49,7 @@
 //! use std::time::Duration;
 //!
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, Schedule, fail, succeed};
+//! use id_effect::{Effect, Schedule, fail, succeed};
 //!
 //! let tries = Arc::new(AtomicU32::new(0));
 //! let t = Arc::clone(&tries);
@@ -73,7 +73,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::next::kernel::{Ctx, Effect, fail, sleep, succeed, suspend};
+use crate::kernel::{Ctx, Effect, fail, sleep, succeed, suspend};
 
 // ── state and step ──────────────────────────────────────────────────────────────────────────
 

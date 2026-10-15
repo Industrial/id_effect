@@ -1,4 +1,4 @@
-//! [`Stream`]: a pull-based, chunked stream on the next kernel.
+//! [`Stream`]: a pull-based, chunked stream on the 0.7 kernel.
 //!
 //! A stream is an owned *pull*: a boxed `FnOnce(max) -> Effect<Step>` whose step is either the
 //! end or one chunk plus the rest of the stream. Operators move their state (counters, buffers,
@@ -16,12 +16,12 @@ use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::capability::HNil;
+use crate::concurrency::{Concurrency, fork_all};
+use crate::coordination::{Queue, QueueError};
 use crate::failure::Never;
-use crate::next::capability::HNil;
-use crate::next::concurrency::{Concurrency, fork_all};
-use crate::next::coordination::{Queue, QueueError};
-use crate::next::kernel::{Effect, fail, succeed, suspend, yield_fiber};
-use crate::next::streaming::chunk::Chunk;
+use crate::kernel::{Effect, fail, succeed, suspend, yield_fiber};
+use crate::streaming::chunk::Chunk;
 
 /// The chunk size a consumer asks for when it does not choose one ([`Stream::next_chunk`] and
 /// the `run_*` consumers).
@@ -48,7 +48,7 @@ pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// proportional to the chunk size and infinite sources work.
 ///
 /// ```
-/// use id_effect::next::Stream;
+/// use id_effect::Stream;
 /// use id_effect::Never;
 ///
 /// let out = Stream::<u64, Never>::from_iterable(0..)
@@ -243,7 +243,7 @@ where
   /// pulls, and an empty batch is simply pulled again.
   ///
   /// ```
-  /// use id_effect::next::{Stream, succeed};
+  /// use id_effect::{Stream, succeed};
   /// use id_effect::Never;
   ///
   /// let mut next = 0_u64;

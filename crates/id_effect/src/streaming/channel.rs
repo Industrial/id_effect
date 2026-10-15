@@ -1,6 +1,6 @@
 //! The stream-, sink- and fold-backed channel variants of the 0.6 `coordination::Channel`,
 //! deferred by `c-coordination` to the streaming leaf and built here on top of
-//! [`next::coordination::{Queue, Channel}`](crate::next::coordination):
+//! [`coordination::{Queue, Channel}`](crate::coordination):
 //!
 //! - [`Channel::to_stream`] / [`Stream::from_channel`]: read a queue-backed [`Channel`] as a
 //!   stream (one `read` per pull, so nothing is read ahead); [`Channel::to_sink`] writes a stream
@@ -15,10 +15,10 @@ use std::sync::{Arc, Mutex};
 
 use super::sink::Sink;
 use super::stream::{Stream, lock};
+use crate::capability::HNil;
+use crate::coordination::{Channel, Queue, QueueError};
 use crate::failure::Never;
-use crate::next::capability::HNil;
-use crate::next::coordination::{Channel, Queue, QueueError};
-use crate::next::kernel::{Effect, succeed, suspend, sync};
+use crate::kernel::{Effect, succeed, suspend, sync};
 
 type Emit<A> = Arc<dyn Fn(A) -> Vec<A> + Send + Sync>;
 
@@ -236,7 +236,7 @@ type FoldFn<Acc, In> = Arc<dyn Fn(Acc, In) -> Acc + Send + Sync>;
 /// the same accumulator.
 ///
 /// ```
-/// use id_effect::next::{FoldChannel, Stream};
+/// use id_effect::{FoldChannel, Stream};
 /// use id_effect::Never;
 ///
 /// let sum = FoldChannel::from_fold(0_u32, |acc, x: u32| acc + x);

@@ -1,7 +1,7 @@
 //! Typed capability access from a running effect: `Ctx::get`, `Ctx::bind` via
 //! `Bindable<R, Is>`, and `BindFuture`. Filled by `k-typed-r`.
 //!
-//! Inside an async body (`Effect::from_ctx`, the `effect_next!` target) `ctx.get::<T>()` reads a
+//! Inside an async body (`Effect::from_ctx`, the `effect!` target) `ctx.get::<T>()` reads a
 //! capability and `ctx.bind(sub).await` (what `~sub` expands to) runs a sub-effect whose
 //! environment is a subset of the body's `R`, **on the same fiber**: the sub-effect sees the
 //! fiber's interrupt flag and mask, and an interrupt reaches it while it is suspended, so its
@@ -30,9 +30,9 @@ use super::cause::{InterruptSignal, split_failure};
 use super::ctx::Ctx;
 use super::effect::{Effect, Node};
 use super::runloop::{Runloop, settle_instr};
+use crate::capability::{Embed, HList, Selector};
 use crate::failure::Cause;
-use crate::next::capability::{Embed, HList, Selector};
-use crate::next::runtime::FiberContext;
+use crate::runtime::FiberContext;
 
 impl<R> Ctx<R> {
   /// Capability `T` at the inferred index (what `~T` expands to). A missing `T` is a compile
@@ -49,7 +49,7 @@ impl<R> Ctx<R> {
   ///
   /// Several binds may be suspended at once (under a `join`): each still sees an interrupt of
   /// the fiber when it is next polled (`BindHold` in `kernel/bind.rs`). They share the fiber,
-  /// so they run interleaved, not in parallel; `~(a, b, ..)` in `effect_next!` forks them.
+  /// so they run interleaved, not in parallel; `~(a, b, ..)` in `effect!` forks them.
   pub fn bind<X, Is>(&self, sub: X) -> BindFuture<X::Output, X::Error>
   where
     X: Bindable<R, Is>,
@@ -296,7 +296,9 @@ fn non_fail_payload<E>(cause: Cause<E>) -> Box<dyn std::any::Any + Send> {
   }
   match first_interrupt(&cause) {
     Some(id) => Box::new(InterruptSignal(id)),
-    None => Box::new(String::from("next: empty cause in a `~` bind (kernel bug)")),
+    None => Box::new(String::from(
+      "id_effect: empty cause in a `~` bind (kernel bug)",
+    )),
   }
 }
 
@@ -325,7 +327,7 @@ impl<B: 'static, E: 'static> BindFuture<B, E> {
     match &mut self.state {
       BindState::Ready(r) => match r.take() {
         Some(r) => Poll::Ready(r),
-        None => unreachable!("next: bind polled after completion"),
+        None => unreachable!("id_effect: bind polled after completion"),
       },
       BindState::Running {
         rl, fiber, hold, ..
@@ -364,10 +366,10 @@ mod tests {
   use std::time::{Duration, Instant};
 
   use super::*;
+  use crate::capability::{HCons, HNil};
   use crate::failure::Exit;
-  use crate::next::capability::{HCons, HNil};
-  use crate::next::kernel::{Instr, MaskOp, erase};
-  use crate::next::runtime::{BoxFuture, Executor, LocalBoxFuture, NotLocal};
+  use crate::kernel::{Instr, MaskOp, erase};
+  use crate::runtime::{BoxFuture, Executor, LocalBoxFuture, NotLocal};
 
   struct NoExec;
 

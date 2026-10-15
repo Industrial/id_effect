@@ -1,5 +1,5 @@
 //! Ex 102 — A `Semaphore` gates concurrent work; a `Permit` is released on drop.
-use id_effect::next::{Effect, Semaphore};
+use id_effect::{Effect, Semaphore};
 
 fn main() {
   let sem = Semaphore::new(1);

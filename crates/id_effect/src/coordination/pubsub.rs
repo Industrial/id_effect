@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use super::queue::Queue;
 use super::waiters::{Signal, lock};
 use crate::failure::Never;
-use crate::next::kernel::{Effect, from_async, suspend, sync};
-use crate::next::scope::Scope;
+use crate::kernel::{Effect, from_async, suspend, sync};
+use crate::scope::Scope;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HubStrategy {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use id_effect::Exit;
-use id_effect::next::{Effect, effect_next, sync};
+use id_effect::{Effect, effect, sync};
 
 fn bump(n: &Arc<AtomicU32>) -> Effect<()> {
   let n = Arc::clone(n);
@@ -15,7 +15,7 @@ fn bump(n: &Arc<AtomicU32>) -> Effect<()> {
 fn main() {
   let calls = Arc::new(AtomicU32::new(0));
   let c = Arc::clone(&calls);
-  let program: Effect<i32> = effect_next!({
+  let program: Effect<i32> = effect!({
     ~bump(&c);
     ~bump(&c);
     42

@@ -1,4 +1,4 @@
-//! `effect!` / `effect_local!` (aliases `effect_next!` / `effect_local_next!`): an async body with `~` reads and binds over a typed `R`.
+//! `effect!` / `effect_local!`: an async body with `~` reads and binds over a typed `R`.
 //!
 //! - `effect!({ body })` or `effect!(|r: &Caps| { body })` (also `|r|`, `||`). With no
 //!   type, `R` comes from the expected type (the fn return type). With `: &Caps`, `R = Caps`. A
@@ -187,13 +187,13 @@ fn expr_end(t: &[TokenTree], mut i: usize) -> usize {
   i
 }
 
-/// A nested effect macro (`effect!`, `effect_local!` or their temporary `_next` names) owns its
-/// own `~` tokens: its group is copied untouched.
+/// A nested effect macro (`effect!` or `effect_local!`) owns its own `~` tokens: its group is
+/// copied untouched.
 fn is_nested_effect_macro(out: &[TokenTree]) -> bool {
   let n = out.len();
   n >= 2
     && matches!(&out[n - 1], TokenTree::Punct(p) if p.as_char() == '!')
-    && matches!(&out[n - 2], TokenTree::Ident(id) if matches!(id.to_string().as_str(), "effect" | "effect_local" | "effect_next" | "effect_local_next"))
+    && matches!(&out[n - 2], TokenTree::Ident(id) if matches!(id.to_string().as_str(), "effect" | "effect_local"))
 }
 
 /// The most effects one `~(a, b, ..)` joins (`__private::JoinTuple` impls).

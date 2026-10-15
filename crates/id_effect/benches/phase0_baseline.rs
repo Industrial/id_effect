@@ -3,20 +3,20 @@
 //!
 //! Kernel measured, per bench:
 //!
-//! - `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`: the 0.7 kernel
-//!   (`id_effect::next`), run through its real edge `Effect::block_on` (v0.6 ran
+//! - `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`: the 0.7 kernel,
+//!   run through its real edge `Effect::block_on` (v0.6 ran
 //!   `pollster::block_on(effect.run(&mut ()))`). Same workload: `succeed(1)` then 4 maps / 4
 //!   `succeed` binds.
-//! - `phase0/bench_env_insert_overhead`: `id_effect::next::DynEnv::insert` (v0.6: `Env::insert`
+//! - `phase0/bench_env_insert_overhead`: `id_effect::DynEnv::insert` (v0.6: `Env::insert`
 //!   of `Cap<Bench>`), one insert into a fresh environment.
 //! - `phase0/bench_schedule_retry_overhead`: the 0.7 kernel, `Effect::retry` with
-//!   `next::Schedule::recurs(3)` through `Effect::block_on` (v0.6: the free `retry` with
+//!   `Schedule::recurs(3)` through `Effect::block_on` (v0.6: the free `retry` with
 //!   `pollster::block_on`). Same workload: two failures, then a success.
-//! - `phase0/bench_stream_throughput_collect`: the 0.7 `next::Stream` (`m-streams`) through
+//! - `phase0/bench_stream_throughput_collect`: the 0.7 `Stream` (`m-streams`) through
 //!   `Effect::block_on` (v0.6: `pollster::block_on(effect.run(&mut ()))`). Same workload: 1024
 //!   items through `map` and `filter` into `run_collect`.
 
-use ::id_effect::next::{self as k, DynEnv, Effect, HNil};
+use ::id_effect::{self as k, DynEnv, Effect, HNil};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

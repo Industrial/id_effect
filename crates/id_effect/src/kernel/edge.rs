@@ -2,9 +2,9 @@
 //! `Effect::try_block_on`. Filled by `k-edge`.
 
 use super::effect::Effect;
+use crate::capability::HNil;
 use crate::failure::Exit;
-use crate::next::capability::HNil;
-use crate::next::runtime::{BlockOnInAsync, Runtime};
+use crate::runtime::{BlockOnInAsync, Runtime};
 
 #[allow(
   clippy::disallowed_methods,

@@ -1,5 +1,5 @@
 //! Ex 100 — A duplex `Channel` backed by a `Queue` (write / read outside a `Stream`).
-use id_effect::next::{Channel, Effect};
+use id_effect::{Channel, Effect};
 
 fn main() {
   let ch = Channel::<i32>::duplex_unbounded();

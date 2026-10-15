@@ -1,6 +1,6 @@
 //! Ex 051 — `FiberRef` stores a fiber-local value.
 use id_effect::Exit;
-use id_effect::next::{Effect, FiberRef};
+use id_effect::{Effect, FiberRef};
 
 fn main() {
   let r = FiberRef::new(0_u32);

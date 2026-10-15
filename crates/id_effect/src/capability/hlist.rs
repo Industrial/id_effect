@@ -16,7 +16,7 @@
 //! the length of `R`. The `.stderr` shapes are pinned by `k-ui-suite`.
 //!
 //! A capability that appears twice in `R` is ambiguous (E0283, "type annotations needed"):
-//! `on_unimplemented` does not fire on ambiguity. `caps_next!` rejects duplicates at the
+//! `on_unimplemented` does not fire on ambiguity. `caps!` rejects duplicates at the
 //! declaration, and `Layer::merge` deduplicates shared inputs (`k-layer-base`).
 
 use std::marker::PhantomData;
@@ -69,7 +69,7 @@ impl<H: Send + Sync + 'static, T: HList> HList for HCons<H, T> {
 #[diagnostic::on_unimplemented(
   message = "capability `{T}` is not in this effect's environment",
   label = "`{T}` is required here",
-  note = "add `{T}` to the effect's `caps_next!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running"
+  note = "add `{T}` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running"
 )]
 pub trait Selector<T, I> {
   /// The capability.
@@ -164,7 +164,7 @@ where
 #[diagnostic::on_unimplemented(
   message = "the environment `{Self}` does not contain every capability of `{Sub}`",
   label = "cannot narrow `{Self}` to `{Sub}`",
-  note = "a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `{Sub}` in `{Self}`; add the missing ones to the caller's `caps_next!(..)`"
+  note = "a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `{Sub}` in `{Self}`; add the missing ones to the caller's `caps!(..)`"
 )]
 pub trait Embed<Sub, Is> {
   /// The sub-environment.
@@ -215,15 +215,15 @@ impl<H: Send + Sync + 'static, T: Concat<Rhs>, Rhs> Concat<Rhs> for HCons<H, T> 
 /// Builds an environment value: `hlist![Db::new(), Logger::default()]`.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __next_hlist {
+macro_rules! __hlist {
   () => { $crate::HNil };
   ($head:expr $(, $rest:expr)* $(,)?) => {
-    $crate::HCons::new($head, $crate::__next_hlist!($($rest),*))
+    $crate::HCons::new($head, $crate::__hlist!($($rest),*))
   };
 }
 
 #[doc(inline)]
-pub use crate::__next_hlist as hlist;
+pub use crate::__hlist as hlist;
 
 #[cfg(test)]
 mod tests {

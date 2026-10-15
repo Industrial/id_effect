@@ -6,14 +6,14 @@
 //! element, expands it through the read side ([`map_out`](Channel::map_out),
 //! [`flat_map_out`](Channel::flat_map_out)) and returns it, or `None` once the queue is shut down
 //! and drained. The v1 stream-, sink- and fold-backed variants depend on `Stream`/`Sink`, which
-//! are not on the next kernel yet; they move with the streaming leaf (`m-streams`).
+//! are not on the 0.7 kernel yet; they move with the streaming leaf (`m-streams`).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use super::queue::{Queue, QueueError};
 use super::waiters::lock;
-use crate::next::kernel::{Effect, from_async};
+use crate::kernel::{Effect, from_async};
 
 type Ingest<In, Out> = Arc<dyn Fn(In) -> Vec<Out> + Send + Sync>;
 type Emit<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
@@ -22,7 +22,7 @@ type Emit<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
 /// another handle on the same queue and read buffer.
 ///
 /// ```
-/// use id_effect::next::Channel;
+/// use id_effect::Channel;
 /// use id_effect::Never;
 ///
 /// let ch = Channel::<u32>::duplex_unbounded().map_in(|s: &str| s.len() as u32);

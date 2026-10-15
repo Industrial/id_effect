@@ -1,6 +1,6 @@
 //! Ex 071 — `map_serial` takes an `FnMut` closure with mutable state.
 use id_effect::Exit;
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 fn main() {
   let mut offset = 0_i32;

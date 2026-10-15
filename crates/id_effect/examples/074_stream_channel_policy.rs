@@ -1,5 +1,5 @@
 //! Ex 074 — `stream_from_channel_with_policy` selects the queue backpressure mode.
-use id_effect::next::{
+use id_effect::{
   BackpressurePolicy, Chunk, Effect, StreamChannelFull, end_stream, send_chunk,
   stream_from_channel_with_policy,
 };

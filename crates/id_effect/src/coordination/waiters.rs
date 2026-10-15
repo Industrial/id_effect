@@ -18,10 +18,10 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::Waker;
 
+use crate::capability::HNil;
 use crate::failure::Cause;
 use crate::failure::FiberId;
-use crate::next::capability::HNil;
-use crate::next::kernel::{AnyEnv, Effect, Instr, erase_exit};
+use crate::kernel::{AnyEnv, Effect, Instr, erase_exit};
 
 /// Locks `m`, recovering the guard from a poisoned mutex (a panicking user closure in an update
 /// must not wedge the primitive for every other fiber).

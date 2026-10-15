@@ -1,6 +1,6 @@
 //! Ex 064 — `scan` carries state while emitting mapped outputs.
 use id_effect::Exit;
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 fn main() {
   let s = Stream::<i64, ()>::range(1, 5).scan(0_i64, |acc, x| {

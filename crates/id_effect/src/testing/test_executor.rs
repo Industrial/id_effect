@@ -16,7 +16,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
-use crate::next::runtime::{BoxFuture, Executor, LocalBoxFuture, NotLocal};
+use crate::runtime::{BoxFuture, Executor, LocalBoxFuture, NotLocal};
 
 static NEXT_EXECUTOR_ID: AtomicU64 = AtomicU64::new(0);
 

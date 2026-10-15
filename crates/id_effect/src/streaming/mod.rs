@@ -1,9 +1,9 @@
-//! Streams on the `next` kernel (`m-streams`): a pull-based, chunked [`Stream`], its consumers
+//! Streams on the 0.7 kernel (`m-streams`): a pull-based, chunked [`Stream`], its consumers
 //! ([`Sink`]), producer-fed streams ([`stream_from_channel`] / [`StreamSender`]), and the
 //! stream-, sink- and fold-backed channels ([`StreamChannel`], [`FoldChannel`],
 //! `Channel::to_stream` / `to_sink`).
 //!
-//! | 0.6 (`id_effect::streaming`) | 0.7 (`id_effect::next`) |
+//! | 0.6 (`id_effect::streaming`) | 0.7 |
 //! |---|---|
 //! | `Arc<Mutex<StreamState>>`, locked on every pull | an owned pull: the rest of the stream is returned with each chunk, no lock |
 //! | `poll_next_chunk(&mut self, &mut env)` | [`Stream::next_chunk`]`(self)` → `Effect<Option<(Chunk, Stream)>>` |
@@ -18,7 +18,7 @@
 //! [`Transducer`] are the kernel-independent 0.6 types, shared.
 //!
 //! ```
-//! use id_effect::next::{Stream, succeed};
+//! use id_effect::{Stream, succeed};
 //! use id_effect::Never;
 //!
 //! // Sequential effectful map, then a bounded-concurrency one.

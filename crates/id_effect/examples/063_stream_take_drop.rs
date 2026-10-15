@@ -1,6 +1,6 @@
 //! Ex 063 — `take`, `take_while`, `drop_while`.
 use id_effect::Exit;
-use id_effect::next::Stream;
+use id_effect::Stream;
 
 fn main() {
   let s = Stream::<i64, ()>::range(0, 100)

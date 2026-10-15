@@ -56,7 +56,7 @@ pub(crate) fn map_fail_once<E, E2>(c: Cause<E>, f: impl FnOnce(E) -> E2) -> Caus
   map_fail_mut(c, &mut |e| match f.take() {
     Some(f) => Cause::Fail(f(e)),
     None => Cause::Die(Defect::new(
-      "next: map_err saw a second typed failure in a composite cause",
+      "id_effect: map_err saw a second typed failure in a composite cause",
     )),
   })
   .flatten()
@@ -80,7 +80,7 @@ pub(crate) fn split_failure<E, E2>(c: Cause<E>) -> Result<E, Cause<E2>> {
   }
   first(c).map_err(|no_fail| {
     map_fail_mut(no_fail, &mut |_| -> E2 {
-      unreachable!("next: split_failure checked there is no Fail")
+      unreachable!("id_effect: split_failure checked there is no Fail")
     })
   })
 }
@@ -187,7 +187,7 @@ mod tests {
       m,
       Cause::both(
         Cause::fail(10),
-        Cause::die("next: map_err saw a second typed failure in a composite cause")
+        Cause::die("id_effect: map_err saw a second typed failure in a composite cause")
       )
     );
   }

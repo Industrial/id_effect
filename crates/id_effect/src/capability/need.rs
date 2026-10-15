@@ -5,7 +5,7 @@
 //! a parameter of the builder's methods, not of `need`, so `need::<T>()` needs no other turbofish.
 //!
 //! ```
-//! use id_effect::next::{Effect, HCons, HNil, need};
+//! use id_effect::{Effect, HCons, HNil, need};
 //!
 //! struct Greeting(&'static str);
 //!
@@ -18,10 +18,10 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::next::capability::Selector;
-use crate::next::kernel::{Effect, Node};
+use crate::capability::Selector;
+use crate::kernel::{Effect, Node};
 
-/// Reads capability `T` from the environment (combinator style; `effect_next!` spells it `~T`).
+/// Reads capability `T` from the environment (combinator style; `effect!` spells it `~T`).
 /// See [`Need`].
 pub fn need<T>() -> Need<T> {
   Need(PhantomData)

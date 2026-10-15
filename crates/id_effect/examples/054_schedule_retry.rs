@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use id_effect::Exit;
-use id_effect::next::{Effect, Schedule, fail, succeed, suspend};
+use id_effect::{Effect, Schedule, fail, succeed, suspend};
 
 fn main() {
   let n = Arc::new(AtomicU32::new(0));

@@ -1,13 +1,13 @@
-//! Ex 010 — One `effect_next!` per function; control flow stays inside the block.
+//! Ex 010 — One `effect!` per function; control flow stays inside the block.
 use id_effect::Exit;
-use id_effect::next::{Effect, effect_next, succeed};
+use id_effect::{Effect, effect, succeed};
 
 fn number(n: i32) -> Effect<i32> {
   succeed(n)
 }
 
 fn branch(flag: bool) -> Effect<i32> {
-  effect_next!({
+  effect!({
     if flag {
       let x = ~number(40);
       x + 2

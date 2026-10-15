@@ -6,9 +6,9 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use super::stream::{FailSlot, Stream, lock, queue_source};
+use crate::coordination::Queue;
 use crate::failure::Never;
-use crate::next::coordination::Queue;
-use crate::next::kernel::{Effect, succeed, suspend, sync, yield_fiber};
+use crate::kernel::{Effect, succeed, suspend, sync, yield_fiber};
 
 /// `(consumer streams, pump effect)` from [`Stream::broadcast`].
 pub type StreamBroadcastFanout<A, E, R> = (Vec<Stream<A, E, R>>, Effect<(), E, R>);

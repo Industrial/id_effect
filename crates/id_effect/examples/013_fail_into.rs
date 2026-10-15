@@ -1,7 +1,7 @@
-//! Ex 013 — `fail(domain).map_err(Into::into)` when `E: From<SmallErr>`; `effect_next!` widens a
+//! Ex 013 — `fail(domain).map_err(Into::into)` when `E: From<SmallErr>`; `effect!` widens a
 //! bound effect's error through `From` on its own.
-use id_effect::next::{Effect, effect_next, fail};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, effect, fail};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum AppErr {
@@ -23,7 +23,7 @@ fn main() {
     program.block_on(),
     Exit::Failure(Cause::Fail(AppErr::Msg("boom")))
   );
-  let widened: Effect<(), AppErr> = effect_next!({ ~step() });
+  let widened: Effect<(), AppErr> = effect!({ ~step() });
   assert_eq!(
     widened.block_on(),
     Exit::Failure(Cause::Fail(AppErr::Msg("boom")))

@@ -13,8 +13,8 @@ use std::task::{Context, Poll, Waker};
 
 use super::waiters::{WaitList, lock, wake_all};
 use crate::failure::Never;
-use crate::next::kernel::{Effect, from_async, sync, uninterruptible_mask};
-use crate::next::scope::Scope;
+use crate::kernel::{Effect, from_async, sync, uninterruptible_mask};
+use crate::scope::Scope;
 
 struct State {
   permits: usize,

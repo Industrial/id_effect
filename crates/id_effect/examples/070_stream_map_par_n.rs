@@ -1,6 +1,6 @@
 //! Ex 070 — `map_effect_par(n, f)` runs up to `n` element effects at once, keeping order.
 use id_effect::Exit;
-use id_effect::next::{Stream, succeed};
+use id_effect::{Stream, succeed};
 
 fn main() {
   let s = Stream::<i32, ()>::from_iterable([1, 2, 3, 4]).map_effect_par(2, |n| succeed(n * 10));

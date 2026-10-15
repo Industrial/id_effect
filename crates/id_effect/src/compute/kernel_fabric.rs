@@ -1,10 +1,10 @@
 //! The Compute Fabric as the fiber admission scheduler (ADR 0007 Amendment 1, D6). Filled by
 //! `c-fabric-scheduler`.
 //!
-//! [`Concurrency::Inherit`](crate::next::Concurrency::Inherit) awaits an asynchronous admission
+//! [`Concurrency::Inherit`](crate::Concurrency::Inherit) awaits an asynchronous admission
 //! permit from the ambient [`Fabric`] before each child of
-//! [`fork_all`](crate::next::fork_all) (and so of `all`, `for_each_par`, `zip_par`, …) starts.
-//! [`Concurrency::Bounded(n)`](crate::next::Concurrency::Bounded) stays a purely local bound
+//! [`fork_all`](crate::fork_all) (and so of `all`, `for_each_par`, `zip_par`, …) starts.
+//! [`Concurrency::Bounded(n)`](crate::Concurrency::Bounded) stays a purely local bound
 //! and never consults the fabric; with no ambient fabric, `Inherit` is `Unbounded`.
 //!
 //! # Finding the ambient fabric
@@ -30,7 +30,7 @@
 //!
 //! ```
 //! use std::sync::Arc;
-//! use id_effect::next::{Concurrency, Effect, Fabric, TestExecutor, all, succeed};
+//! use id_effect::{Concurrency, Effect, Fabric, TestExecutor, all, succeed};
 //! use id_effect::Never;
 //!
 //! let fabric = Fabric::with_capacity(2); // at most 2 `Inherit` children run at once
@@ -48,12 +48,12 @@ use std::sync::{Arc, OnceLock};
 
 #[cfg(feature = "compute")]
 use crate::compute::{AdmissionController, ComputeFabric, TelemetryEngine};
-use crate::next::concurrency::{Admission, AdmissionPermit};
-use crate::next::kernel::Effect;
-use crate::next::runtime::{BoxFuture, FiberContext, FiberRef};
+use crate::concurrency::{Admission, AdmissionPermit};
+use crate::kernel::Effect;
+use crate::runtime::{BoxFuture, FiberContext, FiberRef};
 
 /// The compute fabric as seen by the 0.7 kernel: the [`Admission`] that
-/// [`Concurrency::Inherit`](crate::next::Concurrency::Inherit) children await.
+/// [`Concurrency::Inherit`](crate::Concurrency::Inherit) children await.
 ///
 /// Cheap to clone (an `Arc`); clones share the same capacity.
 #[derive(Clone)]

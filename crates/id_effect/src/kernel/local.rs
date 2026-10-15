@@ -44,14 +44,12 @@ use super::cause::{
 use super::ctx::Ctx;
 use super::effect::{Effect, Node};
 use super::runloop::{Instr, Runloop};
+use crate::capability::{HNil, Plucker};
 use crate::failure::Never;
 use crate::failure::{Cause, Defect, Exit};
-use crate::next::capability::{HNil, Plucker};
-use crate::next::observability::{Span, SpanHook};
-use crate::next::runtime::{
-  BlockOnInAsync, Executor, FiberContext, LocalBoxFuture, NotLocal, Runtime,
-};
-use crate::next::runtime::{finish_children, in_async_context, park_on};
+use crate::observability::{Span, SpanHook};
+use crate::runtime::{BlockOnInAsync, Executor, FiberContext, LocalBoxFuture, NotLocal, Runtime};
+use crate::runtime::{finish_children, in_async_context, park_on};
 
 /// An erased `!Send` runloop value.
 type LBox = Box<dyn Any>;
@@ -70,7 +68,7 @@ fn lerase<T: 'static>(t: T) -> LBox {
 fn lunbox<T: 'static>(b: LBox) -> T {
   match b.downcast::<T>() {
     Ok(t) => *t,
-    Err(_) => panic!("next: local erased value type mismatch (kernel bug)"),
+    Err(_) => panic!("id_effect: local erased value type mismatch (kernel bug)"),
   }
 }
 
@@ -196,7 +194,7 @@ impl LocalRunloop {
       }
       None => match self.cur.take() {
         Some(i) => i,
-        None => unreachable!("next: local runloop polled after completion"),
+        None => unreachable!("id_effect: local runloop polled after completion"),
       },
     };
     loop {
@@ -262,7 +260,7 @@ impl LocalRunloop {
         (exit, _) => return Some(self.unwind(exit)),
       };
       let Some(LFrame::Cont(k)) = self.stack.pop() else {
-        unreachable!("next: checked Cont frame (kernel bug)")
+        unreachable!("id_effect: checked Cont frame (kernel bug)")
       };
       exit = match k(v) {
         LInstr::Pure(e) => e,
@@ -415,7 +413,7 @@ where
     })))
   }
 
-  /// An async body that owns a [`Ctx<R>`] (the `effect_local_next!` target).
+  /// An async body that owns a [`Ctx<R>`] (the `effect_local!` target).
   pub fn from_ctx<F, Fut>(f: F) -> Self
   where
     F: FnOnce(Ctx<R>) -> Fut + 'static,
@@ -598,7 +596,7 @@ where
   }
 
   /// Drives this effect under `ctx`'s env and fiber, as the returned future's own local runloop
-  /// (crate hook for `effect_local_next!` binds).
+  /// (crate hook for `effect_local!` binds).
   pub(crate) fn run_in(self, ctx: Ctx<R>) -> LocalRunFuture<A, E> {
     let state = match self.node {
       LNode::Ready(r) => LRunState::Ready(Some(r)),
@@ -684,7 +682,7 @@ impl<A: 'static, E: 'static> Future for LocalRunFuture<A, E> {
     match &mut self.get_mut().state {
       LRunState::Ready(r) => Poll::Ready(to_exit(
         r.take()
-          .expect("next: LocalRunFuture polled after completion"),
+          .expect("id_effect: LocalRunFuture polled after completion"),
       )),
       LRunState::Running(rl) => Pin::new(rl)
         .poll(cx)
@@ -832,7 +830,7 @@ impl<A: Send + 'static, E: Send + 'static> LocalEffect<A, E, HNil> {
 }
 
 /// A nested runloop on the enclosing runloop's fiber that holds one mask level while it is
-/// suspended (the local twin of `BindFuture`'s hold, used by `~` binds in `effect_local_next!`
+/// suspended (the local twin of `BindFuture`'s hold, used by `~` binds in `effect_local!`
 /// and by [`Effect::local`]).
 ///
 /// Without it, an interrupt of a suspended nested runloop is seen first by the enclosing
@@ -877,7 +875,7 @@ impl<F> Drop for HoldMask<F> {
   }
 }
 
-/// What `~e` binds inside `effect_local_next!`: a [`LocalEffect`] or a `Send` [`Effect`] over
+/// What `~e` binds inside `effect_local!`: a [`LocalEffect`] or a `Send` [`Effect`] over
 /// the same environment.
 pub trait IntoLocal<A, E, R> {
   /// The `!Send` view of `self` (free for an `Effect`).

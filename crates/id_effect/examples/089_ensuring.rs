@@ -2,7 +2,7 @@
 use std::sync::{Arc, Mutex};
 
 use id_effect::Never;
-use id_effect::next::{Effect, fail, succeed, sync};
+use id_effect::{Effect, fail, succeed, sync};
 
 fn bump_fin(calls: Arc<Mutex<usize>>) -> Effect<(), Never> {
   sync(move || *calls.lock().expect("mutex") += 1)

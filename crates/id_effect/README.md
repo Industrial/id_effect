@@ -50,7 +50,6 @@ Algebraic type classes, persistent (`im`) collections and STM live in the mainte
 ## Construct catalog (`src/`)
 
 Every module's items are re-exported at the crate root (`use id_effect::{Effect, Layer, Stream, …}`).
-`id_effect::next::…` is a hidden alias of the root kept for the 0.7 rename sweep.
 
 | Module | What lives there |
 |--------|------------------|
@@ -72,7 +71,7 @@ Every module's items are re-exported at the crate root (`use id_effect::{Effect,
 | `foundation` | `Either`, `Pipe` (+ `pipe!`), `Predicate`, `identity` / `always` / `compose` |
 | `schema` | `Schema`, `Unknown`, `ParseError(s)`, `HasSchema` (+ `derive(Schema)`), `EffectData`, `Brand`, `Equal`, `Ordering`, `Redacted` |
 | `match_` | `Matcher`, `HasTag` (+ `match_effect!`, `#[effect_tagged]`) |
-| `macros` | `effect!`, `effect_local!`, `caps!`, `pipe!`, `err!` (the side-by-side names `effect_next!`, `effect_local_next!`, `caps_next!` are aliases until the sweep) |
+| `macros` | `effect!`, `effect_local!`, `caps!`, `pipe!`, `err!` |
 
 The 0.6 kernel (runtime capability DI with `Env` / `ProviderSpec` / `run_with`, `run_blocking`,
 `ThreadSleepRuntime`, `CancellationToken`, `TestClock`, `run_test`) was removed in 0.7; see

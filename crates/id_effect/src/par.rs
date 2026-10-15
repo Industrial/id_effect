@@ -16,13 +16,13 @@
 //! - interrupting the caller interrupts every child.
 //!
 //! `Concurrency::Bounded(n)` is a purely local window. Only `Concurrency::Inherit` awaits
-//! admission from the ambient [`Fabric`](crate::next::Fabric) (installed with `Fabric::provide`,
+//! admission from the ambient [`Fabric`](crate::Fabric) (installed with `Fabric::provide`,
 //! at `fork_all`'s single admission point); with no fabric it behaves as `Unbounded`.
 //!
 //! ```
 //! use std::time::Duration;
 //! use id_effect::Exit;
-//! use id_effect::next::{Concurrency, Effect, all, for_each_par, sleep, succeed, zip_par};
+//! use id_effect::{Concurrency, Effect, all, for_each_par, sleep, succeed, zip_par};
 //! use id_effect::Never;
 //!
 //! let pair: Effect<(u8, &str), Never> = zip_par(
@@ -38,8 +38,8 @@
 //! assert!(matches!(all(effs, Concurrency::Sequential).block_on(), Exit::Success(v) if v == [1, 2]));
 //! ```
 
-use crate::next::concurrency::{Concurrency, fork_all};
-use crate::next::kernel::Effect;
+use crate::concurrency::{Concurrency, fork_all};
+use crate::kernel::Effect;
 
 /// One side of a [`zip_with_par`]: both sides go through one homogeneous [`fork_all`].
 enum Side<A, B> {
@@ -83,7 +83,7 @@ where
     let mut sides = sides.into_iter();
     match (sides.next(), sides.next()) {
       (Some(Side::Left(a)), Some(Side::Right(b))) => f(a, b),
-      _ => unreachable!("next: zip_with_par lost its input order (kernel bug)"),
+      _ => unreachable!("id_effect: zip_with_par lost its input order (kernel bug)"),
     }
   })
 }

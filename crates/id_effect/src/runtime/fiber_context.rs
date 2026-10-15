@@ -6,7 +6,7 @@
 //! interrupt flag, the mask counter and the stored waker. `k-fiber-tree` adds `parent: Weak`,
 //! the children and the done signal (k-rebuild L2: parentage lives here, not in `FiberId`).
 //! `k-scope-fiberref` adds the fiber-ref slots (`refs`, design A §1.3): a per-fiber map from
-//! [`FiberRef`](crate::next::runtime::FiberRef) id to value, copied into a child when it is
+//! [`FiberRef`](crate::runtime::FiberRef) id to value, copied into a child when it is
 //! forked (no thread-locals).
 
 use std::any::Any;
@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::task::{Context, Poll, Waker};
 
 use crate::failure::FiberId;
-use crate::next::runtime::Executor;
+use crate::runtime::Executor;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)

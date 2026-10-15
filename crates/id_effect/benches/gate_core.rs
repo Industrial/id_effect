@@ -10,19 +10,19 @@
 //!
 //! Kernel measured, per bench:
 //!
-//! - `gate/async_bind_64`, `gate/flat_map_depth_10k`: the 0.7 kernel (`id_effect::next`, spec
+//! - `gate/async_bind_64`, `gate/flat_map_depth_10k`: the 0.7 kernel (spec
 //!   k-rebuild §7 Q-E), run through its real edge `Effect::block_on` (v0.6 ran
 //!   `pollster::block_on(effect.run(&mut ()))`). Same workloads: 64 binds through `from_async`,
 //!   and a left-nested 10k-deep `succeed` bind chain (build plus run).
-//! - `stream/*`: the 0.7 `next::Stream` (`m-streams`), run through `Effect::block_on` (v0.6 ran
+//! - `stream/*`: the 0.7 `Stream` (`m-streams`), run through `Effect::block_on` (v0.6 ran
 //!   `pollster::block_on(effect.run(&mut ()))`). Same workloads; `map_effect` is now sequential
 //!   (ADR 0008 Amendment 2), where v0.6 ran each chunk concurrently under the admission budget.
-//! - `coord/*`: the 0.7 `next::Channel` / `next::Queue` (`c-coordination`): a forked producer
+//! - `coord/*`: the 0.7 `Channel` / `Queue` (`c-coordination`): a forked producer
 //!   fiber and the main fiber as consumer, run through `Effect::block_on` (v0.6 ran two
 //!   futures under `tokio::join!` on a current-thread runtime). Same workloads; the bounded
 //!   queue's `offer` now suspends while full instead of the producer polling `yield_now`.
 
-use ::id_effect::next::{self as k, HNil};
+use ::id_effect::{self as k, HNil};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const ASYNC_BINDS: usize = 64;

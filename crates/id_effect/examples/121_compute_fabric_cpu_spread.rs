@@ -3,7 +3,7 @@
 //! Demonstrates even per-worker CPU share under `MetricMode::Spread` and adaptive admission.
 
 use id_effect::compute::{ComputeFabric, CpuSpreadBucket, ResourcePolicy, WorkProfile};
-use id_effect::next::{TracingConfig, install_tracing_layer, snapshot_tracing};
+use id_effect::{TracingConfig, install_tracing_layer, snapshot_tracing};
 
 fn main() {
   let spread_policy = ResourcePolicy::unlimited_memory_cpu_spread(0.25);
