@@ -2,5 +2,4 @@
 
 mod test_executor;
 
-#[allow(unused_imports)] // filled by k-executor
 pub use test_executor::*;

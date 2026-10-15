@@ -20,5 +20,4 @@ pub use fiber_ref::*;
 pub use runtime::*;
 // `self::` because the extern crate `tokio` is also in scope; inside `tokio.rs`, name the crate
 // as `::tokio`.
-#[allow(unused_imports)] // filled by k-executor
 pub use self::tokio::*;

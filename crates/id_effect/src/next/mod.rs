@@ -28,7 +28,6 @@ pub use macros::*;
 pub use runtime::*;
 #[allow(unused_imports)] // filled by k-scope-fiberref
 pub use scope::*;
-#[allow(unused_imports)] // filled by k-executor
 pub use testing::*;
 
 #[doc(hidden)]
