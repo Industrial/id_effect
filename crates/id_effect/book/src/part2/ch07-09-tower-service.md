@@ -1,24 +1,45 @@
 # Tower service (`id_effect_axum::service`)
 
-The **`service`** module of **`id_effect_axum`** (feature **`tower`**) implements **[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Effects are driven with **`id_effect::run_async`**, so you can compose **Tower middleware** (timeouts, retries, load balancing, …) around the same domain style as Axum, without tying to Axum’s router first.
+The **`service`** module of **`id_effect_axum`** (feature **`tower`**) implements
+**[`tower::Service`](https://docs.rs/tower)** for **`Effect`**-based handlers. Each call runs as one
+request fiber on the `EffectExecutor`, so you can compose **Tower middleware** (timeouts, retries,
+load balancing, …) around the same domain style as Axum, without Axum's router.
 
 ## When to use it
 
-- You already have a **Tower stack** (custom servers, gRPC gateways, middleware chains) and want **`poll_ready` / `call`** semantics.
-- You need **per-service concurrency limits** or **request metrics** hooks at the Tower boundary.
+- You already have a **Tower stack** (custom servers, gRPC gateways, middleware chains) and want
+  **`poll_ready` / `call`** semantics.
+- You need **per-service concurrency limits** or **request metrics** at the Tower boundary.
 
 ## `EffectService`
 
-- **`EffectService::new(state, f)`** — `f(&mut state, request)` returns an `Effect`; unlimited concurrency unless configured otherwise.
-- **`with_max_in_flight`** — semaphore-gated **`poll_ready`** / **`call`** so at most *n* handler effects run concurrently; exposes an in-flight counter for observability.
-- **`with_request_metrics`** — wraps each call with **`Metric::track_duration`** and increments an error counter on typed failure.
+```rust
+use id_effect::succeed;
+use id_effect_axum::service::EffectService;
+use tower::{Service, ServiceExt};
 
-## Dependencies
+let mut svc = EffectService::new((), |_env: &mut (), x: u32| {
+    succeed::<u32, (), _>(x.saturating_add(1))
+});
+let out = svc.ready().await.unwrap().call(41).await.unwrap();
+assert_eq!(out, 42);
+```
 
-The module depends on **`id_effect_tokio`** for the async driver; it does not re-export **`TokioRuntime`**—compose runtime and layers at your application root.
+- **`EffectService::new(state, f)`** — `f(&mut state, request)` returns an `Effect`; unlimited
+  concurrency. The service's error type is the whole **`Cause<E>`**: a typed failure is
+  `Cause::Fail(e)`, a handler panic `Cause::Die(..)`, an interrupt `Cause::Interrupt(..)`.
+- **`EffectService::with_max_in_flight(state, n, f)`** — a semaphore gates `poll_ready` so at most
+  *n* handler effects run at once; `in_flight_counter()` exposes the count. The permit and the
+  count are released by a finalizer of the request fiber, on every exit path.
+- **`.with_request_metrics(latency: Histogram, errors: Counter)`** — records each call's duration
+  (seconds) and counts typed failures.
+- **`.with_executor(executor)`** — run on a specific `EffectExecutor` instead of the global one.
+
+Response futures are `Send`; any Tokio runtime flavour works (the example above runs on
+`current_thread`). `ChannelService::new(channel)` serves requests over an `id_effect::Channel`.
 
 ## Further reading
 
+- `cargo run -p id_effect_axum --features tower --example 050_tower_effect_service` (and `051_tower_shared_counter`)
 - `cargo doc --open -p id_effect_axum --features tower`
-- `cargo run -p id_effect_axum --features tower --example 050_tower_effect_service`
-- [Axum host](./ch07-08-axum-host.md) if you are on Axum specifically; [Tokio bridge](./ch07-05-tokio-bridge.md) for `Send` and runtime caveats.
+- [Axum host](./ch07-08-axum-host.md) if you are on Axum specifically.

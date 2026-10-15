@@ -1,62 +1,85 @@
 # Platform I/O (`id_effect_platform`)
 
-Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**, **filesystem**, and **process** as typed capabilities in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs), not ad hoc `reqwest` / `std::fs` calls in domain code.
+Workspace crate **`id_effect_platform`** mirrors Effect.ts **`@effect/platform`**: **HTTP**,
+**filesystem** and **process** as typed capabilities in `R`, not ad hoc `reqwest` / `std::fs`
+calls in domain code.
 
 ## Why separate from `id_effect`?
 
-- **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe *what* you need; provider impls install live or test doubles.
+- **Ports, not drivers** — traits like `HttpClient`, `FileSystem`, `ProcessRuntime` describe
+  *what* you need; layers install live implementations or test doubles.
 - **Test doubles** — `TestFileSystem` is in-memory; production uses `LiveFileSystemProvider`.
-- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait + `execute`, not `reqwest::RequestBuilder` (the capability service is crate-private).
+- **Stable HTTP boundary** — domain code depends on the `HttpClient` trait and `execute`, not on
+  `reqwest::RequestBuilder`.
 
 ## Modules
 
-| Module | Responsibility |
-|--------|----------------|
-| `error` | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
-| `http` | `HttpRequest` / `HttpResponse`, `HttpClient`, `ReqwestHttpClientProvider`, `execute` (key is internal) |
-| `fs` | `FileSystem`, `LiveFileSystemProvider`, `TestFileSystem`, `read` |
-| `command` (was `process`) | `CommandSpec`, `ProcessRuntime`, `spawn_wait` |
-| `uri` | URI helpers |
+| Module | Capability (`R`) | Layers | Effects |
+|--------|------------------|--------|---------|
+| `http` | `HttpClientService` (`HttpClientEnv`) | `ReqwestHttpClientProvider::layer()`, `provide_http_client(c)` | `execute`, `execute_stream` |
+| `fs` | `FileSystemService` (`FileSystemEnv`) | `LiveFileSystemProvider::layer()`, `provide_file_system(fs)` | `read`, `exists` |
+| `command` | `ProcessRuntimeService` (`ProcessRuntimeEnv`) | `TokioProcessRuntimeProvider::layer()`, `provide_process_runtime(rt)` | `spawn`, `spawn_wait`, `child_wait`, `child_kill` |
+| `http::reqwest` | `ReqwestClient`, `ReqwestPool` | `ReqwestClientLive::layer()`, `provide_reqwest_client(c)`, `provide_reqwest_pool(n, ttl)` | `send`, `text`, `bytes`, `json`, `json_schema`, … |
+| `auth` | — | — | `SessionStore`, `OAuthClient` and memory doubles |
+| `error`, `uri` | — | — | `HttpError`, `FsError`, `ProcessError`; URI helpers |
 
-## Wiring pattern
+Each capability is a newtype over `Arc<dyn Trait>` that derefs to the trait; each `*Env` alias is
+the one-element list (`HttpClientEnv = HCons<HttpClientService, HNil>`), and `http_client_env(c)`
+/ `file_system_env(fs)` / `process_runtime_env(rt)` build one for `.provide_all(..)`.
 
-Each module declares a capability service and ships a default provider:
-
-```rust
-// in id_effect_platform::http (simplified; HttpClientService is pub(crate))
-#[derive(ProviderSpecDerive)]
-#[provides(HttpClientService, with = || Arc::new(ReqwestHttpClient::default_client()))]
-pub struct ReqwestHttpClientProvider;
-```
-
-Application entry:
+Every layer needs nothing (`In = HNil`) and is generic over the error type, so they merge into
+one platform layer under your application's `E`:
 
 ```rust
-use id_effect::{run_with, RunError};
-use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
-
-let res = run_with(
-    [provide_reqwest_http_client()],
-    execute(HttpRequest::get("https://example.com")),
-)
-.map_err(|e| match e {
-    RunError::Effect(e) => e,
-    e => panic!("planner: {e}"),
-})?;
+let platform: Layer<_, AppError> = LiveFileSystemProvider::layer()
+    .merge(ReqwestHttpClientProvider::layer())
+    .merge(TokioProcessRuntimeProvider::layer());
 ```
 
-Effects returned by `execute` carry the correct `Needs` bound internally; application code usually calls `run_with([provide_reqwest_http_client()], execute(req))` without naming the key.
+## Running an HTTP effect
 
-Drive async platform effects with **`id_effect::run_async`** (see [Tokio bridge](./ch07-05-tokio-bridge.md)).
+`execute` is generic over any `R` that contains `HttpClientService`. When the effect is fed to
+`provide_layer`, name `R` (from `examples/010_platform_http_get.rs`):
+
+```rust
+use id_effect::{Cause, Exit};
+use id_effect_platform::http::{HttpClientEnv, HttpRequest, ReqwestHttpClientProvider, execute};
+use id_effect_tokio::TokioRuntime;
+
+let program = execute::<HttpClientEnv, _>(HttpRequest::get("https://example.com"))
+    .provide_layer(ReqwestHttpClientProvider::layer());
+match TokioRuntime::current()?.run(program).await {
+    Exit::Success(res) => println!("status={} bytes={}", res.status, res.body.len()),
+    Exit::Failure(Cause::Fail(e)) => return Err(e),
+    Exit::Failure(c) => panic!("run failed: {c:?}"),
+}
+```
+
+A test swaps in a canned client and runs anywhere, `block_on` included:
+
+```rust
+let exit = execute(HttpRequest::get(url))
+    .provide_all(http_client_env(Canned))
+    .block_on();
+```
+
+The live implementations need a Tokio runtime **with its IO driver** (see
+[Tokio bridge](./ch07-05-tokio-bridge.md)); the in-memory doubles (`TestFileSystem`,
+`MemorySessionStore`, `MemoryOAuthClient`) do not.
+
+Streaming responses (`execute_stream`) carry an `HttpBody` read on demand (`next_chunk()`,
+`collect()`, both effects) with the `max_body_bytes` cap enforced as chunks arrive.
 
 ## Security note (filesystem)
 
-`TestFileSystem` rejects paths containing `..`. Live I/O follows OS semantics — sandbox untrusted paths at a higher layer.
+`TestFileSystem` rejects paths containing `..`. Live I/O follows OS semantics — sandbox untrusted
+paths at a higher layer.
 
-## Runnable example
+## Runnable examples
 
 ```bash
 cargo run -p id_effect_platform --example 010_platform_http_get
+cargo run -p id_effect_platform --example 030_layer_default_env
 ```
 
 ## Next
