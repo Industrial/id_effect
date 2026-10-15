@@ -1,9 +1,6 @@
 //! RPC HTTP client — call remote tagged methods as `Effect` (`RpcClient` parity).
 
-use id_effect::Effect;
-use id_effect::Needs;
-use id_effect::next::compat::IntoV1;
-use id_effect::next::{Runtime, TokioExecutor};
+use id_effect::next::{Effect, HList, Selector, fail, need};
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
 use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
@@ -84,7 +81,7 @@ impl RpcClient {
   }
 
   /// Call tagged RPC method with schema-validated payload and success type.
-  pub fn call<A, IA, EA, B, IB, EB, R>(
+  pub fn call<A, IA, EA, B, IB, EB, R, I>(
     &self,
     tag: impl Into<String>,
     payload: A,
@@ -94,19 +91,19 @@ impl RpcClient {
     success_fields: &[&str],
   ) -> Effect<B, RpcClientError, R>
   where
+    R: Selector<HttpClientService, I> + HList,
     A: Send + 'static,
     B: Send + 'static,
     EA: EffectData + 'static,
     EB: EffectData + 'static,
     IA: Send + Sync + 'static + StructWireJson,
     IB: Send + Sync + 'static,
-    R: Needs<HttpClientService> + Send + 'static,
   {
     let tag = tag.into();
     let config = self.config.clone();
     let payload_json = match encode_struct_fields(payload_schema, payload_fields, payload) {
       Ok(v) => v,
-      Err(e) => return id_effect::fail(RpcClientError::Serialization(e)),
+      Err(e) => return fail(RpcClientError::Serialization(e)),
     };
     let wire_req = RpcWireRequest {
       tag: tag.clone(),
@@ -114,53 +111,61 @@ impl RpcClient {
     };
     let body = match serde_json::to_vec(&wire_req) {
       Ok(v) => v,
-      Err(e) => return id_effect::fail(RpcClientError::Serialization(e.into())),
+      Err(e) => return fail(RpcClientError::Serialization(e.into())),
     };
     let success_schema = success_schema.clone();
     let _success_fields = success_fields;
 
-    Effect::new_async(move |r: &mut R| {
-      let config = config.clone();
-      let body = body.clone();
-      let success_schema = success_schema.clone();
-      Box::pin(async move {
-        let req = HttpRequest {
-          method: HttpMethod::Post,
-          url: config.url(),
-          headers: vec![("content-type".to_owned(), "application/json".to_owned())],
-          body: Some(body),
-          timeout: None,
-          max_body_bytes: None,
-        };
-        let client = r.need().clone();
-        // m-platform: the platform client is a `next` effect; bridge it onto the ambient tokio
-        // runtime (reqwest needs its IO driver). Removed when this crate switches (l-labs-edge).
-        let rt = match TokioExecutor::current() {
-          Some(exec) => Runtime::from_executor(std::sync::Arc::new(exec)),
-          None => Runtime::global().clone(),
-        };
-        let resp = client.execute(req).into_v1_on(&rt).run(&mut ()).await?;
-        if resp.status != 200 {
-          return Err(RpcClientError::UnexpectedStatus(resp.status));
-        }
-        let wire: RpcWireResponse = serde_json::from_slice(&resp.body)
-          .map_err(|e| RpcClientError::Serialization(e.into()))?;
-        match wire {
-          RpcWireResponse::Success { success, .. } => {
-            validate_success_json(&success_schema, &success).map_err(RpcClientError::Serialization)
+    let req = HttpRequest {
+      method: HttpMethod::Post,
+      url: config.url(),
+      headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+      body: Some(body),
+      timeout: None,
+      max_body_bytes: None,
+    };
+    need::<HttpClientService>().flat_map(move |client| {
+      client
+        .execute(req)
+        .map_err(RpcClientError::Http)
+        .flat_map(move |resp| {
+          let decoded = if resp.status != 200 {
+            Err(RpcClientError::UnexpectedStatus(resp.status))
+          } else {
+            decode_success(&success_schema, &resp.body)
+          };
+          match decoded {
+            Ok(b) => id_effect::next::succeed(b),
+            Err(e) => fail(e),
           }
-          RpcWireResponse::Failure { failure, .. } => Err(RpcClientError::rpc_envelope(&failure)),
-        }
-      })
+        })
+        .narrow()
     })
+  }
+}
+
+/// Decodes a 200 response body: the success payload against `schema`, or the failure envelope.
+fn decode_success<B, IB, EB>(schema: &Schema<B, IB, EB>, body: &[u8]) -> Result<B, RpcClientError>
+where
+  B: 'static,
+  IB: 'static,
+  EB: EffectData + 'static,
+{
+  let wire: RpcWireResponse =
+    serde_json::from_slice(body).map_err(|e| RpcClientError::Serialization(e.into()))?;
+  match wire {
+    RpcWireResponse::Success { success, .. } => {
+      validate_success_json(schema, &success).map_err(RpcClientError::Serialization)
+    }
+    RpcWireResponse::Failure { failure, .. } => Err(RpcClientError::rpc_envelope(&failure)),
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use id_effect::next::hlist;
   use id_effect::schema;
-  use id_effect::{Cap, Env};
   use id_effect_platform::http::{HttpClient, HttpResponse};
   use std::sync::Arc;
   use std::sync::Mutex;
@@ -194,8 +199,8 @@ mod tests {
     }
   }
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-  async fn call_posts_tagged_json_to_dispatch_url() {
+  #[test]
+  fn call_posts_tagged_json_to_dispatch_url() {
     let payload = schema::struct_(
       "name",
       schema::string::<()>(),
@@ -220,22 +225,21 @@ mod tests {
       })),
       last_url: Mutex::new(None),
     });
-    let mut env = Env::new();
-    env.insert::<Cap<HttpClientService>>(HttpClientService(mock.clone() as Arc<dyn HttpClient>));
+    let env = hlist![HttpClientService(mock.clone() as Arc<dyn HttpClient>)];
     let client = RpcClient::new("http://127.0.0.1:8080");
-    let out = id_effect::run_async(
-      client.call(
+    let out = client
+      .call(
         "greet",
         ("Ada".to_owned(), 1_i64),
         &payload,
         &["name", "enthusiasm"],
         &success,
         &["message", "count"],
-      ),
-      env,
-    )
-    .await
-    .expect("call");
+      )
+      .provide_all(env)
+      .block_on()
+      .into_result()
+      .expect("call");
     assert_eq!(out.0, "Hello!");
     assert_eq!(
       mock.last_url.lock().unwrap().as_deref(),

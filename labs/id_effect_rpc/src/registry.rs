@@ -5,8 +5,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use id_effect::Env;
-use id_effect::kernel::Effect;
+use id_effect::Exit;
+use id_effect::next::{DynEnv, Effect};
 
 use crate::RpcError;
 use crate::protocol::RpcWireResponse;
@@ -17,33 +17,10 @@ use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
 use serde_json::Value;
 
-/// m-axum adapter (release plan §3b): `id_effect_axum::run_with_env` runs `next` effects since
-/// 0.7, so this crate's v1 (`!Send`) handler effect is driven on tokio's blocking pool until
-/// l-labs-edge switches rpc to `next`. A panic in the handler is resumed in the caller.
-async fn run_v1_handler<B, F>(mut env: Env, build: F) -> Result<B, RpcError>
-where
-  B: Send + 'static,
-  F: FnOnce(&mut Env) -> Effect<B, RpcError, Env> + Send + 'static,
-{
-  let handle = tokio::runtime::Handle::current();
-  let joined = tokio::task::spawn_blocking(move || {
-    let eff = build(&mut env);
-    handle.block_on(id_effect::run_async(eff, env))
-  })
-  .await;
-  match joined {
-    Ok(result) => result,
-    Err(e) => match e.try_into_panic() {
-      Ok(payload) => std::panic::resume_unwind(payload),
-      Err(e) => panic!("rpc handler task failed: {e}"),
-    },
-  }
-}
-
 type BoxDispatch = Arc<
   dyn Fn(
       Value,
-      Env,
+      DynEnv,
     ) -> Pin<Box<dyn Future<Output = Result<RpcWireResponse, RpcSerializationError>> + Send>>
     + Send
     + Sync,
@@ -68,7 +45,7 @@ impl RpcMethodEntry {
   pub async fn dispatch(
     &self,
     payload: Value,
-    env: Env,
+    env: DynEnv,
   ) -> Result<RpcWireResponse, RpcSerializationError> {
     (self.inner)(payload, env).await
   }
@@ -90,6 +67,11 @@ impl RpcGroup {
 
   /// Register a typed method with request/response schemas and field names for JSON encoding.
   /// Register a typed RPC handler.
+  ///
+  /// Each dispatch runs the handler's effect as one request fiber
+  /// ([`id_effect_axum::run_with_env`]). A typed [`RpcError`] becomes a failure envelope; a
+  /// defect (a panic in `handler` or its effect) or an interrupt becomes an
+  /// [`RpcError::internal`] envelope (the defect message is not sent).
   pub fn register<A, IA, EA, B, IB, EB, F>(
     &mut self,
     tag: impl Into<String>,
@@ -105,7 +87,7 @@ impl RpcGroup {
     EB: EffectData + 'static,
     IA: Send + Sync + 'static + crate::serialization::StructWireJson,
     IB: Send + Sync + 'static + crate::serialization::StructWireJson,
-    F: Fn(A, &mut Env) -> Effect<B, RpcError, Env> + Send + Sync + 'static,
+    F: Fn(A, &mut DynEnv) -> Effect<B, RpcError, DynEnv> + Send + Sync + 'static,
   {
     let tag = tag.into();
     let payload_schema2 = payload_schema.clone();
@@ -121,10 +103,18 @@ impl RpcGroup {
       let success_fields = success_fields;
       Box::pin(async move {
         let input = decode_payload(payload_schema.as_ref(), &payload)?;
-        let result = run_v1_handler(env, move |e| handler(input, e)).await;
-        match result {
-          Ok(value) => success_wire(&tag, success_schema.as_ref(), success_fields, value),
-          Err(err) => Ok(rpc_error_to_wire(&tag, err)),
+        let exit = id_effect_axum::run_with_env(env, move |e| handler(input, e)).await;
+        match exit {
+          Exit::Success(value) => {
+            success_wire(&tag, success_schema.as_ref(), success_fields, value)
+          }
+          Exit::Failure(cause) => match cause.fail_option() {
+            Some(err) => Ok(rpc_error_to_wire(&tag, err)),
+            None => Ok(rpc_error_to_wire(
+              &tag,
+              RpcError::internal("rpc handler defect or interrupt"),
+            )),
+          },
         }
       })
     });
@@ -164,7 +154,8 @@ impl RpcGroup {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::{schema, succeed};
+  use id_effect::next::{die, succeed};
+  use id_effect::schema;
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn register_and_dispatch_greet() {
@@ -193,7 +184,7 @@ mod tests {
     let wire = method
       .dispatch(
         serde_json::json!({"name": "Ada", "enthusiasm": 2}),
-        Env::new(),
+        DynEnv::new(),
       )
       .await
       .expect("dispatch");
@@ -203,6 +194,65 @@ mod tests {
         assert_eq!(success["count"], 2);
       }
       RpcWireResponse::Failure { .. } => panic!("expected success"),
+    }
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn typed_failure_and_defect_become_failure_envelopes() {
+    let payload = Arc::new(schema::struct_(
+      "name",
+      schema::string::<()>(),
+      "n",
+      schema::i64::<()>(),
+    ));
+    let one = || {
+      Arc::new(schema::struct_(
+        "name",
+        schema::string::<()>(),
+        "n",
+        schema::i64::<()>(),
+      ))
+    };
+    let mut group = RpcGroup::new();
+    group.register(
+      "missing",
+      payload.clone(),
+      &["name", "n"],
+      one(),
+      &["name", "n"],
+      |_, _| id_effect::next::fail(RpcError::not_found("nope")),
+    );
+    group.register(
+      "boom",
+      payload,
+      &["name", "n"],
+      one(),
+      &["name", "n"],
+      |_: (String, i64), _| die("handler bug"),
+    );
+    let method = group.get("missing").expect("method");
+    let ok_payload = serde_json::json!({"name": "Ada", "n": 1});
+    match method
+      .dispatch(ok_payload.clone(), DynEnv::new())
+      .await
+      .expect("dispatch")
+    {
+      RpcWireResponse::Failure { failure, .. } => {
+        assert_eq!(failure.code, crate::RpcErrorCode::NotFound)
+      }
+      RpcWireResponse::Success { .. } => panic!("expected failure"),
+    }
+    let boom = group.get("boom").expect("method");
+    match boom
+      .dispatch(ok_payload, DynEnv::new())
+      .await
+      .expect("dispatch")
+    {
+      RpcWireResponse::Failure { failure, .. } => {
+        assert_eq!(failure.code, crate::RpcErrorCode::Internal);
+        assert!(!failure.message.contains("handler bug"));
+      }
+      RpcWireResponse::Success { .. } => panic!("expected failure"),
     }
   }
 }

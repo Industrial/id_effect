@@ -63,7 +63,7 @@ pub struct RpcServiceDef {
 
 /// Emit a Rust trait stub with one method per [`RpcMethodDef`].
 ///
-/// Generated code depends on `id_effect::Effect` and [`crate::RpcError`].
+/// Generated code depends on `id_effect::next::Effect` and [`crate::RpcError`].
 pub fn emit_service_trait(def: &RpcServiceDef) -> String {
   let mut out = String::new();
   let _ = writeln!(
@@ -75,7 +75,7 @@ pub fn emit_service_trait(def: &RpcServiceDef) -> String {
   );
   let _ = writeln!(out, "#![allow(dead_code, missing_docs)]");
   let _ = writeln!(out);
-  let _ = writeln!(out, "use id_effect::Effect;");
+  let _ = writeln!(out, "use id_effect::next::Effect;");
   let _ = writeln!(out, "use id_effect_rpc::RpcError;");
   let _ = writeln!(out);
   let _ = writeln!(
@@ -94,7 +94,7 @@ pub fn emit_service_trait(def: &RpcServiceDef) -> String {
     let _ = writeln!(out, "  /// {doc}");
     let _ = writeln!(
       out,
-      "  fn {}(&self, request: {req}) -> Effect<{resp}, RpcError, ()>;",
+      "  fn {}(&self, request: {req}) -> Effect<{resp}, RpcError>;",
       method.operation
     );
     let _ = writeln!(out);
@@ -127,7 +127,7 @@ mod tests {
     let src = emit_service_trait(&greet_fixture());
     assert!(src.contains("pub trait GreetService"));
     assert!(src.contains("fn greet(&self, request: GreetRequest)"));
-    assert!(src.contains("Effect<GreetResponse, RpcError, ()>"));
+    assert!(src.contains("Effect<GreetResponse, RpcError>"));
     assert!(src.contains("POST /greet"));
   }
 
@@ -146,6 +146,6 @@ mod tests {
     };
     let src = emit_service_trait(&def);
     assert!(src.contains("fn ping(&self, request: ())"));
-    assert!(src.contains("Effect<(), RpcError, ()>"));
+    assert!(src.contains("Effect<(), RpcError>"));
   }
 }

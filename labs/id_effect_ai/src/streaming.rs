@@ -1,9 +1,8 @@
-//! Streaming completion chunks as `id_effect::Stream`.
+//! Streaming completion chunks as `id_effect::next::Stream`.
 
 use crate::error::AiError;
 use crate::model::{ChatRequest, LanguageModelService};
-use id_effect::kernel::Effect;
-use id_effect::{Chunk, Needs, end_stream, send_chunk, stream_from_channel};
+use id_effect::next::{Effect, HList, Selector, Stream, need};
 use serde::{Deserialize, Serialize};
 
 /// One streamed token or delta from the model.
@@ -17,25 +16,17 @@ pub struct CompletionChunk {
 
 /// Complete with streaming using installed [`LanguageModel`](crate::model::LanguageModel) capability.
 #[inline]
-pub fn complete_stream<R>(
+pub fn complete_stream<R, I>(
   req: ChatRequest,
-) -> Effect<id_effect::Stream<CompletionChunk, AiError, ()>, AiError, R>
+) -> Effect<Stream<CompletionChunk, AiError>, AiError, R>
 where
-  R: Needs<LanguageModelService> + 'static,
+  R: Selector<LanguageModelService, I> + HList,
 {
-  Effect::new_async(move |r: &mut R| {
-    let model = r.need().clone();
-    let inner = model.complete_stream(req);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+  need::<LanguageModelService>().flat_map(move |model| model.complete_stream(req).narrow())
 }
 
 /// Build a mock chunk stream by splitting `text` into `chunk_size` character runs.
-pub fn mock_chunk_stream(
-  text: &str,
-  chunk_size: usize,
-) -> id_effect::Stream<CompletionChunk, AiError, ()> {
-  let (stream, sender) = stream_from_channel::<CompletionChunk, AiError, ()>(8);
+pub fn mock_chunk_stream(text: &str, chunk_size: usize) -> Stream<CompletionChunk, AiError> {
   let parts: Vec<String> = text
     .chars()
     .collect::<Vec<_>>()
@@ -43,30 +34,29 @@ pub fn mock_chunk_stream(
     .map(|c| c.iter().collect())
     .collect();
   let n = parts.len();
-  std::thread::spawn(move || {
-    for (i, part) in parts.into_iter().enumerate() {
-      let chunk = CompletionChunk {
-        delta: part,
-        done: i + 1 == n,
-      };
-      if id_effect::run_blocking(send_chunk(&sender, Chunk::singleton(chunk)), ()).is_err() {
-        return;
-      }
-    }
-    let _ = id_effect::run_blocking(end_stream(sender), ());
-  });
-  stream
+  let chunks = parts
+    .into_iter()
+    .enumerate()
+    .map(|(i, delta)| CompletionChunk {
+      delta,
+      done: i + 1 == n,
+    })
+    .collect();
+  Stream::from_vec(chunks)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::runtime::run_blocking;
 
   #[test]
   fn mock_chunk_stream_emits_parts() {
     let stream = mock_chunk_stream("abcd", 2);
-    let chunks = run_blocking(stream.run_collect(), ()).expect("collect");
+    let chunks = stream
+      .run_collect()
+      .block_on()
+      .into_result()
+      .expect("collect");
     let text: String = chunks.iter().map(|c| c.delta.clone()).collect();
     assert_eq!(text, "abcd");
   }

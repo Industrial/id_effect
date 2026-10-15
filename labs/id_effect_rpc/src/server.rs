@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use id_effect::Env;
+use id_effect::next::DynEnv;
 
 use crate::RpcError;
 use crate::correlation::{append_correlation_header, ensure_correlation_id};
@@ -38,13 +38,13 @@ impl RpcServer {
     &self.group
   }
 
-  /// Mount `POST {path}` tagged dispatch handler on a router with [`Env`] state.
-  pub fn mount_dispatch(self, onto: Router<Env>, path: &str) -> Router<Env> {
+  /// Mount `POST {path}` tagged dispatch handler on a router with [`DynEnv`] state.
+  pub fn mount_dispatch(self, onto: Router<DynEnv>, path: &str) -> Router<DynEnv> {
     let group = self.group.clone();
     onto.route(
       path,
       post(
-        move |State(env): State<Env>, headers: HeaderMap, body: Bytes| async move {
+        move |State(env): State<DynEnv>, headers: HeaderMap, body: Bytes| async move {
           dispatch_request(env, group.clone(), &headers, &body).await
         },
       ),
@@ -53,13 +53,13 @@ impl RpcServer {
 
   /// Mount default `POST /rpc` dispatch route on a new router.
   #[inline]
-  pub fn mount_default(self) -> Router<Env> {
+  pub fn mount_default(self) -> Router<DynEnv> {
     Self::mount_dispatch(self, Router::new(), RPC_DISPATCH_PATH)
   }
 }
 
 async fn dispatch_request(
-  env: Env,
+  env: DynEnv,
   group: Arc<RpcGroup>,
   headers: &HeaderMap,
   body: &[u8],
@@ -128,7 +128,7 @@ fn wire_to_response(wire: RpcWireResponse, cid: &str) -> Response {
 }
 
 /// Layer helper: add RPC dispatch routes to an existing Axum router.
-pub fn layer_rpc(router: Router<Env>, server: RpcServer) -> Router<Env> {
+pub fn layer_rpc(router: Router<DynEnv>, server: RpcServer) -> Router<DynEnv> {
   server.mount_dispatch(router, RPC_DISPATCH_PATH)
 }
 
@@ -137,7 +137,8 @@ mod tests {
   use super::*;
   use axum::body::Body;
   use axum::http::Request;
-  use id_effect::{schema, succeed};
+  use id_effect::next::succeed;
+  use id_effect::schema;
   use std::sync::Arc;
   use tower::ServiceExt;
 
@@ -168,7 +169,7 @@ mod tests {
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn post_rpc_dispatches_tagged_request() {
-    let app = greet_server().mount_default().with_state(Env::new());
+    let app = greet_server().mount_default().with_state(DynEnv::new());
     let body = serde_json::json!({
       "tag": "greet",
       "payload": {"name": "Ada", "enthusiasm": 1}

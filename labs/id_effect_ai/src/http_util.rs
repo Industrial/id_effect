@@ -1,6 +1,8 @@
 //! Shared HTTP helpers for vendor adapters.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use id_effect::next::{Effect, fail, succeed};
+
 /// `Authorization: Bearer <token>`.
 #[inline]
 pub fn bearer_header(token: &str) -> (String, String) {
@@ -14,15 +16,31 @@ pub fn cursor_basic_auth_header(api_key: &str) -> (String, String) {
   ("Authorization".to_string(), format!("Basic {encoded}"))
 }
 
-/// The `next` runtime this crate's v1 code bridges `id_effect_platform` HTTP effects onto
-/// (`next::compat::IntoV1::into_v1_on`): the ambient tokio runtime, whose IO driver reqwest
-/// needs, or [`Runtime::global`](id_effect::next::Runtime::global) outside one. Removed when this
-/// crate switches to `next` (l-labs-edge).
-pub(crate) fn next_http_runtime() -> id_effect::next::Runtime {
-  match id_effect::next::TokioExecutor::current() {
-    Some(exec) => id_effect::next::Runtime::from_executor(std::sync::Arc::new(exec)),
-    None => id_effect::next::Runtime::global().clone(),
+/// Lifts a `Result` into a ready [`Effect`] (success or typed failure).
+#[inline]
+pub(crate) fn from_result<A, E>(r: Result<A, E>) -> Effect<A, E> {
+  match r {
+    Ok(a) => succeed(a),
+    Err(e) => fail(e),
   }
+}
+
+/// Maps a vendor response status to `Unauthorized` (401/403) or
+/// [`AiError::from_http_status`](crate::AiError::from_http_status) (any other non-2xx); `detail`
+/// is computed only on failure.
+#[cfg(any(feature = "openai", feature = "anthropic", feature = "cursor"))]
+pub(crate) fn check_status(
+  status: u16,
+  detail: impl FnOnce() -> String,
+) -> Result<(), crate::error::AiError> {
+  use crate::error::AiError;
+  if status == 401 || status == 403 {
+    return Err(AiError::Unauthorized);
+  }
+  if !(200..300).contains(&status) {
+    return Err(AiError::from_http_status(status, detail()));
+  }
+  Ok(())
 }
 
 /// Join base URL and path without duplicate slashes.

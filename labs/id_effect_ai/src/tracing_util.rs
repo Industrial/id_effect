@@ -1,7 +1,6 @@
 //! Tracing span helpers for AI vendor calls.
 
-use id_effect::kernel::Effect;
-use id_effect::with_span;
+use id_effect::next::Effect;
 
 use crate::error::AiError;
 
@@ -15,19 +14,19 @@ pub fn with_ai_request_span<A, E, R>(
 where
   A: Send + 'static,
   E: Send + 'static,
-  R: Send + 'static,
+  R: Send + Sync + 'static,
 {
   let _ = (vendor, operation, model);
-  with_span(effect, "ai.request")
+  effect.with_span("ai.request")
 }
 
-/// Same as [`with_ai_request_span`] for [`AiError`] programs on `()`.
+/// Same as [`with_ai_request_span`] for [`AiError`] programs that need no capabilities.
 pub fn with_ai_span<A>(
   vendor: &'static str,
   operation: &'static str,
   model: &str,
-  effect: Effect<A, AiError, ()>,
-) -> Effect<A, AiError, ()>
+  effect: Effect<A, AiError>,
+) -> Effect<A, AiError>
 where
   A: Send + 'static,
 {

@@ -1,18 +1,17 @@
 //! One-shot OpenAI chat completion (requires `OPENAI_API_KEY`).
 
-use id_effect::{build_env, run_async};
+use id_effect::next::{HCons, HNil};
 use id_effect_ai::{
-  AiConfig, ChatMessage, ChatRequest, ChatRole, complete, provide_openai_language_model,
+  AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
+  provide_openai_language_model,
 };
 use id_effect_platform::http::ReqwestHttpClient;
 use std::sync::Arc;
 
-#[tokio::main]
-async fn main() {
+fn main() {
   let cfg = AiConfig::from_env();
   let client = Arc::new(ReqwestHttpClient::default_client());
-  let env =
-    build_env([provide_openai_language_model(client, cfg).expect("openai provider")]).expect("env");
+  let layer = provide_openai_language_model::<AiError>(client, cfg).expect("openai provider");
   let req = ChatRequest {
     model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".into()),
     messages: vec![ChatMessage {
@@ -22,6 +21,11 @@ async fn main() {
         .unwrap_or_else(|| "Say hello in one word.".into()),
     }],
   };
-  let resp = run_async(complete(req), env).await.expect("complete");
+  // The program edge: run on the default runtime (its tokio drivers serve reqwest).
+  let resp = complete::<HCons<LanguageModelService, HNil>, _>(req)
+    .provide_layer(layer)
+    .block_on()
+    .into_result()
+    .expect("complete");
   println!("{}", resp.content);
 }

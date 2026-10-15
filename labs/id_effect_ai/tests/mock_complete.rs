@@ -1,4 +1,3 @@
-use id_effect::run_blocking;
 use id_effect_ai::{ChatMessage, ChatRequest, ChatRole, LanguageModel, MockLanguageModel};
 
 #[test]
@@ -11,6 +10,6 @@ fn mock_complete_echoes_user() {
       content: "hello".into(),
     }],
   };
-  let resp = run_blocking(model.complete(req), ()).expect("run");
+  let resp = model.complete(req).block_on().into_result().expect("run");
   assert_eq!(resp.content, "echo:hello");
 }

@@ -4,7 +4,7 @@
 //!
 //! Send one line: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 
-use id_effect::{Effect, succeed};
+use id_effect::next::{Effect, succeed};
 use id_effect_ai::{ChatMessage, ChatRequest, ChatRole, LanguageModel, MockLanguageModel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -42,7 +42,11 @@ fn handle_line(line: &str) -> Result<String, String> {
           content: "mcp".into(),
         }],
       };
-      let resp = id_effect::run_blocking(model.complete(chat), ()).map_err(|e| e.to_string())?;
+      let resp = model
+        .complete(chat)
+        .block_on()
+        .into_result()
+        .map_err(|cause| cause.pretty())?;
       serde_json::json!({"content": [{"type": "text", "text": resp.content}]})
     }
     other => return Err(format!("unknown method: {other}")),
@@ -71,7 +75,7 @@ fn main() -> io::Result<()> {
       Err(e) => eprintln!("error: {e}"),
     }
   }
-  let _: Effect<(), (), ()> = succeed(());
+  let _: Effect<(), ()> = succeed(());
   println!("mcp_server_template ready (stdio JSON-RPC)");
   Ok(())
 }

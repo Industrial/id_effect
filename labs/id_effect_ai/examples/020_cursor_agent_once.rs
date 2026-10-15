@@ -1,8 +1,6 @@
 //! Create a Cursor Cloud Agent and poll until idle (requires `CURSOR_API_KEY`).
 
-use id_effect::next::HNil;
-use id_effect::next::compat::IntoNext;
-use id_effect::succeed;
+use id_effect::next::{HNil, succeed};
 use id_effect_ai::{
   AiConfig, AiError, CreateAgentRequest, CursorAgentsClient, HttpCursorAgentsClient,
 };
@@ -38,8 +36,8 @@ fn main() -> ExitCode {
         .wait_until_idle(&agent.id, &run.id, Duration::from_secs(120))
         .flat_map(move |done| {
           println!("agent {} finished: {:?}", agent_id, done.status);
-          succeed::<(), AiError, ()>(())
+          succeed::<(), AiError, HNil>(())
         })
     });
-  run_main(effect.into_next(), HNil, RunMainConfig::minimal())
+  run_main(effect, HNil, RunMainConfig::minimal())
 }
