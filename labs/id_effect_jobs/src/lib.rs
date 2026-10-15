@@ -54,3 +54,18 @@ pub use obix_outbox::{JobsOutboxEvent, ObixOutbox};
 
 #[cfg(feature = "kafka")]
 pub use kafka::{RdKafkaBroker, RdKafkaConfig};
+
+/// A lazy fallible synchronous step on the 0.7 kernel (the v1 `Effect::new(|_| ..)` shape).
+#[cfg(feature = "memory")]
+pub(crate) fn attempt<A, E>(
+  f: impl FnOnce() -> Result<A, E> + Send + 'static,
+) -> id_effect::Effect<A, E>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+{
+  id_effect::suspend(move || match f() {
+    Ok(a) => id_effect::succeed(a),
+    Err(e) => id_effect::fail(e),
+  })
+}

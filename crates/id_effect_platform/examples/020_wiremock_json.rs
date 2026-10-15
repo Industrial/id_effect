@@ -2,9 +2,10 @@
 //!
 //! Run: `cargo run -p id_effect_platform --example 020_wiremock_json`
 
-use id_effect::build_env;
-use id_effect::run_async;
-use id_effect_platform::http::reqwest::{json, provide_reqwest_client};
+use id_effect::Exit;
+use id_effect::hlist;
+use id_effect_platform::http::reqwest::{ReqwestClient, json};
+use id_effect_tokio::TokioRuntime;
 use reqwest::{Client, Error};
 use serde::{Deserialize, Serialize};
 use wiremock::matchers::{method, path};
@@ -25,10 +26,13 @@ async fn main() {
     .await;
 
   let url = format!("{}/data", server.uri());
-  let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
-  let msg = run_async(json::<Msg, Error, _, _, Msg>(move |c| c.get(url)), env)
-    .await
-    .unwrap();
+  // The capability can also be provided directly as an environment value.
+  let program = json::<Msg, Error, _, _, Msg>(move |c| c.get(url))
+    .provide_all(hlist![ReqwestClient(Client::new())]);
+  let rt = TokioRuntime::current().expect("tokio runtime");
+  let Exit::Success(msg) = rt.run(program).await else {
+    panic!("request failed")
+  };
   assert_eq!(msg, Msg { n: 7 });
   println!("020_wiremock_json ok");
 }

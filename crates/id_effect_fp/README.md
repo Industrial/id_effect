@@ -20,13 +20,13 @@ so they moved here together with their `im` and Rayon-backed bulk operations:
 ## Example
 
 ```rust
-use id_effect::run_blocking;
+use id_effect::Exit;
 use id_effect_fp::{Monoid, Semigroup, TRef, commit, hash_map};
 
-// STM: transactional reference cells, committed as an `Effect`.
-let counter = run_blocking(commit(TRef::make(1_i32)), ()).expect("make");
-run_blocking(commit(counter.update_stm::<(), _>(|n| n + 1)), ()).expect("update");
-assert_eq!(run_blocking(commit(counter.read_stm::<()>()), ()), Ok(2));
+// STM: transactional reference cells, committed as a 0.7-kernel `Effect`.
+let counter = commit(TRef::make(1_i32)).block_on().into_result().expect("make");
+commit(counter.update_stm::<(), _>(|n| n + 1)).block_on().into_result().expect("update");
+assert_eq!(commit(counter.read_stm::<()>()).block_on(), Exit::succeed(2));
 
 // Persistent collections: updates return new maps; the old one is untouched.
 let a = hash_map::set(&hash_map::empty(), "k", 1);
@@ -45,4 +45,12 @@ cargo run -p id_effect_fp --example 077_stm_tref
 cargo run -p id_effect_fp --example 090_algebra_foldable
 ```
 
-STM examples: `077`–`082`; algebra examples: `090`–`092`.
+STM examples: `077`–`086`; algebra examples: `090`–`092`.
+
+## STM retry
+
+`commit` runs on the 0.7 kernel. A transaction that retries
+(`Stm::retry`, `Stm::check(false)`, `TQueue::take` on an empty queue, `TSemaphore::acquire` at
+zero) parks its fiber on the wait lists of the `TRef`s it read, and the next commit that writes
+one of them wakes it (Effect.ts `STM.retry`). Nothing spins and no thread is blocked; an
+interrupted waiter is removed from every wait list.

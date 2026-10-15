@@ -1,21 +1,29 @@
 # `id_effect_sql`
 
-Driver-agnostic **SQL client** capability for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction).
+Driver-agnostic **SQL client** capability for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction), on the 0.7 kernel.
 
-Application code talks to `Arc<dyn SqlClient>` (or the `SqlClientService` capability); production wires the PostgreSQL driver behind the `pg` feature, tests use the scriptable in-memory `TestSqlClient`.
+Application code reads the `SqlClientService` capability (`SqlClientEnv`) from its environment; production wires the PostgreSQL driver behind the `pg` feature, tests use the scriptable in-memory `TestSqlClient`. The client and transactions are **scoped layers**: their resources are released when the layer's scope closes, however the program ends.
 
 ## Quick start
 
 ```rust
-use std::sync::Arc;
+use id_effect::Exit;
+use id_effect::{Effect, need};
+use id_effect_sql::{
+  SqlClientEnv, SqlError, SqlParam, SqlRow, SqlTransactionEnv, SqlTransactionService,
+  TestSqlClient, query, sql_client_layer, transaction_layer,
+};
 
-use id_effect::{Effect, run_blocking};
-use id_effect_sql::{SqlClient, SqlError, SqlParam, SqlRow, TestSqlClient, transaction_scope};
-
-/// Domain code depends only on the trait.
-fn count_users(db: Arc<dyn SqlClient>) -> Effect<usize, SqlError, ()> {
-  db.query("SELECT id FROM users WHERE active = $1", &[SqlParam::Bool(true)])
+/// Domain code depends only on the capability.
+fn count_users() -> Effect<usize, SqlError, SqlClientEnv> {
+  query("SELECT id FROM users WHERE active = $1", vec![SqlParam::Bool(true)])
     .map(|rows| rows.len())
+}
+
+/// Runs inside a transaction: committed on success, rolled back on failure or interrupt.
+fn deactivate_all() -> Effect<u64, SqlError, SqlTransactionEnv> {
+  need::<SqlTransactionService>()
+    .flat_map(|tx| tx.execute("UPDATE users SET active = false", &[]).narrow())
 }
 
 fn main() {
@@ -24,33 +32,27 @@ fn main() {
     "SELECT id FROM users WHERE active = $1",
     vec![SqlRow::new(vec!["1".into()]), SqlRow::new(vec!["2".into()])],
   );
-  let db: Arc<dyn SqlClient> = Arc::new(test.clone());
-  run_blocking(db.connect(), ()).unwrap();
 
-  assert_eq!(run_blocking(count_users(db.clone()), ()), Ok(2));
-
-  // Commit on success, rollback on failure.
-  let n = run_blocking(transaction_scope(db, |_tx| count_users_in_tx()), ()).unwrap();
-  assert_eq!(n, 0);
-  assert_eq!(test.open_transactions(), 0);
-}
-
-fn count_users_in_tx() -> Effect<u32, SqlError, ()> {
-  Effect::new(|_r: &mut ()| Ok(0))
+  let program = count_users()
+    .flat_map(|n| deactivate_all().provide_layer(transaction_layer()).map(move |_| n))
+    .provide_layer(sql_client_layer::<SqlError>(test.clone())); // connect … close
+  assert!(matches!(program.block_on(), Exit::Success(2)));
+  assert_eq!((test.commits(), test.closes()), (1, 1));
 }
 ```
 
-With the `pg` feature, swap `TestSqlClient` for `id_effect_sql::pg::PgSqlClient::new(pool)` (pool from
-`pg_pool_from_config`) or register `provide_pg_sql_client(pool)` in a capability `Env`.
+Brackets are available too: `with_transaction(client, |tx| ..)` and `transaction(|tx| ..)` (which reads the client from the environment) commit on success and roll back on failure, defect or interrupt; a failed `COMMIT` is a typed error there.
+
+With the `pg` feature, swap `sql_client_layer(test)` for `id_effect_sql::pg::PgSqlClient::layer(PgPoolConfig::from_url(url))`, which opens a pool when built and closes it afterwards, and provides the `PgPool` too. Its effects run on tokio (`id_effect_tokio::TokioRuntime`).
 
 ## Modules
 
 | Module | Description |
 |--------|-------------|
 | [`error`](src/error.rs) | `SqlError` |
-| [`client`](src/client.rs) | `SqlClient`, `SqlRow`, `SqlParam`, `TestSqlClient`, `transaction_scope` |
-| [`transaction`](src/transaction.rs) | `SqlTransaction`, `with_transaction` transaction scope |
-| [`pg`](src/pg/mod.rs) (feature `pg`) | `PgSqlClient`, `PgPoolConfig`, `pg_pool_from_config`, `provide_pg_sql_client` (formerly `id_effect_sql_pg`) |
+| [`client`](src/client.rs) | `SqlClient`, `SqlClientService`, `sql_client_layer`, `provide_sql_client`, `query`, `execute`, `SqlRow`, `SqlParam`, `TestSqlClient` |
+| [`transaction`](src/transaction.rs) | `SqlTransaction`, `SqlTransactionService`, `transaction_layer`, `with_transaction` (alias `transaction_scope`), `transaction` |
+| [`pg`](src/pg/mod.rs) (feature `pg`) | `PgSqlClient` (+ `PgSqlClient::layer`), `PgPool`, `PgPoolConfig`, `pg_pool_from_config`, `provide_pg_sql_client`, `provide_pg_pool` |
 
 ## Design
 
@@ -67,6 +69,6 @@ Live PostgreSQL tests (`tests/pg.rs`, `live_postgres_*`) read `DATABASE_URL`. Wi
 missing or unreachable database **fails** the run instead.
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres ID_EFFECT_REQUIRE_PG=1 \
-  cargo nextest run -p id_effect_sql --features pg --test pg
+devenv up -d   # postgres (devenv.nix)
+devenv shell -- env ID_EFFECT_REQUIRE_PG=1 cargo nextest run -p id_effect_sql --features pg
 ```

@@ -2,8 +2,6 @@
 
 Async Rust gives you the ability to do many things concurrently. The challenge is doing it *safely* — without fire-and-forget tasks that outlive their parent, without silent failures when a task panics, and without resource leaks when tasks are cancelled.
 
-id_effect uses **Fibers** for structured concurrency. A Fiber is a lightweight, interruptible async task with a typed result, an explicit lifecycle, and guaranteed cleanup.
+id_effect uses **fibers** for structured concurrency. A fiber is a lightweight, interruptible task with a typed result, an explicit lifecycle and guaranteed cleanup. Fibers run on an [`Executor`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/executor.rs): `TokioExecutor` in production (each fiber is an ordinary tokio task; `Effect::block_on` and `Runtime::global()` own one for you) and the deterministic `TestExecutor` in tests. Parallel combinators can additionally be throttled by the [**Compute Fabric**](./ch12-00-compute-fabric.md) (`Concurrency::Inherit`).
 
-Fibers spawn through [**Compute Fabric**](./ch12-00-compute-fabric.md): [`ThreadSleepRuntime`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/rt.rs) admits work on a shared [`FiberPool`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/compute/fiber_pool.rs) instead of one OS thread per fiber, and [`TokioRuntime`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_tokio/src/lib.rs) gates blocking-pool tasks with the same admission controller.
-
-This chapter covers spawning fibers, joining them, cancelling them gracefully, using `FiberRef` for fiber-local state, and **supervision** (restart policies tied to [`Scope`](./ch10-02-scopes-finalizers.md) and [`CancellationToken`](./ch09-03-cancellation.md)).
+This chapter covers forking and joining fibers, the parallel combinators (`zip_par`, `all`, `race`, `timeout`), interruption, `FiberRef` for fiber-local state, and **supervision** (`supervised`, `Supervisor`).

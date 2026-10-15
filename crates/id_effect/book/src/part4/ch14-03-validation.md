@@ -1,135 +1,112 @@
 # Validation and Refinement — Constrained Types
 
-Schemas parse structure. Validation adds constraints: an age must be positive, an email must contain `@`, a price must have at most two decimal places. Refinement goes further: a validated `Email` is a different type from a raw `String`, so you can never accidentally pass an unvalidated string where an email is expected.
+Schemas check structure. Validation adds constraints: an age must be positive, an email must
+contain `@`. Refinement goes further: a validated `Email` is a different type from a raw
+`String`, so you can never pass an unvalidated string where an email is expected.
 
-## refine: Attach a Predicate
+## refine / filter: Attach a Predicate
 
-`refine` takes a schema and a predicate. Parsing succeeds only if both the schema's parse and the predicate pass:
+`refine(schema, pred, message)` keeps the values for which `pred` holds and fails with `message`
+otherwise. `filter` is the same function under another name.
 
-```rust
-use id_effect::schema::{string, i64, refine};
+```rust,ignore
+use id_effect::schema::{i64, refine, string};
 
-// Age must be between 0 and 150
-let age_schema = refine(
-    i64(),
-    |n| (0..=150).contains(n),
-    "age must be between 0 and 150",
+let age = refine(i64::<()>(), |n| (0..=150).contains(n), "age must be between 0 and 150");
+let non_empty = refine(string::<()>(), |s: &String| !s.is_empty(), "must not be empty");
+
+assert!(age.decode(200).is_err());
+assert_eq!(age.decode(42), Ok(42));
+```
+
+The error has an empty path; an enclosing `struct_` or `array` prefixes it with the field name or
+index.
+
+## transform: Fallible Conversion
+
+When conversion can fail (parsing a date, a URL, an email), use `transform(schema, decode,
+encode)`. `decode` returns `Result<B, ParseError>`; `encode` maps back to the inner type, so the
+schema stays bidirectional:
+
+```rust,ignore
+use id_effect::schema::{ParseError, string, transform};
+
+let port = transform(
+  string::<()>(),
+  |s| s.parse::<u16>().map_err(|e| ParseError::new("", format!("invalid port: {e}"))),
+  |p: u16| p.to_string(),
 );
+assert_eq!(port.decode("8080".into()), Ok(8080));
+```
 
-// Non-empty string
-let non_empty = refine(
-    string(),
-    |s: &String| !s.is_empty(),
-    "must not be empty",
+`transform` is also how a `struct_` tuple becomes your own type:
+
+```rust,ignore
+let user = transform(
+  struct_("name", string::<()>(), "age", i64()),
+  |(name, age)| Ok(User { name, age }),
+  |u: User| (u.name, u.age),
 );
 ```
 
-If the predicate returns `false`, parsing fails with a `ParseError` containing the message you provided.
+## Brand — Nominal Newtypes
 
-## filter: Same as refine, Different Style
+A `Brand<A, Tag>` wraps an `A` with a phantom tag, so `Brand<i64, UsdTag>` and `Brand<i64,
+EurTag>` are different types with the same runtime representation:
 
-`filter` is an alias for `refine` with a closure-first signature, matching Rust iterator conventions:
+```rust,ignore
+use id_effect::Brand;
 
-```rust
-let positive = i64().filter(|n| *n > 0, "must be positive");
-let trimmed  = string().filter(|s| s == s.trim(), "must not have leading/trailing whitespace");
+struct UsdTag;
+type Usd = Brand<i64, UsdTag>;
+
+let price = Usd::nominal(100);
+assert_eq!(*price.value(), 100);
 ```
 
-Use whichever reads more naturally.
+`Brand` keeps `Eq`, `Hash`, `Ord` and `Display` of its inner type, so `Equal` / `EffectHash` still
+apply (example `088_brand_equal_hash`). To validate while branding, use `RefinedBrand`:
 
-## try_map: Fallible Transformation
+```rust,ignore
+use id_effect::schema::RefinedBrand;
 
-When conversion logic can fail — parsing a date, constructing a URL, validating an email — use `.try_map`:
-
-```rust
-use id_effect::schema::ParseError;
-
-let url_schema = string().try_map(|s| {
-    url::Url::parse(&s).map_err(|e| ParseError::custom(format!("invalid URL: {e}")))
+struct EmailTag;
+let email = RefinedBrand::<String, EmailTag>::new(|s: &String| {
+  if s.contains('@') { Ok(()) } else { Err("invalid email".to_owned()) }
 });
 
-let date_schema = string().try_map(|s| {
-    chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d")
-        .map_err(|e| ParseError::custom(format!("invalid date: {e}")))
-});
+assert!(email.try_make("alice@example.com".into()).is_ok());
+assert!(email.try_make("alice".into()).is_err());
 ```
 
-`.try_map` runs after the base schema succeeds. The closure returns `Result<NewType, ParseError>`.
-
-## Brand — Newtypes with Zero Cost
-
-A `Brand` is a newtype wrapper that exists only at the type level. At runtime it's transparent. At compile time it prevents mixing up bare primitives with domain values:
-
-```rust
-use id_effect::schema::Brand;
-
-// Define branded types
-type UserId   = Brand<i64,    UserIdMarker>;
-type Email    = Brand<String, EmailMarker>;
-type PosPrice = Brand<f64,    PosPriceMarker>;
-
-struct UserIdMarker;
-struct EmailMarker;
-struct PosPriceMarker;
-```
-
-Build schemas that produce branded types:
-
-```rust
-let user_id_schema: Schema<UserId> = i64()
-    .filter(|n| *n > 0, "user id must be positive")
-    .map(Brand::new);
-
-let email_schema: Schema<Email> = string()
-    .try_map(|s| {
-        if s.contains('@') {
-            Ok(Brand::new(s))
-        } else {
-            Err(ParseError::custom("invalid email"))
-        }
-    });
-```
-
-Now functions that need an `Email` won't compile with a bare `String`:
-
-```rust
-fn send_welcome(to: Email) -> Effect<(), MailError, Mailer> { /* … */ }
-
-// This compiles:
-send_welcome(parsed_email);
-
-// This doesn't:
-send_welcome("alice@example.com".to_string()); // type error: expected Email, found String
-```
+Combine it with `transform` to get a schema that yields the branded type. Functions that need an
+email then take `Brand<String, EmailTag>` and won't accept a bare `String`.
 
 ## HasSchema — Attaching Schemas to Types
 
-When a type always has the same schema, implement `HasSchema`:
+When a type always has the same schema, implement `HasSchema` (or `derive(Schema)`, see the
+previous section):
 
-```rust
-use id_effect::schema::HasSchema;
+```rust,ignore
+use id_effect::schema::{HasSchema, Schema, i64, refine};
 
-impl HasSchema for User {
-    fn schema() -> Schema<Self> {
-        struct_!(User {
-            id:    user_id_schema(),
-            email: email_schema(),
-            name:  non_empty_string_schema(),
-        })
-    }
+struct Age;
+
+impl HasSchema for Age {
+  type A = i64;
+  type I = i64;
+  type E = ();
+  fn schema() -> Schema<i64, i64, ()> {
+    refine(i64::<()>(), |n| *n >= 0, "age must be non-negative")
+  }
 }
-
-// Now parse using the impl
-let user: User = User::schema().run(raw)?;
 ```
-
-`HasSchema` types work with generic tooling (exporters, documentation generators, UI scaffolding) that needs to know a type's schema without being parameterised over it.
 
 ## Summary
 
 | Tool | When to use |
 |------|-------------|
-| `refine` / `filter` | Predicate on a successfully-parsed value |
-| `try_map` | Fallible conversion after parse |
-| `Brand` | Newtypes that prevent mixing domain values |
-| `HasSchema` | Attach the canonical schema to a type |
+| `refine` / `filter` | Predicate on a decoded value |
+| `transform` | Fallible conversion, or mapping a tuple to your type |
+| `Brand` / `RefinedBrand` | Newtypes that prevent mixing domain values |
+| `HasSchema` / `derive(Schema)` | Attach the canonical schema to a type |

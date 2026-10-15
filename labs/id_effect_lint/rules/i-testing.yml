@@ -1,16 +1,14 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# I-02  run_test result must not be .unwrap()-ed directly
+# I-02  A test's Exit must be matched, not .into_result().unwrap()-ed
 # ──────────────────────────────────────────────────────────────────────────────
 - id: id_effect-run-test-result-must-be-matched
   language: Rust
   severity: warning
   message: |
-    `run_test(…).unwrap()` silently ignores fiber-leak and defect variants.
-    Explicitly match `Exit::Success(_)` or use `run_test_and_unwrap`.
+    `effect.block_on().into_result().unwrap()` hides whether the `Cause` was a typed
+    failure, a defect or an interrupt. Match the `Exit` explicitly.
   note: |
-    BAD:  let result = run_test(my_effect()).unwrap();
-    GOOD: assert!(matches!(run_test(my_effect()), Exit::Success(_)));
-          // or:
-          let result = run_test_and_unwrap(my_effect());
+    BAD:  let result = my_effect().block_on().into_result().unwrap();
+    GOOD: assert!(matches!(my_effect().block_on(), Exit::Success(_)));
   rule:
-    pattern: run_test($$$).unwrap()
+    pattern: $EFF.block_on().into_result().unwrap()

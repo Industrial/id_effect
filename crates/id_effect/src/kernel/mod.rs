@@ -1,14 +1,34 @@
-//! Stratum 2 — **Core Effect**: [`Effect`] and parallel binds.
-//!
-//! The [`effect`] submodule holds [`Effect`](id_effect::Effect), [`BoxFuture`](id_effect::BoxFuture), and
-//! [`IntoBind`](id_effect::IntoBind). The pure `thunk`, `result` and `reader` helpers live in the
-//! maintenance-tier `id_effect_fp` crate (`id_effect_fp::{thunk, result, reader}`).
+//! The effect kernel: `Effect`, its constructors and combinators, the erased runloop, typed binds,
+//! fork/resource combinators, the run edges and `LocalEffect`.
 
-pub mod effect;
-pub mod par_bind;
+mod anybox;
+mod bind;
+mod bind_same;
+mod cause;
+mod constructors;
+mod ctx;
+mod edge;
+mod effect;
+mod fork;
+mod local;
+#[doc(hidden)]
+pub mod macro_support;
+mod resource;
+mod runloop;
 
-pub use self::effect::{
-  BoxFuture, Effect, InfallibleError, IntoBind, acquire_release, box_future, fail, from_async,
-  into_bind, pure, scope_with, scoped, succeed, unwrap_infallible,
-};
-pub use self::par_bind::{flatten_or, join_binds2, join_binds3, join_binds4};
+#[allow(unused_imports)] // crate-internal items only (`crate::kernel::AnyBox` etc.)
+pub use anybox::*;
+pub use bind::*;
+#[allow(unused_imports)] // `SameEnv` and its impls only
+pub use bind_same::*;
+pub use cause::*;
+pub use constructors::*;
+pub use ctx::*;
+#[allow(unused_imports)] // impl-only module (`Effect::block_on` / `try_block_on`)
+pub use edge::*;
+pub use effect::*;
+#[allow(unused_imports)] // inherent impls only (`Effect::fork` / `fork_daemon`)
+pub use fork::*;
+pub use local::*;
+pub use resource::*;
+pub use runloop::*;

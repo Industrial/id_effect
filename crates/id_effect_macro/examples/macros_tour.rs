@@ -1,16 +1,12 @@
-//! Tour of the declarative macros: `pipe!`, `err!`, `caps!`, `mock_capability!`, `providers!`.
+//! Tour of the kernel-neutral declarative macros: `pipe!` and `err!`.
 //!
 //! Run: `cargo run -p id_effect_macro --example macros_tour`
+//!
+//! The environment of an effect is named with `id_effect::caps!` (a proc macro); capabilities are
+//! provided with `.provide(..)` / `.provide_env(..)` or `Layer`s.
 
-use id_effect::{Cap, Or, build_env};
-use id_effect_macro::{caps, err, mock_capability, pipe, providers};
-
-#[derive(Clone, Debug)]
-struct Greeting(&'static str);
-
-mock_capability!(GreetingMock, Greeting, "greeting/mock", || Greeting(
-  "hello"
-));
+use id_effect::Or;
+use id_effect_macro::{err, pipe};
 
 #[derive(Debug)]
 struct ParseErr;
@@ -26,11 +22,6 @@ fn parse_percent(s: &str) -> Result<u8, err!(ParseErr | RangeErr)> {
     .ok_or(Or::Right(RangeErr))
 }
 
-/// Only type-checks because `caps!(Greeting)` names the capability list this fn needs.
-fn greet(env: &caps!(Greeting)) -> &'static str {
-  env.env().get::<Cap<Greeting>>().0
-}
-
 fn main() {
   let shouted = pipe!("  id_effect ", str::trim, str::to_uppercase);
   println!("pipe!: {shouted}");
@@ -40,8 +31,4 @@ fn main() {
     parse_percent("42"),
     parse_percent("420")
   );
-
-  let env = build_env(providers!(dev: [GreetingMock])).expect("providers build");
-  let typed = id_effect::CapList::new(env);
-  println!("caps!: {}", greet(&typed));
 }

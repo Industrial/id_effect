@@ -47,8 +47,10 @@ jobs:
           node-version: '22'
       - name: Install Biome (treefmt formatter for JS/JSON)
         run: npm install -g @biomejs/biome
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      # Pinned (not @stable): the trybuild suite (`crates/id_effect/tests/ui`) snapshots rustc
+      # diagnostics, which change between releases. Re-bless it when bumping (see its docs).
+      - name: Install Rust (1.99.0)
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
       - name: Cache
@@ -84,8 +86,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install system deps (OpenSSL for rdkafka)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (1.99.0, same pin as moon-ci)
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: llvm-tools-preview
       - name: Cache
@@ -186,7 +188,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
-        run: cargo nextest run -p id_effect_sql -p id_effect_node --features id_effect_sql/pg,id_effect_node/pg
+        run: cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase --features id_effect_sql/pg,id_effect_node/pg
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
@@ -210,7 +212,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Test labs workspace
-        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace
+        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────

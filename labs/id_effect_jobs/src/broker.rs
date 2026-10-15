@@ -10,7 +10,7 @@ use crate::error::JobError;
 /// Publish messages to a topic.
 pub trait MessageBroker: Send + Sync {
   /// Publish `payload` to `topic`.
-  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()>;
+  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError>;
 }
 
 /// In-memory FIFO per topic (tests).
@@ -40,11 +40,11 @@ impl MemoryBroker {
 
 #[cfg(feature = "memory")]
 impl MessageBroker for MemoryBroker {
-  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()> {
+  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError> {
     let topic = topic.to_owned();
     let payload = payload.to_vec();
     let topics = Arc::clone(&self.topics);
-    Effect::new(move |_r| {
+    crate::attempt(move || {
       let mut guard = topics.lock().map_err(|e| JobError::Lock(e.to_string()))?;
       guard.entry(topic).or_default().push_back(payload);
       Ok(())
@@ -78,7 +78,7 @@ impl KafkaBrokerStub {
 
 #[cfg(feature = "memory")]
 impl MessageBroker for KafkaBrokerStub {
-  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()> {
+  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError> {
     tracing::debug!(bootstrap = %self.bootstrap, topic, bytes = payload.len(), "kafka stub publish");
     self.inner.publish(topic, payload)
   }
@@ -87,12 +87,18 @@ impl MessageBroker for KafkaBrokerStub {
 #[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
-  use id_effect::run_blocking;
+
+  fn run<A: Send + 'static>(eff: Effect<A, JobError>) -> Result<A, JobError> {
+    eff
+      .block_on()
+      .into_result()
+      .map_err(|c| c.fail_option().expect("typed failure"))
+  }
 
   #[test]
   fn kafka_stub_publishes_to_memory() {
     let broker = KafkaBrokerStub::new("localhost:9092");
-    run_blocking(broker.publish("orders", b"{}"), ()).unwrap();
+    run(broker.publish("orders", b"{}")).unwrap();
     assert_eq!(broker.inner.drain_topic("orders").len(), 1);
     assert_eq!(broker.bootstrap_servers(), "localhost:9092");
   }
@@ -100,8 +106,8 @@ mod tests {
   #[test]
   fn memory_broker_round_trip() {
     let broker = MemoryBroker::new();
-    run_blocking(broker.publish("t", b"one"), ()).unwrap();
-    run_blocking(broker.publish("t", b"two"), ()).unwrap();
+    run(broker.publish("t", b"one")).unwrap();
+    run(broker.publish("t", b"two")).unwrap();
     let drained = broker.drain_topic("t");
     assert_eq!(drained.len(), 2);
     assert_eq!(drained[0], b"one".to_vec());

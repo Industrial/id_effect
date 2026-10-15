@@ -20,6 +20,11 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 | `Discovery` | Join candidates: `StaticDiscovery`, `DnsDiscovery`, `ChainedDiscovery` |
 | `control` | Serializable cluster status / admin DTOs (mounted by `id_effect_axum`) |
 
+Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
+`DistributedSupervisor::start_child` / `on_membership`, the `ClusterSingleton` lease — returns an
+`id_effect::Effect`: `Send`, interruptible, with timeouts on the executor clock. Compose
+them into a program, or run them at the edge with `block_on`.
+
 Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.
 The handshake authenticates but does not encrypt: use the QUIC transport or a trusted network
 for confidentiality.

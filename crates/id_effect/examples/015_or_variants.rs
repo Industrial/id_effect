@@ -1,5 +1,6 @@
-//! Ex 015 — `Or::Left` / `Or::Right` tag the failing branch.
-use id_effect::{Effect, Or, fail, run_blocking};
+//! Ex 015 — `Or::Left` / `Or::Right` tag the failing branch of an `err!` union.
+use id_effect::{Cause, Exit, Or, err};
+use id_effect::{Effect, fail};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum L {
@@ -11,9 +12,15 @@ enum R {
 }
 
 fn main() {
-  let l: Effect<(), Or<L, R>, ()> = fail(L::A).union_error::<R>();
-  assert_eq!(run_blocking(l, ()), Err(Or::Left(L::A)));
-  let r: Effect<(), Or<L, R>, ()> = fail(R::B).map_error(Or::Right);
-  assert_eq!(run_blocking(r, ()), Err(Or::Right(R::B)));
+  let l: Effect<(), err!(L | R)> = fail(L::A).map_err(Or::Left);
+  assert!(matches!(
+    l.block_on(),
+    Exit::Failure(Cause::Fail(Or::Left(L::A)))
+  ));
+  let r: Effect<(), err!(L | R)> = fail(R::B).map_err(Or::Right);
+  assert!(matches!(
+    r.block_on(),
+    Exit::Failure(Cause::Fail(Or::Right(R::B)))
+  ));
   println!("015_or_variants ok");
 }

@@ -5,20 +5,20 @@
   language: Rust
   severity: warning
   message: |
-    Chains of 2+ `.flat_map(…)` calls should use `effect! { ~ … }` do-notation.
+    Chains of 2+ `.flat_map(…)` calls should use `effect!({ ~… })` do-notation.
   note: |
     BAD:
       step_a().flat_map(|a| step_b(a).flat_map(|b| step_c(a, b)))
     GOOD:
-      effect! {
-          let a = ~ step_a();
-          let b = ~ step_b(a);
-          ~ step_c(a, b)
-      }
+      effect!({
+          let a = ~step_a();
+          let b = ~step_b(a);
+          ~step_c(a, b)
+      })
   rule:
     pattern: $RECV.flat_map($$$).flat_map($$$)
 # ──────────────────────────────────────────────────────────────────────────────
-# B-04  The postfix ~ operator must only appear inside effect! { }
+# B-04  The prefix ~operator must only appear inside effect!({ })
 # (This is already a compile error if the macro is not in scope, but we flag
 #  it to give a better error message.)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -36,13 +36,13 @@
   language: Rust
   severity: error
   message: |
-    The `~` (bind) operator is only valid inside `effect! { … }`.
+    The `~` (bind) operator is only valid inside `effect!({ … })` / `effect_local!({ … })`.
   note: |
-    BAD:  fn foo() -> Effect<…> { ~ some_effect() }
-    GOOD: fn foo() -> Effect<…> { effect! { ~ some_effect() } }
+    BAD:  fn foo() -> Effect<…> { ~some_effect() }
+    GOOD: fn foo() -> Effect<…> { effect!({ ~some_effect() }) }
   rule:
     all:
       - pattern: fn $NAME($$$) -> Effect<$$$> { $$$PREFIX ~ $EXPR $$$SUFFIX }
       # Exclude bodies that start with `effect!`
       - not:
-          pattern: fn $NAME($$$) -> Effect<$$$> { effect! { $$$INNER } }
+          pattern: fn $NAME($$$) -> Effect<$$$> { effect!({ $$$INNER }) }

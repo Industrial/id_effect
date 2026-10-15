@@ -2,51 +2,34 @@
 
 use std::time::Duration;
 
-use id_effect::kernel::Effect;
-use id_effect::{Schedule, ScheduleInput};
+use id_effect::{Effect, Schedule};
 
 use crate::error::AiError;
 
-/// Default retry schedule for transient vendor HTTP errors.
+/// Default retry schedule for transient vendor HTTP errors: exponential backoff from 50 ms, at
+/// most 3 retries.
 #[inline]
-pub fn default_ai_retry_schedule() -> Schedule {
-  Schedule::exponential(Duration::from_millis(50)).compose(Schedule::recurs(3))
+pub fn default_ai_retry_schedule() -> Schedule<(Duration, u64), AiError> {
+  Schedule::exponential(Duration::from_millis(50)).intersect(Schedule::recurs(3))
 }
 
-/// Run `make` with exponential backoff when the effect returns a transient [`AiError`].
-pub fn retry_transient_ai_http<A, F>(make: F) -> Effect<A, AiError, ()>
+/// Run `make` with exponential backoff ([`default_ai_retry_schedule`]) when the effect fails
+/// with a transient [`AiError`]; any other failure is returned at once.
+pub fn retry_transient_ai_http<A, F>(make: F) -> Effect<A, AiError>
 where
   A: Send + 'static,
-  F: Fn() -> Effect<A, AiError, ()> + Send + Clone + 'static,
+  F: Fn() -> Effect<A, AiError> + Send + Sync + 'static,
 {
-  Effect::new_async(move |_r: &mut ()| {
-    let make = make.clone();
-    let mut schedule = default_ai_retry_schedule();
-    Box::pin(async move {
-      let mut attempt = 0u64;
-      loop {
-        match make().run(&mut ()).await {
-          Ok(value) => return Ok(value),
-          Err(err) if err.is_transient() => {
-            let input = ScheduleInput { attempt };
-            attempt = attempt.saturating_add(1);
-            if schedule.next(input).is_none() {
-              return Err(err);
-            }
-            std::thread::sleep(Duration::from_millis(25 * attempt.max(1)));
-          }
-          Err(err) => return Err(err),
-        }
-      }
-    })
-  })
+  Effect::retry(
+    make,
+    default_ai_retry_schedule().while_input(AiError::is_transient),
+  )
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::kernel::Effect;
-  use id_effect::runtime::run_blocking;
+  use id_effect::{fail, succeed, suspend};
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -56,19 +39,19 @@ mod tests {
     let c = Arc::clone(&calls);
     let program = retry_transient_ai_http(move || {
       let c = Arc::clone(&c);
-      Effect::new(move |_r| {
+      suspend(move || {
         let n = c.fetch_add(1, Ordering::SeqCst);
         if n < 2 {
-          Err(AiError::Transient {
+          fail(AiError::Transient {
             status: 429,
             detail: "rate".into(),
           })
         } else {
-          Ok(42_i32)
+          succeed(42_i32)
         }
       })
     });
-    let out = run_blocking(program, ()).expect("ok");
+    let out = program.block_on().into_result().expect("ok");
     assert_eq!(out, 42);
     assert!(calls.load(Ordering::SeqCst) >= 3);
   }
@@ -77,15 +60,15 @@ mod tests {
   fn does_not_retry_unauthorized() {
     let calls = Arc::new(AtomicU32::new(0));
     let c = Arc::clone(&calls);
-    let program: Effect<i32, AiError, ()> = retry_transient_ai_http(move || {
+    let program: Effect<i32, AiError> = retry_transient_ai_http(move || {
       let c = Arc::clone(&c);
-      Effect::new(move |_r| {
+      suspend(move || {
         c.fetch_add(1, Ordering::SeqCst);
-        Err(AiError::Unauthorized)
+        fail(AiError::Unauthorized)
       })
     });
-    let err = run_blocking(program, ()).unwrap_err();
-    assert_eq!(err, AiError::Unauthorized);
+    let err = program.block_on().into_result().unwrap_err();
+    assert_eq!(err.fail_option(), Some(AiError::Unauthorized));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
   }
 }

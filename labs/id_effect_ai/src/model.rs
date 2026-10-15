@@ -1,9 +1,9 @@
 //! Language model trait and mock implementation.
 
 use crate::error::AiError;
+use crate::http_util::from_result;
 use crate::streaming::{CompletionChunk, mock_chunk_stream};
-use id_effect::kernel::Effect;
-use id_effect::{Needs, ProviderBox, provide};
+use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, Stream, hlist, need, suspend};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -61,12 +61,9 @@ pub type LanguageModelService = Arc<dyn LanguageModel>;
 /// Vendor-neutral language model capability.
 pub trait LanguageModel: Send + Sync + 'static {
   /// Buffered completion.
-  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError, ()>;
+  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError>;
   /// Streaming token chunks.
-  fn complete_stream(
-    &self,
-    req: ChatRequest,
-  ) -> Effect<id_effect::Stream<CompletionChunk, AiError, ()>, AiError, ()>;
+  fn complete_stream(&self, req: ChatRequest) -> Effect<Stream<CompletionChunk, AiError>, AiError>;
 }
 
 /// Deterministic mock for tests and examples.
@@ -97,57 +94,44 @@ impl MockLanguageModel {
 }
 
 impl LanguageModel for MockLanguageModel {
-  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError, ()> {
+  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError> {
     let prefix = self.reply_prefix.clone();
-    Effect::new(move |_r: &mut ()| {
-      let user = Self::last_user(&req)?;
-      let content = format!("{prefix}{user}");
-      let tokens_used = content.len() as u32;
-      Ok(ChatResponse {
-        content,
-        tokens_used,
-      })
+    suspend(move || {
+      from_result(Self::last_user(&req).map(|user| {
+        let content = format!("{prefix}{user}");
+        let tokens_used = content.len() as u32;
+        ChatResponse {
+          content,
+          tokens_used,
+        }
+      }))
     })
   }
 
-  fn complete_stream(
-    &self,
-    req: ChatRequest,
-  ) -> Effect<id_effect::Stream<CompletionChunk, AiError, ()>, AiError, ()> {
+  fn complete_stream(&self, req: ChatRequest) -> Effect<Stream<CompletionChunk, AiError>, AiError> {
     let prefix = self.reply_prefix.clone();
-    Effect::new(move |_r: &mut ()| {
-      let user = Self::last_user(&req)?;
-      let content = format!("{prefix}{user}");
-      Ok(mock_chunk_stream(&content, 4))
+    suspend(move || {
+      from_result(
+        Self::last_user(&req).map(|user| mock_chunk_stream(&format!("{prefix}{user}"), 4)),
+      )
     })
   }
 }
 
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(LanguageModelService)]
-struct MockLanguageModelProvider;
-
-impl MockLanguageModelProvider {
-  fn new() -> LanguageModelService {
-    Arc::new(MockLanguageModel::echo())
-  }
-}
-
-/// Register mock language model provider.
+/// Register mock language model provider: a [`Layer`] providing [`LanguageModelService`]
+/// ([`MockLanguageModel::echo`]).
 #[inline]
-pub fn provide_mock_language_model() -> ProviderBox {
-  provide!(MockLanguageModelProvider)
+pub fn provide_mock_language_model<E: Send + 'static>()
+-> Layer<HCons<LanguageModelService, HNil>, E> {
+  let model: LanguageModelService = Arc::new(MockLanguageModel::echo());
+  Layer::succeed(hlist![model])
 }
 
 /// Complete using installed [`LanguageModel`] capability.
 #[inline]
-pub fn complete<R>(req: ChatRequest) -> Effect<ChatResponse, AiError, R>
+pub fn complete<R, I>(req: ChatRequest) -> Effect<ChatResponse, AiError, R>
 where
-  R: Needs<LanguageModelService> + 'static,
+  R: Selector<LanguageModelService, I> + HList,
 {
-  Effect::new_async(move |r: &mut R| {
-    let model = r.need().clone();
-    let inner = model.complete(req);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+  need::<LanguageModelService>().flat_map(move |model| model.complete(req).narrow())
 }

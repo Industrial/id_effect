@@ -1,68 +1,85 @@
-# Providing Services — `ProviderSpec` Implementations
+# Providing Services — Layers
 
-You have a trait and an implementation. A provider wires the impl into [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs).
+You have a trait, an implementation and a capability type. A [`Layer`](./ch06-00-layers.md)
+builds the capability; the edge feeds it to the program.
 
-## Production provider
+## A closed layer
 
-```rust
-use id_effect::{Env, ProviderSpecDerive, caps, effect, provide, run_with};
-use std::sync::Arc;
+A layer that needs nothing (`In = HNil`) can be a plain value or a derive:
 
-struct PostgresUserRepository { pool: Pool }
+```rust,ignore
+use id_effect::{HCons, HNil, Layer, ProviderSpecDerive, hlist};
 
-impl UserRepository for PostgresUserRepository {
-    fn get_user(&self, id: u64) -> Effect<User, DbError, ()> {
-        effect! { /* query via self.pool */ }
-    }
+// By hand: one shared value, built once per layer build.
+fn mock_user_repo() -> Layer<HCons<UserRepo, HNil>, AppError> {
+    Layer::succeed(hlist![UserRepo::new(MockUserRepository::default_fixture())])
 }
 
+// Or derived: `UserRepoMock::layer::<E>()` is a `Layer<HCons<UserRepo, HNil>, E>`.
 #[derive(ProviderSpecDerive)]
-#[provides(UserRepo, with = |deps: &Env| UserRepoLive::build(deps))]
-struct UserRepoLive;
+#[provides(UserRepo, with = || UserRepo::new(MockUserRepository::default_fixture()))]
+struct UserRepoMock;
+```
 
-impl UserRepoLive {
-    fn build(deps: &Env) -> Arc<dyn UserRepository> {
-        let pool = deps.get::<Cap<Database>>().clone();
-        Arc::new(PostgresUserRepository { pool })
-    }
+`ProviderSpecDerive` emits only the inherent `layer()`; `#[provides(K, release = f)]` turns it into
+an `acquire_release` layer whose finalizer runs when the layer's scope closes. The 0.6
+`|deps: &Env|` constructors are gone: a provider with dependencies is a layer with an input.
+
+## A layer with dependencies
+
+The production repository needs a `Database`. Read it with `need` inside `Layer::effect`; the
+layer's `In` lists what it needs:
+
+```rust,ignore
+use id_effect::{HCons, HNil, Layer, hlist, need};
+
+fn user_repo_live() -> Layer<HCons<UserRepo, HNil>, AppError, HCons<Database, HNil>> {
+    Layer::effect(|| {
+        need::<Database>().map(|db| {
+            hlist![UserRepo::new(PostgresUserRepository { pool: db.pool.clone() })]
+        })
+    })
+}
+
+fn database_live() -> Layer<HCons<Database, HNil>, AppError> {
+    // `open_pool` adds a finalizer to `scope` that closes the pool when the layer's scope closes.
+    Layer::scoped(|scope| open_pool(scope).map(|db| hlist![db]))
 }
 ```
 
-Register alongside dependencies:
+Compose the graph with the Effect.ts operators:
 
-```rust
-run_with(
-    [provide!(ConfigLive), provide!(DatabaseLive), provide!(UserRepoLive)],
-    get_user_profile(42),
-)?;
+| Operator | Meaning |
+|----------|---------|
+| `a.merge(b)` | side by side; outputs and inputs concatenated |
+| `base.provide_to(upper)` | feed `base`'s output into `upper`; keep only `upper`'s output |
+| `upper.provide_merge(base)` | feed `base` into `upper`; keep both outputs |
+
+```rust,ignore
+// Database → UserRepo, and keep Database for code that also needs it.
+let app = user_repo_live().provide_merge(database_live());
 ```
 
-## Mock provider
+A layer value is memoised within one build: a layer used twice in a graph is constructed once.
 
-[`provide!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) takes a **type** (`provide!(MockUserRepoLive)`), not a value. For custom fixture data, insert into `Env` directly:
+## At the edge
 
-```rust
-let mut env = Env::new();
-env.insert::<Cap<UserRepo>>(Arc::new(MockUserRepository { users: test_data() }));
-run_blocking(get_user(1), env)?;
-```
-
-For a fixed zero-config mock, use a unit struct:
-
-```rust
-#[derive(ProviderSpecDerive)]
-#[provides(UserRepo, with = || Arc::new(MockUserRepository::default_fixture()) as UserRepo)]
-struct MockUserRepoLive;
-```
-
-Same `UserRepo`, no real database — swap at the edge:
-
-```rust
+```rust,ignore
 // Production
-run_with([provide!(DatabaseLive), provide!(UserRepoLive)], app())?;
+let exit = get_user_profile(42).provide_layer(user_repo_live().provide_merge(database_live())).block_on();
 
-// Test (fixed fixture)
-run_with([provide!(MockUserRepoLive)], get_user(1))?;
+// Test with a mock layer
+let exit = get_user_profile(42).provide_layer(UserRepoMock::layer()).block_on();
+
+// Test with a plain value — no layer needed
+let exit = get_user_profile(42)
+    .provide(UserRepo::new(MockUserRepository { users: test_data() }))
+    .block_on();
 ```
 
-Application code using `caps!(UserRepo)` and `~UserRepo` stays identical.
+`provide(v)` removes one capability from `R`; `provide_all(hlist![..])` supplies the whole list;
+`provide_env(env)` accepts any environment that contains `R`; `provide_layer(layer)` builds the
+layer under a fresh scope and closes it (running finalizers) when the effect completes. If the
+layer's output misses a capability of `R`, the call does not compile.
+
+Application code using `caps!(UserRepo)` and `~UserRepo` stays identical across all three.

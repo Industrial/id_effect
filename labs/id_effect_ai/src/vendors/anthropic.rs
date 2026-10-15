@@ -2,15 +2,14 @@
 
 use std::sync::Arc;
 
-use id_effect::kernel::Effect;
-use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
+use id_effect::{Effect, HCons, HNil, Layer, Stream, fail, hlist, suspend};
+use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest, HttpResponse};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::config::AiConfig;
 use crate::error::AiError;
-use crate::http_util::join_url;
+use crate::http_util::{check_status, from_result, join_url};
 use crate::model::{
   ChatMessage, ChatRequest, ChatResponse, ChatRole, LanguageModel, LanguageModelService,
 };
@@ -120,10 +119,56 @@ struct AnthropicStreamDelta {
   text: Option<String>,
 }
 
+impl AnthropicLanguageModel {
+  /// The validated Messages API request for `req` (`stream` selects SSE).
+  fn messages_request(&self, req: &ChatRequest, stream: bool) -> Result<HttpRequest, AiError> {
+    req.validate()?;
+    let (system, msgs) = Self::split_system(&req.messages);
+    let mut body = if stream {
+      json!({
+        "model": req.model,
+        "max_tokens": self.max_tokens,
+        "stream": true,
+        "messages": msgs,
+      })
+    } else {
+      json!({
+        "model": req.model,
+        "max_tokens": self.max_tokens,
+        "messages": msgs,
+      })
+    };
+    if let Some(s) = system {
+      body["system"] = json!(s);
+    }
+    let bytes = serde_json::to_vec(&body).map_err(|e| AiError::InvalidJson(e.to_string()))?;
+    Ok(self.auth_request(bytes, stream))
+  }
+
+  fn parse_completion(resp: HttpResponse) -> Result<ChatResponse, AiError> {
+    check_status(resp.status, || {
+      String::from_utf8_lossy(&resp.body).to_string()
+    })?;
+    let parsed: AnthropicResponse =
+      serde_json::from_slice(&resp.body).map_err(|e| AiError::InvalidJson(e.to_string()))?;
+    let content = parsed
+      .content
+      .iter()
+      .find(|b| b.kind == "text")
+      .and_then(|b| b.text.clone())
+      .filter(|s| !s.is_empty())
+      .ok_or(AiError::EmptyResponse)?;
+    let tokens_used = parsed.usage.and_then(|u| u.output_tokens).unwrap_or(0);
+    Ok(ChatResponse {
+      content,
+      tokens_used,
+    })
+  }
+}
+
 impl LanguageModel for AnthropicLanguageModel {
-  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError, ()> {
+  fn complete(&self, req: ChatRequest) -> Effect<ChatResponse, AiError> {
     let this = self.clone();
-    let req = req.clone();
     let model = req.model.clone();
     with_ai_span(
       "anthropic",
@@ -132,167 +177,71 @@ impl LanguageModel for AnthropicLanguageModel {
       retry_transient_ai_http(move || {
         let this = this.clone();
         let req = req.clone();
-        Effect::new_async(move |_r| {
-          Box::pin(async move {
-            req.validate()?;
-            let (system, msgs) = AnthropicLanguageModel::split_system(&req.messages);
-            let mut body = json!({
-              "model": req.model,
-              "max_tokens": this.max_tokens,
-              "messages": msgs,
-            });
-            if let Some(s) = system {
-              body["system"] = json!(s);
-            }
-            let bytes =
-              serde_json::to_vec(&body).map_err(|e| AiError::InvalidJson(e.to_string()))?;
-            let http_req = this.auth_request(bytes, false);
-            let resp = this
-              .client
-              .execute(http_req)
-              .run(&mut ())
-              .await
-              .map_err(|e| AiError::Upstream(format!("http: {e}")))?;
-            if resp.status == 401 || resp.status == 403 {
-              return Err(AiError::Unauthorized);
-            }
-            if !(200..300).contains(&resp.status) {
-              return Err(AiError::from_http_status(
-                resp.status,
-                String::from_utf8_lossy(&resp.body).to_string(),
-              ));
-            }
-            let parsed: AnthropicResponse = serde_json::from_slice(&resp.body)
-              .map_err(|e| AiError::InvalidJson(e.to_string()))?;
-            let content = parsed
-              .content
-              .iter()
-              .find(|b| b.kind == "text")
-              .and_then(|b| b.text.clone())
-              .filter(|s| !s.is_empty())
-              .ok_or(AiError::EmptyResponse)?;
-            let tokens_used = parsed.usage.and_then(|u| u.output_tokens).unwrap_or(0);
-            Ok(ChatResponse {
-              content,
-              tokens_used,
-            })
-          })
+        suspend(move || {
+          let http_req = match this.messages_request(&req, false) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+          };
+          this
+            .client
+            .execute(http_req)
+            .map_err(|e| AiError::Upstream(format!("http: {e}")))
+            .flat_map(|resp| from_result(AnthropicLanguageModel::parse_completion(resp)))
         })
       }),
     )
   }
 
-  fn complete_stream(
-    &self,
-    req: ChatRequest,
-  ) -> Effect<id_effect::Stream<CompletionChunk, AiError, ()>, AiError, ()> {
+  fn complete_stream(&self, req: ChatRequest) -> Effect<Stream<CompletionChunk, AiError>, AiError> {
     let this = self.clone();
-    Effect::new_async(move |_r| {
-      let this = this.clone();
-      let req = req.clone();
-      Box::pin(async move {
-        req.validate()?;
-        let (system, msgs) = AnthropicLanguageModel::split_system(&req.messages);
-        let mut body = json!({
-          "model": req.model,
-          "max_tokens": this.max_tokens,
-          "stream": true,
-          "messages": msgs,
-        });
-        if let Some(s) = system {
-          body["system"] = json!(s);
-        }
-        let bytes = serde_json::to_vec(&body).map_err(|e| AiError::InvalidJson(e.to_string()))?;
-        let http_req = this.auth_request(bytes, true);
-        let resp = this
-          .client
-          .execute_stream(http_req)
-          .run(&mut ())
-          .await
-          .map_err(|e| AiError::Upstream(format!("http: {e}")))?;
-        if resp.status == 401 || resp.status == 403 {
-          return Err(AiError::Unauthorized);
-        }
-        if !(200..300).contains(&resp.status) {
-          return Err(AiError::from_http_status(
-            resp.status,
-            "stream failed".to_string(),
-          ));
-        }
-        let byte_chunks = resp
-          .body
-          .run_collect()
-          .run(&mut ())
-          .await
-          .map_err(|e| AiError::Upstream(format!("stream collect: {e}")))?;
-        let text = String::from_utf8_lossy(&byte_chunks).to_string();
-        Ok(anthropic_sse_to_chunk_stream(&text))
-      })
+    suspend(move || {
+      let http_req = match this.messages_request(&req, true) {
+        Ok(r) => r,
+        Err(e) => return fail(e),
+      };
+      this
+        .client
+        .execute_stream(http_req)
+        .map_err(|e| AiError::Upstream(format!("http: {e}")))
+        .flat_map(|resp| {
+          if let Err(e) = check_status(resp.status, || "stream failed".to_string()) {
+            return fail(e);
+          }
+          resp
+            .body
+            .collect()
+            .map_err(|e| AiError::Upstream(format!("stream collect: {e}")))
+            .map(|bytes| anthropic_sse_to_chunk_stream(&String::from_utf8_lossy(&bytes)))
+        })
     })
   }
 }
 
-fn anthropic_sse_to_chunk_stream(text: &str) -> id_effect::Stream<CompletionChunk, AiError, ()> {
-  use id_effect::{Chunk, end_stream, send_chunk, stream_from_channel};
-  let (stream, sender) = stream_from_channel::<CompletionChunk, AiError, ()>(16);
-  let text = text.to_string();
-  std::thread::spawn(move || {
-    let mut parser = SseParser::new();
-    for msg in parser.feed(&text) {
-      let data = msg.data();
-      if let Ok(ev) = serde_json::from_str::<AnthropicStreamEvent>(&data)
-        && ev.kind == "content_block_delta"
-        && let Some(delta) = ev.delta.and_then(|d| d.text)
-        && !delta.is_empty()
-      {
-        let c = CompletionChunk { delta, done: false };
-        if id_effect::run_blocking(send_chunk(&sender, Chunk::singleton(c)), ()).is_err() {
-          return;
-        }
-      }
+fn anthropic_sse_to_chunk_stream(text: &str) -> Stream<CompletionChunk, AiError> {
+  let mut chunks = Vec::new();
+  let mut parser = SseParser::new();
+  for msg in parser.feed(text) {
+    let data = msg.data();
+    if let Ok(ev) = serde_json::from_str::<AnthropicStreamEvent>(&data)
+      && ev.kind == "content_block_delta"
+      && let Some(delta) = ev.delta.and_then(|d| d.text)
+      && !delta.is_empty()
+    {
+      chunks.push(CompletionChunk { delta, done: false });
     }
-    let _ = id_effect::run_blocking(
-      send_chunk(
-        &sender,
-        Chunk::singleton(CompletionChunk {
-          delta: String::new(),
-          done: true,
-        }),
-      ),
-      (),
-    );
-    let _ = id_effect::run_blocking(end_stream(sender), ());
+  }
+  chunks.push(CompletionChunk {
+    delta: String::new(),
+    done: true,
   });
-  stream
+  Stream::from_vec(chunks)
 }
 
-/// Register Anthropic [`LanguageModel`].
-pub fn provide_anthropic_language_model(
+/// Register Anthropic [`LanguageModel`]: a [`Layer`] providing [`LanguageModelService`].
+pub fn provide_anthropic_language_model<E: Send + 'static>(
   client: Arc<dyn HttpClient>,
   config: AiConfig,
-) -> Result<ProviderBox, AiError> {
-  let model = Arc::new(AnthropicLanguageModel::new(client, &config)?) as Arc<dyn LanguageModel>;
-  struct Node {
-    model: Arc<dyn LanguageModel>,
-  }
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "ai/anthropic"
-    }
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-    fn provides(&self) -> CapabilityId {
-      Cap::<LanguageModelService>::id()
-    }
-    fn cap_name(&self) -> &str {
-      "LanguageModel"
-    }
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let mut out = deps.clone();
-      out.insert::<Cap<LanguageModelService>>(Arc::clone(&self.model));
-      Ok(out)
-    }
-  }
-  Ok(ProviderBox(Arc::new(Node { model })))
+) -> Result<Layer<HCons<LanguageModelService, HNil>, E>, AiError> {
+  let model: LanguageModelService = Arc::new(AnthropicLanguageModel::new(client, &config)?);
+  Ok(Layer::succeed(hlist![model]))
 }

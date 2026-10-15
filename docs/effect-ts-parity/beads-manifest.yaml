@@ -235,13 +235,13 @@ tasks:
     depends_on: [iep-b-021]
   - slug: iep-b-041
     phase: B
-    title: "run_async / Axum example — init, run, graceful flush"
+    title: "Runtime::run / Axum example — init, run, graceful flush"
     type: task
     priority: 1
     depends_on: [iep-b-040]
   - slug: iep-b-042
     phase: B
-    title: "run_test guidance — isolate OTEL between tests"
+    title: "Test guidance — isolate OTEL between tests"
     type: task
     priority: 2
     depends_on: [iep-b-040]
@@ -314,7 +314,7 @@ tasks:
     depends_on: [iep-c-021]
   - slug: iep-c-030
     phase: C
-    title: "id_effect_sql_pg — connect, pool, Layer"
+    title: "id_effect_sql::pg — connect, pool, Layer"
     type: feature
     priority: 1
     depends_on: [iep-c-022]

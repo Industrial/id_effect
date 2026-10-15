@@ -1,5 +1,6 @@
 //! SQL-backed event journal schema and test double.
 
+use crate::edge::attempt;
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
 use id_effect::Effect;
@@ -103,15 +104,11 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> SqlEventJo
 impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore<E>
   for SqlEventJournal<E>
 {
-  fn append(
-    &self,
-    stream_id: &str,
-    events: &[E],
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let backend = Arc::clone(&self.backend);
-    Effect::new(move |_r| {
+    attempt(move || {
       let latest = backend
         .select_from(&stream_id, 1)?
         .iter()
@@ -139,10 +136,10 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore
     &self,
     stream_id: &str,
     from_version: u64,
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let backend = Arc::clone(&self.backend);
-    Effect::new(move |_r| {
+    attempt(move || {
       let rows = backend.select_from(&stream_id, from_version)?;
       rows
         .into_iter()
@@ -159,10 +156,10 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore
     })
   }
 
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError, ()> {
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let backend = Arc::clone(&self.backend);
-    Effect::new(move |_r| {
+    attempt(move || {
       Ok(
         backend
           .select_from(&stream_id, 1)?

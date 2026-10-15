@@ -1,28 +1,27 @@
 //! Phase 1 semantics tests: spawn/call/cast/info, links, monitors,
 //! trap_exit, and the exactly-once monitor guarantee (ADR 0009 tables).
 
+mod common;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, run_blocking, succeed};
+use common::{JoinNode, advance, run, settle};
+use id_effect::Never;
+use id_effect::{Effect, fail, sleep, succeed, suspend, sync};
 use id_effect_process::{
-  Addr, CallError, ExitReason, Info, Next, NodeName, Process, ProcessCtx, ProcessNode,
+  Addr, CallError, ExitReason, Info, Next, Process, ProcessCtx, ProcessNode,
 };
 
+/// A node on this test's `TestExecutor` (virtual time, driven by `common`).
 fn node() -> ProcessNode {
-  ProcessNode::threads(NodeName::new("test@local"))
+  JoinNode::new("test@local").node
 }
 
-fn wait_until(deadline_ms: u64, mut check: impl FnMut() -> bool) -> bool {
-  let deadline = std::time::Instant::now() + Duration::from_millis(deadline_ms);
-  while std::time::Instant::now() < deadline {
-    if check() {
-      return true;
-    }
-    std::thread::sleep(Duration::from_millis(2));
-  }
+/// Run the executor until it stalls, then evaluate `check`.
+fn settled(check: impl FnOnce() -> bool) -> bool {
+  settle();
   check()
 }
 
@@ -57,39 +56,39 @@ impl Process for Counter {
     msg: CounterCall,
     _ctx: ProcessCtx,
   ) -> Effect<(i64, Next<Self>), String, ()> {
-    Effect::new(move |_| match msg {
-      CounterCall::Get => Ok((self.value, Next::Continue(self))),
+    suspend(move || match msg {
+      CounterCall::Get => succeed((self.value, Next::Continue(self))),
       CounterCall::Add(n) => {
         self.value += n;
-        Ok((self.value, Next::Continue(self)))
+        succeed((self.value, Next::Continue(self)))
       }
-      CounterCall::Crash => Err("deliberate crash".to_string()),
+      CounterCall::Crash => fail("deliberate crash".to_string()),
       CounterCall::StopGracefully => {
         let v = self.value;
-        Ok((v, Next::Stop(ExitReason::Normal, self)))
+        succeed((v, Next::Stop(ExitReason::Normal, self)))
       }
     })
   }
 
   fn handle_cast(mut self, n: i64, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       self.value += n;
-      Ok(Next::Continue(self))
+      Next::Continue(self)
     })
   }
 
   fn handle_info(mut self, msg: Info<i64>, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       if let Info::User(n) = msg {
         self.value += n;
       }
-      Ok(Next::Continue(self))
+      Next::Continue(self)
     })
   }
 }
 
 fn call(addr: &Addr<Counter>, msg: CounterCall) -> Result<i64, CallError> {
-  run_blocking(addr.call(msg, Duration::from_secs(5)), ())
+  run(addr.call(msg, Duration::from_secs(5)))
 }
 
 #[test]
@@ -104,9 +103,9 @@ fn call_roundtrips_state() {
 fn cast_and_info_are_ordered_per_sender() {
   let node = node();
   let addr = node.spawn::<Counter>(0, ());
-  run_blocking(addr.cast(1), ()).unwrap();
-  run_blocking(addr.send(2), ()).unwrap();
-  run_blocking(addr.cast(3), ()).unwrap();
+  run(addr.cast(1)).unwrap();
+  run(addr.send(2)).unwrap();
+  run(addr.cast(3)).unwrap();
   assert_eq!(call(&addr, CounterCall::Get), Ok(6));
 }
 
@@ -121,7 +120,7 @@ fn crash_fails_pending_call_with_down() {
     }
     other => panic!("expected Down(Error), got {other:?}"),
   }
-  assert!(wait_until(2_000, || !addr.is_alive()));
+  assert!(settled(|| !addr.is_alive()));
 }
 
 #[test]
@@ -129,7 +128,7 @@ fn graceful_stop_replies_then_exits_normal() {
   let node = node();
   let addr = node.spawn::<Counter>(7, ());
   assert_eq!(call(&addr, CounterCall::StopGracefully), Ok(7));
-  assert!(wait_until(2_000, || !addr.is_alive()));
+  assert!(settled(|| !addr.is_alive()));
 }
 
 #[test]
@@ -137,7 +136,7 @@ fn call_after_death_fails_fast() {
   let node = node();
   let addr = node.spawn::<Counter>(0, ());
   let _ = call(&addr, CounterCall::StopGracefully);
-  assert!(wait_until(2_000, || !addr.is_alive()));
+  assert!(settled(|| !addr.is_alive()));
   let out = call(&addr, CounterCall::Get);
   assert!(
     matches!(
@@ -155,7 +154,7 @@ fn exit_kill_is_untrappable_even_for_trapping_process() {
   // Wait for init (which sets trap_exit).
   let _ = call_trapper(&addr, TrapperCall::SeenExits);
   node.exit(addr.pid(), ExitReason::Killed);
-  assert!(wait_until(2_000, || !addr.is_alive()));
+  assert!(settled(|| !addr.is_alive()));
 }
 
 // ── Link / trap_exit semantics ──────────────────────────────────
@@ -187,15 +186,15 @@ impl Process for Trapper {
   type Error = Never;
 
   fn init(args: TrapperArgs, ctx: ProcessCtx) -> Effect<Self, Never, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       ctx.trap_exit(args.trap.unwrap_or(true));
       if let Some(pid) = args.link_to {
         ctx.link(&pid);
       }
-      Ok(Trapper {
+      Trapper {
         seen_exits: Vec::new(),
         seen_downs: Vec::new(),
-      })
+      }
     })
   }
 
@@ -204,7 +203,7 @@ impl Process for Trapper {
     msg: TrapperCall,
     ctx: ProcessCtx,
   ) -> Effect<(usize, Next<Self>), Never, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       let reply = match msg {
         TrapperCall::SeenExits => self.seen_exits.len(),
         TrapperCall::SeenDowns => self.seen_downs.len(),
@@ -213,24 +212,24 @@ impl Process for Trapper {
           0
         }
       };
-      Ok((reply, Next::Continue(self)))
+      (reply, Next::Continue(self))
     })
   }
 
   fn handle_info(mut self, msg: Info<()>, _ctx: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       match msg {
         Info::Exit { from, reason } => self.seen_exits.push((from, reason)),
         Info::Down { pid, reason, .. } => self.seen_downs.push((pid, reason)),
         Info::User(()) => {}
       }
-      Ok(Next::Continue(self))
+      Next::Continue(self)
     })
   }
 }
 
 fn call_trapper(addr: &Addr<Trapper>, msg: TrapperCall) -> Result<usize, CallError> {
-  run_blocking(addr.call(msg, Duration::from_secs(5)), ())
+  run(addr.call(msg, Duration::from_secs(5)))
 }
 
 #[test]
@@ -248,7 +247,7 @@ fn link_cascade_kills_non_trapping_peer() {
   node.link(victim.pid(), crasher.pid());
   let _ = call(&crasher, CounterCall::Crash);
   assert!(
-    wait_until(2_000, || !victim.is_alive()),
+    settled(|| !victim.is_alive()),
     "non-trapping linked process must die with the crasher"
   );
 }
@@ -261,7 +260,7 @@ fn trapping_peer_receives_exit_message_and_survives() {
   let crasher = node.spawn::<Counter>(0, ());
   node.link(trapper.pid(), crasher.pid());
   let _ = call(&crasher, CounterCall::Crash);
-  assert!(wait_until(2_000, || {
+  assert!(settled(|| {
     call_trapper(&trapper, TrapperCall::SeenExits) == Ok(1)
   }));
   assert!(trapper.is_alive());
@@ -281,7 +280,7 @@ fn normal_exit_does_not_kill_linked_peer() {
   let stopper = node.spawn::<Counter>(0, ());
   node.link(peer.pid(), stopper.pid());
   let _ = call(&stopper, CounterCall::StopGracefully);
-  assert!(wait_until(500, || !stopper.is_alive()));
+  assert!(settled(|| !stopper.is_alive()));
   assert!(peer.is_alive(), "normal exits must not cascade");
 }
 
@@ -290,7 +289,7 @@ fn link_to_dead_process_delivers_noproc() {
   let node = node();
   let dead = node.spawn::<Counter>(0, ());
   let _ = call(&dead, CounterCall::StopGracefully);
-  assert!(wait_until(2_000, || !dead.is_alive()));
+  assert!(settled(|| !dead.is_alive()));
 
   let trapper = node.spawn::<Trapper>(
     TrapperArgs {
@@ -299,7 +298,7 @@ fn link_to_dead_process_delivers_noproc() {
     },
     (),
   );
-  assert!(wait_until(2_000, || {
+  assert!(settled(|| {
     call_trapper(&trapper, TrapperCall::SeenExits) == Ok(1)
   }));
 }
@@ -313,11 +312,11 @@ fn monitor_fires_exactly_once_on_crash() {
   let target = node.spawn::<Counter>(0, ());
   let _ = call_trapper(&watcher, TrapperCall::Monitor(target.pid().clone()));
   let _ = call(&target, CounterCall::Crash);
-  assert!(wait_until(2_000, || {
+  assert!(settled(|| {
     call_trapper(&watcher, TrapperCall::SeenDowns) == Ok(1)
   }));
   // No duplicate delivery after settling.
-  std::thread::sleep(Duration::from_millis(50));
+  settle();
   assert_eq!(call_trapper(&watcher, TrapperCall::SeenDowns), Ok(1));
 }
 
@@ -327,9 +326,9 @@ fn monitor_on_dead_process_fires_noproc_immediately() {
   let watcher = node.spawn::<Trapper>(TrapperArgs::default(), ());
   let target = node.spawn::<Counter>(0, ());
   let _ = call(&target, CounterCall::StopGracefully);
-  assert!(wait_until(2_000, || !target.is_alive()));
+  assert!(settled(|| !target.is_alive()));
   let _ = call_trapper(&watcher, TrapperCall::Monitor(target.pid().clone()));
-  assert!(wait_until(2_000, || {
+  assert!(settled(|| {
     call_trapper(&watcher, TrapperCall::SeenDowns) == Ok(1)
   }));
 }
@@ -352,10 +351,7 @@ impl Process for Sleeper {
   }
 
   fn handle_call(self, sleep_ms: u64, _ctx: ProcessCtx) -> Effect<((), Next<Self>), Never, ()> {
-    Effect::new(move |_| {
-      std::thread::sleep(Duration::from_millis(sleep_ms));
-      Ok(((), Next::Continue(self)))
-    })
+    sleep(Duration::from_millis(sleep_ms)).map(move |()| ((), Next::Continue(self)))
   }
 }
 
@@ -363,8 +359,14 @@ impl Process for Sleeper {
 fn call_times_out_when_handler_is_slow() {
   let node = node();
   let addr = node.spawn::<Sleeper>((), ());
-  let out = run_blocking(addr.call(500, Duration::from_millis(50)), ());
-  assert_eq!(out, Err(CallError::Timeout));
+  let call = addr
+    .call(500, Duration::from_millis(50))
+    .fork_root(Arc::clone(node.runtime().executor()));
+  settle();
+  assert!(!call.is_done(), "nothing elapses until virtual time moves");
+  advance(Duration::from_millis(50));
+  assert!(call.is_done(), "timed out at virtual 50 ms");
+  assert_eq!(run(call.join()), Err(CallError::Timeout));
 }
 
 // ── Registry ──────────────────────────────────────────────────
@@ -383,7 +385,7 @@ fn registry_registers_resolves_and_cleans_up_on_exit() {
   assert_eq!(call(&resolved, CounterCall::Get), Ok(1));
 
   let _ = call(&addr, CounterCall::StopGracefully);
-  assert!(wait_until(2_000, || node.whereis("counter").is_none()));
+  assert!(settled(|| node.whereis("counter").is_none()));
 }
 
 // ── terminate hook ────────────────────────────────────────────
@@ -410,9 +412,8 @@ impl Process for Cleanup {
   }
 
   fn terminate(self, _reason: &ExitReason, _ctx: ProcessCtx) -> Effect<(), Never, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       self.witness.fetch_add(1, Ordering::SeqCst);
-      Ok(())
     })
   }
 }
@@ -422,10 +423,10 @@ fn terminate_runs_once_on_cooperative_kill() {
   let node = node();
   let witness = Arc::new(AtomicU32::new(0));
   let addr = node.spawn::<Cleanup>(Arc::clone(&witness), ());
-  let _ = run_blocking(addr.call((), Duration::from_secs(5)), ());
+  let _ = run(addr.call((), Duration::from_secs(5)));
   node.exit(addr.pid(), ExitReason::Shutdown);
-  assert!(wait_until(2_000, || !addr.is_alive()));
-  assert!(wait_until(2_000, || witness.load(Ordering::SeqCst) == 1));
-  std::thread::sleep(Duration::from_millis(50));
+  assert!(settled(|| !addr.is_alive()));
+  assert!(settled(|| witness.load(Ordering::SeqCst) == 1));
+  settle();
   assert_eq!(witness.load(Ordering::SeqCst), 1);
 }

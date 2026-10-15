@@ -1,323 +1,357 @@
-//! Tokio integration for [`id_effect`]: [`TokioRuntime`] implements [`id_effect::Runtime`] with
-//! cooperative sleep/yield, and **runs forked effects** on Tokio’s **blocking thread pool** via
-//! [`tokio::runtime::Handle::spawn_blocking`] (the `Effect` interpreter is driven with
-//! [`run_blocking`]; it is not `Send` for [`tokio::spawn`]).
+//! Tokio integration for [`id_effect`], on the 0.7 kernel.
 //!
-//! Tower, Axum, and other Tokio-based adapters should depend on **`id_effect_tokio`** for this wiring.
+//! The executor lives in core: [`TokioExecutor`] (re-exported here) runs every fiber as an
+//! ordinary tokio task, with real wakers and tokio timers, and [`Runtime`] owns the run edges.
+//! This crate is the thin tokio-facing layer on top of them:
 //!
-//! ## Examples
+//! - [`TokioRuntime`] pairs a [`Runtime`] with the tokio runtime it runs on. It either owns one
+//!   ([`TokioRuntime::new_current_thread`], [`TokioRuntime::new_multi_thread`]) or wraps an
+//!   ambient one ([`TokioRuntime::current`], [`TokioRuntime::from_handle`], e.g. under
+//!   `#[tokio::main]` or `axum::serve`).
+//! - [`TokioRuntime::run`] is the async edge, [`TokioRuntime::fork`] starts a daemon root fiber,
+//!   and [`TokioRuntime::spawn`] runs an effect as a tokio task joined by a
+//!   [`tokio::task::JoinHandle`].
+//! - [`TokioRuntime::block_on`] is a program edge (`main`, tests, benches) on an owned runtime.
 //!
-//! See `examples/` (e.g. `109_tokio_end_to_end`). Import [`run_async`], [`run_blocking`],
-//! [`run_fork`](id_effect::run_fork), and [`yield_now`] from `id_effect` at the async boundary alongside [`TokioRuntime`].
+//! Fibers are [`Send`], so they run on tokio's worker threads like any other task, and a sleeping
+//! fiber is parked on the tokio timer. (0.6 drove each forked effect with `run_blocking` on
+//! tokio's blocking pool, busy-polling one OS thread per fiber; that driver and
+//! `spawn_blocking_run_async` are gone.) Sleep and yield are the kernel's own
+//! [`id_effect::sleep`] and [`id_effect::yield_fiber`]: they use the fiber's
+//! executor, so they need no runtime argument.
 //!
-//! ## Async effects that are not [`Send`] ([`spawn_blocking_run_async`])
+//! ```
+//! use std::time::Duration;
 //!
-//! [`tokio::spawn`] requires a [`Send`] future; the future produced by [`run_async`] often is **not**
-//! [`Send`] (e.g. when the graph holds [`id_effect::Scope`] or [`id_effect::Pool::get`] checkout).
-//! [`Runtime::spawn_with`] on [`TokioRuntime`] therefore drives the interpreter with [`run_blocking`],
-//! which is wrong for effects that need a real async driver (I/O, timers). For those, use
-//! [`spawn_blocking_run_async`] (or [`TokioRuntime::spawn_blocking_run_async`]): run the effect on
-//! Tokio’s **blocking pool** and drive it with [`run_async`] inside [`tokio::runtime::Handle::block_on`] — the same
-//! pattern as manually pairing [`tokio::runtime::Handle::spawn_blocking`] with `block_on(run_async(..))`.
+//! use id_effect::Exit;
+//! use id_effect::{HNil, sleep};
+//! use id_effect_tokio::TokioRuntime;
+//!
+//! let rt = TokioRuntime::new_current_thread().expect("tokio runtime");
+//! let exit = rt.block_on(async {
+//!   let nap = sleep::<(), HNil>(Duration::from_millis(1)).map(|()| 42_u8);
+//!   rt.fork(nap).join_future().await
+//! });
+//! assert!(matches!(exit, Exit::Success(42)));
+//! ```
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use id_effect::compute::{ComputeFabric, SysinfoTelemetry, ensure_default_fabric, install_fabric};
-use id_effect::{
-  Effect, FiberHandle, FiberId, Never, Runtime, from_async, run_async, run_blocking,
-};
+use id_effect::Exit;
+use id_effect::{Effect, Executor, FiberHandle, HNil, Runtime};
 
-pub use id_effect::yield_now;
+pub use id_effect::TokioExecutor;
 
-/// Run an [`Effect`] on Tokio’s **blocking thread pool**, driving it with [`run_async`] via
-/// [`tokio::runtime::Handle::block_on`] on the same runtime.
-///
-/// Use this when the async effect graph is **not** [`Send`] and therefore cannot be scheduled with
-/// [`tokio::spawn`], but still needs the real async interpreter (unlike [`run_fork`](id_effect::run_fork), which uses
-/// [`run_blocking`] and only cooperates correctly for sync / spin‑pollable graphs).
-///
-/// `f` is [`Send`] and runs **on the blocking worker**; it constructs `(Effect, env)` there, matching
-/// [`Runtime::spawn_with`].
-///
-/// `A` and `E` must be [`Send`] so the [`Result`] can be returned through Tokio’s
-/// [`JoinHandle`](tokio::task::JoinHandle) (the `Effect` value itself may still be non-[`Send`], as
-/// usual).
-///
-/// The returned [`tokio::task::JoinHandle`] resolves to [`Result`] from [`run_async`] when the
-/// blocking task finishes (including if the effect fails or panics per Tokio rules).
-pub fn spawn_blocking_run_async<A, E, R, F>(
-  handle: &tokio::runtime::Handle,
-  f: F,
-) -> tokio::task::JoinHandle<Result<A, E>>
-where
-  A: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-  F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
-{
-  let h_spawn = handle.clone();
-  let h_block = handle.clone();
-  h_spawn.spawn_blocking(move || {
-    let (effect, env) = f();
-    h_block.block_on(run_async(effect, env))
-  })
+/// An owned tokio runtime, shut down without blocking when the last [`TokioRuntime`] clone drops
+/// (dropping a tokio runtime inside an async context panics, and its default shutdown waits on
+/// tasks).
+struct OwnedTokio(Option<tokio::runtime::Runtime>);
+
+impl Drop for OwnedTokio {
+  fn drop(&mut self) {
+    if let Some(rt) = self.0.take() {
+      rt.shutdown_background();
+    }
+  }
 }
 
-/// Tokio-backed [`Runtime`] adapter (async `sleep` / `yield_now`) with Compute Fabric admission.
+/// A [`Runtime`] on a [`TokioExecutor`], plus the tokio runtime it runs on (owned or ambient).
+///
+/// Cloning is cheap; clones share the executor and, when owned, the tokio runtime.
+#[derive(Clone)]
 pub struct TokioRuntime {
-  _owned: Option<Arc<tokio::runtime::Runtime>>,
-  _handle: tokio::runtime::Handle,
-  fabric: Arc<ComputeFabric<SysinfoTelemetry>>,
+  runtime: Runtime,
+  executor: TokioExecutor,
+  owned: Option<Arc<OwnedTokio>>,
+}
+
+impl fmt::Debug for TokioRuntime {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("TokioRuntime")
+      .field("executor", &self.executor)
+      .field("owns_tokio_runtime", &self.owned.is_some())
+      .finish()
+  }
 }
 
 impl TokioRuntime {
-  fn new_with_handle(
-    owned: Option<Arc<tokio::runtime::Runtime>>,
-    handle: tokio::runtime::Handle,
-  ) -> Self {
-    let fabric = default_fabric();
+  fn with_parts(handle: tokio::runtime::Handle, owned: Option<tokio::runtime::Runtime>) -> Self {
+    let executor = TokioExecutor::new(handle);
     Self {
-      _owned: owned,
-      _handle: handle,
-      fabric,
+      runtime: Runtime::from_executor(Arc::new(executor.clone())),
+      executor,
+      owned: owned.map(|rt| Arc::new(OwnedTokio(Some(rt)))),
     }
   }
 
-  /// Adapter for the current Tokio context.
+  fn owning(rt: tokio::runtime::Runtime) -> Self {
+    let handle = rt.handle().clone();
+    Self::with_parts(handle, Some(rt))
+  }
+
+  /// A runtime on the tokio runtime the calling thread is in.
+  ///
+  /// # Errors
+  ///
+  /// Outside a tokio runtime context.
   pub fn current() -> Result<Self, std::io::Error> {
     let handle = tokio::runtime::Handle::try_current()
       .map_err(|e| std::io::Error::other(format!("no current tokio runtime: {e}")))?;
-    Ok(Self::new_with_handle(None, handle))
+    Ok(Self::from_handle(handle))
   }
 
-  /// Adapter from an explicit Tokio handle (e.g. `axum::serve` / `#[tokio::main]`).
+  /// A runtime on the tokio runtime behind `handle` (e.g. from `#[tokio::main]` or
+  /// `axum::serve`). It owns nothing; that runtime must have its time driver enabled.
   #[inline]
   pub fn from_handle(handle: tokio::runtime::Handle) -> Self {
-    Self::new_with_handle(None, handle)
+    Self::with_parts(handle, None)
   }
 
-  /// Run fibers through the given [`ComputeFabric`] on Tokio's blocking pool.
-  #[inline]
-  pub fn with_fabric(
-    handle: tokio::runtime::Handle,
-    fabric: ComputeFabric<SysinfoTelemetry>,
-  ) -> Self {
-    let fabric = Arc::new(fabric);
-    install_fabric(Arc::clone(&fabric));
-    Self {
-      _owned: None,
-      _handle: handle,
-      fabric,
-    }
-  }
-
-  /// Access the installed fabric (policy, admission, supervisor).
-  #[inline]
-  pub fn fabric(&self) -> &ComputeFabric<SysinfoTelemetry> {
-    &self.fabric
-  }
-
-  /// Owns a single-threaded Tokio runtime (tests, examples, `main` without `#[tokio::main]`).
+  /// Owns a new current-thread tokio runtime (all drivers enabled). Fibers make progress while
+  /// [`Self::block_on`] drives it.
+  ///
+  /// # Errors
+  ///
+  /// If the tokio runtime cannot be built.
   pub fn new_current_thread() -> Result<Self, std::io::Error> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-      .enable_time()
-      .build()?;
-    let runtime = Arc::new(runtime);
-    let handle = runtime.handle().clone();
-    Ok(Self::new_with_handle(Some(runtime), handle))
-  }
-
-  /// Owns a multi-thread Tokio runtime (typical for CLIs and servers without `#[tokio::main]`).
-  pub fn new_multi_thread() -> Result<Self, std::io::Error> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
+    let rt = tokio::runtime::Builder::new_current_thread()
       .enable_all()
       .build()?;
-    let runtime = Arc::new(runtime);
-    let handle = runtime.handle().clone();
-    Ok(Self::new_with_handle(Some(runtime), handle))
+    Ok(Self::owning(rt))
   }
 
-  /// Tokio handle for this adapter (same underlying runtime as [`Self::block_on`] when owned).
+  /// Owns a new multi-thread tokio runtime (all drivers enabled), typical for CLIs and servers
+  /// without `#[tokio::main]`.
+  ///
+  /// # Errors
+  ///
+  /// If the tokio runtime cannot be built (for example, worker threads cannot be spawned).
+  pub fn new_multi_thread() -> Result<Self, std::io::Error> {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+      .enable_all()
+      .build()?;
+    Ok(Self::owning(rt))
+  }
+
+  /// The runtime (run edges) over this adapter's executor.
+  #[inline]
+  pub fn runtime(&self) -> &Runtime {
+    &self.runtime
+  }
+
+  /// The executor fibers run on.
+  #[inline]
+  pub fn executor(&self) -> &TokioExecutor {
+    &self.executor
+  }
+
+  /// The tokio handle fibers are spawned onto.
   #[inline]
   pub fn handle(&self) -> tokio::runtime::Handle {
-    self._handle.clone()
+    self.executor.handle().clone()
   }
 
-  /// Run a future on the owned runtime when this adapter was built with [`Self::new_current_thread`]
-  /// or [`Self::new_multi_thread`].
-  ///
-  /// When constructed with [`Self::from_handle`] / [`Self::current`], this panics — use the
-  /// surrounding runtime’s `block_on` instead.
-  pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
-    match &self._owned {
-      Some(rt) => rt.block_on(f),
-      None => panic!(
-        "TokioRuntime::block_on requires TokioRuntime::new_current_thread() or new_multi_thread(); \
-         otherwise use your Runtime::block_on / #[tokio::main] with from_handle"
-      ),
-    }
-  }
-
-  /// Same as [`spawn_blocking_run_async`], using this adapter’s [`Self::handle`].
-  #[inline]
-  pub fn spawn_blocking_run_async<A, E, R, F>(&self, f: F) -> tokio::task::JoinHandle<Result<A, E>>
+  /// The async edge ([`Runtime::run`]): runs `eff` as a root fiber, driven by whoever polls the
+  /// returned future. Its children run on this adapter's tokio runtime.
+  pub fn run<A, E>(
+    &self,
+    eff: Effect<A, E, HNil>,
+  ) -> impl Future<Output = Exit<A, E>> + Send + 'static
   where
     A: Send + 'static,
     E: Send + 'static,
-    R: 'static,
-    F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
   {
-    spawn_blocking_run_async(&self._handle, f)
+    self.runtime.run(eff)
   }
-}
 
-impl Runtime for TokioRuntime {
-  fn spawn_with<A, E, R, F>(&self, f: F) -> FiberHandle<A, E>
+  /// Starts `eff` as a daemon root fiber ([`Runtime::fork`]); join it with
+  /// [`FiberHandle::join_future`] or the `join` effect, or interrupt it.
+  pub fn fork<A, E>(&self, eff: Effect<A, E, HNil>) -> FiberHandle<A, E>
   where
-    A: Clone + Send + Sync + 'static,
-    E: Clone + Send + Sync + 'static,
-    R: 'static,
-    F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
+    A: Send + 'static,
+    E: Send + 'static,
   {
-    self.fabric.tick();
-    let handle = FiberHandle::pending(FiberId::fresh());
-    let h = handle.clone();
-    let rt = self._handle.clone();
-    let fabric = Arc::clone(&self.fabric);
-    // `run_async` is not `Send`; drive the effect with `run_blocking` on Tokio's blocking pool.
-    let _join = rt.spawn_blocking(move || {
-      fabric.admission().acquire_blocking();
-      let (effect, env) = f();
-      h.mark_completed(run_blocking(effect, env));
-      fabric.admission().release();
-    });
-    handle
+    self.runtime.fork(eff)
   }
 
-  fn spawn_scoped_with<A, E, R, F>(&self, f: F, parent: FiberId) -> FiberHandle<A, E>
+  /// Runs `eff` as a root fiber inside a new tokio task (the successor of 0.6's
+  /// `spawn_blocking_run_async`); the effect no longer has to be driven on the blocking pool.
+  pub fn spawn<A, E>(&self, eff: Effect<A, E, HNil>) -> tokio::task::JoinHandle<Exit<A, E>>
   where
-    A: Clone + Send + Sync + 'static,
-    E: Clone + Send + Sync + 'static,
-    R: 'static,
-    F: FnOnce() -> (Effect<A, E, R>, R) + Send + 'static,
+    A: Send + 'static,
+    E: Send + 'static,
   {
-    let _ = parent;
-    self.spawn_with(f)
+    self.executor.handle().spawn(self.runtime.run(eff))
   }
 
-  fn sleep(&self, duration: Duration) -> Effect<(), Never, ()> {
-    from_async(move |_env| async move {
-      tokio::time::sleep(duration).await;
-      Ok::<(), Never>(())
-    })
-  }
-
+  /// The executor's clock (tokio's clock: the wall clock unless the tokio clock is paused).
   #[inline]
-  fn now(&self) -> Instant {
-    instant_now_blocking()
+  pub fn now(&self) -> Instant {
+    self.executor.now()
   }
 
-  fn yield_now(&self) -> Effect<(), Never, ()> {
-    from_async(move |_env| async move {
-      tokio::task::yield_now().await;
-      Ok::<(), Never>(())
-    })
+  /// Program edge: drives `f` to completion on the owned tokio runtime (built with
+  /// [`Self::new_current_thread`] or [`Self::new_multi_thread`]), blocking the calling thread.
+  /// Use it in `main`, tests and benches only; library code `.await`s [`Self::run`].
+  ///
+  /// # Panics
+  ///
+  /// When this adapter does not own its tokio runtime ([`Self::from_handle`],
+  /// [`Self::current`]): use the surrounding runtime's `block_on` or `.await` instead. Tokio
+  /// also panics when this is called inside an async context.
+  pub fn block_on<F: Future>(&self, f: F) -> F::Output {
+    match self.owned.as_ref().and_then(|o| o.0.as_ref()) {
+      Some(rt) => rt.block_on(f),
+      None => panic!(
+        "TokioRuntime::block_on requires TokioRuntime::new_current_thread() or new_multi_thread(); \
+         otherwise `.await` TokioRuntime::run under the surrounding runtime"
+      ),
+    }
   }
 }
 
-/// Reuse the installed fabric, or install a default one if none is installed; never replaces a
-/// fabric the caller installed (see [`ensure_default_fabric`]).
-#[inline]
-fn default_fabric() -> Arc<ComputeFabric<SysinfoTelemetry>> {
-  ensure_default_fabric()
+impl AsRef<Runtime> for TokioRuntime {
+  #[inline]
+  fn as_ref(&self) -> &Runtime {
+    &self.runtime
+  }
 }
 
-#[inline]
-fn instant_now_blocking() -> Instant {
-  // Dylint `effect_no_instant_now_outside_boundary`: wall time is only allowed in `run_*`-adjacent
-  // helpers (`*_blocking`); `Runtime::now` is the Tokio clock boundary for `LiveClock` / scheduling.
-  Instant::now()
+impl From<TokioRuntime> for Runtime {
+  /// The runtime; an owned tokio runtime is kept alive by the remaining
+  /// [`TokioRuntime`] clones only.
+  #[inline]
+  fn from(rt: TokioRuntime) -> Self {
+    rt.runtime
+  }
 }
-
-#[cfg(test)]
-use id_effect::run_fork;
 
 #[cfg(test)]
 mod tests {
-  use super::*;
-  use id_effect::Effect;
-  use id_effect::kernel::succeed;
   use std::time::Duration;
 
-  #[test]
-  fn spawn_blocking_run_async_runs_async_effect_to_completion() {
-    let rt = TokioRuntime::new_current_thread().expect("tokio runtime should build");
-    rt.block_on(async {
-      let j = spawn_blocking_run_async(&rt.handle(), || {
-        let eff: Effect<u32, (), ()> = from_async(move |_env| async move { Ok::<u32, ()>(41) });
-        (eff, ())
-      });
-      assert_eq!(j.await.expect("join"), Ok(41));
-    });
-  }
+  use id_effect::Cause;
+  use id_effect::{fail, sleep, succeed, sync, yield_fiber};
 
-  #[test]
-  fn tokio_runtime_spawn_blocking_run_async_delegates() {
-    let rt = TokioRuntime::new_current_thread().expect("tokio runtime should build");
-    rt.block_on(async {
-      let j = rt.spawn_blocking_run_async(|| {
-        let eff: Effect<u8, &'static str, ()> =
-          from_async(move |_env| async move { Ok::<u8, &'static str>(9) });
-        (eff, ())
-      });
-      assert_eq!(j.await.expect("join"), Ok(9));
-    });
+  use super::*;
+
+  fn nap(ms: u64) -> Effect<(), (), HNil> {
+    sleep(Duration::from_millis(ms))
   }
 
   #[test]
   fn new_current_thread_runs_sleep_and_yield_under_block_on() {
     let rt = TokioRuntime::new_current_thread().expect("tokio runtime should build");
-    rt.block_on(async {
-      assert_eq!(
-        run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-        Ok(())
-      );
-      assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
-    });
+    let exit = rt.block_on(rt.run(nap(0).then(yield_fiber()).map(|()| 42_u8)));
+    assert!(matches!(exit, Exit::Success(42)));
   }
 
   #[test]
-  fn spawn_runs_effect_to_completion_on_runtime() {
+  fn fork_runs_effect_to_completion_and_join_returns_its_exit() {
     let rt = TokioRuntime::new_current_thread().expect("tokio runtime should build");
-    rt.block_on(async {
-      let h = run_fork(&rt, || (succeed::<u8, (), ()>(7), ()));
-      assert_eq!(h.join().await, Ok(7));
+    let ok = rt.block_on(rt.fork(succeed::<u8, (), HNil>(7)).join_future());
+    assert!(matches!(ok, Exit::Success(7)));
+    let err = rt.block_on(rt.fork(fail::<u8, &str, HNil>("boom")).join_future());
+    assert!(matches!(err, Exit::Failure(Cause::Fail("boom"))));
+  }
+
+  #[test]
+  fn spawn_returns_a_tokio_join_handle_with_the_exit() {
+    let rt = TokioRuntime::new_multi_thread().expect("tokio runtime should build");
+    let exit = rt.block_on(async {
+      rt.spawn(nap(1).map(|()| 9_u8))
+        .await
+        .expect("task should not panic")
     });
+    assert!(matches!(exit, Exit::Success(9)));
+  }
+
+  /// 64 concurrently sleeping fibers share the 2 tokio workers: 0.6 parked (spun) one
+  /// blocking-pool thread per sleeping fiber.
+  #[test]
+  fn sleeping_fibers_share_the_tokio_workers_instead_of_one_thread_each() {
+    let tokio_rt = tokio::runtime::Builder::new_multi_thread()
+      .worker_threads(2)
+      .enable_time()
+      .build()
+      .expect("tokio runtime should build");
+    let rt = TokioRuntime::from_handle(tokio_rt.handle().clone());
+    let threads = tokio_rt.block_on(async {
+      let handles: Vec<_> = (0..64)
+        .map(|_| rt.fork(nap(20).then(sync::<_, (), HNil>(|| std::thread::current().id()))))
+        .collect();
+      let mut threads = std::collections::HashSet::new();
+      for h in handles {
+        match h.join_future().await {
+          Exit::Success(id) => threads.insert(id),
+          Exit::Failure(c) => panic!("fiber failed: {c:?}"),
+        };
+      }
+      threads
+    });
+    assert!(
+      threads.len() <= 2,
+      "fibers ran on {} threads",
+      threads.len()
+    );
+  }
+
+  #[test]
+  fn interrupting_a_sleeping_fiber_ends_it_with_interrupt() {
+    let rt = TokioRuntime::new_multi_thread().expect("tokio runtime should build");
+    let exit = rt.block_on(async {
+      let h = rt.fork(nap(60_000));
+      h.interrupt_now();
+      h.join_future().await
+    });
+    assert!(matches!(exit, Exit::Failure(Cause::Interrupt(_))));
   }
 
   #[tokio::test]
-  async fn from_handle_uses_current_context() {
-    let handle = tokio::runtime::Handle::current();
-    let rt = TokioRuntime::from_handle(handle);
-    // sleep and yield_now work under current context
-    assert_eq!(
-      run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-      Ok(())
-    );
-    assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
+  async fn from_handle_runs_under_the_current_context() {
+    let rt = TokioRuntime::from_handle(tokio::runtime::Handle::current());
+    assert!(!format!("{rt:?}").contains("owns_tokio_runtime: true"));
+    assert!(matches!(rt.run(nap(0)).await, Exit::Success(())));
+    assert!(matches!(
+      rt.fork(nap(0)).join_future().await,
+      Exit::Success(())
+    ));
   }
 
   #[tokio::test]
   async fn current_succeeds_inside_tokio_context() {
     let rt = TokioRuntime::current().expect("current should work inside #[tokio::test]");
-    assert_eq!(
-      run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-      Ok(())
-    );
+    assert!(matches!(
+      rt.run(yield_fiber()).await,
+      Exit::<(), ()>::Success(())
+    ));
+  }
+
+  #[tokio::test]
+  async fn dropping_an_owned_runtime_inside_async_context_does_not_panic() {
+    let owned = TokioRuntime::new_current_thread().expect("runtime");
+    drop(owned.clone());
+    drop(owned);
+  }
+
+  #[test]
+  fn runtime_accessors_share_the_executor() {
+    let rt = TokioRuntime::new_current_thread().expect("runtime");
+    let next_rt: &Runtime = rt.as_ref();
+    assert!(std::ptr::eq(next_rt, rt.runtime()));
+    let handle = rt.handle();
+    assert_eq!(rt.executor().handle().id(), handle.id());
+    let owned: Runtime = rt.clone().into();
+    assert!(matches!(
+      rt.block_on(owned.run(succeed::<u8, (), HNil>(3))),
+      Exit::Success(3)
+    ));
   }
 
   #[test]
@@ -326,17 +360,6 @@ mod tests {
     let t1 = rt.now();
     let t2 = rt.now();
     assert!(t2 >= t1, "now() should be non-decreasing");
-  }
-
-  #[test]
-  fn new_multi_thread_block_on_runs_async() {
-    let rt = TokioRuntime::new_multi_thread().expect("multi-thread runtime should build");
-    rt.block_on(async {
-      assert_eq!(
-        run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-        Ok(())
-      );
-    });
   }
 
   #[test]

@@ -16,13 +16,13 @@ fn main() {
 #[cfg(all(feature = "obix", feature = "postgres"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-  use id_effect::run_async;
   use id_effect_events::{
     EsEntityEventStore, EsEntityPgBackend, EventStore, Projection, ProjectionNode,
     ProjectionRunner, apply_es_entity_journal_ddl,
   };
   use id_effect_jobs::ObixOutbox;
   use id_effect_sql::pg::{PgPoolConfig, pg_pool_from_config};
+  use id_effect_tokio::TokioRuntime;
   use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
   use obix::MailboxConfig;
   use std::collections::HashMap;
@@ -60,17 +60,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
 
   let stream = format!("order-{}", uuid::Uuid::new_v4());
+  let rt = TokioRuntime::current()?;
   let store = EsEntityEventStore::<OrderEvt>::new(EsEntityPgBackend::new(pool.clone()));
-  run_async(
-    store.append(
-      &stream,
-      &[OrderEvt::Placed {
-        sku: "widget".into(),
-      }],
-    ),
-    (),
-  )
-  .await?;
+  rt.run(store.append(
+    &stream,
+    &[OrderEvt::Placed {
+      sku: "widget".into(),
+    }],
+  ))
+  .await
+  .into_result()
+  .map_err(|c| format!("append: {c:?}"))?;
 
   let mut runner = ProjectionRunner::new();
   runner.register(ProjectionNode::new("summary", Vec::<&str>::new()));
@@ -82,22 +82,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   let config = MailboxConfig::builder().build()?;
   let obix = ObixOutbox::init(&pool, config).await?;
-  run_async(
-    obix.insert(id_effect_jobs::OutboxRecord::new(
-      &stream,
-      "OrderPlaced",
-      br#"{"sku":"widget"}"#,
-    )),
-    (),
-  )
-  .await?;
+  rt.run(obix.insert(id_effect_jobs::OutboxRecord::new(
+    &stream,
+    "OrderPlaced",
+    br#"{"sku":"widget"}"#,
+  )))
+  .await
+  .into_result()
+  .map_err(|c| format!("obix insert: {c:?}"))?;
   println!("obix outbox row inserted");
 
-  let wf = format!("wf-{}", uuid::Uuid::new_v4());
-  let mut journal = DuroxideStepJournal::new(pool);
-  journal.register_workflow(&wf)?;
-  let step: String =
-    journal.run_step_typed(&wf, 0, "after_events", || Ok(format!("done:{stream}")))?;
+  // `StepJournal` is a synchronous edge: drive it from a plain thread, off the async runtime.
+  let step = std::thread::spawn(move || {
+    let wf = format!("wf-{}", uuid::Uuid::new_v4());
+    let mut journal = DuroxideStepJournal::new(pool);
+    journal.register_workflow(&wf)?;
+    journal.run_step_typed::<String, _>(&wf, 0, "after_events", || Ok(format!("done:{stream}")))
+  })
+  .join()
+  .map_err(|_| "duroxide step thread panicked")??;
   println!("duroxide step: {step}");
 
   Ok(())

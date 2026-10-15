@@ -51,7 +51,7 @@ impl ExitReason {
   pub fn from_cause<E: fmt::Debug>(cause: &Cause<E>) -> Self {
     match cause {
       Cause::Fail(e) => Self::Error(format!("{e:?}")),
-      Cause::Die(msg) => Self::Error(msg.clone()),
+      Cause::Die(defect) => Self::Error(defect.message().to_string()),
       Cause::Interrupt(_) => Self::Interrupted,
       Cause::Both(l, _) | Cause::Then(l, _) => Self::from_cause(l),
     }

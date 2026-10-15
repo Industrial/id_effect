@@ -10,7 +10,7 @@ RPC client/server stack and HTTP boundary helpers for [`id_effect`](../id_effect
 | [`serialization`](src/serialization.rs) | JSON + [`id_effect::schema`] encode/decode |
 | [`registry`](src/registry.rs) | [`RpcGroup`] — register typed handlers |
 | [`server`](src/server.rs) | [`RpcServer`] — Axum dispatch route |
-| [`client`](src/client.rs) | [`RpcClient`] — remote calls via [`HttpClientKey`] |
+| [`client`](src/client.rs) | [`RpcClient`] — remote calls via `HttpClientService` |
 | [`stream`](src/stream.rs) | NDJSON stream chunk encoding |
 
 ## Edge helpers (D2)
@@ -25,7 +25,8 @@ RPC client/server stack and HTTP boundary helpers for [`id_effect`](../id_effect
 
 ```rust
 use std::sync::Arc;
-use id_effect::{Env, schema, succeed};
+use id_effect::{DynEnv, succeed};
+use id_effect::schema;
 use id_effect_rpc::{RpcClient, RpcGroup, RpcServer};
 
 let mut group = RpcGroup::new();
@@ -37,7 +38,7 @@ group.register(
   &["message", "count"],
   |(name, n), _| succeed((format!("Hello, {name}!"), n)),
 );
-let app = RpcServer::new(group).mount_default().with_state(Env::new());
+let app = RpcServer::new(group).mount_default().with_state(DynEnv::new());
 ```
 
 Wire format:

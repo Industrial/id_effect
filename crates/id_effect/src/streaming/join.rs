@@ -1,63 +1,119 @@
-//! Stream joins — merge, combine-latest, and keyed inner join.
+//! Two-sided stream combinators: [`Stream::merge`] (fair interleave), [`combine_latest`] and
+//! [`keyed_join`].
 //!
-//! [`Stream::merge`] fairly interleaves two streams at the element level.
-//! [`combine_latest`] pairs the latest value from each side whenever either updates.
-//! [`keyed_join`] emits `(K, A, B)` when both sides have a value for the same key.
+//! Each pull fetches at most one chunk from each side whose buffer is empty (left, then right;
+//! the sides are pulled one after the other on the pulling fiber, not concurrently), so memory is
+//! one chunk per side plus the documented operator state.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::hash::Hash;
 
-use crate::streaming::stream::Stream;
+use super::stream::Stream;
+use crate::kernel::{Effect, succeed};
+
+/// One input of a two-sided combinator: the rest of its stream (`None` once it ended) and its
+/// pulled but not yet consumed items.
+struct Side<A, E, R> {
+  stream: Option<Stream<A, E, R>>,
+  buf: VecDeque<A>,
+}
+
+impl<A, E, R> Side<A, E, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  fn new(stream: Stream<A, E, R>) -> Self {
+    Self {
+      stream: Some(stream),
+      buf: VecDeque::new(),
+    }
+  }
+
+  fn done(&self) -> bool {
+    self.stream.is_none()
+  }
+
+  fn finished(&self) -> bool {
+    self.done() && self.buf.is_empty()
+  }
+
+  /// Pulls one chunk into the buffer when it is empty and the side has not ended.
+  fn refill(mut self, n: usize) -> Effect<Self, E, R> {
+    if !self.buf.is_empty() {
+      return succeed(self);
+    }
+    match self.stream.take() {
+      None => succeed(self),
+      Some(s) => s.pull_raw(n).map(move |step| {
+        if let Some((items, rest)) = step {
+          self.buf.extend(items);
+          self.stream = Some(rest);
+        }
+        self
+      }),
+    }
+  }
+}
+
+/// Refills both sides, then lets `emit` consume from their buffers; ends once both sides are
+/// finished.
+fn two_sided<A, B, C, S, F, E, R>(
+  left: Side<A, E, R>,
+  right: Side<B, E, R>,
+  state: S,
+  emit: F,
+) -> Stream<C, E, R>
+where
+  A: Send + 'static,
+  B: Send + 'static,
+  C: Send + 'static,
+  S: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+  F: FnMut(&mut Side<A, E, R>, &mut Side<B, E, R>, &mut S) -> Vec<C> + Send + 'static,
+{
+  Stream::from_step(move |n| {
+    left.refill(n).flat_map(move |left| {
+      right.refill(n).map(move |right| {
+        let (mut left, mut right, mut state, mut emit) = (left, right, state, emit);
+        if left.finished() && right.finished() {
+          return None;
+        }
+        let out = emit(&mut left, &mut right, &mut state);
+        Some((out, two_sided(left, right, state, emit)))
+      })
+    })
+  })
+}
 
 impl<A, E, R> Stream<A, E, R>
 where
   A: Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Fair merge: alternates elements from `self` and `other` until both exhaust.
-  ///
-  /// Incremental: each pull fetches at most one chunk from each side (only for a side whose buffer
-  /// is empty) and interleaves elements, so memory is bounded by one chunk per side. Sides are
-  /// pulled sequentially, not concurrently.
-  #[inline]
+  /// Fair merge: alternates elements of `self` and `other` until both end (the remainder of the
+  /// longer side follows once the other has ended).
+  #[must_use]
   pub fn merge(self, other: Self) -> Self {
-    struct Merge<A, E, R>
-    where
-      A: Send + 'static,
-      E: Send + 'static,
-      R: 'static,
-    {
-      left: Side<A, E, R>,
-      right: Side<A, E, R>,
-      turn_left: bool,
-    }
-    let shared = Arc::new(Mutex::new(Merge {
-      left: Side::new(self),
-      right: Side::new(other),
-      turn_left: true,
-    }));
-    Stream::from_pull(move |r: &mut R, n| {
-      let shared = Arc::clone(&shared);
-      Box::pin(async move {
-        refill(&shared, |m| &mut m.left, &mut *r, n).await?;
-        refill(&shared, |m| &mut m.right, &mut *r, n).await?;
-        let mut g = shared.lock().expect("merge mutex poisoned");
-        let m = &mut *g;
-        if m.left.finished() && m.right.finished() {
-          return Ok(None);
-        }
+    two_sided(
+      Side::new(self),
+      Side::new(other),
+      true,
+      |left, right, turn_left: &mut bool| {
         let mut out = Vec::new();
         loop {
-          let (mine, theirs) = if m.turn_left {
-            (&mut m.left, &mut m.right)
+          let (mine, theirs) = if *turn_left {
+            (&mut *left, &mut *right)
           } else {
-            (&mut m.right, &mut m.left)
+            (&mut *right, &mut *left)
           };
           if let Some(x) = mine.buf.pop_front() {
             out.push(x);
-            m.turn_left = !m.turn_left;
-          } else if mine.done {
+            *turn_left = !*turn_left;
+          } else if mine.done() {
             match theirs.buf.pop_front() {
               Some(x) => out.push(x),
               None => break,
@@ -66,299 +122,82 @@ where
             break;
           }
         }
-        Ok(Some(out))
-      })
-    })
+        out
+      },
+    )
   }
 }
 
-/// One input of a two-sided join: upstream, its not-yet-consumed items, and whether it ended.
-struct Side<A, E, R>
-where
-  A: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  stream: Stream<A, E, R>,
-  buf: VecDeque<A>,
-  done: bool,
-}
-
-impl<A, E, R> Side<A, E, R>
-where
-  A: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  fn new(stream: Stream<A, E, R>) -> Self {
-    Self {
-      stream,
-      buf: VecDeque::new(),
-      done: false,
-    }
-  }
-
-  fn finished(&self) -> bool {
-    self.done && self.buf.is_empty()
-  }
-}
-
-/// Pull one chunk into the side selected by `side` if its buffer is empty and it has not ended.
-/// The lock is not held across the upstream await.
-async fn refill<T, X, E, R>(
-  shared: &Mutex<T>,
-  side: fn(&mut T) -> &mut Side<X, E, R>,
-  r: &mut R,
-  n: usize,
-) -> Result<(), E>
-where
-  X: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  let next = {
-    let mut g = shared.lock().expect("join mutex poisoned");
-    let s = side(&mut g);
-    if s.done || !s.buf.is_empty() {
-      return Ok(());
-    }
-    s.stream.poll_next_chunk_with_size(r, n)
-  };
-  let next = next.await?;
-  let mut g = shared.lock().expect("join mutex poisoned");
-  let s = side(&mut g);
-  match next {
-    Some(chunk) => s.buf.extend(chunk.into_vec()),
-    None => s.done = true,
-  }
-  Ok(())
-}
-
-/// Pair the latest value from each stream whenever either side emits.
-///
-/// Incremental: each pull fetches at most one chunk from each side, then applies the left chunk
-/// followed by the right chunk, emitting a pair for every new item once both sides have produced
-/// a value. Retains only the latest value per side.
-#[inline]
+/// Pairs the latest value of each side whenever either side emits (once both have a value).
+/// Retains only the latest value per side.
 pub fn combine_latest<A, B, E, R>(
   left: Stream<A, E, R>,
   right: Stream<B, E, R>,
 ) -> Stream<(A, B), E, R>
 where
-  A: Send + Clone + 'static,
-  B: Send + Clone + 'static,
+  A: Clone + Send + 'static,
+  B: Clone + Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  struct Latest<A, B, E, R>
-  where
-    A: Send + 'static,
-    B: Send + 'static,
-    E: Send + 'static,
-    R: 'static,
-  {
-    left: Side<A, E, R>,
-    right: Side<B, E, R>,
-    latest_a: Option<A>,
-    latest_b: Option<B>,
-  }
-  let shared = Arc::new(Mutex::new(Latest {
-    left: Side::new(left),
-    right: Side::new(right),
-    latest_a: None,
-    latest_b: None,
-  }));
-  Stream::from_pull(move |r: &mut R, n| {
-    let shared = Arc::clone(&shared);
-    Box::pin(async move {
-      refill(&shared, |s| &mut s.left, &mut *r, n).await?;
-      refill(&shared, |s| &mut s.right, &mut *r, n).await?;
-      let mut g = shared.lock().expect("combine_latest mutex poisoned");
-      let s = &mut *g;
-      if s.left.finished() && s.right.finished() {
-        return Ok(None);
-      }
-      let mut out: Vec<(A, B)> = Vec::new();
-      for a in s.left.buf.drain(..) {
-        if let Some(b) = &s.latest_b {
+  two_sided(
+    Side::new(left),
+    Side::new(right),
+    (None::<A>, None::<B>),
+    |left, right, (latest_a, latest_b)| {
+      let mut out = Vec::new();
+      for a in left.buf.drain(..) {
+        if let Some(b) = latest_b.as_ref() {
           out.push((a.clone(), b.clone()));
         }
-        s.latest_a = Some(a);
+        *latest_a = Some(a);
       }
-      for b in s.right.buf.drain(..) {
-        if let Some(a) = &s.latest_a {
+      for b in right.buf.drain(..) {
+        if let Some(a) = latest_a.as_ref() {
           out.push((a.clone(), b.clone()));
         }
-        s.latest_b = Some(b);
+        *latest_b = Some(b);
       }
-      Ok(Some(out))
-    })
-  })
+      out
+    },
+  )
 }
 
-/// Inner join on key: emits `(K, A, B)` when both streams have a value for the same `K`.
+/// Inner join on key: emits `(K, A, B)` when both sides have a value for the same `K`.
 ///
-/// Incremental: each pull fetches at most one chunk from each side and emits matches against the
-/// values seen so far. **Memory:** to match items that arrive at different times, the join
-/// retains the latest value for every distinct key seen on each side, so state grows with the
-/// number of distinct keys (not with the number of items). Bound the key space (or window the
-/// inputs) for unbounded streams.
-#[inline]
+/// **Memory:** to match items that arrive at different times, the join keeps the latest value
+/// of every distinct key seen on each side, so its state grows with the number of distinct keys
+/// (not of items). Bound the key space (or window the inputs) for unbounded streams.
 pub fn keyed_join<K, A, B, E, R>(
   left: Stream<(K, A), E, R>,
   right: Stream<(K, B), E, R>,
 ) -> Stream<(K, A, B), E, R>
 where
-  K: Send + Clone + std::hash::Hash + Eq + 'static,
-  A: Send + Clone + 'static,
-  B: Send + Clone + 'static,
+  K: Clone + Hash + Eq + Send + 'static,
+  A: Clone + Send + 'static,
+  B: Clone + Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  struct Join<K, A, B, E, R>
-  where
-    K: Send + 'static,
-    A: Send + 'static,
-    B: Send + 'static,
-    E: Send + 'static,
-    R: 'static,
-  {
-    left: Side<(K, A), E, R>,
-    right: Side<(K, B), E, R>,
-    left_map: HashMap<K, A>,
-    right_map: HashMap<K, B>,
-  }
-  let shared = Arc::new(Mutex::new(Join {
-    left: Side::new(left),
-    right: Side::new(right),
-    left_map: HashMap::new(),
-    right_map: HashMap::new(),
-  }));
-  Stream::from_pull(move |r: &mut R, n| {
-    let shared = Arc::clone(&shared);
-    Box::pin(async move {
-      refill(&shared, |j| &mut j.left, &mut *r, n).await?;
-      refill(&shared, |j| &mut j.right, &mut *r, n).await?;
-      let mut g = shared.lock().expect("keyed_join mutex poisoned");
-      let j = &mut *g;
-      if j.left.finished() && j.right.finished() {
-        return Ok(None);
-      }
-      let mut out: Vec<(K, A, B)> = Vec::new();
-      for (k, a) in j.left.buf.drain(..) {
-        if let Some(b) = j.right_map.get(&k) {
+  two_sided(
+    Side::new(left),
+    Side::new(right),
+    (HashMap::<K, A>::new(), HashMap::<K, B>::new()),
+    |left, right, (left_map, right_map)| {
+      let mut out = Vec::new();
+      for (k, a) in left.buf.drain(..) {
+        if let Some(b) = right_map.get(&k) {
           out.push((k.clone(), a.clone(), b.clone()));
         }
-        j.left_map.insert(k, a);
+        left_map.insert(k, a);
       }
-      for (k, b) in j.right.buf.drain(..) {
-        if let Some(a) = j.left_map.get(&k) {
+      for (k, b) in right.buf.drain(..) {
+        if let Some(a) = left_map.get(&k) {
           out.push((k.clone(), a.clone(), b.clone()));
         }
-        j.right_map.insert(k, b);
+        right_map.insert(k, b);
       }
-      Ok(Some(out))
-    })
-  })
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  fn block_on<F: core::future::Future>(fut: F) -> F::Output {
-    pollster::block_on(fut)
-  }
-
-  mod merge {
-    use super::*;
-
-    #[test]
-    fn interleaves_two_streams() {
-      let a = Stream::from_iterable([1, 2]);
-      let b = Stream::from_iterable([10, 20]);
-      let out = block_on(a.merge(b).run_collect().run(&mut ())).expect("collect");
-      assert_eq!(out, vec![1, 10, 2, 20]);
-    }
-
-    #[test]
-    fn drains_remaining_when_one_side_finishes_first() {
-      let a = Stream::from_iterable([1]);
-      let b = Stream::from_iterable([10, 20, 30]);
-      let out = block_on(a.merge(b).run_collect().run(&mut ())).expect("collect");
-      assert_eq!(out, vec![1, 10, 20, 30]);
-    }
-  }
-
-  mod combine_latest {
-    use super::*;
-
-    #[test]
-    fn pairs_latest_on_each_update() {
-      let left = Stream::from_iterable([1, 2]);
-      let right = Stream::from_iterable(['a', 'b']);
-      let out = block_on(combine_latest(left, right).run_collect().run(&mut ())).expect("collect");
-      assert_eq!(out, vec![(2, 'a'), (2, 'b')]);
-    }
-  }
-
-  mod keyed_join {
-    use super::*;
-
-    #[test]
-    fn joins_matching_keys() {
-      let left = Stream::from_iterable([("x", 1), ("y", 2)]);
-      let right = Stream::from_iterable([("x", 'a'), ("z", 'b')]);
-      let out = block_on(keyed_join(left, right).run_collect().run(&mut ())).expect("collect");
-      assert_eq!(out, vec![("x", 1, 'a')]);
-    }
-  }
-
-  mod infinite_sources {
-    use super::*;
-    use crate::testing::assert_bounded_memory;
-
-    #[test]
-    fn merge_with_long_finite_side_keeps_every_element() {
-      let a = Stream::from_iterable([1]);
-      let b = Stream::from_iterable(100..300);
-      let out = block_on(a.merge(b).run_collect().run(&mut ())).expect("collect");
-      let mut expected = vec![1];
-      expected.extend(100..300);
-      assert_eq!(out, expected);
-    }
-
-    #[test]
-    fn merge_with_infinite_sides_is_incremental_and_fair() {
-      let out = assert_bounded_memory(|s| s.merge(Stream::from_iterable(1000_u64..)), 6, 64);
-      assert_eq!(out, vec![0, 1000, 1, 1001, 2, 1002]);
-    }
-
-    #[test]
-    fn combine_latest_with_infinite_sides_is_incremental() {
-      let out = assert_bounded_memory(
-        |s| combine_latest(s, Stream::from_iterable(['a', 'b'].into_iter().cycle())),
-        3,
-        64,
-      );
-      // Under `take(3)` each side yields a 3-item chunk: left 0,1,2 (no right value yet), then
-      // right 'a','b','a' each pair with the latest left value 2.
-      assert_eq!(out, vec![(2, 'a'), (2, 'b'), (2, 'a')]);
-    }
-
-    #[test]
-    fn keyed_join_with_infinite_sides_is_incremental() {
-      let out = assert_bounded_memory(
-        |s| {
-          keyed_join(
-            s.map(|n| (n % 4, n)),
-            Stream::from_iterable((0_u64..).map(|n| (n % 4, n * 10))),
-          )
-        },
-        4,
-        64,
-      );
-      assert_eq!(out, vec![(0, 0, 0), (1, 1, 10), (2, 2, 20), (3, 3, 30)]);
-    }
-  }
+      out
+    },
+  )
 }

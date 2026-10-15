@@ -5,23 +5,24 @@
 //!
 //! - **[`mod@algebra`]** — type-class-shaped traits ([`Semigroup`], [`Monoid`], [`Functor`],
 //!   [`Monad`], [`Foldable`], [`traverse_vec`], …) with instances for `Option`, `Result`, `Vec`,
-//!   [`id_effect::Effect`] and [`id_effect::Cause`].
+//!   the 0.7-kernel `id_effect::Effect` and [`id_effect::Cause`].
 //! - **[`mod@foundation`]** — categorical constructs core does not need: [`Unit`], [`Never`],
 //!   [`Iso`], products, coproducts, and `Option` helpers. (`Either`, `Pipe`, `Predicate`,
 //!   `MutableRef` and `func` stay in `id_effect::foundation`.)
 //! - **[`mod@collections`]** — persistent collections backed by [`im`] ([`EffectHashMap`],
 //!   [`EffectVector`], …) plus mutable helpers ([`MutableList`], [`ChunkBuilder`], …).
-//! - **[`mod@stm`]** — software transactional memory ([`TRef`], [`TMap`], [`commit`], …).
+//! - **[`mod@stm`]** — software transactional memory ([`TRef`], [`TMap`], [`commit`], …); a
+//!   retrying transaction parks its fiber until a cell it read changes.
 //! - **[`mod@result`]**, **[`mod@reader`]**, **[`mod@thunk`]** — pure `Result` combinators, the
-//!   `Reader` monad and one-shot thunks (formerly `id_effect::kernel::{result, reader, thunk}`).
+//!   `Reader` monad and one-shot thunks (formerly in the core `kernel` module).
 //!
 //! ```rust
-//! use id_effect::run_blocking;
+//! use id_effect::Exit;
 //! use id_effect_fp::{Semigroup, TRef, commit, hash_map};
 //!
-//! let counter = run_blocking(commit(TRef::make(1_i32)), ()).expect("make");
-//! run_blocking(commit(counter.update_stm::<(), _>(|n| n + 1)), ()).expect("update");
-//! assert_eq!(run_blocking(commit(counter.read_stm::<()>()), ()), Ok(2));
+//! let counter = commit(TRef::make(1_i32)).block_on().into_result().expect("make");
+//! commit(counter.update_stm::<(), _>(|n| n + 1)).block_on().into_result().expect("update");
+//! assert_eq!(commit(counter.read_stm::<()>()).block_on(), Exit::succeed(2));
 //!
 //! let m = hash_map::set(&hash_map::empty(), "a", 1);
 //! assert_eq!(hash_map::get(&m, "a"), Some(&1));
@@ -74,3 +75,18 @@ pub use collections::{
 };
 pub use foundation::{Iso, Never, Unit};
 pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, commit};
+
+#[cfg(test)]
+pub(crate) mod test_support {
+  use id_effect::Effect;
+  use id_effect::{Cause, Exit};
+
+  /// Runs `eff` on the global runtime; typed failures become `Err`, anything else panics.
+  pub(crate) fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(e)) => Err(e),
+      Exit::Failure(_) => panic!("effect died or was interrupted"),
+    }
+  }
+}

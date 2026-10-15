@@ -1,0 +1,24 @@
+# Clippy config for `scripts/check-no-run-blocking.sh` (gate `G-nb`), loaded via
+# `CLIPPY_CONF_DIR`. It is NOT the workspace clippy config: normal `cargo clippy` never reads it.
+#
+# Library code must not park a thread on an effect: that blocks an executor worker, deadlocks a
+# current-thread runtime, and hides the effect from interruption. Run effects with `.await`
+# (`Runtime::run`, `run_fiber`) or hand them to the caller. Only a program edge (a `main`, a CLI
+# entry point) may block; mark that one call site with
+# `#[allow(clippy::disallowed_methods, reason = "edge: ...")]`.
+#
+# Tests, benches and examples are not checked: the script lints `--lib` only.
+#
+# Paths are the DEFINITION paths (private modules included): clippy does not resolve a method
+# through the glob re-exports (`id_effect::Effect` is `kernel::effect::Effect`). When a type
+# moves, update these; the script fails while any entry "does not refer to a reachable function".
+
+disallowed-methods = [
+  { path = "id_effect::kernel::effect::Effect::block_on", reason = "`Effect::block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
+  { path = "id_effect::kernel::effect::Effect::try_block_on", reason = "`Effect::try_block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
+  { path = "id_effect::kernel::local::LocalEffect::block_on", reason = "`LocalEffect::block_on` parks the thread; `.await` `run_fiber` or return the effect (G-nb)" },
+  { path = "id_effect::kernel::local::LocalEffect::try_block_on", reason = "`LocalEffect::try_block_on` parks the thread; `.await` `run_fiber` or return the effect (G-nb)" },
+  { path = "id_effect::runtime::runtime::Runtime::block_on", reason = "`Runtime::block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
+  { path = "id_effect::runtime::runtime::Runtime::try_block_on", reason = "`Runtime::try_block_on` parks the thread; `.await` `Runtime::run` or return the effect (G-nb)" },
+  { path = "id_effect::runtime::runtime::Runtime::block_on_future", reason = "`Runtime::block_on_future` parks the thread; `.await` the future (G-nb)" },
+]

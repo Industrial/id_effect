@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::id::NodeId;
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, ProcessGroups, fanout_cast};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
@@ -38,10 +38,10 @@ impl Process for Worker {
   }
 
   fn handle_cast(self, msg: Cast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       Cast::Work(n) => {
         DONE.fetch_add(n, Ordering::SeqCst);
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -55,13 +55,13 @@ fn main() {
   rb.register::<Worker>("worker");
   let a = Mesh::new(
     NodeId::fresh(&NodeName::new("a@ex")),
-    ProcessNode::threads(NodeName::new("a@ex")),
+    ProcessNode::new(NodeName::new("a@ex")),
     ra,
   )
   .with_fabric(fabric.clone());
   let _b = Mesh::new(
     NodeId::fresh(&NodeName::new("b@ex")),
-    ProcessNode::threads(NodeName::new("b@ex")),
+    ProcessNode::new(NodeName::new("b@ex")),
     rb,
   )
   .with_fabric(fabric);
@@ -71,14 +71,22 @@ fn main() {
   for _ in 0..3 {
     let pid = a
       .remote_spawn("b@ex", "worker", args.clone(), None, Duration::from_secs(2))
+      .block_on()
+      .into_result()
       .expect("spawn");
     groups.join("workers", &pid);
   }
-  std::thread::sleep(Duration::from_millis(50));
 
   let msg = postcard::to_allocvec(&Cast::Work(10)).unwrap();
   let n = fanout_cast(&a, &groups, "workers", &msg).expect("fanout");
-  std::thread::sleep(Duration::from_millis(50));
+  // Mailboxes are FIFO: once each worker answers a call, its cast has been handled.
+  let call = postcard::to_allocvec(&()).unwrap();
+  for pid in groups.members("workers") {
+    a.remote_call(&pid, call.clone(), Duration::from_secs(2))
+      .block_on()
+      .into_result()
+      .expect("sync call");
+  }
   println!(
     "fanned out to {n} workers; total work = {}",
     DONE.load(Ordering::SeqCst)

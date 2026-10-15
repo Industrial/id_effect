@@ -1,0 +1,13 @@
+# cargo-nextest configuration (workspace root).
+#
+# Trybuild suites share trybuild's generated project under target/tests/trybuild; run in parallel
+# (nextest runs each test binary in its own process) they overwrite each other's case list and
+# report "expected to fail to compile, but succeeded". Serialise them (one suite today: the v1
+# `ui_compile_fail` suite was removed with the v1 kernel).
+
+[test-groups]
+trybuild = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(id_effect) & binary(ui)'
+test-group = 'trybuild'

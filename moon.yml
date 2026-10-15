@@ -83,7 +83,7 @@ tasks:
       outputStyle: buffer-only-failure
   coverage:
     description: >-
-      Full workspace: cargo llvm-cov nextest with 95% lines/regions/functions. Excludes paths that cannot be unit-tested (CLI main, proc-macro entry stubs, generator scaffolding, event-store bridge, streaming spawn glue, logger pipeline, foundation coproduct/never, schema parse combinator surface).
+      Full workspace: cargo llvm-cov nextest with 96% lines/regions/functions. The fixed exclude list (IGNORE_REGEX, with its justifications) lives in scripts/llvm-cov-nextest.sh; see TESTING.md.
     command: 'bash'
     args: ['scripts/llvm-cov-nextest.sh']
     deps: ['~:ci-format']

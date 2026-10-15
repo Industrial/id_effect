@@ -25,7 +25,8 @@ bash scripts/tier-conformance.sh id_effect  # one or more packages by name
 | L | Lives under `labs/` and has `publish = false` | — | — | — | — | ✔ | — |
 
 `merge` and `example` packages are reported but not failed. A `merge` crate should
-not exist at the end of the consolidation mission.
+not exist at the end of the consolidation mission. As of 0.7 none does (ADR 0010,
+Amendment 3).
 
 ## Workspace checks (CI)
 
@@ -35,7 +36,7 @@ These hold for the whole workspace rather than per crate:
   CI `msrv` job builds on that toolchain.
 - **Lints:** `cargo clippy --workspace --all-targets -- -D warnings`.
 - **Tests:** `cargo nextest run --workspace`.
-- **Coverage:** ≥ 95 % lines/regions/functions on core, runtime and integration
+- **Coverage:** ≥ 96 % lines/regions/functions on core, runtime and integration
   crates (`scripts/llvm-cov-nextest.sh`). Labs crates are excluded.
 - **Packaging:** `scripts/validate-crate-packaging.sh` (publish order, versions).
 - **Minimal versions:** lock resolves and builds with `-Z minimal-versions`.

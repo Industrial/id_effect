@@ -1,0 +1,95 @@
+{
+	"schema": 1,
+	"baseline": "v06-r4",
+	"sha": "4894861156a3e4057ca8e1abba3119786defae43",
+	"created": "2026-10-15T01:18:13Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"coord/channel_spsc_10k": {
+			"mean": 1203272.605239483,
+			"median": 1200719.0683357879,
+			"std_dev": 9927.317134802599
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 765829.1692461994,
+			"median": 763434.5416666666,
+			"std_dev": 10030.716711100189
+		},
+		"gate/async_bind_64": {
+			"mean": 1641.245170300993,
+			"median": 1640.7473116385463,
+			"std_dev": 39.709771263673034
+		},
+		"gate/axum_request_caps": {
+			"mean": 53727.22389990767,
+			"median": 53461.436487854255,
+			"std_dev": 1195.444917041594
+		},
+		"gate/axum_request_oneshot": {
+			"mean": 53270.21010052868,
+			"median": 52898.60210366341,
+			"std_dev": 1487.4514181780312
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 488316.40866682975,
+			"median": 488854.016941392,
+			"std_dev": 4963.764031686621
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 702248123.3,
+			"median": 697933409.0,
+			"std_dev": 15098541.315452194
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 6824326043.3,
+			"median": 6825214418.0,
+			"std_dev": 46960692.391058795
+		},
+		"gate/spawn_join_10k": {
+			"mean": 6913518359.4,
+			"median": 6900290503.5,
+			"std_dev": 30000986.57421384
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 92.24365383957561,
+			"median": 92.14032845590856,
+			"std_dev": 1.0070972476470688
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 67.71021356066969,
+			"median": 67.71521036893131,
+			"std_dev": 0.5845712830829617
+		},
+		"phase0/bench_env_insert_overhead": {
+			"mean": 36.721831015713626,
+			"median": 36.63142578549193,
+			"std_dev": 0.3356886009520374
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 103.33349907401899,
+			"median": 103.16972263739972,
+			"std_dev": 1.3695574084470257
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 3895.6716202119637,
+			"median": 3901.515267818839,
+			"std_dev": 65.99050172683464
+		},
+		"stream/map_effect_1k": {
+			"mean": 45526741.4,
+			"median": 45444707.5,
+			"std_dev": 632297.2692777313
+		},
+		"stream/pull_map_10k": {
+			"mean": 18787.8024518098,
+			"median": 18791.33910158905,
+			"std_dev": 173.99218152031247
+		}
+	}
+}

@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, box_future};
+use id_effect::Never;
+use id_effect::{Effect, HNil, succeed, sync};
 
 use crate::addr::Addr;
 use crate::exit::ExitReason;
@@ -29,7 +29,7 @@ pub struct DynamicSupervisorSpec {
   pub shutdown: ShutdownPolicy,
   /// Maximum restarts allowed inside `within`.
   pub max_restarts: u32,
-  /// Sliding intensity window measured on the node clock.
+  /// Sliding intensity window measured on the node's executor clock.
   pub within: Duration,
 }
 
@@ -90,33 +90,33 @@ impl DynamicSupervisor {
 
   /// Start a [`DynamicSupervisor`] on `node` (unlinked).
   pub fn start(node: &ProcessNode, spec: DynamicSupervisorSpec) -> Addr<DynamicSupervisor> {
-    node.spawn::<DynamicSupervisor>(spec, ())
+    node.spawn::<DynamicSupervisor>(spec, HNil)
   }
 
   /// Start a [`DynamicSupervisor`] linked to the calling process.
   pub fn start_link(ctx: &ProcessCtx, spec: DynamicSupervisorSpec) -> Addr<DynamicSupervisor> {
-    ctx.spawn_link::<DynamicSupervisor>(spec, ())
+    ctx.spawn_link::<DynamicSupervisor>(spec, HNil)
   }
 }
 
 impl Process for DynamicSupervisor {
   type Args = DynamicSupervisorSpec;
-  type Env = ();
+  type Env = HNil;
   type Call = DynCall;
   type Reply = DynReply;
   type Cast = ();
   type Info = ();
   type Error = Never;
 
-  fn init(spec: DynamicSupervisorSpec, ctx: ProcessCtx) -> Effect<Self, Never, ()> {
-    Effect::new(move |_| {
+  fn init(spec: DynamicSupervisorSpec, ctx: ProcessCtx) -> Effect<Self, Never, HNil> {
+    sync(move || {
       ctx.trap_exit(true);
-      Ok(Self {
+      Self {
         spec,
         children: HashMap::new(),
         restarts: VecDeque::new(),
         expected_exits: HashSet::new(),
-      })
+      }
     })
   }
 
@@ -124,46 +124,41 @@ impl Process for DynamicSupervisor {
     mut self,
     msg: DynCall,
     ctx: ProcessCtx,
-  ) -> Effect<(DynReply, Next<Self>), Never, ()> {
-    Effect::new_async(move |_| {
-      box_future(async move {
-        let reply = match msg {
-          DynCall::StartChild(start) => match start(ctx.node(), ctx.pid()) {
-            Ok(pid) => {
-              self.children.insert(pid.clone(), start);
-              DynReply::Started(Ok(pid))
-            }
-            Err(err) => DynReply::Started(Err(err)),
-          },
-          DynCall::TerminateChild(pid) => {
-            if self.children.remove(&pid).is_some() {
-              self.expected_exits.insert(pid.clone());
-              terminate_pid(ctx.node(), &pid, self.spec.shutdown).await;
-              DynReply::Terminated(true)
-            } else {
-              DynReply::Terminated(false)
-            }
-          }
-          DynCall::Count => DynReply::Count(self.children.len()),
-        };
-        Ok((reply, Next::Continue(self)))
-      })
-    })
+  ) -> Effect<(DynReply, Next<Self>), Never, HNil> {
+    let reply = match msg {
+      DynCall::StartChild(start) => match start(ctx.node(), ctx.pid()) {
+        Ok(pid) => {
+          self.children.insert(pid.clone(), start);
+          DynReply::Started(Ok(pid))
+        }
+        Err(err) => DynReply::Started(Err(err)),
+      },
+      DynCall::TerminateChild(pid) => {
+        if self.children.remove(&pid).is_some() {
+          self.expected_exits.insert(pid.clone());
+          return terminate_pid(ctx.node(), &pid, self.spec.shutdown)
+            .map(move |()| (DynReply::Terminated(true), Next::Continue(self)));
+        }
+        DynReply::Terminated(false)
+      }
+      DynCall::Count => DynReply::Count(self.children.len()),
+    };
+    succeed((reply, Next::Continue(self)))
   }
 
-  fn handle_info(mut self, msg: Info<()>, ctx: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| {
+  fn handle_info(mut self, msg: Info<()>, ctx: ProcessCtx) -> Effect<Next<Self>, Never, HNil> {
+    sync(move || {
       let Info::Exit { from, reason } = msg else {
-        return Ok(Next::Continue(self));
+        return Next::Continue(self);
       };
       if self.expected_exits.remove(&from) {
-        return Ok(Next::Continue(self));
+        return Next::Continue(self);
       }
       let Some(start) = self.children.remove(&from) else {
         if reason.is_abnormal() {
-          return Ok(Next::Stop(reason, self));
+          return Next::Stop(reason, self);
         }
-        return Ok(Next::Continue(self));
+        return Next::Continue(self);
       };
 
       let restart = match self.spec.restart {
@@ -172,40 +167,37 @@ impl Process for DynamicSupervisor {
         RestartPolicy::Temporary => false,
       };
       if !restart {
-        return Ok(Next::Continue(self));
+        return Next::Continue(self);
       }
 
-      let clock = ctx.node().clock();
-      if !self.note_restart(clock.now()) {
-        return Ok(Next::Stop(ExitReason::Shutdown, self));
+      let node = ctx.node();
+      if !self.note_restart(node.now()) {
+        return Next::Stop(ExitReason::Shutdown, self);
       }
       loop {
-        match start(ctx.node(), ctx.pid()) {
+        match start(node, ctx.pid()) {
           Ok(pid) => {
             self.children.insert(pid, start);
             break;
           }
           Err(_) => {
-            if !self.note_restart(clock.now()) {
-              return Ok(Next::Stop(ExitReason::Shutdown, self));
+            if !self.note_restart(node.now()) {
+              return Next::Stop(ExitReason::Shutdown, self);
             }
           }
         }
       }
-      Ok(Next::Continue(self))
+      Next::Continue(self)
     })
   }
 
-  fn terminate(mut self, _reason: &ExitReason, ctx: ProcessCtx) -> Effect<(), Never, ()> {
-    Effect::new_async(move |_| {
-      box_future(async move {
-        let pids: Vec<Pid> = self.children.keys().cloned().collect();
-        for pid in pids {
-          self.expected_exits.insert(pid.clone());
-          terminate_pid(ctx.node(), &pid, self.spec.shutdown).await;
-        }
-        Ok(())
-      })
+  fn terminate(mut self, _reason: &ExitReason, ctx: ProcessCtx) -> Effect<(), Never, HNil> {
+    let pids: Vec<Pid> = self.children.keys().cloned().collect();
+    let shutdown = self.spec.shutdown;
+    self.expected_exits.extend(pids.iter().cloned());
+    pids.into_iter().fold(succeed(()), |acc, pid| {
+      let node = ctx.node().clone();
+      acc.flat_map(move |()| terminate_pid(&node, &pid, shutdown))
     })
   }
 }
@@ -213,11 +205,11 @@ impl Process for DynamicSupervisor {
 /// Convenience: `call`-based facade over a running [`DynamicSupervisor`].
 impl Addr<DynamicSupervisor> {
   /// Start a new dynamic child.
-  pub fn start_dyn_child(
+  pub fn start_dyn_child<R: Send + Sync + 'static>(
     &self,
     start: StartChildFn,
     timeout: Duration,
-  ) -> Effect<Result<Pid, StartError>, CallError, ()> {
+  ) -> Effect<Result<Pid, StartError>, CallError, R> {
     self
       .call(DynCall::StartChild(start), timeout)
       .map(|reply| match reply {
@@ -228,14 +220,21 @@ impl Addr<DynamicSupervisor> {
 
   /// Stop a dynamic child per the spec's shutdown policy and forget it
   /// (`false` if `pid` is not a child of this supervisor).
-  pub fn terminate_dyn_child(&self, pid: Pid, timeout: Duration) -> Effect<bool, CallError, ()> {
+  pub fn terminate_dyn_child<R: Send + Sync + 'static>(
+    &self,
+    pid: Pid,
+    timeout: Duration,
+  ) -> Effect<bool, CallError, R> {
     self
       .call(DynCall::TerminateChild(pid), timeout)
       .map(|reply| matches!(reply, DynReply::Terminated(true)))
   }
 
   /// Number of live dynamic children.
-  pub fn count_dyn_children(&self, timeout: Duration) -> Effect<usize, CallError, ()> {
+  pub fn count_dyn_children<R: Send + Sync + 'static>(
+    &self,
+    timeout: Duration,
+  ) -> Effect<usize, CallError, R> {
     self.call(DynCall::Count, timeout).map(|reply| match reply {
       DynReply::Count(n) => n,
       _ => 0,

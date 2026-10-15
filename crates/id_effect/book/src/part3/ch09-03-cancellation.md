@@ -1,102 +1,67 @@
-# Cancellation — Interrupting Gracefully
+# Cancellation — Interrupting Fibers
 
-Cancellation in async code is notoriously difficult to get right. id_effect makes it explicit and cooperative.
+Cancellation in async code is notoriously hard to get right. In id_effect it is a property of the fiber: you **interrupt** a fiber, and the runtime stops it at its next step, runs its finalizers, interrupts its children, and only then reports it done.
 
-## The Model: Cooperative Cancellation
+## Interruption Points
 
-Fibers aren't forcibly killed. They're *interrupted* — given a signal to stop at the next safe checkpoint. The fiber cooperates by checking for interruption at yield points.
+A fiber is interrupted wherever it is suspended — sleeping, waiting on a `Queue`, a `Semaphore`, a `Deferred`, a joined fiber — and at the runloop's step boundaries. There is no cancellation token to thread through your code and no `check_interrupt` to sprinkle in loops.
 
-The simplest yield point is `check_interrupt`:
+A pure Rust loop *inside a single* `sync(..)` closure is not interruptible (it is one step). Split long CPU work into effect steps, or `yield_fiber()` between chunks:
 
-```rust
-use id_effect::check_interrupt;
+```rust,ignore
+use id_effect::{Effect, Never, succeed, sync, yield_fiber};
 
-effect! {
-    for chunk in large_dataset.chunks(1000) {
-        ~ check_interrupt();  // yields; if interrupted, stops here
-        process_chunk(chunk);
-    }
-    "done"
+fn process_all(chunks: Vec<Chunk>) -> Effect<(), Never> {
+    chunks.into_iter().fold(succeed(()), |acc, chunk| {
+        acc.then(sync(move || process_chunk(chunk))).then(yield_fiber())
+    })
 }
 ```
 
-Every `~` binding is also an implicit yield point. If a fiber is interrupted while awaiting an effect, the interruption propagates to the next `~` bind.
+## Interrupting via FiberHandle
 
-## CancellationToken
-
-For external cancellation (e.g., from HTTP request handlers or UI cancel buttons):
-
-```rust
-use id_effect::CancellationToken;
-
-// Create a cancellation token
-let token = CancellationToken::new();
-
-// Pass it to a long-running effect
-let effect = long_running_job().with_cancellation(&token);
-
-// Spawn it
-let handle = effect.fork();
-
-// Later, cancel from outside
-token.cancel();
-
-// The fiber will stop at the next check_interrupt
-let exit = handle.join().await;
-// exit will be Exit::Failure(Cause::Interrupt)
-```
-
-Tokens can be cloned and shared. Cancelling any clone cancels all effects sharing that token.
-
-## Interrupting Directly via FiberHandle
-
-```rust
-let handle = background_work().fork();
-
-// After some timeout or external event:
-handle.interrupt();
-
-let exit = handle.join().await;
-// Cleanup (finalizers, scopes) runs before the handle resolves
-```
-
-`.interrupt()` sends the interruption signal. The fiber's finalizers (Chapter 10) still run. `.join()` waits for them to complete.
-
-## Graceful Shutdown
-
-Interruption is the mechanism for graceful shutdown. The pattern:
-
-1. Signal all top-level fibers with `.interrupt()`
-2. Wait for all handles to join (with a timeout)
-3. If any fiber doesn't stop within the timeout, escalate
-
-```rust
-let handles: Vec<FiberHandle<_, _>> = workers.iter().map(|w| w.fork()).collect();
-
-// Shutdown signal received
-for h in &handles { h.interrupt(); }
-
-// Wait with timeout
-for h in handles {
-    tokio::time::timeout(Duration::from_secs(5), h.join()).await;
-}
-```
-
-Because effect finalizers run on interruption, all resources are cleaned up as fibers stop — no manual cleanup required at the shutdown handler.
-
-## Uninterruptible Regions
-
-Some operations shouldn't be interrupted mid-way (e.g., writing to a database inside a transaction). Mark them uninterruptible:
-
-```rust
-use id_effect::uninterruptible;
-
-// This block runs to completion even if interrupted
-let committed = uninterruptible(effect! {
-    ~ begin_transaction();
-    ~ insert_records();
-    ~ commit();
+```rust,ignore
+let program = background_work().fork().widen().flat_map(|handle| {
+    wait_for_shutdown_signal().then(handle.interrupt()) // Effect<Exit<A, E>, ..>
 });
 ```
 
-The interruption is deferred until `committed` completes. Use sparingly — long uninterruptible regions delay shutdown.
+`interrupt()` requests interruption **and waits**: when it succeeds, the child's finalizers and its own children have completed, and its value is the child's `Exit` (normally `Exit::Failure(Cause::Interrupt(id))`). `interrupt_now()` only sends the request.
+
+Interruption also happens structurally, without any handle:
+
+- a parent's exit interrupts and awaits its `fork`ed children;
+- closing a `Scope` interrupts the fibers forked into it (`Scope::fork_in`), and `Supervisor::shutdown` does the same for supervised fibers;
+- the losers of `race` / `timeout` and the siblings of a failed `zip_par` / `all` are interrupted;
+- at the edge, `Effect::block_on` interrupts and awaits the root's children before returning.
+
+## Graceful Shutdown
+
+Because finalizers run on interruption, graceful shutdown is "interrupt the top of the tree and wait":
+
+```rust,ignore
+let workers: Vec<Effect<(), AppError>> = (0..4).map(worker).collect();
+let server = all(workers, Concurrency::Unbounded);
+
+// Stop everything when the signal arrives (both sides return `Vec<()>` here).
+let program = server.race_first(shutdown_signal().map(|()| Vec::new()));
+```
+
+When `shutdown_signal()` completes first, `race_first` interrupts `server`, which interrupts every worker; each worker's scopes and `ensuring` finalizers run before the race returns.
+
+## Uninterruptible Regions
+
+Some operations shouldn't be interrupted midway (writing a transaction, handing off a resource). Mark them uninterruptible; an interrupt that arrives inside is honoured when the region exits:
+
+```rust,ignore
+let committed = begin_transaction()
+    .then(insert_records())
+    .then(commit())
+    .uninterruptible();
+```
+
+- `.interruptible()` re-opens a region inside an uninterruptible one (e.g. a cancellable wait).
+- `uninterruptible_mask(|restore| ..)` runs a block uninterruptibly except for the parts you wrap in `restore.apply(eff)`, which get the caller's interruptibility back.
+- `acquire_use_release` and `Effect::scoped` already do this for you: acquisition and release are uninterruptible, the use keeps the caller's interruptibility ([Chapter 10](./ch10-03-acquire-release.md)).
+
+Use uninterruptible regions sparingly — they delay shutdown, and a masked effect delays its own `timeout` too.

@@ -1,6 +1,6 @@
 # `stm` — Stratum 12: software transactional memory
 
-**Optimistic transactions** over [`TRef`](mod.rs) cells: [`Stm<A, E>`](mod.rs), [`Outcome`](mod.rs), [`commit`](mod.rs) / [`atomically`](mod.rs), plus [`TQueue`](mod.rs), [`TMap`](mod.rs), and [`TSemaphore`](mod.rs). Commits are **serialized** (global lock); transactions retry on conflict or `Outcome::Retry`.
+**Optimistic transactions** over [`TRef`](mod.rs) cells: [`Stm<A, E>`](mod.rs), [`Outcome`](mod.rs), [`commit`](mod.rs) / [`atomically`](mod.rs), plus [`TQueue`](mod.rs), [`TMap`](mod.rs), and [`TSemaphore`](mod.rs). Commits are **serialized** (global lock); a transaction restarts on conflict, and on `Outcome::Retry` its fiber **parks** on the wait lists of the `TRef`s it touched until a commit writes one of them (Effect.ts `STM.retry`). Interrupting a parked transaction deregisters it.
 
 ## What lives here
 
@@ -9,12 +9,12 @@
 | `Stm` | Transactional program: `map`, `flat_map`, `or_else`, `retry`, `check`. |
 | `TRef<A>` | Transactional mutable cell — `read_stm`, `write_stm`, `update_stm`, `modify_stm`. |
 | `TQueue`, `TMap`, `TSemaphore` | Composite structures built on `TRef`. |
-| `commit` / `atomically` | Lift `Stm` to `Effect` (blocking retry loop + validation). |
+| `commit` / `atomically` | Lift `Stm` to a 0.7-kernel `Effect` (validation, restart on conflict, waker-based retry). |
 
 ## What it is used for
 
 - **Composing** atomic read/modify/write sequences without manual lock ordering across many refs.
-- **Blocking** retry (`Outcome::Retry`) for “wait until queue non-empty” patterns.
+- **Parking** retry (`Outcome::Retry`) for “wait until queue non-empty” patterns (no spinning, no blocked thread).
 - **Layer internals** and advanced coordination where `Mutex` granularity is awkward.
 
 ## Best practices

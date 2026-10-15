@@ -13,18 +13,22 @@
 
 1. Import reqwest helpers from `id_effect_platform::http::reqwest` and reqwest types from `reqwest` directly.
 2. For new portable boundaries, prefer `HttpClientService` + `execute(HttpRequest::get(url))`.
-3. Register providers at the composition root:
+3. Provide the client layers at the composition root. Since 0.7 providers are `Layer`s and effects
+   run on a fiber runtime (the 0.6 `build_env([...])` / `provide!` registry is gone; see
+   [MIGRATION-0.7.md](../MIGRATION-0.7.md)):
 
 ```rust
-use id_effect::{build_env, provide};
-use id_effect_platform::http::{provide_reqwest_http_client, HttpRequest, execute};
-use id_effect_platform::http::reqwest::{provide_reqwest_client, send};
-use id_effect_platform::command::TokioProcessRuntimeProvider;
+use id_effect_platform::http::{HttpRequest, execute, provide_reqwest_http_client};
+use id_effect_platform::http::reqwest::{ReqwestClientLive, text};
+use id_effect_tokio::TokioRuntime;
 
-let env = build_env([
-  provide_reqwest_http_client(),
-  provide!(TokioProcessRuntimeProvider),
-])?;
+// Portable boundary: `HttpClientService` from a layer.
+let portable = execute(HttpRequest::get(url)).provide_layer(provide_reqwest_http_client());
+// Reqwest pipeline: a `reqwest::Client` from a layer (see example 030_layer_default_env).
+let direct = text(move |c| c.get(other_url)).provide_layer(ReqwestClientLive::layer());
+
+let rt = TokioRuntime::current().expect("tokio runtime");
+let exit = rt.run(portable).await;
 ```
 
 ## Examples

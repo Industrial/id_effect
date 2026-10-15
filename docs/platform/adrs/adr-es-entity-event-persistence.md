@@ -2,7 +2,7 @@
 
 **Status:** Accepted  
 **Date:** 2026-06-17  
-**Context:** The fp-events initiative replaces the bespoke `PgSqlJournalBackend` / `event_journal` DDL path with a library-backed persistence layer on the shared [`PgPool`](../../../crates/id_effect_sql_pg/src/pool_key.rs). obix already depends on **es-entity** 0.10.x via the messaging stack.
+**Context:** The fp-events initiative replaces the bespoke `PgSqlJournalBackend` / `event_journal` DDL path with a library-backed persistence layer on the shared [`PgPool`](../../../crates/id_effect_sql/src/pg/pool_key.rs). obix already depends on **es-entity** 0.10.x via the messaging stack.
 
 ## Decision
 

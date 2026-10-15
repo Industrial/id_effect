@@ -1,10 +1,11 @@
 //! Ex 152 — Cookbook: run N external commands with at most K in flight.
 //!
-//! Each job takes a permit from a core `Semaphore` (waiting while all K are taken), runs its
-//! command through the `ProcessRuntimeService` capability from `id_effect_platform::command`, and
-//! releases the permit when it finishes. No hand-rolled thread pool or `Condvar` is needed. Use
-//! `id_effect_resilience::Bulkhead` instead of the semaphore when surplus work should be
-//! *rejected* rather than queued.
+//! Each job runs its command through the `ProcessRuntimeService` capability from
+//! `id_effect_platform::command` while holding a permit of a `Semaphore` (waiting while all
+//! K are taken); the permit is released however the job ends. All jobs are forked at once with
+//! `for_each_par`, so the semaphore, not the caller, bounds them. No hand-rolled thread pool or
+//! `Condvar` is needed. Use `id_effect_resilience::Bulkhead` instead of the semaphore when
+//! surplus work should be *rejected* rather than queued.
 //!
 //! The "external command" is this example binary re-invoked as `child <exit-code>`, so the recipe
 //! behaves the same on every OS and needs no fixtures.
@@ -15,13 +16,13 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use id_effect::{
-  Effect, Needs, Semaphore, box_future, build_env, provide, run_async, run_blocking,
-};
+use id_effect::Exit;
+use id_effect::{Concurrency, Effect, Semaphore, for_each_par, sync};
 use id_effect_platform::command::{
-  CommandSpec, ProcessRuntimeService, TokioProcessRuntimeProvider, spawn_wait,
+  CommandSpec, ProcessRuntimeEnv, TokioProcessRuntimeProvider, spawn_wait,
 };
 use id_effect_platform::error::ProcessError;
+use id_effect_tokio::TokioRuntime;
 
 /// How many commands may run at once.
 const MAX_IN_FLIGHT: usize = 3;
@@ -46,25 +47,20 @@ impl Gauge {
   }
 }
 
-/// One job: wait for a permit, run `cmd`, release the permit, yield the exit code.
-fn bounded_job<R>(sem: Semaphore, gauge: Gauge, cmd: CommandSpec) -> Effect<i32, ProcessError, R>
-where
-  R: Needs<ProcessRuntimeService> + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let run = spawn_wait::<R>(cmd);
-    box_future(async move {
-      // `acquire_owned` waits for a permit; dropping `_permit` gives it back, on every path.
-      let _permit = match run_async(sem.acquire_owned(), ()).await {
-        Ok(permit) => permit,
-        Err(never) => match never {},
-      };
-      gauge.enter();
-      let status = run.run(r).await;
-      gauge.exit();
-      Ok(status?.code().unwrap_or(-1))
-    })
-  })
+/// One job: run `cmd` holding a permit, yield the exit code.
+fn bounded_job(
+  sem: &Semaphore,
+  gauge: Gauge,
+  cmd: CommandSpec,
+) -> Effect<i32, ProcessError, ProcessRuntimeEnv> {
+  let (g_in, g_out) = (gauge.clone(), gauge);
+  let job = sync(move || g_in.enter())
+    .then(spawn_wait(cmd))
+    .map(move |status| {
+      g_out.exit();
+      status.code().unwrap_or(-1)
+    });
+  sem.with_permit(job)
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -77,33 +73,27 @@ async fn main() -> ExitCode {
   }
 
   let exe = std::env::current_exe().expect("current_exe");
-  let sem = run_blocking(Semaphore::make(MAX_IN_FLIGHT), ()).expect("semaphore");
+  let sem = Semaphore::new(MAX_IN_FLIGHT);
   let gauge = Gauge::default();
-  // Capabilities are provided once, at the edge.
-  let env = build_env([provide!(TokioProcessRuntimeProvider)]).expect("env");
 
   // Every third command "fails" with exit code 3.
   let expected: Vec<i32> = (0..JOBS).map(|i| if i % 3 == 2 { 3 } else { 0 }).collect();
 
-  // Start all jobs concurrently on this thread; the semaphore, not the caller, bounds them.
-  let local = tokio::task::LocalSet::new();
-  let codes: Vec<i32> = local
-    .run_until(async {
-      let handles: Vec<_> = expected
-        .iter()
-        .map(|code| {
-          let cmd = CommandSpec::new(&exe).arg("child").arg(code.to_string());
-          let job = bounded_job(sem.clone(), gauge.clone(), cmd);
-          tokio::task::spawn_local(run_async(job, env.clone()))
-        })
-        .collect();
-      let mut codes = Vec::with_capacity(handles.len());
-      for handle in handles {
-        codes.push(handle.await.expect("join").expect("spawn"));
-      }
-      codes
-    })
-    .await;
+  let jobs = for_each_par(
+    expected.clone(),
+    |code| {
+      let cmd = CommandSpec::new(&exe).arg("child").arg(code.to_string());
+      bounded_job(&sem, gauge.clone(), cmd)
+    },
+    Concurrency::Unbounded,
+  );
+  // Capabilities are provided once, at the edge, by the process layer.
+  let program = jobs.provide_layer(TokioProcessRuntimeProvider::layer());
+  let rt = TokioRuntime::current().expect("tokio runtime");
+  let codes = match rt.run(program).await {
+    Exit::Success(codes) => codes,
+    Exit::Failure(c) => panic!("jobs failed: {c:?}"),
+  };
 
   let peak = gauge.peak.load(Ordering::SeqCst);
   println!("exit codes {codes:?}; peak in flight {peak} (limit {MAX_IN_FLIGHT})");

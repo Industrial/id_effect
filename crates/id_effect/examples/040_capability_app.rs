@@ -1,6 +1,8 @@
-//! Capability DI: `Cap<T>`, `ProviderSpec`, `run_with`.
+//! Capability DI on the 0.7 kernel: a typed `R`, a provider derive building a `Layer`, and
+//! `provide_layer` at the edge.
+use id_effect::{Effect, caps, effect};
+use id_effect::{Exit, Never};
 
-use id_effect::{Effect, caps, effect, provide, run_with};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
@@ -8,15 +10,12 @@ pub struct Counter(pub u32);
 #[provides(Counter, with = || Counter(42))]
 struct CounterLive;
 
-fn app() -> Effect<u32, (), caps!(Counter)> {
-  effect!(|r| {
-    let counter = ~Counter;
-    counter.0
-  })
+fn app() -> Effect<u32, Never, caps!(Counter)> {
+  effect!({ ~Counter.0 })
 }
 
 fn main() {
-  let n = run_with([provide!(CounterLive)], app()).expect("run");
-  assert_eq!(n, 42);
-  println!("counter = {n}");
+  let exit = app().provide_layer(CounterLive::layer()).block_on();
+  assert_eq!(exit, Exit::succeed(42));
+  println!("counter = 42");
 }

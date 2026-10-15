@@ -1,16 +1,17 @@
 //! Portable OS subprocess spawning ([`ProcessRuntime`]) with Tokio implementation.
 //!
+//! The capability is [`ProcessRuntimeService`]; [`TokioProcessRuntimeProvider::layer`] and
+//! [`provide_process_runtime`] are the [`Layer`]s that provide it ([`ProcessRuntimeEnv`]).
+//!
 //! Formerly `id_effect_platform::process`; renamed to avoid confusion with the actor processes of
-//! `id_effect_process`. The old path remains as a deprecated alias.
+//! `id_effect_process`. The deprecated `process` alias was removed in 0.7.
 
-#![allow(clippy::unused_unit)]
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use id_effect::Needs;
-use id_effect::kernel::Effect;
+use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need};
 
 use crate::error::ProcessError;
 
@@ -57,13 +58,22 @@ pub struct ChildHandle {
   inner: Arc<Mutex<tokio::process::Child>>,
 }
 
+impl std::fmt::Debug for ChildHandle {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ChildHandle").finish_non_exhaustive()
+  }
+}
+
 /// Capability: spawn and await child processes as [`Effect`] values.
+///
+/// The live implementation needs a tokio runtime with its IO driver enabled (child reaping), such
+/// as `id_effect_tokio::TokioRuntime`.
 pub trait ProcessRuntime: Send + Sync + 'static {
   /// Spawn without waiting; use [`child_wait`] or [`child_kill`].
-  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, ()>;
+  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError>;
 
   /// Spawn and wait for exit status (stdout/stderr inherited by host).
-  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()>;
+  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError>;
 }
 
 /// Tokio-backed process runtime.
@@ -71,79 +81,110 @@ pub trait ProcessRuntime: Send + Sync + 'static {
 pub struct TokioProcessRuntime;
 
 impl ProcessRuntime for TokioProcessRuntime {
-  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, ()> {
-    Effect::new_async(move |_r: &mut ()| {
-      Box::pin(async move {
-        let mut c = tokio::process::Command::new(&cmd.program);
-        c.args(&cmd.args);
-        if let Some(dir) = &cmd.current_dir {
-          c.current_dir(dir);
-        }
-        let child = c.spawn().map_err(ProcessError::from)?;
-        Ok(ChildHandle {
-          inner: Arc::new(Mutex::new(child)),
-        })
+  fn spawn(&self, cmd: CommandSpec) -> Effect<ChildHandle, ProcessError> {
+    from_async(move || async move {
+      let mut c = tokio::process::Command::new(&cmd.program);
+      c.args(&cmd.args);
+      if let Some(dir) = &cmd.current_dir {
+        c.current_dir(dir);
+      }
+      let child = c.spawn().map_err(ProcessError::from)?;
+      Ok(ChildHandle {
+        inner: Arc::new(Mutex::new(child)),
       })
     })
   }
 
-  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, ()> {
-    let this = *self;
-    Effect::new_async(move |_r: &mut ()| {
-      Box::pin(async move {
-        let handle = this.spawn(cmd).run(&mut ()).await?;
-        child_wait(handle).run(&mut ()).await
-      })
-    })
+  fn spawn_wait(&self, cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError> {
+    self.spawn(cmd).flat_map(child_wait)
   }
 }
 
-/// Default [`ProviderSpec`](id_effect::ProviderSpec) for a Tokio-backed [`ProcessRuntime`].
-pub type ProcessRuntimeService = Arc<dyn ProcessRuntime>;
+/// The [`ProcessRuntime`] capability: a shared handle to the installed implementation.
+#[derive(Clone)]
+pub struct ProcessRuntimeService(pub Arc<dyn ProcessRuntime>);
 
-/// Tokio-backed [`ProcessRuntime`] provider.
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(ProcessRuntimeService, with = || Arc::new(TokioProcessRuntime))]
+impl ProcessRuntimeService {
+  /// Wrap `rt` as the capability.
+  #[inline]
+  pub fn new(rt: impl ProcessRuntime) -> Self {
+    Self(Arc::new(rt))
+  }
+}
+
+impl std::ops::Deref for ProcessRuntimeService {
+  type Target = dyn ProcessRuntime;
+
+  fn deref(&self) -> &Self::Target {
+    &*self.0
+  }
+}
+
+impl std::fmt::Debug for ProcessRuntimeService {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("ProcessRuntimeService")
+      .field(&"<dyn ProcessRuntime>")
+      .finish()
+  }
+}
+
+/// The minimal typed environment holding only [`ProcessRuntimeService`] (the output of the
+/// process layers).
+pub type ProcessRuntimeEnv = HCons<ProcessRuntimeService, HNil>;
+
+/// A [`ProcessRuntimeEnv`] wrapping `rt` (for `.provide_all(..)` in tests and entry points).
+#[inline]
+pub fn process_runtime_env(rt: impl ProcessRuntime) -> ProcessRuntimeEnv {
+  hlist![ProcessRuntimeService::new(rt)]
+}
+
+/// A [`Layer`] providing `rt` as the [`ProcessRuntimeService`] capability.
+#[inline]
+pub fn provide_process_runtime<E: Send + 'static>(
+  rt: impl ProcessRuntime,
+) -> Layer<ProcessRuntimeEnv, E> {
+  Layer::succeed(process_runtime_env(rt))
+}
+
+/// The Tokio-backed [`ProcessRuntime`] provider.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TokioProcessRuntimeProvider;
 
-/// Spawn using [`ProcessRuntime`].
-#[inline]
-pub fn spawn<R>(cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, R>
-where
-  R: Needs<ProcessRuntimeService> + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let rt = r.need().clone();
-    let inner = rt.spawn(cmd);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+impl TokioProcessRuntimeProvider {
+  /// The layer: a [`TokioProcessRuntime`] as the [`ProcessRuntimeService`] capability.
+  #[inline]
+  pub fn layer<E: Send + 'static>() -> Layer<ProcessRuntimeEnv, E> {
+    provide_process_runtime(TokioProcessRuntime)
+  }
 }
 
-/// Spawn-wait using [`ProcessRuntime`].
+/// Spawn using the [`ProcessRuntimeService`] in `R`.
 #[inline]
-pub fn spawn_wait<R>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
+pub fn spawn<R, I>(cmd: CommandSpec) -> Effect<ChildHandle, ProcessError, R>
 where
-  R: Needs<ProcessRuntimeService> + 'static,
+  R: Selector<ProcessRuntimeService, I> + HList,
 {
-  Effect::new_async(move |r: &mut R| {
-    let rt = r.need().clone();
-    let inner = rt.spawn_wait(cmd);
-    Box::pin(async move { inner.run(&mut ()).await })
-  })
+  need::<ProcessRuntimeService>().flat_map(move |rt| rt.spawn(cmd).narrow())
+}
+
+/// Spawn-wait using the [`ProcessRuntimeService`] in `R`.
+#[inline]
+pub fn spawn_wait<R, I>(cmd: CommandSpec) -> Effect<std::process::ExitStatus, ProcessError, R>
+where
+  R: Selector<ProcessRuntimeService, I> + HList,
+{
+  need::<ProcessRuntimeService>().flat_map(move |rt| rt.spawn_wait(cmd).narrow())
 }
 
 /// Await child exit (after optional [`child_kill`]).
 #[inline]
 pub fn child_wait<R>(handle: ChildHandle) -> Effect<std::process::ExitStatus, ProcessError, R>
 where
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  Effect::new_async(move |_r: &mut R| {
-    Box::pin(async move {
-      let mut guard = handle.inner.lock().await;
-      let status = guard.wait().await.map_err(ProcessError::from)?;
-      Ok(status)
-    })
+  from_async(move || async move {
+    let mut guard = handle.inner.lock().await;
+    guard.wait().await.map_err(ProcessError::from)
   })
 }
 
@@ -151,14 +192,11 @@ where
 #[inline]
 pub fn child_kill<R>(handle: ChildHandle) -> Effect<(), ProcessError, R>
 where
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  Effect::new_async(move |_r: &mut R| {
-    Box::pin(async move {
-      let mut guard = handle.inner.lock().await;
-      guard.kill().await.map_err(ProcessError::from)?;
-      Ok(())
-    })
+  from_async(move || async move {
+    let mut guard = handle.inner.lock().await;
+    guard.kill().await.map_err(ProcessError::from)
   })
 }
 
@@ -191,6 +229,27 @@ mod tests {
       let d = PathBuf::from("/tmp/work");
       let c = CommandSpec::new("p").dir(d.clone());
       assert_eq!(c.current_dir, Some(d));
+    }
+  }
+
+  mod capability {
+    use super::*;
+    use id_effect::Exit;
+
+    #[test]
+    fn service_is_send_sync_and_debug_hides_the_implementation() {
+      fn assert_send_sync<T: Send + Sync>() {}
+      assert_send_sync::<ProcessRuntimeService>();
+      let s = format!("{:?}", ProcessRuntimeService::new(TokioProcessRuntime));
+      assert!(s.contains("ProcessRuntimeService"), "{s}");
+    }
+
+    #[test]
+    fn tokio_provider_layer_builds_the_capability() {
+      let built = TokioProcessRuntimeProvider::layer::<ProcessError>()
+        .build()
+        .block_on();
+      assert!(matches!(built, Exit::Success(_)));
     }
   }
 }

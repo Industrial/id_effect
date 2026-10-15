@@ -4,19 +4,150 @@
 //! **structural data** keys (`HashMap`, `HashSet`, schema-like APIs), implement
 //! [`Hash`](std::hash::Hash) for `E` and use [`crate::schema::data::EffectData`] as the capability
 //! marker (via the blanket impl once `PartialEq + Eq + Hash` hold).
+//!
+//! [`Cause::Die`] carries a [`Defect`]; its equality and hash look at the defect message only.
 
 use core::fmt;
+use std::any::Any;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::Matcher;
-use crate::runtime::FiberId;
+use crate::failure::FiberId;
+
+type Payload = Option<Box<dyn Any + Send>>;
+
+/// Take-once payload slot, type-erased so its interior mutability (which never affects
+/// [`Defect`]'s `Eq`/`Hash`) does not make `Cause` look like a mutable hash key.
+trait PanicSlot: Send + Sync {
+  fn slot(&self) -> MutexGuard<'_, Payload>;
+}
+
+impl PanicSlot for Mutex<Payload> {
+  fn slot(&self) -> MutexGuard<'_, Payload> {
+    self.lock().unwrap_or_else(PoisonError::into_inner)
+  }
+}
+
+/// Unrecoverable failure carried by [`Cause::Die`]: a message and, for panics, the payload.
+///
+/// [`Defect::from_panic`] keeps the original panic payload in a shared slot, so it can be
+/// inspected with [`Defect::with_payload`] or moved out once with [`Defect::take_payload`]
+/// (e.g. to `resume_unwind`). Clones share that slot.
+///
+/// [`PartialEq`], [`Eq`] and [`Hash`] compare the **message only**; the payload is ignored.
+/// [`Debug`](fmt::Debug) renders the message like a string, so `Cause::Die` debug output keeps
+/// its 0.6 shape.
+#[derive(Clone)]
+pub struct Defect {
+  message: Arc<str>,
+  payload: Option<Arc<dyn PanicSlot>>,
+}
+
+impl Defect {
+  /// Defect with `message` and no panic payload.
+  pub fn new(message: impl Into<String>) -> Self {
+    Self {
+      message: Arc::from(message.into()),
+      payload: None,
+    }
+  }
+
+  /// Defect from a caught panic payload (as returned by [`std::panic::catch_unwind`]).
+  ///
+  /// The message is the payload text for `&str` / `String` payloads and
+  /// `"non-string panic payload"` otherwise; the payload itself is kept.
+  pub fn from_panic(payload: Box<dyn Any + Send>) -> Self {
+    let message = if let Some(s) = payload.downcast_ref::<&'static str>() {
+      (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+      s.clone()
+    } else {
+      "non-string panic payload".to_string()
+    };
+    Self {
+      message: Arc::from(message),
+      payload: Some(Arc::new(Mutex::new(Some(payload)))),
+    }
+  }
+
+  /// Human-readable defect message.
+  #[inline]
+  pub fn message(&self) -> &str {
+    &self.message
+  }
+
+  /// `true` while a panic payload is present (not yet taken).
+  pub fn has_payload(&self) -> bool {
+    self
+      .payload
+      .as_ref()
+      .is_some_and(|slot| slot.slot().is_some())
+  }
+
+  /// Run `f` on the panic payload if it is present and of type `T`.
+  pub fn with_payload<T: Any, R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+    let guard = self.payload.as_ref()?.slot();
+    guard.as_ref()?.downcast_ref::<T>().map(f)
+  }
+
+  /// Move the panic payload out of the shared slot; later calls (on any clone) return `None`.
+  pub fn take_payload(&self) -> Option<Box<dyn Any + Send>> {
+    self.payload.as_ref()?.slot().take()
+  }
+}
+
+impl PartialEq for Defect {
+  fn eq(&self, other: &Self) -> bool {
+    self.message == other.message
+  }
+}
+
+impl Eq for Defect {}
+
+impl Hash for Defect {
+  fn hash<H: Hasher>(&self, state: &mut H) {
+    self.message.hash(state);
+  }
+}
+
+impl fmt::Debug for Defect {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fmt::Debug::fmt(&*self.message, f)
+  }
+}
+
+impl fmt::Display for Defect {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str(&self.message)
+  }
+}
+
+impl From<String> for Defect {
+  fn from(message: String) -> Self {
+    Self::new(message)
+  }
+}
+
+impl From<&str> for Defect {
+  fn from(message: &str) -> Self {
+    Self::new(message)
+  }
+}
+
+impl From<&String> for Defect {
+  fn from(message: &String) -> Self {
+    Self::new(message.as_str())
+  }
+}
 
 /// Effect failure algebra: typed errors, defects, fiber interrupts, and composite causes.
 #[derive(Clone, Debug, crate::EffectData)]
 pub enum Cause<E> {
   /// Recoverable failure carrying the typed error `E`.
   Fail(E),
-  /// Defect (panic-style) message.
-  Die(String),
+  /// Defect (panic-style): message plus, for panics, the payload.
+  Die(Defect),
   /// Fiber interrupted at `fiber_id`.
   Interrupt(FiberId),
   /// Parallel composition of two causes.
@@ -32,10 +163,16 @@ impl<E> Cause<E> {
     Self::Fail(error)
   }
 
-  /// [`Cause::Die`] with `message`.
+  /// [`Cause::Die`] with `defect` (a [`Defect`], `String` or `&str` message).
   #[inline]
-  pub fn die(message: impl Into<String>) -> Self {
-    Self::Die(message.into())
+  pub fn die(defect: impl Into<Defect>) -> Self {
+    Self::Die(defect.into())
+  }
+
+  /// [`Cause::Die`] from a caught panic payload; see [`Defect::from_panic`].
+  #[inline]
+  pub fn from_panic(payload: Box<dyn Any + Send>) -> Self {
+    Self::Die(Defect::from_panic(payload))
   }
 
   /// [`Cause::Interrupt`] for `fiber_id`.
@@ -379,6 +516,86 @@ mod tests {
     fn contains_when_predicate_never_matches_returns_false() {
       let cause = Cause::both(Cause::<&str>::die("d"), Cause::interrupt(FiberId::ROOT));
       assert!(!cause.contains(&|c| matches!(c, Cause::Fail(_))));
+    }
+  }
+
+  mod defect {
+    use super::*;
+    use std::collections::hash_map::DefaultHasher;
+
+    fn caught(f: impl FnOnce() + std::panic::UnwindSafe) -> Box<dyn Any + Send> {
+      std::panic::catch_unwind(f).expect_err("closure must panic")
+    }
+
+    fn hash_of(d: &Defect) -> u64 {
+      let mut h = DefaultHasher::new();
+      d.hash(&mut h);
+      h.finish()
+    }
+
+    #[derive(Debug, PartialEq)]
+    struct CustomPayload(u32);
+
+    #[test]
+    fn from_panic_with_str_payload_extracts_message_and_keeps_payload() {
+      let d = Defect::from_panic(caught(|| panic!("static boom")));
+      assert_eq!(d.message(), "static boom");
+      assert_eq!(d.with_payload(|s: &&str| *s), Some("static boom"));
+    }
+
+    #[test]
+    fn from_panic_with_string_payload_extracts_message() {
+      let n = 7;
+      let d = Defect::from_panic(caught(move || panic!("owned boom {n}")));
+      assert_eq!(d.message(), "owned boom 7");
+      assert_eq!(
+        d.with_payload(|s: &String| s.clone()).as_deref(),
+        Some("owned boom 7")
+      );
+    }
+
+    #[test]
+    fn from_panic_with_custom_payload_downcasts_after_take() {
+      let cause = Cause::<()>::from_panic(caught(|| std::panic::panic_any(CustomPayload(42))));
+      let Cause::Die(d) = cause.clone() else {
+        panic!("expected Die");
+      };
+      assert_eq!(d.message(), "non-string panic payload");
+      assert!(d.has_payload());
+      let payload = d.take_payload().expect("payload");
+      assert_eq!(
+        *payload.downcast::<CustomPayload>().unwrap(),
+        CustomPayload(42)
+      );
+      // The slot is shared by clones and can be taken once.
+      let Cause::Die(original) = cause else {
+        panic!("expected Die");
+      };
+      assert!(!original.has_payload());
+      assert!(original.take_payload().is_none());
+    }
+
+    #[test]
+    fn eq_and_hash_compare_message_only() {
+      let with_payload = Defect::from_panic(Box::new("same"));
+      let without = Defect::new("same");
+      assert_eq!(with_payload, without);
+      assert_eq!(hash_of(&with_payload), hash_of(&without));
+      assert_ne!(Defect::new("a"), Defect::new("b"));
+    }
+
+    #[test]
+    fn debug_and_display_render_message() {
+      assert_eq!(format!("{:?}", Cause::<()>::die("x")), "Die(\"x\")");
+      assert_eq!(Defect::new("x").to_string(), "x");
+    }
+
+    #[test]
+    fn message_only_defect_has_no_payload() {
+      let d = Defect::new("plain");
+      assert!(!d.has_payload());
+      assert_eq!(d.with_payload(|s: &&str| *s), None);
+      assert!(d.take_payload().is_none());
     }
   }
 

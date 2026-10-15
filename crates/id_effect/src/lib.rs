@@ -1,20 +1,27 @@
-//! Unified interpreter-style effects, piping, and **capability-first** dependency injection.
+//! `Effect<A, E = Never, R = HNil>`: a lazy, `Send` effect over a typed capability list `R`, run
+//! on a fiber runtime (design A, ADR 0011).
 //!
-//! - **[`mod@kernel`]** — unified [`Effect<A, E, R>`] plus [`into_bind`].
-//! - **[`effect!`](macro@effect)** — procedural do-notation (`x ~ expr` bind, `~ expr` discard), tail `Ok(expr)`; see [`macros`].
-//! - **[`mod@macros`]** — declarative macros ([`pipe!`](macro@pipe), [`require!`](macro@require), …).
-//! - **[`mod@capability`]** — trait-first DI: [`Env`], [`ProviderSpec`], [`CapabilityGraph`], [`run_with`].
-//! - **[`mod@piping`]** — [`Pipe`] trait (macro: [`pipe!`](macro@pipe)).
-//! - **[`schedule`]** — Effect.ts-style repeat/retry policies.
-//! - **[`stream`]** — Effect.ts-inspired stream combinators.
+//! - **[`Effect`]** — the core value: [`succeed`], [`fail`], [`sync`], [`from_async`],
+//!   `map` / `flat_map` / `map_err` / `catch`, run at the edge with `Effect::block_on` or awaited
+//!   with [`Runtime::run`]. [`LocalEffect`] holds `!Send` values.
+//! - **[`effect!`](macro@effect)** — do-notation over an async body: `~Cap` reads a capability,
+//!   `~expr` binds a sub-effect, `~(a, b)` joins in parallel; [`caps!`](macro@caps) spells `R`.
+//! - **Typed `R`** — an HList of capabilities ([`HCons`], [`HNil`], [`need`], `provide`,
+//!   `provide_env`), built from [`Layer`]s (`merge`, `provide_to`, scoped layers).
+//! - **Fibers** — `fork` / `join` / interrupt, [`FiberRef`], [`Scope`], [`all`] / `zip_par` /
+//!   [`race`], the [`Fabric`] admission scheduler, deterministic [`TestExecutor`].
+//! - **Libraries** — [`Stream`] / [`Sink`], [`Schedule`] (`Effect::retry` / `repeat`),
+//!   coordination ([`Queue`], [`Channel`], [`Deferred`], [`Semaphore`], [`PubSub`], [`Ref`], …),
+//!   resources ([`Pool`], [`Cache`]), metrics and spans ([`MetricRegistry`], `with_span`),
+//!   request batching and caching.
+//! - **Kernel-independent** — [`failure`] (`Cause`, `Exit`, `Defect`, `Or`), [`foundation`]
+//!   ([`Pipe`], `pipe!`), [`schema`], [`scheduling`] (`Duration`, `UtcDateTime`), [`match_`].
 //!
 //! ## Cargo features
 //!
 //! - **`compute`** (default) — the Compute Fabric ([`mod@compute`]): admission control, adaptive
-//!   Rayon parallelism for bulk stream/sort operations and `sysinfo` host telemetry. Without it,
-//!   [`run`] / [`run_with`] install no fabric, bulk operations run serially and
-//!   [`ThreadSleepRuntime`] spawns one OS thread per fiber; `rayon` and `sysinfo` are not built.
-//! - **`proptest`** — property-testing helpers in `testing::proptest`.
+//!   Rayon parallelism for bulk operations and `sysinfo` host telemetry. Without it, bulk
+//!   operations run serially; `rayon` and `sysinfo` are not built.
 //! - **`schema-serde`** — `serde_json::Value` ↔ [`Unknown`] and JSON Schema helpers.
 //!
 //! Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
@@ -26,7 +33,7 @@
 // normalized (ambiguous modules, redundant explicit targets, etc.).
 #![allow(rustdoc::all)]
 // `effect-dylint-rules` targets crates that *compose* `Effect` at the edge; this crate implements
-// the runtime (`Effect::new`, internal `run_blocking`, …). Lints are crate-allowed here; see
+// the runtime (`Effect::block_on`, `Runtime`, …). Lints are crate-allowed here; see
 // `.cursor/skills/effect.rs-fundamentals/SKILL.md` for caller-facing rules.
 #![allow(unknown_lints)]
 #![allow(
@@ -61,121 +68,80 @@
   )
 )]
 
-// Lets `::id_effect::…` in `id_effect_macro` expansions resolve when those macros are used inside this crate.
+// Lets `::id_effect::…` in macro expansions resolve when those macros are used inside this crate.
 extern crate self as id_effect;
 
-pub use id_effect_macro::{caps, err, mock_capability, pipe, provide, providers, require};
+/// Compiles and runs the README quick start as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
+pub use id_effect_macro::{err, pipe};
 pub use id_effect_proc_macro::{
-  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, SchemaParser, capability, effect,
+  EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, caps, effect, effect_local,
   effect_tagged, match_effect,
 };
 
+// ── the 0.7 kernel ──────────────────────────────────────────────────────────────────────────
+// Every module's items are glob re-exported at the root, so item names must be unique across
+// them (`ambiguous_glob_reexports` is denied by clippy `-D warnings`).
 pub mod capability;
-#[cfg(feature = "compute")]
 pub mod compute;
 pub mod concurrency;
 pub mod coordination;
-pub mod failure;
-pub mod foundation;
 pub mod kernel;
-pub mod macros;
-pub mod match_;
+pub mod layer;
 pub mod observability;
-#[cfg(feature = "compute")]
-pub mod parallelism;
+pub mod par;
+pub mod race;
+pub mod random;
+pub mod request;
 pub mod resource;
 pub mod runtime;
 pub mod scheduling;
-pub mod schema;
+pub mod scope;
 pub mod streaming;
 pub mod testing;
 
-pub use crate::kernel::{
-  BoxFuture, Effect, IntoBind, acquire_release, box_future, fail, flatten_or, from_async,
-  into_bind, join_binds2, join_binds3, join_binds4, pure, scope_with, scoped, succeed,
-};
+pub use capability::*;
+pub use compute::*;
+pub use concurrency::*;
+pub use coordination::*;
+pub use kernel::*;
+pub use layer::*;
+pub use observability::*;
+pub use par::*;
+pub use race::*;
+pub use random::*;
+pub use request::*;
+pub use resource::*;
+pub use runtime::*;
+pub use scheduling::*;
+pub use scope::*;
+pub use streaming::*;
+pub use testing::*;
+
+#[doc(hidden)]
+pub use kernel::macro_support as __private;
+
+// ── kernel-independent modules ──────────────────────────────────────────────────────────────
+pub mod failure;
+pub mod foundation;
+pub mod macros;
+pub mod match_;
+#[cfg(feature = "compute")]
+pub mod parallelism;
+pub mod schema;
+
 pub use crate::match_::{HasTag, Matcher};
-pub use capability::{
-  Cap, CapBind, CapBindR, CapBindWide, CapKeys, CapList, CapWiden, Capability,
-  CapabilityDiagnostic, CapabilityError, CapabilityGraph, CapabilityId, CapabilityKey,
-  CapabilityPlannerError, CapabilitySet, Caps, Env, FromEnv, HasCap, Needs, NoCaps, PlannerNode,
-  PlannerPlan, Provider, ProviderBox, ProviderError, ProviderNode, ProviderSpec, RunError,
-  build_env, cap_into_bind, plan_topological, run, run_with, with_fiber_and_override,
-  with_override,
-};
-#[cfg(feature = "compute")]
-#[allow(deprecated)]
-pub use compute::ComputeSupervisor;
-#[cfg(feature = "compute")]
-pub use compute::{
-  AdaptiveContext, AdmissionController, ComputeFabric, CpuSpreadBucket, FabricGovernor,
-  FabricJobSpec, FiberPool, MetricMode, MetricPolicy, MockTelemetry, RebalanceStrategy,
-  ResourcePolicy, SysinfoTelemetry, TelemetryEngine, TelemetrySnapshot, WorkProfile,
-  configure_rayon_threads, ensure_default_fabric, ensure_run_context, install_fabric,
-  install_parallel, installed_fabric, is_fabric_installed, refresh_adaptive_context,
-  uninstall_fabric,
-};
-pub use concurrency::{
-  CancellationToken, FiberHandle, FiberId, FiberRef, FiberStatus, RestartIntensity, Supervisor,
-  SupervisorPolicy, check_interrupt, fiber_all, fiber_never, fiber_succeed, interrupt_all,
-  supervised, with_fiber_id,
-};
-pub use coordination::semaphore::Permit;
-pub use coordination::{
-  Channel, ChannelReadError, Deferred, FnRequestResolver, Latch, MissingKey, PubSub, Queue,
-  QueueChannel, QueueError, Ref, RequestEntry, RequestResolver, Semaphore, SubscriptionRef,
-  SynchronizedRef, batching, make_request_resolver,
-};
-pub use failure::{Cause, Exit, Or};
+pub use failure::{Cause, Defect, Exit, FiberId, Never, Or};
 #[doc(inline)]
 pub use foundation::either::Either;
-pub use foundation::func::{
-  always, compose, const_, flip, identity, memoize, pipe1, pipe2, pipe3, tupled, untupled,
-};
-pub use foundation::mutable_ref::MutableRef;
+pub use foundation::func::{always, compose, identity};
 pub use foundation::piping::Pipe;
 pub use foundation::predicate::Predicate;
-pub use observability::{
-  AnnotateCurrentSpanErr, AnnotateCurrentSpanSuccess, ComputeEvent, EffectEvent, FiberEvent,
-  LogLevel, LogSpan, Metric, SpanRecord, TracingConfig, TracingFiberRefs, TracingSnapshot,
-  annotate_current_span, emit_compute_event, emit_effect_event, emit_fiber_event,
-  install_tracing_layer, metric_make, record_compute_event, snapshot_tracing, with_span,
-};
-pub use resource::{Cache, CacheStats, Finalizer, KeyedPool, Pool, Scope};
-pub use runtime::{
-  Never, Runtime, ThreadSleepRuntime, run_async, run_blocking, run_fork, yield_now,
-};
-pub use scheduling::{
-  AnyDateTime, Clock, Duration, DurationParseError, LiveClock, Schedule, ScheduleDecision,
-  ScheduleInput, TestClock, TimeUnit, UtcDateTime, ZonedDateTime, forever, repeat, repeat_n,
-  repeat_with_clock, repeat_with_clock_and_interrupt, retry, retry_with_clock,
-  retry_with_clock_and_interrupt, timezone,
-};
 pub use schema::brand::Brand;
 pub use schema::data::{DataError, DataStruct, DataTuple, EffectData as EffectDataTrait};
 pub use schema::equal::{EffectHash, Equal};
 pub use schema::order::{DynOrder, Ordering, ordering};
 pub use schema::{HasSchema, ParseError, ParseErrors, Redacted, Schema, Unknown};
-pub use streaming::stream::{StreamBroadcastFanout, StreamChannelFull, StreamSender, StreamV1};
-pub use streaming::{
-  BackpressureDecision, BackpressurePolicy, Chunk, Sink, Stream, Transducer, backpressure_decision,
-  broadcast_with_replay, combine_latest, end_stream, keyed_join, send_chunk, state_scan,
-  stream_from_channel, stream_from_channel_with_policy, transducer_filter, transducer_map,
-};
-pub use testing::{
-  assert_no_leaked_fibers, assert_no_unclosed_scopes, record_leaked_fiber, record_unclosed_scope,
-  run_test, run_test_with_clock,
-};
-
-// ─── Backward-compatible module re-exports ────────────────────────────────────
-// External crates that use `id_effect::channel::Channel` etc. keep working.
-pub use coordination::channel;
-pub use coordination::ref_;
-pub use foundation::either;
-pub use foundation::func;
-pub use scheduling::clock;
-pub use scheduling::duration;
-pub use scheduling::schedule;
-pub use schema::data;
-pub use streaming::stream;
-pub use testing::snapshot;

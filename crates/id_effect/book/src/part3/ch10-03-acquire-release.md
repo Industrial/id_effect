@@ -1,83 +1,64 @@
-# acquire_release — The RAII Pattern
+# acquire_use_release — The Bracket Pattern
 
-`acquire_release` is a convenience wrapper around Scope that pairs acquisition and release into a single value.
+`acquire_use_release(acquire, use_, release)` pairs acquisition and release into a single effect (Effect.ts `acquireUseRelease`, the classic *bracket*):
 
-## The Pattern
+- `acquire` runs **uninterruptibly**, so a resource is never half-acquired;
+- `use_` gets the resource and runs with the **caller's interruptibility**;
+- `release` runs **uninterruptibly, exactly once** when `acquire` succeeded, and receives the `ExitKind` of `use_` (`Success`, `Failure`, `Die` or `Interrupt`). A failed `acquire` releases nothing.
+
+From `examples/090_acquire_release.rs`:
 
 ```rust
-use id_effect::acquire_release;
+use std::sync::{Arc, Mutex};
+use id_effect::{Effect, Exit, ExitKind, acquire_use_release, succeed, sync};
 
-let managed_connection = acquire_release(
-    // Acquire: run this to get the resource
-    open_connection(),
-    // Release: run this when done (always runs)
-    |conn| conn.close(),
-);
+let log = Arc::new(Mutex::new(Vec::new()));
+let log2 = Arc::clone(&log);
+let eff: Effect<u8, &'static str> =
+    acquire_use_release(succeed(9_u8), succeed, move |n, _kind: ExitKind| {
+        sync(move || log2.lock().unwrap().push(n))
+    });
+assert_eq!(eff.block_on(), Exit::succeed(9));
+assert_eq!(*log.lock().unwrap(), vec![9]);
 ```
 
-`managed_connection` is itself an effect that:
-1. When executed, opens the connection
-2. Registers `conn.close()` as a finalizer in the current scope
-3. Produces the connection for use
+The resource type must be `Clone` (one copy goes to `use_`, one to `release`), so a connection is typically an `Arc` or a cheap handle. `release` returns an `Effect<(), Never, R>`: it cannot fail, but it may use the same capabilities as the rest of the effect.
 
-Use it with `flat_map` or `effect!`:
+## Why Bracket?
 
-```rust
-let result = managed_connection.flat_map(|conn| {
-    do_work_with_conn(&conn)
-});
-// conn.close() runs after do_work_with_conn, regardless of outcome
+`acquire_use_release` makes the acquisition-release pair inseparable. You can't call `open_connection()` without also registering its cleanup, and you can't forget the cleanup on the error path:
+
+```rust,ignore
+// Without bracket: cleanup is manual and easy to skip on failure or interrupt.
+let conn = ~open_connection();
+let result = ~use_connection(&conn);
+~close_connection(conn);
+
+// With bracket: cleanup is mandatory and automatic.
+let result = ~acquire_use_release(open_connection(), use_connection, |conn, _| close_connection(conn));
 ```
 
-Or inline:
+A common convention is a helper that owns the bracket:
 
-```rust
-effect! {
-    let conn = ~ managed_connection;
-    let data = ~ fetch_data(&conn);   // conn closes after this block
-    process(data)
+```rust,ignore
+fn with_connection<A: Send + 'static>(
+    f: impl FnOnce(Conn) -> Effect<A, DbError, caps!(DbConfig)> + Send + 'static,
+) -> Effect<A, DbError, caps!(DbConfig)> {
+    acquire_use_release(open_connection(), f, |conn, kind| close_connection(conn, kind))
 }
 ```
 
-## Why This Is Better Than Manual Scope
+## Bracket vs. Scope
 
-`acquire_release` makes the acquisition-release pair inseparable. You can't accidentally call `open_connection()` without also registering its cleanup. The resource and its lifecycle are coupled at the point of creation.
+- Use **`acquire_use_release`** when the resource's lifetime is exactly one `use_` effect.
+- Use **`Effect::scoped`** + `scope.add_finalizer(..)` when several resources share one lifetime, or when the cleanup is registered in the middle of a longer body ([Scopes and Finalizers](./ch10-02-scopes-finalizers.md)).
+- Use **`Layer::acquire_release`** / **`Layer::scoped`** when the resource is an application capability built once and released at shutdown.
 
-```rust
-// With manual scope: easy to forget the finalizer
-let conn = ~ open_connection();
-// ... (forgot: ~ scope.add_finalizer(...))
+## Bracket vs. Drop
 
-// With acquire_release: cleanup is mandatory, automatic
-let conn = ~ acquire_release(open_connection(), |c| c.close());
-```
+`acquire_use_release` is not a replacement for `impl Drop` — it's a complement:
 
-## Resource Wrapping Pattern
+- `Drop`: synchronous cleanup for memory and OS resources;
+- `acquire_use_release`: effectful cleanup (async I/O, capabilities, logging) that must run on every exit path, including interruption.
 
-A common convention is to wrap `acquire_release` in a helper function:
-
-```rust
-fn managed_db_connection(url: &str) -> Effect<Connection, DbError, ()> {
-    acquire_release(
-        Connection::open(url),
-        |conn| conn.close(),
-    )
-}
-
-// Usage
-effect! {
-    let conn = ~ managed_db_connection(config.db_url());
-    ~ run_query(&conn, "SELECT 1")
-}
-```
-
-The helper function documents that `open_connection()` must always be paired with `close()`. Callers don't think about the lifecycle; it's handled.
-
-## Comparison with Drop
-
-`acquire_release` is not a replacement for `impl Drop` — it's a complement:
-
-- `impl Drop`: synchronous cleanup for types that own simple resources
-- `acquire_release`: async cleanup for effects that acquire and release through the effect runtime
-
-Use both appropriately. A `TcpStream` closing its OS file descriptor in `Drop` is fine. Closing a database connection pool that requires async coordination belongs in `acquire_release`.
+A `TcpStream` closing its file descriptor in `Drop` is fine. Gracefully closing a database session that needs a round trip belongs in a bracket.

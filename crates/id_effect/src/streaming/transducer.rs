@@ -1,11 +1,9 @@
-//! Transducers — composable reducing-function transforms, and [`Stream::transduce_items`] to
-//! apply them incrementally to streams.
+//! Transducers — composable reducing-function transforms, applied to streams with
+//! [`Stream::transduce_items`](super::Stream::transduce_items).
 //!
-//! This is the single implementation; `id_effect_optics::transducer` re-exports it.
+//! Kernel-independent (no effect or runtime use). `id_effect_optics::transducer` re-exports it.
 
 use std::sync::Arc;
-
-use crate::streaming::stream::{StageStep, Stream};
 
 /// Stateful reducer step: `(accumulator, item) -> accumulator`.
 pub type Reducer<A, Acc> = Box<dyn FnMut(Acc, A) -> Acc + Send>;
@@ -91,83 +89,21 @@ pub fn filter<A: 'static, Acc: 'static>(
   })
 }
 
-impl<A, E, R> Stream<A, E, R>
-where
-  A: Send + Clone + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  /// Apply `xf` to each element, emitting transformed items in order.
-  #[inline]
-  pub fn transduce_items(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
-    let step = xf.step.clone();
-    // Incremental: one upstream chunk per pull, transformed item by item.
-    self.stage(move |input| {
-      let mut out = Vec::new();
-      for item in input.unwrap_or_default() {
-        let mut pushed = (step)(Box::new(|mut acc: Vec<A>, x: A| {
-          acc.push(x);
-          acc
-        }));
-        out.extend(pushed(Vec::new(), item));
-      }
-      StageStep::Emit(out)
-    })
-  }
-
-  /// Alias for [`Self::transduce_items`] — integrates optics-style transducers on streams.
-  #[inline]
-  pub fn via_transducer(self, xf: Transducer<A, Vec<A>>) -> Stream<A, E, R> {
-    self.transduce_items(xf)
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  fn block_on<F: core::future::Future>(fut: F) -> F::Output {
-    pollster::block_on(fut)
-  }
-
-  #[test]
-  fn map_transducer_doubles_values() {
-    let xf = map(|n: i32| n * 2);
-    let stream = Stream::from_iterable([1, 2, 3]).via_transducer(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4, 6]);
-  }
-
-  #[test]
-  fn filter_transducer_keeps_evens() {
-    let xf = filter(|n: &i32| n % 2 == 0);
-    let stream = Stream::from_iterable([1, 2, 3, 4]).transduce_items(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4]);
+  fn push() -> Reducer<i32, Vec<i32>> {
+    Box::new(|mut acc, x| {
+      acc.push(x);
+      acc
+    })
   }
 
   #[test]
   fn custom_transducer_step() {
     let xf = Transducer::new(|mut rf| Box::new(move |acc, item| rf(acc, item)));
-    let out = xf.transduce(
-      [1, 2],
-      Box::new(|mut acc: Vec<i32>, x| {
-        acc.push(x);
-        acc
-      }),
-      vec![],
-    );
-    assert_eq!(out, vec![1, 2]);
-  }
-
-  #[test]
-  fn transducer_on_infinite_source_is_incremental() {
-    let out = crate::testing::assert_bounded_memory(
-      |s| s.via_transducer(map(|n: u64| n * 10).compose(filter(|n: &u64| n.is_multiple_of(20)))),
-      3,
-      64,
-    );
-    assert_eq!(out, vec![0, 20, 40]);
+    assert_eq!(xf.transduce([1, 2], push(), vec![]), vec![1, 2]);
   }
 
   #[test]
@@ -180,8 +116,6 @@ mod tests {
   #[test]
   fn composed_map_and_filter() {
     let xf = map(|n: i32| n + 1).compose(filter(|n: &i32| n % 2 == 0));
-    let stream = Stream::from_iterable([1, 2, 3]).via_transducer(xf);
-    let out = block_on(stream.run_collect().run(&mut ())).expect("collect");
-    assert_eq!(out, vec![2, 4]);
+    assert_eq!(xf.transduce([1, 2, 3], push(), vec![]), vec![2, 4]);
   }
 }

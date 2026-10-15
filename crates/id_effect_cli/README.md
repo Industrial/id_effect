@@ -3,7 +3,7 @@
 Thin helpers for building **CLIs whose bodies are [`Effect`](https://docs.rs/id_effect/latest/id_effect/kernel/struct.Effect.html) programs**:
 
 - Map [`Exit`](https://docs.rs/id_effect/latest/id_effect/enum.Exit.html) / [`Cause`](https://docs.rs/id_effect/latest/id_effect/enum.Cause.html) / `Result` to [`std::process::ExitCode`].
-- [`run_main`](https://docs.rs/id_effect_cli/latest/id_effect_cli/fn.run_main.html) — optional tracing install, then [`run_blocking`](https://docs.rs/id_effect/latest/id_effect/runtime/fn.run_blocking.html), then stderr logging and exit code mapping.
+- [`run_main`](https://docs.rs/id_effect_cli/latest/id_effect_cli/fn.run_main.html) — the program edge: optional in-process tracing buffer (`RunMainConfig::with_tracing`: `id_effect::install_tracing_layer` + its span hook), then `block_on` on the default `id_effect::Runtime`, then stderr logging and `Exit` → exit code mapping. Takes an `Effect` or `LocalEffect` plus its environment (`HNil` when it needs nothing).
 - Optional [`clap`](https://docs.rs/clap) (feature `clap`, on by default).
 
 ## Quick start
@@ -11,10 +11,11 @@ Thin helpers for building **CLIs whose bodies are [`Effect`](https://docs.rs/id_
 ```rust
 use std::process::ExitCode;
 
-use id_effect::{Cause, Effect, Exit, FiberId, fail, succeed};
+use id_effect::{Effect, HNil, fail, succeed};
+use id_effect::{Cause, Exit, FiberId};
 use id_effect_cli::{RunMainConfig, exit_code_for_exit, run_main};
 
-fn greet(name: &str) -> Effect<(), String, ()> {
+fn greet(name: &str) -> Effect<(), String> {
   if name.is_empty() {
     fail("name must not be empty".to_string())
   } else {
@@ -24,11 +25,11 @@ fn greet(name: &str) -> Effect<(), String, ()> {
 }
 
 fn main() -> ExitCode {
-  // Ok -> 0, Err(e) -> prints `error: {e:?}` to stderr and exits 1.
-  assert_eq!(run_main(greet("ada"), (), RunMainConfig::minimal()), ExitCode::SUCCESS);
-  assert_eq!(run_main(greet(""), (), RunMainConfig::minimal()), ExitCode::from(1));
+  // Success -> 0, Fail(e) -> prints `error: {e:?}` to stderr and exits 1 (a defect exits 101).
+  assert_eq!(run_main(greet("ada"), HNil, RunMainConfig::minimal()), ExitCode::SUCCESS);
+  assert_eq!(run_main(greet(""), HNil, RunMainConfig::minimal()), ExitCode::from(1));
 
-  // With a full `Exit`, defects and interrupts keep their own codes.
+  // The same mapping for a full `Exit`.
   assert_eq!(exit_code_for_exit(Exit::<(), String>::Failure(Cause::die("bug"))), ExitCode::from(101));
   assert_eq!(
     exit_code_for_exit(Exit::<(), String>::Failure(Cause::interrupt(FiberId::new(1)))),

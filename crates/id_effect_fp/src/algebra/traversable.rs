@@ -1,49 +1,50 @@
 //! **Traversable** — fold with an applicative effect.
 
-use std::task::{Context, Poll, Waker};
+use id_effect::{Effect, succeed, suspend};
 
-use id_effect::kernel::Effect;
-
-fn run_effect_sync<A, E, R>(effect: Effect<A, E, R>, env: &mut R) -> Result<A, E>
+/// Runs `f` on each remaining element in order, collecting into `acc` (sequential bind).
+fn traverse_from<A, B, E, R, F>(
+  mut it: std::vec::IntoIter<A>,
+  mut f: F,
+  mut acc: Vec<B>,
+) -> Effect<Vec<B>, E, R>
 where
-  A: 'static,
-  E: 'static,
-  R: 'static,
+  A: Send + 'static,
+  B: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+  F: FnMut(A) -> Effect<B, E, R> + Send + 'static,
 {
-  let mut fut = effect.run(env);
-  let waker = Waker::noop();
-  let mut cx = Context::from_waker(waker);
-  loop {
-    match fut.as_mut().poll(&mut cx) {
-      Poll::Ready(out) => return out,
-      Poll::Pending => std::thread::yield_now(),
-    }
+  match it.next() {
+    None => succeed(acc),
+    Some(x) => f(x).flat_map(move |b| {
+      acc.push(b);
+      traverse_from(it, f, acc)
+    }),
   }
 }
 
-/// Traverse a vector with an effectful function (sequential bind).
-pub fn traverse_vec<A, B, E, R, F>(xs: Vec<A>, mut f: F) -> Effect<Vec<B>, E, R>
+/// Traverse a vector with an effectful function (sequential bind; stops at the first failure).
+pub fn traverse_vec<A, B, E, R, F>(xs: Vec<A>, f: F) -> Effect<Vec<B>, E, R>
 where
-  A: 'static,
-  B: 'static,
-  R: 'static,
-  F: FnMut(A) -> Effect<B, E, R>,
-  F: 'static,
+  A: Send + 'static,
+  B: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+  F: FnMut(A) -> Effect<B, E, R> + Send + 'static,
 {
-  Effect::new(move |env| {
-    let mut out = Vec::with_capacity(xs.len());
-    for x in xs {
-      out.push(run_effect_sync(f(x), env)?);
-    }
-    Ok(out)
+  suspend(move || {
+    let n = xs.len();
+    traverse_from(xs.into_iter(), f, Vec::with_capacity(n))
   })
 }
 
 /// Sequence a vector of effects.
 pub fn sequence_vec<A, E, R>(xs: Vec<Effect<A, E, R>>) -> Effect<Vec<A>, E, R>
 where
-  A: 'static,
-  R: 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
 {
   traverse_vec(xs, |eff| eff)
 }
@@ -52,55 +53,76 @@ where
 pub fn traverse_option<A, B, E, R, F>(opt: Option<A>, f: F) -> Effect<Option<B>, E, R>
 where
   A: 'static,
-  B: 'static,
+  B: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
   F: FnOnce(A) -> Effect<B, E, R>,
 {
   match opt {
     Some(a) => f(a).map(Some),
-    None => id_effect::succeed(None),
+    None => succeed(None),
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::runtime::run_blocking;
+  use crate::test_support::run;
+  use id_effect::fail;
 
   #[test]
   fn traverse_vec_empty_input() {
-    let eff = traverse_vec(Vec::<i32>::new(), |n| id_effect::succeed::<i32, (), ()>(n));
-    assert_eq!(run_blocking(eff, ()), Ok(vec![]));
+    let eff = traverse_vec(Vec::<i32>::new(), succeed::<i32, (), _>);
+    assert_eq!(run(eff), Ok(vec![]));
   }
 
   #[test]
   fn traverse_vec_collects() {
     let xs = vec![1, 2, 3];
-    let eff = traverse_vec(xs, |n| id_effect::succeed::<i32, (), ()>(n * 2));
-    assert_eq!(run_blocking(eff, ()), Ok(vec![2, 4, 6]));
+    let eff = traverse_vec(xs, |n| succeed::<i32, (), _>(n * 2));
+    assert_eq!(run(eff), Ok(vec![2, 4, 6]));
+  }
+
+  #[test]
+  fn traverse_vec_stops_at_first_failure() {
+    let eff = traverse_vec(vec![1, 2, 3], |n| {
+      if n == 2 {
+        fail::<i32, i32, _>(n)
+      } else {
+        succeed(n)
+      }
+    });
+    assert_eq!(run(eff), Err(2));
+  }
+
+  #[test]
+  fn traverse_vec_handles_long_inputs() {
+    let xs: Vec<u32> = (0..10_000).collect();
+    let eff = traverse_vec(xs, |n| succeed::<u32, (), _>(n + 1));
+    assert_eq!(run(eff).map(|v| v.len()), Ok(10_000));
   }
 
   #[test]
   fn sequence_vec_empty() {
-    let xs: Vec<id_effect::Effect<i32, (), ()>> = vec![];
-    assert_eq!(run_blocking(sequence_vec(xs), ()), Ok(vec![]));
+    let xs: Vec<Effect<i32, ()>> = vec![];
+    assert_eq!(run(sequence_vec(xs)), Ok(vec![]));
   }
 
   #[test]
   fn sequence_vec_runs_all() {
-    let xs: Vec<id_effect::Effect<i32, (), ()>> =
-      vec![id_effect::succeed(1), id_effect::succeed(2)];
-    assert_eq!(run_blocking(sequence_vec(xs), ()), Ok(vec![1, 2]));
+    let xs: Vec<Effect<i32, ()>> = vec![succeed(1), succeed(2)];
+    assert_eq!(run(sequence_vec(xs)), Ok(vec![1, 2]));
   }
 
   #[test]
   fn traverse_option_some() {
-    let eff = traverse_option(Some(4i32), |n| id_effect::succeed::<i32, (), ()>(n + 1));
-    assert_eq!(run_blocking(eff, ()), Ok(Some(5)));
+    let eff = traverse_option(Some(4i32), |n| succeed::<i32, (), _>(n + 1));
+    assert_eq!(run(eff), Ok(Some(5)));
   }
 
   #[test]
   fn traverse_option_none() {
-    let eff = traverse_option(None::<i32>, |n| id_effect::succeed::<i32, (), ()>(n));
-    assert_eq!(run_blocking(eff, ()), Ok(None));
+    let eff = traverse_option(None::<i32>, succeed::<i32, (), _>);
+    assert_eq!(run(eff), Ok(None));
   }
 }

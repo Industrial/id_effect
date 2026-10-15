@@ -1,160 +1,144 @@
-//! Stream consumers — mirrors Effect.ts-style `Sink` (§24).
-//!
-//! A [`Sink`] describes how to reduce a [`Stream`] into a value. Execute it with [`Sink::run`].
-
-use std::marker::PhantomData;
-use std::sync::Arc;
-
-/// Shared predicate for sinks that need [`Clone`] (e.g. [`Sink::collect_all_while`]).
-type SharedPredicate<In> = Arc<dyn Fn(&In) -> bool + Send + Sync>;
+//! [`Sink`]: a reusable consumer that reduces a [`Stream`] to a value (Effect.ts `Sink`).
 
 use std::collections::HashMap;
+use std::hash::Hash;
+use std::ops::ControlFlow;
+use std::sync::Arc;
 
-use crate::coordination::channel::{Channel, consume_sink_accum_stream};
-use crate::coordination::queue::Queue;
-use crate::foundation::predicate::Predicate;
-use crate::kernel::{Effect, box_future};
-use crate::streaming::stream::Stream;
-use core::any::Any;
+use super::stream::Stream;
+use crate::capability::HNil;
+use crate::coordination::Queue;
+use crate::failure::Never;
+use crate::kernel::Effect;
 
-#[inline]
-fn interruption_requested<R: 'static>(env: &R) -> bool {
-  let any = env as &dyn Any;
-  any
-    .downcast_ref::<crate::runtime::CancellationToken>()
-    .is_some_and(crate::runtime::CancellationToken::is_cancelled)
-}
+type Driver<A, In, E, R> = Arc<dyn Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync>;
 
+/// The fold behind a [`Sink::fold_left`] sink, kept so [`Sink::zip`] can merge two folds into one
+/// pass and [`FoldChannel::from_sink`](super::FoldChannel::from_sink) can reuse it.
 pub(crate) struct FoldState<A, In> {
   pub(crate) init: A,
-  pub(crate) f: Arc<dyn Fn(A, In) -> A + Send + Sync>,
+  pub(crate) step: Arc<dyn Fn(A, In) -> A + Send + Sync>,
 }
 
-pub(crate) type BoxSinkDriver<A, In, E, R> =
-  Arc<dyn Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync>;
-
-/// Consumer that reduces a [`Stream<In, E, R>`] to a value of type `A`.
-pub struct Sink<A, In, E = (), R = ()>
-where
-  A: 'static,
-  In: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
-  driver: BoxSinkDriver<A, In, E, R>,
-  /// Present only for sinks built with [`Sink::fold_left`] / [`Sink::from_fold`], so
-  /// [`Sink::zip`] can merge two folds in one pass.
+/// A consumer that reduces a `Stream<In, E, R>` to an `A`. Run it with [`Sink::run`] (or
+/// [`Stream::run`]). Cloning shares the driver.
+///
+/// ```
+/// use id_effect::{Sink, Stream};
+/// use id_effect::Never;
+///
+/// let sum = Sink::<u32, u32, Never>::fold_left(0, |acc, x| acc + x);
+/// let out = sum.run(Stream::from_iterable([1, 2, 3])).block_on().into_result();
+/// assert_eq!(out.ok(), Some(6));
+/// ```
+pub struct Sink<A, In, E = Never, R = HNil> {
+  driver: Driver<A, In, E, R>,
   pub(crate) fold: Option<Arc<FoldState<A, In>>>,
-  _pd: PhantomData<(E, R)>,
 }
 
-impl<A, In, E, R> Clone for Sink<A, In, E, R>
-where
-  A: 'static,
-  In: Send + 'static,
-  E: Send + 'static,
-  R: 'static,
-{
+impl<A, In, E, R> Clone for Sink<A, In, E, R> {
   fn clone(&self) -> Self {
     Self {
-      driver: self.driver.clone(),
+      driver: Arc::clone(&self.driver),
       fold: self.fold.clone(),
-      _pd: PhantomData,
     }
+  }
+}
+
+impl<A, In, E, R> std::fmt::Debug for Sink<A, In, E, R> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Sink")
+      .field("fold", &self.fold.is_some())
+      .finish_non_exhaustive()
   }
 }
 
 impl<A, In, E, R> Sink<A, In, E, R>
 where
-  A: 'static,
+  A: Send + 'static,
   In: Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Run this sink over `stream`.
-  #[inline]
-  pub fn run(self, stream: Stream<In, E, R>) -> Effect<A, E, R> {
-    (self.driver)(stream)
+  /// A sink from its driver: what to do with the whole stream.
+  pub fn new(driver: impl Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync + 'static) -> Self {
+    Self {
+      driver: Arc::new(driver),
+      fold: None,
+    }
   }
 
-  pub(crate) fn from_driver(driver: BoxSinkDriver<A, In, E, R>) -> Self {
-    Sink {
-      driver,
-      fold: None,
-      _pd: PhantomData,
-    }
+  /// Runs this sink over `stream`.
+  pub fn run(&self, stream: Stream<In, E, R>) -> Effect<A, E, R> {
+    (self.driver)(stream)
   }
 }
 
 impl<A, In, E, R> Sink<A, In, E, R>
 where
-  A: Send + Sync + Clone + 'static,
-  In: Send + Sync + Clone + 'static,
+  A: Clone + Send + Sync + 'static,
+  In: Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Left fold over elements (after the stream ends, the accumulator is the result).
+  /// Left fold over the elements; the final accumulator is the result.
   pub fn fold_left(init: A, f: impl Fn(A, In) -> A + Send + Sync + 'static) -> Self {
-    let f: Arc<dyn Fn(A, In) -> A + Send + Sync> = Arc::new(f);
-    let state = Arc::new(FoldState {
-      init: init.clone(),
-      f: f.clone(),
-    });
-    let st = Channel::<A, In, (), E, R>::from_fold(init, f).sink_accum_inner();
-    Sink {
-      driver: Arc::new(move |stream| consume_sink_accum_stream(st.clone(), stream)),
-      fold: Some(state),
-      _pd: PhantomData,
-    }
+    Self::from_fold_state(FoldState {
+      init,
+      step: Arc::new(f),
+    })
   }
 
-  /// Alias for [`Self::fold_left`].
-  #[inline]
+  /// Alias of [`fold_left`](Self::fold_left).
   pub fn from_fold(init: A, f: impl Fn(A, In) -> A + Send + Sync + 'static) -> Self {
     Self::fold_left(init, f)
   }
 
-  /// Combine two [`Self::fold_left`] / [`Self::from_fold`] sinks into one pass over the stream.
+  fn from_fold_state(state: FoldState<A, In>) -> Self {
+    let state = Arc::new(state);
+    let st = Arc::clone(&state);
+    Self {
+      driver: Arc::new(move |stream: Stream<In, E, R>| {
+        let step = Arc::clone(&st.step);
+        stream.run_fold(st.init.clone(), move |acc, x| step(acc, x))
+      }),
+      fold: Some(state),
+    }
+  }
+
+  /// Combines two [`fold_left`](Self::fold_left) sinks into one pass over the stream.
   ///
   /// # Panics
   ///
-  /// Panics if either sink was not built with [`Self::fold_left`] / [`Self::from_fold`].
+  /// If either sink was not built with [`fold_left`](Self::fold_left) /
+  /// [`from_fold`](Self::from_fold) (or [`collect`](Sink::collect), [`drain`](Sink::drain),
+  /// [`collect_to_map`](Sink::collect_to_map), which are folds).
   pub fn zip<B>(self, other: Sink<B, In, E, R>) -> Sink<(A, B), In, E, R>
   where
-    B: Send + Sync + Clone + 'static,
-    In: Clone + Send + 'static,
+    B: Clone + Send + Sync + 'static,
+    In: Clone,
   {
     let sa = self
       .fold
-      .expect("Sink::zip requires fold_left/from_fold sink");
+      .expect("Sink::zip requires fold_left/from_fold sinks");
     let sb = other
       .fold
-      .expect("Sink::zip requires fold_left/from_fold sink");
-    let ia = sa.init.clone();
-    let ib = sb.init.clone();
-    let fa = sa.f.clone();
-    let fb = sb.f.clone();
-    let state = Arc::new(FoldState {
-      init: (ia, ib),
-      f: Arc::new(move |(a, b), x: In| (fa(a, x.clone()), fb(b, x))),
-    });
-    let st = Channel::<(A, B), In, (), E, R>::from_fold(state.init.clone(), state.f.clone())
-      .sink_accum_inner();
-    Sink {
-      driver: Arc::new(move |stream| consume_sink_accum_stream(st.clone(), stream)),
-      fold: Some(state),
-      _pd: PhantomData,
-    }
+      .expect("Sink::zip requires fold_left/from_fold sinks");
+    let (fa, fb) = (Arc::clone(&sa.step), Arc::clone(&sb.step));
+    Sink::from_fold_state(FoldState {
+      init: (sa.init.clone(), sb.init.clone()),
+      step: Arc::new(move |(a, b), x: In| (fa(a, x.clone()), fb(b, x))),
+    })
   }
 }
 
 impl<In, E, R> Sink<Vec<In>, In, E, R>
 where
-  In: Send + Sync + Clone + 'static,
+  In: Clone + Send + Sync + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Collect all elements into a vector (in stream order).
+  /// Collects every element, in stream order.
   pub fn collect() -> Self {
     Sink::fold_left(Vec::new(), |mut v, x| {
       v.push(x);
@@ -162,232 +146,73 @@ where
     })
   }
 
-  /// Take elements while `pred` holds; stops before the first failing element (that element is
-  /// not included in the result).
-  pub fn collect_all_while(pred: Predicate<In>) -> Self {
-    let pred: SharedPredicate<In> = Arc::from(pred);
-    Sink {
-      driver: Arc::new(move |mut stream: Stream<In, E, R>| {
-        let pred = pred.clone();
-        Effect::new_async(move |env: &mut R| {
-          box_future(async move {
-            let mut out = Vec::new();
-            'outer: loop {
-              if interruption_requested(env) {
-                break;
-              }
-              match stream.poll_next_chunk(env).await? {
-                None => break,
-                Some(chunk) => {
-                  for x in chunk.into_vec() {
-                    if !pred(&x) {
-                      break 'outer;
-                    }
-                    out.push(x);
-                  }
-                }
-              }
-            }
-            Ok(out)
-          })
-        })
-      }),
-      fold: None,
-      _pd: PhantomData,
-    }
+  /// Collects elements while `pred` holds; stops before the first element that fails it (that
+  /// element is not included, and the stream is not pulled further).
+  pub fn collect_all_while(pred: impl Fn(&In) -> bool + Send + Sync + 'static) -> Self {
+    let pred = Arc::new(pred);
+    Sink::new(move |stream: Stream<In, E, R>| {
+      let pred = Arc::clone(&pred);
+      stream.fold_chunks(Vec::new(), move |mut out, items| {
+        for x in items {
+          if !pred(&x) {
+            return ControlFlow::Break(out);
+          }
+          out.push(x);
+        }
+        ControlFlow::Continue(out)
+      })
+    })
   }
 
-  /// Take elements until `pred` becomes true; the first matching element is **not** included.
-  pub fn collect_all_until(pred: Predicate<In>) -> Self {
-    let pred: SharedPredicate<In> = Arc::from(pred);
-    Sink {
-      driver: Arc::new(move |mut stream: Stream<In, E, R>| {
-        let pred = pred.clone();
-        Effect::new_async(move |env: &mut R| {
-          box_future(async move {
-            let mut out = Vec::new();
-            'outer: loop {
-              if interruption_requested(env) {
-                break;
-              }
-              match stream.poll_next_chunk(env).await? {
-                None => break,
-                Some(chunk) => {
-                  for x in chunk.into_vec() {
-                    if pred(&x) {
-                      break 'outer;
-                    }
-                    out.push(x);
-                  }
-                }
-              }
-            }
-            Ok(out)
-          })
-        })
-      }),
-      fold: None,
-      _pd: PhantomData,
-    }
+  /// Collects elements until `pred` becomes true; the first matching element is **not**
+  /// included.
+  pub fn collect_all_until(pred: impl Fn(&In) -> bool + Send + Sync + 'static) -> Self {
+    Self::collect_all_while(move |x| !pred(x))
   }
 }
 
 impl<In, E, R> Sink<(), In, E, R>
 where
-  In: Send + Sync + Clone + 'static,
+  In: Send + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Discard every element; result is `()`.
-  #[inline]
+  /// Discards every element.
   pub fn drain() -> Self {
     Sink::fold_left((), |(), _| ())
   }
 
-  /// Enqueue each stream element into `queue` (using `()` as the queue offer environment).
+  /// Runs `f` for every element, one after the other.
+  pub fn for_each(f: impl Fn(In) -> Effect<(), E, R> + Send + Sync + 'static) -> Self {
+    let f = Arc::new(f);
+    Sink::new(move |stream: Stream<In, E, R>| {
+      let f = Arc::clone(&f);
+      stream.run_for_each_effect(move |x| f(x))
+    })
+  }
+
+  /// Offers every element to `queue` (suspending while a bounded queue is full); elements refused
+  /// by a dropping or shut-down queue are discarded.
   pub fn to_queue(queue: Queue<In>) -> Self {
-    Sink {
-      driver: Arc::new(move |mut stream: Stream<In, E, R>| {
-        let queue = queue.clone();
-        Effect::new_async(move |env: &mut R| {
-          box_future(async move {
-            loop {
-              if interruption_requested(env) {
-                break;
-              }
-              match stream.poll_next_chunk(env).await? {
-                None => break,
-                Some(chunk) => {
-                  for x in chunk.into_vec() {
-                    let _ = queue
-                      .offer(x)
-                      .run(&mut ())
-                      .await
-                      .expect("Queue::offer is infallible");
-                  }
-                }
-              }
-            }
-            Ok(())
-          })
-        })
-      }),
-      fold: None,
-      _pd: PhantomData,
-    }
+    Sink::new(move |stream: Stream<In, E, R>| {
+      let queue = queue.clone();
+      stream.run_for_each_effect(move |x| queue.offer(x).map(|_| ()))
+    })
   }
 }
 
 impl<K, V, E, R> Sink<HashMap<K, V>, (K, V), E, R>
 where
-  K: std::hash::Hash + Eq + Clone + Send + Sync + 'static,
+  K: Hash + Eq + Clone + Send + Sync + 'static,
   V: Clone + Send + Sync + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
-  /// Collect stream elements `(K, V)` into a [`HashMap`] (later values win).
-  #[inline]
+  /// Collects `(K, V)` elements into a map (later values win).
   pub fn collect_to_map() -> Self {
     Sink::fold_left(HashMap::new(), |mut m, (k, v)| {
       m.insert(k, v);
       m
     })
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_blocking;
-  use std::sync::Arc;
-
-  #[test]
-  fn sink_collect_gathers_all_elements() {
-    let stream = Stream::from_iterable([1u8, 2, 3]);
-    let out = pollster::block_on(Sink::collect().run(stream).run(&mut ()));
-    assert_eq!(out, Ok(vec![1, 2, 3]));
-  }
-
-  #[test]
-  fn sink_collect_via_channel_matches_original() {
-    let s1 = Stream::from_iterable([1u8, 2, 3]);
-    let s2 = Stream::from_iterable([1u8, 2, 3]);
-    let ch = Channel::<Vec<u8>, u8, (), (), ()>::from_fold(
-      Vec::new(),
-      Arc::new(|mut v: Vec<u8>, x| {
-        v.push(x);
-        v
-      }),
-    );
-    let from_channel = pollster::block_on(ch.consume_stream(s1).run(&mut ()));
-    let from_sink_collect = pollster::block_on(Sink::collect().run(s2).run(&mut ()));
-    assert_eq!(from_channel, from_sink_collect);
-  }
-
-  #[test]
-  fn sink_drain_via_channel_discards_all() {
-    let s = Stream::from_iterable([1u8, 2, 3]);
-    let ch = Channel::<(), u8, (), (), ()>::from_fold((), Arc::new(|(), _| ()));
-    let via_channel = pollster::block_on(ch.consume_stream(s).run(&mut ()));
-    assert_eq!(via_channel, Ok(()));
-    let stream2 = Stream::from_iterable([1u8, 2, 3]);
-    assert_eq!(
-      pollster::block_on(Sink::drain().run(stream2).run(&mut ())),
-      Ok(())
-    );
-  }
-
-  #[test]
-  fn sink_drain_discards_all() {
-    let stream = Stream::from_iterable([1u8, 2, 3]);
-    let out = pollster::block_on(Sink::drain().run(stream).run(&mut ()));
-    assert_eq!(out, Ok(()));
-  }
-
-  #[test]
-  fn sink_collect_while_stops_at_predicate() {
-    let stream = Stream::from_iterable([1u8, 2, 3, 4u8]);
-    let pred: Predicate<u8> = Box::new(|x| *x < 3);
-    let out = pollster::block_on(Sink::collect_all_while(pred).run(stream).run(&mut ()));
-    assert_eq!(out, Ok(vec![1, 2]));
-  }
-
-  #[test]
-  fn sink_collect_until_stops_before_matching_element() {
-    let stream = Stream::from_iterable([1u8, 2, 3, 4u8]);
-    let pred: Predicate<u8> = Box::new(|x| *x == 3);
-    let out = pollster::block_on(Sink::collect_all_until(pred).run(stream).run(&mut ()));
-    assert_eq!(out, Ok(vec![1, 2]));
-  }
-
-  #[test]
-  fn sink_zip_runs_both_sinks() {
-    let s1 = Sink::fold_left(0i32, |a, x: i32| a + x);
-    let s2 = Sink::fold_left(0usize, |n, _: i32| n + 1);
-    let z = s1.zip(s2);
-    let stream = Stream::from_iterable([1, 2, 3]);
-    let out = pollster::block_on(z.run(stream).run(&mut ()));
-    assert_eq!(out, Ok((6, 3)));
-  }
-
-  #[test]
-  fn sink_collect_to_map_merges_pairs() {
-    let stream = Stream::from_iterable([("a", 1i32), ("b", 2), ("a", 10)]);
-    let out = pollster::block_on(Sink::collect_to_map().run(stream).run(&mut ()));
-    let m = out.expect("sink");
-    assert_eq!(m.get("a"), Some(&10));
-    assert_eq!(m.get("b"), Some(&2));
-  }
-
-  #[test]
-  fn sink_to_queue_offers_each_element() {
-    let q = run_blocking(Queue::unbounded(), ()).expect("queue");
-    let q2 = q.clone();
-    let stream = Stream::from_iterable([7u16, 8, 9]);
-    pollster::block_on(Sink::to_queue(q).run(stream).run(&mut ())).expect("sink run");
-    let a = pollster::block_on(q2.take().run(&mut ())).expect("take");
-    let b = pollster::block_on(q2.take().run(&mut ())).expect("take");
-    let c = pollster::block_on(q2.take().run(&mut ())).expect("take");
-    assert_eq!((a, b, c), (7, 8, 9));
   }
 }

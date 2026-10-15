@@ -1,120 +1,115 @@
-# run_test — The Test Harness
+# Running Effects in Tests
 
-`run_test` is the test equivalent of `run_blocking`. Use it in every `#[test]` that runs an effect.
+There is no special test harness. A test builds an effect, provides its capabilities, runs it at
+the edge with `block_on`, and asserts on the result.
 
 ## Basic Usage
 
-```rust
-use id_effect::{run_test, succeed, Exit};
+```rust,ignore
+use id_effect::{Effect, Exit, succeed};
+
+fn double(n: i32) -> Effect<i32> {
+  succeed(n * 2)
+}
 
 #[test]
-fn simple_effect_succeeds() {
-    let exit = run_test(succeed(42), ());
-    assert_eq!(exit, Exit::Success(42));
+fn double_doubles() {
+  assert_eq!(double(21).block_on(), Exit::succeed(42));
 }
 ```
 
-`run_test` returns an `Exit<A, E>` rather than a `Result<A, E>`. This lets you assert on the exact exit reason — success, typed failure, defect, or cancellation.
-
-## Why Not run_blocking in Tests?
-
-`run_blocking` is correct but missing test-specific guarantees:
-
-| Feature | `run_blocking` | `run_test` |
-|---------|---------------|------------|
-| Runs the effect | ✓ | ✓ |
-| Detects fiber leaks | ✗ | ✓ |
-| Deterministic scheduling | ✗ | ✓ |
-| Reports leaked resources | ✗ | ✓ |
-
-Fiber leaks — effects that spawn children and don't join them — are silent in production but become test failures under `run_test`. This catches a class of resource leak bugs at unit-test time.
+`Effect::block_on` runs the effect on the global runtime (`Runtime::global()`) and returns its
+`Exit<A, E>`. It needs `R = HNil`, so everything the effect requires must be provided first.
 
 ## Asserting on Exit
 
-```rust
-#[test]
-fn division_by_zero_fails() {
-    let eff = divide(10, 0);
-    let exit = run_test(eff, ());
+`Exit` is `Success(A)` or `Failure(Cause<E>)`; a `Cause` is a typed failure (`Fail(e)`), a defect
+(`Die`, e.g. a panic), an interruption (`Interrupt`), or a combination (`Both` / `Then`).
 
-    // Assert specific failure
-    assert!(matches!(exit, Exit::Failure(Cause::Fail(DivError::DivisionByZero))));
+```rust,ignore
+use id_effect::{Cause, Exit};
+
+#[test]
+fn parse_rejects_garbage() {
+  assert_eq!(parse_port("http").block_on(), Exit::fail(PortError::NotANumber));
 }
 
 #[test]
-fn effect_that_panics_is_a_defect() {
-    let eff = effect!(|_r: &mut ()| {
-        panic!("oops");
-    });
-    let exit = run_test(eff, ());
-
-    assert!(matches!(exit, Exit::Failure(Cause::Die(_))));
+fn panics_become_defects() {
+  let exit = boom().block_on();
+  assert!(matches!(exit, Exit::Failure(Cause::Die(_))));
 }
 ```
 
-`Exit::Success(a)` — the effect succeeded with value `a`
-`Exit::Failure(Cause::Fail(e))` — the effect failed with typed error `e`
-`Exit::Failure(Cause::Die(s))` — the effect panicked or encountered a defect
-`Exit::Failure(Cause::Interrupt)` — the effect was cancelled
+`exit.into_result()` gives a `Result<A, Cause<E>>` for `?` or `expect`, and
+`cause.fail_option()` extracts the typed error when there is one. Many test files define a small
+helper that turns an `Exit` into a `Result<A, E>` and panics on defects:
 
-## run_test with an Environment
-
-When your effect needs capabilities, build a test environment with `build_env` or manual `Env::insert`:
-
-```rust
-struct Database;
-
-mock_capability!(MockDb, Database, Arc<dyn Db>, "db/mock", || {
-    Arc::new(FakeDatabase::new()) as Arc<dyn Db>
-});
-
-#[test]
-fn create_user_inserts_into_db() {
-    let env = build_env([provide!(MockDb)]).expect("env");
-    let fake_db = env.get::<Cap<Database>>().clone();
-
-    let eff = create_user(NewUser { name: "Alice".into(), age: 30 });
-    let exit = run_test(eff, env);
-
-    assert!(matches!(exit, Exit::Success(_)));
-    assert_eq!(fake_db.users().len(), 1);
+```rust,ignore
+fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(other) => panic!("effect died or was interrupted: {}", other.pretty()),
+  }
 }
 ```
 
-`run_test(effect, env)` is the full signature. Pass `()` as the second argument when the effect requires no environment.
+## Providing the Environment
 
-## Unwrapping success in tests
+An effect that needs capabilities can't be run until they are provided:
 
-When you're confident an effect succeeds and just want the value, match on `Exit`:
+```rust,ignore
+use id_effect::{Effect, Exit, Never, caps, effect, hlist};
 
-```rust
+#[derive(Debug)]
+struct Greeting(&'static str);
+#[derive(Debug)]
+struct Counter(usize);
+
+fn summary() -> Effect<String, Never, caps!(Greeting, Counter)> {
+  effect!({ format!("{}:{}", ~Greeting.0, ~Counter.0) })
+}
+
 #[test]
-fn addition_works() {
-    let exit = run_test(succeed(1 + 1), ());
-    let Exit::Success(result) = exit else {
-        panic!("expected success, got {exit:?}");
-    };
-    assert_eq!(result, 2);
+fn summary_reads_both_capabilities() {
+  let exit = summary().provide_env(hlist![Greeting("hi"), Counter(3)]).block_on();
+  assert_eq!(exit, Exit::succeed("hi:3".to_string()));
 }
 ```
 
-Explicit matching keeps failure variants visible in the test — useful when a non-success `Exit` indicates a bug in the test setup.
+`provide(value)` removes one capability from `R`; `provide_env(hlist![..])` supplies the whole
+list; `provide_layer(layer)` builds it from a `Layer`. Leaving one out does not compile, so a test
+can never silently run against a missing dependency.
 
-## Fiber Leak Detection
+## Async tests
 
-```rust
-#[test]
-fn this_test_will_fail_due_to_leak() {
-    let eff = effect!(|_r: &mut ()| {
-        // Spawns a fiber but never joins it
-        run_fork(/* … */);
-        ()
-    });
+`block_on` refuses to run inside an async context, where it would block an executor thread: it
+runs nothing and returns a defect (`try_block_on` returns `Err(BlockOnInAsync)` instead). In a
+`#[tokio::test]`, await the effect through a `Runtime`:
 
-    // run_test detects the leaked fiber and fails the test
-    let exit = run_test(eff, ());
-    // exit: Exit::Failure(Cause::Die("fiber leak detected: 1 fiber(s) not joined"))
+```rust,ignore
+use id_effect::Runtime;
+
+#[tokio::test]
+async fn works_inside_tokio() {
+  let exit = Runtime::global().run(double(21)).await;
+  assert_eq!(exit, Exit::succeed(42));
 }
 ```
 
-Fix leaks by joining fibers or explicitly cancelling them before the effect completes.
+## Interruption and leaks
+
+Forked children are supervised by their parent: when a fiber ends, `block_on` interrupts and
+awaits the root's children, so a test cannot leak a running fiber past its end. To test
+interruption itself, fork the effect, interrupt the handle and assert on the `Exit`:
+
+```rust,ignore
+let exit = slow()
+  .fork()
+  .flat_map(|h| sleep(Duration::from_millis(20)).then(h.interrupt()))
+  .block_on();
+```
+
+For anything time-based (sleeps, timeouts, retries), don't wait on the wall clock: run the effect
+on a `TestExecutor` ([next section](./ch15-02-test-clock.md)).

@@ -94,7 +94,7 @@ pub fn emit_service_trait(def: &RpcServiceDef) -> String {
     let _ = writeln!(out, "  /// {doc}");
     let _ = writeln!(
       out,
-      "  fn {}(&self, request: {req}) -> Effect<{resp}, RpcError, ()>;",
+      "  fn {}(&self, request: {req}) -> Effect<{resp}, RpcError>;",
       method.operation
     );
     let _ = writeln!(out);
@@ -127,7 +127,7 @@ mod tests {
     let src = emit_service_trait(&greet_fixture());
     assert!(src.contains("pub trait GreetService"));
     assert!(src.contains("fn greet(&self, request: GreetRequest)"));
-    assert!(src.contains("Effect<GreetResponse, RpcError, ()>"));
+    assert!(src.contains("Effect<GreetResponse, RpcError>"));
     assert!(src.contains("POST /greet"));
   }
 
@@ -146,6 +146,6 @@ mod tests {
     };
     let src = emit_service_trait(&def);
     assert!(src.contains("fn ping(&self, request: ())"));
-    assert!(src.contains("Effect<(), RpcError, ()>"));
+    assert!(src.contains("Effect<(), RpcError>"));
   }
 }

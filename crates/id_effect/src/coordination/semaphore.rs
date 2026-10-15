@@ -1,280 +1,276 @@
-//! N-permit gate — mirrors Effect.ts concurrency primitives backed by `tokio::sync::Semaphore`.
+//! [`Semaphore`] and its RAII [`Permit`] (Effect.ts `Semaphore`). Ported from the v1
+//! `coordination::semaphore`, without tokio's semaphore.
 //!
-//! Use [`Semaphore::acquire`] with [`crate::resource::scope::Scope`] as the effect environment `R` so the
-//! permit is released when the scope is closed (via a [`Scope`] finalizer). [`Semaphore::try_acquire`]
-//! returns an owned [`Permit`] that releases on drop instead.
+//! Waiters queue FIFO: a waiter at the front that needs more permits than are free blocks the
+//! ones behind it (no starvation of large acquires). A release hands permits directly to the
+//! front waiters. An interrupted acquire is removed from the queue; one that was granted permits
+//! but dropped before observing them gives them back.
 
-use std::fmt;
-use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Waker};
 
-use tokio::sync::{OwnedSemaphorePermit, Semaphore as TokioSemaphore};
+use super::waiters::{WaitList, lock, wake_all};
+use crate::failure::Never;
+use crate::kernel::{Effect, from_async, sync, uninterruptible_mask};
+use crate::scope::Scope;
 
-use crate::kernel::{Effect, box_future};
-use crate::resource::scope::Scope;
-use crate::runtime::Never;
+struct State {
+  permits: usize,
+  /// Payload: the number of permits the waiter needs.
+  waiters: WaitList<usize, ()>,
+}
 
-// ── Semaphore ───────────────────────────────────────────────────────────────
+impl State {
+  /// Grants permits to the front waiters while they fit; returns the wakers to wake.
+  fn grant_ready(&mut self) -> Vec<Waker> {
+    let mut out = Vec::new();
+    while let Some(&need) = self.waiters.front() {
+      if need > self.permits {
+        break;
+      }
+      self.permits -= need;
+      if let Ok((_, w)) = self.waiters.grant_front(()) {
+        out.push(w);
+      }
+    }
+    out
+  }
+}
 
-/// N-permit async semaphore (shared handle).
+struct Inner {
+  state: Mutex<State>,
+}
+
+impl Inner {
+  fn release(&self, n: usize) {
+    let ws = {
+      let mut st = lock(&self.state);
+      st.permits += n;
+      st.grant_ready()
+    };
+    wake_all(ws);
+  }
+}
+
+/// An N-permit semaphore. Cloning yields another handle to the same semaphore.
+///
+/// [`acquire`](Self::acquire) suspends the fiber (no thread is blocked) until a permit is free
+/// and returns a [`Permit`] that releases on drop. [`with_permits`](Self::with_permits) is the
+/// structured form: the permits are released however the effect ends.
 #[derive(Clone)]
 pub struct Semaphore {
-  inner: Arc<TokioSemaphore>,
+  inner: Arc<Inner>,
 }
 
-impl Semaphore {
-  /// `Semaphore.make(n)` → `Effect<Semaphore>` (lazy; no I/O until run).
-  pub fn make(permits: usize) -> Effect<Self> {
-    Effect::new(move |_| {
-      Ok(Semaphore {
-        inner: Arc::new(TokioSemaphore::new(permits)),
-      })
-    })
-  }
-
-  /// Acquire one permit, suspending if none are available.
-  ///
-  /// The acquired [`OwnedSemaphorePermit`] is stored in a [`Scope`] finalizer on `scope` (the
-  /// effect environment `R`). Call with [`crate::runtime::run_async`]`(self.acquire(), scope.clone())`.
-  /// When `scope` closes, the permit is released.
-  ///
-  /// The returned [`Permit`] is a zero-cost marker (`Permit(None)`); it does **not** own the permit.
-  pub fn acquire(&self) -> Effect<Permit, Never, Scope> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |scope: &mut Scope| {
-      let scope = scope.clone();
-      box_future(async move {
-        let guard = inner.acquire_owned().await;
-        let _added = scope.add_finalizer(Box::new(move |_exit| {
-          Effect::new(move |_r| {
-            drop(guard);
-            Ok(())
-          })
-        }));
-        // If the scope was already closed, `add_finalizer` drops the box and the permit is released.
-        Ok(Permit(None))
-      })
-    })
-  }
-
-  /// Acquire one permit asynchronously; the returned [`Permit`] owns the handle and releases on
-  /// [`Drop`] (no [`Scope`] required).
-  pub fn acquire_owned(&self) -> Effect<Permit, Never, ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_env: &mut ()| {
-      box_future(async move {
-        let guard = inner
-          .acquire_owned()
-          .await
-          .unwrap_or_else(|_| unreachable!("semaphore closed"));
-        Ok(Permit(Some(guard)))
-      })
-    })
-  }
-
-  /// Try to acquire without blocking. On success, the returned [`Permit`] owns the permit and
-  /// releases on drop.
-  pub fn try_acquire(&self) -> Effect<Option<Permit>, Never, ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new(move |_| Ok(inner.try_acquire_owned().ok().map(|g| Permit(Some(g)))))
-  }
-
-  /// Current number of available permits (best-effort; concurrent acquires may change it immediately after).
-  pub fn available(&self) -> Effect<usize, Never, ()> {
-    let n = self.inner.available_permits();
-    Effect::new(move |_| Ok(n))
-  }
-}
-
-// ── Permit ─────────────────────────────────────────────────────────────────
-
-/// Proof of holding one semaphore permit, or an owned handle that releases on [`Drop`].
-///
-/// After [`Semaphore::acquire`], this is always `Permit(None)` — release happens via [`Scope`].
-/// After [`Semaphore::try_acquire`], `Some(_)` holds an [`OwnedSemaphorePermit`].
-pub struct Permit(Option<OwnedSemaphorePermit>);
-
-impl fmt::Debug for Permit {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_struct("Permit")
-      .field("owned", &self.0.is_some())
+impl std::fmt::Debug for Semaphore {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let st = lock(&self.inner.state);
+    f.debug_struct("Semaphore")
+      .field("available", &st.permits)
+      .field("waiters", &st.waiters.len())
       .finish()
   }
 }
 
-// ── Free functions (Effect.ts-style) ────────────────────────────────────────
+impl Semaphore {
+  /// A semaphore with `permits` free permits.
+  pub fn new(permits: usize) -> Self {
+    Self {
+      inner: Arc::new(Inner {
+        state: Mutex::new(State {
+          permits,
+          waiters: WaitList::default(),
+        }),
+      }),
+    }
+  }
 
-/// `Semaphore.make(n)`
-pub fn make(permits: usize) -> Effect<Semaphore> {
-  Semaphore::make(permits)
+  /// Acquires one permit, suspending until it is free.
+  pub fn acquire<E, R>(&self) -> Effect<Permit, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.acquire_n(1)
+  }
+
+  /// Acquires `n` permits at once, suspending until they are free. `n == 0` succeeds at once.
+  pub fn acquire_n<E, R>(&self, n: usize) -> Effect<Permit, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let inner = Arc::clone(&self.inner);
+    from_async(move || async move {
+      Ok(
+        Acquire {
+          inner,
+          need: n,
+          id: None,
+        }
+        .await,
+      )
+    })
+  }
+
+  /// Takes one permit if one is free right now (and no waiter is queued ahead).
+  pub fn try_acquire<E, R>(&self) -> Effect<Option<Permit>, E, R> {
+    self.try_acquire_n(1)
+  }
+
+  /// Takes `n` permits if they are free right now (and no waiter is queued ahead).
+  pub fn try_acquire_n<E, R>(&self, n: usize) -> Effect<Option<Permit>, E, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || {
+      let mut st = lock(&inner.state);
+      if st.waiters.is_empty() && st.permits >= n {
+        st.permits -= n;
+        drop(st);
+        Some(Permit::new(inner, n))
+      } else {
+        None
+      }
+    })
+  }
+
+  /// The number of free permits (a snapshot).
+  pub fn available<E, R>(&self) -> Effect<usize, E, R> {
+    let inner = Arc::clone(&self.inner);
+    sync(move || lock(&inner.state).permits)
+  }
+
+  /// Runs `eff` holding one permit (Effect.ts `withPermits(1)`).
+  pub fn with_permit<A, E, R>(&self, eff: Effect<A, E, R>) -> Effect<A, E, R>
+  where
+    A: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    self.with_permits(1, eff)
+  }
+
+  /// Runs `eff` holding `n` permits, released however `eff` ends (success, failure, defect or
+  /// interrupt). The wait for the permits is interruptible; the hand-over is not, so a permit is
+  /// never lost between acquiring it and running `eff`.
+  pub fn with_permits<A, E, R>(&self, n: usize, eff: Effect<A, E, R>) -> Effect<A, E, R>
+  where
+    A: Send + 'static,
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let sem = self.clone();
+    uninterruptible_mask(move |restore| {
+      restore
+        .apply(sem.acquire_n::<E, R>(n))
+        .flat_map(move |permit| restore.apply(eff).ensuring(sync(move || drop(permit))))
+    })
+  }
+
+  /// Acquires one permit and ties it to `scope`: it is released when the scope closes (the v1
+  /// `acquire` under a `Scope` environment). On a closed scope the permit is released at once.
+  pub fn acquire_scoped<E, R>(&self, scope: &Scope) -> Effect<(), E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let sem = self.clone();
+    let scope = scope.clone();
+    uninterruptible_mask(move |restore| {
+      restore
+        .apply(sem.acquire::<E, R>())
+        .flat_map(move |permit| scope.add_finalizer(sync::<(), Never, _>(move || drop(permit))))
+    })
+  }
 }
 
-/// `Semaphore.acquire(sem)`
-pub fn acquire(sem: &Semaphore) -> Effect<Permit, Never, Scope> {
-  sem.acquire()
+/// Holds permits of a [`Semaphore`]; releases them when dropped (or on [`release`](Self::release)).
+pub struct Permit {
+  inner: Arc<Inner>,
+  n: usize,
 }
 
-/// `Semaphore.acquire_owned(sem)`
-pub fn acquire_owned(sem: &Semaphore) -> Effect<Permit, Never, ()> {
-  sem.acquire_owned()
+impl std::fmt::Debug for Permit {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Permit").field("permits", &self.n).finish()
+  }
 }
 
-/// `Semaphore.try_acquire(sem)`
-pub fn try_acquire(sem: &Semaphore) -> Effect<Option<Permit>, Never, ()> {
-  sem.try_acquire()
+impl Permit {
+  fn new(inner: Arc<Inner>, n: usize) -> Self {
+    Self { inner, n }
+  }
+
+  /// How many permits this guard holds.
+  pub fn permits(&self) -> usize {
+    self.n
+  }
+
+  /// Releases the permits now (same as dropping the guard).
+  pub fn release(self) {
+    drop(self);
+  }
 }
 
-/// `Semaphore.available(sem)`
-pub fn available(sem: &Semaphore) -> Effect<usize, Never, ()> {
-  sem.available()
+impl Drop for Permit {
+  fn drop(&mut self) {
+    if self.n > 0 {
+      self.inner.release(self.n);
+    }
+  }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::runtime::run_async;
-  use std::sync::mpsc;
-  use std::thread;
-  use std::time::{Duration, Instant};
+/// The suspended acquire: queued once, granted by a release, cancelled on drop.
+struct Acquire {
+  inner: Arc<Inner>,
+  need: usize,
+  id: Option<u64>,
+}
 
-  #[test]
-  fn semaphore_try_acquire_none_when_exhausted() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(0), ()).unwrap();
-    assert!(
-      crate::runtime::run_blocking(sem.try_acquire(), ())
-        .unwrap()
-        .is_none()
-    );
+impl Future for Acquire {
+  type Output = Permit;
+
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Permit> {
+    let this = &mut *self;
+    let mut st = lock(&this.inner.state);
+    match this.id {
+      Some(id) => {
+        if st.waiters.take_grant(id).is_some() {
+          this.id = None;
+          drop(st);
+          return Poll::Ready(Permit::new(Arc::clone(&this.inner), this.need));
+        }
+        st.waiters.refresh(id, cx.waker());
+        Poll::Pending
+      }
+      None => {
+        if st.waiters.is_empty() && st.permits >= this.need {
+          st.permits -= this.need;
+          drop(st);
+          return Poll::Ready(Permit::new(Arc::clone(&this.inner), this.need));
+        }
+        this.id = Some(st.waiters.push(this.need, cx.waker()));
+        Poll::Pending
+      }
+    }
   }
+}
 
-  #[test]
-  fn semaphore_try_acquire_some_when_available() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(1), ()).unwrap();
-    let p = crate::runtime::run_blocking(sem.try_acquire(), ())
-      .unwrap()
-      .expect("permit");
-    drop(p);
-    assert!(
-      crate::runtime::run_blocking(sem.try_acquire(), ())
-        .unwrap()
-        .is_some()
-    );
-  }
-
-  #[test]
-  fn semaphore_permit_released_on_scope_close() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(1), ()).unwrap();
-    let scope = Scope::make();
-    let _ = pollster::block_on(run_async(sem.clone().acquire(), scope.clone())).unwrap();
-    assert!(
-      crate::runtime::run_blocking(sem.try_acquire(), ())
-        .unwrap()
-        .is_none()
-    );
-    scope.close();
-    assert!(
-      crate::runtime::run_blocking(sem.try_acquire(), ())
-        .unwrap()
-        .is_some()
-    );
-  }
-
-  #[test]
-  fn semaphore_acquire_blocks_when_zero_permits() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(1), ()).unwrap();
-    let (tx, rx) = mpsc::channel::<()>();
-    let sem_t = sem.clone();
-    let th = thread::spawn(move || {
-      let scope = Scope::make();
-      pollster::block_on(run_async(sem_t.acquire(), scope.clone())).unwrap();
-      tx.send(()).expect("signal acquire");
-      thread::sleep(Duration::from_millis(150));
-      scope.close();
-    });
-    rx.recv().expect("peer acquired");
-    let scope_m = Scope::make();
-    let start = Instant::now();
-    pollster::block_on(run_async(sem.acquire(), scope_m.clone())).unwrap();
-    assert!(
-      start.elapsed() >= Duration::from_millis(80),
-      "expected second acquire to block until first scope closed"
-    );
-    scope_m.close();
-    th.join().expect("thread");
-  }
-
-  // ── acquire_owned ─────────────────────────────────────────────────────
-
-  #[test]
-  fn semaphore_acquire_owned_returns_permit() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(1), ()).unwrap();
-    let permit = pollster::block_on(run_async(sem.acquire_owned(), ())).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
-      0,
-      "permit should consume the slot"
-    );
-    drop(permit);
-    assert_eq!(
-      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
-      1,
-      "permit release should restore the slot"
-    );
-  }
-
-  // ── available ────────────────────────────────────────────────────────
-
-  #[test]
-  fn semaphore_available_tracks_permits() {
-    let sem = crate::runtime::run_blocking(Semaphore::make(3), ()).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
-      3
-    );
-    let p = pollster::block_on(run_async(sem.acquire_owned(), ())).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(sem.available(), ()).unwrap(),
-      2
-    );
-    drop(p);
-  }
-
-  // ── free-function wrappers ─────────────────────────────────────────────
-
-  #[test]
-  fn semaphore_free_fn_make_and_acquire_owned() {
-    let sem = crate::runtime::run_blocking(make(2), ()).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
-      2
-    );
-    let p1 = pollster::block_on(run_async(acquire_owned(&sem), ())).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
-      1
-    );
-    let p2 = crate::runtime::run_blocking(try_acquire(&sem), ()).unwrap();
-    assert!(p2.is_some());
-    assert_eq!(
-      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
-      0
-    );
-    drop(p1);
-    drop(p2);
-  }
-
-  #[test]
-  fn semaphore_free_fn_acquire_with_scope() {
-    let sem = crate::runtime::run_blocking(make(1), ()).unwrap();
-    let scope = Scope::make();
-    pollster::block_on(run_async(acquire(&sem), scope.clone())).unwrap();
-    assert_eq!(
-      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
-      0
-    );
-    scope.close();
-    assert_eq!(
-      crate::runtime::run_blocking(available(&sem), ()).unwrap(),
-      1
-    );
+impl Drop for Acquire {
+  fn drop(&mut self) {
+    let Some(id) = self.id.take() else { return };
+    let ws = {
+      let mut st = lock(&self.inner.state);
+      if st.waiters.take_grant(id).is_some() {
+        // Granted but never observed (interrupted after the hand-over): give the permits back.
+        st.permits += self.need;
+      } else {
+        st.waiters.remove(id);
+      }
+      // Removing a large waiter at the front may unblock the ones behind it.
+      st.grant_ready()
+    };
+    wake_all(ws);
   }
 }

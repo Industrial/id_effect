@@ -1,10 +1,11 @@
 //! Forward steps with LIFO compensation (saga pattern).
 //!
-//! [`Saga::run`] returns an [`Effect`]: forward steps and compensations all run inside
-//! the caller's interpreter, so a saga composes with other effects instead of blocking.
+//! [`Saga::run`] returns an [`Effect`]: forward steps and compensations are sequenced with
+//! `flat_map`/`catch` on the caller's fiber, so a saga composes with other effects instead of
+//! blocking.
 
 use crate::error::SagaError;
-use id_effect::{Effect, box_future};
+use id_effect::{Effect, fail, succeed};
 use std::sync::Arc;
 
 type ForwardFn<A, Err, R> = Box<dyn Fn() -> Effect<A, Err, R> + Send + Sync>;
@@ -55,10 +56,13 @@ where
   }
 }
 
+type Steps<A, C, Err, R> = Arc<[Arc<SagaStep<A, C, Err, R>>]>;
+
 /// Ordered saga runner with automatic compensation on forward failure.
 ///
-/// Steps are shared behind [`Arc`]s, so [`Saga::run`] can be called repeatedly; each call
-/// builds a fresh effect.
+/// The steps are [`id_effect::Effect`] factories over the environment `R`. Steps are
+/// shared behind [`Arc`]s, so [`Saga::run`] can be called repeatedly; each call builds a fresh
+/// effect.
 pub struct Saga<A: 'static, C: 'static, Err: 'static, R: 'static> {
   steps: Vec<Arc<SagaStep<A, C, Err, R>>>,
 }
@@ -77,10 +81,10 @@ where
 
 impl<A, C, Err, R> Saga<A, C, Err, R>
 where
-  A: 'static,
-  C: 'static,
-  Err: 'static,
-  R: 'static,
+  A: Send + 'static,
+  C: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
 {
   /// Empty saga.
   pub fn new() -> Self {
@@ -96,32 +100,16 @@ where
   /// Effect running all forward steps in order. On the first forward failure, completed
   /// steps are compensated in reverse order and the effect fails with
   /// [`SagaError::Forward`]; a failing compensation aborts the rollback with
-  /// [`SagaError::Compensate`].
+  /// [`SagaError::Compensate`]. Defects and interrupts are not compensated (they pass
+  /// through, as in Effect.ts).
   pub fn run(&self) -> Effect<(), SagaError<Err>, R> {
-    let steps = self.steps.clone();
-    Effect::new_async(move |env: &mut R| {
-      box_future(async move {
-        for (idx, step) in steps.iter().enumerate() {
-          if let Err(err) = (step.forward)().run(env).await {
-            compensate_reverse(&steps[..idx], env).await?;
-            return Err(SagaError::Forward(err));
-          }
-        }
-        Ok(())
-      })
-    })
+    forward_from(self.steps.iter().cloned().collect(), 0)
   }
 
   /// Effect compensating the given step indices in reverse order (indices out of range are
   /// ignored).
   pub fn compensate_indices(&self, indices: &[usize]) -> Effect<(), SagaError<Err>, R> {
-    let steps: Vec<_> = indices
-      .iter()
-      .filter_map(|&idx| self.steps.get(idx).cloned())
-      .collect();
-    Effect::new_async(move |env: &mut R| {
-      box_future(async move { compensate_reverse(&steps, env).await })
-    })
+    compensate_reverse(indices.iter().filter_map(|&idx| self.steps.get(idx)))
   }
 
   /// Number of registered steps.
@@ -135,49 +123,73 @@ where
   }
 }
 
-async fn compensate_reverse<A, C, Err, R>(
-  steps: &[Arc<SagaStep<A, C, Err, R>>],
-  env: &mut R,
-) -> Result<(), SagaError<Err>>
+/// Runs forward step `idx` and the ones after it; on a typed failure, compensates `..idx`.
+fn forward_from<A, C, Err, R>(
+  steps: Steps<A, C, Err, R>,
+  idx: usize,
+) -> Effect<(), SagaError<Err>, R>
 where
-  A: 'static,
-  C: 'static,
-  Err: 'static,
-  R: 'static,
+  A: Send + 'static,
+  C: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
 {
-  for step in steps.iter().rev() {
-    if let Some(comp) = &step.compensate {
-      comp().run(env).await.map_err(SagaError::Compensate)?;
-    }
-  }
-  Ok(())
+  let Some(step) = steps.get(idx) else {
+    return succeed(());
+  };
+  let forward = (step.forward)();
+  let done = Arc::clone(&steps);
+  forward
+    .map(|_| ())
+    .catch(move |err| compensate_reverse(done[..idx].iter()).then(fail(SagaError::Forward(err))))
+    .flat_map(move |()| forward_from(steps, idx + 1))
+}
+
+/// Compensates `steps` from last to first (steps without a compensation are skipped).
+fn compensate_reverse<'a, A, C, Err, R>(
+  steps: impl DoubleEndedIterator<Item = &'a Arc<SagaStep<A, C, Err, R>>>,
+) -> Effect<(), SagaError<Err>, R>
+where
+  A: Send + 'static,
+  C: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  steps
+    .rev()
+    .filter(|step| step.compensate.is_some())
+    .fold(succeed(()), |acc, step| {
+      let step = Arc::clone(step);
+      acc.flat_map(move |()| match &step.compensate {
+        Some(comp) => comp().map(|_| ()).map_err(SagaError::Compensate),
+        None => succeed(()),
+      })
+    })
 }
 
 #[cfg(test)]
 mod saga_tests {
   use super::*;
-  use id_effect::{fail, run_blocking, succeed};
+  use crate::test_support::run;
+  use id_effect::{HCons, HNil, need, sync};
   use std::sync::Mutex;
 
-  type TestSaga = Saga<(), (), String, ()>;
+  type TestSaga = Saga<(), (), String, HNil>;
 
   fn recorder(
     log: &Arc<Mutex<Vec<&'static str>>>,
     entry: &'static str,
-  ) -> impl Fn() -> Effect<(), String, ()> + Send + Sync + 'static {
+  ) -> impl Fn() -> Effect<(), String, HNil> + Send + Sync + 'static {
     let log = Arc::clone(log);
     move || {
       let log = Arc::clone(&log);
-      Effect::new(move |_| {
-        log.lock().unwrap().push(entry);
-        Ok(())
-      })
+      sync(move || log.lock().unwrap().push(entry))
     }
   }
 
   #[test]
   fn step_name_is_preserved() {
-    let step = SagaStep::<(), (), String, ()>::forward("reserve", || succeed(()));
+    let step = SagaStep::<(), (), String, HNil>::forward("reserve", || succeed(()));
     assert_eq!(step.name(), "reserve");
     let saga = TestSaga::new().step(step);
     assert_eq!(saga.len(), 1);
@@ -188,7 +200,7 @@ mod saga_tests {
   fn empty_saga_succeeds() {
     let saga = TestSaga::new();
     assert!(saga.is_empty());
-    run_blocking(saga.run(), ()).expect("empty run");
+    run(saga.run()).expect("empty run");
   }
 
   #[test]
@@ -210,7 +222,7 @@ mod saga_tests {
         || fail("declined".to_string()),
         recorder(&log, "never"),
       ));
-    let err = run_blocking(saga.run(), ()).expect_err("forward fail");
+    let err = run(saga.run()).expect_err("forward fail");
     assert_eq!(err, SagaError::Forward("declined".to_string()));
     assert_eq!(
       *log.lock().unwrap(),
@@ -231,7 +243,7 @@ mod saga_tests {
         fail("undo-b broke".to_string())
       }))
       .step(SagaStep::forward("c", || fail("c broke".to_string())));
-    let err = run_blocking(saga.run(), ()).expect_err("rollback fails");
+    let err = run(saga.run()).expect_err("rollback fails");
     assert_eq!(err, SagaError::Compensate("undo-b broke".to_string()));
     assert_eq!(*log.lock().unwrap(), vec!["a", "b"]);
   }
@@ -242,9 +254,27 @@ mod saga_tests {
     let saga = TestSaga::new()
       .step(SagaStep::forward("a", recorder(&log, "a")))
       .step(SagaStep::forward("b", recorder(&log, "b")));
-    run_blocking(saga.run(), ()).expect("first run");
-    run_blocking(saga.run(), ()).expect("second run");
+    run(saga.run()).expect("first run");
+    run(saga.run()).expect("second run");
     assert_eq!(*log.lock().unwrap(), vec!["a", "b", "a", "b"]);
+  }
+
+  #[test]
+  fn a_defect_is_not_compensated() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let saga = TestSaga::new()
+      .step(SagaStep::with_compensate(
+        "a",
+        recorder(&log, "a"),
+        recorder(&log, "undo-a"),
+      ))
+      .step(SagaStep::forward("b", || id_effect::die("boom")));
+    let exit = saga.run().block_on();
+    assert!(matches!(
+      exit,
+      id_effect::Exit::Failure(id_effect::Cause::Die(_))
+    ));
+    assert_eq!(*log.lock().unwrap(), vec!["a"]);
   }
 
   #[test]
@@ -261,24 +291,27 @@ mod saga_tests {
         || succeed(()),
         recorder(&log, "undo-b"),
       ));
-    run_blocking(saga.compensate_indices(&[0, 1, 7]), ()).expect("compensate");
+    run(saga.compensate_indices(&[0, 1, 7])).expect("compensate");
     assert_eq!(*log.lock().unwrap(), vec!["undo-b", "undo-a"]);
   }
 
+  struct Budget(u32);
+
   #[test]
   fn steps_read_the_environment() {
-    let saga = Saga::<(), (), String, u32>::new().step(SagaStep::forward("check", || {
-      Effect::new(|budget: &mut u32| {
-        if *budget >= 10 {
-          Ok(())
-        } else {
-          Err(format!("budget {budget} too low"))
-        }
-      })
-    }));
-    assert!(run_blocking(saga.run(), 10).is_ok());
+    let saga =
+      Saga::<(), (), String, HCons<Budget, HNil>>::new().step(SagaStep::forward("check", || {
+        need::<Budget>().flat_map(|budget| {
+          if budget.0 >= 10 {
+            succeed(())
+          } else {
+            fail(format!("budget {} too low", budget.0))
+          }
+        })
+      }));
+    assert!(run(saga.run().provide(Budget(10))).is_ok());
     assert_eq!(
-      run_blocking(saga.run(), 3),
+      run(saga.run().provide(Budget(3))),
       Err(SagaError::Forward("budget 3 too low".to_string()))
     );
   }

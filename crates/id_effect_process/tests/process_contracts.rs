@@ -7,19 +7,20 @@ mod common;
 
 use std::sync::mpsc;
 
-use common::{JoinNode, Probe, RecCall, Recorder, T, await_exit, watch_exit};
-use id_effect::{Cause, Effect, run_blocking};
+use common::{JoinNode, Probe, RecCall, Recorder, T, await_exit, recv, run, watch_exit};
+use id_effect::Cause;
+use id_effect::Effect;
 use id_effect_process::{
   Addr, CallError, ExitReason, Info, MonitorRef, Next, NodeName, Pid, Process, ProcessCtx,
   SendError,
 };
 
 fn log(addr: &Addr<Recorder>) -> Vec<i64> {
-  run_blocking(addr.call(RecCall::Log, T), ()).expect("log call")
+  run(addr.call(RecCall::Log, T)).expect("log call")
 }
 
 fn crash(addr: &Addr<Recorder>) {
-  let _ = run_blocking(addr.call(RecCall::Crash, T), ());
+  let _ = run(addr.call(RecCall::Crash, T));
 }
 
 // ── Mailbox ordering and dead-letter behaviour ─────────────────────
@@ -29,7 +30,7 @@ fn mailbox_preserves_fifo_order_across_many_casts() {
   let jn = JoinNode::new("fifo@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
   for n in 0..200 {
-    run_blocking(addr.cast(n), ()).unwrap();
+    run(addr.cast(n)).unwrap();
   }
   assert_eq!(log(&addr), (0..200).collect::<Vec<_>>());
 }
@@ -38,9 +39,9 @@ fn mailbox_preserves_fifo_order_across_many_casts() {
 fn send_now_interleaves_with_casts_in_sender_order() {
   let jn = JoinNode::new("interleave@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
-  run_blocking(addr.cast(1), ()).unwrap();
+  run(addr.cast(1)).unwrap();
   assert!(addr.send_now(2));
-  run_blocking(addr.send(3), ()).unwrap();
+  run(addr.send(3)).unwrap();
   assert!(addr.send_now(4));
   assert_eq!(log(&addr), vec![1, 2, 3, 4]);
 }
@@ -49,13 +50,13 @@ fn send_now_interleaves_with_casts_in_sender_order() {
 fn messages_to_a_dead_process_are_rejected_not_lost_silently() {
   let jn = JoinNode::new("deadletter@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
-  let _ = run_blocking(addr.call(RecCall::Stop, T), ());
+  let _ = run(addr.call(RecCall::Stop, T));
   jn.join(0);
   assert!(!addr.is_alive());
   assert!(!addr.send_now(1));
-  assert_eq!(run_blocking(addr.cast(1), ()), Err(SendError::Rejected));
-  assert_eq!(run_blocking(addr.send(1), ()), Err(SendError::Rejected));
-  let call = run_blocking(addr.call(RecCall::Log, T), ());
+  assert_eq!(run(addr.cast(1)), Err(SendError::Rejected));
+  assert_eq!(run(addr.send(1)), Err(SendError::Rejected));
+  let call = run(addr.call(RecCall::Log, T));
   assert!(
     matches!(
       call,
@@ -71,7 +72,7 @@ fn cloned_addresses_reach_the_same_process() {
   let addr = jn.node.spawn::<Recorder>(None, ());
   let other = addr.clone();
   assert_eq!(addr.pid(), other.pid());
-  run_blocking(other.cast(7), ()).unwrap();
+  run(other.cast(7)).unwrap();
   assert_eq!(log(&addr), vec![7]);
 }
 
@@ -94,7 +95,7 @@ fn monitor_reports_normal_for_a_graceful_stop() {
   let jn = JoinNode::new("mon-normal@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
   let exits = watch_exit(&jn.node, addr.pid());
-  let _ = run_blocking(addr.call(RecCall::Stop, T), ());
+  let _ = run(addr.call(RecCall::Stop, T));
   assert_eq!(await_exit(&exits), ExitReason::Normal);
 }
 
@@ -103,7 +104,7 @@ fn monitor_reports_killed_for_an_untrappable_kill() {
   let jn = JoinNode::new("mon-kill@test");
   let (tx, _rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap(); // init done: trapping
+  run(probe.call((), T)).unwrap(); // init done: trapping
   let exits = watch_exit(&jn.node, probe.pid());
   jn.node.exit(probe.pid(), ExitReason::Killed);
   assert_eq!(await_exit(&exits), ExitReason::Killed);
@@ -185,7 +186,7 @@ fn unlink_stops_the_cascade() {
   crash(&a);
   jn.join(0);
   assert!(b.is_alive());
-  run_blocking(b.cast(5), ()).unwrap();
+  run(b.cast(5)).unwrap();
   assert_eq!(log(&b), vec![5]);
 }
 
@@ -194,7 +195,7 @@ fn exit_normal_is_ignored_by_a_non_trapping_process() {
   let jn = JoinNode::new("exit-normal@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
   jn.node.exit(addr.pid(), ExitReason::Normal);
-  run_blocking(addr.cast(1), ()).unwrap();
+  run(addr.cast(1)).unwrap();
   assert_eq!(log(&addr), vec![1]);
   assert!(addr.is_alive());
 }
@@ -204,16 +205,16 @@ fn trappable_exit_reaches_a_trapping_process_as_a_message() {
   let jn = JoinNode::new("exit-trap@test");
   let (tx, rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap();
+  run(probe.call((), T)).unwrap();
   jn.node.exit(probe.pid(), ExitReason::Shutdown);
-  match rx.recv_timeout(T).expect("exit message") {
+  match recv(&rx).expect("exit message") {
     Info::Exit { from, reason } => {
       assert_eq!(&from, probe.pid());
       assert_eq!(reason, ExitReason::Shutdown);
     }
     _ => panic!("expected Info::Exit"),
   }
-  run_blocking(probe.call((), T), ()).expect("probe survives");
+  run(probe.call((), T)).expect("probe survives");
 }
 
 #[test]
@@ -221,10 +222,10 @@ fn trapping_process_learns_the_linked_peer_crash_reason() {
   let jn = JoinNode::new("trap-link@test");
   let (tx, rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap();
+  run(probe.call((), T)).unwrap();
   let peer = jn.node.spawn_linked_to::<Recorder>(probe.pid(), None, ());
   crash(&peer);
-  match rx.recv_timeout(T).expect("exit message") {
+  match recv(&rx).expect("exit message") {
     Info::Exit { from, reason } => {
       assert_eq!(&from, peer.pid());
       assert!(matches!(reason, ExitReason::Error(_)), "{reason:?}");
@@ -269,9 +270,9 @@ fn init_failure_exits_with_the_init_error() {
   let jn = JoinNode::new("init-fail@test");
   let (tx, rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap();
+  run(probe.call((), T)).unwrap();
   let child = jn.node.spawn_linked_to::<FailingInit>(probe.pid(), (), ());
-  match rx.recv_timeout(T).expect("exit message") {
+  match recv(&rx).expect("exit message") {
     Info::Exit { from, reason } => {
       assert_eq!(&from, child.pid());
       assert_eq!(reason, ExitReason::error("no config"));
@@ -287,7 +288,7 @@ fn terminate_receives_the_cooperative_kill_reason() {
   let addr = jn.node.spawn::<Recorder>(Some(tx), ());
   let _ = log(&addr);
   jn.node.exit(addr.pid(), ExitReason::Shutdown);
-  assert_eq!(rx.recv_timeout(T), Ok(ExitReason::Shutdown));
+  assert_eq!(recv(&rx), Ok(ExitReason::Shutdown));
 }
 
 #[test]
@@ -295,8 +296,8 @@ fn terminate_runs_with_normal_after_a_graceful_stop() {
   let jn = JoinNode::new("term-normal@test");
   let (tx, rx) = mpsc::channel();
   let addr = jn.node.spawn::<Recorder>(Some(tx), ());
-  let _ = run_blocking(addr.call(RecCall::Stop, T), ());
-  assert_eq!(rx.recv_timeout(T), Ok(ExitReason::Normal));
+  let _ = run(addr.call(RecCall::Stop, T));
+  assert_eq!(recv(&rx), Ok(ExitReason::Normal));
 }
 
 #[test]
@@ -316,7 +317,7 @@ fn handler_panic_fails_the_call_fires_monitors_and_closes_the_mailbox() {
   let jn = JoinNode::new("panic@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
   let exits = watch_exit(&jn.node, addr.pid());
-  let call = run_blocking(addr.call(RecCall::Panic, T), ());
+  let call = run(addr.call(RecCall::Panic, T));
   assert_eq!(
     call,
     Err(CallError::Down(ExitReason::Error(
@@ -327,9 +328,9 @@ fn handler_panic_fails_the_call_fires_monitors_and_closes_the_mailbox() {
     await_exit(&exits),
     ExitReason::Error("panic: recorder panic".to_string())
   );
-  jn.join(0); // the process thread itself did not unwind
+  jn.join(0); // the process fiber itself did not unwind
   assert!(!addr.is_alive());
-  assert_eq!(run_blocking(addr.send(1), ()), Err(SendError::Rejected));
+  assert_eq!(run(addr.send(1)), Err(SendError::Rejected));
   assert!(!addr.send_now(1));
 }
 
@@ -340,7 +341,7 @@ fn handler_panic_cascades_over_links() {
   let b = jn.node.spawn::<Recorder>(None, ());
   jn.node.link(a.pid(), b.pid());
   let b_exit = watch_exit(&jn.node, b.pid());
-  let _ = run_blocking(a.call(RecCall::Panic, T), ());
+  let _ = run(a.call(RecCall::Panic, T));
   assert_eq!(
     await_exit(&b_exit),
     ExitReason::Error("panic: recorder panic".to_string())
@@ -372,11 +373,11 @@ fn init_panic_exits_with_the_panic_message() {
   let jn = JoinNode::new("init-panic@test");
   let (tx, rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap();
+  run(probe.call((), T)).unwrap();
   let child = jn
     .node
     .spawn_linked_to::<PanickingInit>(probe.pid(), (), ());
-  match rx.recv_timeout(T).expect("exit message") {
+  match recv(&rx).expect("exit message") {
     Info::Exit { from, reason } => {
       assert_eq!(&from, child.pid());
       assert_eq!(
@@ -394,7 +395,7 @@ fn init_panic_exits_with_the_panic_message() {
 fn registering_a_dead_process_fails() {
   let jn = JoinNode::new("reg-dead@test");
   let addr = jn.node.spawn::<Recorder>(None, ());
-  let _ = run_blocking(addr.call(RecCall::Stop, T), ());
+  let _ = run(addr.call(RecCall::Stop, T));
   jn.join(0);
   assert!(!jn.node.register("late", &addr));
   assert_eq!(jn.node.whereis("late"), None);
@@ -430,7 +431,7 @@ fn process_table_tracks_live_processes() {
   let _b = jn.node.spawn::<Recorder>(None, ());
   assert_eq!(jn.node.table().len(), 2);
   assert!(jn.node.table().pids().contains(a.pid()));
-  let _ = run_blocking(a.call(RecCall::Stop, T), ());
+  let _ = run(a.call(RecCall::Stop, T));
   jn.join(0);
   assert_eq!(jn.node.table().len(), 1);
   assert!(!jn.node.table().pids().contains(a.pid()));
@@ -451,7 +452,7 @@ fn pid_parts_and_display_round_trip() {
 fn spawned_pids_are_never_reused() {
   let jn = JoinNode::new("pids@test");
   let a = jn.node.spawn::<Recorder>(None, ());
-  let _ = run_blocking(a.call(RecCall::Stop, T), ());
+  let _ = run(a.call(RecCall::Stop, T));
   jn.join(0);
   let b = jn.node.spawn::<Recorder>(None, ());
   assert_ne!(a.pid(), b.pid());

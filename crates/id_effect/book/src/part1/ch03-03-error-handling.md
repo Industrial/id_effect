@@ -1,114 +1,110 @@
 # Error Handling Inside effect!
 
-The `~` operator short-circuits on failure — if a bound effect fails, the whole `effect!` block fails with that error. But you can also handle errors *within* the block.
+A failing `~` ends the whole `effect!` block with that failure. You can also handle errors within
+the block.
 
 ## The Default: Short-Circuit
 
-```rust
-effect! {
-    let a = ~ step_a();    // if this fails → whole block fails
-    let b = ~ step_b(a);   // if this fails → whole block fails
-    b
-}
+```rust,ignore
+effect!({
+  let a = ~step_a();  // if this fails, the block fails
+  let b = ~step_b(a); // if this fails, the block fails
+  b
+})
 ```
 
-This matches `?` in `Result`. You get clean sequencing at the cost of aborting early. For most code, that's exactly what you want.
+This matches `?` on a `Result`, and `?` works too: on a `Result` it fails the block with the
+error (converted with `From`):
+
+```rust
+# use id_effect::{Cause, Effect, Exit, effect};
+fn parse(raw: &'static str) -> Effect<i32, &'static str> {
+  effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+}
+
+assert_eq!(parse("42").block_on(), Exit::succeed(42));
+assert_eq!(parse("x").block_on(), Exit::Failure(Cause::Fail("parse_failed")));
+```
 
 ## Catching Errors Mid-block
 
-To handle an error inline and continue, use `.catch` before the `~`:
+To recover and continue, use `.catch` before the `~`:
 
-```rust
-effect! {
-    let user = ~ fetch_user(id).catch(|_| succeed(User::anonymous()));
-    // If fetch_user fails, we get User::anonymous() and continue
-    render_user(user)
-}
+```rust,ignore
+effect!({
+  let v = ~parse_i32("x").catch(|_| succeed(0));
+  v + 42
+})
 ```
 
-`.catch` converts a failure into a success (or a different effect). The `~` then sees a successful effect.
+`.catch(|e| ..)` turns a typed failure into another effect (a fallback value, or a different
+failure). Defects and interrupts are not caught by `catch`.
 
-## Converting Errors with map_error
+## Converting Errors
 
-Often you have multiple effect types with different `E` parameters and need to unify them:
+A bound effect's error is widened into the block's error through `From`, so with
 
-```rust
+```rust,ignore
 #[derive(Debug)]
 enum AppError {
-    Db(DbError),
-    Network(HttpError),
+  Db(DbError),
+  Network(HttpError),
 }
+impl From<DbError> for AppError { fn from(e: DbError) -> Self { AppError::Db(e) } }
+impl From<HttpError> for AppError { fn from(e: HttpError) -> Self { AppError::Network(e) } }
+```
 
-effect! {
-    let user = ~ fetch_user(id).map_error(AppError::Db);
-    let data = ~ fetch_external_data(user.id).map_error(AppError::Network);
+both steps bind without any conversion:
+
+```rust,ignore
+fn load(id: u64) -> Effect<Data, AppError, caps!(Database, HttpClient)> {
+  effect!({
+    let user = ~fetch_user(id);             // DbError -> AppError
+    let data = ~fetch_external(user.id);    // HttpError -> AppError
     process(user, data)
+  })
 }
 ```
 
-Both effects are converted to the same `AppError` before binding. The block's `E` parameter is `AppError` throughout.
+Without a `From` impl, convert explicitly with `.map_err(..)` before the `~`.
 
-## Handling Errors with fold
+## Inspecting the Outcome
 
-`fold` handles both success and failure paths:
+`.exit()` turns the outcome into a value, so the block sees success and failure alike:
 
-```rust
-effect! {
-    let outcome = ~ risky_operation().fold(
-        |err| format!("Error: {err}"),
-        |val| format!("Success: {val}"),
-    );
-    // outcome is always Ok(String), never fails here
-    log_outcome(outcome)
-}
+```rust,ignore
+effect!({
+  let outcome = ~risky_operation().exit();
+  match outcome {
+    Exit::Success(v) => format!("ok: {v}"),
+    Exit::Failure(cause) => format!("failed: {cause:?}"),
+  }
+})
 ```
-
-`fold` is like pattern matching on the effect — you handle both arms and produce a uniform success value.
 
 ## Re-raising Errors
 
-Inside a `.catch` handler, you can inspect the error and decide whether to recover or re-fail:
+Inside `.catch`, decide whether to recover or fail again:
 
-```rust
-effect! {
-    let result = ~ db_operation().catch(|error| {
-        if error.is_transient() {
-            // Transient: retry once with a fallback
-            fallback_db_operation()
-        } else {
-            // Permanent: re-raise
-            fail(error)
-        }
-    });
-    result
-}
+```rust,ignore
+effect!({
+  ~db_operation().catch(|error| {
+    if error.is_transient() { fallback_db_operation() } else { fail(error) }
+  })
+})
 ```
-
-`fail(error)` inside a handler produces a failing effect — the outer `~` then propagates it.
 
 ## Accumulating Multiple Errors
 
-Short-circuit stops at the first error. When you need *all* errors (like form validation), use `validate_all` outside the macro:
-
-```rust
-// Not inside effect! — runs all regardless of failures
-let results = validate_all(vec![
-    validate_name(&input.name),
-    validate_email(&input.email),
-    validate_age(input.age),
-]);
-
-// results is Effect<Vec<Ok>, Vec<Err>, ()>
-```
-
-Chapter 8 covers `validate_all` and error accumulation patterns in detail.
+Short-circuiting stops at the first error. When you need every failure (form validation), validate
+outside the short-circuiting chain and collect the results; Chapter 8 covers error accumulation.
 
 ## The Rule of Thumb
 
 | Want | Do |
 |------|----|
-| Stop at first failure | plain `~ effect` |
-| Provide a fallback | `~ effect.catch(|e| fallback)` |
-| Unify error types | `~ effect.map_error(Into::into)` |
-| Pattern match both arms | `~ effect.fold(on_err, on_ok)` |
-| Collect all failures | `validate_all` outside the macro |
+| Stop at the first failure | plain `~effect` or `?` on a `Result` |
+| Provide a fallback | `~effect.catch(\|e\| fallback)` |
+| Unify error types | `impl From<Small> for Big`, or `.map_err(..)` |
+| Look at success and failure | `~effect.exit()` |
+| Collect all failures | accumulate outside the chain (Chapter 8) |

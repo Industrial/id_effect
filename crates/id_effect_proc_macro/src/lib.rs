@@ -5,20 +5,15 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 #![deny(missing_docs)]
 
-mod capability_attr;
 mod derive_fsm;
 mod derive_optics;
 mod derive_schema_parser;
 mod distributed_behavior;
 mod effect_data;
-mod effect_graph;
+mod effect_macro;
 mod effect_tagged;
-mod expand;
-mod infer_caps;
 mod match_effect;
-mod parse;
 mod provider_spec;
-mod transform;
 
 use proc_macro::TokenStream;
 
@@ -29,7 +24,7 @@ struct ReadmeDoctests;
 
 /// Derive macro: structural [`PartialEq`], [`Eq`], and [`Hash`] for Effect.ts-style data types.
 ///
-/// Types implementing these impls automatically satisfy [`id_effect::data::EffectData`] via the
+/// Types implementing these impls automatically satisfy [`id_effect::schema::data::EffectData`] via the
 /// blanket implementation in the `effect` crate.
 #[proc_macro_derive(EffectData)]
 pub fn derive_effect_data(input: TokenStream) -> TokenStream {
@@ -45,28 +40,21 @@ pub fn effect_tagged(attr: TokenStream, item: TokenStream) -> TokenStream {
   effect_tagged::expand(attr, item)
 }
 
-/// **Deprecated no-op** (since 0.3; removed in 0.7): returns the item unchanged.
+/// Derive an inherent `layer()` (an `id_effect::Layer` providing the service) from
+/// `#[provides(Service)]`. Re-exported by `id_effect` as `ProviderSpecDerive`.
 ///
-/// Capability keys are no longer generated — use the service type itself in `caps!(Service)`,
-/// `Needs::<Service>` and `#[provides(Service)]`. Delete the attribute. (Attribute macros
-/// cannot carry `#[deprecated]`, so there is no compiler warning.)
-#[proc_macro_attribute]
-pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
-  capability_attr::expand(attr, item)
-}
-
-/// Derive [`id_effect::ProviderSpec`] when paired with `#[provides(Capability)]`.
+/// `Struct::layer::<E>()` is a `Layer<HCons<Service, HNil>, E>` that needs nothing and never
+/// fails. The service value comes from, in order of precedence:
 ///
-/// The service value comes from, in order of precedence:
-///
-/// - `#[provides(Service, with = <constructor>)]` — `|| expr`, `|deps: &Env| expr` (reads
-///   already-built capabilities), or a path such as `Self::build` called with no arguments.
-///   This is the recommended form: no `fn new() -> Service` (which trips
-///   `clippy::new_ret_no_self`) is needed.
+/// - `#[provides(Service, with = <constructor>)]` — `|| expr`, or a path such as `Self::build`
+///   called with no arguments. This is the recommended form: no `fn new() -> Service` (which
+///   trips `clippy::new_ret_no_self`) is needed.
 /// - `Self::default()` when the struct derives `Default` (the provider is its own service).
 /// - `Self::new()` otherwise.
 ///
-/// Add `#[named("variant")]` for a named variant of the same capability.
+/// `#[provides(Service, release = <finalizer>)]` makes it an `acquire_release` layer whose
+/// finalizer `release(Arc<Service>)` (an `Effect<(), Never, HNil>`) runs when the layer's scope
+/// closes. The 0.6 forms `|deps: &Env| ..` and `#[named("..")]` are compile errors.
 ///
 /// ```ignore
 /// #[derive(Clone)]
@@ -75,6 +63,8 @@ pub fn capability(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[derive(ProviderSpecDerive)]
 /// #[provides(Counter, with = || Counter(42))]
 /// struct CounterLive;
+///
+/// let program = app().provide_layer(CounterLive::layer());
 /// ```
 #[proc_macro_derive(ProviderSpec, attributes(provides, named))]
 pub fn derive_provider_spec(input: TokenStream) -> TokenStream {
@@ -95,20 +85,48 @@ pub fn match_effect(input: TokenStream) -> TokenStream {
   match_effect::expand(input)
 }
 
-/// Procedural do-notation macro for [`id_effect::Effect`].
+/// Do-notation over an async body, building an `id_effect::Effect`.
 ///
-/// See the `effect` crate documentation for usage.
+/// `effect!({ body })` takes `R` from the expected type; `effect!(|r: &Caps| { body })` fixes
+/// `R = Caps` and binds `r: &Caps`. In the body, `~Cap` reads a capability (`&Arc<Cap>`),
+/// `~expr` runs a sub-effect over a part of `R` on the same fiber, widening its error (`Never`
+/// to anything, else `E: From<E2>`), and `~(a, b, ..)` joins up to 8 effects in parallel on
+/// child fibers. `?` on a `Result` fails the effect with its error. The body must be `Send`.
+///
+/// ```
+/// use id_effect::{Effect, Exit, Never, caps, effect, succeed};
+///
+/// struct Greeting(&'static str);
+///
+/// fn answer() -> Effect<u32> {
+///   succeed(42)
+/// }
+///
+/// fn hello() -> Effect<String, Never, caps!(Greeting)> {
+///   effect!({ format!("{}:{}", ~Greeting.0, ~answer()) })
+/// }
+///
+/// let out = hello().provide(Greeting("hi")).block_on();
+/// assert!(matches!(out, Exit::Success(ref s) if s == "hi:42"));
+/// ```
 #[proc_macro]
 pub fn effect(input: TokenStream) -> TokenStream {
-  let input = proc_macro2::TokenStream::from(input);
-  let kind = match parse::parse_effect_input(input) {
-    Ok(k) => k,
-    Err(e) => return e.to_compile_error().into(),
-  };
-  match expand::expand(kind) {
-    Ok(ts) => ts.into(),
-    Err(e) => e.to_compile_error().into(),
-  }
+  effect_macro::effect::expand(input, false)
+}
+
+/// Like `effect!`, but builds an `id_effect::LocalEffect`, whose body may hold `!Send` values.
+/// `~expr` binds a `LocalEffect` or a `Send` `Effect` over a part of `R`.
+#[proc_macro]
+pub fn effect_local(input: TokenStream) -> TokenStream {
+  effect_macro::effect::expand(input, true)
+}
+
+/// `caps!(A, B, C)` is the environment type `HCons<A, HCons<B, HCons<C, HNil>>>`. A capability
+/// listed twice (compared by token) is one compile error at the repeat; the de-duplicated list
+/// is still emitted so no further errors cascade.
+#[proc_macro]
+pub fn caps(input: TokenStream) -> TokenStream {
+  effect_macro::caps::expand(input)
 }
 
 /// Derive field lenses and enum prisms for [`id_effect_optics`].
@@ -177,19 +195,6 @@ pub fn derive_fsm(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_derive(Schema, attributes(schema))]
 pub fn derive_schema(input: TokenStream) -> TokenStream {
-  derive_schema_parser::derive_schema(input)
-}
-
-/// Deprecated alias of [`macro@Schema`]; expands to exactly the same code.
-///
-/// Earlier releases also generated a `parser()` method backed by the unpublished `id_effect_parse`
-/// crate; that method is gone. Build a text parser with
-/// `id_effect_parse::SchemaBridge::parser_for::<T>()` instead.
-///
-/// Derive macros cannot carry `#[deprecated]`, so the compiler will not warn on use — migrate to
-/// `#[derive(Schema)]`. This alias will be removed in a future minor release.
-#[proc_macro_derive(SchemaParser, attributes(schema, parser))]
-pub fn derive_schema_parser(input: TokenStream) -> TokenStream {
   derive_schema_parser::derive_schema(input)
 }
 

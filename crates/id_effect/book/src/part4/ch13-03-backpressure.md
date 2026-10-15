@@ -1,98 +1,83 @@
 # Backpressure Policies — Controlling Flow
 
-A stream is a pipeline: a producer emits data, operators transform it, a consumer processes it. Problems arise when the producer is faster than the consumer. Backpressure is the mechanism that handles this mismatch.
+Inside a stream pipeline there is no backpressure problem to solve: streams are pull-based, so a
+source produces a chunk only when the consumer asks for one. The problem appears at the edge,
+where a *push* producer (a socket, a callback, another thread) feeds a stream. If it produces
+faster than the consumer pulls, something has to give: block the producer, drop data, or fail.
+`id_effect` makes that choice explicit with `BackpressurePolicy`.
 
-## The Problem
+## stream_from_channel
 
+`stream_from_channel(capacity)` returns a `Stream` and a `StreamSender` backed by a queue of at
+most `capacity` chunks:
+
+```rust,ignore
+use id_effect::{Chunk, Effect, Exit, Never, StreamChannelFull, end_stream, send_chunk,
+  stream_from_channel};
+
+let (stream, sender) = stream_from_channel::<i32, &'static str, _>(3);
+let send: Effect<(), StreamChannelFull> = send_chunk(&sender, Chunk::from_vec(vec![1, 2]));
+assert!(send.block_on().into_result().is_ok());
+let end: Effect<(), Never> = end_stream(sender);
+assert_eq!(end.block_on(), Exit::succeed(()));
+assert_eq!(stream.run_collect().block_on(), Exit::succeed(vec![1, 2]));
 ```
-Producer: emits 10,000 events/sec
-Consumer: processes 1,000 events/sec
 
-What happens to the 9,000 surplus events per second?
-```
-
-Your options are: block the producer, drop events, or buffer them. Each is correct in different contexts. id_effect makes the choice explicit via `BackpressurePolicy`.
+- `send_chunk(&sender, chunk)` is an effect, generic over `R`. Run it from a producer fiber, or
+  `.block_on()` it on a producer thread.
+- `end_stream(sender)` ends the stream after the buffered chunks; dropping the last sender ends
+  it too.
+- `sender.fail(e)` delivers `e` after every chunk already sent; it returns a `bool` and never
+  waits (example `073_stream_producer_fail`).
 
 ## BackpressurePolicy
 
-```rust
-use id_effect::BackpressurePolicy;
+`stream_from_channel` uses `BoundedBlock`. `stream_from_channel_with_policy(capacity, policy)`
+picks another one:
 
-// Block the producer until the consumer catches up (default for bounded channels)
-BackpressurePolicy::Block
+| Policy | When the queue is full |
+|--------|------------------------|
+| `BoundedBlock` | `send_chunk` suspends until there is room (nothing is lost) |
+| `DropNewest` | the newly offered chunk is dropped |
+| `DropOldest` | the oldest queued chunk is evicted to make room |
+| `Fail` | `send_chunk` fails with `StreamChannelFull` |
 
-// Drop the newest events when the buffer is full
-BackpressurePolicy::DropLatest
+```rust,ignore
+use id_effect::{BackpressurePolicy, stream_from_channel_with_policy};
 
-// Drop the oldest events when the buffer is full (keep the freshest data)
-BackpressurePolicy::DropOldest
-
-// Unbounded buffering — never drop, never block (use carefully)
-BackpressurePolicy::Unbounded
+// Keep the freshest data; a slow consumer never stalls the producer.
+let (stream, sender) =
+  stream_from_channel_with_policy::<Reading, (), _>(1024, BackpressurePolicy::DropOldest);
 ```
 
-## Applying a Policy to a Channel-Backed Stream
-
-The most common place to specify backpressure is when bridging from a channel to a `Stream`:
-
-```rust
-use id_effect::{stream_from_channel_with_policy, BackpressurePolicy};
-use std::sync::mpsc;
-
-let (tx, rx) = mpsc::channel::<Event>();
-
-// Drop old events; always reflect the latest state
-let stream = stream_from_channel_with_policy(rx, 1024, BackpressurePolicy::DropOldest);
-```
-
-Contrast with `stream_from_channel`, which uses `Block` by default. If you don't think about backpressure at this point, `Block` is the safe choice — you won't lose data, but a slow consumer will slow down the producer.
+`backpressure_decision(policy, queue_len, capacity)` is the pure decision function behind the
+policies (example `075_backpressure_decision`).
 
 ## Choosing a Policy
 
 | Scenario | Policy |
 |----------|--------|
-| Financial transactions — no data loss acceptable | `Block` |
-| Real-time sensor readings — only latest matters | `DropOldest` |
-| Log pipeline — drop excess if overwhelmed | `DropLatest` |
-| Batch import — control memory, halt on overflow | `Block` |
-| Dashboard metrics — fresh data over completeness | `DropOldest` |
+| Financial transactions: no data loss acceptable | `BoundedBlock` |
+| Real-time sensor readings: only the latest matters | `DropOldest` |
+| Log pipeline: shed excess load when overwhelmed | `DropNewest` |
+| Overflow is a bug the producer must handle | `Fail` |
 
-## Stream-Level Backpressure
+## Concurrency inside the pipeline
 
-Streams composed with `flat_map` or `merge` also have implicit backpressure: downstream operators signal upstream when they can accept more work. This happens automatically and doesn't require a policy setting — the `Stream` runtime handles it.
+Effectful steps are sequential by default (`map_effect`). Bound concurrency explicitly with
+`map_effect_par(n, f)`: at most `n` element effects run at once, as child fibers of the pulling
+fiber, and the output keeps stream order. Since the next chunk is pulled only when the current one
+is done, this is backpressure too.
 
-For explicit control over concurrency in `flat_map`:
-
-```rust
-stream
-    .flat_map_with_concurrency(4, |id| fetch_record(id))
-    // Only 4 fetch_record effects run concurrently
-    // Others wait until a slot frees — natural backpressure
+```rust,ignore
+let fetched = ids.map_effect_par(4, |id| fetch_record(id)); // at most 4 in flight
 ```
 
-## Monitoring Drops
-
-When using `DropLatest` or `DropOldest`, you often want to know how many events were dropped:
-
-```rust
-let (stream, dropped_counter) = stream_from_channel_with_policy_and_counter(
-    rx,
-    1024,
-    BackpressurePolicy::DropOldest,
-);
-
-// Periodically log the counter
-effect! {
-    loop {
-        let n = dropped_counter.load(Ordering::Relaxed);
-        if n > 0 {
-            ~ log.warn(format!("Dropped {n} events due to backpressure"));
-        }
-        ~ sleep(Duration::from_secs(10));
-    }
-}
-```
+Other bounded buffers: `Sink::to_queue(queue)` suspends on a full bounded queue, and `broadcast`
+gives each branch its own sliding queue.
 
 ## Summary
 
-Always choose a backpressure policy explicitly. The default (`Block`) is safe but can stall producers. `DropOldest` is often right for real-time data. `DropLatest` is right when order matters but throughput doesn't. `Unbounded` is only acceptable when the rate is truly bounded by the domain.
+Choose the policy where a push producer meets a stream. `BoundedBlock` is the safe default but
+can stall producers; `DropOldest` suits real-time data; `DropNewest` sheds load; `Fail` makes
+overflow visible.

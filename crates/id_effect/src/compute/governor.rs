@@ -1,7 +1,7 @@
 //! Fabric governor control loop (monitor → admit → rebalance).
 //!
 //! This is *resource governance* (admission, thread sizing, scale-out), not fault supervision;
-//! restart policies live in [`crate::concurrency::Supervisor`].
+//! restart policies live in the `Supervisor`.
 
 use std::sync::{Arc, RwLock};
 
@@ -15,8 +15,6 @@ use crate::observability::{ComputeEvent, record_compute_event};
 
 /// Resource governor for a [`super::ComputeFabric`]: compares telemetry to [`ResourcePolicy`]
 /// and throttles admission, resizes Rayon, or emits scale-out jobs.
-///
-/// Formerly `ComputeSupervisor` (deprecated alias kept for one release).
 #[derive(Debug)]
 pub struct FabricGovernor<E: TelemetryEngine> {
   policy: ResourcePolicy,

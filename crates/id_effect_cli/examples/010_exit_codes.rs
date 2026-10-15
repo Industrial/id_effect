@@ -6,7 +6,8 @@
 
 use std::process::ExitCode;
 
-use id_effect::{Cause, Exit, FiberId, fail, succeed};
+use id_effect::{Cause, Exit, FiberId};
+use id_effect::{HNil, die, fail, succeed};
 use id_effect_cli::{RunMainConfig, cause_max_exit_byte, exit_code_for_exit, run_main};
 
 fn main() -> ExitCode {
@@ -20,19 +21,23 @@ fn main() -> ExitCode {
   }
 
   match std::env::args().nth(1).as_deref().unwrap_or("ok") {
-    // `run_main` drives the effect, prints `Err` to stderr and maps the `Result`.
+    // `run_main` drives the effect, prints a failure to stderr and maps its `Exit`.
     "ok" => run_main(
-      succeed::<_, String, ()>("done"),
-      (),
+      succeed::<_, String, HNil>("done"),
+      HNil,
       RunMainConfig::minimal(),
     ),
     "fail" => run_main(
-      fail::<(), _, ()>("bad input".to_string()),
-      (),
+      fail::<(), _, HNil>("bad input".to_string()),
+      HNil,
       RunMainConfig::minimal(),
     ),
-    // With a full `Exit` (e.g. from a fiber join), defects and interrupts keep their codes.
-    "die" => exit_code_for_exit(Exit::<(), String>::Failure(Cause::die("bug"))),
+    "die" => run_main(
+      die::<(), String, HNil>("bug"),
+      HNil,
+      RunMainConfig::minimal(),
+    ),
+    // With a full `Exit` (e.g. from a fiber join), the same mapping applies.
     "interrupt" => exit_code_for_exit(Exit::<(), String>::Failure(Cause::interrupt(FiberId::new(
       1,
     )))),

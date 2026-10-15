@@ -1,0 +1,113 @@
+[1m[92m    Finished[0m ]8;;https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles\`bench` profile [optimized + debuginfo]]8;;\ target(s) in 0.22s
+[1m[92m     Running[0m benches/probe.rs (.tmp/target-probe/release/deps/probe-2ab08e36b9df5189)
+Gnuplot not found, using plotters backend
+Benchmarking probe/async_bind/v06/1
+Benchmarking probe/async_bind/v06/1: Warming up for 3.0000 s
+Benchmarking probe/async_bind/v06/1: Collecting 100 samples in estimated 5.0001 s (136M iterations)
+Benchmarking probe/async_bind/v06/1: Analyzing
+probe/async_bind/v06/1  time:   [37.277 ns 37.527 ns 37.915 ns]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/async_bind/a/1
+Benchmarking probe/async_bind/a/1: Warming up for 3.0000 s
+Benchmarking probe/async_bind/a/1: Collecting 100 samples in estimated 5.0005 s (41M iterations)
+Benchmarking probe/async_bind/a/1: Analyzing
+probe/async_bind/a/1    time:   [121.46 ns 121.72 ns 121.97 ns]
+Benchmarking probe/async_bind/b/1
+Benchmarking probe/async_bind/b/1: Warming up for 3.0000 s
+Benchmarking probe/async_bind/b/1: Collecting 100 samples in estimated 5.0002 s (35M iterations)
+Benchmarking probe/async_bind/b/1: Analyzing
+probe/async_bind/b/1    time:   [141.13 ns 141.35 ns 141.60 ns]
+Found 4 outliers among 100 measurements (4.00%)
+  1 (1.00%) low mild
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/async_bind/v06/16
+Benchmarking probe/async_bind/v06/16: Warming up for 3.0000 s
+Benchmarking probe/async_bind/v06/16: Collecting 100 samples in estimated 5.0010 s (11M iterations)
+Benchmarking probe/async_bind/v06/16: Analyzing
+probe/async_bind/v06/16 time:   [455.07 ns 455.86 ns 456.67 ns]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/async_bind/a/16
+Benchmarking probe/async_bind/a/16: Warming up for 3.0000 s
+Benchmarking probe/async_bind/a/16: Collecting 100 samples in estimated 5.0046 s (3.9M iterations)
+Benchmarking probe/async_bind/a/16: Analyzing
+probe/async_bind/a/16   time:   [1.2768 µs 1.2780 µs 1.2792 µs]
+Found 1 outliers among 100 measurements (1.00%)
+  1 (1.00%) high mild
+Benchmarking probe/async_bind/b/16
+Benchmarking probe/async_bind/b/16: Warming up for 3.0000 s
+Benchmarking probe/async_bind/b/16: Collecting 100 samples in estimated 5.0034 s (5.8M iterations)
+Benchmarking probe/async_bind/b/16: Analyzing
+probe/async_bind/b/16   time:   [856.48 ns 860.25 ns 864.43 ns]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/async_bind/v06/64
+Benchmarking probe/async_bind/v06/64: Warming up for 3.0000 s
+Benchmarking probe/async_bind/v06/64: Collecting 100 samples in estimated 5.0080 s (2.4M iterations)
+Benchmarking probe/async_bind/v06/64: Analyzing
+probe/async_bind/v06/64 time:   [2.1091 µs 2.1245 µs 2.1450 µs]
+Found 3 outliers among 100 measurements (3.00%)
+  2 (2.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/async_bind/a/64
+Benchmarking probe/async_bind/a/64: Warming up for 3.0000 s
+Benchmarking probe/async_bind/a/64: Collecting 100 samples in estimated 5.0190 s (944k iterations)
+Benchmarking probe/async_bind/a/64: Analyzing
+probe/async_bind/a/64   time:   [5.2697 µs 5.2761 µs 5.2833 µs]
+Found 7 outliers among 100 measurements (7.00%)
+  5 (5.00%) high mild
+  2 (2.00%) high severe
+Benchmarking probe/async_bind/b/64
+Benchmarking probe/async_bind/b/64: Warming up for 3.0000 s
+Benchmarking probe/async_bind/b/64: Collecting 100 samples in estimated 5.0092 s (1.4M iterations)
+Benchmarking probe/async_bind/b/64: Analyzing
+probe/async_bind/b/64   time:   [3.5671 µs 3.5885 µs 3.6109 µs]
+Benchmarking probe/async_bind/v06/256
+Benchmarking probe/async_bind/v06/256: Warming up for 3.0000 s
+Benchmarking probe/async_bind/v06/256: Collecting 100 samples in estimated 5.0106 s (576k iterations)
+Benchmarking probe/async_bind/v06/256: Analyzing
+probe/async_bind/v06/256
+                        time:   [8.7751 µs 8.8032 µs 8.8307 µs]
+Benchmarking probe/async_bind/a/256
+Benchmarking probe/async_bind/a/256: Warming up for 3.0000 s
+Benchmarking probe/async_bind/a/256: Collecting 100 samples in estimated 5.0260 s (278k iterations)
+Benchmarking probe/async_bind/a/256: Analyzing
+probe/async_bind/a/256  time:   [18.117 µs 18.168 µs 18.219 µs]
+Found 6 outliers among 100 measurements (6.00%)
+  6 (6.00%) high mild
+Benchmarking probe/async_bind/b/256
+Benchmarking probe/async_bind/b/256: Warming up for 3.0000 s
+Benchmarking probe/async_bind/b/256: Collecting 100 samples in estimated 5.0061 s (333k iterations)
+Benchmarking probe/async_bind/b/256: Analyzing
+probe/async_bind/b/256  time:   [14.818 µs 14.846 µs 14.878 µs]
+
+Benchmarking probe/flat_map_depth_10k_bb/v06
+Benchmarking probe/flat_map_depth_10k_bb/v06: Warming up for 3.0000 s
+Benchmarking probe/flat_map_depth_10k_bb/v06: Collecting 100 samples in estimated 5.4913 s (10k iterations)
+Benchmarking probe/flat_map_depth_10k_bb/v06: Analyzing
+probe/flat_map_depth_10k_bb/v06
+                        time:   [521.94 µs 524.79 µs 528.30 µs]
+Benchmarking probe/flat_map_depth_10k_bb/a
+Benchmarking probe/flat_map_depth_10k_bb/a: Warming up for 3.0000 s
+Benchmarking probe/flat_map_depth_10k_bb/a: Collecting 100 samples in estimated 7.0270 s (15k iterations)
+Benchmarking probe/flat_map_depth_10k_bb/a: Analyzing
+probe/flat_map_depth_10k_bb/a
+                        time:   [457.62 µs 459.02 µs 460.52 µs]
+Found 2 outliers among 100 measurements (2.00%)
+  1 (1.00%) high mild
+  1 (1.00%) high severe
+Benchmarking probe/flat_map_depth_10k_bb/b
+Benchmarking probe/flat_map_depth_10k_bb/b: Warming up for 3.0000 s
+Benchmarking probe/flat_map_depth_10k_bb/b: Collecting 100 samples in estimated 5.0010 s (2.7M iterations)
+Benchmarking probe/flat_map_depth_10k_bb/b: Analyzing
+probe/flat_map_depth_10k_bb/b
+                        time:   [1.8512 µs 1.8541 µs 1.8572 µs]
+Found 7 outliers among 100 measurements (7.00%)
+  4 (4.00%) high mild
+  3 (3.00%) high severe
+

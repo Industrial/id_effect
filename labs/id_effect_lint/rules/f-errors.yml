@@ -9,7 +9,7 @@
     semantics. Use `Or<E1, E2>` or a flat error sum type.
   note: |
     BAD:  pub fn parse(…) -> Result<Result<Value, ParseError>, IoError> { … }
-    GOOD: pub fn parse(…) -> Effect<Value, Or<ParseError, IoError>, ()> { … }
+    GOOD: pub fn parse(…) -> Effect<Value, Or<ParseError, IoError>> { … }
   rule:
     pattern: Result<Result<$OK, $INNER_ERR>, $OUTER_ERR>
 # ──────────────────────────────────────────────────────────────────────────────
@@ -39,11 +39,11 @@
     `.unwrap()` / `.expect(…)` in an Effect-returning function will panic
     instead of propagating failures through the effect channel.
   note: |
-    BAD:  fn parse_config() -> Effect<Config, Infallible, ()> {
-              effect! { serde_json::from_str(&s).unwrap() }
+    BAD:  fn parse_config() -> Effect<Config, Infallible> {
+              effect!({ serde_json::from_str(&s).unwrap() })
           }
-    GOOD: fn parse_config() -> Effect<Config, ParseError, ()> {
-              effect! { ~ Effect::from_result(serde_json::from_str(&s)) }
+    GOOD: fn parse_config() -> Effect<Config, ParseError> {
+              effect!({ serde_json::from_str(&s)? })
           }
   rule:
     all:
@@ -75,8 +75,8 @@
     `panic!` / `unreachable!` / `todo!` in an Effect-returning function bypasses
     the effect failure channel.
   note: |
-    BAD:  fn load() -> Effect<Data, LoadError, ()> { effect! { panic!("not implemented") } }
-    GOOD: fn load() -> Effect<Data, LoadError, ()> { fail(LoadError::NotImplemented) }
+    BAD:  fn load() -> Effect<Data, LoadError> { effect!({ panic!("not implemented") }) }
+    GOOD: fn load() -> Effect<Data, LoadError> { fail(LoadError::NotImplemented) }
   rule:
     all:
       - any:

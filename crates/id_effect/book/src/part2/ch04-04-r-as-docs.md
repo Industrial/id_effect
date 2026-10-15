@@ -1,91 +1,66 @@
 # R as Documentation — Self-Describing Functions
 
-The `R` parameter is often described as "the environment type." That's true, but it undersells the practical benefit. `R` is *living documentation* that the compiler enforces.
+`R` is "the environment type", but in practice it is also *living documentation* that the
+compiler enforces.
 
 ## The Signature Tells the Story
 
-Consider two versions of the same function:
+```rust,ignore
+// Version A: traditional async. What does it use? Read the body to find out.
+async fn process_order(order: Order) -> Result<Receipt, Error> { /* 200 lines */ }
 
-```rust
-// Version A: traditional async
-async fn process_order(order: Order) -> Result<Receipt, Error> {
-    // What does this use? Read the body to find out.
-    // Database? PaymentGateway? Email? Metrics?
-    // You'll have to trace through 200 lines to know.
-}
-
-// Version B: effect-based
-fn process_order(order: Order) -> Effect<
-    Receipt,
-    OrderError,
-    caps!(Database, PaymentGateway, EmailService, EffectLogger),
-> {
-    // What does this use? Look at the signature.
-    // Database ✓, PaymentGateway ✓, EmailService ✓, Logger ✓
-    // Done.
-}
+// Version B: effect-based. What does it use? Read the signature.
+fn process_order(order: Order)
+  -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
+{ /* ... */ }
 ```
-
-Version B's type is self-describing. You don't need to read the implementation to understand its dependency surface.
 
 ## Code Review Benefits
 
-In a pull request, `R` changes are visible in the diff. If someone adds a call to `send_metrics()` inside `process_order` and `MetricsClient` wasn't previously in `R`, the function signature must change:
+If someone adds a metrics call inside `process_order`, the body only compiles once `Metrics` is in
+`R`, so the signature changes in the diff:
 
 ```diff
-- fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, EmailService, EffectLogger)>
-+ fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, EmailService, EffectLogger, MetricsClient)>
+- fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
++ fn process_order(order: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog, Metrics)>
 ```
 
-This diff is in the function signature — impossible to miss. With traditional parameters or singletons, new dependencies can silently appear in implementation bodies.
+With parameters threaded by hand or with globals, a new dependency can appear silently in a body.
 
 ## Refactoring Safety
 
-When you refactor and remove a dependency, the compiler finds all the places that were providing the now-unnecessary value. The `R` type shrinks, and provider lists that still register removed keys become visible during review.
-
-```rust
-// After removing EffectLogger from process_order's caps! list:
-
-// Callers must drop LoggerLive from run_with when nothing in the graph needs it
-run_with(
-    [provide!(DatabaseLive)], // LoggerLive no longer required by this effect
-    process_order(order),
-)?;
-```
-
-The compiler guides you to clean up wiring. Traditional code leaves stale dependencies silently lingering.
+Remove `AuditLog` from `process_order`'s `caps!` and every `.provide(audit_log)` aimed at it stops
+compiling: providing a capability the effect does not need is a type error. The compiler walks you through the
+wiring clean-up. (`provide_env` and `provide_layer` accept extra capabilities, so an unused
+capability in an application environment or layer graph is allowed, but it is visible there.)
 
 ## Testing Clarity
 
-When writing a test, `R` tells you exactly what you need to mock:
+The type tells a test exactly what to supply, no more, no less:
 
 ```rust
 #[test]
-fn test_process_order() {
-    // R = caps!(Database, PaymentGateway, EmailService, EffectLogger)
-    // So the test needs these four keys — no more, no less
-    let mut env = Env::new();
-    env.insert::<Cap<Database>>(mock_db());
-    env.insert::<Cap<PaymentGateway>>(mock_payment());
-    env.insert::<Cap<EmailService>>(mock_email());
-    env.insert::<Cap<EffectLogger>>(test_logger());
-
-    let result = run_test(process_order(test_order()), env);
-    assert!(result.is_ok());
+fn process_order_charges_once() {
+  // R = caps!(Database, PaymentGateway, Mailer, AuditLog): four values to provide
+  let exit = process_order(test_order())
+    .provide_env(hlist![mock_db(), mock_payment(), mock_mailer(), AuditLog::memory()])
+    .block_on();
+  assert!(matches!(exit, Exit::Success(_)));
 }
 ```
 
-There's no "I wonder if this also touches the metrics service" uncertainty. The type says it doesn't. If you're missing a mock, the code won't compile or `require!` fails at runtime.
+Missing one is a compile error at `provide_env`, not a failure halfway through the test.
 
 ## R is Not Magic
 
-It's important to understand that `R` is just a type parameter. The "compile-time DI" property comes from:
+`R` is just a type parameter. The compile-time DI comes from:
 
-1. Functions declaring what they need in `R` (usually via `caps!`)
-2. Capability services identifying services in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs)
-3. Composition automatically merging requirements
-4. Wiring centralized at `run_with` / `build_env` boundaries
+1. functions declaring what they need in `R` (usually with `caps!`);
+2. capability lookups (`~Cap`, `need::<Cap>()`) checked against `R` by the type system;
+3. `~` binds lifting each step into the block's environment;
+4. wiring done once at the edge with `provide*` or a `Layer` graph.
 
-There's no reflection, no registration, no framework. Just types.
+No reflection, no registration, no runtime container. Just types.
 
-The next chapter shows how **capability services** and **`Env`** make this scale beyond simple capability lists — handling large, complex dependency graphs without positional ambiguity.
+The next chapter looks at the environment itself: capability types, the HList that holds them, and
+how lookups work.

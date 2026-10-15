@@ -1,5 +1,6 @@
 //! Ex 077 — `TRef` read/write inside `commit`.
-use id_effect::run_blocking;
+use id_effect::Effect;
+use id_effect::{Cause, Exit};
 use id_effect_fp::{TRef, commit};
 
 fn main() {
@@ -14,6 +15,15 @@ fn main() {
       })
       .flat_map(move |_| c2.read_stm::<()>())
   });
-  assert_eq!(run_blocking(commit(stm), ()), Ok(42));
+  assert_eq!(run(commit(stm)), Ok(42));
   println!("077_stm_tref ok");
+}
+
+/// Runs `eff` on the global runtime: `Ok` on success, `Err` on a typed failure.
+fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died or was interrupted"),
+  }
 }

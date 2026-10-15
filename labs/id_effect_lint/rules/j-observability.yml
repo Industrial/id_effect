@@ -9,12 +9,12 @@
     effect that bypasses the effect channel and breaks testability.
   note: |
     BAD:
-      fn load() -> Effect<Data, LoadError, ()> {
-          effect! { println!("loading…"); … }
+      fn load() -> Effect<Data, LoadError> {
+          effect!({ println!("loading…"); … })
       }
     GOOD: use structured spans / tracing hooks:
-      fn load() -> Effect<Data, LoadError, ()> {
-          with_span("load", effect! { … })
+      fn load() -> Effect<Data, LoadError> {
+          effect!({ … }).with_span("load")
       }
   rule:
     all:

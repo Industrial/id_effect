@@ -1,5 +1,8 @@
 //! Unified OpenTelemetry starter: one call to install traces, metrics, logs, and propagation.
 
+use std::sync::Arc;
+
+use id_effect::SpanHook;
 use opentelemetry::global;
 use opentelemetry::metrics::Meter;
 use opentelemetry::metrics::MeterProvider as _;
@@ -12,8 +15,11 @@ use crate::error::OtelError;
 use crate::logs_bridge::{
   sdk_logger_provider_with_in_memory_exporter, try_init_global_tracing_with_otel_logs,
 };
-use crate::metrics_bridge::sdk_meter_provider_with_in_memory_exporter;
+use crate::metrics_bridge::{
+  MetricsBridge, bridge_global_metrics, sdk_meter_provider_with_in_memory_exporter,
+};
 use crate::propagation::install_w3c_propagators;
+use crate::span_bridge::OtelSpanHook;
 use crate::subscriber::{
   register_global_tracer_provider, sdk_tracer_provider_with_in_memory_exporter,
 };
@@ -110,11 +116,15 @@ impl From<&OtelConfig> for OtelStarterConfig {
 
 /// Handle returned after a successful [`install_otel_starter`]; call [`force_flush`](Self::force_flush)
 /// before shutdown and [`shutdown`](Self::shutdown) on graceful exit.
+///
+/// It keeps the [`MetricsBridge`] from `MetricRegistry::global()` to the meter provider alive,
+/// and hands out the span hook ([`span_hook`](Self::span_hook)) to install around the program.
 #[derive(Clone)]
 pub struct OtelStarterGuard {
   providers: OtelProviders,
   service_name: String,
   meter_scope: &'static str,
+  metrics: MetricsBridge,
 }
 
 impl OtelStarterGuard {
@@ -131,6 +141,17 @@ impl OtelStarterGuard {
   /// OpenTelemetry [`Meter`] scoped to the configured service name.
   pub fn meter(&self) -> Meter {
     self.providers.meter.meter(self.meter_scope)
+  }
+
+  /// The bridge exporting `MetricRegistry::global()` through the meter provider.
+  pub fn metrics_bridge(&self) -> &MetricsBridge {
+    &self.metrics
+  }
+
+  /// An [`OtelSpanHook`] on the tracer provider (scope: the service name), as the value
+  /// `Effect::with_span_hook` takes: install it around the root effect to export its spans.
+  pub fn span_hook(&self) -> Arc<dyn SpanHook> {
+    OtelSpanHook::for_provider(&self.providers.tracer, self.service_name.clone()).into_hook()
   }
 
   /// Flushes pending trace, metric, and log batches.
@@ -156,7 +177,11 @@ pub fn install_from_config(config: OtelConfig) -> Result<OtelStarterGuard, OtelE
   install_otel_starter(&providers, &starter).map_err(OtelError::from)
 }
 
-/// Installs global tracer + meter providers, W3C propagation, and a tracing subscriber with OTEL trace + log layers.
+/// Installs global tracer + meter providers, W3C propagation, and a tracing subscriber with OTEL trace + log layers,
+/// then bridges `MetricRegistry::global()` to the meter provider (kept alive by the guard).
+///
+/// Spans are exported once the program runs under [`OtelStarterGuard::span_hook`]
+/// (`effect.with_span_hook(guard.span_hook())`).
 pub fn install_otel_starter(
   providers: &OtelProviders,
   config: &OtelStarterConfig,
@@ -170,21 +195,22 @@ pub fn install_otel_starter(
     config.with_fmt_layer,
     config.env_filter.as_deref(),
   )?;
+  let meter_scope = leak_meter_scope(config.service_name.clone());
   Ok(OtelStarterGuard {
     providers: providers.clone(),
     service_name: config.service_name.clone(),
-    meter_scope: leak_meter_scope(config.service_name.clone()),
+    meter_scope,
+    metrics: bridge_global_metrics(providers.meter.meter(meter_scope)),
   })
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::CounterBridge;
   use crate::logs_bridge::trace_and_log_subscriber_for_providers;
-  use id_effect::run_blocking;
+  use crate::metrics_bridge::bridge_metrics;
+  use id_effect::{Metric, MetricRegistry};
   use opentelemetry::logs::AnyValue;
-  use opentelemetry::metrics::MeterProvider;
 
   #[test]
   fn exports_traces_metrics_and_logs_via_scoped_subscriber() {
@@ -192,15 +218,14 @@ mod tests {
     let providers = OtelProviders::with_in_memory_exporters(&exporters);
     let subscriber =
       trace_and_log_subscriber_for_providers(&providers.tracer, &providers.logger, false, None);
+    let registry = MetricRegistry::new();
+    let _bridge = bridge_metrics(&registry, providers.meter.meter("starter_test"));
     tracing::subscriber::with_default(subscriber, || {
       register_global_tracer_provider(&providers.tracer);
       global::set_meter_provider(providers.meter.clone());
       install_w3c_propagators();
 
-      let meter = providers.meter.meter("starter_test");
-      let local = id_effect::Metric::counter("req", Vec::<(String, String)>::new());
-      let bridge = CounterBridge::new(local, &meter, "req_otel");
-      let _ = run_blocking(bridge.apply(2), ());
+      registry.counter("req").update_now(2);
 
       let span = tracing::info_span!("starter_span");
       let _g = span.enter();
@@ -215,7 +240,14 @@ mod tests {
     assert!(spans.iter().any(|s| s.name == "starter_span"));
 
     let metrics = exporters.metrics.get_finished_metrics().expect("metrics");
-    assert!(!metrics.is_empty());
+    assert!(
+      metrics
+        .iter()
+        .flat_map(|rm| rm.scope_metrics())
+        .flat_map(|sm| sm.metrics())
+        .any(|m| m.name() == "req"),
+      "expected the bridged `req` counter, got {metrics:?}"
+    );
 
     let logs = exporters.logs.get_emitted_logs().expect("logs");
     assert!(logs.iter().any(|l| {

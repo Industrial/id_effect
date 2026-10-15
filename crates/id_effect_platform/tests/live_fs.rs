@@ -1,6 +1,8 @@
 //! Integration tests for [`id_effect_platform::fs::LiveFileSystem`] (Tokio-backed I/O).
 
-use id_effect::run_async;
+mod common;
+
+use common::run;
 use id_effect_platform::error::FsError;
 use id_effect_platform::fs::{FileSystem, LiveFileSystem};
 use tempfile::tempdir;
@@ -11,20 +13,16 @@ async fn live_write_read_append_metadata_remove_round_trip() {
   let path = dir.path().join("data.bin");
   let fs = LiveFileSystem::new();
 
-  run_async(fs.write(&path, b"ab"), ()).await.expect("write");
-  let n = run_async(fs.metadata_len(&path), ())
-    .await
-    .expect("metadata");
+  run(fs.write(&path, b"ab")).await.expect("write");
+  let n = run(fs.metadata_len(&path)).await.expect("metadata");
   assert_eq!(n, 2);
 
-  run_async(fs.append(&path, b"c"), ()).await.expect("append");
-  let body = run_async(fs.read(&path), ()).await.expect("read");
+  run(fs.append(&path, b"c")).await.expect("append");
+  let body = run(fs.read(&path)).await.expect("read");
   assert_eq!(body, b"abc");
 
-  run_async(fs.remove_file(&path), ()).await.expect("remove");
-  let err = run_async(fs.read(&path), ())
-    .await
-    .expect_err("missing file");
+  run(fs.remove_file(&path)).await.expect("remove");
+  let err = run(fs.read(&path)).await.expect_err("missing file");
   assert!(
     matches!(err, FsError::Io(ref e) if e.kind() == std::io::ErrorKind::NotFound),
     "unexpected err: {err:?}"
@@ -38,13 +36,11 @@ async fn live_create_dir_all_nested_then_write_under() {
   let file = nested_dir.join("f.txt");
   let fs = LiveFileSystem::new();
 
-  run_async(fs.create_dir_all(&nested_dir), ())
-    .await
-    .expect("mkdir");
-  run_async(fs.write(&file, b"x"), ())
+  run(fs.create_dir_all(&nested_dir)).await.expect("mkdir");
+  run(fs.write(&file, b"x"))
     .await
     .expect("write under nested");
-  let got = run_async(fs.read(&file), ()).await.expect("read");
+  let got = run(fs.read(&file)).await.expect("read");
   assert_eq!(got, b"x");
 }
 
@@ -53,7 +49,7 @@ async fn live_exists_reflects_file_presence() {
   let dir = tempfile::tempdir().expect("tempdir");
   let path = dir.path().join("probe.txt");
   let fs = LiveFileSystem::new();
-  assert!(!run_async(fs.exists(&path), ()).await.expect("exists"));
-  run_async(fs.write(&path, b"x"), ()).await.expect("write");
-  assert!(run_async(fs.exists(&path), ()).await.expect("exists"));
+  assert!(!run(fs.exists(&path)).await.expect("exists"));
+  run(fs.write(&path, b"x")).await.expect("write");
+  assert!(run(fs.exists(&path)).await.expect("exists"));
 }

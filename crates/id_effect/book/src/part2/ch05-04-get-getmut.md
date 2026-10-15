@@ -1,80 +1,106 @@
-# `Needs` and `~Key` — Reading from `Env`
+# Reading Capabilities — `~Cap`, `need` and `Ctx`
 
-To use a capability inside an effect, declare required keys in `R` with [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and borrow with `~Key`, [`require!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), or `Needs::need`.
+Declare what an effect needs in `R` with `caps!`, then read it in one of three ways. All three are
+checked at compile time against `R`.
 
-## Declaring requirements with `caps!`
-
-Put the keys your effect needs in the third type parameter:
+## `~Cap` inside `effect!`
 
 ```rust
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { ... }
-fn notify_user(id: u64, msg: &str) -> Effect<(), AppError, caps!(UserRepo, EmailService)> { ... }
+use id_effect::{Effect, Exit, Never, caps, effect};
+
+#[derive(Debug)]
+struct Greeting(&'static str);
+
+fn answer() -> Effect<u32> {
+  id_effect::succeed(42)
+}
+
+fn hello() -> Effect<String, Never, caps!(Greeting)> {
+  effect!({ format!("{}:{}", ~Greeting.0, ~answer()) })
+}
+
+let out = hello().provide(Greeting("hi")).block_on();
+assert!(matches!(out, Exit::Success(ref s) if s == "hi:42"));
 ```
 
-Library helpers can stay generic when callers supply a wider `Env`:
+`~Greeting` is an `&Arc<Greeting>` borrowed from the environment; what follows it (`.0`, a method
+call) is plain Rust on that reference. The closure form names the whole environment:
+`effect!(|r: &caps!(Greeting, Counter)| { .. })` binds `r` and fixes `R`.
+
+## `need::<T>()` outside the macro
+
+`need::<T>()` builds a lookup that you finish with `.effect()`, `.map(..)` or `.flat_map(..)`:
 
 ```rust
-fn get_user<R>(id: u64) -> Effect<User, DbError, R>
+use std::sync::Arc;
+use id_effect::{Effect, HCons, HNil, hlist, need};
+
+struct Db(u32);
+struct Logger(&'static str);
+type DbLog = HCons<Db, HCons<Logger, HNil>>;
+
+let db: Effect<Arc<Db>, (), DbLog> = need::<Db>().effect();
+let len: Effect<u32, (), DbLog> = need::<Logger>().map(|l| l.0.len() as u32);
+let sum: Effect<u32, (), DbLog> =
+  need::<Db>().flat_map(|db| need::<Logger>().map(move |l| db.0 + l.0.len() as u32));
+
+let exit = sum.provide_all(hlist![Db(10), Logger("ab")]).block_on(); // Success(12)
+```
+
+`need` is the tool for library code that is generic over its environment:
+
+```rust,ignore
+use id_effect::{Effect, HList, Selector, need};
+
+fn audit<R, I>(line: String) -> Effect<(), AppError, R>
 where
-    R: id_effect::Needs<Database> + 'static,
+  R: HList + Selector<Logger, I> + Send + Sync + 'static,
 {
-    effect!(|r: &mut R| {
-        let db = ~Database;
-        db.fetch_user(id)
-    })
+  need::<Logger>().map(move |log| log.info(line))
 }
 ```
 
-## `~Key` — capability lookup inside effect bodies
+## `Ctx` in hand-written async steps
 
-```rust
-use id_effect::{effect, require, caps};
+`Effect::from_ctx` gives an async step direct access to its context: `ctx.get::<T, _>()` reads a
+capability and `ctx.env()` is the whole environment.
 
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r| {
-        let db = ~Database;
-        db.fetch_user(id)
-    })
+```rust,ignore
+fn describe() -> Effect<String, (), DbLog> {
+  Effect::from_ctx(|ctx| async move {
+    Ok(format!("{}:{}", ctx.get::<Db, _>().0, ctx.get::<Logger, _>().0))
+  })
 }
 ```
 
-`~Key` inside `effect!` expands to a typed borrow from `r`. `require!(K)` is equivalent sugar.
+## No `get_mut`
 
-If `get_user` requires `Database` but you run it with an empty `Env`, you get a **runtime** missing-capability error when the effect executes — not a silent `None`. For static verification, keep `caps!(…)` or `Needs<K>` bounds on public APIs so callers must wire providers before `run_with`.
+Capabilities are shared `Arc`s, so there is no mutable lookup. State that changes lives behind
+interior mutability inside the capability: a `Mutex`, an atomic, or an effect-aware `Ref` /
+`SynchronizedRef` from the coordination module.
 
-When building tests manually:
+## When a capability is missing
 
-```rust
-let mut env = Env::new();
-// forgot env.insert::<Cap<Database>>(...)
-run_blocking(get_user(42), env); // panics on ~Key / get
-```
-
-The lookups are `#[track_caller]`, so the panic points at **your** code, not at `id_effect` internals:
+A missing capability never reaches run time with a typed `R`:
 
 ```text
-missing capability `my_app::Database` (required at src/users.rs:14:19)
-  hint: register a provider with `provide!(…)` in `run_with` / `build_env`, and list the service in the effect's `caps!(…)` so `run_with` verifies it up front
+error[E0277]: capability `Metrics` is not in this effect's environment
+  --> src/handler.rs:14:14
+   |
+14 |     let m = ~Metrics;
+   |              ^^^^^^^ `Metrics` is required here
+   = note: add `Metrics` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
 ```
 
-`Env::try_get` returns the same information as [`CapabilityError::MissingAt`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs) (`err.location()` is the caller's `file:line:column`), and binding a narrower effect with `~inner()` names the `~` call site when the wider environment lacks a key. `run_with` reports an unprovided service before the program starts as `RunError::Capability(CapabilityError::Missing(…))`, displayed as ``missing capability `my_app::Database` ``.
-
-Compile-time mistakes get targeted messages too — for example, looking up a service in an effect whose environment is `()`:
-
-```text
-error[E0277]: environment `()` cannot provide capability `Database`
-  = note: run the effect in a capability environment: `Effect<_, _, caps!(Database)>` (or `Env`), not `()`
-```
-
-Prefer `build_env` or typed test helpers so incomplete wiring fails at setup time.
+Only `DynEnv` lookups (`try_need`) can fail at run time, and they fail with a typed
+`MissingCapability` error rather than a panic.
 
 ## Summary
 
 | Tool | Use |
 |------|-----|
-| `caps!(K1, K2, …)` | Declare dependencies in `R` |
-| `~Key` / `require!(K)` | Borrow inside `effect!` |
-| `env.get::<Cap<K>>()` | Direct access when you hold `&Env` |
-| `env.try_get::<Cap<K>>()` | Fallible lookup without panic |
-
-An application that satisfies all `Needs` bounds at the edge and passes a complete provider list to `run_with` is an application where every dependency is explicit — no service-locator globals.
+| `caps!(K1, K2, ..)` | declare dependencies in `R` |
+| `~Cap` | read inside `effect!` |
+| `need::<Cap>()` | read in combinator code or generic helpers |
+| `ctx.get::<Cap, _>()` | read inside `Effect::from_ctx` |
+| `try_need::<Cap>()` | fallible lookup in a `DynEnv` |

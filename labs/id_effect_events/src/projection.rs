@@ -1,8 +1,8 @@
 //! Fold event streams into read models.
 
+use crate::edge::run_sync;
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
-use id_effect::run_blocking;
 
 /// Stateful fold over a domain event type.
 pub trait Projection<S, E> {
@@ -36,7 +36,7 @@ where
   Store: EventStore<E>,
   E: Clone + Send + Sync + 'static,
 {
-  let stored = run_blocking(store.read(stream_id, from_version), ())?;
+  let stored = run_sync(store.read(stream_id, from_version))?;
   let events = stored.into_iter().map(|s: StoredEvent<E>| s.payload);
   Ok(run_projection(projection, events))
 }
@@ -44,8 +44,8 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::edge::run_sync;
   use crate::event_store::MemoryEventStore;
-  use id_effect::run_blocking;
 
   #[derive(Clone, Debug, PartialEq, Eq)]
   enum Evt {
@@ -78,7 +78,7 @@ mod tests {
   #[test]
   fn run_projection_from_store_reads_stream() {
     let store = MemoryEventStore::new();
-    run_blocking(store.append("wallet", &[Evt::Added(7), Evt::Added(2)]), ()).expect("append");
+    run_sync(store.append("wallet", &[Evt::Added(7), Evt::Added(2)])).expect("append");
     let state = run_projection_from_store(&store, "wallet", 1, &Balance).expect("project");
     assert_eq!(state, 9);
   }

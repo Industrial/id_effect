@@ -5,59 +5,48 @@ can only afford K of them at once. A common hand-rolled answer is a `Mutex` + `C
 around `std::process::Command`. That works, but it blocks threads, is hard to test, and ignores the
 effect runtime you already have.
 
-**Recipe.** Start every job concurrently and let a core `Semaphore` with K permits decide which
-ones run. Each job:
+**Recipe.** Fork every job at once with `for_each_par` and let a core `Semaphore` with K permits
+decide which ones run. Each job runs its command through the `ProcessRuntimeService` capability
+(`id_effect_platform::command`) inside `sem.with_permit(..)`, which waits for a permit and releases
+it however the job ends: success, failure or interruption.
 
-1. waits for a permit (`Semaphore::acquire_owned`),
-2. runs its command through the `ProcessRuntimeService` capability (`id_effect_platform::command`),
-3. gives the permit back when the permit value is dropped. That happens on success, failure and
-   cancellation alike.
-
-```rust
-use id_effect::{Effect, Needs, Semaphore, box_future, run_async};
-use id_effect_platform::command::{CommandSpec, ProcessRuntimeService, spawn_wait};
+```rust,ignore
+use id_effect::{Concurrency, Effect, Exit, Semaphore, for_each_par};
+use id_effect_platform::command::{
+  CommandSpec, ProcessRuntimeEnv, TokioProcessRuntimeProvider, spawn_wait,
+};
 use id_effect_platform::error::ProcessError;
+use id_effect_tokio::TokioRuntime;
 
-fn bounded_job<R>(sem: Semaphore, cmd: CommandSpec) -> Effect<i32, ProcessError, R>
-where
-  R: Needs<ProcessRuntimeService> + 'static,
-{
-  Effect::new_async(move |r: &mut R| {
-    let run = spawn_wait::<R>(cmd);
-    box_future(async move {
-      // Waits while all K permits are taken; `_permit` releases on drop.
-      let _permit = match run_async(sem.acquire_owned(), ()).await {
-        Ok(permit) => permit,
-        Err(never) => match never {},
-      };
-      let status = run.run(r).await?;
-      Ok(status.code().unwrap_or(-1))
-    })
-  })
+/// One job: run `cmd` holding a permit, yield the exit code.
+fn bounded_job(sem: &Semaphore, cmd: CommandSpec) -> Effect<i32, ProcessError, ProcessRuntimeEnv> {
+  let job = spawn_wait(cmd).map(|status| status.code().unwrap_or(-1));
+  sem.with_permit(job) // waits while all K permits are taken
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+  let sem = Semaphore::new(3);
+  let jobs = for_each_par(
+    commands,
+    |cmd| bounded_job(&sem, cmd),
+    Concurrency::Unbounded, // the semaphore, not the fork policy, bounds the pool
+  );
+  // Capabilities are provided once, at the edge, by the process layer.
+  let program = jobs.provide_layer(TokioProcessRuntimeProvider::layer());
+  let codes: Vec<i32> = match TokioRuntime::current().expect("tokio").run(program).await {
+    Exit::Success(codes) => codes,
+    Exit::Failure(cause) => panic!("jobs failed: {cause:?}"),
+  };
 }
 ```
 
-At the edge, build the semaphore and the capability once, then start all jobs. The example uses a
-current-thread Tokio runtime with a `LocalSet`, so nothing has to be `Send`:
+`for_each_par` returns the results in input order. The runnable example counts how many jobs are
+inside the permit at once and asserts the peak never exceeds K. To stay portable, its "external
+command" is the example binary itself, re-invoked as `child <exit-code>`.
 
-```rust
-let sem = run_blocking(Semaphore::make(3), ()).expect("semaphore");
-let env = build_env([provide!(TokioProcessRuntimeProvider)]).expect("env");
-
-let local = tokio::task::LocalSet::new();
-let codes: Vec<i32> = local.run_until(async {
-  let handles: Vec<_> = commands.into_iter()
-    .map(|cmd| tokio::task::spawn_local(run_async(bounded_job(sem.clone(), cmd), env.clone())))
-    .collect();
-  let mut codes = Vec::new();
-  for h in handles { codes.push(h.await.expect("join").expect("spawn")); }
-  codes
-}).await;
-```
-
-The runnable example counts how many jobs are inside the permit at once and asserts the peak never
-exceeds K. To stay portable, its "external command" is the example binary itself, re-invoked as
-`child <exit-code>`.
+`Concurrency::Bounded(k)` on `for_each_par` would also cap the pool. The semaphore is the better
+fit when the limit must be shared by jobs started from different places.
 
 Full example: [`crates/id_effect_platform/examples/152_cookbook_bounded_command_pool.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_platform/examples/152_cookbook_bounded_command_pool.rs)
 

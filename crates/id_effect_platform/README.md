@@ -2,41 +2,50 @@
 
 Cross-cutting **platform** capabilities (HTTP, filesystem, subprocess commands) for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 
-Each boundary is a capability trait stored in an `id_effect::Env`: production code registers the live implementation (reqwest, `tokio::fs`, `tokio::process`), tests swap in a double — the effect code does not change.
+Each boundary is a capability (`HttpClientService`, `FileSystemService`, `ProcessRuntimeService`) in the typed environment of an `id_effect::Effect`, provided by an `id_effect::Layer`: production code provides the live layer (reqwest, `tokio::fs`, `tokio::process`), tests provide a double — the effect code does not change.
 
 ## Quick start
 
 ```rust
-use std::sync::Arc;
-
-use id_effect::{Effect, Env, fail, run_blocking, succeed};
+use id_effect::Exit;
+use id_effect::{Effect, fail, succeed};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClient, HttpRequest, HttpResponse, StreamingHttpResponse, env_set_http_client, execute,
+  HttpClient, HttpClientEnv, HttpRequest, HttpResponse, StreamingHttpResponse, execute,
+  provide_http_client,
 };
 
 /// Test double: echoes the URL back as the body.
 struct Canned;
 
 impl HttpClient for Canned {
-  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError, ()> {
+  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
     succeed(HttpResponse { status: 200, headers: vec![], body: req.url.into_bytes() })
   }
 
-  fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError, ()> {
+  fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
     fail(HttpError::InvalidRequest("no streaming in this double".into()))
   }
 }
 
 fn main() {
-  // Production: `id_effect::run_with([provide_reqwest_http_client()], execute(..))`.
-  let mut env = Env::new();
-  env_set_http_client(&mut env, Arc::new(Canned));
-
-  let res = run_blocking(execute::<Env>(HttpRequest::get("https://example.com/hi")), env).unwrap();
+  // Production: `.provide_layer(ReqwestHttpClientProvider::layer())`, run on
+  // `id_effect_tokio::TokioRuntime` (reqwest needs the tokio IO driver).
+  let program = execute::<HttpClientEnv, _>(HttpRequest::get("https://example.com/hi"))
+    .provide_layer(provide_http_client(Canned));
+  let Exit::Success(res) = program.block_on() else { panic!("request failed") };
   assert_eq!(res.status, 200);
   assert_eq!(res.body, b"https://example.com/hi");
 }
+```
+
+The layers merge into one platform environment:
+
+```rust,ignore
+let platform = LiveFileSystemProvider::layer()
+  .merge(ReqwestHttpClientProvider::layer())
+  .merge(TokioProcessRuntimeProvider::layer());
+let exit = TokioRuntime::current()?.run(program.provide_layer(platform)).await;
 ```
 
 ## Modules
@@ -44,10 +53,10 @@ fn main() {
 | Module | Description |
 |--------|-------------|
 | [`error`](src/error.rs) | `HttpError`, `FsError`, `ProcessError`, `PlatformError` |
-| [`http`](src/http/mod.rs) | `HttpClient`, `ReqwestHttpClient`, `execute`, `execute_stream`, `provide_reqwest_http_client` |
-| [`http::reqwest`](src/http/reqwest.rs) | `send`, `json`, `json_schema`, pools (`provide_reqwest_pool`) |
-| [`fs`](src/fs.rs) | `FileSystem`, `LiveFileSystem`, `TestFileSystem`, `FileSystemKey` |
-| [`command`](src/command.rs) (was `process`) | `ProcessRuntime`, `TokioProcessRuntime`, `ProcessRuntimeKey` |
+| [`http`](src/http/mod.rs) | `HttpClient`, `ReqwestHttpClient`, `HttpBody`, `execute`, `execute_stream`; layers `ReqwestHttpClientProvider::layer` / `provide_reqwest_http_client`, `provide_http_client` |
+| [`http::reqwest`](src/http/reqwest.rs) | `send`, `text`, `json`, `json_schema`, `send_pooled`; layers `ReqwestClientLive::layer`, `provide_reqwest_client`, `provide_reqwest_pool` |
+| [`fs`](src/fs.rs) | `FileSystem`, `LiveFileSystem`, `TestFileSystem`, `read`, `exists`; layers `LiveFileSystemProvider::layer`, `provide_file_system` |
+| [`command`](src/command.rs) (was `process`) | `ProcessRuntime`, `TokioProcessRuntime`, `spawn`, `spawn_wait`, `child_wait`, `child_kill`; layers `TokioProcessRuntimeProvider::layer`, `provide_process_runtime` |
 | [`uri`](src/uri.rs) | `http::Uri` parse / build helpers |
 
 ## Features
@@ -74,4 +83,5 @@ cargo run -p id_effect_platform --example 010_platform_http_get
 cargo run -p id_effect_platform --example 010_wiremock_get_text
 cargo run -p id_effect_platform --example 020_wiremock_json
 cargo run -p id_effect_platform --example 030_layer_default_env
+cargo run -p id_effect_platform --example 152_cookbook_bounded_command_pool
 ```

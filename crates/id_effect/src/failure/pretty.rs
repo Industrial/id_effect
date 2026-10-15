@@ -7,7 +7,7 @@ use core::fmt::{Debug, Display, Write};
 
 use super::cause::Cause;
 use super::exit::Exit;
-use crate::runtime::FiberId;
+use crate::failure::FiberId;
 
 /// Indentation width for nested cause nodes.
 const INDENT: &str = "  ";

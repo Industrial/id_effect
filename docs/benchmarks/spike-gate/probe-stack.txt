@@ -1,0 +1,38 @@
+# stack probe: left-nested chain built then run on a thread with the given stack (KiB)
+# impl kind n kib -> result (release profile, as cargo bench builds)
+v06 async 10000 2048 -> ok 10000
+v06 async 100000 2048 -> fatal runtime error: stack overflow, aborting
+v06 sync 10000 2048 -> ok 10000
+v06 sync 100000 2048 -> fatal runtime error: stack overflow, aborting
+a async 10000 2048 -> ok 10000
+a async 100000 2048 -> ok 100000
+a sync 10000 2048 -> ok 10000
+a sync 100000 2048 -> ok 100000
+b async 10000 2048 -> ok 10000
+b async 100000 2048 -> fatal runtime error: stack overflow, aborting
+b sync 10000 2048 -> ok 10000
+b sync 100000 2048 -> ok 100000
+v06 async 10000 8192 -> ok 10000
+v06 async 100000 8192 -> ok 100000
+v06 sync 10000 8192 -> ok 10000
+v06 sync 100000 8192 -> ok 100000
+a async 10000 8192 -> ok 10000
+a async 100000 8192 -> ok 100000
+a sync 10000 8192 -> ok 10000
+a sync 100000 8192 -> ok 100000
+b async 10000 8192 -> ok 10000
+b async 100000 8192 -> fatal runtime error: stack overflow, aborting
+b sync 10000 8192 -> ok 10000
+b sync 100000 8192 -> ok 100000
+v06 async 10000 65536 -> ok 10000
+v06 async 100000 65536 -> ok 100000
+v06 sync 10000 65536 -> ok 10000
+v06 sync 100000 65536 -> ok 100000
+a async 10000 65536 -> ok 10000
+a async 100000 65536 -> ok 100000
+a sync 10000 65536 -> ok 10000
+a sync 100000 65536 -> ok 100000
+b async 10000 65536 -> ok 10000
+b async 100000 65536 -> ok 100000
+b sync 10000 65536 -> ok 10000
+b sync 100000 65536 -> ok 100000

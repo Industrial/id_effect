@@ -1,19 +1,19 @@
 #![cfg(feature = "cursor")]
 
-use id_effect::run_async;
 use id_effect_ai::{AiConfig, CreateAgentRequest, CursorAgentsClient, HttpCursorAgentsClient};
 use id_effect_config::Secret;
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClient, HttpMethod, HttpRequest, HttpResponse, StreamingHttpResponse,
 };
+use id_effect_tokio::TokioRuntime;
 use std::sync::Arc;
 
 #[derive(Clone, Default)]
 struct MockHttpClient;
 
 impl HttpClient for MockHttpClient {
-  fn execute(&self, req: HttpRequest) -> id_effect::Effect<HttpResponse, HttpError, ()> {
+  fn execute(&self, req: HttpRequest) -> id_effect::Effect<HttpResponse, HttpError> {
     let body = if req.url.contains("/v1/models") {
       br#"{"items":[{"id":"composer-2","displayName":"Composer 2"}]}"#.to_vec()
     } else if req.url.ends_with("/v1/agents") && matches!(req.method, HttpMethod::Post) {
@@ -25,19 +25,17 @@ impl HttpClient for MockHttpClient {
     } else {
       b"{}".to_vec()
     };
-    id_effect::Effect::new(move |_r| {
-      Ok(HttpResponse {
-        status: 200,
-        headers: vec![],
-        body,
-      })
+    id_effect::succeed(HttpResponse {
+      status: 200,
+      headers: vec![],
+      body,
     })
   }
 
   fn execute_stream(
     &self,
     _req: HttpRequest,
-  ) -> id_effect::Effect<StreamingHttpResponse, HttpError, ()> {
+  ) -> id_effect::Effect<StreamingHttpResponse, HttpError> {
     id_effect::fail(HttpError::InvalidRequest(
       "stream not supported in mock".into(),
     ))
@@ -56,7 +54,12 @@ fn fixture_config() -> AiConfig {
 async fn cursor_list_models_fixture() {
   let client = Arc::new(MockHttpClient) as Arc<dyn HttpClient>;
   let agents = HttpCursorAgentsClient::new(client, fixture_config()).expect("client");
-  let models = run_async(agents.list_models(), ()).await.expect("models");
+  let models = TokioRuntime::current()
+    .expect("tokio")
+    .run(agents.list_models())
+    .await
+    .into_result()
+    .expect("models");
   assert_eq!(models[0].id, "composer-2");
 }
 
@@ -64,23 +67,22 @@ async fn cursor_list_models_fixture() {
 async fn cursor_create_and_poll_fixture() {
   let client = Arc::new(MockHttpClient) as Arc<dyn HttpClient>;
   let agents = HttpCursorAgentsClient::new(client, fixture_config()).expect("client");
-  let (agent, run) = run_async(
-    agents.create_agent(CreateAgentRequest {
+  let rt = TokioRuntime::current().expect("tokio");
+  let (agent, run) = rt
+    .run(agents.create_agent(CreateAgentRequest {
       prompt_text: "hello".into(),
       model_id: Some("composer-2".into()),
       repos: vec![],
-    }),
-    (),
-  )
-  .await
-  .expect("create");
+    }))
+    .await
+    .into_result()
+    .expect("create");
   assert_eq!(agent.id, "bc-test");
   assert_eq!(run.id, "run-1");
-  let done = run_async(
-    agents.wait_until_idle(&agent.id, &run.id, std::time::Duration::from_secs(2)),
-    (),
-  )
-  .await
-  .expect("poll");
+  let done = rt
+    .run(agents.wait_until_idle(&agent.id, &run.id, std::time::Duration::from_secs(2)))
+    .await
+    .into_result()
+    .expect("poll");
   assert!(done.status.is_terminal());
 }

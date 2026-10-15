@@ -8,16 +8,18 @@ use axum::extract::State;
 use axum::http::Request;
 use axum::routing::{Router, get};
 use http_body_util::BodyExt;
-use id_effect::{Cap, Effect, Env, succeed};
+use id_effect::{DynEnv, Effect, succeed};
 use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps};
 use std::convert::Infallible;
 use tower::ServiceExt;
 
-#[derive(Clone)]
 struct Tenant(String);
 
-fn whoami(env: &mut Env) -> Effect<String, Infallible, Env> {
-  succeed(format!("tenant={}", env.get::<Cap<Tenant>>().0))
+fn whoami(env: &mut DynEnv) -> Effect<String, Infallible, DynEnv> {
+  let tenant = env
+    .try_get::<Tenant>()
+    .map_or_else(|_| "none".to_owned(), |t| t.0.clone());
+  succeed(format!("tenant={tenant}"))
 }
 
 async fn get_body(app: &Router, req: Request<Body>) -> String {
@@ -28,15 +30,14 @@ async fn get_body(app: &Router, req: Request<Body>) -> String {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-  let mut base = Env::new();
-  base.insert::<Cap<Tenant>>(Tenant("public".into()));
+  let base = DynEnv::new().with(Tenant("public".into()));
 
   let app = Router::new()
     .route(
       "/whoami",
-      get(|st: State<Env>, caps: RequestCaps| execute_with_request_caps(st, caps, whoami)),
+      get(|st: State<DynEnv>, caps: RequestCaps| execute_with_request_caps(st, caps, whoami)),
     )
-    .layer(CapOverrideLayer::<Cap<Tenant>, _>::new(|parts| {
+    .layer(CapOverrideLayer::new(|parts| {
       let tenant = parts.headers.get("x-tenant")?.to_str().ok()?;
       Some(Tenant(tenant.to_owned()))
     }))

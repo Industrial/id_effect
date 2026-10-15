@@ -1,11 +1,13 @@
-//! Ex 108 — Tokio-backed `Runtime`: monotonic `now`, async `sleep`, cooperative `yield_now`.
+//! Ex 108 — `TokioRuntime` on an existing tokio runtime: monotonic `now`, async `sleep`,
+//! cooperative `yield_fiber`.
 //!
 //! Run: `cargo run -p id_effect_tokio --example 108_tokio_clock`
 
-use id_effect::Runtime;
-use id_effect::{run_async, yield_now};
-use id_effect_tokio::TokioRuntime;
 use std::time::Duration;
+
+use id_effect::Exit;
+use id_effect::{HNil, sleep, yield_fiber};
+use id_effect_tokio::TokioRuntime;
 
 fn main() {
   let tokio_rt = tokio::runtime::Builder::new_current_thread()
@@ -18,11 +20,9 @@ fn main() {
     let t2 = rt.now();
     assert!(t2 >= t1);
 
-    assert_eq!(
-      run_async(rt.sleep(Duration::from_millis(0)), ()).await,
-      Ok(())
-    );
-    assert_eq!(run_async(yield_now(&rt), ()).await, Ok(()));
+    let nap = sleep::<(), HNil>(Duration::from_millis(1)).then(yield_fiber());
+    assert!(matches!(rt.run(nap).await, Exit::Success(())));
+    assert!(rt.now() >= t1 + Duration::from_millis(1));
   });
 
   println!("108_tokio_clock ok");

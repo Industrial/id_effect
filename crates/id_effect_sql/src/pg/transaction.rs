@@ -1,76 +1,75 @@
-//! [`PgSqlTransaction`] — commit/rollback over a pooled sqlx connection.
+//! [`PgSqlTransaction`] — statements, commit and rollback over a sqlx [`Transaction`].
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::{SqlError, SqlTransaction};
-use id_effect::kernel::Effect;
-use sqlx::Postgres;
-use sqlx::pool::PoolConnection;
+use id_effect::{Effect, from_async};
+use sqlx::{Postgres, Transaction};
+use tokio::sync::Mutex;
 
+use super::client::{bind_query, row_to_sql_row};
 use super::error::sqlx_error;
+use crate::{SqlError, SqlParam, SqlRow, SqlTransaction};
 
-struct PgSqlTransactionInner {
-  conn: Mutex<Option<PoolConnection<Postgres>>>,
-  finished: Mutex<bool>,
-}
+type Slot = Arc<Mutex<Option<Transaction<'static, Postgres>>>>;
 
-/// PostgreSQL transaction handle (explicit `COMMIT` / `ROLLBACK` on the held connection).
+/// PostgreSQL transaction handle: its statements run on the transaction's connection.
+///
+/// It wraps a sqlx [`Transaction`], so a handle dropped without `commit` / `rollback` (or a
+/// `COMMIT` cut short) is rolled back by sqlx when its connection returns to the pool.
 pub struct PgSqlTransaction {
-  inner: Arc<PgSqlTransactionInner>,
+  tx: Slot,
 }
 
 impl PgSqlTransaction {
-  pub(crate) fn new(conn: PoolConnection<Postgres>) -> Self {
+  pub(crate) fn new(tx: Transaction<'static, Postgres>) -> Self {
     Self {
-      inner: Arc::new(PgSqlTransactionInner {
-        conn: Mutex::new(Some(conn)),
-        finished: Mutex::new(false),
-      }),
+      tx: Arc::new(Mutex::new(Some(tx))),
     }
-  }
-
-  fn take_conn(inner: &PgSqlTransactionInner) -> Result<PoolConnection<Postgres>, SqlError> {
-    let mut finished = inner.finished.lock().expect("tx finished mutex poisoned");
-    if *finished {
-      return Err(SqlError::TransactionFailed(
-        "transaction already finished".into(),
-      ));
-    }
-    *finished = true;
-    drop(finished);
-    let mut guard = inner.conn.lock().expect("tx conn mutex poisoned");
-    guard
-      .take()
-      .ok_or_else(|| SqlError::TransactionFailed("connection already released".into()))
   }
 }
 
+fn already_finished() -> SqlError {
+  SqlError::TransactionFailed("transaction already finished".into())
+}
+
+async fn take(slot: &Slot) -> Result<Transaction<'static, Postgres>, SqlError> {
+  slot.lock().await.take().ok_or_else(already_finished)
+}
+
 impl SqlTransaction for PgSqlTransaction {
-  fn commit(&self) -> Effect<(), SqlError, ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      Box::pin(async move {
-        let mut conn = Self::take_conn(&inner)?;
-        sqlx::query("COMMIT")
-          .execute(&mut *conn)
-          .await
-          .map_err(sqlx_error)?;
-        Ok(())
-      })
+  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+    let (slot, sql, params) = (Arc::clone(&self.tx), sql.to_string(), params.to_vec());
+    from_async(move || async move {
+      let mut guard = slot.lock().await;
+      let tx = guard.as_mut().ok_or_else(already_finished)?;
+      let rows = bind_query(sqlx::query(&sql), &params)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(sqlx_error)?;
+      Ok(rows.iter().map(row_to_sql_row).collect())
     })
   }
 
-  fn rollback(&self) -> Effect<(), SqlError, ()> {
-    let inner = Arc::clone(&self.inner);
-    Effect::new_async(move |_r: &mut ()| {
-      Box::pin(async move {
-        let mut conn = Self::take_conn(&inner)?;
-        sqlx::query("ROLLBACK")
-          .execute(&mut *conn)
-          .await
-          .map_err(sqlx_error)?;
-        Ok(())
-      })
+  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+    let (slot, sql, params) = (Arc::clone(&self.tx), sql.to_string(), params.to_vec());
+    from_async(move || async move {
+      let mut guard = slot.lock().await;
+      let tx = guard.as_mut().ok_or_else(already_finished)?;
+      let result = bind_query(sqlx::query(&sql), &params)
+        .execute(&mut **tx)
+        .await
+        .map_err(sqlx_error)?;
+      Ok(result.rows_affected())
     })
+  }
+
+  fn commit(&self) -> Effect<(), SqlError> {
+    let slot = Arc::clone(&self.tx);
+    from_async(move || async move { take(&slot).await?.commit().await.map_err(sqlx_error) })
+  }
+
+  fn rollback(&self) -> Effect<(), SqlError> {
+    let slot = Arc::clone(&self.tx);
+    from_async(move || async move { take(&slot).await?.rollback().await.map_err(sqlx_error) })
   }
 }

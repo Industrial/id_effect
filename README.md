@@ -27,7 +27,7 @@ It is not a batteries-included web framework: there is an Axum integration for t
 
 - **Read online:** [Typed Effects in Rust](https://industrial.github.io/id_effect/) (GitHub Pages)
 - **Terminology:** [Glossary](https://industrial.github.io/id_effect/appendix-c-glossary.html)
-- **Upgrading:** [Migration guide to 0.6](docs/MIGRATION-0.6.md) and the [CHANGELOG](CHANGELOG.md)
+- **Upgrading:** [Migration guide to 0.7](docs/MIGRATION-0.7.md) (from 0.6), [to 0.6](docs/MIGRATION-0.6.md) (from 0.4 / 0.5), and the [CHANGELOG](CHANGELOG.md)
 - **Source:** [`crates/id_effect/book/`](crates/id_effect/book/) (build locally with `mdbook build crates/id_effect/book`)
 
 ---
@@ -37,14 +37,14 @@ It is not a batteries-included web framework: there is an Axum integration for t
 **id_effect** models programs as **descriptions** of work (`Effect` values) rather than immediate side effects. You compose them, attach requirements to the type signature, and run them when you choose:
 
 - **`Effect<A, E, R>`** — success type `A`, error type `E`, requirements `R`.
-- **Capabilities and providers** — typed dependency injection: declare what an effect needs (`caps!`, `Needs`), provide it once at the edge (`#[derive(ProviderSpecDerive)]`, `build_env`).
+- **Capabilities and providers** — typed dependency injection: declare what an effect needs (`caps!`, `need`), provide it once at the edge as a `Layer` (`#[derive(ProviderSpecDerive)]`, `provide_layer`).
 - **`pipe!` and `effect!`** — composition and do-notation-style blocks without hiding what the types mean.
 - **Structured concurrency and resilience** — fibers, scopes, cancellation, `Schedule`-driven retry, circuit breakers.
 - **Pull-based streams** — bounded-memory, incremental operators that work on infinite sources.
 - **Supervision and distribution** — `id_effect_process` (processes, links, monitors, supervision trees, gen_statem-style FSMs) and `id_effect_node` (Process Mesh across nodes).
-- **Testing kit** — `run_test`, `TestClock`, capability mocks, golden snapshots, `assert_bounded_memory`.
+- **Testing kit** — the deterministic `TestExecutor` (virtual clock: `run_until_stalled`, `advance`, `next_timer_deadline`), a seeded/fed `TestRandom`, and capability mocks provided as layers.
 
-The core crate runs effects on its own interpreter (`run_blocking`, `run_async`); the default `compute` feature adds the parallel Compute Fabric. Tokio integration lives in `id_effect_tokio`.
+The core crate runs effects as fibers on a pluggable executor (a multi-thread `TokioExecutor` in production, the deterministic `TestExecutor` with a virtual clock in tests): `Runtime::run(eff).await` in async code, `Effect::block_on` / `Runtime::block_on` at a synchronous edge. The default `compute` feature adds the parallel Compute Fabric; `id_effect_tokio` is the Tokio runtime adapter.
 
 ---
 
@@ -56,13 +56,13 @@ The core crate runs effects on its own interpreter (`run_blocking`, `run_async`)
 
 | Crate | Version | Description |
 |-------|---------|-------------|
-| [`id_effect`](crates/id_effect) | [![crates.io](https://img.shields.io/crates/v/id_effect.svg)](https://crates.io/crates/id_effect) | Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor |
+| [`id_effect`](crates/id_effect) | [![crates.io](https://img.shields.io/crates/v/id_effect.svg)](https://crates.io/crates/id_effect) | Effect<A, E, R>: lazy Send effects over a typed capability list, run on a fiber runtime (Tokio executor), with layers, streams, schedules and coordination |
 | [`id_effect_config`](crates/id_effect_config) | [![crates.io](https://img.shields.io/crates/v/id_effect_config.svg)](https://crates.io/crates/id_effect_config) | Configuration for id_effect: Config descriptors, ConfigProvider and Figment/serde loading |
 | [`id_effect_logger`](crates/id_effect_logger) | [![crates.io](https://img.shields.io/crates/v/id_effect_logger.svg)](https://crates.io/crates/id_effect_logger) | EffectLogger capability for id_effect: log levels, annotations and pluggable backends over tracing |
-| [`id_effect_macro`](crates/id_effect_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_macro.svg)](https://crates.io/crates/id_effect_macro) | Declarative macros re-exported by id_effect: pipe!, err!, caps!, provide!, providers!, mock_capability! |
+| [`id_effect_macro`](crates/id_effect_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_macro.svg)](https://crates.io/crates/id_effect_macro) | Declarative macros re-exported by id_effect: pipe!, err! |
 | [`id_effect_proc_macro`](crates/id_effect_proc_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_proc_macro.svg)](https://crates.io/crates/id_effect_proc_macro) | Procedural `effect!` macro for the `effect` crate (proc-macro only; declarative macros live in `id_effect_macro`) |
 | [`id_effect_resilience`](crates/id_effect_resilience) | [![crates.io](https://img.shields.io/crates/v/id_effect_resilience.svg)](https://crates.io/crates/id_effect_resilience) | Resilience patterns for id_effect: circuit breaker, Schedule-driven retry, rate limiter, bulkhead, hedged requests |
-| [`id_effect_tokio`](crates/id_effect_tokio) | [![crates.io](https://img.shields.io/crates/v/id_effect_tokio.svg)](https://crates.io/crates/id_effect_tokio) | Tokio runtime adapter for id_effect: TokioRuntime (sleep, yield, fork on the blocking pool) |
+| [`id_effect_tokio`](crates/id_effect_tokio) | [![crates.io](https://img.shields.io/crates/v/id_effect_tokio.svg)](https://crates.io/crates/id_effect_tokio) | Tokio runtime adapter for id_effect: TokioRuntime over the 0.7-kernel TokioExecutor (fibers as tokio tasks) |
 
 **Runtime and supervision**
 
@@ -77,7 +77,7 @@ The core crate runs effects on its own interpreter (`run_blocking`, `run_async`)
 | Crate | Version | Description |
 |-------|---------|-------------|
 | [`id_effect_axum`](crates/id_effect_axum) | [![crates.io](https://img.shields.io/crates/v/id_effect_axum.svg)](https://crates.io/crates/id_effect_axum) | Axum and Tower integration for id_effect — Send-safe Effect handlers, request-scoped capabilities, host lifecycle |
-| [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing init, run_main |
+| [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing buffer, run_main |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
@@ -112,19 +112,19 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.6"
+id_effect = "0.7"
 ```
 
 ```rust
-use id_effect::{Effect, run_blocking, succeed};
+use id_effect::{Effect, Never, succeed};
 
-fn greet(name: &str) -> Effect<String, (), ()> {
+fn greet(name: &str) -> Effect<String, Never> {
     succeed(format!("Hello, {name}!"))
 }
 
 fn main() {
-    let result = run_blocking(greet("world"), ());
-    println!("{result:?}");
+    let exit = greet("world").block_on();
+    println!("{exit:?}");
 }
 ```
 
@@ -207,7 +207,7 @@ devenv shell -- pre-push
 #    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
 # 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
 # 3. Commit, push, then tag — CI publishes in dependency order
-git tag v0.6.0
+git tag v0.7.0
 git push --tags
 ```
 

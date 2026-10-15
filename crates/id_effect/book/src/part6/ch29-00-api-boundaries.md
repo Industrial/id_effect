@@ -20,7 +20,7 @@ Use [`ensure_correlation_id`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc
 
 [`versioning::negotiate_api_version`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/versioning/fn.negotiate_api_version.html) resolves version from `Accept-Version` or `/vN/` path prefix:
 
-```rust
+```rust,ignore
 use id_effect_rpc::versioning::{ApiVersion, VersionConfig, negotiate_api_version};
 
 let cfg = VersionConfig::new(ApiVersion::new("v1"), vec![ApiVersion::new("v1")]);

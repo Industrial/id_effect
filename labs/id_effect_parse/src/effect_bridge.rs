@@ -36,11 +36,11 @@ where
   O: Send + Sync + 'static,
   E: Send + 'static,
   P: Send + Sync + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
   stream
     .run_collect()
-    .map_error(ParseStreamError::Stream)
+    .map_err(ParseStreamError::Stream)
     .flat_map(move |chunks| {
       let flat: Vec<I> = chunks.into_iter().flat_map(Chunk::into_vec).collect();
       match parser.parse(flat) {
@@ -58,11 +58,11 @@ pub fn parse_text_stream<O, E, R>(
 where
   O: Send + Sync + 'static,
   E: Send + 'static,
-  R: 'static,
+  R: Send + Sync + 'static,
 {
   stream
     .run_collect()
-    .map_error(ParseStreamError::Stream)
+    .map_err(ParseStreamError::Stream)
     .flat_map(move |chunks| {
       let bytes: Vec<u8> = chunks.into_iter().flat_map(Chunk::into_vec).collect();
       let text = match String::from_utf8(bytes) {
@@ -82,7 +82,6 @@ mod tests {
 
   #[test]
   fn parse_stream_success() {
-    use id_effect::{Chunk, Stream};
     let parser = crate::parser::Parser::new(|input: Vec<u8>| {
       if input == b"ab" {
         Ok((2usize, Vec::new()))
@@ -90,20 +89,25 @@ mod tests {
         Err(crate::parser::ParseFailure::new("bad"))
       }
     });
-    let stream = Stream::from_iterable([
+    let stream = Stream::<Chunk<u8>>::from_iterable([
       Chunk::from_vec(b"a".to_vec()),
       Chunk::from_vec(b"b".to_vec()),
     ]);
-    let len = id_effect::run_blocking(parse_stream(parser, stream), ()).expect("parse");
+    let len = parse_stream(parser, stream)
+      .block_on()
+      .into_result()
+      .expect("parse");
     assert_eq!(len, 2);
   }
 
   #[test]
   fn parse_text_stream_success() {
-    use id_effect::{Chunk, Stream};
     let parser = crate::parser::Parser::new(|s: String| Ok((s.len(), String::new())));
-    let stream = Stream::from_iterable([Chunk::from_vec(b"abc".to_vec())]);
-    let len = id_effect::run_blocking(parse_text_stream(parser, stream), ()).expect("parse");
+    let stream = Stream::<Chunk<u8>>::from_iterable([Chunk::from_vec(b"abc".to_vec())]);
+    let len = parse_text_stream(parser, stream)
+      .block_on()
+      .into_result()
+      .expect("parse");
     assert_eq!(len, 3);
   }
 

@@ -1,23 +1,18 @@
-//! Ex 104 — `Cache` memoizes loads; `CacheStats` tracks hits/misses.
-use id_effect::{Cache, run_async, run_blocking, succeed};
+//! Ex 104 — A `Cache` memoizes lookups; `CacheStats` tracks hits and misses.
+use id_effect::Never;
+use id_effect::{Cache, CacheStats, Effect, succeed};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-  let cache = run_blocking(
-    Cache::make(8, None, |k: &'static str| {
-      succeed::<u64, (), ()>(k.len() as u64)
-    }),
-    (),
-  )
-  .expect("cache");
-  let v = run_async(cache.get("hi"), ()).await.expect("get");
-  assert_eq!(v, 2_u64);
-  let stats = run_async(cache.stats(), ()).await.expect("stats");
-  assert_eq!(stats.misses, 1);
-  assert_eq!(stats.hits, 0);
-  let v2 = run_async(cache.get("hi"), ()).await.expect("get2");
-  assert_eq!(v2, 2);
-  let stats2 = run_async(cache.stats(), ()).await.expect("stats2");
+fn main() {
+  let cache = Cache::new(8, None, |k: &'static str| succeed(k.len() as u64));
+  let program: Effect<(u64, CacheStats, u64, CacheStats), Never> = cache
+    .get("hi")
+    .zip(cache.stats())
+    .zip(cache.get("hi"))
+    .zip(cache.stats())
+    .map(|(((a, s1), b), s2)| (a, s1, b, s2));
+  let (v, stats, v2, stats2) = program.block_on().into_result().expect("cache");
+  assert_eq!((v, v2), (2, 2));
+  assert_eq!((stats.misses, stats.hits), (1, 0));
   assert_eq!(stats2.hits, 1);
   println!("104_cache ok");
 }

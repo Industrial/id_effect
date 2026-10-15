@@ -1,0 +1,76 @@
+{
+	"schema": 1,
+	"baseline": "fixture-base",
+	"sha": "0000000000000000000000000000000000000000",
+	"created": "2026-10-15T00:00:00Z",
+	"machine": {
+		"cpu": "fixture",
+		"governor": "performance",
+		"rustc": "rustc 1.94.0 (fixture)",
+		"kernel": "fixture"
+	},
+	"benches": {
+		"phase0/bench_effect_map_chain": {
+			"mean": 1000,
+			"median": 1000,
+			"std_dev": 10
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 2000,
+			"median": 2000,
+			"std_dev": 20
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 50000,
+			"median": 50000,
+			"std_dev": 500
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 500000,
+			"median": 500000,
+			"std_dev": 5000
+		},
+		"gate/async_bind_64": { "mean": 8000, "median": 8000, "std_dev": 80 },
+		"gate/spawn_join_10k": {
+			"mean": 4000000,
+			"median": 4000000,
+			"std_dev": 40000
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 1500000,
+			"median": 1500000,
+			"std_dev": 15000
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 2000000,
+			"median": 2000000,
+			"std_dev": 20000
+		},
+		"gate/axum_request_oneshot": {
+			"mean": 20000,
+			"median": 20000,
+			"std_dev": 200
+		},
+		"gate/axum_request_caps": {
+			"mean": 25000,
+			"median": 25000,
+			"std_dev": 250
+		},
+		"stream/pull_map_10k": {
+			"mean": 300000,
+			"median": 300000,
+			"std_dev": 3000
+		},
+		"stream/map_effect_1k": { "mean": 90000, "median": 90000, "std_dev": 900 },
+		"coord/channel_spsc_10k": {
+			"mean": 700000,
+			"median": 700000,
+			"std_dev": 7000
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 800000,
+			"median": 800000,
+			"std_dev": 8000
+		}
+	}
+}

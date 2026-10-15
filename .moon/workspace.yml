@@ -3,6 +3,7 @@ $schema: https://moonrepo.dev/schemas/workspace.json
 projects:
   cli_minimal: examples/cli-minimal
   effect: '.'
+  http_showcase: examples/http-showcase
   id_effect_axum: crates/id_effect_axum
   id_effect_cli: crates/id_effect_cli
   id_effect_config: crates/id_effect_config
@@ -14,9 +15,7 @@ projects:
   id_effect_platform: crates/id_effect_platform
   id_effect_proc_macro: crates/id_effect_proc_macro
   id_effect_sql: crates/id_effect_sql
-  id_effect_sql_pg: crates/id_effect_sql_pg
   id_effect_tokio: crates/id_effect_tokio
-  id_effect_tower: crates/id_effect_tower
   id_effect_fsm: crates/id_effect_fsm
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node

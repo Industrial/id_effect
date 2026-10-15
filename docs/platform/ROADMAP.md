@@ -11,6 +11,10 @@ Single index for **FP Kitchen Sink** (Part V) and **Platform Kitchen Sink** (Par
 > merged into `id_effect_axum`, and `id_effect_sql_pg` merged into `id_effect_sql` (feature `pg`).
 > New extension work resumes only after the consolidation exit gate. Current per-area status:
 > [PARITY_DASHBOARD.md](./PARITY_DASHBOARD.md).
+>
+> **0.7:** the v1 interpreter (`run_blocking`, `run_async`, the provider registry) was replaced by
+> the fiber runtime ([ADR 0011](../adrs/0011-fiber-runtime-send-typed-r.md)). API names in the
+> linked execution overlays predate it; see [MIGRATION-0.7.md](../MIGRATION-0.7.md) for the current equivalents.
 
 ## Part V — Functional patterns (shipped)
 

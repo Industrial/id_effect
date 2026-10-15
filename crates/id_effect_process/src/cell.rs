@@ -4,8 +4,7 @@
 //! Every live process has exactly one cell in the table. The cell is
 //! type-erased: typed mailbox access lives in [`crate::addr::Addr`]; the
 //! cell only knows how to (a) deliver a [`SysMsg`] into the mailbox and
-//! (b) kill the process cooperatively (record reason, cancel, close the
-//! mailbox).
+//! (b) kill the process cooperatively (record reason, close the mailbox).
 //!
 //! ## Delivery guarantees (ADR 0009)
 //!
@@ -20,12 +19,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use id_effect::runtime::Never;
-use id_effect::{CancellationToken, Deferred};
+use id_effect::Deferred;
+use id_effect::Never;
 
 use crate::exit::ExitReason;
 use crate::msg::SysMsg;
-use crate::node::run_mailbox_op;
 use crate::pid::{MonitorRef, Pid};
 
 /// Callback fired when a monitored process exits. Public so distribution
@@ -58,33 +56,23 @@ pub struct ProcessCell {
   pid: Pid,
   deliver: SysDeliver,
   close_mailbox: MailboxClose,
-  cancel: CancellationToken,
   trap_exit: AtomicBool,
   /// First kill reason wins; read by the process loop between messages.
   kill_reason: Mutex<Option<ExitReason>>,
   monitors: Mutex<MonitorState>,
   links: Mutex<LinkState>,
-  /// Completed exactly once at finalization.
+  /// Completed exactly once, after finalization has fanned out links and monitors.
   exited: Deferred<ExitReason, Never>,
   /// Names registered for this pid (cleaned up at finalization).
   registered_names: Mutex<Vec<String>>,
 }
 
 impl ProcessCell {
-  pub(crate) fn new(
-    pid: Pid,
-    deliver: SysDeliver,
-    close_mailbox: MailboxClose,
-    cancel: CancellationToken,
-  ) -> Self {
-    // Pure constructor: completes on the first poll (see `node` module docs).
-    let exited = run_mailbox_op(Deferred::<ExitReason, Never>::make())
-      .unwrap_or_else(|_| unreachable!("Deferred::make is infallible"));
+  pub(crate) fn new(pid: Pid, deliver: SysDeliver, close_mailbox: MailboxClose) -> Self {
     Self {
       pid,
       deliver,
       close_mailbox,
-      cancel,
       trap_exit: AtomicBool::new(false),
       kill_reason: Mutex::new(None),
       monitors: Mutex::new(MonitorState {
@@ -95,7 +83,7 @@ impl ProcessCell {
         done: None,
         set: Vec::new(),
       }),
-      exited,
+      exited: Deferred::new(),
       registered_names: Mutex::new(Vec::new()),
     }
   }
@@ -103,11 +91,6 @@ impl ProcessCell {
   /// This process's pid.
   pub fn pid(&self) -> &Pid {
     &self.pid
-  }
-
-  /// Cooperative-cancellation token cancelled when the process is killed.
-  pub fn cancellation(&self) -> &CancellationToken {
-    &self.cancel
   }
 
   /// Whether this process converts link exits into [`SysMsg::Exit`]
@@ -125,8 +108,8 @@ impl ProcessCell {
     (self.deliver)(msg)
   }
 
-  /// Kill cooperatively: record `reason` (first wins), cancel the token,
-  /// and close the mailbox so the loop stops at its next checkpoint.
+  /// Kill cooperatively: record `reason` (first wins) and close the
+  /// mailbox so the loop stops at its next checkpoint.
   pub(crate) fn kill(&self, reason: ExitReason) {
     {
       let mut guard = self.kill_reason.lock().expect("kill_reason mutex poisoned");
@@ -134,7 +117,6 @@ impl ProcessCell {
         *guard = Some(reason);
       }
     }
-    self.cancel.cancel();
     (self.close_mailbox)();
   }
 
@@ -147,9 +129,15 @@ impl ProcessCell {
       .clone()
   }
 
-  /// One-shot deferred completed with the final exit reason.
+  /// One-shot deferred completed with the final exit reason once the process
+  /// is fully finalized (links and monitors have fanned out).
   pub fn exited(&self) -> Deferred<ExitReason, Never> {
     self.exited.clone()
+  }
+
+  /// Complete [`exited`](Self::exited) (the last step of finalization).
+  pub(crate) fn mark_exited(&self, reason: ExitReason) {
+    self.exited.try_succeed(reason);
   }
 
   /// Register a monitor sink. If the process already finalized, the sink
@@ -226,7 +214,6 @@ impl ProcessCell {
         .lock()
         .expect("registered_names mutex poisoned"),
     );
-    self.exited.try_succeed(reason.clone());
     (links, monitors, names)
   }
 

@@ -6,6 +6,12 @@ Superseded — public `Parallelism` surface removed in favor of Fabric-only impl
 
 Previously: **Accepted** (Rayon parallel-by-default via caller `Parallelism` policy; see decision below).
 
+Note (2026-10-15): in 0.7, effectful concurrency is scheduled by the Fabric behind
+`fork_all` / `Concurrency` ([ADR 0007 Amendment 1](0007-compute-fabric.md#amendment-1-2026-10-15-phase-c-for-07)).
+The "`Effect` / `effect!` remain sequential" boundary below, already relaxed by the ADR 0008
+auto-parallel binds, no longer holds: `zip_par`, `all`, `for_each_par` and the `effect!`
+auto-parallel binds run effects concurrently under Fabric admission.
+
 ## Context
 
 Commit `3e6536a` added `*_par` siblings alongside serial collection and Stream APIs. Callers must opt in to parallelism explicitly. Rayon is already a direct dependency.

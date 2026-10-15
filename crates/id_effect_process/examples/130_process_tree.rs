@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, run_blocking, succeed};
+use id_effect::Never;
+use id_effect::{Effect, HNil, succeed};
 use id_effect_process::{
   ChildSpec, Next, NodeName, Process, ProcessCtx, ProcessNode, Strategy, SupervisorSpec,
 };
@@ -29,13 +29,17 @@ impl Process for Ping {
 }
 
 fn main() {
-  let node = ProcessNode::threads(NodeName::new("ex130@local"));
+  // Processes are fibers on the default runtime.
+  let node = ProcessNode::new(NodeName::new("ex130@local"));
   let handle = SupervisorSpec::new(Strategy::OneForOne)
     .child(ChildSpec::worker::<Ping, _>("ping", || ((), ())))
     .start(&node);
   // A supervisor call is answered only after `init` started every child.
-  let children =
-    run_blocking(handle.which_children(Duration::from_secs(5)), ()).expect("supervisor answers");
+  let children = handle
+    .which_children::<HNil>(Duration::from_secs(5))
+    .block_on()
+    .into_result()
+    .expect("supervisor answers");
   println!(
     "supervisor pid {} children={children:?} live processes={}",
     handle.pid(),

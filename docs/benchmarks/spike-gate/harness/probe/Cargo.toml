@@ -1,0 +1,24 @@
+[package]
+name = "spike_gate_probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Standalone: w2-spike-gate referee probes (scaling, allocations, laziness, stack depth).
+[workspace]
+
+[dependencies]
+kernel_a = { path = "../../../spikes/kernel_a" }
+kernel_b = { path = "../../../spikes/kernel_b" }
+id_effect = { path = "../../bench-v0.6/crates/id_effect" }
+pollster = "1.0"
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "probe"
+harness = false
+
+[profile.release]
+debug = 1

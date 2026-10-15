@@ -1,11 +1,12 @@
-//! GET + [`id_effect_platform::http::reqwest::text`] against a local [wiremock](https://docs.rs/wiremock) server, driven
-//! with [`id_effect::run_async`].
+//! GET + [`id_effect_platform::http::reqwest::text`] against a local [wiremock](https://docs.rs/wiremock) server, with
+//! the client provided by [`provide_reqwest_client`] and the effect run on
+//! [`id_effect_tokio::TokioRuntime`].
 //!
 //! Run: `cargo run -p id_effect_platform --example 010_wiremock_get_text`
 
-use id_effect::build_env;
-use id_effect::run_async;
-use id_effect_platform::http::reqwest::{provide_reqwest_client, text};
+use id_effect::Exit;
+use id_effect_platform::http::reqwest::{ReqwestClientEnv, provide_reqwest_client, text};
+use id_effect_tokio::TokioRuntime;
 use reqwest::{Client, Error};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -20,10 +21,12 @@ async fn main() {
     .await;
 
   let url = format!("{}/ping", server.uri());
-  let env = build_env([provide_reqwest_client(Client::new())]).expect("env");
-  let body = run_async(text::<String, Error, _, _>(move |c| c.get(url)), env)
-    .await
-    .unwrap();
+  let program = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(url))
+    .provide_layer(provide_reqwest_client(Client::new()));
+  let rt = TokioRuntime::current().expect("tokio runtime");
+  let Exit::Success(body) = rt.run(program).await else {
+    panic!("request failed")
+  };
   assert_eq!(body, "pong");
   println!("010_wiremock_get_text ok");
 }

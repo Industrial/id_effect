@@ -1,20 +1,21 @@
-//! CLI ergonomics for [`id_effect::Effect`] programs: **exit code mapping**, optional **[`clap`]**
-//! integration, and a small **`run_main`** helper.
+//! CLI ergonomics for [`id_effect::Effect`] programs: **exit code mapping**, optional
+//! **[`clap`]** integration, and a small **`run_main`** helper.
 //!
 //! Design matches [Phase E — CLI ergonomics](https://github.com/Industrial/id_effect/blob/main/docs/effect-ts-parity/phases/phase-e-cli.md):
-//! embrace **`clap`** for parsing, run the effect with [`id_effect::runtime::run_blocking`], map
-//! [`Result`] / [`id_effect::Exit`] / [`id_effect::Cause`] to
-//! [`std::process::ExitCode`] for `fn main() -> ExitCode`.
+//! embrace **`clap`** for parsing, run the effect at the program edge with `block_on` on the
+//! default [`id_effect::Runtime`], map [`Result`] / [`id_effect::Exit`] /
+//! [`id_effect::Cause`] to [`std::process::ExitCode`] for `fn main() -> ExitCode`.
 //!
 //! ## Example
 //!
 //! ```rust
 //! use std::process::ExitCode;
 //!
-//! use id_effect::{Cause, Effect, Exit, FiberId, fail, succeed};
+//! use id_effect::{Effect, HNil, die, fail, succeed};
+//! use id_effect::{Cause, Exit, FiberId};
 //! use id_effect_cli::{RunMainConfig, exit_code_for_exit, run_main};
 //!
-//! fn greet(name: &str) -> Effect<(), String, ()> {
+//! fn greet(name: &str) -> Effect<(), String> {
 //!   if name.is_empty() {
 //!     fail("name must not be empty".to_string())
 //!   } else {
@@ -23,8 +24,13 @@
 //!   }
 //! }
 //!
-//! assert_eq!(run_main(greet("ada"), (), RunMainConfig::minimal()), ExitCode::SUCCESS);
-//! assert_eq!(run_main(greet(""), (), RunMainConfig::minimal()), ExitCode::from(1));
+//! assert_eq!(run_main(greet("ada"), HNil, RunMainConfig::minimal()), ExitCode::SUCCESS);
+//! assert_eq!(run_main(greet(""), HNil, RunMainConfig::minimal()), ExitCode::from(1));
+//! // Defects keep their own code through `run_main` too.
+//! assert_eq!(
+//!   run_main(die::<(), String, HNil>("bug"), HNil, RunMainConfig::minimal()),
+//!   ExitCode::from(101)
+//! );
 //! assert_eq!(
 //!   exit_code_for_exit(Exit::<(), String>::Failure(Cause::die("bug"))),
 //!   ExitCode::from(101)

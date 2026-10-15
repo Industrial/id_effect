@@ -1,13 +1,16 @@
 # id_effect_tokio
 
-Tokio runtime adapter for [`id_effect`](https://github.com/Industrial/id_effect).
+Tokio runtime adapter for [`id_effect`](https://github.com/Industrial/id_effect), on the 0.7
+kernel.
 
-- `TokioRuntime` implements `id_effect::Runtime`: `sleep` and `yield_now` run on the Tokio timer
-  driver, and forked effects run on Tokio's blocking pool (the `Effect` interpreter is not `Send`,
-  so it is never handed to `tokio::spawn`).
-- `spawn_blocking_run_async` drives a non-`Send` effect graph with the real async interpreter on a
-  blocking worker — use it for effects that need Tokio I/O or timers.
-- Building a `TokioRuntime` keeps any `ComputeFabric` you installed beforehand.
+- The executor lives in core: `TokioExecutor` (re-exported here) runs every fiber as an ordinary
+  tokio task, with real wakers and tokio timers. Fibers are `Send`; a sleeping fiber parks on the
+  tokio timer instead of spinning a blocking-pool thread as in 0.6.
+- `TokioRuntime` pairs the `Runtime` with the tokio runtime it runs on, owned
+  (`new_current_thread`, `new_multi_thread`) or ambient (`current`, `from_handle`). It offers
+  `run` (async edge), `fork` (daemon root fiber), `spawn` (a tokio task with a `JoinHandle`),
+  `now`, and `block_on` as a program edge on an owned runtime.
+- Sleep and yield are the kernel's `id_effect::{sleep, yield_fiber}`.
 
 Tower, Axum and other Tokio-based adapters depend on this crate for that wiring.
 
@@ -15,14 +18,15 @@ Tower, Axum and other Tokio-based adapters depend on this crate for that wiring.
 
 ```rust
 use std::time::Duration;
-use id_effect::{Runtime, run_async, succeed};
-use id_effect_tokio::{TokioRuntime, yield_now};
+use id_effect::Exit;
+use id_effect::{HNil, sleep, succeed};
+use id_effect_tokio::TokioRuntime;
 
 let rt = TokioRuntime::new_current_thread().expect("tokio runtime");
 rt.block_on(async {
-  run_async(rt.sleep(Duration::from_millis(1)), ()).await.unwrap();
-  run_async(yield_now(&rt), ()).await.unwrap();
-  assert_eq!(run_async(succeed::<u8, (), ()>(42), ()).await, Ok(42));
+  assert!(matches!(rt.run(sleep::<(), HNil>(Duration::from_millis(1))).await, Exit::Success(())));
+  let fiber = rt.fork(succeed::<u8, (), HNil>(42));
+  assert!(matches!(fiber.join_future().await, Exit::Success(42)));
 });
 ```
 
@@ -30,9 +34,9 @@ rt.block_on(async {
 
 | Example | Shows |
 |---------|-------|
-| `106_tokio_runtime` | `TokioRuntime` as an `id_effect::Runtime` (sleep / yield) |
-| `107_tokio_fork_contract` | `run_fork` on `TokioRuntime`, then `join` |
-| `108_tokio_clock` | monotonic `now`, async `sleep`, cooperative `yield_now` |
-| `109_tokio_end_to_end` | capability DI, `effect!`, streams and `catch` on Tokio |
+| `106_tokio_runtime` | `TokioRuntime::run` with sleep / yield on the Tokio driver |
+| `107_tokio_fork_contract` | `TokioRuntime::fork`, join, and interruption |
+| `108_tokio_clock` | monotonic `now`, async `sleep`, `yield_fiber` on an existing runtime |
+| `109_tokio_end_to_end` | typed capabilities, an async step, `catch`, concurrent fibers |
 
 Run one with `cargo run -p id_effect_tokio --example 106_tokio_runtime`.

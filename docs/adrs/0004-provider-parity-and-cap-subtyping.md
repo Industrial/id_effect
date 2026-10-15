@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted
+Accepted. Superseded in part (2026-10-15) by [ADR 0011](0011-fiber-runtime-send-typed-r.md):
+in 0.7 `CapList`, `CapKeys` and `CapWiden` give way to the typed HList and `Embed`, and the
+runtime `CapabilitySet::verify` is gone. See
+[ADR 0003 Amendment 1](0003-capability-set-and-provider-lifecycle.md#amendment-1-2026-10-15-for-07).
 
 ## Context
 

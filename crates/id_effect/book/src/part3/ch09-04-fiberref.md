@@ -1,73 +1,56 @@
 # FiberRef — Fiber-Local State
 
-`FiberRef` is the effect equivalent of thread-local storage. It holds a value that's scoped to the current fiber — each fiber has its own independent copy.
+`FiberRef<T>` is the effect equivalent of thread-local storage, except that it follows the *fiber* across executor threads. Each fiber has its own slot; a forked child starts with a copy of its parent's value.
 
-## Defining a FiberRef
+## Creating a FiberRef
 
-```rust
+```rust,ignore
 use id_effect::FiberRef;
 
-// A fiber-local trace ID, defaulting to "none"
-static TRACE_ID: FiberRef<String> = FiberRef::new(|| "none".to_string());
+// A fiber-local trace id, "none" in every fiber until it is set.
+let trace_id: FiberRef<String> = FiberRef::new("none".to_string());
 ```
 
-`FiberRef::new` takes a factory closure that produces the initial value for each fiber. The static variable is the *key*; each fiber has its own value.
+`FiberRef::new(init)` is a plain constructor (`T: Clone + Send + Sync + 'static`). Cloning a `FiberRef` clones the *handle*: both clones name the same slot. Keep one in a `static` `LazyLock`, in a capability, or pass it around.
 
 ## Reading and Writing
 
-```rust
-effect! {
-    // Set the trace ID for this fiber
-    ~ TRACE_ID.set("req-abc-123".to_string());
-
-    // Read it anywhere in this fiber's call stack
-    let id = ~ TRACE_ID.get();
-    ~ log(&format!("[{id}] processing request"));
-
-    ~ process_request();
-    Ok(())
-}
-```
-
-`set` and `get` are both effects (they need the fiber context). Inside `effect!`, use `~` to bind them.
-
-## FiberRef Doesn't Cross Fiber Boundaries
-
-When you `fork` a new fiber, it starts with its own copy of the FiberRef value (the factory closure runs again):
+`get`, `set` and `update` are effects (they need the running fiber):
 
 ```rust
-effect! {
-    ~ TRACE_ID.set("parent-123".to_string());
-    
-    let child = effect! {
-        let id = ~ TRACE_ID.get();
-        // id is "none" — the fork starts fresh
-        println!("child trace id: {id}");
-    }.fork();
-    
-    ~ child.join();
-    Ok(())
-}
+use id_effect::{Effect, Exit, FiberRef};
+
+let r = FiberRef::new(0_u32);
+let r2 = r.clone();
+let program: Effect<u32, ()> = r.set(42).flat_map(move |()| r2.get());
+assert_eq!(program.block_on(), Exit::succeed(42));
+
+// `locally` scopes a value to one effect, then restores the previous one.
+let scoped: Effect<u32, ()> = r.locally(7, r.get());
+assert_eq!(scoped.block_on(), Exit::succeed(7));
 ```
 
-If you want the child to inherit the parent's value, pass it explicitly or use `FiberRef::inherit`:
+`locally(value, eff)` restores the previous value however `eff` ends (success, failure, defect or interrupt).
 
-```rust
-let child_with_inherited = effect! {
-    let id = ~ TRACE_ID.get();
-    TRACE_ID.locally(id, child_effect())  // child sees parent's value
-};
+## Inheritance Across Forks
+
+A child forked with `fork`, `fork_all` (and so `all`, `zip_par`, …) or `Scope::fork_in` starts with a **copy of its parent's values at fork time**. After that, each side's `set` is invisible to the other:
+
+```rust,ignore
+let program = trace_id.set("req-123".into())
+    .then(trace_id.get().fork())          // the child sees "req-123"
+    .flat_map(|h| h.join());
 ```
 
-`locally(value, effect)` runs the effect with a temporarily overridden FiberRef value, then restores the previous value when done.
+`fork_daemon` inherits the same copy (Effect.ts parity). Only a fiber started from outside any fiber (`Runtime::fork`, a run edge such as `block_on`) starts from the initial values.
 
 ## Common Use Cases
 
 | Use Case | Pattern |
 |----------|---------|
-| Request tracing / correlation IDs | `static TRACE_ID: FiberRef<String>` |
-| Per-request user context | `static CURRENT_USER: FiberRef<Option<UserId>>` |
-| Metrics labels | `static OPERATION: FiberRef<&'static str>` |
-| Debug context | `static CALL_PATH: FiberRef<Vec<String>>` |
+| Request tracing / correlation ids | `FiberRef<String>` set per request, read by loggers |
+| Per-request user context | `FiberRef<Option<UserId>>` with `locally` |
+| Metric tags | the metrics layer's fiber tags (`MetricRegistry::fiber_tags`) |
+| Debug context | `FiberRef<Vec<String>>` call path |
 
-`FiberRef` makes it easy to carry contextual information through deep call stacks without threading extra parameters everywhere — the fiber equivalent of request-scoped context in traditional web frameworks.
+Runtime integrations (tracing bridges, metrics) can read or write a fiber's value from outside an effect with `get_in(&fiber_context)` / `set_in`.

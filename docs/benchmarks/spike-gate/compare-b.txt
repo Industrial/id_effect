@@ -1,0 +1,18 @@
+bench-compare: v06-median-of-rounds@4894861156a3 -> b-median-of-rounds@ece233398350 (median)
+ID                                     KIND     LIMIT  RATIO   RESULT
+phase0/bench_effect_map_chain          budget   1.25   0.160   PASS
+phase0/bench_effect_flat_map_chain     budget   1.25   0.065   PASS
+gate/flat_map_depth_10k                budget   1.25   0.000   PASS
+gate/async_bind_64                     budget   1.25   2.030   FAIL
+gate/spawn_join_10k                    improve  1.00   0.001   PASS
+gate/sleep_cpu_1k_x_1ms                improve  1.00   0.002   PASS
+gate/axum_request_oneshot              improve  1.00   -       FAIL (missing in new)
+gate/sleep_1k_x_1ms                    report   -      0.005   REPORT
+gate/axum_request_caps                 report   -      -       FAIL (missing in new)
+stream/pull_map_10k                    report   -      -       FAIL (missing in new)
+stream/map_effect_1k                   report   -      -       FAIL (missing in new)
+coord/channel_spsc_10k                 report   -      -       FAIL (missing in new)
+coord/queue_bounded_10k                report   -      -       FAIL (missing in new)
+
+bench-compare: 7 gate(s) FAIL
+bench-compare v06-median vs b-median: exit=1

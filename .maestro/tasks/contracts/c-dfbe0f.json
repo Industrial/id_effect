@@ -1,0 +1,122 @@
+{
+	"schemaVersion": 2,
+	"id": "c-dfbe0f",
+	"taskId": "tsk-mv8ohjj3-a69hni",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-14T22:31:20.599Z",
+	"lockedAt": "2026-10-14T22:31:20.599Z",
+	"intent": "W2: Shared spike harness (handler corpus, annotation count, check-time scripts)",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-0ad2e5",
+			"text": "A draft PR release/0.7.0 to main exists from W0 so that ci-pass and pg-integration witness every leaf, and the W0 CI run records the baseline coverage percentage",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-8f5fd5",
+			"text": "Criterion baselines of v0.6.0 are committed as docs/benchmarks/v0.6.json with machine info and the bench/v0.6 SHA, covering bind/map chains, async bind, flat_map depth, stream pull/map_effect, channel/queue, fiber spawn/join, fiber sleep wall and CPU time, and the axum request path, and scripts/bench-compare.sh enforces the D9 thresholds from docs/benchmarks/gates.toml",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-612dbc",
+			"text": "id_effect_tower and id_effect_sql_pg are deleted, and so are StreamV1, ComputeSupervisor, SchemaParser, the",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-e2eaf7",
+			"text": "The request resolver awaits its batch fetch instead of calling run_blocking(..).expect, a fetch error fails every waiting entry with a typed error, and a current_thread tokio test with an async fetch completes",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-2b9060",
+			"text": "Cause::Die carries a Defect that keeps the panic payload, and a panic in any fiber, finalizer or runtime edge surfaces as Cause::Die with a downcastable payload",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-727eba",
+			"text": "Both kernel designs are spiked in parallel — A in spikes/kernel_a and B as the standalone spikes/kernel_b crate — sharing the inline Ready variant, Cause<E> as internal error channel, a one-shot completion slot and effect_local!/LocalEffect, and docs/benchmarks/SPIKE-REPORT.md compares them side by side against v0.6 (bench ratios, at least three trybuild .stderr compile errors each, inference annotation counts on a shared corpus, cargo check time at 16 caps by 100 handlers, B's showcase env forward-list size) before the human design choice H1",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a05236",
+			"text": "ADR 0011 (fiber runtime, Send by default, typed R, side-by-side transition) is accepted, and ADRs 0003, 0007 Phase C, 0008 and 0010 are amended to match the code; ADR 0010 records that tokio stays mandatory",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-73a877",
+			"text": "The chosen kernel lands side by side in id_effect::next with the old kernel untouched, and every leaf from W1 on keeps cargo check --workspace, scripts/ci-local.sh full and the labs workspace tests green",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-7c42b9",
+			"text": "Effect<A,E,R> is Send by default with an opt-in LocalEffect, fibers run on an Executor trait with mandatory tokio as the default backend and real wakers, interruption stops work and runs finalizers, parent fibers interrupt their children on exit, and a missing capability is a compile error",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-11e834",
+			"text": "race, race_all, timeout, zip_par, all and for_each with Sequential, Bounded, Unbounded and Inherit concurrency, fork, fork_daemon, interruptible and uninterruptible exist, join_binds fails fast with sibling interruption, and coordination and resource constructors are plain functions",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-6f1237",
+			"text": "Layer values support merge, provide_to, fresh and scoped with async finalizers, Schedule<Out,In> is an immutable typed value with retry, retry_or_else, repeat and repeat_or_else Effect methods, Effect::request batches and caches, and Random and TestRandom exist",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-90af16",
+			"text": "Metrics use atomics and bounded bucketed histograms behind a registry, every Schema combinator round-trips decode(encode(a)) == a with struct arity of at least 12, and Config<T> is the sole configuration API and is providable as a Layer",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-316efb",
+			"text": "All 17 published crates switch to the new kernel in publish-level order, with unmigrated dependents bridged through id_effect::next::compat until they switch; axum handlers are native Send without block_in_place or run_local, resilience hedged uses race, STM retry no longer spins, SpinClock is deleted, and the logger keeps its thread-local install API",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-593494",
+			"text": "All labs crates (parse, events, graph, workflow, jobs, rpc, ai, plus lint message text) are migrated to 0.7 with no new features and the labs CI job green",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-6999cd",
+			"text": "k-retire-v1 deletes the old kernel and the compat bridge only after no next::compat call site remains, and k-retire-sweep leaves no id_effect::next or temporary *_next! macro reference in crates, labs or examples; no library target calls run_blocking except allowlisted edges",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-4fa413",
+			"text": "examples/http-showcase (axum + sql pg + config + otel) uses Layers, Scope, typed errors, retry with a Schedule and per-request timeout, and its integration tests against a real Postgres are green in the CI pg-integration job, failing rather than skipping when ID_EFFECT_REQUIRE_PG=1 and no database is reachable",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-aa374d",
+			"text": "docs/benchmarks/REPORT-0.7.md compares a same-session re-run of bench/v0.6 with 0.7.0, showing bind/map regress by at most 25 percent while fiber sleep CPU, fiber spawn and the axum request path improve, or records an explicit human waiver per D9",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-98c849",
+			"text": "docs/MIGRATION-0.7.md covers every breaking change and removal with its replacement, the CHANGELOG has a 0.7.0 section, and the book, READMEs and Effect.ts parity checklist match the code",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-f8b78e",
+			"text": "The coverage floor in scripts/llvm-cov-nextest.sh and docs/QUALITY_BAR.md is 96 percent and is met; moon CI, tier conformance, docs with -D warnings, cargo audit, MSRV 1.94, minimal-versions, crate packaging, labs and pg-integration are green on the release PR; all workspace and labs crates are versioned 0.7.0",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "claude",
+	"lockedBy": "claude",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"missionId": "pln-mv8oh29m-3zdrrj",
+	"riskClass": "high"
+}

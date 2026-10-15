@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use super::admission::AdmissionController;
+use super::admission::{AdmissionController, Admit};
 use super::fiber_pool::FiberPool;
 use super::governor::FabricGovernor;
 use super::policy::ResourcePolicy;
@@ -55,15 +55,16 @@ impl<E: TelemetryEngine + 'static> ComputeFabric<E> {
     &self.admission
   }
 
+  /// Asynchronously takes one admission permit (see [`AdmissionController::admit`]): a
+  /// waker-based future, never a blocked thread. The 0.7 kernel's `Concurrency::Inherit`
+  /// admission goes through this (ADR 0007 Amendment 1).
+  pub fn admit(&self) -> Admit {
+    self.admission.admit()
+  }
+
   /// Resource governor (monitor → admit → rebalance control loop) for this fabric.
   pub fn governor(&self) -> &FabricGovernor<E> {
     &self.governor
-  }
-
-  /// Deprecated name of [`Self::governor`].
-  #[deprecated(since = "0.6.0", note = "renamed to `governor()`")]
-  pub fn supervisor(&self) -> &FabricGovernor<E> {
-    self.governor()
   }
 
   /// Telemetry engine feeding the governor.

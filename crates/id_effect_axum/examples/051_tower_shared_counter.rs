@@ -5,7 +5,6 @@
 //! `050_tower_effect_service.rs`).
 //!
 //! Run: `cargo run -p id_effect_axum --features tower --example 051_tower_shared_counter`
-//! Or: `moon run effect-tower:examples`
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -30,5 +29,5 @@ async fn main() {
   assert_eq!(a, "req #1");
   assert_eq!(b, "req #2");
   assert_eq!(hits.load(Ordering::Relaxed), 2);
-  println!("002_shared_counter: ok ({a}, {b})");
+  println!("051_tower_shared_counter: ok ({a}, {b})");
 }

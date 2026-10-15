@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.7.0 — 2026-10-15 — The runtime release (breaking)
+
+Replaces the `!Send`, busy-polled kernel with an owned fiber runtime on an `Executor` trait
+(tokio is the default backend), makes `Effect` `Send` with a typed `R`, adds the Effect.ts
+parity layer and prunes the 0.6 deprecations. See
+[ADR 0011](docs/adrs/0011-fiber-runtime-send-typed-r.md). Upgrading from 0.6: see the
+[0.7 migration guide](docs/MIGRATION-0.7.md), which lists every removal with its replacement.
+
+### Changed
+
+- **Kernel:** `Effect<A, E = Never, R = HNil>` is `Send`; `LocalEffect` / `effect_local!` hold
+  `!Send` values. Fibers have real wakers, interruption runs finalizers, and a parent interrupts
+  its children when it exits. Effects run once: `retry`, `repeat` and `Layer::effect` take a
+  factory.
+- **Typed `R`:** capabilities are an HList (`HCons` / `HNil`, `caps!`, `need::<K>()`, `~K`); a
+  missing capability is a compile error. `provide`, `provide_env`, `provide_all` and `narrow`
+  replace `Env`, `Needs` and `Cap`.
+- **Run edges:** `Effect::block_on`, `Runtime::run(..).await` and `Runtime::fork` return `Exit`.
+  A blocking edge inside an async context refuses to run (`BlockOnInAsync`).
+- **`effect!`** binds sequentially; `~(a, b, ..)` joins in parallel (0.6 parallelised
+  independent binds implicitly).
+- **`Cause::Die`** carries a `Defect` that keeps the panic payload; panics in fibers,
+  finalizers and edges surface as `Die`.
+- **Coordination and resources** (`Ref`, `Semaphore`, `Queue`, `Deferred`, `Latch`, `PubSub`,
+  `Channel`, `Pool`, `Cache`, …) have plain constructors and suspend on wakers. A bounded
+  `Queue::offer` waits; `KeyedPool` capacity is per key; `Cache` caches typed failures.
+- **Streams** are owned pulls; `map_effect` is sequential (`map_effect_par(n, f)` for
+  concurrency).
+- **`Concurrency::Inherit`** takes its limit from the ambient `Fabric`, admitted asynchronously.
+- **Satellite crates** are on the 0.7 kernel; their providers are `Layer`s. Highlights:
+  `id_effect_axum` runs one fiber per request (panic → 500, disconnect → interrupt);
+  `id_effect_cli::run_main` maps defects to 101 and interrupts to 130; `id_effect_config` reads
+  only through `Config<T>` and `Config::all` accumulates errors; `id_effect_sql` transactions
+  roll back on defects and interrupts and statements run on the transaction's connection;
+  `id_effect_process` processes are fibers; `id_effect_node` waits are effects;
+  `id_effect_resilience::hedged` is a race; `id_effect_fp` STM retry parks instead of spinning.
+- **Labs** crates are migrated to the 0.7 kernel without new features.
+
+### Added
+
+- `Layer` values: `succeed`, `effect`, `scoped`, `acquire_release`, `merge`, `provide_to`,
+  `provide_merge`, `fresh`, `build_scoped`, `launch`; `Effect::provide_layer`.
+- `zip_par`, `zip_with_par`, `all`, `for_each_par`, `fork_all` with `Concurrency`; `race`,
+  `race_all`, `race_first`, `timeout`, `timeout_fail`; `fork_daemon` inherits `FiberRef`s.
+- Typed `Schedule<Out, In>` with `Effect::retry` / `retry_or_else` / `repeat` / `repeat_or_else`.
+- `Effect::request` with `RequestResolver::make_batched` batching and `RequestCache`.
+- `Random` / `TestRandom`; `TestExecutor` (virtual time); `TokioExecutor`.
+- Metrics on atomics (`Counter`, `Gauge`, `Histogram`, `Summary`, `Frequency`) in a
+  `MetricRegistry`; `tag_metrics`; spans with `SpanHook`; `tracing_hook()` for the in-process
+  tracing buffer.
+- Schema `tuple5`..`tuple12` and `struct5`..`struct12`; `Config::<T>::layer()`.
+- `id_effect_axum::server_layer` / `serve*`, `id_effect_sql` scoped client and transaction
+  layers, `id_effect_opentelemetry` registry bridge and `OtelSpanHook`.
+- `examples/http-showcase` (axum + sql pg + config + otel, unpublished).
+
+### Removed
+
+- Crates `id_effect_tower` and `id_effect_sql_pg` (use `id_effect_axum` feature `tower`,
+  `id_effect_sql` feature `pg`).
+- `StreamV1`, `ComputeSupervisor`, `fabric.supervisor()`, `id_effect_platform::process`,
+  `#[derive(SchemaParser)]`, `#[capability]`, the root `pipe1/2/3`, `memoize`, `flip`, `const_`,
+  `tupled`, `untupled`, `MutableRef`, and the module aliases `id_effect::{channel, ref_, either,
+  func, clock, duration, schedule, data, stream, snapshot}`.
+- The 0.6 kernel: `run_blocking` / `run_async` / `run_fork` / `run_test*`, `Env` / `Cap` /
+  `Needs`, the provider graph (`ProviderSpec`, `ProviderBox`, `build_env`, `run_with`), the
+  `provide!` / `providers!` / `require!` / `mock_capability!` macros, `CancellationToken`,
+  `Clock` / `TestClock`, the free `retry` / `repeat`, the 0.6 `Metric`, and the
+  `testing::{snapshot, proptest, stream}` helpers with the `proptest` feature.
+- The `id-effect-diagnose` binary of `id_effect_cli`.
+
+### Fixed
+
+- The request resolver awaits its fetch (no `run_blocking`) and fails entries with a typed
+  error instead of panicking.
+- `#[derive(Schema)]` compiles for `i32`, `Option<bool | f64 | i32>`, `Vec<i32>` and
+  `Vec<T: HasSchema>` fields.
+- `Stm::or_else` no longer leaks the retrying branch's writes into the alternative.
+- `id_effect_jobs`' `apalis` feature compiles against `apalis-postgres` 1.0.0.
+
 ## 0.6.0 — 2026-10-14 — Consolidation (breaking)
 
 Narrows the workspace to its core purpose and hardens what remains. See

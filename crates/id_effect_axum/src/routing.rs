@@ -1,41 +1,59 @@
-//! Method routers that wrap `Effect<A, E, S>` with [`axum::extract::State`].
+//! Method routers that run `Effect<A, E, S>` handlers with [`axum::extract::State`]`<S>`.
 //!
-//! Each helper returns a [`MethodRouter`] you can pass to
-//! [`axum::Router::route`].
+//! Each helper returns a [`MethodRouter`] you can pass to [`axum::Router::route`]. Per request,
+//! the handler `f(&mut state)` builds the effect, which is provided with that state and run as a
+//! request fiber on the global [`crate::EffectExecutor`]; the exit is mapped with
+//! [`crate::exit_response`] (typed failure → `E`, defect → `500`, interrupt → `503`).
 //!
-//! [`get_with_metrics`] (and siblings) increment a request [`Metric`]
-//! counter and record handler wall time in a latency [`Metric`] (histogram / summary / timer) via
-//! [`id_effect::Metric::track_duration`].
+//! [`get_with_metrics`] (and siblings) increment a request [`Counter`] and record the handler's
+//! duration (seconds, executor clock) in a latency [`Histogram`] via
+//! [`Histogram::track_duration`].
 //!
-//! Effects run on the global [`crate::EffectExecutor`]; when it is saturated and configured with
-//! [`crate::SaturationPolicy::Reject`], handlers answer `503` ([`crate::Saturated`]).
+//! When the executor is saturated and configured with [`crate::SaturationPolicy::Reject`],
+//! handlers answer `503` ([`crate::Saturated`]).
+
+use std::future::Future;
 
 use axum::extract::State;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{MethodFilter, MethodRouter};
-use id_effect::Effect;
-use id_effect::Metric;
-use id_effect::duration::Duration;
-use id_effect::runtime::run_blocking;
+use id_effect::{Counter, Effect, Histogram};
 
-async fn run_with_axum_metrics<S, A, E, F>(
-  env: S,
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
-  f: F,
-) -> Result<Result<A, E>, crate::Saturated>
+/// The Axum handler behind every helper: one request fiber per call.
+fn handler<S, A, E, F>(f: F) -> impl Fn(State<S>) -> HandlerFuture + Clone + Send + Sync + 'static
 where
-  S: Send + 'static,
-  A: Send + 'static,
-  E: Send + 'static,
-  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
+  S: Clone + Send + Sync + 'static,
+  A: IntoResponse + Send + 'static,
+  E: IntoResponse + Send + 'static,
+  F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  crate::try_run_effect_from_state(env, move |e| {
-    // Counter increments are synchronous; run them on the executor worker with the request.
-    run_blocking(request_counter.apply(1), ()).expect("request counter");
-    latency.track_duration(f(e))
+  move |State(env): State<S>| {
+    let f = f.clone();
+    Box::pin(
+      async move { crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await) },
+    ) as HandlerFuture
+  }
+}
+
+type HandlerFuture = std::pin::Pin<Box<dyn Future<Output = Response> + Send>>;
+
+/// [`handler`] with the request counter and latency histogram around the effect.
+fn metered<S, A, E, F>(
+  request_counter: Counter,
+  latency: Histogram,
+  f: F,
+) -> impl Fn(State<S>) -> HandlerFuture + Clone + Send + Sync + 'static
+where
+  S: Clone + Send + Sync + 'static,
+  A: IntoResponse + Send + 'static,
+  E: IntoResponse + Send + 'static,
+  F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
+{
+  handler(move |e: &mut S| {
+    request_counter
+      .increment::<E, S>()
+      .then(latency.track_duration(f(e)))
   })
-  .await
 }
 
 /// `GET` — `f` is invoked per request; use [`Clone`] on `f` when the router stores it (e.g. closure
@@ -48,23 +66,17 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::get(move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::get(handler(f))
 }
 
 /// `GET` with per-route request counting and latency recording.
 ///
-/// Pass counters/histograms (typically tagged with `route`, etc.) built via [`Metric::counter`] /
-/// [`Metric::histogram`].
+/// Pass handles (typically tagged with `route`, etc.) built via [`Counter::new`] /
+/// [`Histogram::new`].
 #[inline]
 pub fn get_with_metrics<S, A, E, F>(
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -73,15 +85,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::get(move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::get(metered(request_counter, latency, f))
 }
 
 /// `POST`
@@ -93,20 +97,14 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::post(move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::post(handler(f))
 }
 
-/// `POST` with request counter + latency [`Metric`] (see [`get_with_metrics`]).
+/// `POST` with request counter + latency histogram (see [`get_with_metrics`]).
 #[inline]
 pub fn post_with_metrics<S, A, E, F>(
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -115,15 +113,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::post(move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::post(metered(request_counter, latency, f))
 }
 
 /// `PUT`
@@ -135,20 +125,14 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::put(move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::put(handler(f))
 }
 
-/// `PUT` with request counter + latency [`Metric`].
+/// `PUT` with request counter + latency histogram.
 #[inline]
 pub fn put_with_metrics<S, A, E, F>(
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -157,15 +141,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::put(move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::put(metered(request_counter, latency, f))
 }
 
 /// `PATCH`
@@ -177,20 +153,14 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::patch(move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::patch(handler(f))
 }
 
-/// `PATCH` with request counter + latency [`Metric`].
+/// `PATCH` with request counter + latency histogram.
 #[inline]
 pub fn patch_with_metrics<S, A, E, F>(
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -199,15 +169,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::patch(move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::patch(metered(request_counter, latency, f))
 }
 
 /// `DELETE`
@@ -219,20 +181,14 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::delete(move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::delete(handler(f))
 }
 
-/// `DELETE` with request counter + latency [`Metric`].
+/// `DELETE` with request counter + latency histogram.
 #[inline]
 pub fn delete_with_metrics<S, A, E, F>(
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -241,15 +197,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::delete(move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::delete(metered(request_counter, latency, f))
 }
 
 /// Custom method filter (e.g. [`MethodFilter::HEAD`](MethodFilter::HEAD)).
@@ -261,21 +209,15 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::on(method, move |st: State<S>| {
-    let f = f.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(crate::try_run_effect_from_state(env, move |e| f(e)).await)
-    }
-  })
+  axum::routing::on(method, handler(f))
 }
 
-/// Custom method filter with request counter + latency [`Metric`].
+/// Custom method filter with request counter + latency histogram.
 #[inline]
 pub fn on_with_metrics<S, A, E, F>(
   method: MethodFilter,
-  request_counter: Metric<u64, ()>,
-  latency: Metric<Duration, ()>,
+  request_counter: Counter,
+  latency: Histogram,
   f: F,
 ) -> MethodRouter<S>
 where
@@ -284,15 +226,7 @@ where
   E: IntoResponse + Send + 'static,
   F: Fn(&mut S) -> Effect<A, E, S> + Clone + Send + Sync + 'static,
 {
-  axum::routing::on(method, move |st: State<S>| {
-    let f = f.clone();
-    let ctr = request_counter.clone();
-    let lat = latency.clone();
-    async move {
-      let State(env) = st;
-      crate::respond(run_with_axum_metrics(env, ctr, lat, move |e| f(e)).await)
-    }
-  })
+  axum::routing::on(method, metered(request_counter, latency, f))
 }
 
 #[cfg(test)]
@@ -302,8 +236,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::{Method, Request, StatusCode};
   use axum::routing::{MethodFilter, Router};
-  use id_effect::duration::Duration;
-  use id_effect::{Effect, Metric, fail, succeed};
+  use id_effect::{Boundaries, Counter, Effect, Histogram, fail, succeed};
   use tower::ServiceExt;
 
   use super::*;
@@ -319,6 +252,21 @@ mod tests {
     fail((StatusCode::INTERNAL_SERVER_ERROR, "nope"))
   }
 
+  async fn status(app: &Router, method: Method, path: &str) -> StatusCode {
+    app
+      .clone()
+      .oneshot(
+        Request::builder()
+          .method(method)
+          .uri(path)
+          .body(Body::empty())
+          .unwrap(),
+      )
+      .await
+      .unwrap()
+      .status()
+  }
+
   #[tokio::test]
   async fn get_post_put_patch_delete_and_error_paths() {
     let app = Router::new()
@@ -327,6 +275,7 @@ mod tests {
       .route("/u", put(ok))
       .route("/a", patch(ok))
       .route("/d", delete(ok))
+      .route("/h", on(MethodFilter::HEAD, ok))
       .route("/e", get(fail_handler))
       .with_state(AppState(()));
 
@@ -336,85 +285,55 @@ mod tests {
       (Method::PUT, "/u"),
       (Method::PATCH, "/a"),
       (Method::DELETE, "/d"),
+      (Method::HEAD, "/h"),
     ] {
-      let res = app
-        .clone()
-        .oneshot(
-          Request::builder()
-            .method(method)
-            .uri(path)
-            .body(Body::empty())
-            .unwrap(),
-        )
-        .await
-        .unwrap();
-      assert_eq!(res.status(), StatusCode::OK);
+      assert_eq!(status(&app, method, path).await, StatusCode::OK, "{path}");
     }
-
-    let res = app
-      .oneshot(Request::builder().uri("/e").body(Body::empty()).unwrap())
-      .await
-      .unwrap();
-    assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+      status(&app, Method::GET, "/e").await,
+      StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(
+      status(&app, Method::POST, "/g").await,
+      StatusCode::METHOD_NOT_ALLOWED
+    );
   }
 
   #[tokio::test]
-  async fn on_and_metrics_variants_execute() {
-    let ctr = Metric::counter("c", []);
-    let lat = Metric::<Duration, ()>::histogram("h", []);
+  async fn every_metered_helper_counts_and_times() {
+    let ctr = Counter::new("id_effect_axum_routing_requests");
+    let lat = Histogram::new(
+      "id_effect_axum_routing_latency",
+      Boundaries::exponential(0.0001, 2.0, 16),
+    );
     let app = Router::new()
-      .route("/gm", get_with_metrics(ctr.clone(), lat.clone(), ok))
-      .route("/pm", post_with_metrics(ctr.clone(), lat.clone(), ok))
-      .route("/um", put_with_metrics(ctr.clone(), lat.clone(), ok))
-      .route("/am", patch_with_metrics(ctr.clone(), lat.clone(), ok))
-      .route("/dm", delete_with_metrics(ctr.clone(), lat.clone(), ok))
-      .route("/o", on(MethodFilter::OPTIONS, ok))
+      .route("/g", get_with_metrics(ctr.clone(), lat.clone(), ok))
+      .route("/p", post_with_metrics(ctr.clone(), lat.clone(), ok))
+      .route("/u", put_with_metrics(ctr.clone(), lat.clone(), ok))
+      .route("/a", patch_with_metrics(ctr.clone(), lat.clone(), ok))
+      .route("/d", delete_with_metrics(ctr.clone(), lat.clone(), ok))
+      .route(
+        "/h",
+        on_with_metrics(MethodFilter::HEAD, ctr.clone(), lat.clone(), ok),
+      )
+      .route(
+        "/e",
+        get_with_metrics(ctr.clone(), lat.clone(), fail_handler),
+      )
       .with_state(AppState(()));
-
     for (method, path) in [
-      (Method::GET, "/gm"),
-      (Method::POST, "/pm"),
-      (Method::PUT, "/um"),
-      (Method::PATCH, "/am"),
-      (Method::DELETE, "/dm"),
+      (Method::GET, "/g"),
+      (Method::POST, "/p"),
+      (Method::PUT, "/u"),
+      (Method::PATCH, "/a"),
+      (Method::DELETE, "/d"),
+      (Method::HEAD, "/h"),
+      (Method::GET, "/e"),
     ] {
-      let _ = app
-        .clone()
-        .oneshot(
-          Request::builder()
-            .method(method)
-            .uri(path)
-            .body(Body::empty())
-            .unwrap(),
-        )
-        .await
-        .unwrap();
+      let _ = status(&app, method, path).await;
     }
-
-    let _ = app
-      .clone()
-      .oneshot(
-        Request::builder()
-          .method(Method::OPTIONS)
-          .uri("/o")
-          .body(Body::empty())
-          .unwrap(),
-      )
-      .await
-      .unwrap();
-
-    let app2 = Router::new()
-      .route("/h", on_with_metrics(MethodFilter::HEAD, ctr, lat, ok))
-      .with_state(AppState(()));
-    let _ = app2
-      .oneshot(
-        Request::builder()
-          .method(Method::HEAD)
-          .uri("/h")
-          .body(Body::empty())
-          .unwrap(),
-      )
-      .await
-      .unwrap();
+    assert_eq!(ctr.count(), 7);
+    // Failures are timed too.
+    assert_eq!(lat.snapshot().count, 7);
   }
 }

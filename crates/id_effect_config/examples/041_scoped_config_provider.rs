@@ -1,22 +1,27 @@
-//! Ex 041 — request-local config via [`Env::scoped`] (replaces thread-local config overrides).
+//! Ex 041 — request-local config: an inner effect gets its own provider layer while the outer
+//! program keeps the process-environment provider (replaces thread-local config overrides).
 
-use id_effect::{build_env, provide, run_blocking};
+use id_effect::Effect;
+use id_effect::Exit;
 use id_effect_config::{
-  Config, ConfigError, EnvConfigProviderLive, MapConfigProvider, provide_config_provider,
+  Config, ConfigEnv, ConfigError, EnvConfigProviderLive, MapConfigProvider, provide_config_provider,
 };
 
 fn main() {
-  let base = build_env([provide!(EnvConfigProviderLive)]).expect("base env");
-  let local = base
-    .scoped([provide_config_provider(MapConfigProvider::from_pairs([(
+  // Request-local: this read sees only its own provider.
+  let local: Effect<String, ConfigError> = Config::string("REGION")
+    .run::<String, ConfigError, ConfigEnv, _>()
+    .provide_layer(provide_config_provider(MapConfigProvider::from_pairs([(
       "REGION", "eu-west",
-    )]))])
-    .expect("scoped env");
-  let region: String = run_blocking(
-    Config::string("REGION").run::<String, ConfigError, _>(),
-    local,
-  )
-  .unwrap();
+    )])));
+  // The outer program runs against the process environment (`EnvConfigProviderLive`).
+  let program: Effect<String, ConfigError, ConfigEnv> = local.narrow::<ConfigEnv, _>();
+  let Exit::Success(region) = program
+    .provide_layer(EnvConfigProviderLive::layer())
+    .block_on()
+  else {
+    panic!("config read failed")
+  };
   assert_eq!(region, "eu-west");
   println!("041_scoped_config_provider ok");
 }

@@ -14,17 +14,26 @@ Vendor-neutral LLM client traits and multi-vendor HTTP adapters for `id_effect`.
 ## Quick start
 
 ```rust
-use id_effect::{build_env, run_async};
-use id_effect_ai::{AiConfig, ChatRequest, ChatRole, ChatMessage, complete, provide_openai_language_model};
-use id_effect_platform::http::{ReqwestHttpClient, provide_reqwest_http_client};
+use id_effect::{HCons, HNil};
+use id_effect_ai::{
+  AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
+  provide_openai_language_model,
+};
+use id_effect_platform::http::ReqwestHttpClient;
 use std::sync::Arc;
 
 let cfg = AiConfig::from_env();
 let client = Arc::new(ReqwestHttpClient::default_client());
-let env = build_env([
-  provide_reqwest_http_client(),
-  provide_openai_language_model(client, cfg)?,
-])?;
+let layer = provide_openai_language_model::<AiError>(client, cfg)?;
+let req = ChatRequest {
+  model: "gpt-4o-mini".into(),
+  messages: vec![ChatMessage { role: ChatRole::User, content: "Hello".into() }],
+};
+// `id_effect` effect; `block_on` at the program edge (or `TokioRuntime::run` in async code).
+let resp = complete::<HCons<LanguageModelService, HNil>, _>(req)
+  .provide_layer(layer)
+  .block_on()
+  .into_result();
 ```
 
 ## Environment variables

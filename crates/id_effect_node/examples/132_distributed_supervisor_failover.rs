@@ -1,9 +1,8 @@
 //! Example 132 — DistributedSupervisor takeover when a node goes down.
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use id_effect::runtime::Never;
+use id_effect::Never;
 use id_effect::{Effect, succeed};
 use id_effect_node::id::NodeId;
 use id_effect_node::membership::{Member, MembershipEvent};
@@ -38,13 +37,13 @@ fn main() {
   rb.register::<Worker>("worker");
   let a = Mesh::new(
     NodeId::fresh(&NodeName::new("a@ex")),
-    ProcessNode::threads(NodeName::new("a@ex")),
+    ProcessNode::new(NodeName::new("a@ex")),
     ra,
   )
   .with_fabric(fabric.clone());
   let _b = Mesh::new(
     NodeId::fresh(&NodeName::new("b@ex")),
-    ProcessNode::threads(NodeName::new("b@ex")),
+    ProcessNode::new(NodeName::new("b@ex")),
     rb,
   )
   .with_fabric(fabric);
@@ -60,12 +59,16 @@ fn main() {
       },
       None,
     )
+    .block_on()
+    .into_result()
     .expect("start");
   println!("child started on {}", pid.node().as_str());
 
+  // The takeover effect completes once the departed node's children are re-placed.
   let down = Member::new(NodeId::fresh(&NodeName::new("b@ex")), "b@ex");
-  sup.on_membership(&MembershipEvent::NodeDown(down));
-  std::thread::sleep(Duration::from_millis(50));
+  let _ = sup
+    .on_membership(&MembershipEvent::NodeDown(down))
+    .block_on();
 
   let listed = sup.list();
   println!("after failover: child {} on {}", listed[0].0, listed[0].2);

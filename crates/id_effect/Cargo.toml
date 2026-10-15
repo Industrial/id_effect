@@ -3,7 +3,7 @@ name = "id_effect"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Effect<A, E, R> (sync + async), capability DI, pipe — interpreter-style, no bundled executor"
+description = "Effect<A, E, R>: lazy Send effects over a typed capability list, run on a fiber runtime (Tokio executor), with layers, streams, schedules and coordination"
 license.workspace = true
 repository.workspace = true
 
@@ -22,17 +22,16 @@ name = "phase0_baseline"
 harness = false
 
 [[bench]]
-name = "env_lookup"
-harness = false
-
-[[bench]]
 name = "effect_macro_bind_free"
 harness = false
 
 [[bench]]
-name = "startup_run_with"
+name = "gate_core"
 harness = false
-required-features = ["compute"]
+
+[[bench]]
+name = "next_kernel"
+harness = false
 
 # Compute Fabric examples (auto-discovered otherwise; listed only to gate on `compute`).
 [[example]]
@@ -49,18 +48,17 @@ required-features = ["compute"]
 
 [features]
 default = ["compute"]
-# Compute Fabric (`compute` module): admission, adaptive Rayon parallelism for bulk ops, sysinfo
-# telemetry. Off → serial bulk ops, no fabric at `run`/`run_with`, no rayon/sysinfo deps.
+# Compute Fabric (`compute` module): resource-aware admission (`ComputeFabric`), adaptive Rayon
+# parallelism for bulk ops, sysinfo telemetry. Off → serial bulk ops, no rayon/sysinfo deps (the
+# kernel's fiber admission `Fabric` is always built).
 compute = ["dep:rayon", "dep:sysinfo"]
-# Property-testing helpers in `testing::proptest`.
-proptest = ["dep:proptest"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
-id_effect_macro = { path = "../id_effect_macro", version = "0.6.0" }
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.6.0" }
+id_effect_macro = { path = "../id_effect_macro", version = "0.7.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.7.0" }
 flume = "0.12"
 # 0.2.0 lacks APIs we use (`SignedDuration::from_nanos_i128`, `Error::from_args`).
 jiff = "0.2.23"
@@ -68,11 +66,15 @@ rayon = { version = "1.12", optional = true }
 # 0.39+ needs rustc ≥1.95 (cfg_select); pin until devenv rustc catches up.
 sysinfo = { version = "0.33", optional = true }
 serde_json = { version = "1", optional = true }
-proptest = { version = "1", optional = true }
-# Required: `coordination` is built on tokio::sync (Notify, Semaphore, Mutex, watch, broadcast) and
-# FiberHandle::{map, zip, or_else, interrupt_fork} / PubSub spawn onto the ambient Tokio runtime.
-# No timer driver (`time`) is needed by library code.
-tokio = { version = "1.50.0", features = ["macros", "rt", "sync"] }
+# Required (R6): the kernel's default `TokioExecutor` (`time` for real timers, `rt-multi-thread`
+# for the default `Runtime::global`).
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
 
 [dev-dependencies]
 trybuild = "1"
@@ -80,6 +82,9 @@ criterion = "0.8.2"
 pollster = "1.0"
 proptest = "1"
 rstest = "0.26"
+# Counting global allocator for `tests/kernel_alloc.rs` (the crate forbids `unsafe_code`, so
+# the test cannot implement `GlobalAlloc` itself).
+stats_alloc = "0.1"
 tokio = { version = "1.50.0", features = [
   "macros",
   "rt",

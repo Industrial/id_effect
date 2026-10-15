@@ -38,7 +38,8 @@ pub fn exit_code_for_cause<E>(cause: Cause<E>) -> ExitCode {
   ExitCode::from(cause_max_exit_byte(&cause))
 }
 
-/// Map a synchronous [`Result`] from [`id_effect::runtime::run_blocking`] to an [`ExitCode`].
+/// Map a synchronous [`Result`] (e.g. `Exit::into_result`, or a plain fallible step) to an
+/// [`ExitCode`].
 ///
 /// - `Ok(_)` → [`ExitCode::SUCCESS`]
 /// - `Err(_)` → `1` (typed channel; use [`exit_code_for_exit`] when you have a full [`Exit`])

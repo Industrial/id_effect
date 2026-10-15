@@ -53,7 +53,8 @@ impl CpuSpreadBucket {
   /// Block until a token is available.
   pub fn acquire_blocking(&self) {
     while !self.try_acquire() {
-      std::thread::yield_now();
+      // Back off briefly (a thread-level spin, not an effect yield).
+      std::thread::sleep(std::time::Duration::from_micros(10));
     }
   }
 

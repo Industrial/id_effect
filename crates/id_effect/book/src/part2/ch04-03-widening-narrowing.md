@@ -1,174 +1,117 @@
 # Widening and Narrowing — Environment Transformations
 
-Sometimes your effect needs *part* of an environment, but you have the whole thing. Or you need to thread an effect through a context that provides more than required. This is where `zoom_env`, `contramap_env`, and capability subtyping come in.
+Your effect needs *part* of an environment, but the caller has the whole thing. Or a step cannot
+fail, but the block it joins can. Typed `R` handles both with a few operations.
 
-## The Mismatch Problem
+## The mismatch
 
-Imagine your application needs several capabilities:
+```rust,ignore
+// Needs only AuditLog
+fn audit(msg: String) -> Effect<(), AppError, caps!(AuditLog)> { /* ... */ }
 
-```rust
-// Effect needs only EffectLogger
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> { ... }
-
-// Caller has Database + EffectLogger + Config
-fn process(data: Data) -> Effect<(), AppError, caps!(Database, EffectLogger, Config)> { ... }
+// The caller has Database, AuditLog and Config
+fn process(data: Data) -> Effect<(), AppError, caps!(Database, AuditLog, Config)> { /* ... */ }
 ```
 
-You can't call `log_event` inside `process` without adapting the environment — the `R` types don't match. You need to *narrow* or *widen*.
+`caps!(AuditLog)` and `caps!(Database, AuditLog, Config)` are different types, so `audit(..)` has
+to be lifted into the wider environment before it can be sequenced with the caller's other steps.
 
-## zoom_env: Narrow the Environment
+## Inside effect!: `~` narrows for you
 
-`zoom_env` adapts an effect to work with a *larger* environment by providing a lens from the larger type to the smaller one:
+A `~` bind lifts the sub-effect into the block's environment automatically, as long as every
+capability it needs is in the block's `R`:
 
-```rust
-// Adapt log_event to work with a struct holding logger + other fields
-let app_log = log_event("hello").zoom_env(|env: &AppEnv| &env.logger);
-```
-
-Now `app_log` has type `Effect<(), LogError, AppEnv>`. The function extracts the `Logger` from `AppEnv` and feeds it to the original effect.
-
-Inside `effect!`, the pattern looks like:
-
-```rust
-fn process(data: Data) -> Effect<(), AppError, caps!(Database, EffectLogger, Config)> {
-    effect!(|r| {
-        ~ log_event("start").zoom_env(|e| extract_logger(e)).map_error(AppError::Log);
-        ~ db_query(data).zoom_env(|e| extract_db(e)).map_error(AppError::Db);
-        Ok(())
-    })
+```rust,ignore
+fn process(data: Data) -> Effect<(), AppError, caps!(Database, AuditLog, Config)> {
+  effect!({
+    ~audit("start".into());  // caps!(AuditLog) lifted into the block's R
+    ~store(data);            // caps!(Database) lifted too
+  })
 }
 ```
 
-## contramap_env: Transform the Environment
+This is the common case, and it needs no annotations.
 
-While `zoom_env` narrows, `contramap_env` transforms. It applies a function to convert whatever environment the caller provides into what the effect actually needs:
+## Outside effect!: `narrow`
+
+With combinators, lift explicitly with `.narrow()`. It turns an `Effect<A, E, R>` into an
+`Effect<A, E, Wide>` for any `Wide` that contains every capability of `R` (any order, extras
+allowed):
 
 ```rust
-// Effect needs a raw string URL
-fn connect(url: &str) -> Effect<Database, DbError, String> { ... }
+use id_effect::{Effect, HCons, HNil, hlist, need};
 
-// You have a Config that contains the URL
-let with_config = connect_raw.contramap_env(|cfg: &Config| cfg.db_url.clone());
-// Now type is Effect<Database, DbError, Config>
+struct Db(u32);
+struct Logger(&'static str);
+struct Cache(u8);
+
+type DbLog = HCons<Db, HCons<Logger, HNil>>;
+type Wide = HCons<Cache, HCons<Logger, HCons<Db, HNil>>>;
+
+let small: Effect<u32, (), DbLog> = need::<Db>().map(|d| d.0);
+let wide: Effect<u32, (), Wide> = small.narrow();
+
+let exit = wide.provide_all(hlist![Cache(0), Logger("w"), Db(4)]).block_on();
 ```
 
-`contramap_env` is the formal name for "adapt the environment type." In practice, most code uses `zoom_env` for the common case of extracting a field.
+`narrow` into the same environment is free; otherwise the sub-environment is projected when the
+effect runs (one `Arc` clone per capability). It is what makes this compose:
 
-## caps! and automatic subtyping
-
-For capability DI, prefer [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and the `~` bind operator inside `effect!`. A wider runtime environment satisfies a narrower `R`: every [`CapList`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) shares one [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs); [`cap_into_bind`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/cap_bind.rs) clones that env and verifies the inner keys (see ADR 0005).
-
-```rust
-use id_effect::{Effect, caps, effect, run_with, provide};
-
-fn query(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r| {
-        let db = ~Database;
-        db.fetch_user(id)
-    })
-}
-
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)> {
-    effect!(|r| {
-        let log = ~EffectLogger;
-        log.info(msg);
-    })
-}
-
-fn app() -> Effect<User, AppError, caps!(Database, EffectLogger)> {
-    effect!(|r| {
-        ~log_event("start");
-        ~query(42)
-    })
-}
-
-run_with(
-    [provide!(DatabaseLive), provide!(LoggerLive)],
-    app(),
-)?;
+```rust,ignore
+let both: Effect<(u32, String), (), Wide> = small_effect().narrow().zip(other_effect().narrow());
 ```
 
-**Automatic binding with `~`:** when the inner effect needs any single key from the outer `caps!(…)` list, `effect!` expands `~inner(...)` to [`cap_into_bind`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/cap_bind.rs) — no manual projection.
+## Shrinking R: provide
 
-**Capability lookup:** `~Database` inside `effect!` borrows that capability from `r` (same as [`require!(Database)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_macro/src/capability/require.rs)).
+The other direction, removing requirements, is [providing](./ch04-02-providing.md):
+`.provide(t)` removes one capability, `.provide_some(hlist![..])` a sub-list. Providing in the
+middle of a program is how you scope a capability to one region:
 
-**Implicit `|r|`:** write `effect!(|r| { … })`; Rust infers `&mut caps!(…)` from the enclosing function's `Effect<_, _, caps!(…)>` return type. You still declare `caps!(…)` once on the signature.
-
-**Outside `effect!`**, narrow explicitly with [`CapWiden::widen`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) or [`project_at_*`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs):
-
-```rust
-let wide: caps!(Database, EffectLogger) = /* from build_env or run_with */;
-let narrow: caps!(Database) = wide.widen();
-run_blocking(query(1), narrow)?;
+```rust,ignore
+// `Db(1)` is visible only inside `inner`; the outer environment is restored afterwards.
+let outer: Effect<u32, (), HCons<Logger, HNil>> = inner().provide(Db(1)).narrow();
 ```
 
-When an inner function declares `caps!(Database)` and the caller holds `caps!(Database, EffectLogger)`, the compiler checks that every required key is present — no positional tuple indexing, no runtime downcasts.
+## Widening the error: `widen`
 
-## Writing `caps!(…)` once
-
-A feature that touches more than one service used to repeat its capability list — on the signature, on the closure, and as a turbofish on every log call — and needed a closure with `unreachable!()` to compose an infallible service:
+`Effect<A, Never, R>` cannot fail. `.widen()` gives it any error type, so it can be sequenced with
+fallible effects outside `effect!` (inside `effect!`, `~` widens `Never` on its own):
 
 ```rust
-// Before (0.5)
-fn hello() -> Effect<HelloView, HelloError, caps!(Hello, EffectLogger)> {
-    effect!(|r: &mut caps!(Hello, EffectLogger)| {
-        let logger = *~EffectLogger;
-        ~logger
-            .info::<caps!(Hello, EffectLogger)>("running hello program")
-            .map_error(HelloError::Log);
-        let hello = ~Hello;
-        HelloView {
-            greeting: ~hello.greeting().map_error(|()| -> HelloError { unreachable!() }),
-        }
-    })
+# use id_effect::{Effect, succeed};
+let child: Effect<u8, ()> = succeed(5);
+// `fork` cannot fail; `widen` lets it flat_map into the fallible `join`.
+let program: Effect<u8, ()> = child.fork().widen().flat_map(|h| h.join());
+```
+
+For a fallible error type, `.map_err(Into::into)` widens through `From`.
+
+## Generic helpers
+
+A helper generic over `R` (with a `Selector` bound) fits any environment that has its capability.
+`~` cannot infer such an `R` on its own; bind it with `.same_env()`, which fixes it to the
+caller's environment:
+
+```rust,ignore
+fn audit<R, I>(msg: String) -> Effect<(), AppError, R>
+where
+  R: HList + Selector<Logger, I>,
+{
+  effect!({ ~Logger.info(msg) })
+}
+
+fn signup() -> Effect<(), AppError, caps!(Logger, Db)> {
+  effect!({ ~audit("signup".into()).same_env() })
 }
 ```
 
-```rust
-// After (0.6)
-type HelloCaps = caps!(Hello, EffectLogger);
+## Summary
 
-fn hello() -> Effect<HelloView, HelloError, HelloCaps> {
-    effect!(|r: &mut HelloCaps| {
-        let logger = *~EffectLogger;
-        ~logger.info("running hello program").map_error(HelloError::Log);
-        let hello = ~Hello;
-        HelloView {
-            greeting: ~hello.greeting().widen_error::<HelloError>(),
-        }
-    })
-}
-```
-
-Three things changed:
-
-- **`type HelloCaps = caps!(…);`** is a plain type alias, usable anywhere `caps!(…)` is — return types, the `effect!` closure annotation, tests, `run_blocking(…, HelloCaps::from_env(env))`. As with an inline `caps!(…)`, `run_with` verifies the listed services before the program starts; a `~Key` that is *not* in the list panics when reached, naming the service and the `~Key` call site.
-- **Log steps need no environment.** `EffectLogger::info` and friends return `Effect<(), EffectLoggerError>` (`R = ()`), and `~` binds an environment-free effect inside any `effect!` — so no `::<R>` turbofish. In combinator chains, lift one with [`Effect::into_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/kernel/effect.rs): `program.flat_map(|x| logger.info("…").into_env().map(move |()| x))`.
-- **[`widen_error`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/kernel/effect.rs) lifts infallible errors.** An `Effect<A, Never, R>` (or `Infallible`) lifts into any error type as a proof; an `Effect<A, (), R>` is treated as "declared infallible" and panics, naming the `widen_error` call site, if it ever fails. In tail position `E2` is inferred; elsewhere in `effect!` (where `~` converts errors with `From`) name it: `.widen_error::<HelloError>()`. Prefer `Never` as the error type of services that cannot fail.
-
-`crates/id_effect_logger/examples/capability_ergonomics.rs` is the complete feature, with a mock provider in its tests.
-
-## R as Documentation Revisited
-
-These combinators highlight why `R` is valuable as documentation. When you see:
-
-```rust
-fn log_event(msg: &str) -> Effect<(), LogError, caps!(EffectLogger)>
-```
-
-You know *exactly* what this function needs. You don't need to read its body to see if it also touches the database. Adaptation at the call site stays explicit.
-
-Compare to the pre-effect alternative:
-
-```rust
-// Traditional: you'd need to read the body to know what `env` is used for
-fn log_event(env: &AppEnv, msg: &str) -> Result<(), LogError> { ... }
-```
-
-With `R`, the function declares what it needs. With `zoom_env` or `CapWiden`, the caller declares how to satisfy it.
-
-## When to Use These
-
-In practice, `zoom_env` and `contramap_env` appear most often in *library code* — when writing reusable utilities that should work with any environment containing the right piece. Application code typically uses [`caps!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) / [`CapWiden`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/set.rs) and named capability services (Chapters 5–6), which avoid the need for explicit projection.
-
-Think of `zoom_env` as the manual fallback when automatic capability subtyping isn't the right fit.
+| Operation | Effect on `R` / `E` |
+|-----------|---------------------|
+| `~sub` in `effect!` | lifts `sub` into the block's `R`, widens its error |
+| `.narrow::<Wide, _>()` | `R` → any `Wide` containing `R` |
+| `.provide(t)` / `.provide_some(..)` | removes capabilities from `R` |
+| `.widen()` | `Never` → any `E` |
+| `.map_err(Into::into)` | `E2` → `E` through `From` |
+| `.same_env()` | fixes a generic helper's `R` to the caller's |

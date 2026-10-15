@@ -1,115 +1,123 @@
 # The ~ Operator Explained
 
-The `~` (tilde) is the bind operator inside `effect!`. It means: "execute this effect and give me its success value; if it fails, propagate the failure and stop."
+Inside `effect!`, the prefix `~` has three forms:
 
-## Basic Usage
+| Form | Meaning |
+|------|---------|
+| `~expr` (an effect) | run the sub-effect on this fiber, evaluate to its success value, stop on failure |
+| `~Cap` (a capability type) | read capability `Cap` from the environment `R` (an `&Arc<Cap>`) |
+| `~(a, b, ..)` | run up to 8 effects in parallel on child fibers and evaluate to the tuple of values |
 
-```rust
-effect! {
-    let user = ~ fetch_user(42);   // bind the result to `user`
-    user.name
-}
+## Binding an effect
+
+```rust,ignore
+effect!({
+  let user = ~fetch_user(42);
+  user.name
+})
 ```
 
-`~ fetch_user(42)` desugars to a `flat_map`. The rest of the block becomes the body of the closure.
+When you don't need the value, use `~` as a statement:
 
-## Discarding Results
-
-When you don't need the value, use `~` without a binding:
-
-```rust
-effect! {
-    ~ log_event("processing started");   // run for side effect, discard result
-    let result = ~ do_work();
-    ~ log_event("processing done");
-    result
-}
+```rust,ignore
+effect!({
+  ~log_event("processing started");
+  let result = ~do_work();
+  ~log_event("processing done");
+  result
+})
 ```
 
-Both `~ log_event(...)` expressions run for their effects and the `()` return is discarded.
+A bound effect may need only **part** of the block's `R` (it is narrowed into the block's
+environment), and its error is **widened** into the block's error: `Never` converts to anything,
+any other `E2` needs `E: From<E2>`.
 
-## Method Calls on Effects
+## Reading a capability
 
-`~` works on any expression that evaluates to an `Effect`. That includes method chains:
-
-```rust
-effect! {
-    let user = ~ fetch_user(id).map_error(AppError::Database);
-    let posts = ~ fetch_posts(user.id)
-        .map_error(AppError::Database)
-        .retry(Schedule::exponential(100.ms()).take(3));
-    (user, posts)
+```rust,ignore
+fn program() -> Effect<i32, Never, caps!(Counter)> {
+  effect!({ ~Counter.0 + 1 })
 }
+
+assert_eq!(program().provide(Counter(41)).block_on(), Exit::succeed(42));
 ```
 
-The `~` applies to the entire expression, including any `.map_error()`, `.retry()`, etc. that follow.
+`~Counter` reads the `Counter` in `R` (an `&Arc<Counter>`); field accesses and method calls after
+it are plain Rust on that reference (`~Logger.info(msg)`). `~X` is a capability read only when `X`
+is an upper-case identifier (not followed by `::`, `(`, `{` or `!`); anything else after `~` is
+bound as an effect. So when a capability's method returns an effect, read the capability first and
+bind the call: `let repo = ~UserRepo.clone(); let user = ~repo.get_user(id);`. Reading a
+capability that is not in `R` is a compile error naming it.
 
-## ~ in Conditionals and Loops
+## Joining in parallel
 
-You can use `~` inside `if` expressions and loops:
-
-```rust
-effect! {
-    let value = if condition {
-        ~ compute_a()
-    } else {
-        ~ compute_b()
-    };
-    process(value)
-}
+```rust,ignore
+effect!({
+  let (user, prefs) = ~(fetch_user(id), fetch_prefs(id));
+  render(user, prefs)
+})
 ```
 
-Both branches are effects; the macro handles either path.
+The branches run concurrently; the first failure fails the join and interrupts the siblings.
 
-```rust
-effect! {
-    for id in user_ids {
-        ~ process_user(id);  // sequential: one at a time
-    }
-    "done"
-}
+## Method chains on effects
+
+`~` applies to the whole expression after it, so combinators go before the bind:
+
+```rust,ignore
+effect!({
+  let user = ~fetch_user(id).map_err(AppError::Database);
+  let posts = ~fetch_posts(user.id).timeout(Duration::from_secs(2)); // Option<Vec<Post>>
+  (user, posts)
+})
 ```
 
-Note: this is *sequential* iteration. For concurrent processing, use `fiber_all` (Chapter 9).
+## ~ in conditionals and loops
+
+```rust,ignore
+effect!({
+  let value = if condition { ~compute_a() } else { ~compute_b() };
+  for id in user_ids {
+    ~process_user(id); // sequential: one at a time
+  }
+  value
+})
+```
+
+Loops are sequential. For concurrent work over a collection use `for_each_par` or `all`
+([Chapter 9](../part3/ch09-00-concurrency.md)).
 
 ## What ~ Cannot Do
 
-`~` only works *inside* an `effect!` block. Calling it outside is a compile error:
+`~` only works inside an `effect!` (or `effect_local!`) body:
 
-```rust
-// Does not compile — ~ is not valid here
-let x = ~ fetch_user(42);
+```rust,ignore
+// Does not compile: ~ is not valid here
+let x = ~fetch_user(42);
 
-// Must be inside effect!
-let x = effect! { ~ fetch_user(42) };
+// Inside effect!
+let x: Effect<User, DbError> = effect!({ ~fetch_user(42) });
 ```
 
-Also, `~` cannot bind across an async closure boundary. If you're calling `from_async`, the body of the async block is separate:
+Inside a `from_async(|| async move { .. })` block you are in plain async Rust: use `.await` there
+and `~` outside it.
 
-```rust
-effect! {
-    let result = ~ from_async(|_r| async move {
-        // Inside here, you're in regular Rust async — no ~
-        let data = some_future().await?;
-        Ok(data)
-    });
-    result
+## Binding a generic helper
+
+`~` narrows from any sub-environment, so a helper that is generic in its `R` leaves nothing to fix
+that `R`. Bind it with `.same_env()`, which ties it to the caller's environment:
+
+```rust,ignore
+fn audit<R, I>(msg: String) -> Effect<(), AppError, R>
+where
+  R: HList + Selector<Logger, I>,
+{
+  effect!({ ~Logger.info(msg) })
+}
+
+fn signup() -> Effect<(), AppError, caps!(Logger, Db)> {
+  effect!({ ~audit("signup".to_string()).same_env() })
 }
 ```
 
-Use `~` outside the `async move` block; use `.await` inside it.
-
-## The Old Postfix Syntax (Deprecated)
-
-Early versions of id_effect used a postfix tilde: `expr ~`. This is no longer valid. Always use the prefix form:
-
-```rust
-// OLD — do not use
-step_a() ~;
-
-// GOOD
-~ step_a();
-let x = ~ step_b();
-```
-
-If you see postfix tilde in older code, update it to the prefix form.
+A helper with a concrete `caps!(..)` needs nothing special.

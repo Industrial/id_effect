@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted, amended 2026-10-14 (see [Amendment 1](#amendment-1-2026-10-14))
+Accepted, amended 2026-10-14 (see [Amendment 1](#amendment-1-2026-10-14)) and
+2026-10-15 (see [Amendment 2](#amendment-2-2026-10-15))
 
 ## Context
 
@@ -62,3 +63,47 @@ disagrees with this section, this section wins.
 
 `parallel_if_profitable`, `ensure_run_context`, the EDG `join_binds2/3/4` codegen and
 `#[effect(serial)]` exist as described.
+
+## Amendment 2 (2026-10-15)
+
+Corrects Amendment 1 and records the 0.7 decision (mission `id-effect-runtime-0-7`,
+task `w2-adr-0008-amend`; release plan §9, default Q6). Where Amendment 1 disagrees
+with this section, this section wins.
+
+### Drift in Amendment 1
+
+Amendment 1 calls `Stream::map_effect` "serial, ordered". The 0.6 code is not serial.
+`map_effect` (`crates/id_effect/src/streaming/stream.rs`, around line 1193) takes
+`admission_budget()` permits, then runs every element of a chunk through
+`buffer_unordered(permits)` behind a `Semaphore`, and sorts the results by index.
+So it is **ordered but concurrent**, bounded by the Fabric admission budget.
+Effects inside one chunk run at the same time and their side effects interleave.
+
+### Decision for 0.7
+
+| Operator | Behaviour |
+|---|---|
+| `Stream::map_effect(f)` | **Sequential.** One element's effect completes before the next starts. Output order and side-effect order both match stream order. |
+| `Stream::map_effect_par(n, f)` | **Bounded concurrency.** At most `max(n, 1)` effects in flight. Output order matches stream order; side-effect order does not. |
+
+Why:
+
+- The name `map_effect` should mean what `Effect`'s own sequencing means. Hidden
+  concurrency in the default operator surprises callers whose effects touch shared
+  state, and Amendment 1 shows that even the docs read it as serial.
+- The caller picks the bound. The admission budget is a machine-wide number; it is
+  the wrong default for I/O fan-out (for example, a database pool of 10).
+- This matches Effect.ts, where `Stream.mapEffect` is sequential unless a
+  `concurrency` option is given.
+
+This narrows the ADR's core principle for effectful streams: concurrency is an
+explicit opt-in (`map_effect_par`), not an opt-out. Pure bulk operators
+(`Stream::map`, `Vec`/`HashMap` bulk ops) keep Fabric-driven parallelism.
+
+### Implementation
+
+The code change lands in `m-streams`, when streaming moves to the 0.7 kernel. Until
+then, the 0.6 `map_effect` behaviour described above remains. `map_effect_par` is
+built on the 0.7 bounded concurrency operators (`Concurrency::Bounded(n)`).
+Callers that relied on the 0.6 concurrency switch to `map_effect_par(n, f)`; the
+`m-streams` migration fragment records this.

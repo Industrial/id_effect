@@ -1,7 +1,9 @@
-use id_effect::{build_env, run_async};
+mod common;
+
+use common::run;
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpRequest, execute, provide_reqwest_http_client, response_body_chunk,
+  HttpClientEnv, HttpRequest, ReqwestHttpClientProvider, execute, response_body_stream,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -15,15 +17,17 @@ async fn execute_hits_mock_server() {
     .mount(&server)
     .await;
 
-  let env = build_env([provide_reqwest_http_client()]).expect("providers");
   let url = format!("{}/hello", server.uri());
-  let res = run_async(execute(HttpRequest::get(url)), env)
-    .await
-    .expect("http ok");
+  let program = execute::<HttpClientEnv, _>(HttpRequest::get(url))
+    .provide_layer(ReqwestHttpClientProvider::layer());
+  let res = run(program).await.expect("http ok");
   assert_eq!(res.status, 200);
   assert_eq!(res.body, b"ok");
-  let chunk = response_body_chunk(&res);
-  assert_eq!(chunk.len(), 2);
+  let body = response_body_stream(&res, 1);
+  assert_eq!(
+    run(body.next_chunk()).await.expect("chunk"),
+    Some(b"o".to_vec())
+  );
 }
 
 #[test]

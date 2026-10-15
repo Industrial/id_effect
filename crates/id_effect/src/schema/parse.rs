@@ -651,6 +651,152 @@ where
   )
 }
 
+/// Generates `tupleN` (positional, [`Unknown::Array`] of length `N`) for `N` in 5..=12.
+///
+/// Same contract as [`tuple4`]: wire is the tuple of part wires, decode errors are prefixed with
+/// the positional index.
+macro_rules! tuple_n {
+  ($name:ident, $len:literal, $doc:literal; $( $idx:tt => $A:ident, $I:ident, $s:ident ),+ $(,)?) => {
+    #[doc = $doc]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    pub fn $name<$($A,)+ $($I,)+ E>(
+      $( $s: Schema<$A, $I, E>, )+
+    ) -> Schema<($($A,)+), ($($I,)+), E>
+    where
+      E: EffectData + 'static,
+      $( $A: 'static, $I: 'static, )+
+    {
+      let dec = ($( $s, )+);
+      let enc = dec.clone();
+      let du = dec.clone();
+      Schema::make(
+        move |w: ($($I,)+)| {
+          Ok(($(
+            dec.$idx.decode(w.$idx).map_err(|e| e.prefix(stringify!($idx)))?,
+          )+))
+        },
+        move |a: ($($A,)+)| ($( enc.$idx.encode(a.$idx), )+),
+        move |u| match u {
+          Unknown::Array(arr) if arr.len() == $len => Ok(($(
+            du.$idx
+              .decode_unknown(&arr[$idx])
+              .map_err(|e| e.prefix(stringify!($idx)))?,
+          )+)),
+          _ => Err(ParseError::new(
+            "",
+            concat!("expected array of length ", stringify!($len)),
+          )),
+        },
+      )
+    }
+  };
+}
+
+/// Generates `structN` (named fields, [`Unknown::Object`]) for `N` in 5..=12.
+///
+/// Same contract as [`struct4`]: wire is the tuple of field wires in declaration order, decode
+/// errors are prefixed with the field name, and a missing key reports `missing field <name>`.
+macro_rules! struct_n {
+  ($name:ident, $doc:literal; $( $idx:tt => $nm:ident, $A:ident, $I:ident, $s:ident ),+ $(,)?) => {
+    #[doc = $doc]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    pub fn $name<$($A,)+ $($I,)+ E>(
+      $( $nm: &'static str, $s: Schema<$A, $I, E>, )+
+    ) -> Schema<($($A,)+), ($($I,)+), E>
+    where
+      E: EffectData + 'static,
+      $( $A: 'static, $I: 'static, )+
+    {
+      // `(&'static str, ..)` is `Copy`, so each `move` closure gets its own copy.
+      let names = ($( $nm, )+);
+      let dec = ($( $s, )+);
+      let enc = dec.clone();
+      let du = dec.clone();
+      Schema::make(
+        move |w: ($($I,)+)| {
+          Ok(($(
+            dec.$idx.decode(w.$idx).map_err(|e| e.prefix(names.$idx))?,
+          )+))
+        },
+        move |a: ($($A,)+)| ($( enc.$idx.encode(a.$idx), )+),
+        move |u| {
+          let obj = match u {
+            Unknown::Object(m) => m,
+            _ => return Err(ParseError::new("", "expected object")),
+          };
+          Ok(($({
+            let name = names.$idx;
+            let field = obj
+              .get(name)
+              .ok_or_else(|| ParseError::new(name, format!("missing field {name}")))?;
+            du.$idx.decode_unknown(field).map_err(|e| e.prefix(name))?
+          },)+))
+        },
+      )
+    }
+  };
+}
+
+tuple_n!(tuple5, 5, "Fixed-length 5-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4);
+tuple_n!(tuple6, 6, "Fixed-length 6-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5);
+tuple_n!(tuple7, 7, "Fixed-length 7-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6);
+tuple_n!(tuple8, 8, "Fixed-length 8-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6, 7 => A7, I7, s7);
+tuple_n!(tuple9, 9, "Fixed-length 9-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6, 7 => A7, I7, s7, 8 => A8, I8, s8);
+tuple_n!(tuple10, 10, "Fixed-length 10-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6, 7 => A7, I7, s7, 8 => A8, I8, s8, 9 => A9, I9, s9);
+tuple_n!(tuple11, 11, "Fixed-length 11-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6, 7 => A7, I7, s7, 8 => A8, I8, s8, 9 => A9, I9, s9,
+  10 => A10, I10, s10);
+tuple_n!(tuple12, 12, "Fixed-length 12-tuple (wire = tuple of parts).";
+  0 => A0, I0, s0, 1 => A1, I1, s1, 2 => A2, I2, s2, 3 => A3, I3, s3, 4 => A4, I4, s4,
+  5 => A5, I5, s5, 6 => A6, I6, s6, 7 => A7, I7, s7, 8 => A8, I8, s8, 9 => A9, I9, s9,
+  10 => A10, I10, s10, 11 => A11, I11, s11);
+
+struct_n!(struct5, "Struct with five named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4);
+struct_n!(struct6, "Struct with six named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5);
+struct_n!(struct7, "Struct with seven named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6);
+struct_n!(struct8, "Struct with eight named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6, 7 => name7, A7, I7, s7);
+struct_n!(struct9, "Struct with nine named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6, 7 => name7, A7, I7, s7, 8 => name8, A8, I8, s8);
+struct_n!(struct10, "Struct with ten named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6, 7 => name7, A7, I7, s7, 8 => name8, A8, I8, s8,
+  9 => name9, A9, I9, s9);
+struct_n!(struct11, "Struct with eleven named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6, 7 => name7, A7, I7, s7, 8 => name8, A8, I8, s8,
+  9 => name9, A9, I9, s9, 10 => name10, A10, I10, s10);
+struct_n!(struct12, "Struct with twelve named fields (wire = tuple of fields in declaration order).";
+  0 => name0, A0, I0, s0, 1 => name1, A1, I1, s1, 2 => name2, A2, I2, s2,
+  3 => name3, A3, I3, s3, 4 => name4, A4, I4, s4, 5 => name5, A5, I5, s5,
+  6 => name6, A6, I6, s6, 7 => name7, A7, I7, s7, 8 => name8, A8, I8, s8,
+  9 => name9, A9, I9, s9, 10 => name10, A10, I10, s10, 11 => name11, A11, I11, s11);
+
 /// Try `primary` first, then `fallback` (both share semantic type `A`; wire is [`Unknown`]).
 pub fn union_<A, E>(
   primary: Schema<A, Unknown, E>,

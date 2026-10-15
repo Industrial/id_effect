@@ -43,7 +43,7 @@
     Dependency injection should happen at the program edge (`main` or tests),
     not buried inside implementation functions.
   note: |
-    BAD:  fn get_user(id: Uuid) -> Effect<User, DbError, ()> {
+    BAD:  fn get_user(id: Uuid) -> Effect<User, DbError> {
               fetch_user(id).provide(default_db_layer())
           }
     GOOD: // In main: run_with([provide!(DatabaseLive), provide!(CacheLive)], app())

@@ -1,84 +1,75 @@
-//! [`EffectExecutor`] — the crate's single strategy for running `!Send` effects behind the `Send`
-//! futures Axum and Tower require.
-//!
-//! ## Why
-//!
-//! [`id_effect::Effect`] futures are intentionally **not** [`Send`] (they box `!Send` futures so
-//! effects can hold `Rc`, `RefCell`, fiber-local state, …). Axum handlers and most Tower stacks need
-//! [`Send`] futures. Earlier releases bridged the gap with `block_in_place` + `Handle::block_on`,
-//! which parks a runtime worker for the whole request and panics on `current_thread` runtimes.
+//! [`EffectExecutor`]: runs one [`id_effect::Effect`] per request as a fiber on the
+//! [`TokioExecutor`] of the runtime that serves the request.
 //!
 //! ## How
 //!
-//! An [`EffectExecutor`] is an **elastic pool of dedicated OS threads** (not Tokio's blocking pool).
-//! Every in-flight request gets a thread of its own, running a private `current_thread` Tokio runtime
-//! (I/O + time enabled). The caller ships a [`Send`] *recipe* (`env` + the closure that builds the
-//! effect); the worker builds the effect, drives it with [`id_effect::run_async`] inside a
-//! [`LocalSet`](tokio::task::LocalSet), and sends the result back over a oneshot channel. The
-//! caller's future is therefore [`Send`], never blocks a thread, and works on any runtime flavour.
+//! Effects are [`Send`], so they run where Axum already runs: every request's effect is
+//! forked as a root fiber on the ambient tokio runtime (a [`TokioExecutor`] over
+//! [`tokio::runtime::Handle::current`]), and the handler future awaits the fiber's [`Exit`]. There
+//! is no thread pool and no blocking bridge: a suspended effect costs a parked tokio task, and the
+//! handler future is [`Send`] on any runtime flavour (including `#[tokio::test]`'s default
+//! `current_thread`).
 //!
-//! - **Isolation.** `Effect::new` runs synchronous closures; one effect doing `std::fs`, a CPU loop
-//!   or `thread::sleep` occupies only its own request's thread, never other requests.
-//! - **Elasticity.** Threads are spawned on demand up to [`EffectExecutorBuilder::max_threads`]
-//!   (default 512), cached after a request finishes and retired after
-//!   [`EffectExecutorBuilder::idle_timeout`] (default 10 s) without work.
-//! - **Backpressure.** At most `max_threads` requests run and at most
-//!   [`EffectExecutorBuilder::queue_capacity`] (default 1024) wait for a thread. Beyond that,
-//!   [`SaturationPolicy::Wait`] (default) makes callers await admission, while
-//!   [`SaturationPolicy::Reject`] makes the `try_*` entry points return [`Saturated`] — which the
-//!   routing helpers turn into `503 Service Unavailable`.
-//! - **Cancellation.** By default ([`DropPolicy::RunToCompletion`]) an effect always runs to the
-//!   end even if the caller's future is dropped (client disconnect): the result is discarded, but no
-//!   effect stops half-way between two side effects. [`DropPolicy::Cancel`] opts into dropping the
-//!   effect at its next `.await` instead (synchronous steps cannot be interrupted).
-//! - **Panics** inside the effect are re-raised in the caller, like an inline `.await`.
+//! 0.6 ran each `!Send` v1 effect on a dedicated OS thread with its own `current_thread` runtime
+//! (an elastic pool of up to 512 threads); that pool and its `max_threads`, `queue_capacity` and
+//! `idle_timeout` knobs are gone.
 //!
-//! Inside an effect, [`tokio::spawn`] / [`tokio::runtime::Handle::current`] refer to the worker
-//! thread's runtime: spawned tasks progress while that thread is alive (running a request or idle)
-//! and are dropped when it retires; `spawn_local` tasks end with their request. Spawn long-lived
-//! background work on your application runtime instead. Tokio resources created on the application
-//! runtime (pools, sockets) keep working — their driver keeps running there.
+//! - **Interruption.** When the caller's future is dropped before the fiber is done (the client
+//!   disconnected, a timeout layer gave up, the server shut down), the fiber is **interrupted**
+//!   ([`DropPolicy::Interrupt`], default): its finalizers (`ensuring`, `acquire_release`, scoped
+//!   layers) run on the executor. [`DropPolicy::Detach`] lets it run to completion instead (the
+//!   result is discarded), the 0.6 default.
+//! - **Panics** inside the build closure or the effect become a defect
+//!   ([`Cause::Die`](id_effect::Cause::Die)), never an unwinding handler: the routing helpers
+//!   answer `500` (see [`crate::exit_response`]).
+//! - **Backpressure** is opt-in: with [`EffectExecutorBuilder::max_in_flight`] at most `n` request
+//!   fibers run at once. Further callers wait ([`SaturationPolicy::Wait`], default) or the `try_*`
+//!   entry points return [`Saturated`] ([`SaturationPolicy::Reject`]), which the routing helpers
+//!   answer with `503`. The slot is held until the fiber has finished (finalizers included), also
+//!   when it was detached.
+//! - **Runtime.** By default each request runs on the tokio runtime that polls the handler (the
+//!   one `axum::serve` or the test uses); [`EffectExecutorBuilder::runtime`] pins a [`Runtime`]
+//!   instead. Outside any tokio runtime the process-wide [`Runtime::global`] is used.
+//!
+//! Configure the process-wide executor with [`EffectExecutor::install_global`] before serving.
 
-use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
-use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
-use std::task::Poll;
-use std::time::Duration;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::task::{Context, Poll};
 
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use id_effect::{Effect, run_async};
-use tokio::runtime::Runtime;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
-
-type Job = Box<dyn FnOnce(&Runtime) + Send + 'static>;
+use id_effect::Exit;
+use id_effect::{Effect, FiberContext, HNil, JoinFuture, Runtime, TokioExecutor, suspend, sync};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 static GLOBAL: OnceLock<EffectExecutor> = OnceLock::new();
 
-/// What happens to a running effect when the caller's future is dropped.
+/// What happens to a request's fiber when the caller's future is dropped before it is done.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DropPolicy {
-  /// The effect keeps running to completion; its result is discarded (default).
+  /// Interrupt the fiber; its finalizers run (default).
   #[default]
-  RunToCompletion,
-  /// The effect is dropped at its next `.await` point.
-  Cancel,
+  Interrupt,
+  /// Let the fiber run to completion; its result is discarded.
+  Detach,
 }
 
-/// What the `try_*` entry points do when every thread is busy and the queue is full.
+/// What the `try_*` entry points do when [`EffectExecutorBuilder::max_in_flight`] fibers run.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SaturationPolicy {
-  /// Wait for admission (default). The non-`try` entry points always wait.
+  /// Wait for a free slot (default). The non-`try` entry points always wait.
   #[default]
   Wait,
   /// Fail fast with [`Saturated`] (mapped to `503` by the routing helpers).
   Reject,
 }
 
-/// The executor is saturated and its [`SaturationPolicy`] is [`SaturationPolicy::Reject`].
+/// The executor is at its in-flight limit and its [`SaturationPolicy`] is
+/// [`SaturationPolicy::Reject`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Saturated;
 
@@ -102,51 +93,19 @@ impl IntoResponse for Saturated {
 }
 
 /// Configuration for an [`EffectExecutor`]; start from [`EffectExecutor::builder`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct EffectExecutorBuilder {
-  max_threads: usize,
-  queue_capacity: usize,
-  idle_timeout: Duration,
+  max_in_flight: Option<usize>,
   drop_policy: DropPolicy,
   saturation: SaturationPolicy,
-  /// Test hook: receives a worker's thread id once it has retired.
-  #[cfg(test)]
-  retired: Option<std::sync::mpsc::Sender<std::thread::ThreadId>>,
-}
-
-impl Default for EffectExecutorBuilder {
-  fn default() -> Self {
-    Self {
-      max_threads: 512,
-      queue_capacity: 1024,
-      idle_timeout: Duration::from_secs(10),
-      drop_policy: DropPolicy::RunToCompletion,
-      saturation: SaturationPolicy::Wait,
-      #[cfg(test)]
-      retired: None,
-    }
-  }
+  runtime: Option<Runtime>,
 }
 
 impl EffectExecutorBuilder {
-  /// Maximum number of concurrently running requests (= worker threads); at least 1.
+  /// At most `n` (at least 1) request fibers run at once; unbounded by default.
   #[must_use]
-  pub fn max_threads(mut self, n: usize) -> Self {
-    self.max_threads = n.max(1);
-    self
-  }
-
-  /// Requests allowed to wait for a free thread before the executor counts as saturated.
-  #[must_use]
-  pub fn queue_capacity(mut self, n: usize) -> Self {
-    self.queue_capacity = n;
-    self
-  }
-
-  /// How long a cached worker thread waits for new work before it exits.
-  #[must_use]
-  pub fn idle_timeout(mut self, d: Duration) -> Self {
-    self.idle_timeout = d;
+  pub fn max_in_flight(mut self, n: usize) -> Self {
+    self.max_in_flight = Some(n.max(1));
     self
   }
 
@@ -164,78 +123,42 @@ impl EffectExecutorBuilder {
     self
   }
 
-  #[cfg(test)]
-  fn on_retire(mut self, tx: std::sync::mpsc::Sender<std::thread::ThreadId>) -> Self {
-    self.retired = Some(tx);
+  /// Run every request's fiber on `runtime` instead of the tokio runtime polling the handler.
+  #[must_use]
+  pub fn runtime(mut self, runtime: impl Into<Runtime>) -> Self {
+    self.runtime = Some(runtime.into());
     self
   }
 
-  /// Build the executor. No thread is started until the first request.
+  /// Build the executor.
   pub fn build(self) -> EffectExecutor {
-    let admission = Arc::new(Semaphore::new(
-      self
-        .max_threads
-        .saturating_add(self.queue_capacity)
-        .min(Semaphore::MAX_PERMITS),
-    ));
+    let admission = self
+      .max_in_flight
+      .map(|n| Arc::new(Semaphore::new(n.min(Semaphore::MAX_PERMITS))));
     EffectExecutor {
-      handle: Arc::new(Handle {
-        shared: Arc::new(Shared {
-          config: self,
-          admission,
-          state: Mutex::new(PoolState::default()),
-          next_id: AtomicU64::new(0),
-        }),
+      inner: Arc::new(Inner {
+        admission,
+        in_flight: Arc::new(AtomicUsize::new(0)),
+        config: self,
       }),
     }
   }
 }
 
-struct Shared {
+struct Inner {
   config: EffectExecutorBuilder,
-  admission: Arc<Semaphore>,
-  state: Mutex<PoolState>,
-  next_id: AtomicU64,
+  admission: Option<Arc<Semaphore>>,
+  in_flight: Arc<AtomicUsize>,
 }
 
-impl Shared {
-  fn lock(&self) -> MutexGuard<'_, PoolState> {
-    self.state.lock().unwrap_or_else(|e| e.into_inner())
-  }
-}
-
-#[derive(Default)]
-struct PoolState {
-  /// Admitted jobs waiting for a thread (bounded by the admission semaphore).
-  queue: VecDeque<Job>,
-  /// Cached idle workers, each waiting on its own channel.
-  idle: Vec<(u64, mpsc::UnboundedSender<Job>)>,
-  threads: usize,
-  shutdown: bool,
-}
-
-/// Last-clone guard: shuts the pool down (idle workers exit, busy ones finish and drain the queue).
-struct Handle {
-  shared: Arc<Shared>,
-}
-
-impl Drop for Handle {
-  fn drop(&mut self) {
-    let mut st = self.shared.lock();
-    st.shutdown = true;
-    st.idle.clear();
-  }
-}
-
-/// Elastic thread-per-request pool that runs `!Send` effects for `Send` callers.
+/// Runs request effects as fibers on the [`TokioExecutor`] (see the [module docs](self)).
 ///
-/// Cheap to clone (clones share the pool). Most code uses the lazily created
-/// [`EffectExecutor::global`] implicitly through [`crate::routing`], [`crate::execute`],
-/// [`crate::run_with_env`] and the `service` module; call [`EffectExecutor::install_global`] early in
-/// `main` to configure it.
+/// Cheap to clone (clones share the in-flight limit). Most code uses [`EffectExecutor::global`]
+/// implicitly through [`crate::routing`], [`crate::execute`], [`crate::run_with_env`] and the
+/// `service` module.
 #[derive(Clone)]
 pub struct EffectExecutor {
-  handle: Arc<Handle>,
+  inner: Arc<Inner>,
 }
 
 impl Default for EffectExecutor {
@@ -244,8 +167,18 @@ impl Default for EffectExecutor {
   }
 }
 
+impl fmt::Debug for EffectExecutor {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("EffectExecutor")
+      .field("in_flight", &self.in_flight())
+      .field("config", &self.inner.config)
+      .finish()
+  }
+}
+
 impl EffectExecutor {
-  /// Executor with the default configuration (see [`EffectExecutorBuilder`]).
+  /// Executor with the default configuration (unbounded, [`DropPolicy::Interrupt`], ambient
+  /// tokio runtime).
   pub fn new() -> Self {
     Self::builder().build()
   }
@@ -267,286 +200,250 @@ impl EffectExecutor {
     GLOBAL.set(executor)
   }
 
-  /// Number of live worker threads (busy or idle).
-  pub fn threads(&self) -> usize {
-    self.shared().lock().threads
+  /// Request fibers started by this executor (and its clones) that have not finished yet.
+  pub fn in_flight(&self) -> usize {
+    self.inner.in_flight.load(Ordering::SeqCst)
+  }
+
+  /// The configured in-flight limit (`None`: unbounded).
+  pub fn max_in_flight(&self) -> Option<usize> {
+    self.inner.config.max_in_flight
   }
 
   /// The configured [`DropPolicy`].
   pub fn drop_policy(&self) -> DropPolicy {
-    self.shared().config.drop_policy
+    self.inner.config.drop_policy
   }
 
   /// The configured [`SaturationPolicy`].
   pub fn saturation(&self) -> SaturationPolicy {
-    self.shared().config.saturation
+    self.inner.config.saturation
   }
 
-  /// Build `build(&mut env)` on a worker and drive it to completion with the same `env`.
+  /// The runtime a fiber started now runs on: the configured one, else a [`TokioExecutor`] over
+  /// the current tokio runtime, else [`Runtime::global`].
+  pub fn runtime(&self) -> Runtime {
+    if let Some(rt) = &self.inner.config.runtime {
+      return rt.clone();
+    }
+    match TokioExecutor::current() {
+      Some(exec) => Runtime::from_executor(Arc::new(exec)),
+      None => Runtime::global().clone(),
+    }
+  }
+
+  /// Runs `build(&mut env)` and the effect it returns, provided with the same `env`, as one
+  /// request fiber. The build closure runs inside the fiber, so a panic there is a defect too.
   ///
-  /// Always waits for admission when saturated (use [`Self::try_run`] to honour
+  /// Always waits for a slot when an in-flight limit is set (use [`Self::try_run`] to honour
   /// [`SaturationPolicy::Reject`]).
-  pub async fn run<S, A, E, F>(&self, env: S, build: F) -> Result<A, E>
+  pub fn run<S, A, E, F>(
+    &self,
+    env: S,
+    build: F,
+  ) -> impl Future<Output = Exit<A, E>> + Send + 'static
   where
-    S: Send + 'static,
+    S: Send + Sync + 'static,
     A: Send + 'static,
     E: Send + 'static,
     F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
   {
-    self.run_local(move || drive(env, build)).await
+    self.run_effect(request_effect(env, build))
   }
 
-  /// Like [`Self::run`], but returns [`Saturated`] instead of waiting when the executor is full and
-  /// configured with [`SaturationPolicy::Reject`].
-  pub async fn try_run<S, A, E, F>(&self, env: S, build: F) -> Result<Result<A, E>, Saturated>
+  /// [`Self::run`], returning [`Saturated`] instead of waiting when the executor is at its limit
+  /// and configured with [`SaturationPolicy::Reject`].
+  pub fn try_run<S, A, E, F>(
+    &self,
+    env: S,
+    build: F,
+  ) -> impl Future<Output = Result<Exit<A, E>, Saturated>> + Send + 'static
   where
-    S: Send + 'static,
+    S: Send + Sync + 'static,
     A: Send + 'static,
     E: Send + 'static,
     F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
   {
-    self.try_run_local(move || drive(env, build)).await
+    self.try_run_effect(request_effect(env, build))
   }
 
-  /// Run the `!Send` future produced by `make` on a worker and return its output.
-  ///
-  /// Lower-level than [`Self::run`]; use it when one request needs several effect runs (e.g. the
-  /// in-flight bookkeeping of the `service` module's `EffectService`). Waits when saturated.
-  pub async fn run_local<T, Fut, M>(&self, make: M) -> T
+  /// Runs a ready-to-run effect (`R = HNil`) as one request fiber and awaits its exit. Waits for
+  /// a slot when an in-flight limit is set.
+  pub fn run_effect<A, E>(
+    &self,
+    eff: Effect<A, E, HNil>,
+  ) -> impl Future<Output = Exit<A, E>> + Send + 'static
   where
-    T: Send + 'static,
-    Fut: Future<Output = T> + 'static,
-    M: FnOnce() -> Fut + Send + 'static,
+    A: Send + 'static,
+    E: Send + 'static,
   {
-    let permit = self
-      .shared()
-      .admission
-      .clone()
-      .acquire_owned()
-      .await
-      .expect("effect executor admission semaphore is never closed");
-    self.submit(permit, make).await
+    let this = self.clone();
+    async move {
+      let permit = match &this.inner.admission {
+        None => None,
+        Some(sem) => Some(acquire(sem).await),
+      };
+      this.start(eff, permit).await
+    }
   }
 
-  /// [`Self::run_local`] honouring [`SaturationPolicy::Reject`].
-  pub async fn try_run_local<T, Fut, M>(&self, make: M) -> Result<T, Saturated>
+  /// [`Self::run_effect`] honouring [`SaturationPolicy::Reject`].
+  pub fn try_run_effect<A, E>(
+    &self,
+    eff: Effect<A, E, HNil>,
+  ) -> impl Future<Output = Result<Exit<A, E>, Saturated>> + Send + 'static
   where
-    T: Send + 'static,
-    Fut: Future<Output = T> + 'static,
-    M: FnOnce() -> Fut + Send + 'static,
+    A: Send + 'static,
+    E: Send + 'static,
   {
-    let shared = self.shared();
-    let permit = match shared.config.saturation {
-      SaturationPolicy::Wait => shared
-        .admission
-        .clone()
-        .acquire_owned()
-        .await
-        .expect("effect executor admission semaphore is never closed"),
-      SaturationPolicy::Reject => shared
-        .admission
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| Saturated)?,
-    };
-    Ok(self.submit(permit, make).await)
+    let this = self.clone();
+    async move {
+      let permit = match (&this.inner.admission, this.saturation()) {
+        (None, _) => None,
+        (Some(sem), SaturationPolicy::Wait) => Some(acquire(sem).await),
+        (Some(sem), SaturationPolicy::Reject) => {
+          Some(Arc::clone(sem).try_acquire_owned().map_err(|_| Saturated)?)
+        }
+      };
+      Ok(this.start(eff, permit).await)
+    }
   }
 
-  fn shared(&self) -> &Arc<Shared> {
-    &self.handle.shared
-  }
-
-  async fn submit<T, Fut, M>(&self, permit: OwnedSemaphorePermit, make: M) -> T
+  /// Forks `eff` (plus the bookkeeping finalizer) as a root fiber; the returned future awaits it
+  /// and interrupts it when dropped early (under [`DropPolicy::Interrupt`]).
+  fn start<A, E>(
+    &self,
+    eff: Effect<A, E, HNil>,
+    permit: Option<OwnedSemaphorePermit>,
+  ) -> RequestFiber<A, E>
   where
-    T: Send + 'static,
-    Fut: Future<Output = T> + 'static,
-    M: FnOnce() -> Fut + Send + 'static,
+    A: Send + 'static,
+    E: Send + 'static,
   {
-    let (tx, rx) = oneshot::channel::<std::thread::Result<T>>();
-    let cancel = self.drop_policy() == DropPolicy::Cancel;
-    self.dispatch(Box::new(move |rt: &Runtime| {
-      let mut tx = tx;
-      let tx_ref = &mut tx;
-      let outcome = std::panic::catch_unwind(AssertUnwindSafe(move || {
-        let local = tokio::task::LocalSet::new();
-        local.block_on(rt, async move {
-          let fut = make();
-          if cancel {
-            until_caller_drops(fut, tx_ref).await
-          } else {
-            Some(fut.await)
-          }
-        })
-      }));
-      // Admission is released once the effect has really finished — and before the caller can
-      // observe the result, so a follow-up request is never rejected by this one's permit.
+    let in_flight = Arc::clone(&self.inner.in_flight);
+    in_flight.fetch_add(1, Ordering::SeqCst);
+    let done = sync(move || {
       drop(permit);
-      match outcome {
-        Ok(Some(out)) => {
-          let _ = tx.send(Ok(out));
-        }
-        Ok(None) => {} // cancelled: the caller is gone
-        Err(payload) => {
-          let _ = tx.send(Err(payload));
-        }
-      }
-    }));
-    match rx.await {
-      Ok(Ok(out)) => out,
-      Ok(Err(payload)) => std::panic::resume_unwind(payload),
-      Err(_) => {
-        panic!("id_effect_axum: effect executor worker stopped before the effect completed")
-      }
-    }
-  }
-
-  fn dispatch(&self, mut job: Job) {
-    let shared = self.shared();
-    let mut st = shared.lock();
-    while let Some((_, tx)) = st.idle.pop() {
-      match tx.send(job) {
-        Ok(()) => return,
-        Err(mpsc::error::SendError(back)) => job = back,
-      }
-    }
-    if st.threads < shared.config.max_threads {
-      st.threads += 1;
-      drop(st);
-      let worker_shared = Arc::clone(shared);
-      let id = shared.next_id.fetch_add(1, Ordering::Relaxed);
-      let spawned = std::thread::Builder::new()
-        .name(format!("id-effect-axum-{id}"))
-        .spawn(move || worker(worker_shared, job));
-      if spawned.is_err() {
-        // The job is dropped with the closure; its caller observes a stopped worker.
-        shared.lock().threads -= 1;
-      }
-    } else {
-      st.queue.push_back(job);
+      in_flight.fetch_sub(1, Ordering::SeqCst);
+    });
+    let handle = self.runtime().fork(eff.ensuring(done));
+    let fiber = match self.drop_policy() {
+      DropPolicy::Interrupt => Some(Arc::clone(handle.fiber())),
+      DropPolicy::Detach => None,
+    };
+    RequestFiber {
+      fiber,
+      join: handle.join_future(),
     }
   }
 }
 
-impl fmt::Debug for EffectExecutor {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let shared = self.shared();
-    f.debug_struct("EffectExecutor")
-      .field("threads", &self.threads())
-      .field("config", &shared.config)
-      .finish()
-  }
+async fn acquire(sem: &Arc<Semaphore>) -> OwnedSemaphorePermit {
+  Arc::clone(sem)
+    .acquire_owned()
+    .await
+    .expect("effect executor admission semaphore is never closed")
 }
 
-async fn drive<S, A, E, F>(mut env: S, build: F) -> Result<A, E>
+/// `build(&mut env)` provided with `env`, built lazily inside the fiber (a panicking build is a
+/// defect, not an unwinding caller).
+pub(crate) fn request_effect<S, A, E, F>(env: S, build: F) -> Effect<A, E, HNil>
 where
-  S: 'static,
-  A: 'static,
-  E: 'static,
-  F: FnOnce(&mut S) -> Effect<A, E, S>,
+  S: Send + Sync + 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  F: FnOnce(&mut S) -> Effect<A, E, S> + Send + 'static,
 {
-  let eff = build(&mut env);
-  run_async(eff, env).await
-}
-
-/// Poll `fut` until it completes (`Some`) or the caller hangs up (`None`, `fut` is dropped).
-async fn until_caller_drops<T, F: Future<Output = T>>(
-  fut: F,
-  tx: &mut oneshot::Sender<std::thread::Result<T>>,
-) -> Option<T> {
-  let mut fut = std::pin::pin!(fut);
-  std::future::poll_fn(|cx| {
-    if let Poll::Ready(out) = fut.as_mut().poll(cx) {
-      return Poll::Ready(Some(out));
-    }
-    if tx.poll_closed(cx).is_ready() {
-      return Poll::Ready(None);
-    }
-    Poll::Pending
+  suspend(move || {
+    let mut env = env;
+    let eff = build(&mut env);
+    eff.provide_all(env)
   })
-  .await
 }
 
-enum Next {
-  Run(Job),
-  Wait(u64, mpsc::UnboundedReceiver<Job>),
+/// The exit of one request fiber; interrupts the fiber when dropped before it is done (unless
+/// detached).
+struct RequestFiber<A, E> {
+  fiber: Option<Arc<FiberContext>>,
+  join: JoinFuture<A, E>,
 }
 
-fn retire(shared: &Shared) {
-  shared.lock().threads -= 1;
-}
+impl<A: Send + 'static, E: Send + 'static> Future for RequestFiber<A, E> {
+  type Output = Exit<A, E>;
 
-fn worker(shared: Arc<Shared>, first: Job) {
-  worker_loop(&shared, first);
-  // `worker_loop` has already removed this thread from the pool's count.
-  #[cfg(test)]
-  if let Some(tx) = &shared.config.retired {
-    let _ = tx.send(std::thread::current().id());
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Exit<A, E>> {
+    let exit = std::task::ready!(Pin::new(&mut self.join).poll(cx));
+    self.fiber = None;
+    Poll::Ready(exit)
   }
 }
 
-fn worker_loop(shared: &Shared, first: Job) {
-  let rt = match tokio::runtime::Builder::new_current_thread()
-    .enable_all()
-    .build()
-  {
-    Ok(rt) => rt,
-    Err(_) => return retire(shared), // `first` is dropped; its caller sees a stopped worker
-  };
-  let mut job = first;
-  loop {
-    job(&rt);
-    let next = {
-      let mut st = shared.lock();
-      if let Some(queued) = st.queue.pop_front() {
-        Next::Run(queued)
-      } else if st.shutdown {
-        st.threads -= 1;
-        return;
-      } else {
-        let id = shared.next_id.fetch_add(1, Ordering::Relaxed);
-        let (tx, rx) = mpsc::unbounded_channel();
-        st.idle.push((id, tx));
-        Next::Wait(id, rx)
-      }
-    };
-    job = match next {
-      Next::Run(queued) => queued,
-      Next::Wait(id, mut rx) => {
-        // Idle inside `block_on` so tasks spawned on this runtime keep making progress.
-        let idle_timeout = shared.config.idle_timeout;
-        match rt.block_on(async { tokio::time::timeout(idle_timeout, rx.recv()).await }) {
-          Ok(Some(next)) => next,
-          Ok(None) => return retire(shared), // executor dropped
-          Err(_) => {
-            let mut st = shared.lock();
-            if let Some(pos) = st.idle.iter().position(|(i, _)| *i == id) {
-              st.idle.swap_remove(pos);
-              st.threads -= 1;
-              return;
-            }
-            drop(st);
-            // A dispatcher claimed this worker just as it timed out: take that job.
-            match rt.block_on(rx.recv()) {
-              Some(next) => next,
-              None => return retire(shared),
-            }
-          }
-        }
-      }
-    };
+impl<A, E> Drop for RequestFiber<A, E> {
+  fn drop(&mut self) {
+    if let Some(fiber) = self.fiber.take()
+      && !fiber.is_done()
+    {
+      fiber.request_interrupt();
+    }
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::{fail, succeed};
-  use std::rc::Rc;
+  use id_effect::Cause;
+  use id_effect::{fail, from_async, sleep, succeed};
   use std::sync::atomic::AtomicBool;
+  use std::time::Duration;
+  use tokio::sync::oneshot;
 
   fn assert_send<T: Send>(_: &T) {}
 
-  /// Fires its sender when dropped (proves an effect future was dropped).
+  const PATIENCE: Duration = Duration::from_secs(10);
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn run_works_on_current_thread_runtime() {
+    let exec = EffectExecutor::new();
+    let out = exec
+      .run(5_u32, |n: &mut u32| succeed::<_, (), _>(*n * 2))
+      .await;
+    assert_eq!(out, Exit::Success(10));
+    let err = exec.run((), |_: &mut ()| fail::<u8, _, _>("nope")).await;
+    assert_eq!(err, Exit::Failure(Cause::Fail("nope")));
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn run_future_is_send_and_awaits_async_steps() {
+    let fut = EffectExecutor::global().run((), |_: &mut ()| {
+      sleep::<(), ()>(Duration::from_millis(1)).map(|()| 3_u8)
+    });
+    assert_send(&fut);
+    assert_eq!(fut.await, Exit::Success(3));
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn caller_thread_is_never_blocked() {
+    // The effect waits on a flag the caller's (single) thread sets afterwards.
+    let exec = EffectExecutor::new();
+    let flag = Arc::new(AtomicBool::new(false));
+    let f2 = flag.clone();
+    let run = exec.run((), move |_: &mut ()| {
+      from_async(move || async move {
+        while !f2.load(Ordering::SeqCst) {
+          tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        Ok::<(), ()>(())
+      })
+    });
+    let setter = async {
+      tokio::time::sleep(Duration::from_millis(5)).await;
+      flag.store(true, Ordering::SeqCst);
+    };
+    let (out, ()) = tokio::join!(run, setter);
+    assert_eq!(out, Exit::Success(()));
+  }
+
+  /// Fires its sender when dropped.
   struct DropSignal(Option<oneshot::Sender<()>>);
 
   impl Drop for DropSignal {
@@ -557,307 +454,166 @@ mod tests {
     }
   }
 
-  const PATIENCE: Duration = Duration::from_secs(10);
+  async fn wait_idle(exec: &EffectExecutor) {
+    tokio::time::timeout(PATIENCE, async {
+      while exec.in_flight() > 0 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+      }
+    })
+    .await
+    .expect("in-flight count returns to zero");
+  }
 
   #[tokio::test(flavor = "current_thread")]
-  async fn run_works_on_current_thread_runtime() {
+  async fn dropping_the_caller_interrupts_the_fiber_and_runs_finalizers() {
     let exec = EffectExecutor::new();
-    let out = exec
-      .run(5_u32, |n: &mut u32| succeed::<_, (), _>(*n * 2))
-      .await;
-    assert_eq!(out, Ok(10));
-    let err = exec.run((), |_: &mut ()| fail::<u8, _, _>("nope")).await;
-    assert_eq!(err, Err("nope"));
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn run_future_is_send_and_supports_non_send_effect_state() {
-    let fut = EffectExecutor::global().run((), |_: &mut ()| {
-      // `Rc` makes the effect body `!Send`; only the recipe crosses threads.
-      let rc = Rc::new(3_u8);
-      Effect::new_async(move |_r: &mut ()| {
-        id_effect::box_future(async move {
-          tokio::time::sleep(Duration::from_millis(1)).await;
-          Ok::<u8, ()>(*rc)
-        })
-      })
-    });
-    assert_send(&fut);
-    assert_eq!(fut.await, Ok(3));
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn caller_thread_is_never_blocked() {
-    // The effect waits on a flag the caller's (single) thread sets afterwards: with
-    // `block_in_place` this would deadlock or panic.
-    let exec = EffectExecutor::new();
-    let flag = Arc::new(AtomicBool::new(false));
-    let f2 = flag.clone();
-    let run = exec.run((), move |_: &mut ()| {
-      Effect::new_async(move |_r: &mut ()| {
-        id_effect::box_future(async move {
-          while !f2.load(Ordering::SeqCst) {
-            tokio::time::sleep(Duration::from_millis(1)).await;
-          }
-          Ok::<(), ()>(())
-        })
-      })
-    });
-    let setter = async {
-      tokio::time::sleep(Duration::from_millis(5)).await;
-      flag.store(true, Ordering::SeqCst);
-    };
-    let (out, ()) = tokio::join!(run, setter);
-    assert_eq!(out, Ok(()));
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn blocking_effect_only_occupies_its_own_request() {
-    let exec = EffectExecutor::builder().max_threads(4).build();
-    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    assert_eq!(exec.drop_policy(), DropPolicy::Interrupt);
     let (started_tx, started_rx) = oneshot::channel::<()>();
-    let e2 = exec.clone();
-    let blocked = tokio::spawn(async move {
-      e2.run((), move |_: &mut ()| {
-        // A synchronous, thread-blocking step (as `Effect::new` closures often are).
-        Effect::new(move |_r: &mut ()| {
-          let _ = started_tx.send(());
-          release_rx.recv().expect("release");
-          Ok::<u8, ()>(1)
-        })
+    let (fin_tx, fin_rx) = oneshot::channel::<()>();
+    let finished = Arc::new(AtomicBool::new(false));
+    let f2 = finished.clone();
+    let caller = tokio::spawn(exec.run((), move |_: &mut ()| {
+      let signal = DropSignal(Some(fin_tx));
+      sync::<_, (), ()>(move || {
+        let _ = started_tx.send(());
       })
-      .await
-    });
-    started_rx.await.expect("blocked effect started");
-
-    let other = tokio::time::timeout(PATIENCE, exec.run((), |_: &mut ()| succeed::<_, (), _>(2)))
-      .await
-      .expect("second request must not wait behind the blocked one");
-    assert_eq!(other, Ok(2));
-
-    release_tx.send(()).unwrap();
-    assert_eq!(blocked.await.unwrap(), Ok(1));
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn default_policy_runs_effect_to_completion_after_caller_drops() {
-    let exec = EffectExecutor::new();
-    assert_eq!(exec.drop_policy(), DropPolicy::RunToCompletion);
-    let (started_tx, started_rx) = oneshot::channel::<()>();
-    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-    let (finished_tx, finished_rx) = oneshot::channel::<()>();
-    let e2 = exec.clone();
-    let caller = tokio::spawn(async move {
-      e2.run((), move |_: &mut ()| {
-        Effect::new(move |_r: &mut ()| {
-          let _ = started_tx.send(());
-          release_rx.recv().expect("release");
-          let _ = finished_tx.send(()); // the "credit" after the "debit"
-          Ok::<(), ()>(())
-        })
-      })
-      .await
-    });
+      .then(sleep(Duration::from_secs(3600)))
+      .map(move |()| f2.store(true, Ordering::SeqCst))
+      .ensuring(sync(move || drop(signal)))
+    }));
     started_rx.await.unwrap();
     caller.abort(); // client disconnect
     assert!(caller.await.unwrap_err().is_cancelled());
-    release_tx.send(()).unwrap();
-    tokio::time::timeout(PATIENCE, finished_rx)
+    tokio::time::timeout(PATIENCE, fin_rx)
       .await
-      .expect("effect must finish although its caller is gone")
+      .expect("the finalizer runs once the caller is gone")
       .unwrap();
+    assert!(!finished.load(Ordering::SeqCst));
+    wait_idle(&exec).await;
   }
 
   #[tokio::test(flavor = "current_thread")]
-  async fn cancel_policy_drops_effect_when_caller_drops() {
+  async fn detach_policy_runs_the_effect_to_completion() {
     let exec = EffectExecutor::builder()
-      .drop_policy(DropPolicy::Cancel)
+      .drop_policy(DropPolicy::Detach)
       .build();
     let (started_tx, started_rx) = oneshot::channel::<()>();
-    let (dropped_tx, dropped_rx) = oneshot::channel::<()>();
-    let finished = Arc::new(AtomicBool::new(false));
-    let f2 = finished.clone();
-    let e2 = exec.clone();
-    let caller = tokio::spawn(async move {
-      e2.run((), move |_: &mut ()| {
-        Effect::new_async(move |_r: &mut ()| {
-          id_effect::box_future(async move {
-            let _guard = DropSignal(Some(dropped_tx));
-            let _ = started_tx.send(());
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-            f2.store(true, Ordering::SeqCst);
-            Ok::<(), ()>(())
-          })
-        })
+    let (release_tx, release_rx) = oneshot::channel::<()>();
+    let (finished_tx, finished_rx) = oneshot::channel::<()>();
+    let caller = tokio::spawn(exec.run((), move |_: &mut ()| {
+      from_async(move || async move {
+        let _ = started_tx.send(());
+        let _ = release_rx.await;
+        let _ = finished_tx.send(());
+        Ok::<(), ()>(())
       })
-      .await
-    });
+    }));
     started_rx.await.unwrap();
     caller.abort();
-    tokio::time::timeout(PATIENCE, dropped_rx)
+    let _ = caller.await;
+    release_tx.send(()).unwrap();
+    tokio::time::timeout(PATIENCE, finished_rx)
       .await
-      .expect("effect must be dropped once the caller is gone")
+      .expect("a detached effect finishes although its caller is gone")
       .unwrap();
-    assert!(!finished.load(Ordering::SeqCst));
+    wait_idle(&exec).await;
   }
 
   #[tokio::test(flavor = "current_thread")]
   async fn reject_policy_returns_saturated_then_recovers() {
     let exec = EffectExecutor::builder()
-      .max_threads(1)
-      .queue_capacity(0)
+      .max_in_flight(1)
       .saturation(SaturationPolicy::Reject)
       .build();
     let (started_tx, started_rx) = oneshot::channel::<()>();
-    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-    let e2 = exec.clone();
-    let busy = tokio::spawn(async move {
-      e2.try_run((), move |_: &mut ()| {
+    let (release_tx, release_rx) = oneshot::channel::<()>();
+    let busy = tokio::spawn(exec.try_run((), move |_: &mut ()| {
+      from_async(move || async move {
         let _ = started_tx.send(());
-        release_rx.recv().expect("release");
-        succeed::<_, (), _>(1_u8)
+        let _ = release_rx.await;
+        Ok::<u8, ()>(1)
       })
-      .await
-    });
+    }));
     started_rx.await.unwrap();
     let rejected = exec
       .try_run((), |_: &mut ()| succeed::<_, (), _>(2_u8))
       .await;
     assert_eq!(rejected, Err(Saturated));
     release_tx.send(()).unwrap();
-    assert_eq!(busy.await.unwrap(), Ok(Ok(1)));
+    assert_eq!(busy.await.unwrap(), Ok(Exit::Success(1)));
     let ok = exec
       .try_run((), |_: &mut ()| succeed::<_, (), _>(3_u8))
       .await;
-    assert_eq!(ok, Ok(Ok(3)));
+    assert_eq!(ok, Ok(Exit::Success(3)));
   }
 
   #[tokio::test(flavor = "current_thread")]
-  async fn wait_policy_queues_until_a_thread_frees_up() {
-    let exec = EffectExecutor::builder()
-      .max_threads(1)
-      .queue_capacity(0)
-      .build();
+  async fn wait_policy_queues_until_a_slot_frees_up() {
+    let exec = EffectExecutor::builder().max_in_flight(1).build();
+    assert_eq!(exec.max_in_flight(), Some(1));
     let (started_tx, started_rx) = oneshot::channel::<()>();
-    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
-    let e2 = exec.clone();
-    let busy = tokio::spawn(async move {
-      e2.run((), move |_: &mut ()| {
+    let (release_tx, release_rx) = oneshot::channel::<()>();
+    let busy = tokio::spawn(exec.run((), move |_: &mut ()| {
+      from_async(move || async move {
         let _ = started_tx.send(());
-        release_rx.recv().expect("release");
-        succeed::<_, (), _>(1_u8)
+        let _ = release_rx.await;
+        Ok::<u8, ()>(1)
       })
-      .await
-    });
+    }));
     started_rx.await.unwrap();
-    let e3 = exec.clone();
-    let mut waiting =
-      tokio::spawn(async move { e3.try_run((), |_: &mut ()| succeed::<_, (), _>(2_u8)).await });
+    let mut waiting = tokio::spawn(exec.try_run((), |_: &mut ()| succeed::<_, (), _>(2_u8)));
     assert!(
       tokio::time::timeout(Duration::from_millis(20), &mut waiting)
         .await
         .is_err(),
-      "second request waits while the only thread is busy"
+      "second request waits while the only slot is busy"
     );
     release_tx.send(()).unwrap();
-    assert_eq!(busy.await.unwrap(), Ok(1));
-    assert_eq!(waiting.await.unwrap(), Ok(Ok(2)));
+    assert_eq!(busy.await.unwrap(), Exit::Success(1));
+    assert_eq!(waiting.await.unwrap(), Ok(Exit::Success(2)));
   }
 
-  /// Thread id of the worker that built the effect.
-  async fn run_on_thread(exec: &EffectExecutor) -> std::thread::ThreadId {
-    exec
-      .run((), |_: &mut ()| {
-        succeed::<_, (), _>(std::thread::current().id())
-      })
-      .await
-      .unwrap()
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn sequential_requests_reuse_the_cached_thread() {
-    // One thread, effectively no idle expiry: every request must land on the same thread,
-    // whatever the scheduling (a busy worker means the request queues for it).
-    let exec = EffectExecutor::builder()
-      .max_threads(1)
-      .idle_timeout(Duration::from_secs(24 * 3600))
-      .build();
-    let first = run_on_thread(&exec).await;
-    for _ in 0..10 {
-      assert_eq!(run_on_thread(&exec).await, first);
+  fn die_message<A, E>(exit: &Exit<A, E>) -> Option<String> {
+    match exit {
+      Exit::Failure(Cause::Die(d)) => Some(d.message().to_string()),
+      _ => None,
     }
-    assert_eq!(exec.threads(), 1);
-    assert_ne!(first, std::thread::current().id());
   }
 
   #[tokio::test(flavor = "current_thread")]
-  async fn idle_thread_retires_and_a_fresh_one_serves_the_next_request() {
-    let (retired_tx, retired_rx) = std::sync::mpsc::channel();
-    let exec = EffectExecutor::builder()
-      .max_threads(1)
-      .idle_timeout(Duration::ZERO)
-      .on_retire(retired_tx)
-      .build();
-    let first = run_on_thread(&exec).await;
-    // Block (off the runtime thread) until the hook reports the retirement — no deadline guess.
-    let retired = tokio::task::spawn_blocking(move || {
-      let id = retired_rx.recv().expect("retire signal");
-      (id, retired_rx)
-    })
-    .await
-    .unwrap();
-    let (retired_id, retired_rx) = retired;
-    assert_eq!(retired_id, first);
-    assert_eq!(
-      exec.threads(),
-      0,
-      "the hook fires after the pool count drops"
-    );
-
-    let second = run_on_thread(&exec).await;
-    assert_ne!(
-      second, first,
-      "thread ids are never reused within a process"
-    );
-    drop(exec);
-    // Dropping the executor retires the remaining idle worker as well.
-    let last = tokio::task::spawn_blocking(move || retired_rx.recv().expect("retire on drop"))
-      .await
-      .unwrap();
-    assert_eq!(last, second);
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  #[should_panic(expected = "boom")]
-  async fn effect_panic_is_resumed_in_caller() {
+  async fn a_panicking_build_or_effect_is_a_defect() {
     let exec = EffectExecutor::new();
-    let _ = exec
-      .run((), |_: &mut ()| -> Effect<(), (), ()> { panic!("boom") })
+    let in_build = exec
+      .run((), |_: &mut ()| -> Effect<(), (), ()> {
+        panic!("boom in build")
+      })
       .await;
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn worker_survives_a_panicking_request() {
-    let exec = EffectExecutor::builder().max_threads(1).build();
-    let e2 = exec.clone();
-    let panicked = tokio::spawn(async move {
-      e2.run((), |_: &mut ()| -> Effect<(), (), ()> { panic!("boom") })
-        .await
-    })
-    .await;
-    assert!(panicked.unwrap_err().is_panic());
+    assert_eq!(die_message(&in_build).as_deref(), Some("boom in build"));
+    let in_effect = exec
+      .run((), |_: &mut ()| {
+        sync::<(), (), ()>(|| panic!("boom in effect"))
+      })
+      .await;
+    assert_eq!(die_message(&in_effect).as_deref(), Some("boom in effect"));
+    // The executor keeps serving.
     assert_eq!(
       exec.run((), |_: &mut ()| succeed::<_, (), _>(7)).await,
-      Ok(7)
+      Exit::Success(7)
     );
   }
 
   #[test]
-  fn builder_clamps_debug_and_saturated_response() {
-    let exec = EffectExecutor::builder().max_threads(0).build();
+  fn builder_clamps_debug_runtime_and_saturated_response() {
+    let exec = EffectExecutor::builder().max_in_flight(0).build();
     let rendered = format!("{exec:?}");
-    assert!(rendered.contains("max_threads: 1"), "{rendered}");
+    assert!(rendered.contains("max_in_flight: Some(1)"), "{rendered}");
     assert_eq!(exec.saturation(), SaturationPolicy::Wait);
+    // Outside tokio: the global runtime.
+    let _ = exec.runtime();
+    let pinned = EffectExecutor::builder()
+      .runtime(Runtime::global().clone())
+      .build();
+    let _ = pinned.runtime();
     let res = Saturated.into_response();
     assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(res.headers()[header::RETRY_AFTER], "1");

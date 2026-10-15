@@ -11,7 +11,7 @@ should stop in order and let workers flush what they hold.
 - `SupervisorHandle::stop` on shutdown. It sends each child a trappable `Shutdown`, escalates to a
   kill after the child's shutdown timeout, and runs the worker's `terminate` hook.
 
-```rust
+```rust,ignore
 enum Job { Work(u64), Poison }
 
 struct Worker { total: u64, flushed: Arc<AtomicU64> }
@@ -52,7 +52,7 @@ impl Process for Worker {
 Register the worker under a name in its start function, so callers always reach the current
 incarnation after a restart:
 
-```rust
+```rust,ignore
 fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
   let start: StartFn = Arc::new(move |node: &ProcessNode, supervisor: &Pid| {
     let addr = node.spawn_linked_to::<Worker>(supervisor, Arc::clone(&flushed), ());
@@ -62,30 +62,42 @@ fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
   ChildSpec::from_start("worker", start)
 }
 
-let node = ProcessNode::threads(NodeName::new("daemon@local"));
+let node = ProcessNode::new(NodeName::new("daemon@local"));
 let tree = SupervisorSpec::new(Strategy::OneForOne)
   .intensity(3, Duration::from_secs(5)) // more than 3 restarts in 5 s escalates
   .child(worker_child(Arc::clone(&flushed)))
   .start(&node);
 
+let first = worker_pid(&tree).expect("worker started"); // via `tree.which_children(..)`
 let worker = node.whereis_addr::<Worker>("worker").expect("registered");
-run_blocking(worker.cast(Job::Poison), ())?; // crash → supervisor restarts it with total = 0
+```
+
+`Process` handlers return ordinary 0.7 effects (`Effect<_, Self::Error, ()>`), and every
+node / supervisor operation (`cast`, `call`, `which_children`, `stop`, `await_exit`) is an
+effect you run with `.block_on()` from `main` or compose with other effects. The example waits
+for the crashed incarnation without sleeping:
+
+```rust,ignore
+worker.cast(Job::Poison).block_on(); // crash: the supervisor restarts it with total = 0
+node.await_exit::<Never, HNil>(&first).block_on(); // its exit signal is now with the supervisor
+let second = worker_pid(&tree).expect("supervisor restarted the worker");
+assert_ne!(first, second);
 ```
 
 ## Wiring the shutdown signal
 
 The runnable example simulates the signal with a channel so that it stays deterministic. In a
-binary, feed the same channel from the OS. With Tokio's `signal` feature:
+binary, wait for the OS signal instead. With Tokio's `signal` feature and an async `main`, await
+the stop effect through a `Runtime` (`block_on` refuses to run inside an async context):
 
-```rust
-let (signal_tx, signal_rx) = std::sync::mpsc::channel();
-tokio::spawn(async move {
+```rust,ignore
+#[tokio::main]
+async fn main() {
+  let (node, tree) = start_tree();
   tokio::signal::ctrl_c().await.ok(); // or tokio::signal::unix::signal(SignalKind::terminate())
-  let _ = signal_tx.send("SIGTERM");
-});
-
-let signal = signal_rx.recv().expect("signal");
-tree.stop(&node, ShutdownPolicy::Timeout(Duration::from_secs(5))).await;
+  let stop = tree.stop::<Never, HNil>(&node, ShutdownPolicy::Timeout(Duration::from_secs(5)));
+  Runtime::global().run(stop).await;
+}
 ```
 
 `stop` returns after every child has exited, so when it returns the worker's `terminate` hook has

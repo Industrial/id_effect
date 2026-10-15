@@ -1,5 +1,5 @@
 use id_effect::schema::{HasSchema, Unknown};
-use id_effect_proc_macro::{EffectData, Optics, Schema, SchemaParser};
+use id_effect_proc_macro::{EffectData, Optics, Schema};
 
 #[derive(Optics)]
 struct Point {
@@ -19,11 +19,6 @@ struct Account {
   id: i64,
   tags: Vec<String>,
   note: Option<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, SchemaParser)]
-struct LegacyAccount {
-  id: i64,
 }
 
 #[derive(EffectData)]
@@ -64,16 +59,5 @@ fn derive_schema_round_trips_with_wire_rename() {
       .decode_unknown(&wire)
       .unwrap(),
     account
-  );
-}
-
-#[test]
-fn derive_schema_parser_alias_matches_schema() {
-  let wire = LegacyAccount::schema().encode(LegacyAccount { id: 3 });
-  assert_eq!(
-    <LegacyAccount as HasSchema>::schema()
-      .decode_unknown(&wire)
-      .unwrap(),
-    LegacyAccount { id: 3 }
   );
 }

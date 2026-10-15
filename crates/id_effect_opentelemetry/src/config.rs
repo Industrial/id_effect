@@ -148,11 +148,13 @@ pub mod config_keys {
 pub fn load_otel_config(
   provider: &dyn id_effect_config::ConfigProvider,
 ) -> Result<OtelConfig, OtelError> {
-  use id_effect_config::config;
+  use id_effect_config::Config;
 
+  // A key that is absent (or unreadable) keeps the env-derived value.
+  let string = |key: &str| Config::string(key).load(provider).ok();
   let mut cfg = OtelConfig::from_env()?;
 
-  if let Ok(endpoint) = config::string(provider, config_keys::ENDPOINT) {
+  if let Some(endpoint) = string(config_keys::ENDPOINT) {
     if endpoint.trim().is_empty() {
       return Err(OtelError::Config(format!(
         "{} must not be empty",
@@ -162,11 +164,11 @@ pub fn load_otel_config(
     cfg.endpoint = endpoint;
   }
 
-  if let Ok(protocol) = config::string(provider, config_keys::PROTOCOL) {
+  if let Some(protocol) = string(config_keys::PROTOCOL) {
     cfg.protocol = parse_protocol(&protocol)?;
   }
 
-  if let Ok(name) = config::string(provider, config_keys::SERVICE_NAME) {
+  if let Some(name) = string(config_keys::SERVICE_NAME) {
     if name.trim().is_empty() {
       return Err(OtelError::Config(format!(
         "{} must not be empty",
@@ -176,13 +178,13 @@ pub fn load_otel_config(
     cfg.service_name = name;
   }
 
-  if let Ok(version) = config::string(provider, config_keys::SERVICE_VERSION)
+  if let Some(version) = string(config_keys::SERVICE_VERSION)
     && !version.trim().is_empty()
   {
     cfg.service_version = Some(version);
   }
 
-  if let Ok(headers) = config::string(provider, config_keys::HEADERS) {
+  if let Some(headers) = string(config_keys::HEADERS) {
     cfg.headers = parse_header_list(&headers)?;
   }
 

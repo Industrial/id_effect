@@ -1,0 +1,9 @@
+{
+	"id": "hnd-mv8op8ar-fzlk9o",
+	"task_id": "tsk-mv8ohjj3-szkjg2",
+	"trigger_verb": "task:claim",
+	"created_at": "2026-10-14T22:31:19.875Z",
+	"agent_id": "claude",
+	"spec_path": "/data/Code/rust/id_effect/.maestro/specs/0.7/id-effect-runtime-0-7.mission.md",
+	"to_agent": "cli"
+}

@@ -1,0 +1,247 @@
+{
+	"files": ["spikes/kernel_a/tests/corpus.rs"],
+	"handlers": [
+		{
+			"id": "H01",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H02",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H03",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H04",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H05",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H06",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H07",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H08",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H09",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H10",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H11",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H12",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H13",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H14",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H15",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H16",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H17",
+			"status": "ok",
+			"turbofish": 2,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 2,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H18",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H19",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "H20",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		},
+		{
+			"id": "W01",
+			"status": "ok",
+			"turbofish": 0,
+			"let_ty": 0,
+			"closure_ty": 0,
+			"marker": 0,
+			"total": 0,
+			"index": 0,
+			"fwd": 0
+		}
+	],
+	"summary": {
+		"handlers": 21,
+		"ported": 21,
+		"unsupported": 0,
+		"missing": 0,
+		"annotated": 1,
+		"annotated_pct": 4.8,
+		"total": 2,
+		"index": 0,
+		"fwd": 0
+	}
+}

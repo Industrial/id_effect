@@ -28,6 +28,58 @@ pub enum ConfigError {
     /// Name of the environment variable that was not valid UTF-8.
     var: String,
   },
+  /// Several independent failures, every one reported (Effect `ConfigError.And`).
+  ///
+  /// Produced by [`Config::all`](crate::Config::all) and the combinators built on it
+  /// ([`Config::zip`](crate::Config::zip), [`Config::zip_with`](crate::Config::zip_with)) when
+  /// more than one component fails. Always flat (no nested `And`) and holds at least two errors;
+  /// build one with [`ConfigError::and`].
+  And(
+    /// The failures, in the order of the components.
+    Vec<ConfigError>,
+  ),
+}
+
+impl ConfigError {
+  /// Combine failures (Effect `ConfigError.And`): nested `And`s are flattened and a single error
+  /// is returned as is.
+  ///
+  /// # Panics
+  ///
+  /// When `errors` is empty (there is nothing to report).
+  pub fn and(errors: impl IntoIterator<Item = ConfigError>) -> Self {
+    let mut flat = Vec::new();
+    for e in errors {
+      match e {
+        ConfigError::And(inner) => flat.extend(inner),
+        other => flat.push(other),
+      }
+    }
+    match flat.len() {
+      0 => panic!("ConfigError::and needs at least one error"),
+      1 => flat.pop().expect("one error"),
+      _ => ConfigError::And(flat),
+    }
+  }
+
+  /// Every individual failure: the components of an [`And`](ConfigError::And), or `self`.
+  pub fn errors(&self) -> &[ConfigError] {
+    match self {
+      ConfigError::And(errors) => errors,
+      other => std::slice::from_ref(other),
+    }
+  }
+
+  /// `true` when every failure is [`Missing`](ConfigError::Missing) (Effect
+  /// `ConfigError.isMissingDataOnly`): the condition under which
+  /// [`Config::with_default`](crate::Config::with_default) and
+  /// [`Config::or_else`](crate::Config::or_else) fall back.
+  pub fn is_missing_only(&self) -> bool {
+    self
+      .errors()
+      .iter()
+      .all(|e| matches!(e, ConfigError::Missing { .. }))
+  }
 }
 
 impl From<figment::Error> for ConfigError {
@@ -58,6 +110,7 @@ enum ConfigErrorDisp {
   InvalidUtf8 {
     var: String,
   },
+  And(Vec<String>),
 }
 
 impl From<&ConfigError> for ConfigErrorDisp {
@@ -75,6 +128,7 @@ impl From<&ConfigError> for ConfigErrorDisp {
         reason: reason.clone(),
       },
       ConfigError::InvalidUtf8 { var } => Self::InvalidUtf8 { var: var.clone() },
+      ConfigError::And(errors) => Self::And(errors.iter().map(ToString::to_string).collect()),
     }
   }
 }
@@ -115,6 +169,19 @@ impl std::fmt::Display for ConfigError {
         |c| match c {
           ConfigErrorDisp::InvalidUtf8 { var } => {
             format!("environment variable {var:?} is not valid UTF-8")
+          }
+          _ => unreachable!(),
+        },
+      )
+      .when(
+        Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::And(_))),
+        |c| match c {
+          ConfigErrorDisp::And(errors) => {
+            format!(
+              "{} configuration errors: {}",
+              errors.len(),
+              errors.join("; ")
+            )
           }
           _ => unreachable!(),
         },

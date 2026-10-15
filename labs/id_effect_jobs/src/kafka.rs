@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use id_effect::Effect;
+use id_effect::{Effect, from_async};
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 
@@ -57,19 +57,17 @@ impl RdKafkaBroker {
 }
 
 impl MessageBroker for RdKafkaBroker {
-  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError, ()> {
+  fn publish(&self, topic: &str, payload: &[u8]) -> Effect<(), JobError> {
     let producer = self.producer.clone();
     let topic = topic.to_owned();
     let payload = payload.to_vec();
-    Effect::new_async(move |_r| {
-      Box::pin(async move {
-        let record = FutureRecord::<(), _>::to(&topic).payload(&payload);
-        producer
-          .send(record, Duration::from_secs(5))
-          .await
-          .map_err(|(e, _)| JobError::Storage(e.to_string()))?;
-        Ok(())
-      })
+    from_async(move || async move {
+      let record = FutureRecord::<(), _>::to(&topic).payload(&payload);
+      producer
+        .send(record, Duration::from_secs(5))
+        .await
+        .map_err(|(e, _)| JobError::Storage(e.to_string()))?;
+      Ok(())
     })
   }
 }

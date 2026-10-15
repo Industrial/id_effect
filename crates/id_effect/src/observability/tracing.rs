@@ -1,38 +1,50 @@
-//! Lightweight tracing hooks for effect/fiber observability.
+//! In-process tracing buffer: `install_tracing_layer` / `snapshot_tracing` on the span hook
+//! surface.
+//!
+//! The buffer is process-global (one per process): [`install_tracing_layer`] turns it on
+//! (or off) and clears it, [`snapshot_tracing`] copies it out. Spans reach it through
+//! [`TracingHook`], a [`SpanHook`] installed around the program with
+//! [`Effect::with_span_hook`]`(`[`tracing_hook`]`())` (or `LocalEffect::with_span_hook`): every
+//! [`Effect::with_span`] inside then records an [`EffectEvent::Start`] and an
+//! [`EffectEvent::Success`] / [`EffectEvent::Failure`] (a defect or an interrupt counts as a
+//! failure) plus a [`SpanRecord`] with the span's attributes and the annotations added by
+//! [`annotate_current_span`]. Fiber and compute-fabric events are appended explicitly with
+//! [`emit_fiber_event`] / [`emit_compute_event`] (or the synchronous `record_*` functions).
+//!
+//! While the buffer is disabled (the default, or after `install_tracing_layer` with
+//! `enabled: false`) every hook and `record_*` call is a no-op.
+//!
+//! ```
+//! use id_effect::Exit;
+//! use id_effect::{
+//!   Effect, EffectEvent, TracingConfig, annotate_current_span, install_tracing_layer,
+//!   snapshot_tracing, succeed, tracing_hook,
+//! };
+//!
+//! install_tracing_layer(TracingConfig::enabled());
+//! let eff: Effect<u8, ()> = annotate_current_span("user", "ada")
+//!   .then(succeed(7))
+//!   .with_span("request")
+//!   .with_span_hook(tracing_hook());
+//! assert!(matches!(eff.block_on(), Exit::Success(7)));
+//!
+//! let snap = snapshot_tracing();
+//! assert_eq!(snap.effect_events[0], EffectEvent::Start { span: "request".into() });
+//! let span = snap.spans.iter().find(|s| s.name == "request").unwrap();
+//! assert_eq!(span.annotations.get("user").map(String::as_str), Some("ada"));
+//! ```
 
-use crate::Effect;
-use crate::concurrency::fiber_ref::FiberRef;
-use crate::effect;
-use crate::kernel::box_future;
-use crate::runtime::{Never, run_blocking};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::time::Instant;
 
-mod annotate_current_span_seal {
-  pub(super) trait Success {}
-  pub(super) trait Error {}
-}
+use super::{Span, SpanHook};
+use crate::kernel::{Effect, ExitKind, sync};
 
-/// Success type for [`annotate_current_span`]. Implemented for [`unit`](()) only (sealed) so `A`
-/// infers at call sites while the API stays `Effect<A, E, R>`-shaped.
-#[allow(private_bounds)] // seal traits in `annotate_current_span_seal` are intentionally private
-pub trait AnnotateCurrentSpanSuccess: From<()> + annotate_current_span_seal::Success {}
-
-/// Error type for [`annotate_current_span`]. Implemented for [`Never`] only (sealed); the helper is
-/// infallible.
-#[allow(private_bounds)]
-pub trait AnnotateCurrentSpanErr: From<Never> + annotate_current_span_seal::Error {}
-
-impl annotate_current_span_seal::Success for () {}
-impl AnnotateCurrentSpanSuccess for () {}
-
-impl annotate_current_span_seal::Error for Never {}
-impl AnnotateCurrentSpanErr for Never {}
-
-/// Global tracing toggle installed by [`install_tracing_layer`].
+/// Global switch for the tracing buffer, set by [`install_tracing_layer`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TracingConfig {
-  /// When `false`, hooks and span recording are no-ops.
+  /// When `false`, the hook and every `record_*` / `emit_*` call are no-ops.
   pub enabled: bool,
 }
 
@@ -44,22 +56,22 @@ impl TracingConfig {
   }
 }
 
-/// Lifecycle markers for effects wrapped in [`with_span`].
+/// Lifecycle markers of spans ([`Effect::with_span`] under [`TracingHook`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EffectEvent {
   /// Entered a named span.
   Start {
-    /// Span name (matches [`with_span`] argument).
+    /// Span name.
     span: String,
   },
-  /// Effect under the span completed successfully.
+  /// The effect under the span succeeded.
   Success {
-    /// Span name (matches [`with_span`] argument).
+    /// Span name.
     span: String,
   },
-  /// Effect under the span failed.
+  /// The effect under the span failed (typed failure, defect or interrupt).
   Failure {
-    /// Span name (matches [`with_span`] argument).
+    /// Span name.
     span: String,
   },
 }
@@ -84,7 +96,8 @@ pub enum FiberEvent {
   },
 }
 
-/// Compute Fabric supervisor signals (opt-in via [`record_compute_event`] / [`emit_compute_event`]).
+/// Compute Fabric supervisor signals (opt-in via [`record_compute_event`] /
+/// [`emit_compute_event`]).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ComputeEvent {
   /// Supervisor control-loop tick with live telemetry and admission state.
@@ -110,30 +123,23 @@ pub enum ComputeEvent {
   },
 }
 
-/// Aggregated span metadata keyed by span name.
+/// Aggregated span metadata, one record per span name.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct SpanRecord {
-  /// Span identifier (same string passed to [`with_span`]).
+  /// Span name.
   pub name: String,
-  /// Key–value annotations merged from fiber-local state on span end.
+  /// The span's attributes merged with the annotations added while it ran.
   pub annotations: HashMap<String, String>,
 }
 
-/// One frame on the fiber-local span stack (`TracingFiberRefs::span_stack`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LogSpan {
-  /// Name of the active span frame.
-  pub name: String,
-}
-
-/// Point-in-time copy of recorded tracing buffers.
+/// Point-in-time copy of the tracing buffer.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct TracingSnapshot {
-  /// Ordered [`EffectEvent`] stream since last install.
+  /// Ordered [`EffectEvent`] stream since the last install.
   pub effect_events: Vec<EffectEvent>,
-  /// Ordered [`FiberEvent`] stream since last install.
+  /// Ordered [`FiberEvent`] stream since the last install.
   pub fiber_events: Vec<FiberEvent>,
-  /// Ordered [`ComputeEvent`] stream since last install.
+  /// Ordered [`ComputeEvent`] stream since the last install.
   pub compute_events: Vec<ComputeEvent>,
   /// Span records with merged annotations.
   pub spans: Vec<SpanRecord>,
@@ -142,552 +148,351 @@ pub struct TracingSnapshot {
 #[derive(Default)]
 struct TraceState {
   config: TracingConfig,
-  effect_events: Vec<EffectEvent>,
-  fiber_events: Vec<FiberEvent>,
-  compute_events: Vec<ComputeEvent>,
-  spans: Vec<SpanRecord>,
+  snapshot: TracingSnapshot,
 }
 
-static TRACE_STATE: OnceLock<Mutex<TraceState>> = OnceLock::new();
-
-/// Fiber-local span stack and current-span annotation map (see beads n48f).
-#[derive(Clone)]
-pub struct TracingFiberRefs {
-  /// Current span stack for this fiber.
-  pub span_stack: FiberRef<Vec<LogSpan>>,
-  /// Mutable annotations for the innermost span.
-  pub span_annotations: FiberRef<HashMap<String, String>>,
+fn state() -> MutexGuard<'static, TraceState> {
+  static STATE: OnceLock<Mutex<TraceState>> = OnceLock::new();
+  STATE
+    .get_or_init(|| Mutex::new(TraceState::default()))
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-static TRACING_FIBER_REFS: OnceLock<TracingFiberRefs> = OnceLock::new();
-
-fn trace_state() -> &'static Mutex<TraceState> {
-  TRACE_STATE.get_or_init(|| Mutex::new(TraceState::default()))
-}
-
-fn tracing_enabled_fast() -> bool {
-  trace_state().lock().ok().is_some_and(|g| g.config.enabled)
-}
-
-pub(crate) fn fiber_refs() -> Option<&'static TracingFiberRefs> {
-  TRACING_FIBER_REFS.get()
-}
-
-fn with_state_mut<F>(f: F)
-where
-  F: FnOnce(&mut TraceState),
-{
-  let mut guard = trace_state().lock().expect("trace state mutex poisoned");
-  if !guard.config.enabled {
-    return;
-  }
-  f(&mut guard);
-}
-
-fn ensure_span_exists(spans: &mut Vec<SpanRecord>, name: &str) {
-  if spans.iter().all(|span| span.name != name) {
-    spans.push(SpanRecord {
-      name: name.to_owned(),
-      annotations: HashMap::new(),
-    });
+/// Runs `f` on the buffer when tracing is enabled.
+fn with_buffer(f: impl FnOnce(&mut TracingSnapshot)) {
+  let mut guard = state();
+  if guard.config.enabled {
+    f(&mut guard.snapshot);
   }
 }
 
-/// Installs fiber refs and replaces global trace buffers; clears prior events.
-pub fn install_tracing_layer(config: TracingConfig) -> Effect<(), Never, ()> {
-  Effect::new(move |_env| {
-    TRACING_FIBER_REFS.get_or_init(|| {
-      let span_stack = run_blocking(
-        FiberRef::make_with(
-          Vec::<LogSpan>::new,
-          |_parent| Vec::new(),
-          |parent, _child| parent.clone(),
-        ),
-        (),
-      )
-      .expect("tracing span_stack FiberRef");
-      let span_annotations = run_blocking(
-        FiberRef::make_with(
-          HashMap::<String, String>::new,
-          |_parent| HashMap::new(),
-          |parent, _child| parent.clone(),
-        ),
-        (),
-      )
-      .expect("tracing span_annotations FiberRef");
-      TracingFiberRefs {
-        span_stack,
-        span_annotations,
-      }
-    });
-    let mut guard = trace_state().lock().expect("trace state mutex poisoned");
-    guard.config = config.clone();
-    guard.effect_events.clear();
-    guard.fiber_events.clear();
-    guard.compute_events.clear();
-    guard.spans.clear();
-    Ok(())
-  })
+/// The last record named `name`, created when missing.
+fn span_record<'a>(spans: &'a mut Vec<SpanRecord>, name: &str) -> &'a mut SpanRecord {
+  match spans.iter().rposition(|s| s.name == name) {
+    Some(i) => &mut spans[i],
+    None => {
+      spans.push(SpanRecord {
+        name: name.to_owned(),
+        annotations: HashMap::new(),
+      });
+      spans.last_mut().expect("just pushed")
+    }
+  }
 }
 
-/// Appends an effect lifecycle event when tracing is enabled.
-pub fn emit_effect_event(event: EffectEvent) -> Effect<(), Never, ()> {
-  Effect::new(move |_env| {
-    with_state_mut(|state| {
-      if let EffectEvent::Start { span } = &event {
-        ensure_span_exists(&mut state.spans, span);
-      }
-      state.effect_events.push(event.clone());
-    });
-    Ok(())
-  })
+/// Sets the buffer's [`TracingConfig`] and clears every recorded event and span.
+pub fn install_tracing_layer(config: TracingConfig) {
+  let mut guard = state();
+  guard.config = config;
+  guard.snapshot = TracingSnapshot::default();
 }
 
-/// Appends a fiber lifecycle event when tracing is enabled.
-pub fn emit_fiber_event(event: FiberEvent) -> Effect<(), Never, ()> {
-  Effect::new(move |_env| {
-    with_state_mut(|state| {
-      state.fiber_events.push(event.clone());
-    });
-    Ok(())
-  })
+/// Whether the buffer is currently recording.
+pub fn tracing_enabled() -> bool {
+  state().config.enabled
 }
 
-/// Appends a compute fabric event when tracing is enabled.
-pub fn emit_compute_event(event: ComputeEvent) -> Effect<(), Never, ()> {
-  Effect::new(move |_env| {
-    record_compute_event(event);
-    Ok(())
-  })
+/// Copies the current buffer out.
+pub fn snapshot_tracing() -> TracingSnapshot {
+  state().snapshot.clone()
 }
 
-/// Synchronous compute event append (supervisor ticks).
-pub fn record_compute_event(event: ComputeEvent) {
-  with_state_mut(|state| {
-    state.compute_events.push(event);
+/// Appends `event` (synchronously) when tracing is enabled. A `Start` also creates the span's
+/// [`SpanRecord`].
+pub fn record_effect_event(event: EffectEvent) {
+  with_buffer(|b| {
+    if let EffectEvent::Start { span } = &event {
+      span_record(&mut b.spans, span);
+    }
+    b.effect_events.push(event);
   });
 }
 
-/// Adds `key` → `value` to the current span’s annotation map (fiber-local).
-///
-/// Generic over `A`, `E`, and `R` for composition with other `Effect<A, E, R>` graphs. In practice
-/// `A` is [`unit`](()) and `E` is [`Never`] (see [`AnnotateCurrentSpanSuccess`],
-/// [`AnnotateCurrentSpanErr`]). The body does not read `R`; nested fiber ops still use
-/// [`run_blocking`] with `()` where those effects require it.
-///
-/// Type inference often needs an explicit turbofish, e.g.
-/// `annotate_current_span::<(), Never, ()>(key, value)` or `::<(), Never, R>` under a generic env.
-pub fn annotate_current_span<A, E, R>(
-  key: &'static str,
+/// Appends `event` (synchronously) when tracing is enabled.
+pub fn record_fiber_event(event: FiberEvent) {
+  with_buffer(|b| b.fiber_events.push(event));
+}
+
+/// Appends `event` (synchronously) when tracing is enabled (compute supervisor ticks).
+pub fn record_compute_event(event: ComputeEvent) {
+  with_buffer(|b| b.compute_events.push(event));
+}
+
+/// Adds `key = value` to the record of span `name` (created when missing), when tracing is
+/// enabled.
+pub fn record_span_annotation(name: &str, key: impl Into<String>, value: impl Into<String>) {
+  with_buffer(|b| {
+    span_record(&mut b.spans, name)
+      .annotations
+      .insert(key.into(), value.into());
+  });
+}
+
+/// [`record_effect_event`] as an effect step.
+pub fn emit_effect_event<E: Send + 'static, R: Send + Sync + 'static>(
+  event: EffectEvent,
+) -> Effect<(), E, R> {
+  sync(move || record_effect_event(event))
+}
+
+/// [`record_fiber_event`] as an effect step.
+pub fn emit_fiber_event<E: Send + 'static, R: Send + Sync + 'static>(
+  event: FiberEvent,
+) -> Effect<(), E, R> {
+  sync(move || record_fiber_event(event))
+}
+
+/// [`record_compute_event`] as an effect step.
+pub fn emit_compute_event<E: Send + 'static, R: Send + Sync + 'static>(
+  event: ComputeEvent,
+) -> Effect<(), E, R> {
+  sync(move || record_compute_event(event))
+}
+
+/// Adds `key = value` to the current span's [`SpanRecord`]; a no-op outside any span or while
+/// tracing is disabled.
+pub fn annotate_current_span<E: Send + 'static, R: Send + Sync + 'static>(
+  key: impl Into<String>,
   value: impl Into<String>,
-) -> Effect<A, E, R>
-where
-  A: AnnotateCurrentSpanSuccess + 'static,
-  E: AnnotateCurrentSpanErr + 'static,
-  R: 'static,
-{
-  let value = value.into();
-  effect!(|_r: &mut R| {
-    if !tracing_enabled_fast() {
-      return Ok(A::from(()));
+) -> Effect<(), E, R> {
+  let (key, value) = (key.into(), value.into());
+  Span::current().map(move |span| {
+    if let Some(span) = span {
+      record_span_annotation(span.name(), key, value);
     }
-
-    let Some(refs) = fiber_refs() else {
-      return Ok(A::from(()));
-    };
-
-    // FiberRef ops are `Effect<_, _, ()>` — do not `~` them here: `effect!` lowers `~` to `?`, and
-    // those results do not convert to a caller-chosen generic `E`. Drive them with `run_blocking`.
-    let stack = run_blocking(refs.span_stack.get(), ()).expect("span_stack get");
-    if stack.is_empty() {
-      return Ok(A::from(()));
-    }
-
-    let span_name = stack.last().expect("non-empty span stack").name.clone();
-    let val = value.clone();
-    run_blocking(
-      refs.span_annotations.update(move |mut m| {
-        m.insert(key.to_string(), val);
-        m
-      }),
-      (),
-    )
-    .expect("span_annotations update");
-
-    with_state_mut(|state| {
-      if let Some(span) = state
-        .spans
-        .iter_mut()
-        .rev()
-        .find(|span| span.name == span_name)
-      {
-        span.annotations.insert(key.to_string(), value.clone());
-      }
-    });
-
-    A::from(())
   })
 }
 
-/// Runs `effect` inside a named span: pushes stack, emits start/success/failure, flushes annotations.
-pub fn with_span<A, E, R>(effect: Effect<A, E, R>, name: &'static str) -> Effect<A, E, R>
-where
-  A: 'static,
-  E: 'static,
-  R: 'static,
-{
-  let span_name = name.to_string();
-  Effect::new_async(move |env: &mut R| {
-    let span_name = span_name.clone();
-    box_future(async move {
-      if !tracing_enabled_fast() {
-        return effect.run(env).await;
-      }
-      let Some(refs) = fiber_refs().cloned() else {
-        return effect.run(env).await;
-      };
-      let span_name_for_push = span_name.clone();
-      run_blocking(
-        refs.span_stack.update(|mut v| {
-          v.push(LogSpan {
-            name: span_name_for_push,
-          });
-          v
-        }),
-        (),
-      )
-      .expect("span_stack push");
+/// The [`SpanHook`] that records spans into the tracing buffer (see the module docs).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TracingHook;
 
-      let empty_ann = HashMap::<String, String>::new();
-      let refs_for_inner = refs.clone();
-      let span_name_inner = span_name.clone();
-      let inner = Effect::new_async(move |env: &mut R| {
-        let span_name = span_name_inner.clone();
-        let refs = refs_for_inner.clone();
-        box_future(async move {
-          let _ = emit_effect_event(EffectEvent::Start {
-            span: span_name.clone(),
-          })
-          .run(&mut ())
-          .await;
-          let out = effect.run(env).await;
-          if tracing_enabled_fast() {
-            let ann = run_blocking(refs.span_annotations.get(), ())
-              .expect("span_annotations get for flush");
-            with_state_mut(|state| {
-              ensure_span_exists(&mut state.spans, &span_name);
-              if let Some(rec) = state.spans.iter_mut().rev().find(|s| s.name == span_name) {
-                rec.annotations = ann;
-              }
-            });
-          }
-          let event = match &out {
-            Ok(_) => EffectEvent::Success {
-              span: span_name.clone(),
-            },
-            Err(_) => EffectEvent::Failure {
-              span: span_name.clone(),
-            },
-          };
-          let _ = emit_effect_event(event).run(&mut ()).await;
-          out
-        })
+impl SpanHook for TracingHook {
+  fn on_start(&self, span: &Span) {
+    with_buffer(|b| {
+      let rec = span_record(&mut b.spans, span.name());
+      rec.annotations.extend(span.attributes().iter().cloned());
+      b.effect_events.push(EffectEvent::Start {
+        span: span.name().to_owned(),
       });
+    });
+  }
 
-      let out = refs
-        .span_annotations
-        .locally(empty_ann, inner)
-        .run(env)
-        .await;
-
-      run_blocking(
-        refs.span_stack.update(|mut v| {
-          v.pop();
-          v
-        }),
-        (),
-      )
-      .expect("span_stack pop");
-
-      out
-    })
-  })
+  fn on_end(&self, span: &Span, _end: Instant, exit: ExitKind) {
+    let span = span.name().to_owned();
+    record_effect_event(match exit {
+      ExitKind::Success => EffectEvent::Success { span },
+      _ => EffectEvent::Failure { span },
+    });
+  }
 }
 
-/// Clones the current global trace buffers (lock held briefly).
-pub fn snapshot_tracing() -> TracingSnapshot {
-  let guard = trace_state().lock().expect("trace state mutex poisoned");
-  TracingSnapshot {
-    effect_events: guard.effect_events.clone(),
-    fiber_events: guard.fiber_events.clone(),
-    compute_events: guard.compute_events.clone(),
-    spans: guard.spans.clone(),
-  }
+/// The shared [`TracingHook`], ready for [`Effect::with_span_hook`].
+pub fn tracing_hook() -> Arc<dyn SpanHook> {
+  static HOOK: OnceLock<Arc<dyn SpanHook>> = OnceLock::new();
+  Arc::clone(HOOK.get_or_init(|| Arc::new(TracingHook)))
+}
+
+/// Serializes the tests that share the process-global buffer.
+#[cfg(test)]
+pub(crate) fn test_lock() -> MutexGuard<'static, ()> {
+  static LOCK: Mutex<()> = Mutex::new(());
+  LOCK
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{fail, runtime::run_blocking, succeed};
-  use rstest::rstest;
-  use std::sync::{Mutex, OnceLock};
+  use crate::Exit;
+  use crate::{LocalEffect, die, fail, succeed};
 
-  static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-  fn test_lock() -> std::sync::MutexGuard<'static, ()> {
-    TEST_LOCK
-      .get_or_init(|| Mutex::new(()))
-      .lock()
-      .expect("test lock mutex poisoned")
+  fn start(span: &str) -> EffectEvent {
+    EffectEvent::Start { span: span.into() }
   }
 
-  mod with_span_events {
+  mod install_tracing_layer {
     use super::*;
 
     #[test]
-    fn with_span_when_effect_succeeds_records_start_and_success_events() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let eff = with_span(succeed::<u32, (), ()>(7), "test.span");
-      let out = run_blocking(eff, ());
-      assert_eq!(out, Ok(7));
-
-      let snapshot = snapshot_tracing();
-      assert_eq!(
-        snapshot.effect_events,
-        vec![
-          EffectEvent::Start {
-            span: "test.span".to_string()
-          },
-          EffectEvent::Success {
-            span: "test.span".to_string()
-          }
-        ]
-      );
+    fn clears_the_buffer_and_sets_the_switch() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      record_effect_event(start("a"));
+      assert_eq!(snapshot_tracing().effect_events.len(), 1);
+      install_tracing_layer(TracingConfig::enabled());
+      assert_eq!(snapshot_tracing(), TracingSnapshot::default());
+      assert!(tracing_enabled());
     }
 
     #[test]
-    fn with_span_when_effect_fails_records_start_and_failure_events() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let eff = with_span(fail::<(), &'static str, ()>("boom"), "failure.span");
-      let out = run_blocking(eff, ());
-      assert_eq!(out, Err("boom"));
-
-      let snapshot = snapshot_tracing();
-      assert_eq!(
-        snapshot.effect_events,
-        vec![
-          EffectEvent::Start {
-            span: "failure.span".to_string()
-          },
-          EffectEvent::Failure {
-            span: "failure.span".to_string()
-          }
-        ]
-      );
+    fn disabled_records_nothing() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::default());
+      record_effect_event(start("a"));
+      record_fiber_event(FiberEvent::Spawn {
+        fiber_id: "f".into(),
+      });
+      record_compute_event(ComputeEvent::ScaleOut {
+        job_name: "j".into(),
+      });
+      record_span_annotation("a", "k", "v");
+      let eff: Effect<u8, ()> = succeed(1).with_span("s").with_span_hook(tracing_hook());
+      assert!(matches!(eff.block_on(), Exit::Success(1)));
+      assert_eq!(snapshot_tracing(), TracingSnapshot::default());
+      assert!(!tracing_enabled());
     }
   }
 
-  mod hooks_and_config {
+  mod tracing_hook {
     use super::*;
 
     #[test]
-    fn annotation_and_fiber_event_hooks_when_enabled_record_data() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let eff = with_span(
-        annotate_current_span::<(), Never, ()>("market", "SOL-PERP").flat_map(|_| {
-          emit_fiber_event(FiberEvent::Spawn {
-            fiber_id: "fiber-1".to_string(),
-          })
-        }),
-        "annotated.span",
-      );
-      let _ = run_blocking(eff, ());
-
-      let snapshot = snapshot_tracing();
-      assert_eq!(snapshot.fiber_events.len(), 1);
-      let span = snapshot
-        .spans
-        .iter()
-        .find(|s| s.name == "annotated.span")
-        .expect("span should be present");
-      assert_eq!(
-        span.annotations.get("market"),
-        Some(&"SOL-PERP".to_string())
-      );
-    }
-
-    #[rstest]
-    #[case::effect_event(0)]
-    #[case::fiber_event(1)]
-    fn emit_hooks_when_tracing_disabled_do_not_record_events(#[case] mode: u8) {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig { enabled: false }), ());
-      if mode == 0 {
-        let _ = run_blocking(
-          emit_effect_event(EffectEvent::Start {
-            span: "disabled.span".to_string(),
-          }),
-          (),
-        );
-      } else {
-        let _ = run_blocking(
-          emit_fiber_event(FiberEvent::Spawn {
-            fiber_id: "fiber-disabled".to_string(),
-          }),
-          (),
-        );
-      }
-      let snapshot = snapshot_tracing();
-      assert!(snapshot.effect_events.is_empty());
-      assert!(snapshot.fiber_events.is_empty());
-      assert!(snapshot.spans.is_empty());
-    }
-
-    #[test]
-    fn annotate_current_span_when_no_active_span_is_present_is_noop() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let _ = run_blocking(annotate_current_span::<(), Never, ()>("k", "v"), ());
-      let snapshot = snapshot_tracing();
-      assert!(snapshot.spans.is_empty());
-      assert!(snapshot.effect_events.is_empty());
-      assert!(snapshot.fiber_events.is_empty());
-    }
-
-    #[test]
-    fn tracing_config_enabled_constructor_sets_enabled_true() {
-      let cfg = TracingConfig::enabled();
-      assert!(cfg.enabled);
-    }
-
-    #[test]
-    fn tracing_snapshot_annotations_preserved_across_clone() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let eff = with_span(
-        annotate_current_span::<(), Never, ()>("market", "SOL-PERP"),
-        "clone.span",
-      );
-      let _ = run_blocking(eff, ());
-
+    fn records_start_and_success_with_attributes() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<u8, ()> = succeed(7)
+        .with_span_attrs("req", [("route", "/health")])
+        .with_span_hook(tracing_hook());
+      assert!(matches!(eff.block_on(), Exit::Success(7)));
       let snap = snapshot_tracing();
-      let mut snap_clone = snap.clone();
-      let span = snap_clone
-        .spans
-        .iter_mut()
-        .find(|s| s.name == "clone.span")
-        .expect("span recorded");
-      span
-        .annotations
-        .insert("market".to_string(), "edited".to_string());
-
-      let orig = snap
-        .spans
-        .iter()
-        .find(|s| s.name == "clone.span")
-        .expect("span in original snapshot");
       assert_eq!(
-        orig.annotations.get("market"),
-        Some(&"SOL-PERP".to_string())
+        snap.effect_events,
+        vec![start("req"), EffectEvent::Success { span: "req".into() }]
       );
       assert_eq!(
-        snap_clone
+        snap.spans[0].annotations.get("route").map(String::as_str),
+        Some("/health")
+      );
+    }
+
+    #[test]
+    fn failure_and_defect_record_failure() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let failed: Effect<u8, &str> = fail("boom").with_span("f").with_span_hook(tracing_hook());
+      let died: Effect<u8, &str> = die("bug").with_span("d").with_span_hook(tracing_hook());
+      let _ = failed.block_on();
+      let _ = died.block_on();
+      let ends: Vec<_> = snapshot_tracing()
+        .effect_events
+        .into_iter()
+        .filter(|e| matches!(e, EffectEvent::Failure { .. }))
+        .collect();
+      assert_eq!(
+        ends,
+        vec![
+          EffectEvent::Failure { span: "f".into() },
+          EffectEvent::Failure { span: "d".into() }
+        ]
+      );
+    }
+
+    #[test]
+    fn nested_spans_nest_events() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<(), ()> = succeed(())
+        .with_span("inner")
+        .with_span("outer")
+        .with_span_hook(tracing_hook());
+      let _ = eff.block_on();
+      let names: Vec<String> = snapshot_tracing()
+        .effect_events
+        .into_iter()
+        .map(|e| match e {
+          EffectEvent::Start { span } => format!("+{span}"),
+          EffectEvent::Success { span } | EffectEvent::Failure { span } => format!("-{span}"),
+        })
+        .collect();
+      assert_eq!(names, ["+outer", "+inner", "-inner", "-outer"]);
+    }
+
+    #[test]
+    fn without_the_hook_spans_record_nothing() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<(), ()> = succeed(()).with_span("quiet");
+      let _ = eff.block_on();
+      assert!(snapshot_tracing().effect_events.is_empty());
+    }
+
+    #[test]
+    fn local_effect_with_span_hook_records() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let inner: Effect<(), ()> = succeed(()).with_span("in-local");
+      let eff = LocalEffect::<(), ()>::sync(|| ())
+        .then(inner.local())
+        .with_span_hook(tracing_hook());
+      assert!(matches!(eff.block_on(), Exit::Success(())));
+      assert_eq!(snapshot_tracing().effect_events[0], start("in-local"));
+    }
+  }
+
+  mod annotate_current_span {
+    use super::*;
+
+    #[test]
+    fn outside_a_span_is_a_noop() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<(), ()> = annotate_current_span("k", "v");
+      let _ = eff.block_on();
+      assert!(snapshot_tracing().spans.is_empty());
+    }
+
+    #[test]
+    fn annotates_the_innermost_span() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<(), ()> = annotate_current_span("k", "inner")
+        .with_span("inner")
+        .then(annotate_current_span("k", "outer"))
+        .with_span("outer")
+        .with_span_hook(tracing_hook());
+      let _ = eff.block_on();
+      let snap = snapshot_tracing();
+      let get = |n: &str| {
+        snap
           .spans
           .iter()
-          .find(|s| s.name == "clone.span")
-          .expect("span in clone")
-          .annotations
-          .get("market"),
-        Some(&"edited".to_string())
-      );
+          .find(|s| s.name == n)
+          .and_then(|s| s.annotations.get("k").cloned())
+      };
+      assert_eq!(get("inner").as_deref(), Some("inner"));
+      assert_eq!(get("outer").as_deref(), Some("outer"));
     }
   }
 
-  mod fiber_local_tracing {
+  mod emit {
     use super::*;
-    use crate::concurrency::fiber_ref::with_fiber_id;
-    use crate::runtime::FiberId;
 
     #[test]
-    fn annotation_isolated_per_fiber() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let ef_a = with_span(
-        annotate_current_span::<(), Never, ()>("k", "fiber-a"),
-        "span.a",
-      );
-      let ef_b = with_span(
-        annotate_current_span::<(), Never, ()>("k", "fiber-b"),
-        "span.b",
-      );
-      with_fiber_id(FiberId::fresh(), || {
-        let _ = run_blocking(ef_a, ());
-      });
-      with_fiber_id(FiberId::fresh(), || {
-        let _ = run_blocking(ef_b, ());
-      });
+    fn emit_steps_append_in_order() {
+      let _g = test_lock();
+      install_tracing_layer(TracingConfig::enabled());
+      let eff: Effect<(), ()> = emit_fiber_event(FiberEvent::Spawn {
+        fiber_id: "1".into(),
+      })
+      .then(emit_compute_event(ComputeEvent::AdmissionThrottle {
+        permits: 2,
+      }))
+      .then(emit_effect_event(start("manual")))
+      .then(emit_fiber_event(FiberEvent::Complete {
+        fiber_id: "1".into(),
+      }));
+      let _ = eff.block_on();
       let snap = snapshot_tracing();
-      let sa = snap
-        .spans
-        .iter()
-        .find(|s| s.name == "span.a")
-        .expect("span.a");
-      let sb = snap
-        .spans
-        .iter()
-        .find(|s| s.name == "span.b")
-        .expect("span.b");
-      assert_eq!(sa.annotations.get("k"), Some(&"fiber-a".to_string()));
-      assert_eq!(sb.annotations.get("k"), Some(&"fiber-b".to_string()));
-    }
-
-    #[test]
-    fn span_stack_not_shared_between_fibers() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let refs = fiber_refs().expect("refs").clone();
-      let id_a = FiberId::fresh();
-      let id_b = FiberId::fresh();
-      with_fiber_id(id_a, || {
-        run_blocking(
-          refs.span_stack.update(|mut v| {
-            v.push(LogSpan {
-              name: "only-a".into(),
-            });
-            v
-          }),
-          (),
-        )
-        .expect("push stack");
-      });
-      with_fiber_id(id_b, || {
-        let len = run_blocking(refs.span_stack.get(), ())
-          .expect("get stack")
-          .len();
-        assert_eq!(len, 0, "B should not see A's stack");
-      });
-      with_fiber_id(id_a, || {
-        let len = run_blocking(refs.span_stack.get(), ())
-          .expect("get stack a")
-          .len();
-        assert_eq!(len, 1);
-      });
-    }
-
-    #[test]
-    fn with_span_pushes_then_pops() {
-      let _guard = test_lock();
-      let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-      let refs = fiber_refs().expect("refs").clone();
-      let eff = with_span(with_span(succeed::<(), (), ()>(()), "inner"), "outer");
-      let _ = run_blocking(eff, ());
-      let len = run_blocking(refs.span_stack.get(), ())
-        .expect("stack len")
-        .len();
-      assert_eq!(len, 0);
+      assert_eq!(snap.fiber_events.len(), 2);
+      assert_eq!(
+        snap.compute_events,
+        vec![ComputeEvent::AdmissionThrottle { permits: 2 }]
+      );
+      assert_eq!(snap.effect_events, vec![start("manual")]);
+      assert_eq!(snap.spans[0].name, "manual");
     }
   }
 }

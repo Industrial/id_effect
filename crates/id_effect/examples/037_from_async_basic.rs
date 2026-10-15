@@ -1,13 +1,12 @@
-//! Ex 037 — `Effect::new_async` wraps an async body (driven by `run_async` / runtime).
-use id_effect::{Effect, box_future, run_async};
+//! Ex 037 — `from_async` wraps a real `async` step.
+use id_effect::Exit;
+use id_effect::{Effect, from_async};
 
 fn main() {
-  let eff = Effect::new_async(|_r: &mut ()| {
-    box_future(async move {
-      core::future::ready(()).await;
-      Ok::<u8, ()>(42_u8)
-    })
+  let eff: Effect<u8, ()> = from_async(|| async move {
+    core::future::ready(()).await;
+    Ok(42)
   });
-  assert_eq!(pollster::block_on(run_async(eff, ())), Ok(42));
+  assert_eq!(eff.block_on(), Exit::succeed(42));
   println!("037_from_async_basic ok");
 }

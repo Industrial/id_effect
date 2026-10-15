@@ -1,6 +1,6 @@
 //! es-entity journal integration tests (skip when DATABASE_URL unreachable).
 
-use id_effect::run_async;
+use id_effect::Runtime;
 use id_effect_events::{
   EsEntityEventStore, EsEntityPgBackend, EventStore, apply_es_entity_journal_ddl,
 };
@@ -41,11 +41,17 @@ async fn live_es_entity_event_store_round_trip() {
 
   let stream = format!("es-entity-{}", uuid::Uuid::new_v4());
   let store = EsEntityEventStore::<Ping>::new(EsEntityPgBackend::new(pool));
-  let appended = run_async(store.append(&stream, &[Ping { n: 1 }, Ping { n: 2 }]), ())
+  let appended = Runtime::global()
+    .run(store.append(&stream, &[Ping { n: 1 }, Ping { n: 2 }]))
     .await
+    .into_result()
     .expect("append");
   assert_eq!(appended.len(), 2);
-  let read = run_async(store.read(&stream, 1), ()).await.expect("read");
+  let read = Runtime::global()
+    .run(store.read(&stream, 1))
+    .await
+    .into_result()
+    .expect("read");
   assert_eq!(read.len(), 2);
   assert_eq!(read[0].payload, Ping { n: 1 });
 }

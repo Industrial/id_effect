@@ -1,8 +1,9 @@
 # `id_effect_axum`
 
-Run [`id_effect`](../id_effect) `Effect` programs inside [Axum](https://docs.rs/axum) handlers and
-[Tower](https://docs.rs/tower) services: route helpers, request-scoped capability overrides, JSON +
-schema decoding, health/readiness routes and a host lifecycle (`HostBuilder`, graceful drain).
+Run [`id_effect`](../id_effect) `Effect` programs (the 0.7 kernel) inside
+[Axum](https://docs.rs/axum) handlers and [Tower](https://docs.rs/tower) services: route helpers,
+request-scoped capability overrides, streaming bodies, JSON + schema decoding, health/readiness
+routes, and the HTTP server as a scoped `Layer`.
 
 ## Quick start
 
@@ -38,46 +39,34 @@ async fn main() {
 }
 ```
 
-Use `id_effect_axum::execute(State(s), |s| effect)` inside a plain Axum handler when you need extra
-extractors, and `run_with_env` / `run_with_caps` when you only want the `Result`.
+The router state is the effect's environment: plain state, a typed capability list
+(`HCons<Db, HNil>`, read with `need::<Db>()`) or a runtime-checked `DynEnv`. Use
+`id_effect_axum::execute(State(s), |s| effect)` inside a plain Axum handler when you need extra
+extractors, and `run_with_env` / `run_with_caps` when you want the `Exit` instead of a response.
 
-## Send strategy
+## Execution
 
-`Effect` futures are deliberately **not** `Send`; Axum handlers must be. The crate has one answer for
-every entry point (`routing::*`, `execute`, `run_with_env`, `run_with_caps`, the request-cap helpers and
-the `tower` feature's `service` module): the **`EffectExecutor`**, an elastic pool of dedicated OS
-threads (not Tokio's blocking pool).
+Effects are `Send`, so each request's effect runs as **one fiber on the tokio runtime that
+serves the request** — no thread pool, no `LocalSet`, no `block_in_place`.
 
-- **Thread per in-flight request.** The handler sends a `Send` recipe — the state value plus the
-  closure that builds the effect — to a pooled thread running its own `current_thread` Tokio runtime;
-  the result comes back over a oneshot channel. Handler futures are `Send`, never block a runtime
-  worker, and work on `current_thread` runtimes too.
-- **Isolation.** A synchronous step that blocks (`Effect::new` doing `std::fs`, a CPU loop,
-  `thread::sleep`) occupies only its own request's thread.
-- **Elastic and bounded.** Threads are created on demand up to `max_threads` (default 512), reused,
-  and retired after `idle_timeout` (default 10 s). Up to `queue_capacity` (default 1024) more requests
-  wait for a thread. Beyond that, callers wait for admission (`SaturationPolicy::Wait`, default) or —
-  with `SaturationPolicy::Reject` — routing helpers, `execute`, `execute_with_request_caps` and
-  `exchange_into_response` answer **`503`** with `Retry-After: 1`. `run_with_env` / `run_with_caps` and
-  Tower services always wait.
-- **Run to completion.** If the client disconnects, the effect still finishes (its result is
-  discarded), so nothing stops half-way between two side effects. Opt into cancel-on-drop with
-  `DropPolicy::Cancel` (the effect is dropped at its next `.await`; synchronous steps cannot be
-  interrupted).
-- Panics inside the effect are re-raised in the handler.
-- Inside an effect, `tokio::spawn` / `Handle::current()` refer to the worker thread's runtime (tasks
-  live as long as that thread); resources created on the application runtime keep working.
+- **Outcomes.** Success → `A::into_response()`; a typed failure → `E::into_response()`; a defect (a
+  panic anywhere in the handler or its effect) → `500 Internal Server Error` with a `HandlerDefect`
+  response extension for logging middleware (the message is never sent to the client); an
+  interrupt → `503`.
+- **Interruption.** When the request future is dropped (client disconnect, timeout layer,
+  shutdown), the fiber is interrupted and its finalizers (`ensuring`, `acquire_release`, scoped
+  layers) run (`DropPolicy::Interrupt`, default). `DropPolicy::Detach` lets it finish instead.
+- **Backpressure** is opt-in: `max_in_flight(n)` caps running request fibers; callers wait, or with
+  `SaturationPolicy::Reject` the routing helpers, `execute`, `execute_with_request_caps` and
+  `exchange_into_response` answer **`503`** with `Retry-After: 1`.
 
 ```rust,no_run
-use std::time::Duration;
 use id_effect_axum::{DropPolicy, EffectExecutor, SaturationPolicy};
 
 let executor = EffectExecutor::builder()
-  .max_threads(256)
-  .queue_capacity(512)
-  .idle_timeout(Duration::from_secs(30))
+  .max_in_flight(1024)
   .saturation(SaturationPolicy::Reject) // shed load with 503
-  .drop_policy(DropPolicy::RunToCompletion)
+  .drop_policy(DropPolicy::Interrupt)
   .build();
 EffectExecutor::install_global(executor).expect("install before serving");
 ```
@@ -85,65 +74,72 @@ EffectExecutor::install_global(executor).expect("install before serving");
 ## Request-scoped capabilities
 
 `CapOverrideLayer` resolves a capability value per request (tenant, database handle, request id, …)
-from the request head; `execute_with_request_caps` / `run_with_request_caps` overlay those values on the
-router's base `Env` for that request's effect only:
+from the request head; `execute_with_request_caps` / `run_with_request_caps` overlay those values on
+the router's base `DynEnv` for that request's effect only:
 
 ```rust
 use axum::{Router, extract::State, routing::get};
-use id_effect::{Cap, Effect, Env, succeed};
+use id_effect::{DynEnv, Effect, succeed};
 use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps};
 
-#[derive(Clone)]
 struct Tenant(String);
 
-fn whoami(env: &mut Env) -> Effect<String, std::convert::Infallible, Env> {
-  succeed(env.get::<Cap<Tenant>>().0.clone())
+fn whoami(env: &mut DynEnv) -> Effect<String, std::convert::Infallible, DynEnv> {
+  succeed(env.try_get::<Tenant>().map_or("none".into(), |t| t.0.clone()))
 }
 
-fn app(base: Env) -> Router {
+fn app() -> Router {
   Router::new()
     .route(
       "/whoami",
-      get(|st: State<Env>, caps: RequestCaps| execute_with_request_caps(st, caps, whoami)),
+      get(|st: State<DynEnv>, caps: RequestCaps| execute_with_request_caps(st, caps, whoami)),
     )
-    .layer(CapOverrideLayer::<Cap<Tenant>, _>::new(|parts| {
+    .layer(CapOverrideLayer::new(|parts| {
       let tenant = parts.headers.get("x-tenant")?.to_str().ok()?;
       Some(Tenant(tenant.to_owned()))
     }))
-    .with_state(base)
+    .with_state(DynEnv::new().with(Tenant("public".into())))
 }
+```
+
+## Streaming bodies
+
+`body::stream_body(stream)` turns a `Stream<Bytes, E>` into a response `Body` (a producer
+fiber feeds it chunk by chunk; dropping the body interrupts the producer); `body::body_stream(body)`
+reads a request body as a stream.
+
+## The server as a layer
+
+`HostConfig::layer()` loads `HOST` / `PORT` / `SHUTDOWN_TIMEOUT_SECS` through `id_effect_config`;
+`server_layer(app)` binds on acquire and shuts down gracefully on release; `serve(app)` launches it
+until interrupted and `serve_until_shutdown(app)` until SIGINT/SIGTERM:
+
+```rust,no_run
+use id_effect::Effect;
+use id_effect_axum::{
+  EffectExecutor, HostConfig, HostError, ShutdownReason, health_router, provide_host_config_env,
+  serve_until_shutdown,
+};
+
+# async fn run() {
+let config = provide_host_config_env::<HostError>().provide_to(HostConfig::layer());
+let program: Effect<ShutdownReason, HostError> =
+  serve_until_shutdown(health_router()).provide_layer(config);
+let exit = EffectExecutor::global().run_effect(program).await;
+# let _ = exit;
+# }
 ```
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| `tower` | `service::{EffectService, ChannelService}` — Tower `Service`s backed by effects (formerly `id_effect_tower`). |
+| `tower` | `service::{EffectService, ChannelService}` — Tower `Service`s backed by effects. |
 | `cluster` | `cluster::ClusterControl` — Process Mesh control-plane routes (`id_effect_node`). |
 
-## Breaking changes in 0.6
+## Migrating from 0.6
 
-The build closure, `A` and `E` now cross to an executor thread, so `run_with_env`, `run_with_caps`
-(and the routing helpers / `execute`, which already required most of this) need them to be
-`Send + 'static`. Code that now fails to compile:
-
-- closures borrowing locals — `run_with_env(st, |e| f(e, &body))` → move an owned value in:
-  `run_with_env(st, move |e| f(e, &body))` (with `body` owned by the closure);
-- closures capturing `Rc` / `RefCell` / other `!Send` values — create them *inside* the closure
-  (the effect itself may hold them);
-- success or error types containing `Rc` / `RefCell` — return `Send` types (e.g. `Arc`, `String`).
-
-Runtime semantics that changed:
-
-- effects no longer run on the caller's runtime: `tokio::spawn` inside an effect lands on an executor
-  thread's runtime;
-- the previous `block_in_place` bridge needed a multi-thread runtime; any flavour now works;
-- concurrency is bounded (512 running + 1024 queued by default); saturation waits, or answers `503`
-  under `SaturationPolicy::Reject`;
-- effects still run to completion on client disconnect (as before) unless `DropPolicy::Cancel` is set;
-- `service::EffectService::Future` / `ChannelService::Future` are now `Send`; `EffectService` gains
-  `with_executor`, and its in-flight counter / permit are released on every exit path (including
-  panics and cancellation).
+See §14.14 (`id_effect_axum`) of [`docs/MIGRATION-0.7.md`](../../docs/MIGRATION-0.7.md).
 
 ## Examples
 
@@ -152,6 +148,3 @@ cargo run -p id_effect_axum --example 010_routing_hello
 cargo run -p id_effect_axum --example 060_request_caps
 cargo run -p id_effect_axum --features tower --example 050_tower_effect_service
 ```
-
-See also crate docs on [docs.rs](https://docs.rs/id_effect_axum) and the `id_effect_sql` example
-`010_axum_sql`.

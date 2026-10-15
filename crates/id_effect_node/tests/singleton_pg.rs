@@ -7,9 +7,52 @@
 
 #![cfg(feature = "pg")]
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, Runtime, TokioExecutor};
 use id_effect_node::singleton::{PgAdvisoryLease, SingletonError, SingletonLease};
+
+/// Run a lease effect on the default runtime (its tokio side has the IO driver sqlx needs; the
+/// session fiber the connect forks lands there).
+fn run<A: Send + 'static>(eff: Effect<A, SingletonError>) -> Result<A, SingletonError> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  }
+}
+
+fn get<A: Send + 'static>(eff: Effect<A, Never>) -> A {
+  match eff.block_on() {
+    Exit::Success(a) => a,
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  }
+}
+
+/// On an executor without tokio's IO driver the session fiber dies before dialing; connect
+/// reports that defect instead of hanging (no database needed).
+#[test]
+fn connect_without_an_io_driver_is_unavailable() {
+  let timer_only = tokio::runtime::Builder::new_multi_thread()
+    .worker_threads(1)
+    .enable_time()
+    .build()
+    .expect("tokio runtime");
+  let rt = Runtime::from_executor(Arc::new(TokioExecutor::new(timer_only.handle().clone())));
+  let err = match rt.block_on(PgAdvisoryLease::connect(
+    "postgres://id_effect@127.0.0.1:1/none",
+  )) {
+    Exit::Failure(Cause::Fail(e)) => e,
+    Exit::Success(_) => panic!("connect must fail without an IO driver"),
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  };
+  assert!(
+    matches!(&err, SingletonError::Unavailable(m) if m.starts_with("lease worker exited before ready")),
+    "{err}"
+  );
+}
 
 fn pg_required() -> bool {
   std::env::var("ID_EFFECT_REQUIRE_PG").is_ok_and(|v| v == "1")
@@ -33,7 +76,7 @@ fn live_url(test: &str) -> Option<String> {
   let Some(url) = url else {
     return unavailable(test, "DATABASE_URL is not set");
   };
-  match PgAdvisoryLease::connect(&url) {
+  match run(PgAdvisoryLease::connect(&url)) {
     Ok(_) => Some(url),
     Err(e) => unavailable(test, &format!("cannot connect: {e}")),
   }
@@ -46,9 +89,11 @@ fn lock_name(test: &str) -> String {
 #[test]
 fn unreachable_database_is_unavailable() {
   // Port 1 on loopback refuses immediately; no database needed.
-  let err = PgAdvisoryLease::connect("postgres://id_effect@127.0.0.1:1/none")
-    .err()
-    .expect("connect must fail");
+  let err = run(PgAdvisoryLease::connect(
+    "postgres://id_effect@127.0.0.1:1/none",
+  ))
+  .err()
+  .expect("connect must fail");
   assert!(matches!(err, SingletonError::Unavailable(_)), "{err}");
 }
 
@@ -60,29 +105,27 @@ fn pg_advisory_lease_enforces_single_holder() {
   let ttl = Duration::from_secs(30);
   let name = lock_name("single");
 
-  let node_a = PgAdvisoryLease::connect(&url).expect("node a connects");
-  let node_b = PgAdvisoryLease::connect(&url).expect("node b connects");
+  let node_a = run(PgAdvisoryLease::connect(&url)).expect("node a connects");
+  let node_b = run(PgAdvisoryLease::connect(&url)).expect("node b connects");
 
   // First contender wins the advisory lock.
-  node_a.try_acquire(&name, "a", ttl).expect("a acquires");
-  assert_eq!(node_a.holder(&name).as_deref(), Some("a"));
+  run(node_a.try_acquire(&name, "a", ttl)).expect("a acquires");
+  assert_eq!(get(node_a.holder(&name)).as_deref(), Some("a"));
 
   // Second contender on a separate session is refused.
   assert!(matches!(
-    node_b.try_acquire(&name, "b", ttl),
+    run(node_b.try_acquire(&name, "b", ttl)),
     Err(SingletonError::HeldBy(_))
   ));
 
   // Heartbeat succeeds while the session is alive, then the holder steps down.
-  node_a.renew(&name, "a", ttl).expect("a renews");
-  node_a.release(&name, "a").expect("a releases");
+  run(node_a.renew(&name, "a", ttl)).expect("a renews");
+  run(node_a.release(&name, "a")).expect("a releases");
 
   // After release the lock is available to the other node.
-  node_b
-    .try_acquire(&name, "b", ttl)
-    .expect("b acquires after release");
-  assert_eq!(node_b.holder(&name).as_deref(), Some("b"));
-  node_b.release(&name, "b").expect("b releases");
+  run(node_b.try_acquire(&name, "b", ttl)).expect("b acquires after release");
+  assert_eq!(get(node_b.holder(&name)).as_deref(), Some("b"));
+  run(node_b.release(&name, "b")).expect("b releases");
 }
 
 #[test]
@@ -93,23 +136,24 @@ fn dropping_the_holder_session_fails_over() {
   let ttl = Duration::from_secs(30);
   let name = lock_name("failover");
 
-  let node_a = PgAdvisoryLease::connect(&url).expect("node a connects");
-  let node_b = PgAdvisoryLease::connect(&url).expect("node b connects");
-  node_a.try_acquire(&name, "a", ttl).expect("a acquires");
-  assert!(node_b.try_acquire(&name, "b", ttl).is_err());
+  let node_a = run(PgAdvisoryLease::connect(&url)).expect("node a connects");
+  let node_b = run(PgAdvisoryLease::connect(&url)).expect("node b connects");
+  run(node_a.try_acquire(&name, "a", ttl)).expect("a acquires");
+  assert!(run(node_b.try_acquire(&name, "b", ttl)).is_err());
 
-  // The lock is session-scoped: when a's connection goes away, so does the lock. Postgres
-  // processes the disconnect asynchronously, so retry until it lands (bounded).
+  // The lock is session-scoped: dropping the handle interrupts its session fiber, the
+  // connection goes away, and so does the lock. Postgres processes the disconnect
+  // asynchronously, so retry until it lands (bounded).
   drop(node_a);
   let deadline = std::time::Instant::now() + Duration::from_secs(10);
   loop {
-    match node_b.try_acquire(&name, "b", ttl) {
+    match run(node_b.try_acquire(&name, "b", ttl)) {
       Ok(()) => break,
       Err(e) if std::time::Instant::now() >= deadline => panic!("no failover: {e}"),
-      Err(_) => std::thread::yield_now(),
+      Err(_) => std::thread::sleep(Duration::from_millis(10)),
     }
   }
-  assert_eq!(node_b.holder(&name).as_deref(), Some("b"));
+  assert_eq!(get(node_b.holder(&name)).as_deref(), Some("b"));
 }
 
 #[test]
@@ -119,24 +163,22 @@ fn renew_and_release_respect_ownership() {
   };
   let ttl = Duration::from_secs(30);
   let name = lock_name("ownership");
-  let lease = PgAdvisoryLease::connect(&url).expect("connects");
+  let lease = run(PgAdvisoryLease::connect(&url)).expect("connects");
 
   assert!(matches!(
-    lease.renew(&name, "a", ttl),
+    run(lease.renew(&name, "a", ttl)),
     Err(SingletonError::Unavailable(_))
   ));
-  lease.try_acquire(&name, "a", ttl).expect("a acquires");
-  lease
-    .try_acquire(&name, "a", ttl)
-    .expect("re-entrant for a");
+  run(lease.try_acquire(&name, "a", ttl)).expect("a acquires");
+  run(lease.try_acquire(&name, "a", ttl)).expect("re-entrant for a");
   assert!(matches!(
-    lease.renew(&name, "b", ttl),
+    run(lease.renew(&name, "b", ttl)),
     Err(SingletonError::HeldBy(h)) if h == "a"
   ));
   assert!(matches!(
-    lease.release(&name, "b"),
+    run(lease.release(&name, "b")),
     Err(SingletonError::HeldBy(_))
   ));
-  lease.release(&name, "a").expect("a releases");
-  assert_eq!(lease.holder(&name), None);
+  run(lease.release(&name, "a")).expect("a releases");
+  assert_eq!(get(lease.holder(&name)), None);
 }

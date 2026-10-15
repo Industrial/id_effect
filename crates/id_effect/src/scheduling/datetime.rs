@@ -11,8 +11,8 @@ use jiff::civil::{DateTime, DateTimeRound, date};
 use jiff::tz::{self, TimeZone};
 use jiff::{RoundMode, Timestamp, ToSpan, Unit, Zoned, ZonedRound};
 
-use crate::runtime::Never;
-use crate::{Effect, fail, succeed};
+use crate::failure::Never;
+use crate::{Effect, fail, succeed, sync};
 
 // ── TimeUnit ─────────────────────────────────────────────────────────────────
 
@@ -58,8 +58,8 @@ pub struct UtcDateTime(
 
 impl UtcDateTime {
   /// Current system time as UTC ([`Timestamp::now`]).
-  pub fn now() -> Effect<Self, Never, ()> {
-    succeed(Self(Timestamp::now()))
+  pub fn now() -> Effect<Self, Never> {
+    sync(|| Self(Timestamp::now()))
   }
 
   /// Construct from Unix milliseconds when in range.
@@ -235,8 +235,8 @@ pub struct ZonedDateTime(
 
 impl ZonedDateTime {
   /// “Now” in the system default zone ([`Zoned::now`]).
-  pub fn now() -> Effect<Self, Never, ()> {
-    succeed(Self(Zoned::now()))
+  pub fn now() -> Effect<Self, Never> {
+    sync(|| Self(Zoned::now()))
   }
 
   /// Build from Unix milliseconds in `zone` when in range.
@@ -458,7 +458,7 @@ pub mod timezone {
   }
 
   /// Resolve a named zone from the bundled IANA database.
-  pub fn named(iana_id: &str) -> Effect<TimeZone, TimeZoneError, ()> {
+  pub fn named(iana_id: &str) -> Effect<TimeZone, TimeZoneError> {
     match TimeZone::get(iana_id) {
       Ok(tz) => succeed(tz),
       Err(_) => fail(TimeZoneError {
@@ -642,7 +642,9 @@ mod tests {
   use super::timezone;
   use super::*;
   use crate::failure::exit::Exit;
-  use crate::testing::test_runtime::run_test;
+  fn run_test<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>, _env: ()) -> Exit<A, E> {
+    eff.block_on()
+  }
 
   #[test]
   fn now_returns_utc_datetime() {

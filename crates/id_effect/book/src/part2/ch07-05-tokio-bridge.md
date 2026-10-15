@@ -1,61 +1,83 @@
 # Tokio bridge (`id_effect_tokio`)
 
-The core **`id_effect`** crate defines interpreters (`run_blocking`, `run_async`, `run_fork`, …) and the **`Runtime`** trait. Workspace crate **`id_effect_tokio`** supplies the **Tokio-backed** implementation for binaries on **`#[tokio::main]`**.
+The core `id_effect` crate already runs effects on Tokio: `Effect::block_on` and
+`Runtime::global()` use a `TokioExecutor`, and every fiber is an ordinary Tokio task with a real
+waker. Workspace crate **`id_effect_tokio`** adds **`TokioRuntime`**, a handle that ties an
+`id_effect::Runtime` to a specific Tokio runtime — the one your `#[tokio::main]` is running, or one
+it owns.
 
-Read this section **before** [Platform I/O](./ch07-06-platform-services.md), [HTTP via reqwest](./ch07-07-reqwest-http.md), and [Axum](./ch07-08-axum-host.md).
+Read this section **before** [Platform I/O](./ch07-06-platform-services.md),
+[HTTP via reqwest](./ch07-07-reqwest-http.md) and [Axum](./ch07-08-axum-host.md).
 
-## What `id_effect_tokio` provides
+## What `TokioRuntime` provides
 
-- **`TokioRuntime`** — implements [`id_effect::Runtime`]: cooperative sleep/yield; forked fibers on Tokio's blocking pool.
-- **Re-exports** — `run_async`, `run_blocking`, `run_fork`, `yield_now` for use at async boundaries.
-- **`spawn_blocking_run_async`** — when the effect graph is not `Send` but must be driven by `run_async` (Axum uses the same pattern).
+| Method | What it does |
+|--------|--------------|
+| `TokioRuntime::current()` | wrap the ambient Tokio runtime (inside `#[tokio::main]` / `#[tokio::test]`) |
+| `new_current_thread()`, `new_multi_thread()`, `from_handle(h)` | own a runtime, or wrap a handle |
+| `rt.run(eff).await` | run an `Effect<A, E, HNil>` as a root fiber → `Exit<A, E>` |
+| `rt.fork(eff)` | start a root fiber → `FiberHandle` (`join_future().await`, `interrupt_now()`) |
+| `rt.spawn(eff)` | → `tokio::task::JoinHandle<Exit<A, E>>` |
+| `rt.block_on(fut)` | drive a future on an **owned** runtime |
+| `rt.runtime()`, `rt.executor()` | the underlying `id_effect::Runtime` / `TokioExecutor` |
 
-## Capability DI with Tokio
+Effects are `Send`, so `rt.run(eff)` is a `Send + 'static` future you can await anywhere — no
+`spawn_blocking` adapters. `sleep` and `yield_fiber` use the fiber's executor, so on a
+`TokioRuntime` they park on Tokio timers.
 
-Build [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) manually or via [`run_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs) / [`build_env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/run.rs), then pass it to `run_async`:
+## Capabilities with Tokio
 
-```rust
-use id_effect::{Env, caps, effect, require, run_async, succeed};
-struct ApiToken;
+Provide `R` first (`provide`, `provide_all`, `provide_layer`), then run the closed effect
+(`crates/id_effect_tokio/examples/109_tokio_end_to_end.rs`):
 
-fn fetch() -> Effect<Vec<Quote>, AppError, caps!(ApiToken)> {
-    effect!(|r| {
-        let token = ~ApiToken;
-        // async steps…
-        Ok(quotes)
+```rust,ignore
+use id_effect::{Effect, Exit, HCons, HNil, from_async, hlist, need};
+use id_effect_tokio::TokioRuntime;
+
+struct ApiToken(&'static str);
+type AppEnv = HCons<ApiToken, HNil>;
+
+fn fetch_quotes() -> Effect<Vec<Quote>, AppError, AppEnv> {
+    need::<ApiToken>().flat_map(|token| {
+        let missing = token.0.is_empty();
+        from_async(move || async move {
+            if missing {
+                return Err(AppError::MissingApiToken);
+            }
+            Ok(load_quotes().await)
+        })
     })
 }
 
 #[tokio::main]
 async fn main() {
-    let mut env = Env::new();
-    env.insert::<Cap<ApiToken>>("secret");
-    let quotes = run_async(fetch(), env).await?;
+    let rt = TokioRuntime::current().expect("inside a tokio runtime");
+    let exit = rt.run(fetch_quotes().provide_all(hlist![ApiToken("secret")])).await;
+    assert!(matches!(exit, Exit::Success(_)));
 }
 ```
 
-For provider-based apps, use `build_env` + `run_async`:
-
-```rust
-let env = build_env([provide!(ConfigLive), provide!(HttpClientLive)])?;
-let res = run_async(my_handler(), env).await?;
-```
+For layer-based apps: `rt.run(app().provide_layer(live_layer())).await`.
 
 ## Mental model
 
 | Concern | Where it lives |
 |---------|----------------|
 | Describing work | `Effect<A, E, R>` |
-| Capabilities | `caps!(…)` + `Needs<K>` + `run_with` / `build_env` |
-| Blocking / tests | `run_blocking(effect, env)` |
-| Async I/O on Tokio | `id_effect::run_async(effect, env)` |
+| Capabilities | `caps!(…)` / `HCons` in `R`, built with `Layer`s or provided as values |
+| Blocking edge (`main`, sync tests) | `eff.block_on()` |
+| Async edge on Tokio | `TokioRuntime::current()?.run(eff).await` or `Runtime::global().run(eff).await` |
+| Deterministic tests | `TestExecutor` (virtual clock), see [Testing](../part4/ch15-00-testing.md) |
 
 ## Sharp edges
 
-1. **`Send`**: `run_async` futures are often **not** `Send` — use Axum/Tower adapters or `spawn_blocking_run_async`.
-2. **Router tests**: prefer `#[tokio::test(flavor = "multi_thread", worker_threads = 2)]` when exercising Axum + effects.
+1. **`block_on` inside async code is refused.** `Effect::block_on` parks the calling thread; inside
+   a Tokio task it fails with a `BlockOnInAsync` defect (`try_block_on` returns the error). Await
+   `rt.run(eff)` there instead.
+2. **IO drivers.** Live platform effects (reqwest, `tokio::process`) need a Tokio runtime with its
+   IO driver; `TokioRuntime`'s owned runtimes enable every compiled driver.
 
 ## Further reading
 
-- Example: `crates/id_effect_tokio/examples/109_tokio_end_to_end.rs`
+- Examples: `cargo run -p id_effect_tokio --example 109_tokio_end_to_end` (also `106`–`108`)
 - `cargo doc --open -p id_effect_tokio`

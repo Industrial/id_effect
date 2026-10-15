@@ -1,0 +1,32 @@
+# probe lazy  (2026-10-14T23:58:34Z)
+impl flat_map_ran_at_build map_ran_at_build
+v06 0 0
+a 0 0
+b 1 1
+
+# probe allocs (allocations + bytes for ONE call, after one warm-up call)
+impl kind n allocs bytes
+v06 async 1 5 112
+v06 async 16 50 1312
+v06 async 64 194 5152
+v06 async 256 770 20512
+v06 sync 1 5 112
+v06 sync 16 50 1312
+v06 sync 64 194 5152
+v06 sync 256 770 20512
+a async 1 3 224
+a async 16 39 1808
+a async 64 137 6800
+a async 256 340 33456
+a sync 1 1 8
+a sync 16 16 248
+a sync 64 64 1016
+a sync 256 76 14008
+b async 1 8 656
+b async 16 68 3536
+b async 64 260 12752
+b async 256 1028 49616
+b sync 1 0 0
+b sync 16 0 0
+b sync 64 0 0
+b sync 256 0 0

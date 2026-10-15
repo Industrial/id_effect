@@ -2,11 +2,11 @@
 //!
 //! The machine is threaded **by value** through the returned effects (the same
 //! ownership discipline as `id_effect_process` behaviours), so no step ever nests
-//! a blocking interpreter inside another effect.
+//! an interpreter inside another effect: every action is sequenced with `flat_map`.
 
 use crate::error::FsmError;
 use crate::machine::StateMachine;
-use id_effect::{Effect, box_future};
+use id_effect::{Effect, fail, succeed};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -18,6 +18,10 @@ pub type TransitionEffect<A, Err, R> = Arc<dyn Fn() -> Effect<A, Err, R> + Send 
 type ActionMap<S, E, A, Err, R> = HashMap<(S, E), TransitionEffect<A, Err, R>>;
 
 /// Maps `(state, event)` pairs to effect factories run as part of the transition.
+///
+/// The actions are [`id_effect::Effect`]s over the environment `R` (an HList such as
+/// `HCons<Db, HNil>`, or `HNil`); [`Interpreter::step`] and [`Interpreter::run`] return effects
+/// that need the same `R`.
 ///
 /// Cheap to clone (the action map is shared behind an [`Arc`]).
 pub struct Interpreter<S, E, A, Err, R>
@@ -63,8 +67,8 @@ where
 
 impl<S, E, A, Err, R> Interpreter<S, E, A, Err, R>
 where
-  S: Copy + Eq + Hash + Debug + 'static,
-  E: Copy + Eq + Hash + Debug + 'static,
+  S: Copy + Eq + Hash + 'static,
+  E: Copy + Eq + Hash + 'static,
   A: 'static,
   Err: 'static,
   R: 'static,
@@ -92,7 +96,16 @@ where
   pub(crate) fn action(&self, from: S, event: E) -> Option<Effect<A, Err, R>> {
     self.actions.get(&(from, event)).map(|make| make())
   }
+}
 
+impl<S, E, A, Err, R> Interpreter<S, E, A, Err, R>
+where
+  S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
+  E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
+  A: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
+{
   /// Applies one `event` to `machine`.
   ///
   /// The table is consulted **first**: a missing edge fails with
@@ -117,17 +130,28 @@ where
   where
     I: IntoIterator<Item = E>,
   {
-    let actions = Arc::clone(&self.actions);
     let events: Vec<E> = events.into_iter().collect();
-    Effect::new_async(move |env: &mut R| {
-      box_future(async move {
-        let mut machine = machine;
-        for event in events {
-          machine = step_with(&actions, machine, event).run(env).await?;
-        }
-        Ok(machine)
-      })
-    })
+    run_from(Arc::clone(&self.actions), machine, events.into_iter())
+  }
+}
+
+/// Steps `machine` through the remaining `events`, one `flat_map` per event.
+fn run_from<S, E, A, Err, R>(
+  actions: Arc<ActionMap<S, E, A, Err, R>>,
+  machine: StateMachine<S, E>,
+  mut events: std::vec::IntoIter<E>,
+) -> Effect<StateMachine<S, E>, RunError<S, E, Err>, R>
+where
+  S: Copy + Eq + Hash + Debug + Send + Sync + 'static,
+  E: Copy + Eq + Hash + Debug + Send + Sync + 'static,
+  A: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  match events.next() {
+    None => succeed(machine),
+    Some(event) => step_with(&actions, machine, event)
+      .flat_map(move |machine| run_from(actions, machine, events)),
   }
 }
 
@@ -137,31 +161,27 @@ fn step_with<S, E, A, Err, R>(
   event: E,
 ) -> Effect<StateMachine<S, E>, RunError<S, E, Err>, R>
 where
-  S: Copy + Eq + Hash + Debug + 'static,
-  E: Copy + Eq + Hash + Debug + 'static,
-  A: 'static,
-  Err: 'static,
-  R: 'static,
+  S: Copy + Eq + Hash + Debug + Send + 'static,
+  E: Copy + Eq + Hash + Debug + Send + 'static,
+  A: Send + 'static,
+  Err: Send + 'static,
+  R: Send + Sync + 'static,
 {
   let from = machine.state();
   if machine.table().next(from, event).is_none() {
-    return Effect::new(move |_| {
-      Err(RunError::Transition(FsmError::NoTransition {
-        state: from,
-        event,
-      }))
-    });
+    return fail(RunError::Transition(FsmError::NoTransition {
+      state: from,
+      event,
+    }));
   }
-  let action = actions.get(&(from, event)).map(|make| make());
-  Effect::new_async(move |env: &mut R| {
-    box_future(async move {
-      if let Some(action) = action {
-        action.run(env).await.map_err(RunError::Effect)?;
-      }
-      machine.step(event).map_err(RunError::Transition)?;
-      Ok(machine)
-    })
-  })
+  let commit = move || match machine.step(event) {
+    Ok(_) => succeed(machine),
+    Err(e) => fail(RunError::Transition(e)),
+  };
+  match actions.get(&(from, event)) {
+    Some(make) => make().map_err(RunError::Effect).flat_map(move |_| commit()),
+    None => commit(),
+  }
 }
 
 /// Combined failure from pure stepping or effect execution.
@@ -177,7 +197,8 @@ pub enum RunError<S, E, Err> {
 mod tests {
   use super::*;
   use crate::machine::TransitionTable;
-  use id_effect::{fail, run_blocking, succeed};
+  use crate::test_support::run;
+  use id_effect::{HCons, HNil, need, sync};
   use std::sync::Mutex;
 
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -204,13 +225,14 @@ mod tests {
   fn missing_edge_fails_without_running_action() {
     let ran = Arc::new(Mutex::new(false));
     let flag = Arc::clone(&ran);
-    let interp = Interpreter::<S, E, (), &str, ()>::new().on_transition(S::C, E::Next, move || {
-      *flag.lock().unwrap() = true;
-      succeed(())
-    });
+    let interp =
+      Interpreter::<S, E, (), &str, HNil>::new().on_transition(S::C, E::Next, move || {
+        let flag = Arc::clone(&flag);
+        sync(move || *flag.lock().unwrap() = true)
+      });
     let mut m = machine();
     m.set_state(S::C);
-    let err = run_blocking(interp.step(m, E::Next), ()).unwrap_err();
+    let err = run(interp.step(m, E::Next)).unwrap_err();
     assert_eq!(
       err,
       RunError::Transition(FsmError::NoTransition {
@@ -223,40 +245,39 @@ mod tests {
 
   #[test]
   fn action_failure_surfaces_as_effect_error() {
-    let interp = Interpreter::<S, E, (), &str, ()>::new()
+    let interp = Interpreter::<S, E, (), &str, HNil>::new()
       .on_transition(S::A, E::Next, || fail("action failed"));
-    let err = run_blocking(interp.step(machine(), E::Next), ()).unwrap_err();
+    let err = run(interp.step(machine(), E::Next)).unwrap_err();
     assert_eq!(err, RunError::Effect("action failed"));
+  }
+
+  type Log = HCons<Mutex<Vec<S>>, HNil>;
+
+  fn push(state: S) -> Effect<(), (), Log> {
+    need::<Mutex<Vec<S>>>().map(move |log| log.lock().unwrap().push(state))
   }
 
   #[test]
   fn run_threads_environment_through_every_action() {
-    let interp = Interpreter::<S, E, (), (), Vec<S>>::new()
-      .on_transition(S::A, E::Next, || {
-        Effect::new(|log: &mut Vec<S>| {
-          log.push(S::A);
-          Ok(())
-        })
-      })
-      .on_transition(S::B, E::Next, || {
-        Effect::new(|log: &mut Vec<S>| {
-          log.push(S::B);
-          Ok(())
-        })
-      });
+    let interp = Interpreter::<S, E, (), (), Log>::new()
+      .on_transition(S::A, E::Next, || push(S::A))
+      .on_transition(S::B, E::Next, || push(S::B));
     assert!(interp.has_action(S::A, E::Next));
     let program = interp
       .run(machine(), [E::Next, E::Next])
-      .flat_map(|m| Effect::new(move |log: &mut Vec<S>| Ok((m.state(), log.clone()))));
-    let (state, log) = run_blocking(program, Vec::new()).unwrap();
+      .flat_map(|m| {
+        need::<Mutex<Vec<S>>>().map(move |log| (m.state(), log.lock().unwrap().clone()))
+      })
+      .provide(Mutex::new(Vec::new()));
+    let (state, log) = run(program).unwrap();
     assert_eq!(state, S::C);
     assert_eq!(log, vec![S::A, S::B]);
   }
 
   #[test]
   fn run_stops_at_first_failure() {
-    let interp = Interpreter::<S, E, (), (), ()>::new();
-    let err = run_blocking(interp.run(machine(), [E::Next, E::Next, E::Next]), ()).unwrap_err();
+    let interp = Interpreter::<S, E, (), (), HNil>::new();
+    let err = run(interp.run(machine(), [E::Next, E::Next, E::Next])).unwrap_err();
     assert!(matches!(
       err,
       RunError::Transition(FsmError::NoTransition { state: S::C, .. })
@@ -264,11 +285,22 @@ mod tests {
   }
 
   #[test]
+  fn run_over_many_events_does_not_grow_the_stack() {
+    let table = TransitionTable::new().on(0u8, 'x', 1u8).on(1, 'x', 0);
+    let interp = Interpreter::<u8, char, (), (), HNil>::new().on_transition(0, 'x', || succeed(()));
+    let events = std::iter::repeat_n('x', 100_001);
+    let m = run(interp.run(StateMachine::new(0, table), events)).unwrap();
+    assert_eq!(m.state(), 1);
+  }
+
+  #[test]
   fn cloned_interpreter_shares_actions() {
     let interp =
-      Interpreter::<S, E, (), (), ()>::new().on_transition(S::A, E::Next, || succeed(()));
+      Interpreter::<S, E, (), (), HNil>::new().on_transition(S::A, E::Next, || succeed(()));
     let copy = interp.clone();
     assert!(copy.has_action(S::A, E::Next));
     assert!(!copy.has_action(S::B, E::Next));
+    assert!(copy.action(S::A, E::Next).is_some());
+    assert!(copy.action(S::B, E::Next).is_none());
   }
 }

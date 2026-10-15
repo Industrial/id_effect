@@ -9,11 +9,11 @@ transactions read and write.
 committing it, then share the handle:
 
 ```rust,ignore
-use id_effect::run_blocking;
 use id_effect_fp::{TRef, commit};
+// `run` is the Exit-to-Result helper from the chapter introduction.
 
-let counter: TRef<i32> = run_blocking(commit(TRef::make(0_i32)), ()).expect("cell");
-let total: TRef<i32> = run_blocking(commit(TRef::make(0_i32)), ()).expect("cell");
+let counter: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
+let total: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
 ```
 
 Creating a cell *inside* a larger transaction (`TRef::make(0).flat_map(|cell| …)`) also works, but
@@ -52,7 +52,7 @@ fn bump(counter: &TRef<i32>, total: &TRef<i32>) -> Stm<(), ()> {
 }
 
 // modify_stm returns something computed from the old value (here: the previous count).
-let previous = run_blocking(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10))), ());
+let previous = run(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10))));
 ```
 
 ## Sharing TRefs
@@ -61,22 +61,22 @@ let previous = run_blocking(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10
 each thread or fiber; no `Arc<Mutex<_>>` is needed:
 
 ```rust,ignore
-let hits = run_blocking(commit(TRef::make(0_u32)), ()).expect("cell");
+let hits = run(commit(TRef::make(0_u32))).expect("cell");
 let handles: Vec<_> = (0..2).map(|_| {
   let hits = hits.clone();
   std::thread::spawn(move || {
     for _ in 0..1_000 {
-      run_blocking(commit(hits.update_stm::<(), _>(|n| n + 1)), ()).expect("update");
+      run(commit(hits.update_stm::<(), _>(|n| n + 1))).expect("update");
     }
   })
 }).collect();
 for h in handles { h.join().expect("join"); }
-assert_eq!(run_blocking(commit(hits.read_stm::<()>()), ()), Ok(2_000));
+assert_eq!(run(commit(hits.read_stm::<()>())), Ok(2_000));
 ```
 
 Full example: [`crates/id_effect_fp/examples/084_stm_tref_compose.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/084_stm_tref_compose.rs) (`cargo run -p id_effect_fp --example 084_stm_tref_compose`); the minimal read/write version is `077_stm_tref`.
 
-## TRef vs. Mutex<T>
+## `TRef` vs. `Mutex<T>`
 
 | Property | TRef | Mutex |
 |----------|------|-------|

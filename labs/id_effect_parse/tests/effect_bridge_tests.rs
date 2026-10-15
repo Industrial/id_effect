@@ -1,4 +1,4 @@
-use id_effect::{Chunk, Stream, run_blocking};
+use id_effect::{Chunk, Stream};
 use id_effect_parse::{
   ParseFailure, ParseStreamError, Parser, parse_stream, parse_text_stream, tag,
 };
@@ -12,19 +12,25 @@ fn parse_stream_collects_chunks() {
       Err(ParseFailure::new("unexpected bytes"))
     }
   });
-  let stream = Stream::from_iterable(vec![
+  let stream = Stream::<Chunk<u8>>::from_iterable(vec![
     Chunk::from_vec(b"a".to_vec()),
     Chunk::from_vec(b"bc".to_vec()),
   ]);
-  let value = run_blocking(parse_stream(parser, stream), ()).unwrap();
+  let value = parse_stream(parser, stream)
+    .block_on()
+    .into_result()
+    .unwrap();
   assert_eq!(value, "ok");
 }
 
 #[test]
 fn parse_text_stream_decodes_utf8() {
   let parser = tag("hi");
-  let stream = Stream::from_iterable(vec![Chunk::from_vec(b"hi".to_vec())]);
-  let value = run_blocking(parse_text_stream(parser, stream), ()).unwrap();
+  let stream = Stream::<Chunk<u8>>::from_iterable(vec![Chunk::from_vec(b"hi".to_vec())]);
+  let value = parse_text_stream(parser, stream)
+    .block_on()
+    .into_result()
+    .unwrap();
   assert_eq!(value, "hi");
 }
 
@@ -37,15 +43,35 @@ fn parse_stream_fails_on_parser_error() {
       Err(ParseFailure::new("unexpected bytes"))
     }
   });
-  let stream = Stream::from_iterable(vec![Chunk::from_vec(b"wrong".to_vec())]);
-  let err = run_blocking(parse_stream(parser, stream), ()).unwrap_err();
-  assert!(matches!(err, ParseStreamError::Parse(_)));
+  let stream = Stream::<Chunk<u8>>::from_iterable(vec![Chunk::from_vec(b"wrong".to_vec())]);
+  let err = parse_stream(parser, stream)
+    .block_on()
+    .into_result()
+    .unwrap_err();
+  assert!(matches!(
+    err.fail_option(),
+    Some(ParseStreamError::Parse(_))
+  ));
 }
 
 #[test]
 fn parse_text_stream_fails_on_invalid_utf8() {
   let parser = tag("hi");
-  let stream = Stream::from_iterable(vec![Chunk::from_vec(vec![0xff, 0xfe])]);
-  let err = run_blocking(parse_text_stream(parser, stream), ()).unwrap_err();
-  assert!(matches!(err, ParseStreamError::Utf8(_)));
+  let stream = Stream::<Chunk<u8>>::from_iterable(vec![Chunk::from_vec(vec![0xff, 0xfe])]);
+  let err = parse_text_stream(parser, stream)
+    .block_on()
+    .into_result()
+    .unwrap_err();
+  assert!(matches!(err.fail_option(), Some(ParseStreamError::Utf8(_))));
+}
+
+#[test]
+fn parse_stream_surfaces_upstream_failure() {
+  let parser = Parser::new(|input: Vec<u8>| Ok::<_, ParseFailure>((input.len(), Vec::new())));
+  let stream = Stream::<Chunk<u8>, &'static str>::fail("boom");
+  let err = parse_stream(parser, stream)
+    .block_on()
+    .into_result()
+    .unwrap_err();
+  assert_eq!(err.fail_option(), Some(ParseStreamError::Stream("boom")));
 }

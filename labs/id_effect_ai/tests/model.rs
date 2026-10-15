@@ -1,8 +1,9 @@
-use id_effect::{build_env, run_async, run_blocking};
+use id_effect::{HCons, HNil};
 use id_effect_ai::{
-  ChatMessage, ChatRequest, ChatRole, LanguageModel, MockLanguageModel, complete,
-  provide_mock_language_model,
+  AiError, ChatMessage, ChatRequest, ChatRole, LanguageModel, LanguageModelService,
+  MockLanguageModel, complete, provide_mock_language_model,
 };
+use id_effect_tokio::TokioRuntime;
 
 #[test]
 fn chat_request_validate_empty_fails() {
@@ -15,7 +16,6 @@ fn chat_request_validate_empty_fails() {
 
 #[tokio::test]
 async fn mock_complete_echoes_user_message() {
-  let env = build_env([provide_mock_language_model()]).expect("env");
   let req = ChatRequest {
     model: "mock".into(),
     messages: vec![ChatMessage {
@@ -23,7 +23,14 @@ async fn mock_complete_echoes_user_message() {
       content: "hello".into(),
     }],
   };
-  let resp = run_async(complete(req), env).await.expect("complete");
+  let program = complete::<HCons<LanguageModelService, HNil>, _>(req)
+    .provide_layer(provide_mock_language_model::<AiError>());
+  let resp = TokioRuntime::current()
+    .expect("tokio")
+    .run(program)
+    .await
+    .into_result()
+    .expect("complete");
   assert!(resp.content.contains("hello"));
 }
 
@@ -37,7 +44,16 @@ async fn mock_stream_yields_chunks() {
       content: "ab".into(),
     }],
   };
-  let stream = run_blocking(model.complete_stream(req), ()).expect("stream");
-  let chunks = run_async(stream.run_collect(), ()).await.expect("collect");
+  let rt = TokioRuntime::current().expect("tokio");
+  let stream = rt
+    .run(model.complete_stream(req))
+    .await
+    .into_result()
+    .expect("stream");
+  let chunks = rt
+    .run(stream.run_collect())
+    .await
+    .into_result()
+    .expect("collect");
   assert!(!chunks.is_empty());
 }

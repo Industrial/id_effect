@@ -9,8 +9,8 @@
     Convert to `fn -> Effect<A, E, R>` and wrap async calls with `from_async`.
   note: |
     BAD:  async fn fetch(url: &str) -> String { … }
-    GOOD: fn fetch(url: &str) -> Effect<String, FetchError, ()> {
-              effect! { ~ from_async(|_| async move { … }) }
+    GOOD: fn fetch(url: &str) -> Effect<String, FetchError> {
+              effect!({ ~from_async(move || async move { … }) })
           }
   rule:
     pattern: async fn $NAME($$$PARAMS) $$$
@@ -38,7 +38,7 @@
     Public functions must return `Effect<A, E, R>`, not `Result<T, E>`.
   note: |
     BAD:  pub fn parse(s: &str) -> Result<MyType, ParseError> { … }
-    GOOD: pub fn parse(s: &str) -> Effect<MyType, ParseError, ()> { … }
+    GOOD: pub fn parse(s: &str) -> Effect<MyType, ParseError> { … }
   rule:
     all:
       - pattern: pub fn $NAME($$$) -> Result<$$$> { $$$BODY }
@@ -57,7 +57,7 @@
   note: |
     BAD:  fn build<A, E, R>(…) -> Effect<A, E, R> { … }
     GOOD: fn build<A, E, R>(…) -> Effect<A, E, R>
-          where A: 'static, E: From<SvcError> + 'static, R: Needs<Key> + 'static
+          where A: 'static, E: From<SvcError> + 'static, R: Selector<Key, I> + Send + Sync + 'static
           { … }
   rule:
     all:
@@ -74,8 +74,8 @@
     Effect-returning functions must not have the `_effect` suffix.
     The return type already communicates effectfulness.
   note: |
-    BAD:  fn fetch_user_effect(id: UserId) -> Effect<User, DbError, ()> { … }
-    GOOD: fn fetch_user(id: UserId) -> Effect<User, DbError, ()> { … }
+    BAD:  fn fetch_user_effect(id: UserId) -> Effect<User, DbError> { … }
+    GOOD: fn fetch_user(id: UserId) -> Effect<User, DbError> { … }
   rule:
     all:
       - pattern: fn $NAME($$$) -> Effect<$$$> { $$$BODY }
@@ -90,26 +90,26 @@
   message: |
     Functions named `*_blocking` that return `Effect<…>` are misleading.
     The `_blocking` suffix should only be used for functions that synchronously
-    run an effect (calling `run_blocking` internally).
+    run an effect (calling `block_on` internally).
   note: |
-    BAD:  fn save_blocking(r: Record) -> Effect<(), DbError, ()> { … }
-    GOOD: fn save(r: Record) -> Effect<(), DbError, ()> { … }
-          fn save_blocking(r: Record) -> Result<(), DbError> { run_blocking(save(r)) }
+    BAD:  fn save_blocking(r: Record) -> Effect<(), DbError> { … }
+    GOOD: fn save(r: Record) -> Effect<(), DbError> { … }
+          fn save_blocking(r: Record) -> Exit<(), DbError> { save(r).block_on() }
   rule:
     all:
       - pattern: fn $NAME($$$) -> Effect<$$$> { $$$BODY }
       - regex: "_blocking$"
         field: name
 # ──────────────────────────────────────────────────────────────────────────────
-# A-09  Public APIs must not expose concrete `Env` as `R`
+# A-09  Public APIs must not expose the 0.6 `Env` as `R`
 # ──────────────────────────────────────────────────────────────────────────────
 - id: id_effect-no-concrete-env-pub-fn
   language: Rust
   severity: error
   message: |
-    Public functions must not return `Effect<A, E, Env>`; use `R: Needs<Key> + 'static`.
+    Public functions must not return the 0.6 `Effect<A, E, Env>`; spell `R` with `caps!(Key, ..)`.
   note: |
     BAD:  pub fn load() -> Effect<String, E, Env> { … }
-    GOOD: pub fn load<R>() -> Effect<String, E, R> where R: Needs<ConfigProviderKey> + 'static { … }
+    GOOD: pub fn load() -> Effect<String, E, caps!(ConfigProviderService)> { … }
   rule:
     pattern: pub fn $NAME($$$) -> Effect<$A, $E, Env> { $$$BODY }

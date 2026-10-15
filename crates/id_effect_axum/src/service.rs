@@ -1,23 +1,23 @@
-//! [`tower::Service`] implementations that run [`id_effect::Effect`] programs using
-//! [`id_effect::run_async`], so handlers stay in the Effect interpreter while composing with
-//! Tower middleware stacks.
+//! [`tower::Service`] implementations that run [`id_effect::Effect`] programs, so handlers
+//! stay in the effect runtime while composing with Tower middleware stacks.
 //!
-//! Enabled by the `tower` feature. Formerly the `id_effect_tower` crate (merged in 0.6, ADR 0010).
-//! Effects run via [`id_effect::run_async`] on the global [`EffectExecutor`] — the crate's single
-//! [Send strategy](crate#send-strategy) — so service futures are [`Send`] and work on any Tokio
-//! runtime flavour.
+//! Enabled by the `tower` feature. Each call runs as one request fiber on the
+//! [`EffectExecutor`] (the global one unless [`EffectService::with_executor`] is used), so service
+//! futures are [`Send`], work on any Tokio runtime flavour, and dropping one interrupts its fiber
+//! (under [`DropPolicy::Interrupt`](crate::DropPolicy::Interrupt)).
+//!
+//! [`EffectService`]'s error type is the whole [`Cause<E>`]: a typed failure is `Cause::Fail(e)`,
+//! a panic in the handler is `Cause::Die(..)`, an interrupt `Cause::Interrupt(..)`.
 //!
 //! ## Concurrency
 //!
 //! [`EffectService::with_max_in_flight`] adds a [`tokio::sync::Semaphore`] gate so
-//! [`Service::poll_ready`] acquires a permit before each
-//! [`Service::call`]. In-flight work is also tracked in a
-//! [`id_effect::SynchronizedRef`] so effectful updates stay serialized when you compose with other
-//! `Effect` code.
+//! [`Service::poll_ready`] acquires a permit before each [`Service::call`]. In-flight work is
+//! tracked in a [`SynchronizedRef`]; the count and the permit are released by a finalizer of the
+//! request fiber, so every exit path (success, failure, defect, interruption) releases them.
 //!
-//! [`EffectService::with_request_metrics`] wraps each call with [`id_effect::Metric::track_duration`]
-//! (typically a [`Metric::timer`](id_effect::Metric::timer)) and increments an error counter when the
-//! handler effect fails.
+//! [`EffectService::with_request_metrics`] records each call's duration (seconds) in a latency
+//! [`Histogram`] and counts typed failures in an error [`Counter`].
 //!
 //! ## Examples
 //!
@@ -29,9 +29,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use id_effect::duration::Duration;
-use id_effect::run_async as run_effect_async;
-use id_effect::{Effect, Metric, QueueError, SynchronizedRef, box_future};
+use id_effect::{Cause, Exit};
+use id_effect::{Channel, Counter, Effect, Histogram, Metric, QueueError, SynchronizedRef, sync};
 use tokio::sync::{AcquireError, OwnedSemaphorePermit, Semaphore};
 use tower::Service;
 
@@ -40,21 +39,11 @@ use crate::EffectExecutor;
 type AcquireFuture =
   Pin<Box<dyn Future<Output = Result<OwnedSemaphorePermit, AcquireError>> + Send>>;
 
-/// Optional per-request latency ([`Metric::timer`] / histogram) and error-rate counter.
+/// Optional per-request latency histogram and error-rate counter.
 #[derive(Clone)]
 struct RequestMetrics {
-  latency: Metric<Duration, ()>,
-  errors: Metric<u64, ()>,
-}
-
-/// Decrements the in-flight counter on every exit path (completion, error, panic, cancellation).
-struct InFlightGuard(SynchronizedRef<u64>);
-
-impl Drop for InFlightGuard {
-  fn drop(&mut self) {
-    // Uncontended in practice; `run_blocking` keeps `Drop` synchronous.
-    let _ = id_effect::run_blocking(self.0.update(|n| n.saturating_sub(1)), ());
-  }
+  latency: Histogram,
+  errors: Counter,
 }
 
 /// Shared limiter for [`EffectService::with_max_in_flight`].
@@ -66,18 +55,18 @@ struct ServiceLimit {
 impl ServiceLimit {
   fn new(max_in_flight: usize) -> Self {
     assert!(max_in_flight > 0, "max_in_flight must be positive");
-    let in_flight = SynchronizedRef::new(0_u64);
     Self {
       sem: Arc::new(Semaphore::new(max_in_flight)),
-      in_flight,
+      in_flight: SynchronizedRef::new(0_u64),
     }
   }
 }
 
-/// [`Service`] that clones `S`, runs `f(&mut env, req)` to an effect, then drives it with
-/// [`run_effect_async`].
+/// [`Service`] that clones `S`, builds `f(&mut env, req)` and runs it, provided with `env`, as a
+/// request fiber.
 ///
-/// `S` is typically application state (`Clone`, often `Arc`-backed), matching Axum’s pattern.
+/// `S` is typically application state (`Clone`, often `Arc`-backed) or a capability list,
+/// matching Axum’s pattern.
 pub struct EffectService<S, F, Req> {
   state: S,
   f: F,
@@ -107,24 +96,20 @@ impl<S, F, Req> EffectService<S, F, Req> {
     }
   }
 
-  /// Record each request duration with `latency` ([`Metric::track_duration`]) and increment `errors`
-  /// when the inner effect fails.
+  /// Record each request's duration in `latency` and increment `errors` when the handler effect
+  /// fails with a typed error.
   #[must_use]
   #[inline]
-  pub fn with_request_metrics(
-    mut self,
-    latency: Metric<Duration, ()>,
-    errors: Metric<u64, ()>,
-  ) -> Self {
+  pub fn with_request_metrics(mut self, latency: Histogram, errors: Counter) -> Self {
     self.request_metrics = Some(RequestMetrics { latency, errors });
     self
   }
 
   /// Same as [`Self::new`], but at most `max_in_flight` requests run concurrently.
   ///
-  /// [`Service::poll_ready`] acquires a semaphore permit (possibly
-  /// after pending) before reporting readiness; [`Service::call`] consumes
-  /// that permit for the duration of the handler effect.
+  /// [`Service::poll_ready`] acquires a semaphore permit (possibly after pending) before
+  /// reporting readiness; [`Service::call`] hands that permit to the request fiber, which
+  /// releases it when it ends.
   ///
   /// # Panics
   ///
@@ -132,19 +117,13 @@ impl<S, F, Req> EffectService<S, F, Req> {
   #[inline]
   pub fn with_max_in_flight(state: S, max_in_flight: usize, f: F) -> Self {
     Self {
-      state,
-      f,
       limit: Some(Arc::new(ServiceLimit::new(max_in_flight))),
-      request_metrics: None,
-      ready_permit: None,
-      pending_acquire: None,
-      executor: None,
-      _pd: PhantomData,
+      ..Self::new(state, f)
     }
   }
 
   /// Run handler effects on `executor` instead of [`EffectExecutor::global`] (e.g. one configured
-  /// with [`crate::DropPolicy::Cancel`]). Service calls always wait for executor admission.
+  /// with [`crate::DropPolicy::Detach`]). Service calls always wait for executor admission.
   #[must_use]
   #[inline]
   pub fn with_executor(mut self, executor: EffectExecutor) -> Self {
@@ -179,7 +158,6 @@ impl<S, F, Req> EffectService<S, F, Req> {
     if self.ready_permit.is_some() {
       return Poll::Ready(Ok(()));
     }
-
     match lim.sem.clone().try_acquire_owned() {
       Ok(permit) => {
         self.pending_acquire = None;
@@ -187,13 +165,9 @@ impl<S, F, Req> EffectService<S, F, Req> {
         Poll::Ready(Ok(()))
       }
       Err(_) => {
-        if self.pending_acquire.is_none() {
-          self.pending_acquire = Some(Box::pin(lim.sem.clone().acquire_owned()));
-        }
         let fut = self
           .pending_acquire
-          .as_mut()
-          .expect("just set pending_acquire");
+          .get_or_insert_with(|| Box::pin(lim.sem.clone().acquire_owned()));
         match fut.as_mut().poll(cx) {
           Poll::Ready(Ok(permit)) => {
             self.pending_acquire = None;
@@ -229,160 +203,106 @@ where
 
 impl<S, F, Req, Res, E> Service<Req> for EffectService<S, F, Req>
 where
-  S: Clone + Send + 'static,
+  S: Clone + Send + Sync + 'static,
   Req: Send + 'static,
   Res: Send + 'static,
   E: Send + 'static,
   F: Fn(&mut S, Req) -> Effect<Res, E, S> + Clone + Send + 'static,
 {
   type Response = Res;
-  type Error = E;
-  /// [`Send`]: the effect runs on the global [`EffectExecutor`] (see
-  /// [crate docs](crate#send-strategy)), so this future works on any Tokio runtime flavour.
-  type Future = Pin<Box<dyn Future<Output = Result<Res, E>> + Send + 'static>>;
+  type Error = Cause<E>;
+  /// [`Send`]: the effect runs as a request fiber; dropping the future interrupts it.
+  type Future = Pin<Box<dyn Future<Output = Result<Res, Cause<E>>> + Send + 'static>>;
 
   fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-    let lim = self.limit.clone();
-    match lim {
+    match self.limit.clone() {
       None => Poll::Ready(Ok(())),
-      Some(lim) => match self.poll_ready_limited(cx, &lim) {
-        Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-        Poll::Ready(Err(e)) => {
-          // Semaphore closed — treat as ready with no permit; call will panic on take (extremely rare).
-          let _ = e;
-          Poll::Ready(Ok(()))
-        }
-        Poll::Pending => Poll::Pending,
-      },
+      // The semaphore is never closed; a closed one would surface as a missing permit in `call`.
+      Some(lim) => self.poll_ready_limited(cx, &lim).map(|_| Ok(())),
     }
   }
 
   fn call(&mut self, req: Req) -> Self::Future {
-    let mut env = self.state.clone();
+    let env = self.state.clone();
     let f = self.f.clone();
     let metrics = self.request_metrics.clone();
     let executor = self
       .executor
       .clone()
       .unwrap_or_else(|| EffectExecutor::global().clone());
-    match &self.limit {
-      None => Box::pin(async move {
-        executor
-          .run_local(move || async move {
-            let eff = f(&mut env, req);
-            let eff = match &metrics {
-              Some(m) => m.latency.track_duration(eff),
-              None => eff,
-            };
-            let result = run_effect_async(eff, env).await;
-            if result.is_err()
-              && let Some(m) = metrics
-            {
-              let _ = run_effect_async(m.errors.apply(1), ()).await;
-            }
-            result
-          })
-          .await
-      }),
-      Some(lim) => {
-        let permit = self
-          .ready_permit
-          .take()
-          .expect("EffectService::call without successful poll_ready");
-        let in_flight = lim.in_flight.clone();
-        Box::pin(async move {
-          executor
-            .run_local(move || async move {
-              // The concurrency permit lives as long as the effect (also when detached).
-              let _permit = permit;
-              run_effect_async(in_flight.update(|n| n.saturating_add(1)), ())
-                .await
-                .expect("in_flight increment");
-              let _in_flight = InFlightGuard(in_flight);
-              let eff = f(&mut env, req);
-              let eff = match &metrics {
-                Some(m) => m.latency.track_duration(eff),
-                None => eff,
-              };
-              let result = run_effect_async(eff, env.clone()).await;
-              if result.is_err()
-                && let Some(m) = metrics
-              {
-                let _ = run_effect_async(m.errors.apply(1), ()).await;
-              }
-              result
-            })
-            .await
-        })
+    let limited = self.limit.as_ref().map(|lim| {
+      let permit = self
+        .ready_permit
+        .take()
+        .expect("EffectService::call without successful poll_ready");
+      (permit, lim.in_flight.clone())
+    });
+    let run = executor.run(env, move |e: &mut S| {
+      let mut eff = f(e, req);
+      if let Some(m) = metrics {
+        eff = m
+          .latency
+          .track_duration(m.errors.track_error_with(eff, |_| 1));
       }
-    }
+      match limited {
+        None => eff,
+        Some((permit, in_flight)) => {
+          let release = in_flight
+            .update(|n| n.saturating_sub(1))
+            .flat_map(move |()| sync(move || drop(permit)));
+          in_flight
+            .update(|n| n.saturating_add(1))
+            .then(eff)
+            .ensuring(release)
+        }
+      }
+    });
+    Box::pin(async move {
+      match run.await {
+        Exit::Success(res) => Ok(res),
+        Exit::Failure(cause) => Err(cause),
+      }
+    })
   }
 }
 
-/// Tower [`Service`] shaped like a queue-backed [`id_effect::channel::QueueChannel`]: each
-/// [`Service::call`] runs [`QueueChannel::write`](id_effect::channel::QueueChannel::write) with the
-/// request, then [`QueueChannel::read`](id_effect::channel::QueueChannel::read) for the response.
-/// Read errors are [`QueueError`].
-pub struct ChannelService<S, Req, Res>
-where
-  Req: Send + 'static,
-  Res: Send + Clone + 'static,
-  S: 'static,
-{
-  state: S,
-  channel: id_effect::channel::QueueChannel<Res, Req, S>,
+/// Tower [`Service`] over a queue-backed [`Channel`]: each [`Service::call`] writes the request
+/// and reads the next response (as one request fiber). A read on a shut-down, drained channel
+/// (or an interrupted call) is [`QueueError::Disconnected`].
+pub struct ChannelService<Req, Res> {
+  channel: Channel<Res, Req>,
 }
 
-impl<S, Req, Res> ChannelService<S, Req, Res>
+impl<Req, Res> ChannelService<Req, Res>
 where
   Req: Send + 'static,
-  Res: Send + Clone + 'static,
-  S: 'static,
+  Res: Send + 'static,
 {
-  /// Queue-backed service with environment `state` and shared `channel`.
+  /// Service over the shared `channel`.
   #[inline]
-  pub fn new(state: S, channel: id_effect::channel::QueueChannel<Res, Req, S>) -> Self {
-    Self { state, channel }
+  pub fn new(channel: Channel<Res, Req>) -> Self {
+    Self { channel }
   }
 
-  /// Immutable reference to the channel environment `S`.
+  /// Borrow the underlying [`Channel`].
   #[inline]
-  pub fn state(&self) -> &S {
-    &self.state
-  }
-
-  /// Mutable reference to the channel environment `S`.
-  #[inline]
-  pub fn state_mut(&mut self) -> &mut S {
-    &mut self.state
-  }
-
-  /// Borrow the underlying [`id_effect::channel::QueueChannel`].
-  #[inline]
-  pub fn channel(&self) -> &id_effect::channel::QueueChannel<Res, Req, S> {
+  pub fn channel(&self) -> &Channel<Res, Req> {
     &self.channel
   }
 }
 
-impl<S, Req, Res> Clone for ChannelService<S, Req, Res>
-where
-  S: Clone + 'static,
-  Req: Send + 'static,
-  Res: Send + Clone + 'static,
-{
+impl<Req, Res> Clone for ChannelService<Req, Res> {
   fn clone(&self) -> Self {
     Self {
-      state: self.state.clone(),
       channel: self.channel.clone(),
     }
   }
 }
 
-impl<S, Req, Res> Service<Req> for ChannelService<S, Req, Res>
+impl<Req, Res> Service<Req> for ChannelService<Req, Res>
 where
-  S: Clone + Send + 'static,
   Req: Send + 'static,
-  Res: Send + Clone + 'static,
+  Res: Send + 'static,
 {
   type Response = Res;
   type Error = QueueError;
@@ -393,24 +313,14 @@ where
   }
 
   fn call(&mut self, req: Req) -> Self::Future {
-    let env = self.state.clone();
     let ch = self.channel.clone();
-    let executor = EffectExecutor::global().clone();
+    let run = EffectExecutor::global()
+      .run_effect(ch.write::<std::convert::Infallible, _>(req).then(ch.read()));
     Box::pin(async move {
-      executor
-        .run(env, move |_env: &mut S| {
-          Effect::new_async(move |r: &mut S| {
-            box_future(async move {
-              ch.write(req).run(r).await.unwrap();
-              match ch.read().run(r).await {
-                Ok(Some(x)) => Ok(x),
-                Ok(None) => Err(QueueError::Disconnected),
-                Err(e) => Err(e),
-              }
-            })
-          })
-        })
-        .await
+      match run.await {
+        Exit::Success(Some(res)) => Ok(res),
+        Exit::Success(None) | Exit::Failure(_) => Err(QueueError::Disconnected),
+      }
     })
   }
 }
@@ -418,19 +328,54 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::Metric;
-  use id_effect::channel::QueueChannel;
-  use id_effect::succeed;
+  use id_effect::{Boundaries, HNil, fail, from_async, sleep, succeed};
+  use std::convert::Infallible;
   use std::time::Duration;
   use tower::{Service, ServiceExt};
 
+  async fn read(ctr: &SynchronizedRef<u64>) -> u64 {
+    match EffectExecutor::global()
+      .run_effect(ctr.get::<Infallible, HNil>())
+      .await
+    {
+      Exit::Success(n) => n,
+      Exit::Failure(c) => panic!("read failed: {c:?}"),
+    }
+  }
+
+  async fn wait_for_zero(ctr: &SynchronizedRef<u64>) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+      let n = read(ctr).await;
+      if n == 0 {
+        return;
+      }
+      assert!(
+        std::time::Instant::now() < deadline,
+        "in_flight stuck at {n}"
+      );
+      tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+  }
+
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn tower_channel_service_returns_response() {
-    let ch = run_effect_async(QueueChannel::<u32, u32, ()>::duplex_unbounded(), ())
-      .await
-      .expect("duplex channel");
-    let mut svc = ChannelService::new((), ch);
+    let mut svc = ChannelService::new(Channel::<u32>::duplex_unbounded());
     assert_eq!(svc.ready().await.unwrap().call(41).await, Ok(41));
+    let _ = svc.channel();
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn channel_service_reports_disconnect_after_shutdown() {
+    let ch = Channel::<u32>::duplex_unbounded();
+    let _ = EffectExecutor::global()
+      .run_effect(ch.shutdown::<Infallible, HNil>())
+      .await;
+    let mut svc = ChannelService::new(ch);
+    assert_eq!(
+      svc.ready().await.unwrap().call(1).await,
+      Err(QueueError::Disconnected)
+    );
   }
 
   #[tokio::test(flavor = "current_thread")]
@@ -443,69 +388,47 @@ mod tests {
 
   #[tokio::test(flavor = "current_thread")]
   async fn tower_latency_histogram_records_duration() {
-    let timer = Metric::timer("tower_req", std::iter::empty());
-    let errors = Metric::counter("tower_err", std::iter::empty());
+    let latency = Histogram::new(
+      "id_effect_axum_tower_req",
+      Boundaries::exponential(0.0001, 2.0, 16),
+    );
+    let errors = Counter::new("id_effect_axum_tower_err");
     let mut svc = EffectService::new((), |_env: &mut (), _x: u32| {
-      Effect::new_async(move |_r: &mut ()| {
-        id_effect::box_future(async move {
-          tokio::time::sleep(Duration::from_millis(5)).await;
-          Ok::<u32, ()>(7)
-        })
-      })
+      sleep::<(), ()>(Duration::from_millis(5)).map(|()| 7_u32)
     })
-    .with_request_metrics(timer.clone(), errors.clone());
+    .with_request_metrics(latency.clone(), errors.clone());
 
     assert_eq!(svc.ready().await.unwrap().call(0).await, Ok(7));
-    let obs = timer.snapshot_durations();
-    assert_eq!(obs.len(), 1);
-    assert!(obs[0] > id_effect::duration::Duration::ZERO);
-    assert_eq!(errors.snapshot_count(), 0);
+    let snap = latency.snapshot();
+    assert_eq!(snap.count, 1);
+    assert!(snap.sum > 0.0);
+    assert_eq!(errors.count(), 0);
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
   async fn tower_service_concurrent_calls_count_correctly() {
-    let local = tokio::task::LocalSet::new();
-    local
-      .run_until(async {
-        let svc = EffectService::with_max_in_flight((), 4_usize, |_env: &mut (), _req: u32| {
-          Effect::new_async(move |_r: &mut ()| {
-            id_effect::box_future(async move {
-              tokio::time::sleep(Duration::from_millis(20)).await;
-              Ok::<u32, ()>(1)
-            })
-          })
-        });
-
-        let mut handles = Vec::new();
-        for i in 0..8_u32 {
-          let mut s = svc.clone();
-          handles.push(tokio::task::spawn_local(async move {
-            s.ready().await.unwrap();
-            s.call(i).await
-          }));
-        }
-        for h in handles {
-          assert_eq!(h.await.unwrap(), Ok(1));
-        }
-
-        let ctr = svc.in_flight_counter().expect("counter");
-        let n = run_effect_async(ctr.get(), ())
-          .await
-          .expect("in_flight counter read");
-        assert_eq!(n, 0, "in_flight should return to zero");
-      })
-      .await;
+    let svc = EffectService::with_max_in_flight((), 4_usize, |_env: &mut (), _req: u32| {
+      sleep::<(), ()>(Duration::from_millis(20)).map(|()| 1_u32)
+    });
+    let mut handles = Vec::new();
+    for i in 0..8_u32 {
+      let mut s = svc.clone();
+      handles.push(tokio::spawn(async move {
+        s.ready().await.unwrap();
+        s.call(i).await
+      }));
+    }
+    for h in handles {
+      assert_eq!(h.await.unwrap(), Ok(1));
+    }
+    let ctr = svc.in_flight_counter().expect("counter");
+    assert_eq!(read(&ctr).await, 0, "in_flight should return to zero");
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
   async fn tower_service_ready_blocks_until_capacity() {
     let mut slow = EffectService::with_max_in_flight((), 1_usize, |_env: &mut (), _req: ()| {
-      Effect::new_async(move |_r: &mut ()| {
-        id_effect::box_future(async move {
-          tokio::time::sleep(Duration::from_millis(200)).await;
-          Ok::<(), ()>(())
-        })
-      })
+      sleep::<(), ()>(Duration::from_millis(200))
     });
     let mut fast = slow.clone();
 
@@ -528,16 +451,18 @@ mod tests {
 
   #[tokio::test(flavor = "current_thread")]
   async fn tower_error_metric_increments_on_failure() {
-    let timer = Metric::timer("tower_req_fail", std::iter::empty());
-    let errors = Metric::counter("tower_err_fail", std::iter::empty());
-    let mut svc = EffectService::new((), |_env: &mut (), _x: u32| {
-      id_effect::fail::<u32, &str, ()>("oops")
-    })
-    .with_request_metrics(timer.clone(), errors.clone());
+    let latency = Histogram::new(
+      "id_effect_axum_tower_req_fail",
+      Boundaries::exponential(0.0001, 2.0, 16),
+    );
+    let errors = Counter::new("id_effect_axum_tower_err_fail");
+    let mut svc = EffectService::new((), |_env: &mut (), _x: u32| fail::<u32, &str, ()>("oops"))
+      .with_request_metrics(latency.clone(), errors.clone());
 
-    let _ = svc.ready().await.unwrap().call(0).await;
-    assert_eq!(errors.snapshot_count(), 1);
-    assert_eq!(timer.snapshot_durations().len(), 1);
+    let out = svc.ready().await.unwrap().call(0).await;
+    assert_eq!(out, Err(Cause::Fail("oops")));
+    assert_eq!(errors.count(), 1);
+    assert_eq!(latency.snapshot().count, 1);
   }
 
   #[tokio::test(flavor = "current_thread")]
@@ -553,21 +478,7 @@ mod tests {
     assert_eq!(svc.state().v, 10);
     svc.state_mut().v = 20;
     assert_eq!(svc.state().v, 20);
-  }
-
-  #[tokio::test(flavor = "current_thread")]
-  async fn channel_service_state_accessors() {
-    #[derive(Clone, Default)]
-    struct St {
-      n: u32,
-    }
-    let ch = run_effect_async(QueueChannel::<u32, u32, St>::duplex_unbounded(), ())
-      .await
-      .expect("channel");
-    let mut svc = ChannelService::new(St { n: 7 }, ch);
-    assert_eq!(svc.state().n, 7);
-    svc.state_mut().n = 8;
-    assert_eq!(svc.state().n, 8);
+    assert_eq!(svc.ready().await.unwrap().call(0).await, Ok(20));
   }
 
   #[tokio::test(flavor = "current_thread")]
@@ -577,48 +488,27 @@ mod tests {
     assert!(svc.in_flight_counter().is_none());
   }
 
-  async fn wait_for_zero(ctr: SynchronizedRef<u64>) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    loop {
-      let n = run_effect_async(ctr.get(), ()).await.expect("read");
-      if n == 0 {
-        return;
-      }
-      assert!(
-        std::time::Instant::now() < deadline,
-        "in_flight stuck at {n}"
-      );
-      tokio::time::sleep(Duration::from_millis(5)).await;
-    }
-  }
-
   #[tokio::test(flavor = "current_thread")]
-  async fn in_flight_counter_released_when_cancelled_effect_is_dropped() {
-    let exec = EffectExecutor::builder()
-      .drop_policy(crate::DropPolicy::Cancel)
-      .build();
+  async fn in_flight_counter_released_when_the_call_is_dropped() {
     let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
     let started = Arc::new(std::sync::Mutex::new(Some(started_tx)));
     let mut svc = EffectService::with_max_in_flight((), 1_usize, move |_env: &mut (), _x: u32| {
       let started = started.clone();
-      Effect::new_async(move |_r: &mut ()| {
-        id_effect::box_future(async move {
-          if let Some(tx) = started.lock().unwrap().take() {
-            let _ = tx.send(());
-          }
-          tokio::time::sleep(Duration::from_secs(3600)).await;
-          Ok::<u32, ()>(0)
-        })
+      from_async(move || async move {
+        if let Some(tx) = started.lock().unwrap().take() {
+          let _ = tx.send(());
+        }
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+        Ok::<u32, ()>(0)
       })
-    })
-    .with_executor(exec);
+    });
     let ctr = svc.in_flight_counter().expect("counter");
     svc.ready().await.unwrap();
     let call = tokio::spawn(svc.call(1));
     started_rx.await.unwrap();
-    assert_eq!(run_effect_async(ctr.get(), ()).await, Ok(1));
+    assert_eq!(read(&ctr).await, 1);
     call.abort();
-    wait_for_zero(ctr).await;
+    wait_for_zero(&ctr).await;
     // The permit came back too: the next call is admitted.
     tokio::time::timeout(Duration::from_secs(10), svc.ready())
       .await
@@ -627,15 +517,21 @@ mod tests {
   }
 
   #[tokio::test(flavor = "current_thread")]
-  async fn in_flight_counter_released_when_handler_panics() {
+  async fn a_panicking_handler_is_a_defect_and_releases_the_slot() {
     let mut svc = EffectService::with_max_in_flight((), 1_usize, |_env: &mut (), _x: u32| {
-      Effect::new(|_r: &mut ()| -> Result<u32, ()> { panic!("handler boom") })
+      sync::<u32, (), ()>(|| panic!("handler boom"))
     });
     let ctr = svc.in_flight_counter().expect("counter");
     svc.ready().await.unwrap();
-    let joined = tokio::spawn(svc.call(1)).await;
-    assert!(joined.unwrap_err().is_panic());
-    wait_for_zero(ctr).await;
+    match svc.call(1).await {
+      Err(Cause::Die(d)) => assert_eq!(d.message(), "handler boom"),
+      other => panic!("expected a defect, got {other:?}"),
+    }
+    wait_for_zero(&ctr).await;
+    tokio::time::timeout(Duration::from_secs(10), svc.ready())
+      .await
+      .expect("permit released")
+      .unwrap();
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -645,13 +541,9 @@ mod tests {
     });
     svc.ready().await.unwrap();
     let fut = svc.call(5);
-    // `tokio::spawn` requires `Send`: this would not compile with the pre-0.6 `!Send` future.
     assert_eq!(tokio::spawn(fut).await.unwrap(), Ok(15));
 
-    let ch = run_effect_async(QueueChannel::<u32, u32, ()>::duplex_unbounded(), ())
-      .await
-      .expect("duplex channel");
-    let mut chan = ChannelService::new((), ch);
+    let mut chan = ChannelService::new(Channel::<u32>::duplex_unbounded());
     let fut = chan.ready().await.unwrap().call(9);
     assert_eq!(tokio::spawn(fut).await.unwrap(), Ok(9));
   }

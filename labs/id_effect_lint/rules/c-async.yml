@@ -9,12 +9,12 @@
     Direct `.await` in Effect code means you are mixing runtimes.
   note: |
     BAD:
-      fn fetch(url: &str) -> Effect<Bytes, IoError, ()> {
-          effect! { let resp = reqwest::get(url).await?; … }
+      fn fetch(url: &str) -> Effect<Bytes, IoError> {
+          effect!({ let resp = reqwest::get(url).await?; … })
       }
     GOOD:
-      fn fetch(url: &str) -> Effect<Bytes, IoError, ()> {
-          effect! { let resp = ~ from_async(|_| async move { reqwest::get(url).await }); … }
+      fn fetch(url: &str) -> Effect<Bytes, IoError> {
+          effect!({ let resp = ~from_async(move || async move { reqwest::get(url).await }); … })
       }
   rule:
     all:
@@ -38,11 +38,11 @@
     should be replaced with `?` operator.
   note: |
     BAD:
-      from_async(|_| async move {
+      from_async(move || async move {
           let v = match op() { Ok(v) => v, Err(e) => return Err(e.into()) };
       })
     GOOD:
-      from_async(|_| async move { let v = op()?; … })
+      from_async(move || async move { let v = op()?; … })
   rule:
     all:
       - pattern: |

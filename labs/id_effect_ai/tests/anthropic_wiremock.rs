@@ -1,12 +1,13 @@
 #![cfg(feature = "anthropic")]
 
-use id_effect::{build_env, run_async};
+use id_effect::Exit;
+use id_effect::{Effect, HCons, HNil};
 use id_effect_ai::{
-  AiConfig, AnthropicLanguageModel, ChatMessage, ChatRequest, ChatRole, LanguageModel, complete,
-  provide_anthropic_language_model,
+  AiConfig, AiError, AnthropicLanguageModel, ChatMessage, ChatRequest, ChatRole, LanguageModel,
+  LanguageModelService, complete, provide_anthropic_language_model,
 };
 use id_effect_config::Secret;
-use id_effect_platform::http::provide_reqwest_http_client;
+use id_effect_tokio::TokioRuntime;
 use std::sync::Arc;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -17,6 +18,10 @@ fn test_config(server_uri: &str) -> AiConfig {
     anthropic_base_url: server_uri.to_string(),
     ..AiConfig::default()
   }
+}
+
+async fn run<A: Send + 'static>(eff: Effect<A, AiError>) -> Exit<A, AiError> {
+  TokioRuntime::current().expect("tokio").run(eff).await
 }
 
 #[tokio::test]
@@ -34,11 +39,7 @@ async fn anthropic_complete_success() {
 
   let client = Arc::new(id_effect_platform::http::ReqwestHttpClient::default_client());
   let cfg = test_config(&server.uri());
-  let env = build_env([
-    provide_reqwest_http_client(),
-    provide_anthropic_language_model(client, cfg).expect("provider"),
-  ])
-  .expect("env");
+  let layer = provide_anthropic_language_model::<AiError>(client, cfg).expect("provider");
 
   let req = ChatRequest {
     model: "claude-sonnet-4-20250514".into(),
@@ -47,7 +48,8 @@ async fn anthropic_complete_success() {
       content: "hi".into(),
     }],
   };
-  let resp = run_async(complete(req), env).await.expect("complete");
+  let program = complete::<HCons<LanguageModelService, HNil>, _>(req).provide_layer(layer);
+  let resp = run(program).await.into_result().expect("complete");
   assert_eq!(resp.content, "claude says hi");
 }
 
@@ -75,10 +77,14 @@ async fn anthropic_stream_parses_sse() {
       content: "hi".into(),
     }],
   };
-  let stream = run_async(model.complete_stream(req), ())
+  let stream = run(model.complete_stream(req))
     .await
+    .into_result()
     .expect("stream");
-  let chunks = run_async(stream.run_collect(), ()).await.expect("chunks");
+  let chunks = run(stream.run_collect())
+    .await
+    .into_result()
+    .expect("chunks");
   let text: String = chunks.iter().map(|c| c.delta.clone()).collect();
   assert!(text.contains("yo"));
 }

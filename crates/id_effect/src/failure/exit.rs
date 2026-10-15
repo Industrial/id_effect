@@ -4,10 +4,10 @@
 //! [`Hash`](std::hash::Hash) (and the standard equality traits), the exit value participates in
 //! [`crate::schema::data::EffectData`] semantics through the usual blanket impl.
 
-use super::cause::Cause;
+use super::cause::{Cause, Defect};
 use crate::Matcher;
+use crate::failure::FiberId;
 use crate::foundation::either::Either;
-use crate::runtime::FiberId;
 
 /// Final outcome of an effect: either a success value or a structured failure [`Cause`].
 #[derive(Clone, Debug, crate::EffectData)]
@@ -33,8 +33,8 @@ impl<A, E> Exit<A, E> {
 
   /// Defect exit — [`Exit::Failure`] with [`Cause::Die`].
   #[inline]
-  pub fn die(message: impl Into<String>) -> Self {
-    Self::Failure(Cause::die(message))
+  pub fn die(defect: impl Into<Defect>) -> Self {
+    Self::Failure(Cause::die(defect))
   }
 
   /// Cancellation-style exit — [`Exit::Failure`] with [`Cause::Interrupt`].
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn map_error_with_die_cause_preserves_defect_message() {
       let mapped = Exit::<u8, u8>::die("fatal").map_error(|n| n.to_string());
-      assert_eq!(mapped, Exit::Failure(Cause::Die(String::from("fatal"))));
+      assert_eq!(mapped, Exit::Failure(Cause::die("fatal")));
     }
 
     #[test]

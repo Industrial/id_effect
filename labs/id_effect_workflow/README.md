@@ -13,4 +13,6 @@ See the mdBook chapter **“Durable workflow spike (`id_effect_workflow`)”** (
 
 ## Composition with `id_effect`
 
-The log API is **synchronous** (Rusqlite). Run it **inside** `effect!` blocks or behind `from_async` + `spawn_blocking` at your application boundary — see tests in `src/lib.rs` and the book chapter.
+The log API is **synchronous** (Rusqlite). Run it **inside** `id_effect::effect!` blocks (the `?` operator lifts its `Result`s) or on a thread at your application boundary — see the tests in `src/sqlite_log.rs` / `src/fsm.rs` and the book chapter.
+
+The duroxide (PostgreSQL) `StepJournal` is a synchronous **blocking edge** over async sqlx: call it from a plain thread, not from inside a tokio task (there it panics with `BlockOnInAsync`). See [`docs/MIGRATION-0.7.md`](../../docs/MIGRATION-0.7.md) §15.

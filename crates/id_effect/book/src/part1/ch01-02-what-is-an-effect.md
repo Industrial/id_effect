@@ -2,139 +2,141 @@
 
 **An Effect is a description of a computation, not the computation itself.**
 
-The rest of the API—`map`, `flat_map`, environment types, runners—is there to work with that description in a type-safe way.
+The rest of the API (`map`, `flat_map`, the environment type, the run edges) is there to work with
+that description in a type-safe way.
 
 ## The Recipe Analogy
 
-Think about a recipe for chocolate cake.
+A recipe is not a cake. You can hold a recipe, photocopy it, change it (less sugar, more cocoa),
+combine it with a frosting recipe and hand it to a friend, and no cake appears. The cake appears
+only when someone *executes* the recipe.
 
-A recipe is not a cake. You can hold a recipe in your hands without any flour appearing. You can read a recipe without preheating an oven. You can photocopy a recipe, modify it (less sugar, more cocoa), combine it with a frosting recipe, and share it with a friend — all without a single cake coming into existence.
-
-The cake only appears when someone *executes* the recipe. Takes out the ingredients, follows the steps, waits for the oven.
-
-An `Effect` is a recipe for a computation.
-
-When you write `succeed(42)`, you're not "succeeding" at anything. You're writing down a recipe that says "when executed, produce the value 42." The 42 doesn't exist yet. No computation has happened. You just have a piece of paper with instructions on it.
+An `Effect` is a recipe for a computation. `succeed(42)` does not "succeed" at anything: it is a
+recipe that says "when run, produce 42".
 
 ```rust
 use id_effect::{Effect, succeed};
 
-// This doesn't compute anything — it's a description
-let recipe: Effect<i32, String, ()> = succeed(42);
-
-// Still nothing has happened. `recipe` is just a value.
-// We can pass it around, store it, inspect its type.
+// Nothing is computed here: `recipe` is just a value.
+let recipe: Effect<i32, String> = succeed(42);
 ```
 
-The computation only happens when you explicitly run it:
+The computation happens only when you run it at the edge of the program:
 
-```rust
-use id_effect::run_blocking;
+```rust,ignore
+use id_effect::Exit;
 
-// NOW something happens
-let result: Result<i32, String> = run_blocking(recipe);
-assert_eq!(result, Ok(42));
+// NOW something happens.
+let exit: Exit<i32, String> = recipe.block_on();
+assert_eq!(exit, Exit::succeed(42));
 ```
+
+Running an effect gives you an [`Exit`](../part3/ch08-02-exit.md): `Exit::Success(a)` or
+`Exit::Failure(cause)`. `exit.into_result()` turns it into a `Result<A, Cause<E>>`.
 
 ## Building Up Descriptions
 
-Because an Effect is just data — a description — you can transform it without running it.
+Because an effect is a value, you can transform it without running it:
 
 ```rust
-let recipe: Effect<i32, String, ()> = succeed(42);
+use id_effect::{Effect, Exit, succeed};
 
-// Transform the description: "when executed, produce 42, then double it"
-let doubled: Effect<i32, String, ()> = recipe.map(|x| x * 2);
+let recipe: Effect<i32, String> = succeed(42);
 
-// Still nothing has happened! `doubled` is just a modified recipe.
+// "When run, produce 42, then double it." Still nothing has happened.
+let doubled: Effect<i32, String> = recipe.map(|x| x * 2);
 
-// Now run it
-let result = run_blocking(doubled);
-assert_eq!(result, Ok(84));
+assert_eq!(doubled.block_on(), Exit::succeed(84));
 ```
 
-The `.map()` call didn't execute anything. It took one recipe and produced a new recipe that includes an extra step. Like writing "double the result" at the bottom of your cake recipe — the cake doesn't change until someone bakes it.
+`.map()` did not execute anything. It took one recipe and produced a new one with an extra step.
 
 ## A More Realistic Example
 
-Let's see what this looks like with actual I/O:
+```rust,ignore
+use id_effect::{Effect, effect};
 
-```rust
-use id_effect::{Effect, effect, run_blocking};
-
-// This function doesn't fetch anything — it returns a DESCRIPTION
-// of how to fetch a user
-fn fetch_user(id: u64) -> Effect<User, DbError, ()> {
-    effect! {
-        let conn = ~ connect_to_db();
-        let user = ~ query_user(&conn, id);
-        Ok(user)
-    }
+// This function fetches nothing: it returns a DESCRIPTION of how to fetch a user.
+fn fetch_user(id: u64) -> Effect<User, DbError> {
+  effect!({
+    let conn = ~connect_to_db();
+    let user = ~query_user(&conn, id);
+    user
+  })
 }
 
-// Calling the function doesn't open any connections
+// Calling the function opens no connection.
 let description = fetch_user(42);
 
-// `description` is a value we can hold, pass around, combine with others
-// No database has been touched
-
-// Only when we run it does the I/O happen
-let user = run_blocking(description)?;
+// Only running it does the I/O.
+let user = description.block_on().into_result()?;
 ```
 
-That `effect!` block looks imperative — it looks like it's doing things. But it's not. It's building a description of things to do. The `~` operator means "this step depends on the previous step completing" — it's describing sequencing, not executing it.
+The `effect!` block looks imperative, but it builds a description. `~expr` means "run this
+sub-effect and give me its value", in order, when the outer effect runs.
 
 ## The Key Insight: Separation of Concerns
 
-This separation — description vs execution — is how the challenges from the previous section (errors, dependencies, task structure) get a consistent home in the type system.
+Separating description from execution gives the challenges of the previous section a consistent
+home in the type system.
 
-**Error handling** becomes part of the description itself. When you write:
+**Error handling** becomes part of the description:
 
-```rust
-let resilient = risky_operation.retry(Schedule::exponential(100.ms(), 3));
+```rust,ignore
+use std::time::Duration;
+use id_effect::{Effect, Schedule};
+
+// Effects are one-shot values, so `retry` takes a factory that builds a fresh attempt.
+let resilient = Effect::retry(
+  || risky_operation(),
+  Schedule::exponential(Duration::from_millis(100)).intersect(Schedule::recurs(3)),
+);
 ```
 
-You're not adding retry logic to running code. You're modifying the *description* to say "when executed, retry up to 3 times with exponential backoff." The retry logic is baked into the recipe.
+You are not adding retry logic to running code; you are building a new recipe that says "when
+run, retry up to 3 times with exponential backoff".
 
-**Dependencies** become part of the type signature. When you write:
+**Dependencies** become part of the type signature:
 
-```rust
+```rust,ignore
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
 ```
 
-That `caps!(Database)` in the type says "this recipe requires a database capability to execute." The compiler enforces it. You can't run the effect without wiring `Database` at the edge. No runtime surprises.
+`caps!(Database)` says "this recipe needs a `Database` capability to run". The compiler enforces
+it: `block_on` only exists for effects whose requirements have all been provided, so a missing
+capability is a compile error, not a runtime surprise.
 
-**Structured concurrency** becomes possible because the runtime knows what each effect intends to do before it does it. Spawning an effect doesn't fire and forget — it creates a handle to a structured task with clear ownership and cancellation semantics.
+**Structured concurrency** follows because forking an effect returns a handle to a child fiber
+with clear ownership and interruption semantics, instead of a fire-and-forget task.
 
 ## What's in an Effect?
 
-An `Effect<A, E, R>` carries three pieces of information in its type:
+An `Effect<A, E = Never, R = HNil>` carries three pieces of information in its type:
 
-- `A` — the **Answer**: what you get if it succeeds
-- `E` — the **Error**: what you get if it fails
-- `R` — the **Requirements**: what environment is needed to run it
+- `A`: the **Answer**, what you get if it succeeds;
+- `E`: the **Error**, what you get if it fails (default `Never`: it cannot fail);
+- `R`: the **Requirements**, the capabilities needed to run it (default `HNil`: nothing).
 
-We'll explore all three in the next section. For now, just notice that an Effect's type tells you everything about what it does — success, failure, and dependencies — without you having to read the implementation.
-
-```rust
-// This type signature tells the whole story:
-fn process_payment(
-    amount: Money
-) -> Effect<Receipt, PaymentError, caps!(PaymentGateway, EffectLogger)>
-
-// - Produces a Receipt on success
-// - Can fail with PaymentError
-// - Requires PaymentGateway and EffectLogger to run
+```rust,ignore
+// The signature tells the whole story:
+fn process_payment(amount: Money)
+  -> Effect<Receipt, PaymentError, caps!(PaymentGateway, AuditLog)>
+// - produces a Receipt on success
+// - can fail with PaymentError
+// - needs PaymentGateway and AuditLog to run
 ```
 
-No need to read the function body to know what resources it needs or what errors it can produce. The type *is* the documentation.
+An `Effect` is `Send` and one-shot: running it consumes it. To run "the same" work twice, call the
+function that builds it twice.
 
 ## Style: imperative async vs effect descriptions
 
-Typical `async fn` code is written as a sequence of steps: each `.await` drives the next piece of work. That is clear and idiomatic Rust.
+`async fn` code is written as a sequence of `.await`s. That is clear and idiomatic Rust, and the
+effect runtime is built on the same `Future` machinery.
 
-Effect code in this library is often written so that **many domain functions return `Effect<…>`**: a value that describes work and only runs when you pass it to a runner with an environment. The style emphasizes **composition** (map, flat_map, layers, retries) before execution.
+Effect code makes many domain functions return `Effect<…>`: a value that describes work and runs
+only when you pass it to an edge with its environment. Use effects where you want the environment
+and the error structure in the type, shared policies (retry, timeout, spans) and test
+substitution at the boundary; use plain `async fn` where a small linear function is enough.
 
-Both approaches run on the same `Future` machinery underneath. Use effects where you want environment and error structure in the type, shared policies, and test substitution at the boundary; use plain `async fn` where a small linear function is enough.
-
-Let's look at those three type parameters in detail.
+Let's look at the three type parameters in detail.

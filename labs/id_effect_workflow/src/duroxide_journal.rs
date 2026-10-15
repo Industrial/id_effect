@@ -3,8 +3,12 @@
 use crate::error::WorkflowError;
 use crate::journal::StepJournal;
 use duroxide_pg::migrations::MigrationRunner;
+use id_effect::{Cause, Exit};
+use id_effect::{Effect, from_async};
 use serde::{Serialize, de::DeserializeOwned};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -63,47 +67,106 @@ impl DuroxideStepJournal {
     Self { pool }
   }
 
-  /// Apply [`bootstrap_duroxide_schema`] synchronously (requires Tokio runtime).
+  /// Apply [`bootstrap_duroxide_schema`] synchronously.
+  ///
+  /// A blocking edge, like the [`StepJournal`] methods: call it from a plain thread, not from
+  /// inside an async context.
   pub fn migrate_sync(&self) -> Result<(), WorkflowError> {
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(bootstrap_duroxide_schema(&self.pool))
-    })
+    let pool = self.pool.clone();
+    run_edge(move || async move { bootstrap_duroxide_schema(&pool).await })
   }
 }
 
+/// Runs the async sqlx step `f` on a fiber of the global runtime (a tokio worker, so the
+/// pool has its IO driver) and parks the calling thread until it finishes: the synchronous edge
+/// behind the [`StepJournal`] impl.
+///
+/// Inside an async context the run is refused (`BlockOnInAsync`) and this panics, like every
+/// Blocking edge. A defect re-raises its panic.
+#[allow(
+  clippy::disallowed_methods,
+  reason = "edge: the synchronous StepJournal impl over async sqlx"
+)]
+fn run_edge<A, F, Fut>(f: F) -> Result<A, WorkflowError>
+where
+  A: Send + 'static,
+  F: FnOnce() -> Fut + Send + 'static,
+  Fut: Future<Output = Result<A, WorkflowError>> + Send + 'static,
+{
+  let step: Effect<A, WorkflowError> = from_async(f).fork().widen().flat_map(|h| h.join());
+  match step.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(cause) => Err(take_fail(cause)),
+  }
+}
+
+/// The first typed failure of `cause`; a defect re-raises its panic and an interrupt panics.
+fn take_fail(cause: Cause<WorkflowError>) -> WorkflowError {
+  match cause {
+    Cause::Fail(e) => e,
+    Cause::Die(defect) => match defect.take_payload() {
+      Some(payload) => resume_unwind(payload),
+      None => panic!("{}", defect.message()),
+    },
+    Cause::Interrupt(fiber_id) => panic!("step journal edge interrupted (fiber {fiber_id:?})"),
+    Cause::Both(left, right) | Cause::Then(left, right) => {
+      if left.contains(&|c: &Cause<WorkflowError>| matches!(c, Cause::Fail(_))) {
+        take_fail(*left)
+      } else {
+        take_fail(*right)
+      }
+    }
+  }
+}
+
+fn pg_err(e: sqlx::Error) -> WorkflowError {
+  WorkflowError::Postgres(e.to_string())
+}
+
+/// Rolls `tx` back on the runtime (dropping a sqlx transaction needs a tokio context). The
+/// rollback's own error is ignored: the caller reports the error that caused it.
+fn rollback(tx: Transaction<'static, Postgres>) {
+  let _ = run_edge(move || async move { tx.rollback().await.map_err(pg_err) });
+}
+
+/// The `StepJournal` methods are **synchronous edges** over async sqlx: each statement runs on
+/// a fiber of the global runtime while the calling thread parks. Call them from a plain
+/// thread (for example `std::thread::spawn` or a synchronous `main`), not from inside a tokio
+/// task or runtime context: there the run is refused and the call panics with the
+/// `BlockOnInAsync` defect. From async code, move the journal work to a thread.
 impl StepJournal for DuroxideStepJournal {
   fn register_workflow(&mut self, id: &str) -> Result<(), WorkflowError> {
     if id.trim().is_empty() {
       return Err(WorkflowError::InvalidWorkflowId);
     }
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(async {
-        sqlx::query("INSERT INTO id_effect_workflows (id, created_ms) VALUES ($1, $2)")
-          .bind(id)
-          .bind(now_ms())
-          .execute(&self.pool)
-          .await
-          .map(|_| ())
-          .map_err(|e| match e {
-            sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
-              WorkflowError::WorkflowAlreadyExists(id.to_string())
-            }
-            other => WorkflowError::Postgres(other.to_string()),
-          })
-      })
+    let pool = self.pool.clone();
+    let id = id.to_string();
+    run_edge(move || async move {
+      sqlx::query("INSERT INTO id_effect_workflows (id, created_ms) VALUES ($1, $2)")
+        .bind(&id)
+        .bind(now_ms())
+        .execute(&pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| match e {
+          sqlx::Error::Database(db) if db.code().as_deref() == Some("23505") => {
+            WorkflowError::WorkflowAlreadyExists(id.clone())
+          }
+          other => WorkflowError::Postgres(other.to_string()),
+        })
     })
   }
 
   fn has_workflow(&self, id: &str) -> Result<bool, WorkflowError> {
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(async {
-        let n: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM id_effect_workflows WHERE id = $1")
-          .bind(id)
-          .fetch_one(&self.pool)
-          .await
-          .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-        Ok(n.0 > 0)
-      })
+    let pool = self.pool.clone();
+    let id = id.to_string();
+    run_edge(move || async move {
+      let n: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM id_effect_workflows WHERE id = $1")
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .map_err(pg_err)?;
+      Ok(n.0 > 0)
     })
   }
 
@@ -111,18 +174,18 @@ impl StepJournal for DuroxideStepJournal {
     if !self.has_workflow(workflow_id)? {
       return Err(WorkflowError::UnknownWorkflow(workflow_id.to_string()));
     }
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(async {
-        let row: Option<(String,)> = sqlx::query_as(
-          "SELECT output_json FROM id_effect_completed_steps WHERE workflow_id = $1 AND seq = $2",
-        )
-        .bind(workflow_id)
-        .bind(seq as i32)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-        Ok(row.map(|r| r.0))
-      })
+    let pool = self.pool.clone();
+    let workflow_id = workflow_id.to_string();
+    run_edge(move || async move {
+      let row: Option<(String,)> = sqlx::query_as(
+        "SELECT output_json FROM id_effect_completed_steps WHERE workflow_id = $1 AND seq = $2",
+      )
+      .bind(&workflow_id)
+      .bind(seq as i32)
+      .fetch_optional(&pool)
+      .await
+      .map_err(pg_err)?;
+      Ok(row.map(|r| r.0))
     })
   }
 
@@ -141,67 +204,88 @@ impl StepJournal for DuroxideStepJournal {
       return Err(WorkflowError::UnknownWorkflow(workflow_id.to_string()));
     }
 
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(async {
-        let mut tx = self
-          .pool
-          .begin()
-          .await
-          .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
+    // One transaction spans the lookup, `compute` (on the calling thread) and the insert, as in
+    // 0.6; the transaction value moves between the edge steps.
+    let pool = self.pool.clone();
+    let wf = workflow_id.to_string();
+    let (tx, existing) = run_edge(move || async move {
+      let mut tx = pool.begin().await.map_err(pg_err)?;
+      let existing: Option<(String,)> = sqlx::query_as(
+        "SELECT output_json FROM id_effect_completed_steps WHERE workflow_id = $1 AND seq = $2 FOR UPDATE",
+      )
+      .bind(&wf)
+      .bind(seq as i32)
+      .fetch_optional(&mut *tx)
+      .await
+      .map_err(pg_err)?;
+      Ok((tx, existing))
+    })?;
 
-        let existing: Option<(String,)> = sqlx::query_as(
-          "SELECT output_json FROM id_effect_completed_steps WHERE workflow_id = $1 AND seq = $2 FOR UPDATE",
-        )
-        .bind(workflow_id)
-        .bind(seq as i32)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-
-        if let Some((json,)) = existing {
-          let value: T = serde_json::from_str(&json)?;
-          tx.commit()
-            .await
-            .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-          return Ok(value);
+    if let Some((json,)) = existing {
+      let value: T = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(e) => {
+          rollback(tx);
+          return Err(e.into());
         }
+      };
+      run_edge(move || async move { tx.commit().await.map_err(pg_err) })?;
+      return Ok(value);
+    }
 
-        let value = compute()?;
-        let json = serde_json::to_string(&value)?;
-        sqlx::query(
-          "INSERT INTO id_effect_completed_steps (workflow_id, seq, step_name, output_json, completed_ms) VALUES ($1, $2, $3, $4, $5)",
-        )
-        .bind(workflow_id)
-        .bind(seq as i32)
-        .bind(step_name)
-        .bind(&json)
-        .bind(now_ms())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-
-        tx.commit()
-          .await
-          .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-        Ok(value)
-      })
-    })
+    let computed = catch_unwind(AssertUnwindSafe(compute));
+    let value = match computed {
+      Ok(Ok(v)) => v,
+      Ok(Err(e)) => {
+        rollback(tx);
+        return Err(e);
+      }
+      Err(panic) => {
+        rollback(tx);
+        resume_unwind(panic);
+      }
+    };
+    let json = match serde_json::to_string(&value) {
+      Ok(j) => j,
+      Err(e) => {
+        rollback(tx);
+        return Err(e.into());
+      }
+    };
+    let wf = workflow_id.to_string();
+    let step_name = step_name.to_string();
+    run_edge(move || async move {
+      let mut tx = tx;
+      sqlx::query(
+        "INSERT INTO id_effect_completed_steps (workflow_id, seq, step_name, output_json, completed_ms) VALUES ($1, $2, $3, $4, $5)",
+      )
+      .bind(&wf)
+      .bind(seq as i32)
+      .bind(&step_name)
+      .bind(&json)
+      .bind(now_ms())
+      .execute(&mut *tx)
+      .await
+      .map_err(pg_err)?;
+      tx.commit().await.map_err(pg_err)
+    })?;
+    Ok(value)
   }
 
   fn completed_step_count(&self, workflow_id: &str) -> Result<u32, WorkflowError> {
     if !self.has_workflow(workflow_id)? {
       return Err(WorkflowError::UnknownWorkflow(workflow_id.to_string()));
     }
-    tokio::task::block_in_place(|| {
-      tokio::runtime::Handle::current().block_on(async {
-        let n: (i64,) =
-          sqlx::query_as("SELECT COUNT(*) FROM id_effect_completed_steps WHERE workflow_id = $1")
-            .bind(workflow_id)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| WorkflowError::Postgres(e.to_string()))?;
-        Ok(n.0.try_into().unwrap_or(u32::MAX))
-      })
+    let pool = self.pool.clone();
+    let workflow_id = workflow_id.to_string();
+    run_edge(move || async move {
+      let n: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM id_effect_completed_steps WHERE workflow_id = $1")
+          .bind(&workflow_id)
+          .fetch_one(&pool)
+          .await
+          .map_err(pg_err)?;
+      Ok(n.0.try_into().unwrap_or(u32::MAX))
     })
   }
 }

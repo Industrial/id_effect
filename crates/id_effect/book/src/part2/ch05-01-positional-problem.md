@@ -1,55 +1,52 @@
 # The Problem with Positional Types
 
-Early effect code sometimes used tuples as `R`. That works briefly, then becomes fragile.
+A first attempt at an environment type is a tuple. That works briefly, then becomes fragile.
 
 ## The tuple explosion
 
-Two dependencies: readable.
-
-```rust
-Effect<A, E, (Database, Logger)>
+```rust,ignore
+Effect<A, E, (Database, Logger)>                           // readable
+Effect<A, E, (Pool, Pool, Logger, Config, HttpClient)>     // which Pool is which?
 ```
-
-Five dependencies: which is which?
-
-```rust
-Effect<A, E, (Pool, Pool, Logger, Config, HttpClient)>
-//            ^^^^ two Pools — main DB or cache?
-```
-
-Tuples are positional. `(Pool, Pool, …)` is ambiguous when both fields share a type.
 
 ## Fragility under change
 
-```rust
-fn foo() -> Effect<A, E, (Database, Logger)>
-//                        0         1
+```rust,ignore
+fn foo() -> Effect<A, E, (Database, Logger)>          // 0, 1
+fn foo() -> Effect<A, E, (Database, Config, Logger)>  // a teammate inserts Config
 ```
 
-A teammate inserts `Config`:
-
-```rust
-fn foo() -> Effect<A, E, (Database, Config, Logger)>
-//                        0         1       2
-```
-
-Every caller that built `(db, log)` must become `(db, config, log)`. The type system does not point at stale indices — it's a silent refactor hazard.
+Every caller that built `(db, log)` must now build `(db, config, log)`, and every `env.1` silently
+means something else.
 
 ## Same-type collision
 
-Rust cannot distinguish a main-database `Pool` from a cache `Pool` in a tuple:
-
-```rust
-run_blocking(effect, (cache_pool, main_pool)); // compiles, wrong at runtime
+```rust,ignore
+run((cache_pool, main_pool)); // compiles, wrong at runtime
 ```
 
-## What we need
+## What id_effect does instead
 
-Each dependency needs a **compile-time name** independent of position:
+`R` is a type-level list, `HCons<A, HCons<B, HNil>>`, so it has an order, but **no code depends on
+that order**:
 
-- `Database` → the primary `Pool`
-- `Cache` → the cache `Pool`
+- a lookup (`~Database`, `need::<Database>()`) finds a capability **by its type**, wherever it is
+  in the list (the compiler infers its position);
+- `provide::<T>` removes `T` wherever it is, and `provide_env` accepts any environment that
+  contains every capability, in any order;
+- a `~` bind lifts a sub-effect into any environment that contains its capabilities.
 
-Different keys, same underlying type — the compiler catches swaps.
+Inserting `Config` in the middle of `caps!(Database, Config, Logger)` therefore changes nothing for
+the code that reads `Database` or `Logger`.
 
-That's what [``](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) generates.
+The type is the identity, so two capabilities of the same Rust type cannot share an `R`
+(`caps!(Pool, Pool)` is a compile error). Give each a name with a newtype:
+
+```rust,ignore
+struct MainDb(Pool);
+struct CacheDb(Pool);
+
+fn report() -> Effect<Report, DbError, caps!(MainDb, CacheDb)> { /* ... */ }
+```
+
+Swapping them is now a type error, not a runtime surprise.

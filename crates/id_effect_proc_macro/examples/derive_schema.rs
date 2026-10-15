@@ -6,7 +6,7 @@
 //! ```
 
 use id_effect::schema::{HasSchema, Unknown};
-use id_effect::{Effect, Schema, effect, run_blocking, succeed};
+use id_effect::{Effect, Schema, effect, succeed};
 
 #[derive(Clone, Debug, PartialEq, Schema)]
 struct User {
@@ -15,11 +15,15 @@ struct User {
   age: i64,
 }
 
-fn older(user: User) -> Effect<User, String, ()> {
-  effect! {
-    let age = ~succeed::<i64, String, ()>(user.age + 1);
+fn bump(age: i64) -> Effect<i64, String> {
+  succeed(age + 1)
+}
+
+fn older(user: User) -> Effect<User, String> {
+  effect!({
+    let age = ~bump(user.age);
     User { age, ..user }
-  }
+  })
 }
 
 fn main() {
@@ -35,6 +39,9 @@ fn main() {
   let decoded = <User as HasSchema>::schema()
     .decode_unknown(&wire)
     .expect("round trip");
-  let birthday = run_blocking(older(decoded), ()).expect("pure effect");
+  let birthday = older(decoded)
+    .block_on()
+    .into_result()
+    .expect("pure effect");
   println!("{birthday:?}");
 }

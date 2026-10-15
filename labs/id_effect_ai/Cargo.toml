@@ -23,14 +23,13 @@ cursor = []
 full = ["openai", "anthropic", "cursor"]
 
 [dependencies]
-id_effect = { path = "../../crates/id_effect", version = "0.6.0" }
-id_effect_config = { path = "../../crates/id_effect_config", version = "0.6.0" }
-id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.6.0" }
+id_effect = { path = "../../crates/id_effect", version = "0.7.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.7.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.7.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 base64 = "0.22"
-tokio = { version = "1.50.0", features = ["time"] }
 
 [dev-dependencies]
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }

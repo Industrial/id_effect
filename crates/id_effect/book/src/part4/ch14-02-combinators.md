@@ -1,152 +1,110 @@
 # Schema Combinators — Describing Data Shapes
 
-A schema is a value that describes how to parse an `Unknown` into a typed result. Schemas compose: build small schemas for primitive types, then combine them into schemas for complex structures.
+A schema is a value that describes how to decode wire data into a typed result and how to encode
+it back. Schemas compose: build small schemas for primitives, then combine them into schemas for
+structures. All combinators live in `id_effect::schema` and are plain functions.
 
 ## Primitive Schemas
 
-```rust
-use id_effect::schema::{string, integer, i64, f64, boolean, null};
+```rust,ignore
+use id_effect::schema::{Schema, bool_, f64, i64, string};
 
-// Parse a string
-let name_schema = string();
-
-// Parse an integer (i64)
-let age_schema = i64();
-
-// Parse a float
-let price_schema = f64();
-
-// Parse a boolean
-let active_schema = boolean();
+let name: Schema<String, String, ()> = string();
+let age: Schema<i64, i64, ()> = i64();
+let price: Schema<f64, f64, ()> = f64(); // decode_unknown also accepts Unknown::I64
+let active: Schema<bool, bool, ()> = bool_();
 ```
 
-Each schema has type `Schema<T>` — `string()` is a `Schema<String>`, `i64()` is a `Schema<i64>`, and so on.
+Each primitive's wire type is the value itself; `decode_unknown` checks the `Unknown` variant.
+The third type parameter is the phantom tag `E`; annotate it once (`i64::<()>()`) when nothing
+else fixes it.
 
-## Struct Schemas
+## Structs and Tuples
 
-```rust
-use id_effect::schema::struct_;
+`struct_` takes field names and field schemas and decodes to a tuple. `struct3` … `struct12`
+cover wider shapes; `tuple` … `tuple12` do the same for positional arrays.
 
-#[derive(Debug)]
+```rust,ignore
+use id_effect::schema::{i64, string, struct_};
+
+let person = struct_("name", string::<()>(), "age", i64());
+// decode_unknown reads an Unknown::Object; a missing key fails with path "age",
+// message "missing field age".
+let (name, age): (String, i64) = person.decode_unknown(&raw)?;
+```
+
+To decode into your own type, map the tuple with `transform` (see the next section), or derive
+the schema:
+
+```rust,ignore
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
 struct User {
-    name: String,
-    age:  i64,
+  #[schema("user_name")] // wire key
+  name: String,
+  age: i64,
+  nick: Option<String>,
+  tags: Vec<String>,
+  address: Address, // any type that itself derives Schema
 }
 
-let user_schema = struct_!(User {
-    name: string(),
-    age:  i64(),
-});
+let wire: Unknown = User::schema().encode(user.clone()); // Unknown::Object
+assert_eq!(User::schema().decode_unknown(&wire), Ok(user));
 ```
 
-`struct_!` maps field names to their schemas and constructs the target type. If any field is missing or has the wrong type, parsing fails with a `ParseError` that includes the field path.
+`derive(Schema)` implements `HasSchema` with wire type `Unknown`. It accepts `String`, `bool`,
+`i64`, `i32`, `f64`, nested `HasSchema` types, and `Option` / `Vec` of those, with any number of
+fields. Errors carry the field name as their path.
 
-For schemas without a derive macro, use `object`:
+## Optional and Nullable Values
 
-```rust
-use id_effect::schema::object;
+```rust,ignore
+use id_effect::schema::{i64, null_or, optional};
 
-let user_schema = object([
-    ("name", string().map(|s| s)),
-    ("age",  i64()),
-]).map(|(name, age)| User { name, age });
+let port = optional(i64::<()>()); // Schema<Option<i64>, Option<i64>, ()>
+let parent = null_or(i64::<()>());
 ```
 
-## Optional Fields
+Both decode `Unknown::Null` as `None`. Inside `struct_` a field must still be present; use
+`derive(Schema)` with an `Option<T>` field when the key may be missing.
 
-```rust
-use id_effect::schema::optional;
+## Arrays and Records
 
-struct Config {
-    host:    String,
-    port:    Option<u16>,
-    timeout: Option<Duration>,
-}
+```rust,ignore
+use id_effect::schema::{array, i64, record, string};
 
-let config_schema = struct_!(Config {
-    host:    string(),
-    port:    optional(u16()),
-    timeout: optional(duration_ms()),
-});
+let tags = array(string::<()>()); // Vec<String>; an error at index 2 has path "2"
+let scores = record(i64::<()>()); // BTreeMap<String, i64>; errors are prefixed with the key
 ```
 
-`optional(schema)` produces `Schema<Option<T>>`. A missing field or `null` both parse as `None`.
+## Literals and Unions
 
-## Array Schemas
+```rust,ignore
+use id_effect::schema::{i64_unknown_wire, literal_string, union_, union_chain};
 
-```rust
-use id_effect::schema::array;
+let kind = literal_string::<()>("user"); // only the exact string "user"
 
-// Vec of strings
-let tags_schema: Schema<Vec<String>> = array(string());
-
-// Vec of User
-let users_schema: Schema<Vec<User>> = array(user_schema);
+// Try schemas in order; the first successful decode wins. Wire type is Unknown.
+let id = union_(i64_unknown_wire::<()>(), id_from_string());
+let any = union_chain(vec![a, b, c]);
 ```
 
-`array(item_schema)` parses a JSON array where each element is validated by `item_schema`. Errors include the index: `"[2].email: expected string, got null"`.
-
-## Union Schemas
-
-```rust
-use id_effect::schema::{union_, literal_string};
-
-#[derive(Debug)]
-enum Status { Active, Inactive, Pending }
-
-let status_schema = union_![
-    literal_string("active")   => Status::Active,
-    literal_string("inactive") => Status::Inactive,
-    literal_string("pending")  => Status::Pending,
-];
-```
-
-`union_!` tries each branch in order and returns the first that succeeds. Errors report all branches that failed.
-
-## Transforming Schemas
-
-Schemas are values — you can `.map` them:
-
-```rust
-// Parse a string and convert it to uppercase
-let upper_schema: Schema<String> = string().map(|s| s.to_uppercase());
-
-// Parse a string and try to convert to a domain type
-let email_schema: Schema<Email> = string().try_map(|s| {
-    Email::parse(s).map_err(ParseError::custom)
-});
-```
-
-`.map` transforms on success. `.try_map` can fail and produce a `ParseError`.
+`union_` / `union_chain` encode with the **first** schema, so the arms should agree on
+encoding. For recursive shapes, `suspend(|| schema())` defers building the inner schema.
 
 ## Running a Schema
 
-```rust
-use id_effect::schema::parse;
-
-let raw: Unknown = Unknown::from_json_str(r#"{"name":"Alice","age":30}"#)?;
-
-match parse(user_schema, raw) {
-    Ok(user)  => println!("Got: {user:?}"),
-    Err(errs) => println!("Errors: {errs}"),
-}
+```rust,ignore
+let wire = person.encode(("Alice".to_owned(), 30));
+assert_eq!(person.decode(wire), Ok(("Alice".to_owned(), 30)));
 ```
 
-`parse` returns `Result<T, ParseErrors>`. `ParseErrors` accumulates all errors — not just the first — so a caller gets the complete picture of what's wrong.
+`decode`, `decode_unknown` and `encode` are synchronous. The round-trip law
+`decode(encode(a)) == a` holds for every combinator and is property-tested in
+`crates/id_effect/tests/schema_roundtrip.rs`.
 
 ## Schema as a Type Contract
 
-A schema is documentation. Where you use `Schema<CreateUserRequest>`, readers know: this function requires exactly this shape of data, checked at runtime. The schema is the spec.
-
-```rust
-pub fn create_user_handler() -> impl Fn(Unknown) -> Effect<User, ApiError, Db> {
-    let schema = create_user_schema();
-    move |raw| {
-        effect! {
-            let req = parse(schema.clone(), raw)
-                .map_err(ApiError::Validation)?;
-            ~ db_create_user(req)
-        }
-    }
-}
-```
+A schema is documentation: where a handler takes a `Schema<CreateUser, Unknown, ()>`, readers
+know exactly which shape of data it accepts, checked at runtime. Implement `HasSchema` (or derive
+it) so generic tooling, such as the JSON Schema helpers behind the `schema-serde` feature, can
+find a type's canonical schema.

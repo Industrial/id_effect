@@ -1,27 +1,22 @@
-//! **Stratum 10 — Scheduling & Time**
+//! **Scheduling & time.**
 //!
-//! Policies for repetition, retry, and temporal reasoning, built from Strata 0–9.
+//! | Submodule | Provides |
+//! |-----------|----------|
+//! | [`duration`] | [`Duration`], [`DurationParseError`] |
+//! | [`datetime`] | [`UtcDateTime`], [`ZonedDateTime`], [`AnyDateTime`], [`TimeUnit`] (`jiff`) |
+//! | `schedule` | the immutable [`Schedule<Out, In>`](Schedule) with its combinators (`recurs`, `spaced`, `exponential`, `fibonacci`, `jittered`, `union`, `intersect`, `and_then`, `while_input`, `up_to`) and the `retry` / `repeat` associated functions on `Effect` (no free functions) |
 //!
-//! | Submodule | Provides | Depends on |
-//! |-----------|----------|------------|
-//! | [`duration`] | [`Duration`], [`DurationParseError`] | Stratum 0 |
-//! | [`datetime`] | [`UtcDateTime`], [`ZonedDateTime`], [`AnyDateTime`], [`TimeUnit`] | [`duration`], `jiff` |
-//! | [`clock`] | [`Clock`], [`LiveClock`], [`TestClock`] | [`datetime`], Stratum 6 (`runtime`) |
-//! | [`schedule`] | [`Schedule`], repeat/retry combinators | [`clock`], [`duration`], Stratum 6 |
+//! Schedule delays come from the executor clock, so they run in virtual time on
+//! `TestExecutor`; schedule durations are `std::time::Duration` at the boundary.
 //!
 //! ## Public API
 //!
 //! Re-exported at the crate root: all public types and functions.
 
-pub mod clock;
 pub mod datetime;
 pub mod duration;
-pub mod schedule;
+mod schedule;
 
-pub use clock::{Clock, LiveClock, TestClock};
 pub use datetime::{AnyDateTime, TimeUnit, UtcDateTime, ZonedDateTime, timezone};
 pub use duration::{Duration, DurationParseError};
-pub use schedule::{
-  Schedule, ScheduleDecision, ScheduleInput, forever, repeat, repeat_n, repeat_with_clock,
-  repeat_with_clock_and_interrupt, retry, retry_with_clock, retry_with_clock_and_interrupt,
-};
+pub use schedule::*;

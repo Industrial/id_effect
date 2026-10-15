@@ -1,18 +1,10 @@
-//! Ex 103 — `KeyedPool` reuses values per key under a global capacity cap.
-use id_effect::{KeyedPool, Scope, run_async, succeed};
+//! Ex 103 — A `KeyedPool` reuses values per key; a checked-out value returns when its scope closes.
+use id_effect::{Effect, KeyedPool, Scope, succeed};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-  let pool = run_async(
-    KeyedPool::make(2, |k: &'static str| succeed::<u32, (), ()>(k.len() as u32)),
-    (),
-  )
-  .await
-  .expect("pool");
-  let scope = Scope::make();
-  let v = run_async(pool.get("answer"), scope.clone())
-    .await
-    .expect("get");
-  assert_eq!(v, 6);
+fn main() {
+  let pool = KeyedPool::new(2, |k: &'static str| succeed(k.len() as u32));
+  let scope = Scope::new();
+  let v: Effect<u32, id_effect::Never> = pool.get("answer", &scope);
+  assert_eq!(v.block_on().into_result().ok(), Some(6));
   println!("103_pool ok");
 }

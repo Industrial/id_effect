@@ -1,7 +1,7 @@
-//! Tiny probe binary for integration tests (exit `0` / `1`).
+//! Tiny probe binary for integration tests (exit `0` / `1` / `101`).
 
 use clap::{Parser, ValueEnum};
-use id_effect::{Effect, fail, succeed};
+use id_effect::{Effect, HNil, die, fail, succeed};
 use std::process::ExitCode;
 
 #[derive(Parser, Debug)]
@@ -16,13 +16,15 @@ struct Args {
 enum ProbeMode {
   Ok,
   Fail,
+  Die,
 }
 
 fn main() -> ExitCode {
   let args = Args::parse();
-  let eff: Effect<(), String, ()> = match args.mode {
+  let eff: Effect<(), String> = match args.mode {
     ProbeMode::Ok => succeed(()),
     ProbeMode::Fail => fail("boom".into()),
+    ProbeMode::Die => die("bug"),
   };
-  id_effect_cli::run_main(eff, (), id_effect_cli::RunMainConfig::minimal())
+  id_effect_cli::run_main(eff, HNil, id_effect_cli::RunMainConfig::minimal())
 }

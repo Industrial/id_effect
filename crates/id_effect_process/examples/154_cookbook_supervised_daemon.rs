@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, fail, run_blocking, succeed};
+use id_effect::Never;
+use id_effect::{Effect, HNil, fail, succeed};
 use id_effect_process::{
   ChildSpec, ExitReason, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode, ShutdownPolicy,
   StartFn, Strategy, SupervisorHandle, SupervisorSpec,
@@ -83,17 +83,21 @@ fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
   ChildSpec::from_start("worker", start)
 }
 
+/// Run `eff` on the default runtime from `main` (the blocking edge).
+fn run<A: Send + 'static, E: Send + std::fmt::Debug + 'static>(eff: Effect<A, E, HNil>) -> A {
+  eff.block_on().into_result().expect("effect succeeds")
+}
+
 /// Current pid of the supervised worker.
 fn worker_pid(tree: &SupervisorHandle) -> Option<Pid> {
-  run_blocking(tree.which_children(TIMEOUT), ())
-    .expect("supervisor answers")
+  run(tree.which_children(TIMEOUT))
     .into_iter()
     .find(|(id, _)| id == "worker")
     .and_then(|(_, pid)| pid)
 }
 
 fn main() {
-  let node = ProcessNode::threads(NodeName::new("daemon@local"));
+  let node = ProcessNode::new(NodeName::new("daemon@local"));
   let flushed = Arc::new(AtomicU64::new(0));
   let tree = SupervisorSpec::new(Strategy::OneForOne)
     .intensity(3, Duration::from_secs(5))
@@ -102,21 +106,14 @@ fn main() {
 
   let first = worker_pid(&tree).expect("worker started");
   let worker = node.whereis_addr::<Worker>("worker").expect("registered");
-  run_blocking(worker.cast(Job::Work(5)), ()).expect("cast");
+  run(worker.cast(Job::Work(5)));
 
-  // Crash it. The supervisor restarts it; wait (without sleeping) until the new pid shows up.
-  run_blocking(worker.cast(Job::Poison), ()).expect("cast");
-  let mut restarted = None;
-  for _ in 0..100_000 {
-    match worker_pid(&tree) {
-      Some(pid) if pid != first => {
-        restarted = Some(pid);
-        break;
-      }
-      _ => std::thread::yield_now(),
-    }
-  }
-  let second = restarted.expect("supervisor restarted the worker");
+  // Crash it and wait (without sleeping) until it is finalized: its exit signal is then in the
+  // supervisor's mailbox, so the next supervisor call is answered after the restart.
+  run(worker.cast(Job::Poison));
+  run(node.await_exit::<Never, HNil>(&first));
+  let second = worker_pid(&tree).expect("supervisor restarted the worker");
+  assert_ne!(first, second);
   println!("worker crashed and restarted: {first} -> {second}");
 
   // The new incarnation starts from fresh state.
@@ -124,9 +121,9 @@ fn main() {
     .whereis_addr::<Worker>("worker")
     .expect("re-registered");
   for n in [1, 2, 3] {
-    run_blocking(worker.cast(Job::Work(n)), ()).expect("cast");
+    run(worker.cast(Job::Work(n)));
   }
-  let total = run_blocking(worker.call((), TIMEOUT), ()).expect("call");
+  let total = run(worker.call((), TIMEOUT));
   assert_eq!(total, 6);
 
   // Wait for a shutdown signal, then stop the tree: children get a trappable `Shutdown`
@@ -135,7 +132,7 @@ fn main() {
   signal_tx.send("SIGTERM").expect("signal");
   let signal = signal_rx.recv().expect("signal");
   println!("received {signal}, shutting down");
-  pollster::block_on(tree.stop(&node, ShutdownPolicy::Timeout(TIMEOUT)));
+  run(tree.stop::<Never, HNil>(&node, ShutdownPolicy::Timeout(TIMEOUT)));
 
   assert_eq!(flushed.load(Ordering::SeqCst), 6, "terminate flushed state");
   assert!(!worker.is_alive());

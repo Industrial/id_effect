@@ -4,7 +4,7 @@
 **Effect.ts reference:** `@effect/opentelemetry` — traces, metrics, logs aligned with OTEL semantics and context propagation.  
 **Goal:** First-class **OpenTelemetry** export and **context propagation** integrated with `id_effect` fibers, spans, and existing `observability` hooks—without forcing every user to depend on OTEL in the core crate.
 
-**Implementation (workspace):** `crates/id_effect_opentelemetry` — tracing bridge (`with_span_otel`), W3C header propagation, metric bridges, and mdBook `part2/ch07-12-opentelemetry.md`.
+**Implementation (workspace):** `crates/id_effect_opentelemetry` — span bridge (`OtelSpanHook`, installed with `Effect::with_span_hook` so every `Effect::with_span` becomes an OTEL span), W3C header propagation, metric bridges over `MetricRegistry` (`bridge_metrics`), and mdBook `part2/ch07-12-opentelemetry.md`.
 
 ## Executive summary
 
@@ -12,7 +12,7 @@
 
 1. Wires **trace** and **metric** exporters to the OpenTelemetry SDK for Rust (`opentelemetry`, `opentelemetry_sdk`, `tracing-opentelemetry` or OTLP exporters as appropriate).
 2. Maps **`FiberId`** / internal span stack to OTEL span context where possible.
-3. Provides **Layers** (in the DI sense) to install subscribers/propagators in `run_async` / Axum stacks.
+3. Provides **Layers** (in the DI sense) to install subscribers/propagators in `Runtime::run` / Axum stacks.
 4. Documents **Axum + Tokio + OTEL** as the canonical production setup.
 
 ## Non-goals (initial milestones)
@@ -25,8 +25,9 @@
 
 | Location | Relevant APIs |
 |----------|---------------|
-| `crates/id_effect/src/observability/tracing.rs` | Span stack, fiber refs, events |
-| `crates/id_effect/src/observability/metric.rs` | Metric combinator |
+| `crates/id_effect/src/observability/mod.rs` | Spans (`Effect::with_span`, `SpanHook`, `Effect::with_span_hook`) |
+| `crates/id_effect/src/observability/tracing.rs` | In-process tracing buffer (`tracing_hook`), fiber / effect events |
+| `crates/id_effect/src/observability/metric.rs`, `registry.rs` | `Metric` instruments, `MetricRegistry` |
 | `crates/id_effect_logger` | Logging pipeline — coordinate naming with OTEL log bridge |
 
 ## Design constraints
@@ -55,7 +56,7 @@ bd create "Phase B — OpenTelemetry (@effect/opentelemetry parity)" -t epic -p 
 bd create "B — Audit & design" -t task -p 1 --parent EPIC_B --json
 bd create "B — Crate skeleton & trace MVP" -t feature -p 1 --parent EPIC_B --json
 bd create "B — Metrics bridge" -t feature -p 2 --parent EPIC_B --json
-bd create "B — Runtime integration (Layer, run_async, tests)" -t feature -p 1 --parent EPIC_B --json
+bd create "B — Runtime integration (Layer, Runtime::run, tests)" -t feature -p 1 --parent EPIC_B --json
 bd create "B — Docs, CI, release" -t task -p 2 --parent EPIC_B --json
 # WS_B1 … WS_B5
 ```
@@ -102,8 +103,8 @@ bd dep add <b032> <b030>
 
 ```bash
 bd create "Slug iep-b-040 — Layer builder + tracing_subscriber" -t feature -p 1 --parent WS_B4 --json
-bd create "Slug iep-b-041 — run_async + Axum init/teardown/flush" -t task -p 1 --parent WS_B4 --json
-bd create "Slug iep-b-042 — run_test isolation for OTEL" -t task -p 2 --parent WS_B4 --json
+bd create "Slug iep-b-041 — Runtime::run + Axum init/teardown/flush" -t task -p 1 --parent WS_B4 --json
+bd create "Slug iep-b-042 — Test isolation for OTEL" -t task -p 2 --parent WS_B4 --json
 bd dep add <b040> <b021>
 bd dep add <b041> <b040>
 bd dep add <b042> <b040>
@@ -165,8 +166,8 @@ Cross-workstream: `bd dep add <b020> <b011>` (skeleton after RFC). Optional: `bd
 | Slug | Suggested title | Type | P | Blocked by |
 |------|-----------------|------|---|------------|
 | `iep-b-040` | `Layer` / builder: install global tracer provider + `tracing_subscriber` | feature | 1 | `iep-b-021` |
-| `iep-b-041` | `run_async` / Axum example: init + teardown (flush) | task | 1 | `iep-b-040` |
-| `iep-b-042` | `run_test` guidance: isolate OTEL state between tests | task | 2 | `iep-b-040` |
+| `iep-b-041` | `Runtime::run` / Axum example: init + teardown (flush) | task | 1 | `iep-b-040` |
+| `iep-b-042` | Test guidance (`with_otel_test_harness`): isolate OTEL state between tests | task | 2 | `iep-b-040` |
 
 ### B5 — Docs & release
 

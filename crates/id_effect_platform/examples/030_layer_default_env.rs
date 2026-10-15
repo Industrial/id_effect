@@ -1,11 +1,11 @@
-//! Build an [`reqwest::Client`] with [`ReqwestClientLive`], register it in an [`id_effect::Env`],
-//! and run an HTTP [`id_effect::Effect`].
+//! Build a [`reqwest::Client`] with the [`ReqwestClientLive`] layer and run an HTTP effect
+//! against it.
 //!
 //! Run: `cargo run -p id_effect_platform --example 030_layer_default_env`
 
-use id_effect::run_async;
-use id_effect::{build_env, provide};
-use id_effect_platform::http::reqwest::{ReqwestClientLive, text};
+use id_effect::Exit;
+use id_effect_platform::http::reqwest::{ReqwestClientEnv, ReqwestClientLive, text};
+use id_effect_tokio::TokioRuntime;
 use reqwest::Error;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -20,11 +20,12 @@ async fn main() {
     .await;
 
   let url = format!("{}/layer", server.uri());
-  let env = build_env([provide!(ReqwestClientLive)]).expect("env");
-
-  let body = run_async(text::<String, Error, _, _>(move |c| c.get(url)), env)
-    .await
-    .unwrap();
+  let program = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(url))
+    .provide_layer(ReqwestClientLive::layer());
+  let rt = TokioRuntime::current().expect("tokio runtime");
+  let Exit::Success(body) = rt.run(program).await else {
+    panic!("request failed")
+  };
   assert_eq!(body, "layer-ok");
   println!("030_layer_default_env ok");
 }

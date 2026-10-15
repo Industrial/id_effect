@@ -1,71 +1,91 @@
-# `Env` — The Runtime Capability Container
+# The Environment Value — `HCons`, `HNil` and `DynEnv`
 
-Multi-capability effects use [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs) at runtime: a map from capability identity to service value. **Insertion order does not matter**.
+At run time an effect's environment is a **value of its `R` type**: an HList whose cells hold
+`Arc`ed capabilities.
 
 ## Structure
 
 ```rust
-use id_effect::Env;
+use id_effect::{HCons, HNil, hlist};
 
-let mut env = Env::new();
-env.insert::<Cap<Database>>(pool);
-env.insert::<Cap<EffectLogger>>(logger);
+struct Db(u32);
+struct Logger(&'static str);
 
-assert!(env.has::<Cap<Database>>());
-let pool = env.get::<Cap<Database>>();
+// The type: caps!(Db, Logger)
+type DbLog = HCons<Db, HCons<Logger, HNil>>;
+
+// The value
+let env: DbLog = hlist![Db(1), Logger("app")];
+// same as HCons::new(Db(1), HCons::new(Logger("app"), HNil))
 ```
 
-`Env` stores cloneable, `Send + Sync` values keyed by [`CapabilityId`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/id.rs) (derived from the key type). Lookups are O(1); there is no positional indexing.
+`HCons<H, T>` holds an `Arc<H>` and the tail `T`, so cloning an environment costs one refcount
+bump per capability, and every effect that reads a capability shares the same `Arc`.
 
-## Building `Env`
+## Typed lookup: `Selector`
 
-Three common paths:
+Reading capability `T` from an environment `R` is the trait bound `R: Selector<T, I>`. The index
+`I` (`Here`, `There<Here>`, …) is a type the compiler infers: it is the position of `T`, found by
+type, so callers never write it. A missing capability is an unsatisfied bound, reported as
 
-**1. Application entry — providers + graph**
-
-```rust
-run_with([provide!(ConfigLive), provide!(DatabaseLive)], app())?;
+```text
+error[E0277]: capability `Metrics` is not in this effect's environment
 ```
 
-**2. Providers only — reuse in tests**
+The related traits do the other environment operations, all resolved at compile time:
 
-```rust
-let env = build_env([provide!(MockDatabaseLive)])?;
+| Trait | Used by | Does |
+|-------|---------|------|
+| `Selector<T, I>` | `~T`, `need::<T>()` | reads `T` |
+| `Plucker<T, I>` | `.provide(t)` | removes `T`, leaving `Rest` |
+| `Sculptor<Sub, Is>` | `.provide_some(sub)` | removes a sub-list |
+| `Embed<R, Is>` | `.provide_env(env)`, `.narrow()`, `~sub` | projects a wider environment onto `R` |
+| `Concat<Rhs>` | `Layer::merge` | appends two lists |
+
+You meet these names in compiler errors and in generic helpers
+(`R: HList + Selector<Logger, I>`); application code uses `caps!`, `hlist!` and the `provide*`
+methods.
+
+## Building the environment
+
+```rust,ignore
+// Exactly R, in order
+eff.provide_all(hlist![Db(1), Logger("app")]);
+
+// Any environment that contains R (any order, extras allowed)
+eff.provide_env(hlist![Logger("app"), Cache::default(), Db(1)]);
+
+// From a Layer graph: the layers' output HList
+eff.provide_layer(app_layer());
 ```
-
-**3. Manual — fast unit tests**
-
-```rust
-let mut env = Env::new();
-env.insert::<Cap<Database>>(MockPool::new());
-```
-
-## Why not a plain `HashMap<TypeId, Box<dyn Any>>`?
-
-You could store `dyn Any` and downcast. `Env` + `Capability` keeps:
-
-- **Compile-time requirements** via `Needs<K>` bounds and `caps!`
-- **Typed access** — `get::<Cap<Database>>()` returns `&Pool`, not `&dyn Any`
-- **Stable diagnostics** — missing capabilities produce [`CapabilityError::Missing`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/error.rs) with the key name
-
-Application code should think in **`Env` and capability services**, not positional tuples.
 
 ## Order independence
 
-These two sequences produce equivalent lookup behaviour:
+`hlist![Db(1), Logger("x")]` and `hlist![Logger("x"), Db(1)]` are different types, but both satisfy
+an effect that needs `caps!(Db, Logger)` through `provide_env`, and a lookup of `Db` works in
+either. Adding a capability never changes how existing ones are read.
 
-```rust
-env.insert::<Cap<Database>>(db).insert::<Cap<EffectLogger>>(log);
-// vs
-env.insert::<Cap<EffectLogger>>(log).insert::<Cap<Database>>(db);
+## `DynEnv`: runtime-checked lookup
+
+The typed environment is the default. For plugin-style wiring whose capabilities are not known at
+compile time, `DynEnv` is a `TypeId`-keyed map with **fallible** lookups. It is itself a
+capability: an effect that looks things up dynamically requires `caps!(DynEnv)`.
+
+```rust,ignore
+use std::sync::Arc;
+use id_effect::{DynEnv, MissingCapability};
+
+struct Plugin(&'static str);
+struct Absent;
+
+let mut env = DynEnv::new();
+env.insert(Plugin("audit"));
+let p: Arc<Plugin> = env.try_get::<Plugin>().map_err(|e| e.to_string())?;
+assert_eq!(p.0, "audit");
+assert!(matches!(env.try_get::<Absent>(), Err(MissingCapability { .. })));
 ```
 
-Adding a new capability never changes how existing keys are accessed — refactor-safe in a way tuples never were.
-
-## When you touch `Env` directly
-
-- Test fixtures with one or two mocks
-- Tokio/async examples that pass `Env` to [`run_async`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/runtime/mod.rs)
-- HTTP hosts that store `State<Env>` (see [Axum host](./ch07-08-axum-host.md))
-
-Production apps usually list [`provide!(…)`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) values once at the top level and let [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) assemble `Env`.
+Inside an effect, `try_need::<T>()` is an `Effect<Arc<T>, MissingCapability, caps!(DynEnv)>`: it
+fails with `MissingCapability` (it never panics) when `T` is absent. Use it only where the set of
+capabilities really is dynamic; everywhere else a typed `R` turns the same mistake into a compile
+error.

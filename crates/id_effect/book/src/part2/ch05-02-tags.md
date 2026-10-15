@@ -1,64 +1,74 @@
-# Capability services
+# Capability Types
 
-A **capability service** is a Rust type that names a dependency in [`Env`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/env.rs). The [`Cap<T>`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) wrapper implements [`CapabilityKey`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/key.rs) for any cloneable `T`, so you use the service type directly in `caps!`, `require!`, and `#[provides]`.
+A **capability** is any `Send + Sync + 'static` type placed in an effect's `R`. Its Rust type is
+its name: there is no separate key type, registry or tag.
 
-## Declaring a service
+## Declaring a capability
 
-```rust
-// Concrete value type
+```rust,ignore
+use std::sync::Arc;
+
+// A concrete value
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Counter(pub u32);
 
-// Trait-backed service (typical for ports/adapters)
-pub type Database = Arc<dyn DbClient>;
-pub type UserRepo = Arc<dyn UserRepository>;
+// Two roles of the same underlying type: one newtype each
+pub struct MainDb(pub Pool);
+pub struct CacheDb(pub Pool);
+
+// A trait-backed service (ports and adapters): a newtype over `Arc<dyn Trait>`
+pub trait UserRepository: Send + Sync {
+  fn get_user(&self, id: u64) -> Effect<User, DbError>;
+}
+#[derive(Clone)]
+pub struct UserRepo(pub Arc<dyn UserRepository>);
 ```
 
-`Database` and `Cache` can both wrap a `Pool` but remain **distinct capability identities** — you cannot pass one where the other is required.
+`MainDb` and `CacheDb` both wrap a `Pool` but are distinct capabilities: providing one where the
+other is required is a type error.
 
-## Registering values
+## Spelling R: `caps!`
 
-At runtime, values live in `Env`:
+`caps!(A, B, C)` is the type `HCons<A, HCons<B, HCons<C, HNil>>>`:
 
-```rust
-use id_effect::{Cap, Env};
-
-let mut env = Env::new();
-env.insert::<Cap<Database>>(main_pool);
-env.insert::<Cap<Cache>>(cache_pool);
+```rust,ignore
+fn needs_main() -> Effect<Report, DbError, caps!(MainDb)> { /* ... */ }
+fn needs_both() -> Effect<Report, DbError, caps!(MainDb, CacheDb, UserRepo)> { /* ... */ }
 ```
 
-Or let a [`ProviderSpec`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/provider.rs) insert them during `run_with`.
-
-## Why named services help the compiler
-
-```rust
-fn needs_database() -> Effect<A, E, caps!(Database)> { ... }
-fn needs_cache() -> Effect<A, E, caps!(Cache)> { ... }
-```
-
-Providing the wrong service is a type error at the call site, not a silent runtime swap.
+Listing a capability twice is a compile error at the repeat.
 
 ## Service traits
 
-Define a focused trait, then a type alias for the handle stored in `Env`:
+A trait method returns an effect that needs nothing (`R = HNil`); the **caller** carries the
+service in its `R`:
 
-```rust
-pub trait UserRepository: Send + Sync {
-    fn get_user(&self, id: u64) -> Effect<User, DbError, ()>;
+```rust,ignore
+fn show_user(id: u64) -> Effect<String, DbError, caps!(UserRepo)> {
+  effect!({
+    let repo = ~UserRepo.clone(); // Arc<UserRepo>
+    let user = ~repo.0.get_user(id);
+    user.name.clone()
+  })
 }
-pub type UserRepo = Arc<dyn UserRepository>;
 ```
 
-Trait methods keep `R = ()` — the *caller* carries `Database` / `UserRepo` in its `caps!` list.
+`~UserRepo` reads the capability (an `&Arc<UserRepo>`) and `.clone()` applies to that reference;
+`~repo.0.get_user(id)` is an ordinary bind that runs the effect the method returns. (`~X` reads a
+capability only when `X` is an upper-case identifier; anything else after `~` is bound as an
+effect.) In tests, provide a `UserRepo` wrapping an in-memory implementation.
+
+## Values are shared
+
+Capabilities are stored as `Arc<T>` and handed out as `&Arc<T>` (inside `effect!`) or `Arc<T>`
+(from `need`). They are shared, not owned by one effect, so mutable state inside a capability uses
+interior mutability (`Mutex`, atomics, or the effect-aware `Ref` / `SynchronizedRef`).
 
 ## Summary
 
 | Item | Role |
 |------|------|
-| Service type `T` | Name used in `caps!(T)` and `require!(T)` |
-| `Cap<T>` | Internal `CapabilityKey` with `Value = T` |
-| `Env::insert::<Cap<T>>(v)` | Register a service |
-| `Needs<T>` | Bound: environment contains `T` |
-
-Named services eliminate the positional problem. The next section introduces `Env` — how those services are stored at runtime.
+| capability type `T` | a dependency; the type is its identity |
+| `caps!(T1, T2, ..)` | the environment type `HCons<T1, HCons<T2, .., HNil>>` |
+| newtype `struct X(Inner)` | names a role, separates same-type capabilities |
+| `struct S(Arc<dyn Trait>)` | a swappable service |

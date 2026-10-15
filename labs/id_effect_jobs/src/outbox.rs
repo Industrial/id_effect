@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use id_effect::{Effect, runtime::run_blocking};
+use id_effect::Effect;
+#[cfg(feature = "memory")]
+use id_effect::effect;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -55,16 +57,16 @@ impl OutboxRecord {
 /// Transactional outbox persistence (append + mark-published).
 pub trait OutboxTable: Send + Sync {
   /// Insert a row (typically in the same DB transaction as domain writes).
-  fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()>;
+  fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError>;
 
   /// Fetch unpublished rows in creation order, up to `limit`.
-  fn fetch_unpublished(&self, limit: usize) -> Effect<Vec<OutboxRecord>, OutboxError, ()>;
+  fn fetch_unpublished(&self, limit: usize) -> Effect<Vec<OutboxRecord>, OutboxError>;
 
   /// Mark rows published after successful relay.
-  fn mark_published(&self, ids: &[String]) -> Effect<(), OutboxError, ()>;
+  fn mark_published(&self, ids: &[String]) -> Effect<(), OutboxError>;
 
   /// Count rows still awaiting relay.
-  fn unpublished_count(&self) -> Effect<usize, OutboxError, ()>;
+  fn unpublished_count(&self) -> Effect<usize, OutboxError>;
 }
 
 /// In-memory outbox table (tests and local demos).
@@ -93,19 +95,19 @@ impl MemoryOutbox {
 
 #[cfg(feature = "memory")]
 impl OutboxTable for MemoryOutbox {
-  fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()> {
+  fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError> {
     let rows = Arc::clone(&self.rows);
     let stored = record.clone();
-    Effect::new(move |_r| {
+    crate::attempt(move || {
       let mut guard = rows.lock().map_err(|e| OutboxError::Lock(e.to_string()))?;
       guard.insert(stored.id.clone(), stored.clone());
       Ok(stored)
     })
   }
 
-  fn fetch_unpublished(&self, limit: usize) -> Effect<Vec<OutboxRecord>, OutboxError, ()> {
+  fn fetch_unpublished(&self, limit: usize) -> Effect<Vec<OutboxRecord>, OutboxError> {
     let rows = Arc::clone(&self.rows);
-    Effect::new(move |_r| {
+    crate::attempt(move || {
       let guard = rows.lock().map_err(|e| OutboxError::Lock(e.to_string()))?;
       let mut out: Vec<OutboxRecord> = guard.values().filter(|r| !r.published).cloned().collect();
       out.sort_by_key(|r| r.created_ms);
@@ -114,10 +116,10 @@ impl OutboxTable for MemoryOutbox {
     })
   }
 
-  fn mark_published(&self, ids: &[String]) -> Effect<(), OutboxError, ()> {
+  fn mark_published(&self, ids: &[String]) -> Effect<(), OutboxError> {
     let ids: Vec<String> = ids.to_vec();
     let rows = Arc::clone(&self.rows);
-    Effect::new(move |_r| {
+    crate::attempt(move || {
       let mut guard = rows.lock().map_err(|e| OutboxError::Lock(e.to_string()))?;
       for id in ids {
         let Some(row) = guard.get_mut(&id) else {
@@ -129,9 +131,9 @@ impl OutboxTable for MemoryOutbox {
     })
   }
 
-  fn unpublished_count(&self) -> Effect<usize, OutboxError, ()> {
+  fn unpublished_count(&self) -> Effect<usize, OutboxError> {
     let rows = Arc::clone(&self.rows);
-    Effect::new(move |_r| {
+    crate::attempt(move || {
       let guard = rows.lock().map_err(|e| OutboxError::Lock(e.to_string()))?;
       Ok(guard.values().filter(|r| !r.published).count())
     })
@@ -142,88 +144,90 @@ impl OutboxTable for MemoryOutbox {
 ///
 /// Returns the number of rows relayed. Publish failures leave rows unpublished.
 #[cfg(feature = "memory")]
-pub fn relay_outbox<O, P>(outbox: O, limit: usize, publish: P) -> Effect<usize, OutboxError, ()>
+pub fn relay_outbox<O, P>(outbox: O, limit: usize, publish: P) -> Effect<usize, OutboxError>
 where
   O: OutboxTable + 'static,
-  P: Fn(&OutboxRecord) -> Effect<(), OutboxError, ()> + 'static,
+  P: Fn(&OutboxRecord) -> Effect<(), OutboxError> + Send + 'static,
 {
-  Effect::new(move |_r| {
-    let batch = run_blocking(outbox.fetch_unpublished(limit), ())?;
-    if batch.is_empty() {
-      return Ok(0);
-    }
+  effect!({
+    let batch = ~outbox.fetch_unpublished(limit);
     let mut published_ids = Vec::new();
     for row in &batch {
-      run_blocking(publish(row), ())?;
+      ~publish(row);
       published_ids.push(row.id.clone());
     }
-    run_blocking(outbox.mark_published(&published_ids), ())?;
-    Ok(published_ids.len())
+    if !published_ids.is_empty() {
+      ~outbox.mark_published(&published_ids);
+    }
+    published_ids.len()
   })
 }
 
 #[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
-  use id_effect::succeed;
+  use id_effect::{fail, succeed};
+
+  fn run<A: Send + 'static>(eff: Effect<A, OutboxError>, _env: ()) -> Result<A, OutboxError> {
+    eff
+      .block_on()
+      .into_result()
+      .map_err(|c| c.fail_option().expect("typed failure"))
+  }
 
   #[test]
   fn insert_and_relay_round_trip() {
     let outbox = MemoryOutbox::new();
     let row = OutboxRecord::new("order-1", "OrderPlaced", br#"{"id":1}"#);
-    run_blocking(outbox.insert(row), ()).unwrap();
-    assert_eq!(run_blocking(outbox.unpublished_count(), ()).unwrap(), 1);
+    run(outbox.insert(row), ()).unwrap();
+    assert_eq!(run(outbox.unpublished_count(), ()).unwrap(), 1);
 
-    let n = run_blocking(
+    let n = run(
       relay_outbox(outbox.clone(), 10, |rec| {
         assert_eq!(rec.event_type, "OrderPlaced");
-        succeed::<(), OutboxError, ()>(())
+        succeed::<(), OutboxError, _>(())
       }),
       (),
     )
     .unwrap();
     assert_eq!(n, 1);
-    assert_eq!(run_blocking(outbox.unpublished_count(), ()).unwrap(), 0);
+    assert_eq!(run(outbox.unpublished_count(), ()).unwrap(), 0);
   }
 
   #[test]
   fn fetch_respects_limit_and_order() {
     let outbox = MemoryOutbox::new();
-    run_blocking(outbox.insert(OutboxRecord::new("a", "E1", vec![])), ()).unwrap();
-    run_blocking(outbox.insert(OutboxRecord::new("b", "E2", vec![])), ()).unwrap();
-    let batch = run_blocking(outbox.fetch_unpublished(1), ()).unwrap();
+    run(outbox.insert(OutboxRecord::new("a", "E1", vec![])), ()).unwrap();
+    run(outbox.insert(OutboxRecord::new("b", "E2", vec![])), ()).unwrap();
+    let batch = run(outbox.fetch_unpublished(1), ()).unwrap();
     assert_eq!(batch.len(), 1);
   }
 
   #[test]
   fn mark_published_unknown_id_errors() {
     let outbox = MemoryOutbox::new();
-    let err = run_blocking(outbox.mark_published(&["missing".into()]), ()).unwrap_err();
+    let err = run(outbox.mark_published(&["missing".into()]), ()).unwrap_err();
     assert_eq!(err, OutboxError::NotFound("missing".into()));
   }
 
   #[test]
   fn fetch_empty_returns_empty_batch() {
     let outbox = MemoryOutbox::new();
-    assert!(
-      run_blocking(outbox.fetch_unpublished(5), ())
-        .unwrap()
-        .is_empty()
-    );
+    assert!(run(outbox.fetch_unpublished(5), ()).unwrap().is_empty());
   }
 
   #[test]
   fn relay_failure_leaves_rows_unpublished() {
     let outbox = MemoryOutbox::new();
-    run_blocking(outbox.insert(OutboxRecord::new("a", "E", vec![])), ()).unwrap();
-    let err = run_blocking(
+    run(outbox.insert(OutboxRecord::new("a", "E", vec![])), ()).unwrap();
+    let err = run(
       relay_outbox(outbox.clone(), 5, |_row| {
-        id_effect::fail::<(), OutboxError, ()>(OutboxError::Lock("relay fail".into()))
+        fail::<(), OutboxError, _>(OutboxError::Lock("relay fail".into()))
       }),
       (),
     )
     .unwrap_err();
     assert!(matches!(err, OutboxError::Lock(_)));
-    assert_eq!(run_blocking(outbox.unpublished_count(), ()).unwrap(), 1);
+    assert_eq!(run(outbox.unpublished_count(), ()).unwrap(), 1);
   }
 }

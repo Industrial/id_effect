@@ -1,0 +1,109 @@
+{
+	"schema": 1,
+	"baseline": "k-pre-opt",
+	"sha": "8864d96a239cb6c344ffd00aeec69f7c5ea3e61d",
+	"created": "2026-10-15T03:28:02Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"rounds": {
+		"count": 3,
+		"statistic": "median of round medians (mean, std_dev: median of rounds)",
+		"quiet": "3 interleaved rounds (v0.6 then HEAD 8864d96), each side started with pgrep -c rustc = 0: r1 quiet, r2 quiet, r3 quiet",
+		"baselines": ["k-pre-r1", "k-pre-r2", "k-pre-r3"],
+		"round_medians": {
+			"coord/channel_spsc_10k": [
+				1190171.5493421052, 1210786.8756684493, 1190238.3233766234
+			],
+			"coord/queue_bounded_10k": [
+				730930.7845588236, 744415.7952380952, 728619.3743291593
+			],
+			"gate/async_bind_64": [
+				4382.739139179404, 4451.258065038619, 4449.173535906299
+			],
+			"gate/flat_map_depth_10k": [
+				303726.36057692306, 306336.38247422676, 307292.3499417249
+			],
+			"phase0/bench_effect_flat_map_chain": [
+				55.17679206727918, 54.75153653358477, 54.56557785538864
+			],
+			"phase0/bench_effect_map_chain": [
+				53.390760211742354, 52.564964811843325, 52.904587001439594
+			],
+			"phase0/bench_env_insert_overhead": [
+				39.20833014072708, 33.515399823457244, 34.08048337065949
+			],
+			"phase0/bench_schedule_retry_overhead": [
+				102.95355760787425, 103.43232402088618, 103.2825984844703
+			],
+			"phase0/bench_stream_throughput_collect": [
+				3764.3808517861444, 4081.132198885429, 3837.813009072014
+			],
+			"stream/map_effect_1k": [44423491.0, 44320937.0, 44490545.25],
+			"stream/pull_map_10k": [
+				16344.679312188167, 16650.374844858154, 16414.10055620609
+			]
+		}
+	},
+	"benches": {
+		"coord/channel_spsc_10k": {
+			"mean": 1197605.5829994532,
+			"median": 1190238.3233766234,
+			"std_dev": 19690.185342208068
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 734893.5072833407,
+			"median": 730930.7845588236,
+			"std_dev": 9095.75437789405
+		},
+		"gate/async_bind_64": {
+			"mean": 4455.264248753541,
+			"median": 4449.173535906299,
+			"std_dev": 31.856467800702717
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 306808.90412760165,
+			"median": 306336.38247422676,
+			"std_dev": 2579.0714765606854
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 54.73948507369781,
+			"median": 54.75153653358477,
+			"std_dev": 0.45057459929504456
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 52.91885619604959,
+			"median": 52.904587001439594,
+			"std_dev": 0.4120577943262225
+		},
+		"phase0/bench_env_insert_overhead": {
+			"mean": 34.100908198996805,
+			"median": 34.08048337065949,
+			"std_dev": 0.28104095661366146
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 103.34524321027344,
+			"median": 103.2825984844703,
+			"std_dev": 1.0835942726214909
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 3842.927150232117,
+			"median": 3837.813009072014,
+			"std_dev": 52.318475390120916
+		},
+		"stream/map_effect_1k": {
+			"mean": 44613116.43,
+			"median": 44423491.0,
+			"std_dev": 619704.799047024
+		},
+		"stream/pull_map_10k": {
+			"mean": 16528.714220891135,
+			"median": 16414.10055620609,
+			"std_dev": 160.13203885220886
+		}
+	}
+}

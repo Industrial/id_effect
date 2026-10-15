@@ -1,6 +1,8 @@
 # HTTP via reqwest (`id_effect_platform::http::reqwest`)
 
-The **`id_effect_platform::http::reqwest`** module integrates **`reqwest::Client`** with the effect environment: the client lives in **`R`** behind **`ReqwestClient`**, and HTTP work is expressed as **`Effect`** values (`send`, `text`, `bytes`, `json`, …).
+The **`id_effect_platform::http::reqwest`** module integrates **`reqwest::Client`** with the
+effect environment: the client lives in **`R`** as the **`ReqwestClient`** capability, and HTTP work
+is expressed as **`Effect`** values (`send`, `text`, `bytes`, `json`, …).
 
 ## Relation to portable HTTP
 
@@ -9,18 +11,42 @@ The **`id_effect_platform::http::reqwest`** module integrates **`reqwest::Client
 | Portable **`HttpClient`** trait, swap implementations in tests, minimal request/response model | [`id_effect_platform::http`](./ch07-06-platform-services.md) (`HttpClientService`, `execute`, …) |
 | Rich **reqwest** surface (`RequestBuilder`, redirects, pools), **JSON + `Schema`** decoding | **`id_effect_platform::http::reqwest`** |
 
-Prefer **`id_effect_platform::http`** for new application boundaries that should stay stack-agnostic. Use **`id_effect_platform::http::reqwest`** when you depend on **`RequestBuilder`** pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or want **`json_schema`** so parse failures carry **field paths** (`id_effect::schema::ParseError`).
-
-Import reqwest types (`Client`, `Error`, …) from the **`reqwest`** crate; import helpers from **`id_effect_platform::http::reqwest`**. Drive async steps with **`id_effect::run_async`** per [Tokio bridge](./ch07-05-tokio-bridge.md).
+Prefer **`id_effect_platform::http`** for new application boundaries that should stay
+stack-agnostic. Use **`id_effect_platform::http::reqwest`** when you depend on **`RequestBuilder`**
+pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or want
+**`json_schema`** so parse failures carry **field paths** (`id_effect::schema::ParseError`).
 
 ## Core pieces
 
-- **`ReqwestClient`** — tag for the active `reqwest::Client` in `R`.
-- **`provide_reqwest_client` / `ReqwestClientLive`** — construct the client at the composition root.
-- **`send`**, **`text`**, **`bytes`**, **`json`**, **`json_schema`** — effectful helpers over `RequestBuilder`.
-- **Optional pools** — TTL pools of clients for connection churn scenarios.
+- **`ReqwestClient(pub reqwest::Client)`** — the capability; `ReqwestClientEnv` is its
+  one-element list.
+- **`ReqwestClientLive::layer()`** / **`provide_reqwest_client(client)`** — layers that build or
+  supply the client at the composition root.
+- **`send`**, **`text`**, **`bytes`**, **`json`**, **`json_schema`** — effects over a
+  `FnOnce(&Client) -> RequestBuilder`; `get` / `post` / `put` / `delete` / `head` / `patch` take a URL.
+- **Pools** — `provide_reqwest_pool(n, ttl)` provides a `ReqwestPool` (`id_effect::Pool` of
+  clients); `send_pooled` borrows one per request.
+
+```rust,ignore
+use id_effect::Exit;
+use id_effect_platform::http::reqwest::{ReqwestClientEnv, ReqwestClientLive, text};
+use id_effect_tokio::TokioRuntime;
+use reqwest::Error;
+
+let program = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(url))
+    .provide_layer(ReqwestClientLive::layer());
+let Exit::Success(body) = TokioRuntime::current()?.run(program).await else {
+    panic!("request failed")
+};
+```
+
+Import reqwest types (`Client`, `Error`, …) from the **`reqwest`** crate and the helpers from
+**`id_effect_platform::http::reqwest`**. Like every live platform effect these need a Tokio runtime
+with its IO driver ([Tokio bridge](./ch07-05-tokio-bridge.md)).
 
 ## Further reading
 
+- Examples: `030_layer_default_env`, `010_wiremock_get_text`, `020_wiremock_json` in
+  `crates/id_effect_platform/examples`
 - Crate-level docs: `cargo doc --open -p id_effect_platform`
-- [Migrating from async](../appendix-b-migration.md) for the general `async fn` → `Effect` move; combine with this module at HTTP boundaries when you choose the reqwest adapter.
+- [Migrating from async](../appendix-b-migration.md) for the general `async fn` → `Effect` move.

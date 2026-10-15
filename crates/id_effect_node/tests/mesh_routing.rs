@@ -7,8 +7,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::envelope::{PidWire, ProcessEnvelope, RemoteFault};
 use id_effect_node::wire::Frame;
 use id_effect_node::{
@@ -19,6 +19,15 @@ use id_effect_process::{ExitReason, Next, NodeName, Pid, Process, ProcessCtx, Pr
 use serde::{Deserialize, Serialize};
 
 const WAIT: Duration = Duration::from_secs(5);
+
+/// Run a mesh request on the default runtime.
+fn run<A: Send + 'static>(eff: Effect<A, RemoteFault>) -> Result<A, RemoteFault> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(f)) => Err(f),
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  }
+}
 
 #[derive(Serialize, Deserialize)]
 enum CounterCall {
@@ -48,16 +57,16 @@ impl Process for Counter {
   }
 
   fn handle_call(self, msg: CounterCall, _: ProcessCtx) -> Effect<(u32, Next<Self>), Never, ()> {
-    Effect::new(move |_| match msg {
-      CounterCall::Get => Ok((self.n, Next::Continue(self))),
+    sync(move || match msg {
+      CounterCall::Get => (self.n, Next::Continue(self)),
     })
   }
 
   fn handle_cast(mut self, msg: CounterCast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       CounterCast::Add(x) => {
         self.n += x;
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -72,7 +81,7 @@ fn registry() -> BehaviorRegistry {
 fn mesh(name: &str) -> Mesh {
   Mesh::new(
     NodeId::fresh(&NodeName::new(name)),
-    ProcessNode::threads(NodeName::new(name)),
+    ProcessNode::new(NodeName::new(name)),
     registry(),
   )
 }
@@ -87,7 +96,7 @@ fn unit() -> Vec<u8> {
 
 fn get(mesh: &Mesh, pid: &Pid) -> u32 {
   let call = postcard::to_allocvec(&CounterCall::Get).expect("encode");
-  let reply = mesh.remote_call(pid, call, WAIT).expect("call");
+  let reply = run(mesh.remote_call(pid, call, WAIT)).expect("call");
   postcard::from_bytes(&reply).expect("decode reply")
 }
 
@@ -110,9 +119,7 @@ fn cast_then_call_is_ordered_without_waiting() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
   let _b = on_fabric(&fabric, "b@test");
-  let pid = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let pid = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("spawn");
   a.remote_cast(&pid, add(3)).expect("cast");
   a.remote_cast(&pid, add(4)).expect("cast");
   // The mailbox is FIFO: the call is handled after both casts.
@@ -123,9 +130,7 @@ fn cast_then_call_is_ordered_without_waiting() {
 fn spawning_on_self_short_circuits_to_a_local_spawn() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
-  let pid = a
-    .remote_spawn("a@test", "counter", unit(), None, WAIT)
-    .expect("local spawn");
+  let pid = run(a.remote_spawn("a@test", "counter", unit(), None, WAIT)).expect("local spawn");
   assert_eq!(pid.node().as_str(), "a@test");
   assert!(a.registry().has_route(&pid));
   a.remote_cast(&pid, add(2)).expect("local cast");
@@ -139,7 +144,10 @@ fn call_to_a_missing_remote_pid_is_noproc() {
   let _b = on_fabric(&fabric, "b@test");
   let ghost = Pid::from_parts(NodeName::new("b@test"), 9_999, 1);
   let call = postcard::to_allocvec(&CounterCall::Get).expect("encode");
-  assert_eq!(a.remote_call(&ghost, call, WAIT), Err(RemoteFault::NoProc));
+  assert_eq!(
+    run(a.remote_call(&ghost, call, WAIT)),
+    Err(RemoteFault::NoProc)
+  );
 }
 
 #[test]
@@ -157,7 +165,7 @@ fn unreachable_node_is_noproc_for_every_operation() {
   let elsewhere = Pid::from_parts(NodeName::new("z@test"), 1, 1);
   assert_eq!(a.remote_cast(&elsewhere, add(1)), Err(RemoteFault::NoProc));
   assert_eq!(
-    a.remote_spawn("z@test", "counter", unit(), None, WAIT),
+    run(a.remote_spawn("z@test", "counter", unit(), None, WAIT)),
     Err(RemoteFault::NoProc)
   );
 }
@@ -167,9 +175,7 @@ fn undecodable_cast_payload_is_a_decode_fault() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
   let _b = on_fabric(&fabric, "b@test");
-  let pid = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let pid = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("spawn");
   assert!(matches!(
     a.remote_cast(&pid, vec![0xff, 0xff]),
     Err(RemoteFault::Decode(_))
@@ -191,13 +197,13 @@ fn spawn_replies_reach_only_the_caller() {
   let c_spawn = {
     let c = Arc::clone(&c);
     std::thread::spawn(move || {
-      c.remote_spawn(
+      run(c.remote_spawn(
         "z@test",
         "counter",
         unit(),
         None,
         Duration::from_millis(300),
-      )
+      ))
     })
   };
   // Once z has the request, c's pending spawn #1 is registered.
@@ -207,9 +213,7 @@ fn spawn_replies_reach_only_the_caller() {
   ));
 
   // a's spawn #1 on b succeeds; its reply must not leak to c.
-  let pid = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("a spawn");
+  let pid = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("a spawn");
   assert_eq!(pid.node().as_str(), "b@test");
   assert_eq!(
     c_spawn.join().expect("join"),
@@ -258,9 +262,7 @@ fn remote_monitor_fires_when_the_target_exits() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
   let b = on_fabric(&fabric, "b@test");
-  let pid = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let pid = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("spawn");
   let (tx, rx) = flume::unbounded();
   a.remote_monitor(
     &pid,
@@ -281,9 +283,7 @@ fn demonitored_remote_monitor_never_fires() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
   let b = on_fabric(&fabric, "b@test");
-  let pid = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let pid = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("spawn");
   let (cancelled_tx, cancelled_rx) = flume::unbounded();
   let cancelled = a.remote_monitor(
     &pid,
@@ -314,9 +314,7 @@ fn demonitored_remote_monitor_never_fires() {
 #[test]
 fn local_demonitor_cancels_a_local_monitor() {
   let a = mesh("a@test");
-  let pid = a
-    .remote_spawn("a@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let pid = run(a.remote_spawn("a@test", "counter", unit(), None, WAIT)).expect("spawn");
   let (tx, rx) = flume::unbounded();
   let monitor = a.remote_monitor(
     &pid,
@@ -382,7 +380,7 @@ fn placed_spawn_without_eligible_nodes_is_noproc() {
   let policy =
     ClusterResourcePolicy::local_first(id_effect::ResourcePolicy::memory_cap_max_cpu(1.0));
   assert_eq!(
-    a.remote_spawn_placed(&[], &policy, "counter", unit(), None, WAIT),
+    run(a.remote_spawn_placed(&[], &policy, "counter", unit(), None, WAIT)),
     Err(RemoteFault::NoProc)
   );
 }
@@ -498,9 +496,7 @@ fn fanout_fails_only_when_every_member_fails() {
     Err(RemoteFault::NoProc)
   );
 
-  let live = a
-    .remote_spawn("a@test", "counter", unit(), None, WAIT)
-    .expect("spawn");
+  let live = run(a.remote_spawn("a@test", "counter", unit(), None, WAIT)).expect("spawn");
   groups.join("g", &live);
   assert_eq!(fanout_cast(&a, &groups, "g", &add(1)), Ok(1), "partial");
   assert_eq!(get(&a, &live), 1);
@@ -511,12 +507,8 @@ fn fanout_on_node_targets_only_that_node() {
   let fabric = MeshFabric::new();
   let a = on_fabric(&fabric, "a@test");
   let _b = on_fabric(&fabric, "b@test");
-  let local = a
-    .remote_spawn("a@test", "counter", unit(), None, WAIT)
-    .expect("local");
-  let remote = a
-    .remote_spawn("b@test", "counter", unit(), None, WAIT)
-    .expect("remote");
+  let local = run(a.remote_spawn("a@test", "counter", unit(), None, WAIT)).expect("local");
+  let remote = run(a.remote_spawn("b@test", "counter", unit(), None, WAIT)).expect("remote");
   let mut groups = ProcessGroups::new("a@test");
   groups.join("g", &local);
   groups.join("g", &remote);

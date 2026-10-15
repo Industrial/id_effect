@@ -1,30 +1,32 @@
 //! Supervision-tree semantics: strategies, restart policies, intensity
 //! escalation, shutdown protocol, and DynamicSupervisor.
+//!
+//! Every node runs on a `TestExecutor`: restarts, shutdown deadlines and
+//! intensity windows are measured on its virtual clock.
+
+mod common;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, run_blocking, succeed};
+use common::{JoinNode, advance, run, settle};
+use id_effect::Never;
+use id_effect::{Effect, fail, succeed, suspend, sync};
 use id_effect_process::{
-  ChildSpec, DynamicSupervisor, DynamicSupervisorSpec, ExitReason, Next, NodeName, Pid, Process,
-  ProcessCtx, ProcessNode, RestartPolicy, ShutdownPolicy, StartChildFn, Strategy, SupervisorHandle,
+  ChildSpec, DynamicSupervisor, DynamicSupervisorSpec, ExitReason, Next, Pid, Process, ProcessCtx,
+  ProcessNode, RestartPolicy, ShutdownPolicy, StartChildFn, Strategy, SupervisorHandle,
   SupervisorSpec,
 };
 
+/// A node on this test's `TestExecutor` (virtual time, driven by `common`).
 fn node() -> ProcessNode {
-  ProcessNode::threads(NodeName::new("suptest@local"))
+  JoinNode::new("suptest@local").node
 }
 
-fn wait_until(deadline_ms: u64, mut check: impl FnMut() -> bool) -> bool {
-  let deadline = std::time::Instant::now() + Duration::from_millis(deadline_ms);
-  while std::time::Instant::now() < deadline {
-    if check() {
-      return true;
-    }
-    std::thread::sleep(Duration::from_millis(2));
-  }
+/// Run the executor until it stalls, then evaluate `check`.
+fn settled(check: impl FnOnce() -> bool) -> bool {
+  settle();
   check()
 }
 
@@ -53,20 +55,20 @@ impl Process for Worker {
   type Error = String;
 
   fn init(witness: Arc<AtomicU32>, _ctx: ProcessCtx) -> Effect<Self, String, ()> {
-    Effect::new(move |_| {
+    sync(move || {
       witness.fetch_add(1, Ordering::SeqCst);
-      Ok(Worker { witness })
+      Worker { witness }
     })
   }
 
   fn handle_call(self, msg: WorkerCall, _ctx: ProcessCtx) -> Effect<(u32, Next<Self>), String, ()> {
-    Effect::new(move |_| match msg {
+    suspend(move || match msg {
       WorkerCall::Ping => {
         let starts = self.witness.load(Ordering::SeqCst);
-        Ok((starts, Next::Continue(self)))
+        succeed((starts, Next::Continue(self)))
       }
-      WorkerCall::Crash => Err("worker crash".to_string()),
-      WorkerCall::StopNormal => Ok((0, Next::Stop(ExitReason::Normal, self))),
+      WorkerCall::Crash => fail("worker crash".to_string()),
+      WorkerCall::StopNormal => succeed((0, Next::Stop(ExitReason::Normal, self))),
     })
   }
 }
@@ -77,7 +79,7 @@ fn worker_spec(id: &str, witness: &Arc<AtomicU32>) -> ChildSpec {
 }
 
 fn child_pid(handle: &SupervisorHandle, id: &str) -> Option<Pid> {
-  run_blocking(handle.which_children(T), ())
+  run(handle.which_children(T))
     .ok()?
     .into_iter()
     .find(|(cid, _)| cid == id)?
@@ -102,17 +104,18 @@ fn one_for_one_restarts_only_the_crashed_child() {
     .child(worker_spec("b", &w2))
     .start(&node);
 
-  assert!(wait_until(2_000, || w1.load(Ordering::SeqCst) == 1
-    && w2.load(Ordering::SeqCst) == 1));
+  assert!(settled(
+    || w1.load(Ordering::SeqCst) == 1 && w2.load(Ordering::SeqCst) == 1
+  ));
 
   let a_pid = child_pid(&handle, "a").expect("child a running");
   crash_child(&node, &a_pid);
 
   assert!(
-    wait_until(2_000, || w1.load(Ordering::SeqCst) == 2),
+    settled(|| w1.load(Ordering::SeqCst) == 2),
     "crashed child must restart"
   );
-  std::thread::sleep(Duration::from_millis(50));
+  settle();
   assert_eq!(w2.load(Ordering::SeqCst), 1, "sibling must not restart");
 
   let a_pid2 = child_pid(&handle, "a").expect("child a running again");
@@ -130,13 +133,15 @@ fn one_for_all_restarts_every_child() {
     .child(worker_spec("b", &w2))
     .start(&node);
 
-  assert!(wait_until(2_000, || w1.load(Ordering::SeqCst) == 1
-    && w2.load(Ordering::SeqCst) == 1));
+  assert!(settled(
+    || w1.load(Ordering::SeqCst) == 1 && w2.load(Ordering::SeqCst) == 1
+  ));
   let a_pid = child_pid(&handle, "a").expect("child a running");
   crash_child(&node, &a_pid);
 
-  assert!(wait_until(2_000, || w1.load(Ordering::SeqCst) == 2
-    && w2.load(Ordering::SeqCst) == 2));
+  assert!(settled(
+    || w1.load(Ordering::SeqCst) == 2 && w2.load(Ordering::SeqCst) == 2
+  ));
 }
 
 #[test]
@@ -152,13 +157,14 @@ fn rest_for_one_restarts_crashed_child_and_later_siblings_only() {
     .child(worker_spec("c", &w3))
     .start(&node);
 
-  assert!(wait_until(2_000, || w3.load(Ordering::SeqCst) == 1));
+  assert!(settled(|| w3.load(Ordering::SeqCst) == 1));
   let b_pid = child_pid(&handle, "b").expect("child b running");
   crash_child(&node, &b_pid);
 
-  assert!(wait_until(2_000, || w2.load(Ordering::SeqCst) == 2
-    && w3.load(Ordering::SeqCst) == 2));
-  std::thread::sleep(Duration::from_millis(50));
+  assert!(settled(
+    || w2.load(Ordering::SeqCst) == 2 && w3.load(Ordering::SeqCst) == 2
+  ));
+  settle();
   assert_eq!(
     w1.load(Ordering::SeqCst),
     1,
@@ -174,11 +180,11 @@ fn transient_child_is_not_restarted_after_graceful_stop() {
     .child(worker_spec("a", &w).with_restart(RestartPolicy::Transient))
     .start(&node);
 
-  assert!(wait_until(2_000, || w.load(Ordering::SeqCst) == 1));
+  assert!(settled(|| w.load(Ordering::SeqCst) == 1));
   let a_pid = child_pid(&handle, "a").expect("running");
   node.exit(&a_pid, ExitReason::Shutdown);
 
-  std::thread::sleep(Duration::from_millis(100));
+  settle();
   assert_eq!(
     w.load(Ordering::SeqCst),
     1,
@@ -196,19 +202,108 @@ fn intensity_exceeded_stops_supervisor_and_escalates() {
     .child(worker_spec("a", &w))
     .start(&node);
 
-  assert!(wait_until(2_000, || w.load(Ordering::SeqCst) == 1));
+  assert!(settled(|| w.load(Ordering::SeqCst) == 1));
 
   for _ in 0..2 {
     if let Some(pid) = child_pid(&handle, "a") {
       crash_child(&node, &pid);
-      std::thread::sleep(Duration::from_millis(50));
+      settle();
     }
   }
 
   assert!(
-    wait_until(2_000, || node.table().lookup(handle.pid()).is_none()),
+    settled(|| node.table().lookup(handle.pid()).is_none()),
     "supervisor must stop once intensity is exceeded"
   );
+}
+
+#[test]
+fn intensity_window_slides_on_virtual_time() {
+  let node = node();
+  let w = Arc::new(AtomicU32::new(0));
+  // 1 restart per 10 s: two crashes 10 s apart (virtual) are both restarted.
+  let handle = SupervisorSpec::new(Strategy::OneForOne)
+    .intensity(1, Duration::from_secs(10))
+    .child(worker_spec("a", &w))
+    .start(&node);
+  assert!(settled(|| w.load(Ordering::SeqCst) == 1));
+
+  crash_child(&node, &child_pid(&handle, "a").expect("running"));
+  assert!(settled(|| w.load(Ordering::SeqCst) == 2), "first restart");
+
+  advance(Duration::from_secs(11));
+  crash_child(&node, &child_pid(&handle, "a").expect("running again"));
+  assert!(
+    settled(|| w.load(Ordering::SeqCst) == 3),
+    "the first restart left the window"
+  );
+  assert!(node.table().lookup(handle.pid()).is_some(), "within budget");
+
+  // A third crash inside the same 10 s breaches the budget.
+  crash_child(
+    &node,
+    &child_pid(&handle, "a").expect("running a third time"),
+  );
+  assert!(settled(|| node.table().lookup(handle.pid()).is_none()));
+  assert_eq!(w.load(Ordering::SeqCst), 3);
+}
+
+#[test]
+fn shutdown_timeout_escalates_to_kill_on_virtual_time() {
+  let node = node();
+  let w = Arc::new(AtomicU32::new(0));
+  let handle = SupervisorSpec::new(Strategy::OneForOne)
+    .child(ChildSpec::worker::<Stubborn, _>("s", {
+      let w = Arc::clone(&w);
+      move || (Arc::clone(&w), ())
+    }))
+    .start(&node);
+  assert!(settled(|| w.load(Ordering::SeqCst) == 1));
+  let child = child_pid(&handle, "s").expect("running");
+
+  let stop = handle
+    .stop::<Never, id_effect::HNil>(&node, ShutdownPolicy::Infinity)
+    .fork_root(Arc::clone(node.runtime().executor()));
+  settle();
+  // The root asks its child to shut down with the default 5 s deadline;
+  // the child traps it, so only the deadline's kill ends it.
+  assert!(node.table().lookup(&child).is_some(), "trapped shutdown");
+  advance(Duration::from_secs(4));
+  assert!(
+    node.table().lookup(&child).is_some(),
+    "deadline not reached"
+  );
+  advance(Duration::from_secs(1));
+  assert!(
+    node.table().lookup(&child).is_none(),
+    "killed at virtual 5 s"
+  );
+  assert!(stop.is_done());
+}
+
+/// Worker that traps exits, so a trappable `Shutdown` does not stop it.
+struct Stubborn;
+
+impl Process for Stubborn {
+  type Args = Arc<AtomicU32>;
+  type Env = ();
+  type Call = ();
+  type Reply = ();
+  type Cast = ();
+  type Info = ();
+  type Error = Never;
+
+  fn init(witness: Arc<AtomicU32>, ctx: ProcessCtx) -> Effect<Self, Never, ()> {
+    sync(move || {
+      ctx.trap_exit(true);
+      witness.fetch_add(1, Ordering::SeqCst);
+      Stubborn
+    })
+  }
+
+  fn handle_call(self, _: (), _ctx: ProcessCtx) -> Effect<((), Next<Self>), Never, ()> {
+    succeed(((), Next::Continue(self)))
+  }
 }
 
 #[test]
@@ -223,14 +318,15 @@ fn nested_supervisor_shutdown_stops_grandchildren() {
     }))
     .start(&node);
 
-  assert!(wait_until(2_000, || w.load(Ordering::SeqCst) == 1));
+  assert!(settled(|| w.load(Ordering::SeqCst) == 1));
   let before = node.table().len();
   assert!(before >= 3, "root + inner + leaf alive, got {before}");
 
-  pollster::block_on(root.stop(&node, ShutdownPolicy::Timeout(Duration::from_secs(2))));
+  run::<(), Never>(root.stop(&node, ShutdownPolicy::Timeout(Duration::from_secs(2))))
+    .expect("tree stopped");
 
   assert!(
-    wait_until(2_000, || node.table().is_empty()),
+    settled(|| node.table().is_empty()),
     "whole tree must be gone, {} processes remain",
     node.table().len()
   );
@@ -242,20 +338,17 @@ fn start_child_and_terminate_child_manage_dynamic_members() {
   let w = Arc::new(AtomicU32::new(0));
   let handle = SupervisorSpec::new(Strategy::OneForOne).start(&node);
 
-  assert_eq!(run_blocking(handle.count_children(T), ()), Ok(0));
+  assert_eq!(run(handle.count_children(T)), Ok(0));
 
-  let started = run_blocking(handle.start_child(worker_spec("a", &w), T), ())
+  let started = run(handle.start_child(worker_spec("a", &w), T))
     .expect("call ok")
     .expect("start ok");
   assert!(node.table().lookup(&started).is_some());
-  assert_eq!(run_blocking(handle.count_children(T), ()), Ok(1));
+  assert_eq!(run(handle.count_children(T)), Ok(1));
 
-  assert_eq!(run_blocking(handle.terminate_child("a", T), ()), Ok(true));
-  assert!(wait_until(2_000, || node
-    .table()
-    .lookup(&started)
-    .is_none()));
-  assert_eq!(run_blocking(handle.count_children(T), ()), Ok(0));
+  assert_eq!(run(handle.terminate_child("a", T)), Ok(true));
+  assert!(settled(|| node.table().lookup(&started).is_none()));
+  assert_eq!(run(handle.count_children(T)), Ok(0));
 }
 
 // ── DynamicSupervisor ──────────────────────────────────────────
@@ -294,14 +387,14 @@ fn dynamic_supervisor_starts_restarts_and_counts_children() {
   let start: StartChildFn =
     Arc::new(|node, sup_pid| Ok(node.spawn_linked_to::<Echo>(sup_pid, (), ()).pid().clone()));
 
-  let pid = run_blocking(sup.start_dyn_child(Arc::clone(&start), T), ())
+  let pid = run(sup.start_dyn_child(Arc::clone(&start), T))
     .expect("call ok")
     .expect("start ok");
-  assert_eq!(run_blocking(sup.count_dyn_children(T), ()), Ok(1));
+  assert_eq!(run(sup.count_dyn_children(T)), Ok(1));
 
   // Crash the child: Permanent policy must replace it.
   node.exit(&pid, ExitReason::Error("boom".to_string()));
-  assert!(wait_until(2_000, || {
-    node.table().lookup(&pid).is_none() && run_blocking(sup.count_dyn_children(T), ()) == Ok(1)
+  assert!(settled(|| {
+    node.table().lookup(&pid).is_none() && run(sup.count_dyn_children(T)) == Ok(1)
   }));
 }

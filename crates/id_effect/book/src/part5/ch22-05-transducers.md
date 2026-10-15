@@ -1,17 +1,17 @@
 # Transducers on streams
 
-[`transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) provides [`Transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) with the same shape as [`id_effect_optics::Transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_optics/src/transducer.rs) (kept local to avoid a crate dependency cycle).
+[`transducer.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) provides [`Transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs), a composable reducing-function transform. It is kernel-independent and is the same type `id_effect_optics::Transducer` re-exports.
 
 ```rust
-use id_effect::{Stream, Transducer, transducer_filter, transducer_map};
+use id_effect::{Exit, Stream, transducer_filter, transducer_map};
 
 let xf = transducer_map(|n: i32| n + 1).compose(transducer_filter(|n: &i32| n % 2 == 0));
-let out = Stream::from_iterable(1..=5).via_transducer(xf);
-// [2, 4, 6]
+let out = Stream::<i32>::from_iterable(1..=5).via_transducer(xf).run_collect().block_on();
+assert_eq!(out, Exit::succeed(vec![2, 4, 6]));
 ```
 
-- **`via_transducer`** — alias of **`transduce_items`**: map/filter pipeline per element, preserving order.
-- **`Transducer::compose`** — inner transducer runs first, then outer (same as optics).
-- Built-ins: **`transducer_map`**, **`transducer_filter`**.
+- **`via_transducer`** — alias of **`transduce_items`**: a map/filter pipeline per element, preserving order. The transducer keeps the element type (`Transducer<A, Vec<A>>`).
+- **`outer.compose(inner)`** — wraps `inner`'s reducer in `outer`'s, so elements pass through `outer` first (above: `+ 1`, then the even filter).
+- Built-ins: **`transducer_map`**, **`transducer_filter`**, **`transducer_take`** (the crate-root names of `streaming::transducer::{map, filter, take}`).
 
-For list-only transduction without streams, use `id_effect_optics` directly or `Transducer::transduce` on iterators.
+For list-only transduction without streams, call `Transducer::transduce(iter, reducer, init)` directly.

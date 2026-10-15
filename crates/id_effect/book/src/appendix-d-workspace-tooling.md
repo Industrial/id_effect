@@ -4,12 +4,20 @@ This appendix covers **authoring** and **static analysis** pieces that most appl
 
 ## `id_effect_macro` and `id_effect_proc_macro`
 
-The **`effect!`** do-notation macro is split across:
+The macro surface is split across two crates, both re-exported at the `id_effect` root (and in
+`id_effect::macros`):
 
-- **`id_effect_proc_macro`** — procedural macro crate (actual `TokenStream` → `TokenStream` expansion).
-- **`id_effect_macro`** — user-facing definitions and re-exports consumed as a normal dependency.
+- **`id_effect_proc_macro`** — procedural macros: `effect!` / `effect_local!` (do-notation over
+  a typed `R`), `caps!`, and the derives (`Schema`, `EffectData`, `ProviderSpec` as
+  `ProviderSpecDerive`, `Optics`, `Fsm`, …).
+- **`id_effect_macro`** — declarative macros: `pipe!` and `err!`. (The 0.6 capability-DI macros
+  `provide!`, `providers!`, `require!` and `mock_capability!` were removed in 0.7.)
 
-When debugging “why doesn’t my `effect!` compile?”, use **`cargo expand`** on a small repro and inspect the generated bind chain. Application code should keep following [The effect! Macro](./part1/ch03-00-effect-macro.md); these crates are implementation details unless you extend the macro system.
+Expansions name root paths (`::id_effect::HCons`, `::id_effect::__private::…`), so depend on
+`id_effect` rather than on these crates directly. The 0.7 trybuild suite
+(`crates/id_effect/tests/ui`) pins the macro diagnostics.
+
+When debugging “why doesn’t my `effect!` compile?”, use **`cargo expand`** on a small repro and inspect the generated code. Application code should keep following [The effect! Macro](./part1/ch03-00-effect-macro.md); these crates are implementation details unless you extend the macro system.
 
 ## `id_effect_lint`
 

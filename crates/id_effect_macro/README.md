@@ -9,21 +9,25 @@ expansions refer to `::id_effect::…` paths. The procedural `effect!` macro and
 |-------|------------|
 | `pipe!(x, f, g)` | `g(f(x))` — left-to-right application |
 | `err!(A \| B \| C)` | `Or<A, Or<B, C>>` — type-level error union (`err!()` is `()`) |
-| `caps!(A, B)` | `CapList<(Cap<A>, Cap<B>)>` — required capability set (`caps!()` is `Env`) |
-| `provide!(P)` | `ProviderBox::new::<P>()` |
-| `providers!(name: [P, Q])` | `[ProviderBox; 2]` — a named provider bundle |
-| `mock_capability!(M, Svc, "id", \|\| value)` | a `ProviderSpec` struct `M` that supplies `Svc` |
-| `require!(Key)` | only valid inside `effect!` (a `compile_error!` elsewhere) |
+
+### Removed in 0.7: the v1 capability-DI macros
+
+`caps!`, `provide!`, `providers!`, `require!` and `mock_capability!` expanded to the 0.6 runtime
+capability types (`Env`, `CapList`, `ProviderBox`, `ProviderSpec`) and were removed with the v1
+kernel (k-retire-v1). Their 0.7 replacements:
+
+| 0.6 macro | 0.7 replacement |
+|-----------|-----------------|
+| `caps!(A, B)` (`CapList<(Cap<A>, Cap<B>)>`) | `id_effect::caps!(A, B)`, now the proc macro from `id_effect_proc_macro` (`HCons<A, HCons<B, HNil>>`) |
+| `provide!(P)` | a `Layer` (`P::layer()`, `Layer::succeed(hlist![..])`) |
+| `providers!(name: [P, Q])` | `P::layer().merge(Q::layer())` |
+| `mock_capability!(M, Svc, "id", \|\| v)` | `.provide(v)` / `.provide_env(hlist![v])` / `Layer::succeed(hlist![v])` |
+| `require!(Key)` | `~Key` inside `effect!`, `need::<Key>()` elsewhere |
 
 ## Quick start
 
 ```rust
-use id_effect::{Cap, Or, build_env, err, mock_capability, pipe, providers};
-
-#[derive(Clone)]
-struct Greeting(&'static str);
-
-mock_capability!(GreetingMock, Greeting, "greeting/mock", || Greeting("hello"));
+use id_effect::{Or, err, pipe};
 
 struct ParseErr;
 struct RangeErr;
@@ -35,9 +39,6 @@ fn parse_percent(s: &str) -> Result<u8, err!(ParseErr | RangeErr)> {
 
 assert_eq!(pipe!(" 7 ", str::trim, str::len), 1);
 assert!(parse_percent("42").is_ok());
-
-let env = build_env(providers!(dev: [GreetingMock])).unwrap();
-assert_eq!(env.get::<Cap<Greeting>>().0, "hello");
 ```
 
 See [`examples/macros_tour.rs`](examples/macros_tour.rs) and the expansion tests in

@@ -3,8 +3,7 @@
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
 use crate::sql_journal::JournalRow;
-use id_effect::Effect;
-use id_effect::kernel::box_future;
+use id_effect::{Effect, from_async};
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{PgPool, Row};
 use std::marker::PhantomData;
@@ -164,41 +163,35 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EsEntityEv
 impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore<E>
   for EsEntityEventStore<E>
 {
-  fn append(
-    &self,
-    stream_id: &str,
-    events: &[E],
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let backend = self.backend.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let latest = backend
-          .select_from(&stream_id, 1)
-          .await?
-          .into_iter()
-          .map(|(v, _, _)| v)
-          .max()
-          .unwrap_or(0);
+    from_async(move || async move {
+      let latest = backend
+        .select_from(&stream_id, 1)
+        .await?
+        .into_iter()
+        .map(|(v, _, _)| v)
+        .max()
+        .unwrap_or(0);
 
-        let mut out = Vec::with_capacity(events.len());
-        let mut rows = Vec::with_capacity(events.len());
-        for (i, payload) in events.into_iter().enumerate() {
-          let version = latest + i as u64 + 1;
-          let event_id = Uuid::new_v4().to_string();
-          let json =
-            serde_json::to_string(&payload).map_err(|e| EventStoreError::Serde(e.to_string()))?;
-          rows.push((version, event_id.clone(), json));
-          out.push(StoredEvent {
-            event_id,
-            version,
-            payload,
-          });
-        }
-        backend.append_rows(&stream_id, &rows).await?;
-        Ok(out)
-      })
+      let mut out = Vec::with_capacity(events.len());
+      let mut rows = Vec::with_capacity(events.len());
+      for (i, payload) in events.into_iter().enumerate() {
+        let version = latest + i as u64 + 1;
+        let event_id = Uuid::new_v4().to_string();
+        let json =
+          serde_json::to_string(&payload).map_err(|e| EventStoreError::Serde(e.to_string()))?;
+        rows.push((version, event_id.clone(), json));
+        out.push(StoredEvent {
+          event_id,
+          version,
+          payload,
+        });
+      }
+      backend.append_rows(&stream_id, &rows).await?;
+      Ok(out)
     })
   }
 
@@ -206,43 +199,39 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore
     &self,
     stream_id: &str,
     from_version: u64,
-  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError, ()> {
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let backend = self.backend.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let rows = backend.select_from(&stream_id, from_version).await?;
-        rows
-          .into_iter()
-          .map(|(version, event_id, json)| {
-            let payload: E =
-              serde_json::from_str(&json).map_err(|e| EventStoreError::Serde(e.to_string()))?;
-            Ok(StoredEvent {
-              event_id,
-              version,
-              payload,
-            })
+    from_async(move || async move {
+      let rows = backend.select_from(&stream_id, from_version).await?;
+      rows
+        .into_iter()
+        .map(|(version, event_id, json)| {
+          let payload: E =
+            serde_json::from_str(&json).map_err(|e| EventStoreError::Serde(e.to_string()))?;
+          Ok(StoredEvent {
+            event_id,
+            version,
+            payload,
           })
-          .collect()
-      })
+        })
+        .collect()
     })
   }
 
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError, ()> {
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let backend = self.backend.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        Ok(
-          backend
-            .select_from(&stream_id, 1)
-            .await?
-            .into_iter()
-            .map(|(v, _, _)| v)
-            .max()
-            .unwrap_or(0),
-        )
-      })
+    from_async(move || async move {
+      Ok(
+        backend
+          .select_from(&stream_id, 1)
+          .await?
+          .into_iter()
+          .map(|(v, _, _)| v)
+          .max()
+          .unwrap_or(0),
+      )
     })
   }
 }

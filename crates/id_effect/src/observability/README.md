@@ -1,29 +1,27 @@
-# `observability` — Stratum 15: metrics & tracing
+# `observability` — log levels, metrics, spans and the tracing buffer
 
-**Instrumentation** for effects and fibers: [`Metric`](metric.rs) (counters, gauges, histograms via `metric_make`), and [`tracing`](tracing.rs) integration — [`TracingConfig`](tracing.rs), [`with_span`](tracing.rs), [`emit_effect_event`](tracing.rs) / [`emit_fiber_event`](tracing.rs), [`install_tracing_layer`](tracing.rs), [`snapshot_tracing`](tracing.rs), [`TracingFiberRefs`](tracing.rs).
+| Module | Items |
+|--------|-------|
+| `log_level` | `LogLevel` (shared with `id_effect_config` and `id_effect_logger`). |
+| `metric` | Effect.ts `Metric` semantics: `Counter`, `Gauge`, `Histogram` (`Boundaries`), `Summary`, `Frequency`, the `Metric` trait (`update`, `track*`), `MetricKey` / `MetricState`. |
+| `registry` | `MetricRegistry` (`global()` or isolated `new()`), tagged snapshots, `MetricListener`. |
+| `mod.rs` | `Span`, `SpanHook`, `Effect::with_span` / `with_span_attrs` / `with_span_hook`, `tag_metrics`: the hooks `id_effect_opentelemetry` builds on. |
+| `tracing` | The in-process buffer: `install_tracing_layer`, `snapshot_tracing`, `tracing_hook`, `annotate_current_span`, `emit_*` / `record_*` events. |
 
-## What lives here
+```rust
+use id_effect::{Effect, Exit, Metric, MetricRegistry, succeed};
 
-| Module | Role |
-|--------|------|
-| `metric` | `Metric`, `metric_make` — structured metrics keyed in hash maps. |
-| `tracing` | Spans, fiber/effect events, snapshotting, fiber-ref bridges for trace context. |
+let registry = MetricRegistry::new();
+let requests = registry.counter("requests");
+let eff: Effect<u32, ()> = requests.track_all(1, succeed(7)).with_span("handler");
+assert_eq!(eff.block_on(), Exit::succeed(7));
+```
 
-## What it is used for
+Spans are recorded only under a span hook: wrap the program with
+`.with_span_hook(tracing_hook())` for the in-process buffer, or use the OpenTelemetry layer of
+`id_effect_opentelemetry`. All per-fiber state (current span, metric tags) lives in `FiberRef`
+slots, never in thread-locals.
 
-- **SLIs** for schedulers, pools, queues (rates, queue depth, retries).
-- **Correlating** logs/traces with `FiberId` and effect boundaries.
-- **Test assertions** on span trees via snapshot helpers.
+Keep span names stable and metric tags low-cardinality (no unbounded user ids as tags).
 
-## Best practices
-
-1. **Install** tracing layers once at startup (`install_tracing_layer`); avoid per-request layer stacks.
-2. **Keep span names stable** — they become dashboards and alerts.
-3. **Cardinality** — avoid high-cardinality labels on `Metric` keys (user IDs as unbounded labels burn memory).
-4. **Pair** with [`concurrency::FiberRef`](../concurrency/README.md) when you need per-fiber trace baggage.
-
-## See also
-
-- [`SPEC.md`](../../SPEC.md) §Stratum 15.
-- [`runtime`](../runtime/README.md) — where execution starts; hooks often wrap `run_*`.
-- [`scheduling`](../scheduling/README.md) — clock + metrics for retry storms.
+The 0.6 `metric_make`, the free `with_span` and `TracingFiberRefs` were removed in 0.7.
