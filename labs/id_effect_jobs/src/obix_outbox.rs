@@ -1,6 +1,6 @@
 //! Transactional outbox backed by [obix](https://docs.rs/obix) on a shared [`PgPool`](sqlx::PgPool).
 
-use id_effect::Effect;
+use id_effect::next::{Effect, from_async};
 use obix::{MailboxConfig, Outbox, OutboxEventHandler, OutboxEventJobConfig};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
@@ -65,25 +65,23 @@ impl ObixOutbox {
   }
 
   /// Append an outbox row in its own transaction.
-  pub fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError, ()> {
+  pub fn insert(&self, record: OutboxRecord) -> Effect<OutboxRecord, OutboxError> {
     let inner = self.inner.clone();
     let stored = record.clone();
-    Effect::new_async(move |_r| {
-      Box::pin(async move {
-        let event = JobsOutboxEvent::from_record(&stored);
-        let mut op = inner
-          .begin_op()
-          .await
-          .map_err(|e| OutboxError::Storage(e.to_string()))?;
-        inner
-          .publish_persisted_in_op(&mut op, event)
-          .await
-          .map_err(|e| OutboxError::Storage(e.to_string()))?;
-        op.commit()
-          .await
-          .map_err(|e| OutboxError::Storage(e.to_string()))?;
-        Ok(stored)
-      })
+    from_async(move || async move {
+      let event = JobsOutboxEvent::from_record(&stored);
+      let mut op = inner
+        .begin_op()
+        .await
+        .map_err(|e| OutboxError::Storage(e.to_string()))?;
+      inner
+        .publish_persisted_in_op(&mut op, event)
+        .await
+        .map_err(|e| OutboxError::Storage(e.to_string()))?;
+      op.commit()
+        .await
+        .map_err(|e| OutboxError::Storage(e.to_string()))?;
+      Ok(stored)
     })
   }
 

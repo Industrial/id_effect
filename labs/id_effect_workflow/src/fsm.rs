@@ -120,7 +120,7 @@ where
 mod tests {
   use super::*;
   use crate::DurableWorkflowLog;
-  use id_effect::{Effect, effect, run_blocking};
+  use id_effect::next::{Effect, effect_next};
   use id_effect_fsm::TransitionTable;
 
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -182,14 +182,14 @@ mod tests {
 
   #[test]
   fn effect_program_steps_door() {
-    let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>, ()> = effect! {
-      let mut log = ~DurableWorkflowLog::open_in_memory();
+    let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>> = effect_next!({
+      let mut log = DurableWorkflowLog::open_in_memory()?;
       let mut m = door_machine();
-      ~register_fsm(&mut log, "wf", &m);
-      ~step_durable(&mut log, "wf", &mut m, DoorEvt::Open, "open");
+      register_fsm(&mut log, "wf", &m)?;
+      step_durable(&mut log, "wf", &mut m, DoorEvt::Open, "open")?;
       m.state()
-    };
-    let final_state = run_blocking(program, ()).expect("run");
+    });
+    let final_state = program.block_on().into_result().expect("run");
     assert_eq!(final_state, Door::Open);
   }
 }

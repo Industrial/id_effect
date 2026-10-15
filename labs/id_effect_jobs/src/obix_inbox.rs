@@ -1,6 +1,6 @@
 //! Idempotent consumer inbox backed by [obix](https://docs.rs/obix) + [job](https://docs.rs/job).
 
-use id_effect::Effect;
+use id_effect::next::{Effect, from_async};
 use job::Jobs;
 use obix::prelude::es_entity;
 use obix::{Inbox, InboxConfig, InboxError as ObixInboxError, InboxHandler, InboxIdempotencyKey};
@@ -49,20 +49,18 @@ impl ObixInbox {
     &self,
     idempotency_key: impl Into<InboxIdempotencyKey>,
     event: P,
-  ) -> Effect<InboxPersistResult, JobError, ()>
+  ) -> Effect<InboxPersistResult, JobError>
   where
     P: Serialize + Send + Sync + 'static,
   {
     let inbox = self.inner.clone();
     let key = idempotency_key.into();
-    Effect::new_async(move |_r| {
-      Box::pin(async move {
-        match inbox.persist_and_queue_job(key, event).await {
-          Ok(es_entity::Idempotent::Executed(_)) => Ok(InboxPersistResult::Queued),
-          Ok(es_entity::Idempotent::AlreadyApplied) => Ok(InboxPersistResult::AlreadyApplied),
-          Err(e) => Err(map_inbox_err(e)),
-        }
-      })
+    from_async(move || async move {
+      match inbox.persist_and_queue_job(key, event).await {
+        Ok(es_entity::Idempotent::Executed(_)) => Ok(InboxPersistResult::Queued),
+        Ok(es_entity::Idempotent::AlreadyApplied) => Ok(InboxPersistResult::AlreadyApplied),
+        Err(e) => Err(map_inbox_err(e)),
+      }
     })
   }
 }

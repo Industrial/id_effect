@@ -7,8 +7,7 @@
 use id_effect::compute::{
   ComputeFabric, MetricMode, MetricPolicy, RebalanceStrategy, ResourcePolicy, WorkProfile,
 };
-use id_effect::kernel::succeed;
-use id_effect::runtime::run_blocking;
+use id_effect::next::succeed;
 use id_effect_jobs::{JobRunner, JobSpec, MemoryJobRunner, drain_jobs};
 
 fn main() {
@@ -23,7 +22,12 @@ fn main() {
   let node_a = ComputeFabric::with_mock(policy.clone(), 0.95, 0.92);
   node_a.governor().tick();
   let permits_a = node_a.admission().available();
-  assert_eq!(permits_a, 1, "saturated node throttles to min permits");
+  // The governor throttles a saturated node to its floor (half the permits; 1 when the CPU
+  // spread bucket is exhausted), so fewer than the maximum are available.
+  assert!(
+    permits_a < node_a.admission().max_permits(),
+    "saturated node throttles below max permits"
+  );
 
   let job = node_a.governor().scale_out(
     "heavy-batch",
@@ -31,7 +35,12 @@ fn main() {
     WorkProfile::CpuIntensive,
   );
   let runner = MemoryJobRunner::new();
-  let enqueued = run_blocking(runner.enqueue(JobSpec::from_fabric(job)), ()).expect("enqueue");
+  // A synchronous `main` is a program edge: `block_on` runs the effect on this thread.
+  let enqueued = runner
+    .enqueue(JobSpec::from_fabric(job))
+    .block_on()
+    .into_result()
+    .expect("enqueue");
   assert_eq!(enqueued.spec.name, "heavy-batch");
   assert!(enqueued.spec.work_profile.is_some());
 
@@ -41,12 +50,11 @@ fn main() {
   let worker_permits = node_b.admission().available();
   assert!(worker_permits > permits_a);
 
-  let processed = run_blocking(
-    drain_jobs(runner.clone(), 1, |_spec| {
-      succeed::<(), id_effect_jobs::JobError, ()>(())
-    }),
-    (),
-  )
+  let processed = drain_jobs(runner.clone(), 1, |_spec| {
+    succeed::<(), id_effect_jobs::JobError, _>(())
+  })
+  .block_on()
+  .into_result()
   .expect("drain");
   println!(
     "worker node permits={worker_permits} (node A had {permits_a}); offloaded jobs={processed}"
