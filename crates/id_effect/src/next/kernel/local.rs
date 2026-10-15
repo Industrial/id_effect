@@ -93,8 +93,9 @@ enum LInstr {
   Step(LStepFn),
   /// Suspend on a `'static`, `!Send` future built from the env and the fiber.
   Async(LAsyncFn),
-  /// `inner` followed by `conts` in order (repeated `map`/`flat_map` push here).
-  Seq(Box<LInstr>, Vec<LCont>),
+  /// `inner` followed by `conts` in order (repeated `map`/`flat_map` push here). Boxed as one
+  /// unit, as `Instr::Seq` is: moving the effect while building stays a tag and a pointer.
+  Seq(Box<(LInstr, Vec<LCont>)>),
   /// Runs on success and failure (`catch`, `exit`, `map_err`, finalizers).
   Fold(Box<LInstr>, LHandler),
   /// Run the inner instruction under a different env (`provide`).
@@ -114,17 +115,6 @@ enum LFrame {
 /// Instructions per poll before the local runloop yields (same budget as the `Send` runloop).
 const BUDGET: u32 = 2048;
 
-fn catch_step<T>(f: impl FnOnce() -> T) -> Result<T, Cause<LBox>> {
-  catch_unwind(AssertUnwindSafe(f)).map_err(cause_from_panic)
-}
-
-fn guard(f: impl FnOnce() -> LInstr) -> LInstr {
-  match catch_step(f) {
-    Ok(i) => i,
-    Err(c) => LInstr::Pure(Err(c)),
-  }
-}
-
 /// The `!Send` erased interpreter (mirrors `Runloop`).
 struct LocalRunloop {
   cur: Option<LInstr>,
@@ -135,14 +125,17 @@ struct LocalRunloop {
 }
 
 impl LocalRunloop {
-  fn unwind(&mut self, mut exit: LExit) -> Result<LInstr, LExit> {
+  /// Pops frames until a continuation consumes `exit` and returns its next instruction, or
+  /// `LInstr::Pure(exit)` once the stack is empty (mirrors `Runloop::unwind`).
+  #[inline(always)]
+  fn unwind(&mut self, mut exit: LExit) -> LInstr {
     while let Some(frame) = self.stack.pop() {
       match frame {
         LFrame::Cont(k) => match exit {
-          Ok(v) => return Ok(guard(move || k(v))),
+          Ok(v) => return k(v),
           Err(c) => exit = Err(c),
         },
-        LFrame::Fold(h) => return Ok(guard(move || h(exit))),
+        LFrame::Fold(h) => return h(exit),
         LFrame::Env(e) => self.env = e,
         LFrame::Mask(m) => {
           self.fiber.set_mask(m);
@@ -152,89 +145,177 @@ impl LocalRunloop {
         }
       }
     }
-    Err(exit)
+    LInstr::Pure(exit)
   }
 }
 
 impl Future for LocalRunloop {
   type Output = LExit;
 
+  /// One poll under a single panic boundary (mirrors `Runloop::poll`): a panicking step
+  /// re-enters the interpreter as `Die` and unwinds the frame stack.
   fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<LExit> {
     let this = &mut *self;
     let mut budget = BUDGET;
     loop {
-      if let Some(fut) = this.fut.as_mut() {
-        let exit = if this.fiber.should_interrupt() {
-          Err(Cause::Interrupt(this.fiber.id()))
+      match catch_unwind(AssertUnwindSafe(|| this.drive(cx, &mut budget))) {
+        Ok(p) => return p,
+        Err(payload) => {
+          this.fut = None;
+          this.cur = Some(LInstr::Pure(Err(cause_from_panic(payload))));
+        }
+      }
+    }
+  }
+}
+
+impl LocalRunloop {
+  /// The interpreter loop (mirrors `Runloop::drive`: the instruction lives in a local, fresh
+  /// futures are polled at once, binds go through [`feed`](Self::feed)).
+  fn drive(&mut self, cx: &mut Context<'_>, budget: &mut u32) -> Poll<LExit> {
+    let mut instr = match self.fut.as_mut() {
+      Some(fut) => {
+        let exit = if self.fiber.should_interrupt() {
+          Err(Cause::Interrupt(self.fiber.id()))
         } else {
-          match catch_step(|| fut.as_mut().poll(cx)) {
-            Ok(Poll::Pending) => {
-              this.fiber.register_waker(cx.waker());
-              if this.fiber.should_interrupt() {
-                continue;
+          match fut.as_mut().poll(cx) {
+            Poll::Ready(exit) => exit,
+            Poll::Pending => match self.suspend(cx) {
+              Some(i) => {
+                self.cur = Some(i);
+                return self.drive(cx, budget);
               }
-              return Poll::Pending;
-            }
-            Ok(Poll::Ready(v)) => v,
-            Err(c) => Err(c),
+              None => return Poll::Pending,
+            },
           }
         };
-        this.fut = None;
-        this.cur = Some(LInstr::Pure(exit));
+        self.fut = None;
+        LInstr::Pure(exit)
       }
-      let Some(mut instr) = this.cur.take() else {
-        unreachable!("next: local runloop polled after completion");
-      };
-      if !matches!(instr, LInstr::Pure(Err(_))) && this.fiber.should_interrupt() {
-        instr = LInstr::Pure(Err(Cause::Interrupt(this.fiber.id())));
+      None => match self.cur.take() {
+        Some(i) => i,
+        None => unreachable!("next: local runloop polled after completion"),
+      },
+    };
+    loop {
+      if !matches!(instr, LInstr::Pure(Err(_))) && self.fiber.should_interrupt() {
+        instr = LInstr::Pure(Err(Cause::Interrupt(self.fiber.id())));
       }
-      match instr {
-        LInstr::Pure(exit) => match this.unwind(exit) {
-          Ok(next) => this.cur = Some(next),
-          Err(exit) => return Poll::Ready(exit),
-        },
-        LInstr::Step(f) => {
-          let (env, fiber) = (&this.env, &this.fiber);
-          this.cur = Some(guard(|| f(env, fiber)));
-        }
-        LInstr::Async(f) => {
-          let (env, fiber) = (&this.env, &this.fiber);
-          match catch_step(|| f(env, fiber)) {
-            Ok(fut) => this.fut = Some(fut),
-            Err(c) => this.cur = Some(LInstr::Pure(Err(c))),
+      instr = match instr {
+        LInstr::Pure(exit) => {
+          if self.stack.is_empty() {
+            return Poll::Ready(exit);
+          }
+          match self.feed(exit, cx, budget) {
+            Some(next) => next,
+            None => return Poll::Pending,
           }
         }
-        LInstr::Seq(inner, conts) => {
-          this.stack.extend(conts.into_iter().rev().map(LFrame::Cont));
-          this.cur = Some(*inner);
+        LInstr::Step(f) => f(&self.env, &self.fiber),
+        LInstr::Async(f) => {
+          let fut = f(&self.env, &self.fiber);
+          match self.start(fut, cx) {
+            Some(next) => next,
+            None => return Poll::Pending,
+          }
+        }
+        LInstr::Seq(body) => {
+          let (inner, conts) = *body;
+          self.stack.extend(conts.into_iter().rev().map(LFrame::Cont));
+          inner
         }
         LInstr::Fold(inner, h) => {
-          this.stack.push(LFrame::Fold(h));
-          this.cur = Some(*inner);
+          self.stack.push(LFrame::Fold(h));
+          *inner
         }
         LInstr::Provide(inner, f) => {
-          let env = &this.env;
-          match catch_step(|| f(env)) {
-            Ok(new_env) => {
-              let old = std::mem::replace(&mut this.env, new_env);
-              this.stack.push(LFrame::Env(old));
-              this.cur = Some(*inner);
-            }
-            Err(c) => this.cur = Some(LInstr::Pure(Err(c))),
-          }
+          let new_env = f(&self.env);
+          let old = std::mem::replace(&mut self.env, new_env);
+          self.stack.push(LFrame::Env(old));
+          *inner
         }
         LInstr::Mask(inner, set) => {
-          let old = this.fiber.mask();
-          this.stack.push(LFrame::Mask(old));
-          this.fiber.set_mask(set.unwrap_or(old + 1));
-          this.cur = Some(*inner);
+          let old = self.fiber.mask();
+          self.stack.push(LFrame::Mask(old));
+          self.fiber.set_mask(set.unwrap_or(old + 1));
+          *inner
         }
-      }
-      budget -= 1;
-      if budget == 0 {
+      };
+      *budget -= 1;
+      if *budget == 0 {
+        self.cur = Some(instr);
         cx.waker().wake_by_ref();
         return Poll::Pending;
       }
+    }
+  }
+
+  /// The bind fast path (mirrors `Runloop::feed`): a success into the `Cont` frame on top, then
+  /// on while continuations return ready values or async steps that are ready at once.
+  #[inline(always)]
+  fn feed(&mut self, mut exit: LExit, cx: &mut Context<'_>, budget: &mut u32) -> Option<LInstr> {
+    loop {
+      let v = match (exit, self.stack.last()) {
+        (Ok(v), Some(LFrame::Cont(_))) => v,
+        (exit, _) => return Some(self.unwind(exit)),
+      };
+      let Some(LFrame::Cont(k)) = self.stack.pop() else {
+        unreachable!("next: checked Cont frame (kernel bug)")
+      };
+      exit = match k(v) {
+        LInstr::Pure(e) => e,
+        LInstr::Async(f) => {
+          if self.fiber.should_interrupt() {
+            Err(Cause::Interrupt(self.fiber.id()))
+          } else {
+            let mut fut = f(&self.env, &self.fiber);
+            match fut.as_mut().poll(cx) {
+              Poll::Ready(e) => e,
+              Poll::Pending => {
+                self.fut = Some(fut);
+                return self.suspend(cx);
+              }
+            }
+          }
+        }
+        other => return Some(other),
+      };
+      if exit.is_ok() && self.fiber.should_interrupt() {
+        exit = Err(Cause::Interrupt(self.fiber.id()));
+      }
+      *budget -= 1;
+      if *budget == 0 {
+        self.cur = Some(LInstr::Pure(exit));
+        cx.waker().wake_by_ref();
+        return None;
+      }
+    }
+  }
+
+  /// Polls a fresh future once: its exit as the next instruction, or `None` once suspended.
+  #[inline]
+  fn start(
+    &mut self,
+    mut fut: LocalBoxFuture<'static, LExit>,
+    cx: &mut Context<'_>,
+  ) -> Option<LInstr> {
+    match fut.as_mut().poll(cx) {
+      Poll::Ready(exit) => Some(LInstr::Pure(exit)),
+      Poll::Pending => {
+        self.fut = Some(fut);
+        self.suspend(cx)
+      }
+    }
+  }
+
+  /// Registers the waker and re-checks the interrupt flag (mirrors `Runloop::suspend`).
+  fn suspend(&mut self, cx: &mut Context<'_>) -> Option<LInstr> {
+    self.fiber.register_waker(cx.waker());
+    if self.fiber.should_interrupt() {
+      self.fut = None;
+      Some(LInstr::Pure(Err(Cause::Interrupt(self.fiber.id()))))
+    } else {
+      None
     }
   }
 }
@@ -347,11 +428,11 @@ where
   /// Appends an erased continuation (pushes onto an existing `Seq`).
   fn seq(self, k: LCont) -> LInstr {
     match self.node {
-      LNode::Op(LInstr::Seq(inner, mut ks), _) => {
-        ks.push(k);
-        LInstr::Seq(inner, ks)
+      LNode::Op(LInstr::Seq(mut body), _) => {
+        body.1.push(k);
+        LInstr::Seq(body)
       }
-      node => LInstr::Seq(Box::new(Self { node }.into_instr()), vec![k]),
+      node => LInstr::Seq(Box::new((Self { node }.into_instr(), vec![k]))),
     }
   }
 

@@ -32,7 +32,9 @@ use std::thread::{self, Thread};
 
 use crate::failure::{Cause, Defect, Exit};
 use crate::next::capability::HNil;
-use crate::next::kernel::{Effect, Node, cause_from_panic, to_exit};
+use crate::next::kernel::{
+  Effect, Node, cause_from_panic, hnil_env, settle_instr, to_exit, unerase_exit,
+};
 use crate::next::runtime::{Executor, FiberContext, FiberHandle, TokioExecutor};
 
 /// A blocking edge (`try_block_on`, `block_on_future`) was called inside an async context, where
@@ -84,10 +86,11 @@ pub(crate) fn park_on<F: Future>(fut: F) -> F::Output {
   }
 }
 
-/// Settles fused synchronous effects without a fiber, runloop or executor (`Pure`, and `Sync`
-/// chains that end in `Pure`); returns the effect unchanged once it reaches an `Op`.
+/// Settles the fiber-free prefix of an effect without a fiber, runloop or executor (`Pure`, `Sync`
+/// closures, and `map`/`flat_map`/`Fold` frames over them: see `settle_instr`); returns the rest
+/// of the program once it reaches a step that needs a fiber.
 ///
-/// A panic in a fused step becomes `Die` (as in the runloop's per-step guard).
+/// A panic in a step becomes `Die` (as in the runloop).
 fn settle<A, E>(eff: Effect<A, E, HNil>) -> Result<Exit<A, E>, Effect<A, E, HNil>>
 where
   A: Send + 'static,
@@ -100,15 +103,20 @@ where
   let out = catch_unwind(AssertUnwindSafe(move || {
     loop {
       match node {
-        Node::Pure(r) => return Ok(to_exit(r)),
+        Node::Pure(r) => return Ok(r),
         Node::Sync(f, _) => node = f(&HNil).node,
-        node @ Node::Op(_) => return Err(Effect { node }),
+        Node::Op(i) => return Err(i),
       }
     }
   }));
-  match out {
-    Ok(r) => r,
-    Err(payload) => Ok(Exit::Failure(cause_from_panic(payload))),
+  let instr = match out {
+    Ok(Ok(r)) => return Ok(to_exit(r)),
+    Ok(Err(i)) => i,
+    Err(payload) => return Ok(Exit::Failure(cause_from_panic(payload))),
+  };
+  match settle_instr(instr, hnil_env()) {
+    Ok(exit) => Ok(to_exit(unerase_exit::<A, E>(exit))),
+    Err(rest) => Err(Effect::from_instr(rest)),
   }
 }
 

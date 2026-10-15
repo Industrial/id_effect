@@ -311,6 +311,63 @@ fn panics_in_async_steps_and_continuations_become_die() {
   assert!(matches!(run(eff), Exit::Failure(Cause::Die(d)) if d.message() == "in future"));
 }
 
+/// `k-runloop-opt`: panics are caught once per poll, not per step. A panic in a sync step deep in
+/// a bind chain is still `Die` with its payload, and the finalizer around it has run, on the
+/// fiber edge (`run_on`) and on the blocking edge (`block_on`, fiber-free prefix first).
+#[test]
+fn a_panic_in_a_sync_step_is_die_after_the_finalizer_ran() {
+  fn program(fin: &Arc<AtomicUsize>, before: usize) -> Effect<u32> {
+    let mut eff: Effect<u32> = succeed(0);
+    for _ in 0..before {
+      eff = eff.flat_map(|n| succeed(n + 1));
+    }
+    let fin = Arc::clone(fin);
+    eff
+      .map(|n| -> u32 {
+        if n < u32::MAX {
+          panic!("sync boom")
+        }
+        n
+      })
+      .ensuring(sync(move || bump(&fin)))
+  }
+  for before in [0, 3, 10, 1_000] {
+    let fin = counter();
+    match run(program(&fin, before)) {
+      Exit::Failure(Cause::Die(d)) => assert_eq!(d.with_payload(|s: &&str| *s), Some("sync boom")),
+      other => panic!("expected Die, got {other:?}"),
+    }
+    assert_eq!(get(&fin), 1, "finalizer ran (run_on, {before} binds)");
+    let fin = counter();
+    match program(&fin, before).block_on() {
+      Exit::Failure(Cause::Die(d)) => assert_eq!(d.with_payload(|s: &&str| *s), Some("sync boom")),
+      other => panic!("expected Die, got {other:?}"),
+    }
+    assert_eq!(get(&fin), 1, "finalizer ran (block_on, {before} binds)");
+  }
+}
+
+/// `k-runloop-opt`: the bind fast path keeps the interrupt point before every continuation.
+#[test]
+fn an_interrupt_inside_a_long_async_bind_chain_stops_the_next_continuation() {
+  let steps = counter();
+  let fiber = fiber();
+  let mut eff: Effect<u32> = succeed(0);
+  for i in 0..2_000_u32 {
+    let (s, f) = (Arc::clone(&steps), Arc::clone(&fiber));
+    eff = eff.flat_map(move |n| {
+      bump(&s);
+      if i == 999 {
+        f.request_interrupt();
+      }
+      from_async(move || async move { Ok(n + 1) })
+    });
+  }
+  let exit = pollster::block_on(eff.run_on(Arc::clone(&fiber)));
+  assert_eq!(exit, Exit::interrupt(fiber.id()));
+  assert_eq!(get(&steps), 1_000);
+}
+
 // ── core combinators ───────────────────────────────────────────────────────────────────────
 
 #[test]

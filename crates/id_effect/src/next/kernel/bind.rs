@@ -29,7 +29,7 @@ use super::anybox::{AnyEnv, unerase_exit};
 use super::cause::{InterruptSignal, split_failure};
 use super::ctx::Ctx;
 use super::effect::{Effect, Node};
-use super::runloop::Runloop;
+use super::runloop::{Runloop, settle_instr};
 use crate::failure::Cause;
 use crate::next::capability::{Embed, HList, Selector};
 use crate::next::runtime::FiberContext;
@@ -154,7 +154,7 @@ impl<B: Send + 'static, E: Send + 'static> BindFuture<B, E> {
       }
       _ => env(),
     };
-    loop {
+    let instr = loop {
       match node {
         Node::Pure(r) => {
           return Self {
@@ -162,21 +162,23 @@ impl<B: Send + 'static, E: Send + 'static> BindFuture<B, E> {
           };
         }
         Node::Sync(f, _) => node = f(&sub).node,
-        node @ Node::Op(_) => {
-          return Self {
-            state: BindState::Running {
-              rl: Box::new(Runloop::new(
-                Effect { node }.into_instr(),
-                sub as AnyEnv,
-                Arc::clone(fiber),
-              )),
-              fiber: Arc::clone(fiber),
-              held: false,
-              _out: PhantomData,
-            },
-          };
-        }
+        Node::Op(i) => break i,
       }
+    };
+    let sub = sub as AnyEnv;
+    // The fiber-free prefix (`map`/`flat_map` over ready values) runs here, without a runloop.
+    match settle_instr(instr, &sub) {
+      Ok(exit) => Self {
+        state: BindState::Ready(Some(unerase_exit::<B, E>(exit))),
+      },
+      Err(rest) => Self {
+        state: BindState::Running {
+          rl: Box::new(Runloop::new(rest, sub, Arc::clone(fiber))),
+          fiber: Arc::clone(fiber),
+          held: false,
+          _out: PhantomData,
+        },
+      },
     }
   }
 }

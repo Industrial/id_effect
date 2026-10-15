@@ -7,10 +7,11 @@
 //! that leaf has a single place to change.
 
 use std::any::Any;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use super::cause::map_fail_mut;
 use crate::failure::Cause;
+use crate::next::capability::HNil;
 
 /// An erased runloop value (design A §5 R2 mitigation, "SmallBox", in safe Rust): `()` and a
 /// fixed set of word-sized primitives (recognised by `TypeId`) travel inline; every other type,
@@ -79,6 +80,13 @@ pub(crate) type AnyExit = Result<AnyBox, Cause<AnyBox>>;
 
 /// The erased environment of a runloop (an `Arc` of the effect's `R` HList).
 pub(crate) type AnyEnv = Arc<dyn Any + Send + Sync>;
+
+/// The shared empty environment (`HNil`) of every run edge: cloning it is a reference-count
+/// increment instead of an allocation per run.
+pub(crate) fn hnil_env() -> &'static AnyEnv {
+  static HNIL_ENV: LazyLock<AnyEnv> = LazyLock::new(|| Arc::new(HNil));
+  &HNIL_ENV
+}
 
 /// Erases a typed step outcome.
 pub(crate) fn erase_exit<A: Send + 'static, E: Send + 'static>(r: Result<A, Cause<E>>) -> AnyExit {

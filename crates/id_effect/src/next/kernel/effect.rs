@@ -2,20 +2,29 @@
 //! combinators (`map`/`flat_map`/`map_err`/`catch`/`exit`/`then`/`zip`/`widen`) and `ExitKind`.
 //! Filled by `k-core-runloop`.
 //!
-//! Design A §1.1: an inline `Pure` node (no allocation for ready values), fused synchronous
-//! closures (`Sync`, bounded depth) and erased runloop programs (`Op`). `ExitKind` is defined in
+//! Design A §1.1: an inline `Pure` node (no allocation for ready values), lazy synchronous
+//! closures (`Sync`) and erased runloop programs (`Op`). `ExitKind` is defined in
 //! `kernel/cause.rs`, next to the cause helpers it classifies.
+//!
+//! Up to `FUSE_MAX` `map`/`flat_map` steps on a ready value fuse into one typed closure; after
+//! that a chain appends continuation frames to an `Instr::Seq` (no box per step for a
+//! capture-free closure). `k-runloop-opt` lowered the cap from 64 to 4: with 64 live boxes of one
+//! size class the allocator leaves its thread cache, which cost an async bind chain more than the
+//! fusion saved. The fiber-free prefix of a program still runs without a fiber or executor
+//! (`settle_instr`, used by `block_on` and `~` binds).
 
 use super::anybox::{AnyBox, downcast_env, erase, unbox, unerase_exit};
 use super::cause::{map_fail_once, split_failure, to_exit};
-use super::runloop::Instr;
+use super::runloop::{Frame, Instr, SeqBody, frame_vec};
 use crate::failure::{Cause, Exit};
 use crate::next::capability::HNil;
 use crate::runtime::Never;
 
-/// How many `map`/`flat_map` steps fuse into one synchronous closure before the chain spills into
-/// runloop frames. Bounds native stack use (fusion nests calls).
-pub(crate) const FUSE_MAX: u16 = 64;
+/// How many `map`/`flat_map` steps fuse into one typed synchronous closure before the chain
+/// spills into `Seq` frames. Short ready chains stay typed and allocation-cheap; a long chain must
+/// not keep one live box per step (beyond the allocator's per-size thread cache of 7 entries the
+/// boxes go through its slow path), and fused steps nest native calls.
+pub(crate) const FUSE_MAX: usize = 4;
 
 type SyncFn<A, E, R> = Box<dyn FnOnce(&R) -> Effect<A, E, R> + Send>;
 
@@ -31,9 +40,9 @@ pub struct Effect<A, E = Never, R = HNil> {
 pub(crate) enum Node<A, E, R> {
   /// Ready outcome (the inline `Ready` variant: no allocation).
   Pure(Result<A, Cause<E>>),
-  /// Fused synchronous step: computes the next effect from the env. The `u16` is the fusion
+  /// Fused synchronous step: computes the next effect from the env. The `usize` is the fusion
   /// depth.
-  Sync(SyncFn<A, E, R>, u16),
+  Sync(SyncFn<A, E, R>, usize),
   /// Erased runloop program.
   Op(Instr),
 }
@@ -70,13 +79,18 @@ where
     Self { node: Node::Op(i) }
   }
 
-  fn sync_node(f: impl FnOnce(&R) -> Effect<A, E, R> + Send + 'static, depth: u16) -> Self {
+  fn sync_node(f: impl FnOnce(&R) -> Effect<A, E, R> + Send + 'static, depth: usize) -> Self {
     Self {
       node: Node::Sync(Box::new(f), depth),
     }
   }
 
   /// Erases this effect into a runloop program.
+  ///
+  /// Always inlined: it sits between a constructor and the runloop on every step, and as an
+  /// out-of-line call the enum it moves goes through memory with mismatched store and load
+  /// widths, which stalls store-to-load forwarding (measured: about 20 % of an async bind).
+  #[inline(always)]
   pub(crate) fn into_instr(self) -> Instr {
     match self.node {
       Node::Pure(r) => Instr::Pure(super::anybox::erase_exit(r)),
@@ -132,13 +146,21 @@ where
   }
 
   /// Appends an erased continuation: pushes onto an existing `Seq` (no box per step).
+  #[inline(always)]
   fn seq(self, k: Box<dyn FnOnce(AnyBox) -> Instr + Send>) -> Instr {
     match self.node {
-      Node::Op(Instr::Seq(inner, mut ks)) => {
-        ks.push(k);
-        Instr::Seq(inner, ks)
+      Node::Op(Instr::Seq(mut body)) => {
+        body.frames.push(Frame::FlatMap(k));
+        Instr::Seq(body)
       }
-      node => Instr::Seq(Box::new(Self { node }.into_instr()), vec![k]),
+      node => {
+        let mut frames = frame_vec();
+        frames.push(Frame::FlatMap(k));
+        Instr::Seq(Box::new(SeqBody {
+          inner: Self { node }.into_instr(),
+          frames,
+        }))
+      }
     }
   }
 
