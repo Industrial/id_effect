@@ -8,7 +8,9 @@ Examples are named `NNN_slug.rs` (three-digit order + short topic). Run from the
 Every example runs on the 0.7 kernel (`Effect<A, E = Never, R = HNil>`, run at the edge with
 `Effect::block_on`, or awaited with `Runtime::run`). Numbers that were dropped with the 0.6 kernel
 (`ThreadSleepRuntime`, `CancellationToken`, `TestClock`, `run_test`, `#[named]` provider variants,
-the snapshot corpus, …) are listed in `docs/migration-0.7/k-retire-v1.md`.
+the snapshot corpus, …): `016`, `040_runtime_trait`, `041`, `043`–`047`, `050`, `053`, `056`–`059`,
+`076`, `092`, `097`–`099` and `150`. The replacements for what they showed are in
+[`docs/MIGRATION-0.7.md`](../../../docs/MIGRATION-0.7.md) §16.
 
 ## Spine (`id_effect` crate, 001–105)
 
