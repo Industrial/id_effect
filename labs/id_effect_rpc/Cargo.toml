@@ -28,6 +28,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 thiserror = "2"
+# m-axum adapter: drives the v1 handler effects on the blocking pool (registry.rs).
+tokio = { version = "1", features = ["rt"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 

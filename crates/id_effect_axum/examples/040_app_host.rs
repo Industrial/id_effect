@@ -1,28 +1,29 @@
 //! Application host composition: config bootstrap, security middleware, platform auth traits.
+//!
+//! Run: `cargo run -p id_effect_axum --example 040_app_host`
 
+use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::{Router, body::Body, http::Request, middleware};
-use id_effect::next::compat::IntoV1;
-use id_effect::{Effect, run_blocking, succeed};
+use id_effect::Exit;
+use id_effect::next::{Effect, HCons, HNil, hlist, need};
 use id_effect_axum::{
-  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, HostBuilder, bootstrap_env, csp_middleware,
-  csrf_middleware, routing,
+  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, EffectExecutor, HostBuilder, bootstrap_env,
+  csp_middleware, csrf_middleware, routing,
 };
 use id_effect_config::MapConfigProvider;
 use id_effect_platform::auth::{MemorySessionStore, SessionData, SessionStore};
 use tower::ServiceExt;
 
-#[derive(Clone)]
-struct AppState {
-  sessions: MemorySessionStore,
-}
+type AppEnv = HCons<MemorySessionStore, HNil>;
 
-fn session_user(env: &mut AppState) -> Effect<String, std::convert::Infallible, AppState> {
-  let store = env.sessions.clone();
-  succeed(match run_blocking(store.get("demo").into_v1(), ()) {
-    Ok(Some(data)) => format!("user={}", data.user_id),
-    _ => "user=none".into(),
+fn session_user(_env: &mut AppEnv) -> Effect<String, Infallible, AppEnv> {
+  need::<MemorySessionStore>().flat_map(|store| {
+    store.get("demo").exit().narrow().map(|exit| match exit {
+      Exit::Success(Some(data)) => format!("user={}", data.user_id),
+      _ => "user=none".into(),
+    })
   })
 }
 
@@ -37,17 +38,11 @@ async fn main() {
     .expect("host");
   assert_eq!(host.config.bind_port, 8080);
 
-  let state = AppState {
-    sessions: MemorySessionStore::default(),
-  };
-  run_blocking(
-    state
-      .sessions
-      .put("demo", SessionData::new("user-1"))
-      .into_v1(),
-    (),
-  )
-  .expect("seed session");
+  let sessions = MemorySessionStore::default();
+  let seeded = EffectExecutor::global()
+    .run_effect(sessions.put("demo", SessionData::new("user-1")))
+    .await;
+  assert!(matches!(seeded, Exit::Success(())), "seed session");
 
   let csp = Arc::new(ContentSecurityPolicy::new().default_src_self());
   let csrf = CsrfConfig::new("demo-token");
@@ -56,7 +51,7 @@ async fn main() {
     .route("/", routing::get(session_user))
     .layer(middleware::from_fn_with_state(csp, csp_middleware))
     .layer(middleware::from_fn_with_state(csrf, csrf_middleware))
-    .with_state(state);
+    .with_state(hlist![sessions]);
 
   let res = app
     .oneshot(

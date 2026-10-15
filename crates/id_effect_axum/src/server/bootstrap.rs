@@ -1,16 +1,16 @@
-//! Config bootstrap via [`id_effect_config`].
+//! Config bootstrap via [`id_effect_config`]: [`HostConfig`] as a `Config<T>` descriptor and as a
+//! [`Layer`].
 
-use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::Needs;
-use id_effect::kernel::Effect;
-use id_effect::next::compat::IntoV1With;
-use id_effect::next::{HCons, HNil};
-use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
-use id_effect_config::{Config, ConfigEnv, ConfigError, ConfigProviderService};
+use id_effect::next::{Effect, HCons, HNil, Layer, Selector};
+use id_effect_config::{
+  Config, ConfigEnv, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProviderLive,
+  config_env,
+};
 
-/// Host bind and shutdown settings loaded from the environment.
+/// Host bind and shutdown settings loaded from the environment (`HOST`, `PORT`,
+/// `SHUTDOWN_TIMEOUT_SECS`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostConfig {
   /// Bind address (e.g. `0.0.0.0`).
@@ -22,7 +22,8 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-  /// Compose the lazy config descriptor for host settings.
+  /// The raw descriptor: `HOST` (default `0.0.0.0`), `PORT` (default `8080`) and
+  /// `SHUTDOWN_TIMEOUT_SECS` (default `30`), loaded together so every failure is reported.
   #[inline]
   pub fn descriptor() -> Config<(String, i64, i64)> {
     Config::all((
@@ -32,97 +33,83 @@ impl HostConfig {
     ))
   }
 
+  /// The validated descriptor (port in `1..=65535`, non-negative timeout).
+  #[inline]
+  pub fn config() -> Config<HostConfig> {
+    Self::descriptor().map_attempt(Self::from_tuple)
+  }
+
+  /// A layer providing [`HostConfig`] from the [`ConfigProviderService`] capability (feed it a
+  /// provider layer such as [`provide_host_config_env`] with `provide_to`).
+  #[inline]
+  pub fn layer<E>() -> Layer<HCons<HostConfig, HNil>, E, ConfigEnv>
+  where
+    E: From<ConfigError> + Send + 'static,
+  {
+    Self::config().layer()
+  }
+
   #[allow(clippy::result_large_err)]
   fn from_tuple((bind_host, port, timeout_secs): (String, i64, i64)) -> Result<Self, ConfigError> {
-    if !(1..=u16::MAX as i64).contains(&port) {
+    if !(1..=i64::from(u16::MAX)).contains(&port) {
       return Err(ConfigError::Invalid {
         path: "PORT".into(),
         value: port.to_string(),
         reason: "port must be between 1 and 65535".into(),
       });
     }
-    if timeout_secs < 0 {
+    let Ok(timeout_secs) = u64::try_from(timeout_secs) else {
       return Err(ConfigError::Invalid {
         path: "SHUTDOWN_TIMEOUT_SECS".into(),
         value: timeout_secs.to_string(),
         reason: "timeout must be non-negative".into(),
       });
-    }
+    };
     Ok(Self {
       bind_host,
-      bind_port: port as u16,
-      shutdown_timeout: Duration::from_secs(timeout_secs as u64),
+      bind_port: u16::try_from(port).unwrap_or(u16::MAX),
+      shutdown_timeout: Duration::from_secs(timeout_secs),
     })
   }
 }
 
-/// Load [`HostConfig`] using the installed [`id_effect_config::ConfigProvider`] capability.
+/// Load [`HostConfig`] using the [`ConfigProviderService`] capability in `R` (index `I` inferred).
 #[inline]
-pub fn load_host_config<R>() -> Effect<HostConfig, ConfigError, R>
+pub fn load_host_config<R, I>() -> Effect<HostConfig, ConfigError, R>
 where
-  R: Needs<ConfigProviderService> + 'static,
+  R: Selector<ConfigProviderService, I> + Send + Sync + 'static,
 {
-  // m-config: `Config::run` is a `next` effect; bridged to v1 until m-axum (release plan §3b).
-  HostConfig::descriptor()
-    .map_attempt(HostConfig::from_tuple)
-    .run::<HostConfig, ConfigError, ConfigEnv, _>()
-    .into_v1_with(|r: &mut R| -> ConfigEnv { HCons(Arc::new(r.need().clone()), HNil) })
+  HostConfig::config().run::<HostConfig, ConfigError, R, I>()
 }
 
-/// Register the process environment as the config provider.
+/// A layer providing the process environment as the config provider.
 #[inline]
-pub fn provide_host_config_env() -> ProviderBox {
-  // m-config: id_effect_config now provides `next` layers; this v1 node stays until m-axum.
-  struct Node;
-
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "config-provider"
-    }
-
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-
-    fn provides(&self) -> CapabilityId {
-      Cap::<ConfigProviderService>::id()
-    }
-
-    fn cap_name(&self) -> &str {
-      "ConfigProvider"
-    }
-
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let mut out = deps.clone();
-      out.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(
-        id_effect_config::EnvConfigProvider::new(id_effect_config::ProviderOptions::default()),
-      )));
-      Ok(out)
-    }
-  }
-
-  ProviderBox(Arc::new(Node))
+pub fn provide_host_config_env<E: Send + 'static>() -> Layer<ConfigEnv, E> {
+  EnvConfigProviderLive::layer()
 }
 
-/// Build a minimal [`Env`] with only the config provider (tests / CLI bootstrap).
+/// A minimal environment with only `provider` as the config provider (tests / CLI bootstrap).
 #[inline]
-pub fn bootstrap_env<P: id_effect_config::ConfigProvider + 'static>(provider: P) -> Env {
-  let mut env = Env::new();
-  env.insert::<Cap<ConfigProviderService>>(ConfigProviderService(Arc::new(provider)));
-  env
+pub fn bootstrap_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
+  config_env(provider)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::run_blocking;
-  use id_effect_config::MapConfigProvider;
+  use id_effect::Exit;
+  use id_effect::next::need;
+  use id_effect_config::{MapConfigProvider, provide_config_provider};
+
+  #[allow(clippy::result_large_err)]
+  fn load(pairs: &[(&str, &str)]) -> Result<HostConfig, id_effect::Cause<ConfigError>> {
+    let env = bootstrap_env(MapConfigProvider::from_pairs(pairs.iter().copied()));
+    load_host_config().provide_all(env).block_on().into_result()
+  }
 
   #[test]
   fn load_host_config_uses_defaults() {
-    let provider = MapConfigProvider::from_pairs(std::iter::empty::<(&str, &str)>());
-    let env = bootstrap_env(provider);
-    let cfg = run_blocking(load_host_config(), env).unwrap();
+    let cfg = load(&[]).unwrap();
     assert_eq!(cfg.bind_host, "0.0.0.0");
     assert_eq!(cfg.bind_port, 8080);
     assert_eq!(cfg.shutdown_timeout, Duration::from_secs(30));
@@ -130,13 +117,12 @@ mod tests {
 
   #[test]
   fn load_host_config_reads_overrides() {
-    let provider = MapConfigProvider::from_pairs([
+    let cfg = load(&[
       ("HOST", "127.0.0.1"),
       ("PORT", "9090"),
       ("SHUTDOWN_TIMEOUT_SECS", "5"),
-    ]);
-    let env = bootstrap_env(provider);
-    let cfg = run_blocking(load_host_config(), env).unwrap();
+    ])
+    .unwrap();
     assert_eq!(cfg.bind_host, "127.0.0.1");
     assert_eq!(cfg.bind_port, 9090);
     assert_eq!(cfg.shutdown_timeout, Duration::from_secs(5));
@@ -144,15 +130,27 @@ mod tests {
 
   #[test]
   fn load_host_config_rejects_invalid_port() {
-    let provider = MapConfigProvider::from_pairs([("PORT", "99999")]);
-    let env = bootstrap_env(provider);
-    assert!(run_blocking(load_host_config(), env).is_err());
+    assert!(load(&[("PORT", "99999")]).is_err());
   }
 
   #[test]
   fn load_host_config_rejects_negative_shutdown_timeout() {
-    let provider = MapConfigProvider::from_pairs([("SHUTDOWN_TIMEOUT_SECS", "-1")]);
-    let env = bootstrap_env(provider);
-    assert!(run_blocking(load_host_config(), env).is_err());
+    assert!(load(&[("SHUTDOWN_TIMEOUT_SECS", "-1")]).is_err());
+  }
+
+  #[test]
+  fn host_config_layer_provides_the_capability() {
+    let app = provide_config_provider(MapConfigProvider::from_pairs([("PORT", "7070")]))
+      .provide_to(HostConfig::layer::<ConfigError>());
+    let port: Effect<u16, ConfigError, HCons<HostConfig, HNil>> =
+      need::<HostConfig>().map(|c| c.bind_port);
+    assert!(matches!(
+      port.provide_layer(app).block_on(),
+      Exit::Success(7070)
+    ));
+    // The env-backed provider layer builds too.
+    let env_app = provide_host_config_env::<ConfigError>().provide_to(HostConfig::layer());
+    let any: Effect<(), ConfigError, HCons<HostConfig, HNil>> = need::<HostConfig>().map(|_| ());
+    let _ = any.provide_layer(env_app).block_on();
   }
 }

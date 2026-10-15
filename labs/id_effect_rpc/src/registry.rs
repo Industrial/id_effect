@@ -15,8 +15,30 @@ use crate::serialization::{
 };
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
-use id_effect_axum::run_with_env;
 use serde_json::Value;
+
+/// m-axum adapter (release plan §3b): `id_effect_axum::run_with_env` runs `next` effects since
+/// 0.7, so this crate's v1 (`!Send`) handler effect is driven on tokio's blocking pool until
+/// l-labs-edge switches rpc to `next`. A panic in the handler is resumed in the caller.
+async fn run_v1_handler<B, F>(mut env: Env, build: F) -> Result<B, RpcError>
+where
+  B: Send + 'static,
+  F: FnOnce(&mut Env) -> Effect<B, RpcError, Env> + Send + 'static,
+{
+  let handle = tokio::runtime::Handle::current();
+  let joined = tokio::task::spawn_blocking(move || {
+    let eff = build(&mut env);
+    handle.block_on(id_effect::run_async(eff, env))
+  })
+  .await;
+  match joined {
+    Ok(result) => result,
+    Err(e) => match e.try_into_panic() {
+      Ok(payload) => std::panic::resume_unwind(payload),
+      Err(e) => panic!("rpc handler task failed: {e}"),
+    },
+  }
+}
 
 type BoxDispatch = Arc<
   dyn Fn(
@@ -99,7 +121,7 @@ impl RpcGroup {
       let success_fields = success_fields;
       Box::pin(async move {
         let input = decode_payload(payload_schema.as_ref(), &payload)?;
-        let result = run_with_env(env, move |e| handler(input, e)).await;
+        let result = run_v1_handler(env, move |e| handler(input, e)).await;
         match result {
           Ok(value) => success_wire(&tag, success_schema.as_ref(), success_fields, value),
           Err(err) => Ok(rpc_error_to_wire(&tag, err)),
