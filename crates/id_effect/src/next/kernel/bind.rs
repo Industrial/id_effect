@@ -493,9 +493,13 @@ mod tests {
       matches!(exit, Exit::Failure(Cause::Interrupt(id)) if id == fiber.id()),
       "{exit:?}"
     );
-    // The first bind polled sees the interrupt and unwinds; its `Interrupt` then unwinds the
-    // body, which drops the sibling (a same-fiber `join` cannot wait for it; `~(a, b)` forks).
-    assert!(fin_a.load(Ordering::SeqCst), "a's finalizer ran");
+    // Whichever bind is polled first after the wake-up sees the interrupt and unwinds (which one
+    // depends on wake-up order); its `Interrupt` then unwinds the body, which drops the sibling
+    // (a same-fiber `join` cannot wait for it; `~(a, b)` forks). So at least one finalizer ran.
+    assert!(
+      fin_a.load(Ordering::SeqCst) || fin_b.load(Ordering::SeqCst),
+      "a suspended bind's finalizer ran"
+    );
     assert_eq!(fiber.mask(), 0, "no hold leaked");
   }
 
