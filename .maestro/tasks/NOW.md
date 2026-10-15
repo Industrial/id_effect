@@ -1,27 +1,8 @@
 # NOW
-Updated: 2026-10-15T00:38:57.613Z
+Updated: 2026-10-15T01:32:48.523Z
 
-## In flight (4)
-### tsk-mv8ohjj3-eu7872 . W2: Kernel spike A (HList typed R) — placeholder, split per kernel-design-a
-State: claimed
-Owner: claude (claimed 1h ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-zxtk5h . W2: Kernel spike B (trait-bound env) — placeholder, split per kernel-design-b
-State: claimed
-Owner: claude (claimed 1h ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-7vb6hy . W0: Capture and commit v0.6 baseline (docs/benchmarks/v0.6.json)
-State: claimed
-Owner: claude (claimed 45m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
-### tsk-mv8ohjj3-w10z06 . W2: SPIKE-REPORT.md side-by-side A vs B vs v0.6 → human gate H1
-State: claimed
-Owner: claude (claimed 45m ago)
-Mission: pln-mv8oh29m-3zdrrj
-
+## In flight (0)
+None.
 
 ## Ready to pick up (54)
 ### tsk-mv799sew-y9wf9g . W5: Migrate assay and solana to crates.io 0.6; decide webapp archive/migrate

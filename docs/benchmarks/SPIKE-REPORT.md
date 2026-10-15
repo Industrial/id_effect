@@ -15,8 +15,20 @@ unless a row says otherwise. Raw outputs and the scripts that produced them are 
 
 ## H1 decision
 
-> **Pending.** The human records the choice here: A / B, plus any conditions. The referee's
-> recommendation is in section 9.
+> **Design A (HList typed R)**, decided 2026-10-15 by the orchestrator under the user's standing
+> `/goal` instruction to finish all planned waves without pausing (user may override).
+>
+> - Why A: its advantages are structural and match the Effect.ts north star (D1): `Layer.merge`
+>   union, provide-one-service, lazy binds, stack safety at 100k-deep chains. B's gaps (build-time
+>   `flat_map` evaluation, stack overflow on deep async chains) are semantic defects whose fixes
+>   cost the per-bind box A already pays. Compile time is ~2× v0.6 for both.
+> - Conditions carried into `k-rebuild`: (1) a dedicated runloop-optimisation leaf targeting
+>   `gate/async_bind_64` ≤ 1.25× v0.6 — move `catch_unwind` to fiber/edge boundaries, amortise
+>   interrupt checks, fuse sync steps, avoid per-value erasure where the type is statically known;
+>   (2) `Layer::merge` dedupes or rejects duplicate capabilities with a custom diagnostic instead of
+>   reaching E0283; (3) generic-helper narrowing (H17) gets a documented pattern or macro.
+> - H2 (D9 waiver) is NOT granted now; it is decided at `r-bench-report` only if the optimisation
+>   leaf misses 1.25×.
 
 ## 1. Method
 
