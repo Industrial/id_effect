@@ -7,7 +7,8 @@
     inherit (pkgs.stdenv.hostPlatform) system;
     overlays = [inputs.rust-overlay.overlays.default];
   };
-  rustStable = pkgsWithRust.rust-bin.stable."1.97.0".default;
+  # Same pin as CI's moon-ci and coverage jobs: the `ui` trybuild suite is gated to rustc 1.99.0.
+  rustStable = pkgsWithRust.rust-bin.stable."1.99.0".default;
 
   # Moon from GitHub releases (x86_64-linux). See https://moonrepo.dev/docs/install
   moon = pkgs.stdenv.mkDerivation {
@@ -95,6 +96,17 @@ in {
     enable = true;
     initialDatabases = [{name = "id_effect";}];
     listen_addresses = "127.0.0.1";
+    # initdb's superuser is $USER; DATABASE_URL (and CI) connect as `postgres`.
+    # Runs once, when `devenv up` creates a fresh data directory.
+    initialScript = ''
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'postgres') THEN
+          CREATE ROLE postgres WITH LOGIN SUPERUSER;
+        END IF;
+      END
+      $$;
+    '';
   };
 
   env = {
@@ -112,6 +124,8 @@ in {
     # rustc internals (rustc_private).  The Dylint crate carries no
     # rust-toolchain pin so it always uses whatever nightly devenv provides.
     channel = "nightly";
+    # Pinned so bumping rust-overlay (for a new stable) doesn't silently move the nightly.
+    version = "2026-07-10";
     components = [
       "cargo"
       "clippy"
