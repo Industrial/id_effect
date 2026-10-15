@@ -1,8 +1,14 @@
 #![allow(dead_code)]
 //! Env insert/get/has microbenchmarks at N = 4, 16, 64 capabilities.
+//!
+//! Kernel measured: the 0.7 runtime-checked environment `id_effect::next::DynEnv` (v0.6:
+//! `Env` with `Cap<T>` keys). IDs are unchanged (`env_get_n{4,16,64}`); the workload is the
+//! same: build an environment of N capabilities once, then look up the last-inserted one per
+//! iteration. `DynEnv::try_get` returns an `Arc<T>` (one refcount bump and drop per lookup)
+//! where v0.6 `Env::get` returned `&T`.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use id_effect::{Cap, Env};
+use id_effect::next::DynEnv;
 
 #[derive(Clone, Copy)]
 struct Cap0(u32);
@@ -133,7 +139,7 @@ struct Cap62(u32);
 #[derive(Clone, Copy)]
 struct Cap63(u32);
 
-fn bench_env_n(c: &mut Criterion, name: &str, setup: impl Fn() -> Env, get: fn(&Env) -> u32) {
+fn bench_env_n(c: &mut Criterion, name: &str, setup: impl Fn() -> DynEnv, get: fn(&DynEnv) -> u32) {
   c.bench_function(name, |b| {
     let env = setup();
     b.iter(|| std::hint::black_box(get(&env)));
@@ -145,114 +151,114 @@ fn bench_env_lookup(c: &mut Criterion) {
     c,
     "env_get_n4",
     || {
-      let mut env = Env::new();
-      env.insert::<Cap<Cap0>>(Cap0(0));
-      env.insert::<Cap<Cap1>>(Cap1(0));
-      env.insert::<Cap<Cap2>>(Cap2(0));
-      env.insert::<Cap<Cap3>>(Cap3(0));
+      let mut env = DynEnv::new();
+      env.insert::<Cap0>(Cap0(0));
+      env.insert::<Cap1>(Cap1(0));
+      env.insert::<Cap2>(Cap2(0));
+      env.insert::<Cap3>(Cap3(0));
       env
     },
-    |e| e.get::<Cap<Cap3>>().0,
+    |e| e.try_get::<Cap3>().expect("capability was inserted").0,
   );
 
   bench_env_n(
     c,
     "env_get_n16",
     || {
-      let mut env = Env::new();
-      env.insert::<Cap<Cap0>>(Cap0(0));
-      env.insert::<Cap<Cap1>>(Cap1(0));
-      env.insert::<Cap<Cap2>>(Cap2(0));
-      env.insert::<Cap<Cap3>>(Cap3(0));
-      env.insert::<Cap<Cap4>>(Cap4(0));
-      env.insert::<Cap<Cap5>>(Cap5(0));
-      env.insert::<Cap<Cap6>>(Cap6(0));
-      env.insert::<Cap<Cap7>>(Cap7(0));
-      env.insert::<Cap<Cap8>>(Cap8(0));
-      env.insert::<Cap<Cap9>>(Cap9(0));
-      env.insert::<Cap<Cap10>>(Cap10(0));
-      env.insert::<Cap<Cap11>>(Cap11(0));
-      env.insert::<Cap<Cap12>>(Cap12(0));
-      env.insert::<Cap<Cap13>>(Cap13(0));
-      env.insert::<Cap<Cap14>>(Cap14(0));
-      env.insert::<Cap<Cap15>>(Cap15(0));
+      let mut env = DynEnv::new();
+      env.insert::<Cap0>(Cap0(0));
+      env.insert::<Cap1>(Cap1(0));
+      env.insert::<Cap2>(Cap2(0));
+      env.insert::<Cap3>(Cap3(0));
+      env.insert::<Cap4>(Cap4(0));
+      env.insert::<Cap5>(Cap5(0));
+      env.insert::<Cap6>(Cap6(0));
+      env.insert::<Cap7>(Cap7(0));
+      env.insert::<Cap8>(Cap8(0));
+      env.insert::<Cap9>(Cap9(0));
+      env.insert::<Cap10>(Cap10(0));
+      env.insert::<Cap11>(Cap11(0));
+      env.insert::<Cap12>(Cap12(0));
+      env.insert::<Cap13>(Cap13(0));
+      env.insert::<Cap14>(Cap14(0));
+      env.insert::<Cap15>(Cap15(0));
       env
     },
-    |e| e.get::<Cap<Cap15>>().0,
+    |e| e.try_get::<Cap15>().expect("capability was inserted").0,
   );
 
   bench_env_n(
     c,
     "env_get_n64",
     || {
-      let mut env = Env::new();
-      env.insert::<Cap<Cap0>>(Cap0(0));
-      env.insert::<Cap<Cap1>>(Cap1(0));
-      env.insert::<Cap<Cap2>>(Cap2(0));
-      env.insert::<Cap<Cap3>>(Cap3(0));
-      env.insert::<Cap<Cap4>>(Cap4(0));
-      env.insert::<Cap<Cap5>>(Cap5(0));
-      env.insert::<Cap<Cap6>>(Cap6(0));
-      env.insert::<Cap<Cap7>>(Cap7(0));
-      env.insert::<Cap<Cap8>>(Cap8(0));
-      env.insert::<Cap<Cap9>>(Cap9(0));
-      env.insert::<Cap<Cap10>>(Cap10(0));
-      env.insert::<Cap<Cap11>>(Cap11(0));
-      env.insert::<Cap<Cap12>>(Cap12(0));
-      env.insert::<Cap<Cap13>>(Cap13(0));
-      env.insert::<Cap<Cap14>>(Cap14(0));
-      env.insert::<Cap<Cap15>>(Cap15(0));
-      env.insert::<Cap<Cap16>>(Cap16(0));
-      env.insert::<Cap<Cap17>>(Cap17(0));
-      env.insert::<Cap<Cap18>>(Cap18(0));
-      env.insert::<Cap<Cap19>>(Cap19(0));
-      env.insert::<Cap<Cap20>>(Cap20(0));
-      env.insert::<Cap<Cap21>>(Cap21(0));
-      env.insert::<Cap<Cap22>>(Cap22(0));
-      env.insert::<Cap<Cap23>>(Cap23(0));
-      env.insert::<Cap<Cap24>>(Cap24(0));
-      env.insert::<Cap<Cap25>>(Cap25(0));
-      env.insert::<Cap<Cap26>>(Cap26(0));
-      env.insert::<Cap<Cap27>>(Cap27(0));
-      env.insert::<Cap<Cap28>>(Cap28(0));
-      env.insert::<Cap<Cap29>>(Cap29(0));
-      env.insert::<Cap<Cap30>>(Cap30(0));
-      env.insert::<Cap<Cap31>>(Cap31(0));
-      env.insert::<Cap<Cap32>>(Cap32(0));
-      env.insert::<Cap<Cap33>>(Cap33(0));
-      env.insert::<Cap<Cap34>>(Cap34(0));
-      env.insert::<Cap<Cap35>>(Cap35(0));
-      env.insert::<Cap<Cap36>>(Cap36(0));
-      env.insert::<Cap<Cap37>>(Cap37(0));
-      env.insert::<Cap<Cap38>>(Cap38(0));
-      env.insert::<Cap<Cap39>>(Cap39(0));
-      env.insert::<Cap<Cap40>>(Cap40(0));
-      env.insert::<Cap<Cap41>>(Cap41(0));
-      env.insert::<Cap<Cap42>>(Cap42(0));
-      env.insert::<Cap<Cap43>>(Cap43(0));
-      env.insert::<Cap<Cap44>>(Cap44(0));
-      env.insert::<Cap<Cap45>>(Cap45(0));
-      env.insert::<Cap<Cap46>>(Cap46(0));
-      env.insert::<Cap<Cap47>>(Cap47(0));
-      env.insert::<Cap<Cap48>>(Cap48(0));
-      env.insert::<Cap<Cap49>>(Cap49(0));
-      env.insert::<Cap<Cap50>>(Cap50(0));
-      env.insert::<Cap<Cap51>>(Cap51(0));
-      env.insert::<Cap<Cap52>>(Cap52(0));
-      env.insert::<Cap<Cap53>>(Cap53(0));
-      env.insert::<Cap<Cap54>>(Cap54(0));
-      env.insert::<Cap<Cap55>>(Cap55(0));
-      env.insert::<Cap<Cap56>>(Cap56(0));
-      env.insert::<Cap<Cap57>>(Cap57(0));
-      env.insert::<Cap<Cap58>>(Cap58(0));
-      env.insert::<Cap<Cap59>>(Cap59(0));
-      env.insert::<Cap<Cap60>>(Cap60(0));
-      env.insert::<Cap<Cap61>>(Cap61(0));
-      env.insert::<Cap<Cap62>>(Cap62(0));
-      env.insert::<Cap<Cap63>>(Cap63(0));
+      let mut env = DynEnv::new();
+      env.insert::<Cap0>(Cap0(0));
+      env.insert::<Cap1>(Cap1(0));
+      env.insert::<Cap2>(Cap2(0));
+      env.insert::<Cap3>(Cap3(0));
+      env.insert::<Cap4>(Cap4(0));
+      env.insert::<Cap5>(Cap5(0));
+      env.insert::<Cap6>(Cap6(0));
+      env.insert::<Cap7>(Cap7(0));
+      env.insert::<Cap8>(Cap8(0));
+      env.insert::<Cap9>(Cap9(0));
+      env.insert::<Cap10>(Cap10(0));
+      env.insert::<Cap11>(Cap11(0));
+      env.insert::<Cap12>(Cap12(0));
+      env.insert::<Cap13>(Cap13(0));
+      env.insert::<Cap14>(Cap14(0));
+      env.insert::<Cap15>(Cap15(0));
+      env.insert::<Cap16>(Cap16(0));
+      env.insert::<Cap17>(Cap17(0));
+      env.insert::<Cap18>(Cap18(0));
+      env.insert::<Cap19>(Cap19(0));
+      env.insert::<Cap20>(Cap20(0));
+      env.insert::<Cap21>(Cap21(0));
+      env.insert::<Cap22>(Cap22(0));
+      env.insert::<Cap23>(Cap23(0));
+      env.insert::<Cap24>(Cap24(0));
+      env.insert::<Cap25>(Cap25(0));
+      env.insert::<Cap26>(Cap26(0));
+      env.insert::<Cap27>(Cap27(0));
+      env.insert::<Cap28>(Cap28(0));
+      env.insert::<Cap29>(Cap29(0));
+      env.insert::<Cap30>(Cap30(0));
+      env.insert::<Cap31>(Cap31(0));
+      env.insert::<Cap32>(Cap32(0));
+      env.insert::<Cap33>(Cap33(0));
+      env.insert::<Cap34>(Cap34(0));
+      env.insert::<Cap35>(Cap35(0));
+      env.insert::<Cap36>(Cap36(0));
+      env.insert::<Cap37>(Cap37(0));
+      env.insert::<Cap38>(Cap38(0));
+      env.insert::<Cap39>(Cap39(0));
+      env.insert::<Cap40>(Cap40(0));
+      env.insert::<Cap41>(Cap41(0));
+      env.insert::<Cap42>(Cap42(0));
+      env.insert::<Cap43>(Cap43(0));
+      env.insert::<Cap44>(Cap44(0));
+      env.insert::<Cap45>(Cap45(0));
+      env.insert::<Cap46>(Cap46(0));
+      env.insert::<Cap47>(Cap47(0));
+      env.insert::<Cap48>(Cap48(0));
+      env.insert::<Cap49>(Cap49(0));
+      env.insert::<Cap50>(Cap50(0));
+      env.insert::<Cap51>(Cap51(0));
+      env.insert::<Cap52>(Cap52(0));
+      env.insert::<Cap53>(Cap53(0));
+      env.insert::<Cap54>(Cap54(0));
+      env.insert::<Cap55>(Cap55(0));
+      env.insert::<Cap56>(Cap56(0));
+      env.insert::<Cap57>(Cap57(0));
+      env.insert::<Cap58>(Cap58(0));
+      env.insert::<Cap59>(Cap59(0));
+      env.insert::<Cap60>(Cap60(0));
+      env.insert::<Cap61>(Cap61(0));
+      env.insert::<Cap62>(Cap62(0));
+      env.insert::<Cap63>(Cap63(0));
       env
     },
-    |e| e.get::<Cap<Cap63>>().0,
+    |e| e.try_get::<Cap63>().expect("capability was inserted").0,
   );
 }
 

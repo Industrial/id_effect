@@ -34,6 +34,10 @@ name = "gate_core"
 harness = false
 
 [[bench]]
+name = "next_kernel"
+harness = false
+
+[[bench]]
 name = "startup_run_with"
 harness = false
 required-features = ["compute"]

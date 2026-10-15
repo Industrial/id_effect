@@ -7,8 +7,17 @@
 //! ```bash
 //! cargo bench -p id_effect --bench gate_core
 //! ```
+//!
+//! Kernel measured, per bench:
+//!
+//! - `gate/async_bind_64`, `gate/flat_map_depth_10k`: the 0.7 kernel (`id_effect::next`, spec
+//!   k-rebuild §7 Q-E), run through its real edge `Effect::block_on` (v0.6 ran
+//!   `pollster::block_on(effect.run(&mut ()))`). Same workloads: 64 binds through `from_async`,
+//!   and a left-nested 10k-deep `succeed` bind chain (build plus run).
+//! - `stream/*`, `coord/*`: still the v1 kernel (§7 Q-C) until `m-streams` / `c-coordination`.
 
-use ::id_effect::{Channel, Effect, Queue, Stream, from_async, pure, succeed};
+use ::id_effect::next::{self as k, HNil};
+use ::id_effect::{Channel, Queue, Stream, succeed};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const ASYNC_BINDS: usize = 64;
@@ -28,11 +37,14 @@ fn current_thread_runtime() -> tokio::runtime::Runtime {
 fn bench_async_bind_64(c: &mut Criterion) {
   c.bench_function("gate/async_bind_64", |b| {
     b.iter(|| {
-      let mut effect: Effect<usize, (), ()> = pure(0);
+      let mut effect: k::Effect<usize, (), HNil> = k::succeed(0);
       for _ in 0..ASYNC_BINDS {
-        effect = effect.flat_map(|n| from_async(move |_r: &mut ()| async move { Ok(n + 1) }));
+        effect = effect.flat_map(|n| k::from_async(move || async move { Ok(n + 1) }));
       }
-      let out = pollster::block_on(effect.run(&mut ())).expect("async bind chain should not fail");
+      let out = effect
+        .block_on()
+        .into_result()
+        .expect("async bind chain should not fail");
       std::hint::black_box(out)
     });
   });
@@ -42,16 +54,20 @@ fn bench_async_bind_64(c: &mut Criterion) {
 fn bench_flat_map_depth_10k(c: &mut Criterion) {
   c.bench_function("gate/flat_map_depth_10k", |b| {
     b.iter(|| {
-      let mut effect: Effect<usize, (), ()> = pure(0);
+      let mut effect: k::Effect<usize, (), HNil> = k::succeed(0);
       for _ in 0..FLAT_MAP_DEPTH {
-        effect = effect.flat_map(|n| succeed(n + 1));
+        effect = effect.flat_map(|n| k::succeed(n + 1));
       }
-      let out = pollster::block_on(effect.run(&mut ())).expect("deep flat_map should not fail");
+      let out = effect
+        .block_on()
+        .into_result()
+        .expect("deep flat_map should not fail");
       std::hint::black_box(out)
     });
   });
 }
 
+// v1 body until m-streams
 /// Pull 10k elements through a pure `map` stage into a collected vector.
 fn bench_stream_pull_map_10k(c: &mut Criterion) {
   c.bench_function("stream/pull_map_10k", |b| {
@@ -66,6 +82,7 @@ fn bench_stream_pull_map_10k(c: &mut Criterion) {
   });
 }
 
+// v1 body until m-streams
 /// Run an effect per element for 1k elements via `map_effect`.
 fn bench_stream_map_effect_1k(c: &mut Criterion) {
   c.bench_function("stream/map_effect_1k", |b| {
@@ -80,6 +97,7 @@ fn bench_stream_map_effect_1k(c: &mut Criterion) {
   });
 }
 
+// v1 body until c-coordination
 /// One producer writes 10k elements into a queue-backed `Channel`; one consumer reads them back.
 fn bench_channel_spsc_10k(c: &mut Criterion) {
   let rt = current_thread_runtime();
@@ -123,6 +141,7 @@ fn bench_channel_spsc_10k(c: &mut Criterion) {
   });
 }
 
+// v1 body until c-coordination
 /// One producer offers 10k elements into a bounded queue (capacity 64, yielding when full);
 /// one consumer takes them.
 fn bench_queue_bounded_10k(c: &mut Criterion) {
