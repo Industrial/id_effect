@@ -31,9 +31,12 @@ where
 
   /// Forks this effect as a daemon: a root fiber with no parent, which keeps running after the
   /// forking fiber has exited.
+  ///
+  /// Like Effect.ts `forkDaemon`, the daemon starts with a copy of the forking fiber's
+  /// [`FiberRef`](crate::next::FiberRef) values at fork time; only its lifetime is detached.
   pub fn fork_daemon(self) -> Effect<FiberHandle<A, E>, Never, R> {
     Effect::from_instr(Instr::WithFiber(Box::new(move |env, fiber| {
-      let child = FiberContext::new_root(Arc::clone(fiber.executor()));
+      let child = FiberContext::new_detached(fiber);
       let cell = spawn_fiber(&child, self.into_instr(), Arc::clone(env));
       Instr::Pure(Ok(erase(FiberHandle::<A, E>::new(child, cell))))
     })))

@@ -513,6 +513,31 @@ fn fork_in_and_locally_children_inherit_fiber_refs() {
   });
 }
 
+/// Effect.ts parity (`forkDaemon`): a daemon starts with the forker's fiber-ref values at fork
+/// time, and its own `set` stays local to it.
+#[test]
+fn fork_daemon_inherits_fiber_refs_at_fork_time() {
+  on_both(|d| {
+    let r = FiberRef::new(0u32);
+    let daemon: Effect<(u32, u32), Never> = r.get().flat_map({
+      let r = r.clone();
+      move |at_start| r.set(99).then(r.get()).map(move |own| (at_start, own))
+    });
+    let eff = r.set(7).then(daemon.fork_daemon()).flat_map({
+      let r = r.clone();
+      move |h: FiberHandle<(u32, u32), Never>| {
+        assert!(h.fiber().parent().is_none(), "daemon has no parent");
+        h.join()
+          .flat_map(move |(seen, own)| r.get().map(move |parent| (seen, own, parent)))
+      }
+    });
+    assert!(
+      matches!(d.run(eff), Exit::Success((7, 99, 7))),
+      "{d:?}: daemon saw 7 (fork time), set 99 locally; forker kept 7"
+    );
+  });
+}
+
 // ── AC5: no thread-locals ─────────────────────────────────────────────────────────────────
 
 /// Fiber state (refs included) never lives in thread-locals. `testing/` is skipped: the

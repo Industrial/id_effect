@@ -75,7 +75,8 @@ impl FiberContext {
   }
 
   /// A fresh fiber with no parent that inherits `forker`'s executor and fiber refs (what
-  /// `Scope::fork_in` builds: the scope, not the forking fiber, bounds its lifetime).
+  /// `Scope::fork_in` and `fork_daemon` build: the scope, or nothing, bounds its lifetime, not
+  /// the forking fiber).
   pub(crate) fn new_detached(forker: &Arc<Self>) -> Arc<Self> {
     let ctx = Self::with_parent(None, Arc::clone(&forker.exec));
     *lock(&ctx.refs) = forker.refs_snapshot();

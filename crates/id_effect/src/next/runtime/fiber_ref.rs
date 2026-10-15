@@ -4,8 +4,10 @@
 //! thread-locals, so they follow the fiber across executor threads. A child forked with
 //! [`fork`](crate::next::Effect::fork), `fork_all` or [`Scope::fork_in`](crate::next::Scope)
 //! starts with a copy of its parent's slots at fork time; after that, each side's
-//! [`set`](FiberRef::set) is invisible to the other. A `fork_daemon` root starts from the
-//! initial values.
+//! [`set`](FiberRef::set) is invisible to the other. A
+//! [`fork_daemon`](crate::next::Effect::fork_daemon) root inherits the same copy (Effect.ts
+//! parity); only a fiber started from outside a fiber (`Runtime::fork`, a run edge) starts from
+//! the initial values.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
