@@ -24,7 +24,6 @@ pub use layer::*;
 #[allow(unused_imports)] // filled by k-macros-next
 pub use macros::*;
 pub use runtime::*;
-#[allow(unused_imports)] // filled by k-scope-fiberref
 pub use scope::*;
 pub use testing::*;
 

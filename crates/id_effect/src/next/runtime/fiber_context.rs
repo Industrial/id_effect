@@ -5,7 +5,11 @@
 //! `k-core-runloop` lands the minimal state the runloop needs: the id, the executor, the
 //! interrupt flag, the mask counter and the stored waker. `k-fiber-tree` adds `parent: Weak`,
 //! the children and the done signal (k-rebuild L2: parentage lives here, not in `FiberId`).
+//! `k-scope-fiberref` adds the fiber-ref slots (`refs`, design A §1.3): a per-fiber map from
+//! [`FiberRef`](crate::next::runtime::FiberRef) id to value, copied into a child when it is
+//! forked (no thread-locals).
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -20,6 +24,12 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
   m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// A fiber-ref value slot (an `Arc<T>` behind `dyn Any`).
+pub(crate) type RefSlot = Arc<dyn Any + Send + Sync>;
+
+/// The fiber-ref slots of one fiber: `FiberRef` id → current value.
+type FiberRefs = HashMap<u64, RefSlot>;
+
 /// Per-fiber runtime state shared by its runloop(s), its handle and (later) its parent.
 pub struct FiberContext {
   id: FiberId,
@@ -33,6 +43,8 @@ pub struct FiberContext {
   children: Mutex<HashMap<FiberId, Arc<FiberContext>>>,
   done: AtomicBool,
   done_wakers: Mutex<Vec<Waker>>,
+  /// Fiber-local values set through `FiberRef`s (an unset ref reads its initial value).
+  refs: Mutex<FiberRefs>,
 }
 
 impl std::fmt::Debug for FiberContext {
@@ -54,14 +66,24 @@ impl FiberContext {
     Self::with_parent(None, exec)
   }
 
-  /// A fresh child of `parent`, on the parent's executor. The child is not registered in
-  /// `parent`'s children here: the fork path does that when it spawns the child, so a context
-  /// built and never spawned does not hold up the parent's exit.
+  /// A fresh child of `parent`, on the parent's executor, starting with a copy of the parent's
+  /// fiber refs. The child is not registered in `parent`'s children here: the fork path does
+  /// that when it spawns the child, so a context built and never spawned does not hold up the
+  /// parent's exit.
   pub fn new_child(parent: &Arc<Self>) -> Arc<Self> {
     Self::with_parent(Some(parent), Arc::clone(&parent.exec))
   }
 
+  /// A fresh fiber with no parent that inherits `forker`'s executor and fiber refs (what
+  /// `Scope::fork_in` builds: the scope, not the forking fiber, bounds its lifetime).
+  pub(crate) fn new_detached(forker: &Arc<Self>) -> Arc<Self> {
+    let ctx = Self::with_parent(None, Arc::clone(&forker.exec));
+    *lock(&ctx.refs) = forker.refs_snapshot();
+    ctx
+  }
+
   fn with_parent(parent: Option<&Arc<Self>>, exec: Arc<dyn Executor>) -> Arc<Self> {
+    let refs = parent.map(|p| p.refs_snapshot()).unwrap_or_default();
     Arc::new(Self {
       id: FiberId::fresh(),
       exec,
@@ -72,7 +94,33 @@ impl FiberContext {
       children: Mutex::new(HashMap::new()),
       done: AtomicBool::new(false),
       done_wakers: Mutex::new(Vec::new()),
+      refs: Mutex::new(refs),
     })
+  }
+
+  /// A copy of this fiber's ref slots. Values are shared `Arc`s and a later `set` on either
+  /// side replaces the slot, so neither fiber sees the other's writes.
+  fn refs_snapshot(&self) -> FiberRefs {
+    lock(&self.refs).clone()
+  }
+
+  /// The slot of fiber ref `id` in this fiber, if it was set here or inherited.
+  pub(crate) fn ref_get(&self, id: u64) -> Option<RefSlot> {
+    lock(&self.refs).get(&id).cloned()
+  }
+
+  /// Sets fiber ref `id` in this fiber and returns the previous slot.
+  pub(crate) fn ref_set(&self, id: u64, v: RefSlot) -> Option<RefSlot> {
+    lock(&self.refs).insert(id, v)
+  }
+
+  /// Restores slot `id` to `prev` (`None` clears it, so the ref reads its initial value).
+  pub(crate) fn ref_restore(&self, id: u64, prev: Option<RefSlot>) {
+    let mut refs = lock(&self.refs);
+    match prev {
+      Some(v) => refs.insert(id, v),
+      None => refs.remove(&id),
+    };
   }
 
   /// This fiber's id (the one `Cause::Interrupt` carries).

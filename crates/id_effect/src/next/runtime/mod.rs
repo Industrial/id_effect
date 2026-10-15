@@ -12,7 +12,6 @@ mod tokio;
 pub use executor::*;
 pub use fiber::*;
 pub use fiber_context::*;
-#[allow(unused_imports)] // filled by k-scope-fiberref
 pub use fiber_ref::*;
 pub use runtime::*;
 // `self::` because the extern crate `tokio` is also in scope; inside `tokio.rs`, name the crate
