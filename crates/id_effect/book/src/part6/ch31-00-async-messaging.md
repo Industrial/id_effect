@@ -15,7 +15,7 @@ feature `pg`), with adapters in the labs crates
 [`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) (feature `pg`) is built on sqlx:
 
 - `PgSqlClient` implements [`SqlClient`](https://docs.rs/id_effect_sql/latest/id_effect_sql/trait.SqlClient.html)
-- `provide_pg_sql_client` registers `PgPool` + `SqlClientService`
+- `provide_pg_sql_client::<E>(pool)` is a `Layer` providing `SqlClientService` + `PgPool` (`PgSqlEnv`)
 - Set `DATABASE_URL` (devenv provides `postgresql://postgres@127.0.0.1:5432/id_effect`)
 
 ## Jobs — Apalis (pull workers)
@@ -23,13 +23,19 @@ feature `pg`), with adapters in the labs crates
 `ApalisJobQueue` is **enqueue-only**. Workers pull tasks via Apalis `WorkerBuilder` + `PostgresStorage::poll`. There is no FIFO `dequeue` on the storage side. `id_effect_jobs` uses the stable apalis 1.0 family.
 
 ```rust,ignore
-use id_effect_jobs::{ApalisJobQueue, JobSpec};
-use id_effect::run_async;
+use id_effect_jobs::{ApalisJobQueue, JobQueue, JobSpec};
+use id_effect_tokio::TokioRuntime;
 
 ApalisJobQueue::setup(&pool).await?;
 let queue = ApalisJobQueue::new(&pool, "app_jobs");
-run_async(queue.enqueue(JobSpec::new("notify", b"payload")), ()).await?;
+// `enqueue` is an `Effect<JobRecord, JobError>`; sqlx needs tokio's IO driver.
+let record = TokioRuntime::current()?
+    .run(queue.enqueue(JobSpec::new("notify", b"payload")))
+    .await
+    .into_result()?;
 ```
+
+`JobRunner` / `FabricJobRunner` methods and `drain_jobs(runner, limit, handler)` are effects too (`R = HNil`); `drain_jobs` runs every job in one effect without parking a thread.
 
 Enable: `id_effect_jobs` features `apalis` (+ `postgres`).
 

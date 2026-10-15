@@ -2,24 +2,26 @@
 
 **Part V · Chapter 22** — windowing, joins, replay fanout, FSM scans, and transducers.
 
-Part IV introduced pull-based [`Stream`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) processing with chunks, sinks, and backpressure. This chapter covers **multi-stream** patterns: grouping events into windows, joining live sources, replaying history to fanout branches, stepping simple state machines over elements, and applying composable transducers.
+Part IV introduced the pull-based, chunked [`Stream<A, E = Never, R = HNil>`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs). This chapter covers **multi-stream** patterns: grouping elements into windows, joining sources, replaying history to fanout branches, stepping simple state machines over elements, and applying composable transducers. Every operator pulls one upstream chunk per downstream pull, so memory stays bounded by the chunk size plus the operator's documented state.
 
 ## Module map
 
-| Module | Role |
-|--------|------|
-| [`window`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/window.rs) | Tumbling, sliding, and session windows |
-| [`join`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/join.rs) | `merge`, `combine_latest`, `keyed_join` |
-| [`replay`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/replay.rs) | `broadcast_with_replay` fanout |
-| [`state_scan`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/state_scan.rs) | Optional-output FSM step |
-| [`transducer`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) | `via_transducer` / `transduce_items` |
+All items are re-exported at the crate root (`use id_effect::{Stream, combine_latest, …}`).
+
+| Source | Items |
+|--------|-------|
+| [`window.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/window.rs) | `tumbling`, `sliding`, `session_by_gap`, `tumbling_by_time`, `sliding_by_time` |
+| [`join.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/join.rs) | `Stream::merge`, `combine_latest`, `keyed_join` |
+| [`broadcast.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/broadcast.rs) | `Stream::broadcast`, `Stream::broadcast_replay`, `broadcast_with_replay` |
+| [`transduce.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transduce.rs) | `state_scan`, `transduce_items` / `via_transducer` |
+| [`transducer.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/transducer.rs) | `Transducer`, `transducer_map` / `transducer_filter` / `transducer_take` |
 
 ## When to use what
 
-- **Windows** — aggregate or batch events by count, time, or session gaps.
-- **Joins** — correlate two live sources (`merge` for fair interleave, `combine_latest` for dashboards).
-- **Replay fanout** — same as `broadcast`, plus a retained tail buffer per branch.
-- **`state_scan`** — emit only on FSM transitions (contrast with [`scan`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs) which emits every step).
-- **Transducers** — reusable map/filter pipelines (API-compatible with `id_effect_optics::Transducer`).
+- **Windows** — aggregate or batch elements by count, time, or session gaps.
+- **Joins** — correlate two sources (`merge` for fair interleave, `combine_latest` for dashboards, `keyed_join` for per-key correlation).
+- **Replay fanout** — like `broadcast`, plus a retained tail replayed to each branch.
+- **`state_scan`** — emit only on FSM transitions (contrast with [`scan`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/stream.rs), which emits every step).
+- **Transducers** — reusable map/filter pipelines (the same type as `id_effect_optics::Transducer`).
 
-See the section pages for examples and tests in each module.
+See the section pages for examples; the tests in `crates/id_effect/tests/stream*.rs` exercise each operator.

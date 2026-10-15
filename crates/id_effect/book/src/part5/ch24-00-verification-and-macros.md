@@ -1,44 +1,39 @@
 # Verification and Metaprogramming
 
-Part V closes with tools that keep functional patterns honest: law checks, property tests, golden snapshots, and derive macros.
+Part V closes with tools that keep functional patterns honest: law checks, property tests, readable failure output, and derive macros.
 
 ## What This Chapter Covers
 
-- **[`testing::proptest`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/proptest.rs)** — helpers for `run_test` + `Exit` in property tests
-- **[`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs)** — monad law checks for concrete type constructors
+- **[`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs)** (`id_effect_fp`) — monad law checks for concrete type constructors
 - **[`failure::pretty`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs)** — multi-line `Cause` / `Exit` rendering for failures
-- **[`testing::snapshot`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs)** — golden snapshot builders (`GoldenBuilder`, `assert_golden`)
-- **[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs)** — free applicative over `Effect`
+- **[`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs)** (`id_effect_fp`) — free applicative over `Effect`
 - **`id_effect_proc_macro` derives** — `#[derive(Optics)]` (lenses and prisms) and `#[derive(Schema)]` (`schema()`, `HasSchema`)
 
 ## Property tests with `Exit`
 
-Enable the optional `proptest` feature when you want strategy helpers:
-
-```toml
-[dev-dependencies]
-id_effect = { version = "3", features = ["proptest"] }
-proptest = "1"
-```
-
-Core helpers work without the feature:
+`Exit<A, E>` is `PartialEq` and `Debug`, so effects drop straight into `proptest` (or any property-testing crate): build the effect from the generated input, run it with `block_on` — or on a `TestExecutor` when it sleeps (Part IV [Testing](../part4/ch15-00-testing.md)) — and compare exits.
 
 ```rust
-use id_effect::{run_effect, exit_success_value, Exit, succeed};
+use id_effect::{Effect, Exit, succeed};
 
-let exit = run_effect(succeed(42), ());
-assert_eq!(exit_success_value(exit), Some(42));
+fn double(n: i64) -> Effect<i64, String> {
+    succeed(n * 2)
+}
+
+// Inside `proptest! { #[test] fn doubles(n in -1000i64..1000) { … } }`:
+let n = 21;
+assert_eq!(double(n).block_on(), Exit::succeed(n * 2));
 ```
 
-With `proptest`, use `success_value` and `prop_assert_exit_success` inside `proptest!` blocks (see Part IV [Property Testing](../part4/ch15-04-property-testing.md)).
+The 0.6 `testing::proptest` and `testing::snapshot` helpers (`success_value`, `prop_assert_exit_success`, `GoldenBuilder`, `assert_golden*`) and the `proptest` cargo feature were removed in 0.7 with the old kernel; plain `Exit` assertions replace them.
 
 ## Monad law checks
 
-Use [`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs) with **function items** (not closure literals) for `f` and `g`:
+[`law_test!`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/law_test.rs) expands to a `#[test]` checking left identity, right identity and associativity. `f` and `g` must be `fn` items:
 
 ```rust
-use id_effect::law_test;
 use id_effect_fp::algebra::monad::option;
+use id_effect_fp::law_test;
 
 fn inc(x: i32) -> Option<i32> { Some(x + 1) }
 fn double(x: i32) -> Option<i32> { Some(x * 2) }
@@ -57,17 +52,15 @@ law_test! {
 
 ## Pretty failures
 
-[`pretty_cause`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) renders indented trees; [`pretty_exit`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) labels success vs failure branches for logs and test output.
-
-## Golden snapshots
-
-[`GoldenBuilder`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) freezes expected strings; [`assert_golden_effect`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/testing/snapshot.rs) runs an effect and asserts the snapshot contract.
+[`pretty_cause`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) renders an indented cause tree (`Both` / `Then` branches nested); [`pretty_exit`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/failure/pretty.rs) labels success vs failure for logs and test output. `pretty_cause_inline` gives a one-line form. All are re-exported from `id_effect::failure`.
 
 ```rust
-use id_effect::{GoldenBuilder, snapshot_effect_map_flat_map, assert_golden_effect};
+use id_effect::failure::pretty_exit;
+use id_effect::{Effect, fail};
 
-assert_golden_effect(snapshot_effect_map_flat_map(), ());
-GoldenBuilder::new("my_case", "expected").assert_observed("observed");
+let eff: Effect<u8, &str> = fail("boom");
+let exit = eff.block_on();
+println!("{}", pretty_exit(&exit));
 ```
 
 ## Free applicative
@@ -75,20 +68,20 @@ GoldenBuilder::new("my_case", "expected").assert_observed("observed");
 [`FreeAp`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) collects effectful work as data, then [`interpret`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/src/algebra/free_ap.rs) runs it as a concrete `Effect`:
 
 ```rust
-use id_effect::{FreeAp, pure, run_test, Exit};
+use id_effect::{Exit, HNil, succeed};
+use id_effect_fp::FreeAp;
 
-let free = FreeAp::ap2(
-  |a: i32, b: i32| a + b,
-  FreeAp::lift(pure(2)),
-  FreeAp::lift(pure(3)),
+let free: FreeAp<i32, (), HNil> = FreeAp::ap2(
+    |a: i32, b: i32| a + b,
+    FreeAp::lift(succeed(2)),
+    FreeAp::lift(succeed(3)),
 );
-let exit = run_test(free.interpret(), ());
-assert_eq!(exit, Exit::succeed(5));
+assert_eq!(free.interpret().block_on(), Exit::succeed(5));
 ```
 
 ## Derive macros
 
-`id_effect_proc_macro` ships derives for optics and schema codegen:
+`id_effect_proc_macro` ships derives for optics and schema codegen (both re-exported by `id_effect`):
 
 | Derive | Generates |
 |--------|-----------|
@@ -96,7 +89,7 @@ assert_eq!(exit, Exit::succeed(5));
 | `Schema` | inherent `schema()` + `HasSchema` over the JSON-shaped `Unknown` wire |
 
 ```rust
-use id_effect_proc_macro::{Optics, Schema};
+use id_effect::{Optics, Schema};
 
 #[derive(Optics)]
 struct Point { x: i32, y: i32 }
@@ -105,7 +98,7 @@ struct Point { x: i32, y: i32 }
 struct User { #[schema("user_name")] name: String }
 ```
 
-`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(Schema)]` generates `schema()` and a `HasSchema` impl; `#[schema("wire")]` renames a field on the wire. For a JSON text parser, pass the type to `id_effect_parse::SchemaBridge::parser_for::<User>()`.
+`#[derive(Optics)]` generates field lenses and enum prisms backed by `id_effect_optics`. `#[derive(Schema)]` generates `schema()` and a `HasSchema` impl; `#[schema("wire")]` renames a field on the wire. For a JSON text parser, pass the type to the labs `id_effect_parse::SchemaBridge::parser_for::<User>()` (see [Parser Combinators](./ch20-00-parser-combinators.md)).
 
 The 0.6 deprecated alias of `Schema` was removed in 0.7; use `#[derive(Schema)]`.
 

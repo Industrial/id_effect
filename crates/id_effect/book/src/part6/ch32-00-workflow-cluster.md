@@ -19,7 +19,9 @@ journal.register_workflow("order-42")?;
 let out: String = journal.run_step_typed("order-42", 0, "validate", || Ok("ok".into()))?;
 ```
 
-Register providers with `provide_duroxide_pg`.
+The journal API is synchronous. To give effects the duroxide capabilities, provide the layer
+`provide_duroxide_pg::<E>(pool, url)` (`Layer<HCons<DuroxideProvider, HCons<WorkflowRuntime, HNil>>, E>`;
+the caller owns the pool): `program.provide_layer(provide_duroxide_pg::<AppError>(pool, url))`.
 
 ## Dev / tests: SQLite (`memory` feature)
 

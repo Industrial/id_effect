@@ -18,9 +18,21 @@ HostBuilder::new()
 
 See `cargo run -p id_effect_axum --example 040_app_host`.
 
+The server's lifetime can also be a scoped `Layer`: `server_layer(app)` binds on acquire and shuts down gracefully (within `shutdown_timeout`) on release; `serve(app)`, `serve_until(app, stop)` and `serve_until_shutdown(app)` (SIGINT/SIGTERM) build on it:
+
+```rust,ignore
+use id_effect_axum::{EffectExecutor, HostConfig, HostError, provide_host_config_env, serve_until_shutdown};
+
+let config = provide_host_config_env::<HostError>().provide_to(HostConfig::layer());
+let program = serve_until_shutdown(app).provide_layer(config);
+let exit = EffectExecutor::global().run_effect(program).await;
+```
+
+Each request's effect runs as one fiber on the tokio runtime serving it; a client disconnect interrupts that fiber (its finalizers run).
+
 ## Sessions and OAuth
 
-Trait-only v1 — bring your own store/IdP via `id_effect_platform::auth`:
+Traits only — bring your own store/IdP via `id_effect_platform::auth` (methods return `Effect`s):
 
 - [`SessionStore`](https://docs.rs/id_effect_platform/latest/id_effect_platform/trait.SessionStore.html) + [`MemorySessionStore`](https://docs.rs/id_effect_platform/latest/id_effect_platform/struct.MemorySessionStore.html)
 - [`OAuthClient`](https://docs.rs/id_effect_platform/latest/id_effect_platform/trait.OAuthClient.html) + `MemoryOAuthClient` (in-memory test double, feature `test-util`)
