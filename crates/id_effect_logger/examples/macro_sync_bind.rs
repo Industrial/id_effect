@@ -1,24 +1,25 @@
-//! Log inside `effect!` using `~EffectLogger` and `~logger.level(…)` steps.
+//! Log inside `effect_next!` using `~EffectLogger` and `~logger.level(…)` steps.
 //!
 //! Run: `devenv shell -- cargo run -p id_effect_logger --example macro_sync_bind`
 
-use ::id_effect::{Effect, Env, caps, effect, provide, run_with, succeed};
-use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
+use ::id_effect::Exit;
+use ::id_effect::next::{Effect, HNil, caps_next, effect_next, succeed};
+use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn main() {
   tracing_subscriber::fmt()
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let program: Effect<i32, EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
-    let logger = *~EffectLogger;
+  let program: Effect<i32, EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+    let logger = ~EffectLogger;
     ~logger.info("first step: log_info via ~logger");
     ~logger.warn("second step: log_warn via ~logger");
-    let n = ~succeed::<i32, EffectLoggerError, Env>(21);
+    let n = ~succeed::<i32, EffectLoggerError, HNil>(21);
     n + 1
   });
 
-  let n = run_with([provide!(EffectLoggerLive)], program).expect("run");
-  assert_eq!(n, 22);
-  println!("macro_sync_bind ok: {n}");
+  let n = program.provide(EffectLogger).block_on();
+  assert_eq!(n, Exit::Success(22));
+  println!("macro_sync_bind ok: {n:?}");
 }

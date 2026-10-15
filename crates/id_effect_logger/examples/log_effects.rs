@@ -3,8 +3,9 @@
 //!
 //! Run: `RUST_LOG=trace devenv shell -- cargo run -p id_effect_logger --example log_effects`
 
-use ::id_effect::{Effect, caps, effect, provide, run_with};
-use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
+use ::id_effect::Exit;
+use ::id_effect::next::{Effect, caps_next, effect_next};
+use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn main() {
   tracing_subscriber::fmt()
@@ -14,8 +15,8 @@ fn main() {
     )
     .init();
 
-  let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!(|r| {
-    let logger = *~EffectLogger;
+  let prog: Effect<(), EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+    let logger = ~EffectLogger;
     ~logger.trace("trace step");
     ~logger.debug("debug step");
     ~logger.info("info step");
@@ -23,6 +24,6 @@ fn main() {
     ~logger.error("error step");
   });
 
-  run_with([provide!(EffectLoggerLive)], prog).expect("logging should not fail");
+  assert_eq!(prog.provide(EffectLogger).block_on(), Exit::Success(()));
   println!("ran all five log levels via ~EffectLogger");
 }

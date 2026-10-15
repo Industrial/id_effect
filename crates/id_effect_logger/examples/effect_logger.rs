@@ -1,10 +1,10 @@
-//! [`EffectLogger`] as a service value: each method returns an
-//! `Effect<(), EffectLoggerError>` that is run with [`id_effect::run_blocking`]
-//! against a `()` environment (the logger is self-contained after extraction).
+//! [`EffectLogger`] as a service value: each method returns a `next`
+//! `Effect<(), EffectLoggerError>` (no environment) that is run at the edge with `block_on`
+//! (the logger is self-contained after extraction).
 //!
-//! Run: `RUST_LOG=debug devenv shell -- cargo run -p logger --example effect_logger`
+//! Run: `RUST_LOG=debug devenv shell -- cargo run -p id_effect_logger --example effect_logger`
 
-use ::id_effect::run_blocking;
+use ::id_effect::Exit;
 use id_effect_logger::{EffectLogger, LogLevel};
 
 fn main() {
@@ -16,12 +16,15 @@ fn main() {
     .init();
 
   let log = EffectLogger;
-  run_blocking(log.trace("trace line (raise RUST_LOG=trace to see)"), ()).unwrap();
-  run_blocking(log.debug("debug line (raise RUST_LOG=debug to see)"), ()).unwrap();
-  run_blocking(log.info("info: EffectLogger methods work"), ()).unwrap();
-  run_blocking(log.warn("warn example"), ()).unwrap();
-  run_blocking(log.error("error example"), ()).unwrap();
-
-  // .log() also accepts an explicit LogLevel:
-  run_blocking(log.log(LogLevel::Info, "explicit level via .log()"), ()).unwrap();
+  for step in [
+    log.trace("trace line (raise RUST_LOG=trace to see)"),
+    log.debug("debug line (raise RUST_LOG=debug to see)"),
+    log.info("info: EffectLogger methods work"),
+    log.warn("warn example"),
+    log.error("error example"),
+    // .log() also accepts an explicit LogLevel:
+    log.log(LogLevel::Info, "explicit level via .log()"),
+  ] {
+    assert_eq!(step.block_on(), Exit::Success(()));
+  }
 }

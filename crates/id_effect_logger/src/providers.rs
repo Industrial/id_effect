@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use std::collections::HashMap;
 
+use ::id_effect::next::FiberRef;
 use ::id_effect::{
-  Cap, CapabilityId, CapabilityKey, Env, FiberRef, ProviderBox, ProviderError, ProviderNode,
-  run_blocking,
+  Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode,
 };
 
 use crate::{
@@ -31,22 +31,9 @@ pub struct LogMetadataLive;
 
 impl LogMetadataLive {
   fn install() -> EffectLogMetadata {
-    let ann = run_blocking(
-      FiberRef::make_with(
-        HashMap::<String, String>::new,
-        |m| m.clone(),
-        |p, _c| p.clone(),
-      ),
-      (),
-    )
-    .expect("annotation FiberRef");
-    let sp = run_blocking(
-      FiberRef::make_with(Vec::<String>::new, |v| v.clone(), |p, _c| p.clone()),
-      (),
-    )
-    .expect("span FiberRef");
-    install_log_annotations_fiber_ref(ann);
-    install_log_spans_fiber_ref(sp);
+    // A forked child starts with a copy of its parent's value (`next` FiberRef inheritance).
+    install_log_annotations_fiber_ref(FiberRef::new(HashMap::<String, String>::new()));
+    install_log_spans_fiber_ref(FiberRef::new(Vec::<String>::new()));
     EffectLogMetadata
   }
 }
@@ -111,11 +98,7 @@ pub fn provide_minimum_log_level(initial: LogLevel) -> ProviderBox {
     }
 
     fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let initial = self.0;
-      let fr = run_blocking(FiberRef::make(move || initial), ()).map_err(|e| ProviderError {
-        provider: "effect-logger-min-level",
-        message: format!("FiberRef::make: {e:?}"),
-      })?;
+      let fr = FiberRef::new(self.0);
       install_min_log_level_fiber_ref(fr.clone());
       let mut out = deps.clone();
       out.insert::<Cap<EffectLogMinLevel>>(fr);
