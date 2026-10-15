@@ -18,13 +18,13 @@ struct StubExec;
 
 impl Executor for StubExec {
   fn spawn(&self, _: BoxFuture<'static, ()>) {
-    unreachable!("next_layer_base tests spawn no tasks")
+    unreachable!("layer_base tests spawn no tasks")
   }
   fn spawn_local(&self, _: LocalBoxFuture<'static, ()>) -> Result<(), NotLocal> {
     Err(NotLocal)
   }
   fn spawn_blocking(&self, _: Box<dyn FnOnce() + Send>) {
-    unreachable!("next_layer_base tests spawn no blocking work")
+    unreachable!("layer_base tests spawn no blocking work")
   }
   fn sleep(&self, _: Duration) -> BoxFuture<'static, ()> {
     Box::pin(async {})

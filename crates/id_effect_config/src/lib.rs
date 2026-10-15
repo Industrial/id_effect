@@ -123,7 +123,7 @@ pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-  //! The v1 `run_blocking(effect, env)` shape over the edge, so the tests port mechanically.
+  //! Test helper over the `Effect::block_on` edge that returns the typed outcome as a `Result`.
   use ::id_effect::{Effect, HList};
 
   /// Provide `env`, run on the global runtime, and return the typed outcome (panics on a defect).

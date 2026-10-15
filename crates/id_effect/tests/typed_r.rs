@@ -17,13 +17,13 @@ struct StubExec;
 
 impl Executor for StubExec {
   fn spawn(&self, _: BoxFuture<'static, ()>) {
-    unreachable!("next_typed_r tests spawn no tasks")
+    unreachable!("typed_r tests spawn no tasks")
   }
   fn spawn_local(&self, _: LocalBoxFuture<'static, ()>) -> Result<(), NotLocal> {
     Err(NotLocal)
   }
   fn spawn_blocking(&self, _: Box<dyn FnOnce() + Send>) {
-    unreachable!("next_typed_r tests spawn no blocking work")
+    unreachable!("typed_r tests spawn no blocking work")
   }
   fn sleep(&self, _: Duration) -> BoxFuture<'static, ()> {
     Box::pin(async {})

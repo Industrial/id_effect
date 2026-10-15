@@ -37,14 +37,14 @@ It is not a batteries-included web framework: there is an Axum integration for t
 **id_effect** models programs as **descriptions** of work (`Effect` values) rather than immediate side effects. You compose them, attach requirements to the type signature, and run them when you choose:
 
 - **`Effect<A, E, R>`** — success type `A`, error type `E`, requirements `R`.
-- **Capabilities and providers** — typed dependency injection: declare what an effect needs (`caps!`, `Needs`), provide it once at the edge (`#[derive(ProviderSpecDerive)]`, `build_env`).
+- **Capabilities and providers** — typed dependency injection: declare what an effect needs (`caps!`, `need`), provide it once at the edge as a `Layer` (`#[derive(ProviderSpecDerive)]`, `provide_layer`).
 - **`pipe!` and `effect!`** — composition and do-notation-style blocks without hiding what the types mean.
 - **Structured concurrency and resilience** — fibers, scopes, cancellation, `Schedule`-driven retry, circuit breakers.
 - **Pull-based streams** — bounded-memory, incremental operators that work on infinite sources.
 - **Supervision and distribution** — `id_effect_process` (processes, links, monitors, supervision trees, gen_statem-style FSMs) and `id_effect_node` (Process Mesh across nodes).
-- **Testing kit** — `run_test`, `TestClock`, capability mocks, golden snapshots, `assert_bounded_memory`.
+- **Testing kit** — the deterministic `TestExecutor` (virtual clock: `run_until_stalled`, `advance`, `next_timer_deadline`), a seeded/fed `TestRandom`, and capability mocks provided as layers.
 
-The core crate runs effects on its own interpreter (`run_blocking`, `run_async`); the default `compute` feature adds the parallel Compute Fabric. Tokio integration lives in `id_effect_tokio`.
+The core crate runs effects as fibers on a pluggable executor (a multi-thread `TokioExecutor` in production, the deterministic `TestExecutor` with a virtual clock in tests): `Runtime::run(eff).await` in async code, `Effect::block_on` / `Runtime::block_on` at a synchronous edge. The default `compute` feature adds the parallel Compute Fabric; `id_effect_tokio` is the Tokio runtime adapter.
 
 ---
 
@@ -116,15 +116,15 @@ id_effect = "0.6"
 ```
 
 ```rust
-use id_effect::{Effect, run_blocking, succeed};
+use id_effect::{Effect, Never, succeed};
 
-fn greet(name: &str) -> Effect<String, (), ()> {
+fn greet(name: &str) -> Effect<String, Never> {
     succeed(format!("Hello, {name}!"))
 }
 
 fn main() {
-    let result = run_blocking(greet("world"), ());
-    println!("{result:?}");
+    let exit = greet("world").block_on();
+    println!("{exit:?}");
 }
 ```
 

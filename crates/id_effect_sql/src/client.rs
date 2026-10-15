@@ -372,7 +372,7 @@ pub(crate) mod tests {
   };
   use crate::error::SqlError;
 
-  /// The v1 `run_blocking(effect, ())` shape over the blocking edge.
+  /// Runs `eff` with `Effect::block_on`; the typed outcome as a `Result` (panics on any other cause).
   pub(crate) fn run<A: Send + 'static>(eff: Effect<A, SqlError>) -> Result<A, SqlError> {
     match eff.block_on() {
       Exit::Success(a) => Ok(a),

@@ -324,7 +324,7 @@ mod tests {
   use id_effect::{Cause, Exit};
   use std::path::Path;
 
-  /// The v1 `run_blocking(effect, ())` shape over the blocking edge.
+  /// Runs `eff` with `Effect::block_on`; the typed outcome as a `Result` (panics on any other cause).
   fn run_blocking<A: Send + 'static>(eff: Effect<A, FsError>) -> Result<A, FsError> {
     match eff.block_on() {
       Exit::Success(a) => Ok(a),
