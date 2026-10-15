@@ -2,7 +2,7 @@
 
 **id_effect** is a typed effect runtime for Rust: `Effect<A, E, R>`, capability-based dependency injection, structured concurrency, resilience, pull-based streams and a first-class testing kit — plus OTP-grade supervision and distribution for **long-running supervised services, daemons and CLIs**. The design is inspired by [Effect](https://effect.website) (Effect-TS) and Erlang/OTP: programs describe work as lazy values, wire dependencies through the type system, run under an explicit runtime, and recover under supervision.
 
-It is not a batteries-included web framework: there is an Axum integration for the HTTP edge of a service, but no ORM, auth or migrations layer.
+It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-platform-vision.md)): the compiler checks your dependencies, errors and resources, the runtime supervises them, and one command gets you a production-shaped service. Today it ships the runtime, supervision, and integrations for Axum and SQL; further effect-native batteries (migrations, auth, jobs, mail, storage, an in-app console) and the `id_effect_kit` facade and `id-effect` CLI are planned for the releases leading to 1.0.
 
 <!-- Badge row 1: CI & quality -->
 [![CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/ci.yml)

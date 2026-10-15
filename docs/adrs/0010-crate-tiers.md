@@ -5,6 +5,7 @@
 Accepted (2026-10-14). Executed by mission `id-effect-consolidation-0-6`
 (`.maestro/missions/id-effect-consolidation-0-6.plan.md`). Amended for 0.7 on
 2026-10-15 (see [Amendment 3](#amendment-3-2026-10-15-for-07)).
+Superseded in part by [ADR 0012](0012-platform-vision.md) (vision statement and Rule 4).
 
 ## Context
 
