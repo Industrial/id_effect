@@ -157,13 +157,9 @@ fn schema_decode_expr(
       };
     }
     if path.path.is_ident("i32") {
+      let i32_schema = i32_schema_tokens();
       return quote! {
-        let #field_ident = ::id_effect::schema::transform(
-          ::id_effect::schema::i64::<()>(),
-          |n| ::std::convert::TryInto::<i32>::try_into(n)
-            .map_err(|_| ::id_effect::schema::ParseError::new(#wire_lit, "i32 overflow")),
-          |n| *n as i64,
-        )
+        let #field_ident = #i32_schema
         .decode_unknown(
           obj.get(#wire_lit)
             .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
@@ -265,6 +261,14 @@ fn schema_decode_from_unknown(
           .map_err(|e| e.prefix(#wire_lit))?;
       };
     }
+    if path.path.is_ident("i32") {
+      let i32_schema = i32_schema_tokens();
+      return quote! {
+        let #out_ident = #i32_schema
+          .decode_unknown(#src)
+          .map_err(|e| e.prefix(#wire_lit))?;
+      };
+    }
   }
   let ty_tokens = quote! { #ty };
   quote! {
@@ -354,6 +358,39 @@ fn schema_encode_option(
         )
       };
     }
+    if path.path.is_ident("i32") {
+      return quote! {
+        (
+          #wire_lit.to_string(),
+          match value.#field_ident {
+            None => ::id_effect::schema::Unknown::Null,
+            Some(v) => ::id_effect::schema::Unknown::I64(::std::primitive::i64::from(v)),
+          },
+        )
+      };
+    }
+    if path.path.is_ident("bool") {
+      return quote! {
+        (
+          #wire_lit.to_string(),
+          match value.#field_ident {
+            None => ::id_effect::schema::Unknown::Null,
+            Some(v) => ::id_effect::schema::Unknown::Bool(v),
+          },
+        )
+      };
+    }
+    if path.path.is_ident("f64") {
+      return quote! {
+        (
+          #wire_lit.to_string(),
+          match value.#field_ident {
+            None => ::id_effect::schema::Unknown::Null,
+            Some(v) => ::id_effect::schema::Unknown::F64(v),
+          },
+        )
+      };
+    }
   }
   let inner_tokens = quote! { #inner };
   quote! {
@@ -381,9 +418,24 @@ fn schema_for_type(ty: &Type) -> proc_macro2::TokenStream {
     if path.path.is_ident("f64") {
       return quote! { ::id_effect::schema::f64::<()>() };
     }
+    if path.path.is_ident("i32") {
+      return i32_schema_tokens();
+    }
   }
   let ty_tokens = quote! { #ty };
   quote! { <#ty_tokens as ::id_effect::schema::HasSchema>::schema() }
+}
+
+/// `i32` over the `i64` wire: decode range-checks, encode widens losslessly.
+fn i32_schema_tokens() -> proc_macro2::TokenStream {
+  quote! {
+    ::id_effect::schema::transform(
+      ::id_effect::schema::i64::<()>(),
+      |n: ::std::primitive::i64| ::std::convert::TryInto::<::std::primitive::i32>::try_into(n)
+        .map_err(|_| ::id_effect::schema::ParseError::new("", "i32 overflow")),
+      |n: ::std::primitive::i32| ::std::primitive::i64::from(n),
+    )
+  }
 }
 
 /// `Option<T>` / `Vec<T>` carry generic args, so `Path::is_ident` never matches them.
@@ -458,6 +510,20 @@ fn schema_encode_vec(
         )
       };
     }
+    if path.path.is_ident("i32") {
+      return quote! {
+        (
+          #wire_lit.to_string(),
+          ::id_effect::schema::Unknown::Array(
+            value
+              .#field_ident
+              .iter()
+              .map(|n| ::id_effect::schema::Unknown::I64(::std::primitive::i64::from(*n)))
+              .collect(),
+          ),
+        )
+      };
+    }
   }
   let inner_tokens = quote! { #inner };
   quote! {
@@ -469,9 +535,9 @@ fn schema_encode_vec(
           .iter()
           .cloned()
           .map(|item| {
-            let wire = <#inner_tokens as ::id_effect::schema::HasSchema<I = ::id_effect::schema::Unknown>>::schema()
-              .encode(item);
-            wire
+            // Associated-item constraints are not allowed in a qualified path
+            // (`<T as HasSchema<I = Unknown>>` is E0229); `Unknown::Array` pins `I`.
+            <#inner_tokens as ::id_effect::schema::HasSchema>::schema().encode(item)
           })
           .collect(),
       ),

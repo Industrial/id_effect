@@ -8,7 +8,7 @@
 //! | [`equal`] | [`Equal`], [`EffectHash`] | Stratum 0 |
 //! | [`data`] | [`EffectData`], [`DataStruct`], [`DataTuple`], [`DataError`] | [`equal`] |
 //! | [`order`] | [`DynOrder`], [`Ordering`], `ordering`, `order` | Stratum 0 |
-//! | [`parse`] | [`Schema`], [`ParseError`], [`Unknown`], primitives, `tuple`/`tuple3`/`tuple4`, `struct_`/`struct3`/`struct4`, … | [`data`] |
+//! | [`parse`] | [`Schema`], [`ParseError`], [`Unknown`], primitives, `tuple`/`tuple3`..`tuple12`, `struct_`/`struct3`..`struct12`, … | [`data`] |
 //! | [`extra`] | [`record`], [`suspend`], [`union_chain`], literals, [`wire_equal`](extra::wire_equal), [`null_or`](extra::null_or) | [`parse`] |
 //! | [`parse_errors`] | [`ParseErrors`] | [`parse`] |
 //! | [`has_schema`] | [`HasSchema`] | [`parse`] |
@@ -42,7 +42,9 @@ pub use has_schema::HasSchema;
 pub use order::{DynOrder, Ordering, ordering};
 pub use parse::{
   ParseError, Schema, Unknown, array, bool_, f64, filter, i64, i64_unknown_wire, optional, refine,
-  string, struct_, struct3, struct4, transform, tuple, tuple3, tuple4, union_,
+  string, struct_, struct3, struct4, struct5, struct6, struct7, struct8, struct9, struct10,
+  struct11, struct12, transform, tuple, tuple3, tuple4, tuple5, tuple6, tuple7, tuple8, tuple9,
+  tuple10, tuple11, tuple12, union_,
 };
 pub use parse_errors::ParseErrors;
 pub use redacted::Redacted;
