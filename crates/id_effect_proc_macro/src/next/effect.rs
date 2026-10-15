@@ -4,7 +4,8 @@
 //!   type, `R` comes from the expected type (the fn return type). With `: &Caps`, `R = Caps`. A
 //!   named head binds `r: &R` to the environment.
 //! - `~Cap` (an upper-case identifier not followed by `::`, `(`, `{` or `!`) reads capability
-//!   `Cap`: `Ctx::get::<Cap, _>(&ctx)`, a `&Arc<Cap>` with the HList index inferred.
+//!   `Cap`: `<_ as Selector<Cap, _>>::get(Ctx::env(&ctx))`, a `&Arc<Cap>` with the HList index
+//!   inferred.
 //! - `~expr` (anything else: a path, call, method chain, group) binds a sub-effect:
 //!   `Ctx::bind(&ctx, expr).await` (`effect_next!`) or `__private::bind_local(&ctx, expr).await`
 //!   (`effect_local_next!`). Its error widens into the body's: `Never` to anything, otherwise
@@ -203,9 +204,11 @@ fn rewrite(tokens: &[TokenTree], local: bool) -> TokenStream {
           let TokenTree::Ident(id) = &tokens[start] else {
             unreachable!("is_cap_read checked for an ident")
           };
-          let mut call = parse("::id_effect::next::Ctx::get::<");
+          // A direct trait call (not `Ctx::get`): a missing capability then reports only the
+          // `Selector` diagnostic, without a `required by a bound in Ctx::get` note.
+          let mut call = parse("<_ as ::id_effect::next::Selector<");
           call.extend([TokenTree::Ident(id.clone())]);
-          call.extend(parse(", _>(&__ctx)"));
+          call.extend(parse(", _>>::get(::id_effect::next::Ctx::env(&__ctx))"));
           out.push(group(Delimiter::Parenthesis, respan(call, id.span())));
           i = start + 1;
           continue;

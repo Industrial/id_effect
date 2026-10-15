@@ -1,0 +1,5 @@
+error: capability `ConfigSource` appears twice in `caps_next!(..)`; an environment holds each capability once
+  --> tests/next_ui/fail/duplicate_capability_caps.rs:16:68
+   |
+16 | fn handler() -> Effect<String, Never, caps_next!(ConfigSource, Db, ConfigSource)> {
+   |                                                                    ^^^^^^^^^^^^

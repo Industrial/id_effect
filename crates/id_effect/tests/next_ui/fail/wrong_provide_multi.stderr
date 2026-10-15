@@ -1,0 +1,35 @@
+error[E0277]: `Cache` is not required by this effect, so it cannot be provided
+  --> tests/next_ui/fail/wrong_provide_multi.rs:25:19
+   |
+25 |   let _ = hello().provide(Cache::default());
+   |                   ^^^^^^^ this effect's environment `id_effect::next::HCons<Logger, id_effect::next::HNil>` has no `Cache`
+   |
+   = help: the trait `id_effect::next::Plucker<Cache, id_effect::next::There<_>>` is not implemented for `id_effect::next::HCons<Logger, id_effect::next::HNil>`
+   = note: only capabilities in the effect's `R` can be provided; drop this `.provide(..)`
+help: the trait `id_effect::next::Plucker<T, id_effect::next::Here>` is implemented for `id_effect::next::HCons<T, Tl>`
+  --> src/next/capability/hlist.rs
+   |
+   | impl<T: Send + Sync + 'static, Tl: HList> Plucker<T, Here> for HCons<T, Tl> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0277]: `Cache` is not required by this effect, so it cannot be provided
+  --> tests/next_ui/fail/wrong_provide_multi.rs:25:19
+   |
+25 |   let _ = hello().provide(Cache::default());
+   |                   ^^^^^^^ this effect's environment `id_effect::next::HCons<Greeting, id_effect::next::HCons<Logger, id_effect::next::HNil>>` has no `Cache`
+   |
+   = help: the trait `id_effect::next::Plucker<Cache, id_effect::next::There<id_effect::next::There<_>>>` is not implemented for `id_effect::next::HCons<Greeting, id_effect::next::HCons<Logger, id_effect::next::HNil>>`
+   = note: only capabilities in the effect's `R` can be provided; drop this `.provide(..)`
+help: the trait `id_effect::next::Plucker<T, id_effect::next::Here>` is implemented for `id_effect::next::HCons<T, Tl>`
+  --> src/next/capability/hlist.rs
+   |
+   | impl<T: Send + Sync + 'static, Tl: HList> Plucker<T, Here> for HCons<T, Tl> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `id_effect::next::capability::provide::<impl id_effect::next::Effect<A, E, R>>::provide`
+  --> src/next/capability/provide.rs
+   |
+   |   pub fn provide<T, I>(self, t: T) -> Effect<A, E, <R as Plucker<T, I>>::Rest>
+   |          ------- required by a bound in this associated function
+...
+   |     R: Plucker<T, I>,
+   |        ^^^^^^^^^^^^^ required by this bound in `id_effect::next::capability::provide::<impl Effect<A, E, R>>::provide`

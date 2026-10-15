@@ -1,0 +1,41 @@
+error[E0283]: type annotations needed
+  --> tests/next_ui/fail/generic_runner_unannotated.rs:24:37
+   |
+23 |   let _ = execute(hlist![Counter(7)], || {
+   |           ------- ------------------ type must be known at this point
+   |           |
+   |           required by a bound introduced by this call
+24 |     effect_next!({ format!("n={}", ~Counter.0) })
+   |                                     ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
+   |
+   = note: multiple `impl`s satisfying `id_effect::next::HCons<Counter, id_effect::next::HNil>: id_effect::next::Embed<_, _>` found in the `id_effect` crate:
+           - impl<S, H, T, I, Is> id_effect::next::Embed<id_effect::next::HCons<H, T>, id_effect::next::HCons<I, Is>> for S
+             where S: id_effect::next::Selector<H, I>, S: id_effect::next::Embed<T, Is>;
+           - impl<S> id_effect::next::Embed<id_effect::next::HNil, id_effect::next::HNil> for S;
+note: required by a bound in `execute`
+  --> tests/next_ui/fail/generic_runner_unannotated.rs:12:8
+   |
+10 | fn execute<Env, R, Is, F>(env: Env, f: F) -> String
+   |    ------- required by a bound in this function
+11 | where
+12 |   Env: Embed<R, Is> + Send + Sync + 'static,
+   |        ^^^^^^^^^^^^ required by this bound in `execute`
+help: consider specifying a concrete type for the type parameter `R`
+   |
+24 |     effect_next!({ format!("n={}", ~Counter::</* Type */>.0) })
+   |                                            ++++++++++++++
+
+error[E0283]: type annotations needed
+  --> tests/next_ui/fail/generic_runner_unannotated.rs:24:37
+   |
+24 |     effect_next!({ format!("n={}", ~Counter.0) })
+   |                                     ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
+   |
+   = note: multiple `impl`s satisfying `_: id_effect::next::Selector<Counter, _>` found in the `id_effect` crate:
+           - impl<T, H, Tl, I> id_effect::next::Selector<T, id_effect::next::There<I>> for id_effect::next::HCons<H, Tl>
+             where Tl: id_effect::next::Selector<T, I>;
+           - impl<T, Tl> id_effect::next::Selector<T, id_effect::next::Here> for id_effect::next::HCons<T, Tl>;
+help: consider specifying a concrete type for the type parameter `R`
+   |
+24 |     effect_next!({ format!("n={}", ~Counter::</* Type */>.0) })
+   |                                            ++++++++++++++
