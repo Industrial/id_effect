@@ -16,10 +16,6 @@ use id_effect::next::{
   die, fail, from_async, sleep, succeed, suspend, sync, yield_fiber,
 };
 use id_effect::{Cause, Exit};
-use stats_alloc::{INSTRUMENTED_SYSTEM, Region, StatsAlloc};
-
-#[global_allocator]
-static GLOBAL: &StatsAlloc<std::alloc::System> = &INSTRUMENTED_SYSTEM;
 
 /// Spawns nothing; `sleep` completes at once and records the requested duration.
 #[derive(Default)]
@@ -67,21 +63,9 @@ fn get(c: &Arc<AtomicUsize>) -> usize {
 }
 
 // ── AC1: inline Pure, zero allocations ─────────────────────────────────────────────────────
-
-#[test]
-fn succeed_and_drive_through_the_pure_fast_path_allocates_nothing() {
-  let fiber = fiber();
-  let waker = Waker::noop();
-  let mut cx = Context::from_waker(waker);
-  let region = Region::new(GLOBAL);
-  let eff: Effect<u32> = succeed(1);
-  let mut fut = eff.run_on(Arc::clone(&fiber));
-  let out = Pin::new(&mut fut).poll(&mut cx);
-  let stats = region.change();
-  assert!(matches!(out, Poll::Ready(Exit::Success(1))));
-  assert_eq!(stats.allocations, 0, "{stats:?}");
-  assert_eq!(stats.reallocations, 0, "{stats:?}");
-}
+//
+// Lives in `tests/next_kernel_alloc.rs`: its global allocation counter must not see other test
+// threads, so it is the only test in its binary.
 
 // ── AC2: Send ──────────────────────────────────────────────────────────────────────────────
 
@@ -93,6 +77,12 @@ fn effects_are_send() {
   assert_send::<Effect<u8, (), Caps>>();
   assert_send::<Effect<u8, (), HNil>>();
   assert_send::<Effect<u8>>();
+}
+
+/// K exit item 3, for every environment `R` (not only concrete ones): `Effect<u8, (), R>: Send`.
+#[allow(dead_code)]
+fn effects_are_send_for_any_r<R: Send + Sync + 'static>() {
+  assert_send::<Effect<u8, (), R>>();
 }
 
 // ── AC3: laziness ──────────────────────────────────────────────────────────────────────────
