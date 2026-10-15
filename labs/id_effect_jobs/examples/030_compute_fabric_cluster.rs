@@ -7,7 +7,7 @@
 use id_effect::compute::{
   ComputeFabric, MetricMode, MetricPolicy, RebalanceStrategy, ResourcePolicy, WorkProfile,
 };
-use id_effect::next::succeed;
+use id_effect::succeed;
 use id_effect_jobs::{JobRunner, JobSpec, MemoryJobRunner, drain_jobs};
 
 fn main() {

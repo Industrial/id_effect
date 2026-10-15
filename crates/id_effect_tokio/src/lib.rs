@@ -1,4 +1,4 @@
-//! Tokio integration for [`id_effect`], on the 0.7 kernel (`id_effect::next`).
+//! Tokio integration for [`id_effect`], on the 0.7 kernel.
 //!
 //! The executor lives in core: [`TokioExecutor`] (re-exported here) runs every fiber as an
 //! ordinary tokio task, with real wakers and tokio timers, and [`Runtime`] owns the run edges.
@@ -17,19 +17,19 @@
 //! fiber is parked on the tokio timer. (0.6 drove each forked effect with `run_blocking` on
 //! tokio's blocking pool, busy-polling one OS thread per fiber; that driver and
 //! `spawn_blocking_run_async` are gone.) Sleep and yield are the kernel's own
-//! [`id_effect::next::sleep`] and [`id_effect::next::yield_fiber`]: they use the fiber's
+//! [`id_effect::sleep`] and [`id_effect::yield_fiber`]: they use the fiber's
 //! executor, so they need no runtime argument.
 //!
 //! ```
 //! use std::time::Duration;
 //!
 //! use id_effect::Exit;
-//! use id_effect::next::{self, HNil};
+//! use id_effect::{HNil, sleep};
 //! use id_effect_tokio::TokioRuntime;
 //!
 //! let rt = TokioRuntime::new_current_thread().expect("tokio runtime");
 //! let exit = rt.block_on(async {
-//!   let nap = next::sleep::<(), HNil>(Duration::from_millis(1)).map(|()| 42_u8);
+//!   let nap = sleep::<(), HNil>(Duration::from_millis(1)).map(|()| 42_u8);
 //!   rt.fork(nap).join_future().await
 //! });
 //! assert!(matches!(exit, Exit::Success(42)));
@@ -44,9 +44,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use id_effect::Exit;
-use id_effect::next::{Effect, Executor, FiberHandle, HNil, Runtime};
+use id_effect::{Effect, Executor, FiberHandle, HNil, Runtime};
 
-pub use id_effect::next::TokioExecutor;
+pub use id_effect::TokioExecutor;
 
 /// An owned tokio runtime, shut down without blocking when the last [`TokioRuntime`] clone drops
 /// (dropping a tokio runtime inside an async context panics, and its default shutdown waits on
@@ -139,7 +139,7 @@ impl TokioRuntime {
     Ok(Self::owning(rt))
   }
 
-  /// The `next` runtime (run edges) over this adapter's executor.
+  /// The runtime (run edges) over this adapter's executor.
   #[inline]
   pub fn runtime(&self) -> &Runtime {
     &self.runtime
@@ -224,7 +224,7 @@ impl AsRef<Runtime> for TokioRuntime {
 }
 
 impl From<TokioRuntime> for Runtime {
-  /// The `next` runtime; an owned tokio runtime is kept alive by the remaining
+  /// The runtime; an owned tokio runtime is kept alive by the remaining
   /// [`TokioRuntime`] clones only.
   #[inline]
   fn from(rt: TokioRuntime) -> Self {
@@ -237,7 +237,7 @@ mod tests {
   use std::time::Duration;
 
   use id_effect::Cause;
-  use id_effect::next::{fail, sleep, succeed, sync, yield_fiber};
+  use id_effect::{fail, sleep, succeed, sync, yield_fiber};
 
   use super::*;
 

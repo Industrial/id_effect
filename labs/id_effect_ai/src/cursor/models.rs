@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use id_effect::next::{Effect, fail, suspend};
+use id_effect::{Effect, fail, suspend};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest, HttpResponse};
 use serde::Deserialize;
 

@@ -1,4 +1,4 @@
-//! [`EffectLogger`] as a service value: each method returns a `next`
+//! [`EffectLogger`] as a service value: each method returns an
 //! `Effect<(), EffectLoggerError>` (no environment) that is run at the edge with `block_on`
 //! (the logger is self-contained after extraction).
 //!

@@ -1,4 +1,4 @@
-//! Run [`id_effect::next::Effect`] programs inside [Axum](https://docs.rs/axum) handlers and Tower
+//! Run [`id_effect::Effect`] programs inside [Axum](https://docs.rs/axum) handlers and Tower
 //! services (the 0.7 kernel).
 //!
 //! ## Mental model
@@ -14,7 +14,7 @@
 //!
 //! ## Execution
 //!
-//! `next` effects are [`Send`], so there is no bridge any more: no thread pool and no thread
+//! Effects are [`Send`], so there is no bridge any more: no thread pool and no thread
 //! parking. Handler futures are [`Send`] and work on any runtime flavour.
 //!
 //! - **Interruption.** Dropping the handler future (client disconnect, timeout layer, shutdown)
@@ -40,7 +40,7 @@
 //!
 //! ```rust
 //! use axum::Router;
-//! use id_effect::next::{Effect, succeed};
+//! use id_effect::{Effect, succeed};
 //! use id_effect_axum::routing;
 //!
 //! #[derive(Clone)]
@@ -62,7 +62,7 @@
 //!
 //! ## Bodies, JSON and the server
 //!
-//! - [`body`]: stream a response from a [`next::Stream`](id_effect::next::Stream) of `Bytes`
+//! - [`body`]: stream a response from a [`Stream`](id_effect::Stream) of `Bytes`
 //!   ([`body::stream_body`]) and read a request body as one ([`body::body_stream`]).
 //! - [`json::decode_json_schema`] validates JSON with an [`id_effect::schema::Schema`]; schema
 //!   errors become **422** with `path` + `message`.
@@ -116,8 +116,8 @@ pub use health::{
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use id_effect::next::{DynEnv, Effect};
 use id_effect::{Cause, Exit};
+use id_effect::{DynEnv, Effect};
 
 /// Run `build` with the runtime-checked capability state [`State<DynEnv>`](axum::extract::State).
 #[inline]
@@ -254,7 +254,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::{Request, StatusCode};
   use axum::routing::Router;
-  use id_effect::next::{Boundaries, Counter, Histogram, die, fail, succeed, sync};
+  use id_effect::{Boundaries, Counter, Histogram, die, fail, succeed, sync};
   use std::convert::Infallible;
   use tower::ServiceExt;
 
@@ -377,8 +377,8 @@ mod tests {
         .message,
       "first"
     );
-    let fiber = id_effect::next::Runtime::global()
-      .fork(succeed::<(), (), id_effect::next::HNil>(()))
+    let fiber = id_effect::Runtime::global()
+      .fork(succeed::<(), (), id_effect::HNil>(()))
       .id();
     let interrupted = exit_response::<&str, StatusCode>(Exit::Failure(Cause::interrupt(fiber)));
     assert_eq!(interrupted.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -413,7 +413,7 @@ mod tests {
               let _ = tx.send(());
             }
           })
-          .then(id_effect::next::sleep(Duration::from_secs(3600)))
+          .then(id_effect::sleep(Duration::from_secs(3600)))
           .map(|()| "never")
           .ensuring(sync(move || {
             if let Some(tx) = released {
@@ -487,7 +487,7 @@ mod tests {
   async fn axum_channel_handler_responds_to_request() {
     use axum::body::Bytes;
     use axum::http::Response as HttpResponse;
-    use id_effect::next::{Channel, Queue};
+    use id_effect::{Channel, Queue};
 
     #[derive(Clone)]
     struct St {
@@ -542,7 +542,7 @@ mod tests {
 
   #[tokio::test]
   async fn typed_capability_state_reads_with_need() {
-    use id_effect::next::{HCons, HNil, hlist, need};
+    use id_effect::{HCons, HNil, hlist, need};
 
     struct Greeting(&'static str);
     type AppEnv = HCons<Greeting, HNil>;

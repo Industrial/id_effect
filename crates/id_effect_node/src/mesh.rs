@@ -5,7 +5,7 @@
 //! outstanding monitors fire [`ExitReason::NoConnection`].
 //!
 //! Requests that wait for an answer ([`Mesh::remote_spawn`], [`Mesh::remote_call`]) are
-//! `next` effects: `Send`, bounded by a timeout on the calling fiber's executor clock, and
+//! Effects: `Send`, bounded by a timeout on the calling fiber's executor clock, and
 //! interruptible (an interrupted request forgets its pending entry; the peer may still act on
 //! it — at-most-once). An inbound call is answered by a daemon fiber on the local
 //! [`ProcessNode`]'s runtime, never by a parked thread.
@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::{Deferred, Effect, HNil, fail, succeed, suspend, sync};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Deferred, Effect, HNil, fail, succeed, suspend, sync};
 use id_effect_process::{ExitReason, MonitorRef, MonitorSink, Pid, ProcessNode};
 
 use crate::envelope::{
@@ -848,7 +848,7 @@ where
 #[cfg(test)]
 mod tests {
   use id_effect::Never;
-  use id_effect::next::{Effect, succeed};
+  use id_effect::{Effect, succeed};
   use id_effect_process::{Next, NodeName, Process, ProcessCtx};
 
   use super::*;
@@ -961,7 +961,7 @@ mod tests {
     fn assert_send<T: Send + 'static>(t: T) -> T {
       t
     }
-    let rt = id_effect::next::Runtime::global();
+    let rt = id_effect::Runtime::global();
     let spawn = assert_send(rt.fork(assert_send(spawn_eff)));
     let call = assert_send(rt.fork(assert_send(call_eff)));
     // Both requests reached the (silent) peer and are pending.

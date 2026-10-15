@@ -3,7 +3,7 @@
 mod common;
 
 use common::run;
-use id_effect::next::HNil;
+use id_effect::HNil;
 use id_effect_platform::command::{
   CommandSpec, TokioProcessRuntime, child_kill, child_wait, process_runtime_env, spawn,
 };

@@ -24,7 +24,7 @@ use http_showcase::{
   app_env, database_layer, repo, router, run_until, telemetry,
 };
 use id_effect::Exit;
-use id_effect::next::{Effect, Layer, caps_next, effect_next, from_async, hlist, need};
+use id_effect::{Effect, Layer, caps, effect, from_async, hlist, need};
 use id_effect_axum::{EffectExecutor, HostConfig, HostError, ServerHandle, server_layer};
 use id_effect_config::{ConfigProvider, MapConfigProvider, Secret};
 use id_effect_sql::SqlClientService;
@@ -94,8 +94,8 @@ fn serve_ephemeral(
   ready: oneshot::Sender<SocketAddr>,
   done: oneshot::Receiver<()>,
 ) -> Effect<(), HostError> {
-  let host: Layer<caps_next!(HostConfig), HostError> = Layer::succeed(hlist![host_config(0)]);
-  let probe: Effect<(), HostError, caps_next!(ServerHandle)> =
+  let host: Layer<caps!(HostConfig), HostError> = Layer::succeed(hlist![host_config(0)]);
+  let probe: Effect<(), HostError, caps!(ServerHandle)> =
     need::<ServerHandle>().flat_map(move |handle| {
       let addr = handle.local_addr();
       from_async(move || async move {
@@ -115,7 +115,7 @@ fn showcase_on(
   done: oneshot::Receiver<()>,
 ) -> Effect<(), StartupError> {
   let policy = RequestPolicy::new(Duration::from_secs(5), 2, Duration::from_millis(10));
-  let served: Effect<(), StartupError, caps_next!(SqlClientService)> = effect_next!(|_r: &caps_next!(SqlClientService)| {
+  let served: Effect<(), StartupError, caps!(SqlClientService)> = effect!(|_r: &caps!(SqlClientService)| {
     let sql = SqlClientService::clone(~SqlClientService);
     ~repo::migrate(Arc::clone(&sql.0));
     let env = app_env(TodoRepoService::new(PgTodoRepo::new(sql)), policy);
@@ -391,7 +391,7 @@ async fn http_run_until_with_database_url_serves_postgres() {
   .layer()
   .provide_to(AppConfig::layer());
   let (done_tx, done_rx) = oneshot::channel::<()>();
-  let stop: Effect<(), HostError, caps_next!(HostConfig)> = from_async(move || async move {
+  let stop: Effect<(), HostError, caps!(HostConfig)> = from_async(move || async move {
     let _ = done_rx.await;
     Ok(())
   });

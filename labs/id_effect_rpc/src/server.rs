@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use id_effect::next::DynEnv;
+use id_effect::DynEnv;
 
 use crate::RpcError;
 use crate::correlation::{append_correlation_header, ensure_correlation_id};
@@ -137,8 +137,8 @@ mod tests {
   use super::*;
   use axum::body::Body;
   use axum::http::Request;
-  use id_effect::next::succeed;
   use id_effect::schema;
+  use id_effect::succeed;
   use std::sync::Arc;
   use tower::ServiceExt;
 

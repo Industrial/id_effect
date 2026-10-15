@@ -19,7 +19,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use id_effect::next::{Effect, fail};
+use id_effect::{Effect, fail};
 use id_effect_axum::execute;
 use serde::Deserialize;
 

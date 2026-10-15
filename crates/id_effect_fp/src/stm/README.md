@@ -9,7 +9,7 @@
 | `Stm` | Transactional program: `map`, `flat_map`, `or_else`, `retry`, `check`. |
 | `TRef<A>` | Transactional mutable cell — `read_stm`, `write_stm`, `update_stm`, `modify_stm`. |
 | `TQueue`, `TMap`, `TSemaphore` | Composite structures built on `TRef`. |
-| `commit` / `atomically` | Lift `Stm` to a next-kernel `Effect` (validation, restart on conflict, waker-based retry). |
+| `commit` / `atomically` | Lift `Stm` to a 0.7-kernel `Effect` (validation, restart on conflict, waker-based retry). |
 
 ## What it is used for
 

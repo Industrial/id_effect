@@ -1,8 +1,8 @@
-//! Private helpers on the `next` kernel: a fallible synchronous constructor and the
+//! Private helpers on the 0.7 kernel: a fallible synchronous constructor and the
 //! `Exit` → `Result` mapping used by the synchronous / async run edges of this crate.
 
-use id_effect::next::{Effect, fail, succeed, suspend};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, fail, succeed, suspend};
 use std::panic::resume_unwind;
 
 /// A lazy fallible synchronous step (the v1 `Effect::new(|_| ..)` shape).
@@ -31,13 +31,13 @@ where
   into_result(eff.block_on())
 }
 
-/// Runs `eff` on the `next` global runtime from an async caller.
+/// Runs `eff` on the global runtime from an async caller.
 pub(crate) async fn run_async<A, E>(eff: Effect<A, E>) -> Result<A, E>
 where
   A: Send + 'static,
   E: Send + 'static,
 {
-  into_result(id_effect::next::Runtime::global().run(eff).await)
+  into_result(id_effect::Runtime::global().run(eff).await)
 }
 
 /// `Success` → `Ok`, the first typed failure → `Err`. A defect re-raises its panic (payload

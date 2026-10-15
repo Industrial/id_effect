@@ -1,9 +1,9 @@
-//! Log inside `effect_next!` using `~EffectLogger` and `~logger.level(…)` steps.
+//! Log inside `effect!` using `~EffectLogger` and `~logger.level(…)` steps.
 //!
 //! Run: `devenv shell -- cargo run -p id_effect_logger --example macro_sync_bind`
 
 use ::id_effect::Exit;
-use ::id_effect::next::{Effect, HNil, caps_next, effect_next, succeed};
+use ::id_effect::{Effect, HNil, caps, effect, succeed};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn main() {
@@ -11,7 +11,7 @@ fn main() {
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let program: Effect<i32, EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+  let program: Effect<i32, EffectLoggerError, caps!(EffectLogger)> = effect!({
     let logger = ~EffectLogger;
     ~logger.info("first step: log_info via ~logger");
     ~logger.warn("second step: log_warn via ~logger");

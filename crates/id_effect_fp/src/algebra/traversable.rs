@@ -1,6 +1,6 @@
 //! **Traversable** — fold with an applicative effect.
 
-use id_effect::next::{Effect, succeed, suspend};
+use id_effect::{Effect, succeed, suspend};
 
 /// Runs `f` on each remaining element in order, collecting into `acc` (sequential bind).
 fn traverse_from<A, B, E, R, F>(
@@ -68,7 +68,7 @@ where
 mod tests {
   use super::*;
   use crate::test_support::run;
-  use id_effect::next::fail;
+  use id_effect::fail;
 
   #[test]
   fn traverse_vec_empty_input() {

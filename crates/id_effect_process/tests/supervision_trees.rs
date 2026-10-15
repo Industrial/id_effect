@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use common::{JoinNode, advance, run, settle};
 use id_effect::Never;
-use id_effect::next::{Effect, fail, succeed, suspend, sync};
+use id_effect::{Effect, fail, succeed, suspend, sync};
 use id_effect_process::{
   ChildSpec, DynamicSupervisor, DynamicSupervisorSpec, ExitReason, Next, Pid, Process, ProcessCtx,
   ProcessNode, RestartPolicy, ShutdownPolicy, StartChildFn, Strategy, SupervisorHandle,
@@ -262,7 +262,7 @@ fn shutdown_timeout_escalates_to_kill_on_virtual_time() {
   let child = child_pid(&handle, "s").expect("running");
 
   let stop = handle
-    .stop::<Never, id_effect::next::HNil>(&node, ShutdownPolicy::Infinity)
+    .stop::<Never, id_effect::HNil>(&node, ShutdownPolicy::Infinity)
     .fork_root(Arc::clone(node.runtime().executor()));
   settle();
   // The root asks its child to shut down with the default 5 s deadline;

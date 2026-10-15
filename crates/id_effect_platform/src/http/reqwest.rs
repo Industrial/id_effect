@@ -12,7 +12,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::next::{
+use ::id_effect::{
   Effect, HCons, HList, HNil, Layer, Pool, Selector, fail, from_async, hlist, need, succeed, sync,
 };
 use id_effect::schema::data::EffectData;

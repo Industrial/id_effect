@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, HNil, succeed};
+use id_effect::{Effect, HNil, succeed};
 use id_effect_process::{
   ChildSpec, Next, NodeName, Process, ProcessCtx, ProcessNode, Strategy, SupervisorSpec,
 };
@@ -29,7 +29,7 @@ impl Process for Ping {
 }
 
 fn main() {
-  // Processes are fibers on the default `next` runtime.
+  // Processes are fibers on the default runtime.
   let node = ProcessNode::new(NodeName::new("ex130@local"));
   let handle = SupervisorSpec::new(Strategy::OneForOne)
     .child(ChildSpec::worker::<Ping, _>("ping", || ((), ())))

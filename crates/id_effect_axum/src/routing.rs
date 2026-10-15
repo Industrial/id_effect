@@ -17,7 +17,7 @@ use std::future::Future;
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{MethodFilter, MethodRouter};
-use id_effect::next::{Counter, Effect, Histogram};
+use id_effect::{Counter, Effect, Histogram};
 
 /// The Axum handler behind every helper: one request fiber per call.
 fn handler<S, A, E, F>(f: F) -> impl Fn(State<S>) -> HandlerFuture + Clone + Send + Sync + 'static
@@ -236,7 +236,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::{Method, Request, StatusCode};
   use axum::routing::{MethodFilter, Router};
-  use id_effect::next::{Boundaries, Counter, Effect, Histogram, fail, succeed};
+  use id_effect::{Boundaries, Counter, Effect, Histogram, fail, succeed};
   use tower::ServiceExt;
 
   use super::*;

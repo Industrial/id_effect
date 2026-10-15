@@ -4,13 +4,13 @@
 effectful steps, forwarded to [`tracing`](https://docs.rs/tracing) by default.
 
 - `EffectLogger` methods (`trace` / `debug` / `info` / `warn` / `error` / `fatal` / `log`) each return an
-  `id_effect::next::Effect<(), EffectLoggerError>` with no environment, so log lines compose with
-  the rest of a program: `~logger.info("…")` binds inside any `effect_next!` (no turbofish), and
+  `id_effect::Effect<(), EffectLoggerError>` with no environment, so log lines compose with
+  the rest of a program: `~logger.info("…")` binds inside any `effect!` (no turbofish), and
   `.narrow()` lifts a log step into a combinator chain over another environment.
-- Provide it with `.provide(EffectLogger)` (or a `Layer`) and extract it inside `effect_next!`
+- Provide it with `.provide(EffectLogger)` (or a `Layer`) and extract it inside `effect!`
   with `~EffectLogger`, or use it directly as a value.
 - The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-  by building its `next::Layer`s (`provide_minimum_log_level(level)`, `LogMetadataLive::layer()`,
+  by building its `Layer`s (`provide_minimum_log_level(level)`, `LogMetadataLive::layer()`,
   `provide_composite_logger(backend)`) on the thread that runs the program, e.g.
   `program.provide_layer(LogMetadataLive::layer().merge(provide_composite_logger(backend)))`.
   `EffectLoggerLive::layer()` provides the `EffectLogger` capability itself.
@@ -24,14 +24,14 @@ effectful steps, forwarded to [`tracing`](https://docs.rs/tracing) by default.
 
 ```rust
 use id_effect::Exit;
-use id_effect::next::{Effect, caps_next, effect_next};
+use id_effect::{Effect, caps, effect};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 // As a plain value:
 assert_eq!(EffectLogger.info("service starting").block_on(), Exit::Success(()));
 
-// As a capability inside `effect_next!`:
-let prog: Effect<u32, EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+// As a capability inside `effect!`:
+let prog: Effect<u32, EffectLoggerError, caps!(EffectLogger)> = effect!({
   let logger = ~EffectLogger;
   ~logger.info("handling request");
   42

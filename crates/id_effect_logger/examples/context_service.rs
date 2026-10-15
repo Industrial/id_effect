@@ -1,10 +1,10 @@
-//! Provide [`EffectLogger`] in a typed `next` environment, then extract it inside
-//! `effect_next!` with `~EffectLogger` and use its methods with `~`.
+//! Provide [`EffectLogger`] in a typed environment, then extract it inside
+//! `effect!` with `~EffectLogger` and use its methods with `~`.
 //!
 //! Run: `devenv shell -- cargo run -p id_effect_logger --example context_service`
 
 use ::id_effect::Exit;
-use ::id_effect::next::{Effect, caps_next, effect_next};
+use ::id_effect::{Effect, caps, effect};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn main() {
@@ -12,7 +12,7 @@ fn main() {
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let prog: Effect<(), EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+  let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!({
     let logger = ~EffectLogger;
     ~logger.info("resolved EffectLogger from the typed environment");
     ~logger.warn("warn from the same extracted logger");

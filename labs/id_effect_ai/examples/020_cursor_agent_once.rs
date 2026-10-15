@@ -1,6 +1,6 @@
 //! Create a Cursor Cloud Agent and poll until idle (requires `CURSOR_API_KEY`).
 
-use id_effect::next::{HNil, succeed};
+use id_effect::{HNil, succeed};
 use id_effect_ai::{
   AiConfig, AiError, CreateAgentRequest, CursorAgentsClient, HttpCursorAgentsClient,
 };

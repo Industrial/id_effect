@@ -21,14 +21,14 @@
 //!
 //! Restarts are immediate (OTP semantics): the budget is the sliding
 //! [`RestartIntensity`] window, not a backoff delay, so this supervisor does
-//! not use `next::SupervisorPolicy`'s restart delay or a `Schedule`.
+//! not use `SupervisorPolicy`'s restart delay or a `Schedule`.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, HNil, RestartIntensity, succeed, suspend};
+use id_effect::{Effect, HNil, RestartIntensity, succeed, suspend};
 
 use crate::addr::Addr;
 use crate::exit::ExitReason;
@@ -420,7 +420,7 @@ impl Process for SupervisorProcess {
           Ok(pid) => state.children[index].pid = Some(pid),
           Err(err) => {
             let id = state.children[index].spec.id.clone();
-            return id_effect::next::fail(SupError::StartFailed(id, err));
+            return id_effect::fail(SupError::StartFailed(id, err));
           }
         }
       }

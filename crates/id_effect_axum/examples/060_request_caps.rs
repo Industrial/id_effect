@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::Request;
 use axum::routing::{Router, get};
 use http_body_util::BodyExt;
-use id_effect::next::{DynEnv, Effect, succeed};
+use id_effect::{DynEnv, Effect, succeed};
 use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps};
 use std::convert::Infallible;
 use tower::ServiceExt;

@@ -1,4 +1,4 @@
-//! HTTP bodies as [`next::Stream`](Stream)s of [`Bytes`].
+//! HTTP bodies as [`Stream`]s of [`Bytes`].
 //!
 //! - [`stream_body`] turns a `Stream<Bytes, E>` into an Axum [`Body`]: a producer fiber pulls the
 //!   stream and hands each chunk to the body, one at a time (backpressure: it waits while the
@@ -11,7 +11,7 @@
 //! ```rust
 //! use axum::body::Bytes;
 //! use axum::response::IntoResponse;
-//! use id_effect::next::Stream;
+//! use id_effect::Stream;
 //! use id_effect_axum::body::stream_body;
 //!
 //! async fn numbers() -> impl IntoResponse {
@@ -31,7 +31,7 @@ use axum::body::{Body, Bytes};
 use http_body::Frame;
 use http_body_util::BodyExt;
 use id_effect::Exit;
-use id_effect::next::{Effect, FiberContext, HNil, Stream, from_async, succeed};
+use id_effect::{Effect, FiberContext, HNil, Stream, from_async, succeed};
 use tokio::sync::{Mutex, mpsc};
 
 /// The error a streamed body can end with (what [`axum::Error::new`] accepts).
@@ -172,7 +172,7 @@ mod tests {
   use axum::http::{Request, StatusCode};
   use axum::routing::{get, post};
   use http_body::Body as _;
-  use id_effect::next::{fail, sleep, sync};
+  use id_effect::{fail, sleep, sync};
   use std::sync::atomic::{AtomicBool, Ordering};
   use std::time::Duration;
   use tower::ServiceExt;

@@ -7,11 +7,11 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, caps_next, effect_next};
+//! use id_effect::{Effect, caps, effect};
 //! use id_effect_logger::{EffectLogger, EffectLoggerError};
 //!
-//! fn program() -> Effect<u32, EffectLoggerError, caps_next!(EffectLogger)> {
-//!   effect_next!({
+//! fn program() -> Effect<u32, EffectLoggerError, caps!(EffectLogger)> {
+//!   effect!({
 //!     let logger = ~EffectLogger;
 //!     ~logger.warn("something suspicious");
 //!     ~logger.info("all good");
@@ -22,24 +22,24 @@
 //! assert_eq!(program().provide(EffectLogger).block_on(), Exit::Success(7));
 //! ```
 //!
-//! Since 0.7 every effect in this crate is an [`id_effect::next::Effect`] (the 0.7 kernel). Log
+//! Since 0.7 every effect in this crate is an [`id_effect::Effect`] (the 0.7 kernel). Log
 //! methods return `Effect<(), EffectLoggerError>` (no environment, `R = HNil`): `~` binds them in
-//! any `effect_next!` environment. In combinator chains, lift them with
-//! [`Effect::narrow`](id_effect::next::Effect::narrow).
+//! any `effect!` environment. In combinator chains, lift them with
+//! [`Effect::narrow`](id_effect::Effect::narrow).
 //!
-//! The environment only needs the `EffectLogger` capability (`caps_next!(EffectLogger)`). Provide
+//! The environment only needs the `EffectLogger` capability (`caps!(EffectLogger)`). Provide
 //! it at the program edge with `.provide(EffectLogger)`.
 //!
 //! The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-//! by building its [`Layer`](id_effect::next::Layer)s ([`provide_minimum_log_level`],
+//! by building its [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`],
 //! [`LogMetadataLive::layer`], [`provide_composite_logger`]) on the thread that runs the program;
-//! the installed refs are `next` [`FiberRef`]s:
+//! the installed refs are [`FiberRef`]s:
 //!
 //! ```
 //! use std::sync::Arc;
 //!
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, HNil};
+//! use id_effect::{Effect, HNil};
 //! use id_effect_logger::{
 //!   CompositeLogBackend, EffectLogger, EffectLoggerError, LogLevel, LogMetadataLive,
 //!   annotate_logs, provide_composite_logger, provide_minimum_log_level,
@@ -67,7 +67,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::thread::LocalKey;
 
-use ::id_effect::next::{Effect, FiberRef, fail, succeed, suspend};
+use ::id_effect::{Effect, FiberRef, fail, succeed, suspend};
 
 mod pipeline;
 mod providers;
@@ -182,9 +182,9 @@ fn test_clear_all_logger_tls() {
 /// [`EffectLoggerLive::layer`]); forwards to [`tracing`].
 ///
 /// Extracted from the environment with `~EffectLogger` inside
-/// [`effect_next!`](id_effect::next::effect_next). After extraction its methods return
+/// [`effect!`](id_effect::effect). After extraction its methods return
 /// `Effect<(), EffectLoggerError>` (no environment) and are themselves bound with `~` — in any
-/// `effect_next!` environment, without a turbofish.
+/// `effect!` environment, without a turbofish.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLogger;
 
@@ -266,10 +266,10 @@ impl EffectLogger {
   /// to [`tracing`].  The logger is self-contained after extraction, so the effect needs no
   /// environment (`R = HNil`):
   ///
-  /// - inside [`id_effect::next::effect_next!`], `~logger.log(…)` binds in any environment — no
+  /// - inside [`id_effect::effect!`], `~logger.log(…)` binds in any environment — no
   ///   turbofish;
   /// - in combinator chains over an environment `R`, lift it with
-  ///   [`Effect::narrow`](id_effect::next::Effect::narrow).
+  ///   [`Effect::narrow`](id_effect::Effect::narrow).
   ///
   /// When [`provide_minimum_log_level`] has been built on this thread, messages below the current
   /// fiber’s minimum [`LogLevel`] (from that [`FiberRef`]) are dropped without calling [`tracing`].
@@ -398,12 +398,12 @@ mod tests {
 
   use super::*;
   use crate::{EffectLoggerLive, provide_minimum_log_level};
-  use ::id_effect::next::{HCons, HList, HNil, Layer, need};
   use ::id_effect::{Cause, Never};
+  use ::id_effect::{HCons, HList, HNil, Layer, need};
 
   // ========== Fixtures ==========
 
-  /// Runs a `next` effect on the calling thread (where this thread's logger refs are installed).
+  /// Runs an effect on the calling thread (where this thread's logger refs are installed).
   pub(super) fn run<A: Send + 'static, E: Send + 'static>(
     eff: Effect<A, E>,
   ) -> Result<A, Cause<E>> {
@@ -469,7 +469,7 @@ mod tests {
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
       let fr = test_ctx_with_min(LogLevel::Trace);
-      // A `next` FiberRef value lives in the running fiber: set and log in one program.
+      // A FiberRef value lives in the running fiber: set and log in one program.
       run(
         fr.set(LogLevel::Warn)
           .then(EffectLogger.info("filtered-info")),
@@ -618,7 +618,7 @@ mod tests {
       #[case::fatal(LogLevel::Fatal)]
       fn returns_ok_for_every_level(#[case] level: LogLevel) {
         init_subscriber();
-        // Extract the logger from a typed `next` environment, then bind the log step.
+        // Extract the logger from a typed environment, then bind the log step.
         let program: Effect<(), EffectLoggerError, HCons<EffectLogger, HNil>> =
           need::<EffectLogger>().flat_map(move |logger| logger.log(level, "msg").narrow());
         let result = run(program.provide(EffectLogger));

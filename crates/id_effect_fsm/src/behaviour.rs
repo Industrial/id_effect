@@ -18,14 +18,14 @@
 //!
 //! The process environment is the actions' environment: `FsmProcess<S, E, Err, R>` has
 //! `Env = R` (provided once at spawn), and a transition action is an
-//! [`id_effect::next::Effect<(), Err, R>`](Effect) sequenced into the handler's effect on the
+//! [`id_effect::Effect<(), Err, R>`](Effect) sequenced into the handler's effect on the
 //! process fiber, so it can be interrupted with the process like any other step.
 
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::time::Duration;
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_process::{
   Addr, CallError, ExitReason, Info, Next, Pid, Process, ProcessCtx, ProcessNode, SendError,
 };

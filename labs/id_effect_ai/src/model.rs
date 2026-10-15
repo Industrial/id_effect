@@ -3,7 +3,7 @@
 use crate::error::AiError;
 use crate::http_util::from_result;
 use crate::streaming::{CompletionChunk, mock_chunk_stream};
-use id_effect::next::{Effect, HCons, HList, HNil, Layer, Selector, Stream, hlist, need, suspend};
+use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, Stream, hlist, need, suspend};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

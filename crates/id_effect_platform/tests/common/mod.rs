@@ -3,7 +3,7 @@
 
 #![allow(dead_code)]
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_tokio::TokioRuntime;
 

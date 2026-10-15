@@ -3,7 +3,7 @@
 use std::future::ready;
 use std::time::Instant;
 
-use id_effect::next::{Ctx, Effect};
+use id_effect::{Ctx, Effect};
 
 /// The running fiber's executor clock: wall-clock time on `TokioExecutor`, virtual time on
 /// `TestExecutor` (so cooldowns and refills follow `TestExecutor::advance`).

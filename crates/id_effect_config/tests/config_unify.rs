@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil, Layer, need};
+use id_effect::{Effect, HCons, HNil, Layer, need};
 use id_effect_config::{
   Config, ConfigEnv, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider,
   FigmentConfigProvider, MapConfigProvider, OrElseConfigProvider, ProviderOptions, config_env,

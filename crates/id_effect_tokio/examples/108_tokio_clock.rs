@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use id_effect::Exit;
-use id_effect::next::{HNil, sleep, yield_fiber};
+use id_effect::{HNil, sleep, yield_fiber};
 use id_effect_tokio::TokioRuntime;
 
 fn main() {

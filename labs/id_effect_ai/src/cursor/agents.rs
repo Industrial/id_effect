@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use id_effect::next::{Effect, HCons, HNil, Layer, fail, hlist, sleep, succeed, suspend};
+use id_effect::{Effect, HCons, HNil, Layer, fail, hlist, sleep, succeed, suspend};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;

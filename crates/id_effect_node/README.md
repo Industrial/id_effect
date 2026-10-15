@@ -22,7 +22,7 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 
 Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
 `DistributedSupervisor::start_child` / `on_membership`, the `ClusterSingleton` lease — returns an
-`id_effect::next::Effect`: `Send`, interruptible, with timeouts on the executor clock. Compose
+`id_effect::Effect`: `Send`, interruptible, with timeouts on the executor clock. Compose
 them into a program, or run them at the edge with `block_on`.
 
 Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.

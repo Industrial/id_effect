@@ -4,7 +4,7 @@
 //! cargo run -p id_effect_jobs --example 010_messaging_e2e --features memory,apalis,obix
 //! ```
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_jobs::{
   JobRunner, JobSpec, MemoryJobRunner, MemoryOutbox, OutboxRecord, OutboxTable, drain_jobs,
   relay_outbox,

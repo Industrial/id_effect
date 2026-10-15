@@ -1,4 +1,4 @@
-//! `m-fp` acceptance: STM on the next kernel under contention.
+//! `m-fp` acceptance: STM on the 0.7 kernel under contention.
 //!
 //! Two fibers run 10 000 transactions each against one `TRef`:
 //! - **increments** (`update_stm`) collide at commit validation and restart;
@@ -16,7 +16,7 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use id_effect::Exit;
-use id_effect::next::{Effect, FiberHandle, HNil, Runtime, TestExecutor, succeed, suspend};
+use id_effect::{Effect, FiberHandle, HNil, Runtime, TestExecutor, succeed, suspend};
 use id_effect_fp::{Stm, TRef, commit};
 
 const N: u32 = 10_000;

@@ -2,9 +2,9 @@
 //!
 //! Opt-in at the dependency boundary: core `id_effect` has no OpenTelemetry dependency.
 //!
-//! Built on the `id_effect::next` kernel:
+//! Built on the 0.7 kernel:
 //!
-//! - **Metrics** go through the `next` [`MetricRegistry`](id_effect::next::MetricRegistry):
+//! - **Metrics** go through the [`MetricRegistry`](id_effect::MetricRegistry):
 //!   [`bridge_metrics`] / [`bridge_global_metrics`] export every series (counters and gauges
 //!   pulled from registry snapshots, histograms, summaries and frequencies pushed by a registry
 //!   listener).

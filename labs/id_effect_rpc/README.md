@@ -25,7 +25,7 @@ RPC client/server stack and HTTP boundary helpers for [`id_effect`](../id_effect
 
 ```rust
 use std::sync::Arc;
-use id_effect::next::{DynEnv, succeed};
+use id_effect::{DynEnv, succeed};
 use id_effect::schema;
 use id_effect_rpc::{RpcClient, RpcGroup, RpcServer};
 

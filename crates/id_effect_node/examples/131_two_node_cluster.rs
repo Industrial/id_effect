@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, succeed, sync};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, NodeId};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ fn main() {
   )
   .with_fabric(fabric);
 
-  // Remote requests are `next` effects: compose them, or run them at the edge.
+  // Remote requests are effects: compose them, or run them at the edge.
   let pid = a
     .remote_spawn(
       "b@ex",

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use id_effect::next::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need};
+use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need};
 
 use crate::error::ProcessError;
 

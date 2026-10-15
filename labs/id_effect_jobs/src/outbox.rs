@@ -4,9 +4,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 #[cfg(feature = "memory")]
-use id_effect::next::effect_next;
+use id_effect::effect;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -149,7 +149,7 @@ where
   O: OutboxTable + 'static,
   P: Fn(&OutboxRecord) -> Effect<(), OutboxError> + Send + 'static,
 {
-  effect_next!({
+  effect!({
     let batch = ~outbox.fetch_unpublished(limit);
     let mut published_ids = Vec::new();
     for row in &batch {
@@ -166,7 +166,7 @@ where
 #[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
-  use id_effect::next::{fail, succeed};
+  use id_effect::{fail, succeed};
 
   fn run<A: Send + 'static>(eff: Effect<A, OutboxError>, _env: ()) -> Result<A, OutboxError> {
     eff

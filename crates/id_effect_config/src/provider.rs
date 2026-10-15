@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use ::figment::Figment;
 use ::figment::value::{Num, Value};
-use ::id_effect::next::Layer;
+use ::id_effect::Layer;
 
 use crate::ConfigEnv;
 use crate::error::ConfigError;
@@ -18,8 +18,8 @@ use crate::error::ConfigError;
 
 /// Injectable wrapper around an `Arc<dyn ConfigProvider>`.
 ///
-/// The capability in a `next` environment `R`: read it with
-/// `need::<ConfigProviderService>()` (`id_effect::next::need`), or let [`Config::run`] /
+/// The capability in an environment `R`: read it with
+/// `need::<ConfigProviderService>()` (`id_effect::need`), or let [`Config::run`] /
 /// [`Config::layer`] do it. Install it with [`ConfigProvider::layer`],
 /// [`provide_config_provider`](crate::provide_config_provider) or
 /// [`config_env`](crate::config_env).

@@ -1,12 +1,12 @@
 //! Minimal [`id_effect_axum::service::EffectService`]: map a request to an
-//! [`id_effect::next::Effect`] and run it as a fiber inside Tower’s [`tower::Service::call`].
+//! [`id_effect::Effect`] and run it as a fiber inside Tower’s [`tower::Service::call`].
 //!
 //! The response future is `Send`, so any runtime flavour works; this example uses
 //! `current_thread` to show that no worker pool is required.
 //!
 //! Run: `cargo run -p id_effect_axum --features tower --example 050_tower_effect_service`
 
-use id_effect::next::succeed;
+use id_effect::succeed;
 use id_effect_axum::service::EffectService;
 use tower::{Service, ServiceExt};
 

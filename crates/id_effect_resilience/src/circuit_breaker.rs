@@ -1,16 +1,16 @@
 //! Circuit breaker — open after `failure_threshold` failures, probe in half-open after `reset_after`.
 //!
-//! To retry through a breaker according to a [`Schedule`](id_effect::next::Schedule), see
+//! To retry through a breaker according to a [`Schedule`](id_effect::Schedule), see
 //! [`retry_with_breaker`](crate::retry_with_breaker).
 //!
 //! The cooldown is measured on the running fiber's executor clock, so on a
-//! [`TestExecutor`](id_effect::next::TestExecutor) it is virtual time: a program that sleeps
+//! [`TestExecutor`](id_effect::TestExecutor) it is virtual time: a program that sleeps
 //! `reset_after` sees the breaker half-open without any real wait.
 
 use std::time::{Duration, Instant};
 
 use id_effect::Or;
-use id_effect::next::{Effect, Ref, fail};
+use id_effect::{Effect, Ref, fail};
 
 use crate::clock::now;
 
@@ -157,8 +157,8 @@ mod tests {
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
-  use id_effect::next::{die, sleep, succeed, sync};
   use id_effect::{Cause, Exit};
+  use id_effect::{die, sleep, succeed, sync};
 
   use super::*;
   use crate::test_support::{run_ok, run_virtual};

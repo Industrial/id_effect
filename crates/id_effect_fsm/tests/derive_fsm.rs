@@ -2,11 +2,11 @@
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use id_effect::next::{Effect, HCons, HNil, need};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, HCons, HNil, need};
 use id_effect_fsm::{Fsm, FsmError, Interpreter, RunError, to_mermaid};
 
-/// Run a `next` effect at the test edge.
+/// Run an effect at the test edge.
 fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),

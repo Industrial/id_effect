@@ -1,7 +1,7 @@
 #![cfg(feature = "anthropic")]
 
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil};
+use id_effect::{Effect, HCons, HNil};
 use id_effect_ai::{
   AiConfig, AiError, AnthropicLanguageModel, ChatMessage, ChatRequest, ChatRole, LanguageModel,
   LanguageModelService, complete, provide_anthropic_language_model,

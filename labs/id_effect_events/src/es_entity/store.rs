@@ -3,7 +3,7 @@
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
 use crate::sql_journal::JournalRow;
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{PgPool, Row};
 use std::marker::PhantomData;

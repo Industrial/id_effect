@@ -14,7 +14,7 @@ Vendor-neutral LLM client traits and multi-vendor HTTP adapters for `id_effect`.
 ## Quick start
 
 ```rust
-use id_effect::next::{HCons, HNil};
+use id_effect::{HCons, HNil};
 use id_effect_ai::{
   AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
   provide_openai_language_model,
@@ -29,7 +29,7 @@ let req = ChatRequest {
   model: "gpt-4o-mini".into(),
   messages: vec![ChatMessage { role: ChatRole::User, content: "Hello".into() }],
 };
-// `id_effect::next` effect; `block_on` at the program edge (or `TokioRuntime::run` in async code).
+// `id_effect` effect; `block_on` at the program edge (or `TokioRuntime::run` in async code).
 let resp = complete::<HCons<LanguageModelService, HNil>, _>(req)
   .provide_layer(layer)
   .block_on()

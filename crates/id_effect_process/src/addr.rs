@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use id_effect::Cause;
-use id_effect::next::{Deferred, Effect, fail, succeed, suspend, sync};
+use id_effect::{Deferred, Effect, fail, succeed, suspend, sync};
 
 use crate::exit::ExitReason;
 use crate::mailbox::Mailbox;

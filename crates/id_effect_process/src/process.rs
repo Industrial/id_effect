@@ -26,8 +26,8 @@
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use id_effect::next::{Effect, succeed, suspend, sync};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed, suspend, sync};
 
 use crate::addr::Addr;
 use crate::cell::ProcessCell;
@@ -328,7 +328,7 @@ mod tests {
   use std::sync::mpsc;
   use std::task::{Context, Poll, Waker};
 
-  use id_effect::next::{HNil, TestExecutor, fail};
+  use id_effect::{HNil, TestExecutor, fail};
 
   use crate::pid::NodeName;
 

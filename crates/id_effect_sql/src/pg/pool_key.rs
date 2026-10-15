@@ -1,6 +1,6 @@
 //! Shared [`sqlx::PgPool`] capability for Apalis, obix, and event journal adapters.
 
-use id_effect::next::{HCons, HNil, Layer, hlist};
+use id_effect::{HCons, HNil, Layer, hlist};
 
 /// Shared PostgreSQL pool in the typed environment (derefs to [`sqlx::PgPool`], which is itself
 /// a cheap handle: clone it to hand the pool to an adapter).

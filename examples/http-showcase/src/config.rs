@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Layer, caps_next};
+use id_effect::{Layer, caps};
 use id_effect_axum::HostConfig;
 use id_effect_config::{Config, ConfigEnv, ConfigError, Secret};
 
@@ -61,7 +61,7 @@ impl AppConfig {
   /// The loaded [`AppConfig`] as a capability, read from the
   /// [`ConfigProviderService`](id_effect_config::ConfigProviderService) capability when the
   /// layer is built. A load failure fails the build with `E::from(err)`.
-  pub fn layer<E>() -> Layer<caps_next!(AppConfig), E, ConfigEnv>
+  pub fn layer<E>() -> Layer<caps!(AppConfig), E, ConfigEnv>
   where
     E: From<ConfigError> + Send + 'static,
   {
@@ -109,7 +109,7 @@ impl AppConfig {
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::{Effect, need};
+  use id_effect::{Effect, need};
   use id_effect_config::{ConfigProvider, MapConfigProvider};
 
   fn load(pairs: &[(&str, &str)]) -> Result<AppConfig, ConfigError> {
@@ -164,7 +164,7 @@ mod tests {
     let app = MapConfigProvider::from_pairs([("PORT", "7070")])
       .layer()
       .provide_to(AppConfig::layer::<ConfigError>());
-    let port: Effect<u16, ConfigError, caps_next!(AppConfig)> =
+    let port: Effect<u16, ConfigError, caps!(AppConfig)> =
       need::<AppConfig>().map(|c| c.host.bind_port);
     assert!(matches!(
       port.provide_layer(app).block_on(),

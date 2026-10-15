@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use rdkafka::config::ClientConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 

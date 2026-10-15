@@ -1,7 +1,7 @@
-//! A small feature module written with the 0.7 (`next`) capability ergonomics — no clippy
+//! A small feature module written with the 0.7 capability ergonomics — no clippy
 //! allows, no turbofish, no `unreachable!`:
 //!
-//! - `type HelloCaps = caps_next!(…)` names the environment once and is usable everywhere
+//! - `type HelloCaps = caps!(…)` names the environment once and is usable everywhere
 //!   (signatures, tests);
 //! - services are plain values put in the typed environment with `provide_env(hlist![…])`;
 //! - `~logger.info(…)` needs no `::<R>` (log steps have no environment);
@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use id_effect::Never;
-use id_effect::next::{Effect, caps_next, effect_next, hlist, succeed};
+use id_effect::{Effect, caps, effect, hlist, succeed};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 /// Greeting operations exposed as effects.
@@ -45,10 +45,10 @@ impl std::fmt::Display for HelloError {
 }
 
 /// The feature's environment, named once.
-type HelloCaps = caps_next!(Hello, EffectLogger);
+type HelloCaps = caps!(Hello, EffectLogger);
 
 fn hello() -> Effect<String, HelloError, HelloCaps> {
-  effect_next!({
+  effect!({
     let logger = ~EffectLogger;
     ~logger.info("running hello program").map_err(HelloError::Log);
     let hello = ~Hello;

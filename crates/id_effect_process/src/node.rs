@@ -4,7 +4,7 @@
 //! Every process loop is a fiber on the node's [`Runtime`] (a daemon root
 //! fiber, so it outlives whatever spawned it). Time — call timeouts, the
 //! shutdown protocol and restart-intensity windows — is the runtime's
-//! executor clock, so a node on a [`TestExecutor`](id_effect::next::TestExecutor)
+//! executor clock, so a node on a [`TestExecutor`](id_effect::TestExecutor)
 //! runs on virtual time.
 //!
 //! The synchronous entry points ([`ProcessNode::spawn`], [`ProcessNode::link`],
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use id_effect::next::{Effect, Executor, Runtime, succeed};
+use id_effect::{Effect, Executor, Runtime, succeed};
 
 use crate::addr::Addr;
 use crate::cell::{MonitorSink, ProcessCell, ProcessTable, RegistryEntry};
@@ -66,7 +66,7 @@ impl ProcessNode {
   }
 
   /// Node whose processes run as fibers on `executor` (a
-  /// [`TestExecutor`](id_effect::next::TestExecutor) for deterministic,
+  /// [`TestExecutor`](id_effect::TestExecutor) for deterministic,
   /// virtual-time tests; a `TokioExecutor` on an ambient tokio runtime).
   pub fn on_executor(name: NodeName, executor: Arc<dyn Executor>) -> Self {
     Self::on_runtime(name, Runtime::from_executor(executor))

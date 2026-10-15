@@ -1,6 +1,6 @@
 //! Tracing span helpers for AI vendor calls.
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 
 use crate::error::AiError;
 

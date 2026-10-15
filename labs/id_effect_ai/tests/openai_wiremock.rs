@@ -1,7 +1,7 @@
 #![cfg(feature = "openai")]
 
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil};
+use id_effect::{Effect, HCons, HNil};
 use id_effect_ai::{
   AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModel, LanguageModelService,
   OpenAiLanguageModel, complete, provide_openai_language_model,

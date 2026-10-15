@@ -5,15 +5,15 @@
 //! - [`StateMachine`] / [`TransitionTable`] — pure transition tables and [`StateMachine::step`]
 //! - [`Fsm`] / `#[derive(Fsm)]` — declare states, events and edges on an enum
 //! - [`Interpreter`] — Effect-valued transition actions ([`Interpreter::step`] returns an
-//!   [`id_effect::next::Effect`])
+//!   [`id_effect::Effect`])
 //! - [`FsmProcess`] / [`FsmHandle`] — host a machine in a supervised
 //!   [`id_effect_process`] process: events are mailbox messages, state is queryable
 //! - [`to_mermaid`] / [`table_to_mermaid`] — export Mermaid `stateDiagram-v2` charts
 //! - [`TaggedEvent`] / [`event_matcher`] — bridge events/states to [`id_effect::HasTag`] / [`id_effect::Matcher`]
 //! - [`Saga`] / [`SagaStep`] — forward steps with LIFO compensation, as one
-//!   [`id_effect::next::Effect`]
+//!   [`id_effect::Effect`]
 //!
-//! Transition actions and saga steps are [`id_effect::next::Effect`]s over a typed environment
+//! Transition actions and saga steps are [`id_effect::Effect`]s over a typed environment
 //! `R` (an HList, or `HNil`): stepping, running and compensating are plain effect composition,
 //! so nothing here blocks a thread.
 //!
@@ -61,9 +61,9 @@ struct ReadmeDoctests;
 
 #[cfg(test)]
 pub(crate) mod test_support {
-  //! Runs a `next` effect at the test edge.
+  //! Runs an effect at the test edge.
 
-  use id_effect::next::Effect;
+  use id_effect::Effect;
   use id_effect::{Cause, Exit};
 
   /// The effect's outcome as a `Result` over its typed error (panics on a defect or interrupt).
@@ -80,7 +80,7 @@ pub(crate) mod test_support {
 mod tests {
   use super::*;
   use crate::test_support::run;
-  use id_effect::next::{Effect, HNil, effect_next, fail, sync};
+  use id_effect::{Effect, HNil, effect, fail, sync};
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn effect_program_steps_door() {
-      let program: Effect<Door, FsmError<Door, DoorEvt>> = effect_next!({
+      let program: Effect<Door, FsmError<Door, DoorEvt>> = effect!({
         let mut m = door_machine();
         m.step(DoorEvt::Open)?;
         m.state()

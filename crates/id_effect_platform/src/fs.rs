@@ -32,7 +32,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use id_effect::next::{
+use id_effect::{
   Effect, HCons, HList, HNil, Layer, Selector, fail, from_async, hlist, need, succeed, suspend,
 };
 
@@ -324,7 +324,7 @@ mod tests {
   use id_effect::{Cause, Exit};
   use std::path::Path;
 
-  /// The v1 `run_blocking(effect, ())` shape over the `next` blocking edge.
+  /// The v1 `run_blocking(effect, ())` shape over the blocking edge.
   fn run_blocking<A: Send + 'static>(eff: Effect<A, FsError>) -> Result<A, FsError> {
     match eff.block_on() {
       Exit::Success(a) => Ok(a),

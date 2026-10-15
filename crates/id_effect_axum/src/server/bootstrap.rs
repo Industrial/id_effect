@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, HCons, HNil, Layer, Selector};
+use id_effect::{Effect, HCons, HNil, Layer, Selector};
 use id_effect_config::{
   Config, ConfigEnv, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProviderLive,
   config_env,
@@ -98,7 +98,7 @@ pub fn bootstrap_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::need;
+  use id_effect::need;
   use id_effect_config::{MapConfigProvider, provide_config_provider};
 
   #[allow(clippy::result_large_err)]

@@ -3,7 +3,7 @@
 //!
 //! ```rust,no_run
 //! use axum::Router;
-//! use id_effect::next::Effect;
+//! use id_effect::Effect;
 //! use id_effect_axum::{HostConfig, HostError, ShutdownReason, provide_host_config_env, serve_until_shutdown};
 //!
 //! # async fn run() {
@@ -24,8 +24,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::Router;
-use id_effect::next::{Effect, HCons, HNil, Layer, from_async, hlist, need};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, HCons, HNil, Layer, from_async, hlist, need};
 use id_effect_config::{ConfigEnv, ConfigError};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -289,7 +289,7 @@ pub fn serve_until_shutdown(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{sleep, succeed};
+  use id_effect::{sleep, succeed};
   use id_effect_config::MapConfigProvider;
   use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

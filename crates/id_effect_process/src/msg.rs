@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use id_effect::next::Deferred;
+use id_effect::Deferred;
 
 use crate::exit::ExitReason;
 use crate::pid::{MonitorRef, Pid};

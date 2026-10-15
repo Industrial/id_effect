@@ -1,7 +1,7 @@
 //! CLI: ask once via OpenAI or Anthropic (`--vendor`).
 
 use clap::{Parser, ValueEnum};
-use id_effect::next::{Effect, HCons, HNil, succeed};
+use id_effect::{Effect, HCons, HNil, succeed};
 use id_effect_ai::{
   AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
   provide_anthropic_language_model, provide_openai_language_model,

@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::{Router, body::Body, http::Request, middleware};
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil, hlist, need};
+use id_effect::{Effect, HCons, HNil, hlist, need};
 use id_effect_axum::{
   CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, EffectExecutor, HostBuilder, bootstrap_env,
   csp_middleware, csrf_middleware, routing,

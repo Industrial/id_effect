@@ -3,9 +3,9 @@
 //! - argv is parsed with `clap`, configuration comes from the process environment
 //!   (`EnvConfigProvider`), and the capabilities are put into one environment ([`AppEnv`]) in
 //!   `main`.
-//! - The program itself is a plain `next` [`Effect`] over that capability list, so tests run it
+//! - The program itself is a plain [`Effect`] over that capability list, so tests run it
 //!   with a `MapConfigProvider` and a recording console instead.
-//! - `run_main` drives it at the edge (`block_on` on the `next` runtime) and maps success → exit
+//! - `run_main` drives it at the edge (`block_on` on the runtime) and maps success → exit
 //!   0, a typed failure → exit 1.
 //!
 //! Run:
@@ -19,7 +19,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use id_effect::next::{Effect, HCons, HNil, fail, need};
+use id_effect::{Effect, HCons, HNil, fail, need};
 use id_effect_cli::{RunMainConfig, run_main};
 use id_effect_config::{
   Config, ConfigError, ConfigProvider, ConfigProviderService, EnvConfigProvider,

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::Never;
-use id_effect::next::{Effect, Layer, from_async, hlist};
+use id_effect::{Effect, Layer, from_async, hlist};
 use sqlx::{PgPool, Row as _};
 
 use super::config::{PgPoolConfig, pg_pool_from_config};

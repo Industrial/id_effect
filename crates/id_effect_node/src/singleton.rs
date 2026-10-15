@@ -5,7 +5,7 @@
 //! This module ships an **in-memory lease** suitable for single-process
 //! tests and as the interface the PG backend implements.
 //!
-//! Every lease operation is a `next` effect (`Send`, interruptible). The Postgres lease keeps
+//! Every lease operation is an effect (`Send`, interruptible). The Postgres lease keeps
 //! its dedicated session on a daemon fiber (not a thread with its own tokio runtime), so it
 //! must be connected from a fiber on a `TokioExecutor` whose runtime has the IO driver enabled
 //! (sqlx needs it; `Runtime::new()` / `Runtime::global()` do).
@@ -15,9 +15,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use id_effect::Never;
-use id_effect::next::{Effect, fail, succeed, suspend, sync};
 #[cfg(feature = "pg")]
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, fail, succeed, suspend, sync};
 use id_effect_process::Pid;
 
 /// Derive `(key1, key2)` for `pg_try_advisory_lock(key1, key2)` from a singleton name.
@@ -276,7 +276,7 @@ fn lease_worker(
   commands: flume::Receiver<LeaseCmd>,
   ready: flume::Sender<Result<(), String>>,
 ) -> Effect<(), Never> {
-  id_effect::next::from_async(move || async move {
+  id_effect::from_async(move || async move {
     use sqlx::Connection as _;
 
     let mut conn = match sqlx::postgres::PgConnection::connect(&url).await {
@@ -340,7 +340,7 @@ pub struct PgAdvisoryLease {
   /// round-trip to the worker, so check-then-lock is atomic per lease.
   held: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
   /// The session fiber; interrupted when the handle drops.
-  worker: Option<id_effect::next::FiberHandle<(), Never>>,
+  worker: Option<id_effect::FiberHandle<(), Never>>,
 }
 
 #[cfg(feature = "pg")]
@@ -395,7 +395,7 @@ impl PgAdvisoryLease {
         .fork_daemon()
         .widen()
         .flat_map(move |worker| {
-          id_effect::next::from_async(move || async move {
+          id_effect::from_async(move || async move {
             Ok::<_, SingletonError>(ready_rx.recv_async().await.ok())
           })
           .flat_map(move |ready| match ready {
@@ -435,7 +435,7 @@ impl PgAdvisoryLease {
     Fut: std::future::Future<Output = Result<A, SingletonError>> + Send + 'static,
   {
     let (commands, held) = (self.commands.clone(), Arc::clone(&self.held));
-    id_effect::next::from_async(move || f(commands, held))
+    id_effect::from_async(move || f(commands, held))
   }
 }
 
@@ -498,7 +498,7 @@ impl SingletonLease for PgAdvisoryLease {
   fn holder(&self, name: &str) -> Effect<Option<String>, Never> {
     let name = name.to_string();
     let (commands, held) = (self.commands.clone(), Arc::clone(&self.held));
-    id_effect::next::from_async(move || async move {
+    id_effect::from_async(move || async move {
       let owner = held.lock().await.get(&name).cloned();
       // Confirm the session is still alive; otherwise the lock has already been lost.
       Ok(match owner {

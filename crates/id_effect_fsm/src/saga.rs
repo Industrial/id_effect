@@ -5,7 +5,7 @@
 //! blocking.
 
 use crate::error::SagaError;
-use id_effect::next::{Effect, fail, succeed};
+use id_effect::{Effect, fail, succeed};
 use std::sync::Arc;
 
 type ForwardFn<A, Err, R> = Box<dyn Fn() -> Effect<A, Err, R> + Send + Sync>;
@@ -60,7 +60,7 @@ type Steps<A, C, Err, R> = Arc<[Arc<SagaStep<A, C, Err, R>>]>;
 
 /// Ordered saga runner with automatic compensation on forward failure.
 ///
-/// The steps are [`id_effect::next::Effect`] factories over the environment `R`. Steps are
+/// The steps are [`id_effect::Effect`] factories over the environment `R`. Steps are
 /// shared behind [`Arc`]s, so [`Saga::run`] can be called repeatedly; each call builds a fresh
 /// effect.
 pub struct Saga<A: 'static, C: 'static, Err: 'static, R: 'static> {
@@ -171,7 +171,7 @@ where
 mod saga_tests {
   use super::*;
   use crate::test_support::run;
-  use id_effect::next::{HCons, HNil, need, sync};
+  use id_effect::{HCons, HNil, need, sync};
   use std::sync::Mutex;
 
   type TestSaga = Saga<(), (), String, HNil>;
@@ -268,7 +268,7 @@ mod saga_tests {
         recorder(&log, "a"),
         recorder(&log, "undo-a"),
       ))
-      .step(SagaStep::forward("b", || id_effect::next::die("boom")));
+      .step(SagaStep::forward("b", || id_effect::die("boom")));
     let exit = saga.run().block_on();
     assert!(matches!(
       exit,

@@ -3,8 +3,8 @@
 use std::fmt::{self, Debug};
 use std::process::ExitCode;
 
-use id_effect::next::{IntoLocal, TracingConfig, install_tracing_layer, tracing_hook};
 use id_effect::{Cause, Exit};
+use id_effect::{IntoLocal, TracingConfig, install_tracing_layer, tracing_hook};
 
 use crate::exit_code_for_cause;
 
@@ -36,12 +36,12 @@ impl RunMainConfig {
 }
 
 /// The program edge: provide `env` to `effect`, run it to completion on the calling thread
-/// (`block_on` on the default [`Runtime`](id_effect::next::Runtime)), report a failure on
+/// (`block_on` on the default [`Runtime`](id_effect::Runtime)), report a failure on
 /// **stderr**, and return the [`ExitCode`] for its [`Exit`] ([`exit_code_for_exit`]).
 ///
-/// `effect` is a `Send` [`Effect`](id_effect::next::Effect) or a `!Send`
-/// [`LocalEffect`](id_effect::next::LocalEffect) over the capability list `R`; pass
-/// [`HNil`](id_effect::next::HNil) for an effect that needs nothing.
+/// `effect` is a `Send` [`Effect`](id_effect::Effect) or a `!Send`
+/// [`LocalEffect`](id_effect::LocalEffect) over the capability list `R`; pass
+/// [`HNil`](id_effect::HNil) for an effect that needs nothing.
 ///
 /// | outcome | stderr | exit code |
 /// |---|---|---|
@@ -107,7 +107,7 @@ impl<E: Debug> fmt::Display for CauseLine<'_, E> {
 mod tests {
   use super::*;
   use id_effect::FiberId;
-  use id_effect::next::{
+  use id_effect::{
     Effect, EffectEvent, HCons, HNil, LocalEffect, die, fail, need, snapshot_tracing, succeed, sync,
   };
 

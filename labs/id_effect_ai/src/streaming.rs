@@ -1,8 +1,8 @@
-//! Streaming completion chunks as `id_effect::next::Stream`.
+//! Streaming completion chunks as `id_effect::Stream`.
 
 use crate::error::AiError;
 use crate::model::{ChatRequest, LanguageModelService};
-use id_effect::next::{Effect, HList, Selector, Stream, need};
+use id_effect::{Effect, HList, Selector, Stream, need};
 use serde::{Deserialize, Serialize};
 
 /// One streamed token or delta from the model.

@@ -5,7 +5,7 @@
 //! Software transactional memory — optimistic transactions over [`TRef`] cells.
 //!
 //! A [`Stm<A, E>`] describes a transactional program. [`commit`] (alias [`atomically`]) lifts it
-//! into a next-kernel [`Effect`] that runs it to completion:
+//! into a 0.7-kernel [`Effect`] that runs it to completion:
 //!
 //! - **Conflict:** when commit-time validation finds that a cell the attempt read was committed
 //!   by someone else in between, the attempt restarts at once (a conflict means another
@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{Context, Poll, Waker};
 
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 
 // ── locking helpers ───────────────────────────────────────────────────────────
 
@@ -680,7 +680,7 @@ impl TSemaphore {
 
 // ── commit ─────────────────────────────────────────────────────────────────
 
-/// Run `stm` until it commits successfully, as an async next-kernel [`Effect`].
+/// Run `stm` until it commits successfully, as an async 0.7-kernel [`Effect`].
 ///
 /// Conflicts restart the attempt; [`Outcome::Retry`] parks the fiber (no thread is blocked)
 /// until a cell the attempt touched is committed by another transaction. The effect is
@@ -725,7 +725,7 @@ where
 mod tests {
   use super::*;
   use crate::test_support::run;
-  use id_effect::next::{FiberHandle, HNil, TestExecutor};
+  use id_effect::{FiberHandle, HNil, TestExecutor};
   use std::thread;
   use std::time::Duration;
 

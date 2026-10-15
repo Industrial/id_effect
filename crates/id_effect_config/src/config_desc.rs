@@ -49,7 +49,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ::id_effect::next::{Effect, HCons, HNil, Layer, Selector, fail, hlist, need, succeed};
+use ::id_effect::{Effect, HCons, HNil, Layer, Selector, fail, hlist, need, succeed};
 use id_effect::LogLevel;
 use id_effect::scheduling::duration::duration;
 use url::Url;
@@ -166,7 +166,7 @@ impl<T: Send + Sync + 'static> Config<T> {
   ///
   /// ```rust
   /// use id_effect::Exit;
-  /// use id_effect::next::{Effect, HCons, HNil, need};
+  /// use id_effect::{Effect, HCons, HNil, need};
   /// use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
   ///
   /// struct Port(i64);
@@ -1105,7 +1105,7 @@ mod tests {
   #[test]
   fn config_run_with_scoped_env_override() {
     use crate::{ConfigEnv, MapConfigProvider, config_env, provide_config_provider};
-    use id_effect::next::Effect;
+    use id_effect::Effect;
 
     // The outer program reads from the base provider; the inner read is given its own layer.
     let inner: Effect<String, ConfigError> = Config::string("REGION")

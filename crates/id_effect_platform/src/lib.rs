@@ -2,9 +2,9 @@
 //! inspired by Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 //!
 //! [`http`], [`fs`], [`command`], and [`uri`] are always available. Every effect is an
-//! `id_effect::next::Effect`, and each capability ([`http::HttpClientService`],
+//! `id_effect::Effect`, and each capability ([`http::HttpClientService`],
 //! [`fs::FileSystemService`], [`command::ProcessRuntimeService`]) is provided by a
-//! `id_effect::next::Layer` (`ReqwestHttpClientProvider::layer()`, `LiveFileSystemProvider::layer()`,
+//! `id_effect::Layer` (`ReqwestHttpClientProvider::layer()`, `LiveFileSystemProvider::layer()`,
 //! `TokioProcessRuntimeProvider::layer()`, or the `provide_*` layers for a custom implementation).
 //!
 //! The live implementations (reqwest, `tokio::process`) need a tokio runtime with its IO driver
@@ -23,7 +23,7 @@
 //!
 //! ```rust
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, fail, succeed};
+//! use id_effect::{Effect, fail, succeed};
 //! use id_effect_platform::error::HttpError;
 //! use id_effect_platform::http::{
 //!   HttpClient, HttpClientEnv, HttpRequest, HttpResponse, StreamingHttpResponse, execute,

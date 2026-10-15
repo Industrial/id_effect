@@ -20,13 +20,13 @@ Durable FSM snapshots live in the unpublished labs crate `id_effect_workflow::fs
 
 ## Quick example
 
-Transition actions and saga steps are `id_effect::next::Effect`s over a typed environment `R`
+Transition actions and saga steps are `id_effect::Effect`s over a typed environment `R`
 (an HList such as `HCons<Locks, HNil>`, or `HNil`); `step` / `run` / `Saga::run` compose them
 with `flat_map`, so nothing blocks a thread.
 
 ```rust
 use std::sync::atomic::{AtomicU32, Ordering};
-use id_effect::next::{HCons, HNil, need};
+use id_effect::{HCons, HNil, need};
 use id_effect_fsm::{Fsm, Interpreter};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -74,11 +74,11 @@ edges, and data-carrying variants are compile errors.
 # #[fsm(event = DoorEvent)]
 # enum Door { #[fsm(on(Open => Opened))] Closed, #[fsm(on(Close => Closed))] Opened }
 use std::time::Duration;
-use id_effect::next::HNil;
+use id_effect::HNil;
 use id_effect_fsm::{FsmProcess, FsmSpec};
 use id_effect_process::{NodeName, ProcessNode};
 
-// The handle's effects are `id_effect::next` effects: run them at the edge with `block_on`.
+// The handle's effects are `id_effect` effects: run them at the edge with `block_on`.
 let node = ProcessNode::new(NodeName::new("door@local"));
 // The last argument is the actions' environment `R` (the process `Env`).
 let door = FsmProcess::start(&node, FsmSpec::<Door, DoorEvent, String, HNil>::from_fsm(), HNil);

@@ -3,7 +3,7 @@
 //! Run: `cargo run -p id_effect_config --example 005_config_layer`
 
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil, need};
+use id_effect::{Effect, HCons, HNil, need};
 use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
 
 /// The application's server settings, provided as a capability.

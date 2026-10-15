@@ -1,4 +1,4 @@
-//! Bridge a queue-backed [`next::Channel`](Channel) to Axum: one HTTP exchange is
+//! Bridge a queue-backed [`Channel`] to Axum: one HTTP exchange is
 //! `write(Request)` then `read()` for the response.
 //!
 //! The channel carries [`Bytes`] bodies (`http::Request<Bytes>` / `http::Response<Bytes>`); use
@@ -9,7 +9,7 @@ use axum::body::{Body, Bytes};
 use axum::http::{Request, Response, StatusCode};
 use axum::response::{IntoResponse, Response as AxumResponse};
 use http_body_util::BodyExt;
-use id_effect::next::{Channel, Effect, fail, succeed};
+use id_effect::{Channel, Effect, fail, succeed};
 
 /// Build an effect that performs one round trip on `ch`: enqueue `req`, then await the mapped
 /// response. A read that finds the channel shut down fails with `E::from(503)`.
@@ -60,7 +60,7 @@ pub async fn exchange_into_response(
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::Queue;
+  use id_effect::Queue;
 
   #[tokio::test]
   async fn shut_down_channel_answers_503() {

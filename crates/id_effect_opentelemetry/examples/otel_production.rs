@@ -8,7 +8,7 @@
 //! cargo run -p id_effect_opentelemetry --features otlp,platform --example otel_production
 //! ```
 
-use id_effect::next::{Counter, Effect, succeed};
+use id_effect::{Counter, Effect, succeed};
 use id_effect_opentelemetry::{OtelConfig, install_from_config};
 use id_effect_tokio::TokioRuntime;
 

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use id_effect::next::{Effect, HCons, HNil, fail, need, sleep, sync};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, HCons, HNil, fail, need, sleep, sync};
 use id_effect_sql::pg::{
   PgPool, PgPoolConfig, PgSqlClient, PgSqlEnv, pg_pool_from_config, pg_pool_from_config_lazy,
   provide_pg_pool, provide_pg_sql_client,

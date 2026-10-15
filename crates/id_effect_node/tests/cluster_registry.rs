@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::next::{Effect, succeed, sync};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::id::NodeId;
 use id_effect_node::{
   BehaviorRegistry, Mesh, MeshFabric, OrSwot, ProcessGroups, RemoteFault, fanout_cast,

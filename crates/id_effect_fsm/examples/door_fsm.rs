@@ -8,12 +8,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::{Effect, HNil, sync};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, HNil, sync};
 use id_effect_fsm::{Fsm, FsmProcess, FsmSpec, Interpreter, to_mermaid};
 use id_effect_process::{NodeName, ProcessNode};
 
-/// Run a `next` effect (the process API) at the edge.
+/// Run an effect (the process API) at the edge.
 fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E, HNil>) -> Result<A, E> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),

@@ -1,6 +1,6 @@
 # `id_effect_axum`
 
-Run [`id_effect`](../id_effect) `Effect` programs (the 0.7 kernel, `id_effect::next`) inside
+Run [`id_effect`](../id_effect) `Effect` programs (the 0.7 kernel) inside
 [Axum](https://docs.rs/axum) handlers and [Tower](https://docs.rs/tower) services: route helpers,
 request-scoped capability overrides, streaming bodies, JSON + schema decoding, health/readiness
 routes, and the HTTP server as a scoped `Layer`.
@@ -11,7 +11,7 @@ routes, and the HTTP server as a scoped `Layer`.
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_axum::routing;
 use tower::ServiceExt;
 
@@ -46,7 +46,7 @@ extractors, and `run_with_env` / `run_with_caps` when you want the `Exit` instea
 
 ## Execution
 
-`next` effects are `Send`, so each request's effect runs as **one fiber on the tokio runtime that
+Effects are `Send`, so each request's effect runs as **one fiber on the tokio runtime that
 serves the request** — no thread pool, no `LocalSet`, no `block_in_place`.
 
 - **Outcomes.** Success → `A::into_response()`; a typed failure → `E::into_response()`; a defect (a
@@ -79,7 +79,7 @@ the router's base `DynEnv` for that request's effect only:
 
 ```rust
 use axum::{Router, extract::State, routing::get};
-use id_effect::next::{DynEnv, Effect, succeed};
+use id_effect::{DynEnv, Effect, succeed};
 use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps};
 
 struct Tenant(String);
@@ -104,7 +104,7 @@ fn app() -> Router {
 
 ## Streaming bodies
 
-`body::stream_body(stream)` turns a `next::Stream<Bytes, E>` into a response `Body` (a producer
+`body::stream_body(stream)` turns a `Stream<Bytes, E>` into a response `Body` (a producer
 fiber feeds it chunk by chunk; dropping the body interrupts the producer); `body::body_stream(body)`
 reads a request body as a stream.
 
@@ -115,7 +115,7 @@ reads a request body as a stream.
 until interrupted and `serve_until_shutdown(app)` until SIGINT/SIGTERM:
 
 ```rust,no_run
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect_axum::{
   EffectExecutor, HostConfig, HostError, ShutdownReason, health_router, provide_host_config_env,
   serve_until_shutdown,

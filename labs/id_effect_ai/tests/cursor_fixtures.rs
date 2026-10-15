@@ -13,7 +13,7 @@ use std::sync::Arc;
 struct MockHttpClient;
 
 impl HttpClient for MockHttpClient {
-  fn execute(&self, req: HttpRequest) -> id_effect::next::Effect<HttpResponse, HttpError> {
+  fn execute(&self, req: HttpRequest) -> id_effect::Effect<HttpResponse, HttpError> {
     let body = if req.url.contains("/v1/models") {
       br#"{"items":[{"id":"composer-2","displayName":"Composer 2"}]}"#.to_vec()
     } else if req.url.ends_with("/v1/agents") && matches!(req.method, HttpMethod::Post) {
@@ -25,7 +25,7 @@ impl HttpClient for MockHttpClient {
     } else {
       b"{}".to_vec()
     };
-    id_effect::next::succeed(HttpResponse {
+    id_effect::succeed(HttpResponse {
       status: 200,
       headers: vec![],
       body,
@@ -35,8 +35,8 @@ impl HttpClient for MockHttpClient {
   fn execute_stream(
     &self,
     _req: HttpRequest,
-  ) -> id_effect::next::Effect<StreamingHttpResponse, HttpError> {
-    id_effect::next::fail(HttpError::InvalidRequest(
+  ) -> id_effect::Effect<StreamingHttpResponse, HttpError> {
+    id_effect::fail(HttpError::InvalidRequest(
       "stream not supported in mock".into(),
     ))
   }

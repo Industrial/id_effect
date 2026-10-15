@@ -1,6 +1,6 @@
 //! Message broker trait and Kafka adapter stub.
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 

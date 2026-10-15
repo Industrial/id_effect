@@ -1,9 +1,9 @@
-//! [`EffectExecutor`]: runs one [`id_effect::next::Effect`] per request as a fiber on the
+//! [`EffectExecutor`]: runs one [`id_effect::Effect`] per request as a fiber on the
 //! [`TokioExecutor`] of the runtime that serves the request.
 //!
 //! ## How
 //!
-//! `next` effects are [`Send`], so they run where Axum already runs: every request's effect is
+//! Effects are [`Send`], so they run where Axum already runs: every request's effect is
 //! forked as a root fiber on the ambient tokio runtime (a [`TokioExecutor`] over
 //! [`tokio::runtime::Handle::current`]), and the handler future awaits the fiber's [`Exit`]. There
 //! is no thread pool and no blocking bridge: a suspended effect costs a parked tokio task, and the
@@ -43,9 +43,7 @@ use std::task::{Context, Poll};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use id_effect::Exit;
-use id_effect::next::{
-  Effect, FiberContext, HNil, JoinFuture, Runtime, TokioExecutor, suspend, sync,
-};
+use id_effect::{Effect, FiberContext, HNil, JoinFuture, Runtime, TokioExecutor, suspend, sync};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 static GLOBAL: OnceLock<EffectExecutor> = OnceLock::new();
@@ -394,7 +392,7 @@ impl<A, E> Drop for RequestFiber<A, E> {
 mod tests {
   use super::*;
   use id_effect::Cause;
-  use id_effect::next::{fail, from_async, sleep, succeed};
+  use id_effect::{fail, from_async, sleep, succeed};
   use std::sync::atomic::AtomicBool;
   use std::time::Duration;
   use tokio::sync::oneshot;

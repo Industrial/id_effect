@@ -3,10 +3,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use id_effect::Effect;
 use id_effect::compute::{FabricJobSpec, WorkProfile};
-use id_effect::next::Effect;
 #[cfg(feature = "memory")]
-use id_effect::next::{effect_next, succeed};
+use id_effect::{effect, succeed};
 
 fn work_profile_label(profile: WorkProfile) -> String {
   match profile {
@@ -280,7 +280,7 @@ where
   R: JobRunner + 'static,
   H: Fn(&JobSpec) -> Effect<(), JobError> + Copy + Send + 'static,
 {
-  effect_next!({
+  effect!({
     let mut processed = 0usize;
     for _ in 0..limit {
       let maybe = ~runner.dequeue();
@@ -307,7 +307,7 @@ where
 #[cfg(all(test, feature = "memory"))]
 mod tests {
   use super::*;
-  use id_effect::next::fail;
+  use id_effect::fail;
 
   fn run<A: Send + 'static>(eff: Effect<A, JobError>, _env: ()) -> Result<A, JobError> {
     eff

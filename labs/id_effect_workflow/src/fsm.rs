@@ -120,7 +120,7 @@ where
 mod tests {
   use super::*;
   use crate::DurableWorkflowLog;
-  use id_effect::next::{Effect, effect_next};
+  use id_effect::{Effect, effect};
   use id_effect_fsm::TransitionTable;
 
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -182,7 +182,7 @@ mod tests {
 
   #[test]
   fn effect_program_steps_door() {
-    let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>> = effect_next!({
+    let program: Effect<Door, WorkflowFsmError<Door, DoorEvt>> = effect!({
       let mut log = DurableWorkflowLog::open_in_memory()?;
       let mut m = door_machine();
       register_fsm(&mut log, "wf", &m)?;

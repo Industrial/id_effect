@@ -1,7 +1,7 @@
 # `id_effect_opentelemetry`
 
 **OpenTelemetry** traces, metrics, and logs for `id_effect` programs: `Effect::with_span`
-spans and the `MetricRegistry` metrics of the `id_effect::next` kernel are exported to OTEL.
+spans and the `MetricRegistry` metrics of the 0.7 kernel are exported to OTEL.
 
 See the mdBook chapter **"OpenTelemetry (`id_effect_opentelemetry`)"** and
 [`docs/effect-ts-parity/phases/phase-b-opentelemetry.md`](../../docs/effect-ts-parity/phases/phase-b-opentelemetry.md).

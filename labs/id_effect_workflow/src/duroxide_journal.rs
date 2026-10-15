@@ -3,8 +3,8 @@
 use crate::error::WorkflowError;
 use crate::journal::StepJournal;
 use duroxide_pg::migrations::MigrationRunner;
-use id_effect::next::{Effect, from_async};
 use id_effect::{Cause, Exit};
+use id_effect::{Effect, from_async};
 use serde::{Serialize, de::DeserializeOwned};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::future::Future;
@@ -77,12 +77,12 @@ impl DuroxideStepJournal {
   }
 }
 
-/// Runs the async sqlx step `f` on a fiber of the `next` global runtime (a tokio worker, so the
+/// Runs the async sqlx step `f` on a fiber of the global runtime (a tokio worker, so the
 /// pool has its IO driver) and parks the calling thread until it finishes: the synchronous edge
 /// behind the [`StepJournal`] impl.
 ///
 /// Inside an async context the run is refused (`BlockOnInAsync`) and this panics, like every
-/// `next` blocking edge. A defect re-raises its panic.
+/// Blocking edge. A defect re-raises its panic.
 #[allow(
   clippy::disallowed_methods,
   reason = "edge: the synchronous StepJournal impl over async sqlx"
@@ -130,7 +130,7 @@ fn rollback(tx: Transaction<'static, Postgres>) {
 }
 
 /// The `StepJournal` methods are **synchronous edges** over async sqlx: each statement runs on
-/// a fiber of the `next` global runtime while the calling thread parks. Call them from a plain
+/// a fiber of the global runtime while the calling thread parks. Call them from a plain
 /// thread (for example `std::thread::spawn` or a synchronous `main`), not from inside a tokio
 /// task or runtime context: there the run is refused and the call panics with the
 /// `BlockOnInAsync` defect. From async code, move the journal work to a thread.

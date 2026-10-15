@@ -7,7 +7,7 @@
 //! Run: `cargo run -p id_effect_fp --example 083_stm_transfer`
 use std::thread;
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_fp::{Stm, TRef, commit};
 

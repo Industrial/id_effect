@@ -186,7 +186,7 @@ impl DurableWorkflowLog {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{Effect, effect_next};
+  use id_effect::{Effect, effect};
   use rstest::rstest;
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn block_on_executes_effect_that_uses_durable_log_in_memory() {
-      let program: Effect<i32, WorkflowError> = effect_next!({
+      let program: Effect<i32, WorkflowError> = effect!({
         let mut log = DurableWorkflowLog::open_in_memory()?;
         log.register_workflow("w-effect")?;
         log.run_step_typed("w-effect", 0, "s0", || Ok(7_i32))?

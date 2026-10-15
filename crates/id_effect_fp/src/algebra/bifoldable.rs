@@ -33,8 +33,8 @@ pub mod either {
 
 /// Effectful bitraverse over `Either`.
 pub mod bitraverse {
+  use id_effect::Effect;
   use id_effect::foundation::either::Either;
-  use id_effect::next::Effect;
 
   /// Traverse both sides with effects.
   pub fn bitraverse<L, R, L2, R2, E, Rq, FL, FR>(
@@ -81,7 +81,7 @@ mod tests {
     use crate::algebra::bifoldable::bitraverse::bitraverse;
     use id_effect::Exit;
     use id_effect::foundation::either::Either;
-    use id_effect::next::{Effect, succeed as pure};
+    use id_effect::{Effect, succeed as pure};
 
     fn run_test<A: Send + 'static>(eff: Effect<A, ()>, (): ()) -> Exit<A, ()> {
       eff.block_on()

@@ -41,7 +41,7 @@
 //!
 //! - Sits between [`Applicative`](super::applicative::Applicative) (Stratum 1) and
 //!   [`Monad`](super::monad::Monad) (Stratum 1).
-//! - The next-kernel `Effect` (Stratum 2) provides the concrete implementation via
+//! - The 0.7-kernel `Effect` (Stratum 2) provides the concrete implementation via
 //!   [`select_effect`] and [`branch_effect`].
 
 use crate::foundation::coproduct::Either;
@@ -80,7 +80,7 @@ pub trait Selective {
 
 // ── Effect implementations ────────────────────────────────────────────────────
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 
 /// Selective `select` for [`Effect`].
 ///
@@ -91,7 +91,7 @@ use id_effect::next::{Effect, succeed};
 ///
 /// ```rust
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, succeed};
+/// use id_effect::{Effect, succeed};
 /// use id_effect_fp::algebra::selective::select_effect;
 ///
 /// // Short-circuit path: Right does not run ff
@@ -143,7 +143,7 @@ where
 ///
 /// ```rust
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, succeed};
+/// use id_effect::{Effect, succeed};
 /// use id_effect_fp::algebra::selective::branch_effect;
 ///
 /// let left_in: Effect<i32, ()> = branch_effect(
@@ -187,7 +187,7 @@ where
 mod tests {
   use super::*;
   use crate::test_support::run;
-  use id_effect::next::{HNil, fail};
+  use id_effect::{HNil, fail};
   use rstest::rstest;
 
   /// Runs `eff` (the 0.6 `run_blocking(eff, ())` call shape).

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, succeed, sync};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::id::NodeId;
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, ProcessGroups, fanout_cast};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};

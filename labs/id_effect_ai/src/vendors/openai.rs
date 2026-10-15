@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use id_effect::next::{Effect, HCons, HNil, Layer, Stream, fail, hlist, suspend};
+use id_effect::{Effect, HCons, HNil, Layer, Stream, fail, hlist, suspend};
 use id_effect_platform::http::{HttpClient, HttpMethod, HttpRequest, HttpResponse};
 use serde::Deserialize;
 use serde_json::json;

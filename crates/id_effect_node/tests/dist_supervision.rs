@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use id_effect::next::{Effect, succeed};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed};
 use id_effect_node::id::NodeId;
 use id_effect_node::membership::{Member, MembershipEvent};
 use id_effect_node::{

@@ -1,9 +1,9 @@
 //! [`Transducer`] — composable list transformation without intermediate collections.
 //!
-//! Re-exports the single implementation in [`id_effect::next::streaming::transducer`]
+//! Re-exports the single implementation in [`id_effect::streaming::transducer`]
 //! (deduplicated in 0.6), which also powers `Stream::transduce_items`.
 
-pub use id_effect::next::streaming::transducer::{Reducer, Transducer, filter, map, take};
+pub use id_effect::streaming::transducer::{Reducer, Transducer, filter, map, take};
 #[cfg(test)]
 mod tests {
   use super::*;

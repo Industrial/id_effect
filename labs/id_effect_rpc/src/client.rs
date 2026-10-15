@@ -1,8 +1,8 @@
 //! RPC HTTP client — call remote tagged methods as `Effect` (`RpcClient` parity).
 
-use id_effect::next::{Effect, HList, Selector, fail, need};
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
+use id_effect::{Effect, HList, Selector, fail, need};
 use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
 
 use crate::protocol::{RPC_DISPATCH_PATH, RpcWireRequest, RpcWireResponse};
@@ -135,7 +135,7 @@ impl RpcClient {
             decode_success(&success_schema, &resp.body)
           };
           match decoded {
-            Ok(b) => id_effect::next::succeed(b),
+            Ok(b) => id_effect::succeed(b),
             Err(e) => fail(e),
           }
         })
@@ -164,7 +164,7 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::hlist;
+  use id_effect::hlist;
   use id_effect::schema;
   use id_effect_platform::http::{HttpClient, HttpResponse};
   use std::sync::Arc;
@@ -179,21 +179,21 @@ mod tests {
     fn execute(
       &self,
       req: HttpRequest,
-    ) -> id_effect::next::Effect<HttpResponse, id_effect_platform::error::HttpError> {
+    ) -> id_effect::Effect<HttpResponse, id_effect_platform::error::HttpError> {
       let url = req.url.clone();
       *self.last_url.lock().unwrap() = Some(url);
       let resp = self.response.lock().unwrap().clone().expect("response set");
-      id_effect::next::succeed(resp)
+      id_effect::succeed(resp)
     }
 
     fn execute_stream(
       &self,
       _req: HttpRequest,
-    ) -> id_effect::next::Effect<
+    ) -> id_effect::Effect<
       id_effect_platform::http::StreamingHttpResponse,
       id_effect_platform::error::HttpError,
     > {
-      id_effect::next::fail(id_effect_platform::error::HttpError::InvalidRequest(
+      id_effect::fail(id_effect_platform::error::HttpError::InvalidRequest(
         "mock stream".to_owned(),
       ))
     }

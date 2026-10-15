@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use id_effect::next::{HNil, sleep, succeed};
 use id_effect::{Cause, Exit};
+use id_effect::{HNil, sleep, succeed};
 use id_effect_tokio::TokioRuntime;
 
 fn main() {

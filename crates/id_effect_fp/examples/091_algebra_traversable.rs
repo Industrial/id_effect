@@ -1,6 +1,6 @@
 //! Traverse a vector with Effect.
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_fp::algebra::traversable::traverse_vec;
 
 fn main() {

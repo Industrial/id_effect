@@ -23,7 +23,7 @@ so they moved here together with their `im` and Rayon-backed bulk operations:
 use id_effect::Exit;
 use id_effect_fp::{Monoid, Semigroup, TRef, commit, hash_map};
 
-// STM: transactional reference cells, committed as a next-kernel `Effect`.
+// STM: transactional reference cells, committed as a 0.7-kernel `Effect`.
 let counter = commit(TRef::make(1_i32)).block_on().into_result().expect("make");
 commit(counter.update_stm::<(), _>(|n| n + 1)).block_on().into_result().expect("update");
 assert_eq!(commit(counter.read_stm::<()>()).block_on(), Exit::succeed(2));
@@ -49,7 +49,7 @@ STM examples: `077`–`086`; algebra examples: `090`–`092`.
 
 ## STM retry
 
-`commit` runs on the 0.7 kernel (`id_effect::next`). A transaction that retries
+`commit` runs on the 0.7 kernel. A transaction that retries
 (`Stm::retry`, `Stm::check(false)`, `TQueue::take` on an empty queue, `TSemaphore::acquire` at
 zero) parks its fiber on the wait lists of the `TRef`s it read, and the next commit that writes
 one of them wakes it (Effect.ts `STM.retry`). Nothing spins and no thread is blocked; an

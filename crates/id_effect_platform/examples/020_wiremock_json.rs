@@ -3,7 +3,7 @@
 //! Run: `cargo run -p id_effect_platform --example 020_wiremock_json`
 
 use id_effect::Exit;
-use id_effect::next::hlist;
+use id_effect::hlist;
 use id_effect_platform::http::reqwest::{ReqwestClient, json};
 use id_effect_tokio::TokioRuntime;
 use reqwest::{Client, Error};

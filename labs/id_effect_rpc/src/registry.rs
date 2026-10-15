@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use id_effect::Exit;
-use id_effect::next::{DynEnv, Effect};
+use id_effect::{DynEnv, Effect};
 
 use crate::RpcError;
 use crate::protocol::RpcWireResponse;
@@ -154,8 +154,8 @@ impl RpcGroup {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{die, succeed};
   use id_effect::schema;
+  use id_effect::{die, succeed};
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn register_and_dispatch_greet() {
@@ -220,7 +220,7 @@ mod tests {
       &["name", "n"],
       one(),
       &["name", "n"],
-      |_, _| id_effect::next::fail(RpcError::not_found("nope")),
+      |_, _| id_effect::fail(RpcError::not_found("nope")),
     );
     group.register(
       "boom",

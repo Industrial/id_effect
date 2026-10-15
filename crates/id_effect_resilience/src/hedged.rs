@@ -3,11 +3,11 @@
 //! Built on [`Effect::race`]: both branches run as child fibers of the caller, the first
 //! **success** wins, and the loser is interrupted and awaited (its finalizers have run) before the
 //! result is returned. The backup is started only once `delay` has passed on the fiber's executor
-//! clock (virtual time on [`TestExecutor`](id_effect::next::TestExecutor)).
+//! clock (virtual time on [`TestExecutor`](id_effect::TestExecutor)).
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, sleep};
+use id_effect::{Effect, sleep};
 
 /// Runs `primary` and, after `delay`, `backup`; the first success wins and the other branch is
 /// interrupted.
@@ -20,7 +20,7 @@ use id_effect::next::{Effect, sleep};
 /// use std::time::Duration;
 ///
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, sleep, succeed};
+/// use id_effect::{Effect, sleep, succeed};
 /// use id_effect_resilience::hedged;
 ///
 /// let slow: Effect<&str> = sleep(Duration::from_secs(3600)).map(|()| "primary");
@@ -48,8 +48,8 @@ mod tests {
   use std::sync::Arc;
   use std::sync::atomic::{AtomicBool, Ordering};
 
-  use id_effect::next::{TokioExecutor, fail, succeed, sync};
   use id_effect::{Cause, Exit};
+  use id_effect::{TokioExecutor, fail, succeed, sync};
 
   use super::*;
   use crate::test_support::run_virtual;

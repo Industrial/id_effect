@@ -1,14 +1,14 @@
-//! Bridges `next` spans ([`Effect::with_span`]) to OpenTelemetry spans.
+//! Bridges spans ([`Effect::with_span`]) to OpenTelemetry spans.
 //!
 //! [`OtelSpanHook`] is a [`SpanHook`]: install it around the root effect with
 //! [`Effect::with_span_hook`]. The hook lives in a `FiberRef` (inherited by every forked
 //! child), so every `with_span` in the program, on whichever executor thread it runs, opens an
 //! OpenTelemetry span; nothing goes through thread-locals or the `tracing` subscriber.
 //!
-//! - The OpenTelemetry span's parent is the enclosing `next` span's OpenTelemetry context, or,
+//! - The OpenTelemetry span's parent is the enclosing span's OpenTelemetry context, or,
 //!   for a root span, the hook's parent context ([`OtelSpanHook::with_parent`], e.g. one
 //!   extracted from W3C headers).
-//! - Its name, attributes and start / end times are the `next` span's (executor clock).
+//! - Its name, attributes and start / end times are the span's (executor clock).
 //! - Its status follows the exit: success is `Ok`, a failure or a defect is `Error`, an
 //!   interrupt leaves the status unset and sets `id_effect.interrupted = true`.
 //! - The OpenTelemetry [`Context`] is kept in the span's extension slot:
@@ -17,7 +17,7 @@
 //!
 //! ```
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, succeed};
+//! use id_effect::{Effect, succeed};
 //! use id_effect_opentelemetry::{OtelSpanHook, sdk_tracer_provider_with_in_memory_exporter};
 //! use opentelemetry_sdk::trace::InMemorySpanExporter;
 //!
@@ -34,7 +34,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
-use id_effect::next::{Effect, ExitKind, Span, SpanHook};
+use id_effect::{Effect, ExitKind, Span, SpanHook};
 use opentelemetry::trace::{Status, TraceContextExt, Tracer, TracerProvider as _};
 use opentelemetry::{Context, KeyValue};
 use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
@@ -73,7 +73,7 @@ fn system_time(at: Instant) -> SystemTime {
   }
 }
 
-/// A [`SpanHook`] exporting every `next` span through an OpenTelemetry [`Tracer`]. Install it
+/// A [`SpanHook`] exporting every span through an OpenTelemetry [`Tracer`]. Install it
 /// around the root effect with [`Effect::with_span_hook`]: each `with_span` then opens an OTEL
 /// span (parent: the enclosing span's OTEL context, else [`with_parent`](Self::with_parent)),
 /// ended with status `Ok` on success, `Error` on a failure or defect, and the attribute
@@ -170,7 +170,7 @@ mod tests {
   };
   use crate::subscriber::sdk_tracer_provider_with_in_memory_exporter;
   use id_effect::Exit;
-  use id_effect::next::{Concurrency, die, fail, fork_all, succeed};
+  use id_effect::{Concurrency, die, fail, fork_all, succeed};
   use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
 
   fn setup() -> (InMemorySpanExporter, SdkTracerProvider, Arc<dyn SpanHook>) {

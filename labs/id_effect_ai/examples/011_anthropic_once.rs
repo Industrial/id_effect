@@ -1,6 +1,6 @@
 //! One-shot Anthropic chat completion (requires `ANTHROPIC_API_KEY`).
 
-use id_effect::next::{HCons, HNil};
+use id_effect::{HCons, HNil};
 use id_effect_ai::{
   AiConfig, AiError, ChatMessage, ChatRequest, ChatRole, LanguageModelService, complete,
   provide_anthropic_language_model,

@@ -1,6 +1,6 @@
 //! Layers providing [`PgSqlClient`] as [`SqlClientService`] together with its [`PgPool`].
 
-use id_effect::next::{HCons, HNil, Layer, hlist};
+use id_effect::{HCons, HNil, Layer, hlist};
 
 use super::PgSqlClient;
 use super::pool_key::PgPool;

@@ -1,7 +1,7 @@
-//! Bridge parser combinators to [`id_effect::next::Stream`] chunk input.
+//! Bridge parser combinators to [`id_effect::Stream`] chunk input.
 
 use crate::parser::{ParseFailure, Parser};
-use id_effect::next::{Chunk, Effect, Stream, fail, succeed};
+use id_effect::{Chunk, Effect, Stream, fail, succeed};
 
 /// Error when stream collection or parsing fails.
 #[derive(Clone, Debug, PartialEq, Eq)]

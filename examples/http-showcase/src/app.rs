@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, HCons, HNil, Schedule, effect_next, fail, hlist, suspend};
+use id_effect::{Effect, HCons, HNil, Schedule, effect, fail, hlist, suspend};
 
 use crate::config::AppConfig;
 use crate::error::AppError;
@@ -53,7 +53,7 @@ impl RequestPolicy {
     self.timeout
   }
 
-  /// Runs `attempt()` under this policy. `attempt` is the call's factory: a `next` effect runs
+  /// Runs `attempt()` under this policy. `attempt` is the call's factory: an effect runs
   /// once, so every retry builds a fresh one.
   pub fn run<A: Send + 'static>(
     &self,
@@ -76,7 +76,7 @@ pub fn app_env(repo: TodoRepoService, policy: RequestPolicy) -> AppEnv {
 fn with_repo<A: Send + 'static>(
   call: impl Fn(&dyn TodoRepo) -> Effect<A, AppError> + Send + Sync + 'static,
 ) -> Effect<A, AppError, AppEnv> {
-  effect_next!(|_r: &AppEnv| {
+  effect!(|_r: &AppEnv| {
     let repo = TodoRepoService::clone(~TodoRepoService);
     let policy = RequestPolicy::clone(~RequestPolicy);
     ~policy.run(move || call(&*repo))

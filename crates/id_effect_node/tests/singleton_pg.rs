@@ -10,8 +10,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::next::{Effect, Runtime, TokioExecutor};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, Runtime, TokioExecutor};
 use id_effect_node::singleton::{PgAdvisoryLease, SingletonError, SingletonLease};
 
 /// Run a lease effect on the default runtime (its tokio side has the IO driver sqlx needs; the

@@ -1,14 +1,14 @@
-//! [`Layer`]s for [`EffectLogger`] and the thread-local logger pipeline (`next` kernel).
+//! [`Layer`]s for [`EffectLogger`] and the thread-local logger pipeline (0.7 kernel).
 //!
 //! Each layer needs nothing (`In = HNil`) and never fails, so its error type `E` is whatever the
 //! graph it joins uses. The pipeline layers install their thread-local state when they are
 //! **built**, on the thread that drives the build (the thread running the program for
-//! [`Effect::block_on`](id_effect::next::Effect::block_on)).
+//! [`Effect::block_on`](id_effect::Effect::block_on)).
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ::id_effect::next::{FiberRef, HCons, HNil, Layer, hlist, sync};
+use ::id_effect::{FiberRef, HCons, HNil, Layer, hlist, sync};
 
 use crate::{
   CompositeLogBackend, EffectLogMinLevel, EffectLogger, LogLevel, install_composite_log_backend,
@@ -43,7 +43,7 @@ impl LogMetadataLive {
   pub fn layer<E: Send + 'static>() -> Layer<HCons<EffectLogMetadata, HNil>, E> {
     Layer::effect(|| {
       sync(|| {
-        // A forked child starts with a copy of its parent's value (`next` FiberRef inheritance).
+        // A forked child starts with a copy of its parent's value (FiberRef inheritance).
         install_log_annotations_fiber_ref(FiberRef::new(HashMap::<String, String>::new()));
         install_log_spans_fiber_ref(FiberRef::new(Vec::<String>::new()));
         hlist![EffectLogMetadata]
@@ -88,8 +88,8 @@ pub fn provide_minimum_log_level<E: Send + 'static>(
 #[cfg(test)]
 mod tests {
   use super::*;
+  use ::id_effect::Effect;
   use ::id_effect::Never;
-  use ::id_effect::next::Effect;
 
   fn build<Out: Send + 'static>(eff: Effect<Out, Never>) -> Out {
     eff.block_on().into_result().expect("layer build")

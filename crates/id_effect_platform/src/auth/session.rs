@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use id_effect::next::{Effect, fail, succeed, suspend};
+use id_effect::{Effect, fail, succeed, suspend};
 
 /// Session payload stored server-side.
 #[derive(Clone, Debug, PartialEq, Eq)]

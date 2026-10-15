@@ -17,8 +17,8 @@ use common::{
   JoinNode, Probe, T, Worker, WorkerArgs, WorkerCall, advance, await_exit, next_start, recv,
   registered_worker_spec, run, settle, watch_exit, worker_args, worker_spec,
 };
+use id_effect::HNil;
 use id_effect::Never;
-use id_effect::next::HNil;
 use id_effect_process::{
   ChildSpec, DynamicSupervisor, DynamicSupervisorSpec, ExitReason, Info, Pid, ProcessNode,
   RestartPolicy, ShutdownPolicy, StartChildFn, StartError, Strategy, SupError, SupervisorHandle,

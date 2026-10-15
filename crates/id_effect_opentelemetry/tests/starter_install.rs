@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::Exit;
-use id_effect::next::{Boundaries, Concurrency, Counter, Effect, Histogram, fork_all, need};
+use id_effect::{Boundaries, Concurrency, Counter, Effect, Histogram, fork_all, need};
 use id_effect_opentelemetry::{
   OtelInMemoryExporters, OtelProviders, OtelRuntime, OtelRuntimeEnv, OtelStarterConfig,
   install_otel_starter, provide_otel_runtime,
@@ -41,7 +41,7 @@ fn install_otel_starter_exports_span_and_log_globally() {
     "expected integration log, got {logs:?}"
   );
 
-  // `next` program on tokio worker fibers: spans through the guard's span hook (a FiberRef),
+  // Program on tokio worker fibers: spans through the guard's span hook (a FiberRef),
   // metrics through the global registry bridge.
   let rt = TokioRuntime::new_multi_thread().expect("tokio");
   let requests = Counter::new("starter_install.requests");
@@ -60,7 +60,7 @@ fn install_otel_starter_exports_span_and_log_globally() {
     .with_span_hook(guard.span_hook());
   assert!(matches!(rt.block_on(rt.run(program)), Exit::Success(3)));
 
-  // The guard as a `next` capability.
+  // The guard as a capability.
   let runtime: Effect<String, ()> = need::<OtelRuntime>()
     .map::<_, (), OtelRuntimeEnv, _>(|otel| otel.service_name().to_owned())
     .provide_layer(provide_otel_runtime(Arc::new(guard.clone())));

@@ -1,4 +1,4 @@
-//! m-platform AC: the fs, http and command providers are `next::Layer`s that compose with
+//! m-platform AC: the fs, http and command providers are `Layer`s that compose with
 //! `merge` and feed one program needing all three capabilities.
 
 mod common;
@@ -6,7 +6,7 @@ mod common;
 use std::path::PathBuf;
 
 use common::run;
-use id_effect::next::{Effect, HCons, HNil, Layer};
+use id_effect::{Effect, HCons, HNil, Layer};
 use id_effect_platform::command::{
   CommandSpec, ProcessRuntimeService, TokioProcessRuntimeProvider, spawn_wait,
 };
@@ -56,7 +56,7 @@ async fn one_program_uses_the_merged_fs_http_and_command_layers() {
     execute::<PlatformEnv, _>(HttpRequest::get(url))
       .map_err(AppError::Http)
       .flat_map(move |resp| {
-        id_effect::next::need::<FileSystemService>()
+        id_effect::need::<FileSystemService>()
           .flat_map(move |fs| fs.write(&f1, &resp.body).narrow())
           .map_err(AppError::Fs)
       })

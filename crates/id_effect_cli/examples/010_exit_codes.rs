@@ -6,8 +6,8 @@
 
 use std::process::ExitCode;
 
-use id_effect::next::{HNil, die, fail, succeed};
 use id_effect::{Cause, Exit, FiberId};
+use id_effect::{HNil, die, fail, succeed};
 use id_effect_cli::{RunMainConfig, cause_max_exit_byte, exit_code_for_exit, run_main};
 
 fn main() -> ExitCode {

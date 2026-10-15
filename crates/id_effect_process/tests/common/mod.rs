@@ -15,7 +15,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use id_effect::next::{Effect, HNil, TestExecutor, fail, succeed, suspend};
+use id_effect::{Effect, HNil, TestExecutor, fail, succeed, suspend};
 use id_effect::{Exit, Never};
 use id_effect_process::{
   ChildSpec, ExitReason, Info, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode,

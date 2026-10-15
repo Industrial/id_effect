@@ -1,7 +1,7 @@
 //! Ex 152 — Cookbook: run N external commands with at most K in flight.
 //!
 //! Each job runs its command through the `ProcessRuntimeService` capability from
-//! `id_effect_platform::command` while holding a permit of a `next` `Semaphore` (waiting while all
+//! `id_effect_platform::command` while holding a permit of a `Semaphore` (waiting while all
 //! K are taken); the permit is released however the job ends. All jobs are forked at once with
 //! `for_each_par`, so the semaphore, not the caller, bounds them. No hand-rolled thread pool or
 //! `Condvar` is needed. Use `id_effect_resilience::Bulkhead` instead of the semaphore when
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use id_effect::Exit;
-use id_effect::next::{Concurrency, Effect, Semaphore, for_each_par, sync};
+use id_effect::{Concurrency, Effect, Semaphore, for_each_par, sync};
 use id_effect_platform::command::{
   CommandSpec, ProcessRuntimeEnv, TokioProcessRuntimeProvider, spawn_wait,
 };

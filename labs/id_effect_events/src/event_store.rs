@@ -2,7 +2,7 @@
 
 use crate::edge::attempt;
 use crate::error::EventStoreError;
-use id_effect::next::Effect;
+use id_effect::Effect;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};

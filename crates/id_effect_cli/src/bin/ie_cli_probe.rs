@@ -1,7 +1,7 @@
 //! Tiny probe binary for integration tests (exit `0` / `1` / `101`).
 
 use clap::{Parser, ValueEnum};
-use id_effect::next::{Effect, HNil, die, fail, succeed};
+use id_effect::{Effect, HNil, die, fail, succeed};
 use std::process::ExitCode;
 
 #[derive(Parser, Debug)]

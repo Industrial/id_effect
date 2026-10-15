@@ -1,7 +1,7 @@
 //! Shared HTTP helpers for vendor adapters.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use id_effect::next::{Effect, fail, succeed};
+use id_effect::{Effect, fail, succeed};
 
 /// `Authorization: Bearer <token>`.
 #[inline]

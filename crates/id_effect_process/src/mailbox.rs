@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 
-use id_effect::next::{Effect, from_async, sync};
+use id_effect::{Effect, from_async, sync};
 
 /// A take on a mailbox that is closed and drained.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,7 +166,7 @@ impl<A> Future for Take<A> {
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::{HNil, Runtime, TestExecutor};
+  use id_effect::{HNil, Runtime, TestExecutor};
 
   #[test]
   fn offer_take_close_drain() {

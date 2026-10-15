@@ -5,8 +5,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use id_effect::next::{Deferred, Effect, from_async};
 use id_effect::{Cause, Exit};
+use id_effect::{Deferred, Effect, from_async};
 use id_effect_process::{CallError, ExitReason, Info, Mailbox, Pid, ProcMsg, Process, ProcessNode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -264,7 +264,7 @@ fn encode_reply<A: Serialize>(exit: Exit<A, CallError>) -> Result<Vec<u8>, Remot
 mod tests {
   use super::*;
   use id_effect::Never;
-  use id_effect::next::{HNil, succeed, sync};
+  use id_effect::{HNil, succeed, sync};
   use id_effect_process::{Next, NodeName, ProcessCtx};
 
   struct Echo {

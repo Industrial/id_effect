@@ -1,8 +1,8 @@
 //! **SQL client** traits for `id_effect` — driver-agnostic database access inspired by
 //! Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction), on the
-//! `id_effect::next` kernel.
+//! 0.7 kernel.
 //!
-//! - [`SqlClient`] returns `next::Effect`s; the capability is [`SqlClientService`]
+//! - [`SqlClient`] returns `Effect`s; the capability is [`SqlClientService`]
 //!   ([`SqlClientEnv`]), read by [`query`] / [`execute`] / [`transaction`](fn@transaction).
 //! - The client is a scoped `Layer`: [`sql_client_layer`] connects it when built and closes it
 //!   when the scope closes (`pg::PgSqlClient::layer` opens and closes a pool).
@@ -17,7 +17,7 @@
 //!
 //! ```rust
 //! use id_effect::Exit;
-//! use id_effect::next::Effect;
+//! use id_effect::Effect;
 //! use id_effect_sql::{
 //!   SqlClientEnv, SqlError, SqlParam, SqlRow, TestSqlClient, query, sql_client_layer, transaction,
 //! };

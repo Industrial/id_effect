@@ -5,8 +5,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::{HCons, HNil, fail, need, sleep};
 use id_effect::{Cause, Exit};
+use id_effect::{HCons, HNil, fail, need, sleep};
 use id_effect_fsm::{
   Fsm, FsmError, FsmHandle, FsmProcess, FsmSpec, Interpreter, StateMachine, TransitionTable,
   Unhandled,
@@ -40,10 +40,8 @@ fn node(name: &str) -> ProcessNode {
   ProcessNode::new(NodeName::new(name))
 }
 
-/// Run a `next` effect at the edge (the node's processes are fibers on the default runtime).
-fn run<A: Send + 'static, E: Send + 'static>(
-  eff: id_effect::next::Effect<A, E, HNil>,
-) -> Result<A, E> {
+/// Run an effect at the edge (the node's processes are fibers on the default runtime).
+fn run<A: Send + 'static, E: Send + 'static>(eff: id_effect::Effect<A, E, HNil>) -> Result<A, E> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),
     Exit::Failure(Cause::Fail(e)) => Err(e),
@@ -232,7 +230,7 @@ fn supervisor_restarts_a_crashed_machine_from_its_initial_state() {
 
 #[test]
 fn start_linked_ties_the_machine_to_its_parent() {
-  use id_effect::next::{Effect, succeed};
+  use id_effect::{Effect, succeed};
   use id_effect_process::{Next, Process, ProcessCtx};
 
   /// Parent that starts a linked machine in `init` and returns its pid.

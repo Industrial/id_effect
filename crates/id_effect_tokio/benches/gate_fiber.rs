@@ -1,10 +1,10 @@
-//! Fiber gate benches (D9) on `TokioRuntime` (the `next` kernel on `TokioExecutor`): fiber
+//! Fiber gate benches (D9) on `TokioRuntime` (the 0.7 kernel on `TokioExecutor`): fiber
 //! spawn/join and fiber sleep, wall clock and process CPU time. The bench IDs are the 0.6 ones.
 //!
 //! - `gate/spawn_join_10k` — wall clock to fork 10 000 trivial fibers with `TokioRuntime::fork`
 //!   and join them all.
 //! - `gate/sleep_1k_x_1ms` — wall clock for 1 000 concurrent fibers that each sleep 1 ms through
-//!   `next::sleep`.
+//!   `sleep`.
 //! - `gate/sleep_cpu_1k_x_1ms` — the same sleep workload, measured in **process CPU time** (user +
 //!   system, all threads) by the custom criterion `Measurement` [`ProcessCpuTime`]. Values are CPU
 //!   nanoseconds per iteration.
@@ -16,7 +16,7 @@
 //! burns CPU for the full sleep duration. A kernel with real wakers parks sleeping fibers, so its
 //! CPU time drops to the spawn and timer bookkeeping cost. The D9 gate requires a `sleep_cpu`
 //! ratio below 1.00 against the v0.6 baseline. Since 0.7 (`m-tokio`) every fiber is a tokio task
-//! with a real waker, so this measures `next`.
+//! with a real waker, so this measures the 0.7 kernel.
 
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ use criterion::{
   BenchmarkGroup, Criterion, SamplingMode, Throughput, criterion_group, criterion_main,
 };
 use id_effect::Exit;
-use id_effect::next::{HNil, sleep, succeed};
+use id_effect::{HNil, sleep, succeed};
 use id_effect_tokio::TokioRuntime;
 
 const SPAWN_FIBERS: u32 = 10_000;

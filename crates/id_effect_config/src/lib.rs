@@ -5,9 +5,9 @@
 //!
 //! Compose lazy descriptors, then evaluate them one of three ways:
 //!
-//! - [`Config::run`] — a `next` effect reading the [`ConfigProviderService`] capability from its
+//! - [`Config::run`] — an effect reading the [`ConfigProviderService`] capability from its
 //!   environment `R` (`R: Selector<ConfigProviderService, I>`, Effect `yield* config`);
-//! - [`Config::layer`] — a [`Layer`](id_effect::next::Layer) providing the loaded value as a
+//! - [`Config::layer`] — a [`Layer`](id_effect::Layer) providing the loaded value as a
 //!   capability (Effect `Layer.effect(Tag, config)`);
 //! - [`Config::load`] — synchronously against a provider reference (tests, edges).
 //!
@@ -29,7 +29,7 @@
 //! assert_eq!(host, "localhost");
 //! assert_eq!(port, 8080);
 //!
-//! // Evaluate as a `next` Effect with the provider capability injected
+//! // Evaluate as a Effect with the provider capability injected
 //! let both = Config::all((host_cfg, port_cfg))
 //!   .run::<(String, i64), ConfigError, _, _>()
 //!   .provide_all(config_env(p));
@@ -45,7 +45,7 @@
 //!
 //! ```rust
 //! use id_effect::Exit;
-//! use id_effect::next::{Effect, HCons, HNil, need};
+//! use id_effect::{Effect, HCons, HNil, need};
 //! use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
 //!
 //! #[derive(Debug)]
@@ -95,9 +95,9 @@ pub use secret::Secret;
 
 use std::sync::Arc;
 
-use ::id_effect::next::{HCons, HNil, hlist};
+use ::id_effect::{HCons, HNil, hlist};
 
-/// The minimal typed environment (`id_effect::next`) containing only [`ConfigProviderService`].
+/// The minimal typed environment containing only [`ConfigProviderService`].
 ///
 /// Use with [`config_env`] and `.provide_all(..)` to evaluate [`Config::run`] effects in tests
 /// and CLI entry points; it is also the output of the provider layers and the input of
@@ -123,8 +123,8 @@ pub fn config_env<P: ConfigProvider + 'static>(provider: P) -> ConfigEnv {
 
 #[cfg(test)]
 pub(crate) mod test_support {
-  //! The v1 `run_blocking(effect, env)` shape over the `next` edge, so the tests port mechanically.
-  use ::id_effect::next::{Effect, HList};
+  //! The v1 `run_blocking(effect, env)` shape over the edge, so the tests port mechanically.
+  use ::id_effect::{Effect, HList};
 
   /// Provide `env`, run on the global runtime, and return the typed outcome (panics on a defect).
   pub(crate) fn run_blocking<A, E, R>(eff: Effect<A, E, R>, env: R) -> Result<A, E>
@@ -289,8 +289,8 @@ mod tests {
   use super::*;
   use crate::test_support::run_blocking;
   use ::id_effect::Exit;
+  use ::id_effect::Layer;
   use ::id_effect::Never;
-  use ::id_effect::next::Layer;
   use serde::Deserialize;
   use std::io::Write;
   use temp_env::with_var;

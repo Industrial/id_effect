@@ -6,7 +6,7 @@
 
 use crate::error::FsmError;
 use crate::machine::StateMachine;
-use id_effect::next::{Effect, fail, succeed};
+use id_effect::{Effect, fail, succeed};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -19,7 +19,7 @@ type ActionMap<S, E, A, Err, R> = HashMap<(S, E), TransitionEffect<A, Err, R>>;
 
 /// Maps `(state, event)` pairs to effect factories run as part of the transition.
 ///
-/// The actions are [`id_effect::next::Effect`]s over the environment `R` (an HList such as
+/// The actions are [`id_effect::Effect`]s over the environment `R` (an HList such as
 /// `HCons<Db, HNil>`, or `HNil`); [`Interpreter::step`] and [`Interpreter::run`] return effects
 /// that need the same `R`.
 ///
@@ -198,7 +198,7 @@ mod tests {
   use super::*;
   use crate::machine::TransitionTable;
   use crate::test_support::run;
-  use id_effect::next::{HCons, HNil, need, sync};
+  use id_effect::{HCons, HNil, need, sync};
   use std::sync::Mutex;
 
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

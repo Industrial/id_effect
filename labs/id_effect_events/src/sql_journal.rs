@@ -3,7 +3,7 @@
 use crate::edge::attempt;
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
-use id_effect::next::Effect;
+use id_effect::Effect;
 use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

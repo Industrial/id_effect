@@ -5,7 +5,7 @@
 //!
 //! - **[`mod@algebra`]** — type-class-shaped traits ([`Semigroup`], [`Monoid`], [`Functor`],
 //!   [`Monad`], [`Foldable`], [`traverse_vec`], …) with instances for `Option`, `Result`, `Vec`,
-//!   the next-kernel `id_effect::next::Effect` and [`id_effect::Cause`].
+//!   the 0.7-kernel `id_effect::Effect` and [`id_effect::Cause`].
 //! - **[`mod@foundation`]** — categorical constructs core does not need: [`Unit`], [`Never`],
 //!   [`Iso`], products, coproducts, and `Option` helpers. (`Either`, `Pipe`, `Predicate`,
 //!   `MutableRef` and `func` stay in `id_effect::foundation`.)
@@ -78,7 +78,7 @@ pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, com
 
 #[cfg(test)]
 pub(crate) mod test_support {
-  use id_effect::next::Effect;
+  use id_effect::Effect;
   use id_effect::{Cause, Exit};
 
   /// Runs `eff` on the global next runtime; typed failures become `Err`, anything else panics.

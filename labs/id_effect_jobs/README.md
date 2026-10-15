@@ -17,7 +17,7 @@ Production async messaging for [id_effect](https://github.com/Industrial/id_effe
 id_effect_jobs = { path = "../id_effect_jobs", features = ["apalis", "obix"] }
 ```
 
-Every operation returns an `id_effect::next::Effect` (0.7). Set `DATABASE_URL` (devenv:
+Every operation returns an `id_effect::Effect` (0.7). Set `DATABASE_URL` (devenv:
 `postgresql://postgres@127.0.0.1:5432/id_effect`) to run, and build the pg features with
 `SQLX_OFFLINE=true` (apalis-postgres checks its queries against the database otherwise).
 

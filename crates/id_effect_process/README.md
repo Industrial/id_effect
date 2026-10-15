@@ -3,8 +3,8 @@
 BEAM/OTP-style processes for [`id_effect`](https://github.com/Industrial/id_effect): typed
 mailboxes, GenServer-shaped behaviours, links, monitors, `trap_exit`, exit-signal propagation,
 name registration, and supervision trees (`OneForOne` / `OneForAll` / `RestForOne`, restart
-intensity, `DynamicSupervisor`). Every behaviour callback returns an `id_effect::next` `Effect`,
-every process is a fiber on a `next::Runtime`, and timeouts and restart windows are measured on
+intensity, `DynamicSupervisor`). Every behaviour callback returns an `id_effect` `Effect`,
+every process is a fiber on a `Runtime`, and timeouts and restart windows are measured on
 that runtime's executor clock (virtual time on a `TestExecutor`).
 
 This is the local half of the Process Mesh (ADR 0009); `id_effect_node` adds distribution on top.
@@ -27,7 +27,7 @@ For a `gen_statem`-style behaviour that hosts a typed state machine, see
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, HNil, succeed};
+use id_effect::{Effect, HNil, succeed};
 use id_effect_process::{
   ChildSpec, Next, NodeName, Process, ProcessCtx, ProcessNode, Strategy, SupervisorSpec,
 };

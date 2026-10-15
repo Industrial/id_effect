@@ -4,7 +4,7 @@
 //! [`FreeAp::interpret`] runs independent [`FreeAp::Lift`] nodes sequentially; callers can
 //! swap in a parallel interpreter when effects commute.
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 
 /// Free applicative over [`Effect<A, E, R>`].
 pub enum FreeAp<A, E, R>
@@ -93,7 +93,7 @@ where
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::HNil;
+  use id_effect::HNil;
 
   fn pure(a: i32) -> Effect<i32, ()> {
     succeed(a)

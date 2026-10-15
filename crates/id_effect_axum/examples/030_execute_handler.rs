@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use axum::routing::Router;
 use http_body_util::BodyExt;
-use id_effect::next::succeed;
+use id_effect::succeed;
 use id_effect_axum::execute;
 use std::convert::Infallible;
 use tower::ServiceExt;

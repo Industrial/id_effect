@@ -1,6 +1,6 @@
 # `id_effect_sql`
 
-Driver-agnostic **SQL client** capability for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction), on the `id_effect::next` kernel.
+Driver-agnostic **SQL client** capability for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/sql`](https://effect.website/docs/sql/introduction), on the 0.7 kernel.
 
 Application code reads the `SqlClientService` capability (`SqlClientEnv`) from its environment; production wires the PostgreSQL driver behind the `pg` feature, tests use the scriptable in-memory `TestSqlClient`. The client and transactions are **scoped layers**: their resources are released when the layer's scope closes, however the program ends.
 
@@ -8,7 +8,7 @@ Application code reads the `SqlClientService` capability (`SqlClientEnv`) from i
 
 ```rust
 use id_effect::Exit;
-use id_effect::next::{Effect, need};
+use id_effect::{Effect, need};
 use id_effect_sql::{
   SqlClientEnv, SqlError, SqlParam, SqlRow, SqlTransactionEnv, SqlTransactionService,
   TestSqlClient, query, sql_client_layer, transaction_layer,

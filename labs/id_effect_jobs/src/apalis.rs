@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use apalis_core::backend::TaskSink;
 use apalis_postgres::{Config, PgPool, PostgresStorage};
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;

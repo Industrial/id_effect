@@ -1,11 +1,11 @@
-//! Ex 106 — `TokioRuntime` runs `next` effects on the Tokio driver (sleep / yield on tokio timers).
+//! Ex 106 — `TokioRuntime` runs effects on the Tokio driver (sleep / yield on tokio timers).
 //!
 //! Run: `cargo run -p id_effect_tokio --example 106_tokio_runtime`
 
 use std::time::Duration;
 
 use id_effect::Exit;
-use id_effect::next::{HNil, sleep, succeed, yield_fiber};
+use id_effect::{HNil, sleep, succeed, yield_fiber};
 use id_effect_tokio::TokioRuntime;
 
 fn main() {

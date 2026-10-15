@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::next::{Effect, Schedule, fail, sleep, succeed, suspend};
 use id_effect::{Cause, Exit, Or};
+use id_effect::{Effect, Schedule, fail, sleep, succeed, suspend};
 use id_effect_resilience::{CircuitBreaker, CircuitBreakerError, CircuitState, retry_with_breaker};
 
 type Call = Effect<&'static str, &'static str>;

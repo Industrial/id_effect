@@ -6,7 +6,7 @@ use crate::event_store::EventStore;
 #[cfg(feature = "es-entity")]
 use crate::projection::run_projection;
 use crate::projection::{Projection, run_projection_from_store};
-use id_effect::next::Effect;
+use id_effect::Effect;
 
 /// Turn a command into zero or more domain events (write side).
 pub trait CommandHandler<Cmd, Ev> {
@@ -129,7 +129,7 @@ where
 mod tests {
   use super::*;
   use crate::event_store::MemoryEventStore;
-  use id_effect::next::{fail, succeed};
+  use id_effect::{fail, succeed};
 
   #[derive(Clone, Debug, PartialEq, Eq)]
   enum Evt {

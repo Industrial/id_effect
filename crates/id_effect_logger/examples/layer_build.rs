@@ -1,9 +1,9 @@
-//! Build the [`EffectLogger`] capability from a `next` [`Layer`], then run an effect that
+//! Build the [`EffectLogger`] capability from a [`Layer`], then run an effect that
 //! extracts it via `~EffectLogger`.
 //!
 //! Run: `devenv shell -- cargo run -p id_effect_logger --example layer_build`
 
-use ::id_effect::next::{Effect, HCons, HNil, Layer, caps_next, effect_next, hlist};
+use ::id_effect::{Effect, HCons, HNil, Layer, caps, effect, hlist};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn logger_layer() -> Layer<HCons<EffectLogger, HNil>, EffectLoggerError> {
@@ -15,7 +15,7 @@ fn main() {
     .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
     .init();
 
-  let prog: Effect<(), EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+  let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!({
     let logger = ~EffectLogger;
     ~logger.info("logger provided via a Layer");
   });

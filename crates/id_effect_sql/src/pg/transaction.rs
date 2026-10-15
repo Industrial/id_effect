@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use sqlx::{Postgres, Transaction};
 use tokio::sync::Mutex;
 

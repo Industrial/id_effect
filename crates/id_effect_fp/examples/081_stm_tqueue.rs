@@ -1,5 +1,5 @@
 //! Ex 081 — `TQueue::offer` / `take` with retry on empty.
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_fp::{TQueue, commit};
 

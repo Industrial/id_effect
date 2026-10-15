@@ -19,8 +19,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use id_effect::Deferred;
 use id_effect::Never;
-use id_effect::next::Deferred;
 
 use crate::exit::ExitReason;
 use crate::msg::SysMsg;

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, Schedule};
+use id_effect::{Effect, Schedule};
 
 use crate::error::AiError;
 
@@ -29,7 +29,7 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{fail, succeed, suspend};
+  use id_effect::{fail, succeed, suspend};
   use std::sync::Arc;
   use std::sync::atomic::{AtomicU32, Ordering};
 

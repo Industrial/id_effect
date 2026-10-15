@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::next::{Effect, succeed, sync};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault};
 use id_effect_process::{ExitReason, Next, NodeName, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};

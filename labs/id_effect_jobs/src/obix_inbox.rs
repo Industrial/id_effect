@@ -1,6 +1,6 @@
 //! Idempotent consumer inbox backed by [obix](https://docs.rs/obix) + [job](https://docs.rs/job).
 
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use job::Jobs;
 use obix::prelude::es_entity;
 use obix::{Inbox, InboxConfig, InboxError as ObixInboxError, InboxHandler, InboxIdempotencyKey};

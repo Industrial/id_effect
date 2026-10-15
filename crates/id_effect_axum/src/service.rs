@@ -1,4 +1,4 @@
-//! [`tower::Service`] implementations that run [`id_effect::next::Effect`] programs, so handlers
+//! [`tower::Service`] implementations that run [`id_effect::Effect`] programs, so handlers
 //! stay in the effect runtime while composing with Tower middleware stacks.
 //!
 //! Enabled by the `tower` feature. Each call runs as one request fiber on the
@@ -29,10 +29,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use id_effect::next::{
-  Channel, Counter, Effect, Histogram, Metric, QueueError, SynchronizedRef, sync,
-};
 use id_effect::{Cause, Exit};
+use id_effect::{Channel, Counter, Effect, Histogram, Metric, QueueError, SynchronizedRef, sync};
 use tokio::sync::{AcquireError, OwnedSemaphorePermit, Semaphore};
 use tower::Service;
 
@@ -330,7 +328,7 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{Boundaries, HNil, fail, from_async, sleep, succeed};
+  use id_effect::{Boundaries, HNil, fail, from_async, sleep, succeed};
   use std::convert::Infallible;
   use std::time::Duration;
   use tower::{Service, ServiceExt};

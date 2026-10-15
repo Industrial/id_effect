@@ -1,6 +1,6 @@
 //! Cross-module integration: enqueue job while staging outbox event.
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_jobs::{
   JobRunner, JobSpec, MemoryJobRunner, MemoryOutbox, OutboxRecord, OutboxTable, drain_jobs,
   relay_outbox,

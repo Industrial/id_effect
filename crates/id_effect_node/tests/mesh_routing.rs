@@ -7,8 +7,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::next::{Effect, succeed, sync};
 use id_effect::{Cause, Exit, Never};
+use id_effect::{Effect, succeed, sync};
 use id_effect_node::envelope::{PidWire, ProcessEnvelope, RemoteFault};
 use id_effect_node::wire::Frame;
 use id_effect_node::{

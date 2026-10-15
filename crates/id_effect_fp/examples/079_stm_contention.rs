@@ -1,5 +1,5 @@
 //! Ex 079 — Two transactions can serialize on the same `TRef` via STM restart.
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_fp::{TRef, commit};
 

@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use id_effect::next::{Effect, fail, succeed, suspend};
+use id_effect::{Effect, fail, succeed, suspend};
 use id_effect_sql::{
   SqlClient, SqlClientService, SqlError, SqlParam, SqlRow, SqlTransaction, with_transaction,
 };
@@ -421,7 +421,7 @@ pub(crate) mod doubles {
   use std::sync::{Arc, Mutex, PoisonError};
   use std::time::Duration;
 
-  use id_effect::next::{Effect, fail, sleep, succeed, suspend};
+  use id_effect::{Effect, fail, sleep, succeed, suspend};
 
   use super::{InMemoryTodoRepo, Title, Todo, TodoPatch, TodoRepo};
   use crate::error::AppError;

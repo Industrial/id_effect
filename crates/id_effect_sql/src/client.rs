@@ -9,7 +9,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use id_effect::Never;
-use id_effect::next::{
+use id_effect::{
   Effect, HCons, HList, HNil, Layer, Selector, fail, hlist, need, succeed, suspend, sync,
 };
 
@@ -115,7 +115,7 @@ pub fn provide_sql_client<E: Send + 'static>(client: impl SqlClient) -> Layer<Sq
 /// The scoped client [`Layer`] (Effect.ts `Layer.scoped`): building it runs
 /// [`SqlClient::connect`] (a failure fails the build with `E::from(err)`), and the build's scope
 /// closing runs [`SqlClient::close`], after the effect a
-/// [`provide_layer`](id_effect::next::Effect::provide_layer) runs, however it ends.
+/// [`provide_layer`](id_effect::Effect::provide_layer) runs, however it ends.
 pub fn sql_client_layer<E>(client: impl SqlClient) -> Layer<SqlClientEnv, E>
 where
   E: From<SqlError> + Send + 'static,
@@ -363,8 +363,8 @@ impl SqlClient for TestSqlClient {
 pub(crate) mod tests {
   use std::sync::Arc;
 
-  use id_effect::next::{Effect, fail, need, sync};
   use id_effect::{Cause, Exit};
+  use id_effect::{Effect, fail, need, sync};
 
   use super::{
     SqlClient, SqlClientEnv, SqlClientService, SqlParam, SqlRow, TestSqlClient, execute,
@@ -372,7 +372,7 @@ pub(crate) mod tests {
   };
   use crate::error::SqlError;
 
-  /// The v1 `run_blocking(effect, ())` shape over the `next` blocking edge.
+  /// The v1 `run_blocking(effect, ())` shape over the blocking edge.
   pub(crate) fn run<A: Send + 'static>(eff: Effect<A, SqlError>) -> Result<A, SqlError> {
     match eff.block_on() {
       Exit::Success(a) => Ok(a),

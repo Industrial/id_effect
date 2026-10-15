@@ -5,7 +5,7 @@
 //! callers should *wait* for a permit.
 
 use id_effect::Or;
-use id_effect::next::{Effect, Semaphore, fail, sync};
+use id_effect::{Effect, Semaphore, fail, sync};
 
 /// Returned when the bulkhead cannot admit another effect immediately.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -57,8 +57,8 @@ impl Bulkhead {
 mod tests {
   use std::time::Duration;
 
-  use id_effect::next::{sleep, succeed, zip_par};
   use id_effect::{Cause, Exit};
+  use id_effect::{sleep, succeed, zip_par};
 
   use super::*;
   use crate::test_support::{run_ok, run_virtual};
@@ -134,7 +134,7 @@ mod tests {
   #[test]
   fn defect_releases_the_permit() {
     let bh = Bulkhead::new(1);
-    let (exit, _) = run_virtual(bh.with_permit(id_effect::next::die::<u32, (), _>("crash")));
+    let (exit, _) = run_virtual(bh.with_permit(id_effect::die::<u32, (), _>("crash")));
     assert!(matches!(exit, Exit::Failure(Cause::Die(_))));
     assert_eq!(run_ok::<_, ()>(bh.available()), Ok(1));
   }

@@ -2,9 +2,9 @@
 //!
 //! Enable the `test-util` feature for `MemoryOAuthClient`, an in-memory test double.
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 #[cfg(any(test, feature = "test-util"))]
-use id_effect::next::{fail, succeed, suspend};
+use id_effect::{fail, succeed, suspend};
 #[cfg(any(test, feature = "test-util"))]
 use std::collections::HashMap;
 #[cfg(any(test, feature = "test-util"))]

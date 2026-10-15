@@ -1,8 +1,8 @@
-//! The installed OpenTelemetry runtime handle as a `next` capability ([`Layer`]).
+//! The installed OpenTelemetry runtime handle as a capability ([`Layer`]).
 
 use std::sync::Arc;
 
-use id_effect::next::{HCons, HNil, Layer, hlist};
+use id_effect::{HCons, HNil, Layer, hlist};
 
 use crate::starter::OtelStarterGuard;
 

@@ -6,16 +6,16 @@
 //!
 //! This is [`Effect::retry`] with the caller's schedule wrapped so that an open breaker ends it:
 //! backoff delays are slept on the running fiber's executor clock (virtual time on
-//! [`TestExecutor`](id_effect::next::TestExecutor)).
+//! [`TestExecutor`](id_effect::TestExecutor)).
 
 use id_effect::Or;
-use id_effect::next::{Effect, Schedule};
+use id_effect::{Effect, Schedule};
 
 use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerError};
 
 /// Retries `make()` per `schedule`, guarded by `breaker`.
 ///
-/// A `next` effect is one-shot, so the attempt is given as a factory: `make` is called once per
+/// An effect is one-shot, so the attempt is given as a factory: `make` is called once per
 /// attempt, when the attempt starts (as for [`Effect::retry`]). `schedule` is stepped with each
 /// typed failure `E`.
 ///
@@ -32,7 +32,7 @@ use crate::circuit_breaker::{CircuitBreaker, CircuitBreakerError};
 /// use std::sync::atomic::{AtomicU32, Ordering};
 ///
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, Schedule, fail, succeed, suspend};
+/// use id_effect::{Effect, Schedule, fail, succeed, suspend};
 /// use id_effect_resilience::{CircuitBreaker, retry_with_breaker};
 ///
 /// let breaker = CircuitBreaker::new(3, Duration::from_secs(30));
@@ -91,7 +91,7 @@ mod tests {
   use std::sync::atomic::{AtomicU32, Ordering};
   use std::time::Duration;
 
-  use id_effect::next::{fail, sleep, succeed, suspend};
+  use id_effect::{fail, sleep, succeed, suspend};
 
   use super::*;
   use crate::circuit_breaker::CircuitState;

@@ -7,7 +7,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::routing::Router;
 use http_body_util::BodyExt;
-use id_effect::next::{Effect, from_async, sleep};
+use id_effect::{Effect, from_async, sleep};
 use id_effect_axum::routing;
 use std::convert::Infallible;
 use std::time::Duration;

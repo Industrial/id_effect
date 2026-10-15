@@ -4,7 +4,7 @@
 //! Run: `RUST_LOG=trace devenv shell -- cargo run -p id_effect_logger --example log_effects`
 
 use ::id_effect::Exit;
-use ::id_effect::next::{Effect, caps_next, effect_next};
+use ::id_effect::{Effect, caps, effect};
 use id_effect_logger::{EffectLogger, EffectLoggerError};
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
     )
     .init();
 
-  let prog: Effect<(), EffectLoggerError, caps_next!(EffectLogger)> = effect_next!({
+  let prog: Effect<(), EffectLoggerError, caps!(EffectLogger)> = effect!({
     let logger = ~EffectLogger;
     ~logger.trace("trace step");
     ~logger.debug("debug step");

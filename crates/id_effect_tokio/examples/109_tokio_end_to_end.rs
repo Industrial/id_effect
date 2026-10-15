@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil, from_async, hlist, need, sleep, succeed};
+use id_effect::{Effect, HCons, HNil, from_async, hlist, need, sleep, succeed};
 use id_effect_tokio::TokioRuntime;
 
 struct ApiToken(&'static str);

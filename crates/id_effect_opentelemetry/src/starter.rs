@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use id_effect::next::SpanHook;
+use id_effect::SpanHook;
 use opentelemetry::global;
 use opentelemetry::metrics::Meter;
 use opentelemetry::metrics::MeterProvider as _;
@@ -180,7 +180,7 @@ pub fn install_from_config(config: OtelConfig) -> Result<OtelStarterGuard, OtelE
 /// Installs global tracer + meter providers, W3C propagation, and a tracing subscriber with OTEL trace + log layers,
 /// then bridges `MetricRegistry::global()` to the meter provider (kept alive by the guard).
 ///
-/// `next` spans are exported once the program runs under [`OtelStarterGuard::span_hook`]
+/// Spans are exported once the program runs under [`OtelStarterGuard::span_hook`]
 /// (`effect.with_span_hook(guard.span_hook())`).
 pub fn install_otel_starter(
   providers: &OtelProviders,
@@ -209,7 +209,7 @@ mod tests {
   use super::*;
   use crate::logs_bridge::trace_and_log_subscriber_for_providers;
   use crate::metrics_bridge::bridge_metrics;
-  use id_effect::next::{Metric, MetricRegistry};
+  use id_effect::{Metric, MetricRegistry};
   use opentelemetry::logs::AnyValue;
 
   #[test]

@@ -1,7 +1,7 @@
 //! Effect + config environment for the `cli_minimal` example (see mdBook CLI chapter).
 
 use id_effect::Cause;
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect_config::{Config, ConfigEnv, ConfigError, MapConfigProvider, Secret, config_env};
 
 /// The `API_TOKEN` secret, loaded from the [`ConfigEnv`] capability.

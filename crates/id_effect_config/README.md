@@ -8,7 +8,7 @@ Effect.ts `Config` module. There is one reading API, the lazy **`Config<T>` desc
 - combine them with `Config::all((a, b, c))` (tuples, `Vec`s and arrays), `a.zip(b)`,
   `a.zip_with(b, f)`. Like Effect.ts `Config.all`, **errors accumulate**: every missing or
   invalid key is reported in one `ConfigError::And`, not only the first;
-- evaluate with `Config::run` (an `id_effect::next` effect reading the `ConfigProviderService`
+- evaluate with `Config::run` (an `id_effect` effect reading the `ConfigProviderService`
   capability from its environment), `Config::layer()` (a `Layer` that provides the loaded value
   as a capability) or `Config::load(&provider)` (synchronous, for tests and edges).
 
@@ -27,7 +27,7 @@ features `toml` / `env` (default), `json`, `yaml` and `dotenv` select Figment so
 
 ```rust
 use id_effect::Exit;
-use id_effect::next::{Effect, HCons, HNil, need};
+use id_effect::{Effect, HCons, HNil, need};
 use id_effect_config::{Config, ConfigError, ConfigProvider, MapConfigProvider};
 
 let provider = MapConfigProvider::from_pairs([("HOST", "localhost"), ("PORT", "8080")]);

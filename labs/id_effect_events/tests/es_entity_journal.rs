@@ -1,6 +1,6 @@
 //! es-entity journal integration tests (skip when DATABASE_URL unreachable).
 
-use id_effect::next::Runtime;
+use id_effect::Runtime;
 use id_effect_events::{
   EsEntityEventStore, EsEntityPgBackend, EventStore, apply_es_entity_journal_ddl,
 };

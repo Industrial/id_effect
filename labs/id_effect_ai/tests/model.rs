@@ -1,4 +1,4 @@
-use id_effect::next::{HCons, HNil};
+use id_effect::{HCons, HNil};
 use id_effect_ai::{
   AiError, ChatMessage, ChatRequest, ChatRole, LanguageModel, LanguageModelService,
   MockLanguageModel, complete, provide_mock_language_model,

@@ -3,7 +3,7 @@
 #[cfg(feature = "duroxide")]
 mod duroxide_provider {
   use crate::duroxide_journal::{DuroxideStepJournal, DuroxideWorkflowRuntime};
-  use id_effect::next::{HCons, HNil, Layer, hlist};
+  use id_effect::{HCons, HNil, Layer, hlist};
   use sqlx::PgPool;
   use std::sync::Arc;
 

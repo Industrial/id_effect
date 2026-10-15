@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use id_effect::Never;
-use id_effect::next::{Effect, HNil, succeed, sync};
+use id_effect::{Effect, HNil, succeed, sync};
 
 use crate::addr::Addr;
 use crate::exit::ExitReason;

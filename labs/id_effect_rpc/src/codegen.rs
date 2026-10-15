@@ -63,7 +63,7 @@ pub struct RpcServiceDef {
 
 /// Emit a Rust trait stub with one method per [`RpcMethodDef`].
 ///
-/// Generated code depends on `id_effect::next::Effect` and [`crate::RpcError`].
+/// Generated code depends on `id_effect::Effect` and [`crate::RpcError`].
 pub fn emit_service_trait(def: &RpcServiceDef) -> String {
   let mut out = String::new();
   let _ = writeln!(
@@ -75,7 +75,7 @@ pub fn emit_service_trait(def: &RpcServiceDef) -> String {
   );
   let _ = writeln!(out, "#![allow(dead_code, missing_docs)]");
   let _ = writeln!(out);
-  let _ = writeln!(out, "use id_effect::next::Effect;");
+  let _ = writeln!(out, "use id_effect::Effect;");
   let _ = writeln!(out, "use id_effect_rpc::RpcError;");
   let _ = writeln!(out);
   let _ = writeln!(

@@ -9,7 +9,7 @@ use std::sync::mpsc;
 
 use common::{JoinNode, Probe, RecCall, Recorder, T, await_exit, recv, run, watch_exit};
 use id_effect::Cause;
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect_process::{
   Addr, CallError, ExitReason, Info, MonitorRef, Next, NodeName, Pid, Process, ProcessCtx,
   SendError,
@@ -257,11 +257,11 @@ impl Process for FailingInit {
   type Error = String;
 
   fn init(_: (), _ctx: ProcessCtx) -> Effect<Self, String, ()> {
-    id_effect::next::fail("no config".to_string())
+    id_effect::fail("no config".to_string())
   }
 
   fn handle_call(self, _: (), _ctx: ProcessCtx) -> Effect<((), Next<Self>), String, ()> {
-    id_effect::next::succeed(((), Next::Continue(self)))
+    id_effect::succeed(((), Next::Continue(self)))
   }
 }
 
@@ -364,7 +364,7 @@ impl Process for PanickingInit {
   }
 
   fn handle_call(self, _: (), _ctx: ProcessCtx) -> Effect<((), Next<Self>), String, ()> {
-    id_effect::next::succeed(((), Next::Continue(self)))
+    id_effect::succeed(((), Next::Continue(self)))
   }
 }
 

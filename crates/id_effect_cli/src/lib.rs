@@ -1,9 +1,9 @@
-//! CLI ergonomics for [`id_effect::next::Effect`] programs: **exit code mapping**, optional
+//! CLI ergonomics for [`id_effect::Effect`] programs: **exit code mapping**, optional
 //! **[`clap`]** integration, and a small **`run_main`** helper.
 //!
 //! Design matches [Phase E — CLI ergonomics](https://github.com/Industrial/id_effect/blob/main/docs/effect-ts-parity/phases/phase-e-cli.md):
 //! embrace **`clap`** for parsing, run the effect at the program edge with `block_on` on the
-//! default [`id_effect::next::Runtime`], map [`Result`] / [`id_effect::Exit`] /
+//! default [`id_effect::Runtime`], map [`Result`] / [`id_effect::Exit`] /
 //! [`id_effect::Cause`] to [`std::process::ExitCode`] for `fn main() -> ExitCode`.
 //!
 //! ## Example
@@ -11,7 +11,7 @@
 //! ```rust
 //! use std::process::ExitCode;
 //!
-//! use id_effect::next::{Effect, HNil, die, fail, succeed};
+//! use id_effect::{Effect, HNil, die, fail, succeed};
 //! use id_effect::{Cause, Exit, FiberId};
 //! use id_effect_cli::{RunMainConfig, exit_code_for_exit, run_main};
 //!

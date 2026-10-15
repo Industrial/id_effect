@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use common::{JoinNode, advance, run, settle};
 use id_effect::Never;
-use id_effect::next::{Effect, fail, sleep, succeed, suspend, sync};
+use id_effect::{Effect, fail, sleep, succeed, suspend, sync};
 use id_effect_process::{
   Addr, CallError, ExitReason, Info, Next, Process, ProcessCtx, ProcessNode,
 };

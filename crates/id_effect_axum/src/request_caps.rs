@@ -12,7 +12,7 @@
 //!
 //! ```rust
 //! use axum::{Router, extract::State, routing::get};
-//! use id_effect::next::{DynEnv, Effect, succeed};
+//! use id_effect::{DynEnv, Effect, succeed};
 //! use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps};
 //!
 //! struct Tenant(String);
@@ -49,7 +49,7 @@ use axum::http::Request;
 use axum::http::request::Parts;
 use axum::response::Response;
 use id_effect::Exit;
-use id_effect::next::{DynEnv, Effect};
+use id_effect::{DynEnv, Effect};
 use tower_layer::Layer;
 use tower_service::Service;
 
@@ -292,7 +292,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::StatusCode;
   use axum::routing::get;
-  use id_effect::next::succeed;
+  use id_effect::succeed;
   use tower::ServiceExt;
 
   struct Tenant(String);

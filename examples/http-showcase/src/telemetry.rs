@@ -3,11 +3,11 @@
 //! [`instrument`] wraps a [`Router`] in a middleware that runs every request (the rest of the
 //! stack, handler included) as one fiber under
 //!
-//! - a `next` span `"{method} {route}"` with the attributes `http.route` (the matched route
+//! - a span `"{method} {route}"` with the attributes `http.route` (the matched route
 //!   template, e.g. `/todos/{id}`, or `unmatched`) and `http.request.method`, exported through
 //!   [`OtelSpanHook`] and parented under the incoming W3C `traceparent` when there is one;
 //! - [`Histogram::track_duration`] on [`REQUEST_DURATION`] (seconds), tagged with the same two
-//!   attributes, in a `next` [`MetricRegistry`] bridged to OpenTelemetry
+//!   attributes, in a [`MetricRegistry`] bridged to OpenTelemetry
 //!   ([`bridge_metrics`](id_effect_opentelemetry::bridge_metrics)).
 //!
 //! Export is optional. [`Telemetry::from_env`] installs the OTLP starter
@@ -22,7 +22,7 @@
 //! ```
 //! use axum::Router;
 //! use axum::routing::get;
-//! use id_effect::next::MetricRegistry;
+//! use id_effect::MetricRegistry;
 //! use http_showcase::telemetry::Telemetry;
 //!
 //! // No exporter: requests are timed into `registry`, spans go nowhere.
@@ -39,7 +39,7 @@ use axum::Router;
 use axum::extract::{MatchedPath, Request, State};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use id_effect::next::{Boundaries, Effect, Histogram, Metric, MetricRegistry, from_async};
+use id_effect::{Boundaries, Effect, Histogram, Metric, MetricRegistry, from_async};
 use id_effect_axum::{EffectExecutor, exit_response};
 use id_effect_opentelemetry::{
   OtelConfig, OtelSpanHook, OtelStarterGuard, extract_trace_context_from_headers,
@@ -228,7 +228,7 @@ mod tests {
   use axum::body::Body;
   use axum::http::{Request, StatusCode};
   use axum::routing::get;
-  use id_effect::next::succeed;
+  use id_effect::succeed;
   use id_effect_opentelemetry::{
     bridge_metrics, install_w3c_propagators, sdk_meter_provider_with_in_memory_exporter,
     sdk_tracer_provider_with_in_memory_exporter,

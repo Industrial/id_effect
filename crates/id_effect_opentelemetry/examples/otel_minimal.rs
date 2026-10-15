@@ -1,9 +1,9 @@
-//! Minimal example: in-memory OTEL trace and metric export from a `next` effect.
+//! Minimal example: in-memory OTEL trace and metric export from an effect.
 //!
 //! Run: `cargo run -p id_effect_opentelemetry --example otel_minimal`
 
 use id_effect::Exit;
-use id_effect::next::{Effect, MetricRegistry, succeed};
+use id_effect::{Effect, MetricRegistry, succeed};
 use id_effect_opentelemetry::{
   OtelSpanHook, bridge_metrics, sdk_meter_provider_with_in_memory_exporter,
   sdk_tracer_provider_with_in_memory_exporter,

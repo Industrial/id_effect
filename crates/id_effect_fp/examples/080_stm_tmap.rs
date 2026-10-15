@@ -1,5 +1,5 @@
 //! Ex 080 — `TMap` transactional key/value operations.
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_fp::{TMap, commit};
 

@@ -1,4 +1,4 @@
-//! [`Layer`]s that provide the [`ConfigProviderService`] capability (`next` kernel).
+//! [`Layer`]s that provide the [`ConfigProviderService`] capability (0.7 kernel).
 //!
 //! Each layer outputs a [`ConfigEnv`] (`HCons<ConfigProviderService, HNil>`), needs nothing
 //! (`In = HNil`) and never fails, so its error type `E` is whatever the graph it joins uses.
@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use ::figment::Figment;
-use ::id_effect::next::{Layer, hlist, sync};
+use ::id_effect::{Layer, hlist, sync};
 
 use crate::ConfigEnv;
 use crate::provider::{

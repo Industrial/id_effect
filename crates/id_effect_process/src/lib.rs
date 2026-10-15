@@ -3,7 +3,7 @@
 //! The local half of the Process Mesh (ADR 0009): typed mailboxes,
 //! GenServer-shaped behaviors, links, monitors, `trap_exit`, exit-signal
 //! propagation, and multi-strategy supervision trees — all effect-native
-//! (`id_effect::next`) and deterministic on a `TestExecutor`, whose virtual
+//! and deterministic on a `TestExecutor`, whose virtual
 //! clock drives call timeouts, shutdown deadlines and restart intensity.
 //!
 //! ## Quick tour
@@ -11,7 +11,7 @@
 //! - [`Process`]: the behavior trait (`init` / `handle_call` /
 //!   `handle_cast` / `handle_info` / `terminate`, each returning
 //!   `Effect<_, Error, Env>`).
-//! - [`ProcessNode`]: spawns processes (fibers on a `next::Runtime`), owns
+//! - [`ProcessNode`]: spawns processes (fibers on a `Runtime`), owns
 //!   the process table, links, monitors, exit signals, and the name registry.
 //! - [`Addr`]: typed `send` / `cast` / `call` handle.
 //! - [`SupervisorSpec`] / [`ChildSpec`] / [`Strategy`]: OTP supervision

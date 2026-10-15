@@ -1,5 +1,5 @@
 //! Ex 078 — `atomically` is [`commit`] under the Effect.ts-style name.
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect::{Cause, Exit};
 use id_effect_fp::{TRef, atomically, commit};
 

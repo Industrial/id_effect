@@ -2,13 +2,13 @@
 
 Cross-cutting **platform** capabilities (HTTP, filesystem, subprocess commands) for [`id_effect`](../id_effect), aligned with Effect.ts [`@effect/platform`](https://effect.website/docs/platform/introduction).
 
-Each boundary is a capability (`HttpClientService`, `FileSystemService`, `ProcessRuntimeService`) in the typed environment of an `id_effect::next::Effect`, provided by an `id_effect::next::Layer`: production code provides the live layer (reqwest, `tokio::fs`, `tokio::process`), tests provide a double — the effect code does not change.
+Each boundary is a capability (`HttpClientService`, `FileSystemService`, `ProcessRuntimeService`) in the typed environment of an `id_effect::Effect`, provided by an `id_effect::Layer`: production code provides the live layer (reqwest, `tokio::fs`, `tokio::process`), tests provide a double — the effect code does not change.
 
 ## Quick start
 
 ```rust
 use id_effect::Exit;
-use id_effect::next::{Effect, fail, succeed};
+use id_effect::{Effect, fail, succeed};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClient, HttpClientEnv, HttpRequest, HttpResponse, StreamingHttpResponse, execute,

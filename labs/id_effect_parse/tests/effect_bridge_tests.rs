@@ -1,4 +1,4 @@
-use id_effect::next::{Chunk, Stream};
+use id_effect::{Chunk, Stream};
 use id_effect_parse::{
   ParseFailure, ParseStreamError, Parser, parse_stream, parse_text_stream, tag,
 };

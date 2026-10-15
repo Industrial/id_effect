@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use id_effect::next::succeed;
+use id_effect::succeed;
 use id_effect_axum::service::EffectService;
 use tower::{Service, ServiceExt};
 

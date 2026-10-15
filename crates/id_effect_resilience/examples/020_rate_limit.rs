@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use id_effect::next::{Effect, sleep, succeed, zip_par};
+use id_effect::{Effect, sleep, succeed, zip_par};
 use id_effect::{Exit, Or};
 use id_effect_resilience::{Bulkhead, BulkheadError, RateLimitError, RateLimiter, hedged};
 

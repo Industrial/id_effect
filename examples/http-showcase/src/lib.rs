@@ -53,7 +53,7 @@ pub mod telemetry;
 use std::sync::Arc;
 
 use axum::Router;
-use id_effect::next::{Effect, Layer, caps_next, effect_next, hlist};
+use id_effect::{Effect, Layer, caps, effect, hlist};
 use id_effect_axum::{HostConfig, HostError, ShutdownReason, health_router, wait_for_shutdown};
 use id_effect_config::{ConfigError, EnvConfigProviderLive};
 use id_effect_sql::pg::{PgPoolConfig, PgSqlClient, PgSqlEnv};
@@ -120,7 +120,7 @@ fn instrument(router: Router) -> Router {
 }
 
 /// [`AppConfig`] loaded from the process environment ([`EnvConfigProviderLive`]).
-pub fn live_layer() -> Layer<caps_next!(AppConfig), StartupError> {
+pub fn live_layer() -> Layer<caps!(AppConfig), StartupError> {
   EnvConfigProviderLive::layer().provide_to(AppConfig::layer())
 }
 
@@ -136,20 +136,20 @@ pub fn database_layer(config: &DatabaseConfig) -> Layer<PgSqlEnv, StartupError> 
 /// server and closes the pool, returning `stop`'s value), or fails when the server cannot bind
 /// or the database cannot be opened.
 pub fn run_until<A>(
-  stop: Effect<A, HostError, caps_next!(HostConfig)>,
-) -> Effect<A, StartupError, caps_next!(AppConfig)>
+  stop: Effect<A, HostError, caps!(HostConfig)>,
+) -> Effect<A, StartupError, caps!(AppConfig)>
 where
   A: Send + 'static,
 {
-  effect_next!(|_r: &caps_next!(AppConfig)| {
+  effect!(|_r: &caps!(AppConfig)| {
     let config = AppConfig::clone(~AppConfig);
     ~serve(&config, stop)
   })
 }
 
 /// [`run_until`] SIGINT / SIGTERM.
-pub fn run_until_shutdown() -> Effect<ShutdownReason, StartupError, caps_next!(AppConfig)> {
-  run_until(id_effect::next::from_async(|| async {
+pub fn run_until_shutdown() -> Effect<ShutdownReason, StartupError, caps!(AppConfig)> {
+  run_until(id_effect::from_async(|| async {
     Ok(wait_for_shutdown().await)
   }))
 }
@@ -158,13 +158,12 @@ pub fn run_until_shutdown() -> Effect<ShutdownReason, StartupError, caps_next!(A
 /// layers around `id_effect_axum::server::serve_until`.
 fn serve<A>(
   config: &AppConfig,
-  stop: Effect<A, HostError, caps_next!(HostConfig)>,
+  stop: Effect<A, HostError, caps!(HostConfig)>,
 ) -> Effect<A, StartupError>
 where
   A: Send + 'static,
 {
-  let host: Layer<caps_next!(HostConfig), StartupError> =
-    Layer::succeed(hlist![config.host.clone()]);
+  let host: Layer<caps!(HostConfig), StartupError> = Layer::succeed(hlist![config.host.clone()]);
   let policy = RequestPolicy::from_config(config);
   match &config.database {
     None => {
@@ -178,8 +177,8 @@ where
 /// Serves the [`router`] over `env` until `stop` completes.
 fn serve_app<A>(
   env: AppEnv,
-  stop: Effect<A, HostError, caps_next!(HostConfig)>,
-) -> Effect<A, StartupError, caps_next!(HostConfig)>
+  stop: Effect<A, HostError, caps!(HostConfig)>,
+) -> Effect<A, StartupError, caps!(HostConfig)>
 where
   A: Send + 'static,
 {
@@ -190,12 +189,12 @@ where
 /// on the pool's [`SqlClientService`].
 fn serve_with_database<A>(
   policy: RequestPolicy,
-  stop: Effect<A, HostError, caps_next!(HostConfig)>,
-) -> Effect<A, StartupError, caps_next!(HostConfig, SqlClientService)>
+  stop: Effect<A, HostError, caps!(HostConfig)>,
+) -> Effect<A, StartupError, caps!(HostConfig, SqlClientService)>
 where
   A: Send + 'static,
 {
-  effect_next!(|_r: &caps_next!(HostConfig, SqlClientService)| {
+  effect!(|_r: &caps!(HostConfig, SqlClientService)| {
     let sql = SqlClientService::clone(~SqlClientService);
     ~repo::migrate(Arc::clone(&sql.0));
     let env = app_env(TodoRepoService::new(PgTodoRepo::new(sql)), policy);
@@ -208,8 +207,8 @@ mod tests {
   use std::net::SocketAddr;
   use std::time::Duration;
 
-  use id_effect::next::{from_async, need};
   use id_effect::{Cause, Exit};
+  use id_effect::{from_async, need};
   use id_effect_axum::{EffectExecutor, ServerHandle};
   use id_effect_config::{ConfigProvider, MapConfigProvider};
   use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -242,10 +241,9 @@ mod tests {
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn get_health_is_200() {
-    let host: Layer<caps_next!(HostConfig), HostError> =
-      Layer::succeed(hlist![local_config(0).host]);
-    let probe: Effect<String, HostError, caps_next!(ServerHandle)> = need::<ServerHandle>()
-      .flat_map(|h| {
+    let host: Layer<caps!(HostConfig), HostError> = Layer::succeed(hlist![local_config(0).host]);
+    let probe: Effect<String, HostError, caps!(ServerHandle)> =
+      need::<ServerHandle>().flat_map(|h| {
         let addr = h.local_addr();
         from_async(move || async move {
           get(addr, "/health")
@@ -315,7 +313,7 @@ mod tests {
     let app = MapConfigProvider::from_pairs([("PORT", "nope")])
       .layer()
       .provide_to(AppConfig::layer());
-    let program = run_until(id_effect::next::succeed(())).provide_layer(app);
+    let program = run_until(id_effect::succeed(())).provide_layer(app);
     let exit = EffectExecutor::global().run_effect(program).await;
     assert!(
       matches!(&exit, Exit::Failure(Cause::Fail(StartupError::Config(_)))),
@@ -330,8 +328,7 @@ mod tests {
       url: id_effect_config::Secret::new("postgres://127.0.0.1:1/none".into()),
       max_connections: 1,
     });
-    let program =
-      run_until(id_effect::next::succeed(())).provide_layer(Layer::succeed(hlist![config]));
+    let program = run_until(id_effect::succeed(())).provide_layer(Layer::succeed(hlist![config]));
     let exit = EffectExecutor::global().run_effect(program).await;
     assert!(
       matches!(&exit, Exit::Failure(Cause::Fail(StartupError::Sql(_)))),

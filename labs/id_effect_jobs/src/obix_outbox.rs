@@ -1,6 +1,6 @@
 //! Transactional outbox backed by [obix](https://docs.rs/obix) on a shared [`PgPool`](sqlx::PgPool).
 
-use id_effect::next::{Effect, from_async};
+use id_effect::{Effect, from_async};
 use obix::{MailboxConfig, Outbox, OutboxEventHandler, OutboxEventJobConfig};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;

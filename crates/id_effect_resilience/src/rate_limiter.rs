@@ -1,11 +1,11 @@
 //! Token-bucket rate limiter.
 //!
 //! Refill is measured on the running fiber's executor clock, so on a
-//! [`TestExecutor`](id_effect::next::TestExecutor) it follows virtual time.
+//! [`TestExecutor`](id_effect::TestExecutor) it follows virtual time.
 
 use std::time::Instant;
 
-use id_effect::next::{Effect, Ref, fail, succeed};
+use id_effect::{Effect, Ref, fail, succeed};
 
 use crate::clock::now;
 
@@ -88,7 +88,7 @@ impl RateLimiter {
 mod tests {
   use std::time::Duration;
 
-  use id_effect::next::sleep;
+  use id_effect::sleep;
 
   use super::*;
   use crate::test_support::{run_ok, run_virtual};

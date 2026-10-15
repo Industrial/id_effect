@@ -6,7 +6,7 @@
 
 #![cfg(all(feature = "apalis", feature = "obix"))]
 
-use id_effect::next::Effect;
+use id_effect::Effect;
 use id_effect_jobs::{ApalisJobQueue, JobSpec, JobsOutboxEvent, ObixOutbox, OutboxRecord};
 use id_effect_tokio::TokioRuntime;
 use obix::prelude::es_entity;

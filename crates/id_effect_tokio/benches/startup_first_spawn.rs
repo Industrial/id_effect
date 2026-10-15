@@ -1,15 +1,15 @@
 //! Startup cost of the first `TokioRuntime` fiber spawn of a trivial effect.
 //!
-//! Each iteration builds a fresh current-thread `TokioRuntime` (a tokio runtime plus the `next`
+//! Each iteration builds a fresh current-thread `TokioRuntime` (a tokio runtime plus the
 //! `TokioExecutor`) and forks and joins one fiber, so it pays runtime construction plus the first
 //! spawn. Target: well under 50 ms.
 //!
 //! In 0.6 this also uninstalled the Compute Fabric so the spawn paid default-fabric setup and the
 //! first supervisor tick; since 0.7 (`m-tokio`) `TokioRuntime` no longer owns a fabric (admission
-//! is `next::compute`'s job), so the bench ID is unchanged but the fabric step is gone.
+//! is `compute`'s job), so the bench ID is unchanged but the fabric step is gone.
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use id_effect::next::{HNil, succeed};
+use id_effect::{HNil, succeed};
 use id_effect_tokio::TokioRuntime;
 
 fn bench_startup_first_spawn(c: &mut Criterion) {

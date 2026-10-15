@@ -16,7 +16,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use id_effect::Never;
-use id_effect::next::{Effect, HNil, fail, succeed};
+use id_effect::{Effect, HNil, fail, succeed};
 use id_effect_process::{
   ChildSpec, ExitReason, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode, ShutdownPolicy,
   StartFn, Strategy, SupervisorHandle, SupervisorSpec,

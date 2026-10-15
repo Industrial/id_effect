@@ -7,7 +7,7 @@
 //! fiber — when a node joins, or on demand via
 //! [`DistributedSupervisor::retry_orphaned`]; it is never dropped.
 //!
-//! Every operation that spawns is a `next` effect (`Send`, interruptible): placement tries its
+//! Every operation that spawns is an effect (`Send`, interruptible): placement tries its
 //! candidates one after another, each remote spawn bounded by a timeout on the executor clock.
 
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use id_effect::Never;
 use id_effect::compute::ResourcePolicy;
-use id_effect::next::{Effect, FiberHandle, fail, succeed, suspend, sync};
+use id_effect::{Effect, FiberHandle, fail, succeed, suspend, sync};
 use id_effect_process::Pid;
 
 use crate::envelope::RemoteFault;

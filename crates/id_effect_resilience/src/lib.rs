@@ -1,23 +1,23 @@
-//! Resilience patterns for [`id_effect::next::Effect`] programs.
+//! Resilience patterns for [`id_effect::Effect`] programs.
 //!
 //! | Item | Role |
 //! |--------|------|
 //! | [`CircuitBreaker`] | Fail fast after repeated failures |
 //! | [`RateLimiter`] | Token-bucket admission control |
 //! | [`Bulkhead`] | Limit concurrent in-flight effects (rejects when full) |
-//! | [`hedged()`] | Race a primary against a delayed backup ([`Effect::race`](id_effect::next::Effect::race)) |
-//! | [`retry_with_breaker`] | Retry per a [`Schedule`](id_effect::next::Schedule) through a breaker |
+//! | [`hedged()`] | Race a primary against a delayed backup ([`Effect::race`](id_effect::Effect::race)) |
+//! | [`retry_with_breaker`] | Retry per a [`Schedule`](id_effect::Schedule) through a breaker |
 //!
-//! Every constructor is a plain function, and every operation returns a lazy `next` effect,
+//! Every constructor is a plain function, and every operation returns a lazy effect,
 //! generic over its environment `R`. Time (the breaker cooldown, token refill, backoff and hedge
 //! delays) is read from the running fiber's executor clock, so all of it is virtual time on a
-//! [`TestExecutor`](id_effect::next::TestExecutor).
+//! [`TestExecutor`](id_effect::TestExecutor).
 //!
 //! ```
 //! use std::time::Duration;
 //!
 //! use id_effect::Or;
-//! use id_effect::next::{Effect, Schedule, fail};
+//! use id_effect::{Effect, Schedule, fail};
 //! use id_effect_resilience::{CircuitBreaker, CircuitBreakerError, retry_with_breaker};
 //!
 //! let breaker = CircuitBreaker::new(2, Duration::from_secs(30));
@@ -57,7 +57,7 @@ pub(crate) mod test_support {
   use std::time::Duration;
 
   use id_effect::Exit;
-  use id_effect::next::{Effect, Executor, TestExecutor};
+  use id_effect::{Effect, Executor, TestExecutor};
 
   /// Runs `eff` to completion on a fresh `TestExecutor`; returns its exit and the virtual time
   /// that passed.

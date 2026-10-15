@@ -1,11 +1,11 @@
-//! Bridges the `next` [`MetricRegistry`] to OpenTelemetry metrics.
+//! Bridges the [`MetricRegistry`] to OpenTelemetry metrics.
 //!
 //! [`bridge_metrics`] attaches a [`MetricListener`] to a registry and maps every series (a
 //! [`MetricKey`]: name, kind and tags) to an OpenTelemetry instrument named after the metric,
 //! with the key's tags as attributes (fiber tags from `Effect::tag_metrics` are already merged
 //! into the key):
 //!
-//! | `next` kind | OpenTelemetry instrument | how values flow |
+//! | `MetricRegistry` kind | OpenTelemetry instrument | how values flow |
 //! |---|---|---|
 //! | counter | `u64` observable counter | pulled: the callback reads the registry at collection |
 //! | gauge | `i64` observable gauge | pulled: the callback reads the registry at collection |
@@ -24,9 +24,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError, RwLock, Weak};
 
-use id_effect::next::{
-  MetricKey, MetricKind, MetricListener, MetricRegistry, MetricState, MetricUpdate,
-};
+use id_effect::{MetricKey, MetricKind, MetricListener, MetricRegistry, MetricState, MetricUpdate};
 use opentelemetry::KeyValue;
 use opentelemetry::metrics::{Counter, Histogram, Meter};
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMeterProvider};
@@ -266,7 +264,7 @@ pub fn sdk_meter_provider_with_in_memory_exporter(
 mod tests {
   use super::*;
   use id_effect::Exit;
-  use id_effect::next::{Boundaries, Effect, Metric, SummaryConfig, succeed};
+  use id_effect::{Boundaries, Effect, Metric, SummaryConfig, succeed};
   use opentelemetry::metrics::MeterProvider as _;
   use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData};
 

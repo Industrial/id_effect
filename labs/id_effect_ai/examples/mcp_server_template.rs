@@ -4,7 +4,7 @@
 //!
 //! Send one line: `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_ai::{ChatMessage, ChatRequest, ChatRole, LanguageModel, MockLanguageModel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

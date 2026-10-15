@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use common::{RecCall, Recorder, T, worker_args, worker_spec};
 use id_effect::Exit;
-use id_effect::next::{Effect, HNil, TokioExecutor};
+use id_effect::{Effect, HNil, TokioExecutor};
 use id_effect_process::{ExitReason, NodeName, Pid, ProcessNode, Strategy, SupervisorSpec};
 use tokio::sync::oneshot;
 

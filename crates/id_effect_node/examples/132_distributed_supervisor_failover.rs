@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::Never;
-use id_effect::next::{Effect, succeed};
+use id_effect::{Effect, succeed};
 use id_effect_node::id::NodeId;
 use id_effect_node::membership::{Member, MembershipEvent};
 use id_effect_node::{BehaviorRegistry, DistChildSpec, DistributedSupervisor, Mesh, MeshFabric};

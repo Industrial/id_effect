@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ::reqwest::header::{HeaderName, HeaderValue};
-use id_effect::next::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need, sync};
+use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, need, sync};
 use tokio::sync::Mutex;
 
 use crate::error::HttpError;
@@ -136,12 +136,12 @@ impl BodySource {
   }
 }
 
-/// A pull-based HTTP response body: successive byte chunks read on demand as `next` effects.
+/// A pull-based HTTP response body: successive byte chunks read on demand as effects.
 ///
 /// Reading is lazy and backpressured: a live reqwest body reads one network chunk per
 /// [`next_chunk`](Self::next_chunk), and [`collect`](Self::collect) reads to the end. The
 /// request's [`max_body_bytes`](HttpRequest::max_body_bytes) cap is enforced as chunks arrive
-/// ([`HttpError::BodyTooLarge`]). Until `id_effect::next` has a `Stream`, this is the streaming
+/// ([`HttpError::BodyTooLarge`]). Until `id_effect` has a `Stream`, this is the streaming
 /// body type.
 pub struct HttpBody {
   src: Arc<Mutex<BodySource>>,
@@ -510,7 +510,7 @@ mod tests {
 
   mod capability {
     use super::*;
-    use id_effect::next::{fail, succeed};
+    use id_effect::{fail, succeed};
 
     struct Echo;
 

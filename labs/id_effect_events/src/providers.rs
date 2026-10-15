@@ -1,10 +1,9 @@
-//! [`Layer`](id_effect::next::Layer)s providing the es-entity event journal backend (`next`
-//! kernel).
+//! [`Layer`](id_effect::Layer)s providing the es-entity event journal backend.
 
 #[cfg(feature = "es-entity")]
 mod es_entity_provider {
   use crate::es_entity::EsEntityPgBackend;
-  use id_effect::next::{HCons, HNil, Layer, hlist};
+  use id_effect::{HCons, HNil, Layer, hlist};
   use sqlx::PgPool;
   use std::sync::Arc;
 
@@ -35,7 +34,7 @@ mod es_entity_provider {
   mod tests {
     use super::*;
     use id_effect::Never;
-    use id_effect::next::{Effect, need};
+    use id_effect::{Effect, need};
 
     #[test]
     fn layer_provides_the_journal_backend() {

@@ -15,7 +15,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use id_effect::next::{
+use id_effect::{
   Effect, ExitKind, HCons, HList, HNil, Layer, Selector, acquire_use_release, die, fail, hlist,
   need, succeed, suspend,
 };
@@ -139,7 +139,7 @@ fn finish(tx: Arc<dyn SqlTransaction>, kind: ExitKind) -> Effect<(), Never> {
 ///
 /// ```rust
 /// use id_effect::Exit;
-/// use id_effect::next::{Effect, need};
+/// use id_effect::{Effect, need};
 /// use id_effect_sql::{
 ///   SqlClient, SqlError, SqlTransactionEnv, SqlTransactionService, TestSqlClient,
 ///   provide_sql_client, transaction_layer,
@@ -278,10 +278,10 @@ mod tests {
   use std::sync::atomic::{AtomicBool, Ordering};
   use std::time::Duration;
 
-  use id_effect::next::{
+  use id_effect::{Cause, Exit};
+  use id_effect::{
     Effect, Executor, HCons, HNil, TestExecutor, die, fail, need, sleep, succeed, suspend, sync,
   };
-  use id_effect::{Cause, Exit};
 
   use super::{
     SqlTransactionEnv, SqlTransactionService, transaction, transaction_layer, with_transaction,

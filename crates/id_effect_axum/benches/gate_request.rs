@@ -15,7 +15,7 @@ use axum::extract::State;
 use axum::http::{Request, StatusCode};
 use criterion::{Criterion, criterion_group, criterion_main};
 use http_body_util::BodyExt;
-use id_effect::next::{DynEnv, Effect, succeed};
+use id_effect::{DynEnv, Effect, succeed};
 use id_effect_axum::{CapOverrideLayer, RequestCaps, execute_with_request_caps, routing};
 use std::convert::Infallible;
 use std::hint::black_box;
