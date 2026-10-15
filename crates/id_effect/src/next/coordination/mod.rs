@@ -15,10 +15,14 @@
 #[allow(dead_code)] // helpers for the primitives landing in the next commits of this leaf
 mod waiters;
 
+mod deferred;
+mod latch;
 mod ref_;
 mod semaphore;
 mod synchronized_ref;
 
+pub use deferred::*;
+pub use latch::*;
 pub use ref_::*;
 pub use semaphore::*;
 pub use synchronized_ref::*;
