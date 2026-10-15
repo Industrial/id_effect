@@ -19,10 +19,12 @@ mod deferred;
 mod latch;
 mod ref_;
 mod semaphore;
+mod supervisor;
 mod synchronized_ref;
 
 pub use deferred::*;
 pub use latch::*;
 pub use ref_::*;
 pub use semaphore::*;
+pub use supervisor::*;
 pub use synchronized_ref::*;
