@@ -17,7 +17,6 @@ pub mod scope;
 pub mod testing;
 
 pub use capability::*;
-#[allow(unused_imports)] // filled by k-fiber-tree
 pub use concurrency::*;
 pub use kernel::*;
 #[allow(unused_imports)] // filled by k-layer-base
