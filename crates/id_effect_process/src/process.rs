@@ -1,9 +1,8 @@
 //! The [`Process`] behavior trait, [`ProcessCtx`], and the process loop.
 //!
-//! A process is a supervised fiber draining a typed mailbox. Behavior
-//! callbacks are effect-native: each returns `Effect<_, Error, Env>` and
-//! state threads through by value (Rust ownership replaces BEAM's
-//! per-process heap).
+//! A process is a fiber draining a typed mailbox. Behavior callbacks are
+//! effect-native: each returns `Effect<_, Error, Env>` and state threads
+//! through by value (Rust ownership replaces BEAM's per-process heap).
 //!
 //! ## Loop semantics
 //!
@@ -13,27 +12,27 @@
 //!    (**without** running `terminate` — the state was consumed by the
 //!    failing handler; this is the honest Rust-ownership variant of
 //!    BEAM's crash semantics). A panic in `init`, a handler, or `terminate`
-//!    is caught and treated the same way, with reason
+//!    reaches the loop as a [`Defect`](id_effect::Defect) (`Cause::Die`, the
+//!    kernel's panic boundary) and is treated the same way, with reason
 //!    `ExitReason::Error("panic: <message>")`.
 //! 3. A cooperative kill (link cascade, `exit/2`, supervisor shutdown)
 //!    closes the mailbox; the loop notices at the next message boundary
 //!    and runs `terminate` with the intact state.
-//! 4. On every exit path the mailbox is closed (later sends fail with
-//!    `SendError::Rejected`) and the process is finalized exactly once: exit
-//!    signals fan out to links, monitors fire, and registered names are
-//!    dropped.
+//! 4. On every exit path — including an interrupt of the process fiber —
+//!    the mailbox is closed (later sends fail with `SendError::Rejected`)
+//!    and the process is finalized exactly once: exit signals fan out to
+//!    links, monitors fire, and registered names are dropped.
 
-use std::any::Any;
-use std::future::Future;
-use std::panic::{self, AssertUnwindSafe};
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex, PoisonError};
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, Queue, box_future, succeed};
+use id_effect::next::{Effect, succeed, suspend, sync};
+use id_effect::{Cause, Exit, Never};
 
 use crate::addr::Addr;
+use crate::cell::ProcessCell;
 use crate::exit::ExitReason;
+use crate::mailbox::Mailbox;
 use crate::msg::{Info, ProcMsg};
 use crate::node::ProcessNode;
 use crate::pid::{MonitorRef, Pid};
@@ -48,13 +47,13 @@ pub enum Next<P> {
 
 /// An OTP-style behavior: GenServer-shaped, effect-native.
 ///
-/// All callbacks run inside the process fiber with exclusive access to the
-/// environment `Env` (capabilities, clients, config).
-pub trait Process: Sized + 'static {
+/// All callbacks run inside the process fiber under the environment `Env`
+/// (capabilities, clients, config), which is provided once at spawn.
+pub trait Process: Sized + Send + 'static {
   /// Arguments passed to [`Process::init`] (crosses the spawn boundary).
   type Args: Send + 'static;
   /// Effect environment for all callbacks.
-  type Env: Send + 'static;
+  type Env: Send + Sync + 'static;
   /// Synchronous request payload.
   type Call: Send + 'static;
   /// Reply to a [`Process::handle_call`].
@@ -64,7 +63,7 @@ pub trait Process: Sized + 'static {
   /// User out-of-band message payload.
   type Info: Send + 'static;
   /// Behavior error; rendered into [`ExitReason::Error`] on crash.
-  type Error: std::fmt::Debug + Clone + Send + Sync + 'static;
+  type Error: Debug + Clone + Send + Sync + 'static;
 
   /// Build the initial state. Failure exits the process immediately.
   fn init(args: Self::Args, ctx: ProcessCtx) -> Effect<Self, Self::Error, Self::Env>;
@@ -181,152 +180,157 @@ impl ProcessCtx {
   }
 }
 
-/// Polls the inner future, converting a panic during any poll into `Err`.
-struct CatchUnwind<F>(F);
-
-impl<F: Future + Unpin> Future for CatchUnwind<F> {
-  type Output = Result<F::Output, Box<dyn Any + Send>>;
-
-  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-    let inner = &mut self.0;
-    match panic::catch_unwind(AssertUnwindSafe(|| Pin::new(inner).poll(cx))) {
-      Ok(Poll::Ready(out)) => Poll::Ready(Ok(out)),
-      Ok(Poll::Pending) => Poll::Pending,
-      Err(payload) => Poll::Ready(Err(payload)),
-    }
+/// The exit reason for a callback that ended with `cause` instead of a value.
+fn crash_reason<E: Debug>(cause: &Cause<E>) -> ExitReason {
+  match cause {
+    Cause::Fail(e) => ExitReason::error(e),
+    Cause::Die(defect) => ExitReason::Error(format!("panic: {}", defect.message())),
+    Cause::Interrupt(_) => ExitReason::Interrupted,
+    Cause::Both(l, _) | Cause::Then(l, _) => crash_reason(l),
   }
 }
 
-/// Best-effort text of a panic payload (`&str` / `String` payloads).
-fn panic_message(payload: &(dyn Any + Send)) -> String {
-  if let Some(s) = payload.downcast_ref::<&str>() {
-    (*s).to_string()
-  } else if let Some(s) = payload.downcast_ref::<String>() {
-    s.clone()
-  } else {
-    "non-string panic payload".to_string()
+/// Runs a behavior callback (built lazily, so a panic while building it is
+/// caught too) and turns any failure — typed error, defect or interrupt —
+/// into the crash reason.
+fn guarded<A, E, R>(
+  callback: impl FnOnce() -> Effect<A, E, R> + Send + 'static,
+) -> Effect<Result<A, ExitReason>, Never, R>
+where
+  A: Send + 'static,
+  E: Debug + Send + 'static,
+  R: Send + Sync + 'static,
+{
+  suspend(callback).exit::<Never>().map(|exit| match exit {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(cause) => Err(crash_reason(&cause)),
+  })
+}
+
+/// What the loop carries from message to message besides the state.
+struct Looper<P: Process> {
+  ctx: ProcessCtx,
+  mailbox: Mailbox<ProcMsg<P>>,
+  cell: Option<Arc<ProcessCell>>,
+}
+
+impl<P: Process> Looper<P> {
+  fn killed(&self) -> Option<ExitReason> {
+    self.cell.as_ref().and_then(|c| c.recorded_kill())
+  }
+}
+
+type Step<P> = Effect<ExitReason, Never, <P as Process>::Env>;
+
+/// Run `terminate`; a panic in it replaces the stop reason.
+fn terminate<P: Process>(state: P, reason: ExitReason, ctx: ProcessCtx) -> Step<P> {
+  let arg = reason.clone();
+  guarded(move || P::terminate(state, &arg, ctx)).map(move |r| match r {
+    Ok(()) => reason,
+    Err(crash) => crash,
+  })
+}
+
+/// Next message boundary: kill checkpoint, then take and dispatch.
+fn step<P: Process>(state: P, lp: Looper<P>) -> Step<P> {
+  // A cooperative kill may have arrived while a handler ran or while
+  // messages were still buffered.
+  if let Some(r) = lp.killed() {
+    return terminate(state, r, lp.ctx);
+  }
+  lp.mailbox
+    .take()
+    .exit::<Never>()
+    .flat_map(move |exit| match exit {
+      Exit::Success(msg) => dispatch(state, msg, lp),
+      // Closed: either a kill (reason recorded) or a graceful stop.
+      Exit::Failure(Cause::Fail(_)) => {
+        let r = lp.killed().unwrap_or(ExitReason::Normal);
+        terminate(state, r, lp.ctx)
+      }
+      Exit::Failure(cause) => terminate(state, crash_reason(&cause), lp.ctx),
+    })
+}
+
+fn proceed<P: Process>(outcome: Result<Next<P>, ExitReason>, lp: Looper<P>) -> Step<P> {
+  match outcome {
+    Ok(Next::Continue(s)) => step(s, lp),
+    Ok(Next::Stop(r, s)) => terminate(s, r, lp.ctx),
+    Err(crash) => succeed(crash),
+  }
+}
+
+fn dispatch<P: Process>(state: P, msg: ProcMsg<P>, lp: Looper<P>) -> Step<P> {
+  let ctx = lp.ctx.clone();
+  match msg {
+    ProcMsg::Call(m, reply) => guarded(move || P::handle_call(state, m, ctx)).flat_map(move |r| {
+      let outcome = r.map(|(rep, next)| {
+        reply.try_succeed(rep);
+        next
+      });
+      proceed(outcome, lp)
+    }),
+    ProcMsg::Cast(m) => {
+      guarded(move || P::handle_cast(state, m, ctx)).flat_map(move |r| proceed(r, lp))
+    }
+    ProcMsg::Info(i) => {
+      guarded(move || P::handle_info(state, i, ctx)).flat_map(move |r| proceed(r, lp))
+    }
   }
 }
 
 /// Build the complete process-loop effect for behavior `P`.
 ///
 /// The effect never fails (`E = Never`); every failure mode is converted
-/// into an [`ExitReason`] and fanned out by finalization.
+/// into an [`ExitReason`] and fanned out by finalization, which runs as a
+/// finalizer (`ensuring`) so an interrupted process is finalized too.
 pub(crate) fn process_loop<P: Process>(
   args: P::Args,
   ctx: ProcessCtx,
-  mailbox: Queue<ProcMsg<P>>,
+  mailbox: Mailbox<ProcMsg<P>>,
 ) -> Effect<(), Never, P::Env> {
-  Effect::new_async(move |env| {
-    box_future(async move {
-      let pid = ctx.pid().clone();
-      let node = ctx.node().clone();
-      let cell = node.table().lookup(&pid);
+  let pid = ctx.pid().clone();
+  let node = ctx.node().clone();
+  let lp = Looper::<P> {
+    ctx: ctx.clone(),
+    mailbox: mailbox.clone(),
+    cell: node.table().lookup(&pid),
+  };
+  let outcome: Arc<Mutex<Option<ExitReason>>> = Arc::new(Mutex::new(None));
+  let slot = Arc::clone(&outcome);
 
-      let recorded = |fallback: ExitReason| -> ExitReason {
-        cell
-          .as_ref()
-          .and_then(|c| c.recorded_kill())
-          .unwrap_or(fallback)
-      };
-
-      let body = async {
-        match P::init(args, ctx.clone()).run(env).await {
-          Err(e) => ExitReason::error(e),
-          Ok(mut state) => {
-            let exit: ExitReason;
-            loop {
-              // Kill checkpoint: a cooperative kill may have arrived while a
-              // handler ran or while messages were still buffered.
-              if let Some(c) = cell.as_ref()
-                && let Some(r) = c.recorded_kill()
-              {
-                let _ = P::terminate(state, &r, ctx.clone()).run(env).await;
-                exit = r;
-                break;
-              }
-              let msg = match mailbox.take().run(&mut ()).await {
-                Ok(m) => m,
-                Err(_) => {
-                  // Mailbox closed: either a kill (reason recorded) or all
-                  // senders dropped (treated as a graceful stop).
-                  let r = recorded(ExitReason::Normal);
-                  let _ = P::terminate(state, &r, ctx.clone()).run(env).await;
-                  exit = r;
-                  break;
-                }
-              };
-              let next = match msg {
-                ProcMsg::Call(m, reply) => {
-                  match P::handle_call(state, m, ctx.clone()).run(env).await {
-                    Ok((rep, next)) => {
-                      reply.try_succeed(rep);
-                      next
-                    }
-                    Err(e) => {
-                      exit = ExitReason::error(e);
-                      break;
-                    }
-                  }
-                }
-                ProcMsg::Cast(m) => match P::handle_cast(state, m, ctx.clone()).run(env).await {
-                  Ok(next) => next,
-                  Err(e) => {
-                    exit = ExitReason::error(e);
-                    break;
-                  }
-                },
-                ProcMsg::Info(i) => match P::handle_info(state, i, ctx.clone()).run(env).await {
-                  Ok(next) => next,
-                  Err(e) => {
-                    exit = ExitReason::error(e);
-                    break;
-                  }
-                },
-              };
-              match next {
-                Next::Continue(s) => state = s,
-                Next::Stop(r, s) => {
-                  let _ = P::terminate(s, &r, ctx.clone()).run(env).await;
-                  exit = r;
-                  break;
-                }
-              }
-            }
-            exit
-          }
-        }
-      };
-      // A panic in `init`, a handler, or `terminate` is a crash like any
-      // other: the state is gone, and the process still exits through the
-      // same close-and-finalize path so links, monitors, pending calls, and
-      // supervisors all observe it.
-      let reason = match CatchUnwind(Box::pin(body)).await {
-        Ok(reason) => reason,
-        Err(payload) => ExitReason::Error(format!("panic: {}", panic_message(&*payload))),
-      };
-
-      // Close the mailbox on every exit path (graceful stops, init failures
-      // and panics do not go through `kill`), so later sends to this pid are
-      // rejected instead of silently queueing into a dead mailbox.
-      let _ = mailbox.shutdown().run(&mut ()).await;
-      node.finalize_process(&pid, reason);
-      Ok(())
+  guarded(move || P::init(args, ctx))
+    .flat_map(move |r| match r {
+      Ok(state) => step(state, lp),
+      Err(crash) => succeed(crash),
     })
-  })
+    .map(move |reason| {
+      *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(reason);
+    })
+    .ensuring(sync(move || {
+      // Close on every exit path (graceful stops, init failures and panics
+      // do not go through `kill`), so later sends to this pid are rejected
+      // instead of silently queueing into a dead mailbox.
+      mailbox.close();
+      let reason = outcome
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .unwrap_or(ExitReason::Interrupted);
+      node.finalize_process(&pid, reason);
+    }))
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use std::pin::pin;
   use std::sync::mpsc;
-  use std::time::Duration;
+  use std::task::{Context, Poll, Waker};
 
-  use id_effect::run_blocking;
+  use id_effect::next::{HNil, TestExecutor, fail};
 
   use crate::pid::NodeName;
-
-  const WAIT: Duration = Duration::from_secs(10);
 
   /// Behavior that drives [`ProcessCtx`] operations from inside its own callbacks.
   struct Probe {
@@ -343,7 +347,7 @@ mod tests {
 
   impl Process for Probe {
     type Args = ();
-    type Env = ();
+    type Env = HNil;
     type Call = ProbeCall;
     type Reply = i64;
     /// `true` makes the handler fail.
@@ -352,12 +356,16 @@ mod tests {
     type Info = bool;
     type Error = String;
 
-    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, ()> {
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
       succeed(Probe { downs: 0 })
     }
 
-    fn handle_call(self, msg: ProbeCall, ctx: ProcessCtx) -> Effect<(i64, Next<Self>), String, ()> {
-      Effect::new(move |_| {
+    fn handle_call(
+      self,
+      msg: ProbeCall,
+      ctx: ProcessCtx,
+    ) -> Effect<(i64, Next<Self>), String, HNil> {
+      sync(move || {
         let reply = match msg {
           ProbeCall::Downs => self.downs,
           ProbeCall::LinkThenUnlink(peer) => {
@@ -371,101 +379,128 @@ mod tests {
             0
           }
           ProbeCall::SpawnSibling => {
-            let sibling = ctx.spawn::<Probe>((), ());
+            let sibling = ctx.spawn::<Probe>((), HNil);
             i64::from(sibling.pid() != ctx.pid() && sibling.is_alive())
           }
           ProbeCall::IsKilled => i64::from(ctx.is_killed()),
         };
-        Ok((reply, Next::Continue(self)))
+        (reply, Next::Continue(self))
       })
     }
 
-    fn handle_cast(self, fail: bool, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
-      Effect::new(move |_| {
-        if fail {
-          Err("cast boom".to_string())
-        } else {
-          Ok(Next::Continue(self))
-        }
-      })
+    fn handle_cast(self, fail_it: bool, _ctx: ProcessCtx) -> Effect<Next<Self>, String, HNil> {
+      if fail_it {
+        fail("cast boom".to_string())
+      } else {
+        succeed(Next::Continue(self))
+      }
     }
 
-    fn handle_info(mut self, msg: Info<bool>, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
-      Effect::new(move |_| match msg {
-        Info::User(true) => Err("info boom".to_string()),
+    fn handle_info(
+      mut self,
+      msg: Info<bool>,
+      _ctx: ProcessCtx,
+    ) -> Effect<Next<Self>, String, HNil> {
+      match msg {
+        Info::User(true) => fail("info boom".to_string()),
         Info::Down { .. } => {
           self.downs += 1;
-          Ok(Next::Continue(self))
+          succeed(Next::Continue(self))
         }
-        _ => Ok(Next::Continue(self)),
-      })
+        _ => succeed(Next::Continue(self)),
+      }
     }
   }
 
-  fn node() -> ProcessNode {
-    ProcessNode::threads(NodeName::new("probe@local"))
+  struct Harness {
+    exec: TestExecutor,
+    node: ProcessNode,
   }
 
-  fn call(addr: &Addr<Probe>, msg: ProbeCall) -> i64 {
-    run_blocking(addr.call(msg, WAIT), ()).expect("call")
+  fn harness() -> Harness {
+    let exec = TestExecutor::new();
+    let node = ProcessNode::on_executor(NodeName::new("probe@local"), Arc::new(exec.clone()));
+    Harness { exec, node }
   }
 
-  /// Exit reason of `pid`, observed through a raw monitor sink (no polling).
-  fn exit_watch(node: &ProcessNode, pid: &Pid) -> mpsc::Receiver<ExitReason> {
-    let (tx, rx) = mpsc::channel();
-    let tx = std::sync::Mutex::new(tx);
-    node.monitor_with_sink(
-      pid,
-      Box::new(move |_m, _p, reason| {
-        let _ = tx.lock().expect("tx").send(reason);
-      }),
-    );
-    rx
+  impl Harness {
+    /// Runs `eff` on the node's executor until everything stalls; it must be done by then.
+    fn run<A: Send + 'static, E: Send + 'static>(&self, eff: Effect<A, E, HNil>) -> Exit<A, E> {
+      let handle = self.node.runtime().fork(eff);
+      self.exec.run_until_stalled();
+      let mut join = pin!(handle.join_future());
+      match join.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(exit) => exit,
+        Poll::Pending => panic!("effect still pending after the executor stalled"),
+      }
+    }
+
+    fn call(&self, addr: &Addr<Probe>, msg: ProbeCall) -> i64 {
+      match self.run(addr.call(msg, std::time::Duration::from_secs(10))) {
+        Exit::Success(n) => n,
+        Exit::Failure(c) => panic!("call failed: {c:?}"),
+      }
+    }
+
+    /// Exit reason of `pid`, observed through a raw monitor sink.
+    fn exit_watch(&self, pid: &Pid) -> mpsc::Receiver<ExitReason> {
+      let (tx, rx) = mpsc::channel();
+      let tx = Mutex::new(tx);
+      self.node.monitor_with_sink(
+        pid,
+        Box::new(move |_m, _p, reason| {
+          let _ = tx.lock().expect("tx").send(reason);
+        }),
+      );
+      rx
+    }
   }
 
   #[test]
   fn unlinked_peer_exit_does_not_propagate() {
-    let node = node();
-    let probe = node.spawn::<Probe>((), ());
-    let peer = node.spawn::<Probe>((), ());
-    call(&probe, ProbeCall::LinkThenUnlink(peer.pid().clone()));
-    let peer_exit = exit_watch(&node, peer.pid());
-    node.exit(peer.pid(), ExitReason::Error("peer died".into()));
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let peer = h.node.spawn::<Probe>((), HNil);
+    h.call(&probe, ProbeCall::LinkThenUnlink(peer.pid().clone()));
+    let peer_exit = h.exit_watch(peer.pid());
+    h.node
+      .exit(peer.pid(), ExitReason::Error("peer died".into()));
+    h.exec.run_until_stalled();
     assert_eq!(
-      peer_exit.recv_timeout(WAIT).expect("peer exit"),
+      peer_exit.try_recv().expect("peer exit"),
       ExitReason::Error("peer died".into())
     );
-    // Link exits fan out before monitors fire, so a surviving link would already have killed us.
-    assert_eq!(call(&probe, ProbeCall::IsKilled), 0);
+    assert_eq!(h.call(&probe, ProbeCall::IsKilled), 0);
   }
 
   #[test]
   fn demonitored_peer_exit_sends_no_down() {
-    let node = node();
-    let probe = node.spawn::<Probe>((), ());
-    let peer = node.spawn::<Probe>((), ());
-    call(&probe, ProbeCall::MonitorThenDemonitor(peer.pid().clone()));
-    let peer_exit = exit_watch(&node, peer.pid());
-    node.exit(peer.pid(), ExitReason::Shutdown);
-    peer_exit.recv_timeout(WAIT).expect("peer exit");
-    assert_eq!(call(&probe, ProbeCall::Downs), 0);
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let peer = h.node.spawn::<Probe>((), HNil);
+    h.call(&probe, ProbeCall::MonitorThenDemonitor(peer.pid().clone()));
+    let peer_exit = h.exit_watch(peer.pid());
+    h.node.exit(peer.pid(), ExitReason::Shutdown);
+    h.exec.run_until_stalled();
+    peer_exit.try_recv().expect("peer exit");
+    assert_eq!(h.call(&probe, ProbeCall::Downs), 0);
   }
 
   #[test]
   fn ctx_spawn_starts_an_unlinked_sibling() {
-    let node = node();
-    let probe = node.spawn::<Probe>((), ());
-    assert_eq!(call(&probe, ProbeCall::SpawnSibling), 1);
-    assert_eq!(call(&probe, ProbeCall::IsKilled), 0);
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    assert_eq!(h.call(&probe, ProbeCall::SpawnSibling), 1);
+    assert_eq!(h.call(&probe, ProbeCall::IsKilled), 0);
   }
 
   #[test]
   fn cast_handler_failure_exits_with_its_error() {
-    let node = node();
-    let probe = node.spawn::<Probe>((), ());
-    let exit = exit_watch(&node, probe.pid());
-    run_blocking(probe.cast(true), ()).expect("cast");
-    match exit.recv_timeout(WAIT).expect("exit") {
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let exit = h.exit_watch(probe.pid());
+    assert!(matches!(h.run(probe.cast(true)), Exit::Success(())));
+    match exit.try_recv().expect("exit") {
       ExitReason::Error(msg) => assert!(msg.contains("cast boom"), "{msg}"),
       other => panic!("unexpected exit: {other:?}"),
     }
@@ -473,11 +508,11 @@ mod tests {
 
   #[test]
   fn info_handler_failure_exits_with_its_error() {
-    let node = node();
-    let probe = node.spawn::<Probe>((), ());
-    let exit = exit_watch(&node, probe.pid());
-    run_blocking(probe.send(true), ()).expect("send");
-    match exit.recv_timeout(WAIT).expect("exit") {
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let exit = h.exit_watch(probe.pid());
+    assert!(matches!(h.run(probe.send(true)), Exit::Success(())));
+    match exit.try_recv().expect("exit") {
       ExitReason::Error(msg) => assert!(msg.contains("info boom"), "{msg}"),
       other => panic!("unexpected exit: {other:?}"),
     }
@@ -485,16 +520,24 @@ mod tests {
 
   #[test]
   fn ctx_for_a_dead_pid_reports_killed() {
-    let node = node();
-    let ctx = ProcessCtx::new(Pid::from_parts(NodeName::new("probe@local"), 999, 1), node);
+    let h = harness();
+    let ctx = ProcessCtx::new(
+      Pid::from_parts(NodeName::new("probe@local"), 999, 1),
+      h.node,
+    );
     ctx.trap_exit(true); // no cell: a no-op rather than a panic
     assert!(ctx.is_killed());
   }
 
   #[test]
-  fn panic_message_renders_common_payloads() {
-    assert_eq!(panic_message(&"static"), "static");
-    assert_eq!(panic_message(&String::from("owned")), "owned");
-    assert_eq!(panic_message(&42_u8), "non-string panic payload");
+  fn crash_reason_renders_defects_as_panics() {
+    assert_eq!(
+      crash_reason(&Cause::<String>::Die(id_effect::Defect::new("boom"))),
+      ExitReason::Error("panic: boom".into())
+    );
+    assert_eq!(
+      crash_reason(&Cause::<String>::Fail("e".into())),
+      ExitReason::Error("\"e\"".into())
+    );
   }
 }

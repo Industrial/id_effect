@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use id_effect::{Deferred, Queue, run_blocking};
-use id_effect_process::{CallError, ExitReason, Info, Pid, ProcMsg, Process, ProcessNode};
+use id_effect::Deferred;
+use id_effect::next::{Deferred as NextDeferred, HNil};
+use id_effect_process::{CallError, ExitReason, Info, Mailbox, Pid, ProcMsg, Process, ProcessNode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -163,7 +164,7 @@ impl BehaviorRegistry {
   }
 
   /// Adopt local process for remote delivery.
-  pub fn adopt_local<P>(&self, name: &str, pid: &Pid, mailbox: Queue<ProcMsg<P>>)
+  pub fn adopt_local<P>(&self, name: &str, pid: &Pid, mailbox: Mailbox<ProcMsg<P>>)
   where
     P: Process,
     P::Call: Serialize + DeserializeOwned + Send + 'static,
@@ -177,8 +178,11 @@ impl BehaviorRegistry {
   }
 }
 
-fn install_route<P>(routes: &Arc<Mutex<HashMap<Pid, Route>>>, pid: Pid, mailbox: Queue<ProcMsg<P>>)
-where
+fn install_route<P>(
+  routes: &Arc<Mutex<HashMap<Pid, Route>>>,
+  pid: Pid,
+  mailbox: Mailbox<ProcMsg<P>>,
+) where
   P: Process,
   P::Call: Serialize + DeserializeOwned + Send + 'static,
   P::Reply: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
@@ -190,7 +194,7 @@ where
     Arc::new(move |bytes| {
       let msg: P::Cast =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      if run_blocking(mailbox.offer(ProcMsg::Cast(msg)), ()).unwrap_or(false) {
+      if mailbox.offer_now(ProcMsg::Cast(msg)) {
         Ok(())
       } else {
         Err(RemoteFault::NoProc)
@@ -202,7 +206,7 @@ where
     Arc::new(move |bytes| {
       let msg: P::Info =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      if run_blocking(mailbox.offer(ProcMsg::Info(Info::User(msg))), ()).unwrap_or(false) {
+      if mailbox.offer_now(ProcMsg::Info(Info::User(msg))) {
         Ok(())
       } else {
         Err(RemoteFault::NoProc)
@@ -214,37 +218,39 @@ where
     Arc::new(move |bytes, reply| {
       let msg: P::Call =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      let typed: Deferred<P::Reply, CallError> = run_blocking(Deferred::make(), ())
-        .unwrap_or_else(|_| unreachable!("Deferred::make is infallible"));
+      let typed: NextDeferred<P::Reply, CallError> = NextDeferred::new();
       let bridge = typed.clone();
-      if !run_blocking(mailbox.offer(ProcMsg::Call(msg, typed)), ()).unwrap_or(false) {
+      if !mailbox.offer_now(ProcMsg::Call(msg, typed)) {
         return Err(RemoteFault::NoProc);
       }
-      std::thread::spawn(move || match run_blocking(bridge.wait(), ()) {
-        Ok(rep) => match postcard::to_allocvec(&rep) {
-          Ok(encoded) => {
-            let _ = reply.try_succeed(encoded);
+      // Bridges the process's `next` reply into the v1 wire reply (until m-node).
+      std::thread::spawn(
+        move || match bridge.wait::<HNil>().block_on().into_result() {
+          Ok(rep) => match postcard::to_allocvec(&rep) {
+            Ok(encoded) => {
+              let _ = reply.try_succeed(encoded);
+            }
+            Err(e) => {
+              let _ =
+                reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Decode(e.to_string())));
+            }
+          },
+          Err(id_effect::Cause::Fail(CallError::Down(reason))) => {
+            let wire: ExitReasonWire = (&reason).into();
+            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
           }
-          Err(e) => {
-            let _ =
-              reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Decode(e.to_string())));
+          Err(id_effect::Cause::Fail(CallError::Timeout)) => {
+            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Timeout));
+          }
+          Err(id_effect::Cause::Fail(CallError::MailboxClosed)) => {
+            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::NoProc));
+          }
+          Err(_) => {
+            let wire: ExitReasonWire = (&ExitReason::Interrupted).into();
+            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
           }
         },
-        Err(id_effect::Cause::Fail(CallError::Down(reason))) => {
-          let wire: ExitReasonWire = (&reason).into();
-          let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
-        }
-        Err(id_effect::Cause::Fail(CallError::Timeout)) => {
-          let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Timeout));
-        }
-        Err(id_effect::Cause::Fail(CallError::MailboxClosed)) => {
-          let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::NoProc));
-        }
-        Err(_) => {
-          let wire: ExitReasonWire = (&ExitReason::Interrupted).into();
-          let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
-        }
-      });
+      );
       Ok(())
     })
   };
@@ -257,8 +263,8 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::runtime::Never;
-  use id_effect::{Cause, Effect, succeed};
+  use id_effect::next::{Effect, succeed, sync};
+  use id_effect::{Cause, Never, run_blocking};
   use id_effect_process::{Next, NodeName, ProcessCtx};
 
   struct Echo {
@@ -279,9 +285,9 @@ mod tests {
     }
 
     fn handle_call(mut self, msg: u32, _ctx: ProcessCtx) -> Effect<(u32, Next<Self>), Never, ()> {
-      Effect::new(move |_| {
+      sync(move || {
         self.n += msg;
-        Ok((self.n, Next::Continue(self)))
+        (self.n, Next::Continue(self))
       })
     }
   }
@@ -296,8 +302,13 @@ mod tests {
     reg
   }
 
-  fn mailbox() -> Queue<ProcMsg<Echo>> {
-    run_blocking(Queue::unbounded(), ()).expect("queue")
+  fn mailbox() -> Mailbox<ProcMsg<Echo>> {
+    Mailbox::new()
+  }
+
+  /// The next mailbox message (it must already be there).
+  fn take(q: &Mailbox<ProcMsg<Echo>>) -> ProcMsg<Echo> {
+    q.take::<HNil>().block_on().into_result().expect("take")
   }
 
   fn reply_slot() -> Deferred<Vec<u8>, RemoteFault> {
@@ -310,7 +321,7 @@ mod tests {
 
   /// Adopt a bare mailbox, deliver a call, then complete the typed reply with `typed_outcome`.
   fn call_outcome(
-    typed_outcome: impl FnOnce(&Deferred<u32, CallError>),
+    typed_outcome: impl FnOnce(&NextDeferred<u32, CallError>),
   ) -> Result<Vec<u8>, Cause<RemoteFault>> {
     let reg = registry();
     let q = mailbox();
@@ -319,7 +330,7 @@ mod tests {
     reg
       .deliver_call(&pid(1), &enc(3), reply.clone())
       .expect("deliver");
-    match run_blocking(q.take(), ()).expect("take") {
+    match take(&q) {
       ProcMsg::Call(msg, typed) => {
         assert_eq!(msg, 3);
         typed_outcome(&typed);
@@ -332,7 +343,7 @@ mod tests {
   #[test]
   fn unknown_behavior_and_unrouted_pids_are_refused() {
     let reg = registry();
-    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let node = ProcessNode::new(NodeName::new("t@test"));
     assert!(matches!(
       reg.spawn(&node, "nope", &enc(0), None),
       Err(RemoteFault::UnknownBehavior(n)) if n == "nope"
@@ -357,7 +368,7 @@ mod tests {
   #[test]
   fn spawn_rejects_undecodable_args() {
     let reg = registry();
-    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let node = ProcessNode::new(NodeName::new("t@test"));
     assert!(matches!(
       reg.spawn(&node, "echo", &[], None),
       Err(RemoteFault::Decode(_))
@@ -367,7 +378,7 @@ mod tests {
   #[test]
   fn spawned_behavior_answers_wire_calls() {
     let reg = registry();
-    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let node = ProcessNode::new(NodeName::new("t@test"));
     let pid = reg.spawn(&node, "echo", &enc(10), None).expect("spawn");
     assert!(reg.has_route(&pid));
     reg.deliver_cast(&pid, &enc(1)).expect("cast");
@@ -386,7 +397,7 @@ mod tests {
   #[test]
   fn spawn_linked_to_a_parent_installs_a_route() {
     let reg = registry();
-    let node = ProcessNode::threads(NodeName::new("t@test"));
+    let node = ProcessNode::new(NodeName::new("t@test"));
     let parent = reg.spawn(&node, "echo", &enc(0), None).expect("parent");
     let child = reg
       .spawn(&node, "echo", &enc(0), Some(&parent))
@@ -411,14 +422,8 @@ mod tests {
     reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
     reg.deliver_cast(&pid(1), &enc(4)).expect("cast");
     reg.deliver_info(&pid(1), &enc(6)).expect("info");
-    assert!(matches!(
-      run_blocking(q.take(), ()).expect("take"),
-      ProcMsg::Cast(4)
-    ));
-    assert!(matches!(
-      run_blocking(q.take(), ()).expect("take"),
-      ProcMsg::Info(Info::User(6))
-    ));
+    assert!(matches!(take(&q), ProcMsg::Cast(4)));
+    assert!(matches!(take(&q), ProcMsg::Info(Info::User(6))));
   }
 
   #[test]
@@ -444,7 +449,7 @@ mod tests {
     let reg = registry();
     let q = mailbox();
     reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
-    run_blocking(q.shutdown(), ()).expect("shutdown");
+    q.close();
     assert_eq!(reg.deliver_cast(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(reg.deliver_info(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(

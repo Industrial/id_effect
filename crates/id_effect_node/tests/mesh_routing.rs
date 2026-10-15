@@ -7,8 +7,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, succeed, sync};
 use id_effect_node::envelope::{PidWire, ProcessEnvelope, RemoteFault};
 use id_effect_node::wire::Frame;
 use id_effect_node::{
@@ -48,16 +48,16 @@ impl Process for Counter {
   }
 
   fn handle_call(self, msg: CounterCall, _: ProcessCtx) -> Effect<(u32, Next<Self>), Never, ()> {
-    Effect::new(move |_| match msg {
-      CounterCall::Get => Ok((self.n, Next::Continue(self))),
+    sync(move || match msg {
+      CounterCall::Get => (self.n, Next::Continue(self)),
     })
   }
 
   fn handle_cast(mut self, msg: CounterCast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       CounterCast::Add(x) => {
         self.n += x;
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -72,7 +72,7 @@ fn registry() -> BehaviorRegistry {
 fn mesh(name: &str) -> Mesh {
   Mesh::new(
     NodeId::fresh(&NodeName::new(name)),
-    ProcessNode::threads(NodeName::new(name)),
+    ProcessNode::new(NodeName::new(name)),
     registry(),
   )
 }

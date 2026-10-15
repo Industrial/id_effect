@@ -66,14 +66,15 @@ edges, and data-carrying variants are compile errors.
 # #[fsm(event = DoorEvent)]
 # enum Door { #[fsm(on(Open => Opened))] Closed, #[fsm(on(Close => Closed))] Opened }
 use std::time::Duration;
-use id_effect::run_blocking;
+use id_effect::next::HNil;
 use id_effect_fsm::{FsmProcess, FsmSpec};
 use id_effect_process::{NodeName, ProcessNode};
 
-let node = ProcessNode::threads(NodeName::new("door@local"));
+// The handle's effects are `id_effect::next` effects: run them at the edge with `block_on`.
+let node = ProcessNode::new(NodeName::new("door@local"));
 let door = FsmProcess::start(&node, FsmSpec::<Door, DoorEvent, String, ()>::from_fsm(), ());
-run_blocking(door.cast(DoorEvent::Open), ()).unwrap();
-let state = run_blocking(door.state(Duration::from_secs(1)), ()).unwrap();
+door.cast::<HNil>(DoorEvent::Open).block_on().into_result().unwrap();
+let state = door.state::<HNil>(Duration::from_secs(1)).block_on().into_result().unwrap();
 assert_eq!(state, Door::Opened);
 ```
 

@@ -5,7 +5,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::{Effect, fail, run_blocking};
+use id_effect::next::HNil;
+use id_effect::{Cause, Effect, Exit, fail};
 use id_effect_fsm::{
   Fsm, FsmError, FsmHandle, FsmProcess, FsmSpec, Interpreter, StateMachine, TransitionTable,
   Unhandled,
@@ -36,7 +37,18 @@ enum Turnstile {
 type Handle<R> = FsmHandle<Turnstile, Ev, String, R>;
 
 fn node(name: &str) -> ProcessNode {
-  ProcessNode::threads(NodeName::new(name))
+  ProcessNode::new(NodeName::new(name))
+}
+
+/// Run a `next` effect at the edge (the node's processes are fibers on the default runtime).
+fn run<A: Send + 'static, E: Send + 'static>(
+  eff: id_effect::next::Effect<A, E, HNil>,
+) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died"),
+  }
 }
 
 fn start(node: &ProcessNode, spec: FsmSpec<Turnstile, Ev, String, ()>) -> Handle<()> {
@@ -55,7 +67,7 @@ fn watch_exit(node: &ProcessNode, pid: &Pid) -> Receiver<ExitReason> {
 }
 
 fn state<R: Send + 'static>(h: &Handle<R>) -> Turnstile {
-  run_blocking(h.state(T), ()).expect("state call")
+  run(h.state(T)).expect("state call")
 }
 
 #[test]
@@ -63,21 +75,15 @@ fn fire_transitions_and_state_is_queryable() {
   let node = node("fsm-fire@test");
   let h = start(&node, FsmSpec::from_fsm());
   assert_eq!(state(&h), Turnstile::Locked);
-  assert_eq!(
-    run_blocking(h.fire(Ev::Coin, T), ()),
-    Ok(Ok(Turnstile::Unlocked))
-  );
-  assert_eq!(
-    run_blocking(h.fire(Ev::Push, T), ()),
-    Ok(Ok(Turnstile::Locked))
-  );
+  assert_eq!(run(h.fire(Ev::Coin, T)), Ok(Ok(Turnstile::Unlocked)));
+  assert_eq!(run(h.fire(Ev::Push, T)), Ok(Ok(Turnstile::Locked)));
 }
 
 #[test]
 fn fire_without_an_edge_is_rejected_and_keeps_the_state() {
   let node = node("fsm-reject@test");
   let h = start(&node, FsmSpec::from_fsm());
-  let out = run_blocking(h.fire(Ev::Push, T), ()).expect("call");
+  let out = run(h.fire(Ev::Push, T)).expect("call");
   assert_eq!(
     out,
     Err(FsmError::NoTransition {
@@ -92,8 +98,8 @@ fn fire_without_an_edge_is_rejected_and_keeps_the_state() {
 fn cast_and_send_events_apply_in_mailbox_order() {
   let node = node("fsm-cast@test");
   let h = start(&node, FsmSpec::from_fsm());
-  run_blocking(h.cast(Ev::Coin), ()).unwrap();
-  run_blocking(h.addr().send(Ev::Push), ()).unwrap();
+  run(h.cast(Ev::Coin)).unwrap();
+  run(h.addr().send(Ev::Push)).unwrap();
   assert!(h.addr().send_now(Ev::Coin));
   assert_eq!(state(&h), Turnstile::Unlocked);
 }
@@ -102,7 +108,7 @@ fn cast_and_send_events_apply_in_mailbox_order() {
 fn unhandled_cast_is_ignored_by_default() {
   let node = node("fsm-ignore@test");
   let h = start(&node, FsmSpec::from_fsm());
-  run_blocking(h.cast(Ev::Push), ()).unwrap();
+  run(h.cast(Ev::Push)).unwrap();
   assert_eq!(state(&h), Turnstile::Locked);
   assert!(h.addr().is_alive());
 }
@@ -112,7 +118,7 @@ fn unhandled_cast_stops_the_process_when_configured() {
   let node = node("fsm-stop@test");
   let h = start(&node, FsmSpec::from_fsm().on_unhandled(Unhandled::Stop));
   let exits = watch_exit(&node, h.pid());
-  run_blocking(h.cast(Ev::Push), ()).unwrap();
+  run(h.cast(Ev::Push)).unwrap();
   match exits.recv_timeout(T).expect("exit") {
     ExitReason::Error(msg) => assert!(msg.contains("NoTransition"), "{msg}"),
     other => panic!("expected Error, got {other:?}"),
@@ -123,7 +129,7 @@ fn unhandled_cast_stops_the_process_when_configured() {
 fn rejected_calls_never_stop_the_process_even_with_stop_policy() {
   let node = node("fsm-call-stop@test");
   let h = start(&node, FsmSpec::from_fsm().on_unhandled(Unhandled::Stop));
-  assert!(matches!(run_blocking(h.fire(Ev::Push, T), ()), Ok(Err(_))));
+  assert!(matches!(run(h.fire(Ev::Push, T)), Ok(Err(_))));
   assert_eq!(state(&h), Turnstile::Locked);
 }
 
@@ -143,15 +149,9 @@ fn transition_actions_run_in_the_process_environment() {
     FsmSpec::from_fsm().with_interpreter(actions),
     Arc::clone(&audit),
   );
-  assert_eq!(
-    run_blocking(h.fire(Ev::Coin, T), ()),
-    Ok(Ok(Turnstile::Unlocked))
-  );
+  assert_eq!(run(h.fire(Ev::Coin, T)), Ok(Ok(Turnstile::Unlocked)));
   assert_eq!(*audit.lock().unwrap(), vec![Turnstile::Locked]);
-  assert_eq!(
-    run_blocking(h.fire(Ev::Push, T), ()),
-    Ok(Ok(Turnstile::Locked))
-  );
+  assert_eq!(run(h.fire(Ev::Push, T)), Ok(Ok(Turnstile::Locked)));
   assert_eq!(audit.lock().unwrap().len(), 1, "no action on Push");
 }
 
@@ -163,7 +163,7 @@ fn failing_action_crashes_the_process_with_the_action_error() {
   });
   let h = start(&node, FsmSpec::from_fsm().with_interpreter(actions));
   let exits = watch_exit(&node, h.pid());
-  let out = run_blocking(h.fire(Ev::Break, T), ());
+  let out = run(h.fire(Ev::Break, T));
   assert!(
     matches!(out, Err(CallError::Down(ExitReason::Error(_)))),
     "{out:?}"
@@ -180,8 +180,8 @@ fn hand_built_machines_work_without_the_derive() {
   let table = TransitionTable::new().on(0u8, 'x', 1u8).on(1, 'x', 0);
   let h: FsmHandle<u8, char, String, ()> =
     FsmProcess::start(&node, FsmSpec::new(StateMachine::new(0, table)), ());
-  assert_eq!(run_blocking(h.fire('x', T), ()), Ok(Ok(1)));
-  assert_eq!(run_blocking(h.state(T), ()), Ok(1));
+  assert_eq!(run(h.fire('x', T)), Ok(Ok(1)));
+  assert_eq!(run(h.state(T)), Ok(1));
 }
 
 #[test]
@@ -194,7 +194,8 @@ fn supervisor_restarts_a_crashed_machine_from_its_initial_state() {
   let current: Arc<Mutex<Option<Handle<()>>>> = Arc::default();
   let publish = Arc::clone(&current);
   let start: StartFn = Arc::new(move |node, sup| {
-    let addr = node.spawn_linked_to::<FsmProcess<Turnstile, Ev, String, ()>>(sup, spec.clone(), ());
+    let addr =
+      node.spawn_linked_to::<FsmProcess<Turnstile, Ev, String, ()>>(sup, (spec.clone(), ()), HNil);
     let pid = addr.pid().clone();
     *publish.lock().unwrap() = Some(FsmHandle::from_addr(addr));
     Ok(pid)
@@ -202,18 +203,15 @@ fn supervisor_restarts_a_crashed_machine_from_its_initial_state() {
   let tree = SupervisorSpec::new(Strategy::OneForOne)
     .child(ChildSpec::from_start("turnstile", start))
     .start(&node);
-  run_blocking(tree.which_children(T), ()).unwrap();
+  run(tree.which_children(T)).unwrap();
   let first = current.lock().unwrap().clone().unwrap();
-  assert_eq!(
-    run_blocking(first.fire(Ev::Coin, T), ()),
-    Ok(Ok(Turnstile::Unlocked))
-  );
-  let crashed = run_blocking(first.fire(Ev::Break, T), ());
+  assert_eq!(run(first.fire(Ev::Coin, T)), Ok(Ok(Turnstile::Unlocked)));
+  let crashed = run(first.fire(Ev::Break, T));
   assert!(matches!(crashed, Err(CallError::Down(_))), "{crashed:?}");
 
   // The monitor behind `call` fires after the link exit reached the
   // supervisor, so this call is ordered after the restart.
-  let kids = run_blocking(tree.which_children(T), ()).unwrap();
+  let kids = run(tree.which_children(T)).unwrap();
   let second = current.lock().unwrap().clone().unwrap();
   assert_eq!(kids[0].1.as_ref(), Some(second.pid()));
   assert_ne!(first.pid(), second.pid());
@@ -222,7 +220,7 @@ fn supervisor_restarts_a_crashed_machine_from_its_initial_state() {
 
 #[test]
 fn start_linked_ties_the_machine_to_its_parent() {
-  use id_effect::succeed;
+  use id_effect::next::{Effect, succeed};
   use id_effect_process::{Next, Process, ProcessCtx};
 
   /// Parent that starts a linked machine in `init` and returns its pid.
@@ -251,7 +249,7 @@ fn start_linked_ties_the_machine_to_its_parent() {
 
   let node = node("fsm-linked@test");
   let parent = node.spawn::<Parent>((), ());
-  let child = run_blocking(parent.call((), T), ()).unwrap();
+  let child = run(parent.call((), T)).unwrap();
   let child_exit = watch_exit(&node, &child);
   node.exit(parent.pid(), ExitReason::Killed);
   assert_eq!(

@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, succeed, sync};
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, NodeId};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};
@@ -37,16 +37,16 @@ impl Process for BoxNum {
   }
 
   fn handle_call(self, msg: Call, _: ProcessCtx) -> Effect<(u32, Next<Self>), Never, ()> {
-    Effect::new(move |_| match msg {
-      Call::Get => Ok((self.n, Next::Continue(self))),
+    sync(move || match msg {
+      Call::Get => (self.n, Next::Continue(self)),
     })
   }
 
   fn handle_cast(mut self, msg: Cast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       Cast::Set(n) => {
         self.n = n;
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -60,13 +60,13 @@ fn main() {
   rb.register::<BoxNum>("box");
   let a = Mesh::new(
     NodeId::fresh(&NodeName::new("a@ex")),
-    ProcessNode::threads(NodeName::new("a@ex")),
+    ProcessNode::new(NodeName::new("a@ex")),
     ra,
   )
   .with_fabric(fabric.clone());
   let _b = Mesh::new(
     NodeId::fresh(&NodeName::new("b@ex")),
-    ProcessNode::threads(NodeName::new("b@ex")),
+    ProcessNode::new(NodeName::new("b@ex")),
     rb,
   )
   .with_fabric(fabric);

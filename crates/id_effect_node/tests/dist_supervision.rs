@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, succeed};
 use id_effect_node::id::NodeId;
 use id_effect_node::membership::{Member, MembershipEvent};
 use id_effect_node::{
@@ -40,13 +40,13 @@ fn mesh_pair() -> (Arc<Mesh>, Arc<Mesh>) {
   rb.register::<Worker>("worker");
   let a = Mesh::new(
     NodeId::fresh(&NodeName::new("a@test")),
-    ProcessNode::threads(NodeName::new("a@test")),
+    ProcessNode::new(NodeName::new("a@test")),
     ra,
   )
   .with_fabric(fabric.clone());
   let b = Mesh::new(
     NodeId::fresh(&NodeName::new("b@test")),
-    ProcessNode::threads(NodeName::new("b@test")),
+    ProcessNode::new(NodeName::new("b@test")),
     rb,
   )
   .with_fabric(fabric);
@@ -60,7 +60,7 @@ fn mesh_trio() -> (Arc<Mesh>, Arc<Mesh>, Arc<Mesh>) {
     r.register::<Worker>("worker");
     Mesh::new(
       NodeId::fresh(&NodeName::new(name)),
-      ProcessNode::threads(NodeName::new(name)),
+      ProcessNode::new(NodeName::new(name)),
       r,
     )
     .with_fabric(fabric.clone())
@@ -271,7 +271,7 @@ fn mesh_with(fabric: &MeshFabric, name: &str, hosts_worker: bool) -> Arc<Mesh> {
   }
   Mesh::new(
     NodeId::fresh(&NodeName::new(name)),
-    ProcessNode::threads(NodeName::new(name)),
+    ProcessNode::new(NodeName::new(name)),
     registry,
   )
   .with_fabric(fabric.clone())

@@ -1,5 +1,5 @@
 //! OTP-style supervision trees: [`ChildSpec`], [`Strategy`], restart
-//! intensity on the injected `Clock`, and the shutdown protocol.
+//! intensity on the node's executor clock, and the shutdown protocol.
 //!
 //! The supervisor **is a process** (it implements [`Process`]): it traps
 //! exits, links every child, and reacts to `Info::Exit` messages with the
@@ -12,19 +12,23 @@
 //!
 //! - [`ShutdownPolicy::BrutalKill`]: untrappable kill, wait for the exit.
 //! - [`ShutdownPolicy::Timeout`]: trappable `Shutdown` signal, wait up to
-//!   the deadline on the injected clock, then untrappable kill.
+//!   the deadline on the supervisor fiber's executor clock, then
+//!   untrappable kill.
 //! - [`ShutdownPolicy::Infinity`]: trappable `Shutdown`, wait forever
 //!   (reserved for child supervisors).
+//!
+//! ## Restarts
+//!
+//! Restarts are immediate (OTP semantics): the budget is the sliding
+//! [`RestartIntensity`] window, not a backoff delay, so this supervisor does
+//! not use `next::SupervisorPolicy`'s restart delay or a `Schedule`.
 
 use std::collections::HashSet;
-use std::future::poll_fn;
-use std::pin::pin;
 use std::sync::Arc;
-use std::task::Poll;
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Deferred, Effect, RestartIntensity, box_future};
+use id_effect::Never;
+use id_effect::next::{Effect, HNil, RestartIntensity, succeed, suspend};
 
 use crate::addr::Addr;
 use crate::exit::ExitReason;
@@ -140,7 +144,7 @@ impl ChildSpec {
     let start: StartFn = Arc::new(move |node, supervisor| {
       Ok(
         node
-          .spawn_linked_to::<SupervisorProcess>(supervisor, factory(), ())
+          .spawn_linked_to::<SupervisorProcess>(supervisor, factory(), HNil)
           .pid()
           .clone(),
       )
@@ -174,7 +178,7 @@ pub struct SupervisorSpec {
   pub strategy: Strategy,
   /// Maximum restarts allowed inside [`SupervisorSpec::within`].
   pub max_restarts: u32,
-  /// Sliding intensity window measured on the node clock.
+  /// Sliding intensity window measured on the node's executor clock.
   pub within: Duration,
   /// Children in start order.
   pub children: Vec<ChildSpec>,
@@ -207,14 +211,14 @@ impl SupervisorSpec {
   /// Start a root supervisor on `node` (unlinked).
   pub fn start(self, node: &ProcessNode) -> SupervisorHandle {
     SupervisorHandle {
-      addr: node.spawn::<SupervisorProcess>(self, ()),
+      addr: node.spawn::<SupervisorProcess>(self, HNil),
     }
   }
 
   /// Start a supervisor linked to the calling process.
   pub fn start_link(self, ctx: &ProcessCtx) -> SupervisorHandle {
     SupervisorHandle {
-      addr: ctx.spawn_link::<SupervisorProcess>(self, ()),
+      addr: ctx.spawn_link::<SupervisorProcess>(self, HNil),
     }
   }
 }
@@ -262,8 +266,8 @@ pub struct SupervisorProcess {
   strategy: Strategy,
   children: Vec<ChildState>,
   /// Sliding-window restart-intensity limiter. The intensity math is owned by
-  /// [`id_effect::RestartIntensity`]; this process only records restart events
-  /// on the injected node clock and escalates when it reports over-budget.
+  /// [`RestartIntensity`]; this process only records restart events on the
+  /// node's executor clock and escalates when it reports over-budget.
   intensity: RestartIntensity,
   /// Pids we terminated on purpose — their queued exit messages must not
   /// be mistaken for crashes or parent exits.
@@ -290,7 +294,6 @@ impl SupervisorProcess {
   /// Returns `false` when intensity is exhausted.
   fn start_child_with_intensity(&mut self, index: usize, ctx: &ProcessCtx) -> bool {
     let node = ctx.node().clone();
-    let clock = node.clock();
     loop {
       let start = Arc::clone(&self.children[index].spec.start);
       match start(&node, ctx.pid()) {
@@ -299,7 +302,7 @@ impl SupervisorProcess {
           return true;
         }
         Err(_) => {
-          if !self.intensity.note(clock.now()) {
+          if !self.intensity.note(node.now()) {
             return false;
           }
         }
@@ -307,70 +310,98 @@ impl SupervisorProcess {
     }
   }
 
-  /// Stop a running child following its shutdown policy. Async because it
-  /// waits for the exit (bounded by the policy).
-  async fn stop_child(&mut self, index: usize, ctx: &ProcessCtx) {
+  /// Restart every non-temporary child from `from` on, in start order.
+  fn restart_from(mut self, from: usize, ctx: &ProcessCtx) -> Next<Self> {
+    for i in from..self.children.len() {
+      if self.children[i].spec.restart == RestartPolicy::Temporary {
+        continue;
+      }
+      if !self.start_child_with_intensity(i, ctx) {
+        return Next::Stop(ExitReason::Shutdown, self);
+      }
+    }
+    Next::Continue(self)
+  }
+
+  /// Stop a running child following its shutdown policy and wait for its
+  /// exit (bounded by the policy).
+  fn stop_child<R: Send + Sync + 'static>(
+    mut self,
+    index: usize,
+    ctx: &ProcessCtx,
+  ) -> Effect<Self, Never, R> {
     let Some(pid) = self.children[index].pid.take() else {
-      return;
+      return succeed(self);
     };
     self.expected_exits.insert(pid.clone());
     let shutdown = self.children[index].spec.shutdown;
-    terminate_pid(ctx.node(), &pid, shutdown).await;
+    terminate_pid(ctx.node(), &pid, shutdown).map(move |()| self)
+  }
+
+  /// Stop the children at `indices`, one after the other, in that order.
+  fn stop_children<R: Send + Sync + 'static>(
+    self,
+    indices: Vec<usize>,
+    ctx: &ProcessCtx,
+  ) -> Effect<Self, Never, R> {
+    indices.into_iter().fold(succeed(self), |acc, i| {
+      let ctx = ctx.clone();
+      acc.flat_map(move |s| s.stop_child(i, &ctx))
+    })
   }
 }
 
-/// Ask `pid` to stop per `policy` and wait for it to exit.
-pub(crate) async fn terminate_pid(node: &ProcessNode, pid: &Pid, policy: ShutdownPolicy) {
-  let Some(cell) = node.table().lookup(pid) else {
-    return;
-  };
-  let exited: Deferred<ExitReason, Never> = cell.exited();
-  match policy {
-    ShutdownPolicy::BrutalKill => {
-      node.exit(pid, ExitReason::Killed);
-      let _ = exited.wait_future().await;
-    }
-    ShutdownPolicy::Infinity => {
-      node.exit(pid, ExitReason::Shutdown);
-      let _ = exited.wait_future().await;
-    }
-    ShutdownPolicy::Timeout(timeout) => {
-      node.exit(pid, ExitReason::Shutdown);
-      let clock = node.clock();
-      let exited_in_time = {
-        let mut wait = pin!(exited.wait_future());
-        let mut sleep_env = ();
-        let mut deadline = pin!(clock.sleep(timeout).run(&mut sleep_env));
-        poll_fn(move |cx| {
-          if wait.as_mut().poll(cx).is_ready() {
-            return Poll::Ready(true);
-          }
-          if deadline.as_mut().poll(cx).is_ready() {
-            return Poll::Ready(false);
-          }
-          Poll::Pending
-        })
-        .await
-      };
-      if !exited_in_time {
-        node.exit(pid, ExitReason::Killed);
-        let _ = exited.wait_future().await;
+/// Ask `pid` to stop per `policy` and wait until it is fully finalized.
+/// The exit signal is sent when the effect runs.
+pub(crate) fn terminate_pid<R: Send + Sync + 'static>(
+  node: &ProcessNode,
+  pid: &Pid,
+  policy: ShutdownPolicy,
+) -> Effect<(), Never, R> {
+  let node = node.clone();
+  let pid = pid.clone();
+  suspend(move || {
+    let Some(cell) = node.table().lookup(&pid) else {
+      return succeed(());
+    };
+    let exited = cell.exited();
+    match policy {
+      ShutdownPolicy::BrutalKill => {
+        node.exit(&pid, ExitReason::Killed);
+        exited.wait().map(|_| ())
+      }
+      ShutdownPolicy::Infinity => {
+        node.exit(&pid, ExitReason::Shutdown);
+        exited.wait().map(|_| ())
+      }
+      ShutdownPolicy::Timeout(timeout) => {
+        node.exit(&pid, ExitReason::Shutdown);
+        exited
+          .wait()
+          .timeout(timeout)
+          .flat_map(move |done| match done {
+            Some(_) => succeed(()),
+            None => {
+              node.exit(&pid, ExitReason::Killed);
+              exited.wait().map(|_| ())
+            }
+          })
       }
     }
-  }
+  })
 }
 
 impl Process for SupervisorProcess {
   type Args = SupervisorSpec;
-  type Env = ();
+  type Env = HNil;
   type Call = SupCall;
   type Reply = SupReply;
   type Cast = ();
   type Info = ();
   type Error = SupError;
 
-  fn init(spec: SupervisorSpec, ctx: ProcessCtx) -> Effect<Self, SupError, ()> {
-    Effect::new(move |_| {
+  fn init(spec: SupervisorSpec, ctx: ProcessCtx) -> Effect<Self, SupError, HNil> {
+    suspend(move || {
       ctx.trap_exit(true);
       let mut state = SupervisorProcess {
         strategy: spec.strategy,
@@ -389,11 +420,11 @@ impl Process for SupervisorProcess {
           Ok(pid) => state.children[index].pid = Some(pid),
           Err(err) => {
             let id = state.children[index].spec.id.clone();
-            return Err(SupError::StartFailed(id, err));
+            return id_effect::next::fail(SupError::StartFailed(id, err));
           }
         }
       }
-      Ok(state)
+      succeed(state)
     })
   }
 
@@ -401,126 +432,100 @@ impl Process for SupervisorProcess {
     mut self,
     msg: SupCall,
     ctx: ProcessCtx,
-  ) -> Effect<(SupReply, Next<Self>), SupError, ()> {
-    Effect::new_async(move |_| {
-      box_future(async move {
-        let reply = match msg {
-          SupCall::WhichChildren => SupReply::Children(
-            self
-              .children
-              .iter()
-              .map(|c| (c.spec.id.clone(), c.pid.clone()))
-              .collect(),
-          ),
-          SupCall::CountChildren => SupReply::Count(self.children.len()),
-          SupCall::StartChild(spec) => {
-            let start = Arc::clone(&spec.start);
-            match start(ctx.node(), ctx.pid()) {
-              Ok(pid) => {
-                self.children.push(ChildState {
-                  spec,
-                  pid: Some(pid.clone()),
-                });
-                SupReply::Started(Ok(pid))
-              }
-              Err(err) => SupReply::Started(Err(err)),
-            }
+  ) -> Effect<(SupReply, Next<Self>), SupError, HNil> {
+    let reply = match msg {
+      SupCall::WhichChildren => SupReply::Children(
+        self
+          .children
+          .iter()
+          .map(|c| (c.spec.id.clone(), c.pid.clone()))
+          .collect(),
+      ),
+      SupCall::CountChildren => SupReply::Count(self.children.len()),
+      SupCall::StartChild(spec) => {
+        let start = Arc::clone(&spec.start);
+        match start(ctx.node(), ctx.pid()) {
+          Ok(pid) => {
+            self.children.push(ChildState {
+              spec,
+              pid: Some(pid.clone()),
+            });
+            SupReply::Started(Ok(pid))
           }
-          SupCall::TerminateChild(id) => match self.children.iter().position(|c| c.spec.id == id) {
-            Some(index) => {
-              self.stop_child(index, &ctx).await;
-              self.children.remove(index);
-              SupReply::Terminated(true)
-            }
-            None => SupReply::Terminated(false),
-          },
+          Err(err) => SupReply::Started(Err(err)),
+        }
+      }
+      SupCall::TerminateChild(id) => {
+        return match self.children.iter().position(|c| c.spec.id == id) {
+          Some(index) => self.stop_child(index, &ctx).widen().map(move |mut s| {
+            s.children.remove(index);
+            (SupReply::Terminated(true), Next::Continue(s))
+          }),
+          None => succeed((SupReply::Terminated(false), Next::Continue(self))),
         };
-        Ok((reply, Next::Continue(self)))
-      })
-    })
+      }
+    };
+    succeed((reply, Next::Continue(self)))
   }
 
-  fn handle_info(mut self, msg: Info<()>, ctx: ProcessCtx) -> Effect<Next<Self>, SupError, ()> {
-    Effect::new_async(move |_| {
-      box_future(async move {
-        let Info::Exit { from, reason } = msg else {
-          return Ok(Next::Continue(self));
-        };
+  fn handle_info(mut self, msg: Info<()>, ctx: ProcessCtx) -> Effect<Next<Self>, SupError, HNil> {
+    let Info::Exit { from, reason } = msg else {
+      return succeed(Next::Continue(self));
+    };
 
-        // Exit we caused on purpose (shutdown protocol) — already handled.
-        if self.expected_exits.remove(&from) {
-          return Ok(Next::Continue(self));
-        }
+    // Exit we caused on purpose (shutdown protocol) — already handled.
+    if self.expected_exits.remove(&from) {
+      return succeed(Next::Continue(self));
+    }
 
-        let Some(index) = self.child_index(&from) else {
-          // Not a child: parent or linked peer. Graceful `Normal` is
-          // ignored; anything else stops the whole tree with that reason.
-          if reason.is_abnormal() {
-            return Ok(Next::Stop(reason, self));
-          }
-          return Ok(Next::Continue(self));
-        };
+    let Some(index) = self.child_index(&from) else {
+      // Not a child: parent or linked peer. Graceful `Normal` is
+      // ignored; anything else stops the whole tree with that reason.
+      if reason.is_abnormal() {
+        return succeed(Next::Stop(reason, self));
+      }
+      return succeed(Next::Continue(self));
+    };
 
-        self.children[index].pid = None;
+    self.children[index].pid = None;
 
-        if !Self::should_restart(self.children[index].spec.restart, &reason) {
-          return Ok(Next::Continue(self));
-        }
+    if !Self::should_restart(self.children[index].spec.restart, &reason) {
+      return succeed(Next::Continue(self));
+    }
 
-        let now = ctx.node().clock().now();
-        if !self.intensity.note(now) {
-          return Ok(Next::Stop(ExitReason::Shutdown, self));
-        }
+    if !self.intensity.note(ctx.node().now()) {
+      return succeed(Next::Stop(ExitReason::Shutdown, self));
+    }
 
-        match self.strategy {
-          Strategy::OneForOne => {
-            if !self.start_child_with_intensity(index, &ctx) {
-              return Ok(Next::Stop(ExitReason::Shutdown, self));
-            }
-          }
-          Strategy::OneForAll => {
-            for i in (0..self.children.len()).rev() {
-              if i != index {
-                self.stop_child(i, &ctx).await;
-              }
-            }
-            for i in 0..self.children.len() {
-              if self.children[i].spec.restart == RestartPolicy::Temporary {
-                continue;
-              }
-              if !self.start_child_with_intensity(i, &ctx) {
-                return Ok(Next::Stop(ExitReason::Shutdown, self));
-              }
-            }
-          }
-          Strategy::RestForOne => {
-            for i in ((index + 1)..self.children.len()).rev() {
-              self.stop_child(i, &ctx).await;
-            }
-            for i in index..self.children.len() {
-              if self.children[i].spec.restart == RestartPolicy::Temporary {
-                continue;
-              }
-              if !self.start_child_with_intensity(i, &ctx) {
-                return Ok(Next::Stop(ExitReason::Shutdown, self));
-              }
-            }
-          }
-        }
-        Ok(Next::Continue(self))
-      })
-    })
+    match self.strategy {
+      Strategy::OneForOne => succeed(if self.start_child_with_intensity(index, &ctx) {
+        Next::Continue(self)
+      } else {
+        Next::Stop(ExitReason::Shutdown, self)
+      }),
+      Strategy::OneForAll => {
+        let others = (0..self.children.len())
+          .rev()
+          .filter(|&i| i != index)
+          .collect();
+        self
+          .stop_children(others, &ctx)
+          .widen()
+          .map(move |s| s.restart_from(0, &ctx))
+      }
+      Strategy::RestForOne => {
+        let later = ((index + 1)..self.children.len()).rev().collect();
+        self
+          .stop_children(later, &ctx)
+          .widen()
+          .map(move |s| s.restart_from(index, &ctx))
+      }
+    }
   }
 
-  fn terminate(mut self, _reason: &ExitReason, ctx: ProcessCtx) -> Effect<(), Never, ()> {
-    Effect::new_async(move |_| {
-      box_future(async move {
-        for index in (0..self.children.len()).rev() {
-          self.stop_child(index, &ctx).await;
-        }
-        Ok(())
-      })
-    })
+  fn terminate(self, _reason: &ExitReason, ctx: ProcessCtx) -> Effect<(), Never, HNil> {
+    let all = (0..self.children.len()).rev().collect();
+    self.stop_children(all, &ctx).map(|_| ())
   }
 }
 
@@ -542,10 +547,10 @@ impl SupervisorHandle {
   }
 
   /// `(child id, live pid)` pairs, in start order.
-  pub fn which_children(
+  pub fn which_children<R: Send + Sync + 'static>(
     &self,
     timeout: Duration,
-  ) -> Effect<Vec<(String, Option<Pid>)>, CallError, ()> {
+  ) -> Effect<Vec<(String, Option<Pid>)>, CallError, R> {
     self
       .addr
       .call(SupCall::WhichChildren, timeout)
@@ -556,7 +561,10 @@ impl SupervisorHandle {
   }
 
   /// Number of children.
-  pub fn count_children(&self, timeout: Duration) -> Effect<usize, CallError, ()> {
+  pub fn count_children<R: Send + Sync + 'static>(
+    &self,
+    timeout: Duration,
+  ) -> Effect<usize, CallError, R> {
     self
       .addr
       .call(SupCall::CountChildren, timeout)
@@ -567,11 +575,11 @@ impl SupervisorHandle {
   }
 
   /// Add and start a new child.
-  pub fn start_child(
+  pub fn start_child<R: Send + Sync + 'static>(
     &self,
     spec: ChildSpec,
     timeout: Duration,
-  ) -> Effect<Result<Pid, StartError>, CallError, ()> {
+  ) -> Effect<Result<Pid, StartError>, CallError, R> {
     self
       .addr
       .call(SupCall::StartChild(spec), timeout)
@@ -582,19 +590,24 @@ impl SupervisorHandle {
   }
 
   /// Stop and remove a child by id.
-  pub fn terminate_child(
+  pub fn terminate_child<R: Send + Sync + 'static>(
     &self,
     id: impl Into<String>,
     timeout: Duration,
-  ) -> Effect<bool, CallError, ()> {
+  ) -> Effect<bool, CallError, R> {
     self
       .addr
       .call(SupCall::TerminateChild(id.into()), timeout)
       .map(|reply| matches!(reply, SupReply::Terminated(true)))
   }
 
-  /// Ask the whole tree to stop gracefully and wait for it.
-  pub async fn stop(&self, node: &ProcessNode, policy: ShutdownPolicy) {
-    terminate_pid(node, self.addr.pid(), policy).await;
+  /// Ask the whole tree to stop per `policy` and wait until it is fully
+  /// finalized.
+  pub fn stop<E: Send + 'static, R: Send + Sync + 'static>(
+    &self,
+    node: &ProcessNode,
+    policy: ShutdownPolicy,
+  ) -> Effect<(), E, R> {
+    terminate_pid(node, self.addr.pid(), policy).widen()
   }
 }

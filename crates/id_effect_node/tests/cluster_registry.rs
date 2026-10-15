@@ -4,8 +4,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, succeed, sync};
 use id_effect_node::id::NodeId;
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, OrSwot, ProcessGroups, fanout_cast};
 use id_effect_process::{Next, NodeName, Pid, Process, ProcessCtx, ProcessNode};
@@ -38,10 +38,10 @@ impl Process for Sink {
   }
 
   fn handle_cast(self, msg: Cast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       Cast::Tick => {
         HITS.fetch_add(1, Ordering::SeqCst);
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -90,13 +90,13 @@ fn fanout_cast_reaches_all_group_members() {
   rb.register::<Sink>("sink");
   let a = Mesh::new(
     NodeId::fresh(&NodeName::new("a@test")),
-    ProcessNode::threads(NodeName::new("a@test")),
+    ProcessNode::new(NodeName::new("a@test")),
     ra,
   )
   .with_fabric(fabric.clone());
   let _b = Mesh::new(
     NodeId::fresh(&NodeName::new("b@test")),
-    ProcessNode::threads(NodeName::new("b@test")),
+    ProcessNode::new(NodeName::new("b@test")),
     rb,
   )
   .with_fabric(fabric);

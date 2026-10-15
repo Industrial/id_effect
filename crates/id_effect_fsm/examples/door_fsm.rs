@@ -8,9 +8,21 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::{Effect, run_blocking};
+use id_effect::next::HNil;
+use id_effect::{Cause, Effect, Exit, run_blocking};
 use id_effect_fsm::{Fsm, FsmProcess, FsmSpec, Interpreter, to_mermaid};
 use id_effect_process::{NodeName, ProcessNode};
+
+/// Run a `next` effect (the process API) at the edge.
+fn run<A: Send + 'static, E: Send + 'static>(
+  eff: id_effect::next::Effect<A, E, HNil>,
+) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died"),
+  }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum DoorEvent {
@@ -82,13 +94,13 @@ fn main() {
   );
 
   // 2. As a gen_statem-style process: events are mailbox messages.
-  let node = ProcessNode::threads(NodeName::new("door@local"));
+  let node = ProcessNode::new(NodeName::new("door@local"));
   let spec = FsmSpec::from_fsm().with_interpreter(interpreter(&log));
   let door = FsmProcess::start(&node, spec, ());
   let timeout = Duration::from_secs(5);
-  run_blocking(door.cast(DoorEvent::Lock), ()).expect("mailbox open");
-  let rejected = run_blocking(door.fire(DoorEvent::Open, timeout), ()).expect("call");
+  run(door.cast(DoorEvent::Lock)).expect("mailbox open");
+  let rejected = run(door.fire(DoorEvent::Open, timeout)).expect("call");
   println!("open while locked: {rejected:?}");
-  let state = run_blocking(door.state(timeout), ()).expect("call");
+  let state = run(door.state(timeout)).expect("call");
   println!("process state: {state:?}; audit: {:?}", log.lock().unwrap());
 }

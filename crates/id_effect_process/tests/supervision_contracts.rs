@@ -4,7 +4,8 @@
 //! Restarts are observed through start notifications sent from each
 //! worker's `init`; "the supervisor has processed the exit" is established
 //! by waiting on the child's monitor (links fan out before monitors), after
-//! which any supervisor `call` is ordered behind that exit.
+//! which any supervisor `call` is ordered behind that exit. Every node runs
+//! on a `TestExecutor`, so deadlines and intensity windows are virtual time.
 
 mod common;
 
@@ -13,10 +14,11 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use common::{
-  JoinNode, Probe, T, Worker, WorkerArgs, WorkerCall, await_exit, next_start,
-  registered_worker_spec, watch_exit, worker_args, worker_spec,
+  JoinNode, Probe, T, Worker, WorkerArgs, WorkerCall, advance, await_exit, next_start, recv,
+  registered_worker_spec, run, settle, watch_exit, worker_args, worker_spec,
 };
-use id_effect::run_blocking;
+use id_effect::Never;
+use id_effect::next::HNil;
 use id_effect_process::{
   ChildSpec, DynamicSupervisor, DynamicSupervisorSpec, ExitReason, Info, Pid, ProcessNode,
   RestartPolicy, ShutdownPolicy, StartChildFn, StartError, Strategy, SupError, SupervisorHandle,
@@ -24,7 +26,7 @@ use id_effect_process::{
 };
 
 fn children(handle: &SupervisorHandle) -> Vec<(String, Option<Pid>)> {
-  run_blocking(handle.which_children(T), ()).expect("which_children")
+  run(handle.which_children(T)).expect("which_children")
 }
 
 fn pid_of(handle: &SupervisorHandle, id: &str) -> Option<Pid> {
@@ -57,8 +59,8 @@ fn three_children(
   (jn, handle, rx)
 }
 
-/// The next `n` start notifications, sorted (each child runs `init` on its
-/// own thread, so notification order is not the spawn order).
+/// The next `n` start notifications, sorted (each child runs `init` in its
+/// own fiber, so notification order need not be the spawn order).
 fn starts(rx: &mpsc::Receiver<(&'static str, Pid)>, n: usize) -> Vec<&'static str> {
   let mut ids: Vec<_> = (0..n).map(|_| next_start(rx).0).collect();
   ids.sort_unstable();
@@ -143,7 +145,7 @@ fn transient_child_is_not_restarted_after_a_normal_exit() {
   let _ = children(&handle); // start closure (and registration) finished
   let exits = watch_exit(&jn.node, &pid);
   let addr = jn.node.whereis_addr::<Worker>("t").expect("registered");
-  run_blocking(addr.call(WorkerCall::StopNormal, T), ()).unwrap();
+  run(addr.call(WorkerCall::StopNormal, T)).unwrap();
   assert_eq!(await_exit(&exits), ExitReason::Normal);
   assert_eq!(pid_of(&handle, "t"), None);
   assert!(rx.try_recv().is_err());
@@ -159,7 +161,7 @@ fn permanent_child_is_restarted_even_after_a_normal_exit() {
   let (_, pid) = next_start(&rx);
   let _ = children(&handle);
   let addr = jn.node.whereis_addr::<Worker>("p").expect("registered");
-  run_blocking(addr.call(WorkerCall::StopNormal, T), ()).unwrap();
+  run(addr.call(WorkerCall::StopNormal, T)).unwrap();
   let (_, again) = next_start(&rx);
   assert_ne!(pid, again);
 }
@@ -175,7 +177,7 @@ fn panicking_child_is_restarted_and_its_old_pid_rejects_sends() {
   let _ = children(&handle);
   let exits = watch_exit(&jn.node, &pid);
   let old = jn.node.whereis_addr::<Worker>("p").expect("registered");
-  let call = run_blocking(old.call(WorkerCall::Panic, T), ());
+  let call = run(old.call(WorkerCall::Panic, T));
   assert!(
     matches!(call, Err(id_effect_process::CallError::Down(_))),
     "{call:?}"
@@ -188,7 +190,7 @@ fn panicking_child_is_restarted_and_its_old_pid_rejects_sends() {
   assert_ne!(pid, again);
   assert_eq!(pid_of(&handle, "p"), Some(again));
   assert_eq!(
-    run_blocking(old.call(WorkerCall::Ping, T), ()),
+    run(old.call(WorkerCall::Ping, T)),
     Err(id_effect_process::CallError::MailboxClosed)
   );
 }
@@ -241,14 +243,14 @@ fn supervisor_init_fails_when_a_child_cannot_start() {
   let jn = JoinNode::new("init-fail@test");
   let (tx, rx) = mpsc::channel();
   let probe = jn.node.spawn::<Probe>(tx, ());
-  run_blocking(probe.call((), T), ()).unwrap();
+  run(probe.call((), T)).unwrap();
   let refuse: id_effect_process::StartFn =
     Arc::new(|_node, _sup| Err(StartError::Failed("no db".to_string())));
   let spec = SupervisorSpec::new(Strategy::OneForOne).child(ChildSpec::from_start("db", refuse));
   let sup = jn
     .node
-    .spawn_linked_to::<SupervisorProcess>(probe.pid(), spec, ());
-  match rx.recv_timeout(T).expect("supervisor exit") {
+    .spawn_linked_to::<SupervisorProcess>(probe.pid(), spec, HNil);
+  match recv(&rx).expect("supervisor exit") {
     Info::Exit { from, reason } => {
       assert_eq!(&from, sup.pid());
       let expected = SupError::StartFailed("db".into(), StartError::Failed("no db".into()));
@@ -281,7 +283,7 @@ fn shutdown_stops_children_in_reverse_start_order() {
   for _ in 0..3 {
     next_start(&started_rx);
   }
-  pollster::block_on(root.stop(&jn.node, ShutdownPolicy::Infinity));
+  run::<(), Never>(root.stop(&jn.node, ShutdownPolicy::Infinity)).expect("stopped");
   let order: Vec<_> = stopped_rx.try_iter().collect();
   assert_eq!(order, ["c", "b", "a"]);
 }
@@ -299,8 +301,19 @@ fn shutdown_timeout_escalates_to_kill_for_a_child_that_traps_exits() {
     .start(&jn.node);
   let (_, pid) = next_start(&rx);
   let exits = watch_exit(&jn.node, &pid);
-  pollster::block_on(root.stop(&jn.node, ShutdownPolicy::Infinity));
+  let stop = root
+    .stop::<Never, HNil>(&jn.node, ShutdownPolicy::Infinity)
+    .fork_root(Arc::clone(jn.node.runtime().executor()));
+  settle();
+  assert!(
+    exits.try_recv().is_err(),
+    "the trapped shutdown waits for the deadline"
+  );
+  advance(Duration::from_millis(49));
+  assert!(exits.try_recv().is_err(), "virtual 49 ms: still alive");
+  advance(Duration::from_millis(1));
   assert_eq!(await_exit(&exits), ExitReason::Killed);
+  assert!(stop.is_done());
 }
 
 #[test]
@@ -316,9 +329,9 @@ fn brutal_kill_child_policy_kills_immediately() {
     .start(&jn.node);
   let (_, pid) = next_start(&rx);
   let exits = watch_exit(&jn.node, &pid);
-  assert_eq!(run_blocking(root.terminate_child("b", T), ()), Ok(true));
+  assert_eq!(run(root.terminate_child("b", T)), Ok(true));
   assert_eq!(await_exit(&exits), ExitReason::Killed);
-  assert_eq!(run_blocking(root.count_children(T), ()), Ok(0));
+  assert_eq!(run(root.count_children(T)), Ok(0));
 }
 
 // ── Dynamic membership on a static supervisor ─────────────────────
@@ -329,19 +342,16 @@ fn start_child_with_a_failing_start_reports_the_error() {
   let root = SupervisorSpec::new(Strategy::OneForOne).start(&jn.node);
   let refuse: id_effect_process::StartFn =
     Arc::new(|_node, _sup| Err(StartError::Failed("busy".to_string())));
-  let out = run_blocking(root.start_child(ChildSpec::from_start("x", refuse), T), ());
+  let out = run(root.start_child(ChildSpec::from_start("x", refuse), T));
   assert_eq!(out, Ok(Err(StartError::Failed("busy".to_string()))));
-  assert_eq!(run_blocking(root.count_children(T), ()), Ok(0));
+  assert_eq!(run(root.count_children(T)), Ok(0));
 }
 
 #[test]
 fn terminate_child_with_an_unknown_id_is_false() {
   let jn = JoinNode::new("term-unknown@test");
   let root = SupervisorSpec::new(Strategy::OneForOne).start(&jn.node);
-  assert_eq!(
-    run_blocking(root.terminate_child("ghost", T), ()),
-    Ok(false)
-  );
+  assert_eq!(run(root.terminate_child("ghost", T)), Ok(false));
 }
 
 // ── DynamicSupervisor ─────────────────────────────────────────────
@@ -363,18 +373,15 @@ fn dynamic_terminate_child_stops_and_forgets_it() {
   let jn = JoinNode::new("dyn-term@test");
   let (tx, rx) = mpsc::channel();
   let sup = DynamicSupervisor::start(&jn.node, DynamicSupervisorSpec::default());
-  let pid = run_blocking(sup.start_dyn_child(dyn_start(&tx), T), ())
+  let pid = run(sup.start_dyn_child(dyn_start(&tx), T))
     .unwrap()
     .unwrap();
   next_start(&rx);
   let exits = watch_exit(&jn.node, &pid);
-  assert_eq!(
-    run_blocking(sup.terminate_dyn_child(pid.clone(), T), ()),
-    Ok(true)
-  );
+  assert_eq!(run(sup.terminate_dyn_child(pid.clone(), T)), Ok(true));
   assert_eq!(await_exit(&exits), ExitReason::Shutdown);
-  assert_eq!(run_blocking(sup.count_dyn_children(T), ()), Ok(0));
-  assert_eq!(run_blocking(sup.terminate_dyn_child(pid, T), ()), Ok(false));
+  assert_eq!(run(sup.count_dyn_children(T)), Ok(0));
+  assert_eq!(run(sup.terminate_dyn_child(pid, T)), Ok(false));
   assert!(rx.try_recv().is_err(), "an expected exit is not restarted");
 }
 
@@ -389,12 +396,12 @@ fn dynamic_temporary_children_are_dropped_after_a_crash() {
       ..DynamicSupervisorSpec::default()
     },
   );
-  let pid = run_blocking(sup.start_dyn_child(dyn_start(&tx), T), ())
+  let pid = run(sup.start_dyn_child(dyn_start(&tx), T))
     .unwrap()
     .unwrap();
   next_start(&rx);
   crash(&jn.node, &pid);
-  assert_eq!(run_blocking(sup.count_dyn_children(T), ()), Ok(0));
+  assert_eq!(run(sup.count_dyn_children(T)), Ok(0));
   assert!(rx.try_recv().is_err());
 }
 
@@ -411,7 +418,7 @@ fn dynamic_supervisor_escalates_when_intensity_is_exhausted() {
     },
   );
   let sup_exit = watch_exit(&jn.node, sup.pid());
-  let pid = run_blocking(sup.start_dyn_child(dyn_start(&tx), T), ())
+  let pid = run(sup.start_dyn_child(dyn_start(&tx), T))
     .unwrap()
     .unwrap();
   next_start(&rx);
@@ -426,13 +433,13 @@ fn stopping_a_dynamic_supervisor_stops_its_children() {
   let sup = DynamicSupervisor::start(&jn.node, DynamicSupervisorSpec::default());
   let mut exits = Vec::new();
   for _ in 0..2 {
-    let pid = run_blocking(sup.start_dyn_child(dyn_start(&tx), T), ())
+    let pid = run(sup.start_dyn_child(dyn_start(&tx), T))
       .unwrap()
       .unwrap();
     next_start(&rx);
     exits.push(watch_exit(&jn.node, &pid));
   }
-  assert_eq!(run_blocking(sup.count_dyn_children(T), ()), Ok(2));
+  assert_eq!(run(sup.count_dyn_children(T)), Ok(2));
   jn.node.exit(sup.pid(), ExitReason::Shutdown);
   for rx in &exits {
     assert_eq!(await_exit(rx), ExitReason::Shutdown);

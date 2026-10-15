@@ -748,7 +748,6 @@ impl Mesh {
     reply: Deferred<T, RemoteFault>,
     timeout: Duration,
   ) -> Result<T, RemoteFault> {
-    let clock = self.inner.process.clock();
     let start = std::time::Instant::now();
     loop {
       if let Ok(Some(exit)) = run_blocking(reply.poll(), ()) {
@@ -761,7 +760,6 @@ impl Mesh {
       if start.elapsed() >= timeout {
         return Err(RemoteFault::Timeout);
       }
-      let _ = run_blocking(clock.sleep(Duration::from_millis(2)), ());
       std::thread::sleep(Duration::from_millis(2));
     }
   }
@@ -797,8 +795,8 @@ impl Mesh {
 
 #[cfg(test)]
 mod tests {
-  use id_effect::runtime::Never;
-  use id_effect::{Effect, succeed};
+  use id_effect::Never;
+  use id_effect::next::{Effect, succeed};
   use id_effect_process::{Next, NodeName, Process, ProcessCtx};
 
   use super::*;
@@ -828,7 +826,7 @@ mod tests {
     registry.register::<Idle>("idle");
     Mesh::new(
       NodeId::from_parts(name, 1),
-      ProcessNode::threads(NodeName::new(name)),
+      ProcessNode::new(NodeName::new(name)),
       registry,
     )
   }

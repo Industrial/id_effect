@@ -11,7 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::{Effect, run_blocking};
+use id_effect::next::HNil;
+use id_effect::{Cause, Effect, Exit};
 use id_effect_fsm::{Fsm, FsmHandle, FsmProcess, FsmSpec, Interpreter};
 use id_effect_process::{
   CallError, ChildSpec, NodeName, ProcessNode, StartFn, Strategy, SupervisorSpec,
@@ -35,6 +36,17 @@ enum Light {
 
 type Handle = FsmHandle<Light, Tick, String, ()>;
 
+/// Run a `next` effect (the process API) at the edge.
+fn run<A: Send + 'static, E: Send + 'static>(
+  eff: id_effect::next::Effect<A, E, HNil>,
+) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died"),
+  }
+}
+
 fn main() -> Result<(), CallError> {
   let timeout = Duration::from_secs(5);
   let flaky = Arc::new(AtomicBool::new(true));
@@ -54,33 +66,33 @@ fn main() -> Result<(), CallError> {
   let current: Arc<Mutex<Option<Handle>>> = Arc::default();
   let publish = Arc::clone(&current);
   let start: StartFn = Arc::new(move |node, supervisor| {
-    let addr =
-      node.spawn_linked_to::<FsmProcess<Light, Tick, String, ()>>(supervisor, spec.clone(), ());
+    let addr = node.spawn_linked_to::<FsmProcess<Light, Tick, String, ()>>(
+      supervisor,
+      (spec.clone(), ()),
+      HNil,
+    );
     let pid = addr.pid().clone();
     *publish.lock().unwrap() = Some(FsmHandle::from_addr(addr));
     Ok(pid)
   });
 
-  let node = ProcessNode::threads(NodeName::new("traffic@local"));
+  let node = ProcessNode::new(NodeName::new("traffic@local"));
   let tree = SupervisorSpec::new(Strategy::OneForOne)
     .child(ChildSpec::from_start("light", start))
     .start(&node);
   let handle = || current.lock().unwrap().clone().expect("light started");
-  run_blocking(tree.which_children(timeout), ())?; // start closure has run
+  run(tree.which_children(timeout))?; // start closure has run
 
   let light = handle();
-  println!("{:?}", run_blocking(light.fire(Tick::Next, timeout), ())?); // Ok(Green)
-  println!("{:?}", run_blocking(light.fire(Tick::Next, timeout), ())?); // Ok(Amber)
+  println!("{:?}", run(light.fire(Tick::Next, timeout))?); // Ok(Green)
+  println!("{:?}", run(light.fire(Tick::Next, timeout))?); // Ok(Amber)
   // Amber -> Red runs the flaky action: the process crashes, the call reports Down.
-  println!("{:?}", run_blocking(light.fire(Tick::Next, timeout), ()));
+  println!("{:?}", run(light.fire(Tick::Next, timeout)));
 
   // The supervisor restarted the light from its spec.
-  let children = run_blocking(tree.which_children(timeout), ())?;
+  let children = run(tree.which_children(timeout))?;
   println!("children after restart: {children:?}");
   let light = handle();
-  println!(
-    "restarted light is {:?}",
-    run_blocking(light.state(timeout), ())?
-  );
+  println!("restarted light is {:?}", run(light.state(timeout))?);
   Ok(())
 }

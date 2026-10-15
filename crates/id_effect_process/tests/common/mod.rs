@@ -1,57 +1,93 @@
 //! Shared fixtures for the deterministic contract tests.
 //!
-//! No test here sleeps: progress is observed through channels fed by
-//! monitors / behaviour callbacks, and "fully finalized" is observed by
-//! joining the process thread ([`JoinNode`]).
+//! Every node runs on a [`TestExecutor`]: nothing runs until the test
+//! drives it, time is virtual, and nothing sleeps. [`JoinNode::new`] makes
+//! its executor the current thread's test executor, so the free helpers
+//! ([`run`], [`settle`], [`recv`], [`await_exit`], [`advance`]) drive it
+//! without threading it through every call.
 
 #![allow(dead_code)] // each test binary uses a different subset
 
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::cell::RefCell;
+use std::pin::pin;
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::next::{Effect, HNil, TestExecutor, fail, succeed, suspend};
+use id_effect::{Exit, Never};
 use id_effect_process::{
-  ChildSpec, ExitReason, Info, Job, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode,
-  SpinClock,
+  ChildSpec, ExitReason, Info, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode,
 };
 
-/// Generous upper bound for any single observation (never a sleep).
+/// Call timeout used everywhere (virtual time: it only elapses through [`advance`]).
 pub const T: Duration = Duration::from_secs(10);
 
-/// Thread-per-process node that remembers each process thread so a test
-/// can join it — after the join, the process is fully finalized (links
-/// and monitors have fanned out).
+thread_local! {
+  static EXEC: RefCell<Option<TestExecutor>> = const { RefCell::new(None) };
+}
+
+fn exec() -> TestExecutor {
+  EXEC.with(|e| e.borrow().clone().expect("no JoinNode on this test thread"))
+}
+
+/// A node on a fresh [`TestExecutor`] (made this thread's current one).
 pub struct JoinNode {
   pub node: ProcessNode,
-  handles: Arc<Mutex<Vec<Option<JoinHandle<()>>>>>,
+  pub exec: TestExecutor,
 }
 
 impl JoinNode {
   pub fn new(name: &str) -> Self {
-    let handles: Arc<Mutex<Vec<Option<JoinHandle<()>>>>> = Arc::new(Mutex::new(Vec::new()));
-    let sink = Arc::clone(&handles);
-    let node = ProcessNode::with_spawner(
-      NodeName::new(name),
-      Arc::new(SpinClock),
-      Arc::new(move |job: Job| {
-        let handle = std::thread::spawn(job);
-        sink.lock().unwrap().push(Some(handle));
-      }),
-    );
-    Self { node, handles }
+    let exec = TestExecutor::new();
+    EXEC.with(|e| *e.borrow_mut() = Some(exec.clone()));
+    let node = ProcessNode::on_executor(NodeName::new(name), Arc::new(exec.clone()));
+    Self { node, exec }
   }
 
-  /// Join the `index`-th spawned process (spawn order; only meaningful
-  /// when the test thread is the only spawner).
+  /// Wait until the `index`-th spawned process (spawn order on this node,
+  /// pids start at 1) is fully finalized: its links and monitors have
+  /// fanned out.
   pub fn join(&self, index: usize) {
-    let handle = self.handles.lock().unwrap()[index]
-      .take()
-      .expect("process thread already joined");
-    handle.join().expect("process thread panicked");
+    let pid = Pid::from_parts(self.node.name().clone(), index as u64 + 1, 0);
+    let _ = run(self.node.await_exit::<Never, HNil>(&pid));
   }
+}
+
+/// Run every queued task until the executor stalls.
+pub fn settle() {
+  exec().run_until_stalled();
+}
+
+/// Move virtual time forward by `d` (firing due timers).
+pub fn advance(d: Duration) {
+  exec().advance(d);
+}
+
+/// Run `eff` on the current test executor until it stalls; it must have
+/// finished by then. Typed failures come back as `Err`, defects panic.
+pub fn run<A, E>(eff: Effect<A, E, HNil>) -> Result<A, E>
+where
+  A: Send + 'static,
+  E: Send + std::fmt::Debug + 'static,
+{
+  let exec = exec();
+  let handle = eff.fork_root(Arc::new(exec.clone()));
+  exec.run_until_stalled();
+  let mut join = pin!(handle.join_future());
+  match join.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+    Poll::Ready(Exit::Success(a)) => Ok(a),
+    Poll::Ready(Exit::Failure(id_effect::Cause::Fail(e))) => Err(e),
+    Poll::Ready(Exit::Failure(cause)) => panic!("effect died: {cause:?}"),
+    Poll::Pending => panic!("effect still pending after the executor stalled"),
+  }
+}
+
+/// Settle, then take the next message without waiting.
+pub fn recv<T>(rx: &Receiver<T>) -> Result<T, TryRecvError> {
+  settle();
+  rx.try_recv()
 }
 
 /// Channel receiving the exit reason of `pid` exactly when its monitors fire.
@@ -67,7 +103,7 @@ pub fn watch_exit(node: &ProcessNode, pid: &Pid) -> Receiver<ExitReason> {
 }
 
 pub fn await_exit(rx: &Receiver<ExitReason>) -> ExitReason {
-  rx.recv_timeout(T).expect("exit observed before deadline")
+  recv(rx).expect("exit observed once the executor stalled")
 }
 
 // ── Recorder: logs casts/infos, crashes or stops on request ─────────
@@ -106,10 +142,10 @@ impl Process for Recorder {
     msg: RecCall,
     _ctx: ProcessCtx,
   ) -> Effect<(Vec<i64>, Next<Self>), String, ()> {
-    Effect::new(move |_| match msg {
-      RecCall::Log => Ok((self.log.clone(), Next::Continue(self))),
-      RecCall::Crash => Err("recorder crash".to_string()),
-      RecCall::Stop => Ok((self.log.clone(), Next::Stop(ExitReason::Normal, self))),
+    suspend(move || match msg {
+      RecCall::Log => succeed((self.log.clone(), Next::Continue(self))),
+      RecCall::Crash => fail("recorder crash".to_string()),
+      RecCall::Stop => succeed((self.log.clone(), Next::Stop(ExitReason::Normal, self))),
       RecCall::Panic => panic!("recorder panic"),
     })
   }
@@ -247,6 +283,5 @@ pub fn worker_args(id: &'static str, started: &Sender<(&'static str, Pid)>) -> W
 
 /// Next start notification (`(child id, pid)`).
 pub fn next_start(rx: &Receiver<(&'static str, Pid)>) -> (&'static str, Pid) {
-  rx.recv_timeout(T)
-    .expect("child start observed before deadline")
+  recv(rx).expect("child start observed once the executor stalled")
 }

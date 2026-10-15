@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, succeed, sync};
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault};
 use id_effect_process::{ExitReason, Next, NodeName, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};
@@ -42,20 +42,20 @@ impl Process for Counter {
     msg: CounterCall,
     _ctx: ProcessCtx,
   ) -> Effect<(u32, Next<Self>), Never, ()> {
-    Effect::new(move |_| match msg {
-      CounterCall::Get => Ok((self.n, Next::Continue(self))),
+    sync(move || match msg {
+      CounterCall::Get => (self.n, Next::Continue(self)),
       CounterCall::Inc => {
         self.n += 1;
-        Ok((self.n, Next::Continue(self)))
+        (self.n, Next::Continue(self))
       }
     })
   }
 
   fn handle_cast(mut self, msg: CounterCast, _ctx: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
-    Effect::new(move |_| match msg {
+    sync(move || match msg {
       CounterCast::Add(x) => {
         self.n += x;
-        Ok(Next::Continue(self))
+        Next::Continue(self)
       }
     })
   }
@@ -70,10 +70,10 @@ fn mesh_pair() -> (Arc<Mesh>, Arc<Mesh>, MeshFabric) {
 
   let name_a = NodeName::new("a@test");
   let name_b = NodeName::new("b@test");
-  let a = Mesh::new(NodeId::fresh(&name_a), ProcessNode::threads(name_a), reg_a)
-    .with_fabric(fabric.clone());
-  let b = Mesh::new(NodeId::fresh(&name_b), ProcessNode::threads(name_b), reg_b)
-    .with_fabric(fabric.clone());
+  let a =
+    Mesh::new(NodeId::fresh(&name_a), ProcessNode::new(name_a), reg_a).with_fabric(fabric.clone());
+  let b =
+    Mesh::new(NodeId::fresh(&name_b), ProcessNode::new(name_b), reg_b).with_fabric(fabric.clone());
   (a, b, fabric)
 }
 

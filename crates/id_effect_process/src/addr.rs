@@ -1,25 +1,25 @@
 //! [`Addr`] — typed send/cast/call handle to a process mailbox.
 
-use std::future::poll_fn;
-use std::pin::pin;
-use std::task::Poll;
 use std::time::Duration;
 
-use id_effect::{Cause, Deferred, Effect, Queue, box_future};
+use id_effect::Cause;
+use id_effect::next::{Deferred, Effect, fail, succeed, suspend, sync};
 
 use crate::exit::ExitReason;
+use crate::mailbox::Mailbox;
 use crate::msg::{CallError, Info, ProcMsg, SendError};
-use crate::node::{ProcessNode, run_mailbox_op};
+use crate::node::ProcessNode;
 use crate::pid::Pid;
 use crate::process::Process;
 
 /// Typed handle to a process implementing behavior `P`.
 ///
 /// Cloneable; sending to a dead process fails with [`SendError::Rejected`]
-/// (send) or [`CallError`] (call) — never panics.
+/// (send) or [`CallError`] (call) — never panics. The effects are generic
+/// over the environment `R`, so they bind inside any program.
 pub struct Addr<P: Process> {
   pid: Pid,
-  mailbox: Queue<ProcMsg<P>>,
+  mailbox: Mailbox<ProcMsg<P>>,
   node: ProcessNode,
 }
 
@@ -34,7 +34,7 @@ impl<P: Process> Clone for Addr<P> {
 }
 
 impl<P: Process> Addr<P> {
-  pub(crate) fn new(pid: Pid, mailbox: Queue<ProcMsg<P>>, node: ProcessNode) -> Self {
+  pub(crate) fn new(pid: Pid, mailbox: Mailbox<ProcMsg<P>>, node: ProcessNode) -> Self {
     Self { pid, mailbox, node }
   }
 
@@ -44,7 +44,7 @@ impl<P: Process> Addr<P> {
   }
 
   /// Clone the typed mailbox (distribution layer installs wire gateways).
-  pub fn clone_mailbox(&self) -> Queue<ProcMsg<P>> {
+  pub fn clone_mailbox(&self) -> Mailbox<ProcMsg<P>> {
     self.mailbox.clone()
   }
 
@@ -54,34 +54,30 @@ impl<P: Process> Addr<P> {
   }
 
   /// Fire-and-forget request (`GenServer.cast`).
-  pub fn cast(&self, msg: P::Cast) -> Effect<(), SendError, ()> {
+  pub fn cast<R: Send + Sync + 'static>(&self, msg: P::Cast) -> Effect<(), SendError, R> {
     self.offer(ProcMsg::Cast(msg))
   }
 
   /// Plain message delivered to `handle_info` (BEAM's bare `send`).
-  pub fn send(&self, msg: P::Info) -> Effect<(), SendError, ()> {
+  pub fn send<R: Send + Sync + 'static>(&self, msg: P::Info) -> Effect<(), SendError, R> {
     self.offer(ProcMsg::Info(Info::User(msg)))
   }
 
   /// Non-effect variant of [`Addr::send`] for use from plain code
   /// (timers, transports). Returns `false` if the mailbox is closed.
-  ///
-  /// Never waits for the receiving process (the mailbox is unbounded); see
-  /// the `node` module docs for the one async-context caveat — from async
-  /// code prefer [`Addr::send`].
+  /// Never waits (the mailbox is unbounded).
   pub fn send_now(&self, msg: P::Info) -> bool {
-    run_mailbox_op(self.mailbox.offer(ProcMsg::Info(Info::User(msg)))).unwrap_or(false)
+    self.mailbox.offer_now(ProcMsg::Info(Info::User(msg)))
   }
 
-  fn offer(&self, msg: ProcMsg<P>) -> Effect<(), SendError, ()> {
+  fn offer<R: Send + Sync + 'static>(&self, msg: ProcMsg<P>) -> Effect<(), SendError, R> {
     let mailbox = self.mailbox.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        match mailbox.offer(msg).run(&mut ()).await {
-          Ok(true) => Ok(()),
-          _ => Err(SendError::Rejected),
-        }
-      })
+    suspend(move || {
+      if mailbox.offer_now(msg) {
+        succeed(())
+      } else {
+        fail(SendError::Rejected)
+      }
     })
   }
 
@@ -89,64 +85,39 @@ impl<P: Process> Addr<P> {
   ///
   /// Implemented exactly as BEAM's convention: monitor + one-shot reply +
   /// timeout. If the callee exits before replying the call fails with
-  /// [`CallError::Down`]; if the deadline passes first it fails with
-  /// [`CallError::Timeout`] (the request may still execute — at-most-once).
-  pub fn call(&self, msg: P::Call, timeout: Duration) -> Effect<P::Reply, CallError, ()> {
+  /// [`CallError::Down`]; if the deadline passes first (on the calling
+  /// fiber's executor clock) it fails with [`CallError::Timeout`] (the request may
+  /// still execute — at-most-once).
+  pub fn call<R: Send + Sync + 'static>(
+    &self,
+    msg: P::Call,
+    timeout: Duration,
+  ) -> Effect<P::Reply, CallError, R> {
     let mailbox = self.mailbox.clone();
     let node = self.node.clone();
     let pid = self.pid.clone();
-    Effect::new_async(move |_r| {
-      box_future(async move {
-        let reply: Deferred<P::Reply, CallError> = Deferred::make()
-          .run(&mut ())
-          .await
-          .unwrap_or_else(|_| unreachable!("Deferred::make is infallible"));
+    suspend(move || {
+      let reply: Deferred<P::Reply, CallError> = Deferred::new();
 
-        // Monitor completes the deferred with Down if the callee dies
-        // before replying (first completion wins).
-        let down_reply = reply.clone();
-        let monitor = node.monitor_with_sink(
-          &pid,
-          Box::new(move |_m, _p, reason: ExitReason| {
-            down_reply.try_fail_cause(Cause::fail(CallError::Down(reason)));
-          }),
-        );
+      // The monitor completes the reply with `Down` if the callee dies
+      // before replying (first completion wins).
+      let down_reply = reply.clone();
+      let monitor = node.monitor_with_sink(
+        &pid,
+        Box::new(move |_m, _p, reason: ExitReason| {
+          down_reply.try_fail_cause(Cause::Fail(CallError::Down(reason)));
+        }),
+      );
 
-        let offered = mailbox
-          .offer(ProcMsg::Call(msg, reply.clone()))
-          .run(&mut ())
-          .await
-          .unwrap_or(false);
-        if !offered {
-          node.demonitor(&pid, monitor);
-          return Err(CallError::MailboxClosed);
-        }
-
-        let clock = node.clock();
-        let mut sleep_env = ();
-        let outcome = {
-          let mut reply_fut = pin!(reply.wait_future());
-          let mut timeout_fut = pin!(clock.sleep(timeout).run(&mut sleep_env));
-          poll_fn(move |cx| {
-            if let Poll::Ready(r) = reply_fut.as_mut().poll(cx) {
-              return Poll::Ready(Some(r));
-            }
-            if timeout_fut.as_mut().poll(cx).is_ready() {
-              return Poll::Ready(None);
-            }
-            Poll::Pending
-          })
-          .await
-        };
-
+      if !mailbox.offer_now(ProcMsg::Call(msg, reply.clone())) {
         node.demonitor(&pid, monitor);
-        match outcome {
-          Some(Ok(rep)) => Ok(rep),
-          Some(Err(Cause::Fail(err))) => Err(err),
-          Some(Err(_)) => Err(CallError::Down(ExitReason::Interrupted)),
-          None => Err(CallError::Timeout),
-        }
-      })
+        return fail(CallError::MailboxClosed);
+      }
+
+      reply
+        .wait()
+        .timeout_fail(timeout, || CallError::Timeout)
+        .ensuring(sync(move || node.demonitor(&pid, monitor)))
     })
   }
 }

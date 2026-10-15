@@ -3,8 +3,9 @@
 BEAM/OTP-style processes for [`id_effect`](https://github.com/Industrial/id_effect): typed
 mailboxes, GenServer-shaped behaviours, links, monitors, `trap_exit`, exit-signal propagation,
 name registration, and supervision trees (`OneForOne` / `OneForAll` / `RestForOne`, restart
-intensity, `DynamicSupervisor`). Every behaviour callback returns an `Effect`, and timeouts and
-restart windows are measured on an injected `Clock`.
+intensity, `DynamicSupervisor`). Every behaviour callback returns an `id_effect::next` `Effect`,
+every process is a fiber on a `next::Runtime`, and timeouts and restart windows are measured on
+that runtime's executor clock (virtual time on a `TestExecutor`).
 
 This is the local half of the Process Mesh (ADR 0009); `id_effect_node` adds distribution on top.
 For a `gen_statem`-style behaviour that hosts a typed state machine, see
@@ -25,8 +26,8 @@ For a `gen_statem`-style behaviour that hosts a typed state machine, see
 ```rust
 use std::time::Duration;
 
-use id_effect::runtime::Never;
-use id_effect::{Effect, run_blocking, succeed};
+use id_effect::Never;
+use id_effect::next::{Effect, HNil, succeed};
 use id_effect_process::{
   ChildSpec, Next, NodeName, Process, ProcessCtx, ProcessNode, Strategy, SupervisorSpec,
 };
@@ -57,14 +58,18 @@ impl Process for Counter {
   }
 }
 
-let node = ProcessNode::threads(NodeName::new("readme@local"));
+let node = ProcessNode::new(NodeName::new("readme@local"));
 let tree = SupervisorSpec::new(Strategy::OneForOne)
   .intensity(3, Duration::from_secs(5))
   .child(ChildSpec::worker::<Counter, _>("hits", || (0, ())))
   .child(ChildSpec::worker::<Counter, _>("misses", || (100, ())))
   .start(&node);
 
-let children = run_blocking(tree.which_children(Duration::from_secs(5)), ()).unwrap();
+let children = tree
+  .which_children::<HNil>(Duration::from_secs(5))
+  .block_on()
+  .into_result()
+  .unwrap();
 let ids: Vec<_> = children.iter().map(|(id, _)| id.as_str()).collect();
 assert_eq!(ids, ["hits", "misses"]);
 ```
@@ -74,12 +79,16 @@ five seconds stops the supervisor with `Shutdown`, escalating to its own parent.
 
 ## Blocking and async contexts
 
-`Addr::call`, `Addr::cast`, `Addr::send` and the supervisor handles return effects — drive them
-with your interpreter of choice (`run_blocking` on plain threads, `run_async` inside an async
-runtime). The plain-code entry points (`ProcessNode::spawn`, `link`, `monitor_*`, `exit`,
-`Addr::send_now`) never wait on another process: they only touch the node's own tables and
-enqueue into an unbounded mailbox, so they are safe to call from inside a current-thread async
-runtime. See the `node` module docs for the details.
+`Addr::call`, `Addr::cast`, `Addr::send` and the supervisor handles return effects (generic over
+the environment, so they bind inside any program) — run them at the edge with `block_on` on a
+plain thread or `Runtime::run(..).await` inside an async runtime. The plain-code entry points
+(`ProcessNode::spawn`, `link`, `monitor_*`, `exit`, `Addr::send_now`) never run an effect or wait
+on another process: they only touch the node's own tables, enqueue into an unbounded `Mailbox`
+and fork fibers, so they are safe to call from anywhere, including a current-thread runtime.
+
+For deterministic tests, build the node with `ProcessNode::on_executor(name, test_executor)` and
+drive it with `run_until_stalled` / `advance`: call timeouts, shutdown deadlines and restart
+intensity windows then run on virtual time.
 
 ## Book
 

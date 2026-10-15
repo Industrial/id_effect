@@ -3,18 +3,19 @@
 //! The local half of the Process Mesh (ADR 0009): typed mailboxes,
 //! GenServer-shaped behaviors, links, monitors, `trap_exit`, exit-signal
 //! propagation, and multi-strategy supervision trees — all effect-native
-//! and deterministic under `TestClock`.
+//! (`id_effect::next`) and deterministic on a `TestExecutor`, whose virtual
+//! clock drives call timeouts, shutdown deadlines and restart intensity.
 //!
 //! ## Quick tour
 //!
 //! - [`Process`]: the behavior trait (`init` / `handle_call` /
 //!   `handle_cast` / `handle_info` / `terminate`, each returning
 //!   `Effect<_, Error, Env>`).
-//! - [`ProcessNode`]: spawns processes, owns the process table, links,
-//!   monitors, exit signals, and the name registry.
+//! - [`ProcessNode`]: spawns processes (fibers on a `next::Runtime`), owns
+//!   the process table, links, monitors, exit signals, and the name registry.
 //! - [`Addr`]: typed `send` / `cast` / `call` handle.
 //! - [`SupervisorSpec`] / [`ChildSpec`] / [`Strategy`]: OTP supervision
-//!   trees with restart intensity measured on the injected `Clock`.
+//!   trees with restart intensity measured on the node's executor clock.
 //! - [`DynamicSupervisor`]: homogeneous, on-demand children.
 //!
 //! ## Guarantees (normative, ADR 0009)
@@ -33,9 +34,9 @@
 
 pub mod addr;
 pub mod cell;
-pub mod clock_util;
 pub mod dynamic;
 pub mod exit;
+pub mod mailbox;
 pub mod msg;
 pub mod node;
 pub mod pid;
@@ -44,11 +45,11 @@ pub mod supervisor;
 
 pub use addr::Addr;
 pub use cell::{MonitorSink, ProcessCell, ProcessTable};
-pub use clock_util::SpinClock;
 pub use dynamic::{DynCall, DynReply, DynamicSupervisor, DynamicSupervisorSpec, StartChildFn};
 pub use exit::ExitReason;
+pub use mailbox::{Mailbox, MailboxClosed};
 pub use msg::{CallError, Info, ProcMsg, SendError, StartError, SysMsg};
-pub use node::{Job, ProcessNode, Spawner};
+pub use node::ProcessNode;
 pub use pid::{MonitorRef, NodeName, Pid};
 pub use process::{Next, Process, ProcessCtx};
 pub use supervisor::{
