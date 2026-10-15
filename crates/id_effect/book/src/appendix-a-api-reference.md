@@ -1,155 +1,151 @@
 # API Quick Reference
 
-A condensed reference for the most commonly used types and functions in id_effect. For full documentation, use `cargo doc --open -p id_effect`.
+A condensed reference for the most commonly used types and functions in id_effect 0.7. Every
+module's items are re-exported at the crate root (`use id_effect::{Effect, Layer, Stream, …}`).
+For full documentation, run `cargo doc --open -p id_effect`.
 
 ## Core Types
 
 | Type | Description |
 |------|-------------|
-| `Effect<A, E, R>` | A computation that produces `A`, can fail with `E`, and requires environment `R` |
-| `Stream<A, E, R>` | A sequence of `A` values that can fail with `E` and requires environment `R` |
-| `Stm<A, E>` | A transactional computation that produces `A` (in `id_effect_fp` since 0.6) |
-| `Exit<A, E>` | The result of running an effect: `Success(A)` or `Failure(Cause<E>)` |
-| `Cause<E>` | `Fail(E)`, `Die(Box<dyn Any>)`, or `Interrupt` |
-| `Env` | Runtime capability map; built with `build_env` or manual `insert` |
-| `caps!(K1, K2, …)` | Typed required-capability set for `Effect<A, E, caps!(…)>` |
-| `CapList<(K1, K2, …)>` | Runtime representation of a fixed capability set |
-| `Chunk<A>` | A contiguous, reference-counted batch of `A` values |
-| `Unknown` | Unvalidated wire data; input type for schemas |
+| `Effect<A, E = Never, R = HNil>` | A lazy, `Send`, one-shot computation that produces `A`, can fail with `E`, and needs the capabilities in `R` |
+| `LocalEffect<A, E, R>` | The same for `!Send` bodies (`Rc`, `RefCell` across awaits); built with `effect_local!` |
+| `Stream<A, E, R>` | A pull-based, chunked sequence of `A` values |
+| `Exit<A, E>` | The outcome of running an effect: `Success(A)` or `Failure(Cause<E>)` |
+| `Cause<E>` | `Fail(E)`, `Die(Defect)`, `Interrupt(FiberId)`, composed with `Both` / `Then` |
+| `Never` | The error type of an effect that cannot fail |
+| `HCons<H, T>` / `HNil` | The typed environment: an HList of capabilities |
+| `caps!(A, B)` | Spells `HCons<A, HCons<B, HNil>>` for `Effect<_, _, caps!(A, B)>` |
+| `Layer<Out, E, In>` | A recipe that builds the capabilities `Out` from `In` (memoised per build, scoped finalizers) |
+| `Chunk<A>` | A contiguous batch of `A` values |
+| `Unknown` | Unvalidated wire data; the input type for schemas |
 | `ParseErrors` | Accumulated parse failures with paths |
 
-## Capability DI
+## Capabilities and Layers
 
 | Item | Notes |
 |------|-------|
-| `caps!(Name)` / `Needs<Name>` | The service type itself is the capability key |
-| `#[derive(::id_effect::ProviderSpecDerive)]` | Derive a provider struct |
-| `#[provides(Name)]` | Marks which key a provider satisfies |
-| `~Name` / `require!(Name)` | Borrow a capability inside `effect!` |
-| `Needs::<Name>::need(env)` | Advanced: borrow outside `effect!` (prefer `~Key` inside `effect!`) |
-| `provide!(LiveProvider)` | Box a provider for wiring |
-| `run_with([…], effect)` | Build env from providers and run |
-| `build_env([…])` | Build an `Env` without running |
-| `Env::insert::<Cap<K>>(value)` | Manual test override on an existing env |
-| `mock_capability!(…)` | Generate a test `ProviderSpec` with a closure body |
+| `~Cap` inside `effect!` | Read capability `Cap` from `R` |
+| `need::<Cap>()` | The same outside `effect!` (`.map(..)`, `.flat_map(..)`, `.effect()`) |
+| `eff.provide(v)` | Remove `v`'s type from `R` by supplying it |
+| `eff.provide_env(hlist![a, b])` | Supply the whole environment; `R` becomes `HNil` |
+| `eff.provide_some(hlist![..])` / `eff.narrow()` | Supply part of `R` / run a narrower effect in a wider `R` |
+| `eff.provide_layer(layer)` | Build `layer` and supply its output |
+| `Layer::succeed(hlist![..])` | A layer from ready values |
+| `Layer::effect(\|\| eff)` / `Layer::scoped(\|scope\| eff)` / `Layer::acquire_release(acq, rel)` | Effectful, scoped and bracketed layers |
+| `a.merge(b)` / `a.provide_to(b)` / `a.provide_merge(b)` | Compose layers side by side / feed one into another |
+| `#[derive(ProviderSpecDerive)]` + `#[provides(Cap, with = \|\| ..)]` | Generates an inherent `layer()` |
+| `DynEnv` / `try_need::<T>()` | A runtime-checked environment for dynamic edges (Axum state) |
+
+A missing capability is a compile error, not a runtime one.
 
 ## Constructors
 
-| Function | Type | Notes |
-|----------|------|-------|
-| `succeed(a)` | `Effect<A, E, R>` | Always succeeds with `a` |
-| `fail(e)` | `Effect<A, E, R>` | Always fails with typed error `e` |
-| `pure(a)` | `Effect<A, Never, ()>` | Alias for `succeed`; `E = Never` |
-| `from_async(f)` | `Effect<A, E, R>` | Lift an async closure |
-| `Effect::new(f)` / `Effect::new_async(f)` | `Effect<A, E, R>` | Build from a sync / async closure over `&mut R` |
-| `effect!(…)` | `Effect<A, E, R>` | Do-notation macro |
-| `Stream::from_iterable(i)` | `Stream<A, (), ()>` | Lazy stream over an owned iterator (`I::IntoIter: 'static`) |
-| `Stream::unfold(s, f)` / `Stream::unfold_effect(s, f)` | `Stream<A, E, R>` | Generate a stream from state, lazily |
-| `Stream::from_pull(f)` | `Stream<A, E, R>` | Custom incremental source (`PullFn`) |
-| `Stream::from_effect(e)` | `Stream<A, E, R>` | Single batch from an `Effect<Vec<A>, E, R>` |
+| Function | Notes |
+|----------|-------|
+| `succeed(a)` | Always succeeds with `a` |
+| `fail(e)` | Fails with the typed error `e` |
+| `die(defect)` | Fails with a defect (`Cause::Die`) |
+| `sync(\|\| a)` | Runs a synchronous closure when the effect runs |
+| `suspend(\|\| eff)` | Builds the effect lazily |
+| `from_async(\|\| async { .. })` | Lifts a future returning `Result<A, E>` |
+| `sleep(d)` / `yield_fiber()` | Sleep on the executor clock / yield the fiber |
+| `effect!({ .. })` | Do-notation: `~expr` binds, `~Cap` reads, `~(a, b)` joins in parallel, `?` on a `Result` |
+| `Stream::from_iterable(i)` / `Stream::from_vec(v)` / `Stream::range(a, b)` | Finite streams |
+| `Stream::unfold(s, f)` / `Stream::unfold_effect(s, f)` | Generate a stream from state, lazily |
+| `Stream::from_pull(f)` / `Stream::from_effect(eff)` / `Stream::from_queue(q)` | Custom sources |
 
 ## Effect Combinators
 
 | Method | Notes |
 |--------|-------|
-| `.map(f)` | Transform success value |
-| `.flat_map(f)` | Chain effects |
-| `.map_error(f)` | Transform error |
-| `.catch(f)` | Handle typed failure |
-| `.catch_all(f)` | Handle any `Cause` |
-| `.tap_error(f)` | Observe a failure without changing it |
-| `.ensuring(fin)` / `.on_exit(f)` | Run a finalizer on every exit |
-| `.zip(other)` | Run two effects, tuple result |
-| `.zip_left(other)` | Run two effects, keep left |
-| `.zip_right(other)` | Run two effects, keep right |
-| `.void()` | Discard the success value |
-| `retry(make, schedule)` | Re-run `make()` on failure per `schedule` (`retry_with_clock` for an explicit clock) |
-| `repeat(make, schedule)` | Re-run `make()` on success per `schedule` (`repeat_with_clock`) |
+| `.map(f)` / `.flat_map(f)` / `.then(next)` | Transform / chain / sequence |
+| `.map_err(f)` | Transform the error |
+| `.catch(f)` | Recover from a typed failure |
+| `.exit()` | Observe the outcome as an `Exit` value |
+| `.zip(other)` | Run sequentially, tuple the results |
+| `.widen()` | Adapt the error type (e.g. from `Never`) |
+| `.ensuring(fin)` | Run a finalizer on every exit |
+| `.interruptible()` / `.uninterruptible()` | Interrupt masks |
+| `.timeout(d)` / `.timeout_fail(d, \|\| e)` | `Option<A>` on timeout / fail on timeout |
+| `.race(other)` | First success wins; the loser is interrupted |
+| `.with_span(name)` | Record a span (seen by the installed `SpanHook`) |
+| `Effect::retry(\|\| eff, schedule)` | Re-run a fresh effect from the factory on failure |
+| `Effect::repeat(\|\| eff, schedule)` | Re-run on success (`retry_or_else` / `repeat_or_else` handle exhaustion) |
+
+Effects are one-shot values: anything that runs an effect more than once (`retry`, `repeat`,
+`Layer::effect`, `supervised`) takes a factory closure.
 
 ## Concurrency
 
 | Function/Method | Notes |
 |----------------|-------|
-| `run_fork(rt, f)` | Spawn a fiber |
-| `handle.join()` | `Effect` that waits for the fiber |
-| `handle.interrupt()` | Cancel a fiber |
-| `fiber_all(handles)` | Join many fibers |
-| `FiberRef::new(initial)` | Fiber-scoped dynamic variable |
-| `fiber_ref.get()` | Read current fiber's value |
-| `fiber_ref.set(v)` | Set current fiber's value |
-| `with_fiber_id(id, f)` | Run `f` with a specific fiber id |
-| `Semaphore::make(n)` / `sem.acquire_owned()` | Bound concurrency; the permit releases on drop |
-| `Supervisor::attach(scope)` | Fork child scope; cancel token when child closes |
-| `supervised(&sup, policy, clock, make)` | Run `make` under restart / limit / ignore policy |
-| `Supervisor::spawn(rt, …)` | `run_fork` + `supervised` on a worker |
+| `eff.fork()` / `eff.fork_daemon()` | Start a child (or detached) fiber; returns a `FiberHandle` |
+| `handle.join()` | Wait for the fiber's outcome |
+| `handle.interrupt()` | Interrupt the fiber; returns its `Exit` |
+| `zip_par(a, b)` / `zip_with_par(a, b, f)` | Run two effects in parallel |
+| `all(effects, Concurrency::unlimited())` / `for_each_par(..)` / `fork_all(..)` | Run many effects in parallel |
+| `race_all(effects)` / `race_first(effects)` | First success / first exit wins |
+| `FiberRef::new(init)` / `.get()` / `.set(v)` / `.locally(v, eff)` | Fiber-scoped dynamic variables |
+| `Semaphore::new(n)` / `sem.with_permit(eff)` | Bound concurrency |
+| `Queue`, `Channel`, `Deferred`, `Latch`, `PubSub`, `Ref`, `SynchronizedRef`, `SubscriptionRef` | Coordination primitives |
+| `supervised(policy, make)` | Run a fresh `make()` under a `SupervisorPolicy` (`Terminate`, `Restart { delay }`, `RestartWithLimit { .. }`, …) |
+| `Supervisor::new()` / `sup.spawn(policy, make)` / `sup.shutdown()` | Own supervised fibers; shutdown interrupts them all |
 
 ## STM (`id_effect_fp`)
 
-Since 0.6 STM lives in the maintenance-tier `id_effect_fp` crate.
+STM lives in the maintenance-tier `id_effect_fp` crate.
 
 | Function | Notes |
 |----------|-------|
 | `TRef::make(v)` | Create a transactional cell (an `Stm`) |
-| `tref.read_stm()` | Read inside a transaction |
-| `tref.write_stm(v)` | Write inside a transaction |
+| `tref.read_stm()` / `tref.write_stm(v)` | Read / write inside a transaction |
 | `tref.modify_stm(f)` / `tref.update_stm(f)` | Modify inside a transaction |
-| `commit(stm)` | Lift `Stm<A>` into an `Effect` |
-| `atomically(stm)` | Alias of `commit` (also returns an `Effect`) |
-| `Stm::retry()` / `Stm::check(cond)` | Restart the transaction (yielding) until a condition holds |
-| `Stm::fail(e)` | Abort transaction with error; nothing is written |
-| `a.or_else(b)` | Run `b` when `a` retries (non-blocking try) |
-| `TQueue::bounded(n)` / `TQueue::unbounded()` | Transactional FIFO queue |
-| `TMap::make()` | Transactional hash map |
-| `TSemaphore::make(n)` | Transactional semaphore |
+| `commit(stm)` / `atomically(stm)` | Lift an `Stm<A, E>` into an `Effect<A, E, R>` |
+| `Stm::retry()` / `Stm::check(cond)` | Restart the transaction until a condition holds |
+| `Stm::fail(e)` | Abort with an error; nothing is written |
+| `a.or_else(b)` | Run `b` when `a` retries |
+| `TQueue::bounded(n)` / `TQueue::unbounded()` / `TMap::make()` / `TSemaphore::make(n)` | Transactional collections |
 
 ## Resources
 
 | Function | Notes |
 |----------|-------|
-| `acquire_release(acq, rel)` | Bracket-style resource management |
-| `scope_with(f)` / `scoped(eff)` | Run with a `Scope`; finalizers run on close |
-| `Pool::make(capacity, factory)` | Reusable resource pool |
-| `pool.get()` | `Effect` that borrows one resource |
-| `Cache::make(capacity, ttl, load)` | Cache backed by an effect |
+| `acquire_use_release(acq, use_, rel)` | Bracket-style resource management |
+| `Effect::scoped(\|scope\| eff)` | Run with a `Scope`; its finalizers run when it closes |
+| `scope.add_finalizer(fin)` / `scope.add_finalizer_exit(f)` | Register finalizers |
+| `Pool::new(capacity, \|\| acquire)` / `pool.get(&scope)` | Reusable resource pool (`KeyedPool` per key) |
+| `Cache::new(capacity, ttl, \|k\| lookup)` / `cache.get(k)` | Cache filled by an effect |
 
 ## Scheduling
 
 | Function | Notes |
 |----------|-------|
 | `Schedule::spaced(d)` | Wait `d` between attempts |
-| `Schedule::exponential(base)` | Exponential backoff |
-| `Schedule::recurs(n)` | At most `n` repetitions |
-| `Schedule::recurs_while(p)` / `recurs_until(p)` | Stop on a predicate |
-| `Schedule::forever()` | Never stop |
-| `.compose(other)` | Combine two schedules |
-| `.jittered()` | Randomise delays |
-| `TestClock::new(start)` | Virtual clock; `advance`, `pending_sleeps` |
+| `Schedule::exponential(base)` / `exponential_by(base, f)` / `fibonacci(one)` | Backoff |
+| `Schedule::recurs(n)` / `Schedule::forever()` | Limit the number of recurrences |
+| `.intersect(other)` / `.union(other)` / `.and_then(other)` | Combine schedules |
+| `.while_input(p)` / `.up_to(max)` / `.jittered()` | Stop on a predicate / cap the elapsed time / randomise delays |
 
 ## Running Effects
 
 | Function | Notes |
 |----------|-------|
-| `run_blocking(eff, env)` | Synchronous runner (main/binaries) |
-| `run_async(eff, env)` | Async runner (tokio integration) |
-| `run_with([…], eff)` | Build env from providers and run |
-| `build_env([…])` | Build an `Env` from providers |
-| `run_test(eff, env)` | Test harness; detects leaks |
-| `run_test_with_clock(eff, env, clock)` | Test with an explicit `TestClock` |
-| `testing::assert_bounded_memory(pipeline, n, max)` | Prove a stream pipeline does not buffer its upstream |
+| `eff.block_on()` | Run an `Effect<A, E>` (`R = HNil`) at the program edge; returns `Exit<A, E>` |
+| `Runtime::global().run(eff).await` | The async edge, inside async code |
+| `Runtime::new()` / `Runtime::from_executor(exec)` | A runtime on its own Tokio runtime / on any `Executor` |
+| `TestExecutor::new()` | Deterministic executor with a virtual clock: `run_until_stalled`, `advance(d)` |
+| `eff.fork_root(Arc::new(exec.clone()))` | Start a root fiber on an executor (tests use it with `TestExecutor`) |
 
 ## Schema
 
 | Function | Notes |
 |----------|-------|
-| `string()` | `Schema<String>` |
-| `i64()` | `Schema<i64>` |
-| `f64()` | `Schema<f64>` |
-| `bool_()` | `Schema<bool>` |
-| `optional(s)` | `Schema<Option<T>>` |
-| `array(s)` | `Schema<Vec<T>>` |
+| `string()` / `i64()` / `f64()` / `bool_()` | Primitive schemas |
+| `optional(s)` / `array(s)` / `null_or(s)` / `record(s)` | Containers |
 | `struct_(…)` / `tuple(…)` / `union_(…)` | Composite schemas |
-| `refine(s, pred, msg)` | Add a predicate constraint |
-| `schema.decode_unknown(&unknown)` | Run schema; returns `Result<T, ParseError>` |
+| `refine(s, pred, msg)` / `filter(..)` / `transform(..)` | Constraints and conversions |
+| `schema.decode_unknown(&unknown)` | Run a schema on wire data |
 | `#[derive(Schema)]` | Generate `schema()` + `HasSchema` for a struct |
 | `schema::serde_bridge` | `serde_json::Value` → `Unknown` (feature `schema-serde`) |
 
@@ -157,12 +153,12 @@ Since 0.6 STM lives in the maintenance-tier `id_effect_fp` crate.
 
 | Macro | Notes |
 |-------|-------|
-| `effect!(…)` | Do-notation for effects; use `~expr` to bind |
-| `~Key` / `require!(Key)` | Borrow a capability inside `effect!` (alias) |
-| `caps!(K1, K2, …)` | Typed capability set for `Effect<_, _, caps!(…)>` |
-| `provide!(Provider)` | Box a provider for wiring |
-| `mock_capability!(…)` | Generate a test provider |
-| `pipe!(v, f, g, …)` | Pipeline for pure values |
+| `effect!({ .. })` | Do-notation for `Effect` |
+| `effect_local!({ .. })` | Do-notation for `LocalEffect` |
+| `caps!(A, B)` | The typed environment type |
+| `hlist![a, b]` | An environment value |
+| `pipe!(v, f, g)` | Left-to-right application for pure values |
+| `err!(A \| B)` | Type-level error union `Or<A, B>` |
 
 ## Workspace crates (beyond `id_effect`)
 
@@ -170,10 +166,10 @@ Crates are grouped by tier ([ADR 0010](https://github.com/Industrial/id_effect/b
 
 | Crate | Tier | Role | Book |
 |-------|------|------|------|
-| `id_effect` | core | `Effect`, `Stream`, capabilities, fibers, schema, testing | Parts I–IV |
-| `id_effect_macro` / `id_effect_proc_macro` | core | `effect!` and capability DI macros, derives | [Workspace tooling](./appendix-d-workspace-tooling.md) |
-| `id_effect_tokio` | core | Tokio `Runtime`, `run_async` wiring, `spawn_blocking_run_async` | [Tokio bridge](./part2/ch07-05-tokio-bridge.md) |
-| `id_effect_config` | core | Config descriptors, Figment, provider in `R` | [Configuration](./part2/ch07-10-config.md) |
+| `id_effect` | core | `Effect`, typed `R`, `Layer`, fibers, streams, schema, `TestExecutor` | Parts I–IV |
+| `id_effect_macro` / `id_effect_proc_macro` | core | `pipe!` / `err!`; `effect!`, `caps!` and the derives | [Workspace tooling](./appendix-d-workspace-tooling.md) |
+| `id_effect_tokio` | core | `TokioRuntime` (owned or ambient Tokio runtime; `run`, `fork`, `spawn`) | [Tokio bridge](./part2/ch07-05-tokio-bridge.md) |
+| `id_effect_config` | core | Config descriptors, Figment, a config provider in `R` | [Configuration](./part2/ch07-10-config.md) |
 | `id_effect_logger` | core | Injectable `EffectLogger` | [Logging](./part2/ch07-11-logger.md) |
 | `id_effect_resilience` | core | Circuit breaker, rate limiter, bulkhead, `retry_with_breaker`, hedging | [Runtime resilience](./part5/ch21-00-runtime-resilience.md) |
 | `id_effect_process` | runtime | OTP-style processes, links, monitors, supervision trees | [Processes and supervision](./part7/ch37-00-processes-supervision.md) |
@@ -182,7 +178,7 @@ Crates are grouped by tier ([ADR 0010](https://github.com/Industrial/id_effect/b
 | `id_effect_platform` | integration | HTTP / FS / subprocess (`command`) capabilities; `auth` feature | [Platform I/O](./part2/ch07-06-platform-services.md) |
 | `id_effect_axum` | integration | Axum host, `EffectExecutor`; `tower` feature for `service` | [Axum host](./part2/ch07-08-axum-host.md) |
 | `id_effect_sql` | integration | `SqlClient`, transactions; `pg` feature for Postgres | [Data access](./part6/ch28-00-data.md) |
-| `id_effect_opentelemetry` | integration | OpenTelemetry tracing layers | [Observability](./part6/ch27-00-observability.md) |
+| `id_effect_opentelemetry` | integration | OpenTelemetry span hook, metrics bridge, logs | [Observability](./part6/ch27-00-observability.md) |
 | `id_effect_cli` | integration | `run_main`, `Exit`/`Cause` → `ExitCode` | [CLI with clap](./part3/ch16-00-cli-with-clap.md) |
 | `id_effect_fp` | maintenance | algebra, persistent collections, STM | [Part V](./part5/ch17-00-algebra-type-classes.md), [STM](./part4/ch12-00-stm.md) |
 | `id_effect_optics` | maintenance | Lenses, prisms, traversals | [Optics](./part5/ch18-00-optics.md) |

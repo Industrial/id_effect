@@ -1,49 +1,50 @@
 # Migrating from `async fn` to effects
 
-> **Upgrading id_effect 0.4 / 0.5 → 0.6:** crates moved to `labs/`, merged crates
-> (Tower bridge into `id_effect_axum::service`, Postgres into `id_effect_sql::pg`), paths moved to `id_effect_fp` and
-> `id_effect_node::placement`, renames, pull-based streams and the axum executor are covered in the
+> **Upgrading id_effect 0.6 → 0.7:** the runtime capability DI (`Env`, `ProviderSpec`,
+> `run_with`, `provide!`, `require!`), `run_blocking` / `run_test` and `TestClock` are gone; `R`
+> is a typed HList, dependencies come from `Layer`s, and effects run with `block_on`. See the
+> [0.7 migration guide](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.7.md).
+> For 0.5 → 0.6 see the
 > [0.6 migration guide](https://github.com/Industrial/id_effect/blob/main/docs/MIGRATION-0.6.md).
 
-> **2.x → 3.0:** See [Migrating 2.x → 3.0](#migrating-2x--30) for the DI maturity breaking changes.
-
-
-
-This appendix is a practical guide for converting existing async Rust code to id_effect. It covers common patterns and their id_effect equivalents, with migration steps for each.
-
-> **1.x DI:** If you are migrating from id_effect 1.x tag/HList DI (`service_key!`, `ctx!`, `Layer`/`Stack`), skip to [Migrating 1.x DI to id_effect 3.0](#migrating-1x-di-to-id_effect-30) first.
+This appendix is a practical guide for converting existing async Rust code to id_effect. It covers
+common patterns and their id_effect equivalents. The snippets are sketches: `Database`, `Mailer`,
+`User` and friends stand for your own types.
 
 ## The Mental Model Shift
 
 In typical async Rust, a function returns a `Future`; when that future is awaited, the work runs:
 
-```rust
+```rust,ignore
 async fn get_user(id: u64, db: &DbClient) -> Result<User, DbError> {
     db.query_one("SELECT * FROM users WHERE id = $1", &[&id]).await
 }
 ```
 
-In id_effect, domain functions return an **`Effect`** — a description you run later with an environment:
+In id_effect, domain functions return an **`Effect`**: a description that runs later, once its
+capabilities have been provided:
 
-```rust
-struct Database;
+```rust,ignore
+use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r: &mut caps!(Database)| {
-        let db = require!(Database);
-        let user = ~ db.get_user(id);
-        user
+    effect!({
+        let db = Arc::clone(~Database);
+        ~db.get_user(id)
     })
 }
 ```
 
-The database client is no longer a function parameter. It is declared via `caps!(Database)` and retrieved with `require!`. The business logic is identical; what changes is how dependencies are supplied at `run_with` / `main`.
+The database client is no longer a function parameter. It is declared in `R` with
+`caps!(Database)` and read with `~Database` inside `effect!`. The business logic is the same; what
+changes is where the dependency comes from: `.provide(db)` or a `Layer` at the edge. Forgetting to
+provide it is a compile error.
 
 ## Pattern 1: async fn → fn returning Effect
 
 **Before**
 
-```rust
+```rust,ignore
 pub async fn process_order(
     order_id: OrderId,
     db: &DbClient,
@@ -58,31 +59,34 @@ pub async fn process_order(
 
 **After**
 
-```rust
-struct Database;
-struct Mailer;
-
+```rust,ignore
 pub fn process_order(order_id: OrderId) -> Effect<Receipt, AppError, caps!(Database, Mailer)> {
-    effect!(|r: &mut caps!(Database, Mailer)| {
-        let db     = require!(Database);
-        let mailer = require!(Mailer);
-        let order   = ~ db.get_order(order_id);
-        let receipt = ~ db.complete_order(order);
-        ~ mailer.send_receipt(&receipt);
+    effect!({
+        let db = Arc::clone(~Database);
+        let mailer = Arc::clone(~Mailer);
+        let order = ~db.get_order(order_id);
+        let receipt = ~db.complete_order(order);
+        ~mailer.send_receipt(receipt.clone());
         receipt
     })
 }
+
+// At the edge:
+let exit = process_order(id)
+    .provide_layer(DatabaseLive::layer().merge(MailerLive::layer()))
+    .block_on();
 ```
 
 **Migration steps:**
 
-1. Remove dependency parameters (`db`, `mailer`)
-2. Declare service types (`struct Counter(u32);` or `type Database = Arc<dyn DbClient>;`)
-3. Use `Effect<_, _, caps!(K1, K2)>` (or `where Env: Needs<K> + …` when generic)
-4. Replace `async move { … }` with `effect!(|r: &mut caps!(…)| { … })`
-5. Replace `.await?` with `~ ` prefix
-6. Use `require!(K)` for each capability inside `effect!`
-7. Wire providers at the edge with `run_with([provide!(…), …], effect)`
+1. Remove dependency parameters (`db`, `mailer`).
+2. Declare service types (`struct Database { .. }` or a newtype over `Arc<dyn DbClient>`).
+3. Return `Effect<_, _, caps!(Database, Mailer)>`.
+4. Replace `async move { … }` with `effect!({ … })`; `~Cap` reads a capability.
+5. Replace `.await?` on effects with a `~` prefix (`.await` on plain futures and `?` on `Result`s
+   still work in the body); `~(a, b)` runs two effects in parallel.
+6. Provide the capabilities at the edge: `.provide(v)`, `.provide_env(hlist![..])` or
+   `.provide_layer(layer)`, then `.block_on()` (or `Runtime::run(eff).await` in async code).
 
 ## Pattern 2: Wrapping Third-Party Async
 
@@ -90,7 +94,7 @@ Third-party libraries return `Future`s, not `Effect`s. Use `from_async` to wrap 
 
 **Before**
 
-```rust
+```rust,ignore
 async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
     reqwest::get(format!("https://api.example.com/price/{symbol}"))
         .await?
@@ -102,9 +106,11 @@ async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
 
 **After**
 
-```rust
-fn fetch_price(symbol: String) -> Effect<f64, reqwest::Error, ()> {
-    from_async(move |_env| async move {
+```rust,ignore
+use id_effect::{Effect, from_async};
+
+fn fetch_price(symbol: String) -> Effect<f64, reqwest::Error> {
+    from_async(move || async move {
         reqwest::get(format!("https://api.example.com/price/{symbol}"))
             .await?
             .json::<PriceResponse>()
@@ -114,42 +120,47 @@ fn fetch_price(symbol: String) -> Effect<f64, reqwest::Error, ()> {
 }
 ```
 
-The `from_async` closure still uses `.await` internally. Only the outermost function signature changes.
+The closure takes no arguments and its future must be `Send + 'static`. The future still uses
+`.await` internally; only the outer signature changes.
 
 ## Pattern 3: Error Types
 
-**Before** — single monolithic error enum
+**Before**: a single monolithic error enum threaded through every function.
 
-```rust
+```rust,ignore
 #[derive(Debug)]
 enum AppError {
-    DbError(DbError),
-    MailError(MailError),
+    Db(DbError),
+    Mail(MailError),
     NotFound(String),
 }
 ```
 
-**After** — effects propagate errors through `E`
+**After**: each function fails with its own error, and callers widen it. `~expr` in `effect!`
+converts the sub-effect's error with `From`; outside the macro use `map_err`.
 
-```rust
-#[derive(Debug)] struct NotFoundError(String);
-struct Database;
+```rust,ignore
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* … */ }
 
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
-    effect!(|r: &mut caps!(Database)| {
-        let db = require!(Database);
-        ~ db.get_user(id)
+impl From<DbError> for AppError {
+    fn from(e: DbError) -> Self { AppError::Db(e) }
+}
+
+fn handler(id: u64) -> Effect<Response, AppError, caps!(Database)> {
+    effect!({
+        let user = ~get_user(id); // DbError -> AppError
+        Response::ok(user)
     })
 }
 ```
 
-You still need an `AppError` at the top level (in `main` or your HTTP handler), but individual functions no longer need unrelated error variants.
+`err!(A | B)` spells the anonymous union `Or<A, B>` when you don't want a named enum.
 
 ## Pattern 4: Shared State
 
-**Before** — `Arc<Mutex<T>>` passed through function calls
+**Before**: `Arc<Mutex<T>>` passed through function calls.
 
-```rust
+```rust,ignore
 async fn handler(state: Arc<Mutex<AppState>>) -> Response {
     let mut s = state.lock().unwrap();
     s.request_count += 1;
@@ -157,67 +168,80 @@ async fn handler(state: Arc<Mutex<AppState>>) -> Response {
 }
 ```
 
-**After** — shared state as a capability
+**After**: a `Ref` (or any shared value) as a capability.
 
-```rust
-struct AppStateCap;
+```rust,ignore
+use id_effect::{Effect, Ref, caps, effect};
 
-fn handler() -> Effect<Response, AppError, caps!(AppStateCap)> {
-    effect!(|r: &mut caps!(AppStateCap)| {
-        let state = require!(AppStateCap);
-        let mut s = state.lock().unwrap();
-        s.request_count += 1;
-        // …
+struct RequestCount(Ref<u64>);
+
+fn handler() -> Effect<Response, AppError, caps!(RequestCount)> {
+    effect!({
+        let counter = Arc::clone(~RequestCount);
+        let count = ~counter.0.update_and_get(|n| n + 1);
+        Response::ok(count)
     })
 }
 ```
 
-Or, for transactional mutable state across fibers, use `TRef` + STM (see Part III).
+For transactional state across several cells, use `TRef` + STM from `id_effect_fp`.
 
 ## Pattern 5: Resource Cleanup
 
-**Before** — manual `drop` or relying on `Drop` impls
+**Before**: manual cleanup, or relying on `Drop` impls that cannot be async.
 
-```rust
-async fn with_connection<F, T>(pool: &Pool, f: F) -> Result<T, DbError>
-where F: AsyncFnOnce(&Connection) -> Result<T, DbError>
+```rust,ignore
+async fn with_connection<T>(pool: &Pool, f: impl AsyncFnOnce(&Conn) -> Result<T, DbError>)
+    -> Result<T, DbError>
 {
     let conn = pool.get().await?;
-    let result = f(&conn).await;
-    result
+    f(&conn).await
 }
 ```
 
-**After** — explicit `Scope`
+**After**: `acquire_use_release` (or a `Scope`) runs the release on success, failure and
+interruption.
 
-```rust
-struct PoolCap;
+```rust,ignore
+use id_effect::{Effect, ExitKind, acquire_use_release};
 
-fn with_connection<F, A, E>(f: F) -> Effect<A, E, caps!(PoolCap)>
-where
-    F: FnOnce(&Connection) -> Effect<A, E, caps!(PoolCap)> + 'static,
-    E: From<DbError> + 'static,
-    A: 'static,
-{
-    effect!(|r: &mut caps!(PoolCap)| {
-        let pool = require!(PoolCap);
-        ~ scope.acquire(
-            pool.get(),
-            |conn| pool.release(conn),
-            |conn| f(conn),
-        )
-    })
+fn with_connection<A>(
+    f: impl FnOnce(Conn) -> Effect<A, DbError> + Send + 'static,
+) -> Effect<A, DbError> {
+    acquire_use_release(
+        open_connection(),                      // Effect<Conn, DbError>
+        f,
+        |conn, _exit: ExitKind| close(conn),    // Effect<(), Never>
+    )
 }
 ```
 
-The `Scope` finalizer runs whether the inner effect succeeds, fails, or is cancelled.
+`Effect::scoped(|scope| ..)` with `scope.add_finalizer(..)` covers several resources at once, and
+`Pool::new(capacity, || acquire)` with `pool.get(&scope)` reuses them.
+
+## Pattern 6: Tests
+
+**Before**: a mocking framework, or test-only constructor parameters.
+
+**After**: provide a test value of the same capability type and run with `block_on`; for time,
+run on a `TestExecutor` and move its virtual clock.
+
+```rust,ignore
+#[test]
+fn reads_the_user() {
+    let exit = get_user(1).provide(Database::in_memory()).block_on();
+    assert_eq!(exit, Exit::succeed(User::fixture()));
+}
+```
 
 ## HTTP boundaries: raw `reqwest` → workspace crates
 
 After effects replace bare `async fn`, move HTTP edges toward **typed capabilities**:
 
-1. **`id_effect_platform`** — `HttpClientService` + `ReqwestHttpClientProvider` + `execute` for portable requests.
-2. **`id_effect_platform::http::reqwest`** — `reqwest::Client` keyed in `Env`, pools, `json_schema` — see [HTTP via reqwest](./part2/ch07-07-reqwest-http.md).
+1. **`id_effect_platform`** — portable HTTP, file system and subprocess capabilities (see
+   [Platform I/O](./part2/ch07-06-platform-services.md)).
+2. **`id_effect_platform::http::reqwest`** — the reqwest backend (see
+   [HTTP via reqwest](./part2/ch07-07-reqwest-http.md)).
 
 Host either style under **Axum** with **`id_effect_axum`** ([Axum host](./part2/ch07-08-axum-host.md)).
 
@@ -227,135 +251,10 @@ Migrate gradually, one module at a time:
 
 1. Start with leaf functions (no effect dependencies yet).
 2. Move up the call graph.
-3. Push `run_with` / `run_blocking` to `main` or the request handler.
-4. Convert tests last — swap `provide!(Mock…)` implementations.
+3. Push `block_on` (or `Runtime::run(..).await`) to `main` or the request handler.
+4. Convert tests last: provide test values or test layers instead of mocks.
 
-You can mix async functions and effects during the transition: wrap async with `from_async`; call effects with `run_blocking` or `run_async` at boundaries.
+You can mix async functions and effects during the transition: wrap async code with
+`from_async`, and call effects from async code with `Runtime::global().run(eff).await`.
 
----
-
-
-## Migrating 2.x → 3.0
-
-| Removed (2.x) | Replacement (3.0) |
-|---------------|-------------------|
-| `CapEnv1…6` | `caps!(K0, K1, …)` / `CapList<(K0, K1, …)>` |
-| `caps!(Key, T)` (removed) | declare service type `T` directly |
-| `require!(env, K)` | `require!(K)` in `effect!` or `Needs::<K>::need(env)` |
-| `ctx!`, `req!`, `service_key!` | ``, `caps!`, `build_env` |
-| `Layer` / `Stack` / `Effect::provide` | `ProviderSpec` + `run_with` |
-| `IntoBind` | `Needs<K>` + `require!(K)` |
-| config `ambient` | `Env::scoped` / `build_env` |
-| `Effect<_, _, Env>` (multi-cap public API) | `Effect<_, _, caps!(…)>` |
-
-Run `cargo test -p id_effect --test ui_compile_fail` to see compile-fail examples for each removed symbol.
-
-
-## Migrating 1.x DI to id_effect 3.0
-
-id_effect 3.0 replaces the Effect.ts-style tag/HList stack with **capability services**, **`Env`**, and **`ProviderSpec`**. 1.x symbols (`service_key!`, `ctx!`, `req!`, `Layer`/`Stack`, `.provide()` on effects) are removed from the public DI path.
-
-### Symbol mapping
-
-| 1.x (removed from DI path) | 3.0 |
-|---------------------------|-----|
-| `service_key!(K: V)` | service type `T` / `type K = Arc<dyn Trait>` |
-| `Tagged<K>` / `tagged(v)` | `Env::insert::<Cap<K>>(v)` |
-| `Context` / `Cons` / `Nil` / `ctx!(…)` | `Env` (order-independent) |
-| `Get<K>` / `NeedsX` supertraits | `Needs<K>` |
-| `~ Service` in `effect!` | `require!(K)` |
-| `req!(K: V \| …)` | `caps!(…)` + `Needs<K>` bounds |
-| `Layer` / `Stack` / `layer_service` | `ProviderSpec` + `provide!(P)` |
-| `effect.provide(ctx)` | `run_with([provide!(…)], effect)` |
-| `LayerGraph` (app wiring) | `CapabilityGraph` (via `run_with` / `build_env`) |
-
-### Example: service key → capability service
-
-**1.x**
-
-```rust
-service_key!(UserRepo: Arc<dyn UserRepository>);
-
-fn get_user<R: NeedsUserRepo>(id: u64) -> Effect<User, DbError, R> {
-    effect! {
-        let repo = ~ UserRepo;
-        ~ repo.get_user(id)
-    }
-}
-
-run_blocking(get_user(1).provide(ctx!(tagged::<UserRepo>(repo))))?;
-```
-
-**3.0**
-
-```rust
-struct UserRepo;
-
-fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepo)> {
-    effect!(|r: &mut caps!(UserRepo)| {
-        let repo = require!(UserRepo);
-        ~ repo.get_user(id)
-    })
-}
-
-run_with([provide!(UserRepoLive)], get_user(1))?;
-```
-
-### Example: layer stack → provider list
-
-**1.x**
-
-```rust
-let app_layer = config_layer
-    .stack(db_layer)
-    .stack(user_repo_layer);
-
-run_blocking(my_app().provide_layer(app_layer))?;
-```
-
-**3.0**
-
-```rust
-run_with(
-    [
-        provide!(ConfigLive),
-        provide!(DatabaseLive),
-        provide!(UserRepoLive),
-    ],
-    my_app(),
-)?;
-```
-
-Each `*Live` type implements `ProviderSpec`. Dependencies are declared in `requires()` and satisfied via `deps.get::<Cap<K>>()` inside `provide()`. [`CapabilityGraph`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/capability/graph.rs) plans build order — no manual stacking.
-
-### Test environments
-
-**1.x**
-
-```rust
-let env = ctx!(tagged::<Database>(mock_db), tagged::<EffectLogger>(mock_log));
-run_blocking(effect.provide(env))?;
-```
-
-**3.0**
-
-```rust
-let mut env = build_env([provide!(DatabaseLive), provide!(LoggerLive)])?;
-env.insert::<Cap<Database>>(mock_db);
-
-run_blocking(effect, env)?;
-
-// or swap providers entirely
-run_with([provide!(MockDatabase), provide!(MockLogger)], effect)?;
-```
-
-### Migration checklist
-
-1. Declare service types (structs or `Arc<dyn Trait>` aliases).
-2. Change `NeedsX` / `Get<K>` bounds to `Needs<K>` or `caps!(…)`.
-3. Replace `~ K` with `require!(K)` (use `|r: &mut caps!(…)|` on `effect!` when needed).
-4. Replace layer stacks with `ProviderSpec` impls + `provide!(…)`.
-5. Replace `.provide()` / `.provide_layer()` with `run_with` or manual `Env` + `run_blocking`.
-6. Update `main`, tests, and workspace crate providers (`id_effect_platform`, `id_effect_config`, etc.) in the same release — 3.0 is a clean break.
-
-See Part II (chapters 4–7) for the full capability DI narrative.
+See Part II (chapters 4–7) for the full capability narrative.
