@@ -30,10 +30,30 @@
 //! The environment only needs the `EffectLogger` capability (`caps_next!(EffectLogger)`). Provide
 //! it at the program edge with `.provide(EffectLogger)`.
 //!
-//! The thread-local pipeline (minimum level, annotations, spans, composite backend) is still
-//! installed by building the capability providers ([`provide_minimum_log_level`],
-//! [`LogMetadataLive`], [`provide_composite_logger`]) on the thread that runs the program; the
-//! installed refs are `next` [`FiberRef`]s.
+//! The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
+//! by building its [`Layer`](id_effect::next::Layer)s ([`provide_minimum_log_level`],
+//! [`LogMetadataLive::layer`], [`provide_composite_logger`]) on the thread that runs the program;
+//! the installed refs are `next` [`FiberRef`]s:
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use id_effect::Exit;
+//! use id_effect::next::{Effect, HNil};
+//! use id_effect_logger::{
+//!   CompositeLogBackend, EffectLogger, EffectLoggerError, LogLevel, LogMetadataLive,
+//!   annotate_logs, provide_composite_logger, provide_minimum_log_level,
+//! };
+//!
+//! let pipeline = LogMetadataLive::layer()
+//!   .merge(provide_composite_logger(Arc::new(CompositeLogBackend::new())))
+//!   .merge(provide_minimum_log_level(LogLevel::Info));
+//! let program: Effect<(), EffectLoggerError, HNil> =
+//!   annotate_logs("request_id", "r-1", EffectLogger.info("handled"));
+//! // The layer is built (and the pipeline installed) before the program runs.
+//! let exit = program.provide_layer(pipeline).block_on();
+//! assert_eq!(exit, Exit::Success(()));
+//! ```
 //!
 //! Log methods accept `impl Into<Cow<'static, str>>`: literals stay zero-copy;
 //! runtime text passes as `String` or `format!(...)`.
@@ -158,11 +178,13 @@ fn test_clear_all_logger_tls() {
   test_clear_log_metadata_fiber_refs();
 }
 
-/// Log sink registered as [`EffectLogger`] via capability DI; forwards to [`tracing`].
+/// Log sink provided as the [`EffectLogger`] capability (`.provide(EffectLogger)` or
+/// [`EffectLoggerLive::layer`]); forwards to [`tracing`].
 ///
-/// Extracted from the environment with `~EffectLogger` inside [`id_effect::effect!`].
-/// After extraction its methods return `Effect<(), EffectLoggerError>` (no environment) and
-/// are themselves bound with `~` — in any `effect!` environment, without a turbofish.
+/// Extracted from the environment with `~EffectLogger` inside
+/// [`effect_next!`](id_effect::next::effect_next). After extraction its methods return
+/// `Effect<(), EffectLoggerError>` (no environment) and are themselves bound with `~` — in any
+/// `effect_next!` environment, without a turbofish.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLogger;
 
@@ -372,13 +394,12 @@ where
 
 #[cfg(test)]
 mod tests {
-  use ::id_effect::Needs;
   use rstest::rstest;
 
   use super::*;
   use crate::{EffectLoggerLive, provide_minimum_log_level};
-  use ::id_effect::next::{HCons, HNil, need};
-  use ::id_effect::{Cause, Env, Never, build_env, provide};
+  use ::id_effect::next::{HCons, HList, HNil, Layer, need};
+  use ::id_effect::{Cause, Never};
 
   // ========== Fixtures ==========
 
@@ -389,19 +410,22 @@ mod tests {
     eff.block_on().into_result()
   }
 
-  type LogCtx = Env;
-
-  fn test_ctx() -> LogCtx {
-    build_env([provide!(EffectLoggerLive)]).expect("logger env")
+  /// Builds `layer` on the calling thread (installing its thread-local logger state here).
+  pub(super) fn build_layer<Out: HList>(layer: Layer<Out, Never>) -> Out {
+    layer.build().block_on().into_result().expect("layer build")
   }
 
-  fn test_ctx_with_min(initial: LogLevel) -> Env {
+  type LogCtx = HCons<EffectLogger, HNil>;
+
+  fn test_ctx() -> LogCtx {
+    build_layer(EffectLoggerLive::layer())
+  }
+
+  /// Installs a fresh minimum-level ref starting at `initial` and returns it.
+  fn test_ctx_with_min(initial: LogLevel) -> EffectLogMinLevel {
     test_clear_all_logger_tls();
-    build_env([
-      provide!(EffectLoggerLive),
-      provide_minimum_log_level(initial),
-    ])
-    .expect("logger env with min level")
+    let HCons(fr, HNil) = build_layer(provide_minimum_log_level(initial));
+    (*fr).clone()
   }
 
   fn init_subscriber() {
@@ -444,8 +468,7 @@ mod tests {
       let levels = Arc::new(Mutex::new(Vec::new()));
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
-      let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
+      let fr = test_ctx_with_min(LogLevel::Trace);
       // A `next` FiberRef value lives in the running fiber: set and log in one program.
       run(
         fr.set(LogLevel::Warn)
@@ -466,8 +489,7 @@ mod tests {
       let levels = Arc::new(Mutex::new(Vec::new()));
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
-      let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
+      let fr = test_ctx_with_min(LogLevel::Trace);
       let inner = EffectLogger.info("inside-scope");
       run(EffectLogger::with_minimum_log_level(
         fr.clone(),
@@ -503,8 +525,7 @@ mod tests {
       let _g =
         tracing::subscriber::set_default(subscriber_with_capture(Arc::new(Mutex::new(Vec::new()))));
 
-      let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
+      let fr = test_ctx_with_min(LogLevel::Trace);
       let scoped = EffectLogger::with_minimum_log_level(fr.clone(), LogLevel::Warn, fr.get());
       let program = fr
         .set(LogLevel::Debug)
@@ -525,8 +546,7 @@ mod tests {
       let levels = Arc::new(Mutex::new(Vec::new()));
       let _g = tracing::subscriber::set_default(subscriber_with_capture(levels.clone()));
 
-      let ctx = test_ctx_with_min(LogLevel::Trace);
-      let fr = Needs::<EffectLogMinLevel>::need(&ctx).clone();
+      let fr = test_ctx_with_min(LogLevel::Trace);
       // The child reads the parent's `Error` level (copied at fork time).
       let program = fr.set(LogLevel::Error).then(
         fr.get::<EffectLoggerError, HNil>()
@@ -693,14 +713,11 @@ mod tests {
 
   mod needs_extraction {
     use super::*;
-    use ::id_effect::Needs;
 
     #[test]
     fn extracts_logger_copy_from_context() {
-      // v1 capability env (the provider DI is unchanged in 0.7).
-      let ctx: LogCtx = test_ctx();
-      let _logger: EffectLogger = *Needs::<EffectLogger>::need(&ctx);
-      // `next` typed env.
+      // The layer-built typed env.
+      let HCons(_logger, HNil): LogCtx = test_ctx();
       let effect: Effect<EffectLogger, EffectLoggerError, HCons<EffectLogger, HNil>> =
         need::<EffectLogger>().map(|l| *l);
       assert!(run(effect.provide(EffectLogger)).is_ok());
@@ -723,16 +740,25 @@ mod tests {
 
     #[test]
     fn builds_without_error() {
-      let env = build_env([provide!(EffectLoggerLive)]);
-      assert!(env.is_ok());
+      let env = EffectLoggerLive::layer::<Never>().build().block_on();
+      assert!(env.into_result().is_ok());
     }
 
     #[test]
     fn produced_service_can_be_placed_in_context() {
-      let ctx = build_env([provide!(EffectLoggerLive)]).expect("infallible");
-      let logger = *Needs::<EffectLogger>::need(&ctx);
+      let HCons(logger, HNil) = test_ctx();
       let result = run(logger.info("provider build ok"));
       assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn layer_provides_the_logger_to_a_program() {
+      let program: Effect<(), EffectLoggerError, LogCtx> =
+        need::<EffectLogger>().flat_map(|logger| logger.info("via layer").narrow());
+      assert_eq!(
+        run(program.provide_layer(EffectLoggerLive::layer())),
+        Ok(())
+      );
     }
   }
 
@@ -781,9 +807,7 @@ mod tests {
   mod wave5_full_logger {
     use std::sync::{Arc, Mutex};
 
-    use ::id_effect::{build_env, provide};
-
-    use super::run;
+    use super::{build_layer, run};
     use crate::{
       CompositeLogBackend, EffectLogger, EffectLoggerError, JsonLogBackend, LogBackend, LogLevel,
       LogMetadataLive, LogRecord, Logger, StructuredLogBackend, annotate_logs,
@@ -805,8 +829,7 @@ mod tests {
       let buf = jb.writer_arc();
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(jb)).expect("add json");
-      build_env([provide!(LogMetadataLive), provide_composite_logger(comp)])
-        .expect("logger pipeline");
+      build_layer(LogMetadataLive::layer().merge(provide_composite_logger(comp)));
       buf
     }
 
@@ -831,11 +854,7 @@ mod tests {
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(MsgCap(a.clone()))).unwrap();
       comp.add(Arc::new(MsgCap(b.clone()))).unwrap();
-      build_env([
-        provide!(LogMetadataLive),
-        provide_composite_logger(comp.clone()),
-      ])
-      .unwrap();
+      build_layer(LogMetadataLive::layer().merge(provide_composite_logger(comp.clone())));
       run(EffectLogger.info("m1")).unwrap();
       assert_eq!(*a.lock().unwrap(), vec!["m1".to_string()]);
       assert_eq!(*b.lock().unwrap(), vec!["m1".to_string()]);
@@ -866,7 +885,7 @@ mod tests {
       let buf = structured.writer_arc();
       let comp = Arc::new(CompositeLogBackend::new());
       comp.add(Arc::new(structured)).unwrap();
-      build_env([provide!(LogMetadataLive), provide_composite_logger(comp)]).unwrap();
+      build_layer(LogMetadataLive::layer().merge(provide_composite_logger(comp)));
       run(annotate_logs("trace_id", "abc", EffectLogger.info("done"))).unwrap();
       let s = String::from_utf8(buf.lock().unwrap().clone()).unwrap();
       assert!(

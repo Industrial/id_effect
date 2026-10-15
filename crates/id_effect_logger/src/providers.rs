@@ -1,13 +1,14 @@
-//! Capability DI v2 providers for [`EffectLogger`] and thread-local logger runtime.
-
-use std::sync::Arc;
+//! [`Layer`]s for [`EffectLogger`] and the thread-local logger pipeline (`next` kernel).
+//!
+//! Each layer needs nothing (`In = HNil`) and never fails, so its error type `E` is whatever the
+//! graph it joins uses. The pipeline layers install their thread-local state when they are
+//! **built**, on the thread that drives the build (the thread running the program for
+//! [`Effect::block_on`](id_effect::next::Effect::block_on)).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use ::id_effect::next::FiberRef;
-use ::id_effect::{
-  Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode,
-};
+use ::id_effect::next::{FiberRef, HCons, HNil, Layer, hlist, sync};
 
 use crate::{
   CompositeLogBackend, EffectLogMinLevel, EffectLogger, LogLevel, install_composite_log_backend,
@@ -15,9 +16,16 @@ use crate::{
 };
 
 /// Default [`EffectLogger`] provider (tracing-backed).
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLogger, with = || EffectLogger)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EffectLoggerLive;
+
+impl EffectLoggerLive {
+  /// The layer: [`EffectLogger`] as a capability.
+  #[inline]
+  pub fn layer<E: Send + 'static>() -> Layer<HCons<EffectLogger, HNil>, E> {
+    Layer::succeed(hlist![EffectLogger])
+  }
+}
 
 /// Marker capability: fiber-local log annotation / span metadata installed.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -25,16 +33,22 @@ pub struct EffectLogMetadata;
 
 /// Installs fiber-local annotation and span-stack refs used by [`crate::annotate_logs`] and
 /// [`crate::with_log_span`].
-#[derive(::id_effect::ProviderSpecDerive)]
-#[provides(EffectLogMetadata, with = Self::install)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LogMetadataLive;
 
 impl LogMetadataLive {
-  fn install() -> EffectLogMetadata {
-    // A forked child starts with a copy of its parent's value (`next` FiberRef inheritance).
-    install_log_annotations_fiber_ref(FiberRef::new(HashMap::<String, String>::new()));
-    install_log_spans_fiber_ref(FiberRef::new(Vec::<String>::new()));
-    EffectLogMetadata
+  /// The layer: each build installs fresh annotation and span-stack [`FiberRef`]s on the
+  /// building thread and provides the [`EffectLogMetadata`] marker.
+  #[inline]
+  pub fn layer<E: Send + 'static>() -> Layer<HCons<EffectLogMetadata, HNil>, E> {
+    Layer::effect(|| {
+      sync(|| {
+        // A forked child starts with a copy of its parent's value (`next` FiberRef inheritance).
+        install_log_annotations_fiber_ref(FiberRef::new(HashMap::<String, String>::new()));
+        install_log_spans_fiber_ref(FiberRef::new(Vec::<String>::new()));
+        hlist![EffectLogMetadata]
+      })
+    })
   }
 }
 
@@ -42,102 +56,61 @@ impl LogMetadataLive {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EffectLogComposite;
 
-/// Build a provider that registers `composite` for [`EffectLogger::log`] on this thread.
+/// A layer that registers `composite` for [`EffectLogger::log`] on the building thread.
 #[inline]
-pub fn provide_composite_logger(composite: Arc<CompositeLogBackend>) -> ProviderBox {
-  struct Node(Arc<CompositeLogBackend>);
-
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "effect-logger-composite"
-    }
-
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-
-    fn provides(&self) -> CapabilityId {
-      Cap::<EffectLogComposite>::id()
-    }
-
-    fn cap_name(&self) -> &str {
-      "EffectLogComposite"
-    }
-
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      install_composite_log_backend(self.0.clone());
-      let mut out = deps.clone();
-      out.insert::<Cap<EffectLogComposite>>(EffectLogComposite);
-      Ok(out)
-    }
-  }
-
-  ProviderBox(Arc::new(Node(composite)))
+pub fn provide_composite_logger<E: Send + 'static>(
+  composite: Arc<CompositeLogBackend>,
+) -> Layer<HCons<EffectLogComposite, HNil>, E> {
+  Layer::effect(move || {
+    let composite = Arc::clone(&composite);
+    sync(move || {
+      install_composite_log_backend(composite);
+      hlist![EffectLogComposite]
+    })
+  })
 }
 
-/// Build a provider that allocates a minimum [`LogLevel`] [`FiberRef`] and registers it for filtering.
+/// A layer that allocates a minimum [`LogLevel`] [`FiberRef`] starting at `initial`, registers it
+/// for filtering on the building thread and provides it as [`EffectLogMinLevel`].
 #[inline]
-pub fn provide_minimum_log_level(initial: LogLevel) -> ProviderBox {
-  struct Node(LogLevel);
-
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "effect-logger-min-level"
-    }
-
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-
-    fn provides(&self) -> CapabilityId {
-      Cap::<EffectLogMinLevel>::id()
-    }
-
-    fn cap_name(&self) -> &str {
-      "EffectLogMinLevel"
-    }
-
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let fr = FiberRef::new(self.0);
+pub fn provide_minimum_log_level<E: Send + 'static>(
+  initial: LogLevel,
+) -> Layer<HCons<EffectLogMinLevel, HNil>, E> {
+  Layer::effect(move || {
+    sync(move || {
+      let fr = FiberRef::new(initial);
       install_min_log_level_fiber_ref(fr.clone());
-      let mut out = deps.clone();
-      out.insert::<Cap<EffectLogMinLevel>>(fr);
-      Ok(out)
-    }
-  }
-
-  ProviderBox(Arc::new(Node(initial)))
+      hlist![fr]
+    })
+  })
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::sync::Arc;
+  use ::id_effect::Never;
+  use ::id_effect::next::Effect;
+
+  fn build<Out: Send + 'static>(eff: Effect<Out, Never>) -> Out {
+    eff.block_on().into_result().expect("layer build")
+  }
 
   #[test]
   fn provide_composite_logger_installs_capability() {
     let composite = Arc::new(CompositeLogBackend::new());
-    let node = provide_composite_logger(composite);
-    let env = node.0.build(&Env::new()).expect("build");
-    assert!(env.try_get::<Cap<EffectLogComposite>>().is_ok());
+    let HCons(marker, HNil) = build(provide_composite_logger::<Never>(composite).build());
+    assert_eq!(*marker, EffectLogComposite);
 
-    let logger_env = ProviderBox::new::<EffectLoggerLive>()
-      .0
-      .build(&Env::new())
-      .expect("logger live");
-    assert!(logger_env.try_get::<Cap<EffectLogger>>().is_ok());
+    let HCons(_logger, HNil) = build(EffectLoggerLive::layer::<Never>().build());
 
-    let meta_env = ProviderBox::new::<LogMetadataLive>()
-      .0
-      .build(&Env::new())
-      .expect("metadata live");
-    assert!(meta_env.try_get::<Cap<EffectLogMetadata>>().is_ok());
+    let HCons(meta, HNil) = build(LogMetadataLive::layer::<Never>().build());
+    assert_eq!(*meta, EffectLogMetadata);
   }
 
   #[test]
   fn provide_minimum_log_level_installs_fiber_ref() {
-    let node = provide_minimum_log_level(LogLevel::Warn);
-    let env = node.0.build(&Env::new()).expect("build");
-    assert!(env.try_get::<Cap<EffectLogMinLevel>>().is_ok());
+    let layer = provide_minimum_log_level::<Never>(LogLevel::Warn);
+    let HCons(fr, HNil) = build(layer.build());
+    assert_eq!(build(fr.get()), LogLevel::Warn);
   }
 }

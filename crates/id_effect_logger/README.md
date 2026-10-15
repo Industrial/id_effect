@@ -10,8 +10,10 @@ effectful steps, forwarded to [`tracing`](https://docs.rs/tracing) by default.
 - Provide it with `.provide(EffectLogger)` (or a `Layer`) and extract it inside `effect_next!`
   with `~EffectLogger`, or use it directly as a value.
 - The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-  by building the providers (`provide_minimum_log_level`, `LogMetadataLive`,
-  `provide_composite_logger`) with `build_env` on the thread that runs the program.
+  by building its `next::Layer`s (`provide_minimum_log_level(level)`, `LogMetadataLive::layer()`,
+  `provide_composite_logger(backend)`) on the thread that runs the program, e.g.
+  `program.provide_layer(LogMetadataLive::layer().merge(provide_composite_logger(backend)))`.
+  `EffectLoggerLive::layer()` provides the `EffectLogger` capability itself.
 - Fiber-scoped minimum level (`with_minimum_log_level`), annotations (`annotate_logs`) and log spans
   (`with_log_span`).
 - Pluggable backends: `TracingLogBackend`, `JsonLogBackend`, `StructuredLogBackend` and
