@@ -13,6 +13,7 @@
 
 pub mod capability;
 pub mod compat;
+pub mod compute;
 pub mod concurrency;
 pub mod coordination;
 pub mod kernel;
@@ -31,6 +32,8 @@ pub mod streaming;
 pub mod testing;
 
 pub use capability::*;
+#[allow(unused_imports)] // filled by c-fabric-scheduler
+pub use compute::*;
 pub use concurrency::*;
 #[allow(unused_imports)] // filled by c-coordination
 pub use coordination::*;
