@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use id_effect::streaming::chunk::Chunk;
+use id_effect::Chunk;
 
 /// A mutex-backed double-ended list.
 pub struct MutableList<A> {

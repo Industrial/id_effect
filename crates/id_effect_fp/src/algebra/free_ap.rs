@@ -4,7 +4,7 @@
 //! [`FreeAp::interpret`] runs independent [`FreeAp::Lift`] nodes sequentially; callers can
 //! swap in a parallel interpreter when effects commute.
 
-use id_effect::kernel::{Effect, succeed};
+use id_effect::next::{Effect, succeed};
 
 /// Free applicative over [`Effect<A, E, R>`].
 pub enum FreeAp<A, E, R>
@@ -18,7 +18,7 @@ where
   /// Lift a single effect into the free applicative.
   Lift(Effect<A, E, R>),
   /// Type-erased binary apply node.
-  Ap2(Box<dyn FnOnce() -> Effect<A, E, R>>),
+  Ap2(Box<dyn FnOnce() -> Effect<A, E, R> + Send>),
 }
 
 impl<A, E, R> std::fmt::Debug for FreeAp<A, E, R>
@@ -38,9 +38,9 @@ where
 
 impl<A, E, R> FreeAp<A, E, R>
 where
-  A: 'static,
-  E: 'static,
-  R: 'static,
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
 {
   /// Lift a pure value.
   #[inline]
@@ -58,8 +58,8 @@ where
   #[inline]
   pub fn ap2<B, C>(f: fn(B, C) -> A, fb: FreeAp<B, E, R>, fc: FreeAp<C, E, R>) -> Self
   where
-    B: 'static,
-    C: 'static,
+    B: Send + 'static,
+    C: Send + 'static,
   {
     Self::Ap2(Box::new(move || {
       fb.interpret()
@@ -71,7 +71,7 @@ where
   #[inline]
   pub fn map<B>(self, f: fn(A) -> B) -> FreeAp<B, E, R>
   where
-    B: 'static,
+    B: Send + 'static,
   {
     match self {
       Self::Pure(a) => FreeAp::Pure(f(a)),
@@ -92,7 +92,16 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::{Exit, pure, run_test};
+  use id_effect::Exit;
+  use id_effect::next::HNil;
+
+  fn pure(a: i32) -> Effect<i32, ()> {
+    succeed(a)
+  }
+
+  fn run_test(eff: Effect<i32, ()>, (): ()) -> Exit<i32, ()> {
+    eff.block_on()
+  }
 
   #[test]
   fn lift_interprets_directly() {
@@ -102,7 +111,7 @@ mod tests {
 
   #[test]
   fn pure_interprets_to_success() {
-    let exit: Exit<i32, ()> = run_test(FreeAp::<i32, (), ()>::pure(9).interpret(), ());
+    let exit: Exit<i32, ()> = run_test(FreeAp::<i32, (), HNil>::pure(9).interpret(), ());
     assert_eq!(exit, Exit::succeed(9));
   }
 
@@ -142,14 +151,14 @@ mod tests {
   #[test]
   fn debug_formats_all_variants() {
     assert_eq!(
-      format!("{:?}", FreeAp::<i32, (), ()>::pure(1)),
+      format!("{:?}", FreeAp::<i32, (), HNil>::pure(1)),
       r#"Pure("...")"#
     );
     assert_eq!(format!("{:?}", FreeAp::lift(pure(1))), r#"Lift("...")"#);
     let ap2 = FreeAp::ap2(
       |a: i32, b: i32| a + b,
-      FreeAp::<i32, (), ()>::pure(1),
-      FreeAp::<i32, (), ()>::pure(2),
+      FreeAp::<i32, (), HNil>::pure(1),
+      FreeAp::<i32, (), HNil>::pure(2),
     );
     assert_eq!(format!("{ap2:?}"), "Ap2(...)");
   }

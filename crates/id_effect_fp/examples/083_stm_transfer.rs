@@ -7,7 +7,8 @@
 //! Run: `cargo run -p id_effect_fp --example 083_stm_transfer`
 use std::thread;
 
-use id_effect::run_blocking;
+use id_effect::next::Effect;
+use id_effect::{Cause, Exit};
 use id_effect_fp::{Stm, TRef, commit};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,13 +49,11 @@ fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64) -> Stm<(), Tr
 
 /// Allocate a cell once, outside any transaction, so every thread shares it.
 fn account(id: u32, balance: u64) -> TRef<Account> {
-  run_blocking(commit(TRef::make(Account { id, balance })), ()).expect("cell")
+  run(commit(TRef::make(Account { id, balance }))).expect("cell")
 }
 
 fn balance(acct: &TRef<Account>) -> u64 {
-  run_blocking(commit(acct.read_stm::<()>()), ())
-    .expect("read")
-    .balance
+  run(commit(acct.read_stm::<()>())).expect("read").balance
 }
 
 fn main() {
@@ -67,7 +66,7 @@ fn main() {
     .map(|(from, to)| {
       thread::spawn(move || {
         for _ in 0..50 {
-          run_blocking(commit::<_, _, ()>(transfer(&from, &to, 1)), ()).expect("transfer");
+          run(commit(transfer(&from, &to, 1))).expect("transfer");
         }
       })
     })
@@ -78,15 +77,20 @@ fn main() {
   assert_eq!((balance(&a), balance(&b)), (100, 50));
 
   // A failed transaction writes nothing.
-  let r = run_blocking(commit::<_, _, ()>(transfer(&b, &a, 1_000)), ());
+  let r = run(commit(transfer(&b, &a, 1_000)));
   assert_eq!(r, Err(TransferError::InsufficientFunds));
   assert_eq!((balance(&a), balance(&b)), (100, 50));
 
-  let ids = [a, b].map(|acct| {
-    run_blocking(commit(acct.read_stm::<()>()), ())
-      .expect("read")
-      .id
-  });
+  let ids = [a, b].map(|acct| run(commit(acct.read_stm::<()>())).expect("read").id);
   println!("accounts {ids:?} balanced after 100 concurrent transfers");
   println!("083_stm_transfer ok");
+}
+
+/// Runs `eff` on the global next runtime: `Ok` on success, `Err` on a typed failure.
+fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(e)) => Err(e),
+    Exit::Failure(_) => panic!("effect died or was interrupted"),
+  }
 }

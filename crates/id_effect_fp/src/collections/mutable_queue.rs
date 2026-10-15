@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use id_effect::streaming::chunk::Chunk;
+use id_effect::Chunk;
 
 /// FIFO queue; bounded variant drops new items when full.
 pub struct MutableQueue<A> {
