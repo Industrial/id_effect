@@ -1,7 +1,7 @@
 //! Bridge to `crate::failure` (`Result<A, Cause<E>>` to and from `Exit`), `InterruptSignal` and
 //! `cause_from_panic`.
 //!
-//! Inside the kernel every step yields `Result<A, Cause<E>>` (the spike's `Exit` alias); the
+//! Inside the kernel every step yields `Result<A, Cause<E>>` (the prototype's `Exit` alias); the
 //! public run edges return the root [`Exit`] enum. `Cause`, `Defect` and `Exit` are the root
 //! `crate::failure` types (k-rebuild L1), so nothing here redefines them.
 

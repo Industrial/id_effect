@@ -137,7 +137,7 @@
 //!
 //! `a.merge(b)` needs `Concat<In_a, In_b>`: a capability both sides need appears twice in the
 //! merged `In`. The merged input is split back **positionally** ([`SplitAt`]), never by type
-//! search, so the duplicate is not ambiguous and needs no annotation (the spike's E0283). Every
+//! search, so the duplicate is not ambiguous and needs no annotation (the prototype's E0283). Every
 //! way of supplying the merged `In` from one environment (`provide_to`, `provide_merge`,
 //! `provide_layer`, `.build().provide_env(..)`) projects it with `Embed`, whose **sub**-list may
 //! repeat a capability: both positions receive the same `Arc`. Only `.provide::<T>(..)` on a

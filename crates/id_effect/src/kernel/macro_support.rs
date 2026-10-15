@@ -2,7 +2,7 @@
 //! `id_effect::__private`. Not API.
 //!
 //! - [`Lift`] with [`LiftNever`] / [`LiftFrom`]: error widening for `~` binds by autoref
-//!   specialisation (spike A `lib.rs:46-84`). `(&&Lift::new(e)).lift()` picks `LiftNever` for a
+//!   specialisation (the ADR 0011 prototype). `(&&Lift::new(e)).lift()` picks `LiftNever` for a
 //!   `Never` error (widens to anything) and `LiftFrom` otherwise (`E: From<E2>`).
 //! - [`bind_local`]: what `~expr` expands to inside `effect_local!`.
 //! - [`CapsChecked`]: the identity projection `caps!` wraps a de-duplicated list in when it

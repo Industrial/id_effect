@@ -49,7 +49,7 @@
 //! [`Effect::same_env`] wraps the helper's effect in [`SameEnv`], whose [`Bindable`] impl binds
 //! it over **exactly** the caller's environment (`Sub = R`, the `Arc` is shared, nothing is
 //! projected). That fixes the helper's `R` from the caller, so `~audit(msg).same_env()` needs no
-//! turbofish (spike A wrote `~audit::<SignupCaps, _>(..)`). The same works for an inline
+//! turbofish (the prototype wrote `~audit::<SignupCaps, _>(..)`). The same works for an inline
 //! `~need::<T>().map(..).same_env()`.
 //!
 //! ```

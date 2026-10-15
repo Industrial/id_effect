@@ -1,7 +1,7 @@
 //! `LocalEffect` (the opt-in `!Send` effect), `IntoLocal` and `.local()`.
 //!
 //! ADR 0011 D4: `LocalEffect<A, E, R>` is the `!Send` twin of [`Effect`] for `Rc`/`RefCell`
-//! code. Unlike the spike's thin async wrapper it has its own erased runloop (same shape as
+//! code. Unlike the prototype's thin async wrapper it has its own erased runloop (same shape as
 //! `kernel/runloop.rs`, with `!Send` boxes), so it gets the same semantics:
 //!
 //! - an inline `Ready` node (no allocation for ready values); anything else is an erased program;
