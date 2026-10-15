@@ -6,7 +6,7 @@ reference frameworks. Every release is re-scored against it. The plan of plans
 release proves its progress by re-running this method.
 
 - **Data:** `scorecard.json` (single source of truth: rows, competitor scores, id_effect scores per
-  version, evidence, tracks, targets).
+  version, evidence, tracks, targets, v2 checklists).
 - **Rendered view:** the published HTML matrix, `docs/scorecard/index.html`, generated from
   `scorecard.json` by `scripts/scorecard.sh --html` (CI checks it is up to date).
 - **Computation:** this document, §5. It must be reproducible with nothing but `scorecard.json`.
@@ -154,19 +154,61 @@ the tool's self-test fixture.
    indices table, the deltas against the previous version and against the targets, the rows that
    changed with their evidence, any regressions, and any misses with their carry-over.
 
-## 7. Method v2 (planned, `leaf-method-v2-checklists`)
+## 7. Method v2 (checklists)
 
-v1 is anchored judgment plus hard caps. v2 makes it mechanical: each row gets 4–8 **table-stakes
-checks**, phrased so a yes/no answer is objective (example for `sec.authn`: argon2 password hashing;
-server-side sessions with a persistent store; JWT verify/issue; OIDC with PKCE; MFA/TOTP; passkeys).
-The v2 score is:
+v1 is anchored judgment plus hard caps. v2 makes the row score mechanical.
+
+### 7.1 Data
+- **Checks.** Each row has 4–8 **table-stakes checks**, `rows[].checks: [{id, text}]`, phrased so a
+  yes/no answer is objective. An example for `sec.authn`: argon2 password hashing, server-side
+  sessions with a persistent store, JWT verify/issue, OIDC with PKCE, MFA/TOTP, passkeys. Check ids
+  are `<row id>#<n>`, unique within the row, and never reused.
+- **Level.** `rows[].v2.level` gives every framework one level per row: `absent`, `labs`,
+  `published`, `tested`, `documented` or `production`. id_effect has one level per version it has a
+  score for. Competitor levels come from the frozen snapshot (§4).
+- **Met.** `rows[].v2.met` lists the check ids that each framework meets, in the same shape as the
+  level. id_effect checks come from the repository at the release tag, and `rows[].v2.evidence`
+  maps each met check id to a path, symbol or test. Competitor checks are expert judgement from the
+  snapshot. Labs or third-party answers can meet a check; their level caps the score.
+- **Notes.** `rows[].v2.notes` is optional. It maps a framework id to a one-line reason why its v2
+  score is far from its v1 score.
+
+`scripts/scorecard.sh --validate` enforces this shape: 4–8 checks, known check ids only, an entry
+for every framework, and id_effect versions that match its scores.
+
+### 7.2 Score
+For a row with `n` checks, a framework at level `L` that meets `m` of them scores:
 
 ```
-s = clamp(1, cap(level), round(100 × checks_met / checks_total))
+s = clamp(1, cap(L), round(100 × m / n))
 ```
 
-`cap(level)` is taken from §3.2. Competitor columns are checked against the same lists. Moving to v2
-re-baselines every stored version, and reports show v1 and v2 side by side for one release.
+| Level | Meaning (at the scored tag) | cap(L) |
+|---|---|---|
+| `absent` | Capability absent from published crates | 9 |
+| `labs` | Only in `labs/`, `examples/` or an unpublished crate | 39 |
+| `published` | Published, but no test exercises it | 49 |
+| `tested` | Published and tested, with no book chapter or rustdoc guide | 69 |
+| `documented` | Published, tested, book chapter, runnable example and integration test | 89 |
+| `production` | All of the above, plus a production consumer or a reference app tested in CI | 100 |
+
+The caps are those of §3.2. `round` is half away from zero, computed in integers as
+`floor((200 × m + n) / (2 × n))`, so 12.5 becomes 13. `clamp` keeps the score in 1–100. Indices,
+ranks and KPIs then follow §5 unchanged.
+
+`scripts/scorecard.sh --method 2` scores `--version`, `--json` and `--diff` with v2 for id_effect and
+for every competitor. `--method 1`, the default, is v1. `scripts/scorecard.sh --method-compare`
+writes `REPORT-method-v2.md`, and CI checks that it is up to date. The report shows, for each
+measured version:
+- v1 and v2 indices for all 11 frameworks;
+- every id_effect row, v1 beside v2;
+- every id_effect score and v1-leader score that moves by more than 15, with its note;
+- every **v1 cap violation**: an id_effect v1 score above the cap of its v2 level.
+
+### 7.3 Status
+v2 is reported alongside v1; v1 remains primary until the owner accepts `REPORT-method-v2.md` and the
+cap-violation list is adjudicated. Then the method version becomes 2.0 and all stored versions are
+re-based.
 
 ## 8. Change log
 
@@ -174,3 +216,4 @@ re-baselines every stored version, and reports show v1 and v2 side by side for o
 |---|---|---|
 | 2026-10-14 | 1.0 | Initial 82 rows × 11 frameworks; 0.6.0 scored. |
 | 2026-10-15 | 1.0 | 0.7.0 re-scored (blind researcher passes on core and platform); `targets`, `track`, `stance` added; weights defined. Live-reload agent proposal 12 kept at 15, migrations proposal 6 kept at 3, and track record kept at 8, because under §3.1 the evidence had not changed (example-only or unmeasured). Compile-loop kept at 38 until measured. |
+| 2026-10-15 | 1.0 | v2 checklists added (reported alongside). |

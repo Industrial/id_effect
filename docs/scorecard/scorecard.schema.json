@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "scorecard.schema.json",
 	"title": "id_effect platform scorecard",
-	"description": "Structure of docs/scorecard/scorecard.json (METHOD.md). scripts/scorecard.sh --validate enforces this schema with jq, plus the cross references a schema cannot express: row ids are unique, every row's group is a groups[].id, every row's track is a tracks key, every group has at least one row, frameworks[0] is id_effect and competitor_order lists the other frameworks in order.",
+	"description": "Structure of docs/scorecard/scorecard.json (METHOD.md). scripts/scorecard.sh --validate enforces this schema with jq, plus the cross references a schema cannot express: row ids are unique, every row's group is a groups[].id, every row's track is a tracks key, every group has at least one row, frameworks[0] is id_effect and competitor_order lists the other frameworks in order; on a row with checks (method v2, METHOD.md §7), check ids are unique and start with \"<row id>#\", v2.level and v2.met cover exactly the frameworks (id_effect: exactly its score versions), and v2.met, v2.evidence and v2.notes name only known check ids and frameworks.",
 	"type": "object",
 	"required": [
 		"schema_version",
@@ -142,8 +142,80 @@
 					"description": "Optional. Version (x.y.z) -> why the id_effect score may drop by 5 or more at that release (scorecard.sh --diff; PLAN-OF-PLANS §7.3).",
 					"propertyNames": { "$ref": "#/$defs/semver" },
 					"additionalProperties": { "type": "string", "minLength": 1 }
+				},
+				"checks": {
+					"type": "array",
+					"description": "Method v2 table-stakes checks (METHOD.md §7). Ids are unique and start with \"<row id>#\". A row with checks needs v2.",
+					"minItems": 4,
+					"maxItems": 8,
+					"items": {
+						"type": "object",
+						"required": ["id", "text"],
+						"properties": {
+							"id": {
+								"type": "string",
+								"pattern": "^[a-z]+\\.[a-z0-9-]+#[0-9]+$"
+							},
+							"text": { "type": "string", "minLength": 1 }
+						}
+					}
+				},
+				"v2": {
+					"type": "object",
+					"description": "Method v2 assessment (METHOD.md §7). level and met have an entry for every framework id; id_effect's entries are objects keyed by exactly the versions of the row's id_effect scores. met lists only ids from checks.",
+					"required": ["level", "met"],
+					"properties": {
+						"level": {
+							"type": "object",
+							"properties": {
+								"id_effect": {
+									"type": "object",
+									"propertyNames": { "$ref": "#/$defs/semver" },
+									"additionalProperties": { "$ref": "#/$defs/level" }
+								}
+							},
+							"additionalProperties": { "$ref": "#/$defs/level" }
+						},
+						"met": {
+							"type": "object",
+							"properties": {
+								"id_effect": {
+									"type": "object",
+									"propertyNames": { "$ref": "#/$defs/semver" },
+									"additionalProperties": { "$ref": "#/$defs/checkIds" }
+								}
+							},
+							"additionalProperties": { "$ref": "#/$defs/checkIds" }
+						},
+						"evidence": {
+							"type": "object",
+							"description": "Check id -> where id_effect meets it (path, symbol or test).",
+							"additionalProperties": { "type": "string", "minLength": 1 }
+						},
+						"notes": {
+							"type": "object",
+							"description": "Optional. Framework id -> why its v2 score differs from v1 (REPORT-method-v2.md).",
+							"additionalProperties": { "type": "string", "minLength": 1 }
+						}
+					}
 				}
 			}
+		},
+		"level": {
+			"description": "Method v2 maturity level; its cap is METHOD.md §3.2 (absent 9, labs 39, published 49, tested 69, documented 89, production 100).",
+			"enum": [
+				"absent",
+				"labs",
+				"published",
+				"tested",
+				"documented",
+				"production"
+			]
+		},
+		"checkIds": {
+			"type": "array",
+			"uniqueItems": true,
+			"items": { "type": "string" }
 		}
 	}
 }

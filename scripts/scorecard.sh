@@ -7,10 +7,15 @@
 #        bash scripts/scorecard.sh [--file FILE] --json V [--write]
 #        bash scripts/scorecard.sh [--file FILE] --diff A B | --compare-targets V
 #        bash scripts/scorecard.sh [--file FILE] --report V [--prev P] | --html
+#        bash scripts/scorecard.sh [--file FILE] --method 2 --version V | --json V | --diff A B
+#        bash scripts/scorecard.sh [--file FILE] --method-compare
 #        bash scripts/scorecard.sh --validate --self-test
 # FILE defaults to docs/scorecard/scorecard.json. --version V scores id_effect with the scores
 # measured at V (planned scores, §5.1, where V has none); --targets V always uses planned scores.
 # Both print U, E and RT with ranks, then ≥80, <40, leader and median gap, in the §5.2 layout.
+# --method 2 replaces every measured score by its checklist score (METHOD §7) before §5 runs; it
+# needs a measured V, and checks on every row. --method 1, the default, is the primary method.
+# --method-compare writes docs/scorecard/REPORT-method-v2.md: v1 beside v2 at each measured version.
 # --json V prints the --version result as JSON; --write stores it in docs/scorecard/results/vV.json.
 # --diff A B lists the rows whose measured id_effect score changed from A to B; it FAILs on a drop
 # of 5 or more unless the row has an adr note for B. --compare-targets V sets the indices measured
@@ -45,6 +50,58 @@ VALIDATE_JQ='
 def semver: type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$");
 def score: type == "number" and . == floor and . >= 1 and . <= 100;
 def stances: "build", "promote", "integrate", "maintain", "non-goal", "partial-non-goal";
+def level: . as $l | any("absent", "labs", "published", "tested", "documented", "production"; . == $l);
+# METHOD §7 on a row with checks: 4–8 checks with unique "<row id>#" ids; a v2 level and met list
+# for every framework (id_effect: one per version it has a score for); only known check ids.
+def known($ids): . as $c | any($ids[]; . == $c);
+def met_list($at; $where; $ids):
+  if type != "array" then "\($at): \($where) must be an array of check ids" else
+    (.[] | select(known($ids) | not) | "\($at): \($where) has unknown check id \(tojson)"),
+    (group_by(.)[] | select(length > 1) | "\($at): \($where) lists \(.[0] | tojson) twice")
+  end;
+def v2rules($at; $fids):
+  . as $r
+  | ([.checks | arrays | .[] | objects | .id]) as $ids
+  | (($r.id_effect | objects | keys) // []) as $vs
+  | (select((.checks | type) != "array" or (.checks | length) < 4 or (.checks | length) > 8)
+      | "\($at): checks must be an array of 4 to 8 entries"),
+    (.checks | arrays | .[] | select((.id | type) != "string" or (.text | type) != "string" or .text == "")
+      | "\($at): every check needs a string id and a non-empty text"),
+    ($ids | group_by(.)[] | select(length > 1) | "\($at): duplicate check id \(.[0] | tojson)"),
+    ($ids[] | strings | select(startswith("\($r.id)#") | not)
+      | "\($at): check id \(tojson) must start with \("\($r.id)#" | tojson)"),
+    (select((.v2 | type) != "object" or (.v2.level | type) != "object" or (.v2.met | type) != "object")
+      | "\($at): checks need a v2 object with level and met objects"),
+    (.v2 | objects
+      | (("level", "met") as $k | .[$k] | objects
+          | (($fids - keys)[] | "\($at): v2.\($k) has no entry for \(tojson)"),
+            ((keys - $fids)[] | "\($at): v2.\($k) has unknown framework \(tojson)")),
+        (("level", "met") as $k | .[$k] | objects | .id_effect
+          | select(type != "object" or keys != $vs)
+          | "\($at): v2.\($k).id_effect must have one entry per id_effect version \($vs | tojson)"),
+        (.level | objects | to_entries[]
+          | if .key == "id_effect" then
+              .value | objects | to_entries[] | select(.value | level | not)
+              | "\($at): v2.level.id_effect[\(.key)] = \(.value | tojson) is not a level"
+            else
+              select(.value | level | not) | "\($at): v2.level.\(.key) = \(.value | tojson) is not a level"
+            end),
+        (.met | objects | to_entries[]
+          | if .key == "id_effect" then
+              .value | objects | to_entries[] | .key as $v
+              | .value | met_list($at; "v2.met.id_effect[\($v)]"; $ids)
+            else
+              .key as $f | .value | met_list($at; "v2.met.\($f)"; $ids)
+            end),
+        (("evidence", "notes") as $k | .[$k]
+          | (select(. != null and type != "object") | "\($at): v2.\($k) must be an object"),
+            (objects | to_entries[]
+              | (select($k == "evidence" and (.key | known($ids) | not))
+                  | "\($at): v2.evidence key \(.key | tojson) is not a check id"),
+                (select($k == "notes" and (.key | known($fids) | not))
+                  | "\($at): v2.notes key \(.key | tojson) is not a framework"),
+                (select((.value | type) != "string" or .value == "")
+                  | "\($at): v2.\($k)[\(.key | tojson)] must be a non-empty string"))));
 def shape:
   (("frameworks", "groups", "rows", "competitor_order") as $k
     | select((.[$k] | type) != "array") | "\($k): must be an array"),
@@ -87,7 +144,9 @@ def rules:
         (.adr | objects | to_entries[]
           | (select(.key | semver | not) | "\($at): adr key \(.key | tojson) is not x.y.z"),
             (select((.value | type) != "string" or .value == "")
-              | "\($at): adr[\(.key)] must be a non-empty string")));
+              | "\($at): adr[\(.key)] must be a non-empty string")),
+        (select(has("v2") and (has("checks") | not)) | "\($at): v2 needs checks"),
+        (select(has("checks")) | v2rules($at; $fids)));
 (select(type != "object") | "top level: must be an object"),
 (objects | [shape] as $e | $e[], (select($e == []) | rules))
 '
@@ -109,6 +168,19 @@ def measured:
   . as $d | [$d.rows[].id_effect | keys[]] | unique
   | map(select(. as $v | all($d.rows[]; .id_effect[$v] != null))) | sort_by(vkey);
 def target_versions: ([.rows[].targets | keys[]] | unique) - measured | sort_by(vkey);
+# METHOD §7: s = clamp(1, cap(level), round(100 × met / checks)), the caps of §3.2. round is half
+# away from zero, done in integers: floor((200 × met + checks) / (2 × checks)).
+def cap: {absent: 9, labs: 39, published: 49, tested: 69, documented: 89, production: 100}[.];
+def v2score($level; $met; $n):
+  [1, ([($level | cap), ((200 * ($met | length) + $n) / (2 * $n) | floor)] | min)] | max;
+# The scorecard with every measured id_effect score and every competitor score replaced by its v2
+# score (--method 2). targets stay v1, so only measured versions are meaningful.
+def v2doc:
+  .competitor_order as $order
+  | .method_version = "v2 checklists"
+  | .rows |= map((.checks | length) as $n | .v2 as $w
+      | .id_effect |= with_entries(.value = v2score($w.level.id_effect[.key]; $w.met.id_effect[.key]; $n))
+      | .competitors = [$order[] as $f | v2score($w.level[$f]; $w.met[$f]; $n)]);
 # Markdown table cell text.
 def md: gsub("\\\\"; "\\\\") | gsub("\\|"; "\\|") | gsub("<"; "\\<") | gsub("\\*"; "\\*");
 '
@@ -228,6 +300,17 @@ id_rows() {
 
 # versions FILE KIND (measured|target_versions): one version per line, ascending.
 versions() { jq -r "$SCORE_JQ$2"'[]' "$1"; }
+
+# rebase FILE: FILE scored by method 2 (v2doc), written to the scratch directory; prints its path.
+# Exit 2 unless every row of FILE has checks.
+rebase() {
+    jq -e 'all(.rows[]; has("checks"))' "$1" >/dev/null || {
+        echo "scorecard: method 2 needs checks on every row of ${1#"$ROOT"/}" >&2
+        exit 2
+    }
+    jq "$SCORE_JQ"'v2doc' "$1" >"$SCRATCH/method2.json"
+    printf '%s\n' "$SCRATCH/method2.json"
+}
 
 # Exit 2 unless every row of FILE has a measured id_effect score at V.
 require_measured() {
@@ -507,6 +590,118 @@ html() {
     done <"$tpl"
 }
 
+# The row sections of REPORT-method-v2.md ($part: rows, gaps or caps) from the scorecard, at the
+# measured versions $vs: each id_effect row v1 beside v2; every id_effect score and every v1 leader
+# (the best competitor in v1, ties to the first in competitor_order) that moves by more than 15;
+# every id_effect v1 score above the cap of its v2 level (METHOD §3.2).
+# shellcheck disable=SC2016 # jq program, not shell expansions
+METHOD_ROWS_JQ="$SCORE_JQ"'
+def signed: if . > 0 then "+\(.)" else tostring end;
+def v2cell: "\(.v2) (\(.level), \(.met)/\(.n))";
+. as $d
+| ([$d.frameworks[] | {key: .id, value: .name}] | from_entries) as $names
+| [$d.rows[] | . as $r | (.checks | length) as $n | .v2 as $w
+    | {id, name, n: $n, notes: ($w.notes // {}),
+       ver: [$vs[] as $v | {at: $v, v1: $r.id_effect[$v], v2: v2score($w.level.id_effect[$v]; $w.met.id_effect[$v]; $n),
+               level: $w.level.id_effect[$v], met: ($w.met.id_effect[$v] | length), n: $n}],
+       leader: (($r.competitors | max) as $top
+         | $d.competitor_order[[range(0; 10) | select($r.competitors[.] == $top)] | first] as $f
+         | {f: $f, at: "snapshot \($d.competitor_snapshot.date)", v1: $top,
+            v2: v2score($w.level[$f]; $w.met[$f]; $n), level: $w.level[$f], met: ($w.met[$f] | length), n: $n})}]
+| if $part == "rows" then
+    "| Row | Checks | \([$vs[] | "\(.) v1 | \(.) v2 (level, met) | Δ"] | join(" | ")) |",
+    "|---|---|\([$vs[] | "---|---|---|"] | join(""))",
+    (.[] | "| `\(.id)` | \(.n) | \([.ver[] | "\(.v1) | \(v2cell) | \(.v2 - .v1 | signed)"] | join(" | ")) |")
+  elif $part == "gaps" then
+    [.[] | . as $row
+      | ((.ver[] | {f: "id_effect"} + .), (.leader | {f} + .))
+      | select((.v2 - .v1 | fabs) > 15) | . + {id: $row.id, note: $row.notes[.f]}]
+    | if length == 0 then "No id_effect score or v1 leader score moves by more than 15." else
+        "| Row | Framework | Scored at | v1 | v2 (level, met) | Δ | Explanation |",
+        "|---|---|---|---|---|---|---|",
+        (.[] | "| `\(.id)` | \($names[.f]) | \(.at) | \(.v1) | \(v2cell) | \(.v2 - .v1 | signed) | \(.note // "No note recorded." | md) |"),
+        "",
+        "\(length) scores move by more than 15: \(map(select(.f == "id_effect")) | length) of id_effect, \(map(select(.f != "id_effect")) | length) of v1 leaders."
+      end
+  else
+    [.[] | . as $row | .ver[] | select(.v1 > (.level | cap))
+      | {id: $row.id, name: $row.name, at, v1, level, cap: (.level | cap), v2}]
+    | if length == 0 then "No id_effect v1 score exceeds the cap of its v2 level." else
+        "| Row | Capability | Version | v1 | v2 level | Cap | v2 |",
+        "|---|---|---|---|---|---|---|",
+        (.[] | "| `\(.id)` | \(.name | md) | \(.at) | \(.v1) | \(.level) | \(.cap) | \(.v2) |"),
+        "",
+        "\(length) v1 scores on \(map(.id) | unique | length) rows exceed the cap of their v2 level."
+      end
+  end
+'
+
+# method_md V1 V2 (compute_raw output for one version, by method 1 and 2): the indices of every
+# framework, v1 beside v2, then the id_effect KPIs. Frameworks in the v1 display order.
+method_md() {
+    awk -F'\t' '
+        function d1(x, s) { s = sprintf("%+.1f", x); return s == "-0.0" ? "+0.0" : s }
+        FNR == 1 { f++ }
+        $1 == "fw" {
+            if (f == 1) { pos[$10] = $2; name[$2] = $3; n++ }
+            for (i = 4; i <= 6; i++) { x[f, $2, i] = $i + 0; r[f, $2, i] = $(i + 3) + 0 }
+        }
+        $1 == "kpi" { for (i = 2; i <= 5; i++) k[f, i] = $i + 0 }
+        END {
+            print "| Framework | U v1 (rank) | U v2 (rank) | Δ U | E v1 (rank) | E v2 (rank) | Δ E | RT v1 (rank) | RT v2 (rank) | Δ RT |"
+            print "|---|---|---|---|---|---|---|---|---|---|"
+            for (j = 0; j < n; j++) {
+                c = pos[j]
+                line = "| " name[c]
+                for (i = 4; i <= 6; i++)
+                    line = line sprintf(" | %.1f (#%d) | %.1f (#%d) | %s", x[1, c, i], r[1, c, i], x[2, c, i], r[2, c, i], d1(x[2, c, i] - x[1, c, i]))
+                print line " |"
+            }
+            print ""
+            print "| id_effect KPI | v1 | v2 | Δ |"
+            print "|---|---|---|---|"
+            split("≥80|<40|leader|median gap", kpi, "|")
+            for (i = 2; i <= 5; i++) printf "| %s | %d | %d | %+d |\n", kpi[i - 1], k[1, i], k[2, i], k[2, i] - k[1, i]
+        }' <(printf '%s\n' "$1") <(printf '%s\n' "$2")
+}
+
+# method_compare FILE: docs/scorecard/REPORT-method-v2.md (METHOD §7) on stdout.
+# shellcheck disable=SC2329 # invoked through generate
+method_compare() {
+    local file="$1" v2 vs v
+    local -a list=()
+    v2="$(rebase "$file")"
+    vs="$(jq -c "$SCORE_JQ"'measured' "$file")"
+    mapfile -t list < <(jq -r '.[]' <<<"$vs")
+
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    jq -r --arg src "${file#"$ROOT"/}" '
+        "# Scorecard method v2 beside v1",
+        "",
+        "Generated by `bash scripts/scorecard.sh --method-compare` from `\($src)` (METHOD.md v\(.method_version) §7, competitor snapshot \(.competitor_snapshot.date)). Do not edit it by hand: change the data and regenerate.",
+        "",
+        "v1 is anchored judgment with the hard caps of METHOD §3.2. v2 scores each row from its 4 to 8 table-stakes checks: s = clamp(1, cap(level), round(100 × met / checks)), where round is half away from zero and cap(level) is absent 9, labs 39, published 49, tested 69, documented 89, production 100. Both go through the same §5 index pipeline. v2 is reported alongside v1; v1 remains primary until the owner accepts this report and the cap violations below are adjudicated.",
+        "",
+        "Every Δ is v2 − v1. Index Δs are computed from unrounded values (METHOD §5 step 7), so they can differ by 0.1 from the difference of the rounded values shown."' "$file"
+    for v in "${list[@]}"; do
+        printf '\n## Indices at %s\n\n' "$v"
+        method_md "$(compute_raw "$file" "$v" version)" "$(compute_raw "$v2" "$v" version)"
+    done
+
+    printf '\n## id_effect rows, v1 beside v2\n\n'
+    jq -r --argjson vs "$vs" --arg part rows "$METHOD_ROWS_JQ" "$file"
+
+    printf '\n## Rows where |v1 − v2| > 15\n\n'
+    echo "Each id_effect score, and the score of each row's v1 leader (the best competitor in v1; ties go to the first in \`competitor_order\`), whose v2 score differs from v1 by more than 15. The explanation is the row's \`v2.notes\` entry for that framework."
+    echo
+    jq -r --argjson vs "$vs" --arg part gaps "$METHOD_ROWS_JQ" "$file"
+
+    printf '\n## v1 cap violations\n\n'
+    echo "Each id_effect v1 score above the cap that METHOD §3.2 sets for its v2 level. Listed only: the v1 scores stay as they are until the owner adjudicates each one."
+    echo
+    jq -r --argjson vs "$vs" --arg part caps "$METHOD_ROWS_JQ" "$file"
+}
+
 # generate DEST CMD...: run CMD into the scratch directory, then copy the result over DEST whole.
 generate() {
     local dest="$1"
@@ -583,6 +778,8 @@ dup-id duplicate id "core.a"
 bad-score competitors[3] = 101 is not an integer in 1..100
 unknown-group unknown group "nope"
 bad-adr adr key "next" is not x.y.z
+bad-v2-check-ref v2.met.a has unknown check id "core.a#9"
+bad-v2-level v2.level.b = "beta" is not a level
 EOF
 
     # Ties take the better rank (§5 step 5); id_effect also ties the best competitor on row core.b,
@@ -642,6 +839,22 @@ regression 1
 regression-with-adr 0
 EOF
 
+    # Method 2 (METHOD §7): the row scores of valid/v2.json (see its measures) give id_effect
+    # 13 and 39, U 26.0; competitors e to j average 81.5, a 31.5 and c 42.0 are ahead too.
+    file="$FIXTURES/valid/v2.json"
+    if out="$(check "$file" 2>&1)"; then
+        echo "self-test: ok   validate fixture valid/v2"
+    else
+        echo "self-test: FAIL validate fixture valid/v2"
+        printf '%s\n' "$out" | sed 's/^/    /'
+        failed=1
+    fi
+    # shellcheck disable=SC2016 # jq program, not shell expansions
+    expect "fixture valid/v2 method 2 row scores" "13 38 69 9 1 63 63 63 63 63 63 | 39 25 89 75 50 100 100 100 100 100 100" \
+        "$(jq -r "$SCORE_JQ"'v2doc | [.rows[] | [.id_effect["0.1.0"]] + .competitors | map(tostring) | join(" ")] | join(" | ")' "$file")"
+    expect "fixture valid/v2 method 2 indices" "| 0.1.0 measured | 26.0 | 26.0 (#10) | 26.0 (#10) | 0 | 2 | 0 | 61 |" \
+        "$(id_rows "$(rebase "$file")" version:0.1.0)"
+
     # --html and --report must be byte-identical across runs (CI diffs the committed files).
     file="$DIR/scorecard.json"
     html "$file" >"$SCRATCH/a.html"
@@ -660,6 +873,14 @@ EOF
         echo "self-test: FAIL --report 0.7.0 differs between two runs"
         failed=1
     fi
+    method_compare "$file" >"$SCRATCH/a-v2.md"
+    method_compare "$file" >"$SCRATCH/b-v2.md"
+    if cmp -s "$SCRATCH/a-v2.md" "$SCRATCH/b-v2.md"; then
+        echo "self-test: ok   --method-compare deterministic"
+    else
+        echo "self-test: FAIL --method-compare differs between two runs"
+        failed=1
+    fi
 
     ((failed == 0)) || { echo "scorecard: self-test FAILED"; exit 1; }
     echo "scorecard: self-test passed"
@@ -668,10 +889,16 @@ EOF
 file="$DIR/scorecard.json"
 write=0
 prev=""
+method=1
 actions=()
 while (($#)); do
     case "$1" in
-        --validate | --self-test | --html) actions+=("${1#--}"); shift ;;
+        --validate | --self-test | --html | --method-compare) actions+=("${1#--}"); shift ;;
+        --method)
+            [[ "${2:-}" =~ ^[12]$ ]] || { echo "scorecard: --method needs 1 or 2" >&2; exit 2; }
+            method="$2"
+            shift 2
+            ;;
         --version | --targets | --json | --compare-targets | --report | --prev)
             [[ "${2:-}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "scorecard: $1 needs a version x.y.z" >&2; exit 2; }
             if [[ "$1" == --prev ]]; then prev="$2"; else actions+=("${1#--}:$2"); fi
@@ -702,6 +929,15 @@ if [[ -n "$prev" && " ${actions[*]} " != *" report:"* ]]; then
     echo "scorecard: --prev needs --report" >&2
     exit 2
 fi
+if ((method == 2)); then
+    for action in "${actions[@]}"; do
+        [[ "$action" == validate || "$action" == version:* || "$action" == json:* || "$action" == diff:* ]] || {
+            echo "scorecard: --method 2 works with --version, --json and --diff only" >&2
+            exit 2
+        }
+    done
+    ((write == 0)) || { echo "scorecard: --write stores method 1 results only" >&2; exit 2; }
+fi
 
 # --diff and --compare-targets report every result before a missed gate makes the exit status 1.
 status=0
@@ -714,11 +950,21 @@ for action in "${actions[@]}"; do
         self-test) self_test ;;
         version:* | targets:*)
             check "$file"
-            compute "$file" "${action#*:}" "${action%%:*}" | render "${action#*:}" all
+            scored="$file"
+            if ((method == 2)); then
+                require_measured "$file" "${action#*:}"
+                scored="$(rebase "$file")"
+            fi
+            compute "$scored" "${action#*:}" "${action%%:*}" | render "${action#*:}" all
             ;;
         json:*)
             check "$file"
-            out="$(compute "$file" "${action#*:}" version | render_json "${action#*:}")"
+            scored="$file"
+            if ((method == 2)); then
+                require_measured "$file" "${action#*:}"
+                scored="$(rebase "$file")"
+            fi
+            out="$(compute "$scored" "${action#*:}" version | render_json "${action#*:}")"
             if ((write)); then
                 mkdir -p "$DIR/results"
                 printf '%s\n' "$out" >"$DIR/results/v${action#*:}.json"
@@ -734,11 +980,17 @@ for action in "${actions[@]}"; do
             a="${a%%:*}"
             require_measured "$file" "$a"
             require_measured "$file" "$b"
-            printf 'scorecard: diff %s → %s (measured id_effect scores, %s)\n\n' "$a" "$b" "${file#"$ROOT"/}"
-            changes "$file" "$a" "$b" table
+            scored="$file"
+            kind="measured id_effect scores"
+            if ((method == 2)); then
+                scored="$(rebase "$file")"
+                kind+=" by method 2"
+            fi
+            printf 'scorecard: diff %s → %s (%s, %s)\n\n' "$a" "$b" "$kind" "${file#"$ROOT"/}"
+            changes "$scored" "$a" "$b" table
             echo
-            changes "$file" "$a" "$b" gate
-            out="$(changes "$file" "$a" "$b" fails)"
+            changes "$scored" "$a" "$b" gate
+            out="$(changes "$scored" "$a" "$b" fails)"
             if [[ -n "$out" ]]; then
                 while IFS= read -r line; do echo "scorecard: FAIL ${file#"$ROOT"/}: $line" >&2; done <<<"$out"
                 status=1
@@ -776,6 +1028,11 @@ for action in "${actions[@]}"; do
             check "$file"
             generate "$DIR/index.html" html "$file"
             echo "scorecard: wrote docs/scorecard/index.html"
+            ;;
+        method-compare)
+            check "$file"
+            generate "$DIR/REPORT-method-v2.md" method_compare "$file"
+            echo "scorecard: wrote docs/scorecard/REPORT-method-v2.md"
             ;;
     esac
 done
