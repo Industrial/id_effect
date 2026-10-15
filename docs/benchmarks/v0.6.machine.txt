@@ -1,0 +1,11 @@
+cpu: AMD Ryzen 9 7950X 16-Core Processor
+cpus: 32
+governor: performance
+rustc: rustc 1.99.0-nightly (af3d95584 2026-07-09)
+kernel: Linux 6.18.55
+sha: 4894861156a3e4057ca8e1abba3119786defae43
+baseline: v0.6
+ref: bench/v0.6 = v0.6.0 (68d4b02494ffce8fb4b770f37f6a8b68adda552a) + bench hunks of 135ab6969af9d137a76c50be8a81949f86b435ad, a18c4c5d3b52a83f2469235f5f8d3c670d85c437, 2bcd932c3487c0830d8d6a9584f84f2590f63471
+tree: 1eca549f9b2cd0bf7dbea9a12c9b1542d84f7dc0
+target_dir: .tmp/target-bench-v06 (dedicated)
+criterion: 0.8.2

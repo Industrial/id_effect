@@ -1,0 +1,133 @@
+{
+	"schema": 1,
+	"baseline": "v0.6",
+	"sha": "4894861156a3e4057ca8e1abba3119786defae43",
+	"created": "2026-10-15T00:45:17Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"coord/channel_spsc_10k": {
+			"mean": 1527059.0936963153,
+			"median": 1547542.3593073594,
+			"std_dev": 82512.82634250732
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 920394.0619338223,
+			"median": 893694.8323170731,
+			"std_dev": 68839.63596365911
+		},
+		"gate/async_bind_64": {
+			"mean": 1597.970470364481,
+			"median": 1586.5861292711459,
+			"std_dev": 59.74887366390894
+		},
+		"gate/axum_request_caps": {
+			"mean": 53641.936545484234,
+			"median": 53392.677827380954,
+			"std_dev": 1424.5380885747234
+		},
+		"gate/axum_request_oneshot": {
+			"mean": 56644.70926507886,
+			"median": 56165.98077717677,
+			"std_dev": 3513.12948518502
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 481549.2802807767,
+			"median": 479839.1450617284,
+			"std_dev": 7137.182936563985
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 709445350.2,
+			"median": 707127710.5,
+			"std_dev": 14064968.088131895
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 6758148885.8,
+			"median": 6756026540.5,
+			"std_dev": 54793831.89136801
+		},
+		"gate/spawn_join_10k": {
+			"mean": 6948022730.8,
+			"median": 6932907151.5,
+			"std_dev": 83360270.38172795
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 91.60655747488791,
+			"median": 91.53142309063509,
+			"std_dev": 0.9833431528619461
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 68.05416434427869,
+			"median": 67.94795195219612,
+			"std_dev": 0.5148321204011486
+		},
+		"phase0/bench_env_insert_overhead": {
+			"mean": 36.42895228953313,
+			"median": 36.3538742314005,
+			"std_dev": 0.3738388264578048
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 105.28082436321996,
+			"median": 104.43481028513543,
+			"std_dev": 5.050474621063914
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 4105.923049232341,
+			"median": 4081.7622397338073,
+			"std_dev": 127.57821581107683
+		},
+		"stream/map_effect_1k": {
+			"mean": 45110776.345,
+			"median": 45136261.25,
+			"std_dev": 576899.1247383393
+		},
+		"stream/pull_map_10k": {
+			"mean": 17807.46238443191,
+			"median": 17714.74290617849,
+			"std_dev": 322.3484219806764
+		}
+	},
+	"sources": {
+		"ref": "bench/v0.6",
+		"commit": "4894861156a3e4057ca8e1abba3119786defae43",
+		"tree": "1eca549f9b2cd0bf7dbea9a12c9b1542d84f7dc0",
+		"base": {
+			"tag": "v0.6.0",
+			"commit": "68d4b02494ffce8fb4b770f37f6a8b68adda552a"
+		},
+		"applied": [
+			{
+				"commit": "135ab6969af9d137a76c50be8a81949f86b435ad",
+				"leaf": "b0-bench-core",
+				"paths": [
+					"crates/id_effect/benches/gate_core.rs",
+					"crates/id_effect/Cargo.toml"
+				]
+			},
+			{
+				"commit": "a18c4c5d3b52a83f2469235f5f8d3c670d85c437",
+				"leaf": "b0-bench-fiber",
+				"paths": [
+					"crates/id_effect_tokio/benches/gate_fiber.rs",
+					"crates/id_effect_tokio/Cargo.toml"
+				]
+			},
+			{
+				"commit": "2bcd932c3487c0830d8d6a9584f84f2590f63471",
+				"leaf": "b0-bench-axum",
+				"paths": [
+					"crates/id_effect_axum/benches/gate_request.rs",
+					"crates/id_effect_axum/Cargo.toml"
+				]
+			}
+		],
+		"src_diff_vs_tag": "empty (git diff v0.6.0 bench/v0.6 -- crates/*/src)",
+		"export": "git archive bench/v0.6 into .tmp/bench-v0.6 (no worktree); Cargo.lock resolved fresh at build time",
+		"criterion": "0.8.2"
+	}
+}
