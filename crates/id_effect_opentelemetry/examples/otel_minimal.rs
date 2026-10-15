@@ -1,25 +1,46 @@
-//! Minimal example: in-memory OTEL trace export + `with_span_otel`.
+//! Minimal example: in-memory OTEL trace and metric export from a `next` effect.
 //!
 //! Run: `cargo run -p id_effect_opentelemetry --example otel_minimal`
 
-use id_effect::{TracingConfig, install_tracing_layer, run_blocking, succeed};
+use id_effect::Exit;
+use id_effect::next::{Effect, MetricRegistry, succeed};
 use id_effect_opentelemetry::{
-  sdk_tracer_provider_with_in_memory_exporter, trace_subscriber_for_provider, with_span_otel,
+  OtelSpanHook, bridge_metrics, sdk_meter_provider_with_in_memory_exporter,
+  sdk_tracer_provider_with_in_memory_exporter,
 };
+use opentelemetry::metrics::MeterProvider as _;
+use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 
 fn main() {
-  let exporter = InMemorySpanExporter::default();
-  let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
-  let subscriber = trace_subscriber_for_provider(&provider, true, None);
-  let _guard = tracing::subscriber::set_default(subscriber);
+  let span_exporter = InMemorySpanExporter::default();
+  let tracer_provider = sdk_tracer_provider_with_in_memory_exporter(&span_exporter);
+  let metric_exporter = InMemoryMetricExporter::default();
+  let meter_provider = sdk_meter_provider_with_in_memory_exporter(&metric_exporter);
 
-  let _ = run_blocking(install_tracing_layer(TracingConfig::enabled()), ());
-  let eff = with_span_otel("example.work", succeed::<(), (), ()>(()));
-  let _ = run_blocking(eff, ());
+  let registry = MetricRegistry::new();
+  let _bridge = bridge_metrics(&registry, meter_provider.meter("example"));
+  let work = registry.counter("example.work");
 
-  let _ = provider.force_flush();
-  let spans = exporter.get_finished_spans().expect("read spans");
-  println!("exported spans: {}", spans.len());
-  let _ = provider.shutdown();
+  let hook = OtelSpanHook::for_provider(&tracer_provider, "example").into_hook();
+  let eff: Effect<u32, ()> = work
+    .increment()
+    .then(succeed(42))
+    .with_span("example.work")
+    .with_span_hook(hook);
+  assert!(matches!(eff.block_on(), Exit::Success(42)));
+
+  let _ = tracer_provider.force_flush();
+  let _ = meter_provider.force_flush();
+  let spans = span_exporter.get_finished_spans().expect("read spans");
+  let metrics = metric_exporter
+    .get_finished_metrics()
+    .expect("read metrics");
+  println!(
+    "exported spans: {}, metric exports: {}",
+    spans.len(),
+    metrics.len()
+  );
+  let _ = tracer_provider.shutdown();
+  let _ = meter_provider.shutdown();
 }

@@ -1,6 +1,18 @@
 //! OpenTelemetry integration for `id_effect`: tracing spans, W3C propagation, and metric bridges.
 //!
 //! Opt-in at the dependency boundary: core `id_effect` has no OpenTelemetry dependency.
+//!
+//! Built on the `id_effect::next` kernel:
+//!
+//! - **Metrics** go through the `next` [`MetricRegistry`](id_effect::next::MetricRegistry):
+//!   [`bridge_metrics`] / [`bridge_global_metrics`] export every series (counters and gauges
+//!   pulled from registry snapshots, histograms, summaries and frequencies pushed by a registry
+//!   listener).
+//! - **Spans** go through the span-hook `FiberRef`: install [`OtelSpanHook`] around the root
+//!   effect with `Effect::with_span_hook`, and every `Effect::with_span` becomes an
+//!   OpenTelemetry span, parented across forked fibers on any executor thread.
+//! - **Logs**: [`OtelLogBackend`] is an `id_effect_logger` backend; `tracing` events reach OTEL
+//!   logs through the subscriber layers.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -30,7 +42,9 @@ pub use logs_bridge::{
   trace_and_log_subscriber_for_providers, tracing_logs_layer_for_provider,
   try_init_global_tracing_with_otel_logs,
 };
-pub use metrics_bridge::{CounterBridge, DurationHistogramBridge};
+pub use metrics_bridge::{
+  MetricsBridge, bridge_global_metrics, bridge_metrics, sdk_meter_provider_with_in_memory_exporter,
+};
 #[cfg(feature = "otlp")]
 pub use otlp::build_otlp_providers;
 #[cfg(feature = "platform")]
@@ -39,12 +53,12 @@ pub use propagation::{
   extract_trace_context_from_headers, inject_current_trace_context,
   inject_trace_context_into_headers, install_w3c_propagators, install_w3c_trace_context_propagator,
 };
-pub use providers::{OtelRuntime, provide_otel_runtime};
+pub use providers::{OtelRuntime, OtelRuntimeEnv, provide_otel_runtime};
 pub use shutdown::{
   graceful_otel_shutdown, run_until_shutdown, shutdown_otel_on_signal,
   shutdown_otel_on_signal_with_timeout,
 };
-pub use span_bridge::with_span_otel;
+pub use span_bridge::{OtelSpanHook, current_otel_context, span_otel_context};
 pub use starter::{
   OtelInMemoryExporters, OtelProviders, OtelStarterConfig, OtelStarterGuard, install_from_config,
   install_otel_starter,

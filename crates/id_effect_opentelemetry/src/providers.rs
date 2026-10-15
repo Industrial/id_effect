@@ -1,42 +1,21 @@
-//! Capability DI provider for an installed OpenTelemetry runtime handle.
+//! The installed OpenTelemetry runtime handle as a `next` capability ([`Layer`]).
 
 use std::sync::Arc;
 
-use id_effect::{Cap, CapabilityId, CapabilityKey, Env, ProviderBox, ProviderError, ProviderNode};
+use id_effect::next::{HCons, HNil, Layer, hlist};
 
 use crate::starter::OtelStarterGuard;
 
-/// OpenTelemetry runtime handle (flush/shutdown + meter access).
+/// OpenTelemetry runtime handle (flush/shutdown + meter access), the capability
+/// [`provide_otel_runtime`] provides (`need::<OtelRuntime>()`).
 pub type OtelRuntime = Arc<OtelStarterGuard>;
 
-/// Register `guard` in the capability environment for domain programs that need OTEL flush/shutdown.
+/// The typed environment holding only [`OtelRuntime`] (the output of [`provide_otel_runtime`]).
+pub type OtelRuntimeEnv = HCons<OtelRuntime, HNil>;
+
+/// A [`Layer`] providing `guard` as the [`OtelRuntime`] capability, for domain programs that need
+/// OTEL flush/shutdown or the meter.
 #[inline]
-pub fn provide_otel_runtime(guard: Arc<OtelStarterGuard>) -> ProviderBox {
-  struct Node(Arc<OtelStarterGuard>);
-
-  impl ProviderNode for Node {
-    fn id(&self) -> &str {
-      "opentelemetry/runtime"
-    }
-
-    fn requires(&self) -> &[CapabilityId] {
-      &[]
-    }
-
-    fn provides(&self) -> CapabilityId {
-      Cap::<OtelRuntime>::id()
-    }
-
-    fn cap_name(&self) -> &str {
-      "OtelRuntime"
-    }
-
-    fn build(&self, deps: &Env) -> Result<Env, ProviderError> {
-      let mut out = deps.clone();
-      out.insert::<Cap<OtelRuntime>>(Arc::clone(&self.0));
-      Ok(out)
-    }
-  }
-
-  ProviderBox(Arc::new(Node(guard)))
+pub fn provide_otel_runtime<E: Send + 'static>(guard: OtelRuntime) -> Layer<OtelRuntimeEnv, E> {
+  Layer::succeed(hlist![guard])
 }
