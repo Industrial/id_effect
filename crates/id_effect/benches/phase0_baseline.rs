@@ -12,11 +12,11 @@
 //! - `phase0/bench_schedule_retry_overhead`: the 0.7 kernel, `Effect::retry` with
 //!   `next::Schedule::recurs(3)` through `Effect::block_on` (v0.6: the free `retry` with
 //!   `pollster::block_on`). Same workload: two failures, then a success.
-//! - `phase0/bench_stream_throughput_collect`: still the v1 kernel (spec k-rebuild §7 Q-C) until
-//!   `m-streams` ports it.
+//! - `phase0/bench_stream_throughput_collect`: the 0.7 `next::Stream` (`m-streams`) through
+//!   `Effect::block_on` (v0.6: `pollster::block_on(effect.run(&mut ()))`). Same workload: 1024
+//!   items through `map` and `filter` into `run_collect`.
 
 use ::id_effect::next::{self as k, DynEnv, Effect, HNil};
-use ::id_effect::streaming::stream::Stream;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -54,15 +54,17 @@ fn bench_effect_flat_map_chain(c: &mut Criterion) {
   });
 }
 
-// v1 body until m-streams
 fn bench_stream_throughput_collect(c: &mut Criterion) {
   c.bench_function("phase0/bench_stream_throughput_collect", |b| {
     b.iter(|| {
-      let effect = Stream::from_iterable(0..1024)
+      let effect = k::Stream::<i32, (), HNil>::from_iterable(0..1024)
         .map(|n| n + 1)
-        .filter(Box::new(|n: &i32| *n % 2 == 0))
+        .filter(|n: &i32| *n % 2 == 0)
         .run_collect();
-      let out = pollster::block_on(effect.run(&mut ())).expect("stream collect should not fail");
+      let out = effect
+        .block_on()
+        .into_result()
+        .expect("stream collect should not fail");
       std::hint::black_box(out.len())
     });
   });

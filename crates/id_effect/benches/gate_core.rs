@@ -14,10 +14,13 @@
 //!   k-rebuild §7 Q-E), run through its real edge `Effect::block_on` (v0.6 ran
 //!   `pollster::block_on(effect.run(&mut ()))`). Same workloads: 64 binds through `from_async`,
 //!   and a left-nested 10k-deep `succeed` bind chain (build plus run).
-//! - `stream/*`, `coord/*`: still the v1 kernel (§7 Q-C) until `m-streams` / `c-coordination`.
+//! - `stream/*`: the 0.7 `next::Stream` (`m-streams`), run through `Effect::block_on` (v0.6 ran
+//!   `pollster::block_on(effect.run(&mut ()))`). Same workloads; `map_effect` is now sequential
+//!   (ADR 0008 Amendment 2), where v0.6 ran each chunk concurrently under the admission budget.
+//! - `coord/*`: still the v1 kernel (§7 Q-C) until `c-coordination`.
 
 use ::id_effect::next::{self as k, HNil};
-use ::id_effect::{Channel, Queue, Stream, succeed};
+use ::id_effect::{Channel, Queue};
 use criterion::{Criterion, criterion_group, criterion_main};
 
 const ASYNC_BINDS: usize = 64;
@@ -67,31 +70,33 @@ fn bench_flat_map_depth_10k(c: &mut Criterion) {
   });
 }
 
-// v1 body until m-streams
 /// Pull 10k elements through a pure `map` stage into a collected vector.
 fn bench_stream_pull_map_10k(c: &mut Criterion) {
   c.bench_function("stream/pull_map_10k", |b| {
     b.iter(|| {
-      let effect = Stream::from_iterable(0..STREAM_PULL_LEN)
+      let effect = k::Stream::<u64, (), HNil>::from_iterable(0..STREAM_PULL_LEN)
         .map(|n| n.wrapping_mul(3))
         .run_collect();
-      let out: Vec<u64> =
-        pollster::block_on(effect.run(&mut ())).expect("stream pull should not fail");
+      let out: Vec<u64> = effect
+        .block_on()
+        .into_result()
+        .expect("stream pull should not fail");
       std::hint::black_box(out.len())
     });
   });
 }
 
-// v1 body until m-streams
 /// Run an effect per element for 1k elements via `map_effect`.
 fn bench_stream_map_effect_1k(c: &mut Criterion) {
   c.bench_function("stream/map_effect_1k", |b| {
     b.iter(|| {
-      let effect = Stream::from_iterable(0..STREAM_MAP_EFFECT_LEN)
-        .map_effect(|n| succeed::<u64, (), ()>(n.wrapping_mul(3)))
+      let effect = k::Stream::<u64, (), HNil>::from_iterable(0..STREAM_MAP_EFFECT_LEN)
+        .map_effect(|n| k::succeed(n.wrapping_mul(3)))
         .run_collect();
-      let out: Vec<u64> =
-        pollster::block_on(effect.run(&mut ())).expect("stream map_effect should not fail");
+      let out: Vec<u64> = effect
+        .block_on()
+        .into_result()
+        .expect("stream map_effect should not fail");
       std::hint::black_box(out.len())
     });
   });
