@@ -71,6 +71,7 @@ fn main() {
   )
   .with_fabric(fabric);
 
+  // Remote requests are `next` effects: compose them, or run them at the edge.
   let pid = a
     .remote_spawn(
       "b@ex",
@@ -79,18 +80,21 @@ fn main() {
       None,
       Duration::from_secs(2),
     )
+    .block_on()
+    .into_result()
     .expect("spawn");
-  std::thread::sleep(Duration::from_millis(50));
+  // Mailboxes are FIFO: the call below is handled after this cast.
   a.remote_cast(&pid, postcard::to_allocvec(&Cast::Set(42)).unwrap())
     .unwrap();
-  std::thread::sleep(Duration::from_millis(20));
   let bytes = a
     .remote_call(
       &pid,
       postcard::to_allocvec(&Call::Get).unwrap(),
       Duration::from_secs(2),
     )
-    .unwrap();
+    .block_on()
+    .into_result()
+    .expect("call");
   let n: u32 = postcard::from_bytes(&bytes).unwrap();
   println!("remote box = {n}");
   let _ = Arc::clone(&a);

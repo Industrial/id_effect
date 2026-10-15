@@ -71,14 +71,22 @@ fn main() {
   for _ in 0..3 {
     let pid = a
       .remote_spawn("b@ex", "worker", args.clone(), None, Duration::from_secs(2))
+      .block_on()
+      .into_result()
       .expect("spawn");
     groups.join("workers", &pid);
   }
-  std::thread::sleep(Duration::from_millis(50));
 
   let msg = postcard::to_allocvec(&Cast::Work(10)).unwrap();
   let n = fanout_cast(&a, &groups, "workers", &msg).expect("fanout");
-  std::thread::sleep(Duration::from_millis(50));
+  // Mailboxes are FIFO: once each worker answers a call, its cast has been handled.
+  let call = postcard::to_allocvec(&()).unwrap();
+  for pid in groups.members("workers") {
+    a.remote_call(&pid, call.clone(), Duration::from_secs(2))
+      .block_on()
+      .into_result()
+      .expect("sync call");
+  }
   println!(
     "fanned out to {n} workers; total work = {}",
     DONE.load(Ordering::SeqCst)

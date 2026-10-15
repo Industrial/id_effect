@@ -3,13 +3,20 @@
 //! Combines a local [`ProcessNode`], [`BehaviorRegistry`], and authenticated
 //! [`Session`]s. Remote delivery is **at-most-once** (ADR 0009). On peer loss,
 //! outstanding monitors fire [`ExitReason::NoConnection`].
+//!
+//! Requests that wait for an answer ([`Mesh::remote_spawn`], [`Mesh::remote_call`]) are
+//! `next` effects: `Send`, bounded by a timeout on the calling fiber's executor clock, and
+//! interruptible (an interrupted request forgets its pending entry; the peer may still act on
+//! it — at-most-once). An inbound call is answered by a daemon fiber on the local
+//! [`ProcessNode`]'s runtime, never by a parked thread.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use id_effect::{Deferred, run_blocking};
+use id_effect::next::{Deferred, Effect, HNil, fail, succeed, suspend, sync};
+use id_effect::{Cause, Exit, Never};
 use id_effect_process::{ExitReason, MonitorRef, MonitorSink, Pid, ProcessNode};
 
 use crate::envelope::{
@@ -86,19 +93,11 @@ struct RemoteMonitor {
   target: Pid,
 }
 
-/// Removes a pending request entry on every exit path (reply, send failure,
-/// timeout). After a reply the entry is already gone and this is a no-op.
-struct PendingEntry<'a, T> {
-  map: &'a Mutex<HashMap<u64, T>>,
-  id: u64,
-}
-
-impl<T> Drop for PendingEntry<'_, T> {
-  fn drop(&mut self) {
-    if let Ok(mut map) = self.map.lock() {
-      map.remove(&self.id);
-    }
-  }
+/// Which pending-request table an id lives in.
+#[derive(Clone, Copy)]
+enum PendingKind {
+  Call,
+  Spawn,
 }
 
 /// Key of a monitor a peer holds on one of our processes: the origin node
@@ -258,41 +257,52 @@ impl Mesh {
       .spawn(&self.inner.process, behavior, args, link_to)
   }
 
-  /// Remote spawn on `node_name`.
-  pub fn remote_spawn(
+  /// Remote spawn on `node_name` (a local spawn when it names this node).
+  ///
+  /// The effect sends the request when it runs and waits for the reply up to `timeout` on the
+  /// calling fiber's executor clock ([`RemoteFault::Timeout`] after that). It is interruptible;
+  /// the pending entry is removed on every exit path.
+  pub fn remote_spawn<R: Send + Sync + 'static>(
     &self,
     node_name: &str,
     behavior: &str,
     args: Vec<u8>,
     link_to: Option<&Pid>,
     timeout: Duration,
-  ) -> Result<Pid, RemoteFault> {
-    if node_name == self.node_name() {
-      return self.spawn_local(behavior, &args, link_to);
-    }
-    let spawn_id = self.alloc_id();
-    let reply: Deferred<Pid, RemoteFault> =
-      run_blocking(Deferred::make(), ()).unwrap_or_else(|_| unreachable!("Deferred::make"));
-    self.inner.pending_spawns.lock().expect("spawns").insert(
-      spawn_id,
-      PendingSpawn {
-        reply: reply.clone(),
-      },
-    );
-    let _pending = PendingEntry {
-      map: &self.inner.pending_spawns,
-      id: spawn_id,
-    };
-    self.send_to(
-      node_name,
-      ProcessEnvelope::Spawn {
-        spawn_id,
-        behavior: behavior.to_string(),
-        args,
-        link_to: link_to.map(PidWire::from),
-      },
-    )?;
-    self.await_deferred(reply, timeout)
+  ) -> Effect<Pid, RemoteFault, R> {
+    let mesh = self.clone();
+    let node_name = node_name.to_string();
+    let behavior = behavior.to_string();
+    let link_to = link_to.cloned();
+    suspend(move || {
+      if node_name == mesh.node_name() {
+        return match mesh.spawn_local(&behavior, &args, link_to.as_ref()) {
+          Ok(pid) => succeed(pid),
+          Err(fault) => fail(fault),
+        };
+      }
+      let spawn_id = mesh.alloc_id();
+      let m = mesh.clone();
+      mesh.pending_request(PendingKind::Spawn, spawn_id, move || {
+        let reply: Deferred<Pid, RemoteFault> = Deferred::new();
+        m.inner.pending_spawns.lock().expect("spawns").insert(
+          spawn_id,
+          PendingSpawn {
+            reply: reply.clone(),
+          },
+        );
+        let sent = m.send_to(
+          &node_name,
+          ProcessEnvelope::Spawn {
+            spawn_id,
+            behavior,
+            args,
+            link_to: link_to.as_ref().map(PidWire::from),
+          },
+        );
+        await_reply(sent, reply, timeout)
+      })
+    })
   }
 
   /// Record a node's latest load telemetry for placement.
@@ -331,7 +341,7 @@ impl Mesh {
   /// policy, and the mesh resolves the target. Returns [`RemoteFault::NoProc`]
   /// when no reported node satisfies the policy (the caller can then fall back to
   /// an explicit node).
-  pub fn remote_spawn_placed(
+  pub fn remote_spawn_placed<R: Send + Sync + 'static>(
     &self,
     reports: &[LoadReport],
     policy: &ClusterResourcePolicy,
@@ -339,9 +349,11 @@ impl Mesh {
     args: Vec<u8>,
     link_to: Option<&Pid>,
     timeout: Duration,
-  ) -> Result<Pid, RemoteFault> {
-    let target = place(reports, policy).ok_or(RemoteFault::NoProc)?;
-    self.remote_spawn(&target, behavior, args, link_to, timeout)
+  ) -> Effect<Pid, RemoteFault, R> {
+    match place(reports, policy) {
+      Some(target) => self.remote_spawn(&target, behavior, args, link_to, timeout),
+      None => fail(RemoteFault::NoProc),
+    }
   }
 
   /// Remote cast (or local if same node).
@@ -374,42 +386,47 @@ impl Mesh {
     )
   }
 
-  /// Remote call with timeout.
-  pub fn remote_call(
+  /// Remote call with timeout (a local call when `to` lives on this node).
+  ///
+  /// Like [`Mesh::remote_spawn`]: sent when the effect runs, bounded by `timeout` on the
+  /// calling fiber's executor clock, interruptible, and leaves no pending entry behind.
+  pub fn remote_call<R: Send + Sync + 'static>(
     &self,
     to: &Pid,
     msg: Vec<u8>,
     timeout: Duration,
-  ) -> Result<Vec<u8>, RemoteFault> {
-    if to.node().as_str() == self.node_name() {
-      let reply: Deferred<Vec<u8>, RemoteFault> =
-        run_blocking(Deferred::make(), ()).unwrap_or_else(|_| unreachable!("Deferred::make"));
-      self.inner.registry.deliver_call(to, &msg, reply.clone())?;
-      return self.await_deferred(reply, timeout);
-    }
-    let call_id = self.alloc_id();
-    let reply: Deferred<Vec<u8>, RemoteFault> =
-      run_blocking(Deferred::make(), ()).unwrap_or_else(|_| unreachable!("Deferred::make"));
-    self.inner.pending_calls.lock().expect("calls").insert(
-      call_id,
-      PendingCall {
-        reply: reply.clone(),
-      },
-    );
-    let _pending = PendingEntry {
-      map: &self.inner.pending_calls,
-      id: call_id,
-    };
-    self.send_to(
-      to.node().as_str(),
-      ProcessEnvelope::Call {
-        to: PidWire::from(to),
-        call_id,
-        msg,
-        trace: TraceContext::new(),
-      },
-    )?;
-    self.await_deferred(reply, timeout)
+  ) -> Effect<Vec<u8>, RemoteFault, R> {
+    let mesh = self.clone();
+    let to = to.clone();
+    suspend(move || {
+      if to.node().as_str() == mesh.node_name() {
+        return match mesh.inner.registry.deliver_call::<R>(&to, &msg) {
+          Ok(reply) => reply.timeout_fail(timeout, || RemoteFault::Timeout),
+          Err(fault) => fail(fault),
+        };
+      }
+      let call_id = mesh.alloc_id();
+      let m = mesh.clone();
+      mesh.pending_request(PendingKind::Call, call_id, move || {
+        let reply: Deferred<Vec<u8>, RemoteFault> = Deferred::new();
+        m.inner.pending_calls.lock().expect("calls").insert(
+          call_id,
+          PendingCall {
+            reply: reply.clone(),
+          },
+        );
+        let sent = m.send_to(
+          to.node().as_str(),
+          ProcessEnvelope::Call {
+            to: PidWire::from(&to),
+            call_id,
+            msg,
+            trace: TraceContext::new(),
+          },
+        );
+        await_reply(sent, reply, timeout)
+      })
+    })
   }
 
   /// Monitor a (possibly remote) pid; sink fires exactly once.
@@ -520,32 +537,37 @@ impl Mesh {
         to, call_id, msg, ..
       } => {
         let pid = to.to_pid();
-        let reply: Deferred<Vec<u8>, RemoteFault> =
-          run_blocking(Deferred::make(), ()).unwrap_or_else(|_| unreachable!("Deferred::make"));
-        let bridge = reply.clone();
+        let wait = match self.inner.registry.deliver_call::<HNil>(&pid, &msg) {
+          Ok(wait) => wait,
+          Err(fault) => {
+            self.reply(
+              origin_name,
+              ProcessEnvelope::Reply {
+                call_id,
+                result: Err(fault),
+              },
+            );
+            return Ok(());
+          }
+        };
+        // The answer is relayed by a daemon fiber on this node's runtime. The caller bounds the
+        // wait with its own timeout; this side has none (a lost reply is a caller timeout).
         let mesh = self.clone();
         let origin = origin_name.map(str::to_string);
-        if let Err(fault) = self.inner.registry.deliver_call(&pid, &msg, reply) {
-          mesh.reply(
-            origin.as_deref(),
-            ProcessEnvelope::Reply {
-              call_id,
-              result: Err(fault),
-            },
-          );
-          return Ok(());
-        }
-        std::thread::spawn(move || {
-          let result = match run_blocking(bridge.wait(), ()) {
-            Ok(bytes) => Ok(bytes),
-            Err(id_effect::Cause::Fail(f)) => Err(f),
-            Err(_) => Err(RemoteFault::Down(ExitReasonWire::Interrupted)),
-          };
-          mesh.reply(
-            origin.as_deref(),
-            ProcessEnvelope::Reply { call_id, result },
-          );
+        let relay: Effect<(), Never> = wait.exit().flat_map(move |exit| {
+          sync(move || {
+            let result = match exit {
+              Exit::Success(bytes) => Ok(bytes),
+              Exit::Failure(Cause::Fail(f)) => Err(f),
+              Exit::Failure(_) => Err(RemoteFault::Down(ExitReasonWire::Interrupted)),
+            };
+            mesh.reply(
+              origin.as_deref(),
+              ProcessEnvelope::Reply { call_id, result },
+            );
+          })
         });
+        drop(self.inner.process.runtime().fork(relay));
         Ok(())
       }
       ProcessEnvelope::Reply { call_id, result } => {
@@ -561,7 +583,7 @@ impl Mesh {
               let _ = pending.reply.try_succeed(bytes);
             }
             Err(f) => {
-              let _ = pending.reply.try_fail_cause(id_effect::Cause::fail(f));
+              let _ = pending.reply.try_fail_cause(Cause::fail(f));
             }
           }
         }
@@ -598,7 +620,7 @@ impl Mesh {
               let _ = pending.reply.try_succeed(pid.to_pid());
             }
             Err(f) => {
-              let _ = pending.reply.try_fail_cause(id_effect::Cause::fail(f));
+              let _ = pending.reply.try_fail_cause(Cause::fail(f));
             }
           }
         }
@@ -743,25 +765,39 @@ impl Mesh {
     }
   }
 
-  fn await_deferred<T: Clone + Send + Sync + 'static>(
-    &self,
-    reply: Deferred<T, RemoteFault>,
-    timeout: Duration,
-  ) -> Result<T, RemoteFault> {
-    let start = std::time::Instant::now();
-    loop {
-      if let Ok(Some(exit)) = run_blocking(reply.poll(), ()) {
-        return match exit.into_result() {
-          Ok(v) => Ok(v),
-          Err(id_effect::Cause::Fail(f)) => Err(f),
-          Err(_) => Err(RemoteFault::Down(ExitReasonWire::Interrupted)),
-        };
+  /// Forget a pending request (reply, send failure, timeout or interrupt). After a reply the
+  /// entry is already gone and this is a no-op.
+  fn forget_pending(&self, kind: PendingKind, id: u64) {
+    match kind {
+      PendingKind::Call => {
+        self.inner.pending_calls.lock().expect("calls").remove(&id);
       }
-      if start.elapsed() >= timeout {
-        return Err(RemoteFault::Timeout);
+      PendingKind::Spawn => {
+        self
+          .inner
+          .pending_spawns
+          .lock()
+          .expect("spawns")
+          .remove(&id);
       }
-      std::thread::sleep(Duration::from_millis(2));
     }
+  }
+
+  /// Run `body` (register request `id`, send it, wait) with the pending entry forgotten on
+  /// every exit path. The finalizer is in place before `body` registers anything, so an
+  /// interrupt at any point leaves no entry behind.
+  fn pending_request<T, R>(
+    &self,
+    kind: PendingKind,
+    id: u64,
+    body: impl FnOnce() -> Effect<T, RemoteFault, R> + Send + 'static,
+  ) -> Effect<T, RemoteFault, R>
+  where
+    T: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    let mesh = self.clone();
+    suspend(body).ensuring(sync(move || mesh.forget_pending(kind, id)))
   }
 
   /// Pump one inbound data frame from a session into the mesh.
@@ -790,6 +826,22 @@ impl Mesh {
       .send(&Frame::Data(bytes))
       .await
       .map_err(|e| RemoteFault::Decode(e.to_string()))
+  }
+}
+
+/// Wait for the reply to a request handed to the peer (`sent`), up to `timeout`.
+fn await_reply<T, R>(
+  sent: Result<(), RemoteFault>,
+  reply: Deferred<T, RemoteFault>,
+  timeout: Duration,
+) -> Effect<T, RemoteFault, R>
+where
+  T: Clone + Send + 'static,
+  R: Send + Sync + 'static,
+{
+  match sent {
+    Ok(()) => reply.wait().timeout_fail(timeout, || RemoteFault::Timeout),
+    Err(fault) => fail(fault),
   }
 }
 
@@ -835,6 +887,15 @@ mod tests {
     postcard::to_allocvec(&()).expect("unit")
   }
 
+  /// Run a request effect to its typed outcome.
+  fn run<A: Send + 'static>(eff: Effect<A, RemoteFault>) -> Result<A, RemoteFault> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(f)) => Err(f),
+      Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+    }
+  }
+
   /// Peer sender that accepts and drops everything (an unresponsive node).
   fn black_hole() -> PeerSender {
     Arc::new(|_| Ok(()))
@@ -859,31 +920,62 @@ mod tests {
     let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
     let wait = Duration::from_secs(5);
     assert_eq!(
-      a.remote_spawn("z@test", "idle", unit(), None, wait),
+      run(a.remote_spawn("z@test", "idle", unit(), None, wait)),
       Err(RemoteFault::NoProc)
     );
     assert_eq!(
-      a.remote_call(&target, unit(), wait),
+      run(a.remote_call(&target, unit(), wait)),
       Err(RemoteFault::NoProc)
     );
     assert_eq!(pending(&a), (0, 0));
   }
 
-  // A zero timeout expires on the first check, so the timeout path is
-  // exercised without waiting.
+  // A zero timeout expires at once, so the timeout path is exercised without waiting.
   #[test]
   fn timed_out_request_leaves_no_pending_entry() {
     let a = mesh("a@test");
     a.add_peer("z@test", black_hole());
     let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
     assert_eq!(
-      a.remote_spawn("z@test", "idle", unit(), None, Duration::ZERO),
+      run(a.remote_spawn("z@test", "idle", unit(), None, Duration::ZERO)),
       Err(RemoteFault::Timeout)
     );
     assert_eq!(
-      a.remote_call(&target, unit(), Duration::ZERO),
+      run(a.remote_call(&target, unit(), Duration::ZERO)),
       Err(RemoteFault::Timeout)
     );
+    assert_eq!(pending(&a), (0, 0));
+  }
+
+  /// A request is a `Send` fiber that can be interrupted while it waits: the interrupt ends
+  /// it and its pending entry is forgotten.
+  #[test]
+  fn interrupted_request_forgets_its_pending_entry() {
+    let a = mesh("a@test");
+    let (sink, sent) = recorder();
+    a.add_peer("z@test", sink);
+    let target = Pid::from_parts(NodeName::new("z@test"), 1, 1);
+    let hour = Duration::from_secs(3600);
+    let spawn_eff = a.remote_spawn("z@test", "idle", unit(), None, hour);
+    let call_eff = a.remote_call(&target, unit(), hour);
+    fn assert_send<T: Send + 'static>(t: T) -> T {
+      t
+    }
+    let rt = id_effect::next::Runtime::global();
+    let spawn = assert_send(rt.fork(assert_send(spawn_eff)));
+    let call = assert_send(rt.fork(assert_send(call_eff)));
+    // Both requests reached the (silent) peer and are pending.
+    for _ in 0..2 {
+      sent
+        .recv_timeout(Duration::from_secs(5))
+        .expect("request sent");
+    }
+    assert_eq!(pending(&a), (1, 1));
+    spawn.interrupt_now();
+    call.interrupt_now();
+    let interrupted = |c: &Cause<RemoteFault>| matches!(c, Cause::Interrupt(_));
+    assert!(matches!(spawn.join().block_on(), Exit::Failure(c) if c.contains(&interrupted)));
+    assert!(matches!(call.join().block_on(), Exit::Failure(c) if c.contains(&interrupted)));
     assert_eq!(pending(&a), (0, 0));
   }
 
@@ -892,11 +984,9 @@ mod tests {
     let fabric = MeshFabric::new();
     let a = mesh("a@test").with_fabric(fabric.clone());
     let _b = mesh("b@test").with_fabric(fabric);
-    let pid = a
-      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
-      .expect("spawn");
-    a.remote_call(&pid, unit(), Duration::from_secs(5))
-      .expect("call");
+    let pid =
+      run(a.remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))).expect("spawn");
+    run(a.remote_call(&pid, unit(), Duration::from_secs(5))).expect("call");
     assert_eq!(pending(&a), (0, 0));
   }
 
@@ -905,9 +995,8 @@ mod tests {
     let fabric = MeshFabric::new();
     let a = mesh("a@test").with_fabric(fabric.clone());
     let b = mesh("b@test").with_fabric(fabric);
-    let pid = a
-      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
-      .expect("spawn");
+    let pid =
+      run(a.remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))).expect("spawn");
     let monitor = a.remote_monitor(&pid, Box::new(|_, _, _| {}));
     assert_eq!(
       b.inner.inbound_monitors.lock().expect("inbound").len(),
@@ -1044,9 +1133,8 @@ mod tests {
     let fabric = MeshFabric::new();
     let a = mesh("a@test").with_fabric(fabric.clone());
     let b = mesh("b@test").with_fabric(fabric);
-    let pid = a
-      .remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))
-      .expect("spawn");
+    let pid =
+      run(a.remote_spawn("b@test", "idle", unit(), None, Duration::from_secs(5))).expect("spawn");
     let (tx, rx) = flume::bounded(1);
     let reentrant = Arc::clone(&a);
     a.remote_monitor(

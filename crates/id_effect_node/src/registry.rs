@@ -1,10 +1,12 @@
 //! BehaviorRegistry for remote spawn (FLAME model).
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use id_effect::Deferred;
-use id_effect::next::{Deferred as NextDeferred, HNil};
+use id_effect::next::{Deferred, Effect, from_async};
+use id_effect::{Cause, Exit};
 use id_effect_process::{CallError, ExitReason, Info, Mailbox, Pid, ProcMsg, Process, ProcessNode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -18,9 +20,13 @@ pub type SpawnFn =
 /// Wire bytes into a mailbox.
 pub type WireFn = Arc<dyn Fn(&[u8]) -> Result<(), RemoteFault> + Send + Sync>;
 
-/// Call with deferred byte reply.
-pub type CallWireFn =
-  Arc<dyn Fn(&[u8], Deferred<Vec<u8>, RemoteFault>) -> Result<(), RemoteFault> + Send + Sync>;
+/// The encoded reply of a delivered call: resolves once the process answers (or exits).
+///
+/// Dropping it abandons the wait (the process may still handle the call: at-most-once).
+pub type ReplyFuture = Pin<Box<dyn Future<Output = Result<Vec<u8>, RemoteFault>> + Send>>;
+
+/// Decode call bytes and enqueue the call; the returned future awaits the encoded reply.
+pub type CallWireFn = Arc<dyn Fn(&[u8]) -> Result<ReplyFuture, RemoteFault> + Send + Sync>;
 
 #[derive(Clone)]
 struct Route {
@@ -100,12 +106,16 @@ impl BehaviorRegistry {
   }
 
   /// Deliver call bytes.
-  pub fn deliver_call(
+  ///
+  /// The call is decoded and enqueued now (so it is ordered after earlier casts); the returned
+  /// effect awaits the encoded reply. It is `Send` and interruptible: interrupting it abandons
+  /// the wait only (at-most-once). Bound it with a timeout — a process that exits without
+  /// replying never answers.
+  pub fn deliver_call<R: Send + Sync + 'static>(
     &self,
     pid: &Pid,
     bytes: &[u8],
-    reply: Deferred<Vec<u8>, RemoteFault>,
-  ) -> Result<(), RemoteFault> {
+  ) -> Result<Effect<Vec<u8>, RemoteFault, R>, RemoteFault> {
     let route = self
       .routes
       .lock()
@@ -113,7 +123,8 @@ impl BehaviorRegistry {
       .get(pid)
       .cloned()
       .ok_or(RemoteFault::NoProc)?;
-    (route.call)(bytes, reply)
+    let reply = (route.call)(bytes)?;
+    Ok(from_async(move || reply))
   }
 
   /// Forget dead pid.
@@ -215,43 +226,16 @@ fn install_route<P>(
   };
   let call: CallWireFn = {
     let mailbox = mailbox.clone();
-    Arc::new(move |bytes, reply| {
+    Arc::new(move |bytes| {
       let msg: P::Call =
         postcard::from_bytes(bytes).map_err(|e| RemoteFault::Decode(e.to_string()))?;
-      let typed: NextDeferred<P::Reply, CallError> = NextDeferred::new();
-      let bridge = typed.clone();
+      let typed: Deferred<P::Reply, CallError> = Deferred::new();
+      let wait = typed.wait_future();
       if !mailbox.offer_now(ProcMsg::Call(msg, typed)) {
         return Err(RemoteFault::NoProc);
       }
-      // Bridges the process's `next` reply into the v1 wire reply (until m-node).
-      std::thread::spawn(
-        move || match bridge.wait::<HNil>().block_on().into_result() {
-          Ok(rep) => match postcard::to_allocvec(&rep) {
-            Ok(encoded) => {
-              let _ = reply.try_succeed(encoded);
-            }
-            Err(e) => {
-              let _ =
-                reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Decode(e.to_string())));
-            }
-          },
-          Err(id_effect::Cause::Fail(CallError::Down(reason))) => {
-            let wire: ExitReasonWire = (&reason).into();
-            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
-          }
-          Err(id_effect::Cause::Fail(CallError::Timeout)) => {
-            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Timeout));
-          }
-          Err(id_effect::Cause::Fail(CallError::MailboxClosed)) => {
-            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::NoProc));
-          }
-          Err(_) => {
-            let wire: ExitReasonWire = (&ExitReason::Interrupted).into();
-            let _ = reply.try_fail_cause(id_effect::Cause::fail(RemoteFault::Down(wire)));
-          }
-        },
-      );
-      Ok(())
+      let reply: ReplyFuture = Box::pin(async move { encode_reply(wait.await) });
+      Ok(reply)
     })
   };
   routes
@@ -260,11 +244,27 @@ fn install_route<P>(
     .insert(pid, Route { cast, info, call });
 }
 
+/// Encode a process's typed call outcome as the wire reply.
+fn encode_reply<A: Serialize>(exit: Exit<A, CallError>) -> Result<Vec<u8>, RemoteFault> {
+  match exit {
+    Exit::Success(rep) => {
+      postcard::to_allocvec(&rep).map_err(|e| RemoteFault::Decode(e.to_string()))
+    }
+    Exit::Failure(Cause::Fail(CallError::Down(reason))) => Err(RemoteFault::Down((&reason).into())),
+    Exit::Failure(Cause::Fail(CallError::Timeout)) => Err(RemoteFault::Timeout),
+    Exit::Failure(Cause::Fail(CallError::MailboxClosed)) => Err(RemoteFault::NoProc),
+    Exit::Failure(_) => {
+      let wire: ExitReasonWire = (&ExitReason::Interrupted).into();
+      Err(RemoteFault::Down(wire))
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
-  use id_effect::next::{Effect, succeed, sync};
-  use id_effect::{Cause, Never, run_blocking};
+  use id_effect::Never;
+  use id_effect::next::{HNil, succeed, sync};
   use id_effect_process::{Next, NodeName, ProcessCtx};
 
   struct Echo {
@@ -311,8 +311,13 @@ mod tests {
     q.take::<HNil>().block_on().into_result().expect("take")
   }
 
-  fn reply_slot() -> Deferred<Vec<u8>, RemoteFault> {
-    run_blocking(Deferred::make(), ()).expect("deferred")
+  /// Deliver a call; the reply effect is checked by the caller.
+  fn call(
+    reg: &BehaviorRegistry,
+    pid: &Pid,
+    bytes: &[u8],
+  ) -> Result<Effect<Vec<u8>, RemoteFault, HNil>, RemoteFault> {
+    reg.deliver_call(pid, bytes)
   }
 
   fn enc(n: u32) -> Vec<u8> {
@@ -321,15 +326,12 @@ mod tests {
 
   /// Adopt a bare mailbox, deliver a call, then complete the typed reply with `typed_outcome`.
   fn call_outcome(
-    typed_outcome: impl FnOnce(&NextDeferred<u32, CallError>),
+    typed_outcome: impl FnOnce(&Deferred<u32, CallError>),
   ) -> Result<Vec<u8>, Cause<RemoteFault>> {
     let reg = registry();
     let q = mailbox();
     reg.adopt_local::<Echo>("echo", &pid(1), q.clone());
-    let reply = reply_slot();
-    reg
-      .deliver_call(&pid(1), &enc(3), reply.clone())
-      .expect("deliver");
+    let reply = call(&reg, &pid(1), &enc(3)).unwrap_or_else(|f| panic!("deliver: {f:?}"));
     match take(&q) {
       ProcMsg::Call(msg, typed) => {
         assert_eq!(msg, 3);
@@ -337,7 +339,7 @@ mod tests {
       }
       _ => panic!("expected a call"),
     }
-    run_blocking(reply.wait(), ())
+    reply.block_on().into_result()
   }
 
   #[test]
@@ -352,8 +354,8 @@ mod tests {
     assert_eq!(reg.deliver_cast(&pid(9), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(reg.deliver_info(&pid(9), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(
-      reg.deliver_call(&pid(9), &enc(1), reply_slot()),
-      Err(RemoteFault::NoProc)
+      call(&reg, &pid(9), &enc(1)).err(),
+      Some(RemoteFault::NoProc)
     );
   }
 
@@ -383,11 +385,8 @@ mod tests {
     assert!(reg.has_route(&pid));
     reg.deliver_cast(&pid, &enc(1)).expect("cast");
     reg.deliver_info(&pid, &enc(1)).expect("info");
-    let reply = reply_slot();
-    reg
-      .deliver_call(&pid, &enc(5), reply.clone())
-      .expect("call");
-    let bytes = run_blocking(reply.wait(), ()).expect("reply");
+    let reply = call(&reg, &pid, &enc(5)).unwrap_or_else(|f| panic!("call: {f:?}"));
+    let bytes = reply.block_on().into_result().expect("reply");
     assert_eq!(postcard::from_bytes::<u32>(&bytes).unwrap(), 15);
     reg.forget(&pid);
     assert!(!reg.has_route(&pid));
@@ -439,8 +438,8 @@ mod tests {
       Err(RemoteFault::Decode(_))
     ));
     assert!(matches!(
-      reg.deliver_call(&pid(1), &[], reply_slot()),
-      Err(RemoteFault::Decode(_))
+      call(&reg, &pid(1), &[]).err(),
+      Some(RemoteFault::Decode(_))
     ));
   }
 
@@ -453,8 +452,8 @@ mod tests {
     assert_eq!(reg.deliver_cast(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(reg.deliver_info(&pid(1), &enc(1)), Err(RemoteFault::NoProc));
     assert_eq!(
-      reg.deliver_call(&pid(1), &enc(1), reply_slot()),
-      Err(RemoteFault::NoProc)
+      call(&reg, &pid(1), &enc(1)).err(),
+      Some(RemoteFault::NoProc)
     );
   }
 

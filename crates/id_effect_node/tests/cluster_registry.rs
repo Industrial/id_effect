@@ -4,12 +4,23 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use id_effect::Never;
 use id_effect::next::{Effect, succeed, sync};
+use id_effect::{Cause, Exit, Never};
 use id_effect_node::id::NodeId;
-use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, OrSwot, ProcessGroups, fanout_cast};
+use id_effect_node::{
+  BehaviorRegistry, Mesh, MeshFabric, OrSwot, ProcessGroups, RemoteFault, fanout_cast,
+};
 use id_effect_process::{Next, NodeName, Pid, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};
+
+/// Run a mesh request on the default runtime.
+fn run<A: Send + 'static>(eff: Effect<A, RemoteFault>) -> Result<A, RemoteFault> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(f)) => Err(f),
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  }
+}
 
 #[derive(Serialize, Deserialize)]
 enum Cast {
@@ -102,12 +113,10 @@ fn fanout_cast_reaches_all_group_members() {
   .with_fabric(fabric);
 
   let args = postcard::to_allocvec(&()).unwrap();
-  let p1 = a
-    .remote_spawn("b@test", "sink", args.clone(), None, Duration::from_secs(2))
+  let p1 = run(a.remote_spawn("b@test", "sink", args.clone(), None, Duration::from_secs(2)))
     .expect("spawn 1");
-  let p2 = a
-    .remote_spawn("b@test", "sink", args, None, Duration::from_secs(2))
-    .expect("spawn 2");
+  let p2 =
+    run(a.remote_spawn("b@test", "sink", args, None, Duration::from_secs(2))).expect("spawn 2");
 
   let mut groups = ProcessGroups::new("a@test");
   groups.join("sinks", &p1);
@@ -120,8 +129,7 @@ fn fanout_cast_reaches_all_group_members() {
   // Mailboxes are FIFO: once each sink answers a call, its cast is handled.
   let call = postcard::to_allocvec(&()).unwrap();
   for pid in [&p1, &p2] {
-    a.remote_call(pid, call.clone(), Duration::from_secs(2))
-      .expect("sync call");
+    run(a.remote_call(pid, call.clone(), Duration::from_secs(2))).expect("sync call");
   }
   assert_eq!(HITS.load(Ordering::SeqCst), 2, "both sinks ticked");
 }

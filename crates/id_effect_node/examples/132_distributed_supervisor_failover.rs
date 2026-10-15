@@ -1,7 +1,6 @@
 //! Example 132 — DistributedSupervisor takeover when a node goes down.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use id_effect::Never;
 use id_effect::next::{Effect, succeed};
@@ -60,12 +59,16 @@ fn main() {
       },
       None,
     )
+    .block_on()
+    .into_result()
     .expect("start");
   println!("child started on {}", pid.node().as_str());
 
+  // The takeover effect completes once the departed node's children are re-placed.
   let down = Member::new(NodeId::fresh(&NodeName::new("b@ex")), "b@ex");
-  sup.on_membership(&MembershipEvent::NodeDown(down));
-  std::thread::sleep(Duration::from_millis(50));
+  let _ = sup
+    .on_membership(&MembershipEvent::NodeDown(down))
+    .block_on();
 
   let listed = sup.list();
   println!("after failover: child {} on {}", listed[0].0, listed[0].2);

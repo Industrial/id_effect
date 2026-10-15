@@ -4,11 +4,20 @@
 //! uses Postgres advisory-lock leases (`pg` feature via `id_effect_sql` (`pg` feature)).
 //! This module ships an **in-memory lease** suitable for single-process
 //! tests and as the interface the PG backend implements.
+//!
+//! Every lease operation is a `next` effect (`Send`, interruptible). The Postgres lease keeps
+//! its dedicated session on a daemon fiber (not a thread with its own tokio runtime), so it
+//! must be connected from a fiber on a `TokioExecutor` whose runtime has the IO driver enabled
+//! (sqlx needs it; `Runtime::new()` / `Runtime::global()` do).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use id_effect::Never;
+use id_effect::next::{Effect, fail, succeed, suspend, sync};
+#[cfg(feature = "pg")]
+use id_effect::{Cause, Exit};
 use id_effect_process::Pid;
 
 /// Derive `(key1, key2)` for `pg_try_advisory_lock(key1, key2)` from a singleton name.
@@ -49,19 +58,27 @@ impl std::fmt::Display for SingletonError {
 
 impl std::error::Error for SingletonError {}
 
-/// Abstract lease backend.
+/// Abstract lease backend. Each operation is an effect run on the caller's fiber.
 pub trait SingletonLease: Send + Sync {
   /// Try to acquire `name` for `holder` until `ttl` elapses.
-  fn try_acquire(&self, name: &str, holder: &str, ttl: Duration) -> Result<(), SingletonError>;
+  fn try_acquire(&self, name: &str, holder: &str, ttl: Duration) -> Effect<(), SingletonError>;
 
   /// Renew an existing lease (must already be held by `holder`).
-  fn renew(&self, name: &str, holder: &str, ttl: Duration) -> Result<(), SingletonError>;
+  fn renew(&self, name: &str, holder: &str, ttl: Duration) -> Effect<(), SingletonError>;
 
   /// Release if (and only if) `holder` owns it.
-  fn release(&self, name: &str, holder: &str) -> Result<(), SingletonError>;
+  fn release(&self, name: &str, holder: &str) -> Effect<(), SingletonError>;
 
   /// Current holder id, if any and not expired.
-  fn holder(&self, name: &str) -> Option<String>;
+  fn holder(&self, name: &str) -> Effect<Option<String>, Never>;
+}
+
+/// A ready effect from a computed result.
+fn from_result<A: Send + 'static, E: Send + 'static>(r: Result<A, E>) -> Effect<A, E> {
+  match r {
+    Ok(a) => succeed(a),
+    Err(e) => fail(e),
+  }
 }
 
 struct MemEntry {
@@ -89,56 +106,74 @@ impl MemoryLease {
     let now = Instant::now();
     map.retain(|_, e| e.until > now);
   }
+
+  /// Run `f` on the swept table when the effect runs.
+  fn with_table<A: Send + 'static, E: Send + 'static>(
+    &self,
+    f: impl FnOnce(&mut HashMap<String, MemEntry>) -> Result<A, E> + Send + 'static,
+  ) -> Effect<A, E> {
+    let inner = Arc::clone(&self.inner);
+    suspend(move || {
+      let mut map = inner.lock().expect("lease");
+      from_result(f(&mut map))
+    })
+  }
 }
 
 impl SingletonLease for MemoryLease {
-  fn try_acquire(&self, name: &str, holder: &str, ttl: Duration) -> Result<(), SingletonError> {
-    let mut map = self.inner.lock().expect("lease");
-    Self::sweep(&mut map);
-    match map.get(name) {
-      Some(e) if e.holder != holder => Err(SingletonError::HeldBy(e.holder.clone())),
-      _ => {
-        map.insert(
-          name.to_string(),
-          MemEntry {
-            holder: holder.to_string(),
-            until: Instant::now() + ttl,
-          },
-        );
-        Ok(())
+  fn try_acquire(&self, name: &str, holder: &str, ttl: Duration) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.with_table(move |map| {
+      Self::sweep(map);
+      match map.get(&name) {
+        Some(e) if e.holder != holder => Err(SingletonError::HeldBy(e.holder.clone())),
+        _ => {
+          map.insert(
+            name,
+            MemEntry {
+              holder,
+              until: Instant::now() + ttl,
+            },
+          );
+          Ok(())
+        }
       }
-    }
+    })
   }
 
-  fn renew(&self, name: &str, holder: &str, ttl: Duration) -> Result<(), SingletonError> {
-    let mut map = self.inner.lock().expect("lease");
-    Self::sweep(&mut map);
-    match map.get_mut(name) {
-      Some(e) if e.holder == holder => {
-        e.until = Instant::now() + ttl;
-        Ok(())
+  fn renew(&self, name: &str, holder: &str, ttl: Duration) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.with_table(move |map| {
+      Self::sweep(map);
+      match map.get_mut(&name) {
+        Some(e) if e.holder == holder => {
+          e.until = Instant::now() + ttl;
+          Ok(())
+        }
+        Some(e) => Err(SingletonError::HeldBy(e.holder.clone())),
+        None => Err(SingletonError::Unavailable("no lease".into())),
       }
-      Some(e) => Err(SingletonError::HeldBy(e.holder.clone())),
-      None => Err(SingletonError::Unavailable("no lease".into())),
-    }
+    })
   }
 
-  fn release(&self, name: &str, holder: &str) -> Result<(), SingletonError> {
-    let mut map = self.inner.lock().expect("lease");
-    match map.get(name) {
+  fn release(&self, name: &str, holder: &str) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.with_table(move |map| match map.get(&name) {
       Some(e) if e.holder == holder => {
-        map.remove(name);
+        map.remove(&name);
         Ok(())
       }
       Some(e) => Err(SingletonError::HeldBy(e.holder.clone())),
       None => Ok(()),
-    }
+    })
   }
 
-  fn holder(&self, name: &str) -> Option<String> {
-    let mut map = self.inner.lock().expect("lease");
-    Self::sweep(&mut map);
-    map.get(name).map(|e| e.holder.clone())
+  fn holder(&self, name: &str) -> Effect<Option<String>, Never> {
+    let name = name.to_string();
+    self.with_table(move |map| {
+      Self::sweep(map);
+      Ok(map.get(&name).map(|e| e.holder.clone()))
+    })
   }
 }
 
@@ -148,7 +183,7 @@ pub struct ClusterSingleton {
   holder_id: String,
   lease: Arc<dyn SingletonLease>,
   ttl: Duration,
-  local_pid: Mutex<Option<Pid>>,
+  local_pid: Arc<Mutex<Option<Pid>>>,
 }
 
 impl ClusterSingleton {
@@ -164,34 +199,40 @@ impl ClusterSingleton {
       holder_id: holder_id.into(),
       lease,
       ttl,
-      local_pid: Mutex::new(None),
+      local_pid: Arc::new(Mutex::new(None)),
     }
   }
 
   /// Attempt to become the singleton; records `pid` on success.
-  pub fn try_become(&self, pid: &Pid) -> Result<(), SingletonError> {
+  pub fn try_become(&self, pid: &Pid) -> Effect<(), SingletonError> {
+    let (slot, pid) = (Arc::clone(&self.local_pid), pid.clone());
     self
       .lease
-      .try_acquire(&self.name, &self.holder_id, self.ttl)?;
-    *self.local_pid.lock().expect("pid") = Some(pid.clone());
-    Ok(())
+      .try_acquire(&self.name, &self.holder_id, self.ttl)
+      .flat_map(move |()| sync(move || *slot.lock().expect("pid") = Some(pid)))
   }
 
-  /// Renew the lease (call from a heartbeat fiber).
-  pub fn heartbeat(&self) -> Result<(), SingletonError> {
+  /// Renew the lease (run it from a heartbeat fiber, e.g. under a `Schedule`).
+  pub fn heartbeat(&self) -> Effect<(), SingletonError> {
     self.lease.renew(&self.name, &self.holder_id, self.ttl)
   }
 
   /// Step down.
-  pub fn resign(&self) -> Result<(), SingletonError> {
-    self.lease.release(&self.name, &self.holder_id)?;
-    *self.local_pid.lock().expect("pid") = None;
-    Ok(())
+  pub fn resign(&self) -> Effect<(), SingletonError> {
+    let slot = Arc::clone(&self.local_pid);
+    self
+      .lease
+      .release(&self.name, &self.holder_id)
+      .flat_map(move |()| sync(move || *slot.lock().expect("pid") = None))
   }
 
   /// Whether this node currently holds the singleton.
-  pub fn is_holder(&self) -> bool {
-    self.lease.holder(&self.name).as_deref() == Some(self.holder_id.as_str())
+  pub fn is_holder(&self) -> Effect<bool, Never> {
+    let me = self.holder_id.clone();
+    self
+      .lease
+      .holder(&self.name)
+      .map(move |h| h.as_deref() == Some(me.as_str()))
   }
 
   /// Local process running the singleton role, if we are the holder.
@@ -222,36 +263,27 @@ enum LeaseCmd {
   },
 }
 
-/// Owns a single Postgres connection and runs advisory-lock SQL on it.
+/// The dedicated-session worker: a daemon fiber that owns a single Postgres connection and
+/// runs advisory-lock SQL on it.
 ///
-/// The lock is session-scoped: it stays held for exactly as long as this loop (and therefore the
-/// connection) lives. When every [`PgAdvisoryLease`] handle drops, `commands` closes, the loop
-/// ends, the connection closes, and Postgres releases all advisory locks — the failover trigger.
+/// The lock is session-scoped: it stays held for exactly as long as this fiber (and therefore
+/// the connection) lives. When the [`PgAdvisoryLease`] handle drops, the fiber is interrupted
+/// (and `commands` closes), the connection closes, and Postgres releases all advisory locks —
+/// the failover trigger.
 #[cfg(feature = "pg")]
-fn run_lease_worker(
+fn lease_worker(
   url: String,
   commands: flume::Receiver<LeaseCmd>,
   ready: flume::Sender<Result<(), String>>,
-) {
-  use sqlx::Connection as _;
+) -> Effect<(), Never> {
+  id_effect::next::from_async(move || async move {
+    use sqlx::Connection as _;
 
-  let runtime = match tokio::runtime::Builder::new_current_thread()
-    .enable_all()
-    .build()
-  {
-    Ok(rt) => rt,
-    Err(e) => {
-      let _ = ready.send(Err(format!("tokio runtime: {e}")));
-      return;
-    }
-  };
-
-  runtime.block_on(async move {
     let mut conn = match sqlx::postgres::PgConnection::connect(&url).await {
       Ok(conn) => conn,
       Err(e) => {
         let _ = ready.send(Err(format!("connect: {e}")));
-        return;
+        return Ok(());
       }
     };
     let _ = ready.send(Ok(()));
@@ -287,164 +319,218 @@ fn run_lease_worker(
       }
     }
     // `conn` drops here: session ends, advisory locks released.
-  });
+    Ok(())
+  })
 }
 
 /// Postgres session-level advisory-lock [`SingletonLease`] — the CP production path (ADR 0009).
 ///
-/// Holds a **dedicated** connection on a worker thread for the lease lifetime so
+/// Holds a **dedicated** connection on a daemon fiber for the lease lifetime so
 /// `pg_try_advisory_lock` stays session-scoped and is auto-released on connection loss or drop,
 /// enabling failover. TTLs are ignored: ownership tracks session liveness, not wall-clock time.
 ///
 /// Each node process should hold its own lease (one connection). Enabled by the `pg` feature;
-/// construct via [`PgAdvisoryLease::connect`] or [`PgAdvisoryLease::from_pool_config`].
+/// construct via [`PgAdvisoryLease::connect`] or [`PgAdvisoryLease::from_pool_config`] on a
+/// `TokioExecutor` over a tokio runtime with the IO driver enabled (sqlx needs it); elsewhere
+/// the connect fails with [`SingletonError::Unavailable`] naming the session fiber's defect.
 #[cfg(feature = "pg")]
 pub struct PgAdvisoryLease {
   commands: flume::Sender<LeaseCmd>,
-  held: Mutex<HashMap<String, String>>,
+  /// Names this session holds → holder id. An async mutex: an operation holds it across its
+  /// round-trip to the worker, so check-then-lock is atomic per lease.
+  held: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
+  /// The session fiber; interrupted when the handle drops.
+  worker: Option<id_effect::next::FiberHandle<(), Never>>,
+}
+
+#[cfg(feature = "pg")]
+impl Drop for PgAdvisoryLease {
+  fn drop(&mut self) {
+    if let Some(worker) = &self.worker {
+      worker.interrupt_now();
+    }
+  }
+}
+
+#[cfg(feature = "pg")]
+fn worker_gone() -> SingletonError {
+  SingletonError::Unavailable("lease worker gone".into())
+}
+
+#[cfg(feature = "pg")]
+fn response_dropped() -> SingletonError {
+  SingletonError::Unavailable("lease worker dropped response".into())
+}
+
+#[cfg(feature = "pg")]
+async fn round_trip<T>(
+  commands: &flume::Sender<LeaseCmd>,
+  cmd: impl FnOnce(flume::Sender<Result<T, String>>) -> LeaseCmd,
+) -> Result<T, SingletonError> {
+  let (tx, rx) = flume::bounded(1);
+  commands.send(cmd(tx)).map_err(|_| worker_gone())?;
+  rx.recv_async()
+    .await
+    .map_err(|_| response_dropped())?
+    .map_err(SingletonError::Unavailable)
+}
+
+#[cfg(feature = "pg")]
+async fn ping(commands: &flume::Sender<LeaseCmd>) -> Result<(), SingletonError> {
+  round_trip(commands, |resp| LeaseCmd::Ping { resp }).await
 }
 
 #[cfg(feature = "pg")]
 impl PgAdvisoryLease {
   /// Open a dedicated advisory-lock session at `url` (`postgres://…`).
   ///
-  /// Blocks until the connection is established; returns [`SingletonError::Unavailable`] if the
-  /// worker cannot connect.
-  pub fn connect(url: impl Into<String>) -> Result<Self, SingletonError> {
+  /// Forks the session fiber and completes once the connection is established; fails with
+  /// [`SingletonError::Unavailable`] if it cannot connect.
+  pub fn connect(url: impl Into<String>) -> Effect<Self, SingletonError> {
     let url = url.into();
-    let (commands, rx) = flume::unbounded();
-    let (ready_tx, ready_rx) = flume::bounded(1);
-    std::thread::Builder::new()
-      .name("pg-advisory-lease".into())
-      .spawn(move || run_lease_worker(url, rx, ready_tx))
-      .map_err(|e| SingletonError::Unavailable(format!("spawn lease worker: {e}")))?;
-    match ready_rx.recv() {
-      Ok(Ok(())) => Ok(Self {
-        commands,
-        held: Mutex::new(HashMap::new()),
-      }),
-      Ok(Err(e)) => Err(SingletonError::Unavailable(e)),
-      Err(_) => Err(SingletonError::Unavailable(
-        "lease worker exited before ready".into(),
-      )),
-    }
+    suspend(move || {
+      let (commands, rx) = flume::unbounded();
+      let (ready_tx, ready_rx) = flume::bounded(1);
+      lease_worker(url, rx, ready_tx)
+        .fork_daemon()
+        .widen()
+        .flat_map(move |worker| {
+          id_effect::next::from_async(move || async move {
+            Ok::<_, SingletonError>(ready_rx.recv_async().await.ok())
+          })
+          .flat_map(move |ready| match ready {
+            Some(Ok(())) => succeed(Self {
+              commands,
+              held: Arc::default(),
+              worker: Some(worker),
+            }),
+            Some(Err(e)) => fail(SingletonError::Unavailable(e)),
+            // The session fiber died before reporting (e.g. sqlx found no tokio IO driver).
+            None => worker.join().exit().flat_map(|exit: Exit<(), Never>| {
+              let why = match exit {
+                Exit::Failure(Cause::Die(d)) => d.message().to_string(),
+                other => format!("{other:?}"),
+              };
+              fail(SingletonError::Unavailable(format!(
+                "lease worker exited before ready: {why}"
+              )))
+            }),
+          })
+        })
+    })
   }
 
   /// Open a lease using an [`id_effect_sql::pg::PgPoolConfig`]'s connection URL.
-  pub fn from_pool_config(config: id_effect_sql::pg::PgPoolConfig) -> Result<Self, SingletonError> {
+  pub fn from_pool_config(config: id_effect_sql::pg::PgPoolConfig) -> Effect<Self, SingletonError> {
     Self::connect(config.url)
   }
 
-  fn command_bool(
-    &self,
-    cmd: LeaseCmd,
-    rx: flume::Receiver<Result<bool, String>>,
-  ) -> Result<bool, SingletonError> {
-    self
-      .commands
-      .send(cmd)
-      .map_err(|_| SingletonError::Unavailable("lease worker gone".into()))?;
-    rx.recv()
-      .map_err(|_| SingletonError::Unavailable("lease worker dropped response".into()))?
-      .map_err(SingletonError::Unavailable)
-  }
-
-  fn acquire_lock(&self, k1: i32, k2: i32) -> Result<bool, SingletonError> {
-    let (tx, rx) = flume::bounded(1);
-    self.command_bool(LeaseCmd::Acquire { k1, k2, resp: tx }, rx)
-  }
-
-  fn unlock(&self, k1: i32, k2: i32) -> Result<bool, SingletonError> {
-    let (tx, rx) = flume::bounded(1);
-    self.command_bool(LeaseCmd::Unlock { k1, k2, resp: tx }, rx)
-  }
-
-  fn ping(&self) -> Result<(), SingletonError> {
-    let (tx, rx) = flume::bounded(1);
-    self
-      .commands
-      .send(LeaseCmd::Ping { resp: tx })
-      .map_err(|_| SingletonError::Unavailable("lease worker gone".into()))?;
-    rx.recv()
-      .map_err(|_| SingletonError::Unavailable("lease worker dropped response".into()))?
-      .map_err(SingletonError::Unavailable)
+  /// Run `f` with the session's command channel and held-names table (locked).
+  fn op<A, F, Fut>(&self, f: F) -> Effect<A, SingletonError>
+  where
+    A: Send + 'static,
+    F: FnOnce(flume::Sender<LeaseCmd>, Arc<tokio::sync::Mutex<HashMap<String, String>>>) -> Fut
+      + Send
+      + 'static,
+    Fut: std::future::Future<Output = Result<A, SingletonError>> + Send + 'static,
+  {
+    let (commands, held) = (self.commands.clone(), Arc::clone(&self.held));
+    id_effect::next::from_async(move || f(commands, held))
   }
 }
 
 #[cfg(feature = "pg")]
 impl SingletonLease for PgAdvisoryLease {
-  fn try_acquire(&self, name: &str, holder: &str, _ttl: Duration) -> Result<(), SingletonError> {
-    let mut held = self
-      .held
-      .lock()
-      .map_err(|_| SingletonError::Unavailable("lease state poisoned".into()))?;
-    if let Some(existing) = held.get(name) {
-      return if existing == holder {
+  fn try_acquire(&self, name: &str, holder: &str, _ttl: Duration) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.op(move |commands, held| async move {
+      let mut held = held.lock().await;
+      if let Some(existing) = held.get(&name) {
+        return if *existing == holder {
+          Ok(())
+        } else {
+          Err(SingletonError::HeldBy(existing.clone()))
+        };
+      }
+      let (k1, k2) = advisory_lock_keys(&name);
+      if round_trip(&commands, |resp| LeaseCmd::Acquire { k1, k2, resp }).await? {
+        held.insert(name, holder);
         Ok(())
       } else {
-        Err(SingletonError::HeldBy(existing.clone()))
-      };
-    }
-    let (k1, k2) = advisory_lock_keys(name);
-    if self.acquire_lock(k1, k2)? {
-      held.insert(name.to_string(), holder.to_string());
-      Ok(())
-    } else {
-      Err(SingletonError::HeldBy("another session".into()))
-    }
-  }
-
-  fn renew(&self, name: &str, holder: &str, _ttl: Duration) -> Result<(), SingletonError> {
-    {
-      let held = self
-        .held
-        .lock()
-        .map_err(|_| SingletonError::Unavailable("lease state poisoned".into()))?;
-      match held.get(name) {
-        Some(h) if h == holder => {}
-        Some(h) => return Err(SingletonError::HeldBy(h.clone())),
-        None => return Err(SingletonError::Unavailable("no lease".into())),
+        Err(SingletonError::HeldBy("another session".into()))
       }
-    }
-    // Ownership is session liveness: a failed ping means the session (and lock) is gone.
-    self.ping()
+    })
   }
 
-  fn release(&self, name: &str, holder: &str) -> Result<(), SingletonError> {
-    let mut held = self
-      .held
-      .lock()
-      .map_err(|_| SingletonError::Unavailable("lease state poisoned".into()))?;
-    match held.get(name) {
-      Some(h) if h == holder => {
-        let (k1, k2) = advisory_lock_keys(name);
-        let _ = self.unlock(k1, k2);
-        held.remove(name);
-        Ok(())
+  fn renew(&self, name: &str, holder: &str, _ttl: Duration) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.op(move |commands, held| async move {
+      {
+        let held = held.lock().await;
+        match held.get(&name) {
+          Some(h) if *h == holder => {}
+          Some(h) => return Err(SingletonError::HeldBy(h.clone())),
+          None => return Err(SingletonError::Unavailable("no lease".into())),
+        }
       }
-      Some(h) => Err(SingletonError::HeldBy(h.clone())),
-      None => Ok(()),
-    }
+      // Ownership is session liveness: a failed ping means the session (and lock) is gone.
+      ping(&commands).await
+    })
   }
 
-  fn holder(&self, name: &str) -> Option<String> {
-    let owner = {
-      let held = self.held.lock().ok()?;
-      held.get(name)?.clone()
-    };
-    // Confirm the session is still alive; otherwise the lock has already been lost.
-    if self.ping().is_ok() {
-      Some(owner)
-    } else {
-      None
-    }
+  fn release(&self, name: &str, holder: &str) -> Effect<(), SingletonError> {
+    let (name, holder) = (name.to_string(), holder.to_string());
+    self.op(move |commands, held| async move {
+      let mut held = held.lock().await;
+      match held.get(&name) {
+        Some(h) if *h == holder => {
+          let (k1, k2) = advisory_lock_keys(&name);
+          let _ = round_trip(&commands, |resp| LeaseCmd::Unlock { k1, k2, resp }).await;
+          held.remove(&name);
+          Ok(())
+        }
+        Some(h) => Err(SingletonError::HeldBy(h.clone())),
+        None => Ok(()),
+      }
+    })
+  }
+
+  fn holder(&self, name: &str) -> Effect<Option<String>, Never> {
+    let name = name.to_string();
+    let (commands, held) = (self.commands.clone(), Arc::clone(&self.held));
+    id_effect::next::from_async(move || async move {
+      let owner = held.lock().await.get(&name).cloned();
+      // Confirm the session is still alive; otherwise the lock has already been lost.
+      Ok(match owner {
+        Some(owner) if ping(&commands).await.is_ok() => Some(owner),
+        _ => None,
+      })
+    })
   }
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use id_effect::{Cause, Exit};
   use id_effect_process::NodeName;
+
+  /// Run a lease effect to its typed outcome.
+  fn run<A: Send + 'static>(eff: Effect<A, SingletonError>) -> Result<A, SingletonError> {
+    match eff.block_on() {
+      Exit::Success(a) => Ok(a),
+      Exit::Failure(Cause::Fail(e)) => Err(e),
+      Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+    }
+  }
+
+  /// Run an infallible lease effect.
+  fn get<A: Send + 'static>(eff: Effect<A, Never>) -> A {
+    match eff.block_on() {
+      Exit::Success(a) => a,
+      Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+    }
+  }
 
   #[test]
   fn only_one_holder() {
@@ -462,12 +548,15 @@ mod tests {
       Duration::from_secs(5),
     );
     let pid = Pid::from_parts(NodeName::new("a@t"), 1, 1);
-    a.try_become(&pid).unwrap();
-    assert!(a.is_holder());
-    assert!(matches!(b.try_become(&pid), Err(SingletonError::HeldBy(_))));
-    a.resign().unwrap();
-    b.try_become(&pid).unwrap();
-    assert!(b.is_holder());
+    run(a.try_become(&pid)).unwrap();
+    assert!(get(a.is_holder()));
+    assert!(matches!(
+      run(b.try_become(&pid)),
+      Err(SingletonError::HeldBy(_))
+    ));
+    run(a.resign()).unwrap();
+    run(b.try_become(&pid)).unwrap();
+    assert!(get(b.is_holder()));
   }
 
   const LONG: Duration = Duration::from_secs(3600);
@@ -479,17 +568,17 @@ mod tests {
   #[test]
   fn acquire_by_the_same_holder_is_reentrant() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("first");
-    lease.try_acquire("job", "a", LONG).expect("re-acquire");
-    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+    run(lease.try_acquire("job", "a", LONG)).expect("first");
+    run(lease.try_acquire("job", "a", LONG)).expect("re-acquire");
+    assert_eq!(get(lease.holder("job")).as_deref(), Some("a"));
   }
 
   #[test]
   fn contender_learns_who_holds_the_lease() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("a");
+    run(lease.try_acquire("job", "a", LONG)).expect("a");
     assert_eq!(
-      lease.try_acquire("job", "b", LONG),
+      run(lease.try_acquire("job", "b", LONG)),
       Err(SingletonError::HeldBy("a".into()))
     );
   }
@@ -497,26 +586,26 @@ mod tests {
   #[test]
   fn leases_are_independent_per_name() {
     let lease = MemoryLease::new();
-    lease.try_acquire("one", "a", LONG).expect("one");
-    lease.try_acquire("two", "b", LONG).expect("two");
-    assert_eq!(lease.holder("one").as_deref(), Some("a"));
-    assert_eq!(lease.holder("two").as_deref(), Some("b"));
+    run(lease.try_acquire("one", "a", LONG)).expect("one");
+    run(lease.try_acquire("two", "b", LONG)).expect("two");
+    assert_eq!(get(lease.holder("one")).as_deref(), Some("a"));
+    assert_eq!(get(lease.holder("two")).as_deref(), Some("b"));
   }
 
   #[test]
   fn renew_keeps_the_holder() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("acquire");
-    lease.renew("job", "a", LONG).expect("renew");
-    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+    run(lease.try_acquire("job", "a", LONG)).expect("acquire");
+    run(lease.renew("job", "a", LONG)).expect("renew");
+    assert_eq!(get(lease.holder("job")).as_deref(), Some("a"));
   }
 
   #[test]
   fn renew_by_a_non_holder_is_refused() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("acquire");
+    run(lease.try_acquire("job", "a", LONG)).expect("acquire");
     assert_eq!(
-      lease.renew("job", "b", LONG),
+      run(lease.renew("job", "b", LONG)),
       Err(SingletonError::HeldBy("a".into()))
     );
   }
@@ -525,7 +614,7 @@ mod tests {
   fn renew_without_a_lease_is_unavailable() {
     let lease = MemoryLease::new();
     assert!(matches!(
-      lease.renew("job", "a", LONG),
+      run(lease.renew("job", "a", LONG)),
       Err(SingletonError::Unavailable(_))
     ));
   }
@@ -533,17 +622,17 @@ mod tests {
   #[test]
   fn release_by_a_non_holder_is_refused_and_keeps_the_lease() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("acquire");
+    run(lease.try_acquire("job", "a", LONG)).expect("acquire");
     assert_eq!(
-      lease.release("job", "b"),
+      run(lease.release("job", "b")),
       Err(SingletonError::HeldBy("a".into()))
     );
-    assert_eq!(lease.holder("job").as_deref(), Some("a"));
+    assert_eq!(get(lease.holder("job")).as_deref(), Some("a"));
   }
 
   #[test]
   fn release_of_an_absent_lease_is_ok() {
-    assert_eq!(MemoryLease::new().release("job", "a"), Ok(()));
+    assert_eq!(run(MemoryLease::new().release("job", "a")), Ok(()));
   }
 
   // A zero TTL is expired the moment it is granted (deadline == grant
@@ -552,18 +641,18 @@ mod tests {
   #[test]
   fn expired_lease_has_no_holder_and_can_be_taken_over() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", Duration::ZERO).expect("a");
-    assert_eq!(lease.holder("job"), None);
-    lease.try_acquire("job", "b", LONG).expect("b takes over");
-    assert_eq!(lease.holder("job").as_deref(), Some("b"));
+    run(lease.try_acquire("job", "a", Duration::ZERO)).expect("a");
+    assert_eq!(get(lease.holder("job")), None);
+    run(lease.try_acquire("job", "b", LONG)).expect("b takes over");
+    assert_eq!(get(lease.holder("job")).as_deref(), Some("b"));
   }
 
   #[test]
   fn expired_lease_cannot_be_renewed() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", Duration::ZERO).expect("a");
+    run(lease.try_acquire("job", "a", Duration::ZERO)).expect("a");
     assert!(matches!(
-      lease.renew("job", "a", LONG),
+      run(lease.renew("job", "a", LONG)),
       Err(SingletonError::Unavailable(_))
     ));
   }
@@ -571,9 +660,13 @@ mod tests {
   #[test]
   fn renew_extends_a_lease_that_would_have_expired() {
     let lease = MemoryLease::new();
-    lease.try_acquire("job", "a", LONG).expect("a");
-    lease.renew("job", "a", Duration::ZERO).expect("shrink");
-    assert_eq!(lease.holder("job"), None, "renewal sets a new deadline");
+    run(lease.try_acquire("job", "a", LONG)).expect("a");
+    run(lease.renew("job", "a", Duration::ZERO)).expect("shrink");
+    assert_eq!(
+      get(lease.holder("job")),
+      None,
+      "renewal sets a new deadline"
+    );
   }
 
   #[test]
@@ -581,13 +674,13 @@ mod tests {
     let lease: Arc<dyn SingletonLease> = Arc::new(MemoryLease::new());
     let single = ClusterSingleton::new("leader", "a", lease, LONG);
     assert_eq!(single.local_pid(), None);
-    assert!(!single.is_holder());
-    single.try_become(&pid()).expect("become");
+    assert!(!get(single.is_holder()));
+    run(single.try_become(&pid())).expect("become");
     assert_eq!(single.local_pid(), Some(pid()));
-    single.heartbeat().expect("heartbeat");
-    single.resign().expect("resign");
+    run(single.heartbeat()).expect("heartbeat");
+    run(single.resign()).expect("resign");
     assert_eq!(single.local_pid(), None);
-    assert!(!single.is_holder());
+    assert!(!get(single.is_holder()));
   }
 
   #[test]
@@ -595,10 +688,10 @@ mod tests {
     let lease = Arc::new(MemoryLease::new());
     let a = ClusterSingleton::new("leader", "a", Arc::clone(&lease) as _, LONG);
     let b = ClusterSingleton::new("leader", "b", lease as _, LONG);
-    a.try_become(&pid()).expect("a");
-    assert!(b.try_become(&pid()).is_err());
+    run(a.try_become(&pid())).expect("a");
+    assert!(run(b.try_become(&pid())).is_err());
     assert_eq!(b.local_pid(), None);
-    assert!(matches!(b.heartbeat(), Err(SingletonError::HeldBy(h)) if h == "a"));
+    assert!(matches!(run(b.heartbeat()), Err(SingletonError::HeldBy(h)) if h == "a"));
   }
 
   #[test]
@@ -633,7 +726,7 @@ mod tests {
   #[cfg(feature = "pg")]
   #[test]
   fn pg_lease_connect_failure_is_unavailable() {
-    match PgAdvisoryLease::connect("not-a-postgres-url") {
+    match run(PgAdvisoryLease::connect("not-a-postgres-url")) {
       Err(SingletonError::Unavailable(msg)) => assert!(msg.starts_with("connect:"), "{msg}"),
       Err(other) => panic!("unexpected error: {other}"),
       Ok(_) => panic!("connect to a bogus url must fail"),
@@ -700,7 +793,8 @@ mod tests {
       Fake {
         lease: PgAdvisoryLease {
           commands,
-          held: Mutex::new(HashMap::new()),
+          held: Arc::default(),
+          worker: None,
         },
         session_alive,
         unlocked,
@@ -712,21 +806,25 @@ mod tests {
       drop(rx);
       PgAdvisoryLease {
         commands,
-        held: Mutex::new(HashMap::from([("job".to_string(), "a".to_string())])),
+        held: Arc::new(tokio::sync::Mutex::new(HashMap::from([(
+          "job".to_string(),
+          "a".to_string(),
+        )]))),
+        worker: None,
       }
     }
 
     #[test]
     fn acquire_is_reentrant_and_exclusive_per_process() {
       let f = fake(Script::default());
-      f.lease.try_acquire("job", "a", LONG).expect("acquire");
-      f.lease.try_acquire("job", "a", LONG).expect("re-acquire");
+      run(f.lease.try_acquire("job", "a", LONG)).expect("acquire");
+      run(f.lease.try_acquire("job", "a", LONG)).expect("re-acquire");
       assert_eq!(
-        f.lease.try_acquire("job", "b", LONG),
+        run(f.lease.try_acquire("job", "b", LONG)),
         Err(SingletonError::HeldBy("a".into()))
       );
-      assert_eq!(f.lease.holder("job").as_deref(), Some("a"));
-      assert_eq!(f.lease.holder("other"), None);
+      assert_eq!(get(f.lease.holder("job")).as_deref(), Some("a"));
+      assert_eq!(get(f.lease.holder("other")), None);
     }
 
     #[test]
@@ -736,11 +834,11 @@ mod tests {
         ..Script::default()
       });
       assert_eq!(
-        f.lease.try_acquire("job", "a", LONG),
+        run(f.lease.try_acquire("job", "a", LONG)),
         Err(SingletonError::HeldBy("another session".into()))
       );
-      assert_eq!(f.lease.holder("job"), None);
-      f.lease.try_acquire("free", "a", LONG).expect("other key");
+      assert_eq!(get(f.lease.holder("job")), None);
+      run(f.lease.try_acquire("free", "a", LONG)).expect("other key");
     }
 
     #[test]
@@ -750,7 +848,7 @@ mod tests {
         ..Script::default()
       });
       assert_eq!(
-        f.lease.try_acquire("job", "a", LONG),
+        run(f.lease.try_acquire("job", "a", LONG)),
         Err(SingletonError::Unavailable("permission denied".into()))
       );
     }
@@ -759,47 +857,52 @@ mod tests {
     fn renew_tracks_session_liveness() {
       let f = fake(Script::default());
       assert_eq!(
-        f.lease.renew("job", "a", LONG),
+        run(f.lease.renew("job", "a", LONG)),
         Err(SingletonError::Unavailable("no lease".into()))
       );
-      f.lease.try_acquire("job", "a", LONG).expect("acquire");
-      f.lease.renew("job", "a", LONG).expect("renew");
+      run(f.lease.try_acquire("job", "a", LONG)).expect("acquire");
+      run(f.lease.renew("job", "a", LONG)).expect("renew");
       assert_eq!(
-        f.lease.renew("job", "b", LONG),
+        run(f.lease.renew("job", "b", LONG)),
         Err(SingletonError::HeldBy("a".into()))
       );
       f.session_alive.store(false, Ordering::SeqCst);
       assert_eq!(
-        f.lease.renew("job", "a", LONG),
+        run(f.lease.renew("job", "a", LONG)),
         Err(SingletonError::Unavailable("connection reset".into()))
       );
-      assert_eq!(f.lease.holder("job"), None, "a dead session holds nothing");
+      assert_eq!(
+        get(f.lease.holder("job")),
+        None,
+        "a dead session holds nothing"
+      );
     }
 
     #[test]
     fn release_unlocks_only_for_the_holder() {
       let f = fake(Script::default());
-      assert_eq!(f.lease.release("job", "a"), Ok(()));
-      f.lease.try_acquire("job", "a", LONG).expect("acquire");
+      assert_eq!(run(f.lease.release("job", "a")), Ok(()));
+      run(f.lease.try_acquire("job", "a", LONG)).expect("acquire");
       assert_eq!(
-        f.lease.release("job", "b"),
+        run(f.lease.release("job", "b")),
         Err(SingletonError::HeldBy("a".into()))
       );
       assert!(f.unlocked.lock().unwrap().is_empty());
-      f.lease.release("job", "a").expect("release");
+      run(f.lease.release("job", "a")).expect("release");
       assert_eq!(*f.unlocked.lock().unwrap(), vec![advisory_lock_keys("job")]);
-      f.lease
-        .try_acquire("job", "b", LONG)
-        .expect("b after release");
+      run(f.lease.try_acquire("job", "b", LONG)).expect("b after release");
     }
 
     #[test]
     fn missing_worker_is_unavailable() {
       let lease = worker_gone();
       let gone = SingletonError::Unavailable("lease worker gone".into());
-      assert_eq!(lease.try_acquire("other", "a", LONG), Err(gone.clone()));
-      assert_eq!(lease.renew("job", "a", LONG), Err(gone));
-      assert_eq!(lease.holder("job"), None);
+      assert_eq!(
+        run(lease.try_acquire("other", "a", LONG)),
+        Err(gone.clone())
+      );
+      assert_eq!(run(lease.renew("job", "a", LONG)), Err(gone));
+      assert_eq!(get(lease.holder("job")), None);
     }
 
     #[test]
@@ -809,16 +912,18 @@ mod tests {
         ..Script::default()
       });
       let dropped = SingletonError::Unavailable("lease worker dropped response".into());
-      assert_eq!(f.lease.try_acquire("job", "a", LONG), Err(dropped.clone()));
+      assert_eq!(
+        run(f.lease.try_acquire("job", "a", LONG)),
+        Err(dropped.clone())
+      );
       f.lease
         .held
-        .lock()
-        .unwrap()
+        .blocking_lock()
         .insert("job".into(), "a".into());
-      assert_eq!(f.lease.renew("job", "a", LONG), Err(dropped));
+      assert_eq!(run(f.lease.renew("job", "a", LONG)), Err(dropped));
       // Release still clears local state even if the unlock reply is lost.
-      assert_eq!(f.lease.release("job", "a"), Ok(()));
-      assert!(f.lease.held.lock().unwrap().is_empty());
+      assert_eq!(run(f.lease.release("job", "a")), Ok(()));
+      assert!(f.lease.held.blocking_lock().is_empty());
     }
   }
 
@@ -827,7 +932,7 @@ mod tests {
   fn pg_lease_from_pool_config_uses_its_url() {
     let config = id_effect_sql::pg::PgPoolConfig::from_url("not-a-postgres-url");
     assert!(matches!(
-      PgAdvisoryLease::from_pool_config(config),
+      run(PgAdvisoryLease::from_pool_config(config)),
       Err(SingletonError::Unavailable(_))
     ));
   }

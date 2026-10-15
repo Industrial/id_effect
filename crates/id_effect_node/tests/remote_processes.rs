@@ -3,11 +3,20 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::Never;
 use id_effect::next::{Effect, succeed, sync};
+use id_effect::{Cause, Exit, Never};
 use id_effect_node::{BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault};
 use id_effect_process::{ExitReason, Next, NodeName, Process, ProcessCtx, ProcessNode};
 use serde::{Deserialize, Serialize};
+
+/// Run a mesh request on the default runtime.
+fn run<A: Send + 'static>(eff: Effect<A, RemoteFault>) -> Result<A, RemoteFault> {
+  match eff.block_on() {
+    Exit::Success(a) => Ok(a),
+    Exit::Failure(Cause::Fail(f)) => Err(f),
+    Exit::Failure(c) => panic!("unexpected cause: {c:?}"),
+  }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum CounterCall {
@@ -82,9 +91,8 @@ fn remote_spawn_cast_call_round_trip() {
   let (a, b, _fabric) = mesh_pair();
   let args = postcard::to_allocvec(&()).expect("args");
 
-  let pid = a
-    .remote_spawn("b@test", "counter", args, None, Duration::from_secs(2))
-    .expect("spawn");
+  let pid =
+    run(a.remote_spawn("b@test", "counter", args, None, Duration::from_secs(2))).expect("spawn");
   assert_eq!(pid.node().as_str(), "b@test");
 
   // The mailbox is FIFO, so the call below is handled after this cast.
@@ -92,9 +100,7 @@ fn remote_spawn_cast_call_round_trip() {
   a.remote_cast(&pid, cast).expect("cast");
 
   let call = postcard::to_allocvec(&CounterCall::Get).unwrap();
-  let reply = a
-    .remote_call(&pid, call, Duration::from_secs(2))
-    .expect("call");
+  let reply = run(a.remote_call(&pid, call, Duration::from_secs(2))).expect("call");
   let n: u32 = postcard::from_bytes(&reply).unwrap();
   assert_eq!(n, 5);
 
@@ -105,9 +111,8 @@ fn remote_spawn_cast_call_round_trip() {
 fn remote_monitor_fires_noconnection_on_peer_down() {
   let (a, b, _fabric) = mesh_pair();
   let args = postcard::to_allocvec(&()).unwrap();
-  let pid = a
-    .remote_spawn("b@test", "counter", args, None, Duration::from_secs(2))
-    .expect("spawn");
+  let pid =
+    run(a.remote_spawn("b@test", "counter", args, None, Duration::from_secs(2))).expect("spawn");
 
   let seen = Arc::new(std::sync::Mutex::new(None));
   let sink_seen = Arc::clone(&seen);
@@ -130,9 +135,8 @@ fn remote_monitor_fires_noconnection_on_peer_down() {
 #[test]
 fn unknown_behavior_is_rejected() {
   let (a, _b, _) = mesh_pair();
-  let err = a
-    .remote_spawn("b@test", "nope", vec![], None, Duration::from_secs(1))
-    .unwrap_err();
+  let err =
+    run(a.remote_spawn("b@test", "nope", vec![], None, Duration::from_secs(1))).unwrap_err();
   assert!(matches!(err, RemoteFault::UnknownBehavior(_)));
 }
 
