@@ -116,7 +116,12 @@
   optimistic locking via `#[entity(version)]` (`SqlError::StaleVersion`), soft-delete / tenant /
   custom global filters on every generated statement with `with_deleted()` / `unscoped()` escape
   hatches (a tenant-scoped entity with no tenant fails closed); runs in transactions via
-  `repo.on(tx)`.
+  `repo.on(tx)`. Book: part6/ch28-03-repositories.md; example `040_repository`.
+- Book part6/ch30-07-audit-tenancy.md: the row-level tenant pattern end to end (authenticated
+  principal → `CapOverrideLayer` setting `CurrentTenant` and `AuditContext` → tenant-filtered
+  `Repository` → `audit::record` in the request's transaction → `verify_chain`), its fail-closed
+  behaviour and the alternatives it does not cover (row-level security, schema or database per
+  tenant); example `id_effect_sql/050_tenancy_audit`.
 - `id_effect_sql` feature `audit`: hash-chained audit log. `AuditLog` layer, `append` / `record`
   inside the caller's transaction, one chain per tenant with `sha256(prev_hash ‖ record)` (the
   chain head is row-locked, so concurrent appends never fork it), `verify_chain` reports the first

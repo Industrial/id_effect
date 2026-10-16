@@ -41,6 +41,10 @@ struct Ch3005Oidc;
 struct Ch3006Totp;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-07-audit-tenancy.md")]
+struct Ch3007AuditTenancy;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 
@@ -59,6 +63,10 @@ struct Ch2801TypedSql;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-02-migrations.md")]
 struct Ch2802Migrations;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-03-repositories.md")]
+struct Ch2803Repositories;
 
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-04-redis.md")]

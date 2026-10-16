@@ -119,6 +119,14 @@ required-features = ["repository"]
 name = "030_migrate"
 required-features = ["migrate", "pg"]
 
+[[example]]
+name = "040_repository"
+required-features = ["repository", "sqlite"]
+
+[[example]]
+name = "050_tenancy_audit"
+required-features = ["repository", "sqlite", "audit", "migrate", "pg"]
+
 [package.metadata.docs.rs]
 all-features = true
 
