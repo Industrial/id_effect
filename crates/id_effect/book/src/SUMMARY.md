@@ -156,6 +156,7 @@
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
 - [Application host](./part6/ch30-00-application.md)
+  - [Authorization](./part6/ch30-02-authorization.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)

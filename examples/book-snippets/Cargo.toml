@@ -19,6 +19,7 @@ id_effect = { path = "../../crates/id_effect", version = "0.8.0", features = [
   "schema-regex",
   "proptest",
 ] }
+id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.8.0" }
 id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0", features = [
   "tower",
 ] }

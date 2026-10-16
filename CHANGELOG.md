@@ -14,6 +14,11 @@
   with `HasSchema` parts, every decode issue reported at once (422); `route::Router` keeps a
   `RouteRegistry` of `RouteInfo` (method, path, schema per part, JSON Schema 2020-12) for OpenAPI
   and route listings. The existing `routing::get/post/…` are unchanged.
+- `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
+  effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
+  inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
+  ownership, tenant and ACL resource policies; claim (ABAC) policies; `AuthzError::http_status`
+  (401 / 403 / 500).
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 

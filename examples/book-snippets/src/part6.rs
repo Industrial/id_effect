@@ -9,6 +9,10 @@ struct Ch2600PlatformIntroduction;
 struct Ch2700Observability;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-02-authorization.md")]
+struct Ch3002Authorization;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 

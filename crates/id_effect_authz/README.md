@@ -1,18 +1,61 @@
 # `id_effect_authz`
 
-Authorization for id_effect services.
+Authorization for id_effect services. Policies are capabilities:
 
-**Status: in development for 0.9.** This crate is registered (workspace member, publish order,
-CI) but has no public API yet; its first crates.io release carries that API
-(ADR 0010 Amendment 5). Planned scope:
-
-- role and permission sets, named policies, resource/ownership and attribute policies
-- route guards and an allow/deny event stream
-- test helpers that assert a policy allows or denies
+- **`Principal`** — who is asking (id, roles, permissions, claims, tenant). `id_effect_auth`'s
+  principals implement it; `BasicPrincipal` covers API keys, service accounts and tests. The
+  current one is the `CurrentPrincipal` capability, installed per request or job.
+- **`Policy<Res>`** — evaluates the principal against a resource as an effect returning a
+  `Decision` (`Allow` or `Deny` with a reason). Combine with `and`, `or`, `negate`, `all_of`,
+  `any_of`.
+- **Roles and permissions** — `Rbac`: role → permission table with inheritance and `area:*`
+  wildcards.
+- **Resources** — ownership (`owner`), tenant match (`same_tenant`), access lists (`Acl`,
+  `acl_permits`).
+- **Attributes** — claim predicates (`claim_equals`, `claim_contains`, `claim`, `claim_matches`).
+- **Named policies** — `Policies`, a registry capability; `authorize(name, resource)` fails with
+  `AuthzError` (401 for an anonymous principal, 403 otherwise).
 
 ```rust
-// The crate links; its API lands during the 0.9 release.
-use id_effect_authz as _;
+use id_effect::{Effect, Exit, HCons, HNil, hlist};
+use id_effect_authz::{
+  AuthzError, BasicPrincipal, CurrentPrincipal, Owned, Policies, PolicyExt, Rbac, authorize,
+  owner,
+};
+
+#[derive(Clone)]
+struct Account {
+  owner: String,
+}
+
+impl Owned for Account {
+  fn owner_id(&self) -> &str {
+    &self.owner
+  }
+}
+
+let rbac = Rbac::builder()
+  .grant("auditor", ["account:read"])
+  .build();
+let policies = Policies::builder()
+  .define::<Account>("account.read", owner().or(rbac.require("account:read")))
+  .build();
+
+type Env = HCons<CurrentPrincipal, HCons<Policies, HNil>>;
+fn read(account: Account) -> Effect<(), AuthzError, Env> {
+  authorize("account.read", account)
+}
+
+let account = Account { owner: "olga".into() };
+let auditor = CurrentPrincipal::new(BasicPrincipal::new("ada").with_role("auditor"));
+let stranger = CurrentPrincipal::new(BasicPrincipal::new("sam"));
+
+let ok = read(account.clone()).provide_all(hlist![auditor, policies.clone()]);
+assert_eq!(ok.block_on(), Exit::Success(()));
+let denied = read(account).provide_all(hlist![stranger, policies]);
+assert!(matches!(denied.block_on(), Exit::Failure(_)));
 ```
+
+Example: `cargo run -p id_effect_authz --example 010_policies`. Book: Part VI, "Authorization".
 
 Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).

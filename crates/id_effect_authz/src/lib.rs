@@ -1,20 +1,77 @@
-//! Authorization for id_effect services.
+//! Authorization for id_effect services: policies are capabilities.
 //!
-//! **Status: in development for 0.9.** The crate is registered (workspace member, publish
-//! order, CI) but has no public items yet; they land with the 0.9 leaves that own them
-//! (E5.3). Planned scope:
+//! - **Who** — the [`Principal`] trait (implemented by `id_effect_auth`'s principals and by
+//!   [`BasicPrincipal`]), installed per request or job as the [`CurrentPrincipal`] capability.
+//! - **Rules** — a [`Policy<Res>`](Policy) evaluates the principal against a resource as an
+//!   effect returning a [`Decision`]; policies compose ([`PolicyExt`], [`all_of`], [`any_of`]).
+//! - **Roles and permissions** — [`Rbac`]: role → permission table with inheritance and
+//!   `area:*` wildcards ([`Rbac::require`], [`has_permission`]).
+//! - **Resources** — ownership ([`owner`]), tenant match ([`same_tenant`]) and access lists
+//!   ([`Acl`], [`acl_permits`]).
+//! - **Attributes** — claim predicates ([`claim_equals`], [`claim_contains`], [`claim`],
+//!   [`claim_matches`]).
+//! - **Named policies** — [`Policies`], a registry capability; [`authorize`] and [`check`]
+//!   evaluate a rule by name for the principal in the environment.
 //!
-//! - role and permission sets, named policies, resource/ownership and attribute policies
-//! - route guards and an allow/deny event stream
-//! - test helpers that assert a policy allows or denies
+//! A denial is a value ([`Decision::Deny`] with a [`Denial`] reason) until
+//! [`authorize`] / [`authorize_with`] turn it into an [`AuthzError`] whose
+//! [`http_status`](AuthzError::http_status) is 401 for an anonymous principal and 403 otherwise.
 //!
-//! It defines the `Principal` trait that `id_effect_auth` implements.
+//! ```
+//! use id_effect::{Effect, Exit, HCons, HNil, hlist};
+//! use id_effect_authz::{
+//!   AuthzError, BasicPrincipal, CurrentPrincipal, Policies, Rbac, authorize,
+//! };
+//!
+//! let rbac = Rbac::builder().grant("accountant", ["ledger:post"]).build();
+//! let policies = Policies::builder().define::<()>("ledger.post", rbac.require("ledger:post")).build();
+//!
+//! fn post_entry() -> Effect<(), AuthzError, HCons<CurrentPrincipal, HCons<Policies, HNil>>> {
+//!   authorize("ledger.post", ())
+//! }
+//!
+//! let carol = CurrentPrincipal::new(BasicPrincipal::new("carol").with_role("accountant"));
+//! assert_eq!(post_entry().provide_all(hlist![carol, policies]).block_on(), Exit::Success(()));
+//! ```
+//!
+//! Route guards and test helpers build on this API.
 //!
 //! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
 //! under `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+
+mod attr;
+mod policy;
+mod principal;
+mod rbac;
+mod registry;
+mod resource;
+
+pub use attr::{
+  ClaimCheck, ClaimContains, ClaimEquals, ClaimMatches, ClaimPolicy, claim, claim_contains,
+  claim_equals, claim_matches,
+};
+pub use policy::{
+  AllOf, And, AnyOf, Authenticated, AuthzError, BoxPolicy, Constant, Decision, Denial,
+  EffectPolicy, Not, Or, Policy, PolicyEffect, PolicyExt, PredicatePolicy, RequireRole, all_of,
+  allow_all, any_of, authenticated, authorize_with, check_with, deny_all, from_effect, predicate,
+  require_any_role, require_role,
+};
+pub use principal::{
+  Anonymous, BasicPrincipal, CurrentPrincipal, Principal, PrincipalEnv, current_principal,
+  principal_env, provide_principal,
+};
+pub use rbac::{
+  Rbac, RbacBuilder, RbacEnv, RequireInheritedRole, RequirePermission, has_permission,
+  permission_matches, provide_rbac,
+};
+pub use registry::{Policies, PoliciesBuilder, PoliciesEnv, authorize, check, provide_policies};
+pub use resource::{
+  Acl, AclPolicy, Grantee, HasAcl, Owned, OwnerPolicy, SameTenant, Tenanted, acl_permits, owner,
+  same_tenant,
+};
 
 /// Compiles and runs the README's code block as a doctest.
 #[cfg(doctest)]
