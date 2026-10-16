@@ -11,6 +11,7 @@
 - `transaction_layer::<E>()` — `BEGIN` on build, `COMMIT` / `ROLLBACK` when the owner's scope closes
 - [`TestSqlClient`](https://docs.rs/id_effect_sql/latest/id_effect_sql/struct.TestSqlClient.html) — scriptable in-memory double (`commits()`, `rollbacks()`, `recorded_executes()`, …); runs anywhere, `block_on` included
 - Parameters are typed `SqlValue`s (`params![id, title]`) and rows decode by column with `row.get::<T>("id")`, returning a `SqlError` that names the column: see [Typed SQL values and rows](./ch28-01-typed-sql.md)
+- Versioned schema migrations (`migrate` feature): a startup layer, the `id-effect migrate` command and a CI `check`; see [Migrations](./ch28-02-migrations.md)
 
 PostgreSQL lives in [`id_effect_sql::pg`](https://docs.rs/id_effect_sql/latest/id_effect_sql/pg/index.html) behind the `pg` feature: `PgPool`, `PgSqlClient` (sqlx-backed), `PgSqlClient::layer::<E>(PgPoolConfig)` (opens and checks the pool on build, closes it with the scope) and `provide_pg_sql_client::<E>(pool)` for a caller-owned pool.
 

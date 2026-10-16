@@ -41,6 +41,7 @@ id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.8.0" }
 id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.8.0" }
 id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.8.0", features = [
   "pg",
+  "migrate",
 ] }
 id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.8.0" }
 id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.8.0", features = [

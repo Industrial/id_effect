@@ -41,6 +41,10 @@ struct Ch2800Data;
 struct Ch2801TypedSql;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-02-migrations.md")]
+struct Ch2802Migrations;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-00-api-boundaries.md")]
 struct Ch2900ApiBoundaries;
 

@@ -66,6 +66,10 @@ required-features = ["pg"]
 name = "migrate"
 required-features = ["migrate", "pg"]
 
+[[example]]
+name = "030_migrate"
+required-features = ["migrate", "pg"]
+
 [package.metadata.docs.rs]
 all-features = true
 

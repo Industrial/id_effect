@@ -67,6 +67,8 @@
 - `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
   sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
   exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.
+  Book: part6/ch28-02-migrations.md; example `id_effect_sql/examples/030_migrate.rs` (in memory by
+  default, live on PostgreSQL with `DATABASE_URL` / `--live`).
 
 ### Changed
 
