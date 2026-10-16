@@ -12,6 +12,9 @@
 excludes = [
   "target/**",
   "target-ci-stable/**",
+  # Maestro harness state (contracts, verdicts, handoffs, task logs) is machine-written; formatting
+  # it churns files the maestro CLI rewrites and fails the CI format check.
+  ".maestro/**",
   ".cursor/agency-agents/**",
   ".cursor/microsoft-rust-training/**",
   ".cursor/vendor/**",
