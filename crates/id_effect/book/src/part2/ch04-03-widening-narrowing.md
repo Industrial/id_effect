@@ -5,12 +5,21 @@ fail, but the block it joins can. Typed `R` handles both with a few operations.
 
 ## The mismatch
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct AppError; struct Data;
+# struct Database; struct AuditLog; struct Config;
 // Needs only AuditLog
-fn audit(msg: String) -> Effect<(), AppError, caps!(AuditLog)> { /* ... */ }
+fn audit(msg: String) -> Effect<(), AppError, caps!(AuditLog)> {
+  // ...
+#   need::<AuditLog>().map(|_| ())
+}
 
 // The caller has Database, AuditLog and Config
-fn process(data: Data) -> Effect<(), AppError, caps!(Database, AuditLog, Config)> { /* ... */ }
+fn process(data: Data) -> Effect<(), AppError, caps!(Database, AuditLog, Config)> {
+  // ...
+#   effect!({ let _ = (~Database, ~AuditLog, ~Config); })
+}
 ```
 
 `caps!(AuditLog)` and `caps!(Database, AuditLog, Config)` are different types, so `audit(..)` has
@@ -21,7 +30,12 @@ to be lifted into the wider environment before it can be sequenced with the call
 A `~` bind lifts the sub-effect into the block's environment automatically, as long as every
 capability it needs is in the block's `R`:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct AppError; struct Data;
+# struct Database; struct AuditLog; struct Config;
+# fn audit(_: String) -> Effect<(), AppError, caps!(AuditLog)> { need::<AuditLog>().map(|_| ()) }
+# fn store(_: Data) -> Effect<(), AppError, caps!(Database)> { need::<Database>().map(|_| ()) }
 fn process(data: Data) -> Effect<(), AppError, caps!(Database, AuditLog, Config)> {
   effect!({
     ~audit("start".into());  // caps!(AuditLog) lifted into the block's R
@@ -57,7 +71,12 @@ let exit = wide.provide_all(hlist![Cache(0), Logger("w"), Db(4)]).block_on();
 `narrow` into the same environment is free; otherwise the sub-environment is projected when the
 effect runs (one `Arc` clone per capability). It is what makes this compose:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HCons, HNil, need};
+# struct Db(u32); struct Logger(&'static str); struct Cache(u8);
+# type Wide = HCons<Cache, HCons<Logger, HCons<Db, HNil>>>;
+# fn small_effect() -> Effect<u32, (), HCons<Db, HNil>> { need::<Db>().map(|d| d.0) }
+# fn other_effect() -> Effect<String, (), HCons<Logger, HNil>> { need::<Logger>().map(|l| l.0.to_string()) }
 let both: Effect<(u32, String), (), Wide> = small_effect().narrow().zip(other_effect().narrow());
 ```
 
@@ -67,7 +86,10 @@ The other direction, removing requirements, is [providing](./ch04-02-providing.m
 `.provide(t)` removes one capability, `.provide_some(hlist![..])` a sub-list. Providing in the
 middle of a program is how you scope a capability to one region:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HCons, HNil, need};
+# struct Db(u32); struct Logger;
+# fn inner() -> Effect<u32, (), HCons<Db, HNil>> { need::<Db>().map(|d| d.0) }
 // `Db(1)` is visible only inside `inner`; the outer environment is restored afterwards.
 let outer: Effect<u32, (), HCons<Logger, HNil>> = inner().provide(Db(1)).narrow();
 ```
@@ -92,7 +114,11 @@ A helper generic over `R` (with a `Selector` bound) fits any environment that ha
 `~` cannot infer such an `R` on its own; bind it with `.same_env()`, which fixes it to the
 caller's environment:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HList, Selector, caps, effect};
+# struct AppError; struct Db;
+# struct Logger;
+# impl Logger { fn info(&self, _msg: String) {} }
 fn audit<R, I>(msg: String) -> Effect<(), AppError, R>
 where
   R: HList + Selector<Logger, I>,

@@ -15,7 +15,9 @@ common patterns and their id_effect equivalents. The snippets are sketches: `Dat
 
 In typical async Rust, a function returns a `Future`; when that future is awaited, the work runs:
 
-```rust,ignore
+```rust
+# struct User; struct DbError; struct DbClient;
+# impl DbClient { async fn query_one(&self, _sql: &str, _params: &[&u64]) -> Result<User, DbError> { Ok(User) } }
 async fn get_user(id: u64, db: &DbClient) -> Result<User, DbError> {
     db.query_one("SELECT * FROM users WHERE id = $1", &[&id]).await
 }
@@ -24,7 +26,10 @@ async fn get_user(id: u64, db: &DbClient) -> Result<User, DbError> {
 In id_effect, domain functions return an **`Effect`**: a description that runs later, once its
 capabilities have been provided:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# struct User; struct DbError; struct Database;
+# impl Database { fn get_user(&self, _id: u64) -> Effect<User, DbError> { id_effect::succeed(User) } }
 use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
@@ -44,7 +49,14 @@ provide it is a compile error.
 
 **Before**
 
-```rust,ignore
+```rust
+# pub struct OrderId; pub struct Order; pub struct Receipt; pub struct AppError;
+# pub struct DbClient; pub struct MailClient;
+# impl DbClient {
+#     async fn get_order(&self, _: OrderId) -> Result<Order, AppError> { Ok(Order) }
+#     async fn complete_order(&self, _: Order) -> Result<Receipt, AppError> { Ok(Receipt) }
+# }
+# impl MailClient { async fn send_receipt(&self, _: &Receipt) -> Result<(), AppError> { Ok(()) } }
 pub async fn process_order(
     order_id: OrderId,
     db: &DbClient,
@@ -59,7 +71,22 @@ pub async fn process_order(
 
 **After**
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::{Effect, ProviderSpecDerive, caps, effect, succeed};
+# #[derive(Clone, Copy)] pub struct OrderId(u64);
+# pub struct Order; #[derive(Clone)] pub struct Receipt;
+# #[derive(Debug)] pub struct AppError;
+# #[derive(Default)] pub struct Database;
+# impl Database {
+#     fn get_order(&self, _: OrderId) -> Effect<Order, AppError> { succeed(Order) }
+#     fn complete_order(&self, _: Order) -> Effect<Receipt, AppError> { succeed(Receipt) }
+# }
+# #[derive(Default)] pub struct Mailer;
+# impl Mailer { fn send_receipt(&self, _: Receipt) -> Effect<(), AppError> { succeed(()) } }
+# #[derive(ProviderSpecDerive)] #[provides(Database, with = Database::default)] struct DatabaseLive;
+# #[derive(ProviderSpecDerive)] #[provides(Mailer, with = Mailer::default)] struct MailerLive;
+# let id = OrderId(1);
 pub fn process_order(order_id: OrderId) -> Effect<Receipt, AppError, caps!(Database, Mailer)> {
     effect!({
         let db = Arc::clone(~Database);
@@ -75,6 +102,7 @@ pub fn process_order(order_id: OrderId) -> Effect<Receipt, AppError, caps!(Datab
 let exit = process_order(id)
     .provide_layer(DatabaseLive::layer().merge(MailerLive::layer()))
     .block_on();
+# assert!(exit.into_result().is_ok());
 ```
 
 **Migration steps:**
@@ -94,6 +122,7 @@ Third-party libraries return `Future`s, not `Effect`s. Use `from_async` to wrap 
 
 **Before**
 
+<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
 ```rust,ignore
 async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
     reqwest::get(format!("https://api.example.com/price/{symbol}"))
@@ -106,6 +135,7 @@ async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
 
 **After**
 
+<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
 ```rust,ignore
 use id_effect::{Effect, from_async};
 
@@ -127,7 +157,9 @@ The closure takes no arguments and its future must be `Send + 'static`. The futu
 
 **Before**: a single monolithic error enum threaded through every function.
 
-```rust,ignore
+```rust
+# #[derive(Debug)] struct DbError;
+# #[derive(Debug)] struct MailError;
 #[derive(Debug)]
 enum AppError {
     Db(DbError),
@@ -139,8 +171,16 @@ enum AppError {
 **After**: each function fails with its own error, and callers widen it. `~expr` in `effect!`
 converts the sub-effect's error with `From`; outside the macro use `map_err`.
 
-```rust,ignore
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* … */ }
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct User; struct DbError; struct Database;
+# enum AppError { Db(DbError) }
+# struct Response;
+# impl Response { fn ok<T>(_body: T) -> Self { Response } }
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
+    // …
+#     need::<Database>().map(|_| User)
+}
 
 impl From<DbError> for AppError {
     fn from(e: DbError) -> Self { AppError::Db(e) }
@@ -160,25 +200,34 @@ fn handler(id: u64) -> Effect<Response, AppError, caps!(Database)> {
 
 **Before**: `Arc<Mutex<T>>` passed through function calls.
 
-```rust,ignore
+```rust
+# use std::sync::{Arc, Mutex};
+# struct AppState { request_count: u64 }
+# struct Response;
 async fn handler(state: Arc<Mutex<AppState>>) -> Response {
     let mut s = state.lock().unwrap();
     s.request_count += 1;
     // …
+#     Response
 }
 ```
 
 **After**: a `Ref` (or any shared value) as a capability.
 
-```rust,ignore
-use id_effect::{Effect, Ref, caps, effect};
+```rust
+use id_effect::{Effect, HNil, Never, Ref, caps, effect};
+# use std::sync::Arc;
+# struct AppError;
+# struct Response;
+# impl Response { fn ok<T>(_body: T) -> Self { Response } }
 
 struct RequestCount(Ref<u64>);
 
 fn handler() -> Effect<Response, AppError, caps!(RequestCount)> {
     effect!({
         let counter = Arc::clone(~RequestCount);
-        let count = ~counter.0.update_and_get(|n| n + 1);
+        // `Ref` operations are generic in `E` and `R`; a `~` bind needs them named.
+        let count = ~counter.0.update_and_get::<Never, HNil>(|n| n + 1);
         Response::ok(count)
     })
 }
@@ -190,7 +239,9 @@ For transactional state across several cells, use `TRef` + STM from `id_effect_f
 
 **Before**: manual cleanup, or relying on `Drop` impls that cannot be async.
 
-```rust,ignore
+```rust
+# struct Conn; struct DbError; struct Pool;
+# impl Pool { async fn get(&self) -> Result<Conn, DbError> { Ok(Conn) } }
 async fn with_connection<T>(pool: &Pool, f: impl AsyncFnOnce(&Conn) -> Result<T, DbError>)
     -> Result<T, DbError>
 {
@@ -202,10 +253,15 @@ async fn with_connection<T>(pool: &Pool, f: impl AsyncFnOnce(&Conn) -> Result<T,
 **After**: `acquire_use_release` (or a `Scope`) runs the release on success, failure and
 interruption.
 
-```rust,ignore
+```rust
 use id_effect::{Effect, ExitKind, acquire_use_release};
+# use id_effect::{Never, succeed};
+# #[derive(Clone)] struct Conn;
+# struct DbError;
+# fn open_connection() -> Effect<Conn, DbError> { succeed(Conn) }
+# fn close(_conn: Conn) -> Effect<(), Never> { succeed(()) }
 
-fn with_connection<A>(
+fn with_connection<A: Send + 'static>(
     f: impl FnOnce(Conn) -> Effect<A, DbError> + Send + 'static,
 ) -> Effect<A, DbError> {
     acquire_use_release(
@@ -226,12 +282,25 @@ fn with_connection<A>(
 **After**: provide a test value of the same capability type and run with `block_on`; for time,
 run on a `TestExecutor` and move its virtual clock.
 
-```rust,ignore
-#[test]
+```rust
+# use id_effect::{Effect, Exit, caps, effect, succeed};
+# #[derive(Debug, PartialEq, Eq, Hash)] struct User(u64);
+# impl User { fn fixture() -> Self { User(1) } }
+# #[derive(Debug, PartialEq, Eq, Hash)] struct DbError;
+# struct Database;
+# impl Database {
+#     fn in_memory() -> Self { Database }
+#     fn get_user(&self, id: u64) -> Effect<User, DbError> { succeed(User(id)) }
+# }
+# fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
+#     effect!({ let db = std::sync::Arc::clone(~Database); ~db.get_user(id) })
+# }
+// In a #[cfg(test)] module, under #[test]:
 fn reads_the_user() {
     let exit = get_user(1).provide(Database::in_memory()).block_on();
     assert_eq!(exit, Exit::succeed(User::fixture()));
 }
+# reads_the_user();
 ```
 
 ## HTTP boundaries: raw `reqwest` → workspace crates

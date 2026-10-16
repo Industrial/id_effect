@@ -5,8 +5,9 @@ callers.
 
 ## Define the interface
 
-```rust,ignore
+```rust
 use id_effect::Effect;
+# pub struct User; pub struct DbError;
 
 pub trait UserRepository: Send + Sync + 'static {
     fn get_user(&self, id: u64) -> Effect<User, DbError>;
@@ -29,9 +30,14 @@ A capability is any `Send + Sync + 'static` type; `R` stores it behind an `Arc`.
 object, wrap it in a newtype and deref to the trait (this is how
 `id_effect_platform::http::HttpClientService` is built):
 
-```rust,ignore
+```rust
 use std::ops::Deref;
 use std::sync::Arc;
+# use id_effect::Effect;
+# pub struct User; pub struct DbError;
+# pub trait UserRepository: Send + Sync + 'static {
+#     fn get_user(&self, id: u64) -> Effect<User, DbError>;
+# }
 
 #[derive(Clone)]
 pub struct UserRepo(pub Arc<dyn UserRepository>);
@@ -55,7 +61,20 @@ type are told apart by their newtypes.
 
 ## Use `~UserRepo` in callers
 
-```rust,ignore
+```rust
+# pub struct User { pub name: String }
+# pub struct DbError;
+# pub trait UserRepository: Send + Sync + 'static {
+#     fn get_user(&self, id: u64) -> id_effect::Effect<User, DbError>;
+# }
+# #[derive(Clone)] pub struct UserRepo(pub std::sync::Arc<dyn UserRepository>);
+# impl std::ops::Deref for UserRepo {
+#     type Target = dyn UserRepository;
+#     fn deref(&self) -> &Self::Target { &*self.0 }
+# }
+# pub struct UserProfile { pub name: String }
+# impl From<User> for UserProfile { fn from(u: User) -> Self { UserProfile { name: u.name } } }
+# pub enum AppError { Db(DbError) }
 use id_effect::{Effect, caps, effect};
 
 fn get_user_profile(id: u64) -> Effect<UserProfile, AppError, caps!(UserRepo)> {
@@ -75,18 +94,24 @@ widens the sub-effect's error with `From`, so with `impl From<DbError> for AppEr
 
 ## Keep traits focused
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::Effect;
+# struct User; struct AppError;
+# mod bad { use super::*;
 // BAD — one god trait
 trait AppService {
     fn get_user(&self, id: u64) -> Effect<User, AppError>;
     fn send_email(&self, to: &str, body: &str) -> Effect<(), AppError>;
 }
+# }
 
 // GOOD — separate capabilities
 trait UserRepository { /* … */ }
 trait EmailService { /* … */ }
 struct UserRepo(Arc<dyn UserRepository>);
 struct Email(Arc<dyn EmailService>);
+# fn main() {}
 ```
 
 Functions declare exactly what they need: `caps!(UserRepo, Email)`.

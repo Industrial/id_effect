@@ -19,7 +19,7 @@ struct User {
   email: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 enum AppError {
   Config(String),
   NotFound(u64),
@@ -28,7 +28,8 @@ enum AppError {
 
 The user store is a capability: a plain value the program reads from its environment.
 
-```rust,ignore
+```rust
+# #[derive(Debug, Clone)] struct User { id: u64, name: String, email: String }
 use std::collections::HashMap;
 
 struct UserStore(HashMap<u64, User>);
@@ -36,7 +37,12 @@ struct UserStore(HashMap<u64, User>);
 
 ## The Individual Steps
 
-```rust,ignore
+```rust
+# use std::collections::HashMap;
+# #[derive(Debug, Clone)] struct Config { app_name: String }
+# #[derive(Debug, Clone)] struct User { id: u64, name: String, email: String }
+# #[derive(Debug, PartialEq, Eq, Hash)] enum AppError { Config(String), NotFound(u64) }
+# struct UserStore(HashMap<u64, User>);
 use id_effect::{Effect, caps, effect, fail, succeed};
 
 fn load_config(raw_name: &str) -> Effect<Config, AppError> {
@@ -61,7 +67,26 @@ fn format_greeting(config: &Config, user: &User) -> String {
 
 ## Composing the Program
 
-```rust,ignore
+```rust
+# use std::collections::HashMap;
+# use id_effect::{Effect, caps, effect, fail, succeed};
+# #[derive(Debug, Clone)] struct Config { app_name: String }
+# #[derive(Debug, Clone)] struct User { id: u64, name: String, email: String }
+# #[derive(Debug, PartialEq, Eq, Hash)] enum AppError { Config(String), NotFound(u64) }
+# struct UserStore(HashMap<u64, User>);
+# fn load_config(raw_name: &str) -> Effect<Config, AppError> {
+#   if raw_name.is_empty() {
+#     fail(AppError::Config("app name is empty".into()))
+#   } else {
+#     succeed(Config { app_name: raw_name.to_string() })
+#   }
+# }
+# fn fetch_user(id: u64) -> Effect<User, AppError, caps!(UserStore)> {
+#   effect!({ ~UserStore.0.get(&id).cloned().ok_or(AppError::NotFound(id))? })
+# }
+# fn format_greeting(config: &Config, user: &User) -> String {
+#   format!("{}: Hello, {}! ({})", config.app_name, user.name, user.email)
+# }
 fn greet_user(app_name: &str, user_id: u64) -> Effect<String, AppError, caps!(UserStore)> {
   let config = load_config(app_name);
   effect!({
@@ -85,7 +110,34 @@ Read it like a recipe:
 
 At the edge of the program, provide the capability and run:
 
-```rust,ignore
+```rust
+# use std::collections::HashMap;
+# use id_effect::{Effect, caps, effect, fail, succeed};
+# #[derive(Debug, Clone)] struct Config { app_name: String }
+# #[derive(Debug, Clone)] struct User { id: u64, name: String, email: String }
+# #[derive(Debug, PartialEq, Eq, Hash)] enum AppError { Config(String), NotFound(u64) }
+# struct UserStore(HashMap<u64, User>);
+# fn load_config(raw_name: &str) -> Effect<Config, AppError> {
+#   if raw_name.is_empty() {
+#     fail(AppError::Config("app name is empty".into()))
+#   } else {
+#     succeed(Config { app_name: raw_name.to_string() })
+#   }
+# }
+# fn fetch_user(id: u64) -> Effect<User, AppError, caps!(UserStore)> {
+#   effect!({ ~UserStore.0.get(&id).cloned().ok_or(AppError::NotFound(id))? })
+# }
+# fn format_greeting(config: &Config, user: &User) -> String {
+#   format!("{}: Hello, {}! ({})", config.app_name, user.name, user.email)
+# }
+# fn greet_user(app_name: &str, user_id: u64) -> Effect<String, AppError, caps!(UserStore)> {
+#   let config = load_config(app_name);
+#   effect!({
+#     let config = ~config;
+#     let user = ~fetch_user(user_id);
+#     format_greeting(&config, &user)
+#   })
+# }
 use id_effect::{Cause, Exit};
 
 fn main() {
@@ -111,13 +163,41 @@ fn main() {
 A test provides its own store:
 
 ```rust
-#[test]
+# use std::collections::HashMap;
+# use id_effect::{Cause, Effect, Exit, caps, effect, fail, succeed};
+# #[derive(Debug, Clone)] struct Config { app_name: String }
+# #[derive(Debug, Clone)] struct User { id: u64, name: String, email: String }
+# #[derive(Debug, PartialEq, Eq, Hash)] enum AppError { Config(String), NotFound(u64) }
+# struct UserStore(HashMap<u64, User>);
+# fn load_config(raw_name: &str) -> Effect<Config, AppError> {
+#   if raw_name.is_empty() {
+#     fail(AppError::Config("app name is empty".into()))
+#   } else {
+#     succeed(Config { app_name: raw_name.to_string() })
+#   }
+# }
+# fn fetch_user(id: u64) -> Effect<User, AppError, caps!(UserStore)> {
+#   effect!({ ~UserStore.0.get(&id).cloned().ok_or(AppError::NotFound(id))? })
+# }
+# fn format_greeting(config: &Config, user: &User) -> String {
+#   format!("{}: Hello, {}! ({})", config.app_name, user.name, user.email)
+# }
+# fn greet_user(app_name: &str, user_id: u64) -> Effect<String, AppError, caps!(UserStore)> {
+#   let config = load_config(app_name);
+#   effect!({
+#     let config = ~config;
+#     let user = ~fetch_user(user_id);
+#     format_greeting(&config, &user)
+#   })
+# }
+// In a #[cfg(test)] module, under #[test]:
 fn unknown_user_is_not_found() {
   let exit = greet_user("TestApp", 7)
     .provide(UserStore(HashMap::new()))
     .block_on();
   assert_eq!(exit, Exit::Failure(Cause::Fail(AppError::NotFound(7))));
 }
+# unknown_user_is_not_found();
 ```
 
 No mocking framework and no `Arc<dyn Trait>` plumbing: the test supplies a different value for the

@@ -11,7 +11,11 @@ should stop in order and let workers flush what they hold.
 - `SupervisorHandle::stop` on shutdown. It sends each child a trappable `Shutdown`, escalates to a
   kill after the child's shutdown timeout, and runs the worker's `terminate` hook.
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicU64, Ordering};
+# use id_effect::{Effect, Never, fail, succeed};
+# use id_effect_process::{ExitReason, Next, Process, ProcessCtx};
 enum Job { Work(u64), Poison }
 
 struct Worker { total: u64, flushed: Arc<AtomicU64> }
@@ -52,7 +56,41 @@ impl Process for Worker {
 Register the worker under a name in its start function, so callers always reach the current
 incarnation after a restart:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicU64, Ordering};
+# use std::time::Duration;
+# use id_effect::{Effect, HNil, Never, fail, succeed};
+# use id_effect_process::{
+#   ChildSpec, ExitReason, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode, ShutdownPolicy,
+#   StartFn, Strategy, SupervisorHandle, SupervisorSpec,
+# };
+# enum Job { Work(u64), Poison }
+# struct Worker { total: u64, flushed: Arc<AtomicU64> }
+# impl Process for Worker {
+#   type Args = Arc<AtomicU64>; type Env = (); type Call = (); type Reply = u64;
+#   type Cast = Job; type Info = (); type Error = String;
+#   fn init(flushed: Arc<AtomicU64>, _ctx: ProcessCtx) -> Effect<Self, String, ()> { succeed(Worker { total: 0, flushed }) }
+#   fn handle_call(self, _: (), _ctx: ProcessCtx) -> Effect<(u64, Next<Self>), String, ()> {
+#     let total = self.total;
+#     succeed((total, Next::Continue(self)))
+#   }
+#   fn handle_cast(self, job: Job, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
+#     match job {
+#       Job::Work(n) => succeed(Next::Continue(Worker { total: self.total + n, ..self })),
+#       Job::Poison => fail("poison message".to_string()),
+#     }
+#   }
+#   fn terminate(self, _reason: &ExitReason, _ctx: ProcessCtx) -> Effect<(), Never, ()> {
+#     self.flushed.store(self.total, Ordering::SeqCst);
+#     succeed(())
+#   }
+# }
+# fn worker_pid(tree: &SupervisorHandle) -> Option<Pid> {
+#   tree.which_children(Duration::from_secs(5)).block_on().into_result().ok()?
+#     .into_iter().find(|(id, _)| id == "worker").and_then(|(_, pid)| pid)
+# }
+# let flushed = Arc::new(AtomicU64::new(0));
 fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
   let start: StartFn = Arc::new(move |node: &ProcessNode, supervisor: &Pid| {
     let addr = node.spawn_linked_to::<Worker>(supervisor, Arc::clone(&flushed), ());
@@ -70,6 +108,8 @@ let tree = SupervisorSpec::new(Strategy::OneForOne)
 
 let first = worker_pid(&tree).expect("worker started"); // via `tree.which_children(..)`
 let worker = node.whereis_addr::<Worker>("worker").expect("registered");
+# let _ = (first, worker);
+# tree.stop::<Never, HNil>(&node, ShutdownPolicy::Timeout(Duration::from_secs(5))).block_on();
 ```
 
 `Process` handlers return ordinary 0.7 effects (`Effect<_, Self::Error, ()>`), and every
@@ -77,11 +117,61 @@ node / supervisor operation (`cast`, `call`, `which_children`, `stop`, `await_ex
 effect you run with `.block_on()` from `main` or compose with other effects. The example waits
 for the crashed incarnation without sleeping:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicU64, Ordering};
+# use std::time::Duration;
+# use id_effect::{Effect, HNil, Never, fail, succeed};
+# use id_effect_process::{
+#   ChildSpec, ExitReason, Next, NodeName, Pid, Process, ProcessCtx, ProcessNode, ShutdownPolicy,
+#   StartFn, Strategy, SupervisorHandle, SupervisorSpec,
+# };
+# enum Job { Work(u64), Poison }
+# struct Worker { total: u64, flushed: Arc<AtomicU64> }
+# impl Process for Worker {
+#   type Args = Arc<AtomicU64>; type Env = (); type Call = (); type Reply = u64;
+#   type Cast = Job; type Info = (); type Error = String;
+#   fn init(flushed: Arc<AtomicU64>, _ctx: ProcessCtx) -> Effect<Self, String, ()> { succeed(Worker { total: 0, flushed }) }
+#   fn handle_call(self, _: (), _ctx: ProcessCtx) -> Effect<(u64, Next<Self>), String, ()> {
+#     let total = self.total;
+#     succeed((total, Next::Continue(self)))
+#   }
+#   fn handle_cast(self, job: Job, _ctx: ProcessCtx) -> Effect<Next<Self>, String, ()> {
+#     match job {
+#       Job::Work(n) => succeed(Next::Continue(Worker { total: self.total + n, ..self })),
+#       Job::Poison => fail("poison message".to_string()),
+#     }
+#   }
+#   fn terminate(self, _reason: &ExitReason, _ctx: ProcessCtx) -> Effect<(), Never, ()> {
+#     self.flushed.store(self.total, Ordering::SeqCst);
+#     succeed(())
+#   }
+# }
+# fn worker_child(flushed: Arc<AtomicU64>) -> ChildSpec {
+#   let start: StartFn = Arc::new(move |node: &ProcessNode, supervisor: &Pid| {
+#     let addr = node.spawn_linked_to::<Worker>(supervisor, Arc::clone(&flushed), ());
+#     node.register("worker", &addr);
+#     Ok(addr.pid().clone())
+#   });
+#   ChildSpec::from_start("worker", start)
+# }
+# fn worker_pid(tree: &SupervisorHandle) -> Option<Pid> {
+#   tree.which_children(Duration::from_secs(5)).block_on().into_result().ok()?
+#     .into_iter().find(|(id, _)| id == "worker").and_then(|(_, pid)| pid)
+# }
+# let flushed = Arc::new(AtomicU64::new(0));
+# let node = ProcessNode::new(NodeName::new("daemon@local"));
+# let tree = SupervisorSpec::new(Strategy::OneForOne)
+#   .intensity(3, Duration::from_secs(5))
+#   .child(worker_child(Arc::clone(&flushed)))
+#   .start(&node);
+# let first = worker_pid(&tree).expect("worker started");
+# let worker = node.whereis_addr::<Worker>("worker").expect("registered");
 worker.cast(Job::Poison).block_on(); // crash: the supervisor restarts it with total = 0
 node.await_exit::<Never, HNil>(&first).block_on(); // its exit signal is now with the supervisor
 let second = worker_pid(&tree).expect("supervisor restarted the worker");
 assert_ne!(first, second);
+# tree.stop::<Never, HNil>(&node, ShutdownPolicy::Timeout(Duration::from_secs(5))).block_on();
 ```
 
 ## Wiring the shutdown signal
@@ -90,6 +180,7 @@ The runnable example simulates the signal with a channel so that it stays determ
 binary, wait for the OS signal instead. With Tokio's `signal` feature and an async `main`, await
 the stop effect through a `Runtime` (`block_on` refuses to run inside an async context):
 
+<!-- ignore: needs tokio's `signal` feature; tokio is not a dependency of the book_snippets harness -->
 ```rust,ignore
 #[tokio::main]
 async fn main() {

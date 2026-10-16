@@ -30,9 +30,12 @@ Effects are `Send`, so `rt.run(eff)` is a `Send + 'static` future you can await 
 Provide `R` first (`provide`, `provide_all`, `provide_layer`), then run the closed effect
 (`crates/id_effect_tokio/examples/109_tokio_end_to_end.rs`):
 
-```rust,ignore
+```rust
 use id_effect::{Effect, Exit, HCons, HNil, from_async, hlist, need};
 use id_effect_tokio::TokioRuntime;
+# struct Quote;
+# enum AppError { MissingApiToken }
+# async fn load_quotes() -> Vec<Quote> { vec![Quote] }
 
 struct ApiToken(&'static str);
 type AppEnv = HCons<ApiToken, HNil>;
@@ -49,12 +52,14 @@ fn fetch_quotes() -> Effect<Vec<Quote>, AppError, AppEnv> {
     })
 }
 
-#[tokio::main]
-async fn main() {
+// Inside `#[tokio::main] async fn main()`, or any task on a Tokio runtime:
+async fn serve() {
     let rt = TokioRuntime::current().expect("inside a tokio runtime");
     let exit = rt.run(fetch_quotes().provide_all(hlist![ApiToken("secret")])).await;
     assert!(matches!(exit, Exit::Success(_)));
 }
+# let owned = TokioRuntime::new_current_thread().expect("tokio runtime");
+# owned.block_on(serve());
 ```
 
 For layer-based apps: `rt.run(app().provide_layer(live_layer())).await`.

@@ -5,8 +5,10 @@ its name: there is no separate key type, registry or tag.
 
 ## Declaring a capability
 
-```rust,ignore
+```rust
 use std::sync::Arc;
+# use id_effect::Effect;
+# pub struct Pool; pub struct User; pub struct DbError;
 
 // A concrete value
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,9 +33,17 @@ other is required is a type error.
 
 `caps!(A, B, C)` is the type `HCons<A, HCons<B, HCons<C, HNil>>>`:
 
-```rust,ignore
-fn needs_main() -> Effect<Report, DbError, caps!(MainDb)> { /* ... */ }
-fn needs_both() -> Effect<Report, DbError, caps!(MainDb, CacheDb, UserRepo)> { /* ... */ }
+```rust
+# use id_effect::{Effect, caps, effect};
+# struct Report; struct DbError; struct MainDb; struct CacheDb; struct UserRepo;
+fn needs_main() -> Effect<Report, DbError, caps!(MainDb)> {
+  // ...
+#   effect!({ let _ = ~MainDb; Report })
+}
+fn needs_both() -> Effect<Report, DbError, caps!(MainDb, CacheDb, UserRepo)> {
+  // ...
+#   effect!({ let _ = (~MainDb, ~CacheDb, ~UserRepo); Report })
+}
 ```
 
 Listing a capability twice is a compile error at the repeat.
@@ -43,7 +53,20 @@ Listing a capability twice is a compile error at the repeat.
 A trait method returns an effect that needs nothing (`R = HNil`); the **caller** carries the
 service in its `R`:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::{Effect, Exit, caps, effect, succeed};
+# pub struct User { name: String }
+# pub struct DbError;
+# pub trait UserRepository: Send + Sync {
+#   fn get_user(&self, id: u64) -> Effect<User, DbError>;
+# }
+# #[derive(Clone)]
+# pub struct UserRepo(pub Arc<dyn UserRepository>);
+# struct InMemory;
+# impl UserRepository for InMemory {
+#   fn get_user(&self, _id: u64) -> Effect<User, DbError> { succeed(User { name: "Ada".into() }) }
+# }
 fn show_user(id: u64) -> Effect<String, DbError, caps!(UserRepo)> {
   effect!({
     let repo = ~UserRepo.clone(); // Arc<UserRepo>
@@ -51,6 +74,8 @@ fn show_user(id: u64) -> Effect<String, DbError, caps!(UserRepo)> {
     user.name.clone()
   })
 }
+# let exit = show_user(1).provide(UserRepo(Arc::new(InMemory))).block_on();
+# assert!(matches!(exit, Exit::Success(ref n) if n == "Ada"));
 ```
 
 `~UserRepo` reads the capability (an `&Arc<UserRepo>`) and `.clone()` applies to that reference;

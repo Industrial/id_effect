@@ -9,8 +9,11 @@ type; its type is its identity. Effects that need nothing have `R = HNil`, the d
 
 ## What R means
 
-```rust,ignore
+```rust
 use id_effect::{Effect, caps, effect};
+# struct User; struct DbError;
+# struct Database;
+# impl Database { fn fetch_user(&self, _id: u64) -> Result<User, DbError> { Ok(User) } }
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
   effect!({ ~Database.fetch_user(id)? })
@@ -23,8 +26,12 @@ the macro, [`need::<Database>()`](./ch05-04-get-getmut.md) does the same.
 
 Library code can also stay generic over any environment that contains the capability:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, HList, Selector, need};
+# use id_effect::succeed;
+# struct User; struct DbError;
+# struct Database;
+# impl Database { fn fetch_user_effect(&self, _id: u64) -> Effect<User, DbError> { succeed(User) } }
 
 fn get_user_in<R, I>(id: u64) -> Effect<User, DbError, R>
 where
@@ -40,7 +47,23 @@ where
 Library code does **not** wire dependencies. The program edge removes requirements from `R` until
 nothing is left, then runs the effect:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HCons, HNil, Layer, caps, effect};
+# struct User; struct DbError;
+# struct Database;
+# impl Database {
+#   fn connect(_url: &str) -> Self { Database }
+#   fn fetch_user(&self, _id: u64) -> Result<User, DbError> { Ok(User) }
+# }
+# struct AuditLog;
+# impl AuditLog { fn stdout() -> Self { AuditLog } }
+# fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { effect!({ ~Database.fetch_user(id)? }) }
+# fn app() -> Effect<(), DbError, caps!(Database, AuditLog)> {
+#   effect!({ let _ = (~Database, ~AuditLog); })
+# }
+# fn app_layer() -> Layer<HCons<Database, HCons<AuditLog, HNil>>, DbError> {
+#   Layer::succeed(id_effect::hlist![Database::connect("mem://"), AuditLog::stdout()])
+# }
 use id_effect::hlist;
 
 // One capability at a time

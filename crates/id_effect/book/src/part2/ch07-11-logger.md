@@ -14,7 +14,8 @@ are **effect steps**, so formatting and sinks stay composable and testable.
 - **`EffectLoggerLive::layer()`**, **`LogMetadataLive::layer()`**, **`provide_composite_logger(c)`**
   and **`provide_minimum_log_level(level)`** are `Layer`s (no input, any `E`).
 
-```rust
+<!-- ignore: needs the `id_effect_logger` crate, which the book_snippets harness does not depend on -->
+```rust,ignore
 use id_effect::{Effect, Exit, caps, effect};
 use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
 
@@ -33,6 +34,7 @@ assert_eq!(app().provide(EffectLogger).block_on(), Exit::Success(7));
 
 A full pipeline is a merged layer:
 
+<!-- ignore: needs the `id_effect_logger` crate, which the book_snippets harness does not depend on -->
 ```rust,ignore
 let pipeline = LogMetadataLive::layer()
     .merge(provide_composite_logger(composite))

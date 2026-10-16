@@ -6,7 +6,8 @@ scoped prefixes).
 
 ## Descriptors
 
-```rust,ignore
+```rust,no_run
+# fn main() -> Result<(), id_effect_config::ConfigError> {
 use id_effect_config::{Config, EnvConfigProvider};
 
 let (host, port) = Config::all((
@@ -15,6 +16,9 @@ let (host, port) = Config::all((
 ))
 .nested("SERVER") // SERVER_HOST, SERVER_PORT
 .load(&EnvConfigProvider::from_env())?;
+# let _: (String, i64) = (host, port);
+# Ok(())
+# }
 ```
 
 - Primitives: `Config::string`, `integer`, `number`, `boolean`, … ; `Secret<T>` for values that must

@@ -63,7 +63,12 @@ assert_eq!(effect.block_on(), Exit::succeed(86));
 
 A common pattern normalises an effect into your domain's types:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, succeed};
+# struct Row; struct User; struct DbError;
+# enum AppError { Database(DbError) }
+# impl User { fn from_row(_: Row) -> Self { User } }
+# fn raw_db_fetch(_: u64) -> Effect<Row, DbError> { succeed(Row) }
 fn fetch_user_record(id: u64) -> Effect<User, AppError> {
   raw_db_fetch(id)
     .map(User::from_row)

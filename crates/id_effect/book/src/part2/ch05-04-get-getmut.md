@@ -49,8 +49,11 @@ let exit = sum.provide_all(hlist![Db(10), Logger("ab")]).block_on(); // Success(
 
 `need` is the tool for library code that is generic over its environment:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, HList, Selector, need};
+# struct AppError;
+# struct Logger;
+# impl Logger { fn info(&self, _line: String) {} }
 
 fn audit<R, I>(line: String) -> Effect<(), AppError, R>
 where
@@ -65,12 +68,18 @@ where
 `Effect::from_ctx` gives an async step direct access to its context: `ctx.get::<T, _>()` reads a
 capability and `ctx.env()` is the whole environment.
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, HCons, HNil, hlist};
+# struct Db(u32);
+# struct Logger(&'static str);
+# type DbLog = HCons<Db, HCons<Logger, HNil>>;
 fn describe() -> Effect<String, (), DbLog> {
   Effect::from_ctx(|ctx| async move {
     Ok(format!("{}:{}", ctx.get::<Db, _>().0, ctx.get::<Logger, _>().0))
   })
 }
+# let exit = describe().provide_all(hlist![Db(1), Logger("app")]).block_on();
+# assert_eq!(exit, Exit::succeed("1:app".to_string()));
 ```
 
 ## No `get_mut`

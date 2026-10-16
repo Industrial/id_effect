@@ -44,11 +44,17 @@ Providing a capability the effect does not need is a compile error (a type misma
 `provide_env` takes any HList value that **contains** every capability of `R`, in any order, with
 extras allowed. It is the natural fit for an application environment built once:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, caps, effect};
+# struct Cache(u32); struct Logger(&'static str); struct Db(u32);
+# fn describe() -> Effect<String, (), caps!(Db, Logger)> {
+#   effect!({ format!("{}{}", ~Logger.0, ~Db.0) })
+# }
 use id_effect::hlist;
 
 let app_env = hlist![Cache(0), Logger("b"), Db(2)];
 let exit = describe().provide_env(app_env).block_on(); // describe() needs Db and Logger
+# assert_eq!(exit, Exit::succeed("b2".to_string()));
 ```
 
 Related methods:
@@ -95,27 +101,55 @@ joins uses.
 Independent layers combine with `merge`; a layer that needs another one's output is fed with
 `provide_to` / `provide_merge` (Chapter 6):
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Never, caps, effect};
+# #[derive(Default)] struct Config;
+# #[derive(Default)] struct Database;
+# #[derive(Default)] struct Logger;
+# #[derive(::id_effect::ProviderSpecDerive)]
+# #[provides(Config, with = Config::default)]
+# struct ConfigLive;
+# #[derive(::id_effect::ProviderSpecDerive)]
+# #[provides(Database, with = Database::default)]
+# struct DatabaseLive;
+# #[derive(::id_effect::ProviderSpecDerive)]
+# #[provides(Logger, with = Logger::default)]
+# struct LoggerLive;
+# fn my_application() -> Effect<u32, Never, caps!(Config, Database, Logger)> {
+#   effect!({ let _ = (~Config, ~Database, ~Logger); 1 })
+# }
 let exit = my_application()
   .provide_layer(ConfigLive::layer().merge(DatabaseLive::layer()).merge(LoggerLive::layer()))
   .block_on();
+# assert_eq!(exit, Exit::succeed(1));
 ```
 
 ## Where to provide
 
 **Provide at `main`, in test setup, or at framework boundaries, not inside library functions.**
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect};
+# pub struct Order; pub struct Receipt; pub struct AppError;
+# pub struct Database; pub struct AuditLog;
+# impl Database { fn connect(_url: &str) -> Self { Database } }
+# mod bad { use super::*;
 // BAD: the library reaches for concrete dependencies
 pub fn process_order(order: Order) -> Effect<Receipt, AppError> {
   let db = Database::connect("hardcoded-url");
   // ...
+#   id_effect::succeed(Receipt)
 }
+# }
+# mod good { use super::*;
 
 // GOOD: the library declares its needs; the caller wires them
 pub fn process_order(order: Order) -> Effect<Receipt, AppError, caps!(Database, AuditLog)> {
   // ...
+#   effect!({ let _ = (~Database, ~AuditLog); Receipt })
 }
+# }
+# fn main() {}
 ```
 
 Providing is lazy too: nothing is built or run until the provided effect itself is run.

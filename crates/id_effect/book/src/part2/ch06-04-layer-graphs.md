@@ -5,13 +5,27 @@ everything it produces and everything it still needs, and the compiler checks ev
 
 ## Declaring the graph
 
-```rust,ignore
+```rust
 use id_effect::{HCons, HNil, Layer, caps};
+# use id_effect::{hlist, need, sync};
+# struct Config; struct Db; struct Cache; struct UserRepo; struct AppError;
 
-fn config_live() -> Layer<caps!(Config), AppError> { /* Layer::effect: load from the env */ }
-fn db_live() -> Layer<caps!(Db), AppError, caps!(Config)> { /* Layer::acquire_release */ }
-fn cache_live() -> Layer<caps!(Cache), AppError, caps!(Config)> { /* ... */ }
-fn user_repo_live() -> Layer<caps!(UserRepo), AppError, caps!(Db)> { /* ... */ }
+fn config_live() -> Layer<caps!(Config), AppError> {
+  // Layer::effect: load from the env
+#   Layer::effect(|| sync(|| hlist![Config]))
+}
+fn db_live() -> Layer<caps!(Db), AppError, caps!(Config)> {
+  // Layer::acquire_release
+#   Layer::acquire_release(|| need::<Config>().map(|_| hlist![Db]), |_, _| sync(|| ()))
+}
+fn cache_live() -> Layer<caps!(Cache), AppError, caps!(Config)> {
+  // ...
+#   Layer::effect(|| need::<Config>().map(|_| hlist![Cache]))
+}
+fn user_repo_live() -> Layer<caps!(UserRepo), AppError, caps!(Db)> {
+  // ...
+#   Layer::effect(|| need::<Db>().map(|_| hlist![UserRepo]))
+}
 
 fn app_layer() -> Layer<caps!(Config, Db, Cache, UserRepo), AppError> {
   let config = config_live(); // one layer value, shared below
@@ -37,7 +51,11 @@ which `merge` / `provide_merge` reject with a panic when the graph is wired, not
 
 ## Running with the graph
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Layer, caps, effect, hlist};
+# struct Config; struct AppError;
+# fn app_layer() -> Layer<caps!(Config), AppError> { Layer::succeed(hlist![Config]) }
+# fn program() -> Effect<(), AppError, caps!(Config)> { effect!({ let _ = ~Config; }) }
 fn main() {
   let exit = program().provide_layer(app_layer()).block_on();
   // ...
@@ -46,7 +64,10 @@ fn main() {
 
 Long-running services that should live until shutdown use `launch`:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Layer, Never, caps, hlist};
+# struct Server; struct AppError;
+# fn server_layer() -> Layer<caps!(Server), AppError> { Layer::succeed(hlist![Server]) }
 // Builds the graph and keeps it alive until the fiber is interrupted, then runs the finalizers.
 let server: Effect<Never, AppError> = server_layer().launch();
 ```
@@ -57,7 +78,11 @@ and code that manages its own `Scope` builds into it with `layer.build_scoped(&s
 
 A layer's type is fixed, so a conditional graph chooses between layers of the **same type**:
 
-```rust,ignore
+```rust
+# use id_effect::{Layer, caps, hlist};
+# struct Metrics { enabled: bool } struct AppError;
+# fn metrics_live() -> Layer<caps!(Metrics), AppError> { Layer::succeed(hlist![Metrics { enabled: true }]) }
+# fn metrics_noop() -> Layer<caps!(Metrics), AppError> { Layer::succeed(hlist![Metrics { enabled: false }]) }
 fn metrics_layer(enabled: bool) -> Layer<caps!(Metrics), AppError> {
   if enabled { metrics_live() } else { metrics_noop() }
 }

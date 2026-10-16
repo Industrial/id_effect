@@ -13,6 +13,7 @@ load balancing, …) around the same domain style as Axum, without Axum's router
 
 ## `EffectService`
 
+<!-- ignore: needs the `tower` crate and id_effect_axum's `tower` feature, not enabled in the book_snippets harness -->
 ```rust,ignore
 use id_effect::succeed;
 use id_effect_axum::service::EffectService;

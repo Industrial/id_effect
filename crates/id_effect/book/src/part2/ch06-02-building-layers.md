@@ -39,7 +39,9 @@ assert_eq!(cfg, Exit::succeed("loaded-from-effect".to_string()));
 
 A **dependent** layer reads its input like any effect:
 
-```rust,ignore
+```rust
+# use id_effect::{HCons, HNil, Layer, hlist, need};
+# struct Config(&'static str);
 struct Db(&'static str);
 
 fn db() -> Layer<HCons<Db, HNil>, (), HCons<Config, HNil>> {
@@ -52,8 +54,9 @@ be built only once (a second build dies with a defect). Prefer `Layer::effect`.
 
 ## Resources: `Layer::acquire_release` and `Layer::scoped`
 
-```rust,ignore
+```rust
 use id_effect::{HCons, HNil, Layer, hlist, sync};
+# fn close() {}
 
 struct Pool;
 
@@ -116,7 +119,15 @@ A capability whose construction needs other capabilities, or can fail, is a hand
 
 A test double is just another layer (or a plain value) for the same capability:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::{HCons, HNil, Layer, hlist};
+# struct AppError;
+# trait Users: Send + Sync {}
+# struct InMemoryUsers;
+# impl InMemoryUsers { fn fixture() -> Self { InMemoryUsers } }
+# impl Users for InMemoryUsers {}
+# struct UserRepo(Arc<dyn Users>);
 fn user_repo_mock() -> Layer<HCons<UserRepo, HNil>, AppError> {
   Layer::succeed(hlist![UserRepo(Arc::new(InMemoryUsers::fixture()))])
 }

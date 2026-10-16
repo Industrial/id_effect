@@ -27,6 +27,7 @@ pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or w
 - **Pools** — `provide_reqwest_pool(n, ttl)` provides a `ReqwestPool` (`id_effect::Pool` of
   clients); `send_pooled` borrows one per request.
 
+<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
 ```rust,ignore
 use id_effect::Exit;
 use id_effect_platform::http::reqwest::{ReqwestClientEnv, ReqwestClientLive, text};
