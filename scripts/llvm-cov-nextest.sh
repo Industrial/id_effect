@@ -21,9 +21,12 @@ unset DATABASE_URL
 #   opentelemetry/src/{otlp,providers,shutdown,starter,config,error,testing}: OTLP exporter
 #     builders and process-global provider install/shutdown need a collector / global state.
 #   axum/src/server/lifecycle: binds sockets and serves until shutdown.
+#   tool/src/bin/id-effect.rs: the `id-effect` binary's `main`, one call into the library's
+#     `cli::run` (unit-tested in-process); its process behaviour is checked by
+#     crates/id_effect_tool/tests/bin.rs, whose spawned binary is not instrumented.
 #   logger/src/pipeline, id_effect/src/schema/parse: carried over from the v3.0 gate (#64)
 #     without a recorded justification; reviewing them is a post-0.7 follow-up.
-IGNORE_REGEX='crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_effect|lib)\.rs|crates/id_effect_logger/src/pipeline\.rs|crates/id_effect_fp/src/foundation/never\.rs|crates/id_effect/src/schema/parse\.rs|crates/id_effect_sql/src/pg/(pool_key|client|transaction)\.rs|crates/id_effect_opentelemetry/src/(otlp|providers|shutdown|testing|error|config|starter)\.rs|crates/id_effect_proc_macro/src/derive_(schema_parser|optics)\.rs|crates/id_effect_axum/src/server/lifecycle\.rs'
+IGNORE_REGEX='crates/id_effect_proc_macro/src/(effect_data|effect_tagged|match_effect|lib)\.rs|crates/id_effect_logger/src/pipeline\.rs|crates/id_effect_fp/src/foundation/never\.rs|crates/id_effect/src/schema/parse\.rs|crates/id_effect_sql/src/pg/(pool_key|client|transaction)\.rs|crates/id_effect_opentelemetry/src/(otlp|providers|shutdown|testing|error|config|starter)\.rs|crates/id_effect_proc_macro/src/derive_(schema_parser|optics)\.rs|crates/id_effect_axum/src/server/lifecycle\.rs|crates/id_effect_tool/src/bin/id-effect\.rs'
 
 exec cargo llvm-cov nextest \
     --ignore-filename-regex "${IGNORE_REGEX}" \

@@ -1,0 +1,106 @@
+//! {{name}}: a cluster node on id_effect_node, a mesh hosting the `counter` process behavior.
+//!
+//! [`node`] builds a mesh node; [`round_trip`] spawns a counter on another node, casts to it
+//! and calls it, all as one effect.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use id_effect::{Effect, Never, fail, succeed, sync};
+use id_effect_kit::node::{BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault};
+use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
+use serde::{Deserialize, Serialize};
+
+/// The name [`Counter`] is registered under on every node.
+pub const COUNTER: &str = "counter";
+
+/// How long a remote spawn or call may take.
+pub const TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Requests a [`Counter`] answers.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Call {
+    /// Reply with the current value.
+    Get,
+}
+
+/// Fire-and-forget messages to a [`Counter`].
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Cast {
+    /// Add to the value.
+    Add(u64),
+}
+
+/// A process holding a number: casts add to it, calls read it.
+pub struct Counter {
+    value: u64,
+}
+
+impl Process for Counter {
+    type Args = ();
+    type Env = ();
+    type Call = Call;
+    type Reply = u64;
+    type Cast = Cast;
+    type Info = ();
+    type Error = Never;
+
+    fn init(_: (), _: ProcessCtx) -> Effect<Self, Never, ()> {
+        succeed(Counter { value: 0 })
+    }
+
+    fn handle_call(self, msg: Call, _: ProcessCtx) -> Effect<(u64, Next<Self>), Never, ()> {
+        sync(move || match msg {
+            Call::Get => (self.value, Next::Continue(self)),
+        })
+    }
+
+    fn handle_cast(mut self, msg: Cast, _: ProcessCtx) -> Effect<Next<Self>, Never, ()> {
+        sync(move || match msg {
+            Cast::Add(n) => {
+                self.value += n;
+                Next::Continue(self)
+            }
+        })
+    }
+}
+
+/// A mesh node named `name` (`node@host`) that hosts [`Counter`]s, attached to `fabric`.
+///
+/// `MeshFabric` connects the nodes of one process (tests, local runs); between hosts the
+/// mesh talks over `id_effect_kit::node::TcpTransport` sessions instead.
+pub fn node(name: &str, fabric: &MeshFabric) -> Arc<Mesh> {
+    let mut registry = BehaviorRegistry::new();
+    registry.register::<Counter>(COUNTER);
+    let node_name = NodeName::new(name);
+    let process = ProcessNode::new(node_name.clone());
+    Mesh::new(NodeId::fresh(&node_name), process, registry).with_fabric(fabric.clone())
+}
+
+fn encode<T: Serialize>(message: &T) -> Result<Vec<u8>, RemoteFault> {
+    postcard::to_allocvec(message).map_err(|e| RemoteFault::Decode(e.to_string()))
+}
+
+/// From `from`: spawns a [`Counter`] on the node `target`, adds `amount` to it and reads it
+/// back. Mailboxes are FIFO, so the call sees the cast.
+pub fn round_trip(from: &Arc<Mesh>, target: &str, amount: u64) -> Effect<u64, RemoteFault> {
+    let mesh = Arc::clone(from);
+    let args = match encode(&()) {
+        Ok(args) => args,
+        Err(fault) => return fail(fault),
+    };
+    from.remote_spawn(target, COUNTER, args, None, TIMEOUT)
+        .flat_map(move |pid| {
+            let sent = encode(&Cast::Add(amount))
+                .and_then(|msg| mesh.remote_cast(&pid, msg))
+                .and_then(|()| encode(&Call::Get));
+            match sent {
+                Ok(get) => mesh.remote_call(&pid, get, TIMEOUT),
+                Err(fault) => fail(fault),
+            }
+        })
+        .flat_map(|reply| match postcard::from_bytes::<u64>(&reply) {
+            Ok(value) => succeed(value),
+            Err(e) => fail(RemoteFault::Decode(e.to_string())),
+        })
+}

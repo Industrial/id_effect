@@ -1,0 +1,21 @@
+//! {{name}}: start this node and a peer on an in-process fabric, run a counter on the peer and
+//! call it remotely.
+//!
+//! `NODE_NAME` names this node (default `a@localhost`).
+
+use std::process::ExitCode;
+
+use id_effect_kit::node::MeshFabric;
+use id_effect_kit::prelude::{RunMainConfig, hlist, run_main};
+
+use {{crate_name}}::{node, round_trip};
+
+fn main() -> ExitCode {
+    let name = std::env::var("NODE_NAME").unwrap_or_else(|_| "a@localhost".to_string());
+    let fabric = MeshFabric::new();
+    let this = node(&name, &fabric);
+    let _peer = node("b@localhost", &fabric);
+    let program = round_trip(&this, "b@localhost", 42)
+        .map(move |value| println!("{name}: counter on b@localhost = {value}"));
+    run_main(program, hlist![], RunMainConfig::with_tracing())
+}

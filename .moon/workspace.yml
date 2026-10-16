@@ -19,6 +19,7 @@ projects:
   id_effect_tokio: crates/id_effect_tokio
   id_effect_fsm: crates/id_effect_fsm
   id_effect_kit: crates/id_effect_kit
+  id_effect_tool: crates/id_effect_tool
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
 vcs:

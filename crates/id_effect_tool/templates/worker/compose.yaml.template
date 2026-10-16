@@ -1,0 +1,7 @@
+# docker compose up --build    (Ctrl-C stops the jobs)
+services:
+  worker:
+    build: .
+    init: true
+    environment:
+      RUST_LOG: info

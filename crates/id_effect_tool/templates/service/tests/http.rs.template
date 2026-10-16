@@ -1,0 +1,108 @@
+//! The router in process: no socket, no database, no collector.
+
+use axum::Router;
+use axum::body::Body;
+use axum::http::{HeaderMap, Method, Request, StatusCode};
+use http_body_util::BodyExt;
+use id_effect_kit::axum::HealthRegistry;
+use id_effect_kit::axum::server::security::CookieKey;
+use tower::ServiceExt;
+
+use {{crate_name}}::app;
+
+fn test_app() -> Router {
+    app(&HealthRegistry::new(), CookieKey::generate())
+}
+
+async fn call(app: &Router, method: Method, uri: &str) -> (StatusCode, HeaderMap, String) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .body(Body::empty())
+        .unwrap();
+    let (parts, body) = app.clone().oneshot(request).await.unwrap().into_parts();
+    let bytes = body.collect().await.unwrap().to_bytes();
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    (parts.status, parts.headers, text)
+}
+
+#[tokio::test]
+async fn index_answers_with_security_headers() {
+    let (status, headers, body) = call(&test_app(), Method::GET, "/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.starts_with("hello from"), "{body}");
+    assert_eq!(headers["x-content-type-options"], "nosniff");
+    assert!(headers.contains_key("content-security-policy"));
+}
+
+#[tokio::test]
+async fn state_changing_requests_need_a_csrf_token() {
+    let (status, _, body) = call(&test_app(), Method::POST, "/").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+async fn health_and_ready_are_up() {
+    let app = test_app();
+    assert_eq!(call(&app, Method::GET, "/health").await.0, StatusCode::OK);
+    let (status, _, body) = call(&app, Method::GET, "/ready").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("\"status\":\"up\""), "{body}");
+}
+
+#[tokio::test]
+async fn metrics_count_requests_by_route() {
+    let app = test_app();
+    call(&app, Method::GET, "/").await;
+    let (status, _, body) = call(&app, Method::GET, "/metrics").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("greetings_total"), "{body}");
+    let line = r#"http_server_requests_total{method="GET",route="/",status="200"}"#;
+    assert!(body.contains(line), "{body}");
+}
+{{#if !pg}}
+
+/// The binary boots with nothing else running and answers `/health` on `PORT`.
+mod boot {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    const BIN: &str = env!("CARGO_BIN_EXE_{{name}}");
+
+    fn get_health(port: u16) -> Option<String> {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+        let request = "GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+        stream.write_all(request.as_bytes()).ok()?;
+        let mut answer = String::new();
+        stream.read_to_string(&mut answer).ok()?;
+        Some(answer)
+    }
+
+    #[test]
+    fn binary_serves_health() {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .unwrap()
+            .port();
+        let mut child = Command::new(BIN)
+            .env("HOST", "127.0.0.1")
+            .env("PORT", port.to_string())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut answer = None;
+        while answer.is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+            answer = get_health(port);
+        }
+        child.kill().ok();
+        child.wait().ok();
+        let answer = answer.expect("no answer on /health within 30s");
+        assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    }
+}
+{{/if}}

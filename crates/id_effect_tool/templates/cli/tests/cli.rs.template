@@ -1,0 +1,44 @@
+//! The program effect in process, and the binary end to end.
+
+use std::process::{Command, Output};
+
+use id_effect::Exit;
+
+use {{crate_name}}::app;
+
+const BIN: &str = env!("CARGO_BIN_EXE_{{name}}");
+
+fn cli(args: &[&str]) -> Output {
+    Command::new(BIN)
+        .args(args)
+        .output()
+        .expect("spawn the binary")
+}
+
+#[test]
+fn the_program_reads_the_token_secret() {
+    let (program, env) = app("s3cr3t".into());
+    let exit = program.provide_env(env).block_on();
+    assert!(matches!(exit, Exit::Success(6)), "{exit:?}");
+}
+
+#[test]
+fn a_token_runs_the_program() {
+    let out = cli(&["--token", "s3cr3t"]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("6 characters"));
+}
+
+#[test]
+fn no_token_is_a_usage_error() {
+    assert_eq!(cli(&[]).status.code(), Some(2));
+}
+
+#[test]
+fn completions_print_a_script() {
+    for shell in ["bash", "zsh", "fish"] {
+        let out = cli(&["completions", shell]);
+        assert_eq!(out.status.code(), Some(0), "{shell}: {out:?}");
+        assert!(!out.stdout.is_empty(), "{shell}: empty script");
+    }
+}

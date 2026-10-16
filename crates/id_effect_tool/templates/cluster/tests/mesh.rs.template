@@ -1,0 +1,39 @@
+//! Two nodes on one in-process fabric: remote spawn, cast and call.
+
+use std::process::Command;
+
+use id_effect::{Cause, Exit};
+use id_effect_kit::node::{MeshFabric, RemoteFault};
+
+use {{crate_name}}::{node, round_trip};
+
+const BIN: &str = env!("CARGO_BIN_EXE_{{name}}");
+
+#[test]
+fn a_counter_on_another_node_answers_calls() {
+    let fabric = MeshFabric::new();
+    let a = node("a@test", &fabric);
+    let _b = node("b@test", &fabric);
+    let remote = round_trip(&a, "b@test", 7).block_on();
+    assert!(matches!(remote, Exit::Success(7)), "{remote:?}");
+    let local = round_trip(&a, "a@test", 3).block_on();
+    assert!(matches!(local, Exit::Success(3)), "{local:?}");
+}
+
+#[test]
+fn an_unknown_node_is_a_remote_fault() {
+    let fabric = MeshFabric::new();
+    let a = node("a@test", &fabric);
+    let exit = round_trip(&a, "nobody@test", 1).block_on();
+    assert!(
+        matches!(exit, Exit::Failure(Cause::Fail(RemoteFault::NoProc))),
+        "{exit:?}"
+    );
+}
+
+#[test]
+fn the_binary_runs_the_round_trip() {
+    let out = Command::new(BIN).output().expect("spawn the binary");
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stdout).contains("= 42"));
+}

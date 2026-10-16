@@ -267,6 +267,39 @@ jobs:
       - name: Validate crate packaging
         run: bash scripts/validate-crate-packaging.sh
   # ──────────────────────────────────────────────────────────────────────────
+  # `id-effect new` templates: each one generated outside the repo against this
+  # checkout (--local-workspace), then fmt / build / clippy / test; the service
+  # is also built as a Docker image and probed on /health.
+  # ──────────────────────────────────────────────────────────────────────────
+  templates:
+    name: Template ${{ matrix.template }}
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [service, worker, cli, cluster]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: templates-${{ matrix.template }}
+      - name: Generate, build and test the template
+        env:
+          TEMPLATE: ${{ matrix.template }}
+          SMOKE_DIR: ${{ runner.temp }}/template-smoke
+          # Inside ./target so the cache step keeps the generated projects' dependencies.
+          SMOKE_TARGET_DIR: ${{ github.workspace }}/target/template-smoke
+        run: |
+          args=("$TEMPLATE")
+          if [ "$TEMPLATE" = service ]; then args+=(--docker); fi
+          bash scripts/template-smoke.sh "${args[@]}"
+  # ──────────────────────────────────────────────────────────────────────────
   # Supply-chain policy: advisories, licenses, bans, sources (deny.toml).
   # No committed Cargo.lock, so this checks a fresh resolution.
   # ──────────────────────────────────────────────────────────────────────────
@@ -331,6 +364,7 @@ jobs:
       - labs
       - minimal-versions
       - validate-packaging
+      - templates
       - deny
       - semver
     if: always()

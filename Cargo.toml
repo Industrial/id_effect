@@ -21,6 +21,7 @@ members = [
   "crates/id_effect_tokio",
   "crates/id_effect_fsm",
   "crates/id_effect_kit",
+  "crates/id_effect_tool",
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",

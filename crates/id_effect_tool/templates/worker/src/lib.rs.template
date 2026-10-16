@@ -1,0 +1,58 @@
+//! {{name}}: a background worker on id_effect, named cron jobs with run history.
+//!
+//! [`registry`] declares the jobs; `main.rs` runs them on the system clock until Ctrl-C.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use id_effect::{
+    Cron, CronError, CronJob, CronRegistry, CronRun, Effect, MissedRunPolicy, Never, OverlapPolicy,
+    WallClock, sync,
+};
+
+/// What the jobs have done so far.
+#[derive(Clone, Debug, Default)]
+pub struct Stats {
+    /// `heartbeat` runs.
+    pub heartbeats: Arc<AtomicU64>,
+    /// `cleanup` runs.
+    pub cleanups: Arc<AtomicU64>,
+}
+
+/// The jobs: `heartbeat` every minute (a run still in flight skips the next fire time) and
+/// `cleanup` daily at 03:00 UTC (a missed night is caught up once). Every fire time lands in
+/// the scheduler's history; finished runs are printed by [`log_run`].
+pub fn registry(stats: &Stats) -> Result<CronRegistry, CronError> {
+    let heartbeats = Arc::clone(&stats.heartbeats);
+    let cleanups = Arc::clone(&stats.cleanups);
+    let heartbeat = CronJob::new("heartbeat", Cron::parse("* * * * *")?, move || {
+        count(&heartbeats)
+    })
+    .overlap(OverlapPolicy::Skip)
+    .on_success(log_run);
+    let cleanup = CronJob::new("cleanup", Cron::parse("0 3 * * *")?, move || {
+        count(&cleanups)
+    })
+    .missed_runs(MissedRunPolicy::CatchUp { max: 1 })
+    .on_success(log_run)
+    .on_failure(log_run);
+    CronRegistry::new().with(heartbeat)?.with(cleanup)
+}
+
+/// One unit of work: bumps `counter`. Replace it with the job's real effect.
+fn count(counter: &Arc<AtomicU64>) -> Effect<u64, String> {
+    let counter = Arc::clone(counter);
+    sync(move || counter.fetch_add(1, Ordering::SeqCst) + 1)
+}
+
+/// Prints a finished run: job, fire time and outcome.
+pub fn log_run(run: &CronRun) -> Effect<(), Never> {
+    let at = run.scheduled.format_iso();
+    let line = format!("{} {at}: {:?}", run.job, run.outcome);
+    sync(move || println!("{line}"))
+}
+
+/// Runs every job of `registry` on the system clock until interrupted.
+pub fn program(registry: &CronRegistry) -> Effect<(), Never> {
+    registry.run(WallClock::system())
+}

@@ -1,0 +1,36 @@
+# Kamal 2 deploy config for {{name}} (https://kamal-deploy.org). Set the image, servers and
+# registry, put the secrets in .kamal/secrets, then `kamal setup` / `kamal deploy`.
+service: {{name}}
+image: ghcr.io/example/{{name}}
+
+servers:
+  web:
+    - 192.0.2.1
+
+proxy:
+  app_port: 8080
+  healthcheck:
+    path: /health
+
+registry:
+  server: ghcr.io
+  username: KAMAL_REGISTRY_USER
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  clear:
+    HOST: "0.0.0.0"
+    PORT: "8080"
+  secret:
+    - COOKIE_KEY
+{{#if pg}}
+    - DATABASE_URL
+{{/if}}
+{{#if otel}}
+    - OTEL_EXPORTER_OTLP_ENDPOINT
+{{/if}}
+
+builder:
+  arch: amd64
+  dockerfile: Dockerfile

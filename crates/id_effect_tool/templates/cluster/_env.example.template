@@ -1,0 +1,5 @@
+# Copy to .env and adjust.
+# This node's name (`name@host`); peers address its processes by it.
+NODE_NAME=a@localhost
+# `run_main` installs tracing; RUST_LOG filters it.
+RUST_LOG=info

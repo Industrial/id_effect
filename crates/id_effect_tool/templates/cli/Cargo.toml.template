@@ -1,0 +1,14 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# One front door to id_effect: a feature per battery (web, sql-pg, otel, cluster).
+id_effect_kit = { version = "{{id_effect_version}}", features = [{{kit_features}}] }
+# The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
+id_effect = "{{id_effect_version}}"
+# `completions <shell>` (the kit re-exports id_effect_cli without it).
+id_effect_cli = { version = "{{id_effect_version}}", features = ["completions"] }
+clap = { version = "4.5", features = ["derive"] }

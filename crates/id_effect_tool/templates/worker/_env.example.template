@@ -1,0 +1,3 @@
+# Copy to .env and adjust; the worker reads the process environment.
+# `run_main` installs tracing; RUST_LOG filters it.
+RUST_LOG=info

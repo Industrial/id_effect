@@ -1,0 +1,24 @@
+//! {{name}}: the program as an effect over its configuration, run at the edge by `main.rs`.
+
+use id_effect::Effect;
+use id_effect_kit::config::{
+    Config, ConfigEnv, ConfigError, MapConfigProvider, Secret, config_env,
+};
+
+/// The `API_TOKEN` secret, read from the [`ConfigEnv`] capability.
+fn token() -> Effect<Secret<String>, ConfigError, ConfigEnv> {
+    Config::string("API_TOKEN")
+        .secret()
+        .run::<Secret<String>, ConfigError, ConfigEnv, _>()
+}
+
+/// The program and the [`ConfigEnv`] it runs in: `token` becomes the `API_TOKEN` secret (a
+/// [`Secret`] never prints its value). Replace the body with the real work.
+pub fn app(token_value: String) -> (Effect<usize, ConfigError, ConfigEnv>, ConfigEnv) {
+    let env = config_env(MapConfigProvider::from_pairs([(
+        "API_TOKEN",
+        token_value.as_str(),
+    )]));
+    let program = token().map(|secret| secret.expose().len());
+    (program, env)
+}

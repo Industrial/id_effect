@@ -1,0 +1,6 @@
+# docker compose run --rm cli --token "$API_TOKEN"
+services:
+  cli:
+    build: .
+    environment:
+      RUST_LOG: info
