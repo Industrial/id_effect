@@ -16,9 +16,12 @@ There is no `Clock` trait, `LiveClock` or `TestClock` in 0.7, and no `*_with_clo
 
 ## Driving a TestExecutor
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 use id_effect::TestExecutor;
+# use std::time::Duration;
+# use id_effect::{Effect, sleep};
+# let program: Effect<()> = sleep(Duration::from_secs(1));
 
 let exec = TestExecutor::new();
 let handle = program.fork_root(Arc::new(exec.clone())); // spawn the root fiber on it
@@ -60,7 +63,20 @@ assert!(h.is_done(), "timed out at virtual 10 s");
 
 From `crates/id_effect/tests/schedule.rs`: exponential(10 ms) with 3 retries is done at exactly 70 ms of virtual time, and not one nanosecond earlier.
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicUsize, Ordering};
+# use std::time::Duration;
+# use id_effect::{Effect, Schedule, TestExecutor, fail, succeed};
+# fn ms(n: u64) -> Duration { Duration::from_millis(n) }
+# fn flaky(n: &Arc<AtomicUsize>, fails: usize) -> impl Fn() -> Effect<usize, String> + Send + Sync + use<> {
+#     let n = Arc::clone(n);
+#     move || {
+#         let i = n.fetch_add(1, Ordering::SeqCst);
+#         if i < fails { fail(format!("boom {i}")) } else { succeed(i) }
+#     }
+# }
+# let n = Arc::new(AtomicUsize::new(0));
 let eff: Effect<usize, String> = Effect::retry(
     flaky(&n, usize::MAX), // always fails, counting attempts in `n`
     Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)),
@@ -80,7 +96,10 @@ assert_eq!(n.load(Ordering::SeqCst), 4); // 1 attempt + 3 retries
 
 A handy helper advances from deadline to deadline until the root is done, so tests don't hard-code delays:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::time::Duration;
+# use id_effect::{Effect, Executor, FiberHandle, TestExecutor, sleep};
 fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (FiberHandle<A, E>, Duration) {
     let exec = TestExecutor::new();
     let start = exec.now();
@@ -92,6 +111,9 @@ fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Fibe
     }
     (h, exec.now() - start)
 }
+# let (h, took) = run_virtual(sleep::<(), _>(Duration::from_secs(90)));
+# assert!(h.is_done());
+# assert_eq!(took, Duration::from_secs(90));
 ```
 
 Once `h.is_done()`, `h.join_future()` is ready on its first poll and yields the `Exit`.
@@ -100,10 +122,12 @@ Once `h.is_done()`, `h.join_future()` is ready on its first poll and yields the 
 
 If business logic needs "now", read it from the executor so tests control it too:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Executor};
 fn now<E: Send + 'static>() -> Effect<std::time::Instant, E> {
     Effect::from_ctx(|ctx| async move { Ok(ctx.fiber().executor().now()) })
 }
+# assert!(now::<()>().block_on().into_result().is_ok());
 ```
 
 For wall-clock calendar values (`UtcDateTime`, time zones) see `id_effect::scheduling::datetime`; they are plain data, so pass them in as inputs or capabilities when a test needs to fix them. More on testing with `TestExecutor` in [Testing](../part4/ch15-00-testing.md).

@@ -26,10 +26,14 @@ completion: it runs every ready task, then jumps the virtual clock to the next t
 fiber is done. An hour of `sleep`, a `timeout` or a `retry` schedule costs no wall-clock time.
 It panics on a deadlock (the fiber waits on something nothing will complete).
 
-```rust,ignore
+```rust
 use std::time::Duration;
 
 use id_effect::{Effect, Schedule, assert_exit_fail, assert_exit_success, run_test, sleep};
+# use id_effect::fail;
+# #[derive(Debug, PartialEq)]
+# enum FetchError { Unavailable }
+# fn fetch_flaky() -> Effect<u8, FetchError> { fail(FetchError::Unavailable) }
 
 #[test]
 fn slow_lookup_times_out() {
@@ -42,6 +46,10 @@ fn retries_then_gives_up() {
   let eff = Effect::retry(|| fetch_flaky(), Schedule::spaced(Duration::from_secs(1)).intersect(Schedule::recurs(3)));
   assert_exit_fail(&run_test(eff), &FetchError::Unavailable);
 }
+# let lookup: Effect<u8> = sleep(Duration::from_secs(60)).map(|()| 1);
+# assert_exit_success(&run_test(lookup.timeout(Duration::from_secs(5))), &None);
+# let eff = Effect::retry(|| fetch_flaky(), Schedule::spaced(Duration::from_secs(1)).intersect(Schedule::recurs(3)));
+# assert_exit_fail(&run_test(eff), &FetchError::Unavailable);
 ```
 
 `run_test_on(&exec, eff)` runs on an executor you keep, so several effects share one virtual
@@ -54,14 +62,23 @@ failed, else `Interrupt`.
 
 ## Golden files
 
-```rust,ignore
+```rust,no_run
 use id_effect::{assert_golden, assert_golden_exit, run_test};
+# use id_effect::{Effect, succeed};
+# struct Report;
+# fn sample() -> Report { Report }
+# fn render_report(_report: &Report) -> String { "total: 0".to_owned() }
+# struct Cart;
+# fn empty_cart() -> Cart { Cart }
+# fn checkout(_cart: Cart) -> Effect<u32, String> { succeed(0) }
 
 #[test]
 fn report_layout() {
   assert_golden("tests/golden/report.txt", &render_report(&sample()));
   assert_golden_exit("tests/golden/checkout_exit.txt", &run_test(checkout(empty_cart())));
 }
+# assert_golden("tests/golden/report.txt", &render_report(&sample()));
+# assert_golden_exit("tests/golden/checkout_exit.txt", &run_test(checkout(empty_cart())));
 ```
 
 - A relative path resolves against `CARGO_MANIFEST_DIR`; line endings are normalized.
@@ -77,6 +94,7 @@ TestCaseError>`, so it composes with `?` inside `proptest!`. `prop_sync` turns a
 `prop_assert!` into an effect, so the check can sit inside the pipeline. `prop_run` does the same
 for any error type (a typed failure fails the case).
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use id_effect::testing::property::{arb_duration, prop_check, prop_sync};
 use id_effect::{Effect, sleep};
@@ -106,6 +124,7 @@ schema decodes. Every generated value passes the schema's refinements and brands
 case shrinks on the wire value. `arb_schema::<T>()` does it for a `HasSchema` type whose wire type
 implements `Arbitrary`. `prop_assert_roundtrip` checks `decode(encode(a)) == a`.
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use id_effect::schema::{HasSchema, Unknown, i64, refine};
 use id_effect::testing::property::{from_schema, prop_assert_roundtrip, unknown_object};
@@ -165,6 +184,7 @@ Implement `StateMachine` for a pure model of the system, and `run_state_machine`
 command lists, runs each against the model and against the real system, and shrinks a failure to
 a minimal list of commands.
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use std::collections::VecDeque;
 

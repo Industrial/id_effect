@@ -2,7 +2,9 @@
 
 Consider transferring money between two accounts. With mutexes:
 
-```rust,ignore
+```rust
+# use std::sync::Mutex;
+# struct Account { balance: u64 }
 fn transfer(from: &Mutex<Account>, to: &Mutex<Account>, amount: u64) {
     let mut from_guard = from.lock().unwrap();
     // Thread B might be doing transfer(to, from, ...) right here
@@ -26,8 +28,22 @@ STM assumes conflicts are rare. Instead of locking, a transaction:
 
 If something changed between step 1 and step 3, the transaction restarts from step 1.
 
-```rust,ignore
+```rust
 use id_effect_fp::{Stm, TRef, commit};
+# use id_effect::{Cause, Effect, Exit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
+# #[derive(Clone, Debug, PartialEq)]
+# struct Account { id: u32, balance: u64 }
+# #[derive(Clone, Debug, PartialEq)]
+# enum TransferError { InsufficientFunds }
+# let a = run(commit(TRef::make(Account { id: 1, balance: 100 }))).expect("cell");
+# let b = run(commit(TRef::make(Account { id: 2, balance: 50 }))).expect("cell");
 
 fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64) -> Stm<(), TransferError> {
   let (from, to) = (from.clone(), to.clone());
@@ -47,6 +63,9 @@ fn transfer(from: &TRef<Account>, to: &TRef<Account>, amount: u64) -> Stm<(), Tr
 
 // Run it: `commit` lifts the transaction into an Effect.
 run(commit(transfer(&a, &b, 1)))?;
+# assert_eq!(run(commit(b.read_stm::<()>())).map(|acct| acct.balance), Ok(51));
+# assert_eq!(run(commit(transfer(&b, &a, 1_000))), Err(TransferError::InsufficientFunds));
+# Ok::<(), TransferError>(())
 ```
 
 No locks and no lock ordering. The runnable example starts two threads that make 50 transfers each

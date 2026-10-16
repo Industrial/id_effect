@@ -6,7 +6,15 @@ Knowing about `Cause` and `Exit` is only useful if you can act on them. The 0.7 
 
 `catch` intercepts `Cause::Fail(e)` and gives you a chance to recover (it may also change the error type):
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, fail, succeed};
+# struct Db;
+# #[derive(Debug)]
+# enum DbError { NotFound, Timeout }
+# struct User;
+# impl User { fn anonymous() -> Self { User } }
+# fn find_user(_id: u64) -> Effect<User, DbError, caps!(Db)> { fail(DbError::NotFound) }
+# let id = 7;
 let resilient: Effect<User, DbError, caps!(Db)> = find_user(id).catch(|error: DbError| match error {
     DbError::NotFound => succeed(User::anonymous()),
     other => fail(other), // re-raise anything else
@@ -33,16 +41,31 @@ assert_eq!(program.block_on(), Exit::succeed(42));
 
 `map_err` transforms the typed error and leaves defects and interrupts alone. Use it to lift a component's error into your application's error type, or into an `Or` union (next section):
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect};
+# #[derive(Debug)]
+# enum AppError { BadInput }
+# fn parse_i32(raw: &'static str) -> Effect<i32, &'static str> {
+#     effect!({ raw.parse::<i32>().map_err(|_| "parse_failed")? })
+# }
+# let program: Effect<i32, AppError> = effect!({
 let v = ~parse_i32("nope").map_err(|_| AppError::BadInput);
+# v
+# });
+# assert!(program.block_on().into_result().is_err());
 ```
 
 ## exit: Handle Everything
 
 When you genuinely need to react to defects or interruption — at a top-level handler, around a plugin call, in a supervisor — observe the outcome as a value and branch on it:
 
-```rust,ignore
+```rust
 use id_effect::{Cause, Exit, succeed};
+# use id_effect::{Effect, die};
+# fn risky() -> Effect<i32, String> { die("plugin panicked") }
+# fn handle_expected_error(e: String) -> Effect<i32, String> { id_effect::fail(e) }
+# fn log_defect(report: String) { eprintln!("{report}") }
+# fn fallback_value() -> i32 { 0 }
 
 let bulletproof = risky().exit().flat_map(|exit| match exit {
     Exit::Success(v) => succeed(v),
@@ -52,6 +75,7 @@ let bulletproof = risky().exit().flat_map(|exit| match exit {
         succeed(fallback_value())
     }
 });
+# assert_eq!(bulletproof.block_on(), Exit::succeed(0));
 ```
 
 Don't use this to swallow defects silently, and remember that swallowing a `Cause::Interrupt` means your fiber keeps running after someone asked it to stop.

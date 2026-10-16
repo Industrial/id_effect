@@ -2,18 +2,29 @@
 
 RAII in synchronous code:
 
-```rust,ignore
+```rust
+# use std::fs::File;
+# fn process(_file: &File) -> std::io::Result<()> { Ok(()) }
+# fn run() -> std::io::Result<()> {
 {
     let file = File::open("data.txt")?;
     process(&file)?;
 }  // file.drop() runs here, always, unconditionally
+# Ok(())
+# }
 ```
 
 Reliable. Simple. The drop happens when the scope ends.
 
 ## The Async Complication
 
-```rust,ignore
+```rust
+# struct Error;
+# struct Connection;
+# impl Connection { async fn close(self) -> Result<(), Error> { Ok(()) } }
+# async fn open_connection() -> Result<Connection, Error> { Ok(Connection) }
+# async fn fetch_data(_conn: &Connection) -> Result<Vec<u8>, Error> { Ok(Vec::new()) }
+# async fn transform_and_save(_data: Vec<u8>) -> Result<(), Error> { Ok(()) }
 async fn process_data() -> Result<(), Error> {
     let conn = open_connection().await?;
     let data = fetch_data(&conn).await?;  // What if this is cancelled?

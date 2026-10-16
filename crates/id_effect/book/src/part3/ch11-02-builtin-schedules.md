@@ -20,19 +20,42 @@ Most constructors never finish on their own, so always bound them.
 
 ## Limiters
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::Schedule;
+# struct ApiError;
+# impl ApiError { fn is_transient(&self) -> bool { true } }
+# let base: Schedule<Duration, ApiError> = Schedule::exponential(Duration::from_millis(100));
+# let schedule = base.clone();
+# let _ =
 schedule.intersect(Schedule::recurs(5))        // at most 5 recurrences
+# ;
+# let schedule = base.clone();
+# let _ =
 schedule.up_to(Duration::from_secs(30))        // stop once 30 s have elapsed since the first step
+# ;
+# let schedule = base.clone();
+# let _ =
 schedule.while_input(|e: &ApiError| e.is_transient()) // continue only while the input matches
+# ;
 ```
 
 There is no `max_delay` cap combinator; for a capped backoff, write it with `Schedule::from_fn` or bound the total time with `up_to`.
 
 ## Jitter
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{JitterSource, Schedule};
+# let base: Schedule<Duration, ()> = Schedule::exponential(Duration::from_millis(100));
+# let schedule = base.clone();
+# let _ =
 schedule.jittered()                                   // each delay × random factor in [0.8, 1.2]
+# ;
+# let schedule = base.clone();
+# let _ =
 schedule.jittered_with(0.5, 1.5, JitterSource::seeded(42)) // custom range, reproducible
+# ;
 ```
 
 Jitter prevents retry storms: when 1000 clients hit a failing service and retry in lockstep they create a "thundering herd"; jitter spreads them out. `jittered` seeds its generator per run from `JitterSource::entropy()`; tests pass `JitterSource::seeded(n)` to `jittered_with` for a reproducible sequence.
@@ -46,11 +69,14 @@ Jitter prevents retry storms: when 1000 clients hit a failing service and retry 
 | `a.and_then(b)` | `a`, then `b` | the current one's | the current one's |
 | `a.map(f)` | `a` | `a`'s | `f(a_out)` |
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::Schedule;
 let bounded_backoff = Schedule::exponential(Duration::from_millis(100))
     .intersect(Schedule::recurs(5))
     .jittered()
     .up_to(Duration::from_secs(10));
+# let _: &Schedule<(Duration, u64), String> = &bounded_backoff;
 ```
 
 `intersect` is the "both must agree to continue" combination: the first schedule that says "done" ends the whole thing.

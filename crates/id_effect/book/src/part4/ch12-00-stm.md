@@ -24,7 +24,7 @@ The model in `id_effect_fp`:
 The snippets below use a small helper from the examples that runs an effect and turns its `Exit`
 into a `Result`:
 
-```rust,ignore
+```rust
 use id_effect::{Cause, Effect, Exit};
 
 fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {

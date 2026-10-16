@@ -74,11 +74,18 @@ Most services want a single declarative list of their jobs. A `CronRegistry` hol
 so the job takes a `Fn() -> Effect`). Names are unique — registering one twice is a typed
 `CronError::DuplicateJob`:
 
-```rust,ignore
+```rust
+# use id_effect::{Cron, CronError, CronJob, CronRegistry, Effect, succeed, timezone};
+# fn report() -> Effect<(), String> { succeed(()) }
+# fn sync_upstream() -> Effect<(), String> { succeed(()) }
+# fn ping() -> Effect<(), String> { succeed(()) }
+# let new_york = timezone::from_str("America/New_York").unwrap();
 let registry = CronRegistry::new()
     .with(CronJob::new("nightly-report", Cron::parse("30 2 * * *")?.in_zone(new_york), report))?
     .schedule("sync", "0 */6 * * *", sync_upstream)?
     .schedule("heartbeat", "@hourly", ping)?;
+# assert_eq!(registry.len(), 3);
+# Ok::<(), CronError>(())
 ```
 
 Run the jobs with `registry.run(clock)` — an effect that runs every job's scheduler fiber until
@@ -100,10 +107,16 @@ Two policies decide what happens when reality does not match the calendar:
 | `OverlapPolicy` | A fire time arrives while the previous run is still going | `Skip` (default) records it as skipped; `Allow` starts a concurrent run |
 | `MissedRunPolicy` | The scheduler wakes up after several fire times passed (suspended host, clock step) | `Skip` (default) runs only the latest; `CatchUp { max }` runs up to `max` of the missed ones first, oldest first |
 
-```rust,ignore
+```rust
+# use id_effect::{Cron, CronError, CronJob, Effect, MissedRunPolicy, OverlapPolicy, succeed};
+# fn sync_upstream() -> Effect<(), String> { succeed(()) }
+# let job: CronJob =
 CronJob::new("sync", Cron::parse("0 */6 * * *")?, sync_upstream)
     .overlap(OverlapPolicy::Skip)
     .missed_runs(MissedRunPolicy::CatchUp { max: 3 })
+# ;
+# assert_eq!(job.name(), "sync");
+# Ok::<(), CronError>(())
 ```
 
 ## Monitoring: Hooks and History
@@ -113,13 +126,19 @@ CronJob::new("sync", Cron::parse("0 */6 * * *")?, sync_upstream)
 kept in a bounded history (the last 100 by default, `history_limit` to change), available from
 `CronScheduler::history` and `last_run`:
 
-```rust,ignore
+```rust
+# use id_effect::{Cron, CronError, CronJob, CronRegistry, CronRun, Effect, Never, succeed, sync};
+# fn sync_upstream() -> Effect<(), String> { succeed(()) }
+# fn alert(message: String) -> Effect<(), Never> { sync(move || eprintln!("{message}")) }
 let job = CronJob::new("sync", Cron::parse("0 */6 * * *")?, sync_upstream)
     .on_failure(|run: &CronRun| alert(format!("{} failed: {:?}", run.job, run.outcome)));
 // ...
+# let registry = CronRegistry::new().with(job)?;
+# let scheduler = registry.scheduler();
 for run in scheduler.history("sync").unwrap() {
     println!("{} {:?}", run.scheduled.format_iso(), run.outcome);
 }
+# Ok::<(), CronError>(())
 ```
 
 ## Testing Jobs on Virtual Time

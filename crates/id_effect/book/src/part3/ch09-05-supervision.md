@@ -45,7 +45,10 @@ assert_eq!(attempts.load(Ordering::SeqCst), 3);
 
 A `Supervisor` owns supervised fibers:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Exit, Never, sleep};
+# fn make_worker() -> Effect<(), String> { sleep(Duration::from_secs(3600)) }
 use id_effect::{Scope, Supervisor, SupervisorPolicy};
 
 let parent = Scope::new();
@@ -54,6 +57,9 @@ let setup = sup
     .attach_to::<Never, _>(&parent) // closing `parent` shuts `sup` down
     .then(sup.spawn(SupervisorPolicy::Restart { delay: Duration::from_secs(1) }, make_worker));
 // ... later: sup.shutdown() interrupts and awaits every supervised fiber.
+# let stop = sup.shutdown::<Never, _>();
+# assert_eq!(setup.flat_map(|_handle| stop).block_on(), Exit::succeed(()));
+# assert!(sup.is_shutdown());
 ```
 
 - `spawn(policy, make)` forks `supervised(policy, make)` into the supervisor's scope and returns its `FiberHandle`; the fiber outlives the forking fiber.

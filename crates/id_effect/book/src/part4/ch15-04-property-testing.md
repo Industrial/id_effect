@@ -10,6 +10,7 @@ hundreds of cases run in milliseconds.
 
 ## Effect Laws
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use id_effect::{Effect, Exit, succeed};
 use proptest::prelude::*;
@@ -39,6 +40,7 @@ Effects are one-shot values, so build a fresh effect for every comparison instea
 
 Every schema combinator is tested this way in `crates/id_effect/tests/schema_roundtrip.rs`:
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use id_effect::schema::{array, i64, optional, string};
 
@@ -59,6 +61,7 @@ proptest! {
 
 ## Business Invariants with STM
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 use id_effect::{Cause, Exit};
 use id_effect_fp::{TRef, commit};
@@ -86,6 +89,7 @@ proptest! {
 
 Provide a fake capability per case, exactly as in [Mocking](./ch15-03-mocking.md):
 
+<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
 ```rust,ignore
 proptest! {
   #[test]

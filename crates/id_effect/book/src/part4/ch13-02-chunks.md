@@ -10,7 +10,7 @@ element-wise and handle chunking for you.
 `Chunk<A>` is a small wrapper over a `Vec<A>` with chunk-level semantics. It is `Clone`, `Eq` and
 `Hash` when `A` is, so chunks of hashable elements can be map keys.
 
-```rust,ignore
+```rust
 use id_effect::Chunk;
 
 let chunk: Chunk<i32> = Chunk::from_vec(vec![1, 2, 3]);
@@ -39,7 +39,7 @@ operator. Chunks amortise that: each operator stage runs once per chunk, and the
 A consumer pulls with `next_chunk` (or `next_chunk_with_size(n)`), an effect yielding
 `Option<(Chunk<A>, Stream<A, E, R>)>`: `None` at the end, otherwise one chunk and the rest.
 
-```rust,ignore
+```rust
 use id_effect::{Exit, Stream};
 
 let s = Stream::<i32, ()>::from_iterable(1..=5);

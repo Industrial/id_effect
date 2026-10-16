@@ -2,13 +2,20 @@
 
 ## The Problem with Real Time in Tests
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Schedule, fail};
+# fn ms(n: u64) -> Duration { Duration::from_millis(n) }
+# fn flaky() -> Effect<u32, String> { fail("down".to_owned()) }
 #[test]
 fn retry_backs_off() {
   // With real time this takes 10 + 20 + 40 = 70 ms; with a 30 s backoff it takes minutes.
   let exit = Effect::retry(flaky, Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)))
     .block_on();
 }
+# let exit = Effect::retry(flaky, Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)))
+#   .block_on();
+# assert!(exit.into_result().is_err());
 ```
 
 Real-time tests are slow and flaky. In `id_effect` there is no separate clock capability to fake:
@@ -31,7 +38,7 @@ until the test drives it:
 Start the effect as a root fiber on it with `eff.fork_root(Arc::new(exec.clone()))` (clones share
 the executor) and check the `FiberHandle`:
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 use std::time::Duration;
 use id_effect::{Effect, TestExecutor, sleep};
@@ -50,6 +57,15 @@ fn an_hour_long_sleep_takes_no_time() {
   exec.advance(Duration::from_secs(1));
   assert!(h.is_done());
 }
+# let exec = TestExecutor::new();
+# let eff: Effect<&'static str> = sleep(Duration::from_secs(3600)).map(|()| "done");
+# let h = eff.fork_root(Arc::new(exec.clone()));
+# exec.run_until_stalled();
+# assert!(!h.is_done());
+# exec.advance(Duration::from_secs(3599));
+# assert!(!h.is_done());
+# exec.advance(Duration::from_secs(1));
+# assert!(h.is_done());
 ```
 
 ## Reading the Exit
@@ -58,7 +74,9 @@ fn an_hour_long_sleep_takes_no_time() {
 poll. The kernel tests use a tiny helper for that, and another one that advances the clock from
 deadline to deadline until the fiber finishes (from `crates/id_effect/tests/schedule.rs`):
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::time::Duration;
 use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
@@ -83,11 +101,45 @@ fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit
   }
   (take_ready(h.join_future()), exec.now() - start)
 }
+# let (exit, took) = run_virtual(id_effect::sleep::<(), _>(Duration::from_secs(5)).map(|()| 1));
+# assert_eq!((exit, took), (Exit::succeed(1), Duration::from_secs(5)));
 ```
 
 ## Testing Retries and Schedules
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::pin;
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicUsize, Ordering};
+# use std::task::{Context, Poll, Waker};
+# use std::time::Duration;
+# use id_effect::{Cause, Effect, Executor, Exit, Schedule, TestExecutor, fail, succeed};
+# fn ms(n: u64) -> Duration { Duration::from_millis(n) }
+# fn flaky(n: &Arc<AtomicUsize>, fails: usize) -> impl Fn() -> Effect<usize, String> + Send + Sync + use<> {
+#   let n = Arc::clone(n);
+#   move || {
+#     let i = n.fetch_add(1, Ordering::SeqCst);
+#     if i < fails { fail(format!("boom {i}")) } else { succeed(i) }
+#   }
+# }
+# fn take_ready<F: Future>(fut: F) -> F::Output {
+#   match pin!(fut).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+#     Poll::Ready(v) => v,
+#     Poll::Pending => panic!("root fiber is not done"),
+#   }
+# }
+# fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit<A, E>, Duration) {
+#   let exec = TestExecutor::new();
+#   let start = exec.now();
+#   let h = eff.fork_root(Arc::new(exec.clone()));
+#   exec.run_until_stalled();
+#   while !h.is_done() {
+#     let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+#     exec.advance(deadline.saturating_duration_since(exec.now()));
+#   }
+#   (take_ready(h.join_future()), exec.now() - start)
+# }
 #[test]
 fn exponential_10ms_with_3_retries_takes_exactly_70ms() {
   let n = Arc::new(AtomicUsize::new(0));
@@ -100,12 +152,27 @@ fn exponential_10ms_with_3_retries_takes_exactly_70ms() {
   assert_eq!(n.load(Ordering::SeqCst), 4); // 1 attempt + 3 retries
   assert!(matches!(exit, Exit::Failure(Cause::Fail(ref e)) if e == "boom 3"));
 }
+# let n = Arc::new(AtomicUsize::new(0));
+# let eff = Effect::retry(flaky(&n, usize::MAX), Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)));
+# let (exit, took) = run_virtual(eff);
+# assert_eq!(took, ms(70));
+# assert_eq!(n.load(Ordering::SeqCst), 4);
+# assert!(matches!(exit, Exit::Failure(Cause::Fail(ref e)) if e == "boom 3"));
 ```
 
 Effects are one-shot, so `Effect::retry` takes a factory that builds a fresh attempt each time.
 To check timing step by step, drive the executor yourself and assert between `advance` calls:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::time::Duration;
+# use id_effect::{Effect, Schedule, TestExecutor, fail};
+# fn ms(n: u64) -> Duration { Duration::from_millis(n) }
+# let eff: Effect<u32, String> = Effect::retry(
+#   || fail("boom".to_owned()),
+#   Schedule::exponential(ms(10)).intersect(Schedule::recurs(3)),
+# );
+# let exec = TestExecutor::new();
 let h = eff.fork_root(Arc::new(exec.clone()));
 exec.run_until_stalled();
 for step in [ms(10), ms(20), ms(40) - Duration::from_nanos(1)] {
@@ -121,7 +188,30 @@ assert!(h.is_done());
 `Effect::timeout(d)` races the effect against a `sleep(d)` on the same clock, so it is
 deterministic under `TestExecutor` too:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::pin;
+# use std::sync::Arc;
+# use std::task::{Context, Poll, Waker};
+# use std::time::Duration;
+# use id_effect::{Effect, Executor, Exit, TestExecutor, sleep};
+# fn take_ready<F: Future>(fut: F) -> F::Output {
+#   match pin!(fut).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+#     Poll::Ready(v) => v,
+#     Poll::Pending => panic!("root fiber is not done"),
+#   }
+# }
+# fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit<A, E>, Duration) {
+#   let exec = TestExecutor::new();
+#   let start = exec.now();
+#   let h = eff.fork_root(Arc::new(exec.clone()));
+#   exec.run_until_stalled();
+#   while !h.is_done() {
+#     let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+#     exec.advance(deadline.saturating_duration_since(exec.now()));
+#   }
+#   (take_ready(h.join_future()), exec.now() - start)
+# }
 let slow: Effect<u32> = sleep(Duration::from_secs(10)).map(|()| 1);
 let (exit, took) = run_virtual(slow.timeout(Duration::from_secs(1)));
 assert_eq!(exit, Exit::succeed(None));
@@ -132,7 +222,36 @@ assert_eq!(took, Duration::from_secs(1));
 
 Provide test doubles first, then run on the executor; `fork_root` needs `R = HNil`:
 
-```rust,ignore
+```rust
+# use std::future::Future;
+# use std::pin::pin;
+# use std::sync::Arc;
+# use std::task::{Context, Poll, Waker};
+# use std::time::Duration;
+# use id_effect::{Effect, Executor, Exit, TestExecutor, caps, need};
+# fn take_ready<F: Future>(fut: F) -> F::Output {
+#   match pin!(fut).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+#     Poll::Ready(v) => v,
+#     Poll::Pending => panic!("root fiber is not done"),
+#   }
+# }
+# fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit<A, E>, Duration) {
+#   let exec = TestExecutor::new();
+#   let start = exec.now();
+#   let h = eff.fork_root(Arc::new(exec.clone()));
+#   exec.run_until_stalled();
+#   while !h.is_done() {
+#     let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+#     exec.advance(deadline.saturating_duration_since(exec.now()));
+#   }
+#   (take_ready(h.join_future()), exec.now() - start)
+# }
+# struct User;
+# fn user_a() -> User { User }
+# fn user_b() -> User { User }
+# struct FakeApi(Vec<User>);
+# impl FakeApi { fn new(users: Vec<User>) -> Self { FakeApi(users) } }
+# fn sync_users() -> Effect<usize, String, caps!(FakeApi)> { need::<FakeApi>().map(|api| api.0.len()) }
 let eff = sync_users().provide(FakeApi::new(vec![user_a(), user_b()]));
 let (exit, _) = run_virtual(eff);
 assert_eq!(exit, Exit::succeed(2));

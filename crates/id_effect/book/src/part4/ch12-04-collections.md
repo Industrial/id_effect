@@ -15,8 +15,16 @@ too: commit it once and share the handle (all three are `Clone + Send + Sync`).
 `take` waits (retries) while the queue is empty. `offer` on a full bounded queue does *not* wait:
 it returns `false`. Add `Stm::check` to make a waiting offer:
 
-```rust,ignore
+```rust
 use id_effect_fp::{Stm, TQueue, commit};
+# use id_effect::{Cause, Effect, Exit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
 
 fn offer_blocking(queue: &TQueue<u32>, job: u32) -> Stm<(), ()> {
   queue.offer(job).flat_map(Stm::<(), ()>::check) // retry while full
@@ -42,7 +50,16 @@ assert_eq!(sum, 55);
 
 Reads and writes on a `TMap` and a `TRef` in one transaction commit together:
 
-```rust,ignore
+```rust
+# use id_effect::{Cause, Effect, Exit};
+# use id_effect_fp::{TMap, TRef, commit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
 let users = run(commit(TMap::<String, String>::make())).expect("map");
 let reads = run(commit(TRef::make(0_u32))).expect("cell");
 
@@ -54,11 +71,23 @@ let lookup = {
 };
 // Either the map read AND the counter increment happen, or neither does.
 let user: Option<String> = run(commit(lookup))?;
+# assert_eq!(user, None);
+# assert_eq!(run(commit(reads.read_stm::<()>())), Ok(1));
+# Ok::<(), ()>(())
 ```
 
 ## TSemaphore: transactional permits
 
-```rust,ignore
+```rust
+# use id_effect::{Cause, Effect, Exit};
+# use id_effect_fp::{Stm, TSemaphore, commit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
 let sem = run(commit(TSemaphore::make(1))).expect("sem");
 run(commit(sem.acquire::<()>()))?; // takes the only permit
 
@@ -68,6 +97,7 @@ assert_eq!(run(commit(try_acquire.clone())), Ok(false));
 
 run(commit(sem.release::<()>()))?;
 assert_eq!(run(commit(try_acquire)), Ok(true));
+# Ok::<(), ()>(())
 ```
 
 Because `acquire` and `release` are `Stm`s, you can combine taking a permit with other state
