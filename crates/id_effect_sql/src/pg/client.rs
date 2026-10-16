@@ -5,14 +5,15 @@ use std::sync::Arc;
 
 use id_effect::Never;
 use id_effect::{Effect, Layer, from_async, hlist};
-use sqlx::{PgPool, Row as _};
+use sqlx::PgPool;
 
 use super::config::{PgPoolConfig, pg_pool_from_config};
 use super::error::sqlx_error;
 use super::pool_key::PgPool as PgPoolCap;
 use super::providers::PgSqlEnv;
 use super::transaction::PgSqlTransaction;
-use crate::{SqlClient, SqlClientService, SqlError, SqlParam, SqlRow, SqlTransaction};
+use super::value::{bind_query, decode_rows};
+use crate::{SqlClient, SqlClientService, SqlError, SqlRow, SqlTransaction, SqlValue};
 
 /// PostgreSQL [`SqlClient`] backed by a sqlx connection pool.
 #[derive(Clone)]
@@ -96,70 +97,27 @@ fn close_pool(pool: PgPool) -> Effect<(), Never> {
   })
 }
 
-pub(super) fn bind_query<'q>(
-  mut query: sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments>,
-  params: &'q [SqlParam],
-) -> sqlx::query::Query<'q, sqlx::Postgres, sqlx::postgres::PgArguments> {
-  for param in params {
-    query = match param {
-      SqlParam::Null => query.bind(None::<i32>),
-      SqlParam::Bool(v) => query.bind(*v),
-      SqlParam::Int(v) => query.bind(*v),
-      SqlParam::Text(v) => query.bind(v.clone()),
-      SqlParam::Bytes(v) => query.bind(v.clone()),
-    };
-  }
-  query
-}
-
-pub(super) fn row_to_sql_row(row: &sqlx::postgres::PgRow) -> SqlRow {
-  let cells = (0..row.len())
-    .map(|idx| {
-      if let Ok(v) = row.try_get::<Option<i32>, _>(idx) {
-        return v.map(|n| n.to_string()).unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<Option<i64>, _>(idx) {
-        return v.map(|n| n.to_string()).unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<Option<bool>, _>(idx) {
-        return v.map(|b| b.to_string()).unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<Option<f64>, _>(idx) {
-        return v.map(|f| f.to_string()).unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<Option<String>, _>(idx) {
-        return v.unwrap_or_default();
-      }
-      if let Ok(v) = row.try_get::<Option<Vec<u8>>, _>(idx) {
-        return v.map(|b| format!("{b:?}")).unwrap_or_default();
-      }
-      String::new()
-    })
-    .collect();
-  SqlRow::new(cells)
-}
-
 impl SqlClient for PgSqlClient {
   fn connect(&self) -> Effect<(), SqlError> {
     let pool = self.pool.clone();
     from_async(move || async move { ping(&pool).await })
   }
 
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (pool, sql, params) = (self.pool.clone(), sql.to_string(), params.to_vec());
     from_async(move || async move {
-      let rows = bind_query(sqlx::query(&sql), &params)
+      let rows = bind_query(sqlx::query(&sql), &params)?
         .fetch_all(&pool)
         .await
         .map_err(sqlx_error)?;
-      Ok(rows.iter().map(row_to_sql_row).collect())
+      decode_rows(&rows)
     })
   }
 
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
     let (pool, sql, params) = (self.pool.clone(), sql.to_string(), params.to_vec());
     from_async(move || async move {
-      let result = bind_query(sqlx::query(&sql), &params)
+      let result = bind_query(sqlx::query(&sql), &params)?
         .execute(&pool)
         .await
         .map_err(sqlx_error)?;

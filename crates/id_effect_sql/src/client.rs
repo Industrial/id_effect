@@ -14,7 +14,9 @@ use id_effect::{
 };
 
 use crate::error::SqlError;
+pub use crate::row::SqlRow;
 use crate::transaction::{SqlTransaction, TestSqlTransaction};
+use crate::value::SqlValue;
 
 /// Capability: an `Arc<dyn SqlClient>` in the typed environment (derefs to `dyn SqlClient`).
 #[derive(Clone)]
@@ -47,7 +49,12 @@ impl fmt::Debug for SqlClientService {
 /// The minimal typed environment holding only [`SqlClientService`].
 pub type SqlClientEnv = HCons<SqlClientService, HNil>;
 
-/// One bound parameter for a SQL statement (MVP: textual cells).
+/// One bound parameter for a SQL statement (the 0.8 parameter type).
+///
+/// Deprecated: statements take [`SqlValue`]s. `SqlValue::from(param)` converts (`Int` becomes
+/// [`SqlValue::I64`]), and `SqlValue == SqlParam` compares through that conversion. Removed in
+/// 0.10.
+#[deprecated(since = "0.9.0", note = "use SqlValue (SqlParam::Int → SqlValue::I64)")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SqlParam {
   /// NULL.
@@ -62,31 +69,17 @@ pub enum SqlParam {
   Bytes(Vec<u8>),
 }
 
-/// One result row as ordered textual cells (MVP decoding).
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct SqlRow {
-  /// Column values left-to-right.
-  pub cells: Vec<String>,
-}
-
-impl SqlRow {
-  /// Build a row from string cells.
-  #[inline]
-  pub fn new(cells: Vec<String>) -> Self {
-    Self { cells }
-  }
-}
-
 /// Capability: portable SQL operations as [`Effect`] values.
 pub trait SqlClient: Send + Sync + 'static {
   /// Establish connectivity (pool warm-up / health check).
   fn connect(&self) -> Effect<(), SqlError>;
 
-  /// Run a read query and collect all rows.
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError>;
+  /// Run a read query and collect all rows. `params` bind to the placeholders in order
+  /// (`&params![a, b]`, `&[x.into()]`).
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError>;
 
   /// Run a write/DDL statement; returns affected row count when known.
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError>;
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError>;
 
   /// Begin a transaction. Statements run through the returned handle belong to it. Prefer
   /// [`with_transaction`](crate::with_transaction), [`transaction`](fn@crate::transaction) or
@@ -136,7 +129,7 @@ where
 /// Run `sql` on the [`SqlClientService`] in `R`.
 pub fn query<R, I>(
   sql: impl Into<String>,
-  params: Vec<SqlParam>,
+  params: Vec<SqlValue>,
 ) -> Effect<Vec<SqlRow>, SqlError, R>
 where
   R: Selector<SqlClientService, I> + HList,
@@ -146,7 +139,7 @@ where
 }
 
 /// Execute `sql` on the [`SqlClientService`] in `R`.
-pub fn execute<R, I>(sql: impl Into<String>, params: Vec<SqlParam>) -> Effect<u64, SqlError, R>
+pub fn execute<R, I>(sql: impl Into<String>, params: Vec<SqlValue>) -> Effect<u64, SqlError, R>
 where
   R: Selector<SqlClientService, I> + HList,
 {
@@ -164,8 +157,8 @@ pub struct TestSqlClient {
 pub(crate) struct TestSqlClientState {
   pub(crate) connected: bool,
   pub(crate) closes: usize,
-  pub(crate) queries: Vec<(String, Vec<SqlParam>)>,
-  pub(crate) executes: Vec<(String, Vec<SqlParam>)>,
+  pub(crate) queries: Vec<(String, Vec<SqlValue>)>,
+  pub(crate) executes: Vec<(String, Vec<SqlValue>)>,
   pub(crate) query_results: HashMap<String, Vec<SqlRow>>,
   pub(crate) execute_rows: HashMap<String, u64>,
   pub(crate) fail_connect: bool,
@@ -224,7 +217,7 @@ impl TestSqlClient {
     lock(&self.inner)
   }
 
-  /// Script rows returned for an exact SQL key.
+  /// Script rows returned for an exact SQL key (build them with [`SqlRow::from_pairs`]).
   #[inline]
   pub fn script_query(&self, sql: impl Into<String>, rows: Vec<SqlRow>) {
     self.state().query_results.insert(sql.into(), rows);
@@ -257,14 +250,14 @@ impl TestSqlClient {
   /// Recorded query calls (sql, params). A transaction's statements are recorded when it
   /// commits; a rolled-back transaction's are discarded.
   #[inline]
-  pub fn recorded_queries(&self) -> Vec<(String, Vec<SqlParam>)> {
+  pub fn recorded_queries(&self) -> Vec<(String, Vec<SqlValue>)> {
     self.state().queries.clone()
   }
 
   /// Recorded execute calls (sql, params), with the same transaction rule as
   /// [`Self::recorded_queries`].
   #[inline]
-  pub fn recorded_executes(&self) -> Vec<(String, Vec<SqlParam>)> {
+  pub fn recorded_executes(&self) -> Vec<(String, Vec<SqlValue>)> {
     self.state().executes.clone()
   }
 
@@ -312,7 +305,7 @@ impl SqlClient for TestSqlClient {
     })
   }
 
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (inner, sql, params) = (Arc::clone(&self.inner), sql.to_string(), params.to_vec());
     suspend(move || {
       let mut state = lock(&inner);
@@ -324,7 +317,7 @@ impl SqlClient for TestSqlClient {
     })
   }
 
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
     let (inner, sql, params) = (Arc::clone(&self.inner), sql.to_string(), params.to_vec());
     suspend(move || {
       let mut state = lock(&inner);
@@ -367,10 +360,12 @@ pub(crate) mod tests {
   use id_effect::{Effect, fail, need, sync};
 
   use super::{
-    SqlClient, SqlClientEnv, SqlClientService, SqlParam, SqlRow, TestSqlClient, execute,
-    provide_sql_client, query, sql_client_env, sql_client_layer,
+    SqlClient, SqlClientEnv, SqlClientService, SqlRow, TestSqlClient, execute, provide_sql_client,
+    query, sql_client_env, sql_client_layer,
   };
   use crate::error::SqlError;
+  use crate::params;
+  use crate::value::SqlValue;
 
   /// Runs `eff` with `Effect::block_on`; the typed outcome as a `Result` (panics on any other cause).
   pub(crate) fn run<A: Send + 'static>(eff: Effect<A, SqlError>) -> Result<A, SqlError> {
@@ -392,12 +387,30 @@ pub(crate) mod tests {
   #[test]
   fn connect_then_query_returns_scripted_rows() {
     let test = TestSqlClient::new();
-    test.script_query("SELECT id FROM users", vec![SqlRow::new(vec!["1".into()])]);
+    test.script_query(
+      "SELECT id FROM users",
+      vec![SqlRow::from_pairs([("id", 1i64)])],
+    );
     let client: Arc<dyn SqlClient> = Arc::new(test.clone());
     run(client.connect()).unwrap();
-    let rows = run(client.query("SELECT id FROM users", &[SqlParam::Int(1)])).unwrap();
+    let rows = run(client.query("SELECT id FROM users", &[SqlValue::I64(1)])).unwrap();
     assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get::<i64>("id"), Ok(1));
     assert_eq!(test.recorded_queries().len(), 1);
+  }
+
+  #[test]
+  #[allow(deprecated)]
+  fn deprecated_sqlparam_still_converts_and_compares() {
+    use super::SqlParam;
+    let test = TestSqlClient::new();
+    run(test.connect()).unwrap();
+    run(test.query("Q", &[SqlParam::Int(1).into()])).unwrap();
+    assert_eq!(test.recorded_queries()[0].1, [SqlParam::Int(1)]);
+    assert_eq!(
+      SqlRow::new(vec!["1".into()]).get::<String>(0usize),
+      Ok("1".into())
+    );
   }
 
   #[test]
@@ -449,21 +462,13 @@ pub(crate) mod tests {
   }
 
   #[test]
-  fn sql_param_variants_round_trip_in_query() {
+  fn sql_values_are_recorded_as_bound() {
     let test = TestSqlClient::new();
     run(test.connect()).unwrap();
-    run(test.query(
-      "Q",
-      &[
-        SqlParam::Null,
-        SqlParam::Bool(true),
-        SqlParam::Int(1),
-        SqlParam::Text("t".into()),
-        SqlParam::Bytes(vec![1, 2]),
-      ],
-    ))
-    .unwrap();
-    assert_eq!(test.recorded_queries().len(), 1);
+    let id = uuid::Uuid::from_u128(7);
+    let params = params![None::<i64>, true, 1i64, "t", vec![1u8, 2], id, 2.5f64];
+    run(test.query("Q", &params)).unwrap();
+    assert_eq!(test.recorded_queries(), [("Q".to_owned(), params)]);
   }
 
   #[test]

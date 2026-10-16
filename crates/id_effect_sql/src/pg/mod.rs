@@ -14,6 +14,7 @@ mod error;
 mod pool_key;
 mod providers;
 mod transaction;
+mod value;
 
 pub use client::PgSqlClient;
 pub use config::{PgPoolConfig, pg_pool_from_config, pg_pool_from_config_lazy};

@@ -10,6 +10,10 @@
 //!   scoped `Layer` ([`transaction_layer`]): it commits on success and rolls back on failure,
 //!   defect or interrupt.
 //!
+//! - Parameters and column values are typed [`SqlValue`]s ([`params!`] encodes Rust values with
+//!   [`ToSqlValue`]); a [`SqlRow`] decodes its columns by name or index with
+//!   [`SqlRow::get`] ([`FromSqlValue`]), returning a [`SqlError`] naming the column.
+//!
 //! Production PostgreSQL support is behind the `pg` feature (`pg` module, sqlx `PgPool`).
 //! See [`docs/platform/adrs/adr-sql-driver-choice.md`](../../docs/platform/adrs/adr-sql-driver-choice.md).
 //!
@@ -17,27 +21,30 @@
 //!
 //! ```rust
 //! use id_effect::Exit;
-//! use id_effect::Effect;
+//! use id_effect::{Effect, fail, succeed};
 //! use id_effect_sql::{
-//!   SqlClientEnv, SqlError, SqlParam, SqlRow, TestSqlClient, query, sql_client_layer, transaction,
+//!   SqlClientEnv, SqlError, SqlRow, TestSqlClient, params, query, sql_client_layer, transaction,
 //! };
 //!
-//! fn count_users() -> Effect<usize, SqlError, SqlClientEnv> {
-//!   query("SELECT id FROM users WHERE active = $1", vec![SqlParam::Bool(true)])
-//!     .map(|rows| rows.len())
+//! fn active_ids() -> Effect<Vec<i64>, SqlError, SqlClientEnv> {
+//!   query("SELECT id FROM users WHERE active = $1", params![true])
+//!     .flat_map(|rows| match rows.iter().map(|r| r.get::<i64>("id")).collect::<Result<_, _>>() {
+//!       Ok(ids) => succeed(ids),
+//!       Err(e) => fail(e),
+//!     })
 //! }
 //!
 //! let test = TestSqlClient::new();
 //! test.script_query(
 //!   "SELECT id FROM users WHERE active = $1",
-//!   vec![SqlRow::new(vec!["1".into()]), SqlRow::new(vec!["2".into()])],
+//!   vec![SqlRow::from_pairs([("id", 1i64)]), SqlRow::from_pairs([("id", 2i64)])],
 //! );
 //!
 //! // Connected while the program runs, closed after it.
-//! let program = count_users()
-//!   .flat_map(|n| {
-//!     let n = SqlParam::Int(n as i64);
-//!     transaction(move |tx| tx.execute("UPDATE stats SET n = $1", &[n]).narrow())
+//! let program = active_ids()
+//!   .flat_map(|ids| {
+//!     let n = ids.len() as i64;
+//!     transaction(move |tx| tx.execute("UPDATE stats SET n = $1", &params![n]).narrow())
 //!   })
 //!   .provide_layer(sql_client_layer::<SqlError>(test.clone()));
 //! assert!(matches!(program.block_on(), Exit::Success(0)));
@@ -51,20 +58,32 @@ pub mod client;
 pub mod error;
 pub mod health;
 pub mod metrics;
+pub mod row;
 pub mod transaction;
+pub mod value;
 
 #[cfg(feature = "pg")]
 pub mod pg;
 
+#[cfg(feature = "proptest")]
+pub mod testing;
+
+#[allow(deprecated)]
+pub use client::SqlParam;
 pub use client::{
-  SqlClient, SqlClientEnv, SqlClientService, SqlParam, SqlRow, TestSqlClient, execute,
-  provide_sql_client, query, sql_client_env, sql_client_layer,
+  SqlClient, SqlClientEnv, SqlClientService, TestSqlClient, execute, provide_sql_client, query,
+  sql_client_env, sql_client_layer,
 };
 pub use error::SqlError;
+pub use row::{ColumnIndex, SqlColumn, SqlRow};
+pub use value::{FromSqlValue, Json, SqlType, SqlValue, ToSqlValue, ValueError};
+
 pub use transaction::{
   SqlTransaction, SqlTransactionEnv, SqlTransactionService, transaction, transaction_layer,
   with_transaction,
 };
+/// The value crates of the public API, re-exported so callers use the same versions.
+pub use {jiff, rust_decimal, serde_json, uuid};
 
 /// Alias of [`with_transaction`] (the 0.6 name).
 pub use transaction::with_transaction as transaction_scope;

@@ -18,10 +18,15 @@ use id_effect_sql::pg::{
   provide_pg_pool, provide_pg_sql_client,
 };
 use id_effect_sql::{
-  SqlClient, SqlClientService, SqlError, SqlParam, SqlTransactionEnv, SqlTransactionService, query,
-  transaction_layer, with_transaction,
+  SqlClient, SqlClientService, SqlError, SqlTransactionEnv, SqlTransactionService, SqlType,
+  SqlValue, query, transaction_layer, with_transaction,
 };
 use id_effect_tokio::TokioRuntime;
+
+#[allow(dead_code)]
+mod conformance;
+
+use conformance::Backend;
 
 fn lazy_pool() -> sqlx::PgPool {
   pg_pool_from_config_lazy(PgPoolConfig::from_url("postgres://localhost:5432/postgres"))
@@ -93,11 +98,11 @@ async fn table(client: &PgSqlClient, name: &str) {
     .expect("create");
 }
 
-async fn count(client: &PgSqlClient, name: &str) -> String {
+async fn count(client: &PgSqlClient, name: &str) -> i32 {
   let rows = run(client.query(&format!("SELECT COUNT(*)::int FROM {name}"), &[]))
     .await
     .expect("count");
-  rows[0].cells[0].clone()
+  rows[0].get::<i32>(0usize).expect("count is an int4")
 }
 
 async fn drop_table(client: &PgSqlClient, name: &str) {
@@ -168,10 +173,10 @@ async fn live_postgres_round_trip() {
   let Some(client) = live_client("live_postgres_round_trip").await else {
     return;
   };
-  let rows = run(client.query("SELECT $1::int AS n", &[SqlParam::Int(42)]))
+  let rows = run(client.query("SELECT $1::int AS n", &[SqlValue::I32(42)]))
     .await
     .expect("query");
-  assert_eq!(rows[0].cells.first().map(String::as_str), Some("42"));
+  assert_eq!(rows[0].get::<i32>("n"), Ok(42));
   run(client.execute("SELECT 1", &[])).await.expect("execute");
   let tx = run(client.begin()).await.expect("begin");
   run(tx.commit()).await.expect("commit");
@@ -183,21 +188,40 @@ async fn live_postgres_all_param_types_and_row_decode() {
     return;
   };
   let rows = run(client.query(
-    "SELECT $1::bool AS b, $2::text AS t, $3::bytea AS bytes, $4::int AS n, NULL::int AS nil, 3.14::float AS f",
+    "SELECT $1::bool AS b, $2::text AS t, $3::bytea AS bytes, $4::int AS n, NULL::int AS nil, 2.5::float AS f",
     &[
-      SqlParam::Bool(true),
-      SqlParam::Text("hello".into()),
-      SqlParam::Bytes(vec![1, 2, 3]),
-      SqlParam::Int(99),
+      SqlValue::Bool(true),
+      SqlValue::Text("hello".into()),
+      SqlValue::Bytes(vec![1, 2, 3]),
+      SqlValue::I32(99),
     ],
   ))
   .await
   .expect("typed query");
-  assert_eq!(rows[0].cells.get(1).map(String::as_str), Some("hello"));
-  assert_eq!(rows[0].cells.get(3).map(String::as_str), Some("99"));
-  assert_eq!(rows[0].cells.get(4).map(String::as_str), Some(""));
-  assert!(rows[0].cells.get(5).is_some_and(|c| c.starts_with("3.14")));
-  let null_rows = run(client.query("SELECT $1::int", &[SqlParam::Null]))
+  let row = &rows[0];
+  assert_eq!(row.get::<bool>("b"), Ok(true));
+  assert_eq!(row.get::<String>("t"), Ok("hello".into()));
+  assert_eq!(row.get::<Vec<u8>>("bytes"), Ok(vec![1, 2, 3]));
+  assert_eq!(row.get::<i32>("n"), Ok(99));
+  assert_eq!(row.get::<Option<i32>>("nil"), Ok(None));
+  assert_eq!(row.get::<f64>("f"), Ok(2.5));
+  let types: Vec<(SqlType, &str)> = row
+    .columns()
+    .iter()
+    .map(|c| (c.sql_type(), c.db_type()))
+    .collect();
+  assert_eq!(
+    types,
+    [
+      (SqlType::Bool, "BOOL"),
+      (SqlType::Text, "TEXT"),
+      (SqlType::Bytes, "BYTEA"),
+      (SqlType::I32, "INT4"),
+      (SqlType::I32, "INT4"),
+      (SqlType::F64, "FLOAT8"),
+    ]
+  );
+  let null_rows = run(client.query("SELECT $1::int", &[SqlValue::Null]))
     .await
     .expect("null param query");
   assert_eq!(null_rows.len(), 1);
@@ -234,20 +258,20 @@ async fn live_postgres_transaction_statements_are_isolated_until_commit() {
   let inside = run(tx.query(&format!("SELECT COUNT(*)::int FROM {t}"), &[]))
     .await
     .expect("count in tx");
-  assert_eq!(inside[0].cells[0], "1");
+  assert_eq!(inside[0].get::<i32>(0usize), Ok(1));
   assert_eq!(
     count(&client, t).await,
-    "0",
+    0,
     "uncommitted row visible outside"
   );
   run(tx.commit()).await.expect("commit");
-  assert_eq!(count(&client, t).await, "1");
+  assert_eq!(count(&client, t).await, 1);
   let tx = run(client.begin()).await.expect("begin 2");
   run(tx.execute(&format!("INSERT INTO {t} VALUES (2)"), &[]))
     .await
     .expect("insert 2");
   run(tx.rollback()).await.expect("rollback");
-  assert_eq!(count(&client, t).await, "1");
+  assert_eq!(count(&client, t).await, 1);
   drop_table(&client, t).await;
 }
 
@@ -266,7 +290,7 @@ async fn live_postgres_with_transaction_commits_and_rolls_back() {
   }))
   .await
   .expect("committed");
-  assert_eq!(count(&client, t).await, "1");
+  assert_eq!(count(&client, t).await, 1);
   let err = run(with_transaction(shared, move |tx| {
     tx.execute(&insert, &[])
       .then(fail::<(), _, _>(SqlError::Unsupported("abort".into())))
@@ -276,7 +300,7 @@ async fn live_postgres_with_transaction_commits_and_rolls_back() {
   assert_eq!(err, SqlError::Unsupported("abort".into()));
   assert_eq!(
     count(&client, t).await,
-    "1",
+    1,
     "failed transaction was not rolled back"
   );
   drop_table(&client, t).await;
@@ -316,7 +340,7 @@ async fn live_postgres_scoped_layers_commit_roll_back_and_close_the_pool() {
     .await
     .expect("committed program");
   assert_eq!(n, 1);
-  assert_eq!(count(&client, t).await, "1");
+  assert_eq!(count(&client, t).await, 1);
   let pool = pool_seen.lock().unwrap().clone().expect("pool seen");
   assert!(
     pool.is_closed(),
@@ -335,7 +359,7 @@ async fn live_postgres_scoped_layers_commit_roll_back_and_close_the_pool() {
   );
   assert_eq!(
     count(&client, t).await,
-    "1",
+    1,
     "failed scope was not rolled back"
   );
 
@@ -363,7 +387,7 @@ async fn live_postgres_scoped_layers_commit_roll_back_and_close_the_pool() {
   assert!(matches!(ex, Exit::Failure(Cause::Interrupt(_))), "{ex:?}");
   assert_eq!(
     count(&client, t).await,
-    "1",
+    1,
     "interrupted scope was not rolled back"
   );
 
@@ -383,5 +407,165 @@ async fn live_postgres_query_reads_the_client_from_the_layer() {
   let rows = run(body.provide_layer(PgSqlClient::layer(config)))
     .await
     .expect("query");
-  assert_eq!(rows[0].cells[0], "7");
+  assert_eq!(rows[0].get::<i32>(0usize), Ok(7));
+}
+
+// ---- typed values (E3.1a): the conformance bodies on PostgreSQL --------------------------------
+
+struct Pg(PgSqlClient);
+
+impl Backend for Pg {
+  fn client(&self) -> Arc<dyn SqlClient> {
+    Arc::new(self.0.clone())
+  }
+
+  fn column_ddl(&self, t: SqlType) -> &'static str {
+    match t {
+      SqlType::Bool => "BOOLEAN",
+      SqlType::I16 => "SMALLINT",
+      SqlType::I32 => "INTEGER",
+      SqlType::I64 => "BIGINT",
+      SqlType::F32 => "REAL",
+      SqlType::F64 => "DOUBLE PRECISION",
+      SqlType::Bytes => "BYTEA",
+      SqlType::Uuid => "UUID",
+      SqlType::Timestamp => "TIMESTAMPTZ",
+      SqlType::DateTime => "TIMESTAMP",
+      SqlType::Date => "DATE",
+      SqlType::Time => "TIME",
+      SqlType::Decimal => "NUMERIC",
+      SqlType::Json => "JSONB",
+      _ => "TEXT",
+    }
+  }
+
+  fn placeholder(&self, n: usize) -> String {
+    format!("${n}")
+  }
+}
+
+async fn live_pg(test: &str) -> Option<Pg> {
+  live_client(test).await.map(Pg)
+}
+
+#[tokio::test]
+async fn typed_binds_round_trip_uuid_timestamp_decimal_json() {
+  let t = "m_sql_typed_binds";
+  let Some(pg) = live_pg(t).await else {
+    return;
+  };
+  conformance::typed_binds_round_trip_uuid_timestamp_decimal_json(&pg, t).await;
+}
+
+#[tokio::test]
+async fn row_get_by_name_and_index() {
+  let Some(pg) = live_pg("row_get_by_name_and_index").await else {
+    return;
+  };
+  conformance::row_get_by_name_and_index(&pg).await;
+}
+
+#[tokio::test]
+async fn deprecated_sqlparam_still_binds() {
+  let t = "m_sql_deprecated_param";
+  let Some(pg) = live_pg(t).await else {
+    return;
+  };
+  conformance::deprecated_sqlparam_still_binds(&pg, t).await;
+}
+
+#[tokio::test]
+async fn untyped_null_binds_into_int_text_uuid_columns() {
+  let t = "m_sql_untyped_null";
+  let Some(pg) = live_pg(t).await else {
+    return;
+  };
+  conformance::untyped_null_binds_into_int_text_uuid_columns(&pg, t).await;
+}
+
+#[tokio::test]
+async fn unsupported_column_type_is_a_clear_error() {
+  let Some(pg) = live_pg("unsupported_column_type_is_a_clear_error").await else {
+    return;
+  };
+  let err = run(pg.0.query("SELECT '127.0.0.1'::inet AS addr", &[]))
+    .await
+    .unwrap_err();
+  let SqlError::Unsupported(message) = err else {
+    panic!("expected Unsupported, got {err:?}");
+  };
+  assert!(message.contains("`addr`"), "{message}");
+  assert!(message.contains("INET"), "{message}");
+  assert!(message.contains("addr::text"), "{message}");
+  // The suggested cast works.
+  let rows = run(pg.0.query("SELECT '127.0.0.1'::inet::text AS addr", &[]))
+    .await
+    .expect("cast");
+  assert_eq!(rows[0].get::<String>("addr"), Ok("127.0.0.1/32".into()));
+}
+
+#[tokio::test]
+async fn enums_oids_and_out_of_range_values_decode_or_fail_by_column() {
+  let t = "enums_oids_and_out_of_range_values_decode_or_fail_by_column";
+  let Some(pg) = live_pg(t).await else {
+    return;
+  };
+  let c = &pg.0;
+  run(c.execute("DROP TYPE IF EXISTS m_sql_mood", &[]))
+    .await
+    .expect("drop type");
+  run(c.execute("CREATE TYPE m_sql_mood AS ENUM ('happy', 'sad')", &[]))
+    .await
+    .expect("create type");
+  let rows = run(c.query(
+    "SELECT 'happy'::m_sql_mood AS mood, 'pg_class'::regclass::oid AS o, NULL::m_sql_mood AS none",
+    &[],
+  ))
+  .await
+  .expect("enum and oid");
+  assert_eq!(rows[0].get::<String>("mood"), Ok("happy".into()));
+  assert_eq!(rows[0].columns()[0].db_type(), "m_sql_mood");
+  assert!(rows[0].get::<i64>("o").is_ok_and(|o| o > 0));
+  assert_eq!(rows[0].get::<Option<String>>("none"), Ok(None));
+  run(c.execute("DROP TYPE m_sql_mood", &[]))
+    .await
+    .expect("drop type");
+  for (sql, column) in [
+    ("SELECT 'infinity'::timestamptz AS at", "at"),
+    ("SELECT '-infinity'::timestamp AS local", "local"),
+    ("SELECT 'infinity'::date AS day", "day"),
+    ("SELECT '24:00:00'::time AS tod", "tod"),
+    ("SELECT 'NaN'::numeric AS amount", "amount"),
+  ] {
+    let err = run(c.query(sql, &[])).await.unwrap_err();
+    assert!(
+      matches!(&err, SqlError::ValueOutOfRange { column: c, .. } if c == column),
+      "{sql}: {err:?}"
+    );
+  }
+}
+
+#[cfg(feature = "proptest")]
+#[test]
+fn prop_values_round_trip_through_insert_select() {
+  use id_effect_sql::testing::arb_sql_value;
+  use proptest::test_runner::{Config, TestCaseError, TestRunner};
+
+  let t = "m_sql_prop_values";
+  let rt = tokio::runtime::Runtime::new().expect("tokio");
+  let Some(pg) = rt.block_on(live_pg(t)) else {
+    return;
+  };
+  rt.block_on(conformance::create_value_table(&pg, t));
+  let mut runner = TestRunner::new(Config {
+    cases: 64,
+    failure_persistence: None,
+    ..Config::default()
+  });
+  let outcome = runner.run(&arb_sql_value(), |value| {
+    rt.block_on(conformance::value_round_trips(&pg, t, value))
+      .map_err(TestCaseError::fail)
+  });
+  rt.block_on(conformance::drop_table(&pg, t));
+  outcome.expect("every generated value round-trips through PostgreSQL");
 }

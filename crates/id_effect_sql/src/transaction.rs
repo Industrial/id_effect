@@ -21,8 +21,10 @@ use id_effect::{
 };
 use id_effect::{Exit, Never};
 
-use crate::client::{SqlClient, SqlClientEnv, SqlClientService, SqlParam, SqlRow, TestState, lock};
+use crate::client::{SqlClient, SqlClientEnv, SqlClientService, TestState, lock};
 use crate::error::SqlError;
+use crate::row::SqlRow;
+use crate::value::SqlValue;
 
 /// Logical SQL transaction: statements on it, then commit or rollback, as effects.
 ///
@@ -30,9 +32,9 @@ use crate::error::SqlError;
 /// [`SqlError::TransactionFailed`].
 pub trait SqlTransaction: Send + Sync + 'static {
   /// Run a read query inside the transaction and collect all rows.
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError>;
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError>;
   /// Run a write/DDL statement inside the transaction; returns the affected row count.
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError>;
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError>;
   /// Persist work.
   fn commit(&self) -> Effect<(), SqlError>;
   /// Discard work.
@@ -176,8 +178,8 @@ where
 #[derive(Default)]
 struct Pending {
   finished: bool,
-  queries: Vec<(String, Vec<SqlParam>)>,
-  executes: Vec<(String, Vec<SqlParam>)>,
+  queries: Vec<(String, Vec<SqlValue>)>,
+  executes: Vec<(String, Vec<SqlValue>)>,
 }
 
 /// Test double transaction tied to [`crate::client::TestSqlClient`] state: its statements are
@@ -245,7 +247,7 @@ fn already_finished() -> SqlError {
 }
 
 impl SqlTransaction for TestSqlTransaction {
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (sql, params) = (sql.to_string(), params.to_vec());
     self.statement(move |p, state| {
       let rows = state.run_query(&sql)?;
@@ -254,7 +256,7 @@ impl SqlTransaction for TestSqlTransaction {
     })
   }
 
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
     let (sql, params) = (sql.to_string(), params.to_vec());
     self.statement(move |p, state| {
       let n = state.run_execute(&sql)?;

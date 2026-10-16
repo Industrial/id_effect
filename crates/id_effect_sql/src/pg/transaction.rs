@@ -6,9 +6,9 @@ use id_effect::{Effect, from_async};
 use sqlx::{Postgres, Transaction};
 use tokio::sync::Mutex;
 
-use super::client::{bind_query, row_to_sql_row};
 use super::error::sqlx_error;
-use crate::{SqlError, SqlParam, SqlRow, SqlTransaction};
+use super::value::{bind_query, decode_rows};
+use crate::{SqlError, SqlRow, SqlTransaction, SqlValue};
 
 type Slot = Arc<Mutex<Option<Transaction<'static, Postgres>>>>;
 
@@ -37,25 +37,25 @@ async fn take(slot: &Slot) -> Result<Transaction<'static, Postgres>, SqlError> {
 }
 
 impl SqlTransaction for PgSqlTransaction {
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (slot, sql, params) = (Arc::clone(&self.tx), sql.to_string(), params.to_vec());
     from_async(move || async move {
       let mut guard = slot.lock().await;
       let tx = guard.as_mut().ok_or_else(already_finished)?;
-      let rows = bind_query(sqlx::query(&sql), &params)
+      let rows = bind_query(sqlx::query(&sql), &params)?
         .fetch_all(&mut **tx)
         .await
         .map_err(sqlx_error)?;
-      Ok(rows.iter().map(row_to_sql_row).collect())
+      decode_rows(&rows)
     })
   }
 
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
     let (slot, sql, params) = (Arc::clone(&self.tx), sql.to_string(), params.to_vec());
     from_async(move || async move {
       let mut guard = slot.lock().await;
       let tx = guard.as_mut().ok_or_else(already_finished)?;
-      let result = bind_query(sqlx::query(&sql), &params)
+      let result = bind_query(sqlx::query(&sql), &params)?
         .execute(&mut **tx)
         .await
         .map_err(sqlx_error)?;
