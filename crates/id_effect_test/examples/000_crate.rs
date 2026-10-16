@@ -1,4 +1,4 @@
-//! Ex 000 — the crate builds and links. Real examples arrive with its 0.9 API.
+//! Ex 000 — the crate builds and links (containers: `010_containers`).
 //!
 //! Run: `cargo run -p id_effect_test --example 000_crate`
 

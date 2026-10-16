@@ -102,6 +102,12 @@
   inside the caller's transaction, one chain per tenant with `sha256(prev_hash ‖ record)` (the
   chain head is row-locked, so concurrent appends never fork it), `verify_chain` reports the first
   edited, removed or relinked record; bundled migration `migrations/audit/`.
+- `id_effect_test`: effect-native test containers (testcontainers). Postgres (with a ready
+  `SqlClient` layer under feature `sql`), MySQL, Redis, Keycloak, Vault and a generic
+  `ContainerSpec` as scoped layers, removed when their scope closes (success, failure, defect or
+  interrupt); `Shared` one-per-binary containers with the Ryuk reaper; readiness waits with typed
+  timeouts (`ContainerError::NotReady`); `require_docker()` prints SKIP, or fails under
+  `ID_EFFECT_REQUIRE_DOCKER=1`. Book: part4/ch15-07-containers.md.
 - `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
   sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
   exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.
