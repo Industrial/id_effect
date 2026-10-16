@@ -62,10 +62,10 @@ Follow-ups recorded during wave 1:
   binary(from_row)` like the core ui tests.
 - Commit rule learned the hard way (fixed by 2nd commit after 2905241): `git add` before every
   pathspec commit, otherwise new files are silently left out; check `git status` for `??` after.
-- **Security gap (before 0.9 exit):** id_effect_sql builds sqlx without a TLS feature, so
-  PostgreSQL and MySQL connections are plaintext. Add rustls TLS (`sqlx/tls-rustls-aws-lc-rs` or
-  ring, matching the tree) behind the driver features, with `sslmode` / `ssl-mode` honoured from
-  the URL, and a test against a TLS-enabled container.
+- ~~Security gap: plaintext SQL connections~~ — done in `r09-sql-tls` (rustls on aws-lc-rs,
+  explicit TLS modes, live TLS tests). Follow-ups: a typed `SqlError` connection/TLS variant
+  (failures are `QueryFailed` today); `id_effect_node`'s `PgAdvisoryLease::from_pool_config`
+  ignores explicit TLS settings (URL only); with sqlx 0.8 `VerifyCa` also checks the host name.
 - **Coverage gate (before 0.9 exit):** run `scripts/llvm-cov-nextest.sh` (workspace, 96 % floor)
   once the tree is quiet; core `id_effect` measured alone at ~94 % during wave 2. Raise it or
   carry the gap in writing.
