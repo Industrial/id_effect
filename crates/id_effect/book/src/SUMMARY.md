@@ -76,6 +76,7 @@
   - [Built-in Schedules](./part3/ch11-02-builtin-schedules.md)
   - [retry and repeat](./part3/ch11-03-retry-repeat.md)
   - [Virtual Time and the Executor Clock](./part3/ch11-04-clock-injection.md)
+  - [Cron Jobs](./part3/ch11-05-cron.md)
 - [Compute Fabric](./part3/ch12-00-compute-fabric.md)
 - [CLI with clap](./part3/ch16-00-cli-with-clap.md)
   - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
@@ -138,6 +139,7 @@
   - [Rate limiting and grouping](./part5/ch22-06-rate-and-grouping.md)
 
 - [Runtime Resilience](./part5/ch21-00-runtime-resilience.md)
+  - [Fallbacks and Resilience Pipelines](./part5/ch21-01-resilience-pipelines.md)
 
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
