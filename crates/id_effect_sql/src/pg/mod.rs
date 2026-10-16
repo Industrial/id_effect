@@ -13,6 +13,7 @@ mod config;
 mod error;
 mod pool_key;
 mod providers;
+mod stream;
 mod transaction;
 mod value;
 

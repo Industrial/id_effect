@@ -1,0 +1,5 @@
+error: #[derive(FromRow)] supports structs with named fields only (decode tuples with the tuple `FromRow` impls)
+ --> tests/ui/from_row/tuple_struct.rs:4:12
+  |
+4 | struct Pair(i64, String);
+  |            ^^^^^^^^^^^^^

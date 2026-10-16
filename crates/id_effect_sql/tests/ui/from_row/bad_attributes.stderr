@@ -1,0 +1,11 @@
+error: expected `rename = ".."`, `default` or `flatten`
+ --> tests/ui/from_row/bad_attributes.rs:5:14
+  |
+5 |   #[from_row(skip)]
+  |              ^^^^
+
+error: #[from_row(schema)] decodes with the type's Schema: rename columns with #[schema("..")], not #[from_row(..)]
+  --> tests/ui/from_row/bad_attributes.rs:12:3
+   |
+12 |   #[from_row(rename = "user_id")]
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

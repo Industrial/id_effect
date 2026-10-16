@@ -12,6 +12,7 @@ mod distributed_behavior;
 mod effect_data;
 mod effect_macro;
 mod effect_tagged;
+mod from_row;
 mod match_effect;
 mod provider_spec;
 
@@ -201,6 +202,36 @@ pub fn derive_fsm(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Schema, attributes(schema))]
 pub fn derive_schema(input: TokenStream) -> TokenStream {
   derive_schema_parser::derive_schema(input)
+}
+
+/// Derive `id_effect_sql::FromRow` (decode a struct with named fields from an `SqlRow`).
+///
+/// Use it through the re-export `id_effect_sql::FromRow`; the generated impl names
+/// `::id_effect_sql` unless overridden with `#[from_row(crate = path)]`.
+///
+/// - Each field is `row.get::<FieldTy>(column)`; `Option<T>` fields decode NULL as `None`.
+///   The column is `#[from_row(rename = "col")]`, else the `#[derive(Schema)]` rename
+///   `#[schema("col")]`, else the field name.
+/// - `#[from_row(default)]`: a missing column is `Default::default()`.
+/// - `#[from_row(flatten)]`: the field is itself `FromRow`, decoded from the same row.
+/// - Container `#[from_row(schema)]`: decode the whole row with the type's `HasSchema` schema
+///   (`#[derive(Schema)]`), so refinements and brands run on database data and the issues come
+///   back as `SqlError::InvalidRow`; field `#[from_row(..)]` attributes are then errors.
+///
+/// ```ignore
+/// use id_effect_sql::FromRow;
+///
+/// #[derive(FromRow)]
+/// struct Todo {
+///   id: i64,
+///   #[from_row(rename = "title_text")]
+///   title: String,
+///   done_at: Option<id_effect_sql::jiff::Timestamp>,
+/// }
+/// ```
+#[proc_macro_derive(FromRow, attributes(from_row, schema))]
+pub fn derive_from_row(input: TokenStream) -> TokenStream {
+  from_row::derive(input)
 }
 
 /// Mark a process struct as a remotely spawnable behavior.

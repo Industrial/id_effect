@@ -166,6 +166,60 @@ let row = SqlRow::from_pairs([("email", "nobody")]);
 assert!(row.get::<Email>("email").unwrap_err().to_string().contains("column `email`"));
 ```
 
+## Rows into structs: `FromRow`
+
+`#[derive(FromRow)]` turns a row into a struct. Each field reads its column with
+`row.get::<FieldTy>(column)`, so an `Option<T>` field accepts NULL and an error names the column.
+The column is the field name, the `#[schema("…")]` rename if the type also derives `Schema`, or
+`#[from_row(rename = "col")]`:
+
+```rust
+use id_effect_sql::{FromRow, SqlRow, SqlValue};
+
+#[derive(Debug, PartialEq, FromRow)]
+struct Todo {
+    id: i64,
+    #[from_row(rename = "text")]
+    title: String,
+    due: Option<String>,
+}
+
+let row = SqlRow::from_pairs([
+    ("id", SqlValue::I64(7)),
+    ("text", SqlValue::Text("ship 0.9".into())),
+    ("due", SqlValue::Null),
+]);
+assert_eq!(
+    Todo::from_row(&row).unwrap(),
+    Todo { id: 7, title: "ship 0.9".into(), due: None }
+);
+```
+
+`#[from_row(default)]` fills a missing column with `Default::default()`, and
+`#[from_row(flatten)]` decodes a nested `FromRow` struct from the same row. Tuples decode by
+position: `<(i64, String)>::from_row(&row)`. Put `#[from_row(schema)]` on a type with a `Schema`
+and the whole row runs through that schema, so refinements and brands check database data too;
+failures come back together as `SqlError::InvalidRow { issues }`. `query_as`, `query_one_as`
+(`SqlError::RowNotFound` when no row comes back) and `query_opt_as` run a query and decode it in one
+step.
+
+## Savepoints, isolation and streaming
+
+A transaction can open nested scopes with `savepoint(&tx, "line", |sp| …)`. If the inner work fails,
+panics or is interrupted, only that work is rolled back (`ROLLBACK TO SAVEPOINT`); the outer
+transaction stays usable. Savepoints nest, and their names are generated, never built from input.
+
+`transaction_with(Isolation::Serializable, |tx| …)` or
+`with_transaction_options(client, TransactionOptions::from(Isolation::Serializable).with_read_only(), f)`
+runs `SET TRANSACTION …` first. Under `SERIALIZABLE` a transaction can lose a conflict; wrap it in
+`retry_serialization_failures(Schedule::recurs(5), || transaction_with(…))` to rerun it on SQLSTATE
+40001 or 40P01 only.
+
+`query_stream(sql, params)` returns a `Stream<SqlRow, SqlError, R>`, and `query_stream_as::<T>`
+decodes each row with `FromRow`. Rows arrive one chunk per pull, so a slow consumer slows the
+database down instead of filling memory. If the stream is dropped or its fiber interrupted,
+PostgreSQL cancels the query and the connection returns to the pool.
+
 ## Testing with `TestSqlClient`
 
 Script result rows with `SqlRow::from_pairs` and assert on the typed parameters the code bound (`recorded_queries()` / `recorded_executes()` return `Vec<(String, Vec<SqlValue>)>`). No database is needed:

@@ -56,6 +56,7 @@
 
 pub mod client;
 pub mod error;
+pub mod from_row;
 pub mod health;
 pub mod metrics;
 pub mod row;
@@ -64,6 +65,9 @@ pub mod value;
 
 #[cfg(feature = "pg")]
 pub mod pg;
+
+#[cfg(feature = "migrate")]
+pub mod migrate;
 
 #[cfg(feature = "proptest")]
 pub mod testing;
@@ -75,6 +79,9 @@ pub use client::{
   sql_client_env, sql_client_layer,
 };
 pub use error::SqlError;
+pub use from_row::{FromRow, query_as, query_one_as, query_opt_as};
+/// Derive [`FromRow`] for a struct with named fields (see [`from_row`]).
+pub use id_effect_proc_macro::FromRow;
 pub use row::{ColumnIndex, SqlColumn, SqlRow};
 pub use value::{FromSqlValue, Json, SqlType, SqlValue, ToSqlValue, ValueError};
 
@@ -92,3 +99,12 @@ pub use transaction::with_transaction as transaction_scope;
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+// Savepoints, isolation levels and streaming (E3.1a).
+pub mod stream;
+pub use stream::{query_stream, query_stream_as};
+pub use transaction::{
+  Isolation, SQLSTATE_DEADLOCK_DETECTED, SQLSTATE_SERIALIZATION_FAILURE, TransactionOptions,
+  is_serialization_failure, retry_serialization_failures, savepoint, transaction_with,
+  with_transaction_options,
+};

@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use id_effect::schema::ParseError;
+
 use crate::value::{SqlType, ValueError};
 
 /// SQL client / query failures.
@@ -53,6 +55,14 @@ pub enum SqlError {
     /// What did not fit.
     message: String,
   },
+  /// A row failed its type's `Schema` ([`from_row_with_schema`](crate::from_row::from_row_with_schema),
+  /// `#[from_row(schema)]`). Each issue's `path` starts with the column name.
+  InvalidRow {
+    /// Every issue the schema reported.
+    issues: Vec<ParseError>,
+  },
+  /// A query that must return a row returned none ([`query_one_as`](crate::query_one_as)).
+  RowNotFound,
 }
 
 impl SqlError {
@@ -96,6 +106,19 @@ impl fmt::Display for SqlError {
       SqlError::ValueOutOfRange { column, message } => {
         write!(f, "sql column `{column}` out of range: {message}")
       }
+      SqlError::InvalidRow { issues } => {
+        write!(f, "sql row invalid")?;
+        for (i, issue) in issues.iter().enumerate() {
+          let sep = if i == 0 { ": " } else { "; " };
+          if issue.path.is_empty() {
+            write!(f, "{sep}{}", issue.message)?;
+          } else {
+            write!(f, "{sep}{}: {}", issue.path, issue.message)?;
+          }
+        }
+        Ok(())
+      }
+      SqlError::RowNotFound => write!(f, "sql query returned no row"),
     }
   }
 }

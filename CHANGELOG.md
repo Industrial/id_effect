@@ -52,6 +52,18 @@
   `SqlColumn` metadata, `Json<T>`. PostgreSQL binds NULL untyped and decodes by column type;
   unsupported column types are a clear error instead of a silent `""`. `testing::arb_sql_value`
   (feature `proptest`). Book: part6/ch28-01-typed-sql.md.
+- `id_effect_sql`: `FromRow` and `#[derive(FromRow)]` (`rename`, `default`, `flatten`, `#[schema]`
+  renames, `#[from_row(schema)]` validation into the new `SqlError::InvalidRow`), tuple `FromRow`,
+  `query_as` / `query_one_as` / `query_opt_as`, `SqlError::RowNotFound`.
+- `id_effect_sql`: nested `savepoint` scopes; isolation / read-only / deferrable transactions
+  (`transaction_with`, `with_transaction_options`, `SqlClient::begin_with`);
+  `retry_serialization_failures` over a `Schedule`; streaming queries (`query_stream`,
+  `query_stream_as`) with bounded buffering and cancel-on-interrupt on PostgreSQL. `TestSqlClient`
+  supports all three.
+- `id_effect_sql` feature `migrate`: `Migrator` (`from_dir`, `from_files`, `from_sqlx` for
+  `sqlx::migrate!` embedding) with `run` / `status` / `revert(n)` / `check` as effects and a startup
+  `Layer`; sqlx-cli file naming and checksums, tracking table `_id_effect_migrations`, one
+  transaction per migration under a PostgreSQL advisory lock with a timeout, typed `MigrateError`.
 
 ### Changed
 

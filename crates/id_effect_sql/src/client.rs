@@ -10,12 +10,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use id_effect::Never;
 use id_effect::{
-  Effect, HCons, HList, HNil, Layer, Selector, fail, hlist, need, succeed, suspend, sync,
+  Effect, HCons, HList, HNil, Layer, Selector, Stream, fail, hlist, need, succeed, suspend, sync,
 };
 
 use crate::error::SqlError;
 pub use crate::row::SqlRow;
-use crate::transaction::{SqlTransaction, TestSqlTransaction};
+use crate::transaction::{
+  SqlTransaction, TestSqlTransaction, TransactionOptions, begin_with_options,
+};
 use crate::value::SqlValue;
 
 /// Capability: an `Arc<dyn SqlClient>` in the typed environment (derefs to `dyn SqlClient`).
@@ -85,6 +87,24 @@ pub trait SqlClient: Send + Sync + 'static {
   /// [`with_transaction`](crate::with_transaction), [`transaction`](fn@crate::transaction) or
   /// [`transaction_layer`](crate::transaction_layer), which always finish it.
   fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError>;
+
+  /// Begin a transaction with `options` (isolation level, read-only, deferrable). The default
+  /// runs [`TransactionOptions::set_transaction_sql`] as the transaction's first statement
+  /// (rolling back if it fails). Prefer
+  /// [`with_transaction_options`](crate::with_transaction_options) /
+  /// [`transaction_with`](crate::transaction_with).
+  fn begin_with(&self, options: TransactionOptions) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+    begin_with_options(self.begin(), options)
+  }
+
+  /// Run a read query and stream its rows (see [`crate::stream`]). Nothing runs until the
+  /// stream is pulled; dropping or interrupting it stops the query. The default runs
+  /// [`query`](Self::query) on the first pull and serves the collected rows (no bounded
+  /// buffering); drivers override it (`PgSqlClient` streams from a server-side fetch with
+  /// bounded buffering).
+  fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+    Stream::from_effect(self.query(sql, params))
+  }
 
   /// Release the client's resources (close the pool). [`sql_client_layer`] runs it when its
   /// scope closes. The default does nothing.
@@ -167,6 +187,10 @@ pub(crate) struct TestSqlClientState {
   pub(crate) open_transactions: usize,
   pub(crate) commits: usize,
   pub(crate) rollbacks: usize,
+  /// Commits still to fail with a serialization failure.
+  pub(crate) serialization_failures: usize,
+  /// [`SqlClient::query_stream`] streams started and not yet finished or dropped.
+  pub(crate) open_streams: usize,
 }
 
 pub(crate) type TestState = Arc<Mutex<TestSqlClientState>>;
@@ -290,6 +314,21 @@ impl TestSqlClient {
   pub fn closes(&self) -> usize {
     self.state().closes
   }
+
+  /// Make the next `n` commits fail with a serialization failure (SQLSTATE `40001`, see
+  /// [`is_serialization_failure`](crate::is_serialization_failure)); the transaction is then
+  /// rolled back.
+  #[inline]
+  pub fn fail_commits_with_serialization_failure(&self, n: usize) {
+    self.state().serialization_failures = n;
+  }
+
+  /// Number of [`SqlClient::query_stream`] streams started and neither drained nor dropped (`0`
+  /// once a consumer stops early, fails or is interrupted).
+  #[inline]
+  pub fn open_streams(&self) -> usize {
+    self.state().open_streams
+  }
 }
 
 impl SqlClient for TestSqlClient {
@@ -340,6 +379,12 @@ impl SqlClient for TestSqlClient {
       drop(state);
       succeed(Arc::new(TestSqlTransaction::new(inner)) as Arc<dyn SqlTransaction>)
     })
+  }
+
+  /// The scripted rows, served lazily in the requested chunk sizes; the query is recorded (and
+  /// [`TestSqlClient::open_streams`] counts it) from the first pull.
+  fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+    crate::stream::test_query_stream(Arc::clone(&self.inner), sql.to_string(), params.to_vec())
   }
 
   fn close(&self) -> Effect<(), Never> {

@@ -133,6 +133,12 @@ impl SqlClient for PgSqlClient {
     })
   }
 
+  /// Streams the rows from a sqlx `fetch` on a pooled connection, buffering at most two batches
+  /// of 64 rows; dropping or interrupting the stream cancels the query on the server.
+  fn query_stream(&self, sql: &str, params: &[SqlValue]) -> id_effect::Stream<SqlRow, SqlError> {
+    super::stream::query_stream(self.pool.clone(), sql.to_owned(), params.to_vec())
+  }
+
   fn close(&self) -> Effect<(), Never> {
     close_pool(self.pool.clone())
   }
