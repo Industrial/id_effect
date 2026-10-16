@@ -185,7 +185,8 @@ where
 }
 
 /// Structural equality of exits with only `PartialEq` on `A` and `E` (`Exit`'s own `==` also
-/// needs `Eq + Hash`).
+/// needs `Eq + Hash`). Only `testing::property` uses it.
+#[cfg(feature = "proptest")]
 pub(crate) fn exits_equal<A: PartialEq, E: PartialEq>(l: &Exit<A, E>, r: &Exit<A, E>) -> bool {
   match (l, r) {
     (Exit::Success(l), Exit::Success(r)) => l == r,

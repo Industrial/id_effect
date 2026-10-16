@@ -32,6 +32,28 @@ from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
   `completions <shell>`.
 - **Compile time:** `scripts/compile-time.sh` measures the template app's cold build, rebuild and
   boot; 0.8 figures in `docs/benchmarks/compile-0.8.json`.
+- **Cron jobs:** `Cron` expressions with time-zone/DST-aware next-fire, `WallClock`,
+  `Schedule::cron`; named `CronJob`s with overlap and missed-run policies, success/failure hooks
+  and run history, declared in a `CronRegistry` and run directly or through a `Layer` that
+  provides a `CronScheduler`. All of it runs on virtual time under `TestExecutor`.
+- **Resilience (`id_effect_resilience`):** a `Fallback` policy and `Pipeline`, which composes
+  fallback, retry, rate limiter, bulkhead, circuit breaker and timeout into one reusable policy
+  with `PipelineEvent` listeners and a per-pipeline metric.
+- **Streams:** `zip` / `zip_with` / `combine_latest`; `throttle` / `throttle_enforce` /
+  `debounce` on the fiber clock; `group_by_key` / `group_by` substreams with bounded buffers and
+  backpressure. Stopping early interrupts upstream and runs its finalizers.
+- **Schema:** JSON Schema (2020-12) export for any `Schema` or `HasSchema` type
+  (`schema.json_schema()`, `json_schema_for::<T>()`) with constraints, annotations and `$ref`
+  recursion, read from the same schema value that validates. `decode_unknown_all` returns every
+  error in one pass. Built-in validators `email`, `uuid`, `url`, `length`, `range`, `pattern`,
+  `one_of` and friends.
+- **Testing:** `run_test`, `assert_exit_*` / `expect_exit_*` and golden files (`assert_golden*`,
+  `ID_EFFECT_BLESS=1`). The `proptest` feature returns as `testing::property`: schema-derived and
+  framework-type generators, effect-aware properties and model-based testing (`StateMachine`).
+  `TestExecutor::seeded(seed)` explores fiber interleavings reproducibly;
+  `explore_interleavings` / `assert_interleavings` report the failing seed.
+- **Book:** an idiom and style guide (appendix E); its snippets and the interleavings chapter's
+  run as doctests.
 
 ### Changed
 

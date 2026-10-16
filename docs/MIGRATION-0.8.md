@@ -58,6 +58,19 @@ the 0.7 import paths still work.
   `Vec<Sink<…>>`), convert with `.into()` or `Sink::from(fold_sink)`. `Sink`'s `Debug` output no
   longer has a `fold` field.
 
+## Testing
+
+- The 0.6 test helpers removed in 0.7 return in a 0.8 form. `run_test(eff)` (0.6 took
+  `(eff, env)`; provide `R` first) runs on a `TestExecutor` and skips through virtual time.
+  `assert_exit_success` / `assert_exit_eq` keep their 0.6 signatures; new are
+  `assert_exit_fail`, `assert_exit_die`, `assert_exit_interrupted`, `assert_exit_kind` and
+  `expect_exit_*`. 0.6 `SnapshotAssertion` becomes file-based `assert_golden(path, text)`,
+  `assert_golden_debug` and `assert_golden_exit` (`ID_EFFECT_BLESS=1` rewrites the files).
+- The `proptest` feature returns: `id_effect::testing::property` (0.6 `testing::proptest`) keeps
+  `arb_exit_success` / `arb_exit_fail` / `prop_assert_exit_eq` / `prop_assert_exit_success` and
+  adds schema, `Cause`, `Duration` and `Chunk` generators, `prop_check` and `StateMachine`.
+  0.6 `run_effect` / `success_value` become `prop_run` / `prop_check`.
+
 ## Observability
 
 - `id_effect_axum::Host` has a new public field `readiness: ReadinessState`;
