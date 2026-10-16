@@ -13,6 +13,10 @@ struct Ch2700Observability;
 struct Ch3002Authorization;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-03-passwords-sessions.md")]
+struct Ch3003PasswordsSessions;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 

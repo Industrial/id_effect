@@ -19,6 +19,10 @@
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
   ownership, tenant and ACL resource policies; claim (ABAC) policies; `AuthzError::http_status`
   (401 / 403 / 500).
+- `id_effect_auth`: argon2id `PasswordHasher` (OWASP defaults, rehash-on-verify, dummy verification
+  for unknown users, hashing on the blocking pool) and server-side `Sessions` over a `SessionStore`
+  (`MemorySessionStore`; idle and absolute timeouts, id rotation on login, rotate / logout /
+  revoke-all, `__Host-` Secure HttpOnly SameSite=Lax cookie); feature `axum` adds `SessionLayer`.
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
