@@ -39,6 +39,16 @@ Exit check (from A0): `publish.yml` publishes every crate in `validate-crate-pac
 at the tag. Before tagging 0.9.0, each of id_effect_auth, id_effect_authz and id_effect_test must
 have shipped leaves, or it comes out of the publish order (D8: no placeholders).
 
+Follow-ups recorded during wave 1:
+
+- `PgSessionStore: id_effect_auth::SessionStore` (+ migration, store SHA-256 of the session id) after
+  `r09-e3-1a-values-rows`; completes sec.authn #2 (persistent store).
+- E3.4 `RedisSessionStore` implements `id_effect_auth::SessionStore`, not the older
+  `id_effect_platform::auth::session` trait.
+- `r09-e5-2a-credentials-jwt` starts after `r09-e5-3-guards-testing`, which defines how the
+  principal reaches request extensions.
+- `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
+
 ## Waves 2–3
 
 Tasks are created with `task from-spec` when their wave starts (the mission can only be decomposed
