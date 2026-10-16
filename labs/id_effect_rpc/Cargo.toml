@@ -19,11 +19,11 @@ name = "id_effect_rpc"
 [dependencies]
 axum = { version = "0.8", features = ["json"] }
 http = "1"
-id_effect = { path = "../../crates/id_effect", version = "0.7.0", features = [
+id_effect = { path = "../../crates/id_effect", version = "0.8.0", features = [
   "schema-serde",
 ] }
-id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.7.0" }
-id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.7.0" }
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.8.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"

@@ -24,7 +24,7 @@ obix = ["postgres", "dep:obix", "dep:job"]
 kafka = ["dep:rdkafka", "dep:tokio"]
 
 [dependencies]
-id_effect = { path = "../../crates/id_effect", version = "0.7.0" }
+id_effect = { path = "../../crates/id_effect", version = "0.8.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

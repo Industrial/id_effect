@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — 0.8.0 — Trust & first hour (breaking)
+## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
 First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading
 from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
