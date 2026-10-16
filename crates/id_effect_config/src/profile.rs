@@ -322,10 +322,21 @@ where
 }
 
 /// The merged configuration of one selected [`Profile`] (from [`Profiles::load`]).
-#[derive(Clone, Debug)]
+///
+/// `Debug` names the profile and the merged sources but never prints values: the merged figment
+/// can hold secrets (for example from the `vault` overlay).
+#[derive(Clone)]
 pub struct ProfiledConfig {
   profile: Profile,
   figment: Figment,
+}
+
+impl std::fmt::Debug for ProfiledConfig {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("ProfiledConfig")
+      .field("profile", &self.profile)
+      .finish_non_exhaustive()
+  }
 }
 
 impl ProfiledConfig {
@@ -377,6 +388,19 @@ mod tests {
 
   fn no_args() -> Vec<String> {
     Vec::new()
+  }
+
+  #[test]
+  fn debug_names_the_profile_but_never_prints_values() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write(&dir, "base.toml", "[db]\npassword = \"s3cr3t\"\n");
+    let profiles = Profiles::default().dir(dir.path());
+    let loaded = profiles
+      .load_for(profiles.profile("prod").unwrap())
+      .expect("load");
+    let shown = format!("{loaded:?}");
+    assert!(shown.contains("prod"), "{shown}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
   }
 
   #[test]

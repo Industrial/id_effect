@@ -241,7 +241,11 @@ impl<T: Send + Sync + 'static> Config<T> {
   pub fn secret(self) -> Config<Secret<T>> {
     let loader = self.loader;
     Config {
-      loader: Arc::new(move |p| Ok(Secret::new((loader)(p)?))),
+      loader: Arc::new(move |p| {
+        (loader)(p)
+          .map(Secret::new)
+          .map_err(ConfigError::redact_values)
+      }),
     }
   }
 
@@ -862,6 +866,27 @@ mod tests {
     let k = go(Config::string("KEY").secret(), &p).unwrap();
     assert_eq!(format!("{k:?}"), "<redacted>");
     assert_eq!(k.expose(), "s3cr3t");
+  }
+
+  #[test]
+  fn secret_load_errors_never_contain_the_value() {
+    let p = map_provider(&[("PIN", "s3cr3t"), ("A", "x9secret"), ("B", "y9secret")]);
+    let err = go(Config::integer("PIN").secret(), &p).unwrap_err();
+    let shown = format!("{err} {err:?}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
+    assert!(shown.contains("<redacted>"), "{shown}");
+    assert!(shown.contains("PIN"), "{shown}");
+
+    let err = go(Config::integer("A").zip(Config::integer("B")).secret(), &p).unwrap_err();
+    let shown = format!("{err} {err:?}");
+    assert!(
+      matches!(err, ConfigError::And(ref v) if v.len() == 2),
+      "{shown}"
+    );
+    assert!(
+      !shown.contains("x9secret") && !shown.contains("y9secret"),
+      "{shown}"
+    );
   }
 
   #[test]

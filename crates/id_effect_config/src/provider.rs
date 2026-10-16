@@ -241,9 +241,18 @@ impl ConfigProvider for MapConfigProvider {
 }
 
 /// Adapts a merged [`Figment`] as a provider (paths joined with `.`, matching Figment key paths).
-#[derive(Clone, Debug)]
+///
+/// `Debug` never prints the merged values, which can include secrets.
+#[derive(Clone)]
 pub struct FigmentConfigProvider {
   figment: Arc<Figment>,
+}
+
+impl std::fmt::Debug for FigmentConfigProvider {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("FigmentConfigProvider")
+      .finish_non_exhaustive()
+  }
 }
 
 impl FigmentConfigProvider {
@@ -417,6 +426,15 @@ mod tests {
 
   fn pairs(entries: &[(&str, &str)]) -> MapConfigProvider {
     MapConfigProvider::from_pairs(entries.iter().copied())
+  }
+
+  #[test]
+  fn figment_provider_debug_never_prints_values() {
+    let figment = figment::Figment::from(figment::providers::Serialized::defaults([(
+      "token", "s3cr3t",
+    )]));
+    let shown = format!("{:?}", FigmentConfigProvider::new(figment));
+    assert_eq!(shown, "FigmentConfigProvider { .. }");
   }
 
   // ── ConfigProviderService Debug ───────────────────────────────────────────

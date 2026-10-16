@@ -58,6 +58,33 @@ pub enum ConfigError {
   ),
 }
 
+/// Shown in place of a secret's raw value in errors.
+pub(crate) const REDACTED: &str = "<redacted>";
+
+impl ConfigError {
+  /// The same error with every raw value removed, for errors raised while loading a secret.
+  ///
+  /// `Invalid` keeps its path and reason but drops the value. A Figment error can quote the
+  /// offending value in its message, so it becomes `Invalid` at the same path with a generic
+  /// reason. `And` is redacted element by element.
+  pub(crate) fn redact_values(self) -> Self {
+    match self {
+      Self::Invalid { path, reason, .. } => Self::Invalid {
+        path,
+        value: REDACTED.to_string(),
+        reason,
+      },
+      Self::Figment(e) => Self::Invalid {
+        path: e.path.join("."),
+        value: REDACTED.to_string(),
+        reason: "value has the wrong type or format (details hidden for a secret)".to_string(),
+      },
+      Self::And(errors) => Self::And(errors.into_iter().map(Self::redact_values).collect()),
+      other => other,
+    }
+  }
+}
+
 /// The failing step of a [`ConfigError::Vault`] read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -285,6 +312,24 @@ impl std::error::Error for ConfigError {
 mod tests {
   use super::*;
   use std::error::Error;
+
+  #[test]
+  fn redact_values_hides_raw_values_and_keeps_paths() {
+    let mut fig = figment::Error::from("invalid type: found string \"s3cr3t\"".to_string());
+    fig.path = vec!["db".to_string(), "password".to_string()];
+    let err = ConfigError::Figment(fig).redact_values();
+    let shown = format!("{err} {err:?}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
+    assert!(
+      matches!(&err, ConfigError::Invalid { path, value, .. } if path == "db.password" && value == REDACTED)
+    );
+
+    let missing = ConfigError::Missing {
+      path: "KEY".to_string(),
+    }
+    .redact_values();
+    assert!(matches!(missing, ConfigError::Missing { ref path } if path == "KEY"));
+  }
 
   #[test]
   fn config_error_matcher_all_variants_covered() {
