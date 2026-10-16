@@ -4,7 +4,7 @@ use id_effect_sql::SqlRow;
 
 use crate::domain::todo::{StoreError, Title, Todo, TodoId};
 
-/// The cells of one `id, title, completed` row, parsed but not yet validated as a [`Todo`].
+/// The columns of one `id, title, completed` row, decoded but not yet validated as a [`Todo`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TodoRow {
   id: i64,
@@ -13,20 +13,14 @@ pub(crate) struct TodoRow {
 }
 
 impl TodoRow {
-  /// Parses the text cells of `row`: an integer id, any title, `true` / `false`.
+  /// Decodes the columns of `row` by name: an integer `id`, a text `title`, a boolean
+  /// `completed`. A missing, NULL or mistyped column is [`StoreError::Internal`] naming the
+  /// column (`From<SqlError>`).
   pub(crate) fn parse(row: &SqlRow) -> Result<Self, StoreError> {
-    let bad = || StoreError::Internal(format!("unexpected todo row {:?}", row.cells));
-    let [id, title, completed] = row.cells.as_slice() else {
-      return Err(bad());
-    };
     Ok(Self {
-      id: id.parse().map_err(|_| bad())?,
-      title: title.clone(),
-      completed: match completed.as_str() {
-        "true" => true,
-        "false" => false,
-        _ => return Err(bad()),
-      },
+      id: row.get("id")?,
+      title: row.get("title")?,
+      completed: row.get("completed")?,
     })
   }
 
@@ -59,36 +53,39 @@ impl TodoRow {
 
 #[cfg(test)]
 mod tests {
+  use id_effect_sql::SqlValue;
+
   use super::*;
 
-  fn row(cells: &[&str]) -> SqlRow {
-    SqlRow::new(cells.iter().map(|c| (*c).to_owned()).collect())
+  fn row(id: i64, title: &str, completed: bool) -> SqlRow {
+    columns(id.into(), title.into(), completed.into())
+  }
+
+  fn columns(id: SqlValue, title: SqlValue, completed: SqlValue) -> SqlRow {
+    SqlRow::from_pairs([("id", id), ("title", title), ("completed", completed)])
   }
 
   #[test]
   fn decodes_a_well_formed_row() {
-    let todo = TodoRow::decode(&row(&["3", "t", "true"])).unwrap();
+    let todo = TodoRow::decode(&row(3, "t", true)).unwrap();
     assert_eq!(
       todo,
       Todo::restore(TodoId::new(3), Title::parse("t").unwrap(), true)
     );
-    assert!(
-      !TodoRow::decode(&row(&["3", "t", "false"]))
-        .unwrap()
-        .is_completed()
-    );
+    assert!(!TodoRow::decode(&row(3, "t", false)).unwrap().is_completed());
   }
 
   #[test]
   fn rejects_malformed_rows() {
     for bad in [
-      &["x", "t", "true"][..],
-      &["3", "t", "yes"],
-      &["3", "t"],
-      &[],
+      columns("x".into(), "t".into(), true.into()),
+      columns(3i64.into(), "t".into(), "yes".into()),
+      columns(3i64.into(), SqlValue::Null, false.into()),
+      SqlRow::from_pairs([("id", 3i64)]),
+      SqlRow::default(),
     ] {
       assert!(
-        matches!(TodoRow::decode(&row(bad)), Err(StoreError::Internal(_))),
+        matches!(TodoRow::decode(&bad), Err(StoreError::Internal(_))),
         "{bad:?}"
       );
     }
@@ -99,23 +96,23 @@ mod tests {
     for title in ["", "  ", " padded "] {
       assert!(
         matches!(
-          TodoRow::decode(&row(&["1", title, "false"])),
+          TodoRow::decode(&row(1, title, false)),
           Err(StoreError::Internal(_))
         ),
         "{title:?}"
       );
     }
     let long = "x".repeat(Title::MAX_CHARS + 1);
-    assert!(TodoRow::decode(&row(&["1", &long, "false"])).is_err());
+    assert!(TodoRow::decode(&row(1, &long, false)).is_err());
   }
 
   #[test]
   fn decodes_result_sets() {
-    let rows = [row(&["1", "a", "false"]), row(&["2", "b", "true"])];
+    let rows = [row(1, "a", false), row(2, "b", true)];
     let all = TodoRow::decode_all(&rows).unwrap();
     assert_eq!(all.len(), 2);
     assert_eq!(TodoRow::decode_first(&rows).unwrap(), Some(all[0].clone()));
     assert_eq!(TodoRow::decode_first(&[]).unwrap(), None);
-    assert!(TodoRow::decode_all(&[row(&["1"])]).is_err());
+    assert!(TodoRow::decode_all(&[SqlRow::from_pairs([("id", 1i64)])]).is_err());
   }
 }

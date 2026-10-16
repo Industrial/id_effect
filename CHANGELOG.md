@@ -37,9 +37,21 @@
   back as `Secret<T>`, and merge above the profile files and below the environment;
   `refresh_every` re-fetches and swaps atomically; failures are `ConfigError::Vault`.
   `Secret<T>` now implements `Deserialize`.
+- `id_effect_sql`: typed SQL. `SqlValue` (bool, i16/i32/i64, f32/f64, text, bytes, uuid, jiff
+  `Timestamp` / `DateTime` / `Date` / `Time`, `rust_decimal::Decimal`, JSON), `ToSqlValue` /
+  `FromSqlValue`, `params!`, typed `SqlRow::get::<T>(name | index)` with errors naming the column,
+  `SqlColumn` metadata, `Json<T>`. PostgreSQL binds NULL untyped and decodes by column type;
+  unsupported column types are a clear error instead of a silent `""`. `testing::arb_sql_value`
+  (feature `proptest`). Book: part6/ch28-01-typed-sql.md.
+
+### Changed
+
+- **Breaking** `id_effect_sql`: statements take `&[SqlValue]`; rows are typed; `SqlError` is
+  `#[non_exhaustive]`. See [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
 
 ### Deprecated
 
+- `id_effect_sql::SqlParam`, `SqlRow::new`, `SqlRow::text_cells` (removed in 0.10).
 - `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody` (removed in
   0.10; see [MIGRATION-0.9.md](docs/MIGRATION-0.9.md)).
 

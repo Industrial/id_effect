@@ -23,4 +23,27 @@ Each 0.9 change appends its entry to the matching section below.
 
 ## Data: SQL values and rows
 
-Filled in by the `SqlValue` / `SqlRow` change (release spec D2).
+`id_effect_sql` parameters and column values are now typed `SqlValue`s and rows decode by column
+(book: "Typed SQL values and rows"). Statements with no parameters (`client.query(sql, &[])`,
+`query(sql, vec![])`), transactions, `SqlRow::default()` and `rows.len()` compile unchanged.
+
+- Statements take `&[SqlValue]` / `Vec<SqlValue>` instead of `SqlParam`s:
+  `&[SqlParam::Int(1)]` becomes `&[SqlValue::I64(1)]`, `&[1i64.into()]` or `&params![id]`
+  (`params!` encodes each argument by reference with `ToSqlValue`; `None` becomes `SqlValue::Null`).
+- `row.cells[i]` (now private) becomes `row.get::<T>(i)` or `row.get::<T>("name")`, which returns
+  `Result<T, SqlError>` naming the column (`ColumnNotFound`, `UnexpectedNull`, `TypeMismatch`,
+  `ValueOutOfRange`, `Decode`) instead of a string to parse. Transitional: `row.text_cells()`
+  returns the 0.8 strings.
+- `impl SqlClient for X` / `impl SqlTransaction for X`: `query` and `execute` take
+  `params: &[SqlValue]`.
+- `SqlError` is `#[non_exhaustive]` and has new variants: add a `_ =>` arm to every `match` on it.
+- `SqlRow` and parameter vectors are no longer `Eq` / `Hash` (`SqlValue` holds floats); bound on
+  `PartialEq` instead.
+- `TestSqlClient::recorded_queries()` / `recorded_executes()` return
+  `Vec<(String, Vec<SqlValue>)>`; compare the recorded parameters with `SqlValue`s.
+- Deprecated, still compiling with a warning, removed in 0.10:
+  - `SqlParam` (convert with `SqlValue::from(param)`; `Int` is `I64`, the other variants keep
+    their names; `SqlValue == SqlParam` comparisons still compile),
+  - `SqlRow::new(cells)`, replaced by `SqlRow::from_pairs([("id", 1i64)])` (named, typed
+    columns),
+  - `SqlRow::text_cells()`, replaced by `row.get::<T>(idx)`.

@@ -33,6 +33,10 @@ struct Ch2702Health;
 struct Ch2800Data;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-01-typed-sql.md")]
+struct Ch2801TypedSql;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-00-api-boundaries.md")]
 struct Ch2900ApiBoundaries;
 

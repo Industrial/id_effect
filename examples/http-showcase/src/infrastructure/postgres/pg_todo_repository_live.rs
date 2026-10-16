@@ -38,7 +38,7 @@ impl PgTodoRepositoryLive {
 #[cfg(test)]
 mod tests {
   use id_effect::{Cause, Effect, Exit};
-  use id_effect_sql::{SqlClient as _, TestSqlClient};
+  use id_effect_sql::{SqlClient as _, SqlValue, TestSqlClient};
 
   use super::*;
   use crate::domain::todo::StoreError;
@@ -66,10 +66,10 @@ mod tests {
     assert!(matches!(client.connect().block_on(), Exit::Success(())));
     client.script_query(
       PgTodoRepository::SELECT_ALL,
-      vec![id_effect_sql::SqlRow::new(vec![
-        "1".into(),
-        "a".into(),
-        "false".into(),
+      vec![id_effect_sql::SqlRow::from_pairs([
+        ("id", SqlValue::I64(1)),
+        ("title", SqlValue::Text("a".into())),
+        ("completed", SqlValue::Bool(false)),
       ])],
     );
     let counted = count().provide_layer(over(&client)).block_on();
