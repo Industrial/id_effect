@@ -122,6 +122,12 @@
   interrupt); `Shared` one-per-binary containers with the Ryuk reaper; readiness waits with typed
   timeouts (`ContainerError::NotReady`); `require_docker()` prints SKIP, or fails under
   `ID_EFFECT_REQUIRE_DOCKER=1`. Book: part4/ch15-07-containers.md.
+  Per-test database isolation: `isolated_db()` (a rolled-back transaction over any `SqlClient`,
+  with savepoints per statement and per nested transaction) and `TemplateDb` (a migrated template
+  cloned per test with `CREATE DATABASE … TEMPLATE`, dropped on scope close); `Fixture` /
+  `Factory` with seeded Schema-arbitrary defaults and `FromRow` rows (feature `fixtures`); an
+  in-process `TestClient` over any tower `Service` (feature `http`). Book:
+  part4/ch15-08-integration-testing.md; example `020_isolated_db`.
 - `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
   sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
   exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.

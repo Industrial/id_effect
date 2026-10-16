@@ -13,7 +13,8 @@ Integration-test support for id_effect programs.
 - **`require_docker()`**: without Docker a test prints `SKIP` and passes, unless
   `ID_EFFECT_REQUIRE_DOCKER=1` (CI), where it fails.
 
-Per-test database isolation and fixtures land later in 0.9 (E6.5).
+Per-test database isolation (`isolated_db()`, `TemplateDb`), seeded fixtures (`Factory`) and an
+in-process HTTP `TestClient` are behind the features `sql`, `fixtures` and `http`.
 
 ```rust
 use std::time::Duration;

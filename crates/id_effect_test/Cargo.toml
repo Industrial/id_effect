@@ -15,6 +15,20 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 [features]
 # `Postgres::sql_layer`: a ready `SqlClient` (id_effect_sql `pg`) over the started container.
 sql = ["dep:id_effect_sql", "id_effect_sql/pg"]
+# `db::migrate`: an app's migrations as the setup of a `TemplateDb`.
+migrate = ["sql", "id_effect_sql/migrate"]
+# `fixtures`: `Fixture` / `Factory` with Schema-arbitrary defaults (proptest generators).
+fixtures = ["sql", "dep:proptest", "id_effect/proptest"]
+# `http`: the in-process `TestClient` over a tower `Service` (an axum `Router`), without axum.
+http = [
+  "dep:tower",
+  "dep:http",
+  "dep:http-body",
+  "dep:http-body-util",
+  "dep:bytes",
+  "dep:serde",
+  "dep:serde_json",
+]
 
 [lib]
 name = "id_effect_test"
@@ -34,14 +48,41 @@ tokio = { version = "1.50.0", features = [
   "sync",
   "io-util",
 ] }
+# Feature `fixtures`: the seeded generator behind `Factory` (id_effect's `from_schema` strategies).
+proptest = { version = "1", optional = true, default-features = false, features = [
+  "std",
+] }
+# Feature `http`: requests and responses as `http` types, sent to any tower `Service`.
+tower = { version = "0.5.3", optional = true, default-features = false, features = [
+  "util",
+] }
+http = { version = "1", optional = true }
+http-body = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+serde = { version = "1", optional = true, features = ["derive"] }
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 id_effect_tokio = { path = "../id_effect_tokio" }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+# tests/db.rs, tests/fixtures.rs, examples/020_isolated_db.rs: container-free SQLite databases.
+id_effect_sql = { path = "../id_effect_sql", features = ["sqlite"] }
+# tests/http.rs and the `http` docs: an axum router under the test client.
+axum = { version = "0.8", default-features = false, features = ["json"] }
+serde_json = "1"
+# tests/http.rs: hand-written services (a failing one, a failing body).
+tower = "0.5.3"
+http-body = "1"
+bytes = "1"
 
 [[example]]
 name = "010_containers"
 required-features = ["sql"]
+
+[[example]]
+name = "020_isolated_db"
+required-features = ["fixtures"]
 
 [package.metadata.docs.rs]
 all-features = true
