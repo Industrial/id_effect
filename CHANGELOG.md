@@ -38,6 +38,9 @@
   iss / aud / exp / nbf / leeway, required claims, claim → roles / permissions mapping);
   `JwksClient` with kid-rotation refetch, rate limiting and stale-cache fallback (feature `jwks`);
   hashed API keys with constant-time compare; Basic auth via `UserLookup` + `verify_or_dummy`.
+  Feature `pg`: `PgSessionStore` keeps sessions in PostgreSQL (SHA-256 of the session id as the
+  key, jsonb attributes, timestamptz expiries, upsert `save`), `pg_session_store_layer()`,
+  `ensure_schema()` and the migration `migrations/0001_id_effect_sessions.{up,down}.sql`.
 - `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
   (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
   back as `Secret<T>`, and merge above the profile files and below the environment;

@@ -214,36 +214,19 @@ mod tests {
     )
   }
 
+  // The `SessionStore` behaviour (round trip, upsert, remove, remove_user, purge) is the shared
+  // suite in tests/session_store.rs, run against this store and `PgSessionStore`.
+
   #[test]
-  fn save_load_remove_round_trip() {
+  fn len_counts_records_and_debug_shows_it() {
     let store = MemorySessionStore::new();
     assert!(store.is_empty());
-    let s = session("u", 10);
+    let s = session("a", 10);
     run(store.save(s.clone())).unwrap();
-    assert_eq!(run(store.load(s.id())).unwrap(), Some(s.clone()));
-    assert!(run(store.remove(s.id())).unwrap());
-    assert!(!run(store.remove(s.id())).unwrap());
-    assert_eq!(run(store.load(s.id())).unwrap(), None);
-  }
-
-  #[test]
-  fn remove_user_drops_only_that_users_sessions() {
-    let store = MemorySessionStore::new();
-    for s in [session("a", 10), session("a", 10), session("b", 10)] {
-      run(store.save(s)).unwrap();
-    }
-    assert_eq!(run(store.remove_user("a")).unwrap(), 2);
-    assert_eq!(store.len(), 1);
-    assert!(format!("{store:?}").contains("len: 1"));
-  }
-
-  #[test]
-  fn purge_drops_expired_records() {
-    let store = MemorySessionStore::new();
-    run(store.save(session("a", 5))).unwrap();
-    run(store.save(session("b", 50))).unwrap();
-    assert_eq!(run(store.purge_expired(at(5))).unwrap(), 1);
-    assert_eq!(store.len(), 1);
+    run(store.save(s)).unwrap();
+    run(store.save(session("b", 10))).unwrap();
+    assert_eq!(store.len(), 2);
+    assert!(format!("{store:?}").contains("len: 2"));
   }
 
   #[test]

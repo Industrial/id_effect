@@ -7,8 +7,8 @@
 //!   [`logout`](Sessions::logout) and [`revoke_all`](Sessions::revoke_all) end one or every
 //!   session of a user.
 //! - [`SessionStore`] is where records live. [`MemorySessionStore`] is the in-memory store for
-//!   tests and single-process development; a store backed by a database implements the same
-//!   trait.
+//!   tests and single-process development. With feature `pg`, `PgSessionStore` keeps them in
+//!   PostgreSQL (keyed by the SHA-256 of the id) over `id_effect_sql`'s `SqlClient`.
 //! - [`CookieConfig`] renders the `Set-Cookie` header (`__Host-` prefix, `Secure`, `HttpOnly`,
 //!   `SameSite=Lax` by default) and finds the id in a `Cookie` header.
 //! - With feature `axum`, `SessionLayer` loads the request's session into
@@ -34,6 +34,8 @@ mod cookie;
 #[cfg(feature = "axum")]
 mod layer;
 mod manager;
+#[cfg(feature = "pg")]
+mod pg;
 mod store;
 
 use std::collections::BTreeMap;
@@ -46,6 +48,8 @@ pub use cookie::{CookieConfig, SameSite};
 #[cfg(feature = "axum")]
 pub use layer::{SessionLayer, SessionService};
 pub use manager::{Sessions, SessionsEnv, load_session, login, logout, revoke_all, sessions_layer};
+#[cfg(feature = "pg")]
+pub use pg::{PgSessionStore, pg_session_store_layer};
 pub use store::{
   MemorySessionStore, SessionStore, SessionStoreEnv, SessionStoreService, provide_session_store,
   session_store_env,

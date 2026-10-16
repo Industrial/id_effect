@@ -10,8 +10,11 @@ Authentication for id_effect services.
 - **Sessions** (`session`): `Sessions` over a `SessionStore` (in-memory `MemorySessionStore`
   for tests), with idle and absolute timeouts, a fresh id on every login (session fixation),
   rotation, logout and revoke-all, and a `__Host-` / `Secure` / `HttpOnly` / `SameSite=Lax`
-  cookie. Feature `axum` adds `SessionLayer`, which loads the request's session into
-  `id_effect_axum`'s request capabilities.
+  cookie. Feature `pg` adds `PgSessionStore`: sessions in PostgreSQL over `id_effect_sql`'s
+  `SqlClient`, keyed by the SHA-256 of the id (never the id), with an upsert `save` and the
+  schema as a migration (`migrations/`) or `ensure_schema()`. Feature `axum` adds
+  `SessionLayer`, which loads the request's session into `id_effect_axum`'s request
+  capabilities.
 - **Principals** (`principal`): `AuthPrincipal` implements `id_effect_authz::Principal` (id,
   roles, permissions, claims, tenant) and records the `AuthScheme` that authenticated it.
 - **API keys** (`apikey`): `<prefix>_<id>_<secret>` keys with 256-bit secrets, stored as SHA-256
@@ -50,7 +53,7 @@ let set_cookie = sessions.set_cookie(&session);
 assert!(set_cookie.starts_with("__Host-id_session="));
 ```
 
-Still to land in 0.9: a database-backed session store, OIDC + PKCE and TOTP.
+Still to land in 0.9: OIDC + PKCE and TOTP.
 
 Book: [Passwords and sessions](../id_effect/book/src/part6/ch30-03-passwords-sessions.md),
 [Credentials and JWT](../id_effect/book/src/part6/ch30-04-credentials-jwt.md).

@@ -6,9 +6,10 @@
 //!   on the executor's blocking pool.
 //! - [`session`] — [`Sessions`]: server-side sessions behind a [`SessionStore`] (in-memory
 //!   [`MemorySessionStore`] for tests), with idle and absolute timeouts, a fresh id on every
-//!   login, rotation, logout and revoke-all, and a hardened cookie. Feature `axum` adds
-//!   `SessionLayer`, which loads the request's session into `id_effect_axum`'s request
-//!   capabilities.
+//!   login, rotation, logout and revoke-all, and a hardened cookie. Feature `pg` adds
+//!   `PgSessionStore`: sessions in PostgreSQL over `id_effect_sql`, keyed by the SHA-256 of the
+//!   id, with the crate's `migrations/`. Feature `axum` adds `SessionLayer`, which loads the
+//!   request's session into `id_effect_axum`'s request capabilities.
 //! - [`principal`] — [`AuthPrincipal`], the `id_effect_authz::Principal` every credential check
 //!   yields, tagged with its [`AuthScheme`]; [`AuthError`] says why a credential was rejected.
 //! - [`apikey`] — [`ApiKeys`]: random keys stored as SHA-256 digests in an [`ApiKeyStore`],
@@ -25,8 +26,8 @@
 //!
 //! [`PasswordHasher`] and [`Sessions`] are capabilities with a [`Layer`](id_effect::Layer), like
 //! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
-//! return effects, held by the middleware or a handler. Still to land in 0.9: a database-backed
-//! session store, OIDC + PKCE and TOTP.
+//! return effects, held by the middleware or a handler. Still to land in 0.9: OIDC + PKCE and
+//! TOTP.
 //!
 //! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
 //! under `examples/reference/` depends on it.
@@ -87,6 +88,8 @@ pub use session::{
   CookieConfig, MemorySessionStore, SameSite, Session, SessionConfig, SessionError, SessionId,
   SessionStore, SessionStoreService, Sessions,
 };
+#[cfg(feature = "pg")]
+pub use session::{PgSessionStore, pg_session_store_layer};
 
 /// Compiles and runs the README's code block as a doctest.
 #[cfg(doctest)]

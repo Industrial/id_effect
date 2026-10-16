@@ -32,11 +32,17 @@ jwt = ["dep:jsonwebtoken"]
 # `JwksClient`: fetches and caches an issuer's JSON Web Key Set over HTTP (reqwest + rustls);
 # needs a tokio runtime.
 jwks = ["jwt", "dep:reqwest", "dep:tokio"]
+# `PgSessionStore`: sessions in PostgreSQL over id_effect_sql's `SqlClient` (table
+# `id_effect_sessions`, created by `migrations/` or `PgSessionStore::ensure_schema`).
+pg = ["dep:id_effect_sql"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
 id_effect_authz = { path = "../id_effect_authz", version = "0.8.0" }
 id_effect_axum = { path = "../id_effect_axum", version = "0.8.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.8.0", features = [
+  "pg",
+], optional = true }
 # `Authenticate` answers with axum responses (id_effect_axum's `Problem`); already in its tree.
 axum = { version = "0.8", default-features = false, optional = true }
 # Claims and principals' claim values (also what id_effect_authz uses).

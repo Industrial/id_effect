@@ -180,7 +180,87 @@ assert!(matches!(program.provide_layer(layer).block_on(), Exit::Success(u) if u 
 
 `MemorySessionStore` keeps records in process. Use it in tests (`fail_with` simulates an outage)
 and in single-process development. Production needs a store that survives restarts and is shared
-by every instance. A database-backed store implements the same trait.
+by every instance: `PgSessionStore`.
+
+### Persistent sessions in Postgres (feature `pg`)
+
+`PgSessionStore` keeps sessions in the PostgreSQL table `id_effect_sessions`, through the
+`SqlClient` capability of [`id_effect_sql`](ch28-01-typed-sql.md). Each method is one statement:
+
+| Method | Statement |
+|---|---|
+| `save` | `INSERT … ON CONFLICT (id_hash) DO UPDATE` (an upsert: logins, touches and attribute changes) |
+| `load` | `SELECT … WHERE id_hash = $1` |
+| `remove` / `remove_user` | `DELETE … WHERE id_hash = $1` / `WHERE user_id = $1` |
+| `purge_expired(now)` | `DELETE … WHERE idle_expires_at <= $1 OR absolute_expires_at <= $1` |
+
+The table never holds a session id. Its primary key `id_hash` is the lowercase hex SHA-256 of the
+id, so a leaked table or backup contains no cookie value that would authenticate. Attributes are
+a `jsonb` object of strings. The four times are `timestamptz`, which keeps microseconds, so a
+time read back can be up to a microsecond earlier than the `UtcDateTime` that was saved.
+
+The crate ships the schema as a migration, `migrations/0001_id_effect_sessions.up.sql` (and its
+`.down.sql`): the table, an index on `user_id` for `revoke_all`, and an index on
+`absolute_expires_at` for `purge_expired`. Copy it into your migrations directory, or call
+`PgSessionStore::ensure_schema()` at startup, which runs the same statements with
+`IF NOT EXISTS`.
+
+`pg_session_store_layer()` provides the store as the `SessionStoreService` capability over the
+`SqlClientService` it needs. Wire it under `PgSqlClient::layer`, and `sessions_layer` on top:
+
+```rust,no_run
+use id_effect::{Effect, Exit};
+use id_effect_auth::session::{
+  SessionConfig, SessionError, SessionsEnv, login, pg_session_store_layer, sessions_layer,
+};
+use id_effect_sql::SqlError;
+use id_effect_sql::pg::{PgPoolConfig, PgSqlClient};
+
+#[derive(Debug)]
+enum AppError {
+  Sql(SqlError),
+  Session(SessionError),
+}
+impl From<SqlError> for AppError {
+  fn from(e: SqlError) -> Self {
+    AppError::Sql(e)
+  }
+}
+
+# async fn demo() {
+let config = PgPoolConfig::from_url("postgres://app@localhost/app");
+let layer = PgSqlClient::layer::<AppError>(config)
+  .provide_to(pg_session_store_layer())
+  .provide_to(sessions_layer(SessionConfig::default()));
+
+let program: Effect<String, AppError, SessionsEnv> = login::<SessionsEnv, _>("alice", None)
+  .map(|s| s.user_id().to_owned())
+  .map_err(AppError::Session);
+// sqlx needs tokio's IO driver: run on `id_effect_tokio::TokioRuntime`.
+let runtime = id_effect_tokio::TokioRuntime::current().unwrap();
+let exit = runtime.run(program.provide_layer(layer)).await;
+assert!(matches!(exit, Exit::Success(u) if u == "alice"));
+# }
+```
+
+To create the table from the program instead of a migration run, build the store from the
+client and run `ensure_schema` before serving:
+
+```rust,no_run
+use id_effect::Effect;
+use id_effect_auth::{PgSessionStore, SessionError};
+use id_effect_sql::pg::PgSqlClient;
+
+fn prepare(client: PgSqlClient) -> Effect<PgSessionStore, SessionError> {
+  let store = PgSessionStore::new(client);
+  store.ensure_schema().map(move |()| store)
+}
+```
+
+Schedule `Sessions::purge_expired` (for example with `Effect::repeat`) so abandoned rows do not
+accumulate. The crate's `tests/session_store.rs` runs one behaviour suite (round trip, upsert,
+remove, revoke-all, purge at the expiry boundary) against both `MemorySessionStore` and a live
+`PgSessionStore`.
 
 ## Loading the session per request (feature `axum`)
 
