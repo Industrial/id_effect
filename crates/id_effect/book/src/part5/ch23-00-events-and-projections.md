@@ -20,6 +20,7 @@ Source lives under [`labs/id_effect_events/src`](https://github.com/Industrial/i
 
 ## Production path (es-entity)
 
+<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_events::{EsEntityEventStore, EsEntityPgBackend, EventStore};
 // pool: id_effect_sql::pg::PgPool
@@ -32,6 +33,7 @@ Apply `ES_ENTITY_EVENT_JOURNAL_DDL` at startup. See ADR [`docs/platform/adrs/adr
 
 Register projection nodes with dependencies; `plan()` uses `id_effect_graph::topological_sort`:
 
+<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_events::{ProjectionNode, ProjectionRunner};
 let mut runner = ProjectionRunner::new();

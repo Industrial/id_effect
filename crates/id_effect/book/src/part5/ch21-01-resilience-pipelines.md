@@ -76,11 +76,13 @@ error kind) and `Fallback`:
   `fallback.circuit_open`, …) in an `id_effect` `Frequency` metric tagged `pipeline=<name>`, so
   it is exported with the rest of the metric registry (for example on the Prometheus endpoint).
 
-```rust,ignore
+```rust
+# use id_effect::{Frequency, Schedule};
+# use id_effect_resilience::Pipeline;
 let events = Frequency::new("resilience_events");
-let prices = Pipeline::new("prices")
+let prices: Pipeline<u32, &str> = Pipeline::new("prices")
     .retry(Schedule::recurs(3))
-    .on_event(|name, event| tracing::debug!(pipeline = name, ?event))
+    .on_event(|name, event| eprintln!("{name}: {event:?}"))
     .metrics(&events);
 ```
 

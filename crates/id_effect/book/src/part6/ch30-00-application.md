@@ -6,26 +6,34 @@ Axum application shell pieces live in **`id_effect_axum::server`** (lifecycle, c
 
 [`HostBuilder`](https://docs.rs/id_effect_axum/latest/id_effect_axum/struct.HostBuilder.html) loads [`HostConfig`](https://docs.rs/id_effect_axum/latest/id_effect_axum/struct.HostConfig.html) from `HOST`, `PORT`, and `SHUTDOWN_TIMEOUT_SECS`, then runs your `serve` future concurrently with SIGINT/SIGTERM:
 
-```rust,ignore
+```rust,no_run
 use id_effect_axum::{HostBuilder, serve_router};
 
+# async fn run(app: axum::Router) -> Result<(), id_effect_axum::HostError> {
 HostBuilder::new()
   .run_until_shutdown(|host| async move {
     serve_router(host, app).await
   })
   .await?;
+# Ok(())
+# }
+# fn main() {}
 ```
 
 See `cargo run -p id_effect_axum --example 040_app_host`.
 
 The server's lifetime can also be a scoped `Layer`: `server_layer(app)` binds on acquire and shuts down gracefully (within `shutdown_timeout`) on release; `serve(app)`, `serve_until(app, stop)` and `serve_until_shutdown(app)` (SIGINT/SIGTERM) build on it:
 
-```rust,ignore
+```rust,no_run
 use id_effect_axum::{EffectExecutor, HostConfig, HostError, provide_host_config_env, serve_until_shutdown};
 
+# async fn run(app: axum::Router) {
 let config = provide_host_config_env::<HostError>().provide_to(HostConfig::layer());
 let program = serve_until_shutdown(app).provide_layer(config);
 let exit = EffectExecutor::global().run_effect(program).await;
+# let _ = exit;
+# }
+# fn main() {}
 ```
 
 Each request's effect runs as one fiber on the tokio runtime serving it; a client disconnect interrupts that fiber (its finalizers run).
@@ -41,14 +49,24 @@ Traits only — bring your own store/IdP via `id_effect_platform::auth` (methods
 
 `id_effect_axum::server::security` is secure by default. One layer turns everything on:
 
-```rust,ignore
+```rust
 use id_effect_axum::server::security::{CookieKey, CorsConfig, SecurityLayer};
 
+# use axum::Router;
+# use axum::routing::{get, post};
+# async fn list() {}
+# async fn create() {}
+# async fn stripe() {}
+# fn main() -> Result<(), id_effect_axum::SecurityError> {
+# let key = CookieKey::generate();
 let app = Router::new()
   .route("/notes", get(list).post(create))
   .route("/webhooks/stripe", post(stripe))
   .layer(SecurityLayer::recommended(key).csrf_exempt("/webhooks"))
   .layer(CorsConfig::new().allow_origin("https://app.example").allow_credentials(true).build()?);
+# let _: Router = app;
+# Ok(())
+# }
 ```
 
 [`SecurityLayer::recommended(key)`](https://docs.rs/id_effect_axum/latest/id_effect_axum/server/security/struct.SecurityLayer.html) bundles:

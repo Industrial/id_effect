@@ -42,10 +42,11 @@ ready.set_ready(true);
 
 `id_effect_opentelemetry::trace_request` extracts W3C `traceparent` and creates a server `tracing` span:
 
-```rust,ignore
+```rust
 use axum::middleware;
 use id_effect_opentelemetry::trace_request;
 
+# let router: axum::Router = axum::Router::new();
 let app = router.layer(middleware::from_fn(trace_request));
 ```
 

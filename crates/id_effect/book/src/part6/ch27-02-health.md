@@ -6,7 +6,7 @@ A liveness probe asks "is the process up?"; a readiness probe asks "should this 
 
 A `HealthIndicator` is a name plus a factory for the `Effect` that probes one dependency. The effect is built afresh on every probe and reports a `HealthStatus` — `up`, `degraded` or `down` — with a JSON detail:
 
-```rust,ignore
+```rust
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -14,6 +14,10 @@ use id_effect::succeed;
 use id_effect_axum::{HealthIndicator, HealthOutcome, HealthRegistry};
 use serde_json::json;
 
+# use id_effect_sql::health::sql_ping;
+# use id_effect_sql::{TestSqlClient, sql_client_env};
+# let env = sql_client_env(TestSqlClient::new());
+# let router: axum::Router = axum::Router::new();
 let registry = HealthRegistry::new()
   // Full control over the verdict.
   .with_indicator(HealthIndicator::new("queue", || {
@@ -60,7 +64,9 @@ The SQL checks are plain effects — success is up, a `SqlError` is down — so 
 
 Gate the registry on the host's readiness:
 
-```rust,ignore
+```rust,no_run
+# use id_effect_axum::{HealthIndicator, HealthRegistry, HostBuilder, HostError, serve_router};
+# async fn run(db_indicator: HealthIndicator) -> Result<(), HostError> {
 HostBuilder::new()
   .run_until_shutdown(|host| {
     let app = HealthRegistry::new()
@@ -70,6 +76,8 @@ HostBuilder::new()
     serve_router(host, app)
   })
   .await?;
+# Ok(())
+# }
 ```
 
 On SIGINT/SIGTERM, `run_until_shutdown` and `serve_router` call `ReadinessState::mark_shutting_down()` **before** draining: the listener keeps accepting while in-flight requests finish, so the load balancer sees `/ready` answer `503` with reason `shutting_down` and stops routing new traffic. `ServerHandle::shutdown` (and releasing `server_layer_with_readiness`) marks its readiness the same way before it stops accepting.

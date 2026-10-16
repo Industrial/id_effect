@@ -20,6 +20,7 @@ Use [`ensure_correlation_id`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc
 
 [`versioning::negotiate_api_version`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/versioning/fn.negotiate_api_version.html) resolves version from `Accept-Version` or `/vN/` path prefix:
 
+<!-- ignore: labs crate id_effect_rpc is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_rpc::versioning::{ApiVersion, VersionConfig, negotiate_api_version};
 

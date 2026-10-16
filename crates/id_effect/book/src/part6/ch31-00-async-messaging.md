@@ -22,6 +22,7 @@ feature `pg`), with adapters in the labs crates
 
 `ApalisJobQueue` is **enqueue-only**. Workers pull tasks via Apalis `WorkerBuilder` + `PostgresStorage::poll`. There is no FIFO `dequeue` on the storage side. `id_effect_jobs` uses the stable apalis 1.0 family.
 
+<!-- ignore: labs crate id_effect_jobs is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_jobs::{ApalisJobQueue, JobQueue, JobSpec};
 use id_effect_tokio::TokioRuntime;

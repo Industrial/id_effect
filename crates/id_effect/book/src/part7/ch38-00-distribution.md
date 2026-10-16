@@ -11,9 +11,36 @@ Remote spawn names a **registered behavior** plus postcard args (no code
 mobility). Everything that waits on the network is an `Effect`: `Send`,
 interruptible, and timed on the calling fiber's executor clock.
 
-```rust,ignore
+```rust
 use std::time::Duration;
 use id_effect::Effect;
+# use id_effect::{Cause, Never, succeed};
+# use id_effect_node::{BehaviorRegistry, Mesh, RemoteFault};
+# use id_effect_process::{Next, Process, ProcessCtx};
+# struct Counter(u64);
+# impl Process for Counter {
+#   type Args = u64;
+#   type Env = ();
+#   type Call = ();
+#   type Reply = u64;
+#   type Cast = ();
+#   type Info = ();
+#   type Error = Never;
+#   fn init(start: u64, _: ProcessCtx) -> Effect<Self, Never, ()> {
+#     succeed(Counter(start))
+#   }
+#   fn handle_call(self, _: (), _: ProcessCtx) -> Effect<(u64, Next<Self>), Never, ()> {
+#     let n = self.0 + 1;
+#     succeed((n, Next::Continue(Counter(n))))
+#   }
+# }
+# fn run(
+#   mut registry: BehaviorRegistry,
+#   mesh: Mesh,
+#   args: Vec<u8>,
+#   msg: Vec<u8>,
+# ) -> Result<(), Cause<RemoteFault>> {
+# let mesh2 = mesh.clone();
 
 registry.register::<Counter>("counter");
 
@@ -23,6 +50,9 @@ let program: Effect<Vec<u8>, RemoteFault> = mesh
   .flat_map(move |pid| mesh2.remote_call(&pid, msg, Duration::from_secs(2)));
 // … or run at the edge
 let reply = program.block_on().into_result()?;
+# let _ = reply;
+# Ok(())
+# }
 ```
 
 `remote_cast`, `remote_info`, `remote_monitor`, `remote_demonitor` and `fanout_cast` stay synchronous (at-most-once sends).

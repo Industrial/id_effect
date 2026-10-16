@@ -24,7 +24,18 @@ id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.7.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.7.0" }
 id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.7.0" }
 id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.7.0" }
-id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.7.0" }
+id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.7.0", features = [
+  "pg",
+] }
+id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.7.0" }
+id_effect_node = { path = "../../crates/id_effect_node", version = "0.7.0" }
+id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.7.0" }
+id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.7.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.7.0" }
+id_effect_process = { path = "../../crates/id_effect_process", version = "0.7.0" }
+id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.7.0" }
+axum = "0.8"
+serde_json = "1"
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier - checked by scripts/tier-conformance.sh

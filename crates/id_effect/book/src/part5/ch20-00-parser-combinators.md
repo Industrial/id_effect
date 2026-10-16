@@ -11,6 +11,7 @@
 
 A [`Parser<I, O, E>`](https://docs.rs/id_effect_parse/latest/id_effect_parse/struct.Parser.html) wraps a function `I -> Result<(O, I), E>`: parsed output plus **remaining input**.
 
+<!-- ignore: labs crate id_effect_parse is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_parse::{char, int, parse_str, Parser};
 
@@ -38,6 +39,7 @@ Built-ins such as `char`, `tag`, `int`, and `ws` cover common text needs.
 
 The [`Pretty`](https://docs.rs/id_effect_parse/latest/id_effect_parse/trait.Pretty.html) trait builds [`Doc`](https://docs.rs/id_effect_parse/latest/id_effect_parse/enum.Doc.html) values — a Wadler-style document tree rendered with a line width budget:
 
+<!-- ignore: labs crate id_effect_parse is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_parse::{Doc, Pretty};
 
@@ -55,6 +57,7 @@ Use pretty printers for debug output, REPLs, and human-readable config — not f
 
 [`Codec`](https://docs.rs/id_effect_parse/latest/id_effect_parse/struct.Codec.html) pairs parse and print so formats round-trip:
 
+<!-- ignore: labs crate id_effect_parse is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_parse::codec::quoted_string;
 
@@ -74,6 +77,7 @@ When you need lossless serialization with a parser-shaped API, start with `Codec
 
 Collect stream chunks, flatten, then parse — [`parse_stream`](https://docs.rs/id_effect_parse/latest/id_effect_parse/fn.parse_stream.html) for typed buffers, [`parse_text_stream`](https://docs.rs/id_effect_parse/latest/id_effect_parse/fn.parse_text_stream.html) for UTF-8 text:
 
+<!-- ignore: labs crate id_effect_parse is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect::{Chunk, Stream};
 use id_effect_parse::{parse_text_stream, tag};
@@ -94,6 +98,7 @@ assert_eq!(value, "ping");
 
 Boundary validation for external data still belongs to **`id_effect::schema`** (Part IV). Use schema at the edge; use `SchemaBridge` when a text protocol should reuse the same schema.
 
+<!-- ignore: labs crate id_effect_parse is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect::schema::{HasSchema, i64, string, struct_};
 use id_effect_parse::SchemaBridge;

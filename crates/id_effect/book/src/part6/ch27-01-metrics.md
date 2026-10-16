@@ -10,16 +10,24 @@ and instruments the SQL client. No `prometheus` crate is involved: the text form
 
 Merge `metrics_router()` into your app and wrap the whole router in `http_metrics_layer()`:
 
-```rust,ignore
+```rust
 use axum::Router;
 use id_effect_axum::metrics::{http_metrics_layer, metrics_router};
 use id_effect_axum::routing;
 
+# use id_effect::{Effect, succeed};
+# #[derive(Clone)]
+# struct AppState;
+# fn get_user(_: &mut AppState) -> Effect<&'static str, (), AppState> {
+#     succeed("ada")
+# }
+# let state = AppState;
 let app = Router::new()
     .route("/users/{id}", routing::get(get_user))
     .merge(metrics_router())          // GET /metrics
     .layer(http_metrics_layer())      // every request, matched or not
     .with_state(state);
+# let _: Router = app;
 ```
 
 `GET /metrics` answers `200` with `Content-Type: text/plain; version=0.0.4; charset=utf-8` and
@@ -85,10 +93,17 @@ layer with `Router::layer`. `route_layer` only sees matched routes.
 
 Wrap any `SqlClient` in `InstrumentedSqlClient` before providing it:
 
-```rust,ignore
+```rust
 use id_effect_sql::metrics::InstrumentedSqlClient;
 use id_effect_sql::sql_client_layer;
 
+# use id_effect_sql::{SqlError, TestSqlClient};
+# #[derive(Debug)]
+# struct AppError(SqlError);
+# impl From<SqlError> for AppError {
+#     fn from(e: SqlError) -> Self { AppError(e) }
+# }
+# let pg_client = TestSqlClient::new(); // any `SqlClient`
 let layer = sql_client_layer::<AppError>(InstrumentedSqlClient::new(pg_client));
 ```
 
@@ -102,9 +117,16 @@ SQL text is never used as a label. With the `pg` feature, `metrics::record_pg_po
 &registry)` sets `db_client_connection_count{state="idle"|"used"}` and
 `db_client_connection_max` from the pool. Call it from the scrape hook:
 
-```rust,ignore
+```rust
+# use id_effect::MetricRegistry;
+# use id_effect_axum::metrics::metrics_route_with;
+# use id_effect_sql::metrics::record_pg_pool;
+# use id_effect_sql::pg::PgSqlClient;
+# fn scrape_route(client: PgSqlClient) -> axum::routing::MethodRouter {
 let registry = MetricRegistry::global().clone();
 let route = metrics_route_with(registry.clone(), move || record_pg_pool(&client, &registry));
+# route
+# }
 ```
 
 ## Run it

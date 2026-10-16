@@ -11,6 +11,7 @@ Phase G delivers **durable workflow** without a full distributed cluster runtime
 
 Enable `id_effect_workflow` feature **`duroxide`**. `DuroxideStepJournal` persists completed steps on the shared PostgreSQL pool; duroxide-pg migrations run via `bootstrap_duroxide_schema`.
 
+<!-- ignore: labs crate id_effect_workflow is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
 bootstrap_duroxide_schema(&pool).await?;
