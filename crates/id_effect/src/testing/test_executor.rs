@@ -3,12 +3,17 @@
 //! Safe Rust only. The run queue is a `Mutex<VecDeque<Arc<Task>>>` and the timers are a
 //! `BinaryHeap` keyed on `(deadline, seq)`. `!Send` futures from `spawn_local` live in a
 //! thread-local table on the owner thread, so a task's waker stays `Send + Sync`.
+//!
+//! A seeded executor ([`TestExecutor::seeded`]) picks the next queued task with a SplitMix64
+//! generator instead of FIFO, so one seed is one reproducible interleaving of the ready fibers;
+//! [`explore_interleavings`] runs a test under many seeds and reports the first failing one.
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::fmt;
 use std::future::Future;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
@@ -16,6 +21,7 @@ use std::task::{Context, Poll, Wake, Waker};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
+use crate::random::splitmix64;
 use crate::runtime::{BoxFuture, Executor, LocalBoxFuture, NotLocal};
 
 static NEXT_EXECUTOR_ID: AtomicU64 = AtomicU64::new(0);
@@ -42,6 +48,13 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// - [`now`](Executor::now) is the virtual clock. It starts at the wall-clock instant of
 ///   [`new`](Self::new) and moves only through `advance`.
 ///
+/// [`seeded`](Self::seeded) builds an executor that explores interleavings: instead of FIFO,
+/// each poll picks one of the queued tasks with a generator seeded by `seed`. Every fiber is one
+/// task, so the seed selects the order in which ready fibers run (and how their steps between
+/// suspension points, such as [`yield_fiber`](crate::yield_fiber), interleave). Single-threaded
+/// runs with the same seed and the same spawns make the same choices, so a failure found under a
+/// seed reproduces by re-running with it; [`explore_interleavings`] runs a test under many seeds.
+///
 /// `spawn` accepts futures from any thread. `spawn_local` succeeds only on the thread that
 /// created the executor (its owner thread), which is also where local tasks are polled.
 /// `spawn_blocking` queues the closure as an ordinary task, so it runs inside
@@ -59,6 +72,8 @@ struct Inner {
   next_task: AtomicU64,
   queue: Mutex<VecDeque<Arc<Task>>>,
   clock: Mutex<Clock>,
+  /// `Some((seed, generator state))` for a seeded executor; `None` polls in FIFO order.
+  order: Option<(u64, Mutex<u64>)>,
 }
 
 struct Clock {
@@ -160,7 +175,24 @@ impl Future for Sleep {
 
 impl TestExecutor {
   /// A new executor owned by the calling thread, with the virtual clock at the current instant.
+  /// Queued tasks run in FIFO order.
   pub fn new() -> Self {
+    Self::with_order(None)
+  }
+
+  /// Like [`new`](Self::new), but each poll picks one of the queued tasks with a SplitMix64
+  /// generator seeded by `seed` instead of the front one: the seed selects the interleaving of
+  /// the ready fibers. The same seed, driven the same way from one thread, makes the same choices.
+  pub fn seeded(seed: u64) -> Self {
+    Self::with_order(Some((seed, Mutex::new(seed))))
+  }
+
+  /// The seed of a [`seeded`](Self::seeded) executor; `None` for a FIFO one.
+  pub fn seed(&self) -> Option<u64> {
+    self.inner.order.as_ref().map(|(seed, _)| *seed)
+  }
+
+  fn with_order(order: Option<(u64, Mutex<u64>)>) -> Self {
     Self {
       inner: Arc::new(Inner {
         id: NEXT_EXECUTOR_ID.fetch_add(1, AtomicOrdering::Relaxed),
@@ -172,11 +204,13 @@ impl TestExecutor {
           next_seq: 0,
           timers: BinaryHeap::new(),
         }),
+        order,
       }),
     }
   }
 
-  /// Polls queued tasks in FIFO order until no task is queued, and returns how many polls ran.
+  /// Polls queued tasks in FIFO order (in seeded order for [`seeded`](Self::seeded)) until no
+  /// task is queued, and returns how many polls ran.
   ///
   /// Tasks woken while this runs are queued at the back and polled in the same call. Returns
   /// when every remaining task is waiting on a waker (a sleep, or a wake from elsewhere).
@@ -188,7 +222,7 @@ impl TestExecutor {
   pub fn run_until_stalled(&self) -> usize {
     let mut polls = 0;
     loop {
-      let Some(task) = lock(&self.inner.queue).pop_front() else {
+      let Some(task) = self.next_queued() else {
         return polls;
       };
       // Cleared before polling, so a wake during the poll re-queues the task.
@@ -255,6 +289,19 @@ impl TestExecutor {
     lock(&self.inner.queue).len()
   }
 
+  /// Dequeues the next task: the front one, or a seeded pick among the queued ones.
+  fn next_queued(&self) -> Option<Arc<Task>> {
+    let mut queue = lock(&self.inner.queue);
+    match &self.inner.order {
+      None => queue.pop_front(),
+      Some(_) if queue.is_empty() => None,
+      Some((_, state)) => {
+        let pick = splitmix64(&mut lock(state)) % queue.len() as u64;
+        queue.remove(pick as usize)
+      }
+    }
+  }
+
   fn next_task_id(&self) -> u64 {
     self.inner.next_task.fetch_add(1, AtomicOrdering::Relaxed)
   }
@@ -313,6 +360,7 @@ impl fmt::Debug for TestExecutor {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("TestExecutor")
       .field("id", &self.inner.id)
+      .field("seed", &self.seed())
       .field("queued_tasks", &self.queued_tasks())
       .field("pending_timers", &self.pending_timers())
       .finish()
@@ -377,5 +425,103 @@ impl Executor for TestExecutor {
 
   fn now(&self) -> Instant {
     lock(&self.inner.clock).now
+  }
+}
+
+/// The first seed under which an [`explore_interleavings`] test failed, and its panic message.
+///
+/// Its `Display` names the seed and how to reproduce the run with [`TestExecutor::seeded`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InterleavingFailure {
+  /// The seed of the failing run.
+  pub seed: u64,
+  /// The panic message of the failing run (`"<non-string panic payload>"` if it had none).
+  pub message: String,
+}
+
+impl fmt::Display for InterleavingFailure {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      "interleaving test failed under seed {seed}: {msg}\nreproduce with TestExecutor::seeded({seed})",
+      seed = self.seed,
+      msg = self.message
+    )
+  }
+}
+
+impl std::error::Error for InterleavingFailure {}
+
+/// Runs `test` once per seed on a fresh [`TestExecutor::seeded`] executor, in the order the seeds
+/// are given, and returns the first seed under which it panicked.
+///
+/// `test` drives the executor itself (fork fibers onto it, `run_until_stalled`, `advance`) and
+/// asserts on the outcome. Its panic is caught, so the remaining seeds are not run; the panic
+/// hook still prints it as usual. Re-running the same body on `TestExecutor::seeded(seed)`
+/// reproduces the failure.
+///
+/// ```
+/// use std::sync::Arc;
+/// use std::sync::atomic::{AtomicU64, Ordering};
+/// use id_effect::{Effect, TestExecutor, explore_interleavings, succeed, sync, yield_fiber, zip_par};
+///
+/// // A planted lost update: each side reads, yields, then writes back what it read plus one.
+/// // In FIFO order the second side (which yields first) reads after the first side wrote, so
+/// // `TestExecutor::new()` never sees the race; some seeds interleave the two reads.
+/// fn bump(n: &Arc<AtomicU64>, pause: bool) -> Effect<()> {
+///   let (r, w) = (Arc::clone(n), Arc::clone(n));
+///   let gap: Effect<()> = if pause { yield_fiber() } else { succeed(()) };
+///   gap
+///     .flat_map(move |()| sync(move || r.load(Ordering::SeqCst)))
+///     .flat_map(move |v| yield_fiber().map(move |()| v))
+///     .flat_map(move |v| sync(move || w.store(v + 1, Ordering::SeqCst)))
+/// }
+///
+/// let run = |exec: &TestExecutor| {
+///   let n = Arc::new(AtomicU64::new(0));
+///   let h = zip_par(bump(&n, false), bump(&n, true)).fork_root(Arc::new(exec.clone()));
+///   exec.run_until_stalled();
+///   assert!(h.is_done());
+///   assert_eq!(n.load(Ordering::SeqCst), 2, "lost update");
+/// };
+///
+/// let failure = explore_interleavings(0..64, run).expect_err("some seed loses the update");
+/// // Re-running with the reported seed reproduces the failure.
+/// let again = explore_interleavings([failure.seed], run).unwrap_err();
+/// assert_eq!(again, failure);
+/// ```
+pub fn explore_interleavings<I, F>(seeds: I, test: F) -> Result<(), InterleavingFailure>
+where
+  I: IntoIterator<Item = u64>,
+  F: Fn(&TestExecutor),
+{
+  for seed in seeds {
+    let exec = TestExecutor::seeded(seed);
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| test(&exec))) {
+      let message = payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "<non-string panic payload>".to_owned());
+      return Err(InterleavingFailure { seed, message });
+    }
+  }
+  Ok(())
+}
+
+/// [`explore_interleavings`] that panics with the [`InterleavingFailure`] (the failing seed and
+/// how to reproduce it) instead of returning it.
+///
+/// # Panics
+///
+/// If `test` panics under any of `seeds`.
+#[track_caller]
+pub fn assert_interleavings<I, F>(seeds: I, test: F)
+where
+  I: IntoIterator<Item = u64>,
+  F: Fn(&TestExecutor),
+{
+  if let Err(failure) = explore_interleavings(seeds, test) {
+    panic!("{failure}");
   }
 }

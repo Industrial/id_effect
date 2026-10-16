@@ -78,6 +78,16 @@ extern crate self as id_effect;
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
+/// Compiles and runs the book's idiom guide snippets as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../book/src/appendix-e-idiom-guide.md")]
+struct BookIdiomGuideDoctests;
+
+/// Compiles and runs the book's interleaving-exploration snippets as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../book/src/part4/ch15-05-interleavings.md")]
+struct BookInterleavingsDoctests;
+
 pub use id_effect_macro::{err, pipe};
 pub use id_effect_proc_macro::{
   EffectData, Optics, ProviderSpec as ProviderSpecDerive, Schema, caps, effect, effect_local,

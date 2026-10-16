@@ -104,6 +104,7 @@
   - [Virtual Time with TestExecutor](./part4/ch15-02-test-clock.md)
   - [Mocking Services](./part4/ch15-03-mocking.md)
   - [Property Testing](./part4/ch15-04-property-testing.md)
+  - [Exploring Interleavings](./part4/ch15-05-interleavings.md)
   - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
 
 # Part V: Functional Patterns
@@ -178,4 +179,5 @@
 - [Migrating from `async fn` to effects](./appendix-b-migration.md)
 - [Glossary](./appendix-c-glossary.md)
 - [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
+- [Idiom and Style Guide](./appendix-e-idiom-guide.md)
 
