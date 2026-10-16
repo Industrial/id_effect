@@ -84,9 +84,10 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_kit`](crates/id_effect_kit) | [![crates.io](https://img.shields.io/crates/v/id_effect_kit.svg)](https://crates.io/crates/id_effect_kit) | One front door to id_effect: a single dependency with feature flags per battery and a prelude |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
+| [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, sessions and rate limits |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
 | [`id_effect_test`](crates/id_effect_test) | [![crates.io](https://img.shields.io/crates/v/id_effect_test.svg)](https://crates.io/crates/id_effect_test) | Integration-test support for id_effect: effect-native containers, per-test database isolation, fixtures |
-| [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit |
+| [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit; `id-effect migrate` runs SQL migrations |
 
 **Maintenance (frozen API)**
 

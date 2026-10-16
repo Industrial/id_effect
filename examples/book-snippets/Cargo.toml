@@ -55,6 +55,10 @@ id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", versi
 id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.8.0" }
 id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.8.0" }
 id_effect_process = { path = "../../crates/id_effect_process", version = "0.8.0" }
+id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.8.0", features = [
+  "session",
+  "rate-limit",
+] }
 id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.8.0" }
 cli_minimal = { path = "../cli-minimal" }
 axum = "0.8"

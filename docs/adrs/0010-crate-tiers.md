@@ -170,8 +170,13 @@ Names the tiers of the 0.9 platform-battery crates (ADR 0012 pre-lists them; rel
 - None has a crates.io release yet, so all three are excluded from the semver job until their
   first publish gives it a baseline. No placeholder versions are published: each crate's first
   release carries its API.
-- **No `id_effect_redis` yet.** ADR 0012 also pre-lists it; it needs its own amendment when
-  the Redis work (stretch in 0.9) ships. Audit logging is a feature of `id_effect_sql` and
+- **`id_effect_redis` is tier `integration`** (added when the 0.9 stretch epic E3.4 shipped).
+  Redis over redis-rs: the pooled client layer, typed key-value, hash and JSON stores, the
+  `CacheBackend` behind the core `Cache`, pub/sub as a `Stream`, and, behind features,
+  `id_effect_auth`'s `SessionStore` and `id_effect_axum`'s `RateLimitStore`. It depends on those
+  two crates (never the reverse), so it publishes after `id_effect_auth`, before
+  `id_effect_test`. It moves to `platform` on the same rule as the three above, and is excluded
+  from the semver job until its first publish. Audit logging is a feature of `id_effect_sql` and
   OpenAPI a feature of `id_effect_axum`, so neither adds a crate.
 
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).

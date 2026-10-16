@@ -159,6 +159,7 @@
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
   - [Typed SQL values and rows](./part6/ch28-01-typed-sql.md)
   - [Migrations](./part6/ch28-02-migrations.md)
+  - [Redis](./part6/ch28-04-redis.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
   - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)

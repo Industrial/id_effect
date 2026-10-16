@@ -45,6 +45,9 @@ declare -A LEVEL=(
     # principal implements its `Principal`. All three publish before the kit, which may re-export them.
     [id_effect_authz]=5
     [id_effect_auth]=5
+    # 0.9 stretch (E3.4): its `session` and `rate-limit` features build on id_effect_auth and
+    # id_effect_axum, so it publishes after id_effect_auth.
+    [id_effect_redis]=5
     [id_effect_test]=5
 )
 
@@ -56,7 +59,7 @@ declare -a ORDER=(
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
     id_effect_config id_effect_fsm
     id_effect_node id_effect_axum id_effect_opentelemetry
-    id_effect_authz id_effect_auth id_effect_test
+    id_effect_authz id_effect_auth id_effect_redis id_effect_test
     id_effect_kit id_effect_tool
 )
 

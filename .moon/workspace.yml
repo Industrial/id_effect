@@ -23,6 +23,7 @@ projects:
   id_effect_auth: crates/id_effect_auth
   id_effect_authz: crates/id_effect_authz
   id_effect_test: crates/id_effect_test
+  id_effect_redis: crates/id_effect_redis
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
 vcs:

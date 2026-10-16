@@ -25,6 +25,7 @@ members = [
   "crates/id_effect_auth",
   "crates/id_effect_authz",
   "crates/id_effect_test",
+  "crates/id_effect_redis",
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",

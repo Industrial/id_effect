@@ -5,7 +5,12 @@
 ### Added
 
 - New crates (ADR 0010 Amendment 5, tier `integration`): `id_effect_auth`, `id_effect_authz`,
-  `id_effect_test`.
+  `id_effect_test`, `id_effect_redis`.
+- `id_effect_redis`: pooled `RedisClient` layer; typed `RedisKv` / `RedisHash` / `RedisJson`
+  stores; `RedisCacheBackend`; pub/sub as a `Stream`; `RedisSessionStore` (feature `session`);
+  `RedisRateLimitStore` (feature `rate-limit`). Core `id_effect`: additive `CacheBackend` trait and
+  `Cache::with_backend` (same `Cache` API, in-process single-flight kept, backend failures counted
+  by `Cache::backend_errors`).
 - `id_effect_config`: per-environment profiles (`Profiles`, `ID_EFFECT_PROFILE` / `--profile`)
   layering `config/base.toml` → `config/<profile>.toml` → `APP_*` env (env > profile > base); an
   unknown profile is `ConfigError::UnknownProfile`; `Profiles::overlay` takes a secret provider.
