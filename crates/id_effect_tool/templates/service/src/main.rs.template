@@ -1,6 +1,7 @@
 //! {{name}}: serve the app until SIGINT / SIGTERM, then drain in-flight requests.
 //!
-//! Configuration comes from the environment (see `.env.example`).
+//! Configuration comes from the environment (see `.env.example`). `--describe-layers` (or
+//! `--describe-layers=dot`) prints the layer graph instead; `id-effect doctor --graph` runs it.
 
 use std::process::ExitCode;
 
@@ -10,6 +11,7 @@ use id_effect_kit::axum::{
     EffectExecutor, HealthRegistry, HostConfig, HostError, provide_host_config_env,
     serve_until_shutdown,
 };
+use id_effect_kit::graph::LayerGraph;
 {{#if otel}}
 use id_effect_kit::otel::{OtelConfig, install_from_config};
 {{/if}}
@@ -21,6 +23,17 @@ use {{crate_name}}::db::Database;
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    // HOST, PORT and SHUTDOWN_TIMEOUT_SECS from the environment.
+    let env = provide_host_config_env::<HostError>();
+    let host_config = HostConfig::layer::<HostError>();
+    // Register every layer the app composes, so the graph shows what each one needs.
+    let graph = LayerGraph::new()
+        .with("env", &env)
+        .with("host-config", &host_config);
+    if let Some(description) = graph.describe_if_requested(std::env::args()) {
+        print!("{description}");
+        return ExitCode::SUCCESS;
+    }
 {{#if otel}}
     // OTLP export of traces, metrics and logs, configured by the OTEL_* variables.
     let telemetry = match OtelConfig::from_env().and_then(install_from_config) {
@@ -39,8 +52,7 @@ async fn main() -> ExitCode {
         Err(e) => return fail(e),
     };
 {{/if}}
-    // HOST, PORT and SHUTDOWN_TIMEOUT_SECS from the environment.
-    let host = provide_host_config_env::<HostError>().provide_to(HostConfig::layer());
+    let host = env.provide_to(host_config);
     let program = serve_until_shutdown(app(&health, cookie_key)).provide_layer(host);
 {{#if otel}}
     let program = program.with_span_hook(telemetry.span_hook());

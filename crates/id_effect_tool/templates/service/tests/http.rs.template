@@ -60,6 +60,21 @@ async fn metrics_count_requests_by_route() {
     let line = r#"http_server_requests_total{method="GET",route="/",status="200"}"#;
     assert!(body.contains(line), "{body}");
 }
+
+/// `--describe-layers` prints the layer graph (`id-effect doctor --graph`) and exits.
+#[test]
+fn describe_layers_prints_the_graph() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_{{name}}"))
+        .arg("--describe-layers")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let graph = String::from_utf8(out.stdout).unwrap();
+    let summary = "layer graph: 2 layers, 1 edges, 0 missing\n";
+    assert!(graph.starts_with(summary), "{graph}");
+    let edge = "needs    ConfigProviderService <- env";
+    assert!(graph.contains(edge), "{graph}");
+}
 {{#if !pg}}
 
 /// The binary boots with nothing else running and answers `/health` on `PORT`.

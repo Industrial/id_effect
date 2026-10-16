@@ -157,6 +157,7 @@
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
+  - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
 - [AI and MCP (`id_effect_ai`, labs)](./part6/ch35-00-ai.md)
 
 # Part VII: Process Mesh

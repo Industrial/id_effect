@@ -1,0 +1,15 @@
+// layer graph: 4 layers, 3 edges, 2 missing
+digraph layers {
+  rankdir=LR;
+  node [shape=box];
+  n0 [label="config"];
+  n1 [label="pool"];
+  n2 [label="users"];
+  n3 [label="mailer"];
+  m0 [label="Clock (missing)", shape=ellipse, style=dashed, color=red];
+  n0 -> n1 [label="Config"];
+  n1 -> n2 [label="Pool"];
+  m0 -> n2 [label="Clock", style=dashed, color=red];
+  n0 -> n3 [label="Config"];
+  m0 -> n3 [label="Clock", style=dashed, color=red];
+}

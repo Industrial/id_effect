@@ -39,6 +39,7 @@
 #![deny(missing_docs)]
 
 pub mod cli;
+pub mod doctor;
 pub mod error;
 pub mod project;
 pub mod render;

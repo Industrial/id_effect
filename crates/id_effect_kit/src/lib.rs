@@ -22,6 +22,9 @@
 //! Each battery stays reachable whole under its short name (`id_effect_kit::axum::server`, …);
 //! the [`prelude`] holds the items most programs touch.
 //!
+//! [`graph::LayerGraph`] registers an app's layers by name and renders their dependency edges
+//! as text or DOT, flagging capabilities nobody provides (`id-effect doctor --graph`).
+//!
 //! ## Quick start
 //!
 //! ```rust
@@ -48,6 +51,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod graph;
 pub mod prelude;
 
 pub use id_effect;

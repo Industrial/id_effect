@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::doctor::{GraphFormat, Options as DoctorOptions, doctor};
 use crate::project::new_project;
 use crate::render::{Db, Options};
 use crate::template::Template;
@@ -25,6 +26,31 @@ pub struct Cli {
 pub enum Command {
   /// Generate a new project from a template.
   New(NewArgs),
+  /// Check that a project can build and run here: toolchain, id_effect versions, environment,
+  /// database, docker, port (and, with --graph, its layer graph). Exits 1 when a check fails.
+  Doctor(DoctorArgs),
+}
+
+/// Arguments of `id-effect doctor`.
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+  /// The project directory.
+  #[arg(long, value_name = "DIR", default_value = ".")]
+  pub path: PathBuf,
+  /// Print the report as one JSON object.
+  #[arg(long)]
+  pub json: bool,
+  /// Also build the project, run its binary with `--describe-layers` and print the layer graph
+  /// (`--graph=dot` for Graphviz DOT).
+  #[arg(
+    long,
+    value_enum,
+    value_name = "FORMAT",
+    num_args = 0..=1,
+    require_equals = true,
+    default_missing_value = "text"
+  )]
+  pub graph: Option<GraphFormat>,
 }
 
 /// Arguments of `id-effect new`.
@@ -91,6 +117,23 @@ where
   };
   match cli.command {
     Command::New(args) => run_new(&args, out, err),
+    Command::Doctor(args) => run_doctor(&args, out),
+  }
+}
+
+fn run_doctor(args: &DoctorArgs, out: &mut dyn Write) -> ExitCode {
+  let options = DoctorOptions { graph: args.graph };
+  let report = doctor(&args.path, &options);
+  let text = if args.json {
+    report.to_json()
+  } else {
+    report.to_text()
+  };
+  let _ = write!(out, "{text}");
+  if report.failed() {
+    ExitCode::FAILURE
+  } else {
+    ExitCode::SUCCESS
   }
 }
 
@@ -126,6 +169,7 @@ mod tests {
     argv.extend_from_slice(args);
     match Cli::try_parse_from(argv).expect("parse").command {
       Command::New(args) => args,
+      other => panic!("not `new`: {other:?}"),
     }
   }
 
@@ -178,6 +222,31 @@ mod tests {
       assert!(on.options().otel);
       let off = parse(&["a", "--template", "service", "--otel", "--no-otel"]);
       assert!(!off.options().otel);
+    }
+
+    fn parse_doctor(args: &[&str]) -> DoctorArgs {
+      let argv = ["id-effect", "doctor"].iter().chain(args).copied();
+      match Cli::try_parse_from(argv).expect("parse").command {
+        Command::Doctor(args) => args,
+        other => panic!("not `doctor`: {other:?}"),
+      }
+    }
+
+    #[test]
+    fn doctor_defaults_to_this_directory_text_and_no_graph() {
+      let args = parse_doctor(&[]);
+      assert_eq!(args.path, PathBuf::from("."));
+      assert!(!args.json);
+      assert_eq!(args.graph, None);
+    }
+
+    #[test]
+    fn doctor_reads_path_json_and_both_graph_forms() {
+      let args = parse_doctor(&["--path", "/srv/app", "--json", "--graph"]);
+      assert_eq!(args.path, PathBuf::from("/srv/app"));
+      assert!(args.json);
+      assert_eq!(args.graph, Some(GraphFormat::Text));
+      assert_eq!(parse_doctor(&["--graph=dot"]).graph, Some(GraphFormat::Dot));
     }
 
     #[test]
@@ -236,6 +305,21 @@ mod tests {
       assert!(
         err.contains("--db pg is not supported by the `cli` template"),
         "{err}"
+      );
+    }
+
+    #[test]
+    fn doctor_on_a_directory_without_a_project_exits_1() {
+      let tmp = tempfile::tempdir().unwrap();
+      let dir = tmp.path().to_str().unwrap();
+      let (code, out, _) = call(&["doctor", "--path", dir]);
+      assert_eq!(code, ExitCode::FAILURE);
+      assert!(out.contains("  fail  project  no Cargo.toml in "), "{out}");
+      let (code, out, _) = call(&["doctor", "--path", dir, "--json"]);
+      assert_eq!(code, ExitCode::FAILURE);
+      assert!(
+        out.starts_with("{\"path\":") && out.contains("\"ok\":false"),
+        "{out}"
       );
     }
 

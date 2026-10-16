@@ -69,6 +69,7 @@
 /target/
 /tmp/
 Cargo.lock
+!crates/id_effect_tool/tests/fixtures/**/Cargo.lock
 Thumbs.db
 \!logs/.gitkeep
 config.json
