@@ -133,6 +133,7 @@
   - [Replay fanout](./part5/ch22-03-replay-fanout.md)
   - [state_scan FSM stepping](./part5/ch22-04-state-scan.md)
   - [Transducers on streams](./part5/ch22-05-transducers.md)
+  - [Rate limiting and grouping](./part5/ch22-06-rate-and-grouping.md)
 
 - [Runtime Resilience](./part5/ch21-00-runtime-resilience.md)
 

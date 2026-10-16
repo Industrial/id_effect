@@ -13,6 +13,10 @@
 //! | `Channel::from_stream` / `from_fold` / `from_sink` | [`StreamChannel`] / [`FoldChannel::from_fold`] / [`FoldChannel::from_sink`] |
 //! | `with_throughput_metric(Metric)` | [`Stream::with_throughput_counter`]`(Arc<AtomicU64>)` |
 //!
+//! 0.8 adds [`Stream::zip`] / [`Stream::zip_with`] / [`Stream::combine_latest`], the fiber-clock
+//! rate operators [`Stream::throttle`] / [`Stream::throttle_enforce`] / [`Stream::debounce`], and
+//! [`Stream::group_by_key`] / [`Stream::group_by`].
+//!
 //! Every operator pulls one upstream chunk per downstream pull, so memory stays proportional to
 //! the chunk size (plus documented operator state) and infinite sources work. [`Chunk`] and
 //! [`Transducer`] are kernel-independent.
@@ -33,12 +37,16 @@
 
 mod broadcast;
 mod channel;
+mod group;
 mod join;
+mod pump;
 mod sender;
 mod sink;
 mod stream;
+mod time;
 mod transduce;
 mod window;
+mod zip;
 
 pub mod chunk;
 pub mod transducer;

@@ -13,9 +13,29 @@ let merged: Stream<i32> = Stream::from_iterable([1, 2]).merge(Stream::from_itera
 assert_eq!(merged.run_collect().block_on(), Exit::succeed(vec![1, 10, 2, 20]));
 ```
 
+## Zip
+
+[`Stream::zip`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/zip.rs) pairs elements **by position** and ends with the shorter side (the other side is dropped, unpulled, so it may be infinite). [`Stream::zip_with`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/zip.rs) combines each pair with a function instead of building a tuple:
+
+```rust
+use id_effect::{Exit, Stream};
+
+let pairs = Stream::<u32>::from_iterable(1..).zip(Stream::from_iterable(['a', 'b', 'c']));
+assert_eq!(
+    pairs.run_collect().block_on(),
+    Exit::succeed(vec![(1, 'a'), (2, 'b'), (3, 'c')])
+);
+
+let sums = Stream::<u32>::from_iterable([1, 2, 3])
+    .zip_with(Stream::from_iterable([10, 20, 30]), |a, b| a + b);
+assert_eq!(sums.run_collect().block_on(), Exit::succeed(vec![11, 22, 33]));
+```
+
+Each pull fetches at most one chunk from each side whose buffer is empty, so memory is one chunk per side. A failure of either side fails the zip.
+
 ## Combine latest
 
-[`combine_latest`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/join.rs) keeps the latest value from each side and emits whenever either updates (after both have emitted at least once):
+[`combine_latest`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/src/streaming/join.rs) (or the method form `left.combine_latest(right)`, Effect.ts `zipLatest`) keeps the latest value from each side and emits whenever either updates (after both have emitted at least once):
 
 ```rust
 use id_effect::{Exit, Stream, combine_latest};
