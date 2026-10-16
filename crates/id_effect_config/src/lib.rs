@@ -70,17 +70,28 @@
 //! Build a [`Figment`](https://docs.rs/figment/latest/figment/struct.Figment.html) (layering TOML, JSON, env, …), then [`extract`] /
 //! [`FigmentLayer`] — good for structured config files. [`FigmentConfigProvider`] exposes a
 //! Figment to `Config<T>` descriptors.
+//!
+//! ## Profiles (`dev` / `test` / `prod`)
+//!
+//! With the `toml` and `env` features (default), [`Profiles`] selects a profile with
+//! `--profile <name>` or `ID_EFFECT_PROFILE` and merges `config/base.toml`, then
+//! `config/<profile>.toml`, then `APP_`-prefixed environment variables (env > profile > base).
+//! An undeclared profile is [`ConfigError::UnknownProfile`]. See the [`profile`] module.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 mod config_desc;
 mod error;
+#[cfg(all(feature = "toml", feature = "env"))]
+pub mod profile;
 mod provider;
 mod providers;
 mod secret;
 
 pub use config_desc::{Config, ConfigAll};
 pub use error::ConfigError;
+#[cfg(all(feature = "toml", feature = "env"))]
+pub use profile::{PROFILE_ENV_VAR, PROFILE_FLAG, Profile, ProfiledConfig, Profiles};
 pub use provider::{
   ConfigProvider, ConfigProviderService, EnvConfigProvider, FigmentConfigProvider,
   MapConfigProvider, OrElseConfigProvider, ProviderOptions, ScopedConfigProvider,

@@ -82,6 +82,7 @@
 - [CLI with clap](./part3/ch16-00-cli-with-clap.md)
   - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
   - [Config + `Secret` from flags](./part3/ch16-02-cli-config-secret.md)
+  - [Profiles: dev, test, prod](./part3/ch16-03-config-profiles.md)
 
 # Part IV: Advanced
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — 0.9.0 — Data & security
+
+### Added
+
+- New crates (ADR 0010 Amendment 5, tier `integration`): `id_effect_auth`, `id_effect_authz`,
+  `id_effect_test`.
+- `id_effect_config`: per-environment profiles (`Profiles`, `ID_EFFECT_PROFILE` / `--profile`)
+  layering `config/base.toml` → `config/<profile>.toml` → `APP_*` env (env > profile > base); an
+  unknown profile is `ConfigError::UnknownProfile`; `Profiles::overlay` takes a secret provider.
+
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
 First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading

@@ -28,6 +28,14 @@ pub enum ConfigError {
     /// Name of the environment variable that was not valid UTF-8.
     var: String,
   },
+  /// The selected configuration profile is not one the application declared (see
+  /// `Profiles::known`, features `toml` + `env`).
+  UnknownProfile {
+    /// Profile name that was requested (flag, environment variable or default).
+    profile: String,
+    /// Profiles the application declared, in declaration order.
+    known: Vec<String>,
+  },
   /// Several independent failures, every one reported (Effect `ConfigError.And`).
   ///
   /// Produced by [`Config::all`](crate::Config::all) and the combinators built on it
@@ -110,6 +118,10 @@ enum ConfigErrorDisp {
   InvalidUtf8 {
     var: String,
   },
+  UnknownProfile {
+    profile: String,
+    known: Vec<String>,
+  },
   And(Vec<String>),
 }
 
@@ -128,6 +140,10 @@ impl From<&ConfigError> for ConfigErrorDisp {
         reason: reason.clone(),
       },
       ConfigError::InvalidUtf8 { var } => Self::InvalidUtf8 { var: var.clone() },
+      ConfigError::UnknownProfile { profile, known } => Self::UnknownProfile {
+        profile: profile.clone(),
+        known: known.clone(),
+      },
       ConfigError::And(errors) => Self::And(errors.iter().map(ToString::to_string).collect()),
     }
   }
@@ -170,6 +186,16 @@ impl std::fmt::Display for ConfigError {
           ConfigErrorDisp::InvalidUtf8 { var } => {
             format!("environment variable {var:?} is not valid UTF-8")
           }
+          _ => unreachable!(),
+        },
+      )
+      .when(
+        Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::UnknownProfile { .. })),
+        |c| match c {
+          ConfigErrorDisp::UnknownProfile { profile, known } => format!(
+            "unknown configuration profile {profile:?} (known: {})",
+            known.join(", ")
+          ),
           _ => unreachable!(),
         },
       )
@@ -319,6 +345,28 @@ mod tests {
 
     let utf8 = ConfigError::InvalidUtf8 { var: "VAR".into() };
     assert!(utf8.source().is_none());
+
+    let unknown = ConfigError::UnknownProfile {
+      profile: "staging".into(),
+      known: vec!["dev".into()],
+    };
+    assert!(unknown.source().is_none());
+  }
+
+  #[test]
+  fn config_error_unknown_profile_display_lists_known_profiles() {
+    let err = ConfigError::UnknownProfile {
+      profile: "staging".into(),
+      known: vec!["dev".into(), "test".into(), "prod".into()],
+    };
+    assert_eq!(
+      err.to_string(),
+      "unknown configuration profile \"staging\" (known: dev, test, prod)"
+    );
+    assert!(matches!(
+      ConfigErrorDisp::from(&err),
+      ConfigErrorDisp::UnknownProfile { .. }
+    ));
   }
 
   #[test]
