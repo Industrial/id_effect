@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::task::{Context, Poll, Waker};
 
 use crate::failure::FiberId;
+use crate::observability::runtime_metrics;
 use crate::runtime::Executor;
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -40,6 +41,8 @@ pub struct FiberContext {
   /// Live children (each removes itself when it completes; `finish_children` drains them).
   children: Mutex<HashMap<FiberId, Arc<FiberContext>>>,
   done: AtomicBool,
+  /// Still counted in the live-fiber gauge (cleared once, by `mark_done` or drop).
+  counted: AtomicBool,
   done_wakers: Mutex<Vec<Waker>>,
   /// Fiber-local values set through `FiberRef`s (an unset ref reads its initial value).
   refs: Mutex<FiberRefs>,
@@ -83,6 +86,7 @@ impl FiberContext {
 
   fn with_parent(parent: Option<&Arc<Self>>, exec: Arc<dyn Executor>) -> Arc<Self> {
     let refs = parent.map(|p| p.refs_snapshot()).unwrap_or_default();
+    runtime_metrics::fiber_started();
     Arc::new(Self {
       id: FiberId::fresh(),
       exec,
@@ -92,6 +96,7 @@ impl FiberContext {
       parent: parent.map(Arc::downgrade),
       children: Mutex::new(HashMap::new()),
       done: AtomicBool::new(false),
+      counted: AtomicBool::new(true),
       done_wakers: Mutex::new(Vec::new()),
       refs: Mutex::new(refs),
     })
@@ -203,6 +208,9 @@ impl FiberContext {
   /// Marks the fiber complete and wakes every [`Done`] waiting on it.
   pub(crate) fn mark_done(&self) {
     self.done.store(true, Ordering::Release);
+    if self.counted.swap(false, Ordering::Relaxed) {
+      runtime_metrics::fiber_finished();
+    }
     let ws = std::mem::take(&mut *lock(&self.done_wakers));
     for w in ws {
       w.wake();
@@ -224,6 +232,16 @@ impl FiberContext {
       Poll::Ready(())
     } else {
       Poll::Pending
+    }
+  }
+}
+
+impl Drop for FiberContext {
+  /// Uncounts a context that was never marked done (built and not run, or run on an edge that
+  /// does not mark it).
+  fn drop(&mut self) {
+    if *self.counted.get_mut() {
+      runtime_metrics::fiber_finished();
     }
   }
 }

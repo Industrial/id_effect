@@ -49,6 +49,8 @@
 
 pub mod client;
 pub mod error;
+pub mod health;
+pub mod metrics;
 pub mod transaction;
 
 #[cfg(feature = "pg")]

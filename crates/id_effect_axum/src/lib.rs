@@ -88,6 +88,7 @@ pub mod cluster;
 pub mod executor;
 pub mod health;
 pub mod json;
+pub mod metrics;
 pub mod request_caps;
 pub mod routing;
 pub mod server;
@@ -109,6 +110,7 @@ pub use server::{
 };
 
 pub use health::{
+  CheckReport, HealthIndicator, HealthOutcome, HealthRegistry, HealthReport, HealthStatus,
   ReadinessCheck, ReadinessState, health, health_router, observability_routes,
   observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
 };

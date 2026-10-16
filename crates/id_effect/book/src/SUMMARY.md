@@ -144,6 +144,8 @@
 
 - [Platform introduction](./part6/ch26-00-platform-introduction.md)
 - [Observability and health](./part6/ch27-00-observability.md)
+  - [Metrics and Prometheus](./part6/ch27-01-metrics.md)
+  - [Health checks and readiness](./part6/ch27-02-health.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
 - [Application host](./part6/ch30-00-application.md)
