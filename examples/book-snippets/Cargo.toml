@@ -1,0 +1,31 @@
+[package]
+name = "book_snippets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Compiles the id_effect book's Rust snippets as doctests (DX KPI K5)"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lib]
+path = "src/lib.rs"
+
+# Every crate a book chapter may use. Doctests compile against these.
+[dependencies]
+id_effect = { path = "../../crates/id_effect", version = "0.7.0", features = [
+  "schema-serde",
+  "schema-regex",
+  "proptest",
+] }
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.7.0" }
+id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.7.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.7.0" }
+id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.7.0" }
+id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.7.0" }
+id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.7.0" }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier - checked by scripts/tier-conformance.sh
+tier = "example"

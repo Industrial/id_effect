@@ -20,6 +20,7 @@ members = [
   "crates/id_effect_sql",
   "crates/id_effect_tokio",
   "crates/id_effect_fsm",
+  "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",
 ]
