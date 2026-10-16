@@ -3,7 +3,8 @@
 //!
 //! - [`Lift`] with [`LiftNever`] / [`LiftFrom`]: error widening for `~` binds by autoref
 //!   specialisation (the ADR 0011 prototype). `(&&Lift::new(e)).lift()` picks `LiftNever` for a
-//!   `Never` error (widens to anything) and `LiftFrom` otherwise (`E: From<E2>`).
+//!   `Never` error (widens to anything) and `LiftFrom` otherwise (`E: From<E2>`, through
+//!   [`WidenFrom`] for the diagnostic).
 //! - [`bind_local`]: what `~expr` expands to inside `effect_local!`.
 //! - [`CapsChecked`]: the identity projection `caps!` wraps a de-duplicated list in when it
 //!   also reports a duplicate (so the error does not cascade).
@@ -126,15 +127,35 @@ impl LiftNever for &Lift<Never> {
 /// Widening through `From` (every other error type).
 pub trait LiftFrom<E2> {
   /// `E::from(e2)`.
-  fn lift<E: From<E2>>(&self) -> E;
+  fn lift<E: WidenFrom<E2>>(&self) -> E;
 }
 
 impl<E2> LiftFrom<E2> for Lift<E2> {
-  fn lift<E: From<E2>>(&self) -> E {
+  fn lift<E: WidenFrom<E2>>(&self) -> E {
     match self.0.take() {
-      Some(e) => E::from(e),
+      Some(e) => E::widen(e),
       None => unreachable!("id_effect: `~` error lifted twice (macro bug)"),
     }
+  }
+}
+
+/// `From<E2>` under another name, so a `~` bind whose error does not widen into the body's error
+/// reports a diagnostic that states the fix instead of a bare `From` bound. Implemented for every
+/// `E: From<E2>` and nothing else.
+#[diagnostic::on_unimplemented(
+  message = "the error `{E2}` of this `~` bind does not widen into the body's error `{Self}`",
+  label = "`{Self}` has no `From<{E2}>`",
+  note = "convert it at the bind: `~x.map_err(..)` (into an `Or<L, R>` body error, `.map_err(Or::Right)` for the right arm), `~x.catch(..)` to handle it (the only option in a `Never` body), or `impl From<{E2}> for {Self}`"
+)]
+pub trait WidenFrom<E2> {
+  /// `Self::from(e)`.
+  fn widen(e: E2) -> Self;
+}
+
+#[diagnostic::do_not_recommend]
+impl<E: From<E2>, E2> WidenFrom<E2> for E {
+  fn widen(e: E2) -> E {
+    E::from(e)
   }
 }
 
@@ -181,7 +202,7 @@ impl<T, const N: usize> CapsChecked<N> for T {
 #[diagnostic::on_unimplemented(
   message = "`{Self}` cannot be a branch of a `~(..)` join in an effect over `{R}`",
   label = "not an effect over a part of `{R}`",
-  note = "each branch of `~(a, b, ..)` is an `Effect` whose capabilities are all in the enclosing effect's environment"
+  note = "each branch of `~(a, b, ..)` is an `Effect` (or a `.same_env()` one); bind a `Result` with `?` or a future with `.await` before the join"
 )]
 pub trait JoinBranch<R, Is> {
   /// The branch's success type.
@@ -228,7 +249,8 @@ where
 /// A tuple of 2 to 8 branches over one environment and one error, joined by [`join_binds`].
 #[diagnostic::on_unimplemented(
   message = "`~(..)` joins 2 to 8 effects over the same environment and error",
-  label = "not a tuple of 2 to 8 effects"
+  label = "not a tuple of 2 to 8 effects",
+  note = "pass 2 to 8 effects; for more, nest a join or use `all`"
 )]
 pub trait JoinTuple<R> {
   /// The tuple of the branches' values.

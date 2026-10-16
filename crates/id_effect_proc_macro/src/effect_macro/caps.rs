@@ -30,8 +30,8 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
       let span = item.first().map_or_else(Span::call_site, TokenTree::span);
       errors.extend(compile_error(
         &format!(
-          "capability `{key}` appears twice in `caps!(..)`; an environment holds each \
-           capability once"
+          "capability `{key}` appears twice in `caps!(..)`; remove the repeated `{key}` (an \
+           environment holds each capability once)"
         ),
         span,
       ));

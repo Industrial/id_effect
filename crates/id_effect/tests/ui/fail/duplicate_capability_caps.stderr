@@ -1,4 +1,4 @@
-error: capability `ConfigSource` appears twice in `caps!(..)`; an environment holds each capability once
+error: capability `ConfigSource` appears twice in `caps!(..)`; remove the repeated `ConfigSource` (an environment holds each capability once)
   --> tests/ui/fail/duplicate_capability_caps.rs:16:63
    |
 16 | fn handler() -> Effect<String, Never, caps!(ConfigSource, Db, ConfigSource)> {

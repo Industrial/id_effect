@@ -163,7 +163,7 @@ where
 #[diagnostic::on_unimplemented(
   message = "the environment `{Self}` does not contain every capability of `{Sub}`",
   label = "cannot narrow `{Self}` to `{Sub}`",
-  note = "a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `{Sub}` in `{Self}`; add the missing ones to the caller's `caps!(..)`"
+  note = "every capability of `{Sub}` must be in `{Self}`; add the missing ones to the caller's `caps!(..)` (for a `~` bind, a `~(..)` branch or `.narrow()`), to the `hlist![..]` (for `.provide_env(..)`) or to the layer's output (for `.provide_layer(..)` / `.provide_to(..)`)"
 )]
 pub trait Embed<Sub, Is> {
   /// The sub-environment.

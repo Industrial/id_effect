@@ -1,0 +1,14 @@
+error[E0277]: `Exit<u32, Infallible>` is not a future
+  --> tests/ui/gallery/block_on_in_async.rs:11:26
+   |
+11 |   match job().block_on().await {
+   |                          ^^^^^ `Exit<u32, Infallible>` is not a future
+   |
+   = help: the trait `Future` is not implemented for `Exit<u32, Infallible>`
+   = note: Exit<u32, Infallible> must be a future or must implement `IntoFuture` to be awaited
+   = note: required for `Exit<u32, Infallible>` to implement `IntoFuture`
+help: remove the `.await`
+   |
+11 -   match job().block_on().await {
+11 +   match job().block_on() {
+   |

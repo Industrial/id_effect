@@ -75,7 +75,7 @@ impl<R: Send + Sync + 'static> Ctx<R> {
 #[diagnostic::on_unimplemented(
   message = "`{Self}` cannot be bound with `~` in an effect over `{R}`",
   label = "not an effect over a part of `{R}`",
-  note = "`~` / `Ctx::bind` takes an `Effect` whose capabilities are all in the enclosing effect's environment"
+  note = "`~` / `Ctx::bind` takes an `Effect` (or a `.same_env()` one); use `?` on a `Result`, `.await` on a future, and no `~` on a plain value"
 )]
 pub trait Bindable<R, Is> {
   /// The sub-effect's success type.

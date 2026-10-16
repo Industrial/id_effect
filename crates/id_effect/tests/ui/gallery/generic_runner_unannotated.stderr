@@ -1,0 +1,41 @@
+error[E0283]: type annotations needed
+  --> tests/ui/gallery/generic_runner_unannotated.rs:22:32
+   |
+21 |   let _ = execute(hlist![Counter(7)], || {
+   |           ------- ------------------ type must be known at this point
+   |           |
+   |           required by a bound introduced by this call
+22 |     effect!({ format!("n={}", ~Counter.0) })
+   |                                ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
+   |
+   = note: multiple `impl`s satisfying `HCons<Counter, HNil>: Embed<_, _>` found in the `id_effect` crate:
+           - impl<S, H, T, I, Is> Embed<HCons<H, T>, HCons<I, Is>> for S
+             where S: Selector<H, I>, S: Embed<T, Is>;
+           - impl<S> Embed<HNil, HNil> for S;
+note: required by a bound in `execute`
+  --> tests/ui/gallery/generic_runner_unannotated.rs:10:8
+   |
+ 8 | fn execute<Env, R, Is, F>(env: Env, f: F) -> String
+   |    ------- required by a bound in this function
+ 9 | where
+10 |   Env: Embed<R, Is> + Send + Sync + 'static,
+   |        ^^^^^^^^^^^^ required by this bound in `execute`
+help: consider specifying a concrete type for the type parameter `R`
+   |
+22 |     effect!({ format!("n={}", ~Counter::</* Type */>.0) })
+   |                                       ++++++++++++++
+
+error[E0283]: type annotations needed
+  --> tests/ui/gallery/generic_runner_unannotated.rs:22:32
+   |
+22 |     effect!({ format!("n={}", ~Counter.0) })
+   |                                ^^^^^^^ cannot infer type of the type parameter `R` declared on the struct `Ctx`
+   |
+   = note: multiple `impl`s satisfying `_: Selector<Counter, _>` found in the `id_effect` crate:
+           - impl<T, H, Tl, I> Selector<T, There<I>> for HCons<H, Tl>
+             where Tl: Selector<T, I>;
+           - impl<T, Tl> Selector<T, Here> for HCons<T, Tl>;
+help: consider specifying a concrete type for the type parameter `R`
+   |
+22 |     effect!({ format!("n={}", ~Counter::</* Type */>.0) })
+   |                                       ++++++++++++++

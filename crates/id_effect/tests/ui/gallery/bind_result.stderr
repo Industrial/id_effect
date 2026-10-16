@@ -1,0 +1,35 @@
+error[E0277]: `Result<u32, ParseError>` cannot be bound with `~` in an effect over `_`
+  --> tests/ui/gallery/bind_result.rs:11:14
+   |
+11 |   effect!({ ~parse("42") })
+   |              ^^^^^ not an effect over a part of `_`
+   |
+   = help: the trait `Bindable<_, _>` is not implemented for `Result<u32, ParseError>`
+   = note: `~` / `Ctx::bind` takes an `Effect` (or a `.same_env()` one); use `?` on a `Result`, `.await` on a future, and no `~` on a plain value
+help: the following other types implement trait `Bindable<R, Is>`
+  --> src/kernel/bind.rs
+   |
+   | / impl<B, E2, Sub, R, Is> Bindable<R, Is> for Effect<B, E2, Sub>
+   | | where
+   | |   B: Send + 'static,
+   | |   E2: Send + 'static,
+   | |   Sub: HList,
+   | |   R: Embed<Sub, Is> + Send + Sync + 'static,
+   | |____________________________________________^ `Effect<B, E2, Sub>` implements `Bindable<R, Is>`
+   |
+  ::: src/kernel/bind_same.rs
+   |
+   | / impl<B, E2, R> Bindable<R, SameEnvIndex> for SameEnv<Effect<B, E2, R>>
+   | | where
+   | |   B: Send + 'static,
+   | |   E2: Send + 'static,
+   | |   R: Send + Sync + 'static,
+   | |___________________________^ `SameEnv<Effect<B, E2, R>>` implements `Bindable<R, SameEnvIndex>`
+note: required by a bound in `kernel::bind::<impl Ctx<R>>::bind`
+  --> src/kernel/bind.rs
+   |
+   |   pub fn bind<X, Is>(&self, sub: X) -> BindFuture<X::Output, X::Error>
+   |          ---- required by a bound in this associated function
+   |   where
+   |     X: Bindable<R, Is>,
+   |        ^^^^^^^^^^^^^^^ required by this bound in `kernel::bind::<impl Ctx<R>>::bind`

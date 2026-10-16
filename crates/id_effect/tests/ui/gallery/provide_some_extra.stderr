@@ -1,0 +1,8 @@
+error[E0277]: `HCons<Cache, HNil>` is not a part of this effect's environment `HCons<Logger, HNil>`
+  --> tests/ui/gallery/provide_some_extra.rs:20:17
+   |
+20 |   let _ = job().provide_some(hlist![Db, Cache]);
+   |                 ^^^^^^^^^^^^ cannot provide `HCons<Cache, HNil>` here
+   |
+   = help: the trait `Sculptor<HCons<Cache, HNil>, HCons<There<_>, HNil>>` is not implemented for `HCons<Logger, HNil>`
+   = note: every capability given to `.provide_some(..)` must be in the effect's `R`; provide the others separately or drop them

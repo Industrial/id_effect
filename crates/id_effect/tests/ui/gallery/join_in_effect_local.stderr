@@ -1,0 +1,5 @@
+error: a parallel join `~(a, b, ..)` needs `effect!` (its branches run on child fibers); bind them one at a time in `effect_local!`
+  --> tests/ui/gallery/join_in_effect_local.rs:12:19
+   |
+12 |     let (a, b) = ~(one(), one());
+   |                   ^^^^^^^^^^^^^^
