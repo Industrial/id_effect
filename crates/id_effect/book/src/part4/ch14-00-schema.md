@@ -19,6 +19,6 @@ Runnable examples: `083_schema_primitive` … `086_parse_error_paths` in
 ## What This Chapter Covers
 
 - **`Unknown`** — the type for unvalidated wire data ([next section](./ch14-01-unknown.md))
-- **Schema combinators** — the building blocks for describing data shapes ([ch14-02](./ch14-02-combinators.md))
-- **Validation and refinement** — `refine`, `filter`, `transform` and `Brand` for domain constraints ([ch14-03](./ch14-03-validation.md))
-- **`ParseError` / `ParseErrors`** — path-aware error reports ([ch14-04](./ch14-04-parse-errors.md))
+- **Schema combinators** — the building blocks for describing data shapes, and JSON Schema export ([ch14-02](./ch14-02-combinators.md))
+- **Validation and refinement** — `refine`, `filter`, `transform`, built-in validators (`email`, `uuid`, `url`, `length`, `range`, `pattern`) and `Brand` for domain constraints ([ch14-03](./ch14-03-validation.md))
+- **`ParseError` / `ParseErrors`** — path-aware error reports, fail-fast or all-at-once ([ch14-04](./ch14-04-parse-errors.md))

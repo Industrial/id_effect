@@ -38,10 +38,43 @@ pub fn unknown_from_serde_json(value: Value) -> Unknown {
   }
 }
 
+/// Map [`Unknown`] back to JSON [`Value`] (inverse of [`unknown_from_serde_json`]).
+///
+/// Non-finite [`Unknown::F64`] values (NaN, ±∞) have no JSON form and map to [`Value::Null`].
+pub fn serde_json_from_unknown(value: &Unknown) -> Value {
+  match value {
+    Unknown::Null => Value::Null,
+    Unknown::Bool(b) => Value::Bool(*b),
+    Unknown::I64(n) => Value::from(*n),
+    Unknown::F64(x) => serde_json::Number::from_f64(*x).map_or(Value::Null, Value::Number),
+    Unknown::String(s) => Value::String(s.clone()),
+    Unknown::Array(items) => Value::Array(items.iter().map(serde_json_from_unknown).collect()),
+    Unknown::Object(map) => Value::Object(
+      map
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json_from_unknown(v)))
+        .collect(),
+    ),
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use serde_json::json;
+
+  #[test]
+  fn unknown_to_json_round_trips() {
+    let v = json!({"a": [1, 2.5, "x", null, true], "b": {}});
+    assert_eq!(
+      serde_json_from_unknown(&unknown_from_serde_json(v.clone())),
+      v
+    );
+    assert_eq!(
+      serde_json_from_unknown(&Unknown::F64(f64::NAN)),
+      Value::Null
+    );
+  }
 
   #[test]
   fn maps_float_to_f64_unknown() {

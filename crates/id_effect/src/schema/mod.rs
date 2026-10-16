@@ -8,17 +8,20 @@
 //! | [`equal`] | [`Equal`], [`EffectHash`] | Stratum 0 |
 //! | [`data`] | [`EffectData`], [`DataStruct`], [`DataTuple`], [`DataError`] | [`equal`] |
 //! | [`order`] | [`DynOrder`], [`Ordering`], `ordering`, `order` | Stratum 0 |
-//! | [`parse`] | [`Schema`], [`ParseError`], [`Unknown`], primitives, `tuple`/`tuple3`..`tuple12`, `struct_`/`struct3`..`struct12`, … | [`data`] |
-//! | [`extra`] | [`record`], [`suspend`], [`union_chain`], literals, [`wire_equal`](extra::wire_equal), [`null_or`](extra::null_or) | [`parse`] |
+//! | [`ast`] | [`SchemaAst`], [`SchemaKind`], [`Constraints`], [`Annotations`] — introspectable wire shape | Stratum 0 |
+//! | [`parse`] | [`Schema`], [`ParseError`], [`Unknown`], primitives, `tuple`/`tuple3`..`tuple12`, `struct_`/`struct3`..`struct12`, … | [`data`], [`ast`] |
+//! | [`extra`] | [`record`], [`suspend`], [`suspend_named`], [`union_chain`], literals, [`wire_equal`](extra::wire_equal), [`null_or`](extra::null_or) | [`parse`] |
+//! | [`validators`] | [`min_length`], [`max_length`], [`pattern`], [`email`], [`uuid`], [`url`], [`one_of`], [`range`], [`min_items`], … | [`parse`] |
 //! | [`parse_errors`] | [`ParseErrors`] | [`parse`] |
 //! | [`has_schema`] | [`HasSchema`] | [`parse`] |
 //! | [`serde_bridge`] | JSON → [`Unknown`] (`schema-serde` feature) | [`parse`], `serde_json` |
-//! | [`json_schema_export`] | Primitive JSON Schema fragments (`schema-serde`) | `serde_json` |
+//! | `json_schema_export` | JSON Schema 2020-12 export: `to_json_schema`, `json_schema_for`, `Schema::json_schema` (`schema-serde`) | [`ast`], `serde_json` |
 //!
 //! ## Public API
 //!
 //! Re-exported at the crate root: all public types and functions.
 
+pub mod ast;
 pub mod brand;
 pub mod data;
 pub mod equal;
@@ -28,16 +31,20 @@ pub mod order;
 pub mod parse;
 pub mod parse_errors;
 pub mod redacted;
+pub mod validators;
 
 #[cfg(feature = "schema-serde")]
 pub mod json_schema_export;
 #[cfg(feature = "schema-serde")]
 pub mod serde_bridge;
 
+pub use ast::{Annotations, Constraints, Field, LazyAst, SchemaAst, SchemaKind};
 pub use brand::{Brand, RefinedBrand};
 pub use data::{DataError, DataStruct, DataTuple, EffectData};
 pub use equal::{EffectHash, Equal, combine, equals, hash, hash_string, hash_structure};
-pub use extra::{literal_i64, literal_string, null_or, record, suspend, union_chain, wire_equal};
+pub use extra::{
+  literal_i64, literal_string, null_or, record, suspend, suspend_named, union_chain, wire_equal,
+};
 pub use has_schema::HasSchema;
 pub use order::{DynOrder, Ordering, ordering};
 pub use parse::{
@@ -48,10 +55,15 @@ pub use parse::{
 };
 pub use parse_errors::ParseErrors;
 pub use redacted::Redacted;
+pub use validators::{
+  NumericBound, email, exclusive_maximum, exclusive_minimum, length, max_items, max_length,
+  maximum, min_items, min_length, minimum, non_empty, one_of, pattern, range, url, uuid,
+};
 
 #[cfg(feature = "schema-serde")]
 pub use json_schema_export::{
-  type_array, type_boolean, type_integer, type_number, type_record, type_string,
+  ast_to_json_schema, json_schema_for, to_json_schema, type_array, type_boolean, type_integer,
+  type_number, type_record, type_string,
 };
 #[cfg(feature = "schema-serde")]
-pub use serde_bridge::unknown_from_serde_json;
+pub use serde_bridge::{serde_json_from_unknown, unknown_from_serde_json};

@@ -89,7 +89,9 @@ let any = union_chain(vec![a, b, c]);
 ```
 
 `union_` / `union_chain` encode with the **first** schema, so the arms should agree on
-encoding. For recursive shapes, `suspend(|| schema())` defers building the inner schema.
+encoding. For recursive shapes, `suspend(|| schema())` defers building the inner schema;
+`suspend_named("Node", schema)` does the same and gives the recursion a name, which JSON Schema
+export uses for `$defs` / `$ref` (see below).
 
 ## Running a Schema
 
@@ -106,5 +108,52 @@ assert_eq!(person.decode(wire), Ok(("Alice".to_owned(), 30)));
 
 A schema is documentation: where a handler takes a `Schema<CreateUser, Unknown, ()>`, readers
 know exactly which shape of data it accepts, checked at runtime. Implement `HasSchema` (or derive
-it) so generic tooling, such as the JSON Schema helpers behind the `schema-serde` feature, can
+it) so generic tooling, such as the JSON Schema export behind the `schema-serde` feature, can
 find a type's canonical schema.
+
+## Exporting JSON Schema
+
+Every combinator also records a description of the wire shape it accepts, a `SchemaAst`
+(`schema.ast()`). With the `schema-serde` feature, `schema.json_schema()`,
+`to_json_schema(&schema)` or `json_schema_for::<T: HasSchema>()` turn it into a JSON Schema
+**draft 2020-12** document. Because the exporter reads the *same* schema value that decodes,
+the published contract cannot drift from the validation:
+
+```rust,ignore
+use id_effect::schema::{email, i64, range, string, struct_};
+
+let signup = struct_(
+  "email", email(string::<()>()).describe("Login address"),
+  "age", range(i64::<()>(), 13, 130),
+)
+.title("Signup");
+
+assert_eq!(signup.json_schema(), serde_json::json!({
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signup",
+  "type": "object",
+  "properties": {
+    "email": { "type": "string", "format": "email", "description": "Login address" },
+    "age": { "type": "integer", "minimum": 13, "maximum": 130 }
+  },
+  "required": ["email", "age"]
+}));
+```
+
+| Schema | JSON Schema |
+|--------|-------------|
+| `string` / `i64` / `f64` / `bool_` | `type` |
+| `literal_string` / `literal_i64` | `const` |
+| `array` / `record` | `items` / `additionalProperties` |
+| `tuple*` | `prefixItems`, `items: false` |
+| `struct_*` | `properties`, `required` |
+| `optional` / `null_or` / `union_` / `union_chain` | `anyOf` |
+| `suspend_named` | `$ref` into `$defs` |
+| built-in validators ([next section](./ch14-03-validation.md)) | `minLength`, `pattern`, `format`, `enum`, `minimum`, … |
+| `.title` / `.describe` / `.example` / `.default_value` / `.deprecated` | `title`, `description`, `examples`, `default`, `deprecated` |
+
+What cannot be introspected is exported loosely rather than wrongly: a hand-written
+`Schema::make` codec exports `{}` (accept anything) unless you attach a description with
+`.with_ast(...)`, an arbitrary `refine` predicate adds no keyword, and `transform` exports its
+inner wire schema. `#[derive(Schema)]` types currently build through `Schema::make`, so they
+export as `{}` for now. OpenAPI documents generated from routes are a later release.

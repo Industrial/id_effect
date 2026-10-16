@@ -22,6 +22,36 @@ assert_eq!(age.decode(42), Ok(42));
 The error has an empty path; an enclosing `struct_` or `array` prefixes it with the field name or
 index.
 
+## Built-in Validators
+
+The common checks ship ready-made. Each is a `filter` that also records a declarative constraint,
+so it shows up in JSON Schema export ([ch14-02](./ch14-02-combinators.md#exporting-json-schema)):
+
+| Validator | Applies to | Error message | JSON Schema |
+|-----------|-----------|---------------|-------------|
+| `min_length(s, n)` / `max_length(s, n)` / `length(s, min, max)` / `non_empty(s)` | `String` (counts `chars()`) | `must be at least n characters`, … | `minLength` / `maxLength` |
+| `pattern(s, source, matcher)` | `String` | `must match pattern <source>` | `pattern` |
+| `email(s)` | `String` | `must be a valid email address` | `format: email` |
+| `uuid(s)` | `String` | `must be a valid UUID` | `format: uuid` |
+| `url(s)` | `String` | `must be a valid URL` | `format: uri` |
+| `one_of(s, &[..])` | `String` | `must be one of: a, b` | `enum` |
+| `minimum` / `maximum` / `range(s, min, max)` | `i64`, `f64` | `must be >= min`, `must be <= max` | `minimum` / `maximum` |
+| `exclusive_minimum` / `exclusive_maximum` | `i64`, `f64` | `must be > min`, `must be < max` | `exclusiveMinimum` / `exclusiveMaximum` |
+| `min_items` / `max_items` | `Vec<A>` | `must have at least n items`, … | `minItems` / `maxItems` |
+
+```rust,ignore
+use id_effect::schema::{email, i64, length, range, string};
+
+let name = length(string::<()>(), 1, 40);
+let contact = email(string::<()>());
+let age = range(i64::<()>(), 0, 150);
+```
+
+`email` and `url` are pragmatic syntax checks, not full RFC parsers. id_effect bundles no regex
+engine: `pattern` takes the expression to publish plus the matcher that enforces it, for example
+`pattern(string(), r"^[a-z]+$", move |s| re.is_match(s))` with the `regex` crate. Keep the two in
+sync.
+
 ## transform: Fallible Conversion
 
 When conversion can fail (parsing a date, a URL, an email), use `transform(schema, decode,
@@ -107,6 +137,7 @@ impl HasSchema for Age {
 | Tool | When to use |
 |------|-------------|
 | `refine` / `filter` | Predicate on a decoded value |
+| `email`, `uuid`, `url`, `length`, `range`, `pattern`, `one_of`, … | Common checks that also appear in exported JSON Schema |
 | `transform` | Fallible conversion, or mapping a tuple to your type |
 | `Brand` / `RefinedBrand` | Newtypes that prevent mixing domain values |
 | `HasSchema` / `derive(Schema)` | Attach the canonical schema to a type |
