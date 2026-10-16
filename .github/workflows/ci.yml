@@ -311,8 +311,11 @@ jobs:
       - name: cargo semver-checks (publishable workspace crates)
         # --workspace skips publish = false members (examples). Step-level
         # continue-on-error keeps the job (and ci-pass) green while report-only.
+        # id_effect_kit and id_effect_tool are new in 0.8 with no crates.io baseline yet;
+        # drop the excludes once they are published.
         continue-on-error: true
-        run: cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
+        run: >-
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_kit --exclude id_effect_tool
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
