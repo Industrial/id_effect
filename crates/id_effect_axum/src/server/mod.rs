@@ -11,7 +11,10 @@ pub use lifecycle::{
   Host, HostBuilder, HostError, ServerHandle, serve, serve_router, serve_until,
   serve_until_shutdown, server_layer, socket_addr,
 };
+#[allow(deprecated)]
 pub use security::{
-  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, csp_middleware, csrf_middleware, set_csrf_header,
+  COOKIE_KEY_ENV, CSRF_COOKIE, CSRF_FORM_FIELD, CSRF_HEADER, ContentSecurityPolicy, CookieDefaults,
+  CookieKey, Cookies, CorsConfig, CspNonce, CsrfConfig, CsrfToken, FrameOptions, SecurityError,
+  SecurityHeaders, SecurityLayer, csp_middleware, csrf_middleware, set_csrf_header,
 };
 pub use shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};

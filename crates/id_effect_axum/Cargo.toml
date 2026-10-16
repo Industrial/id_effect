@@ -49,6 +49,15 @@ tower = { version = "0.5.3", features = ["util"], optional = true }
 # `CapOverrideLayer` (request-scoped capabilities); already in axum's dependency tree.
 tower-layer = "0.3.3"
 tower-service = "0.3.3"
+# Web hardening (`server::security`): CORS, CSRF tokens, CSP nonces/hashes, signed cookies.
+base64 = "0.22.1"
+cookie = { version = "0.18.1", features = ["signed", "private"] }
+rand = "0.9"
+sha2 = "0.10.9"
+subtle = "2.6.1"
+tower-http = { version = "0.6.8", default-features = false, features = [
+  "cors",
+] }
 
 [[bench]]
 name = "gate_request"

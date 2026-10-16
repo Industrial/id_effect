@@ -102,9 +102,11 @@ pub use executor::{
 pub use request_caps::{
   CapOverride, CapOverrideLayer, RequestCaps, execute_with_request_caps, run_with_request_caps,
 };
+#[allow(deprecated)]
 pub use server::{
-  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, Host, HostBuilder, HostConfig, HostDrain,
-  HostError, ServerHandle, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware,
+  CSRF_HEADER, ContentSecurityPolicy, CookieKey, Cookies, CorsConfig, CspNonce, CsrfConfig,
+  CsrfToken, Host, HostBuilder, HostConfig, HostDrain, HostError, SecurityError, SecurityHeaders,
+  SecurityLayer, ServerHandle, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware,
   drain_with_timeout, load_host_config, provide_host_config_env, serve, serve_router,
   serve_until_shutdown, server_layer, set_csrf_header, socket_addr, wait_for_shutdown,
 };
