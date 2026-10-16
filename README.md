@@ -62,7 +62,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_logger`](crates/id_effect_logger) | [![crates.io](https://img.shields.io/crates/v/id_effect_logger.svg)](https://crates.io/crates/id_effect_logger) | EffectLogger capability for id_effect: log levels, annotations and pluggable backends over tracing |
 | [`id_effect_macro`](crates/id_effect_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_macro.svg)](https://crates.io/crates/id_effect_macro) | Declarative macros re-exported by id_effect: pipe!, err! |
 | [`id_effect_proc_macro`](crates/id_effect_proc_macro) | [![crates.io](https://img.shields.io/crates/v/id_effect_proc_macro.svg)](https://crates.io/crates/id_effect_proc_macro) | Procedural `effect!` macro for the `effect` crate (proc-macro only; declarative macros live in `id_effect_macro`) |
-| [`id_effect_resilience`](crates/id_effect_resilience) | [![crates.io](https://img.shields.io/crates/v/id_effect_resilience.svg)](https://crates.io/crates/id_effect_resilience) | Resilience patterns for id_effect: circuit breaker, Schedule-driven retry, rate limiter, bulkhead, hedged requests |
+| [`id_effect_resilience`](crates/id_effect_resilience) | [![crates.io](https://img.shields.io/crates/v/id_effect_resilience.svg)](https://crates.io/crates/id_effect_resilience) | Resilience patterns for id_effect: circuit breaker, Schedule-driven retry, rate limiter, bulkhead, hedged requests, fallback, policy pipelines |
 | [`id_effect_tokio`](crates/id_effect_tokio) | [![crates.io](https://img.shields.io/crates/v/id_effect_tokio.svg)](https://crates.io/crates/id_effect_tokio) | Tokio runtime adapter for id_effect: TokioRuntime over the 0.7-kernel TokioExecutor (fibers as tokio tasks) |
 
 **Runtime and supervision**
@@ -79,9 +79,11 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 |-------|---------|-------------|
 | [`id_effect_axum`](crates/id_effect_axum) | [![crates.io](https://img.shields.io/crates/v/id_effect_axum.svg)](https://crates.io/crates/id_effect_axum) | Axum and Tower integration for id_effect — Send-safe Effect handlers, request-scoped capabilities, host lifecycle |
 | [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing buffer, run_main |
+| [`id_effect_kit`](crates/id_effect_kit) | [![crates.io](https://img.shields.io/crates/v/id_effect_kit.svg)](https://crates.io/crates/id_effect_kit) | One front door to id_effect: a single dependency with feature flags per battery and a prelude |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
+| [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit |
 
 **Maintenance (frozen API)**
 
