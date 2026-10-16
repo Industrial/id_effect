@@ -53,6 +53,15 @@ Follow-ups recorded during wave 1:
   guard's self-contained Problem body to `id_effect_axum`'s `Problem` type.
 - Gates under concurrent agents: set `TMPDIR` on `/data` (the 2 GB `/tmp` tmpfs fills and crashes
   llvm-cov / lld).
+- id_effect_sql: plain `PgSqlClient::query`/`execute` errors drop the SQLSTATE (only transaction
+  and stream errors carry it); add a typed `SqlError` code instead of parsing the message.
+  `SqlTransaction` has no `query_stream` yet.
+- `#[derive(Schema)]` stops at the first error, so `#[from_row(schema)]` on a derived schema reports
+  one issue per row; combinator schemas report all (fix in `derive_schema_parser.rs`).
+- `.config/nextest.toml`: if trybuild runs collide, serialise `package(id_effect_sql) &
+  binary(from_row)` like the core ui tests.
+- Commit rule learned the hard way (fixed by 2nd commit after 2905241): `git add` before every
+  pathspec commit, otherwise new files are silently left out; check `git status` for `??` after.
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 
 ## Waves 2–3
