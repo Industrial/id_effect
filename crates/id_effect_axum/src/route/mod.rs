@@ -58,6 +58,8 @@
 
 mod decode;
 pub mod extract;
+#[cfg(feature = "openapi")]
+pub mod introspect;
 pub mod problem;
 mod registry;
 
@@ -429,7 +431,8 @@ where
       + Sync
       + 'static,
   {
-    let info = self.info();
+    let mut info = self.info();
+    info.handler = Some(std::any::type_name::<F>());
     let filter = MethodFilter::try_from(self.method.clone())
       .unwrap_or_else(|e| panic!("typed route {} {}: {e}", self.method, self.template));
     let parts = Arc::new(self.parts);

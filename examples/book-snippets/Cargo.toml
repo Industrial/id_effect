@@ -32,6 +32,7 @@ id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.8.0", fe
   "testing",
 ] }
 id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0", features = [
+  "openapi",
   "tower",
 ] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.8.0" }

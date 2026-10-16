@@ -13,6 +13,10 @@ struct Ch2700Observability;
 struct Ch2901TypedRoutes;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-02-openapi.md")]
+struct Ch2902OpenApi;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-03-middleware.md")]
 struct Ch2903Middleware;
 

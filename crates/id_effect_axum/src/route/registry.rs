@@ -89,14 +89,20 @@ impl BodyKind {
   }
 }
 
-/// Everything a typed route declares.
-#[derive(Clone, Debug, PartialEq)]
+/// Everything a typed route declares. Equality compares the declaration, not
+/// [`handler`](RouteInfo::handler).
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct RouteInfo {
   /// HTTP method.
   pub method: Method,
   /// Path template in Axum syntax (`/accounts/{id}`), which is also OpenAPI's.
   pub path: String,
+  /// Rust type name ([`std::any::type_name`]) of the handler given to
+  /// [`Route::handler`](super::Route::handler) (`my_app::show_account`; a closure reads
+  /// `my_app::routes::{{closure}}`); `None` for a [`RouteInfo::new`] not built by a route.
+  /// Descriptive only, for route listings: not compared by `==`.
+  pub handler: Option<&'static str>,
   /// Path parameter schema, when declared with [`Route::path`](super::Route::path).
   pub path_params: Option<SchemaRef>,
   /// Query string schema, when declared with [`Route::query`](super::Route::query).
@@ -122,6 +128,7 @@ impl RouteInfo {
     Self {
       method,
       path: path.into(),
+      handler: None,
       path_params: None,
       query: None,
       headers: None,
@@ -130,6 +137,32 @@ impl RouteInfo {
       responses: Vec::new(),
       policies: Vec::new(),
     }
+  }
+}
+
+impl PartialEq for RouteInfo {
+  fn eq(&self, other: &Self) -> bool {
+    let Self {
+      method,
+      path,
+      handler: _,
+      path_params,
+      query,
+      headers,
+      body,
+      body_kind,
+      responses,
+      policies,
+    } = self;
+    *method == other.method
+      && *path == other.path
+      && *path_params == other.path_params
+      && *query == other.query
+      && *headers == other.headers
+      && *body == other.body
+      && *body_kind == other.body_kind
+      && *responses == other.responses
+      && *policies == other.policies
   }
 }
 

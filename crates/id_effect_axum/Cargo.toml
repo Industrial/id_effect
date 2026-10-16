@@ -23,7 +23,8 @@ default = []
 cluster = ["dep:id_effect_node"]
 # Tower `Service` bridge (`service` module).
 tower = ["dep:tower"]
-# OpenAPI 3.1 documents generated from typed routes (`openapi` module).
+# OpenAPI 3.1 documents generated from typed routes (`openapi` module), the opt-in
+# `/openapi.json` + Scalar `/docs` router and the `/_routes` table (`route::introspect`).
 openapi = []
 
 [dependencies]
@@ -94,6 +95,10 @@ required-features = ["tower"]
 [[example]]
 name = "051_tower_shared_counter"
 required-features = ["tower"]
+
+[[example]]
+name = "085_openapi"
+required-features = ["openapi"]
 
 [package.metadata.docs.rs]
 all-features = true

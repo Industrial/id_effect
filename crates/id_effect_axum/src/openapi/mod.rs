@@ -22,7 +22,9 @@
 //!   and lists its policies as `x-policies`.
 //!
 //! The document is plain serde data: adjust any [`Operation`] through [`OpenApi::operation_mut`]
-//! and serve [`OpenApi::to_json`].
+//! and serve [`OpenApi::to_json`] — or merge [`openapi_router`] ([`OpenApi::routes`]) for
+//! `/openapi.json` plus a Scalar `/docs` page with its own strict CSP (see [`ui`]). The
+//! route table itself is served by [`route::introspect`](crate::route::introspect) (`/_routes`).
 //!
 //! ```rust
 //! use axum::http::{Method, StatusCode};
@@ -70,6 +72,7 @@
 
 mod build;
 mod model;
+pub mod ui;
 
 use std::collections::BTreeMap;
 
@@ -81,6 +84,7 @@ pub use model::{
   ApiKeyLocation, Components, Info, MediaType, Operation, Parameter, ParameterIn, PathItem,
   RequestBody, Response, SecurityRequirement, SecurityScheme, Server, Tag,
 };
+pub use ui::{DEFAULT_SCALAR_URL, DOCS_PATH, OPENAPI_JSON_PATH, OpenApiUi, openapi_router};
 
 use crate::route::{RouteInfo, RouteRegistry, Router};
 

@@ -36,7 +36,12 @@
   (`application/problem+json`) responses, security schemes (bearer JWT, session cookie, OpenID
   Connect) with per-operation requirements from the new `RouteInfo::policies`.
   `Endpoint::from_parts` / `Endpoint::layer`; `id_effect_authz` guarded endpoints convert into an
-  `Endpoint` and record their policies.
+  `Endpoint` and record their policies. Opt-in `openapi_router(&doc, OpenApiUi::scalar())` /
+  `doc.routes()` serve `/openapi.json` (ETag, 304) and a Scalar `/docs` page loaded from a CDN or
+  mirror (`cdn_url`, `integrity`) under its own strict CSP that works behind `SecurityLayer`;
+  `route::introspect::routes_router` serves a `/_routes` table (method, path, handler, schemas,
+  policies) as JSON or text; `RouteInfo::handler` records the handler's type name. Book:
+  part6/ch29-02-openapi.md; example `085_openapi`.
 - `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
   effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
