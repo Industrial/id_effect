@@ -104,6 +104,7 @@
   - [Virtual Time with TestExecutor](./part4/ch15-02-test-clock.md)
   - [Mocking Services](./part4/ch15-03-mocking.md)
   - [Property Testing](./part4/ch15-04-property-testing.md)
+  - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
 
 # Part V: Functional Patterns
 

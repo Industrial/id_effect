@@ -23,6 +23,8 @@
 //!   Rayon parallelism for bulk operations and `sysinfo` host telemetry. Without it, bulk
 //!   operations run serially; `rayon` and `sysinfo` are not built.
 //! - **`schema-serde`** — `serde_json::Value` ↔ [`Unknown`] and JSON Schema helpers.
+//! - **`proptest`** — `testing::property`: proptest strategies for framework types and schemas,
+//!   effect-aware properties under [`TestExecutor`], stateful (model-based) testing.
 //!
 //! Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
 //! `id_effect_fp` crate.

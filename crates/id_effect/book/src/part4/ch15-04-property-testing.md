@@ -1,9 +1,11 @@
 # Property Testing — Testing Invariants
 
 Unit tests check specific examples. Property tests check that an invariant holds for *all*
-inputs. id_effect has no property-testing module of its own: use the
-[`proptest`](https://docs.rs/proptest) crate as a dev-dependency and run each generated case with
-`block_on`. Pure and fused synchronous effects settle inline without touching an executor, so
+inputs. Since 0.8 the `proptest` feature adds `id_effect::testing::property` (schema-derived
+generators, effect-aware properties, model-based testing): see
+[Property Testing, Exit Assertions and Golden Files](./ch15-06-testing-property.md). This page shows
+the plain approach underneath it: use the [`proptest`](https://docs.rs/proptest) crate as a
+dev-dependency and run each generated case with `block_on`. Pure and fused synchronous effects settle inline without touching an executor, so
 hundreds of cases run in milliseconds.
 
 ## Effect Laws

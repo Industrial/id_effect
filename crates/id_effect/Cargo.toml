@@ -46,6 +46,10 @@ required-features = ["compute"]
 name = "122_compute_fabric_effect_parallel"
 required-features = ["compute"]
 
+[[example]]
+name = "110_property_testing"
+required-features = ["proptest"]
+
 [features]
 default = ["compute"]
 # Compute Fabric (`compute` module): resource-aware admission (`ComputeFabric`), adaptive Rayon
@@ -54,6 +58,9 @@ default = ["compute"]
 compute = ["dep:rayon", "dep:sysinfo"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
+# `testing::property`: proptest strategies for framework types and schemas, effect-aware
+# properties under `TestExecutor`, stateful (model-based) testing.
+proptest = ["dep:proptest"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
@@ -66,6 +73,9 @@ rayon = { version = "1.12", optional = true }
 # 0.39+ needs rustc ≥1.95 (cfg_select); pin until devenv rustc catches up.
 sysinfo = { version = "0.33", optional = true }
 serde_json = { version = "1", optional = true }
+proptest = { version = "1", optional = true, default-features = false, features = [
+  "std",
+] }
 # Required (R6): the kernel's default `TokioExecutor` (`time` for real timers, `rt-multi-thread`
 # for the default `Runtime::global`).
 tokio = { version = "1.50.0", features = [
