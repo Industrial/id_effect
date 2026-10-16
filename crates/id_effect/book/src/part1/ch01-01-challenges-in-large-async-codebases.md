@@ -81,11 +81,6 @@ Fire-and-forget background tasks are easy to start and harder to reason about:
 # use std::time::Duration;
 # struct DatabasePool;
 # async fn process_queue(_: &DatabasePool) -> Result<(), String> { Ok(()) }
-# // A stand-in for the two tokio functions used here (tokio is not a dependency of the book).
-# mod tokio {
-#     pub fn spawn(_: impl std::future::Future<Output = ()> + Send + 'static) {}
-#     pub mod time { pub async fn sleep(_: std::time::Duration) {} }
-# }
 fn start_background_worker(db: DatabasePool) {
     tokio::spawn(async move {
         loop {

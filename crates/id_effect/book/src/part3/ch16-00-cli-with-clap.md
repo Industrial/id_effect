@@ -13,8 +13,7 @@ This mirrors Effect.ts **`@effect/cli`**: declarative argument models composed i
 
 Returning `ExitCode` keeps `main` testable and avoids calling [`std::process::exit`](https://doc.rust-lang.org/std/process/fn.exit.html) deep inside library code. This is `examples/cli-minimal/src/main.rs`:
 
-<!-- ignore: needs the clap and cli_minimal crates, which are not dependencies of the book_snippets harness -->
-```rust,ignore
+```rust,no_run
 use clap::Parser;
 use id_effect_cli::{RunMainConfig, run_main};
 

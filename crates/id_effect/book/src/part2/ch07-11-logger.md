@@ -14,8 +14,7 @@ are **effect steps**, so formatting and sinks stay composable and testable.
 - **`EffectLoggerLive::layer()`**, **`LogMetadataLive::layer()`**, **`provide_composite_logger(c)`**
   and **`provide_minimum_log_level(level)`** are `Layer`s (no input, any `E`).
 
-<!-- ignore: needs the `id_effect_logger` crate, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust
 use id_effect::{Effect, Exit, caps, effect};
 use id_effect_logger::{EffectLogger, EffectLoggerError, EffectLoggerLive};
 
@@ -34,8 +33,15 @@ assert_eq!(app().provide(EffectLogger).block_on(), Exit::Success(7));
 
 A full pipeline is a merged layer:
 
-<!-- ignore: needs the `id_effect_logger` crate, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::{caps, succeed};
+# use id_effect_logger::{
+#   CompositeLogBackend, EffectLogComposite, EffectLoggerError, LogLevel, LogMetadataLive,
+#   provide_composite_logger, provide_minimum_log_level,
+# };
+# let composite = Arc::new(CompositeLogBackend::new());
+# let program = succeed::<(), EffectLoggerError, caps!(EffectLogComposite)>(());
 let pipeline = LogMetadataLive::layer()
     .merge(provide_composite_logger(composite))
     .merge(provide_minimum_log_level(LogLevel::Info));

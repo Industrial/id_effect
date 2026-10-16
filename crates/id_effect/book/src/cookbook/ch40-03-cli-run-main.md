@@ -23,9 +23,9 @@ goes:
 # impl std::fmt::Display for AppError {
 #   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{self:?}") }
 # }
-# /// Stand-in for a `#[derive(clap::Parser)]` struct (clap is not a dependency of the book).
+# #[derive(clap::Parser)]
 # struct Cli { name: String }
-# impl Cli { fn parse() -> Self { Cli { name: "Ada".into() } } }
+# use clap::Parser as _;
 # struct Stdout;
 # impl Console for Stdout { fn line(&self, text: String) { println!("{text}") } }
 use std::sync::Arc;

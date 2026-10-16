@@ -17,8 +17,7 @@ Design goals match [`@effect/opentelemetry`](https://www.npmjs.com/package/@effe
 `FiberRef`, so forked fibers on any executor thread export their spans under the right parent. No
 `tracing` subscriber is needed for effect spans. From `examples/otel_minimal.rs`:
 
-<!-- ignore: needs the `opentelemetry` and `opentelemetry_sdk` crates, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust
 use id_effect::{Effect, Exit, MetricRegistry, succeed};
 use id_effect_opentelemetry::{
     OtelSpanHook, bridge_metrics, sdk_meter_provider_with_in_memory_exporter,
@@ -73,11 +72,12 @@ over high-cardinality user IDs.
 
 Enable the `otlp` feature. At process start (`examples/otel_production.rs`):
 
-<!-- ignore: needs id_effect_opentelemetry's `otlp` feature and a live OTLP collector -->
-```rust,ignore
+```rust,no_run
 use id_effect::{Counter, Effect, succeed};
 use id_effect_opentelemetry::{OtelConfig, install_from_config};
 use id_effect_tokio::TokioRuntime;
+# // Needs a live OTLP collector, so it is compiled but not run.
+# async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
 let guard = install_from_config(OtelConfig::from_env()?)?; // bridges MetricRegistry::global()
 let eff: Effect<(), ()> = Counter::new("production.work")
@@ -88,6 +88,8 @@ let eff: Effect<(), ()> = Counter::new("production.work")
 let _ = TokioRuntime::current()?.run(eff).await;
 guard.force_flush();
 guard.shutdown();
+# Ok(())
+# }
 ```
 
 `install_otel_starter(&providers, &config)` is the lower-level form; both install global providers,

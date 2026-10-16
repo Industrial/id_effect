@@ -94,11 +94,22 @@ TestCaseError>`, so it composes with `?` inside `proptest!`. `prop_sync` turns a
 `prop_assert!` into an effect, so the check can sit inside the pipeline. `prop_run` does the same
 for any error type (a typed failure fails the case).
 
-<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust
+# // Doctests build without `--cfg test`, which drops `#[test]` items: run each property directly.
+# macro_rules! proptest {
+#   ($(#[test] fn $name:ident $args:tt $body:block)*) => {
+#     ::proptest::proptest! { $(fn $name $args $body)* }
+#     $($name();)*
+#   };
+# }
 use id_effect::testing::property::{arb_duration, prop_check, prop_sync};
 use id_effect::{Effect, sleep};
 use proptest::prelude::*;
+# /// Waits `gap`, then emits the last value.
+# fn debounce<E: Send + 'static>(values: Vec<u8>, gap: std::time::Duration) -> Effect<u8, E> {
+#   let last = *values.last().unwrap();
+#   sleep(gap).map(move |()| last)
+# }
 
 proptest! {
   #[test]
@@ -124,8 +135,14 @@ schema decodes. Every generated value passes the schema's refinements and brands
 case shrinks on the wire value. `arb_schema::<T>()` does it for a `HasSchema` type whose wire type
 implements `Arbitrary`. `prop_assert_roundtrip` checks `decode(encode(a)) == a`.
 
-<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust
+# // Doctests build without `--cfg test`, which drops `#[test]` items: run each property directly.
+# macro_rules! proptest {
+#   ($(#[test] fn $name:ident $args:tt $body:block)*) => {
+#     ::proptest::proptest! { $(fn $name $args $body)* }
+#     $($name();)*
+#   };
+# }
 use id_effect::schema::{HasSchema, Unknown, i64, refine};
 use id_effect::testing::property::{from_schema, prop_assert_roundtrip, unknown_object};
 use id_effect::Schema;
@@ -184,8 +201,7 @@ Implement `StateMachine` for a pure model of the system, and `run_state_machine`
 command lists, runs each against the model and against the real system, and shrinks a failure to
 a minimal list of commands.
 
-<!-- ignore: needs the proptest crate, which is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust
 use std::collections::VecDeque;
 
 use id_effect::testing::property::{StateMachine, prop_sync, run_state_machine};
@@ -241,6 +257,7 @@ impl StateMachine for BoundedQueue {
 fn bounded_queue_matches_its_model() {
   run_state_machine(&BoundedQueue { cap: 3 }, Config::with_cases(64), 0..40);
 }
+# run_state_machine(&BoundedQueue { cap: 3 }, Config::with_cases(64), 0..40);
 ```
 
 - A command whose `precondition` fails in the current model state is skipped, so commands can be

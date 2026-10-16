@@ -102,15 +102,21 @@ can never silently run against a missing dependency.
 runs nothing and returns a defect (`try_block_on` returns `Err(BlockOnInAsync)` instead). In a
 `#[tokio::test]`, await the effect through a `Runtime`:
 
-<!-- ignore: needs tokio (#[tokio::test]), which is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust
 use id_effect::Runtime;
+# use id_effect::{Effect, Exit, succeed};
+# fn double(n: u32) -> Effect<u32, ()> { succeed(n * 2) }
 
 #[tokio::test]
 async fn works_inside_tokio() {
   let exit = Runtime::global().run(double(21)).await;
   assert_eq!(exit, Exit::succeed(42));
 }
+# // Doctests build without `--cfg test`, which drops `#[tokio::test]` items: run the body here.
+# tokio::runtime::Runtime::new().unwrap().block_on(async {
+#   let exit = Runtime::global().run(double(21)).await;
+#   assert_eq!(exit, Exit::succeed(42));
+# });
 ```
 
 ## Interruption and leaks

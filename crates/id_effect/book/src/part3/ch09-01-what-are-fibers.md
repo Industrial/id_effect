@@ -4,8 +4,9 @@ A fiber is an effect-managed task. It's lighter than an OS thread and safer than
 
 ## Fibers vs. Raw Tasks
 
-<!-- ignore: contrasts with tokio::spawn, and tokio is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust,no_run
+# async fn do_something() {}
+# fn background_work() -> id_effect::Effect<u8, ()> { id_effect::succeed(1) }
 // Raw tokio::spawn — fire and forget.
 // Who owns this? What happens if it panics? Who cleans up?
 tokio::spawn(async {

@@ -122,8 +122,8 @@ Third-party libraries return `Future`s, not `Effect`s. Use `from_async` to wrap 
 
 **Before**
 
-<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust,no_run
+# #[derive(serde::Deserialize)] struct PriceResponse { price: f64 }
 async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
     reqwest::get(format!("https://api.example.com/price/{symbol}"))
         .await?
@@ -135,8 +135,8 @@ async fn fetch_price(symbol: &str) -> Result<f64, reqwest::Error> {
 
 **After**
 
-<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust,no_run
+# #[derive(serde::Deserialize)] struct PriceResponse { price: f64 }
 use id_effect::{Effect, from_async};
 
 fn fetch_price(symbol: String) -> Effect<f64, reqwest::Error> {

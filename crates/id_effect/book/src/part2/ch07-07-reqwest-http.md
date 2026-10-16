@@ -27,18 +27,21 @@ pipelines, need **pooled clients** (`provide_reqwest_pool`, `send_pooled`), or w
 - **Pools** — `provide_reqwest_pool(n, ttl)` provides a `ReqwestPool` (`id_effect::Pool` of
   clients); `send_pooled` borrows one per request.
 
-<!-- ignore: needs the `reqwest` crate, which the book_snippets harness does not depend on -->
-```rust,ignore
+```rust,no_run
 use id_effect::Exit;
 use id_effect_platform::http::reqwest::{ReqwestClientEnv, ReqwestClientLive, text};
 use id_effect_tokio::TokioRuntime;
 use reqwest::Error;
+# // Needs the network, so it is compiled but not run.
+# async fn fetch(url: &'static str) -> Result<String, std::io::Error> {
 
 let program = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(url))
     .provide_layer(ReqwestClientLive::layer());
 let Exit::Success(body) = TokioRuntime::current()?.run(program).await else {
     panic!("request failed")
 };
+# Ok(body)
+# }
 ```
 
 Import reqwest types (`Client`, `Error`, …) from the **`reqwest`** crate and the helpers from

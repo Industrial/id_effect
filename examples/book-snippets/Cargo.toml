@@ -19,10 +19,13 @@ id_effect = { path = "../../crates/id_effect", version = "0.7.0", features = [
   "schema-regex",
   "proptest",
 ] }
-id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.7.0" }
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.7.0", features = [
+  "tower",
+] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.7.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.7.0" }
 id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.7.0" }
+id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.7.0" }
 id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.7.0" }
 id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.7.0", features = [
   "pg",
@@ -34,8 +37,39 @@ id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.7.0" }
 id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.7.0" }
 id_effect_process = { path = "../../crates/id_effect_process", version = "0.7.0" }
 id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.7.0" }
+cli_minimal = { path = "../cli-minimal" }
 axum = "0.8"
+clap = { version = "4.5", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+] }
+opentelemetry = { version = "0.32", default-features = false, features = [
+  "trace",
+  "metrics",
+  "logs",
+] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = [
+  "trace",
+  "metrics",
+  "logs",
+  "rt-tokio",
+  "testing",
+] }
+proptest = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt",
+  "rt-multi-thread",
+  "signal",
+  "time",
+] }
+tower = { version = "0.5.3", features = ["util"] }
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier - checked by scripts/tier-conformance.sh

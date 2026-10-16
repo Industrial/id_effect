@@ -180,8 +180,16 @@ The runnable example simulates the signal with a channel so that it stays determ
 binary, wait for the OS signal instead. With Tokio's `signal` feature and an async `main`, await
 the stop effect through a `Runtime` (`block_on` refuses to run inside an async context):
 
-<!-- ignore: needs tokio's `signal` feature; tokio is not a dependency of the book_snippets harness -->
-```rust,ignore
+```rust,no_run
+# use std::time::Duration;
+# use id_effect::{HNil, Never, Runtime};
+# use id_effect_process::{NodeName, ProcessNode, ShutdownPolicy, Strategy, SupervisorHandle, SupervisorSpec};
+# // The tree from above, minus the worker child.
+# fn start_tree() -> (ProcessNode, SupervisorHandle) {
+#   let node = ProcessNode::new(NodeName::new("daemon@local"));
+#   let tree = SupervisorSpec::new(Strategy::OneForOne).start(&node);
+#   (node, tree)
+# }
 #[tokio::main]
 async fn main() {
   let (node, tree) = start_tree();
