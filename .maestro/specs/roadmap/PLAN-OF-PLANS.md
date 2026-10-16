@@ -63,6 +63,7 @@ any other way does not count.
 | L10 | **License: MIT** (owner decision 2026-10-15). A single `LICENSE` file, `license = "MIT"` in every manifest, and a DCO line in CONTRIBUTING. | It is the most widely accepted permissive license, and corporate legal reviews clear it routinely. |
 | L11 | **Facade crate: `id_effect_kit`** (owner decision 2026-10-15). | Clear and searchable. |
 | L12 | **Console built into the app** (owner decision 2026-10-15). `id_effect_console` is mounted by the service at `/_console` behind auth, server-rendered (axum + maud + htmx) with live updates, behind a feature flag. No separate SPA and no JavaScript toolchain in the repo. | Nothing extra to deploy, everything stays in Rust, and it follows the Phoenix LiveDashboard model. |
+| L13 | **Scoring method (owner decisions 2026-10-16):** method v2 (table-stakes checklists) becomes primary after one alignment pass on competitor levels. v1 caps are applied strictly (method 1.1). Both happen in one re-base at 0.8 kickoff (§7.0), after which every stored version, the §1 north-star numbers and the §6 targets are re-stated on method 2.0. | v2 is objective and harder to inflate; under v1, 25 scores broke their own caps (`docs/scorecard/REPORT-method-v2.md`). |
 | L9 | **Breaking changes are allowed until 1.0**, but each one needs a deprecation shim for one minor version and a migration-guide entry. `cargo-semver-checks` runs in CI from 0.8. | Stability (28) is a trust blocker. |
 
 ### 3.2 Open: needs owner decision before 0.8 kickoff
@@ -240,6 +241,13 @@ still ship in order.
 
 ## 7. Per-release operating protocol (how every version uses this document)
 
+### 7.0 One-time step at 0.8 kickoff: method re-base (L13)
+The first 0.8 leaf runs before scope selection:
+1. Align the v2 competitor levels across all rows with one rule: a third-party library counts as `production` only if the framework's own docs recommend it; otherwise it is `labs`.
+2. Apply the v1 caps strictly: every score listed under cap violations in `REPORT-method-v2.md` is lowered to its cap. Bump the method to 1.1 and regenerate `results/`.
+3. Switch to method 2.0 (v2 primary). Re-base 0.6.0, 0.7.0 and every row target. Re-state §1 and §6 (and METHOD §5.2) with v2 numbers. Keep the v1 numbers in a "history" table.
+4. The owner accepts the re-based numbers before step 7.1.3 uses them.
+
 ### 7.1 Kickoff (day 0)
 1. Run `scripts/scorecard.sh --version <previous>` at the previous tag. Confirm the stored results
    reproduce (self-test).
@@ -336,3 +344,5 @@ snapshot.
 | Date | Change |
 |---|---|
 | 2026-10-15 | Initial draft (baseline 0.7.0, method v1.0). |
+| 2026-10-15 | Owner decisions L10 (MIT), L11 (`id_effect_kit`), L12 (console built into the app). Plan approved; roadmap-bootstrap mission executed. |
+| 2026-10-16 | roadmap-bootstrap complete: ADR 0012, scorecard tooling + reports + HTML, method v2 checklists (61f3b78, 3af5d74, 679a1d4, f9bb09d, 15ea25f). Owner decision L13 (v2 primary after alignment; v1 caps applied strictly); §7.0 added. Under v2, 0.7.0 scores E 43.2, rank #9 of 11. |

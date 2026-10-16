@@ -1,0 +1,54 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792093258409-5a4c4a",
+	"taskId": "tsk-mv9xeqip-lny39q",
+	"contractVersion": 1,
+	"computedAt": "2026-10-15T19:40:58.409Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "high",
+	"effectiveRiskClass": "high",
+	"reasons": [
+		{
+			"category": "policy",
+			"code": "auto-merge-not-allowed",
+			"message": "Auto-merge is opt-in and not enabled for risk class \"high\" in autopilot.yaml; the task can still complete via human review (run `maestro handoff emit`, or set autoMergeAllowed.high: true — note: enabling auto-merge is a \"loosening\" and soaks for 30 days before taking effect; run `maestro policy pending` to see in-flight changes)."
+		},
+		{
+			"category": "evidence",
+			"code": "proof-map-incomplete",
+			"message": "8 acceptance criterion/criteria lack covering evidence: dw-c4971c (\"docs/adrs/0012-platform-vision.md (status Accepted) supersedes the ADR 0010 vision statement, adds the \"platform\" tier (integration gates + reference-app consumer), and amends Rule 4 so CI-tested reference apps count as consumers; ADR 0010 gets a \"Superseded in part by 0012\" header line; README scope paragraph (lines 3-5) no longer says \"not a batteries-included web framework\".\"); dw-460878 (\"docs/scorecard/ contains METHOD.md, scorecard.json (moved from .maestro/specs/roadmap/scorecard/), results/v0.6.0.json and results/v0.7.0.json; scripts/scorecard.sh (bash + jq, Requires header, exit 1 FAIL / 2 misuse) implements METHOD §5 and §5.1; `scripts/scorecard.sh --self-test` reproduces every number in METHOD §5.2 exactly (one-decimal string compare).\"); dw-f60c1a (\"scorecard.sh subcommands work - `--version <v>` (indices + KPIs), `--targets <v>` (planned indices), `--diff <a> <b>` (row deltas, exit 1 on any row ≤ −5 without `adr` note), `--compare-targets <v>` (exit 1 if E < target − 1.0), `--report <v>` (writes REPORT-<v>.md), `--html` (writes docs/scorecard/index.html from the JSON).\"); dw-664c88 (\"scorecard.json validates against docs/scorecard/scorecard.schema.json (row ids unique, 10 competitor scores, scores in 1..100, every group/track referenced exists); invalid fixtures under docs/scorecard/fixtures/ make the validator exit 1.\"); dw-f89541 (\"moon task `scorecard` and a CI step in ci.yml run `scorecard.sh --self-test` and schema validation on every PR.\"); dw-8a9ce4 (\".maestro/specs/roadmap/PLAN-OF-PLANS.md links to docs/scorecard/ paths (no stale .maestro scorecard paths remain - grep returns 0).\"); dw-3b75bf (\"Stale task tsk-mv799sew-y9wf9g (W5, migrate downstream to 0.6) is abandoned with reason \"superseded by PLAN-OF-PLANS E0.5 (downstream migration to 0.7+)\"; mission pln-mv799j4f-1r1u6b is closed.\"); dw-ab8b45 (\"Method v2 table-stakes checklists exist for all 82 rows in scorecard.json (a checks list with 4-8 entries each); scorecard.sh --method 2 recomputes 0.6.0 and 0.7.0; REPORT-method-v2.md shows v1 vs v2 side by side for both versions.\"). Record covering evidence with `maestro evidence record --task <id> --criterion dw-c4971c --command \"...\" --exit 0` (criterion id matches the spec's acceptance_criteria — see `maestro spec show <slug>` or the spec frontmatter)."
+		}
+	],
+	"evidenceConsulted": ["evd-1792093255218-f0a0a5", "evd-1792093257660-0dd398"],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between f6d730760da0ec0c181e90675118b9277cebe6d4 and f6d730760da0ec0c181e90675118b9277cebe6d4 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "e9ba65d05925d2f5207febe15ee38a7cfd23f9dc"
+	}
+}

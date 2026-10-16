@@ -1,0 +1,68 @@
+{
+	"schemaVersion": 1,
+	"id": "vrd-1792095952608-fc43d7",
+	"taskId": "tsk-mv9xeqip-b9jlzp",
+	"contractVersion": 1,
+	"computedAt": "2026-10-15T20:25:52.608Z",
+	"decision": "HUMAN",
+	"proposedRiskClass": "high",
+	"effectiveRiskClass": "high",
+	"reasons": [
+		{
+			"category": "evidence",
+			"code": "evidence-witness-level-insufficient",
+			"message": "5 evidence row(s) are below the required witness level \"witnessed-by-maestro\" for high-risk tasks.",
+			"evidenceIds": [
+				"evd-1792095951927-44cc7c",
+				"evd-1792095952035-1bdb6b",
+				"evd-1792095952145-4de1dc",
+				"evd-1792095952255-7f2d95",
+				"evd-1792095952366-cc5aa5"
+			]
+		}
+	],
+	"evidenceConsulted": [
+		"evd-1792093879264-9c72fb",
+		"evd-1792093880873-2ba480",
+		"evd-1792093882372-c82415",
+		"evd-1792093883719-b76eb8",
+		"evd-1792093886470-aacf54",
+		"evd-1792093888197-8de787",
+		"evd-1792095951927-44cc7c",
+		"evd-1792095952035-1bdb6b",
+		"evd-1792095952145-4de1dc",
+		"evd-1792095952255-7f2d95",
+		"evd-1792095952366-cc5aa5"
+	],
+	"policiesConsulted": [
+		{
+			"file": "policies/risk.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/autopilot.yaml",
+			"version": "1"
+		},
+		{
+			"file": "policies/release.yaml",
+			"version": "1"
+		}
+	],
+	"trustVerifier": {
+		"findingsCount": 1,
+		"errors": 0,
+		"warns": 1,
+		"infos": 0,
+		"findings": [
+			{
+				"check": "empty-diff",
+				"severity": "warn",
+				"paths": [],
+				"details": "Diff between f6d730760da0ec0c181e90675118b9277cebe6d4 and f6d730760da0ec0c181e90675118b9277cebe6d4 is empty (base equals HEAD). Commit work after locking the contract — the verifier diffs from the lock-commit."
+			}
+		]
+	},
+	"subject": {
+		"tree_sha": "a640c7938f9db421a8668eab98ee41f97720a4e0"
+	}
+}
