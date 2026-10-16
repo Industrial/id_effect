@@ -23,6 +23,7 @@
 //!   Rayon parallelism for bulk operations and `sysinfo` host telemetry. Without it, bulk
 //!   operations run serially; `rayon` and `sysinfo` are not built.
 //! - **`schema-serde`** — `serde_json::Value` ↔ [`Unknown`] and JSON Schema helpers.
+//! - **`schema-regex`** — `schema::regex`: a `regex`-crate validator that exports its pattern.
 //! - **`proptest`** — `testing::property`: proptest strategies for framework types and schemas,
 //!   effect-aware properties under [`TestExecutor`], stateful (model-based) testing.
 //!

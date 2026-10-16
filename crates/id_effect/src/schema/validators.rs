@@ -1,5 +1,5 @@
-//! Built-in validators: string length / pattern / `email` / `uuid` / `url` / `one_of`, numeric
-//! ranges, array sizes.
+//! Built-in validators: string length / pattern / `regex` (feature `schema-regex`) / `email` /
+//! `uuid` / `url` / `one_of`, numeric ranges, array sizes.
 //!
 //! Each validator is a [`filter`] that **also** records a declarative constraint in the schema's
 //! [`SchemaAst`](crate::schema::ast::SchemaAst), so the very schema value that validates input is
@@ -104,9 +104,9 @@ where
 
 /// Must match the regular expression `source` (JSON Schema `pattern`).
 ///
-/// The crate does not bundle a regex engine: `matches` performs the check (e.g.
-/// `move |s| re.is_match(s)` with the `regex` crate) and `source` is what JSON Schema export emits.
-/// Keep the two in sync — `source` should be the expression `matches` compiles.
+/// `matches` performs the check and `source` is what JSON Schema export emits; keep the two in
+/// sync — `source` should be the expression `matches` compiles. With the **`schema-regex`**
+/// feature, `regex(s, source)` compiles `source` itself so the two cannot drift.
 pub fn pattern<I, E>(
   s: Schema<String, I, E>,
   source: impl Into<String>,
@@ -126,6 +126,27 @@ where
       c.pattern = Some(source);
     },
   )
+}
+
+/// Must match the regular expression `source` (JSON Schema `pattern`), checked with the `regex`
+/// crate (feature **`schema-regex`**).
+///
+/// The same `source` string is compiled for validation and exported verbatim. Like JSON Schema,
+/// matching is unanchored: write `^…$` to match the whole string. JSON Schema patterns are
+/// ECMA-262, so for a portable contract stay in the syntax both dialects share (classes,
+/// quantifiers, groups, alternation, anchors); Rust-only syntax such as `(?P<name>…)` or `\z`
+/// validates here but other JSON Schema tools may reject it. Errors when `source` does not compile.
+#[cfg(feature = "schema-regex")]
+pub fn regex<I, E>(
+  s: Schema<String, I, E>,
+  source: &str,
+) -> Result<Schema<String, I, E>, ::regex::Error>
+where
+  E: EffectData + 'static,
+  I: 'static,
+{
+  let re = ::regex::Regex::new(source)?;
+  Ok(pattern(s, source, move |v| re.is_match(v)))
 }
 
 /// Syntactically valid email address `local@domain.tld` (JSON Schema `format: email`).
@@ -433,6 +454,23 @@ mod tests {
     let e = v.decode("aB".into()).unwrap_err();
     assert_eq!(e.message, "must match pattern ^[a-z]+$");
     assert_eq!(v.ast().constraints.pattern.as_deref(), Some("^[a-z]+$"));
+  }
+
+  #[cfg(feature = "schema-regex")]
+  #[test]
+  fn regex_compiles_checks_and_records_source() {
+    let v = regex(s(), r"^[a-z]+(-[a-z]+)*$").unwrap();
+    assert!(v.decode("kebab-case".into()).is_ok());
+    let e = v.decode("Kebab".into()).unwrap_err();
+    assert_eq!(e.message, "must match pattern ^[a-z]+(-[a-z]+)*$");
+    assert!(v.decode_unknown(&Unknown::String("a--b".into())).is_err());
+    assert_eq!(
+      v.ast().constraints.pattern.as_deref(),
+      Some("^[a-z]+(-[a-z]+)*$")
+    );
+    // Unanchored, like JSON Schema `pattern`.
+    assert!(regex(s(), "[0-9]").unwrap().decode("a1b".into()).is_ok());
+    assert!(regex(s(), "(unclosed").is_err());
   }
 
   #[test]

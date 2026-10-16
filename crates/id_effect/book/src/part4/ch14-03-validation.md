@@ -31,6 +31,7 @@ so it shows up in JSON Schema export ([ch14-02](./ch14-02-combinators.md#exporti
 |-----------|-----------|---------------|-------------|
 | `min_length(s, n)` / `max_length(s, n)` / `length(s, min, max)` / `non_empty(s)` | `String` (counts `chars()`) | `must be at least n characters`, … | `minLength` / `maxLength` |
 | `pattern(s, source, matcher)` | `String` | `must match pattern <source>` | `pattern` |
+| `regex(s, source)?` (feature `schema-regex`) | `String` | `must match pattern <source>` | `pattern` |
 | `email(s)` | `String` | `must be a valid email address` | `format: email` |
 | `uuid(s)` | `String` | `must be a valid UUID` | `format: uuid` |
 | `url(s)` | `String` | `must be a valid URL` | `format: uri` |
@@ -47,10 +48,28 @@ let contact = email(string::<()>());
 let age = range(i64::<()>(), 0, 150);
 ```
 
-`email` and `url` are pragmatic syntax checks, not full RFC parsers. id_effect bundles no regex
-engine: `pattern` takes the expression to publish plus the matcher that enforces it, for example
-`pattern(string(), r"^[a-z]+$", move |s| re.is_match(s))` with the `regex` crate. Keep the two in
-sync.
+`email` and `url` are pragmatic syntax checks, not full RFC parsers.
+
+For regular expressions, enable the `schema-regex` feature and use `regex`. It compiles the
+expression with the `regex` crate, validates with it, and exports the **same** string as JSON
+Schema `pattern`, so the check and the contract cannot drift. It returns `Err(regex::Error)` when
+the expression does not compile:
+
+```rust,ignore
+use id_effect::schema::{regex, string};
+
+let slug = regex(string::<()>(), r"^[a-z0-9]+(-[a-z0-9]+)*$")?;
+assert_eq!(slug.json_schema()["pattern"], "^[a-z0-9]+(-[a-z0-9]+)*$"); // `schema-serde`
+```
+
+Like JSON Schema, matching is unanchored: write `^...$` to match the whole string. JSON Schema
+patterns are ECMA-262; for a portable contract, stay in the syntax both dialects share (classes,
+quantifiers, groups, alternation, anchors). Rust-only syntax such as `(?P<name>...)` or `\z`
+validates here, but other JSON Schema tools may reject it.
+
+The feature is optional so crates that never validate patterns do not compile a regex engine.
+Without it, `pattern` takes the expression to publish plus the matcher that enforces it, for
+example `pattern(string(), r"^[a-z]+$", move |s| re.is_match(s))`. Keep the two in sync.
 
 ## transform: Fallible Conversion
 

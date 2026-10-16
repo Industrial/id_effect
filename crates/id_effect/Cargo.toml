@@ -58,6 +58,10 @@ default = ["compute"]
 compute = ["dep:rayon", "dep:sysinfo"]
 # `serde_json::Value` ↔ [`crate::schema::Unknown`], JSON Schema helpers for primitives.
 schema-serde = ["dep:serde_json"]
+# `schema::validators::regex`: `pattern` validation backed by the `regex` crate (same source string
+# is checked and exported as JSON Schema `pattern`). Optional so core users without it pay no
+# regex compile cost; `pattern(s, source, matcher)` works without it.
+schema-regex = ["dep:regex"]
 # `testing::property`: proptest strategies for framework types and schemas, effect-aware
 # properties under `TestExecutor`, stateful (model-based) testing.
 proptest = ["dep:proptest"]
@@ -73,6 +77,7 @@ rayon = { version = "1.12", optional = true }
 # 0.39+ needs rustc ≥1.95 (cfg_select); pin until devenv rustc catches up.
 sysinfo = { version = "0.33", optional = true }
 serde_json = { version = "1", optional = true }
+regex = { version = "1.12", optional = true }
 proptest = { version = "1", optional = true, default-features = false, features = [
   "std",
 ] }

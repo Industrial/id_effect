@@ -105,7 +105,8 @@ pub struct Field {
   pub name: String,
   /// Field schema.
   pub schema: SchemaAst,
-  /// Whether the key must be present (always `true` for the built-in `struct_*` combinators).
+  /// Whether the key must be present (always `true` for the built-in `struct_*` combinators;
+  /// `false` for `Option<_>` fields of `#[derive(Schema)]`).
   pub required: bool,
 }
 
@@ -116,6 +117,15 @@ impl Field {
       name: name.into(),
       schema,
       required: true,
+    }
+  }
+
+  /// Field `name` with `schema` whose key may be absent (JSON Schema: not listed in `required`).
+  pub fn optional(name: impl Into<String>, schema: SchemaAst) -> Self {
+    Self {
+      name: name.into(),
+      schema,
+      required: false,
     }
   }
 }
@@ -251,6 +261,14 @@ mod tests {
     assert!(ast.constraints.is_empty());
     assert!(ast.annotations.is_empty());
     assert_eq!(SchemaAst::default().kind, SchemaKind::Any);
+  }
+
+  #[test]
+  fn field_constructors_set_required() {
+    let req = Field::required("a", SchemaAst::any());
+    let opt = Field::optional("b", SchemaAst::any());
+    assert!(req.required && !opt.required);
+    assert_eq!(opt.name, "b");
   }
 
   #[test]

@@ -11,9 +11,9 @@
 //! | [`ast`] | [`SchemaAst`], [`SchemaKind`], [`Constraints`], [`Annotations`] — introspectable wire shape | Stratum 0 |
 //! | [`parse`] | [`Schema`], [`ParseError`], [`Unknown`], primitives, `tuple`/`tuple3`..`tuple12`, `struct_`/`struct3`..`struct12`, … | [`data`], [`ast`] |
 //! | [`extra`] | [`record`], [`suspend`], [`suspend_named`], [`union_chain`], literals, [`wire_equal`](extra::wire_equal), [`null_or`](extra::null_or) | [`parse`] |
-//! | [`validators`] | [`min_length`], [`max_length`], [`pattern`], [`email`], [`uuid`], [`url`], [`one_of`], [`range`], [`min_items`], … | [`parse`] |
+//! | [`validators`] | [`min_length`], [`max_length`], [`pattern`], `regex` (`schema-regex`), [`email`], [`uuid`], [`url`], [`one_of`], [`range`], [`min_items`], … | [`parse`] |
 //! | [`parse_errors`] | [`ParseErrors`] | [`parse`] |
-//! | [`has_schema`] | [`HasSchema`] | [`parse`] |
+//! | [`has_schema`] | [`HasSchema`], [`ast_ref`] | [`parse`] |
 //! | [`serde_bridge`] | JSON → [`Unknown`] (`schema-serde` feature) | [`parse`], `serde_json` |
 //! | `json_schema_export` | JSON Schema 2020-12 export: `to_json_schema`, `json_schema_for`, `Schema::json_schema` (`schema-serde`) | [`ast`], `serde_json` |
 //!
@@ -45,7 +45,7 @@ pub use equal::{EffectHash, Equal, combine, equals, hash, hash_string, hash_stru
 pub use extra::{
   literal_i64, literal_string, null_or, record, suspend, suspend_named, union_chain, wire_equal,
 };
-pub use has_schema::HasSchema;
+pub use has_schema::{HasSchema, ast_ref};
 pub use order::{DynOrder, Ordering, ordering};
 pub use parse::{
   ParseError, Schema, Unknown, array, bool_, f64, filter, i64, i64_unknown_wire, optional, refine,
@@ -55,6 +55,8 @@ pub use parse::{
 };
 pub use parse_errors::ParseErrors;
 pub use redacted::Redacted;
+#[cfg(feature = "schema-regex")]
+pub use validators::regex;
 pub use validators::{
   NumericBound, email, exclusive_maximum, exclusive_minimum, length, max_items, max_length,
   maximum, min_items, min_length, minimum, non_empty, one_of, pattern, range, url, uuid,

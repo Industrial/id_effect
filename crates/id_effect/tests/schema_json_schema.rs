@@ -361,3 +361,25 @@ fn same_schema_validates_and_exports() {
     ("kid@school.edu".to_owned(), 13)
   );
 }
+
+/// data.schema#8: a real regular expression validates, and the same source is the exported
+/// `pattern`.
+#[cfg(feature = "schema-regex")]
+#[test]
+fn regex_validator_exports_its_pattern() {
+  let slug = id_effect::schema::regex(string::<()>(), r"^[a-z0-9]+(-[a-z0-9]+)*$").unwrap();
+  assert_eq!(
+    slug.json_schema(),
+    doc(json!({"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"}))
+  );
+  let decode = |s: &str| slug.decode_unknown(&Unknown::String(s.into()));
+  assert!(decode("release-0-8").is_ok());
+  for bad in ["", "Release", "a--b", "-a", "a-"] {
+    assert_eq!(
+      decode(bad).unwrap_err().message,
+      "must match pattern ^[a-z0-9]+(-[a-z0-9]+)*$",
+      "{bad:?}"
+    );
+  }
+  assert!(id_effect::schema::regex(string::<()>(), "[").is_err());
+}

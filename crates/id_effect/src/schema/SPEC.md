@@ -237,7 +237,7 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 ### 7.5 Phase 5 — Interop and Rust-only extensions (@TESTING.md)
 
 - **`serde_json::Value` ↔ `Unknown`:** **Done** with feature **`schema-serde`** ([`serde_bridge`](./serde_bridge.rs)); `effect-axum` / `effect-reqwest` delegate to it.
-- **JSON Schema export:** **Done** (0.8) — every built-in combinator records a [`SchemaAst`](./ast.rs); [`json_schema_export`](./json_schema_export.rs) renders draft 2020-12 with constraints, annotations, and `$defs`/`$ref` for `suspend_named`. `Schema::make` codecs (incl. `derive(Schema)`) are opaque (`{}`) unless given `with_ast`.
+- **JSON Schema export:** **Done** (0.8) — every built-in combinator records a [`SchemaAst`](./ast.rs); [`json_schema_export`](./json_schema_export.rs) renders draft 2020-12 with constraints, annotations, and `$defs`/`$ref` for `suspend_named`. `Schema::make` codecs are opaque (`{}`) unless given `with_ast`; `derive(Schema)` attaches a struct AST (nested `HasSchema` fields via [`ast_ref`](./has_schema.rs) → `$defs`/`$ref`). `validators::regex` (feature `schema-regex`) validates with the `regex` crate and exports the same `pattern`.
 - **Extensions:** **`no_std`** subset discussion, **const** metadata where feasible.
 
 **Delivery (`@TESTING.md`):** **Feature-gated** tests (`#[cfg(feature = "…")]`) with **documented** CI matrix; **§Integration Tests** for large JSON files if any.

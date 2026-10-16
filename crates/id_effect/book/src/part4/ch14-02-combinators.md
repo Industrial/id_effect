@@ -53,7 +53,8 @@ assert_eq!(User::schema().decode_unknown(&wire), Ok(user));
 
 `derive(Schema)` implements `HasSchema` with wire type `Unknown`. It accepts `String`, `bool`,
 `i64`, `i32`, `f64`, nested `HasSchema` types, and `Option` / `Vec` of those, with any number of
-fields. Errors carry the field name as their path.
+fields. Errors carry the field name as their path. The derived schema also exports as JSON Schema
+(see [Derived types](#derived-types) below).
 
 ## Optional and Nullable Values
 
@@ -155,5 +156,44 @@ assert_eq!(signup.json_schema(), serde_json::json!({
 What cannot be introspected is exported loosely rather than wrongly: a hand-written
 `Schema::make` codec exports `{}` (accept anything) unless you attach a description with
 `.with_ast(...)`, an arbitrary `refine` predicate adds no keyword, and `transform` exports its
-inner wire schema. `#[derive(Schema)]` types currently build through `Schema::make`, so they
-export as `{}` for now. OpenAPI documents generated from routes are a later release.
+inner wire schema. OpenAPI documents generated from routes are a later release.
+
+### Derived types
+
+`#[derive(Schema)]` attaches the AST for you, built from each field's own schema, so
+`json_schema_for::<User>()` describes the struct. Every field is `required` except `Option<T>`
+fields, which may be missing or `null`; `i32` fields carry their range. A field whose type is
+another `HasSchema` type becomes a `$ref` into `$defs`, keyed by the type's path
+(`ast_ref::<T>()`), so the type is written once and recursive types terminate:
+
+```rust,ignore
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+struct Address { street: String, zip: Option<String> }
+
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+struct Person { name: String, home: Address }
+
+assert_eq!(json_schema_for::<Person>(), serde_json::json!({
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "home": { "$ref": "#/$defs/my_app::Address" }
+  },
+  "required": ["name", "home"],
+  "$defs": {
+    "my_app::Address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" },
+        "zip": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "required": ["street"]
+    }
+  }
+}));
+```
+
+The `$defs` key comes from `std::any::type_name` (characters that are not valid in a URI fragment
+become `_`); it documents the type and is not a stable identifier across compiler versions.
+`derive(Schema)` supports structs with named fields only, so there is no derived enum export.

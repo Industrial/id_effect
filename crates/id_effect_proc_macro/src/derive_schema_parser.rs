@@ -1,5 +1,6 @@
 //! `#[derive(Schema)]` — `schema()` +
-//! `HasSchema` codegen over the JSON-shaped `Unknown` wire.
+//! `HasSchema` codegen over the JSON-shaped `Unknown` wire, with a `SchemaAst` describing the
+//! struct so JSON Schema export sees its fields.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -33,6 +34,7 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
   let mut decode_fields = Vec::new();
   let mut encode_pairs = Vec::new();
   let mut field_idents = Vec::new();
+  let mut ast_fields = Vec::new();
 
   for field in fields {
     let field_ident = field.ident.as_ref().expect("named field");
@@ -56,6 +58,8 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
 
     let encode_expr = schema_encode_expr(&field.ty, field_ident, &wire_lit);
     encode_pairs.push(encode_expr);
+
+    ast_fields.push(schema_field_ast(&field.ty, &wire_lit));
   }
 
   let struct_expr = if field_idents.is_empty() {
@@ -104,6 +108,9 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
             Ok(#struct_expr)
           },
         )
+        .with_ast(::id_effect::schema::SchemaAst::new(
+          ::id_effect::schema::SchemaKind::Struct(::std::vec![ #( #ast_fields ),* ]),
+        ))
       }
     }
 
@@ -424,6 +431,69 @@ fn schema_for_type(ty: &Type) -> proc_macro2::TokenStream {
   }
   let ty_tokens = quote! { #ty };
   quote! { <#ty_tokens as ::id_effect::schema::HasSchema>::schema() }
+}
+
+/// `SchemaAst` `Field` for one struct field: `Option<T>` keys may be missing or `null` (not
+/// required, nullable), everything else is required.
+fn schema_field_ast(ty: &Type, wire_lit: &LitStr) -> proc_macro2::TokenStream {
+  if let Type::Path(path) = ty
+    && last_segment_is(path, "Option")
+    && let Some(inner) = extract_generic(ty, 0)
+  {
+    let inner_ast = schema_ast_for_type(inner);
+    return quote! {
+      ::id_effect::schema::Field::optional(
+        #wire_lit,
+        ::id_effect::schema::SchemaAst::new(::id_effect::schema::SchemaKind::Nullable(
+          ::std::boxed::Box::new(#inner_ast),
+        )),
+      )
+    };
+  }
+  let ast = schema_ast_for_type(ty);
+  quote! { ::id_effect::schema::Field::required(#wire_lit, #ast) }
+}
+
+/// `SchemaAst` expression for a field type, mirroring `schema_decode_expr`. Other `HasSchema`
+/// types become named lazy references (`ast_ref::<T>()`), so recursive types terminate and export
+/// via `$defs` / `$ref`.
+fn schema_ast_for_type(ty: &Type) -> proc_macro2::TokenStream {
+  let Type::Path(path) = ty else {
+    // Unsupported; decode/encode codegen already reports the error.
+    return quote! { ::id_effect::schema::SchemaAst::any() };
+  };
+  if path.path.is_ident("i32") {
+    return quote! {
+      {
+        let mut ast = ::id_effect::schema::i64::<()>().ast().clone();
+        ast.constraints.minimum = ::std::option::Option::Some(
+          ::std::primitive::f64::from(::std::primitive::i32::MIN),
+        );
+        ast.constraints.maximum = ::std::option::Option::Some(
+          ::std::primitive::f64::from(::std::primitive::i32::MAX),
+        );
+        ast
+      }
+    };
+  }
+  if ["String", "bool", "i64", "f64"]
+    .iter()
+    .any(|name| path.path.is_ident(name))
+  {
+    let schema = schema_for_type(ty);
+    return quote! { #schema.ast().clone() };
+  }
+  if last_segment_is(path, "Vec")
+    && let Some(inner) = extract_generic(ty, 0)
+  {
+    let inner_ast = schema_ast_for_type(inner);
+    return quote! {
+      ::id_effect::schema::SchemaAst::new(::id_effect::schema::SchemaKind::Array(
+        ::std::boxed::Box::new(#inner_ast),
+      ))
+    };
+  }
+  quote! { ::id_effect::schema::ast_ref::<#ty>() }
 }
 
 /// `i32` over the `i64` wire: decode range-checks, encode widens losslessly.
