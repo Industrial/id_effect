@@ -1,17 +1,4 @@
-//! [`AppConfig`]: every setting of the showcase as one `Config<T>` descriptor
-//! ([`AppConfig::config`]), provided to the program as a capability by [`AppConfig::layer`].
-//!
-//! | Variable | Default | Meaning |
-//! |---|---|---|
-//! | `HOST` | `0.0.0.0` | bind address ([`HostConfig`]) |
-//! | `PORT` | `8080` | listen port ([`HostConfig`]) |
-//! | `SHUTDOWN_TIMEOUT_SECS` | `30` | graceful drain on shutdown ([`HostConfig`]) |
-//! | `REQUEST_TIMEOUT` | `2s` | per-request handler timeout (a duration: `500ms`, `2s`, ...) |
-//! | `DATABASE_URL` | unset | PostgreSQL URL; unset runs without a database |
-//! | `DATABASE_MAX_CONNECTIONS` | `16` | pool size when `DATABASE_URL` is set |
-//!
-//! Every key is read together ([`Config::all`]), so a misconfigured process reports all of its
-//! bad keys at once.
+//! [`AppConfig`]: the showcase's configuration, its `Config<T>` descriptor and its layer.
 
 use std::time::Duration;
 
@@ -19,22 +6,9 @@ use id_effect::{Layer, caps};
 use id_effect_axum::HostConfig;
 use id_effect_config::{Config, ConfigEnv, ConfigError, Secret};
 
-/// Default per-request handler timeout (`REQUEST_TIMEOUT`).
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+use super::DatabaseConfig;
 
-/// Default pool size (`DATABASE_MAX_CONNECTIONS`).
-pub const DEFAULT_MAX_CONNECTIONS: u32 = 16;
-
-/// PostgreSQL settings, present when `DATABASE_URL` is set.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DatabaseConfig {
-  /// Connection URL (`postgres://…`); redacted in `Debug` output.
-  pub url: Secret<String>,
-  /// Maximum pooled connections.
-  pub max_connections: u32,
-}
-
-/// The showcase's configuration.
+/// The showcase's configuration (the [module docs](super) list its variables).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppConfig {
   /// Bind address, port and shutdown drain of the HTTP server.
@@ -46,14 +20,18 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-  /// The descriptor: [`HostConfig::config`] plus the showcase's own keys (module docs), loaded
-  /// together and validated.
+  /// Default per-request handler timeout (`REQUEST_TIMEOUT`).
+  pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+
+  /// The descriptor: [`HostConfig::config`] plus the showcase's own keys, loaded together and
+  /// validated (Effect.ts `Config.all(..).pipe(Config.mapOrFail(..))`).
   pub fn config() -> Config<AppConfig> {
     Config::all((
       HostConfig::config(),
-      Config::duration("REQUEST_TIMEOUT").with_default(DEFAULT_REQUEST_TIMEOUT),
+      Config::duration("REQUEST_TIMEOUT").with_default(Self::DEFAULT_REQUEST_TIMEOUT),
       Config::optional_string("DATABASE_URL"),
-      Config::integer("DATABASE_MAX_CONNECTIONS").with_default(i64::from(DEFAULT_MAX_CONNECTIONS)),
+      Config::integer("DATABASE_MAX_CONNECTIONS")
+        .with_default(i64::from(DatabaseConfig::DEFAULT_MAX_CONNECTIONS)),
     ))
     .map_attempt(Self::from_parts)
   }
@@ -68,6 +46,8 @@ impl AppConfig {
     Self::config().layer()
   }
 
+  /// Validates the raw keys: a positive request timeout, a pool size in `1..=u32::MAX`; a blank
+  /// `DATABASE_URL` means no database.
   fn from_parts(
     (host, request_timeout, database_url, max_connections): (
       HostConfig,
@@ -107,10 +87,10 @@ impl AppConfig {
 
 #[cfg(test)]
 mod tests {
-  use super::*;
-  use id_effect::Exit;
-  use id_effect::{Effect, need};
+  use id_effect::{Effect, Exit, need};
   use id_effect_config::{ConfigProvider, MapConfigProvider};
+
+  use super::*;
 
   fn load(pairs: &[(&str, &str)]) -> Result<AppConfig, ConfigError> {
     AppConfig::config().load(&MapConfigProvider::from_pairs(pairs.iter().copied()))
@@ -120,7 +100,7 @@ mod tests {
   fn defaults_without_a_database() {
     let cfg = load(&[]).unwrap();
     assert_eq!(cfg.host.bind_port, 8080);
-    assert_eq!(cfg.request_timeout, DEFAULT_REQUEST_TIMEOUT);
+    assert_eq!(cfg.request_timeout, AppConfig::DEFAULT_REQUEST_TIMEOUT);
     assert_eq!(cfg.database, None);
   }
 
@@ -142,6 +122,15 @@ mod tests {
   }
 
   #[test]
+  fn the_pool_size_defaults() {
+    let db = load(&[("DATABASE_URL", "postgres://db/app")])
+      .unwrap()
+      .database
+      .unwrap();
+    assert_eq!(db.max_connections, DatabaseConfig::DEFAULT_MAX_CONNECTIONS);
+  }
+
+  #[test]
   fn blank_database_url_means_no_database() {
     assert_eq!(load(&[("DATABASE_URL", " ")]).unwrap().database, None);
   }
@@ -157,6 +146,12 @@ mod tests {
   #[test]
   fn rejects_a_zero_request_timeout() {
     assert!(load(&[("REQUEST_TIMEOUT", "0s")]).is_err());
+  }
+
+  #[test]
+  fn rejects_an_out_of_range_pool_size() {
+    assert!(load(&[("DATABASE_MAX_CONNECTIONS", "-1")]).is_err());
+    assert!(load(&[("DATABASE_MAX_CONNECTIONS", "4294967296")]).is_err());
   }
 
   #[test]

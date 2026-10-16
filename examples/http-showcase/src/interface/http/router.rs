@@ -1,135 +1,17 @@
-//! The `/todos` HTTP routes: decode the request (path id, JSON body), run the [`crate::app`]
-//! use case as one request fiber ([`id_effect_axum::execute`]) and answer its outcome
-//! ([`AppError`] for failures).
-//!
-//! | Method and path | Body | Success |
-//! |---|---|---|
-//! | `GET /todos` | | `200` `[Todo]` |
-//! | `POST /todos` | `{"title": ".."}` | `201` `Todo` |
-//! | `POST /todos/batch` | `{"titles": [".."]}` | `201` `[Todo]`, all or none |
-//! | `GET /todos/{id}` | | `200` `Todo` |
-//! | `PATCH /todos/{id}` | `{"title"?: "..", "completed"?: bool}` | `200` `Todo` |
-//! | `DELETE /todos/{id}` | | `204` |
-//!
-//! A `Todo` is `{"id": 1, "title": "..", "completed": false}`. A malformed id or body is `422`.
+//! [`router`]: the service's HTTP routes over an [`AppEnv`].
 
-use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
-use axum::response::Response;
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use id_effect::{Effect, fail};
-use id_effect_axum::execute;
-use serde::Deserialize;
+use axum::Router;
+use id_effect_axum::health_router;
 
-use crate::app::{self, AppEnv};
-use crate::error::AppError;
+use super::todo_routes;
+use crate::application::AppEnv;
 
-/// `POST /todos` body.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateTodo {
-  /// The title (trimmed; 1 to 200 characters).
-  pub title: String,
-}
-
-/// `POST /todos/batch` body.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateTodos {
-  /// The titles; stored all together or not at all.
-  pub titles: Vec<String>,
-}
-
-/// `PATCH /todos/{id}` body: the fields to change.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UpdateTodo {
-  /// The new title.
-  pub title: Option<String>,
-  /// The new completion state.
-  pub completed: Option<bool>,
-}
-
-/// The `/todos` routes over the [`AppEnv`] state.
-pub fn todo_routes() -> Router<AppEnv> {
+/// `GET /health` (liveness, always `200 ok`) and the `/todos` routes ([`todo_routes`]) over
+/// `env`.
+pub fn router(env: AppEnv) -> Router {
   Router::new()
-    .route("/todos", get(list).post(create))
-    .route("/todos/batch", post(create_batch))
-    .route("/todos/{id}", get(show).patch(update).delete(remove))
-}
-
-/// A path id: a decimal `i64` (`422` otherwise).
-fn parse_id(raw: &str) -> Result<i64, AppError> {
-  raw
-    .parse()
-    .map_err(|_| AppError::Invalid(format!("the todo id must be an integer, not {raw:?}")))
-}
-
-/// A JSON body (`422` for a missing or wrong content type, bad JSON or a bad shape).
-fn body<T>(body: Result<Json<T>, JsonRejection>) -> Result<T, AppError> {
-  body
-    .map(|Json(t)| t)
-    .map_err(|rejection| AppError::Invalid(rejection.body_text()))
-}
-
-/// Runs `build(input)` as the request's effect, or fails it with the decode error.
-async fn respond<T, A, F>(state: State<AppEnv>, input: Result<T, AppError>, build: F) -> Response
-where
-  T: Send + 'static,
-  A: axum::response::IntoResponse + Send + 'static,
-  F: FnOnce(T) -> Effect<A, AppError, AppEnv> + Send + 'static,
-{
-  execute(state, move |_| match input {
-    Ok(input) => build(input),
-    Err(e) => fail(e),
-  })
-  .await
-}
-
-async fn list(state: State<AppEnv>) -> Response {
-  execute(state, |_| app::list_todos().map(Json)).await
-}
-
-async fn create(state: State<AppEnv>, input: Result<Json<CreateTodo>, JsonRejection>) -> Response {
-  respond(state, body(input), |input: CreateTodo| {
-    app::create_todo(&input.title).map(|todo| (StatusCode::CREATED, Json(todo)))
-  })
-  .await
-}
-
-async fn create_batch(
-  state: State<AppEnv>,
-  input: Result<Json<CreateTodos>, JsonRejection>,
-) -> Response {
-  respond(state, body(input), |input: CreateTodos| {
-    app::create_todos(&input.titles).map(|todos| (StatusCode::CREATED, Json(todos)))
-  })
-  .await
-}
-
-async fn show(state: State<AppEnv>, Path(id): Path<String>) -> Response {
-  respond(state, parse_id(&id), |id| app::get_todo(id).map(Json)).await
-}
-
-async fn update(
-  state: State<AppEnv>,
-  Path(id): Path<String>,
-  input: Result<Json<UpdateTodo>, JsonRejection>,
-) -> Response {
-  let input = parse_id(&id).and_then(|id| body(input).map(|patch| (id, patch)));
-  respond(state, input, |(id, patch): (i64, UpdateTodo)| {
-    app::update_todo(id, patch.title.as_deref(), patch.completed).map(Json)
-  })
-  .await
-}
-
-async fn remove(state: State<AppEnv>, Path(id): Path<String>) -> Response {
-  respond(state, parse_id(&id), |id| {
-    app::delete_todo(id).map(|()| StatusCode::NO_CONTENT)
-  })
-  .await
+    .merge(health_router())
+    .merge(todo_routes().with_state(env))
 }
 
 #[cfg(test)]
@@ -142,20 +24,28 @@ mod tests {
   use tower::ServiceExt;
 
   use super::*;
-  use crate::app::{DEFAULT_RETRIES, RequestPolicy, app_env};
-  use crate::repo::doubles::{FlakyRepo, SlowRepo};
-  use crate::repo::{InMemoryTodoRepo, TodoRepo, TodoRepoService};
+  use crate::application::{RequestPolicy, new_app_env};
+  use crate::domain::todo::{TodoRepository, TodoRepositoryService};
+  use crate::infrastructure::doubles::{FlakyTodoRepository, SlowTodoRepository};
+  use crate::infrastructure::memory::InMemoryTodoRepository;
 
   fn policy(timeout: Duration) -> RequestPolicy {
-    RequestPolicy::new(timeout, DEFAULT_RETRIES, Duration::from_millis(1))
+    RequestPolicy::new(
+      timeout,
+      RequestPolicy::DEFAULT_RETRIES,
+      Duration::from_millis(1),
+    )
   }
 
-  fn app_with(repo: impl TodoRepo, policy: RequestPolicy) -> Router {
-    crate::router(app_env(TodoRepoService::new(repo), policy))
+  fn app_with(repo: impl TodoRepository, policy: RequestPolicy) -> Router {
+    router(new_app_env(TodoRepositoryService::new(repo), policy))
   }
 
   fn app() -> Router {
-    app_with(InMemoryTodoRepo::new(), policy(Duration::from_secs(5)))
+    app_with(
+      InMemoryTodoRepository::new(),
+      policy(Duration::from_secs(5)),
+    )
   }
 
   /// Sends one request; returns the status and the JSON body (`Null` when empty).
@@ -178,6 +68,12 @@ mod tests {
       serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(format!("{bytes:?}")))
     };
     (status, json)
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn health_is_200() {
+    let (status, _) = call(&app(), Method::GET, "/health", None).await;
+    assert_eq!(status, 200);
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -292,8 +188,31 @@ mod tests {
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn ids_and_bodies_decode_to_422_with_a_message() {
+    let app = app();
+    let (status, json) = call(&app, Method::GET, "/todos/abc", None).await;
+    assert_eq!(status, 422);
+    assert_eq!(
+      json["message"],
+      json!("the todo id must be an integer, not \"abc\"")
+    );
+    let (status, json) = call(&app, Method::POST, "/todos", Some(r#"{"title":1}"#)).await;
+    assert_eq!((status, &json["error"]), (422, &json!("invalid")));
+    assert!(
+      json["message"].as_str().unwrap().contains("`title`"),
+      "{json}"
+    );
+    let (status, json) = call(&app, Method::PATCH, "/todos/1", Some(r#"{"done":true}"#)).await;
+    assert_eq!((status, &json["error"]), (422, &json!("invalid")));
+    assert!(
+      json["message"].as_str().unwrap().contains("`done`"),
+      "{json}"
+    );
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn a_repo_failing_twice_then_succeeding_answers_200_after_3_calls() {
-    let repo = FlakyRepo::new(InMemoryTodoRepo::new(), 2);
+    let repo = FlakyTodoRepository::new(InMemoryTodoRepository::new(), 2);
     let app = app_with(repo.clone(), policy(Duration::from_secs(5)));
     assert_eq!(
       call(&app, Method::GET, "/todos", None).await,
@@ -304,28 +223,46 @@ mod tests {
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn a_repo_that_stays_down_answers_503() {
-    let repo = FlakyRepo::new(InMemoryTodoRepo::new(), u32::MAX);
+    let repo = FlakyTodoRepository::new(InMemoryTodoRepository::new(), u32::MAX);
     let app = app_with(repo.clone(), policy(Duration::from_secs(5)));
     let (status, json) = call(&app, Method::GET, "/todos", None).await;
     assert_eq!((status, &json["error"]), (503, &json!("unavailable")));
-    assert_eq!(repo.calls(), 1 + DEFAULT_RETRIES as u32);
+    assert_eq!(repo.calls(), 1 + RequestPolicy::DEFAULT_RETRIES as u32);
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn an_open_circuit_breaker_answers_503_without_calling_the_store() {
+    let repo = FlakyTodoRepository::new(InMemoryTodoRepository::new(), u32::MAX);
+    let app = app_with(repo.clone(), policy(Duration::from_secs(5)));
+    // Each request fails up to `1 + DEFAULT_RETRIES` attempts until the breaker opens.
+    while repo.calls() < RequestPolicy::BREAKER_THRESHOLD {
+      let (status, _) = call(&app, Method::GET, "/todos", None).await;
+      assert_eq!(status, 503);
+    }
+    let calls = repo.calls();
+    let (status, json) = call(&app, Method::GET, "/todos", None).await;
+    assert_eq!((status, &json["error"]), (503, &json!("unavailable")));
+    assert!(
+      json["message"]
+        .as_str()
+        .unwrap()
+        .contains("circuit breaker"),
+      "{json}"
+    );
+    assert_eq!(
+      repo.calls(),
+      calls,
+      "an open breaker does not call the store"
+    );
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
   async fn a_slow_repo_answers_504() {
-    let repo = SlowRepo::new(InMemoryTodoRepo::new(), Duration::from_secs(30));
+    let repo = SlowTodoRepository::new(InMemoryTodoRepository::new(), Duration::from_secs(30));
     let app = app_with(repo, policy(Duration::from_millis(50)));
     let started = std::time::Instant::now();
     let (status, json) = call(&app, Method::GET, "/todos", None).await;
     assert_eq!((status, &json["error"]), (504, &json!("timeout")));
     assert!(started.elapsed() < Duration::from_secs(5));
-  }
-
-  #[test]
-  fn ids_and_bodies_decode() {
-    assert_eq!(parse_id("42"), Ok(42));
-    assert!(matches!(parse_id("4.2"), Err(AppError::Invalid(_))));
-    let patch: UpdateTodo = serde_json::from_str(r#"{"title":"x"}"#).unwrap();
-    assert_eq!((patch.title.as_deref(), patch.completed), (Some("x"), None));
   }
 }

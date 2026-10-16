@@ -1,76 +1,19 @@
-//! Request telemetry: one OpenTelemetry span and one latency histogram observation per request.
-//!
-//! [`instrument`] wraps a [`Router`] in a middleware that runs every request (the rest of the
-//! stack, handler included) as one fiber under
-//!
-//! - a span `"{method} {route}"` with the attributes `http.route` (the matched route
-//!   template, e.g. `/todos/{id}`, or `unmatched`) and `http.request.method`, exported through
-//!   [`OtelSpanHook`] and parented under the incoming W3C `traceparent` when there is one;
-//! - [`Histogram::track_duration`] on [`REQUEST_DURATION`] (seconds), tagged with the same two
-//!   attributes, in a [`MetricRegistry`] bridged to OpenTelemetry
-//!   ([`bridge_metrics`](id_effect_opentelemetry::bridge_metrics)).
-//!
-//! Export is optional. [`Telemetry::from_env`] installs the OTLP starter
-//! ([`install_from_config`]) only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (the other standard
-//! `OTEL_*` variables apply, see [`OtelConfig::from_env`]); without it, or when the exporter cannot
-//! be built, spans are not exported and the histogram only records into the process registry, so
-//! the showcase runs without a collector.
-//!
-//! Spans that handlers open themselves (`Effect::with_span`) are not exported: handler effects
-//! run on their own request fibers (`id_effect_axum`), outside this middleware's span hook.
-//!
-//! ```
-//! use axum::Router;
-//! use axum::routing::get;
-//! use id_effect::MetricRegistry;
-//! use http_showcase::telemetry::Telemetry;
-//!
-//! // No exporter: requests are timed into `registry`, spans go nowhere.
-//! let registry = MetricRegistry::new();
-//! let app: Router = Telemetry::new(&registry, None)
-//!   .instrument(Router::new().route("/ping", get(|| async { "pong" })));
-//! # let _ = app;
-//! ```
+//! [`Telemetry`]: where request spans and the latency histogram go.
 
 use std::convert::Infallible;
 use std::sync::OnceLock;
 
 use axum::Router;
-use axum::extract::{MatchedPath, Request, State};
-use axum::middleware::{self, Next};
+use axum::middleware;
 use axum::response::Response;
-use id_effect::{Boundaries, Effect, Histogram, Metric, MetricRegistry, from_async};
-use id_effect_axum::{EffectExecutor, exit_response};
-use id_effect_opentelemetry::{
-  OtelConfig, OtelSpanHook, OtelStarterGuard, extract_trace_context_from_headers,
-  install_from_config,
-};
+use id_effect::{Boundaries, Effect, Histogram, Metric, MetricRegistry};
+use id_effect_opentelemetry::{OtelConfig, OtelSpanHook, OtelStarterGuard, install_from_config};
 use opentelemetry::Context;
 
-/// The latency histogram's name (OpenTelemetry HTTP semantic conventions), in seconds.
-pub const REQUEST_DURATION: &str = "http.server.request.duration";
+use super::track_request;
 
-/// The span / histogram attribute carrying the matched route template.
-pub const ROUTE: &str = "http.route";
-
-/// The span / histogram attribute carrying the request method.
-pub const METHOD: &str = "http.request.method";
-
-/// The `http.route` value of a request no route matched (the fallback).
-pub const UNMATCHED: &str = "unmatched";
-
-/// The environment variable that turns export on ([`Telemetry::from_env`]).
-pub const ENDPOINT_VAR: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
-
-/// The instrumentation scope / default `service.name`.
-pub const SERVICE_NAME: &str = "http_showcase";
-
-/// Bucket boundaries (seconds) recommended for `http.server.request.duration`.
-const DURATION_BUCKETS: [f64; 14] = [
-  0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
-];
-
-/// Where request spans and the latency histogram go. Cheap to clone.
+/// Where request spans and the latency histogram go (see the [module docs](super)). Cheap to
+/// clone.
 #[derive(Clone)]
 pub struct Telemetry {
   latency: Histogram,
@@ -89,11 +32,37 @@ impl std::fmt::Debug for Telemetry {
 }
 
 impl Telemetry {
-  /// Requests timed into `registry`'s [`REQUEST_DURATION`] histogram (bridge the registry to
-  /// export it); spans exported through `spans` when given.
+  /// The latency histogram's name (OpenTelemetry HTTP semantic conventions), in seconds.
+  pub const REQUEST_DURATION: &'static str = "http.server.request.duration";
+
+  /// The span / histogram attribute carrying the matched route template.
+  pub const ROUTE: &'static str = "http.route";
+
+  /// The span / histogram attribute carrying the request method.
+  pub const METHOD: &'static str = "http.request.method";
+
+  /// The `http.route` value of a request no route matched (the fallback).
+  pub const UNMATCHED: &'static str = "unmatched";
+
+  /// The environment variable that turns export on ([`Self::from_env`]).
+  pub const ENDPOINT_VAR: &'static str = "OTEL_EXPORTER_OTLP_ENDPOINT";
+
+  /// The instrumentation scope / default `service.name`.
+  pub const SERVICE_NAME: &'static str = "http_showcase";
+
+  /// Bucket boundaries (seconds) recommended for [`Self::REQUEST_DURATION`].
+  pub const DURATION_BUCKETS: [f64; 14] = [
+    0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0,
+  ];
+
+  /// Requests timed into `registry`'s [`Self::REQUEST_DURATION`] histogram (bridge the
+  /// registry to export it); spans exported through `spans` when given.
   pub fn new(registry: &MetricRegistry, spans: Option<OtelSpanHook>) -> Self {
     Self {
-      latency: registry.histogram(REQUEST_DURATION, Boundaries::new(DURATION_BUCKETS)),
+      latency: registry.histogram(
+        Self::REQUEST_DURATION,
+        Boundaries::new(Self::DURATION_BUCKETS),
+      ),
       spans,
       guard: None,
     }
@@ -107,7 +76,7 @@ impl Telemetry {
   /// Exports through an installed OTLP starter: spans on its tracer provider, the histogram in
   /// [`MetricRegistry::global`] (which the starter bridges). The guard is kept alive.
   pub fn from_guard(guard: OtelStarterGuard) -> Self {
-    let spans = OtelSpanHook::for_provider(&guard.providers().tracer, SERVICE_NAME);
+    let spans = OtelSpanHook::for_provider(&guard.providers().tracer, Self::SERVICE_NAME);
     Self {
       guard: Some(guard),
       ..Self::new(MetricRegistry::global(), Some(spans))
@@ -115,17 +84,17 @@ impl Telemetry {
   }
 
   /// [`Self::from_guard`] on [`install_from_config`]`(`[`OtelConfig::from_env`]`)` when
-  /// [`ENDPOINT_VAR`] is set and not blank, else [`Self::disabled`]. A configuration or exporter
-  /// error is reported on stderr and also falls back to [`Self::disabled`]: telemetry never
-  /// stops the service from starting.
+  /// [`Self::ENDPOINT_VAR`] is set and not blank, else [`Self::disabled`]. A configuration or
+  /// exporter error is reported on stderr and also falls back to [`Self::disabled`]: telemetry
+  /// never stops the service from starting.
   pub fn from_env() -> Self {
-    match std::env::var(ENDPOINT_VAR) {
+    match std::env::var(Self::ENDPOINT_VAR) {
       Ok(endpoint) if !endpoint.trim().is_empty() => {}
       _ => return Self::disabled(),
     }
     let installed = OtelConfig::from_env().and_then(|mut config| {
       if std::env::var_os("OTEL_SERVICE_NAME").is_none() {
-        config.service_name = SERVICE_NAME.into();
+        config.service_name = Self::SERVICE_NAME.into();
       }
       install_from_config(config)
     });
@@ -164,11 +133,12 @@ impl Telemetry {
   /// `router` with every request (fallback included) recorded: one span, one histogram
   /// observation.
   pub fn instrument(&self, router: Router) -> Router {
-    router.layer(middleware::from_fn_with_state(self.clone(), track))
+    router.layer(middleware::from_fn_with_state(self.clone(), track_request))
   }
 
-  /// The effect serving one request: `inner` timed and spanned.
-  fn request_effect(
+  /// The effect serving one request: `inner` timed and spanned, the span parented under
+  /// `parent` when there is one.
+  pub(crate) fn request_effect(
     &self,
     method: String,
     route: String,
@@ -177,12 +147,12 @@ impl Telemetry {
   ) -> Effect<Response, Infallible> {
     let timed = self
       .latency
-      .tagged(ROUTE, route.clone())
-      .tagged(METHOD, method.clone())
+      .tagged(Self::ROUTE, route.clone())
+      .tagged(Self::METHOD, method.clone())
       .track_duration(inner);
     let spanned = timed.with_span_attrs(
       format!("{method} {route}"),
-      [(ROUTE, route), (METHOD, method)],
+      [(Self::ROUTE, route), (Self::METHOD, method)],
     );
     match (&self.spans, parent) {
       (Some(hook), Some(parent)) => {
@@ -192,35 +162,6 @@ impl Telemetry {
       (None, _) => spanned,
     }
   }
-}
-
-/// [`Telemetry::global`]`().`[`instrument`](Telemetry::instrument)`(router)`: the wiring the
-/// showcase applies around its routes.
-pub fn instrument(router: Router) -> Router {
-  Telemetry::global().instrument(router)
-}
-
-/// The W3C trace context of `request`'s headers.
-fn remote_parent(request: &Request) -> Context {
-  let headers: Vec<(String, String)> = request
-    .headers()
-    .iter()
-    .filter_map(|(k, v)| Some((k.as_str().to_owned(), v.to_str().ok()?.to_owned())))
-    .collect();
-  extract_trace_context_from_headers(&Context::new(), &headers)
-}
-
-/// The middleware: runs the rest of the stack as one request fiber under the span and timer.
-async fn track(State(telemetry): State<Telemetry>, request: Request, next: Next) -> Response {
-  let route = request
-    .extensions()
-    .get::<MatchedPath>()
-    .map_or_else(|| UNMATCHED.to_owned(), |p| p.as_str().to_owned());
-  let method = request.method().as_str().to_owned();
-  let parent = telemetry.exports_spans().then(|| remote_parent(&request));
-  let inner = from_async(move || async move { Ok(next.run(request).await) });
-  let eff = telemetry.request_effect(method, route, parent, inner);
-  exit_response(EffectExecutor::global().run_effect(eff).await)
 }
 
 #[cfg(test)]
@@ -242,6 +183,10 @@ mod tests {
   use tower::ServiceExt as _;
 
   use super::*;
+
+  const ROUTE: &str = Telemetry::ROUTE;
+  const METHOD: &str = Telemetry::METHOD;
+  const UNMATCHED: &str = Telemetry::UNMATCHED;
 
   /// A router like the showcase's: a plain axum route, a templated route and an effect handler.
   fn app() -> Router {
@@ -305,14 +250,14 @@ mod tests {
       .map(|kv| kv.value.as_str().into_owned())
   }
 
-  /// `(route, method, count)` per exported histogram data point of [`REQUEST_DURATION`].
+  /// `(route, method, count)` per exported data point of [`Telemetry::REQUEST_DURATION`].
   fn histogram_points(metrics: &InMemoryMetricExporter) -> Vec<(String, String, u64)> {
     let finished = metrics.get_finished_metrics().expect("metrics");
     let last = finished.last().expect("one export");
     let metric = last
       .scope_metrics()
       .flat_map(|s| s.metrics())
-      .find(|m| m.name() == REQUEST_DURATION)
+      .find(|m| m.name() == Telemetry::REQUEST_DURATION)
       .expect("duration histogram exported");
     let AggregatedMetrics::F64(MetricData::Histogram(h)) = metric.data() else {
       panic!("expected an f64 histogram, got {:?}", metric.data());
@@ -439,7 +384,7 @@ mod tests {
   #[test]
   fn from_env_without_an_endpoint_is_disabled() {
     // The test process does not set OTEL_EXPORTER_OTLP_ENDPOINT.
-    if std::env::var_os(ENDPOINT_VAR).is_none() {
+    if std::env::var_os(Telemetry::ENDPOINT_VAR).is_none() {
       let telemetry = Telemetry::from_env();
       assert!(!telemetry.exports_spans());
       assert!(format!("{telemetry:?}").contains("otlp: false"));
