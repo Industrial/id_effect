@@ -17,7 +17,7 @@ Living view of **Effect.ts parity** vs **id_effect** platform crates, as of 0.7 
 | F | Supervision | `id_effect::Supervisor` (`coordination`), `id_effect_process`, `id_effect_node` | core / runtime | Shipped — one layering: core restart primitive, OTP process trees, distributed supervision |
 | G | Cluster / workflow | Process Mesh (`id_effect_process` + `id_effect_node`); `id_effect_workflow` | runtime; labs (unpublished) | Cluster runtime shipped in the mesh. Durable workflow (duroxide-pg journal, bundled-SQLite dev log, fsm bridge) is labs |
 | H | `@effect/ai` | `id_effect_ai` | labs (unpublished) | OpenAI, Anthropic, Cursor vendors; MCP server template |
-| — | Messaging / events | `id_effect_jobs`, `id_effect_events`, `id_effect_graph` | labs (unpublished) | Apalis 1.0 queue, obix outbox/inbox, rdkafka broker, es-entity journal |
+| — | Messaging / events | `id_effect_jobs`, `id_effect_events`, `id_effect_graph` | labs (unpublished) | Apalis 1.0 queue, obix inbox, rdkafka broker, es-entity journal |
 | — | HTTP host (Axum / tower) | `id_effect_axum` (feature `tower` for the `service` module) | integration | Shipped — `EffectExecutor` (bounded admission, `SaturationPolicy`, `DropPolicy`), request-scoped capability overrides |
 | I | Maintenance | `docs/effect-ts-parity/CHECKLIST-upstream-effect.md` | — | Ongoing |
 

@@ -45,4 +45,4 @@ let order = runner.plan()?;
 
 `MemoryEventStore` and `FileJournal` remain for unit tests and local experiments without PostgreSQL.
 
-See also [Async messaging](../part6/ch31-00-async-messaging.md) (obix outbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).
+See also [Async messaging](../part6/ch31-00-async-messaging.md) (outbox and obix inbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).

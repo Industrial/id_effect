@@ -97,7 +97,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
 | [`id_effect_events`](labs/id_effect_events) | unpublished | Event sourcing, projections, and CQRS boundaries for id_effect programs |
 | [`id_effect_graph`](labs/id_effect_graph) | unpublished | Directed acyclic graphs and topological sorting for id_effect programs |
-| [`id_effect_jobs`](labs/id_effect_jobs) | unpublished | Production async messaging — Apalis jobs, obix outbox/inbox, Kafka broker |
+| [`id_effect_jobs`](labs/id_effect_jobs) | unpublished | Production async messaging — Apalis jobs, obix inbox, Kafka broker |
 | [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
 | [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
 | [`id_effect_workflow`](labs/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |

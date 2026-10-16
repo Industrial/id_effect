@@ -4,7 +4,7 @@
 //! |---------|-------|
 //! | `memory` (default) | [`MemoryJobRunner`], [`MemoryOutbox`], [`MemoryBroker`] |
 //! | `apalis` | `ApalisJobQueue`, `JobQueue` |
-//! | `obix` | `ObixOutbox` (relay via `register_event_handler`), `ObixInbox` |
+//! | `obix` | `ObixInbox` (an obix-backed outbox relay returns with the 0.10 jobs battery) |
 //! | `kafka` | `RdKafkaBroker` |
 
 #![forbid(unsafe_code)]
@@ -29,8 +29,6 @@ mod apalis;
 mod kafka;
 #[cfg(feature = "obix")]
 mod obix_inbox;
-#[cfg(feature = "obix")]
-mod obix_outbox;
 
 pub use broker::MessageBroker;
 pub use error::{JobError, OutboxError};
@@ -49,8 +47,6 @@ pub use apalis::{ApalisJobPayload, ApalisJobQueue, JobQueue};
 
 #[cfg(feature = "obix")]
 pub use obix_inbox::{InboxPersistResult, ObixInbox};
-#[cfg(feature = "obix")]
-pub use obix_outbox::{JobsOutboxEvent, ObixOutbox};
 
 #[cfg(feature = "kafka")]
 pub use kafka::{RdKafkaBroker, RdKafkaConfig};

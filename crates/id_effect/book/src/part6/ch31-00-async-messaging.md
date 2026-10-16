@@ -40,11 +40,11 @@ let record = TokioRuntime::current()?
 
 Enable: `id_effect_jobs` features `apalis` (+ `postgres`).
 
-## Transactional outbox — obix
+## Transactional outbox
 
-`ObixOutbox` persists `OutboxRecord` rows through [obix](https://docs.rs/obix) on the shared pool. Relay is driven by obix's [`register_event_handler`](https://docs.rs/obix/latest/obix/struct.Outbox.html#method.register_event_handler); the per-consumer cursor lives in `job_executions.execution_state_json`.
-
-For unit tests only: `memory` feature + `MemoryOutbox` + `relay_outbox`.
+`id_effect_jobs` ships no PostgreSQL outbox adapter today: the `OutboxTable` trait has only the
+in-process `MemoryOutbox` + `relay_outbox` (`memory` feature, for unit tests). A durable outbox
+relay returns with the 0.10 jobs battery.
 
 ## Idempotent inbox — obix + job
 
@@ -66,7 +66,7 @@ Apply `ES_ENTITY_EVENT_JOURNAL_DDL` via `apply_es_entity_journal_ddl`.
 |-------|---------|---------|
 | `id_effect_jobs` (labs) | `memory` (default) | in-process test doubles |
 | `id_effect_jobs` (labs) | `apalis` | Apalis PostgreSQL queue |
-| `id_effect_jobs` (labs) | `obix` | obix outbox + inbox |
+| `id_effect_jobs` (labs) | `obix` | obix idempotent inbox |
 | `id_effect_jobs` (labs) | `kafka` | rdkafka broker |
 | `id_effect_events` (labs) | `postgres` | `EsEntityPgBackend` |
 

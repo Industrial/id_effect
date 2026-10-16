@@ -8,7 +8,7 @@ Production async messaging for [id_effect](https://github.com/Industrial/id_effe
 |---------|-------------|
 | `memory` (default) | In-process `MemoryJobRunner`, `MemoryOutbox`, `MemoryBroker`, `KafkaBrokerStub` |
 | `apalis` | `ApalisJobQueue` — enqueue-only; workers pull via Apalis (takes `apalis_postgres::PgPool`, sqlx 0.9) |
-| `obix` | `ObixOutbox`, `ObixInbox` on shared `sqlx::PgPool` |
+| `obix` | `ObixInbox` on shared `sqlx::PgPool` (an obix outbox relay returns with the 0.10 jobs battery) |
 | `kafka` | `RdKafkaBroker` via rdkafka |
 
 ## Quick start
