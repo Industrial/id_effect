@@ -54,6 +54,23 @@ from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
   `explore_interleavings` / `assert_interleavings` report the failing seed.
 - **Book:** an idiom and style guide (appendix E); its snippets and the interleavings chapter's
   run as doctests.
+- **`id_effect_kit` (new crate):** one dependency for apps, with feature bundles `web`,
+  `sql-pg`, `otel`, `cluster`, `full`, a `prelude`, whole-crate re-exports and `graph`
+  (`LayerGraph`: a layer dependency graph as text or DOT that flags missing providers).
+- **`id_effect_tool` (new crate), the `id-effect` binary:** `id-effect new <name> --template
+  service|worker|cli|cluster [--db pg] [--otel]` generates a project on the kit with tests, a
+  Dockerfile, compose, `.env.example`, a CI workflow and (service) Kamal config; secure defaults,
+  `/health`, `/ready` and `/metrics` are wired in. `id-effect doctor [--json] [--graph]` checks
+  the toolchain, duplicate id_effect versions, env keys, database reachability, docker and the
+  port. CI generates, builds and tests every template and docker-builds the service.
+- **Diagnostics:** a gallery of the 20 most common mistakes (`tests/ui/gallery`,
+  `docs/diagnostics.md`); 17 of their first errors now state the fix (capability, `~` bind,
+  error-conversion and `caps!` errors).
+- **Schema:** `#[derive(Schema)]` types export JSON Schema (`$ref`/`$defs` for nested types);
+  `schema-regex` feature with a `regex` validator.
+- **Docs:** a zero-to-production tutorial; 95 % of the book's Rust snippets now compile in CI
+  (`examples/book-snippets`); `scripts/dx-kpis.sh` measures the first-hour KPIs (new service to
+  `/health` in about 19 s cold).
 
 ### Changed
 

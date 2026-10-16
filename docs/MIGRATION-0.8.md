@@ -71,6 +71,18 @@ the 0.7 import paths still work.
   adds schema, `Cause`, `Duration` and `Chunk` generators, `prop_check` and `StateMachine`.
   0.6 `run_effect` / `success_value` become `prop_run` / `prop_check`.
 
+## Schema
+
+- `json_schema_for::<T>()` for a `#[derive(Schema)]` type now returns the full object schema
+  (it returned `{}`); nested `HasSchema` fields appear as `$ref` into `$defs`, keyed by
+  `std::any::type_name`. Regenerate golden files of derived types.
+
+## Tooling
+
+- `id_effect_cli`'s unused `templates/deploy-kamal/` is removed. `id-effect new <name> --template
+  service` (crate `id_effect_tool`) generates its `Dockerfile`, `config/deploy.yml` and
+  `compose.yaml`; for an existing app, generate a scratch service and copy those files.
+
 ## Observability
 
 - `id_effect_axum::Host` has a new public field `readiness: ReadinessState`;
