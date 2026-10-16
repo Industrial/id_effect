@@ -37,5 +37,9 @@ struct Ch3100AsyncMessaging;
 struct Ch3200WorkflowCluster;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch34-01-doctor-graph.md")]
+struct Ch3401DoctorGraph;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch35-00-ai.md")]
 struct Ch3500Ai;

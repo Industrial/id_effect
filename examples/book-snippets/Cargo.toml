@@ -31,6 +31,9 @@ id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.7.0", featur
   "pg",
 ] }
 id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.7.0" }
+id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.7.0", features = [
+  "full",
+] }
 id_effect_node = { path = "../../crates/id_effect_node", version = "0.7.0" }
 id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.7.0" }
 id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.7.0" }
@@ -58,6 +61,7 @@ opentelemetry_sdk = { version = "0.32", default-features = false, features = [
   "rt-tokio",
   "testing",
 ] }
+http-body-util = "0.1"
 proptest = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 serde = { version = "1", features = ["derive"] }

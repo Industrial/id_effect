@@ -200,6 +200,15 @@ tasks:
       cache: false
       runInCI: false
       outputStyle: stream
+  dx-kpis:
+    description: >-
+      Measure the 0.8 DX KPIs and write docs/benchmarks/dx-kpis-0.8.json: K1 (id-effect new service to GET /health = 200, cold build, budget 180 s), K4 (diagnostics gallery errors that state the fix, >= 17/20), K5 (book rust fences compiled as doctests, >= 80 %). Manual only, not part of ci; run on an idle machine.
+    command: 'bash'
+    args: ['scripts/dx-kpis.sh', '--json']
+    options:
+      cache: false
+      runInCI: false
+      outputStyle: stream
   check-docs:
     description: 'Build docs with -D warnings (same bar as Docs & Pages)'
     command: 'bash'

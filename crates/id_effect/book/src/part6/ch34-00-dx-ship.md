@@ -1,23 +1,43 @@
 # DX and deploy
 
-Platform DX ships deploy templates and CLI parity documented under `docs/platform/`.
+The `id-effect` command (crate `id_effect_tool`) starts a project and checks that it can run;
+every generated project ships with its build, CI and deploy files.
+[Tutorial: zero to production](../tutorial-zero-to-production.md) walks one service through all of
+it.
 
-## Starting an app
+## Starting an app: `id-effect new`
 
-There is no `id-effect new` generator (the earlier placeholder scaffolder was removed in 0.6). Start from the [`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal) template: `app_effect` returns an `Effect<(), ConfigError, ConfigEnv>` and `main` calls `id_effect_cli::run_main(eff, env, RunMainConfig::with_tracing())`. For an HTTP service, start from [`examples/http-showcase`](https://github.com/Industrial/id_effect/tree/main/examples/http-showcase). See [PHASE_E_CLI_PARITY.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/PHASE_E_CLI_PARITY.md).
+```sh
+cargo install id_effect_tool
+id-effect new orders-api --template service      # or worker, cli, cluster
+```
 
-## Kamal deploy template
+| Template | What you get |
+|---|---|
+| `service` | An Axum app with `SecurityLayer::recommended`, `/health`, `/ready`, `/metrics`, graceful shutdown. `--db pg` adds a PostgreSQL pool, a first migration and a `db` readiness check; `--otel` OTLP export. |
+| `worker` | Named cron jobs in a `CronRegistry` under `run_main`. |
+| `cli` | clap, `run_main` and shell completions (the [`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal) shape). |
+| `cluster` | An `id_effect_node` mesh node hosting a process behavior. |
 
-Scaffold under `crates/id_effect_cli/templates/deploy-kamal/`:
+Each project depends on `id_effect_kit` (one dependency, a feature per battery) and has `src/`,
+`tests/`, a multi-stage `Dockerfile`, `compose.yaml`, `.github/workflows/ci.yml` (fmt, clippy,
+test, docker build), `.env.example` and a README. `--local-workspace PATH` builds against an
+id_effect checkout instead of crates.io. The [crate README](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_tool/README.md)
+lists every option.
 
-- `config/deploy.yml.template` — Kamal 2 service definition
-- `Dockerfile.template` — multi-stage Rust release build
+## Checking a project: `id-effect doctor`
 
-Copy to your app root and replace the `{{name}}` placeholders with your binary name.
+`id-effect doctor` checks the toolchain, that the id_effect crates resolve to one version, the
+`.env.example` keys, the database, docker and the port, and exits `1` when a check fails;
+`--graph` also prints the app's layer graph. See [Doctor and the layer graph](./ch34-01-doctor-graph.md).
 
-## Admin scaffold stub
+## Deploy
 
-`templates/admin-stub/` provides a README and placeholder Axum routes for an internal admin UI — not a full Django-admin clone.
+The `service` template's `config/deploy.yml` is a [Kamal 2](https://kamal-deploy.org) config
+(service, image, servers, registry, the `/health` check of Kamal's proxy, the environment and
+secrets); the `Dockerfile` builds the release binary into `debian:bookworm-slim`. Fill in the
+image, servers and registry, put the secrets in `.kamal/secrets`, then `kamal setup` once and
+`kamal deploy` per release.
 
 ## See also
 

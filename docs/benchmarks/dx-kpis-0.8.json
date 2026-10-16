@@ -1,0 +1,47 @@
+{
+	"schema": "id_effect dx-kpis v1",
+	"method": "scripts/dx-kpis.sh (header)",
+	"release": "0.8",
+	"measured_at": "2026-10-16T18:40:00Z",
+	"revision": "d76009d+dirty",
+	"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cores": 32,
+		"mem_gib": 62,
+		"os": "Linux 6.18.55",
+		"load_avg_start": "9.15 5.05 4.97",
+		"load_avg_end": "13.11 6.19 5.35"
+	},
+	"k1": {
+		"seconds": 18.92,
+		"budget_s": 180,
+		"pass": true,
+		"new_s": 0.0,
+		"build_s": 18.9,
+		"boot_to_health_s": 0.01,
+		"template": "service",
+		"target_dir": "fresh",
+		"wrapper": "none"
+	},
+	"k4": {
+		"fixed": 17,
+		"cases": 20,
+		"min": 17,
+		"pass": true,
+		"without_fix": [
+			"not_send_body",
+			"generic_runner_unannotated",
+			"block_on_in_async"
+		]
+	},
+	"k5": {
+		"compiled": 409,
+		"rust_fences": 429,
+		"ignored": 20,
+		"not_included": 0,
+		"percent": 95.3,
+		"min_percent": 80,
+		"pass": true
+	}
+}

@@ -1,12 +1,15 @@
 # `id_effect_tool`
 
-The `id-effect` command. `id-effect new` generates a ready-to-run project on [`id_effect_kit`](../id_effect_kit) from one of four templates embedded in the binary, so it works the same after `cargo install`.
+The `id-effect` command. `id-effect new` generates a ready-to-run project on [`id_effect_kit`](../id_effect_kit) from one of four templates embedded in the binary, so it works the same after `cargo install`. `id-effect doctor` checks that a project can build and run on this machine.
 
 ```sh
 cargo install id_effect_tool          # installs the `id-effect` binary
 id-effect new orders-api --template service
 cd orders-api && cargo test && cargo run
+id-effect doctor                      # toolchain, versions, env, database, docker, port
 ```
+
+The book's [zero-to-production tutorial](../id_effect/book/src/tutorial-zero-to-production.md) takes a generated service through a route, a test, PostgreSQL, doctor, the Docker image and the deploy config.
 
 The package is `id_effect_tool` because crates.io treats `id-effect` and `id_effect` as the same name.
 
@@ -28,6 +31,14 @@ Every project has a `Cargo.toml` depending on `id_effect_kit` (and `id_effect`: 
 
 - `--dest DIR` — where to write (default `./<NAME>`). A non-empty directory is refused; nothing is written then.
 - `--local-workspace PATH` — build against an id_effect checkout: appends a `[patch.crates-io]` section pointing each id_effect crate the project uses at `PATH/crates/<crate>`. `scripts/template-smoke.sh` uses it to test every template in CI.
+
+## `id-effect doctor`
+
+```text
+id-effect doctor [--path DIR] [--json] [--graph[=text|dot]]
+```
+
+Runs every check on the project in `DIR` (default: the current directory) and prints one line per check, `pass`, `warn`, `fail` or `skip`, with the reason: `project` (a `Cargo.toml`), `rustc` (against the project's `rust-version` and the id_effect MSRV), `versions` (the id_effect crates in `Cargo.lock` resolve to one version), `env` (every `.env.example` key set in the environment or `.env`), `database` (`DATABASE_URL` accepts a TCP connection), `docker` (the CLIs, when a `Dockerfile` or compose file exists) and `port` (`HOST:PORT` is free). `--graph` also builds the project, runs it with `--describe-layers` and prints its layer graph (`id_effect_kit::graph::LayerGraph`), which the `service` template registers. It exits `1` when a check fails, else `0`; `--json` prints the report as one object. The book chapter [Doctor and the layer graph](../id_effect/book/src/part6/ch34-01-doctor-graph.md) has the full table.
 
 ## Library
 

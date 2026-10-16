@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](./introduction.md)
+[Tutorial: zero to production](./tutorial-zero-to-production.md)
 
 # Part I: Foundations
 

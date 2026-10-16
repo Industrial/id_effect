@@ -11,6 +11,11 @@ export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 cargo run      # http://127.0.0.1:8080/health (variables: .env.example)
 ```
 
+If it does not start, `id-effect doctor` checks the toolchain, the id_effect versions, the
+`.env.example` keys, `DATABASE_URL`, docker and the port (`cargo install id_effect_tool` for the
+`id-effect` command). `cargo run -- --describe-layers` (or `id-effect doctor --graph`) prints the
+layer graph that `src/main.rs` registers.
+
 | Route | What |
 |---|---|
 | `GET /` | the greeting, counted in `greetings_total` |

@@ -60,6 +60,8 @@ tasks:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
+      # Golden files the graph tests compare against (tests/golden/layers.dot).
+      - 'tests/golden/**'
       - 'examples/**/*.rs'
     options:
       cache: true
