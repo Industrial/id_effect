@@ -22,7 +22,10 @@ id_effect = { path = "../../crates/id_effect", version = "0.8.0", features = [
 id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.8.0", features = [
   "axum",
 ] }
-id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.8.0" }
+id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.8.0", features = [
+  "axum",
+  "testing",
+] }
 id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0", features = [
   "tower",
 ] }

@@ -18,7 +18,10 @@
   effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
   ownership, tenant and ACL resource policies; claim (ABAC) policies; `AuthzError::http_status`
-  (401 / 403 / 500).
+  (401 / 403 / 500). Feature `axum`: route guards (`Guard` layer; `.authorize(guard)` on an axum
+  `MethodRouter` and on a typed `Endpoint`) answering 401 / 403 / 500 as `application/problem+json`.
+  Every decision can be recorded as a serde `DecisionEvent` to the `AuthzEvents` sink capability.
+  Feature `testing`: `AuthzTest` with `assert_allows` / `assert_denies` / `assert_denied_because`.
 - `id_effect_auth`: argon2id `PasswordHasher` (OWASP defaults, rehash-on-verify, dummy verification
   for unknown users, hashing on the blocking pool) and server-side `Sessions` over a `SessionStore`
   (`MemorySessionStore`; idle and absolute timeouts, id rotation on login, rotate / logout /

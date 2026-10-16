@@ -34,7 +34,12 @@
 //! assert_eq!(post_entry().provide_all(hlist![carol, policies]).block_on(), Exit::Success(()));
 //! ```
 //!
-//! Route guards and test helpers build on this API.
+//! - **Decision events** — every decision can be recorded as a serialisable [`DecisionEvent`] to
+//!   the [`AuthzEvents`] sink capability ([`PoliciesBuilder::events`], [`AuthzEvents::observe`]).
+//! - **Route guards** (feature `axum`) — `guard::Guard`, a Tower layer answering 401/403 with
+//!   Problem Details, attached with `guard::AuthorizeExt::authorize`.
+//! - **Test helpers** (feature `testing`) — `testing::AuthzTest` with `assert_allows` /
+//!   `assert_denies` and the decisions it recorded.
 //!
 //! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
 //! under `examples/reference/` depends on it.
@@ -43,16 +48,27 @@
 #![deny(missing_docs)]
 
 mod attr;
+mod audit;
+#[cfg(feature = "axum")]
+pub mod guard;
 mod policy;
 mod principal;
 mod rbac;
 mod registry;
 mod resource;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 pub use attr::{
   ClaimCheck, ClaimContains, ClaimEquals, ClaimMatches, ClaimPolicy, claim, claim_contains,
   claim_equals, claim_matches,
 };
+pub use audit::{
+  AuthzEvents, AuthzEventsEnv, AuthzSink, DecisionEvent, MemorySink, Observed, Outcome,
+  emit_decision, provide_authz_events,
+};
+#[cfg(feature = "axum")]
+pub use guard::{AuthorizeExt, AuthorizedEndpoint, Guard, GuardService};
 pub use policy::{
   AllOf, And, AnyOf, Authenticated, AuthzError, BoxPolicy, Constant, Decision, Denial,
   EffectPolicy, Not, Or, Policy, PolicyEffect, PolicyExt, PredicatePolicy, RequireRole, all_of,

@@ -15,6 +15,12 @@ Authorization for id_effect services. Policies are capabilities:
 - **Attributes** — claim predicates (`claim_equals`, `claim_contains`, `claim`, `claim_matches`).
 - **Named policies** — `Policies`, a registry capability; `authorize(name, resource)` fails with
   `AuthzError` (401 for an anonymous principal, 403 otherwise).
+- **Decision events** — every decision as a serialisable `DecisionEvent` delivered to the
+  `AuthzEvents` sink capability (`MemorySink`, closures, fan-out).
+- **Route guards** (feature `axum`) — `Guard`, a Tower layer evaluating a policy for the
+  request's principal; `.authorize(guard)` on axum and typed routes; 401/403 as Problem Details.
+- **Test helpers** (feature `testing`) — `AuthzTest::assert_allows` / `assert_denies` /
+  `assert_denied_because`, with the decisions it recorded.
 
 ```rust
 use id_effect::{Effect, Exit, HCons, HNil, hlist};
@@ -56,6 +62,8 @@ let denied = read(account).provide_all(hlist![stranger, policies]);
 assert!(matches!(denied.block_on(), Exit::Failure(_)));
 ```
 
-Example: `cargo run -p id_effect_authz --example 010_policies`. Book: Part VI, "Authorization".
+Examples: `cargo run -p id_effect_authz --example 010_policies`;
+`cargo run -p id_effect_authz --example 020_route_guards --features axum,testing`. Book: Part VI,
+"Authorization".
 
 Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).

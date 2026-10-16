@@ -13,6 +13,9 @@ both.
 | Resource rules | `owner()`, `same_tenant()`, `Acl` + `acl_permits(..)` |
 | Attribute rules | `claim_equals`, `claim_contains`, `claim`, `claim_matches` |
 | Rules by name | `Policies` registry, `authorize(name, resource)` |
+| Route guards (feature `axum`) | `Guard`, `.authorize(guard)` on routes |
+| Decision events | `DecisionEvent`, the `AuthzEvents` sink capability |
+| Tests (feature `testing`) | `AuthzTest::assert_allows` / `assert_denies` |
 
 ## The principal
 
@@ -213,6 +216,178 @@ not match the registered one, or a failed lookup (`Evaluation`) is 500.
 
 See `cargo run -p id_effect_authz --example 010_policies` for a small ledger with every rule
 kind.
+
+## Route guards
+
+With the `axum` feature, a **`Guard`** checks a policy before a route's handler runs. It is a
+Tower layer; `.authorize(guard)` (the `AuthorizeExt` trait) attaches it to an axum
+`MethodRouter` or to a typed `id_effect_axum::route::Endpoint`.
+
+- `Guard::new(name, policy)` evaluates a policy over `()` (roles, permissions, claims);
+- `Guard::named(&policies, name)` evaluates a registry policy, so the rule stays defined once;
+- `Guard::request(name, policy)` evaluates a policy over the request head (`http::request::Parts`),
+  e.g. a tenant taken from the path.
+
+The guard finds the principal in the request's extensions: a `CurrentPrincipal` extension (what
+an authentication layer inserts), else one installed by `CapOverrideLayer`, else `Anonymous`.
+The authentication layer therefore wraps the router (`Router::layer`) and the guards sit on the
+routes. A refusal is answered per `AuthzError::http_status` — 401 for an anonymous caller, 403
+for an authenticated one, 500 when the policy cannot be evaluated — with an
+`application/problem+json` body naming the policy. The denial reason stays out of the body
+unless the guard opts in with `.expose_reason(true)`.
+
+```rust
+use axum::extract::Request;
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::{get, post};
+use id_effect_authz::{
+  AuthorizeExt, BasicPrincipal, CurrentPrincipal, Guard, Policies, Rbac, authenticated,
+};
+
+// The authentication layer: whatever proves who the caller is ends here.
+async fn authenticate(mut req: Request, next: Next) -> Response {
+  if let Some(user) = req.headers().get("x-user").and_then(|v| v.to_str().ok()) {
+    let principal = BasicPrincipal::new(user).with_role("viewer");
+    req.extensions_mut().insert(CurrentPrincipal::new(principal));
+  }
+  next.run(req).await
+}
+
+let rbac = Rbac::builder().grant("viewer", ["ledger:read"]).build();
+let policies = Policies::builder()
+  .define::<()>("ledger.read", rbac.require("ledger:read"))
+  .define::<()>("ledger.post", rbac.require("ledger:post"))
+  .build();
+
+let app: axum::Router = axum::Router::new()
+  .route("/me", get(|| async { "signed in" }).authorize(Guard::new("me", authenticated())))
+  .route(
+    "/ledger",
+    get(|| async { "entries" })
+      .authorize(Guard::named(&policies, "ledger.read"))
+      .merge(post(|| async { "posted" }).authorize(Guard::named(&policies, "ledger.post"))),
+  )
+  .layer(middleware::from_fn(authenticate));
+# let _ = app;
+```
+
+A typed endpoint keeps its declaration: `.authorize(..)` on an `Endpoint` returns an
+`AuthorizedEndpoint` that lists its guards' policy names and mounts with its `RouteInfo`
+recorded in the route registry.
+
+```rust
+use id_effect::{Effect, succeed};
+use id_effect_authz::{AuthorizeExt, Guard, authenticated};
+use id_effect_axum::route::{Input, Route, Router};
+
+#[derive(Clone)]
+struct App;
+
+fn report(_: &mut App, _: Input) -> Effect<&'static str, std::convert::Infallible, App> {
+  succeed("report")
+}
+
+let endpoint = Route::get("/reports")
+  .handler(report)
+  .authorize(Guard::new("reports.view", authenticated()));
+assert_eq!(endpoint.policies(), ["reports.view"]);
+
+let (plain, mut registry) = Router::<App>::new().into_parts();
+let app: axum::Router = endpoint.mount(plain, &mut registry).with_state(App);
+assert_eq!(registry.len(), 1);
+# let _ = app;
+```
+
+`AuthzError` also implements `IntoResponse` with the same Problem Details body, so a handler that
+calls `authorize(name, resource)` on a loaded resource can return its error as is.
+
+## Recording decisions
+
+Every decision can be recorded as a **`DecisionEvent`**: the principal's id, whether it was
+authenticated, its tenant, the policy name, a description of the resource, the outcome (`allow`,
+`deny` or `error`) and the reason. The event serialises with serde in a stable shape, so an
+audit log can persist it.
+
+Events go to the **`AuthzEvents`** capability, a handle to one or more sinks (`AuthzSink`):
+`MemorySink` for tests, `AuthzEvents::from_fn` for a logger or a metrics counter,
+`AuthzEvents::and` to fan out. Decisions are recorded where they are made:
+
+- a `Policies` registry built with `.events(sink)` records every named evaluation, which covers
+  `authorize` and `check`;
+- `events.observe(name, policy)` wraps any policy;
+- a route guard records with `.events(sink)`, the resource being `METHOD /path`.
+
+```rust
+use id_effect::Exit;
+use id_effect_authz::{
+  AuthzEvents, BasicPrincipal, CurrentPrincipal, MemorySink, Outcome, Policies, require_role,
+};
+
+let sink = MemorySink::new();
+let policies = Policies::builder()
+  .define::<()>("reports.export", require_role("auditor"))
+  .events(AuthzEvents::new(sink.clone()))
+  .build();
+
+let sam = CurrentPrincipal::new(BasicPrincipal::new("sam"));
+assert!(matches!(
+  policies.evaluate("reports.export", &sam, &()).block_on(),
+  Exit::Success(_)
+));
+
+let event = &sink.events()[0];
+assert_eq!((event.principal.as_str(), event.outcome), ("sam", Outcome::Deny));
+assert_eq!(event.reason.as_deref(), Some("requires role auditor"));
+let json = serde_json::to_value(event).unwrap();
+assert_eq!(json["outcome"], "deny");
+```
+
+Inside an effect, `emit_decision(event)` reads the sink from the environment
+(`provide_authz_events(events)` is its `Layer`).
+
+## Testing policies
+
+The `testing` feature adds **`AuthzTest`**. It evaluates a policy for a principal and asserts
+the outcome — `assert_allows`, `assert_denies` (returns the `Denial`), `assert_denied_because`
+(checks the reason) and their `_named` forms for a registry — and records every decision it
+sees. Its `policies()` record into the harness, and `sink()` plugs into a route guard, so an
+HTTP test can assert the decisions a request triggered.
+
+```rust
+use id_effect_authz::testing::AuthzTest;
+use id_effect_authz::{BasicPrincipal, CurrentPrincipal, Outcome, Policies, Rbac, owner};
+
+struct Account {
+  owner: String,
+}
+impl id_effect_authz::Owned for Account {
+  fn owner_id(&self) -> &str {
+    &self.owner
+  }
+}
+
+let rbac = Rbac::builder().grant("accountant", ["ledger:post"]).build();
+let authz = AuthzTest::with_policies(
+  Policies::builder()
+    .define::<()>("ledger.post", rbac.require("ledger:post"))
+    .build(),
+);
+
+let carl = CurrentPrincipal::new(BasicPrincipal::new("carl").with_role("accountant"));
+let vera = CurrentPrincipal::new(BasicPrincipal::new("vera").with_role("viewer"));
+authz.assert_allows_named(&carl, "ledger.post", &());
+authz.assert_denied_because_named(&vera, "ledger.post", &(), "missing permission ledger:post");
+
+let account = Account { owner: "olga".into() };
+authz.assert_denies(&carl, &owner(), &account);
+
+let outcomes: Vec<Outcome> = authz.events().iter().map(|e| e.outcome).collect();
+assert_eq!(outcomes, [Outcome::Allow, Outcome::Deny, Outcome::Deny]);
+```
+
+See `cargo run -p id_effect_authz --example 020_route_guards --features axum,testing` for guards,
+Problem Details answers and the decision events of a few requests.
 
 ## See also
 

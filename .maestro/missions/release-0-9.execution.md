@@ -47,6 +47,12 @@ Follow-ups recorded during wave 1:
   `id_effect_platform::auth::session` trait.
 - `r09-e5-2a-credentials-jwt` starts after `r09-e5-3-guards-testing`, which defines how the
   principal reaches request extensions.
+- Axum route owner (after `r09-e4-1-extractors-problem`): add `Endpoint::layer` / `from_parts` so
+  `.authorize()` returns an `Endpoint` (today `AuthorizedEndpoint::mount`), and a
+  `RouteInfo.policies` field so OpenAPI and `/_routes` show the guarding policy; switch the authz
+  guard's self-contained Problem body to `id_effect_axum`'s `Problem` type.
+- Gates under concurrent agents: set `TMPDIR` on `/data` (the 2 GB `/tmp` tmpfs fills and crashes
+  llvm-cov / lld).
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 
 ## Waves 2–3

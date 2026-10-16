@@ -50,6 +50,7 @@ use std::sync::Arc;
 
 use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, fail, hlist, need};
 
+use crate::audit::{AuthzEvents, audited};
 use crate::policy::{
   AuthzError, BoxPolicy, Decision, Policy, PolicyEffect, PolicyExt, into_effect,
 };
@@ -62,12 +63,21 @@ struct Entry {
 }
 
 /// A registry of named policies, each over its own resource type. Cheap to clone (shared).
+///
+/// With [`AuthzEvents`] attached ([`PoliciesBuilder::events`], [`Policies::with_events`]) every
+/// evaluation is recorded as a [`DecisionEvent`](crate::DecisionEvent).
 #[derive(Clone, Default)]
-pub struct Policies(Arc<BTreeMap<String, Entry>>);
+pub struct Policies {
+  entries: Arc<BTreeMap<String, Entry>>,
+  events: Option<AuthzEvents>,
+}
 
 /// Builds a [`Policies`] registry.
 #[derive(Default)]
-pub struct PoliciesBuilder(BTreeMap<String, Entry>);
+pub struct PoliciesBuilder {
+  entries: BTreeMap<String, Entry>,
+  events: Option<AuthzEvents>,
+}
 
 impl PoliciesBuilder {
   /// Defines (or redefines) the policy `name` over resources of type `Res` (`()` for rules that
@@ -79,7 +89,7 @@ impl PoliciesBuilder {
     policy: impl Policy<Res>,
   ) -> Self {
     let boxed: BoxPolicy<Res> = policy.boxed();
-    self.0.insert(
+    self.entries.insert(
       name.into(),
       Entry {
         resource: type_name::<Res>(),
@@ -89,15 +99,25 @@ impl PoliciesBuilder {
     self
   }
 
+  /// Records every evaluation of the registry's policies to `events`.
+  #[must_use]
+  pub fn events(mut self, events: AuthzEvents) -> Self {
+    self.events = Some(events);
+    self
+  }
+
   /// The registry.
   pub fn build(self) -> Policies {
-    Policies(Arc::new(self.0))
+    Policies {
+      entries: Arc::new(self.entries),
+      events: self.events,
+    }
   }
 }
 
 impl fmt::Debug for PoliciesBuilder {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_set().entries(self.0.keys()).finish()
+    f.debug_set().entries(self.entries.keys()).finish()
   }
 }
 
@@ -107,26 +127,40 @@ impl Policies {
     PoliciesBuilder::default()
   }
 
+  /// The same policies, recording every evaluation to `events` (the policies stay shared).
+  #[must_use]
+  pub fn with_events(&self, events: AuthzEvents) -> Self {
+    Self {
+      entries: Arc::clone(&self.entries),
+      events: Some(events),
+    }
+  }
+
+  /// The decision-event sink, if one is attached.
+  pub fn events(&self) -> Option<&AuthzEvents> {
+    self.events.as_ref()
+  }
+
   /// Whether a policy is registered as `name`.
   pub fn contains(&self, name: &str) -> bool {
-    self.0.contains_key(name)
+    self.entries.contains_key(name)
   }
 
   /// The registered names, sorted.
   pub fn names(&self) -> impl Iterator<Item = &str> {
-    self.0.keys().map(String::as_str)
+    self.entries.keys().map(String::as_str)
   }
 
   /// The resource type the policy `name` was defined for.
   pub fn resource_type(&self, name: &str) -> Option<&'static str> {
-    self.0.get(name).map(|e| e.resource)
+    self.entries.get(name).map(|e| e.resource)
   }
 
   /// The policy `name` over `Res`: [`AuthzError::UnknownPolicy`] when absent,
   /// [`AuthzError::ResourceMismatch`] when defined for another resource type.
   pub fn get<Res: ?Sized + 'static>(&self, name: &str) -> Result<BoxPolicy<Res>, AuthzError> {
     let entry = self
-      .0
+      .entries
       .get(name)
       .ok_or_else(|| AuthzError::UnknownPolicy(name.to_owned()))?;
     entry
@@ -141,8 +175,22 @@ impl Policies {
   }
 
   /// Evaluates the policy `name`; a denial is attributed to `name`
-  /// ([`Denial::policy`](crate::Denial::policy)).
+  /// ([`Denial::policy`](crate::Denial::policy)). With events attached, the decision (or the
+  /// failure) is recorded, the resource described by its type name.
   pub fn evaluate<Res: ?Sized + 'static>(
+    &self,
+    name: &str,
+    principal: &CurrentPrincipal,
+    resource: &Res,
+  ) -> PolicyEffect {
+    let effect = self.evaluate_unrecorded(name, principal, resource);
+    match &self.events {
+      Some(events) => audited(effect, events, principal, name, type_name::<Res>()),
+      None => effect,
+    }
+  }
+
+  fn evaluate_unrecorded<Res: ?Sized + 'static>(
     &self,
     name: &str,
     principal: &CurrentPrincipal,
@@ -180,7 +228,7 @@ impl Policies {
 impl fmt::Debug for Policies {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_map()
-      .entries(self.0.iter().map(|(k, e)| (k, e.resource)))
+      .entries(self.entries.iter().map(|(k, e)| (k, e.resource)))
       .finish()
   }
 }
@@ -300,6 +348,44 @@ mod tests {
         .block_on(),
       Exit::Failure(Cause::Fail(AuthzError::Unauthenticated))
     );
+  }
+
+  #[test]
+  fn attached_events_record_every_evaluation() {
+    use crate::audit::{MemorySink, Outcome};
+    let sink = MemorySink::new();
+    assert!(registry().events().is_none());
+    let r = registry().with_events(AuthzEvents::new(sink.clone()));
+    assert_eq!(r.events().map(AuthzEvents::sinks), Some(1));
+    let _ = r.evaluate("doc.read", &bob(), &Doc).block_on();
+    let _ = r.authorize("closed", &bob(), &()).block_on();
+    let _ = r.evaluate("missing", &bob(), &()).block_on();
+    let events = sink.take();
+    let seen: Vec<_> = events
+      .iter()
+      .map(|e| (e.policy.as_str(), e.outcome, e.principal.as_str()))
+      .collect();
+    assert_eq!(
+      seen,
+      [
+        ("doc.read", Outcome::Allow, "bob"),
+        ("closed", Outcome::Deny, "bob"),
+        ("missing", Outcome::Error, "bob"),
+      ]
+    );
+    assert!(
+      events[0].resource.ends_with("Doc"),
+      "{}",
+      events[0].resource
+    );
+    assert_eq!(events[1].reason.as_deref(), Some("maintenance"));
+
+    let built = Policies::builder()
+      .define::<()>("open", allow_all())
+      .events(AuthzEvents::new(sink.clone()))
+      .build();
+    let _ = built.evaluate("open", &bob(), &()).block_on();
+    assert_eq!(sink.len(), 1);
   }
 
   #[test]
