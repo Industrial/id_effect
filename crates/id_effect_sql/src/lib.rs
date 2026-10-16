@@ -139,3 +139,7 @@ pub mod repository;
 pub use id_effect_proc_macro::Entity;
 #[cfg(feature = "repository")]
 pub use repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};
+
+// MySQL driver (E3.1b, feature `mysql`).
+#[cfg(feature = "mysql")]
+pub mod mysql;

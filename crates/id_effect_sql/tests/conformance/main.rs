@@ -3,6 +3,8 @@
 //!
 //! - `pg`: PostgreSQL at `DATABASE_URL` (skipped without it unless `ID_EFFECT_REQUIRE_PG=1`).
 //! - `sqlite`: SQLite in memory, in a file, and in memory behind a `RoutingSqlClient`.
+//! - `mysql`: MySQL 8 in a container per test (or at `MYSQL_URL`); skipped without Docker unless
+//!   `ID_EFFECT_REQUIRE_DOCKER=1`.
 //!
 //! A new backend adds `mod <backend>;` here and calls `conformance_suite!` in it.
 
@@ -10,6 +12,8 @@
 #[path = "mod.rs"]
 mod conformance;
 
+#[cfg(feature = "mysql")]
+mod mysql;
 #[cfg(feature = "pg")]
 mod pg;
 #[cfg(feature = "sqlite")]

@@ -2,8 +2,8 @@
 //! `Arc<dyn SqlClient>` and a [`Backend`] that knows its DDL, placeholders and how its columns
 //! read back. [`conformance_suite!`] turns the bodies into one test each for a backend; the
 //! `conformance` test target (`main.rs`) instantiates it per backend feature (`pg.rs`,
-//! `sqlite.rs`). A new driver (MySQL) adds a `Backend` impl, a `mod` line in `main.rs` and one
-//! `conformance_suite!` call. `tests/pg.rs` also calls a few bodies directly.
+//! `sqlite.rs`, `mysql.rs`). A new driver adds a `Backend` impl, a `mod` line in `main.rs` and
+//! one `conformance_suite!` call. `tests/pg.rs` also calls a few bodies directly.
 //!
 //! Each body takes a table name owned by the calling test (tests run concurrently).
 
@@ -39,6 +39,15 @@ pub trait Backend {
   /// The most connections the client's pool opens (the stream bodies check none leaks).
   fn max_connections(&self) -> usize {
     4
+  }
+  /// The type `CAST(1 AS …)` names for a 64-bit integer (MySQL has no `CAST(… AS BIGINT)`).
+  fn bigint_cast(&self) -> &'static str {
+    "BIGINT"
+  }
+  /// Whether the column of `value`'s type holds `value` ([`value_round_trips`] skips the rest:
+  /// a MySQL `TIMESTAMP` holds years 1970-2038 only).
+  fn stores(&self, _value: &SqlValue) -> bool {
+    true
   }
 }
 
@@ -187,7 +196,11 @@ pub async fn typed_binds_round_trip_uuid_timestamp_decimal_json(b: &impl Backend
 }
 
 pub async fn row_get_by_name_and_index(b: &impl Backend) {
-  let rows = query(b, "SELECT CAST(1 AS BIGINT) AS a, 'x' AS b, NULL AS c", &[]).await;
+  let sql = format!(
+    "SELECT CAST(1 AS {}) AS a, 'x' AS b, NULL AS c",
+    b.bigint_cast()
+  );
+  let rows = query(b, &sql, &[]).await;
   let row = &rows[0];
   assert_eq!(row.len(), 3);
   assert_eq!(row.get::<i64>("a"), row.get::<i64>(0usize));
@@ -341,6 +354,9 @@ pub async fn value_round_trips(
   table: &str,
   value: SqlValue,
 ) -> Result<(), String> {
+  if !b.stores(&value) {
+    return Ok(());
+  }
   let t = match value.sql_type() {
     SqlType::Null => SqlType::Text,
     t => t,

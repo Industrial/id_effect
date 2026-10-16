@@ -99,6 +99,10 @@
   databases, savepoints, streaming, `Serializable` → `BEGIN IMMEDIATE`, busy → retryable 40001).
   `RoutingSqlClient` sends reads to replicas (round-robin or custom) and writes / transactions to
   the primary. One conformance suite runs on PostgreSQL and SQLite.
+- `id_effect_sql` feature `mysql`: `MySqlSqlClient` / `MySqlPoolConfig` on sqlx; the shared
+  conformance suite passes on MySQL 8. Isolation levels, `READ ONLY` transactions, savepoints,
+  deadlocks and lock wait timeouts retryable as SQLSTATE 40001, bounded streaming with
+  `KILL QUERY` on drop.
 - `id_effect_sql` feature `query`: build statements with sea-query 1.0, render them per dialect
   (`BuildSql::build_sql(Dialect::{Postgres, MySql, Sqlite})` → SQL + `Vec<SqlValue>`, our own value
   bridge, no sea-query-binder) and run them with `execute_query` / `fetch_all_as` /

@@ -237,6 +237,18 @@ begins with `BEGIN IMMEDIATE`, and a busy database fails like a serialization fa
 `retry_serialization_failures` covers it. `READ ONLY` is unsupported (open the database with
 `?mode=ro`).
 
+**MySQL** (feature `mysql`, MySQL 8): `MySqlSqlClient::layer(MySqlPoolConfig::from_url(..))`
+provides the same `SqlClient`; placeholders are `?`. Connections use the UTC session time zone, so
+`TIMESTAMP` columns read as `SqlValue::Timestamp` and `DATETIME` as `DateTime`; declare
+`DATETIME(6)` / `TIMESTAMP(6)` / `TIME(6)` to keep microseconds, and remember that `TIMESTAMP`
+only spans 1970–2038. `BOOLEAN` (`TINYINT(1)`) reads as `Bool`, unsigned integers as the narrowest
+signed type that fits (`BIGINT UNSIGNED` above `i64::MAX` is `ValueOutOfRange`), `DECIMAL`
+exactly, `JSON` as `Json`, and a uuid lives in `BINARY(16)`. Transactions support every isolation
+level and `READ ONLY`; deadlocks and lock wait timeouts are SQLSTATE `40001`, so
+`retry_serialization_failures` retries them. Dropping a `query_stream` stops the statement with
+`KILL QUERY`. Connections are plaintext (sqlx is built without TLS); use a private network or a
+TLS-terminating proxy.
+
 **Read replicas.** `RoutingSqlClient::new(primary, vec![replica_a, replica_b])` is itself a
 `SqlClient`. `query` and `query_stream` go to a replica (round-robin by default, or
 `ReadRouting::custom(..)`); `execute`, `begin` and every statement inside a transaction go to the

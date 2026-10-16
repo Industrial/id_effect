@@ -226,7 +226,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Container tests
-        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config --all-features
+        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.

@@ -37,6 +37,9 @@ audit = ["dep:sha2"]
 # tenant / custom global filters) over `query`'s sea-query statements. A feature of its own so
 # `query` stays the plain statement builder.
 repository = ["query"]
+# MySQL driver (sqlx mysql) and `MySqlSqlClient`, tested against MySQL 8. sqlx-mysql brings `rsa`
+# (RUSTSEC-2023-0071, ignored with its reason in deny.toml).
+mysql = ["dep:sqlx", "dep:tokio", "dep:time", "sqlx/mysql"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
@@ -85,6 +88,8 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "net"] }
 # tests/from_row.rs: compile-fail cases of `#[derive(FromRow)]`.
 trybuild = "1"
+# MySQL 8 container for tests/conformance/mysql.rs (feature `mysql`).
+testcontainers = { version = "0.28", default-features = false }
 
 [[test]]
 name = "pg"
