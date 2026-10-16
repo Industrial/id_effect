@@ -62,6 +62,11 @@ Follow-ups recorded during wave 1:
   binary(from_row)` like the core ui tests.
 - Commit rule learned the hard way (fixed by 2nd commit after 2905241): `git add` before every
   pathspec commit, otherwise new files are silently left out; check `git status` for `??` after.
+- **Security gap (before 0.9 exit):** id_effect_sql builds sqlx without a TLS feature, so
+  PostgreSQL and MySQL connections are plaintext. Add rustls TLS (`sqlx/tls-rustls-aws-lc-rs` or
+  ring, matching the tree) behind the driver features, with `sslmode` / `ssl-mode` honoured from
+  the URL, and a test against a TLS-enabled container.
+- `src/metrics.rs` doc links to `record_pg_pool` break `cargo doc -D warnings` without `pg`.
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 
 ## Waves 2–3
