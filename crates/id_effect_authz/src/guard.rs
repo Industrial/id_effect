@@ -302,7 +302,6 @@ impl<S: Clone + Send + Sync + 'static> AuthorizeExt for Endpoint<S> {
     AuthorizedEndpoint {
       info,
       method_router,
-      policies: Vec::new(),
     }
     .authorize(guard)
   }
@@ -312,22 +311,22 @@ impl<S: Clone + Send + Sync + 'static> AuthorizeExt for AuthorizedEndpoint<S> {
   type Output = AuthorizedEndpoint<S>;
 
   fn authorize(mut self, guard: Guard) -> AuthorizedEndpoint<S> {
-    self.policies.push(guard.name().to_owned());
+    self.info.policies.push(guard.name().to_owned());
     self.method_router = self.method_router.layer(guard);
     self
   }
 }
 
-/// A typed endpoint behind one or more guards: its [`RouteInfo`], the guard names, and the
-/// guarded method router.
+/// A typed endpoint behind one or more guards: its [`RouteInfo`] (whose
+/// [`policies`](RouteInfo::policies) lists the guard names) and the guarded method router.
 ///
-/// Mount it with [`AuthorizedEndpoint::mount`] (keeps the [`RouteRegistry`] complete) or
-/// [`AuthorizedEndpoint::into_parts`].
+/// Add it to an [`id_effect_axum::route::Router`] through [`AuthorizedEndpoint::into_endpoint`]
+/// (or `Endpoint::from`), mount it with [`AuthorizedEndpoint::mount`] (both keep the
+/// [`RouteRegistry`] complete) or take [`AuthorizedEndpoint::into_parts`].
 #[must_use = "mount the endpoint on a router"]
 pub struct AuthorizedEndpoint<S = ()> {
   info: RouteInfo,
   method_router: MethodRouter<S>,
-  policies: Vec<String>,
 }
 
 impl<S: Clone + Send + Sync + 'static> AuthorizedEndpoint<S> {
@@ -336,9 +335,14 @@ impl<S: Clone + Send + Sync + 'static> AuthorizedEndpoint<S> {
     &self.info
   }
 
-  /// The guards' policy names, outermost last.
+  /// The guards' policy names, outermost last ([`RouteInfo::policies`]).
   pub fn policies(&self) -> &[String] {
-    &self.policies
+    &self.info.policies
+  }
+
+  /// The guarded route as a typed [`Endpoint`], for [`id_effect_axum::route::Router::route`].
+  pub fn into_endpoint(self) -> Endpoint<S> {
+    Endpoint::from_parts(self.info, self.method_router)
   }
 
   /// The declaration and the guarded method router.
@@ -359,12 +363,18 @@ impl<S: Clone + Send + Sync + 'static> AuthorizedEndpoint<S> {
   }
 }
 
+impl<S: Clone + Send + Sync + 'static> From<AuthorizedEndpoint<S>> for Endpoint<S> {
+  fn from(endpoint: AuthorizedEndpoint<S>) -> Self {
+    endpoint.into_endpoint()
+  }
+}
+
 impl<S> fmt::Debug for AuthorizedEndpoint<S> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("AuthorizedEndpoint")
       .field("method", &self.info.method)
       .field("path", &self.info.path)
-      .field("policies", &self.policies)
+      .field("policies", &self.info.policies)
       .finish()
   }
 }
@@ -444,6 +454,22 @@ mod tests {
     assert_eq!(events[0].resource, "GET /books/7");
     assert_eq!(events[0].outcome, Outcome::Allow);
     assert_eq!(events[0].policy, "books");
+  }
+
+  #[test]
+  fn guarded_endpoints_record_their_policies_in_the_route_info() {
+    use id_effect_axum::route::{Input, Route, Router};
+    let endpoint = Route::get("/books")
+      .handler(|_: &mut (), _: Input| id_effect::succeed::<_, Infallible, ()>("books"))
+      .authorize(Guard::new("books.read", allow_all()))
+      .authorize(Guard::new("staff", allow_all()));
+    assert_eq!(endpoint.info().policies, ["books.read", "staff"]);
+    let router = Router::new().route(endpoint.into());
+    let info = router.routes().next().expect("registered");
+    assert_eq!(info.policies, ["books.read", "staff"]);
+    let plain = Route::get("/open")
+      .handler(|_: &mut (), _: Input| id_effect::succeed::<_, Infallible, ()>("open"));
+    assert!(plain.info().policies.is_empty());
   }
 
   #[test]

@@ -111,6 +111,9 @@ pub struct RouteInfo {
   pub body_kind: BodyKind,
   /// Documented responses, in declaration order ([`Route::response`](super::Route::response)).
   pub responses: Vec<ResponseInfo>,
+  /// Names of the authorization policies guarding the route, outermost last (empty when the
+  /// route is unguarded); filled by guards such as `id_effect_authz`'s `.authorize(..)`.
+  pub policies: Vec<String>,
 }
 
 impl RouteInfo {
@@ -125,6 +128,7 @@ impl RouteInfo {
       body: None,
       body_kind: BodyKind::Json,
       responses: Vec::new(),
+      policies: Vec::new(),
     }
   }
 }

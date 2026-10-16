@@ -94,6 +94,8 @@ pub mod health;
 pub mod json;
 pub mod metrics;
 pub mod middleware;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod request_caps;
 pub mod route;
 pub mod routing;
@@ -127,6 +129,8 @@ pub use health::{
 pub use middleware::{
   BodyLimitLayer, CompressionLayer, RateLimitLayer, RequestId, RequestIdLayer, TimeoutLayer,
 };
+pub use middleware::{CacheControl, HttpCacheLayer};
+pub use server::{StaticFiles, serve_dir};
 
 use axum::extract::State;
 use axum::http::StatusCode;

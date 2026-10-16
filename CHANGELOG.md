@@ -25,6 +25,18 @@
   `TimeoutLayer` (503 Problem; interrupts the handler's fiber), `BodyLimitLayer` (413 Problem) and
   `RateLimitLayer` (429 Problem + `Retry-After`; token buckets behind a pluggable
   `RateLimitStore`). New dependency `id_effect_resilience`.
+- `id_effect_axum`: `server::serve_dir` static files with strong `ETag` / `Last-Modified` / 304,
+  `If-Match` / `If-Range`, precompressed `.br` / `.gz`, hashed-asset `Cache-Control`, traversal
+  and hidden-file protection; `middleware::HttpCacheLayer` + `CacheControl` add `Cache-Control`
+  and a body-hash `ETag` to GET responses and answer `If-None-Match` / `If-Modified-Since` with
+  304. Book: part6/ch29-03-middleware.md; example `090_middleware`.
+- `id_effect_axum` feature `openapi`: `OpenApi::from_router` generates an OpenAPI 3.1 document from
+  typed routes. Component schemas are exactly the decoding schemas' JSON Schema; path / query /
+  header parameters, request bodies per media type, documented and Problem
+  (`application/problem+json`) responses, security schemes (bearer JWT, session cookie, OpenID
+  Connect) with per-operation requirements from the new `RouteInfo::policies`.
+  `Endpoint::from_parts` / `Endpoint::layer`; `id_effect_authz` guarded endpoints convert into an
+  `Endpoint` and record their policies.
 - `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
   effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;

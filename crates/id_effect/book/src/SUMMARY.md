@@ -159,6 +159,7 @@
   - [Migrations](./part6/ch28-02-migrations.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
+  - [Middleware, static files and HTTP caching](./part6/ch29-03-middleware.md)
 - [Application host](./part6/ch30-00-application.md)
   - [Authorization](./part6/ch30-02-authorization.md)
   - [Passwords and sessions (`id_effect_auth`)](./part6/ch30-03-passwords-sessions.md)

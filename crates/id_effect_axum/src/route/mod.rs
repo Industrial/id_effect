@@ -469,6 +469,33 @@ impl<S> Endpoint<S> {
   pub fn into_parts(self) -> (RouteInfo, MethodRouter<S>) {
     (self.info, self.method_router)
   }
+
+  /// Reassemble an endpoint from [`Endpoint::into_parts`] (e.g. after wrapping the method router
+  /// or recording [`RouteInfo::policies`]).
+  pub fn from_parts(info: RouteInfo, method_router: MethodRouter<S>) -> Self {
+    Self {
+      info,
+      method_router,
+    }
+  }
+}
+
+impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
+  /// Wrap the handler in `layer` (see [`MethodRouter::layer`]); the [`RouteInfo`] is unchanged.
+  pub fn layer<L>(self, layer: L) -> Self
+  where
+    L: tower_layer::Layer<axum::routing::Route> + Clone + Send + Sync + 'static,
+    L::Service: tower_service::Service<Request> + Clone + Send + Sync + 'static,
+    <L::Service as tower_service::Service<Request>>::Response: IntoResponse + 'static,
+    <L::Service as tower_service::Service<Request>>::Error:
+      Into<std::convert::Infallible> + 'static,
+    <L::Service as tower_service::Service<Request>>::Future: Send + 'static,
+  {
+    Self {
+      info: self.info,
+      method_router: self.method_router.layer(layer),
+    }
+  }
 }
 
 /// An [`axum::Router`] that records the [`RouteInfo`] of every typed route added to it.
@@ -581,5 +608,32 @@ mod tests {
     let missing = declared.decode(None).unwrap_err();
     assert_eq!(missing.issues[0].message, "missing input");
     assert!(Undeclared.decode(None).is_ok());
+  }
+
+  #[tokio::test]
+  async fn endpoints_take_layers_and_reassemble_from_parts() {
+    use tower::ServiceExt;
+    fn ok(_: &mut (), _: Input) -> Effect<&'static str, std::convert::Infallible, ()> {
+      id_effect::succeed("ok")
+    }
+    let stamp = tower::util::MapResponseLayer::new(|mut res: Response| {
+      res
+        .headers_mut()
+        .insert("x-layered", axum::http::HeaderValue::from_static("1"));
+      res
+    });
+    let endpoint = Route::get("/x").handler(ok).layer(stamp);
+    let (mut info, method_router) = endpoint.into_parts();
+    info.policies.push("staff".to_owned());
+    let endpoint = Endpoint::from_parts(info, method_router);
+    assert_eq!(endpoint.info().policies, ["staff"]);
+    let router = Router::new().route(endpoint);
+    assert_eq!(router.routes().next().unwrap().policies, ["staff"]);
+    let req = axum::http::Request::get("/x")
+      .body(axum::body::Body::empty())
+      .unwrap();
+    let res = router.into_axum().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["x-layered"], "1");
   }
 }

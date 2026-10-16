@@ -12,6 +12,9 @@
 //! | [`TimeoutLayer`] | 30 s; the handler's fiber is interrupted (its finalizers run) | `503` |
 //! | [`BodyLimitLayer`] | 2 MiB, checked on `Content-Length` and while the body streams | `413` |
 //! | [`RateLimitLayer`] | token bucket per client IP over [`id_effect_resilience::RateLimiter`] | `429` + `Retry-After` |
+//! | [`HttpCacheLayer`] | `Cache-Control: private, no-cache` and a body-hash `ETag` on `GET` `200`s | `304` |
+//!
+//! Static files with `ETag` / `Last-Modified` / `304` are [`crate::server::serve_dir`].
 //!
 //! CORS, CSRF, CSP and security headers live in [`crate::server::security`]
 //! ([`SecurityLayer::recommended`](crate::SecurityLayer::recommended)).
@@ -44,6 +47,7 @@ use axum::response::{IntoResponse, Response};
 use crate::route::Problem;
 
 pub mod compression;
+pub mod http_cache;
 pub mod limits;
 pub mod rate_limit;
 pub mod request_id;
@@ -51,6 +55,7 @@ pub mod request_id;
 pub use compression::{
   CompressionLayer, CompressionLevel, CompressionPredicate, CompressionService,
 };
+pub use http_cache::{CacheControl, DEFAULT_ETAG_BODY_LIMIT, HttpCacheLayer, HttpCacheService};
 pub use limits::{
   BodyLimitLayer, BodyLimitService, DEFAULT_BODY_LIMIT, DEFAULT_TIMEOUT, TimeoutLayer,
   TimeoutService,
