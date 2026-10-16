@@ -90,6 +90,18 @@
   `sqlx::migrate!` embedding) with `run` / `status` / `revert(n)` / `check` as effects and a startup
   `Layer`; sqlx-cli file naming and checksums, tracking table `_id_effect_migrations`, one
   transaction per migration under a PostgreSQL advisory lock with a timeout, typed `MigrateError`.
+- `id_effect_sql` feature `sqlite`: `SqliteSqlClient` over sqlx SQLite (in-memory and file
+  databases, savepoints, streaming, `Serializable` → `BEGIN IMMEDIATE`, busy → retryable 40001).
+  `RoutingSqlClient` sends reads to replicas (round-robin or custom) and writes / transactions to
+  the primary. One conformance suite runs on PostgreSQL and SQLite.
+- `id_effect_sql` feature `query`: build statements with sea-query 1.0, render them per dialect
+  (`BuildSql::build_sql(Dialect::{Postgres, MySql, Sqlite})` → SQL + `Vec<SqlValue>`, our own value
+  bridge, no sea-query-binder) and run them with `execute_query` / `fetch_all_as` /
+  `fetch_one_as` / `fetch_optional_as`.
+- `id_effect_sql` feature `audit`: hash-chained audit log. `AuditLog` layer, `append` / `record`
+  inside the caller's transaction, one chain per tenant with `sha256(prev_hash ‖ record)` (the
+  chain head is row-locked, so concurrent appends never fork it), `verify_chain` reports the first
+  edited, removed or relinked record; bundled migration `migrations/audit/`.
 - `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
   sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
   exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.

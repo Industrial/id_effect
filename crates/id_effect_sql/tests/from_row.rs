@@ -326,6 +326,12 @@ async fn live_postgres_rows_decode_into_structs() {
 }
 
 #[test]
+// The expected rustc output lists `Value` (serde_json's); with `query`, sea-query's `Value` makes
+// rustc print the full path, which sorts out of the shown impls.
+#[cfg_attr(
+  feature = "query",
+  ignore = "rustc's impl list depends on the crate graph; run without `query`"
+)]
 fn derive_compile_errors() {
   let t = trybuild::TestCases::new();
   t.compile_fail("tests/ui/from_row/*.rs");

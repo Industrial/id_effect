@@ -108,3 +108,24 @@ pub use transaction::{
   is_serialization_failure, retry_serialization_failures, savepoint, transaction_with,
   with_transaction_options,
 };
+
+// sea-query statements bridged to `SqlValue` (E3.3, feature `query`). The module is
+// `query_builder`: `query` is already the free function.
+#[cfg(feature = "query")]
+#[path = "query/mod.rs"]
+pub mod query_builder;
+#[cfg(feature = "query")]
+pub use query_builder::{
+  BuildSql, Dialect, execute_query, fetch_all_as, fetch_one_as, fetch_optional_as,
+};
+
+// SQLite driver (E3.1b, feature `sqlite`) and read-replica routing over any `SqlClient`.
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
+
+pub mod routing;
+pub use routing::{ReadRouting, RoutingSqlClient};
+
+// Hash-chained audit log appended in the caller's transaction (E5.5, feature `audit`).
+#[cfg(feature = "audit")]
+pub mod audit;

@@ -220,6 +220,29 @@ decodes each row with `FromRow`. Rows arrive one chunk per pull, so a slow consu
 database down instead of filling memory. If the stream is dropped or its fiber interrupted,
 PostgreSQL cancels the query and the connection returns to the pool.
 
+## Backends
+
+Every database sits behind the same `SqlClient`. Enable `pg` for PostgreSQL
+(`PgSqlClient::layer(PgPoolConfig::from_url(..))`) or `sqlite` for SQLite
+(`SqliteSqlClient::layer(SqlitePoolConfig::memory())` for a private in-memory database,
+`SqlitePoolConfig::file("app.db")` for a file in WAL mode). Queries, `SqlRow::get`, transactions,
+savepoints and `query_stream` don't change; only placeholders do (`$1` on PostgreSQL, `?1` on
+SQLite). One conformance suite (`crates/id_effect_sql/tests/conformance`) runs on both.
+
+SQLite stores values by storage class. Integers read back as `I64` and floats as `F64`
+(`get::<i32>` range-checks). Uuids, decimals and JSON are stored as text and parsed by
+`get::<Uuid>`, `get::<Decimal>` and `get::<Json<T>>`, so declare those columns `TEXT`. Date-times
+are fixed-width text. SQLite transactions are always serializable: `Isolation::Serializable`
+begins with `BEGIN IMMEDIATE`, and a busy database fails like a serialization failure, so
+`retry_serialization_failures` covers it. `READ ONLY` is unsupported (open the database with
+`?mode=ro`).
+
+**Read replicas.** `RoutingSqlClient::new(primary, vec![replica_a, replica_b])` is itself a
+`SqlClient`. `query` and `query_stream` go to a replica (round-robin by default, or
+`ReadRouting::custom(..)`); `execute`, `begin` and every statement inside a transaction go to the
+primary. Replicas lag, so do reads that must see a write you just made inside that write's
+transaction, or on `router.primary()`.
+
 ## Testing with `TestSqlClient`
 
 Script result rows with `SqlRow::from_pairs` and assert on the typed parameters the code bound (`recorded_queries()` / `recorded_executes()` return `Vec<(String, Vec<SqlValue>)>`). No database is needed:
