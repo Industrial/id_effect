@@ -70,6 +70,9 @@ in {
     lldb
     cargo-watch
     cargo-audit
+    cargo-cyclonedx
+    cargo-deny
+    cargo-semver-checks
     cargo-llvm-cov
     cargo-nextest
     sccache

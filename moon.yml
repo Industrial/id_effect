@@ -70,6 +70,30 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  deny:
+    description: 'Run cargo deny check (advisories, licenses, bans, sources; policy in deny.toml)'
+    command: 'cargo'
+    args: ['deny', 'check']
+    inputs:
+      - 'deny.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
+  semver:
+    description: >-
+      Run cargo semver-checks for the publishable crates against the 0.7.0 crates.io baseline. Report-only in CI until v0.8.0 (see the semver job in ci.yml and docs/STABILITY.md).
+    command: 'cargo'
+    args: ['semver-checks', '--workspace', '--baseline-version', '0.7.0']
+    inputs:
+      - 'Cargo.toml'
+      - '**/Cargo.toml'
+      - 'crates/**/*.rs'
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
   parity-checklist:
     description: 'Validate Effect.ts upstream parity checklist and UPSTREAM-VERSION pin'
     command: 'bash'

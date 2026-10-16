@@ -59,7 +59,7 @@ integration and platform crates:
 - Docs (README, book chapter, skill) describe what the code does today. A wrong
   claim is a bug.
 - Breaking changes ship a `#[deprecated]` shim for one minor release and a
-  CHANGELOG migration note.
+  CHANGELOG migration note. The full rule, semver and MSRV policy: [STABILITY.md](STABILITY.md).
 
 ## Known heuristic limits
 

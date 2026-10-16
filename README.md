@@ -28,6 +28,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 - **Read online:** [Typed Effects in Rust](https://industrial.github.io/id_effect/) (GitHub Pages)
 - **Terminology:** [Glossary](https://industrial.github.io/id_effect/appendix-c-glossary.html)
 - **Upgrading:** [Migration guide to 0.7](docs/MIGRATION-0.7.md) (from 0.6), [to 0.6](docs/MIGRATION-0.6.md) (from 0.4 / 0.5), and the [CHANGELOG](CHANGELOG.md)
+- **Stability:** [semver, deprecation and MSRV policy](docs/STABILITY.md)
 - **Source:** [`crates/id_effect/book/`](crates/id_effect/book/) (build locally with `mdbook build crates/id_effect/book`)
 
 ---

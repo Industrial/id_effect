@@ -267,6 +267,53 @@ jobs:
       - name: Validate crate packaging
         run: bash scripts/validate-crate-packaging.sh
   # ──────────────────────────────────────────────────────────────────────────
+  # Supply-chain policy: advisories, licenses, bans, sources (deny.toml).
+  # No committed Cargo.lock, so this checks a fresh resolution.
+  # ──────────────────────────────────────────────────────────────────────────
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check
+  # ──────────────────────────────────────────────────────────────────────────
+  # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
+  # REPORT-ONLY until v0.8.0 is tagged: 0.8 carries intentional breaks, each of
+  # which must be listed in docs/MIGRATION-0.8.md; the job prints them for review
+  # (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI. After the v0.8.0 tag:
+  # set SEMVER_BASELINE to 0.8.0 and delete the step's `continue-on-error` so it enforces.
+  # ──────────────────────────────────────────────────────────────────────────
+  semver:
+    name: Semver checks (report-only until v0.8.0)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      SEMVER_BASELINE: 0.7.0
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: semver
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-semver-checks
+      - name: cargo semver-checks (publishable workspace crates)
+        # --workspace skips publish = false members (examples). Step-level
+        # continue-on-error keeps the job (and ci-pass) green while report-only.
+        continue-on-error: true
+        run: cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
+  # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
   ci-pass:
@@ -281,6 +328,8 @@ jobs:
       - labs
       - minimal-versions
       - validate-packaging
+      - deny
+      - semver
     if: always()
     steps:
       - name: Check all required jobs passed
