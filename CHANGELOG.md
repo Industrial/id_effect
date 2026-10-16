@@ -20,6 +20,11 @@
   `ValidJson`, `ValidForm` (urlencoded and multipart text fields) share the same decoder.
   `Route::form::<T>()`, `RouteInfo::body_kind`, `json::decode_json`. Absent array / nullable
   query, form and header fields decode to `[]` / `null`.
+- `id_effect_axum::middleware`: `CompressionLayer` (gzip / brotli / deflate), `RequestIdLayer`
+  (`x-request-id` propagation, `RequestId` extractor, one `http.request` effect span per request),
+  `TimeoutLayer` (503 Problem; interrupts the handler's fiber), `BodyLimitLayer` (413 Problem) and
+  `RateLimitLayer` (429 Problem + `Retry-After`; token buckets behind a pluggable
+  `RateLimitStore`). New dependency `id_effect_resilience`.
 - `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
   effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;

@@ -58,7 +58,13 @@ sha2 = "0.10.9"
 subtle = "2.6.1"
 tower-http = { version = "0.6.8", default-features = false, features = [
   "cors",
+  # `middleware::CompressionLayer` (pure-Rust encoders; zstd would need a C toolchain).
+  "compression-br",
+  "compression-deflate",
+  "compression-gzip",
 ] }
+# `middleware::RateLimitLayer`: token buckets on the effect runtime.
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.8.0" }
 
 [[bench]]
 name = "gate_request"

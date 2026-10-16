@@ -71,6 +71,8 @@
 //! - [`server`]: [`HostConfig::layer`] loads the bind settings through `id_effect_config`, and
 //!   [`server_layer`] is the HTTP server as a scoped `Layer` (bound on acquire, gracefully shut
 //!   down on release); [`serve`] / [`serve_until_shutdown`] launch it.
+//! - [`middleware`]: compression, request ids with a span per request, timeouts, body limits
+//!   and rate limiting, rejecting with a [`Problem`].
 //!
 //! ## Examples
 //!
@@ -91,6 +93,7 @@ pub mod executor;
 pub mod health;
 pub mod json;
 pub mod metrics;
+pub mod middleware;
 pub mod request_caps;
 pub mod route;
 pub mod routing;
@@ -119,6 +122,10 @@ pub use health::{
   CheckReport, HealthIndicator, HealthOutcome, HealthRegistry, HealthReport, HealthStatus,
   ReadinessCheck, ReadinessState, health, health_router, observability_routes,
   observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
+};
+
+pub use middleware::{
+  BodyLimitLayer, CompressionLayer, RateLimitLayer, RequestId, RequestIdLayer, TimeoutLayer,
 };
 
 use axum::extract::State;
