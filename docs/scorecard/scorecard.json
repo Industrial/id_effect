@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"method_version": "1.0",
+	"method_version": "2.0",
 	"method_doc": "METHOD.md",
 	"competitor_snapshot": {
 		"date": "2026-10-14",
@@ -17,8 +17,16 @@
 			"name": "Effect-TS",
 			"scope": "effect + @effect/* packages"
 		},
-		{ "id": "zio", "name": "ZIO", "scope": "ZIO 2 + official zio-* ecosystem" },
-		{ "id": "otp", "name": "OTP", "scope": "Erlang/OTP distribution only" },
+		{
+			"id": "zio",
+			"name": "ZIO",
+			"scope": "ZIO 2 + official zio-* ecosystem"
+		},
+		{
+			"id": "otp",
+			"name": "OTP",
+			"scope": "Erlang/OTP distribution only"
+		},
 		{
 			"id": "phoenix",
 			"name": "Phoenix",
@@ -37,12 +45,12 @@
 		{
 			"id": "rails",
 			"name": "Rails",
-			"scope": "Rails 8 defaults + de facto gems (discounted)"
+			"scope": "Rails 8 defaults (rails/* gems); other gems per METHOD.md §7.4"
 		},
 		{
 			"id": "django",
 			"name": "Django",
-			"scope": "Django + DRF + de facto packages (discounted)"
+			"scope": "Django + DRF; other packages per METHOD.md §7.4"
 		},
 		{
 			"id": "laravel",
@@ -80,14 +88,24 @@
 			"w_enterprise": 0.75,
 			"w_runtime": 1.25
 		},
-		{ "id": "data", "name": "Data", "w_enterprise": 1.5, "w_runtime": 0.5 },
+		{
+			"id": "data",
+			"name": "Data",
+			"w_enterprise": 1.5,
+			"w_runtime": 0.5
+		},
 		{
 			"id": "web",
 			"name": "Web & API",
 			"w_enterprise": 1.25,
 			"w_runtime": 0.5
 		},
-		{ "id": "sec", "name": "Security", "w_enterprise": 1.5, "w_runtime": 0.5 },
+		{
+			"id": "sec",
+			"name": "Security",
+			"w_enterprise": 1.5,
+			"w_runtime": 0.5
+		},
 		{
 			"id": "obs",
 			"name": "Observability",
@@ -100,8 +118,18 @@
 			"w_enterprise": 1.0,
 			"w_runtime": 0.75
 		},
-		{ "id": "ai", "name": "AI", "w_enterprise": 0.5, "w_runtime": 0.25 },
-		{ "id": "test", "name": "Testing", "w_enterprise": 1.0, "w_runtime": 1.0 },
+		{
+			"id": "ai",
+			"name": "AI",
+			"w_enterprise": 0.5,
+			"w_runtime": 0.25
+		},
+		{
+			"id": "test",
+			"name": "Testing",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.0
+		},
 		{
 			"id": "dx",
 			"name": "Developer experience",
@@ -145,12 +173,17 @@
 			"group": "core",
 			"name": "Typed success / error / requirements",
 			"measures": "Errors and dependencies are tracked in the type of a program value; missing handling is a compile error.",
-			"competitors": [95, 95, 40, 40, 35, 45, 15, 15, 15, 25],
+			"competitors": [100, 88, 1, 1, 13, 1, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 88, "0.7.0": 92 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 88
+			},
 			"evidence": "Effect<A,E=Never,R=HNil> is Send; typed HList R; compile-fail UI tests in crates/id_effect/tests/ui/.",
-			"targets": { "1.0.0": 95 },
+			"targets": {
+				"1.0.0": 100
+			},
 			"checks": [
 				{
 					"id": "core.typed-effect#1",
@@ -187,7 +220,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -256,6 +292,16 @@
 					"core.typed-effect#7": "crates/id_effect/src/kernel/effect.rs:32 (#[must_use = \"effects are lazy...\"])",
 					"core.typed-effect#8": "crates/id_effect/examples/006_effect_macro_binds.rs"
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 40, 40, 35, 45, 15, 15, 15, 25],
+				"id_effect": {
+					"0.6.0": 88,
+					"0.7.0": 89
+				},
+				"targets": {
+					"1.0.0": 95
+				}
 			}
 		},
 		{
@@ -263,12 +309,18 @@
 			"group": "core",
 			"name": "Typed dependency injection",
 			"measures": "Declaring, providing, overriding and scoping services, checked before run time.",
-			"competitors": [92, 90, 30, 35, 95, 92, 30, 25, 80, 15],
+			"competitors": [75, 100, 25, 38, 88, 75, 13, 13, 50, 1],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 85, "0.7.0": 91 },
+			"id_effect": {
+				"0.6.0": 88,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect/src/layer.rs (succeed/effect/scoped/merge/provide_to/fresh/launch), caps!/need::<K>(); tests layer*.rs.",
-			"targets": { "0.9.0": 93, "1.0.0": 95 },
+			"targets": {
+				"0.9.0": 88,
+				"1.0.0": 100
+			},
 			"checks": [
 				{
 					"id": "core.di#1",
@@ -305,7 +357,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -389,6 +444,17 @@
 					"core.di#6": "crates/id_effect/src/layer.rs:25 (Layer::succeed swap-in)",
 					"core.di#7": "crates/id_effect/tests/ui/fail/duplicate_capability_caps.rs"
 				}
+			},
+			"v1": {
+				"competitors": [92, 90, 30, 35, 95, 92, 30, 25, 80, 15],
+				"id_effect": {
+					"0.6.0": 85,
+					"0.7.0": 89
+				},
+				"targets": {
+					"0.9.0": 93,
+					"1.0.0": 95
+				}
 			}
 		},
 		{
@@ -396,12 +462,18 @@
 			"group": "core",
 			"name": "Composition ergonomics",
 			"measures": "How short and readable everyday sequential/parallel code is.",
-			"competitors": [88, 80, 75, 85, 75, 88, 92, 88, 90, 85],
+			"competitors": [100, 75, 75, 88, 75, 100, 100, 75, 88, 88],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 68, "0.7.0": 72 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "effect! sequential binds, ~(a,b) parallel join; retry/repeat need factories; pipe helpers removed.",
-			"targets": { "0.8.0": 76, "1.0.0": 85 },
+			"targets": {
+				"0.8.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "core.ergonomics#1",
@@ -438,7 +510,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -541,7 +616,6 @@
 						"core.ergonomics#1",
 						"core.ergonomics#2",
 						"core.ergonomics#3",
-						"core.ergonomics#4",
 						"core.ergonomics#5",
 						"core.ergonomics#6",
 						"core.ergonomics#7",
@@ -567,6 +641,17 @@
 				"notes": {
 					"id_effect": "0.6.0 meets 4 of 8: no one-call timeout, generic runners need annotations, no first-party lints or idiom guide; v1 judged readability, which the checks do not see."
 				}
+			},
+			"v1": {
+				"competitors": [88, 80, 75, 85, 75, 88, 92, 88, 90, 85],
+				"id_effect": {
+					"0.6.0": 68,
+					"0.7.0": 72
+				},
+				"targets": {
+					"0.8.0": 76,
+					"1.0.0": 85
+				}
 			}
 		},
 		{
@@ -574,12 +659,17 @@
 			"group": "core",
 			"name": "Failure model (Cause / Exit)",
 			"measures": "Structured failure: expected errors, defects, interruption, composition and rendering.",
-			"competitors": [95, 95, 60, 55, 50, 55, 40, 40, 40, 30],
+			"competitors": [100, 100, 75, 75, 75, 88, 50, 88, 50, 75],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 85, "0.7.0": 88 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect/src/failure/{cause,exit}.rs; Die(Defect) keeps panic payload; tests/panic.rs.",
-			"targets": { "1.0.0": 92 },
+			"targets": {
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "core.cause#1",
@@ -605,7 +695,10 @@
 					"id": "core.cause#6",
 					"text": "Handlers can recover from defects and interruption, not only typed errors"
 				},
-				{ "id": "core.cause#7", "text": "Failures carry stack or span traces" },
+				{
+					"id": "core.cause#7",
+					"text": "Failures carry stack or span traces"
+				},
 				{
 					"id": "core.cause#8",
 					"text": "Cause queries and normalisation (failures/defects/interruptors, flatten)"
@@ -613,7 +706,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -738,6 +834,16 @@
 				"notes": {
 					"id_effect": "The 0.6.0 kernel had no Cause or Exit: panics were not captured as defects, nothing recovered from defects or interruption, failures carried no traces (4 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 60, 55, 50, 55, 40, 40, 40, 30],
+				"id_effect": {
+					"0.6.0": 85,
+					"0.7.0": 88
+				},
+				"targets": {
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -745,12 +851,17 @@
 			"group": "core",
 			"name": "Resource safety (Scope / acquire-release)",
 			"measures": "Guaranteed release on success, failure and interruption; scoped lifetimes.",
-			"competitors": [95, 95, 75, 70, 70, 80, 50, 50, 45, 40],
+			"competitors": [100, 100, 63, 75, 50, 63, 38, 25, 25, 25],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 85, "0.7.0": 88 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 89
+			},
 			"evidence": "kernel/resource.rs acquire_use_release/ensuring; finalizers run on interrupt; Layer::scoped.",
-			"targets": { "1.0.0": 92 },
+			"targets": {
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "core.scope#1",
@@ -787,7 +898,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -884,6 +998,16 @@
 				"notes": {
 					"id_effect": "0.6.0 acquire_release ran release right after acquire and ensuring skipped drop and panic (4 of 8); no integration test, so level tested."
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 75, 70, 70, 80, 50, 50, 45, 40],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 88
+				},
+				"targets": {
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -891,12 +1015,17 @@
 			"group": "core",
 			"name": "Interruption and cancellation",
 			"measures": "Cooperative cancellation, masking, propagation to children, finalizer semantics.",
-			"competitors": [95, 95, 90, 85, 45, 80, 30, 35, 25, 50],
+			"competitors": [100, 100, 88, 88, 25, 50, 13, 50, 1, 38],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 68, "0.7.0": 85 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 88
+			},
 			"evidence": "uninterruptible/uninterruptible_mask/interruptible (kernel/resource.rs), parent interrupts children; tests/fibers.rs. No on_interrupt.",
-			"targets": { "0.8.0": 90 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "core.interrupt#1",
@@ -914,7 +1043,10 @@
 					"id": "core.interrupt#4",
 					"text": "Interrupting a parent interrupts its children"
 				},
-				{ "id": "core.interrupt#5", "text": "Finalizers run on interruption" },
+				{
+					"id": "core.interrupt#5",
+					"text": "Finalizers run on interruption"
+				},
 				{
 					"id": "core.interrupt#6",
 					"text": "on_interrupt/on_cancel hook attachable to an effect"
@@ -930,7 +1062,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1026,6 +1161,16 @@
 				"notes": {
 					"id_effect": "0.6.0 cancellation was a manual CancellationToken/check_interrupt: no automatic interruption, masks, finalizers on interrupt or loser cleanup (3 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 90, 85, 45, 80, 30, 35, 25, 50],
+				"id_effect": {
+					"0.6.0": 68,
+					"0.7.0": 85
+				},
+				"targets": {
+					"0.8.0": 90
+				}
 			}
 		},
 		{
@@ -1033,12 +1178,17 @@
 			"group": "core",
 			"name": "timeout / race / zip-par combinators",
 			"measures": "First-class timeout, race, parallel zip/for-each with bounded concurrency.",
-			"competitors": [95, 95, 85, 80, 70, 85, 45, 40, 45, 55],
+			"competitors": [100, 100, 25, 38, 63, 50, 25, 50, 1, 25],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 25, "0.7.0": 88 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect/src/race.rs, par.rs; tests race_timeout.rs, par.rs. No race_with/disconnect.",
-			"targets": { "0.8.0": 92 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "core.race#1",
@@ -1075,7 +1225,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1142,7 +1295,7 @@
 						"core.race#5",
 						"core.race#6"
 					],
-					"laravel": ["core.race#1"],
+					"laravel": [],
 					"nextjs": ["core.race#1", "core.race#5"]
 				},
 				"evidence": {
@@ -1157,20 +1310,34 @@
 				"notes": {
 					"id_effect": "0.6.0 had no timeout or race combinators on the effect type, so the level is absent (cap 9); v1 25 is above that cap."
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 85, 80, 70, 85, 45, 40, 45, 55],
+				"id_effect": {
+					"0.6.0": 9,
+					"0.7.0": 88
+				},
+				"targets": {
+					"0.8.0": 92
+				}
 			}
 		},
-
 		{
 			"id": "conc.fibers",
 			"group": "conc",
 			"name": "Lightweight fibers / processes",
 			"measures": "Cost and semantics of spawning, joining and supervising many concurrent tasks.",
-			"competitors": [92, 95, 98, 96, 80, 85, 45, 40, 30, 60],
+			"competitors": [100, 100, 75, 75, 50, 63, 25, 50, 13, 38],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 78, "0.7.0": 88 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 75
+			},
 			"evidence": "Executor trait, real wakers; spawn_join_10k 6.67s → 17.2ms (docs/benchmarks/REPORT-0.7.md).",
-			"targets": { "1.0.0": 92 },
+			"targets": {
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "conc.fibers#1",
@@ -1207,7 +1374,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1302,6 +1472,16 @@
 					"id_effect": "0.6.0 meets 3 of 8: no measured spawn cost or 1M-task figure, children not structured by default, no auto-yield, no task introspection.",
 					"otp": "The checks reward structured-by-default children and virtual-time testing, which OTP lacks; v1 weighted process isolation."
 				}
+			},
+			"v1": {
+				"competitors": [92, 95, 98, 96, 80, 85, 45, 40, 30, 60],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 88
+				},
+				"targets": {
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -1309,12 +1489,17 @@
 			"group": "conc",
 			"name": "Coordination primitives",
 			"measures": "Queue, PubSub, Deferred, Semaphore, Ref, Latch, channels; no panics on misuse.",
-			"competitors": [95, 95, 70, 75, 80, 85, 40, 35, 35, 35],
+			"competitors": [100, 100, 25, 38, 75, 75, 25, 38, 25, 25],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 82, "0.7.0": 85 },
+			"id_effect": {
+				"0.6.0": 69,
+				"0.7.0": 88
+			},
 			"evidence": "Waker-based constructors; coordination/channel.rs panic-free; streaming/channel.rs:306 still .expect; queue_bounded 2.55x slower than 0.6.",
-			"targets": { "0.8.0": 90 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "conc.coordination#1",
@@ -1351,7 +1536,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1427,7 +1615,6 @@
 					],
 					"rails": ["conc.coordination#1", "conc.coordination#2"],
 					"django": [
-						"conc.coordination#1",
 						"conc.coordination#3",
 						"conc.coordination#4",
 						"conc.coordination#6"
@@ -1444,6 +1631,16 @@
 					"conc.coordination#6": "crates/id_effect/src/coordination/latch.rs:45",
 					"conc.coordination#7": "crates/id_effect/src/coordination/queue.rs:393 (shutdown), :405 (await_shutdown)"
 				}
+			},
+			"v1": {
+				"competitors": [95, 95, 70, 75, 80, 85, 40, 35, 35, 35],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 85
+				},
+				"targets": {
+					"0.8.0": 90
+				}
 			}
 		},
 		{
@@ -1451,12 +1648,17 @@
 			"group": "conc",
 			"name": "Software transactional memory",
 			"measures": "Composable transactions over shared memory (TRef/TMap/TQueue) with retry/orElse.",
-			"competitors": [85, 95, 35, 30, 20, 15, 5, 5, 5, 5],
+			"competitors": [100, 100, 25, 25, 1, 1, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 55, "0.7.0": 62 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect_fp/src/stm/mod.rs parks on wakers; still in maintenance-tier fp crate.",
-			"targets": { "0.11.0": 85 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "conc.stm#1",
@@ -1474,7 +1676,10 @@
 					"id": "conc.stm#4",
 					"text": "Typed failure aborts the transaction without committing"
 				},
-				{ "id": "conc.stm#5", "text": "Transactional map and queue" },
+				{
+					"id": "conc.stm#5",
+					"text": "Transactional map and queue"
+				},
 				{
 					"id": "conc.stm#6",
 					"text": "Wider STM set: TSet, TArray, TPriorityQueue, TPromise, TReentrantLock"
@@ -1490,7 +1695,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1562,6 +1770,16 @@
 				"notes": {
 					"id_effect": "v1 docked STM for sitting in the maintenance-tier fp crate; the capability checks ignore crate tier."
 				}
+			},
+			"v1": {
+				"competitors": [85, 95, 35, 30, 20, 15, 5, 5, 5, 5],
+				"id_effect": {
+					"0.6.0": 55,
+					"0.7.0": 62
+				},
+				"targets": {
+					"0.11.0": 85
+				}
 			}
 		},
 		{
@@ -1569,12 +1787,17 @@
 			"group": "conc",
 			"name": "Parallel CPU compute",
 			"measures": "Built-in data-parallel / CPU-bound execution with admission control.",
-			"competitors": [35, 75, 55, 50, 80, 88, 25, 25, 20, 30],
+			"competitors": [38, 63, 25, 38, 63, 75, 1, 1, 1, 13],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 88, "0.7.0": 88 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect/src/compute/*; Concurrency::Inherit from Fabric.",
-			"targets": { "1.0.0": 92 },
+			"targets": {
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "conc.parallel#1",
@@ -1611,7 +1834,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1688,6 +1914,16 @@
 				"notes": {
 					"id_effect": "0.6.0 lacked an ambient concurrency budget, cancellation of queued CPU work and pool metrics (5 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [35, 75, 55, 50, 80, 88, 25, 25, 20, 30],
+				"id_effect": {
+					"0.6.0": 88,
+					"0.7.0": 88
+				},
+				"targets": {
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -1695,18 +1931,26 @@
 			"group": "conc",
 			"name": "Raw performance and footprint",
 			"measures": "Throughput, latency and memory of typical workloads.",
-			"competitors": [50, 70, 60, 65, 72, 86, 35, 35, 45, 55],
+			"competitors": [25, 38, 38, 50, 38, 75, 13, 13, 13, 13],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 85, "0.7.0": 90 },
+			"id_effect": {
+				"0.6.0": 13,
+				"0.7.0": 63
+			},
 			"evidence": "axum_request_oneshot 52.5 → 7.16µs; schedule_retry_overhead 5.77x regression (REPORT-0.7.md).",
-			"targets": { "1.0.0": 93 },
+			"targets": {
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "conc.perf#1",
 					"text": "Committed benchmark suite with regression gates and a per-release report"
 				},
-				{ "id": "conc.perf#2", "text": "Task spawn+join <=10 us (measured)" },
+				{
+					"id": "conc.perf#2",
+					"text": "Task spawn+join <=10 us (measured)"
+				},
 				{
 					"id": "conc.perf#3",
 					"text": "Idle/sleeping tasks use ~zero CPU (no spin polling), measured"
@@ -1734,7 +1978,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1790,6 +2037,16 @@
 				"notes": {
 					"id_effect": "v1 scored micro-bench speed-ups; v2 also needs TechEmpower presence, memory-per-task and p99 data, none published (0.6.0 also had no committed bench suite: 1 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [50, 70, 60, 65, 72, 86, 35, 35, 45, 55],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 89
+				},
+				"targets": {
+					"1.0.0": 93
+				}
 			}
 		},
 		{
@@ -1797,10 +2054,13 @@
 			"group": "conc",
 			"name": "Language-level safety",
 			"measures": "Memory and data-race safety guaranteed by language and library policy.",
-			"competitors": [65, 80, 75, 75, 65, 72, 35, 40, 40, 60],
+			"competitors": [38, 25, 75, 75, 25, 50, 38, 25, 38, 38],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 95, "0.7.0": 96 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 88
+			},
 			"evidence": "#![forbid(unsafe_code)] in every crate; no unsafe blocks in crates/ or labs/.",
 			"targets": {},
 			"checks": [
@@ -1839,7 +2099,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -1886,7 +2149,6 @@
 						"conc.safety#4",
 						"conc.safety#5",
 						"conc.safety#6",
-						"conc.safety#7",
 						"conc.safety#8"
 					],
 					"spring": ["conc.safety#1", "conc.safety#6"],
@@ -1914,20 +2176,32 @@
 					"id_effect": "0.6.0 meets 5 of 8: values crossing tasks not statically checked, no panic isolation, no per-task heap isolation.",
 					"zio": "The language-level checks are compile-time guarantees the JVM lacks; v1 credited ZIO's fiber and immutability discipline."
 				}
+			},
+			"v1": {
+				"competitors": [65, 80, 75, 75, 65, 72, 35, 40, 40, 60],
+				"id_effect": {
+					"0.6.0": 89,
+					"0.7.0": 89
+				},
+				"targets": {}
 			}
 		},
-
 		{
 			"id": "fault.supervision",
 			"group": "fault",
 			"name": "Supervision trees",
 			"measures": "Restart strategies, intensity limits, dynamic children, shutdown policies.",
-			"competitors": [55, 50, 99, 97, 35, 40, 15, 10, 30, 10],
+			"competitors": [1, 1, 100, 100, 1, 1, 1, 1, 25, 1],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 82, "0.7.0": 84 },
+			"id_effect": {
+				"0.6.0": 88,
+				"0.7.0": 88
+			},
 			"evidence": "crates/id_effect_process/src/supervisor.rs (3 strategies, intensity, DynamicSupervisor); tests/coordination_supervisor.rs.",
-			"targets": { "0.11.0": 90 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "fault.supervision#1",
@@ -1964,7 +2238,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "absent",
 					"zio": "absent",
 					"otp": "production",
@@ -2035,6 +2312,16 @@
 					"fault.supervision#6": "crates/id_effect_process/src/supervisor.rs:140 (ChildSpec::supervisor)",
 					"fault.supervision#7": "crates/id_effect_process/src/supervisor.rs:550 (which_children), :564 (count_children)"
 				}
+			},
+			"v1": {
+				"competitors": [55, 50, 99, 97, 35, 40, 15, 10, 30, 10],
+				"id_effect": {
+					"0.6.0": 82,
+					"0.7.0": 84
+				},
+				"targets": {
+					"0.11.0": 90
+				}
 			}
 		},
 		{
@@ -2042,12 +2329,17 @@
 			"group": "fault",
 			"name": "Actor / process model",
 			"measures": "gen_server equivalent: mailboxes, call/cast/info, links, monitors, timers, selective receive.",
-			"competitors": [45, 45, 99, 97, 30, 65, 10, 10, 10, 5],
+			"competitors": [25, 25, 100, 100, 1, 63, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 74, "0.7.0": 75 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 63
+			},
 			"evidence": "id_effect_process mailbox.rs, links/monitors/trap_exit. No selective receive, send_after or hibernate.",
-			"targets": { "0.11.0": 88 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "fault.actors#1",
@@ -2065,7 +2357,10 @@
 					"id": "fault.actors#4",
 					"text": "Monitors (one-way DOWN notifications) with demonitor"
 				},
-				{ "id": "fault.actors#5", "text": "Name registry (register/whereis)" },
+				{
+					"id": "fault.actors#5",
+					"text": "Name registry (register/whereis)"
+				},
 				{
 					"id": "fault.actors#6",
 					"text": "Timers to self (send_after) and idle timeouts"
@@ -2081,7 +2376,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "labs",
 					"zio": "labs",
 					"otp": "production",
@@ -2152,6 +2450,16 @@
 					"fault.actors#4": "crates/id_effect_process/src/node.rs:199 (monitor_into), :227 (demonitor)",
 					"fault.actors#5": "crates/id_effect_process/src/node.rs:306 (register), :333 (whereis)"
 				}
+			},
+			"v1": {
+				"competitors": [45, 45, 99, 97, 30, 65, 10, 10, 10, 5],
+				"id_effect": {
+					"0.6.0": 74,
+					"0.7.0": 75
+				},
+				"targets": {
+					"0.11.0": 88
+				}
 			}
 		},
 		{
@@ -2159,12 +2467,17 @@
 			"group": "fault",
 			"name": "State machines (gen_statem)",
 			"measures": "Typed FSMs with state data, timeouts, postpone, enter actions, visualisation.",
-			"competitors": [40, 35, 90, 85, 70, 45, 50, 40, 45, 30],
+			"competitors": [39, 1, 75, 75, 88, 39, 38, 39, 38, 39],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 62, "0.7.0": 62 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 63
+			},
 			"evidence": "crates/id_effect_fsm (fieldless derive(Fsm), FsmProcess, Mermaid). No state timeouts/postpone/per-state data.",
-			"targets": { "0.11.0": 80 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "fault.fsm#1",
@@ -2174,8 +2487,14 @@
 					"id": "fault.fsm#2",
 					"text": "Declarative definition (derive, DSL or annotations)"
 				},
-				{ "id": "fault.fsm#3", "text": "Per-state data carried by states" },
-				{ "id": "fault.fsm#4", "text": "State and event timeouts" },
+				{
+					"id": "fault.fsm#3",
+					"text": "Per-state data carried by states"
+				},
+				{
+					"id": "fault.fsm#4",
+					"text": "State and event timeouts"
+				},
 				{
 					"id": "fault.fsm#5",
 					"text": "Postpone/defer events until a later state"
@@ -2184,7 +2503,10 @@
 					"id": "fault.fsm#6",
 					"text": "Effectful actions on transitions or state entry/exit"
 				},
-				{ "id": "fault.fsm#7", "text": "Diagram export (Mermaid/DOT/UML)" },
+				{
+					"id": "fault.fsm#7",
+					"text": "Diagram export (Mermaid/DOT/UML)"
+				},
 				{
 					"id": "fault.fsm#8",
 					"text": "FSM runs as a supervised process/actor"
@@ -2192,7 +2514,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "labs",
 					"zio": "absent",
 					"otp": "production",
@@ -2227,7 +2552,6 @@
 						"fault.fsm#3",
 						"fault.fsm#4",
 						"fault.fsm#6",
-						"fault.fsm#7",
 						"fault.fsm#8"
 					],
 					"zio": [],
@@ -2287,6 +2611,16 @@
 					"fault.fsm#7": "crates/id_effect_fsm/src/visualize.rs:8 (to_mermaid)",
 					"fault.fsm#8": "crates/id_effect_fsm/src/behaviour.rs:141 (FsmProcess); examples/supervised_traffic_light.rs"
 				}
+			},
+			"v1": {
+				"competitors": [40, 35, 90, 85, 70, 45, 50, 40, 45, 30],
+				"id_effect": {
+					"0.6.0": 62,
+					"0.7.0": 62
+				},
+				"targets": {
+					"0.11.0": 80
+				}
 			}
 		},
 		{
@@ -2294,26 +2628,46 @@
 			"group": "fault",
 			"name": "Resilience patterns",
 			"measures": "Circuit breaker, retry, timeout, rate limit, bulkhead, hedging, fallback as composable policies.",
-			"competitors": [80, 80, 60, 55, 92, 95, 30, 25, 40, 20],
+			"competitors": [75, 75, 13, 13, 88, 100, 25, 1, 38, 1],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 72, "0.7.0": 78 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 69
+			},
 			"evidence": "id_effect_resilience breaker/bulkhead/rate limiter; hedged is a race; core timeout. No fallback/policy pipeline.",
-			"targets": { "0.8.0": 88 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "fault.resilience#1",
 					"text": "Circuit breaker with closed/open/half-open states"
 				},
-				{ "id": "fault.resilience#2", "text": "Retry with a backoff policy" },
-				{ "id": "fault.resilience#3", "text": "Timeout policy" },
+				{
+					"id": "fault.resilience#2",
+					"text": "Retry with a backoff policy"
+				},
+				{
+					"id": "fault.resilience#3",
+					"text": "Timeout policy"
+				},
 				{
 					"id": "fault.resilience#4",
 					"text": "Rate limiter (token bucket or sliding window)"
 				},
-				{ "id": "fault.resilience#5", "text": "Bulkhead/concurrency limiter" },
-				{ "id": "fault.resilience#6", "text": "Hedged requests" },
-				{ "id": "fault.resilience#7", "text": "Fallback policy" },
+				{
+					"id": "fault.resilience#5",
+					"text": "Bulkhead/concurrency limiter"
+				},
+				{
+					"id": "fault.resilience#6",
+					"text": "Hedged requests"
+				},
+				{
+					"id": "fault.resilience#7",
+					"text": "Fallback policy"
+				},
 				{
 					"id": "fault.resilience#8",
 					"text": "Policies compose into one reusable pipeline with telemetry"
@@ -2321,7 +2675,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -2405,6 +2762,16 @@
 					"fault.resilience#5": "crates/id_effect_resilience/src/bulkhead.rs:17",
 					"fault.resilience#6": "crates/id_effect_resilience/src/hedged.rs:33"
 				}
+			},
+			"v1": {
+				"competitors": [80, 80, 60, 55, 92, 95, 30, 25, 40, 20],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 69
+				},
+				"targets": {
+					"0.8.0": 88
+				}
 			}
 		},
 		{
@@ -2412,34 +2779,57 @@
 			"group": "fault",
 			"name": "Retry / repeat schedule algebra",
 			"measures": "Composable schedules: exponential, jitter, fibonacci, union/intersect, cron.",
-			"competitors": [95, 98, 40, 45, 65, 72, 45, 30, 50, 20],
+			"competitors": [100, 100, 1, 38, 50, 38, 50, 39, 38, 1],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 76, "0.7.0": 83 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 88
+			},
 			"evidence": "Typed Schedule<Out,In> (scheduling/schedule.rs) with fibonacci/union/intersect/jitter. No cron.",
-			"targets": { "0.8.0": 92 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "fault.schedule#1",
 					"text": "Schedule is one composable value used by both retry and repeat"
 				},
-				{ "id": "fault.schedule#2", "text": "Exponential backoff" },
-				{ "id": "fault.schedule#3", "text": "Jitter" },
-				{ "id": "fault.schedule#4", "text": "Fibonacci schedule" },
+				{
+					"id": "fault.schedule#2",
+					"text": "Exponential backoff"
+				},
+				{
+					"id": "fault.schedule#3",
+					"text": "Jitter"
+				},
+				{
+					"id": "fault.schedule#4",
+					"text": "Fibonacci schedule"
+				},
 				{
 					"id": "fault.schedule#5",
 					"text": "Union and intersection of schedules"
 				},
-				{ "id": "fault.schedule#6", "text": "Sequencing schedules (andThen)" },
+				{
+					"id": "fault.schedule#6",
+					"text": "Sequencing schedules (andThen)"
+				},
 				{
 					"id": "fault.schedule#7",
 					"text": "Input-aware schedules (continue while error/value matches)"
 				},
-				{ "id": "fault.schedule#8", "text": "Cron/calendar schedules" }
+				{
+					"id": "fault.schedule#8",
+					"text": "Cron/calendar schedules"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -2447,7 +2837,7 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "absent"
 				},
@@ -2537,6 +2927,16 @@
 				"notes": {
 					"id_effect": "0.6.0 lacked fibonacci, union/intersection, andThen and cron schedules (4 of 8); no integration test, so level tested."
 				}
+			},
+			"v1": {
+				"competitors": [95, 98, 40, 45, 65, 72, 45, 30, 50, 20],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 83
+				},
+				"targets": {
+					"0.8.0": 92
+				}
 			}
 		},
 		{
@@ -2544,12 +2944,17 @@
 			"group": "fault",
 			"name": "Durable workflows and sagas",
 			"measures": "Persistent, resumable multi-step workflows with compensation.",
-			"competitors": [70, 45, 35, 60, 60, 78, 40, 35, 45, 55],
+			"competitors": [39, 39, 1, 50, 50, 100, 50, 38, 38, 39],
 			"track": "T7",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "In-memory Saga in id_effect_fsm; labs/id_effect_workflow (sqlite, single writer), unpublished.",
-			"targets": { "0.11.0": 78 },
+			"targets": {
+				"0.11.0": 75
+			},
 			"checks": [
 				{
 					"id": "fault.workflows#1",
@@ -2559,7 +2964,10 @@
 					"id": "fault.workflows#2",
 					"text": "Resume from the last completed step (journal/replay)"
 				},
-				{ "id": "fault.workflows#3", "text": "Saga compensation on failure" },
+				{
+					"id": "fault.workflows#3",
+					"text": "Saga compensation on failure"
+				},
 				{
 					"id": "fault.workflows#4",
 					"text": "Durable timers (waits of hours/days survive restarts)"
@@ -2583,7 +2991,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "labs",
 					"zio": "labs",
 					"otp": "absent",
@@ -2591,7 +3002,7 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "labs"
 				},
@@ -2681,6 +3092,16 @@
 				"notes": {
 					"dotnet": "Durable Functions/Durable Task meets every check; v1 discounted it for Azure coupling."
 				}
+			},
+			"v1": {
+				"competitors": [70, 45, 35, 60, 60, 78, 40, 35, 45, 55],
+				"id_effect": {
+					"0.6.0": 30,
+					"0.7.0": 30
+				},
+				"targets": {
+					"0.11.0": 78
+				}
 			}
 		},
 		{
@@ -2688,12 +3109,18 @@
 			"group": "fault",
 			"name": "Live reload and zero-downtime upgrades",
 			"measures": "Dev auto-reload and production upgrades without dropping work.",
-			"competitors": [20, 20, 95, 72, 50, 55, 70, 55, 62, 80],
+			"competitors": [13, 13, 75, 38, 50, 50, 50, 38, 50, 38],
 			"track": "T1",
 			"stance": "partial-non-goal",
-			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "Hot code loading is a non-goal (ADR 0009); HostDrain graceful drain only.",
-			"targets": { "0.10.0": 45, "1.0.0": 55 },
+			"targets": {
+				"0.10.0": 50,
+				"1.0.0": 50
+			},
 			"checks": [
 				{
 					"id": "fault.reload#1",
@@ -2730,7 +3157,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -2792,26 +3222,44 @@
 				"notes": {
 					"otp": "OTP has no first-party dev watcher or readiness probes; v1 scored hot code loading alone as best in class."
 				}
+			},
+			"v1": {
+				"competitors": [20, 20, 95, 72, 50, 55, 70, 55, 62, 80],
+				"id_effect": {
+					"0.6.0": 15,
+					"0.7.0": 15
+				},
+				"targets": {
+					"0.10.0": 45,
+					"1.0.0": 55
+				}
 			}
 		},
-
 		{
 			"id": "dist.membership",
 			"group": "dist",
 			"name": "Clustering and node membership",
 			"measures": "Node identity, discovery, failure detection, authenticated join.",
-			"competitors": [65, 60, 92, 90, 72, 75, 15, 10, 15, 20],
+			"competitors": [63, 50, 63, 88, 63, 88, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 72, "0.7.0": 72 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "crates/id_effect_node (SWIM via foca, cookie HMAC, Static/DNS discovery, TCP/QUIC).",
-			"targets": { "0.11.0": 82 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "dist.membership#1",
 					"text": "Stable node identity incl. incarnation/boot id that distinguishes restarts"
 				},
-				{ "id": "dist.membership#2", "text": "Static seed-list discovery" },
+				{
+					"id": "dist.membership#2",
+					"text": "Static seed-list discovery"
+				},
 				{
 					"id": "dist.membership#3",
 					"text": "DNS-based discovery (e.g. headless-service records)"
@@ -2839,7 +3287,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -2931,6 +3382,16 @@
 				"notes": {
 					"otp": "No DNS/cloud discovery or split-brain resolver without libcluster (Phoenix, which ships it, gets 88)."
 				}
+			},
+			"v1": {
+				"competitors": [65, 60, 92, 90, 72, 75, 15, 10, 15, 20],
+				"id_effect": {
+					"0.6.0": 72,
+					"0.7.0": 72
+				},
+				"targets": {
+					"0.11.0": 82
+				}
 			}
 		},
 		{
@@ -2938,19 +3399,30 @@
 			"group": "dist",
 			"name": "Remote spawn / send / monitor",
 			"measures": "Location-transparent messaging, remote spawn, cross-node links/monitors.",
-			"competitors": [65, 55, 95, 92, 40, 70, 10, 10, 10, 5],
+			"competitors": [63, 50, 88, 88, 38, 75, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 70, "0.7.0": 71 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "mesh.rs remote_spawn/call/cast/monitor; at-most-once delivery; node waits are effects.",
-			"targets": { "0.11.0": 82 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "dist.remote#1",
 					"text": "Location-transparent process addresses usable from any node"
 				},
-				{ "id": "dist.remote#2", "text": "Remote fire-and-forget send" },
-				{ "id": "dist.remote#3", "text": "Remote request/reply with timeout" },
+				{
+					"id": "dist.remote#2",
+					"text": "Remote fire-and-forget send"
+				},
+				{
+					"id": "dist.remote#3",
+					"text": "Remote request/reply with timeout"
+				},
 				{
 					"id": "dist.remote#4",
 					"text": "Remote spawn of a named behaviour/actor on a chosen node"
@@ -2974,7 +3446,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -3058,6 +3533,16 @@
 					"dist.remote#5": "crates/id_effect_node/src/mesh.rs:433 remote_monitor (NoConnection on NodeDown)",
 					"dist.remote#6": "crates/id_effect_node/src/envelope.rs:193 ProcessEnvelope::Link; mesh.rs:270 link_to"
 				}
+			},
+			"v1": {
+				"competitors": [65, 55, 95, 92, 40, 70, 10, 10, 10, 5],
+				"id_effect": {
+					"0.6.0": 70,
+					"0.7.0": 71
+				},
+				"targets": {
+					"0.11.0": 82
+				}
 			}
 		},
 		{
@@ -3065,12 +3550,17 @@
 			"group": "dist",
 			"name": "Singletons, groups and placement",
 			"measures": "Cluster singletons, process groups, global registry, sharding/placement.",
-			"competitors": [72, 65, 72, 78, 55, 82, 10, 10, 15, 5],
+			"competitors": [63, 63, 63, 63, 38, 88, 25, 1, 25, 1],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 65, "0.7.0": 66 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "singleton.rs + PgAdvisoryLease, OrSwot groups, DistributedSupervisor. No global registry.",
-			"targets": { "0.11.0": 82 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "dist.placement#1",
@@ -3107,7 +3597,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -3164,7 +3657,6 @@
 						"dist.placement#3",
 						"dist.placement#4",
 						"dist.placement#5",
-						"dist.placement#6",
 						"dist.placement#7"
 					],
 					"spring": [
@@ -3194,6 +3686,16 @@
 					"dist.placement#7": "crates/id_effect_node/src/dist_supervisor.rs:137 on_membership takeover",
 					"dist.placement#8": "crates/id_effect_node/src/placement.rs:187 place"
 				}
+			},
+			"v1": {
+				"competitors": [72, 65, 72, 78, 55, 82, 10, 10, 15, 5],
+				"id_effect": {
+					"0.6.0": 65,
+					"0.7.0": 66
+				},
+				"targets": {
+					"0.11.0": 82
+				}
 			}
 		},
 		{
@@ -3201,12 +3703,17 @@
 			"group": "dist",
 			"name": "Transport security",
 			"measures": "Encryption and mutual authentication between nodes.",
-			"competitors": [60, 65, 75, 75, 85, 88, 30, 30, 30, 40],
+			"competitors": [50, 50, 75, 75, 75, 88, 38, 38, 38, 38],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 50, "0.7.0": 50 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 50
+			},
 			"evidence": "QUIC via rustls (accepts any cert); TCP authenticated but unencrypted.",
-			"targets": { "0.11.0": 85 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "dist.tls#1",
@@ -3243,7 +3750,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -3306,20 +3816,35 @@
 					"dist.tls#6": "crates/id_effect_node/src/handshake.rs:87 initiate (HMAC nonce challenge)",
 					"dist.tls#8": "crates/id_effect_node/src/transport/quic.rs:8 '## Trust model' rustdoc"
 				}
+			},
+			"v1": {
+				"competitors": [60, 65, 75, 75, 85, 88, 30, 30, 30, 40],
+				"id_effect": {
+					"0.6.0": 50,
+					"0.7.0": 50
+				},
+				"targets": {
+					"0.11.0": 85
+				}
 			}
 		},
-
 		{
 			"id": "data.schema",
 			"group": "data",
 			"name": "Schema / validation",
 			"measures": "Declarative decode/encode/validate with derive, refinements, error accumulation.",
-			"competitors": [97, 85, 30, 85, 80, 85, 85, 90, 92, 70],
+			"competitors": [100, 88, 1, 88, 88, 88, 75, 75, 50, 100],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 75, "0.7.0": 77 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "crates/id_effect/src/schema (tuple/struct up to 12, Brand, Redacted, derive fixes).",
-			"targets": { "0.8.0": 82, "0.9.0": 88 },
+			"targets": {
+				"0.8.0": 88,
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "data.schema#1",
@@ -3333,7 +3858,10 @@
 					"id": "data.schema#3",
 					"text": "Custom refinements/filters with messages"
 				},
-				{ "id": "data.schema#4", "text": "Branded/nominal types" },
+				{
+					"id": "data.schema#4",
+					"text": "Branded/nominal types"
+				},
 				{
 					"id": "data.schema#5",
 					"text": "Unions, literals and recursive (lazy) schemas"
@@ -3342,7 +3870,10 @@
 					"id": "data.schema#6",
 					"text": "Accumulates all field errors in one pass (not fail-fast)"
 				},
-				{ "id": "data.schema#7", "text": "Errors carry field/index paths" },
+				{
+					"id": "data.schema#7",
+					"text": "Errors carry field/index paths"
+				},
 				{
 					"id": "data.schema#8",
 					"text": "Built-in validators (email, uuid, url, length, range, regex)"
@@ -3350,7 +3881,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -3445,8 +3979,6 @@
 						"data.schema#8"
 					],
 					"laravel": [
-						"data.schema#1",
-						"data.schema#2",
 						"data.schema#3",
 						"data.schema#6",
 						"data.schema#7",
@@ -3471,6 +4003,17 @@
 					"data.schema#5": "crates/id_effect/src/schema/extra.rs:106 suspend, :141 union_chain, :51 literal_string",
 					"data.schema#7": "crates/id_effect/src/schema/parse.rs:16 ParseError{path}, prefix :33"
 				}
+			},
+			"v1": {
+				"competitors": [97, 85, 30, 85, 80, 85, 85, 90, 92, 70],
+				"id_effect": {
+					"0.6.0": 75,
+					"0.7.0": 77
+				},
+				"targets": {
+					"0.8.0": 82,
+					"0.9.0": 88
+				}
 			}
 		},
 		{
@@ -3478,12 +4021,18 @@
 			"group": "data",
 			"name": "JSON Schema / OpenAPI generation",
 			"measures": "Generate JSON Schema and OpenAPI from the same schemas/routes the code uses.",
-			"competitors": [90, 75, 10, 55, 90, 95, 45, 85, 65, 40],
+			"competitors": [88, 75, 1, 39, 39, 100, 39, 88, 39, 25],
 			"track": "T4",
 			"stance": "build",
-			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "schema/json_schema_export.rs is primitive fragments only; SPEC.md: not implemented.",
-			"targets": { "0.8.0": 70, "0.9.0": 88 },
+			"targets": {
+				"0.8.0": 75,
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "data.jsonschema#1",
@@ -3520,12 +4069,15 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
 					"phoenix": "labs",
-					"spring": "production",
+					"spring": "labs",
 					"dotnet": "production",
 					"rails": "labs",
 					"django": "production",
@@ -3533,7 +4085,10 @@
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"data.jsonschema#1",
 						"data.jsonschema#2",
@@ -3605,6 +4160,17 @@
 					"nextjs": ["data.jsonschema#1", "data.jsonschema#6"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [90, 75, 10, 55, 90, 95, 45, 85, 65, 40],
+				"id_effect": {
+					"0.6.0": 15,
+					"0.7.0": 15
+				},
+				"targets": {
+					"0.8.0": 70,
+					"0.9.0": 88
+				}
 			}
 		},
 		{
@@ -3612,12 +4178,17 @@
 			"group": "data",
 			"name": "SQL client, pooling, transactions",
 			"measures": "Typed rows/params, pooling, transactions, savepoints, isolation, streaming.",
-			"competitors": [80, 75, 30, 92, 95, 97, 97, 95, 95, 50],
+			"competitors": [88, 75, 1, 88, 100, 100, 88, 75, 75, 39],
 			"track": "T3",
 			"stance": "build",
-			"id_effect": { "0.6.0": 35, "0.7.0": 42 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "id_effect_sql: tx roll back on defect/interrupt, scoped layers; rows are Vec<String> (MVP), few param types.",
-			"targets": { "0.9.0": 85 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "data.sql#1",
@@ -3627,14 +4198,26 @@
 					"id": "data.sql#2",
 					"text": "Typed binds cover uuid, timestamp, decimal and json"
 				},
-				{ "id": "data.sql#3", "text": "Rows decode into typed structs/tuples" },
+				{
+					"id": "data.sql#3",
+					"text": "Rows decode into typed structs/tuples"
+				},
 				{
 					"id": "data.sql#4",
 					"text": "Scoped transactions: commit on success, auto-rollback on failure"
 				},
-				{ "id": "data.sql#5", "text": "Savepoints / nested transactions" },
-				{ "id": "data.sql#6", "text": "Per-transaction isolation level" },
-				{ "id": "data.sql#7", "text": "Streaming/cursor result sets" },
+				{
+					"id": "data.sql#5",
+					"text": "Savepoints / nested transactions"
+				},
+				{
+					"id": "data.sql#6",
+					"text": "Per-transaction isolation level"
+				},
+				{
+					"id": "data.sql#7",
+					"text": "Streaming/cursor result sets"
+				},
 				{
 					"id": "data.sql#8",
 					"text": "Per-query tracing spans or metrics emitted automatically"
@@ -3642,7 +4225,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -3740,6 +4326,16 @@
 				"notes": {
 					"id_effect": "Only pooling and transaction scope are met: SqlParam is Null/Bool/Int/Text/Bytes (client.rs:52), rows are Vec<String> (client.rs:67), no savepoint, isolation, streaming or spans; v1 credited transaction robustness."
 				}
+			},
+			"v1": {
+				"competitors": [80, 75, 30, 92, 95, 97, 97, 95, 95, 50],
+				"id_effect": {
+					"0.6.0": 35,
+					"0.7.0": 42
+				},
+				"targets": {
+					"0.9.0": 85
+				}
 			}
 		},
 		{
@@ -3747,14 +4343,23 @@
 			"group": "data",
 			"name": "ORM / query builder",
 			"measures": "Typed query construction, entity mapping, relations.",
-			"competitors": [55, 65, 10, 92, 95, 97, 98, 97, 97, 40],
+			"competitors": [38, 38, 1, 88, 100, 100, 100, 75, 88, 39],
 			"track": "T3",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None.",
-			"targets": { "0.9.0": 65, "0.12.0": 80 },
+			"targets": {
+				"0.9.0": 63,
+				"0.12.0": 88
+			},
 			"checks": [
-				{ "id": "data.orm#1", "text": "Entity mapping from types to tables" },
+				{
+					"id": "data.orm#1",
+					"text": "Entity mapping from types to tables"
+				},
 				{
 					"id": "data.orm#2",
 					"text": "Typed query builder (filters, joins, ordering, paging)"
@@ -3786,7 +4391,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -3799,7 +4407,10 @@
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["data.orm#1", "data.orm#2", "data.orm#6"],
 					"zio": ["data.orm#1", "data.orm#2", "data.orm#6"],
 					"otp": [],
@@ -3862,6 +4473,17 @@
 					"nextjs": ["data.orm#1", "data.orm#2", "data.orm#3", "data.orm#6"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [55, 65, 10, 92, 95, 97, 98, 97, 97, 40],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"0.9.0": 65,
+					"0.12.0": 80
+				}
 			}
 		},
 		{
@@ -3869,12 +4491,17 @@
 			"group": "data",
 			"name": "Migrations",
 			"measures": "Versioned schema migrations with CLI, locking, up/down, CI check.",
-			"competitors": [65, 50, 15, 92, 85, 95, 99, 98, 97, 35],
+			"competitors": [38, 39, 1, 75, 88, 100, 88, 88, 75, 39],
 			"track": "T3",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "Only an include_str! migration inside unpublished examples/http-showcase.",
-			"targets": { "0.9.0": 85 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "data.migrations#1",
@@ -3888,7 +4515,10 @@
 					"id": "data.migrations#3",
 					"text": "CLI/API applies pending migrations and reports status"
 				},
-				{ "id": "data.migrations#4", "text": "Down/rollback migrations" },
+				{
+					"id": "data.migrations#4",
+					"text": "Down/rollback migrations"
+				},
 				{
 					"id": "data.migrations#5",
 					"text": "Lock prevents concurrent migration runs"
@@ -3908,7 +4538,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "production",
 					"zio": "labs",
 					"otp": "absent",
@@ -3921,7 +4554,10 @@
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"data.migrations#1",
 						"data.migrations#5",
@@ -3997,6 +4633,16 @@
 					]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [65, 50, 15, 92, 85, 95, 99, 98, 97, 35],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"0.9.0": 85
+				}
 			}
 		},
 		{
@@ -4004,18 +4650,38 @@
 			"group": "data",
 			"name": "Database backend breadth",
 			"measures": "Supported databases (Postgres, MySQL, SQLite, MSSQL, …) behind one API.",
-			"competitors": [85, 75, 30, 85, 97, 95, 90, 90, 90, 50],
+			"competitors": [63, 75, 13, 75, 100, 88, 63, 75, 75, 39],
 			"track": "T3",
 			"stance": "build",
-			"id_effect": { "0.6.0": 15, "0.7.0": 15 },
+			"id_effect": {
+				"0.6.0": 13,
+				"0.7.0": 13
+			},
 			"evidence": "Postgres only (feature pg via sqlx).",
-			"targets": { "0.9.0": 75 },
+			"targets": {
+				"0.9.0": 75
+			},
 			"checks": [
-				{ "id": "data.backends#1", "text": "PostgreSQL supported" },
-				{ "id": "data.backends#2", "text": "MySQL/MariaDB supported" },
-				{ "id": "data.backends#3", "text": "SQLite supported" },
-				{ "id": "data.backends#4", "text": "SQL Server supported" },
-				{ "id": "data.backends#5", "text": "Oracle supported" },
+				{
+					"id": "data.backends#1",
+					"text": "PostgreSQL supported"
+				},
+				{
+					"id": "data.backends#2",
+					"text": "MySQL/MariaDB supported"
+				},
+				{
+					"id": "data.backends#3",
+					"text": "SQLite supported"
+				},
+				{
+					"id": "data.backends#4",
+					"text": "SQL Server supported"
+				},
+				{
+					"id": "data.backends#5",
+					"text": "Oracle supported"
+				},
 				{
 					"id": "data.backends#6",
 					"text": "One portable API across 2+ SQL backends (dialect abstraction)"
@@ -4031,7 +4697,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -4125,6 +4794,16 @@
 				"evidence": {
 					"data.backends#1": "crates/id_effect_sql/src/pg/client.rs:18 PgSqlClient (feature pg)"
 				}
+			},
+			"v1": {
+				"competitors": [85, 75, 30, 85, 97, 95, 90, 90, 90, 50],
+				"id_effect": {
+					"0.6.0": 15,
+					"0.7.0": 15
+				},
+				"targets": {
+					"0.9.0": 75
+				}
 			}
 		},
 		{
@@ -4132,12 +4811,17 @@
 			"group": "data",
 			"name": "Caching (local + distributed)",
 			"measures": "In-process and distributed caches, TTL, stampede protection, invalidation.",
-			"competitors": [70, 70, 80, 80, 92, 94, 92, 88, 92, 85],
+			"competitors": [63, 63, 13, 39, 75, 75, 63, 50, 63, 50],
 			"track": "T3",
 			"stance": "build",
-			"id_effect": { "0.6.0": 42, "0.7.0": 60 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 63
+			},
 			"evidence": "resource/cache.rs capacity/ttl/typed failures; RequestCache + batching. No distributed cache.",
-			"targets": { "0.9.0": 82 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "data.cache#1",
@@ -4174,11 +4858,14 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
-					"phoenix": "production",
+					"otp": "labs",
+					"phoenix": "labs",
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
@@ -4258,7 +4945,6 @@
 					],
 					"nextjs": [
 						"data.cache#1",
-						"data.cache#2",
 						"data.cache#4",
 						"data.cache#5",
 						"data.cache#7"
@@ -4274,6 +4960,16 @@
 				"notes": {
 					"dotnet": "No first-party DataLoader and no L2 backplane invalidation in HybridCache; checks #5 and #8 may be too strict for a leader."
 				}
+			},
+			"v1": {
+				"competitors": [70, 70, 80, 80, 92, 94, 92, 88, 92, 85],
+				"id_effect": {
+					"0.6.0": 42,
+					"0.7.0": 60
+				},
+				"targets": {
+					"0.9.0": 82
+				}
 			}
 		},
 		{
@@ -4281,12 +4977,17 @@
 			"group": "data",
 			"name": "Event sourcing / CQRS",
 			"measures": "Event store, projections, command/query handlers, snapshots.",
-			"competitors": [45, 40, 35, 62, 62, 65, 35, 20, 50, 15],
+			"competitors": [25, 25, 1, 39, 39, 39, 39, 1, 39, 1],
 			"track": "T7",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"id_effect": {
+				"0.6.0": 39,
+				"0.7.0": 39
+			},
 			"evidence": "labs/id_effect_events (unpublished).",
-			"targets": { "0.10.0": 70 },
+			"targets": {
+				"0.10.0": 75
+			},
 			"checks": [
 				{
 					"id": "data.events#1",
@@ -4296,7 +4997,10 @@
 					"id": "data.events#2",
 					"text": "Optimistic concurrency on append (expected-version conflict)"
 				},
-				{ "id": "data.events#3", "text": "Durable DB-backed event store" },
+				{
+					"id": "data.events#3",
+					"text": "Durable DB-backed event store"
+				},
 				{
 					"id": "data.events#4",
 					"text": "Projections/read models folded from events"
@@ -4305,8 +5009,14 @@
 					"id": "data.events#5",
 					"text": "Command and query handler abstractions (CQRS dispatch)"
 				},
-				{ "id": "data.events#6", "text": "Aggregate snapshots" },
-				{ "id": "data.events#7", "text": "Event schema versioning/upcasting" },
+				{
+					"id": "data.events#6",
+					"text": "Aggregate snapshots"
+				},
+				{
+					"id": "data.events#7",
+					"text": "Event schema versioning/upcasting"
+				},
 				{
 					"id": "data.events#8",
 					"text": "Checkpointed catch-up subscriptions for projections"
@@ -4314,13 +5024,16 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "labs",
 					"zio": "labs",
 					"otp": "absent",
 					"phoenix": "labs",
 					"spring": "labs",
-					"dotnet": "production",
+					"dotnet": "labs",
 					"rails": "labs",
 					"django": "absent",
 					"laravel": "labs",
@@ -4399,6 +5112,16 @@
 					"data.events#4": "labs/id_effect_events/src/projection.rs:8 Projection",
 					"data.events#5": "labs/id_effect_events/src/cqrs.rs:12 CommandHandler, :20 QueryHandler"
 				}
+			},
+			"v1": {
+				"competitors": [45, 40, 35, 62, 62, 65, 35, 20, 50, 15],
+				"id_effect": {
+					"0.6.0": 25,
+					"0.7.0": 25
+				},
+				"targets": {
+					"0.10.0": 70
+				}
 			}
 		},
 		{
@@ -4406,10 +5129,13 @@
 			"group": "data",
 			"name": "Persistent collections and FP toolkit",
 			"measures": "Immutable collections, typeclasses, optics.",
-			"competitors": [85, 90, 70, 70, 35, 50, 20, 20, 20, 30],
+			"competitors": [75, 88, 13, 13, 38, 13, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "maintain",
-			"id_effect": { "0.6.0": 72, "0.7.0": 70 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "id_effect_fp/optics maintenance tier; pipe/memoize/flip helpers removed in 0.7.",
 			"targets": {},
 			"checks": [
@@ -4417,23 +5143,41 @@
 					"id": "data.fp#1",
 					"text": "Persistent collections with structural sharing (vector, map, set)"
 				},
-				{ "id": "data.fp#2", "text": "Functor/Applicative/Monad abstractions" },
-				{ "id": "data.fp#3", "text": "Foldable/Traversable abstractions" },
-				{ "id": "data.fp#4", "text": "Semigroup/Monoid abstractions" },
+				{
+					"id": "data.fp#2",
+					"text": "Functor/Applicative/Monad abstractions"
+				},
+				{
+					"id": "data.fp#3",
+					"text": "Foldable/Traversable abstractions"
+				},
+				{
+					"id": "data.fp#4",
+					"text": "Semigroup/Monoid abstractions"
+				},
 				{
 					"id": "data.fp#5",
 					"text": "Optics: lens, prism, optional, traversal"
 				},
-				{ "id": "data.fp#6", "text": "Derive/codegen for optics" },
+				{
+					"id": "data.fp#6",
+					"text": "Derive/codegen for optics"
+				},
 				{
 					"id": "data.fp#7",
 					"text": "Accumulating Validation type (applicative error collection)"
 				},
-				{ "id": "data.fp#8", "text": "NonEmpty collection types" }
+				{
+					"id": "data.fp#8",
+					"text": "NonEmpty collection types"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -4498,20 +5242,32 @@
 					"data.fp#5": "crates/id_effect_optics/src/lens.rs:7 (prism.rs:7, optional.rs:7, traversal.rs:8)",
 					"data.fp#6": "crates/id_effect_proc_macro/src/lib.rs:133 derive(Optics)"
 				}
+			},
+			"v1": {
+				"competitors": [85, 90, 70, 70, 35, 50, 20, 20, 20, 30],
+				"id_effect": {
+					"0.6.0": 72,
+					"0.7.0": 70
+				},
+				"targets": {}
 			}
 		},
-
 		{
 			"id": "web.server",
 			"group": "web",
 			"name": "HTTP server and routing",
 			"measures": "Routing, typed handlers, lifecycle, request scoping, graceful shutdown.",
-			"competitors": [80, 80, 35, 95, 97, 97, 97, 92, 96, 95],
+			"competitors": [75, 88, 38, 100, 100, 100, 100, 50, 75, 88],
 			"track": "T4",
 			"stance": "build",
-			"id_effect": { "0.6.0": 60, "0.7.0": 68 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "id_effect_axum server_layer/serve*, fiber per request (panic → 500, disconnect → interrupt).",
-			"targets": { "0.9.0": 85 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "web.server#1",
@@ -4548,10 +5304,13 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
+					"otp": "labs",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
@@ -4665,6 +5424,16 @@
 					"web.server#4": "crates/id_effect_axum/src/server/shutdown.rs:71 drain_with_timeout",
 					"web.server#5": "crates/id_effect_axum/src/lib.rs:167 HandlerDefect (500 on defect/panic)"
 				}
+			},
+			"v1": {
+				"competitors": [80, 80, 35, 95, 97, 97, 97, 92, 96, 95],
+				"id_effect": {
+					"0.6.0": 60,
+					"0.7.0": 68
+				},
+				"targets": {
+					"0.9.0": 85
+				}
 			}
 		},
 		{
@@ -4672,12 +5441,17 @@
 			"group": "web",
 			"name": "Middleware pipeline",
 			"measures": "Composable request/response middleware with typed context.",
-			"competitors": [80, 75, 30, 92, 92, 95, 92, 88, 93, 75],
+			"competitors": [50, 75, 1, 63, 88, 100, 75, 50, 63, 25],
 			"track": "T4",
 			"stance": "build",
-			"id_effect": { "0.6.0": 65, "0.7.0": 67 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "Tower feature of id_effect_axum, CapOverrideLayer, require_ready.",
-			"targets": { "0.9.0": 82 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "web.middleware#1",
@@ -4687,7 +5461,10 @@
 					"id": "web.middleware#2",
 					"text": "Middleware injects typed per-request context read by handlers"
 				},
-				{ "id": "web.middleware#3", "text": "First-party CORS middleware" },
+				{
+					"id": "web.middleware#3",
+					"text": "First-party CORS middleware"
+				},
 				{
 					"id": "web.middleware#4",
 					"text": "First-party response compression"
@@ -4711,7 +5488,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -4808,6 +5588,16 @@
 				"notes": {
 					"id_effect": "No first-party CORS, compression, request id/trace, HTTP rate limit, timeout or body limit; tower-http is neither depended on nor recommended in the docs, so the de facto rule does not apply."
 				}
+			},
+			"v1": {
+				"competitors": [80, 75, 30, 92, 92, 95, 92, 88, 93, 75],
+				"id_effect": {
+					"0.6.0": 65,
+					"0.7.0": 67
+				},
+				"targets": {
+					"0.9.0": 82
+				}
 			}
 		},
 		{
@@ -4815,12 +5605,17 @@
 			"group": "web",
 			"name": "Request validation",
 			"measures": "Schema-validated path/query/form/header/body extraction with uniform error bodies.",
-			"competitors": [90, 75, 15, 90, 90, 92, 88, 92, 95, 65],
+			"competitors": [75, 75, 1, 88, 100, 100, 63, 88, 88, 38],
 			"track": "T4",
 			"stance": "build",
-			"id_effect": { "0.6.0": 45, "0.7.0": 47 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "decode_json_schema for JSON bodies only (id_effect_axum/src/json.rs).",
-			"targets": { "0.9.0": 85 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "web.validation#1",
@@ -4838,7 +5633,10 @@
 					"id": "web.validation#4",
 					"text": "Form (urlencoded/multipart) input validated via schema"
 				},
-				{ "id": "web.validation#5", "text": "Headers validated via schema" },
+				{
+					"id": "web.validation#5",
+					"text": "Headers validated via schema"
+				},
 				{
 					"id": "web.validation#6",
 					"text": "Uniform machine-readable error body with field paths"
@@ -4854,7 +5652,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -4951,6 +5752,16 @@
 				"notes": {
 					"id_effect": "Only JSON bodies are covered: no path/query/form/header extractors, struct decoding is fail-fast (parse.rs:500), no i18n."
 				}
+			},
+			"v1": {
+				"competitors": [90, 75, 15, 90, 90, 92, 88, 92, 95, 65],
+				"id_effect": {
+					"0.6.0": 45,
+					"0.7.0": 47
+				},
+				"targets": {
+					"0.9.0": 85
+				}
 			}
 		},
 		{
@@ -4958,19 +5769,30 @@
 			"group": "web",
 			"name": "HTTP client",
 			"measures": "Typed client with timeouts, retries, tracing, pooling, streaming.",
-			"competitors": [85, 80, 50, 75, 92, 95, 55, 50, 85, 75],
+			"competitors": [88, 75, 38, 63, 100, 100, 25, 39, 63, 50],
 			"track": "T4",
 			"stance": "build",
-			"id_effect": { "0.6.0": 68, "0.7.0": 68 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "id_effect_platform HttpClient on reqwest. No built-in retry/breaker.",
-			"targets": { "0.10.0": 85 },
+			"targets": {
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "web.client#1",
 					"text": "Client exposed as an injectable capability with typed errors"
 				},
-				{ "id": "web.client#2", "text": "Connection pooling/keep-alive" },
-				{ "id": "web.client#3", "text": "Default and per-request timeouts" },
+				{
+					"id": "web.client#2",
+					"text": "Connection pooling/keep-alive"
+				},
+				{
+					"id": "web.client#3",
+					"text": "Default and per-request timeouts"
+				},
 				{
 					"id": "web.client#4",
 					"text": "Client-level retry/backoff policy configured once for all calls"
@@ -4983,7 +5805,10 @@
 					"id": "web.client#6",
 					"text": "Automatic tracing span plus W3C traceparent propagation"
 				},
-				{ "id": "web.client#7", "text": "Streaming request/response bodies" },
+				{
+					"id": "web.client#7",
+					"text": "Streaming request/response bodies"
+				},
 				{
 					"id": "web.client#8",
 					"text": "Typed response decoding (JSON to schema/type) with decode errors"
@@ -4991,7 +5816,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -4999,7 +5827,7 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "production"
 				},
@@ -5096,6 +5924,16 @@
 					"web.client#7": "crates/id_effect_platform/src/http/mod.rs:210 StreamingHttpResponse; tests/http_streaming.rs",
 					"web.client#8": "crates/id_effect_platform/src/http/reqwest.rs:186 json_schema"
 				}
+			},
+			"v1": {
+				"competitors": [85, 80, 50, 75, 92, 95, 55, 50, 85, 75],
+				"id_effect": {
+					"0.6.0": 68,
+					"0.7.0": 68
+				},
+				"targets": {
+					"0.10.0": 85
+				}
 			}
 		},
 		{
@@ -5103,12 +5941,17 @@
 			"group": "web",
 			"name": "Typed RPC / API contracts",
 			"measures": "Shared typed contracts between client and server, codegen or derive.",
-			"competitors": [90, 70, 75, 60, 80, 92, 30, 40, 35, 85],
+			"competitors": [75, 63, 38, 38, 100, 100, 1, 1, 1, 38],
 			"track": "T8",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"id_effect": {
+				"0.6.0": 39,
+				"0.7.0": 39
+			},
 			"evidence": "labs/id_effect_rpc (unpublished at 0.7).",
-			"targets": { "0.11.0": 80 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
 				{
 					"id": "web.rpc#1",
@@ -5130,20 +5973,29 @@
 					"id": "web.rpc#5",
 					"text": "Multiple transports (HTTP plus WebSocket/binary)"
 				},
-				{ "id": "web.rpc#6", "text": "Contract versioning support" },
+				{
+					"id": "web.rpc#6",
+					"text": "Contract versioning support"
+				},
 				{
 					"id": "web.rpc#7",
 					"text": "Export to language-neutral IDL (OpenAPI/protobuf)"
 				},
-				{ "id": "web.rpc#8", "text": "Tracing span per call" }
+				{
+					"id": "web.rpc#8",
+					"text": "Tracing span per call"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
-					"phoenix": "production",
+					"otp": "labs",
+					"phoenix": "labs",
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "absent",
@@ -5220,6 +6072,16 @@
 					"web.rpc#7": "labs/id_effect_rpc/src/openapi.rs:31 emit_openapi_json",
 					"web.rpc#8": "labs/id_effect_rpc/src/span.rs:10 rpc_request_span"
 				}
+			},
+			"v1": {
+				"competitors": [90, 70, 75, 60, 80, 92, 30, 40, 35, 85],
+				"id_effect": {
+					"0.6.0": 30,
+					"0.7.0": 30
+				},
+				"targets": {
+					"0.11.0": 80
+				}
 			}
 		},
 		{
@@ -5227,20 +6089,34 @@
 			"group": "web",
 			"name": "WebSockets and realtime",
 			"measures": "WebSockets/SSE, channels, presence, cluster-wide broadcast.",
-			"competitors": [70, 70, 70, 99, 80, 95, 85, 70, 88, 50],
+			"competitors": [25, 25, 25, 88, 88, 88, 88, 39, 88, 13],
 			"track": "T8",
 			"stance": "build",
-			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "No first-party support; raw axum only.",
-			"targets": { "0.11.0": 82 },
+			"targets": {
+				"0.11.0": 88
+			},
 			"checks": [
-				{ "id": "web.realtime#1", "text": "First-party WebSocket endpoints" },
-				{ "id": "web.realtime#2", "text": "Server-Sent Events helper" },
+				{
+					"id": "web.realtime#1",
+					"text": "First-party WebSocket endpoints"
+				},
+				{
+					"id": "web.realtime#2",
+					"text": "Server-Sent Events helper"
+				},
 				{
 					"id": "web.realtime#3",
 					"text": "Pub/sub channels/topics with join/leave"
 				},
-				{ "id": "web.realtime#4", "text": "Presence tracking" },
+				{
+					"id": "web.realtime#4",
+					"text": "Presence tracking"
+				},
 				{
 					"id": "web.realtime#5",
 					"text": "Cluster-wide broadcast across nodes (backplane)"
@@ -5260,7 +6136,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -5268,12 +6147,15 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["web.realtime#1", "web.realtime#2"],
 					"zio": ["web.realtime#1", "web.realtime#2"],
 					"otp": ["web.realtime#3", "web.realtime#5"],
@@ -5334,6 +6216,16 @@
 				"notes": {
 					"id_effect": "Nothing realtime in the published crates (body.rs stream_body is generic streaming, not SSE or WebSocket); v1 25 already exceeds the §3.2 absent cap of 9."
 				}
+			},
+			"v1": {
+				"competitors": [70, 70, 70, 99, 80, 95, 85, 70, 88, 50],
+				"id_effect": {
+					"0.6.0": 9,
+					"0.7.0": 9
+				},
+				"targets": {
+					"0.11.0": 82
+				}
 			}
 		},
 		{
@@ -5341,44 +6233,73 @@
 			"group": "web",
 			"name": "GraphQL",
 			"measures": "Schema-first or code-first GraphQL server integration.",
-			"competitors": [30, 75, 20, 85, 90, 92, 85, 75, 80, 65],
+			"competitors": [1, 88, 1, 39, 88, 39, 39, 39, 39, 1],
 			"track": "T9",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None.",
-			"targets": { "0.12.0": 60 },
+			"targets": {
+				"0.12.0": 63
+			},
 			"checks": [
 				{
 					"id": "web.graphql#1",
 					"text": "Code-first schema derived from types"
 				},
-				{ "id": "web.graphql#2", "text": "Schema-first (SDL) support" },
+				{
+					"id": "web.graphql#2",
+					"text": "Schema-first (SDL) support"
+				},
 				{
 					"id": "web.graphql#3",
 					"text": "Resolvers integrated with request context/DI"
 				},
-				{ "id": "web.graphql#4", "text": "Subscriptions over WebSocket" },
-				{ "id": "web.graphql#5", "text": "DataLoader batching against N+1" },
-				{ "id": "web.graphql#6", "text": "Query depth/complexity limiting" },
-				{ "id": "web.graphql#7", "text": "Federation/schema composition" },
-				{ "id": "web.graphql#8", "text": "GraphiQL/playground and SDL export" }
+				{
+					"id": "web.graphql#4",
+					"text": "Subscriptions over WebSocket"
+				},
+				{
+					"id": "web.graphql#5",
+					"text": "DataLoader batching against N+1"
+				},
+				{
+					"id": "web.graphql#6",
+					"text": "Query depth/complexity limiting"
+				},
+				{
+					"id": "web.graphql#7",
+					"text": "Federation/schema composition"
+				},
+				{
+					"id": "web.graphql#8",
+					"text": "GraphiQL/playground and SDL export"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "labs",
 					"zio": "production",
 					"otp": "absent",
-					"phoenix": "production",
+					"phoenix": "labs",
 					"spring": "production",
-					"dotnet": "production",
-					"rails": "production",
-					"django": "production",
-					"laravel": "production",
+					"dotnet": "labs",
+					"rails": "labs",
+					"django": "labs",
+					"laravel": "labs",
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [],
 					"zio": [
 						"web.graphql#1",
@@ -5446,6 +6367,16 @@
 					"nextjs": []
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [30, 75, 20, 85, 90, 92, 85, 75, 80, 65],
+				"id_effect": {
+					"0.6.0": 2,
+					"0.7.0": 2
+				},
+				"targets": {
+					"0.12.0": 60
+				}
 			}
 		},
 		{
@@ -5453,28 +6384,57 @@
 			"group": "web",
 			"name": "Server-side UI / frontend",
 			"measures": "Rendering HTML/UI from the framework (templates, components, live views).",
-			"competitors": [25, 10, 5, 92, 50, 90, 90, 70, 92, 99],
+			"competitors": [1, 1, 1, 88, 50, 100, 88, 50, 100, 88],
 			"track": "T9",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None (out of scope).",
-			"targets": { "0.12.0": 40 },
+			"targets": {
+				"0.12.0": 50
+			},
 			"checks": [
-				{ "id": "web.ui#1", "text": "Server-side HTML templating" },
-				{ "id": "web.ui#2", "text": "Component model with props/slots" },
+				{
+					"id": "web.ui#1",
+					"text": "Server-side HTML templating"
+				},
+				{
+					"id": "web.ui#2",
+					"text": "Component model with props/slots"
+				},
 				{
 					"id": "web.ui#3",
 					"text": "Server-driven interactive views (LiveView/Blazor Server/Hotwire)"
 				},
-				{ "id": "web.ui#4", "text": "Asset pipeline/bundling" },
-				{ "id": "web.ui#5", "text": "Form helpers bound to validation errors" },
-				{ "id": "web.ui#6", "text": "Layouts/partials" },
-				{ "id": "web.ui#7", "text": "Client hydration/SPA integration" },
-				{ "id": "web.ui#8", "text": "i18n in views" }
+				{
+					"id": "web.ui#4",
+					"text": "Asset pipeline/bundling"
+				},
+				{
+					"id": "web.ui#5",
+					"text": "Form helpers bound to validation errors"
+				},
+				{
+					"id": "web.ui#6",
+					"text": "Layouts/partials"
+				},
+				{
+					"id": "web.ui#7",
+					"text": "Client hydration/SPA integration"
+				},
+				{
+					"id": "web.ui#8",
+					"text": "i18n in views"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "absent",
 					"zio": "absent",
 					"otp": "absent",
@@ -5487,7 +6447,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [],
 					"zio": [],
 					"otp": [],
@@ -5542,6 +6505,16 @@
 					]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [25, 10, 5, 92, 50, 90, 90, 70, 92, 99],
+				"id_effect": {
+					"0.6.0": 2,
+					"0.7.0": 2
+				},
+				"targets": {
+					"0.12.0": 40
+				}
 			}
 		},
 		{
@@ -5549,18 +6522,26 @@
 			"group": "web",
 			"name": "Admin / back-office UI",
 			"measures": "Generated CRUD admin over the data model.",
-			"competitors": [5, 5, 10, 65, 45, 50, 75, 99, 92, 40],
+			"competitors": [1, 1, 1, 25, 13, 25, 39, 100, 100, 1],
 			"track": "T9",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "Template stub only (id_effect_cli/templates/admin-stub).",
-			"targets": { "0.12.0": 55 },
+			"targets": {
+				"0.12.0": 50
+			},
 			"checks": [
 				{
 					"id": "web.admin#1",
 					"text": "CRUD list/detail/edit generated from the data model"
 				},
-				{ "id": "web.admin#2", "text": "Search, filter, sort and pagination" },
+				{
+					"id": "web.admin#2",
+					"text": "Search, filter, sort and pagination"
+				},
 				{
 					"id": "web.admin#3",
 					"text": "Role-based permissions on admin actions"
@@ -5569,8 +6550,14 @@
 					"id": "web.admin#4",
 					"text": "Relation editing (inline / FK pickers)"
 				},
-				{ "id": "web.admin#5", "text": "Bulk actions" },
-				{ "id": "web.admin#6", "text": "Audit log of admin changes" },
+				{
+					"id": "web.admin#5",
+					"text": "Bulk actions"
+				},
+				{
+					"id": "web.admin#6",
+					"text": "Audit log of admin changes"
+				},
 				{
 					"id": "web.admin#7",
 					"text": "Customizable fields, widgets and actions"
@@ -5582,20 +6569,26 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "absent",
 					"zio": "absent",
 					"otp": "absent",
 					"phoenix": "production",
 					"spring": "labs",
 					"dotnet": "production",
-					"rails": "production",
+					"rails": "labs",
 					"django": "production",
 					"laravel": "production",
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [],
 					"zio": [],
 					"otp": [],
@@ -5634,6 +6627,16 @@
 					"nextjs": []
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [5, 5, 10, 65, 45, 50, 75, 99, 92, 40],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"0.12.0": 55
+				}
 			}
 		},
 		{
@@ -5641,23 +6644,34 @@
 			"group": "web",
 			"name": "File storage abstraction",
 			"measures": "Local + object storage (S3/GCS/Azure) behind one capability, uploads.",
-			"competitors": [60, 50, 20, 65, 75, 85, 95, 85, 95, 60],
+			"competitors": [63, 38, 25, 38, 88, 63, 100, 100, 88, 25],
 			"track": "T6",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 25, "0.7.0": 25 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "FileSystem trait (Live/Test) only.",
-			"targets": { "0.10.0": 78 },
+			"targets": {
+				"0.10.0": 75
+			},
 			"checks": [
 				{
 					"id": "web.storage#1",
 					"text": "One storage capability (read/write/delete/exists) with swappable backends"
 				},
-				{ "id": "web.storage#2", "text": "Local filesystem driver" },
+				{
+					"id": "web.storage#2",
+					"text": "Local filesystem driver"
+				},
 				{
 					"id": "web.storage#3",
 					"text": "S3-compatible object storage driver"
 				},
-				{ "id": "web.storage#4", "text": "GCS and/or Azure Blob driver" },
+				{
+					"id": "web.storage#4",
+					"text": "GCS and/or Azure Blob driver"
+				},
 				{
 					"id": "web.storage#5",
 					"text": "Streaming upload/download without full in-memory buffering"
@@ -5666,12 +6680,21 @@
 					"id": "web.storage#6",
 					"text": "Multipart/form file upload handling in the web layer"
 				},
-				{ "id": "web.storage#7", "text": "Signed/temporary URLs" },
-				{ "id": "web.storage#8", "text": "In-memory/fake backend for tests" }
+				{
+					"id": "web.storage#7",
+					"text": "Signed/temporary URLs"
+				},
+				{
+					"id": "web.storage#8",
+					"text": "In-memory/fake backend for tests"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -5738,7 +6761,6 @@
 						"web.storage#1",
 						"web.storage#2",
 						"web.storage#3",
-						"web.storage#4",
 						"web.storage#5",
 						"web.storage#6",
 						"web.storage#7",
@@ -5751,20 +6773,35 @@
 					"web.storage#2": "crates/id_effect_platform/src/fs.rs:61 LiveFileSystem",
 					"web.storage#8": "crates/id_effect_platform/src/fs.rs:132 TestFileSystem"
 				}
+			},
+			"v1": {
+				"competitors": [60, 50, 20, 65, 75, 85, 95, 85, 95, 60],
+				"id_effect": {
+					"0.6.0": 25,
+					"0.7.0": 25
+				},
+				"targets": {
+					"0.10.0": 78
+				}
 			}
 		},
-
 		{
 			"id": "sec.authn",
 			"group": "sec",
 			"name": "Authentication",
 			"measures": "Sessions, password hashing, JWT, OAuth2/OIDC with PKCE, passkeys.",
-			"competitors": [30, 30, 15, 85, 98, 95, 82, 92, 97, 75],
+			"competitors": [13, 13, 13, 50, 88, 100, 39, 39, 75, 38],
 			"track": "T5",
 			"stance": "build",
-			"id_effect": { "0.6.0": 8, "0.7.0": 10 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "OAuthClient/SessionStore traits, memory impls only (feature auth, off).",
-			"targets": { "0.9.0": 78, "1.0.0": 85 },
+			"targets": {
+				"0.9.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "sec.authn#1",
@@ -5786,8 +6823,14 @@
 					"id": "sec.authn#5",
 					"text": "OAuth2/OIDC login client with PKCE against real IdPs"
 				},
-				{ "id": "sec.authn#6", "text": "MFA / TOTP support" },
-				{ "id": "sec.authn#7", "text": "Passkeys / WebAuthn support" },
+				{
+					"id": "sec.authn#6",
+					"text": "MFA / TOTP support"
+				},
+				{
+					"id": "sec.authn#7",
+					"text": "Passkeys / WebAuthn support"
+				},
 				{
 					"id": "sec.authn#8",
 					"text": "Account flows: registration, password reset, email verification"
@@ -5795,20 +6838,26 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
-					"rails": "production",
-					"django": "production",
+					"rails": "labs",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["sec.authn#3"],
 					"zio": ["sec.authn#3"],
 					"otp": ["sec.authn#1"],
@@ -5848,7 +6897,6 @@
 						"sec.authn#1",
 						"sec.authn#2",
 						"sec.authn#3",
-						"sec.authn#4",
 						"sec.authn#5",
 						"sec.authn#6",
 						"sec.authn#8"
@@ -5856,6 +6904,17 @@
 					"nextjs": ["sec.authn#2", "sec.authn#4", "sec.authn#5"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [30, 30, 15, 85, 98, 95, 82, 92, 97, 75],
+				"id_effect": {
+					"0.6.0": 8,
+					"0.7.0": 10
+				},
+				"targets": {
+					"0.9.0": 78,
+					"1.0.0": 85
+				}
 			}
 		},
 		{
@@ -5863,12 +6922,18 @@
 			"group": "sec",
 			"name": "Authorization (RBAC / policies)",
 			"measures": "Roles, permissions, policy evaluation integrated with handlers and data.",
-			"competitors": [20, 20, 10, 60, 95, 95, 70, 90, 92, 40],
+			"competitors": [13, 13, 1, 38, 100, 100, 39, 63, 50, 13],
 			"track": "T5",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None.",
-			"targets": { "0.9.0": 72, "1.0.0": 82 },
+			"targets": {
+				"0.9.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "sec.authz#1",
@@ -5905,20 +6970,26 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
-					"rails": "production",
+					"rails": "labs",
 					"django": "production",
 					"laravel": "production",
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["sec.authz#2"],
 					"zio": ["sec.authz#2"],
 					"otp": [],
@@ -5959,7 +7030,6 @@
 						"sec.authz#7"
 					],
 					"laravel": [
-						"sec.authz#1",
 						"sec.authz#2",
 						"sec.authz#3",
 						"sec.authz#4",
@@ -5968,6 +7038,17 @@
 					"nextjs": ["sec.authz#2"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [20, 20, 10, 60, 95, 95, 70, 90, 92, 40],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"0.9.0": 72,
+					"1.0.0": 82
+				}
 			}
 		},
 		{
@@ -5975,12 +7056,18 @@
 			"group": "sec",
 			"name": "Web security defaults (CSRF, CSP, CORS)",
 			"measures": "Secure-by-default headers, CSRF, CORS, CSP, cookie flags.",
-			"competitors": [45, 40, 20, 92, 95, 95, 95, 97, 95, 75],
+			"competitors": [13, 38, 1, 75, 88, 75, 100, 88, 63, 50],
 			"track": "T5",
 			"stance": "build",
-			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"id_effect": {
+				"0.6.0": 13,
+				"0.7.0": 13
+			},
 			"evidence": "axum/src/server/security.rs:91 static CSRF token compared with ==; CSP builder minimal; no CORS.",
-			"targets": { "0.8.0": 75, "0.9.0": 88 },
+			"targets": {
+				"0.8.0": 75,
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "sec.web#1",
@@ -6017,7 +7104,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -6030,7 +7120,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": ["sec.web#4"], "0.7.0": ["sec.web#4"] },
+					"id_effect": {
+						"0.6.0": ["sec.web#4"],
+						"0.7.0": ["sec.web#4"]
+					},
 					"effect_ts": ["sec.web#3"],
 					"zio": ["sec.web#1", "sec.web#3", "sec.web#7"],
 					"otp": [],
@@ -6090,6 +7183,17 @@
 				"evidence": {
 					"sec.web#4": "crates/id_effect_axum/src/server/security.rs:40 csp_middleware (only default_src_self/script_src_self directives, :21-28)"
 				}
+			},
+			"v1": {
+				"competitors": [45, 40, 20, 92, 95, 95, 95, 97, 95, 75],
+				"id_effect": {
+					"0.6.0": 22,
+					"0.7.0": 22
+				},
+				"targets": {
+					"0.8.0": 75,
+					"0.9.0": 88
+				}
 			}
 		},
 		{
@@ -6097,12 +7201,17 @@
 			"group": "sec",
 			"name": "Config, secrets and settings",
 			"measures": "Typed config, layered sources, secret redaction, vault/KMS sources, reload.",
-			"competitors": [82, 80, 50, 75, 97, 97, 88, 65, 88, 70],
+			"competitors": [50, 63, 25, 25, 100, 88, 25, 1, 25, 25],
 			"track": "T5",
 			"stance": "build",
-			"id_effect": { "0.6.0": 60, "0.7.0": 66 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "Config<T>, Config::all accumulates errors, Config::layer(), Secret<T>. No vault/KMS/reload.",
-			"targets": { "0.9.0": 85 },
+			"targets": {
+				"0.9.0": 88
+			},
 			"checks": [
 				{
 					"id": "sec.config#1",
@@ -6139,7 +7248,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -6195,7 +7307,6 @@
 					"dotnet": [
 						"sec.config#1",
 						"sec.config#2",
-						"sec.config#3",
 						"sec.config#4",
 						"sec.config#5",
 						"sec.config#6",
@@ -6214,6 +7325,16 @@
 					"sec.config#4": "crates/id_effect_config/src/error.rs:50 ConfigError::and; config_desc.rs:708 Config::all",
 					"sec.config#5": "crates/id_effect_config/src/secret.rs:16 Secret<T>"
 				}
+			},
+			"v1": {
+				"competitors": [82, 80, 50, 75, 97, 97, 88, 65, 88, 70],
+				"id_effect": {
+					"0.6.0": 60,
+					"0.7.0": 66
+				},
+				"targets": {
+					"0.9.0": 85
+				}
 			}
 		},
 		{
@@ -6221,12 +7342,18 @@
 			"group": "sec",
 			"name": "Supply-chain and security process",
 			"measures": "Advisory scanning, license/ban policy, SECURITY.md, SBOM, signed releases, CVE process.",
-			"competitors": [60, 60, 60, 70, 88, 92, 85, 90, 75, 75],
+			"competitors": [50, 38, 100, 50, 88, 88, 63, 50, 63, 75],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 45, "0.7.0": 45 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "Daily cargo audit + Dependabot. No cargo-deny, SECURITY.md, SBOM.",
-			"targets": { "0.8.0": 78, "1.0.0": 88 },
+			"targets": {
+				"0.8.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "sec.supply#1",
@@ -6263,7 +7390,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -6357,20 +7487,35 @@
 				"notes": {
 					"id_effect": "v1 credited audit plus Dependabot as about half; v2 counts 2 of 8 process checks (no cargo-deny, SECURITY.md, SBOM, signing, CVE process or support window)."
 				}
+			},
+			"v1": {
+				"competitors": [60, 60, 60, 70, 88, 92, 85, 90, 75, 75],
+				"id_effect": {
+					"0.6.0": 45,
+					"0.7.0": 45
+				},
+				"targets": {
+					"0.8.0": 78,
+					"1.0.0": 88
+				}
 			}
 		},
-
 		{
 			"id": "obs.logging",
 			"group": "obs",
 			"name": "Structured logging",
 			"measures": "Levels, structured fields, spans, JSON output, redaction, sampling.",
-			"competitors": [85, 85, 85, 85, 92, 95, 80, 80, 85, 60],
+			"competitors": [63, 75, 50, 63, 63, 100, 38, 25, 38, 39],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 75, "0.7.0": 76 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 75
+			},
 			"evidence": "id_effect_logger rewritten on Layers; JSON/structured/tracing backends.",
-			"targets": { "0.10.0": 86 },
+			"targets": {
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "obs.logging#1",
@@ -6384,7 +7529,10 @@
 					"id": "obs.logging#3",
 					"text": "Nested log spans/scopes attached to records"
 				},
-				{ "id": "obs.logging#4", "text": "JSON output formatter" },
+				{
+					"id": "obs.logging#4",
+					"text": "JSON output formatter"
+				},
 				{
 					"id": "obs.logging#5",
 					"text": "Trace/span correlation of log records (OTel logs bridge)"
@@ -6404,7 +7552,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -6453,14 +7604,12 @@
 					"otp": [
 						"obs.logging#1",
 						"obs.logging#2",
-						"obs.logging#5",
 						"obs.logging#6",
 						"obs.logging#8"
 					],
 					"phoenix": [
 						"obs.logging#1",
 						"obs.logging#2",
-						"obs.logging#5",
 						"obs.logging#6",
 						"obs.logging#7",
 						"obs.logging#8"
@@ -6501,6 +7650,16 @@
 					"obs.logging#5": "crates/id_effect_opentelemetry/src/logs_bridge.rs:62 OtelLogBackend",
 					"obs.logging#6": "crates/id_effect_opentelemetry/src/config.rs:101 RUST_LOG EnvFilter"
 				}
+			},
+			"v1": {
+				"competitors": [85, 85, 85, 85, 92, 95, 80, 80, 85, 60],
+				"id_effect": {
+					"0.6.0": 75,
+					"0.7.0": 76
+				},
+				"targets": {
+					"0.10.0": 86
+				}
 			}
 		},
 		{
@@ -6508,18 +7667,26 @@
 			"group": "obs",
 			"name": "Metrics",
 			"measures": "Counters/gauges/histograms, tags, Prometheus/OTLP export, runtime metrics.",
-			"competitors": [85, 85, 70, 88, 97, 95, 55, 50, 70, 60],
+			"competitors": [88, 100, 25, 75, 100, 100, 39, 39, 38, 39],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 62, "0.7.0": 70 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 63
+			},
 			"evidence": "Atomic metrics in MetricRegistry, with_tags, OTel registry bridge. No Prometheus endpoint.",
-			"targets": { "0.8.0": 85 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "obs.metrics#1",
 					"text": "Counter, gauge and histogram instruments"
 				},
-				{ "id": "obs.metrics#2", "text": "Dimensional tags/labels on series" },
+				{
+					"id": "obs.metrics#2",
+					"text": "Dimensional tags/labels on series"
+				},
 				{
 					"id": "obs.metrics#3",
 					"text": "Summaries/percentiles or exponential histograms"
@@ -6547,10 +7714,13 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
+					"otp": "labs",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
@@ -6594,7 +7764,6 @@
 						"obs.metrics#1",
 						"obs.metrics#2",
 						"obs.metrics#3",
-						"obs.metrics#5",
 						"obs.metrics#6",
 						"obs.metrics#7",
 						"obs.metrics#8"
@@ -6637,8 +7806,7 @@
 						"obs.metrics#1",
 						"obs.metrics#2",
 						"obs.metrics#3",
-						"obs.metrics#4",
-						"obs.metrics#5"
+						"obs.metrics#4"
 					]
 				},
 				"evidence": {
@@ -6651,6 +7819,16 @@
 				"notes": {
 					"id_effect": "The 0.6.0 bridge covered counters and duration histograms only: no full OTLP instruments, scrape endpoint, runtime or automatic HTTP/DB metrics, registry API (3 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [85, 85, 70, 88, 97, 95, 55, 50, 70, 60],
+				"id_effect": {
+					"0.6.0": 62,
+					"0.7.0": 70
+				},
+				"targets": {
+					"0.8.0": 85
+				}
 			}
 		},
 		{
@@ -6658,12 +7836,17 @@
 			"group": "obs",
 			"name": "Distributed tracing (OpenTelemetry)",
 			"measures": "OTLP traces/metrics/logs, propagation, auto-instrumentation.",
-			"competitors": [90, 80, 75, 85, 95, 97, 70, 65, 60, 80],
+			"competitors": [88, 75, 39, 39, 100, 100, 39, 39, 39, 88],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 80, "0.7.0": 84 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "OtelSpanHook, span_bridge.rs, W3C propagation, OTLP export.",
-			"targets": { "0.10.0": 90 },
+			"targets": {
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "obs.tracing#1",
@@ -6673,7 +7856,10 @@
 					"id": "obs.tracing#2",
 					"text": "Span context follows forked tasks/fibers across threads automatically"
 				},
-				{ "id": "obs.tracing#3", "text": "OTLP trace export" },
+				{
+					"id": "obs.tracing#3",
+					"text": "OTLP trace export"
+				},
 				{
 					"id": "obs.tracing#4",
 					"text": "W3C trace-context and baggage propagation"
@@ -6697,11 +7883,14 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
-					"phoenix": "production",
+					"otp": "labs",
+					"phoenix": "labs",
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "labs",
@@ -6826,6 +8015,16 @@
 				"notes": {
 					"id_effect": "No client/DB auto-spans, first-party sampler config or zero-code agent; v1 credited the depth of the span bridge, which v2 cannot see."
 				}
+			},
+			"v1": {
+				"competitors": [90, 80, 75, 85, 95, 97, 70, 65, 60, 80],
+				"id_effect": {
+					"0.6.0": 80,
+					"0.7.0": 84
+				},
+				"targets": {
+					"0.10.0": 90
+				}
 			}
 		},
 		{
@@ -6833,14 +8032,22 @@
 			"group": "obs",
 			"name": "Health, readiness, graceful shutdown",
 			"measures": "Liveness/readiness with dependency checks, drain, signals.",
-			"competitors": [60, 60, 70, 72, 97, 97, 75, 50, 75, 55],
+			"competitors": [38, 38, 25, 38, 100, 88, 38, 39, 38, 25],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 70, "0.7.0": 70 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "axum/src/health.rs /health /ready require_ready; drain. No dependency aggregation.",
-			"targets": { "0.8.0": 85 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
-				{ "id": "obs.health#1", "text": "Liveness endpoint" },
+				{
+					"id": "obs.health#1",
+					"text": "Liveness endpoint"
+				},
 				{
 					"id": "obs.health#2",
 					"text": "Readiness endpoint with pluggable check"
@@ -6872,7 +8079,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -6945,6 +8155,16 @@
 				"notes": {
 					"id_effect": "0.6.0 meets 4 of 8: no aggregated per-dependency indicators, built-in integration checks, readiness flip on shutdown or ordered teardown."
 				}
+			},
+			"v1": {
+				"competitors": [60, 60, 70, 72, 97, 97, 75, 50, 75, 55],
+				"id_effect": {
+					"0.6.0": 69,
+					"0.7.0": 69
+				},
+				"targets": {
+					"0.8.0": 85
+				}
 			}
 		},
 		{
@@ -6952,12 +8172,18 @@
 			"group": "obs",
 			"name": "Runtime introspection and dashboards",
 			"measures": "Live view of fibers, supervisors, metrics, jobs; remote shell; profiling.",
-			"competitors": [65, 55, 98, 92, 90, 92, 75, 80, 92, 70],
+			"competitors": [38, 25, 88, 88, 63, 63, 13, 13, 38, 1],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "Registry snapshots, snapshot_tracing; cluster control DTOs. No fiber dump or dashboard.",
-			"targets": { "0.10.0": 75, "1.0.0": 85 },
+			"targets": {
+				"0.10.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "obs.console#1",
@@ -6994,7 +8220,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -7002,7 +8231,7 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "absent"
 				},
@@ -7054,20 +8283,35 @@
 					"obs.console#5": "crates/id_effect_axum/src/cluster.rs:48 ClusterControl::router (/cluster/status,/members,/processes,/drain,/rebalance; feature cluster)",
 					"obs.console#8": "crates/id_effect/src/observability/tracing.rs:197 snapshot_tracing; registry.rs:210 MetricRegistry::snapshot"
 				}
+			},
+			"v1": {
+				"competitors": [65, 55, 98, 92, 90, 92, 75, 80, 92, 70],
+				"id_effect": {
+					"0.6.0": 22,
+					"0.7.0": 22
+				},
+				"targets": {
+					"0.10.0": 75,
+					"1.0.0": 85
+				}
 			}
 		},
-
 		{
 			"id": "msg.jobs",
 			"group": "msg",
 			"name": "Background jobs and queues",
 			"measures": "Persistent jobs with retries, uniqueness, priorities, dashboard.",
-			"competitors": [55, 45, 70, 92, 85, 85, 97, 72, 98, 40],
+			"competitors": [25, 1, 1, 100, 38, 39, 100, 50, 100, 25],
 			"track": "T7",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 22, "0.7.0": 22 },
+			"id_effect": {
+				"0.6.0": 13,
+				"0.7.0": 13
+			},
 			"evidence": "labs/id_effect_jobs (unpublished); core Queue is in-memory.",
-			"targets": { "0.10.0": 85 },
+			"targets": {
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "msg.jobs#1",
@@ -7077,9 +8321,18 @@
 					"id": "msg.jobs#2",
 					"text": "Retries with backoff and a dead-letter/failed-jobs store"
 				},
-				{ "id": "msg.jobs#3", "text": "Unique/deduplicated jobs" },
-				{ "id": "msg.jobs#4", "text": "Priorities and multiple named queues" },
-				{ "id": "msg.jobs#5", "text": "Delayed/scheduled-at job execution" },
+				{
+					"id": "msg.jobs#3",
+					"text": "Unique/deduplicated jobs"
+				},
+				{
+					"id": "msg.jobs#4",
+					"text": "Priorities and multiple named queues"
+				},
+				{
+					"id": "msg.jobs#5",
+					"text": "Delayed/scheduled-at job execution"
+				},
 				{
 					"id": "msg.jobs#6",
 					"text": "Per-queue concurrency limits / rate limiting"
@@ -7095,20 +8348,26 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "production",
 					"zio": "absent",
 					"otp": "absent",
 					"phoenix": "production",
 					"spring": "production",
-					"dotnet": "production",
+					"dotnet": "labs",
 					"rails": "production",
 					"django": "production",
 					"laravel": "production",
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": ["msg.jobs#1"], "0.7.0": ["msg.jobs#1"] },
+					"id_effect": {
+						"0.6.0": ["msg.jobs#1"],
+						"0.7.0": ["msg.jobs#1"]
+					},
 					"effect_ts": ["msg.jobs#1", "msg.jobs#5"],
 					"zio": [],
 					"otp": [],
@@ -7142,15 +8401,7 @@
 						"msg.jobs#7",
 						"msg.jobs#8"
 					],
-					"django": [
-						"msg.jobs#1",
-						"msg.jobs#2",
-						"msg.jobs#4",
-						"msg.jobs#5",
-						"msg.jobs#6",
-						"msg.jobs#7",
-						"msg.jobs#8"
-					],
+					"django": ["msg.jobs#1", "msg.jobs#4", "msg.jobs#5", "msg.jobs#8"],
 					"laravel": [
 						"msg.jobs#1",
 						"msg.jobs#2",
@@ -7166,6 +8417,16 @@
 				"evidence": {
 					"msg.jobs#1": "labs/id_effect_jobs/src/apalis.rs:62 ApalisJobQueue (Postgres, enqueue-only; labs, unpublished)"
 				}
+			},
+			"v1": {
+				"competitors": [55, 45, 70, 92, 85, 85, 97, 72, 98, 40],
+				"id_effect": {
+					"0.6.0": 22,
+					"0.7.0": 22
+				},
+				"targets": {
+					"0.10.0": 85
+				}
 			}
 		},
 		{
@@ -7173,19 +8434,31 @@
 			"group": "msg",
 			"name": "Scheduled tasks / cron",
 			"measures": "Cron expressions, single-run across a cluster, missed-run policy.",
-			"competitors": [72, 60, 50, 85, 92, 80, 85, 60, 98, 50],
+			"competitors": [63, 13, 13, 75, 100, 39, 75, 39, 88, 39],
 			"track": "T7",
 			"stance": "build",
-			"id_effect": { "0.6.0": 30, "0.7.0": 30 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 25
+			},
 			"evidence": "Typed Schedule; no cron expressions.",
-			"targets": { "0.8.0": 70, "0.10.0": 88 },
+			"targets": {
+				"0.8.0": 75,
+				"0.10.0": 88
+			},
 			"checks": [
-				{ "id": "msg.cron#1", "text": "Cron-expression schedules" },
+				{
+					"id": "msg.cron#1",
+					"text": "Cron-expression schedules"
+				},
 				{
 					"id": "msg.cron#2",
 					"text": "Fixed-rate/fixed-delay recurring execution"
 				},
-				{ "id": "msg.cron#3", "text": "Timezone- and DST-aware scheduling" },
+				{
+					"id": "msg.cron#3",
+					"text": "Timezone- and DST-aware scheduling"
+				},
 				{
 					"id": "msg.cron#4",
 					"text": "Single execution across a cluster (lock/leader/singleton)"
@@ -7209,15 +8482,18 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
 					"phoenix": "production",
 					"spring": "production",
-					"dotnet": "production",
+					"dotnet": "labs",
 					"rails": "production",
-					"django": "production",
+					"django": "labs",
 					"laravel": "production",
 					"nextjs": "labs"
 				},
@@ -7299,6 +8575,17 @@
 					"msg.cron#2": "crates/id_effect/src/scheduling/schedule.rs:371 Schedule::spaced; :591 repeat",
 					"msg.cron#4": "crates/id_effect_node/src/singleton.rs:181 ClusterSingleton; :337 PgAdvisoryLease (generic, not wired to schedules)"
 				}
+			},
+			"v1": {
+				"competitors": [72, 60, 50, 85, 92, 80, 85, 60, 98, 50],
+				"id_effect": {
+					"0.6.0": 30,
+					"0.7.0": 30
+				},
+				"targets": {
+					"0.8.0": 70,
+					"0.10.0": 88
+				}
 			}
 		},
 		{
@@ -7306,12 +8593,17 @@
 			"group": "msg",
 			"name": "Message brokers (Kafka, AMQP, NATS, SQS)",
 			"measures": "Producer/consumer integrations with backpressure, acks, outbox.",
-			"competitors": [45, 85, 75, 82, 97, 85, 55, 50, 70, 25],
+			"competitors": [1, 63, 39, 39, 100, 100, 39, 38, 50, 1],
 			"track": "T7",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 12, "0.7.0": 12 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "labs/id_effect_jobs kafka.rs stub + outbox (unpublished).",
-			"targets": { "0.10.0": 72 },
+			"targets": {
+				"0.10.0": 75
+			},
 			"checks": [
 				{
 					"id": "msg.brokers#1",
@@ -7348,11 +8640,14 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "absent",
 					"zio": "production",
-					"otp": "production",
-					"phoenix": "production",
+					"otp": "labs",
+					"phoenix": "labs",
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "labs",
@@ -7430,6 +8725,16 @@
 				"notes": {
 					"id_effect": "The labs outbox, inbox and broker trait meet 3 checks and the labs cap (39) is the only limit; v1 scored it as a stub. Decide whether labs-only checks count."
 				}
+			},
+			"v1": {
+				"competitors": [45, 85, 75, 82, 97, 85, 55, 50, 70, 25],
+				"id_effect": {
+					"0.6.0": 12,
+					"0.7.0": 12
+				},
+				"targets": {
+					"0.10.0": 72
+				}
 			}
 		},
 		{
@@ -7437,12 +8742,17 @@
 			"group": "msg",
 			"name": "Stream processing",
 			"measures": "Backpressured streams with zip/merge/flat_map/throttle/debounce/group_by/windows.",
-			"competitors": [92, 95, 55, 82, 80, 80, 20, 20, 25, 45],
+			"competitors": [100, 100, 1, 50, 100, 50, 1, 1, 38, 25],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 72, "0.7.0": 74 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 63
+			},
 			"evidence": "Owned pulls, flat_map, map_effect_par, merge, windows. No zip/throttle/debounce/group_by.",
-			"targets": { "0.8.0": 86 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "msg.streams#1",
@@ -7452,12 +8762,18 @@
 					"id": "msg.streams#2",
 					"text": "flat_map and bounded-concurrency effectful map (mapPar)"
 				},
-				{ "id": "msg.streams#3", "text": "merge of multiple streams" },
+				{
+					"id": "msg.streams#3",
+					"text": "merge of multiple streams"
+				},
 				{
 					"id": "msg.streams#4",
 					"text": "zip / zip_with / combine_latest of streams"
 				},
-				{ "id": "msg.streams#5", "text": "Time-based throttle and debounce" },
+				{
+					"id": "msg.streams#5",
+					"text": "Time-based throttle and debounce"
+				},
 				{
 					"id": "msg.streams#6",
 					"text": "group_by key into substreams/partitions"
@@ -7473,7 +8789,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "absent",
@@ -7525,10 +8844,7 @@
 					"phoenix": [
 						"msg.streams#1",
 						"msg.streams#2",
-						"msg.streams#3",
 						"msg.streams#4",
-						"msg.streams#6",
-						"msg.streams#7",
 						"msg.streams#8"
 					],
 					"spring": [
@@ -7545,10 +8861,6 @@
 						"msg.streams#1",
 						"msg.streams#2",
 						"msg.streams#3",
-						"msg.streams#4",
-						"msg.streams#5",
-						"msg.streams#6",
-						"msg.streams#7",
 						"msg.streams#8"
 					],
 					"rails": [],
@@ -7566,6 +8878,16 @@
 				"notes": {
 					"id_effect": "0.6.0 streams lacked flat_map/mapPar, zip/combine_latest, throttle/debounce and group_by (4 of 8)."
 				}
+			},
+			"v1": {
+				"competitors": [92, 95, 55, 82, 80, 80, 20, 20, 25, 45],
+				"id_effect": {
+					"0.6.0": 72,
+					"0.7.0": 74
+				},
+				"targets": {
+					"0.8.0": 86
+				}
 			}
 		},
 		{
@@ -7573,12 +8895,17 @@
 			"group": "msg",
 			"name": "Email and notifications",
 			"measures": "Mail sending, templating, previews, inbound mail, notification channels.",
-			"competitors": [10, 10, 20, 85, 85, 70, 97, 85, 98, 40],
+			"competitors": [1, 1, 25, 63, 50, 25, 88, 63, 88, 38],
 			"track": "T7",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None.",
-			"targets": { "0.10.0": 72 },
+			"targets": {
+				"0.10.0": 75
+			},
 			"checks": [
 				{
 					"id": "msg.email#1",
@@ -7600,16 +8927,25 @@
 					"id": "msg.email#5",
 					"text": "Async/queued delivery (deliver_later)"
 				},
-				{ "id": "msg.email#6", "text": "Inbound email receiving and routing" },
+				{
+					"id": "msg.email#6",
+					"text": "Inbound email receiving and routing"
+				},
 				{
 					"id": "msg.email#7",
 					"text": "Multi-channel notifications (SMS, Slack, push, database)"
 				},
-				{ "id": "msg.email#8", "text": "Attachments and inline images" }
+				{
+					"id": "msg.email#8",
+					"text": "Attachments and inline images"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "absent",
 					"zio": "absent",
 					"otp": "labs",
@@ -7622,7 +8958,10 @@
 					"nextjs": "labs"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [],
 					"zio": [],
 					"otp": ["msg.email#1", "msg.email#8"],
@@ -7668,26 +9007,43 @@
 					"nextjs": ["msg.email#1", "msg.email#2", "msg.email#3"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [10, 10, 20, 85, 85, 70, 97, 85, 98, 40],
+				"id_effect": {
+					"0.6.0": 2,
+					"0.7.0": 2
+				},
+				"targets": {
+					"0.10.0": 72
+				}
 			}
 		},
-
 		{
 			"id": "ai.llm",
 			"group": "ai",
 			"name": "LLM / AI integration",
 			"measures": "Provider-neutral LLM API, tool calling, streaming, MCP, embeddings.",
-			"competitors": [78, 35, 15, 50, 90, 92, 45, 40, 78, 95],
+			"competitors": [88, 13, 1, 39, 100, 100, 39, 39, 75, 100],
 			"track": "T9",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 28, "0.7.0": 28 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "labs/id_effect_ai (OpenAI/Anthropic/Cursor, MCP template), unpublished.",
-			"targets": { "0.12.0": 78 },
+			"targets": {
+				"0.12.0": 75
+			},
 			"checks": [
 				{
 					"id": "ai.llm#1",
 					"text": "Provider-neutral chat/completion API with >=2 vendor adapters"
 				},
-				{ "id": "ai.llm#2", "text": "Token streaming of responses" },
+				{
+					"id": "ai.llm#2",
+					"text": "Token streaming of responses"
+				},
 				{
 					"id": "ai.llm#3",
 					"text": "Tool/function calling with typed schemas"
@@ -7696,8 +9052,14 @@
 					"id": "ai.llm#4",
 					"text": "Structured output decoded into typed values (JSON schema)"
 				},
-				{ "id": "ai.llm#5", "text": "Embeddings API across providers" },
-				{ "id": "ai.llm#6", "text": "MCP client and/or server SDK" },
+				{
+					"id": "ai.llm#5",
+					"text": "Embeddings API across providers"
+				},
+				{
+					"id": "ai.llm#6",
+					"text": "MCP client and/or server SDK"
+				},
 				{
 					"id": "ai.llm#7",
 					"text": "Transient-error retries and per-call tracing spans/usage telemetry"
@@ -7709,7 +9071,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "production",
 					"zio": "labs",
 					"otp": "absent",
@@ -7798,20 +9163,34 @@
 					"ai.llm#2": "labs/id_effect_ai/src/streaming.rs:19 complete_stream; src/sse.rs:30 SseParser",
 					"ai.llm#7": "labs/id_effect_ai/src/retry.rs:18 retry_transient_ai_http; tracing_util.rs:24 with_ai_span"
 				}
+			},
+			"v1": {
+				"competitors": [78, 35, 15, 50, 90, 92, 45, 40, 78, 95],
+				"id_effect": {
+					"0.6.0": 28,
+					"0.7.0": 28
+				},
+				"targets": {
+					"0.12.0": 78
+				}
 			}
 		},
-
 		{
 			"id": "test.unit",
 			"group": "test",
 			"name": "Unit test kit and test doubles",
 			"measures": "Test runtime, layer/service mocks, assertions, snapshots.",
-			"competitors": [90, 95, 85, 92, 95, 92, 97, 92, 95, 70],
+			"competitors": [100, 88, 50, 75, 88, 88, 88, 88, 88, 50],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 80, "0.7.0": 83 },
+			"id_effect": {
+				"0.6.0": 88,
+				"0.7.0": 63
+			},
 			"evidence": "testing/test_executor.rs (advance, run_until_stalled); snapshot/stream helpers removed.",
-			"targets": { "0.8.0": 88 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "test.unit#1",
@@ -7829,7 +9208,10 @@
 					"id": "test.unit#4",
 					"text": "First-party or officially recommended mocking library"
 				},
-				{ "id": "test.unit#5", "text": "Snapshot/golden testing support" },
+				{
+					"id": "test.unit#5",
+					"text": "Snapshot/golden testing support"
+				},
 				{
 					"id": "test.unit#6",
 					"text": "Shipped in-memory doubles for platform services (fs, db, clock, ...)"
@@ -7838,11 +9220,17 @@
 					"id": "test.unit#7",
 					"text": "Test-scoped bootstrapping of the app's dependency graph"
 				},
-				{ "id": "test.unit#8", "text": "Testing guide in official docs" }
+				{
+					"id": "test.unit#8",
+					"text": "Testing guide in official docs"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -7897,7 +9285,6 @@
 						"test.unit#1",
 						"test.unit#2",
 						"test.unit#3",
-						"test.unit#4",
 						"test.unit#6",
 						"test.unit#7",
 						"test.unit#8"
@@ -7943,7 +9330,6 @@
 						"test.unit#2",
 						"test.unit#3",
 						"test.unit#4",
-						"test.unit#5",
 						"test.unit#6",
 						"test.unit#7",
 						"test.unit#8"
@@ -7960,6 +9346,19 @@
 				"notes": {
 					"id_effect": "0.7 removed testing::{snapshot,proptest,stream} and assert_exit_* (MIGRATION-0.7.md:108); v1 83 does not reflect the removal."
 				}
+			},
+			"v1": {
+				"competitors": [90, 95, 85, 92, 95, 92, 97, 92, 95, 70],
+				"id_effect": {
+					"0.6.0": 80,
+					"0.7.0": 83
+				},
+				"targets": {
+					"0.8.0": 88
+				}
+			},
+			"adr": {
+				"0.7.0": "Removed testing::{snapshot,proptest,stream} and assert_exit_* in 0.7 (MIGRATION-0.7.md:109): checks #3 (Exit assertions) and #5 (snapshot testing) lost; restoration planned in PLAN-OF-PLANS E2.2 (0.8)."
 			}
 		},
 		{
@@ -7967,12 +9366,17 @@
 			"group": "test",
 			"name": "Deterministic time and randomness",
 			"measures": "Virtual clock, seeded random, reproducible scheduling.",
-			"competitors": [95, 98, 40, 45, 62, 78, 82, 62, 85, 40],
+			"competitors": [75, 75, 25, 25, 38, 63, 63, 25, 88, 38],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 55, "0.7.0": 75 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 75
+			},
 			"evidence": "TestExecutor virtual time, testing/test_random.rs. FIFO ordering only.",
-			"targets": { "0.8.0": 85 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "test.determinism#1",
@@ -8009,7 +9413,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -8102,6 +9509,16 @@
 					"id_effect": "0.6.0 had no seeded random service, scripted random, run-until-idle executor, interleaving exploration or seeded test order (3 of 8).",
 					"zio": "ZIO lacks interleaving exploration and seeded test order; v1 98 is a reputation premium."
 				}
+			},
+			"v1": {
+				"competitors": [95, 98, 40, 45, 62, 78, 82, 62, 85, 40],
+				"id_effect": {
+					"0.6.0": 55,
+					"0.7.0": 75
+				},
+				"targets": {
+					"0.8.0": 85
+				}
 			}
 		},
 		{
@@ -8109,12 +9526,17 @@
 			"group": "test",
 			"name": "Property-based testing",
 			"measures": "Generators (incl. derived from schemas), shrinking, effect-aware properties.",
-			"competitors": [90, 90, 85, 75, 50, 55, 40, 50, 30, 50],
+			"competitors": [100, 88, 75, 38, 39, 39, 1, 39, 1, 38],
 			"track": "T2",
 			"stance": "build",
-			"id_effect": { "0.6.0": 62, "0.7.0": 45 },
+			"id_effect": {
+				"0.6.0": 75,
+				"0.7.0": 9
+			},
 			"evidence": "testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108).",
-			"targets": { "0.8.0": 82 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"adr": {
 				"0.7.0": "Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8)."
 			},
@@ -8154,17 +9576,20 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
-					"phoenix": "production",
-					"spring": "documented",
-					"dotnet": "documented",
+					"phoenix": "labs",
+					"spring": "labs",
+					"dotnet": "labs",
 					"rails": "absent",
-					"django": "documented",
+					"django": "labs",
 					"laravel": "absent",
-					"nextjs": "documented"
+					"nextjs": "labs"
 				},
 				"met": {
 					"id_effect": {
@@ -8243,6 +9668,16 @@
 				"notes": {
 					"id_effect": "0.7 removed testing::proptest and its feature (MIGRATION-0.7.md:108); only third-party proptest remains, so the §3.2 absent cap (9) applies and v1 45 breaks it."
 				}
+			},
+			"v1": {
+				"competitors": [90, 90, 85, 75, 50, 55, 40, 50, 30, 50],
+				"id_effect": {
+					"0.6.0": 62,
+					"0.7.0": 9
+				},
+				"targets": {
+					"0.8.0": 82
+				}
 			}
 		},
 		{
@@ -8250,12 +9685,18 @@
 			"group": "test",
 			"name": "Integration and E2E testing",
 			"measures": "Containers, HTTP test client, DB fixtures, end-to-end harness.",
-			"competitors": [55, 70, 78, 88, 97, 95, 95, 90, 95, 85],
+			"competitors": [38, 38, 25, 63, 100, 75, 75, 75, 75, 38],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 45, "0.7.0": 50 },
+			"id_effect": {
+				"0.6.0": 25,
+				"0.7.0": 38
+			},
 			"evidence": "examples/http-showcase in live-Postgres CI; no testcontainers/test client.",
-			"targets": { "0.9.0": 70, "0.10.0": 82 },
+			"targets": {
+				"0.9.0": 75,
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "test.integration#1",
@@ -8292,7 +9733,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -8387,6 +9831,17 @@
 				"notes": {
 					"id_effect": "0.6.0 meets 2 of 8: no managed real dependencies, per-test DB isolation, fixtures, E2E, test bootstrap or contract tests."
 				}
+			},
+			"v1": {
+				"competitors": [55, 70, 78, 88, 97, 95, 95, 90, 95, 85],
+				"id_effect": {
+					"0.6.0": 45,
+					"0.7.0": 50
+				},
+				"targets": {
+					"0.9.0": 70,
+					"0.10.0": 82
+				}
 			}
 		},
 		{
@@ -8394,12 +9849,17 @@
 			"group": "test",
 			"name": "Fault injection / chaos",
 			"measures": "Injecting latency, failures, partitions at effect and network level.",
-			"competitors": [40, 50, 70, 60, 52, 58, 20, 20, 20, 15],
+			"competitors": [13, 25, 25, 38, 39, 39, 13, 13, 13, 1],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 60, "0.7.0": 60 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "id_effect_node scripted partitions (transport/mod.rs).",
-			"targets": { "0.10.0": 78 },
+			"targets": {
+				"0.10.0": 75
+			},
 			"checks": [
 				{
 					"id": "test.chaos#1",
@@ -8436,13 +9896,16 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
-					"phoenix": "production",
-					"spring": "documented",
-					"dotnet": "production",
+					"phoenix": "labs",
+					"spring": "labs",
+					"dotnet": "labs",
 					"rails": "production",
 					"django": "production",
 					"laravel": "production",
@@ -8468,8 +9931,7 @@
 						"test.chaos#1",
 						"test.chaos#2",
 						"test.chaos#5",
-						"test.chaos#7",
-						"test.chaos#8"
+						"test.chaos#7"
 					],
 					"rails": ["test.chaos#1"],
 					"django": ["test.chaos#1"],
@@ -8485,6 +9947,16 @@
 					"id_effect": "v1 credited scripted partitions heavily; there is no latency injection, runtime toggle or seeded fault schedule.",
 					"otp": "OTP's strength is architectural (let it crash), not fault-injection tooling; the v2 leaders are Spring and .NET at 63."
 				}
+			},
+			"v1": {
+				"competitors": [40, 50, 70, 60, 52, 58, 20, 20, 20, 15],
+				"id_effect": {
+					"0.6.0": 60,
+					"0.7.0": 60
+				},
+				"targets": {
+					"0.10.0": 78
+				}
 			}
 		},
 		{
@@ -8492,12 +9964,17 @@
 			"group": "test",
 			"name": "Project QA discipline",
 			"measures": "Coverage gate, OS/toolchain matrix, MSRV, minimal versions, compile-fail tests.",
-			"competitors": [85, 85, 90, 85, 95, 95, 92, 92, 85, 85],
+			"competitors": [38, 38, 38, 25, 50, 75, 38, 63, 63, 75],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 88, "0.7.0": 90 },
+			"id_effect": {
+				"0.6.0": 88,
+				"0.7.0": 88
+			},
 			"evidence": "96% coverage gate (scripts/llvm-cov-nextest.sh), ~3,232 tests, pinned trybuild toolchain.",
-			"targets": { "0.8.0": 93 },
+			"targets": {
+				"0.8.0": 88
+			},
 			"checks": [
 				{
 					"id": "test.qa#1",
@@ -8507,7 +9984,10 @@
 					"id": "test.qa#2",
 					"text": "CI matrix across >= 3 operating systems"
 				},
-				{ "id": "test.qa#3", "text": "CI on >= 2 toolchain/runtime versions" },
+				{
+					"id": "test.qa#3",
+					"text": "CI on >= 2 toolchain/runtime versions"
+				},
 				{
 					"id": "test.qa#4",
 					"text": "Declared minimum toolchain/runtime version tested in CI"
@@ -8520,7 +10000,10 @@
 					"id": "test.qa#6",
 					"text": "Compile-fail or type-level tests for public API misuse"
 				},
-				{ "id": "test.qa#7", "text": "Dependency security audit in CI" },
+				{
+					"id": "test.qa#7",
+					"text": "Dependency security audit in CI"
+				},
 				{
 					"id": "test.qa#8",
 					"text": "Performance benchmarks tracked for regressions in CI"
@@ -8528,7 +10011,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -8610,20 +10096,36 @@
 				"notes": {
 					"spring": "The checks follow the row's Rust-centric measures (coverage gate, MSRV, minimal versions); competitors do not gate coverage."
 				}
+			},
+			"v1": {
+				"competitors": [85, 85, 90, 85, 95, 95, 92, 92, 85, 85],
+				"id_effect": {
+					"0.6.0": 88,
+					"0.7.0": 89
+				},
+				"targets": {
+					"0.8.0": 93
+				}
 			}
 		},
-
 		{
 			"id": "dx.scaffold",
 			"group": "dx",
 			"name": "Scaffolding and generators",
 			"measures": "One command to a running project; generators for resources, jobs, migrations.",
-			"competitors": [55, 30, 60, 95, 92, 92, 99, 85, 97, 92],
+			"competitors": [50, 13, 25, 75, 38, 63, 100, 25, 75, 38],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 4, "0.7.0": 4 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "Templates only (id_effect_cli/templates); no generator command.",
-			"targets": { "0.8.0": 65, "0.9.0": 82, "1.0.0": 92 },
+			"targets": {
+				"0.8.0": 63,
+				"0.9.0": 88,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "dx.scaffold#1",
@@ -8633,7 +10135,10 @@
 					"id": "dx.scaffold#2",
 					"text": "Generator for resources/CRUD (model + handler + tests)"
 				},
-				{ "id": "dx.scaffold#3", "text": "Generator for database migrations" },
+				{
+					"id": "dx.scaffold#3",
+					"text": "Generator for database migrations"
+				},
 				{
 					"id": "dx.scaffold#4",
 					"text": "Generator for background jobs/workers"
@@ -8657,10 +10162,13 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
-					"otp": "production",
+					"otp": "labs",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
@@ -8670,7 +10178,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"dx.scaffold#1",
 						"dx.scaffold#5",
@@ -8717,6 +10228,18 @@
 					"nextjs": ["dx.scaffold#1", "dx.scaffold#6", "dx.scaffold#7"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [55, 30, 60, 95, 92, 92, 99, 85, 97, 92],
+				"id_effect": {
+					"0.6.0": 4,
+					"0.7.0": 4
+				},
+				"targets": {
+					"0.8.0": 65,
+					"0.9.0": 82,
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -8724,12 +10247,17 @@
 			"group": "dx",
 			"name": "CLI application toolkit",
 			"measures": "Building CLIs: args, exit codes, prompts, progress, config.",
-			"competitors": [85, 75, 50, 70, 70, 85, 70, 75, 88, 20],
+			"competitors": [88, 75, 50, 63, 100, 75, 63, 50, 100, 1],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 70, "0.7.0": 68 },
+			"id_effect": {
+				"0.6.0": 50,
+				"0.7.0": 50
+			},
 			"evidence": "run_main maps defects → 101, interrupts → 130; id-effect-diagnose removed.",
-			"targets": { "0.8.0": 78 },
+			"targets": {
+				"0.8.0": 75
+			},
 			"checks": [
 				{
 					"id": "dx.cli#1",
@@ -8747,12 +10275,18 @@
 					"id": "dx.cli#4",
 					"text": "Interactive prompts (confirm/select/input)"
 				},
-				{ "id": "dx.cli#5", "text": "Progress bars/spinners" },
+				{
+					"id": "dx.cli#5",
+					"text": "Progress bars/spinners"
+				},
 				{
 					"id": "dx.cli#6",
 					"text": "Layered config from flags, env and files"
 				},
-				{ "id": "dx.cli#7", "text": "Shell completion generation" },
+				{
+					"id": "dx.cli#7",
+					"text": "Shell completion generation"
+				},
 				{
 					"id": "dx.cli#8",
 					"text": "Failures rendered as readable messages on stderr"
@@ -8760,7 +10294,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -8843,6 +10380,16 @@
 				"notes": {
 					"id_effect": "No signal handling in run_main and no prompts, progress or completions; v1 over-credits exit-code mapping."
 				}
+			},
+			"v1": {
+				"competitors": [85, 75, 50, 70, 70, 85, 70, 75, 88, 20],
+				"id_effect": {
+					"0.6.0": 70,
+					"0.7.0": 68
+				},
+				"targets": {
+					"0.8.0": 78
+				}
 			}
 		},
 		{
@@ -8850,24 +10397,39 @@
 			"group": "dx",
 			"name": "Documentation and learning",
 			"measures": "Tutorials, guides, reference, cookbook, examples, tested snippets.",
-			"competitors": [85, 82, 85, 92, 97, 98, 97, 98, 99, 95],
+			"competitors": [75, 88, 63, 88, 100, 100, 63, 75, 63, 88],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 68, "0.7.0": 76 },
+			"id_effect": {
+				"0.6.0": 63,
+				"0.7.0": 63
+			},
 			"evidence": "Book updated for 0.7 (140 files), MIGRATION-0.7.md, ADR 0011.",
-			"targets": { "0.8.0": 82, "1.0.0": 92 },
+			"targets": {
+				"0.8.0": 88,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "dx.docs#1",
 					"text": "Getting-started tutorial ending in a runnable app"
 				},
-				{ "id": "dx.docs#2", "text": "Topic guide for each official module" },
+				{
+					"id": "dx.docs#2",
+					"text": "Topic guide for each official module"
+				},
 				{
 					"id": "dx.docs#3",
 					"text": "Complete API reference (every public item documented)"
 				},
-				{ "id": "dx.docs#4", "text": "Cookbook / how-to recipes section" },
-				{ "id": "dx.docs#5", "text": "Runnable examples executed in CI" },
+				{
+					"id": "dx.docs#4",
+					"text": "Cookbook / how-to recipes section"
+				},
+				{
+					"id": "dx.docs#5",
+					"text": "Runnable examples executed in CI"
+				},
 				{
 					"id": "dx.docs#6",
 					"text": "Guide code snippets compiled/tested in CI"
@@ -8883,7 +10445,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -9007,6 +10572,17 @@
 				"notes": {
 					"laravel": "Laravel's docs are not snippet-tested or example-CI'd; v1 rewards prose quality, which the checks cannot see."
 				}
+			},
+			"v1": {
+				"competitors": [85, 82, 85, 92, 97, 98, 97, 98, 99, 95],
+				"id_effect": {
+					"0.6.0": 68,
+					"0.7.0": 76
+				},
+				"targets": {
+					"0.8.0": 82,
+					"1.0.0": 92
+				}
 			}
 		},
 		{
@@ -9014,12 +10590,18 @@
 			"group": "dx",
 			"name": "Compiler / IDE diagnostics",
 			"measures": "Quality of type errors, on_unimplemented hints, doctor tooling.",
-			"competitors": [78, 70, 60, 80, 90, 97, 70, 70, 80, 88],
+			"competitors": [63, 63, 25, 75, 63, 75, 38, 39, 39, 50],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 55, "0.7.0": 60 },
+			"id_effect": {
+				"0.6.0": 69,
+				"0.7.0": 50
+			},
 			"evidence": "Missing capability is a compile error; 11 on_unimplemented; trybuild ui tests.",
-			"targets": { "0.8.0": 70, "1.0.0": 80 },
+			"targets": {
+				"0.8.0": 75,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "dx.diagnostics#1",
@@ -9056,16 +10638,19 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "tested", "0.7.0": "tested" },
+					"id_effect": {
+						"0.6.0": "tested",
+						"0.7.0": "tested"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
-					"rails": "production",
-					"django": "production",
-					"laravel": "production",
+					"rails": "labs",
+					"django": "labs",
+					"laravel": "labs",
 					"nextjs": "production"
 				},
 				"met": {
@@ -9152,6 +10737,20 @@
 				"notes": {
 					"dotnet": "No dependency-graph tool or doctor CLI in the .NET core SDK; v1 97 credits analyzer depth."
 				}
+			},
+			"v1": {
+				"competitors": [78, 70, 60, 80, 90, 97, 70, 70, 80, 88],
+				"id_effect": {
+					"0.6.0": 55,
+					"0.7.0": 60
+				},
+				"targets": {
+					"0.8.0": 70,
+					"1.0.0": 80
+				}
+			},
+			"adr": {
+				"0.7.0": "Removed the id-effect-diagnose binary in 0.7 (MIGRATION-0.7.md:1038): checks #5 (doctor CLI) and #7 (dependency-graph inspection) lost; replaced by id-effect doctor in PLAN-OF-PLANS E1.4 (0.8)."
 			}
 		},
 		{
@@ -9159,14 +10758,23 @@
 			"group": "dx",
 			"name": "Linting and static analysis",
 			"measures": "Framework-aware lints usable on stable.",
-			"competitors": [78, 55, 70, 80, 85, 95, 88, 72, 82, 85],
+			"competitors": [100, 50, 63, 63, 50, 100, 100, 38, 39, 100],
 			"track": "T1",
 			"stance": "promote",
-			"id_effect": { "0.6.0": 40, "0.7.0": 40 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 38
+			},
 			"evidence": "clippy -D warnings; labs/id_effect_lint nightly-only, unpublished.",
-			"targets": { "0.10.0": 65, "1.0.0": 75 },
+			"targets": {
+				"0.10.0": 63,
+				"1.0.0": 75
+			},
 			"checks": [
-				{ "id": "dx.lint#1", "text": "Framework-specific lint rules exist" },
+				{
+					"id": "dx.lint#1",
+					"text": "Framework-specific lint rules exist"
+				},
 				{
 					"id": "dx.lint#2",
 					"text": "Lints run on the stable/standard toolchain"
@@ -9183,7 +10791,10 @@
 					"id": "dx.lint#5",
 					"text": "Auto-fix suggestions for framework lints"
 				},
-				{ "id": "dx.lint#6", "text": "Lints surface in the IDE" },
+				{
+					"id": "dx.lint#6",
+					"text": "Lints surface in the IDE"
+				},
 				{
 					"id": "dx.lint#7",
 					"text": "Each rule documented with bad/good examples"
@@ -9195,7 +10806,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "labs", "0.7.0": "labs" },
+					"id_effect": {
+						"0.6.0": "labs",
+						"0.7.0": "labs"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -9203,8 +10817,8 @@
 					"spring": "documented",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "documented",
-					"laravel": "documented",
+					"django": "labs",
+					"laravel": "labs",
 					"nextjs": "production"
 				},
 				"met": {
@@ -9222,20 +10836,13 @@
 						"dx.lint#7",
 						"dx.lint#8"
 					],
-					"zio": [
-						"dx.lint#1",
-						"dx.lint#2",
-						"dx.lint#3",
-						"dx.lint#4",
-						"dx.lint#5"
-					],
+					"zio": ["dx.lint#1", "dx.lint#2", "dx.lint#3", "dx.lint#5"],
 					"otp": [
 						"dx.lint#1",
 						"dx.lint#2",
 						"dx.lint#3",
 						"dx.lint#4",
-						"dx.lint#6",
-						"dx.lint#7"
+						"dx.lint#6"
 					],
 					"phoenix": [
 						"dx.lint#1",
@@ -9290,6 +10897,17 @@
 					"dx.lint#2": "labs/id_effect_lint/sgconfig.yml (ast-grep rules need no nightly; the rustc plugin does)",
 					"dx.lint#7": "labs/id_effect_lint/rules/a-fn-signatures.yml:10-14 BAD/GOOD note per rule"
 				}
+			},
+			"v1": {
+				"competitors": [78, 55, 70, 80, 85, 95, 88, 72, 82, 85],
+				"id_effect": {
+					"0.6.0": 39,
+					"0.7.0": 39
+				},
+				"targets": {
+					"0.10.0": 65,
+					"1.0.0": 75
+				}
 			}
 		},
 		{
@@ -9297,12 +10915,18 @@
 			"group": "dx",
 			"name": "Edit-compile-run loop speed",
 			"measures": "Cold and incremental build time of a template app.",
-			"competitors": [85, 45, 85, 92, 70, 82, 98, 95, 95, 88],
+			"competitors": [71, 43, 71, 86, 71, 86, 86, 71, 86, 100],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 38, "0.7.0": 38 },
+			"id_effect": {
+				"0.6.0": 14,
+				"0.7.0": 14
+			},
 			"evidence": "Unmeasured; HList R and typed Schedule likely heavier.",
-			"targets": { "0.8.0": 40, "1.0.0": 55 },
+			"targets": {
+				"0.8.0": 43,
+				"1.0.0": 57
+			},
 			"checks": [
 				{
 					"id": "dx.compile#1",
@@ -9335,7 +10959,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -9348,7 +10975,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": ["dx.compile#5"], "0.7.0": ["dx.compile#5"] },
+					"id_effect": {
+						"0.6.0": ["dx.compile#5"],
+						"0.7.0": ["dx.compile#5"]
+					},
 					"effect_ts": [
 						"dx.compile#1",
 						"dx.compile#2",
@@ -9426,6 +11056,17 @@
 				"notes": {
 					"id_effect": "The build loop is unmeasured (§8: v1 38 is held until measured), so v2 cannot credit the timing checks."
 				}
+			},
+			"v1": {
+				"competitors": [85, 45, 85, 92, 70, 82, 98, 95, 95, 88],
+				"id_effect": {
+					"0.6.0": 38,
+					"0.7.0": 38
+				},
+				"targets": {
+					"0.8.0": 40,
+					"1.0.0": 55
+				}
 			}
 		},
 		{
@@ -9433,12 +11074,17 @@
 			"group": "dx",
 			"name": "REPL and local dev environment",
 			"measures": "Interactive console, one-command local services, dev mode.",
-			"competitors": [70, 60, 95, 97, 78, 88, 97, 90, 95, 90],
+			"competitors": [13, 1, 39, 75, 63, 75, 88, 63, 100, 50],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 42, "0.7.0": 42 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "devenv/Nix + moon; no REPL or dev command.",
-			"targets": { "0.10.0": 62 },
+			"targets": {
+				"0.10.0": 63
+			},
 			"checks": [
 				{
 					"id": "dx.repl#1",
@@ -9448,7 +11094,10 @@
 					"id": "dx.repl#2",
 					"text": "Framework dev command runs the app with dev defaults"
 				},
-				{ "id": "dx.repl#3", "text": "Live/hot reload in dev mode" },
+				{
+					"id": "dx.repl#3",
+					"text": "Live/hot reload in dev mode"
+				},
 				{
 					"id": "dx.repl#4",
 					"text": "One command starts local backing services (DB, broker)"
@@ -9472,10 +11121,13 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "absent",
-					"otp": "production",
+					"otp": "labs",
 					"phoenix": "production",
 					"spring": "production",
 					"dotnet": "production",
@@ -9485,7 +11137,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["dx.repl#5"],
 					"zio": [],
 					"otp": ["dx.repl#1", "dx.repl#2", "dx.repl#5", "dx.repl#7"],
@@ -9517,7 +11172,6 @@
 						"dx.repl#2",
 						"dx.repl#3",
 						"dx.repl#4",
-						"dx.repl#5",
 						"dx.repl#6",
 						"dx.repl#7",
 						"dx.repl#8"
@@ -9546,6 +11200,16 @@
 					"id_effect": "v1 credited devenv.nix and moon, which are contributor tooling for this repo, not app-facing dev features.",
 					"phoenix": "No first-party local services or generated dev environment."
 				}
+			},
+			"v1": {
+				"competitors": [70, 60, 95, 97, 78, 88, 97, 90, 95, 90],
+				"id_effect": {
+					"0.6.0": 9,
+					"0.7.0": 9
+				},
+				"targets": {
+					"0.10.0": 62
+				}
 			}
 		},
 		{
@@ -9553,12 +11217,18 @@
 			"group": "dx",
 			"name": "Deploy and packaging",
 			"measures": "Container images, deploy recipes, release builds, k8s/Kamal.",
-			"competitors": [55, 60, 85, 88, 92, 95, 95, 65, 95, 97],
+			"competitors": [13, 13, 38, 63, 100, 100, 75, 1, 38, 75],
 			"track": "T6",
 			"stance": "build",
-			"id_effect": { "0.6.0": 50, "0.7.0": 50 },
+			"id_effect": {
+				"0.6.0": 49,
+				"0.7.0": 49
+			},
 			"evidence": "Single binary; deploy-kamal template not wired to a command.",
-			"targets": { "0.8.0": 62, "0.10.0": 82 },
+			"targets": {
+				"0.8.0": 63,
+				"0.10.0": 88
+			},
 			"checks": [
 				{
 					"id": "dx.deploy#1",
@@ -9595,7 +11265,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -9683,6 +11356,17 @@
 				"notes": {
 					"nextjs": "No first-party health endpoint or Kubernetes support in Next.js; v1 97 credits Vercel's polish."
 				}
+			},
+			"v1": {
+				"competitors": [55, 60, 85, 88, 92, 95, 95, 65, 95, 97],
+				"id_effect": {
+					"0.6.0": 49,
+					"0.7.0": 49
+				},
+				"targets": {
+					"0.8.0": 62,
+					"0.10.0": 82
+				}
 			}
 		},
 		{
@@ -9690,12 +11374,18 @@
 			"group": "dx",
 			"name": "Coherence: one stack, one way",
 			"measures": "One dependency, one prelude, one documented way for each concern.",
-			"competitors": [78, 62, 72, 92, 97, 98, 99, 95, 99, 85],
+			"competitors": [75, 25, 75, 75, 75, 88, 100, 88, 100, 50],
 			"track": "T1",
 			"stance": "build",
-			"id_effect": { "0.6.0": 30, "0.7.0": 45 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 63
+			},
 			"evidence": "One kernel and Layer model since 0.7; labs lag; no umbrella crate/prelude.",
-			"targets": { "0.8.0": 62, "1.0.0": 88 },
+			"targets": {
+				"0.8.0": 63,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "dx.coherence#1",
@@ -9732,7 +11422,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -9843,20 +11536,36 @@
 				"notes": {
 					"id_effect": "v2 credits the 0.6/0.7 consolidation (lockstep versions, one kernel, reference app); v1 weighted the missing umbrella crate and prelude heavily."
 				}
+			},
+			"v1": {
+				"competitors": [78, 62, 72, 92, 97, 98, 99, 95, 99, 85],
+				"id_effect": {
+					"0.6.0": 30,
+					"0.7.0": 45
+				},
+				"targets": {
+					"0.8.0": 62,
+					"1.0.0": 88
+				}
 			}
 		},
-
 		{
 			"id": "eco.stability",
 			"group": "eco",
 			"name": "Release maturity and API stability",
 			"measures": "Semver discipline, deprecation windows, published crates, cadence.",
-			"competitors": [80, 85, 98, 90, 97, 97, 92, 97, 90, 75],
+			"competitors": [63, 75, 88, 50, 88, 100, 75, 88, 75, 63],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 18, "0.7.0": 28 },
+			"id_effect": {
+				"0.6.0": 49,
+				"0.7.0": 49
+			},
 			"evidence": "17 crates at 0.7.0 on crates.io; breaking every minor; labs at 0.4.0.",
-			"targets": { "0.8.0": 45, "1.0.0": 85 },
+			"targets": {
+				"0.8.0": 50,
+				"1.0.0": 88
+			},
 			"checks": [
 				{
 					"id": "eco.stability#1",
@@ -9893,7 +11602,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10011,6 +11723,17 @@
 				"notes": {
 					"id_effect": "v2 credits process discipline (deprecation policy, migration guides, MSRV CI); v1 weighted the breaking 0.x minors, a yanked 3.0.0 and 6 months of history."
 				}
+			},
+			"v1": {
+				"competitors": [80, 85, 98, 90, 97, 97, 92, 97, 90, 75],
+				"id_effect": {
+					"0.6.0": 18,
+					"0.7.0": 28
+				},
+				"targets": {
+					"0.8.0": 45,
+					"1.0.0": 85
+				}
 			}
 		},
 		{
@@ -10018,14 +11741,23 @@
 			"group": "eco",
 			"name": "Backing and long-term support",
 			"measures": "Maintainers, governance, sponsorship, LTS policy.",
-			"competitors": [70, 70, 92, 78, 98, 99, 90, 92, 90, 95],
+			"competitors": [75, 63, 75, 63, 88, 100, 100, 100, 63, 63],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "Effectively one maintainer; no LTS policy.",
-			"targets": { "0.8.0": 15, "1.0.0": 40 },
+			"targets": {
+				"0.8.0": 13,
+				"1.0.0": 50
+			},
 			"checks": [
-				{ "id": "eco.backing#1", "text": ">= 3 maintainers with merge rights" },
+				{
+					"id": "eco.backing#1",
+					"text": ">= 3 maintainers with merge rights"
+				},
 				{
 					"id": "eco.backing#2",
 					"text": "Active maintainers from >= 2 organisations"
@@ -10034,7 +11766,10 @@
 					"id": "eco.backing#3",
 					"text": "Corporate sponsor or foundation stewardship"
 				},
-				{ "id": "eco.backing#4", "text": "Published governance document" },
+				{
+					"id": "eco.backing#4",
+					"text": "Published governance document"
+				},
 				{
 					"id": "eco.backing#5",
 					"text": "Documented LTS/support-window policy"
@@ -10054,7 +11789,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10067,7 +11805,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"eco.backing#1",
 						"eco.backing#2",
@@ -10153,6 +11894,17 @@
 					]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [70, 70, 92, 78, 98, 99, 90, 92, 90, 95],
+				"id_effect": {
+					"0.6.0": 8,
+					"0.7.0": 8
+				},
+				"targets": {
+					"0.8.0": 15,
+					"1.0.0": 40
+				}
 			}
 		},
 		{
@@ -10160,12 +11912,17 @@
 			"group": "eco",
 			"name": "Third-party ecosystem fit",
 			"measures": "Ease of using the host language's ecosystem; native integrations.",
-			"competitors": [72, 70, 72, 82, 98, 95, 95, 95, 95, 99],
+			"competitors": [50, 88, 50, 63, 100, 100, 75, 63, 88, 75],
 			"track": "T9",
 			"stance": "build",
-			"id_effect": { "0.6.0": 50, "0.7.0": 55 },
+			"id_effect": {
+				"0.6.0": 38,
+				"0.7.0": 50
+			},
 			"evidence": "Tokio default executor; axum/tower feature.",
-			"targets": { "1.0.0": 75 },
+			"targets": {
+				"1.0.0": 75
+			},
 			"checks": [
 				{
 					"id": "eco.fit#1",
@@ -10202,7 +11959,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10229,20 +11989,12 @@
 						"eco.fit#6",
 						"eco.fit#7"
 					],
-					"otp": [
-						"eco.fit#1",
-						"eco.fit#2",
-						"eco.fit#3",
-						"eco.fit#5",
-						"eco.fit#8"
-					],
+					"otp": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#8"],
 					"phoenix": [
 						"eco.fit#1",
 						"eco.fit#2",
 						"eco.fit#3",
 						"eco.fit#4",
-						"eco.fit#5",
-						"eco.fit#6",
 						"eco.fit#8"
 					],
 					"spring": [
@@ -10270,7 +12022,6 @@
 						"eco.fit#2",
 						"eco.fit#3",
 						"eco.fit#4",
-						"eco.fit#5",
 						"eco.fit#7",
 						"eco.fit#8"
 					],
@@ -10279,7 +12030,6 @@
 						"eco.fit#2",
 						"eco.fit#3",
 						"eco.fit#4",
-						"eco.fit#5",
 						"eco.fit#8"
 					],
 					"laravel": [
@@ -10287,7 +12037,6 @@
 						"eco.fit#2",
 						"eco.fit#3",
 						"eco.fit#4",
-						"eco.fit#5",
 						"eco.fit#6",
 						"eco.fit#7",
 						"eco.fit#8"
@@ -10310,6 +12059,16 @@
 				"notes": {
 					"nextjs": "Next.js fit is npm breadth, not first-party DB or broker integrations; the v2 leaders are Spring, .NET and Laravel at 100."
 				}
+			},
+			"v1": {
+				"competitors": [72, 70, 72, 82, 98, 95, 95, 95, 95, 99],
+				"id_effect": {
+					"0.6.0": 50,
+					"0.7.0": 55
+				},
+				"targets": {
+					"1.0.0": 75
+				}
 			}
 		},
 		{
@@ -10317,12 +12076,17 @@
 			"group": "eco",
 			"name": "Community and hiring pool",
 			"measures": "Users, contributors, chat, conference presence, hireability.",
-			"competitors": [40, 35, 45, 52, 99, 98, 85, 92, 90, 97],
+			"competitors": [38, 13, 38, 38, 88, 100, 88, 88, 88, 88],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "No measurable community.",
-			"targets": { "1.0.0": 25 },
+			"targets": {
+				"1.0.0": 25
+			},
 			"checks": [
 				{
 					"id": "eco.community#1",
@@ -10336,8 +12100,14 @@
 					"id": "eco.community#3",
 					"text": "Official chat or forum with a public archive"
 				},
-				{ "id": "eco.community#4", "text": "Dedicated annual conference" },
-				{ "id": "eco.community#5", "text": ">= 1M weekly package downloads" },
+				{
+					"id": "eco.community#4",
+					"text": "Dedicated annual conference"
+				},
+				{
+					"id": "eco.community#5",
+					"text": ">= 1M weekly package downloads"
+				},
 				{
 					"id": "eco.community#6",
 					"text": ">= 1,000 open job postings naming it on major boards"
@@ -10353,7 +12123,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10366,7 +12139,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"eco.community#3",
 						"eco.community#4",
@@ -10432,6 +12208,16 @@
 					]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [40, 35, 45, 52, 99, 98, 85, 92, 90, 97],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"1.0.0": 25
+				}
 			}
 		},
 		{
@@ -10439,12 +12225,17 @@
 			"group": "eco",
 			"name": "Production track record",
 			"measures": "Public production users and case studies.",
-			"competitors": [58, 70, 99, 88, 99, 99, 97, 96, 88, 95],
+			"competitors": [50, 63, 100, 100, 100, 100, 100, 100, 100, 100],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "Two known consumers (ADR 0010).",
-			"targets": { "1.0.0": 40 },
+			"targets": {
+				"1.0.0": 50
+			},
 			"checks": [
 				{
 					"id": "eco.production#1",
@@ -10454,7 +12245,10 @@
 					"id": "eco.production#2",
 					"text": ">= 3 Fortune-500 (or equivalent) public adopters"
 				},
-				{ "id": "eco.production#3", "text": "Official adopters/showcase page" },
+				{
+					"id": "eco.production#3",
+					"text": "Official adopters/showcase page"
+				},
 				{
 					"id": "eco.production#4",
 					"text": ">= 5 years of production use since first stable release"
@@ -10478,7 +12272,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10491,7 +12288,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": [
 						"eco.production#1",
 						"eco.production#3",
@@ -10587,6 +12387,16 @@
 					]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [58, 70, 99, 88, 99, 99, 97, 96, 88, 95],
+				"id_effect": {
+					"0.6.0": 8,
+					"0.7.0": 8
+				},
+				"targets": {
+					"1.0.0": 40
+				}
 			}
 		},
 		{
@@ -10594,15 +12404,26 @@
 			"group": "eco",
 			"name": "License and legal clarity",
 			"measures": "OSI software license, LICENSE file, contributor terms.",
-			"competitors": [98, 98, 98, 98, 98, 98, 98, 98, 98, 98],
+			"competitors": [80, 80, 80, 80, 100, 100, 80, 80, 80, 80],
 			"track": "T0",
 			"stance": "build",
-			"id_effect": { "0.6.0": 8, "0.7.0": 8 },
+			"id_effect": {
+				"0.6.0": 20,
+				"0.7.0": 20
+			},
 			"evidence": "Cargo.toml:32 CC-BY-SA-4.0; no LICENSE file.",
-			"targets": { "0.8.0": 98 },
+			"targets": {
+				"0.8.0": 100
+			},
 			"checks": [
-				{ "id": "eco.license#1", "text": "OSI-approved software license" },
-				{ "id": "eco.license#2", "text": "LICENSE file at repo root" },
+				{
+					"id": "eco.license#1",
+					"text": "OSI-approved software license"
+				},
+				{
+					"id": "eco.license#2",
+					"text": "LICENSE file at repo root"
+				},
 				{
 					"id": "eco.license#3",
 					"text": "License field in every published manifest"
@@ -10618,7 +12439,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "published", "0.7.0": "published" },
+					"id_effect": {
+						"0.6.0": "published",
+						"0.7.0": "published"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10704,6 +12528,16 @@
 				"notes": {
 					"effect_ts": "Effect-TS requires no DCO or CLA, one of 5 checks (8 of the 10 competitors miss it); v1 scored the MIT licence alone."
 				}
+			},
+			"v1": {
+				"competitors": [98, 98, 98, 98, 98, 98, 98, 98, 98, 98],
+				"id_effect": {
+					"0.6.0": 8,
+					"0.7.0": 8
+				},
+				"targets": {
+					"0.8.0": 98
+				}
 			}
 		},
 		{
@@ -10711,18 +12545,26 @@
 			"group": "eco",
 			"name": "i18n / l10n",
 			"measures": "Message catalogs, pluralisation, locale negotiation, formatting.",
-			"competitors": [10, 10, 30, 85, 90, 95, 95, 97, 92, 80],
+			"competitors": [9, 9, 1, 63, 63, 75, 75, 100, 63, 38],
 			"track": "T9",
 			"stance": "integrate",
-			"id_effect": { "0.6.0": 2, "0.7.0": 2 },
+			"id_effect": {
+				"0.6.0": 1,
+				"0.7.0": 1
+			},
 			"evidence": "None.",
-			"targets": { "0.12.0": 60 },
+			"targets": {
+				"0.12.0": 63
+			},
 			"checks": [
 				{
 					"id": "eco.i18n#1",
 					"text": "Message catalogs for translatable strings"
 				},
-				{ "id": "eco.i18n#2", "text": "CLDR-style pluralisation" },
+				{
+					"id": "eco.i18n#2",
+					"text": "CLDR-style pluralisation"
+				},
 				{
 					"id": "eco.i18n#3",
 					"text": "Locale negotiation from the request (Accept-Language)"
@@ -10731,7 +12573,10 @@
 					"id": "eco.i18n#4",
 					"text": "Locale-aware number/date/currency formatting"
 				},
-				{ "id": "eco.i18n#5", "text": "Translated validation error messages" },
+				{
+					"id": "eco.i18n#5",
+					"text": "Translated validation error messages"
+				},
 				{
 					"id": "eco.i18n#6",
 					"text": "String extraction tooling for translators"
@@ -10740,11 +12585,17 @@
 					"id": "eco.i18n#7",
 					"text": "Per-request/per-context locale switching API"
 				},
-				{ "id": "eco.i18n#8", "text": "Localised routing/URLs" }
+				{
+					"id": "eco.i18n#8",
+					"text": "Localised routing/URLs"
+				}
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "absent", "0.7.0": "absent" },
+					"id_effect": {
+						"0.6.0": "absent",
+						"0.7.0": "absent"
+					},
 					"effect_ts": "absent",
 					"zio": "absent",
 					"otp": "absent",
@@ -10757,7 +12608,10 @@
 					"nextjs": "production"
 				},
 				"met": {
-					"id_effect": { "0.6.0": [], "0.7.0": [] },
+					"id_effect": {
+						"0.6.0": [],
+						"0.7.0": []
+					},
 					"effect_ts": ["eco.i18n#4"],
 					"zio": ["eco.i18n#4"],
 					"otp": [],
@@ -10770,7 +12624,6 @@
 					],
 					"spring": [
 						"eco.i18n#1",
-						"eco.i18n#2",
 						"eco.i18n#3",
 						"eco.i18n#4",
 						"eco.i18n#5",
@@ -10812,6 +12665,16 @@
 					"nextjs": ["eco.i18n#3", "eco.i18n#4", "eco.i18n#8"]
 				},
 				"evidence": {}
+			},
+			"v1": {
+				"competitors": [10, 10, 30, 85, 90, 95, 95, 97, 92, 80],
+				"id_effect": {
+					"0.6.0": 2,
+					"0.7.0": 2
+				},
+				"targets": {
+					"0.12.0": 60
+				}
 			}
 		},
 		{
@@ -10819,12 +12682,18 @@
 			"group": "eco",
 			"name": "Multi-tenancy and audit trails",
 			"measures": "Tenant isolation patterns and tamper-evident audit logging.",
-			"competitors": [10, 10, 10, 62, 75, 80, 70, 70, 75, 30],
+			"competitors": [13, 13, 13, 50, 63, 75, 50, 25, 39, 25],
 			"track": "T5",
 			"stance": "build",
-			"id_effect": { "0.6.0": 3, "0.7.0": 3 },
+			"id_effect": {
+				"0.6.0": 13,
+				"0.7.0": 13
+			},
 			"evidence": "Per-request capabilities only (axum/src/request_caps.rs).",
-			"targets": { "0.9.0": 45, "0.12.0": 70 },
+			"targets": {
+				"0.9.0": 50,
+				"0.12.0": 75
+			},
 			"checks": [
 				{
 					"id": "eco.tenancy#1",
@@ -10850,7 +12719,10 @@
 					"id": "eco.tenancy#6",
 					"text": "Tamper-evident audit log (hash chain/WORM)"
 				},
-				{ "id": "eco.tenancy#7", "text": "Per-tenant rate limits/quotas" },
+				{
+					"id": "eco.tenancy#7",
+					"text": "Per-tenant rate limits/quotas"
+				},
 				{
 					"id": "eco.tenancy#8",
 					"text": "Per-tenant database connection routing"
@@ -10858,7 +12730,10 @@
 			],
 			"v2": {
 				"level": {
-					"id_effect": { "0.6.0": "documented", "0.7.0": "documented" },
+					"id_effect": {
+						"0.6.0": "documented",
+						"0.7.0": "documented"
+					},
 					"effect_ts": "production",
 					"zio": "production",
 					"otp": "production",
@@ -10866,8 +12741,8 @@
 					"spring": "production",
 					"dotnet": "production",
 					"rails": "production",
-					"django": "production",
-					"laravel": "production",
+					"django": "labs",
+					"laravel": "labs",
 					"nextjs": "production"
 				},
 				"met": {
@@ -10917,6 +12792,17 @@
 				},
 				"evidence": {
 					"eco.tenancy#2": "crates/id_effect_axum/src/request_caps.rs:159 CapOverrideLayer (doc example resolves Tenant from x-tenant, :18-34); book part2/ch07-08-axum-host.md; example 060_request_caps.rs"
+				}
+			},
+			"v1": {
+				"competitors": [10, 10, 10, 62, 75, 80, 70, 70, 75, 30],
+				"id_effect": {
+					"0.6.0": 3,
+					"0.7.0": 3
+				},
+				"targets": {
+					"0.9.0": 45,
+					"0.12.0": 70
 				}
 			}
 		}

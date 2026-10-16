@@ -19,7 +19,7 @@
 		"schema_version": { "const": 1 },
 		"method_version": {
 			"type": "string",
-			"description": "METHOD.md version the scores follow (e.g. \"1.0\")."
+			"description": "METHOD.md version the scores follow (e.g. \"2.0\"). From 2.0 the stored scores are checklist scores and each row keeps method 1.1 in v1 (METHOD.md §7.4)."
 		},
 		"method_doc": { "type": "string" },
 		"competitor_snapshot": {
@@ -142,6 +142,21 @@
 					"description": "Optional. Version (x.y.z) -> why the id_effect score may drop by 5 or more at that release (scorecard.sh --diff; PLAN-OF-PLANS §7.3).",
 					"propertyNames": { "$ref": "#/$defs/semver" },
 					"additionalProperties": { "type": "string", "minLength": 1 }
+				},
+				"v1": {
+					"type": "object",
+					"description": "Method 2.x only: the method 1.1 history of the row (scripts/scorecard.sh --method 1; METHOD.md §7.4). id_effect scores the same versions as the row's id_effect.",
+					"required": ["competitors", "id_effect", "targets"],
+					"properties": {
+						"competitors": {
+							"type": "array",
+							"minItems": 10,
+							"maxItems": 10,
+							"items": { "$ref": "#/$defs/score" }
+						},
+						"id_effect": { "$ref": "#/$defs/versionScores" },
+						"targets": { "$ref": "#/$defs/versionScores" }
+					}
 				},
 				"checks": {
 					"type": "array",

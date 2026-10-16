@@ -1,6 +1,6 @@
 # id_effect Plan of Plans: 0.8 → 1.0 → Surpass
 
-Status: **draft, awaiting approval** · Baseline: 0.7.0 (2026-10-15) · Scorecard method v1.0
+Status: **approved** (2026-10-15) · Baseline: 0.7.0 (2026-10-15) · Scorecard method 2.0 (re-based 2026-10-16, §7.0)
 (`../../../docs/scorecard/METHOD.md`) · Data: `../../../docs/scorecard/scorecard.json`
 
 Every release from 0.8.0 onward begins by reading this document (§7), picks its scope from it, and
@@ -18,14 +18,19 @@ Success is measured with numbers only:
 
 | Horizon | Enterprise index E | Rank (E) | Runtime index RT | Red rows (<40) | Best-in-class rows (≥80) | First hour (K1) |
 |---|---|---|---|---|---|---|
-| 0.7.0 baseline | 46.8 | #11 | 59.1 (#7) | 31 | 16 | not possible (no generator) |
-| 1.0.0 | ≥ 80 | top 3 | ≥ 83 (#1) | ≤ 1 | ≥ 59 | ≤ 90 s |
-| Surpass (1.x) | > 85.4 (above the .NET snapshot) | #1 | #1 | 0 | ≥ 70 | ≤ 60 s |
+| 0.7.0 baseline | 43.2 | #9 | 56.1 (#6) | 39 | 13 | not possible (no generator) |
+| 1.0.0 | ≥ 82 | #1 | ≥ 84 (#1) | ≤ 1 | ≥ 59 | ≤ 90 s |
+| Surpass (1.x) | ≥ 85, and #1 on the refreshed snapshot | #1 | #1 | 0 | ≥ 70 | ≤ 60 s |
 
-Being honest about it: the plan as targeted reaches **#3 at 1.0**, behind .NET (85.4) and Spring
-(81.1). The remaining gap is almost all in *Ecosystem & trust* (community, backing, production track
-record), which code alone cannot close. That is why the Surpass horizon (§9) exists, and why trust
-work (T0) is a mandatory part of **every** release rather than its own phase.
+All numbers are scorecard method 2.0 (checklist scores, METHOD §7). Being honest about them:
+- The plan as targeted reaches **#1 at 1.0** (E 82.1 against .NET 77.3 and Spring 73.0), but
+  against the competitor snapshot frozen on 2026-10-14. Competitors keep shipping, and the snapshot
+  is refreshed before 1.0 (METHOD §4), so #1 at 1.0 must be re-proven on that refresh. Under the
+  method 1.1 history (judgment scores) the same plan reaches only #3 (80.3, behind .NET 85.4 and
+  Spring 81.1).
+- The structural gap is *Ecosystem & trust* (group score 17 at 0.7.0: community, backing,
+  production track record), which code alone cannot close. That is why the Surpass horizon (§9)
+  exists, and why trust work (T0) is a mandatory part of **every** release rather than its own phase.
 
 ---
 
@@ -33,11 +38,13 @@ work (T0) is a mandatory part of **every** release rather than its own phase.
 
 | Advantage | Who has it today | id_effect position at 0.7 |
 |---|---|---|
-| Typed errors + typed DI + resource safety checked by the compiler | Effect-TS, ZIO | ✓ core 86 (group avg), Send kernel, HList `R` |
-| OTP-grade supervision and distribution | OTP, Phoenix | ✓ the only non-BEAM entrant (supervision 84, mesh 65–72) |
-| Native performance with memory safety and no GC | (.NET partially) | ✓ concurrency 85, `forbid(unsafe_code)` |
-| Batteries (data, auth, jobs, mail, admin, scaffolding) | Rails, Laravel, Spring, .NET, Phoenix | ✗ data 34, security 29, messaging 28, DX 47 |
-| Trust (license, stability, backing, users) | everyone else | ✗ ecosystem 14 |
+| Typed errors + typed DI + resource safety checked by the compiler | Effect-TS, ZIO | ✓ core 85 (group score), Send kernel, HList `R` |
+| OTP-grade supervision and distribution | OTP, Phoenix | ✓ the only non-BEAM entrant (supervision 88, mesh rows 75) |
+| Native performance with memory safety and no GC | (.NET partially) | ✓ concurrency 82, `forbid(unsafe_code)` |
+| Batteries (data, auth, jobs, mail, admin, scaffolding) | Rails, Laravel, Spring, .NET, Phoenix | ✗ data 33, web 28, security 21, messaging 28, DX 37 |
+| Trust (license, stability, backing, users) | everyone else | ✗ ecosystem 17 |
+
+Group scores are method 2.0 at 0.7.0 (`docs/scorecard/results/v0.7.0.json`).
 
 Nobody else has the first three together. The plan builds the fourth on top of them and works on the
 fifth continuously. **Every battery must be effect-native:** a `Layer` to provide it, a typed error
@@ -215,12 +222,12 @@ whose target moves in that release.
 
 | Release | Theme | Tracks / epics | Rows | Target E (rank) | Target RT | Red rows | Exit KPIs |
 |---|---|---|---|---|---|---|---|
-| **0.8.0** | Trust & first hour | E0.1–E0.4, E0.6, E1.1, E1.2, E1.4, E1.6 (tutorial), E1.7, E1.8, E2.1–E2.4, E2.6 (compile bench), E5.1, E6.1, E6.3 templates | 28 | 54.3 (#11) | 64.3 | ≤ 24 | K1 ≤ 180 s, K4 = 100 %, K5 ≥ 80 % |
-| **0.9.0** | Data & security | E1.3, E2.3 OpenAPI, E3.1–E3.4, E4.1–E4.2, E5.2–E5.5 (audit), E6.5 part 1 | 18 | 62.8 (#9) | 68.2 | ≤ 18 | Ledger reference app: CRUD + auth + migrations green |
-| **0.10.0** | Async work & operations | E1.5, E1.9, E2.6 bench CI, E4.3–E4.4, E6.2–E6.5, E7.1–E7.4 | 16 | 69.4 (#5) | 74.1 | ≤ 11 | Ledger with jobs, mail, console; K2 ≤ 8 s |
-| **0.11.0** | Realtime & distribution | E2.5, E7.5, E8.1–E8.5 | 11 | 72.3 (#4) | 78.6 (#2) | ≤ 8 | Relay reference app (3-node chat + presence) green |
-| **0.12.0** | Breadth & API freeze | E3.3 part 2, E5.5 tenancy, E9.1–E9.5, E0.3 freeze RFC | 7 | 76.5 (#4) | 80.9 (#1) | ≤ 3 | Pipeline reference app; API freeze RFC accepted |
-| **1.0.0** | Stability | E0.3 LTS, E0.4, E0.5, E1.6 docs complete, E1.7 compile budget, E5.2 passkeys, E6.2 shell, snapshot refresh | 24 | 80.4 (#3) | 83.5 (#1) | ≤ 1 | K1 ≤ 90 s, ≥ 5 public adopters, ≥ 3 maintainers |
+| **0.8.0** | Trust & first hour | E0.1–E0.4, E0.6, E1.1, E1.2, E1.4, E1.6 (tutorial), E1.7, E1.8, E2.1–E2.4, E2.6 (compile bench), E5.1, E6.1, E6.3 templates | 28 | 53.3 (#6) | 63.4 (#3) | ≤ 31 | K1 ≤ 180 s, K4 = 100 %, K5 ≥ 80 % |
+| **0.9.0** | Data & security | E1.3, E2.3 OpenAPI, E3.1–E3.4, E4.1–E4.2, E5.2–E5.5 (audit), E6.5 part 1 | 18 | 63.1 (#3) | 68.1 (#2) | ≤ 21 | Ledger reference app: CRUD + auth + migrations green |
+| **0.10.0** | Async work & operations | E1.5, E1.9, E2.6 bench CI, E4.3–E4.4, E6.2–E6.5, E7.1–E7.4 | 16 | 70.3 (#3) | 74.6 (#1) | ≤ 11 | Ledger with jobs, mail, console; K2 ≤ 8 s |
+| **0.11.0** | Realtime & distribution | E2.5, E7.5, E8.1–E8.5 | 11 | 73.3 (#2) | 78.9 (#1) | ≤ 8 | Relay reference app (3-node chat + presence) green |
+| **0.12.0** | Breadth & API freeze | E3.3 part 2, E5.5 tenancy, E9.1–E9.5, E0.3 freeze RFC | 7 | 77.4 (#1) | 81.0 (#1) | ≤ 3 | Pipeline reference app; API freeze RFC accepted |
+| **1.0.0** | Stability | E0.3 LTS, E0.4, E0.5, E1.6 docs complete, E1.7 compile budget, E5.2 passkeys, E6.2 shell, snapshot refresh | 24 | 82.1 (#1) | 84.5 (#1) | ≤ 1 | K1 ≤ 90 s, ≥ 5 public adopters, ≥ 3 maintainers |
 
 ```mermaid
 flowchart LR
@@ -241,8 +248,9 @@ still ship in order.
 
 ## 7. Per-release operating protocol (how every version uses this document)
 
-### 7.0 One-time step at 0.8 kickoff: method re-base (L13)
-The first 0.8 leaf runs before scope selection:
+### 7.0 One-time step at 0.8 kickoff: method re-base (L13) — done 2026-10-16
+Done in leaf `method-rebase-2-0` (METHOD §7.4, `docs/scorecard/alignment-2.0.json`); step 4 (owner
+acceptance) is recorded in §11. The first 0.8 leaf runs before scope selection:
 1. Align the v2 competitor levels across all rows with one rule: a third-party library counts as `production` only if the framework's own docs recommend it; otherwise it is `labs`.
 2. Apply the v1 caps strictly: every score listed under cap violations in `REPORT-method-v2.md` is lowered to its cap. Bump the method to 1.1 and regenerate `results/`.
 3. Switch to method 2.0 (v2 primary). Re-base 0.6.0, 0.7.0 and every row target. Re-state §1 and §6 (and METHOD §5.2) with v2 numbers. Keep the v1 numbers in a "history" table.
@@ -312,8 +320,9 @@ and carry-over; DX KPIs; bench summary; the next release's slot confirmed or adj
 
 ## 9. Surpass horizon (1.x)
 
-Passing .NET (E 85.4) needs about +5 E beyond the 1.0 targets. Nearly all of it comes from groups
-that need **people**, not code:
+On the frozen snapshot the 1.0 targets already pass .NET (E 77.3). Staying ahead after the pre-1.0
+snapshot refresh, and reaching E ≥ 85, needs about +3 E beyond the 1.0 targets. Nearly all of it
+comes from groups that need **people**, not code:
 
 | Lever | Rows | Needed |
 |---|---|---|
@@ -346,3 +355,4 @@ snapshot.
 | 2026-10-15 | Initial draft (baseline 0.7.0, method v1.0). |
 | 2026-10-15 | Owner decisions L10 (MIT), L11 (`id_effect_kit`), L12 (console built into the app). Plan approved; roadmap-bootstrap mission executed. |
 | 2026-10-16 | roadmap-bootstrap complete: ADR 0012, scorecard tooling + reports + HTML, method v2 checklists (61f3b78, 3af5d74, 679a1d4, f9bb09d, 15ea25f). Owner decision L13 (v2 primary after alignment; v1 caps applied strictly); §7.0 added. Under v2, 0.7.0 scores E 43.2, rank #9 of 11. |
+| 2026-10-16 | §7.0 re-base done (method 1.1, then 2.0): competitor levels aligned by the third-party rule (60 competitor scores changed), 25 v1 cap violations lowered, targets re-based to checklist scores (METHOD §7.4). §1, §2, §6 and §9 re-stated: 0.7.0 E 43.2 (#9); 1.0 target E 82.1 (#1 on the frozen snapshot; #3 under the 1.1 history). Owner accepted the re-based numbers 2026-10-16 (§7.0 step 4). |

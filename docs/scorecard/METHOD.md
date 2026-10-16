@@ -1,4 +1,9 @@
-# Platform Scorecard — Method (v1.0)
+# Platform Scorecard — Method (v2.0)
+
+Since method 2.0 (2026-10-16) every score is a **checklist score** (§7): a row's score follows
+mechanically from the level of a framework and the table-stakes checks it meets. §2–§3 describe the
+bands and caps the checklist score is built on; the method 1.x judgment scores are kept as history
+(§5.2, `rows[].v1`, `scripts/scorecard.sh --method 1`).
 
 This scorecard measures how well id_effect serves a serious corporate team, compared with ten
 reference frameworks. Every release is re-scored against it. The plan of plans
@@ -22,9 +27,9 @@ release proves its progress by re-running this method.
 | Group | One of 13 groups. Every row belongs to exactly one. |
 | Score | An integer in 1–100: how well the framework covers the row **out of the box**, judged against the best enterprise practice of the day. |
 
-"Out of the box" means first-party, or the de facto standard library that the framework's own docs
-recommend. A third-party-only answer is scored about 5–10 points lower than the same capability
-shipped first-party.
+"Out of the box" means first-party, or a third-party library that the framework's own official docs
+recommend. A check met only through a third-party library the docs do not recommend counts at the
+`labs` level (§7.4, alignment rule).
 
 ## 2. Score anchors (all frameworks)
 
@@ -108,48 +113,66 @@ planned(r, v) = max( latest measured score of r at or before v,
 Applying §5 to planned scores gives the **target indices** for a release. At release exit, the
 measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 
-### 5.2 Reference results (method v1.0, competitor snapshot 2026-10-14)
+### 5.2 Reference results (method 2.0, competitor snapshot 2026-10-14)
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
 |---|---|---|---|---|---|---|---|
-| 0.6.0 measured | 45.9 | 44.0 (#11) | 55.4 (#8) | 12 | 34 | 2 | 47 |
-| 0.7.0 measured | 49.1 | 46.8 (#11) | 59.1 (#7) | 16 | 31 | 3 | 40 |
-| 0.8.0 target | 55.8 | 54.3 (#11) | 64.3 (#7) | 25 | 24 | 4 | 28 |
-| 0.9.0 target | 63.3 | 62.8 (#9) | 68.2 (#6) | 35 | 18 | 4 | 20 |
-| 0.10.0 target | 69.6 | 69.4 (#5) | 74.1 (#4) | 41 | 11 | 6 | 15 |
-| 0.11.0 target | 73.1 | 72.3 (#4) | 78.6 (#2) | 50 | 8 | 8 | 12 |
-| 0.12.0 target | 76.7 | 76.5 (#4) | 80.9 (#1) | 51 | 3 | 8 | 12 |
-| 1.0.0 target | 80.4 | 80.4 (#3) | 83.5 (#1) | 59 | 1 | 10 | 11 |
+| 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
+| 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
+| 0.8.0 target | 54.4 | 53.3 (#6) | 63.4 (#3) | 23 | 31 | 7 | 25 |
+| 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
+| 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
+| 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
+| 0.12.0 target | 77.6 | 77.4 (#1) | 81.0 (#1) | 49 | 3 | 16 | 12 |
+| 1.0.0 target | 82.0 | 82.1 (#1) | 84.5 (#1) | 59 | 1 | 20 | 12 |
 
-Competitor indices in the same snapshot:
+Competitor indices in the same snapshot (after the §7.4 alignment):
 
 | Framework | U | E | RT |
 |---|---|---|---|
-| .NET | 83.9 | 85.4 | 80.3 |
-| Spring | 78.8 | 81.1 | 74.3 |
-| Phoenix | 77.6 | 77.6 | 75.4 |
-| Laravel | 69.1 | 71.3 | 57.5 |
-| Effect-TS | 67.9 | 67.1 | 69.8 |
-| Rails | 65.9 | 67.2 | 54.3 |
-| ZIO | 65.7 | 63.8 | 68.7 |
-| Django | 62.9 | 64.3 | 50.8 |
-| OTP | 58.9 | 57.8 | 65.0 |
-| Next.js | 56.9 | 58.7 | 49.2 |
+| .NET | 75.1 | 77.3 | 71.1 |
+| Spring | 70.1 | 73.0 | 63.8 |
+| Phoenix | 60.3 | 59.6 | 59.5 |
+| Effect-TS | 56.8 | 56.0 | 60.4 |
+| ZIO | 54.2 | 51.8 | 56.6 |
+| Laravel | 52.2 | 53.3 | 42.3 |
+| Rails | 51.3 | 51.5 | 40.6 |
+| Django | 45.5 | 45.6 | 36.7 |
+| Next.js | 38.9 | 41.0 | 33.4 |
+| OTP | 37.3 | 36.6 | 43.2 |
 
-Any implementation of §5 **must** reproduce this table exactly from `scorecard.json`. This table is
-the tool's self-test fixture.
+History: the same table by method 1.1 (`scripts/scorecard.sh --method 1`; the v1 judgment scores
+with the §3.2 caps applied strictly, and the v1 targets). The competitor indices under 1.1 are those
+of method 1.0 (.NET E 85.4, Spring 81.1, Phoenix 77.6, Laravel 71.3).
+
+| Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
+|---|---|---|---|---|---|---|---|
+| 0.6.0 measured | 44.2 | 42.6 (#11) | 53.3 (#9) | 9 | 36 | 2 | 47 |
+| 0.7.0 measured | 47.7 | 45.6 (#11) | 57.8 (#7) | 16 | 34 | 3 | 40 |
+| 0.8.0 target | 55.0 | 53.7 (#11) | 63.7 (#7) | 25 | 26 | 4 | 28 |
+| 0.9.0 target | 62.5 | 62.2 (#9) | 67.6 (#6) | 35 | 20 | 4 | 20 |
+| 0.10.0 target | 69.3 | 69.2 (#5) | 73.8 (#4) | 41 | 11 | 6 | 15 |
+| 0.11.0 target | 73.0 | 72.2 (#4) | 78.4 (#2) | 50 | 8 | 8 | 12 |
+| 0.12.0 target | 76.6 | 76.4 (#4) | 80.7 (#1) | 51 | 3 | 8 | 12 |
+| 1.0.0 target | 80.3 | 80.3 (#3) | 83.3 (#1) | 59 | 1 | 10 | 11 |
+
+Under method 1.0 (before the caps) the 0.7.0 row read U 49.1, E 46.8 (#11), RT 59.1 (#7).
+
+Any implementation of §5 **must** reproduce these tables exactly from `scorecard.json`. They are the
+tool's self-test fixture.
 
 ## 6. Re-test protocol (each release)
 
 1. Check out the release tag in a clean worktree.
 2. A **fresh, blind assessor** re-scores the id_effect column. This is a new agent session or a
    person who has not seen the targets, given only this document, the previous `evidence` strings
-   and the repo. Per row they record a score and an evidence string.
-3. Apply the §3.2 caps.
+   and the repo. Per row they record the level and the met checks (`rows[].v2.level`/`met`) with
+   evidence per met check (`rows[].v2.evidence`), and update the row's `evidence` string.
+3. Compute each row's checklist score (§7.2); the level applies the §3.2 caps.
 4. Adjudicate: any row whose blind score differs from the release owner's expectation by more than
    10 points is discussed, and the decision is recorded in the release report.
-5. Write the scores under the new version key in `scorecard.json → rows[].id_effect`, then
-   recompute §5.
+5. Write the checklist scores under the new version key in `scorecard.json → rows[].id_effect`
+   (`--validate` fails if one differs from its checklist score), then recompute §5.
 6. Publish `docs/scorecard/results/<version>.json` and `REPORT-<version>.md`. The report has: the
    indices table, the deltas against the previous version and against the targets, the rows that
    changed with their evidence, any regressions, and any misses with their carry-over.
@@ -196,19 +219,37 @@ The caps are those of §3.2. `round` is half away from zero, computed in integer
 `floor((200 × m + n) / (2 × n))`, so 12.5 becomes 13. `clamp` keeps the score in 1–100. Indices,
 ranks and KPIs then follow §5 unchanged.
 
-`scripts/scorecard.sh --method 2` scores `--version`, `--json` and `--diff` with v2 for id_effect and
-for every competitor. `--method 1`, the default, is v1. `scripts/scorecard.sh --method-compare`
-writes `REPORT-method-v2.md`, and CI checks that it is up to date. The report shows, for each
-measured version:
-- v1 and v2 indices for all 11 frameworks;
+`scripts/scorecard.sh` scores a file by its own method (the major of `method_version`); `--method 1`
+reads the method 1.1 history of a method 2 file (`--version`, `--targets`, `--json`, `--diff`).
+`scripts/scorecard.sh --method-compare` writes `REPORT-method-v2.md`, and CI checks that it is up to
+date. The report shows, for each measured version:
+- v1 (1.1) and v2 indices for all 11 frameworks;
 - every id_effect row, v1 beside v2;
 - every id_effect score and v1-leader score that moves by more than 15, with its note;
-- every **v1 cap violation**: an id_effect v1 score above the cap of its v2 level.
+- every **v1 cap violation**: an id_effect v1 score above the cap of its v2 level (empty from 1.1 on).
 
 ### 7.3 Status
-v2 is reported alongside v1; v1 remains primary until the owner accepts `REPORT-method-v2.md` and the
-cap-violation list is adjudicated. Then the method version becomes 2.0 and all stored versions are
-re-based.
+v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-based 2026-10-16).
+
+### 7.4 Method 2.0: storage, alignment and re-based targets
+- **Storage.** `rows[].competitors` and `rows[].id_effect` hold the checklist scores of §7.2.
+  `--validate` fails when a stored score differs from the score its level and met list give, so the
+  numbers cannot drift from the checks. `rows[].v1 {competitors, id_effect, targets}` keeps method
+  1.1 for history; it is never edited again.
+- **Method 1.1.** The v1 judgment scores, with every id_effect score above the cap of its v2 level
+  lowered to that cap (25 scores on 17 rows), the targets unchanged.
+- **Alignment rule (competitors).** For each met check of a competitor, its source is classified as
+  first-party (inside `frameworks[].scope`, or the language runtime), `recommended` (a third-party
+  library the framework's own official docs recommend or document as the way to do it), `other`
+  (a third-party library they do not) or `not_met`. `not_met` checks are removed. A row with an
+  `other` check scores the higher of: without the `other` checks at its level, or with them at the
+  `labs` level (cap 39). The one-time pass is recorded check by check in `alignment-2.0.json`
+  (194 cells reviewed, 60 scores changed); later snapshots apply the same rule directly.
+- **Re-based targets.** A v1 target `t` on a row with `n` checks becomes the nearest achievable
+  checklist score `round(100 × k / n)` (ties up), never below 40 or 80 when `t` was at or above that
+  line (the red and best-in-class KPIs keep their meaning), and never below an earlier target of the
+  same row. A target therefore reads "meet `k` of `n` checks"; `alignment-2.0.json →
+  targets_rebased` lists each one.
 
 ## 8. Change log
 
@@ -217,3 +258,5 @@ re-based.
 | 2026-10-14 | 1.0 | Initial 82 rows × 11 frameworks; 0.6.0 scored. |
 | 2026-10-15 | 1.0 | 0.7.0 re-scored (blind researcher passes on core and platform); `targets`, `track`, `stance` added; weights defined. Live-reload agent proposal 12 kept at 15, migrations proposal 6 kept at 3, and track record kept at 8, because under §3.1 the evidence had not changed (example-only or unmeasured). Compile-loop kept at 38 until measured. |
 | 2026-10-15 | 1.0 | v2 checklists added (reported alongside). |
+| 2026-10-16 | 1.1 | v1 caps applied strictly: 25 id_effect scores on 17 rows lowered to the cap of their v2 level (owner decision L13). |
+| 2026-10-16 | 2.0 | v2 primary (L13). Competitor levels aligned by one rule (§7.4, `alignment-2.0.json`: 60 competitor scores changed); stored scores are checklist scores, validated; targets re-based (§7.4); method 1.1 kept in `rows[].v1`. ADR notes added at 0.7.0 for `test.unit` and `dx.diagnostics`, whose checklist scores drop from 0.6.0 (removed helpers and `id-effect-diagnose`). |

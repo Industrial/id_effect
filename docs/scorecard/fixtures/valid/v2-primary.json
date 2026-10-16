@@ -1,0 +1,254 @@
+{
+	"schema_version": 1,
+	"method_version": "2.0",
+	"method_doc": "../../METHOD.md",
+	"competitor_snapshot": {
+		"date": "2026-10-14",
+		"assessor": "scripts/scorecard.sh --self-test fixture: valid, method 2 rounding, caps and clamp"
+	},
+	"frameworks": [
+		{
+			"id": "id_effect",
+			"name": "id_effect",
+			"scope": "fixture"
+		},
+		{
+			"id": "a",
+			"name": "A",
+			"scope": "fixture"
+		},
+		{
+			"id": "b",
+			"name": "B",
+			"scope": "fixture"
+		},
+		{
+			"id": "c",
+			"name": "C",
+			"scope": "fixture"
+		},
+		{
+			"id": "d",
+			"name": "D",
+			"scope": "fixture"
+		},
+		{
+			"id": "e",
+			"name": "E",
+			"scope": "fixture"
+		},
+		{
+			"id": "f",
+			"name": "F",
+			"scope": "fixture"
+		},
+		{
+			"id": "g",
+			"name": "G",
+			"scope": "fixture"
+		},
+		{
+			"id": "h",
+			"name": "H",
+			"scope": "fixture"
+		},
+		{
+			"id": "i",
+			"name": "I",
+			"scope": "fixture"
+		},
+		{
+			"id": "j",
+			"name": "J",
+			"scope": "fixture"
+		}
+	],
+	"groups": [
+		{
+			"id": "core",
+			"name": "Core model",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.5
+		}
+	],
+	"tracks": {
+		"T2": "Core runtime completeness"
+	},
+	"competitor_order": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+	"rows": [
+		{
+			"id": "core.a",
+			"group": "core",
+			"name": "Row A",
+			"measures": "Fixture row, 8 checks: id_effect 1 met (12.5 rounds to 13), a 3 (37.5 to 38), b 8 under the tested cap (69), c 4 under the absent cap (9), d none (clamped to 1), e to j 5 (62.5 to 63).",
+			"competitors": [38, 69, 9, 1, 63, 63, 63, 63, 63, 63],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": {
+				"0.1.0": 13
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "core.a#1",
+					"text": "Check one"
+				},
+				{
+					"id": "core.a#2",
+					"text": "Check two"
+				},
+				{
+					"id": "core.a#3",
+					"text": "Check three"
+				},
+				{
+					"id": "core.a#4",
+					"text": "Check four"
+				},
+				{
+					"id": "core.a#5",
+					"text": "Check five"
+				},
+				{
+					"id": "core.a#6",
+					"text": "Check six"
+				},
+				{
+					"id": "core.a#7",
+					"text": "Check seven"
+				},
+				{
+					"id": "core.a#8",
+					"text": "Check eight"
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "production"
+					},
+					"a": "production",
+					"b": "tested",
+					"c": "absent",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": ["core.a#1"]
+					},
+					"a": ["core.a#1", "core.a#2", "core.a#3"],
+					"b": [
+						"core.a#1",
+						"core.a#2",
+						"core.a#3",
+						"core.a#4",
+						"core.a#5",
+						"core.a#6",
+						"core.a#7",
+						"core.a#8"
+					],
+					"c": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"d": [],
+					"e": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"],
+					"f": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"],
+					"g": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"],
+					"h": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"],
+					"i": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"],
+					"j": ["core.a#1", "core.a#2", "core.a#3", "core.a#4", "core.a#5"]
+				},
+				"evidence": {
+					"core.a#1": "fixture"
+				}
+			},
+			"v1": {
+				"competitors": [60, 50, 10, 10, 10, 10, 10, 10, 10, 10],
+				"id_effect": {
+					"0.1.0": 50
+				},
+				"targets": {}
+			}
+		},
+		{
+			"id": "core.b",
+			"group": "core",
+			"name": "Row B",
+			"measures": "Fixture row, 4 checks: id_effect all met under the labs cap (39), a 1 (25), b all under the documented cap (89), c 3 (75), d 2 (50), e to j all (100).",
+			"competitors": [25, 89, 75, 50, 100, 100, 100, 100, 100, 100],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": {
+				"0.1.0": 39
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "core.b#1",
+					"text": "Check one"
+				},
+				{
+					"id": "core.b#2",
+					"text": "Check two"
+				},
+				{
+					"id": "core.b#3",
+					"text": "Check three"
+				},
+				{
+					"id": "core.b#4",
+					"text": "Check four"
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "labs"
+					},
+					"a": "production",
+					"b": "documented",
+					"c": "production",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"]
+					},
+					"a": ["core.b#1"],
+					"b": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"c": ["core.b#1", "core.b#2", "core.b#3"],
+					"d": ["core.b#1", "core.b#2"],
+					"e": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"f": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"g": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"h": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"i": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"j": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"]
+				},
+				"evidence": {},
+				"notes": {
+					"id_effect": "Fixture note: v1 50 is above the labs cap."
+				}
+			},
+			"v1": {
+				"competitors": [60, 50, 10, 10, 10, 10, 10, 10, 10, 10],
+				"id_effect": {
+					"0.1.0": 50
+				},
+				"targets": {}
+			}
+		}
+	]
+}
