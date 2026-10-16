@@ -1,0 +1,543 @@
+//! Typed routes: declare a route's path parameters, query, headers, body and responses as
+//! [`HasSchema`] types, and keep every declaration in a [`RouteRegistry`].
+//!
+//! [`Route::get`] (and siblings) start a builder; [`Route::path`], [`Route::query`],
+//! [`Route::headers`] and [`Route::body`] each name a [`HasSchema`] type whose decoded value the
+//! handler receives in [`Input`]; [`Route::response`] documents a response. [`Route::handler`]
+//! takes an ordinary effect handler — `Fn(&mut S, Input<…>) -> Effect<A, E, S>` — run exactly like
+//! the [`crate::routing`] helpers (one request fiber on the global [`crate::EffectExecutor`],
+//! exit mapped by [`crate::exit_response`]). Input that does not decode never reaches the handler:
+//! it is answered with a [`RouteRejection`] (**422**, every issue at once).
+//!
+//! A [`Router`] wraps an [`axum::Router`] and records each route's [`RouteInfo`] (method, path
+//! template, [`SchemaRef`] per part) for OpenAPI generation and route listings. The existing
+//! [`crate::routing`] helpers are unchanged and can be mixed in through [`Router::into_axum`].
+//!
+//! ```rust
+//! use axum::http::StatusCode;
+//! use id_effect::schema::{self, HasSchema, Schema};
+//! use id_effect::{Effect, succeed};
+//! use id_effect_axum::route::{Input, Route, Router};
+//!
+//! struct AccountId;
+//!
+//! impl HasSchema for AccountId {
+//!   type A = i64;
+//!   type I = i64;
+//!   type E = ();
+//!
+//!   fn schema() -> Schema<i64, i64> {
+//!     schema::i64::<()>()
+//!   }
+//! }
+//!
+//! #[derive(Clone)]
+//! struct App;
+//!
+//! fn show(_: &mut App, input: Input<i64>) -> Effect<String, std::convert::Infallible, App> {
+//!   succeed(format!("account {}", input.path))
+//! }
+//!
+//! let router = Router::new().route(
+//!   Route::get("/accounts/{id}")
+//!     .path::<AccountId>()
+//!     .response::<AccountId>(StatusCode::OK)
+//!     .handler(show),
+//! );
+//! let info = router.routes().next().unwrap();
+//! assert_eq!(info.path, "/accounts/{id}");
+//! assert!(info.path_params.is_some());
+//! let app: axum::Router = router.with_state(App).into_axum();
+//! # let _ = app;
+//! ```
+
+mod decode;
+mod registry;
+
+use std::future::Future;
+use std::marker::PhantomData;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use axum::extract::{Request, State};
+use axum::http::{Method, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{MethodFilter, MethodRouter};
+use id_effect::Effect;
+use id_effect::schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
+
+pub use decode::{Issue, Location, RouteRejection};
+pub use registry::{ResponseInfo, RouteInfo, RouteRegistry, SchemaRef};
+
+mod sealed {
+  pub trait Sealed {}
+}
+
+/// One request part of a [`Route`]: [`Undeclared`] or [`Declared`]. Sealed.
+pub trait RoutePart: sealed::Sealed + Send + Sync + 'static {
+  /// What the handler receives for this part in [`Input`].
+  type Value: Send + 'static;
+
+  /// The declared schema, if any.
+  fn schema(&self) -> Option<&SchemaRef>;
+
+  /// Decode this part from `input` (`None` when the part is undeclared), collecting every issue.
+  fn decode(&self, input: Option<&Unknown>) -> Result<Self::Value, ParseErrors>;
+}
+
+/// A request part the route does not declare; the handler receives `()` for it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Undeclared;
+
+impl sealed::Sealed for Undeclared {}
+
+impl RoutePart for Undeclared {
+  type Value = ();
+
+  fn schema(&self) -> Option<&SchemaRef> {
+    None
+  }
+
+  fn decode(&self, _input: Option<&Unknown>) -> Result<(), ParseErrors> {
+    Ok(())
+  }
+}
+
+/// A request part declared as the [`HasSchema`] type `T`; the handler receives `T::A`.
+pub struct Declared<T: HasSchema> {
+  schema: Schema<T::A, T::I, T::E>,
+  info: SchemaRef,
+  _type: PhantomData<fn() -> T>,
+}
+
+impl<T: HasSchema> Declared<T> {
+  fn new() -> Self {
+    let schema = T::schema();
+    let info = SchemaRef::from_schema(std::any::type_name::<T>(), &schema);
+    Self {
+      schema,
+      info,
+      _type: PhantomData,
+    }
+  }
+}
+
+impl<T: HasSchema> Clone for Declared<T> {
+  fn clone(&self) -> Self {
+    Self {
+      schema: self.schema.clone(),
+      info: self.info.clone(),
+      _type: PhantomData,
+    }
+  }
+}
+
+impl<T: HasSchema> std::fmt::Debug for Declared<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_tuple("Declared").field(&self.info).finish()
+  }
+}
+
+impl<T: HasSchema> sealed::Sealed for Declared<T> {}
+
+impl<T> RoutePart for Declared<T>
+where
+  T: HasSchema + 'static,
+  T::A: Send,
+{
+  type Value = T::A;
+
+  fn schema(&self) -> Option<&SchemaRef> {
+    Some(&self.info)
+  }
+
+  fn decode(&self, input: Option<&Unknown>) -> Result<T::A, ParseErrors> {
+    match input {
+      Some(u) => self.schema.decode_unknown_all(u),
+      None => Err(ParseErrors::one(ParseError::new("", "missing input"))),
+    }
+  }
+}
+
+/// The decoded input a typed handler receives; undeclared parts are `()`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Input<P = (), Q = (), H = (), B = ()> {
+  /// Path parameters ([`Route::path`]).
+  pub path: P,
+  /// Query string ([`Route::query`]).
+  pub query: Q,
+  /// Request headers ([`Route::headers`]).
+  pub headers: H,
+  /// JSON body ([`Route::body`]).
+  pub body: B,
+}
+
+/// The four request parts of a route, shared by every request of its handler.
+#[derive(Clone, Debug)]
+pub(crate) struct Parts<P, Q, H, B> {
+  pub(crate) path: P,
+  pub(crate) query: Q,
+  pub(crate) headers: H,
+  pub(crate) body: B,
+}
+
+/// Builder for one typed route; finish it with [`Route::handler`].
+#[derive(Clone, Debug)]
+#[must_use = "a route does nothing until `.handler(f)` is added to a `Router`"]
+pub struct Route<P = Undeclared, Q = Undeclared, H = Undeclared, B = Undeclared> {
+  method: Method,
+  template: String,
+  parts: Parts<P, Q, H, B>,
+  responses: Vec<ResponseInfo>,
+}
+
+impl Route {
+  /// Route for `method` at `path` (Axum template syntax, e.g. `/accounts/{id}`).
+  pub fn new(method: Method, path: impl Into<String>) -> Self {
+    Self {
+      method,
+      template: path.into(),
+      parts: Parts {
+        path: Undeclared,
+        query: Undeclared,
+        headers: Undeclared,
+        body: Undeclared,
+      },
+      responses: Vec::new(),
+    }
+  }
+
+  /// `GET` route.
+  pub fn get(path: impl Into<String>) -> Self {
+    Self::new(Method::GET, path)
+  }
+
+  /// `POST` route.
+  pub fn post(path: impl Into<String>) -> Self {
+    Self::new(Method::POST, path)
+  }
+
+  /// `PUT` route.
+  pub fn put(path: impl Into<String>) -> Self {
+    Self::new(Method::PUT, path)
+  }
+
+  /// `PATCH` route.
+  pub fn patch(path: impl Into<String>) -> Self {
+    Self::new(Method::PATCH, path)
+  }
+
+  /// `DELETE` route.
+  pub fn delete(path: impl Into<String>) -> Self {
+    Self::new(Method::DELETE, path)
+  }
+}
+
+impl<P, Q, H, B> Route<P, Q, H, B> {
+  /// Declare the path parameters as `T`: a struct schema keyed by parameter name, or any scalar
+  /// schema when the template has exactly one parameter.
+  pub fn path<T>(self) -> Route<Declared<T>, Q, H, B>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    let Parts {
+      query,
+      headers,
+      body,
+      ..
+    } = self.parts;
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: Parts {
+        path: Declared::new(),
+        query,
+        headers,
+        body,
+      },
+      responses: self.responses,
+    }
+  }
+
+  /// Declare the query string as `T` (a struct or record schema; an array field collects
+  /// repeated keys).
+  pub fn query<T>(self) -> Route<P, Declared<T>, H, B>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    let Parts {
+      path,
+      headers,
+      body,
+      ..
+    } = self.parts;
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: Parts {
+        path,
+        query: Declared::new(),
+        headers,
+        body,
+      },
+      responses: self.responses,
+    }
+  }
+
+  /// Declare request headers as `T` (a struct schema whose field names are header names, matched
+  /// case-insensitively).
+  pub fn headers<T>(self) -> Route<P, Q, Declared<T>, B>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    let Parts {
+      path, query, body, ..
+    } = self.parts;
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: Parts {
+        path,
+        query,
+        headers: Declared::new(),
+        body,
+      },
+      responses: self.responses,
+    }
+  }
+
+  /// Declare the JSON request body as `T`.
+  pub fn body<T>(self) -> Route<P, Q, H, Declared<T>>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    let Parts {
+      path,
+      query,
+      headers,
+      ..
+    } = self.parts;
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: Parts {
+        path,
+        query,
+        headers,
+        body: Declared::new(),
+      },
+      responses: self.responses,
+    }
+  }
+
+  /// Document a `status` response whose body is `T` (repeatable). Documentation only: the
+  /// handler's success value still renders through [`IntoResponse`].
+  pub fn response<T: HasSchema>(mut self, status: StatusCode) -> Self {
+    self.responses.push(ResponseInfo {
+      status,
+      schema: SchemaRef::of::<T>(),
+    });
+    self
+  }
+}
+
+/// Boxed future of a typed handler.
+type HandlerFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
+
+impl<P, Q, H, B> Route<P, Q, H, B>
+where
+  P: RoutePart,
+  Q: RoutePart,
+  H: RoutePart,
+  B: RoutePart,
+{
+  /// Everything this route declares.
+  pub fn info(&self) -> RouteInfo {
+    let mut info = RouteInfo::new(self.method.clone(), self.template.clone());
+    info.path_params = self.parts.path.schema().cloned();
+    info.query = self.parts.query.schema().cloned();
+    info.headers = self.parts.headers.schema().cloned();
+    info.body = self.parts.body.schema().cloned();
+    info.responses = self.responses.clone();
+    info
+  }
+
+  /// Finish the route with an effect handler.
+  ///
+  /// Per request the declared parts are decoded (all issues collected; a failure answers the
+  /// [`RouteRejection`] without running the handler), then `f(&mut state, input)` builds the
+  /// effect, which runs as one request fiber like the [`crate::routing`] helpers: success → `A`,
+  /// typed failure → `E`, defect → `500`, interrupt or saturation → `503`.
+  ///
+  /// # Panics
+  ///
+  /// If Axum cannot route the method (an extension method such as `PROPFIND`).
+  pub fn handler<S, A, E, F>(self, f: F) -> Endpoint<S>
+  where
+    S: Clone + Send + Sync + 'static,
+    A: IntoResponse + Send + 'static,
+    E: IntoResponse + Send + 'static,
+    F: Fn(&mut S, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+      + Clone
+      + Send
+      + Sync
+      + 'static,
+  {
+    let info = self.info();
+    let filter = MethodFilter::try_from(self.method.clone())
+      .unwrap_or_else(|e| panic!("typed route {} {}: {e}", self.method, self.template));
+    let parts = Arc::new(self.parts);
+    let method_router = axum::routing::on(filter, move |State(env): State<S>, req: Request| {
+      let parts = Arc::clone(&parts);
+      let f = f.clone();
+      Box::pin(async move {
+        match decode::decode_input(&parts, req).await {
+          Ok(input) => {
+            crate::respond(crate::try_run_effect_from_state(env, move |e| f(e, input)).await)
+          }
+          Err(rejection) => *rejection,
+        }
+      }) as HandlerFuture
+    });
+    Endpoint {
+      info,
+      method_router,
+    }
+  }
+}
+
+/// A finished typed route: its [`RouteInfo`] and the Axum [`MethodRouter`] serving it.
+#[must_use = "add the endpoint to a `Router`"]
+pub struct Endpoint<S = ()> {
+  info: RouteInfo,
+  method_router: MethodRouter<S>,
+}
+
+impl<S> Endpoint<S> {
+  /// What the route declares.
+  pub fn info(&self) -> &RouteInfo {
+    &self.info
+  }
+
+  /// The declaration and the method router (to mount it on a plain [`axum::Router`]).
+  pub fn into_parts(self) -> (RouteInfo, MethodRouter<S>) {
+    (self.info, self.method_router)
+  }
+}
+
+/// An [`axum::Router`] that records the [`RouteInfo`] of every typed route added to it.
+#[must_use]
+pub struct Router<S = ()> {
+  inner: axum::Router<S>,
+  registry: RouteRegistry,
+}
+
+impl<S: Clone + Send + Sync + 'static> Default for Router<S> {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl<S: Clone + Send + Sync + 'static> Router<S> {
+  /// Empty router.
+  pub fn new() -> Self {
+    Self {
+      inner: axum::Router::new(),
+      registry: RouteRegistry::new(),
+    }
+  }
+
+  /// Mount `endpoint` at its path and register its [`RouteInfo`]. Several methods may share a
+  /// path.
+  ///
+  /// # Panics
+  ///
+  /// Like [`axum::Router::route`]: when the method is already routed at that path, or the path is
+  /// not a valid template.
+  pub fn route(mut self, endpoint: Endpoint<S>) -> Self {
+    let (info, method_router) = endpoint.into_parts();
+    self.inner = self.inner.route(&info.path, method_router);
+    self.registry.register(info);
+    self
+  }
+
+  /// Merge `other`'s routes and registry into this router (see [`axum::Router::merge`]).
+  pub fn merge(mut self, other: Router<S>) -> Self {
+    self.inner = self.inner.merge(other.inner);
+    self.registry.extend(other.registry);
+    self
+  }
+
+  /// Every registered route, in registration order.
+  pub fn routes(&self) -> std::slice::Iter<'_, RouteInfo> {
+    self.registry.iter()
+  }
+
+  /// The route registry.
+  pub fn registry(&self) -> &RouteRegistry {
+    &self.registry
+  }
+
+  /// Provide the state, keeping the registry (see [`axum::Router::with_state`]).
+  pub fn with_state<S2>(self, state: S) -> Router<S2>
+  where
+    S2: Clone + Send + Sync + 'static,
+  {
+    Router {
+      inner: self.inner.with_state(state),
+      registry: self.registry,
+    }
+  }
+
+  /// The underlying Axum router and the registry.
+  pub fn into_parts(self) -> (axum::Router<S>, RouteRegistry) {
+    (self.inner, self.registry)
+  }
+
+  /// The underlying Axum router (add plain routes, layers, or serve it).
+  pub fn into_axum(self) -> axum::Router<S> {
+    self.inner
+  }
+}
+
+impl<S: Clone + Send + Sync + 'static> From<Router<S>> for axum::Router<S> {
+  fn from(router: Router<S>) -> Self {
+    router.into_axum()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use id_effect::schema;
+
+  struct Id;
+
+  impl HasSchema for Id {
+    type A = i64;
+    type I = i64;
+    type E = ();
+
+    fn schema() -> Schema<i64, i64> {
+      schema::i64::<()>()
+    }
+  }
+
+  #[test]
+  fn routes_clone_and_debug_and_declared_parts_need_input() {
+    let route = Route::get("/ids/{id}").path::<Id>();
+    let copy = route.clone();
+    assert_eq!(copy.info(), route.info());
+    assert!(format!("{route:?}").contains("Declared"));
+
+    let declared = Declared::<Id>::new();
+    assert_eq!(declared.decode(Some(&Unknown::I64(3))).unwrap(), 3);
+    let missing = declared.decode(None).unwrap_err();
+    assert_eq!(missing.issues[0].message, "missing input");
+    assert!(Undeclared.decode(None).is_ok());
+  }
+}

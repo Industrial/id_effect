@@ -90,6 +90,7 @@ pub mod health;
 pub mod json;
 pub mod metrics;
 pub mod request_caps;
+pub mod route;
 pub mod routing;
 pub mod server;
 #[cfg(feature = "tower")]

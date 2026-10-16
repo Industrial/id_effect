@@ -9,6 +9,11 @@
 - `id_effect_config`: per-environment profiles (`Profiles`, `ID_EFFECT_PROFILE` / `--profile`)
   layering `config/base.toml` → `config/<profile>.toml` → `APP_*` env (env > profile > base); an
   unknown profile is `ConfigError::UnknownProfile`; `Profiles::overlay` takes a secret provider.
+- `id_effect_axum::route`: typed routes —
+  `Route::get("/accounts/{id}").path::<P>().query::<Q>().headers::<H>().body::<B>().response::<R>(status).handler(f)`
+  with `HasSchema` parts, every decode issue reported at once (422); `route::Router` keeps a
+  `RouteRegistry` of `RouteInfo` (method, path, schema per part, JSON Schema 2020-12) for OpenAPI
+  and route listings. The existing `routing::get/post/…` are unchanged.
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
