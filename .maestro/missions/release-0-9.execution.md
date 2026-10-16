@@ -74,3 +74,5 @@ once); see the spec's Waves table.
 | Date | Event |
 |---|---|
 | 2026-10-16 | Spec approved (D1 (b), D2–D12 as recommended). Mission created, wave 1 decomposed (17 leaves). Wave 1a dispatched. |
+| 2026-10-16 | Wave 1: 16 of 17 leaves shipped plus PgSessionStore (`tsk-mvbg796n-xpvbrc`); `r09-e3-2-docs` running. SqlValue design reviewed and approved by the owner before driver work. |
+| 2026-10-16 | Wave 2: 17 leaf tasks created from `.maestro/specs/releases/0.9/r09-*.md`. Batch A dispatched: sqlite + conformance-routing, sea-query, openapi-doc (+ Endpoint::layer, RouteInfo.policies), middleware layers, OIDC, containers. Next: mysql, repository, static-cache, ui-routes, totp, audit, tenancy-doc, isolation-fixtures, e3-3-docs; E3.4 Redis stretch. |
