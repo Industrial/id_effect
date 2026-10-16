@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::path::PathBuf;
 
 use super::Check;
 use super::project::{Project, toml_entries, unquote};
@@ -12,12 +13,18 @@ const NAME: &str = "versions";
 
 /// Reads the nearest `Cargo.lock` (the project's or its workspace's).
 pub(crate) fn check(project: &Project) -> Check {
-  let Some(lock) = project
-    .dir
-    .ancestors()
-    .map(|dir| dir.join("Cargo.lock"))
-    .find(|path| path.is_file())
-  else {
+  check_at(
+    project
+      .dir
+      .ancestors()
+      .map(|dir| dir.join("Cargo.lock"))
+      .find(|path| path.is_file()),
+  )
+}
+
+/// The check for the lock file found, if any.
+fn check_at(lock: Option<PathBuf>) -> Check {
+  let Some(lock) = lock else {
     return Check::warn(
       NAME,
       "no Cargo.lock in the project or above (run `cargo generate-lockfile`); id_effect versions not checked",
@@ -202,10 +209,9 @@ mod tests {
       check_lock(&lock(&[("serde", "1.0.0")])).status,
       Status::Warn
     );
-    let tmp = tempfile::tempdir().unwrap();
-    fs::write(tmp.path().join("Cargo.toml"), "[package]\nname = \"a\"\n").unwrap();
-    let project = Project::load(tmp.path()).unwrap();
-    let check = check(&project);
+    // Not via a temp dir: one under a workspace (ci-local sets TMPDIR to the repo's tmp/) would
+    // find that workspace's lock.
+    let check = check_at(None);
     assert_eq!(check.status, Status::Warn);
     assert!(
       check.reason.starts_with("no Cargo.lock"),
