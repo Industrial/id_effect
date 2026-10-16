@@ -66,6 +66,13 @@ Follow-ups recorded during wave 1:
   PostgreSQL and MySQL connections are plaintext. Add rustls TLS (`sqlx/tls-rustls-aws-lc-rs` or
   ring, matching the tree) behind the driver features, with `sslmode` / `ssl-mode` honoured from
   the URL, and a test against a TLS-enabled container.
+- **Coverage gate (before 0.9 exit):** run `scripts/llvm-cov-nextest.sh` (workspace, 96 % floor)
+  once the tree is quiet; core `id_effect` measured alone at ~94 % during wave 2. Raise it or
+  carry the gap in writing.
+- Agent rule: never put the owner's email (or any personal data) in requests to external
+  services; use a generic User-Agent such as `id_effect-release-check (+repo URL)`. An earlier
+  crates.io name check sent it in the User-Agent (fixed in `.tmp/cratesio.sh`).
+- `RedisSessionStore` Lua scripts are not Redis-Cluster safe (no hash tags); documented.
 - `src/metrics.rs` doc links to `record_pg_pool` break `cargo doc -D warnings` without `pg`.
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 
