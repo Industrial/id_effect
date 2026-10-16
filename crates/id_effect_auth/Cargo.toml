@@ -1,0 +1,24 @@
+[package]
+name = "id_effect_auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Authentication for id_effect services: password hashing, sessions, JWT, API-key and OIDC credentials"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_auth"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until a reference app
+# under examples/reference/ consumes it; then platform (ADR 0010 Amendment 5, ADR 0012).
+tier = "integration"

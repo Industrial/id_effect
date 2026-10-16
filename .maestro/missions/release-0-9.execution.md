@@ -35,6 +35,10 @@ pathspec-limited. Integrator-only files: CHANGELOG.md, docs/MIGRATION-0.9.md, bo
 docs/scorecard/. examples/http-showcase belongs to a concurrent session and is off-limits until the
 ripple leaf is announced.
 
+Exit check (from A0): `publish.yml` publishes every crate in `validate-crate-packaging.sh` order
+at the tag. Before tagging 0.9.0, each of id_effect_auth, id_effect_authz and id_effect_test must
+have shipped leaves, or it comes out of the publish order (D8: no placeholders).
+
 ## Waves 2–3
 
 Tasks are created with `task from-spec` when their wave starts (the mission can only be decomposed

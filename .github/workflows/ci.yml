@@ -199,7 +199,34 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
-        run: cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase --features id_effect_sql/pg,id_effect_node/pg
+        run: >-
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test --features id_effect_sql/pg,id_effect_node/pg
+  # ──────────────────────────────────────────────────────────────────────────
+  # Container integration: tests that start real services with testcontainers
+  # (id_effect_test containers, the Keycloak OIDC login, the Vault provider).
+  # ID_EFFECT_REQUIRE_DOCKER=1 turns a missing Docker daemon into a failure
+  # (locally those tests print SKIP instead of silently passing).
+  # ──────────────────────────────────────────────────────────────────────────
+  containers-integration:
+    name: Container integration
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_DOCKER: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: containers
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Container tests
+        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
@@ -344,11 +371,12 @@ jobs:
       - name: cargo semver-checks (publishable workspace crates)
         # --workspace skips publish = false members (examples). Step-level
         # continue-on-error keeps the job (and ci-pass) green while report-only.
-        # id_effect_kit and id_effect_tool are new in 0.8 with no crates.io baseline yet;
-        # drop the excludes once they are published.
+        # id_effect_kit and id_effect_tool (new in 0.8) and id_effect_auth, id_effect_authz and
+        # id_effect_test (new in 0.9) have no crates.io baseline yet; drop each exclude once
+        # that crate is published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_kit --exclude id_effect_tool
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_kit --exclude id_effect_tool --exclude id_effect_auth --exclude id_effect_authz --exclude id_effect_test
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
@@ -361,6 +389,7 @@ jobs:
       - matrix
       - msrv
       - pg-integration
+      - containers-integration
       - labs
       - minimal-versions
       - validate-packaging

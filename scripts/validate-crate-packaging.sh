@@ -40,6 +40,12 @@ declare -A LEVEL=(
     # The `id-effect` binary (ADR 0010 Amendment 4): publishes after the kit. It depends on no
     # workspace crate; the templates it embeds pin the kit at the workspace version.
     [id_effect_tool]=5
+    # 0.9 crates (ADR 0010 Amendment 5), level 5 because they build on id_effect_axum (guards,
+    # middleware, the in-process HTTP client) and id_effect_sql. authz first: id_effect_auth's
+    # principal implements its `Principal`. All three publish before the kit, which may re-export them.
+    [id_effect_authz]=5
+    [id_effect_auth]=5
+    [id_effect_test]=5
 )
 
 # Publish order (levels ascending; within a level, dependencies first).
@@ -50,6 +56,7 @@ declare -a ORDER=(
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
     id_effect_config id_effect_fsm
     id_effect_node id_effect_axum id_effect_opentelemetry
+    id_effect_authz id_effect_auth id_effect_test
     id_effect_kit id_effect_tool
 )
 
