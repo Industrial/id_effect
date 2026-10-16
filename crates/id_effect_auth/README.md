@@ -53,9 +53,12 @@ let set_cookie = sessions.set_cookie(&session);
 assert!(set_cookie.starts_with("__Host-id_session="));
 ```
 
-Still to land in 0.9: OIDC + PKCE and TOTP.
+Feature `oidc` adds OpenID Connect login (authorization code + PKCE) and feature `totp` a TOTP
+second factor with recovery codes.
 
 Book: [Passwords and sessions](../id_effect/book/src/part6/ch30-03-passwords-sessions.md),
-[Credentials and JWT](../id_effect/book/src/part6/ch30-04-credentials-jwt.md).
+[Credentials and JWT](../id_effect/book/src/part6/ch30-04-credentials-jwt.md),
+[OpenID Connect](../id_effect/book/src/part6/ch30-05-oidc.md),
+[TOTP](../id_effect/book/src/part6/ch30-06-totp.md).
 
 Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).

@@ -25,6 +25,7 @@ id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.8.0", feat
   "jwks",
   "oidc",
   "pg",
+  "totp",
 ] }
 id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.8.0", features = [
   "axum",

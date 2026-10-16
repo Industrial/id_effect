@@ -51,6 +51,10 @@
   / `azp`, `ClaimMapping`, RP-initiated logout; implements `id_effect_platform`'s `OAuthClient`)
   and `OidcRoutes` (`/auth/oidc/{login,callback,logout}`, a separate flow session, login through
   `Sessions::login`). Tested against a wiremock IdP and a Keycloak container.
+  Feature `totp`: TOTP second factor (totp-rs). Enrolment with an `otpauth://` URI, ±1-step
+  verification on the executor clock with per-user replay protection, single-use recovery codes
+  stored as argon2id hashes, and a session step-up with `amr` claims for the `require_mfa` authz
+  policy.
 - `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
   (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
   back as `Secret<T>`, and merge above the profile files and below the environment;

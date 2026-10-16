@@ -164,6 +164,7 @@
   - [Passwords and sessions (`id_effect_auth`)](./part6/ch30-03-passwords-sessions.md)
   - [Credentials and JWT (`id_effect_auth`)](./part6/ch30-04-credentials-jwt.md)
   - [Single sign-on with OpenID Connect (`id_effect_auth`)](./part6/ch30-05-oidc.md)
+  - [Two-factor authentication with TOTP (`id_effect_auth`)](./part6/ch30-06-totp.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)

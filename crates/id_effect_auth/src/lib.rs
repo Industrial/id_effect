@@ -28,11 +28,15 @@
 //!   `azp`) and mapped with a `ClaimMapping`; `OidcRoutes`: `/auth/oidc/{login,callback,logout}`
 //!   with state, nonce and code verifier in a server-side flow session, login through
 //!   `Sessions::login`, and RP-initiated logout. Implements id_effect_platform's `OAuthClient`.
+//! - `totp` (feature `totp`) — `Totp`: RFC 6238 enrolment (160-bit secret, `otpauth://` URI)
+//!   and verification with ±1 step of skew on a `WallClock` and replay protection through a
+//!   `TotpStepStore`; `RecoveryCodes`: single-use codes stored as argon2id hashes;
+//!   `Totp::step_up` marks the session after a second factor, `with_mfa_claims` and
+//!   `require_mfa` carry it to `id_effect_authz` policies.
 //!
 //! [`PasswordHasher`] and [`Sessions`] are capabilities with a [`Layer`](id_effect::Layer), like
 //! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
-//! return effects, held by the middleware or a handler. Still to land in 0.9: OIDC + PKCE and
-//! TOTP.
+//! return effects, held by the middleware or a handler.
 //!
 //! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
 //! under `examples/reference/` depends on it.
@@ -72,6 +76,8 @@ pub mod oidc;
 pub mod password;
 pub mod principal;
 pub mod session;
+#[cfg(feature = "totp")]
+pub mod totp;
 
 pub use apikey::{ApiKey, ApiKeyRecord, ApiKeyStore, ApiKeys, MemoryApiKeyStore};
 pub use basic::{
@@ -99,6 +105,11 @@ pub use session::{
 };
 #[cfg(feature = "pg")]
 pub use session::{PgSessionStore, pg_session_store_layer};
+#[cfg(feature = "totp")]
+pub use totp::{
+  MemoryTotpStepStore, RecoveryCodes, Totp, TotpConfig, TotpError, TotpSecret, TotpStepStore,
+  TotpVerification,
+};
 
 /// Compiles and runs the README's code block as a doctest.
 #[cfg(doctest)]

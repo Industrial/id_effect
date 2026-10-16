@@ -39,6 +39,10 @@ pg = ["dep:id_effect_sql"]
 # server-side flow session, ID tokens checked over `JwksClient`, the `/auth/oidc/*` axum routes,
 # and id_effect_platform's `OAuthClient`.
 oidc = ["axum", "jwks", "dep:openidconnect", "dep:id_effect_platform"]
+# TOTP second factor (`totp` module): enrolment with an `otpauth://` URI, verification with ±1
+# step of skew on the executor's clock and replay protection, argon2-hashed recovery codes, and
+# an MFA step-up marker on the session.
+totp = ["dep:totp-rs"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
@@ -94,6 +98,12 @@ openidconnect = { version = "4.0.1", default-features = false, optional = true }
 # `OAuthClient` / `OAuthTokens`, the platform's OAuth capability `OidcClient` implements.
 id_effect_platform = { path = "../id_effect_platform", version = "0.8.0", features = [
   "auth",
+], optional = true }
+# totp-rs (release spec 0.9.0 D5): RFC 6238 codes and the `otpauth://` URI. No default features
+# (no `rand`): secrets come from getrandom above. 6.x needs rustc 1.88.
+totp-rs = { version = "6.0.0", default-features = false, features = [
+  "std",
+  "otpauth",
 ], optional = true }
 
 [dev-dependencies]

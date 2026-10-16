@@ -29,6 +29,10 @@ struct Ch3004CredentialsJwt;
 struct Ch3005Oidc;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-06-totp.md")]
+struct Ch3006Totp;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 
