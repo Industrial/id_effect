@@ -143,6 +143,10 @@
 					"propertyNames": { "$ref": "#/$defs/semver" },
 					"additionalProperties": { "type": "string", "minLength": 1 }
 				},
+				"process": {
+					"type": "boolean",
+					"description": "Optional. A process row (project policy, not a library capability): each framework's level is production when it meets a check, absent otherwise (METHOD.md §7.4, method 2.1)."
+				},
 				"v1": {
 					"type": "object",
 					"description": "Method 2.x only: the method 1.1 history of the row (scripts/scorecard.sh --method 1; METHOD.md §7.4). id_effect scores the same versions as the row's id_effect.",

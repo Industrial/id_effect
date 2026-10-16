@@ -1,4 +1,4 @@
-# Platform Scorecard — Method (v2.0)
+# Platform Scorecard — Method (v2.1)
 
 Since method 2.0 (2026-10-16) every score is a **checklist score** (§7): a row's score follows
 mechanically from the level of a framework and the table-stakes checks it meets. §2–§3 describe the
@@ -113,13 +113,13 @@ planned(r, v) = max( latest measured score of r at or before v,
 Applying §5 to planned scores gives the **target indices** for a release. At release exit, the
 measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 
-### 5.2 Reference results (method 2.0, competitor snapshot 2026-10-14)
+### 5.2 Reference results (method 2.1, competitor snapshot 2026-10-14)
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
 |---|---|---|---|---|---|---|---|
 | 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 target | 54.4 | 53.3 (#6) | 63.4 (#3) | 23 | 31 | 7 | 25 |
+| 0.8.0 target | 54.0 | 53.0 (#6) | 63.3 (#3) | 23 | 31 | 7 | 37 |
 | 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
 | 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
 | 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
@@ -250,6 +250,12 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
   line (the red and best-in-class KPIs keep their meaning), and never below an earlier target of the
   same row. A target therefore reads "meet `k` of `n` checks"; `alignment-2.0.json →
   targets_rebased` lists each one.
+- **Process rows (2.1).** A row marked `"process": true` scores a project policy, not a library
+  capability: `sec.supply`, `test.qa`, `eco.stability`, `eco.backing`, `eco.community`,
+  `eco.production`, `eco.license`. On these rows every framework's level is `production` when it
+  meets at least one check and `absent` when it meets none, so the score is the share of checks met;
+  a check counts as met only when it is a committed artifact (a file, a CI job or a published
+  policy). `--validate` enforces the levels.
 
 ## 8. Change log
 
@@ -260,3 +266,4 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
 | 2026-10-15 | 1.0 | v2 checklists added (reported alongside). |
 | 2026-10-16 | 1.1 | v1 caps applied strictly: 25 id_effect scores on 17 rows lowered to the cap of their v2 level (owner decision L13). |
 | 2026-10-16 | 2.0 | v2 primary (L13). Competitor levels aligned by one rule (§7.4, `alignment-2.0.json`: 60 competitor scores changed); stored scores are checklist scores, validated; targets re-based (§7.4); method 1.1 kept in `rows[].v1`. ADR notes added at 0.7.0 for `test.unit` and `dx.diagnostics`, whose checklist scores drop from 0.6.0 (removed helpers and `id-effect-diagnose`). |
+| 2026-10-16 | 2.1 | Process-row level rule (§7.4; owner decision D2 at 0.8 kickoff): 7 rows marked `process`; id_effect `eco.stability` 49 → 50 at 0.6.0 and 0.7.0 (no longer capped at `published`). `data.jsonschema` 0.8.0 target 75 → 50 (owner decision D1: OpenAPI from routes stays in 0.9). |

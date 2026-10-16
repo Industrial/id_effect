@@ -126,6 +126,16 @@ def stored2($at; $order):
           | "\($at): v1.id_effect must score the versions of id_effect, each an integer in 1..100"),
         (select((.targets | type) != "object" or any(.targets[]; score | not))
           | "\($at): v1.targets must map versions to integers in 1..100"));
+# METHOD §7.4 (2.1): on a process row, a framework is production when it meets a check, else absent.
+def process_levels($at):
+  .v2 as $w
+  | (($w.level.id_effect | objects | to_entries[]
+        | {f: "id_effect[\(.key)]", l: .value, m: ($w.met.id_effect[.key] // [])}),
+      ($w.level | objects | to_entries[] | select(.key != "id_effect")
+        | {f: .key, l: .value, m: ($w.met[.key] // [])}))
+  | ["absent", "production"][[.m | length, 1] | min] as $want
+  | select(.l != $want)
+  | "\($at): process row: v2.level.\(.f) = \(.l | tojson), want \($want | tojson)";
 def shape:
   (("frameworks", "groups", "rows", "competitor_order") as $k
     | select((.[$k] | type) != "array") | "\($k): must be an array"),
@@ -172,7 +182,9 @@ def rules:
         (select(has("v2") and (has("checks") | not)) | "\($at): v2 needs checks"),
         (select(has("checks")) | v2rules($at; $fids)),
         (select(($d.method_version | tostring | startswith("2")) and has("checks"))
-          | stored2($at; $d.competitor_order)));
+          | stored2($at; $d.competitor_order)),
+        (select(has("process") and (.process | type) != "boolean") | "\($at): process must be a boolean"),
+        (select(.process == true and has("checks")) | process_levels($at)));
 (select(type != "object") | "top level: must be an object"),
 (objects | [shape] as $e | $e[], (select($e == []) | rules))
 '
@@ -795,7 +807,7 @@ self_test() {
     read -r -d '' want <<'EOF' || true
 | 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 target | 54.4 | 53.3 (#6) | 63.4 (#3) | 23 | 31 | 7 | 25 |
+| 0.8.0 target | 54.0 | 53.0 (#6) | 63.3 (#3) | 23 | 31 | 7 | 37 |
 | 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
 | 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
 | 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
@@ -857,6 +869,7 @@ bad-adr adr key "next" is not x.y.z
 bad-v2-check-ref v2.met.a has unknown check id "core.a#9"
 bad-v2-level v2.level.b = "beta" is not a level
 bad-v2-stored competitors[2] = 10 is not its checklist score 9
+bad-process-level process row: v2.level.b = "documented", want "production"
 EOF
 
     # Ties take the better rank (§5 step 5); id_effect also ties the best competitor on row core.b,

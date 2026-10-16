@@ -1,7 +1,7 @@
 {
 	"version": "0.6.0",
 	"basis": "measured",
-	"method_version": "2.0",
+	"method_version": "2.1",
 	"competitor_snapshot": "2026-10-14",
 	"id_effect": {
 		"u": 38.5,
@@ -42,7 +42,7 @@
 				"ai": 38,
 				"test": 58.7,
 				"dx": 35.9,
-				"eco": 15.5
+				"eco": 15.6
 			}
 		},
 		{

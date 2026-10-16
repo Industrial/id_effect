@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"method_version": "2.0",
+	"method_version": "2.1",
 	"method_doc": "METHOD.md",
 	"competitor_snapshot": {
 		"date": "2026-10-14",
@@ -4030,7 +4030,7 @@
 			},
 			"evidence": "schema/json_schema_export.rs is primitive fragments only; SPEC.md: not implemented.",
 			"targets": {
-				"0.8.0": 75,
+				"0.8.0": 50,
 				"0.9.0": 88
 			},
 			"checks": [
@@ -7345,6 +7345,7 @@
 			"competitors": [50, 38, 100, 50, 88, 88, 63, 50, 63, 75],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 25,
 				"0.7.0": 25
@@ -7391,8 +7392,8 @@
 			"v2": {
 				"level": {
 					"id_effect": {
-						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.6.0": "production",
+						"0.7.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9967,6 +9968,7 @@
 			"competitors": [38, 38, 38, 25, 50, 75, 38, 63, 63, 75],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 88,
 				"0.7.0": 88
@@ -10012,8 +10014,8 @@
 			"v2": {
 				"level": {
 					"id_effect": {
-						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.6.0": "production",
+						"0.7.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11557,9 +11559,10 @@
 			"competitors": [63, 75, 88, 50, 88, 100, 75, 88, 75, 63],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
-				"0.6.0": 49,
-				"0.7.0": 49
+				"0.6.0": 50,
+				"0.7.0": 50
 			},
 			"evidence": "17 crates at 0.7.0 on crates.io; breaking every minor; labs at 0.4.0.",
 			"targets": {
@@ -11603,8 +11606,8 @@
 			"v2": {
 				"level": {
 					"id_effect": {
-						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.6.0": "production",
+						"0.7.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11744,6 +11747,7 @@
 			"competitors": [75, 63, 75, 63, 88, 100, 100, 100, 63, 63],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
 				"0.7.0": 1
@@ -12079,6 +12083,7 @@
 			"competitors": [38, 13, 38, 38, 88, 100, 88, 88, 88, 88],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
 				"0.7.0": 1
@@ -12228,6 +12233,7 @@
 			"competitors": [50, 63, 100, 100, 100, 100, 100, 100, 100, 100],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
 				"0.7.0": 1
@@ -12273,8 +12279,8 @@
 			"v2": {
 				"level": {
 					"id_effect": {
-						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.6.0": "absent",
+						"0.7.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12407,6 +12413,7 @@
 			"competitors": [80, 80, 80, 80, 100, 100, 80, 80, 80, 80],
 			"track": "T0",
 			"stance": "build",
+			"process": true,
 			"id_effect": {
 				"0.6.0": 20,
 				"0.7.0": 20
@@ -12440,8 +12447,8 @@
 			"v2": {
 				"level": {
 					"id_effect": {
-						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.6.0": "production",
+						"0.7.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",

@@ -1,6 +1,6 @@
 # id_effect Plan of Plans: 0.8 → 1.0 → Surpass
 
-Status: **approved** (2026-10-15) · Baseline: 0.7.0 (2026-10-15) · Scorecard method 2.0 (re-based 2026-10-16, §7.0)
+Status: **approved** (2026-10-15) · Baseline: 0.7.0 (2026-10-15) · Scorecard method 2.1 (re-based 2026-10-16, §7.0)
 (`../../../docs/scorecard/METHOD.md`) · Data: `../../../docs/scorecard/scorecard.json`
 
 Every release from 0.8.0 onward begins by reading this document (§7), picks its scope from it, and
@@ -222,7 +222,7 @@ whose target moves in that release.
 
 | Release | Theme | Tracks / epics | Rows | Target E (rank) | Target RT | Red rows | Exit KPIs |
 |---|---|---|---|---|---|---|---|
-| **0.8.0** | Trust & first hour | E0.1–E0.4, E0.6, E1.1, E1.2, E1.4, E1.6 (tutorial), E1.7, E1.8, E2.1–E2.4, E2.6 (compile bench), E5.1, E6.1, E6.3 templates | 28 | 53.3 (#6) | 63.4 (#3) | ≤ 31 | K1 ≤ 180 s, K4 = 100 %, K5 ≥ 80 % |
+| **0.8.0** | Trust & first hour | E0.1–E0.4, E0.6, E1.1, E1.2, E1.4, E1.6 (tutorial), E1.7, E1.8, E2.1–E2.4, E2.6 (compile bench), E5.1, E6.1, E6.3 templates | 28 | 53.0 (#6) | 63.3 (#3) | ≤ 31 | K1 ≤ 180 s, K4 = 100 %, K5 ≥ 80 % |
 | **0.9.0** | Data & security | E1.3, E2.3 OpenAPI, E3.1–E3.4, E4.1–E4.2, E5.2–E5.5 (audit), E6.5 part 1 | 18 | 63.1 (#3) | 68.1 (#2) | ≤ 21 | Ledger reference app: CRUD + auth + migrations green |
 | **0.10.0** | Async work & operations | E1.5, E1.9, E2.6 bench CI, E4.3–E4.4, E6.2–E6.5, E7.1–E7.4 | 16 | 70.3 (#3) | 74.6 (#1) | ≤ 11 | Ledger with jobs, mail, console; K2 ≤ 8 s |
 | **0.11.0** | Realtime & distribution | E2.5, E7.5, E8.1–E8.5 | 11 | 73.3 (#2) | 78.9 (#1) | ≤ 8 | Relay reference app (3-node chat + presence) green |
@@ -356,3 +356,4 @@ snapshot.
 | 2026-10-15 | Owner decisions L10 (MIT), L11 (`id_effect_kit`), L12 (console built into the app). Plan approved; roadmap-bootstrap mission executed. |
 | 2026-10-16 | roadmap-bootstrap complete: ADR 0012, scorecard tooling + reports + HTML, method v2 checklists (61f3b78, 3af5d74, 679a1d4, f9bb09d, 15ea25f). Owner decision L13 (v2 primary after alignment; v1 caps applied strictly); §7.0 added. Under v2, 0.7.0 scores E 43.2, rank #9 of 11. |
 | 2026-10-16 | §7.0 re-base done (method 1.1, then 2.0): competitor levels aligned by the third-party rule (60 competitor scores changed), 25 v1 cap violations lowered, targets re-based to checklist scores (METHOD §7.4). §1, §2, §6 and §9 re-stated: 0.7.0 E 43.2 (#9); 1.0 target E 82.1 (#1 on the frozen snapshot; #3 under the 1.1 history). Owner accepted the re-based numbers 2026-10-16 (§7.0 step 4). |
+| 2026-10-16 | 0.8 kickoff (§7.1): release spec `.maestro/specs/releases/0.8.0.md` approved with owner decisions D1 (`data.jsonschema` 0.8 target 50; OpenAPI stays in 0.9) and D2 (METHOD 2.1 process-row levels). 0.8 target E 53.0 (#6). |

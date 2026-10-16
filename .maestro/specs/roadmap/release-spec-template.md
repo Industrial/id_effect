@@ -7,7 +7,7 @@ work_type: initiative
 risk_class: high            # releases touch manifests + CI → high per .maestro/policies/risk.yaml
 version: 1
 scorecard:
-  method: "1.0"             # METHOD.md version used for targets and exit
+  method: "2.0"             # METHOD.md version used for targets and exit (checklist scores)
   baseline_version: "<previous>"
   target_E: <from METHOD §5.2 / scorecard.sh --targets>
   target_RT: <…>
