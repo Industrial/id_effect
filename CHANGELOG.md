@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased — 0.8.0 — Trust & first hour (breaking)
+
+First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading
+from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
+
+### Added
+
+- **Trust & supply chain:** `SECURITY.md` (private reporting via GitHub advisories, response
+  targets, support window), `GOVERNANCE.md`, `CODEOWNERS`. CI runs `cargo deny check`
+  (`deny.toml`) and a report-only `cargo semver-checks` against 0.7.0 (enforcing from 0.8.0).
+  Releases attach a CycloneDX SBOM per crate and the published `.crate` files with build
+  provenance attestations. `docs/STABILITY.md` states the semver, deprecation and MSRV policy.
+- **Web security (`id_effect_axum`):** `SecurityLayer::recommended(key)` — per-session CSRF
+  tokens in a signed `__Host-` cookie with constant-time compare (on by default), nonce-based CSP
+  (`CspNonce`, script hashes), HSTS / X-Frame-Options / nosniff / Referrer-Policy defaults, and
+  `Cookies` with secure defaults and signed/private jars keyed by a `CookieKey` effect layer.
+  `CorsConfig` builds a validated `tower_http` CORS layer.
+- **Metrics:** `id_effect::observability::prometheus` renders a `MetricRegistry` as Prometheus
+  text 0.0.4 (no dependency); `runtime_metrics` adds `id_effect_fibers_live` and
+  `id_effect_fibers_started_total`. `id_effect_axum::metrics` serves `GET /metrics` and records
+  HTTP requests and durations by route template (`http_metrics_layer()`).
+  `id_effect_sql::metrics::InstrumentedSqlClient` records database operations and durations;
+  `record_pg_pool` samples pool gauges.
+- **Health:** `HealthRegistry` of effect-backed `HealthIndicator`s, run concurrently with
+  per-check timeouts, answers `/ready` with JSON `{status, checks}` and 200 or 503; cache and
+  `ReadinessCheck` adapters; `id_effect_sql::health::sql_ping` and `pg_pool_health`.
+- **CLI (`id_effect_cli`):** `run_main` handles Ctrl-C gracefully (first SIGINT interrupts so
+  finalizers run, exit 130; a second exits at once). New `completions` feature
+  (`completions::{generate, CompletionsArgs, Shell}`); `examples/cli-minimal` gains
+  `completions <shell>`.
+- **Compile time:** `scripts/compile-time.sh` measures the template app's cold build, rebuild and
+  boot; 0.8 figures in `docs/benchmarks/compile-0.8.json`.
+
+### Changed
+
+- **Shutdown:** every host shutdown path marks readiness `shutting_down` before draining, and
+  `run_until_shutdown` keeps serving while it drains.
+- **Streaming:** `Sink::fold_left` / `from_fold` / `collect` / `drain` / `collect_to_map` return
+  `FoldSink`; `FoldSink::zip` and `FoldChannel::from_sink` reject non-fold sinks at compile time
+  instead of panicking (`.into()` converts to `Sink`).
+- **`RunMainConfig`** is `#[non_exhaustive]` with builder methods.
+
+### Deprecated
+
+- `CsrfConfig::new`, `csrf_middleware`, `csp_middleware`, `set_csrf_header` (removed in 0.9);
+  the deprecated CSRF compare is now constant-time.
+
+### Performance
+
+- `Queue::offer` / `take` and `Channel::write` / `read` complete synchronously when they can;
+  `retry` / `repeat` read the clock only for schedules that use it. Against 0.7.0:
+  `coord/queue_bounded_10k` 0.48×, `coord/channel_spsc_10k` 0.50×,
+  `bench_schedule_retry_overhead` 588 → 137 ns. All three are now budget gates.
+
 ## 0.7.0 — 2026-10-15 — The runtime release (breaking)
 
 Replaces the `!Send`, busy-polled kernel with an owned fiber runtime on an `Executor` trait

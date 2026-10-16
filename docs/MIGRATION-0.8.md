@@ -12,8 +12,58 @@ Each 0.8 change appends its entry to the matching section below.
 
 ## Web security
 
+`id_effect_axum`'s `server/security.rs` became `server/security/{csrf,cors,csp,headers,cookies}`;
+the 0.7 import paths still work.
+
+- `CsrfConfig::new(token)` + `csrf_middleware` (one static token shared by all clients) is
+  deprecated. Replace both with `router.layer(SecurityLayer::recommended(key))`: it issues a
+  random per-session token in a signed `__Host-csrf` cookie and checks it on every
+  non-GET/HEAD/OPTIONS/TRACE request. Clients send it back in `X-CSRF-Token` or a `csrf_token`
+  form field. Handlers get it from the `CsrfToken` extractor (returning it sets the header),
+  which replaces `set_csrf_header`. Webhooks and other cross-site endpoints need
+  `.csrf_exempt("/webhooks")`; cookie-less APIs can use `.without_csrf()`. The deprecated
+  `csrf_middleware` now compares in constant time.
+- `csp_middleware` is deprecated: `SecurityLayer` applies `ContentSecurityPolicy::recommended()`
+  (nonce-based) or your `.csp(policy)?`. Inline scripts need `nonce="{CspNonce}"` or
+  `.script_hash(content)`. A handler's own CSP header is no longer overwritten.
+  `ContentSecurityPolicy::to_header_value()` returns `None` for a policy that fails `validate()`
+  (a directive value containing `;`, `,`, whitespace or control characters).
+- Provide the cookie key as an effect layer: `CookieKey::layer::<E>()` reads `COOKIE_KEY`
+  (base64, at least 64 random bytes) from config; `CookieKey::layer_from(key)` wraps a key you
+  already have.
+- CORS: `CorsConfig::new().allow_origin(..).allow_credentials(true).build()?` returns a
+  `tower_http` `CorsLayer`; credentials with a wildcard origin is
+  `SecurityError::CorsCredentialsWithWildcard`.
+- The deprecated items are removed in 0.9.
+
 ## CLI
+
+- `id_effect_cli::RunMainConfig` is `#[non_exhaustive]` and has a new field
+  `interrupt_on_ctrl_c` (default `true`). Struct literals such as
+  `RunMainConfig { install_tracing: true }` no longer compile; use
+  `RunMainConfig::with_tracing()` or `RunMainConfig::minimal().tracing(true)`.
+- Behaviour: under `run_main`, Ctrl-C no longer kills the process at once. It interrupts the
+  program so `ensuring` / `acquire_use_release` finalizers run, then exits 130 with
+  `error: interrupted (…)` on stderr; a second Ctrl-C exits 130 immediately. To keep the old
+  handling (or install your own), use `.ctrl_c(false)`.
 
 ## Streaming
 
+- `Sink::fold_left`, `Sink::from_fold`, `Sink::collect`, `Sink::drain` and
+  `Sink::collect_to_map` return `FoldSink<A, In, E, R>` instead of `Sink`. `zip` is a method of
+  `FoldSink`, and `FoldChannel::from_sink` takes a `FoldSink`. Passing any other sink
+  (`collect_all_while`, `for_each`, `to_queue`, `Sink::new`) used to panic at run time and is
+  now a type error. `sink.run(stream)` and `stream.run(sink)` work unchanged (`Stream::run` takes
+  `impl Into<Sink>`). Where a plain `Sink` is required (a field, a return type, a
+  `Vec<Sink<…>>`), convert with `.into()` or `Sink::from(fold_sink)`. `Sink`'s `Debug` output no
+  longer has a `fold` field.
+
 ## Observability
+
+- `id_effect_axum::Host` has a new public field `readiness: ReadinessState`;
+  `HostBuilder::build` sets it ready. Code that builds a `Host` with a struct literal must add
+  `readiness: ReadinessState::new(true)`.
+- On SIGINT/SIGTERM, `HostBuilder::run_until_shutdown` keeps the `serve` future running while it
+  drains (it used to drop it first). `serve_router` and `ServerHandle::shutdown` mark readiness
+  shutting down before they drain or stop, so `/ready` answers 503. `ReadinessState::set_ready(true)`
+  also clears a shutting-down mark.
