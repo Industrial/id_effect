@@ -1,3 +1,4 @@
-# Transitive sqlx-mysql pulls rsa; workspace sqlx deps use postgres only.
+# Transitive sqlx-mysql and openidconnect pull rsa; no workspace code decrypts or signs with it
+# (ID tokens are verified by jsonwebtoken on aws-lc-rs). Keep in sync with deny.toml.
 [advisories]
 ignore = ["RUSTSEC-2023-0071"]

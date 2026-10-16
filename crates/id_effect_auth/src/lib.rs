@@ -23,6 +23,11 @@
 //! - `middleware` (feature `axum`) — `Authenticate`: session → bearer → API key → Basic, in a
 //!   configurable order, installing the principal as `id_effect_authz::CurrentPrincipal`.
 //!   Missing credentials continue anonymously; invalid ones answer 401 Problem Details.
+//! - `oidc` (feature `oidc`) — `OidcClient`: OpenID Connect discovery, authorization code +
+//!   PKCE (S256), ID tokens verified over the provider's JWKS (`iss`, `aud`, `exp`, `nonce`,
+//!   `azp`) and mapped with a `ClaimMapping`; `OidcRoutes`: `/auth/oidc/{login,callback,logout}`
+//!   with state, nonce and code verifier in a server-side flow session, login through
+//!   `Sessions::login`, and RP-initiated logout. Implements id_effect_platform's `OAuthClient`.
 //!
 //! [`PasswordHasher`] and [`Sessions`] are capabilities with a [`Layer`](id_effect::Layer), like
 //! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
@@ -62,6 +67,8 @@ pub mod jwks;
 pub mod jwt;
 #[cfg(feature = "axum")]
 pub mod middleware;
+#[cfg(feature = "oidc")]
+pub mod oidc;
 pub mod password;
 pub mod principal;
 pub mod session;
@@ -77,6 +84,8 @@ pub use jwks::JwksClient;
 pub use jwt::{Algorithm, ClaimMapping, JwtIssuer, JwtKey, JwtVerifier};
 #[cfg(feature = "axum")]
 pub use middleware::{Authenticate, AuthenticateService};
+#[cfg(feature = "oidc")]
+pub use oidc::{OidcClient, OidcConfig, OidcError, OidcRoutes};
 pub use password::{
   Password, PasswordError, PasswordHash, PasswordHasher, PasswordHasherEnv, PasswordParams,
   Verification,

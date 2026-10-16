@@ -46,6 +46,11 @@
   Feature `pg`: `PgSessionStore` keeps sessions in PostgreSQL (SHA-256 of the session id as the
   key, jsonb attributes, timestamptz expiries, upsert `save`), `pg_session_store_layer()`,
   `ensure_schema()` and the migration `migrations/0001_id_effect_sessions.{up,down}.sql`.
+  Feature `oidc`: OpenID Connect login. `OidcClient` (discovery, authorization code + PKCE S256,
+  state / nonce, ID tokens verified over the provider's JWKS with `iss` / `aud` / `exp` / `nonce`
+  / `azp`, `ClaimMapping`, RP-initiated logout; implements `id_effect_platform`'s `OAuthClient`)
+  and `OidcRoutes` (`/auth/oidc/{login,callback,logout}`, a separate flow session, login through
+  `Sessions::login`). Tested against a wiremock IdP and a Keycloak container.
 - `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
   (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
   back as `Secret<T>`, and merge above the profile files and below the environment;

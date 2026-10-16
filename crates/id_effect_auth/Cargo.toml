@@ -35,6 +35,10 @@ jwks = ["jwt", "dep:reqwest", "dep:tokio"]
 # `PgSessionStore`: sessions in PostgreSQL over id_effect_sql's `SqlClient` (table
 # `id_effect_sessions`, created by `migrations/` or `PgSessionStore::ensure_schema`).
 pg = ["dep:id_effect_sql"]
+# OpenID Connect login (`oidc` module): discovery, authorization code + PKCE, state and nonce in a
+# server-side flow session, ID tokens checked over `JwksClient`, the `/auth/oidc/*` axum routes,
+# and id_effect_platform's `OAuthClient`.
+oidc = ["axum", "jwks", "dep:openidconnect", "dep:id_effect_platform"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
@@ -83,6 +87,14 @@ flume = "0.12"
 http = { version = "1", optional = true }
 tower-layer = { version = "0.3.3", optional = true }
 tower-service = { version = "0.3.3", optional = true }
+# openidconnect (release spec 0.9.0 D5) for discovery, PKCE, the authorization URL, the code
+# exchange and RP-initiated logout; no default features, so no reqwest 0.12 or TLS stack of its
+# own: its requests go through the reqwest 0.13 client above. 4.x needs rustc 1.65.
+openidconnect = { version = "4.0.1", default-features = false, optional = true }
+# `OAuthClient` / `OAuthTokens`, the platform's OAuth capability `OidcClient` implements.
+id_effect_platform = { path = "../id_effect_platform", version = "0.8.0", features = [
+  "auth",
+], optional = true }
 
 [dev-dependencies]
 axum = "0.8"
@@ -100,6 +112,8 @@ id_effect_tokio = { path = "../id_effect_tokio" }
 # Generates RSA / EC test keys at runtime (the provider jsonwebtoken already uses).
 aws-lc-rs = "1.18"
 http-body-util = "0.1"
+# Keycloak container for tests/oidc_keycloak.rs (feature `oidc`); same version as id_effect_config.
+testcontainers = { version = "0.28", default-features = false }
 
 [[example]]
 name = "010_login"

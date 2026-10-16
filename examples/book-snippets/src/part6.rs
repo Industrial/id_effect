@@ -25,6 +25,10 @@ struct Ch3003PasswordsSessions;
 struct Ch3004CredentialsJwt;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-05-oidc.md")]
+struct Ch3005Oidc;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 
