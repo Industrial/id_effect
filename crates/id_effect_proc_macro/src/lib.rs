@@ -15,6 +15,7 @@ mod effect_tagged;
 mod from_row;
 mod match_effect;
 mod provider_spec;
+mod repository;
 
 use proc_macro::TokenStream;
 
@@ -232,6 +233,36 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(FromRow, attributes(from_row, schema))]
 pub fn derive_from_row(input: TokenStream) -> TokenStream {
   from_row::derive(input)
+}
+
+/// Derive `id_effect_sql::Entity` (map a `#[derive(FromRow)]` struct to a table for
+/// `Repository<T>`; `id_effect_sql` feature `repository`).
+///
+/// Use it through the re-export `id_effect_sql::Entity`; the generated impl names
+/// `::id_effect_sql` unless overridden with `#[entity(crate = path)]`.
+///
+/// - Container: `table = ".."` (default: the type name in snake case), `tenant = "col"`,
+///   `soft_delete = "col"`, `scope = path` (a `fn() -> impl Into<Condition>`, repeatable).
+/// - Fields: exactly one `#[entity(id)]` (`#[entity(id, generated)]` when the database assigns
+///   it) and at most one `#[entity(version)]` integer (optimistic locking). Columns are the
+///   `FromRow` columns; `#[from_row(flatten)]` fields are rejected.
+///
+/// ```ignore
+/// use id_effect_sql::{Entity, FromRow};
+///
+/// #[derive(FromRow, Entity)]
+/// #[entity(table = "accounts", tenant = "org_id", soft_delete = "deleted_at")]
+/// struct Account {
+///   #[entity(id, generated)]
+///   id: i64,
+///   name: String,
+///   #[entity(version)]
+///   version: i64,
+/// }
+/// ```
+#[proc_macro_derive(Entity, attributes(entity))]
+pub fn derive_entity(input: TokenStream) -> TokenStream {
+  repository::derive(input)
 }
 
 /// Mark a process struct as a remotely spawnable behavior.

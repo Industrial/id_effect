@@ -33,6 +33,10 @@ sqlite = ["dep:sqlx", "dep:tokio", "sqlx/sqlite"]
 # `audit`: hash-chained audit log appended in the caller's transaction (PostgreSQL SQL; the
 # schema ships in `migrations/audit/`).
 audit = ["dep:sha2"]
+# `repository`: `#[derive(Entity)]` and `Repository<T>` (CRUD, optimistic locking, soft-delete /
+# tenant / custom global filters) over `query`'s sea-query statements. A feature of its own so
+# `query` stays the plain statement builder.
+repository = ["query"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
@@ -101,6 +105,10 @@ required-features = ["sqlite"]
 [[test]]
 name = "audit"
 required-features = ["audit", "pg"]
+
+[[test]]
+name = "repository"
+required-features = ["repository"]
 
 [[example]]
 name = "030_migrate"

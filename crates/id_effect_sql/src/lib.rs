@@ -129,3 +129,13 @@ pub use routing::{ReadRouting, RoutingSqlClient};
 // Hash-chained audit log appended in the caller's transaction (E5.5, feature `audit`).
 #[cfg(feature = "audit")]
 pub mod audit;
+
+// Entities and repositories: `#[derive(Entity)]`, `Repository<T>` CRUD with optimistic locking
+// and global filters (E3.3, feature `repository` = `query` + the repository layer).
+#[cfg(feature = "repository")]
+pub mod repository;
+/// Derive [`Entity`] for a `#[derive(FromRow)]` struct (see [`repository`]).
+#[cfg(feature = "repository")]
+pub use id_effect_proc_macro::Entity;
+#[cfg(feature = "repository")]
+pub use repository::{BoundRepository, CurrentTenant, Entity, Page, Repository, SqlExecutor};

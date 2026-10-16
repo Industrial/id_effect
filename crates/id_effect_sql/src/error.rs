@@ -63,6 +63,15 @@ pub enum SqlError {
   },
   /// A query that must return a row returned none ([`query_one_as`](crate::query_one_as)).
   RowNotFound,
+  /// An optimistic-locking update found the row but not the version the entity was read with:
+  /// another writer changed it first (`Repository::update`, feature `repository`). Reload and
+  /// retry.
+  StaleVersion {
+    /// The entity's Rust type name.
+    entity: String,
+    /// The row's primary key (`Debug`-formatted).
+    id: String,
+  },
 }
 
 impl SqlError {
@@ -119,6 +128,10 @@ impl fmt::Display for SqlError {
         Ok(())
       }
       SqlError::RowNotFound => write!(f, "sql query returned no row"),
+      SqlError::StaleVersion { entity, id } => write!(
+        f,
+        "sql stale version: {entity} {id} was changed by another writer"
+      ),
     }
   }
 }

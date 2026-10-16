@@ -103,6 +103,11 @@
   (`BuildSql::build_sql(Dialect::{Postgres, MySql, Sqlite})` → SQL + `Vec<SqlValue>`, our own value
   bridge, no sea-query-binder) and run them with `execute_query` / `fetch_all_as` /
   `fetch_one_as` / `fetch_optional_as`.
+- `id_effect_sql` feature `repository`: `#[derive(Entity)]` and `Repository<T>`. CRUD, paging,
+  optimistic locking via `#[entity(version)]` (`SqlError::StaleVersion`), soft-delete / tenant /
+  custom global filters on every generated statement with `with_deleted()` / `unscoped()` escape
+  hatches (a tenant-scoped entity with no tenant fails closed); runs in transactions via
+  `repo.on(tx)`.
 - `id_effect_sql` feature `audit`: hash-chained audit log. `AuditLog` layer, `append` / `record`
   inside the caller's transaction, one chain per tenant with `sha256(prev_hash ‖ record)` (the
   chain head is row-locked, so concurrent appends never fork it), `verify_chain` reports the first

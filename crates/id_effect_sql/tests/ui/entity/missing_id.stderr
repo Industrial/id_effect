@@ -1,0 +1,5 @@
+error: #[derive(Entity)] needs an `#[entity(id)]` field (the primary key)
+ --> tests/ui/entity/missing_id.rs:4:8
+  |
+4 | struct NoKey {
+  |        ^^^^^
