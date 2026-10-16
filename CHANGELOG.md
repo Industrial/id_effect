@@ -97,6 +97,19 @@ from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
   `coord/queue_bounded_10k` 0.48×, `coord/channel_spsc_10k` 0.50×,
   `bench_schedule_retry_overhead` 588 → 137 ns. All three are now budget gates.
 
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.8.0.md`, METHOD 2.1):
+
+| Index | 0.7.0 | 0.8.0 | Target |
+|---|---|---|---|
+| Enterprise (E) | 43.2 (#9) | 55.2 (#5) | 53.0 (#6) |
+| Runtime (RT) | 56.1 (#6) | 64.4 (#2) | 63.3 (#3) |
+| Rows < 40 | 39 | 31 | ≤ 31 |
+
+27 rows up, 1 down (`msg.brokers`: the obix outbox was removed for the MIT relicense). One miss
+carried over to 0.9: `data.jsonschema` 38 vs 50.
+
 ## 0.7.0 — 2026-10-15 — The runtime release (breaking)
 
 Replaces the `!Send`, busy-polled kernel with an owned fiber runtime on an `Executor` trait
