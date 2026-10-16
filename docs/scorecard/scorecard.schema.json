@@ -149,7 +149,7 @@
 				},
 				"v1": {
 					"type": "object",
-					"description": "Method 2.x only: the method 1.1 history of the row (scripts/scorecard.sh --method 1; METHOD.md §7.4). id_effect scores the same versions as the row's id_effect.",
+					"description": "Method 2.x only: the method 1.1 history of the row (scripts/scorecard.sh --method 1; METHOD.md §7.4). Its id_effect scores a subset of the row's id_effect versions (the history stops at 0.7.0).",
 					"required": ["competitors", "id_effect", "targets"],
 					"properties": {
 						"competitors": {

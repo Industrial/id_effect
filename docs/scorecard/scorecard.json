@@ -178,9 +178,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "Effect<A,E=Never,R=HNil> is Send; typed HList R; compile-fail UI tests in crates/id_effect/tests/ui/.",
+			"evidence": "Effect<A,E,R> with HList R, trybuild compile-fail suite, book part1 ch01-03 type parameters, examples 001-018.",
 			"targets": {
 				"1.0.0": 100
 			},
@@ -222,7 +223,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -246,6 +248,15 @@
 							"core.typed-effect#8"
 						],
 						"0.7.0": [
+							"core.typed-effect#1",
+							"core.typed-effect#2",
+							"core.typed-effect#3",
+							"core.typed-effect#4",
+							"core.typed-effect#6",
+							"core.typed-effect#7",
+							"core.typed-effect#8"
+						],
+						"0.8.0": [
 							"core.typed-effect#1",
 							"core.typed-effect#2",
 							"core.typed-effect#3",
@@ -284,13 +295,13 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"core.typed-effect#1": "crates/id_effect/src/kernel/effect.rs:33 (struct Effect<A,E=Never,R=HNil>)",
-					"core.typed-effect#2": "crates/id_effect/tests/ui/fail/missing_capability.rs",
-					"core.typed-effect#3": "crates/id_effect/src/failure/never.rs",
-					"core.typed-effect#4": "crates/id_effect/src/failure/union.rs:37 (impl From<L> for Or<L,R>)",
-					"core.typed-effect#6": "crates/id_effect/src/capability/provide.rs:49 (provide -> R::Rest)",
-					"core.typed-effect#7": "crates/id_effect/src/kernel/effect.rs:32 (#[must_use = \"effects are lazy...\"])",
-					"core.typed-effect#8": "crates/id_effect/examples/006_effect_macro_binds.rs"
+					"core.typed-effect#1": "crates/id_effect/src/kernel/effect.rs:34 pub struct Effect<A, E = Never, R = HNil>",
+					"core.typed-effect#2": "crates/id_effect/tests/ui.rs:44 compile_fail(tests/ui/fail/*.rs) incl. tests/ui/fail/missing_capability.rs",
+					"core.typed-effect#3": "crates/id_effect/src/failure/never.rs:7 pub type Never = Infallible",
+					"core.typed-effect#4": "crates/id_effect/src/failure/union.rs:37 impl From<L> for Or<L,R> (library-provided union)",
+					"core.typed-effect#6": "crates/id_effect/src/capability/provide.rs:49 provide -> Effect<A,E,<R as Plucker>::Rest>",
+					"core.typed-effect#7": "crates/id_effect/src/kernel/effect.rs:33 #[must_use = \"effects are lazy; run them with a run edge\"]",
+					"core.typed-effect#8": "crates/id_effect/examples/006_effect_macro_binds.rs effect! binds over typed A/E/R"
 				}
 			},
 			"v1": {
@@ -314,9 +325,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 88,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect/src/layer.rs (succeed/effect/scoped/merge/provide_to/fresh/launch), caps!/need::<K>(); tests layer*.rs.",
+			"evidence": "Layer succeed/effect/scoped/merge/provide_to/fresh, caps!/need, UI tests, book part2 ch04-07.",
 			"targets": {
 				"0.9.0": 88,
 				"1.0.0": 100
@@ -359,7 +371,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -384,6 +397,15 @@
 							"core.di#8"
 						],
 						"0.7.0": [
+							"core.di#1",
+							"core.di#2",
+							"core.di#3",
+							"core.di#4",
+							"core.di#5",
+							"core.di#6",
+							"core.di#7"
+						],
+						"0.8.0": [
 							"core.di#1",
 							"core.di#2",
 							"core.di#3",
@@ -436,12 +458,12 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"core.di#1": "crates/id_effect/src/capability/need.rs:1 (need::<T>(), compile-time Selector)",
-					"core.di#2": "crates/id_effect/tests/ui/fail/missing_capability.rs",
-					"core.di#3": "crates/id_effect/src/layer.rs:409 (provide_to), :381 (merge)",
-					"core.di#4": "crates/id_effect/src/layer.rs:30-80 (memoised per build; Layer::fresh)",
-					"core.di#5": "crates/id_effect/src/layer.rs:2 (scoped/acquire_release); crates/id_effect/tests/layer_scoped.rs",
-					"core.di#6": "crates/id_effect/src/layer.rs:25 (Layer::succeed swap-in)",
+					"core.di#1": "crates/id_effect/src/capability/need.rs:26 need::<T>() resolved by R: Selector<T,I>",
+					"core.di#2": "crates/id_effect/tests/ui/fail/missing_capability.rs (+ missing_capability_narrowed.rs, layer_provide_missing_output.rs)",
+					"core.di#3": "crates/id_effect/src/layer.rs:381 merge, :409 provide_to",
+					"core.di#4": "crates/id_effect/src/layer.rs:30 memoisation by reference within one build; :286 Layer::fresh",
+					"core.di#5": "crates/id_effect/src/layer.rs:255 Layer::scoped, :264 acquire_release; crates/id_effect/tests/layer_scoped.rs",
+					"core.di#6": "crates/id_effect/src/layer.rs:215 Layer::succeed swap-in; book part4/ch15-03-mocking.md",
 					"core.di#7": "crates/id_effect/tests/ui/fail/duplicate_capability_caps.rs"
 				}
 			},
@@ -467,9 +489,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 75
 			},
-			"evidence": "effect! sequential binds, ~(a,b) parallel join; retry/repeat need factories; pipe helpers removed.",
+			"evidence": "effect! binds, ~(a,b) join, retry/timeout one-call combinators, idiom guide appendix E.",
 			"targets": {
 				"0.8.0": 75,
 				"1.0.0": 88
@@ -512,7 +535,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -539,6 +563,14 @@
 							"core.ergonomics#3",
 							"core.ergonomics#4",
 							"core.ergonomics#5"
+						],
+						"0.8.0": [
+							"core.ergonomics#1",
+							"core.ergonomics#2",
+							"core.ergonomics#3",
+							"core.ergonomics#4",
+							"core.ergonomics#5",
+							"core.ergonomics#8"
 						]
 					},
 					"effect_ts": [
@@ -632,11 +664,12 @@
 					]
 				},
 				"evidence": {
-					"core.ergonomics#1": "crates/id_effect/examples/006_effect_macro_binds.rs",
-					"core.ergonomics#2": "crates/id_effect/tests/join_binds.rs; crates/id_effect/src/par.rs:95 (all)",
-					"core.ergonomics#3": "crates/id_effect/src/scheduling/schedule.rs:567 (Effect::retry(make, schedule))",
-					"core.ergonomics#4": "crates/id_effect/src/race.rs:98 (Effect::timeout)",
-					"core.ergonomics#5": "crates/id_effect/examples/009_result_into_bind.rs; failure/union.rs:37"
+					"core.ergonomics#1": "crates/id_effect/examples/006_effect_macro_binds.rs effect! do-notation",
+					"core.ergonomics#2": "crates/id_effect/src/par.rs:95 all(..); crates/id_effect/tests/join_binds.rs ~(a,b)",
+					"core.ergonomics#3": "crates/id_effect/src/scheduling/schedule.rs:612 retry(make, schedule)",
+					"core.ergonomics#4": "crates/id_effect/src/race.rs:98 Effect::timeout",
+					"core.ergonomics#5": "crates/id_effect/examples/009_result_into_bind.rs implicit From at ~ binds",
+					"core.ergonomics#8": "crates/id_effect/book/src/appendix-e-idiom-guide.md:1 Idiom and Style Guide for Application Code (doctested)"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 4 of 8: no one-call timeout, generic runners need annotations, no first-party lints or idiom guide; v1 judged readability, which the checks do not see."
@@ -664,9 +697,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect/src/failure/{cause,exit}.rs; Die(Defect) keeps panic payload; tests/panic.rs.",
+			"evidence": "failure/{cause,exit,pretty}.rs; tests/panic.rs; book part3 ch08-02 Exit.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -708,7 +742,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -730,6 +765,15 @@
 							"core.cause#8"
 						],
 						"0.7.0": [
+							"core.cause#1",
+							"core.cause#2",
+							"core.cause#3",
+							"core.cause#4",
+							"core.cause#5",
+							"core.cause#6",
+							"core.cause#8"
+						],
+						"0.8.0": [
 							"core.cause#1",
 							"core.cause#2",
 							"core.cause#3",
@@ -823,13 +867,13 @@
 					]
 				},
 				"evidence": {
-					"core.cause#1": "crates/id_effect/src/failure/cause.rs:146 (Fail/Die/Interrupt)",
-					"core.cause#2": "crates/id_effect/src/failure/cause.rs:186 (both), :192 (then)",
-					"core.cause#3": "crates/id_effect/src/failure/cause.rs:60 (Defect::from_panic); tests/panic.rs",
-					"core.cause#4": "crates/id_effect/src/kernel/effect.rs:224 (Effect::exit)",
-					"core.cause#5": "crates/id_effect/src/failure/pretty.rs:16 (pretty_cause)",
-					"core.cause#6": "crates/id_effect/src/kernel/effect.rs:224 (exit() reifies Die/Interrupt for handling)",
-					"core.cause#8": "crates/id_effect/src/failure/cause.rs:216 (fail_option), :224 (contains), :288 (flatten)"
+					"core.cause#1": "crates/id_effect/src/failure/cause.rs:146 enum Cause {Fail, Die, Interrupt, Both, Then}",
+					"core.cause#2": "crates/id_effect/src/failure/cause.rs:186 both, :192 then",
+					"core.cause#3": "crates/id_effect/src/failure/cause.rs:60 Defect::from_panic keeps payload (:89 with_payload); tests/panic.rs",
+					"core.cause#4": "crates/id_effect/src/kernel/effect.rs:224 Effect::exit -> Exit<A,E>",
+					"core.cause#5": "crates/id_effect/src/failure/pretty.rs:16 pretty_cause",
+					"core.cause#6": "crates/id_effect/src/kernel/effect.rs:224 exit() reifies Die/Interrupt as a value to handle",
+					"core.cause#8": "crates/id_effect/src/failure/cause.rs:216 fail_option, :224 contains, :288 flatten"
 				},
 				"notes": {
 					"id_effect": "The 0.6.0 kernel had no Cause or Exit: panics were not captured as defects, nothing recovered from defects or interruption, failures carried no traces (4 of 8)."
@@ -856,9 +900,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 89
+				"0.7.0": 89,
+				"0.8.0": 89
 			},
-			"evidence": "kernel/resource.rs acquire_use_release/ensuring; finalizers run on interrupt; Layer::scoped.",
+			"evidence": "kernel/resource.rs, scope/scope.rs, resource/pool.rs; tests resource.rs/scope.rs; book part3 ch10; examples 089-091, 103.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -900,7 +945,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -922,6 +968,16 @@
 							"core.scope#8"
 						],
 						"0.7.0": [
+							"core.scope#1",
+							"core.scope#2",
+							"core.scope#3",
+							"core.scope#4",
+							"core.scope#5",
+							"core.scope#6",
+							"core.scope#7",
+							"core.scope#8"
+						],
+						"0.8.0": [
 							"core.scope#1",
 							"core.scope#2",
 							"core.scope#3",
@@ -986,14 +1042,14 @@
 					"nextjs": ["core.scope#1", "core.scope#3"]
 				},
 				"evidence": {
-					"core.scope#1": "crates/id_effect/src/kernel/resource.rs:101 (acquire_use_release)",
-					"core.scope#2": "crates/id_effect/src/kernel/resource.rs:104 (release(T, ExitKind))",
-					"core.scope#3": "crates/id_effect/src/kernel/resource.rs:39 (ensuring)",
-					"core.scope#4": "crates/id_effect/src/scope/scope.rs:171 (add_finalizer); :4 LIFO doc",
-					"core.scope#5": "crates/id_effect/src/kernel/resource.rs:112-116 (acquire inside Mask)",
-					"core.scope#6": "crates/id_effect/src/layer.rs:2 (Layer::scoped/acquire_release); tests/layer_scoped.rs",
-					"core.scope#7": "crates/id_effect/src/scope/scope.rs:222 (fork_in)",
-					"core.scope#8": "crates/id_effect/src/resource/pool.rs:199 (Pool::get(&Scope))"
+					"core.scope#1": "crates/id_effect/src/kernel/resource.rs:99 release runs exactly once when acquire succeeded; :101 acquire_use_release",
+					"core.scope#2": "crates/id_effect/src/kernel/resource.rs:104 release(T, ExitKind)",
+					"core.scope#3": "crates/id_effect/src/kernel/resource.rs:37-39 ensuring runs on success/failure/defect/interrupt",
+					"core.scope#4": "crates/id_effect/src/scope/scope.rs:171 add_finalizer, :204 close, :27 reverse key order is LIFO",
+					"core.scope#5": "crates/id_effect/src/kernel/resource.rs:96 acquires uninterruptibly (Instr::Mask :114)",
+					"core.scope#6": "crates/id_effect/src/layer.rs:255 Layer::scoped; crates/id_effect/tests/layer_scoped.rs",
+					"core.scope#7": "crates/id_effect/src/scope/scope.rs:222 fork_in",
+					"core.scope#8": "crates/id_effect/src/resource/pool.rs:199 Pool::get(&Scope)"
 				},
 				"notes": {
 					"id_effect": "0.6.0 acquire_release ran release right after acquire and ensuring skipped drop and panic (4 of 8); no integration test, so level tested."
@@ -1020,9 +1076,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "uninterruptible/uninterruptible_mask/interruptible (kernel/resource.rs), parent interrupts children; tests/fibers.rs. No on_interrupt.",
+			"evidence": "Masks, fork/child interruption, race/timeout semantics; tests/fibers.rs; book part3 ch09-03 cancellation.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -1064,7 +1121,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1085,6 +1143,15 @@
 							"core.interrupt#7"
 						],
 						"0.7.0": [
+							"core.interrupt#1",
+							"core.interrupt#2",
+							"core.interrupt#3",
+							"core.interrupt#4",
+							"core.interrupt#5",
+							"core.interrupt#7",
+							"core.interrupt#8"
+						],
+						"0.8.0": [
 							"core.interrupt#1",
 							"core.interrupt#2",
 							"core.interrupt#3",
@@ -1150,13 +1217,13 @@
 					"nextjs": ["core.interrupt#4", "core.interrupt#5", "core.interrupt#6"]
 				},
 				"evidence": {
-					"core.interrupt#1": "crates/id_effect/src/runtime/fiber.rs:253 (FiberHandle::interrupt)",
-					"core.interrupt#2": "crates/id_effect/src/kernel/resource.rs:5 (pending interrupt honoured at region exit; runloop-driven)",
-					"core.interrupt#3": "crates/id_effect/src/kernel/resource.rs:66 (uninterruptible_mask/Restore)",
-					"core.interrupt#4": "crates/id_effect/src/kernel/fork.rs:24 (fork = child); tests/fibers.rs",
-					"core.interrupt#5": "crates/id_effect/src/kernel/resource.rs:37-39 (ensuring runs on interrupt)",
-					"core.interrupt#7": "crates/id_effect/src/failure/cause.rs:152 (Interrupt(FiberId))",
-					"core.interrupt#8": "crates/id_effect/src/race.rs:7-8 (losers interrupted and awaited)"
+					"core.interrupt#1": "crates/id_effect/src/runtime/fiber.rs:253 FiberHandle::interrupt; tests/fibers.rs:180",
+					"core.interrupt#2": "crates/id_effect/src/kernel/runloop.rs:241 resume_after_interrupt inside drive; resource.rs:5 pending interrupt honoured at region exit",
+					"core.interrupt#3": "crates/id_effect/src/kernel/resource.rs:66 uninterruptible_mask / Restore (:86 apply)",
+					"core.interrupt#4": "crates/id_effect/src/kernel/fork.rs:24 fork = child; tests/fibers.rs:228 parent_exit_interrupts_and_awaits_live_children",
+					"core.interrupt#5": "crates/id_effect/src/kernel/resource.rs:37-39 ensuring runs on interrupt; tests/fibers.rs:180",
+					"core.interrupt#7": "crates/id_effect/src/failure/cause.rs:152 Interrupt(FiberId)",
+					"core.interrupt#8": "crates/id_effect/src/race.rs:7-8 losers interrupted and awaited so finalizers have run"
 				},
 				"notes": {
 					"id_effect": "0.6.0 cancellation was a manual CancellationToken/check_interrupt: no automatic interruption, masks, finalizers on interrupt or loser cleanup (3 of 8)."
@@ -1183,9 +1250,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect/src/race.rs, par.rs; tests race_timeout.rs, par.rs. No race_with/disconnect.",
+			"evidence": "race.rs/par.rs; tests race_timeout.rs, par.rs; book part3 ch09.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -1227,7 +1295,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1244,6 +1313,15 @@
 					"id_effect": {
 						"0.6.0": [],
 						"0.7.0": [
+							"core.race#1",
+							"core.race#2",
+							"core.race#3",
+							"core.race#4",
+							"core.race#5",
+							"core.race#6",
+							"core.race#7"
+						],
+						"0.8.0": [
 							"core.race#1",
 							"core.race#2",
 							"core.race#3",
@@ -1299,13 +1377,13 @@
 					"nextjs": ["core.race#1", "core.race#5"]
 				},
 				"evidence": {
-					"core.race#1": "crates/id_effect/src/race.rs:98 (timeout -> Option<A>)",
-					"core.race#2": "crates/id_effect/src/race.rs:105 (timeout_fail)",
-					"core.race#3": "crates/id_effect/src/race.rs:65 (race)",
-					"core.race#4": "crates/id_effect/src/race.rs:71 (race_first)",
-					"core.race#5": "crates/id_effect/src/race.rs:121 (race_all)",
-					"core.race#6": "crates/id_effect/src/par.rs:53 (zip_par; fail-fast doc :11)",
-					"core.race#7": "crates/id_effect/src/par.rs:112 (for_each_par, Concurrency::Bounded)"
+					"core.race#1": "crates/id_effect/src/race.rs:98 timeout -> Effect<Option<A>,E,R>",
+					"core.race#2": "crates/id_effect/src/race.rs:105 timeout_fail",
+					"core.race#3": "crates/id_effect/src/race.rs:65 race (first success, losers interrupted)",
+					"core.race#4": "crates/id_effect/src/race.rs:71 race_first",
+					"core.race#5": "crates/id_effect/src/race.rs:121 race_all",
+					"core.race#6": "crates/id_effect/src/par.rs:53 zip_par",
+					"core.race#7": "crates/id_effect/src/par.rs:112 for_each_par with Concurrency"
 				},
 				"notes": {
 					"id_effect": "0.6.0 had no timeout or race combinators on the effect type, so the level is absent (cap 9); v1 25 is above that cap."
@@ -1332,9 +1410,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "Executor trait, real wakers; spawn_join_10k 6.67s → 17.2ms (docs/benchmarks/REPORT-0.7.md).",
+			"evidence": "Fiber runtime fork/fork_daemon/join/interrupt; tests/fibers.rs; book part3 ch09.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -1376,7 +1455,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1393,6 +1473,14 @@
 					"id_effect": {
 						"0.6.0": ["conc.fibers#3", "conc.fibers#5", "conc.fibers#7"],
 						"0.7.0": [
+							"conc.fibers#1",
+							"conc.fibers#3",
+							"conc.fibers#4",
+							"conc.fibers#5",
+							"conc.fibers#6",
+							"conc.fibers#7"
+						],
+						"0.8.0": [
 							"conc.fibers#1",
 							"conc.fibers#3",
 							"conc.fibers#4",
@@ -1461,12 +1549,12 @@
 					"nextjs": ["conc.fibers#1", "conc.fibers#2", "conc.fibers#5"]
 				},
 				"evidence": {
-					"conc.fibers#1": "docs/benchmarks/REPORT-0.7.md §3 (gate/spawn_join_10k 17.20 ms = ~1.7 us/task)",
-					"conc.fibers#3": "crates/id_effect/src/runtime/fiber.rs:232 (join_future -> Exit<A,E>)",
-					"conc.fibers#4": "crates/id_effect/src/kernel/fork.rs:24 (fork = child of current fiber)",
-					"conc.fibers#5": "crates/id_effect/src/kernel/fork.rs:37 (fork_daemon)",
-					"conc.fibers#6": "crates/id_effect/src/kernel/runloop.rs:215 (drive with poll budget)",
-					"conc.fibers#7": "crates/id_effect/src/testing/test_executor.rs; race.rs:80-96 doctest"
+					"conc.fibers#1": "docs/benchmarks/v0.7.json:70 gate/spawn_join_10k median 17.2 ms per 10k (~1.7 us/task); bench crates/id_effect_tokio/benches/gate_fiber.rs:4",
+					"conc.fibers#3": "crates/id_effect/src/runtime/fiber.rs:232 join_future -> Exit<A,E>",
+					"conc.fibers#4": "crates/id_effect/src/kernel/fork.rs:24 fork = child of current fiber",
+					"conc.fibers#5": "crates/id_effect/src/kernel/fork.rs:37 fork_daemon",
+					"conc.fibers#6": "crates/id_effect/src/kernel/runloop.rs:99 instruction budget per poll before yielding (fairness)",
+					"conc.fibers#7": "crates/id_effect/src/testing/test_executor.rs TestExecutor virtual time; book part4 ch15-02"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 3 of 8: no measured spawn cost or 1M-task figure, children not structured by default, no auto-yield, no task introspection.",
@@ -1494,9 +1582,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 69,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "Waker-based constructors; coordination/channel.rs panic-free; streaming/channel.rs:306 still .expect; queue_bounded 2.55x slower than 0.6.",
+			"evidence": "coordination/* with tests coordination*.rs; examples 100-102; covered in book ch09-03/ch10-02 plus rustdoc.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -1538,7 +1627,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1562,6 +1652,15 @@
 							"conc.coordination#7"
 						],
 						"0.7.0": [
+							"conc.coordination#1",
+							"conc.coordination#2",
+							"conc.coordination#3",
+							"conc.coordination#4",
+							"conc.coordination#5",
+							"conc.coordination#6",
+							"conc.coordination#7"
+						],
+						"0.8.0": [
 							"conc.coordination#1",
 							"conc.coordination#2",
 							"conc.coordination#3",
@@ -1623,13 +1722,13 @@
 					"nextjs": ["conc.coordination#2", "conc.coordination#3"]
 				},
 				"evidence": {
-					"conc.coordination#1": "crates/id_effect/src/coordination/queue.rs:190-205",
-					"conc.coordination#2": "crates/id_effect/src/coordination/pubsub.rs:164 (subscribe(&Scope))",
-					"conc.coordination#3": "crates/id_effect/src/coordination/deferred.rs:91",
-					"conc.coordination#4": "crates/id_effect/src/coordination/semaphore.rs:145 (with_permit)",
-					"conc.coordination#5": "crates/id_effect/src/coordination/synchronized_ref.rs:91; subscription_ref.rs:109",
+					"conc.coordination#1": "crates/id_effect/src/coordination/queue.rs:193-208 bounded/unbounded/dropping/sliding",
+					"conc.coordination#2": "crates/id_effect/src/coordination/pubsub.rs:164 subscribe(&Scope) per-subscriber Queue",
+					"conc.coordination#3": "crates/id_effect/src/coordination/deferred.rs:91 Deferred",
+					"conc.coordination#4": "crates/id_effect/src/coordination/semaphore.rs:145 with_permit, :157 with_permits",
+					"conc.coordination#5": "crates/id_effect/src/coordination/ref_.rs:48; synchronized_ref.rs:36; subscription_ref.rs:45",
 					"conc.coordination#6": "crates/id_effect/src/coordination/latch.rs:45",
-					"conc.coordination#7": "crates/id_effect/src/coordination/queue.rs:393 (shutdown), :405 (await_shutdown)"
+					"conc.coordination#7": "crates/id_effect/src/coordination/queue.rs:446 shutdown, :458 await_shutdown"
 				}
 			},
 			"v1": {
@@ -1653,9 +1752,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect_fp/src/stm/mod.rs parks on wakers; still in maintenance-tier fp crate.",
+			"evidence": "id_effect_fp STM; book part4 ch12 STM chapters.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -1697,7 +1797,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1720,6 +1821,15 @@
 							"conc.stm#8"
 						],
 						"0.7.0": [
+							"conc.stm#1",
+							"conc.stm#2",
+							"conc.stm#3",
+							"conc.stm#4",
+							"conc.stm#5",
+							"conc.stm#7",
+							"conc.stm#8"
+						],
+						"0.8.0": [
 							"conc.stm#1",
 							"conc.stm#2",
 							"conc.stm#3",
@@ -1759,13 +1869,13 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"conc.stm#1": "crates/id_effect_fp/src/stm/mod.rs:383 (TRef)",
-					"conc.stm#2": "crates/id_effect_fp/src/stm/mod.rs:15-16 (parks on wakers, nothing spins), :315 retry",
-					"conc.stm#3": "crates/id_effect_fp/src/stm/mod.rs:358 (or_else)",
-					"conc.stm#4": "crates/id_effect_fp/src/stm/mod.rs:307 (Stm::fail)",
-					"conc.stm#5": "crates/id_effect_fp/src/stm/mod.rs:580 (TMap), :513 (TQueue)",
+					"conc.stm#1": "crates/id_effect_fp/src/stm/mod.rs:383 TRef",
+					"conc.stm#2": "crates/id_effect_fp/src/stm/mod.rs:315 retry (parks on wakers, :15-16)",
+					"conc.stm#3": "crates/id_effect_fp/src/stm/mod.rs:358 or_else",
+					"conc.stm#4": "crates/id_effect_fp/src/stm/mod.rs:307 Stm::fail",
+					"conc.stm#5": "crates/id_effect_fp/src/stm/mod.rs:580 TMap, :513 TQueue",
 					"conc.stm#7": "crates/id_effect_fp/tests/stm_contention.rs",
-					"conc.stm#8": "crates/id_effect_fp/src/stm/mod.rs:688 (commit -> Effect)"
+					"conc.stm#8": "crates/id_effect_fp/src/stm/mod.rs:688 commit -> Effect<A,E,R>"
 				},
 				"notes": {
 					"id_effect": "v1 docked STM for sitting in the maintenance-tier fp crate; the capability checks ignore crate tier."
@@ -1792,9 +1902,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect/src/compute/*; Concurrency::Inherit from Fabric.",
+			"evidence": "compute/* fabric, admission and governor; tests fabric.rs, compute_adaptive.rs; examples 120-122; book part3 ch12 Compute Fabric.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -1836,7 +1947,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1859,6 +1971,15 @@
 							"conc.parallel#5"
 						],
 						"0.7.0": [
+							"conc.parallel#1",
+							"conc.parallel#2",
+							"conc.parallel#3",
+							"conc.parallel#4",
+							"conc.parallel#5",
+							"conc.parallel#6",
+							"conc.parallel#7"
+						],
+						"0.8.0": [
 							"conc.parallel#1",
 							"conc.parallel#2",
 							"conc.parallel#3",
@@ -1903,13 +2024,13 @@
 					"nextjs": ["conc.parallel#1"]
 				},
 				"evidence": {
-					"conc.parallel#1": "crates/id_effect/src/compute/rayon_pool.rs",
-					"conc.parallel#2": "crates/id_effect/src/parallelism.rs; compute/mod.rs:12 (adaptive Rayon parallelism)",
-					"conc.parallel#3": "crates/id_effect/src/compute/admission.rs; compute/fabric.rs:61 (admit)",
-					"conc.parallel#4": "crates/id_effect/src/compute/fabric.rs:40 (memory_cap_max_cpu)",
-					"conc.parallel#5": "crates/id_effect/src/compute/adaptive.rs:42 (AdaptiveContext::from_fabric); governor.rs",
-					"conc.parallel#6": "crates/id_effect/src/compute/kernel_fabric.rs:3 (Concurrency::Inherit)",
-					"conc.parallel#7": "crates/id_effect/src/compute/kernel_fabric.rs:22 (interrupt drops pending admission)"
+					"conc.parallel#1": "crates/id_effect/src/compute/rayon_pool.rs:24 install_parallel on a dedicated Rayon pool",
+					"conc.parallel#2": "crates/id_effect_fp/src/algebra/functor.rs:149 into_par_iter map; crates/id_effect/src/streaming/stream.rs:914",
+					"conc.parallel#3": "crates/id_effect/src/compute/admission.rs:51 admit; compute/fabric.rs:61",
+					"conc.parallel#4": "crates/id_effect/src/compute/fabric.rs:40 memory_cap_max_cpu",
+					"conc.parallel#5": "crates/id_effect/src/compute/adaptive.rs:42 AdaptiveContext::from_fabric (telemetry-driven)",
+					"conc.parallel#6": "crates/id_effect/src/compute/kernel_fabric.rs:3 Concurrency::Inherit ambient fabric",
+					"conc.parallel#7": "crates/id_effect/src/compute/kernel_fabric.rs:22 interrupting the forking fiber drops pending admission"
 				},
 				"notes": {
 					"id_effect": "0.6.0 lacked an ambient concurrency budget, cancellation of queued CPU work and pool metrics (5 of 8)."
@@ -1936,9 +2057,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 13,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "axum_request_oneshot 52.5 → 7.16µs; schedule_retry_overhead 5.77x regression (REPORT-0.7.md).",
+			"evidence": "Criterion gate benches, gates.toml, bench-compare.sh, docs/benchmarks/README.md.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -1980,7 +2102,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1997,6 +2120,13 @@
 					"id_effect": {
 						"0.6.0": ["conc.perf#7"],
 						"0.7.0": [
+							"conc.perf#1",
+							"conc.perf#2",
+							"conc.perf#3",
+							"conc.perf#4",
+							"conc.perf#7"
+						],
+						"0.8.0": [
 							"conc.perf#1",
 							"conc.perf#2",
 							"conc.perf#3",
@@ -2028,11 +2158,11 @@
 					"nextjs": ["conc.perf#3"]
 				},
 				"evidence": {
-					"conc.perf#1": "docs/benchmarks/gates.toml; scripts/bench-compare.sh; docs/benchmarks/REPORT-0.7.md",
-					"conc.perf#2": "docs/benchmarks/REPORT-0.7.md §3 (spawn_join_10k 17.20 ms)",
-					"conc.perf#3": "docs/benchmarks/REPORT-0.7.md §3 (sleep_cpu_1k_x_1ms 12.66 ms CPU)",
-					"conc.perf#4": "docs/benchmarks/REPORT-0.7.md §3 (axum_request_oneshot 7.157 us)",
-					"conc.perf#7": "Rust native build; no GC in any crate"
+					"conc.perf#1": "docs/benchmarks/gates.toml:1 D9 gates read by scripts/bench-compare.sh; per-release docs/benchmarks/REPORT-0.8.md present (not opened)",
+					"conc.perf#2": "docs/benchmarks/v0.7.json:70 gate/spawn_join_10k median 17.2 ms per 10k = ~1.7 us",
+					"conc.perf#3": "crates/id_effect_tokio/benches/gate_fiber.rs:8 process-CPU sleep bench; docs/benchmarks/v0.7.json:63 sleep_cpu_1k_x_1ms 12.66 ms CPU",
+					"conc.perf#4": "docs/benchmarks/v0.7.json:42 gate/axum_request_oneshot median 7.16 us; crates/id_effect_axum/benches/gate_request.rs",
+					"conc.perf#7": "Rust native AOT build; no GC in any published crate"
 				},
 				"notes": {
 					"id_effect": "v1 scored micro-bench speed-ups; v2 also needs TechEmpower presence, memory-per-task and p99 data, none published (0.6.0 also had no committed bench suite: 1 of 8)."
@@ -2059,9 +2189,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "#![forbid(unsafe_code)] in every crate; no unsafe blocks in crates/ or labs/.",
+			"evidence": "forbid(unsafe_code) on all 19 published crates, Send UI test, per-fiber panic boundary, cargo audit CI.",
 			"targets": {},
 			"checks": [
 				{
@@ -2101,7 +2232,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2124,6 +2256,15 @@
 							"conc.safety#7"
 						],
 						"0.7.0": [
+							"conc.safety#1",
+							"conc.safety#2",
+							"conc.safety#3",
+							"conc.safety#4",
+							"conc.safety#5",
+							"conc.safety#6",
+							"conc.safety#7"
+						],
+						"0.8.0": [
 							"conc.safety#1",
 							"conc.safety#2",
 							"conc.safety#3",
@@ -2164,13 +2305,13 @@
 					"nextjs": ["conc.safety#1", "conc.safety#6", "conc.safety#7"]
 				},
 				"evidence": {
-					"conc.safety#1": "Rust safe code (language guarantee)",
-					"conc.safety#2": "Rust Send/Sync (language guarantee)",
-					"conc.safety#3": "crates/id_effect/src/lib.rs:1 #![forbid(unsafe_code)]; crates/id_effect_process/Cargo.toml:12-13 [lints.rust] unsafe_code=\"forbid\"",
+					"conc.safety#1": "Rust safe code; crates/id_effect/Cargo.toml:14 unsafe_code = \"forbid\"",
+					"conc.safety#2": "Rust Send/Sync; crates/id_effect/tests/ui/fail/not_send_body.rs",
+					"conc.safety#3": "crates/id_effect/Cargo.toml:14 and every crates/*/Cargo.toml [lints.rust] unsafe_code = \"forbid\"",
 					"conc.safety#4": "crates/id_effect/tests/ui/fail/not_send_body.rs",
 					"conc.safety#5": "Rust Option<T> (language guarantee)",
-					"conc.safety#6": "crates/id_effect/src/runtime/fiber.rs:104 (catch_unwind per fiber poll)",
-					"conc.safety#7": ".github/workflows/audit.yml"
+					"conc.safety#6": "crates/id_effect/src/runtime/fiber.rs:104 catch_unwind per fiber poll; kernel/runloop.rs:215",
+					"conc.safety#7": ".github/workflows/audit.yml:1 Security Audit (daily and on Cargo changes)"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 5 of 8: values crossing tasks not statically checked, no panic isolation, no per-task heap isolation.",
@@ -2196,9 +2337,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 88,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "crates/id_effect_process/src/supervisor.rs (3 strategies, intensity, DynamicSupervisor); tests/coordination_supervisor.rs.",
+			"evidence": "id_effect_process supervisor/dynamic; tests supervision_contracts.rs, supervision_trees.rs; examples 130_process_tree.rs; book part7 ch37.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -2240,7 +2382,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -2265,6 +2408,15 @@
 							"fault.supervision#7"
 						],
 						"0.7.0": [
+							"fault.supervision#1",
+							"fault.supervision#2",
+							"fault.supervision#3",
+							"fault.supervision#4",
+							"fault.supervision#5",
+							"fault.supervision#6",
+							"fault.supervision#7"
+						],
+						"0.8.0": [
 							"fault.supervision#1",
 							"fault.supervision#2",
 							"fault.supervision#3",
@@ -2304,13 +2456,13 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"fault.supervision#1": "crates/id_effect_process/src/supervisor.rs:42 (Strategy::OneForOne/OneForAll/RestForOne)",
-					"fault.supervision#2": "crates/id_effect_process/src/supervisor.rs:199 (intensity)",
-					"fault.supervision#3": "crates/id_effect_process/src/supervisor.rs:54 (RestartPolicy)",
-					"fault.supervision#4": "crates/id_effect_process/src/supervisor.rs:65 (ShutdownPolicy BrutalKill/Timeout/Infinity)",
-					"fault.supervision#5": "crates/id_effect_process/src/dynamic.rs:69 (DynamicSupervisor)",
-					"fault.supervision#6": "crates/id_effect_process/src/supervisor.rs:140 (ChildSpec::supervisor)",
-					"fault.supervision#7": "crates/id_effect_process/src/supervisor.rs:550 (which_children), :564 (count_children)"
+					"fault.supervision#1": "crates/id_effect_process/src/supervisor.rs:42 Strategy OneForOne/OneForAll/RestForOne",
+					"fault.supervision#2": "crates/id_effect_process/src/supervisor.rs:199 intensity(max_restarts, within)",
+					"fault.supervision#3": "crates/id_effect_process/src/supervisor.rs:54 RestartPolicy",
+					"fault.supervision#4": "crates/id_effect_process/src/supervisor.rs:65 ShutdownPolicy",
+					"fault.supervision#5": "crates/id_effect_process/src/dynamic.rs:69 DynamicSupervisor",
+					"fault.supervision#6": "crates/id_effect_process/src/supervisor.rs:140 ChildSpec::supervisor",
+					"fault.supervision#7": "crates/id_effect_process/src/supervisor.rs:550 which_children, :564 count_children"
 				}
 			},
 			"v1": {
@@ -2334,9 +2486,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "id_effect_process mailbox.rs, links/monitors/trap_exit. No selective receive, send_after or hibernate.",
+			"evidence": "id_effect_process Addr/Node/ProcessCtx; tests process_contracts.rs, process_semantics.rs; book part7 ch37.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -2378,7 +2531,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -2401,6 +2555,13 @@
 							"fault.actors#5"
 						],
 						"0.7.0": [
+							"fault.actors#1",
+							"fault.actors#2",
+							"fault.actors#3",
+							"fault.actors#4",
+							"fault.actors#5"
+						],
+						"0.8.0": [
 							"fault.actors#1",
 							"fault.actors#2",
 							"fault.actors#3",
@@ -2444,11 +2605,11 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"fault.actors#1": "crates/id_effect_process/src/addr.rs:57 (cast), :62 (send); mailbox.rs:42",
-					"fault.actors#2": "crates/id_effect_process/src/addr.rs:91 (call with timeout)",
-					"fault.actors#3": "crates/id_effect_process/src/node.rs:151 (link); process.rs:135 (trap_exit)",
-					"fault.actors#4": "crates/id_effect_process/src/node.rs:199 (monitor_into), :227 (demonitor)",
-					"fault.actors#5": "crates/id_effect_process/src/node.rs:306 (register), :333 (whereis)"
+					"fault.actors#1": "crates/id_effect_process/src/addr.rs:57 cast, :62 send",
+					"fault.actors#2": "crates/id_effect_process/src/addr.rs:91 call with timeout",
+					"fault.actors#3": "crates/id_effect_process/src/node.rs:151 link; process.rs:135 trap_exit",
+					"fault.actors#4": "crates/id_effect_process/src/node.rs:199 monitor_into, :227 demonitor",
+					"fault.actors#5": "crates/id_effect_process/src/node.rs:306 register, :333 whereis"
 				}
 			},
 			"v1": {
@@ -2472,9 +2633,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "crates/id_effect_fsm (fieldless derive(Fsm), FsmProcess, Mermaid). No state timeouts/postpone/per-state data.",
+			"evidence": "id_effect_fsm machine/interpreter/visualize/behaviour; book part5 ch19.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -2516,7 +2678,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "labs",
 					"zio": "absent",
@@ -2539,6 +2702,13 @@
 							"fault.fsm#8"
 						],
 						"0.7.0": [
+							"fault.fsm#1",
+							"fault.fsm#2",
+							"fault.fsm#6",
+							"fault.fsm#7",
+							"fault.fsm#8"
+						],
+						"0.8.0": [
 							"fault.fsm#1",
 							"fault.fsm#2",
 							"fault.fsm#6",
@@ -2605,11 +2775,11 @@
 					]
 				},
 				"evidence": {
-					"fault.fsm#1": "crates/id_effect_fsm/src/machine.rs:110 (step -> Result<S, FsmError>)",
-					"fault.fsm#2": "crates/id_effect_fsm/src/definition.rs:44 (trait Fsm); tests/derive_fsm.rs",
-					"fault.fsm#6": "crates/id_effect_fsm/src/interpreter.rs:82 (on_transition)",
-					"fault.fsm#7": "crates/id_effect_fsm/src/visualize.rs:8 (to_mermaid)",
-					"fault.fsm#8": "crates/id_effect_fsm/src/behaviour.rs:141 (FsmProcess); examples/supervised_traffic_light.rs"
+					"fault.fsm#1": "crates/id_effect_fsm/src/machine.rs:110 step -> Result<S, FsmError>",
+					"fault.fsm#2": "crates/id_effect_fsm/src/definition.rs:44 trait Fsm (derive); tests/derive_fsm.rs",
+					"fault.fsm#6": "crates/id_effect_fsm/src/interpreter.rs:82 on_transition effectful actions",
+					"fault.fsm#7": "crates/id_effect_fsm/src/visualize.rs:8 to_mermaid",
+					"fault.fsm#8": "crates/id_effect_fsm/src/behaviour.rs:141 FsmProcess; examples/supervised_traffic_light.rs; tests/fsm_process.rs"
 				}
 			},
 			"v1": {
@@ -2633,9 +2803,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 69
+				"0.7.0": 69,
+				"0.8.0": 89
 			},
-			"evidence": "id_effect_resilience breaker/bulkhead/rate limiter; hedged is a race; core timeout. No fallback/policy pipeline.",
+			"evidence": "id_effect_resilience (published) with tests/pipeline.rs integration test, examples 010/020/030, book part5 ch21-00/ch21-01.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -2677,7 +2848,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2706,6 +2878,16 @@
 							"fault.resilience#4",
 							"fault.resilience#5",
 							"fault.resilience#6"
+						],
+						"0.8.0": [
+							"fault.resilience#1",
+							"fault.resilience#2",
+							"fault.resilience#3",
+							"fault.resilience#4",
+							"fault.resilience#5",
+							"fault.resilience#6",
+							"fault.resilience#7",
+							"fault.resilience#8"
 						]
 					},
 					"effect_ts": [
@@ -2755,12 +2937,14 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"fault.resilience#1": "crates/id_effect_resilience/src/circuit_breaker.rs:26 (HalfOpen)",
-					"fault.resilience#2": "crates/id_effect_resilience/src/retry.rs:50 (retry_with_breaker)",
-					"fault.resilience#3": "crates/id_effect/src/race.rs:98 (Effect::timeout)",
-					"fault.resilience#4": "crates/id_effect_resilience/src/rate_limiter.rs:26",
-					"fault.resilience#5": "crates/id_effect_resilience/src/bulkhead.rs:17",
-					"fault.resilience#6": "crates/id_effect_resilience/src/hedged.rs:33"
+					"fault.resilience#1": "crates/id_effect_resilience/src/circuit_breaker.rs:26 HalfOpen state",
+					"fault.resilience#2": "crates/id_effect_resilience/src/retry.rs:50 retry_with_breaker",
+					"fault.resilience#3": "crates/id_effect_resilience/src/pipeline.rs:252 Pipeline::timeout; crates/id_effect/src/race.rs:98",
+					"fault.resilience#4": "crates/id_effect_resilience/src/rate_limiter.rs:26 RateLimiter",
+					"fault.resilience#5": "crates/id_effect_resilience/src/bulkhead.rs:17 Bulkhead",
+					"fault.resilience#6": "crates/id_effect_resilience/src/hedged.rs:33 hedged",
+					"fault.resilience#7": "crates/id_effect_resilience/src/fallback.rs:29 Fallback; pipeline.rs:287",
+					"fault.resilience#8": "crates/id_effect_resilience/src/pipeline.rs:184 Pipeline with on_event + :303 metrics (Frequency tagged pipeline=<name>)"
 				}
 			},
 			"v1": {
@@ -2784,9 +2968,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 89
 			},
-			"evidence": "Typed Schedule<Out,In> (scheduling/schedule.rs) with fibonacci/union/intersect/jitter. No cron.",
+			"evidence": "scheduling/{schedule,cron,cron_job}.rs; tests schedule.rs, cron.rs; examples 052-055, 123_cron_jobs.rs; book part3 ch11 incl. ch11-05 Cron Jobs.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -2828,7 +3013,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2857,6 +3043,16 @@
 							"fault.schedule#5",
 							"fault.schedule#6",
 							"fault.schedule#7"
+						],
+						"0.8.0": [
+							"fault.schedule#1",
+							"fault.schedule#2",
+							"fault.schedule#3",
+							"fault.schedule#4",
+							"fault.schedule#5",
+							"fault.schedule#6",
+							"fault.schedule#7",
+							"fault.schedule#8"
 						]
 					},
 					"effect_ts": [
@@ -2916,13 +3112,14 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"fault.schedule#1": "crates/id_effect/src/scheduling/schedule.rs:567 (retry), :591 (repeat)",
-					"fault.schedule#2": "crates/id_effect/src/scheduling/schedule.rs:382 (exponential), :396 (exponential_by)",
-					"fault.schedule#3": "crates/id_effect/src/scheduling/schedule.rs:324 (jittered)",
-					"fault.schedule#4": "crates/id_effect/src/scheduling/schedule.rs:408 (fibonacci)",
-					"fault.schedule#5": "crates/id_effect/src/scheduling/schedule.rs:237 (union), :246 (intersect)",
-					"fault.schedule#6": "crates/id_effect/src/scheduling/schedule.rs:270 (and_then)",
-					"fault.schedule#7": "crates/id_effect/src/scheduling/schedule.rs:297 (while_input)"
+					"fault.schedule#1": "crates/id_effect/src/scheduling/schedule.rs:612 retry, :636 repeat (same Schedule)",
+					"fault.schedule#2": "crates/id_effect/src/scheduling/schedule.rs:405 exponential, :420 exponential_by",
+					"fault.schedule#3": "crates/id_effect/src/scheduling/schedule.rs:343 jittered, :350 jittered_with",
+					"fault.schedule#4": "crates/id_effect/src/scheduling/schedule.rs:433 fibonacci",
+					"fault.schedule#5": "crates/id_effect/src/scheduling/schedule.rs:253 union, :262 intersect",
+					"fault.schedule#6": "crates/id_effect/src/scheduling/schedule.rs:287 and_then",
+					"fault.schedule#7": "crates/id_effect/src/scheduling/schedule.rs:315 while_input",
+					"fault.schedule#8": "crates/id_effect/src/scheduling/schedule.rs:475 Schedule::cron(Cron, WallClock); cron.rs:104 Cron; cron_job.rs:190 CronJob; tests/cron.rs"
 				},
 				"notes": {
 					"id_effect": "0.6.0 lacked fibonacci, union/intersection, andThen and cron schedules (4 of 8); no integration test, so level tested."
@@ -2949,9 +3146,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "In-memory Saga in id_effect_fsm; labs/id_effect_workflow (sqlite, single writer), unpublished.",
+			"evidence": "Durable journal/replay only in labs/id_effect_workflow; published saga compensation in id_effect_fsm.",
 			"targets": {
 				"0.11.0": 75
 			},
@@ -2993,7 +3191,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -3014,6 +3213,11 @@
 							"fault.workflows#3"
 						],
 						"0.7.0": [
+							"fault.workflows#1",
+							"fault.workflows#2",
+							"fault.workflows#3"
+						],
+						"0.8.0": [
 							"fault.workflows#1",
 							"fault.workflows#2",
 							"fault.workflows#3"
@@ -3085,9 +3289,9 @@
 					]
 				},
 				"evidence": {
-					"fault.workflows#1": "labs/id_effect_workflow/src/sqlite_log.rs (labs, unpublished)",
-					"fault.workflows#2": "labs/id_effect_workflow/examples/001_restart_resume.rs (labs)",
-					"fault.workflows#3": "crates/id_effect_fsm/src/saga.rs:41 (SagaStep::with_compensate, in-memory, published)"
+					"fault.workflows#1": "labs/id_effect_workflow/src/sqlite_log.rs:60 DurableWorkflowLog (labs, unpublished)",
+					"fault.workflows#2": "labs/id_effect_workflow/src/sqlite_log.rs:133 run_step_typed replay; labs/id_effect_workflow/examples/001_restart_resume.rs",
+					"fault.workflows#3": "crates/id_effect_fsm/src/saga.rs:41 SagaStep::with_compensate (published, in-memory)"
 				},
 				"notes": {
 					"dotnet": "Durable Functions/Durable Task meets every check; v1 discounted it for Azure coupling."
@@ -3114,9 +3318,10 @@
 			"stance": "partial-non-goal",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 25
 			},
-			"evidence": "Hot code loading is a non-goal (ADR 0009); HostDrain graceful drain only.",
+			"evidence": "Graceful drain and health/readiness in id_effect_axum, with an integration test, example and book chapter.",
 			"targets": {
 				"0.10.0": 50,
 				"1.0.0": 50
@@ -3159,7 +3364,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.7.0": "published",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3175,7 +3381,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["fault.reload#3", "fault.reload#8"],
-						"0.7.0": ["fault.reload#3", "fault.reload#8"]
+						"0.7.0": ["fault.reload#3", "fault.reload#8"],
+						"0.8.0": ["fault.reload#3", "fault.reload#8"]
 					},
 					"effect_ts": ["fault.reload#3"],
 					"zio": ["fault.reload#3"],
@@ -3216,8 +3423,8 @@
 					"nextjs": ["fault.reload#1", "fault.reload#3", "fault.reload#4"]
 				},
 				"evidence": {
-					"fault.reload#3": "crates/id_effect_axum/src/server/shutdown.rs:19 (HostDrain)",
-					"fault.reload#8": "crates/id_effect_axum/src/health.rs:86 (readiness_router), :81 (health_router)"
+					"fault.reload#3": "crates/id_effect_axum/src/server/shutdown.rs:19 HostDrain, :71 drain_with_timeout; tests/health.rs:192 server_handle_shutdown_marks_readiness_shutting_down",
+					"fault.reload#8": "crates/id_effect_axum/src/health.rs:133 health_router, :138 readiness_router; examples/071_health.rs; book part6 ch27-02-health.md"
 				},
 				"notes": {
 					"otp": "OTP has no first-party dev watcher or readiness probes; v1 scored hot code loading alone as best in class."
@@ -3245,9 +3452,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "crates/id_effect_node (SWIM via foca, cookie HMAC, Static/DNS discovery, TCP/QUIC).",
+			"evidence": "id_effect_node: SWIM via foca, cookie-HMAC handshake, Static/DNS/Chained discovery; book ch38, examples 131-133, tests/membership_swim.rs, chaos_partition.rs.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -3289,7 +3497,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3313,6 +3522,14 @@
 							"dist.membership#7"
 						],
 						"0.7.0": [
+							"dist.membership#1",
+							"dist.membership#2",
+							"dist.membership#3",
+							"dist.membership#5",
+							"dist.membership#6",
+							"dist.membership#7"
+						],
+						"0.8.0": [
 							"dist.membership#1",
 							"dist.membership#2",
 							"dist.membership#3",
@@ -3372,11 +3589,11 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"dist.membership#1": "crates/id_effect_node/src/id.rs:16 NodeId (name + incarnation)",
+					"dist.membership#1": "crates/id_effect_node/src/id.rs:16 NodeId (name + boot incarnation; book ch38-00-distribution.md:3)",
 					"dist.membership#2": "crates/id_effect_node/src/discovery.rs:21 StaticDiscovery",
 					"dist.membership#3": "crates/id_effect_node/src/discovery.rs:43 DnsDiscovery",
-					"dist.membership#5": "crates/id_effect_node/src/membership.rs:131 Membership (foca SWIM); tests/membership_swim.rs:192",
-					"dist.membership#6": "crates/id_effect_node/src/handshake.rs:20 Cookie (HMAC-SHA256), BadCookie :62",
+					"dist.membership#5": "crates/id_effect_node/src/membership.rs:131 Membership (foca SWIM), :149 with_config (tunable foca Config); tests/membership_swim.rs",
+					"dist.membership#6": "crates/id_effect_node/src/handshake.rs:20 Cookie HMAC, :62 BadCookie rejection",
 					"dist.membership#7": "crates/id_effect_node/src/membership.rs:69 MembershipEvent, :231 NodeMonitors"
 				},
 				"notes": {
@@ -3404,9 +3621,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "mesh.rs remote_spawn/call/cast/monitor; at-most-once delivery; node waits are effects.",
+			"evidence": "mesh.rs remote_spawn/spawn_placed/call/cast/monitor/link; book ch38; example 131_two_node_cluster; tests/remote_processes.rs.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -3448,7 +3666,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3472,6 +3691,14 @@
 							"dist.remote#6"
 						],
 						"0.7.0": [
+							"dist.remote#1",
+							"dist.remote#2",
+							"dist.remote#3",
+							"dist.remote#4",
+							"dist.remote#5",
+							"dist.remote#6"
+						],
+						"0.8.0": [
 							"dist.remote#1",
 							"dist.remote#2",
 							"dist.remote#3",
@@ -3528,10 +3755,10 @@
 				"evidence": {
 					"dist.remote#1": "crates/id_effect_node/src/envelope.rs:16 PidWire",
 					"dist.remote#2": "crates/id_effect_node/src/mesh.rs:360 remote_cast",
-					"dist.remote#3": "crates/id_effect_node/src/mesh.rs:393 remote_call (timeout)",
-					"dist.remote#4": "crates/id_effect_node/src/mesh.rs:265 remote_spawn",
-					"dist.remote#5": "crates/id_effect_node/src/mesh.rs:433 remote_monitor (NoConnection on NodeDown)",
-					"dist.remote#6": "crates/id_effect_node/src/envelope.rs:193 ProcessEnvelope::Link; mesh.rs:270 link_to"
+					"dist.remote#3": "crates/id_effect_node/src/mesh.rs:393 remote_call (timeout Duration)",
+					"dist.remote#4": "crates/id_effect_node/src/mesh.rs:265 remote_spawn of registered behavior (registry.rs:49 BehaviorRegistry)",
+					"dist.remote#5": "crates/id_effect_node/src/mesh.rs:433 remote_monitor (NoConnection on NodeDown, book ch38)",
+					"dist.remote#6": "crates/id_effect_node/src/envelope.rs:193 ProcessEnvelope::Link; mesh.rs:696 Link handling"
 				}
 			},
 			"v1": {
@@ -3555,9 +3782,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "singleton.rs + PgAdvisoryLease, OrSwot groups, DistributedSupervisor. No global registry.",
+			"evidence": "Singleton with PG advisory lease, OrSwot process groups, fanout, DistributedSupervisor, load-aware place(); book ch38/ch39, example 132.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -3599,7 +3827,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3623,6 +3852,14 @@
 							"dist.placement#8"
 						],
 						"0.7.0": [
+							"dist.placement#1",
+							"dist.placement#2",
+							"dist.placement#3",
+							"dist.placement#4",
+							"dist.placement#7",
+							"dist.placement#8"
+						],
+						"0.8.0": [
 							"dist.placement#1",
 							"dist.placement#2",
 							"dist.placement#3",
@@ -3681,10 +3918,10 @@
 				"evidence": {
 					"dist.placement#1": "crates/id_effect_node/src/singleton.rs:181 ClusterSingleton",
 					"dist.placement#2": "crates/id_effect_node/src/singleton.rs:337 PgAdvisoryLease; tests/singleton_pg.rs",
-					"dist.placement#3": "crates/id_effect_node/src/groups.rs:126 ProcessGroups (OrSwot)",
+					"dist.placement#3": "crates/id_effect_node/src/groups.rs:126 ProcessGroups (OrSwot); tests/cluster_registry.rs",
 					"dist.placement#4": "crates/id_effect_node/src/fanout.rs:15 fanout_cast",
-					"dist.placement#7": "crates/id_effect_node/src/dist_supervisor.rs:137 on_membership takeover",
-					"dist.placement#8": "crates/id_effect_node/src/placement.rs:187 place"
+					"dist.placement#7": "crates/id_effect_node/src/dist_supervisor.rs:137 on_membership takeover; tests/dist_supervision.rs",
+					"dist.placement#8": "crates/id_effect_node/src/placement.rs:187 place; mesh.rs:344 remote_spawn_placed"
 				}
 			},
 			"v1": {
@@ -3708,9 +3945,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 50
+				"0.7.0": 50,
+				"0.8.0": 50
 			},
-			"evidence": "QUIC via rustls (accepts any cert); TCP authenticated but unencrypted.",
+			"evidence": "QUIC/rustls transport. By default it accepts any certificate (quic.rs:88 AcceptAnyCert); roots can be pinned. TCP is authenticated but plaintext.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -3752,7 +3990,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3768,7 +4007,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
-						"0.7.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"]
+						"0.7.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
+						"0.8.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"]
 					},
 					"effect_ts": ["dist.tls#1", "dist.tls#3", "dist.tls#4", "dist.tls#5"],
 					"zio": ["dist.tls#1", "dist.tls#3", "dist.tls#4", "dist.tls#5"],
@@ -3811,8 +4051,8 @@
 					"nextjs": ["dist.tls#1", "dist.tls#3", "dist.tls#5"]
 				},
 				"evidence": {
-					"dist.tls#1": "crates/id_effect_node/src/transport/quic.rs:245 TLS13-only rustls (feature quic)",
-					"dist.tls#3": "crates/id_effect_node/src/transport/quic.rs:67 with_client_verification",
+					"dist.tls#1": "crates/id_effect_node/src/transport/quic.rs:221 QuicTransport (rustls via quinn, feature quic)",
+					"dist.tls#3": "crates/id_effect_node/src/transport/quic.rs:67 with_client_verification; test pinned_roots_verify_against_the_configured_server_name :384",
 					"dist.tls#6": "crates/id_effect_node/src/handshake.rs:87 initiate (HMAC nonce challenge)",
 					"dist.tls#8": "crates/id_effect_node/src/transport/quic.rs:8 '## Trust model' rustdoc"
 				}
@@ -3838,9 +4078,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 89
 			},
-			"evidence": "crates/id_effect/src/schema (tuple/struct up to 12, Brand, Redacted, derive fixes).",
+			"evidence": "id_effect::schema: bidirectional Schema, derive, Brand, validators, decode_unknown_all accumulation; book ch14 (14-03 validators, 14-04 ParseErrors), examples 083-086, tests/schema_*.rs.",
 			"targets": {
 				"0.8.0": 88,
 				"0.9.0": 88
@@ -3883,7 +4124,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3913,6 +4155,16 @@
 							"data.schema#4",
 							"data.schema#5",
 							"data.schema#7"
+						],
+						"0.8.0": [
+							"data.schema#1",
+							"data.schema#2",
+							"data.schema#3",
+							"data.schema#4",
+							"data.schema#5",
+							"data.schema#6",
+							"data.schema#7",
+							"data.schema#8"
 						]
 					},
 					"effect_ts": [
@@ -3996,12 +4248,14 @@
 					]
 				},
 				"evidence": {
-					"data.schema#1": "crates/id_effect/src/schema/parse.rs:75 Schema (decode/encode)",
-					"data.schema#2": "crates/id_effect_proc_macro/src/lib.rs:196 derive(Schema)",
-					"data.schema#3": "crates/id_effect/src/schema/parse.rs:262 refine (filter :223)",
+					"data.schema#1": "crates/id_effect/src/schema/parse.rs:82 Schema; :106 decode, :111 encode",
+					"data.schema#2": "crates/id_effect_proc_macro/src/lib.rs:202 derive_schema; examples/derive_schema.rs",
+					"data.schema#3": "crates/id_effect/src/schema/parse.rs:414 refine (filter :362) with message",
 					"data.schema#4": "crates/id_effect/src/schema/brand.rs:23 Brand, :105 RefinedBrand",
-					"data.schema#5": "crates/id_effect/src/schema/extra.rs:106 suspend, :141 union_chain, :51 literal_string",
-					"data.schema#7": "crates/id_effect/src/schema/parse.rs:16 ParseError{path}, prefix :33"
+					"data.schema#5": "crates/id_effect/src/schema/extra.rs:80 literal_string, :154 suspend_named, :205 union_chain",
+					"data.schema#6": "crates/id_effect/src/schema/parse.rs:125 decode_unknown_all -> ParseErrors; tests/schema_accumulate.rs; book ch14-04",
+					"data.schema#7": "crates/id_effect/src/schema/parse.rs:22 ParseError{path}, :39 prefix",
+					"data.schema#8": "crates/id_effect/src/schema/validators.rs:156 email, :171 uuid, :185 url, :88 length, :286 range, :140 regex"
 				}
 			},
 			"v1": {
@@ -4026,9 +4280,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 38
 			},
-			"evidence": "schema/json_schema_export.rs is primitive fragments only; SPEC.md: not implemented.",
+			"evidence": "Full JSON Schema export from SchemaAst, covered in book ch14-02/14-03. No OpenAPI, docs UI or client generation in published crates.",
 			"targets": {
 				"0.8.0": 50,
 				"0.9.0": 88
@@ -4071,7 +4326,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4087,7 +4343,12 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": [
+							"data.jsonschema#1",
+							"data.jsonschema#5",
+							"data.jsonschema#6"
+						]
 					},
 					"effect_ts": [
 						"data.jsonschema#1",
@@ -4159,7 +4420,11 @@
 					],
 					"nextjs": ["data.jsonschema#1", "data.jsonschema#6"]
 				},
-				"evidence": {}
+				"evidence": {
+					"data.jsonschema#1": "crates/id_effect/src/schema/json_schema_export.rs:46 to_json_schema, :51 json_schema_for (draft 2020-12); tests/schema_json_schema.rs, tests/schema_derive_json_schema.rs",
+					"data.jsonschema#5": "crates/id_effect/src/schema/json_schema_export.rs:220 annotations (title/description/examples/default/deprecated); parse.rs:154 describe, :170 deprecated",
+					"data.jsonschema#6": "crates/id_effect/src/schema/json_schema_export.rs:183 constraints (minLength, pattern, enum, minimum...)"
+				}
 			},
 			"v1": {
 				"competitors": [90, 75, 10, 55, 90, 95, 45, 85, 65, 40],
@@ -4183,9 +4448,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 38
 			},
-			"evidence": "id_effect_sql: tx roll back on defect/interrupt, scoped layers; rows are Vec<String> (MVP), few param types.",
+			"evidence": "id_effect_sql: scoped client/transaction layers, Pg via sqlx, new InstrumentedSqlClient metrics; book ch28, example 010_test_client_transaction, tests/pg.rs.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -4227,7 +4493,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4243,7 +4510,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["data.sql#1", "data.sql#4"],
-						"0.7.0": ["data.sql#1", "data.sql#4"]
+						"0.7.0": ["data.sql#1", "data.sql#4"],
+						"0.8.0": ["data.sql#1", "data.sql#4", "data.sql#8"]
 					},
 					"effect_ts": [
 						"data.sql#1",
@@ -4320,8 +4588,9 @@
 					"nextjs": ["data.sql#1", "data.sql#2", "data.sql#3", "data.sql#4"]
 				},
 				"evidence": {
-					"data.sql#1": "crates/id_effect_sql/src/pg/config.rs:12 PgPoolConfig{max_size,acquire_timeout}",
-					"data.sql#4": "crates/id_effect_sql/src/transaction.rs:111 transaction (rollback on fail/defect/interrupt)"
+					"data.sql#1": "crates/id_effect_sql/src/pg/config.rs:12 PgPoolConfig{max_size :16, acquire_timeout :18}",
+					"data.sql#4": "crates/id_effect_sql/src/transaction.rs:111 transaction / :101 with_transaction (rollback on fail/defect/interrupt, tests :352-475)",
+					"data.sql#8": "crates/id_effect_sql/src/metrics.rs:63 InstrumentedSqlClient (db_client_operations_total{op,outcome} + duration histogram per query)"
 				},
 				"notes": {
 					"id_effect": "Only pooling and transaction scope are met: SqlParam is Null/Bool/Int/Text/Bytes (client.rs:52), rows are Vec<String> (client.rs:67), no savepoint, isolation, streaming or spans; v1 credited transaction robustness."
@@ -4348,9 +4617,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "None.",
+			"evidence": "No ORM or query builder in published crates (id_effect_sql has only raw SQL strings).",
 			"targets": {
 				"0.9.0": 63,
 				"0.12.0": 88
@@ -4393,7 +4663,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4409,7 +4680,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": ["data.orm#1", "data.orm#2", "data.orm#6"],
 					"zio": ["data.orm#1", "data.orm#2", "data.orm#6"],
@@ -4496,9 +4768,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "Only an include_str! migration inside unpublished examples/http-showcase.",
+			"evidence": "There is no migration tool. The id_effect_tool service template (templates/service/src/db.rs.template) runs one idempotent include_str! SQL file on every start, with no tracking table.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -4540,7 +4813,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "labs",
@@ -4556,7 +4830,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [
 						"data.migrations#1",
@@ -4655,9 +4930,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 13,
-				"0.7.0": 13
+				"0.7.0": 13,
+				"0.8.0": 13
 			},
-			"evidence": "Postgres only (feature pg via sqlx).",
+			"evidence": "PostgreSQL only (sqlx, feature pg). SqlClient is a trait, but it has no second backend.",
 			"targets": {
 				"0.9.0": 75
 			},
@@ -4699,7 +4975,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4715,7 +4992,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["data.backends#1"],
-						"0.7.0": ["data.backends#1"]
+						"0.7.0": ["data.backends#1"],
+						"0.8.0": ["data.backends#1"]
 					},
 					"effect_ts": [
 						"data.backends#1",
@@ -4792,7 +5070,7 @@
 					]
 				},
 				"evidence": {
-					"data.backends#1": "crates/id_effect_sql/src/pg/client.rs:18 PgSqlClient (feature pg)"
+					"data.backends#1": "crates/id_effect_sql/src/pg/client.rs:19 PgSqlClient (feature pg)"
 				}
 			},
 			"v1": {
@@ -4816,9 +5094,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "resource/cache.rs capacity/ttl/typed failures; RequestCache + batching. No distributed cache.",
+			"evidence": "In-process effectful Cache plus request batching and RequestCache; example 104_cache. No distributed or HTTP cache.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -4860,7 +5139,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4877,6 +5157,13 @@
 					"id_effect": {
 						"0.6.0": ["data.cache#1", "data.cache#3", "data.cache#6"],
 						"0.7.0": [
+							"data.cache#1",
+							"data.cache#3",
+							"data.cache#4",
+							"data.cache#5",
+							"data.cache#6"
+						],
+						"0.8.0": [
 							"data.cache#1",
 							"data.cache#3",
 							"data.cache#4",
@@ -4951,10 +5238,10 @@
 					]
 				},
 				"evidence": {
-					"data.cache#1": "crates/id_effect/src/resource/cache.rs:129 Cache{capacity,ttl}",
-					"data.cache#3": "crates/id_effect/src/resource/cache.rs:196 get (joins in-flight lookup)",
+					"data.cache#1": "crates/id_effect/src/resource/cache.rs:129 Cache{capacity (LRU), ttl}",
+					"data.cache#3": "crates/id_effect/src/resource/cache.rs:196 get (concurrent misses share one lookup)",
 					"data.cache#4": "crates/id_effect/src/resource/cache.rs:344 invalidate, :354 invalidate_all",
-					"data.cache#5": "crates/id_effect/src/request.rs:309 RequestCache; :219 make_batched",
+					"data.cache#5": "crates/id_effect/src/request.rs RequestCache + RequestResolver::make_batched (module doc); tests/request.rs, tests/request_cache.rs",
 					"data.cache#6": "crates/id_effect/src/resource/cache.rs:372 stats (CacheStats :22)"
 				},
 				"notes": {
@@ -4982,9 +5269,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 39,
-				"0.7.0": 39
+				"0.7.0": 39,
+				"0.8.0": 39
 			},
-			"evidence": "labs/id_effect_events (unpublished).",
+			"evidence": "labs/id_effect_events (publish = false).",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -5026,7 +5314,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -5049,6 +5338,13 @@
 							"data.events#5"
 						],
 						"0.7.0": [
+							"data.events#1",
+							"data.events#2",
+							"data.events#3",
+							"data.events#4",
+							"data.events#5"
+						],
+						"0.8.0": [
 							"data.events#1",
 							"data.events#2",
 							"data.events#3",
@@ -5106,8 +5402,8 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"data.events#1": "labs/id_effect_events/src/event_store.rs:26 EventStore (publish=false)",
-					"data.events#2": "labs/id_effect_events/src/es_entity/store.rs:96 VersionConflict",
+					"data.events#1": "labs/id_effect_events/src/event_store.rs:26 EventStore (per-stream versions)",
+					"data.events#2": "labs/id_effect_events/src/es_entity/store.rs:30 is_unique_violation -> version conflict in append_rows :71",
 					"data.events#3": "labs/id_effect_events/src/es_entity/store.rs:51 EsEntityPgBackend",
 					"data.events#4": "labs/id_effect_events/src/projection.rs:8 Projection",
 					"data.events#5": "labs/id_effect_events/src/cqrs.rs:12 CommandHandler, :20 QueryHandler"
@@ -5134,9 +5430,10 @@
 			"stance": "maintain",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "id_effect_fp/optics maintenance tier; pipe/memoize/flip helpers removed in 0.7.",
+			"evidence": "id_effect_fp and id_effect_optics (maintenance tier); book ch17/ch18; examples 090-092 and optics 010-050.",
 			"targets": {},
 			"checks": [
 				{
@@ -5176,7 +5473,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5200,6 +5498,14 @@
 							"data.fp#6"
 						],
 						"0.7.0": [
+							"data.fp#1",
+							"data.fp#2",
+							"data.fp#3",
+							"data.fp#4",
+							"data.fp#5",
+							"data.fp#6"
+						],
+						"0.8.0": [
 							"data.fp#1",
 							"data.fp#2",
 							"data.fp#3",
@@ -5235,12 +5541,12 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"data.fp#1": "crates/id_effect_fp/src/collections/vector.rs:22 EffectVector (im)",
-					"data.fp#2": "crates/id_effect_fp/src/algebra/monad.rs:47 Monad",
-					"data.fp#3": "crates/id_effect_fp/src/algebra/foldable.rs:4 Foldable; traversable.rs:28",
-					"data.fp#4": "crates/id_effect_fp/src/algebra/monoid.rs:60 Monoid",
-					"data.fp#5": "crates/id_effect_optics/src/lens.rs:7 (prism.rs:7, optional.rs:7, traversal.rs:8)",
-					"data.fp#6": "crates/id_effect_proc_macro/src/lib.rs:133 derive(Optics)"
+					"data.fp#1": "crates/id_effect_fp/src/collections/vector.rs EffectVector (im), hash_map.rs, hash_set.rs",
+					"data.fp#2": "crates/id_effect_fp/src/algebra/monad.rs Monad (+functor.rs, applicative.rs)",
+					"data.fp#3": "crates/id_effect_fp/src/algebra/foldable.rs, traversable.rs",
+					"data.fp#4": "crates/id_effect_fp/src/algebra/semigroup.rs, monoid.rs",
+					"data.fp#5": "crates/id_effect_optics/src/lens.rs, prism.rs, optional.rs, traversal.rs",
+					"data.fp#6": "crates/id_effect_proc_macro/src/lib.rs:134 derive_optics"
 				}
 			},
 			"v1": {
@@ -5262,9 +5568,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "id_effect_axum server_layer/serve*, fiber per request (panic → 500, disconnect → interrupt).",
+			"evidence": "id_effect_axum: one fiber per request, panic becomes 500, scoped server_layer; book ch07-08/ch30, examples 010-071, tests/.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -5306,7 +5613,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5328,6 +5636,13 @@
 							"web.server#4"
 						],
 						"0.7.0": [
+							"web.server#1",
+							"web.server#2",
+							"web.server#3",
+							"web.server#4",
+							"web.server#5"
+						],
+						"0.8.0": [
 							"web.server#1",
 							"web.server#2",
 							"web.server#3",
@@ -5418,11 +5733,11 @@
 					]
 				},
 				"evidence": {
-					"web.server#1": "crates/id_effect_axum/src/routing.rs:62 get/post/... over axum Router",
-					"web.server#2": "crates/id_effect_axum/src/lib.rs:214 exit_response",
+					"web.server#1": "crates/id_effect_axum/src/routing.rs:62 get (post/put/patch/delete/on) over the axum Router",
+					"web.server#2": "crates/id_effect_axum/src/lib.rs exit_response (typed E -> IntoResponse)",
 					"web.server#3": "crates/id_effect_axum/src/request_caps.rs:68 RequestCaps",
-					"web.server#4": "crates/id_effect_axum/src/server/shutdown.rs:71 drain_with_timeout",
-					"web.server#5": "crates/id_effect_axum/src/lib.rs:167 HandlerDefect (500 on defect/panic)"
+					"web.server#4": "crates/id_effect_axum/src/server/shutdown.rs:71 drain_with_timeout; lifecycle.rs:285 server_layer",
+					"web.server#5": "crates/id_effect_axum/src/lib.rs HandlerDefect (500 on panic; test a_panicking_handler_is_a_defect_answered_with_500)"
 				}
 			},
 			"v1": {
@@ -5446,9 +5761,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 50
 			},
-			"evidence": "Tower feature of id_effect_axum, CapOverrideLayer, require_ready.",
+			"evidence": "Tower EffectService, CapOverrideLayer, SecurityLayer (CSRF/CSP/headers/cookies), CorsConfig.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -5490,7 +5806,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5513,6 +5830,12 @@
 						"0.7.0": [
 							"web.middleware#1",
 							"web.middleware#2",
+							"web.middleware#7"
+						],
+						"0.8.0": [
+							"web.middleware#1",
+							"web.middleware#2",
+							"web.middleware#3",
 							"web.middleware#7"
 						]
 					},
@@ -5581,9 +5904,10 @@
 					"nextjs": ["web.middleware#4", "web.middleware#7"]
 				},
 				"evidence": {
-					"web.middleware#1": "crates/id_effect_axum/src/service.rs:70 EffectService (Tower Service)",
+					"web.middleware#1": "crates/id_effect_axum/src/service.rs:70 EffectService (Tower); server/security/mod.rs:139 SecurityLayer",
 					"web.middleware#2": "crates/id_effect_axum/src/request_caps.rs:159 CapOverrideLayer",
-					"web.middleware#7": "crates/id_effect_axum/src/server/security.rs:77 csrf_middleware, :40 csp_middleware"
+					"web.middleware#3": "crates/id_effect_axum/src/server/security/cors.rs:27 CorsConfig -> CorsLayer :88",
+					"web.middleware#7": "crates/id_effect_axum/src/server/security/csrf.rs:275 csrf_middleware; headers.rs:24 SecurityHeaders; tests/security.rs"
 				},
 				"notes": {
 					"id_effect": "No first-party CORS, compression, request id/trace, HTTP rate limit, timeout or body limit; tower-http is neither depended on nor recommended in the docs, so the de facto rule does not apply."
@@ -5610,9 +5934,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 25
 			},
-			"evidence": "decode_json_schema for JSON bodies only (id_effect_axum/src/json.rs).",
+			"evidence": "decode_json_schema handles JSON bodies only.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -5654,7 +5979,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5670,7 +5996,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["web.validation#1", "web.validation#6"],
-						"0.7.0": ["web.validation#1", "web.validation#6"]
+						"0.7.0": ["web.validation#1", "web.validation#6"],
+						"0.8.0": ["web.validation#1", "web.validation#6"]
 					},
 					"effect_ts": [
 						"web.validation#1",
@@ -5746,8 +6073,8 @@
 					"nextjs": ["web.validation#1", "web.validation#4", "web.validation#7"]
 				},
 				"evidence": {
-					"web.validation#1": "crates/id_effect_axum/src/json.rs:72 decode_json_schema (422)",
-					"web.validation#6": "crates/id_effect_axum/src/json.rs:15 SchemaJsonErrorBody"
+					"web.validation#1": "crates/id_effect_axum/src/json.rs:72 decode_json_schema (422; test axum_handler_returns_422_with_field_path_on_bad_body)",
+					"web.validation#6": "crates/id_effect_axum/src/json.rs:16 SchemaJsonErrorBody{path,message}"
 				},
 				"notes": {
 					"id_effect": "Only JSON bodies are covered: no path/query/form/header extractors, struct decoding is fail-fast (parse.rs:500), no i18n."
@@ -5774,9 +6101,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "id_effect_platform HttpClient on reqwest. No built-in retry/breaker.",
+			"evidence": "HttpClient capability on reqwest; book ch07-06/07-07; examples 010/020/030; tests/http_*.rs.",
 			"targets": {
 				"0.10.0": 88
 			},
@@ -5818,7 +6146,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5842,6 +6171,14 @@
 							"web.client#8"
 						],
 						"0.7.0": [
+							"web.client#1",
+							"web.client#2",
+							"web.client#3",
+							"web.client#5",
+							"web.client#7",
+							"web.client#8"
+						],
+						"0.8.0": [
 							"web.client#1",
 							"web.client#2",
 							"web.client#3",
@@ -5917,12 +6254,12 @@
 					]
 				},
 				"evidence": {
-					"web.client#1": "crates/id_effect_platform/src/http/mod.rs:226 HttpClient trait",
-					"web.client#2": "crates/id_effect_platform/src/http/reqwest.rs:40 PooledClient",
-					"web.client#3": "crates/id_effect_platform/src/http/mod.rs:47 HttpRequest.timeout",
-					"web.client#5": "crates/id_effect_resilience/src/circuit_breaker.rs:43 CircuitBreaker",
+					"web.client#1": "crates/id_effect_platform/src/http/mod.rs:226 HttpClient trait, :340 HttpClientService",
+					"web.client#2": "crates/id_effect_platform/src/http/reqwest.rs:40 PooledClient, :98 provide_reqwest_pool",
+					"web.client#3": "crates/id_effect_platform/src/http/mod.rs:47 HttpRequest.timeout (on top of client defaults)",
+					"web.client#5": "crates/id_effect_resilience/src/circuit_breaker.rs CircuitBreaker (lib.rs:48 re-export)",
 					"web.client#7": "crates/id_effect_platform/src/http/mod.rs:210 StreamingHttpResponse; tests/http_streaming.rs",
-					"web.client#8": "crates/id_effect_platform/src/http/reqwest.rs:186 json_schema"
+					"web.client#8": "crates/id_effect_platform/src/http/reqwest.rs:186 json_schema (decode error with field path)"
 				}
 			},
 			"v1": {
@@ -5946,9 +6283,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 39,
-				"0.7.0": 39
+				"0.7.0": 39,
+				"0.8.0": 39
 			},
-			"evidence": "labs/id_effect_rpc (unpublished at 0.7).",
+			"evidence": "labs/id_effect_rpc (publish = false).",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -5990,7 +6328,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6014,6 +6353,14 @@
 							"web.rpc#8"
 						],
 						"0.7.0": [
+							"web.rpc#1",
+							"web.rpc#2",
+							"web.rpc#4",
+							"web.rpc#6",
+							"web.rpc#7",
+							"web.rpc#8"
+						],
+						"0.8.0": [
 							"web.rpc#1",
 							"web.rpc#2",
 							"web.rpc#4",
@@ -6065,8 +6412,8 @@
 					"nextjs": ["web.rpc#1", "web.rpc#3", "web.rpc#4"]
 				},
 				"evidence": {
-					"web.rpc#1": "labs/id_effect_rpc/src/registry.rs:57 RpcGroup (publish=false)",
-					"web.rpc#2": "labs/id_effect_rpc/src/client.rs:84 call (payload_schema)",
+					"web.rpc#1": "labs/id_effect_rpc/src/registry.rs:57 RpcGroup",
+					"web.rpc#2": "labs/id_effect_rpc/src/client.rs:84 call (payload/success schemas)",
 					"web.rpc#4": "labs/id_effect_rpc/src/stream.rs:15 encode_stream_chunk",
 					"web.rpc#6": "labs/id_effect_rpc/src/versioning.rs:23 VersionConfig",
 					"web.rpc#7": "labs/id_effect_rpc/src/openapi.rs:31 emit_openapi_json",
@@ -6094,9 +6441,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "No first-party support; raw axum only.",
+			"evidence": "No WebSocket, SSE or channel module in published crates; the id_effect_axum modules are body, channel_bridge, cluster, executor, health, json, metrics, request_caps, routing, server, service.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -6138,7 +6486,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6154,7 +6503,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": ["web.realtime#1", "web.realtime#2"],
 					"zio": ["web.realtime#1", "web.realtime#2"],
@@ -6238,7 +6588,8 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
 			"evidence": "None.",
 			"targets": {
@@ -6282,7 +6633,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "labs",
 					"zio": "production",
@@ -6298,7 +6650,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [],
 					"zio": [
@@ -6389,9 +6742,10 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "None (out of scope).",
+			"evidence": "None.",
 			"targets": {
 				"0.12.0": 50
 			},
@@ -6433,7 +6787,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -6449,7 +6804,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [],
 					"zio": [],
@@ -6527,9 +6883,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "Template stub only (id_effect_cli/templates/admin-stub).",
+			"evidence": "Template stub only: crates/id_effect_cli/templates/admin-stub (README.md, src/admin.rs.template).",
 			"targets": {
 				"0.12.0": 50
 			},
@@ -6571,7 +6928,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -6587,7 +6945,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [],
 					"zio": [],
@@ -6649,9 +7008,10 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "FileSystem trait (Live/Test) only.",
+			"evidence": "Only the FileSystem trait with Live and Test implementations; tests/live_fs.rs, fs_test_double.rs.",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -6693,7 +7053,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6709,7 +7070,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
-						"0.7.0": ["web.storage#1", "web.storage#2", "web.storage#8"]
+						"0.7.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
+						"0.8.0": ["web.storage#1", "web.storage#2", "web.storage#8"]
 					},
 					"effect_ts": [
 						"web.storage#1",
@@ -6769,7 +7131,7 @@
 					"nextjs": ["web.storage#5", "web.storage#6"]
 				},
 				"evidence": {
-					"web.storage#1": "crates/id_effect_platform/src/fs.rs:42 FileSystem trait",
+					"web.storage#1": "crates/id_effect_platform/src/fs.rs:42 FileSystem trait (read/write/remove_file/exists)",
 					"web.storage#2": "crates/id_effect_platform/src/fs.rs:61 LiveFileSystem",
 					"web.storage#8": "crates/id_effect_platform/src/fs.rs:132 TestFileSystem"
 				}
@@ -6795,9 +7157,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "OAuthClient/SessionStore traits, memory impls only (feature auth, off).",
+			"evidence": "Only traits plus in-memory doubles: crates/id_effect_platform/src/auth/session.rs:48 SessionStore (MemorySessionStore :61) and auth/oauth.rs:54 OAuthClient (MemoryOAuthClient :66, test-util). Tested in crates/id_effect_platform/tests/auth_oauth.rs. No hashing, JWT, PKCE, MFA, passkeys, persistent session store or account flows.",
 			"targets": {
 				"0.9.0": 75,
 				"1.0.0": 88
@@ -6840,7 +7203,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6856,7 +7220,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": ["sec.authn#3"],
 					"zio": ["sec.authn#3"],
@@ -6927,9 +7292,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "None.",
+			"evidence": "No RBAC, policy, guard or ABAC code found in the published crates (id_effect_axum src/lib.rs, request_caps.rs, server/* and id_effect_platform auth/* read).",
 			"targets": {
 				"0.9.0": 75,
 				"1.0.0": 88
@@ -6972,7 +7338,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6988,7 +7355,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": ["sec.authz#2"],
 					"zio": ["sec.authz#2"],
@@ -7061,9 +7429,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 13,
-				"0.7.0": 13
+				"0.7.0": 13,
+				"0.8.0": 88
 			},
-			"evidence": "axum/src/server/security.rs:91 static CSRF token compared with ==; CSP builder minimal; no CORS.",
+			"evidence": "New server/security module (CSRF, CORS, CSP with nonce/hash, headers, cookies) bundled in SecurityLayer::recommended. Tested in crates/id_effect_axum/tests/security.rs. Book chapter book/src/part6/ch30-00-application.md. Example crates/id_effect_axum/examples/040_app_host.rs. No auto-escaping template engine.",
 			"targets": {
 				"0.8.0": 75,
 				"0.9.0": 88
@@ -7106,7 +7475,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7122,7 +7492,16 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["sec.web#4"],
-						"0.7.0": ["sec.web#4"]
+						"0.7.0": ["sec.web#4"],
+						"0.8.0": [
+							"sec.web#1",
+							"sec.web#2",
+							"sec.web#3",
+							"sec.web#4",
+							"sec.web#5",
+							"sec.web#6",
+							"sec.web#7"
+						]
 					},
 					"effect_ts": ["sec.web#3"],
 					"zio": ["sec.web#1", "sec.web#3", "sec.web#7"],
@@ -7181,7 +7560,13 @@
 					"nextjs": ["sec.web#2", "sec.web#4", "sec.web#5", "sec.web#8"]
 				},
 				"evidence": {
-					"sec.web#4": "crates/id_effect_axum/src/server/security.rs:40 csp_middleware (only default_src_self/script_src_self directives, :21-28)"
+					"sec.web#1": "crates/id_effect_axum/src/server/security/csrf.rs:43 tokens_match uses subtle ct_eq; :64 CsrfToken::generate gives a 32-byte per-session token in a signed __Host- cookie (:142)",
+					"sec.web#2": "crates/id_effect_axum/src/server/security/mod.rs:151 SecurityLayer::recommended turns CSRF on for every unsafe method (csrf.rs:171 is_safe gate)",
+					"sec.web#3": "crates/id_effect_axum/src/server/security/cors.rs:27 CorsConfig (allow_origin :45, allow_credentials :75, max_age :81, build :88 -> tower_http CorsLayer)",
+					"sec.web#4": "crates/id_effect_axum/src/server/security/csp.rs:34 ContentSecurityPolicy (directive :69, recommended :57); mod.rs:177 SecurityLayer::csp",
+					"sec.web#5": "crates/id_effect_axum/src/server/security/csp.rs:114 script_nonce, :126 script_hash (sha256), :235 CspNonce per request",
+					"sec.web#6": "crates/id_effect_axum/src/server/security/headers.rs:41 SecurityHeaders::recommended (HSTS, X-Frame-Options, nosniff, Referrer-Policy)",
+					"sec.web#7": "crates/id_effect_axum/src/server/security/cookies.rs:121 CookieDefaults::recommended (HttpOnly/Secure/Lax); :229 add_signed, :237 add_private"
 				}
 			},
 			"v1": {
@@ -7206,9 +7591,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "Config<T>, Config::all accumulates errors, Config::layer(), Secret<T>. No vault/KMS/reload.",
+			"evidence": "Config<T> descriptors, layered figment sources, Config::all error accumulation and Secret<T>. Tested in tests/config_unify.rs. Book chapter book/src/part2/ch07-10-config.md. Examples in crates/id_effect_config/examples. No profiles, vault/KMS or reload.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -7250,7 +7636,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7272,6 +7659,13 @@
 							"sec.config#5"
 						],
 						"0.7.0": [
+							"sec.config#1",
+							"sec.config#2",
+							"sec.config#3",
+							"sec.config#4",
+							"sec.config#5"
+						],
+						"0.8.0": [
 							"sec.config#1",
 							"sec.config#2",
 							"sec.config#3",
@@ -7320,10 +7714,10 @@
 				},
 				"evidence": {
 					"sec.config#1": "crates/id_effect_config/src/config_desc.rs:107 Config<T>; :320 validate",
-					"sec.config#2": "crates/id_effect_config/src/lib.rs:261 layered_toml_env",
-					"sec.config#3": "crates/id_effect_config/Cargo.toml:26-29 json/yaml/dotenv features",
-					"sec.config#4": "crates/id_effect_config/src/error.rs:50 ConfigError::and; config_desc.rs:708 Config::all",
-					"sec.config#5": "crates/id_effect_config/src/secret.rs:16 Secret<T>"
+					"sec.config#2": "crates/id_effect_config/src/lib.rs:261 layered_toml_env (default, then local TOML, then env last)",
+					"sec.config#3": "crates/id_effect_config/Cargo.toml:26-29 json/yaml/dotenv features; lib.rs:245 merge_json, :253 merge_yaml, :276 load_dotenv",
+					"sec.config#4": "crates/id_effect_config/src/error.rs:50 ConfigError::and; config_desc.rs:708 Config::all accumulates errors",
+					"sec.config#5": "crates/id_effect_config/src/secret.rs:16 Secret<T> (Debug/Display redacted)"
 				}
 			},
 			"v1": {
@@ -7348,9 +7742,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 88
 			},
-			"evidence": "Daily cargo audit + Dependabot. No cargo-deny, SECURITY.md, SBOM.",
+			"evidence": "Process row: audit, dependabot and cargo-deny run in CI. SECURITY.md covers disclosure, support window and advisory process. The publish workflow generates SBOMs and provenance attestations.",
 			"targets": {
 				"0.8.0": 75,
 				"1.0.0": 88
@@ -7393,7 +7788,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "production",
-						"0.7.0": "production"
+						"0.7.0": "production",
+						"0.8.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7409,7 +7805,16 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["sec.supply#1", "sec.supply#2"],
-						"0.7.0": ["sec.supply#1", "sec.supply#2"]
+						"0.7.0": ["sec.supply#1", "sec.supply#2"],
+						"0.8.0": [
+							"sec.supply#1",
+							"sec.supply#2",
+							"sec.supply#3",
+							"sec.supply#4",
+							"sec.supply#5",
+							"sec.supply#6",
+							"sec.supply#8"
+						]
 					},
 					"effect_ts": [
 						"sec.supply#1",
@@ -7483,7 +7888,12 @@
 				},
 				"evidence": {
 					"sec.supply#1": ".github/workflows/audit.yml:29-30 cargo audit (push/PR/daily cron)",
-					"sec.supply#2": ".github/dependabot.yml:18 package-ecosystem: cargo"
+					"sec.supply#2": ".github/dependabot.yml:18 package-ecosystem: cargo",
+					"sec.supply#3": ".github/workflows/ci.yml:318 cargo deny check job, configured by deny.toml",
+					"sec.supply#4": "SECURITY.md:1 private GHSA reporting policy",
+					"sec.supply#5": ".github/workflows/publish.yml:153 cargo cyclonedx SBOM per published crate, attached to the GitHub release",
+					"sec.supply#6": ".github/workflows/publish.yml:168-169 actions/attest-build-provenance over .crate files and SBOMs",
+					"sec.supply#8": "SECURITY.md 'Supported versions' / 'Support window' (0.6.x security fixes until 2027-01-13; previous minor gets 90 days)"
 				},
 				"notes": {
 					"id_effect": "v1 credited audit plus Dependabot as about half; v2 counts 2 of 8 process checks (no cargo-deny, SECURITY.md, SBOM, signing, CVE process or support window)."
@@ -7511,9 +7921,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 75
 			},
-			"evidence": "id_effect_logger rewritten on Layers; JSON/structured/tracing backends.",
+			"evidence": "id_effect_logger provides FiberRef levels, annotations, spans and JSON/structured/tracing backends. Logs go to OTel through logs_bridge. Book chapter book/src/part2/ch07-11-logger.md. Examples in crates/id_effect_logger/examples. Integration test is the otel starter_install.",
 			"targets": {
 				"0.10.0": 88
 			},
@@ -7555,7 +7966,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7579,6 +7991,14 @@
 							"obs.logging#6"
 						],
 						"0.7.0": [
+							"obs.logging#1",
+							"obs.logging#2",
+							"obs.logging#3",
+							"obs.logging#4",
+							"obs.logging#5",
+							"obs.logging#6"
+						],
+						"0.8.0": [
 							"obs.logging#1",
 							"obs.logging#2",
 							"obs.logging#3",
@@ -7644,12 +8064,12 @@
 					]
 				},
 				"evidence": {
-					"obs.logging#1": "crates/id_effect_logger/src/providers.rs:76 provide_minimum_log_level",
+					"obs.logging#1": "crates/id_effect_logger/src/providers.rs:76 provide_minimum_log_level; lib.rs:252 with_minimum_log_level",
 					"obs.logging#2": "crates/id_effect_logger/src/lib.rs:354 annotate_logs (FiberRef)",
 					"obs.logging#3": "crates/id_effect_logger/src/lib.rs:376 with_log_span",
 					"obs.logging#4": "crates/id_effect_logger/src/pipeline.rs:158 JsonLogBackend",
-					"obs.logging#5": "crates/id_effect_opentelemetry/src/logs_bridge.rs:62 OtelLogBackend",
-					"obs.logging#6": "crates/id_effect_opentelemetry/src/config.rs:101 RUST_LOG EnvFilter"
+					"obs.logging#5": "crates/id_effect_opentelemetry/src/logs_bridge.rs:62 OtelLogBackend; tests/starter_install.rs:15",
+					"obs.logging#6": "crates/id_effect_opentelemetry/src/config.rs:101 RUST_LOG into an EnvFilter directive"
 				}
 			},
 			"v1": {
@@ -7673,9 +8093,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 89
 			},
-			"evidence": "Atomic metrics in MetricRegistry, with_tags, OTel registry bridge. No Prometheus endpoint.",
+			"evidence": "Native Prometheus endpoint, runtime fiber metrics, HTTP and DB metrics, and the OTel bridge. Book chapter book/src/part6/ch27-01-metrics.md. Example crates/id_effect_axum/examples/070_metrics.rs. Integration test crates/id_effect_axum/tests/metrics.rs.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -7717,7 +8138,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7738,6 +8160,16 @@
 							"obs.metrics#2",
 							"obs.metrics#3",
 							"obs.metrics#4",
+							"obs.metrics#8"
+						],
+						"0.8.0": [
+							"obs.metrics#1",
+							"obs.metrics#2",
+							"obs.metrics#3",
+							"obs.metrics#4",
+							"obs.metrics#5",
+							"obs.metrics#6",
+							"obs.metrics#7",
 							"obs.metrics#8"
 						]
 					},
@@ -7811,10 +8243,13 @@
 					]
 				},
 				"evidence": {
-					"obs.metrics#1": "crates/id_effect/src/observability/registry.rs:127-137 counter/gauge/histogram",
-					"obs.metrics#2": "crates/id_effect/src/observability/metric.rs:248 with_tags; observability/mod.rs:310 tag_metrics",
-					"obs.metrics#3": "crates/id_effect/src/observability/registry.rs:145 summary(SummaryConfig)",
-					"obs.metrics#4": "crates/id_effect_opentelemetry/src/metrics_bridge.rs:238 bridge_metrics (all kinds, table :8-14)",
+					"obs.metrics#1": "crates/id_effect/src/observability/registry.rs:127 counter, :132 gauge, :137 histogram",
+					"obs.metrics#2": "crates/id_effect/src/observability/mod.rs:315 tag_metrics; registry.rs fiber_tags; Prometheus labels from tags",
+					"obs.metrics#3": "crates/id_effect/src/observability/registry.rs:145 summary(SummaryConfig) with quantiles",
+					"obs.metrics#4": "crates/id_effect_opentelemetry/src/metrics_bridge.rs:238 bridge_metrics (counter/gauge/histogram/summary/frequency tests :297-421)",
+					"obs.metrics#5": "crates/id_effect_axum/src/metrics.rs:91 metrics_route; crates/id_effect/src/observability/prometheus.rs:41 render (text 0.0.4)",
+					"obs.metrics#6": "crates/id_effect/src/observability/runtime_metrics.rs:21 id_effect_fibers_live / :24 fibers_started_total; axum metrics.rs:63 executor in-flight",
+					"obs.metrics#7": "crates/id_effect_axum/src/metrics.rs:128 http_metrics_layer (requests_total, duration); crates/id_effect_sql/src/metrics.rs:62 InstrumentedSqlClient",
 					"obs.metrics#8": "crates/id_effect/src/observability/registry.rs:76 MetricRegistry; :210 snapshot"
 				},
 				"notes": {
@@ -7842,9 +8277,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 63
 			},
-			"evidence": "OtelSpanHook, span_bridge.rs, W3C propagation, OTLP export.",
+			"evidence": "Effect spans are bridged to OTel through a fiber-inherited hook, with OTLP export, W3C propagation and axum server spans. Book chapters book/src/part2/ch07-12-opentelemetry.md and part6/ch27-00. Example otel_minimal.rs. Integration test tests/starter_install.rs.",
 			"targets": {
 				"0.10.0": 88
 			},
@@ -7886,7 +8322,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7908,6 +8345,13 @@
 							"obs.tracing#5"
 						],
 						"0.7.0": [
+							"obs.tracing#1",
+							"obs.tracing#2",
+							"obs.tracing#3",
+							"obs.tracing#4",
+							"obs.tracing#5"
+						],
+						"0.8.0": [
 							"obs.tracing#1",
 							"obs.tracing#2",
 							"obs.tracing#3",
@@ -8007,11 +8451,11 @@
 					]
 				},
 				"evidence": {
-					"obs.tracing#1": "crates/id_effect/src/observability/mod.rs:266 Effect::with_span",
-					"obs.tracing#2": "crates/id_effect_opentelemetry/src/span_bridge.rs:82 OtelSpanHook (FiberRef-inherited, doc :3-6)",
+					"obs.tracing#1": "crates/id_effect/src/observability/mod.rs:271 Effect::with_span; :276 with_span_attrs (parent nesting)",
+					"obs.tracing#2": "crates/id_effect_opentelemetry/src/span_bridge.rs:82 OtelSpanHook (FiberRef-inherited); test :236 forked_children_inherit_the_hook_and_parent_on_worker_threads",
 					"obs.tracing#3": "crates/id_effect_opentelemetry/src/otlp.rs:152 build_otlp_providers",
-					"obs.tracing#4": "crates/id_effect_opentelemetry/src/propagation.rs:8 install_w3c_propagators",
-					"obs.tracing#5": "crates/id_effect_opentelemetry/src/axum.rs:12 trace_request"
+					"obs.tracing#4": "crates/id_effect_opentelemetry/src/propagation.rs:8 install_w3c_propagators (trace-context plus baggage)",
+					"obs.tracing#5": "crates/id_effect_opentelemetry/src/axum.rs:12 trace_request middleware"
 				},
 				"notes": {
 					"id_effect": "No client/DB auto-spans, first-party sampler config or zero-code agent; v1 credited the depth of the span bridge, which v2 cannot see."
@@ -8038,9 +8482,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 89
 			},
-			"evidence": "axum/src/health.rs /health /ready require_ready; drain. No dependency aggregation.",
+			"evidence": "HealthRegistry with effect-backed indicators, built-in SQL and cache checks, and readiness that flips on shutdown. Book chapter book/src/part6/ch27-02-health.md. Example crates/id_effect_axum/examples/071_health.rs. Integration test crates/id_effect_axum/tests/health.rs (SIGTERM over a socket).",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -8082,7 +8527,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8108,6 +8554,16 @@
 							"obs.health#2",
 							"obs.health#5",
 							"obs.health#6",
+							"obs.health#8"
+						],
+						"0.8.0": [
+							"obs.health#1",
+							"obs.health#2",
+							"obs.health#3",
+							"obs.health#4",
+							"obs.health#5",
+							"obs.health#6",
+							"obs.health#7",
 							"obs.health#8"
 						]
 					},
@@ -8147,11 +8603,14 @@
 					"nextjs": ["obs.health#5", "obs.health#6"]
 				},
 				"evidence": {
-					"obs.health#1": "crates/id_effect_axum/src/health.rs:60 health()",
-					"obs.health#2": "crates/id_effect_axum/src/health.rs:65 ready(ReadinessCheck); :105 require_ready",
-					"obs.health#5": "crates/id_effect_axum/src/server/shutdown.rs:50 wait_for_shutdown",
+					"obs.health#1": "crates/id_effect_axum/src/health.rs:112 health()",
+					"obs.health#2": "crates/id_effect_axum/src/health.rs:117 ready(ReadinessCheck); :474 HealthRegistry::ready_route",
+					"obs.health#3": "crates/id_effect_axum/src/health.rs:419 HealthRegistry, :250 HealthIndicator, :193 HealthOutcome detail JSON, worst-status aggregation :450",
+					"obs.health#4": "crates/id_effect_sql/src/health.rs:37 sql_ping, :26 pg_pool_health; crates/id_effect_axum/src/health.rs:322 HealthIndicator::cache",
+					"obs.health#5": "crates/id_effect_axum/src/server/shutdown.rs:50 wait_for_shutdown (SIGTERM/SIGINT)",
 					"obs.health#6": "crates/id_effect_axum/src/server/shutdown.rs:71 drain_with_timeout",
-					"obs.health#8": "crates/id_effect_axum/src/server/lifecycle.rs:240 server_layer (scoped Layer)"
+					"obs.health#7": "crates/id_effect_axum/src/server/lifecycle.rs:149 readiness.mark_shutting_down() before drain; :263 in ServerHandle::shutdown",
+					"obs.health#8": "crates/id_effect_axum/src/server/lifecycle.rs:285 server_layer (scoped Layer, released with scope)"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 4 of 8: no aggregated per-dependency indicators, built-in integration checks, readiness flip on shutdown or ordered teardown."
@@ -8178,9 +8637,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 25
 			},
-			"evidence": "Registry snapshots, snapshot_tracing; cluster control DTOs. No fiber dump or dashboard.",
+			"evidence": "Telemetry snapshot APIs and cluster admin HTTP routes (unit-tested in cluster.rs). No fiber dump, supervision-tree view, dashboard, REPL, runtime log-level control or profiling.",
 			"targets": {
 				"0.10.0": 75,
 				"1.0.0": 88
@@ -8223,7 +8683,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8239,7 +8700,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["obs.console#5", "obs.console#8"],
-						"0.7.0": ["obs.console#5", "obs.console#8"]
+						"0.7.0": ["obs.console#5", "obs.console#8"],
+						"0.8.0": ["obs.console#5", "obs.console#8"]
 					},
 					"effect_ts": ["obs.console#1", "obs.console#3", "obs.console#8"],
 					"zio": ["obs.console#1", "obs.console#8"],
@@ -8281,8 +8743,8 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"obs.console#5": "crates/id_effect_axum/src/cluster.rs:48 ClusterControl::router (/cluster/status,/members,/processes,/drain,/rebalance; feature cluster)",
-					"obs.console#8": "crates/id_effect/src/observability/tracing.rs:197 snapshot_tracing; registry.rs:210 MetricRegistry::snapshot"
+					"obs.console#5": "crates/id_effect_axum/src/cluster.rs:48 ClusterControl::router (/cluster/status, /members, /processes, /drain, /rebalance; feature cluster)",
+					"obs.console#8": "crates/id_effect/src/observability/tracing.rs:197 snapshot_tracing; registry.rs:210 MetricRegistry::snapshot; runtime_metrics.rs snapshot"
 				}
 			},
 			"v1": {
@@ -8307,9 +8769,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 13,
-				"0.7.0": 13
+				"0.7.0": 13,
+				"0.8.0": 13
 			},
-			"evidence": "labs/id_effect_jobs (unpublished); core Queue is in-memory.",
+			"evidence": "Only labs/id_effect_jobs (unpublished; book/src/part6/ch31-00-async-messaging.md marks it labs). The core coordination Queue is in-memory.",
 			"targets": {
 				"0.10.0": 88
 			},
@@ -8351,7 +8814,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "absent",
@@ -8367,7 +8831,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["msg.jobs#1"],
-						"0.7.0": ["msg.jobs#1"]
+						"0.7.0": ["msg.jobs#1"],
+						"0.8.0": ["msg.jobs#1"]
 					},
 					"effect_ts": ["msg.jobs#1", "msg.jobs#5"],
 					"zio": [],
@@ -8440,9 +8905,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 25
+				"0.7.0": 25,
+				"0.8.0": 88
 			},
-			"evidence": "Typed Schedule; no cron expressions.",
+			"evidence": "New Cron and CronRegistry with time zones/DST, overlap and missed-run policies, hooks and history. Book chapter book/src/part3/ch11-05-cron.md. Example crates/id_effect/examples/123_cron_jobs.rs. Integration test crates/id_effect/tests/cron.rs.",
 			"targets": {
 				"0.8.0": 75,
 				"0.10.0": 88
@@ -8485,7 +8951,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8501,7 +8968,16 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["msg.cron#2", "msg.cron#4"],
-						"0.7.0": ["msg.cron#2", "msg.cron#4"]
+						"0.7.0": ["msg.cron#2", "msg.cron#4"],
+						"0.8.0": [
+							"msg.cron#1",
+							"msg.cron#2",
+							"msg.cron#3",
+							"msg.cron#4",
+							"msg.cron#5",
+							"msg.cron#7",
+							"msg.cron#8"
+						]
 					},
 					"effect_ts": [
 						"msg.cron#1",
@@ -8573,8 +9049,13 @@
 					]
 				},
 				"evidence": {
-					"msg.cron#2": "crates/id_effect/src/scheduling/schedule.rs:371 Schedule::spaced; :591 repeat",
-					"msg.cron#4": "crates/id_effect_node/src/singleton.rs:181 ClusterSingleton; :337 PgAdvisoryLease (generic, not wired to schedules)"
+					"msg.cron#1": "crates/id_effect/src/scheduling/cron.rs:143 Cron::parse (5/6 fields, names, @macros)",
+					"msg.cron#2": "crates/id_effect/src/scheduling/schedule.rs:393 Schedule::spaced",
+					"msg.cron#3": "crates/id_effect/src/scheduling/cron.rs:182 in_zone (DST gap/overlap handling, book ch11-05)",
+					"msg.cron#4": "crates/id_effect_node/src/singleton.rs:181 ClusterSingleton; :337 PgAdvisoryLease",
+					"msg.cron#5": "crates/id_effect/src/scheduling/cron_job.rs:76 OverlapPolicy, :87 MissedRunPolicy (Skip / CatchUp)",
+					"msg.cron#7": "crates/id_effect/src/scheduling/cron_job.rs:261 on_success, :270 on_failure, :467 CronScheduler::history",
+					"msg.cron#8": "crates/id_effect/src/scheduling/cron_job.rs:328 CronRegistry (named jobs, layer :425)"
 				}
 			},
 			"v1": {
@@ -8599,9 +9080,10 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 25
 			},
-			"evidence": "labs/id_effect_jobs kafka.rs stub + outbox (unpublished).",
+			"evidence": "labs/id_effect_jobs only: MessageBroker, a producer-only rdkafka broker, an in-memory outbox and an obix inbox. Nothing is published.",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -8643,7 +9125,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "absent",
 					"zio": "production",
@@ -8659,7 +9142,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["msg.brokers#4", "msg.brokers#7", "msg.brokers#8"],
-						"0.7.0": ["msg.brokers#4", "msg.brokers#7", "msg.brokers#8"]
+						"0.7.0": ["msg.brokers#4", "msg.brokers#7", "msg.brokers#8"],
+						"0.8.0": ["msg.brokers#4", "msg.brokers#8"]
 					},
 					"effect_ts": [],
 					"zio": [
@@ -8719,9 +9203,9 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"msg.brokers#4": "labs/id_effect_jobs/src/broker.rs:11 MessageBroker trait (Kafka side producer-only: src/kafka.rs:36)",
+					"msg.brokers#4": "labs/id_effect_jobs/src/broker.rs:11 MessageBroker trait (rdkafka is producer-only: src/kafka.rs:59)",
 					"msg.brokers#7": "labs/id_effect_jobs/src/obix_outbox.rs:40 ObixOutbox; src/outbox.rs:147 relay_outbox",
-					"msg.brokers#8": "labs/id_effect_jobs/src/obix_inbox.rs:27 ObixInbox"
+					"msg.brokers#8": "labs/id_effect_jobs/src/obix_inbox.rs:27 ObixInbox idempotent inbox (labs)"
 				},
 				"notes": {
 					"id_effect": "The labs outbox, inbox and broker trait meet 3 checks and the labs cap (39) is the only limit; v1 scored it as a stub. Decide whether labs-only checks count."
@@ -8736,6 +9220,9 @@
 				"targets": {
 					"0.10.0": 72
 				}
+			},
+			"adr": {
+				"0.8.0": "Removed the labs obix transactional outbox adapter in 0.8 (commit d72d7a8) so the relicense to MIT needs no third-party consent (owner decision 2026-10-16); check #7 returns with the 0.10 jobs battery (PLAN-OF-PLANS E7)."
 			}
 		},
 		{
@@ -8748,9 +9235,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 89
 			},
-			"evidence": "Owned pulls, flat_map, map_effect_par, merge, windows. No zip/throttle/debounce/group_by.",
+			"evidence": "Full operator set, now including zip, throttle/debounce and group_by. Book chapters book/src/part4/ch13-* and part5/ch22-* (ch22-06 rate and grouping). Example crates/id_effect/examples/076_stream_zip_time_group.rs. Integration test crates/id_effect/tests/stream_zip_time_group.rs.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -8792,7 +9280,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8817,6 +9306,16 @@
 							"msg.streams#1",
 							"msg.streams#2",
 							"msg.streams#3",
+							"msg.streams#7",
+							"msg.streams#8"
+						],
+						"0.8.0": [
+							"msg.streams#1",
+							"msg.streams#2",
+							"msg.streams#3",
+							"msg.streams#4",
+							"msg.streams#5",
+							"msg.streams#6",
 							"msg.streams#7",
 							"msg.streams#8"
 						]
@@ -8870,10 +9369,13 @@
 					"nextjs": ["msg.streams#1", "msg.streams#8"]
 				},
 				"evidence": {
-					"msg.streams#1": "crates/id_effect/src/streaming/stream.rs:63 Stream<A,E,R>",
+					"msg.streams#1": "crates/id_effect/src/streaming/stream.rs:63 Stream<A,E,R> (owned pulls)",
 					"msg.streams#2": "crates/id_effect/src/streaming/stream.rs:536 flat_map; :571 map_effect_par",
 					"msg.streams#3": "crates/id_effect/src/streaming/join.rs:100 merge",
-					"msg.streams#7": "crates/id_effect/src/streaming/stream.rs:472 grouped; window.rs:33 tumbling, :103 tumbling_by_time",
+					"msg.streams#4": "crates/id_effect/src/streaming/zip.rs:32 zip, :41 zip_with, :53 combine_latest",
+					"msg.streams#5": "crates/id_effect/src/streaming/time.rs:89 throttle, :110 debounce",
+					"msg.streams#6": "crates/id_effect/src/streaming/group.rs:67 group_by_key, :120 group_by",
+					"msg.streams#7": "crates/id_effect/src/streaming/stream.rs:472 grouped; window.rs:33 tumbling, :39 sliding, :103 tumbling_by_time, :143 sliding_by_time",
 					"msg.streams#8": "crates/id_effect/src/streaming/broadcast.rs:31 broadcast"
 				},
 				"notes": {
@@ -8901,9 +9403,10 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "None.",
+			"evidence": "No mail or notification crate or module among crates/* (crate list and src trees read).",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -8945,7 +9448,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -8961,7 +9465,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [],
 					"zio": [],
@@ -9030,9 +9535,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "labs/id_effect_ai (OpenAI/Anthropic/Cursor, MCP template), unpublished.",
+			"evidence": "labs/id_effect_ai (OpenAI, Anthropic, Cursor; examples include mcp_server_template.rs), unpublished. Book chapter book/src/part6/ch35-00-ai.md.",
 			"targets": {
 				"0.12.0": 75
 			},
@@ -9074,7 +9580,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "labs",
@@ -9090,7 +9597,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
-						"0.7.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"]
+						"0.7.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.8.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"]
 					},
 					"effect_ts": [
 						"ai.llm#1",
@@ -9160,9 +9668,9 @@
 					]
 				},
 				"evidence": {
-					"ai.llm#1": "labs/id_effect_ai/src/model.rs:62 LanguageModel; vendors/openai.rs:23, vendors/anthropic.rs:23 (labs, unpublished)",
-					"ai.llm#2": "labs/id_effect_ai/src/streaming.rs:19 complete_stream; src/sse.rs:30 SseParser",
-					"ai.llm#7": "labs/id_effect_ai/src/retry.rs:18 retry_transient_ai_http; tracing_util.rs:24 with_ai_span"
+					"ai.llm#1": "labs/id_effect_ai/src/model.rs:62 LanguageModel; src/vendors/openai.rs, src/vendors/anthropic.rs (labs, unpublished)",
+					"ai.llm#2": "labs/id_effect_ai/src/streaming.rs:19 complete_stream; src/sse.rs SseParser",
+					"ai.llm#7": "labs/id_effect_ai/src/retry.rs:18 retry_transient_ai_http; src/tracing_util.rs:24 with_ai_span"
 				}
 			},
 			"v1": {
@@ -9186,9 +9694,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 88,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 88
 			},
-			"evidence": "testing/test_executor.rs (advance, run_until_stalled); snapshot/stream helpers removed.",
+			"evidence": "testing module: run_test, Exit assertions, golden files, TestExecutor/TestRandom; in-memory fs/sql doubles; book ch15.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -9230,7 +9739,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9257,6 +9767,15 @@
 						"0.7.0": [
 							"test.unit#1",
 							"test.unit#2",
+							"test.unit#6",
+							"test.unit#7",
+							"test.unit#8"
+						],
+						"0.8.0": [
+							"test.unit#1",
+							"test.unit#2",
+							"test.unit#3",
+							"test.unit#5",
 							"test.unit#6",
 							"test.unit#7",
 							"test.unit#8"
@@ -9338,11 +9857,13 @@
 					"nextjs": ["test.unit#1", "test.unit#4", "test.unit#5", "test.unit#8"]
 				},
 				"evidence": {
-					"test.unit#1": "crates/id_effect/src/testing/test_executor.rs:188 TestExecutor::run_until_stalled",
-					"test.unit#2": "crates/id_effect/book/src/part4/ch15-03-mocking.md",
+					"test.unit#1": "crates/id_effect/src/testing/assert.rs:38 run_test (TestExecutor) + test_executor.rs:222 run_until_stalled",
+					"test.unit#2": "crates/id_effect/book/src/part4/ch15-03-mocking.md:195 Layer-based test setup, fake layer swapped in (:222)",
+					"test.unit#3": "crates/id_effect/src/testing/assert.rs:81-169 assert_exit_success/fail/die/interrupted/kind/eq",
+					"test.unit#5": "crates/id_effect/src/testing/golden.rs:33 assert_golden (+assert_golden_exit:69, ID_EFFECT_BLESS:18)",
 					"test.unit#6": "crates/id_effect_platform/src/fs.rs:132 TestFileSystem; crates/id_effect_sql/src/client.rs:159 TestSqlClient",
-					"test.unit#7": "examples/http-showcase/tests/http_pg.rs:3 (starts the app via its public layers)",
-					"test.unit#8": "crates/id_effect/book/src/part4/ch15-00-testing.md"
+					"test.unit#7": "crates/id_effect/book/src/part4/ch15-03-mocking.md:197 swap one layer, keep the rest; examples/http-showcase/tests/http_pg.rs:3 app started via its public layers",
+					"test.unit#8": "crates/id_effect/book/src/part4/ch15-00-testing.md (+ch15-01..06)"
 				},
 				"notes": {
 					"id_effect": "0.7 removed testing::{snapshot,proptest,stream} and assert_exit_* (MIGRATION-0.7.md:108); v1 83 does not reflect the removal."
@@ -9372,9 +9893,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 75
+				"0.7.0": 75,
+				"0.8.0": 88
 			},
-			"evidence": "TestExecutor virtual time, testing/test_random.rs. FIFO ordering only.",
+			"evidence": "Virtual-clock TestExecutor, seeded scheduling exploration (new), seeded/scripted Random; book ch11-04, ch15-02, ch15-05.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -9416,7 +9938,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9443,6 +9966,15 @@
 							"test.determinism#4",
 							"test.determinism#5",
 							"test.determinism#6"
+						],
+						"0.8.0": [
+							"test.determinism#1",
+							"test.determinism#2",
+							"test.determinism#3",
+							"test.determinism#4",
+							"test.determinism#5",
+							"test.determinism#6",
+							"test.determinism#7"
 						]
 					},
 					"effect_ts": [
@@ -9499,12 +10031,13 @@
 					]
 				},
 				"evidence": {
-					"test.determinism#1": "crates/id_effect/src/testing/test_executor.rs:208 advance(Duration)",
-					"test.determinism#2": "crates/id_effect/book/src/cookbook/ch40-01-retry-test-clock.md",
-					"test.determinism#3": "crates/id_effect/book/src/part3/ch11-04-clock-injection.md",
+					"test.determinism#1": "crates/id_effect/src/testing/test_executor.rs:242 advance(Duration)",
+					"test.determinism#2": "crates/id_effect/book/src/part3/ch11-04-clock-injection.md:7-13 sleep/timeout/retry/schedule on executor clock; cookbook/ch40-01-retry-test-clock.md",
+					"test.determinism#3": "crates/id_effect/book/src/part3/ch11-04-clock-injection.md:13 business code never names a clock; executor owns it",
 					"test.determinism#4": "crates/id_effect/src/random.rs:219 Random::seeded",
 					"test.determinism#5": "crates/id_effect/src/testing/test_random.rs:66 feed_u64s",
-					"test.determinism#6": "crates/id_effect/src/testing/test_executor.rs:188 run_until_stalled"
+					"test.determinism#6": "crates/id_effect/src/testing/test_executor.rs:222 run_until_stalled",
+					"test.determinism#7": "crates/id_effect/src/testing/test_executor.rs:186 TestExecutor::seeded, :493 explore_interleavings; tests/interleavings.rs; book part4/ch15-05-interleavings.md"
 				},
 				"notes": {
 					"id_effect": "0.6.0 had no seeded random service, scripted random, run-until-idle executor, interleaving exploration or seeded test order (3 of 8).",
@@ -9532,9 +10065,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 75,
-				"0.7.0": 9
+				"0.7.0": 9,
+				"0.8.0": 89
 			},
-			"evidence": "testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108).",
+			"evidence": "First-party testing::property re-added in 0.8 (feature proptest): schema-derived generators, effect-aware and model-based properties; example 110_property_testing, tests/testing_property.rs.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -9579,7 +10113,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9607,6 +10142,16 @@
 							"test.property#3",
 							"test.property#6",
 							"test.property#7"
+						],
+						"0.8.0": [
+							"test.property#1",
+							"test.property#2",
+							"test.property#3",
+							"test.property#4",
+							"test.property#5",
+							"test.property#6",
+							"test.property#7",
+							"test.property#8"
 						]
 					},
 					"effect_ts": [
@@ -9661,10 +10206,14 @@
 					"nextjs": ["test.property#3", "test.property#5", "test.property#6"]
 				},
 				"evidence": {
-					"test.property#1": "crates/id_effect/book/src/part4/ch15-04-property-testing.md:4 'use the proptest crate as a dev-dependency'",
-					"test.property#3": "proptest shrinking (third-party); crates/id_effect/Cargo.toml:83 proptest dev-dep",
-					"test.property#6": "proptest default failure persistence (third-party behaviour)",
-					"test.property#7": "crates/id_effect/book/src/part4/ch15-04-property-testing.md"
+					"test.property#1": "crates/id_effect/Cargo.toml:67 feature proptest -> id_effect::testing::property (src/testing/property/mod.rs:1)",
+					"test.property#2": "crates/id_effect/src/testing/property/schema.rs:35 from_schema, :48 arb_schema",
+					"test.property#3": "crates/id_effect/src/testing/property/state.rs:97-99 proptest shrinking; test :297 shrinks to two commands",
+					"test.property#4": "crates/id_effect/src/testing/property/mod.rs:59 prop_check / :80 prop_run run effects under TestExecutor",
+					"test.property#5": "crates/id_effect/src/testing/property/state.rs:27 StateMachine, :132 run_state_machine",
+					"test.property#6": "crates/id_effect/src/testing/property/state.rs:98 failure persistence in proptest-regressions/; crates/id_effect/proptest-regressions/",
+					"test.property#7": "crates/id_effect/book/src/part4/ch15-04-property-testing.md; ch15-06-testing-property.md",
+					"test.property#8": "crates/id_effect/src/testing/property/arb.rs:15-103 arb_duration/chunk/fiber_id/cause/exit/hcons"
 				},
 				"notes": {
 					"id_effect": "0.7 removed testing::proptest and its feature (MIGRATION-0.7.md:108); only third-party proptest remains, so the §3.2 absent cap (9) applies and v1 45 breaks it."
@@ -9691,9 +10240,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 25,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "examples/http-showcase in live-Postgres CI; no testcontainers/test client.",
+			"evidence": "In-process router tests (tower oneshot) in docs and templates; live-Postgres CI; no testcontainers, fixtures, isolation or contract tooling.",
 			"targets": {
 				"0.9.0": 75,
 				"0.10.0": 88
@@ -9736,7 +10286,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9753,6 +10304,11 @@
 					"id_effect": {
 						"0.6.0": ["test.integration#1", "test.integration#6"],
 						"0.7.0": [
+							"test.integration#1",
+							"test.integration#6",
+							"test.integration#7"
+						],
+						"0.8.0": [
 							"test.integration#1",
 							"test.integration#6",
 							"test.integration#7"
@@ -9825,9 +10381,9 @@
 					]
 				},
 				"evidence": {
-					"test.integration#1": "crates/id_effect_axum/README.md:16-35 tower::ServiceExt::oneshot pattern",
-					"test.integration#6": ".github/workflows/ci.yml:170 pg-integration (postgres:17) runs -p id_effect_sql -p id_effect_node -p http_showcase",
-					"test.integration#7": "examples/http-showcase/tests/http_pg.rs:3 starts server via run_until/database_layer with test config"
+					"test.integration#1": "crates/id_effect_axum/README.md:35 tower oneshot; crates/id_effect_tool/templates/service/tests/http.rs.template:1,23 router in process, no socket; tutorial-zero-to-production.md:185",
+					"test.integration#6": ".github/workflows/ci.yml:174-202 pg-integration (postgres:17, ID_EFFECT_REQUIRE_PG=1) -p id_effect_sql -p id_effect_node -p http_showcase",
+					"test.integration#7": "examples/http-showcase/tests/http_pg.rs:3-6 whole startup path via run_until with DATABASE_URL config"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 2 of 8: no managed real dependencies, per-test DB isolation, fixtures, E2E, test bootstrap or contract tests."
@@ -9855,9 +10411,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "id_effect_node scripted partitions (transport/mod.rs).",
+			"evidence": "Scripted SQL failures, in-memory network partitions, kill API; no latency/proxy/toggle/seeded fault schedules.",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -9899,7 +10456,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "tested"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9915,7 +10473,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
-						"0.7.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"]
+						"0.7.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
+						"0.8.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"]
 					},
 					"effect_ts": ["test.chaos#1"],
 					"zio": ["test.chaos#1", "test.chaos#4"],
@@ -9940,9 +10499,9 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"test.chaos#1": "crates/id_effect_sql/src/client.rs:247 TestSqlClient::fail_queries (+fail_commits:253)",
-					"test.chaos#3": "crates/id_effect_node/src/transport/memory.rs:185 MemoryNetwork::partition / :204 heal; tests/chaos_partition.rs",
-					"test.chaos#4": "crates/id_effect_process/src/node.rs:254 exit(target, ExitReason) incl. Killed"
+					"test.chaos#1": "crates/id_effect_sql/src/client.rs:247 TestSqlClient::fail_queries, :253 fail_commits",
+					"test.chaos#3": "crates/id_effect_node/src/transport/memory.rs:185 MemoryNetwork::partition, :204 heal; crates/id_effect_node/tests/chaos_partition.rs",
+					"test.chaos#4": "crates/id_effect_process/src/node.rs:254 exit(target, ExitReason), Killed untrappable :259"
 				},
 				"notes": {
 					"id_effect": "v1 credited scripted partitions heavily; there is no latency injection, runtime toggle or seeded fault schedule.",
@@ -9971,9 +10530,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 88,
-				"0.7.0": 88
+				"0.7.0": 88,
+				"0.8.0": 88
 			},
-			"evidence": "96% coverage gate (scripts/llvm-cov-nextest.sh), ~3,232 tests, pinned trybuild toolchain.",
+			"evidence": "Process row: 7/8 checks met by committed CI and scripts.",
 			"targets": {
 				"0.8.0": 88
 			},
@@ -10015,7 +10575,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "production",
-						"0.7.0": "production"
+						"0.7.0": "production",
+						"0.8.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10040,6 +10601,15 @@
 							"test.qa#7"
 						],
 						"0.7.0": [
+							"test.qa#1",
+							"test.qa#2",
+							"test.qa#3",
+							"test.qa#4",
+							"test.qa#5",
+							"test.qa#6",
+							"test.qa#7"
+						],
+						"0.8.0": [
 							"test.qa#1",
 							"test.qa#2",
 							"test.qa#3",
@@ -10087,13 +10657,13 @@
 					]
 				},
 				"evidence": {
-					"test.qa#1": "scripts/llvm-cov-nextest.sh:30-32 --fail-under-* 96",
-					"test.qa#2": ".github/workflows/ci.yml:126 os: [ubuntu, macos, windows]",
-					"test.qa#3": ".github/workflows/ci.yml:125 toolchain: [stable, beta]",
-					"test.qa#4": "Cargo.toml:31 rust-version 1.94; .github/workflows/ci.yml:142 msrv job",
-					"test.qa#5": ".github/workflows/ci.yml:226 minimal-versions job",
-					"test.qa#6": "crates/id_effect/tests/ui.rs + tests/ui/fail/*.stderr (trybuild)",
-					"test.qa#7": ".github/workflows/audit.yml:30 cargo audit"
+					"test.qa#1": "scripts/llvm-cov-nextest.sh:33-35 --fail-under-* 96; .github/workflows/ci.yml:111 coverage job",
+					"test.qa#2": ".github/workflows/ci.yml:130 os: [ubuntu, macos, windows]",
+					"test.qa#3": ".github/workflows/ci.yml:129 toolchain: [stable, beta]",
+					"test.qa#4": "Cargo.toml:34 rust-version 1.94; .github/workflows/ci.yml:146-168 msrv job",
+					"test.qa#5": ".github/workflows/ci.yml:230-252 minimal-versions job",
+					"test.qa#6": "crates/id_effect/tests/ui.rs:22 trybuild, tests/ui/fail + tests/ui/gallery",
+					"test.qa#7": ".github/workflows/audit.yml:29 cargo audit; .github/workflows/ci.yml:306 cargo deny"
 				},
 				"notes": {
 					"spring": "The checks follow the row's Rust-centric measures (coverage gate, MSRV, minimal versions); competitors do not gate coverage."
@@ -10120,9 +10690,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 63
 			},
-			"evidence": "Templates only (id_effect_cli/templates); no generator command.",
+			"evidence": "New published id_effect_tool: `id-effect new` with 4 templates, db/otel options, tests+CI+Dockerfile+Kamal; book ch34-00, tutorial; tests/bin.rs; CI template matrix.",
 			"targets": {
 				"0.8.0": 63,
 				"0.9.0": 88,
@@ -10166,7 +10737,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10182,7 +10754,14 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": [
+							"dx.scaffold#1",
+							"dx.scaffold#5",
+							"dx.scaffold#6",
+							"dx.scaffold#7",
+							"dx.scaffold#8"
+						]
 					},
 					"effect_ts": [
 						"dx.scaffold#1",
@@ -10229,7 +10808,13 @@
 					],
 					"nextjs": ["dx.scaffold#1", "dx.scaffold#6", "dx.scaffold#7"]
 				},
-				"evidence": {}
+				"evidence": {
+					"dx.scaffold#1": "crates/id_effect_tool/src/cli.rs:28 `id-effect new`; .github/workflows/ci.yml:274-301 each template generated, built and tested",
+					"dx.scaffold#5": "crates/id_effect_tool/templates/service/tests/http.rs.template; templates/common/_github/workflows/ci.yml.template:22",
+					"dx.scaffold#6": "crates/id_effect_tool/src/template.rs:14 Template {Service, Worker, Cli, Cluster}",
+					"dx.scaffold#7": "crates/id_effect_tool/src/render.rs:22 Db {None, Pg}; cli.rs:70 --otel",
+					"dx.scaffold#8": "crates/id_effect_tool/templates/common/Dockerfile.template:1; templates/service/config/deploy.yml.template:1 (Kamal)"
+				}
 			},
 			"v1": {
 				"competitors": [55, 30, 60, 95, 92, 92, 99, 85, 97, 92],
@@ -10254,9 +10839,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 50
+				"0.7.0": 50,
+				"0.8.0": 75
 			},
-			"evidence": "run_main maps defects → 101, interrupts → 130; id-effect-diagnose removed.",
+			"evidence": "id_effect_cli: clap, run_main with exit codes, graceful Ctrl-C, completions; book ch16, cookbook ch40-03, cli-minimal example.",
 			"targets": {
 				"0.8.0": 75
 			},
@@ -10298,7 +10884,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10314,7 +10901,15 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
-						"0.7.0": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"]
+						"0.7.0": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
+						"0.8.0": [
+							"dx.cli#1",
+							"dx.cli#2",
+							"dx.cli#3",
+							"dx.cli#6",
+							"dx.cli#7",
+							"dx.cli#8"
+						]
 					},
 					"effect_ts": [
 						"dx.cli#1",
@@ -10374,10 +10969,12 @@
 					"nextjs": []
 				},
 				"evidence": {
-					"dx.cli#1": "crates/id_effect_cli/Cargo.toml:20 optional clap feature; examples/cli-minimal/src/main.rs:3",
-					"dx.cli#2": "crates/id_effect_cli/src/exit_code.rs:28 exit_code_for_exit (defect 101, interrupt 130)",
+					"dx.cli#1": "crates/id_effect_cli/Cargo.toml:20 clap feature (default); examples/cli-minimal",
+					"dx.cli#2": "crates/id_effect_cli/src/exit_code.rs:28 exit_code_for_exit (fail 1, defect 101, interrupt 130)",
+					"dx.cli#3": "crates/id_effect_cli/src/run.rs:23-25 interrupt_on_ctrl_c interrupts root fiber; tests/cli_probe_exit.rs:49 SIGINT tests",
 					"dx.cli#6": "crates/id_effect_config/src/lib.rs:261 layered_toml_env; book part3/ch16-02-cli-config-secret.md",
-					"dx.cli#8": "crates/id_effect_cli/src/run.rs:50 'error: defect: ...' rendering"
+					"dx.cli#7": "crates/id_effect_cli/src/completions.rs:48 generate (clap_complete); examples/cli-minimal/tests/completions.rs",
+					"dx.cli#8": "crates/id_effect_cli/src/run.rs:187 eprintln 'error: ...' (table :81-83)"
 				},
 				"notes": {
 					"id_effect": "No signal handling in run_main and no prompts, progress or completions; v1 over-credits exit-code mapping."
@@ -10404,9 +11001,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 63,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 88
 			},
-			"evidence": "Book updated for 0.7 (140 files), MIGRATION-0.7.md, ADR 0011.",
+			"evidence": "Book + tutorial + cookbook, deny(missing_docs) workspace-wide, book snippets compiled as doctests, migration guide per release.",
 			"targets": {
 				"0.8.0": 88,
 				"1.0.0": 88
@@ -10449,7 +11047,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10476,6 +11075,15 @@
 							"dx.docs#2",
 							"dx.docs#3",
 							"dx.docs#4",
+							"dx.docs#8"
+						],
+						"0.8.0": [
+							"dx.docs#1",
+							"dx.docs#2",
+							"dx.docs#3",
+							"dx.docs#4",
+							"dx.docs#5",
+							"dx.docs#6",
 							"dx.docs#8"
 						]
 					},
@@ -10565,11 +11173,13 @@
 					]
 				},
 				"evidence": {
-					"dx.docs#1": "crates/id_effect/book/src/part1/ch02-04-real-program.md",
-					"dx.docs#2": "crates/id_effect/book/src/SUMMARY.md Parts II-VII (axum, config, logger, otel, sql, fsm, node...)",
-					"dx.docs#3": "crates/id_effect/src/lib.rs:31 #![deny(missing_docs)] (also cli, config, sql, axum, ...)",
+					"dx.docs#1": "crates/id_effect/book/src/tutorial-zero-to-production.md:1 (new -> run -> test -> db -> docker -> deploy)",
+					"dx.docs#2": "crates/id_effect/book/src/SUMMARY.md; every published crate referenced in book (kit/tool via part6/ch34-00-dx-ship.md)",
+					"dx.docs#3": "#![deny(missing_docs)] in all 19 crates/*/src/lib.rs (e.g. crates/id_effect_cli/src/lib.rs:50)",
 					"dx.docs#4": "crates/id_effect/book/src/cookbook/ch40-00-cookbook.md (5 recipes)",
-					"dx.docs#8": "docs/MIGRATION-0.7.md; docs/MIGRATION-0.6.md"
+					"dx.docs#5": ".github/workflows/ci.yml:202 http_showcase tests run the example app; ci.yml:274 generated templates run and probed",
+					"dx.docs#6": "examples/book-snippets/src/lib.rs:1 book chapters as doctests; run by ci.yml:142 cargo test --workspace (K5 409/429 = 95.3%)",
+					"dx.docs#8": "docs/MIGRATION-0.8.md, MIGRATION-0.7.md, MIGRATION-0.6.md"
 				},
 				"notes": {
 					"laravel": "Laravel's docs are not snippet-tested or example-CI'd; v1 rewards prose quality, which the checks cannot see."
@@ -10597,9 +11207,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 69,
-				"0.7.0": 50
+				"0.7.0": 50,
+				"0.8.0": 75
 			},
-			"evidence": "Missing capability is a compile error; 11 on_unimplemented; trybuild ui tests.",
+			"evidence": "on_unimplemented capability errors pinned by trybuild (fail + 20-case gallery), doctor CLI and layer-graph inspection; book ch34-01, docs/diagnostics.md.",
 			"targets": {
 				"0.8.0": 75,
 				"1.0.0": 88
@@ -10642,7 +11253,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "tested",
-						"0.7.0": "tested"
+						"0.7.0": "tested",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10670,6 +11282,14 @@
 							"dx.diagnostics#2",
 							"dx.diagnostics#3",
 							"dx.diagnostics#4"
+						],
+						"0.8.0": [
+							"dx.diagnostics#1",
+							"dx.diagnostics#2",
+							"dx.diagnostics#3",
+							"dx.diagnostics#4",
+							"dx.diagnostics#5",
+							"dx.diagnostics#7"
 						]
 					},
 					"effect_ts": [
@@ -10731,10 +11351,12 @@
 					]
 				},
 				"evidence": {
-					"dx.diagnostics#1": "crates/id_effect/src/capability/hlist.rs:10 #[diagnostic::on_unimplemented] on Selector/Plucker/Sculptor/Embed",
+					"dx.diagnostics#1": "crates/id_effect/src/capability/hlist.rs:10 #[diagnostic::on_unimplemented] (11 in crates/*/src)",
 					"dx.diagnostics#2": "crates/id_effect/tests/ui/fail/missing_capability.stderr:1 'capability `Metrics` is not in this effect's environment'",
-					"dx.diagnostics#3": "crates/id_effect/tests/ui.rs (trybuild, pinned 1.99.0 toolchain ci.yml:60)",
-					"dx.diagnostics#4": "crates/id_effect/src/capability/hlist.rs:71 note 'add `{T}` to the effect's `caps!(..)`...'"
+					"dx.diagnostics#3": "crates/id_effect/tests/ui.rs:22 BLESSED_RUSTC pinned; .github/workflows/ci.yml:63 rust 1.99.0",
+					"dx.diagnostics#4": "missing_capability.stderr:8 note 'add `Metrics` to the effect's `caps!(..)`'; docs/diagnostics.md K4 17/20",
+					"dx.diagnostics#5": "crates/id_effect_tool/src/cli.rs:31 `id-effect doctor`; crates/id_effect_tool/tests/doctor.rs",
+					"dx.diagnostics#7": "crates/id_effect_kit/src/graph.rs:1 LayerGraph text/DOT; `doctor --graph`; book part6/ch34-01-doctor-graph.md:63"
 				},
 				"notes": {
 					"dotnet": "No dependency-graph tool or doctor CLI in the .NET core SDK; v1 97 credits analyzer depth."
@@ -10765,9 +11387,10 @@
 			"stance": "promote",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 38
+				"0.7.0": 38,
+				"0.8.0": 38
 			},
-			"evidence": "clippy -D warnings; labs/id_effect_lint nightly-only, unpublished.",
+			"evidence": "Framework lints only in unpublished labs/id_effect_lint; book appendix-d-workspace-tooling.md:27 points to labs.",
 			"targets": {
 				"0.10.0": 63,
 				"1.0.0": 75
@@ -10810,7 +11433,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "labs",
-						"0.7.0": "labs"
+						"0.7.0": "labs",
+						"0.8.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10826,7 +11450,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
-						"0.7.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"]
+						"0.7.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
+						"0.8.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"]
 					},
 					"effect_ts": [
 						"dx.lint#1",
@@ -10895,8 +11520,8 @@
 					]
 				},
 				"evidence": {
-					"dx.lint#1": "labs/id_effect_lint/rules/*.yml (10 ast-grep rule files) + nightly rustc plugin src/lints",
-					"dx.lint#2": "labs/id_effect_lint/sgconfig.yml (ast-grep rules need no nightly; the rustc plugin does)",
+					"dx.lint#1": "labs/id_effect_lint/rules/*.yml (11 ast-grep rule files) + nightly rustc plugin src/lints",
+					"dx.lint#2": "labs/id_effect_lint/sgconfig.yml:1 ast-grep rules need no nightly (plugin needs rustc_private, Cargo.toml:22)",
 					"dx.lint#7": "labs/id_effect_lint/rules/a-fn-signatures.yml:10-14 BAD/GOOD note per rule"
 				}
 			},
@@ -10922,9 +11547,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 14,
-				"0.7.0": 14
+				"0.7.0": 14,
+				"0.8.0": 49
 			},
-			"evidence": "Unmeasured; HList R and typed Schedule likely heavier.",
+			"evidence": "Build loop measured and published for 0.8 (cold 10.2 s, incremental 0.88 s, boot 4 ms); no watch or hot reload.",
 			"targets": {
 				"0.8.0": 43,
 				"1.0.0": 57
@@ -10963,7 +11589,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.7.0": "published",
+						"0.8.0": "published"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10979,7 +11606,14 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["dx.compile#5"],
-						"0.7.0": ["dx.compile#5"]
+						"0.7.0": ["dx.compile#5"],
+						"0.8.0": [
+							"dx.compile#1",
+							"dx.compile#2",
+							"dx.compile#5",
+							"dx.compile#6",
+							"dx.compile#7"
+						]
 					},
 					"effect_ts": [
 						"dx.compile#1",
@@ -11053,7 +11687,11 @@
 					]
 				},
 				"evidence": {
-					"dx.compile#5": "cargo incremental compilation (toolchain default; not framework-specific)"
+					"dx.compile#1": "docs/benchmarks/compile-0.8.json result.incremental_s 0.877 + boot_s 0.004 = 0.881 s < 2 s (examples/cli-minimal)",
+					"dx.compile#2": "docs/benchmarks/compile-0.8.json cold_s 10.157 < 60 s; dx-kpis-0.8.json k1 build_s 18.9 (service template)",
+					"dx.compile#5": "cargo incremental compilation in dev profile (toolchain default)",
+					"dx.compile#6": "docs/benchmarks/compile-0.8.json boot_s 0.004 < 5 s",
+					"dx.compile#7": "docs/benchmarks/compile-0.8.json + dx-kpis-0.8.json, method docs/benchmarks/README.md, scripts/compile-time.sh"
 				},
 				"notes": {
 					"id_effect": "The build loop is unmeasured (§8: v1 38 is held until measured), so v2 cannot credit the timing checks."
@@ -11081,9 +11719,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 13
 			},
-			"evidence": "devenv/Nix + moon; no REPL or dev command.",
+			"evidence": "Generated compose.yaml only; no REPL, dev command, hot reload, dashboard, seed command, profiles or devcontainer.",
 			"targets": {
 				"0.10.0": 63
 			},
@@ -11125,7 +11764,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "published"
 					},
 					"effect_ts": "production",
 					"zio": "absent",
@@ -11141,7 +11781,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": ["dx.repl#4"]
 					},
 					"effect_ts": ["dx.repl#5"],
 					"zio": [],
@@ -11197,7 +11838,9 @@
 					],
 					"nextjs": ["dx.repl#2", "dx.repl#3", "dx.repl#5", "dx.repl#7"]
 				},
-				"evidence": {},
+				"evidence": {
+					"dx.repl#4": "crates/id_effect_tool/templates/service/compose.yaml.template:1 `docker compose up --build` starts app + postgres (+otel collector)"
+				},
 				"notes": {
 					"id_effect": "v1 credited devenv.nix and moon, which are contributor tooling for this repo, not app-facing dev features.",
 					"phoenix": "No first-party local services or generated dev environment."
@@ -11224,9 +11867,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 49,
-				"0.7.0": 49
+				"0.7.0": 49,
+				"0.8.0": 88
 			},
-			"evidence": "Single binary; deploy-kamal template not wired to a command.",
+			"evidence": "Generated Dockerfile (CI-built and probed on /health) + Kamal config, first-party health/ready and graceful drain; book ch34-00 and tutorial §8-9.",
 			"targets": {
 				"0.8.0": 63,
 				"0.10.0": 88
@@ -11269,7 +11913,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "published",
-						"0.7.0": "published"
+						"0.7.0": "published",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11296,6 +11941,15 @@
 							"dx.deploy#3",
 							"dx.deploy#4",
 							"dx.deploy#5",
+							"dx.deploy#8"
+						],
+						"0.8.0": [
+							"dx.deploy#1",
+							"dx.deploy#2",
+							"dx.deploy#3",
+							"dx.deploy#4",
+							"dx.deploy#5",
+							"dx.deploy#7",
 							"dx.deploy#8"
 						]
 					},
@@ -11349,11 +12003,13 @@
 					]
 				},
 				"evidence": {
-					"dx.deploy#1": "crates/id_effect_cli/templates/deploy-kamal/Dockerfile.template:1 (multi-stage release image; untested, no render command)",
-					"dx.deploy#3": "crates/id_effect_cli/templates/deploy-kamal/config/deploy.yml.template",
-					"dx.deploy#4": "crates/id_effect_axum/src/health.rs:81 health_router (+ready:65)",
-					"dx.deploy#5": "crates/id_effect_axum/src/server/lifecycle.rs:283 serve_until_shutdown (SIGINT/SIGTERM drain)",
-					"dx.deploy#8": "Dockerfile.template:9 copies the single release binary"
+					"dx.deploy#1": "crates/id_effect_tool/templates/common/Dockerfile.template:1 multi-stage release image; built in CI template-smoke (ci.yml:300, scripts/template-smoke.sh:131)",
+					"dx.deploy#2": "Dockerfile.template:3 `docker build -t {{name}} .`; generated ci.yml.template:29",
+					"dx.deploy#3": "crates/id_effect_tool/templates/service/config/deploy.yml.template:1 Kamal 2 config",
+					"dx.deploy#4": "crates/id_effect_axum/src/health.rs:133 health_router, :117 ready",
+					"dx.deploy#5": "crates/id_effect_axum/src/server/lifecycle.rs:338 serve_until_shutdown (SIGINT/SIGTERM drain)",
+					"dx.deploy#7": "crates/id_effect/book/src/part6/ch34-00-dx-ship.md:39-40 `kamal setup` once, `kamal deploy` per release",
+					"dx.deploy#8": "Dockerfile.template:13 copies the single release binary"
 				},
 				"notes": {
 					"nextjs": "No first-party health endpoint or Kubernetes support in Next.js; v1 97 credits Vercel's polish."
@@ -11381,9 +12037,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 63
+				"0.7.0": 63,
+				"0.8.0": 88
 			},
-			"evidence": "One kernel and Layer model since 0.7; labs lag; no umbrella crate/prelude.",
+			"evidence": "New umbrella id_effect_kit with prelude, lockstep workspace version, single Effect/Exit model, written no-duplicate rule.",
 			"targets": {
 				"0.8.0": 63,
 				"1.0.0": 88
@@ -11426,7 +12083,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11448,6 +12106,15 @@
 							"dx.coherence#6",
 							"dx.coherence#7",
 							"dx.coherence#8"
+						],
+						"0.8.0": [
+							"dx.coherence#1",
+							"dx.coherence#2",
+							"dx.coherence#3",
+							"dx.coherence#4",
+							"dx.coherence#5",
+							"dx.coherence#6",
+							"dx.coherence#7"
 						]
 					},
 					"effect_ts": [
@@ -11529,10 +12196,13 @@
 					]
 				},
 				"evidence": {
-					"dx.coherence#3": "docs/QUALITY_BAR.md:55 'no duplicate of a concept that lives elsewhere'",
-					"dx.coherence#4": "Cargo.toml [workspace.package] version 0.7.0; 17/17 crates version.workspace = true",
-					"dx.coherence#6": "Effect<A,E,R>/Exit/Cause shared by every crate (e.g. id_effect_cli exit_code.rs:28)",
-					"dx.coherence#7": "CHANGELOG.md:3-7 single fiber runtime + Layer model; ADR 0010 overlap list",
+					"dx.coherence#1": "crates/id_effect_kit/Cargo.toml:6 'one dependency with feature flags per battery' (web/sql-pg/otel/cluster/full)",
+					"dx.coherence#2": "crates/id_effect_kit/src/prelude.rs:1 `use id_effect_kit::prelude::*`; tests/prelude.rs",
+					"dx.coherence#3": "docs/QUALITY_BAR.md:55 'no duplicate of a concept that lives elsewhere in the workspace'",
+					"dx.coherence#4": "Cargo.toml:31 [workspace.package] version; all crates/*/Cargo.toml use version.workspace = true",
+					"dx.coherence#5": "crates/id_effect/book/src/part6/ch34-00-dx-ship.md:22-24 generated project layout; book appendix-e-idiom-guide.md",
+					"dx.coherence#6": "Effect<A,E,R>/Exit/Cause shared by every crate (e.g. crates/id_effect_cli/src/exit_code.rs:28)",
+					"dx.coherence#7": "Cargo.toml:5-24 workspace members, one crate per concern (ADR 0010 tiers)",
 					"dx.coherence#8": "examples/http-showcase/Cargo.toml:26-34 (id_effect axum/config/logger/otel/resilience/sql only)"
 				},
 				"notes": {
@@ -11562,9 +12232,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 50,
-				"0.7.0": 50
+				"0.7.0": 50,
+				"0.8.0": 75
 			},
-			"evidence": "17 crates at 0.7.0 on crates.io; breaking every minor; labs at 0.4.0.",
+			"evidence": "Stability policy, deprecation rule, migration guides, MSRV CI job and report-only semver-checks CI job are all committed. Still pre-1.0 (Cargo.toml:31 version 0.7.0; tags go up to v0.7.0) with breaking changes in every minor.",
 			"targets": {
 				"0.8.0": 50,
 				"1.0.0": 88
@@ -11607,7 +12278,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "production",
-						"0.7.0": "production"
+						"0.7.0": "production",
+						"0.8.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11633,6 +12305,14 @@
 							"eco.stability#3",
 							"eco.stability#5",
 							"eco.stability#7"
+						],
+						"0.8.0": [
+							"eco.stability#2",
+							"eco.stability#3",
+							"eco.stability#5",
+							"eco.stability#6",
+							"eco.stability#7",
+							"eco.stability#8"
 						]
 					},
 					"effect_ts": [
@@ -11718,10 +12398,12 @@
 					]
 				},
 				"evidence": {
-					"eco.stability#2": "docs/QUALITY_BAR.md:61 '#[deprecated] shim for one minor release and a CHANGELOG migration note'",
-					"eco.stability#3": "CHANGELOG.md:7 0.7 'prunes the 0.6 deprecations'",
-					"eco.stability#5": "CHANGELOG.md:9 + docs/MIGRATION-0.7.md",
-					"eco.stability#7": "Cargo.toml:31 rust-version 1.94; .github/workflows/ci.yml:142 msrv job"
+					"eco.stability#2": "docs/STABILITY.md:33 '## Deprecation rule': a #[deprecated(since=...)] shim in minor N, removable in N+1; semver policy at docs/STABILITY.md:17-31",
+					"eco.stability#3": "CHANGELOG.md:104 0.7 'prunes the 0.6 deprecations'; CHANGELOG.md:88 '### Deprecated' section in 0.8; CHANGELOG.md:492 0.4 removed items deprecated earlier",
+					"eco.stability#5": "CHANGELOG.md:6/106/184/510/532: each breaking release links to migration notes (docs/MIGRATION-0.6.md, MIGRATION-0.7.md, MIGRATION-0.8.md, 0.4 inline migration section, 0.3 book appendix-b)",
+					"eco.stability#6": ".github/workflows/ci.yml:326 'semver' job runs cargo semver-checks against the crates.io 0.7.0 baseline (:351) and is listed in ci-pass needs (:369)",
+					"eco.stability#7": "Cargo.toml:34 rust-version = \"1.94\"; .github/workflows/ci.yml:146 msrv job; docs/STABILITY.md:57 MSRV policy (N-2)",
+					"eco.stability#8": "SECURITY.md:36 '0.6.x | Security fixes only, until 2027-01-13'; SECURITY.md:39-43 support window for the previous minor"
 				},
 				"notes": {
 					"id_effect": "v2 credits process discipline (deprecation policy, migration guides, MSRV CI); v1 weighted the breaking 0.x minors, a yanked 3.0.0 and 6 months of history."
@@ -11750,9 +12432,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 38
 			},
-			"evidence": "Effectively one maintainer; no LTS policy.",
+			"evidence": "GOVERNANCE.md, a SECURITY.md with private disclosure, and a support-window policy are committed. There is one maintainer and no sponsor or funding channel.",
 			"targets": {
 				"0.8.0": 13,
 				"1.0.0": 50
@@ -11795,7 +12478,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11811,7 +12495,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"]
 					},
 					"effect_ts": [
 						"eco.backing#1",
@@ -11897,7 +12582,11 @@
 						"eco.backing#7"
 					]
 				},
-				"evidence": {}
+				"evidence": {
+					"eco.backing#4": "GOVERNANCE.md:1 governance document: maintainers (:5), decision process (:15), ADR process (:29), path to co-maintainer (:44), releases (:60)",
+					"eco.backing#5": "SECURITY.md:39 '### Support window': latest minor gets all fixes, previous minor gets high/critical fixes for 90 days; table at SECURITY.md:28-37",
+					"eco.backing#6": "SECURITY.md:5 'Report vulnerabilities **privately** through GitHub's private vulnerability reporting'"
+				}
 			},
 			"v1": {
 				"competitors": [70, 70, 92, 78, 98, 99, 90, 92, 90, 95],
@@ -11921,9 +12610,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 38,
-				"0.7.0": 50
+				"0.7.0": 50,
+				"0.8.0": 50
 			},
-			"evidence": "Tokio default executor; axum/tower feature.",
+			"evidence": "Published crates for the Tokio runtime, axum/tower and tracing/OpenTelemetry, each with a book chapter, tests and an example. No reference app is tested in CI and no production consumer was found.",
 			"targets": {
 				"1.0.0": 75
 			},
@@ -11965,7 +12655,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11981,7 +12672,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["eco.fit#2", "eco.fit#3", "eco.fit#5"],
-						"0.7.0": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#5"]
+						"0.7.0": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#5"],
+						"0.8.0": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#5"]
 					},
 					"effect_ts": ["eco.fit#1", "eco.fit#2", "eco.fit#4", "eco.fit#5"],
 					"zio": [
@@ -12055,10 +12747,10 @@
 					]
 				},
 				"evidence": {
-					"eco.fit#1": "CHANGELOG.md:4-5 owned fiber runtime on Executor, 'tokio is the default backend'",
-					"eco.fit#2": "crates/id_effect/src/kernel/constructors.rs:47 from_async",
-					"eco.fit#3": "crates/id_effect_axum/Cargo.toml:34 axum 0.8 (+ tower feature :25)",
-					"eco.fit#5": "crates/id_effect_logger/Cargo.toml:25 tracing; crates/id_effect_opentelemetry/Cargo.toml:28 opentelemetry 0.32"
+					"eco.fit#1": "crates/id_effect/Cargo.toml:84-86 tokio is required; comment says it backs the kernel's default TokioExecutor and Runtime::global",
+					"eco.fit#2": "crates/id_effect/src/kernel/constructors.rs:47 pub fn from_async",
+					"eco.fit#3": "crates/id_effect_axum/Cargo.toml:34 axum 0.8 (tower feature at :25); book part2/ch07-08-axum-host.md; crates/id_effect_axum/tests/{health,metrics,security}.rs; crates/id_effect_axum/examples/060_request_caps.rs",
+					"eco.fit#5": "crates/id_effect_logger/Cargo.toml:25 tracing; crates/id_effect_opentelemetry/Cargo.toml:28 opentelemetry 0.32 and :55 tracing-opentelemetry; book part2/ch07-12-opentelemetry.md; crates/id_effect_opentelemetry/tests/starter_install.rs"
 				},
 				"notes": {
 					"nextjs": "Next.js fit is npm breadth, not first-party DB or broker integrations; the v2 leaders are Spring, .NET and Laravel at 100."
@@ -12086,9 +12778,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "No measurable community.",
+			"evidence": "GitHub API reports 19 stars and has_discussions=false. No chat or forum link found in README, CONTRIBUTING, GOVERNANCE or docs.",
 			"targets": {
 				"1.0.0": 25
 			},
@@ -12130,7 +12823,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12146,7 +12840,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [
 						"eco.community#3",
@@ -12236,9 +12931,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "Two known consumers (ADR 0010).",
+			"evidence": "There is no adopters or showcase page and no case studies. The GitHub security-advisories API returns 0 advisories.",
 			"targets": {
 				"1.0.0": 50
 			},
@@ -12280,7 +12976,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12296,7 +12993,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": [
 						"eco.production#1",
@@ -12416,9 +13114,10 @@
 			"process": true,
 			"id_effect": {
 				"0.6.0": 20,
-				"0.7.0": 20
+				"0.7.0": 20,
+				"0.8.0": 100
 			},
-			"evidence": "Cargo.toml:32 CC-BY-SA-4.0; no LICENSE file.",
+			"evidence": "Relicensed to MIT (commit a26876e) with a root LICENSE file, a workspace-inherited license field in every crate, and a DCO requirement in CONTRIBUTING.",
 			"targets": {
 				"0.8.0": 100
 			},
@@ -12448,7 +13147,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "production",
-						"0.7.0": "production"
+						"0.7.0": "production",
+						"0.8.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12464,7 +13164,14 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["eco.license#3"],
-						"0.7.0": ["eco.license#3"]
+						"0.7.0": ["eco.license#3"],
+						"0.8.0": [
+							"eco.license#1",
+							"eco.license#2",
+							"eco.license#3",
+							"eco.license#4",
+							"eco.license#5"
+						]
 					},
 					"effect_ts": [
 						"eco.license#1",
@@ -12530,7 +13237,11 @@
 					]
 				},
 				"evidence": {
-					"eco.license#3": "Cargo.toml:32 license = \"CC-BY-SA-4.0\" inherited by 17/17 crates; crates.io id_effect 0.7.0 license = CC-BY-SA-4.0"
+					"eco.license#1": "LICENSE:1 'MIT License' (OSI-approved)",
+					"eco.license#2": "LICENSE at the repo root (/data/Code/rust/id_effect/LICENSE)",
+					"eco.license#3": "Cargo.toml:35 license = \"MIT\"; every crates/*/Cargo.toml (19/19) has license.workspace = true (e.g. crates/id_effect/Cargo.toml:7)",
+					"eco.license#4": "CONTRIBUTING.md:12 '## Developer Certificate of Origin (DCO)'; :24 'Pull requests with commits lacking a sign-off are not merged.'",
+					"eco.license#5": "LICENSE:1 MIT is permissive; CONTRIBUTING.md:10 contributions are licensed under MIT"
 				},
 				"notes": {
 					"effect_ts": "Effect-TS requires no DCO or CLA, one of 5 checks (8 of the 10 competitors miss it); v1 scored the MIT licence alone."
@@ -12557,9 +13268,10 @@
 			"stance": "integrate",
 			"id_effect": {
 				"0.6.0": 1,
-				"0.7.0": 1
+				"0.7.0": 1,
+				"0.8.0": 1
 			},
-			"evidence": "None.",
+			"evidence": "No i18n, locale, Accept-Language, message-catalog or pluralisation code in crates/, labs/ or examples/ (rg).",
 			"targets": {
 				"0.12.0": 63
 			},
@@ -12601,7 +13313,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "absent",
-						"0.7.0": "absent"
+						"0.7.0": "absent",
+						"0.8.0": "absent"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -12617,7 +13330,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": [],
-						"0.7.0": []
+						"0.7.0": [],
+						"0.8.0": []
 					},
 					"effect_ts": ["eco.i18n#4"],
 					"zio": ["eco.i18n#4"],
@@ -12694,9 +13408,10 @@
 			"stance": "build",
 			"id_effect": {
 				"0.6.0": 13,
-				"0.7.0": 13
+				"0.7.0": 13,
+				"0.8.0": 13
 			},
-			"evidence": "Per-request capabilities only (axum/src/request_caps.rs).",
+			"evidence": "Per-request capability override (tenant) in published id_effect_axum, with a book mention, an example and end-to-end router tests. No other tenancy features.",
 			"targets": {
 				"0.9.0": 50,
 				"0.12.0": 75
@@ -12739,7 +13454,8 @@
 				"level": {
 					"id_effect": {
 						"0.6.0": "documented",
-						"0.7.0": "documented"
+						"0.7.0": "documented",
+						"0.8.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12755,7 +13471,8 @@
 				"met": {
 					"id_effect": {
 						"0.6.0": ["eco.tenancy#2"],
-						"0.7.0": ["eco.tenancy#2"]
+						"0.7.0": ["eco.tenancy#2"],
+						"0.8.0": ["eco.tenancy#2"]
 					},
 					"effect_ts": ["eco.tenancy#2"],
 					"zio": ["eco.tenancy#2"],
@@ -12798,7 +13515,7 @@
 					"nextjs": ["eco.tenancy#1", "eco.tenancy#2"]
 				},
 				"evidence": {
-					"eco.tenancy#2": "crates/id_effect_axum/src/request_caps.rs:159 CapOverrideLayer (doc example resolves Tenant from x-tenant, :18-34); book part2/ch07-08-axum-host.md; example 060_request_caps.rs"
+					"eco.tenancy#2": "crates/id_effect_axum/src/request_caps.rs:159 CapOverrideLayer; the module doc resolves a Tenant from x-tenant (:18-34); HTTP router tests at request_caps.rs:345-370 include concurrent_requests_see_their_own_tenant; book part2/ch07-08-axum-host.md:38; crates/id_effect_axum/examples/060_request_caps.rs"
 				}
 			},
 			"v1": {

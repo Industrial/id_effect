@@ -121,9 +121,9 @@ def stored2($at; $order):
       | (select((.competitors | type) != "array" or (.competitors | length) != 10
             or any(.competitors[]; score | not))
           | "\($at): v1.competitors must be 10 integers in 1..100"),
-        (select((.id_effect | type) != "object" or (.id_effect | keys) != ($r.id_effect | keys)
+        (select((.id_effect | type) != "object" or ((.id_effect | keys) - ($r.id_effect | keys)) != []
             or any(.id_effect[]; score | not))
-          | "\($at): v1.id_effect must score the versions of id_effect, each an integer in 1..100"),
+          | "\($at): v1.id_effect must score versions of id_effect (history may stop earlier), each an integer in 1..100"),
         (select((.targets | type) != "object" or any(.targets[]; score | not))
           | "\($at): v1.targets must map versions to integers in 1..100"));
 # METHOD §7.4 (2.1): on a process row, a framework is production when it meets a check, else absent.
@@ -744,7 +744,8 @@ method_compare() {
     else
         status="v2 is reported alongside v1; v1 remains primary until the owner accepts this report and the cap violations below are adjudicated."
     fi
-    vs="$(jq -c "$SCORE_JQ"'measured' "$file")"
+    # Versions measured under both methods (the 1.1 history stops at 0.7.0).
+    vs="$(jq -c "$SCORE_JQ"'measured' "$v1")"
     mapfile -t list < <(jq -r '.[]' <<<"$vs")
 
     # shellcheck disable=SC2016 # jq program, not shell expansions
@@ -807,15 +808,15 @@ self_test() {
     read -r -d '' want <<'EOF' || true
 | 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 target | 54.0 | 53.0 (#6) | 63.3 (#3) | 23 | 31 | 7 | 37 |
-| 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
-| 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
-| 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
-| 0.12.0 target | 77.6 | 77.4 (#1) | 81.0 (#1) | 49 | 3 | 16 | 12 |
-| 1.0.0 target | 82.0 | 82.1 (#1) | 84.5 (#1) | 59 | 1 | 20 | 12 |
+| 0.8.0 measured | 56.0 | 55.2 (#5) | 64.4 (#2) | 28 | 31 | 7 | 25 |
+| 0.9.0 target | 65.0 | 64.9 (#3) | 69.0 (#2) | 37 | 21 | 8 | 13 |
+| 0.10.0 target | 71.4 | 71.7 (#3) | 75.3 (#1) | 42 | 11 | 9 | 12 |
+| 0.11.0 target | 75.0 | 74.7 (#2) | 79.6 (#1) | 50 | 8 | 15 | 12 |
+| 0.12.0 target | 78.8 | 78.8 (#1) | 81.7 (#1) | 51 | 3 | 16 | 12 |
+| 1.0.0 target | 82.1 | 82.2 (#1) | 84.6 (#1) | 59 | 1 | 20 | 12 |
 EOF
     got="$(id_rows "$file" version:0.6.0 version:0.7.0)"
-    got+=$'\n'"$(id_rows "$file" targets:0.8.0 targets:0.9.0 targets:0.10.0 targets:0.11.0)"
+    got+=$'\n'"$(id_rows "$file" version:0.8.0 targets:0.9.0 targets:0.10.0 targets:0.11.0)"
     got+=$'\n'"$(id_rows "$file" targets:0.12.0 targets:1.0.0)"
     expect "METHOD §5.2 version table" "$want" "$got"
 

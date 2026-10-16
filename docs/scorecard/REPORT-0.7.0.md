@@ -60,34 +60,34 @@ Index target (PLAN-OF-PLANS §7.3, measured E ≥ planned E − 1.0): ok (measur
 
 | Row | Capability | 0.6.0 | 0.7.0 | Δ | Evidence |
 |---|---|---|---|---|---|
-| `core.typed-effect` | Typed success / error / requirements | 75 | 88 | +13 | Effect\<A,E=Never,R=HNil> is Send; typed HList R; compile-fail UI tests in crates/id_effect/tests/ui/. |
-| `core.ergonomics` | Composition ergonomics | 50 | 63 | +13 | effect! sequential binds, ~(a,b) parallel join; retry/repeat need factories; pipe helpers removed. |
-| `core.cause` | Failure model (Cause / Exit) | 50 | 88 | +38 | crates/id_effect/src/failure/{cause,exit}.rs; Die(Defect) keeps panic payload; tests/panic.rs. |
-| `core.scope` | Resource safety (Scope / acquire-release) | 50 | 89 | +39 | kernel/resource.rs acquire_use_release/ensuring; finalizers run on interrupt; Layer::scoped. |
-| `core.interrupt` | Interruption and cancellation | 38 | 88 | +50 | uninterruptible/uninterruptible_mask/interruptible (kernel/resource.rs), parent interrupts children; tests/fibers.rs. No on_interrupt. |
-| `core.race` | timeout / race / zip-par combinators | 1 | 88 | +87 | crates/id_effect/src/race.rs, par.rs; tests race_timeout.rs, par.rs. No race_with/disconnect. |
-| `conc.fibers` | Lightweight fibers / processes | 38 | 75 | +37 | Executor trait, real wakers; spawn_join_10k 6.67s → 17.2ms (docs/benchmarks/REPORT-0.7.md). |
-| `conc.coordination` | Coordination primitives | 69 | 88 | +19 | Waker-based constructors; coordination/channel.rs panic-free; streaming/channel.rs:306 still .expect; queue_bounded 2.55x slower than 0.6. |
-| `conc.stm` | Software transactional memory | 63 | 88 | +25 | crates/id_effect_fp/src/stm/mod.rs parks on wakers; still in maintenance-tier fp crate. |
-| `conc.parallel` | Parallel CPU compute | 63 | 88 | +25 | crates/id_effect/src/compute/\*; Concurrency::Inherit from Fabric. |
-| `conc.perf` | Raw performance and footprint | 13 | 63 | +50 | axum_request_oneshot 52.5 → 7.16µs; schedule_retry_overhead 5.77x regression (REPORT-0.7.md). |
-| `conc.safety` | Language-level safety | 63 | 88 | +25 | #![forbid(unsafe_code)] in every crate; no unsafe blocks in crates/ or labs/. |
-| `fault.resilience` | Resilience patterns | 63 | 69 | +6 | id_effect_resilience breaker/bulkhead/rate limiter; hedged is a race; core timeout. No fallback/policy pipeline. |
-| `fault.schedule` | Retry / repeat schedule algebra | 50 | 88 | +38 | Typed Schedule\<Out,In> (scheduling/schedule.rs) with fibonacci/union/intersect/jitter. No cron. |
-| `data.cache` | Caching (local + distributed) | 38 | 63 | +25 | resource/cache.rs capacity/ttl/typed failures; RequestCache + batching. No distributed cache. |
-| `web.server` | HTTP server and routing | 50 | 63 | +13 | id_effect_axum server_layer/serve\*, fiber per request (panic → 500, disconnect → interrupt). |
-| `sec.config` | Config, secrets and settings | 50 | 63 | +13 | Config\<T>, Config::all accumulates errors, Config::layer(), Secret\<T>. No vault/KMS/reload. |
-| `obs.metrics` | Metrics | 38 | 63 | +25 | Atomic metrics in MetricRegistry, with_tags, OTel registry bridge. No Prometheus endpoint. |
-| `obs.tracing` | Distributed tracing (OpenTelemetry) | 50 | 63 | +13 | OtelSpanHook, span_bridge.rs, W3C propagation, OTLP export. |
-| `obs.health` | Health, readiness, graceful shutdown | 50 | 63 | +13 | axum/src/health.rs /health /ready require_ready; drain. No dependency aggregation. |
-| `msg.streams` | Stream processing | 50 | 63 | +13 | Owned pulls, flat_map, map_effect_par, merge, windows. No zip/throttle/debounce/group_by. |
-| `test.unit` | Unit test kit and test doubles | 88 | 63 | -25 | testing/test_executor.rs (advance, run_until_stalled); snapshot/stream helpers removed. (ADR: Removed testing::{snapshot,proptest,stream} and assert_exit_\* in 0.7 (MIGRATION-0.7.md:109): checks #3 (Exit assertions) and #5 (snapshot testing) lost; restoration planned in PLAN-OF-PLANS E2.2 (0.8).) |
-| `test.determinism` | Deterministic time and randomness | 38 | 75 | +37 | TestExecutor virtual time, testing/test_random.rs. FIFO ordering only. |
-| `test.property` | Property-based testing | 75 | 9 | -66 | testing::proptest and feature removed in 0.7 (MIGRATION-0.7.md:108). (ADR: Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8).) |
-| `test.integration` | Integration and E2E testing | 25 | 38 | +13 | examples/http-showcase in live-Postgres CI; no testcontainers/test client. |
-| `dx.diagnostics` | Compiler / IDE diagnostics | 69 | 50 | -19 | Missing capability is a compile error; 11 on_unimplemented; trybuild ui tests. (ADR: Removed the id-effect-diagnose binary in 0.7 (MIGRATION-0.7.md:1038): checks #5 (doctor CLI) and #7 (dependency-graph inspection) lost; replaced by id-effect doctor in PLAN-OF-PLANS E1.4 (0.8).) |
-| `dx.coherence` | Coherence: one stack, one way | 38 | 63 | +25 | One kernel and Layer model since 0.7; labs lag; no umbrella crate/prelude. |
-| `eco.fit` | Third-party ecosystem fit | 38 | 50 | +12 | Tokio default executor; axum/tower feature. |
+| `core.typed-effect` | Typed success / error / requirements | 75 | 88 | +13 | Effect\<A,E,R> with HList R, trybuild compile-fail suite, book part1 ch01-03 type parameters, examples 001-018. |
+| `core.ergonomics` | Composition ergonomics | 50 | 63 | +13 | effect! binds, ~(a,b) join, retry/timeout one-call combinators, idiom guide appendix E. |
+| `core.cause` | Failure model (Cause / Exit) | 50 | 88 | +38 | failure/{cause,exit,pretty}.rs; tests/panic.rs; book part3 ch08-02 Exit. |
+| `core.scope` | Resource safety (Scope / acquire-release) | 50 | 89 | +39 | kernel/resource.rs, scope/scope.rs, resource/pool.rs; tests resource.rs/scope.rs; book part3 ch10; examples 089-091, 103. |
+| `core.interrupt` | Interruption and cancellation | 38 | 88 | +50 | Masks, fork/child interruption, race/timeout semantics; tests/fibers.rs; book part3 ch09-03 cancellation. |
+| `core.race` | timeout / race / zip-par combinators | 1 | 88 | +87 | race.rs/par.rs; tests race_timeout.rs, par.rs; book part3 ch09. |
+| `conc.fibers` | Lightweight fibers / processes | 38 | 75 | +37 | Fiber runtime fork/fork_daemon/join/interrupt; tests/fibers.rs; book part3 ch09. |
+| `conc.coordination` | Coordination primitives | 69 | 88 | +19 | coordination/\* with tests coordination\*.rs; examples 100-102; covered in book ch09-03/ch10-02 plus rustdoc. |
+| `conc.stm` | Software transactional memory | 63 | 88 | +25 | id_effect_fp STM; book part4 ch12 STM chapters. |
+| `conc.parallel` | Parallel CPU compute | 63 | 88 | +25 | compute/\* fabric, admission and governor; tests fabric.rs, compute_adaptive.rs; examples 120-122; book part3 ch12 Compute Fabric. |
+| `conc.perf` | Raw performance and footprint | 13 | 63 | +50 | Criterion gate benches, gates.toml, bench-compare.sh, docs/benchmarks/README.md. |
+| `conc.safety` | Language-level safety | 63 | 88 | +25 | forbid(unsafe_code) on all 19 published crates, Send UI test, per-fiber panic boundary, cargo audit CI. |
+| `fault.resilience` | Resilience patterns | 63 | 69 | +6 | id_effect_resilience (published) with tests/pipeline.rs integration test, examples 010/020/030, book part5 ch21-00/ch21-01. |
+| `fault.schedule` | Retry / repeat schedule algebra | 50 | 88 | +38 | scheduling/{schedule,cron,cron_job}.rs; tests schedule.rs, cron.rs; examples 052-055, 123_cron_jobs.rs; book part3 ch11 incl. ch11-05 Cron Jobs. |
+| `data.cache` | Caching (local + distributed) | 38 | 63 | +25 | In-process effectful Cache plus request batching and RequestCache; example 104_cache. No distributed or HTTP cache. |
+| `web.server` | HTTP server and routing | 50 | 63 | +13 | id_effect_axum: one fiber per request, panic becomes 500, scoped server_layer; book ch07-08/ch30, examples 010-071, tests/. |
+| `sec.config` | Config, secrets and settings | 50 | 63 | +13 | Config\<T> descriptors, layered figment sources, Config::all error accumulation and Secret\<T>. Tested in tests/config_unify.rs. Book chapter book/src/part2/ch07-10-config.md. Examples in crates/id_effect_config/examples. No profiles, vault/KMS or reload. |
+| `obs.metrics` | Metrics | 38 | 63 | +25 | Native Prometheus endpoint, runtime fiber metrics, HTTP and DB metrics, and the OTel bridge. Book chapter book/src/part6/ch27-01-metrics.md. Example crates/id_effect_axum/examples/070_metrics.rs. Integration test crates/id_effect_axum/tests/metrics.rs. |
+| `obs.tracing` | Distributed tracing (OpenTelemetry) | 50 | 63 | +13 | Effect spans are bridged to OTel through a fiber-inherited hook, with OTLP export, W3C propagation and axum server spans. Book chapters book/src/part2/ch07-12-opentelemetry.md and part6/ch27-00. Example otel_minimal.rs. Integration test tests/starter_install.rs. |
+| `obs.health` | Health, readiness, graceful shutdown | 50 | 63 | +13 | HealthRegistry with effect-backed indicators, built-in SQL and cache checks, and readiness that flips on shutdown. Book chapter book/src/part6/ch27-02-health.md. Example crates/id_effect_axum/examples/071_health.rs. Integration test crates/id_effect_axum/tests/health.rs (SIGTERM over a socket). |
+| `msg.streams` | Stream processing | 50 | 63 | +13 | Full operator set, now including zip, throttle/debounce and group_by. Book chapters book/src/part4/ch13-\* and part5/ch22-\* (ch22-06 rate and grouping). Example crates/id_effect/examples/076_stream_zip_time_group.rs. Integration test crates/id_effect/tests/stream_zip_time_group.rs. |
+| `test.unit` | Unit test kit and test doubles | 88 | 63 | -25 | testing module: run_test, Exit assertions, golden files, TestExecutor/TestRandom; in-memory fs/sql doubles; book ch15. (ADR: Removed testing::{snapshot,proptest,stream} and assert_exit_\* in 0.7 (MIGRATION-0.7.md:109): checks #3 (Exit assertions) and #5 (snapshot testing) lost; restoration planned in PLAN-OF-PLANS E2.2 (0.8).) |
+| `test.determinism` | Deterministic time and randomness | 38 | 75 | +37 | Virtual-clock TestExecutor, seeded scheduling exploration (new), seeded/scripted Random; book ch11-04, ch15-02, ch15-05. |
+| `test.property` | Property-based testing | 75 | 9 | -66 | First-party testing::property re-added in 0.8 (feature proptest): schema-derived generators, effect-aware and model-based properties; example 110_property_testing, tests/testing_property.rs. (ADR: Removed testing::proptest helpers in 0.7 (MIGRATION-0.7.md:108); restoration planned in PLAN-OF-PLANS E2.2 (0.8).) |
+| `test.integration` | Integration and E2E testing | 25 | 38 | +13 | In-process router tests (tower oneshot) in docs and templates; live-Postgres CI; no testcontainers, fixtures, isolation or contract tooling. |
+| `dx.diagnostics` | Compiler / IDE diagnostics | 69 | 50 | -19 | on_unimplemented capability errors pinned by trybuild (fail + 20-case gallery), doctor CLI and layer-graph inspection; book ch34-01, docs/diagnostics.md. (ADR: Removed the id-effect-diagnose binary in 0.7 (MIGRATION-0.7.md:1038): checks #5 (doctor CLI) and #7 (dependency-graph inspection) lost; replaced by id-effect doctor in PLAN-OF-PLANS E1.4 (0.8).) |
+| `dx.coherence` | Coherence: one stack, one way | 38 | 63 | +25 | New umbrella id_effect_kit with prelude, lockstep workspace version, single Effect/Exit model, written no-duplicate rule. |
+| `eco.fit` | Third-party ecosystem fit | 38 | 50 | +12 | Published crates for the Tokio runtime, axum/tower and tracing/OpenTelemetry, each with a book chapter, tests and an example. No reference app is tested in CI and no production consumer was found. |
 
 28 of 82 rows changed: 25 up, 3 down.
 
@@ -107,7 +107,7 @@ No row is below its planned score at 0.7.0.
 
 ## DX KPIs
 
-Not yet measured: `scripts/dx-kpis.sh` (PLAN-OF-PLANS §8) is not in the tree yet.
+Not captured in this report: run `bash scripts/dx-kpis.sh` and check the 0.7.0 row of PLAN-OF-PLANS §6.
 
 ## Bench summary
 
@@ -115,14 +115,13 @@ See [`docs/benchmarks/REPORT-0.7.md`](../benchmarks/REPORT-0.7.md). **Result: ev
 
 ## Next release slot
 
-The next slot is **0.8.0**, with a target on 28 rows. It stands as planned in `rows[].targets`; to adjust it, change the targets and regenerate this report. The planned path from 0.7.0 (METHOD §5.1, same competitor snapshot):
+The next slot is **0.9.0**, with a target on 18 rows. It stands as planned in `rows[].targets`; to adjust it, change the targets and regenerate this report. The planned path from 0.7.0 (METHOD §5.1, same competitor snapshot):
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
 |---|---|---|---|---|---|---|---|
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 target | 54.0 | 53.0 (#6) | 63.3 (#3) | 23 | 31 | 7 | 37 |
-| 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
-| 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
-| 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
-| 0.12.0 target | 77.6 | 77.4 (#1) | 81.0 (#1) | 49 | 3 | 16 | 12 |
-| 1.0.0 target | 82.0 | 82.1 (#1) | 84.5 (#1) | 59 | 1 | 20 | 12 |
+| 0.9.0 target | 65.0 | 64.9 (#3) | 69.0 (#2) | 37 | 21 | 8 | 13 |
+| 0.10.0 target | 71.4 | 71.7 (#3) | 75.3 (#1) | 42 | 11 | 9 | 12 |
+| 0.11.0 target | 75.0 | 74.7 (#2) | 79.6 (#1) | 50 | 8 | 15 | 12 |
+| 0.12.0 target | 78.8 | 78.8 (#1) | 81.7 (#1) | 51 | 3 | 16 | 12 |
+| 1.0.0 target | 82.1 | 82.2 (#1) | 84.6 (#1) | 59 | 1 | 20 | 12 |

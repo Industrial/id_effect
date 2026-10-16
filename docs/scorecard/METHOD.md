@@ -119,12 +119,12 @@ measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 |---|---|---|---|---|---|---|---|
 | 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
-| 0.8.0 target | 54.0 | 53.0 (#6) | 63.3 (#3) | 23 | 31 | 7 | 37 |
-| 0.9.0 target | 63.3 | 63.1 (#3) | 68.1 (#2) | 33 | 21 | 8 | 25 |
-| 0.10.0 target | 70.1 | 70.3 (#3) | 74.6 (#1) | 40 | 11 | 9 | 12 |
-| 0.11.0 target | 73.8 | 73.3 (#2) | 78.9 (#1) | 48 | 8 | 15 | 12 |
-| 0.12.0 target | 77.6 | 77.4 (#1) | 81.0 (#1) | 49 | 3 | 16 | 12 |
-| 1.0.0 target | 82.0 | 82.1 (#1) | 84.5 (#1) | 59 | 1 | 20 | 12 |
+| 0.8.0 measured | 56.0 | 55.2 (#5) | 64.4 (#2) | 28 | 31 | 7 | 25 |
+| 0.9.0 target | 65.0 | 64.9 (#3) | 69.0 (#2) | 37 | 21 | 8 | 13 |
+| 0.10.0 target | 71.4 | 71.7 (#3) | 75.3 (#1) | 42 | 11 | 9 | 12 |
+| 0.11.0 target | 75.0 | 74.7 (#2) | 79.6 (#1) | 50 | 8 | 15 | 12 |
+| 0.12.0 target | 78.8 | 78.8 (#1) | 81.7 (#1) | 51 | 3 | 16 | 12 |
+| 1.0.0 target | 82.1 | 82.2 (#1) | 84.6 (#1) | 59 | 1 | 20 | 12 |
 
 Competitor indices in the same snapshot (after the §7.4 alignment):
 
@@ -156,7 +156,10 @@ of method 1.0 (.NET E 85.4, Spring 81.1, Phoenix 77.6, Laravel 71.3).
 | 0.12.0 target | 76.6 | 76.4 (#4) | 80.7 (#1) | 51 | 3 | 8 | 12 |
 | 1.0.0 target | 80.3 | 80.3 (#3) | 83.3 (#1) | 59 | 1 | 10 | 11 |
 
-Under method 1.0 (before the caps) the 0.7.0 row read U 49.1, E 46.8 (#11), RT 59.1 (#7).
+Under method 1.0 (before the caps) the 0.7.0 row read U 49.1, E 46.8 (#11), RT 59.1 (#7). The
+method 1.1 history stops at 0.7.0; 0.8.0 onward is scored by method 2.1 only. Measuring a version
+raises the planned scores of later targets (§5.1 takes the higher of the measured base and the
+target), which is why the 0.9.0+ rows above moved when 0.8.0 was measured.
 
 Any implementation of §5 **must** reproduce these tables exactly from `scorecard.json`. They are the
 tool's self-test fixture.
@@ -266,4 +269,5 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
 | 2026-10-15 | 1.0 | v2 checklists added (reported alongside). |
 | 2026-10-16 | 1.1 | v1 caps applied strictly: 25 id_effect scores on 17 rows lowered to the cap of their v2 level (owner decision L13). |
 | 2026-10-16 | 2.0 | v2 primary (L13). Competitor levels aligned by one rule (§7.4, `alignment-2.0.json`: 60 competitor scores changed); stored scores are checklist scores, validated; targets re-based (§7.4); method 1.1 kept in `rows[].v1`. ADR notes added at 0.7.0 for `test.unit` and `dx.diagnostics`, whose checklist scores drop from 0.6.0 (removed helpers and `id-effect-diagnose`). |
+| 2026-10-16 | 2.1 | 0.8.0 measured by blind re-score (§6; five assessors without targets): E 55.2 (#5), RT 64.4 (#2), red 31. One miss carried over (`data.jsonschema` 38 vs 50). The method 1.1 history may stop before the latest measured version (v1.id_effect is a subset). |
 | 2026-10-16 | 2.1 | Process-row level rule (§7.4; owner decision D2 at 0.8 kickoff): 7 rows marked `process`; id_effect `eco.stability` 49 → 50 at 0.6.0 and 0.7.0 (no longer capped at `published`). `data.jsonschema` 0.8.0 target 75 → 50 (owner decision D1: OpenAPI from routes stays in 0.9). |
