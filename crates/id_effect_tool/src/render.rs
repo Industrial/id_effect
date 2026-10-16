@@ -23,7 +23,8 @@ pub enum Db {
   /// No database: the service boots with no other services running.
   #[default]
   None,
-  /// PostgreSQL through `id_effect_sql` (kit feature `sql-pg`), with a first migration.
+  /// PostgreSQL through `id_effect_sql` (kit features `sql-pg` and `migrate`), with a first
+  /// migration applied on start.
   Pg,
 }
 
@@ -110,7 +111,7 @@ impl Options {
       Template::Service => {
         features.push("web");
         if self.db == Db::Pg {
-          features.push("sql-pg");
+          features.extend(["sql-pg", "migrate"]);
         }
         if self.otel {
           features.push("otel");
@@ -137,7 +138,7 @@ impl Options {
     for feature in self.kit_features() {
       crates.extend_from_slice(match feature {
         "web" => &["id_effect_axum", "id_effect_platform"][..],
-        "sql-pg" => &["id_effect_sql"],
+        "sql-pg" | "migrate" => &["id_effect_sql"],
         "otel" => &["id_effect_opentelemetry", "id_effect_logger"],
         "cluster" => &["id_effect_node", "id_effect_process"],
         _ => &[],
@@ -402,7 +403,7 @@ mod tests {
       let base = Options::new("app", Template::Service);
       assert_eq!(base.kit_features(), ["web"]);
       let full = base.db(Db::Pg).otel(true);
-      assert_eq!(full.kit_features(), ["web", "sql-pg", "otel"]);
+      assert_eq!(full.kit_features(), ["web", "sql-pg", "migrate", "otel"]);
     }
 
     #[test]
@@ -539,11 +540,19 @@ mod tests {
           let files = render(&o).expect("render");
           let cargo = file(&files, "Cargo.toml");
           assert_eq!(cargo.contains("\"sql-pg\""), db == Db::Pg, "{cargo}");
+          assert_eq!(cargo.contains("\"migrate\""), db == Db::Pg, "{cargo}");
           assert_eq!(cargo.contains("\"otel\""), otel, "{cargo}");
           assert_eq!(
             paths(&files).contains(&"migrations/0001_init.sql"),
             db == Db::Pg
           );
+          if db == Db::Pg {
+            let db_rs = file(&files, "src/db.rs");
+            assert!(db_rs.contains("migrate::run"), "{db_rs}");
+            assert!(!db_rs.contains("include_str!"), "{db_rs}");
+          }
+          let ci = file(&files, ".github/workflows/ci.yml");
+          assert_eq!(ci.contains("id-effect migrate check"), db == Db::Pg, "{ci}");
           let main = file(&files, "src/main.rs");
           assert_eq!(main.contains("install_from_config"), otel);
         }

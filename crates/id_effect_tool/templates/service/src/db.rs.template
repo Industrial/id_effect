@@ -1,13 +1,14 @@
-//! PostgreSQL: the connection pool, the migration in `migrations/` and the `db` readiness check.
+//! PostgreSQL: the connection pool, the migrations in `migrations/` and the `db` readiness check.
 
-use id_effect::Exit;
+use id_effect::{Cause, Exit};
 use id_effect_kit::axum::{EffectExecutor, HealthIndicator};
-use id_effect_kit::sql::SqlClient;
+use id_effect_kit::sql::migrate;
 use id_effect_kit::sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
+use id_effect_kit::sql::{SqlClientEnv, sql_client_env};
 
-/// The first migration. It is idempotent and runs on every start; move to a migration tool
-/// (sqlx-cli, refinery) once the schema grows.
-pub const MIGRATION_0001: &str = include_str!("../migrations/0001_init.sql");
+/// The migrations directory, read on start relative to the working directory (the project
+/// root under `cargo run`, `/app` in the image). `id-effect migrate new <name>` adds one.
+pub const MIGRATIONS_DIR: &str = "migrations";
 
 /// A connected, migrated database.
 #[derive(Clone)]
@@ -16,17 +17,22 @@ pub struct Database {
 }
 
 impl Database {
-    /// Connects to `DATABASE_URL` and runs the migration.
+    /// Connects to `DATABASE_URL` and applies the pending migrations of [`MIGRATIONS_DIR`]: each
+    /// in its own transaction under an advisory lock (replicas starting together apply it once),
+    /// recorded in `_id_effect_migrations`. A migration changed after it was applied stops the
+    /// start.
     pub async fn connect() -> Result<Self, String> {
         let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is not set")?;
         let pool = pg_pool_from_config(PgPoolConfig::from_url(url))
             .await
             .map_err(|e| format!("database: {}", e.0))?;
         let client = PgSqlClient::new(pool);
-        let migrate = client.execute(MIGRATION_0001, &[]);
-        match EffectExecutor::global().run_effect(migrate).await {
-            Exit::Success(_) => Ok(Self { client }),
-            Exit::Failure(cause) => Err(format!("migration 0001: {cause:?}")),
+        let migrations = migrate::run::<SqlClientEnv, _>(MIGRATIONS_DIR)
+            .provide_all(sql_client_env(client.clone()));
+        match EffectExecutor::global().run_effect(migrations).await {
+            Exit::Success(_applied) => Ok(Self { client }),
+            Exit::Failure(Cause::Fail(e)) => Err(format!("migrations: {e}")),
+            Exit::Failure(cause) => Err(format!("migrations: {cause:?}")),
         }
     }
 

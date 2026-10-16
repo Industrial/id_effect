@@ -138,6 +138,16 @@
   `Factory` with seeded Schema-arbitrary defaults and `FromRow` rows (feature `fixtures`); an
   in-process `TestClient` over any tower `Service` (feature `http`). Book:
   part4/ch15-08-integration-testing.md; example `020_isolated_db`.
+- `id_effect_kit`: features `openapi`, `sql`, `sql-sqlite`, `sql-mysql`, `migrate`, `repository`,
+  `auth` (+ `auth-oidc`, `auth-totp`), `authz`, `redis`, `config-vault` and `test` (for
+  dev-dependencies; not in `full`); `full` updated; the prelude gains typed routes, `Problem`,
+  `Valid*`, middleware, `OpenApi`, `FromRow` / `Entity` / `Repository`, `Migrator`, the auth and
+  authz types and `Profiles`. Derives used through the kit alone need
+  `#[from_row(crate = id_effect_kit::sql)]`.
+- `id_effect_tool` `service` template: applies `migrations/` with `id_effect_sql::migrate::run` on
+  start (no more `include_str!` + execute on every start), serves a typed Problem+JSON route
+  behind request-id / compression / timeout / body-limit middleware, and with `--db pg` its CI
+  runs `id-effect migrate run` + `migrate check`.
 - `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
   sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
   exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.
