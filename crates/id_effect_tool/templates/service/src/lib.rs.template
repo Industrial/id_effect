@@ -1,0 +1,50 @@
+//! {{name}}: an HTTP service on id_effect with secure defaults, health, readiness and metrics.
+//!
+//! [`app`] assembles the router; `main.rs` loads the configuration and serves it until SIGINT
+//! or SIGTERM.
+
+use std::convert::Infallible;
+
+use axum::Router;
+use id_effect::{Counter, Effect};
+use id_effect_kit::axum::metrics::{http_metrics_layer, metrics_router};
+use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
+use id_effect_kit::axum::{HealthRegistry, routing};
+
+{{#if pg}}
+pub mod db;
+
+{{/if}}
+/// State shared by the routes.
+#[derive(Clone)]
+pub struct AppState {
+    greetings: Counter,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            greetings: Counter::new("greetings"),
+        }
+    }
+}
+
+/// `GET /`: counts the greeting (`greetings_total` on `/metrics`) and answers it.
+fn index(state: &mut AppState) -> Effect<String, Infallible, AppState> {
+    let greeting = format!("hello from {}", env!("CARGO_PKG_NAME"));
+    state.greetings.increment().map(move |()| greeting)
+}
+
+/// The application: `/`, plus `/health` and `/ready` (running the checks in `health`) and
+/// `/metrics`. Every request is counted by [`http_metrics_layer`] and passes through
+/// [`SecurityLayer::recommended`]: CSRF protection, a nonce-based CSP, security headers and
+/// cookies signed with `cookie_key`.
+pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
+    Router::new()
+        .route("/", routing::get(index))
+        .merge(metrics_router())
+        .with_state(AppState::default())
+        .merge(health.routes())
+        .layer(http_metrics_layer())
+        .layer(SecurityLayer::recommended(cookie_key))
+}

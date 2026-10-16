@@ -70,6 +70,30 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  deny:
+    description: 'Run cargo deny check (advisories, licenses, bans, sources; policy in deny.toml)'
+    command: 'cargo'
+    args: ['deny', 'check']
+    inputs:
+      - 'deny.toml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '**/Cargo.toml'
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
+  semver:
+    description: >-
+      Run cargo semver-checks for the publishable crates against the 0.7.0 crates.io baseline. Report-only in CI until v0.8.0 (see the semver job in ci.yml and docs/STABILITY.md).
+    command: 'cargo'
+    args: ['semver-checks', '--workspace', '--baseline-version', '0.7.0']
+    inputs:
+      - 'Cargo.toml'
+      - '**/Cargo.toml'
+      - 'crates/**/*.rs'
+    options:
+      cache: false
+      outputStyle: buffer-only-failure
   parity-checklist:
     description: 'Validate Effect.ts upstream parity checklist and UPSTREAM-VERSION pin'
     command: 'bash'
@@ -78,6 +102,16 @@ tasks:
       - 'scripts/parity-checklist.sh'
       - 'docs/effect-ts-parity/CHECKLIST-upstream-effect.md'
       - 'docs/effect-ts-parity/UPSTREAM-VERSION'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  scorecard:
+    description: 'Validate docs/scorecard/scorecard.json and reproduce METHOD §5.2 (scorecard self-test)'
+    command: 'bash'
+    args: ['scripts/scorecard.sh', '--validate', '--self-test']
+    inputs:
+      - 'scripts/scorecard.sh'
+      - 'docs/scorecard/**/*'
     options:
       cache: true
       outputStyle: buffer-only-failure
@@ -157,6 +191,24 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  compile-time:
+    description: >-
+      Measure the template app build loop: cold build, incremental rebuild after a one-line change, and boot (median of 3; see docs/benchmarks/README.md). Manual only, not part of ci; run on an idle machine.
+    command: 'bash'
+    args: ['scripts/compile-time.sh', '--json']
+    options:
+      cache: false
+      runInCI: false
+      outputStyle: stream
+  dx-kpis:
+    description: >-
+      Measure the 0.8 DX KPIs and write docs/benchmarks/dx-kpis-0.8.json: K1 (id-effect new service to GET /health = 200, cold build, budget 180 s), K4 (diagnostics gallery errors that state the fix, >= 17/20), K5 (book rust fences compiled as doctests, >= 80 %). Manual only, not part of ci; run on an idle machine.
+    command: 'bash'
+    args: ['scripts/dx-kpis.sh', '--json']
+    options:
+      cache: false
+      runInCI: false
+      outputStyle: stream
   check-docs:
     description: 'Build docs with -D warnings (same bar as Docs & Pages)'
     command: 'bash'

@@ -1,0 +1,7 @@
+# docker compose up --build    (one node; it runs a counter on an in-process peer and exits)
+services:
+  node:
+    build: .
+    environment:
+      NODE_NAME: a@node
+      RUST_LOG: info

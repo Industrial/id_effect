@@ -88,6 +88,7 @@ pub mod cluster;
 pub mod executor;
 pub mod health;
 pub mod json;
+pub mod metrics;
 pub mod request_caps;
 pub mod routing;
 pub mod server;
@@ -101,14 +102,17 @@ pub use executor::{
 pub use request_caps::{
   CapOverride, CapOverrideLayer, RequestCaps, execute_with_request_caps, run_with_request_caps,
 };
+#[allow(deprecated)]
 pub use server::{
-  CSRF_HEADER, ContentSecurityPolicy, CsrfConfig, Host, HostBuilder, HostConfig, HostDrain,
-  HostError, ServerHandle, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware,
+  CSRF_HEADER, ContentSecurityPolicy, CookieKey, Cookies, CorsConfig, CspNonce, CsrfConfig,
+  CsrfToken, Host, HostBuilder, HostConfig, HostDrain, HostError, SecurityError, SecurityHeaders,
+  SecurityLayer, ServerHandle, ShutdownReason, bootstrap_env, csp_middleware, csrf_middleware,
   drain_with_timeout, load_host_config, provide_host_config_env, serve, serve_router,
   serve_until_shutdown, server_layer, set_csrf_header, socket_addr, wait_for_shutdown,
 };
 
 pub use health::{
+  CheckReport, HealthIndicator, HealthOutcome, HealthRegistry, HealthReport, HealthStatus,
   ReadinessCheck, ReadinessState, health, health_router, observability_routes,
   observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
 };

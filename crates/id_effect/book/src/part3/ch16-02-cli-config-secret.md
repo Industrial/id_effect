@@ -11,7 +11,7 @@
 
 From `examples/cli-minimal/src/lib.rs`:
 
-```rust,ignore
+```rust
 use id_effect::{Cause, Effect};
 use id_effect_config::{Config, ConfigEnv, ConfigError, MapConfigProvider, Secret, config_env};
 
@@ -34,6 +34,9 @@ pub fn load_token_secret(token: &str) -> Result<Secret<String>, Cause<ConfigErro
     let env = config_env(MapConfigProvider::from_pairs([("API_TOKEN", token)]));
     token_secret().provide_env(env).block_on().into_result()
 }
+# assert!(load_token_secret("t0ken").is_ok());
+# let (eff, env) = app_effect("t0ken".to_owned());
+# assert!(eff.provide_env(env).block_on().into_result().is_ok());
 ```
 
 `main` then calls `run_main(eff, env, RunMainConfig::with_tracing())` ([CLI with clap](./ch16-00-cli-with-clap.md)). The repository ships the full runnable layout under **[`examples/cli-minimal`](https://github.com/Industrial/id_effect/tree/main/examples/cli-minimal)** (`cli_minimal` package in the workspace).

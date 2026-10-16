@@ -1,12 +1,15 @@
-//! Additional combinators: [`record`], [`suspend`], [`union_chain`], literals, [`wire_equal`].
+//! Additional combinators: [`record`], [`suspend`] / [`suspend_named`], [`union_chain`], literals,
+//! [`wire_equal`].
 //!
 //! See [`crate::schema::SPEC.md`](./SPEC.md) and repository [`TESTING.md`](../../../../TESTING.md).
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
+use crate::schema::ast::{LazyAst, SchemaAst, SchemaKind};
 use crate::schema::data::EffectData;
-use crate::schema::parse::{ParseError, Schema, Unknown};
+use crate::schema::parse::{Issues, ParseError, Schema, Unknown, union_ast};
+use crate::schema::parse_errors::ParseErrors;
 
 /// Homogeneous string-keyed map (JSON object with arbitrary keys, same value schema).
 ///
@@ -45,6 +48,32 @@ where
       Ok(out)
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Record(Box::new(
+    value.ast().clone(),
+  ))))
+  .with_decode_unknown_all(move |u| {
+    let obj = match u {
+      Unknown::Object(m) => m,
+      _ => {
+        return Err(ParseErrors::one(ParseError::new(
+          "",
+          "expected object for record",
+        )));
+      }
+    };
+    let mut issues = Issues::default();
+    let mut out = BTreeMap::new();
+    for (k, uv) in obj {
+      if let Some(a) = issues.take(value.decode_unknown_all(uv).map_err(|e| e.prefix(k))) {
+        out.insert(k.clone(), a);
+      }
+    }
+    if issues.is_empty() {
+      Ok(out)
+    } else {
+      Err(issues.into_errors())
+    }
+  })
 }
 
 /// Exact string literal (Effect.ts `Schema.Literal` for strings).
@@ -70,6 +99,9 @@ pub fn literal_string<E: EffectData + 'static>(
       )),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Literal(Unknown::String(
+    s.to_owned(),
+  ))))
 }
 
 /// Exact `i64` literal.
@@ -89,6 +121,7 @@ pub fn literal_i64<E: EffectData + 'static>(n: i64) -> Schema<i64, i64, E> {
       _ => Err(ParseError::new("", format!("expected literal i64 {n}"))),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Literal(Unknown::I64(n))))
 }
 
 /// Alias of [`crate::schema::parse::optional`] — nullable / optional root (`null` → `None`).
@@ -103,7 +136,32 @@ where
 
 /// Lazy schema for recursion (Effect.ts `Schema.suspend`): `thunk` is called at most once to build
 /// the real [`Schema`], then results are cached.
+///
+/// Its [`SchemaAst`] is an unnamed [`SchemaKind::Lazy`]; prefer [`suspend_named`] for recursive
+/// schemas you export, so JSON Schema can refer back with `$ref`.
 pub fn suspend<A, I, E, F>(thunk: F) -> Schema<A, I, E>
+where
+  E: EffectData + 'static,
+  A: 'static,
+  I: 'static,
+  F: Fn() -> Schema<A, I, E> + Send + Sync + 'static,
+{
+  suspend_impl(None, thunk)
+}
+
+/// [`suspend`] with a definition `name`: JSON Schema export emits the target once under
+/// `$defs/<name>` and refers to it with `$ref`, so recursive schemas export finitely.
+pub fn suspend_named<A, I, E, F>(name: impl Into<String>, thunk: F) -> Schema<A, I, E>
+where
+  E: EffectData + 'static,
+  A: 'static,
+  I: 'static,
+  F: Fn() -> Schema<A, I, E> + Send + Sync + 'static,
+{
+  suspend_impl(Some(name.into()), thunk)
+}
+
+fn suspend_impl<A, I, E, F>(name: Option<String>, thunk: F) -> Schema<A, I, E>
 where
   E: EffectData + 'static,
   A: 'static,
@@ -132,6 +190,12 @@ where
       s.decode_unknown(u)
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Lazy(LazyAst::new(name, {
+    let t = thunk.clone();
+    let c = cell.clone();
+    move || c.get_or_init(|| t()).ast().clone()
+  }))))
+  .with_decode_unknown_all(move |u| cell.get_or_init(|| thunk()).decode_unknown_all(u))
 }
 
 /// Try each schema in order; first successful decode wins (encode uses **only** the first schema).
@@ -150,7 +214,9 @@ where
   let list: Arc<Vec<Schema<A, Unknown, E>>> = Arc::new(schemas);
   let list_dec = list.clone();
   let list_du = list.clone();
+  let list_all = list.clone();
   let enc = list[0].clone();
+  let ast = union_ast(list.iter().map(Schema::ast));
   Schema::make(
     move |u: Unknown| {
       for s in list_dec.iter() {
@@ -176,6 +242,18 @@ where
       ))
     },
   )
+  .with_ast(ast)
+  .with_decode_unknown_all(move |u| {
+    for s in list_all.iter() {
+      if let Ok(a) = s.decode_unknown_all(u) {
+        return Ok(a);
+      }
+    }
+    Err(ParseErrors::one(ParseError::new(
+      "",
+      "no arm of union_chain accepted the unknown value",
+    )))
+  })
 }
 
 /// Compare two values by **encoded wire** equality (Effect.ts-style equivalence when `I` matches).

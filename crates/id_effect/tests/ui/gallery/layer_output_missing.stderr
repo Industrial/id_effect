@@ -1,0 +1,16 @@
+error[E0277]: the environment `HCons<Db, HNil>` does not contain every capability of `HCons<Db, HCons<Mailer, HNil>>`
+  --> tests/ui/gallery/layer_output_missing.rs:23:20
+   |
+23 |   let _ = signup().provide_layer(db_layer());
+   |                    ^^^^^^^^^^^^^ cannot narrow `HCons<Db, HNil>` to `HCons<Db, HCons<Mailer, HNil>>`
+   |
+   = help: the trait `Embed<HCons<Db, HCons<Mailer, HNil>>, HCons<Here, HCons<There<_>, HNil>>>` is not implemented for `HCons<Db, HNil>`
+   = note: every capability of `HCons<Db, HCons<Mailer, HNil>>` must be in `HCons<Db, HNil>`; add the missing ones to the caller's `caps!(..)` (for a `~` bind, a `~(..)` branch or `.narrow()`), to the `hlist![..]` (for `.provide_env(..)`) or to the layer's output (for `.provide_layer(..)` / `.provide_to(..)`)
+note: required by a bound in `layer::<impl Effect<A, E, R>>::provide_layer`
+  --> src/layer.rs
+   |
+   |   pub fn provide_layer<Out, In, Is>(self, layer: Layer<Out, E, In>) -> Effect<A, E, In>
+   |          ------------- required by a bound in this associated function
+   |   where
+   |     Out: HList + Embed<R, Is>,
+   |                  ^^^^^^^^^^^^ required by this bound in `layer::<impl Effect<A, E, R>>::provide_layer`

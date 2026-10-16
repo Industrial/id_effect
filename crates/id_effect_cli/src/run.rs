@@ -1,37 +1,69 @@
-//! `run_main` — the CLI run edge: tracing buffer (optional), `block_on`, stderr, [`ExitCode`].
+//! `run_main` — the CLI run edge: tracing buffer (optional), Ctrl-C → interrupt (optional),
+//! `block_on`, stderr, [`ExitCode`].
 
 use std::fmt::{self, Debug};
 use std::process::ExitCode;
+use std::sync::Arc;
 
-use id_effect::{Cause, Exit};
+use id_effect::{Cause, Defect, Exit, FiberContext, Runtime};
 use id_effect::{IntoLocal, TracingConfig, install_tracing_layer, tracing_hook};
+use tokio::sync::oneshot;
 
 use crate::exit_code_for_cause;
 
-/// Options for [`run_main`].
+/// Options for [`run_main`]. Start from [`RunMainConfig::minimal`] (also the [`Default`]) or
+/// [`RunMainConfig::with_tracing`] and adjust with the builder methods.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RunMainConfig {
   /// When `true`, turns on the in-process tracing buffer ([`install_tracing_layer`] with
   /// [`TracingConfig::enabled`]) and runs `effect` under its span hook ([`tracing_hook`]), so
   /// every `with_span` inside is recorded (read it back with `snapshot_tracing`).
   pub install_tracing: bool,
+  /// When `true` (the default), the first Ctrl-C (`SIGINT`) interrupts the program's root fiber:
+  /// finalizers run and the exit code is `130`. A second Ctrl-C exits `130` at once.
+  pub interrupt_on_ctrl_c: bool,
 }
 
 impl RunMainConfig {
-  /// No tracing install; only runs the effect and maps its [`Exit`] to an [`ExitCode`].
+  /// No tracing install; runs the effect (Ctrl-C interrupts it) and maps its [`Exit`] to an
+  /// [`ExitCode`].
   #[inline]
   pub fn minimal() -> Self {
     Self {
       install_tracing: false,
+      interrupt_on_ctrl_c: true,
     }
   }
 
   /// Same as [`RunMainConfig::minimal`] but installs tracing first.
   #[inline]
   pub fn with_tracing() -> Self {
-    Self {
-      install_tracing: true,
-    }
+    Self::minimal().tracing(true)
+  }
+
+  /// Sets [`install_tracing`](Self::install_tracing).
+  #[inline]
+  #[must_use]
+  pub fn tracing(mut self, on: bool) -> Self {
+    self.install_tracing = on;
+    self
+  }
+
+  /// Sets [`interrupt_on_ctrl_c`](Self::interrupt_on_ctrl_c); `false` keeps the process's
+  /// default Ctrl-C handling (or the one the program installs).
+  #[inline]
+  #[must_use]
+  pub fn ctrl_c(mut self, interrupt: bool) -> Self {
+    self.interrupt_on_ctrl_c = interrupt;
+    self
+  }
+}
+
+impl Default for RunMainConfig {
+  #[inline]
+  fn default() -> Self {
+    Self::minimal()
   }
 }
 
@@ -53,6 +85,12 @@ impl RunMainConfig {
 /// Typed failures are printed with [`Debug`] (covers `E = ()` and structured errors). For
 /// user-facing CLI output, map errors to `String` (or a thin `Display` wrapper) first.
 ///
+/// The program runs as an explicit root [`FiberContext`]. With
+/// [`interrupt_on_ctrl_c`](RunMainConfig::interrupt_on_ctrl_c) (the default) the first Ctrl-C
+/// requests its interruption, so `ensuring` / `acquire_use_release` finalizers run before the
+/// `130` exit; a second Ctrl-C exits `130` immediately. The watcher stops when the program
+/// ends, but the process-wide `SIGINT` handler it registered stays installed.
+///
 /// Call it from `main` only: it parks the calling thread, and inside an async context (a tokio
 /// task) it runs nothing and exits `101`.
 ///
@@ -69,12 +107,76 @@ where
     install_tracing_layer(TracingConfig::enabled());
     program = program.with_span_hook(tracing_hook());
   }
+  let rt = Runtime::global();
+  let fiber = FiberContext::new_root(Arc::clone(rt.executor()));
+  let interrupt_on_ctrl_c = config.interrupt_on_ctrl_c;
+  // Everything happens on the first poll, so inside an async context nothing (not even the
+  // signal handler) is installed.
+  let run = async move {
+    let _watch = if interrupt_on_ctrl_c {
+      watch_ctrl_c(&fiber).await
+    } else {
+      None
+    };
+    program.run_fiber(fiber).await
+  };
   #[allow(
     clippy::disallowed_methods,
     reason = "edge: `run_main` is the CLI program edge (called from `main`), the one place that blocks"
   )]
-  let exit = program.block_on();
+  let exit = rt
+    .block_on_future(run)
+    .unwrap_or_else(|e| Exit::Failure(Cause::Die(Defect::new(e.to_string()))));
   report_exit(exit)
+}
+
+/// Stops the Ctrl-C watcher when dropped (its receiver sees the sender go away).
+type CtrlCWatch = oneshot::Sender<()>;
+
+/// Spawns the Ctrl-C watcher for `fiber` on its executor and waits until the signal handler is
+/// registered (so a Ctrl-C right after start is not lost). `None` when no handler can be
+/// registered; the program then runs with the default Ctrl-C handling.
+async fn watch_ctrl_c(fiber: &Arc<FiberContext>) -> Option<CtrlCWatch> {
+  let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+  let (ready_tx, ready_rx) = oneshot::channel::<bool>();
+  let target = Arc::clone(fiber);
+  fiber.executor().spawn(Box::pin(async move {
+    let Ok(mut sigint) = listen_ctrl_c() else {
+      let _ = ready_tx.send(false);
+      return;
+    };
+    let _ = ready_tx.send(true);
+    let mut interrupted = false;
+    loop {
+      tokio::select! {
+        _ = &mut stop_rx => return,
+        got = sigint.recv() => {
+          if got.is_none() {
+            return;
+          }
+          if interrupted {
+            std::process::exit(130);
+          }
+          interrupted = true;
+          target.request_interrupt();
+        }
+      }
+    }
+  }));
+  match ready_rx.await {
+    Ok(true) => Some(stop_tx),
+    _ => None,
+  }
+}
+
+#[cfg(unix)]
+fn listen_ctrl_c() -> std::io::Result<tokio::signal::unix::Signal> {
+  tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+}
+
+#[cfg(windows)]
+fn listen_ctrl_c() -> std::io::Result<tokio::signal::windows::CtrlC> {
+  tokio::signal::windows::ctrl_c()
 }
 
 /// Prints a failed [`Exit`] to stderr and maps it to an [`ExitCode`].
@@ -181,6 +283,61 @@ mod tests {
         }),
         "{snap:?}"
       );
+    }
+
+    #[test]
+    fn without_ctrl_c_watch_still_runs_timers() {
+      let eff = id_effect::sleep::<&str, HNil>(std::time::Duration::from_millis(1));
+      let code = run_main(eff, HNil, RunMainConfig::minimal().ctrl_c(false));
+      assert_eq!(code, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn with_ctrl_c_watch_runs_a_suspending_effect() {
+      let eff = id_effect::sleep::<&str, HNil>(std::time::Duration::from_millis(1));
+      let code = run_main(eff, HNil, RunMainConfig::minimal());
+      assert_eq!(code, ExitCode::SUCCESS);
+    }
+
+    #[test]
+    fn inside_an_async_context_runs_nothing_and_returns_101() {
+      use std::sync::atomic::{AtomicBool, Ordering};
+      let ran = Arc::new(AtomicBool::new(false));
+      let seen = Arc::clone(&ran);
+      let (tx, rx) = std::sync::mpsc::channel();
+      // A task on the default runtime's tokio executor is an async context.
+      Runtime::global().executor().spawn(Box::pin(async move {
+        let eff = sync::<(), &str, HNil>(move || seen.store(true, Ordering::SeqCst));
+        let _ = tx.send(run_main(eff, HNil, RunMainConfig::minimal()));
+      }));
+      let code = rx.recv().expect("spawned task reports");
+      assert_eq!(code, ExitCode::from(101u8));
+      assert!(!ran.load(Ordering::SeqCst));
+    }
+  }
+
+  mod run_main_config {
+    use super::*;
+
+    #[test]
+    fn minimal_interrupts_on_ctrl_c_without_tracing() {
+      let c = RunMainConfig::minimal();
+      assert!(!c.install_tracing);
+      assert!(c.interrupt_on_ctrl_c);
+    }
+
+    #[test]
+    fn default_is_minimal() {
+      let c = RunMainConfig::default();
+      assert!(!c.install_tracing && c.interrupt_on_ctrl_c);
+    }
+
+    #[test]
+    fn builder_methods_set_each_field() {
+      let c = RunMainConfig::with_tracing().ctrl_c(false);
+      assert!(c.install_tracing);
+      assert!(!c.interrupt_on_ctrl_c);
+      assert!(!c.tracing(false).install_tracing);
     }
   }
 

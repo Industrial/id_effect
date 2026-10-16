@@ -1,0 +1,9 @@
+{
+  "id": "hnd-mva252at-pr2b3c",
+  "task_id": "tsk-mv9xeqip-axc0oj",
+  "trigger_verb": "task:claim",
+  "created_at": "2026-10-15T21:35:19.781Z",
+  "agent_id": "claude-opus",
+  "spec_path": "/data/Code/rust/id_effect/.maestro/specs/roadmap-bootstrap.md",
+  "to_agent": "claude-code"
+}

@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](./introduction.md)
+[Tutorial: zero to production](./tutorial-zero-to-production.md)
 
 # Part I: Foundations
 
@@ -76,6 +77,7 @@
   - [Built-in Schedules](./part3/ch11-02-builtin-schedules.md)
   - [retry and repeat](./part3/ch11-03-retry-repeat.md)
   - [Virtual Time and the Executor Clock](./part3/ch11-04-clock-injection.md)
+  - [Cron Jobs](./part3/ch11-05-cron.md)
 - [Compute Fabric](./part3/ch12-00-compute-fabric.md)
 - [CLI with clap](./part3/ch16-00-cli-with-clap.md)
   - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
@@ -104,6 +106,8 @@
   - [Virtual Time with TestExecutor](./part4/ch15-02-test-clock.md)
   - [Mocking Services](./part4/ch15-03-mocking.md)
   - [Property Testing](./part4/ch15-04-property-testing.md)
+  - [Exploring Interleavings](./part4/ch15-05-interleavings.md)
+  - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
 
 # Part V: Functional Patterns
 
@@ -133,8 +137,10 @@
   - [Replay fanout](./part5/ch22-03-replay-fanout.md)
   - [state_scan FSM stepping](./part5/ch22-04-state-scan.md)
   - [Transducers on streams](./part5/ch22-05-transducers.md)
+  - [Rate limiting and grouping](./part5/ch22-06-rate-and-grouping.md)
 
 - [Runtime Resilience](./part5/ch21-00-runtime-resilience.md)
+  - [Fallbacks and Resilience Pipelines](./part5/ch21-01-resilience-pipelines.md)
 
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
@@ -144,12 +150,15 @@
 
 - [Platform introduction](./part6/ch26-00-platform-introduction.md)
 - [Observability and health](./part6/ch27-00-observability.md)
+  - [Metrics and Prometheus](./part6/ch27-01-metrics.md)
+  - [Health checks and readiness](./part6/ch27-02-health.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
 - [Application host](./part6/ch30-00-application.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
+  - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
 - [AI and MCP (`id_effect_ai`, labs)](./part6/ch35-00-ai.md)
 
 # Part VII: Process Mesh
@@ -174,4 +183,5 @@
 - [Migrating from `async fn` to effects](./appendix-b-migration.md)
 - [Glossary](./appendix-c-glossary.md)
 - [Workspace tooling (macros and lints)](./appendix-d-workspace-tooling.md)
+- [Idiom and Style Guide](./appendix-e-idiom-guide.md)
 

@@ -1,0 +1,15 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# One front door to id_effect: a feature per battery (web, sql-pg, otel, cluster).
+id_effect_kit = { version = "{{id_effect_version}}", features = [{{kit_features}}] }
+# The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
+id_effect = "{{id_effect_version}}"
+# `Process`, `ProcessNode`, `NodeName`: the local process layer the mesh distributes.
+id_effect_process = "{{id_effect_version}}"
+postcard = { version = "1", features = ["alloc"] }
+serde = { version = "1", features = ["derive"] }

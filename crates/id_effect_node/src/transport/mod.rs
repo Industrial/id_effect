@@ -44,6 +44,8 @@ impl From<std::io::Error> for TransportError {
 ///
 /// Guarantees (normative): frames are delivered in order per direction or
 /// the connection reports [`TransportError::Closed`]; no partial frames.
+// async-trait emits `#[must_use]` on methods returning an already-must_use boxed future.
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait Connection: Send + Sync {
   /// Send one frame. Errors mean the connection is dead.
@@ -57,6 +59,7 @@ pub trait Connection: Send + Sync {
 }
 
 /// Accepts inbound connections on a bound address.
+#[allow(clippy::double_must_use)] // see `Connection`
 #[async_trait::async_trait]
 pub trait Listener: Send + Sync {
   /// Wait for the next inbound connection.
@@ -67,6 +70,7 @@ pub trait Listener: Send + Sync {
 
 /// A way of dialing and listening — the only thing the distribution layer
 /// needs from the network.
+#[allow(clippy::double_must_use)] // see `Connection`
 #[async_trait::async_trait]
 pub trait Transport: Send + Sync {
   /// Dial a peer address.

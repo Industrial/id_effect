@@ -4,9 +4,15 @@
 
 ## Expected vs. Unexpected
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps};
+# struct User;
+# struct UserNotFound;
+# struct Db;
+# type Expected =
 // Expected: you planned for this
 Effect<User, UserNotFound, caps!(Db)>
+# ;
 
 // But what if the database driver panics?
 // What if the fiber is interrupted?
@@ -19,6 +25,7 @@ Traditional Rust handles unexpected failures through panics, which unwind (or ab
 
 `Cause<E>` is id_effect's complete taxonomy of failure (`id_effect::Cause`):
 
+<!-- ignore: excerpt of the id_effect::Cause definition, not a standalone program -->
 ```rust,ignore
 pub enum Cause<E> {
     Fail(E),                            // your typed, expected error

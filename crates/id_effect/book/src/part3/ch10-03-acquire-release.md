@@ -28,19 +28,38 @@ The resource type must be `Clone` (one copy goes to `use_`, one to `release`), s
 
 `acquire_use_release` makes the acquisition-release pair inseparable. You can't call `open_connection()` without also registering its cleanup, and you can't forget the cleanup on the error path:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Never, acquire_use_release, effect, succeed, sync};
+# #[derive(Clone)]
+# struct Conn;
+# #[derive(Debug)]
+# struct DbError;
+# fn open_connection() -> Effect<Conn, DbError> { succeed(Conn) }
+# fn use_connection(_conn: Conn) -> Effect<u32, DbError> { succeed(1) }
+# fn close_connection(_conn: Conn) -> Effect<(), Never> { sync(|| ()) }
+# let program: Effect<u32, DbError> = effect!({
 // Without bracket: cleanup is manual and easy to skip on failure or interrupt.
 let conn = ~open_connection();
-let result = ~use_connection(&conn);
+let result = ~use_connection(conn.clone());
 ~close_connection(conn);
 
 // With bracket: cleanup is mandatory and automatic.
 let result = ~acquire_use_release(open_connection(), use_connection, |conn, _| close_connection(conn));
+# result
+# });
+# assert!(program.block_on().into_result().is_ok());
 ```
 
 A common convention is a helper that owns the bracket:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, ExitKind, Never, acquire_use_release, caps, succeed, sync};
+# #[derive(Clone)]
+# struct Conn;
+# struct DbError;
+# struct DbConfig;
+# fn open_connection() -> Effect<Conn, DbError, caps!(DbConfig)> { succeed(Conn) }
+# fn close_connection(_conn: Conn, _kind: ExitKind) -> Effect<(), Never, caps!(DbConfig)> { sync(|| ()) }
 fn with_connection<A: Send + 'static>(
     f: impl FnOnce(Conn) -> Effect<A, DbError, caps!(DbConfig)> + Send + 'static,
 ) -> Effect<A, DbError, caps!(DbConfig)> {

@@ -23,6 +23,9 @@
 //!   Rayon parallelism for bulk operations and `sysinfo` host telemetry. Without it, bulk
 //!   operations run serially; `rayon` and `sysinfo` are not built.
 //! - **`schema-serde`** — `serde_json::Value` ↔ [`Unknown`] and JSON Schema helpers.
+//! - **`schema-regex`** — `schema::regex`: a `regex`-crate validator that exports its pattern.
+//! - **`proptest`** — `testing::property`: proptest strategies for framework types and schemas,
+//!   effect-aware properties under [`TestExecutor`], stateful (model-based) testing.
 //!
 //! Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
 //! `id_effect_fp` crate.
@@ -75,6 +78,16 @@ extern crate self as id_effect;
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+/// Compiles and runs the book's idiom guide snippets as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../book/src/appendix-e-idiom-guide.md")]
+struct BookIdiomGuideDoctests;
+
+/// Compiles and runs the book's interleaving-exploration snippets as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../book/src/part4/ch15-05-interleavings.md")]
+struct BookInterleavingsDoctests;
 
 pub use id_effect_macro::{err, pipe};
 pub use id_effect_proc_macro::{

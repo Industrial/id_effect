@@ -28,13 +28,24 @@ A finalizer is an `Effect<(), Never, HNil>`: it cannot fail and needs no capabil
 
 ## Finalizers Always Run
 
-```rust,ignore
-let result = Effect::scoped(move |scope| effect!({
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicBool, Ordering};
+# use id_effect::{Effect, Never, effect, fail, succeed, sync};
+# static CLOSED: AtomicBool = AtomicBool::new(false);
+# #[derive(Clone)]
+# struct Conn(Arc<u32>);
+# fn open_connection() -> Effect<Conn, String> { succeed(Conn(Arc::new(1))) }
+# fn close_connection(_conn: Conn) -> Effect<(), Never> { sync(|| CLOSED.store(true, Ordering::SeqCst)) }
+# fn risky_operation(_conn: &Conn) -> Effect<u32, String> { fail("query failed".to_owned()) }
+let result: Effect<u32, String> = Effect::scoped(move |scope| effect!({
     let conn = ~open_connection();
     ~scope.add_finalizer(close_connection(conn.clone()));
     ~risky_operation(&conn) // may fail, panic, or be interrupted
 }));
 // However risky_operation ends, close_connection(conn) has run before `result` completes.
+# assert!(result.block_on().into_result().is_err());
+# assert!(CLOSED.load(Ordering::SeqCst));
 ```
 
 The body keeps the caller's interruptibility; closing the scope is uninterruptible. A defect in a finalizer is sequenced after the body's outcome (`Cause::Then`), or replaces a success.
@@ -43,11 +54,20 @@ The body keeps the caller's interruptibility; closing the scope is uninterruptib
 
 `add_finalizer_exit(|kind| ..)` receives the closing `ExitKind` (`Success`, `Failure`, `Die` or `Interrupt`) — commit on success, roll back otherwise:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, ExitKind, Never, effect, sync};
+# struct Txn(u32);
+# fn commit(_txn: Txn) -> Effect<(), Never> { sync(|| ()) }
+# fn rollback(_txn: Txn) -> Effect<(), Never> { sync(|| ()) }
+# let eff: Effect<u32, String> = Effect::scoped(move |scope| effect!({
+# let txn = Txn(1);
 ~scope.add_finalizer_exit(move |kind| match kind {
     ExitKind::Success => commit(txn),
     _ => rollback(txn),
 });
+# 7
+# }));
+# assert_eq!(eff.block_on(), Exit::succeed(7));
 ```
 
 ## ensuring: One Finalizer, One Effect

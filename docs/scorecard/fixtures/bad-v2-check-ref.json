@@ -1,0 +1,81 @@
+{
+	"schema_version": 1,
+	"method_version": "1.0",
+	"method_doc": "../METHOD.md",
+	"competitor_snapshot": {
+		"date": "2026-10-14",
+		"assessor": "scripts/scorecard.sh --self-test fixture: invalid, a v2 met list names an unknown check"
+	},
+	"frameworks": [
+		{ "id": "id_effect", "name": "id_effect", "scope": "fixture" },
+		{ "id": "a", "name": "A", "scope": "fixture" },
+		{ "id": "b", "name": "B", "scope": "fixture" },
+		{ "id": "c", "name": "C", "scope": "fixture" },
+		{ "id": "d", "name": "D", "scope": "fixture" },
+		{ "id": "e", "name": "E", "scope": "fixture" },
+		{ "id": "f", "name": "F", "scope": "fixture" },
+		{ "id": "g", "name": "G", "scope": "fixture" },
+		{ "id": "h", "name": "H", "scope": "fixture" },
+		{ "id": "i", "name": "I", "scope": "fixture" },
+		{ "id": "j", "name": "J", "scope": "fixture" }
+	],
+	"groups": [
+		{
+			"id": "core",
+			"name": "Core model",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.5
+		}
+	],
+	"tracks": { "T2": "Core runtime completeness" },
+	"competitor_order": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+	"rows": [
+		{
+			"id": "core.a",
+			"group": "core",
+			"name": "Row A",
+			"measures": "Fixture row: competitor a meets check core.a#9, but the row has four checks.",
+			"competitors": [60, 50, 10, 10, 10, 10, 10, 10, 10, 10],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": { "0.1.0": 50 },
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{ "id": "core.a#1", "text": "Check one" },
+				{ "id": "core.a#2", "text": "Check two" },
+				{ "id": "core.a#3", "text": "Check three" },
+				{ "id": "core.a#4", "text": "Check four" }
+			],
+			"v2": {
+				"level": {
+					"id_effect": { "0.1.0": "tested" },
+					"a": "production",
+					"b": "production",
+					"c": "production",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": { "0.1.0": ["core.a#1", "core.a#2"] },
+					"a": ["core.a#1", "core.a#9"],
+					"b": [],
+					"c": [],
+					"d": [],
+					"e": [],
+					"f": [],
+					"g": [],
+					"h": [],
+					"i": [],
+					"j": []
+				},
+				"evidence": {}
+			}
+		}
+	]
+}

@@ -177,6 +177,11 @@ pub fn derive_fsm(input: TokenStream) -> TokenStream {
 ///
 /// Rename a field on the wire with `#[schema("wire_name")]`.
 ///
+/// The schema carries a `SchemaAst` (`schema().ast()`), so JSON Schema export (`schema-serde`)
+/// describes the struct: every field is `required` except `Option<_>` fields (missing or `null`),
+/// `i32` fields carry their range, and nested `HasSchema` fields are `$ref`s into `$defs` keyed by
+/// type path (recursive types terminate). Enums are not supported.
+///
 /// ```
 /// use id_effect::Schema;
 /// use id_effect::schema::{HasSchema, Unknown};

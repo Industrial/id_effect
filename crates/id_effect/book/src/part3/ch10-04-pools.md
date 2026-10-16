@@ -25,17 +25,27 @@ assert_eq!((pool.idle_count(), pool.in_use()), (1, 0));
 
 When every item is checked out, `get` suspends the fiber until one is checked in. Waiting is interruptible and never leaks capacity; acquiring a new item runs uninterruptibly. Concurrent borrowers simply share the pool:
 
-```rust,ignore
+```rust
+# use id_effect::{Concurrency, Effect, Exit, Never, Pool, for_each_par, succeed};
+# let pool: Pool<u32> = Pool::new(2, || succeed(7));
+# fn run(conn: u32, q: &str) -> Effect<String, Never> { succeed(format!("{q}@{conn}")) }
 let queries = for_each_par(
     ["a", "b", "c"],
     move |q| { let p = pool.clone(); Effect::scoped(move |scope| p.get(&scope).flat_map(move |c| run(c, q))) },
     Concurrency::Unbounded,
 );
+# assert!(matches!(queries.block_on(), Exit::Success(v) if v == ["a@7", "b@7", "c@7"]));
 ```
 
 ## Lifecycle Options
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Never, Pool, succeed, sync};
+# #[derive(Clone, PartialEq)]
+# struct Conn(u32);
+# fn connect() -> Effect<Conn, String> { succeed(Conn(1)) }
+# fn close(_conn: Conn) -> Effect<(), Never> { sync(|| ()) }
 let pool = Pool::new(10, connect)
     .with_ttl(Duration::from_secs(300)) // idle items older than this are released, not reused
     .with_release(|conn| close(conn));  // disposes of invalidated / expired items and on shutdown
@@ -62,8 +72,17 @@ Capacity is **per key** (e.g. a read replica and a write primary each get their 
 
 In practice a pool is built once at the edge and handed to business code through `R`:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, Pool, caps, need};
+# use id_effect::succeed;
+# #[derive(Clone, PartialEq)]
+# struct Conn;
+# #[derive(Debug)]
+# struct DbError;
+# #[derive(Debug)]
+# struct User;
+# fn connect() -> Effect<Conn, DbError> { succeed(Conn) }
+# fn select_users(_conn: Conn) -> Effect<Vec<User>, DbError> { succeed(vec![User]) }
 
 #[derive(Clone)]
 struct DbPool(Pool<Conn, DbError>);
@@ -78,6 +97,7 @@ fn query_users() -> Effect<Vec<User>, DbError, caps!(DbPool)> {
 
 // At the edge:
 let exit = query_users().provide(DbPool(Pool::new(10, connect))).block_on();
+# assert_eq!(exit.into_result().map(|users| users.len()).ok(), Some(1));
 ```
 
 For a pool whose lifetime should end with the application, build it in a scoped [`Layer`](../part2/ch06-00-layers.md) (`Layer::scoped` / `Layer::acquire_release`, releasing with `pool.shutdown()`) and provide the layer instead.

@@ -23,7 +23,9 @@ let recipe: Effect<i32, String> = succeed(42);
 
 The computation happens only when you run it at the edge of the program:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, succeed};
+# let recipe: Effect<i32, String> = succeed(42);
 use id_effect::Exit;
 
 // NOW something happens.
@@ -53,7 +55,14 @@ assert_eq!(doubled.block_on(), Exit::succeed(84));
 
 ## A More Realistic Example
 
-```rust,ignore
+```rust
+# #[derive(Debug)] struct User;
+# #[derive(Debug)] struct DbError;
+# fn main() -> Result<(), id_effect::Cause<DbError>> {
+# use id_effect::succeed;
+# struct Conn;
+# fn connect_to_db() -> Effect<Conn, DbError> { succeed(Conn) }
+# fn query_user(_: &Conn, _: u64) -> Effect<User, DbError> { succeed(User) }
 use id_effect::{Effect, effect};
 
 // This function fetches nothing: it returns a DESCRIPTION of how to fetch a user.
@@ -70,6 +79,8 @@ let description = fetch_user(42);
 
 // Only running it does the I/O.
 let user = description.block_on().into_result()?;
+# Ok(())
+# }
 ```
 
 The `effect!` block looks imperative, but it builds a description. `~expr` means "run this
@@ -82,15 +93,17 @@ home in the type system.
 
 **Error handling** becomes part of the description:
 
-```rust,ignore
+```rust
 use std::time::Duration;
 use id_effect::{Effect, Schedule};
+# fn risky_operation() -> Effect<u32, String> { id_effect::succeed(1) }
 
 // Effects are one-shot values, so `retry` takes a factory that builds a fresh attempt.
 let resilient = Effect::retry(
   || risky_operation(),
   Schedule::exponential(Duration::from_millis(100)).intersect(Schedule::recurs(3)),
 );
+# assert_eq!(resilient.block_on(), id_effect::Exit::succeed(1));
 ```
 
 You are not adding retry logic to running code; you are building a new recipe that says "when
@@ -98,8 +111,11 @@ run, retry up to 3 times with exponential backoff".
 
 **Dependencies** become part of the type signature:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, need};
+# struct User; struct DbError; struct Database;
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
+# { need::<Database>().map(|_| User) }
 ```
 
 `caps!(Database)` says "this recipe needs a `Database` capability to run". The compiler enforces
@@ -117,13 +133,16 @@ An `Effect<A, E = Never, R = HNil>` carries three pieces of information in its t
 - `E`: the **Error**, what you get if it fails (default `Never`: it cannot fail);
 - `R`: the **Requirements**, the capabilities needed to run it (default `HNil`: nothing).
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect};
+# struct Money; struct Receipt; struct PaymentError; struct PaymentGateway; struct AuditLog;
 // The signature tells the whole story:
 fn process_payment(amount: Money)
   -> Effect<Receipt, PaymentError, caps!(PaymentGateway, AuditLog)>
 // - produces a Receipt on success
 // - can fail with PaymentError
 // - needs PaymentGateway and AuditLog to run
+# { effect!({ let _gateway = ~PaymentGateway; let _audit = ~AuditLog; Receipt }) }
 ```
 
 An `Effect` is `Send` and one-shot: running it consumes it. To run "the same" work twice, call the

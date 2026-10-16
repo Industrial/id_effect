@@ -36,6 +36,25 @@ id = "gate/async_bind_64"
 kind = "budget"
 limit = 1.25
 
+# --- 0.7 regressions fixed in 0.8 (E2.1h, REPORT-0.8.md): budget against v0.6 ------------
+# The queue and channel hand-off may cost at most 25 % more than v0.6, a count-only retry at
+# most twice v0.6.
+
+[[gate]]
+id = "coord/channel_spsc_10k"
+kind = "budget"
+limit = 1.25
+
+[[gate]]
+id = "coord/queue_bounded_10k"
+kind = "budget"
+limit = 1.25
+
+[[gate]]
+id = "phase0/bench_schedule_retry_overhead"
+kind = "budget"
+limit = 2.0
+
 # --- fibers and the axum request path: must improve ----------------------------------
 # "Improve" means a ratio below 0.95 with no noise band (r-bench-report ruling): a
 # same-speed or noise-level result is not an improvement, so it FAILs.
@@ -74,12 +93,4 @@ kind = "report"
 
 [[gate]]
 id = "stream/map_effect_1k"
-kind = "report"
-
-[[gate]]
-id = "coord/channel_spsc_10k"
-kind = "report"
-
-[[gate]]
-id = "coord/queue_bounded_10k"
 kind = "report"

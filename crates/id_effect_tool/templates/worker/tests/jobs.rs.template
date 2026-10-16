@@ -1,0 +1,48 @@
+//! The jobs on a virtual clock: six hours pass instantly.
+
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
+use id_effect::{CronOutcome, Executor, TestExecutor, UtcDateTime, WallClock};
+
+use {{crate_name}}::{Stats, registry};
+
+#[test]
+fn six_hours_of_jobs_land_in_the_history() {
+    let stats = Stats::default();
+    let jobs = registry(&stats).expect("registry");
+    let exec = TestExecutor::new();
+    let start = UtcDateTime("2026-01-01T00:00:00Z".parse().expect("timestamp"));
+    let clock = WallClock::anchored(exec.now(), start);
+    let scheduler = jobs.scheduler();
+    let fiber = jobs.run(clock).fork_root(Arc::new(exec.clone()));
+    exec.advance(Duration::from_secs(6 * 3600));
+    fiber.interrupt_now();
+
+    assert_eq!(stats.cleanups.load(Ordering::SeqCst), 1);
+    let cleanup = scheduler.history("cleanup").expect("cleanup job");
+    assert_eq!(cleanup.len(), 1);
+    assert_eq!(cleanup[0].outcome, CronOutcome::Succeeded);
+    let at = cleanup[0].scheduled.format_iso();
+    assert!(at.starts_with("2026-01-01T03:00:00"), "{at}");
+
+    let beats = stats.heartbeats.load(Ordering::SeqCst);
+    assert!((359..=361).contains(&beats), "{beats} heartbeats");
+    // The history keeps the last 100 runs per job.
+    let heartbeat = scheduler.history("heartbeat").expect("heartbeat job");
+    assert_eq!(heartbeat.len(), 100);
+    assert!(heartbeat.iter().all(|run| run.is_success()));
+}
+
+#[test]
+fn the_registry_names_its_jobs() {
+    let jobs = registry(&Stats::default()).expect("registry");
+    let names: Vec<String> = jobs
+        .scheduler()
+        .job_names()
+        .iter()
+        .map(|n| n.to_string())
+        .collect();
+    assert_eq!(names, ["heartbeat", "cleanup"]);
+}

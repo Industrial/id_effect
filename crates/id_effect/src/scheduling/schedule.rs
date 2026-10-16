@@ -69,8 +69,8 @@ use std::fmt;
 use std::future::ready;
 use std::hash::{BuildHasher, RandomState};
 use std::marker::PhantomData;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::kernel::{Ctx, Effect, fail, sleep, succeed, suspend};
@@ -171,12 +171,16 @@ where
 /// runs at once.
 pub struct Schedule<Out, In> {
   driver: Arc<dyn Driver<Out, In>>,
+  /// `false` when no step reads its `now` (built only from the clock-free constructors and
+  /// combinators): `retry` / `repeat` then step it without reading the fiber's clock.
+  clock: bool,
 }
 
 impl<Out, In> Clone for Schedule<Out, In> {
   fn clone(&self) -> Self {
     Self {
       driver: Arc::clone(&self.driver),
+      clock: self.clock,
     }
   }
 }
@@ -196,12 +200,23 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
     I: Fn() -> S + Send + Sync + 'static,
     F: Fn(Instant, &In, S) -> (S, Out, Option<Duration>) + Send + Sync + 'static,
   {
+    Self::with_clock(true, init, step)
+  }
+
+  /// [`from_fn`](Self::from_fn) whose `step` reads `now` only if `clock`.
+  fn with_clock<S, I, F>(clock: bool, init: I, step: F) -> Self
+  where
+    S: Send + 'static,
+    I: Fn() -> S + Send + Sync + 'static,
+    F: Fn(Instant, &In, S) -> (S, Out, Option<Duration>) + Send + Sync + 'static,
+  {
     Self {
       driver: Arc::new(FromFn {
         init,
         step,
         _state: PhantomData,
       }),
+      clock,
     }
   }
 
@@ -223,7 +238,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
   /// Transforms every output with `f` (the delays are unchanged).
   pub fn map<O2: 'static>(self, f: impl Fn(Out) -> O2 + Send + Sync + 'static) -> Schedule<O2, In> {
     let first = self.clone();
-    Schedule::from_fn(
+    Schedule::with_clock(
+      self.clock,
       move || first.start(),
       move |now, input, s| {
         let (s, out, delay) = self.step(now, input, s).into_parts();
@@ -256,7 +272,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
     combine: fn(Option<Duration>, Option<Duration>) -> Option<Duration>,
   ) -> Schedule<(Out, O2), In> {
     let (l, r) = (self.clone(), other.clone());
-    Schedule::from_fn(
+    Schedule::with_clock(
+      self.clock || other.clock,
       move || (l.start(), r.start()),
       move |now, input, (sa, sb)| {
         let (sa, a, da) = self.step(now, input, sa).into_parts();
@@ -273,7 +290,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
       Second(ScheduleState),
     }
     let first = self.clone();
-    Schedule::from_fn(
+    Schedule::with_clock(
+      self.clock || other.clock,
       move || Phase::First(first.start()),
       move |now, input, phase| {
         if let Phase::First(s) = phase {
@@ -296,7 +314,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
   /// Continues only while `pred` holds for the input (Effect.ts `whileInput`).
   pub fn while_input(self, pred: impl Fn(&In) -> bool + Send + Sync + 'static) -> Self {
     let first = self.clone();
-    Schedule::from_fn(
+    Schedule::with_clock(
+      self.clock,
       move || first.start(),
       move |now, input, s| {
         let (s, out, delay) = self.step(now, input, s).into_parts();
@@ -330,7 +349,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
   /// represent gives `Duration::MAX`.
   pub fn jittered_with(self, min: f64, max: f64, source: JitterSource) -> Self {
     let first = self.clone();
-    Schedule::from_fn(
+    Schedule::with_clock(
+      self.clock,
       move || (first.start(), (source.seed)()),
       move |now, input, (s, mut rng)| {
         let (s, out, delay) = self.step(now, input, s).into_parts();
@@ -347,7 +367,8 @@ impl<Out: 'static, In: 'static> Schedule<Out, In> {
 impl<In: 'static> Schedule<u64, In> {
   /// Recurs forever with no delay; outputs the recurrence count (`0, 1, 2, ..`).
   pub fn forever() -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       || 0u64,
       |_, _, n| (n.saturating_add(1), n, Some(Duration::ZERO)),
     )
@@ -355,7 +376,8 @@ impl<In: 'static> Schedule<u64, In> {
 
   /// Recurs `times` times with no delay; outputs the recurrence count.
   pub fn recurs(times: u64) -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       || 0u64,
       move |_, _, n| {
         (
@@ -369,7 +391,8 @@ impl<In: 'static> Schedule<u64, In> {
 
   /// Recurs forever, `interval` apart; outputs the recurrence count.
   pub fn spaced(interval: Duration) -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       || 0u64,
       move |_, _, n| (n.saturating_add(1), n, Some(interval)),
     )
@@ -380,7 +403,8 @@ impl<In: 'static> Schedule<Duration, In> {
   /// Recurs forever with delays `base * 2^k` (`base`, `2 * base`, `4 * base`, ..); outputs the
   /// delay. Saturates at `Duration::MAX`.
   pub fn exponential(base: Duration) -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       || 0u32,
       move |_, _, k| {
         let d = 1u32
@@ -394,7 +418,8 @@ impl<In: 'static> Schedule<Duration, In> {
   /// Recurs forever with delays `base * factor^k`; outputs the delay (Effect.ts
   /// `exponential(base, factor)`).
   pub fn exponential_by(base: Duration, factor: f64) -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       || 0i32,
       move |_, _, k| {
         let d = scale(base, factor.powi(k));
@@ -406,7 +431,8 @@ impl<In: 'static> Schedule<Duration, In> {
   /// Recurs forever with Fibonacci delays (`one`, `one`, `2 * one`, `3 * one`, `5 * one`, ..);
   /// outputs the delay.
   pub fn fibonacci(one: Duration) -> Self {
-    Self::from_fn(
+    Self::with_clock(
+      false,
       move || (one, one),
       |_, _, (a, b)| ((b, a.saturating_add(b)), a, Some(a)),
     )
@@ -475,6 +501,26 @@ fn clock_now<E: Send + 'static, R: Send + Sync + 'static>() -> Effect<Instant, E
   Effect::from_ctx(|ctx: Ctx<R>| ready(Ok(ctx.fiber().executor().now())))
 }
 
+/// `f(now)` for a step of a schedule: the fiber's clock when the schedule reads it (`clock`),
+/// else at once with a fixed instant it ignores, so a retry or repeat of a synchronous effect
+/// under a clock-free schedule needs no fiber (and settles inline in `block_on`).
+fn with_now<A, E, R>(
+  clock: bool,
+  f: impl FnOnce(Instant) -> Effect<A, E, R> + Send + 'static,
+) -> Effect<A, E, R>
+where
+  A: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  static UNREAD: OnceLock<Instant> = OnceLock::new();
+  if clock {
+    clock_now().flat_map(f)
+  } else {
+    f(*UNREAD.get_or_init(Instant::now))
+  }
+}
+
 /// `next` after sleeping `d` (no timer for a zero delay).
 fn after<A, E, R>(d: Duration, next: Effect<A, E, R>) -> Effect<A, E, R>
 where
@@ -489,14 +535,9 @@ where
   }
 }
 
-/// One attempt of `make`, built when the attempt starts.
-fn attempt<A, E, R, F>(make: &Arc<F>) -> Effect<A, E, R>
-where
-  F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
-{
-  let make = Arc::clone(make);
-  suspend(move || make())
-}
+// Each attempt is built (`make()`) when it starts, inside one `suspend`, and its recovery is
+// attached to the built effect: a ready attempt (`succeed` / `fail`) then stays a typed
+// synchronous step instead of an erased `Fold` around a deferred one.
 
 fn retry_loop<A, E, E2, R, Out, F, G>(
   make: Arc<F>,
@@ -513,13 +554,15 @@ where
   F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
   G: FnOnce(E, Out) -> Effect<A, E2, R> + Send + 'static,
 {
-  attempt(&make).catch(move |e| {
-    clock_now::<E2, R>().flat_map(move |now| {
-      let (state, out, delay) = schedule.step(now, &e, state).into_parts();
-      match delay {
-        Some(d) => after(d, retry_loop(make, schedule, state, or_else)),
-        None => or_else(e, out),
-      }
+  suspend(move || {
+    make().catch(move |e| {
+      with_now(schedule.clock, move |now| {
+        let (state, out, delay) = schedule.step(now, &e, state).into_parts();
+        match delay {
+          Some(d) => after(d, retry_loop(make, schedule, state, or_else)),
+          None => or_else(e, out),
+        }
+      })
     })
   })
 }
@@ -540,19 +583,21 @@ where
   F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
   G: FnOnce(E, Option<Out>) -> Effect<Out, E2, R> + Send + 'static,
 {
-  attempt(&make)
-    .map(Ok)
-    .catch(|e| succeed(Err(e)))
-    .flat_map(move |r: Result<A, E>| match r {
-      Err(e) => or_else(e, last),
-      Ok(a) => clock_now::<E2, R>().flat_map(move |now| {
-        let (state, out, delay) = schedule.step(now, &a, state).into_parts();
-        match delay {
-          Some(d) => after(d, repeat_loop(make, schedule, state, Some(out), or_else)),
-          None => succeed(out),
-        }
-      }),
-    })
+  suspend(move || {
+    make()
+      .map(Ok)
+      .catch(|e| succeed(Err(e)))
+      .flat_map(move |r: Result<A, E>| match r {
+        Err(e) => or_else(e, last),
+        Ok(a) => with_now(schedule.clock, move |now| {
+          let (state, out, delay) = schedule.step(now, &a, state).into_parts();
+          match delay {
+            Some(d) => after(d, repeat_loop(make, schedule, state, Some(out), or_else)),
+            None => succeed(out),
+          }
+        }),
+      })
+  })
 }
 
 impl<A, E, R> Effect<A, E, R>

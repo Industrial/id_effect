@@ -1,5 +1,6 @@
 //! [`PgSqlClient`] — [`SqlClient`](crate::SqlClient) over sqlx [`PgPool`].
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use id_effect::Never;
@@ -30,6 +31,21 @@ impl PgSqlClient {
   #[inline]
   pub fn pool(&self) -> &PgPool {
     &self.pool
+  }
+
+  /// Pool health check: runs `SELECT 1` on a pooled connection, then reports the pool's `size`
+  /// (open connections), `idle` connections and `max_size`. Fails (down) with the [`SqlError`]
+  /// when no connection can be acquired or the query fails.
+  pub fn pool_health(&self) -> Effect<BTreeMap<&'static str, u64>, SqlError> {
+    let pool = self.pool.clone();
+    from_async(move || async move {
+      ping(&pool).await?;
+      Ok(BTreeMap::from([
+        ("size", u64::from(pool.size())),
+        ("idle", u64::try_from(pool.num_idle()).unwrap_or(u64::MAX)),
+        ("max_size", u64::from(pool.options().get_max_connections())),
+      ]))
+    })
   }
 
   /// The scoped PostgreSQL client [`Layer`] (Effect.ts `Layer.scoped`): building it opens a pool

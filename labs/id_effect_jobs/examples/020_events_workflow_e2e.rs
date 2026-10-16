@@ -1,30 +1,28 @@
-//! End-to-end: es-entity events → graph projections → obix outbox → duroxide step.
+//! End-to-end: es-entity events → graph projections → duroxide step.
 //!
 //! ```bash
 //! DATABASE_URL=postgres://... cargo run -p id_effect_jobs --example 020_events_workflow_e2e \
-//!   --features "memory,obix,apalis" \
+//!   --features "memory,postgres" \
 //!   --manifest-path crates/id_effect_jobs/Cargo.toml
 //! ```
 //!
 //! Requires dev-dependencies (`id_effect_events` / `id_effect_workflow` with PG features).
 
-#[cfg(not(all(feature = "obix", feature = "postgres")))]
+#[cfg(not(feature = "postgres"))]
 fn main() {
-  eprintln!("enable features: memory, obix, postgres (and dev-deps for es-entity/duroxide)");
+  eprintln!("enable features: memory, postgres (and dev-deps for es-entity/duroxide)");
 }
 
-#[cfg(all(feature = "obix", feature = "postgres"))]
+#[cfg(feature = "postgres")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   use id_effect_events::{
     EsEntityEventStore, EsEntityPgBackend, EventStore, Projection, ProjectionNode,
     ProjectionRunner, apply_es_entity_journal_ddl,
   };
-  use id_effect_jobs::ObixOutbox;
   use id_effect_sql::pg::{PgPoolConfig, pg_pool_from_config};
   use id_effect_tokio::TokioRuntime;
   use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
-  use obix::MailboxConfig;
   use std::collections::HashMap;
 
   let url = match std::env::var("DATABASE_URL") {
@@ -79,18 +77,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let rebuilt = runner.run_all(&store, &stream, 1, &projections).await?;
   assert_eq!(rebuilt[0].1, "sku=widget");
   println!("projection: {}", rebuilt[0].1);
-
-  let config = MailboxConfig::builder().build()?;
-  let obix = ObixOutbox::init(&pool, config).await?;
-  rt.run(obix.insert(id_effect_jobs::OutboxRecord::new(
-    &stream,
-    "OrderPlaced",
-    br#"{"sku":"widget"}"#,
-  )))
-  .await
-  .into_result()
-  .map_err(|c| format!("obix insert: {c:?}"))?;
-  println!("obix outbox row inserted");
 
   // `StepJournal` is a synchronous edge: drive it from a plain thread, off the async runtime.
   let step = std::thread::spawn(move || {

@@ -38,21 +38,25 @@ assert_eq!(oops.block_on(), Exit::Failure(Cause::Fail("not_ready")));
 
 `sync` defers a synchronous computation until the effect runs:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, sync};
+# fn expensive_calculation() -> i32 { 21 }
 
 let computed: Effect<i32> = sync(|| expensive_calculation() * 2);
+# assert_eq!(computed.block_on(), id_effect::Exit::succeed(42));
 ```
 
 `suspend` defers *building* an effect, which is handy when the effect to run depends on state read
 at run time:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, fail, succeed, suspend};
+# fn feature_enabled() -> bool { true }
 
 let checked: Effect<u8, &'static str> = suspend(|| {
   if feature_enabled() { succeed(1) } else { fail("disabled") }
 });
+# assert_eq!(checked.block_on(), id_effect::Exit::succeed(1));
 ```
 
 ## From async code: from_async
@@ -95,9 +99,12 @@ typed helpers such as `number` rather than a bare `succeed(..)`.
 
 ## Type Inference
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, succeed};
 let answer = succeed(42);    // Effect<i32, _, _>: E and R come from how it is used
 let greeting = succeed("hi"); // Effect<&str, _, _>
+# let _: Effect<i32, String> = answer;
+# let _: Effect<&str> = greeting;
 ```
 
 `E` and `R` are usually inferred from the surrounding code (a function's return type, the effect it
@@ -105,6 +112,7 @@ is combined with). Annotate when the compiler asks.
 
 ## Quick Reference
 
+<!-- ignore: a reference list of forms, not a program -->
 ```rust,ignore
 succeed(value)           // produces value
 fail(error)              // fails with a typed error

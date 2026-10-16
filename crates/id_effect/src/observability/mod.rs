@@ -52,13 +52,18 @@
 //!
 //! - **In-process buffer** — [`tracing`](self::tracing): the `install_tracing_layer` /
 //!   `snapshot_tracing` event buffer, fed by the [`TracingHook`] span hook.
+//! - **Prometheus** — [`prometheus::render`] writes a registry snapshot in the text exposition
+//!   format 0.0.4 (no dependency); [`runtime_metrics`] adds the kernel's fiber counters
+//!   (`id_effect_fibers_live`, `id_effect_fibers_started_total`), read at scrape time.
 //!
 //! Nothing here uses thread-local storage: all per-fiber state lives in `FiberRef` slots of the
 //! fiber's context (design A §1.3).
 
 pub mod log_level;
 pub mod metric;
+pub mod prometheus;
 pub mod registry;
+pub mod runtime_metrics;
 pub mod tracing;
 
 pub use log_level::LogLevel;

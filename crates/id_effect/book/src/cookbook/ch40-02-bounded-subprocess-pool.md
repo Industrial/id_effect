@@ -10,7 +10,7 @@ decide which ones run. Each job runs its command through the `ProcessRuntimeServ
 (`id_effect_platform::command`) inside `sem.with_permit(..)`, which waits for a permit and releases
 it however the job ends: success, failure or interruption.
 
-```rust,ignore
+```rust
 use id_effect::{Concurrency, Effect, Exit, Semaphore, for_each_par};
 use id_effect_platform::command::{
   CommandSpec, ProcessRuntimeEnv, TokioProcessRuntimeProvider, spawn_wait,
@@ -24,8 +24,8 @@ fn bounded_job(sem: &Semaphore, cmd: CommandSpec) -> Effect<i32, ProcessError, P
   sem.with_permit(job) // waits while all K permits are taken
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+// Called from `#[tokio::main(flavor = "current_thread")] async fn main()`:
+async fn run_pool(commands: Vec<CommandSpec>) {
   let sem = Semaphore::new(3);
   let jobs = for_each_par(
     commands,
@@ -39,6 +39,8 @@ async fn main() {
     Exit::Failure(cause) => panic!("jobs failed: {cause:?}"),
   };
 }
+# // No commands here, so the doctest spawns no processes.
+# TokioRuntime::new_current_thread().expect("tokio").block_on(run_pool(Vec::new()));
 ```
 
 `for_each_par` returns the results in input order. The runnable example counts how many jobs are

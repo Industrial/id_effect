@@ -4,12 +4,18 @@
 //!
 //! [`Schema`] carries synchronous `decode` / `encode` plus [`Schema::decode_unknown`] for
 //! tree-shaped [`Unknown`] input (e.g. config or JSON-shaped values without pulling in serde).
+//!
+//! [`Schema::decode_unknown`] stops at the first failure; [`Schema::decode_unknown_all`] walks the
+//! whole input and returns **every** field / index failure as [`ParseErrors`]. Each schema also
+//! carries a [`SchemaAst`] ([`Schema::ast`]) describing its wire shape for JSON Schema export.
 
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use crate::schema::ast::{Annotations, Field, SchemaAst, SchemaKind};
 use crate::schema::data::EffectData;
+use crate::schema::parse_errors::ParseErrors;
 
 /// Parse failure with a dot-separated field path (empty = root).
 #[derive(Clone, Debug, crate::EffectData)]
@@ -70,6 +76,7 @@ pub enum Unknown {
 type BoxDecode<I, A> = Arc<dyn Fn(I) -> Result<A, ParseError> + Send + Sync>;
 type BoxEncode<A, I> = Arc<dyn Fn(A) -> I + Send + Sync>;
 type BoxDecodeUnknown<A> = Arc<dyn Fn(&Unknown) -> Result<A, ParseError> + Send + Sync>;
+type BoxDecodeUnknownAll<A> = Arc<dyn Fn(&Unknown) -> Result<A, ParseErrors> + Send + Sync>;
 
 /// Bidirectional schema: semantic `A`, wire/intermediate `I`, phantom `E` ([`EffectData`] tag).
 pub struct Schema<A, I, E = ()> {
@@ -77,6 +84,8 @@ pub struct Schema<A, I, E = ()> {
   decode: BoxDecode<I, A>,
   encode: BoxEncode<A, I>,
   decode_unknown: BoxDecodeUnknown<A>,
+  decode_unknown_all: BoxDecodeUnknownAll<A>,
+  ast: Arc<SchemaAst>,
 }
 
 impl<A, I, E> Clone for Schema<A, I, E> {
@@ -86,6 +95,8 @@ impl<A, I, E> Clone for Schema<A, I, E> {
       decode: self.decode.clone(),
       encode: self.encode.clone(),
       decode_unknown: self.decode_unknown.clone(),
+      decode_unknown_all: self.decode_unknown_all.clone(),
+      ast: self.ast.clone(),
     }
   }
 }
@@ -105,6 +116,121 @@ impl<A, I, E> Schema<A, I, E> {
   pub fn decode_unknown(&self, input: &Unknown) -> Result<A, ParseError> {
     (self.decode_unknown)(input)
   }
+
+  /// Decode from [`Unknown`], collecting **all** failures instead of stopping at the first.
+  ///
+  /// Structs, tuples, arrays and records keep decoding after a failing field / element / key and
+  /// return every issue (with its path, in declaration / index / key order). A leaf schema still
+  /// reports at most one issue. On success the result equals [`Schema::decode_unknown`].
+  pub fn decode_unknown_all(&self, input: &Unknown) -> Result<A, ParseErrors> {
+    (self.decode_unknown_all)(input)
+  }
+
+  /// Introspectable wire-shape description (kind, constraints, annotations).
+  pub fn ast(&self) -> &SchemaAst {
+    &self.ast
+  }
+
+  /// Replace the [`SchemaAst`] (e.g. to describe a schema built with [`Schema::make`]).
+  ///
+  /// Decoding is unaffected: keep the AST truthful to what the closures accept.
+  pub fn with_ast(mut self, ast: SchemaAst) -> Self {
+    self.ast = Arc::new(ast);
+    self
+  }
+
+  fn map_annotations(mut self, f: impl FnOnce(&mut Annotations)) -> Self {
+    f(&mut Arc::make_mut(&mut self.ast).annotations);
+    self
+  }
+
+  /// Annotate with a title (JSON Schema `title`).
+  pub fn title(self, title: impl Into<String>) -> Self {
+    let title = title.into();
+    self.map_annotations(|a| a.title = Some(title))
+  }
+
+  /// Annotate with a description (JSON Schema `description`).
+  pub fn describe(self, description: impl Into<String>) -> Self {
+    let description = description.into();
+    self.map_annotations(|a| a.description = Some(description))
+  }
+
+  /// Add an example wire value (JSON Schema `examples`).
+  pub fn example(self, example: Unknown) -> Self {
+    self.map_annotations(|a| a.examples.push(example))
+  }
+
+  /// Document a default wire value (JSON Schema `default`; decoding does not substitute it).
+  pub fn default_value(self, value: Unknown) -> Self {
+    self.map_annotations(|a| a.default = Some(value))
+  }
+
+  /// Mark deprecated (JSON Schema `deprecated: true`).
+  pub fn deprecated(self) -> Self {
+    self.map_annotations(|a| a.deprecated = true)
+  }
+
+  /// Replace the accumulating decoder (combinators that walk several children).
+  pub(crate) fn with_decode_unknown_all(
+    mut self,
+    f: impl Fn(&Unknown) -> Result<A, ParseErrors> + Send + Sync + 'static,
+  ) -> Self {
+    self.decode_unknown_all = Arc::new(f);
+    self
+  }
+}
+
+/// Collects issues while an accumulating decoder walks several children.
+#[derive(Default)]
+pub(crate) struct Issues(Vec<ParseError>);
+
+impl Issues {
+  /// Keep `Ok` values; record every issue of an `Err`.
+  pub(crate) fn take<A>(&mut self, r: Result<A, ParseErrors>) -> Option<A> {
+    match r {
+      Ok(a) => Some(a),
+      Err(e) => {
+        self.0.extend(e.issues);
+        None
+      }
+    }
+  }
+
+  /// Decode required key `name` of `obj` with `s`, recording a missing key or nested issues.
+  pub(crate) fn field<A, I, E>(
+    &mut self,
+    obj: &BTreeMap<String, Unknown>,
+    name: &str,
+    s: &Schema<A, I, E>,
+  ) -> Option<A> {
+    match obj.get(name) {
+      Some(u) => self.take(s.decode_unknown_all(u).map_err(|e| e.prefix(name))),
+      None => {
+        self
+          .0
+          .push(ParseError::new(name, format!("missing field {name}")));
+        None
+      }
+    }
+  }
+
+  /// `true` when nothing failed so far.
+  pub(crate) fn is_empty(&self) -> bool {
+    self.0.is_empty()
+  }
+
+  /// Collected issues.
+  pub(crate) fn into_errors(self) -> ParseErrors {
+    ParseErrors::new(self.0)
+  }
+}
+
+fn expected_object(u: &Unknown) -> Result<&BTreeMap<String, Unknown>, ParseErrors> {
+  match u {
+    Unknown::Object(m) => Ok(m),
+    _ => Err(ParseErrors::one(ParseError::new("", "expected object"))),
+  }
 }
 
 impl<A: 'static, I: 'static, E: EffectData + 'static> Schema<A, I, E> {
@@ -114,11 +240,15 @@ impl<A: 'static, I: 'static, E: EffectData + 'static> Schema<A, I, E> {
     encode: impl Fn(A) -> I + Send + Sync + 'static,
     decode_unknown: impl Fn(&Unknown) -> Result<A, ParseError> + Send + Sync + 'static,
   ) -> Self {
+    let decode_unknown: BoxDecodeUnknown<A> = Arc::new(decode_unknown);
+    let du = decode_unknown.clone();
     Self {
       phantom: PhantomData,
       decode: Arc::new(decode),
       encode: Arc::new(encode),
-      decode_unknown: Arc::new(decode_unknown),
+      decode_unknown,
+      decode_unknown_all: Arc::new(move |u| du(u).map_err(ParseErrors::one)),
+      ast: Arc::new(SchemaAst::any()),
     }
   }
 }
@@ -134,6 +264,7 @@ pub fn i64<E: EffectData + 'static>() -> Schema<i64, i64, E> {
       _ => Err(ParseError::new("", "expected i64")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Integer))
 }
 
 /// `i64` with [`Unknown`] as the wire type (for [`crate::schema::extra::union_chain`] and similar).
@@ -151,6 +282,7 @@ pub fn i64_unknown_wire<E: EffectData + 'static>() -> Schema<i64, Unknown, E> {
       _ => Err(ParseError::new("", "expected i64")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Integer))
 }
 
 /// UTF-8 string schema; wire type is [`String`].
@@ -164,6 +296,7 @@ pub fn string<E: EffectData + 'static>() -> Schema<String, String, E> {
       _ => Err(ParseError::new("", "expected string")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::String))
 }
 
 /// Boolean schema; wire type is [`bool`].
@@ -177,6 +310,7 @@ pub fn bool_<E: EffectData + 'static>() -> Schema<bool, bool, E> {
       _ => Err(ParseError::new("", "expected bool")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Boolean))
 }
 
 /// Floating-point schema; wire type is [`f64`].
@@ -194,6 +328,7 @@ pub fn f64<E: EffectData + 'static>() -> Schema<f64, f64, E> {
       _ => Err(ParseError::new("", "expected f64")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Number))
 }
 
 /// Map the decoded value (and reverse for encode).
@@ -209,14 +344,18 @@ where
   let decode_f = s.decode.clone();
   let encode_f = s.encode.clone();
   let du = s.decode_unknown.clone();
+  let du_all = s.decode_unknown_all.clone();
   let decode = Arc::new(decode);
   let decode2 = decode.clone();
+  let decode3 = decode.clone();
   let encode = Arc::new(encode);
   Schema::make(
     move |i| decode(decode_f(i)?),
     move |b| encode_f(encode(b)),
     move |u| decode2(du(u)?),
   )
+  .with_decode_unknown_all(move |u| decode3(du_all(u)?).map_err(ParseErrors::one))
+  .with_ast(s.ast().clone())
 }
 
 /// Keep values satisfying `pred`, otherwise fail with `message`.
@@ -234,9 +373,13 @@ where
   let decode_f = s.decode.clone();
   let encode_f = s.encode.clone();
   let du = s.decode_unknown.clone();
+  let du_all = s.decode_unknown_all.clone();
   let msg: String = message.into();
   let msg2 = msg.clone();
+  let msg3 = msg.clone();
   let p2 = pred.clone();
+  let p3 = pred.clone();
+  let ast = s.ast().clone();
   Schema::make(
     move |i| {
       let a = decode_f(i)?;
@@ -256,6 +399,15 @@ where
       }
     },
   )
+  .with_decode_unknown_all(move |u| {
+    let a = du_all(u)?;
+    if p3(&a) {
+      Ok(a)
+    } else {
+      Err(ParseErrors::one(ParseError::new("", msg3.clone())))
+    }
+  })
+  .with_ast(ast)
 }
 
 /// Refinement alias for [`filter`].
@@ -282,6 +434,7 @@ where
   let s_dec = s.clone();
   let s_enc = s.clone();
   let s_du = s.clone();
+  let ast = SchemaAst::new(SchemaKind::Nullable(Box::new(s.ast().clone())));
   Schema::make(
     move |oi| match oi {
       None => Ok(None),
@@ -293,6 +446,11 @@ where
       other => Ok(Some(s_du.decode_unknown(other)?)),
     },
   )
+  .with_decode_unknown_all(move |u| match u {
+    Unknown::Null => Ok(None),
+    other => Ok(Some(s.decode_unknown_all(other)?)),
+  })
+  .with_ast(ast)
 }
 
 /// Homogeneous array / vector.
@@ -331,6 +489,28 @@ where
       _ => Err(ParseError::new("", "expected array")),
     },
   )
+  .with_decode_unknown_all({
+    let s = s.clone();
+    move |u| match u {
+      Unknown::Array(items) => {
+        let mut issues = Issues::default();
+        let out: Vec<A> = items
+          .iter()
+          .enumerate()
+          .filter_map(|(idx, item)| {
+            issues.take(s.decode_unknown_all(item).map_err(|e| e.prefix_index(idx)))
+          })
+          .collect();
+        if issues.is_empty() {
+          Ok(out)
+        } else {
+          Err(issues.into_errors())
+        }
+      }
+      _ => Err(ParseErrors::one(ParseError::new("", "expected array"))),
+    }
+  })
+  .with_ast(SchemaAst::new(SchemaKind::Array(Box::new(s.ast().clone()))))
 }
 
 /// Fixed-length tuple (wire = tuple of parts).
@@ -367,6 +547,27 @@ where
       _ => Err(ParseError::new("", "expected array of length 2")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Tuple(vec![
+    s0.ast().clone(),
+    s1.ast().clone(),
+  ])))
+  .with_decode_unknown_all(move |u| match u {
+    Unknown::Array(arr) if arr.len() == 2 => {
+      let mut issues = Issues::default();
+      let parts = (
+        issues.take(s0.decode_unknown_all(&arr[0]).map_err(|e| e.prefix("0"))),
+        issues.take(s1.decode_unknown_all(&arr[1]).map_err(|e| e.prefix("1"))),
+      );
+      match parts {
+        (Some(a0), Some(a1)) => Ok((a0, a1)),
+        _ => Err(issues.into_errors()),
+      }
+    }
+    _ => Err(ParseErrors::one(ParseError::new(
+      "",
+      "expected array of length 2",
+    ))),
+  })
 }
 
 /// Fixed-length triple (wire = tuple of parts).
@@ -411,6 +612,29 @@ where
       _ => Err(ParseError::new("", "expected array of length 3")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Tuple(vec![
+    s0.ast().clone(),
+    s1.ast().clone(),
+    s2.ast().clone(),
+  ])))
+  .with_decode_unknown_all(move |u| match u {
+    Unknown::Array(arr) if arr.len() == 3 => {
+      let mut issues = Issues::default();
+      let parts = (
+        issues.take(s0.decode_unknown_all(&arr[0]).map_err(|e| e.prefix("0"))),
+        issues.take(s1.decode_unknown_all(&arr[1]).map_err(|e| e.prefix("1"))),
+        issues.take(s2.decode_unknown_all(&arr[2]).map_err(|e| e.prefix("2"))),
+      );
+      match parts {
+        (Some(a0), Some(a1), Some(a2)) => Ok((a0, a1, a2)),
+        _ => Err(issues.into_errors()),
+      }
+    }
+    _ => Err(ParseErrors::one(ParseError::new(
+      "",
+      "expected array of length 3",
+    ))),
+  })
 }
 
 /// Fixed-length quadruple (wire = tuple of parts).
@@ -470,6 +694,31 @@ where
       _ => Err(ParseError::new("", "expected array of length 4")),
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Tuple(vec![
+    s0.ast().clone(),
+    s1.ast().clone(),
+    s2.ast().clone(),
+    s3.ast().clone(),
+  ])))
+  .with_decode_unknown_all(move |u| match u {
+    Unknown::Array(arr) if arr.len() == 4 => {
+      let mut issues = Issues::default();
+      let parts = (
+        issues.take(s0.decode_unknown_all(&arr[0]).map_err(|e| e.prefix("0"))),
+        issues.take(s1.decode_unknown_all(&arr[1]).map_err(|e| e.prefix("1"))),
+        issues.take(s2.decode_unknown_all(&arr[2]).map_err(|e| e.prefix("2"))),
+        issues.take(s3.decode_unknown_all(&arr[3]).map_err(|e| e.prefix("3"))),
+      );
+      match parts {
+        (Some(a0), Some(a1), Some(a2), Some(a3)) => Ok((a0, a1, a2, a3)),
+        _ => Err(issues.into_errors()),
+      }
+    }
+    _ => Err(ParseErrors::one(ParseError::new(
+      "",
+      "expected array of length 4",
+    ))),
+  })
 }
 
 /// Struct with named fields (wire = tuple of fields in declaration order).
@@ -515,6 +764,19 @@ where
       Ok((a0, a1))
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Struct(vec![
+    Field::required(name0, s0.ast().clone()),
+    Field::required(name1, s1.ast().clone()),
+  ])))
+  .with_decode_unknown_all(move |u| {
+    let obj = expected_object(u)?;
+    let mut issues = Issues::default();
+    let parts = (issues.field(obj, name0, &s0), issues.field(obj, name1, &s1));
+    match parts {
+      (Some(a0), Some(a1)) => Ok((a0, a1)),
+      _ => Err(issues.into_errors()),
+    }
+  })
 }
 
 /// Struct with three named fields (wire = triple of fields in declaration order).
@@ -572,6 +834,24 @@ where
       Ok((a0, a1, a2))
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Struct(vec![
+    Field::required(name0, s0.ast().clone()),
+    Field::required(name1, s1.ast().clone()),
+    Field::required(name2, s2.ast().clone()),
+  ])))
+  .with_decode_unknown_all(move |u| {
+    let obj = expected_object(u)?;
+    let mut issues = Issues::default();
+    let parts = (
+      issues.field(obj, name0, &s0),
+      issues.field(obj, name1, &s1),
+      issues.field(obj, name2, &s2),
+    );
+    match parts {
+      (Some(a0), Some(a1), Some(a2)) => Ok((a0, a1, a2)),
+      _ => Err(issues.into_errors()),
+    }
+  })
 }
 
 /// Struct with four named fields (wire = quadruple of fields in declaration order).
@@ -649,6 +929,26 @@ where
       Ok((a0, a1, a2, a3))
     },
   )
+  .with_ast(SchemaAst::new(SchemaKind::Struct(vec![
+    Field::required(name0, s0.ast().clone()),
+    Field::required(name1, s1.ast().clone()),
+    Field::required(name2, s2.ast().clone()),
+    Field::required(name3, s3.ast().clone()),
+  ])))
+  .with_decode_unknown_all(move |u| {
+    let obj = expected_object(u)?;
+    let mut issues = Issues::default();
+    let parts = (
+      issues.field(obj, name0, &s0),
+      issues.field(obj, name1, &s1),
+      issues.field(obj, name2, &s2),
+      issues.field(obj, name3, &s3),
+    );
+    match parts {
+      (Some(a0), Some(a1), Some(a2), Some(a3)) => Ok((a0, a1, a2, a3)),
+      _ => Err(issues.into_errors()),
+    }
+  })
 }
 
 /// Generates `tupleN` (positional, [`Unknown::Array`] of length `N`) for `N` in 5..=12.
@@ -669,6 +969,8 @@ macro_rules! tuple_n {
       let dec = ($( $s, )+);
       let enc = dec.clone();
       let du = dec.clone();
+      let all = dec.clone();
+      let ast = SchemaAst::new(SchemaKind::Tuple(vec![$( dec.$idx.ast().clone(), )+]));
       Schema::make(
         move |w: ($($I,)+)| {
           Ok(($(
@@ -688,6 +990,27 @@ macro_rules! tuple_n {
           )),
         },
       )
+      .with_ast(ast)
+      .with_decode_unknown_all(move |u| match u {
+        Unknown::Array(arr) if arr.len() == $len => {
+          let mut issues = Issues::default();
+          let parts = ($(
+            issues.take(
+              all.$idx
+                .decode_unknown_all(&arr[$idx])
+                .map_err(|e| e.prefix(stringify!($idx))),
+            ),
+          )+);
+          match parts {
+            ($( Some($s), )+) => Ok(($( $s, )+)),
+            _ => Err(issues.into_errors()),
+          }
+        }
+        _ => Err(ParseErrors::one(ParseError::new(
+          "",
+          concat!("expected array of length ", stringify!($len)),
+        ))),
+      })
     }
   };
 }
@@ -712,6 +1035,10 @@ macro_rules! struct_n {
       let dec = ($( $s, )+);
       let enc = dec.clone();
       let du = dec.clone();
+      let all = dec.clone();
+      let ast = SchemaAst::new(SchemaKind::Struct(vec![
+        $( Field::required(names.$idx, dec.$idx.ast().clone()), )+
+      ]));
       Schema::make(
         move |w: ($($I,)+)| {
           Ok(($(
@@ -733,6 +1060,16 @@ macro_rules! struct_n {
           },)+))
         },
       )
+      .with_ast(ast)
+      .with_decode_unknown_all(move |u| {
+        let obj = expected_object(u)?;
+        let mut issues = Issues::default();
+        let parts = ($( issues.field(obj, names.$idx, &all.$idx), )+);
+        match parts {
+          ($( Some($s), )+) => Ok(($( $s, )+)),
+          _ => Err(issues.into_errors()),
+        }
+      })
     }
   };
 }
@@ -811,6 +1148,7 @@ where
   let fallback_du = fallback.clone();
   let primary_enc = primary.clone();
   let primary_du = primary.clone();
+  let primary_all = primary.clone();
   Schema::make(
     move |u: Unknown| {
       primary
@@ -824,6 +1162,26 @@ where
         .or_else(|_| fallback_du.decode_unknown(u))
     },
   )
+  .with_ast(union_ast([primary_all.ast(), fallback.ast()]))
+  .with_decode_unknown_all(move |u| {
+    primary_all
+      .decode_unknown_all(u)
+      .or_else(|_| fallback.decode_unknown_all(u))
+  })
+}
+
+/// [`SchemaKind::Union`] of `arms`, flattening un-annotated nested unions.
+pub(crate) fn union_ast<'a>(arms: impl IntoIterator<Item = &'a SchemaAst>) -> SchemaAst {
+  let mut flat = Vec::new();
+  for arm in arms {
+    match &arm.kind {
+      SchemaKind::Union(inner) if arm.constraints.is_empty() && arm.annotations.is_empty() => {
+        flat.extend(inner.iter().cloned());
+      }
+      _ => flat.push(arm.clone()),
+    }
+  }
+  SchemaAst::new(SchemaKind::Union(flat))
 }
 
 #[cfg(test)]

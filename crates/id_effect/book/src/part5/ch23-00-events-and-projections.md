@@ -20,6 +20,7 @@ Source lives under [`labs/id_effect_events/src`](https://github.com/Industrial/i
 
 ## Production path (es-entity)
 
+<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_events::{EsEntityEventStore, EsEntityPgBackend, EventStore};
 // pool: id_effect_sql::pg::PgPool
@@ -32,6 +33,7 @@ Apply `ES_ENTITY_EVENT_JOURNAL_DDL` at startup. See ADR [`docs/platform/adrs/adr
 
 Register projection nodes with dependencies; `plan()` uses `id_effect_graph::topological_sort`:
 
+<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_events::{ProjectionNode, ProjectionRunner};
 let mut runner = ProjectionRunner::new();
@@ -43,4 +45,4 @@ let order = runner.plan()?;
 
 `MemoryEventStore` and `FileJournal` remain for unit tests and local experiments without PostgreSQL.
 
-See also [Async messaging](../part6/ch31-00-async-messaging.md) (obix outbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).
+See also [Async messaging](../part6/ch31-00-async-messaging.md) (outbox and obix inbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).

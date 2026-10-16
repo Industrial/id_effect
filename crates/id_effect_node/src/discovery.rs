@@ -8,6 +8,8 @@
 use async_trait::async_trait;
 
 /// Strategy for finding join candidates.
+// async-trait emits `#[must_use]` on methods returning an already-must_use boxed future.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Discovery: Send + Sync {
   /// Addresses to announce to, in preference order. An empty result

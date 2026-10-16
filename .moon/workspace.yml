@@ -1,6 +1,7 @@
 # https://moonrepo.dev/docs/config/workspace
 $schema: https://moonrepo.dev/schemas/workspace.json
 projects:
+  book_snippets: examples/book-snippets
   cli_minimal: examples/cli-minimal
   effect: '.'
   http_showcase: examples/http-showcase
@@ -17,6 +18,8 @@ projects:
   id_effect_sql: crates/id_effect_sql
   id_effect_tokio: crates/id_effect_tokio
   id_effect_fsm: crates/id_effect_fsm
+  id_effect_kit: crates/id_effect_kit
+  id_effect_tool: crates/id_effect_tool
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
 vcs:

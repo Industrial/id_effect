@@ -1,0 +1,16 @@
+# Copy to .env and adjust. The service reads the process environment: export these (or use
+# direnv) for `cargo run`; compose.yaml and config/deploy.yml set their own.
+HOST=127.0.0.1
+PORT=8080
+SHUTDOWN_TIMEOUT_SECS=30
+# Standard base64 of at least 64 random bytes: openssl rand -base64 64 | tr -d '\n'
+# Unset: a random key per start (signed cookies do not survive a restart).
+COOKIE_KEY=
+{{#if pg}}
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+{{/if}}
+{{#if otel}}
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+OTEL_SERVICE_NAME={{name}}
+{{/if}}
+RUST_LOG=info

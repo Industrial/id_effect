@@ -3,6 +3,8 @@
 #
 # Usage: bash scripts/tier-conformance.sh [package ...]
 # Prints one row per package and exits 1 if any package FAILs its tier.
+# TIER_CONFORMANCE_MANIFEST=<Cargo.toml> checks that manifest's workspace instead of
+# the repo (labs not merged); used for fixtures.
 # Requires: cargo, jq, rg.
 set -euo pipefail
 
@@ -13,8 +15,12 @@ for tool in cargo jq rg; do
     command -v "$tool" >/dev/null || { echo "tier-conformance: missing $tool" >&2; exit 2; }
 done
 
-meta="$(cargo metadata --no-deps --format-version 1)"
-if [[ -f labs/Cargo.toml ]]; then
+if [[ -n "${TIER_CONFORMANCE_MANIFEST:-}" ]]; then
+    meta="$(cargo metadata --no-deps --format-version 1 --manifest-path "$TIER_CONFORMANCE_MANIFEST")"
+else
+    meta="$(cargo metadata --no-deps --format-version 1)"
+fi
+if [[ -z "${TIER_CONFORMANCE_MANIFEST:-}" && -f labs/Cargo.toml ]]; then
     # Labs is a separate workspace (ADR 0010 Amendment 1); merge its packages in.
     labs_meta="$(cargo metadata --no-deps --format-version 1 --manifest-path labs/Cargo.toml)"
     meta="$(jq -s '{packages: (.[0].packages + .[1].packages)}' <<<"$meta"$'\n'"$labs_meta")"
@@ -28,12 +34,20 @@ count() { { rg -c --no-messages "$@" || true; } | awk -F: '{s+=$NF} END {print s
 density_for() {
     case "$1" in
         core|runtime) echo 40 ;;
-        integration) echo 80 ;;
+        integration|platform) echo 80 ;;
         *) echo 0 ;;
     esac
 }
 
-strict_tier() { [[ "$1" == core || "$1" == runtime || "$1" == integration ]]; }
+# platform (ADR 0012) carries the integration gates plus a reference-app consumer.
+strict_tier() { [[ "$1" == core || "$1" == runtime || "$1" == integration || "$1" == platform ]]; }
+
+known_tier() {
+    case "$1" in
+        core|runtime|integration|platform|maintenance|labs|merge|example) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 fail_total=0
 printf '%-26s %-12s %-6s %s\n' CRATE TIER RESULT DETAILS
@@ -50,6 +64,8 @@ while IFS=$'\t' read -r name manifest tier publish; do
     if [[ -z "$tier" || "$tier" == null ]]; then
         fails+=("T:no-tier")
         tier="-"
+    elif ! known_tier "$tier"; then
+        fails+=("T:unknown-tier")
     fi
 
     root_rs="$dir/src/lib.rs"
@@ -98,6 +114,13 @@ while IFS=$'\t' read -r name manifest tier publish; do
         labs)
             [[ "$rel" == labs/* ]] || fails+=("L:not-under-labs")
             [[ "$publish" == "[]" ]] || fails+=("L:publish-not-false")
+            ;;
+        platform)
+            # P: a reference app under examples/reference/ depends on it.
+            if [[ ! -d examples/reference ]] || ! rg -q --glob 'Cargo.toml' \
+                -e "^\s*${name}\s*(=|\.)" -e "^\[(\S+\.)?(dev-|build-)?dependencies\.${name}\]" examples/reference; then
+                fails+=("P:no-reference-app-consumer")
+            fi
             ;;
         merge) notes+=("pending-merge") ;;
         example) notes+=("example") ;;

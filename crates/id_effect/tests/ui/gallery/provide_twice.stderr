@@ -1,0 +1,13 @@
+error[E0277]: `Db` is not required by this effect, so it cannot be provided
+  --> tests/ui/gallery/provide_twice.rs:21:29
+   |
+21 |   let _ = job().provide(Db).provide(Db);
+   |                             ^^^^^^^ this effect's environment `HCons<Clock, HNil>` has no `Db`
+   |
+   = help: the trait `Plucker<Db, There<_>>` is not implemented for `HCons<Clock, HNil>`
+   = note: only capabilities in the effect's `R` can be provided; drop this `.provide(..)`
+help: the trait `Plucker<T, Here>` is implemented for `HCons<T, Tl>`
+  --> src/capability/hlist.rs
+   |
+   | impl<T: Send + Sync + 'static, Tl: HList> Plucker<T, Here> for HCons<T, Tl> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

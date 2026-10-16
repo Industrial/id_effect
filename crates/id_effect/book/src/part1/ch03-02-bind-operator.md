@@ -10,22 +10,32 @@ Inside `effect!`, the prefix `~` has three forms:
 
 ## Binding an effect
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed};
+# struct User { name: String }
+# fn fetch_user(_: u64) -> Effect<User, String> { succeed(User { name: "ada".into() }) }
+# let _: Effect<String, String> =
 effect!({
   let user = ~fetch_user(42);
   user.name
 })
+# ;
 ```
 
 When you don't need the value, use `~` as a statement:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed};
+# fn log_event(_: &str) -> Effect<(), String> { succeed(()) }
+# fn do_work() -> Effect<u32, String> { succeed(7) }
+# let _: Effect<u32, String> =
 effect!({
   ~log_event("processing started");
   let result = ~do_work();
   ~log_event("processing done");
   result
 })
+# ;
 ```
 
 A bound effect may need only **part** of the block's `R` (it is narrowed into the block's
@@ -34,7 +44,9 @@ any other `E2` needs `E: From<E2>`.
 
 ## Reading a capability
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Never, caps, effect};
+# struct Counter(i32);
 fn program() -> Effect<i32, Never, caps!(Counter)> {
   effect!({ ~Counter.0 + 1 })
 }
@@ -51,11 +63,20 @@ capability that is not in `R` is a compile error naming it.
 
 ## Joining in parallel
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed};
+# struct User; struct Prefs; struct Page;
+# fn fetch_user(_: u64) -> Effect<User, String> { succeed(User) }
+# fn fetch_prefs(_: u64) -> Effect<Prefs, String> { succeed(Prefs) }
+# fn render(_: User, _: Prefs) -> Page { Page }
+# let id = 1;
+# let page: Effect<Page, String> =
 effect!({
   let (user, prefs) = ~(fetch_user(id), fetch_prefs(id));
   render(user, prefs)
 })
+# ;
+# assert!(page.block_on().into_result().is_ok());
 ```
 
 The branches run concurrently; the first failure fails the join and interrupts the siblings.
@@ -64,17 +85,35 @@ The branches run concurrently; the first failure fails the join and interrupts t
 
 `~` applies to the whole expression after it, so combinators go before the bind:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, effect, succeed};
+# struct User { id: u64 }
+# struct Post; struct DbError;
+# enum AppError { Database(DbError) }
+# impl From<DbError> for AppError { fn from(e: DbError) -> Self { AppError::Database(e) } }
+# fn fetch_user(id: u64) -> Effect<User, DbError> { succeed(User { id }) }
+# fn fetch_posts(_: u64) -> Effect<Vec<Post>, DbError> { succeed(vec![]) }
+# let id = 1;
+# let _: Effect<(User, Option<Vec<Post>>), AppError> =
 effect!({
   let user = ~fetch_user(id).map_err(AppError::Database);
   let posts = ~fetch_posts(user.id).timeout(Duration::from_secs(2)); // Option<Vec<Post>>
   (user, posts)
 })
+# ;
 ```
 
 ## ~ in conditionals and loops
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed};
+# fn compute_a() -> Effect<i32, String> { succeed(1) }
+# fn compute_b() -> Effect<i32, String> { succeed(2) }
+# fn process_user(_: u64) -> Effect<(), String> { succeed(()) }
+# let condition = true;
+# let user_ids = vec![1, 2, 3];
+# let _: Effect<i32, String> =
 effect!({
   let value = if condition { ~compute_a() } else { ~compute_b() };
   for id in user_ids {
@@ -82,6 +121,7 @@ effect!({
   }
   value
 })
+# ;
 ```
 
 Loops are sequential. For concurrent work over a collection use `for_each_par` or `all`
@@ -91,7 +131,10 @@ Loops are sequential. For concurrent work over a collection use `for_each_par` o
 
 `~` only works inside an `effect!` (or `effect_local!`) body:
 
-```rust,ignore
+```rust,compile_fail
+# use id_effect::{Effect, effect, succeed};
+# struct User; struct DbError;
+# fn fetch_user(_: u64) -> Effect<User, DbError> { succeed(User) }
 // Does not compile: ~ is not valid here
 let x = ~fetch_user(42);
 
@@ -107,7 +150,11 @@ and `~` outside it.
 `~` narrows from any sub-environment, so a helper that is generic in its `R` leaves nothing to fix
 that `R`. Bind it with `.same_env()`, which ties it to the caller's environment:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HList, Selector, caps, effect};
+# struct AppError; struct Db;
+# struct Logger;
+# impl Logger { fn info(&self, _msg: String) {} }
 fn audit<R, I>(msg: String) -> Effect<(), AppError, R>
 where
   R: HList + Selector<Logger, I>,

@@ -13,8 +13,8 @@ use crate::kernel::Effect;
 
 type Driver<A, In, E, R> = Arc<dyn Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync>;
 
-/// The fold behind a [`Sink::fold_left`] sink, kept so [`Sink::zip`] can merge two folds into one
-/// pass and [`FoldChannel::from_sink`](super::FoldChannel::from_sink) can reuse it.
+/// The fold behind a [`FoldSink`], kept so [`FoldSink::zip`] can merge two folds into one pass
+/// and [`FoldChannel::from_sink`](super::FoldChannel::from_sink) can reuse it.
 pub(crate) struct FoldState<A, In> {
   pub(crate) init: A,
   pub(crate) step: Arc<dyn Fn(A, In) -> A + Send + Sync>,
@@ -33,23 +33,57 @@ pub(crate) struct FoldState<A, In> {
 /// ```
 pub struct Sink<A, In, E = Never, R = HNil> {
   driver: Driver<A, In, E, R>,
-  pub(crate) fold: Option<Arc<FoldState<A, In>>>,
 }
 
 impl<A, In, E, R> Clone for Sink<A, In, E, R> {
   fn clone(&self) -> Self {
     Self {
       driver: Arc::clone(&self.driver),
-      fold: self.fold.clone(),
     }
   }
 }
 
 impl<A, In, E, R> std::fmt::Debug for Sink<A, In, E, R> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Sink")
-      .field("fold", &self.fold.is_some())
-      .finish_non_exhaustive()
+    f.debug_struct("Sink").finish_non_exhaustive()
+  }
+}
+
+/// A [`Sink`] that is a left fold: what [`Sink::fold_left`] / [`Sink::from_fold`] (and
+/// [`collect`](Sink::collect), [`drain`](Sink::drain), [`collect_to_map`](Sink::collect_to_map))
+/// return. Only a fold can be [zipped](Self::zip) or turned into a
+/// [`FoldChannel`](super::FoldChannel::from_sink), so any other sink is rejected at compile time.
+/// Run it with [`run`](Self::run) or [`Stream::run`]; [`Sink::from`] / `.into()` erases the fold.
+///
+/// ```compile_fail,E0599
+/// use id_effect::Sink;
+///
+/// // `collect_all_while` is not a fold: it has no `zip`.
+/// let _ = Sink::<Vec<u32>, u32>::collect_all_while(|_| true).zip(Sink::<(), u32>::drain());
+/// ```
+pub struct FoldSink<A, In, E = Never, R = HNil> {
+  sink: Sink<A, In, E, R>,
+  pub(crate) fold: Arc<FoldState<A, In>>,
+}
+
+impl<A, In, E, R> Clone for FoldSink<A, In, E, R> {
+  fn clone(&self) -> Self {
+    Self {
+      sink: self.sink.clone(),
+      fold: Arc::clone(&self.fold),
+    }
+  }
+}
+
+impl<A, In, E, R> std::fmt::Debug for FoldSink<A, In, E, R> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("FoldSink").finish_non_exhaustive()
+  }
+}
+
+impl<A, In, E, R> From<FoldSink<A, In, E, R>> for Sink<A, In, E, R> {
+  fn from(fold: FoldSink<A, In, E, R>) -> Self {
+    fold.sink
   }
 }
 
@@ -64,7 +98,6 @@ where
   pub fn new(driver: impl Fn(Stream<In, E, R>) -> Effect<A, E, R> + Send + Sync + 'static) -> Self {
     Self {
       driver: Arc::new(driver),
-      fold: None,
     }
   }
 
@@ -82,50 +115,56 @@ where
   R: Send + Sync + 'static,
 {
   /// Left fold over the elements; the final accumulator is the result.
-  pub fn fold_left(init: A, f: impl Fn(A, In) -> A + Send + Sync + 'static) -> Self {
-    Self::from_fold_state(FoldState {
+  pub fn fold_left(
+    init: A,
+    f: impl Fn(A, In) -> A + Send + Sync + 'static,
+  ) -> FoldSink<A, In, E, R> {
+    FoldSink::from_state(FoldState {
       init,
       step: Arc::new(f),
     })
   }
 
   /// Alias of [`fold_left`](Self::fold_left).
-  pub fn from_fold(init: A, f: impl Fn(A, In) -> A + Send + Sync + 'static) -> Self {
+  pub fn from_fold(
+    init: A,
+    f: impl Fn(A, In) -> A + Send + Sync + 'static,
+  ) -> FoldSink<A, In, E, R> {
     Self::fold_left(init, f)
   }
+}
 
-  fn from_fold_state(state: FoldState<A, In>) -> Self {
-    let state = Arc::new(state);
-    let st = Arc::clone(&state);
-    Self {
-      driver: Arc::new(move |stream: Stream<In, E, R>| {
-        let step = Arc::clone(&st.step);
-        stream.run_fold(st.init.clone(), move |acc, x| step(acc, x))
-      }),
-      fold: Some(state),
-    }
+impl<A, In, E, R> FoldSink<A, In, E, R>
+where
+  A: Clone + Send + Sync + 'static,
+  In: Send + 'static,
+  E: Send + 'static,
+  R: Send + Sync + 'static,
+{
+  fn from_state(state: FoldState<A, In>) -> Self {
+    let fold = Arc::new(state);
+    let st = Arc::clone(&fold);
+    let sink = Sink::new(move |stream: Stream<In, E, R>| {
+      let step = Arc::clone(&st.step);
+      stream.run_fold(st.init.clone(), move |acc, x| step(acc, x))
+    });
+    Self { sink, fold }
   }
 
-  /// Combines two [`fold_left`](Self::fold_left) sinks into one pass over the stream.
-  ///
-  /// # Panics
-  ///
-  /// If either sink was not built with [`fold_left`](Self::fold_left) /
-  /// [`from_fold`](Self::from_fold) (or [`collect`](Sink::collect), [`drain`](Sink::drain),
-  /// [`collect_to_map`](Sink::collect_to_map), which are folds).
-  pub fn zip<B>(self, other: Sink<B, In, E, R>) -> Sink<(A, B), In, E, R>
+  /// Runs this fold over `stream`.
+  pub fn run(&self, stream: Stream<In, E, R>) -> Effect<A, E, R> {
+    self.sink.run(stream)
+  }
+
+  /// Combines two folds into one pass over the stream.
+  pub fn zip<B>(self, other: FoldSink<B, In, E, R>) -> FoldSink<(A, B), In, E, R>
   where
     B: Clone + Send + Sync + 'static,
     In: Clone,
   {
-    let sa = self
-      .fold
-      .expect("Sink::zip requires fold_left/from_fold sinks");
-    let sb = other
-      .fold
-      .expect("Sink::zip requires fold_left/from_fold sinks");
+    let (sa, sb) = (self.fold, other.fold);
     let (fa, fb) = (Arc::clone(&sa.step), Arc::clone(&sb.step));
-    Sink::from_fold_state(FoldState {
+    FoldSink::from_state(FoldState {
       init: (sa.init.clone(), sb.init.clone()),
       step: Arc::new(move |(a, b), x: In| (fa(a, x.clone()), fb(b, x))),
     })
@@ -139,7 +178,7 @@ where
   R: Send + Sync + 'static,
 {
   /// Collects every element, in stream order.
-  pub fn collect() -> Self {
+  pub fn collect() -> FoldSink<Vec<In>, In, E, R> {
     Sink::fold_left(Vec::new(), |mut v, x| {
       v.push(x);
       v
@@ -178,7 +217,7 @@ where
   R: Send + Sync + 'static,
 {
   /// Discards every element.
-  pub fn drain() -> Self {
+  pub fn drain() -> FoldSink<(), In, E, R> {
     Sink::fold_left((), |(), _| ())
   }
 
@@ -209,7 +248,7 @@ where
   R: Send + Sync + 'static,
 {
   /// Collects `(K, V)` elements into a map (later values win).
-  pub fn collect_to_map() -> Self {
+  pub fn collect_to_map() -> FoldSink<HashMap<K, V>, (K, V), E, R> {
     Sink::fold_left(HashMap::new(), |mut m, (k, v)| {
       m.insert(k, v);
       m

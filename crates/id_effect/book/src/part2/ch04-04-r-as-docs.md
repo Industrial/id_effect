@@ -5,14 +5,28 @@ compiler enforces.
 
 ## The Signature Tells the Story
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect};
+# struct Order; struct Receipt; struct Error; struct OrderError;
+# struct Database; struct PaymentGateway; struct Mailer; struct AuditLog;
+# mod a { use super::*;
 // Version A: traditional async. What does it use? Read the body to find out.
-async fn process_order(order: Order) -> Result<Receipt, Error> { /* 200 lines */ }
+async fn process_order(order: Order) -> Result<Receipt, Error> {
+  // 200 lines
+#   Ok(Receipt)
+}
+# }
+# mod b { use super::*;
 
 // Version B: effect-based. What does it use? Read the signature.
 fn process_order(order: Order)
   -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
-{ /* ... */ }
+{
+  // ...
+#   effect!({ let _ = (~Database, ~PaymentGateway, ~Mailer, ~AuditLog); Receipt })
+}
+# }
+# fn main() {}
 ```
 
 ## Code Review Benefits
@@ -39,7 +53,18 @@ capability in an application environment or layer graph is allowed, but it is vi
 The type tells a test exactly what to supply, no more, no less:
 
 ```rust
-#[test]
+# use id_effect::{Effect, Exit, caps, effect, hlist};
+# struct Order; struct Receipt; struct OrderError;
+# struct Database; struct PaymentGateway; struct Mailer; struct AuditLog;
+# impl AuditLog { fn memory() -> Self { AuditLog } }
+# fn mock_db() -> Database { Database }
+# fn mock_payment() -> PaymentGateway { PaymentGateway }
+# fn mock_mailer() -> Mailer { Mailer }
+# fn test_order() -> Order { Order }
+# fn process_order(_: Order) -> Effect<Receipt, OrderError, caps!(Database, PaymentGateway, Mailer, AuditLog)> {
+#   effect!({ let _ = (~Database, ~PaymentGateway, ~Mailer, ~AuditLog); Receipt })
+# }
+// In a #[cfg(test)] module, under #[test]:
 fn process_order_charges_once() {
   // R = caps!(Database, PaymentGateway, Mailer, AuditLog): four values to provide
   let exit = process_order(test_order())
@@ -47,6 +72,7 @@ fn process_order_charges_once() {
     .block_on();
   assert!(matches!(exit, Exit::Success(_)));
 }
+# process_order_charges_once();
 ```
 
 Missing one is a compile error at `provide_env`, not a failure halfway through the test.

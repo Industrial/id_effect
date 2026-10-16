@@ -1,0 +1,13 @@
+error[E0277]: capability `Mailer` is not in this effect's environment
+  --> tests/ui/gallery/missing_capability.rs:17:6
+   |
+17 |     ~Mailer.send("new@user");
+   |      ^^^^^^ `Mailer` is required here
+   |
+   = help: the trait `Selector<Mailer, There<_>>` is not implemented for `HCons<Db, HNil>`
+   = note: add `Mailer` to the effect's `caps!(..)`, or remove it with `.provide(..)` / `.provide_env(..)` before running
+help: the trait `Selector<T, Here>` is implemented for `HCons<T, Tl>`
+  --> src/capability/hlist.rs
+   |
+   | impl<T, Tl> Selector<T, Here> for HCons<T, Tl> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

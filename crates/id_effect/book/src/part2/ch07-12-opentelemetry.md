@@ -72,10 +72,12 @@ over high-cardinality user IDs.
 
 Enable the `otlp` feature. At process start (`examples/otel_production.rs`):
 
-```rust,ignore
+```rust,no_run
 use id_effect::{Counter, Effect, succeed};
 use id_effect_opentelemetry::{OtelConfig, install_from_config};
 use id_effect_tokio::TokioRuntime;
+# // Needs a live OTLP collector, so it is compiled but not run.
+# async fn start() -> Result<(), Box<dyn std::error::Error>> {
 
 let guard = install_from_config(OtelConfig::from_env()?)?; // bridges MetricRegistry::global()
 let eff: Effect<(), ()> = Counter::new("production.work")
@@ -86,6 +88,8 @@ let eff: Effect<(), ()> = Counter::new("production.work")
 let _ = TokioRuntime::current()?.run(eff).await;
 guard.force_flush();
 guard.shutdown();
+# Ok(())
+# }
 ```
 
 `install_otel_starter(&providers, &config)` is the lower-level form; both install global providers,

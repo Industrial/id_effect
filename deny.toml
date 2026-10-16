@@ -1,0 +1,56 @@
+# cargo-deny policy for the main workspace (labs/ is a separate workspace and out of scope).
+# Run: `cargo deny check` (moon: `moon run effect:deny`; CI: the `deny` job in ci.yml).
+# Cargo.lock is not committed, so CI checks a fresh resolution; run `cargo update` first if a
+# stale local lock reports advisories that a fresh resolve no longer pulls in.
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check optional dependencies too: features such as `pg` pull in sqlx and friends.
+all-features = true
+
+[advisories]
+# RUSTSEC-2023-0071 is the same ignore as .cargo/audit.toml (keep the two in sync).
+# The rest are unmaintained/unsound notices that `cargo audit` reports as warnings only.
+# Each is a known debt with a named dependency path, not a silent pass: remove the
+# entry when the dependency is replaced. Vulnerabilities are never ignored here
+# without a reason that says why the vulnerable code path is unreachable.
+ignore = [
+  { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin attack) arrives transitively via sqlx-mysql; workspace sqlx deps use postgres only" },
+  { id = "RUSTSEC-2023-0126", reason = "im 15.1.0 OrdSet aliasing (unsound): direct dep of id_effect_fp and id_effect_optics; open debt until im is replaced" },
+  { id = "RUSTSEC-2026-0248", reason = "im is unmaintained: direct dep of id_effect_fp and id_effect_optics; open debt until im is replaced" },
+  { id = "RUSTSEC-2026-0247", reason = "bitmaps is unmaintained: transitive via im (see RUSTSEC-2026-0248)" },
+  { id = "RUSTSEC-2026-0251", reason = "sized-chunks is unmaintained: transitive via im (see RUSTSEC-2026-0248)" },
+  { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill is unmaintained: transitive via heapless 0.7 <- postcard <- foca/id_effect_node" },
+  { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml is unmaintained: transitive via serde_yaml <- figment <- id_effect_config" },
+]
+
+[licenses]
+# Derived from `cargo deny check licenses` on the main workspace (all features).
+# CDLA-Permissive-2.0: webpki-root-certs (Mozilla CA data). MPL-2.0 also satisfies the
+# MPL-2.0+ of im / bitmaps / sized-chunks.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-3-Clause",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Unpublished workspace members (examples) carry no license field.
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies between workspace members are fine; registry wildcards are not.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

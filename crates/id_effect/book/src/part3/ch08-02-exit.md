@@ -4,6 +4,7 @@ Every effect run ends with an `Exit`. It's the final word on what happened.
 
 ## The Exit Type
 
+<!-- ignore: excerpt of the id_effect::Exit definition, not a standalone program -->
 ```rust,ignore
 pub enum Exit<A, E> {
     Success(A),         // the effect completed with A
@@ -32,7 +33,9 @@ assert_eq!(seen.block_on(), Exit::succeed(Exit::Failure(Cause::Fail("no"))));
 
 `Exit::into_result` gives `Result<A, Cause<E>>`; combine it with `Cause::fail_option` when you only care about typed failures:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, fail};
+# let program: Effect<i32, String> = fail("boom".to_owned());
 match program.block_on().into_result() {
     Ok(value) => println!("got {value}"),
     Err(cause) => match cause.fail_option() {

@@ -33,7 +33,15 @@ assert_eq!(app().provide(EffectLogger).block_on(), Exit::Success(7));
 
 A full pipeline is a merged layer:
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use id_effect::{caps, succeed};
+# use id_effect_logger::{
+#   CompositeLogBackend, EffectLogComposite, EffectLoggerError, LogLevel, LogMetadataLive,
+#   provide_composite_logger, provide_minimum_log_level,
+# };
+# let composite = Arc::new(CompositeLogBackend::new());
+# let program = succeed::<(), EffectLoggerError, caps!(EffectLogComposite)>(());
 let pipeline = LogMetadataLive::layer()
     .merge(provide_composite_logger(composite))
     .merge(provide_minimum_log_level(LogLevel::Info));

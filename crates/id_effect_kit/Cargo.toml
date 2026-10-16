@@ -1,0 +1,50 @@
+[package]
+name = "id_effect_kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "One front door to id_effect: a single dependency with feature flags per battery and a prelude"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_kit"
+
+[features]
+default = []
+# HTTP: `kit::axum` (id_effect_axum) and its prelude items.
+web = ["dep:id_effect_axum"]
+# PostgreSQL: `kit::sql` (id_effect_sql with its `pg` driver) and its prelude items.
+sql-pg = ["dep:id_effect_sql", "id_effect_sql/pg"]
+# OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
+otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
+# Distribution: `kit::node` (id_effect_node); with `web`, also id_effect_axum's `cluster` module.
+cluster = ["dep:id_effect_node", "id_effect_axum?/cluster"]
+full = ["web", "sql-pg", "otel", "cluster"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.8.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "0.8.0", default-features = false }
+id_effect_config = { path = "../id_effect_config", version = "0.8.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.8.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.8.0", optional = true }
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.8.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.8.0", optional = true }
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until a reference app
+# under examples/reference/ consumes it; then platform (ADR 0010 Amendment 4, ADR 0012).
+tier = "integration"

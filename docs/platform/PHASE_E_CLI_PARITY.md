@@ -4,7 +4,8 @@ Reference: [phase-e-cli.md](../effect-ts-parity/phases/phase-e-cli.md)
 
 > **Historical audit (pre-0.7).** API names below are as of the audit. In 0.7 `run_main` no longer
 > wraps `run_blocking` (removed with the v1 interpreter): it runs the effect on the fiber runtime's
-> blocking edge and maps the `Exit` to an `ExitCode`. See `crates/id_effect_cli/src/run.rs`.
+> blocking edge and maps the `Exit` to an `ExitCode`. See `crates/id_effect_cli/src/run.rs`. The
+> two wave 0 gaps below were closed in 0.8 by `id_effect_tool` (`id-effect new`, `id-effect doctor`).
 
 ## Shipped in `id_effect_cli`
 
@@ -21,8 +22,8 @@ Reference: [phase-e-cli.md](../effect-ts-parity/phases/phase-e-cli.md)
 
 | Gap | Resolution |
 |-----|------------|
-| No unified developer CLI entrypoint | **Open** — the placeholder `id-effect` binary (`version`/`new`) was removed in 0.6; `id-effect-diagnose` remains |
-| No app generator | **Open** — start from `examples/cli-minimal`; the placeholder `id-effect new` scaffolder was removed in 0.6 |
+| No unified developer CLI entrypoint | **Closed in 0.8** — `id-effect` (crate `id_effect_tool`, `cargo install id_effect_tool`) with `new` and `doctor`. The 0.6 placeholder binary is gone, and `id-effect-diagnose` was removed in 0.7 |
+| No app generator | **Closed in 0.8** — `id-effect new <name> --template service\|worker\|cli\|cluster` (the `cli` template is the `examples/cli-minimal` shape); `id-effect doctor` checks a project's toolchain, versions, environment, database, docker and port |
 
 ## Remaining (future waves)
 
@@ -35,6 +36,6 @@ Reference: [phase-e-cli.md](../effect-ts-parity/phases/phase-e-cli.md)
 ## Verify
 
 ```bash
-cargo run -p id_effect_cli --features clap --bin id-effect-diagnose -- --help
-cargo nextest run -p id_effect_cli
+cargo run -p id_effect_tool --bin id-effect -- --help
+cargo nextest run -p id_effect_cli -p id_effect_tool
 ```

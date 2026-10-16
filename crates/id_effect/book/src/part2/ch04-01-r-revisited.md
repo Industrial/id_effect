@@ -1,7 +1,10 @@
 # R Revisited — More Than Just a Type Parameter
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, need};
+# struct User; struct DbError; struct Database;
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)>
+# { need::<Database>().map(|_| User) }
 ```
 
 It reads "this needs a `Database`". What does that mean precisely?
@@ -11,7 +14,12 @@ It reads "this needs a `Database`". What does that mean precisely?
 `R` is a promise the compiler holds you to. You cannot run `get_user(1)` until a `Database` has
 been provided:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, need};
+# struct User; struct DbError;
+# struct Database;
+# impl Database { fn connect(_url: &str) -> Self { Database } }
+# fn get_user(_id: u64) -> Effect<User, DbError, caps!(Database)> { need::<Database>().map(|_| User) }
 // Does not compile: `block_on` needs `Effect<_, _, HNil>`, this is `caps!(Database)`
 // get_user(1).block_on();
 
@@ -31,9 +39,18 @@ error[E0277]: capability `Metrics` is not in this effect's environment
 Inside `effect!`, `~sub_effect` accepts any sub-effect whose `R` is **contained in** the block's
 `R` (in any order). The block declares the union:
 
-```rust,ignore
-fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> { /* ... */ }
-fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> { /* ... */ }
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct User { id: u64 }
+# struct Post; struct DbError; struct Database;
+fn get_user(id: u64) -> Effect<User, DbError, caps!(Database)> {
+  // ...
+#   need::<Database>().map(move |_| User { id })
+}
+fn get_posts(user_id: u64) -> Effect<Vec<Post>, DbError, caps!(Database)> {
+  // ...
+#   need::<Database>().map(|_| vec![])
+}
 
 // Both need the same capability: still caps!(Database)
 fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Database)> {
@@ -47,8 +64,17 @@ fn get_user_with_posts(id: u64) -> Effect<(User, Vec<Post>), DbError, caps!(Data
 
 When the steps need different capabilities, the block needs both:
 
-```rust,ignore
-fn audit(msg: String) -> Effect<(), AuditError, caps!(AuditLog)> { /* ... */ }
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct User; struct DbError; struct AuditError; struct Database; struct AuditLog;
+# enum AppError { Db(DbError), Audit(AuditError) }
+# impl From<DbError> for AppError { fn from(e: DbError) -> Self { AppError::Db(e) } }
+# impl From<AuditError> for AppError { fn from(e: AuditError) -> Self { AppError::Audit(e) } }
+# fn get_user(_id: u64) -> Effect<User, DbError, caps!(Database)> { need::<Database>().map(|_| User) }
+fn audit(msg: String) -> Effect<(), AuditError, caps!(AuditLog)> {
+  // ...
+#   need::<AuditLog>().map(|_| ())
+}
 
 // AppError: From<AuditError> + From<DbError>
 fn get_user_logged(id: u64) -> Effect<User, AppError, caps!(Database, AuditLog)> {
@@ -63,7 +89,20 @@ Forgetting `AuditLog` in the block's `caps!` is a compile error at the `~audit(.
 
 ## Multiple requirements
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect, need};
+# struct Order { user_id: u64, total: u64 }
+# struct User { email: String }
+# struct Payment; struct Receipt;
+# impl Receipt { fn new(_: Payment) -> Self { Receipt } }
+# struct AppError;
+# struct Database; struct PaymentGateway; struct Mailer; struct AuditLog;
+# fn audit(_: String) -> Effect<(), AppError, caps!(AuditLog)> { need::<AuditLog>().map(|_| ()) }
+# fn get_user(_: u64) -> Effect<User, AppError, caps!(Database)> {
+#   need::<Database>().map(|_| User { email: "a@example.com".into() })
+# }
+# fn charge(_: u64) -> Effect<Payment, AppError, caps!(PaymentGateway)> { need::<PaymentGateway>().map(|_| Payment) }
+# fn send_confirmation(_: &str) -> Effect<(), AppError, caps!(Mailer)> { need::<Mailer>().map(|_| ()) }
 fn process_order(order: Order)
   -> Effect<Receipt, AppError, caps!(Database, PaymentGateway, Mailer, AuditLog)>
 {
@@ -81,14 +120,19 @@ From the signature alone you know this function touches four capabilities.
 
 ## Why R instead of parameters?
 
-```rust,ignore
+```rust
+# struct Order; struct Receipt; struct AppError;
+# struct Database; struct PaymentGateway; struct Mailer; struct AuditLog;
 fn process_order(
   order: Order,
   db: &Database,
   pay: &PaymentGateway,
   mail: &Mailer,
   log: &AuditLog,
-) -> Result<Receipt, AppError> { /* ... */ }
+) -> Result<Receipt, AppError> {
+  // ...
+#   Ok(Receipt)
+}
 ```
 
 Parameters work, but every layer of the call stack must accept and forward dependencies it may not

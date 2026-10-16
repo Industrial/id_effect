@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 2,
+	"id": "c-19c080",
+	"taskId": "tsk-mv9zvfav-x5368h",
+	"repoRoot": ".",
+	"status": "locked",
+	"createdAt": "2026-10-15T20:31:53.291Z",
+	"lockedAt": "2026-10-15T20:31:53.291Z",
+	"intent": "Fix clippy double_must_use in id_effect_node",
+	"scope": {
+		"filesExpected": ["**/*"],
+		"filesForbidden": []
+	},
+	"doneWhen": [
+		{
+			"id": "dw-beb4dc",
+			"text": "On the CI-stable toolchain (clippy 0.1.99), cargo clippy -p id_effect_axum --all-targets --all-features -- -D warnings exits 0 (was 7 double_must_use errors from async-trait 0.1.89 expansions in id_effect_node).",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-3c118f",
+			"text": "The fix is scoped: #[allow(clippy::double_must_use)] with a one-line reason on the four #[async_trait] trait definitions (Discovery, Connection, Listener, Transport); no public API change.",
+			"kind": "manual"
+		},
+		{
+			"id": "dw-a0f513",
+			"text": "The always-run pre-commit gate (devenv pre-commit -> ci-local affected) passes, so the commit is made without --no-verify.",
+			"kind": "manual"
+		}
+	],
+	"amendments": [],
+	"createdBy": "claude-opus",
+	"lockedBy": "claude-opus",
+	"configSnapshot": {
+		"strict": false,
+		"overlapPolicy": "annotate",
+		"rebaseFallback": "best-effort",
+		"staleReclaimContractPolicy": "inherit"
+	},
+	"riskClass": "medium"
+}

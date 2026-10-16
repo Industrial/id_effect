@@ -13,7 +13,7 @@ async fn main() -> ExitCode {
   let program = http_showcase::run_until_shutdown().provide_layer(http_showcase::live_layer());
   let exit = EffectExecutor::global().run_effect(program).await;
   // Export the last batch of spans and metrics before the process exits.
-  http_showcase::telemetry::Telemetry::global().flush();
+  http_showcase::infrastructure::telemetry::Telemetry::global().flush();
   match exit {
     Exit::Success(reason) => {
       eprintln!("http_showcase: stopped ({reason:?})");

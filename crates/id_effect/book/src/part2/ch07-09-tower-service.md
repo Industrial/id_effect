@@ -13,16 +13,18 @@ load balancing, …) around the same domain style as Axum, without Axum's router
 
 ## `EffectService`
 
-```rust,ignore
+```rust
 use id_effect::succeed;
 use id_effect_axum::service::EffectService;
 use tower::{Service, ServiceExt};
+# tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
 
 let mut svc = EffectService::new((), |_env: &mut (), x: u32| {
     succeed::<u32, (), _>(x.saturating_add(1))
 });
 let out = svc.ready().await.unwrap().call(41).await.unwrap();
 assert_eq!(out, 42);
+# });
 ```
 
 - **`EffectService::new(state, f)`** — `f(&mut state, request)` returns an `Effect`; unlimited

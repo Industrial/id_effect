@@ -5,7 +5,16 @@ Application effects declare the services they use in `R` and read them with `~Ca
 
 ## Single service
 
-```rust,ignore
+```rust
+# pub struct User; pub struct DbError;
+# pub trait UserRepository: Send + Sync + 'static {
+#     fn get_user(&self, id: u64) -> id_effect::Effect<User, DbError>;
+# }
+# #[derive(Clone)] pub struct UserRepo(pub std::sync::Arc<dyn UserRepository>);
+# impl std::ops::Deref for UserRepo {
+#     type Target = dyn UserRepository;
+#     fn deref(&self) -> &Self::Target { &*self.0 }
+# }
 use id_effect::{Effect, caps, effect};
 
 fn get_user(id: u64) -> Effect<User, DbError, caps!(UserRepo)> {
@@ -25,7 +34,16 @@ Library code that should not fix the whole environment type takes `R` with a `Se
 "`R` contains a `UserRepo` at some index `I`". This is how the platform crates are written
 (`id_effect_platform::http::execute`, `id_effect_config::Config::run`):
 
-```rust,ignore
+```rust
+# pub struct User; pub struct DbError;
+# pub trait UserRepository: Send + Sync + 'static {
+#     fn get_user(&self, id: u64) -> id_effect::Effect<User, DbError>;
+# }
+# #[derive(Clone)] pub struct UserRepo(pub std::sync::Arc<dyn UserRepository>);
+# impl std::ops::Deref for UserRepo {
+#     type Target = dyn UserRepository;
+#     fn deref(&self) -> &Self::Target { &*self.0 }
+# }
 use id_effect::{Effect, HList, Selector, need};
 
 fn get_user<R, I>(id: u64) -> Effect<User, DbError, R>
@@ -41,7 +59,21 @@ The index `I` is always inferred; callers write `get_user(1)` inside any environ
 
 ## Multiple services
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, caps, effect};
+# pub struct User { pub email: String }
+# pub struct DbError; pub struct EmailError;
+# pub enum AppError { Db(DbError), Email(EmailError) }
+# pub trait UserRepository: Send + Sync + 'static {
+#     fn get_user(&self, id: u64) -> Effect<User, DbError>;
+# }
+# #[derive(Clone)] pub struct UserRepo(pub std::sync::Arc<dyn UserRepository>);
+# impl std::ops::Deref for UserRepo {
+#     type Target = dyn UserRepository;
+#     fn deref(&self) -> &Self::Target { &*self.0 }
+# }
+# pub struct Email;
+# impl Email { fn send(&self, _to: &str, _body: &str) -> Effect<(), EmailError> { id_effect::succeed(()) } }
 fn notify_user(id: u64, message: String) -> Effect<(), AppError, caps!(UserRepo, Email)> {
     effect!({
         let repo = ~UserRepo;

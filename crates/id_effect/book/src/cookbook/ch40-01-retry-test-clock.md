@@ -9,7 +9,7 @@ one-shot, so `retry` takes a *factory* that builds a fresh attempt each time. Al
 from the executor the fiber runs on, so the same program runs on real time in production and on
 virtual time when a test runs it on a `TestExecutor`.
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -35,6 +35,7 @@ fn backoff() -> Schedule<(Duration, u64), &'static str> {
 
 let calls = Arc::new(AtomicU32::new(0));
 let program = Effect::retry(flaky(&calls, 3), backoff());
+# let _ = program;
 ```
 
 In production, run it at the edge: `program.block_on()` waits 100 + 200 + 400 ms of real time.
@@ -42,8 +43,45 @@ In a test, run it on a `TestExecutor` with the `run_virtual` helper from
 [Virtual Time with TestExecutor](../part4/ch15-02-test-clock.md), which advances the virtual clock
 from timer to timer:
 
-```rust,ignore
-#[test]
+```rust
+# use std::future::Future;
+# use std::pin::pin;
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicU32, Ordering};
+# use std::task::{Context, Poll, Waker};
+# use std::time::Duration;
+# use id_effect::{Effect, Executor, Exit, Schedule, TestExecutor, fail, succeed, suspend};
+# fn flaky(calls: &Arc<AtomicU32>, failures: u32) -> impl Fn() -> Effect<&'static str, &'static str>
+# + Send + Sync + use<> {
+#   let calls = Arc::clone(calls);
+#   move || {
+#     let calls = Arc::clone(&calls);
+#     suspend(move || {
+#       if calls.fetch_add(1, Ordering::SeqCst) < failures { fail("503") } else { succeed("200 OK") }
+#     })
+#   }
+# }
+# fn backoff() -> Schedule<(Duration, u64), &'static str> {
+#   Schedule::exponential(Duration::from_millis(100)).intersect(Schedule::recurs(4))
+# }
+# fn take_ready<F: Future>(fut: F) -> F::Output {
+#   match pin!(fut).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+#     Poll::Ready(v) => v,
+#     Poll::Pending => panic!("root fiber is not done"),
+#   }
+# }
+# fn run_virtual<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> (Exit<A, E>, Duration) {
+#   let exec = TestExecutor::new();
+#   let start = exec.now();
+#   let h = eff.fork_root(Arc::new(exec.clone()));
+#   exec.run_until_stalled();
+#   while !h.is_done() {
+#     let deadline = exec.next_timer_deadline().expect("stalled with no timer pending");
+#     exec.advance(deadline.saturating_duration_since(exec.now()));
+#   }
+#   (take_ready(h.join_future()), exec.now() - start)
+# }
+// In a #[cfg(test)] module, under #[test]:
 fn retries_back_off_exponentially() {
   let calls = Arc::new(AtomicU32::new(0));
   let (exit, took) = run_virtual(Effect::retry(flaky(&calls, 3), backoff()));
@@ -51,6 +89,7 @@ fn retries_back_off_exponentially() {
   assert_eq!(calls.load(Ordering::SeqCst), 4);
   assert_eq!(took, Duration::from_millis(100 + 200 + 400)); // virtual, not wall-clock
 }
+# retries_back_off_exponentially();
 ```
 
 When the schedule runs out, `retry` fails with the last error (`"503"` after five attempts).
@@ -66,20 +105,41 @@ Retrying a dependency that is down makes the outage worse.
 schedule would allow more attempts. The breaker's cooldown also reads the executor clock, so it is
 virtual on a `TestExecutor` too.
 
-```rust,ignore
+```rust
+# use std::sync::Arc;
+# use std::sync::atomic::{AtomicU32, Ordering};
+# use std::time::Duration;
+# use id_effect::{Cause, Effect, Exit, Or, Schedule, fail, sleep, succeed, suspend};
+# fn flaky(calls: &Arc<AtomicU32>, failures: u32) -> impl Fn() -> Effect<&'static str, &'static str>
+# + Send + Sync + use<> {
+#   let calls = Arc::clone(calls);
+#   move || {
+#     let calls = Arc::clone(&calls);
+#     suspend(move || {
+#       if calls.fetch_add(1, Ordering::SeqCst) < failures { fail("503") } else { succeed("200 OK") }
+#     })
+#   }
+# }
+# fn backoff() -> Schedule<(Duration, u64), &'static str> {
+#   Schedule::exponential(Duration::from_millis(100)).intersect(Schedule::recurs(4))
+# }
+# let calls = Arc::new(AtomicU32::new(0));
 use id_effect_resilience::{CircuitBreaker, CircuitBreakerError, CircuitState, retry_with_breaker};
 
-// Opens after 3 consecutive failures, half-opens after the cooldown.
-let breaker = CircuitBreaker::new(3, Duration::from_millis(20));
+// Opens after 3 consecutive failures, half-opens after the cooldown. Keep the cooldown longer
+// than the backoff delays: an attempt that starts after the cooldown is a half-open probe, not a
+// refusal.
+let breaker = CircuitBreaker::new(3, Duration::from_secs(1));
 
 let out = retry_with_breaker(flaky(&calls, u32::MAX), backoff(), &breaker).block_on();
 assert!(matches!(out, Exit::Failure(Cause::Fail(Or::Left(CircuitBreakerError)))));
 assert_eq!(breaker.state::<(), _>().block_on(), Exit::succeed(CircuitState::Open));
 
 // After the cooldown the next attempt is a half-open probe; a success closes the breaker.
-let out = sleep(Duration::from_millis(20))
+let out = sleep(Duration::from_secs(1))
   .then(retry_with_breaker(flaky(&calls, 0), backoff(), &breaker))
   .block_on();
+# assert!(matches!(out, Exit::Success("200 OK")));
 ```
 
 The error type is `Or<CircuitBreakerError, E>`: `Or::Left` means the breaker refused the call, and

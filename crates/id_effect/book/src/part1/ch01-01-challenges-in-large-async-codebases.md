@@ -8,7 +8,17 @@ This section is not a claim that “async is broken.” It is a concise picture 
 
 A typical async workflow chains several operations. Each step may fail in its own way, so you map errors into a domain type and propagate:
 
-```rust,ignore
+```rust
+# struct Order { user_id: u64, items: Vec<u32>, total: u64 }
+# struct Config; struct User; struct Payment; struct Shipment; struct StepError;
+# struct Receipt;
+# impl Receipt { fn new(_: Order, _: Payment, _: Shipment) -> Self { Receipt } }
+# enum ProcessError { Config(StepError), User(StepError), Inventory(StepError), Payment(StepError), Shipment(StepError) }
+# async fn get_config() -> Result<Config, StepError> { Ok(Config) }
+# async fn fetch_user(_: &Config, _: u64) -> Result<User, StepError> { Ok(User) }
+# async fn check_inventory(_: &Config, _: &[u32]) -> Result<(), StepError> { Ok(()) }
+# async fn charge_payment(_: &Config, _: &User, _: u64) -> Result<Payment, StepError> { Ok(Payment) }
+# async fn create_shipment(_: &Config, _: &Order, _: &User) -> Result<Shipment, StepError> { Ok(Shipment) }
 async fn process_order(order: Order) -> Result<Receipt, ProcessError> {
     let config = get_config()
         .await
@@ -42,7 +52,9 @@ The business steps are clear, but the `.map_err` noise is repetitive. The domain
 
 Another common shape is the handler that needs many clients and cross-cutting services:
 
-```rust,ignore
+```rust
+# struct DatabasePool; struct RedisClient; struct Logger; struct AppConfig;
+# struct MetricsClient; struct Tracer; struct Request; struct Response;
 async fn handle_request(
     db: &DatabasePool,
     cache: &RedisClient,
@@ -53,6 +65,7 @@ async fn handle_request(
     request: Request,
 ) -> Response {
     // ...
+#     Response
 }
 ```
 
@@ -64,7 +77,10 @@ Dependencies are explicit, which is good for honesty, but every layer between he
 
 Fire-and-forget background tasks are easy to start and harder to reason about:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# struct DatabasePool;
+# async fn process_queue(_: &DatabasePool) -> Result<(), String> { Ok(()) }
 fn start_background_worker(db: DatabasePool) {
     tokio::spawn(async move {
         loop {

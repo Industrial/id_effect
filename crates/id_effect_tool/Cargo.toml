@@ -1,0 +1,40 @@
+[package]
+name = "id_effect_tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["effect", "scaffold", "generator", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_tool"
+
+# The crates.io name `id-effect` would collide with `id_effect` (cargo treats `-` and `_` alike),
+# so the package is `id_effect_tool` and the binary keeps the short name.
+[[bin]]
+name = "id-effect"
+path = "src/bin/id-effect.rs"
+
+[dependencies]
+clap = { version = "4.5", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh (ADR 0010 Amendment 4).
+tier = "integration"

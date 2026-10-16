@@ -28,7 +28,7 @@ assert!(h.is_done());
 
 ## Declarative Policy
 
-```rust,ignore
+```rust
 use id_effect::compute::{MetricMode, MetricPolicy, RebalanceStrategy, ResourcePolicy};
 
 let policy = ResourcePolicy {
@@ -56,7 +56,7 @@ Each tick records a `ComputeEvent::SupervisorTick` in the [tracing buffer](../pa
 
 Put a `ComputeFabric`'s admission in front of fibers with `Fabric::from_compute` (from `examples/120_compute_fabric_memory_cap.rs`):
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 use id_effect::compute::ComputeFabric;
 use id_effect::{Concurrency, Effect, Fabric, all, succeed};
@@ -67,6 +67,7 @@ let work: Vec<Effect<u32, ()>> = (0..4).map(|_| succeed(42)).collect();
 let out = Fabric::from_compute(fabric)
     .provide(all(work, Concurrency::Inherit))
     .block_on();
+# assert_eq!(out, id_effect::Exit::succeed(vec![42; 4]));
 ```
 
 ## Adaptive Parallelism

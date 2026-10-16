@@ -25,12 +25,12 @@ cluster = ["dep:id_effect_node"]
 tower = ["dep:tower"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.7.0", features = [
+id_effect = { path = "../id_effect", version = "0.8.0", features = [
   "schema-serde",
 ] }
-id_effect_config = { path = "../id_effect_config", version = "0.7.0" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.7.0" }
-id_effect_node = { path = "../id_effect_node", version = "0.7.0", optional = true }
+id_effect_config = { path = "../id_effect_config", version = "0.8.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "0.8.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.8.0", optional = true }
 axum = { version = "0.8" }
 http-body = "1"
 http-body-util = "0.1"
@@ -49,6 +49,15 @@ tower = { version = "0.5.3", features = ["util"], optional = true }
 # `CapOverrideLayer` (request-scoped capabilities); already in axum's dependency tree.
 tower-layer = "0.3.3"
 tower-service = "0.3.3"
+# Web hardening (`server::security`): CORS, CSRF tokens, CSP nonces/hashes, signed cookies.
+base64 = "0.22.1"
+cookie = { version = "0.18.1", features = ["signed", "private"] }
+rand = "0.9"
+sha2 = "0.10.9"
+subtle = "2.6.1"
+tower-http = { version = "0.6.8", default-features = false, features = [
+  "cors",
+] }
 
 [[bench]]
 name = "gate_request"

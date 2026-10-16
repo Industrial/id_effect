@@ -4,13 +4,24 @@ Forking a single fiber is useful; running many concurrently is where fibers shin
 
 ## fork: Spawn One Fiber
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, caps, succeed};
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# struct Local(u8);
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# struct Remote(u8);
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# enum AppError {}
+# struct Api;
+# fn remote_call() -> Effect<Remote, AppError, caps!(Api)> { succeed(Remote(2)) }
+# fn local_computation() -> Effect<Local, AppError, caps!(Api)> { succeed(Local(1)) }
 let program: Effect<(Local, Remote), AppError, caps!(Api)> = remote_call()
     .fork()
     .widen()
     .flat_map(|handle| {
         local_computation().flat_map(move |local| handle.join().map(move |remote| (local, remote)))
     });
+# assert_eq!(program.provide(Api).block_on(), Exit::succeed((Local(1), Remote(2))));
 ```
 
 `fork` starts the effect on a child fiber; you do other work and `join` later.
@@ -55,20 +66,43 @@ Both keep input order. The `Concurrency` argument picks the scheduling:
 
 ## race, race_all, race_first: First One Wins
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, fail, race_all, succeed};
+# fn fetch_from_primary() -> Effect<&'static str, String> { fail("primary down".to_owned()) }
+# fn fetch_from_backup() -> Effect<&'static str, String> { succeed("backup") }
+# fn try_us() -> Effect<&'static str, String> { succeed("us") }
+# fn try_eu() -> Effect<&'static str, String> { succeed("eu") }
+# fn try_ap() -> Effect<&'static str, String> { succeed("ap") }
+# let (a, b) = (fetch_from_primary(), fetch_from_backup());
 let data = fetch_from_primary().race(fetch_from_backup()); // first *success* wins
 let any = race_all([try_us(), try_eu(), try_ap()]);        // the same, for many
 let first = a.race_first(b);                               // first *completion* wins
+# assert_eq!(data.block_on(), Exit::succeed("backup"));
+# assert!(any.block_on().into_result().is_ok());
+# let _either_one: Exit<&str, String> = first.block_on(); // both are ready: either may complete first
 ```
 
 The losers are interrupted and awaited, so their finalizers have run before the result is returned. `race` / `race_all` ignore failures until every racer has failed, then fail with all the causes combined (`Cause::Both`). `race_all` of no effects dies.
 
 ## timeout and timeout_fail
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Exit, caps, succeed};
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# struct User;
+# struct Db;
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# enum DbError {}
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# enum AppError { Db(DbError), Timeout }
+# fn load_user(_id: u64) -> Effect<User, DbError, caps!(Db)> { succeed(User) }
+# let id = 1;
 let maybe: Effect<Option<User>, DbError, caps!(Db)> = load_user(id).timeout(Duration::from_secs(2));
 let strict: Effect<User, AppError, caps!(Db)> =
     load_user(id).map_err(AppError::Db).timeout_fail(Duration::from_secs(2), || AppError::Timeout);
+# assert_eq!(maybe.provide(Db).block_on(), Exit::succeed(Some(User)));
+# assert_eq!(strict.provide(Db).block_on(), Exit::succeed(User));
 ```
 
 `timeout` returns `None` when the deadline passes; `timeout_fail` fails with your error instead. The deadline is on the fiber's executor clock, so under `TestExecutor` it is virtual time ([Chapter 11](./ch11-04-clock-injection.md)).

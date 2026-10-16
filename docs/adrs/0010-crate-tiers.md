@@ -5,6 +5,7 @@
 Accepted (2026-10-14). Executed by mission `id-effect-consolidation-0-6`
 (`.maestro/missions/id-effect-consolidation-0-6.plan.md`). Amended for 0.7 on
 2026-10-15 (see [Amendment 3](#amendment-3-2026-10-15-for-07)).
+Superseded in part by [ADR 0012](0012-platform-vision.md) (vision statement and Rule 4).
 
 ## Context
 
@@ -130,6 +131,21 @@ this one wins.
   It replaces the 95 % in rule 4. The script and `docs/QUALITY_BAR.md` switch to
   96 % at the end of the 0.7 migration, once the old and new kernels no longer
   coexist (task `r-coverage-floor`).
+
+#### Amendment 4 (2026-10-16, for 0.8)
+
+Names the tiers of the two 0.8 front-door crates (ADR 0012 L3, L11), as rule 5 requires.
+
+- **`id_effect_kit` is tier `integration`.** It is the facade crate: one dependency, a
+  feature flag per battery (`web`, `sql-pg`, `otel`, `cluster`, `full`), whole-crate
+  re-exports and a `prelude`. It belongs in the `platform` tier of ADR 0012, but that tier's
+  extra gate (a CI-tested reference app under `examples/reference/` depends on it) cannot
+  pass until the reference apps exist. It moves to `platform` then, with no other change.
+  It publishes last, after every crate it re-exports.
+- **`id_effect_tool` is tier `integration`.** It publishes the `id-effect` binary (`new`,
+  `generate`, `dev`, `doctor`, `migrate`, `deploy`) and publishes after `id_effect_kit`.
+- Neither crate has a crates.io release yet, so both are excluded from the semver job
+  until their first publish gives it a baseline.
 
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.

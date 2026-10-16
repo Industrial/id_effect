@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use super::waiters::{Signal, WaitList, lock, wake_all};
-use crate::kernel::{Effect, from_async, sync};
+use crate::kernel::{Effect, fail, from_async, succeed, suspend, sync};
 
 /// A take on a queue that is shut down and drained.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +129,9 @@ impl<A> State<A> {
   }
 }
 
+/// Cache-line aligned, so the `Arc` counts that every operation's handle clone touches do not
+/// share a line with the lock a producer and a consumer on other threads contend for.
+#[repr(align(128))]
 pub(crate) struct Inner<A> {
   state: Mutex<State<A>>,
   closed: Arc<Signal>,
@@ -222,6 +225,42 @@ impl<A: Send + 'static> Queue<A> {
     }
   }
 
+  /// One put without suspending: `Ok(stored)` (`false` when a dropping or shut-down queue
+  /// refused it), `Err(item)` when a bounded queue is full.
+  pub(crate) fn put_now(&self, item: A) -> Result<bool, A> {
+    let mut ws = Vec::new();
+    let put = lock(&self.inner.state).put(item, &mut ws);
+    wake_all(ws);
+    match put {
+      Put::Stored => Ok(true),
+      Put::Refused(_) => Ok(false),
+      Put::Full(item) => Err(item),
+    }
+  }
+
+  /// The head item without suspending (admitting a blocked offer into the freed slot):
+  /// `Err(true)` when the queue is shut down and drained, `Err(false)` when it is empty.
+  pub(crate) fn pop_now(&self) -> Result<A, bool> {
+    let mut ws = Vec::new();
+    let head = {
+      let mut st = lock(&self.inner.state);
+      match st.pop(&mut ws) {
+        Some(v) => Ok(v),
+        None => Err(st.shutdown),
+      }
+    };
+    wake_all(ws);
+    head
+  }
+
+  /// The take of one item as a plain future (no buffer, unlike [`take_future`](Self::take_future)).
+  pub(crate) fn take_one_future(&self) -> TakeOneFuture<A> {
+    TakeOneFuture {
+      inner: Arc::clone(&self.inner),
+      id: None,
+    }
+  }
+
   /// The take of `min..=max` items as a plain future.
   pub(crate) fn take_future(&self, min: usize, max: usize) -> TakeFuture<A> {
     TakeFuture {
@@ -236,13 +275,19 @@ impl<A: Send + 'static> Queue<A> {
   /// Offers one item. `false` when it was not stored (a full dropping queue, or a shut-down
   /// queue). On a full bounded queue this suspends until a slot frees up; an interrupted offer
   /// stores nothing.
+  ///
+  /// An offer that completes at once (a free slot, a waiting taker, a refusal) is one
+  /// synchronous step; only an offer to a full bounded queue becomes an async step.
   pub fn offer<E, R>(&self, item: A) -> Effect<bool, E, R>
   where
     E: Send + 'static,
     R: Send + Sync + 'static,
   {
     let q = self.clone();
-    from_async(move || async move { Ok(q.offer_future(item).await.is_ok()) })
+    suspend(move || match q.put_now(item) {
+      Ok(stored) => succeed(stored),
+      Err(item) => from_async(move || async move { Ok(q.offer_future(item).await.is_ok()) }),
+    })
   }
 
   /// Offers one item without suspending: `false` when it was not stored (full, dropping, or
@@ -309,8 +354,16 @@ impl<A: Send + 'static> Queue<A> {
 
   /// Takes one item, suspending while the queue is empty. Fails with
   /// [`QueueError::Disconnected`] once the queue is shut down and drained.
+  ///
+  /// A take from a non-empty or shut-down queue is one synchronous step with no allocation;
+  /// only a take from an empty open queue becomes an async step.
   pub fn take<R: Send + Sync + 'static>(&self) -> Effect<A, QueueError, R> {
-    self.take_between_effect(1, 1).map(|mut v| v.remove(0))
+    let q = self.clone();
+    suspend(move || match q.pop_now() {
+      Ok(v) => succeed(v),
+      Err(true) => fail(QueueError::Disconnected),
+      Err(false) => from_async(move || q.take_one_future()),
+    })
   }
 
   /// Waits for at least one item, then takes every item currently buffered.
@@ -506,6 +559,70 @@ impl<A> Drop for OfferFuture<A> {
         st.offerers.remove(id);
       }
     }
+  }
+}
+
+/// The suspended take of one item ([`Queue::take`] on an empty queue).
+pub(crate) struct TakeOneFuture<A> {
+  inner: Arc<Inner<A>>,
+  id: Option<u64>,
+}
+
+impl<A> Unpin for TakeOneFuture<A> {}
+
+impl<A> Future for TakeOneFuture<A> {
+  type Output = Result<A, QueueError>;
+
+  fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = &mut *self;
+    let mut ws = Vec::new();
+    let out = {
+      let mut st = lock(&this.inner.state);
+      if let Some(id) = this.id
+        && let Some(v) = st.takers.take_grant(id)
+      {
+        this.id = None;
+        Poll::Ready(Ok(v))
+      } else if let Some(v) = st.pop(&mut ws) {
+        if let Some(id) = this.id.take() {
+          st.takers.remove(id);
+        }
+        Poll::Ready(Ok(v))
+      } else if st.shutdown {
+        if let Some(id) = this.id.take() {
+          st.takers.remove(id);
+        }
+        Poll::Ready(Err(QueueError::Disconnected))
+      } else {
+        match this.id {
+          Some(id) if st.takers.refresh(id, cx.waker()) => {}
+          _ => this.id = Some(st.takers.push((), cx.waker())),
+        }
+        Poll::Pending
+      }
+    };
+    wake_all(ws);
+    out
+  }
+}
+
+impl<A> Drop for TakeOneFuture<A> {
+  fn drop(&mut self) {
+    let Some(id) = self.id.take() else {
+      return;
+    };
+    let mut ws = Vec::new();
+    {
+      let mut st = lock(&self.inner.state);
+      match st.takers.take_grant(id) {
+        // Handed over but never observed (interrupted): it goes back to the queue.
+        Some(v) => st.put_back(v, &mut ws),
+        None => {
+          st.takers.remove(id);
+        }
+      }
+    }
+    wake_all(ws);
   }
 }
 

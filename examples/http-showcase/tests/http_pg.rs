@@ -1,10 +1,10 @@
 //! Release-gate integration test (D10): the showcase over real HTTP against a real PostgreSQL.
 //!
 //! Each test starts the server through the crate's public API — the scoped pool
-//! ([`database_layer`]), the migration under its advisory lock ([`repo::migrate`]), the routes
-//! over a [`PgTodoRepo`] and the scoped server ([`server_layer`] on `127.0.0.1:0`), or the whole
-//! startup path ([`run_until`] with `DATABASE_URL` in the config) — and drives it with a real
-//! HTTP client (`reqwest`).
+//! ([`database_layer`]) feeding the migrated repository ([`PgTodoRepositoryLive`], migration
+//! under its advisory lock), the routes and the scoped server ([`server_layer`] on
+//! `127.0.0.1:0`), or the whole startup path ([`run_until`] with `DATABASE_URL` in the config) —
+//! and drives it with a real HTTP client (`reqwest`).
 //!
 //! The tests need a database at `DATABASE_URL`. When CI provides a Postgres service it also sets
 //! `ID_EFFECT_REQUIRE_PG=1`, which turns a missing or unreachable database into a test
@@ -12,16 +12,18 @@
 //!
 //! Test data is isolated by title: every title starts with a prefix unique to the test and the
 //! run (process id, clock, counter), and the assertions only look at rows with that prefix, so
-//! parallel runs and the crate's `repo::pg_tests` share the `todos` table without colliding.
+//! parallel runs and the crate's live `infrastructure::postgres` tests share the `todos` table
+//! without colliding.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use http_showcase::infrastructure::postgres::PgTodoRepositoryLive;
+use http_showcase::infrastructure::telemetry::instrument;
 use http_showcase::{
-  AppConfig, AppEnv, DatabaseConfig, PgTodoRepo, RequestPolicy, StartupError, TodoRepoService,
-  app_env, database_layer, repo, router, run_until, telemetry,
+  AppConfig, AppEnv, DatabaseConfig, RequestPolicy, StartupError, TodoRepositoryService,
+  database_layer, new_app_env, router, run_until,
 };
 use id_effect::Exit;
 use id_effect::{Effect, Layer, caps, effect, from_async, hlist, need};
@@ -104,24 +106,22 @@ fn serve_ephemeral(
         Ok(())
       })
     });
-  probe.provide_layer(host.provide_to(server_layer(telemetry::instrument(router(env)))))
+  probe.provide_layer(host.provide_to(server_layer(instrument(router(env)))))
 }
 
-/// The showcase on a live database: inside the scoped pool, migrate (advisory lock), then serve
-/// the routes over a [`PgTodoRepo`] on an ephemeral port until `done`.
+/// The showcase on a live database: the scoped pool feeding the migrated (advisory lock)
+/// [`PgTodoRepositoryLive`], serving the routes on an ephemeral port until `done`.
 fn showcase_on(
   db: &DatabaseConfig,
   ready: oneshot::Sender<SocketAddr>,
   done: oneshot::Receiver<()>,
 ) -> Effect<(), StartupError> {
   let policy = RequestPolicy::new(Duration::from_secs(5), 2, Duration::from_millis(10));
-  let served: Effect<(), StartupError, caps!(SqlClientService)> = effect!(|_r: &caps!(SqlClientService)| {
-    let sql = SqlClientService::clone(~SqlClientService);
-    ~repo::migrate(Arc::clone(&sql.0));
-    let env = app_env(TodoRepoService::new(PgTodoRepo::new(sql)), policy);
-    ~serve_ephemeral(env, ready, done)
+  let served: Effect<(), StartupError, caps!(TodoRepositoryService)> = effect!(|_r: &caps!(TodoRepositoryService)| {
+    let repository = TodoRepositoryService::clone(~TodoRepositoryService);
+    ~serve_ephemeral(new_app_env(repository, policy), ready, done)
   });
-  served.provide_layer(database_layer(db))
+  served.provide_layer(database_layer(db).provide_to(PgTodoRepositoryLive::layer()))
 }
 
 fn database(url: String) -> DatabaseConfig {

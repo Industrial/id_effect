@@ -1,0 +1,340 @@
+error[E0277]: expected an `Fn()` closure, found `Effect<std::string::String, HttpError>`
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ expected an `Fn()` closure, found `Effect<std::string::String, HttpError>`
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Fn()` is not implemented for `Effect<std::string::String, HttpError>`
+   = note: wrap the `Effect<std::string::String, HttpError>` in a closure with no arguments: `|| { /* code */ }`
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                ^^^^^^^^^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn for<'a> FnOnce(&'a HNil) -> Effect<std::string::String, HttpError> + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn for<'a> FnOnce(&'a HNil) -> Effect<std::string::String, HttpError> + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn for<'a> FnOnce(&'a HNil) -> Effect<std::string::String, HttpError> + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn for<'a> FnOnce(&'a HNil) -> Effect<std::string::String, HttpError> + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn for<'a> FnOnce(&'a HNil) -> Effect<std::string::String, HttpError> + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> kernel::runloop::Instr + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> kernel::runloop::Instr + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> kernel::runloop::Instr + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> kernel::runloop::Instr + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> kernel::runloop::Instr + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> kernel::runloop::Instr + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>> + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>> + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>> + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>> + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn for<'a, 'b> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>, &'b Arc<FiberContext>) -> Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>> + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn FnOnce(kernel::anybox::AnyBox) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn FnOnce(kernel::anybox::AnyBox) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn FnOnce(kernel::anybox::AnyBox) -> kernel::runloop::Instr + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn FnOnce(kernel::anybox::AnyBox) -> kernel::runloop::Instr + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn FnOnce(kernel::anybox::AnyBox) -> kernel::runloop::Instr + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn FnOnce(Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn FnOnce(Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>) -> kernel::runloop::Instr + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn FnOnce(Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>) -> kernel::runloop::Instr + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn FnOnce(Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>) -> kernel::runloop::Instr + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn FnOnce(Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>) -> kernel::runloop::Instr + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> Arc<(dyn std::any::Any + Send + Sync + 'static)> + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> Arc<(dyn std::any::Any + Send + Sync + 'static)> + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> Arc<(dyn std::any::Any + Send + Sync + 'static)> + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> Arc<(dyn std::any::Any + Send + Sync + 'static)> + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn for<'a> FnOnce(&'a Arc<(dyn std::any::Any + Send + Sync + 'static)>) -> Arc<(dyn std::any::Any + Send + Sync + 'static)> + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+help: use parentheses to call this trait object
+   |
+12 |   let _ = Effect::retry(fetch()(/* &Arc<(dyn std::any::Any + Send + Sync + 'static)> */), Schedule::recurs(3));
+   |                                +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+error[E0277]: `(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `Pin<Box<(dyn Future<Output = Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>> + Send + 'static)>>`
+  --> $RUST/core/src/pin.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+
+error[E0277]: `(dyn std::any::Any + Send + 'static)` cannot be shared between threads safely
+  --> tests/ui/gallery/retry_without_factory.rs:12:25
+   |
+12 |   let _ = Effect::retry(fetch(), Schedule::recurs(3));
+   |           ------------- ^^^^^^^ `(dyn std::any::Any + Send + 'static)` cannot be shared between threads safely
+   |           |
+   |           required by a bound introduced by this call
+   |
+   = help: the trait `Sync` is not implemented for `(dyn std::any::Any + Send + 'static)`
+   = note: required for `std::ptr::Unique<(dyn std::any::Any + Send + 'static)>` to implement `Sync`
+note: required because it appears within the type `Box<(dyn std::any::Any + Send + 'static)>`
+  --> $RUST/alloc/src/boxed.rs
+note: required because it appears within the type `kernel::anybox::AnyBox`
+  --> src/kernel/anybox.rs
+   |
+   | pub(crate) enum AnyBox {
+   |                 ^^^^^^
+note: required because it appears within the type `Result<kernel::anybox::AnyBox, Cause<kernel::anybox::AnyBox>>`
+  --> $RUST/core/src/result.rs
+note: required because it appears within the type `kernel::runloop::Instr`
+  --> src/kernel/runloop.rs
+   |
+   | pub(crate) enum Instr {
+   |                 ^^^^^
+note: required because it appears within the type `kernel::effect::Node<std::string::String, HttpError, HNil>`
+  --> src/kernel/effect.rs
+   |
+   | pub(crate) enum Node<A, E, R> {
+   |                 ^^^^
+note: required because it appears within the type `Effect<std::string::String, HttpError>`
+  --> src/kernel/effect.rs
+   |
+   | pub struct Effect<A, E = Never, R = HNil> {
+   |            ^^^^^^
+note: required by a bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`
+  --> src/scheduling/schedule.rs
+   |
+   |   pub fn retry<Out: Send + 'static>(
+   |          ----- required by a bound in this associated function
+   |     make: impl Fn() -> Self + Send + Sync + 'static,
+   |                                      ^^^^ required by this bound in `scheduling::schedule::<impl Effect<A, E, R>>::retry`

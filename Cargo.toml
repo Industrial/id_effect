@@ -20,16 +20,19 @@ members = [
   "crates/id_effect_sql",
   "crates/id_effect_tokio",
   "crates/id_effect_fsm",
+  "crates/id_effect_kit",
+  "crates/id_effect_tool",
+  "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",
 ]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 # MSRV. Verified by the CI `msrv` job; bumping it is a deliberate, CHANGELOG-noted change.
 rust-version = "1.94"
-license = "CC-BY-SA-4.0"
+license = "MIT"
 repository = "https://github.com/Industrial/id_effect"
 
 # More stable / comparable Criterion numbers than default bench profile (inherits release).

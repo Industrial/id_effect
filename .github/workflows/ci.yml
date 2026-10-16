@@ -27,6 +27,17 @@ jobs:
           fetch-depth: 0
       - name: Version drift (examples/templates pin the workspace version)
         run: bash scripts/check-version-drift.sh
+      - name: Scorecard (validate, METHOD §5.2 self-test, committed results, reports and page stable)
+        run: |
+          set -euo pipefail
+          bash scripts/scorecard.sh --validate --self-test
+          for v in 0.6.0 0.7.0 0.8.0; do
+            bash scripts/scorecard.sh --json "$v" | diff - "docs/scorecard/results/v$v.json"
+          done
+          bash scripts/scorecard.sh --diff 0.7.0 0.8.0 --compare-targets 0.8.0
+          bash scripts/scorecard.sh --method 1 --version 0.7.0
+          bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --html --method-compare
+          git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
       - name: Install Nix (formatters for treefmt)
         uses: cachix/install-nix-action@v31
         with:
@@ -256,6 +267,89 @@ jobs:
       - name: Validate crate packaging
         run: bash scripts/validate-crate-packaging.sh
   # ──────────────────────────────────────────────────────────────────────────
+  # `id-effect new` templates: each one generated outside the repo against this
+  # checkout (--local-workspace), then fmt / build / clippy / test; the service
+  # is also built as a Docker image and probed on /health.
+  # ──────────────────────────────────────────────────────────────────────────
+  templates:
+    name: Template ${{ matrix.template }}
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [service, worker, cli, cluster]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: templates-${{ matrix.template }}
+      - name: Generate, build and test the template
+        env:
+          TEMPLATE: ${{ matrix.template }}
+          SMOKE_DIR: ${{ runner.temp }}/template-smoke
+          # Inside ./target so the cache step keeps the generated projects' dependencies.
+          SMOKE_TARGET_DIR: ${{ github.workspace }}/target/template-smoke
+        run: |
+          args=("$TEMPLATE")
+          if [ "$TEMPLATE" = service ]; then args+=(--docker); fi
+          bash scripts/template-smoke.sh "${args[@]}"
+  # ──────────────────────────────────────────────────────────────────────────
+  # Supply-chain policy: advisories, licenses, bans, sources (deny.toml).
+  # No committed Cargo.lock, so this checks a fresh resolution.
+  # ──────────────────────────────────────────────────────────────────────────
+  deny:
+    name: cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-deny
+      - name: cargo deny check
+        run: cargo deny check
+  # ──────────────────────────────────────────────────────────────────────────
+  # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
+  # REPORT-ONLY until v0.8.0 is tagged: 0.8 carries intentional breaks, each of
+  # which must be listed in docs/MIGRATION-0.8.md; the job prints them for review
+  # (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI. After the v0.8.0 tag:
+  # set SEMVER_BASELINE to 0.8.0 and delete the step's `continue-on-error` so it enforces.
+  # ──────────────────────────────────────────────────────────────────────────
+  semver:
+    name: Semver checks (report-only until v0.8.0)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      SEMVER_BASELINE: 0.7.0
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: semver
+      - name: Install cargo-semver-checks
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-semver-checks
+      - name: cargo semver-checks (publishable workspace crates)
+        # --workspace skips publish = false members (examples). Step-level
+        # continue-on-error keeps the job (and ci-pass) green while report-only.
+        # id_effect_kit and id_effect_tool are new in 0.8 with no crates.io baseline yet;
+        # drop the excludes once they are published.
+        continue-on-error: true
+        run: >-
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_kit --exclude id_effect_tool
+  # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
   ci-pass:
@@ -270,6 +364,9 @@ jobs:
       - labs
       - minimal-versions
       - validate-packaging
+      - templates
+      - deny
+      - semver
     if: always()
     steps:
       - name: Check all required jobs passed

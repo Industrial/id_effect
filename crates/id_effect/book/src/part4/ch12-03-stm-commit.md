@@ -12,9 +12,21 @@ below, compose with `map` / `flat_map` / `or_else`, and execute it with `commit`
 
 ## commit: Lift Stm into Effect
 
-```rust,ignore
+```rust
 use id_effect::{Effect, Exit};
 use id_effect_fp::{Stm, TRef, commit};
+# #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+# struct InsufficientFunds;
+# fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64, InsufficientFunds> {
+#   let acct = account.clone();
+#   account.read_stm().flat_map(move |balance| {
+#     if balance < amount {
+#       return Stm::fail(InsufficientFunds);
+#     }
+#     acct.write_stm(balance - amount).map(move |()| balance - amount)
+#   })
+# }
+# let account: TRef<u64> = commit::<_, (), _>(TRef::make(100_u64)).block_on().into_result().ok().unwrap();
 
 let effect: Effect<u64, InsufficientFunds> = commit(withdraw(&account, 70));
 assert_eq!(effect.block_on(), Exit::succeed(30));
@@ -28,7 +40,9 @@ with `Runtime::run`, or bind it inside `effect!` like any other effect.
 
 ## Stm::fail: Transactional Errors
 
-```rust,ignore
+```rust
+# use id_effect::Exit;
+# use id_effect_fp::{Stm, TRef, commit};
 #[derive(Clone, Debug, PartialEq)]
 struct InsufficientFunds;
 
@@ -41,6 +55,8 @@ fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64, InsufficientFunds> {
     acct.write_stm(balance - amount).map(move |()| balance - amount)
   })
 }
+# let account: TRef<u64> = commit::<_, (), _>(TRef::make(10_u64)).block_on().into_result().ok().unwrap();
+# assert!(matches!(commit(withdraw(&account, 70)).block_on(), Exit::Failure(_)));
 ```
 
 `Stm::fail(e)` aborts with `e`. The transaction is *not* restarted and none of its writes are
@@ -50,7 +66,8 @@ applied; `commit` surfaces `e` as the effect's error.
 
 A transaction can wait until a condition holds instead of failing:
 
-```rust,ignore
+```rust
+# use id_effect_fp::{Stm, TRef};
 /// Restarts until the balance covers `amount`.
 fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
   let acct = account.clone();
@@ -75,21 +92,57 @@ until it is interrupted. `TQueue::take` and `TSemaphore::acquire` work this way.
 so `b` sees the values from before `a` ran. It turns a would-block transaction into a non-blocking
 try:
 
-```rust,ignore
+```rust
+# use id_effect::Exit;
+# use id_effect_fp::{Stm, TRef, commit};
+# fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
+#   let acct = account.clone();
+#   account.read_stm().flat_map(move |balance| {
+#     let acct = acct.clone();
+#     Stm::<(), ()>::check(balance >= amount)
+#       .flat_map(move |()| acct.write_stm(balance - amount).map(move |()| balance - amount))
+#   })
+# }
+# let account: TRef<u64> = commit::<_, (), _>(TRef::make(30_u64)).block_on().into_result().ok().unwrap();
 let try_now = withdraw_when_available(&account, 80).or_else(Stm::succeed(u64::MAX));
 // Ok(u64::MAX) means "not now" instead of waiting.
+# assert_eq!(commit(try_now).block_on(), Exit::succeed(u64::MAX));
 ```
 
 ## Composing Transactions
 
 Transactions compose with `flat_map`. The result commits as one unit:
 
-```rust,ignore
+```rust
+# use id_effect::{Cause, Effect, Exit};
+# use id_effect_fp::{Stm, TRef, commit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
+# #[derive(Clone, Debug, PartialEq)]
+# struct InsufficientFunds;
+# fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64, InsufficientFunds> {
+#   let acct = account.clone();
+#   account.read_stm().flat_map(move |balance| {
+#     if balance < amount {
+#       return Stm::fail(InsufficientFunds);
+#     }
+#     acct.write_stm(balance - amount).map(move |()| balance - amount)
+#   })
+# }
+# let account: TRef<u64> = run(commit(TRef::make(100_u64))).expect("cell");
+# let audit: TRef<u32> = run(commit(TRef::make(0_u32))).expect("cell");
 let audited = {
   let audit = audit.clone();
   withdraw(&account, 5).flat_map(move |left| audit.update_stm(|n| n + 1).map(move |()| left))
 };
 run(commit(audited))?;
+# assert_eq!(run(commit(audit.read_stm::<()>())), Ok(1));
+# Ok::<(), InsufficientFunds>(())
 ```
 
 If either part sees a conflict, the whole transaction restarts. If the withdrawal fails, the audit

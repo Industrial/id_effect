@@ -1,0 +1,18 @@
+error[E0277]: the environment `HCons<Db, HNil>` does not contain every capability of `HCons<Db, HCons<Logger, HNil>>`
+  --> tests/ui/gallery/provide_env_incomplete.rs:18:17
+   |
+18 |   let _ = job().provide_env(hlist![Db]);
+   |                 ^^^^^^^^^^^ ---------- `HCons<Db, HNil>` doesn't satisfy the trait bound
+   |                 |
+   |                 cannot narrow `HCons<Db, HNil>` to `HCons<Db, HCons<Logger, HNil>>`
+   |
+   = help: the trait `Embed<HCons<Db, HCons<Logger, HNil>>, HCons<Here, HCons<There<_>, HNil>>>` is not implemented for `HCons<Db, HNil>`
+   = note: every capability of `HCons<Db, HCons<Logger, HNil>>` must be in `HCons<Db, HNil>`; add the missing ones to the caller's `caps!(..)` (for a `~` bind, a `~(..)` branch or `.narrow()`), to the `hlist![..]` (for `.provide_env(..)`) or to the layer's output (for `.provide_layer(..)` / `.provide_to(..)`)
+note: required by a bound in `capability::provide::<impl Effect<A, E, R>>::provide_env`
+  --> src/capability/provide.rs
+   |
+   |   pub fn provide_env<Env, Is>(self, env: Env) -> Effect<A, E, HNil>
+   |          ----------- required by a bound in this associated function
+   |   where
+   |     Env: Embed<R, Is> + Send + 'static,
+   |          ^^^^^^^^^^^^ required by this bound in `capability::provide::<impl Effect<A, E, R>>::provide_env`

@@ -12,21 +12,31 @@ readme = "README.md"
 unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(coverage)',
-  'cfg(feature, values("mock", "clap"))',
+  'cfg(feature, values("mock", "clap", "completions"))',
 ] }
 
 [features]
 default = ["clap"]
 clap = ["dep:clap"]
+# `completions::{generate, CompletionsArgs}`: shell completion scripts via `clap_complete`.
+completions = ["clap", "dep:clap_complete"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.7.0" }
+id_effect = { path = "../id_effect", version = "0.8.0" }
 clap = { version = "4.5", optional = true, default-features = false, features = [
   "std",
   "derive",
   "help",
   "usage",
   "error-context",
+] }
+clap_complete = { version = "4.5", optional = true }
+# `signal`: `run_main`'s Ctrl-C watcher (feature unification also enables the signal driver of
+# the default runtime, which is built with `enable_all`).
+tokio = { version = "1.50.0", default-features = false, features = [
+  "macros",
+  "signal",
+  "sync",
 ] }
 
 [dev-dependencies]

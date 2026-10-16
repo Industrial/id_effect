@@ -7,6 +7,8 @@
 //! | [`Bulkhead`] | Limit concurrent in-flight effects (rejects when full) |
 //! | [`hedged()`] | Race a primary against a delayed backup ([`Effect::race`](id_effect::Effect::race)) |
 //! | [`retry_with_breaker`] | Retry per a [`Schedule`](id_effect::Schedule) through a breaker |
+//! | [`Fallback`] | Answer with an alternative effect when a call fails |
+//! | [`Pipeline`] | Compose fallback, retry, rate limiter, bulkhead, breaker and timeout into one reusable policy with telemetry ([`PipelineEvent`], metrics) |
 //!
 //! Every constructor is a plain function, and every operation returns a lazy effect,
 //! generic over its environment `R`. Time (the breaker cooldown, token refill, backoff and hedge
@@ -36,13 +38,17 @@
 pub mod bulkhead;
 pub mod circuit_breaker;
 mod clock;
+pub mod fallback;
 pub mod hedged;
+pub mod pipeline;
 pub mod rate_limiter;
 pub mod retry;
 
 pub use bulkhead::{Bulkhead, BulkheadError};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerError, CircuitState};
+pub use fallback::Fallback;
 pub use hedged::hedged;
+pub use pipeline::{Pipeline, PipelineError, PipelineErrorKind, PipelineEvent};
 pub use rate_limiter::{RateLimitError, RateLimiter};
 pub use retry::retry_with_breaker;
 

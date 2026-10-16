@@ -18,24 +18,27 @@ chunk. With the `compute` feature (on by default), each chunk asks
 preserved either way. Without the feature, bulk operations run serially and `rayon` / `sysinfo`
 are not built.
 
-```rust,ignore
+```rust
 use id_effect::Stream;
 
 let evens = Stream::<i64, ()>::range(0, 10_000)
   .map(|n| n * 2)
   .filter(|n: &i64| n % 4 == 0)
   .run_collect();
+# assert!(matches!(evens.block_on(), id_effect::Exit::Success(v) if v.len() == 5_000));
 ```
 
 Use `map_serial` / `filter_serial` for `FnMut` closures with captured mutable state or
 order-sensitive side effects (example `071_stream_map_serial`):
 
-```rust,ignore
+```rust
+# use id_effect::{Exit, Stream};
 let mut offset = 0;
 let s = Stream::<i32, ()>::from_iterable(1..=8).map_serial(move |n| {
   offset += 1;
   n + offset
 });
+# assert_eq!(s.run_collect().block_on(), Exit::succeed(vec![2, 4, 6, 8, 10, 12, 14, 16]));
 ```
 
 The same rule applies to the bulk `Vec` helpers in `id_effect_fp`
@@ -49,8 +52,10 @@ effects happen in stream order. `map_effect_par(n, f)` runs at most `max(n, 1)` 
 child fibers of the pulling fiber; output is in stream order, side-effect order is not, and the
 first failure interrupts the chunk's in-flight effects (example `070_stream_map_par_n`).
 
-```rust,ignore
+```rust
+# use id_effect::{Exit, Stream, succeed};
 let fetched = Stream::<u32, ()>::from_iterable(0..8).map_effect_par(4, |n| succeed(n * 2));
+# assert_eq!(fetched.run_collect().block_on(), Exit::succeed(vec![0, 2, 4, 6, 8, 10, 12, 14]));
 ```
 
 ## Fiber concurrency and the Fabric's admission
@@ -68,7 +73,7 @@ Fabric's telemetry-driven admission in front of fibers with `Fabric::from_comput
 memory pressure the governor lowers admission, so fewer `Inherit` children run at once
 (examples `120_compute_fabric_memory_cap`, `122_compute_fabric_effect_parallel`):
 
-```rust,ignore
+```rust
 use std::sync::Arc;
 use id_effect::compute::ComputeFabric;
 use id_effect::{Concurrency, Effect, Fabric, all, succeed};
@@ -79,6 +84,7 @@ let work: Vec<Effect<u32, ()>> = (0..4).map(|_| succeed(42)).collect();
 let out = Fabric::from_compute(fabric)
   .provide(all(work, Concurrency::Inherit))
   .block_on();
+# assert_eq!(out, id_effect::Exit::succeed(vec![42; 4]));
 ```
 
 Inside `effect!`, `~(a, b)` joins two sub-effects in parallel; plain `~a; ~b` binds run one after

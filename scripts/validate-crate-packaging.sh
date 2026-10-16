@@ -35,6 +35,11 @@ declare -A LEVEL=(
     [id_effect_node]=4
     [id_effect_axum]=4
     [id_effect_opentelemetry]=4
+    # Facade over level-4 crates (axum, opentelemetry, node), so the last level.
+    [id_effect_kit]=5
+    # The `id-effect` binary (ADR 0010 Amendment 4): publishes after the kit. It depends on no
+    # workspace crate; the templates it embeds pin the kit at the workspace version.
+    [id_effect_tool]=5
 )
 
 # Publish order (levels ascending; within a level, dependencies first).
@@ -45,6 +50,7 @@ declare -a ORDER=(
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
     id_effect_config id_effect_fsm
     id_effect_node id_effect_axum id_effect_opentelemetry
+    id_effect_kit id_effect_tool
 )
 
 if [[ "${1:-}" == "--print-order" ]]; then

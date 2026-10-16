@@ -6,8 +6,14 @@
 
 A 0.7 `Effect` is a single-shot value (its steps are `FnOnce`): it cannot be re-run. So `retry` and `repeat` are associated functions that take the effect's **factory** — an `Fn() -> Effect`, called once per attempt, when the attempt starts:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Schedule, succeed};
+# fn fetch(id: u32) -> Effect<u32, String> { succeed(id) }
+# let (id, schedule) = (7, Schedule::recurs(3));
+# let eff =
 Effect::retry(move || fetch(id), schedule)
+# ;
+# assert_eq!(eff.block_on(), Exit::succeed(7));
 ```
 
 There are no free `retry` / `repeat` functions and no `.retry(..)` method on a built effect.
@@ -47,25 +53,38 @@ assert_eq!(eff.block_on(), Exit::Failure(Cause::Fail("nope")));
 
 Not every error is retriable. The schedule's input is the error, so filter with `while_input`:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Cause, Effect, Exit, Schedule, fail};
+# #[derive(Debug, PartialEq, Eq, Hash)]
+# enum ApiError { NotFound }
+# impl ApiError { fn is_transient(&self) -> bool { false } }
+# fn api_call(_id: u32) -> Effect<String, ApiError> { fail(ApiError::NotFound) }
+# let id = 7;
 let eff = Effect::retry(
     move || api_call(id),
     Schedule::exponential(Duration::from_millis(100))
         .intersect(Schedule::recurs(5))
         .while_input(|e: &ApiError| e.is_transient()),
 );
+# assert_eq!(eff.block_on(), Exit::Failure(Cause::Fail(ApiError::NotFound)));
 ```
 
 A permanent error (404, permission denied) stops the schedule at once and is returned.
 
 ## retry_or_else: Fall Back When Exhausted
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Schedule, fail, succeed};
+# fn primary(_id: u32) -> Effect<String, String> { fail("primary down".to_owned()) }
+# fn secondary(id: u32, last_err: String) -> Effect<String, String> { succeed(format!("{id} from secondary after {last_err}")) }
+# let id = 7;
 let eff = Effect::retry_or_else(
     move || primary(id),
     Schedule::recurs(3),
     move |last_err, _last_out| secondary(id, last_err),
 );
+# assert_eq!(eff.block_on(), Exit::succeed("7 from secondary after primary down".to_owned()));
 ```
 
 ## repeat: On Success, Run Again
@@ -96,23 +115,34 @@ Use cases: poll for job completion, send heartbeats, refresh a cache on an inter
 
 `retry` and `repeat` return effects; they compose like everything else:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Schedule, succeed};
+# fn ms(n: u64) -> Duration { Duration::from_millis(n) }
+# fn process_batch() -> Effect<usize, String> { succeed(10) }
 // Retry each call, then repeat the whole batch every minute.
 let continuous = Effect::repeat(
     move || Effect::retry(move || process_batch(), Schedule::exponential(ms(100)).intersect(Schedule::recurs(3))),
     Schedule::spaced(Duration::from_secs(60)),
 );
+# let _: Effect<u64, String> = continuous; // runs forever: built, not run
 ```
 
 ## Observing Retries
 
 To log each failed attempt, do it inside the factory (it is called once per attempt) or tap the error before it reaches the schedule:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Schedule, fail};
+# fn risky_call() -> Effect<u32, String> { fail("flaky".to_owned()) }
+# let schedule = Schedule::recurs(2);
+# let eff =
 Effect::retry(
-    move || risky_call().map_err(|e| { tracing::warn!(error = ?e, "attempt failed"); e }),
+    move || risky_call().map_err(|e| { eprintln!("attempt failed: {e:?}"); e }),
     schedule,
 )
+# ;
+# assert_eq!(eff.block_on(), Exit::fail("flaky".to_owned()));
 ```
 
 Delays are slept on the fiber's executor clock, so all of this is testable in virtual time — see [Virtual Time](./ch11-04-clock-injection.md).

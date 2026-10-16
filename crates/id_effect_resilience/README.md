@@ -10,6 +10,10 @@ Resilience primitives for [`id_effect`](https://github.com/Industrial/id_effect)
 - **Rate limiter** (`RateLimiter`) — token-bucket admission control
 - **Bulkhead** (`Bulkhead`) — cap concurrent in-flight work (on `Semaphore`)
 - **Hedged requests** (`hedged`) — `Effect::race` a primary against a delayed backup
+- **Fallback** (`Fallback`) — answer with a value or another effect when a call fails
+- **Pipelines** (`Pipeline`) — fallback, retry, rate limiter, bulkhead, circuit breaker and
+  timeout composed into one reusable policy, with telemetry (`PipelineEvent` listeners and a
+  `Frequency` metric tagged `pipeline=<name>`)
 
 Constructors are plain functions (`CircuitBreaker::new`, `RateLimiter::new`, `Bulkhead::new`),
 and every operation returns a lazy `Effect`, generic over its environment.
@@ -58,6 +62,7 @@ running fiber's executor clock. On a `TestExecutor` that is virtual time: a prog
 |---------|-------|
 | `010_retry_with_breaker` | transient failure → retry succeeds; outage → breaker opens and stops the retries; cooldown → half-open probe closes it |
 | `020_rate_limit` | token-bucket burst and refill; a full bulkhead rejecting a concurrent call; a hedged call |
+| `030_resilience_pipeline` | one `Pipeline` (timeout, retry, breaker, fallback): timeout → failure → success; outage → breaker opens → fallback; event log and metric counts |
 
 Run one with `cargo run -p id_effect_resilience --example 010_retry_with_breaker`.
 

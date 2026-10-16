@@ -5,30 +5,50 @@ edges. Knowing when to reach for a combinator instead saves debugging time.
 
 ## Single-step transforms
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed};
+# struct UserId(u64);
+# fn parse_id(_: &str) -> Effect<u64, String> { succeed(7) }
+# let raw = "7";
 // Unnecessarily verbose
+# let _: Effect<u64, String> =
 effect!({ ~parse_id(raw) })
+# ;
 
 // Clear and direct
+# let _ =
 parse_id(raw)
+# ;
+# let _ =
 parse_id(raw).map(UserId)
+# ;
 ```
 
 Use `effect!` for two or more steps; for one, `map` / `flat_map` is enough.
 
 ## Named combinators for structural patterns
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, succeed, zip_par};
+# fn step_a() -> Effect<u32, String> { succeed(1) }
+# fn step_b() -> Effect<u32, String> { succeed(2) }
+# type Pair = Effect<(u32, u32), String>;
 // Sequential, even though the steps are independent:
+# let _: Pair =
 effect!({
   let a = ~step_a();
   let b = ~step_b();
   (a, b)
 })
+# ;
 
 // Says what you mean:
+# let _: Pair =
 step_a().zip(step_b())       // sequential pair
+# ;
+# let _: Pair =
 zip_par(step_a(), step_b())  // concurrent pair
+# ;
 ```
 
 For concurrent independent steps inside a block, `~(step_a(), step_b())` is the same join.
@@ -37,18 +57,31 @@ For concurrent independent steps inside a block, `~(step_a(), step_b())` is the 
 
 ## Avoid nesting effect! inside effect!
 
-```rust,ignore
-// CONFUSING: nested macro bodies
+```rust,compile_fail
+# use id_effect::{Effect, effect, succeed};
+# fn inner_step() -> Effect<i32, String> { succeed(1) }
+// CONFUSING: nested macro bodies. It does not even compile: the inner `effect!` has no
+// expected type, so its error type is not the outer one and `String` cannot widen into it.
+# let _: Effect<i32, String> =
 effect!({
   let result = ~effect!({ let x = ~inner_step(); x * 2 });
   result + 1
 })
+# ;
+```
 
+Flatten instead:
+
+```rust
+# use id_effect::{Effect, effect, succeed};
+# fn inner_step() -> Effect<i32, String> { succeed(1) }
 // BETTER: flatten
+# let _: Effect<i32, String> =
 effect!({
   let x = ~inner_step();
   x * 2 + 1
 })
+# ;
 ```
 
 ## The macro and type inference
@@ -67,8 +100,11 @@ effect!({
 Library code that should work in any environment containing its capability is generic over `R`
 with a `Selector` bound, and uses `need` instead of the macro where that is simpler:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, HList, Selector, need};
+# #[derive(Clone, Copy)] struct UserId(u64);
+# struct AuthError;
+# struct Session { user_id: UserId }
 
 pub fn current_user<R, I>() -> Effect<UserId, AuthError, R>
 where

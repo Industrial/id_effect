@@ -41,7 +41,8 @@ assert!(next_port("http").provide(BasePort(1)).block_on().into_result().is_err()
 - Run at the edge with `Effect::block_on`, or `Runtime::run(eff).await` inside async code.
 
 Cargo features: `compute` (default — the Compute Fabric substrate, adaptive Rayon bulk ops,
-`sysinfo` telemetry), `schema-serde`. `--no-default-features` drops `rayon` and `sysinfo`.
+`sysinfo` telemetry), `schema-serde`, `schema-regex` (regex-backed `schema::regex` validator),
+`proptest` (`testing::property`). `--no-default-features` drops `rayon` and `sysinfo`.
 Algebraic type classes, persistent (`im`) collections and STM live in the maintenance-tier
 [`id_effect_fp`](../id_effect_fp) crate. Examples: [`examples/README.md`](examples/README.md).
 

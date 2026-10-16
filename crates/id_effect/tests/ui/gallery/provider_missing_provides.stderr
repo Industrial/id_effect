@@ -1,0 +1,5 @@
+error: derive(ProviderSpec) requires #[provides(Service)] on the struct
+ --> tests/ui/gallery/provider_missing_provides.rs:8:12
+  |
+8 | pub struct CounterLive;
+  |            ^^^^^^^^^^^

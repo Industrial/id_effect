@@ -1,5 +1,115 @@
 # Changelog
 
+## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
+
+First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading
+from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
+
+**License: MIT from 0.8.0** (was CC-BY-SA-4.0; versions up to 0.7.0 keep their license). A
+`LICENSE` file, `license = "MIT"` in every manifest, and a DCO sign-off for contributions
+(`CONTRIBUTING.md`). The labs `id_effect_jobs` obix outbox adapter was removed before the switch.
+
+### Added
+
+- **Trust & supply chain:** `SECURITY.md` (private reporting via GitHub advisories, response
+  targets, support window), `GOVERNANCE.md`, `CODEOWNERS`. CI runs `cargo deny check`
+  (`deny.toml`) and a report-only `cargo semver-checks` against 0.7.0 (enforcing from 0.8.0).
+  Releases attach a CycloneDX SBOM per crate and the published `.crate` files with build
+  provenance attestations. `docs/STABILITY.md` states the semver, deprecation and MSRV policy.
+- **Web security (`id_effect_axum`):** `SecurityLayer::recommended(key)` — per-session CSRF
+  tokens in a signed `__Host-` cookie with constant-time compare (on by default), nonce-based CSP
+  (`CspNonce`, script hashes), HSTS / X-Frame-Options / nosniff / Referrer-Policy defaults, and
+  `Cookies` with secure defaults and signed/private jars keyed by a `CookieKey` effect layer.
+  `CorsConfig` builds a validated `tower_http` CORS layer.
+- **Metrics:** `id_effect::observability::prometheus` renders a `MetricRegistry` as Prometheus
+  text 0.0.4 (no dependency); `runtime_metrics` adds `id_effect_fibers_live` and
+  `id_effect_fibers_started_total`. `id_effect_axum::metrics` serves `GET /metrics` and records
+  HTTP requests and durations by route template (`http_metrics_layer()`).
+  `id_effect_sql::metrics::InstrumentedSqlClient` records database operations and durations;
+  `record_pg_pool` samples pool gauges.
+- **Health:** `HealthRegistry` of effect-backed `HealthIndicator`s, run concurrently with
+  per-check timeouts, answers `/ready` with JSON `{status, checks}` and 200 or 503; cache and
+  `ReadinessCheck` adapters; `id_effect_sql::health::sql_ping` and `pg_pool_health`.
+- **CLI (`id_effect_cli`):** `run_main` handles Ctrl-C gracefully (first SIGINT interrupts so
+  finalizers run, exit 130; a second exits at once). New `completions` feature
+  (`completions::{generate, CompletionsArgs, Shell}`); `examples/cli-minimal` gains
+  `completions <shell>`.
+- **Compile time:** `scripts/compile-time.sh` measures the template app's cold build, rebuild and
+  boot; 0.8 figures in `docs/benchmarks/compile-0.8.json`.
+- **Cron jobs:** `Cron` expressions with time-zone/DST-aware next-fire, `WallClock`,
+  `Schedule::cron`; named `CronJob`s with overlap and missed-run policies, success/failure hooks
+  and run history, declared in a `CronRegistry` and run directly or through a `Layer` that
+  provides a `CronScheduler`. All of it runs on virtual time under `TestExecutor`.
+- **Resilience (`id_effect_resilience`):** a `Fallback` policy and `Pipeline`, which composes
+  fallback, retry, rate limiter, bulkhead, circuit breaker and timeout into one reusable policy
+  with `PipelineEvent` listeners and a per-pipeline metric.
+- **Streams:** `zip` / `zip_with` / `combine_latest`; `throttle` / `throttle_enforce` /
+  `debounce` on the fiber clock; `group_by_key` / `group_by` substreams with bounded buffers and
+  backpressure. Stopping early interrupts upstream and runs its finalizers.
+- **Schema:** JSON Schema (2020-12) export for any `Schema` or `HasSchema` type
+  (`schema.json_schema()`, `json_schema_for::<T>()`) with constraints, annotations and `$ref`
+  recursion, read from the same schema value that validates. `decode_unknown_all` returns every
+  error in one pass. Built-in validators `email`, `uuid`, `url`, `length`, `range`, `pattern`,
+  `one_of` and friends.
+- **Testing:** `run_test`, `assert_exit_*` / `expect_exit_*` and golden files (`assert_golden*`,
+  `ID_EFFECT_BLESS=1`). The `proptest` feature returns as `testing::property`: schema-derived and
+  framework-type generators, effect-aware properties and model-based testing (`StateMachine`).
+  `TestExecutor::seeded(seed)` explores fiber interleavings reproducibly;
+  `explore_interleavings` / `assert_interleavings` report the failing seed.
+- **Book:** an idiom and style guide (appendix E); its snippets and the interleavings chapter's
+  run as doctests.
+- **`id_effect_kit` (new crate):** one dependency for apps, with feature bundles `web`,
+  `sql-pg`, `otel`, `cluster`, `full`, a `prelude`, whole-crate re-exports and `graph`
+  (`LayerGraph`: a layer dependency graph as text or DOT that flags missing providers).
+- **`id_effect_tool` (new crate), the `id-effect` binary:** `id-effect new <name> --template
+  service|worker|cli|cluster [--db pg] [--otel]` generates a project on the kit with tests, a
+  Dockerfile, compose, `.env.example`, a CI workflow and (service) Kamal config; secure defaults,
+  `/health`, `/ready` and `/metrics` are wired in. `id-effect doctor [--json] [--graph]` checks
+  the toolchain, duplicate id_effect versions, env keys, database reachability, docker and the
+  port. CI generates, builds and tests every template and docker-builds the service.
+- **Diagnostics:** a gallery of the 20 most common mistakes (`tests/ui/gallery`,
+  `docs/diagnostics.md`); 17 of their first errors now state the fix (capability, `~` bind,
+  error-conversion and `caps!` errors).
+- **Schema:** `#[derive(Schema)]` types export JSON Schema (`$ref`/`$defs` for nested types);
+  `schema-regex` feature with a `regex` validator.
+- **Docs:** a zero-to-production tutorial; 95 % of the book's Rust snippets now compile in CI
+  (`examples/book-snippets`); `scripts/dx-kpis.sh` measures the first-hour KPIs (new service to
+  `/health` in about 19 s cold).
+
+### Changed
+
+- **Shutdown:** every host shutdown path marks readiness `shutting_down` before draining, and
+  `run_until_shutdown` keeps serving while it drains.
+- **Streaming:** `Sink::fold_left` / `from_fold` / `collect` / `drain` / `collect_to_map` return
+  `FoldSink`; `FoldSink::zip` and `FoldChannel::from_sink` reject non-fold sinks at compile time
+  instead of panicking (`.into()` converts to `Sink`).
+- **`RunMainConfig`** is `#[non_exhaustive]` with builder methods.
+
+### Deprecated
+
+- `CsrfConfig::new`, `csrf_middleware`, `csp_middleware`, `set_csrf_header` (removed in 0.9);
+  the deprecated CSRF compare is now constant-time.
+
+### Performance
+
+- `Queue::offer` / `take` and `Channel::write` / `read` complete synchronously when they can;
+  `retry` / `repeat` read the clock only for schedules that use it. Against 0.7.0:
+  `coord/queue_bounded_10k` 0.48×, `coord/channel_spsc_10k` 0.50×,
+  `bench_schedule_retry_overhead` 588 → 137 ns. All three are now budget gates.
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.8.0.md`, METHOD 2.1):
+
+| Index | 0.7.0 | 0.8.0 | Target |
+|---|---|---|---|
+| Enterprise (E) | 43.2 (#9) | 55.2 (#5) | 53.0 (#6) |
+| Runtime (RT) | 56.1 (#6) | 64.4 (#2) | 63.3 (#3) |
+| Rows < 40 | 39 | 31 | ≤ 31 |
+
+27 rows up, 1 down (`msg.brokers`: the obix outbox was removed for the MIT relicense). One miss
+carried over to 0.9: `data.jsonschema` 38 vs 50.
+
 ## 0.7.0 — 2026-10-15 — The runtime release (breaking)
 
 Replaces the `!Send`, busy-polled kernel with an owned fiber runtime on an `Executor` trait

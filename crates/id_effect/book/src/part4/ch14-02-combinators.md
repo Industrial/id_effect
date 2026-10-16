@@ -6,7 +6,7 @@ structures. All combinators live in `id_effect::schema` and are plain functions.
 
 ## Primitive Schemas
 
-```rust,ignore
+```rust
 use id_effect::schema::{Schema, bool_, f64, i64, string};
 
 let name: Schema<String, String, ()> = string();
@@ -24,19 +24,31 @@ else fixes it.
 `struct_` takes field names and field schemas and decodes to a tuple. `struct3` … `struct12`
 cover wider shapes; `tuple` … `tuple12` do the same for positional arrays.
 
-```rust,ignore
+```rust
 use id_effect::schema::{i64, string, struct_};
+# use std::collections::BTreeMap;
+# use id_effect::schema::Unknown;
+# let raw = Unknown::Object(BTreeMap::from([
+#   ("name".to_owned(), Unknown::String("Alice".to_owned())),
+#   ("age".to_owned(), Unknown::I64(30)),
+# ]));
 
 let person = struct_("name", string::<()>(), "age", i64());
 // decode_unknown reads an Unknown::Object; a missing key fails with path "age",
 // message "missing field age".
 let (name, age): (String, i64) = person.decode_unknown(&raw)?;
+# assert_eq!((name.as_str(), age), ("Alice", 30));
+# Ok::<(), id_effect::schema::ParseError>(())
 ```
 
 To decode into your own type, map the tuple with `transform` (see the next section), or derive
 the schema:
 
-```rust,ignore
+```rust
+# use id_effect::HasSchema;
+# use id_effect::schema::Unknown;
+# #[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+# struct Address { street: String }
 #[derive(Clone, Debug, PartialEq, id_effect::Schema)]
 struct User {
   #[schema("user_name")] // wire key
@@ -46,6 +58,13 @@ struct User {
   tags: Vec<String>,
   address: Address, // any type that itself derives Schema
 }
+# let user = User {
+#   name: "Alice".to_owned(),
+#   age: 30,
+#   nick: None,
+#   tags: vec!["admin".to_owned()],
+#   address: Address { street: "Main St".to_owned() },
+# };
 
 let wire: Unknown = User::schema().encode(user.clone()); // Unknown::Object
 assert_eq!(User::schema().decode_unknown(&wire), Ok(user));
@@ -53,11 +72,12 @@ assert_eq!(User::schema().decode_unknown(&wire), Ok(user));
 
 `derive(Schema)` implements `HasSchema` with wire type `Unknown`. It accepts `String`, `bool`,
 `i64`, `i32`, `f64`, nested `HasSchema` types, and `Option` / `Vec` of those, with any number of
-fields. Errors carry the field name as their path.
+fields. Errors carry the field name as their path. The derived schema also exports as JSON Schema
+(see [Derived types](#derived-types) below).
 
 ## Optional and Nullable Values
 
-```rust,ignore
+```rust
 use id_effect::schema::{i64, null_or, optional};
 
 let port = optional(i64::<()>()); // Schema<Option<i64>, Option<i64>, ()>
@@ -69,7 +89,7 @@ Both decode `Unknown::Null` as `None`. Inside `struct_` a field must still be pr
 
 ## Arrays and Records
 
-```rust,ignore
+```rust
 use id_effect::schema::{array, i64, record, string};
 
 let tags = array(string::<()>()); // Vec<String>; an error at index 2 has path "2"
@@ -78,22 +98,32 @@ let scores = record(i64::<()>()); // BTreeMap<String, i64>; errors are prefixed 
 
 ## Literals and Unions
 
-```rust,ignore
+```rust
 use id_effect::schema::{i64_unknown_wire, literal_string, union_, union_chain};
+# use id_effect::schema::{Schema, Unknown};
+# fn id_from_string() -> Schema<i64, Unknown, ()> { i64_unknown_wire() }
+# let (a, b, c) = (id_from_string(), id_from_string(), id_from_string());
 
 let kind = literal_string::<()>("user"); // only the exact string "user"
 
 // Try schemas in order; the first successful decode wins. Wire type is Unknown.
 let id = union_(i64_unknown_wire::<()>(), id_from_string());
 let any = union_chain(vec![a, b, c]);
+# assert_eq!(id.decode_unknown(&Unknown::I64(7)), Ok(7));
+# assert_eq!(any.decode_unknown(&Unknown::I64(8)), Ok(8));
+# assert!(kind.decode("admin").is_err());
 ```
 
 `union_` / `union_chain` encode with the **first** schema, so the arms should agree on
-encoding. For recursive shapes, `suspend(|| schema())` defers building the inner schema.
+encoding. For recursive shapes, `suspend(|| schema())` defers building the inner schema;
+`suspend_named("Node", schema)` does the same and gives the recursion a name, which JSON Schema
+export uses for `$defs` / `$ref` (see below).
 
 ## Running a Schema
 
-```rust,ignore
+```rust
+# use id_effect::schema::{i64, string, struct_};
+# let person = struct_("name", string::<()>(), "age", i64());
 let wire = person.encode(("Alice".to_owned(), 30));
 assert_eq!(person.decode(wire), Ok(("Alice".to_owned(), 30)));
 ```
@@ -106,5 +136,92 @@ assert_eq!(person.decode(wire), Ok(("Alice".to_owned(), 30)));
 
 A schema is documentation: where a handler takes a `Schema<CreateUser, Unknown, ()>`, readers
 know exactly which shape of data it accepts, checked at runtime. Implement `HasSchema` (or derive
-it) so generic tooling, such as the JSON Schema helpers behind the `schema-serde` feature, can
+it) so generic tooling, such as the JSON Schema export behind the `schema-serde` feature, can
 find a type's canonical schema.
+
+## Exporting JSON Schema
+
+Every combinator also records a description of the wire shape it accepts, a `SchemaAst`
+(`schema.ast()`). With the `schema-serde` feature, `schema.json_schema()`,
+`to_json_schema(&schema)` or `json_schema_for::<T: HasSchema>()` turn it into a JSON Schema
+**draft 2020-12** document. Because the exporter reads the *same* schema value that decodes,
+the published contract cannot drift from the validation:
+
+```rust
+use id_effect::schema::{email, i64, range, string, struct_};
+
+let signup = struct_(
+  "email", email(string::<()>()).describe("Login address"),
+  "age", range(i64::<()>(), 13, 130),
+)
+.title("Signup");
+
+assert_eq!(signup.json_schema(), serde_json::json!({
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signup",
+  "type": "object",
+  "properties": {
+    "email": { "type": "string", "format": "email", "description": "Login address" },
+    "age": { "type": "integer", "minimum": 13, "maximum": 130 }
+  },
+  "required": ["email", "age"]
+}));
+```
+
+| Schema | JSON Schema |
+|--------|-------------|
+| `string` / `i64` / `f64` / `bool_` | `type` |
+| `literal_string` / `literal_i64` | `const` |
+| `array` / `record` | `items` / `additionalProperties` |
+| `tuple*` | `prefixItems`, `items: false` |
+| `struct_*` | `properties`, `required` |
+| `optional` / `null_or` / `union_` / `union_chain` | `anyOf` |
+| `suspend_named` | `$ref` into `$defs` |
+| built-in validators ([next section](./ch14-03-validation.md)) | `minLength`, `pattern`, `format`, `enum`, `minimum`, … |
+| `.title` / `.describe` / `.example` / `.default_value` / `.deprecated` | `title`, `description`, `examples`, `default`, `deprecated` |
+
+What cannot be introspected is exported loosely rather than wrongly: a hand-written
+`Schema::make` codec exports `{}` (accept anything) unless you attach a description with
+`.with_ast(...)`, an arbitrary `refine` predicate adds no keyword, and `transform` exports its
+inner wire schema. OpenAPI documents generated from routes are a later release.
+
+### Derived types
+
+`#[derive(Schema)]` attaches the AST for you, built from each field's own schema, so
+`json_schema_for::<User>()` describes the struct. Every field is `required` except `Option<T>`
+fields, which may be missing or `null`; `i32` fields carry their range. A field whose type is
+another `HasSchema` type becomes a `$ref` into `$defs`, keyed by the type's path
+(`ast_ref::<T>()`), so the type is written once and recursive types terminate:
+
+```rust,no_run
+# use id_effect::schema::json_schema_for;
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+struct Address { street: String, zip: Option<String> }
+
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+struct Person { name: String, home: Address }
+
+assert_eq!(json_schema_for::<Person>(), serde_json::json!({
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": { "type": "string" },
+    "home": { "$ref": "#/$defs/my_app::Address" }
+  },
+  "required": ["name", "home"],
+  "$defs": {
+    "my_app::Address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string" },
+        "zip": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+      },
+      "required": ["street"]
+    }
+  }
+}));
+```
+
+The `$defs` key comes from `std::any::type_name` (characters that are not valid in a URI fragment
+become `_`); it documents the type and is not a stable identifier across compiler versions.
+`derive(Schema)` supports structs with named fields only, so there is no derived enum export.

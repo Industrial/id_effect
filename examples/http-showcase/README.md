@@ -1,21 +1,47 @@
 # http_showcase
 
 The id_effect 0.7 showcase (not published): an axum HTTP service whose whole lifetime is one
-effect on the fiber runtime.
+effect on the fiber runtime, laid out in domain-driven layers with one construct (struct, enum,
+trait, type alias, function) per file.
 
-- `AppConfig` is one `Config<T>` descriptor (`src/config.rs`), loaded by its layer
-  (`AppConfig::layer()`) from the process environment and provided as a capability.
-- The HTTP server is a scoped layer (`id_effect_axum::server::serve_until`): it binds on acquire and
-  drains gracefully on release (SIGINT / SIGTERM).
-- With `DATABASE_URL` set, a scoped `PgSqlClient` pool layer (`id_effect_sql`, `pg` feature) is
-  opened (and checked with `SELECT 1`) before serving and closed after.
-- Every request runs as one interruptible fiber on tokio.
-- The todo store is a capability (`TodoRepoService`, `src/repo.rs`): `PgTodoRepo` on the pool
-  (the schema `migrations/0001_init.sql` is applied at startup), or `InMemoryTodoRepo` without
-  `DATABASE_URL` (and in the tests).
-- Each store call runs under the `RequestPolicy` (`src/app.rs`): a transient failure (store
-  unavailable) is retried twice with exponential backoff (`Effect::retry` + `Schedule`), and the
-  whole call is bounded by `REQUEST_TIMEOUT` (`timeout_fail`, answered `504`).
+## Layout
+
+```
+src/
+  domain/todo/          Todo aggregate, TodoId, Title, TodoChanges; domain errors
+                        (TodoNotFound, TitleTaken, InvalidTitle); the TodoRepository port,
+                        its StoreError and its capability (TodoRepositoryService)
+  application/          one use case per endpoint (list_todos, get_todo, create_todo, ...),
+                        RequestPolicy, AppEnv
+  infrastructure/
+    memory/             InMemoryTodoRepository (+ its ProviderSpec layer)
+    postgres/           PgTodoRepository, its layer (migrates on build), the pool layer,
+                        Migration, row decoding, SqlError -> StoreError
+    config/             AppConfig, DatabaseConfig (one Config<T> descriptor)
+    telemetry/          one span and one latency observation per request
+  interface/http/       Schema-decoded request bodies, handlers, router, error -> status
+  bootstrap/            the layer graph: config -> server + store -> router; StartupError
+```
+
+- **Domain first.** `Todo` holds a validated `Title` and changes only through its behaviour
+  (`rename`, `complete`, `reopen`, `apply`). The repository port fails only with `StoreError`:
+  a missing todo or a taken title is part of its success value, so retries and the circuit
+  breaker only ever see store failures.
+- **Typed errors per use case.** Each use case says exactly how it fails, e.g.
+  `update_todo: Effect<Todo, err!(InvalidTitle | TodoNotFound | TitleTaken | StoreFailure), AppEnv>`.
+  Only `interface/http` turns errors into statuses (`IntoApiError`).
+- **Resilient store calls.** Each store call runs under the `RequestPolicy`: a shared
+  `CircuitBreaker` (`id_effect_resilience`, opens after 5 failed attempts, half-opens after 5 s),
+  transient failures retried twice with exponential backoff (`Schedule`), the whole call bounded
+  by `REQUEST_TIMEOUT` (`timeout_fail`, answered `504`).
+- **Layers all the way.** `AppConfig` is one `Config<T>` descriptor provided by its layer. The
+  store is a layer chosen by the config: `InMemoryTodoRepositoryLive` (`#[derive(ProviderSpec)]`)
+  or the scoped `PgSqlClient` pool feeding `PgTodoRepositoryLive`, which applies
+  `migrations/0001_init.sql` under an advisory lock when built. The HTTP server is a scoped layer:
+  it binds on acquire, logs `level=INFO message="http_showcase listening" addr=.. store=..` on
+  stderr (`id_effect_logger`) and drains gracefully on release (SIGINT / SIGTERM).
+- Every request runs as one interruptible fiber on tokio. Request bodies are decoded with
+  `#[derive(Schema)]`; unknown fields, bad JSON or a missing JSON content type answer `422`.
 
 ## Endpoints
 
@@ -32,14 +58,14 @@ effect on the fiber runtime.
 A `Todo` is `{"id": 1, "title": "milk", "completed": false}`. Titles are trimmed, 1 to 200
 characters, and unique.
 
-Errors (`AppError`, `src/error.rs`) answer `{"error": "<code>", "message": "..."}`:
+Errors (`ApiError`, `src/interface/http/`) answer `{"error": "<code>", "message": "..."}`:
 
 | Status | `error` | When |
 |---|---|---|
 | `404` | `not_found` | no todo with that id |
 | `409` | `conflict` | the title is taken (a conflicting batch stores nothing) |
 | `422` | `invalid` | a bad id, JSON body or title |
-| `503` | `unavailable` | the store is still unreachable after the retries |
+| `503` | `unavailable` | the store is still unreachable after the retries, or the circuit breaker is open |
 | `504` | `timeout` | the request ran past `REQUEST_TIMEOUT` |
 | `500` | `internal` | any other store failure (details stay in the server) |
 
@@ -80,7 +106,7 @@ use id_effect::Exit;
 use id_effect_axum::EffectExecutor;
 
 # async fn run() {
-// env provider → AppConfig layer → server (+ pool) layers → serve until SIGINT / SIGTERM
+// env provider → AppConfig layer → server + store layers → serve until SIGINT / SIGTERM
 let program = http_showcase::run_until_shutdown().provide_layer(http_showcase::live_layer());
 match EffectExecutor::global().run_effect(program).await {
   Exit::Success(reason) => println!("stopped: {reason:?}"),

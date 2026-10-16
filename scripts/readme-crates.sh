@@ -27,7 +27,7 @@ fi
 
 table() {
     local tier title badge
-    for spec in "core|Core" "runtime|Runtime and supervision" "integration|Integrations" "maintenance|Maintenance (frozen API)" "labs|Labs (unpublished, no guarantees)"; do
+    for spec in "core|Core" "runtime|Runtime and supervision" "integration|Integrations" "platform|Platform (batteries)" "maintenance|Maintenance (frozen API)" "labs|Labs (unpublished, no guarantees)"; do
         tier="${spec%%|*}"
         title="${spec#*|}"
         local section

@@ -30,6 +30,7 @@ use id_effect_config::{ConfigEnv, ConfigError};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
+use crate::health::ReadinessState;
 use crate::server::bootstrap::{HostConfig, bootstrap_env, load_host_config};
 use crate::server::shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};
 
@@ -84,6 +85,9 @@ pub struct Host {
   pub env: ConfigEnv,
   /// In-flight work counter for graceful shutdown.
   pub drain: Arc<HostDrain>,
+  /// Readiness (ready once built); shutdown marks it shutting down before draining. Wire it
+  /// into `/ready` with [`HealthRegistry::with_readiness`](crate::HealthRegistry::with_readiness).
+  pub readiness: ReadinessState,
 }
 
 /// Fluent builder for [`Host`].
@@ -117,12 +121,16 @@ impl HostBuilder {
         config,
         env,
         drain: Arc::new(HostDrain::new()),
+        readiness: ReadinessState::new(true),
       }),
       Exit::Failure(cause) => Err(HostError::from_cause(cause)),
     }
   }
 
   /// Build the host, run `serve` concurrently with shutdown signals, then drain.
+  ///
+  /// On a signal, [`Host::readiness`] is marked shutting down first; `serve` keeps running
+  /// while the drain waits, so `/ready` answers `503` as in-flight work finishes.
   pub async fn run_until_shutdown<F, Fut>(self, serve: F) -> Result<(), HostError>
   where
     F: FnOnce(Host) -> Fut,
@@ -131,10 +139,19 @@ impl HostBuilder {
     let host = self.build().await?;
     let timeout = host.config.shutdown_timeout;
     let drain = Arc::clone(&host.drain);
+    let readiness = host.readiness.clone();
+    let mut serving = std::pin::pin!(serve(host));
 
-    tokio::select! {
-      res = serve(host) => res?,
-      _reason = wait_for_shutdown() => {},
+    let signalled = tokio::select! {
+      res = &mut serving => { res?; false },
+      _reason = wait_for_shutdown() => true,
+    };
+    readiness.mark_shutting_down();
+    if signalled {
+      tokio::select! {
+        res = &mut serving => res?,
+        () = drain_with_timeout(&drain, timeout) => return Ok(()),
+      }
     }
 
     drain_with_timeout(&drain, timeout).await;
@@ -152,6 +169,9 @@ pub fn socket_addr(config: &HostConfig) -> Result<SocketAddr, HostError> {
 }
 
 /// Run an Axum [`Router`] until SIGINT/SIGTERM with graceful connection drain.
+///
+/// On a signal, [`Host::readiness`] is marked shutting down first; the listener keeps
+/// accepting while [`Host::drain`] drains, then stops.
 #[allow(clippy::result_large_err)]
 pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
   let addr = socket_addr(&host.config)?;
@@ -160,10 +180,12 @@ pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
     .map_err(|e| HostError::Serve(e.to_string()))?;
   let timeout = host.config.shutdown_timeout;
   let drain = host.drain;
+  let readiness = host.readiness;
 
   axum::serve(listener, app)
     .with_graceful_shutdown(async move {
       wait_for_shutdown().await;
+      readiness.mark_shutting_down();
       drain_with_timeout(&drain, timeout).await;
     })
     .await
@@ -175,6 +197,7 @@ pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
 pub struct ServerHandle {
   local_addr: SocketAddr,
   shutdown_timeout: Duration,
+  readiness: ReadinessState,
   stop: Arc<Notify>,
   task: Mutex<Option<JoinHandle<std::io::Result<()>>>>,
 }
@@ -186,6 +209,20 @@ impl ServerHandle {
   ///
   /// [`HostError::Serve`] when the address is invalid or cannot be bound.
   pub async fn start(config: &HostConfig, app: Router) -> Result<Self, HostError> {
+    Self::start_with_readiness(config, app, ReadinessState::new(true)).await
+  }
+
+  /// Like [`start`](Self::start), with the [`ReadinessState`] that [`shutdown`](Self::shutdown)
+  /// marks shutting down (share it with the app's `/ready` route).
+  ///
+  /// # Errors
+  ///
+  /// [`HostError::Serve`] when the address is invalid or cannot be bound.
+  pub async fn start_with_readiness(
+    config: &HostConfig,
+    app: Router,
+    readiness: ReadinessState,
+  ) -> Result<Self, HostError> {
     let addr = socket_addr(config)?;
     let listener = tokio::net::TcpListener::bind(addr)
       .await
@@ -203,6 +240,7 @@ impl ServerHandle {
     Ok(Self {
       local_addr,
       shutdown_timeout: config.shutdown_timeout,
+      readiness,
       stop,
       task: Mutex::new(Some(task)),
     })
@@ -213,9 +251,16 @@ impl ServerHandle {
     self.local_addr
   }
 
-  /// Stops accepting connections and waits up to the configured shutdown timeout for open ones
-  /// to finish; aborts the server task after that. Idempotent.
+  /// The server's readiness (marked shutting down by [`shutdown`](Self::shutdown)).
+  pub fn readiness(&self) -> &ReadinessState {
+    &self.readiness
+  }
+
+  /// Marks the readiness shutting down, then stops accepting connections and waits up to the
+  /// configured shutdown timeout for open ones to finish; aborts the server task after that.
+  /// Idempotent.
   pub async fn shutdown(&self) {
+    self.readiness.mark_shutting_down();
     self.stop.notify_one();
     let task = self
       .task
@@ -240,12 +285,22 @@ impl ServerHandle {
 pub fn server_layer(
   app: Router,
 ) -> Layer<HCons<ServerHandle, HNil>, HostError, HCons<HostConfig, HNil>> {
+  server_layer_with_readiness(app, ReadinessState::new(true))
+}
+
+/// [`server_layer`] whose [`ServerHandle`] uses `readiness` (see
+/// [`ServerHandle::start_with_readiness`]): releasing the layer marks it shutting down first.
+pub fn server_layer_with_readiness(
+  app: Router,
+  readiness: ReadinessState,
+) -> Layer<HCons<ServerHandle, HNil>, HostError, HCons<HostConfig, HNil>> {
   Layer::acquire_release(
     move || {
       let app = app.clone();
+      let readiness = readiness.clone();
       need::<HostConfig>().flat_map(move |config| {
         from_async(move || async move {
-          ServerHandle::start(&config, app)
+          ServerHandle::start_with_readiness(&config, app, readiness)
             .await
             .map(|handle| hlist![handle])
         })

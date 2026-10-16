@@ -48,12 +48,20 @@ methods.
 
 ## Building the environment
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, HCons, HNil, Layer, caps, hlist, need};
+# struct Db(u32); struct Logger(&'static str);
+# #[derive(Default)] struct Cache;
+# fn make() -> Effect<u32, (), caps!(Db, Logger)> { need::<Db>().map(|d| d.0) }
+# fn app_layer() -> Layer<HCons<Db, HCons<Logger, HNil>>, ()> { Layer::succeed(hlist![Db(1), Logger("app")]) }
+# let eff = make();
 // Exactly R, in order
 eff.provide_all(hlist![Db(1), Logger("app")]);
+# let eff = make();
 
 // Any environment that contains R (any order, extras allowed)
 eff.provide_env(hlist![Logger("app"), Cache::default(), Db(1)]);
+# let eff = make();
 
 // From a Layer graph: the layers' output HList
 eff.provide_layer(app_layer());
@@ -71,7 +79,8 @@ The typed environment is the default. For plugin-style wiring whose capabilities
 compile time, `DynEnv` is a `TypeId`-keyed map with **fallible** lookups. It is itself a
 capability: an effect that looks things up dynamically requires `caps!(DynEnv)`.
 
-```rust,ignore
+```rust
+# fn main() -> Result<(), String> {
 use std::sync::Arc;
 use id_effect::{DynEnv, MissingCapability};
 
@@ -83,6 +92,8 @@ env.insert(Plugin("audit"));
 let p: Arc<Plugin> = env.try_get::<Plugin>().map_err(|e| e.to_string())?;
 assert_eq!(p.0, "audit");
 assert!(matches!(env.try_get::<Absent>(), Err(MissingCapability { .. })));
+# Ok(())
+# }
 ```
 
 Inside an effect, `try_need::<T>()` is an `Effect<Arc<T>, MissingCapability, caps!(DynEnv)>`: it

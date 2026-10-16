@@ -1,0 +1,5 @@
+error: capability `Config` appears twice in `caps!(..)`; remove the repeated `Config` (an environment holds each capability once)
+ --> tests/ui/gallery/duplicate_capability.rs:9:53
+  |
+9 | fn handler() -> Effect<(), Never, caps!(Config, Db, Config)> {
+  |                                                     ^^^^^^

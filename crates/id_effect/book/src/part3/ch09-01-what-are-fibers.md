@@ -4,7 +4,9 @@ A fiber is an effect-managed task. It's lighter than an OS thread and safer than
 
 ## Fibers vs. Raw Tasks
 
-```rust,ignore
+```rust,no_run
+# async fn do_something() {}
+# fn background_work() -> id_effect::Effect<u8, ()> { id_effect::succeed(1) }
 // Raw tokio::spawn — fire and forget.
 // Who owns this? What happens if it panics? Who cleans up?
 tokio::spawn(async {
@@ -45,12 +47,13 @@ Dropping a `FiberHandle` does **not** interrupt the fiber; the parent-exit rule 
 
 Each fiber has a `FiberId` (the one its `Cause::Interrupt` carries). `FiberHandle::id()` gives a child's id; inside an effect, the current fiber is on the `Ctx`:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, FiberId};
 
 fn current_fiber_id<E: Send + 'static>() -> Effect<FiberId, E> {
     Effect::from_ctx(|ctx| async move { Ok(ctx.fiber().id()) })
 }
+# assert!(current_fiber_id::<()>().block_on().into_result().is_ok());
 ```
 
 ## FiberHandle

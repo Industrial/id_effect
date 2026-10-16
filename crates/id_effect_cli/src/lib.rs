@@ -49,6 +49,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+#[cfg(feature = "completions")]
+pub mod completions;
 mod exit_code;
 mod run;
 

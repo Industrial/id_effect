@@ -30,7 +30,12 @@ the one-element list (`HttpClientEnv = HCons<HttpClientService, HNil>`), and `ht
 Every layer needs nothing (`In = HNil`) and is generic over the error type, so they merge into
 one platform layer under your application's `E`:
 
-```rust,ignore
+```rust
+# use id_effect::Layer;
+# use id_effect_platform::command::TokioProcessRuntimeProvider;
+# use id_effect_platform::fs::LiveFileSystemProvider;
+# use id_effect_platform::http::ReqwestHttpClientProvider;
+# struct AppError;
 let platform: Layer<_, AppError> = LiveFileSystemProvider::layer()
     .merge(ReqwestHttpClientProvider::layer())
     .merge(TokioProcessRuntimeProvider::layer());
@@ -41,26 +46,45 @@ let platform: Layer<_, AppError> = LiveFileSystemProvider::layer()
 `execute` is generic over any `R` that contains `HttpClientService`. When the effect is fed to
 `provide_layer`, name `R` (from `examples/010_platform_http_get.rs`):
 
-```rust,ignore
+```rust
 use id_effect::{Cause, Exit};
 use id_effect_platform::http::{HttpClientEnv, HttpRequest, ReqwestHttpClientProvider, execute};
 use id_effect_tokio::TokioRuntime;
+# async fn get_example() -> Result<(), Box<dyn std::error::Error>> {
 
 let program = execute::<HttpClientEnv, _>(HttpRequest::get("https://example.com"))
     .provide_layer(ReqwestHttpClientProvider::layer());
 match TokioRuntime::current()?.run(program).await {
     Exit::Success(res) => println!("status={} bytes={}", res.status, res.body.len()),
-    Exit::Failure(Cause::Fail(e)) => return Err(e),
+    Exit::Failure(Cause::Fail(e)) => return Err(e.into()),
     Exit::Failure(c) => panic!("run failed: {c:?}"),
 }
+# Ok(())
+# }
 ```
 
 A test swaps in a canned client and runs anywhere, `block_on` included:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, fail, succeed};
+# use id_effect_platform::error::HttpError;
+# use id_effect_platform::http::{
+#     HttpClient, HttpRequest, HttpResponse, StreamingHttpResponse, execute, http_client_env,
+# };
+# struct Canned;
+# impl HttpClient for Canned {
+#     fn execute(&self, _req: HttpRequest) -> Effect<HttpResponse, HttpError> {
+#         succeed(HttpResponse { status: 200, headers: vec![], body: b"ok".to_vec() })
+#     }
+#     fn execute_stream(&self, _req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
+#         fail(HttpError::InvalidRequest("not canned".into()))
+#     }
+# }
+# let url = "https://example.com";
 let exit = execute(HttpRequest::get(url))
     .provide_all(http_client_env(Canned))
     .block_on();
+# assert!(matches!(exit, Exit::Success(ref r) if r.status == 200));
 ```
 
 The live implementations need a Tokio runtime **with its IO driver** (see

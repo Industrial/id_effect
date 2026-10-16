@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use super::queue::{Queue, QueueError};
 use super::waiters::lock;
-use crate::kernel::{Effect, from_async};
+use crate::kernel::{Effect, from_async, succeed, suspend};
 
 type Ingest<In, Out> = Arc<dyn Fn(In) -> Vec<Out> + Send + Sync>;
 type Emit<Out> = Arc<dyn Fn(Out) -> Vec<Out> + Send + Sync>;
@@ -90,6 +90,9 @@ impl<Out: Send + 'static, In: Send + 'static> Channel<Out, In> {
 
   /// Writes one element (suspending while a bounded queue is full). After
   /// [`shutdown`](Self::shutdown) the element is dropped.
+  ///
+  /// A write that fits is one synchronous step; only a write to a full bounded queue becomes an
+  /// async step.
   pub fn write<E, R>(&self, value: In) -> Effect<(), E, R>
   where
     E: Send + 'static,
@@ -97,38 +100,80 @@ impl<Out: Send + 'static, In: Send + 'static> Channel<Out, In> {
   {
     let queue = self.queue.clone();
     let ingest = Arc::clone(&self.ingest);
-    from_async(move || async move {
-      for out in ingest(value) {
-        let _ = queue.offer_future(out).await;
+    suspend(move || {
+      let mut outs = ingest(value).into_iter();
+      while let Some(out) = outs.next() {
+        if let Err(out) = queue.put_now(out) {
+          let rest: Vec<Out> = std::iter::once(out).chain(outs).collect();
+          return from_async(move || async move {
+            for out in rest {
+              let _ = queue.offer_future(out).await;
+            }
+            Ok(())
+          });
+        }
       }
-      Ok(())
+      succeed(())
     })
+  }
+
+  /// The first element of `wire`'s read-side expansion; the rest is buffered for later reads.
+  fn expand(&self, wire: Out) -> Option<Out> {
+    let mut out: VecDeque<Out> = (self.emit)(wire).into();
+    let first = out.pop_front()?;
+    if !out.is_empty() {
+      lock(&self.pending).extend(out);
+    }
+    Some(first)
   }
 
   /// Reads the next element, suspending while none is available; `None` once the queue is shut
   /// down and drained.
+  ///
+  /// A read with an element available is one synchronous step; only a read of an empty open
+  /// channel becomes an async step.
   pub fn read<E, R>(&self) -> Effect<Option<Out>, E, R>
   where
     E: Send + 'static,
     R: Send + Sync + 'static,
   {
     let ch = self.clone();
-    from_async(move || async move {
+    suspend(move || {
       loop {
         if let Some(v) = lock(&ch.pending).pop_front() {
+          return succeed(Some(v));
+        }
+        match ch.queue.pop_now() {
+          Ok(w) => {
+            if let Some(first) = ch.expand(w) {
+              return succeed(Some(first));
+            }
+          }
+          Err(true) => return succeed(lock(&ch.pending).pop_front()),
+          Err(false) => return ch.read_async(),
+        }
+      }
+    })
+  }
+
+  /// [`read`](Self::read) as an async step, waiting on the queue.
+  fn read_async<E, R>(self) -> Effect<Option<Out>, E, R>
+  where
+    E: Send + 'static,
+    R: Send + Sync + 'static,
+  {
+    from_async(move || async move {
+      loop {
+        if let Some(v) = lock(&self.pending).pop_front() {
           return Ok(Some(v));
         }
-        match ch.queue.take_future(1, 1).await {
-          Ok(mut wire) => {
-            let Some(w) = wire.pop() else { continue };
-            let mut out: VecDeque<Out> = (ch.emit)(w).into();
-            let Some(first) = out.pop_front() else {
-              continue;
-            };
-            lock(&ch.pending).extend(out);
-            return Ok(Some(first));
+        match self.queue.take_one_future().await {
+          Ok(w) => {
+            if let Some(first) = self.expand(w) {
+              return Ok(Some(first));
+            }
           }
-          Err(QueueError::Disconnected) => return Ok(lock(&ch.pending).pop_front()),
+          Err(QueueError::Disconnected) => return Ok(lock(&self.pending).pop_front()),
         }
       }
     })

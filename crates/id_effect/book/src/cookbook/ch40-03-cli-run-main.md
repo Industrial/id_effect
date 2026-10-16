@@ -16,7 +16,18 @@ environment, testable logic, and correct exit codes, without an async `main` or 
 The program names its capabilities in `R`, so it never knows where its configuration or output
 goes:
 
-```rust,ignore
+```rust,no_run
+# use std::process::ExitCode;
+# #[derive(Debug)] pub enum AppError { Config(id_effect_config::ConfigError), TooManyGreetings(i64) }
+# impl From<id_effect_config::ConfigError> for AppError { fn from(e: id_effect_config::ConfigError) -> Self { AppError::Config(e) } }
+# impl std::fmt::Display for AppError {
+#   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{self:?}") }
+# }
+# #[derive(clap::Parser)]
+# struct Cli { name: String }
+# use clap::Parser as _;
+# struct Stdout;
+# impl Console for Stdout { fn line(&self, text: String) { println!("{text}") } }
 use std::sync::Arc;
 use id_effect::{Effect, HCons, HNil, fail, need};
 use id_effect_cli::{RunMainConfig, run_main};
@@ -64,7 +75,35 @@ under `tracing_hook()`, so its `with_span`s show up in `snapshot_tracing()`.
 Tests use the same `edge_env` with a `MapConfigProvider` and a recording console, then check the
 exit code mapping directly:
 
-```rust,ignore
+```rust
+# use std::process::ExitCode;
+# use std::sync::{Arc, Mutex};
+# use id_effect::{Effect, Exit, HCons, HNil, fail, need};
+# use id_effect_cli::exit_code_for_result;
+# use id_effect_config::{Config, ConfigProvider, ConfigProviderService, MapConfigProvider};
+# #[derive(Debug)] pub enum AppError { Config(id_effect_config::ConfigError), TooManyGreetings(i64) }
+# impl From<id_effect_config::ConfigError> for AppError { fn from(e: id_effect_config::ConfigError) -> Self { AppError::Config(e) } }
+# pub trait Console: Send + Sync { fn line(&self, text: String); }
+# #[derive(Clone)] pub struct ConsoleService(pub Arc<dyn Console>);
+# pub type AppEnv = HCons<ConfigProviderService, HCons<ConsoleService, HNil>>;
+# fn greet(name: String) -> Effect<(), AppError, AppEnv> {
+#   Config::integer("GREET_TIMES")
+#     .with_default(1)
+#     .run::<i64, AppError, AppEnv, _>()
+#     .flat_map(move |times| {
+#       if !(1..=3).contains(&times) {
+#         return fail(AppError::TooManyGreetings(times));
+#       }
+#       need::<ConsoleService>().map(move |console| {
+#         for _ in 0..times { console.0.line(format!("hello, {name}")); }
+#       })
+#     })
+# }
+# fn edge_env(config: impl ConfigProvider + 'static, console: Arc<dyn Console>) -> AppEnv {
+#   HCons::new(ConfigProviderService(Arc::new(config)), HCons::new(ConsoleService(console), HNil))
+# }
+# #[derive(Default)] struct Recorder(Mutex<Vec<String>>);
+# impl Console for Recorder { fn line(&self, text: String) { self.0.lock().unwrap().push(text) } }
 let recorder = Arc::new(Recorder::default());
 let env = edge_env(MapConfigProvider::from_pairs([("GREET_TIMES", "9")]), recorder.clone());
 let result = match greet("Ada".into()).provide_env(env).block_on() {

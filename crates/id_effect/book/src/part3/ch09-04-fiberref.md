@@ -4,7 +4,7 @@
 
 ## Creating a FiberRef
 
-```rust,ignore
+```rust
 use id_effect::FiberRef;
 
 // A fiber-local trace id, "none" in every fiber until it is set.
@@ -36,10 +36,13 @@ assert_eq!(scoped.block_on(), Exit::succeed(7));
 
 A child forked with `fork`, `fork_all` (and so `all`, `zip_par`, …) or `Scope::fork_in` starts with a **copy of its parent's values at fork time**. After that, each side's `set` is invisible to the other:
 
-```rust,ignore
+```rust
+# use id_effect::{Exit, FiberRef};
+# let trace_id: FiberRef<String> = FiberRef::new("none".to_string());
 let program = trace_id.set("req-123".into())
     .then(trace_id.get().fork())          // the child sees "req-123"
     .flat_map(|h| h.join());
+# assert_eq!(program.block_on(), Exit::succeed("req-123".to_string()));
 ```
 
 `fork_daemon` inherits the same copy (Effect.ts parity). Only a fiber started from outside any fiber (`Runtime::fork`, a run edge such as `block_on`) starts from the initial values.

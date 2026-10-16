@@ -11,7 +11,7 @@ faster than the consumer pulls, something has to give: block the producer, drop 
 `stream_from_channel(capacity)` returns a `Stream` and a `StreamSender` backed by a queue of at
 most `capacity` chunks:
 
-```rust,ignore
+```rust
 use id_effect::{Chunk, Effect, Exit, Never, StreamChannelFull, end_stream, send_chunk,
   stream_from_channel};
 
@@ -42,12 +42,16 @@ picks another one:
 | `DropOldest` | the oldest queued chunk is evicted to make room |
 | `Fail` | `send_chunk` fails with `StreamChannelFull` |
 
-```rust,ignore
+```rust
 use id_effect::{BackpressurePolicy, stream_from_channel_with_policy};
+# #[derive(Clone, Debug)]
+# struct Reading(f64);
 
 // Keep the freshest data; a slow consumer never stalls the producer.
 let (stream, sender) =
   stream_from_channel_with_policy::<Reading, (), _>(1024, BackpressurePolicy::DropOldest);
+# let _: id_effect::Stream<Reading, ()> = stream;
+# drop(sender);
 ```
 
 `backpressure_decision(policy, queue_len, capacity)` is the pure decision function behind the
@@ -69,8 +73,12 @@ Effectful steps are sequential by default (`map_effect`). Bound concurrency expl
 fiber, and the output keeps stream order. Since the next chunk is pulled only when the current one
 is done, this is backpressure too.
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Stream, succeed};
+# fn fetch_record(id: u32) -> Effect<String, ()> { succeed(format!("record {id}")) }
+# let ids = Stream::<u32, ()>::from_iterable(1..=3);
 let fetched = ids.map_effect_par(4, |id| fetch_record(id)); // at most 4 in flight
+# assert!(matches!(fetched.run_collect().block_on(), Exit::Success(v) if v == ["record 1", "record 2", "record 3"]));
 ```
 
 Other bounded buffers: `Sink::to_queue(queue)` suspends on a full bounded queue, and `broadcast`

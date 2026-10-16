@@ -1,0 +1,67 @@
+{
+	"schema": "id_effect compile-time v1",
+	"release": "0.8",
+	"template": "examples/cli-minimal",
+	"command": "bash scripts/compile-time.sh --runs 5",
+	"method": "docs/benchmarks/README.md#compile-time",
+	"measured_at": "2026-10-16",
+	"source": "954368f plus the uncommitted 0.8 working tree (E1.10 cli kit included)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor (32 threads)",
+		"memory_gib": 62,
+		"governor": "performance",
+		"kernel": "Linux 6.18.55",
+		"filesystem": "btrfs",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"cargo": "cargo 1.99.0-nightly (59800466c 2026-07-07)",
+		"linker": "toolchain default (gcc 15.2.0 driver); no mold, no sccache",
+		"profile": "dev",
+		"load": "not idle: other agents' builds and three pinned python3 processes; 1-min load average 9-18 on 32 threads during the runs"
+	},
+	"result": {
+		"crate": "cli_minimal",
+		"cold_s": 10.157,
+		"incremental_s": 0.877,
+		"boot_s": 0.004,
+		"runs": 5,
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"wrapper": "none"
+	},
+	"samples_s": {
+		"cold": [11.211, 9.141, 10.157, 12.236, 9.003],
+		"incremental": [2.832, 0.819, 2.99, 0.877, 0.754],
+		"boot": [0.004, 0.004, 0.004, 0.004, 0.004]
+	},
+	"earlier_session": {
+		"note": "same machine about 10 minutes earlier, --runs 3, 1-min load 14-16",
+		"result": {
+			"crate": "cli_minimal",
+			"cold_s": 9.039,
+			"incremental_s": 0.702,
+			"boot_s": 0.004,
+			"runs": 3,
+			"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+			"wrapper": "none"
+		},
+		"samples_s": {
+			"cold": [10.29, 9.039, 8.861],
+			"incremental": [0.702, 0.728, 0.685],
+			"boot": [0.004, 0.004, 0.004]
+		}
+	},
+	"thresholds": {
+		"dx.compile#2 cold build/boot < 60 s": {
+			"value_s": 10.161,
+			"met": true
+		},
+		"dx.compile#1 rebuild+restart after a one-line change < 2 s": {
+			"value_s": 0.881,
+			"met": true,
+			"caveat": "median only: 2 of 5 incremental samples were 2.8-3.0 s under load"
+		},
+		"dx.compile#6 dev boot < 5 s": {
+			"value_s": 0.004,
+			"met": true
+		}
+	}
+}

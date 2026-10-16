@@ -6,13 +6,23 @@
 
 Sequential `effect!` short-circuits on the first failure, and so do the parallel combinators (`zip_par`, `all`, `for_each_par`): the first failure interrupts the siblings still running.
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, effect, fail, succeed};
+# struct Input { name: String, email: String, age: u32 }
+# struct Person { name: String, email: String, age: u32 }
+# fn validate_name(n: &str) -> Effect<String, String> { fail(format!("bad name {n:?}")) }
+# fn validate_email(e: &str) -> Effect<String, String> { fail(format!("bad email {e:?}")) }
+# fn validate_age(a: u32) -> Effect<u32, String> { succeed(a) }
+# let input = Input { name: String::new(), email: String::new(), age: 0 };
+# let person: Effect<Person, String> =
 effect!({
     let name = ~validate_name(&input.name);    // fails here →
     let email = ~validate_email(&input.email); // never runs
     let age = ~validate_age(input.age);        // never runs
     Person { name, email, age }
 })
+# ;
+# assert_eq!(person.block_on().into_result().err().and_then(|c| c.fail_option()), Some("bad name \"\"".to_owned()));
 ```
 
 For form validation or batch imports you want to report every error, not just the first.

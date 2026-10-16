@@ -1,0 +1,12 @@
+# `id-effect doctor` fixture (tests/doctor.rs): an app whose lock holds two id_effect versions,
+# because id_effect_axum was left on 0.6 while the core crate moved to 0.7. Not built.
+[package]
+name = "mixed-versions"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[dependencies]
+id_effect = "0.7.0"
+id_effect_axum = "0.6.2"

@@ -9,12 +9,18 @@ Stream<A, E, R>  → produces zero or more A values over time (or fails)
 
 ## Concrete Examples
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Stream, caps};
+# struct User;
+# struct DbError;
+# struct Db;
+# trait UserRepo {
 // Effect: get one user
 fn get_user(id: u64) -> Effect<User, DbError, caps!(Db)>;
 
 // Stream: all users, pulled page by page
 fn all_users() -> Stream<User, DbError, caps!(Db)>;
+# }
 ```
 
 If you fetch 10 million rows into a `Vec` and return it as an `Effect`, you'll run out of memory.
@@ -22,7 +28,7 @@ A `Stream` pulls and processes them incrementally.
 
 ## Building Streams
 
-```rust,ignore
+```rust
 use id_effect::{Exit, Stream, succeed};
 
 Stream::<i64, ()>::range(1, 5);                     // 1, 2, 3, 4
@@ -40,7 +46,8 @@ effect per pull (`Ok(None)` ends the stream), `unfold_effect` threads state thro
 
 ## Transforming Streams
 
-```rust,ignore
+```rust
+# use id_effect::{Exit, Stream};
 let s = Stream::<i64, ()>::range(1, 10)
   .map(|n| n * 2)
   .filter(|n: &i64| *n % 3 == 0)
@@ -57,7 +64,8 @@ whole stream into memory.
 `take(n)` on an infinite source stops pulling after `n` elements, so the source never runs ahead
 of the consumer:
 
-```rust,ignore
+```rust
+# use id_effect::{Exit, Stream};
 let first = Stream::<u64, ()>::unfold(0, |n| Some((n, n + 1))).take(3).run_collect();
 assert_eq!(first.block_on(), Exit::succeed(vec![0, 1, 2]));
 ```
@@ -66,9 +74,18 @@ assert_eq!(first.block_on(), Exit::succeed(vec![0, 1, 2]));
 
 A consumer turns `Stream<A, E, R>` into `Effect<B, E, R>`:
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Stream, caps};
+# #[derive(Debug)]
+# struct User;
+# #[derive(Debug)]
+# struct DbError;
+# struct Db;
+# fn all_users() -> Stream<User, DbError, caps!(Db)> { Stream::from_iterable([User, User]) }
 let all: Effect<Vec<User>, DbError, caps!(Db)> = all_users().run_collect();
 let count: Effect<usize, DbError, caps!(Db)> = all_users().run_fold(0, |n, _| n + 1);
+# assert_eq!(all.provide(Db).block_on().into_result().map(|users| users.len()).ok(), Some(2));
+# assert!(matches!(count.provide(Db).block_on(), Exit::Success(2)));
 ```
 
 `run_collect` accumulates into a `Vec`; use it only when the result fits in memory. Prefer
@@ -76,10 +93,19 @@ let count: Effect<usize, DbError, caps!(Db)> = all_users().run_fold(0, |n, _| n 
 
 ## Effect to Stream and back
 
-```rust,ignore
+```rust
+# use id_effect::{Effect, Exit, Stream, caps, succeed};
+# #[derive(Debug)]
+# struct User;
+# #[derive(Debug)]
+# struct DbError;
+# struct Db;
+# fn get_user(_id: u64) -> Effect<User, DbError, caps!(Db)> { succeed(User) }
+# fn all_users() -> Stream<User, DbError, caps!(Db)> { Stream::from_iterable([User, User]) }
 let one: Stream<User, DbError, caps!(Db)> =
   Stream::from_effect(get_user(1).map(|u| vec![u]));
 let combined = one.chain(all_users());
+# assert!(matches!(combined.run_fold(0, |n, _| n + 1).provide(Db).block_on(), Exit::Success(3)));
 ```
 
 ## The Rule

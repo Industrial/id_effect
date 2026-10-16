@@ -4,6 +4,7 @@
 dependency-free `serde_json::Value`: it can hold any JSON-like shape, but you can't do anything
 useful with it until you run it through a schema.
 
+<!-- ignore: excerpt of the id_effect::schema::Unknown definition, not a standalone program -->
 ```rust,ignore
 pub enum Unknown {
   Null,
@@ -20,7 +21,7 @@ pub enum Unknown {
 
 `Unknown` is a plain enum, so you build values with its variants:
 
-```rust,ignore
+```rust
 use std::collections::BTreeMap;
 use id_effect::schema::Unknown;
 
@@ -34,11 +35,13 @@ let tags = Unknown::Array(vec![Unknown::String("admin".into()), Unknown::Null]);
 Config trees, form posts and test fixtures are usually built this way. For JSON, enable the
 `schema-serde` feature and convert a `serde_json::Value`:
 
-```rust,ignore
+```rust
 use id_effect::schema::{Unknown, unknown_from_serde_json};
 
 let value: serde_json::Value = serde_json::from_str(r#"{"name":"Alice","age":30}"#)?;
 let u: Unknown = unknown_from_serde_json(value);
+# assert!(matches!(u, Unknown::Object(ref m) if m.get("age") == Some(&Unknown::I64(30))));
+# Ok::<(), serde_json::Error>(())
 ```
 
 Integers become `Unknown::I64`, other numbers `Unknown::F64`, objects a `BTreeMap` (so encoding
@@ -54,7 +57,7 @@ Every `Schema` has two decoders:
 - `schema.decode_unknown(&u)` takes an `&Unknown`, checks its shape and reports mismatches with
   a path.
 
-```rust,ignore
+```rust
 use id_effect::EffectData;
 use id_effect::schema::{Unknown, string};
 
@@ -74,9 +77,14 @@ assert_eq!(s.decode_unknown(&Unknown::String("hi".into())), Ok("hi".to_owned()))
 file) convert incoming data to `Unknown`, then decode it with a schema. Decoding is synchronous;
 lift the result into the effect world with `succeed` / `fail`:
 
-```rust,ignore
+```rust
 use id_effect::{Effect, fail, succeed};
 use id_effect::schema::{ParseError, Unknown};
+# use id_effect::schema::{Schema, string};
+# type CreateUser = String;
+# #[derive(Debug)]
+# enum ApiError { Validation(ParseError) }
+# fn create_user_schema() -> Schema<CreateUser, String, ()> { string() }
 
 fn parse_request(raw: &Unknown) -> Effect<CreateUser, ApiError> {
   match create_user_schema().decode_unknown(raw) {
@@ -84,6 +92,8 @@ fn parse_request(raw: &Unknown) -> Effect<CreateUser, ApiError> {
     Err(e) => fail(ApiError::Validation(e)),
   }
 }
+# assert!(parse_request(&Unknown::String("alice".into())).block_on().into_result().is_ok());
+# assert!(parse_request(&Unknown::Null).block_on().into_result().is_err());
 ```
 
 Nothing beyond the parse boundary sees `Unknown`. Domain functions only accept validated types.

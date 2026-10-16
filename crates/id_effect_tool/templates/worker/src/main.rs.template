@@ -1,0 +1,21 @@
+//! {{name}}: run the cron jobs until Ctrl-C; in-flight runs are interrupted, then exit 130.
+
+use std::process::ExitCode;
+
+use id_effect_kit::prelude::{RunMainConfig, hlist, run_main};
+
+use {{crate_name}}::{Stats, program, registry};
+
+fn main() -> ExitCode {
+    let jobs = match registry(&Stats::default()) {
+        Ok(jobs) => jobs,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    for name in jobs.scheduler().job_names() {
+        eprintln!("scheduled: {name}");
+    }
+    run_main(program(&jobs), hlist![], RunMainConfig::with_tracing())
+}

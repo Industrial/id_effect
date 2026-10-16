@@ -8,9 +8,17 @@ transactions read and write.
 `TRef::make(value)` is itself a transaction (`Stm<TRef<T>, ()>`). Create long-lived cells once by
 committing it, then share the handle:
 
-```rust,ignore
+```rust
 use id_effect_fp::{TRef, commit};
 // `run` is the Exit-to-Result helper from the chapter introduction.
+# use id_effect::{Cause, Effect, Exit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
 
 let counter: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
 let total: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
@@ -38,7 +46,18 @@ own, name it with a turbofish (`read_stm::<()>()`).
 
 Sequence operations with `flat_map`; the whole chain commits atomically:
 
-```rust,ignore
+```rust
+# use id_effect::{Cause, Effect, Exit};
+# use id_effect_fp::{Stm, TRef, commit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
+# let counter: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
+# let total: TRef<i32> = run(commit(TRef::make(0_i32))).expect("cell");
 /// Increment `counter` and add its old value to `total`, atomically.
 fn bump(counter: &TRef<i32>, total: &TRef<i32>) -> Stm<(), ()> {
   let (counter, total) = (counter.clone(), total.clone());
@@ -52,7 +71,12 @@ fn bump(counter: &TRef<i32>, total: &TRef<i32>) -> Stm<(), ()> {
 }
 
 // modify_stm returns something computed from the old value (here: the previous count).
+# for _ in 0..3 {
+#     run(commit(bump(&counter, &total))).expect("bump");
+# }
 let previous = run(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10))));
+# assert_eq!(previous, Ok(3));
+# assert_eq!(run(commit(total.read_stm::<()>())), Ok(3));
 ```
 
 ## Sharing TRefs
@@ -60,7 +84,16 @@ let previous = run(commit(counter.modify_stm::<_, (), _>(|n| (n, n * 10))));
 `TRef` is `Clone + Send + Sync`, and a clone is another handle to the same cell. Clone it into
 each thread or fiber; no `Arc<Mutex<_>>` is needed:
 
-```rust,ignore
+```rust
+# use id_effect::{Cause, Effect, Exit};
+# use id_effect_fp::{TRef, commit};
+# fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
+#   match eff.block_on() {
+#     Exit::Success(a) => Ok(a),
+#     Exit::Failure(Cause::Fail(e)) => Err(e),
+#     Exit::Failure(_) => panic!("effect died or was interrupted"),
+#   }
+# }
 let hits = run(commit(TRef::make(0_u32))).expect("cell");
 let handles: Vec<_> = (0..2).map(|_| {
   let hits = hits.clone();

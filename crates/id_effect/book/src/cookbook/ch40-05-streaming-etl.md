@@ -9,7 +9,7 @@ that buffers everything.
 upstream for at most one chunk at a time, `take(n)` stops pulling once it has `n` items, and
 windows hold at most one partial window.
 
-```rust,ignore
+```rust
 use id_effect::Stream;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,8 +66,23 @@ pipeline finishes; a stage that drains its whole input first (for example
 `Stream::from_effect(s.run_collect())`) never returns, so the test hangs instead of passing. Run
 it under your test runner's timeout (nextest's slow-test timeout, say) to turn that into a failure:
 
-```rust,ignore
-#[test]
+```rust
+# use id_effect::Stream;
+# #[derive(Clone, Debug, PartialEq)]
+# struct Reading { seq: u64, value: u64 }
+# #[derive(Clone, Debug, PartialEq)]
+# struct WindowStat { first_seq: u64, count: usize, max: u64 }
+# fn transform(readings: Stream<Reading, ()>) -> Stream<WindowStat, ()> {
+#   readings
+#     .filter(|r: &Reading| r.value < 100)
+#     .tumbling(10)
+#     .map(|w: Vec<Reading>| WindowStat {
+#       first_seq: w[0].seq,
+#       count: w.len(),
+#       max: w.iter().map(|r| r.value).max().unwrap_or(0),
+#     })
+# }
+// In a #[cfg(test)] module, under #[test]:
 fn transform_stops_an_infinite_source_after_the_windows_it_needs() {
   let source = Stream::<u64, ()>::unfold(0_u64, |seq| Some((seq, seq + 1)));
   let stats = transform(source.map(|seq| Reading { seq, value: seq % 120 }))
@@ -79,6 +94,7 @@ fn transform_stops_an_infinite_source_after_the_windows_it_needs() {
   assert_eq!(stats.len(), 100);
   assert!(stats.iter().all(|w| w.count == 10 && w.max < 100));
 }
+# transform_stops_an_infinite_source_after_the_windows_it_needs();
 ```
 
 To bound the number of in-flight items exactly, wrap the source in `Stream::from_pull` with a

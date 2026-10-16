@@ -5,7 +5,7 @@ error[E0277]: the environment `HCons<Logger, HNil>` does not contain every capab
    |              ^^^^^^^^^^^ cannot narrow `HCons<Logger, HNil>` to `HCons<Db, HNil>`
    |
    = help: the trait `Embed<HCons<Db, HNil>, HCons<There<_>, HNil>>` is not implemented for `HCons<Logger, HNil>`
-   = note: a `~` bind, `.narrow()` or `.provide_env(..)` needs every capability of `HCons<Db, HNil>` in `HCons<Logger, HNil>`; add the missing ones to the caller's `caps!(..)`
+   = note: every capability of `HCons<Db, HNil>` must be in `HCons<Logger, HNil>`; add the missing ones to the caller's `caps!(..)` (for a `~` bind, a `~(..)` branch or `.narrow()`), to the `hlist![..]` (for `.provide_env(..)`) or to the layer's output (for `.provide_layer(..)` / `.provide_to(..)`)
 help: the trait `Bindable<R, Is>` is conditionally implemented for `Effect<B, E2, Sub>`
   --> src/kernel/bind.rs
    |

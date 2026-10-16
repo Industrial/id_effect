@@ -24,7 +24,7 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 - **Automatic OpenAPI** generation (may build on JSON Schema export later).
 - **Proof** of categorical laws in a proof assistant—laws are **test contracts** per [`TESTING.md`](../../../../TESTING.md) (§Laws-as-tests / algebra patterns in parent SPEC).
 
-**Delivery (`@TESTING.md`):** Non-goals must be **asserted in tests** that **do not** claim unsupported behavior—e.g. tests for `json_schema_export` skip or expect `UnsupportedTransform` variants rather than weakening coverage gates.
+**Delivery (`@TESTING.md`):** Non-goals must be **asserted in tests** that **do not** claim unsupported behavior—e.g. tests for `json_schema_export` assert that opaque schemas export as `{}` rather than weakening coverage gates.
 
 ---
 
@@ -203,13 +203,13 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 | 7.2 | **Partial** | [`suspend`](./extra.rs) implemented; **no** schema step that runs [`Effect`](../../kernel/effect.rs) internally. |
 | 7.3 | **Partial** | [`HasSchema`](./has_schema.rs) implemented; **derive** deferred to `effect-proc-macro`. |
 | 7.4 | **Open** | [`filter`](./parse.rs) / refinements; **RefinedBrand** + schema not wired. |
-| 7.5 | **Partial** | Crate feature **`schema-serde`**: [`serde_bridge`](./serde_bridge.rs), [`json_schema_export`](./json_schema_export.rs) primitives only. |
+| 7.5 | **Partial** | Crate feature **`schema-serde`**: [`serde_bridge`](./serde_bridge.rs) (both directions), [`json_schema_export`](./json_schema_export.rs) full 2020-12 export from [`SchemaAst`](./ast.rs) (0.8). |
 
 ### 7.1 Phase 1 — Kernel completeness (@TESTING.md)
 
 - **Generalize products:** **Done** through **arity 4**; **derive** for arbitrary structs **not done**.
 - **Extend `Unknown` and primitives:** **Done** (`bool_`, `f64`, `F64`, [`record`](./extra.rs)).
-- **Errors:** [`ParseErrors`](./parse_errors.rs) for lists of [`ParseError`](./parse.rs); optional per-field **codes** still future work.
+- **Errors:** [`ParseErrors`](./parse_errors.rs) for lists of [`ParseError`](./parse.rs), returned by `Schema::decode_unknown_all` (one pass, every field / element issue; 0.8); optional per-field **codes** still future work.
 
 **Delivery (`@TESTING.md`):** Phase 1 exit = **all new combinators** covered per §Module Test Trees; **coverage** not regressed vs baseline (§Coverage Goals).
 
@@ -229,7 +229,7 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 
 ### 7.4 Phase 4 — Refinements and brands (@TESTING.md)
 
-- **Composable refinements** with stable **error messages** and optional **JSON Schema** mapping.
+- **Composable refinements** with stable **error messages** and optional **JSON Schema** mapping: **done** for the built-in [`validators`](./validators.rs) (0.8); arbitrary `filter` predicates stay opaque.
 - **`RefinedBrand` + `Schema`:** decode validates → construct brand.
 
 **Delivery (`@TESTING.md`):** **Negative tests** for every rejection path (§Mutation Coverage Checklist).
@@ -237,7 +237,7 @@ This document specifies the **Schema**, **Data**, and related **structural valid
 ### 7.5 Phase 5 — Interop and Rust-only extensions (@TESTING.md)
 
 - **`serde_json::Value` ↔ `Unknown`:** **Done** with feature **`schema-serde`** ([`serde_bridge`](./serde_bridge.rs)); `effect-axum` / `effect-reqwest` delegate to it.
-- **JSON Schema export:** **Primitive fragments** ([`json_schema_export`](./json_schema_export.rs)) only.
+- **JSON Schema export:** **Done** (0.8) — every built-in combinator records a [`SchemaAst`](./ast.rs); [`json_schema_export`](./json_schema_export.rs) renders draft 2020-12 with constraints, annotations, and `$defs`/`$ref` for `suspend_named`. `Schema::make` codecs are opaque (`{}`) unless given `with_ast`; `derive(Schema)` attaches a struct AST (nested `HasSchema` fields via [`ast_ref`](./has_schema.rs) → `$defs`/`$ref`). `validators::regex` (feature `schema-regex`) validates with the `regex` crate and exports the same `pattern`.
 - **Extensions:** **`no_std`** subset discussion, **const** metadata where feasible.
 
 **Delivery (`@TESTING.md`):** **Feature-gated** tests (`#[cfg(feature = "…")]`) with **documented** CI matrix; **§Integration Tests** for large JSON files if any.

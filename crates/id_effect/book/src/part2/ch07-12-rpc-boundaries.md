@@ -49,6 +49,7 @@ Each handler's effect runs as one request fiber (`id_effect_axum::run_with_env`)
 `RpcError` becomes a failure envelope; a defect or interrupt becomes `RpcError::internal` (HTTP 500,
 the panic message is not sent).
 
+<!-- ignore: id_effect_rpc is an unpublished labs crate outside the workspace; fragment of example 010_json_greet -->
 ```rust,ignore
 use id_effect::{DynEnv, succeed};
 use id_effect_platform::http::{ReqwestHttpClient, http_client_env};
