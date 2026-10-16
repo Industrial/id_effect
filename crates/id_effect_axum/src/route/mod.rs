@@ -2,12 +2,17 @@
 //! [`HasSchema`] types, and keep every declaration in a [`RouteRegistry`].
 //!
 //! [`Route::get`] (and siblings) start a builder; [`Route::path`], [`Route::query`],
-//! [`Route::headers`] and [`Route::body`] each name a [`HasSchema`] type whose decoded value the
-//! handler receives in [`Input`]; [`Route::response`] documents a response. [`Route::handler`]
-//! takes an ordinary effect handler — `Fn(&mut S, Input<…>) -> Effect<A, E, S>` — run exactly like
-//! the [`crate::routing`] helpers (one request fiber on the global [`crate::EffectExecutor`],
-//! exit mapped by [`crate::exit_response`]). Input that does not decode never reaches the handler:
-//! it is answered with a [`RouteRejection`] (**422**, every issue at once).
+//! [`Route::headers`] and [`Route::body`] (or [`Route::form`]) each name a [`HasSchema`] type whose
+//! decoded value the handler receives in [`Input`]; [`Route::response`] documents a response.
+//! [`Route::handler`] takes an ordinary effect handler — `Fn(&mut S, Input<…>) -> Effect<A, E, S>` —
+//! run exactly like the [`crate::routing`] helpers (one request fiber on the global
+//! [`crate::EffectExecutor`], exit mapped by [`crate::exit_response`]). Input that does not decode
+//! never reaches the handler: it is answered with an RFC 9457 [`Problem`]
+//! (`application/problem+json`, **422** — **400** for a malformed JSON body) listing every
+//! [`Issue`] of every part at once, each with a JSON Pointer.
+//!
+//! Plain Axum handlers get the same decoding per part from the [`extract`] extractors
+//! ([`ValidPath`], [`ValidQuery`], [`ValidHeaders`], [`ValidJson`], [`ValidForm`]).
 //!
 //! A [`Router`] wraps an [`axum::Router`] and records each route's [`RouteInfo`] (method, path
 //! template, [`SchemaRef`] per part) for OpenAPI generation and route listings. The existing
@@ -52,6 +57,8 @@
 //! ```
 
 mod decode;
+pub mod extract;
+pub mod problem;
 mod registry;
 
 use std::future::Future;
@@ -66,8 +73,10 @@ use axum::routing::{MethodFilter, MethodRouter};
 use id_effect::Effect;
 use id_effect::schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
 
-pub use decode::{Issue, Location, RouteRejection};
-pub use registry::{ResponseInfo, RouteInfo, RouteRegistry, SchemaRef};
+pub use decode::RouteRejection;
+pub use extract::{ValidForm, ValidHeaders, ValidJson, ValidPath, ValidQuery};
+pub use problem::{Issue, Location, PROBLEM_JSON, Problem};
+pub use registry::{BodyKind, ResponseInfo, RouteInfo, RouteRegistry, SchemaRef};
 
 mod sealed {
   pub trait Sealed {}
@@ -168,7 +177,7 @@ pub struct Input<P = (), Q = (), H = (), B = ()> {
   pub query: Q,
   /// Request headers ([`Route::headers`]).
   pub headers: H,
-  /// JSON body ([`Route::body`]).
+  /// Request body ([`Route::body`] or [`Route::form`]).
   pub body: B,
 }
 
@@ -179,6 +188,7 @@ pub(crate) struct Parts<P, Q, H, B> {
   pub(crate) query: Q,
   pub(crate) headers: H,
   pub(crate) body: B,
+  pub(crate) body_kind: BodyKind,
 }
 
 /// Builder for one typed route; finish it with [`Route::handler`].
@@ -202,6 +212,7 @@ impl Route {
         query: Undeclared,
         headers: Undeclared,
         body: Undeclared,
+        body_kind: BodyKind::Json,
       },
       responses: Vec::new(),
     }
@@ -245,6 +256,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
       query,
       headers,
       body,
+      body_kind,
       ..
     } = self.parts;
     Route {
@@ -255,13 +267,14 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         query,
         headers,
         body,
+        body_kind,
       },
       responses: self.responses,
     }
   }
 
   /// Declare the query string as `T` (a struct or record schema; an array field collects
-  /// repeated keys).
+  /// repeated keys and is `[]` when the key is absent, a nullable field is `null` when absent).
   pub fn query<T>(self) -> Route<P, Declared<T>, H, B>
   where
     T: HasSchema + 'static,
@@ -271,6 +284,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
       path,
       headers,
       body,
+      body_kind,
       ..
     } = self.parts;
     Route {
@@ -281,6 +295,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         query: Declared::new(),
         headers,
         body,
+        body_kind,
       },
       responses: self.responses,
     }
@@ -294,7 +309,11 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
     T::A: Send,
   {
     let Parts {
-      path, query, body, ..
+      path,
+      query,
+      body,
+      body_kind,
+      ..
     } = self.parts;
     Route {
       method: self.method,
@@ -304,13 +323,34 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         query,
         headers: Declared::new(),
         body,
+        body_kind,
       },
       responses: self.responses,
     }
   }
 
-  /// Declare the JSON request body as `T`.
+  /// Declare the JSON request body as `T` (the `Content-Type` is not checked; a body that is not
+  /// JSON answers **400**).
   pub fn body<T>(self) -> Route<P, Q, H, Declared<T>>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    self.with_body(BodyKind::Json)
+  }
+
+  /// Declare a form request body as `T`, decoded like [`Route::query`]: the fields of an
+  /// `application/x-www-form-urlencoded` body, or the text fields of a `multipart/form-data` body
+  /// (file fields are skipped). Another content type keeps Axum's `415` rejection.
+  pub fn form<T>(self) -> Route<P, Q, H, Declared<T>>
+  where
+    T: HasSchema + 'static,
+    T::A: Send,
+  {
+    self.with_body(BodyKind::Form)
+  }
+
+  fn with_body<T>(self, body_kind: BodyKind) -> Route<P, Q, H, Declared<T>>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -329,6 +369,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         query,
         headers,
         body: Declared::new(),
+        body_kind,
       },
       responses: self.responses,
     }
@@ -362,14 +403,15 @@ where
     info.query = self.parts.query.schema().cloned();
     info.headers = self.parts.headers.schema().cloned();
     info.body = self.parts.body.schema().cloned();
+    info.body_kind = self.parts.body_kind;
     info.responses = self.responses.clone();
     info
   }
 
   /// Finish the route with an effect handler.
   ///
-  /// Per request the declared parts are decoded (all issues collected; a failure answers the
-  /// [`RouteRejection`] without running the handler), then `f(&mut state, input)` builds the
+  /// Per request the declared parts are decoded (all issues collected; a failure answers a
+  /// [`Problem`] without running the handler), then `f(&mut state, input)` builds the
   /// effect, which runs as one request fiber like the [`crate::routing`] helpers: success → `A`,
   /// typed failure → `E`, defect → `500`, interrupt or saturation → `503`.
   ///

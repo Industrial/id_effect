@@ -1,81 +1,87 @@
-//! Minimal request decoding for typed routes, and the [`RouteRejection`] it answers with.
+//! Request decoding shared by typed routes and the [`extract`](super::extract) extractors, and the
+//! [`RouteRejection`] they answer with.
 //!
-//! Path parameters, query pairs and header values arrive as strings; they are lifted into an
-//! [`Unknown`] object guided by the declared schema's [`SchemaAst`] (an `Integer` field gets
+//! Path parameters, query pairs, form fields and header values arrive as strings; they are lifted
+//! into an [`Unknown`] object guided by the declared schema's [`SchemaAst`] (an `Integer` field gets
 //! [`Unknown::I64`], an `Array` field collects repeated keys, …) and decoded with
 //! [`Schema::decode_unknown_all`](id_effect::schema::Schema::decode_unknown_all), so every issue of
-//! every part is reported at once. The JSON body goes through
+//! every part is reported at once. A JSON body goes through
 //! [`unknown_from_json`](crate::json::unknown_from_json).
 //!
-//! Seam: the `r09-e4-1-extractors-problem` leaf replaces this module with the full extractors
-//! (forms, multipart) and the `application/problem+json` (RFC 9457) error body.
+//! A required struct field that is absent from the string pairs defaults to `[]` when its schema
+//! is an array (no `?tag=` means no tags) and to `null` when it is nullable
+//! ([`schema::optional`](id_effect::schema::optional) decodes it as `None`); any other absent field
+//! is reported as missing.
 
 use std::collections::BTreeMap;
 
-use axum::Json;
+use axum::Form;
 use axum::body::Bytes;
-use axum::extract::{FromRequest, FromRequestParts, Query, RawPathParams, Request};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{FromRequest, FromRequestParts, Multipart, Query, RawPathParams, Request};
+use axum::http::request::Parts as RequestParts;
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use id_effect::schema::{ParseErrors, SchemaAst, SchemaKind, Unknown};
-use serde::Serialize;
 
+use super::problem::{Issue, Location, Problem};
+use super::registry::BodyKind;
 use super::{Input, RoutePart};
 
 /// Nesting limit when forcing [`SchemaKind::Lazy`] nodes during coercion.
 const MAX_LAZY_DEPTH: usize = 8;
 
-/// Where in the request an [`Issue`] was found.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Location {
-  /// A path parameter.
-  Path,
-  /// The query string.
-  Query,
-  /// A request header.
-  Header,
-  /// The JSON body.
-  Body,
+/// Why a typed route or extractor rejected a request.
+#[derive(Debug)]
+pub enum RouteRejection {
+  /// The input did not decode: an `application/problem+json` [`Problem`] listing every
+  /// [`Issue`] — **422**, or **400** when the body is not well-formed.
+  Invalid(Box<Problem>),
+  /// One of Axum's own extractor rejections (body too large, wrong form content type, invalid
+  /// UTF-8 in a path parameter, …), answered as Axum answers it.
+  Extractor(Box<Response>),
 }
 
-/// One decoding failure of a typed route's input.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct Issue {
-  /// Request part that failed.
-  #[serde(rename = "in")]
-  pub location: Location,
-  /// Dot-separated field path within that part (empty = the part itself).
-  pub path: String,
-  /// Human-readable reason.
-  pub message: String,
+impl RouteRejection {
+  /// The problem, when the input did not decode.
+  pub fn problem(&self) -> Option<&Problem> {
+    match self {
+      RouteRejection::Invalid(problem) => Some(problem),
+      RouteRejection::Extractor(_) => None,
+    }
+  }
 }
 
-/// A typed route rejected its input: **422** with every [`Issue`], or **400** when the body is not
-/// JSON at all. The body is `{"errors": [{"in", "path", "message"}, …]}`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RouteRejection {
-  /// Response status.
-  pub status: StatusCode,
-  /// Every failure, in part order (path, query, header, body).
-  pub issues: Vec<Issue>,
-}
-
-#[derive(Serialize)]
-struct RejectionBody<'a> {
-  errors: &'a [Issue],
+impl From<Problem> for RouteRejection {
+  fn from(problem: Problem) -> Self {
+    RouteRejection::Invalid(Box::new(problem))
+  }
 }
 
 impl IntoResponse for RouteRejection {
   fn into_response(self) -> Response {
-    (
-      self.status,
-      Json(RejectionBody {
-        errors: &self.issues,
-      }),
-    )
-      .into_response()
+    match self {
+      RouteRejection::Invalid(problem) => problem.into_response(),
+      RouteRejection::Extractor(response) => *response,
+    }
   }
+}
+
+/// An Axum extractor rejection as a [`RouteRejection::Extractor`].
+pub(crate) fn extractor(rejection: impl IntoResponse) -> RouteRejection {
+  RouteRejection::Extractor(Box::new(rejection.into_response()))
+}
+
+/// The issues of one part, located.
+pub(crate) fn issues(location: Location, errors: ParseErrors) -> impl Iterator<Item = Issue> {
+  errors
+    .issues
+    .into_iter()
+    .map(move |e| Issue::from_parse_error(location, &e))
+}
+
+/// The [`Problem`] for `issues` of a request to `uri`.
+pub(crate) fn problem(status: StatusCode, issues: Vec<Issue>, uri: &Uri) -> Problem {
+  Problem::invalid_input(status, issues).with_instance(uri.path())
 }
 
 /// The schema AST with [`SchemaKind::Lazy`] forced and [`SchemaKind::Nullable`] unwrapped (a
@@ -90,6 +96,21 @@ fn resolve(ast: &SchemaAst) -> SchemaAst {
     };
   }
   ast
+}
+
+/// What an absent key of a required field decodes from: `[]` for an array, `null` for a nullable
+/// schema, otherwise nothing (the schema reports the missing field).
+fn absent_default(ast: &SchemaAst) -> Option<Unknown> {
+  let mut ast = ast.clone();
+  for _ in 0..MAX_LAZY_DEPTH {
+    ast = match ast.kind {
+      SchemaKind::Lazy(lazy) => lazy.force(),
+      SchemaKind::Nullable(_) => return Some(Unknown::Null),
+      SchemaKind::Array(_) => return Some(Unknown::Array(Vec::new())),
+      _ => return None,
+    };
+  }
+  None
 }
 
 /// Lift one raw string to the [`Unknown`] the scalar `ast` expects; left a string when it does
@@ -121,10 +142,12 @@ fn coerce_values(values: &[String], ast: &SchemaAst) -> Unknown {
   }
 }
 
-/// String `pairs` (path parameters or query pairs) as the [`Unknown`] that `ast` decodes.
+/// String `pairs` (path parameters, query pairs or form fields) as the [`Unknown`] that `ast`
+/// decodes.
 ///
-/// A struct or record schema gets an object keyed by name; any other (scalar) schema with exactly
-/// one pair gets that value directly, so `.path::<AccountId>()` works for `/accounts/{id}`.
+/// A struct or record schema gets an object keyed by name (absent required array / nullable
+/// fields defaulted, see the module docs); any other (scalar) schema with exactly one pair gets
+/// that value directly, so `.path::<AccountId>()` works for `/accounts/{id}`.
 pub(crate) fn pairs_unknown(pairs: Vec<(String, String)>, ast: &SchemaAst) -> Unknown {
   let ast = resolve(ast);
   let field_ast = |name: &str| match &ast.kind {
@@ -146,15 +169,23 @@ pub(crate) fn pairs_unknown(pairs: Vec<(String, String)>, ast: &SchemaAst) -> Un
   for (k, v) in pairs {
     grouped.entry(k).or_default().push(v);
   }
-  Unknown::Object(
-    grouped
-      .into_iter()
-      .map(|(k, values)| {
-        let value = coerce_values(&values, &field_ast(&k));
-        (k, value)
-      })
-      .collect(),
-  )
+  let mut object: BTreeMap<String, Unknown> = grouped
+    .into_iter()
+    .map(|(k, values)| {
+      let value = coerce_values(&values, &field_ast(&k));
+      (k, value)
+    })
+    .collect();
+  if let SchemaKind::Struct(fields) = &ast.kind {
+    for field in fields.iter().filter(|f| f.required) {
+      if !object.contains_key(&field.name)
+        && let Some(default) = absent_default(&field.schema)
+      {
+        object.insert(field.name.clone(), default);
+      }
+    }
+  }
+  Unknown::Object(object)
 }
 
 /// Request headers as the [`Unknown`] object that `ast` decodes.
@@ -187,34 +218,113 @@ pub(crate) fn headers_unknown(headers: &HeaderMap, ast: &SchemaAst) -> Unknown {
   pairs_unknown(pairs, ast)
 }
 
+/// Path parameters as the [`Unknown`] that `ast` decodes.
+pub(crate) async fn path_unknown<S: Send + Sync>(
+  head: &mut RequestParts,
+  state: &S,
+  ast: &SchemaAst,
+) -> Result<Unknown, RouteRejection> {
+  let raw = RawPathParams::from_request_parts(head, state)
+    .await
+    .map_err(extractor)?;
+  let pairs = raw
+    .iter()
+    .map(|(k, v)| (k.to_owned(), v.to_owned()))
+    .collect();
+  Ok(pairs_unknown(pairs, ast))
+}
+
+/// The query string as the [`Unknown`] that `ast` decodes.
+pub(crate) fn query_unknown(uri: &Uri, ast: &SchemaAst) -> Result<Unknown, RouteRejection> {
+  let Query(pairs) = Query::<Vec<(String, String)>>::try_from_uri(uri).map_err(extractor)?;
+  Ok(pairs_unknown(pairs, ast))
+}
+
+/// Whether the request declares a `multipart/form-data` body.
+fn is_multipart(headers: &HeaderMap) -> bool {
+  headers
+    .get(header::CONTENT_TYPE)
+    .and_then(|v| v.to_str().ok())
+    .is_some_and(|ct| {
+      ct.trim_start()
+        .to_ascii_lowercase()
+        .starts_with("multipart/form-data")
+    })
+}
+
+/// The text fields of a form: `multipart/form-data` (file fields skipped) or, through Axum's
+/// [`Form`], `application/x-www-form-urlencoded` (the query string for `GET`/`HEAD`).
+async fn form_pairs<S: Send + Sync>(
+  req: Request,
+  state: &S,
+) -> Result<Vec<(String, String)>, RouteRejection> {
+  if !is_multipart(req.headers()) {
+    let Form(pairs) = Form::<Vec<(String, String)>>::from_request(req, state)
+      .await
+      .map_err(extractor)?;
+    return Ok(pairs);
+  }
+  let mut multipart = Multipart::from_request(req, state)
+    .await
+    .map_err(extractor)?;
+  let mut pairs = Vec::new();
+  while let Some(field) = multipart.next_field().await.map_err(extractor)? {
+    if field.file_name().is_some() {
+      continue;
+    }
+    let name = field.name().unwrap_or_default().to_owned();
+    let text = field.text().await.map_err(extractor)?;
+    pairs.push((name, text));
+  }
+  Ok(pairs)
+}
+
+/// The body as the [`Unknown`] that `ast` decodes, read as `kind`. The inner `Err` is the
+/// issue of a JSON body that is not well-formed (a **400**).
+pub(crate) async fn body_unknown<S: Send + Sync>(
+  req: Request,
+  state: &S,
+  ast: &SchemaAst,
+  kind: BodyKind,
+) -> Result<Result<Unknown, Issue>, RouteRejection> {
+  match kind {
+    BodyKind::Json => {
+      let bytes = Bytes::from_request(req, state).await.map_err(extractor)?;
+      Ok(
+        serde_json::from_slice(&bytes)
+          .map(crate::json::unknown_from_json)
+          .map_err(|e| Issue::new(Location::Body, "", e.to_string())),
+      )
+    }
+    BodyKind::Form => Ok(Ok(pairs_unknown(form_pairs(req, state).await?, ast))),
+  }
+}
+
 /// Decode one declared part, recording its issues under `location`.
 fn part<T: RoutePart>(
-  issues: &mut Vec<Issue>,
+  found: &mut Vec<Issue>,
   location: Location,
   part: &T,
   input: Option<&Unknown>,
 ) -> Option<T::Value> {
   match part.decode(input) {
     Ok(v) => Some(v),
-    Err(ParseErrors { issues: found }) => {
-      issues.extend(found.into_iter().map(|e| Issue {
-        location,
-        path: e.path,
-        message: e.message,
-      }));
+    Err(errors) => {
+      found.extend(issues(location, errors));
       None
     }
   }
 }
 
 /// A rejection response, boxed (`Response` is large).
-fn reject(rejection: impl IntoResponse) -> Box<Response> {
+fn reject(rejection: RouteRejection) -> Box<Response> {
   Box::new(rejection.into_response())
 }
 
-/// Decode the typed input of a request: path, query, headers, then the JSON body (read only when
-/// a body is declared). Axum's own extractor rejections (body too large, invalid UTF-8 in a path
-/// parameter, …) are answered as they are.
+/// Decode the typed input of a request: path, query, headers, then the body (read only when one
+/// is declared). Every issue of every part is collected into one [`Problem`]: **400** when the
+/// body is not well-formed JSON, otherwise **422**. Axum's own extractor rejections are answered
+/// as they are.
 pub(crate) async fn decode_input<P, Q, H, B>(
   parts: &super::Parts<P, Q, H, B>,
   req: Request,
@@ -226,83 +336,63 @@ where
   B: RoutePart,
 {
   let (mut head, body) = req.into_parts();
-  let mut issues = Vec::new();
+  let uri = head.uri.clone();
+  let mut found = Vec::new();
   let mut status = StatusCode::UNPROCESSABLE_ENTITY;
 
   let path_in = match parts.path.schema() {
-    Some(schema) => {
-      let raw = RawPathParams::from_request_parts(&mut head, &())
+    Some(schema) => Some(
+      path_unknown(&mut head, &(), schema.ast())
         .await
-        .map_err(reject)?;
-      let pairs = raw
-        .iter()
-        .map(|(k, v)| (k.to_owned(), v.to_owned()))
-        .collect();
-      Some(pairs_unknown(pairs, schema.ast()))
-    }
+        .map_err(reject)?,
+    ),
     None => None,
   };
-  let path = part(&mut issues, Location::Path, &parts.path, path_in.as_ref());
+  let path = part(&mut found, Location::Path, &parts.path, path_in.as_ref());
 
   let query_in = match parts.query.schema() {
-    Some(schema) => {
-      let Query(pairs) = Query::<Vec<(String, String)>>::try_from_uri(&head.uri).map_err(reject)?;
-      Some(pairs_unknown(pairs, schema.ast()))
-    }
+    Some(schema) => Some(query_unknown(&head.uri, schema.ast()).map_err(reject)?),
     None => None,
   };
-  let query = part(
-    &mut issues,
-    Location::Query,
-    &parts.query,
-    query_in.as_ref(),
-  );
+  let query = part(&mut found, Location::Query, &parts.query, query_in.as_ref());
 
   let headers_in = parts
     .headers
     .schema()
     .map(|schema| headers_unknown(&head.headers, schema.ast()));
   let headers = part(
-    &mut issues,
+    &mut found,
     Location::Header,
     &parts.headers,
     headers_in.as_ref(),
   );
 
-  let body_in = match parts.body.schema() {
-    Some(_) => {
-      let bytes = Bytes::from_request(Request::from_parts(head, body), &())
+  let body = match parts.body.schema() {
+    Some(schema) => {
+      let req = Request::from_parts(head, body);
+      match body_unknown(req, &(), schema.ast(), parts.body_kind)
         .await
-        .map_err(reject)?;
-      match serde_json::from_slice(&bytes) {
-        Ok(value) => Some(crate::json::unknown_from_json(value)),
-        Err(e) => {
+        .map_err(reject)?
+      {
+        Ok(input) => part(&mut found, Location::Body, &parts.body, Some(&input)),
+        Err(malformed) => {
           status = StatusCode::BAD_REQUEST;
-          issues.push(Issue {
-            location: Location::Body,
-            path: String::new(),
-            message: e.to_string(),
-          });
+          found.push(malformed);
           None
         }
       }
     }
-    None => None,
-  };
-  let body = if status == StatusCode::BAD_REQUEST {
-    None
-  } else {
-    part(&mut issues, Location::Body, &parts.body, body_in.as_ref())
+    None => part(&mut found, Location::Body, &parts.body, None),
   };
 
   match (path, query, headers, body) {
-    (Some(path), Some(query), Some(headers), Some(body)) if issues.is_empty() => Ok(Input {
+    (Some(path), Some(query), Some(headers), Some(body)) if found.is_empty() => Ok(Input {
       path,
       query,
       headers,
       body,
     }),
-    _ => Err(reject(RouteRejection { status, issues })),
+    _ => Err(reject(problem(status, found, &uri).into())),
   }
 }
 
@@ -347,11 +437,16 @@ mod tests {
   }
 
   #[test]
-  fn resolve_stops_after_the_lazy_depth_limit() {
+  fn resolve_and_absent_default_stop_after_the_lazy_depth_limit() {
     fn endless() -> SchemaAst {
       SchemaAst::new(SchemaKind::Lazy(LazyAst::new(None, endless)))
     }
     assert!(matches!(resolve(&endless()).kind, SchemaKind::Lazy(_)));
+    assert_eq!(absent_default(&endless()), None);
+    let lazy_array = SchemaAst::new(SchemaKind::Lazy(LazyAst::new(None, || {
+      schema::array(schema::i64::<()>()).ast().clone()
+    })));
+    assert_eq!(absent_default(&lazy_array), Some(Unknown::Array(vec![])));
   }
 
   #[test]
@@ -398,6 +493,26 @@ mod tests {
   }
 
   #[test]
+  fn absent_struct_fields_default_by_kind() {
+    let s = schema::struct3(
+      "limit",
+      schema::i64::<()>(),
+      "tag",
+      schema::array(schema::string::<()>()),
+      "cursor",
+      schema::optional(schema::string::<()>()),
+    );
+    let Unknown::Object(map) = pairs_unknown(Vec::new(), s.ast()) else {
+      panic!("object")
+    };
+    assert!(!map.contains_key("limit"));
+    assert_eq!(map["tag"], Unknown::Array(vec![]));
+    assert_eq!(map["cursor"], Unknown::Null);
+    let decoded = s.decode_unknown_all(&pairs_unknown(pairs(&[("limit", "1")]), s.ast()));
+    assert_eq!(decoded.unwrap(), (1, vec![], None));
+  }
+
+  #[test]
   fn headers_follow_struct_fields_or_take_everything() {
     let mut headers = HeaderMap::new();
     headers.insert("x-tenant", HeaderValue::from_static("7"));
@@ -433,5 +548,28 @@ mod tests {
     };
     assert_eq!(map["x-tenant"], Unknown::String("7".into()));
     assert!(!map.contains_key("x-bad"));
+  }
+
+  #[test]
+  fn multipart_is_detected_from_the_content_type() {
+    let mut headers = HeaderMap::new();
+    assert!(!is_multipart(&headers));
+    headers.insert(
+      header::CONTENT_TYPE,
+      HeaderValue::from_static(" Multipart/Form-Data; boundary=x"),
+    );
+    assert!(is_multipart(&headers));
+  }
+
+  #[test]
+  fn rejections_expose_their_problem() {
+    let invalid = RouteRejection::from(Problem::new(StatusCode::UNPROCESSABLE_ENTITY));
+    assert_eq!(
+      invalid.problem().map(|p| p.status),
+      Some(StatusCode::UNPROCESSABLE_ENTITY)
+    );
+    let axum = extractor(StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(axum.problem().is_none());
+    assert_eq!(axum.into_response().status(), StatusCode::PAYLOAD_TOO_LARGE);
   }
 }

@@ -68,6 +68,27 @@ pub struct ResponseInfo {
   pub schema: SchemaRef,
 }
 
+/// How a typed route reads its request body.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BodyKind {
+  /// A JSON document ([`Route::body`](super::Route::body)).
+  #[default]
+  Json,
+  /// Form fields: `application/x-www-form-urlencoded` or the text fields of
+  /// `multipart/form-data` ([`Route::form`](super::Route::form)).
+  Form,
+}
+
+impl BodyKind {
+  /// Request media types this body is read from.
+  pub fn media_types(self) -> &'static [&'static str] {
+    match self {
+      BodyKind::Json => &["application/json"],
+      BodyKind::Form => &["application/x-www-form-urlencoded", "multipart/form-data"],
+    }
+  }
+}
+
 /// Everything a typed route declares.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -82,8 +103,12 @@ pub struct RouteInfo {
   pub query: Option<SchemaRef>,
   /// Request header schema, when declared with [`Route::headers`](super::Route::headers).
   pub headers: Option<SchemaRef>,
-  /// JSON request body schema, when declared with [`Route::body`](super::Route::body).
+  /// Request body schema, when declared with [`Route::body`](super::Route::body) or
+  /// [`Route::form`](super::Route::form).
   pub body: Option<SchemaRef>,
+  /// How the body is read ([`BodyKind::Json`] unless declared with
+  /// [`Route::form`](super::Route::form)).
+  pub body_kind: BodyKind,
   /// Documented responses, in declaration order ([`Route::response`](super::Route::response)).
   pub responses: Vec<ResponseInfo>,
 }
@@ -98,6 +123,7 @@ impl RouteInfo {
       query: None,
       headers: None,
       body: None,
+      body_kind: BodyKind::Json,
       responses: Vec::new(),
     }
   }

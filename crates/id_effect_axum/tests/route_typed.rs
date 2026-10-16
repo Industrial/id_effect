@@ -1,5 +1,5 @@
-//! Typed routes: path / query / header / body extraction through `HasSchema`, and the 422
-//! rejection for input that does not decode.
+//! Typed routes: path / query / header / body extraction through `HasSchema`, and the RFC 9457
+//! problem (422, or 400 for malformed JSON) for input that does not decode.
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -160,6 +160,16 @@ impl HasSchema for OrgName {
 async fn send(app: &axum::Router, req: Request<Body>) -> (StatusCode, String) {
   let res = app.clone().oneshot(req).await.unwrap();
   let status = res.status();
+  if matches!(
+    status,
+    StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+  ) {
+    assert_eq!(
+      res.headers()["content-type"],
+      id_effect_axum::PROBLEM_JSON,
+      "{status}"
+    );
+  }
   let bytes = res.into_body().collect().await.unwrap().to_bytes();
   (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
@@ -186,7 +196,7 @@ fn errors(body: &str) -> Vec<(String, String)> {
     .map(|e| {
       (
         e["in"].as_str().unwrap().to_owned(),
-        e["path"].as_str().unwrap().to_owned(),
+        e["pointer"].as_str().unwrap().to_owned(),
       )
     })
     .collect()
@@ -208,7 +218,7 @@ async fn invalid_path_param_is_422_and_skips_the_handler() {
   let app = app(state.clone());
   let (status, body) = send(&app, get("/orgs/acme/accounts/abc?limit=1&tag=a")).await;
   assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-  assert_eq!(errors(&body), vec![("path".into(), "id".into())]);
+  assert_eq!(errors(&body), vec![("path".into(), "/id".into())]);
   assert_eq!(state.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -217,7 +227,15 @@ async fn missing_query_field_is_422() {
   let app = app(App::default());
   let (status, body) = send(&app, get("/orgs/acme/accounts/1?tag=x")).await;
   assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-  assert_eq!(errors(&body), vec![("query".into(), "limit".into())]);
+  assert_eq!(errors(&body), vec![("query".into(), "/limit".into())]);
+}
+
+#[tokio::test]
+async fn absent_repeated_query_key_is_an_empty_array() {
+  let app = app(App::default());
+  let (status, body) = send(&app, get("/orgs/acme/accounts/1?limit=3")).await;
+  assert_eq!(status, StatusCode::OK, "{body}");
+  assert_eq!(body, "acme/1 limit=3 tags=");
 }
 
 #[tokio::test]
@@ -251,9 +269,9 @@ async fn query_and_body_errors_are_reported_together() {
   assert_eq!(
     errors(&body),
     vec![
-      ("query".into(), "limit".into()),
-      ("body".into(), "name".into()),
-      ("body".into(), "age".into()),
+      ("query".into(), "/limit".into()),
+      ("body".into(), "/name".into()),
+      ("body".into(), "/age".into()),
     ]
   );
   assert_eq!(state.calls.load(Ordering::SeqCst), 0);
@@ -299,8 +317,8 @@ async fn headers_are_decoded_case_insensitively() {
   assert_eq!(
     errors(&body),
     vec![
-      ("header".into(), "X-Tenant".into()),
-      ("header".into(), "x-dry-run".into()),
+      ("header".into(), "/X-Tenant".into()),
+      ("header".into(), "/x-dry-run".into()),
     ]
   );
 }
@@ -318,7 +336,14 @@ async fn scalar_path_and_typed_failures_map_like_routing_helpers() {
   let v: Value = serde_json::from_str(&body).unwrap();
   assert_eq!(
     v,
-    json!({"errors": [{"in": "path", "path": "", "message": "expected i64"}]})
+    json!({
+      "type": "about:blank",
+      "title": "Unprocessable Entity",
+      "status": 422,
+      "detail": "the request input failed validation (1 issue)",
+      "instance": "/ids/seven",
+      "errors": [{"in": "path", "pointer": "", "message": "expected i64"}]
+    })
   );
 }
 

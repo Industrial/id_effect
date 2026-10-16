@@ -1,5 +1,12 @@
-//! Decode JSON request bodies with [`id_effect::schema::Schema`] and map [`ParseError`] to **422**
-//! [`UNPROCESSABLE_ENTITY`](axum::http::StatusCode::UNPROCESSABLE_ENTITY) with a structured body.
+//! Decode JSON request bodies with [`id_effect::schema::Schema`].
+//!
+//! [`decode_json`] reports every schema issue at once as an RFC 9457 [`Problem`] (**422**, **400**
+//! for a syntax error) — the body the typed routes and [`ValidJson`](crate::route::ValidJson)
+//! answer with. The 0.8 [`decode_json_schema`] (first issue only, `{path, message}` body) is
+//! deprecated and kept for one minor release.
+
+// The deprecated 0.8 API below still names its own deprecated types.
+#![allow(deprecated)]
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -10,7 +17,14 @@ use id_effect::schema::{ParseError, Schema, Unknown};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::route::{Issue, Location, Problem};
+
 /// JSON-shaped view of a schema or syntax failure (for clients).
+#[deprecated(
+  since = "0.9.0",
+  note = "use `decode_json` (or the `route::ValidJson` extractor): failures are an RFC 9457 \
+          `route::Problem` with every issue in `errors[]` as `{in, pointer, message}`"
+)]
 #[derive(Debug, Clone, Serialize)]
 pub struct SchemaJsonErrorBody {
   /// JSON pointer–style path to the invalid value (empty for syntax errors).
@@ -20,6 +34,11 @@ pub struct SchemaJsonErrorBody {
 }
 
 /// Failure while decoding a JSON body with [`decode_json_schema`].
+#[deprecated(
+  since = "0.9.0",
+  note = "use `decode_json` (or the `route::ValidJson` extractor), which fails with an RFC 9457 \
+          `route::Problem`"
+)]
 #[derive(Debug)]
 pub enum JsonSchemaError {
   /// `serde_json` could not parse the bytes as JSON ([`BAD_REQUEST`](StatusCode::BAD_REQUEST)).
@@ -66,9 +85,65 @@ pub fn unknown_from_json(value: Value) -> Unknown {
   unknown_from_serde_json(value)
 }
 
+/// Parse `bytes` as JSON, convert to [`Unknown`], then run [`Schema::decode_unknown_all`]: every
+/// schema issue is reported at once.
+///
+/// The error is an RFC 9457 [`Problem`] (`application/problem+json`): **400** with one `body`
+/// issue when `bytes` is not JSON, **422** with one `body` issue per failing value otherwise, each
+/// with a JSON Pointer (`/items/0/name`). The schema's wire type `I` is unused.
+///
+/// ```rust
+/// use axum::http::StatusCode;
+/// use id_effect::schema;
+/// use id_effect_axum::json::decode_json;
+///
+/// let person = schema::struct_("name", schema::string::<()>(), "age", schema::i64::<()>());
+/// assert_eq!(
+///   decode_json(&person, br#"{"name":"ada","age":36}"#).unwrap(),
+///   ("ada".to_owned(), 36)
+/// );
+/// let problem = decode_json(&person, br#"{"name":1,"age":"x"}"#).unwrap_err();
+/// assert_eq!(problem.status, StatusCode::UNPROCESSABLE_ENTITY);
+/// assert_eq!(problem.errors.len(), 2);
+/// assert_eq!(problem.errors[0].pointer, "/name");
+/// ```
+// `Problem` is the error body itself, returned by value like `JsonSchemaError` was.
+#[allow(clippy::result_large_err)]
+pub fn decode_json<A, I, E>(schema: &Schema<A, I, E>, bytes: &[u8]) -> Result<A, Problem>
+where
+  E: EffectData + 'static,
+  A: 'static,
+  I: 'static,
+{
+  let value: Value = serde_json::from_slice(bytes).map_err(|e| {
+    Problem::invalid_input(
+      StatusCode::BAD_REQUEST,
+      vec![Issue::new(Location::Body, "", e.to_string())],
+    )
+  })?;
+  schema
+    .decode_unknown_all(&unknown_from_json(value))
+    .map_err(|errors| {
+      Problem::invalid_input(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        errors
+          .issues
+          .iter()
+          .map(|e| Issue::from_parse_error(Location::Body, e))
+          .collect(),
+      )
+    })
+}
+
 /// Parse `bytes` as JSON, convert to [`Unknown`], then run [`Schema::decode_unknown`].
 ///
 /// The schema's wire type `I` is unused for this path (JSON is always parsed to [`Unknown`] first).
+#[deprecated(
+  since = "0.9.0",
+  note = "use `decode_json` (or the `route::ValidJson` extractor): it reports every issue as an \
+          RFC 9457 `route::Problem` (`application/problem+json`, `errors[]` of \
+          `{in, pointer, message}`) instead of the first issue as `{path, message}`"
+)]
 pub fn decode_json_schema<A, I, E>(
   schema: &Schema<A, I, E>,
   bytes: &[u8],
@@ -148,5 +223,25 @@ mod tests {
     let schema_err = decode_json_schema(schema.as_ref(), b"42").expect_err("type");
     assert!(matches!(schema_err, JsonSchemaError::Schema(_)));
     let _ = unknown_from_json(serde_json::json!("x"));
+  }
+
+  #[test]
+  fn decode_json_answers_problems() {
+    let schema = schema::array(schema::i64::<()>());
+    assert_eq!(decode_json(&schema, b"[1,2]").unwrap(), vec![1, 2]);
+
+    let syntax = decode_json(&schema, b"[1,").unwrap_err();
+    assert_eq!(syntax.status, StatusCode::BAD_REQUEST);
+    assert_eq!(syntax.errors[0].pointer, "");
+
+    let invalid = decode_json(&schema, br#"[1,"a","b"]"#).unwrap_err();
+    let pointers: Vec<&str> = invalid.errors.iter().map(|e| e.pointer.as_str()).collect();
+    assert_eq!(pointers, ["/1", "/2"]);
+    let res = invalid.into_response();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+      res.headers()[axum::http::header::CONTENT_TYPE],
+      crate::route::PROBLEM_JSON
+    );
   }
 }

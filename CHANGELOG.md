@@ -14,6 +14,12 @@
   with `HasSchema` parts, every decode issue reported at once (422); `route::Router` keeps a
   `RouteRegistry` of `RouteInfo` (method, path, schema per part, JSON Schema 2020-12) for OpenAPI
   and route listings. The existing `routing::get/post/…` are unchanged.
+- `id_effect_axum`: RFC 9457 `Problem` (`application/problem+json`) with `errors[]` of
+  `{in, pointer, message}`; typed routes answer invalid input with it (422, or 400 for malformed
+  JSON) and list every issue. Standalone extractors `ValidPath`, `ValidQuery`, `ValidHeaders`,
+  `ValidJson`, `ValidForm` (urlencoded and multipart text fields) share the same decoder.
+  `Route::form::<T>()`, `RouteInfo::body_kind`, `json::decode_json`. Absent array / nullable
+  query, form and header fields decode to `[]` / `null`.
 - `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
   effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
   inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
@@ -31,6 +37,16 @@
   back as `Secret<T>`, and merge above the profile files and below the environment;
   `refresh_every` re-fetches and swaps atomically; failures are `ConfigError::Vault`.
   `Secret<T>` now implements `Deserialize`.
+
+### Deprecated
+
+- `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody` (removed in
+  0.10; see [MIGRATION-0.9.md](docs/MIGRATION-0.9.md)).
+
+### Security
+
+- `id_effect_config`: `ProfiledConfig` and `FigmentConfigProvider` no longer print merged values in
+  `Debug`, and errors from `Config::secret()` loaders no longer contain the raw value.
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
