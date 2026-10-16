@@ -45,9 +45,9 @@ tokio = { version = "1.50", features = [
 tracing = "0.1"
 
 # Floors carry security fixes (quinn-proto >= 0.11.18 via quinn 0.11.12: RUSTSEC-2026-0338..0342;
-# rustls 0.23.45: RUSTSEC-2026-0285) and keep -Z minimal-versions buildable.
+# rustls 0.23.46: RUSTSEC-2026-0285, RUSTSEC-2026-0346..0349) and keep -Z minimal-versions buildable.
 quinn = { version = "0.11.12", optional = true }
-rustls = { version = "0.23.45", optional = true }
+rustls = { version = "0.23.46", optional = true }
 rcgen = { version = "0.13", optional = true }
 
 # Postgres advisory-lock lease backend (feature `pg`).
