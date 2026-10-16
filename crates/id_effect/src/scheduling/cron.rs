@@ -162,14 +162,14 @@ impl Cron {
       6 => (fields[0], &fields[1..]),
       n => return Err(err(format!("expected 5 or 6 fields, found {n}"))),
     };
-    let weekdays = field(rest[4], "day-of-week", 0, 7, &DAY_NAMES, 0, true).map_err(&err)?;
+    let weekdays = field(rest[4], "day-of-week", 0, 7, &DAY_NAMES, 0, true).map_err(err)?;
     Ok(Self {
       source: Arc::from(text),
-      seconds: field(second, "second", 0, 59, &[], 0, false).map_err(&err)?,
-      minutes: field(rest[0], "minute", 0, 59, &[], 0, false).map_err(&err)?,
-      hours: field(rest[1], "hour", 0, 23, &[], 0, false).map_err(&err)?,
-      days: field(rest[2], "day-of-month", 1, 31, &[], 0, true).map_err(&err)?,
-      months: field(rest[3], "month", 1, 12, &MONTH_NAMES, 1, false).map_err(&err)?,
+      seconds: field(second, "second", 0, 59, &[], 0, false).map_err(err)?,
+      minutes: field(rest[0], "minute", 0, 59, &[], 0, false).map_err(err)?,
+      hours: field(rest[1], "hour", 0, 23, &[], 0, false).map_err(err)?,
+      days: field(rest[2], "day-of-month", 1, 31, &[], 0, true).map_err(err)?,
+      months: field(rest[3], "month", 1, 12, &MONTH_NAMES, 1, false).map_err(err)?,
       // Weekday 7 is Sunday (bit 0).
       weekdays: (weekdays & 0x7f) | ((weekdays >> 7) & 1),
       dom_any: rest[2].starts_with(['*', '?']),
