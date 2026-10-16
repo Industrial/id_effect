@@ -77,6 +77,13 @@
 //! `--profile <name>` or `ID_EFFECT_PROFILE` and merges `config/base.toml`, then
 //! `config/<profile>.toml`, then `APP_`-prefixed environment variables (env > profile > base).
 //! An undeclared profile is [`ConfigError::UnknownProfile`]. See the [`profile`] module.
+//!
+//! ## Secrets from HashiCorp Vault (feature `vault`)
+//!
+//! `vault::VaultSettings` reads KV v2 secrets over HTTP once, in a layer, into an in-memory
+//! provider (optionally re-fetched every `refresh_every` and swapped atomically). Merged with
+//! profiles it sits above the profile files and below the environment; failures are
+//! [`ConfigError::Vault`]. See the `vault` module.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -87,9 +94,11 @@ pub mod profile;
 mod provider;
 mod providers;
 mod secret;
+#[cfg(feature = "vault")]
+pub mod vault;
 
 pub use config_desc::{Config, ConfigAll};
-pub use error::ConfigError;
+pub use error::{ConfigError, VaultErrorKind};
 #[cfg(all(feature = "toml", feature = "env"))]
 pub use profile::{PROFILE_ENV_VAR, PROFILE_FLAG, Profile, ProfiledConfig, Profiles};
 pub use provider::{
@@ -101,6 +110,8 @@ pub use providers::{
   provide_figment_config_provider,
 };
 pub use secret::Secret;
+#[cfg(feature = "vault")]
+pub use vault::{VaultAuth, VaultProvider, VaultSettings};
 
 // ── Service environment helper ────────────────────────────────────────────────
 

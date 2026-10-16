@@ -36,6 +36,16 @@ pub enum ConfigError {
     /// Profiles the application declared, in declaration order.
     known: Vec<String>,
   },
+  /// A HashiCorp Vault secret could not be read (feature `vault`). The reason never contains a
+  /// secret value or the token.
+  Vault {
+    /// Secret path below the mount (`ledger/db`) whose read failed.
+    path: String,
+    /// What failed: the transport, an HTTP status, or the response shape.
+    kind: VaultErrorKind,
+    /// Vault's `errors` list, the transport error, or the decoding problem.
+    reason: String,
+  },
   /// Several independent failures, every one reported (Effect `ConfigError.And`).
   ///
   /// Produced by [`Config::all`](crate::Config::all) and the combinators built on it
@@ -46,6 +56,32 @@ pub enum ConfigError {
     /// The failures, in the order of the components.
     Vec<ConfigError>,
   ),
+}
+
+/// The failing step of a [`ConfigError::Vault`] read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum VaultErrorKind {
+  /// The request did not complete (connection refused, TLS, timeout).
+  Transport,
+  /// Vault answered with a non-success HTTP status (`403` permission denied, `404` no such
+  /// secret).
+  Status(
+    /// The HTTP status code.
+    u16,
+  ),
+  /// The body is not a KV v2 read response (`{"data": {"data": {..}}}`).
+  Decode,
+}
+
+impl std::fmt::Display for VaultErrorKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      VaultErrorKind::Transport => f.write_str("transport error"),
+      VaultErrorKind::Status(status) => write!(f, "HTTP {status}"),
+      VaultErrorKind::Decode => f.write_str("unexpected response"),
+    }
+  }
 }
 
 impl ConfigError {
@@ -122,6 +158,11 @@ enum ConfigErrorDisp {
     profile: String,
     known: Vec<String>,
   },
+  Vault {
+    path: String,
+    kind: VaultErrorKind,
+    reason: String,
+  },
   And(Vec<String>),
 }
 
@@ -143,6 +184,11 @@ impl From<&ConfigError> for ConfigErrorDisp {
       ConfigError::UnknownProfile { profile, known } => Self::UnknownProfile {
         profile: profile.clone(),
         known: known.clone(),
+      },
+      ConfigError::Vault { path, kind, reason } => Self::Vault {
+        path: path.clone(),
+        kind: *kind,
+        reason: reason.clone(),
       },
       ConfigError::And(errors) => Self::And(errors.iter().map(ToString::to_string).collect()),
     }
@@ -196,6 +242,15 @@ impl std::fmt::Display for ConfigError {
             "unknown configuration profile {profile:?} (known: {})",
             known.join(", ")
           ),
+          _ => unreachable!(),
+        },
+      )
+      .when(
+        Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::Vault { .. })),
+        |c| match c {
+          ConfigErrorDisp::Vault { path, kind, reason } => {
+            format!("vault secret {path:?}: {kind}: {reason}")
+          }
           _ => unreachable!(),
         },
       )
@@ -367,6 +422,31 @@ mod tests {
       ConfigErrorDisp::from(&err),
       ConfigErrorDisp::UnknownProfile { .. }
     ));
+  }
+
+  #[test]
+  fn config_error_vault_display_names_path_and_kind() {
+    let render = |kind| {
+      ConfigError::Vault {
+        path: "ledger/db".into(),
+        kind,
+        reason: "permission denied".into(),
+      }
+      .to_string()
+    };
+    assert_eq!(
+      render(VaultErrorKind::Status(403)),
+      "vault secret \"ledger/db\": HTTP 403: permission denied"
+    );
+    assert!(render(VaultErrorKind::Transport).contains(": transport error: "));
+    assert!(render(VaultErrorKind::Decode).contains(": unexpected response: "));
+    let err = ConfigError::Vault {
+      path: "p".into(),
+      kind: VaultErrorKind::Decode,
+      reason: "r".into(),
+    };
+    assert!(err.source().is_none());
+    assert!(!err.is_missing_only());
   }
 
   #[test]

@@ -83,6 +83,7 @@
   - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
   - [Config + `Secret` from flags](./part3/ch16-02-cli-config-secret.md)
   - [Profiles: dev, test, prod](./part3/ch16-03-config-profiles.md)
+  - [Secrets from HashiCorp Vault](./part3/ch16-04-secrets-vault.md)
 
 # Part IV: Advanced
 

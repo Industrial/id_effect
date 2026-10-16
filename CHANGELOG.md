@@ -23,6 +23,11 @@
   for unknown users, hashing on the blocking pool) and server-side `Sessions` over a `SessionStore`
   (`MemorySessionStore`; idle and absolute timeouts, id rotation on login, rotate / logout /
   revoke-all, `__Host-` Secure HttpOnly SameSite=Lax cookie); feature `axum` adds `SessionLayer`.
+- `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
+  (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
+  back as `Secret<T>`, and merge above the profile files and below the environment;
+  `refresh_every` re-fetches and swaps atomically; failures are `ConfigError::Vault`.
+  `Secret<T>` now implements `Deserialize`.
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 

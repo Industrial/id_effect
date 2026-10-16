@@ -27,7 +27,9 @@ id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0", feat
   "tower",
 ] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.8.0" }
-id_effect_config = { path = "../../crates/id_effect_config", version = "0.8.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.8.0", features = [
+  "vault",
+] }
 id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.8.0" }
 id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.8.0" }
 id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.8.0" }
