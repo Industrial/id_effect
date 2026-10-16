@@ -13,7 +13,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use super::sink::Sink;
+use super::sink::{FoldSink, Sink};
 use super::stream::{Stream, lock};
 use crate::capability::HNil;
 use crate::coordination::{Channel, Queue, QueueError};
@@ -291,19 +291,21 @@ where
     }
   }
 
-  /// The fold of a [`Sink::fold_left`] sink as a writable channel.
+  /// The fold of a [`FoldSink`] ([`Sink::fold_left`] / [`Sink::from_fold`] and the sinks built
+  /// on them) as a writable channel. Other sinks can feed a queue with [`Sink::to_queue`] and a
+  /// [`Channel`].
   ///
-  /// # Panics
+  /// ```compile_fail,E0308
+  /// use id_effect::{FoldChannel, Sink};
   ///
-  /// If `sink` is not a fold ([`Sink::fold_left`] / [`Sink::from_fold`] and the sinks built on
-  /// them). Other sinks can feed a queue with [`Sink::to_queue`] and a [`Channel`].
-  pub fn from_sink<E, R>(sink: Sink<Acc, In, E, R>) -> Self
+  /// // `collect_all_while` is not a fold.
+  /// let _ = FoldChannel::from_sink(Sink::<Vec<u32>, u32>::collect_all_while(|_| true));
+  /// ```
+  pub fn from_sink<E, R>(sink: FoldSink<Acc, In, E, R>) -> Self
   where
     Acc: Sync,
   {
-    let fold = sink
-      .fold
-      .expect("FoldChannel::from_sink requires a Sink::fold_left / Sink::from_fold sink");
+    let fold = sink.fold;
     Self::with_step(fold.init.clone(), Arc::clone(&fold.step))
   }
 

@@ -758,9 +758,9 @@ where
     self.fold_chunks((), |(), _| ControlFlow::Continue(()))
   }
 
-  /// Runs `sink` over this stream.
-  pub fn run<B: Send + 'static>(self, sink: super::Sink<B, A, E, R>) -> Effect<B, E, R> {
-    sink.run(self)
+  /// Runs `sink` (a [`Sink`](super::Sink) or a [`FoldSink`](super::FoldSink)) over this stream.
+  pub fn run<B: Send + 'static>(self, sink: impl Into<super::Sink<B, A, E, R>>) -> Effect<B, E, R> {
+    sink.into().run(self)
   }
 }
 

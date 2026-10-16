@@ -473,10 +473,21 @@ fn fold_channel_from_sink_writes_accumulate() {
   assert_eq!(ok(eff), 9);
 }
 
+// A non-fold sink is a compile error for `FoldChannel::from_sink` (the `compile_fail` doctest on
+// it); every fold constructor is accepted.
 #[test]
-#[should_panic(expected = "requires a Sink::fold_left")]
-fn fold_channel_from_a_non_fold_sink_panics() {
-  let _ = FoldChannel::from_sink(Sink::<Vec<u32>, u32>::collect_all_while(|_| true));
+fn fold_channel_from_sink_accepts_every_fold_constructor() {
+  let collect = FoldChannel::from_sink(Sink::<Vec<u32>, u32>::collect());
+  let drain = FoldChannel::from_sink(Sink::<(), u32>::drain());
+  let map = FoldChannel::from_sink(Sink::<HashMap<&str, u32>, (&str, u32)>::collect_to_map());
+  let eff = collect
+    .write::<Never, _>(1)
+    .then(collect.write(2))
+    .then(drain.write(3))
+    .then(map.write(("a", 4)))
+    .then(collect.fold_state())
+    .zip(map.fold_state());
+  assert_eq!(ok(eff), (vec![1, 2], HashMap::from([("a", 4)])));
 }
 
 #[test]
@@ -561,10 +572,22 @@ fn sink_zip_runs_two_folds_in_one_pass() {
   );
 }
 
+// A non-fold sink has no `zip` (the `compile_fail` doctest on `FoldSink`); zipped folds nest and
+// erase into a plain `Sink`.
 #[test]
-#[should_panic(expected = "Sink::zip requires")]
-fn sink_zip_of_a_non_fold_sink_panics() {
-  let _ = Sink::<Vec<u32>, u32>::collect_all_while(|_| true).zip(Sink::<(), u32>::drain());
+fn sink_zip_nests_folds_and_erases_into_a_sink() {
+  let zipped = Sink::<Vec<u32>, u32>::collect()
+    .zip(Sink::<u32, u32>::fold_left(0, |a, x| a + x))
+    .zip(Sink::<(), u32>::drain());
+  let erased: Sink<((Vec<u32>, u32), ()), u32> = zipped.clone().into();
+  assert_eq!(
+    ok(Stream::from_iterable([1, 2, 3]).run(zipped)),
+    ((vec![1, 2, 3], 6), ())
+  );
+  assert_eq!(
+    ok(erased.run(Stream::from_iterable([4]))),
+    ((vec![4], 4), ())
+  );
 }
 
 #[test]

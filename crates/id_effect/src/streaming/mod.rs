@@ -51,7 +51,7 @@ pub use sender::{
   BackpressureDecision, BackpressurePolicy, StreamChannelFull, StreamSender, backpressure_decision,
   end_stream, send_chunk, stream_from_channel, stream_from_channel_with_policy,
 };
-pub use sink::Sink;
+pub use sink::{FoldSink, Sink};
 pub use stream::{DEFAULT_CHUNK_SIZE, Stream};
 pub use transduce::{StateStep, state_scan};
 pub use transducer::{

@@ -74,6 +74,11 @@
 			"mean": 800000,
 			"median": 800000,
 			"std_dev": 8000
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 100,
+			"median": 100,
+			"std_dev": 1
 		}
 	}
 }
