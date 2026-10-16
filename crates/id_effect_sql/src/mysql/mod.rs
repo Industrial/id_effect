@@ -51,10 +51,15 @@
 //!
 //! ## Connections
 //!
-//! `MySqlPoolConfig::url` takes sqlx's MySQL URL. This crate enables no TLS backend in sqlx, so
-//! connections are plain TCP (or a unix socket, `?socket=`). With `caching_sha2_password` (the
-//! MySQL 8 default) a plain connection sends the password RSA-encrypted with the server's public
-//! key; keep the database on a trusted network.
+//! `MySqlPoolConfig::url` takes sqlx's MySQL URL (TCP, or a unix socket with `?socket=`).
+//! Connections negotiate TLS through rustls (aws-lc-rs). The mode comes from the URL's
+//! `ssl-mode` (with `ssl-ca`), or from [`MySqlPoolConfig::with_tls_mode`] /
+//! [`MySqlPoolConfig::with_root_cert_file`], which override it. The default,
+//! [`MySqlTlsMode::Preferred`], encrypts when the server offers TLS but checks no certificate and
+//! falls back to plaintext, so it does not stop an active attacker: use
+//! [`MySqlTlsMode::VerifyIdentity`] in production. Over TLS, `caching_sha2_password` (the MySQL 8
+//! default) sends the password inside the encrypted session; over plaintext it is RSA-encrypted
+//! with a server public key that is not authenticated.
 
 mod client;
 mod config;
@@ -64,6 +69,8 @@ mod transaction;
 mod value;
 
 pub use client::MySqlSqlClient;
-pub use config::{MySqlPoolConfig, mysql_pool_from_config, mysql_pool_from_config_lazy};
+pub use config::{
+  MySqlPoolConfig, MySqlRootCert, MySqlTlsMode, mysql_pool_from_config, mysql_pool_from_config_lazy,
+};
 pub use error::MySqlSqlError;
 pub use transaction::MySqlSqlTransaction;

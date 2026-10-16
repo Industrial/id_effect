@@ -246,8 +246,29 @@ signed type that fits (`BIGINT UNSIGNED` above `i64::MAX` is `ValueOutOfRange`),
 exactly, `JSON` as `Json`, and a uuid lives in `BINARY(16)`. Transactions support every isolation
 level and `READ ONLY`; deadlocks and lock wait timeouts are SQLSTATE `40001`, so
 `retry_serialization_failures` retries them. Dropping a `query_stream` stops the statement with
-`KILL QUERY`. Connections are plaintext (sqlx is built without TLS); use a private network or a
-TLS-terminating proxy.
+`KILL QUERY`.
+
+**TLS.** PostgreSQL and MySQL connections negotiate TLS with rustls (aws-lc-rs; no OpenSSL). The
+URL sets the mode (`?sslmode=verify-full&sslrootcert=/etc/ssl/db-ca.pem` on PostgreSQL,
+`?ssl-mode=VERIFY_IDENTITY&ssl-ca=/etc/ssl/db-ca.pem` on MySQL), or the config does, overriding
+the URL:
+
+```rust
+use id_effect_sql::pg::{PgPoolConfig, PgTlsMode};
+
+let config = PgPoolConfig::from_url("postgres://app@db.internal:5432/app")
+    .with_tls_mode(PgTlsMode::VerifyFull)
+    .with_root_cert_file("/etc/ssl/db-ca.pem"); // or .with_root_cert_pem(bytes)
+assert_eq!(config.effective_tls_mode().unwrap(), PgTlsMode::VerifyFull);
+```
+
+`MySqlPoolConfig` has the same builders with `MySqlTlsMode::{Disabled, Preferred, Required,
+VerifyCa, VerifyIdentity}`. The default is `Prefer` / `Preferred`, as in sqlx: TLS when the server
+offers it, but **no certificate check and a silent fallback to plaintext**, so an attacker on the
+network can read or alter the session. `Require` / `Required` refuses a server without TLS but
+still accepts any certificate. In production use `VerifyFull` / `VerifyIdentity` with your CA
+(it is trusted alongside the Mozilla roots). A TLS failure (server without TLS, unknown CA, wrong
+host name) fails the pool with `SqlError::QueryFailed` naming the cause.
 
 **Read replicas.** `RoutingSqlClient::new(primary, vec![replica_a, replica_b])` is itself a
 `SqlClient`. `query` and `query_stream` go to a replica (round-robin by default, or

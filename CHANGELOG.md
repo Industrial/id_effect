@@ -167,6 +167,12 @@
 
 ### Security
 
+- `id_effect_sql`: TLS for PostgreSQL and MySQL (rustls on aws-lc-rs, no OpenSSL); 0.8 connected in
+  plaintext. `PgPoolConfig` / `MySqlPoolConfig` take `with_tls_mode(PgTlsMode / MySqlTlsMode)`,
+  `with_root_cert_file` / `with_root_cert_pem` and `effective_tls_mode()`, overriding the URL's
+  `sslmode` / `ssl-mode`. The default stays `Prefer` / `Preferred` (unverified, may fall back to
+  plaintext); use `VerifyFull` / `VerifyIdentity` in production. With sqlx 0.8, `VerifyCa` also
+  checks the host name (stricter than its name).
 - `id_effect_config`: `ProfiledConfig` and `FigmentConfigProvider` no longer print merged values in
   `Debug`, and errors from `Config::secret()` loaders no longer contain the raw value.
 

@@ -21,6 +21,15 @@ Each 0.9 change appends its entry to the matching section below.
   (`items.0.name`). Each issue also names where it came from in `errors[].in` (`path`, `query`,
   `header`, `body`).
 
+## Data: TLS settings on the pool configs
+
+- `PgPoolConfig` and `MySqlPoolConfig` gain the public fields `tls_mode` and `root_cert`. Code that
+  builds them with a struct literal must add them (or `..Default::default()` where available);
+  prefer the constructors (`from_url`) and builders (`with_tls_mode`, `with_root_cert_file`).
+- Behaviour: with TLS now compiled in, a server that offers TLS is used over (unverified) TLS under
+  the default `Prefer` / `Preferred` instead of plaintext. Set `with_tls_mode(PgTlsMode::VerifyFull)`
+  / `MySqlTlsMode::VerifyIdentity` and a root certificate for production.
+
 ## Data: SQL values and rows
 
 `id_effect_sql` parameters and column values are now typed `SqlValue`s and rows decode by column

@@ -16,8 +16,15 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
 # PostgreSQL driver (sqlx pool + PgSqlClient). `time` is the drivers' date-time type; the public
-# API speaks jiff (`value::time_conv` converts).
-pg = ["dep:sqlx", "dep:tokio", "dep:time", "sqlx/postgres"]
+# API speaks jiff (`value::time_conv` converts). TLS: rustls with aws-lc-rs and the Mozilla roots
+# (webpki-roots), as for MySQL; no OpenSSL.
+pg = [
+  "dep:sqlx",
+  "dep:tokio",
+  "dep:time",
+  "sqlx/postgres",
+  "sqlx/tls-rustls-aws-lc-rs",
+]
 # `testing::arb_sql_value`: proptest strategies over the portable `SqlValue` domain.
 proptest = ["dep:proptest", "id_effect/proptest"]
 # `migrate`: versioned migrations (tracking table, advisory lock, one transaction each). sqlx
@@ -39,7 +46,13 @@ audit = ["dep:sha2"]
 repository = ["query"]
 # MySQL driver (sqlx mysql) and `MySqlSqlClient`, tested against MySQL 8. sqlx-mysql brings `rsa`
 # (RUSTSEC-2023-0071, ignored with its reason in deny.toml).
-mysql = ["dep:sqlx", "dep:tokio", "dep:time", "sqlx/mysql"]
+mysql = [
+  "dep:sqlx",
+  "dep:tokio",
+  "dep:time",
+  "sqlx/mysql",
+  "sqlx/tls-rustls-aws-lc-rs",
+]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
@@ -88,8 +101,14 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "net"] }
 # tests/from_row.rs: compile-fail cases of `#[derive(FromRow)]`.
 trybuild = "1"
-# MySQL 8 container for tests/conformance/mysql.rs (feature `mysql`).
+# MySQL 8 container for tests/conformance/mysql.rs (feature `mysql`), and the TLS servers of
+# tests/tls.rs.
 testcontainers = { version = "0.28", default-features = false }
+# tests/tls.rs: a throwaway CA and server certificate (aws-lc-rs, as rustls uses).
+rcgen = { version = "0.13", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
 
 [[test]]
 name = "pg"
