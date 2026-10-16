@@ -161,6 +161,7 @@
 - [Application host](./part6/ch30-00-application.md)
   - [Authorization](./part6/ch30-02-authorization.md)
   - [Passwords and sessions (`id_effect_auth`)](./part6/ch30-03-passwords-sessions.md)
+  - [Credentials and JWT (`id_effect_auth`)](./part6/ch30-04-credentials-jwt.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)

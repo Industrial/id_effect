@@ -9,10 +9,24 @@
 //!   login, rotation, logout and revoke-all, and a hardened cookie. Feature `axum` adds
 //!   `SessionLayer`, which loads the request's session into `id_effect_axum`'s request
 //!   capabilities.
+//! - [`principal`] — [`AuthPrincipal`], the `id_effect_authz::Principal` every credential check
+//!   yields, tagged with its [`AuthScheme`]; [`AuthError`] says why a credential was rejected.
+//! - [`apikey`] — [`ApiKeys`]: random keys stored as SHA-256 digests in an [`ApiKeyStore`],
+//!   found by public id and compared in constant time.
+//! - [`basic`] — [`BasicAuth`]: username and password against a [`UserLookup`], with
+//!   [`PasswordHasher::verify_or_dummy`] for unknown users.
+//! - `jwt` (feature `jwt`) — `JwtVerifier` / `JwtIssuer`: HS/RS/PS/ES/EdDSA tokens with issuer,
+//!   audience, expiry and required-claim checks and a claim → roles/permissions mapping.
+//!   Feature `jwks` adds `JwksClient`: the identity provider's key set, cached and refetched
+//!   (rate-limited) when a token names an unknown `kid`.
+//! - `middleware` (feature `axum`) — `Authenticate`: session → bearer → API key → Basic, in a
+//!   configurable order, installing the principal as `id_effect_authz::CurrentPrincipal`.
+//!   Missing credentials continue anonymously; invalid ones answer 401 Problem Details.
 //!
-//! Each is a capability with a [`Layer`](id_effect::Layer), like the rest of the platform crates.
-//! Still to land in 0.9: bearer/JWT (JWKS rotation), basic and API-key credential layers
-//! producing a principal, a database-backed session store, OIDC + PKCE and TOTP.
+//! [`PasswordHasher`] and [`Sessions`] are capabilities with a [`Layer`](id_effect::Layer), like
+//! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
+//! return effects, held by the middleware or a handler. Still to land in 0.9: a database-backed
+//! session store, OIDC + PKCE and TOTP.
 //!
 //! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
 //! under `examples/reference/` depends on it.
@@ -38,13 +52,35 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod apikey;
+pub mod basic;
+mod error;
+#[cfg(feature = "jwks")]
+pub mod jwks;
+#[cfg(feature = "jwt")]
+pub mod jwt;
+#[cfg(feature = "axum")]
+pub mod middleware;
 pub mod password;
+pub mod principal;
 pub mod session;
 
+pub use apikey::{ApiKey, ApiKeyRecord, ApiKeyStore, ApiKeys, MemoryApiKeyStore};
+pub use basic::{
+  BasicAuth, MemoryUsers, UserCredentials, UserLookup, basic_credentials, basic_header,
+};
+pub use error::AuthError;
+#[cfg(feature = "jwks")]
+pub use jwks::JwksClient;
+#[cfg(feature = "jwt")]
+pub use jwt::{Algorithm, ClaimMapping, JwtIssuer, JwtKey, JwtVerifier};
+#[cfg(feature = "axum")]
+pub use middleware::{Authenticate, AuthenticateService};
 pub use password::{
   Password, PasswordError, PasswordHash, PasswordHasher, PasswordHasherEnv, PasswordParams,
   Verification,
 };
+pub use principal::{AuthPrincipal, AuthScheme};
 #[cfg(feature = "axum")]
 pub use session::SessionLayer;
 pub use session::{

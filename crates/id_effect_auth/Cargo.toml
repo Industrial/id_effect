@@ -17,18 +17,50 @@ name = "id_effect_auth"
 
 [features]
 default = []
-# `SessionLayer`: a Tower layer that loads the request's session into `id_effect_axum`'s
-# request capabilities.
+# `SessionLayer` (loads the request's session into `id_effect_axum`'s request capabilities) and
+# `Authenticate` (session / bearer JWT / API-key / Basic credentials → `CurrentPrincipal`).
 axum = [
+  "dep:axum",
   "dep:id_effect_axum",
+  "id_effect_authz/axum",
   "dep:http",
   "dep:tower-layer",
   "dep:tower-service",
 ]
+# JWT issue and verify (`jwt` module, jsonwebtoken on aws-lc-rs).
+jwt = ["dep:jsonwebtoken"]
+# `JwksClient`: fetches and caches an issuer's JSON Web Key Set over HTTP (reqwest + rustls);
+# needs a tokio runtime.
+jwks = ["jwt", "dep:reqwest", "dep:tokio"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.8.0" }
+id_effect_authz = { path = "../id_effect_authz", version = "0.8.0" }
 id_effect_axum = { path = "../id_effect_axum", version = "0.8.0", optional = true }
+# `Authenticate` answers with axum responses (id_effect_axum's `Problem`); already in its tree.
+axum = { version = "0.8", default-features = false, optional = true }
+# Claims and principals' claim values (also what id_effect_authz uses).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Basic credentials (`user:password` in base64); the version already in the workspace lock.
+base64 = "0.22.1"
+# API keys are stored as SHA-256 digests of 256-bit random secrets and compared in constant time.
+sha2 = "0.10.9"
+subtle = "2.6.1"
+# jsonwebtoken (release spec 0.9.0 D5) on aws-lc-rs: the provider rustls already brings in, and
+# no `rsa` crate (RUSTSEC-2023-0071). 11.x needs rustc 1.88, within the workspace MSRV.
+jsonwebtoken = { version = "11.1.0", default-features = false, features = [
+  "use_pem",
+  "aws_lc_rs",
+], optional = true }
+# Same major and features as id_effect_config's Vault provider.
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls",
+], optional = true }
+# One JWKS refetch at a time (an async mutex); tokio is already in reqwest's tree.
+tokio = { version = "1.50.0", default-features = false, features = [
+  "sync",
+], optional = true }
 # RustCrypto argon2 (release spec 0.9.0 D5). 0.6 needs rustc 1.85, below the workspace MSRV.
 argon2 = { version = "0.6.0", default-features = false, features = [
   "alloc",
@@ -55,6 +87,17 @@ tokio = { version = "1.50.0", features = [
   "io-util",
 ] }
 tower = { version = "0.5.3", features = ["util"] }
+# A JWKS endpoint double for tests/jwks.rs (feature `jwks`).
+wiremock = "0.6"
+# Runs reqwest-backed effects on the test's tokio runtime.
+id_effect_tokio = { path = "../id_effect_tokio" }
+# Generates RSA / EC test keys at runtime (the provider jsonwebtoken already uses).
+aws-lc-rs = "1.18"
+http-body-util = "0.1"
+
+[[example]]
+name = "010_login"
+required-features = ["axum", "jwt"]
 
 [package.metadata.docs.rs]
 all-features = true

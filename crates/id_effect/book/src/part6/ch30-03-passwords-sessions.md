@@ -213,4 +213,8 @@ The crate's `tests/session_layer.rs` runs the complete flow over a socket: a wro
 an unknown user get 401, a correct login sets the cookie, a second login rotates the id, and
 logout clears the cookie. `examples/005_passwords_sessions.rs` runs the same flow without HTTP.
 
+To turn a session (or a bearer token, an API key or Basic credentials) into the principal that
+`id_effect_authz` guards read, use the `Authenticate` layer described in
+[Credentials and JWT](ch30-04-credentials-jwt.md).
+
 [PHC strings]: https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md

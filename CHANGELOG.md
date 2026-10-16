@@ -32,6 +32,12 @@
   for unknown users, hashing on the blocking pool) and server-side `Sessions` over a `SessionStore`
   (`MemorySessionStore`; idle and absolute timeouts, id rotation on login, rotate / logout /
   revoke-all, `__Host-` Secure HttpOnly SameSite=Lax cookie); feature `axum` adds `SessionLayer`.
+  Credential middleware `Authenticate` (session → bearer JWT → API key → Basic, configurable
+  order) installs a `CurrentPrincipal` (`AuthPrincipal`) for the authz guards; a bad credential is a
+  401 Problem with `WWW-Authenticate`. JWT issue / verify (feature `jwt`: HS / RS / PS / ES / EdDSA,
+  iss / aud / exp / nbf / leeway, required claims, claim → roles / permissions mapping);
+  `JwksClient` with kid-rotation refetch, rate limiting and stale-cache fallback (feature `jwks`);
+  hashed API keys with constant-time compare; Basic auth via `UserLookup` + `verify_or_dummy`.
 - `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
   (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
   back as `Secret<T>`, and merge above the profile files and below the environment;
