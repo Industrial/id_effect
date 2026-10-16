@@ -64,6 +64,9 @@
   `sqlx::migrate!` embedding) with `run` / `status` / `revert(n)` / `check` as effects and a startup
   `Layer`; sqlx-cli file naming and checksums, tracking table `_id_effect_migrations`, one
   transaction per migration under a PostgreSQL advisory lock with a timeout, typed `MigrateError`.
+- `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
+  sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
+  exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.
 
 ### Changed
 

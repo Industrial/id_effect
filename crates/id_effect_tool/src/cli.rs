@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand};
 
 use crate::doctor::{GraphFormat, Options as DoctorOptions, doctor};
+use crate::migrate::MigrateArgs;
 use crate::project::new_project;
 use crate::render::{Db, Options};
 use crate::template::Template;
@@ -29,6 +30,9 @@ pub enum Command {
   /// Check that a project can build and run here: toolchain, id_effect versions, environment,
   /// database, docker, port (and, with --graph, its layer graph). Exits 1 when a check fails.
   Doctor(DoctorArgs),
+  /// Create, apply, list, revert and check SQL migrations (PostgreSQL). Exits 1 when `check`
+  /// finds pending or changed migrations, 3 on a database error.
+  Migrate(MigrateArgs),
 }
 
 /// Arguments of `id-effect doctor`.
@@ -101,7 +105,8 @@ impl NewArgs {
 }
 
 /// Runs `id-effect` with `args` (including the program name), writing to `out` and `err`.
-/// Exit codes: `0` success, `1` the command failed, `2` a usage error.
+/// Exit codes: `0` success, `1` the command failed, `2` a usage error, `3` a database error
+/// (`migrate`; see [`crate::migrate`]).
 pub fn run<'a, I, T>(args: I, out: &'a mut dyn Write, err: &'a mut dyn Write) -> ExitCode
 where
   I: IntoIterator<Item = T>,
@@ -118,6 +123,7 @@ where
   match cli.command {
     Command::New(args) => run_new(&args, out, err),
     Command::Doctor(args) => run_doctor(&args, out),
+    Command::Migrate(args) => crate::migrate::run(&args, out, err),
   }
 }
 
