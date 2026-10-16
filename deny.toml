@@ -26,12 +26,9 @@ ignore = [
 
 [licenses]
 # Derived from `cargo deny check licenses` on the main workspace (all features).
-# CC-BY-SA-4.0 is the workspace's own license today; it stays here until the MIT
-# relicense (PLAN-OF-PLANS L10, E0.1) lands, then it can be removed.
 # CDLA-Permissive-2.0: webpki-root-certs (Mozilla CA data). MPL-2.0 also satisfies the
 # MPL-2.0+ of im / bitmaps / sized-chunks.
 allow = [
-  "CC-BY-SA-4.0",
   "MIT",
   "Apache-2.0",
   "BSD-3-Clause",

@@ -20,5 +20,5 @@ members = [
 version = "0.7.0"
 edition = "2024"
 rust-version = "1.94"
-license = "CC-BY-SA-4.0"
+license = "MIT"
 repository = "https://github.com/Industrial/id_effect"

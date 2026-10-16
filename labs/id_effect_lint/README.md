@@ -30,7 +30,7 @@ cargo publish --no-verify
 
 ## License
 
-CC-BY-SA-4.0 — see the workspace root in [Industrial/id_effect].
+MIT — see the workspace root in [Industrial/id_effect].
 
 [rustc]: https://doc.rust-lang.org/rustc/
 [Effect.rs]: https://github.com/Industrial/id_effect

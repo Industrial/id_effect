@@ -5,6 +5,10 @@
 First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading
 from 0.7: see the [0.8 migration guide](docs/MIGRATION-0.8.md).
 
+**License: MIT from 0.8.0** (was CC-BY-SA-4.0; versions up to 0.7.0 keep their license). A
+`LICENSE` file, `license = "MIT"` in every manifest, and a DCO sign-off for contributions
+(`CONTRIBUTING.md`). The labs `id_effect_jobs` obix outbox adapter was removed before the switch.
+
 ### Added
 
 - **Trust & supply chain:** `SECURITY.md` (private reporting via GitHub advisories, response

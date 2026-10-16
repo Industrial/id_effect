@@ -16,7 +16,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 [![downloads](https://img.shields.io/crates/d/id_effect.svg)](https://crates.io/crates/id_effect)
 
 <!-- Badge row 3: repository health -->
-[![License](https://img.shields.io/badge/license-CC--BY--SA--4.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.94-orange.svg)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 [![GitHub Stars](https://img.shields.io/github/stars/Industrial/id_effect?style=social)](https://github.com/Industrial/id_effect/stargazers)
@@ -246,4 +246,6 @@ Thanks to everyone who has contributed patches, reported issues, or improved the
 
 ## License
 
-This project is licensed under [CC-BY-SA-4.0](LICENSE).
+This project is licensed under the [MIT License](LICENSE) from 0.8.0 onwards. Versions up to
+and including 0.7.0 were published under CC-BY-SA-4.0 and keep that license. Contributions
+require a DCO sign-off; see [CONTRIBUTING.md](CONTRIBUTING.md).
