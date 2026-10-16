@@ -37,8 +37,14 @@ default), so its finalizers (`ensuring`, `acquire_release`, scoped layers) run.
   `Exit<A, E>` back (`into_result()` for `Result<A, Cause<E>>`).
 - **`RequestCaps` + `CapOverrideLayer`** — per-request capabilities over a `DynEnv`
   (`execute_with_request_caps`).
-- **`json::decode_json_schema`** — validate JSON bodies with **`Schema::decode_unknown`** and map
-  errors to HTTP responses (e.g. **422** with paths).
+- **`route`** — typed routes: `Route::get(..).path::<P>().query::<Q>().body::<B>().handler(f)`
+  decodes every request part through a `Schema` before `f` runs, and answers invalid input with an
+  RFC 9457 `Problem` (**422**, `application/problem+json`) listing every issue with a JSON Pointer.
+  `route::Router` keeps a registry of the routes; `ValidPath` / `ValidQuery` / `ValidHeaders` /
+  `ValidJson` / `ValidForm` do the same decoding in plain axum handlers. See
+  [Typed routes and validation](../part6/ch29-01-typed-routes.md).
+- **`json::decode_json`** — decode a JSON body with a `Schema`, failing with the same `Problem`
+  (it replaces the deprecated `decode_json_schema`).
 - **`body::{stream_body, body_stream}`** — response bodies from a `Stream<Bytes, E>` (dropping the
   body interrupts the producer), request bodies as a stream.
 - **`server`** — the server as a scoped layer: `server_layer(app)`, `serve(app)`,
@@ -89,7 +95,10 @@ OpenTelemetry, graceful shutdown).
 
 ## Further reading
 
-- Examples: `cargo run -p id_effect_axum --example 010_routing_hello` (also `020`–`060`)
+- Examples: `cargo run -p id_effect_axum --example 010_routing_hello` (also `020`–`071`), and
+  `080_typed_routes` for typed routes
+- [Typed routes and validation](../part6/ch29-01-typed-routes.md) — schemas per request part,
+  Problem+JSON errors, the route registry
 - [RPC boundaries](./ch07-12-rpc-boundaries.md) — `id_effect_rpc` envelopes, correlation ids, tracing
 - [Tower service](./ch07-09-tower-service.md) for generic `Service` composition without Axum
 - `cargo doc --open -p id_effect_axum`

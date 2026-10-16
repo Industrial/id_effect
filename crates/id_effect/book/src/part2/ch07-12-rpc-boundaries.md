@@ -14,16 +14,18 @@ unpublished) for **RPC-shaped HTTP** on top of **`id_effect_axum`** and **`id_ef
 | **HTTP + JSON + `Schema`** | Same `Schema` as domain validation; easy to debug; fits Axum | No streaming parity on day one; discipline required for versioning and error envelopes |
 
 **Recommendation for `id_effect` today:** use **HTTP + JSON** for public APIs where you already host
-**Axum**, validate bodies with **`Schema::decode_unknown`** via
-[`id_effect_axum::json::decode_json_schema`](./ch07-08-axum-host.md), and return structured failures
-with **`id_effect_rpc::RpcError`**. Add **gRPC (`tonic`)** when you need IDL-first codegen or
+**Axum**, declare and validate request input with the **typed routes** of
+[`id_effect_axum::route`](../part6/ch29-01-typed-routes.md) (or its `ValidJson` extractor), which
+answer invalid input with an RFC 9457 `Problem`, and return structured failures with
+**`id_effect_rpc::RpcError`**. Add **gRPC (`tonic`)** when you need IDL-first codegen or
 cross-language streaming at scale.
 
 ## Effect, `R`, and errors at the edge
 
 - Keep **`Effect<A, E, R>`** for domain logic; **`E`** stays rich inside the process.
-- At the Axum route, **map** `E` (and schema failures) into **`RpcError`** or **422** JSON from
-  `decode_json_schema` — clients see a **stable wire contract**, not internal enums.
+- At the Axum route, **map** `E` into **`RpcError`** or a `route::Problem`; schema failures are
+  already a **422** `application/problem+json` from the typed route or extractor — clients see a
+  **stable wire contract**, not internal enums.
 - Propagate **`x-correlation-id`** (read or generate with **`id_effect_rpc::correlation`**) and
   attach it to **responses** so logs and traces line up across hops.
 
@@ -80,5 +82,6 @@ It accepts `POST /greet` with JSON `{"name": string, "enthusiasm": i64}`, valida
 ## Further reading
 
 - [Axum host](./ch07-08-axum-host.md) — `id_effect_axum`, `execute`, JSON + schema
+- [Typed routes and validation](../part6/ch29-01-typed-routes.md) — request schemas, Problem+JSON
 - [Schema](../part4/ch14-00-schema.md) — wire types and `ParseError`
 - Phase spec: `docs/effect-ts-parity/phases/phase-d-rpc.md`
