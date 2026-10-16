@@ -8,6 +8,10 @@ the old `templates/app-minimal`). It mirrors the mdBook **CLI with clap** chapte
 - Finish with [`id_effect_cli::run_main`](https://docs.rs/id_effect_cli) (success → exit `0`, typed error → `1`,
   defect → `101`). `app_effect` returns the program (an `id_effect::Effect` over
   `ConfigEnv`) and its environment; `main` hands both to `run_main`.
+- Ctrl-C interrupts the program: finalizers (`ensuring`, `acquire_use_release`) run and the exit
+  code is `130`; a second Ctrl-C exits at once. Opt out with `RunMainConfig::minimal().ctrl_c(false)`.
+- Shell completions: `cli-minimal completions <bash|zsh|fish|elvish|powershell>` (feature
+  `completions` of `id_effect_cli`).
 
 ## Start a new CLI from it
 
@@ -22,6 +26,7 @@ the old `templates/app-minimal`). It mirrors the mdBook **CLI with clap** chapte
 ```bash
 cargo build -p cli_minimal
 cargo run -p cli_minimal -- --token demo
+cargo run -p cli_minimal -- completions bash > ~/.local/share/bash-completion/completions/cli-minimal
 ```
 
 Or with Moon:

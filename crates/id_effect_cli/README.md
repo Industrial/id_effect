@@ -4,7 +4,9 @@ Thin helpers for building **CLIs whose bodies are [`Effect`](https://docs.rs/id_
 
 - Map [`Exit`](https://docs.rs/id_effect/latest/id_effect/enum.Exit.html) / [`Cause`](https://docs.rs/id_effect/latest/id_effect/enum.Cause.html) / `Result` to [`std::process::ExitCode`].
 - [`run_main`](https://docs.rs/id_effect_cli/latest/id_effect_cli/fn.run_main.html) — the program edge: optional in-process tracing buffer (`RunMainConfig::with_tracing`: `id_effect::install_tracing_layer` + its span hook), then `block_on` on the default `id_effect::Runtime`, then stderr logging and `Exit` → exit code mapping. Takes an `Effect` or `LocalEffect` plus its environment (`HNil` when it needs nothing).
+- Graceful Ctrl-C: `run_main` runs the program as a root fiber and the first Ctrl-C interrupts it (finalizers run, exit `130`); a second Ctrl-C exits `130` at once. Opt out with `RunMainConfig::minimal().ctrl_c(false)`.
 - Optional [`clap`](https://docs.rs/clap) (feature `clap`, on by default).
+- Shell completions (feature `completions`): embed `completions::CompletionsArgs` as a subcommand and call `completions::generate::<Cli>(&args, &mut std::io::stdout())`.
 
 ## Quick start
 

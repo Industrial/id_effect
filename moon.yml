@@ -191,6 +191,15 @@ tasks:
     options:
       cache: false
       outputStyle: buffer-only-failure
+  compile-time:
+    description: >-
+      Measure the template app build loop: cold build, incremental rebuild after a one-line change, and boot (median of 3; see docs/benchmarks/README.md). Manual only, not part of ci; run on an idle machine.
+    command: 'bash'
+    args: ['scripts/compile-time.sh', '--json']
+    options:
+      cache: false
+      runInCI: false
+      outputStyle: stream
   check-docs:
     description: 'Build docs with -D warnings (same bar as Docs & Pages)'
     command: 'bash'
