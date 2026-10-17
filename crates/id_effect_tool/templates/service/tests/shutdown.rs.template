@@ -1,0 +1,118 @@
+//! Graceful shutdown as `main.rs` wires it: on SIGTERM `/ready` answers `503` while an
+//! in-flight request completes. Its own test binary, since it signals the whole process.
+#![cfg(unix)]
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use axum::routing::get;
+use id_effect_kit::axum::server::security::CookieKey;
+use id_effect_kit::axum::{HealthRegistry, HostBuilder, ReadinessState, bootstrap_env};
+use id_effect_kit::config::MapConfigProvider;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{Notify, oneshot};
+
+use {{crate_name}}::{app, serve};
+
+async fn get_raw(addr: SocketAddr, path: &str) -> std::io::Result<String> {
+    let mut stream = tokio::net::TcpStream::connect(addr).await?;
+    let request = format!("GET {path} HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await?;
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await?;
+    Ok(answer)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn on_sigterm_ready_turns_503_while_an_in_flight_request_completes() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .unwrap()
+        .port();
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    let port_text = port.to_string();
+    let env = bootstrap_env(MapConfigProvider::from_pairs([
+        ("HOST", "127.0.0.1"),
+        ("PORT", port_text.as_str()),
+        ("SHUTDOWN_TIMEOUT_SECS", "10"),
+    ]));
+
+    // `main.rs`'s wiring, plus a route that stays in flight until released.
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Notify::new());
+    let (readiness_tx, readiness_rx) = oneshot::channel::<ReadinessState>();
+    let (started2, release2) = (Arc::clone(&started), Arc::clone(&release));
+    let server = tokio::spawn(
+        HostBuilder::new()
+            .with_env(env)
+            .run_until_shutdown(move |host| {
+                let _ = readiness_tx.send(host.readiness.clone());
+                let health = HealthRegistry::new().with_readiness(host.readiness.clone());
+                let slow = move || {
+                    let (started, release) = (Arc::clone(&started2), Arc::clone(&release2));
+                    async move {
+                        started.notify_one();
+                        release.notified().await;
+                        "done"
+                    }
+                };
+                serve(
+                    host,
+                    app(&health, CookieKey::generate()).route("/slow", get(slow)),
+                )
+            }),
+    );
+    let readiness = readiness_rx.await.unwrap();
+
+    // Serving and ready (retry until the listener is bound).
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match get_raw(addr, "/ready").await {
+            Ok(answer) if answer.starts_with("HTTP/1.1 200") => break,
+            _ if Instant::now() < deadline => tokio::time::sleep(Duration::from_millis(20)).await,
+            other => panic!("never became ready: {other:?}"),
+        }
+    }
+
+    let in_flight = tokio::spawn(get_raw(addr, "/slow"));
+    started.notified().await;
+    let pid = std::process::id().to_string();
+    let killed = std::process::Command::new("kill")
+        .args(["-TERM", &pid])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+
+    // Not ready, answered over a new connection while /slow is still in flight.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let not_ready = loop {
+        let answer = get_raw(addr, "/ready").await.unwrap();
+        if answer.starts_with("HTTP/1.1 503") {
+            break answer;
+        }
+        assert!(Instant::now() < deadline, "never turned 503: {answer}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert!(
+        not_ready.contains("\"reason\":\"shutting_down\""),
+        "{not_ready}"
+    );
+    assert!(readiness.is_shutting_down());
+    assert!(!in_flight.is_finished());
+
+    // The in-flight request completes, then the server stops.
+    release.notify_one();
+    let done = tokio::time::timeout(Duration::from_secs(10), in_flight)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(done.starts_with("HTTP/1.1 200"), "{done}");
+    assert!(done.ends_with("done"), "{done}");
+    tokio::time::timeout(Duration::from_secs(10), server)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+}

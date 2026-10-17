@@ -547,10 +547,14 @@ servers:
   web:
     - 203.0.113.10
 
+drain_timeout: 35
+
 proxy:
   app_port: 8080
   healthcheck:
-    path: /health
+    path: /ready
+    interval: 1
+    timeout: 5
 
 registry:
   server: ghcr.io
@@ -562,6 +566,7 @@ env:
   clear:
     HOST: "0.0.0.0"
     PORT: "8080"
+    SHUTDOWN_TIMEOUT_SECS: "30"
   secret:
     - COOKIE_KEY
     - DATABASE_URL
@@ -576,8 +581,11 @@ kamal setup     # first time: installs Docker on the servers, boots the proxy an
 kamal deploy    # every release after that
 ```
 
-Kamal's proxy only routes traffic to a new container once `/health` answers `200`, and the
-service drains in-flight requests on the `SIGTERM` of the old one. The generated
+Kamal's proxy only routes traffic to a new container once `/ready` answers `200` (here: once the
+`db` check passes), then gives the old one up to `drain_timeout` seconds. On its `SIGTERM` the old
+service turns `/ready` `503` and drains in-flight requests for up to `SHUTDOWN_TIMEOUT_SECS`, so
+`drain_timeout` stays above it ([Rolling restarts and
+drain](./part6/ch34-00-dx-ship.md#rolling-restarts-and-drain)). The generated
 `.github/workflows/ci.yml` already runs fmt, clippy, the tests and a docker build on every push.
 
 ## Where next

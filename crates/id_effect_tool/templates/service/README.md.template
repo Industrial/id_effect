@@ -21,20 +21,21 @@ layer graph that `src/main.rs` registers.
 | `GET /` | the greeting, counted in `greetings_total` |
 | `GET /hello/{name}` | a typed route: `{name}` (1 to 32 characters) is decoded through a schema; anything else is a `422` Problem+JSON |
 | `GET /health` | liveness: `200` while the process runs |
-| `GET /ready` | readiness: the `HealthRegistry` checks as JSON, `503` when one is down |
+| `GET /ready` | readiness: the `HealthRegistry` checks as JSON, `503` when one is down or once shutdown has started |
 | `GET /metrics` | Prometheus text: `http_server_requests_total` by method, route and status, runtime gauges |
 
 Every request passes through `SecurityLayer::recommended`: CSRF tokens on state-changing requests, a nonce-based CSP, HSTS / `X-Frame-Options` / `nosniff` headers and signed cookies (`COOKIE_KEY`). The middleware stack also gives each request an `x-request-id` (and a span), compresses responses, answers a request running past `REQUEST_TIMEOUT` with `503` and a body over `BODY_LIMIT` with `413`; rejections are RFC 9457 Problem+JSON (`application/problem+json`).
 
 ## Layout
 
-- `src/lib.rs` — `app()`: the router, testable without a socket.
-- `src/main.rs` — loads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS` and `COOKIE_KEY`, serves until SIGINT / SIGTERM and drains in-flight requests.
+- `src/lib.rs` — `app()`: the router, testable without a socket; `serve()`: serves it, counting in-flight requests for the drain.
+- `src/main.rs` — loads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS` and `COOKIE_KEY`, serves until SIGINT / SIGTERM, then drains in-flight requests (for up to `SHUTDOWN_TIMEOUT_SECS`) while `/ready` answers `503` and new connections are still accepted.
 {{#if pg}}
 - `src/db.rs` — the PostgreSQL pool (`DATABASE_URL`), the migrations in `migrations/` applied on start (`id_effect_kit::sql::migrate::run`: tracked in `_id_effect_migrations`, one transaction each, an advisory lock across replicas), the `db` check behind `/ready`.
 - `migrations/` — `0001_init.sql`; add the next with `id-effect migrate new <name>`, apply with `id-effect migrate run` (or start the service), and never edit one that ran (`id-effect migrate check` fails on a changed or pending migration).
 {{/if}}
 - `tests/http.rs` — the routes, the security headers, readiness and metrics.
+- `tests/shutdown.rs` — SIGTERM: `/ready` turns `503` while an in-flight request completes.
 
 ## Run it elsewhere
 

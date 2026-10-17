@@ -122,6 +122,7 @@ pub static FILES: &[TemplateFile] = &[
     Condition::Pg
   ),
   embed!("service", "tests/http.rs.template"),
+  embed!("service", "tests/shutdown.rs.template"),
   embed!("worker", "Cargo.toml.template"),
   embed!("worker", "README.md.template"),
   embed!("worker", "compose.yaml.template"),

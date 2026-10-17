@@ -1,29 +1,29 @@
-//! {{name}}: serve the app until SIGINT / SIGTERM, then drain in-flight requests.
+//! {{name}}: serve the app until SIGINT / SIGTERM, then drain in-flight requests while `/ready`
+//! answers `503` (for up to `SHUTDOWN_TIMEOUT_SECS`).
 //!
 //! Configuration comes from the environment (see `.env.example`). `--describe-layers` (or
 //! `--describe-layers=dot`) prints the layer graph instead; `id-effect doctor --graph` runs it.
 
 use std::process::ExitCode;
 
-use id_effect::Exit;
 use id_effect_kit::axum::server::security::{COOKIE_KEY_ENV, CookieKey};
 use id_effect_kit::axum::{
-    EffectExecutor, HealthRegistry, HostConfig, HostError, provide_host_config_env,
-    serve_until_shutdown,
+    HealthRegistry, HostBuilder, HostConfig, HostError, provide_host_config_env,
 };
 use id_effect_kit::graph::LayerGraph;
 {{#if otel}}
 use id_effect_kit::otel::{OtelConfig, install_from_config};
 {{/if}}
 
-use {{crate_name}}::app;
 {{#if pg}}
 use {{crate_name}}::db::Database;
 {{/if}}
+use {{crate_name}}::{app, serve};
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    // HOST, PORT and SHUTDOWN_TIMEOUT_SECS from the environment.
+    // HOST, PORT and SHUTDOWN_TIMEOUT_SECS from the environment (`HostBuilder` loads them the
+    // same way when serving).
     let env = provide_host_config_env::<HostError>();
     let host_config = HostConfig::layer::<HostError>();
     // Register every layer the app composes, so the graph shows what each one needs.
@@ -52,21 +52,22 @@ async fn main() -> ExitCode {
         Err(e) => return fail(e),
     };
 {{/if}}
-    let host = env.provide_to(host_config);
-    let program = serve_until_shutdown(app(&health, cookie_key)).provide_layer(host);
-{{#if otel}}
-    let program = program.with_span_hook(telemetry.span_hook());
-{{/if}}
-    let exit = EffectExecutor::global().run_effect(program).await;
+    let served = HostBuilder::new()
+        .run_until_shutdown(move |host| {
+            // `/ready` reports the host's readiness, which the shutdown signal marks down.
+            let health = health.with_readiness(host.readiness.clone());
+            serve(host, app(&health, cookie_key))
+        })
+        .await;
 {{#if otel}}
     telemetry.shutdown();
 {{/if}}
-    match exit {
-        Exit::Success(reason) => {
-            eprintln!("stopped: {reason:?}");
+    match served {
+        Ok(()) => {
+            eprintln!("stopped");
             ExitCode::SUCCESS
         }
-        Exit::Failure(cause) => fail(format!("{cause:?}")),
+        Err(e) => fail(e),
     }
 }
 

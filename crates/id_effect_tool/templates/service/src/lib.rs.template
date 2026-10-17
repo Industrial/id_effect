@@ -1,7 +1,7 @@
 //! {{name}}: an HTTP service on id_effect with secure defaults, health, readiness and metrics.
 //!
-//! [`app`] assembles the router; `main.rs` loads the configuration and serves it until SIGINT
-//! or SIGTERM.
+//! [`app`] assembles the router; `main.rs` loads the configuration and [`serve`]s it until
+//! SIGINT or SIGTERM.
 
 use std::convert::Infallible;
 use std::time::Duration;
@@ -15,7 +15,9 @@ use id_effect_kit::axum::middleware::{
 };
 use id_effect_kit::axum::route::{self, Input, Route};
 use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
-use id_effect_kit::axum::{HealthRegistry, routing};
+use id_effect_kit::axum::{
+    HealthRegistry, Host, HostError, routing, serve_router, track_in_flight,
+};
 
 {{#if pg}}
 pub mod db;
@@ -89,4 +91,14 @@ pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
         .layer(SecurityLayer::recommended(cookie_key))
         .layer(CompressionLayer::new())
         .layer(RequestIdLayer::new())
+}
+
+/// Serves `app` on `host` until SIGINT / SIGTERM (run it with
+/// `HostBuilder::run_until_shutdown`). Every request is counted in `host.drain`: on a signal
+/// the host is marked shutting down (`/ready` answers `503` when `app`'s health registry has
+/// `host.readiness`), new connections are still accepted while in-flight requests finish, for
+/// up to `SHUTDOWN_TIMEOUT_SECS`, then the server stops.
+pub async fn serve(host: Host, app: Router) -> Result<(), HostError> {
+    let app = track_in_flight(app, &host.drain);
+    serve_router(host, app).await
 }

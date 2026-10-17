@@ -15,4 +15,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
+# tests/shutdown.rs talks HTTP over a socket.
+tokio = { version = "1", features = ["io-util", "net", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }

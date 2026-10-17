@@ -18,5 +18,7 @@ pub use security::{
   CookieKey, Cookies, CorsConfig, CspNonce, CsrfConfig, CsrfToken, FrameOptions, SecurityError,
   SecurityHeaders, SecurityLayer, csp_middleware, csrf_middleware, set_csrf_header,
 };
-pub use shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};
+pub use shutdown::{
+  HostDrain, ShutdownReason, drain_with_timeout, track_in_flight, wait_for_shutdown,
+};
 pub use static_files::{StaticFiles, serve_dir};

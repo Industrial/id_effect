@@ -48,14 +48,16 @@ once and `kamal deploy` per release.
 
 ### Rolling restarts and drain
 
-A deploy replaces instances one at a time without dropping requests. A host run with
-`HostBuilder::run_until_shutdown` and `serve_router`, its `HealthRegistry` built
-`with_readiness(host.readiness.clone())`, marks its readiness shutting down on SIGTERM, so `/ready`
-answers `503` (`"shutting_down"`) while the listener keeps accepting and in-flight requests finish,
-for at most `SHUTDOWN_TIMEOUT_SECS` (default `30`); then the process exits.
-(`server_layer_with_readiness` marks a shared `ReadinessState` the same way but stops accepting at
-once.) `/health` stays `200` throughout: the process is alive, just not taking new work. The
-sequence:
+A deploy replaces instances one at a time without dropping requests. A generated service does this
+out of the box: its `main` runs `HostBuilder::run_until_shutdown` with the project's `serve`
+(`serve_router` over the app wrapped in `track_in_flight(app, &host.drain)`, so in-flight requests
+are counted), its `HealthRegistry` built `with_readiness(host.readiness.clone())`. On SIGTERM it
+marks its readiness shutting down, so `/ready` answers `503` (`"shutting_down"`) while the listener
+keeps accepting and in-flight requests finish, for at most `SHUTDOWN_TIMEOUT_SECS` (default `30`);
+then the process exits. A hand-written host gets the same from those pieces.
+(`serve_until_shutdown` and `server_layer_with_readiness` stop accepting at once; the latter marks
+a shared `ReadinessState` the same way.) `/health` stays `200` throughout: the process is alive,
+just not taking new work. The sequence:
 
 1. The new instance starts and its `/ready` turns `200`.
 2. The old instance gets SIGTERM; its `/ready` turns `503`.
@@ -66,7 +68,8 @@ sequence:
 `on_sigterm_ready_turns_503_while_an_in_flight_request_completes`
 (`crates/id_effect_axum/tests/health.rs:216`) is the evidence: it sends the process SIGTERM with a
 request in flight, sees `/ready` answer `503` while that request is still open, then sees the
-request complete and the server exit.
+request complete and the server exit. A generated project's `tests/shutdown.rs` runs the same check
+against its own `app` and `serve`.
 
 **Kamal.** The generated `config/deploy.yml` carries the settings:
 
