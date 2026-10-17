@@ -5,19 +5,21 @@
 //! arrays, ranges, …) are an error naming the column and suggesting a `::text` cast; enum
 //! columns decode as text.
 //!
-//! Dates and times are read from pg's binary form (microseconds / days since 2000-01-01) with
-//! checked arithmetic, so `infinity` and values beyond jiff's years ±9999 are
-//! [`SqlError::ValueOutOfRange`], never a panic.
+//! Dates and times bind and decode through our own codecs for pg's binary form (microseconds /
+//! days since 2000-01-01, see `datetime`) with checked arithmetic, so `±infinity`, values beyond
+//! jiff's years ±9999 and values before pg's 4714 BC are [`SqlError::ValueOutOfRange`], never a
+//! panic.
 
 use std::sync::Arc;
 
+use sqlx::decode::Decode;
 use sqlx::encode::{Encode, IsNull};
 use sqlx::error::BoxDynError;
 use sqlx::postgres::types::Oid;
 use sqlx::postgres::{PgArgumentBuffer, PgArguments, PgRow, PgTypeInfo, PgTypeKind, Postgres};
 use sqlx::{Column as _, Row as _, TypeInfo as _, ValueRef as _};
 
-use crate::value::time_conv;
+use super::datetime::{PgDate, PgDateTime, PgTime, PgTimestamp};
 use crate::{SqlColumn, SqlError, SqlRow, SqlType, SqlValue};
 
 /// SQL NULL bound with the unspecified type (OID 0): the server infers it from the statement.
@@ -58,10 +60,10 @@ pub(super) fn bind_query<'q>(
       SqlValue::Text(v) => query.bind(v.clone()),
       SqlValue::Bytes(v) => query.bind(v.clone()),
       SqlValue::Uuid(v) => query.bind(*v),
-      SqlValue::Timestamp(v) => query.bind(time_conv::timestamp(*v).map_err(out_of_range)?),
-      SqlValue::DateTime(v) => query.bind(time_conv::datetime(*v).map_err(out_of_range)?),
-      SqlValue::Date(v) => query.bind(time_conv::date(*v).map_err(out_of_range)?),
-      SqlValue::Time(v) => query.bind(time_conv::time_of_day(*v).map_err(out_of_range)?),
+      SqlValue::Timestamp(v) => query.bind(PgTimestamp::checked(*v).map_err(out_of_range)?),
+      SqlValue::DateTime(v) => query.bind(PgDateTime::checked(*v).map_err(out_of_range)?),
+      SqlValue::Date(v) => query.bind(PgDate::checked(*v).map_err(out_of_range)?),
+      SqlValue::Time(v) => query.bind(PgTime(*v)),
       SqlValue::Decimal(v) => query.bind(*v),
       SqlValue::Json(v) => query.bind(sqlx::types::Json(v.clone())),
     };
@@ -157,35 +159,9 @@ pub(super) fn decode_rows(rows: &[PgRow]) -> Result<Vec<SqlRow>, SqlError> {
     .collect()
 }
 
-/// Microseconds from the unix epoch to pg's epoch, 2000-01-01T00:00:00Z.
-const PG_EPOCH_MICROS: i64 = 946_684_800_000_000;
-const DAY_MICROS: i64 = 86_400_000_000;
-
-/// pg's binary timestamp (microseconds since its epoch) as an instant.
-fn pg_timestamp(micros: i64) -> Result<jiff::Timestamp, String> {
-  micros
-    .checked_add(PG_EPOCH_MICROS)
-    .ok_or_else(|| "timestamp is infinite or beyond year 9999".to_owned())
-    .and_then(|unix| jiff::Timestamp::from_microsecond(unix).map_err(|e| e.to_string()))
-}
-
-fn pg_datetime(micros: i64) -> Result<jiff::civil::DateTime, String> {
-  pg_timestamp(micros).map(|t| jiff::tz::Offset::UTC.to_datetime(t))
-}
-
-fn pg_date(days: i32) -> Result<jiff::civil::Date, String> {
-  i64::from(days)
-    .checked_mul(DAY_MICROS)
-    .ok_or_else(|| "date is infinite or beyond year 9999".to_owned())
-    .and_then(pg_datetime)
-    .map(|dt| dt.date())
-}
-
-fn pg_time(micros: i64) -> Result<jiff::civil::Time, String> {
-  if !(0..DAY_MICROS).contains(&micros) {
-    return Err(format!("time of day {micros}µs is not before 24:00"));
-  }
-  pg_datetime(micros).map(|dt| dt.time())
+/// Column `i` (not NULL) through `T`'s own `Decode` (the date-time codecs).
+fn decode_as<T: for<'r> Decode<'r, Postgres>>(row: &PgRow, i: usize) -> Result<T, String> {
+  T::decode(row.try_get_raw(i).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 
 fn decode(row: &PgRow, i: usize, kind: Kind) -> Result<SqlValue, String> {
@@ -205,10 +181,10 @@ fn decode(row: &PgRow, i: usize, kind: Kind) -> Result<SqlValue, String> {
     Kind::OtherText => SqlValue::Text(row.try_get_unchecked(i).map_err(err)?),
     Kind::Bytes => SqlValue::Bytes(row.try_get(i).map_err(err)?),
     Kind::Uuid => SqlValue::Uuid(row.try_get(i).map_err(err)?),
-    Kind::Timestamp => SqlValue::Timestamp(pg_timestamp(row.try_get_unchecked(i).map_err(err)?)?),
-    Kind::DateTime => SqlValue::DateTime(pg_datetime(row.try_get_unchecked(i).map_err(err)?)?),
-    Kind::Date => SqlValue::Date(pg_date(row.try_get_unchecked(i).map_err(err)?)?),
-    Kind::Time => SqlValue::Time(pg_time(row.try_get_unchecked(i).map_err(err)?)?),
+    Kind::Timestamp => SqlValue::Timestamp(decode_as::<PgTimestamp>(row, i)?.0),
+    Kind::DateTime => SqlValue::DateTime(decode_as::<PgDateTime>(row, i)?.0),
+    Kind::Date => SqlValue::Date(decode_as::<PgDate>(row, i)?.0),
+    Kind::Time => SqlValue::Time(decode_as::<PgTime>(row, i)?.0),
     Kind::Decimal => SqlValue::Decimal(row.try_get(i).map_err(err)?),
     Kind::Json => SqlValue::Json(row.try_get(i).map_err(err)?),
   })
@@ -216,28 +192,7 @@ fn decode(row: &PgRow, i: usize, kind: Kind) -> Result<SqlValue, String> {
 
 #[cfg(test)]
 mod tests {
-  use jiff::civil::{date, time};
-
   use super::*;
-
-  #[test]
-  fn binary_temporals_decode_with_checked_arithmetic() {
-    assert_eq!(
-      pg_timestamp(0).unwrap(),
-      "2000-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap()
-    );
-    assert_eq!(
-      pg_datetime(-1).unwrap(),
-      date(1999, 12, 31).at(23, 59, 59, 999_999_000)
-    );
-    assert_eq!(pg_date(366).unwrap(), date(2001, 1, 1));
-    assert_eq!(pg_time(3_600_000_001).unwrap(), time(1, 0, 0, 1_000));
-    assert!(pg_timestamp(i64::MAX).unwrap_err().contains("infinite"));
-    assert!(pg_timestamp(i64::MIN).is_err(), "-infinity");
-    assert!(pg_date(i32::MAX).is_err(), "infinity date");
-    assert!(pg_time(DAY_MICROS).unwrap_err().contains("24:00"));
-    assert!(pg_time(-1).is_err());
-  }
 
   #[test]
   fn type_names_map_to_kinds() {

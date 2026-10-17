@@ -1,7 +1,9 @@
-//! jiff → `time` for the sqlx drivers (`time` never appears in the public API).
+//! jiff → `time` for the sqlx MySQL driver (`time` never appears in the public API). PostgreSQL
+//! has its own wire codecs (`pg::datetime`).
 //!
 //! Both crates span years -9999..=9999, so these conversions do not fail in practice; a failure
 //! is still reported as an error, never a panic.
+#![cfg(feature = "mysql")]
 
 /// An instant as a UTC `OffsetDateTime` (via unix nanoseconds).
 pub(crate) fn timestamp(ts: jiff::Timestamp) -> Result<time::OffsetDateTime, String> {
