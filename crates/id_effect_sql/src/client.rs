@@ -7,10 +7,12 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use id_effect::Never;
 use id_effect::{
-  Effect, HCons, HList, HNil, Layer, Selector, Stream, fail, hlist, need, succeed, suspend, sync,
+  Effect, HCons, HList, HNil, Layer, Selector, Stream, fail, hlist, need, sleep, succeed, suspend,
+  sync,
 };
 
 use crate::error::SqlError;
@@ -183,6 +185,8 @@ pub(crate) struct TestSqlClientState {
   pub(crate) execute_rows: HashMap<String, u64>,
   pub(crate) fail_connect: bool,
   pub(crate) fail_query: Option<String>,
+  /// Latency of every [`SqlClient::query`] (a sleep on the executor clock).
+  pub(crate) query_delay: Option<Duration>,
   pub(crate) fail_commit: bool,
   pub(crate) open_transactions: usize,
   pub(crate) commits: usize,
@@ -263,6 +267,14 @@ impl TestSqlClient {
   #[inline]
   pub fn fail_queries(&self, message: impl Into<String>) {
     self.state().fail_query = Some(message.into());
+  }
+
+  /// Delay every query by `delay` before it runs (latency injection): a [`sleep`] on the
+  /// fiber's executor clock, so virtual time on a
+  /// [`TestExecutor`](id_effect::TestExecutor). `Duration::ZERO` removes the delay.
+  #[inline]
+  pub fn delay_queries(&self, delay: Duration) {
+    self.state().query_delay = (!delay.is_zero()).then_some(delay);
   }
 
   /// Force every commit to fail (the transaction is then rolled back).
@@ -347,12 +359,19 @@ impl SqlClient for TestSqlClient {
   fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (inner, sql, params) = (Arc::clone(&self.inner), sql.to_string(), params.to_vec());
     suspend(move || {
-      let mut state = lock(&inner);
-      let out = state.run_query(&sql);
-      if out.is_ok() {
-        state.queries.push((sql, params));
+      let delay = lock(&inner).query_delay;
+      let run = suspend(move || {
+        let mut state = lock(&inner);
+        let out = state.run_query(&sql);
+        if out.is_ok() {
+          state.queries.push((sql, params));
+        }
+        ready(out)
+      });
+      match delay {
+        Some(d) => sleep(d).then(run),
+        None => run,
       }
-      ready(out)
     })
   }
 
@@ -485,6 +504,30 @@ pub(crate) mod tests {
       Err(SqlError::QueryFailed { .. })
     ));
     assert!(test.recorded_queries().is_empty());
+  }
+
+  #[test]
+  fn delay_queries_sleeps_on_the_executor_clock() {
+    use std::time::Duration;
+
+    use id_effect::TestExecutor;
+
+    let test = TestSqlClient::new();
+    test.script_query("SELECT 1", vec![SqlRow::default()]);
+    run(test.connect()).unwrap();
+    test.delay_queries(Duration::from_secs(30));
+    let exec = TestExecutor::new();
+    let h = test
+      .query("SELECT 1", &[])
+      .fork_root(Arc::new(exec.clone()));
+    exec.advance(Duration::from_secs(30) - Duration::from_nanos(1));
+    assert!(!h.is_done());
+    assert!(test.recorded_queries().is_empty(), "runs after the delay");
+    exec.advance(Duration::from_nanos(1));
+    assert!(h.is_done());
+    assert_eq!(test.recorded_queries().len(), 1);
+    test.delay_queries(Duration::ZERO);
+    assert_eq!(run(test.query("SELECT 1", &[])).unwrap().len(), 1);
   }
 
   #[test]

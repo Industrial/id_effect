@@ -32,6 +32,9 @@ http = [
 # `contract`: contract testing — a `TestResponse` checked against the response schema an OpenAPI
 # document declares for its operation and status.
 contract = ["http", "dep:jsonschema"]
+# `fault`: fault injection — `Fault` (delay, fail, timeout) and seeded `FaultPlan` schedules over
+# any effect, delays on the executor clock (id_effect only).
+fault = []
 
 [lib]
 name = "id_effect_test"

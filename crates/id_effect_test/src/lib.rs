@@ -19,6 +19,9 @@
 //! - **`contract`** (feature `contract`) — `Contract`: contract testing against the app's
 //!   OpenAPI document; a `TestResponse` is checked against the response schema its operation
 //!   declares for its status (`assert_conforms`), violations named by JSON pointer.
+//! - **`fault`** (feature `fault`) — fault injection: `Fault::{delay, fail, timeout}` injected
+//!   into any effect (a service double's calls), and `FaultPlan::seeded(seed)`: a reproducible
+//!   per-call fault schedule; delays run on the executor clock (virtual on a `TestExecutor`).
 //!
 //! ## Cargo features
 //!
@@ -28,6 +31,7 @@
 //! - **`fixtures`** — `fixtures` (with `sql`; proptest).
 //! - **`http`** — `http` (tower and `http` types; no axum dependency).
 //! - **`contract`** — `contract` (with `http`; the `jsonschema` validator).
+//! - **`fault`** — `fault` (no dependency beyond id_effect).
 //!
 //! Container tests run in CI's containers job with `ID_EFFECT_REQUIRE_DOCKER=1`.
 //!
@@ -42,6 +46,8 @@ pub mod containers;
 pub mod contract;
 #[cfg(feature = "sql")]
 pub mod db;
+#[cfg(feature = "fault")]
+pub mod fault;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 #[cfg(feature = "http")]
@@ -56,6 +62,8 @@ pub use containers::{
 pub use contract::{Contract, ContractError};
 #[cfg(feature = "sql")]
 pub use db::{IsolatedDatabase, TemplateDb, TransactionSqlClient, isolated_db};
+#[cfg(feature = "fault")]
+pub use fault::{Fault, FaultKind, FaultPlan};
 #[cfg(feature = "fixtures")]
 pub use fixtures::{Factory, Fixture};
 #[cfg(feature = "http")]
