@@ -12094,7 +12094,7 @@
 			},
 			"evidence": "Framework lints exist only in the unpublished labs/id_effect_lint; book appendix-d-workspace-tooling.md:27 points to labs.",
 			"targets": {
-				"0.10.0": 63,
+				"0.11.0": 63,
 				"1.0.0": 75
 			},
 			"checks": [

@@ -107,12 +107,12 @@ Not yet measured: there is no `docs/benchmarks/REPORT-0.9.md`.
 
 ## Next release slot
 
-The next slot is **0.10.0**, with a target on 18 rows. It stands as planned in `rows[].targets`; to adjust it, change the targets and regenerate this report. The planned path from 0.9.0 (METHOD §5.1, same competitor snapshot):
+The next slot is **0.10.0**, with a target on 17 rows. It stands as planned in `rows[].targets`; to adjust it, change the targets and regenerate this report. The planned path from 0.9.0 (METHOD §5.1, same competitor snapshot):
 
 | Version | U | E (rank) | RT (rank) | ≥80 | <40 | leader | median gap |
 |---|---|---|---|---|---|---|---|
 | 0.9.0 measured | 67.2 | 67.2 (#3) | 70.8 (#2) | 38 | 21 | 19 | 12 |
-| 0.10.0 target | 73.5 | 74.1 (#2) | 77.0 (#1) | 44 | 11 | 20 | 12 |
+| 0.10.0 target | 73.2 | 73.8 (#2) | 76.8 (#1) | 44 | 12 | 20 | 12 |
 | 0.11.0 target | 77.2 | 77.2 (#2) | 81.3 (#1) | 52 | 8 | 26 | 12 |
 | 0.12.0 target | 80.7 | 80.9 (#1) | 83.3 (#1) | 53 | 3 | 26 | 12 |
 | 1.0.0 target | 83.5 | 83.6 (#1) | 85.9 (#1) | 59 | 1 | 30 | 12 |

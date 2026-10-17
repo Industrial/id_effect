@@ -106,6 +106,9 @@ owner's email or other personal data to external services.
   service, incl. the project's own release container (takes :8080 for service) - add a service
   filter (e.g. only services with a `profiles: [dev]` or `--services db,redis`). Template READMEs
   don't mention `.devcontainer/`. Windows path of `id-effect dev` not compile-checked.
+- D1 checkpoint applied 2026-10-17 (dx.lint target 0.10.0 -> 0.11.0; planned 0.10.0 E 73.8 #2,
+  RT 76.8 #1, red 12). TODO: add its PLAN-OF-PLANS §11 row once the other session's uncommitted
+  PLAN-OF-PLANS edit (L14: 1.0 postponed, 0.13 / 0.14 inserted) is committed - do not mix them.
 - Index hygiene: something (likely a Maestro command) staged ~330 files incl. other agents' WIP
   during wave 1. Pathspec commits are unaffected; never run a bare `git commit`.
 - Fiber registry bench numbers came from a loaded machine: re-measure idle in `r10-w3-kpis`.
