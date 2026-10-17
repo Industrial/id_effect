@@ -1,22 +1,62 @@
 //! Object storage for id_effect services: one store interface over the local file system,
 //! in-memory and S3-compatible backends.
 //!
+//! The [`ObjectStore`] capability (installed as [`ObjectStorage`]) puts, gets, heads, deletes
+//! and lists objects, streams uploads and downloads as core [`Stream`](id_effect::Stream)s
+//! without holding the object in memory, and issues signed, expiring URLs. Backends:
+//! [`MemoryStore`] (tests), [`LocalStore`] (a directory) and, with the `s3` feature, `S3Store`
+//! (AWS S3, MinIO, R2, ... with presigned URLs). Local and in-memory stores sign URLs with a
+//! [`UrlSigner`] the serving side verifies.
+//!
 //! [`ObjectKey`] is a validated key that means the same on every backend: 1 to
 //! [`ObjectKey::MAX_LEN`] bytes of `/`-separated segments, none empty, `.` or `..`, and no control
 //! characters, so a key can never escape a file-system store's root.
 //!
 //! ```
-//! use id_effect_storage::{KeyError, ObjectKey};
+//! use bytes::Bytes;
+//! use id_effect::{Exit, Stream};
+//! use id_effect_storage::{
+//!   KeyError, MemoryStore, ObjectKey, ObjectStorageEnv, StorageError, get, put_stream,
+//! };
 //!
 //! let key = ObjectKey::new("avatars/carol.png").unwrap();
 //! assert_eq!(key.segments().collect::<Vec<_>>(), ["avatars", "carol.png"]);
 //! assert_eq!(ObjectKey::new("/avatars"), Err(KeyError::EmptySegment));
+//!
+//! let body = Stream::<Bytes, StorageError>::from_vec(vec![
+//!   Bytes::from_static(b"he"),
+//!   Bytes::from_static(b"llo"),
+//! ]);
+//! let program = put_stream::<ObjectStorageEnv, _>(key.clone(), body)
+//!   .flat_map(move |_| get(key));
+//! let got = program.provide_layer(MemoryStore::layer()).block_on();
+//! assert!(matches!(got, Exit::Success(b) if b == "hello"));
 //! ```
 //!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+
+mod local;
+mod memory;
+#[cfg(feature = "s3")]
+mod s3;
+mod signed;
+mod store;
+
+pub use local::LocalStore;
+pub use memory::MemoryStore;
+#[cfg(feature = "s3")]
+pub use s3::{S3Config, S3Store};
+pub use signed::{SignatureError, SignedMethod, UrlSigner};
+pub use store::{
+  DEFAULT_PART_SIZE, ObjectMeta, ObjectStorage, ObjectStorageEnv, ObjectStore, PutOutcome,
+  StorageError, delete, exists, get, get_stream, head, list, object_storage_env,
+  provide_object_storage, put, put_stream, signed_url,
+};
+/// The URL type of [`ObjectStore::signed_url`] and [`UrlSigner`].
+pub use url::Url;
 
 use std::fmt;
 
