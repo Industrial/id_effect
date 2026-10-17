@@ -1,0 +1,64 @@
+{
+	"schema": "id_effect dx-kpis v1",
+	"method": "scripts/dx-kpis.sh (header)",
+	"release": "0.9",
+	"measured_at": "2026-10-17T01:17:51Z",
+	"revision": "35f575b+dirty",
+	"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cores": 32,
+		"mem_gib": 62,
+		"os": "Linux 6.18.55",
+		"load_avg_start": "21.36 9.57 7.74",
+		"load_avg_end": "56.33 73.27 41.33"
+	},
+	"k1": {
+		"seconds": 67.56,
+		"budget_s": 180,
+		"pass": true,
+		"new_s": 0.63,
+		"build_s": 66.91,
+		"boot_to_health_s": 0.01,
+		"template": "service",
+		"target_dir": "fresh",
+		"wrapper": "none"
+	},
+	"k3": {
+		"lines": 508,
+		"by_category": {
+			"model": 180,
+			"migration": 17,
+			"routes": 153,
+			"policy": 30,
+			"test": 128,
+			"other": 0
+		},
+		"files": 8,
+		"patch": "docs/benchmarks/k3/invoice.patch",
+		"applies_to_head": true,
+		"excluded": { "job": "no jobs battery before 0.10" },
+		"build": { "build_s": 288.14, "test_s": 13.35, "invoice_tests": "passed" },
+		"target": "none at 0.9 (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release"
+	},
+	"k4": {
+		"fixed": 17,
+		"cases": 20,
+		"min": 17,
+		"pass": true,
+		"without_fix": [
+			"not_send_body",
+			"generic_runner_unannotated",
+			"block_on_in_async"
+		]
+	},
+	"k5": {
+		"compiled": 500,
+		"rust_fences": 528,
+		"ignored": 20,
+		"not_included": 8,
+		"percent": 94.7,
+		"min_percent": 80,
+		"pass": true
+	}
+}

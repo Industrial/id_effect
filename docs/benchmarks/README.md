@@ -11,6 +11,8 @@ numbers that gates read are exported to JSON and committed here.
 | `v0.6-rerun.json`, `v0.7.json`, [`REPORT-0.7.md`](REPORT-0.7.md) | The 0.7.0 release comparison: a same-session re-run of `bench/v0.6` against 0.7.0 (`r-bench-report`) |
 | `fixtures/*.json` | Synthetic exports for `bench-compare.sh --self-test` |
 | `compile-0.8.json` | Build loop of the template app (`examples/cli-minimal`) for 0.8: cold build, incremental rebuild, boot ([Compile time](#compile-time)) |
+| `dx-kpis-0.8.json`, `dx-kpis-0.9.json` | The DX KPIs of PLAN-OF-PLANS §8 measured by `scripts/dx-kpis.sh` (K1, K4, K5; K3 from 0.9) |
+| `k3/invoice.patch` | The K3 "invoice" resource for the Ledger reference app ([Feature LOC (K3)](#feature-loc-k3)) |
 
 ## Gates
 
@@ -114,6 +116,44 @@ The scorecard reads `dx.compile` #2 (cold < 60 s) from `cold_s`, #1 (rebuild+res
 The 0.8 run was taken on a loaded machine (1-min load 9–18 on 32 threads): cold 10.16 s,
 incremental 0.88 s, boot 0.004 s. Two of the five incremental samples were 2.8–3.0 s, so
 re-measure #1 on an idle machine before relying on its margin.
+
+## Feature LOC (K3)
+
+K3 is the number of lines it takes to add one resource to a real service: the "invoice" resource
+added to `examples/reference/ledger`, written the way the app writes its accounts (an `Entity`
+over a tenant-scoped, soft-deleted, versioned `Repository`, migration `0004` up and down, typed
+routes answering Problem+JSON, permissions and a resource policy with a guard on every route, an
+integration test on the app's harness). It is kept as `k3/invoice.patch`, a unified diff
+against `HEAD` (repository-relative paths), not as code in the app.
+
+```bash
+bash scripts/dx-kpis.sh --skip-k1              # K3 (and K4, K5): the patch applies, its lines counted
+ID_EFFECT_REQUIRE_DOCKER=1 bash scripts/dx-kpis.sh --skip-k1 --k3-build   # also build it, run its tests
+git apply --check docs/benchmarks/k3/invoice.patch   # on a clean checkout of HEAD
+```
+
+- **Count:** added (`+`) lines whose content is not blank, comments and doc comments included
+  (`#![deny(missing_docs)]` makes them part of the code). A changed line counts as added.
+- **Categories** (paths under `examples/reference/ledger`): `migrations/**` migration;
+  `tests/**` test (the new test and the existing tests the change has to update, here the
+  migration versions in `tests/migrations.rs`); `src/policy.rs` policy; `src/app.rs` routes (the
+  router's `merge`); `src/lib.rs` model (`pub mod`); the resource module `src/<name>.rs` is model
+  up to its first private top-level `fn` (the first handler) and routes from there; anything
+  else is `other`.
+- **Applies to HEAD:** checked on a scratch index read from `HEAD`
+  (`git apply --cached --check`), so local changes do not matter. When the Ledger changes in a way
+  that breaks the patch, the script fails: refresh the patch in an export of `HEAD`
+  (`git archive HEAD | tar -x -C …`, `git apply`, fix, `git diff`) and re-record K3.
+- **`--k3-build`** exports `HEAD` into `DX_KPIS_DIR` (or a temp dir), applies the patch, runs
+  `cargo build -p ledger --tests` and `cargo test -p ledger --test invoices` (`SKIP` without
+  Docker, a failure with `ID_EFFECT_REQUIRE_DOCKER=1`). `K3_TARGET_DIR` reuses a target dir.
+- **Excluded:** the "job" of §8 (PLAN-OF-PLANS: model, migration, routes, auth, job, test): there
+  is no jobs battery before 0.10. The 0.10 patch adds it, so its K3 is not comparable line for
+  line; compare per category.
+- **Target:** none at 0.9 (measured, the 1.0 baseline); §8 sets −40 % against the 0.9 figure.
+
+0.9 (`dx-kpis-0.9.json`): **508** lines over 8 files: model 180, migration 17, routes 153,
+policy 30, test 128. The resource module is 330 of them (179 model, 151 handlers and routes).
 
 ## Spike gate (historical)
 

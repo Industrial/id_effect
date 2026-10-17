@@ -1,0 +1,701 @@
+diff --git a/examples/reference/ledger/migrations/0004_invoices.down.sql b/examples/reference/ledger/migrations/0004_invoices.down.sql
+new file mode 100644
+index 0000000..e8aea1e
+--- /dev/null
++++ b/examples/reference/ledger/migrations/0004_invoices.down.sql
+@@ -0,0 +1 @@
++DROP TABLE invoices;
+diff --git a/examples/reference/ledger/migrations/0004_invoices.up.sql b/examples/reference/ledger/migrations/0004_invoices.up.sql
+new file mode 100644
+index 0000000..b6e4aca
+--- /dev/null
++++ b/examples/reference/ledger/migrations/0004_invoices.up.sql
+@@ -0,0 +1,17 @@
++-- Invoices, in minor units, booked against a receivable account of the same organisation.
++-- `version` is the optimistic-locking column; `voided_at` is the soft delete.
++CREATE TABLE invoices (
++  id BIGSERIAL PRIMARY KEY,
++  org_id TEXT NOT NULL REFERENCES orgs (id),
++  number TEXT NOT NULL,
++  customer TEXT NOT NULL,
++  account_id BIGINT NOT NULL REFERENCES accounts (id),
++  amount BIGINT NOT NULL CHECK (amount > 0),
++  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'issued', 'paid')),
++  owner_id TEXT NOT NULL,
++  version BIGINT NOT NULL DEFAULT 1,
++  voided_at TIMESTAMPTZ,
++  UNIQUE (org_id, number)
++);
++
++CREATE INDEX invoices_org_id ON invoices (org_id, id);
+diff --git a/examples/reference/ledger/src/app.rs b/examples/reference/ledger/src/app.rs
+index fc1cb91..afd01b1 100644
+--- a/examples/reference/ledger/src/app.rs
++++ b/examples/reference/ledger/src/app.rs
+@@ -25,7 +25,7 @@ use crate::config::LedgerConfig;
+ use crate::db::{self, Database};
+ use crate::error::{ApiError, StartupError};
+ use crate::reports::{self, BalanceCache};
+-use crate::{accounts, auth, entries, policy};
++use crate::{accounts, auth, entries, invoices, policy};
+ 
+ /// The router state: one [`App`] in a capability list, so handlers lift environment-free
+ /// effects into it with `narrow()`.
+@@ -273,6 +273,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
+     .merge(auth::routes(&policies, login_limit))
+     .merge(accounts::routes(&policies))
+     .merge(entries::routes(&policies))
++    .merge(invoices::routes(&policies))
+     .merge(reports::routes(&policies));
+ 
+   let mut doc = OpenApi::from_router(&api)
+diff --git a/examples/reference/ledger/src/invoices.rs b/examples/reference/ledger/src/invoices.rs
+new file mode 100644
+index 0000000..c4af61b
+--- /dev/null
++++ b/examples/reference/ledger/src/invoices.rs
+@@ -0,0 +1,352 @@
++//! Invoices: what an organisation bills its customers, booked against a receivable account.
++//!
++//! [`Invoice`] is an entity like [`Account`](crate::accounts::Account): the `Repository` scopes
++//! every statement to the caller's organisation, hides voided invoices (`soft_delete =
++//! "voided_at"`) and checks the `version` column on every update. An invoice moves `draft` →
++//! `issued` → `paid`; only a draft's customer and amount change, and a paid invoice is never
++//! voided.
++
++use std::sync::Arc;
++
++use axum::Json;
++use axum::http::StatusCode;
++use id_effect::schema::{self, HasSchema, ParseError, Schema, length, minimum, pattern};
++use id_effect::{Effect, fail, succeed};
++use id_effect_kit::authz::Policies;
++use id_effect_kit::axum::RequestCaps;
++use id_effect_kit::axum::route::{Input, Route, Router};
++use id_effect_kit::sql::query_builder::Dialect;
++use id_effect_kit::sql::{Entity, FromRow, Repository, with_transaction};
++use serde::Serialize;
++
++use crate::accounts::find_account;
++use crate::app::{App, AppEnv, Caller, as_caller, guarded};
++use crate::error::ApiError;
++
++/// One invoice. `org_id` is the tenant column the repository writes and filters by.
++#[derive(Clone, Debug, PartialEq, Serialize, id_effect::Schema, FromRow, Entity)]
++#[from_row(crate = id_effect_kit::sql)]
++#[entity(
++  crate = id_effect_kit::sql,
++  table = "invoices",
++  tenant = "org_id",
++  soft_delete = "voided_at"
++)]
++pub struct Invoice {
++  /// Assigned by the database.
++  #[entity(id, generated)]
++  pub id: i64,
++  /// The organisation.
++  pub org_id: String,
++  /// Invoice number, unique in the organisation (`INV-1001`).
++  pub number: String,
++  /// Who is billed.
++  pub customer: String,
++  /// The receivable account it is booked against.
++  pub account_id: i64,
++  /// Minor units, positive.
++  pub amount: i64,
++  /// `draft`, `issued` or `paid`.
++  pub status: String,
++  /// Who raised it (ownership: only they or an owner may change or void it).
++  pub owner_id: String,
++  /// Optimistic-locking version.
++  #[entity(version)]
++  pub version: i64,
++}
++
++/// `GET /invoices`.
++#[derive(Clone, Debug, Serialize, id_effect::Schema)]
++pub struct InvoiceList {
++  /// Open invoices, by id.
++  pub invoices: Vec<Invoice>,
++}
++
++/// The statuses, in the order an invoice moves through them.
++pub const STATUSES: [&str; 3] = ["draft", "issued", "paid"];
++
++/// The invoices of `org` (the tenant filter of every statement).
++pub fn invoices_of(org: &str) -> Repository<Invoice> {
++  Repository::new(Dialect::Postgres).with_tenant(org.to_owned())
++}
++
++/// `{id}` of the invoice routes: a positive id.
++pub struct InvoiceId;
++
++impl HasSchema for InvoiceId {
++  type A = i64;
++  type I = i64;
++  type E = ();
++
++  fn schema() -> Schema<i64, i64> {
++    minimum(schema::i64::<()>(), 1).describe("Invoice id")
++  }
++}
++
++/// The body of `POST /invoices`.
++#[derive(Clone, Debug, PartialEq)]
++pub struct NewInvoice {
++  /// `INV-` and 1 to 8 digits.
++  pub number: String,
++  /// 1 to 80 characters.
++  pub customer: String,
++  /// The receivable account.
++  pub account_id: i64,
++  /// Minor units, at least 1.
++  pub amount: i64,
++}
++
++impl HasSchema for NewInvoice {
++  type A = NewInvoice;
++  type I = (String, String, i64, i64);
++  type E = ();
++
++  fn schema() -> Schema<NewInvoice, (String, String, i64, i64)> {
++    schema::transform(
++      schema::struct4(
++        "number",
++        pattern(schema::string::<()>(), "^INV-[0-9]{1,8}$", |number| {
++          number.strip_prefix("INV-").is_some_and(|digits| {
++            (1..=8).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit())
++          })
++        }),
++        "customer",
++        length(schema::string::<()>(), 1, 80),
++        "account_id",
++        minimum(schema::i64::<()>(), 1),
++        "amount",
++        minimum(schema::i64::<()>(), 1),
++      ),
++      |(number, customer, account_id, amount)| {
++        Ok::<_, ParseError>(NewInvoice {
++          number,
++          customer,
++          account_id,
++          amount,
++        })
++      },
++      |i: NewInvoice| (i.number, i.customer, i.account_id, i.amount),
++    )
++  }
++}
++
++/// The body of `PATCH /invoices/{id}`: the changes and the version they were made against.
++#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
++pub struct InvoiceChanges {
++  /// A new customer (drafts only).
++  pub customer: Option<String>,
++  /// A new amount (drafts only).
++  pub amount: Option<i64>,
++  /// The next status (`issued` after `draft`, `paid` after `issued`).
++  pub status: Option<String>,
++  /// The `version` the client read; a newer one in the database is a `409`.
++  pub version: i64,
++}
++
++/// The open invoice `id` of the caller's organisation; `404` for any other.
++pub fn find_invoice(app: &App, caller: &Caller, id: i64) -> Effect<Invoice, ApiError> {
++  invoices_of(caller.org())
++    .on(Arc::clone(&app.db))
++    .find(id)
++    .map_err(ApiError::from)
++    .flat_map(|found| match found {
++      Some(invoice) => succeed(invoice),
++      None => fail(ApiError::NotFound("invoice")),
++    })
++}
++
++/// `invoice` with `changes` applied, or why they do not apply to it.
++pub fn apply(invoice: Invoice, changes: InvoiceChanges) -> Result<Invoice, ApiError> {
++  let draft = invoice.status == "draft";
++  if !draft && (changes.customer.is_some() || changes.amount.is_some()) {
++    return Err(ApiError::Conflict(format!(
++      "invoice {} is {}; only a draft's customer and amount change",
++      invoice.number, invoice.status
++    )));
++  }
++  if let Some(customer) = &changes.customer
++    && !(1..=80).contains(&customer.chars().count())
++  {
++    return Err(ApiError::invalid("/customer", "must be 1 to 80 characters"));
++  }
++  if changes.amount.is_some_and(|amount| amount < 1) {
++    return Err(ApiError::invalid("/amount", "must be at least 1"));
++  }
++  let status = match changes.status {
++    None => invoice.status.clone(),
++    Some(next) => {
++      let at = STATUSES.iter().position(|s| *s == invoice.status);
++      if STATUSES.iter().position(|s| *s == next) != at.map(|i| i + 1) {
++        return Err(ApiError::invalid(
++          "/status",
++          format!("an {} invoice cannot become {next}", invoice.status),
++        ));
++      }
++      next
++    }
++  };
++  Ok(Invoice {
++    customer: changes.customer.unwrap_or(invoice.customer),
++    amount: changes.amount.unwrap_or(invoice.amount),
++    status,
++    version: changes.version,
++    ..invoice
++  })
++}
++
++fn list(
++  env: &mut AppEnv,
++  caps: RequestCaps,
++  _: Input,
++) -> Effect<Json<InvoiceList>, ApiError, AppEnv> {
++  let app = Arc::clone(&env.0);
++  as_caller(&caps, move |caller| {
++    invoices_of(caller.org())
++      .on(Arc::clone(&app.db))
++      .find_all()
++      .map(|invoices| Json(InvoiceList { invoices }))
++      .map_err(ApiError::from)
++  })
++}
++
++fn raise(
++  env: &mut AppEnv,
++  caps: RequestCaps,
++  input: Input<(), (), (), NewInvoice>,
++) -> Effect<(StatusCode, Json<Invoice>), ApiError, AppEnv> {
++  let app = Arc::clone(&env.0);
++  let new = input.body;
++  as_caller(&caps, move |caller| {
++    // The account must be one of the caller's organisation: another's is a 422, not a 404.
++    find_account(&app, &caller, new.account_id)
++      .map_err(|_| ApiError::invalid("/account_id", "no such account"))
++      .flat_map(move |account| {
++        let invoice = Invoice {
++          id: 0,
++          org_id: caller.org().to_owned(),
++          number: new.number,
++          customer: new.customer,
++          account_id: account.id,
++          amount: new.amount,
++          status: "draft".to_owned(),
++          owner_id: caller.id().to_owned(),
++          version: 1,
++        };
++        // In a transaction: its errors carry the SQLSTATE, so a duplicate number answers 409.
++        let invoices = invoices_of(caller.org());
++        with_transaction(Arc::clone(&app.db), move |tx| {
++          invoices.on(tx).insert(invoice)
++        })
++        .map(|invoice| (StatusCode::CREATED, Json(invoice)))
++        .map_err(ApiError::from)
++      })
++  })
++}
++
++fn show(
++  env: &mut AppEnv,
++  caps: RequestCaps,
++  input: Input<i64>,
++) -> Effect<Json<Invoice>, ApiError, AppEnv> {
++  let app = Arc::clone(&env.0);
++  as_caller(&caps, move |caller| {
++    find_invoice(&app, &caller, input.path).map(Json)
++  })
++}
++
++fn update(
++  env: &mut AppEnv,
++  caps: RequestCaps,
++  input: Input<i64, (), (), InvoiceChanges>,
++) -> Effect<Json<Invoice>, ApiError, AppEnv> {
++  let app = Arc::clone(&env.0);
++  let Input {
++    path: id,
++    body: changes,
++    ..
++  } = input;
++  as_caller(&caps, move |caller| {
++    find_invoice(&app, &caller, id).flat_map(move |invoice| {
++      let allowed = caller.authorize(&app.policies, "invoice.manage", &invoice);
++      allowed.flat_map(move |()| match apply(invoice, changes) {
++        Ok(changed) => invoices_of(caller.org())
++          .on(Arc::clone(&app.db))
++          .update(changed)
++          .map(Json)
++          .map_err(ApiError::from),
++        Err(e) => fail(e),
++      })
++    })
++  })
++}
++
++fn void(
++  env: &mut AppEnv,
++  caps: RequestCaps,
++  input: Input<i64>,
++) -> Effect<StatusCode, ApiError, AppEnv> {
++  let app = Arc::clone(&env.0);
++  let id = input.path;
++  as_caller(&caps, move |caller| {
++    find_invoice(&app, &caller, id).flat_map(move |invoice| {
++      let allowed = caller.authorize(&app.policies, "invoice.manage", &invoice);
++      allowed.flat_map(move |()| {
++        if invoice.status == "paid" {
++          return fail(ApiError::Conflict(format!(
++            "invoice {} is paid; it cannot be voided",
++            invoice.number
++          )));
++        }
++        invoices_of(caller.org())
++          .on(Arc::clone(&app.db))
++          .delete(id)
++          .map(|_voided| StatusCode::NO_CONTENT)
++          .map_err(ApiError::from)
++      })
++    })
++  })
++}
++
++/// `/invoices` routes.
++pub fn routes(policies: &Policies) -> Router<AppEnv> {
++  Router::new()
++    .route(guarded(
++      policies,
++      "ledger.read",
++      Route::get("/invoices")
++        .response::<InvoiceList>(StatusCode::OK)
++        .handler_with_request_caps(list),
++    ))
++    .route(guarded(
++      policies,
++      "invoices.write",
++      Route::post("/invoices")
++        .body::<NewInvoice>()
++        .response::<Invoice>(StatusCode::CREATED)
++        .handler_with_request_caps(raise),
++    ))
++    .route(guarded(
++      policies,
++      "ledger.read",
++      Route::get("/invoices/{id}")
++        .path::<InvoiceId>()
++        .response::<Invoice>(StatusCode::OK)
++        .handler_with_request_caps(show),
++    ))
++    .route(guarded(
++      policies,
++      "invoices.write",
++      Route::patch("/invoices/{id}")
++        .path::<InvoiceId>()
++        .body::<InvoiceChanges>()
++        .response::<Invoice>(StatusCode::OK)
++        .handler_with_request_caps(update),
++    ))
++    .route(guarded(
++      policies,
++      "invoices.write",
++      Route::delete("/invoices/{id}")
++        .path::<InvoiceId>()
++        .handler_with_request_caps(void),
++    ))
++}
+diff --git a/examples/reference/ledger/src/lib.rs b/examples/reference/ledger/src/lib.rs
+index 2ebf84a..41aa9ac 100644
+--- a/examples/reference/ledger/src/lib.rs
++++ b/examples/reference/ledger/src/lib.rs
+@@ -29,6 +29,7 @@ pub mod config;
+ pub mod db;
+ pub mod entries;
+ pub mod error;
++pub mod invoices;
+ pub mod policy;
+ pub mod reports;
+ 
+diff --git a/examples/reference/ledger/src/policy.rs b/examples/reference/ledger/src/policy.rs
+index 58f90d5..a5284c5 100644
+--- a/examples/reference/ledger/src/policy.rs
++++ b/examples/reference/ledger/src/policy.rs
+@@ -1,11 +1,11 @@
+ //! Who may do what. Three roles, each a set of permissions ([`rbac`]); every route names a
+ //! policy of the registry ([`policies`]) in its guard, and handlers check the resource policies
+-//! (`account.post`, `account.manage`, `token.revoke`) on the rows they loaded.
++//! (`account.post`, `account.manage`, `invoice.manage`, `token.revoke`) on the rows they loaded.
+ //!
+ //! | Role | Permissions |
+ //! |---|---|
+ //! | `viewer` | `ledger:read` |
+-//! | `accountant` | the viewer's, `ledger:post`, `accounts:open`, `tokens:issue` |
++//! | `accountant` | the viewer's, `ledger:post`, `accounts:open`, `invoices:write`, `tokens:issue` |
+ //! | `owner` | the accountant's, `accounts:manage`, `users:manage`, `audit:verify`, `routes:read` |
+ //!
+ //! Managing users also needs [`MFA`]: the direct permission a login that passed its TOTP step
+@@ -18,6 +18,7 @@ use id_effect_kit::authz::{
+ 
+ use crate::accounts::Account;
+ use crate::auth::ApiToken;
++use crate::invoices::Invoice;
+ 
+ /// Reads the ledger.
+ pub const VIEWER: &str = "viewer";
+@@ -35,7 +36,15 @@ pub const MFA: &str = "auth:mfa";
+ pub fn rbac() -> Rbac {
+   Rbac::builder()
+     .grant(VIEWER, ["ledger:read"])
+-    .grant(ACCOUNTANT, ["ledger:post", "accounts:open", "tokens:issue"])
++    .grant(
++      ACCOUNTANT,
++      [
++        "ledger:post",
++        "accounts:open",
++        "invoices:write",
++        "tokens:issue",
++      ],
++    )
+     .inherit(ACCOUNTANT, VIEWER)
+     .grant(
+       OWNER,
+@@ -62,6 +71,18 @@ impl Tenanted for Account {
+   }
+ }
+ 
++impl Owned for Invoice {
++  fn owner_id(&self) -> &str {
++    &self.owner_id
++  }
++}
++
++impl Tenanted for Invoice {
++  fn tenant_id(&self) -> &str {
++    &self.org_id
++  }
++}
++
+ impl Owned for ApiToken {
+   fn owner_id(&self) -> &str {
+     &self.owner_id
+@@ -95,6 +116,7 @@ pub fn policies(events: AuthzEvents) -> Policies {
+     .define::<()>("ledger.read", rbac.require("ledger:read"))
+     .define::<()>("ledger.post", rbac.require("ledger:post"))
+     .define::<()>("accounts.open", rbac.require("accounts:open"))
++    .define::<()>("invoices.write", rbac.require("invoices:write"))
+     .define::<()>("tokens.issue", rbac.require("tokens:issue"))
+     .define::<()>(
+       "users.manage",
+@@ -110,6 +132,13 @@ pub fn policies(events: AuthzEvents) -> Policies {
+         .and(same_tenant())
+         .and(owner().or(rbac.require_role(OWNER))),
+     )
++    .define::<Invoice>(
++      "invoice.manage",
++      rbac
++        .require("invoices:write")
++        .and(same_tenant())
++        .and(owner().or(rbac.require_role(OWNER))),
++    )
+     .define::<ApiToken>("token.revoke", same_tenant().and(owner()))
+     .events(events)
+     .build()
+diff --git a/examples/reference/ledger/tests/invoices.rs b/examples/reference/ledger/tests/invoices.rs
+new file mode 100644
+index 0000000..4877b65
+--- /dev/null
++++ b/examples/reference/ledger/tests/invoices.rs
+@@ -0,0 +1,133 @@
++//! Invoices over typed routes: CRUD, the status flow, optimistic locking, voiding (a soft
++//! delete), ownership, and the tenant filter.
++
++mod common;
++
++use common::with_ledger;
++use id_effect_kit::sql::params;
++use id_effect_kit::test::http::StatusCode;
++use serde_json::{Value, json};
++
++#[tokio::test]
++async fn invoices_crud_and_status_flow() {
++  with_ledger(
++    |_, _| {},
++    |l| async move {
++      let team = l.team("acme").await;
++      let me = &team.accountant;
++      let receivable = l.accounts("acme", "acme-accountant", 1).await[0].id;
++
++      let raised = l
++        .post(
++          "/invoices",
++          json!({"number": "INV-1001", "customer": "Globex", "account_id": receivable, "amount": 12000}),
++          me,
++        )
++        .await;
++      raised.assert_status(StatusCode::CREATED);
++      let invoice: Value = raised.json().unwrap();
++      assert_eq!(invoice["status"], "draft");
++      assert_eq!(invoice["owner_id"], "acme-accountant");
++      let id = invoice["id"].as_i64().unwrap();
++
++      let list: Value = l.get("/invoices", &team.viewer).await.json().unwrap();
++      assert_eq!(list["invoices"].as_array().unwrap().len(), 1);
++      let path = format!("/invoices/{id}");
++
++      // A draft's amount changes; the version moves on, and a stale write is a 409.
++      let changed = l
++        .patch(&path, json!({"amount": 15000, "version": 1}), me)
++        .await;
++      changed.assert_status(StatusCode::OK);
++      assert_eq!(changed.json::<Value>().unwrap()["version"], 2);
++      l.patch(&path, json!({"status": "issued", "version": 1}), me)
++        .await
++        .assert_status(StatusCode::CONFLICT);
++      // draft → issued; skipping a status or editing an issued invoice is refused.
++      l.patch(&path, json!({"status": "issued", "version": 2}), me)
++        .await
++        .assert_status(StatusCode::OK);
++      l.patch(&path, json!({"amount": 1, "version": 3}), me)
++        .await
++        .assert_status(StatusCode::CONFLICT);
++      l.patch(&path, json!({"status": "draft", "version": 3}), me)
++        .await
++        .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
++
++      // The same number twice in one organisation: 409; an unknown account: 422.
++      let again = json!({"number": "INV-1001", "customer": "Initech", "account_id": receivable, "amount": 1});
++      l.post("/invoices", again, me)
++        .await
++        .assert_status(StatusCode::CONFLICT);
++      let nowhere = json!({"number": "INV-1002", "customer": "Initech", "account_id": 999, "amount": 1});
++      l.post("/invoices", nowhere, me)
++        .await
++        .assert_status(StatusCode::UNPROCESSABLE_ENTITY);
++
++      // Voiding is a soft delete: gone from every query, still in the table.
++      l.delete(&path, me)
++        .await
++        .assert_status(StatusCode::NO_CONTENT);
++      l.get(&path, me).await.assert_status(StatusCode::NOT_FOUND);
++      let kept = l
++        .scalar(
++          "SELECT count(*)::int8 FROM invoices WHERE id = $1 AND voided_at IS NOT NULL",
++          params![id],
++        )
++        .await;
++      assert_eq!(kept, 1);
++    },
++  )
++  .await;
++}
++
++#[tokio::test]
++async fn invoices_are_guarded_and_tenant_scoped() {
++  with_ledger(
++    |_, _| {},
++    |l| async move {
++      let acme = l.team("acme").await;
++      let globex = l.team("globex").await;
++      let receivable = l.accounts("acme", "acme-owner", 1).await[0].id;
++      let body =
++        json!({"number": "INV-7", "customer": "Initech", "account_id": receivable, "amount": 500});
++
++      // A viewer reads but does not raise; Problem+JSON lists every invalid field.
++      l.post("/invoices", body.clone(), &acme.viewer)
++        .await
++        .assert_status(StatusCode::FORBIDDEN);
++      let invalid = l
++        .post(
++          "/invoices",
++          json!({"number": "7", "customer": "", "account_id": 0, "amount": 0}),
++          &acme.accountant,
++        )
++        .await;
++      invalid.assert_status(StatusCode::UNPROCESSABLE_ENTITY);
++      assert_eq!(
++        invalid.problem().unwrap().extensions["errors"]
++          .as_array()
++          .unwrap()
++          .len(),
++        4
++      );
++
++      let raised = l.post("/invoices", body, &acme.owner).await;
++      raised.assert_status(StatusCode::CREATED);
++      let id = raised.json::<Value>().unwrap()["id"].as_i64().unwrap();
++      let path = format!("/invoices/{id}");
++
++      // Ownership: an accountant who did not raise it may not void it.
++      l.delete(&path, &acme.accountant)
++        .await
++        .assert_status(StatusCode::FORBIDDEN);
++      // The tenant filter: another organisation's invoice does not exist for globex.
++      l.get(&path, &globex.owner)
++        .await
++        .assert_status(StatusCode::NOT_FOUND);
++      let list: Value = l.get("/invoices", &globex.viewer).await.json().unwrap();
++      assert!(list["invoices"].as_array().unwrap().is_empty());
++    },
++  )
++  .await;
++}
+diff --git a/examples/reference/ledger/tests/migrations.rs b/examples/reference/ledger/tests/migrations.rs
+index 7b8e75b..a13abf7 100644
+--- a/examples/reference/ledger/tests/migrations.rs
++++ b/examples/reference/ledger/tests/migrations.rs
+@@ -28,7 +28,7 @@ fn the_migrations_directory_is_valid() {
+     .iter()
+     .map(|m| (m.version(), m.is_reversible()))
+     .collect();
+-  assert_eq!(versions, [(1, true), (2, true), (3, true)]);
++  assert_eq!(versions, [(1, true), (2, true), (3, true), (4, true)]);
+ }
+ 
+ #[tokio::test]
+@@ -39,7 +39,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+     assert_eq!(
+       check().await,
+       Err(MigrateError::Pending {
+-        versions: vec![1, 2, 3]
++        versions: vec![1, 2, 3, 4]
+       })
+     );
+ 
+@@ -50,7 +50,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+     );
+     let mut applied = [a, b].concat();
+     applied.sort_unstable();
+-    assert_eq!(applied, [1, 2, 3]);
++    assert_eq!(applied, [1, 2, 3, 4]);
+     assert_eq!(check().await, Ok(()));
+     let states: Vec<MigrationState> = outcome(migrator.status_on(Arc::clone(&db)))
+       .await
+@@ -58,21 +58,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+       .into_iter()
+       .map(|s| s.state)
+       .collect();
+-    assert_eq!(states, [MigrationState::Applied; 3]);
++    assert_eq!(states, [MigrationState::Applied; 4]);
+ 
+     // `id-effect migrate revert`: the last migration's down script; check sees it pending.
+     assert_eq!(
+       outcome(migrator.revert_on(Arc::clone(&db), 1)).await,
+-      Ok(vec![3])
++      Ok(vec![4])
+     );
+     assert_eq!(
+       check().await,
+-      Err(MigrateError::Pending { versions: vec![3] })
++      Err(MigrateError::Pending { versions: vec![4] })
+     );
+     // The next start re-applies it, and nothing else.
+     assert_eq!(
+       run(ledger::db::migrate(Arc::clone(&db), MIGRATIONS)).await,
+-      [3]
++      [4]
+     );
+     assert_eq!(check().await, Ok(()));
+   })
