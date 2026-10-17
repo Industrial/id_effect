@@ -272,14 +272,14 @@ enum LeaseCmd {
 /// the failover trigger.
 #[cfg(feature = "pg")]
 fn lease_worker(
-  url: String,
+  options: sqlx::postgres::PgConnectOptions,
   commands: flume::Receiver<LeaseCmd>,
   ready: flume::Sender<Result<(), String>>,
 ) -> Effect<(), Never> {
   id_effect::from_async(move || async move {
     use sqlx::Connection as _;
 
-    let mut conn = match sqlx::postgres::PgConnection::connect(&url).await {
+    let mut conn = match sqlx::postgres::PgConnection::connect_with(&options).await {
       Ok(conn) => conn,
       Err(e) => {
         let _ = ready.send(Err(format!("connect: {e}")));
@@ -382,16 +382,33 @@ async fn ping(commands: &flume::Sender<LeaseCmd>) -> Result<(), SingletonError> 
 
 #[cfg(feature = "pg")]
 impl PgAdvisoryLease {
-  /// Open a dedicated advisory-lock session at `url` (`postgres://…`).
+  /// Open a dedicated advisory-lock session at `url` (`postgres://…`; TLS from its `sslmode` /
+  /// `sslrootcert`, as [`from_pool_config`](Self::from_pool_config) with no explicit settings).
   ///
   /// Forks the session fiber and completes once the connection is established; fails with
   /// [`SingletonError::Unavailable`] if it cannot connect.
   pub fn connect(url: impl Into<String>) -> Effect<Self, SingletonError> {
-    let url = url.into();
+    Self::from_pool_config(id_effect_sql::pg::PgPoolConfig::from_url(url))
+  }
+
+  /// Open a lease with a [`id_effect_sql::pg::PgPoolConfig`]'s connection settings: its URL
+  /// with the explicit TLS settings ([`tls_mode`](id_effect_sql::pg::PgPoolConfig::tls_mode),
+  /// [`root_cert`](id_effect_sql::pg::PgPoolConfig::root_cert)) applied over it, as the pool
+  /// connects. Fails with [`SingletonError::Unavailable`] (`"connect: …"`) on an invalid URL or
+  /// a failed connection, a TLS failure included.
+  pub fn from_pool_config(config: id_effect_sql::pg::PgPoolConfig) -> Effect<Self, SingletonError> {
+    match config.connect_options() {
+      Ok(options) => Self::open(options),
+      Err(e) => fail(SingletonError::Unavailable(format!("connect: {}", e.0))),
+    }
+  }
+
+  /// Forks the session fiber connecting with `options` and completes once it is connected.
+  fn open(options: sqlx::postgres::PgConnectOptions) -> Effect<Self, SingletonError> {
     suspend(move || {
       let (commands, rx) = flume::unbounded();
       let (ready_tx, ready_rx) = flume::bounded(1);
-      lease_worker(url, rx, ready_tx)
+      lease_worker(options, rx, ready_tx)
         .fork_daemon()
         .widen()
         .flat_map(move |worker| {
@@ -418,11 +435,6 @@ impl PgAdvisoryLease {
           })
         })
     })
-  }
-
-  /// Open a lease using an [`id_effect_sql::pg::PgPoolConfig`]'s connection URL.
-  pub fn from_pool_config(config: id_effect_sql::pg::PgPoolConfig) -> Effect<Self, SingletonError> {
-    Self::connect(config.url)
   }
 
   /// Run `f` with the session's command channel and held-names table (locked).

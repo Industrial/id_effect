@@ -22,7 +22,6 @@ use sqlx::{Connection as _, PgConnection, PgPool};
 use tokio::sync::mpsc;
 
 use super::error::sqlx_error;
-use super::transaction::tx_error;
 use super::value::{bind_query, decode_rows};
 use crate::{SqlError, SqlRow, SqlValue};
 
@@ -130,7 +129,7 @@ async fn feed(
   let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
     .fetch_one(&mut *conn)
     .await
-    .map_err(tx_error)?;
+    .map_err(sqlx_error)?;
   let outcome = {
     let mut rows = query.fetch(&mut *conn);
     let mut closed = pin!(tx.closed());
@@ -160,7 +159,7 @@ async fn feed(
       let (end, failure) = match pulled {
         Pulled::Closed => break Outcome::Abandoned,
         Pulled::Rows(end) => (end, None),
-        Pulled::Failed(e) => (true, Some(tx_error(e))),
+        Pulled::Failed(e) => (true, Some(sqlx_error(e))),
       };
       if !batch.is_empty() {
         let decoded = match decode_rows(&batch) {

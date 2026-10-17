@@ -78,7 +78,7 @@ pub use client::{
   SqlClient, SqlClientEnv, SqlClientService, TestSqlClient, execute, provide_sql_client, query,
   sql_client_env, sql_client_layer,
 };
-pub use error::SqlError;
+pub use error::{SQLSTATE_UNIQUE_VIOLATION, SqlError};
 pub use from_row::{FromRow, query_as, query_one_as, query_opt_as};
 /// Derive [`FromRow`] for a struct with named fields (see [`from_row`]).
 pub use id_effect_proc_macro::FromRow;

@@ -4,7 +4,7 @@ use sqlx::error::DatabaseError;
 use sqlx::mysql::MySqlDatabaseError;
 
 use crate::SqlError;
-use crate::transaction::{SQLSTATE_SERIALIZATION_FAILURE, with_sqlstate};
+use crate::transaction::SQLSTATE_SERIALIZATION_FAILURE;
 
 /// Driver-local error wrapper (mostly for pool construction).
 #[derive(Debug)]
@@ -30,25 +30,12 @@ fn sqlstate(db: &dyn DatabaseError) -> Option<String> {
   mysql.code().map(str::to_owned)
 }
 
-/// The [`SqlError`] of a sqlx failure. A server error's message ends with its SQLSTATE
-/// (`"… (SQLSTATE 40001)"`); a deadlock and a lock wait timeout are both `40001`, so
-/// [`retry_serialization_failures`](crate::retry_serialization_failures) retries them.
+/// The [`SqlError`] of a sqlx failure ([`crate::error::from_sqlx`]). A server error's message
+/// ends with its SQLSTATE (`"… (SQLSTATE 40001)"`); a deadlock and a lock wait timeout are both
+/// `40001`, so [`retry_serialization_failures`](crate::retry_serialization_failures) retries
+/// them, and a duplicate key (MySQL's `23000`) is `23505`, as on PostgreSQL.
 pub(crate) fn mysql_error(err: sqlx::Error) -> SqlError {
-  match err {
-    sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => SqlError::NotConnected,
-    sqlx::Error::Configuration(msg) => SqlError::Unsupported(msg.to_string()),
-    other => {
-      let code = other.as_database_error().and_then(sqlstate);
-      let message = other.to_string();
-      SqlError::QueryFailed {
-        sql: String::new(),
-        message: match code {
-          Some(code) => with_sqlstate(message, &code),
-          None => message,
-        },
-      }
-    }
-  }
+  crate::error::from_sqlx(err, sqlstate)
 }
 
 #[cfg(test)]

@@ -400,6 +400,22 @@ jobs:
           tool: cargo-deny
       - name: cargo deny check
         run: cargo deny check
+      # D3 (0.10): id_effect_sql converts date-times itself, so neither sqlx's `time` feature nor
+      # the `time` crate may come in through id_effect_sql / id_effect_kit (with both `time` and
+      # `chrono`, sqlx's macros pick `time` for the application's own queries).
+      - name: No sqlx `time` from id_effect_sql / id_effect_kit
+        run: |
+          kit=$(cargo tree --color never -p id_effect_kit --all-features -e features -i sqlx)
+          if grep -F 'feature "time"' <<<"$kit"; then
+            echo "::error::sqlx's \`time\` feature is enabled under id_effect_kit --all-features"
+            exit 1
+          fi
+          sql=$(cargo tree --color never -p id_effect_sql --all-features -e normal -i time)
+          if grep -E '^time v' <<<"$sql"; then
+            echo "$sql"
+            echo "::error::id_effect_sql --all-features depends on the \`time\` crate"
+            exit 1
+          fi
   # ──────────────────────────────────────────────────────────────────────────
   # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
   # REPORT-ONLY while a breaking 0.x release is in development: 0.10 may carry intentional

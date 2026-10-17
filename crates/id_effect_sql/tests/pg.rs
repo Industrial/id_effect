@@ -14,12 +14,12 @@ use std::time::Duration;
 use id_effect::{Cause, Exit};
 use id_effect::{Effect, HCons, HNil, fail, need, sleep, sync};
 use id_effect_sql::pg::{
-  PgPool, PgPoolConfig, PgSqlClient, PgSqlEnv, pg_pool_from_config, pg_pool_from_config_lazy,
-  provide_pg_pool, provide_pg_sql_client,
+  PgPool, PgPoolConfig, PgSqlClient, PgSqlEnv, PgTlsMode, pg_pool_from_config,
+  pg_pool_from_config_lazy, provide_pg_pool, provide_pg_sql_client,
 };
 use id_effect_sql::{
-  SqlClient, SqlClientService, SqlError, SqlTransactionEnv, SqlTransactionService, SqlType,
-  SqlValue, query, transaction_layer, with_transaction,
+  SQLSTATE_UNIQUE_VIOLATION, SqlClient, SqlClientService, SqlError, SqlTransactionEnv,
+  SqlTransactionService, SqlType, SqlValue, query, transaction_layer, with_transaction,
 };
 use id_effect_tokio::TokioRuntime;
 
@@ -137,6 +137,72 @@ async fn statements_fail_when_server_unreachable() {
   assert!(run(client.query("SELECT 1", &[])).await.is_err());
   assert!(run(client.execute("SELECT 1", &[])).await.is_err());
   assert!(run(client.begin()).await.is_err());
+}
+
+#[tokio::test]
+async fn unique_violation_has_sqlstate_23505() {
+  let Some(client) = live_client("unique_violation_has_sqlstate_23505").await else {
+    return;
+  };
+  let t = "pg_unique_violation";
+  run(client.execute(&format!("DROP TABLE IF EXISTS {t}"), &[]))
+    .await
+    .expect("drop");
+  run(client.execute(&format!("CREATE TABLE {t} (id int PRIMARY KEY)"), &[]))
+    .await
+    .expect("create");
+  let insert = format!("INSERT INTO {t} VALUES ($1)");
+  run(client.execute(&insert, &[SqlValue::I32(1)]))
+    .await
+    .expect("first insert");
+  // A plain `execute` (no transaction) reports the SQLSTATE, the driver's message kept.
+  let err = run(client.execute(&insert, &[SqlValue::I32(1)]))
+    .await
+    .unwrap_err();
+  assert!(err.is_unique_violation(), "{err:?}");
+  assert_eq!(err.sqlstate(), Some(SQLSTATE_UNIQUE_VIOLATION));
+  assert!(
+    matches!(&err, SqlError::QueryFailed { message, .. }
+      if message.contains("duplicate key value violates unique constraint")),
+    "{err:?}"
+  );
+  // So does a plain `query`, with whatever SQLSTATE the server reported.
+  let err = run(client.query("SELECT * FROM pg_no_such_table", &[]))
+    .await
+    .unwrap_err();
+  assert_eq!(err.sqlstate(), Some("42P01"), "{err:?}");
+  assert!(!err.is_unique_violation());
+  drop_table(&client, t).await;
+}
+
+#[tokio::test]
+async fn tls_required_against_plain_server_is_tls_error() {
+  let t = "tls_required_against_plain_server_is_tls_error";
+  let Some(config) = live_config(t) else {
+    return;
+  };
+  let plain = match pg_pool_from_config(config.clone().with_tls_mode(PgTlsMode::Disable)).await {
+    Ok(pool) => pool,
+    Err(e) => return unavailable(t, &format!("cannot build pool: {}", e.0)).unwrap_or(()),
+  };
+  let ssl = run(PgSqlClient::new(plain.clone()).query("SHOW ssl", &[])).await;
+  plain.close().await;
+  match ssl.as_deref() {
+    Ok([row]) if row.values() == [SqlValue::Text("off".into())] => {}
+    // The test server offers TLS (tests/tls.rs covers `Require` refused by a plaintext
+    // container); nothing to check here.
+    other => return eprintln!("SKIP {t}: the server at DATABASE_URL has TLS on ({other:?})"),
+  }
+  let err = pg_pool_from_config(config.with_tls_mode(PgTlsMode::Require))
+    .await
+    .map(|_| ())
+    .unwrap_err()
+    .0;
+  assert!(
+    matches!(&err, SqlError::TlsFailed { message, .. } if message.contains("server does not support TLS")),
+    "{err:?}"
+  );
+  assert_eq!(err.sqlstate(), None);
 }
 
 #[tokio::test]

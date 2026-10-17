@@ -465,6 +465,28 @@ async fn stream_failures_end_the_stream() {
 }
 
 #[tokio::test]
+async fn sqlite_unique_violation_has_sqlstate_23505() {
+  let client = memory_db().await;
+  for sql in [
+    "CREATE TABLE uniq (id INTEGER PRIMARY KEY, name TEXT UNIQUE)",
+    "INSERT INTO uniq VALUES (1, 'a')",
+  ] {
+    run(client.execute(sql, &[])).await.expect(sql);
+  }
+  for dup in [
+    "INSERT INTO uniq VALUES (2, 'a')",
+    "INSERT INTO uniq VALUES (1, 'b')",
+  ] {
+    let err = run(client.execute(dup, &[])).await.unwrap_err();
+    assert!(err.is_unique_violation(), "{err:?}");
+  }
+  let other = run(client.execute("INSERT INTO missing VALUES (1)", &[]))
+    .await
+    .unwrap_err();
+  assert_eq!(other.sqlstate(), None, "{other:?}");
+}
+
+#[tokio::test]
 async fn query_stream_without_a_tokio_runtime_is_unsupported() {
   // The pool lives (and is dropped) on the runtime; the stream is pulled on a plain thread.
   let client = memory_db().await;

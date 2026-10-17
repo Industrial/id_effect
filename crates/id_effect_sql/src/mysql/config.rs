@@ -178,8 +178,8 @@ impl MySqlPoolConfig {
 
 /// Create a [`MySqlPool`] from `config` (opens a first connection). A TLS failure (the server
 /// offers no TLS under [`MySqlTlsMode::Required`] or stricter, or its certificate does not
-/// verify) is [`SqlError::QueryFailed`](crate::SqlError::QueryFailed) with an empty `sql` and the
-/// cause as its message.
+/// verify) is [`SqlError::TlsFailed`](crate::SqlError::TlsFailed), an unreachable server
+/// [`SqlError::ConnectionFailed`](crate::SqlError::ConnectionFailed).
 pub async fn mysql_pool_from_config(config: MySqlPoolConfig) -> Result<MySqlPool, MySqlSqlError> {
   let options = config.connect_options()?;
   config

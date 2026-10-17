@@ -13,6 +13,7 @@ use std::time::Duration;
 use id_effect::{Cause, Exit, Never};
 use id_effect::{Effect, Runtime, TokioExecutor};
 use id_effect_node::singleton::{PgAdvisoryLease, SingletonError, SingletonLease};
+use id_effect_sql::pg::{PgPoolConfig, PgTlsMode};
 
 /// Run a lease effect on the default runtime (its tokio side has the IO driver sqlx needs; the
 /// session fiber the connect forks lands there).
@@ -95,6 +96,31 @@ fn unreachable_database_is_unavailable() {
   .err()
   .expect("connect must fail");
   assert!(matches!(err, SingletonError::Unavailable(_)), "{err}");
+}
+
+#[test]
+fn advisory_lease_uses_pool_tls() {
+  let Some(url) = live_url("advisory_lease_uses_pool_tls") else {
+    return;
+  };
+  // The config's explicit TLS settings apply, not only the URL's: a certificate no server has
+  // fails (a plaintext server already refuses the TLS `VerifyFull` needs) ...
+  let verified = PgPoolConfig::from_url(&url)
+    .with_tls_mode(PgTlsMode::VerifyFull)
+    .with_root_cert_pem(b"not a certificate".to_vec());
+  match run(PgAdvisoryLease::from_pool_config(verified)) {
+    Err(SingletonError::Unavailable(m)) => assert!(m.starts_with("connect:"), "{m}"),
+    Err(other) => panic!("unexpected error: {other}"),
+    Ok(_) => panic!("VerifyFull with a bogus root certificate must not connect"),
+  }
+  // ... and an explicit `Disable` overrides the URL's `sslmode=verify-full`.
+  let sep = if url.contains('?') { '&' } else { '?' };
+  let plaintext = PgPoolConfig::from_url(format!("{url}{sep}sslmode=verify-full"))
+    .with_tls_mode(PgTlsMode::Disable);
+  let lease = run(PgAdvisoryLease::from_pool_config(plaintext)).expect("Disable connects");
+  let name = lock_name("pool-tls");
+  run(lease.try_acquire(&name, "a", Duration::from_secs(30))).expect("acquires");
+  run(lease.release(&name, "a")).expect("releases");
 }
 
 #[test]

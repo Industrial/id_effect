@@ -83,11 +83,11 @@ async fn run<A: Send + 'static>(eff: Effect<A, SqlError>) -> Result<A, SqlError>
   }
 }
 
-/// A failed connection: `QueryFailed` without SQL, its message containing `cause`.
+/// A failed TLS connection: `TlsFailed`, its message containing `cause`.
 #[track_caller]
 fn assert_refused<T>(result: Result<T, SqlError>, cause: &str) {
   match result {
-    Err(SqlError::QueryFailed { sql, message }) if sql.is_empty() && message.contains(cause) => {}
+    Err(SqlError::TlsFailed { message, .. }) if message.contains(cause) => {}
     Err(other) => panic!("expected a connection failure containing {cause:?}, got {other:?}"),
     Ok(_) => panic!("expected a connection failure containing {cause:?}, but it connected"),
   }
@@ -451,7 +451,11 @@ mod mysql {
     // secure transport, refuses the plaintext login with its own error (SQLSTATE tagged).
     let disabled = MySqlPoolConfig::from_url(format!("{}?ssl-mode=REQUIRED", url(&addr)))
       .with_tls_mode(MySqlTlsMode::Disabled);
-    assert_refused(session_cipher(disabled).await, "(SQLSTATE HY000)");
+    let refused = session_cipher(disabled).await;
+    assert!(
+      matches!(&refused, Err(e) if e.sqlstate() == Some("HY000")),
+      "{refused:?}"
+    );
     let _ = std::fs::remove_file(ca_file);
   }
 

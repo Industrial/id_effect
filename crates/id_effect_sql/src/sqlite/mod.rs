@@ -41,7 +41,8 @@
 //! [`SqlError::Unsupported`](crate::SqlError::Unsupported) (open the database with `?mode=ro`
 //! instead); `DEFERRABLE` changes nothing. Savepoints are SQLite savepoints. `SQLITE_BUSY`
 //! ("database is locked") is reported as SQLSTATE `40001`, so
-//! [`retry_serialization_failures`](crate::retry_serialization_failures) retries it.
+//! [`retry_serialization_failures`](crate::retry_serialization_failures) retries it; a unique
+//! or primary key violation is reported as SQLSTATE `23505`, as on PostgreSQL.
 //!
 //! An in-memory database shares one cache between its connections: a statement outside a
 //! transaction that touches a table the transaction wrote waits until it commits or rolls back.
