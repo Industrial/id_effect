@@ -80,7 +80,10 @@ Follow-ups recorded during wave 1:
   certificates (dist.tls #2 #4 #5 #7; the handshake doc no longer says "mTLS"); the Ledger
   mounting `SecurityLayer` and `RateLimitKey::tenant` (sec.web, eco.tenancy#7 in the reference
   app); an idle-machine compile-time measurement for 0.9 (dx.compile#2 failed on a 66.9 s cold
-  build at load ~60); `id_effect_kit` to tier platform.
+  build at load ~60); `id_effect_kit` to tier platform; drop sqlx's `time` feature from
+  `id_effect_sql` (decode date-times from the wire format) so apps and crates using sqlx macros
+  with chrono (e.g. `job` 0.6, labs `id_effect_jobs/obix`, excluded from the labs CI run) build
+  again.
 - `src/metrics.rs` doc links to `record_pg_pool` break `cargo doc -D warnings` without `pg`.
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 
