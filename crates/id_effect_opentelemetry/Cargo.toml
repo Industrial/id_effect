@@ -69,6 +69,7 @@ axum = { version = "0.8" }
 http = "1"
 
 [dev-dependencies]
+id_effect_sql = { path = "../id_effect_sql" }
 id_effect_tokio = { path = "../id_effect_tokio" }
 tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1.50.0", features = [

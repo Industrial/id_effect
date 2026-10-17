@@ -11,6 +11,9 @@
 //! - **Spans** go through the span-hook `FiberRef`: install [`OtelSpanHook`] around the root
 //!   effect with `Effect::with_span_hook`, and every `Effect::with_span` becomes an
 //!   OpenTelemetry span, parented across forked fibers on any executor thread.
+//!   `TracedHttpClient` (feature `platform`) opens a client span per outbound request and sends
+//!   its W3C `traceparent`; `id_effect_sql`'s `InstrumentedSqlClient` opens a `db.query` span
+//!   per statement. [`OtelConfig::sampler`] picks the head sampler (`OTEL_TRACES_SAMPLER`).
 //! - **Logs**: [`OtelLogBackend`] is an `id_effect_logger` backend; `tracing` events reach OTEL
 //!   logs through the subscriber layers.
 
@@ -18,6 +21,8 @@
 #![deny(missing_docs)]
 
 mod axum;
+#[cfg(feature = "platform")]
+mod client;
 mod config;
 mod error;
 mod logs_bridge;
@@ -33,9 +38,11 @@ mod subscriber;
 mod testing;
 
 pub use axum::trace_request;
+#[cfg(feature = "platform")]
+pub use client::TracedHttpClient;
 #[cfg(feature = "config")]
 pub use config::load_otel_config;
-pub use config::{OtelConfig, OtelProtocol, config_keys};
+pub use config::{OtelConfig, OtelProtocol, OtelSampler, config_keys};
 pub use error::OtelError;
 pub use logs_bridge::{
   OtelLogBackend, otel_log_backend_for_provider, sdk_logger_provider_with_in_memory_exporter,

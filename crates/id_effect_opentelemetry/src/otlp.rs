@@ -155,6 +155,7 @@ pub fn build_otlp_providers(config: &OtelConfig) -> Result<OtelProviders, OtelEr
   let trace_exporter = span_exporter(config)?;
   let tracer = SdkTracerProvider::builder()
     .with_resource(resource.clone())
+    .with_sampler(config.sampler.sdk_sampler())
     .with_batch_exporter(trace_exporter)
     .build();
 

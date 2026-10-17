@@ -1,4 +1,5 @@
-//! Automatic database client metrics: [`InstrumentedSqlClient`] wraps any [`SqlClient`].
+//! Automatic database client metrics and spans: [`InstrumentedSqlClient`] wraps any
+//! [`SqlClient`].
 //!
 //! Each `connect`, `query`, `execute` and `begin` records, however it ends:
 //!
@@ -8,8 +9,16 @@
 //!
 //! Labels never carry SQL text, so the series set is bounded (4 ops × 2 outcomes). Statements
 //! run through a transaction handle are not counted (the `begin` that opened it is). With the
-//! `pg` feature, [`record_pg_pool`] samples a pool's connection gauges; call it before each
+//! `pg` feature, `record_pg_pool` samples a pool's connection gauges; call it before each
 //! scrape (for example from `id_effect_axum::metrics::metrics_route_with`).
+//!
+//! Each `query` and `execute` also runs inside a `db.query` span ([`Effect::with_span_attrs`])
+//! with the attributes `db.system` ([`InstrumentedSqlClient::with_db_system`], default
+//! `other_sql`), `db.operation` (the statement's first keyword, `SELECT`), `db.statement` (the
+//! SQL text with every string and numeric literal replaced by `?`, at most 1024 characters) and
+//! `otel.kind = client`. Bound parameters never reach a span. Under
+//! `id_effect_opentelemetry::OtelSpanHook` the span is exported as an OpenTelemetry client span,
+//! a child of the caller's span; this crate has no OpenTelemetry dependency.
 //!
 //! ```rust
 //! use id_effect::{Exit, MetricRegistry, MetricState};
@@ -42,10 +51,11 @@ pub const DB_CLIENT_OPERATIONS_TOTAL: &str = "db_client_operations_total";
 /// Histogram: client operation duration in seconds, by `op`.
 pub const DB_CLIENT_OPERATION_DURATION_SECONDS: &str = "db_client_operation_duration_seconds";
 
-/// Gauge: pool connections, by `state` (`idle` or `used`), set by [`record_pg_pool`].
+/// Gauge: pool connections, by `state` (`idle` or `used`), set by `record_pg_pool` (feature
+/// `pg`).
 pub const DB_CLIENT_CONNECTION_COUNT: &str = "db_client_connection_count";
 
-/// Gauge: the pool's maximum connections, set by [`record_pg_pool`].
+/// Gauge: the pool's maximum connections, set by `record_pg_pool` (feature `pg`).
 pub const DB_CLIENT_CONNECTION_MAX: &str = "db_client_connection_max";
 
 /// The duration buckets of [`DB_CLIENT_OPERATION_DURATION_SECONDS`] (1 ms to 10 s).
@@ -55,14 +65,21 @@ pub fn duration_boundaries() -> Boundaries {
   ])
 }
 
+/// Span name of `query` / `execute` (see the [module docs](self)).
+pub const DB_QUERY_SPAN: &str = "db.query";
+
+/// Longest `db.statement` span attribute, in characters.
+const STATEMENT_MAX_CHARS: usize = 1024;
+
 /// A [`SqlClient`] that records [`DB_CLIENT_OPERATIONS_TOTAL`] and
-/// [`DB_CLIENT_OPERATION_DURATION_SECONDS`] around every operation of `C` (see the
-/// [module docs](self)). `close` is passed through unrecorded.
+/// [`DB_CLIENT_OPERATION_DURATION_SECONDS`] around every operation of `C` and runs statements in
+/// a [`DB_QUERY_SPAN`] span (see the [module docs](self)). `close` is passed through unrecorded.
 #[derive(Clone, Debug)]
 pub struct InstrumentedSqlClient<C> {
   inner: C,
   operations: Counter,
   duration: Histogram,
+  db_system: &'static str,
 }
 
 impl<C: SqlClient> InstrumentedSqlClient<C> {
@@ -77,12 +94,44 @@ impl<C: SqlClient> InstrumentedSqlClient<C> {
       inner,
       operations: registry.counter(DB_CLIENT_OPERATIONS_TOTAL),
       duration: registry.histogram(DB_CLIENT_OPERATION_DURATION_SECONDS, duration_boundaries()),
+      db_system: "other_sql",
     }
+  }
+
+  /// Sets the spans' `db.system` attribute (OpenTelemetry names: `postgresql`, `mysql`,
+  /// `sqlite`; default `other_sql`).
+  pub fn with_db_system(mut self, system: &'static str) -> Self {
+    self.db_system = system;
+    self
   }
 
   /// The wrapped client.
   pub fn inner(&self) -> &C {
     &self.inner
+  }
+
+  /// `eff` (statement `sql`, operation `op`) instrumented and run in a [`DB_QUERY_SPAN`] span.
+  fn statement<A: Send + 'static>(
+    &self,
+    op: &'static str,
+    sql: &str,
+    eff: Effect<A, SqlError>,
+  ) -> Effect<A, SqlError> {
+    let statement = statement_summary(sql);
+    let operation = statement
+      .split(|c: char| !c.is_ascii_alphabetic())
+      .find(|word| !word.is_empty())
+      .unwrap_or_default()
+      .to_ascii_uppercase();
+    self.instrument(op, eff).with_span_attrs(
+      DB_QUERY_SPAN,
+      [
+        ("otel.kind", "client".to_owned()),
+        ("db.system", self.db_system.to_owned()),
+        ("db.operation", operation),
+        ("db.statement", statement),
+      ],
+    )
   }
 
   /// `eff` with the operation counter and duration recorded under `op`.
@@ -111,11 +160,11 @@ impl<C: SqlClient> SqlClient for InstrumentedSqlClient<C> {
   }
 
   fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
-    self.instrument("query", self.inner.query(sql, params))
+    self.statement("query", sql, self.inner.query(sql, params))
   }
 
   fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
-    self.instrument("execute", self.inner.execute(sql, params))
+    self.statement("execute", sql, self.inner.execute(sql, params))
   }
 
   fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
@@ -125,6 +174,47 @@ impl<C: SqlClient> SqlClient for InstrumentedSqlClient<C> {
   fn close(&self) -> Effect<(), Never> {
     self.inner.close()
   }
+}
+
+/// `sql` with every string literal (`'...'`, `''` escapes) and numeric literal replaced by `?`,
+/// whitespace runs collapsed to one space, truncated to [`STATEMENT_MAX_CHARS`]: the statement's
+/// shape without its inline values. Placeholders (`$1`, `?`) and identifiers (`t1`) are kept.
+fn statement_summary(sql: &str) -> String {
+  let mut out = String::new();
+  let mut len = 0;
+  let mut prev = ' ';
+  let mut chars = sql.chars().peekable();
+  while let Some(c) = chars.next() {
+    if len >= STATEMENT_MAX_CHARS {
+      break;
+    }
+    let pushed = if c == '\'' {
+      while let Some(n) = chars.next() {
+        if n == '\'' && chars.next_if_eq(&'\'').is_none() {
+          break;
+        }
+      }
+      '?'
+    } else if c.is_whitespace() {
+      if prev == ' ' {
+        continue;
+      }
+      ' '
+    } else if c.is_ascii_digit() && !(prev.is_alphanumeric() || matches!(prev, '_' | '$')) {
+      while chars
+        .next_if(|n| n.is_ascii_alphanumeric() || *n == '.')
+        .is_some()
+      {}
+      '?'
+    } else {
+      c
+    };
+    out.push(pushed);
+    len += 1;
+    prev = pushed;
+  }
+  out.truncate(out.trim_end().len());
+  out
 }
 
 /// Sets the connection gauges of `client`'s pool in `registry`:
@@ -225,6 +315,87 @@ mod tests {
         .all(|p| p.key.tags().iter().all(|(_, v)| !v.contains("SELECT")))
     );
     assert!(registry.snapshot().iter().all(|p| p.key.name() != "op"));
+  }
+
+  /// A started span's name and attributes.
+  type Started = (String, Vec<(String, String)>);
+
+  /// Records every span that starts.
+  #[derive(Default)]
+  struct Recorder(std::sync::Mutex<Vec<Started>>);
+
+  impl id_effect::SpanHook for Recorder {
+    fn on_start(&self, span: &id_effect::Span) {
+      self
+        .0
+        .lock()
+        .unwrap()
+        .push((span.name().to_owned(), span.attributes().to_vec()));
+    }
+  }
+
+  #[test]
+  fn statements_run_in_a_db_query_span_without_values() {
+    let test = TestSqlClient::new();
+    run(test.connect()).unwrap();
+    let client = InstrumentedSqlClient::with_registry(test, MetricRegistry::new())
+      .with_db_system("postgresql");
+    let recorder = Arc::new(Recorder::default());
+    let hook: Arc<dyn id_effect::SpanHook> = recorder.clone();
+    let secret = SqlValue::Text("hunter2".into());
+    let sql = "select *\n  from users where name = 'ada' and id = $1 and age > 42";
+    let _ = run(client.query(sql, &[secret]).with_span_hook(hook.clone()));
+    run(
+      client
+        .execute("DELETE FROM t", &[])
+        .with_span_hook(hook.clone()),
+    )
+    .unwrap();
+    run(client.begin().with_span_hook(hook)).unwrap();
+
+    let spans = recorder.0.lock().unwrap();
+    assert_eq!(spans.len(), 2, "begin opens no span: {spans:?}");
+    let (name, attrs) = &spans[0];
+    assert_eq!(name, DB_QUERY_SPAN);
+    let get = |k: &str| {
+      attrs
+        .iter()
+        .find(|(key, _)| key == k)
+        .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(get("otel.kind"), Some("client"));
+    assert_eq!(get("db.system"), Some("postgresql"));
+    assert_eq!(get("db.operation"), Some("SELECT"));
+    assert_eq!(
+      get("db.statement"),
+      Some("select * from users where name = ? and id = $1 and age > ?")
+    );
+    assert!(
+      attrs
+        .iter()
+        .all(|(_, v)| !v.contains("hunter2") && !v.contains("ada"))
+    );
+    assert_eq!(spans[1].1[2], ("db.operation".into(), "DELETE".into()));
+  }
+
+  #[test]
+  fn statement_summary_masks_literals_and_keeps_shape() {
+    assert_eq!(
+      statement_summary("UPDATE t1 SET note = 'it''s', n = -3.5e2 WHERE k = ?"),
+      "UPDATE t1 SET note = ?, n = -? WHERE k = ?"
+    );
+    assert_eq!(statement_summary("  SELECT 'open"), "SELECT ?");
+    assert_eq!(
+      statement_summary("INSERT INTO col_2 VALUES (0x1F)"),
+      "INSERT INTO col_2 VALUES (?)"
+    );
+    let long = format!("SELECT {}", "abc,".repeat(2000));
+    assert_eq!(
+      statement_summary(&long).chars().count(),
+      STATEMENT_MAX_CHARS
+    );
+    let client = InstrumentedSqlClient::new(TestSqlClient::new());
+    assert_eq!(client.db_system, "other_sql");
   }
 
   #[test]
