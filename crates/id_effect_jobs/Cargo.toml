@@ -39,7 +39,8 @@ id_effect_node = { path = "../id_effect_node", version = "0.9.0", optional = tru
 id_effect_process = { path = "../id_effect_process", version = "0.9.0", optional = true }
 
 [dev-dependencies]
-# The live PostgreSQL tests (tests/conformance.rs, tests/pg_worker.rs) connect with the pg driver.
+# The live PostgreSQL tests (tests/conformance.rs, pg_worker.rs, pg_queue.rs, cron_pg.rs) connect
+# with the pg driver.
 id_effect_sql = { path = "../id_effect_sql", features = ["pg", "migrate"] }
 id_effect_tokio = { path = "../id_effect_tokio" }
 

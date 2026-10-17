@@ -1,6 +1,14 @@
 # ADR — es-entity as production event persistence
 
-**Status:** Accepted  
+> **Superseded (0.10).** `id_effect_events` is published (tier `integration`) without es-entity:
+> its durable store is `SqlEventJournal` over any `id_effect_sql` `SqlClient` (features `pg`,
+> `sqlite`), and `EsEntityPgBackend` / `provide_es_entity_events` are gone. The messaging stack
+> this decision leaned on went too: obix, Apalis and rdkafka left with the labs `id_effect_jobs`
+> crate; the transactional outbox and idempotent inbox are `id_effect_messaging`, the job queue
+> is `id_effect_jobs` (both on `id_effect_sql`), and `labs/id_effect_graph` was removed. Kept as
+> a record of the original decision.
+
+**Status:** Superseded (0.10; was Accepted)  
 **Date:** 2026-06-17  
 **Context:** The fp-events initiative replaces the bespoke `PgSqlJournalBackend` / `event_journal` DDL path with a library-backed persistence layer on the shared [`PgPool`](../../../crates/id_effect_sql/src/pg/pool_key.rs). obix already depends on **es-entity** 0.10.x via the messaging stack.
 

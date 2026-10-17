@@ -64,7 +64,10 @@ id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.9.0", fe
 id_effect_console = { path = "../../crates/id_effect_console", version = "0.9.0", features = [
   "jobs",
 ] }
-id_effect_jobs = { path = "../../crates/id_effect_jobs", version = "0.9.0" }
+id_effect_jobs = { path = "../../crates/id_effect_jobs", version = "0.9.0", features = [
+  "cron",
+] }
+id_effect_messaging = { path = "../../crates/id_effect_messaging", version = "0.9.0" }
 id_effect_storage = { path = "../../crates/id_effect_storage", version = "0.9.0", features = [
   "s3",
 ] }

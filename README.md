@@ -79,10 +79,16 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 |-------|---------|-------------|
 | [`id_effect_axum`](crates/id_effect_axum) | [![crates.io](https://img.shields.io/crates/v/id_effect_axum.svg)](https://crates.io/crates/id_effect_axum) | Axum and Tower integration for id_effect — Send-safe Effect handlers, request-scoped capabilities, host lifecycle |
 | [`id_effect_cli`](crates/id_effect_cli) | [![crates.io](https://img.shields.io/crates/v/id_effect_cli.svg)](https://crates.io/crates/id_effect_cli) | CLI helpers for id_effect: optional clap, Exit/Cause → ExitCode, tracing buffer, run_main |
+| [`id_effect_console`](crates/id_effect_console) | [![crates.io](https://img.shields.io/crates/v/id_effect_console.svg)](https://crates.io/crates/id_effect_console) | Operator console for id_effect services: live fibers, jobs and queues behind authorization guards |
+| [`id_effect_events`](crates/id_effect_events) | [![crates.io](https://img.shields.io/crates/v/id_effect_events.svg)](https://crates.io/crates/id_effect_events) | Event sourcing, projections, and CQRS boundaries for id_effect programs |
+| [`id_effect_jobs`](crates/id_effect_jobs) | [![crates.io](https://img.shields.io/crates/v/id_effect_jobs.svg)](https://crates.io/crates/id_effect_jobs) | Background jobs for id_effect services: a Postgres SKIP LOCKED queue, workers, retries and cron |
 | [`id_effect_kit`](crates/id_effect_kit) | [![crates.io](https://img.shields.io/crates/v/id_effect_kit.svg)](https://crates.io/crates/id_effect_kit) | One front door to id_effect: a single dependency with feature flags per battery and a prelude |
+| [`id_effect_mail`](crates/id_effect_mail) | [![crates.io](https://img.shields.io/crates/v/id_effect_mail.svg)](https://crates.io/crates/id_effect_mail) | Outgoing mail for id_effect services: SMTP, the SendGrid API, templates and delivery through jobs |
+| [`id_effect_messaging`](crates/id_effect_messaging) | [![crates.io](https://img.shields.io/crates/v/id_effect_messaging.svg)](https://crates.io/crates/id_effect_messaging) | Messaging for id_effect services: a broker-agnostic MessageBroker, in-memory broker, outbox, inbox and relay |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
+| [`id_effect_storage`](crates/id_effect_storage) | [![crates.io](https://img.shields.io/crates/v/id_effect_storage.svg)](https://crates.io/crates/id_effect_storage) | Object storage for id_effect services: one store interface over file-system, in-memory and S3-compatible backends |
 | [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit; `id-effect migrate` runs SQL migrations |
 
 **Platform (batteries)**
@@ -91,7 +97,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 |-------|---------|-------------|
 | [`id_effect_auth`](crates/id_effect_auth) | [![crates.io](https://img.shields.io/crates/v/id_effect_auth.svg)](https://crates.io/crates/id_effect_auth) | Authentication for id_effect services: password hashing, sessions, JWT, API-key and OIDC credentials |
 | [`id_effect_authz`](crates/id_effect_authz) | [![crates.io](https://img.shields.io/crates/v/id_effect_authz.svg)](https://crates.io/crates/id_effect_authz) | Authorization for id_effect services: roles and permissions, named and resource policies, route guards |
-| [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, sessions and rate limits |
+| [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, a Redis Streams message broker, sessions and rate limits |
 | [`id_effect_test`](crates/id_effect_test) | [![crates.io](https://img.shields.io/crates/v/id_effect_test.svg)](https://crates.io/crates/id_effect_test) | Integration-test support for id_effect: effect-native containers, per-test database isolation, fixtures |
 
 **Maintenance (frozen API)**
@@ -106,9 +112,6 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | Crate | Version | Description |
 |-------|---------|-------------|
 | [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
-| [`id_effect_events`](labs/id_effect_events) | unpublished | Event sourcing, projections, and CQRS boundaries for id_effect programs |
-| [`id_effect_graph`](labs/id_effect_graph) | unpublished | Directed acyclic graphs and topological sorting for id_effect programs |
-| [`id_effect_jobs`](labs/id_effect_jobs) | unpublished | Production async messaging — Apalis jobs, obix inbox, Kafka broker |
 | [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
 | [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
 | [`id_effect_workflow`](labs/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |

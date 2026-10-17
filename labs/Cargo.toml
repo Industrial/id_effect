@@ -1,14 +1,12 @@
 # Labs workspace (ADR 0010, Amendment 1): unpublished crates with no API guarantees.
 # Kept separate from the main workspace so main CI never builds their heavy deps
-# (rdkafka/OpenSSL, bundled SQLite, apalis). Built by the CI `labs` job:
-#   cargo test --manifest-path labs/Cargo.toml --workspace
+# (bundled SQLite, duroxide). Built by the CI `labs` job:
+#   cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
 [workspace]
 resolver = "2"
 exclude = ["id_effect_lint"] # nightly-only Dylint crate; builds standalone
 members = [
   "id_effect_ai",
-  "id_effect_graph",
-  "id_effect_jobs",
   "id_effect_parse",
   "id_effect_rpc",
   "id_effect_workflow",

@@ -93,6 +93,14 @@ struct Ch3000Application;
 struct Ch3100AsyncMessaging;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch31-01-jobs.md")]
+struct Ch3101Jobs;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch31-02-messaging.md")]
+struct Ch3102Messaging;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch32-00-workflow-cluster.md")]
 struct Ch3200WorkflowCluster;
 

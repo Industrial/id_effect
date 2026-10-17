@@ -82,7 +82,7 @@ See also [Implicit Parallelism](../part4/ch13-05-parallelism.md).
 
 ## Cluster
 
-When the local fabric saturates, `RebalanceStrategy::ScaleOut` builds a `FabricJobSpec` via `FabricGovernor::scale_out` (or `id_effect_node::placement::scale_out_placed`, which records a `target_node`). The labs crate `id_effect_jobs` (unpublished, see [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)) converts one with `JobSpec::from_fabric` and runs it on a `FabricJobRunner`; its example `labs/id_effect_jobs/examples/030_compute_fabric_cluster.rs` shows a two-node offload. Within the published crates, cross-node placement goes through `id_effect_node` (Part VII).
+When the local fabric saturates, `RebalanceStrategy::ScaleOut` builds a `FabricJobSpec` via `FabricGovernor::scale_out` (or `id_effect_node::placement::scale_out_placed`, which records a `target_node`). Cross-node placement goes through `id_effect_node` (Part VII).
 
 Cluster placement lives in `id_effect_node::placement`. `ClusterResourcePolicy` combines global and per-node caps with a `PlacementMode`; every placement decision flows through one pure entry point, `place(reports, policy)`, fed by `LoadReport` telemetry:
 
