@@ -44,4 +44,43 @@ owner's email or other personal data to external services.
 
 ## Follow-ups recorded during the release
 
-- (none yet)
+- E7.1 design approved by the owner 2026-10-17 (`.maestro/specs/releases/0.10/e7-1-queue-design.md`:
+  Q1 `scheduled` + `cancelled`, Q2-Q5 as recommended). queue-core may touch `src/lib.rs`,
+  `Cargo.toml`, `tests/conformance.rs`, `tests/pg_worker.rs` beyond its Owns list (note's amendment).
+  Q5 needs an additive core `CronJob::new_at` in `r10-e7-1-cron`.
+- Integrator, CHANGELOG + MIGRATION-0.10 from wave 1 commits:
+  - see each commit body: e64163a (logger), 803151c (schema), f52e67ec + the SQL pair
+    (sqlx time, SqlError variants / sqlstate / 23505, PgPoolConfig::connect_options public,
+    MySQL date-time params bind as text), the HTTP client defaults (30 s timeout, retries; HEAD /
+    OPTIONS not in `HttpMethod`), storage, fiber registry, 7b99a566 (quinn on aws-lc-rs).
+- HttpMethod lacks HEAD / OPTIONS (D10 lists them as retryable): adding variants is breaking;
+  decide before the 0.10 migration guide is final.
+- `ReqwestClientLive::layer()` / `provide_reqwest_pool` still build a bare `Client::new()` (no
+  timeout); `HttpError::clone` turns `Reqwest(e)` into `InvalidRequest`.
+- id_effect_storage: an interrupted multipart upload is not aborted (only failures are).
+- `examples/http-showcase/.../unique_violation.rs` (and maybe the Ledger) can use
+  `SqlError::is_unique_violation()` instead of matching message text.
+- Fiber registry bench numbers came from a loaded machine: re-measure idle in `r10-w3-kpis`.
+  `crates/id_effect/src/lib.rs` feature list does not mention `fiber-registry` yet.
+
+- Integrator, CHANGELOG + MIGRATION-0.10 (from e64163a, E6.4): `RedactionPolicy` /
+  `provide_redaction_policy`, `SamplingBackend` / `SamplingStats`, `LogRecord.target` +
+  `EffectLogger::log_target`; **breaking** `LogRecord` is `#[non_exhaustive]` (build with
+  `LogRecord::new` + `with_*`); output gains `target` only when set.
+- Integrator (from 803151c, co-schema-errors): CHANGELOG "derived schemas report every invalid
+  field; `Schema::with_decode_unknown_all` public"; MIGRATION note: `#[from_row(schema)]` on a
+  derived type now lists every invalid column in `SqlError::InvalidRow { issues }`.
+- Bug (pre-existing, not yet fixed): `#[derive(Schema)]` generated code is not hygienic — a field
+  named `obj` (or now `__issues`) shadows the decoder's locals
+  (`crates/id_effect_proc_macro/src/derive_schema_parser.rs`); rename locals to `__id_effect_*`
+  and add a test with such fields. Also the "unsupported field type" error is emitted 3×.
+- id_effect_sql (pre-existing, seen in f52e67ec): sqlx caches prepared statements by SQL text
+  with their parameter types, so the same SQL bound first with a `Timestamp` and later a
+  `DateTime` reuses the TIMESTAMPTZ statement. Document in the SQL values chapter (or key the
+  cache by types). Also: the local Postgres on :5432 was down during wave 1; agents use their own
+  `postgres:17` containers on 5543x ports.
+- Spec fix: the E6.4 row names `book/src/part6/ch27-00-observability.md` (does not exist); the
+  section went to `part2/ch07-11-logger.md`.
+- Note: the redaction policy is installed per thread like the composite backend
+  (`id_effect_logger/src/lib.rs` thread-locals); the console's runtime log level (E6.2 #6) needs a
+  process-wide handle anyway — consider moving both together there.
