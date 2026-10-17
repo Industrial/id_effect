@@ -3,22 +3,49 @@
 //!
 //! Configuration comes from the environment (see `.env.example`). `--describe-layers` (or
 //! `--describe-layers=dot`) prints the layer graph instead; `id-effect doctor --graph` runs it.
+{{#if jobs}}
+//!
+//! A job worker runs in the same process: it starts before the server and, once the server has
+//! stopped, drains the jobs in flight.
+{{/if}}
+{{#if console}}
+//!
+//! The operator console listens on `127.0.0.1:CONSOLE_PORT` (see `src/console.rs`).
+{{/if}}
 
 use std::process::ExitCode;
 
 use id_effect_kit::axum::server::security::{COOKIE_KEY_ENV, CookieKey};
+{{#if !jobs}}
 use id_effect_kit::axum::{
     HealthRegistry, HostBuilder, HostConfig, HostError, provide_host_config_env,
 };
+{{/if}}
+{{#if jobs}}
+use id_effect_kit::axum::{
+    EffectExecutor, HealthRegistry, HostBuilder, HostConfig, HostError, provide_host_config_env,
+};
+{{/if}}
 use id_effect_kit::graph::LayerGraph;
 {{#if otel}}
 use id_effect_kit::otel::{OtelConfig, install_from_config};
 {{/if}}
 
+{{#if console}}
+use {{crate_name}}::console;
+{{/if}}
 {{#if pg}}
 use {{crate_name}}::db::Database;
 {{/if}}
+{{#if jobs}}
+use {{crate_name}}::jobs;
+{{/if}}
+{{#if !otel}}
 use {{crate_name}}::{app, serve};
+{{/if}}
+{{#if otel}}
+use {{crate_name}}::{serve, traced_app};
+{{/if}}
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -45,20 +72,86 @@ async fn main() -> ExitCode {
         Ok(key) => key,
         Err(e) => return fail(e),
     };
+{{#if console}}
+    let console_config = match console::config() {
+        Ok(config) => config,
+        Err(e) => return fail(e),
+    };
+{{/if}}
     let health = HealthRegistry::new();
 {{#if pg}}
+{{#if !jobs}}
     let health = match Database::connect().await {
         Ok(db) => health.with_indicator(db.health_indicator()),
         Err(e) => return fail(e),
     };
 {{/if}}
+{{#if jobs}}
+    let db = match Database::connect().await {
+        Ok(db) => db,
+        Err(e) => return fail(e),
+    };
+    let health = health.with_indicator(db.health_indicator());
+{{/if}}
+{{/if}}
+{{#if jobs}}
+{{#if !pg}}
+    let queue = jobs::queue();
+{{/if}}
+{{#if pg}}
+    let queue = match jobs::queue(&db).await {
+        Ok(queue) => queue,
+        Err(e) => return fail(e),
+    };
+{{/if}}
+{{/if}}
+{{#if console}}
+{{#if !jobs}}
+    let console_routes = console::router(&health);
+{{/if}}
+{{#if jobs}}
+    let console_routes = console::router(&health, queue.clone());
+{{/if}}
+    match console::spawn(console_config, console_routes).await {
+        Ok(addr) => eprintln!("console on http://{addr}/_console"),
+        Err(e) => return fail(e),
+    }
+{{/if}}
+{{#if jobs}}
+    // The worker drains when `stop_worker` fires, after the server has stopped.
+    let (stop_worker, stopped) = tokio::sync::oneshot::channel::<()>();
+    let worker = match jobs::worker(queue, async move {
+        let _ = stopped.await;
+    }) {
+        Ok(worker) => worker,
+        Err(e) => return fail(format!("jobs: {e}")),
+    };
+{{#if otel}}
+    let worker = worker.with_span_hook(telemetry.span_hook());
+{{/if}}
+    let worker = tokio::spawn(EffectExecutor::global().run_effect(worker));
+{{/if}}
+{{#if otel}}
+    let span_hook = telemetry.span_hook();
+{{/if}}
     let served = HostBuilder::new()
         .run_until_shutdown(move |host| {
             // `/ready` reports the host's readiness, which the shutdown signal marks down.
             let health = health.with_readiness(host.readiness.clone());
+{{#if !otel}}
             serve(host, app(&health, cookie_key))
+{{/if}}
+{{#if otel}}
+            serve(host, traced_app(&health, cookie_key, span_hook))
+{{/if}}
         })
         .await;
+{{#if jobs}}
+    let _ = stop_worker.send(());
+    if let Err(e) = worker.await {
+        eprintln!("jobs: the worker did not stop cleanly: {e}");
+    }
+{{/if}}
 {{#if otel}}
     telemetry.shutdown();
 {{/if}}

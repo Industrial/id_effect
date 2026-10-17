@@ -11,7 +11,25 @@ id_effect_kit = { version = "{{id_effect_version}}", features = [{{kit_features}
 # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
 id_effect = "{{id_effect_version}}"
 axum = "0.8"
+{{#if !jobs}}
+{{#if !console}}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+{{/if}}
+{{#if console}}
+# `net`: the console's listener.
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
+{{/if}}
+{{/if}}
+{{#if jobs}}
+{{#if !console}}
+# `sync`: the job worker's stop signal.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+{{/if}}
+{{#if console}}
+# `net`: the console's listener; `sync`: the job worker's stop signal.
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+{{/if}}
+{{/if}}
 
 [dev-dependencies]
 http-body-util = "0.1"

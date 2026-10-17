@@ -18,11 +18,13 @@ name = "id_effect_kit"
 [features]
 default = []
 # HTTP: `kit::axum` (id_effect_axum: typed routes, Problem+JSON, middleware) and its prelude
-# items. With `authz`, also its route guards; with `redis`, the Redis rate-limit store.
+# items. With `authz`, also its route guards; with `redis`, the Redis rate-limit store; with
+# `mail`, the mail preview routes.
 web = [
   "dep:id_effect_axum",
   "id_effect_authz?/axum",
   "id_effect_redis?/rate-limit",
+  "id_effect_mail?/preview",
 ]
 # OpenAPI 3.1 from the typed routes, `/openapi.json` and `/docs` (id_effect_axum `openapi`).
 openapi = ["web", "id_effect_axum/openapi"]
@@ -68,6 +70,40 @@ authz = ["dep:id_effect_authz"]
 redis = ["dep:id_effect_redis"]
 # Configuration from HashiCorp Vault (`kit::config::vault`).
 config-vault = ["id_effect_config/vault"]
+# Background jobs: `kit::jobs` (id_effect_jobs: the PostgreSQL queue, `MemoryJobQueue`, workers,
+# retries, `enqueue_in` the caller's transaction). With `mail`, also `deliver_later`; with
+# `console`, the console's jobs panel.
+jobs = ["dep:id_effect_jobs", "id_effect_mail?/jobs", "id_effect_console?/jobs"]
+# Cron entries that enqueue jobs, run once per cluster (`CronLeader`, `enqueue_on_tick`), on top
+# of `jobs`.
+jobs-cron = ["jobs", "id_effect_jobs/cron"]
+# Messaging: `kit::messaging` (id_effect_messaging: `MessageBroker`, the in-memory broker, the
+# transactional outbox, inbox and relay).
+messaging = ["dep:id_effect_messaging"]
+# The `MessageBroker` on Redis Streams (`kit::redis::RedisStreamsBroker`), on top of `redis` and
+# `messaging`.
+redis-streams = ["redis", "messaging", "id_effect_redis/streams"]
+# Outgoing mail: `kit::mail` (id_effect_mail: SMTP, SendGrid, minijinja templates,
+# `TestMailbox`). With `jobs`, `deliver_later`; with `web`, the preview routes.
+mail = ["dep:id_effect_mail"]
+# Operator console: `kit::console` (id_effect_console: fibers, supervisors, metrics, health and
+# the log level, behind an authz guard). Implies `web` and `authz`; with `jobs`, the jobs panel.
+console = ["web", "authz", "dep:id_effect_console"]
+# Object storage: `kit::storage` (id_effect_storage: local file system and in-memory stores,
+# signed URLs).
+storage = ["dep:id_effect_storage"]
+# Event sourcing: `kit::events` (id_effect_events: event store, `SqlEventJournal`, projections,
+# snapshots, checkpointed subscriptions).
+events = ["dep:id_effect_events"]
+# User accounts on top of `auth` and `mail`: id_effect_auth's `Accounts`, `AccountRoutes` and
+# `PgAccountTokenStore` (PostgreSQL), and id_effect_mail's `AccountMails` (the sign-up,
+# verification and reset mail).
+auth-accounts = [
+  "auth",
+  "mail",
+  "id_effect_auth/accounts",
+  "id_effect_mail/auth",
+]
 # Test support: `kit::test` (id_effect_test: containers, isolated PostgreSQL databases,
 # fixtures, the in-process HTTP client, OpenAPI contract checks). For tests: enable it on a
 # `[dev-dependencies]` entry of id_effect_kit, not in `[dependencies]`. Not part of `full`.
@@ -97,6 +133,15 @@ full = [
   "authz",
   "redis",
   "config-vault",
+  "jobs",
+  "jobs-cron",
+  "messaging",
+  "redis-streams",
+  "mail",
+  "console",
+  "storage",
+  "events",
+  "auth-accounts",
 ]
 
 [dependencies]
@@ -111,6 +156,12 @@ id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", optional = tru
 id_effect_authz = { path = "../id_effect_authz", version = "0.9.0", optional = true }
 id_effect_redis = { path = "../id_effect_redis", version = "0.9.0", optional = true }
 id_effect_test = { path = "../id_effect_test", version = "0.9.0", optional = true }
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.9.0", optional = true }
+id_effect_messaging = { path = "../id_effect_messaging", version = "0.9.0", optional = true }
+id_effect_mail = { path = "../id_effect_mail", version = "0.9.0", optional = true }
+id_effect_console = { path = "../id_effect_console", version = "0.9.0", optional = true }
+id_effect_storage = { path = "../id_effect_storage", version = "0.9.0", optional = true }
+id_effect_events = { path = "../id_effect_events", version = "0.9.0", optional = true }
 
 [dev-dependencies]
 axum = "0.8"
@@ -121,6 +172,6 @@ tower = { version = "0.5.3", features = ["util"] }
 all-features = true
 
 [package.metadata.id_effect]
-# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until a reference app
-# under examples/reference/ consumes it; then platform (ADR 0010 Amendment 4, ADR 0012).
-tier = "integration"
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform (ADR 0010 Amendment 4,
+# ADR 0012): the Ledger reference app under examples/reference/ depends on it.
+tier = "platform"

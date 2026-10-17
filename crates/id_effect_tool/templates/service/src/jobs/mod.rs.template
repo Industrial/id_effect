@@ -1,0 +1,89 @@
+//! Background jobs on `id_effect_kit::jobs` (id_effect_jobs): a module per job type (its
+//! payload, options, handler and a test), each registered in [`registry`].
+//! `id-effect generate job <name>` adds the module and its line.
+//!
+//! `main.rs` runs a [`worker`] in the service's process, over the queue [`queue`] opens, until
+//! the service shuts down.
+{{#if !pg}}
+//! The queue is in memory: jobs do not survive a restart and are not shared between replicas.
+//! With `--db pg` it is the PostgreSQL table `id_effect_jobs`.
+{{/if}}
+{{#if pg}}
+//! The queue is the PostgreSQL table `id_effect_jobs`, created on start: every replica's worker
+//! claims from it, and a job enqueued with `id_effect_kit::jobs::enqueue_in` commits with the
+//! caller's transaction.
+{{/if}}
+
+use std::future::Future;
+{{#if pg}}
+use std::sync::Arc;
+{{/if}}
+
+{{#if !pg}}
+use id_effect::{Effect, Never, WallClock, from_async};
+use id_effect_kit::jobs::{
+    JobError, JobQueueEnv, JobRegistry, JobStore, MemoryJobQueue, Worker, job_queue_env,
+};
+{{/if}}
+{{#if pg}}
+use id_effect::{Cause, Effect, Exit, Never, from_async};
+use id_effect_kit::axum::EffectExecutor;
+use id_effect_kit::jobs::{
+    JobError, JobQueueEnv, JobRegistry, JobStore, PgJobQueue, Worker, job_queue_env,
+};
+
+use crate::db::Database;
+{{/if}}
+
+/// The environment the handlers run in: the queue, so a handler can enqueue follow-up jobs. Add
+/// the services the handlers need here, and provide them to the worker.
+pub type JobEnv = JobQueueEnv;
+
+/// Every job type with its handler.
+pub fn registry() -> Result<JobRegistry<JobEnv>, JobError> {
+    let registry = JobRegistry::new();
+    Ok(registry)
+}
+
+/// The queue the worker serves.
+pub const QUEUE: &str = "default";
+
+/// How many jobs of [`QUEUE`] run at a time in this process.
+pub const CONCURRENCY: u16 = 4;
+
+{{#if !pg}}
+/// The in-memory queue, on the system clock.
+pub fn queue() -> MemoryJobQueue {
+    MemoryJobQueue::new(WallClock::system())
+}
+{{/if}}
+{{#if pg}}
+/// The queue in `db`: creates the table `id_effect_jobs` unless it exists (its own migration
+/// history, `_id_effect_jobs_migrations`, under the migration advisory lock).
+pub async fn queue(db: &Database) -> Result<PgJobQueue, String> {
+    let client = db.client().clone();
+    let migrations = id_effect_kit::jobs::migrator().run_on(Arc::new(client.clone()));
+    match EffectExecutor::global().run_effect(migrations).await {
+        Exit::Success(_applied) => Ok(PgJobQueue::new(client)),
+        Exit::Failure(Cause::Fail(e)) => Err(format!("jobs migrations: {e}")),
+        Exit::Failure(cause) => Err(format!("jobs migrations: {cause:?}")),
+    }
+}
+{{/if}}
+
+/// Runs the jobs of [`registry`] from `store` until `stop` completes, then drains: claiming
+/// stops and the runs in flight finish (up to the worker's drain timeout) before it returns.
+pub fn worker(
+    store: impl JobStore,
+    stop: impl Future<Output = ()> + Send + 'static,
+) -> Result<Effect<(), Never>, JobError> {
+    let worker = Worker::new(registry()?).queue(QUEUE, CONCURRENCY);
+    let stopped = from_async(move || async move {
+        stop.await;
+        Ok::<(), Never>(())
+    });
+    Ok(worker
+        .run()
+        .race_first(stopped)
+        .provide_all(job_queue_env(store)))
+}

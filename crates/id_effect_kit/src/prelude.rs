@@ -14,12 +14,22 @@
 //! | `id_effect_auth` | `Authenticate`, `AuthPrincipal`, `AuthError`, `Sessions`, `SessionLayer`, `PasswordHasher`, `JwtIssuer`, `JwtVerifier`, `JwtKey` | `auth` |
 //! | `id_effect_authz` | `Policies`, `Policy`, `Principal`, `AuthzError`, `CurrentPrincipal`, `authorize`, `require_role`; with `web`, `AuthorizeExt` | `authz` |
 //! | `id_effect_redis` | `RedisClient`, `RedisConfig` | `redis` |
+//! | `id_effect_jobs` | `Job`, `JobContext`, `JobError`, `JobFailure`, `JobOptions`, `JobQueue`, `JobQueueExt`, `JobRegistry`, `Worker`, `WorkerConfig` | `jobs` |
+//! | `id_effect_jobs` | `CronLeader` | `jobs-cron` |
+//! | `id_effect_messaging` | `MessageBroker`, `MessageBrokerExt`, `BrokerError`, `Delivery`, `Outbox`, `Relay` | `messaging` |
+//! | `id_effect_redis` | `RedisStreamsBroker` | `redis-streams` |
+//! | `id_effect_mail` | `Mailer`, `MailError`, `Mailbox`, `Templates`; with `jobs`, `deliver_later` | `mail` |
+//! | `id_effect_console` | `Console`, `ConsoleConfig` | `console` |
+//! | `id_effect_storage` | `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore`, `MemoryStore` | `storage` |
+//! | `id_effect_events` | `EventStore`, `EventStoreError`, `Projection`, `SqlEventJournal` | `events` |
 //!
 //! `Router` is the typed router of `id_effect_axum::route` (it records every route for OpenAPI
 //! and `/_routes`); an explicit `use axum::Router;` still wins over the glob. `Problem` is
 //! `id_effect_axum`'s RFC 9457 body, the one the extractors, middleware and guards answer with.
 //! Names that would clash stay out: `id_effect_authz::Or` (the policy combinator; [`Or`] here
-//! is the error channel's) and `id_effect_test::Problem` (the test client's parsed copy).
+//! is the error channel's), `id_effect_test::Problem` (the test client's parsed copy), the two
+//! `Message` types (`id_effect_messaging`'s and `id_effect_mail`'s) and the free functions of
+//! `id_effect_storage` (`get`, `put`, `list`, …; call them as `storage::get`).
 //!
 //! The `FromRow` and `Entity` derives name `::id_effect_sql`; through the kit alone, point them
 //! at the re-export: `#[from_row(crate = id_effect_kit::sql)]`, `#[entity(crate =
@@ -82,3 +92,34 @@ pub use id_effect_authz::{
 
 #[cfg(feature = "redis")]
 pub use id_effect_redis::{RedisClient, RedisConfig};
+
+#[cfg(feature = "jobs")]
+pub use id_effect_jobs::{
+  Job, JobContext, JobError, JobFailure, JobOptions, JobQueue, JobQueueExt, JobRegistry, Worker,
+  WorkerConfig,
+};
+
+#[cfg(feature = "jobs-cron")]
+pub use id_effect_jobs::CronLeader;
+
+#[cfg(feature = "messaging")]
+pub use id_effect_messaging::{
+  BrokerError, Delivery, MessageBroker, MessageBrokerExt, Outbox, Relay,
+};
+
+#[cfg(feature = "redis-streams")]
+pub use id_effect_redis::RedisStreamsBroker;
+
+#[cfg(all(feature = "mail", feature = "jobs"))]
+pub use id_effect_mail::deliver_later;
+#[cfg(feature = "mail")]
+pub use id_effect_mail::{MailError, Mailbox, Mailer, Templates};
+
+#[cfg(feature = "console")]
+pub use id_effect_console::{Console, ConsoleConfig};
+
+#[cfg(feature = "storage")]
+pub use id_effect_storage::{LocalStore, MemoryStore, ObjectStorage, ObjectStore, StorageError};
+
+#[cfg(feature = "events")]
+pub use id_effect_events::{EventStore, EventStoreError, Projection, SqlEventJournal};

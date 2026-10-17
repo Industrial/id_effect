@@ -34,6 +34,17 @@ Every request passes through `SecurityLayer::recommended`: CSRF tokens on state-
 - `src/db.rs` — the PostgreSQL pool (`DATABASE_URL`), the migrations in `migrations/` applied on start (`id_effect_kit::sql::migrate::run`: tracked in `_id_effect_migrations`, one transaction each, an advisory lock across replicas), the `db` check behind `/ready`.
 - `migrations/` — `0001_init.sql`; add the next with `id-effect migrate new <name>`, apply with `id-effect migrate run` (or start the service), and never edit one that ran (`id-effect migrate check` fails on a changed or pending migration).
 {{/if}}
+{{#if jobs}}
+{{#if !pg}}
+- `src/jobs/` — background jobs (`id_effect_kit::jobs`): `registry()` and the `worker()` that `main.rs` runs in the same process; the queue is in memory (lost on restart; `--db pg` makes it the `id_effect_jobs` table). `id-effect generate job <name>` adds a job.
+{{/if}}
+{{#if pg}}
+- `src/jobs/` — background jobs (`id_effect_kit::jobs`): `registry()`, the `worker()` that `main.rs` runs in the same process, and the queue, the `id_effect_jobs` table created on start. `id-effect generate job <name>` adds a job.
+{{/if}}
+{{/if}}
+{{#if console}}
+- `src/console.rs` — the operator console (`id_effect_kit::console`) on `127.0.0.1:CONSOLE_PORT` (default 9090): `/_console` (dashboard) and `/_console/api/*`, behind a guard requiring the `operator` role, which every request on the loopback listener has. Put real authentication in front before binding it anywhere else.
+{{/if}}
 - `tests/http.rs` — the routes, the security headers, readiness and metrics.
 - `tests/shutdown.rs` — SIGTERM: `/ready` turns `503` while an in-flight request completes.
 
@@ -50,4 +61,4 @@ Every request passes through `SecurityLayer::recommended`: CSRF tokens on state-
 
 ## Batteries
 
-`Cargo.toml` enables the `id_effect_kit` features [{{kit_features}}]. `id-effect new --template service --db pg` wires the `sql-pg` and `migrate` features (PostgreSQL client, versioned migrations, `db` readiness check); `--otel` the `otel` feature (OTLP export of traces, metrics and logs, configured by the `OTEL_*` variables).
+`Cargo.toml` enables the `id_effect_kit` features [{{kit_features}}]. `id-effect new --template service --db pg` wires the `sql-pg` and `migrate` features (PostgreSQL client, versioned migrations, `db` readiness check); `--otel` the `otel` feature (OTLP export of traces, metrics and logs, configured by the `OTEL_*` variables, request spans included); `--jobs` the `jobs` feature (`src/jobs/` and an in-process worker); `--console` the `console` feature (the operator console on a loopback port).

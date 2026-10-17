@@ -6,9 +6,11 @@
 #   cargo fmt --check · cargo build --all-targets (no unused [patch] entry) · cargo clippy
 #   --all-targets -D warnings · cargo test · no id_effect crate resolved from crates.io ·
 #   actionlint on its .github/workflows/ci.yml (when actionlint is installed).
-# `service` covers two variants: the default (`--db none --no-otel`, whose tests boot the binary
-# with nothing else running) and `--db pg --otel` (built, linted and tested without a database).
-# Before the checks, `id-effect generate job send_report` adds a job to `service` and (with
+# `service` covers four variants: the default (`--db none --no-otel`, whose tests boot the binary
+# with nothing else running), `--db pg --otel` (built, linted and tested without a database),
+# `--jobs --console` (booted like the default) and `--db pg --otel --jobs --console`.
+# Before the checks, `id-effect generate job send_report` adds a job to `service` and
+# `service-jobs-console` (into the src/jobs/ that `--jobs` generated) and (with
 # `--queue reports --cron`) to `worker`; its test must pass.
 #
 # Usage:
@@ -96,7 +98,7 @@ BIN="${tool_target}/debug/id-effect"
 generate_job() {
     local label="$1" dest="$2"
     case "${label}" in
-        service) "${BIN}" generate job send_report --path "${dest}" ;;
+        service | service-jobs-console) "${BIN}" generate job send_report --path "${dest}" ;;
         worker) "${BIN}" generate job send_report --queue reports --cron "0 6 * * *" --path "${dest}" ;;
         *) return 0 ;;
     esac >/dev/null || fail "${label}: id-effect generate job failed"
@@ -188,6 +190,8 @@ for template in "${templates[@]}"; do
     check_variant "${template}" --template "${template}"
     if [[ "${template}" == service ]]; then
         check_variant service-pg-otel --template service --db pg --otel
+        check_variant service-jobs-console --template service --jobs --console
+        check_variant service-pg-otel-jobs-console --template service --db pg --otel --jobs --console
     fi
 done
 if ((docker)); then

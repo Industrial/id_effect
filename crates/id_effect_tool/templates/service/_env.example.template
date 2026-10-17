@@ -13,4 +13,8 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 OTEL_SERVICE_NAME={{name}}
 {{/if}}
+{{#if console}}
+# The operator console's port, on 127.0.0.1 only (0: any free port).
+CONSOLE_PORT=9090
+{{/if}}
 RUST_LOG=info

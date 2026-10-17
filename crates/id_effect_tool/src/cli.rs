@@ -87,6 +87,12 @@ pub struct NewArgs {
   /// No OpenTelemetry export (the default).
   #[arg(long = "no-otel", overrides_with = "otel")]
   pub no_otel: bool,
+  /// Background jobs in src/jobs/, run by a worker in the service's process (`service` only).
+  #[arg(long)]
+  pub jobs: bool,
+  /// The operator console on a loopback port, behind a guard (`service` only).
+  #[arg(long)]
+  pub console: bool,
   /// Build against the id_effect checkout at PATH instead of crates.io
   /// (writes a `[patch.crates-io]` section).
   #[arg(long, value_name = "PATH")]
@@ -98,7 +104,9 @@ impl NewArgs {
   pub fn options(&self) -> Options {
     let options = Options::new(self.name.clone(), self.template)
       .db(self.db)
-      .otel(self.otel && !self.no_otel);
+      .otel(self.otel && !self.no_otel)
+      .jobs(self.jobs)
+      .console(self.console);
     match &self.local_workspace {
       Some(path) => options.local_workspace(path.clone()),
       None => options,
@@ -223,6 +231,8 @@ mod tests {
         "--db",
         "pg",
         "--otel",
+        "--jobs",
+        "--console",
         "--local-workspace",
         "/ws",
       ]);
@@ -230,6 +240,8 @@ mod tests {
       let want = Options::new("shop", Template::Service)
         .db(Db::Pg)
         .otel(true)
+        .jobs(true)
+        .console(true)
         .local_workspace("/ws");
       assert_eq!(args.options(), want);
     }

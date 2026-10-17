@@ -26,6 +26,15 @@ id_effect = "0.9"
 | `authz` | `id_effect_authz` (with `web`: route guards) | `id_effect_kit::authz` |
 | `redis` | `id_effect_redis` (with `web`: the rate-limit store) | `id_effect_kit::redis` |
 | `config-vault` | the Vault provider of `id_effect_config` | `id_effect_kit::config::vault` |
+| `jobs` | `id_effect_jobs` (PostgreSQL queue, `MemoryJobQueue`, workers, retries; with `mail`: `deliver_later`; with `console`: the jobs panel) | `id_effect_kit::jobs` |
+| `jobs-cron` | `jobs` + cron entries that enqueue jobs once per cluster (`CronLeader`, `enqueue_on_tick`) | `id_effect_kit::jobs` |
+| `messaging` | `id_effect_messaging` (`MessageBroker`, in-memory broker, transactional outbox, inbox, relay) | `id_effect_kit::messaging` |
+| `redis-streams` | `redis` + `messaging` + the broker on Redis Streams | `id_effect_kit::redis::RedisStreamsBroker` |
+| `mail` | `id_effect_mail` (SMTP, SendGrid, minijinja templates, `TestMailbox`; with `web`: the preview routes) | `id_effect_kit::mail` |
+| `console` | `web` + `authz` + `id_effect_console` (fibers, supervisors, metrics, health, log level behind a guard) | `id_effect_kit::console` |
+| `storage` | `id_effect_storage` (local file system and in-memory object stores, signed URLs) | `id_effect_kit::storage` |
+| `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots, subscriptions) | `id_effect_kit::events` |
+| `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`) and `AccountMails`, their sign-up, verification and reset mail | `id_effect_kit::{auth, mail}` |
 | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client) — for `[dev-dependencies]` | `id_effect_kit::test` |
 | `full` | all of the above except `test`; builds without Docker or system libraries | |
 
@@ -64,11 +73,11 @@ fn main() -> ExitCode {
 }
 ```
 
-The per-feature prelude items: `web` adds `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`, the typed routes (`Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`) and the middleware (`RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer`); `openapi` adds `OpenApi` and `openapi_router`; `sql` adds `SqlClientService`, `SqlError`, `SqlRow`, `FromRow`, `params!` and `with_transaction`; `migrate` adds `Migrator` and `MigrateError`; `repository` adds `Entity` and `Repository`; `otel` adds `OtelConfig` and `install_from_config`; `auth` adds `Authenticate`, `AuthPrincipal`, `AuthError`, `Sessions`, `SessionLayer`, `PasswordHasher`, `JwtIssuer`, `JwtVerifier` and `JwtKey`; `authz` adds `Policies`, `Policy`, `Principal`, `AuthzError`, `CurrentPrincipal`, `authorize`, `require_role` (and `AuthorizeExt` with `web`); `redis` adds `RedisClient` and `RedisConfig`. `Profiles` (config profiles) is always there. Through the kit alone, point the `FromRow` / `Entity` derives at the re-export with `#[from_row(crate = id_effect_kit::sql)]` / `#[entity(crate = id_effect_kit::sql, …)]`.
+The per-feature prelude items: `web` adds `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`, the typed routes (`Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`) and the middleware (`RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer`); `openapi` adds `OpenApi` and `openapi_router`; `sql` adds `SqlClientService`, `SqlError`, `SqlRow`, `FromRow`, `params!` and `with_transaction`; `migrate` adds `Migrator` and `MigrateError`; `repository` adds `Entity` and `Repository`; `otel` adds `OtelConfig` and `install_from_config`; `auth` adds `Authenticate`, `AuthPrincipal`, `AuthError`, `Sessions`, `SessionLayer`, `PasswordHasher`, `JwtIssuer`, `JwtVerifier` and `JwtKey`; `authz` adds `Policies`, `Policy`, `Principal`, `AuthzError`, `CurrentPrincipal`, `authorize`, `require_role` (and `AuthorizeExt` with `web`); `redis` adds `RedisClient` and `RedisConfig`; `jobs` adds `Job`, `JobContext`, `JobError`, `JobFailure`, `JobOptions`, `JobQueue`, `JobQueueExt`, `JobRegistry`, `Worker` and `WorkerConfig` (`jobs-cron` also `CronLeader`); `messaging` adds `MessageBroker`, `MessageBrokerExt`, `BrokerError`, `Delivery`, `Outbox` and `Relay`; `redis-streams` adds `RedisStreamsBroker`; `mail` adds `Mailer`, `MailError`, `Mailbox` and `Templates` (and `deliver_later` with `jobs`); `console` adds `Console` and `ConsoleConfig`; `storage` adds `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore` and `MemoryStore`; `events` adds `EventStore`, `EventStoreError`, `Projection` and `SqlEventJournal`. `Profiles` (config profiles) is always there. Through the kit alone, point the `FromRow` / `Entity` derives at the re-export with `#[from_row(crate = id_effect_kit::sql)]` / `#[entity(crate = id_effect_kit::sql, …)]`.
 
 ## Tier
 
-`integration` (ADR 0010 Amendment 4). It moves to `platform` (ADR 0012) once a reference app under `examples/reference/` depends on it.
+`platform` (ADR 0010 Amendment 4, ADR 0012): the Ledger reference app under `examples/reference/` builds only through it.
 
 ## Examples
 

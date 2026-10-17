@@ -27,6 +27,15 @@
 //! | `authz` | `id_effect_authz` (with `web`: the route guards) | `authz` |
 //! | `redis` | `id_effect_redis` (with `web`: the rate-limit store) | `redis` |
 //! | `config-vault` | id_effect_config's Vault provider | `config::vault` |
+//! | `jobs` | `id_effect_jobs` (PostgreSQL queue, workers, retries; with `mail`: `deliver_later`; with `console`: the jobs panel) | `jobs` |
+//! | `jobs-cron` | `jobs` + cron entries that enqueue jobs once per cluster | `jobs::CronLeader` |
+//! | `messaging` | `id_effect_messaging` (`MessageBroker`, in-memory broker, outbox, inbox, relay) | `messaging` |
+//! | `redis-streams` | `redis` + `messaging` + the broker on Redis Streams | `redis::RedisStreamsBroker` |
+//! | `mail` | `id_effect_mail` (SMTP, SendGrid, templates; with `web`: the preview routes) | `mail` |
+//! | `console` | `web` + `authz` + `id_effect_console` (the guarded operator console) | `console` |
+//! | `storage` | `id_effect_storage` (local and in-memory object stores, signed URLs) | `storage` |
+//! | `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots) | `events` |
+//! | `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`; `AccountMails`) | `auth`, `mail` |
 //! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client); for `[dev-dependencies]` | `test` |
 //! | `full` | all of the above except `test` | |
 //!
@@ -109,6 +118,33 @@ pub use id_effect_authz as authz;
 /// Redis client, cache backend and stores ([`id_effect_redis`]); feature `redis`.
 #[cfg(feature = "redis")]
 pub use id_effect_redis as redis;
+
+/// Background jobs ([`id_effect_jobs`]): queues, workers, retries; feature `jobs` (cron entries
+/// with `jobs-cron`).
+#[cfg(feature = "jobs")]
+pub use id_effect_jobs as jobs;
+
+/// Broker-agnostic messaging and the transactional outbox ([`id_effect_messaging`]); feature
+/// `messaging`.
+#[cfg(feature = "messaging")]
+pub use id_effect_messaging as messaging;
+
+/// Outgoing mail ([`id_effect_mail`]): SMTP, SendGrid, templates; feature `mail`.
+#[cfg(feature = "mail")]
+pub use id_effect_mail as mail;
+
+/// The operator console ([`id_effect_console`]), behind an authorization guard; feature
+/// `console`.
+#[cfg(feature = "console")]
+pub use id_effect_console as console;
+
+/// Object storage ([`id_effect_storage`]); feature `storage`.
+#[cfg(feature = "storage")]
+pub use id_effect_storage as storage;
+
+/// Event sourcing ([`id_effect_events`]); feature `events`.
+#[cfg(feature = "events")]
+pub use id_effect_events as events;
 
 /// Test support ([`id_effect_test`]): containers, isolated databases, fixtures, the in-process
 /// HTTP client; feature `test`, meant for `[dev-dependencies]`.

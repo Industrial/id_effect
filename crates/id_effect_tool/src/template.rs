@@ -13,7 +13,7 @@ use std::str::FromStr;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, clap::ValueEnum)]
 pub enum Template {
   /// An Axum HTTP service: secure defaults, `/health`, `/ready`, `/metrics`; optional
-  /// PostgreSQL and OpenTelemetry.
+  /// PostgreSQL, OpenTelemetry, background jobs and the operator console.
   Service,
   /// A background worker: named cron jobs with run history.
   Worker,
@@ -70,6 +70,10 @@ pub enum Condition {
   Always,
   /// Only with `--db pg`.
   Pg,
+  /// Only with `--jobs`.
+  Jobs,
+  /// Only with `--console`.
+  Console,
 }
 
 /// One embedded template file.
@@ -119,6 +123,8 @@ pub static FILES: &[TemplateFile] = &[
   embed!("service", "src/lib.rs.template"),
   embed!("service", "src/main.rs.template"),
   embed!("service", "src/db.rs.template", Condition::Pg),
+  embed!("service", "src/jobs/mod.rs.template", Condition::Jobs),
+  embed!("service", "src/console.rs.template", Condition::Console),
   embed!(
     "service",
     "migrations/0001_init.sql.template",

@@ -341,6 +341,131 @@ fn redis_config_is_built_without_connecting() {
   assert!(std::any::type_name::<RedisClient>().ends_with("RedisClient"));
 }
 
+#[cfg(feature = "jobs")]
+#[test]
+fn a_worker_drains_a_memory_queue_through_the_kit() {
+  use id_effect_kit::id_effect::{Executor, TestExecutor, UtcDateTime, WallClock, sync};
+  use id_effect_kit::jobs::{JobQueueService, MemoryJobQueue};
+
+  #[derive(Clone, Schema)]
+  struct Welcome {
+    id: i64,
+  }
+
+  impl Job for Welcome {
+    const NAME: &'static str = "kit.welcome";
+  }
+
+  let ran = Arc::new(AtomicU32::new(0));
+  let counter = Arc::clone(&ran);
+  let registry = JobRegistry::new()
+    .register::<Welcome, JobFailure>(move |job, _ctx: JobContext| {
+      let counter = Arc::clone(&counter);
+      sync(move || {
+        assert_eq!(job.id, 7);
+        counter.fetch_add(1, Ordering::SeqCst);
+      })
+    })
+    .unwrap();
+  let exec = TestExecutor::new();
+  let clock = WallClock::anchored(exec.now(), UtcDateTime::unsafe_make(1_800_000_000_000));
+  let store = MemoryJobQueue::new(clock);
+  let env = hlist![JobQueueService::new(store.clone())];
+  let program = store
+    .enqueue(Welcome { id: 7 }, JobOptions::default())
+    .flat_map(move |_| Worker::new(registry).run_until_idle().provide_all(env));
+  let done = program.fork_root(Arc::new(exec.clone()));
+  exec.run_until_stalled();
+  assert!(done.is_done());
+  assert_eq!(ran.load(Ordering::SeqCst), 1);
+  assert!(WorkerConfig::default().poll_interval > std::time::Duration::ZERO);
+}
+
+#[cfg(feature = "jobs-cron")]
+#[test]
+fn cron_leader_is_in_the_prelude() {
+  assert!(std::any::type_name::<CronLeader>().ends_with("CronLeader"));
+}
+
+#[cfg(feature = "messaging")]
+#[test]
+fn memory_broker_keeps_published_messages() {
+  use id_effect_kit::messaging::{MemoryBroker, Message, Topic};
+
+  let broker = MemoryBroker::new();
+  let topic = Topic::new("ledger.posted").unwrap();
+  let published = broker.publish(&topic, Message::new("hi")).block_on();
+  assert!(matches!(published, Exit::Success(())));
+  assert_eq!(broker.messages(&topic).len(), 1);
+  assert!(std::any::type_name::<BrokerError>().ends_with("BrokerError"));
+}
+
+#[cfg(feature = "redis-streams")]
+#[test]
+fn redis_streams_broker_is_configured_without_connecting() {
+  let config = id_effect_kit::redis::RedisStreamsConfig::new().max_len(10);
+  assert_eq!(config.max_len_cap(), Some(10));
+  assert!(std::any::type_name::<RedisStreamsBroker>().ends_with("RedisStreamsBroker"));
+}
+
+#[cfg(feature = "mail")]
+#[test]
+fn mailboxes_hold_a_validated_address() {
+  use id_effect_kit::mail::Address;
+
+  let to = Mailbox::named("Ada", Address::parse("ada@ledger.example").unwrap());
+  assert_eq!(to.name(), Some("Ada"));
+  assert_eq!(to.address().domain(), "ledger.example");
+  assert!(Address::parse("ada@").is_err());
+  assert!(std::any::type_name::<MailError>().ends_with("MailError"));
+}
+
+#[cfg(all(feature = "mail", feature = "jobs"))]
+#[test]
+fn mail_delivery_job_is_reachable() {
+  assert!(std::any::type_name::<id_effect_kit::mail::DeliverMail>().ends_with("DeliverMail"));
+}
+
+#[cfg(feature = "auth-accounts")]
+#[test]
+fn accounts_and_their_mails_are_reachable() {
+  use id_effect_kit::auth::{AccountNotifier, Accounts, PgAccountTokenStore};
+  use id_effect_kit::mail::AccountMails;
+
+  fn notifier<N: AccountNotifier>() {}
+  notifier::<AccountMails>();
+  assert!(std::any::type_name::<Accounts>().ends_with("Accounts"));
+  assert!(std::any::type_name::<PgAccountTokenStore>().ends_with("PgAccountTokenStore"));
+}
+
+#[cfg(feature = "console")]
+#[test]
+fn console_routes_come_behind_a_guard() {
+  use id_effect_kit::authz::Guard;
+
+  assert!(!ConsoleConfig::loopback(9090).requires_guard());
+  let routes: axum::Router = Console::new().router(Guard::new("console", require_role("ops")));
+  let _ = routes;
+}
+
+#[cfg(feature = "storage")]
+#[test]
+fn memory_store_is_an_object_store() {
+  fn store(_: &impl ObjectStore) {}
+
+  let memory = MemoryStore::new();
+  store(&memory);
+  assert!(memory.part_size() > 0);
+  assert!(std::any::type_name::<StorageError>().ends_with("StorageError"));
+}
+
+#[cfg(feature = "events")]
+#[test]
+fn event_store_types_are_reachable() {
+  assert!(std::any::type_name::<EventStoreError>().ends_with("EventStoreError"));
+  let _ = id_effect_kit::events::SQL_EVENT_JOURNAL_DDL;
+}
+
 #[cfg(feature = "test")]
 #[test]
 fn test_crate_is_reachable() {

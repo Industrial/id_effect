@@ -1,0 +1,100 @@
+//! The operator console (`id_effect_kit::console`) on a listener of its own: live fibers,
+//! metrics, the health checks and the log level as JSON under `/_console/api/`, and a dashboard
+//! at `/_console`.
+{{#if jobs}}
+//! Its jobs panel shows the worker's queue.
+{{/if}}
+//!
+//! It listens on `127.0.0.1:CONSOLE_PORT` (default [`DEFAULT_PORT`]) only, so it answers on the
+//! machine or container itself (`docker exec`, `kubectl port-forward`, an SSH tunnel). Every
+//! console route is behind an `id_effect_kit::authz` guard that requires the [`OPERATOR_ROLE`];
+//! on that loopback listener, [`local_operator`] grants it to every request. Before binding the
+//! console to any other address, replace [`local_operator`] with real authentication
+//! (`id_effect_kit::auth`) and keep the guard.
+
+use std::net::SocketAddr;
+
+use axum::Router;
+use axum::extract::Request;
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use id_effect_kit::authz::{BasicPrincipal, CurrentPrincipal, Guard, require_role};
+use id_effect_kit::axum::HealthRegistry;
+use id_effect_kit::console::{Console, ConsoleConfig};
+{{#if jobs}}
+use id_effect_kit::jobs::JobQueue;
+{{/if}}
+use tokio::net::TcpListener;
+
+/// The variable naming the console's port (`0`: any free port).
+pub const PORT_ENV: &str = "CONSOLE_PORT";
+
+/// The console's port when [`PORT_ENV`] is not set.
+pub const DEFAULT_PORT: u16 = 9090;
+
+/// The role the console's guard requires.
+pub const OPERATOR_ROLE: &str = "operator";
+
+/// Where the console listens: `127.0.0.1` and [`PORT_ENV`] (default [`DEFAULT_PORT`]).
+pub fn config() -> Result<ConsoleConfig, String> {
+    match std::env::var(PORT_ENV) {
+        Ok(port) if !port.trim().is_empty() => port
+            .trim()
+            .parse::<u16>()
+            .map(ConsoleConfig::loopback)
+            .map_err(|e| format!("{PORT_ENV}: {e}")),
+        _ => Ok(ConsoleConfig::loopback(DEFAULT_PORT)),
+    }
+}
+
+{{#if !jobs}}
+/// The console routes over `health`, behind the operator guard, for a loopback listener.
+pub fn router(health: &HealthRegistry) -> Router {
+    Console::new()
+        .health(health.clone())
+        .router(Guard::new("console", require_role(OPERATOR_ROLE)))
+        .layer(middleware::from_fn(local_operator))
+}
+{{/if}}
+{{#if jobs}}
+/// The console routes over `health` and the job queue `jobs`, behind the operator guard, for a
+/// loopback listener.
+pub fn router(health: &HealthRegistry, jobs: impl JobQueue) -> Router {
+    Console::new()
+        .health(health.clone())
+        .jobs(jobs)
+        .router(Guard::new("console", require_role(OPERATOR_ROLE)))
+        .layer(middleware::from_fn(local_operator))
+}
+{{/if}}
+
+/// Every request on the loopback listener is the local operator. Only sound on a loopback
+/// address ([`ConsoleConfig::requires_guard`] is false there).
+pub async fn local_operator(mut request: Request, next: Next) -> Response {
+    let operator = BasicPrincipal::new("local").with_role(OPERATOR_ROLE);
+    request
+        .extensions_mut()
+        .insert(CurrentPrincipal::new(operator));
+    next.run(request).await
+}
+
+/// Binds `config`'s address and serves `routes` there in the background, until the process
+/// exits; returns the bound address.
+pub async fn spawn(config: ConsoleConfig, routes: Router) -> Result<SocketAddr, String> {
+    if config.requires_guard() {
+        return Err(format!(
+            "console: {} is not a loopback address; authenticate operators first",
+            config.bind()
+        ));
+    }
+    let listener = TcpListener::bind(config.bind())
+        .await
+        .map_err(|e| format!("console: bind {}: {e}", config.bind()))?;
+    let addr = listener.local_addr().map_err(|e| format!("console: {e}"))?;
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, routes).await {
+            eprintln!("console: {e}");
+        }
+    });
+    Ok(addr)
+}

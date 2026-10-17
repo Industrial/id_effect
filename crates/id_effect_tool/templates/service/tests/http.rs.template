@@ -93,6 +93,44 @@ fn describe_layers_prints_the_graph() {
     let edge = "needs    ConfigProviderService <- env";
     assert!(graph.contains(edge), "{graph}");
 }
+{{#if console}}
+
+/// The console answers its API on the loopback listener, where every request is the operator.
+#[tokio::test]
+async fn console_api_answers_the_local_operator() {
+    use {{crate_name}}::console::router;
+
+    let health = HealthRegistry::new();
+{{#if !jobs}}
+    let console = router(&health);
+{{/if}}
+{{#if jobs}}
+    let queue = id_effect_kit::jobs::MemoryJobQueue::new(id_effect::WallClock::system());
+    let console = router(&health, queue);
+    let (status, _, body) = call(&console, Method::GET, "/_console/api/jobs").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+{{/if}}
+    let (status, _, body) = call(&console, Method::GET, "/_console/api/health").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _, _) = call(&console, Method::GET, "/_console").await;
+    assert_eq!(status, StatusCode::OK);
+}
+{{/if}}
+{{#if jobs}}
+
+/// The job worker returns once its stop signal fires, after draining.
+#[tokio::test]
+async fn the_job_worker_stops_on_its_signal() {
+    use id_effect::Exit;
+    use id_effect_kit::axum::EffectExecutor;
+    use {{crate_name}}::jobs;
+
+    let queue = id_effect_kit::jobs::MemoryJobQueue::new(id_effect::WallClock::system());
+    let worker = jobs::worker(queue, async {}).expect("the jobs register");
+    let exit = EffectExecutor::global().run_effect(worker).await;
+    assert!(matches!(exit, Exit::Success(())), "{exit:?}");
+}
+{{/if}}
 {{#if pg}}
 
 /// `migrations/` is a valid migration source (names, versions); applying it needs a database
@@ -136,6 +174,9 @@ mod boot {
         let mut child = Command::new(BIN)
             .env("HOST", "127.0.0.1")
             .env("PORT", port.to_string())
+{{#if console}}
+            .env("CONSOLE_PORT", "0")
+{{/if}}
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
