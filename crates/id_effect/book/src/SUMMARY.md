@@ -82,6 +82,8 @@
 - [CLI with clap](./part3/ch16-00-cli-with-clap.md)
   - [Exit codes for `main`](./part3/ch16-01-cli-exit-codes.md)
   - [Config + `Secret` from flags](./part3/ch16-02-cli-config-secret.md)
+  - [Profiles: dev, test, prod](./part3/ch16-03-config-profiles.md)
+  - [Secrets from HashiCorp Vault](./part3/ch16-04-secrets-vault.md)
 
 # Part IV: Advanced
 
@@ -108,6 +110,8 @@
   - [Property Testing](./part4/ch15-04-property-testing.md)
   - [Exploring Interleavings](./part4/ch15-05-interleavings.md)
   - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
+  - [Containers in Tests](./part4/ch15-07-containers.md)
+  - [Integration Testing](./part4/ch15-08-integration-testing.md)
 
 # Part V: Functional Patterns
 
@@ -153,8 +157,21 @@
   - [Metrics and Prometheus](./part6/ch27-01-metrics.md)
   - [Health checks and readiness](./part6/ch27-02-health.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
+  - [Typed SQL values and rows](./part6/ch28-01-typed-sql.md)
+  - [Migrations](./part6/ch28-02-migrations.md)
+  - [Query builder, entities and repositories](./part6/ch28-03-repositories.md)
+  - [Redis](./part6/ch28-04-redis.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
+  - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
+  - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)
+  - [Middleware, static files and HTTP caching](./part6/ch29-03-middleware.md)
 - [Application host](./part6/ch30-00-application.md)
+  - [Authorization](./part6/ch30-02-authorization.md)
+  - [Passwords and sessions (`id_effect_auth`)](./part6/ch30-03-passwords-sessions.md)
+  - [Credentials and JWT (`id_effect_auth`)](./part6/ch30-04-credentials-jwt.md)
+  - [Single sign-on with OpenID Connect (`id_effect_auth`)](./part6/ch30-05-oidc.md)
+  - [Two-factor authentication with TOTP (`id_effect_auth`)](./part6/ch30-06-totp.md)
+  - [Tenancy and the audit log](./part6/ch30-07-audit-tenancy.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)

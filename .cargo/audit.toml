@@ -1,3 +1,7 @@
-# Transitive sqlx-mysql pulls rsa; workspace sqlx deps use postgres only.
+# sqlx-mysql (id_effect_sql feature mysql) and openidconnect pull rsa. The Marvin attack is a
+# timing side channel in RSA private-key operations; sqlx-mysql only encrypts a password with the
+# server's public key (caching_sha2_password over a non-TLS connection), and no workspace code
+# decrypts or signs with an rsa private key (ID tokens are verified by jsonwebtoken on aws-lc-rs).
+# Keep in sync with deny.toml.
 [advisories]
 ignore = ["RUSTSEC-2023-0071"]

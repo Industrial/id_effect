@@ -169,3 +169,182 @@ fn otel_config_defaults_to_a_local_collector() {
 fn cluster_crate_is_reachable() {
   assert!(std::any::type_name::<id_effect_kit::node::NodeId>().ends_with("NodeId"));
 }
+
+#[test]
+fn profiles_resolve_a_known_profile() {
+  let profiles = Profiles::new().known(["dev", "prod"]);
+  assert_eq!(profiles.profile("prod").unwrap().as_str(), "prod");
+  assert!(profiles.profile("staging").is_err());
+}
+
+/// A typed route (`GET /twice/{n}`, `n` in 1..=10) shared by the web and openapi tests.
+#[cfg(feature = "web")]
+mod typed {
+  use id_effect_kit::id_effect::schema::{self, HasSchema};
+  use id_effect_kit::prelude::*;
+
+  pub struct Small;
+
+  impl HasSchema for Small {
+    type A = i64;
+    type I = i64;
+    type E = ();
+
+    fn schema() -> Schema<i64, i64> {
+      schema::range(schema::i64::<()>(), 1, 10)
+    }
+  }
+
+  fn twice(_: &mut (), input: Input<i64>) -> Effect<String, std::convert::Infallible, ()> {
+    succeed((input.path * 2).to_string())
+  }
+
+  pub fn router() -> Router {
+    Router::new().route(Route::get("/twice/{n}").path::<Small>().handler(twice))
+  }
+}
+
+#[cfg(feature = "web")]
+#[tokio::test]
+async fn typed_routes_answer_problems_through_the_middleware_stack() {
+  use axum::body::Body;
+  use axum::http::{Request, StatusCode, header};
+  use tower::ServiceExt;
+
+  let app: axum::Router = typed::router()
+    .with_state::<()>(())
+    .into_axum()
+    .layer(CompressionLayer::new())
+    .layer(TimeoutLayer::default())
+    .layer(BodyLimitLayer::default())
+    .layer(RequestIdLayer::new());
+  let get = |uri: &str| Request::builder().uri(uri).body(Body::empty()).unwrap();
+
+  let ok = app.clone().oneshot(get("/twice/4")).await.unwrap();
+  assert_eq!(ok.status(), StatusCode::OK);
+  assert!(ok.headers().contains_key("x-request-id"));
+
+  let bad = app.oneshot(get("/twice/40")).await.unwrap();
+  assert_eq!(bad.status(), StatusCode::UNPROCESSABLE_ENTITY);
+  assert_eq!(
+    bad.headers()[header::CONTENT_TYPE],
+    id_effect_kit::axum::PROBLEM_JSON
+  );
+  assert!(std::any::type_name::<Problem>().ends_with("Problem"));
+  assert!(std::any::type_name::<ValidJson<typed::Small>>().contains("ValidJson"));
+}
+
+#[cfg(feature = "openapi")]
+#[test]
+fn openapi_documents_the_typed_routes() {
+  let json = OpenApi::from_router(&typed::router()).to_json();
+  assert_eq!(json["openapi"], "3.1.0");
+  assert!(json["paths"]["/twice/{n}"]["get"]["responses"]["422"].is_object());
+}
+
+#[cfg(feature = "sql")]
+#[test]
+fn from_row_derives_through_the_kit_path() {
+  /// The derive names `::id_effect_sql`; through the kit, point it at `id_effect_kit::sql`.
+  #[derive(Debug, PartialEq, FromRow)]
+  #[from_row(crate = id_effect_kit::sql)]
+  struct Balance {
+    id: i64,
+    cents: i64,
+  }
+
+  use id_effect_kit::sql::FromRow as _;
+  let row = SqlRow::from_pairs([("id", 1_i64), ("cents", 250)]);
+  assert_eq!(
+    Balance::from_row(&row).unwrap(),
+    Balance { id: 1, cents: 250 }
+  );
+  assert_eq!(params![1_i64, "x"].len(), 2);
+  assert!(std::any::type_name::<SqlError>().ends_with("SqlError"));
+}
+
+#[cfg(feature = "migrate")]
+#[test]
+fn migrator_reads_sqlx_style_files() {
+  let migrator: Result<Migrator, MigrateError> =
+    Migrator::from_files([("0001_init.sql", "CREATE TABLE t (id BIGINT)")]);
+  let migrator = migrator.unwrap();
+  assert_eq!(migrator.migrations().len(), 1);
+  assert_eq!(migrator.migrations()[0].version(), 1);
+}
+
+#[cfg(feature = "repository")]
+#[test]
+fn entity_derives_through_the_kit_path() {
+  use id_effect_kit::sql::Dialect;
+
+  #[derive(Debug, FromRow, Entity)]
+  #[from_row(crate = id_effect_kit::sql)]
+  #[entity(crate = id_effect_kit::sql, table = "accounts")]
+  struct Account {
+    #[entity(id)]
+    id: i64,
+    #[entity(version)]
+    version: i64,
+  }
+
+  use id_effect_kit::sql::Entity as _;
+  assert_eq!(Account::TABLE, "accounts");
+  assert_eq!(Account::VERSION, Some("version"));
+  let repo = Repository::<Account>::new(Dialect::Postgres);
+  assert_eq!(repo.dialect(), Dialect::Postgres);
+}
+
+#[cfg(feature = "auth")]
+#[test]
+fn jwts_round_trip_and_feed_authenticate() {
+  let secret = b"a 256-bit secret for HS256 tokens";
+  let issuer = JwtIssuer::hs256(secret);
+  let verifier = JwtVerifier::new([JwtKey::hmac(secret)]);
+  let alice = AuthPrincipal::new("alice").with_role("accountant");
+  let Exit::Success(token) = issuer.issue(&alice).block_on() else {
+    panic!("issue failed")
+  };
+  let verified = verifier.verify(&token).block_on();
+  assert!(matches!(verified, Exit::Success(ref p) if format!("{p:?}").contains("alice")));
+  let _middleware = Authenticate::bearer_jwt(verifier);
+  assert!(std::any::type_name::<Sessions>().ends_with("Sessions"));
+  assert!(std::any::type_name::<AuthError>().ends_with("AuthError"));
+}
+
+#[cfg(feature = "authz")]
+#[test]
+fn authorize_checks_a_named_policy() {
+  use id_effect_kit::authz::BasicPrincipal;
+
+  let policies = Policies::builder()
+    .define::<()>("admin-only", require_role("admin"))
+    .build();
+  let as_role = |role: &str| {
+    let principal = CurrentPrincipal::new(BasicPrincipal::new("p").with_role(role));
+    authorize::<(), _, _, _>("admin-only", ())
+      .provide_all(hlist![principal, policies.clone()])
+      .block_on()
+  };
+  assert!(matches!(as_role("admin"), Exit::Success(())));
+  assert!(matches!(
+    as_role("guest"),
+    Exit::Failure(Cause::Fail(AuthzError::Denied(_)))
+  ));
+}
+
+#[cfg(feature = "redis")]
+#[test]
+fn redis_config_is_built_without_connecting() {
+  let config = RedisConfig::new("redis://127.0.0.1:6379");
+  assert_eq!(config.url(), "redis://127.0.0.1:6379");
+  assert!(std::any::type_name::<RedisClient>().ends_with("RedisClient"));
+}
+
+#[cfg(feature = "test")]
+#[test]
+fn test_crate_is_reachable() {
+  assert!(!id_effect_kit::test::REQUIRE_DOCKER_ENV.is_empty());
+  let client = id_effect_kit::test::TestClient::new(axum::Router::<()>::new());
+  let _ = client.service();
+}

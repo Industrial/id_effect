@@ -1,0 +1,2 @@
+CREATE TABLE accounts (id BIGINT PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+INSERT INTO accounts VALUES (0, 'seed');

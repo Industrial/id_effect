@@ -9,7 +9,9 @@
 
 ## Correlation and errors
 
-Use [`ensure_correlation_id`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/correlation/fn.ensure_correlation_id.html) and [`RpcError`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/struct.RpcError.html) for consistent wire errors. Validate bodies with `id_effect_axum::json::decode_json_schema`.
+Use [`ensure_correlation_id`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/correlation/fn.ensure_correlation_id.html) and [`RpcError`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/struct.RpcError.html) for consistent wire errors. Validate request input (path, query, headers and body) with the typed
+routes or `Valid*` extractors of `id_effect_axum::route`, which answer RFC 9457
+`application/problem+json` errors: see [Typed routes and validation](./ch29-01-typed-routes.md).
 
 ## OpenAPI and codegen
 
@@ -38,5 +40,6 @@ Spans use stable field names consumable by `id_effect_opentelemetry` layers.
 
 ## See also
 
+- [Typed routes and validation](./ch29-01-typed-routes.md) — `id_effect_axum::route`
 - Part II: [RPC boundaries](../part2/ch07-12-rpc-boundaries.md)
 - Mission: `platform-api-boundaries`

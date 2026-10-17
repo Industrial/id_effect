@@ -36,6 +36,24 @@ async fn index_answers_with_security_headers() {
 }
 
 #[tokio::test]
+async fn every_response_carries_a_request_id() {
+    let (_, headers, _) = call(&test_app(), Method::GET, "/").await;
+    assert!(headers.contains_key("x-request-id"), "{headers:?}");
+}
+
+#[tokio::test]
+async fn typed_route_decodes_its_path_or_answers_a_problem() {
+    let app = test_app();
+    let (status, _, body) = call(&app, Method::GET, "/hello/ada").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, "hello, ada");
+    let long = format!("/hello/{}", "a".repeat(33));
+    let (status, headers, body) = call(&app, Method::GET, &long).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(headers["content-type"], "application/problem+json");
+}
+
+#[tokio::test]
 async fn state_changing_requests_need_a_csrf_token() {
     let (status, _, body) = call(&test_app(), Method::POST, "/").await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
@@ -75,6 +93,20 @@ fn describe_layers_prints_the_graph() {
     let edge = "needs    ConfigProviderService <- env";
     assert!(graph.contains(edge), "{graph}");
 }
+{{#if pg}}
+
+/// `migrations/` is a valid migration source (names, versions); applying it needs a database
+/// (`id-effect migrate run`, or starting the service).
+#[test]
+fn migrations_directory_is_valid() {
+    use id_effect_kit::sql::migrate::Migrator;
+
+    let dir = {{crate_name}}::db::MIGRATIONS_DIR;
+    let migrator = Migrator::from_dir(dir).expect("migrations/");
+    let versions: Vec<i64> = migrator.migrations().iter().map(|m| m.version()).collect();
+    assert_eq!(versions, [1]);
+}
+{{/if}}
 {{#if !pg}}
 
 /// The binary boots with nothing else running and answers `/health` on `PORT`.

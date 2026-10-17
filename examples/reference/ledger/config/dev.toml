@@ -1,0 +1,19 @@
+# Local development against `compose.yaml` (plain HTTP, so the session cookie is not `Secure`).
+
+[db]
+password = "ledger-dev"
+# With a streaming replica running: replicas = ["postgres://ledger:ledger-dev@localhost:5433/ledger"]
+
+[redis]
+url = "redis://localhost:6379/0"
+
+[auth]
+jwt_secret = "dev-only: replace with 32+ random bytes in prod"
+session_cookie = "id_session"
+secure_cookies = false
+
+[oidc]
+issuer = "http://localhost:8180/realms/ledger"
+client_id = "ledger-web"
+client_secret = "ledger-web-secret"
+redirect_url = "http://localhost:8080/auth/oidc/callback"

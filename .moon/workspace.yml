@@ -20,8 +20,13 @@ projects:
   id_effect_fsm: crates/id_effect_fsm
   id_effect_kit: crates/id_effect_kit
   id_effect_tool: crates/id_effect_tool
+  id_effect_auth: crates/id_effect_auth
+  id_effect_authz: crates/id_effect_authz
+  id_effect_test: crates/id_effect_test
+  id_effect_redis: crates/id_effect_redis
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
+  ledger: examples/reference/ledger
 vcs:
   defaultBranch: main
   provider: github

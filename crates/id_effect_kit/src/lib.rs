@@ -3,9 +3,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! id_effect_kit = { version = "0.8", features = ["web", "otel"] }
+//! id_effect_kit = { version = "0.9", features = ["web", "otel"] }
 //! # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-//! id_effect = "0.8"
+//! id_effect = "0.9"
 //! ```
 //!
 //! ## Features
@@ -13,14 +13,35 @@
 //! | Feature | Crate | Re-exported as |
 //! |---|---|---|
 //! | always on | `id_effect`, `id_effect_cli`, `id_effect_config` | [`id_effect`], [`cli`], [`config`] |
-//! | `web` | `id_effect_axum` | `axum` |
-//! | `sql-pg` | `id_effect_sql` with its `pg` driver | `sql` |
+//! | `web` | `id_effect_axum` (typed routes, Problem+JSON, middleware) | `axum` |
+//! | `openapi` | `web` + id_effect_axum's `openapi` (`/openapi.json`, `/docs`) | `axum::openapi` |
+//! | `sql` | `id_effect_sql` without a driver | `sql` |
+//! | `sql-pg`, `sql-sqlite`, `sql-mysql` | `sql` + its `pg` / `sqlite` / `mysql` driver | `sql::pg`, `sql::sqlite`, `sql::mysql` |
+//! | `migrate` | `sql` + versioned migrations | `sql::migrate` |
+//! | `repository` | `sql` + `#[derive(Entity)]` and `Repository<T>` | `sql::repository` |
+//! | `audit` | `sql` + the hash-chained audit log (PostgreSQL) | `sql::audit` |
 //! | `otel` | `id_effect_opentelemetry` (OTLP, config loading) | `otel` |
 //! | `cluster` | `id_effect_node` (with `web`: also `axum::cluster`) | `node` |
-//! | `full` | all of the above | |
+//! | `auth` | `web` + `id_effect_auth` with its Axum middleware and JWTs (with `sql-pg`: `PgSessionStore`; with `redis`: the Redis session store) | `auth` |
+//! | `auth-oidc`, `auth-totp` | `auth` + OpenID Connect (and JWKS) / TOTP | `auth::oidc`, `auth::totp` |
+//! | `authz` | `id_effect_authz` (with `web`: the route guards) | `authz` |
+//! | `redis` | `id_effect_redis` (with `web`: the rate-limit store) | `redis` |
+//! | `config-vault` | id_effect_config's Vault provider | `config::vault` |
+//! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client); for `[dev-dependencies]` | `test` |
+//! | `full` | all of the above except `test` | |
 //!
 //! Each battery stays reachable whole under its short name (`id_effect_kit::axum::server`, …);
 //! the [`prelude`] holds the items most programs touch.
+//!
+//! `test` is meant for tests only: enable it on a `[dev-dependencies]` entry of the kit, so
+//! containers and fixtures stay out of the shipped binary:
+//!
+//! ```toml
+//! [dependencies]
+//! id_effect_kit = { version = "0.9", features = ["web", "sql-pg", "migrate"] }
+//! [dev-dependencies]
+//! id_effect_kit = { version = "0.9", features = ["test"] }
+//! ```
 //!
 //! [`graph::LayerGraph`] registers an app's layers by name and renders their dependency edges
 //! as text or DOT, flagging capabilities nobody provides (`id-effect doctor --graph`).
@@ -72,9 +93,27 @@ pub use id_effect_node as node;
 #[cfg(feature = "otel")]
 pub use id_effect_opentelemetry as otel;
 
-/// SQL client capability with the PostgreSQL driver ([`id_effect_sql`]); feature `sql-pg`.
-#[cfg(feature = "sql-pg")]
+/// SQL client capability ([`id_effect_sql`]); feature `sql`, turned on by `sql-pg`,
+/// `sql-sqlite`, `sql-mysql`, `migrate` and `repository` (which add its drivers and modules).
+#[cfg(feature = "sql")]
 pub use id_effect_sql as sql;
+
+/// Authentication ([`id_effect_auth`]) with its Axum middleware and JWTs; feature `auth`.
+#[cfg(feature = "auth")]
+pub use id_effect_auth as auth;
+
+/// Authorization policies ([`id_effect_authz`]); feature `authz`.
+#[cfg(feature = "authz")]
+pub use id_effect_authz as authz;
+
+/// Redis client, cache backend and stores ([`id_effect_redis`]); feature `redis`.
+#[cfg(feature = "redis")]
+pub use id_effect_redis as redis;
+
+/// Test support ([`id_effect_test`]): containers, isolated databases, fixtures, the in-process
+/// HTTP client; feature `test`, meant for `[dev-dependencies]`.
+#[cfg(feature = "test")]
+pub use id_effect_test as test;
 
 /// Compiles and runs the README's quick start as a doctest.
 #[cfg(doctest)]

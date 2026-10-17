@@ -147,6 +147,38 @@ Names the tiers of the two 0.8 front-door crates (ADR 0012 L3, L11), as rule 5 r
 - Neither crate has a crates.io release yet, so both are excluded from the semver job
   until their first publish gives it a baseline.
 
+#### Amendment 5 (2026-10-16, for 0.9)
+
+Names the tiers of the 0.9 platform-battery crates (ADR 0012 pre-lists them; release spec
+0.9.0 decision D8), as rule 5 requires.
+
+- **`id_effect_authz` is tier `integration`.** Authorization: role and permission sets, named,
+  resource and attribute policies, route guards, allow/deny test helpers. It defines the
+  `Principal` trait.
+- **`id_effect_auth` is tier `integration`.** Authentication: argon2id passwords, persistent
+  sessions, bearer/JWT (JWKS), basic and API-key credentials, OIDC + PKCE, TOTP. Its principal
+  implements `id_effect_authz::Principal`, so it publishes after `id_effect_authz`.
+- **`id_effect_test` is tier `integration`.** Integration-test support: effect-native
+  containers as scoped layers, per-test database isolation, fixtures and the in-process HTTP
+  client.
+- All three belong in the `platform` tier of ADR 0012. Each moves there, with no other change,
+  when the Ledger reference app under `examples/reference/` depends on it (check P of
+  `scripts/tier-conformance.sh`).
+- They publish at the last level, after `id_effect_axum` and `id_effect_sql`, in the order
+  `id_effect_authz`, `id_effect_auth`, `id_effect_test`, and before `id_effect_kit` and
+  `id_effect_tool` (`scripts/validate-crate-packaging.sh --print-order`).
+- None has a crates.io release yet, so all three are excluded from the semver job until their
+  first publish gives it a baseline. No placeholder versions are published: each crate's first
+  release carries its API.
+- **`id_effect_redis` is tier `integration`** (added when the 0.9 stretch epic E3.4 shipped).
+  Redis over redis-rs: the pooled client layer, typed key-value, hash and JSON stores, the
+  `CacheBackend` behind the core `Cache`, pub/sub as a `Stream`, and, behind features,
+  `id_effect_auth`'s `SessionStore` and `id_effect_axum`'s `RateLimitStore`. It depends on those
+  two crates (never the reverse), so it publishes after `id_effect_auth`, before
+  `id_effect_test`. It moves to `platform` on the same rule as the three above, and is excluded
+  from the semver job until its first publish. Audit logging is a feature of `id_effect_sql` and
+  OpenAPI a feature of `id_effect_axum`, so neither adds a crate.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 

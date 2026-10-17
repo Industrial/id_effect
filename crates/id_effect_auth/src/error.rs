@@ -1,0 +1,94 @@
+//! [`AuthError`]: why a credential was not accepted.
+
+use std::fmt;
+
+/// Why a presented credential (bearer token, API key, Basic password) was not accepted, or why
+/// it could not be checked.
+///
+/// Every rejection of the credential itself answers **401**
+/// ([`http_status`](Self::http_status)); a backend that cannot be reached (user store, JWKS
+/// endpoint) answers **503**, and unusable key material **500**. Messages never contain the
+/// credential.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AuthError {
+  /// The credential is not shaped like one (bad base64, not a JWT, wrong API-key format).
+  Malformed(String),
+  /// Wrong password, unknown user, unknown or revoked API key, bad signature.
+  InvalidCredentials,
+  /// The token's `exp` (plus leeway) has passed.
+  Expired,
+  /// The token's `nbf` (minus leeway) is still in the future.
+  NotYetValid,
+  /// A claim is missing or wrong (`iss`, `aud`, a required claim, the subject).
+  InvalidClaims(String),
+  /// No verification key for the token's `kid` (or algorithm), even after a JWKS refresh.
+  UnknownKey(String),
+  /// The store or key endpoint behind the check failed.
+  Unavailable(String),
+  /// Key material or signing failed (a configuration error, not the client's).
+  Key(String),
+}
+
+impl AuthError {
+  /// 401 for a rejected credential, 503 for [`Unavailable`](Self::Unavailable), 500 for
+  /// [`Key`](Self::Key).
+  pub fn http_status(&self) -> u16 {
+    match self {
+      Self::Unavailable(_) => 503,
+      Self::Key(_) => 500,
+      _ => 401,
+    }
+  }
+
+  /// `true` when the client's credential was rejected (the 401 cases).
+  #[inline]
+  pub fn is_rejection(&self) -> bool {
+    self.http_status() == 401
+  }
+}
+
+impl fmt::Display for AuthError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Malformed(m) => write!(f, "malformed credential: {m}"),
+      Self::InvalidCredentials => f.write_str("invalid credentials"),
+      Self::Expired => f.write_str("the token has expired"),
+      Self::NotYetValid => f.write_str("the token is not valid yet"),
+      Self::InvalidClaims(m) => write!(f, "invalid token claims: {m}"),
+      Self::UnknownKey(m) => write!(f, "no verification key: {m}"),
+      Self::Unavailable(m) => write!(f, "authentication backend unavailable: {m}"),
+      Self::Key(m) => write!(f, "key material: {m}"),
+    }
+  }
+}
+
+impl std::error::Error for AuthError {}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn statuses_and_messages() {
+    let cases = [
+      (
+        AuthError::Malformed("x".into()),
+        401,
+        "malformed credential: x",
+      ),
+      (AuthError::InvalidCredentials, 401, "invalid credentials"),
+      (AuthError::Expired, 401, "expired"),
+      (AuthError::NotYetValid, 401, "not valid yet"),
+      (AuthError::InvalidClaims("aud".into()), 401, "claims: aud"),
+      (AuthError::UnknownKey("k1".into()), 401, "key: k1"),
+      (AuthError::Unavailable("db".into()), 503, "unavailable: db"),
+      (AuthError::Key("pem".into()), 500, "key material: pem"),
+    ];
+    for (error, status, text) in cases {
+      assert_eq!(error.http_status(), status, "{error:?}");
+      assert_eq!(error.is_rejection(), status == 401);
+      assert!(error.to_string().contains(text), "{error}");
+    }
+  }
+}

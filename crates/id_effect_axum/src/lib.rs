@@ -64,11 +64,15 @@
 //!
 //! - [`body`]: stream a response from a [`Stream`](id_effect::Stream) of `Bytes`
 //!   ([`body::stream_body`]) and read a request body as one ([`body::body_stream`]).
-//! - [`json::decode_json_schema`] validates JSON with an [`id_effect::schema::Schema`]; schema
-//!   errors become **422** with `path` + `message`.
+//! - [`route`]: typed routes and the `Valid*` extractors decode path, query, headers, JSON and
+//!   form bodies through an [`id_effect::schema::Schema`], answering bad input with an RFC 9457
+//!   [`Problem`] (`application/problem+json`, every issue at once with a JSON Pointer);
+//!   [`json::decode_json`] does the same for raw bytes.
 //! - [`server`]: [`HostConfig::layer`] loads the bind settings through `id_effect_config`, and
 //!   [`server_layer`] is the HTTP server as a scoped `Layer` (bound on acquire, gracefully shut
 //!   down on release); [`serve`] / [`serve_until_shutdown`] launch it.
+//! - [`middleware`]: compression, request ids with a span per request, timeouts, body limits
+//!   and rate limiting, rejecting with a [`Problem`].
 //!
 //! ## Examples
 //!
@@ -89,7 +93,11 @@ pub mod executor;
 pub mod health;
 pub mod json;
 pub mod metrics;
+pub mod middleware;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 pub mod request_caps;
+pub mod route;
 pub mod routing;
 pub mod server;
 #[cfg(feature = "tower")]
@@ -102,6 +110,7 @@ pub use executor::{
 pub use request_caps::{
   CapOverride, CapOverrideLayer, RequestCaps, execute_with_request_caps, run_with_request_caps,
 };
+pub use route::{PROBLEM_JSON, Problem};
 #[allow(deprecated)]
 pub use server::{
   CSRF_HEADER, ContentSecurityPolicy, CookieKey, Cookies, CorsConfig, CspNonce, CsrfConfig,
@@ -116,6 +125,12 @@ pub use health::{
   ReadinessCheck, ReadinessState, health, health_router, observability_routes,
   observability_routes_with_state, readiness_router, ready, ready_with_state, require_ready,
 };
+
+pub use middleware::{
+  BodyLimitLayer, CompressionLayer, RateLimitLayer, RequestId, RequestIdLayer, TimeoutLayer,
+};
+pub use middleware::{CacheControl, HttpCacheLayer};
+pub use server::{StaticFiles, serve_dir};
 
 use axum::extract::State;
 use axum::http::StatusCode;

@@ -83,3 +83,11 @@ struct Ch1600CliWithClap;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part3/ch16-02-cli-config-secret.md")]
 struct Ch1602CliConfigSecret;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part3/ch16-03-config-profiles.md")]
+struct Ch1603ConfigProfiles;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part3/ch16-04-secrets-vault.md")]
+struct Ch1604SecretsVault;

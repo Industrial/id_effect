@@ -24,12 +24,12 @@ clap = { version = "4.5", default-features = false, features = [
   "usage",
   "error-context",
 ] }
-id_effect = { path = "../../crates/id_effect", version = "0.8.0" }
-id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.8.0", features = [
+id_effect = { path = "../../crates/id_effect", version = "0.9.0" }
+id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.9.0", features = [
   "clap",
   "completions",
 ] }
-id_effect_config = { path = "../../crates/id_effect_config", version = "0.8.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.9.0" }
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh

@@ -1,0 +1,56 @@
+# https://moonrepo.dev/docs/config/project
+# The Ledger reference app. Its container integration tests run in the `reference-ledger` CI job;
+# the moon `test` task runs only the unit tests so moon-ci does not start the containers twice.
+language: 'rust'
+layer: 'application'
+tasks:
+  check:
+    deps: ['effect:ci-format', '^:check']
+    command: [cargo, check, -p, ledger, --all-targets]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - 'migrations/**/*.sql'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  clippy:
+    deps: ['effect:ci-format', '^:clippy', '~:check']
+    command: [cargo, clippy, -p, ledger, --all-targets, --, -D, warnings]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - 'migrations/**/*.sql'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  lint:
+    description: 'Alias for ~:clippy (format-gated)'
+    deps: ['effect:ci-format', '~:clippy']
+    command: 'bash'
+    args: ['-c', ':']
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  test:
+    deps: ['effect:ci-format', '^:test', '~:clippy']
+    command: [cargo, nextest, run, -p, ledger, --lib]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  build:
+    deps: ['effect:ci-format', '^:build', '~:test']
+    command: [cargo, build, -p, ledger, --all-targets]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+      - 'migrations/**/*.sql'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure

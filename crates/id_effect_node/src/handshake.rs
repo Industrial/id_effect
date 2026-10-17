@@ -3,8 +3,11 @@
 //! BEAM's shared-secret cookie scheme with a modern MAC: both sides prove
 //! knowledge of the cookie by HMAC-SHA256 over the peer's nonce and their
 //! own node name. The cookie never travels on the wire. This authenticates
-//! but does **not** encrypt — pair with the QUIC transport (mTLS) or a
-//! trusted network for confidentiality (ADR 0009 § security).
+//! but does **not** encrypt — pair with the QUIC transport (TLS 1.3) or a
+//! trusted network for confidentiality (ADR 0009 § security). The QUIC
+//! transport is not mutual TLS: there is no client certificate, and the
+//! server certificate is only verified when roots are pinned with
+//! `QuicConfig::with_client_verification` (see `transport::quic`, "Trust model").
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;

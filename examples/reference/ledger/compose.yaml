@@ -1,0 +1,35 @@
+# Local development: what `config/dev.toml` connects to. `docker compose up -d`, then
+# `cargo run -p ledger` from this directory.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ledger
+      POSTGRES_PASSWORD: ledger-dev
+      POSTGRES_DB: ledger
+    ports: ['5432:5432']
+    healthcheck:
+      test: [CMD, pg_isready, -U, ledger]
+      interval: 2s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+  # The identity provider for `/auth/oidc/login`: realm `ledger`, client `ledger-web`, user
+  # `alice` / `alice-password` (accountant of organisation `acme`).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    command: [start-dev, --import-realm, --http-port=8180]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    ports: ['8180:8180']
+  # A dev-mode Vault for trying the prod profile locally (see the README).
+  vault:
+    image: hashicorp/vault:1.20
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root
+    cap_add: [IPC_LOCK]
+    ports: ['8200:8200']

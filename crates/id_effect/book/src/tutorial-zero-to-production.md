@@ -42,7 +42,7 @@ macros:
 
 | File | What |
 |---|---|
-| `src/lib.rs` | `app()`: the router, testable without a socket |
+| `src/lib.rs` | `app()`: the router (`/`, the typed `/hello/{name}`, health, metrics) and its middleware, testable without a socket |
 | `src/main.rs` | reads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS`, `COOKIE_KEY`; serves until SIGINT / SIGTERM |
 | `tests/http.rs` | the routes in process, plus one test that boots the binary |
 | `Dockerfile`, `.dockerignore` | a multi-stage release image |
@@ -64,11 +64,30 @@ In a second terminal:
 curl -i http://127.0.0.1:8080/health   # 200: the process runs
 curl http://127.0.0.1:8080/ready       # the readiness checks as JSON
 curl http://127.0.0.1:8080/metrics     # Prometheus text
+curl http://127.0.0.1:8080/hello/ada   # hello, ada
+curl -i http://127.0.0.1:8080/hello/$(printf 'a%.0s' {1..33})   # 33 characters: 422
 ```
 
-The service listens on `0.0.0.0:8080` unless `HOST` / `PORT` say otherwise, and every response
-carries the headers of `SecurityLayer::recommended` (CSP, HSTS, `nosniff`, CSRF protection on
-state-changing requests). Stop it with Ctrl-C: it drains in-flight requests first.
+`/hello/{name}` is a *typed route*: `Route::get("/hello/{name}").path::<Name>()` decodes the path
+through `Name`'s schema (1 to 32 characters) before the handler runs, so `hello` only ever sees a
+valid name. A value the schema rejects never reaches it and is answered `422` with an RFC 9457
+Problem+JSON body:
+
+```text
+HTTP/1.1 422 Unprocessable Entity
+content-type: application/problem+json
+
+{"type":"about:blank","title":"Unprocessable Entity","status":422,"detail":"the request input failed validation (1 issue)","instance":"/hello/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","errors":[{"in":"path","pointer":"","message":"must be at most 32 characters"}]}
+```
+
+The service listens on `0.0.0.0:8080` unless `HOST` / `PORT` say otherwise. `app()` wraps every
+route in the same middleware, outermost first: `RequestIdLayer` (an `x-request-id` header and a
+span per request), `CompressionLayer` (when the client accepts it), `SecurityLayer::recommended`
+(CSP, HSTS, `nosniff`, CSRF protection on state-changing requests), `http_metrics_layer` (the
+`http_server_requests_total` counters), a `TimeoutLayer` of `REQUEST_TIMEOUT` (30 s, then `503`)
+and a `BodyLimitLayer` of `BODY_LIMIT` (2 MiB, then `413`)
+([Typed routes](./part6/ch29-01-typed-routes.md), [middleware](./part6/ch29-03-middleware.md)).
+Stop it with Ctrl-C: it drains in-flight requests first.
 
 ## 4. A route with a typed error and a capability
 
@@ -136,13 +155,17 @@ returning another error type, is a compile error, not a runtime surprise
 A panic in the handler is a defect and answers `500`; the typed error never becomes one.
 
 Declare the module with `pub mod quotes;` in `src/lib.rs` and merge its routes into `app()`, before
-the layers so metrics and the security headers cover them:
+the layers so the middleware covers them:
 
 ```rust
 # use std::convert::Infallible;
+# use std::time::Duration;
 # use axum::Router;
-# use id_effect::{Counter, Effect};
+# use id_effect::schema::{self, HasSchema, Schema};
+# use id_effect::{Counter, Effect, succeed};
 # use id_effect_kit::axum::metrics::{http_metrics_layer, metrics_router};
+# use id_effect_kit::axum::middleware::{BodyLimitLayer, CompressionLayer, RequestIdLayer, TimeoutLayer};
+# use id_effect_kit::axum::route::{self, Input, Route};
 # use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
 # use id_effect_kit::axum::{HealthRegistry, routing};
 # mod quotes {
@@ -167,15 +190,35 @@ the layers so metrics and the security headers cover them:
 # fn index(state: &mut AppState) -> Effect<String, Infallible, AppState> {
 #     state.greetings.increment().map(|()| "hello".to_string())
 # }
+# pub struct Name;
+# impl HasSchema for Name {
+#     type A = String;
+#     type I = String;
+#     type E = ();
+#     fn schema() -> Schema<String, String> { schema::length(schema::string::<()>(), 1, 32) }
+# }
+# fn hello(_: &mut AppState, input: Input<String>) -> Effect<String, Infallible, AppState> {
+#     succeed(format!("hello, {}", input.path))
+# }
+# pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+# pub const BODY_LIMIT: usize = 2 * 1024 * 1024;
 pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
+    // Typed routes are registered (method, path, schemas) for OpenAPI and route listings.
+    let typed =
+        route::Router::new().route(Route::get("/hello/{name}").path::<Name>().handler(hello));
     Router::new()
         .route("/", routing::get(index))
+        .merge(typed.into_axum())
         .merge(metrics_router())
         .with_state(AppState::default())
         .merge(quotes::routes(quotes::Quotes::default()))
         .merge(health.routes())
+        .layer(BodyLimitLayer::new(BODY_LIMIT))
+        .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
         .layer(http_metrics_layer())
         .layer(SecurityLayer::recommended(cookie_key))
+        .layer(CompressionLayer::new())
+        .layer(RequestIdLayer::new())
 }
 # let _ = app(&HealthRegistry::new(), CookieKey::generate());
 ```
@@ -295,12 +338,19 @@ diff -ru ../orders-api-pg . --exclude target
 
 The differences are the database wiring:
 
-- `Cargo.toml`: the `sql-pg` feature, `features = ["web", "sql-pg"]`.
-- `src/db.rs` (new) and `pub mod db;` in `src/lib.rs`: the pool from `DATABASE_URL`, the migration,
-  and a `db` check behind `/ready`.
-- `migrations/0001_init.sql` (new), run on every start, so it stays idempotent.
+- `Cargo.toml`: the `sql-pg` and `migrate` features, `features = ["web", "sql-pg", "migrate"]`.
+- `src/db.rs` (new) and `pub mod db;` in `src/lib.rs`: the pool from `DATABASE_URL`, the
+  migrations of `migrations/` applied on start, and a `db` check behind `/ready`.
+- `migrations/0001_init.sql` (new): a plain `CREATE TABLE greetings`, applied once and recorded in
+  `_id_effect_migrations`.
 - `src/main.rs`: connect before serving and register the readiness check (below).
-- `compose.yaml`, `.env.example`, `config/deploy.yml`: a `postgres:17` service and `DATABASE_URL`.
+- `tests/http.rs`: `migrations_directory_is_valid` checks `migrations/` without a database, in
+  place of the test that boots the binary (which now needs one).
+- `Dockerfile`: copies `migrations/` into the image's working directory, `/app`.
+- `.github/workflows/ci.yml`: a `migrations` job that applies them to a `postgres:17` service with
+  `id-effect migrate run` and gates on `id-effect migrate check`.
+- `compose.yaml`, `.env.example`, `config/deploy.yml`: a `postgres:17` service and `DATABASE_URL`;
+  `README.md` describes the lot.
 
 The `main.rs` change, after `let health = HealthRegistry::new();`:
 
@@ -328,52 +378,68 @@ let health = match Database::connect().await {
 # }
 ```
 
-Now a second migration. Add `migrations/0002_orders.sql`:
-
-```sql
--- orders-api: orders (idempotent: it runs on every start, after 0001).
-CREATE TABLE IF NOT EXISTS orders (
-    id BIGSERIAL PRIMARY KEY,
-    item TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)
-```
-
-In `src/db.rs`, embed it next to the first one,
-`pub const MIGRATION_0002: &str = include_str!("../migrations/0002_orders.sql");`, and run both, in
-order, in `Database::connect`:
+`Database::connect` in `src/db.rs` applies the migrations before the service answers anything:
 
 ```rust
-# use id_effect::Exit;
+# use id_effect::{Cause, Exit};
 # use id_effect_kit::axum::EffectExecutor;
-# use id_effect_kit::sql::SqlClient;
+# use id_effect_kit::sql::migrate;
 # use id_effect_kit::sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
-# pub const MIGRATION_0001: &str = "CREATE TABLE IF NOT EXISTS greetings (id BIGSERIAL PRIMARY KEY)";
-# pub const MIGRATION_0002: &str = "CREATE TABLE IF NOT EXISTS orders (id BIGSERIAL PRIMARY KEY)";
+# use id_effect_kit::sql::{SqlClientEnv, sql_client_env};
+# pub const MIGRATIONS_DIR: &str = "migrations";
 # #[derive(Clone)]
 # pub struct Database {
 #     client: PgSqlClient,
 # }
 # impl Database {
-/// Connects to `DATABASE_URL` and runs the migrations in order.
+/// Connects to `DATABASE_URL` and applies the pending migrations of [`MIGRATIONS_DIR`]: each
+/// in its own transaction under an advisory lock (replicas starting together apply it once),
+/// recorded in `_id_effect_migrations`. A migration changed after it was applied stops the
+/// start.
 pub async fn connect() -> Result<Self, String> {
     let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL is not set")?;
     let pool = pg_pool_from_config(PgPoolConfig::from_url(url))
         .await
         .map_err(|e| format!("database: {}", e.0))?;
     let client = PgSqlClient::new(pool);
-    for (name, sql) in [("0001", MIGRATION_0001), ("0002", MIGRATION_0002)] {
-        let migrate = client.execute(sql, &[]);
-        if let Exit::Failure(cause) = EffectExecutor::global().run_effect(migrate).await {
-            return Err(format!("migration {name}: {cause:?}"));
-        }
+    let migrations = migrate::run::<SqlClientEnv, _>(MIGRATIONS_DIR)
+        .provide_all(sql_client_env(client.clone()));
+    match EffectExecutor::global().run_effect(migrations).await {
+        Exit::Success(_applied) => Ok(Self { client }),
+        Exit::Failure(Cause::Fail(e)) => Err(format!("migrations: {e}")),
+        Exit::Failure(cause) => Err(format!("migrations: {cause:?}")),
     }
-    Ok(Self { client })
 }
 # }
 ```
 
-Start the database and the service:
+`MIGRATIONS_DIR` is `"migrations"`, read relative to the working directory: the project root under
+`cargo run`, `/app` in the image. So a second migration is a new file, not new code. Let
+`id-effect` create it; it numbers after the newest one:
+
+```sh
+id-effect migrate new orders
+```
+
+```text
+Created migrations/0002_orders.sql
+```
+
+Fill it in. Each migration runs once, so it is plain DDL, no `IF NOT EXISTS`:
+
+```sql
+-- orders: the migration (`id-effect migrate run`, one transaction).
+CREATE TABLE orders (
+    id BIGSERIAL PRIMARY KEY,
+    item TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)
+```
+
+`migrations_directory_is_valid` in `tests/http.rs` pins the versions it finds; make it
+`assert_eq!(versions, [1, 2]);` and `cargo test` passes again.
+
+Start the database and the service; the start applies `0001` and `0002`:
 
 ```sh
 docker compose up -d db
@@ -383,9 +449,29 @@ cargo run
 curl http://127.0.0.1:8080/ready   # now lists the `db` check
 ```
 
-The service reads the process environment, not `.env`, hence the `export` (or use direnv). Once
-the schema outgrows "idempotent SQL run on start", move to a migration tool (sqlx-cli, refinery);
-the [data chapter](./part6/ch28-00-data.md) covers the SQL client.
+The service reads the process environment, not `.env`, hence the `export` (or use direnv); the
+`id-effect migrate` commands read either. Ask the database what ran:
+
+```sh
+id-effect migrate status
+id-effect migrate check    # exit 0: up to date; 1: pending, changed or missing
+```
+
+```text
+id-effect migrate status: migrations (table _id_effect_migrations)
+  applied  1  2026-10-16 23:41:32Z  init
+  applied  2  2026-10-16 23:41:32Z  orders
+
+2 applied, 0 pending, 0 drifted, 0 missing
+Up to date: 2 migrations applied, none pending, changed or missing.
+```
+
+Never edit a migration once it ran: its checksum no longer matches, `check` fails and the next start
+stops with the drift. Change the schema with another `id-effect migrate new` (`--reversible`
+writes an `.up.sql` / `.down.sql` pair that `id-effect migrate revert` can undo). The generated
+CI's `migrations` job runs `migrate run` and `migrate check` on every push.
+[Migrations](./part6/ch28-02-migrations.md) covers the engine and the
+[data chapter](./part6/ch28-00-data.md) the SQL client.
 
 ## 7. `id-effect doctor` and the layer graph
 
@@ -401,7 +487,7 @@ id-effect doctor
 id-effect doctor: /home/me/orders-api
   pass  project   package `orders-api`
   pass  rustc     rustc 1.95.0 >= id_effect MSRV 1.94; the project sets no rust-version
-  pass  versions  id_effect 0.8.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
+  pass  versions  id_effect 0.9.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
   pass  env       all 6 .env.example keys set (6 from .env)
   pass  database  localhost:5432 accepts TCP connections
   pass  docker    Docker version 29.8.1; Docker Compose version 5.6.0 (daemon not checked)

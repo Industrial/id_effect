@@ -28,6 +28,24 @@ pub enum ConfigError {
     /// Name of the environment variable that was not valid UTF-8.
     var: String,
   },
+  /// The selected configuration profile is not one the application declared (see
+  /// `Profiles::known`, features `toml` + `env`).
+  UnknownProfile {
+    /// Profile name that was requested (flag, environment variable or default).
+    profile: String,
+    /// Profiles the application declared, in declaration order.
+    known: Vec<String>,
+  },
+  /// A HashiCorp Vault secret could not be read (feature `vault`). The reason never contains a
+  /// secret value or the token.
+  Vault {
+    /// Secret path below the mount (`ledger/db`) whose read failed.
+    path: String,
+    /// What failed: the transport, an HTTP status, or the response shape.
+    kind: VaultErrorKind,
+    /// Vault's `errors` list, the transport error, or the decoding problem.
+    reason: String,
+  },
   /// Several independent failures, every one reported (Effect `ConfigError.And`).
   ///
   /// Produced by [`Config::all`](crate::Config::all) and the combinators built on it
@@ -38,6 +56,59 @@ pub enum ConfigError {
     /// The failures, in the order of the components.
     Vec<ConfigError>,
   ),
+}
+
+/// Shown in place of a secret's raw value in errors.
+pub(crate) const REDACTED: &str = "<redacted>";
+
+impl ConfigError {
+  /// The same error with every raw value removed, for errors raised while loading a secret.
+  ///
+  /// `Invalid` keeps its path and reason but drops the value. A Figment error can quote the
+  /// offending value in its message, so it becomes `Invalid` at the same path with a generic
+  /// reason. `And` is redacted element by element.
+  pub(crate) fn redact_values(self) -> Self {
+    match self {
+      Self::Invalid { path, reason, .. } => Self::Invalid {
+        path,
+        value: REDACTED.to_string(),
+        reason,
+      },
+      Self::Figment(e) => Self::Invalid {
+        path: e.path.join("."),
+        value: REDACTED.to_string(),
+        reason: "value has the wrong type or format (details hidden for a secret)".to_string(),
+      },
+      Self::And(errors) => Self::And(errors.into_iter().map(Self::redact_values).collect()),
+      other => other,
+    }
+  }
+}
+
+/// The failing step of a [`ConfigError::Vault`] read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum VaultErrorKind {
+  /// The request did not complete (connection refused, TLS, timeout).
+  Transport,
+  /// Vault answered with a non-success HTTP status (`403` permission denied, `404` no such
+  /// secret).
+  Status(
+    /// The HTTP status code.
+    u16,
+  ),
+  /// The body is not a KV v2 read response (`{"data": {"data": {..}}}`).
+  Decode,
+}
+
+impl std::fmt::Display for VaultErrorKind {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      VaultErrorKind::Transport => f.write_str("transport error"),
+      VaultErrorKind::Status(status) => write!(f, "HTTP {status}"),
+      VaultErrorKind::Decode => f.write_str("unexpected response"),
+    }
+  }
 }
 
 impl ConfigError {
@@ -110,6 +181,15 @@ enum ConfigErrorDisp {
   InvalidUtf8 {
     var: String,
   },
+  UnknownProfile {
+    profile: String,
+    known: Vec<String>,
+  },
+  Vault {
+    path: String,
+    kind: VaultErrorKind,
+    reason: String,
+  },
   And(Vec<String>),
 }
 
@@ -128,6 +208,15 @@ impl From<&ConfigError> for ConfigErrorDisp {
         reason: reason.clone(),
       },
       ConfigError::InvalidUtf8 { var } => Self::InvalidUtf8 { var: var.clone() },
+      ConfigError::UnknownProfile { profile, known } => Self::UnknownProfile {
+        profile: profile.clone(),
+        known: known.clone(),
+      },
+      ConfigError::Vault { path, kind, reason } => Self::Vault {
+        path: path.clone(),
+        kind: *kind,
+        reason: reason.clone(),
+      },
       ConfigError::And(errors) => Self::And(errors.iter().map(ToString::to_string).collect()),
     }
   }
@@ -174,6 +263,25 @@ impl std::fmt::Display for ConfigError {
         },
       )
       .when(
+        Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::UnknownProfile { .. })),
+        |c| match c {
+          ConfigErrorDisp::UnknownProfile { profile, known } => format!(
+            "unknown configuration profile {profile:?} (known: {})",
+            known.join(", ")
+          ),
+          _ => unreachable!(),
+        },
+      )
+      .when(
+        Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::Vault { .. })),
+        |c| match c {
+          ConfigErrorDisp::Vault { path, kind, reason } => {
+            format!("vault secret {path:?}: {kind}: {reason}")
+          }
+          _ => unreachable!(),
+        },
+      )
+      .when(
         Box::new(|c: &ConfigErrorDisp| matches!(c, ConfigErrorDisp::And(_))),
         |c| match c {
           ConfigErrorDisp::And(errors) => {
@@ -204,6 +312,24 @@ impl std::error::Error for ConfigError {
 mod tests {
   use super::*;
   use std::error::Error;
+
+  #[test]
+  fn redact_values_hides_raw_values_and_keeps_paths() {
+    let mut fig = figment::Error::from("invalid type: found string \"s3cr3t\"".to_string());
+    fig.path = vec!["db".to_string(), "password".to_string()];
+    let err = ConfigError::Figment(fig).redact_values();
+    let shown = format!("{err} {err:?}");
+    assert!(!shown.contains("s3cr3t"), "{shown}");
+    assert!(
+      matches!(&err, ConfigError::Invalid { path, value, .. } if path == "db.password" && value == REDACTED)
+    );
+
+    let missing = ConfigError::Missing {
+      path: "KEY".to_string(),
+    }
+    .redact_values();
+    assert!(matches!(missing, ConfigError::Missing { ref path } if path == "KEY"));
+  }
 
   #[test]
   fn config_error_matcher_all_variants_covered() {
@@ -319,6 +445,53 @@ mod tests {
 
     let utf8 = ConfigError::InvalidUtf8 { var: "VAR".into() };
     assert!(utf8.source().is_none());
+
+    let unknown = ConfigError::UnknownProfile {
+      profile: "staging".into(),
+      known: vec!["dev".into()],
+    };
+    assert!(unknown.source().is_none());
+  }
+
+  #[test]
+  fn config_error_unknown_profile_display_lists_known_profiles() {
+    let err = ConfigError::UnknownProfile {
+      profile: "staging".into(),
+      known: vec!["dev".into(), "test".into(), "prod".into()],
+    };
+    assert_eq!(
+      err.to_string(),
+      "unknown configuration profile \"staging\" (known: dev, test, prod)"
+    );
+    assert!(matches!(
+      ConfigErrorDisp::from(&err),
+      ConfigErrorDisp::UnknownProfile { .. }
+    ));
+  }
+
+  #[test]
+  fn config_error_vault_display_names_path_and_kind() {
+    let render = |kind| {
+      ConfigError::Vault {
+        path: "ledger/db".into(),
+        kind,
+        reason: "permission denied".into(),
+      }
+      .to_string()
+    };
+    assert_eq!(
+      render(VaultErrorKind::Status(403)),
+      "vault secret \"ledger/db\": HTTP 403: permission denied"
+    );
+    assert!(render(VaultErrorKind::Transport).contains(": transport error: "));
+    assert!(render(VaultErrorKind::Decode).contains(": unexpected response: "));
+    let err = ConfigError::Vault {
+      path: "p".into(),
+      kind: VaultErrorKind::Decode,
+      reason: "r".into(),
+    };
+    assert!(err.source().is_none());
+    assert!(!err.is_missing_only());
   }
 
   #[test]

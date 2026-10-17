@@ -1,0 +1,65 @@
+[package]
+name = "id_effect_redis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, sessions and rate limits"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_redis"
+
+[features]
+default = []
+# `RedisSessionStore`: id_effect_auth's `SessionStore` in Redis (records keyed by the SHA-256 of
+# the session id, expiring with the session).
+session = ["dep:id_effect_auth", "dep:sha2", "dep:jiff"]
+# `RedisRateLimitStore`: id_effect_axum's `RateLimitStore` (token buckets shared by every
+# instance, refilled on the Redis server's clock).
+rate-limit = ["dep:id_effect_axum"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.9.0" }
+# redis-rs (release spec 0.9.0 D6): tokio connections behind a reconnecting `ConnectionManager`,
+# Lua scripts for the atomic multi-key operations. 1.x needs rustc 1.88, within the workspace MSRV.
+redis = { version = "1.7.1", default-features = false, features = [
+  "tokio-comp",
+  "connection-manager",
+  "script",
+] }
+# Typed stores encode values as JSON.
+serde = "1"
+serde_json = "1"
+# `StreamExt::next` over the pub/sub message stream; already in redis-rs's async tree.
+futures-util = { version = "0.3.31", default-features = false }
+id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", optional = true }
+id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
+# Session records are keyed by the SHA-256 of the id (as `PgSessionStore` does).
+sha2 = { version = "0.10.9", optional = true }
+# `UtcDateTime`'s timestamp, stored losslessly as RFC 3339; same floor as id_effect's.
+jiff = { version = "0.2.23", optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+# Runs redis-backed effects on the test's tokio runtime.
+id_effect_tokio = { path = "../id_effect_tokio" }
+# A Redis 8 container (JSON module included) for the integration tests; same version as
+# id_effect_config and id_effect_auth.
+testcontainers = { version = "0.28", default-features = false }
+axum = "0.8"
+tower = { version = "0.5.3", features = ["util"] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 5, ADR 0012).
+tier = "platform"

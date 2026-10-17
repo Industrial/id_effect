@@ -1,5 +1,214 @@
 # Changelog
 
+## 0.9.0 — 2026-10-17 — Data & security (breaking)
+
+The second release under the plan of plans: typed SQL with migrations, repositories, three
+databases and TLS; typed routes with OpenAPI; authentication and authorization; test containers;
+and the Ledger reference app that uses all of it in CI. Upgrading from 0.8: see the
+[0.9 migration guide](docs/MIGRATION-0.9.md).
+
+### Added
+
+- New crates (ADR 0010 Amendment 5, tier `platform` since the Ledger reference app uses them):
+  `id_effect_auth`, `id_effect_authz`, `id_effect_test`, `id_effect_redis`.
+- `examples/reference/ledger`: the Ledger reference app (CI job `reference-ledger`). Double entry
+  over typed routes, `SERIALIZABLE` postings, PostgreSQL sessions, JWT, OIDC + PKCE, TOTP, RBAC, a
+  Redis cache, a read replica and Vault, built only through `id_effect_kit`. New on the way:
+  `Route::handler_with_request_caps` (`id_effect_axum`), kit feature `audit`.
+- `id_effect_redis`: pooled `RedisClient` layer; typed `RedisKv` / `RedisHash` / `RedisJson`
+  stores; `RedisCacheBackend`; pub/sub as a `Stream`; `RedisSessionStore` (feature `session`);
+  `RedisRateLimitStore` (feature `rate-limit`). Core `id_effect`: additive `CacheBackend` trait and
+  `Cache::with_backend` (same `Cache` API, in-process single-flight kept, backend failures counted
+  by `Cache::backend_errors`).
+- `id_effect_config`: per-environment profiles (`Profiles`, `ID_EFFECT_PROFILE` / `--profile`)
+  layering `config/base.toml` → `config/<profile>.toml` → `APP_*` env (env > profile > base); an
+  unknown profile is `ConfigError::UnknownProfile`; `Profiles::overlay` takes a secret provider.
+- `id_effect_axum::route`: typed routes —
+  `Route::get("/accounts/{id}").path::<P>().query::<Q>().headers::<H>().body::<B>().response::<R>(status).handler(f)`
+  with `HasSchema` parts, every decode issue reported at once (422); `route::Router` keeps a
+  `RouteRegistry` of `RouteInfo` (method, path, schema per part, JSON Schema 2020-12) for OpenAPI
+  and route listings. The existing `routing::get/post/…` are unchanged.
+- `id_effect_axum`: RFC 9457 `Problem` (`application/problem+json`) with `errors[]` of
+  `{in, pointer, message}`; typed routes answer invalid input with it (422, or 400 for malformed
+  JSON) and list every issue. Standalone extractors `ValidPath`, `ValidQuery`, `ValidHeaders`,
+  `ValidJson`, `ValidForm` (urlencoded and multipart text fields) share the same decoder.
+  `Route::form::<T>()`, `RouteInfo::body_kind`, `json::decode_json`. Absent array / nullable
+  query, form and header fields decode to `[]` / `null`.
+- `id_effect_axum::middleware`: `CompressionLayer` (gzip / brotli / deflate), `RequestIdLayer`
+  (`x-request-id` propagation, `RequestId` extractor, one `http.request` effect span per request),
+  `TimeoutLayer` (503 Problem; interrupts the handler's fiber), `BodyLimitLayer` (413 Problem) and
+  `RateLimitLayer` (429 Problem + `Retry-After`; token buckets behind a pluggable
+  `RateLimitStore`). New dependency `id_effect_resilience`. `RateLimitKey::tenant` keys limits by
+  the request's tenant (read from `RequestCaps` or a request extension).
+- `id_effect_axum`: `server::serve_dir` static files with strong `ETag` / `Last-Modified` / 304,
+  `If-Match` / `If-Range`, precompressed `.br` / `.gz`, hashed-asset `Cache-Control`, traversal
+  and hidden-file protection; `middleware::HttpCacheLayer` + `CacheControl` add `Cache-Control`
+  and a body-hash `ETag` to GET responses and answer `If-None-Match` / `If-Modified-Since` with
+  304. Book: part6/ch29-03-middleware.md; example `090_middleware`.
+- `id_effect_axum` feature `openapi`: `OpenApi::from_router` generates an OpenAPI 3.1 document from
+  typed routes. Component schemas are exactly the decoding schemas' JSON Schema; path / query /
+  header parameters, request bodies per media type, documented and Problem
+  (`application/problem+json`) responses, security schemes (bearer JWT, session cookie, OpenID
+  Connect) with per-operation requirements from the new `RouteInfo::policies`.
+  `Endpoint::from_parts` / `Endpoint::layer`; `id_effect_authz` guarded endpoints convert into an
+  `Endpoint` and record their policies. Opt-in `openapi_router(&doc, OpenApiUi::scalar())` /
+  `doc.routes()` serve `/openapi.json` (ETag, 304) and a Scalar `/docs` page loaded from a CDN or
+  mirror (`cdn_url`, `integrity`) under its own strict CSP that works behind `SecurityLayer`;
+  `route::introspect::routes_router` serves a `/_routes` table (method, path, handler, schemas,
+  policies) as JSON or text; `RouteInfo::handler` records the handler's type name. Book:
+  part6/ch29-02-openapi.md; example `085_openapi`.
+- `id_effect_authz`: `Principal` and the `CurrentPrincipal` capability; `Policy<Res>` evaluated as an
+  effect returning `Decision`, combined with `and` / `or` / `negate`; `Rbac` (roles → permissions,
+  inheritance, wildcards); the named-policy registry `Policies` with `authorize` / `check`;
+  ownership, tenant and ACL resource policies; claim (ABAC) policies; `AuthzError::http_status`
+  (401 / 403 / 500). Feature `axum`: route guards (`Guard` layer; `.authorize(guard)` on an axum
+  `MethodRouter` and on a typed `Endpoint`) answering 401 / 403 / 500 as `application/problem+json`.
+  Every decision can be recorded as a serde `DecisionEvent` to the `AuthzEvents` sink capability.
+  Feature `testing`: `AuthzTest` with `assert_allows` / `assert_denies` / `assert_denied_because`.
+- `id_effect_auth`: argon2id `PasswordHasher` (OWASP defaults, rehash-on-verify, dummy verification
+  for unknown users, hashing on the blocking pool) and server-side `Sessions` over a `SessionStore`
+  (`MemorySessionStore`; idle and absolute timeouts, id rotation on login, rotate / logout /
+  revoke-all, `__Host-` Secure HttpOnly SameSite=Lax cookie); feature `axum` adds `SessionLayer`.
+  Credential middleware `Authenticate` (session → bearer JWT → API key → Basic, configurable
+  order) installs a `CurrentPrincipal` (`AuthPrincipal`) for the authz guards; a bad credential is a
+  401 Problem with `WWW-Authenticate`. JWT issue / verify (feature `jwt`: HS / RS / PS / ES / EdDSA,
+  iss / aud / exp / nbf / leeway, required claims, claim → roles / permissions mapping);
+  `JwksClient` with kid-rotation refetch, rate limiting and stale-cache fallback (feature `jwks`);
+  hashed API keys with constant-time compare; Basic auth via `UserLookup` + `verify_or_dummy`.
+  Feature `pg`: `PgSessionStore` keeps sessions in PostgreSQL (SHA-256 of the session id as the
+  key, jsonb attributes, timestamptz expiries, upsert `save`), `pg_session_store_layer()`,
+  `ensure_schema()` and the migration `migrations/0001_id_effect_sessions.{up,down}.sql`.
+  Feature `oidc`: OpenID Connect login. `OidcClient` (discovery, authorization code + PKCE S256,
+  state / nonce, ID tokens verified over the provider's JWKS with `iss` / `aud` / `exp` / `nonce`
+  / `azp`, `ClaimMapping`, RP-initiated logout; implements `id_effect_platform`'s `OAuthClient`)
+  and `OidcRoutes` (`/auth/oidc/{login,callback,logout}`, a separate flow session, login through
+  `Sessions::login`). Tested against a wiremock IdP and a Keycloak container.
+  Feature `totp`: TOTP second factor (totp-rs). Enrolment with an `otpauth://` URI, ±1-step
+  verification on the executor clock with per-user replay protection, single-use recovery codes
+  stored as argon2id hashes, and a session step-up with `amr` claims for the `require_mfa` authz
+  policy.
+- `id_effect_config`: HashiCorp Vault KV v2 secret provider behind the new `vault` feature
+  (`VaultSettings`, `VaultProvider::layer`, `VaultAuth::token`). Secrets load once in a layer, come
+  back as `Secret<T>`, and merge above the profile files and below the environment;
+  `refresh_every` re-fetches and swaps atomically; failures are `ConfigError::Vault`.
+  `Secret<T>` now implements `Deserialize`.
+- `id_effect_sql`: typed SQL. `SqlValue` (bool, i16/i32/i64, f32/f64, text, bytes, uuid, jiff
+  `Timestamp` / `DateTime` / `Date` / `Time`, `rust_decimal::Decimal`, JSON), `ToSqlValue` /
+  `FromSqlValue`, `params!`, typed `SqlRow::get::<T>(name | index)` with errors naming the column,
+  `SqlColumn` metadata, `Json<T>`. PostgreSQL binds NULL untyped and decodes by column type;
+  unsupported column types are a clear error instead of a silent `""`. `testing::arb_sql_value`
+  (feature `proptest`). Book: part6/ch28-01-typed-sql.md.
+- `id_effect_sql`: `FromRow` and `#[derive(FromRow)]` (`rename`, `default`, `flatten`, `#[schema]`
+  renames, `#[from_row(schema)]` validation into the new `SqlError::InvalidRow`), tuple `FromRow`,
+  `query_as` / `query_one_as` / `query_opt_as`, `SqlError::RowNotFound`.
+- `id_effect_sql`: nested `savepoint` scopes; isolation / read-only / deferrable transactions
+  (`transaction_with`, `with_transaction_options`, `SqlClient::begin_with`);
+  `retry_serialization_failures` over a `Schedule`; streaming queries (`query_stream`,
+  `query_stream_as`) with bounded buffering and cancel-on-interrupt on PostgreSQL. `TestSqlClient`
+  supports all three.
+- `id_effect_sql` feature `migrate`: `Migrator` (`from_dir`, `from_files`, `from_sqlx` for
+  `sqlx::migrate!` embedding) with `run` / `status` / `revert(n)` / `check` as effects and a startup
+  `Layer`; sqlx-cli file naming and checksums, tracking table `_id_effect_migrations`, one
+  transaction per migration under a PostgreSQL advisory lock with a timeout, typed `MigrateError`.
+- `id_effect_sql` feature `sqlite`: `SqliteSqlClient` over sqlx SQLite (in-memory and file
+  databases, savepoints, streaming, `Serializable` → `BEGIN IMMEDIATE`, busy → retryable 40001).
+  `RoutingSqlClient` sends reads to replicas (round-robin or custom) and writes / transactions to
+  the primary. One conformance suite runs on PostgreSQL and SQLite.
+- `id_effect_sql` feature `mysql`: `MySqlSqlClient` / `MySqlPoolConfig` on sqlx; the shared
+  conformance suite passes on MySQL 8. Isolation levels, `READ ONLY` transactions, savepoints,
+  deadlocks and lock wait timeouts retryable as SQLSTATE 40001, bounded streaming with
+  `KILL QUERY` on drop.
+- `id_effect_sql` feature `query`: build statements with sea-query 1.0, render them per dialect
+  (`BuildSql::build_sql(Dialect::{Postgres, MySql, Sqlite})` → SQL + `Vec<SqlValue>`, our own value
+  bridge, no sea-query-binder) and run them with `execute_query` / `fetch_all_as` /
+  `fetch_one_as` / `fetch_optional_as`.
+- `id_effect_sql` feature `repository`: `#[derive(Entity)]` and `Repository<T>`. CRUD, paging,
+  optimistic locking via `#[entity(version)]` (`SqlError::StaleVersion`), soft-delete / tenant /
+  custom global filters on every generated statement with `with_deleted()` / `unscoped()` escape
+  hatches (a tenant-scoped entity with no tenant fails closed); runs in transactions via
+  `repo.on(tx)`. Book: part6/ch28-03-repositories.md; example `040_repository`.
+- Book part6/ch30-07-audit-tenancy.md: the row-level tenant pattern end to end (authenticated
+  principal → `CapOverrideLayer` setting `CurrentTenant` and `AuditContext` → tenant-filtered
+  `Repository` → `audit::record` in the request's transaction → `verify_chain`), its fail-closed
+  behaviour and the alternatives it does not cover (row-level security, schema or database per
+  tenant); example `id_effect_sql/050_tenancy_audit`.
+- `id_effect_sql` feature `audit`: hash-chained audit log. `AuditLog` layer, `append` / `record`
+  inside the caller's transaction, one chain per tenant with `sha256(prev_hash ‖ record)` (the
+  chain head is row-locked, so concurrent appends never fork it), `verify_chain` reports the first
+  edited, removed or relinked record; bundled migration `migrations/audit/`.
+- `id_effect_test`: effect-native test containers (testcontainers). Postgres (with a ready
+  `SqlClient` layer under feature `sql`), MySQL, Redis, Keycloak, Vault and a generic
+  `ContainerSpec` as scoped layers, removed when their scope closes (success, failure, defect or
+  interrupt); `Shared` one-per-binary containers with the Ryuk reaper; readiness waits with typed
+  timeouts (`ContainerError::NotReady`); `require_docker()` prints SKIP, or fails under
+  `ID_EFFECT_REQUIRE_DOCKER=1`. Book: part4/ch15-07-containers.md.
+  Per-test database isolation: `isolated_db()` (a rolled-back transaction over any `SqlClient`,
+  with savepoints per statement and per nested transaction) and `TemplateDb` (a migrated template
+  cloned per test with `CREATE DATABASE … TEMPLATE`, dropped on scope close); `Fixture` /
+  `Factory` with seeded Schema-arbitrary defaults and `FromRow` rows (feature `fixtures`); an
+  in-process `TestClient` over any tower `Service` (feature `http`). Book:
+  part4/ch15-08-integration-testing.md; example `020_isolated_db`. Feature `contract`: `Contract` /
+  `TestResponse::assert_conforms` check responses against the response schema the OpenAPI document
+  declares for their operation and status, naming each violation by JSON pointer.
+- `id_effect_kit`: features `openapi`, `sql`, `sql-sqlite`, `sql-mysql`, `migrate`, `repository`,
+  `auth` (+ `auth-oidc`, `auth-totp`), `authz`, `redis`, `config-vault` and `test` (for
+  dev-dependencies; not in `full`); `full` updated; the prelude gains typed routes, `Problem`,
+  `Valid*`, middleware, `OpenApi`, `FromRow` / `Entity` / `Repository`, `Migrator`, the auth and
+  authz types and `Profiles`. Derives used through the kit alone need
+  `#[from_row(crate = id_effect_kit::sql)]`.
+- `id_effect_tool` `service` template: applies `migrations/` with `id_effect_sql::migrate::run` on
+  start (no more `include_str!` + execute on every start), serves a typed Problem+JSON route
+  behind request-id / compression / timeout / body-limit middleware, and with `--db pg` its CI
+  runs `id-effect migrate run` + `migrate check`.
+- `id_effect_tool`: `id-effect migrate new|run|status|revert|check` (sqlx-cli file layout;
+  sequential or timestamp numbering following the directory; `DATABASE_URL` / `.env`; `--json`;
+  exit codes 0 / 1 / 2 / 3). `check` exits 1 on pending, drifted or missing migrations, for CI.
+  Book: part6/ch28-02-migrations.md; example `id_effect_sql/examples/030_migrate.rs` (in memory by
+  default, live on PostgreSQL with `DATABASE_URL` / `--live`).
+
+### Changed
+
+- **Breaking** `id_effect_sql`: statements take `&[SqlValue]`; rows are typed; `SqlError` is
+  `#[non_exhaustive]`. See [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
+- **Breaking** `id_effect_tool`: `cli::Command` gains `Migrate` and is `#[non_exhaustive]`.
+- `id_effect_sql`: the backends enable sqlx's `time` feature (sqlx 0.8.6 or later), so sqlx's
+  `query!` macros type date-time columns as `time` types even when `chrono` is also enabled. See
+  [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
+
+### Deprecated
+
+- `id_effect_sql::SqlParam`, `SqlRow::new`, `SqlRow::text_cells` (removed in 0.10).
+- `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody` (removed in
+  0.10; see [MIGRATION-0.9.md](docs/MIGRATION-0.9.md)).
+
+### Security
+
+- `id_effect_sql`: TLS for PostgreSQL and MySQL (rustls on aws-lc-rs, no OpenSSL); 0.8 connected in
+  plaintext. `PgPoolConfig` / `MySqlPoolConfig` take `with_tls_mode(PgTlsMode / MySqlTlsMode)`,
+  `with_root_cert_file` / `with_root_cert_pem` and `effective_tls_mode()`, overriding the URL's
+  `sslmode` / `ssl-mode`. The default stays `Prefer` / `Preferred` (unverified, may fall back to
+  plaintext); use `VerifyFull` / `VerifyIdentity` in production. With sqlx 0.8, `VerifyCa` also
+  checks the host name (stricter than its name).
+- `id_effect_config`: `ProfiledConfig` and `FigmentConfigProvider` no longer print merged values in
+  `Debug`, and errors from `Config::secret()` loaders no longer contain the raw value.
+- `id_effect_node`: the handshake docs no longer call the QUIC transport mutual TLS (no client
+  certificate; the server certificate is verified only with pinned roots).
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.9.0.md`, METHOD 2.1):
+
+| Index | 0.8.0 | 0.9.0 | Target |
+|---|---|---|---|
+| Enterprise (E) | 55.2 (#5) | 67.2 (#3) | 64.6 (#3) |
+| Runtime (RT) | 64.4 (#2) | 70.8 (#2) | 68.9 (#2) |
+| Rows < 40 | 31 | 21 | ≤ 21 |
+| Rows where id_effect leads | 7 | 19 | — |
+
+24 rows up, none down. Data 39.7 → 79.6 (ahead of every competitor), Security 48.2 → 87.8. Every
+0.9-targeted row met or beat its target except `dx.scaffold` (75; the generators moved to 0.10).
+DX KPIs: K3 (lines to add the invoice resource to Ledger) 508, K1 67.6 s, K4 17/20, K5 94.7 %.
+
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 
 First release under the plan of plans (`.maestro/specs/roadmap/PLAN-OF-PLANS.md`). Upgrading

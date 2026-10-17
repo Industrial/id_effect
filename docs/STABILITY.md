@@ -46,13 +46,16 @@ rule ([docs/QUALITY_BAR.md](QUALITY_BAR.md), judgement checks).
 ## Semver checks in CI
 
 The `semver` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs
-`cargo semver-checks` for the publishable crates against the previous release on crates.io (the
-baseline is 0.7.0 during the 0.8 cycle). Locally: `moon run effect:semver`.
+`cargo semver-checks` for the publishable crates against the latest release on crates.io (the
+baseline is 0.8.0 during the 0.9 cycle). Crates not yet on crates.io are excluded until their
+first release. Locally: `moon run effect:semver`.
 
-- **Until v0.8.0 is tagged** the job is report-only (`continue-on-error`): 0.8 carries intentional
-  breaks. At the 0.8 exit gate every reported break must appear in
-  [MIGRATION-0.8.md](MIGRATION-0.8.md); anything not listed is a bug to fix before tagging.
-- **After v0.8.0** the baseline moves to 0.8.0 and the job enforces: an unlisted break fails CI.
+- **While a breaking 0.x minor is in development** the job is report-only (`continue-on-error`):
+  the minor carries intentional breaks. At its exit gate every reported break must appear in that
+  release's migration guide (e.g. [MIGRATION-0.9.md](MIGRATION-0.9.md)); anything not listed is a
+  bug to fix before tagging.
+- **For a patch release** (0.N.x), no break is allowed: a reported break fails the release.
+- **From 1.0** the job enforces on every pull request.
 
 ## MSRV policy
 

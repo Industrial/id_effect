@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::{Effect, Or, fail, succeed};
-use id_effect_sql::{SqlClientService, SqlParam, SqlTransaction, with_transaction};
+use id_effect_sql::{SqlClientService, SqlTransaction, params, with_transaction};
 
 use super::{BatchAbort, TodoRow, UniqueViolation};
 use crate::domain::todo::{
@@ -56,14 +56,9 @@ impl PgTodoRepository {
     }
   }
 
-  /// The SQL parameter of `title`.
-  fn text(title: &Title) -> SqlParam {
-    SqlParam::Text(title.as_str().to_owned())
-  }
-
   /// One [`Self::INSERT`] inside the batch transaction `tx`: a taken title aborts it.
   fn insert_in(tx: &Arc<dyn SqlTransaction>, title: Title) -> Effect<Todo, BatchAbort> {
-    tx.query(Self::INSERT, &[Self::text(&title)])
+    tx.query(Self::INSERT, &params![title.as_str()])
       .map_err(BatchAbort::from)
       .flat_map(move |rows| {
         Self::lift(match TodoRow::decode_first(&rows) {
@@ -87,7 +82,7 @@ impl TodoRepository for PgTodoRepository {
   fn find(&self, id: TodoId) -> Effect<Option<Todo>, StoreError> {
     self
       .sql
-      .query(Self::SELECT_ONE, &[SqlParam::Int(id.get())])
+      .query(Self::SELECT_ONE, &params![id.get()])
       .map_err(StoreError::from)
       .flat_map(|rows| Self::lift(TodoRow::decode_first(&rows)))
   }
@@ -95,7 +90,7 @@ impl TodoRepository for PgTodoRepository {
   fn add(&self, title: Title) -> Effect<Result<Todo, TitleTaken>, StoreError> {
     self
       .sql
-      .query(Self::INSERT, &[Self::text(&title)])
+      .query(Self::INSERT, &params![title.as_str()])
       .map_err(StoreError::from)
       .flat_map(move |rows| {
         Self::lift(TodoRow::decode_first(&rows).map(|todo| todo.ok_or(TitleTaken(title))))
@@ -123,11 +118,7 @@ impl TodoRepository for PgTodoRepository {
 
   fn save(&self, todo: Todo) -> Effect<Result<Todo, Or<TodoNotFound, TitleTaken>>, StoreError> {
     let (id, title) = (todo.id(), todo.title().clone());
-    let params = [
-      SqlParam::Int(id.get()),
-      Self::text(&title),
-      SqlParam::Bool(todo.is_completed()),
-    ];
+    let params = params![id.get(), title.as_str(), todo.is_completed()];
     self
       .sql
       .query(Self::UPDATE, &params)
@@ -152,7 +143,7 @@ impl TodoRepository for PgTodoRepository {
   fn remove(&self, id: TodoId) -> Effect<bool, StoreError> {
     self
       .sql
-      .execute(Self::DELETE, &[SqlParam::Int(id.get())])
+      .execute(Self::DELETE, &params![id.get()])
       .map_err(StoreError::from)
       .map(|removed| removed > 0)
   }
@@ -161,7 +152,7 @@ impl TodoRepository for PgTodoRepository {
 #[cfg(test)]
 mod tests {
   use id_effect::{Cause, Exit};
-  use id_effect_sql::{SqlClient as _, SqlRow, TestSqlClient};
+  use id_effect_sql::{SqlClient as _, SqlRow, SqlValue, TestSqlClient};
 
   use super::*;
 
@@ -177,8 +168,12 @@ mod tests {
     Title::parse(raw).unwrap()
   }
 
-  fn row(id: &str, title: &str, completed: &str) -> SqlRow {
-    SqlRow::new(vec![id.into(), title.into(), completed.into()])
+  fn row(id: i64, title: &str, completed: bool) -> SqlRow {
+    SqlRow::from_pairs([
+      ("id", SqlValue::I64(id)),
+      ("title", SqlValue::Text(title.into())),
+      ("completed", SqlValue::Bool(completed)),
+    ])
   }
 
   /// A connected scripted client and a repository over it.
@@ -193,19 +188,19 @@ mod tests {
   fn reads_decode_the_returned_rows() {
     let (client, repo) = scripted();
     assert_eq!(run(repo.find(TodoId::new(1))).unwrap(), None);
-    client.script_query(PgTodoRepository::SELECT_ALL, vec![row("1", "a", "false")]);
-    client.script_query(PgTodoRepository::SELECT_ONE, vec![row("1", "a", "true")]);
+    client.script_query(PgTodoRepository::SELECT_ALL, vec![row(1, "a", false)]);
+    client.script_query(PgTodoRepository::SELECT_ONE, vec![row(1, "a", true)]);
     assert_eq!(run(repo.all()).unwrap().len(), 1);
     let found = run(repo.find(TodoId::new(1))).unwrap().unwrap();
     assert!(found.is_completed());
     let (_, params) = client.recorded_queries().pop().unwrap();
-    assert_eq!(params, [SqlParam::Int(1)]);
+    assert_eq!(params, [SqlValue::I64(1)]);
   }
 
   #[test]
   fn a_corrupt_row_is_internal() {
     let (client, repo) = scripted();
-    client.script_query(PgTodoRepository::SELECT_ALL, vec![row("1", " ", "false")]);
+    client.script_query(PgTodoRepository::SELECT_ALL, vec![row(1, " ", false)]);
     assert!(matches!(run(repo.all()), Err(StoreError::Internal(_))));
   }
 
@@ -216,7 +211,7 @@ mod tests {
       run(repo.add(title("a"))).unwrap(),
       Err(TitleTaken(title("a")))
     );
-    client.script_query(PgTodoRepository::INSERT, vec![row("4", "a", "false")]);
+    client.script_query(PgTodoRepository::INSERT, vec![row(4, "a", false)]);
     let todo = run(repo.add(title("a"))).unwrap().unwrap();
     assert_eq!(todo.id(), TodoId::new(4));
   }
@@ -230,7 +225,7 @@ mod tests {
     );
     assert_eq!((client.commits(), client.rollbacks()), (0, 1));
     assert!(client.recorded_queries().is_empty(), "rolled back");
-    client.script_query(PgTodoRepository::INSERT, vec![row("5", "c", "false")]);
+    client.script_query(PgTodoRepository::INSERT, vec![row(5, "c", false)]);
     let made = run(repo.add_all(vec![title("c"), title("c")]))
       .unwrap()
       .unwrap();
@@ -250,12 +245,12 @@ mod tests {
     assert_eq!(
       params,
       [
-        SqlParam::Int(9),
-        SqlParam::Text("a".into()),
-        SqlParam::Bool(true)
+        SqlValue::I64(9),
+        SqlValue::Text("a".into()),
+        SqlValue::Bool(true)
       ]
     );
-    client.script_query(PgTodoRepository::UPDATE, vec![row("9", "a", "true")]);
+    client.script_query(PgTodoRepository::UPDATE, vec![row(9, "a", true)]);
     assert_eq!(run(repo.save(todo.clone())).unwrap(), Ok(todo.clone()));
     client.fail_queries(format!(
       "db error: {} \"todos_title_key\"",

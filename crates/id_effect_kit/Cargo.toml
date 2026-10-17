@@ -17,24 +17,100 @@ name = "id_effect_kit"
 
 [features]
 default = []
-# HTTP: `kit::axum` (id_effect_axum) and its prelude items.
-web = ["dep:id_effect_axum"]
-# PostgreSQL: `kit::sql` (id_effect_sql with its `pg` driver) and its prelude items.
-sql-pg = ["dep:id_effect_sql", "id_effect_sql/pg"]
+# HTTP: `kit::axum` (id_effect_axum: typed routes, Problem+JSON, middleware) and its prelude
+# items. With `authz`, also its route guards; with `redis`, the Redis rate-limit store.
+web = [
+  "dep:id_effect_axum",
+  "id_effect_authz?/axum",
+  "id_effect_redis?/rate-limit",
+]
+# OpenAPI 3.1 from the typed routes, `/openapi.json` and `/docs` (id_effect_axum `openapi`).
+openapi = ["web", "id_effect_axum/openapi"]
+# SQL without a driver: `kit::sql` (id_effect_sql: `SqlClient`, transactions, `FromRow`,
+# `TestSqlClient`). Every `sql-*`, `migrate` and `repository` feature turns it on. With `auth`,
+# `sql-pg` also adds id_effect_auth's `PgSessionStore`.
+sql = ["dep:id_effect_sql"]
+# PostgreSQL: `kit::sql` with its `pg` driver (`kit::sql::pg`).
+sql-pg = ["sql", "id_effect_sql/pg", "id_effect_auth?/pg"]
+# SQLite: `kit::sql` with its `sqlite` driver (bundled libsqlite3; `kit::sql::sqlite`).
+sql-sqlite = ["sql", "id_effect_sql/sqlite"]
+# MySQL: `kit::sql` with its `mysql` driver (`kit::sql::mysql`).
+sql-mysql = ["sql", "id_effect_sql/mysql"]
+# Versioned migrations: `kit::sql::migrate` (`migrate::run`, `migrate::layer`, `Migrator`).
+# With `test`, also id_effect_test's migrated template databases.
+migrate = ["sql", "id_effect_sql/migrate", "id_effect_test?/migrate"]
+# Entities and repositories: `#[derive(Entity)]`, `Repository<T>` over sea-query statements.
+repository = ["sql", "id_effect_sql/repository"]
+# Hash-chained audit log appended in the caller's transaction (`kit::sql::audit`; PostgreSQL).
+audit = ["sql", "id_effect_sql/audit"]
 # OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
 otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
 # Distribution: `kit::node` (id_effect_node); with `web`, also id_effect_axum's `cluster` module.
 cluster = ["dep:id_effect_node", "id_effect_axum?/cluster"]
-full = ["web", "sql-pg", "otel", "cluster"]
+# Authentication: `kit::auth` (id_effect_auth with its Axum middleware and JWT issue / verify:
+# passwords, sessions, API keys, `Authenticate`). Implies `web`. With `redis`, also the Redis
+# session store.
+auth = [
+  "web",
+  "dep:id_effect_auth",
+  "id_effect_auth/axum",
+  "id_effect_auth/jwt",
+  "id_effect_redis?/session",
+]
+# OpenID Connect login (discovery, PKCE, code exchange) and JWKS key sets, on top of `auth`.
+auth-oidc = ["auth", "id_effect_auth/oidc"]
+# TOTP second factor and recovery codes, on top of `auth`.
+auth-totp = ["auth", "id_effect_auth/totp"]
+# Authorization: `kit::authz` (id_effect_authz: policies, RBAC, `authorize`); with `web`, also
+# the route guards.
+authz = ["dep:id_effect_authz"]
+# Redis: `kit::redis` (id_effect_redis: client layer, cache backend, typed stores, pub/sub).
+redis = ["dep:id_effect_redis"]
+# Configuration from HashiCorp Vault (`kit::config::vault`).
+config-vault = ["id_effect_config/vault"]
+# Test support: `kit::test` (id_effect_test: containers, isolated PostgreSQL databases,
+# fixtures, the in-process HTTP client, OpenAPI contract checks). For tests: enable it on a
+# `[dev-dependencies]` entry of id_effect_kit, not in `[dependencies]`. Not part of `full`.
+test = [
+  "dep:id_effect_test",
+  "id_effect_test/sql",
+  "id_effect_test/fixtures",
+  "id_effect_test/http",
+  "id_effect_test/contract",
+]
+# Every battery a program ships with; builds without Docker or system libraries. `test` is
+# left out: it belongs to dev-dependencies.
+full = [
+  "web",
+  "openapi",
+  "sql-pg",
+  "sql-sqlite",
+  "sql-mysql",
+  "migrate",
+  "repository",
+  "audit",
+  "otel",
+  "cluster",
+  "auth",
+  "auth-oidc",
+  "auth-totp",
+  "authz",
+  "redis",
+  "config-vault",
+]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.8.0" }
-id_effect_cli = { path = "../id_effect_cli", version = "0.8.0", default-features = false }
-id_effect_config = { path = "../id_effect_config", version = "0.8.0" }
-id_effect_axum = { path = "../id_effect_axum", version = "0.8.0", optional = true }
-id_effect_sql = { path = "../id_effect_sql", version = "0.8.0", optional = true }
-id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.8.0", optional = true }
-id_effect_node = { path = "../id_effect_node", version = "0.8.0", optional = true }
+id_effect = { path = "../id_effect", version = "0.9.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "0.9.0", default-features = false }
+id_effect_config = { path = "../id_effect_config", version = "0.9.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", optional = true }
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.9.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.9.0", optional = true }
+id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.9.0", optional = true }
+id_effect_redis = { path = "../id_effect_redis", version = "0.9.0", optional = true }
+id_effect_test = { path = "../id_effect_test", version = "0.9.0", optional = true }
 
 [dev-dependencies]
 axum = "0.8"

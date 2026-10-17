@@ -9,6 +9,42 @@ struct Ch2600PlatformIntroduction;
 struct Ch2700Observability;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-01-typed-routes.md")]
+struct Ch2901TypedRoutes;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-02-openapi.md")]
+struct Ch2902OpenApi;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-03-middleware.md")]
+struct Ch2903Middleware;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-02-authorization.md")]
+struct Ch3002Authorization;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-03-passwords-sessions.md")]
+struct Ch3003PasswordsSessions;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-04-credentials-jwt.md")]
+struct Ch3004CredentialsJwt;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-05-oidc.md")]
+struct Ch3005Oidc;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-06-totp.md")]
+struct Ch3006Totp;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-07-audit-tenancy.md")]
+struct Ch3007AuditTenancy;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-01-metrics.md")]
 struct Ch2701Metrics;
 
@@ -19,6 +55,22 @@ struct Ch2702Health;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-00-data.md")]
 struct Ch2800Data;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-01-typed-sql.md")]
+struct Ch2801TypedSql;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-02-migrations.md")]
+struct Ch2802Migrations;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-03-repositories.md")]
+struct Ch2803Repositories;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-04-redis.md")]
+struct Ch2804Redis;
 
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-00-api-boundaries.md")]

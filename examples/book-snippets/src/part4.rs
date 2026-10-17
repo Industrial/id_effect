@@ -1,7 +1,8 @@
 //! Book part 4: one `#[cfg(doctest)]` include per chapter file.
 //!
 //! `part4/ch15-05-interleavings.md` is not included here: it is already a doctest of `id_effect`
-//! (`crates/id_effect/src/lib.rs`).
+//! (`crates/id_effect/src/lib.rs`). Likewise `part4/ch15-07-containers.md` is a doctest of
+//! `id_effect_test` (`crates/id_effect_test/src/lib.rs`).
 
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part4/ch12-00-stm.md")]

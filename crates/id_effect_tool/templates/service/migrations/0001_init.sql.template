@@ -1,5 +1,7 @@
--- {{name}}: the first migration (run by src/db.rs on start, so it must stay idempotent).
-CREATE TABLE IF NOT EXISTS greetings (
+-- {{name}}: the first migration, applied once by src/db.rs on start (tracked in
+-- _id_effect_migrations). Do not edit it once applied; add the next one with
+-- `id-effect migrate new <name>`.
+CREATE TABLE greetings (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )

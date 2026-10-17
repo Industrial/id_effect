@@ -15,6 +15,8 @@ excludes = [
   # Maestro harness state (contracts, verdicts, handoffs, task logs) is machine-written; formatting
   # it churns files the maestro CLI rewrites and fails the CI format check.
   ".maestro/**",
+  # Vendored, checksummed test fixtures: keep byte-for-byte (sha256 in the fixture README).
+  "crates/id_effect_axum/tests/fixtures/openapi/*.json",
   ".cursor/agency-agents/**",
   ".cursor/microsoft-rust-training/**",
   ".cursor/vendor/**",

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use id_effect::Effect;
-use id_effect_sql::{SqlClient, SqlError, SqlParam, with_transaction};
+use id_effect_sql::{SqlClient, SqlError, params, with_transaction};
 
 /// The schema migration of the PostgreSQL store (`migrations/0001_init.sql`), applied by
 /// [`Self::apply`] when the [`PgTodoRepositoryLive`](super::PgTodoRepositoryLive) layer is built.
@@ -23,10 +23,7 @@ impl Migration {
   pub fn apply(sql: Arc<dyn SqlClient>) -> Effect<(), SqlError> {
     with_transaction(sql, |tx| {
       let lock = tx
-        .execute(
-          "SELECT pg_advisory_xact_lock($1)",
-          &[SqlParam::Int(Self::LOCK_KEY)],
-        )
+        .execute("SELECT pg_advisory_xact_lock($1)", &params![Self::LOCK_KEY])
         .map(drop);
       Self::statements(Self::SCRIPT_0001)
         .into_iter()

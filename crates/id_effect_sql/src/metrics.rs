@@ -34,7 +34,7 @@ use id_effect::{Boundaries, Counter, Effect, Histogram, Metric, MetricRegistry, 
 use crate::client::SqlClient;
 use crate::error::SqlError;
 use crate::transaction::SqlTransaction;
-use crate::{SqlParam, SqlRow};
+use crate::{SqlRow, SqlValue};
 
 /// Counter: client operations, by `op` and `outcome`.
 pub const DB_CLIENT_OPERATIONS_TOTAL: &str = "db_client_operations_total";
@@ -110,11 +110,11 @@ impl<C: SqlClient> SqlClient for InstrumentedSqlClient<C> {
     self.instrument("connect", self.inner.connect())
   }
 
-  fn query(&self, sql: &str, params: &[SqlParam]) -> Effect<Vec<SqlRow>, SqlError> {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     self.instrument("query", self.inner.query(sql, params))
   }
 
-  fn execute(&self, sql: &str, params: &[SqlParam]) -> Effect<u64, SqlError> {
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
     self.instrument("execute", self.inner.execute(sql, params))
   }
 

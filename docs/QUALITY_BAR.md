@@ -26,9 +26,11 @@ bash scripts/tier-conformance.sh id_effect  # one or more packages by name
 | P | A CI-tested reference app under `examples/reference/` depends on it | — | — | — | ✔ | — | — | — |
 | L | Lives under `labs/` and has `publish = false` | — | — | — | — | — | ✔ | — |
 
-`platform` crates carry the integration gates plus check P (ADR 0012): a reference app's
-`Cargo.toml` under `examples/reference/` names the crate as a dependency. That the app
-runs in CI is a review check.
+`platform` crates carry the integration gates plus check P (ADR 0012): a reference app under
+`examples/reference/` depends on the crate, named in its `Cargo.toml` or reached through
+another dependency (the apps take the batteries through `id_effect_kit`'s features; the
+script reads `cargo tree -p <app>`, dev-dependencies included). That the app runs in CI is a
+review check.
 
 `merge` and `example` packages are reported but not failed. A `merge` crate should
 not exist at the end of the consolidation mission. As of 0.7 none does (ADR 0010,

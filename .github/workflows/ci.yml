@@ -31,13 +31,13 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/scorecard.sh --validate --self-test
-          for v in 0.6.0 0.7.0 0.8.0; do
+          for v in 0.6.0 0.7.0 0.8.0 0.9.0; do
             bash scripts/scorecard.sh --json "$v" | diff - "docs/scorecard/results/v$v.json"
           done
-          bash scripts/scorecard.sh --diff 0.7.0 0.8.0 --compare-targets 0.8.0
+          bash scripts/scorecard.sh --diff 0.8.0 0.9.0 --compare-targets 0.9.0
           bash scripts/scorecard.sh --method 1 --version 0.7.0
-          bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --html --method-compare
-          git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
+          bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --report 0.9.0 --html --method-compare
+          git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/REPORT-0.9.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
       - name: Install Nix (formatters for treefmt)
         uses: cachix/install-nix-action@v31
         with:
@@ -199,7 +199,83 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
-        run: cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase --features id_effect_sql/pg,id_effect_node/pg
+        run: >-
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
+  # ──────────────────────────────────────────────────────────────────────────
+  # Container integration: tests that start real services with testcontainers
+  # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).
+  # ID_EFFECT_REQUIRE_DOCKER=1 turns a missing Docker daemon into a failure
+  # (locally those tests print SKIP instead of silently passing).
+  # ──────────────────────────────────────────────────────────────────────────
+  containers-integration:
+    name: Container integration
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_DOCKER: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: containers
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Container tests
+        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis --all-features
+  # ──────────────────────────────────────────────────────────────────────────
+  # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
+  # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
+  # migrations go through `id-effect migrate run` / `check` against a service
+  # database; its tests start PostgreSQL, Redis, Vault and Keycloak containers.
+  # ──────────────────────────────────────────────────────────────────────────
+  reference-ledger:
+    name: Reference app (Ledger)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+          POSTGRES_DB: ledger
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ledger" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ID_EFFECT_REQUIRE_DOCKER: '1'
+      DATABASE_URL: postgres://ledger:ledger@localhost:5432/ledger
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: reference-ledger
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Format and lints
+        run: |
+          cargo fmt -p ledger --check
+          cargo clippy -p ledger --all-targets -- -D warnings
+      - name: Migrations (id-effect migrate run, then check)
+        working-directory: examples/reference/ledger
+        run: |
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate run
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate check
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate status
+      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC denials, Vault, Redis, replica)
+        run: cargo nextest run -p ledger
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
@@ -222,8 +298,12 @@ jobs:
         uses: taiki-e/install-action@v2.87.27
         with:
           tool: cargo-nextest
+      # id_effect_jobs runs without `obix`: the `job` crate's sqlx macros are written for chrono and
+      # fail once id_effect_sql/pg (a dev-dependency) turns on sqlx `time`, which sqlx prefers.
       - name: Test labs workspace
-        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
+        run: |
+          cargo nextest run --manifest-path labs/Cargo.toml --workspace --exclude id_effect_jobs --all-features
+          cargo nextest run --manifest-path labs/Cargo.toml -p id_effect_jobs --features memory,apalis,kafka
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────
@@ -246,6 +326,10 @@ jobs:
           cargo update -p crc32fast@1.1.0 --precise 1.4.2
           cargo update -p semver@1.0.0 --precise 1.0.20
           cargo update -p async-trait --precise 0.1.89
+          # bollard-stubs (testcontainers) allows serde_repr 0.1.0, which needs an older syn/quote
+          cargo update -p serde_repr --precise 0.1.20
+          # openidconnect 4 (id_effect_auth) allows thiserror 1.0.20, too old for its error derives
+          cargo update -p thiserror@1.0.20 --precise 1.0.69
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
       - name: cargo check (minimal versions, stable)
@@ -318,17 +402,17 @@ jobs:
         run: cargo deny check
   # ──────────────────────────────────────────────────────────────────────────
   # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
-  # REPORT-ONLY until v0.8.0 is tagged: 0.8 carries intentional breaks, each of
-  # which must be listed in docs/MIGRATION-0.8.md; the job prints them for review
-  # (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI. After the v0.8.0 tag:
-  # set SEMVER_BASELINE to 0.8.0 and delete the step's `continue-on-error` so it enforces.
+  # REPORT-ONLY while a breaking 0.x release is in development: 0.9 carries intentional
+  # breaks (release spec D2), each of which must be listed in docs/MIGRATION-0.9.md; the
+  # job prints them for review (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI.
+  # Baseline = the latest published release (0.8.0).
   # ──────────────────────────────────────────────────────────────────────────
   semver:
-    name: Semver checks (report-only until v0.8.0)
+    name: Semver checks (report-only, baseline 0.8.0)
     runs-on: ubuntu-latest
     needs: [moon-ci]
     env:
-      SEMVER_BASELINE: 0.7.0
+      SEMVER_BASELINE: 0.8.0
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust (stable)
@@ -344,11 +428,11 @@ jobs:
       - name: cargo semver-checks (publishable workspace crates)
         # --workspace skips publish = false members (examples). Step-level
         # continue-on-error keeps the job (and ci-pass) green while report-only.
-        # id_effect_kit and id_effect_tool are new in 0.8 with no crates.io baseline yet;
-        # drop the excludes once they are published.
+        # id_effect_auth, id_effect_authz, id_effect_test and id_effect_redis (new in 0.9) have no
+        # crates.io baseline yet; drop each exclude once that crate is published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_kit --exclude id_effect_tool
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_auth --exclude id_effect_authz --exclude id_effect_test --exclude id_effect_redis
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
@@ -361,6 +445,8 @@ jobs:
       - matrix
       - msrv
       - pg-integration
+      - containers-integration
+      - reference-ledger
       - labs
       - minimal-versions
       - validate-packaging

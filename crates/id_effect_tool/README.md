@@ -7,6 +7,7 @@ cargo install id_effect_tool          # installs the `id-effect` binary
 id-effect new orders-api --template service
 cd orders-api && cargo test && cargo run
 id-effect doctor                      # toolchain, versions, env, database, docker, port
+id-effect migrate run                 # apply migrations/ to DATABASE_URL
 ```
 
 The book's [zero-to-production tutorial](../id_effect/book/src/tutorial-zero-to-production.md) takes a generated service through a route, a test, PostgreSQL, doctor, the Docker image and the deploy config.
@@ -39,6 +40,41 @@ id-effect doctor [--path DIR] [--json] [--graph[=text|dot]]
 ```
 
 Runs every check on the project in `DIR` (default: the current directory) and prints one line per check, `pass`, `warn`, `fail` or `skip`, with the reason: `project` (a `Cargo.toml`), `rustc` (against the project's `rust-version` and the id_effect MSRV), `versions` (the id_effect crates in `Cargo.lock` resolve to one version), `env` (every `.env.example` key set in the environment or `.env`), `database` (`DATABASE_URL` accepts a TCP connection), `docker` (the CLIs, when a `Dockerfile` or compose file exists) and `port` (`HOST:PORT` is free). `--graph` also builds the project, runs it with `--describe-layers` and prints its layer graph (`id_effect_kit::graph::LayerGraph`), which the `service` template registers. It exits `1` when a check fails, else `0`; `--json` prints the report as one object. The book chapter [Doctor and the layer graph](../id_effect/book/src/part6/ch34-01-doctor-graph.md) has the full table.
+
+## `id-effect migrate`
+
+```text
+id-effect migrate new <NAME> [--reversible] [--timestamp | --sequential] [--dir DIR]
+id-effect migrate run    [DB OPTIONS]
+id-effect migrate status [DB OPTIONS]
+id-effect migrate revert [--count N] [DB OPTIONS]
+id-effect migrate check  [DB OPTIONS]
+
+DB OPTIONS: [--dir DIR] [--database-url URL] [--table TABLE] [--lock-timeout SECS] [--json]
+```
+
+Versioned SQL migrations on PostgreSQL, run by the engine of `id_effect_sql::migrate` (the same one `migrate::layer` runs at startup): a tracking table (`_id_effect_migrations`, or `--table`), an advisory lock so concurrent migrators apply each migration once, and one transaction per migration. Files are sqlx-cli's, in `--dir` (default `migrations`): `<VERSION>_<NAME>.sql`, or `<VERSION>_<NAME>.up.sql` plus `.down.sql` for a reversible migration.
+
+- `new` writes the next migration (`--reversible`: the up/down pair). It numbers after the directory: short sequential versions such as the `service` template's `0001_init.sql` continue at their width (`0002_add_users.sql`); an empty directory, or one of timestamps, gets the UTC time `YYYYMMDDHHMMSS` like sqlx-cli (bumped past the newest version if that is not later). `--timestamp` / `--sequential` force a scheme.
+- `run` applies every pending migration, oldest first, and names each script it applied.
+- `status` lists each migration as `applied`, `pending`, `drifted` (its script changed since it was applied) or `missing` (applied, but no longer in `DIR`), with when it was applied. It always exits `0`.
+- `revert` runs the down scripts of the last `--count` (default 1) applied migrations, newest first.
+- `check` is the CI gate: it exits `1` when a migration is pending, drifted or missing.
+
+The database is `--database-url`, else `DATABASE_URL` from the environment, else from `./.env`; the URL is never printed. `--json` prints one object, `{"ok": true, …}` or, on failure, `{"ok": false, "error": {"kind", "message", "version"?, "file"?, "versions"?}}` on stdout.
+
+| Exit | Meaning |
+|---|---|
+| `0` | done (`check`: up to date) |
+| `1` | the migrations need attention: pending (`check`), drift (any command but `status`), a failing script (rolled back, the run stops), no down script to revert, an unreadable `DIR`, or `new` could not write |
+| `2` | usage: bad arguments, no database URL, not a `postgres://` URL |
+| `3` | the database: cannot connect, the migration lock stayed taken past `--lock-timeout`, a bookkeeping query failed |
+
+```sh
+id-effect migrate new add_users --reversible   # migrations/0002_add_users.{up,down}.sql
+id-effect migrate run                          # applied  0002_add_users.up.sql
+id-effect migrate check                        # in CI: exit 1 on pending or changed migrations
+```
 
 ## Library
 

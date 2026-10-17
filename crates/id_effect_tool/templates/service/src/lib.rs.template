@@ -4,10 +4,16 @@
 //! or SIGTERM.
 
 use std::convert::Infallible;
+use std::time::Duration;
 
 use axum::Router;
-use id_effect::{Counter, Effect};
+use id_effect::schema::{self, HasSchema, Schema};
+use id_effect::{Counter, Effect, succeed};
 use id_effect_kit::axum::metrics::{http_metrics_layer, metrics_router};
+use id_effect_kit::axum::middleware::{
+    BodyLimitLayer, CompressionLayer, RequestIdLayer, TimeoutLayer,
+};
+use id_effect_kit::axum::route::{self, Input, Route};
 use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
 use id_effect_kit::axum::{HealthRegistry, routing};
 
@@ -35,16 +41,52 @@ fn index(state: &mut AppState) -> Effect<String, Infallible, AppState> {
     state.greetings.increment().map(move |()| greeting)
 }
 
-/// The application: `/`, plus `/health` and `/ready` (running the checks in `health`) and
-/// `/metrics`. Every request is counted by [`http_metrics_layer`] and passes through
-/// [`SecurityLayer::recommended`]: CSRF protection, a nonce-based CSP, security headers and
-/// cookies signed with `cookie_key`.
+/// The `{name}` of `/hello/{name}`: 1 to 32 characters.
+pub struct Name;
+
+impl HasSchema for Name {
+    type A = String;
+    type I = String;
+    type E = ();
+
+    fn schema() -> Schema<String, String> {
+        schema::length(schema::string::<()>(), 1, 32)
+    }
+}
+
+/// `GET /hello/{name}`: a typed route. `{name}` is decoded through [`Name`]'s schema; a value
+/// it rejects never reaches the handler and is answered `422` with an RFC 9457 Problem+JSON
+/// body.
+fn hello(_: &mut AppState, input: Input<String>) -> Effect<String, Infallible, AppState> {
+    succeed(format!("hello, {}", input.path))
+}
+
+/// How long a request may run before it is answered `503` (its fiber is interrupted).
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The largest request body accepted; a larger one is answered `413`.
+pub const BODY_LIMIT: usize = 2 * 1024 * 1024;
+
+/// The application: `/` and `/hello/{name}`, plus `/health` and `/ready` (running the checks in
+/// `health`) and `/metrics`. Every request gets an `x-request-id` (and a span), passes through
+/// [`SecurityLayer::recommended`] (CSRF protection, a nonce-based CSP, security headers,
+/// cookies signed with `cookie_key`), is counted by [`http_metrics_layer`] and limited by
+/// [`REQUEST_TIMEOUT`] and [`BODY_LIMIT`]; responses are compressed when the client accepts it.
+/// Rejections are Problem+JSON.
 pub fn app(health: &HealthRegistry, cookie_key: CookieKey) -> Router {
+    // Typed routes are registered (method, path, schemas) for OpenAPI and route listings.
+    let typed =
+        route::Router::new().route(Route::get("/hello/{name}").path::<Name>().handler(hello));
     Router::new()
         .route("/", routing::get(index))
+        .merge(typed.into_axum())
         .merge(metrics_router())
         .with_state(AppState::default())
         .merge(health.routes())
+        .layer(BodyLimitLayer::new(BODY_LIMIT))
+        .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
         .layer(http_metrics_layer())
         .layer(SecurityLayer::recommended(cookie_key))
+        .layer(CompressionLayer::new())
+        .layer(RequestIdLayer::new())
 }

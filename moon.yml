@@ -202,7 +202,7 @@ tasks:
       outputStyle: stream
   dx-kpis:
     description: >-
-      Measure the 0.8 DX KPIs and write docs/benchmarks/dx-kpis-0.8.json: K1 (id-effect new service to GET /health = 200, cold build, budget 180 s), K4 (diagnostics gallery errors that state the fix, >= 17/20), K5 (book rust fences compiled as doctests, >= 80 %). Manual only, not part of ci; run on an idle machine.
+      Measure the DX KPIs and write docs/benchmarks/dx-kpis-<release>.json (DX_KPIS_RELEASE, default 0.9): K1 (id-effect new service to GET /health = 200, cold build, budget 180 s), K3 (added non-blank lines of the invoice patch for the Ledger app; --k3-build also builds and tests it), K4 (diagnostics gallery errors that state the fix, >= 17/20), K5 (book rust fences compiled as doctests, >= 80 %). Manual only, not part of ci; run on an idle machine with DX_KPIS_DIR on a large disk.
     command: 'bash'
     args: ['scripts/dx-kpis.sh', '--json']
     options:

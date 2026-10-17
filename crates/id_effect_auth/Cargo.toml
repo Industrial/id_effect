@@ -1,0 +1,138 @@
+[package]
+name = "id_effect_auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Authentication for id_effect services: password hashing, sessions, JWT, API-key and OIDC credentials"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_auth"
+
+[features]
+default = []
+# `SessionLayer` (loads the request's session into `id_effect_axum`'s request capabilities) and
+# `Authenticate` (session / bearer JWT / API-key / Basic credentials → `CurrentPrincipal`).
+axum = [
+  "dep:axum",
+  "dep:id_effect_axum",
+  "id_effect_authz/axum",
+  "dep:http",
+  "dep:tower-layer",
+  "dep:tower-service",
+]
+# JWT issue and verify (`jwt` module, jsonwebtoken on aws-lc-rs).
+jwt = ["dep:jsonwebtoken"]
+# `JwksClient`: fetches and caches an issuer's JSON Web Key Set over HTTP (reqwest + rustls);
+# needs a tokio runtime.
+jwks = ["jwt", "dep:reqwest", "dep:tokio"]
+# `PgSessionStore`: sessions in PostgreSQL over id_effect_sql's `SqlClient` (table
+# `id_effect_sessions`, created by `migrations/` or `PgSessionStore::ensure_schema`).
+pg = ["dep:id_effect_sql"]
+# OpenID Connect login (`oidc` module): discovery, authorization code + PKCE, state and nonce in a
+# server-side flow session, ID tokens checked over `JwksClient`, the `/auth/oidc/*` axum routes,
+# and id_effect_platform's `OAuthClient`.
+oidc = ["axum", "jwks", "dep:openidconnect", "dep:id_effect_platform"]
+# TOTP second factor (`totp` module): enrolment with an `otpauth://` URI, verification with ±1
+# step of skew on the executor's clock and replay protection, argon2-hashed recovery codes, and
+# an MFA step-up marker on the session.
+totp = ["dep:totp-rs"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.9.0" }
+id_effect_authz = { path = "../id_effect_authz", version = "0.9.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", features = [
+  "pg",
+], optional = true }
+# `Authenticate` answers with axum responses (id_effect_axum's `Problem`); already in its tree.
+axum = { version = "0.8", default-features = false, optional = true }
+# Claims and principals' claim values (also what id_effect_authz uses).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Basic credentials (`user:password` in base64); the version already in the workspace lock.
+base64 = "0.22.1"
+# API keys are stored as SHA-256 digests of 256-bit random secrets and compared in constant time.
+sha2 = "0.10.9"
+subtle = "2.6.1"
+# jsonwebtoken (release spec 0.9.0 D5) on aws-lc-rs: the provider rustls already brings in, and
+# no `rsa` crate (RUSTSEC-2023-0071). 11.x needs rustc 1.88, within the workspace MSRV.
+jsonwebtoken = { version = "11.1.0", default-features = false, features = [
+  "use_pem",
+  "aws_lc_rs",
+], optional = true }
+# Same major and features as id_effect_config's Vault provider.
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls",
+], optional = true }
+# One JWKS refetch at a time (an async mutex); tokio is already in reqwest's tree.
+tokio = { version = "1.50.0", default-features = false, features = [
+  "sync",
+], optional = true }
+# RustCrypto argon2 (release spec 0.9.0 D5). 0.6 needs rustc 1.85, below the workspace MSRV.
+argon2 = { version = "0.6.0", default-features = false, features = [
+  "alloc",
+  "getrandom",
+  "password-hash",
+] }
+# Session tokens: 256 bits from the OS CSPRNG (the same major argon2's salts come from).
+getrandom = "0.4.2"
+# Saturating expiry arithmetic on `UtcDateTime`'s timestamp; same floor as id_effect's.
+jiff = "0.2.23"
+# Hands the blocking pool's result back to the fiber (already in id_effect's tree).
+flume = "0.12"
+# axum 0.8's `http`; `tower-*` are in id_effect_axum's tree already.
+http = { version = "1", optional = true }
+tower-layer = { version = "0.3.3", optional = true }
+tower-service = { version = "0.3.3", optional = true }
+# openidconnect (release spec 0.9.0 D5) for discovery, PKCE, the authorization URL, the code
+# exchange and RP-initiated logout; no default features, so no reqwest 0.12 or TLS stack of its
+# own: its requests go through the reqwest 0.13 client above. 4.x needs rustc 1.65.
+openidconnect = { version = "4.0.1", default-features = false, optional = true }
+# `OAuthClient` / `OAuthTokens`, the platform's OAuth capability `OidcClient` implements.
+id_effect_platform = { path = "../id_effect_platform", version = "0.9.0", features = [
+  "auth",
+], optional = true }
+# totp-rs (release spec 0.9.0 D5): RFC 6238 codes and the `otpauth://` URI. No default features
+# (no `rand`): secrets come from getrandom above. 6.x needs rustc 1.88.
+totp-rs = { version = "6.0.0", default-features = false, features = [
+  "std",
+  "otpauth",
+], optional = true }
+
+[dev-dependencies]
+axum = "0.8"
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+] }
+tower = { version = "0.5.3", features = ["util"] }
+# A JWKS endpoint double for tests/jwks.rs (feature `jwks`).
+wiremock = "0.6"
+# Runs reqwest-backed effects on the test's tokio runtime.
+id_effect_tokio = { path = "../id_effect_tokio" }
+# Generates RSA / EC test keys at runtime (the provider jsonwebtoken already uses).
+aws-lc-rs = "1.18"
+http-body-util = "0.1"
+# Keycloak container for tests/oidc_keycloak.rs (feature `oidc`); same version as id_effect_config.
+testcontainers = { version = "0.28", default-features = false }
+
+[[example]]
+name = "010_login"
+required-features = ["axum", "jwt"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 5, ADR 0012).
+tier = "platform"

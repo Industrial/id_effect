@@ -10,13 +10,13 @@ Application code reads the `SqlClientService` capability (`SqlClientEnv`) from i
 use id_effect::Exit;
 use id_effect::{Effect, need};
 use id_effect_sql::{
-  SqlClientEnv, SqlError, SqlParam, SqlRow, SqlTransactionEnv, SqlTransactionService,
-  TestSqlClient, query, sql_client_layer, transaction_layer,
+  SqlClientEnv, SqlError, SqlRow, SqlTransactionEnv, SqlTransactionService, TestSqlClient, params,
+  query, sql_client_layer, transaction_layer,
 };
 
 /// Domain code depends only on the capability.
 fn count_users() -> Effect<usize, SqlError, SqlClientEnv> {
-  query("SELECT id FROM users WHERE active = $1", vec![SqlParam::Bool(true)])
+  query("SELECT id FROM users WHERE active = $1", params![true])
     .map(|rows| rows.len())
 }
 
@@ -30,7 +30,7 @@ fn main() {
   let test = TestSqlClient::new();
   test.script_query(
     "SELECT id FROM users WHERE active = $1",
-    vec![SqlRow::new(vec!["1".into()]), SqlRow::new(vec!["2".into()])],
+    vec![SqlRow::from_pairs([("id", 1i64)]), SqlRow::from_pairs([("id", 2i64)])],
   );
 
   let program = count_users()
@@ -41,6 +41,8 @@ fn main() {
 }
 ```
 
+Parameters are typed `SqlValue`s (`params![id, title]` encodes Rust values; `None` binds NULL), and rows are typed: `row.get::<i64>("id")` / `row.get::<String>(1)` decode a column (`uuid`, `jiff` dates and times, `rust_decimal`, `serde_json` included) and return a `SqlError` naming the column instead of panicking.
+
 Brackets are available too: `with_transaction(client, |tx| ..)` and `transaction(|tx| ..)` (which reads the client from the environment) commit on success and roll back on failure, defect or interrupt; a failed `COMMIT` is a typed error there.
 
 With the `pg` feature, swap `sql_client_layer(test)` for `id_effect_sql::pg::PgSqlClient::layer(PgPoolConfig::from_url(url))`, which opens a pool when built and closes it afterwards, and provides the `PgPool` too. Its effects run on tokio (`id_effect_tokio::TokioRuntime`).
@@ -50,7 +52,9 @@ With the `pg` feature, swap `sql_client_layer(test)` for `id_effect_sql::pg::PgS
 | Module | Description |
 |--------|-------------|
 | [`error`](src/error.rs) | `SqlError` |
-| [`client`](src/client.rs) | `SqlClient`, `SqlClientService`, `sql_client_layer`, `provide_sql_client`, `query`, `execute`, `SqlRow`, `SqlParam`, `TestSqlClient` |
+| [`client`](src/client.rs) | `SqlClient`, `SqlClientService`, `sql_client_layer`, `provide_sql_client`, `query`, `execute`, `TestSqlClient` (`SqlParam`, deprecated) |
+| [`value`](src/value/mod.rs) | `SqlValue`, `SqlType`, `ToSqlValue`, `FromSqlValue`, `ValueError`, `Json<T>`, `params!` |
+| [`row`](src/row.rs) | `SqlRow` (`get`, `value`, `from_pairs`), `SqlColumn`, `ColumnIndex` |
 | [`transaction`](src/transaction.rs) | `SqlTransaction`, `SqlTransactionService`, `transaction_layer`, `with_transaction` (alias `transaction_scope`), `transaction` |
 | [`pg`](src/pg/mod.rs) (feature `pg`) | `PgSqlClient` (+ `PgSqlClient::layer`), `PgPool`, `PgPoolConfig`, `pg_pool_from_config`, `provide_pg_sql_client`, `provide_pg_pool` |
 

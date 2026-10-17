@@ -23,15 +23,19 @@ default = []
 cluster = ["dep:id_effect_node"]
 # Tower `Service` bridge (`service` module).
 tower = ["dep:tower"]
+# OpenAPI 3.1 documents generated from typed routes (`openapi` module), the opt-in
+# `/openapi.json` + Scalar `/docs` router and the `/_routes` table (`route::introspect`).
+openapi = []
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.8.0", features = [
+id_effect = { path = "../id_effect", version = "0.9.0", features = [
   "schema-serde",
 ] }
-id_effect_config = { path = "../id_effect_config", version = "0.8.0" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.8.0" }
-id_effect_node = { path = "../id_effect_node", version = "0.8.0", optional = true }
-axum = { version = "0.8" }
+id_effect_config = { path = "../id_effect_config", version = "0.9.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "0.9.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.9.0", optional = true }
+# `multipart`: typed routes and `ValidForm` read the text fields of `multipart/form-data` bodies.
+axum = { version = "0.8", features = ["multipart"] }
 http-body = "1"
 http-body-util = "0.1"
 serde = { version = "1", features = ["derive"] }
@@ -57,7 +61,17 @@ sha2 = "0.10.9"
 subtle = "2.6.1"
 tower-http = { version = "0.6.8", default-features = false, features = [
   "cors",
+  # `middleware::CompressionLayer` (pure-Rust encoders; zstd would need a C toolchain).
+  "compression-br",
+  "compression-deflate",
+  "compression-gzip",
+  # `server::serve_dir` (static files, conditional GET, precompressed variants).
+  "fs",
 ] }
+# `HTTP-date` validators (`Last-Modified` / `If-Modified-Since`); already in tower-http's `fs` tree.
+httpdate = "1.0.3"
+# `middleware::RateLimitLayer`: token buckets on the effect runtime.
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.9.0" }
 
 [[bench]]
 name = "gate_request"
@@ -70,6 +84,9 @@ criterion = "0.8.2"
 id_effect_platform = { path = "../id_effect_platform", features = ["auth"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util"] }
 tower = { version = "0.5.3", features = ["util"] }
+# tests/openapi.rs validates generated documents against the OpenAPI 3.1 meta-schema (MIT;
+# no remote reference resolution needed, so no default features).
+jsonschema = { version = "0.59", default-features = false }
 
 [[example]]
 name = "050_tower_effect_service"
@@ -78,6 +95,10 @@ required-features = ["tower"]
 [[example]]
 name = "051_tower_shared_counter"
 required-features = ["tower"]
+
+[[example]]
+name = "085_openapi"
+required-features = ["openapi"]
 
 [package.metadata.docs.rs]
 all-features = true

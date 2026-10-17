@@ -6,8 +6,8 @@
 
 use id_effect::{Cause, Effect, Exit, fail, need};
 use id_effect_sql::{
-  SqlClientEnv, SqlError, SqlParam, SqlRow, SqlTransactionEnv, SqlTransactionService,
-  TestSqlClient, query, sql_client_layer, transaction_layer,
+  SqlClientEnv, SqlError, SqlRow, SqlTransactionEnv, SqlTransactionService, TestSqlClient, params,
+  query, sql_client_layer, transaction_layer,
 };
 
 const ACTIVE: &str = "SELECT id FROM users WHERE active = $1";
@@ -15,7 +15,7 @@ const DEACTIVATE: &str = "UPDATE users SET active = false";
 
 /// Reads the client from the environment.
 fn count_active() -> Effect<usize, SqlError, SqlClientEnv> {
-  query(ACTIVE, vec![SqlParam::Bool(true)]).map(|rows| rows.len())
+  query(ACTIVE, params![true]).map(|rows| rows.len())
 }
 
 /// Runs on the transaction's connection.
@@ -27,7 +27,10 @@ fn main() {
   let test = TestSqlClient::new();
   test.script_query(
     ACTIVE,
-    vec![SqlRow::new(vec!["1".into()]), SqlRow::new(vec!["2".into()])],
+    vec![
+      SqlRow::from_pairs([("id", 1i64)]),
+      SqlRow::from_pairs([("id", 2i64)]),
+    ],
   );
   test.script_execute(DEACTIVATE, 2);
 

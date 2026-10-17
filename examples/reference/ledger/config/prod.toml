@@ -1,0 +1,24 @@
+# Production. No secret lives in this file: the database password and the JWT signing secret
+# are read from Vault (KV v2) when the service starts, with the token in `VAULT_TOKEN`.
+
+[http]
+host = "0.0.0.0"
+
+[db]
+host = "postgres"
+
+[redis]
+url = "redis://redis:6379/0"
+
+[auth]
+session_cookie = "__Host-id_session"
+secure_cookies = true
+
+[vault]
+addr = "http://vault:8200"
+mount = "secret"
+
+# Vault secret path -> where its keys land: `ledger/db`'s `password` becomes `db.password`.
+[vault.secrets]
+db = "ledger/db"
+auth = "ledger/auth"

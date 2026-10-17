@@ -5,6 +5,7 @@ pub mod bootstrap;
 pub mod lifecycle;
 pub mod security;
 pub mod shutdown;
+pub mod static_files;
 
 pub use bootstrap::{HostConfig, bootstrap_env, load_host_config, provide_host_config_env};
 pub use lifecycle::{
@@ -18,3 +19,4 @@ pub use security::{
   SecurityHeaders, SecurityLayer, csp_middleware, csrf_middleware, set_csrf_header,
 };
 pub use shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};
+pub use static_files::{StaticFiles, serve_dir};
