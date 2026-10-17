@@ -30,6 +30,16 @@ Each 0.9 change appends its entry to the matching section below.
   the default `Prefer` / `Preferred` instead of plaintext. Set `with_tls_mode(PgTlsMode::VerifyFull)`
   / `MySqlTlsMode::VerifyIdentity` and a root certificate for production.
 
+## Data: sqlx's `time` feature is on
+
+- `id_effect_sql`'s `pg`, `mysql` and `sqlite` features now enable sqlx's `time` feature (0.8 did
+  not). When a build also has sqlx's `chrono`, sqlx's `query!` / `query_as!` macros type date-time
+  columns as `time` types (`OffsetDateTime`, `PrimitiveDateTime`), not chrono's. Code of your own
+  that relies on the chrono mapping can override it per column (`created_at as "created_at:
+  chrono::DateTime<chrono::Utc>"`) or decode with `query_as` and `FromRow`. A dependency written
+  against the chrono mapping (for example `job` 0.6) no longer compiles in such a build. id_effect
+  0.10 is planned to drop the feature.
+
 ## Tooling: `id_effect_tool`
 
 - `id_effect_tool::cli::Command` gains the `Migrate` subcommand (`id-effect migrate`) and is now

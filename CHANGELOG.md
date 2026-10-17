@@ -171,6 +171,9 @@ and the Ledger reference app that uses all of it in CI. Upgrading from 0.8: see 
 - **Breaking** `id_effect_sql`: statements take `&[SqlValue]`; rows are typed; `SqlError` is
   `#[non_exhaustive]`. See [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
 - **Breaking** `id_effect_tool`: `cli::Command` gains `Migrate` and is `#[non_exhaustive]`.
+- `id_effect_sql`: the backends enable sqlx's `time` feature (sqlx 0.8.6 or later), so sqlx's
+  `query!` macros type date-time columns as `time` types even when `chrono` is also enabled. See
+  [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
 
 ### Deprecated
 

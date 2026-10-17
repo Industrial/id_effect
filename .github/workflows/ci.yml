@@ -328,6 +328,8 @@ jobs:
           cargo update -p async-trait --precise 0.1.89
           # bollard-stubs (testcontainers) allows serde_repr 0.1.0, which needs an older syn/quote
           cargo update -p serde_repr --precise 0.1.20
+          # openidconnect 4 (id_effect_auth) allows thiserror 1.0.20, too old for its error derives
+          cargo update -p thiserror@1.0.20 --precise 1.0.69
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
       - name: cargo check (minimal versions, stable)
