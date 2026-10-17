@@ -71,7 +71,8 @@ pub use starter::{
   install_otel_starter,
 };
 pub use subscriber::{
-  register_global_tracer_provider, sdk_tracer_provider_with_in_memory_exporter,
-  trace_subscriber_for_provider, try_init_global_tracing_with_otel,
+  EnvFilterHandle, register_global_tracer_provider, reloadable_env_filter,
+  sdk_tracer_provider_with_in_memory_exporter, trace_subscriber_for_provider,
+  try_init_global_tracing_with_otel,
 };
 pub use testing::with_otel_test_harness;

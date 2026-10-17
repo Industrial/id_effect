@@ -1,23 +1,60 @@
-//! The operator console for id_effect services: live fibers, jobs and queues, behind
-//! `id_effect_authz` guards.
+//! The operator console for id_effect services: live fibers, supervision trees, metrics, health
+//! and the log level, behind an `id_effect_authz` guard.
+//!
+//! # The API
+//!
+//! [`Console`] collects what the console shows and [`Console::router`] turns it into an Axum
+//! router answering JSON under [`API_PREFIX`] (`/_console/api`):
+//!
+//! | Route | Answers |
+//! |---|---|
+//! | `GET fibers` | every live fiber ([`FiberView`], from core `fiber_dump`, feature `fiber-registry`) |
+//! | `GET supervisors` | the registered supervision trees ([`SupervisorsView`], from `which_children`) |
+//! | `GET metrics` | the metric registry and the runtime fiber gauges ([`MetricView`]) |
+//! | `GET health` | the [`HealthRegistry`](id_effect_axum::HealthRegistry) report (always `200`) |
+//! | `GET log-level` | the reloadable `EnvFilter` and the `EffectLogger` minimum ([`LogLevelView`]) |
+//! | `PUT log-level` | changes both without a restart ([`LogLevelChange`]) |
+//!
+//! # Security model
+//!
+//! There is no unguarded constructor: the only way to get the routes is
+//! [`Console::router`], which takes an authorization [`Guard`](id_effect_authz::Guard) and puts it
+//! in front of every console route **and** the console router's fallback, so a principal the
+//! guard denies learns nothing about the API (`401` anonymous, `403` otherwise, Problem Details
+//! body). The authentication layer that sets the principal runs outside the guard
+//! (`Router::layer` on the merged app), as for any `id_effect_authz` route. Console answers carry
+//! `Cache-Control: no-store`.
 //!
 //! [`ConsoleConfig`] is where the console listens. Bound to a loopback address it serves the local
-//! machine only; on any other address [`ConsoleConfig::requires_guard`] is true: the console must
-//! not serve that address without an authorization guard.
+//! machine only; on any other address [`ConsoleConfig::requires_guard`] is true: the guard must then
+//! restrict the console to operators (a role or permission policy), while a loopback console may
+//! use a lenient one such as `authenticated()`. The guard is required either way.
 //!
 //! ```
 //! use std::net::{Ipv6Addr, SocketAddr};
 //!
-//! use id_effect_console::ConsoleConfig;
+//! use id_effect_authz::{Guard, require_role};
+//! use id_effect_console::{Console, ConsoleConfig};
 //!
 //! let config = ConsoleConfig::new(SocketAddr::from((Ipv6Addr::LOCALHOST, 9090)));
 //! assert!(!config.requires_guard());
+//!
+//! let console: axum::Router = Console::new().router(Guard::new("console", require_role("operator")));
+//! # let _ = console;
 //! ```
 //!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+
+mod api;
+mod log_level;
+mod supervisors;
+
+pub use api::{API_PREFIX, Console, FiberView, MetricView};
+pub use log_level::{EnvFilterHandle, LogLevelChange, LogLevelView};
+pub use supervisors::{SupervisorsView, UnreachableSupervisor};
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 

@@ -1,11 +1,33 @@
 # `id_effect_console`
 
 The operator console for id_effect services: live fibers from the core `fiber-registry` feature,
-jobs and queues, behind `id_effect_authz` guards (ADR 0010 Amendment 6).
+supervision trees, metrics, health and the log level, behind an `id_effect_authz` guard (ADR 0010
+Amendment 6).
 
-The crate grows over the 0.10 release. Today it defines `ConsoleConfig`, where the console listens.
-A console bound to a loopback address serves the local machine only; on any other address it
-requires an authorization guard:
+`Console::router(guard)` is the only way to get the routes: JSON under `/_console/api/`, every
+route and the console's fallback behind the guard (`401` anonymous, `403` otherwise).
+
+| Route | Answers |
+|---|---|
+| `GET fibers` | every live fiber (core `fiber_dump`) |
+| `GET supervisors` | the registered supervisors' trees, from `which_children` |
+| `GET metrics` | the metric registry and the runtime fiber gauges |
+| `GET health` | the `HealthRegistry` report |
+| `GET` / `PUT log-level` | the reloadable `EnvFilter` and the `EffectLogger` minimum, changed without a restart |
+
+```rust
+use id_effect_authz::{Guard, require_role};
+use id_effect_console::Console;
+
+let console: axum::Router = Console::new()
+  // .supervisor("app", supervisor_handle)
+  // .env_filter(otel_guard.env_filter().clone())
+  .router(Guard::new("console", require_role("operator")));
+```
+
+`ConsoleConfig` is where the console listens. A console bound to a loopback address serves the
+local machine only and may use a lenient guard; on any other address the guard must restrict it
+to operators:
 
 ```rust
 use id_effect_console::ConsoleConfig;

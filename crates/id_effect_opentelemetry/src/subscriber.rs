@@ -7,7 +7,26 @@ use tracing::Subscriber;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Registry;
 use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::reload;
 use tracing_subscriber::util::SubscriberInitExt;
+
+/// Changes the [`EnvFilter`] of a running subscriber stack (from [`reloadable_env_filter`], and
+/// [`OtelStarterGuard::env_filter`](crate::OtelStarterGuard::env_filter)):
+/// `handle.reload(EnvFilter::try_new("info,my_app=debug")?)` takes effect for every callsite
+/// without a restart; `handle.with_current(|f| f.to_string())` reads the directive in force.
+pub type EnvFilterHandle = reload::Handle<EnvFilter, Registry>;
+
+/// An [`EnvFilter`] behind a [`reload`] layer, to put first on a [`Registry`], and the handle that
+/// changes it at runtime. `None`, or a directive that does not parse, enables every level (as
+/// no filter would).
+pub fn reloadable_env_filter(
+  directive: Option<&str>,
+) -> (reload::Layer<EnvFilter, Registry>, EnvFilterHandle) {
+  let filter = directive
+    .and_then(|s| EnvFilter::try_new(s).ok())
+    .unwrap_or_else(|| EnvFilter::new("trace"));
+  reload::Layer::new(filter)
+}
 
 /// Builds an [`SdkTracerProvider`] with a simple in-memory span exporter.
 pub fn sdk_tracer_provider_with_in_memory_exporter(
@@ -126,6 +145,43 @@ mod tests {
   #[test]
   fn invalid_filter_is_ignored() {
     assert!(exports_tracing_span(false, Some("[[[not a filter")));
+  }
+
+  #[test]
+  fn reloaded_filter_takes_effect_on_the_running_subscriber() {
+    let exporter = InMemorySpanExporter::default();
+    let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
+    let (filter, handle) = reloadable_env_filter(Some("off"));
+    let subscriber = Registry::default()
+      .with(filter)
+      .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("unit")));
+    let exported = |name: &str| {
+      let _ = provider.force_flush();
+      exporter
+        .get_finished_spans()
+        .expect("spans")
+        .iter()
+        .any(|s| s.name == name)
+    };
+    tracing::subscriber::with_default(subscriber, || {
+      tracing::info_span!("before").in_scope(|| {});
+      assert_eq!(handle.with_current(|f| f.to_string()).unwrap(), "off");
+      handle.reload(EnvFilter::new("info")).expect("reload");
+      tracing::info_span!("after").in_scope(|| {});
+      tracing::debug_span!("too_verbose").in_scope(|| {});
+    });
+    assert!(!exported("before"));
+    assert!(exported("after"));
+    assert!(!exported("too_verbose"));
+    let _ = provider.shutdown();
+  }
+
+  #[test]
+  fn reloadable_filter_without_directive_enables_every_level() {
+    let (_layer, handle) = reloadable_env_filter(None);
+    assert_eq!(handle.with_current(|f| f.to_string()).unwrap(), "trace");
+    let (_layer, handle) = reloadable_env_filter(Some("[[[not a filter"));
+    assert_eq!(handle.with_current(|f| f.to_string()).unwrap(), "trace");
   }
 
   #[test]

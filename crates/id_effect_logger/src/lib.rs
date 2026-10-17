@@ -65,6 +65,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::thread::LocalKey;
 
 use ::id_effect::{Effect, FiberRef, fail, succeed, suspend};
@@ -108,6 +109,39 @@ thread_local! {
 
 thread_local! {
   static REDACTION_POLICY: RefCell<Option<Arc<RedactionPolicy>>> = const { RefCell::new(None) };
+}
+
+/// No process-wide minimum is set (not a [`LogLevel`] discriminant).
+const GLOBAL_MIN_UNSET: u8 = 254;
+
+/// The process-wide minimum level ([`set_global_minimum_log_level`]), as a `LogLevel`
+/// discriminant or [`GLOBAL_MIN_UNSET`].
+static GLOBAL_MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(GLOBAL_MIN_UNSET);
+
+/// Sets (`Some`) or clears (`None`) the process-wide minimum level that every [`EffectLogger`]
+/// consults, on every thread and fiber, from its next log call on.
+///
+/// While it is set it takes precedence over the fiber-local minimum of
+/// [`provide_minimum_log_level`] (and [`EffectLogger::with_minimum_log_level`]): it is the
+/// runtime override an operator console changes without a restart. Cleared, the fiber-local
+/// minimum applies again. One relaxed atomic load per log call.
+pub fn set_global_minimum_log_level(level: Option<LogLevel>) {
+  let raw = level.map_or(GLOBAL_MIN_UNSET, |l| l as u8);
+  GLOBAL_MIN_LOG_LEVEL.store(raw, Ordering::Relaxed);
+}
+
+/// The process-wide minimum level set by [`set_global_minimum_log_level`], if any.
+pub fn global_minimum_log_level() -> Option<LogLevel> {
+  match GLOBAL_MIN_LOG_LEVEL.load(Ordering::Relaxed) {
+    0 => Some(LogLevel::Trace),
+    1 => Some(LogLevel::Debug),
+    2 => Some(LogLevel::Info),
+    3 => Some(LogLevel::Warn),
+    4 => Some(LogLevel::Error),
+    5 => Some(LogLevel::Fatal),
+    255 => Some(LogLevel::None),
+    _ => None,
+  }
 }
 
 fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
@@ -296,6 +330,7 @@ impl EffectLogger {
   ///
   /// When [`provide_minimum_log_level`] has been built on this thread, messages below the current
   /// fiber’s minimum [`LogLevel`] (from that [`FiberRef`]) are dropped without calling [`tracing`].
+  /// A process-wide minimum ([`set_global_minimum_log_level`]) takes precedence while it is set.
   ///
   /// `msg` may be a `&'static str`, `String`, or other `Into<Cow<'static, str>>`.
   pub fn log(
@@ -329,7 +364,7 @@ impl EffectLogger {
     // installed refs are read from the running fiber.
     suspend(move || {
       current(&MIN_LOG_LEVEL_FIBER_REF).flat_map(move |min| {
-        let emit = match min {
+        let emit = match global_minimum_log_level().or(min) {
           None => true,
           Some(min) => min.allows(level),
         };
