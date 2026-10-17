@@ -33,12 +33,14 @@
 //! ```
 //!
 //! [`new_project`] writes the files (refusing a non-empty destination); [`cli::run`] is the
-//! whole command line. `id-effect doctor` is [`doctor`], `id-effect migrate` [`migrate`].
+//! whole command line. `id-effect doctor` is [`doctor`], `id-effect migrate` [`migrate`],
+//! `id-effect dev` [`dev`].
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 pub mod cli;
+pub mod dev;
 pub mod doctor;
 pub mod error;
 pub mod migrate;

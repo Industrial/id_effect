@@ -157,6 +157,7 @@
 - [Observability and health](./part6/ch27-00-observability.md)
   - [Metrics and Prometheus](./part6/ch27-01-metrics.md)
   - [Health checks and readiness](./part6/ch27-02-health.md)
+  - [The operator console](./part6/ch27-03-console.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
   - [Typed SQL values and rows](./part6/ch28-01-typed-sql.md)
   - [Migrations](./part6/ch28-02-migrations.md)
@@ -179,6 +180,7 @@
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
+  - [The dev loop](./part6/ch34-02-dev.md)
 - [AI and MCP (`id_effect_ai`, labs)](./part6/ch35-00-ai.md)
 
 # Part VII: Process Mesh

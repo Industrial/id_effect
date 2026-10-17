@@ -7,6 +7,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::dev::DevArgs;
 use crate::doctor::{GraphFormat, Options as DoctorOptions, doctor};
 use crate::migrate::MigrateArgs;
 use crate::project::new_project;
@@ -34,6 +35,10 @@ pub enum Command {
   /// Create, apply, list, revert and check SQL migrations (PostgreSQL). Exits 1 when `check`
   /// finds pending or changed migrations, 3 on a database error.
   Migrate(MigrateArgs),
+  /// Build and run the project's binary with ID_EFFECT_PROFILE=dev; rebuild and restart it
+  /// (SIGTERM, then kill after --grace-secs) when src/, Cargo.toml, config/ or a --watch path
+  /// changes. A failed build keeps the running app.
+  Dev(DevArgs),
 }
 
 /// Arguments of `id-effect doctor`.
@@ -125,6 +130,7 @@ where
     Command::New(args) => run_new(&args, out, err),
     Command::Doctor(args) => run_doctor(&args, out),
     Command::Migrate(args) => crate::migrate::run(&args, out, err),
+    Command::Dev(args) => crate::dev::run(&args, out, err),
   }
 }
 
