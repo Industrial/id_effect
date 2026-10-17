@@ -7,11 +7,14 @@
 //! drop-time cleanup therefore never depend on a test's own runtime, which ends with the test,
 //! while a [`Shared`](super::Shared) container outlives it.
 
+use std::collections::HashMap;
 use std::future::Future;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{LazyLock, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use bollard::query_parameters::{ListContainersOptions, RemoveContainerOptions};
 use id_effect::{Effect, from_async};
 use testcontainers::GenericImage;
 use testcontainers::{ContainerAsync, core::client::docker_client_instance};
@@ -26,6 +29,10 @@ pub const REQUIRE_DOCKER_ENV: &str = "ID_EFFECT_REQUIRE_DOCKER";
 /// The label every container started by this crate carries, valued with this process's session
 /// id: the reaper removes the session's containers after the process exits.
 pub(crate) const SESSION_LABEL: &str = "org.id_effect.test.session";
+
+/// The label naming one start attempt (`<session>-<n>`): a start that fails after Docker created
+/// the container leaves it behind without telling its id, so it is found and removed by this.
+pub(crate) const ATTEMPT_LABEL: &str = "org.id_effect.test.attempt";
 
 /// Name of the Docker runtime's threads (also how a drop knows it runs on one).
 const THREAD_NAME: &str = "id-effect-test-docker";
@@ -43,6 +50,40 @@ pub(crate) static SESSION: LazyLock<String> = LazyLock::new(|| {
     .map_or(0, |d| d.as_nanos());
   format!("{}-{nanos:x}", std::process::id())
 });
+
+/// A fresh value for [`ATTEMPT_LABEL`], unique in this process and across processes.
+pub(crate) fn attempt_id() -> String {
+  static NEXT: AtomicU64 = AtomicU64::new(0);
+  format!("{}-{}", *SESSION, NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// Force-removes every container labelled [`ATTEMPT_LABEL`]`=attempt` (best effort: a failure
+/// only leaves a never-started container to the reaper or `docker container prune`).
+pub(crate) async fn remove_attempt(attempt: &str) {
+  let Ok(docker) = docker_client_instance().await else {
+    return;
+  };
+  let filters = HashMap::from([(
+    "label".to_owned(),
+    vec![format!("{ATTEMPT_LABEL}={attempt}")],
+  )]);
+  let list = ListContainersOptions {
+    all: true,
+    filters: Some(filters),
+    ..Default::default()
+  };
+  let Ok(containers) = docker.list_containers(Some(list)).await else {
+    return;
+  };
+  for id in containers.into_iter().filter_map(|c| c.id) {
+    let remove = RemoveContainerOptions {
+      force: true,
+      v: true,
+      ..Default::default()
+    };
+    let _ = docker.remove_container(&id, Some(remove)).await;
+  }
+}
 
 fn runtime() -> &'static Runtime {
   static RUNTIME: OnceLock<Runtime> = OnceLock::new();

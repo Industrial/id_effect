@@ -19,12 +19,12 @@ use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
 use testcontainers::core::{IntoContainerPort, Mount};
-use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::sync::OnceCell;
 
 use super::ContainerError;
 use super::docker::{SESSION, SESSION_LABEL};
+use super::spec::start_request;
 
 const RYUK_IMAGE: &str = "testcontainers/ryuk";
 const RYUK_TAG: &str = "0.13.0";
@@ -71,13 +71,16 @@ async fn launch() -> Result<Reaper, Box<dyn std::error::Error + Send + Sync>> {
     std::env::var("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE").ok(),
     std::env::var("DOCKER_HOST").ok(),
   );
-  let container = GenericImage::new(RYUK_IMAGE, RYUK_TAG)
-    .with_exposed_port(RYUK_PORT.tcp())
-    .with_mount(Mount::bind_mount(socket, "/var/run/docker.sock"))
-    .with_privileged(env_flag("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED"))
-    .with_host_config_modifier(|config| config.auto_remove = Some(true))
-    .start()
-    .await?;
+  // Ryuk publishes a port too, and a failed start is kept for the life of the process: retry a
+  // lost host-port race as the other containers do.
+  let container = start_request(&format!("{RYUK_IMAGE}:{RYUK_TAG}"), || {
+    GenericImage::new(RYUK_IMAGE, RYUK_TAG)
+      .with_exposed_port(RYUK_PORT.tcp())
+      .with_mount(Mount::bind_mount(socket.clone(), "/var/run/docker.sock"))
+      .with_privileged(env_flag("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED"))
+      .with_host_config_modifier(|config| config.auto_remove = Some(true))
+  })
+  .await?;
   let address = format!(
     "{}:{}",
     container.get_host().await?,

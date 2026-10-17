@@ -167,7 +167,10 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: cargo check --workspace --all-targets
   # ──────────────────────────────────────────────────────────────────────────
-  # Postgres integration: live tests for id_effect_sql `pg` and id_effect_node `pg`.
+  # Postgres integration: every live test that reads DATABASE_URL (id_effect_sql `pg`,
+  # id_effect_node `pg`, id_effect_auth `pg` / `accounts`, id_effect_jobs (+ `cron`),
+  # id_effect_messaging, id_effect_events `pg`, id_effect_mail `jobs`, id_effect_tool migrate,
+  # http_showcase). Tests sharing the one database use a schema or database of their own.
   # ID_EFFECT_REQUIRE_PG=1 turns a missing/unreachable database into a failure
   # (locally those tests print SKIP instead of silently passing).
   # ──────────────────────────────────────────────────────────────────────────
@@ -200,7 +203,7 @@ jobs:
           tool: cargo-nextest
       - name: Live Postgres tests
         run: >-
-          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging -p id_effect_events -p id_effect_mail --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg,id_effect_auth/accounts,id_effect_jobs/cron,id_effect_events/pg,id_effect_mail/jobs
   # ──────────────────────────────────────────────────────────────────────────
   # Container integration: tests that start real services with testcontainers
   # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).

@@ -37,6 +37,11 @@
 //! not ready in time is removed and the start fails with [`ContainerError::NotReady`]; one that
 //! exits or turns unhealthy first, with [`ContainerError::Unready`].
 //!
+//! A start that loses the race for a random host port (`address already in use`, common under
+//! rootless Docker, or `port is already allocated`) is removed and retried as a new container
+//! with fresh host ports, a few times with a short backoff, each retry logged to stderr; any
+//! other start error fails at once with [`ContainerError::Start`].
+//!
 //! # Docker
 //!
 //! Docker is found as testcontainers finds it (`DOCKER_HOST`, `~/.testcontainers.properties`,
