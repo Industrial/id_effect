@@ -159,12 +159,7 @@ mod tests {
       let exporter = InMemoryLogExporter::default();
       let provider = sdk_logger_provider_with_in_memory_exporter(&exporter);
       let backend = otel_log_backend_for_provider(&provider);
-      let mut rec = LogRecord {
-        level: LogLevel::Info,
-        message: std::borrow::Cow::Borrowed("hello otel"),
-        annotations: Default::default(),
-        spans: vec!["outer".into()],
-      };
+      let mut rec = LogRecord::new(LogLevel::Info, "hello otel").with_spans(vec!["outer".into()]);
       rec.annotations.insert("request_id".into(), "abc".into());
       backend.emit(&rec).unwrap();
       let _ = provider.force_flush();
@@ -255,12 +250,7 @@ mod tests {
       composite
         .add(Arc::new(otel_log_backend_for_provider(&provider)))
         .unwrap();
-      let rec = LogRecord {
-        level: LogLevel::Warn,
-        message: std::borrow::Cow::Borrowed("composite path"),
-        annotations: Default::default(),
-        spans: vec![],
-      };
+      let rec = LogRecord::new(LogLevel::Warn, "composite path");
       composite.emit(&rec).unwrap();
       let _ = provider.force_flush();
       let logs = exporter.get_emitted_logs().expect("logs");

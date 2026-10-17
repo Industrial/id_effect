@@ -65,6 +65,63 @@ let exit = program.provide_layer(pipeline).block_on();
 **`StructuredLogBackend`** and **`CompositeLogBackend`**; `id_effect_opentelemetry` adds
 `OtelLogBackend`. See `cargo doc -p id_effect_logger`.
 
+A `LogRecord` is `#[non_exhaustive]` (since 0.10): build one with `LogRecord::new(level, msg)`
+and `with_target` / `with_annotation` / `with_spans`. `target` is the line's module or category;
+`EffectLogger::log_target(target, level, msg)` sets it.
+
+## Redaction and sampling
+
+A **`RedactionPolicy`** names what must never reach a sink: annotation keys (`field`, ASCII
+case-insensitive), key patterns (`glob`, `*` and `?`), and known secret values (`secret`, or
+`redacted` for a `Redacted<T>`) masked wherever they occur — message, target, annotation values,
+spans. Register a config `Secret<T>` with `policy.secret(key.expose())` at startup.
+`provide_redaction_policy(policy)` installs it; the logger applies it **once per line, before the
+composite fans out**, so tracing, JSON, structured and OTel backends all see the same masked
+record.
+
+**`SamplingBackend`** wraps any backend for overload protection: `ratio(level, r)` keeps a
+deterministic fraction of lines at that level, `rate_limit(burst, per_second)` is a token bucket
+over all levels, and `exempt_at_or_above(level)` lets severe lines through. `stats()` reports
+`emitted`, `sampled_out` and `rate_limited`.
+
+```rust
+use std::sync::Arc;
+
+use id_effect::{Effect, Exit, HNil};
+use id_effect_logger::{
+    CompositeLogBackend, EffectLogger, EffectLoggerError, JsonLogBackend, LogLevel,
+    LogMetadataLive, Logger, RedactionPolicy, SamplingBackend, annotate_logs,
+    provide_composite_logger, provide_redaction_policy,
+};
+
+let json = JsonLogBackend::new(Vec::<u8>::new());
+let sampled = Arc::new(
+    SamplingBackend::new(Arc::new(json.clone()))
+        .ratio(LogLevel::Debug, 0.1)
+        .rate_limit(1_000, 200.0)
+        .exempt_at_or_above(LogLevel::Error),
+);
+let composite = Arc::new(CompositeLogBackend::new());
+composite.add(sampled.clone()).unwrap();
+
+let policy = RedactionPolicy::new().field("password").glob("*token*");
+let pipeline = LogMetadataLive::layer()
+    .merge(provide_composite_logger(composite))
+    .merge(provide_redaction_policy(policy));
+
+let program: Effect<(), EffectLoggerError, HNil> =
+    annotate_logs("password", "hunter2", EffectLogger.info("signed in"));
+assert_eq!(program.provide_layer(pipeline).block_on(), Exit::Success(()));
+
+let line = String::from_utf8(json.writer_arc().lock().unwrap().clone()).unwrap();
+assert!(line.contains(r#""password":"<redacted>""#));
+assert_eq!(sampled.stats().emitted, 1);
+```
+
+Redaction is a pipeline step, not a backend: a `LogBackend` called directly (outside
+`EffectLogger`) is not filtered. Sampling, by contrast, is per backend — wrap only the sinks that
+need protecting (a remote exporter, say) and leave a local file unsampled.
+
 ## Relation to the rest of Part II
 
 Logging is just another **capability**: same mental model as [Providing Services](./ch07-03-providing-services.md).

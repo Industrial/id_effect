@@ -71,6 +71,8 @@ use ::id_effect::{Effect, FiberRef, fail, succeed, suspend};
 
 mod pipeline;
 mod providers;
+mod redact;
+mod sample;
 
 pub use pipeline::{
   CompositeLogBackend, JsonLogBackend, LogBackend, LogRecord, Logger, StructuredLogBackend,
@@ -78,9 +80,12 @@ pub use pipeline::{
 };
 
 pub use providers::{
-  EffectLogComposite, EffectLogMetadata, EffectLoggerLive, LogMetadataLive,
-  provide_composite_logger, provide_minimum_log_level,
+  EffectLogComposite, EffectLogMetadata, EffectLogRedaction, EffectLoggerLive, LogMetadataLive,
+  provide_composite_logger, provide_minimum_log_level, provide_redaction_policy,
 };
+
+pub use redact::{DEFAULT_REDACTION_MASK, RedactionPolicy};
+pub use sample::{SamplingBackend, SamplingStats};
 
 use pipeline::TracingLogBackend as TracingSink;
 
@@ -101,6 +106,10 @@ thread_local! {
   static LOG_SPAN_STACK_FIBER_REF: RefCell<Option<FiberRef<Vec<String>>>> = const { RefCell::new(None) };
 }
 
+thread_local! {
+  static REDACTION_POLICY: RefCell<Option<Arc<RedactionPolicy>>> = const { RefCell::new(None) };
+}
+
 fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
   MIN_LOG_LEVEL_FIBER_REF.with(|c| {
     *c.borrow_mut() = Some(fr);
@@ -110,6 +119,12 @@ fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
 fn install_composite_log_backend(c: Arc<CompositeLogBackend>) {
   COMPOSITE_LOG_BACKEND.with(|cell| {
     *cell.borrow_mut() = Some(c);
+  });
+}
+
+fn install_redaction_policy(p: Arc<RedactionPolicy>) {
+  REDACTION_POLICY.with(|cell| {
+    *cell.borrow_mut() = Some(p);
   });
 }
 
@@ -143,11 +158,18 @@ fn current<T: Clone + Send + Sync + 'static>(
   }
 }
 
-/// Hands `rec` to the installed composite backend, or to `tracing` when none is installed.
+/// Applies the installed [`RedactionPolicy`] once, then hands the record to the installed
+/// composite backend (or to `tracing` when none is installed): every backend sees the same
+/// redacted record.
 fn emit_record(rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+  let policy = REDACTION_POLICY.with(|c| c.borrow().clone());
+  let rec = match policy.as_deref() {
+    Some(p) => p.apply(rec),
+    None => Cow::Borrowed(rec),
+  };
   COMPOSITE_LOG_BACKEND.with(|c| match c.borrow().as_ref() {
-    Some(comp) => comp.emit_all(rec),
-    None => LogBackend::emit(&TracingSink, rec),
+    Some(comp) => comp.emit_all(&rec),
+    None => LogBackend::emit(&TracingSink, &rec),
   })
 }
 
@@ -176,6 +198,7 @@ fn test_clear_all_logger_tls() {
   test_clear_min_log_level_fiber_ref();
   test_clear_composite_log_backend();
   test_clear_log_metadata_fiber_refs();
+  REDACTION_POLICY.with(|c| *c.borrow_mut() = None);
 }
 
 /// Log sink provided as the [`EffectLogger`] capability (`.provide(EffectLogger)` or
@@ -280,7 +303,25 @@ impl EffectLogger {
     level: LogLevel,
     msg: impl Into<Cow<'static, str>>,
   ) -> Effect<(), EffectLoggerError> {
-    let msg = msg.into();
+    Self::log_record(None, level, msg.into())
+  }
+
+  /// Same as [`Self::log`], with [`LogRecord::target`] set to `target` (a module or category such
+  /// as `"billing::invoice"`).
+  pub fn log_target(
+    &self,
+    target: impl Into<Cow<'static, str>>,
+    level: LogLevel,
+    msg: impl Into<Cow<'static, str>>,
+  ) -> Effect<(), EffectLoggerError> {
+    Self::log_record(Some(target.into()), level, msg.into())
+  }
+
+  fn log_record(
+    target: Option<Cow<'static, str>>,
+    level: LogLevel,
+    msg: Cow<'static, str>,
+  ) -> Effect<(), EffectLoggerError> {
     if level == LogLevel::None {
       return succeed(());
     }
@@ -298,12 +339,10 @@ impl EffectLogger {
         current(&LOG_ANNOTATIONS_FIBER_REF)
           .zip(current(&LOG_SPAN_STACK_FIBER_REF))
           .flat_map(move |(annotations, spans)| {
-            let rec = LogRecord {
-              level,
-              message: msg,
-              annotations: annotations.unwrap_or_default(),
-              spans: spans.unwrap_or_default(),
-            };
+            let mut rec = LogRecord::new(level, msg)
+              .with_annotations(annotations.unwrap_or_default())
+              .with_spans(spans.unwrap_or_default());
+            rec.target = target;
             match emit_record(&rec) {
               Ok(()) => succeed(()),
               Err(e) => fail(e),

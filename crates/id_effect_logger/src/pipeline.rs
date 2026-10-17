@@ -11,16 +11,59 @@ use serde::Serialize;
 use crate::{EffectLoggerError, LogLevel};
 
 /// One log event passed to each backend in a [`CompositeLogBackend`].
+///
+/// `#[non_exhaustive]` since 0.10: build one with [`LogRecord::new`] and the `with_*` methods.
+/// The fields stay public for backends to read (and for a policy to rewrite).
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct LogRecord<'a> {
   /// Severity of this line.
   pub level: LogLevel,
   /// Human-readable message body.
   pub message: Cow<'a, str>,
+  /// Module or category the line belongs to (e.g. `"billing::invoice"`), when the caller gave one.
+  pub target: Option<Cow<'a, str>>,
   /// Structured key/value fields merged into the formatted line or JSON row.
   pub annotations: HashMap<String, String>,
   /// Active span names from outermost to innermost (for nesting display).
   pub spans: Vec<String>,
+}
+
+impl<'a> LogRecord<'a> {
+  /// A record at `level` with `message`, no target, annotations or spans.
+  pub fn new(level: LogLevel, message: impl Into<Cow<'a, str>>) -> Self {
+    Self {
+      level,
+      message: message.into(),
+      target: None,
+      annotations: HashMap::new(),
+      spans: Vec::new(),
+    }
+  }
+
+  /// Set the module/category [`Self::target`].
+  pub fn with_target(mut self, target: impl Into<Cow<'a, str>>) -> Self {
+    self.target = Some(target.into());
+    self
+  }
+
+  /// Add one structured field.
+  pub fn with_annotation(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    self.annotations.insert(key.into(), value.into());
+    self
+  }
+
+  /// Replace the structured fields.
+  pub fn with_annotations(mut self, annotations: HashMap<String, String>) -> Self {
+    self.annotations = annotations;
+    self
+  }
+
+  /// Replace the span stack (outermost first).
+  pub fn with_spans(mut self, spans: Vec<String>) -> Self {
+    self.spans = spans;
+    self
+  }
 }
 
 /// Sink for [`LogRecord`] values (tracing, JSON file, tests, etc.).
@@ -124,6 +167,9 @@ impl LogBackend for CompositeLogBackend {
 
 fn format_tracing_line(rec: &LogRecord<'_>) -> String {
   let mut full = String::new();
+  if let Some(target) = rec.target.as_deref() {
+    let _ = write!(&mut full, "{target}: ");
+  }
   if !rec.spans.is_empty() {
     let _ = write!(&mut full, "[{}] ", rec.spans.join(" > "));
   }
@@ -177,6 +223,8 @@ impl<W: Write + Send + 'static> JsonLogBackend<W> {
 struct JsonLine<'a> {
   level: &'a str,
   message: &'a str,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  target: Option<&'a str>,
   #[serde(skip_serializing_if = "HashMap::is_empty")]
   fields: HashMap<&'a str, &'a str>,
   #[serde(skip_serializing_if = "spans_is_empty")]
@@ -199,6 +247,7 @@ impl<W: Write + Send + 'static> LogBackend for JsonLogBackend<W> {
     let row = JsonLine {
       level: rec.level.as_str(),
       message: rec.message.as_ref(),
+      target: rec.target.as_deref(),
       fields,
       spans: rec.spans.clone(),
     };
@@ -249,6 +298,9 @@ impl<W: Write + Send + 'static> LogBackend for StructuredLogBackend<W> {
       rec.message.as_ref()
     )
     .map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
+    if let Some(target) = rec.target.as_deref() {
+      write!(w, " target={target:?}").map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
+    }
     if !rec.spans.is_empty() {
       write!(w, " spans={:?}", rec.spans.join(">"))
         .map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
@@ -268,12 +320,7 @@ mod tests {
   use std::borrow::Cow;
 
   fn make_record(level: crate::LogLevel, msg: &str) -> LogRecord<'_> {
-    LogRecord {
-      level,
-      message: Cow::Borrowed(msg),
-      annotations: Default::default(),
-      spans: vec![],
-    }
+    LogRecord::new(level, Cow::Borrowed(msg))
   }
 
   fn make_record_with_spans(
@@ -281,12 +328,7 @@ mod tests {
     msg: &str,
     spans: Vec<String>,
   ) -> LogRecord<'_> {
-    LogRecord {
-      level,
-      message: Cow::Borrowed(msg),
-      annotations: Default::default(),
-      spans,
-    }
+    LogRecord::new(level, Cow::Borrowed(msg)).with_spans(spans)
   }
 
   #[test]
@@ -429,6 +471,28 @@ mod tests {
     let out = String::from_utf8(arc.lock().unwrap().clone()).unwrap();
     assert!(out.contains("s1"), "output: {out}");
     assert!(out.contains("foo"), "output: {out}");
+  }
+
+  #[test]
+  fn target_is_rendered_by_json_structured_and_tracing() {
+    let rec = LogRecord::new(crate::LogLevel::Info, "t")
+      .with_target("billing::invoice")
+      .with_annotation("k", "v");
+    let json = JsonLogBackend::new(Vec::<u8>::new());
+    json.emit(&rec).unwrap();
+    let out = String::from_utf8(json.writer_arc().lock().unwrap().clone()).unwrap();
+    assert!(
+      out.contains(r#""target":"billing::invoice""#),
+      "output: {out}"
+    );
+    let structured = StructuredLogBackend::new(Vec::<u8>::new());
+    structured.emit(&rec).unwrap();
+    let out = String::from_utf8(structured.writer_arc().lock().unwrap().clone()).unwrap();
+    assert!(
+      out.contains(r#"target="billing::invoice""#),
+      "output: {out}"
+    );
+    assert_eq!(format_tracing_line(&rec), "billing::invoice: t k=v");
   }
 
   #[test]

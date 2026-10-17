@@ -11,8 +11,9 @@ use std::sync::Arc;
 use ::id_effect::{FiberRef, HCons, HNil, Layer, hlist, sync};
 
 use crate::{
-  CompositeLogBackend, EffectLogMinLevel, EffectLogger, LogLevel, install_composite_log_backend,
-  install_log_annotations_fiber_ref, install_log_spans_fiber_ref, install_min_log_level_fiber_ref,
+  CompositeLogBackend, EffectLogMinLevel, EffectLogger, LogLevel, RedactionPolicy,
+  install_composite_log_backend, install_log_annotations_fiber_ref, install_log_spans_fiber_ref,
+  install_min_log_level_fiber_ref, install_redaction_policy,
 };
 
 /// Default [`EffectLogger`] provider (tracing-backed).
@@ -66,6 +67,26 @@ pub fn provide_composite_logger<E: Send + 'static>(
     sync(move || {
       install_composite_log_backend(composite);
       hlist![EffectLogComposite]
+    })
+  })
+}
+
+/// Marker capability: a [`RedactionPolicy`] installed on this thread.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EffectLogRedaction;
+
+/// A layer that registers `policy` on the building thread: [`EffectLogger::log`] applies it to
+/// each record once, before the composite (or the `tracing` fallback) sees it.
+#[inline]
+pub fn provide_redaction_policy<E: Send + 'static>(
+  policy: RedactionPolicy,
+) -> Layer<HCons<EffectLogRedaction, HNil>, E> {
+  let policy = Arc::new(policy);
+  Layer::effect(move || {
+    let policy = Arc::clone(&policy);
+    sync(move || {
+      install_redaction_policy(policy);
+      hlist![EffectLogRedaction]
     })
   })
 }
