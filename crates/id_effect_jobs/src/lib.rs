@@ -123,7 +123,8 @@ pub use worker::{
 ///
 /// `scheduled → running → succeeded`; a failed attempt goes `running → failed → running …` until
 /// it succeeds or its attempts are exhausted (`dead`). `scheduled` and `failed` jobs can be
-/// `cancelled`; `dead` and `cancelled` jobs can be retried by hand ([`JobQueue::retry_now`]).
+/// `cancelled`; `dead` and `cancelled` jobs can be retried by hand, and a `failed` job's next
+/// attempt brought forward ([`JobQueue::retry_now`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum JobState {
   /// Waiting for its `run_at` time and a free worker.

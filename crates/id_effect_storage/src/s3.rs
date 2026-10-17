@@ -128,6 +128,12 @@ impl S3Config {
 
 /// An [`ObjectStore`](crate::ObjectStore) over an S3 bucket. Keys are S3 keys, verbatim;
 /// signed URLs are SigV4 presigned URLs (at most 7 days).
+///
+/// The bucket must exist: `S3Store` reads and writes objects and never creates (or checks)
+/// the bucket, so every operation on a missing one fails (a [`StorageError`] carrying the
+/// service's `NoSuchBucket`). Create it when provisioning (Terraform, `aws s3 mb`, `mc mb`, a MinIO
+/// init container); `object_store` has no bucket API, and a test can send a presigned
+/// `PUT /<bucket>` (CreateBucket) as this crate's `tests/s3.rs` does.
 #[derive(Clone, Debug)]
 pub struct S3Store {
   backend: Backend,
@@ -139,7 +145,8 @@ impl S3Store {
   /// [`with_part_size`](Self::with_part_size).
   pub const MIN_PART_SIZE: usize = 5 * 1024 * 1024;
 
-  /// A store for `config`'s bucket. No request is made until the first operation.
+  /// A store for `config`'s bucket, which must already exist. No request is made until the
+  /// first operation.
   ///
   /// # Errors
   ///

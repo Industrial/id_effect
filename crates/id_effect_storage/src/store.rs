@@ -165,8 +165,9 @@ pub trait ObjectStore: Send + Sync + 'static {
   /// Stores `body` under `key`, replacing any object there.
   fn put(&self, key: &ObjectKey, body: Bytes) -> Effect<PutOutcome, StorageError>;
 
-  /// Stores the bytes of `body` under `key` without holding the whole object in memory (see
-  /// the [module docs](self)). A failing `body` fails the put and leaves no object behind.
+  /// Stores the bytes of `body` under `key` without holding the whole object in memory (at
+  /// most one part, [`DEFAULT_PART_SIZE`] unless the backend is configured otherwise, plus one
+  /// body item). A failing `body` fails the put and leaves no object behind.
   fn put_stream(
     &self,
     key: &ObjectKey,

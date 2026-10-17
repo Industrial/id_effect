@@ -170,6 +170,27 @@ mod suite {
     assert_eq!((r.state, r.attempts), (JobState::Scheduled, 0));
   }
 
+  pub fn retry_now_brings_a_failed_attempt_forward(h: &impl Harness) {
+    let q = "retry-now";
+    let id = new_id(h.enqueue(Flaky { n: 1 }, JobOptions::new().queue(q)));
+    assert_eq!(h.drain(&[q]).retrying, 1);
+    assert_eq!(h.drain(&[q]).runs(), 0, "backing off for 1 s");
+    // Runnable now, without the clock moving; its attempts and error are kept.
+    assert!(h.run(h.store().retry_now(id)));
+    let r = h.record(id);
+    assert_eq!((r.state, r.attempts), (JobState::Failed, 1));
+    assert_eq!(r.last_error.as_deref(), Some("flaky 1"));
+    h.assert_about(h.now().distance_duration(&r.run_at), Duration::ZERO);
+    assert_eq!(h.drain(&[q]).retrying, 1, "attempt 2 ran");
+    assert_eq!(h.record(id).attempts, 2);
+    // A scheduled or succeeded job is left alone.
+    let task = new_id(h.enqueue(Task { n: 2 }, JobOptions::new().queue(q)));
+    assert!(!h.run(h.store().retry_now(task)));
+    assert_eq!(h.drain(&[q]).succeeded, 1);
+    assert!(!h.run(h.store().retry_now(task)));
+    assert_eq!(h.record(task).state, JobState::Succeeded);
+  }
+
   pub fn unique_key_dedups_while_pending(h: &impl Harness) {
     let (q, other) = ("unique", "unique-other");
     let key = || {
@@ -392,6 +413,11 @@ mod memory {
   #[test]
   fn retry_backoff_then_dead() {
     suite::retry_backoff_then_dead(&Memory::new());
+  }
+
+  #[test]
+  fn retry_now_brings_a_failed_attempt_forward() {
+    suite::retry_now_brings_a_failed_attempt_forward(&Memory::new());
   }
 
   #[test]
@@ -618,6 +644,13 @@ mod pg {
   fn retry_backoff_then_dead() {
     if let Some(h) = Pg::new("retry_backoff_then_dead") {
       suite::retry_backoff_then_dead(&h);
+    }
+  }
+
+  #[test]
+  fn retry_now_brings_a_failed_attempt_forward() {
+    if let Some(h) = Pg::new("retry_now_brings_a_failed_attempt_forward") {
+      suite::retry_now_brings_a_failed_attempt_forward(&h);
     }
   }
 

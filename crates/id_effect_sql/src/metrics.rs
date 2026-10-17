@@ -1,24 +1,26 @@
 //! Automatic database client metrics and spans: [`InstrumentedSqlClient`] wraps any
 //! [`SqlClient`].
 //!
-//! Each `connect`, `query`, `execute` and `begin` records, however it ends:
+//! Each `connect`, `query`, `execute`, `begin` (and `begin_with`, as `begin`) and the first pull
+//! of a `query_stream` (as `query_stream`) records, however it ends:
 //!
 //! - [`DB_CLIENT_OPERATIONS_TOTAL`]`{op,outcome}` — `outcome` is `ok`, or `error` for a typed
 //!   failure, a defect or an interrupt;
 //! - [`DB_CLIENT_OPERATION_DURATION_SECONDS`]`{op}` — executor clock.
 //!
-//! Labels never carry SQL text, so the series set is bounded (4 ops × 2 outcomes). Statements
+//! Labels never carry SQL text, so the series set is bounded (5 ops × 2 outcomes). Statements
 //! run through a transaction handle are not counted (the `begin` that opened it is). With the
 //! `pg` feature, `record_pg_pool` samples a pool's connection gauges; call it before each
 //! scrape (for example from `id_effect_axum::metrics::metrics_route_with`).
 //!
-//! Each `query` and `execute` also runs inside a `db.query` span ([`Effect::with_span_attrs`])
-//! with the attributes `db.system` ([`InstrumentedSqlClient::with_db_system`], default
-//! `other_sql`), `db.operation` (the statement's first keyword, `SELECT`), `db.statement` (the
-//! SQL text with every string and numeric literal replaced by `?`, at most 1024 characters) and
-//! `otel.kind = client`. Bound parameters never reach a span. Under
-//! `id_effect_opentelemetry::OtelSpanHook` the span is exported as an OpenTelemetry client span,
-//! a child of the caller's span; this crate has no OpenTelemetry dependency.
+//! Each `query`, `execute` and first `query_stream` pull also runs inside a `db.query` span
+//! ([`Effect::with_span_attrs`]) with the attributes `db.system`
+//! ([`InstrumentedSqlClient::with_db_system`], default `other_sql`), `db.operation` (the
+//! statement's first keyword, `SELECT`), `db.statement` (the SQL text with every string and
+//! numeric literal replaced by `?`, at most 1024 characters) and `otel.kind = client`. Bound
+//! parameters never reach a span. Under `id_effect_opentelemetry::OtelSpanHook` the span is
+//! exported as an OpenTelemetry client span, a child of the caller's span; this crate has no
+//! OpenTelemetry dependency.
 //!
 //! ```rust
 //! use id_effect::{Exit, MetricRegistry, MetricState};
@@ -36,13 +38,16 @@
 //! assert_eq!(ok.state, MetricState::Counter { count: 1 });
 //! ```
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use id_effect::{Boundaries, Counter, Effect, Histogram, Metric, MetricRegistry, Never};
+use id_effect::{
+  Boundaries, Counter, Effect, Histogram, Metric, MetricRegistry, Never, Stream, suspend,
+};
 
 use crate::client::SqlClient;
 use crate::error::SqlError;
-use crate::transaction::SqlTransaction;
+use crate::transaction::{SqlTransaction, TransactionOptions};
 use crate::{SqlRow, SqlValue};
 
 /// Counter: client operations, by `op` and `outcome`.
@@ -65,7 +70,7 @@ pub fn duration_boundaries() -> Boundaries {
   ])
 }
 
-/// Span name of `query` / `execute` (see the [module docs](self)).
+/// Span name of `query` / `execute` / `query_stream` (see the [module docs](self)).
 pub const DB_QUERY_SPAN: &str = "db.query";
 
 /// Longest `db.statement` span attribute, in characters.
@@ -73,7 +78,9 @@ const STATEMENT_MAX_CHARS: usize = 1024;
 
 /// A [`SqlClient`] that records [`DB_CLIENT_OPERATIONS_TOTAL`] and
 /// [`DB_CLIENT_OPERATION_DURATION_SECONDS`] around every operation of `C` and runs statements in
-/// a [`DB_QUERY_SPAN`] span (see the [module docs](self)). `close` is passed through unrecorded.
+/// a [`DB_QUERY_SPAN`] span (see the [module docs](self)). Every method, `C`'s overrides of
+/// `begin_with` and `query_stream` included, runs `C`'s own; `close` is passed through
+/// unrecorded. `C` may be an `Arc<dyn SqlClient>`.
 #[derive(Clone, Debug)]
 pub struct InstrumentedSqlClient<C> {
   inner: C,
@@ -171,9 +178,55 @@ impl<C: SqlClient> SqlClient for InstrumentedSqlClient<C> {
     self.instrument("begin", self.inner.begin())
   }
 
+  /// `C`'s own `begin_with` (its BEGIN with the options), recorded as `begin`.
+  fn begin_with(&self, options: TransactionOptions) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+    self.instrument("begin", self.inner.begin_with(options))
+  }
+
+  /// `C`'s own `query_stream`. Its first pull (the query's setup and first rows) is recorded as
+  /// `query_stream` in a [`DB_QUERY_SPAN`] span; later pulls are not, and a stream dropped
+  /// before its first pull records nothing.
+  fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+    let rest: Rest = Arc::new(Mutex::new(Some(self.inner.query_stream(sql, params))));
+    let size = Arc::new(AtomicUsize::new(0));
+    let (slot, want) = (Arc::clone(&rest), Arc::clone(&size));
+    // Built now, while `self` is here; the pull size is only known when it runs.
+    let mut first = Some(self.statement(
+      "query_stream",
+      sql,
+      suspend(move || pull_rest(&slot, want.load(Ordering::Relaxed))),
+    ));
+    Stream::from_pull(move |n| match first.take() {
+      Some(setup) => {
+        size.store(n, Ordering::Relaxed);
+        setup
+      }
+      None => pull_rest(&rest, n),
+    })
+  }
+
   fn close(&self) -> Effect<(), Never> {
     self.inner.close()
   }
+}
+
+/// The rest of a wrapped row stream, between pulls.
+type Rest = Arc<Mutex<Option<Stream<SqlRow, SqlError>>>>;
+
+/// Pulls at most `n` rows from the stream in `rest`, keeping what remains there.
+fn pull_rest(rest: &Rest, n: usize) -> Effect<Option<Vec<SqlRow>>, SqlError> {
+  let stream = rest
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+    .take()
+    .unwrap_or_else(Stream::empty);
+  let rest = Arc::clone(rest);
+  stream.next_chunk_with_size(n).map(move |step| {
+    step.map(|(chunk, more)| {
+      *rest.lock().unwrap_or_else(PoisonError::into_inner) = Some(more);
+      chunk.into_vec()
+    })
+  })
 }
 
 /// `sql` with every string literal (`'...'`, `''` escapes) and numeric literal replaced by `?`,
@@ -241,7 +294,8 @@ mod tests {
 
   use super::*;
   use crate::TestSqlClient;
-  use crate::client::tests::run;
+  use crate::client::tests::{Recording, run};
+  use crate::transaction::TransactionOptions;
 
   fn count(registry: &MetricRegistry, op: &str, outcome: &str) -> u64 {
     registry
@@ -376,6 +430,58 @@ mod tests {
         .all(|(_, v)| !v.contains("hunter2") && !v.contains("ada"))
     );
     assert_eq!(spans[1].1[2], ("db.operation".into(), "DELETE".into()));
+  }
+
+  #[test]
+  fn begin_with_and_query_stream_reach_the_inner_client() {
+    let registry = MetricRegistry::new();
+    let inner = Recording::connected();
+    let client = InstrumentedSqlClient::with_registry(inner.clone(), registry.clone())
+      .with_db_system("postgresql");
+    let recorder = Arc::new(Recorder::default());
+    let hook: Arc<dyn id_effect::SpanHook> = recorder.clone();
+
+    let options = TransactionOptions::default();
+    let tx = run(client.begin_with(options).with_span_hook(hook.clone())).unwrap();
+    run(tx.commit()).unwrap();
+    let stream = client.query_stream("SELECT n", &[]);
+    let rows = run(stream.run_collect().with_span_hook(hook)).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(inner.calls(), ["begin_with", "query_stream"], "no fallback");
+    assert_eq!(count(&registry, "begin", "ok"), 1);
+    assert_eq!(
+      count(&registry, "query_stream", "ok"),
+      1,
+      "the first pull only"
+    );
+    assert_eq!(durations(&registry, "query_stream"), 1);
+    let spans = recorder.0.lock().unwrap();
+    assert_eq!(spans.len(), 1, "the stream's setup: {spans:?}");
+    assert_eq!(spans[0].0, DB_QUERY_SPAN);
+    assert!(
+      spans[0]
+        .1
+        .contains(&("db.statement".into(), "SELECT n".into()))
+    );
+    drop(spans);
+
+    // A stream that fails to start counts as an error; one never pulled counts nothing.
+    inner.inner.fail_queries("boom");
+    assert!(run(client.query_stream("SELECT n", &[]).run_collect()).is_err());
+    assert_eq!(count(&registry, "query_stream", "error"), 1);
+    drop(client.query_stream("SELECT n", &[]));
+    assert_eq!(durations(&registry, "query_stream"), 2);
+  }
+
+  #[test]
+  fn the_wrapper_wraps_a_shared_client() {
+    let inner = Recording::connected();
+    let shared: Arc<dyn SqlClient> = Arc::new(inner.clone());
+    let client = InstrumentedSqlClient::with_registry(shared, MetricRegistry::new());
+    let rows = run(client.query_stream("SELECT n", &[]).run_collect()).unwrap();
+    assert_eq!(rows.len(), 2);
+    run(client.begin_with(TransactionOptions::default())).unwrap();
+    assert_eq!(inner.calls(), ["query_stream", "begin_with"]);
   }
 
   #[test]

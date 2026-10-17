@@ -195,6 +195,13 @@ impl JobQueue for MemoryJobQueue {
 
   fn retry_now(&self, id: JobId) -> Effect<bool, JobError> {
     self.with(move |st, now| {
+      if let Some(r) = st.jobs.get_mut(&id)
+        && r.state == JobState::Failed
+      {
+        // Its backoff is skipped; it already holds its unique key.
+        r.run_at = now;
+        return Ok(true);
+      }
       let Some(r) = st.jobs.get(&id) else {
         return Ok(false);
       };
@@ -490,7 +497,7 @@ mod tests {
   fn cancel_and_retry_now_follow_the_state_machine() {
     let q = store();
     let id = run(q.enqueue_raw(job("a", None))).unwrap().id().unwrap();
-    assert_eq!(run(q.retry_now(id)), Ok(false), "only dead or cancelled");
+    assert_eq!(run(q.retry_now(id)), Ok(false), "not a scheduled job");
     assert_eq!(run(q.cancel(id)), Ok(true));
     assert_eq!(record(&q, id).state, JobState::Cancelled);
     assert!(record(&q, id).finished_at.is_some());

@@ -127,11 +127,14 @@ impl Inbox {
   /// requeued ([`Nack::Requeue`]), so it is dead-lettered after
   /// [`max_deliveries`](crate::SubscribeOptions::max_deliveries); the error is dropped. An ack
   /// lost after the commit is harmless: the redelivery is a duplicate.
+  ///
+  /// The handler owns a clone of the inbox: it can be built from a temporary
+  /// (`Inbox::new().handler(..)`) and outlive it.
   pub fn handler<E, F>(
     &self,
     client: Arc<dyn SqlClient>,
     handler: F,
-  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static
+  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static + use<E, F>
   where
     E: From<SqlError> + Send + 'static,
     F: Fn(Arc<dyn SqlTransaction>, &Message) -> Effect<(), E> + Send + Sync + 'static,
@@ -252,11 +255,12 @@ impl MemoryInbox {
 
   /// A [`consume`](crate::consume) handler: runs `handler` through [`once`](Self::once) on each
   /// delivery's group and message id, then acks (a duplicate without running it); a failure
-  /// requeues the delivery and drops the error.
+  /// requeues the delivery and drops the error. The handler shares this inbox's records and
+  /// may outlive the value it was built from.
   pub fn handler<E, F>(
     &self,
     handler: F,
-  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static
+  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static + use<E, F>
   where
     E: Send + 'static,
     F: Fn(&Message) -> Effect<(), E> + Send + Sync + 'static,
@@ -381,5 +385,60 @@ mod tests {
     assert_eq!(inbox.len(), 2);
     assert_eq!(broker.backlog(&orders, &group()), 0);
     assert_eq!(broker.in_flight(&orders, &group()), 0);
+  }
+
+  /// An [`Inbox::handler`] built from a temporary inbox and returned on its own.
+  fn detached_handler(
+    client: Arc<dyn SqlClient>,
+    runs: Arc<AtomicUsize>,
+  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static {
+    Inbox::new().handler(client, move |_: Arc<dyn SqlTransaction>, _: &Message| {
+      runs.fetch_add(1, Ordering::SeqCst);
+      succeed::<(), SqlError, _>(())
+    })
+  }
+
+  /// A [`MemoryInbox::handler`] built from a temporary inbox and returned on its own.
+  fn detached_memory_handler(
+    runs: Arc<AtomicUsize>,
+  ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static {
+    MemoryInbox::new().handler(move |_: &Message| {
+      runs.fetch_add(1, Ordering::SeqCst);
+      succeed::<(), (), _>(())
+    })
+  }
+
+  #[test]
+  fn handlers_outlive_the_inbox_they_came_from() {
+    let client = TestSqlClient::new();
+    run(client.connect()).unwrap();
+    client.script_execute(MARK, 1);
+    let (runs, memory_runs) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+    let handler = detached_handler(Arc::new(client.clone()), Arc::clone(&runs));
+    let memory = detached_memory_handler(Arc::clone(&memory_runs));
+    let broker = MemoryBroker::new();
+    let orders = Topic::new("orders").unwrap();
+    let audit = ConsumerGroup::new("audit").unwrap();
+    for id in ["m-1", "m-1", "m-2"] {
+      run(broker.publish(&orders, Message::new("a").with_id(id))).unwrap();
+    }
+    let opts = || SubscribeOptions::default().prefetch(1);
+    run(
+      broker
+        .subscribe(&orders, &group(), opts())
+        .flat_map(move |deliveries| deliveries.take(3).run_for_each(handler)),
+    )
+    .unwrap();
+    run(
+      broker
+        .subscribe(&orders, &audit, opts())
+        .flat_map(move |deliveries| deliveries.take(3).run_for_each(memory)),
+    )
+    .unwrap();
+    assert_eq!(runs.load(Ordering::SeqCst), 3, "every mark is new here");
+    assert_eq!(client.commits(), 3);
+    assert_eq!(memory_runs.load(Ordering::SeqCst), 2, "m-1 once, m-2 once");
+    assert_eq!(broker.backlog(&orders, &group()), 0);
+    assert_eq!(broker.backlog(&orders, &audit), 0);
   }
 }

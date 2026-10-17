@@ -347,8 +347,9 @@ pub trait JobQueue: Send + Sync + 'static {
   /// job is not interrupted) or no job.
   fn cancel(&self, id: JobId) -> Effect<bool, JobError>;
 
-  /// `dead` or `cancelled` → `scheduled` now, with its attempts reset; `false` for a job in
-  /// another state or no job.
+  /// `dead` or `cancelled` → `scheduled` now, with its attempts reset; a `failed` job awaiting
+  /// its retry runs now instead of after its backoff (`run_at` = now; it stays `failed`, with
+  /// its attempts and `last_error`). `false` for a job in another state or no job.
   fn retry_now(&self, id: JobId) -> Effect<bool, JobError>;
 
   /// Per-queue counts per state, by queue name.

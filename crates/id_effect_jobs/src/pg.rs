@@ -89,8 +89,12 @@ pub(crate) const PRUNE: &str = "DELETE FROM id_effect_jobs \
 pub(crate) const CANCEL: &str = "UPDATE id_effect_jobs SET state = 'cancelled', finished_at = $2 \
   WHERE id = $1 AND state IN ('scheduled', 'failed')";
 
-pub(crate) const RETRY_NOW: &str = "UPDATE id_effect_jobs SET state = 'scheduled', attempts = 0, \
-  run_at = $2, finished_at = NULL WHERE id = $1 AND state IN ('dead', 'cancelled')";
+/// `dead` / `cancelled` start over; a `failed` job keeps its state and attempts (SET reads the
+/// old row).
+pub(crate) const RETRY_NOW: &str = "UPDATE id_effect_jobs SET \
+  state = CASE WHEN state = 'failed' THEN 'failed' ELSE 'scheduled' END, \
+  attempts = CASE WHEN state = 'failed' THEN attempts ELSE 0 END, \
+  run_at = $2, finished_at = NULL WHERE id = $1 AND state IN ('failed', 'dead', 'cancelled')";
 
 pub(crate) const STATS: &str = "SELECT queue, state, count(*) AS jobs, min(run_at) AS oldest \
   FROM id_effect_jobs GROUP BY queue, state ORDER BY queue, state";

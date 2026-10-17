@@ -12,6 +12,17 @@ use id_effect_storage::{
   list, object_storage_env, provide_object_storage, put, put_stream, signed_url,
 };
 
+/// The body type is re-exported: a caller needs no `bytes` dependency to name it.
+#[test]
+fn bytes_is_reexported() {
+  let store = MemoryStore::new();
+  let body = id_effect_storage::Bytes::from_static(b"hi");
+  run(store.put(&key("k"), body)).unwrap();
+  let got: id_effect_storage::Bytes = run(store.get(&key("k"))).unwrap();
+  let same: Bytes = got;
+  assert_eq!(same, "hi");
+}
+
 fn run<A: Send + 'static>(eff: Effect<A, StorageError>) -> Result<A, StorageError> {
   match eff.block_on() {
     Exit::Success(a) => Ok(a),

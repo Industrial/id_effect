@@ -6,17 +6,19 @@
 //! without holding the object in memory, and issues signed, expiring URLs. Backends:
 //! [`MemoryStore`] (tests), [`LocalStore`] (a directory) and, with the `s3` feature, `S3Store`
 //! (AWS S3, MinIO, R2, ... with presigned URLs). Local and in-memory stores sign URLs with a
-//! [`UrlSigner`] the serving side verifies.
+//! [`UrlSigner`] the serving side verifies. `S3Store` never creates its bucket: provision it
+//! before the service starts (infrastructure code, `aws s3 mb`, `mc mb`).
+//!
+//! Bodies are [`Bytes`] (re-exported from the `bytes` crate).
 //!
 //! [`ObjectKey`] is a validated key that means the same on every backend: 1 to
 //! [`ObjectKey::MAX_LEN`] bytes of `/`-separated segments, none empty, `.` or `..`, and no control
 //! characters, so a key can never escape a file-system store's root.
 //!
 //! ```
-//! use bytes::Bytes;
 //! use id_effect::{Exit, Stream};
 //! use id_effect_storage::{
-//!   KeyError, MemoryStore, ObjectKey, ObjectStorageEnv, StorageError, get, put_stream,
+//!   Bytes, KeyError, MemoryStore, ObjectKey, ObjectStorageEnv, StorageError, get, put_stream,
 //! };
 //!
 //! let key = ObjectKey::new("avatars/carol.png").unwrap();
@@ -46,6 +48,9 @@ mod s3;
 mod signed;
 mod store;
 
+/// The body type of [`ObjectStore::put`], [`ObjectStore::get`] and the streamed uploads and
+/// downloads (the `bytes` crate's, re-exported so callers need no dependency of their own).
+pub use bytes::Bytes;
 pub use local::LocalStore;
 pub use memory::MemoryStore;
 #[cfg(feature = "s3")]
