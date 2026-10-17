@@ -1,0 +1,8 @@
+{% extends "layouts/base.html" %}
+{% block body %}
+<p>Hello {{ customer }},</p>
+<p>invoice {{ number }} is due on {{ due }}:</p>
+<ul>
+{% for line in lines %}  <li>{{ line.item }}: {{ line.amount }}</li>
+{% endfor %}</ul>
+{% endblock %}

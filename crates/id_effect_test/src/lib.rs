@@ -2,7 +2,8 @@
 //!
 //! - **[`containers`]** — effect-native containers: [`Postgres`] (with feature `sql`, a ready
 //!   `SqlClient` via `Postgres::sql_layer`), [`MySql`], [`Redis`], [`Keycloak`], [`Vault`],
-//!   [`S3`] (S3-compatible, SeaweedFS pinned by digest) and any image through [`ContainerSpec`],
+//!   [`S3`] (S3-compatible, SeaweedFS pinned by digest), [`Mailpit`] (an SMTP server with an
+//!   HTTP API, pinned by digest) and any image through [`ContainerSpec`],
 //!   as scoped layers removed when their scope closes (also on failure and interrupt), or one
 //!   per test binary with [`Shared`]; readiness waits bounded by typed timeouts
 //!   ([`ContainerError::NotReady`]); [`require_docker`] for the SKIP /
@@ -55,10 +56,10 @@ pub mod fixtures;
 pub mod http;
 
 pub use containers::{
-  Container, ContainerError, ContainerImage, ContainerSpec, Keycloak, KeycloakContainer, MySql,
-  MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis, RedisContainer, S3,
-  S3Container, Shared, Vault, VaultContainer, Wait, container_exists, docker_available,
-  require_docker,
+  Container, ContainerError, ContainerImage, ContainerSpec, Keycloak, KeycloakContainer, Mailpit,
+  MailpitContainer, MySql, MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis,
+  RedisContainer, S3, S3Container, Shared, Vault, VaultContainer, Wait, container_exists,
+  docker_available, require_docker,
 };
 #[cfg(feature = "contract")]
 pub use contract::{Contract, ContractError};

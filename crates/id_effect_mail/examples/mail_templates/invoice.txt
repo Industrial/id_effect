@@ -1,0 +1,6 @@
+{% extends "layouts/base.txt" %}
+{% block body %}Hello {{ customer }},
+
+invoice {{ number }} is due on {{ due }}:
+{% for line in lines %}
+- {{ line.item }}: {{ line.amount }}{% endfor %}{% endblock %}

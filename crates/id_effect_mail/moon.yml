@@ -60,6 +60,7 @@ tasks:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'tests/**/*.rs'
+      - 'tests/templates/**'
       - 'examples/**/*.rs'
     options:
       cache: true
@@ -92,6 +93,7 @@ tasks:
       - 'Cargo.toml'
       - 'src/**/*.rs'
       - 'examples/**/*.rs'
+      - 'examples/mail_templates/**'
     options:
       cache: true
       outputStyle: buffer-only-failure

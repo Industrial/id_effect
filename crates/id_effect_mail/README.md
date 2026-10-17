@@ -7,8 +7,11 @@ The crate grows over the 0.10 release. Today it has the `Message` model (text an
 attachments, inline `cid:` parts, extra headers), the `Mailer` capability with three layers
 (`SmtpMailer::layer`, pooled SMTP over rustls; `SendGridMailer::layer`, the SendGrid v3 API;
 `TestMailbox::layer`, an in-memory mailbox with `assert_sent_to` / `assert_subject` /
-`assert_contains`), and `Address`, a validated `local@domain` mailbox address (lengths per
-RFC 5321, dot-separated domain labels, no whitespace):
+`assert_contains`), `Templates` (minijinja subject, text and HTML templates with shared layouts
+and partials, HTML autoescaped, missing variables an error), `MailPreviews` (feature `preview`:
+an axum router at `/_mail/previews` showing each registered preview as HTML, text and raw MIME,
+re-reading the templates from disk in a debug build), and `Address`, a validated `local@domain`
+mailbox address (lengths per RFC 5321, dot-separated domain labels, no whitespace):
 
 ```rust
 use id_effect_mail::Address;

@@ -1,0 +1,6 @@
+{% extends "layouts/base.html" %}
+{% block title %}Welcome{% endblock %}
+{% block body %}
+<h1>Hello {{ user.name }}</h1>
+<p><a href="{{ confirm_url }}">Confirm your account</a></p>
+{% endblock %}

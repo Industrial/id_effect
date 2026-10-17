@@ -1,5 +1,6 @@
 //! Effect-native containers (testcontainers): PostgreSQL, MySQL, Redis, Keycloak, Vault, an
-//! S3-compatible store and any image through [`ContainerSpec`], started as effect resources.
+//! S3-compatible store, a Mailpit SMTP server and any image through [`ContainerSpec`], started as
+//! effect resources.
 //!
 //! # Per-test containers
 //!
@@ -53,6 +54,7 @@ mod docker;
 mod error;
 mod image;
 mod keycloak;
+mod mailpit;
 mod mysql;
 mod postgres;
 mod reaper;
@@ -68,6 +70,9 @@ pub use docker::{REQUIRE_DOCKER_ENV, container_exists, docker_available, require
 pub use error::ContainerError;
 pub use image::ContainerImage;
 pub use keycloak::{KEYCLOAK_PORT, KEYCLOAK_READY_TIMEOUT, Keycloak, KeycloakContainer};
+pub use mailpit::{
+  MAILPIT_API_PORT, MAILPIT_IMAGE, MAILPIT_SMTP_PORT, MAILPIT_TAG, Mailpit, MailpitContainer,
+};
 pub use mysql::{MYSQL_PORT, MySql, MySqlContainer};
 #[cfg(feature = "sql")]
 pub use postgres::PostgresSqlEnv;

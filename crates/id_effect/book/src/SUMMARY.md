@@ -175,6 +175,7 @@
   - [Two-factor authentication with TOTP (`id_effect_auth`)](./part6/ch30-06-totp.md)
   - [Tenancy and the audit log](./part6/ch30-07-audit-tenancy.md)
 - [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
+  - [Mail (`id_effect_mail`)](./part6/ch31-03-mail.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)

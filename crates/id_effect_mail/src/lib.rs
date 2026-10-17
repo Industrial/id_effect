@@ -42,6 +42,34 @@
 //! mailbox.assert_subject("Your invoice");
 //! ```
 //!
+//! [`Templates`] renders a mail's subject, text and HTML bodies from minijinja templates with
+//! shared layouts and partials: HTML autoescaped, a missing variable an error
+//! ([`TemplateError`]), the context any `Serialize` value. With feature `preview`,
+//! `MailPreviews` serves registered previews at `/_mail/previews` (HTML, text and raw MIME),
+//! re-reading the templates from disk on every request in a debug build.
+//!
+//! ```
+//! use id_effect_mail::{Address, Templates};
+//!
+//! let templates = Templates::new()
+//!   .with_template("layout.txt", "{% block body %}{% endblock %}\n-- Ledger").unwrap()
+//!   .with_template("receipt.subject.txt", "Receipt {{ number }}").unwrap()
+//!   .with_template(
+//!     "receipt.txt",
+//!     r#"{% extends "layout.txt" %}{% block body %}Paid: {{ amount }}{% endblock %}"#,
+//!   )
+//!   .unwrap();
+//! let message = templates
+//!   .message("receipt", &serde_json::json!({ "number": 7, "amount": "12.00 EUR" }))
+//!   .unwrap()
+//!   .from(Address::parse("billing@ledger.example").unwrap())
+//!   .to(Address::parse("carol@ledger.example").unwrap())
+//!   .build()
+//!   .unwrap();
+//! assert_eq!(message.subject(), "Receipt 7");
+//! assert_eq!(message.text(), Some("Paid: 12.00 EUR\n-- Ledger"));
+//! ```
+//!
 //! Neither transport retries a send by itself; a refused send says whether a later attempt may
 //! succeed ([`MailError::is_transient`]).
 //!
@@ -54,16 +82,22 @@ use std::fmt;
 
 mod mailer;
 mod message;
+#[cfg(feature = "preview")]
+mod preview;
 mod sendgrid;
 mod smtp;
+mod template;
 mod testing;
 
 pub use mailer::{
   MailError, Mailer, MailerEnv, MailerService, Sent, deliver, mailer_env, provide_mailer,
 };
 pub use message::{Attachment, InlinePart, Mailbox, Message, MessageBuilder};
+#[cfg(feature = "preview")]
+pub use preview::{MailPreviews, PREVIEWS_PATH};
 pub use sendgrid::{SendGridConfig, SendGridMailer};
 pub use smtp::{SmtpConfig, SmtpMailer, SmtpSecurity};
+pub use template::{RenderedMail, TemplateError, Templates};
 pub use testing::TestMailbox;
 
 /// A validated `local@domain` mailbox address.
@@ -155,3 +189,8 @@ impl fmt::Display for AddressError {
 }
 
 impl std::error::Error for AddressError {}
+
+/// Runs the book chapter on mail as a doctest (the preview block needs feature `preview`).
+#[cfg(all(doctest, feature = "preview"))]
+#[doc = include_str!("../../id_effect/book/src/part6/ch31-03-mail.md")]
+struct BookMailDoctests;
