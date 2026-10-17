@@ -1,0 +1,24 @@
+[package]
+name = "id_effect_messaging"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Messaging for id_effect services: a broker-agnostic MessageBroker, in-memory broker, outbox, inbox and relay"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_messaging"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until the Ledger
+# reference app depends on it, then platform (ADR 0010 Amendment 6, ADR 0012).
+tier = "integration"

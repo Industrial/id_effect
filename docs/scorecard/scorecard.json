@@ -7605,6 +7605,7 @@
 			"evidence": "New published id_effect_auth crate: argon2 passwords, Postgres/Redis sessions, Authenticate middleware, JWT with JWKS rotation, OIDC+PKCE tested against Keycloak, and TOTP. Book chapters crates/id_effect/book/src/part6/ch30-03..ch30-06. Examples examples/005_passwords_sessions.rs and 010_login.rs. The CI-tested Ledger uses it (ci.yml:236-278).",
 			"targets": {
 				"0.9.0": 75,
+				"0.10.0": 88,
 				"1.0.0": 88
 			},
 			"checks": [

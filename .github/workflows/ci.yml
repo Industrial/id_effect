@@ -200,7 +200,7 @@ jobs:
           tool: cargo-nextest
       - name: Live Postgres tests
         run: >-
-          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
   # ──────────────────────────────────────────────────────────────────────────
   # Container integration: tests that start real services with testcontainers
   # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).
@@ -226,7 +226,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Container tests
-        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis --all-features
+        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis -p id_effect_mail -p id_effect_storage --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
   # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
@@ -431,7 +431,7 @@ jobs:
         # A crate new in a release has no crates.io baseline yet: --exclude it until published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_jobs --exclude id_effect_messaging --exclude id_effect_mail --exclude id_effect_console --exclude id_effect_storage
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
