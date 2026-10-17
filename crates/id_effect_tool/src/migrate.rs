@@ -66,8 +66,10 @@ pub struct MigrateArgs {
   pub command: MigrateCommand,
 }
 
-/// The `id-effect migrate` subcommands.
+/// The `id-effect migrate` subcommands. Non-exhaustive: new subcommands are added in minor
+/// releases.
 #[derive(Debug, Subcommand)]
+#[non_exhaustive]
 pub enum MigrateCommand {
   /// Create the next migration in DIR: `<VERSION>_<NAME>.sql`, or an `.up.sql` / `.down.sql`
   /// pair with --reversible.

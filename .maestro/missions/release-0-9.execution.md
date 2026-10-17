@@ -74,6 +74,13 @@ Follow-ups recorded during wave 1:
   services; use a generic User-Agent such as `id_effect-release-check (+repo URL)`. An earlier
   crates.io name check sent it in the User-Agent (fixed in `.tmp/cratesio.sh`).
 - `RedisSessionStore` Lua scripts are not Redis-Cluster safe (no hash tags); documented.
+- For 0.10 (from the 0.9 audit and blind re-score): config change notification (sec.config#8
+  strict reading, G1); two-level cache with pub/sub invalidation (data.cache#8, G5);
+  `id_effect_node` QUIC peer verification by default and real mutual TLS with operator-issued
+  certificates (dist.tls #2 #4 #5 #7; the handshake doc no longer says "mTLS"); the Ledger
+  mounting `SecurityLayer` and `RateLimitKey::tenant` (sec.web, eco.tenancy#7 in the reference
+  app); an idle-machine compile-time measurement for 0.9 (dx.compile#2 failed on a 66.9 s cold
+  build at load ~60); `id_effect_kit` to tier platform.
 - `src/metrics.rs` doc links to `record_pg_pool` break `cargo doc -D warnings` without `pg`.
 - `verify_is_constant_time_on_unknown_user` compares timing medians (0.33–3×); watch for flakes on CI.
 

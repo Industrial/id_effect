@@ -22,8 +22,9 @@ pub struct Cli {
   pub command: Command,
 }
 
-/// The `id-effect` subcommands.
+/// The `id-effect` subcommands. Non-exhaustive: new subcommands are added in minor releases.
 #[derive(Debug, Subcommand)]
+#[non_exhaustive]
 pub enum Command {
   /// Generate a new project from a template.
   New(NewArgs),

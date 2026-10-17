@@ -32,7 +32,9 @@ crates and the `examples/` are not.
 
 | Version | Supported |
 |---|---|
-| 0.7.x | Yes: all fixes, including security fixes |
+| 0.9.x | Yes: all fixes, including security fixes |
+| 0.8.x | Security fixes only, until 2027-01-15 |
+| 0.7.x | Security fixes only, until 2027-01-14 |
 | 0.6.x | Security fixes only, until 2027-01-13 |
 | < 0.6 | No |
 

@@ -30,6 +30,12 @@ Each 0.9 change appends its entry to the matching section below.
   the default `Prefer` / `Preferred` instead of plaintext. Set `with_tls_mode(PgTlsMode::VerifyFull)`
   / `MySqlTlsMode::VerifyIdentity` and a root certificate for production.
 
+## Tooling: `id_effect_tool`
+
+- `id_effect_tool::cli::Command` gains the `Migrate` subcommand (`id-effect migrate`) and is now
+  `#[non_exhaustive]`, as is the new `migrate::MigrateCommand`. Code that matches on `Command`
+  exhaustively must add a `_ =>` arm. Running the `id-effect` binary is unaffected.
+
 ## Data: SQL values and rows
 
 `id_effect_sql` parameters and column values are now typed `SqlValue`s and rows decode by column
@@ -43,6 +49,8 @@ Each 0.9 change appends its entry to the matching section below.
   `Result<T, SqlError>` naming the column (`ColumnNotFound`, `UnexpectedNull`, `TypeMismatch`,
   `ValueOutOfRange`, `Decode`) instead of a string to parse. Transitional: `row.text_cells()`
   returns the 0.8 strings.
+- `SqlRow` can no longer be built with a struct literal (its fields are private): use
+  `SqlRow::from_pairs([("id", 1i64)])` or `SqlRow::from_parts(columns, values)`.
 - `impl SqlClient for X` / `impl SqlTransaction for X`: `query` and `execute` take
   `params: &[SqlValue]`.
 - `SqlError` is `#[non_exhaustive]` and has new variants: add a `_ =>` arm to every `match` on it.
