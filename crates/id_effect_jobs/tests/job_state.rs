@@ -14,10 +14,23 @@ fn every_state_round_trips_through_its_column_value() {
 }
 
 #[test]
-fn only_succeeded_and_dead_are_terminal() {
+fn only_succeeded_dead_and_cancelled_are_terminal() {
   let terminal: Vec<_> = JobState::ALL
     .into_iter()
     .filter(|s| s.is_terminal())
     .collect();
-  assert_eq!(terminal, [JobState::Succeeded, JobState::Dead]);
+  assert_eq!(
+    terminal,
+    [JobState::Succeeded, JobState::Dead, JobState::Cancelled]
+  );
+  let runnable: Vec<_> = JobState::ALL
+    .into_iter()
+    .filter(|s| s.is_runnable())
+    .collect();
+  assert_eq!(runnable, [JobState::Scheduled, JobState::Failed]);
+  assert!(
+    JobState::ALL
+      .into_iter()
+      .all(|s| s.is_pending() != s.is_terminal())
+  );
 }

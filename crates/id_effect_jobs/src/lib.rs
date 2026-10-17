@@ -1,6 +1,23 @@
 //! Background jobs for id_effect services: a Postgres `SKIP LOCKED` queue on `id_effect_sql`,
 //! workers, retries with backoff and cron schedules.
 //!
+//! - A **[`Job`]** is a `#[derive(Schema)]` struct with a stable [`Job::NAME`], a queue, a
+//!   priority, a maximum number of attempts, an optional [`UniqueKey`] and a retry
+//!   [`Schedule`](id_effect::Schedule). Its payload is stored as `jsonb` through its schema.
+//! - The **[`JobQueue`]** capability enqueues ([`JobQueueExt::enqueue`], [`enqueue`]) and
+//!   administers jobs; [`JobStore`] adds the worker side (claim, fenced outcomes, heartbeat,
+//!   rescue). [`PgJobQueue`] stores them in the table `id_effect_jobs` ([`migrator`],
+//!   [`PgJobQueue::ensure_schema`]), [`MemoryJobQueue`] in memory for tests.
+//! - **[`enqueue_in`]** inserts a job with the caller's
+//!   [`SqlTransaction`](id_effect_sql::SqlTransaction), so it commits or rolls back with the
+//!   caller's work.
+//! - A **[`Worker`]** runs the handlers of a [`JobRegistry`] with a concurrency limit per queue,
+//!   a heartbeat and lease, rescues the jobs of crashed workers, and drains on shutdown.
+//!
+//! Every time the queue reads (`run_at`, leases, `finished_at`) comes from a
+//! [`WallClock`](id_effect::WallClock), so tests run on virtual time. Delivery is at least once:
+//! a job whose worker died mid-run runs again, so handlers must be idempotent.
+//!
 //! [`JobState`] is the lifecycle every queued job moves through; [`JobState::as_str`] is the value
 //! stored in the queue table's `state` column.
 //!
@@ -12,6 +29,52 @@
 //! assert_eq!(state.as_str(), "failed");
 //! ```
 //!
+//! A job, its handler, and a worker draining the queue on a test executor:
+//!
+//! ```
+//! use std::sync::Arc;
+//! use std::sync::atomic::{AtomicU32, Ordering};
+//!
+//! use id_effect::{Executor, Schema, TestExecutor, UtcDateTime, WallClock, hlist, sync};
+//! use id_effect_jobs::{
+//!   Job, JobFailure, JobOptions, JobQueueExt, JobQueueService, JobRegistry, MemoryJobQueue, Worker,
+//! };
+//!
+//! #[derive(Clone, Schema)]
+//! struct Welcome {
+//!   email: String,
+//! }
+//!
+//! impl Job for Welcome {
+//!   const NAME: &'static str = "app.welcome";
+//! }
+//!
+//! let sent = Arc::new(AtomicU32::new(0));
+//! let s = Arc::clone(&sent);
+//! let registry = JobRegistry::new()
+//!   .register::<Welcome, JobFailure>(move |job, _ctx| {
+//!     let s = Arc::clone(&s);
+//!     sync(move || {
+//!       assert_eq!(job.email, "ada@example.com");
+//!       s.fetch_add(1, Ordering::SeqCst);
+//!     })
+//!   })
+//!   .unwrap();
+//!
+//! let exec = TestExecutor::new();
+//! let clock = WallClock::anchored(exec.now(), UtcDateTime::unsafe_make(1_800_000_000_000));
+//! let store = MemoryJobQueue::new(clock);
+//! let env = hlist![JobQueueService::new(store.clone())];
+//! let job = Welcome { email: "ada@example.com".into() };
+//! let program = store
+//!   .enqueue(job, JobOptions::default())
+//!   .flat_map(move |_| Worker::new(registry).run_until_idle().provide_all(env));
+//! let done = program.fork_root(Arc::new(exec.clone()));
+//! exec.run_until_stalled();
+//! assert!(done.is_done());
+//! assert_eq!(sent.load(Ordering::SeqCst), 1);
+//! ```
+//!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
 #![forbid(unsafe_code)]
@@ -20,8 +83,33 @@
 use std::fmt;
 use std::str::FromStr;
 
+mod job;
+mod memory;
+mod pg;
+mod queue;
+mod worker;
+
+pub use job::{
+  Job, JobContext, JobFailure, JobId, JobRegistry, Priority, Queue, UniqueKey, UniqueScope,
+  default_retry, retry_delay,
+};
+pub use memory::{MemoryJobQueue, memory_job_queue_layer};
+pub use pg::{PgJobQueue, enqueue_in, migrator, pg_job_queue_layer};
+pub use queue::{
+  Claimed, Enqueued, Fenced, JobError, JobFilter, JobOptions, JobQueue, JobQueueEnv, JobQueueExt,
+  JobQueueService, JobRecord, JobStore, NewJob, QueueStats, RunAt, WakeSignal, enqueue,
+  job_queue_env,
+};
+pub use worker::{
+  DrainReport, JobObserver, NoopObserver, Outcome, Worker, WorkerConfig, WorkerHandle, WorkerId,
+};
+
 /// Lifecycle of a queued job.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+///
+/// `scheduled → running → succeeded`; a failed attempt goes `running → failed → running …` until
+/// it succeeds or its attempts are exhausted (`dead`). `scheduled` and `failed` jobs can be
+/// `cancelled`; `dead` and `cancelled` jobs can be retried by hand ([`JobQueue::retry_now`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum JobState {
   /// Waiting for its `run_at` time and a free worker.
   Scheduled,
@@ -31,21 +119,24 @@ pub enum JobState {
   Succeeded,
   /// Failed; runs again after its backoff unless its attempts are exhausted.
   Failed,
-  /// Out of attempts; kept for inspection and a manual retry.
+  /// Out of attempts (or discarded); kept for inspection and a manual retry.
   Dead,
+  /// Cancelled before it ran; kept for inspection and a manual retry.
+  Cancelled,
 }
 
 impl JobState {
   /// Every state, in lifecycle order.
-  pub const ALL: [JobState; 5] = [
+  pub const ALL: [JobState; 6] = [
     JobState::Scheduled,
     JobState::Running,
     JobState::Succeeded,
     JobState::Failed,
     JobState::Dead,
+    JobState::Cancelled,
   ];
 
-  /// The column value: `scheduled`, `running`, `succeeded`, `failed` or `dead`.
+  /// The column value: `scheduled`, `running`, `succeeded`, `failed`, `dead` or `cancelled`.
   pub const fn as_str(self) -> &'static str {
     match self {
       JobState::Scheduled => "scheduled",
@@ -53,12 +144,30 @@ impl JobState {
       JobState::Succeeded => "succeeded",
       JobState::Failed => "failed",
       JobState::Dead => "dead",
+      JobState::Cancelled => "cancelled",
     }
   }
 
   /// Whether no worker picks the job up again from this state without a manual retry.
   pub const fn is_terminal(self) -> bool {
-    matches!(self, JobState::Succeeded | JobState::Dead)
+    matches!(
+      self,
+      JobState::Succeeded | JobState::Dead | JobState::Cancelled
+    )
+  }
+
+  /// Whether a worker may claim the job once its `run_at` has come: `scheduled`, or `failed`
+  /// (awaiting its retry).
+  pub const fn is_runnable(self) -> bool {
+    matches!(self, JobState::Scheduled | JobState::Failed)
+  }
+
+  /// Whether the job holds a [`UniqueScope::WhilePending`] key: runnable or running.
+  pub const fn is_pending(self) -> bool {
+    matches!(
+      self,
+      JobState::Scheduled | JobState::Running | JobState::Failed
+    )
   }
 }
 
@@ -90,3 +199,8 @@ impl FromStr for JobState {
       .ok_or_else(|| UnknownJobState(s.to_owned()))
   }
 }
+
+/// Compiles and runs the README's examples as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
