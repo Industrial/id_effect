@@ -402,17 +402,17 @@ jobs:
         run: cargo deny check
   # ──────────────────────────────────────────────────────────────────────────
   # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
-  # REPORT-ONLY while a breaking 0.x release is in development: 0.9 carries intentional
-  # breaks (release spec D2), each of which must be listed in docs/MIGRATION-0.9.md; the
-  # job prints them for review (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI.
-  # Baseline = the latest published release (0.8.0).
+  # REPORT-ONLY while a breaking 0.x release is in development: 0.10 may carry intentional
+  # breaks, each of which must be listed in its migration guide; the job prints them for
+  # review (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI.
+  # Baseline = the latest published release (0.9.0).
   # ──────────────────────────────────────────────────────────────────────────
   semver:
-    name: Semver checks (report-only, baseline 0.8.0)
+    name: Semver checks (report-only, baseline 0.9.0)
     runs-on: ubuntu-latest
     needs: [moon-ci]
     env:
-      SEMVER_BASELINE: 0.8.0
+      SEMVER_BASELINE: 0.9.0
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust (stable)
@@ -428,11 +428,10 @@ jobs:
       - name: cargo semver-checks (publishable workspace crates)
         # --workspace skips publish = false members (examples). Step-level
         # continue-on-error keeps the job (and ci-pass) green while report-only.
-        # id_effect_auth, id_effect_authz, id_effect_test and id_effect_redis (new in 0.9) have no
-        # crates.io baseline yet; drop each exclude once that crate is published.
+        # A crate new in a release has no crates.io baseline yet: --exclude it until published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_auth --exclude id_effect_authz --exclude id_effect_test --exclude id_effect_redis
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
