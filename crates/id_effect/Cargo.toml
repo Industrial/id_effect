@@ -68,8 +68,8 @@ proptest = ["dep:proptest"]
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
-id_effect_macro = { path = "../id_effect_macro", version = "0.8.0" }
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.8.0" }
+id_effect_macro = { path = "../id_effect_macro", version = "0.9.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.9.0" }
 flume = "0.12"
 # 0.2.0 lacks APIs we use (`SignedDuration::from_nanos_i128`, `Error::from_args`).
 jiff = "0.2.23"

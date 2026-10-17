@@ -45,7 +45,7 @@ let exit = TokioRuntime::current()?.run(program).await;
 The live client needs a tokio runtime with its IO driver (sqlx): run it with `id_effect_tokio::TokioRuntime`.
 
 ```toml
-id_effect_sql = { version = "0.8", features = ["pg"] }
+id_effect_sql = { version = "0.9", features = ["pg"] }
 ```
 
 Live Postgres tests read `DATABASE_URL`. They print `SKIP` when no database is reachable, and fail instead when `ID_EFFECT_REQUIRE_PG=1` (set by CI's `pg-integration` job). Driver choice ADR: [docs/platform/adrs/adr-sql-driver-choice.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/adrs/adr-sql-driver-choice.md).

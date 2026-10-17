@@ -23,15 +23,15 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8" }
-id_effect = { path = "../../crates/id_effect", version = "0.8.0", features = [
+id_effect = { path = "../../crates/id_effect", version = "0.9.0", features = [
   "schema-serde",
 ] }
-id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.8.0" }
-id_effect_config = { path = "../../crates/id_effect_config", version = "0.8.0" }
-id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.8.0" }
-id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.8.0" }
-id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.8.0" }
-id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.8.0", features = [
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.9.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.9.0" }
+id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.9.0" }
+id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.9.0" }
+id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.9.0" }
+id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.9.0", features = [
   "pg",
 ] }
 opentelemetry = { version = "0.32", default-features = false, features = [

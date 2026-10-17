@@ -1,11 +1,20 @@
 # Changelog
 
-## Unreleased — 0.9.0 — Data & security
+## 0.9.0 — 2026-10-17 — Data & security (breaking)
+
+The second release under the plan of plans: typed SQL with migrations, repositories, three
+databases and TLS; typed routes with OpenAPI; authentication and authorization; test containers;
+and the Ledger reference app that uses all of it in CI. Upgrading from 0.8: see the
+[0.9 migration guide](docs/MIGRATION-0.9.md).
 
 ### Added
 
-- New crates (ADR 0010 Amendment 5, tier `integration`): `id_effect_auth`, `id_effect_authz`,
-  `id_effect_test`, `id_effect_redis`.
+- New crates (ADR 0010 Amendment 5, tier `platform` since the Ledger reference app uses them):
+  `id_effect_auth`, `id_effect_authz`, `id_effect_test`, `id_effect_redis`.
+- `examples/reference/ledger`: the Ledger reference app (CI job `reference-ledger`). Double entry
+  over typed routes, `SERIALIZABLE` postings, PostgreSQL sessions, JWT, OIDC + PKCE, TOTP, RBAC, a
+  Redis cache, a read replica and Vault, built only through `id_effect_kit`. New on the way:
+  `Route::handler_with_request_caps` (`id_effect_axum`), kit feature `audit`.
 - `id_effect_redis`: pooled `RedisClient` layer; typed `RedisKv` / `RedisHash` / `RedisJson`
   stores; `RedisCacheBackend`; pub/sub as a `Stream`; `RedisSessionStore` (feature `session`);
   `RedisRateLimitStore` (feature `rate-limit`). Core `id_effect`: additive `CacheBackend` trait and
@@ -161,12 +170,7 @@
 
 - **Breaking** `id_effect_sql`: statements take `&[SqlValue]`; rows are typed; `SqlError` is
   `#[non_exhaustive]`. See [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
-
-- `examples/reference/ledger`: the Ledger reference app (CI job `reference-ledger`). Double entry
-  over typed routes, `SERIALIZABLE` postings, PostgreSQL sessions, JWT, OIDC + PKCE, TOTP, RBAC, a
-  Redis cache, a read replica and Vault, built only through `id_effect_kit`. `id_effect_auth`,
-  `id_effect_authz`, `id_effect_test` and `id_effect_redis` move to tier `platform`. New:
-  `Route::handler_with_request_caps` (`id_effect_axum`), kit feature `audit`.
+- **Breaking** `id_effect_tool`: `cli::Command` gains `Migrate` and is `#[non_exhaustive]`.
 
 ### Deprecated
 
@@ -184,6 +188,23 @@
   checks the host name (stricter than its name).
 - `id_effect_config`: `ProfiledConfig` and `FigmentConfigProvider` no longer print merged values in
   `Debug`, and errors from `Config::secret()` loaders no longer contain the raw value.
+- `id_effect_node`: the handshake docs no longer call the QUIC transport mutual TLS (no client
+  certificate; the server certificate is verified only with pinned roots).
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.9.0.md`, METHOD 2.1):
+
+| Index | 0.8.0 | 0.9.0 | Target |
+|---|---|---|---|
+| Enterprise (E) | 55.2 (#5) | 67.2 (#3) | 64.6 (#3) |
+| Runtime (RT) | 64.4 (#2) | 70.8 (#2) | 68.9 (#2) |
+| Rows < 40 | 31 | 21 | ≤ 21 |
+| Rows where id_effect leads | 7 | 19 | — |
+
+24 rows up, none down. Data 39.7 → 79.6 (ahead of every competitor), Security 48.2 → 87.8. Every
+0.9-targeted row met or beat its target except `dx.scaffold` (75; the generators moved to 0.10).
+DX KPIs: K3 (lines to add the invoice resource to Ledger) 508, K1 67.6 s, K4 17/20, K5 94.7 %.
 
 ## 0.8.0 — 2026-10-16 — Trust & first hour (breaking)
 

@@ -15,7 +15,7 @@ the next run.
 
 ```toml
 [dev-dependencies]
-id_effect = { version = "0.8", features = ["proptest"] }
+id_effect = { version = "0.9", features = ["proptest"] }
 proptest = "1"
 ```
 
