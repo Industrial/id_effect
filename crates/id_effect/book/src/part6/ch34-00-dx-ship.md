@@ -41,10 +41,93 @@ lists every option.
 ## Deploy
 
 The `service` template's `config/deploy.yml` is a [Kamal 2](https://kamal-deploy.org) config
-(service, image, servers, registry, the `/health` check of Kamal's proxy, the environment and
-secrets); the `Dockerfile` builds the release binary into `debian:bookworm-slim`. Fill in the
-image, servers and registry, put the secrets in `.kamal/secrets`, then `kamal setup` once and
-`kamal deploy` per release.
+(service, image, servers, registry, the `/ready` check of Kamal's proxy, the drain timeout, the
+environment and secrets); the `Dockerfile` builds the release binary into `debian:bookworm-slim`.
+Fill in the image, servers and registry, put the secrets in `.kamal/secrets`, then `kamal setup`
+once and `kamal deploy` per release.
+
+### Rolling restarts and drain
+
+A deploy replaces instances one at a time without dropping requests. A host run with
+`HostBuilder::run_until_shutdown` and `serve_router`, its `HealthRegistry` built
+`with_readiness(host.readiness.clone())`, marks its readiness shutting down on SIGTERM, so `/ready`
+answers `503` (`"shutting_down"`) while the listener keeps accepting and in-flight requests finish,
+for at most `SHUTDOWN_TIMEOUT_SECS` (default `30`); then the process exits.
+(`server_layer_with_readiness` marks a shared `ReadinessState` the same way but stops accepting at
+once.) `/health` stays `200` throughout: the process is alive, just not taking new work. The
+sequence:
+
+1. The new instance starts and its `/ready` turns `200`.
+2. The old instance gets SIGTERM; its `/ready` turns `503`.
+3. The proxy or load balancer stops routing new requests to it.
+4. Its in-flight requests finish (or `SHUTDOWN_TIMEOUT_SECS` runs out).
+5. It exits.
+
+`on_sigterm_ready_turns_503_while_an_in_flight_request_completes`
+(`crates/id_effect_axum/tests/health.rs:216`) is the evidence: it sends the process SIGTERM with a
+request in flight, sees `/ready` answer `503` while that request is still open, then sees the
+request complete and the server exit.
+
+**Kamal.** The generated `config/deploy.yml` carries the settings:
+
+```yaml
+drain_timeout: 35
+
+proxy:
+  app_port: 8080
+  healthcheck:
+    path: /ready
+    interval: 1
+    timeout: 5
+
+env:
+  clear:
+    SHUTDOWN_TIMEOUT_SECS: "30"
+```
+
+`kamal deploy` boots the new container and kamal-proxy polls its `/ready` until it answers `200`
+(a `--db pg` service only does once the database check passes); the proxy then sends new requests
+there, waits up to `drain_timeout` seconds for the old container's in-flight requests, and stops
+it, which sends SIGTERM and kills it `drain_timeout` seconds later. The proxy has already moved
+traffic by the time SIGTERM arrives, so here the `503` only matters to other probes. Keep
+`drain_timeout` above `SHUTDOWN_TIMEOUT_SECS` so the service's own drain finishes before the
+kill. Run more than one server under `servers.web` (behind a load balancer) for the deploy to
+roll across hosts.
+
+**Kubernetes.** The same settings, as a Deployment:
+
+```yaml
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0      # never fewer ready pods than replicas
+      maxSurge: 1            # one new pod at a time
+  template:
+    spec:
+      terminationGracePeriodSeconds: 45   # > preStop sleep + SHUTDOWN_TIMEOUT_SECS
+      containers:
+        - name: app
+          env:
+            - name: SHUTDOWN_TIMEOUT_SECS
+              value: "30"
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 1
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+```
+
+Kubernetes removes a terminating pod from its Service endpoints at the same time as it starts the
+`preStop` hook, so the hook's short sleep lets kube-proxy and ingress controllers catch up before
+SIGTERM reaches the service. The readiness probe on `/ready` holds the rollout until the new pod is
+ready and drops a draining pod from the endpoints; the liveness probe stays on `/health`, so a
+draining pod is never restarted. `terminationGracePeriodSeconds` must cover the `preStop` sleep
+plus `SHUTDOWN_TIMEOUT_SECS`, or the kubelet's SIGKILL cuts the drain short.
 
 ## See also
 
