@@ -91,6 +91,21 @@ owner's email or other personal data to external services.
   `examples/book-snippets/Cargo.toml` (K5). `ch30-04-credentials-jwt` doctests take > 60 s
   (argon2 cost?) — check. `cargo clippy -p id_effect_opentelemetry --no-default-features` fails
   on existing code (`install_from_config` re-export, unused `OtelError` import).
+- Service template (from the readiness fix): the generated main no longer installs the OTel span
+  hook on the root fiber; wire request spans with `RequestIdLayer::span_hook(telemetry.span_hook())`
+  in `r10-w3-kit-template` (service-pg-otel variant). `server_layer_with_readiness` is only
+  exported from `server::lifecycle`.
+- Bugs, id_effect_node (pre-existing, found by r10-e7-1-cron; fix before exit):
+  `ClusterSingleton::resign` clears `local_pid` only when release succeeds, so after a lost lease
+  (`HeldBy`) it keeps the old pid; `PgAdvisoryLease::try_acquire` treats its in-memory `held` map
+  as ownership without pinging, so after its session died the same holder "re-acquires". Also:
+  console nested supervisors need a child kind from `which_children` (id_effect_process);
+  `logs_bridge.rs` subscriber builders still use a non-reloadable filter;
+  `tier-conformance.sh id_effect_opentelemetry` fails on 15 pre-existing "stub" markers.
+- DX (from dev / devcontainer): `id-effect dev --services` runs `docker compose up -d` on every
+  service, incl. the project's own release container (takes :8080 for service) - add a service
+  filter (e.g. only services with a `profiles: [dev]` or `--services db,redis`). Template READMEs
+  don't mention `.devcontainer/`. Windows path of `id-effect dev` not compile-checked.
 - Index hygiene: something (likely a Maestro command) staged ~330 files incl. other agents' WIP
   during wave 1. Pathspec commits are unaffected; never run a bare `git commit`.
 - Fiber registry bench numbers came from a loaded machine: re-measure idle in `r10-w3-kpis`.
