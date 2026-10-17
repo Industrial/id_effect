@@ -9,8 +9,24 @@ url = "redis://localhost:6379/0"
 
 [auth]
 jwt_secret = "dev-only: replace with 32+ random bytes in prod"
+cookie_key = "ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2ZGV2"
 session_cookie = "id_session"
 secure_cookies = false
+
+[mail]
+# Mailpit from `compose.yaml` (web UI on http://localhost:8025).
+transport = "smtp"
+smtp_host = "localhost"
+smtp_port = 1025
+previews = true
+
+[storage]
+# SeaweedFS from `compose.yaml` (`s3.json` holds the credentials).
+bucket = "ledger-statements"
+endpoint = "http://localhost:8333"
+access_key_id = "ledger"
+secret_access_key = "ledger-dev-secret"
+allow_http = true
 
 [oidc]
 issuer = "http://localhost:8180/realms/ledger"

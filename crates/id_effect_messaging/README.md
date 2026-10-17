@@ -54,4 +54,4 @@ and runs `f` only the first time; `Inbox::handler` wraps it into a `consume` han
 after the commit. `migrator()` ships both tables (tracked in `_id_effect_messaging_migrations`);
 `MemoryOutbox` and `MemoryInbox` are the same in memory for tests.
 
-Tier `integration`.
+Tier `platform`: the Ledger reference app under `examples/reference/` depends on it.

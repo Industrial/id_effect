@@ -82,7 +82,8 @@
 //! [`Mailer`] with a short retry. They never go through `deliver_later`, whose job payload would
 //! keep a usable token in the jobs table (see the `auth` module).
 //!
-//! Tier `integration` (ADR 0010 Amendment 6).
+//! Tier `platform` (ADR 0010 Amendment 6): the Ledger reference app under
+//! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

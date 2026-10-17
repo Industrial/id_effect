@@ -33,7 +33,8 @@
 //! assert!(matches!(got, Exit::Success(b) if b == "hello"));
 //! ```
 //!
-//! Tier `integration` (ADR 0010 Amendment 6).
+//! Tier `platform` (ADR 0010 Amendment 6): the Ledger reference app under
+//! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

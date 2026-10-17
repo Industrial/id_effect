@@ -47,4 +47,4 @@ let public = ConsoleConfig::new("0.0.0.0:9090".parse().unwrap());
 assert!(public.requires_guard());
 ```
 
-Tier `integration`.
+Tier `platform`: the Ledger reference app under `examples/reference/` depends on it.

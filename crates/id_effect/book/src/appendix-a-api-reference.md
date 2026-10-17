@@ -178,8 +178,8 @@ Crates are grouped by tier ([ADR 0010](https://github.com/Industrial/id_effect/b
 | `id_effect_platform` | integration | HTTP / FS / subprocess (`command`) capabilities; `auth` feature | [Platform I/O](./part2/ch07-06-platform-services.md) |
 | `id_effect_axum` | integration | Axum host, `EffectExecutor`; `tower` feature for `service` | [Axum host](./part2/ch07-08-axum-host.md) |
 | `id_effect_sql` | integration | `SqlClient`, transactions; `pg` feature for Postgres | [Data access](./part6/ch28-00-data.md) |
-| `id_effect_jobs` | integration | Postgres job queue, workers, retries, unique keys; `cron` feature | [Background jobs](./part6/ch31-01-jobs.md) |
-| `id_effect_messaging` | integration | `MessageBroker`, `MemoryBroker`, transactional outbox, relay, inbox | [Messaging](./part6/ch31-02-messaging.md) |
+| `id_effect_jobs` | platform | Postgres job queue, workers, retries, unique keys; `cron` feature | [Background jobs](./part6/ch31-01-jobs.md) |
+| `id_effect_messaging` | platform | `MessageBroker`, `MemoryBroker`, transactional outbox, relay, inbox | [Messaging](./part6/ch31-02-messaging.md) |
 | `id_effect_events` | integration | Event store, projections, snapshots, CQRS dispatch | [Events and projections](./part5/ch23-00-events-and-projections.md) |
 | `id_effect_opentelemetry` | integration | OpenTelemetry span hook, metrics bridge, logs | [Observability](./part6/ch27-00-observability.md) |
 | `id_effect_cli` | integration | `run_main`, `Exit`/`Cause` → `ExitCode` | [CLI with clap](./part3/ch16-00-cli-with-clap.md) |

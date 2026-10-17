@@ -68,4 +68,4 @@ let state: JobState = "dead".parse().unwrap();
 assert!(state.is_terminal());
 ```
 
-Tier `integration`.
+Tier `platform`: the Ledger reference app under `examples/reference/` depends on it.

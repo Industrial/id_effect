@@ -7,9 +7,18 @@ password = "postgres"
 
 [auth]
 jwt_secret = "test-only secret, at least 32 bytes long"
+cookie_key = "dGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVzdGVz"
 session_cookie = "id_session"
 secure_cookies = false
 password_memory_kib = 64
 # Tests sign many users in; the rate-limit tests lower these.
 login_per_second = 10.0
 login_burst = 100
+login_tenant_per_second = 10.0
+login_tenant_burst = 100
+# The tests reload the limits themselves.
+reload_limits_secs = 0
+
+[jobs]
+# The tests drive the worker, the cron, the relay and the consumers themselves.
+run = false

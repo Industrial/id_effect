@@ -34,6 +34,9 @@
 //! | `mail` | `id_effect_mail` (SMTP, SendGrid, templates; with `web`: the preview routes) | `mail` |
 //! | `console` | `web` + `authz` + `id_effect_console` (the guarded operator console) | `console` |
 //! | `storage` | `id_effect_storage` (local and in-memory object stores, signed URLs) | `storage` |
+//! | `storage-s3` | `storage` + the S3 (and S3-compatible) store | `storage::S3Store` |
+//! | `http-client` | `id_effect_platform` (the `HttpClient` capability, reqwest, retries; with `otel`: `TracedHttpClient`) | `platform` |
+//! | `logger` | `id_effect_logger` (`EffectLogger`, backends, `RedactionPolicy`) | `logger` |
 //! | `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots) | `events` |
 //! | `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`; `AccountMails`) | `auth`, `mail` |
 //! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client); for `[dev-dependencies]` | `test` |
@@ -141,6 +144,15 @@ pub use id_effect_console as console;
 /// Object storage ([`id_effect_storage`]); feature `storage`.
 #[cfg(feature = "storage")]
 pub use id_effect_storage as storage;
+
+/// Outbound HTTP ([`id_effect_platform`]): the `HttpClient` capability and the reqwest client;
+/// feature `http-client`.
+#[cfg(feature = "http-client")]
+pub use id_effect_platform as platform;
+
+/// Structured logging ([`id_effect_logger`]) and its `RedactionPolicy`; feature `logger`.
+#[cfg(feature = "logger")]
+pub use id_effect_logger as logger;
 
 /// Event sourcing ([`id_effect_events`]); feature `events`.
 #[cfg(feature = "events")]

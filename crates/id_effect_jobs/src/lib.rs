@@ -78,7 +78,8 @@
 //! assert_eq!(sent.load(Ordering::SeqCst), 1);
 //! ```
 //!
-//! Tier `integration` (ADR 0010 Amendment 6).
+//! Tier `platform` (ADR 0010 Amendment 6): the Ledger reference app under
+//! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -96,6 +97,13 @@ mod worker;
 
 #[cfg(feature = "cron")]
 pub use cron::{CronLeader, enqueue_on_tick, tick_key};
+/// What [`CronLeader::new`] is built from: the singleton and its PostgreSQL lease
+/// (`id_effect_node`), and the local process id (`id_effect_process`), so a service reaches them
+/// through this crate.
+#[cfg(feature = "cron")]
+pub use id_effect_node::singleton::{ClusterSingleton, PgAdvisoryLease, SingletonError};
+#[cfg(feature = "cron")]
+pub use id_effect_process::{NodeName, Pid};
 pub use job::{
   Job, JobContext, JobFailure, JobId, JobRegistry, Priority, Queue, UniqueKey, UniqueScope,
   default_retry, retry_delay,

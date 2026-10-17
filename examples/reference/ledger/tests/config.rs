@@ -109,7 +109,16 @@ async fn prod_reads_its_database_password_from_vault() {
           put_secret(
             &vault,
             "ledger/auth",
-            serde_json::json!({"jwt_secret": "a prod signing secret from vault"}),
+            serde_json::json!({
+              "jwt_secret": "a prod signing secret from vault",
+              "cookie_key": "cHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9kcHJvZHByb2Rwcm9k",
+            }),
+          )
+          .await;
+          put_secret(
+            &vault,
+            "ledger/mail",
+            serde_json::json!({"sendgrid_api_key": "SG.from-vault"}),
           )
           .await;
           let dir = config_dir_for(&vault.addr());
@@ -123,6 +132,12 @@ async fn prod_reads_its_database_password_from_vault() {
             "a prod signing secret from vault"
           );
           assert!(prod.auth.secure_cookies && prod.auth.session_cookie.starts_with("__Host-"));
+          // SendGrid in prod, its key from Vault too.
+          assert_eq!(prod.mail.transport, ledger::config::MailTransport::Sendgrid);
+          assert_eq!(
+            prod.mail.sendgrid_api_key.as_ref().map(|k| k.expose().as_str()),
+            Some("SG.from-vault")
+          );
 
           // The password from Vault opens the database.
           let database = run(Database::connect(&prod.db)).await;

@@ -11,20 +11,24 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use id_effect::HNil;
 use id_effect::{Cause, Effect, Exit, UtcDateTime, caps, from_async, need, succeed};
 use id_effect_kit::auth::{
   MemoryTotpStepStore, PasswordHasher, PasswordParams, Totp, TotpConfig, TotpSecret,
 };
 use id_effect_kit::authz::{AuthzEvents, MemorySink};
 use id_effect_kit::axum::EffectExecutor;
+use id_effect_kit::mail::{MailerService, SmtpConfig, SmtpMailer};
 use id_effect_kit::sql::{SqlClient, SqlClientService, SqlError, SqlValue, params};
+use id_effect_kit::storage::ObjectStorage;
 use id_effect_kit::test::fixtures::{BoxedStrategy, Strategy, from_schema};
 use id_effect_kit::test::http::{StatusCode, TestClient, TestRequest, TestResponse};
 use id_effect_kit::test::{
-  ContainerError, Factory, Fixture, IsolatedDatabase, Postgres, Shared, TemplateDb,
+  ContainerError, ContainerImage, Factory, Fixture, IsolatedDatabase, Mailpit, MailpitContainer,
+  Postgres, S3, S3Container, Shared, TemplateDb,
 };
 use ledger::accounts::Account;
-use ledger::config::{self, LedgerConfig};
+use ledger::config::{self, LedgerConfig, StorageConfig};
 use ledger::{Database, Services, StartupError};
 use serde_json::{Value, json};
 
@@ -32,6 +36,10 @@ use serde_json::{Value, json};
 pub const MIGRATIONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
 /// The app's profiles.
 pub const CONFIG: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/config");
+/// The app's mail templates.
+pub const TEMPLATES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/templates/mail");
+/// The header a browser echoes the CSRF token in.
+pub const CSRF_HEADER: &str = "x-csrf-token";
 /// The password every fixture user has.
 pub const PASSWORD: &str = "correct horse battery staple";
 
@@ -80,7 +88,38 @@ pub async fn test_config() -> LedgerConfig {
   let profile = profiles.profile("test").expect("test profile");
   let mut config = run(config::load(&profiles, profile, None)).await;
   config.db.migrations = MIGRATIONS.to_owned();
+  config.mail.templates = TEMPLATES.to_owned();
   config
+}
+
+/// The CSRF cookie and token a browser holds (from `GET /auth/csrf`).
+#[derive(Clone, Debug, Default)]
+pub struct Csrf {
+  /// `__Host-csrf=…`.
+  pub cookie: String,
+  /// What the browser echoes in [`CSRF_HEADER`].
+  pub token: String,
+}
+
+impl Csrf {
+  /// A browser's first visit to `client`: the CSRF cookie the security layer sets and its
+  /// token.
+  pub async fn fetch(client: &TestClient<axum::Router>) -> Self {
+    let res = run(client.get("/auth/csrf").send()).await;
+    res.assert_status(StatusCode::OK);
+    let cookie = res
+      .header("set-cookie")
+      .expect("a CSRF cookie")
+      .split(';')
+      .next()
+      .expect("name=value")
+      .to_owned();
+    let token = res.json::<Value>().expect("json")["token"]
+      .as_str()
+      .expect("a token")
+      .to_owned();
+    Self { cookie, token }
+  }
 }
 
 /// A running ledger over a fresh database.
@@ -95,6 +134,8 @@ pub struct Ledger {
   pub config: LedgerConfig,
   /// Every authorization decision the app made.
   pub decisions: MemorySink,
+  /// The browser's CSRF cookie and token, sent with every request but bearer ones.
+  pub csrf: Csrf,
 }
 
 /// Runs `test` against a ledger on a database of its own. `configure` may change the
@@ -119,7 +160,8 @@ where
           .map_err(TestError::from)
           .flat_map(move |_applied| {
             from_async(move || async move {
-              let ledger = Ledger::start(db, url, config, configure);
+              let mut ledger = Ledger::start(db, url, config, configure);
+              ledger.csrf = Csrf::fetch(&ledger.client).await;
               test(ledger).await;
               Ok::<(), TestError>(())
             })
@@ -196,6 +238,7 @@ impl Ledger {
       url,
       config,
       decisions,
+      csrf: Csrf::default(),
     }
   }
 
@@ -204,24 +247,60 @@ impl Ledger {
     run(request.send()).await
   }
 
+  /// `request` as a browser sends it: the CSRF cookie (after `session`, a `name=value` pair,
+  /// when given) and the CSRF header.
+  pub fn browser(
+    &self,
+    request: TestRequest<axum::Router>,
+    session: Option<&str>,
+  ) -> TestRequest<axum::Router> {
+    let cookie = match session {
+      Some(session) => format!("{session}; {}", self.csrf.cookie),
+      None => self.csrf.cookie.clone(),
+    };
+    request
+      .header("cookie", &cookie)
+      .header(CSRF_HEADER, &self.csrf.token)
+  }
+
+  /// `request` sent by `who` (a session cookie or a bearer token, see [`As`]).
+  pub fn by(&self, who: &As, request: TestRequest<axum::Router>) -> TestRequest<axum::Router> {
+    match who {
+      As::Anonymous => self.browser(request, None),
+      As::Session(cookie) => self.browser(request, Some(cookie)),
+      As::Bearer(token) => request.bearer(token),
+    }
+  }
+
   /// `GET path` as `who` (a session cookie or a bearer token, see [`As`]).
   pub async fn get(&self, path: &str, who: &As) -> TestResponse {
-    self.send(who.on(self.client.get(path))).await
+    self.send(self.by(who, self.client.get(path))).await
   }
 
   /// `POST path` with a JSON body as `who`.
   pub async fn post(&self, path: &str, body: Value, who: &As) -> TestResponse {
-    self.send(who.on(self.client.post_json(path, &body))).await
+    self
+      .send(self.by(who, self.client.post_json(path, &body)))
+      .await
   }
 
   /// `PATCH path` with a JSON body as `who`.
   pub async fn patch(&self, path: &str, body: Value, who: &As) -> TestResponse {
-    self.send(who.on(self.client.patch_json(path, &body))).await
+    self
+      .send(self.by(who, self.client.patch_json(path, &body)))
+      .await
+  }
+
+  /// `PUT path` with a JSON body as `who`.
+  pub async fn put(&self, path: &str, body: Value, who: &As) -> TestResponse {
+    self
+      .send(self.by(who, self.client.put_json(path, &body)))
+      .await
   }
 
   /// `DELETE path` as `who`.
   pub async fn delete(&self, path: &str, who: &As) -> TestResponse {
-    self.send(who.on(self.client.delete(path))).await
+    self.send(self.by(who, self.client.delete(path))).await
   }
 
   /// Runs `sql` on the test database.
@@ -269,6 +348,16 @@ impl Ledger {
           role,
           totp.map(TotpSecret::to_base32)
         ],
+      )
+      .await;
+  }
+
+  /// Gives `username` the verified address `email` (its statements are mailed there).
+  pub async fn email(&self, username: &str, email: &str) {
+    self
+      .execute(
+        "UPDATE users SET email = $2, email_verified = true WHERE username = $1",
+        params![username, email],
       )
       .await;
   }
@@ -331,6 +420,114 @@ impl Ledger {
   }
 }
 
+/// A Mailpit server and an SMTP transport to it.
+pub async fn mailpit() -> (MailpitContainer, MailerService) {
+  let mailpit = run(Mailpit::new().start::<ContainerError, HNil>()).await;
+  let smtp = SmtpConfig::plaintext(mailpit.host(), mailpit.smtp_port());
+  let mailer = MailerService::new(SmtpMailer::new(smtp).expect("an SMTP mailer"));
+  (mailpit, mailer)
+}
+
+/// `GET path` of Mailpit's API, as JSON.
+pub async fn mailpit_api(mailpit: &MailpitContainer, path: &str) -> Value {
+  let body = reqwest::get(format!("{}{path}", mailpit.api_url()))
+    .await
+    .expect("Mailpit reachable")
+    .text()
+    .await
+    .expect("a body");
+  serde_json::from_str(&body).unwrap_or_else(|e| panic!("{path}: {e}: {body}"))
+}
+
+/// The raw body of `GET path` of Mailpit's API.
+pub async fn mailpit_raw(mailpit: &MailpitContainer, path: &str) -> String {
+  reqwest::get(format!("{}{path}", mailpit.api_url()))
+    .await
+    .expect("Mailpit reachable")
+    .text()
+    .await
+    .expect("a body")
+}
+
+/// Every message Mailpit holds, once there are `n` (newest first), each in full.
+pub async fn mail_received(mailpit: &MailpitContainer, n: usize) -> Vec<Value> {
+  for _ in 0..100 {
+    let list = mailpit_api(mailpit, "/api/v1/messages").await;
+    let messages = list["messages"].as_array().cloned().unwrap_or_default();
+    if messages.len() >= n {
+      let mut full = Vec::new();
+      for m in messages {
+        let id = m["ID"].as_str().expect("an id").to_owned();
+        full.push(mailpit_api(mailpit, &format!("/api/v1/message/{id}")).await);
+      }
+      return full;
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+  }
+  panic!("Mailpit did not receive {n} message(s)");
+}
+
+/// The token of the link in `message`'s text (`…?token=<token>`).
+pub fn link_token(message: &Value) -> String {
+  let text = message["Text"].as_str().expect("a text body");
+  let at = text.find("token=").expect("a link with a token") + "token=".len();
+  text[at..]
+    .chars()
+    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+    .collect()
+}
+
+/// An S3-compatible server with the bucket `bucket`, and the Ledger's store on it.
+pub async fn s3(bucket: &str) -> (S3Container, ObjectStorage, StorageConfig) {
+  let s3 = run(S3::new().start::<ContainerError, HNil>()).await;
+  create_bucket(&s3, bucket).await;
+  let config = StorageConfig {
+    bucket: Some(bucket.to_owned()),
+    endpoint: Some(s3.endpoint()),
+    region: "us-east-1".to_owned(),
+    access_key_id: Some(s3.access_key_id().to_owned()),
+    secret_access_key: Some(id_effect_kit::config::Secret::new(
+      s3.secret_access_key().to_owned(),
+    )),
+    allow_http: true,
+  };
+  let store = ledger::app::statement_store(&config).expect("an S3 store");
+  (s3, store, config)
+}
+
+/// `PUT /<bucket>` (CreateBucket), presigned with object_store's SigV4 signer: the Ledger reads
+/// and writes objects, it never creates buckets.
+pub async fn create_bucket(s3: &S3Container, bucket: &str) {
+  use object_store::signer::Signer as _;
+  let signer = object_store::aws::AmazonS3Builder::new()
+    .with_endpoint(s3.endpoint())
+    .with_allow_http(true)
+    .with_bucket_name(bucket)
+    .with_region("us-east-1")
+    .with_access_key_id(s3.access_key_id())
+    .with_secret_access_key(s3.secret_access_key())
+    .build()
+    .expect("a signer");
+  let url = signer
+    .signed_url(
+      object_store::signer::Method::PUT,
+      &object_store::path::Path::from(""),
+      Duration::from_secs(60),
+    )
+    .await
+    .expect("a presigned URL");
+  let created = reqwest::Client::new()
+    .put(url)
+    .send()
+    .await
+    .expect("S3 reachable");
+  assert!(
+    created.status().is_success(),
+    "create bucket {bucket}: {}",
+    created.status()
+  );
+}
+
 /// The three users of [`Ledger::team`], signed in.
 pub struct Team {
   pub owner: As,
@@ -352,16 +549,14 @@ pub enum As {
 impl As {
   /// The session a sign-in response set.
   pub fn session(res: &TestResponse) -> Self {
-    let set_cookie = res.header("set-cookie").expect("a session cookie");
+    let set_cookie = res
+      .headers()
+      .get_all("set-cookie")
+      .iter()
+      .filter_map(|v| v.to_str().ok())
+      .find(|c| !c.starts_with("__Host-csrf="))
+      .expect("a session cookie");
     Self::Session(set_cookie.split(';').next().expect("name=value").to_owned())
-  }
-
-  fn on(&self, request: TestRequest<axum::Router>) -> TestRequest<axum::Router> {
-    match self {
-      Self::Anonymous => request,
-      Self::Session(cookie) => request.header("cookie", cookie),
-      Self::Bearer(token) => request.bearer(token),
-    }
   }
 }
 

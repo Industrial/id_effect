@@ -20,4 +20,4 @@ assert_eq!(key.file_name(), "inv-0042.pdf");
 assert_eq!(ObjectKey::new("../etc/passwd"), Err(KeyError::DotSegment));
 ```
 
-Tier `integration`.
+Tier `platform`: the Ledger reference app under `examples/reference/` depends on it.

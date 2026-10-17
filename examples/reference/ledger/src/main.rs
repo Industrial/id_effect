@@ -8,10 +8,11 @@
 use std::process::ExitCode;
 use std::time::Duration;
 
-use id_effect::{Cause, Effect, Exit};
+use id_effect::{Cause, Effect, Exit, Never};
 use id_effect_kit::axum::{EffectExecutor, HostConfig, serve_until_shutdown};
+use id_effect_kit::logger::provide_redaction_policy;
 use ledger::config::{self, LedgerConfig};
-use ledger::{StartupError, router, start};
+use ledger::{StartupError, background, limits, observability, router, start};
 
 /// The directory of `base.toml` and the profiles, relative to the working directory.
 const CONFIG_DIR: &str = "config";
@@ -25,15 +26,44 @@ async fn main() -> ExitCode {
   };
   eprintln!("ledger: profile {profile}");
   let loaded: Effect<LedgerConfig, StartupError> =
-    config::load(&profiles, profile, None).map_err(StartupError::from);
+    config::load(&profiles, profile.clone(), None).map_err(StartupError::from);
   let config = match EffectExecutor::global().run_effect(loaded).await {
     Exit::Success(config) => config,
     Exit::Failure(cause) => return fail(describe(cause)),
   };
-  let services = match EffectExecutor::global().run_effect(start(&config)).await {
+  // Traces, metrics and logs over OTLP when the environment names a collector.
+  let otel = match observability::install() {
+    Ok(otel) => otel,
+    Err(e) => return fail(format!("opentelemetry: {e}")),
+  };
+  let redaction = provide_redaction_policy::<Never>(observability::redaction(&config)).build();
+  let _ = EffectExecutor::global().run_effect(redaction).await;
+  let mut services = match EffectExecutor::global().run_effect(start(&config)).await {
     Exit::Success(services) => services,
     Exit::Failure(cause) => return fail(describe(cause)),
   };
+  services.env_filter = otel.as_ref().map(|guard| guard.env_filter().clone());
+  if config.auth.reload_limits_secs > 0 {
+    let every = Duration::from_secs(config.auth.reload_limits_secs);
+    match limits::watch(&profiles, profile, every) {
+      Ok(watch) => services.limits = Some(watch),
+      Err(e) => return fail(format!("login limits: {e}")),
+    }
+  }
+  let tasks = match EffectExecutor::global()
+    .run_effect(background::tasks(&config, &services))
+    .await
+  {
+    Exit::Success(tasks) => tasks,
+    Exit::Failure(cause) => return fail(describe(cause)),
+  };
+  let running: Vec<_> = tasks
+    .into_iter()
+    .map(|(name, task)| {
+      eprintln!("ledger: {name} started");
+      tokio::spawn(EffectExecutor::global().run_effect(task))
+    })
+    .collect();
   let app = match router(&config, services) {
     Ok(app) => app,
     Err(e) => return fail(e),
@@ -44,7 +74,15 @@ async fn main() -> ExitCode {
     shutdown_timeout: Duration::from_secs(20),
   };
   let program = serve_until_shutdown(app).provide(host);
-  match EffectExecutor::global().run_effect(program).await {
+  let served = EffectExecutor::global().run_effect(program).await;
+  // Dropping a task's future interrupts its fiber: the worker drains, the cron resigns.
+  for task in running {
+    task.abort();
+  }
+  if let Some(otel) = otel {
+    otel.shutdown();
+  }
+  match served {
     Exit::Success(reason) => {
       eprintln!("ledger: stopped ({reason:?})");
       ExitCode::SUCCESS

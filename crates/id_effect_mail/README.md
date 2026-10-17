@@ -25,4 +25,4 @@ assert_eq!(to.domain(), "ledger.example");
 assert!(Address::parse("carol@").is_err());
 ```
 
-Tier `integration`.
+Tier `platform`: the Ledger reference app under `examples/reference/` depends on it.

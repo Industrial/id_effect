@@ -14,6 +14,17 @@ url = "redis://redis:6379/0"
 session_cookie = "__Host-id_session"
 secure_cookies = true
 
+[mail]
+# The SendGrid v3 API over the traced HTTP client; the API key comes from Vault (`ledger/mail`).
+transport = "sendgrid"
+verify_url = "https://ledger.example/verify"
+reset_url = "https://ledger.example/reset"
+
+[storage]
+# AWS S3 with the instance's credentials.
+bucket = "ledger-statements"
+region = "eu-central-1"
+
 [vault]
 addr = "http://vault:8200"
 mount = "secret"
@@ -22,3 +33,4 @@ mount = "secret"
 [vault.secrets]
 db = "ledger/db"
 auth = "ledger/auth"
+mail = "ledger/mail"

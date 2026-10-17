@@ -1,0 +1,14 @@
+{% extends "layout.txt" %}{% block body %}Hello {{ owner }},
+
+The {{ month }} statement of account {{ account.code }} ({{ account.name }}, {{ org }}):
+
+  Opening balance  {{ opening }}
+  Postings         {{ postings }}
+  Closing balance  {{ closing }}
+{% if link is defined %}
+Download it (the link works for {{ link_valid_for }}):
+
+{{ link }}
+{% else %}
+The postings are attached as {{ filename }}.
+{% endif %}{% endblock %}

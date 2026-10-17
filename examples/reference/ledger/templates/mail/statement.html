@@ -1,0 +1,11 @@
+{% extends "layout.html" %}{% block body %}<p>Hello {{ owner }},</p>
+<p>The {{ month }} statement of account <strong>{{ account.code }}</strong> ({{ account.name }},
+{{ org }}):</p>
+<table>
+<tr><td>Opening balance</td><td>{{ opening }}</td></tr>
+<tr><td>Postings</td><td>{{ postings }}</td></tr>
+<tr><td>Closing balance</td><td>{{ closing }}</td></tr>
+</table>
+{% if link is defined %}<p><a href="{{ link }}">Download the statement</a> (the link works for
+{{ link_valid_for }}).</p>{% else %}<p>The postings are attached as {{ filename }}.</p>{% endif %}
+{% endblock %}

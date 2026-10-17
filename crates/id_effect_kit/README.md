@@ -33,6 +33,9 @@ id_effect = "0.9"
 | `mail` | `id_effect_mail` (SMTP, SendGrid, minijinja templates, `TestMailbox`; with `web`: the preview routes) | `id_effect_kit::mail` |
 | `console` | `web` + `authz` + `id_effect_console` (fibers, supervisors, metrics, health, log level behind a guard) | `id_effect_kit::console` |
 | `storage` | `id_effect_storage` (local file system and in-memory object stores, signed URLs) | `id_effect_kit::storage` |
+| `storage-s3` | `storage` + the S3 (and S3-compatible) store | `id_effect_kit::storage::S3Store` |
+| `http-client` | `id_effect_platform` (the `HttpClient` capability, the reqwest client, retries; with `otel` also `TracedHttpClient`) | `id_effect_kit::platform` |
+| `logger` | `id_effect_logger` (`EffectLogger`, backends, `RedactionPolicy`) | `id_effect_kit::logger` |
 | `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots, subscriptions) | `id_effect_kit::events` |
 | `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`) and `AccountMails`, their sign-up, verification and reset mail | `id_effect_kit::{auth, mail}` |
 | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client) — for `[dev-dependencies]` | `id_effect_kit::test` |

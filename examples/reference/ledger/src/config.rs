@@ -39,6 +39,19 @@ pub struct LedgerConfig {
   pub oidc: Option<OidcConfig>,
   /// Where the secrets are (prod).
   pub vault: Option<VaultConfig>,
+  /// Outgoing mail: the transport, the sender, the account links and the previews.
+  pub mail: MailConfig,
+  /// Where the monthly statements are stored (S3).
+  pub storage: StorageConfig,
+  /// The monthly statements: when the cron fires and how a statement is delivered.
+  pub statements: StatementsConfig,
+  /// The background workers of this process.
+  pub jobs: JobsConfig,
+  /// Where postings are announced and who listens.
+  pub messaging: MessagingConfig,
+  /// The operator console at `/_console`.
+  #[serde(default)]
+  pub console: ConsoleConfig,
 }
 
 /// `[http]`.
@@ -121,6 +134,9 @@ pub struct AuthConfig {
   pub jwt_audience: String,
   /// Lifetime of an API token.
   pub token_ttl_minutes: u64,
+  /// Base64 of 64+ random bytes: signs the CSRF cookie (from Vault in `prod`; every instance
+  /// needs the same key).
+  pub cookie_key: Secret<String>,
   /// Name of the session cookie (`__Host-` prefixed in prod).
   pub session_cookie: String,
   /// Whether cookies are `Secure` (HTTPS only).
@@ -129,10 +145,143 @@ pub struct AuthConfig {
   pub login_per_second: f64,
   /// Login attempts allowed in a burst.
   pub login_burst: f64,
+  /// Login attempts refilled per second, per organisation (all its clients together).
+  pub login_tenant_per_second: f64,
+  /// Login attempts an organisation may make in a burst.
+  pub login_tenant_burst: f64,
+  /// How often the profile file is polled for new login limits (`0`: never).
+  #[serde(default)]
+  pub reload_limits_secs: u64,
   /// Argon2id memory cost (KiB).
   pub password_memory_kib: u32,
   /// Issuer shown by authenticator apps.
   pub totp_issuer: String,
+}
+
+/// `[mail]`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct MailConfig {
+  /// How mail leaves the service.
+  pub transport: MailTransport,
+  /// The sender's address.
+  pub from: String,
+  /// The sender's display name.
+  pub from_name: String,
+  /// The mail templates (`<name>.subject.txt`, `<name>.txt`, `<name>.html`).
+  pub templates: String,
+  /// SMTP server (`transport = "smtp"`).
+  #[serde(default)]
+  pub smtp_host: String,
+  /// SMTP port (plaintext; Mailpit in dev).
+  #[serde(default)]
+  pub smtp_port: u16,
+  /// SendGrid API key (`transport = "sendgrid"`; from Vault in `prod`).
+  pub sendgrid_api_key: Option<Secret<String>>,
+  /// SendGrid API base URL (default the public API).
+  pub sendgrid_base_url: Option<String>,
+  /// The page an email verification link opens (`?token=` is appended).
+  pub verify_url: String,
+  /// The page a password reset link opens (`?token=` is appended).
+  pub reset_url: String,
+  /// Serve `/_mail/previews` (the dev profile only).
+  #[serde(default)]
+  pub previews: bool,
+}
+
+/// `mail.transport`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MailTransport {
+  /// Kept in memory, never sent (tests).
+  Memory,
+  /// Plain SMTP (Mailpit in dev).
+  Smtp,
+  /// The SendGrid v3 API over traced HTTP (prod).
+  Sendgrid,
+}
+
+/// `[storage]`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct StorageConfig {
+  /// The S3 bucket of the statements; in memory when absent.
+  pub bucket: Option<String>,
+  /// An S3-compatible endpoint (`http://localhost:8333`); AWS when absent.
+  pub endpoint: Option<String>,
+  /// The region.
+  pub region: String,
+  /// Access key id; the environment's AWS credentials when absent.
+  pub access_key_id: Option<String>,
+  /// Secret access key.
+  pub secret_access_key: Option<Secret<String>>,
+  /// Allow plain HTTP to the endpoint (dev).
+  #[serde(default)]
+  pub allow_http: bool,
+}
+
+/// `[statements]`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct StatementsConfig {
+  /// When the statements of the previous month are due (six-field cron, UTC).
+  pub cron: String,
+  /// A statement CSV up to this size is attached to its mail; a larger one is linked.
+  pub attach_max_bytes: usize,
+  /// How long the signed link of a linked statement is valid.
+  pub link_ttl_hours: u64,
+}
+
+/// `[jobs]`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct JobsConfig {
+  /// Run the worker, the statement cron, the relay and the consumers in this process.
+  pub run: bool,
+  /// Jobs of one queue running at a time.
+  pub concurrency: u16,
+}
+
+/// `[messaging]`.
+#[derive(Clone, Debug, Deserialize)]
+pub struct MessagingConfig {
+  /// The topic every posting is announced on.
+  pub topic: String,
+  /// The consumer group of the balance notifications.
+  pub group: String,
+  /// A notification is dead-lettered after this many failed deliveries.
+  pub max_deliveries: u32,
+  /// This instance's consumer name on Redis Streams (stable per instance).
+  pub consumer: String,
+}
+
+/// `[console]`.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct ConsoleConfig {
+  /// Mount `/_console` (behind `console.admin`).
+  #[serde(default)]
+  pub enabled: bool,
+}
+
+/// The login limits of `[auth]`, as the profile file is reloaded ([`crate::limits`]).
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+pub struct LoginLimits {
+  /// Per client: tokens per second.
+  pub login_per_second: f64,
+  /// Per client: burst.
+  pub login_burst: f64,
+  /// Per organisation: tokens per second.
+  pub login_tenant_per_second: f64,
+  /// Per organisation: burst.
+  pub login_tenant_burst: f64,
+}
+
+impl AuthConfig {
+  /// The login limits in force.
+  pub fn limits(&self) -> LoginLimits {
+    LoginLimits {
+      login_per_second: self.login_per_second,
+      login_burst: self.login_burst,
+      login_tenant_per_second: self.login_tenant_per_second,
+      login_tenant_burst: self.login_tenant_burst,
+    }
+  }
 }
 
 /// `[oidc]`.

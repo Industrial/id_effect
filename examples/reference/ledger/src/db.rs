@@ -1,14 +1,20 @@
 //! PostgreSQL: the primary, the read replicas behind a [`RoutingSqlClient`], and the migrations
 //! the service applies when it starts.
+//!
+//! Every statement runs in a `db.query` span with the operation counted and timed
+//! ([`InstrumentedSqlClient`]): under the OpenTelemetry span hook the spans are exported as
+//! client spans of the request's trace, with the statement's shape and never its parameters.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use id_effect::{Effect, Layer, fail, from_async, hlist, need, succeed};
+use id_effect::{Effect, Layer, Never, Stream, fail, from_async, hlist, need, succeed};
+use id_effect_kit::sql::metrics::InstrumentedSqlClient;
 use id_effect_kit::sql::migrate::{self, MigratedEnv, MigrationsApplied};
 use id_effect_kit::sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
 use id_effect_kit::sql::{
-  FromRow, RoutingSqlClient, SqlClient, SqlClientService, SqlError, SqlValue,
+  FromRow, RoutingSqlClient, SqlClient, SqlClientService, SqlError, SqlRow, SqlTransaction,
+  SqlValue, TransactionOptions,
 };
 
 use crate::config::DbConfig;
@@ -24,8 +30,11 @@ pub struct Database {
 }
 
 impl Database {
-  /// `primary`, with reads routed to `replicas` (to the primary when the list is empty).
+  /// `primary`, with reads routed to `replicas` (to the primary when the list is empty); every
+  /// one instrumented ([module docs](self)).
   pub fn new(primary: Arc<dyn SqlClient>, replicas: Vec<Arc<dyn SqlClient>>) -> Self {
+    let primary = instrumented(primary);
+    let replicas = replicas.into_iter().map(instrumented).collect();
     let reads: Arc<dyn SqlClient> = Arc::new(RoutingSqlClient::new(Arc::clone(&primary), replicas));
     Self { primary, reads }
   }
@@ -47,6 +56,45 @@ impl Database {
       }
       Ok(Database::new(primary, reads))
     })
+  }
+}
+
+/// `client` in `db.query` spans, counted and timed (`db.system = postgresql`).
+fn instrumented(client: Arc<dyn SqlClient>) -> Arc<dyn SqlClient> {
+  Arc::new(InstrumentedSqlClient::new(Shared(client)).with_db_system("postgresql"))
+}
+
+/// A shared client as a [`SqlClient`] value, for the wrappers generic over one.
+#[derive(Clone)]
+struct Shared(Arc<dyn SqlClient>);
+
+impl SqlClient for Shared {
+  fn connect(&self) -> Effect<(), SqlError> {
+    self.0.connect()
+  }
+
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
+    self.0.query(sql, params)
+  }
+
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
+    self.0.execute(sql, params)
+  }
+
+  fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+    self.0.begin()
+  }
+
+  fn begin_with(&self, options: TransactionOptions) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+    self.0.begin_with(options)
+  }
+
+  fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+    self.0.query_stream(sql, params)
+  }
+
+  fn close(&self) -> Effect<(), Never> {
+    self.0.close()
   }
 }
 

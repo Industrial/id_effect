@@ -160,17 +160,20 @@ async fn oidc_login_through_keycloak_opens_the_ledger() {
         "{me}"
       );
 
-      // The session works like a password session: alice opens an account.
+      // The session works like a password session: alice opens an account (echoing the CSRF
+      // token, like every unsafe request of a browser).
       let opened = browser
         .http
         .post(format!("{app_url}/accounts"))
         .header(
           COOKIE,
           format!(
-            "id_session={}",
-            browser.jar[&Browser::origin(&Url::parse(&app_url).unwrap())]["id_session"]
+            "id_session={}; {}",
+            browser.jar[&Browser::origin(&Url::parse(&app_url).unwrap())]["id_session"],
+            l.csrf.cookie
           ),
         )
+        .header(common::CSRF_HEADER, &l.csrf.token)
         .header(CONTENT_TYPE, "application/json")
         .body(r#"{"code": "1000", "name": "Cash", "kind": "asset"}"#)
         .send()

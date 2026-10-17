@@ -74,7 +74,7 @@ type Call<T> = fn(&dyn HttpClient, HttpRequest) -> Effect<T, HttpError>;
 ///   }
 ///
 ///   fn execute_stream(&self, _: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
-///     unimplemented!()
+///     id_effect::fail(HttpError::InvalidRequest("Echo does not stream".into()))
 ///   }
 /// }
 ///
@@ -358,22 +358,22 @@ mod tests {
 
   /// Answers with the scripted statuses in turn (the last one repeats), recording each request's
   /// headers.
-  struct Stub {
+  struct Scripted {
     statuses: Mutex<Vec<u16>>,
     seen: Seen,
   }
 
-  /// The headers of every request a [`Stub`] answered.
+  /// The headers of every request a [`Scripted`] answered.
   type Seen = Arc<Mutex<Vec<Vec<(String, String)>>>>;
 
-  impl Stub {
+  impl Scripted {
     fn new(statuses: Vec<u16>) -> (Self, Seen) {
       let seen = Arc::new(Mutex::new(Vec::new()));
-      let stub = Self {
+      let scripted = Self {
         statuses: Mutex::new(statuses),
         seen: Arc::clone(&seen),
       };
-      (stub, seen)
+      (scripted, seen)
     }
 
     fn answer(&self, req: &HttpRequest) -> u16 {
@@ -387,7 +387,7 @@ mod tests {
     }
   }
 
-  impl HttpClient for Stub {
+  impl HttpClient for Scripted {
     fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
       let status = self.answer(&req);
       id_effect::succeed(HttpResponse {
@@ -455,8 +455,8 @@ mod tests {
   #[test]
   fn client_span_is_child_and_sends_traceparent() {
     let (exporter, provider, hook) = setup();
-    let (stub, seen) = Stub::new(vec![200]);
-    let client = TracedHttpClient::new(stub);
+    let (scripted, seen) = Scripted::new(vec![200]);
+    let client = TracedHttpClient::new(scripted);
     let url = "https://ada:secret@api.example.com:8443/v1/items?sig=abc&page=2";
     let eff = client
       .execute(HttpRequest::get(url))
@@ -503,8 +503,8 @@ mod tests {
   #[test]
   fn error_status_and_transport_errors_mark_the_span() {
     let (exporter, provider, hook) = setup();
-    let (stub, _) = Stub::new(vec![404]);
-    let eff = TracedHttpClient::new(stub)
+    let (scripted, _) = Scripted::new(vec![404]);
+    let eff = TracedHttpClient::new(scripted)
       .execute_stream(HttpRequest::post("http://svc/orders", b"{}".to_vec()))
       .with_span_hook(hook.clone());
     assert!(matches!(eff.block_on(), Exit::Success(r) if r.status == 404));
@@ -531,9 +531,9 @@ mod tests {
   #[test]
   fn with_retry_records_attempts_as_events_on_one_span() {
     let (exporter, provider, hook) = setup();
-    let (stub, seen) = Stub::new(vec![503, 503, 200]);
+    let (scripted, seen) = Scripted::new(vec![503, 503, 200]);
     let policy = RetryPolicy::new(id_effect::Schedule::recurs(2));
-    let eff = TracedHttpClient::with_retry(stub, policy)
+    let eff = TracedHttpClient::with_retry(scripted, policy)
       .execute(HttpRequest::get("http://svc/flaky"))
       .with_span_hook(hook);
     assert!(matches!(eff.block_on(), Exit::Success(r) if r.status == 200));
@@ -565,8 +565,8 @@ mod tests {
     let exporter = InMemorySpanExporter::default();
     let provider = sdk_tracer_provider_with_in_memory_exporter(&exporter);
     let remote = Context::new().with_span(provider.tracer("ambient").start("ambient"));
-    let (stub, seen) = Stub::new(vec![200]);
-    let client = TracedHttpClient::from_service(HttpClientService::new(stub));
+    let (scripted, seen) = Scripted::new(vec![200]);
+    let client = TracedHttpClient::from_service(HttpClientService::new(scripted));
     {
       let _attached = remote.clone().attach();
       assert!(matches!(

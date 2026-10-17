@@ -6,9 +6,9 @@
 //!    (debits positive, credits negative), else a `422` listing every issue;
 //! 2. loads the accounts it touches (tenant-scoped, so another organisation's account is
 //!    unknown) and checks `account.post` ([`can_post`](crate::policy::can_post)) on each;
-//! 3. writes the entry, its postings and a hash-chained audit record in one `SERIALIZABLE`
-//!    transaction, rerun when it loses a serialization conflict
-//!    ([`retry_serialization_failures`]);
+//! 3. writes the entry, its postings, a hash-chained audit record and its announcement
+//!    ([`EntryPosted`] in the outbox, see [`notifications`]) in one `SERIALIZABLE` transaction,
+//!    rerun when it loses a serialization conflict ([`retry_serialization_failures`]);
 //! 4. drops the cached balances of its accounts.
 //!
 //! `POST /entries/batch` posts many entries in one transaction, each under its own savepoint: an
@@ -27,6 +27,7 @@ use id_effect::{Effect, Schedule, fail, succeed};
 use id_effect_kit::authz::Policies;
 use id_effect_kit::axum::RequestCaps;
 use id_effect_kit::axum::route::{Input, Route, Router};
+use id_effect_kit::messaging::Topic;
 use id_effect_kit::sql::audit::{AuditContext, AuditEntry, AuditLog};
 use id_effect_kit::sql::query_builder::Dialect;
 use id_effect_kit::sql::query_builder::sea_query::{Expr, ExprTrait};
@@ -39,6 +40,7 @@ use serde::Serialize;
 use crate::accounts::{Account, accounts_of};
 use crate::app::{App, AppEnv, Caller, as_caller, guarded};
 use crate::error::ApiError;
+use crate::notifications::{self, EntryPosted};
 use crate::reports;
 
 /// A journal entry's header.
@@ -288,20 +290,24 @@ fn authorize_all(app: &App, caller: &Caller, accounts: &[Account]) -> Effect<(),
   })
 }
 
-/// The inserts of one entry in `tx`, then its audit record. The accounts are checked after the
-/// inserts (still open, still the caller's organisation), so a refused entry has written
-/// something its savepoint must undo.
+/// The inserts of one entry in `tx`, then its audit record and its announcement on `topic` (the
+/// outbox, [`notifications`]). The accounts are checked after the inserts (still open, still
+/// the caller's organisation), so a refused entry has written something its savepoint must
+/// undo.
 fn write_entry(
   tx: Arc<dyn SqlTransaction>,
   audit: AuditLog,
   who: AuditContext,
+  topic: Topic,
   entry: NewEntry,
 ) -> Effect<PostedEntry, SqlError> {
   let org = who.tenant().unwrap_or_default().to_owned();
+  let org_of_entry = org.clone();
   let journal: BoundRepository<JournalEntry> = repository(&org).on(Arc::clone(&tx));
   let postings: BoundRepository<Posting> = repository(&org).on(Arc::clone(&tx));
   let accounts = accounts_of(&org).on(Arc::clone(&tx));
   let ids = entry.account_ids();
+  let touched = ids.clone();
   let header = JournalEntry {
     id: 0,
     org_id: org.clone(),
@@ -340,10 +346,21 @@ fn write_entry(
           }
         })
     })
+    .flat_map({
+      let tx = Arc::clone(&tx);
+      move |posted| {
+        let record = AuditEntry::new("entry.post", format!("entry:{}", posted.id))
+          .with_after(serde_json::to_value(&posted).unwrap_or_default());
+        audit.append(&tx, &who, record).map(move |_| posted)
+      }
+    })
     .flat_map(move |posted| {
-      let record = AuditEntry::new("entry.post", format!("entry:{}", posted.id))
-        .with_after(serde_json::to_value(&posted).unwrap_or_default());
-      audit.append(&tx, &who, record).map(move |_| posted)
+      let announced = EntryPosted {
+        org_id: org_of_entry,
+        entry_id: posted.id,
+        account_ids: touched,
+      };
+      notifications::stage(&tx, &topic, announced).map(move |_| posted)
     })
 }
 
@@ -360,11 +377,12 @@ pub fn post_entry(app: Arc<App>, caller: Caller, entry: NewEntry) -> Effect<Post
       let who = caller.audit();
       move |()| {
         let db = Arc::clone(&app.db);
-        let audit = app.audit.clone();
+        let (audit, topic) = (app.audit.clone(), app.topic.clone());
         retry_serialization_failures(conflicts(), move || {
           let (audit, who, entry) = (audit.clone(), who.clone(), entry.clone());
+          let topic = topic.clone();
           with_transaction_options(Arc::clone(&db), Isolation::Serializable, move |tx| {
-            write_entry(tx, audit, who, entry)
+            write_entry(tx, audit, who, topic, entry)
           })
         })
         .map_err(ApiError::from)
@@ -421,11 +439,12 @@ pub fn post_batch(
     .flat_map({
       let app = Arc::clone(&app);
       move |checked| {
-        let (db, audit) = (Arc::clone(&app.db), app.audit.clone());
+        let (db, audit, topic) = (Arc::clone(&app.db), app.audit.clone(), app.topic.clone());
         retry_serialization_failures(conflicts(), move || {
           let (audit, who, checked) = (audit.clone(), who.clone(), checked.clone());
+          let topic = topic.clone();
           with_transaction_options(Arc::clone(&db), Isolation::Serializable, move |tx| {
-            post_lines(tx, audit, who, checked)
+            post_lines(tx, audit, who, topic, checked)
           })
         })
         .map_err(ApiError::from)
@@ -442,6 +461,7 @@ fn post_lines(
   tx: Arc<dyn SqlTransaction>,
   audit: AuditLog,
   who: AuditContext,
+  topic: Topic,
   checked: Vec<(NewEntry, Option<String>)>,
 ) -> Effect<Vec<BatchLine>, SqlError> {
   checked
@@ -456,24 +476,26 @@ fn post_lines(
           error: Some(reason),
         }),
         None => {
-          let (audit, who) = (audit.clone(), who.clone());
-          savepoint(&tx, "entry", move |sp| write_entry(sp, audit, who, entry))
-            .map(move |posted| BatchLine {
-              index,
-              entry_id: Some(posted.id),
-              error: None,
-            })
-            .catch(move |e| {
-              if is_serialization_failure(&e) {
-                fail(e)
-              } else {
-                succeed(BatchLine {
-                  index,
-                  entry_id: None,
-                  error: Some(e.to_string()),
-                })
-              }
-            })
+          let (audit, who, topic) = (audit.clone(), who.clone(), topic.clone());
+          savepoint(&tx, "entry", move |sp| {
+            write_entry(sp, audit, who, topic, entry)
+          })
+          .map(move |posted| BatchLine {
+            index,
+            entry_id: Some(posted.id),
+            error: None,
+          })
+          .catch(move |e| {
+            if is_serialization_failure(&e) {
+              fail(e)
+            } else {
+              succeed(BatchLine {
+                index,
+                entry_id: None,
+                error: Some(e.to_string()),
+              })
+            }
+          })
         }
       };
       done.flat_map(move |mut lines: Vec<BatchLine>| {

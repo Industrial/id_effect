@@ -148,17 +148,12 @@ async fn request_ids_compression_and_the_body_limit() {
 
       // Bodies over the configured limit are refused before any handler runs.
       let team = l.team("acme").await;
-      let As::Session(cookie) = &team.accountant else {
-        unreachable!()
-      };
       let huge = format!(r#"{{"memo": "{}", "lines": []}}"#, "x".repeat(70_000));
       let res = l
-        .send(
-          l.client
-            .post("/entries")
-            .header("cookie", cookie)
-            .body(huge, "application/json"),
-        )
+        .send(l.by(
+          &team.accountant,
+          l.client.post("/entries").body(huge, "application/json"),
+        ))
         .await;
       res.assert_status(StatusCode::PAYLOAD_TOO_LARGE);
       assert_eq!(res.header("content-type"), Some("application/problem+json"));
