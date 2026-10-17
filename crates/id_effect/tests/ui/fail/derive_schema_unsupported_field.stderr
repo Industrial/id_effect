@@ -1,0 +1,5 @@
+error: unsupported derive(Schema) field type
+ --> tests/ui/fail/derive_schema_unsupported_field.rs:8:13
+  |
+8 |   pub pair: (i64, i64),
+  |             ^^^^^^^^^^

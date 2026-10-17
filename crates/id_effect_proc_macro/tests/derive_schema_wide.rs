@@ -95,6 +95,59 @@ fn wide_derive_wire_keys_and_errors() {
   assert_eq!(err.path, "e");
 }
 
+/// Fields named like the decoder's locals (before 0.10 the generated code bound `obj` and
+/// `__issues` itself, so a field `obj` shadowed the input map and the derive did not compile).
+#[derive(Clone, Debug, PartialEq, Schema)]
+struct Shadowing {
+  obj: i64,
+  __issues: String,
+  value: bool,
+  issues: Vec<i64>,
+  u: Option<String>,
+  map: f64,
+  raw: Option<i64>,
+  v: i32,
+  e: Vec<String>,
+  item: Leaf,
+  r#type: String,
+}
+
+#[test]
+fn derive_is_hygienic_for_fields_named_like_its_locals() {
+  let v = Shadowing {
+    obj: 1,
+    __issues: "two".into(),
+    value: true,
+    issues: vec![3, 4],
+    u: Some("five".into()),
+    map: 6.5,
+    raw: None,
+    v: 7,
+    e: vec!["eight".into()],
+    item: Leaf { id: 9 },
+    r#type: "ten".into(),
+  };
+  let s = Shadowing::schema();
+  let wire = s.encode(v.clone());
+  let Unknown::Object(obj) = &wire else {
+    panic!("expected object wire");
+  };
+  assert_eq!(obj.get("obj"), Some(&Unknown::I64(1)));
+  assert_eq!(obj.get("__issues"), Some(&Unknown::String("two".into())));
+  assert_eq!(s.decode(wire.clone()).unwrap(), v);
+  assert_eq!(s.decode_unknown(&wire).unwrap(), v);
+  assert_eq!(s.decode_unknown_all(&wire).unwrap(), v);
+
+  let Unknown::Object(mut bad) = wire else {
+    unreachable!()
+  };
+  bad.insert("obj".into(), Unknown::Bool(false));
+  bad.remove("__issues");
+  let errs = s.decode_unknown_all(&Unknown::Object(bad)).unwrap_err();
+  let paths: Vec<_> = errs.issues.iter().map(|e| e.path.as_str()).collect();
+  assert_eq!(paths, ["obj", "__issues"]);
+}
+
 #[test]
 fn derived_schema_reports_every_invalid_field() {
   let s = Wide::schema();
