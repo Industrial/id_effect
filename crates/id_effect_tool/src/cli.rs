@@ -41,7 +41,7 @@ pub enum Command {
   /// changes. A failed build keeps the running app.
   Dev(DevArgs),
   /// Add code to a project `id-effect new` generated: `generate job <NAME>` writes a background
-  /// job (src/jobs/<NAME>.rs, its registration and a test). Exits 1 when it refuses.
+  /// job (`src/jobs/<NAME>.rs`, its registration and a test). Exits 1 when it refuses.
   Generate(GenerateArgs),
 }
 

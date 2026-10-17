@@ -98,7 +98,7 @@ pub struct GenerateArgs {
 #[derive(Debug, Subcommand)]
 #[non_exhaustive]
 pub enum GenerateCommand {
-  /// Add a background job (id_effect_jobs): src/jobs/<NAME>.rs with its payload, `Job` impl,
+  /// Add a background job (id_effect_jobs): `src/jobs/<NAME>.rs` with its payload, `Job` impl,
   /// handler and a test, registered in src/jobs/mod.rs; adds the id_effect_jobs dependency.
   Job(JobArgs),
 }

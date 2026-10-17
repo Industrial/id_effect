@@ -13,7 +13,7 @@ Each 0.9 change appends its entry to the matching section below.
 ## Web: validation errors
 
 - `id_effect_axum::json::decode_json_schema`, `JsonSchemaError` and `SchemaJsonErrorBody` are
-  deprecated and will be removed in 0.10. They still behave as in 0.8 (first issue only,
+  deprecated and will be removed in 0.11 (kept through 0.10). They still behave as in 0.8 (first issue only,
   `{path, message}` body). Replace them with `json::decode_json(&schema, &bytes)`, which returns
   `Result<A, Problem>` listing every issue, or with the `route::ValidJson<T>` extractor.
 - Clients of those endpoints should expect `Content-Type: application/problem+json` (RFC 9457) and
@@ -68,7 +68,7 @@ Each 0.9 change appends its entry to the matching section below.
   `PartialEq` instead.
 - `TestSqlClient::recorded_queries()` / `recorded_executes()` return
   `Vec<(String, Vec<SqlValue>)>`; compare the recorded parameters with `SqlValue`s.
-- Deprecated, still compiling with a warning, removed in 0.10:
+- Deprecated, still compiling with a warning, removed in 0.11 (kept through 0.10):
   - `SqlParam` (convert with `SqlValue::from(param)`; `Int` is `I64`, the other variants keep
     their names; `SqlValue == SqlParam` comparisons still compile),
   - `SqlRow::new(cells)`, replaced by `SqlRow::from_pairs([("id", 1i64)])` (named, typed
