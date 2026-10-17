@@ -15,6 +15,12 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 [lib]
 name = "id_effect_jobs"
 
+[features]
+default = []
+# Cron entries that enqueue a job per tick, led by one node: `ClusterSingleton` over
+# `PgAdvisoryLease` (id_effect_node `pg`).
+cron = ["dep:id_effect_node", "id_effect_node/pg", "dep:id_effect_process"]
+
 [dependencies]
 # `schema-serde`: job payloads go `Schema` → `Unknown` → `serde_json::Value` → `jsonb`.
 id_effect = { path = "../id_effect", version = "0.9.0", features = [
@@ -28,6 +34,9 @@ id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", features = [
 # Same floors as id_effect_sql (whose value types they are).
 jiff = "0.2.23"
 serde_json = "1"
+# Feature `cron`: leader election (`ClusterSingleton`, `PgAdvisoryLease`) and its holder `Pid`.
+id_effect_node = { path = "../id_effect_node", version = "0.9.0", optional = true }
+id_effect_process = { path = "../id_effect_process", version = "0.9.0", optional = true }
 
 [dev-dependencies]
 # The live PostgreSQL tests (tests/conformance.rs, tests/pg_worker.rs) connect with the pg driver.

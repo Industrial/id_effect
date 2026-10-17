@@ -13,6 +13,9 @@
 //!   caller's work.
 //! - A **[`Worker`]** runs the handlers of a [`JobRegistry`] with a concurrency limit per queue,
 //!   a heartbeat and lease, rescues the jobs of crashed workers, and drains on shutdown.
+//! - With the feature `cron`, **[`enqueue_on_tick`]** makes a core cron entry enqueue one job per
+//!   tick (deduplicated across schedulers by [`tick_key`]), and **[`CronLeader`]** runs the
+//!   schedule on the node holding a cluster singleton.
 //!
 //! Every time the queue reads (`run_at`, leases, `finished_at`) comes from a
 //! [`WallClock`](id_effect::WallClock), so tests run on virtual time. Delivery is at least once:
@@ -83,12 +86,16 @@
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(feature = "cron")]
+mod cron;
 mod job;
 mod memory;
 mod pg;
 mod queue;
 mod worker;
 
+#[cfg(feature = "cron")]
+pub use cron::{CronLeader, enqueue_on_tick, tick_key};
 pub use job::{
   Job, JobContext, JobFailure, JobId, JobRegistry, Priority, Queue, UniqueKey, UniqueScope,
   default_retry, retry_delay,
