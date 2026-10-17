@@ -1,10 +1,12 @@
-//! The HTTP edge: the OpenAPI document and docs page, request ids, compression, the body limit,
-//! the request timeout, and `ETag`s on balances.
+//! The HTTP edge: the OpenAPI document and docs page, responses checked against it (contract
+//! tests), request ids, compression, the body limit, the request timeout, and `ETag`s on
+//! balances.
 
 mod common;
 
 use common::{As, with_ledger};
-use id_effect_kit::test::http::StatusCode;
+use id_effect_kit::test::contract::Contract;
+use id_effect_kit::test::http::{Method, StatusCode};
 use serde_json::{Value, json};
 
 #[tokio::test]
@@ -35,6 +37,87 @@ async fn openapi_documents_every_typed_route() {
         docs.header("content-type"),
         Some("text/html; charset=utf-8")
       );
+    },
+  )
+  .await;
+}
+
+#[tokio::test]
+async fn responses_conform_to_the_openapi_document() {
+  with_ledger(
+    |_, _| {},
+    |l| async move {
+      // The contract is the document the app serves; every response below is checked against
+      // the schema it declares for that operation and status.
+      let doc: Value = l.get("/openapi.json", &As::Anonymous).await.json().unwrap();
+      let contract = Contract::new(doc);
+      let team = l.team("acme").await;
+      let accounts = l.accounts("acme", "acme-accountant", 2).await;
+      l.transfer(&team.accountant, accounts[0].id, accounts[1].id, 42)
+        .await;
+
+      let me = l.get("/me", &team.owner).await;
+      me.assert_status(StatusCode::OK).assert_conforms(&contract);
+      let list = l.get("/accounts", &team.viewer).await;
+      list
+        .assert_status(StatusCode::OK)
+        .assert_conforms(&contract);
+      let one = l
+        .get(&format!("/accounts/{}", accounts[0].id), &team.viewer)
+        .await;
+      one.assert_status(StatusCode::OK).assert_conforms(&contract);
+      // The check is the schema's: `/me`'s body is not an account.
+      let mismatch = contract
+        .check_operation(&Method::GET, "/accounts/{id}", &me)
+        .unwrap_err();
+      assert!(
+        mismatch
+          .to_string()
+          .starts_with("`GET /accounts/{id}` 200: the body does not match the declared schema"),
+        "{mismatch}"
+      );
+      let posted = l
+        .post(
+          "/entries",
+          json!({"memo": "rent", "lines": [
+            {"account_id": accounts[0].id, "amount": 10},
+            {"account_id": accounts[1].id, "amount": -10},
+          ]}),
+          &team.accountant,
+        )
+        .await;
+      posted
+        .assert_status(StatusCode::CREATED)
+        .assert_conforms(&contract);
+
+      // Refusals are documented too: a body that does not decode, a caller without the right.
+      let invalid = l
+        .post(
+          "/entries",
+          json!({"memo": "", "lines": []}),
+          &team.accountant,
+        )
+        .await;
+      invalid
+        .assert_status(StatusCode::UNPROCESSABLE_ENTITY)
+        .assert_conforms(&contract);
+      let denied = l
+        .post(
+          "/entries",
+          json!({"memo": "rent", "lines": [
+            {"account_id": accounts[0].id, "amount": 10},
+            {"account_id": accounts[1].id, "amount": -10},
+          ]}),
+          &team.viewer,
+        )
+        .await;
+      denied
+        .assert_status(StatusCode::FORBIDDEN)
+        .assert_conforms(&contract);
+      let anonymous = l.get("/accounts", &As::Anonymous).await;
+      anonymous
+        .assert_status(StatusCode::UNAUTHORIZED)
+        .assert_conforms(&contract);
     },
   )
   .await;

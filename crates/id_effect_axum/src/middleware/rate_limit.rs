@@ -11,7 +11,9 @@
 //!
 //! The default key is the client IP (`ConnectInfo<SocketAddr>`, present when the app is served
 //! with `into_make_service_with_connect_info::<SocketAddr>()`), falling back to one bucket shared
-//! by every request without it. Key by principal with [`RateLimitKey::from_fn`]:
+//! by every request without it. Per-tenant limits key by the request's tenant with
+//! [`RateLimitKey::tenant`] (read from a [`RequestCaps`] value or a request extension the
+//! authentication layer recorded). Key by principal with [`RateLimitKey::from_fn`]:
 //!
 //! ```rust
 //! use axum::{Router, routing::get};
@@ -54,6 +56,7 @@ pub use id_effect_resilience::{RateLimitError, RateLimiter};
 
 use super::problem_response;
 use crate::executor::EffectExecutor;
+use crate::request_caps::RequestCaps;
 
 /// Where [`RateLimitLayer`] keeps its buckets.
 pub trait RateLimitStore: Send + Sync + 'static {
@@ -190,6 +193,35 @@ impl RateLimitKey {
         "header:{name}:{}",
         String::from_utf8_lossy(value.as_bytes())
       ))
+    })
+  }
+
+  /// `tenant:<id>`: one bucket per tenant (organisation, customer, workspace) — a per-tenant
+  /// limit, shared by every user and instance of that tenant when the store is.
+  ///
+  /// The tenant is read from a value of type `T` the request carries: the latest [`RequestCaps`]
+  /// override of `T` (what an authentication layer or a
+  /// [`CapOverrideLayer`](crate::CapOverrideLayer) recorded), else a request extension of type
+  /// `T`. `tenant` maps it to the tenant id, so `T`
+  /// can be the app's principal type (`|p: &CurrentPrincipal| p.tenant().map(str::to_owned)`)
+  /// or a tenant type of its own. `None` — no such value, or a value without a tenant — leaves
+  /// the request to a fallback (`.or(RateLimitKey::peer_ip())`), or exempts it.
+  ///
+  /// The layer must run after whatever records `T`: add the rate limit layer before (inside)
+  /// the authentication layer.
+  pub fn tenant<T: Send + Sync + 'static>(
+    tenant: impl Fn(&T) -> Option<String> + Send + Sync + 'static,
+  ) -> Self {
+    Self::from_fn(move |req| {
+      let id = match req
+        .extensions()
+        .get::<RequestCaps>()
+        .and_then(RequestCaps::get::<T>)
+      {
+        Some(value) => tenant(&value),
+        None => tenant(req.extensions().get::<T>()?),
+      }?;
+      Some(format!("tenant:{id}"))
     })
   }
 
@@ -398,6 +430,84 @@ mod tests {
       .insert("x-api-key", HeaderValue::from_static("k1"));
     assert_eq!(api.key(&req).as_deref(), Some("header:x-api-key:k1"));
     assert_eq!(format!("{api:?}"), "RateLimitKey(..)");
+  }
+
+  /// What an app's authentication records: a principal that may belong to a tenant.
+  #[derive(Clone)]
+  struct Member(Option<&'static str>);
+
+  fn by_tenant() -> RateLimitKey {
+    RateLimitKey::tenant(|m: &Member| m.0.map(str::to_owned))
+  }
+
+  #[test]
+  fn tenant_keys_read_request_caps_then_extensions() {
+    let mut req = request();
+    assert_eq!(by_tenant().key(&req), None);
+    // A plain extension.
+    req.extensions_mut().insert(Member(Some("globex")));
+    assert_eq!(by_tenant().key(&req).as_deref(), Some("tenant:globex"));
+    // A `RequestCaps` override wins over the extension; the latest one counts.
+    let mut caps = RequestCaps::new();
+    caps
+      .insert(Member(Some("initech")))
+      .insert(Member(Some("acme")));
+    req.extensions_mut().insert(caps);
+    assert_eq!(by_tenant().key(&req).as_deref(), Some("tenant:acme"));
+    // A principal without a tenant falls back.
+    let mut caps = RequestCaps::new();
+    caps.insert(Member(None));
+    req.extensions_mut().insert(caps);
+    assert_eq!(by_tenant().key(&req), None);
+    assert_eq!(
+      by_tenant().or(RateLimitKey::global()).key(&req).as_deref(),
+      Some("global")
+    );
+  }
+
+  #[tokio::test]
+  async fn each_tenant_has_its_own_bucket() {
+    use axum::Router;
+    use axum::http::request::Parts;
+    use axum::routing::get;
+    use tower::ServiceExt;
+
+    use crate::CapOverrideLayer;
+
+    // The tenant a stand-in authentication layer records in `RequestCaps` from `x-tenant`.
+    let authenticate = CapOverrideLayer::new(|parts: &Parts| {
+      let tenant = parts.headers.get("x-tenant")?.to_str().ok()?;
+      Some(Member(Some(if tenant == "acme" {
+        "acme"
+      } else {
+        "globex"
+      })))
+    });
+    let store = Arc::new(MemoryRateLimitStore::new(0.0, 2.0));
+    let app = Router::new()
+      .route("/api", get(|| async { "ok" }))
+      .layer(RateLimitLayer::new(Arc::clone(&store)).key(by_tenant().or(RateLimitKey::global())))
+      .layer(authenticate);
+    let status = |tenant: Option<&str>| {
+      let app = app.clone();
+      let mut req = Request::builder().uri("/api");
+      if let Some(tenant) = tenant {
+        req = req.header("x-tenant", tenant);
+      }
+      let req = req.body(Body::empty()).unwrap();
+      async move { app.oneshot(req).await.unwrap().status() }
+    };
+
+    // acme spends its burst of two; globex and the anonymous bucket are untouched.
+    for _ in 0..2 {
+      assert_eq!(status(Some("acme")).await, StatusCode::OK);
+    }
+    assert_eq!(status(Some("acme")).await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(status(Some("globex")).await, StatusCode::OK);
+    assert_eq!(status(None).await, StatusCode::OK);
+    let mut keys: Vec<String> = store.lock().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, ["global", "tenant:acme", "tenant:globex"]);
   }
 
   #[test]

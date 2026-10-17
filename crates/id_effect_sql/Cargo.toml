@@ -134,6 +134,11 @@ required-features = ["audit", "pg"]
 name = "repository"
 required-features = ["repository"]
 
+# Typed values and rows (`params!`, `SqlRow::get`, `FromRow`) over `TestSqlClient`: no database,
+# no feature.
+[[example]]
+name = "020_typed_rows"
+
 [[example]]
 name = "030_migrate"
 required-features = ["migrate", "pg"]

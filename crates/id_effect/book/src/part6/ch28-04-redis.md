@@ -50,9 +50,9 @@ redis.query_pipeline(redis::pipe().atomic().cmd("INCR").arg("a").cmd("INCR").arg
 # }
 ```
 
-## Typed stores
+## Typed stores: key-value and JSON documents
 
-Three stores give Redis a typed API, with values as any `serde` type, stored as JSON. Each lives in a **namespace** (a key prefix, `namespace:key`), so `keys()` and `clear()` touch only their own data.
+Besides SQL, id_effect ships a first-party NoSQL integration: Redis as a **typed key-value store** (`RedisKv`, `RedisHash`) and a **JSON document store** (`RedisJson`, on the RedisJSON module). The type parameter is the value or document type — any `serde` type, stored as JSON — so reads come back as your Rust type, and a stored value that no longer matches it is a `RedisError::Decode`. Each store lives in a **namespace** (a key prefix, `namespace:key`), so `keys()` / `ids()` and `clear()` touch only their own data.
 
 | Store | Shape | Highlights |
 |---|---|---|
@@ -93,6 +93,87 @@ fn remember_once(redis: &RedisClient, request_id: &str) -> Effect<bool, RedisErr
 ```
 
 `RedisJson` uses the RedisJSON module, which Redis 8 includes (as does Redis Stack); against a server without it, its commands fail with `RedisError::Command`. A value that does not decode as the requested type is a `RedisError::Decode`, not a panic. Note that `RedisJson::incr_by` with a fractional delta leaves a float in the document.
+
+### A document collection
+
+A `RedisJson<D>` is a collection of documents of one type, addressed by id: whole-document `set` / `get` / `delete`, partial reads and writes at a JSONPath, and `ids()` to list the collection. Wrapped in a small type of your own, it reads like a repository; values a document embeds (lists, nested objects) stay typed on the way back:
+
+```rust,no_run
+use id_effect::{Effect, Exit, succeed};
+use id_effect_redis::{RedisClient, RedisConfig, RedisError, RedisJson};
+use id_effect_tokio::TokioRuntime;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct Profile {
+    name: String,
+    plan: String,
+    tags: Vec<String>,
+}
+
+/// User profiles as JSON documents, keyed by user id (keys `profiles:<id>`).
+#[derive(Clone)]
+struct Profiles(RedisJson<Profile>);
+
+impl Profiles {
+    fn new(redis: &RedisClient) -> Self {
+        Self(redis.json("profiles"))
+    }
+
+    fn save(&self, id: &str, profile: &Profile) -> Effect<(), RedisError> {
+        self.0.set(id, profile)
+    }
+
+    fn find(&self, id: &str) -> Effect<Option<Profile>, RedisError> {
+        self.0.get(id)
+    }
+
+    /// One field, without reading the whole document.
+    fn plan(&self, id: &str) -> Effect<Option<String>, RedisError> {
+        self.0.get_path(id, "$.plan")
+    }
+
+    /// Upgrades in place; `false` when there is no such profile.
+    fn upgrade(&self, id: &str) -> Effect<bool, RedisError> {
+        self.0.set_path(id, "$.plan", &"pro")
+    }
+
+    /// Every profile id in the collection.
+    fn ids(&self) -> Effect<Vec<String>, RedisError> {
+        self.0.ids()
+    }
+}
+
+/// Saves a profile, upgrades it in place, and reads it back: one field, then the document.
+fn upgrade_flow(redis: &RedisClient) -> Effect<(Option<String>, Option<Profile>, Vec<String>), RedisError> {
+    let profiles = Profiles::new(redis);
+    let ada = Profile { name: "Ada".into(), plan: "free".into(), tags: vec!["beta".into()] };
+    let p = profiles.clone();
+    profiles
+        .save("u1", &ada)
+        .flat_map(move |()| p.upgrade("u1").map(move |_| p))
+        .flat_map(|p| {
+            let q = p.clone();
+            p.plan("u1").zip(q.find("u1")).zip(q.ids())
+        })
+        .flat_map(|((plan, found), ids)| succeed((plan, found, ids)))
+}
+
+# async fn run() -> std::io::Result<()> {
+let program = RedisClient::connect_lazy(RedisConfig::new("redis://127.0.0.1:6379/0"))
+    .flat_map(|redis| upgrade_flow(&redis));
+let exit = TokioRuntime::current()?.run(program).await;
+if let Exit::Success((plan, found, ids)) = exit {
+    assert_eq!(plan.as_deref(), Some("pro"));
+    assert_eq!(found.map(|p| p.tags), Some(vec!["beta".to_owned()]));
+    assert_eq!(ids, ["u1"]);
+}
+# Ok(())
+# }
+# fn main() {}
+```
+
+`crates/id_effect_redis/tests/redis_container.rs` runs the three stores against a Redis 8 container: `key_value_store`, `hash_store` and `json_document_store` (documents, JSONPath reads and writes, `incr_by`, decoding failures).
 
 ## The cache, on Redis
 

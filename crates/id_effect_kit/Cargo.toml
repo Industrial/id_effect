@@ -69,13 +69,14 @@ redis = ["dep:id_effect_redis"]
 # Configuration from HashiCorp Vault (`kit::config::vault`).
 config-vault = ["id_effect_config/vault"]
 # Test support: `kit::test` (id_effect_test: containers, isolated PostgreSQL databases,
-# fixtures, the in-process HTTP client). For tests: enable it on a `[dev-dependencies]` entry of
-# id_effect_kit, not in `[dependencies]`. Not part of `full`.
+# fixtures, the in-process HTTP client, OpenAPI contract checks). For tests: enable it on a
+# `[dev-dependencies]` entry of id_effect_kit, not in `[dependencies]`. Not part of `full`.
 test = [
   "dep:id_effect_test",
   "id_effect_test/sql",
   "id_effect_test/fixtures",
   "id_effect_test/http",
+  "id_effect_test/contract",
 ]
 # Every battery a program ships with; builds without Docker or system libraries. `test` is
 # left out: it belongs to dev-dependencies.

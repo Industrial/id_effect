@@ -1,11 +1,13 @@
 //! sea-query statements (feature `query`): the crate-root API, and one live PostgreSQL run that
-//! builds, executes and decodes `INSERT … RETURNING` / `SELECT` / `UPDATE` / `DELETE`.
+//! builds, executes and decodes `INSERT … RETURNING` / `SELECT` / `UPDATE` / `DELETE`. Joins
+//! with ordering and paging are rendered for every dialect and run on SQLite in memory (feature
+//! `sqlite`).
 //!
 //! The live test needs a database at `DATABASE_URL`; without one it prints `SKIP`, and
 //! `ID_EFFECT_REQUIRE_PG=1` turns that into a failure (the `tests/pg.rs` policy).
 
 use id_effect::Exit;
-use id_effect_sql::query_builder::sea_query::{Expr, ExprTrait, Order, Query};
+use id_effect_sql::query_builder::sea_query::{Expr, ExprTrait, Order, Query, SelectStatement};
 use id_effect_sql::query_builder::sql_values;
 use id_effect_sql::{
   BuildSql, Dialect, FromRow, SqlClientEnv, SqlError, SqlRow, SqlValue, TestSqlClient, ToSqlValue,
@@ -122,6 +124,159 @@ fn crate_root_api_renders_and_runs_statements() {
     &by_title("docs"),
   ));
   assert!(matches!(found, Exit::Success(ref v) if v == &[item(1)]));
+}
+
+/// An order with its customer's name, read through a join.
+#[derive(Debug, Clone, PartialEq, FromRow)]
+struct OrderLine {
+  id: i64,
+  customer: String,
+  total: i64,
+}
+
+/// Orders of active customers worth at least `min_total`: an inner join, a filter on each table,
+/// the largest first (ties by id), one page of `limit` rows after `offset`.
+fn big_orders(min_total: i64, limit: u64, offset: u64) -> SelectStatement {
+  Query::select()
+    .column(("orders", "id"))
+    .expr_as(Expr::col(("customers", "name")), "customer")
+    .column(("orders", "total"))
+    .from("orders")
+    .inner_join(
+      "customers",
+      Expr::col(("orders", "customer_id")).equals(("customers", "id")),
+    )
+    .and_where(Expr::col(("orders", "total")).gte(min_total))
+    .and_where(Expr::col(("customers", "active")).eq(true))
+    .order_by(("orders", "total"), Order::Desc)
+    .order_by(("orders", "id"), Order::Asc)
+    .limit(limit)
+    .offset(offset)
+    .to_owned()
+}
+
+/// Every customer with the number of its orders, customers without one included: a left join
+/// and a `GROUP BY`.
+fn order_counts() -> SelectStatement {
+  Query::select()
+    .expr_as(Expr::col(("customers", "name")), "customer")
+    .expr_as(Expr::col(("orders", "id")).count(), "orders")
+    .from("customers")
+    .left_join(
+      "orders",
+      Expr::col(("orders", "customer_id")).equals(("customers", "id")),
+    )
+    .group_by_col(("customers", "name"))
+    .order_by(("customers", "name"), Order::Asc)
+    .to_owned()
+}
+
+#[test]
+fn joins_render_with_ordering_and_paging() {
+  let (sql, params) = big_orders(100, 2, 2).build_sql(Dialect::Postgres).unwrap();
+  assert_eq!(
+    sql,
+    r#"SELECT "orders"."id", "customers"."name" AS "customer", "orders"."total" FROM "orders" INNER JOIN "customers" ON "orders"."customer_id" = "customers"."id" WHERE "orders"."total" >= $1 AND "customers"."active" = $2 ORDER BY "orders"."total" DESC, "orders"."id" ASC LIMIT $3 OFFSET $4"#
+  );
+  assert_eq!(
+    params,
+    [
+      SqlValue::I64(100),
+      SqlValue::Bool(true),
+      SqlValue::I64(2),
+      SqlValue::I64(2)
+    ]
+  );
+  let (mysql, _) = big_orders(100, 2, 2).build_sql(Dialect::MySql).unwrap();
+  assert!(
+    mysql.contains("INNER JOIN `customers` ON `orders`.`customer_id` = `customers`.`id`"),
+    "{mysql}"
+  );
+  let (counts, _) = order_counts().build_sql(Dialect::Sqlite).unwrap();
+  assert_eq!(
+    counts,
+    r#"SELECT "customers"."name" AS "customer", COUNT("orders"."id") AS "orders" FROM "customers" LEFT JOIN "orders" ON "orders"."customer_id" = "customers"."id" GROUP BY "customers"."name" ORDER BY "customers"."name" ASC"#
+  );
+
+  // The joined rows decode with `FromRow` like any other.
+  let test = TestSqlClient::new();
+  test.script_query(
+    sql,
+    vec![SqlRow::from_pairs([
+      ("id", SqlValue::I64(3)),
+      ("customer", "ada".into()),
+      ("total", SqlValue::I64(250)),
+    ])],
+  );
+  let page = fetch_all_as::<OrderLine, SqlClientEnv, _>(Dialect::Postgres, &big_orders(100, 2, 2))
+    .provide_layer(sql_client_layer::<SqlError>(test))
+    .block_on();
+  assert!(
+    matches!(page, Exit::Success(ref v) if v == &[OrderLine { id: 3, customer: "ada".into(), total: 250 }]),
+    "{page:?}"
+  );
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn joins_run_on_sqlite() {
+  use id_effect::Effect;
+  use id_effect_sql::sqlite::{SqlitePoolConfig, SqliteSqlClient, sqlite_pool_from_config};
+  use id_effect_sql::{SqlClient, provide_sql_client};
+  use id_effect_tokio::TokioRuntime;
+
+  let pool = sqlite_pool_from_config(SqlitePoolConfig::memory().with_max_size(1))
+    .await
+    .expect("sqlite pool");
+  let client = SqliteSqlClient::new(pool);
+  let rt = TokioRuntime::current().expect("tokio");
+  for sql in [
+    "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN NOT NULL)",
+    "CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER NOT NULL REFERENCES customers (id), total INTEGER NOT NULL)",
+    "INSERT INTO customers VALUES (1, 'ada', 1), (2, 'bob', 0), (3, 'cy', 1)",
+    "INSERT INTO orders VALUES (1, 1, 500), (2, 2, 900), (3, 1, 120), (4, 1, 80), (5, 1, 300), (6, 3, 300)",
+  ] {
+    let done = rt.run(client.execute(sql, &[])).await;
+    assert!(matches!(done, Exit::Success(_)), "{sql}: {done:?}");
+  }
+  async fn rows<T: FromRow + Send + 'static>(
+    rt: &TokioRuntime,
+    client: &SqliteSqlClient,
+    stmt: &SelectStatement,
+  ) -> Vec<T> {
+    let eff: Effect<Vec<T>, SqlError, SqlClientEnv> = fetch_all_as(Dialect::Sqlite, stmt);
+    match rt
+      .run(eff.provide_layer(provide_sql_client::<SqlError>(client.clone())))
+      .await
+    {
+      Exit::Success(rows) => rows,
+      Exit::Failure(c) => panic!("query failed: {c:?}"),
+    }
+  }
+  let line = |id, customer: &str, total| OrderLine {
+    id,
+    customer: customer.into(),
+    total,
+  };
+
+  // Active customers only (bob's 900 is left out), largest first, ties by id; pages of two.
+  let first = rows::<OrderLine>(&rt, &client, &big_orders(100, 2, 0)).await;
+  assert_eq!(first, [line(1, "ada", 500), line(5, "ada", 300)]);
+  let second = rows::<OrderLine>(&rt, &client, &big_orders(100, 2, 2)).await;
+  assert_eq!(second, [line(6, "cy", 300), line(3, "ada", 120)]);
+  let past_the_end = rows::<OrderLine>(&rt, &client, &big_orders(100, 2, 4)).await;
+  assert!(past_the_end.is_empty());
+
+  let counts = rows::<(String, i64)>(&rt, &client, &order_counts()).await;
+  assert_eq!(
+    counts,
+    [
+      ("ada".to_owned(), 4),
+      ("bob".to_owned(), 1),
+      ("cy".to_owned(), 1)
+    ]
+  );
+  let _ = rt.run(client.close()).await;
 }
 
 #[cfg(feature = "pg")]

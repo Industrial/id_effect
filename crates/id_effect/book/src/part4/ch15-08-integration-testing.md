@@ -8,10 +8,11 @@ and safe to run side by side. `id_effect_test` adds three pieces:
 | `isolated_db()` / `TemplateDb` | `sql` | a database nobody else sees: a rolled-back transaction, or a fresh clone of a migrated template |
 | `Fixture` / `Factory` | `fixtures` | rows with deterministic, schema-valid defaults, inserted and read back with `FromRow` |
 | `TestClient` | `http` | requests sent straight into the app's router — no socket, no port |
+| `Contract` | `contract` | contract tests: each response checked against the schema the app's OpenAPI document declares for it |
 
 ```toml
 [dev-dependencies]
-id_effect_test = { version = "0.9", features = ["sql", "migrate", "fixtures", "http"] }
+id_effect_test = { version = "0.9", features = ["sql", "migrate", "fixtures", "http", "contract"] }
 ```
 
 ## A database per test: rollback mode
@@ -280,6 +281,92 @@ assert_eq!(missing.status(), StatusCode::NOT_FOUND);
 (`TokioRuntime::run`) when handlers need one — an app whose handlers read a database through
 `isolated_db()`, for instance. Invalid input (a bad header, a body that does not serialize) fails
 the effect with `HttpTestError::Request`; a service error with `HttpTestError::Service`.
+
+## Contract tests against the OpenAPI document
+
+An app built on `id_effect_axum`'s typed routes publishes an OpenAPI 3.1 document generated from
+the same schemas its extractors decode with. Feature `contract` turns that document into a test
+oracle: `Contract::new(document)` takes it as JSON (`OpenApi::to_json()`, or the app's own
+`/openapi.json` fetched with the test client), and `response.assert_conforms(&contract)` checks a
+`TestResponse` against it:
+
+- the **operation** is the request's method and path, matched against the document's path
+  templates (`/accounts/7` is `GET /accounts/{id}`); `check_operation(method, path, response)`
+  names it explicitly;
+- the **status** must be declared — the exact code, else its range (`4XX`), else `default`;
+- the **`Content-Type`** must be one of that response's media types, and a response declared
+  without content must have no body;
+- the **body** must validate against the media type's JSON Schema (draft 2020-12, `$ref`s into
+  `#/components` resolved).
+
+`contract.check(&response)` returns the `ContractError` instead of panicking. A body that does not
+match names every violation by **JSON pointer**:
+
+```rust
+use axum::Json;
+use axum::http::StatusCode as Status;
+use id_effect::{Effect, Exit, succeed};
+use id_effect::schema::{self, HasSchema, Schema, minimum};
+use id_effect_axum::openapi::OpenApi;
+use id_effect_axum::route::{Input, Route, Router};
+use id_effect_test::contract::{Contract, ContractError};
+use id_effect_test::http::{Method, StatusCode, TestClient};
+use serde_json::json;
+
+struct AccountId;
+impl HasSchema for AccountId {
+  type A = i64;
+  type I = i64;
+  type E = ();
+  fn schema() -> Schema<i64, i64> {
+    minimum(schema::i64(), 1)
+  }
+}
+
+#[derive(Clone, Debug, serde::Serialize, id_effect::Schema)]
+struct Account {
+  id: i64,
+  name: String,
+}
+
+fn show(_: &mut (), input: Input<i64>) -> Effect<Json<Account>, std::convert::Infallible, ()> {
+  succeed(Json(Account { id: input.path, name: "cash".into() }))
+}
+
+let routes = Router::<()>::new().route(
+  Route::get("/accounts/{id}").path::<AccountId>().response::<Account>(Status::OK).handler(show),
+);
+let contract = Contract::new(OpenApi::from_router(&routes).to_json());
+let (app, _) = routes.with_state::<()>(()).into_parts();
+
+# tokio::runtime::Runtime::new().unwrap().block_on(async {
+let runtime = id_effect_tokio::TokioRuntime::current().unwrap();
+let Exit::Success(found) = runtime.run(TestClient::new(app).get("/accounts/7").send()).await else {
+  panic!("request failed")
+};
+found.assert_status(StatusCode::OK).assert_conforms(&contract);
+
+// A handler that drifted from the document: `id` became a string.
+let drifted = axum::Router::new()
+  .route("/accounts/{id}", axum::routing::get(|| async { Json(json!({"id": "7", "name": "cash"})) }));
+let Exit::Success(res) = runtime.run(TestClient::new(drifted).get("/accounts/7").send()).await else {
+  panic!("request failed")
+};
+let Err(err @ ContractError::Schema { .. }) = contract.check(&res) else { panic!("not caught") };
+assert_eq!(
+  err.to_string(),
+  "`GET /accounts/{id}` 200: the body does not match the declared schema\n  at `/id`: \"7\" is not of type \"integer\""
+);
+assert!(contract.check_operation(&Method::GET, "/accounts/{id}", &found).is_ok());
+# });
+```
+
+Statuses a route answers without declaring them fail the check too
+(`ContractError::UndeclaredStatus` lists what the operation declares), so the document cannot
+silently fall behind the handlers. `examples/reference/ledger/tests/http.rs`
+(`responses_conform_to_the_openapi_document`) checks the Ledger's own `/openapi.json` this way —
+`/me`, the account list and detail, a posted entry, and the 401, 403 and 422 refusals; the crate's
+`tests/contract.rs` covers ranges, `default`, `$ref`'d responses, media types and every error.
 
 ## Putting it together
 

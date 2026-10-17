@@ -29,6 +29,9 @@ http = [
   "dep:serde",
   "dep:serde_json",
 ]
+# `contract`: contract testing — a `TestResponse` checked against the response schema an OpenAPI
+# document declares for its operation and status.
+contract = ["http", "dep:jsonschema"]
 
 [lib]
 name = "id_effect_test"
@@ -62,6 +65,10 @@ http-body-util = { version = "0.1", optional = true }
 bytes = { version = "1", optional = true }
 serde = { version = "1", optional = true, features = ["derive"] }
 serde_json = { version = "1", optional = true }
+# Feature `contract`: JSON Schema 2020-12 validation of response bodies (MIT, rust-version 1.85;
+# already id_effect_axum's meta-schema test dependency). Local `$ref`s only, so no default
+# features (no remote reference resolution).
+jsonschema = { version = "0.59", optional = true, default-features = false }
 
 [dev-dependencies]
 id_effect_tokio = { path = "../id_effect_tokio" }
@@ -75,6 +82,9 @@ serde_json = "1"
 tower = "0.5.3"
 http-body = "1"
 bytes = "1"
+# tests/contract.rs: typed routes and the OpenAPI document generated from them. Path-only: cargo
+# publish resolves path+version dev-deps on crates.io.
+id_effect_axum = { path = "../id_effect_axum", features = ["openapi"] }
 
 [[example]]
 name = "010_containers"

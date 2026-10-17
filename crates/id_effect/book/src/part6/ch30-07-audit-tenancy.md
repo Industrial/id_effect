@@ -266,11 +266,78 @@ fn verify_tenant(tenant: String) -> Effect<String, SqlError, HCons<AuditLog, HCo
 
 What the chain detects: an edited record (its hash no longer matches), a removed or inserted record (the sequence or the next `prev_hash` no longer follows), and records removed from the end (the chain no longer reaches its head). Someone who can rewrite the whole chain and its head can only be caught by comparing with a head you anchored elsewhere.
 
+## Per-tenant rate limits
+
+A tenant's traffic can be limited as a whole: `RateLimitKey::tenant` keys `RateLimitLayer`'s
+buckets by the request's tenant (`tenant:<id>`), so every user of one organisation draws from the
+same bucket and one busy tenant cannot starve the others. The tenant is read from a value the
+authentication layer recorded — the request's `RequestCaps` override of a type, else a request
+extension of that type — through a closure, so `id_effect_axum` needs no dependency on the auth
+or SQL crates. With `id_effect_auth`'s `Authenticate` (which records the `CurrentPrincipal` in
+both places) that is `RateLimitKey::tenant(|p: &CurrentPrincipal| p.tenant().map(str::to_owned))`.
+The rate limit layer goes **inside** the authentication layer (added to the router before it), so
+the principal is there when the key is computed; a request without a tenant falls back to the key
+given with `.or(..)`.
+
+```rust
+use std::sync::Arc;
+
+use axum::body::Body;
+use axum::extract::Request;
+use axum::http::StatusCode;
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::get;
+use id_effect_authz::{BasicPrincipal, CurrentPrincipal, Principal};
+use id_effect_axum::middleware::{MemoryRateLimitStore, RateLimitKey, RateLimitLayer};
+use tower::ServiceExt;
+
+// A stand-in for the authentication layer: `x-user` signs in as a member of `x-org`.
+async fn authenticate(mut req: Request, next: Next) -> Response {
+  let signed_in = {
+    let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_owned);
+    (header("x-user"), header("x-org"))
+  };
+  if let (Some(user), Some(org)) = signed_in {
+    let principal = BasicPrincipal::new(user).with_tenant(org);
+    req.extensions_mut().insert(CurrentPrincipal::new(principal));
+  }
+  next.run(req).await
+}
+
+// Two requests per tenant (no refill, for the example); anonymous callers share one bucket.
+let store = Arc::new(MemoryRateLimitStore::new(0.0, 2.0));
+let per_tenant = RateLimitKey::tenant(|p: &CurrentPrincipal| p.tenant().map(str::to_owned))
+  .or(RateLimitKey::global());
+let app = axum::Router::new()
+  .route("/reports", get(|| async { "report" }))
+  .layer(RateLimitLayer::new(Arc::clone(&store)).key(per_tenant))
+  .layer(middleware::from_fn(authenticate));
+
+let call = |user: &str, org: &str| {
+  let req = Request::builder().uri("/reports").header("x-user", user).header("x-org", org);
+  app.clone().oneshot(req.body(Body::empty()).unwrap())
+};
+# tokio::runtime::Runtime::new().unwrap().block_on(async {
+// Two acme users spend acme's bucket; globex is not affected.
+assert_eq!(call("ada", "acme").await.unwrap().status(), StatusCode::OK);
+assert_eq!(call("bob", "acme").await.unwrap().status(), StatusCode::OK);
+assert_eq!(call("ada", "acme").await.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
+assert_eq!(call("eve", "globex").await.unwrap().status(), StatusCode::OK);
+# });
+assert_eq!(store.len(), 2); // tenant:acme, tenant:globex
+```
+
+Every tenant gets the same rate. `RedisRateLimitStore` (feature `rate-limit` of `id_effect_redis`)
+holds the per-tenant buckets across instances; tenants on different plans need a
+`RateLimitStore` that sizes a bucket by its key, or one layer per plan.
+
 ## What this pattern does not cover
 
 - **Database-enforced isolation.** The filter lives in the repository, so raw SQL (`query`, `execute`) and statements you build with the query builder are not filtered: add the tenant condition yourself, and keep such code close to the repository. For a second line of defence, PostgreSQL row-level security (`CREATE POLICY … USING (org_id = current_setting('app.tenant'))`, with `SET LOCAL app.tenant` at the start of each transaction) enforces the same rule in the database; `id_effect_sql` does not set it up for you.
 - **Schema or database per tenant.** Stronger isolation (one schema per tenant selected with `search_path`, or one database per tenant with its own pool) is an alternative to row-level tenancy. Per-tenant connection routing is not part of 0.9; `RoutingSqlClient` routes reads to replicas, not tenants.
-- **Per-tenant configuration, quotas and rate limits** are not provided.
+- **Per-tenant configuration and quotas** other than a request rate (storage, seats, a different
+  rate per plan out of the box) are not provided; per-tenant request rate limits are (above).
 - **Audit on other databases.** The audit log's SQL is PostgreSQL's. The repository and its tenant filter work on PostgreSQL, MySQL and SQLite.
 
 ## Tests and example
@@ -278,5 +345,6 @@ What the chain detects: an edited record (its hash no longer matches), a removed
 - `crates/id_effect_sql/tests/repository.rs`: `tenant_filter_scopes_every_query` runs on SQLite and PostgreSQL (two tenants, every operation, `CurrentTenant` from the environment, fail-closed without a tenant).
 - `crates/id_effect_sql/tests/audit.rs` (PostgreSQL): `tampered_row_breaks_chain`, `audit_rolls_back_with_tx`, removed records, concurrent writers that never fork a chain, and the `REPEATABLE READ` race.
 - `crates/id_effect_authz/tests/guards.rs`: principals installed by `CapOverrideLayer` reach the guards.
+- `crates/id_effect_axum/src/middleware/rate_limit.rs`: `each_tenant_has_its_own_bucket` (per-tenant buckets behind a `CapOverrideLayer`) and `tenant_keys_read_request_caps_then_extensions`.
 - `crates/id_effect_sql/examples/050_tenancy_audit.rs` runs the request path for two tenants: by default on SQLite in memory (tenant filter, transaction, fail-closed), with `--live` and `DATABASE_URL` on PostgreSQL including the audit chain, a rolled-back request, `verify_chain` and a detected edit:
   `cargo run -p id_effect_sql --example 050_tenancy_audit --features repository,sqlite,audit,migrate,pg -- --live`.

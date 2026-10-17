@@ -16,6 +16,9 @@
 //!   `FromRow`.
 //! - **`http`** (feature `http`) — `TestClient`: the in-process HTTP client over a tower
 //!   `Service` (an axum `Router`): no socket; status, headers, JSON and problem bodies.
+//! - **`contract`** (feature `contract`) — `Contract`: contract testing against the app's
+//!   OpenAPI document; a `TestResponse` is checked against the response schema its operation
+//!   declares for its status (`assert_conforms`), violations named by JSON pointer.
 //!
 //! ## Cargo features
 //!
@@ -24,6 +27,7 @@
 //! - **`migrate`** — `db::migrate`: an app's migration directory as a `TemplateDb` setup.
 //! - **`fixtures`** — `fixtures` (with `sql`; proptest).
 //! - **`http`** — `http` (tower and `http` types; no axum dependency).
+//! - **`contract`** — `contract` (with `http`; the `jsonschema` validator).
 //!
 //! Container tests run in CI's containers job with `ID_EFFECT_REQUIRE_DOCKER=1`.
 //!
@@ -34,6 +38,8 @@
 #![deny(missing_docs)]
 
 pub mod containers;
+#[cfg(feature = "contract")]
+pub mod contract;
 #[cfg(feature = "sql")]
 pub mod db;
 #[cfg(feature = "fixtures")]
@@ -46,6 +52,8 @@ pub use containers::{
   MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis, RedisContainer, Shared,
   Vault, VaultContainer, Wait, container_exists, docker_available, require_docker,
 };
+#[cfg(feature = "contract")]
+pub use contract::{Contract, ContractError};
 #[cfg(feature = "sql")]
 pub use db::{IsolatedDatabase, TemplateDb, TransactionSqlClient, isolated_db};
 #[cfg(feature = "fixtures")]
@@ -66,6 +74,12 @@ struct BookContainersDoctests;
 
 /// Runs the book chapter on integration testing (isolated databases, fixtures, the HTTP test
 /// client) as a doctest.
-#[cfg(all(doctest, feature = "fixtures", feature = "http", feature = "migrate"))]
+#[cfg(all(
+  doctest,
+  feature = "fixtures",
+  feature = "http",
+  feature = "migrate",
+  feature = "contract"
+))]
 #[doc = include_str!("../../id_effect/book/src/part4/ch15-08-integration-testing.md")]
 struct BookIntegrationTestingDoctests;

@@ -39,7 +39,7 @@ use serde::{Deserialize, Serialize};
 use tower::{Service, ServiceExt};
 
 pub use ::http::{
-  HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, header,
+  HeaderMap, HeaderName, HeaderValue, Method, Request, Response, StatusCode, Uri, header,
 };
 
 /// What the client sends: the whole request body in memory.
@@ -264,6 +264,7 @@ where
   pub fn send(self) -> Effect<TestResponse, HttpTestError> {
     from_async(move || async move {
       let (service, request) = self.into_parts()?;
+      let (method, uri) = (request.method().clone(), request.uri().clone());
       let response = service
         .oneshot(request)
         .await
@@ -275,6 +276,8 @@ where
         .map_err(|e| HttpTestError::Body(e.to_string()))?
         .to_bytes();
       Ok(TestResponse {
+        method,
+        uri,
         status: parts.status,
         headers: parts.headers,
         body,
@@ -283,15 +286,28 @@ where
   }
 }
 
-/// A response read whole: status, headers and body.
+/// A response read whole: status, headers and body, and the method and URI of the request that
+/// got it.
 #[derive(Clone, Debug)]
 pub struct TestResponse {
+  method: Method,
+  uri: Uri,
   status: StatusCode,
   headers: HeaderMap,
   body: Bytes,
 }
 
 impl TestResponse {
+  /// The method of the request.
+  pub fn method(&self) -> &Method {
+    &self.method
+  }
+
+  /// The URI of the request (as sent: a path, with its query if any).
+  pub fn uri(&self) -> &Uri {
+    &self.uri
+  }
+
   /// The status.
   pub fn status(&self) -> StatusCode {
     self.status

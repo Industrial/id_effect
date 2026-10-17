@@ -29,7 +29,8 @@
   (`x-request-id` propagation, `RequestId` extractor, one `http.request` effect span per request),
   `TimeoutLayer` (503 Problem; interrupts the handler's fiber), `BodyLimitLayer` (413 Problem) and
   `RateLimitLayer` (429 Problem + `Retry-After`; token buckets behind a pluggable
-  `RateLimitStore`). New dependency `id_effect_resilience`.
+  `RateLimitStore`). New dependency `id_effect_resilience`. `RateLimitKey::tenant` keys limits by
+  the request's tenant (read from `RequestCaps` or a request extension).
 - `id_effect_axum`: `server::serve_dir` static files with strong `ETag` / `Last-Modified` / 304,
   `If-Match` / `If-Range`, precompressed `.br` / `.gz`, hashed-asset `Cache-Control`, traversal
   and hidden-file protection; `middleware::HttpCacheLayer` + `CacheControl` add `Cache-Control`
@@ -137,7 +138,9 @@
   cloned per test with `CREATE DATABASE … TEMPLATE`, dropped on scope close); `Fixture` /
   `Factory` with seeded Schema-arbitrary defaults and `FromRow` rows (feature `fixtures`); an
   in-process `TestClient` over any tower `Service` (feature `http`). Book:
-  part4/ch15-08-integration-testing.md; example `020_isolated_db`.
+  part4/ch15-08-integration-testing.md; example `020_isolated_db`. Feature `contract`: `Contract` /
+  `TestResponse::assert_conforms` check responses against the response schema the OpenAPI document
+  declares for their operation and status, naming each violation by JSON pointer.
 - `id_effect_kit`: features `openapi`, `sql`, `sql-sqlite`, `sql-mysql`, `migrate`, `repository`,
   `auth` (+ `auth-oidc`, `auth-totp`), `authz`, `redis`, `config-vault` and `test` (for
   dev-dependencies; not in `full`); `full` updated; the prelude gains typed routes, `Problem`,

@@ -302,6 +302,94 @@ assert_eq!(registry.len(), 1);
 `AuthzError` also implements `IntoResponse` with the same Problem Details body, so a handler that
 calls `authorize(name, resource)` on a loaded resource can return its error as is.
 
+## Data-layer scoping
+
+A guard decides whether a caller may run a route; it does not decide **which rows** the route
+reads. `same_tenant()` checks one loaded resource, but a list, a count or a lookup by id has to be
+filtered before the rows leave the database, or a forgotten check leaks another tenant's data.
+`id_effect_sql`'s repositories (feature `repository`, see
+[Query builder, entities and repositories](ch28-03-repositories.md)) do that filtering:
+
+- an entity declared with `#[entity(tenant = "org_id")]` is **tenant-scoped**;
+- its `Repository` adds `"org_id" = <tenant>` to **every** statement it builds — `find`,
+  `find_all`, `find_by`, `find_page`, `count`, `exists`, `update`, `delete` — and an insert writes
+  the tenant column whatever the struct says (an update never changes it);
+- the tenant comes from the request: `Repository::for_current_tenant(dialect)` reads the
+  **`CurrentTenant`** capability from the environment, `repo.with_tenant(value)` takes it from a
+  value you hold (the caller's organisation);
+- it **fails closed**: a scoped repository of a tenant-scoped entity without a tenant fails every
+  call with `SqlError::Unsupported` and sends nothing. Only `unscoped()`, visible in the code that
+  calls it, reads across tenants.
+
+`CurrentTenant` is set where the principal is known. Taking it from `Principal::tenant` keeps the
+two in step, and a principal of no tenant gets no repository at all:
+
+```rust
+use id_effect::{Cause, Effect, Exit, HCons, HNil, fail, hlist, succeed};
+use id_effect_authz::{BasicPrincipal, CurrentPrincipal, Principal};
+use id_effect_sql::{
+  CurrentTenant, Dialect, Entity, FromRow, Repository, SqlClient, SqlClientService, SqlError,
+  SqlValue, TestSqlClient,
+};
+
+#[derive(Clone, Debug, PartialEq, FromRow, Entity)]
+#[entity(table = "invoices", tenant = "org_id")]
+struct Invoice {
+  #[entity(id)]
+  id: i64,
+  amount: i64,
+}
+
+type Env = HCons<CurrentTenant, HCons<SqlClientService, HNil>>;
+
+/// The caller's invoices: whatever the query, only rows of the request's tenant come back.
+fn invoices() -> Effect<Vec<Invoice>, SqlError, Env> {
+  Repository::<Invoice>::for_current_tenant(Dialect::Postgres).flat_map(|repo| repo.find_all())
+}
+
+/// The tenant of an authenticated principal; none means no data access (fail closed).
+fn tenant_of(principal: &CurrentPrincipal) -> Effect<CurrentTenant, SqlError> {
+  match principal.tenant() {
+    Some(org) => succeed(CurrentTenant::new(org.to_owned())),
+    None => fail(SqlError::Unsupported("the principal has no tenant".into())),
+  }
+}
+
+let test = TestSqlClient::new();
+let _ = test.connect().block_on();
+let carl = CurrentPrincipal::new(BasicPrincipal::new("carl").with_tenant("acme"));
+let Exit::Success(tenant) = tenant_of(&carl).block_on() else { panic!("carl has a tenant") };
+let env = hlist![tenant, SqlClientService::new(test.clone())];
+assert!(matches!(invoices().provide_all(env).block_on(), Exit::Success(_)));
+assert_eq!(
+  test.recorded_queries()[0],
+  (
+    r#"SELECT "id", "amount" FROM "invoices" WHERE "org_id" = $1 ORDER BY "id" ASC"#.to_owned(),
+    vec![SqlValue::Text("acme".into())]
+  )
+);
+
+// No tenant: nothing is queried.
+let nobody = CurrentPrincipal::new(BasicPrincipal::new("svc"));
+assert!(matches!(tenant_of(&nobody).block_on(), Exit::Failure(Cause::Fail(SqlError::Unsupported(_)))));
+let no_tenant = Repository::<Invoice>::new(Dialect::Postgres)
+  .find_all::<HCons<SqlClientService, HNil>, _>()
+  .provide_all(hlist![SqlClientService::new(test.clone())]);
+assert!(matches!(
+  no_tenant.block_on(),
+  Exit::Failure(Cause::Fail(SqlError::Unsupported(m))) if m.contains("tenant column `org_id`")
+));
+assert_eq!(test.recorded_queries().len(), 1, "the call without a tenant sent nothing");
+```
+
+The reference app `examples/reference/ledger` scopes every account, entry and API-token
+repository to the caller's organisation (`accounts_of(caller.org())` in `src/accounts.rs`, built
+from the principal's tenant by `Caller::of`, which answers 403 for a principal without one). Its
+test `accounts::organisations_never_see_each_other` (`tests/accounts.rs`) signs in two
+organisations and checks that one cannot list, read, read the balance of, or post to the other's
+accounts. Statements written by hand (`query`, raw SQL, the query builder) are not filtered: put
+the tenant in their `WHERE` yourself, as the Ledger's balance query does.
+
 ## Recording decisions
 
 Every decision can be recorded as a **`DecisionEvent`**: the principal's id, whether it was

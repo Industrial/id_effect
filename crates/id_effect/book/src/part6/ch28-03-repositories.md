@@ -54,6 +54,60 @@ assert!(matches!(todos.block_on(), Exit::Success(v) if v == [Todo { id: 1, title
 
 The statement is rendered when `fetch_*` is called. A parameter the bridge cannot carry fails the effect with an error naming the parameter (`$2`), and no query runs.
 
+### Joins, ordering and paging
+
+Columns of a join are `(table, column)` pairs; `inner_join` / `left_join` take the joined table and the `ON` condition (`Expr::col(a).equals(b)` compares two columns), and `expr_as` names a selected expression so `FromRow` finds it. `order_by` is repeatable — the first call is the primary sort key. For paging, the `Page` of the repository feature (below) carries `limit` and `offset`; `Page::number(n, size)` is the 0-based page `n`:
+
+```rust
+use id_effect::Exit;
+use id_effect_sql::query_builder::sea_query::{Expr, ExprTrait, Order, Query, SelectStatement};
+use id_effect_sql::query_builder::{BuildSql, Dialect, fetch_all_as};
+use id_effect_sql::{FromRow, Page, SqlClientEnv, SqlError, SqlRow, SqlValue, TestSqlClient, sql_client_layer};
+
+/// An order with its customer's name.
+#[derive(Debug, PartialEq, FromRow)]
+struct OrderLine { id: i64, customer: String, total: i64 }
+
+/// Orders of active customers worth at least `min_total`, the largest first (ties by id).
+fn big_orders(min_total: i64, page: Page) -> SelectStatement {
+    Query::select()
+        .column(("orders", "id"))
+        .expr_as(Expr::col(("customers", "name")), "customer")
+        .column(("orders", "total"))
+        .from("orders")
+        .inner_join("customers", Expr::col(("orders", "customer_id")).equals(("customers", "id")))
+        .and_where(Expr::col(("orders", "total")).gte(min_total))
+        .and_where(Expr::col(("customers", "active")).eq(true))
+        .order_by(("orders", "total"), Order::Desc)
+        .order_by(("orders", "id"), Order::Asc)
+        .limit(page.limit)
+        .offset(page.offset)
+        .to_owned()
+}
+
+let second_page = big_orders(100, Page::number(1, 20));
+let (sql, params) = second_page.build_sql(Dialect::Postgres)?;
+assert_eq!(
+    sql,
+    r#"SELECT "orders"."id", "customers"."name" AS "customer", "orders"."total" FROM "orders" INNER JOIN "customers" ON "orders"."customer_id" = "customers"."id" WHERE "orders"."total" >= $1 AND "customers"."active" = $2 ORDER BY "orders"."total" DESC, "orders"."id" ASC LIMIT $3 OFFSET $4"#
+);
+assert_eq!(params, [SqlValue::I64(100), SqlValue::Bool(true), SqlValue::I64(20), SqlValue::I64(20)]);
+
+let test = TestSqlClient::new();
+test.script_query(sql, vec![SqlRow::from_pairs([
+    ("id", SqlValue::I64(21)), ("customer", "ada".into()), ("total", SqlValue::I64(250)),
+])]);
+let lines = fetch_all_as::<OrderLine, SqlClientEnv, _>(Dialect::Postgres, &second_page)
+    .provide_layer(sql_client_layer::<SqlError>(test));
+assert!(matches!(
+    lines.block_on(),
+    Exit::Success(v) if v == [OrderLine { id: 21, customer: "ada".into(), total: 250 }]
+));
+# Ok::<(), SqlError>(())
+```
+
+`left_join` keeps the rows without a match (their joined columns are NULL: decode them as `Option<T>`), and `group_by_col` with an aggregate (`Expr::col(..).count()`) summarises them. `crates/id_effect_sql/tests/query.rs` (`joins_render_with_ordering_and_paging`, `joins_run_on_sqlite`) renders an inner and a left join and runs them, page by page, on SQLite. The repository's own `find_page` (below) pages one entity's table in primary-key order; reach for the query builder when a read spans tables.
+
 ## Entities: `#[derive(Entity)]`
 
 `#[derive(FromRow, Entity)]` maps a struct to a table:

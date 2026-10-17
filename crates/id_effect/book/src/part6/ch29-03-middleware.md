@@ -130,9 +130,15 @@ while !released.load(Ordering::SeqCst) {
 
 `RateLimitLayer::per_second(rate, burst)` limits each client IP. The IP comes from
 `into_make_service_with_connect_info::<SocketAddr>()`; without it, all requests share one
-bucket. To key by principal, use `RateLimitKey::from_fn(..).or(RateLimitKey::peer_ip())`. To
-share buckets across instances, implement your own `RateLimitStore`. A store's `acquire` is an
-effect, so it can do I/O:
+bucket. To key by principal, use `RateLimitKey::from_fn(..).or(RateLimitKey::peer_ip())`. For
+**per-tenant limits**, `RateLimitKey::tenant(|p: &T| ..)` keys by the tenant of a value `T` the
+authentication layer recorded (a `RequestCaps` override, else a request extension) — e.g.
+`RateLimitKey::tenant(|p: &CurrentPrincipal| p.tenant().map(str::to_owned))` — so every user of
+an organisation shares its bucket; add the rate limit layer inside the authentication layer
+([Tenancy and the audit log](ch30-07-audit-tenancy.md) has the whole example). Other keys:
+`RateLimitKey::header(name)` (an API key) and `RateLimitKey::global()`. To share buckets across
+instances, implement your own `RateLimitStore` (or use `id_effect_redis`'s
+`RedisRateLimitStore`). A store's `acquire` is an effect, so it can do I/O:
 
 ```rust
 use std::sync::atomic::{AtomicU32, Ordering};
