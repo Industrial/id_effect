@@ -42,4 +42,16 @@ assert!(acked.into_result().is_ok());
 assert_eq!(broker.backlog(&orders, &billing), 0);
 ```
 
+The transactional outbox, relay and inbox run on `id_effect_sql`. `Outbox::stage(&tx, topic,
+message)` writes the message to `id_effect_outbox` with the caller's `SqlTransaction`, so it is
+published if and only if the caller's work commits. A `Relay` claims committed rows from
+`PgOutbox` with `FOR UPDATE SKIP LOCKED` and a lease (several relays share the outbox; a crashed
+relay's rows are claimed again when its lease expires), publishes each through any
+`MessageBroker` with its staged `MessageId`, marks it sent, retries a failed publish on a core
+`Schedule` and prunes sent rows. Delivery is at least once, so `Inbox::once(&tx, group,
+message_id, f)` records `(group, message id)` in `id_effect_inbox` in the handler's transaction
+and runs `f` only the first time; `Inbox::handler` wraps it into a `consume` handler that acks
+after the commit. `migrator()` ships both tables (tracked in `_id_effect_messaging_migrations`);
+`MemoryOutbox` and `MemoryInbox` are the same in memory for tests.
+
 Tier `integration`.

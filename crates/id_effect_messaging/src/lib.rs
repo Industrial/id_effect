@@ -44,6 +44,44 @@
 //! assert_eq!(dlq[0].payload(), b"order 1");
 //! ```
 //!
+//! # Outbox, relay and inbox
+//!
+//! [`Outbox::stage`] writes a message to the table `id_effect_outbox` with the caller's
+//! `SqlTransaction`, so it is published if and only if the caller's work commits. A [`Relay`]
+//! claims the committed rows from an [`OutboxStore`] ([`PgOutbox`]: `FOR UPDATE SKIP LOCKED`
+//! with a lease, so several relays share the outbox), publishes each through any
+//! [`MessageBroker`] with its staged [`MessageId`], marks it sent, retries a failed publish on a
+//! core `Schedule` ([`RelayConfig::retry`]) and prunes sent rows. Delivery is at least once (a
+//! relay that crashes after publishing publishes again), so consumers deduplicate with
+//! [`Inbox::once`]: it records `(consumer group, message id)` in `id_effect_inbox` with the
+//! handler's transaction and runs the handler only the first time; [`Inbox::handler`] acks after
+//! the commit. [`migrator`] ships both tables, tracked in their own table [`MIGRATIONS_TABLE`].
+//! [`MemoryOutbox`] and [`MemoryInbox`] are the same in memory, for tests.
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use id_effect_messaging::{
+//!   ConsumerGroup, MemoryBroker, MemoryInbox, MemoryOutbox, Message, MessageId, Once, Relay,
+//!   Topic,
+//! };
+//!
+//! let (outbox, broker) = (MemoryOutbox::new(), MemoryBroker::new());
+//! let orders = Topic::new("orders").unwrap();
+//! let staged = outbox.stage(&orders, Message::new("o-1").with_id("o-1"));
+//! assert!(staged.block_on().into_result().is_ok());
+//! let relay = Relay::new(Arc::new(outbox.clone()), Arc::new(broker.clone()));
+//! let report = relay.run_until_idle().block_on().into_result().unwrap();
+//! assert_eq!((report.published, broker.messages(&orders).len()), (1, 1));
+//!
+//! let inbox = MemoryInbox::new();
+//! let (billing, id) = (ConsumerGroup::new("billing").unwrap(), MessageId::new("o-1"));
+//! let first = inbox.once(&billing, &id, || id_effect::succeed::<_, (), _>("billed"));
+//! let again = inbox.once(&billing, &id, || id_effect::succeed::<_, (), _>("billed twice"));
+//! assert_eq!(first.block_on().into_result(), Ok(Once::Ran("billed")));
+//! assert_eq!(again.block_on().into_result(), Ok(Once::Duplicate));
+//! ```
+//!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
 #![forbid(unsafe_code)]
@@ -51,14 +89,22 @@
 
 mod broker;
 mod delivery;
+mod inbox;
 mod memory;
+mod outbox;
+mod relay;
+mod schema;
 
 pub use broker::{
   BrokerError, ConsumerGroup, Message, MessageBroker, MessageBrokerExt, MessageId, StartFrom,
   SubscribeOptions, consume, headers,
 };
 pub use delivery::{Acker, DeadLetterReason, Delivery, Nack, ack_on_success};
+pub use inbox::{Inbox, MemoryInbox, Once};
 pub use memory::MemoryBroker;
+pub use outbox::{MemoryOutbox, Outbox, OutboxError, OutboxId, OutboxStore, Pending, PgOutbox};
+pub use relay::{Relay, RelayConfig, RelayReport, default_relay_retry, retry_delay};
+pub use schema::{MIGRATIONS_TABLE, migrator};
 
 use std::fmt;
 
