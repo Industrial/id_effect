@@ -2,6 +2,7 @@
 
 use crate::edge::attempt;
 use crate::error::EventStoreError;
+use crate::subscription::{EventLog, RecordedEvent};
 use id_effect::Effect;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
@@ -99,8 +100,17 @@ pub(crate) fn check_version(
 }
 
 /// In-memory append-only store (tests and ephemeral demos). Clones share the same streams.
+///
+/// It is also an [`EventLog`](crate::EventLog): every append gets the next global position.
 pub struct MemoryEventStore<E> {
-  streams: Arc<Mutex<HashMap<String, Vec<StoredEvent<E>>>>>,
+  streams: Arc<Mutex<MemoryStreams<E>>>,
+}
+
+/// The streams, and the global log of appends as `(stream_id, version)`; position `n` is
+/// `log[n - 1]`.
+struct MemoryStreams<E> {
+  by_id: HashMap<String, Vec<StoredEvent<E>>>,
+  log: Vec<(String, u64)>,
 }
 
 impl<E> Clone for MemoryEventStore<E> {
@@ -115,7 +125,10 @@ impl<E> MemoryEventStore<E> {
   /// Empty store.
   pub fn new() -> Self {
     Self {
-      streams: Arc::new(Mutex::new(HashMap::new())),
+      streams: Arc::new(Mutex::new(MemoryStreams {
+        by_id: HashMap::new(),
+        log: Vec::new(),
+      })),
     }
   }
 }
@@ -141,9 +154,10 @@ impl<E: Clone + Send + Sync + 'static> MemoryEventStore<E> {
       let mut guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
-      let current = guard.get(&stream_id).map_or(0, |s| s.len() as u64);
+      let MemoryStreams { by_id, log } = &mut *guard;
+      let current = by_id.get(&stream_id).map_or(0, |s| s.len() as u64);
       check_version(&stream_id, expected, current)?;
-      let stream = guard.entry(stream_id).or_default();
+      let stream = by_id.entry(stream_id.clone()).or_default();
       let mut out = Vec::with_capacity(events.len());
       for payload in events {
         let version = stream.len() as u64 + 1;
@@ -153,6 +167,7 @@ impl<E: Clone + Send + Sync + 'static> MemoryEventStore<E> {
           payload,
         };
         stream.push(stored.clone());
+        log.push((stream_id.clone(), version));
         out.push(stored);
       }
       Ok(out)
@@ -185,7 +200,7 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
       let guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
-      let Some(stream) = guard.get(&stream_id) else {
+      let Some(stream) = guard.by_id.get(&stream_id) else {
         return Ok(Vec::new());
       };
       Ok(
@@ -205,7 +220,42 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
       let guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
-      Ok(guard.get(&stream_id).map(|s| s.len() as u64).unwrap_or(0))
+      Ok(
+        guard
+          .by_id
+          .get(&stream_id)
+          .map(|s| s.len() as u64)
+          .unwrap_or(0),
+      )
+    })
+  }
+}
+
+impl<E: Clone + Send + Sync + 'static> EventLog<E> for MemoryEventStore<E> {
+  fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<E>>, EventStoreError> {
+    let streams = Arc::clone(&self.streams);
+    attempt(move || {
+      let guard = streams
+        .lock()
+        .map_err(|e| EventStoreError::Io(e.to_string()))?;
+      let skip = usize::try_from(after).unwrap_or(usize::MAX);
+      Ok(
+        guard
+          .log
+          .iter()
+          .enumerate()
+          .skip(skip)
+          .take(limit)
+          .filter_map(|(i, (stream_id, version))| {
+            let event = guard.by_id.get(stream_id)?.get(*version as usize - 1)?;
+            Some(RecordedEvent {
+              position: i as u64 + 1,
+              stream_id: stream_id.clone(),
+              event: event.clone(),
+            })
+          })
+          .collect(),
+      )
     })
   }
 }

@@ -1,5 +1,5 @@
 //! Journal checks shared by the SQLite (`tests/sql_journal.rs`) and PostgreSQL
-//! (`tests/pg_journal.rs`) suites: the same `SqlEventJournal` over each driver.
+//! (`tests/pg_events.rs`) suites: the same `SqlEventJournal` over each driver.
 
 use id_effect::{Cause, Effect, Exit};
 use id_effect_events::{

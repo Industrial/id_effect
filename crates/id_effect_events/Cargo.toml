@@ -41,8 +41,12 @@ name = "sql_journal"
 required-features = ["sqlite"]
 
 [[test]]
-name = "pg_journal"
+name = "pg_events"
 required-features = ["pg"]
+
+[[example]]
+name = "010_account"
+required-features = ["sqlite"]
 
 [[example]]
 name = "020_sqlite_journal"

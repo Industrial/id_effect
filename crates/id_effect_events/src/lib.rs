@@ -8,6 +8,8 @@
 //! | [`MemoryEventStore`], [`FileJournal`] | in-memory and JSON-lines stores for tests and local runs |
 //! | [`run_projection`], [`run_projection_from_store`] | fold events or a stored stream through a [`Projection`] |
 //! | [`ProjectionRunner`] | rebuild several projections in dependency order |
+//! | [`SnapshotStore`], [`load_aggregate`] | aggregate snapshots: load = latest snapshot + later events |
+//! | [`EventLog`], [`CatchUpSubscription`], [`CheckpointStore`] | every stream in global order; subscriptions that resume from a stored checkpoint |
 //! | [`EventEnvelope`] | versioned payload with wire bridging via [`id_effect::schema::Schema`] |
 //! | [`CommandHandler`] / [`QueryHandler`], [`dispatch_command`], [`query_projection`] | CQRS dispatch |
 //!
@@ -53,7 +55,9 @@ mod error;
 mod event_store;
 mod projection;
 mod projection_runner;
+mod snapshot;
 mod sql_journal;
+mod subscription;
 
 pub use cqrs::{
   CommandHandler, DispatchError, QueryDispatchError, QueryHandler, dispatch_command,
@@ -68,7 +72,14 @@ pub use error::EventStoreError;
 pub use event_store::{EventStore, FileJournal, MemoryEventStore, StoredEvent};
 pub use projection::{Projection, run_projection, run_projection_from_store};
 pub use projection_runner::{ProjectionNode, ProjectionRunner};
-pub use sql_journal::{SQL_EVENT_JOURNAL_DDL, SqlEventJournal};
+pub use snapshot::{
+  MemorySnapshotStore, SQL_SNAPSHOT_DDL, Snapshot, SnapshotStore, SqlSnapshotStore, load_aggregate,
+};
+pub use sql_journal::{POSITION_RETRIES, SQL_EVENT_JOURNAL_DDL, SqlEventJournal};
+pub use subscription::{
+  CatchUpSubscription, CheckpointStore, DEFAULT_BATCH_SIZE, EventLog, MemoryCheckpointStore,
+  RecordedEvent, SQL_CHECKPOINT_DDL, SqlCheckpointStore, SubscriptionError,
+};
 
 /// Compiles and runs the README's example as a doctest.
 #[cfg(doctest)]

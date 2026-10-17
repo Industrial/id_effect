@@ -6,9 +6,18 @@
 //! versions; a concurrent writer that took one of those versions first makes the insert hit the
 //! key ([`SqlError::is_unique_violation`]), which becomes [`EventStoreError::VersionConflict`]
 //! and rolls the whole append back.
+//!
+//! Every row also gets a global `position` (unique, `MAX(position) + 1` inside the append's
+//! transaction), the order [`EventLog::read_all`] and catch-up subscriptions read in. A
+//! transaction that takes a position blocks the next writer's insert of the same position until
+//! it commits, so positions are gap-free and become visible in order: a reader that has seen
+//! position `n` never sees a smaller one appear later. The cost is that appends are serialized
+//! on the journal; a writer that loses the position to another stream's append is retried (up to
+//! [`POSITION_RETRIES`] times) rather than reported as a conflict.
 
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent, check_version};
+use crate::subscription::{EventLog, RecordedEvent};
 use id_effect::{Effect, fail, succeed};
 use id_effect_sql::{SqlClient, SqlClientService, SqlError, SqlRow, params, with_transaction};
 use serde::{Serialize, de::DeserializeOwned};
@@ -17,7 +26,11 @@ use uuid::Uuid;
 
 /// DDL of the journal table (portable PostgreSQL / SQLite; payloads are JSON text). Apply it in
 /// a migration, or at startup with [`SqlEventJournal::create_table`].
+///
+/// `position` is the global order across streams (see the module docs); `(stream_id, version)`
+/// is the per-stream order and the optimistic-concurrency key.
 pub const SQL_EVENT_JOURNAL_DDL: &str = "CREATE TABLE IF NOT EXISTS id_effect_event_journal (
+  position BIGINT NOT NULL UNIQUE,
   stream_id TEXT NOT NULL,
   version BIGINT NOT NULL,
   event_id TEXT NOT NULL,
@@ -28,11 +41,20 @@ pub const SQL_EVENT_JOURNAL_DDL: &str = "CREATE TABLE IF NOT EXISTS id_effect_ev
 const LATEST_SQL: &str = "SELECT COALESCE(MAX(version), 0) AS latest \
   FROM id_effect_event_journal WHERE stream_id = $1";
 
+const HEAD_SQL: &str = "SELECT COALESCE(MAX(position), 0) AS head FROM id_effect_event_journal";
+
 const INSERT_SQL: &str = "INSERT INTO id_effect_event_journal \
-  (stream_id, version, event_id, payload) VALUES ($1, $2, $3, $4)";
+  (position, stream_id, version, event_id, payload) VALUES ($1, $2, $3, $4, $5)";
 
 const SELECT_SQL: &str = "SELECT version, event_id, payload FROM id_effect_event_journal \
   WHERE stream_id = $1 AND version >= $2 ORDER BY version";
+
+const READ_ALL_SQL: &str = "SELECT position, stream_id, version, event_id, payload \
+  FROM id_effect_event_journal WHERE position > $1 ORDER BY position LIMIT $2";
+
+/// How many times an append that lost the global position to another stream's append is
+/// retried before it fails with [`EventStoreError::Io`].
+pub const POSITION_RETRIES: u32 = 32;
 
 /// [`EventStore`] persisted through a [`SqlClient`] (`PgSqlClient`, `SqliteSqlClient`, …) in
 /// the table of [`SQL_EVENT_JOURNAL_DDL`]. Payloads are stored as JSON. Clones share the client.
@@ -63,23 +85,38 @@ impl From<SqlError> for AppendError {
   }
 }
 
-fn to_version(raw: i64) -> Result<u64, EventStoreError> {
+pub(crate) fn to_version(raw: i64) -> Result<u64, EventStoreError> {
   u64::try_from(raw).map_err(|_| EventStoreError::Io(format!("negative stream version {raw}")))
 }
 
-fn to_sql_version(version: u64) -> Result<i64, EventStoreError> {
+pub(crate) fn to_sql_version(version: u64) -> Result<i64, EventStoreError> {
   i64::try_from(version)
     .map_err(|_| EventStoreError::Io(format!("stream version {version} exceeds i64")))
 }
 
-fn latest_from(rows: &[SqlRow]) -> Result<u64, EventStoreError> {
+/// The `u64` in column `column` of the first row (`0` without rows).
+fn first_u64(rows: &[SqlRow], column: &str) -> Result<u64, EventStoreError> {
   match rows.first() {
-    Some(row) => to_version(row.get::<i64>("latest")?),
+    Some(row) => to_version(row.get::<i64>(column)?),
     None => Ok(0),
   }
 }
 
-fn ready<A: Send + 'static, E: Send + 'static>(r: Result<A, E>) -> Effect<A, E> {
+fn latest_from(rows: &[SqlRow]) -> Result<u64, EventStoreError> {
+  first_u64(rows, "latest")
+}
+
+/// A journal row's event (`version`, `event_id`, JSON `payload`).
+fn decode_event<E: DeserializeOwned>(row: &SqlRow) -> Result<StoredEvent<E>, EventStoreError> {
+  let json = row.get::<String>("payload")?;
+  Ok(StoredEvent {
+    event_id: row.get::<String>("event_id")?,
+    version: to_version(row.get::<i64>("version")?)?,
+    payload: serde_json::from_str(&json).map_err(|e| EventStoreError::Serde(e.to_string()))?,
+  })
+}
+
+pub(crate) fn ready<A: Send + 'static, E: Send + 'static>(r: Result<A, E>) -> Effect<A, E> {
   match r {
     Ok(a) => succeed(a),
     Err(e) => fail(e),
@@ -138,67 +175,109 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> SqlEventJo
         Ok((Uuid::new_v4().to_string(), json, payload.clone()))
       })
       .collect();
-    let encoded = match encoded {
-      Ok(encoded) => encoded,
-      Err(e) => return fail(e),
-    };
-    let stream_id = stream_id.to_owned();
-    let conflict = (Arc::clone(&self.client), stream_id.clone());
-    with_transaction(Arc::clone(&self.client), move |tx| {
-      tx.query(LATEST_SQL, &params![stream_id.as_str()])
-        .map_err(AppendError::from)
-        .flat_map(move |rows| {
-          let current = match latest_from(&rows)
-            .and_then(|current| check_version(&stream_id, expected, current).map(|()| current))
-          {
-            Ok(current) => current,
-            Err(e) => return fail(AppendError::Store(e)),
-          };
-          let mut inserts: Effect<(), AppendError> = succeed(());
-          let mut out = Vec::with_capacity(encoded.len());
-          for (i, (event_id, json, payload)) in encoded.into_iter().enumerate() {
-            let version = current + i as u64 + 1;
-            let sql_version = match to_sql_version(version) {
-              Ok(v) => v,
+    match encoded {
+      Ok(encoded) => append_attempt(
+        Arc::clone(&self.client),
+        stream_id.to_owned(),
+        expected,
+        encoded,
+        POSITION_RETRIES,
+      ),
+      Err(e) => fail(e),
+    }
+  }
+}
+
+/// One transaction of an append: version check, global head, inserts. A unique violation
+/// rolls it back; if the stream did not move meanwhile, another stream's append took the
+/// position and the append is retried (`retries` left), else it is a version conflict.
+fn append_attempt<E: Clone + Send + Sync + 'static>(
+  client: Arc<dyn SqlClient>,
+  stream_id: String,
+  expected: Option<u64>,
+  encoded: Vec<(String, String, E)>,
+  retries: u32,
+) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+  let again = (Arc::clone(&client), stream_id.clone(), encoded.clone());
+  with_transaction(client, move |tx| {
+    tx.query(LATEST_SQL, &params![stream_id.as_str()])
+      .map_err(AppendError::from)
+      .flat_map(move |rows| {
+        let current = match latest_from(&rows)
+          .and_then(|current| check_version(&stream_id, expected, current).map(|()| current))
+        {
+          Ok(current) => current,
+          Err(e) => return fail(AppendError::Store(e)),
+        };
+        tx.query(HEAD_SQL, &[])
+          .map_err(AppendError::from)
+          .flat_map(move |rows| {
+            let head = match first_u64(&rows, "head") {
+              Ok(head) => head,
               Err(e) => return fail(AppendError::Store(e)),
             };
-            let insert = tx
-              .execute(
-                INSERT_SQL,
-                &params![stream_id.as_str(), sql_version, event_id.as_str(), json],
-              )
-              .map(|_| ())
-              .map_err(move |e| {
-                if e.is_unique_violation() {
-                  AppendError::Raced { expected: current }
-                } else {
-                  AppendError::from(e)
-                }
+            let mut inserts: Effect<(), AppendError> = succeed(());
+            let mut out = Vec::with_capacity(encoded.len());
+            for (i, (event_id, json, payload)) in encoded.into_iter().enumerate() {
+              let version = current + i as u64 + 1;
+              let keys = to_sql_version(head + i as u64 + 1)
+                .and_then(|position| Ok((position, to_sql_version(version)?)));
+              let (sql_position, sql_version) = match keys {
+                Ok(keys) => keys,
+                Err(e) => return fail(AppendError::Store(e)),
+              };
+              let insert = tx
+                .execute(
+                  INSERT_SQL,
+                  &params![
+                    sql_position,
+                    stream_id.as_str(),
+                    sql_version,
+                    event_id.as_str(),
+                    json
+                  ],
+                )
+                .map(|_| ())
+                .map_err(move |e| {
+                  if e.is_unique_violation() {
+                    AppendError::Raced { expected: current }
+                  } else {
+                    AppendError::from(e)
+                  }
+                });
+              inserts = inserts.then(insert);
+              out.push(StoredEvent {
+                event_id,
+                version,
+                payload,
               });
-            inserts = inserts.then(insert);
-            out.push(StoredEvent {
-              event_id,
-              version,
-              payload,
-            });
-          }
-          inserts.map(move |()| out)
-        })
-    })
-    .catch(move |e| match e {
-      AppendError::Store(e) => fail(e),
-      AppendError::Raced { expected } => {
-        let (client, stream_id) = conflict;
-        latest(&client, &stream_id).flat_map(move |actual| {
+            }
+            inserts.map(move |()| out)
+          })
+      })
+  })
+  .catch(move |e| match e {
+    AppendError::Store(e) => fail(e),
+    AppendError::Raced { expected: current } => {
+      let (client, stream_id, encoded) = again;
+      latest(&client, &stream_id).flat_map(move |actual| {
+        if actual != current {
           fail(EventStoreError::VersionConflict {
             stream_id,
-            expected,
+            expected: current,
             actual,
           })
-        })
-      }
-    })
-  }
+        } else if retries > 0 {
+          append_attempt(client, stream_id, expected, encoded, retries - 1)
+        } else {
+          fail(EventStoreError::Io(format!(
+            "append to `{stream_id}` lost the global position {} times",
+            POSITION_RETRIES + 1
+          )))
+        }
+      })
+    }
+  })
 }
 
 impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore<E>
@@ -230,26 +309,41 @@ impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventStore
       .client
       .query(SELECT_SQL, &params![stream_id, from])
       .map_err(EventStoreError::from)
+      .flat_map(|rows| ready(rows.iter().map(decode_event).collect()))
+  }
+
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
+    latest(&self.client, stream_id)
+  }
+}
+
+impl<E: Serialize + DeserializeOwned + Clone + Send + Sync + 'static> EventLog<E>
+  for SqlEventJournal<E>
+{
+  fn read_all(&self, after: u64, limit: usize) -> Effect<Vec<RecordedEvent<E>>, EventStoreError> {
+    let after = match to_sql_version(after) {
+      Ok(v) => v,
+      Err(e) => return fail(e),
+    };
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    self
+      .client
+      .query(READ_ALL_SQL, &params![after, limit])
+      .map_err(EventStoreError::from)
       .flat_map(|rows| {
         ready(
           rows
             .iter()
             .map(|row| {
-              let json = row.get::<String>("payload")?;
-              Ok(StoredEvent {
-                event_id: row.get::<String>("event_id")?,
-                version: to_version(row.get::<i64>("version")?)?,
-                payload: serde_json::from_str(&json)
-                  .map_err(|e| EventStoreError::Serde(e.to_string()))?,
+              Ok(RecordedEvent {
+                position: to_version(row.get::<i64>("position")?)?,
+                stream_id: row.get::<String>("stream_id")?,
+                event: decode_event(row)?,
               })
             })
-            .collect::<Result<Vec<_>, EventStoreError>>(),
+            .collect(),
         )
       })
-  }
-
-  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
-    latest(&self.client, stream_id)
   }
 }
 
@@ -289,11 +383,74 @@ mod tests {
     assert_eq!(test.commits(), 1);
     let inserts = test.recorded_executes();
     assert_eq!(inserts.len(), 2);
-    assert_eq!(inserts[1].1[1], id_effect_sql::SqlValue::I64(2));
+    // (position, stream_id, version, event_id, payload): the journal head is 0 (no rows).
+    assert_eq!(inserts[1].1[0], id_effect_sql::SqlValue::I64(2));
+    assert_eq!(inserts[1].1[2], id_effect_sql::SqlValue::I64(2));
     assert_eq!(
-      inserts[0].1[3],
+      inserts[0].1[4],
       id_effect_sql::SqlValue::Text(r#"{"n":1}"#.into())
     );
+  }
+
+  #[test]
+  fn append_takes_positions_after_the_journal_head() {
+    let test = connected();
+    test.script_query(HEAD_SQL, vec![SqlRow::from_pairs([("head", 41i64)])]);
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    run_sync(journal.append("s", &[Ping { n: 1 }, Ping { n: 2 }])).expect("append");
+    let positions: Vec<_> = test
+      .recorded_executes()
+      .iter()
+      .map(|(_, params)| params[0].clone())
+      .collect();
+    assert_eq!(
+      positions,
+      [
+        id_effect_sql::SqlValue::I64(42),
+        id_effect_sql::SqlValue::I64(43)
+      ]
+    );
+  }
+
+  #[test]
+  fn read_all_decodes_positions_and_streams() {
+    let test = connected();
+    test.script_query(
+      READ_ALL_SQL,
+      vec![SqlRow::from_pairs([
+        ("position", id_effect_sql::SqlValue::I64(7)),
+        ("stream_id", id_effect_sql::SqlValue::Text("a".into())),
+        ("version", id_effect_sql::SqlValue::I64(2)),
+        ("event_id", id_effect_sql::SqlValue::Text("e7".into())),
+        (
+          "payload",
+          id_effect_sql::SqlValue::Text(r#"{"n":3}"#.into()),
+        ),
+      ])],
+    );
+    let journal = SqlEventJournal::<Ping>::new(Arc::new(test.clone()));
+    let all = run_sync(journal.read_all(6, 10)).expect("read_all");
+    assert_eq!(
+      (
+        all[0].position,
+        all[0].stream_id.as_str(),
+        all[0].event.version
+      ),
+      (7, "a", 2)
+    );
+    assert_eq!(all[0].event.payload, Ping { n: 3 });
+    let (_, params) = test.recorded_queries().pop().expect("query");
+    assert_eq!(
+      params,
+      [
+        id_effect_sql::SqlValue::I64(6),
+        id_effect_sql::SqlValue::I64(10)
+      ]
+    );
+    assert!(matches!(
+      run_sync(journal.read_all(u64::MAX, 1)).expect_err("range"),
+      EventStoreError::Io(_)
+    ));
   }
 
   #[test]

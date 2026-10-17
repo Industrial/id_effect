@@ -9,6 +9,10 @@ Event sourcing, projections, and CQRS boundaries for [`id_effect`](https://githu
   `sqlite`); `MemoryEventStore` and `FileJournal` for tests and local runs
 - **`Projection`** / **`run_projection_from_store`** / **`ProjectionRunner`** — fold streams into read models, several
   in dependency order
+- **`SnapshotStore`** / **`load_aggregate`** — aggregate snapshots: load the latest snapshot plus the events after it
+  (`SqlSnapshotStore`, `MemorySnapshotStore`)
+- **`EventLog`** / **`CatchUpSubscription`** — every stream in global position order; subscriptions resume from a
+  checkpoint in a `CheckpointStore` (`SqlCheckpointStore`, `MemoryCheckpointStore`), at least once
 - **`CommandHandler`** / **`QueryHandler`** / **`dispatch_command`** — CQRS dispatch, as effects
 - **`EventEnvelope`** — metadata shell with `Schema` wire bridging
 
