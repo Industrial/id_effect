@@ -10696,7 +10696,7 @@
 			"evidence": "New published id_effect_tool: `id-effect new` with 4 templates, db/otel options, tests+CI+Dockerfile+Kamal; book ch34-00, tutorial; tests/bin.rs; CI template matrix.",
 			"targets": {
 				"0.8.0": 63,
-				"0.9.0": 88,
+				"0.10.0": 88,
 				"1.0.0": 88
 			},
 			"checks": [

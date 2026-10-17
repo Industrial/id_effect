@@ -120,7 +120,7 @@ measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 | 0.6.0 measured | 38.5 | 37.3 (#10) | 46.0 (#6) | 4 | 47 | 2 | 62 |
 | 0.7.0 measured | 45.3 | 43.2 (#9) | 56.1 (#6) | 13 | 39 | 4 | 50 |
 | 0.8.0 measured | 56.0 | 55.2 (#5) | 64.4 (#2) | 28 | 31 | 7 | 25 |
-| 0.9.0 target | 65.0 | 64.9 (#3) | 69.0 (#2) | 37 | 21 | 8 | 13 |
+| 0.9.0 target | 64.7 | 64.6 (#3) | 68.9 (#2) | 36 | 21 | 8 | 13 |
 | 0.10.0 target | 71.4 | 71.7 (#3) | 75.3 (#1) | 42 | 11 | 9 | 12 |
 | 0.11.0 target | 75.0 | 74.7 (#2) | 79.6 (#1) | 50 | 8 | 15 | 12 |
 | 0.12.0 target | 78.8 | 78.8 (#1) | 81.7 (#1) | 51 | 3 | 16 | 12 |
@@ -269,5 +269,6 @@ v2 is **primary since method 2.0** (owner decision L13, PLAN-OF-PLANS §7.0, re-
 | 2026-10-15 | 1.0 | v2 checklists added (reported alongside). |
 | 2026-10-16 | 1.1 | v1 caps applied strictly: 25 id_effect scores on 17 rows lowered to the cap of their v2 level (owner decision L13). |
 | 2026-10-16 | 2.0 | v2 primary (L13). Competitor levels aligned by one rule (§7.4, `alignment-2.0.json`: 60 competitor scores changed); stored scores are checklist scores, validated; targets re-based (§7.4); method 1.1 kept in `rows[].v1`. ADR notes added at 0.7.0 for `test.unit` and `dx.diagnostics`, whose checklist scores drop from 0.6.0 (removed helpers and `id-effect-diagnose`). |
+| 2026-10-17 | 2.1 | 0.9 decision D1 applied: the E1.3 generators did not start by the end of wave 2, so `dx.scaffold`'s 0.9.0 target (88) moves to 0.10.0. Planned 0.9.0 E 64.9 → 64.6 (#3). |
 | 2026-10-16 | 2.1 | 0.8.0 measured by blind re-score (§6; five assessors without targets): E 55.2 (#5), RT 64.4 (#2), red 31. One miss carried over (`data.jsonschema` 38 vs 50). The method 1.1 history may stop before the latest measured version (v1.id_effect is a subset). |
 | 2026-10-16 | 2.1 | Process-row level rule (§7.4; owner decision D2 at 0.8 kickoff): 7 rows marked `process`; id_effect `eco.stability` 49 → 50 at 0.6.0 and 0.7.0 (no longer capped at `published`). `data.jsonschema` 0.8.0 target 75 → 50 (owner decision D1: OpenAPI from routes stays in 0.9). |
