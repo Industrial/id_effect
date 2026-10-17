@@ -53,6 +53,10 @@ struct Ch2701Metrics;
 struct Ch2702Health;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-03-console.md")]
+struct Ch2703Console;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-00-data.md")]
 struct Ch2800Data;
 

@@ -4,7 +4,8 @@
 //! # The API
 //!
 //! [`Console`] collects what the console shows and [`Console::router`] turns it into an Axum
-//! router answering JSON under [`API_PREFIX`] (`/_console/api`):
+//! router answering JSON under [`API_PREFIX`] (`/_console/api`) and the dashboard page at
+//! `/_console`:
 //!
 //! | Route | Answers |
 //! |---|---|
@@ -14,6 +15,15 @@
 //! | `GET health` | the [`HealthRegistry`](id_effect_axum::HealthRegistry) report (always `200`) |
 //! | `GET log-level` | the reloadable `EnvFilter` and the `EffectLogger` minimum ([`LogLevelView`]) |
 //! | `PUT log-level` | changes both without a restart ([`LogLevelChange`]) |
+//! | `GET jobs` | per-queue counts and the newest jobs of a job queue (`JobsView`, feature `jobs`) |
+//!
+//! # The dashboard
+//!
+//! The same router serves `GET /_console`: one static page (inline CSS and vanilla JavaScript,
+//! compiled in with `include_str!`, no build step and nothing loaded from another origin) that
+//! polls the API and shows the health checks, the log level with a form that changes it, the
+//! supervision trees, the job queues (when the `jobs` feature and a queue are configured), the
+//! live fibers and the metrics. It is behind the same guard as the API.
 //!
 //! # Security model
 //!
@@ -49,10 +59,15 @@
 #![deny(missing_docs)]
 
 mod api;
+#[cfg(feature = "jobs")]
+mod jobs;
 mod log_level;
 mod supervisors;
+mod ui;
 
 pub use api::{API_PREFIX, Console, FiberView, MetricView};
+#[cfg(feature = "jobs")]
+pub use jobs::{JobView, JobsView, QueueView};
 pub use log_level::{EnvFilterHandle, LogLevelChange, LogLevelView};
 pub use supervisors::{SupervisorsView, UnreachableSupervisor};
 

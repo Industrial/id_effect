@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::log_level::{self, EnvFilterHandle, LogLevelChange, LogLevelError};
-use crate::supervisors;
+use crate::{supervisors, ui};
 
 /// Where the console API is mounted: every route is `/_console/api/<name>`.
 pub const API_PREFIX: &str = "/_console/api";
@@ -48,6 +48,8 @@ pub struct Console {
   metrics: MetricRegistry,
   env_filter: Option<EnvFilterHandle>,
   call_timeout: Duration,
+  #[cfg(feature = "jobs")]
+  jobs: Option<Arc<dyn id_effect_jobs::JobQueue>>,
 }
 
 impl Default for Console {
@@ -78,6 +80,8 @@ impl Console {
       metrics: MetricRegistry::global().clone(),
       env_filter: None,
       call_timeout: DEFAULT_CALL_TIMEOUT,
+      #[cfg(feature = "jobs")]
+      jobs: None,
     }
   }
 
@@ -119,20 +123,37 @@ impl Console {
     self
   }
 
-  /// The console routes under [`API_PREFIX`], every one of them (and the console router's
-  /// fallback) behind `guard`. Merge the result into the app's router, inside its
-  /// authentication layer.
+  /// The job queue `GET jobs` reports on (feature `jobs`): per-queue counts by state and the
+  /// newest 50 jobs, without their payloads. Without one, `GET jobs` is a `404` and the
+  /// dashboard hides its jobs panel.
+  #[cfg(feature = "jobs")]
+  #[must_use]
+  pub fn jobs(mut self, queue: impl id_effect_jobs::JobQueue) -> Self {
+    self.jobs = Some(Arc::new(queue));
+    self
+  }
+
+  /// The console routes under [`API_PREFIX`] and the dashboard page at `/_console`, every one of
+  /// them (and the console API's fallback) behind `guard`. Merge the result into the app's
+  /// router, inside its authentication layer.
   pub fn router(self, guard: Guard) -> Router {
     let api = Router::new()
       .route("/fibers", get(fibers))
       .route("/supervisors", get(supervisors_tree))
       .route("/metrics", get(metrics))
       .route("/health", get(health))
-      .route("/log-level", get(log_level_get).put(log_level_put))
+      .route("/log-level", get(log_level_get).put(log_level_put));
+    #[cfg(feature = "jobs")]
+    let api = api.route("/jobs", get(jobs));
+    let api = api
       .fallback(not_found)
       .layer(axum::middleware::map_response(no_store))
       .with_state(Arc::new(self));
-    Router::new().nest(API_PREFIX, api.layer(guard))
+    let page = Router::new()
+      .route(ui::PATH, get(ui::index))
+      .route_layer(guard.clone())
+      .route_layer(axum::middleware::map_response(no_store));
+    Router::new().nest(API_PREFIX, api.layer(guard)).merge(page)
   }
 }
 
@@ -282,6 +303,17 @@ async fn log_level_put(
     Ok(view) => Json(view).into_response(),
     Err(LogLevelError::Invalid(detail)) => problem(StatusCode::BAD_REQUEST, detail),
     Err(LogLevelError::Reload(detail)) => problem(StatusCode::INTERNAL_SERVER_ERROR, detail),
+  }
+}
+
+#[cfg(feature = "jobs")]
+async fn jobs(State(console): Shared) -> Response {
+  let Some(queue) = &console.jobs else {
+    return problem(StatusCode::NOT_FOUND, "no job queue registered");
+  };
+  match crate::jobs::snapshot(queue).await {
+    Ok(view) => Json(view).into_response(),
+    Err(detail) => problem(StatusCode::INTERNAL_SERVER_ERROR, detail),
   }
 }
 

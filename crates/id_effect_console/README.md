@@ -14,6 +14,12 @@ route and the console's fallback behind the guard (`401` anonymous, `403` otherw
 | `GET metrics` | the metric registry and the runtime fiber gauges |
 | `GET health` | the `HealthRegistry` report |
 | `GET` / `PUT log-level` | the reloadable `EnvFilter` and the `EffectLogger` minimum, changed without a restart |
+| `GET jobs` | per-queue counts and the newest jobs of an `id_effect_jobs` queue (feature `jobs`) |
+
+The same router serves the dashboard at `GET /_console`, behind the same guard: one static page
+(inline CSS and vanilla JavaScript, no build step, nothing loaded from another origin) that polls
+the API and shows health, the log level with a form to change it, the supervision trees, the job
+queues, the live fibers and the metrics.
 
 ```rust
 use id_effect_authz::{Guard, require_role};
