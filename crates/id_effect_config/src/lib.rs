@@ -78,6 +78,11 @@
 //! `config/<profile>.toml`, then `APP_`-prefixed environment variables (env > profile > base).
 //! An undeclared profile is [`ConfigError::UnknownProfile`]. See the [`profile`] module.
 //!
+//! [`Profiles::watch`] keeps a profile current without a restart: it polls the profile files by
+//! modification time and publishes each re-parsed value through a
+//! [`SubscriptionRef`](id_effect::SubscriptionRef); a change that does not parse keeps the
+//! previous value and is reported. See the [`watch`] module.
+//!
 //! ## Secrets from HashiCorp Vault (feature `vault`)
 //!
 //! `vault::VaultSettings` reads KV v2 secrets over HTTP once, in a layer, into an in-memory
@@ -96,6 +101,8 @@ mod providers;
 mod secret;
 #[cfg(feature = "vault")]
 pub mod vault;
+#[cfg(all(feature = "toml", feature = "env"))]
+pub mod watch;
 
 pub use config_desc::{Config, ConfigAll};
 pub use error::{ConfigError, VaultErrorKind};
@@ -112,6 +119,8 @@ pub use providers::{
 pub use secret::Secret;
 #[cfg(feature = "vault")]
 pub use vault::{VaultAuth, VaultProvider, VaultSettings};
+#[cfg(all(feature = "toml", feature = "env"))]
+pub use watch::ProfileWatch;
 
 // ── Service environment helper ────────────────────────────────────────────────
 
