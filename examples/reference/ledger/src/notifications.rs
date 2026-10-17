@@ -15,7 +15,7 @@
 //!    a lost ack) notifies once. A message it cannot process is requeued and, after
 //!    `max_deliveries`, moved to the dead-letter stream `ledger.entry-posted.dlq`.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use id_effect::{Effect, fail, succeed};
 use id_effect_kit::messaging::{
@@ -116,15 +116,11 @@ pub fn notify(tx: Arc<dyn SqlTransaction>, message: &Message) -> Effect<(), Noti
     })
 }
 
-/// The inbox of the consumers (on the system clock). A static: [`Inbox::handler`]'s handler
-/// borrows the inbox it came from.
-static INBOX: LazyLock<Inbox> = LazyLock::new(Inbox::new);
-
 /// The consumer's delivery handler: [`notify`] once per message ([`Inbox::handler`]).
 pub fn handler(
   db: Arc<dyn SqlClient>,
 ) -> impl Fn(Delivery) -> Effect<(), BrokerError> + Send + Sync + 'static {
-  INBOX.handler(db, notify)
+  Inbox::new().handler(db, notify)
 }
 
 /// Consumes `topic` as `group` until the broker closes or fails.

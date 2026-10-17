@@ -337,10 +337,11 @@ pub fn as_caller<A: Send + 'static>(
 
 /// The whole HTTP application for `config` over `services`.
 ///
-/// Middleware, outermost first: request id (and span), the security layer
+/// Middleware, outermost first: request id (and span), compression, timeout, body limit, the
+/// organisation a login names ([`TenantHint`]), authentication (session cookie or bearer API
+/// token), revoked-token check, and innermost the security layer
 /// ([`SecurityLayer::recommended`]: CSRF, CSP with nonces, the security headers; see
-/// [`secured`]), compression, timeout, body limit, the organisation a login names
-/// ([`TenantHint`]), authentication (session cookie or bearer API token), revoked-token check.
+/// [`secured`]).
 /// Every route has a guard naming its policy; `/openapi.json`, `/docs`, `/health`, the login,
 /// account and CSRF routes (and `/_mail/previews` in dev) are `public`, `/_routes` needs
 /// `routes.read` and `/_console` `console.admin`.
