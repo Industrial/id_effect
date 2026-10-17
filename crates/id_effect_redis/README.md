@@ -10,6 +10,9 @@ Redis for id_effect services, over [redis-rs](https://crates.io/crates/redis):
 - `RedisCacheBackend`: Redis behind the core `Cache` API (`Cache::with_backend`), so the same
   cache code runs in process or shared by every instance.
 - Pub/sub: `publish`, and `subscribe` / `psubscribe` as an `id_effect` `Stream`.
+- Feature `streams`: `RedisStreamsBroker`, `id_effect_messaging`'s `MessageBroker` on Redis
+  Streams (consumer groups, ack / nack, redelivery of idle entries, a dead-letter stream,
+  prefetch).
 - Feature `session`: `RedisSessionStore`, `id_effect_auth`'s `SessionStore` in Redis.
 - Feature `rate-limit`: `RedisRateLimitStore`, `id_effect_axum`'s `RateLimitStore`, so a rate
   limit holds across instances.

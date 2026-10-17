@@ -1,9 +1,9 @@
 # Redis (`id_effect_redis`)
 
-`id_effect_redis` puts Redis behind the same effect-and-layer shape as the SQL client: a pooled `RedisClient` capability, typed stores for key-value, hash and JSON data, a backend for the core `Cache`, pub/sub as a `Stream`, and Redis-backed session and rate-limit stores for `id_effect_auth` and `id_effect_axum`.
+`id_effect_redis` puts Redis behind the same effect-and-layer shape as the SQL client: a pooled `RedisClient` capability, typed stores for key-value, hash and JSON data, a backend for the core `Cache`, pub/sub as a `Stream`, a Redis Streams `MessageBroker` for `id_effect_messaging`, and Redis-backed session and rate-limit stores for `id_effect_auth` and `id_effect_axum`.
 
 ```toml
-id_effect_redis = { version = "0.9", features = ["session", "rate-limit"] }
+id_effect_redis = { version = "0.10", features = ["streams", "session", "rate-limit"] }
 ```
 
 It is built on [redis-rs](https://crates.io/crates/redis) with tokio connections, so its effects run on a tokio runtime (`id_effect_tokio::TokioRuntime`, or the one your axum server runs on). Every operation is a lazy `Effect<_, RedisError>`; `RedisError` separates `Config`, `Connection` (unreachable, dropped, timed out), `Command` (the server said no) and `Decode` (a reply or a stored value is not the type you asked for).
@@ -261,7 +261,65 @@ fn next_shipments(redis: &RedisClient, n: usize) -> Effect<Vec<String>, RedisErr
 }
 ```
 
-Dropping the stream unsubscribes. If the connection is lost, the stream fails with `RedisError::Connection`; subscribe again to resume (Redis pub/sub does not replay what was published meanwhile; use Redis streams through `query` when every message must arrive).
+Dropping the stream unsubscribes. If the connection is lost, the stream fails with `RedisError::Connection`; subscribe again to resume (Redis pub/sub does not replay what was published meanwhile; use the Redis Streams broker below when every message must arrive).
+
+## A message broker on Redis Streams (feature `streams`)
+
+`RedisStreamsBroker` implements `id_effect_messaging`'s `MessageBroker` (publish, subscribe a consumer group, ack or nack each delivery) on Redis Streams, over the same `RedisClient`. Code written against `MessageBroker` and tested on `MemoryBroker` runs on it unchanged, and the `Relay` of an outbox publishes through it like through any broker.
+
+```rust,no_run
+use std::time::Duration;
+
+use id_effect::{Effect, succeed};
+use id_effect_messaging::{
+    BrokerError, ConsumerGroup, Delivery, MessageBrokerExt, SubscribeOptions, Topic, ack_on_success,
+};
+use id_effect_redis::{RedisClient, RedisStreamsBroker, RedisStreamsConfig};
+
+fn bill_orders(redis: RedisClient) -> Effect<(), BrokerError> {
+    let broker = RedisStreamsBroker::new(
+        redis,
+        RedisStreamsConfig::new()
+            .consumer("billing-7f9c")              // stable and unique per instance
+            .min_idle(Duration::from_secs(60))     // reclaim deliveries unsettled for a minute
+            .max_len(1_000_000),                   // XADD … MAXLEN ~ 1000000
+    );
+    let orders = Topic::new("orders").unwrap();
+    let billing = ConsumerGroup::new("billing").unwrap();
+    let options = SubscribeOptions::default().prefetch(32).concurrency(4).max_deliveries(5);
+    broker.consume(&orders, &billing, options, ack_on_success(|d: &Delivery| {
+        println!("billing {} (attempt {})", d.message().id(), d.attempt());
+        succeed::<(), (), _>(())
+    }))
+}
+```
+
+How the broker semantics map onto Redis:
+
+| `MessageBroker` | Redis Streams |
+|---|---|
+| a topic | a stream, keyed by the topic name |
+| `publish` | `XADD <topic> [MAXLEN ~ n] * id <id> [key <key>] h:<name> <value>… payload <bytes>` |
+| `subscribe` | `XGROUP CREATE <topic> <group> 0` (`StartFrom::Earliest`) or `$` (`Latest`) `MKSTREAM`; an existing group keeps its position |
+| pulling deliveries | `XAUTOCLAIM` of entries idle for `min_idle` (redeliveries first), else `XREADGROUP GROUP <group> <consumer> COUNT <credit> BLOCK <block> STREAMS <topic> >` |
+| `prefetch` | the credit: prefetch minus the deliveries still unsettled; at zero the subscription waits for a settlement |
+| `Delivery::attempt` | the entry's delivery count in the group (`XPENDING`) |
+| `ack` | `XACK` |
+| `nack(Requeue)` | `XCLAIM … IDLE <min_idle> JUSTID`: the next pull redelivers it, without counting a delivery |
+| a dropped delivery | stays pending; reclaimed once idle for `min_idle` |
+| dead-lettering | one Lua script: `XACK`, then `XADD` of `Message::dead_lettered` to `<topic>.dlq` (or `SubscribeOptions::dead_letter`) if the group still had the entry pending |
+
+A message is dead-lettered when it is nacked with `Nack::DeadLetter` (reason `rejected`), nacked with `Requeue` on its `max_deliveries`-th delivery, or reclaimed after its `max_deliveries`-th delivery was dropped (reason `max-deliveries`). The dead-letter stream is a topic like any other: subscribe a group to it to inspect or replay.
+
+Things to know:
+
+- **At least once.** A delivery is redelivered if it is nacked, dropped, or its consumer crashes; handlers must be idempotent (`Inbox` in `id_effect_messaging` deduplicates on the message id). A delivery still being handled after `min_idle` is reclaimed by another consumer, so keep `min_idle` above the longest handler run.
+- **Consumers.** Give each instance a stable `consumer` name, unique among the instances. The default is generated per start, which leaves an empty consumer behind in each group.
+- **Connections.** Each subscription opens its own reconnecting connection for its blocking reads (the response timeout grows by `block`); publishing and settling use the client's pool. `close()` ends every subscription within `block`.
+- **Trimming.** Acked entries stay in the stream. `max_len` trims it on every publish, approximately; trimming also drops entries a slow group has not read yet. Unbounded by default.
+- Redis 6.2 or later (`XAUTOCLAIM`). The keys are not hash-tagged: use one Redis node (with replicas if you like), not a cluster.
+
+`cargo run -p id_effect_redis --features streams --example 030_streams` runs the whole cycle (a redelivery and a dead letter) against a local server.
 
 ## Sessions in Redis (feature `session`)
 

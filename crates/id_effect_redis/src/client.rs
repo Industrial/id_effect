@@ -125,6 +125,16 @@ impl RedisConfig {
     }
     config
   }
+
+  /// [`manager_config`](Self::manager_config) for a connection that waits on blocking commands
+  /// for up to `block`: the response timeout (redis-rs's 500 ms unless set) grows by `block`.
+  #[cfg(feature = "streams")]
+  pub(crate) fn blocking_manager_config(&self, block: Duration) -> ConnectionManagerConfig {
+    let base = self.response_timeout.unwrap_or(Duration::from_millis(500));
+    self
+      .manager_config()
+      .set_response_timeout(Some(base + block))
+  }
 }
 
 struct Inner {
