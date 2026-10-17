@@ -65,6 +65,9 @@ schema-regex = ["dep:regex"]
 # `testing::property`: proptest strategies for framework types and schemas, effect-aware
 # properties under `TestExecutor`, stateful (model-based) testing.
 proptest = ["dep:proptest"]
+# `fiber_dump`: a process-wide registry of live fibers (id, parent, children, state, age, span
+# chain) for `id_effect_console` (0.10 D8). Off → no registry, no per-fork cost.
+fiber-registry = []
 
 [dependencies]
 futures = { version = "0.3", default-features = false, features = ["std"] }
