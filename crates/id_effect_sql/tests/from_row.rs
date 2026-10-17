@@ -325,6 +325,29 @@ async fn live_postgres_rows_decode_into_structs() {
   let _ = rt.run(client.close()).await;
 }
 
+/// The exact `rustc -V` prefix the `tests/ui/**/*.stderr` snapshots are blessed with: the version
+/// the CI `moon-ci` job pins (rustc's wording and spans change between releases and channels, as
+/// in `crates/id_effect/tests/ui.rs`). Other compilers skip the snapshot tests (`UI_FORCE=1` runs
+/// them anyway); re-bless with `TRYBUILD=overwrite` on that rustc when CI's pin moves.
+const BLESSED_RUSTC: &str = "rustc 1.99.0 ";
+
+fn on_blessed_rustc(test: &str) -> bool {
+  let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+  let version = std::process::Command::new(rustc)
+    .arg("-V")
+    .output()
+    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    .unwrap_or_default();
+  if version.starts_with(BLESSED_RUSTC) || std::env::var_os("UI_FORCE").is_some() {
+    return true;
+  }
+  eprintln!(
+    "{test}: skipped on `{}`; snapshots are blessed on `{BLESSED_RUSTC}` (UI_FORCE=1 runs it)",
+    version.trim()
+  );
+  false
+}
+
 #[test]
 // The expected rustc output lists `Value` (serde_json's); with `query`, sea-query's `Value` makes
 // rustc print the full path, which sorts out of the shown impls.
@@ -333,6 +356,9 @@ async fn live_postgres_rows_decode_into_structs() {
   ignore = "rustc's impl list depends on the crate graph; run without `query`"
 )]
 fn derive_compile_errors() {
+  if !on_blessed_rustc("derive_compile_errors") {
+    return;
+  }
   let t = trybuild::TestCases::new();
   t.compile_fail("tests/ui/from_row/*.rs");
 }

@@ -15,7 +15,7 @@ error: #[derive(Entity)] takes one `#[entity(version)]` field
   --> tests/ui/entity/bad_attributes.rs:24:3
    |
 24 |   #[entity(version)]
-   |   ^^^^^^^^^^^^^^^^^^
+   |   ^
 
 error: #[derive(Entity)] maps each field to one column: `#[from_row(flatten)]` fields are not supported
   --> tests/ui/entity/bad_attributes.rs:37:3

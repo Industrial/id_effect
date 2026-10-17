@@ -8,4 +8,4 @@ error: #[from_row(schema)] decodes with the type's Schema: rename columns with #
   --> tests/ui/from_row/bad_attributes.rs:12:3
    |
 12 |   #[from_row(rename = "user_id")]
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |   ^

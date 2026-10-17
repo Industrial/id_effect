@@ -499,9 +499,26 @@ fn custom_id_types_and_scope_errors_on_bound_repositories() {
   ));
 }
 
+/// The exact `rustc -V` prefix the `tests/ui/entity/*.stderr` snapshots are blessed with: CI's
+/// `moon-ci` pin, as in `tests/from_row.rs`. Other compilers skip the test (`UI_FORCE=1` runs it).
+const BLESSED_RUSTC: &str = "rustc 1.99.0 ";
+
 #[test]
 // The expected rustc output for a non-integer version field depends on the toolchain only.
 fn entity_derive_compile_errors() {
+  let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
+  let version = std::process::Command::new(rustc)
+    .arg("-V")
+    .output()
+    .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    .unwrap_or_default();
+  if !version.starts_with(BLESSED_RUSTC) && std::env::var_os("UI_FORCE").is_none() {
+    eprintln!(
+      "entity_derive_compile_errors: skipped on `{}`; snapshots are blessed on `{BLESSED_RUSTC}`",
+      version.trim()
+    );
+    return;
+  }
   let t = trybuild::TestCases::new();
   t.compile_fail("tests/ui/entity/*.rs");
 }
