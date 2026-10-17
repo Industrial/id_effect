@@ -32,8 +32,12 @@ allow = [
   "MIT",
   "Apache-2.0",
   "BSD-3-Clause",
+  # Boost 1.0 (permissive, OSI): xxhash-rust, via redis (id_effect_redis).
+  "BSL-1.0",
   "CDLA-Permissive-2.0",
   "ISC",
+  # MIT No Attribution (permissive, OSI): borrow-or-share, via jsonschema (id_effect_test).
+  "MIT-0",
   "MPL-2.0",
   "Unicode-3.0",
   "Zlib",
