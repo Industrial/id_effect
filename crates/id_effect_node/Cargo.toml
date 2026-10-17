@@ -46,7 +46,15 @@ tracing = "0.1"
 
 # Floors carry security fixes (quinn-proto >= 0.11.18 via quinn 0.11.12: RUSTSEC-2026-0338..0342;
 # rustls 0.23.46: RUSTSEC-2026-0285, RUSTSEC-2026-0346..0349) and keep -Z minimal-versions buildable.
-quinn = { version = "0.11.12", optional = true }
+# aws-lc-rs, not quinn's default ring: sqlx, reqwest and jsonwebtoken use aws-lc-rs, and with both
+# rustls providers compiled in, rustls cannot pick a process default (sqlx's TLS configs panic).
+quinn = { version = "0.11.12", optional = true, default-features = false, features = [
+  "log",
+  "platform-verifier",
+  "runtime-tokio",
+  "rustls-aws-lc-rs",
+  "bloom",
+] }
 rustls = { version = "0.23.46", optional = true }
 rcgen = { version = "0.13", optional = true }
 
