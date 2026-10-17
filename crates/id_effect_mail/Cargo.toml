@@ -20,6 +20,9 @@ name = "id_effect_mail"
 preview = ["dep:axum"]
 # `deliver_later` / `deliver_later_in`: the `DeliverMail` job and its handler (msg.email#5).
 jobs = ["dep:id_effect_jobs", "dep:id_effect_sql"]
+# `AccountMails`: id_effect_auth's `AccountNotifier` (verification and password reset mails from
+# templates, sent directly through the `Mailer`, never through the jobs table) (sec.authn#8).
+auth = ["dep:id_effect_auth"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.9.0" }
@@ -51,6 +54,11 @@ axum = { version = "0.8", default-features = false, optional = true }
 # reverse), and the `SqlTransaction` `deliver_later_in` enqueues with.
 id_effect_jobs = { path = "../id_effect_jobs", version = "0.9.0", optional = true }
 id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", optional = true }
+# Feature `auth`: the `AccountNotifier` trait `AccountMails` implements (mail depends on auth,
+# never the reverse).
+id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", features = [
+  "accounts",
+], optional = true }
 
 [dev-dependencies]
 # Runs the transports' effects on the test's tokio runtime; the in-process SMTP stub listens on

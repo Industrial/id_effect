@@ -1,0 +1,9 @@
+Hello,
+
+Someone asked to reset the password of the account {{ email }}. To choose a new password, open
+this link:
+
+{{ link }}
+
+The link works once and expires in {{ valid_for }}. Resetting signs you out everywhere. If you
+did not ask for this, ignore this message: your password stays as it is.

@@ -39,6 +39,11 @@ pg = ["dep:id_effect_sql"]
 # server-side flow session, ID tokens checked over `JwksClient`, the `/auth/oidc/*` axum routes,
 # and id_effect_platform's `OAuthClient`.
 oidc = ["axum", "jwks", "dep:openidconnect", "dep:id_effect_platform"]
+# Account flows (`account` module): registration, email verification, forgot / reset password
+# with single-use expiring tokens stored as SHA-256 digests (`PgAccountTokenStore`, table
+# `id_effect_account_tokens` from `migrations/`), an `AccountNotifier` for the mails
+# (id_effect_mail's feature `auth` implements it) and the `/auth/*` axum routes.
+accounts = ["pg", "axum"]
 # TOTP second factor (`totp` module): enrolment with an `otpauth://` URI, verification with ±1
 # step of skew on the executor's clock and replay protection, argon2-hashed recovery codes, and
 # an MFA step-up marker on the session.

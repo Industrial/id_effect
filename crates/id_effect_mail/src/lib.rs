@@ -77,6 +77,11 @@
 //! that sends it through the [`Mailer`]: a transient failure is retried with backoff, any other
 //! makes the job `dead` with the error recorded.
 //!
+//! With feature `auth`, `AccountMails` implements `id_effect_auth`'s `AccountNotifier`: the
+//! verification and password reset mails, rendered from templates and sent directly through the
+//! [`Mailer`] with a short retry. They never go through `deliver_later`, whose job payload would
+//! keep a usable token in the jobs table (see the `auth` module).
+//!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
 #![forbid(unsafe_code)]
@@ -84,6 +89,8 @@
 
 use std::fmt;
 
+#[cfg(feature = "auth")]
+pub mod auth;
 #[cfg(feature = "jobs")]
 mod later;
 mod mailer;
@@ -95,6 +102,8 @@ mod smtp;
 mod template;
 mod testing;
 
+#[cfg(feature = "auth")]
+pub use auth::AccountMails;
 #[cfg(feature = "jobs")]
 pub use later::{DeliverMail, deliver_later, deliver_later_in, register_mail_jobs};
 pub use mailer::{

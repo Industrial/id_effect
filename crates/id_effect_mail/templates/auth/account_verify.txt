@@ -1,0 +1,8 @@
+Hello,
+
+Confirm that {{ email }} is your email address by opening this link:
+
+{{ link }}
+
+The link works once and expires in {{ valid_for }}. If you did not create an account, ignore
+this message.
