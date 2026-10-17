@@ -66,9 +66,10 @@ Follow-ups recorded during wave 1:
   explicit TLS modes, live TLS tests). Follow-ups: a typed `SqlError` connection/TLS variant
   (failures are `QueryFailed` today); `id_effect_node`'s `PgAdvisoryLease::from_pool_config`
   ignores explicit TLS settings (URL only); with sqlx 0.8 `VerifyCa` also checks the host name.
-- **Coverage gate (before 0.9 exit):** run `scripts/llvm-cov-nextest.sh` (workspace, 96 % floor)
-  once the tree is quiet; core `id_effect` measured alone at ~94 % during wave 2. Raise it or
-  carry the gap in writing.
+- Coverage gate, checked 2026-10-17 before the Ledger app (CI invocation, default features):
+  regions 96.31 %, functions 96.71 %, lines 97.01 %; 4305 tests passed. Re-run at exit. Note: CI
+  measures default features only, so feature-gated 0.9 code (mysql, sqlite, audit, oidc, …) is
+  covered by its own crate gates, not this number.
 - Agent rule: never put the owner's email (or any personal data) in requests to external
   services; use a generic User-Agent such as `id_effect-release-check (+repo URL)`. An earlier
   crates.io name check sent it in the User-Agent (fixed in `.tmp/cratesio.sh`).
