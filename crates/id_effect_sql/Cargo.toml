@@ -71,7 +71,8 @@ time = { version = "0.3", optional = true, default-features = false, features = 
 proptest = { version = "1", optional = true, default-features = false, features = [
   "std",
 ] }
-sqlx = { version = "0.8", optional = true, default-features = false, features = [
+# 0.8.6: `Pool::begin_with` (transactions with a custom BEGIN statement).
+sqlx = { version = "0.8.6", optional = true, default-features = false, features = [
   "runtime-tokio",
   "uuid",
   "time",

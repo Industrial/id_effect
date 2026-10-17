@@ -164,7 +164,11 @@ pub async fn live_mysql(test: &str) -> Option<MySql> {
       Err(e) => return unavailable(test, &format!("the MySQL container did not start: {e}")),
     },
   };
-  let pool = match mysql_pool_from_config(MySqlPoolConfig::from_url(&url).with_max_size(4)).await {
+  // A dropped stream holds its connection until its query is killed and the rest of the result
+  // read, which on a loaded CI runner takes longer than the default 5 s acquire timeout.
+  let mut config = MySqlPoolConfig::from_url(&url).with_max_size(4);
+  config.acquire_timeout = Duration::from_secs(60);
+  let pool = match mysql_pool_from_config(config).await {
     Ok(pool) => pool,
     Err(e) => return unavailable(test, &format!("cannot build pool: {}", e.0)),
   };
