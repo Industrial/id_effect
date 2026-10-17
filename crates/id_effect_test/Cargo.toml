@@ -97,6 +97,10 @@ required-features = ["sql"]
 name = "020_isolated_db"
 required-features = ["fixtures"]
 
+[[example]]
+name = "030_faults"
+required-features = ["fault"]
+
 [package.metadata.docs.rs]
 all-features = true
 

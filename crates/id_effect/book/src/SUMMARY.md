@@ -112,6 +112,7 @@
   - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
   - [Containers in Tests](./part4/ch15-07-containers.md)
   - [Integration Testing](./part4/ch15-08-integration-testing.md)
+  - [Fault Injection](./part4/ch15-09-fault-injection.md)
 
 # Part V: Functional Patterns
 
