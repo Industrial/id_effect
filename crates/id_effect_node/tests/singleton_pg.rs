@@ -12,7 +12,9 @@ use std::time::Duration;
 
 use id_effect::{Cause, Exit, Never};
 use id_effect::{Effect, Runtime, TokioExecutor};
-use id_effect_node::singleton::{PgAdvisoryLease, SingletonError, SingletonLease};
+use id_effect_node::singleton::{
+  PgAdvisoryLease, SingletonError, SingletonLease, advisory_lock_keys,
+};
 use id_effect_sql::pg::{PgPoolConfig, PgTlsMode};
 
 /// Run a lease effect on the default runtime (its tokio side has the IO driver sqlx needs; the
@@ -180,6 +182,61 @@ fn dropping_the_holder_session_fails_over() {
     }
   }
   assert_eq!(get(node_b.holder(&name)).as_deref(), Some("b"));
+}
+
+/// Terminate (from a separate connection) the backend holding the advisory lock for `name`.
+fn terminate_lock_holder(url: &str, name: &str) -> i64 {
+  use sqlx::Connection as _;
+  let (k1, k2) = advisory_lock_keys(name);
+  let rt = tokio::runtime::Builder::new_current_thread()
+    .enable_all()
+    .build()
+    .expect("tokio runtime");
+  rt.block_on(async {
+    let mut admin = sqlx::postgres::PgConnection::connect(url).await?;
+    // Two-key advisory locks: classid = key1, objid = key2, objsubid = 2.
+    sqlx::query_scalar::<_, i64>(
+      "SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_locks \
+       WHERE locktype = 'advisory' AND granted AND objsubid = 2 \
+       AND classid = $1::int4::oid AND objid = $2::int4::oid) t",
+    )
+    .bind(k1)
+    .bind(k2)
+    .fetch_one(&mut admin)
+    .await
+  })
+  .expect("terminate the lock holder")
+}
+
+#[test]
+fn terminated_session_does_not_reacquire() {
+  let Some(url) = live_url("terminated_session_does_not_reacquire") else {
+    return;
+  };
+  let ttl = Duration::from_secs(30);
+  let name = lock_name("terminated");
+  let node_a = run(PgAdvisoryLease::connect(&url)).expect("node a connects");
+  let node_b = run(PgAdvisoryLease::connect(&url)).expect("node b connects");
+  run(node_a.try_acquire(&name, "a", ttl)).expect("a acquires");
+  assert_eq!(terminate_lock_holder(&url, &name), 1, "one session held it");
+
+  // a's session is gone and so is its lock: a must not "re-acquire" from its own bookkeeping.
+  assert!(matches!(
+    run(node_a.try_acquire(&name, "a", ttl)),
+    Err(SingletonError::Unavailable(_))
+  ));
+  assert_eq!(get(node_a.holder(&name)), None);
+
+  // The lock really is free: b takes it (Postgres frees it asynchronously, so retry, bounded).
+  let deadline = std::time::Instant::now() + Duration::from_secs(10);
+  loop {
+    match run(node_b.try_acquire(&name, "b", ttl)) {
+      Ok(()) => break,
+      Err(e) if std::time::Instant::now() >= deadline => panic!("lock not freed: {e}"),
+      Err(_) => std::thread::sleep(Duration::from_millis(10)),
+    }
+  }
+  run(node_b.release(&name, "b")).expect("b releases");
 }
 
 #[test]

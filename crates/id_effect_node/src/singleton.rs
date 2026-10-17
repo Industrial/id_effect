@@ -217,13 +217,15 @@ impl ClusterSingleton {
     self.lease.renew(&self.name, &self.holder_id, self.ttl)
   }
 
-  /// Step down.
+  /// Step down. The local pid is cleared whatever the release reports (a lease already lost
+  /// to another holder fails with [`SingletonError::HeldBy`]), so this node never keeps
+  /// claiming a role it no longer holds.
   pub fn resign(&self) -> Effect<(), SingletonError> {
     let slot = Arc::clone(&self.local_pid);
     self
       .lease
       .release(&self.name, &self.holder_id)
-      .flat_map(move |()| sync(move || *slot.lock().expect("pid") = None))
+      .ensuring(sync(move || *slot.lock().expect("pid") = None))
   }
 
   /// Whether this node currently holds the singleton.
@@ -458,6 +460,12 @@ impl SingletonLease for PgAdvisoryLease {
     self.op(move |commands, held| async move {
       let mut held = held.lock().await;
       if let Some(existing) = held.get(&name) {
+        // The entry only proves ownership while the session lives: once it is gone (connection
+        // lost, backend terminated) so is the lock, and the entry is dropped.
+        if let Err(e) = ping(&commands).await {
+          held.remove(&name);
+          return Err(e);
+        }
         return if *existing == holder {
           Ok(())
         } else {
@@ -696,6 +704,23 @@ mod tests {
   }
 
   #[test]
+  fn resign_after_a_lost_lease_clears_the_local_pid() {
+    let lease = Arc::new(MemoryLease::new());
+    let a = ClusterSingleton::new("leader", "a", Arc::clone(&lease) as _, Duration::ZERO);
+    let b = ClusterSingleton::new("leader", "b", lease as _, LONG);
+    run(a.try_become(&pid())).expect("a");
+    // a's zero TTL lapses at once and b takes the lease over.
+    run(b.try_become(&pid())).expect("b takes over");
+    assert_eq!(
+      run(a.resign()),
+      Err(SingletonError::HeldBy("b".into())),
+      "the release still reports the lost lease"
+    );
+    assert_eq!(a.local_pid(), None, "a no longer claims the role");
+    assert!(get(b.is_holder()));
+  }
+
+  #[test]
   fn failed_takeover_records_no_pid() {
     let lease = Arc::new(MemoryLease::new());
     let a = ClusterSingleton::new("leader", "a", Arc::clone(&lease) as _, LONG);
@@ -888,6 +913,25 @@ mod tests {
         None,
         "a dead session holds nothing"
       );
+    }
+
+    #[test]
+    fn reacquire_after_the_session_died_is_unavailable() {
+      let f = fake(Script::default());
+      run(f.lease.try_acquire("job", "a", LONG)).expect("acquire");
+      f.session_alive.store(false, Ordering::SeqCst);
+      assert_eq!(
+        run(f.lease.try_acquire("job", "a", LONG)),
+        Err(SingletonError::Unavailable("connection reset".into())),
+        "a dead session's lock is gone; re-acquiring must not pretend otherwise"
+      );
+      assert!(
+        f.lease.held.blocking_lock().is_empty(),
+        "the stale entry is dropped"
+      );
+      f.session_alive.store(true, Ordering::SeqCst);
+      run(f.lease.try_acquire("job", "a", LONG)).expect("re-acquire on a live session");
+      assert_eq!(get(f.lease.holder("job")).as_deref(), Some("a"));
     }
 
     #[test]
