@@ -8,6 +8,8 @@
 #   actionlint on its .github/workflows/ci.yml (when actionlint is installed).
 # `service` covers two variants: the default (`--db none --no-otel`, whose tests boot the binary
 # with nothing else running) and `--db pg --otel` (built, linted and tested without a database).
+# Before the checks, `id-effect generate job send_report` adds a job to `service` and (with
+# `--queue reports --cron`) to `worker`; its test must pass.
 #
 # Usage:
 #   scripts/template-smoke.sh [TEMPLATE...] [--docker] [--keep]
@@ -90,13 +92,25 @@ tool_target="${CARGO_TARGET_DIR:-target}"
 BIN="${tool_target}/debug/id-effect"
 [[ -x "${BIN}" ]] || fail "no id-effect binary at ${BIN}"
 
+# Adds a job with `id-effect generate job` to the variants that get one; prints its test's name.
+generate_job() {
+    local label="$1" dest="$2"
+    case "${label}" in
+        service) "${BIN}" generate job send_report --path "${dest}" ;;
+        worker) "${BIN}" generate job send_report --queue reports --cron "0 6 * * *" --path "${dest}" ;;
+        *) return 0 ;;
+    esac >/dev/null || fail "${label}: id-effect generate job failed"
+    echo "jobs::send_report::tests::a_queued_job_runs_once_and_succeeds"
+}
+
 # Generates the variant LABEL (`id-effect new smoke-LABEL ARGS...`) and runs every check on it.
 check_variant() {
-    local label="$1" dest="${SMOKE_DIR}/$1" log t build_s clippy_s test_s
+    local label="$1" dest="${SMOKE_DIR}/$1" log t build_s clippy_s test_s job_test listed
     shift
     rm -rf "${dest}"
     "${BIN}" new "smoke-${label}" --dest "${dest}" --local-workspace "${ROOT}" "$@" >/dev/null ||
     fail "${label}: id-effect new failed"
+    job_test="$(generate_job "${label}" "${dest}")"
     [[ ! -f "${ROOT}/Cargo.lock" ]] || cp "${ROOT}/Cargo.lock" "${dest}/Cargo.lock"
     log="${dest}/build.log"
     (
@@ -115,6 +129,11 @@ check_variant() {
         t="$(now_ns)"
         cargo test --quiet || fail "${label}: cargo test"
         test_s="$(seconds_since "${t}")"
+        if [[ -n "${job_test}" ]]; then
+            listed="$(cargo test --quiet --lib -- --list 2>/dev/null)" || fail "${label}: cargo test --list"
+            [[ "${listed}" == *"${job_test}: test"* ]] ||
+            fail "${label}: the generated job's test ${job_test} is not among the lib tests"
+        fi
         if awk '/^name = "id_effect/ { dep = 1; next } dep && /^source = "registry/ { found = 1 } /^$/ { dep = 0 } END { exit !found }' Cargo.lock; then
             fail "${label}: an id_effect crate resolved from crates.io instead of the checkout"
         fi

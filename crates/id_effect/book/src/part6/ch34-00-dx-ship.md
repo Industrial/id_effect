@@ -38,6 +38,36 @@ lists every option.
 `.env.example` keys, the database, docker and the port, and exits `1` when a check fails;
 `--graph` also prints the app's layer graph. See [Doctor and the layer graph](./ch34-01-doctor-graph.md).
 
+## Generators: `id-effect generate job`
+
+Inside a generated project (any template; `--path DIR` points elsewhere), `generate job` adds a
+[background job](./ch31-01-jobs.md):
+
+```sh
+id-effect generate job send_report                       # enqueued on the `default` queue
+id-effect generate job nightly_digest --queue reports --cron "0 6 * * *"
+```
+
+| File | What it gets |
+|---|---|
+| `src/jobs/send_report.rs` | `SendReport`, the `#[derive(Schema)]` payload; its `Job` impl (`NAME` = `<crate>.send_report`, `QUEUE`, and `priority`, `max_attempts`, `unique_key`, `retry` spelled out at their defaults to edit); `handle`, the handler; a test that enqueues one job on a `MemoryJobQueue` and drains it with a `Worker` on virtual time |
+| `src/jobs/mod.rs` | `pub mod send_report;` and `let registry = registry.register(send_report::handle)?;` in `registry()`. Created on the first job with `JobEnv`, the handlers' environment (the queue; add the services they need) |
+| `src/lib.rs` | `pub mod jobs;` on the first job |
+| `Cargo.toml` | `id_effect_jobs` at the project's `id_effect` version; a `--local-workspace` project also gets its `[patch.crates-io]` entries |
+
+`--cron EXPR` also writes `CRON` and `cron()`, an `enqueue_on_tick` entry, adds it to
+`jobs::schedule()` and turns on `id_effect_jobs`' `cron` feature; run the schedule under a
+`CronLeader` so one node enqueues each tick. Names are snake_case, at most 24 characters, and
+must not be a keyword or turn into a type the module imports (`job` → `Job`).
+
+The generator never overwrites: an existing `src/jobs/<name>.rs` or module of that name is an
+error (exit `1`) and nothing is written. If it can't place a line safely (you rewrote
+`registry()`, or the dependency is a multi-line table), it writes the rest and prints the line
+under `Do by hand`. Running the jobs is up to the app: a `Worker::new(jobs::registry()?)` with
+the queues it serves, provided with `pg_job_queue_layer()` (or
+`job_queue_env(PgJobQueue::new(client))`); enqueue with `id_effect_jobs::enqueue`, or
+`enqueue_in` to commit the job with a transaction.
+
 ## Deploy
 
 The `service` template's `config/deploy.yml` is a [Kamal 2](https://kamal-deploy.org) config

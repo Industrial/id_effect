@@ -9,6 +9,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::dev::DevArgs;
 use crate::doctor::{GraphFormat, Options as DoctorOptions, doctor};
+use crate::generate::GenerateArgs;
 use crate::migrate::MigrateArgs;
 use crate::project::new_project;
 use crate::render::{Db, Options};
@@ -39,6 +40,9 @@ pub enum Command {
   /// (SIGTERM, then kill after --grace-secs) when src/, Cargo.toml, config/ or a --watch path
   /// changes. A failed build keeps the running app.
   Dev(DevArgs),
+  /// Add code to a project `id-effect new` generated: `generate job <NAME>` writes a background
+  /// job (src/jobs/<NAME>.rs, its registration and a test). Exits 1 when it refuses.
+  Generate(GenerateArgs),
 }
 
 /// Arguments of `id-effect doctor`.
@@ -131,6 +135,7 @@ where
     Command::Doctor(args) => run_doctor(&args, out),
     Command::Migrate(args) => crate::migrate::run(&args, out, err),
     Command::Dev(args) => crate::dev::run(&args, out, err),
+    Command::Generate(args) => crate::generate::run(&args, out, err),
   }
 }
 

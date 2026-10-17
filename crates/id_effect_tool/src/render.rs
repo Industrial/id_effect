@@ -295,6 +295,16 @@ fn patch_section(workspace: &Path, crates: &[&str]) -> Result<String, NewError> 
 
 /// Applies the `{{#if}}` / `{{/if}}` line blocks.
 fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewError> {
+  keep_lines_with(text, &|flag| options.flag(flag), label)
+}
+
+/// [`keep_lines`] with the flags `lookup` knows (`None`: an unknown flag); `id-effect generate`
+/// renders its templates with flags of its own.
+pub(crate) fn keep_lines_with(
+  text: &str,
+  lookup: &dyn Fn(&str) -> Option<bool>,
+  label: &str,
+) -> Result<String, NewError> {
   let error = |reason: String| NewError::Template {
     file: label.to_owned(),
     reason,
@@ -311,9 +321,8 @@ fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewE
         Some(flag) => (true, flag),
         None => (false, cond.trim()),
       };
-      let value = options
-        .flag(flag)
-        .ok_or_else(|| error(format!("line {}: unknown flag `{flag}`", n + 1)))?;
+      let value =
+        lookup(flag).ok_or_else(|| error(format!("line {}: unknown flag `{flag}`", n + 1)))?;
       stack.push(value != negate);
     } else if trimmed == "{{/if}}" {
       stack.pop().ok_or_else(|| {
@@ -334,7 +343,11 @@ fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewE
 }
 
 /// Replaces the `{{word}}` placeholders.
-fn substitute(text: &str, vars: &[(&str, &str)], label: &str) -> Result<String, NewError> {
+pub(crate) fn substitute(
+  text: &str,
+  vars: &[(&str, &str)],
+  label: &str,
+) -> Result<String, NewError> {
   let mut out = String::with_capacity(text.len());
   let mut rest = text;
   while let Some(start) = rest.find("{{") {

@@ -75,7 +75,8 @@ pub enum Condition {
 /// One embedded template file.
 #[derive(Clone, Copy, Debug)]
 pub struct TemplateFile {
-  /// Directory under `templates/`: a template name or `common` (shared by every template).
+  /// Directory under `templates/`: a template name, `common` (shared by every template) or
+  /// `generate/job` (`id-effect generate job`).
   pub dir: &'static str,
   /// Path inside `dir`, as on disk (with the `.template` suffix and `_` prefixes).
   pub source: &'static str,
@@ -146,6 +147,10 @@ pub static FILES: &[TemplateFile] = &[
   embed!("cluster", "src/lib.rs.template"),
   embed!("cluster", "src/main.rs.template"),
   embed!("cluster", "tests/mesh.rs.template"),
+  // `id-effect generate job` (crate::generate), never part of a new project.
+  embed!("generate/job", "job.rs.template"),
+  embed!("generate/job", "mod.rs.template"),
+  embed!("generate/job", "schedule.rs.template"),
 ];
 
 /// The generated path of the template file `source`: the `.template` suffix is dropped and a

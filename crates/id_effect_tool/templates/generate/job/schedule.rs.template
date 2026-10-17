@@ -1,0 +1,8 @@
+
+/// The cron entries that enqueue jobs (`id-effect generate job --cron`). Run them on one node at
+/// a time with `id_effect_jobs::CronLeader` (`leader.run(&jobs::schedule()?, clock)`, provided
+/// with the queue), or with `jobs::schedule()?.run(clock)` on a single instance.
+pub fn schedule() -> Result<id_effect::CronRegistry<JobQueueEnv>, id_effect::CronError> {
+    let schedule = id_effect::CronRegistry::new();
+    Ok(schedule)
+}
