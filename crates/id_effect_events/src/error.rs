@@ -1,7 +1,12 @@
 //! Event store and CQRS errors.
 
+use id_effect_sql::SqlError;
+
 /// Failure while reading or writing events.
+///
+/// Non-exhaustive: match it with a wildcard arm.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EventStoreError {
   /// Stream does not exist.
   #[error("stream `{stream_id}` not found")]
@@ -9,16 +14,21 @@ pub enum EventStoreError {
     /// Stream identifier.
     stream_id: String,
   },
-  /// Optimistic concurrency conflict.
+  /// Optimistic concurrency conflict: the stream was not at the version the writer expected
+  /// ([`EventStore::append_expected`](crate::EventStore::append_expected)), or another writer
+  /// appended the same version first.
   #[error("expected version {expected}, found {actual} on stream `{stream_id}`")]
   VersionConflict {
     /// Stream identifier.
     stream_id: String,
-    /// Expected next version.
+    /// The stream version the writer expected (`0`: an empty stream).
     expected: u64,
-    /// Actual next version.
+    /// The stream version found.
     actual: u64,
   },
+  /// The SQL journal's database failed ([`SqlEventJournal`](crate::SqlEventJournal)).
+  #[error("sql error: {0}")]
+  Sql(#[from] SqlError),
   /// Underlying I/O failure.
   #[error("io error: {0}")]
   Io(String),
@@ -64,6 +74,10 @@ mod tests {
         "schema error: bad field",
       ),
       (EventStoreError::Graph("cycle".into()), "graph error: cycle"),
+      (
+        EventStoreError::from(SqlError::NotConnected),
+        "sql error: sql client not connected",
+      ),
     ];
     for (err, expected) in cases {
       assert_eq!(err.to_string(), expected);

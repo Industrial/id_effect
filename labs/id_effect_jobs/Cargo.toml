@@ -54,7 +54,7 @@ rdkafka = { version = "0.39", optional = true, default-features = false, feature
 
 [dev-dependencies]
 # Path-only: these crates publish after id_effect_jobs (or later in the same level).
-id_effect_events = { path = "../id_effect_events", features = ["es-entity"] }
+id_effect_events = { path = "../../crates/id_effect_events", features = ["pg"] }
 id_effect_workflow = { path = "../id_effect_workflow", default-features = false, features = [
   "duroxide",
 ] }

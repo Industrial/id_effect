@@ -31,6 +31,7 @@ members = [
   "crates/id_effect_mail",
   "crates/id_effect_console",
   "crates/id_effect_storage",
+  "crates/id_effect_events",
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",

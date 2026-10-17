@@ -1,8 +1,9 @@
 //! Fold event streams into read models.
 
-use crate::edge::run_sync;
 use crate::error::EventStoreError;
 use crate::event_store::{EventStore, StoredEvent};
+use id_effect::Effect;
+use std::sync::Arc;
 
 /// Stateful fold over a domain event type.
 pub trait Projection<S, E> {
@@ -12,10 +13,21 @@ pub trait Projection<S, E> {
   fn apply(&self, state: S, event: &E) -> S;
 }
 
-/// Fold `events` into a read model using `projection`.
+/// A shared projection is a projection (the effects below own the projection they fold with).
+impl<S, E, P: Projection<S, E> + ?Sized> Projection<S, E> for Arc<P> {
+  fn initial(&self) -> S {
+    (**self).initial()
+  }
+
+  fn apply(&self, state: S, event: &E) -> S {
+    (**self).apply(state, event)
+  }
+}
+
+/// Fold `events` into a read model using `projection` (pure: no I/O).
 pub fn run_projection<S, E, P>(projection: &P, events: impl IntoIterator<Item = E>) -> S
 where
-  P: Projection<S, E>,
+  P: Projection<S, E> + ?Sized,
 {
   events
     .into_iter()
@@ -24,21 +36,25 @@ where
     })
 }
 
-/// Load events from `store` and fold them with `projection`.
+/// Load the events of `stream_id` from `from_version` and fold them with `projection`. Nothing
+/// is read until the effect runs.
 pub fn run_projection_from_store<S, E, P, Store>(
   store: &Store,
   stream_id: &str,
   from_version: u64,
-  projection: &P,
-) -> Result<S, EventStoreError>
+  projection: P,
+) -> Effect<S, EventStoreError>
 where
-  P: Projection<S, E>,
-  Store: EventStore<E>,
+  P: Projection<S, E> + Send + 'static,
+  Store: EventStore<E> + ?Sized,
   E: Clone + Send + Sync + 'static,
+  S: Send + 'static,
 {
-  let stored = run_sync(store.read(stream_id, from_version))?;
-  let events = stored.into_iter().map(|s: StoredEvent<E>| s.payload);
-  Ok(run_projection(projection, events))
+  store
+    .read(stream_id, from_version)
+    .map(move |stored: Vec<StoredEvent<E>>| {
+      run_projection(&projection, stored.into_iter().map(|s| s.payload))
+    })
 }
 
 #[cfg(test)]
@@ -79,7 +95,16 @@ mod tests {
   fn run_projection_from_store_reads_stream() {
     let store = MemoryEventStore::new();
     run_sync(store.append("wallet", &[Evt::Added(7), Evt::Added(2)])).expect("append");
-    let state = run_projection_from_store(&store, "wallet", 1, &Balance).expect("project");
+    let state = run_sync(run_projection_from_store(&store, "wallet", 1, Balance)).expect("project");
     assert_eq!(state, 9);
+  }
+
+  #[test]
+  fn run_projection_from_store_is_lazy_and_rereads() {
+    let store = MemoryEventStore::new();
+    let project = run_projection_from_store(&store, "wallet", 2, Arc::new(Balance));
+    run_sync(store.append("wallet", &[Evt::Added(7), Evt::Removed(2)])).expect("append");
+    // Built before the append, run after it: the read happens when the effect runs.
+    assert_eq!(run_sync(project).expect("project"), -2);
   }
 }

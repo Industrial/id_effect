@@ -7,7 +7,6 @@ resolver = "2"
 exclude = ["id_effect_lint"] # nightly-only Dylint crate; builds standalone
 members = [
   "id_effect_ai",
-  "id_effect_events",
   "id_effect_graph",
   "id_effect_jobs",
   "id_effect_parse",

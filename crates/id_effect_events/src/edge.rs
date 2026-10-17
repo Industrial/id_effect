@@ -1,8 +1,11 @@
-//! Private helpers on the 0.7 kernel: a fallible synchronous constructor and the
-//! `Exit` → `Result` mapping used by the synchronous / async run edges of this crate.
+//! Private helpers on the 0.7 kernel: a fallible synchronous constructor, and (tests only) the
+//! `Exit` → `Result` mapping of the synchronous / async run edges the unit tests use. The public
+//! API returns `Effect`s and runs nothing itself.
 
+#[cfg(test)]
 use id_effect::{Cause, Exit};
 use id_effect::{Effect, fail, succeed, suspend};
+#[cfg(test)]
 use std::panic::resume_unwind;
 
 /// A lazy fallible synchronous step (the v1 `Effect::new(|_| ..)` shape).
@@ -17,12 +20,9 @@ where
   })
 }
 
-/// Runs `eff` on the calling thread (the synchronous edge of [`crate::dispatch_command`] and
-/// friends) and maps its exit with [`into_result`].
-#[allow(
-  clippy::disallowed_methods,
-  reason = "edge: the crate's synchronous dispatch / projection APIs"
-)]
+/// Runs `eff` on the calling thread and maps its exit with [`into_result`] (unit tests).
+#[cfg(test)]
+#[allow(clippy::disallowed_methods, reason = "edge: unit tests run effects")]
 pub(crate) fn run_sync<A, E>(eff: Effect<A, E>) -> Result<A, E>
 where
   A: Send + 'static,
@@ -31,7 +31,8 @@ where
   into_result(eff.block_on())
 }
 
-/// Runs `eff` on the global runtime from an async caller.
+/// Runs `eff` on the global runtime from an async caller (unit tests).
+#[cfg(test)]
 pub(crate) async fn run_async<A, E>(eff: Effect<A, E>) -> Result<A, E>
 where
   A: Send + 'static,
@@ -42,6 +43,7 @@ where
 
 /// `Success` → `Ok`, the first typed failure → `Err`. A defect re-raises its panic (payload
 /// kept) and an interrupt panics, as the v1 run edges did.
+#[cfg(test)]
 pub(crate) fn into_result<A, E>(exit: Exit<A, E>) -> Result<A, E> {
   match exit {
     Exit::Success(a) => Ok(a),
@@ -49,6 +51,7 @@ pub(crate) fn into_result<A, E>(exit: Exit<A, E>) -> Result<A, E> {
   }
 }
 
+#[cfg(test)]
 fn take_fail<E>(cause: Cause<E>) -> E {
   match cause {
     Cause::Fail(e) => e,

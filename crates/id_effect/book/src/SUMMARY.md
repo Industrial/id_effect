@@ -148,7 +148,7 @@
 
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
-- [Events and projections (`id_effect_events`, labs)](./part5/ch23-00-events-and-projections.md)
+- [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)
 
 # Part VI: Application Platform
 

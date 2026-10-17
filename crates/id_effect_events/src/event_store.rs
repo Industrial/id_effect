@@ -23,9 +23,25 @@ pub struct StoredEvent<E> {
 }
 
 /// Append-only event persistence.
+///
+/// A stream's version is the number of events in it (`0` when empty); its events carry the
+/// versions `1..=version`.
 pub trait EventStore<E>: Send + Sync {
-  /// Append events to `stream_id`, returning assigned versions.
+  /// Append events to `stream_id` at its current version, returning assigned versions. A writer
+  /// that appends the same versions first fails this append with
+  /// [`EventStoreError::VersionConflict`] (stores that detect it).
   fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError>;
+
+  /// Append events to `stream_id` only if the stream is at `expected_version` (optimistic
+  /// concurrency). Otherwise nothing is appended and the effect fails with
+  /// [`EventStoreError::VersionConflict`] naming the version found. The events get the versions
+  /// `expected_version + 1 ..`.
+  fn append_expected(
+    &self,
+    stream_id: &str,
+    expected_version: u64,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError>;
 
   /// Read events from `stream_id` starting at `from_version` (inclusive, 1-based).
   fn read(
@@ -38,9 +54,61 @@ pub trait EventStore<E>: Send + Sync {
   fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError>;
 }
 
-/// In-memory append-only store (tests and ephemeral demos).
+/// A shared store is a store (handlers and dispatch take stores that are `Clone`).
+impl<E, S: EventStore<E> + ?Sized> EventStore<E> for Arc<S> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    (**self).append(stream_id, events)
+  }
+
+  fn append_expected(
+    &self,
+    stream_id: &str,
+    expected_version: u64,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    (**self).append_expected(stream_id, expected_version, events)
+  }
+
+  fn read(
+    &self,
+    stream_id: &str,
+    from_version: u64,
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    (**self).read(stream_id, from_version)
+  }
+
+  fn latest_version(&self, stream_id: &str) -> Effect<u64, EventStoreError> {
+    (**self).latest_version(stream_id)
+  }
+}
+
+/// [`EventStoreError::VersionConflict`] unless `actual == expected` (no expectation: `None`).
+pub(crate) fn check_version(
+  stream_id: &str,
+  expected: Option<u64>,
+  actual: u64,
+) -> Result<(), EventStoreError> {
+  match expected {
+    Some(expected) if expected != actual => Err(EventStoreError::VersionConflict {
+      stream_id: stream_id.to_owned(),
+      expected,
+      actual,
+    }),
+    _ => Ok(()),
+  }
+}
+
+/// In-memory append-only store (tests and ephemeral demos). Clones share the same streams.
 pub struct MemoryEventStore<E> {
   streams: Arc<Mutex<HashMap<String, Vec<StoredEvent<E>>>>>,
+}
+
+impl<E> Clone for MemoryEventStore<E> {
+  fn clone(&self) -> Self {
+    Self {
+      streams: Arc::clone(&self.streams),
+    }
+  }
 }
 
 impl<E> MemoryEventStore<E> {
@@ -58,8 +126,14 @@ impl<E> Default for MemoryEventStore<E> {
   }
 }
 
-impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
-  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+impl<E: Clone + Send + Sync + 'static> MemoryEventStore<E> {
+  /// Appends under the lock, so the version check and the append are atomic.
+  fn append_at(
+    &self,
+    stream_id: &str,
+    expected: Option<u64>,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let streams = Arc::clone(&self.streams);
@@ -67,6 +141,8 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
       let mut guard = streams
         .lock()
         .map_err(|e| EventStoreError::Io(e.to_string()))?;
+      let current = guard.get(&stream_id).map_or(0, |s| s.len() as u64);
+      check_version(&stream_id, expected, current)?;
       let stream = guard.entry(stream_id).or_default();
       let mut out = Vec::with_capacity(events.len());
       for payload in events {
@@ -81,6 +157,21 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
       }
       Ok(out)
     })
+  }
+}
+
+impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    self.append_at(stream_id, None, events)
+  }
+
+  fn append_expected(
+    &self,
+    stream_id: &str,
+    expected_version: u64,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    self.append_at(stream_id, Some(expected_version), events)
   }
 
   fn read(
@@ -119,10 +210,20 @@ impl<E: Clone + Send + Sync + 'static> EventStore<E> for MemoryEventStore<E> {
   }
 }
 
-/// JSON-lines journal on disk (one [`StoredEvent`] per line).
+/// JSON-lines journal on disk (one [`StoredEvent`] per line). One writer process at a time:
+/// the version check of [`EventStore::append_expected`] is not atomic across processes.
 pub struct FileJournal<E> {
   path: PathBuf,
   _marker: std::marker::PhantomData<E>,
+}
+
+impl<E> Clone for FileJournal<E> {
+  fn clone(&self) -> Self {
+    Self {
+      path: self.path.clone(),
+      _marker: std::marker::PhantomData,
+    }
+  }
 }
 
 impl<E: Serialize + DeserializeOwned + Send + Sync + 'static> FileJournal<E> {
@@ -191,10 +292,13 @@ struct JournalRecord<E> {
   payload: E,
 }
 
-impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore<E>
-  for FileJournal<E>
-{
-  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> FileJournal<E> {
+  fn append_at(
+    &self,
+    stream_id: &str,
+    expected: Option<u64>,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
     let stream_id = stream_id.to_owned();
     let events: Vec<E> = events.to_vec();
     let path = self.path.clone();
@@ -204,6 +308,8 @@ impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore
         _marker: std::marker::PhantomData,
       };
       let mut streams = journal.read_all()?;
+      let current = streams.get(&stream_id).map_or(0, |s| s.len() as u64);
+      check_version(&stream_id, expected, current)?;
       let stream = streams.entry(stream_id.clone()).or_default();
       let mut out = Vec::with_capacity(events.len());
       let mut records = Vec::with_capacity(events.len());
@@ -227,6 +333,23 @@ impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore
       journal.append_records(&records)?;
       Ok(out)
     })
+  }
+}
+
+impl<E: Clone + Serialize + DeserializeOwned + Send + Sync + 'static> EventStore<E>
+  for FileJournal<E>
+{
+  fn append(&self, stream_id: &str, events: &[E]) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    self.append_at(stream_id, None, events)
+  }
+
+  fn append_expected(
+    &self,
+    stream_id: &str,
+    expected_version: u64,
+    events: &[E],
+  ) -> Effect<Vec<StoredEvent<E>>, EventStoreError> {
+    self.append_at(stream_id, Some(expected_version), events)
   }
 
   fn read(
@@ -296,6 +419,72 @@ mod tests {
     run_sync(store.append("acct", &[CounterEvt(10)])).expect("append");
     let read = run_sync(store.read("acct", 1)).expect("read");
     assert_eq!(read[0].payload, CounterEvt(10));
+  }
+
+  #[test]
+  fn expected_version_conflict() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let first = run_sync(store.append_expected("s", 0, &[CounterEvt(1), CounterEvt(2)]))
+      .expect("append at 0");
+    assert_eq!(first[1].version, 2);
+    let err = run_sync(store.append_expected("s", 1, &[CounterEvt(3)])).expect_err("stale");
+    assert_eq!(
+      err,
+      EventStoreError::VersionConflict {
+        stream_id: "s".into(),
+        expected: 1,
+        actual: 2,
+      }
+    );
+    assert_eq!(run_sync(store.latest_version("s")).expect("latest"), 2);
+    let next = run_sync(store.append_expected("s", 2, &[CounterEvt(3)])).expect("append at 2");
+    assert_eq!(next[0].version, 3);
+  }
+
+  #[test]
+  fn append_expected_ahead_of_the_stream_conflicts() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let err = run_sync(store.append_expected("s", 4, &[CounterEvt(1)])).expect_err("gap");
+    assert!(matches!(
+      err,
+      EventStoreError::VersionConflict {
+        expected: 4,
+        actual: 0,
+        ..
+      }
+    ));
+    assert!(run_sync(store.read("s", 1)).expect("read").is_empty());
+  }
+
+  #[test]
+  fn file_journal_expected_version_conflict() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = FileJournal::<CounterEvt>::open(dir.path().join("ev.jsonl")).expect("open");
+    run_sync(store.append_expected("s", 0, &[CounterEvt(1)])).expect("append");
+    let err = run_sync(store.append_expected("s", 0, &[CounterEvt(2)])).expect_err("stale");
+    assert!(matches!(
+      err,
+      EventStoreError::VersionConflict {
+        expected: 0,
+        actual: 1,
+        ..
+      }
+    ));
+    assert_eq!(run_sync(store.latest_version("s")).expect("latest"), 1);
+  }
+
+  #[test]
+  fn arc_store_and_clones_share_streams() {
+    let store = MemoryEventStore::<CounterEvt>::new();
+    let shared = Arc::new(store.clone());
+    run_sync(shared.append("s", &[CounterEvt(1)])).expect("append");
+    run_sync(shared.append_expected("s", 1, &[CounterEvt(2)])).expect("append expected");
+    assert_eq!(run_sync(store.latest_version("s")).expect("latest"), 2);
+    assert_eq!(
+      run_sync(shared.read("s", 2)).expect("read")[0].payload,
+      CounterEvt(2)
+    );
+    assert_eq!(run_sync(shared.latest_version("s")).expect("latest"), 2);
   }
 
   #[test]

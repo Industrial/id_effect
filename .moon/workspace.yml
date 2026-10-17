@@ -29,6 +29,7 @@ projects:
   id_effect_mail: crates/id_effect_mail
   id_effect_console: crates/id_effect_console
   id_effect_storage: crates/id_effect_storage
+  id_effect_events: crates/id_effect_events
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
   ledger: examples/reference/ledger

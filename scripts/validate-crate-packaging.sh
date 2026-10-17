@@ -74,10 +74,9 @@ declare -a ORDER=(
 )
 
 # Crates in ORDER that are still labs crates awaiting promotion into crates/ (ADR 0010 rule 2).
-# Remove the entry in the leaf that moves the crate (id_effect_events: r10-e7-4-promote).
-declare -A PENDING_PROMOTION=(
-    [id_effect_events]=1
-)
+# Remove the entry in the leaf that moves the crate. None pending: id_effect_events moved in
+# r10-e7-4-promote.
+declare -A PENDING_PROMOTION=()
 
 if [[ "${1:-}" == "--print-order" ]]; then
     printf '%s\n' "${ORDER[@]}"

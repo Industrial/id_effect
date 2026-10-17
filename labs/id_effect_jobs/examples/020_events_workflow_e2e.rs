@@ -1,4 +1,4 @@
-//! End-to-end: es-entity events → graph projections → duroxide step.
+//! End-to-end: SQL journal events → ordered projections → duroxide step.
 //!
 //! ```bash
 //! DATABASE_URL=postgres://... cargo run -p id_effect_jobs --example 020_events_workflow_e2e \
@@ -10,20 +10,20 @@
 
 #[cfg(not(feature = "postgres"))]
 fn main() {
-  eprintln!("enable features: memory, postgres (and dev-deps for es-entity/duroxide)");
+  eprintln!("enable features: memory, postgres (and the duroxide dev-dependency)");
 }
 
 #[cfg(feature = "postgres")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
   use id_effect_events::{
-    EsEntityEventStore, EsEntityPgBackend, EventStore, Projection, ProjectionNode,
-    ProjectionRunner, apply_es_entity_journal_ddl,
+    EventStore, Projection, ProjectionNode, ProjectionRunner, SqlEventJournal,
   };
-  use id_effect_sql::pg::{PgPoolConfig, pg_pool_from_config};
+  use id_effect_sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
   use id_effect_tokio::TokioRuntime;
   use id_effect_workflow::{DuroxideStepJournal, StepJournal, bootstrap_duroxide_schema};
   use std::collections::HashMap;
+  use std::sync::Arc;
 
   let url = match std::env::var("DATABASE_URL") {
     Ok(u) => u,
@@ -37,7 +37,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await
     .map_err(|e| e.0.to_string())?;
 
-  apply_es_entity_journal_ddl(&pool).await?;
+  let rt = TokioRuntime::current()?;
+  let store = SqlEventJournal::<OrderEvt>::new(Arc::new(PgSqlClient::new(pool.clone())));
+  rt.run(store.create_table())
+    .await
+    .into_result()
+    .map_err(|c| format!("journal ddl: {c:?}"))?;
   bootstrap_duroxide_schema(&pool).await?;
 
   #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -58,8 +63,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
 
   let stream = format!("order-{}", uuid::Uuid::new_v4());
-  let rt = TokioRuntime::current()?;
-  let store = EsEntityEventStore::<OrderEvt>::new(EsEntityPgBackend::new(pool.clone()));
   rt.run(store.append(
     &stream,
     &[OrderEvt::Placed {
@@ -74,7 +77,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   runner.register(ProjectionNode::new("summary", Vec::<&str>::new()));
   let mut projections = HashMap::new();
   projections.insert("summary".to_string(), OrderSummary);
-  let rebuilt = runner.run_all(&store, &stream, 1, &projections).await?;
+  let rebuilt = rt
+    .run(runner.run_all(&store, &stream, 1, projections))
+    .await
+    .into_result()
+    .map_err(|c| format!("projections: {c:?}"))?;
   assert_eq!(rebuilt[0].1, "sku=widget");
   println!("projection: {}", rebuilt[0].1);
 

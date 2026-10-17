@@ -1,48 +1,63 @@
 # Events and Projections
 
-> **Labs crate — unpublished, no API guarantees ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)).**
-> `id_effect_events` and `id_effect_graph` live in [`labs/`](https://github.com/Industrial/id_effect/tree/main/labs).
-> Use them via a path or git dependency on `labs/`; they are not on crates.io. Build and test them
-> with `cargo … --manifest-path labs/Cargo.toml`.
+> **`id_effect_events`** — published crate, tier `integration` ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md), Amendment 6).
+> Add it with `cargo add id_effect_events` (features `pg` / `sqlite` bring the `id_effect_sql` drivers).
 
-Event sourcing keeps the **write model** as an append-only log of domain events. **Projections** fold that log into query-friendly read models. Production PostgreSQL persistence uses **es-entity** on the shared `PgPool` (`id_effect_sql::pg::PgPool`, feature `pg`); multi-projection rebuild order uses **`id_effect_graph`**.
+Event sourcing keeps the **write model** as an append-only log of domain events. **Projections** fold that log into query-friendly read models. The durable store is **`SqlEventJournal`**, which runs on any `id_effect_sql` `SqlClient` (PostgreSQL or SQLite); every operation that touches a store returns an `Effect`, so nothing is appended or read until the program runs.
 
 ## What This Chapter Covers
 
-Source lives under [`labs/id_effect_events/src`](https://github.com/Industrial/id_effect/tree/main/labs/id_effect_events/src) and [`labs/id_effect_graph/src`](https://github.com/Industrial/id_effect/tree/main/labs/id_effect_graph/src).
+Source lives under [`crates/id_effect_events/src`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_events/src).
 
-- **`EventStore`** (`event_store.rs`) — append and read stream events
-- **`EsEntityEventStore`** (`es_entity/store.rs`, feature `es-entity`) — production PG journal
-- **`ProjectionRunner`** (`projection_runner.rs`) — graph-ordered multi-projection rebuilds
+- **`EventStore`** (`event_store.rs`) — append and read stream events; `append_expected` for optimistic concurrency
+- **`SqlEventJournal`** (`sql_journal.rs`) — the durable journal over `SqlClient`
+- **`ProjectionRunner`** (`projection_runner.rs`) — multi-projection rebuilds in dependency order
 - **`MemoryEventStore`** / **`FileJournal`** (`event_store.rs`) — dev/test persistence
-- **`dispatch_command_es_entity`** (`cqrs.rs`) — async CQRS write path
-- **`topological_sort`** (`id_effect_graph`) — projection dependency ordering
+- **`dispatch_command`** / **`query_projection`** (`cqrs.rs`) — CQRS dispatch as effects
 
-## Production path (es-entity)
+## Optimistic concurrency
 
-<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
+A stream's version is its number of events. `append_expected(stream, expected_version, events)` appends only if the stream is still at `expected_version`; otherwise nothing is written and the effect fails with `EventStoreError::VersionConflict { expected, actual, .. }`. Reload the stream, re-run the command and try again.
+
+<!-- ignore: id_effect_events is not a book_snippets dependency -->
 ```rust,ignore
-use id_effect_events::{EsEntityEventStore, EsEntityPgBackend, EventStore};
-// pool: id_effect_sql::pg::PgPool
-let store = EsEntityEventStore::new(EsEntityPgBackend::new(pool));
+use id_effect_events::{EventStore, EventStoreError};
+
+let version = store.latest_version("account-1");          // Effect<u64, EventStoreError>
+let append = store.append_expected("account-1", 2, &events); // fails if another writer got there first
 ```
 
-Apply `ES_ENTITY_EVENT_JOURNAL_DDL` at startup. See ADR [`docs/platform/adrs/adr-es-entity-event-persistence.md`](https://github.com/Industrial/id_effect/blob/main/docs/platform/adrs/adr-es-entity-event-persistence.md).
+## Production path (SQL journal)
+
+<!-- ignore: id_effect_events is not a book_snippets dependency -->
+```rust,ignore
+use std::sync::Arc;
+use id_effect_events::SqlEventJournal;
+use id_effect_sql::pg::PgSqlClient;
+
+// pool: id_effect_sql::pg::PgPool (feature `pg`); SqliteSqlClient works the same way.
+let journal = SqlEventJournal::<AccountEvent>::new(Arc::new(PgSqlClient::new(pool)));
+let setup = journal.create_table(); // runs SQL_EVENT_JOURNAL_DDL (or put it in a migration)
+```
+
+One table keyed by `(stream_id, version)`. An append runs in one transaction: it reads the stream's version, checks the expectation and inserts the events; a concurrent writer that takes the same version first trips the primary key, which becomes a `VersionConflict` and rolls the append back.
 
 ## ProjectionRunner
 
-Register projection nodes with dependencies; `plan()` uses `id_effect_graph::topological_sort`:
+Register projection nodes with their dependencies; `plan()` orders them (ties by id), and `run_all` folds one read of the stream through each, as an effect:
 
-<!-- ignore: labs crate id_effect_events is outside the workspace, not a book_snippets dependency -->
+<!-- ignore: id_effect_events is not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_events::{ProjectionNode, ProjectionRunner};
 let mut runner = ProjectionRunner::new();
-runner.register(ProjectionNode::new("summary", []));
+runner.register(ProjectionNode::new("summary", Vec::<&str>::new()));
+runner.register(ProjectionNode::new("report", ["summary"]));
 let order = runner.plan()?;
+let rebuild = runner.run_all(&journal, "order-7", 1, projections_by_id);
 ```
 
 ## Dev stores
 
-`MemoryEventStore` and `FileJournal` remain for unit tests and local experiments without PostgreSQL.
+`MemoryEventStore` and `FileJournal` remain for unit tests and local experiments without a database. Runnable examples: `crates/id_effect_events/examples/` (`001_expected_version`, and `020_sqlite_journal` with `--features sqlite`).
 
 See also [Async messaging](../part6/ch31-00-async-messaging.md) (outbox and obix inbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).
