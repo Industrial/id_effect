@@ -10,7 +10,10 @@ attachments, inline `cid:` parts, extra headers), the `Mailer` capability with t
 `assert_contains`), `Templates` (minijinja subject, text and HTML templates with shared layouts
 and partials, HTML autoescaped, missing variables an error), `MailPreviews` (feature `preview`:
 an axum router at `/_mail/previews` showing each registered preview as HTML, text and raw MIME,
-re-reading the templates from disk in a debug build), and `Address`, a validated `local@domain`
+re-reading the templates from disk in a debug build), `deliver_later` / `deliver_later_in`
+(feature `jobs`: a `DeliverMail` job on `id_effect_jobs`, enqueued alone or with the caller's
+SQL transaction, sent by the handler `register_mail_jobs` adds, transient failures retried with
+backoff and permanent ones dead at once), and `Address`, a validated `local@domain`
 mailbox address (lengths per RFC 5321, dot-separated domain labels, no whitespace):
 
 ```rust

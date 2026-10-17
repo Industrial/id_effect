@@ -71,7 +71,11 @@
 //! ```
 //!
 //! Neither transport retries a send by itself; a refused send says whether a later attempt may
-//! succeed ([`MailError::is_transient`]).
+//! succeed ([`MailError::is_transient`]). With feature `jobs`, `deliver_later` enqueues a message
+//! as a `DeliverMail` job of `id_effect_jobs` (`deliver_later_in` with the caller's SQL
+//! transaction, so it is sent only if that commits), and `register_mail_jobs` adds the handler
+//! that sends it through the [`Mailer`]: a transient failure is retried with backoff, any other
+//! makes the job `dead` with the error recorded.
 //!
 //! Tier `integration` (ADR 0010 Amendment 6).
 
@@ -80,6 +84,8 @@
 
 use std::fmt;
 
+#[cfg(feature = "jobs")]
+mod later;
 mod mailer;
 mod message;
 #[cfg(feature = "preview")]
@@ -89,6 +95,8 @@ mod smtp;
 mod template;
 mod testing;
 
+#[cfg(feature = "jobs")]
+pub use later::{DeliverMail, deliver_later, deliver_later_in, register_mail_jobs};
 pub use mailer::{
   MailError, Mailer, MailerEnv, MailerService, Sent, deliver, mailer_env, provide_mailer,
 };
@@ -190,7 +198,7 @@ impl fmt::Display for AddressError {
 
 impl std::error::Error for AddressError {}
 
-/// Runs the book chapter on mail as a doctest (the preview block needs feature `preview`).
-#[cfg(all(doctest, feature = "preview"))]
+/// Runs the book chapter on mail as a doctest (its blocks need features `preview` and `jobs`).
+#[cfg(all(doctest, feature = "preview", feature = "jobs"))]
 #[doc = include_str!("../../id_effect/book/src/part6/ch31-03-mail.md")]
 struct BookMailDoctests;

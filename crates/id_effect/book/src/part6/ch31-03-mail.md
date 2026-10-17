@@ -16,7 +16,90 @@ A `Message` is built and checked by `Message::builder()`: a sender, `To` / `Cc` 
 | `SendGridMailer::layer(SendGridConfig)` | to the SendGrid v3 API through the `HttpClient` capability |
 | `TestMailbox::layer()` | into memory, with `assert_sent_to`, `assert_subject` and `assert_contains` |
 
-A refused send is a `MailError` that says whether a later attempt may succeed (`is_transient`); neither transport retries by itself.
+A refused send is a `MailError` that says whether a later attempt may succeed (`is_transient`); neither transport retries by itself. Retries belong to the next section.
+
+## Delivering later
+
+A request handler should not wait on an SMTP server, and a greylisting provider should not cost a customer their invoice. With feature `jobs`, mail goes out through the background job queue of `id_effect_jobs` instead:
+
+```toml
+id_effect_mail = { version = "0.10", features = ["jobs"] }
+```
+
+| Call | Does |
+|---|---|
+| `deliver_later(message)` | enqueues a `DeliverMail` job on the `JobQueueService` in the environment |
+| `deliver_later_in(&tx, message, &clock)` | inserts the job with the caller's `SqlTransaction`: the mail is sent only if `tx` commits |
+| `register_mail_jobs(registry)` | adds the handler that sends the job's message with the `MailerService` in the worker's environment |
+
+`deliver_later_in` is the one to reach for when the mail announces a database change — "your order is confirmed" enqueued in the transaction that inserts the order. A rolled-back order sends nothing, and a committed one cannot lose its mail to a crash between the commit and the send.
+
+The handler maps the transport's verdict onto the job's:
+
+| `MailError` | Job |
+|---|---|
+| `Temporary` (SMTP `4xx`, HTTP `429` / `5xx`), `Transport` | retried: exponential backoff from 30 s, capped at 1 h, jittered; at most 12 attempts (about five hours) |
+| `Rejected`, `Unauthorized`, `InvalidMessage`, `Config` | `dead` at once, the error kept as the job's `last_error` for the console and a manual `retry_now` |
+
+`DeliverMail` runs on the queue `mail` (`DeliverMail::QUEUE`), so a slow provider never holds up other jobs: serve it with `Worker::queue(DeliverMail::QUEUE, n)`. Delivery is at least once: a worker that dies after the provider accepted the message, or a `Transport` failure after the provider received it, sends it again. To keep the same mail from being *enqueued* twice (a retried request), give it a unique key with `enqueue(DeliverMail::new(message)?, JobOptions::new().unique(..))`; the same call takes `RunAt` for a mail sent at a later time.
+
+The job's payload is the whole message, attachments included (base64), stored as JSON in the queue table until the finished job is pruned (seven days by default): recipients, `Bcc`, bodies and files. Attachment and inline content together may be at most `DeliverMail::MAX_CONTENT_BYTES` (2 MiB); a larger message fails to enqueue with `JobError::Encode`. Keep large files in object storage and send a link.
+
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+
+use id_effect::{Executor, HCons, HNil, TestExecutor, UtcDateTime, WallClock, hlist};
+use id_effect_jobs::{Job, JobQueueService, JobRegistry, MemoryJobQueue, Worker, WorkerConfig};
+use id_effect_mail::{
+    Address, DeliverMail, MailError, MailerService, Message, TestMailbox, deliver_later,
+    register_mail_jobs,
+};
+
+type Env = HCons<JobQueueService, HCons<MailerService, HNil>>;
+
+let exec = TestExecutor::new();
+let clock = WallClock::anchored(exec.now(), UtcDateTime::unsafe_make(1_800_000_000_000));
+let mailbox = TestMailbox::new();
+let env: Env = hlist![
+    JobQueueService::new(MemoryJobQueue::new(clock.clone())),
+    MailerService::new(mailbox.clone())
+];
+let worker = Worker::new(register_mail_jobs(JobRegistry::<Env>::new()).unwrap())
+    .queue(DeliverMail::QUEUE, 4)
+    .with_config(WorkerConfig { clock, ..WorkerConfig::default() });
+
+let message = Message::builder()
+    .from(Address::parse("billing@ledger.example").unwrap())
+    .to(Address::parse("carol@ledger.example").unwrap())
+    .subject("Your invoice")
+    .text("Your invoice is attached.")
+    .build()
+    .unwrap();
+
+// The provider greylists the first attempt.
+mailbox.fail_next(MailError::Temporary { code: 451, message: "try later".into() });
+let drain = {
+    let (worker, env) = (worker.clone(), env.clone());
+    move || worker.clone().run_until_idle().provide_all(env.clone())
+};
+let first = deliver_later::<Env, _>(message)
+    .provide_all(env.clone())
+    .flat_map(move |_| drain())
+    .fork_root(Arc::new(exec.clone()));
+exec.run_until_stalled();
+assert!(first.is_done());
+mailbox.assert_none_sent();
+
+// Thirty seconds (± 20 %) later the retry goes out.
+exec.advance(Duration::from_secs(60));
+let second = worker.run_until_idle().provide_all(env).fork_root(Arc::new(exec.clone()));
+exec.run_until_stalled();
+assert!(second.is_done());
+mailbox.assert_sent_to("carol@ledger.example");
+```
+
+`crates/id_effect_mail/tests/mail.rs` checks the retry on virtual time, a permanent refusal going `dead` after one attempt, and — against PostgreSQL — that a mail enqueued with `deliver_later_in` is neither visible to a worker nor sent until its transaction commits, and never after a rollback. The runnable example is `cargo run -p id_effect_mail --example 010_mail --features jobs`.
 
 ## Templates
 
