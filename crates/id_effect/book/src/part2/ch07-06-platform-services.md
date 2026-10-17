@@ -94,6 +94,51 @@ The live implementations need a Tokio runtime **with its IO driver** (see
 Streaming responses (`execute_stream`) carry an `HttpBody` read on demand (`next_chunk()`,
 `collect()`, both effects) with the `max_body_bytes` cap enforced as chunks arrive.
 
+## Client defaults: timeouts and retries
+
+`ReqwestHttpClientProvider::layer()` installs a client with defaults that apply to every call:
+
+| Setting | Default |
+|---------|---------|
+| Connect timeout | 10 s |
+| Total timeout | 30 s (a request's own `HttpRequest::timeout` replaces it) |
+| Retried methods | GET, PUT, DELETE (idempotent); POST and PATCH are never retried unless listed |
+| Retried outcomes | connect errors, `5xx`, `429`; never `4xx`, timeouts or invalid requests |
+| Attempts | 3 in total, exponential backoff from 100 ms with jitter |
+| `Retry-After` | honoured (delta-seconds): the next delay is at least that long, up to 30 s |
+
+The retry is a `RetryingHttpClient` decorator over a core `Schedule`, so the policy is configured
+once, on the layer, instead of wrapping each call in `Effect::retry`. When the attempts run out
+the last outcome is returned unchanged (the last `503` response, or the last connect error).
+Change the defaults with `HttpClientConfig` and `layer_with`:
+
+```rust
+use std::time::Duration;
+
+use id_effect::{Layer, Schedule};
+use id_effect_platform::http::{
+    HttpClientConfig, HttpClientEnv, HttpMethod, ReqwestHttpClientProvider, RetryPolicy,
+};
+# struct AppError;
+
+let config = HttpClientConfig::default()
+    .with_timeout(Duration::from_secs(5))
+    .with_retry(
+        // 5 attempts from 50 ms, and POST opted in (the server deduplicates).
+        RetryPolicy::exponential(5, Duration::from_millis(50))
+            .with_methods([HttpMethod::Get, HttpMethod::Post]),
+    );
+let http: Layer<HttpClientEnv, AppError> = ReqwestHttpClientProvider::layer_with(config);
+
+// Any `Schedule` stepped with a `RetryCause` (status, Retry-After) drives the policy.
+let fixed = RetryPolicy::new(Schedule::spaced(Duration::from_millis(200)).intersect(Schedule::recurs(2)));
+let off = HttpClientConfig::default().with_retry(RetryPolicy::none());
+# let _ = (http, fixed, off);
+```
+
+`RetryingHttpClient::new(client, policy)` wraps any other `HttpClient` the same way. See
+`examples/040_http_client_retry.rs`.
+
 ## Security note (filesystem)
 
 `TestFileSystem` rejects paths containing `..`. Live I/O follows OS semantics — sandbox untrusted
@@ -104,6 +149,7 @@ paths at a higher layer.
 ```bash
 cargo run -p id_effect_platform --example 010_platform_http_get
 cargo run -p id_effect_platform --example 030_layer_default_env
+cargo run -p id_effect_platform --example 040_http_client_retry
 ```
 
 ## Next
