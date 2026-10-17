@@ -531,6 +531,41 @@ mod tests {
   }
 
   #[test]
+  fn errors_never_quote_a_malformed_secret_line() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let base = write(&dir, "base.toml", "port = 1\n");
+    let w = watch(&dir);
+    let exec = TestExecutor::new();
+    let check = |body: &str, expect: &[&str]| {
+      rewrite(&base, body);
+      let err = match run_test_on(&exec, w.reload_if_changed::<ConfigError, _>()) {
+        Exit::Failure(cause) => cause.fail_option().expect("a typed failure"),
+        other => panic!("expected the error, got {other:?}"),
+      };
+      let reported = w.last_error().expect("reported");
+      let shown = format!("{err}\n{err:?}\n{reported}");
+      assert!(!shown.contains("hunter2"), "{shown}");
+      for kept in expect {
+        assert!(reported.contains(kept), "{kept:?} missing: {reported}");
+      }
+    };
+    // An unquoted string: the TOML parser quotes the whole line.
+    check(
+      "port = 1\npassword = hunter2-s3cr3t\n",
+      &["TOML parse error at line 2, column 12", "invalid string"],
+    );
+    // Well-formed, wrong type: serde reports the value it found.
+    check(
+      "port = \"hunter2-s3cr3t\"\n",
+      &[
+        "invalid type: found string, expected u16",
+        "for key \"default.port\"",
+        "base.toml",
+      ],
+    );
+  }
+
+  #[test]
   fn debug_never_prints_the_value_or_the_error() {
     let dir = tempfile::tempdir().expect("tempdir");
     let base = write(&dir, "base.toml", "port = 1\npassword = \"s3cr3t\"\n");
