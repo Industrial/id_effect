@@ -162,6 +162,7 @@
   - [Migrations](./part6/ch28-02-migrations.md)
   - [Query builder, entities and repositories](./part6/ch28-03-repositories.md)
   - [Redis](./part6/ch28-04-redis.md)
+  - [Object storage (`id_effect_storage`)](./part6/ch28-05-storage.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
   - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)

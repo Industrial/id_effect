@@ -1,5 +1,5 @@
-//! Effect-native containers (testcontainers): PostgreSQL, MySQL, Redis, Keycloak, Vault and any
-//! image through [`ContainerSpec`], started as effect resources.
+//! Effect-native containers (testcontainers): PostgreSQL, MySQL, Redis, Keycloak, Vault, an
+//! S3-compatible store and any image through [`ContainerSpec`], started as effect resources.
 //!
 //! # Per-test containers
 //!
@@ -57,6 +57,7 @@ mod mysql;
 mod postgres;
 mod reaper;
 mod redis;
+mod s3;
 mod shared;
 mod spec;
 mod vault;
@@ -72,6 +73,7 @@ pub use mysql::{MYSQL_PORT, MySql, MySqlContainer};
 pub use postgres::PostgresSqlEnv;
 pub use postgres::{POSTGRES_PORT, Postgres, PostgresContainer};
 pub use redis::{REDIS_PORT, Redis, RedisContainer};
+pub use s3::{S3, S3_IMAGE, S3_PORT, S3_TAG, S3Container};
 pub use shared::Shared;
 pub use spec::{ContainerSpec, DEFAULT_READY_TIMEOUT};
 pub use vault::{VAULT_PORT, Vault, VaultContainer};

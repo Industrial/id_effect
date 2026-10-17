@@ -36,6 +36,21 @@ url = "2"
 [dev-dependencies]
 async-trait = "0.1"
 tempfile = "3"
+# tests/s3.rs (feature `s3`): the S3-compatible container, the effects run on tokio (as reqwest
+# needs), presigned URLs used over plain HTTP, and the bucket created with object_store's own
+# SigV4 signer (`S3Store` never creates buckets). Path-only: cargo publish resolves path+version
+# dev-deps on crates.io.
+id_effect_test = { path = "../id_effect_test" }
+id_effect_tokio = { path = "../id_effect_tokio" }
+object_store = { version = "0.14", default-features = false, features = [
+  "aws",
+] }
+reqwest = { version = "0.13", default-features = false }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "s3"
+required-features = ["s3"]
 
 [package.metadata.docs.rs]
 all-features = true

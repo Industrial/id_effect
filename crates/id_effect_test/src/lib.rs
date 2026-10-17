@@ -1,10 +1,11 @@
 //! Integration-test support for id_effect programs.
 //!
 //! - **[`containers`]** — effect-native containers: [`Postgres`] (with feature `sql`, a ready
-//!   `SqlClient` via `Postgres::sql_layer`), [`MySql`], [`Redis`], [`Keycloak`], [`Vault`] and
-//!   any image through [`ContainerSpec`], as scoped layers removed when their scope closes
-//!   (also on failure and interrupt), or one per test binary with [`Shared`]; readiness waits
-//!   bounded by typed timeouts ([`ContainerError::NotReady`]); [`require_docker`] for the SKIP /
+//!   `SqlClient` via `Postgres::sql_layer`), [`MySql`], [`Redis`], [`Keycloak`], [`Vault`],
+//!   [`S3`] (S3-compatible, SeaweedFS pinned by digest) and any image through [`ContainerSpec`],
+//!   as scoped layers removed when their scope closes (also on failure and interrupt), or one
+//!   per test binary with [`Shared`]; readiness waits bounded by typed timeouts
+//!   ([`ContainerError::NotReady`]); [`require_docker`] for the SKIP /
 //!   `ID_EFFECT_REQUIRE_DOCKER=1` rule.
 //!
 //! - **`db`** (feature `sql`) — per-test database isolation: `isolated_db()` runs the test in one
@@ -55,8 +56,9 @@ pub mod http;
 
 pub use containers::{
   Container, ContainerError, ContainerImage, ContainerSpec, Keycloak, KeycloakContainer, MySql,
-  MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis, RedisContainer, Shared,
-  Vault, VaultContainer, Wait, container_exists, docker_available, require_docker,
+  MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis, RedisContainer, S3,
+  S3Container, Shared, Vault, VaultContainer, Wait, container_exists, docker_available,
+  require_docker,
 };
 #[cfg(feature = "contract")]
 pub use contract::{Contract, ContractError};

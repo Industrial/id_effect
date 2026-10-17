@@ -61,10 +61,15 @@ id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.9.0", fe
   "session",
   "rate-limit",
 ] }
+id_effect_storage = { path = "../../crates/id_effect_storage", version = "0.9.0", features = [
+  "s3",
+] }
 id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.9.0" }
 id_effect_test = { path = "../../crates/id_effect_test", version = "0.9.0", features = [
   "fault",
 ] }
+tempfile = "3"
+bytes = "1"
 cli_minimal = { path = "../cli-minimal" }
 axum = "0.8"
 clap = { version = "4.5", default-features = false, features = [
