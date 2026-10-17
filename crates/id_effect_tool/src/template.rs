@@ -105,6 +105,8 @@ macro_rules! embed {
 /// Every embedded template file (`templates/<dir>/<source>`).
 pub static FILES: &[TemplateFile] = &[
   embed!("common", "Dockerfile.template"),
+  embed!("common", "_devcontainer/Dockerfile.template"),
+  embed!("common", "_devcontainer/devcontainer.json.template"),
   embed!("common", "_dockerignore.template"),
   embed!("common", "_gitignore.template"),
   embed!("common", "_github/workflows/ci.yml.template"),

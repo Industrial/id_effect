@@ -44,3 +44,18 @@ What `id-effect dev` does not do:
 - On Windows the old app is killed at once (there is no SIGTERM).
 - Ctrl-C stops `id-effect dev` and the app together (they share the terminal's process group); the app sees the interrupt like any Ctrl-C.
 - The app's stdin, stdout and stderr are the terminal's.
+
+## The dev container
+
+Every project `id-effect new` generates, whatever the template, has a `.devcontainer/` directory: open it in VS Code ("Reopen in Container"), GitHub Codespaces or any tool that reads the [Dev Container spec](https://containers.dev/) (`devcontainer up --workspace-folder .` with the CLI) and you get the same toolchain on every machine.
+
+- `.devcontainer/Dockerfile` starts from `rust:1.99-bookworm`, pinned by its `sha256` digest (current stable; the id_effect crates need Rust 1.94 or newer), adds `rustfmt` and `clippy`, and installs the `id-effect` command at the version that generated the project (`cargo install id_effect_tool --version … --locked`, the build argument `ID_EFFECT_VERSION`). It runs as a non-root user `dev`, so files written to the workspace are not root's.
+- `.devcontainer/devcontainer.json` is plain JSON (no comments). It adds the `docker-in-docker` feature, so `docker compose` works inside the container against the project's `compose.yaml`; ports that compose publishes are on the container's `localhost`, which is what `.env.example` points at. The `service` template forwards port 8080 and sets `HOST=0.0.0.0` and `PORT=8080`. `postCreateCommand` runs `cargo fetch` and prints the dev loop.
+
+Inside the container the dev loop is `id-effect dev`. With `--db pg`, start the database first with `docker compose up -d db`: `id-effect dev --services` brings up every compose service, including `app`, the release build of the project itself, which would take port 8080 (and in the other templates would run a second copy of the program).
+
+What the dev container does not do:
+
+- The Rust version is pinned, not tracked: move to a newer release by changing the `FROM` line (tag and digest; `docker buildx imagetools inspect rust:<version>-bookworm` prints the digest).
+- The `docker-in-docker` feature is referenced by its major version tag (`:2`), not a digest, and runs the container privileged.
+- `id-effect new --local-workspace` projects get the same `cargo install` from crates.io; inside the container the checkout is not mounted, so build against it from the host.

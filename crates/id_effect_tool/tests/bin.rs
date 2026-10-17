@@ -32,6 +32,81 @@ fn new_generates_every_template_from_any_working_directory() {
   }
 }
 
+/// `.devcontainer/` is plain JSON on a digest-pinned Rust image no older than the workspace MSRV,
+/// with Docker for compose services and `id-effect dev` named as the dev loop.
+#[test]
+fn every_template_ships_a_devcontainer_on_a_pinned_toolchain() {
+  let tmp = tempfile::tempdir().unwrap();
+  let msrv = minor(env!("CARGO_PKG_RUST_VERSION"));
+  let variants: [(&str, &[&str]); 5] = [
+    ("service", &["--template", "service"]),
+    (
+      "service-pg",
+      &["--template", "service", "--db", "pg", "--otel"],
+    ),
+    ("worker", &["--template", "worker"]),
+    ("cli", &["--template", "cli"]),
+    ("cluster", &["--template", "cluster"]),
+  ];
+  for (label, args) in variants {
+    let dest = tmp.path().join(label);
+    let mut argv = vec!["new", "demo", "--dest", dest.to_str().unwrap()];
+    argv.extend_from_slice(args);
+    let out = id_effect(&argv);
+    assert!(out.status.success(), "{label}: {out:?}");
+    let text = std::fs::read_to_string(dest.join(".devcontainer/devcontainer.json")).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text)
+      .unwrap_or_else(|e| panic!("{label}: devcontainer.json is not JSON ({e}):\n{text}"));
+    assert_eq!(json["name"], "demo", "{label}");
+    assert_eq!(json["build"]["dockerfile"], "Dockerfile", "{label}");
+    assert!(
+      json["features"]
+        .as_object()
+        .is_some_and(|f| f.keys().any(|k| k.contains("/docker-in-docker:"))),
+      "{label}: no docker-in-docker feature"
+    );
+    let post_create = json["postCreateCommand"].as_str().unwrap_or_default();
+    assert!(
+      post_create.contains("id-effect dev"),
+      "{label}: {post_create}"
+    );
+    let ports = json["forwardPorts"].as_array().cloned().unwrap_or_default();
+    if label.starts_with("service") {
+      assert_eq!(ports, [serde_json::json!(8080)], "{label}");
+    } else {
+      assert!(ports.is_empty(), "{label}: {ports:?}");
+    }
+
+    let dockerfile = std::fs::read_to_string(dest.join(".devcontainer/Dockerfile")).unwrap();
+    let from = dockerfile
+      .lines()
+      .find_map(|line| line.strip_prefix("FROM "))
+      .unwrap_or_else(|| panic!("{label}: no FROM in:\n{dockerfile}"));
+    let (image, digest) = from.split_once('@').expect("a digest-pinned image");
+    assert!(
+      digest.starts_with("sha256:") && digest.len() == 71,
+      "{label}: {from}"
+    );
+    let version = image
+      .strip_prefix("rust:")
+      .and_then(|tag| tag.split('-').next())
+      .unwrap_or_else(|| panic!("{label}: not a rust image: {from}"));
+    assert!(
+      minor(version) >= msrv,
+      "{label}: {version} is older than the MSRV"
+    );
+    let pin = format!("ID_EFFECT_VERSION={}", env!("CARGO_PKG_VERSION"));
+    assert!(dockerfile.contains(&pin), "{label}: no {pin}");
+  }
+}
+
+/// The minor version of `1.<minor>[.<patch>]`.
+fn minor(version: &str) -> u32 {
+  let mut parts = version.split('.');
+  assert_eq!(parts.next(), Some("1"), "{version}");
+  parts.next().and_then(|m| m.parse().ok()).expect(version)
+}
+
 /// Rolling deploys: Kamal's proxy gates on `/ready` and waits longer than the service drains.
 #[test]
 fn the_service_deploy_config_checks_ready_and_outwaits_the_drain() {
