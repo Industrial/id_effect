@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Measure the developer-experience KPIs and record them in docs/benchmarks/dx-kpis-<release>.json
-# (release DX_KPIS_RELEASE, default 0.9).
+# (release DX_KPIS_RELEASE, default 0.10).
 #
 #   K1  time to a running service: wall time from `id-effect new svc --template service
 #       --local-workspace <repo>` to `GET /health` answering 200, with a cold build in a fresh
 #       target dir (budget: K1_BUDGET_S, default 180 s).
+#   K2  incremental rebuild: the median `cargo build` of a generated `service` project after
+#       editing one handler (`hello` in src/lib.rs), over K2_RUNS runs (default 3; budget:
+#       K2_BUDGET_S, default 8 s).
+#   K6  cold release build: `cargo build --release` of the same project in a fresh target dir.
+#       Recorded, no budget check here; the budget is in docs/benchmarks/README.md (§8).
 #   K3  feature LOC: the added non-blank lines of docs/benchmarks/k3/invoice.patch, the "invoice"
 #       resource (model, migration, routes, policy, test) added to examples/reference/ledger,
 #       per category. Measured, no target (PLAN-OF-PLANS §8: -40 % at a later release). The
@@ -16,21 +21,25 @@
 #       rust fences (at least K5_MIN_PERCENT, default 80).
 #
 # Usage:
-#   scripts/dx-kpis.sh [--json] [--out FILE] [--skip-k1] [--k3-build] [--keep]
+#   scripts/dx-kpis.sh [--json] [--out FILE] [--skip-k1] [--skip-k2] [--skip-k6] [--k3-build] [--keep]
 #   scripts/dx-kpis.sh --self-test
 #
 #     --json      print the result as one JSON object (default: one line per KPI)
 #     --out FILE  where to write the JSON (default docs/benchmarks/dx-kpis-<release>.json; written
-#                 only when K1 was measured or --out is given)
-#     --skip-k1   only the static KPIs K3, K4 and K5 (seconds instead of minutes); k1 is null
+#                 only when K1, K2 or K6 was measured or --out is given)
+#     --skip-k1   do not measure K1; k1 is null
+#     --skip-k2   do not measure K2; k2 is null
+#     --skip-k6   do not measure K6; k6 is null (all three: only the static KPIs K3, K4 and K5,
+#                 seconds instead of minutes)
 #     --k3-build  also build the patched Ledger and run its invoice tests (minutes; the tests
 #                 need Docker and print SKIP without it, unless ID_EFFECT_REQUIRE_DOCKER=1)
-#     --keep      keep the K1 and K3 work directories
+#     --keep      keep the K1, K2/K6 and K3 work directories
 #
 # Environment:
-#   DX_KPIS_DIR  where the K1 project, the K3 copy and their target dirs go (default: a new
-#                `mktemp -d`); must be outside the repository. The `id-effect` binary is built
-#                first, untimed, with the caller's CARGO_TARGET_DIR (default: <repo>/target).
+#   DX_KPIS_DIR  where the K1 project, the K2/K6 project, the K3 copy and their target dirs go
+#                (default: a new `mktemp -d`); must be outside the repository. The `id-effect`
+#                binary is built first, untimed, with the caller's CARGO_TARGET_DIR (default:
+#                <repo>/target).
 #   K3_TARGET_DIR  the target dir of the --k3-build build (default: <work>/k3-target).
 #
 # Method:
@@ -41,6 +50,14 @@
 #       PORT, and polling /health every 0.1 s until it answers 200 (60 s limit after the build).
 #       Dependency sources come from the local cargo registry cache when they are there, so
 #       download time is not part of the figure on a machine that has built the workspace.
+#   K2  the wrappers and CARGO_INCREMENTAL are unset as for K1 (the method of
+#       scripts/compile-time.sh). `id-effect new svc --template service` generates <work>/k2 (with
+#       the root Cargo.lock) and `cargo build` builds it into <work>/k2-target, untimed. Each run
+#       then restores the generated src/lib.rs, edits the `hello` handler's body (the greeting
+#       `"hello, {}"` becomes `"hello <run>, {}"`, so every run changes it) and times
+#       `cargo build` (dev profile). The handler line must be in the template (FAIL otherwise).
+#   K6  the same project with the generated src/lib.rs and the same environment as K2:
+#       `cargo build --release` into an empty <work>/k6-target, timed once.
 #   K3  the patch is a unified diff with repository-relative paths (a/examples/reference/ledger/...)
 #       and must apply to HEAD (`git apply --cached --check` on a scratch index read from HEAD;
 #       the working tree is not touched). A counted line is an added line (`+`, not the `+++`
@@ -67,22 +84,28 @@
 #       `compile_fail` and `no_run` count as compiled. `cargo test --doc -p book_snippets` is the
 #       check that they do compile.
 #
-# Output: `dx-kpis: K1 <s>s (budget <b>s ...) ok|FAIL`, `dx-kpis: K3 <n> lines ... measured`,
-# `dx-kpis: K4 <n>/<m> ...`, `dx-kpis: K5 <c>/<t> rust fences compiled = <p>% ...`, or with --json
-# the object written to --out. Progress and the machine's load go to stderr. Exit status: 0 every
-# KPI meets its target (K3 has none: it fails only when the patch does not apply or, with
-# --k3-build, does not build or pass), 1 FAIL (a target missed, a measurement or the self-test
-# failed), 2 misuse. The written file is formatted with biome when it is on PATH, like every JSON
-# file in the repository.
+# Output: `dx-kpis: K1 <s>s (budget <b>s ...) ok|FAIL`, `dx-kpis: K2 <s>s (budget <b>s; runs
+# <s1>,<s2>,..) ok|FAIL`, `dx-kpis: K3 <n> lines ... measured`, `dx-kpis: K4 <n>/<m> ...`,
+# `dx-kpis: K5 <c>/<t> rust fences compiled = <p>% ...`, `dx-kpis: K6 <s>s ... recorded`, or with
+# --json the object written to --out. Progress and the machine's load go to stderr. Exit status:
+# 0 every KPI meets its target (K3 and K6 have none: K3 fails only when the patch does not apply
+# or, with --k3-build, does not build or pass), 1 FAIL (a target missed, a measurement or the
+# self-test failed), 2 misuse. The written file is formatted with biome when it is on PATH, like
+# every JSON file in the repository.
 # Requires: bash >= 4.4, cargo and rustc on PATH, curl, git, GNU coreutils (date %N, realpath -m,
 # sort -z, mktemp, nproc), awk, sed, grep, find, tar.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-RELEASE="${DX_KPIS_RELEASE:-0.9}"
+RELEASE="${DX_KPIS_RELEASE:-0.10}"
 K3_PATCH="${ROOT}/docs/benchmarks/k3/invoice.patch"
 K3_APP="examples/reference/ledger"
 K1_BUDGET_S="${K1_BUDGET_S:-180}"
+K2_BUDGET_S="${K2_BUDGET_S:-8}"
+K2_RUNS="${K2_RUNS:-3}"
+# The `hello` handler's body in the service template's src/lib.rs, the line K2 edits.
+K2_TEMPLATE="${ROOT}/crates/id_effect_tool/templates/service/src/lib.rs.template"
+K2_HANDLER='succeed(format!("hello, {}", input.path))'
 K4_MIN="${K4_MIN:-17}"
 K5_MIN_PERCENT="${K5_MIN_PERCENT:-80}"
 # One and three backticks, spelled without them so formatters do not read a command substitution.
@@ -138,6 +161,11 @@ percent_ok() {
 
 percent() {
     awk -v c="$1" -v t="$2" 'BEGIN { printf "%.1f", (t ? 100 * c / t : 0) }'
+}
+
+# The median of the numbers on stdin, one per line.
+median() {
+    sort -g | awk '{ v[NR] = $1 } END { if (NR % 2) printf "%.2f", v[(NR + 1) / 2]; else printf "%.2f", (v[NR / 2] + v[NR / 2 + 1]) / 2 }'
 }
 
 # --- K3 -------------------------------------------------------------------------------------
@@ -365,6 +393,75 @@ k1_measure() {
     echo "${total_s} ${new_s} ${build_s} ${boot_s}"
 }
 
+# --- K2, K6 ---------------------------------------------------------------------------------
+
+# Writes FILE with the `hello` handler's greeting changed for RUN (`"hello, {}"` becomes
+# `"hello <run>, {}"`), from the generated source PRISTINE; returns 1 when PRISTINE does not
+# contain the handler line exactly once.
+k2_edit() {
+    local pristine="$1" file="$2" run="$3" src
+    src="$(<"${pristine}")"
+    [[ "$(grep -cF "${K2_HANDLER}" "${pristine}")" == 1 ]] || return 1
+    printf '%s\n' "${src/"${K2_HANDLER}"/"succeed(format!(\"hello ${run}, {}\", input.path))"}" >"${file}"
+}
+
+# Generates the K2/K6 project DIR/k2 with the id-effect binary BIN (untimed) and keeps its
+# generated src/lib.rs as DIR/k2-pristine.rs.
+k2_project() {
+    local dir="$1" bin="$2" project="$1/k2"
+    rm -rf "${project}"
+    "${bin}" new svc --template service --dest "${project}" --local-workspace "${ROOT}" >/dev/null ||
+    fail "K2: id-effect new failed"
+    [[ ! -f "${ROOT}/Cargo.lock" ]] || cp "${ROOT}/Cargo.lock" "${project}/Cargo.lock"
+    cp "${project}/src/lib.rs" "${dir}/k2-pristine.rs"
+    [[ "$(grep -cF "${K2_HANDLER}" "${dir}/k2-pristine.rs")" == 1 ]] ||
+    fail "K2: the generated src/lib.rs does not contain the handler line ${K2_HANDLER} exactly once"
+}
+
+# Runs `cargo build ARGS..` on the project DIR/k2 with the target dir TARGET; FAIL (the log's tail
+# on stderr) with WHAT when it fails.
+k2_cargo() {
+    local dir="$1" target="$2" what="$3"
+    shift 3
+    if ! CARGO_TARGET_DIR="${target}" cargo build --quiet --manifest-path "${dir}/k2/Cargo.toml" "$@" >"${dir}/k2.log" 2>&1; then
+        tail -n 40 "${dir}/k2.log" >&2
+        fail "${what}: cargo build $* failed"
+    fi
+}
+
+# Measures K2 on the project DIR/k2 (see k2_project); prints `<median_s> <run1_s>,<run2_s>,..`.
+k2_measure() {
+    local dir="$1" target="$1/k2-target" lib="$1/k2/src/lib.rs" t i runs=() s
+    unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER CARGO_INCREMENTAL
+    cp "${dir}/k2-pristine.rs" "${lib}"
+    echo "dx-kpis: K2: building the generated service in ${dir}/k2 (untimed); load average: $(cut -d' ' -f1-3 /proc/loadavg)" >&2
+    k2_cargo "${dir}" "${target}" "K2 (warm-up)"
+    for ((i = 1; i <= K2_RUNS; i++)); do
+        k2_edit "${dir}/k2-pristine.rs" "${lib}" "${i}" ||
+        fail "K2: the generated src/lib.rs does not contain the handler line ${K2_HANDLER} exactly once"
+        t="$(now_ns)"
+        k2_cargo "${dir}" "${target}" "K2 (run ${i})"
+        runs+=("$(seconds_since "${t}")")
+        echo "dx-kpis: K2: run ${i}/${K2_RUNS}: ${runs[-1]}s; load: $(cut -d' ' -f1 /proc/loadavg)" >&2
+    done
+    cp "${dir}/k2-pristine.rs" "${lib}"
+    s="$(printf '%s,' "${runs[@]}")"
+    echo "$(printf '%s\n' "${runs[@]}" | median) ${s%,}"
+}
+
+# Measures K6 on the project DIR/k2 (see k2_project); prints `<seconds>`.
+k6_measure() {
+    local dir="$1" target="$1/k6-target" t
+    unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER CARGO_INCREMENTAL
+    cp "${dir}/k2-pristine.rs" "${dir}/k2/src/lib.rs"
+    rm -rf "${target}"
+    echo "dx-kpis: K6: cold release build of the generated service in ${dir}/k2; load average: $(cut -d' ' -f1-3 /proc/loadavg)" >&2
+    t="$(now_ns)"
+    k2_cargo "${dir}" "${target}" "K6" --release
+    seconds_since "${t}"
+    echo
+}
+
 # --- output ---------------------------------------------------------------------------------
 
 # The machine, with the load average (1, 5, 15 min) at the START and at the end of the run.
@@ -385,11 +482,20 @@ json_list() {
 
 # Prints the JSON object for K1 ("total new build boot", or empty when skipped), K4 ("fixed
 # rows without"), K5 ("compiled fences ignored notincl"), the machine JSON, rustc, revision, K3
-# (the k3_count line) and the K3 build ("build_s test_s outcome", or empty without --k3-build).
+# (the k3_count line), the K3 build ("build_s test_s outcome", or empty without --k3-build), K2
+# ("median runs", or empty when skipped) and K6 ("seconds", or empty when skipped).
 emit_json() {
     local k1="$1" k4="$2" k5="$3" machine="$4" rustc="$5" rev="$6" k3="$7" k3b="$8" k1_json="null"
+    local k2="${9:-}" k6="${10:-}" k2_json="null" k6_json="null" median runs
     local total new build boot fixed rows without compiled fences ignored notincl
     local lines model migration routes policy tests other files k3b_json="null" tested outcome
+    if [[ -n "${k2}" ]]; then
+        read -r median runs <<<"${k2}"
+        k2_json="{\"seconds\": ${median}, \"budget_s\": ${K2_BUDGET_S}, \"pass\": $(json_bool "$(at_most "${median}" "${K2_BUDGET_S}")"), \"runs_s\": [${runs//,/, }], \"edit\": \"hello handler in src/lib.rs\", \"template\": \"service\", \"profile\": \"dev\", \"wrapper\": \"none\"}"
+    fi
+    if [[ -n "${k6}" ]]; then
+        k6_json="{\"seconds\": ${k6}, \"template\": \"service\", \"profile\": \"release\", \"target_dir\": \"fresh\", \"wrapper\": \"none\", \"budget\": \"docs/benchmarks/README.md (K6)\"}"
+    fi
     read -r lines model migration routes policy tests other files <<<"${k3}"
     if [[ -n "${k3b}" ]]; then
         read -r build tested outcome <<<"${k3b}"
@@ -410,9 +516,11 @@ emit_json() {
     echo "  \"rustc\": $(json_string "${rustc}"),"
     echo "  \"machine\": ${machine},"
     echo "  \"k1\": ${k1_json},"
+    echo "  \"k2\": ${k2_json},"
     echo "  \"k3\": {\"lines\": ${lines}, \"by_category\": {\"model\": ${model}, \"migration\": ${migration}, \"routes\": ${routes}, \"policy\": ${policy}, \"test\": ${tests}, \"other\": ${other}}, \"files\": ${files}, \"patch\": \"docs/benchmarks/k3/invoice.patch\", \"applies_to_head\": true, \"excluded\": {\"job\": \"no jobs battery before 0.10\"}, \"build\": ${k3b_json}, \"target\": \"none at 0.9 (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release\"},"
     echo "  \"k4\": {\"fixed\": ${fixed}, \"cases\": ${rows}, \"min\": ${K4_MIN}, \"pass\": $(json_bool $((fixed >= K4_MIN))), \"without_fix\": [$(json_list "${without}")]},"
-    echo "  \"k5\": {\"compiled\": ${compiled}, \"rust_fences\": ${fences}, \"ignored\": ${ignored}, \"not_included\": ${notincl}, \"percent\": $(percent "${compiled}" "${fences}"), \"min_percent\": ${K5_MIN_PERCENT}, \"pass\": $(json_bool "$(percent_ok "${compiled}" "${fences}" "${K5_MIN_PERCENT}")")}"
+    echo "  \"k5\": {\"compiled\": ${compiled}, \"rust_fences\": ${fences}, \"ignored\": ${ignored}, \"not_included\": ${notincl}, \"percent\": $(percent "${compiled}" "${fences}"), \"min_percent\": ${K5_MIN_PERCENT}, \"pass\": $(json_bool "$(percent_ok "${compiled}" "${fences}" "${K5_MIN_PERCENT}")")},"
+    echo "  \"k6\": ${k6_json}"
     echo "}"
 }
 
@@ -508,6 +616,28 @@ self_test() {
     done
     out="$(emit_json "200.0 0.1 195.0 4.9" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "")"
     [[ "${out}" == *'"seconds": 200.0, "budget_s": 180, "pass": false,'* ]] || st_fail "K1 over budget passes: ${out}" || return 1
+    [[ "${out}" == *'"k2": null,'* && "${out}" == *'"k6": null'$'\n''}' ]] || st_fail "skipped K2/K6 are not null: ${out}" || return 1
+
+    # K2, K6: the median, the handler edit on the real template, the JSON.
+    [[ "$(printf '3\n1\n2\n' | median)" == 2.00 && "$(printf '4\n1\n2\n3\n' | median)" == 2.50 ]] ||
+    st_fail "median" || return 1
+    [[ "$(grep -cF "${K2_HANDLER}" "${K2_TEMPLATE}")" == 1 ]] ||
+    st_fail "${K2_TEMPLATE} does not contain the K2 handler line ${K2_HANDLER} exactly once" || return 1
+    k2_edit "${K2_TEMPLATE}" "${tmp}/lib.rs" 7 || st_fail "k2_edit on ${K2_TEMPLATE}" || return 1
+    grep -qF 'succeed(format!("hello 7, {}", input.path))' "${tmp}/lib.rs" && ! grep -qF "${K2_HANDLER}" "${tmp}/lib.rs" &&
+    [[ "$(wc -l <"${tmp}/lib.rs")" == "$(wc -l <"${K2_TEMPLATE}")" ]] ||
+    st_fail "k2_edit did not change exactly the handler line" || return 1
+    if k2_edit "${tmp}/lib.rs" "${tmp}/lib2.rs" 8; then
+        st_fail "k2_edit accepted a source without the handler line" || return 1
+    fi
+    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "" "6.10 6.30,6.10,5.90" "212.40")"
+    for want in '"k2": {"seconds": 6.10, "budget_s": 8, "pass": true, "runs_s": [6.30, 6.10, 5.90],' \
+        '"k6": {"seconds": 212.40, "template": "service", "profile": "release", "target_dir": "fresh",'; do
+        [[ "${out}" == *"${want}"* ]] || st_fail "the JSON lacks ${want}: ${out}" || return 1
+    done
+    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "" "8.01 8.01" "")"
+    [[ "${out}" == *'"k2": {"seconds": 8.01, "budget_s": 8, "pass": false, "runs_s": [8.01],'* ]] ||
+    st_fail "K2 over budget passes: ${out}" || return 1
     [[ "$(json_string 'a "b" \c')" == '"a \"b\" \\c"' ]] || st_fail "json_string" || return 1
     [[ "$(free_port)" =~ ^[0-9]+$ ]] || st_fail "free_port" || return 1
 
@@ -525,6 +655,11 @@ self_test() {
     status=0
     K4_MIN=x bash "${BASH_SOURCE[0]}" --skip-k1 >/dev/null 2>&1 || status=$?
     ((status == 2)) || st_fail "K4_MIN=x must exit 2, got ${status}" || return 1
+    for args in K2_BUDGET_S=x K2_RUNS=0; do
+        status=0
+        env "${args}" bash "${BASH_SOURCE[0]}" --skip-k1 >/dev/null 2>&1 || status=$?
+        ((status == 2)) || st_fail "${args} must exit 2, got ${status}" || return 1
+    done
     echo "dx-kpis self-test: ok"
 }
 
@@ -533,6 +668,8 @@ self_test() {
 json=0
 keep=0
 skip_k1=0
+skip_k2=0
+skip_k6=0
 build_k3=0
 out=""
 while (($# > 0)); do
@@ -544,6 +681,8 @@ while (($# > 0)); do
         --json) json=1 ;;
         --keep) keep=1 ;;
         --skip-k1) skip_k1=1 ;;
+        --skip-k2) skip_k2=1 ;;
+        --skip-k6) skip_k6=1 ;;
         --k3-build) build_k3=1 ;;
         --out)
             (($# >= 2)) || die "--out needs a file"
@@ -558,13 +697,17 @@ while (($# > 0)); do
     esac
     shift
 done
-for n in "${K1_BUDGET_S}" "${K4_MIN}" "${K5_MIN_PERCENT}"; do
-    [[ "${n}" =~ ^[0-9]+$ ]] || die "K1_BUDGET_S, K4_MIN and K5_MIN_PERCENT must be integers"
+for n in "${K1_BUDGET_S}" "${K2_BUDGET_S}" "${K4_MIN}" "${K5_MIN_PERCENT}"; do
+    [[ "${n}" =~ ^[0-9]+$ ]] || die "K1_BUDGET_S, K2_BUDGET_S, K4_MIN and K5_MIN_PERCENT must be integers"
 done
+[[ "${K2_RUNS}" =~ ^[1-9][0-9]*$ ]] || die "K2_RUNS must be a positive integer"
+need_bin=$((!skip_k1 || !skip_k2 || !skip_k6))
 
 load_start="$(cut -d' ' -f1-3 /proc/loadavg)"
 k1=""
-if ((!skip_k1 || build_k3)); then
+k2=""
+k6=""
+if ((need_bin || build_k3)); then
     if [[ -n "${DX_KPIS_DIR:-}" ]]; then
         work="$(realpath -m "${DX_KPIS_DIR}")"
         [[ "${work}/" != "${ROOT}/"* ]] || die "DX_KPIS_DIR ${work} is inside the repository; the K1 project must live outside it"
@@ -576,17 +719,28 @@ if ((!skip_k1 || build_k3)); then
         echo "dx-kpis: keeping ${work}" >&2
     else
         # shellcheck disable=SC2016 # expanded when the trap runs
-        trap 'rm -rf "${work:?}/svc" "${work:?}/target" "${work:?}/build.log" "${work:?}/svc.log" "${work:?}/k3" "${work:?}/k3-target" "${work:?}/k3.log"; [[ -n "${DX_KPIS_DIR:-}" ]] || rmdir "${work}" 2>/dev/null || true' EXIT
+        trap 'rm -rf "${work:?}/svc" "${work:?}/target" "${work:?}/build.log" "${work:?}/svc.log" "${work:?}/k3" "${work:?}/k3-target" "${work:?}/k3.log" "${work:?}/k2" "${work:?}/k2-target" "${work:?}/k6-target" "${work:?}/k2.log" "${work:?}/k2-pristine.rs"; [[ -n "${DX_KPIS_DIR:-}" ]] || rmdir "${work}" 2>/dev/null || true' EXIT
     fi
 fi
-if ((!skip_k1)); then
+if ((need_bin)); then
     echo "dx-kpis: building id-effect (untimed)" >&2
     (cd "${ROOT}" && cargo build --quiet -p id_effect_tool --bin id-effect) || fail "cargo build -p id_effect_tool"
     tool_target="${CARGO_TARGET_DIR:-target}"
     [[ "${tool_target}" == /* ]] || tool_target="${ROOT}/${tool_target}"
     bin="${tool_target}/debug/id-effect"
     [[ -x "${bin}" ]] || fail "no id-effect binary at ${bin}"
+fi
+if ((!skip_k1)); then
     k1="$(k1_measure "${work}" "${bin}")"
+fi
+if ((!skip_k2 || !skip_k6)); then
+    k2_project "${work}" "${bin}"
+fi
+if ((!skip_k2)); then
+    k2="$(k2_measure "${work}")"
+fi
+if ((!skip_k6)); then
+    k6="$(k6_measure "${work}")"
 fi
 
 [[ -f "${K3_PATCH}" ]] || fail "K3: no ${K3_PATCH}"
@@ -608,8 +762,8 @@ rev="$(git -C "${ROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 if [[ -n "$(git -C "${ROOT}" status --porcelain -- crates examples docs/diagnostics.md 2>/dev/null)" ]]; then
     rev+="+dirty"
 fi
-result="$(emit_json "${k1}" "${k4}" "${k5}" "$(machine_json "${load_start}")" "$(rustc -V)" "${rev}" "${k3}" "${k3b}")"
-if [[ -n "${out}" || -n "${k1}" ]]; then
+result="$(emit_json "${k1}" "${k4}" "${k5}" "$(machine_json "${load_start}")" "$(rustc -V)" "${rev}" "${k3}" "${k3b}" "${k2}" "${k6}")"
+if [[ -n "${out}" || -n "${k1}${k2}${k6}" ]]; then
     out="${out:-${ROOT}/docs/benchmarks/dx-kpis-${RELEASE}.json}"
     printf '%s\n' "${result}" >"${out}"
     # The repository formats JSON with biome (treefmt.toml); keep the committed file stable.
@@ -628,6 +782,11 @@ if [[ -n "${k1}" ]]; then
     read -r total _ build boot <<<"${k1}"
     k1_ok="$(at_most "${total}" "${K1_BUDGET_S}")"
 fi
+k2_ok=1
+if [[ -n "${k2}" ]]; then
+    read -r k2_s k2_runs <<<"${k2}"
+    k2_ok="$(at_most "${k2_s}" "${K2_BUDGET_S}")"
+fi
 if ((json)); then
     printf '%s\n' "${result}"
 else
@@ -635,6 +794,11 @@ else
         echo "dx-kpis: K1 ${total}s (budget ${K1_BUDGET_S}s; build ${build}s, boot to /health ${boot}s) $(ok_word "${k1_ok}")"
     else
         echo "dx-kpis: K1 skipped"
+    fi
+    if [[ -n "${k2}" ]]; then
+        echo "dx-kpis: K2 ${k2_s}s median incremental build after a handler edit (budget ${K2_BUDGET_S}s; runs ${k2_runs}) $(ok_word "${k2_ok}")"
+    else
+        echo "dx-kpis: K2 skipped"
     fi
     read -r k3_lines k3_model k3_migration k3_routes k3_policy k3_test k3_other k3_files <<<"${k3}"
     k3_detail="model ${k3_model}, migration ${k3_migration}, routes ${k3_routes}, policy ${k3_policy}, test ${k3_test}"
@@ -647,5 +811,10 @@ else
     echo "dx-kpis: K3 ${k3_lines} added non-blank lines for the invoice resource in Ledger (${k3_detail}) measured"
     echo "dx-kpis: K4 ${fixed}/${rows} gallery errors state the fix (min ${K4_MIN}; without: ${without}) $(ok_word "${k4_ok}")"
     echo "dx-kpis: K5 ${compiled}/${fences} rust fences compiled = $(percent "${compiled}" "${fences}")% (min ${K5_MIN_PERCENT}%) $(ok_word "${k5_ok}")"
+    if [[ -n "${k6}" ]]; then
+        echo "dx-kpis: K6 ${k6}s cold release build of the service template (budget in docs/benchmarks/README.md) recorded"
+    else
+        echo "dx-kpis: K6 skipped"
+    fi
 fi
-((k1_ok && k4_ok && k5_ok)) || fail "a KPI misses its target"
+((k1_ok && k2_ok && k4_ok && k5_ok)) || fail "a KPI misses its target"
