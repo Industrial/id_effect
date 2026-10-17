@@ -426,7 +426,7 @@ impl Inner {
 }
 
 /// An in-memory snapshot of Vault secrets, served as a [`ConfigProvider`] (dotted lower-case
-/// paths, like [`FigmentConfigProvider`]) and as a [`figment::Provider`](::figment::Provider)
+/// paths, like [`FigmentConfigProvider`]) and as a [`figment::Provider`]
 /// (for [`Profiles::overlay`](crate::Profiles::overlay)). Cloning shares the snapshot.
 ///
 /// Obtain one from [`VaultSettings::fetch`], or let [`VaultSettings::layer`] /

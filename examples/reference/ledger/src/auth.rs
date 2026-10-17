@@ -13,7 +13,7 @@
 //! | `DELETE /auth/tokens/{id}` | the token's owner (`token.revoke`) | revoke it |
 //!
 //! A session's principal is rebuilt on every request from its attributes (`roles`, `tenant`,
-//! and the [`MFA`](crate::policy::MFA) permission after a TOTP login). An API token carries the
+//! and the [`crate::policy::MFA`] permission after a TOTP login). An API token carries the
 //! roles and organisation of whoever issued it, never the MFA permission.
 
 use std::sync::Arc;
