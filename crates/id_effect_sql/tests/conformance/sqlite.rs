@@ -4,6 +4,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use id_effect_sql::sqlite::{SqlitePoolConfig, SqliteSqlClient, sqlite_pool_from_config};
 use id_effect_sql::{RoutingSqlClient, SqlClient, SqlType, SqlValue};
@@ -97,8 +98,13 @@ pub async fn file(test: &str) -> Option<Sqlite> {
     std::process::id()
   ));
   let _ = std::fs::remove_file(&path);
+  // Opening a WAL database file syncs it to disk several times; with the whole workspace's
+  // tests running in parallel (CI, coverage) that can exceed the 10 s default, so these tests
+  // allow a minute. The defaults themselves are unchanged.
+  let mut config = SqlitePoolConfig::file(&path).with_busy_timeout(Duration::from_secs(30));
+  config.acquire_timeout = Duration::from_secs(60);
   Some(Sqlite {
-    client: Arc::new(client(SqlitePoolConfig::file(&path)).await),
+    client: Arc::new(client(config).await),
     file: Some(path),
   })
 }

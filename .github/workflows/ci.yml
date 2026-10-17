@@ -200,7 +200,7 @@ jobs:
           tool: cargo-nextest
       - name: Live Postgres tests
         run: >-
-          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test --features id_effect_sql/pg,id_effect_node/pg
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
   # ──────────────────────────────────────────────────────────────────────────
   # Container integration: tests that start real services with testcontainers
   # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).
