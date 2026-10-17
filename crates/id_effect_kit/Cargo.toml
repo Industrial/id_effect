@@ -30,8 +30,9 @@ web = [
 openapi = ["web", "id_effect_axum/openapi"]
 # SQL without a driver: `kit::sql` (id_effect_sql: `SqlClient`, transactions, `FromRow`,
 # `TestSqlClient`). Every `sql-*`, `migrate` and `repository` feature turns it on. With `auth`,
-# `sql-pg` also adds id_effect_auth's `PgSessionStore`.
-sql = ["dep:id_effect_sql"]
+# `sql-pg` also adds id_effect_auth's `PgSessionStore`; with `otel`,
+# `kit::otel::instrumented_sql_layer` (a `db.query` span per statement).
+sql = ["dep:id_effect_sql", "id_effect_opentelemetry?/sql"]
 # PostgreSQL: `kit::sql` with its `pg` driver (`kit::sql::pg`).
 sql-pg = ["sql", "id_effect_sql/pg", "id_effect_auth?/pg"]
 # SQLite: `kit::sql` with its `sqlite` driver (bundled libsqlite3; `kit::sql::sqlite`).
@@ -95,7 +96,7 @@ storage = ["dep:id_effect_storage"]
 # Amazon S3 and S3-compatible servers (`kit::storage::S3Store`), on top of `storage`.
 storage-s3 = ["storage", "id_effect_storage/s3"]
 # Outbound HTTP: `kit::platform` (id_effect_platform: the `HttpClient` capability, the reqwest
-# client, retries). With `otel`, also `kit::otel::TracedHttpClient`; with `mail`, what
+# client, retries). With `otel`, also `kit::otel::TracedHttpClient` (and its `layer`); with `mail`, what
 # `SendGridMailer` sends through.
 http-client = ["dep:id_effect_platform", "id_effect_opentelemetry?/platform"]
 # Structured logging: `kit::logger` (id_effect_logger: `EffectLogger`, backends, the

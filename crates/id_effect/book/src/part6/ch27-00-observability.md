@@ -95,6 +95,19 @@ let spans = exporter.get_finished_spans().unwrap();
 assert!(spans.iter().any(|s| s.name == "db.query"));
 ```
 
+**Installed where OpenTelemetry is set up.** Both wrappers are decorators: nothing traces a client nobody wrapped. Wrap the capability's layer once, where the app installs telemetry, and every program that reads the `HttpClientService` or `SqlClientService` is traced without touching a call site: `TracedHttpClient::layer(inner)` (feature `platform`) and `instrumented_sql_layer(inner, db_system)` (feature `sql`) take the layer that provides the capability and return one that provides it wrapped (`instrumented_sql_client(service, db_system)` wraps a capability value). With `id_effect_kit`, the `otel` feature brings them as `kit::otel::…` alongside `http-client` / `sql`; `id-effect new --template service --db pg --otel` builds its `Database::sql()` capability with `instrumented_sql_client`. Wrap a client once: a second wrap opens a second span per call.
+
+<!-- ignore: book_snippets builds id_effect_opentelemetry without its `platform` and `sql` features -->
+```rust,ignore
+use id_effect_opentelemetry::{TracedHttpClient, instrumented_sql_layer};
+use id_effect_platform::http::ReqwestHttpClientProvider;
+use id_effect_sql::sql_client_layer;
+
+let http = TracedHttpClient::layer::<AppError>(ReqwestHttpClientProvider::layer());
+let db = instrumented_sql_layer::<AppError>(sql_client_layer(pg_client), "postgresql");
+let app = program.provide_layer(http.merge(db));
+```
+
 **Sampling.** `OtelConfig::sampler` is the head sampler of the OTLP tracer provider. `OtelConfig::from_env` reads the standard `OTEL_TRACES_SAMPLER` (`always_on`, `always_off`, `traceidratio`, `parentbased_always_on` (the default), `parentbased_always_off`, `parentbased_traceidratio`) and `OTEL_TRACES_SAMPLER_ARG` (the ratio, default `1.0`); `load_otel_config` also reads `otel.traces_sampler` / `otel.traces_sampler_arg`. Prefer a parent-based sampler in services that receive traced requests: it keeps every trace an upstream service decided to record and applies the ratio only to traces that start here.
 
 ```rust

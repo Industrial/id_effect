@@ -4,10 +4,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use id_effect::{Effect, Span};
+use id_effect::{Effect, Layer, Span, hlist, need};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClient, HttpClientService, HttpMethod, HttpRequest, HttpResponse, RetryPolicy,
+  HttpClient, HttpClientEnv, HttpClientService, HttpMethod, HttpRequest, HttpResponse, RetryPolicy,
   RetryingHttpClient, StreamingHttpResponse,
 };
 use opentelemetry::trace::TraceContextExt;
@@ -134,6 +134,24 @@ impl TracedHttpClient {
       inner: Arc::new(inner),
       retry: Some(policy),
     }
+  }
+
+  /// The client `inner` provides, traced: the [`HttpClientService`] it builds is wrapped in a
+  /// [`TracedHttpClient`] (outside any retry it already has), so every call through the
+  /// capability opens a client span and sends its `traceparent`. This is how an app installs
+  /// tracing where it sets up OpenTelemetry, e.g.
+  /// `TracedHttpClient::layer(ReqwestHttpClientProvider::layer())`; wrap a client once.
+  pub fn layer<E: Send + 'static>(inner: Layer<HttpClientEnv, E>) -> Layer<HttpClientEnv, E> {
+    let traced: Layer<HttpClientEnv, E, HttpClientEnv> = Layer::effect(|| {
+      need::<HttpClientService>().map(|service| {
+        let traced = TracedHttpClient {
+          inner: Arc::clone(&service.0),
+          retry: None,
+        };
+        hlist![HttpClientService::new(traced)]
+      })
+    });
+    inner.provide_to(traced)
   }
 
   fn run<T: Send + 'static>(
@@ -576,6 +594,33 @@ mod tests {
     }
     let sent = traceparent(&seen.lock().unwrap()[0]);
     assert!(sent.contains(&remote.span().span_context().span_id().to_string()));
+    let _ = provider.shutdown();
+  }
+
+  #[test]
+  fn the_layer_traces_every_call_through_the_capability() {
+    let (exporter, provider, hook) = setup();
+    let (scripted, seen) = Scripted::new(vec![200]);
+    let inner = id_effect_platform::http::provide_http_client(scripted);
+    let layer = TracedHttpClient::layer::<id_effect::Never>(inner);
+    let Exit::Success(env) = layer.build().block_on() else {
+      panic!("the layer failed")
+    };
+    let eff = env
+      .0
+      .execute(HttpRequest::get("http://svc/items"))
+      .with_span("handler")
+      .with_span_hook(hook);
+    assert!(matches!(eff.block_on(), Exit::Success(_)));
+    let client = finished(&exporter, "GET");
+    let handler = finished(&exporter, "handler");
+    assert_eq!(client.parent_span_id, handler.span_context.span_id());
+    assert_eq!(
+      attr(&client, "http.response.status_code"),
+      Some(Value::I64(200))
+    );
+    let sent = traceparent(&seen.lock().unwrap()[0]);
+    assert!(sent.contains(&client.span_context.span_id().to_string()));
     let _ = provider.shutdown();
   }
 

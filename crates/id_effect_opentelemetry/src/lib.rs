@@ -13,7 +13,10 @@
 //!   OpenTelemetry span, parented across forked fibers on any executor thread.
 //!   `TracedHttpClient` (feature `platform`) opens a client span per outbound request and sends
 //!   its W3C `traceparent`; `id_effect_sql`'s `InstrumentedSqlClient` opens a `db.query` span
-//!   per statement. [`OtelConfig::sampler`] picks the head sampler (`OTEL_TRACES_SAMPLER`).
+//!   per statement. Where OpenTelemetry is set up, `TracedHttpClient::layer` and
+//!   `instrumented_sql_layer` (feature `sql`) install them around the `HttpClientService` /
+//!   `SqlClientService` layers, so every call through the capability is traced.
+//!   [`OtelConfig::sampler`] picks the head sampler (`OTEL_TRACES_SAMPLER`).
 //! - **Logs**: [`OtelLogBackend`] is an `id_effect_logger` backend; `tracing` events reach OTEL
 //!   logs through the subscriber layers.
 
@@ -33,6 +36,8 @@ mod propagation;
 mod providers;
 mod shutdown;
 mod span_bridge;
+#[cfg(feature = "sql")]
+mod sql;
 mod starter;
 mod subscriber;
 mod testing;
@@ -66,6 +71,8 @@ pub use shutdown::{
   shutdown_otel_on_signal_with_timeout,
 };
 pub use span_bridge::{OtelSpanHook, current_otel_context, span_otel_context};
+#[cfg(feature = "sql")]
+pub use sql::{instrumented_sql_client, instrumented_sql_layer};
 pub use starter::{
   OtelInMemoryExporters, OtelProviders, OtelStarterConfig, OtelStarterGuard, install_from_config,
   install_otel_starter,

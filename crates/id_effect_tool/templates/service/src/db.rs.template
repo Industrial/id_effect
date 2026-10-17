@@ -2,9 +2,17 @@
 
 use id_effect::{Cause, Exit};
 use id_effect_kit::axum::{EffectExecutor, HealthIndicator};
+{{#if otel}}
+use id_effect_kit::otel::instrumented_sql_client;
+{{/if}}
 use id_effect_kit::sql::migrate;
 use id_effect_kit::sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
+{{#if !otel}}
 use id_effect_kit::sql::{SqlClientEnv, sql_client_env};
+{{/if}}
+{{#if otel}}
+use id_effect_kit::sql::{SqlClientEnv, SqlClientService, sql_client_env};
+{{/if}}
 
 /// The migrations directory, read on start relative to the working directory (the project
 /// root under `cargo run`, `/app` in the image). `id-effect migrate new <name>` adds one.
@@ -14,6 +22,9 @@ pub const MIGRATIONS_DIR: &str = "migrations";
 #[derive(Clone)]
 pub struct Database {
     client: PgSqlClient,
+{{#if otel}}
+    sql: SqlClientService,
+{{/if}}
 }
 
 impl Database {
@@ -30,7 +41,15 @@ impl Database {
         let migrations = migrate::run::<SqlClientEnv, _>(MIGRATIONS_DIR)
             .provide_all(sql_client_env(client.clone()));
         match EffectExecutor::global().run_effect(migrations).await {
+{{#if !otel}}
             Exit::Success(_applied) => Ok(Self { client }),
+{{/if}}
+{{#if otel}}
+            Exit::Success(_applied) => Ok(Self {
+                sql: instrumented_sql_client(SqlClientService::new(client.clone()), "postgresql"),
+                client,
+            }),
+{{/if}}
             Exit::Failure(Cause::Fail(e)) => Err(format!("migrations: {e}")),
             Exit::Failure(cause) => Err(format!("migrations: {cause:?}")),
         }
@@ -40,6 +59,16 @@ impl Database {
     pub fn client(&self) -> &PgSqlClient {
         &self.client
     }
+{{#if otel}}
+
+    /// The SQL capability for handlers (provide it as the `SqlClientService`): every `query` and
+    /// `execute` runs in a `db.query` client span (`db.statement` with literals replaced by `?`;
+    /// parameters never reach it), exported as a child of the request span, and is counted in
+    /// the `db_client_*` metrics on `/metrics`.
+    pub fn sql(&self) -> SqlClientService {
+        self.sql.clone()
+    }
+{{/if}}
 
     /// The `db` check behind `/ready`: `SELECT 1` plus the pool's size and idle connections.
     pub fn health_indicator(&self) -> HealthIndicator {

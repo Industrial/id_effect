@@ -30,10 +30,11 @@
 //! The environment only needs the `EffectLogger` capability (`caps!(EffectLogger)`). Provide
 //! it at the program edge with `.provide(EffectLogger)`.
 //!
-//! The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-//! by building its [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`],
-//! [`LogMetadataLive::layer`], [`provide_composite_logger`]) on the thread that runs the program;
-//! the installed refs are [`FiberRef`]s:
+//! The thread-local pipeline (minimum level, annotations, spans) is installed by building its
+//! [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`], [`LogMetadataLive::layer`]) on the
+//! thread that runs the program; the installed refs are [`FiberRef`]s. The composite backend
+//! ([`provide_composite_logger`]) and the [`RedactionPolicy`] ([`provide_redaction_policy`]) are
+//! process-wide: built once at startup, they apply on every thread (since 0.10).
 //!
 //! ```
 //! use std::sync::Arc;
@@ -66,6 +67,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+#[cfg(not(test))]
+use std::sync::{PoisonError, RwLock};
 use std::thread::LocalKey;
 
 use ::id_effect::{Effect, FiberRef, fail, succeed, suspend};
@@ -95,10 +98,6 @@ thread_local! {
 }
 
 thread_local! {
-  static COMPOSITE_LOG_BACKEND: RefCell<Option<Arc<CompositeLogBackend>>> = const { RefCell::new(None) };
-}
-
-thread_local! {
   static LOG_ANNOTATIONS_FIBER_REF: RefCell<Option<FiberRef<HashMap<String, String>>>> =
     const { RefCell::new(None) };
 }
@@ -107,9 +106,70 @@ thread_local! {
   static LOG_SPAN_STACK_FIBER_REF: RefCell<Option<FiberRef<Vec<String>>>> = const { RefCell::new(None) };
 }
 
-thread_local! {
-  static REDACTION_POLICY: RefCell<Option<Arc<RedactionPolicy>>> = const { RefCell::new(None) };
+/// A process-wide pipeline value: set from any thread, read on every thread.
+///
+/// This crate's unit tests run in parallel threads of one process (`cargo test`), so under
+/// `cfg(test)` each thread reads and writes its own value instead; the process-wide path is
+/// exercised by the integration tests (`tests/process_wide_pipeline.rs`).
+struct Slot<T: 'static> {
+  #[cfg(not(test))]
+  value: RwLock<Option<Arc<T>>>,
+  #[cfg(test)]
+  value: &'static LocalKey<RefCell<Option<Arc<T>>>>,
 }
+
+#[cfg(not(test))]
+impl<T> Slot<T> {
+  /// The current value (cloned handle); a poisoned lock still yields its value.
+  fn get(&self) -> Option<Arc<T>> {
+    self
+      .value
+      .read()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone()
+  }
+
+  /// Replaces the value.
+  fn set(&self, value: Option<Arc<T>>) {
+    *self.value.write().unwrap_or_else(PoisonError::into_inner) = value;
+  }
+}
+
+#[cfg(test)]
+impl<T> Slot<T> {
+  fn get(&self) -> Option<Arc<T>> {
+    self.value.with(|c| c.borrow().clone())
+  }
+
+  fn set(&self, value: Option<Arc<T>>) {
+    self.value.with(|c| *c.borrow_mut() = value);
+  }
+}
+
+#[cfg(test)]
+thread_local! {
+  static TEST_COMPOSITE_LOG_BACKEND: RefCell<Option<Arc<CompositeLogBackend>>> = const { RefCell::new(None) };
+  static TEST_REDACTION_POLICY: RefCell<Option<Arc<RedactionPolicy>>> = const { RefCell::new(None) };
+}
+
+/// The process-wide composite backend ([`provide_composite_logger`]): every thread emits through
+/// it, not only the one that built the layer (a server's worker threads included).
+static COMPOSITE_LOG_BACKEND: Slot<CompositeLogBackend> = Slot {
+  #[cfg(not(test))]
+  value: RwLock::new(None),
+  #[cfg(test)]
+  value: &TEST_COMPOSITE_LOG_BACKEND,
+};
+
+/// The process-wide [`RedactionPolicy`] ([`provide_redaction_policy`]). Process-wide for the same
+/// reason as [`COMPOSITE_LOG_BACKEND`]: a policy that only held on the startup thread would let
+/// secrets through from every request-handling thread.
+static REDACTION_POLICY: Slot<RedactionPolicy> = Slot {
+  #[cfg(not(test))]
+  value: RwLock::new(None),
+  #[cfg(test)]
+  value: &TEST_REDACTION_POLICY,
+};
 
 /// No process-wide minimum is set (not a [`LogLevel`] discriminant).
 const GLOBAL_MIN_UNSET: u8 = 254;
@@ -151,15 +211,11 @@ fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
 }
 
 fn install_composite_log_backend(c: Arc<CompositeLogBackend>) {
-  COMPOSITE_LOG_BACKEND.with(|cell| {
-    *cell.borrow_mut() = Some(c);
-  });
+  COMPOSITE_LOG_BACKEND.set(Some(c));
 }
 
 fn install_redaction_policy(p: Arc<RedactionPolicy>) {
-  REDACTION_POLICY.with(|cell| {
-    *cell.borrow_mut() = Some(p);
-  });
+  REDACTION_POLICY.set(Some(p));
 }
 
 fn install_log_annotations_fiber_ref(fr: FiberRef<HashMap<String, String>>) {
@@ -194,17 +250,17 @@ fn current<T: Clone + Send + Sync + 'static>(
 
 /// Applies the installed [`RedactionPolicy`] once, then hands the record to the installed
 /// composite backend (or to `tracing` when none is installed): every backend sees the same
-/// redacted record.
+/// redacted record. Both are process-wide; the locks are released before any backend runs.
 fn emit_record(rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
-  let policy = REDACTION_POLICY.with(|c| c.borrow().clone());
+  let policy = REDACTION_POLICY.get();
   let rec = match policy.as_deref() {
     Some(p) => p.apply(rec),
     None => Cow::Borrowed(rec),
   };
-  COMPOSITE_LOG_BACKEND.with(|c| match c.borrow().as_ref() {
+  match COMPOSITE_LOG_BACKEND.get() {
     Some(comp) => comp.emit_all(&rec),
     None => LogBackend::emit(&TracingSink, &rec),
-  })
+  }
 }
 
 #[cfg(test)]
@@ -216,9 +272,7 @@ fn test_clear_min_log_level_fiber_ref() {
 
 #[cfg(test)]
 fn test_clear_composite_log_backend() {
-  COMPOSITE_LOG_BACKEND.with(|c| {
-    *c.borrow_mut() = None;
-  });
+  COMPOSITE_LOG_BACKEND.set(None);
 }
 
 #[cfg(test)]
@@ -232,7 +286,7 @@ fn test_clear_all_logger_tls() {
   test_clear_min_log_level_fiber_ref();
   test_clear_composite_log_backend();
   test_clear_log_metadata_fiber_refs();
-  REDACTION_POLICY.with(|c| *c.borrow_mut() = None);
+  REDACTION_POLICY.set(None);
 }
 
 /// Log sink provided as the [`EffectLogger`] capability (`.provide(EffectLogger)` or

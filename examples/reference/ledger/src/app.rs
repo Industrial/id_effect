@@ -4,8 +4,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::Request;
-use axum::http::header;
 use axum::http::request::Parts;
 use id_effect::{Effect, HCons, HNil, fail, hlist};
 use id_effect_kit::auth::oidc::OidcRoutes;
@@ -31,7 +29,6 @@ use id_effect_kit::redis::{RedisClient, RedisConfig, RedisStreamsBroker, RedisSt
 use id_effect_kit::sql::audit::{AuditContext, AuditLog};
 use id_effect_kit::sql::{SqlClient, SqlClientService};
 use id_effect_kit::storage::{MemoryStore, ObjectStorage, S3Config, S3Store};
-use tower::ServiceExt;
 
 use crate::config::{LedgerConfig, StorageConfig};
 use crate::db::{self, Database};
@@ -417,70 +414,37 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
     .realm("ledger");
   let key = CookieKey::from_base64(config.auth.cookie_key.expose())
     .map_err(|e| StartupError::Settings(format!("auth.cookie_key: {e}")))?;
-  let stack = |csrf: bool| {
-    secured(http.clone(), pages.clone(), &key, csrf)
+  Ok(
+    secured(http, pages, &key)
       .layer(axum::middleware::from_fn_with_state(
         app.clone(),
         auth::reject_revoked_tokens,
       ))
-      .layer(authenticate.clone())
+      .layer(authenticate)
       .layer(CapOverrideLayer::new(tenant_hint))
       .layer(BodyLimitLayer::new(config.http.body_limit_bytes))
       .layer(TimeoutLayer::new(Duration::from_millis(
         config.http.request_timeout_ms,
       )))
       .layer(CompressionLayer::new())
-  };
-  let (with_csrf, bearer_only) = (stack(true), stack(false));
-  let dispatch = tower::service_fn(move |request: Request| {
-    let app = if is_bearer_only(&request) {
-      bearer_only.clone()
-    } else {
-      with_csrf.clone()
-    };
-    app.oneshot(request)
-  });
-  Ok(
-    axum::Router::new()
-      .fallback_service(dispatch)
       .layer(RequestIdLayer::new()),
   )
 }
 
 /// `api` and `pages` under [`SecurityLayer::recommended`] (`pages` without a CSP: they carry
-/// inline styles and scripts), with or without the CSRF check.
+/// inline styles and scripts).
 ///
 /// A request authenticated by a session cookie, or anonymous, must echo the CSRF token of its
 /// `__Host-csrf` cookie in `X-CSRF-Token` on every unsafe method (`GET /auth/csrf` issues both).
-/// A request carrying only a bearer token (no cookie at all) runs without the check: nothing
-/// ambient authenticates it, so another site cannot forge it.
-pub fn secured(
-  api: axum::Router,
-  pages: axum::Router,
-  key: &CookieKey,
-  csrf: bool,
-) -> axum::Router {
+/// A request carrying only a bearer token (no cookie at all) runs without the check
+/// ([`SecurityLayer::csrf_exempt_bearer`]): nothing ambient authenticates it, so another site
+/// cannot forge it.
+pub fn secured(api: axum::Router, pages: axum::Router, key: &CookieKey) -> axum::Router {
   let layer = |csp: bool| {
-    let mut layer = SecurityLayer::recommended(key.clone());
-    if !csp {
-      layer = layer.without_csp();
-    }
-    if !csrf {
-      layer = layer.without_csrf();
-    }
-    layer
+    let layer = SecurityLayer::recommended(key.clone()).csrf_exempt_bearer();
+    if csp { layer } else { layer.without_csp() }
   };
   api.layer(layer(true)).merge(pages.layer(layer(false)))
-}
-
-/// A request with an `Authorization: Bearer` header and no cookie.
-fn is_bearer_only(request: &Request) -> bool {
-  let headers = request.headers();
-  !headers.contains_key(header::COOKIE)
-    && headers
-      .get(header::AUTHORIZATION)
-      .and_then(|v| v.to_str().ok())
-      .is_some_and(|v| v.len() > 7 && v[..7].eq_ignore_ascii_case("bearer "))
 }
 
 /// `GET /auth/csrf`: the session's CSRF token (the security layer sets its cookie on the first

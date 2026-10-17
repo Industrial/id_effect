@@ -12,6 +12,16 @@ use id_effect_logger::{
   with_log_span,
 };
 
+/// The composite backend and the redaction policy are process-wide: the tests that install them
+/// run one at a time when `cargo test` runs them on threads of one process.
+static PIPELINE: Mutex<()> = Mutex::new(());
+
+fn serial() -> std::sync::MutexGuard<'static, ()> {
+  PIPELINE
+    .lock()
+    .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Stands in for a network backend (e.g. the OTel bridge): keeps every record it is handed.
 #[derive(Default)]
 struct Capture(Mutex<Vec<LogRecord<'static>>>);
@@ -55,6 +65,7 @@ impl SharedBuf {
 
 #[test]
 fn redacted_field_never_reaches_any_backend() {
+  let _serial = serial();
   let api_key = Redacted::new("sk-live-42".to_string());
   let policy = RedactionPolicy::new()
     .field("password")
@@ -136,6 +147,7 @@ fn redacted_field_never_reaches_any_backend() {
 
 #[test]
 fn rate_limit_drops_and_counts() {
+  let _serial = serial();
   let capture = Arc::new(Capture::default());
   let sampled = Arc::new(
     SamplingBackend::new(capture.clone())

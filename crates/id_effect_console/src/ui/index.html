@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="">
 <title>id_effect console</title>
 <style>
   :root {
@@ -113,6 +114,17 @@ async function api(route, init) {
   let body = null;
   try { body = await response.json(); } catch (_) { body = null; }
   return { status: response.status, ok: response.ok, body };
+}
+
+// Behind id_effect_axum's SecurityLayer the server puts the session's CSRF token in this meta tag
+// (its cookie is HttpOnly); every state-changing call echoes it in X-CSRF-Token. Empty: no layer.
+const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+// The headers of a state-changing call: a JSON body (the API requires it) and the CSRF token.
+function mutating() {
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  if (csrf) headers['x-csrf-token'] = csrf;
+  return headers;
 }
 
 // Builds an element; string children become text nodes, so API values never become markup.
@@ -234,7 +246,7 @@ const render = {
 };
 
 // Retry for a dead or cancelled job, cancel for a scheduled or failed one (JobQueue::retry_now
-// and JobQueue::cancel). The JSON content type is what the API requires of these POSTs.
+// and JobQueue::cancel), sent with the mutating() headers.
 function jobAction(job) {
   const verb = { dead: 'retry', cancelled: 'retry', scheduled: 'cancel', failed: 'cancel' }[job.state];
   if (!verb) return '';
@@ -243,7 +255,7 @@ function jobAction(job) {
     button.disabled = true;
     const answer = await api('jobs/' + job.id + '/' + verb, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: mutating(),
       body: '{}',
     });
     part('jobs', 'result').replaceChildren(answer.ok
@@ -298,7 +310,7 @@ document.getElementById('log-level-form').addEventListener('submit', async (even
   const result = part('log-level', 'result');
   const answer = await api('log-level', {
     method: 'PUT',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: mutating(),
     body: JSON.stringify(change),
   });
   if (answer.ok) {

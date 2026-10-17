@@ -1,9 +1,10 @@
-//! [`Layer`]s for [`EffectLogger`] and the thread-local logger pipeline (0.7 kernel).
+//! [`Layer`]s for [`EffectLogger`] and the logger pipeline (0.7 kernel).
 //!
 //! Each layer needs nothing (`In = HNil`) and never fails, so its error type `E` is whatever the
-//! graph it joins uses. The pipeline layers install their thread-local state when they are
-//! **built**, on the thread that drives the build (the thread running the program for
-//! [`Effect::block_on`](id_effect::Effect::block_on)).
+//! graph it joins uses. The pipeline layers install their state when they are **built**: the
+//! minimum level and metadata refs on the thread that drives the build (the thread running the
+//! program for [`Effect::block_on`](id_effect::Effect::block_on)), the composite backend and the
+//! redaction policy process-wide.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,11 +54,12 @@ impl LogMetadataLive {
   }
 }
 
-/// Marker capability: composite log backend installed on this thread.
+/// Marker capability: composite log backend installed (process-wide).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EffectLogComposite;
 
-/// A layer that registers `composite` for [`EffectLogger::log`] on the building thread.
+/// A layer that registers `composite` for [`EffectLogger::log`] process-wide: from the build on,
+/// every thread emits through it (it replaces any previously installed composite).
 #[inline]
 pub fn provide_composite_logger<E: Send + 'static>(
   composite: Arc<CompositeLogBackend>,
@@ -71,12 +73,13 @@ pub fn provide_composite_logger<E: Send + 'static>(
   })
 }
 
-/// Marker capability: a [`RedactionPolicy`] installed on this thread.
+/// Marker capability: a [`RedactionPolicy`] installed (process-wide).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EffectLogRedaction;
 
-/// A layer that registers `policy` on the building thread: [`EffectLogger::log`] applies it to
-/// each record once, before the composite (or the `tracing` fallback) sees it.
+/// A layer that registers `policy` process-wide: from the build on, [`EffectLogger::log`] on every
+/// thread (a server's worker threads included) applies it to each record once, before the
+/// composite (or the `tracing` fallback) sees it. It replaces any previously installed policy.
 #[inline]
 pub fn provide_redaction_policy<E: Send + 'static>(
   policy: RedactionPolicy,
