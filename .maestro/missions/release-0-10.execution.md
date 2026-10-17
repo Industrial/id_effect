@@ -34,6 +34,20 @@ skeletons from `r10-t0-adr-skeletons`.
 | `r10-e6-2-fiber-registry` `tsk-mvcjv3iq-y7wzar` | none; bench gates (`docs/benchmarks/gates.toml`, `crates/id_effect/tests/kernel_alloc.rs`) green with the feature off and on |
 | `r10-t0-k2-k6` `tsk-mvcjv4mz-pvmh4b` | run its measurement when no other agent is building (idle machine) |
 
+## Wave 2 (tasks created after `r10-e7-1-queue-core` landed)
+
+| Leaf (task id) | Depends on |
+|---|---|
+| `r10-e7-3-transports` `tsk-mvcpexut-0na9la` → `r10-e7-3-templates-preview` `tsk-mvcpexxx-4ohdhl` → `r10-e7-3-deliver-later` `tsk-mvcpey14-2k0wis` → `r10-auth8-accounts` `tsk-mvcpey4b-b89h8y` | queue-core (deliver-later); longest chain, start first |
+| `r10-e7-2-broker-api` `tsk-mvcpexl4-f87btw` → `r10-e7-2-outbox-inbox` `tsk-mvcpexoh-4d52ro` → `r10-e7-2-redis-streams` `tsk-mvcpexrp-ffsx4n` | queue-core (outbox relay reuses the worker pattern) |
+| `r10-e7-1-cron` `tsk-mvcpexet-7d5r2f` | queue-core; adds core `CronJob::new_at` (Q5) |
+| `r10-e7-1-docs-labs` `tsk-mvcpexhy-k9wn2c` | outbox-inbox (msg.brokers#8 must exist before ObixInbox goes) |
+| `r10-e6-2-console-api` `tsk-mvcpey7z-zm5f97` → `r10-e6-2-dashboard` `tsk-mvcpeyb9-t3b4bu` | fiber registry (done); jobs panel optional |
+| `r10-e1-5-dev` `tsk-mvcpeyei-jtr1wv` → `r10-e1-5-devcontainer` `tsk-mvcpeyhp-jmyzba` → `r10-e1-3-generate-job` `tsk-mvcpeyky-peqniz` | share crates/id_effect_tool cli.rs / template.rs: sequential |
+
+D1 checkpoint at the end of wave 2: if E1.9 (dylint) has not started, move dx.lint's 0.10.0
+target to 0.11.0.
+
 Rules (as 0.9): agents never commit or stage; the main session reviews each leaf and commits it
 pathspec-limited (`git add` the leaf's paths first, then `git commit -F <file> -- <paths>`).
 Integrator-only files: CHANGELOG.md, docs/MIGRATION-0.10.md (except the section draft owned by
@@ -60,6 +74,25 @@ owner's email or other personal data to external services.
 - id_effect_storage: an interrupted multipart upload is not aborted (only failures are).
 - `examples/http-showcase/.../unique_violation.rs` (and maybe the Ledger) can use
   `SqlError::is_unique_violation()` instead of matching message text.
+- Security (pre-existing in `Profiles::load`, now also in `ProfileWatch`): figment's TOML errors
+  quote the broken source line and bad values, so a malformed line holding a secret can reach a
+  `ConfigError` message / `last_error()`. Redact config error text (keep path + kind) — small
+  fix in id_effect_config; schedule before exit.
+- Events (from the promote commit): book/docs still say labs or es-entity in
+  `part6/ch31-00-async-messaging.md` (:4 :11 :59 :71; e7-1-docs-labs rewrites it),
+  `part6/ch26-00-platform-introduction.md:44`, `appendix-a-api-reference.md:185`,
+  `appendix-c-glossary.md:173`, `docs/platform/PARITY_DASHBOARD.md:20`,
+  `docs/platform/adrs/adr-es-entity-event-persistence.md` (supersede note). `labs/id_effect_graph`
+  has no consumer left (remove or keep, decide in e7-1-docs-labs). `dispatch_command` appends
+  without an expected version (handlers never see state); conflicts are caught only when two
+  appends race. MIGRATION-0.10 lines in the commit body.
+- Tracing (from the E4.3 tracing commit): book_snippets builds id_effect_opentelemetry without
+  `platform`, so the `TracedHttpClient` snippet in ch27-00 is `rust,ignore`; enable the feature in
+  `examples/book-snippets/Cargo.toml` (K5). `ch30-04-credentials-jwt` doctests take > 60 s
+  (argon2 cost?) — check. `cargo clippy -p id_effect_opentelemetry --no-default-features` fails
+  on existing code (`install_from_config` re-export, unused `OtelError` import).
+- Index hygiene: something (likely a Maestro command) staged ~330 files incl. other agents' WIP
+  during wave 1. Pathspec commits are unaffected; never run a bare `git commit`.
 - Fiber registry bench numbers came from a loaded machine: re-measure idle in `r10-w3-kpis`.
   `crates/id_effect/src/lib.rs` feature list does not mention `fiber-registry` yet.
 
