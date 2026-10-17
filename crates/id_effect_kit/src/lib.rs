@@ -19,6 +19,7 @@
 //! | `sql-pg`, `sql-sqlite`, `sql-mysql` | `sql` + its `pg` / `sqlite` / `mysql` driver | `sql::pg`, `sql::sqlite`, `sql::mysql` |
 //! | `migrate` | `sql` + versioned migrations | `sql::migrate` |
 //! | `repository` | `sql` + `#[derive(Entity)]` and `Repository<T>` | `sql::repository` |
+//! | `audit` | `sql` + the hash-chained audit log (PostgreSQL) | `sql::audit` |
 //! | `otel` | `id_effect_opentelemetry` (OTLP, config loading) | `otel` |
 //! | `cluster` | `id_effect_node` (with `web`: also `axum::cluster`) | `node` |
 //! | `auth` | `web` + `id_effect_auth` with its Axum middleware and JWTs (with `sql-pg`: `PgSessionStore`; with `redis`: the Redis session store) | `auth` |

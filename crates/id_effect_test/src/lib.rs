@@ -27,8 +27,8 @@
 //!
 //! Container tests run in CI's containers job with `ID_EFFECT_REQUIRE_DOCKER=1`.
 //!
-//! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
-//! under `examples/reference/` depends on it.
+//! Tier `platform` (ADR 0010 Amendment 5): the Ledger reference app under
+//! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

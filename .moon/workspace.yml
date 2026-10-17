@@ -26,6 +26,7 @@ projects:
   id_effect_redis: crates/id_effect_redis
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
+  ledger: examples/reference/ledger
 vcs:
   defaultBranch: main
   provider: github

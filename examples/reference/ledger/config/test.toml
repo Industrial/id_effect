@@ -1,0 +1,15 @@
+# The integration tests: every dependency is a container started by the test itself, which
+# overrides the connection settings. Fast password hashing; no Redis or IdP unless a test adds
+# them.
+
+[db]
+password = "postgres"
+
+[auth]
+jwt_secret = "test-only secret, at least 32 bytes long"
+session_cookie = "id_session"
+secure_cookies = false
+password_memory_kib = 64
+# Tests sign many users in; the rate-limit tests lower these.
+login_per_second = 10.0
+login_burst = 100

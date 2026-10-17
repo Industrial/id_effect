@@ -159,6 +159,12 @@
 - **Breaking** `id_effect_sql`: statements take `&[SqlValue]`; rows are typed; `SqlError` is
   `#[non_exhaustive]`. See [MIGRATION-0.9.md](docs/MIGRATION-0.9.md).
 
+- `examples/reference/ledger`: the Ledger reference app (CI job `reference-ledger`). Double entry
+  over typed routes, `SERIALIZABLE` postings, PostgreSQL sessions, JWT, OIDC + PKCE, TOTP, RBAC, a
+  Redis cache, a read replica and Vault, built only through `id_effect_kit`. `id_effect_auth`,
+  `id_effect_authz`, `id_effect_test` and `id_effect_redis` move to tier `platform`. New:
+  `Route::handler_with_request_caps` (`id_effect_axum`), kit feature `audit`.
+
 ### Deprecated
 
 - `id_effect_sql::SqlParam`, `SqlRow::new`, `SqlRow::text_cells` (removed in 0.10).

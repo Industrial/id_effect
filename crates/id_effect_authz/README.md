@@ -66,4 +66,4 @@ Examples: `cargo run -p id_effect_authz --example 010_policies`;
 `cargo run -p id_effect_authz --example 020_route_guards --features axum,testing`. Book: Part VI,
 "Authorization".
 
-Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).
+Tier: `platform` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md) Amendment 5): the Ledger reference app ([`examples/reference/ledger`](../../examples/reference/ledger)) depends on it.

@@ -1,0 +1,65 @@
+[package]
+name = "ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "id_effect reference app: a multi-tenant double-entry ledger built through id_effect_kit"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Configuration loading returns `Result<_, ConfigError>` like id_effect_config.
+result_large_err = "allow"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ledger"
+path = "src/main.rs"
+
+[dependencies]
+# Every id_effect battery comes through the kit, one feature each.
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.8.0", features = [
+  "web",
+  "openapi",
+  "sql-pg",
+  "migrate",
+  "repository",
+  "audit",
+  "auth",
+  "auth-oidc",
+  "auth-totp",
+  "authz",
+  "redis",
+  "config-vault",
+] }
+# The `Schema` derive expands to `::id_effect::` paths, so the core crate is named too (the kit
+# README's advice).
+id_effect = { path = "../../../crates/id_effect", version = "0.8.0" }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+[dev-dependencies]
+# Containers, isolated databases, fixtures and the in-process HTTP client.
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.8.0", features = [
+  "test",
+] }
+# tests/oidc.rs plays the browser against Keycloak; tests/config.rs writes Vault secrets.
+reqwest = { version = "0.13", default-features = false }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "time",
+] }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. The reference app is the
+# CI-tested consumer that puts the 0.9 battery crates in tier `platform` (check P).
+tier = "example"

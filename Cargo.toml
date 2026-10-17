@@ -29,6 +29,7 @@ members = [
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",
+  "examples/reference/ledger",
 ]
 
 [workspace.package]

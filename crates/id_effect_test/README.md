@@ -32,4 +32,4 @@ assert_eq!(echo.image(), "hashicorp/http-echo:1.0");
 // `program.provide_layer(echo.layer())` — see the book chapter "Containers in Tests".
 ```
 
-Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).
+Tier: `platform` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md) Amendment 5): the Ledger reference app ([`examples/reference/ledger`](../../examples/reference/ledger)) depends on it.

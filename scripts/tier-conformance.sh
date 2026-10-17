@@ -27,6 +27,18 @@ if [[ -z "${TIER_CONFORMANCE_MANIFEST:-}" && -f labs/Cargo.toml ]]; then
 fi
 filter=("$@")
 
+# Check P's consumers: every package a reference app under examples/reference/ depends on,
+# directly or through another crate (the apps reach the batteries through id_effect_kit's
+# features), dev-dependencies included. `cargo tree -p` resolves the app's own features, not the
+# workspace's union.
+reference_deps=""
+if [[ -z "${TIER_CONFORMANCE_MANIFEST:-}" ]]; then
+    while IFS= read -r app; do
+        reference_deps+="$(cargo tree -p "$app" -e normal,dev --prefix none --format '{p}' | awk '{print $1}')"$'\n'
+        done < <(jq -r --arg root "$ROOT/examples/reference/" \
+        '.packages[] | select(.manifest_path | startswith($root)) | .name' <<<"$meta")
+fi
+
 # Sum `rg -c` counts; rg exits 1 on no match, which must not trip pipefail.
 count() { { rg -c --no-messages "$@" || true; } | awk -F: '{s+=$NF} END {print s+0}'; }
 
@@ -116,9 +128,11 @@ while IFS=$'\t' read -r name manifest tier publish; do
             [[ "$publish" == "[]" ]] || fails+=("L:publish-not-false")
             ;;
         platform)
-            # P: a reference app under examples/reference/ depends on it.
-            if [[ ! -d examples/reference ]] || ! rg -q --glob 'Cargo.toml' \
-                -e "^\s*${name}\s*(=|\.)" -e "^\[(\S+\.)?(dev-|build-)?dependencies\.${name}\]" examples/reference; then
+            # P: a reference app under examples/reference/ depends on it, named in its manifest
+            # or reached through another dependency (`reference_deps`).
+            if [[ ! -d examples/reference ]] || { ! rg -q --glob 'Cargo.toml' \
+                    -e "^\s*${name}\s*(=|\.)" -e "^\[(\S+\.)?(dev-|build-)?dependencies\.${name}\]" examples/reference \
+                    && ! grep -qxF "$name" <<<"$reference_deps"; }; then
                 fails+=("P:no-reference-app-consumer")
             fi
             ;;

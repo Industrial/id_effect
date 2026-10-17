@@ -41,8 +41,8 @@
 //! - **Test helpers** (feature `testing`) — `testing::AuthzTest` with `assert_allows` /
 //!   `assert_denies` and the decisions it recorded.
 //!
-//! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
-//! under `examples/reference/` depends on it.
+//! Tier `platform` (ADR 0010 Amendment 5): the Ledger reference app under
+//! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

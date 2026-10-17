@@ -1,0 +1,33 @@
+# Settings shared by every profile. `config/<profile>.toml` overrides them, then (in `prod`)
+# the Vault secrets, then `LEDGER_*` environment variables (`LEDGER_DB__HOST=db`).
+
+[http]
+host = "127.0.0.1"
+port = 8080
+# A request still running after this long is answered 503 and its fiber interrupted.
+request_timeout_ms = 10000
+# Larger request bodies are answered 413.
+body_limit_bytes = 65536
+
+[db]
+host = "localhost"
+port = 5432
+user = "ledger"
+name = "ledger"
+# Applied at start (`id-effect migrate run` applies the same directory).
+migrations = "migrations"
+# Read replicas (PostgreSQL URLs); reports and balances read from them.
+replicas = []
+max_connections = 10
+
+[auth]
+jwt_issuer = "ledger"
+jwt_audience = "ledger-api"
+# API tokens live this long.
+token_ttl_minutes = 60
+# Login attempts: a bucket of `login_burst` refilled at `login_per_second`.
+login_per_second = 0.2
+login_burst = 5
+# Argon2id memory cost in KiB (OWASP: 19456).
+password_memory_kib = 19456
+totp_issuer = "Ledger"

@@ -61,4 +61,4 @@ Book: [Passwords and sessions](../id_effect/book/src/part6/ch30-03-passwords-ses
 [OpenID Connect](../id_effect/book/src/part6/ch30-05-oidc.md),
 [TOTP](../id_effect/book/src/part6/ch30-06-totp.md).
 
-Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).
+Tier: `platform` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md) Amendment 5): the Ledger reference app ([`examples/reference/ledger`](../../examples/reference/ledger)) depends on it.

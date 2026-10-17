@@ -228,6 +228,55 @@ jobs:
       - name: Container tests
         run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis --all-features
   # ──────────────────────────────────────────────────────────────────────────
+  # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
+  # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
+  # migrations go through `id-effect migrate run` / `check` against a service
+  # database; its tests start PostgreSQL, Redis, Vault and Keycloak containers.
+  # ──────────────────────────────────────────────────────────────────────────
+  reference-ledger:
+    name: Reference app (Ledger)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ledger
+          POSTGRES_PASSWORD: ledger
+          POSTGRES_DB: ledger
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ledger" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      ID_EFFECT_REQUIRE_DOCKER: '1'
+      DATABASE_URL: postgres://ledger:ledger@localhost:5432/ledger
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: reference-ledger
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Format and lints
+        run: |
+          cargo fmt -p ledger --check
+          cargo clippy -p ledger --all-targets -- -D warnings
+      - name: Migrations (id-effect migrate run, then check)
+        working-directory: examples/reference/ledger
+        run: |
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate run
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate check
+          cargo run -q -p id_effect_tool --bin id-effect -- migrate status
+      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC denials, Vault, Redis, replica)
+        run: cargo nextest run -p ledger
+  # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
   # ──────────────────────────────────────────────────────────────────────────
@@ -389,6 +438,7 @@ jobs:
       - msrv
       - pg-integration
       - containers-integration
+      - reference-ledger
       - labs
       - minimal-versions
       - validate-packaging

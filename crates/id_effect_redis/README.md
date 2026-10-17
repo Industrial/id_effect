@@ -35,4 +35,4 @@ Every operation is a lazy `Effect` failing with `RedisError`; run it on a tokio 
 integration tests start a Redis 8 container (testcontainers): without Docker they print `SKIP`,
 and with `ID_EFFECT_REQUIRE_DOCKER=1` (the CI `containers-integration` job) they fail instead.
 
-Tier: `integration` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md)).
+Tier: `platform` ([ADR 0010](../../docs/adrs/0010-crate-tiers.md) Amendment 5): the Ledger reference app ([`examples/reference/ledger`](../../examples/reference/ledger)) depends on it.

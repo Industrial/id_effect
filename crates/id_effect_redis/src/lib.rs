@@ -32,7 +32,7 @@
 //! # let _ = program;
 //! ```
 //!
-//! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app under
+//! Tier `platform` (ADR 0010 Amendment 5): the Ledger reference app under
 //! `examples/reference/` depends on it.
 
 #![forbid(unsafe_code)]

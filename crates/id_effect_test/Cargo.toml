@@ -88,6 +88,6 @@ required-features = ["fixtures"]
 all-features = true
 
 [package.metadata.id_effect]
-# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until a reference app
-# under examples/reference/ consumes it; then platform (ADR 0010 Amendment 5, ADR 0012).
-tier = "integration"
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 5, ADR 0012).
+tier = "platform"

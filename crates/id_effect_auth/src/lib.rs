@@ -38,8 +38,8 @@
 //! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
 //! return effects, held by the middleware or a handler.
 //!
-//! Tier `integration` (ADR 0010 Amendment 5); `platform` once the Ledger reference app
-//! under `examples/reference/` depends on it.
+//! Tier `platform` (ADR 0010 Amendment 5): the Ledger reference app under
+//! `examples/reference/` depends on it.
 //!
 //! ```
 //! use id_effect::Exit;

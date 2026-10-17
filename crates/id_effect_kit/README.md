@@ -18,6 +18,7 @@ id_effect = "0.8"
 | `sql-pg`, `sql-sqlite`, `sql-mysql` | `sql` + the `pg` / `sqlite` / `mysql` driver | `id_effect_kit::sql::{pg, sqlite, mysql}` |
 | `migrate` | `sql` + versioned migrations (`migrate::run`, `migrate::layer`) | `id_effect_kit::sql::migrate` |
 | `repository` | `sql` + `#[derive(Entity)]`, `Repository<T>` | `id_effect_kit::sql::repository` |
+| `audit` | `sql` + the hash-chained audit log appended in the caller's transaction (PostgreSQL) | `id_effect_kit::sql::audit` |
 | `otel` | `id_effect_opentelemetry` (OTLP, config loading) | `id_effect_kit::otel` |
 | `cluster` | `id_effect_node` (with `web`: also `axum::cluster`) | `id_effect_kit::node` |
 | `auth` | `web` + `id_effect_auth` with Axum middleware and JWTs (with `sql-pg`: `PgSessionStore`; with `redis`: the Redis session store) | `id_effect_kit::auth` |

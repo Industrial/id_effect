@@ -75,6 +75,8 @@ use axum::routing::{MethodFilter, MethodRouter};
 use id_effect::Effect;
 use id_effect::schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
 
+use crate::request_caps::RequestCaps;
+
 pub use decode::RouteRejection;
 pub use extract::{ValidForm, ValidHeaders, ValidJson, ValidPath, ValidQuery};
 pub use problem::{Issue, Location, PROBLEM_JSON, Problem};
@@ -431,8 +433,48 @@ where
       + Sync
       + 'static,
   {
+    self.endpoint(std::any::type_name::<F>(), move |s, _caps, input| {
+      f(s, input)
+    })
+  }
+
+  /// [`handler`](Self::handler) for a handler that also reads the request's [`RequestCaps`]:
+  /// the per-request capabilities a [`CapOverrideLayer`](crate::CapOverrideLayer) or an
+  /// authentication layer recorded (the caller's principal, its tenant), empty when there are
+  /// none. The handler builds the request's environment from them, as
+  /// [`execute_with_request_caps`](crate::execute_with_request_caps) does for plain handlers.
+  ///
+  /// # Panics
+  ///
+  /// If Axum cannot route the method (an extension method such as `PROPFIND`).
+  pub fn handler_with_request_caps<S, A, E, F>(self, f: F) -> Endpoint<S>
+  where
+    S: Clone + Send + Sync + 'static,
+    A: IntoResponse + Send + 'static,
+    E: IntoResponse + Send + 'static,
+    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+      + Clone
+      + Send
+      + Sync
+      + 'static,
+  {
+    self.endpoint(std::any::type_name::<F>(), f)
+  }
+
+  /// The endpoint running `f` (named `handler` in the [`RouteInfo`]) for each decoded request.
+  fn endpoint<S, A, E, F>(self, handler: &'static str, f: F) -> Endpoint<S>
+  where
+    S: Clone + Send + Sync + 'static,
+    A: IntoResponse + Send + 'static,
+    E: IntoResponse + Send + 'static,
+    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+      + Clone
+      + Send
+      + Sync
+      + 'static,
+  {
     let mut info = self.info();
-    info.handler = Some(std::any::type_name::<F>());
+    info.handler = Some(handler);
     let filter = MethodFilter::try_from(self.method.clone())
       .unwrap_or_else(|e| panic!("typed route {} {}: {e}", self.method, self.template));
     let parts = Arc::new(self.parts);
@@ -440,9 +482,14 @@ where
       let parts = Arc::clone(&parts);
       let f = f.clone();
       Box::pin(async move {
+        let caps = req
+          .extensions()
+          .get::<RequestCaps>()
+          .cloned()
+          .unwrap_or_default();
         match decode::decode_input(&parts, req).await {
           Ok(input) => {
-            crate::respond(crate::try_run_effect_from_state(env, move |e| f(e, input)).await)
+            crate::respond(crate::try_run_effect_from_state(env, move |e| f(e, caps, input)).await)
           }
           Err(rejection) => *rejection,
         }
@@ -638,5 +685,55 @@ mod tests {
     let res = router.into_axum().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(res.headers()["x-layered"], "1");
+  }
+
+  #[tokio::test]
+  async fn request_caps_reach_the_typed_handler() {
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    #[derive(Clone)]
+    struct Tenant(String);
+
+    fn whoami(_: &mut (), caps: RequestCaps, input: Input<i64>) -> Effect<String, Problem, ()> {
+      let tenant = caps
+        .get::<Tenant>()
+        .map_or_else(|| "none".to_owned(), |t| t.0.clone());
+      id_effect::succeed(format!("{tenant}:{}", input.path))
+    }
+
+    let endpoint = Route::get("/ids/{id}")
+      .path::<Id>()
+      .handler_with_request_caps(whoami);
+    assert!(endpoint.info().handler.unwrap().contains("whoami"));
+    let app = Router::new()
+      .route(endpoint)
+      .into_axum()
+      .layer(crate::CapOverrideLayer::new(
+        |parts: &axum::http::request::Parts| {
+          let tenant = parts.headers.get("x-tenant")?.to_str().ok()?;
+          Some(Tenant(tenant.to_owned()))
+        },
+      ));
+    let call = |tenant: Option<&str>, path: &str| {
+      let mut req = axum::http::Request::get(path);
+      if let Some(tenant) = tenant {
+        req = req.header("x-tenant", tenant);
+      }
+      app
+        .clone()
+        .oneshot(req.body(axum::body::Body::empty()).unwrap())
+    };
+    let text = |res: Response| async move {
+      let bytes = res.into_body().collect().await.unwrap().to_bytes();
+      String::from_utf8(bytes.to_vec()).unwrap()
+    };
+    let res = call(Some("acme"), "/ids/7").await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(text(res).await, "acme:7");
+    let res = call(None, "/ids/8").await.unwrap();
+    assert_eq!(text(res).await, "none:8");
+    let res = call(Some("acme"), "/ids/x").await.unwrap();
+    assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
   }
 }

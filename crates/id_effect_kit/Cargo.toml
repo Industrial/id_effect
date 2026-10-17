@@ -41,6 +41,8 @@ sql-mysql = ["sql", "id_effect_sql/mysql"]
 migrate = ["sql", "id_effect_sql/migrate", "id_effect_test?/migrate"]
 # Entities and repositories: `#[derive(Entity)]`, `Repository<T>` over sea-query statements.
 repository = ["sql", "id_effect_sql/repository"]
+# Hash-chained audit log appended in the caller's transaction (`kit::sql::audit`; PostgreSQL).
+audit = ["sql", "id_effect_sql/audit"]
 # OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
 otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
 # Distribution: `kit::node` (id_effect_node); with `web`, also id_effect_axum's `cluster` module.
@@ -85,6 +87,7 @@ full = [
   "sql-mysql",
   "migrate",
   "repository",
+  "audit",
   "otel",
   "cluster",
   "auth",
