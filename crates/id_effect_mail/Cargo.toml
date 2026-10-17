@@ -15,6 +15,38 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 [lib]
 name = "id_effect_mail"
 
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.9.0" }
+# `SendGridMailer` posts through the `HttpClient` capability (release spec 0.10.0 D9), so it gets
+# the 0.10 client defaults: connect and total timeouts, and retries of idempotent methods only.
+id_effect_platform = { path = "../id_effect_platform", version = "0.9.0" }
+# MIME building and the pooled SMTP transport (D9). No native-tls; no `dkim` (it pulls rsa,
+# RUSTSEC-2023-0071 in deny.toml); no `hostname` (EHLO uses the configured name, the
+# Message-ID the sender's domain). `builder` pulls quoted_printable, licensed 0BSD.
+lettre = { version = "0.11.23", default-features = false, features = [
+  "builder",
+  "smtp-transport",
+  "pool",
+  "tokio1-rustls",
+  "aws-lc-rs",
+  "webpki-roots",
+] }
+# SendGrid v3 request bodies and attachment content; the versions already in the workspace lock.
+serde_json = "1"
+base64 = "0.22.1"
+
+[dev-dependencies]
+# Runs the transports' effects on the test's tokio runtime; the in-process SMTP stub listens on
+# a tokio socket.
+id_effect_tokio = { path = "../id_effect_tokio" }
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+] }
+wiremock = "0.6"
+
 [package.metadata.docs.rs]
 all-features = true
 

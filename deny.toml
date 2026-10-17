@@ -29,6 +29,8 @@ ignore = [
 # CDLA-Permissive-2.0: webpki-root-certs (Mozilla CA data). MPL-2.0 also satisfies the
 # MPL-2.0+ of im / bitmaps / sized-chunks.
 allow = [
+  # Zero-clause BSD (permissive, OSI, no conditions): quoted_printable, via lettre (id_effect_mail).
+  "0BSD",
   "MIT",
   "Apache-2.0",
   "BSD-3-Clause",
