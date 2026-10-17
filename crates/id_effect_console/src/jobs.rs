@@ -1,12 +1,13 @@
 //! `/_console/api/jobs` (feature `jobs`): per-queue counts and the newest jobs of an
-//! `id_effect_jobs` [`JobQueue`], mapped to console view types.
+//! `id_effect_jobs` [`JobQueue`], mapped to console view types, and the operator's retry and
+//! cancel of one job.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use id_effect::{Exit, UtcDateTime};
+use id_effect::{Cause, Exit, UtcDateTime};
 use id_effect_axum::EffectExecutor;
-use id_effect_jobs::{JobFilter, JobQueue, JobRecord, QueueStats};
+use id_effect_jobs::{JobError, JobFilter, JobId, JobQueue, JobRecord, QueueStats};
 use serde::{Deserialize, Serialize};
 
 /// How many of the newest jobs `GET jobs` lists.
@@ -118,4 +119,97 @@ pub(crate) async fn snapshot(queue: &Arc<dyn JobQueue>) -> Result<JobsView, Stri
     queues: stats.into_iter().map(QueueView::from).collect(),
     recent: recent.into_iter().map(JobView::from).collect(),
   })
+}
+
+/// What an operator does to one job.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Action {
+  /// [`JobQueue::retry_now`]: `dead` or `cancelled` → `scheduled` now, attempts reset.
+  Retry,
+  /// [`JobQueue::cancel`]: `scheduled` or `failed` → `cancelled`.
+  Cancel,
+}
+
+impl Action {
+  fn verb(self) -> &'static str {
+    match self {
+      Action::Retry => "retry",
+      Action::Cancel => "cancel",
+    }
+  }
+
+  /// The states the action applies to.
+  fn applies_to(self) -> &'static str {
+    match self {
+      Action::Retry => "dead or cancelled",
+      Action::Cancel => "scheduled or failed",
+    }
+  }
+}
+
+/// Why an [`Action`] changed nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ActionError {
+  /// No job has the id (`404`).
+  NotFound(String),
+  /// The job is in a state the action does not apply to, or retrying it would take a unique key
+  /// another job holds (`409`).
+  Conflict(String),
+  /// The queue failed (`500`).
+  Failed(String),
+}
+
+/// Applies `action` to job `id` and answers the job as it is afterwards.
+pub(crate) async fn act(
+  queue: &Arc<dyn JobQueue>,
+  id: i64,
+  action: Action,
+) -> Result<JobView, ActionError> {
+  let executor = EffectExecutor::global();
+  let effect = match action {
+    Action::Retry => queue.retry_now(JobId(id)),
+    Action::Cancel => queue.cancel(JobId(id)),
+  };
+  let changed = match executor.run_effect(effect).await {
+    Exit::Success(changed) => changed,
+    Exit::Failure(Cause::Fail(JobError::Sql(e))) if e.is_unique_violation() => {
+      return Err(ActionError::Conflict(format!(
+        "job {id} cannot be retried: another pending job holds its unique key"
+      )));
+    }
+    Exit::Failure(cause) => {
+      return Err(ActionError::Failed(format!(
+        "job {} failed: {cause:?}",
+        action.verb()
+      )));
+    }
+  };
+  // `false` is both "no such job" and "wrong state": the job's row tells them apart.
+  let job = find(queue, id).await.map_err(ActionError::Failed)?;
+  match job {
+    None => Err(ActionError::NotFound(format!("no job with id {id}"))),
+    Some(job) if changed => Ok(JobView::from(job)),
+    Some(job) => Err(ActionError::Conflict(format!(
+      "job {id} is {}; {} applies to {} jobs",
+      job.state,
+      action.verb(),
+      action.applies_to()
+    ))),
+  }
+}
+
+/// Job `id`, through [`JobQueue::list`]: the newest job below `id + 1` is `id` when it exists.
+async fn find(queue: &Arc<dyn JobQueue>, id: i64) -> Result<Option<JobRecord>, String> {
+  let filter = JobFilter {
+    limit: 1,
+    before: id.checked_add(1).map(JobId),
+    ..JobFilter::default()
+  };
+  match EffectExecutor::global()
+    .run_effect(queue.list(filter))
+    .await
+  {
+    Exit::Success(jobs) => Ok(jobs.into_iter().find(|job| job.id == JobId(id))),
+    Exit::Failure(cause) => Err(format!("job queue list failed: {cause:?}")),
+  }
 }

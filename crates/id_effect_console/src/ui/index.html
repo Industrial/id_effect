@@ -86,6 +86,7 @@
   <section id="jobs" hidden>
     <h2>Jobs <span class="count" data-count></span></h2>
     <div data-body class="scroll"></div>
+    <div data-result class="muted"></div>
   </section>
   <section id="fibers" class="wide">
     <h2>Fibers <span class="count" data-count></span></h2>
@@ -223,13 +224,34 @@ const render = {
       table(['queue'].concat(states, ['oldest runnable']), view.queues.map((q) =>
         [q.queue].concat(states.map((s) => num(q.counts[s] || 0)), [q.oldest_runnable || '']))),
       el('h3', {}, 'Recent jobs'),
-      table(['id', 'name', 'queue', 'state', 'attempts', 'run at', 'last error'], view.recent.map((j) => [
+      table(['id', 'name', 'queue', 'state', 'attempts', 'run at', 'last error', ''], view.recent.map((j) => [
         num(j.id), el('code', {}, j.name), j.queue, badge(j.state), num(j.attempts + '/' + j.max_attempts),
         el('code', {}, j.run_at), j.last_error ? el('span', { class: 'error' }, j.last_error) : '',
+        jobAction(j),
       ])),
     ];
   },
 };
+
+// Retry for a dead or cancelled job, cancel for a scheduled or failed one (JobQueue::retry_now
+// and JobQueue::cancel). The JSON content type is what the API requires of these POSTs.
+function jobAction(job) {
+  const verb = { dead: 'retry', cancelled: 'retry', scheduled: 'cancel', failed: 'cancel' }[job.state];
+  if (!verb) return '';
+  const button = el('button', { type: 'button' }, verb);
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const answer = await api('jobs/' + job.id + '/' + verb, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: '{}',
+    });
+    part('jobs', 'result').replaceChildren(answer.ok
+      ? verb + ' job ' + job.id + ': now ' + answer.body.state : problem(answer));
+    poll();
+  });
+  return button;
+}
 
 const routes = ['health', 'log-level', 'supervisors', 'jobs', 'fibers', 'metrics'];
 const last = {};

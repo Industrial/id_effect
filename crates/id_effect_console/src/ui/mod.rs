@@ -59,6 +59,9 @@ mod tests {
       );
     }
     assert!(INDEX_HTML.contains("method: 'PUT'"));
+    // The job buttons POST with the JSON content type the API requires of them.
+    assert!(INDEX_HTML.contains("api('jobs/' + job.id + '/' + verb"));
+    assert!(INDEX_HTML.contains("method: 'POST'"));
     for external in ["http://", "https://", "src=", "<link", "innerHTML"] {
       assert!(!INDEX_HTML.contains(external), "the page uses {external}");
     }

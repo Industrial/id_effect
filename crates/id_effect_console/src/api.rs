@@ -124,8 +124,10 @@ impl Console {
   }
 
   /// The job queue `GET jobs` reports on (feature `jobs`): per-queue counts by state and the
-  /// newest 50 jobs, without their payloads. Without one, `GET jobs` is a `404` and the
-  /// dashboard hides its jobs panel.
+  /// newest 50 jobs, without their payloads; `POST jobs/{id}/retry` and `POST jobs/{id}/cancel`
+  /// run [`JobQueue::retry_now`](id_effect_jobs::JobQueue::retry_now) and
+  /// [`JobQueue::cancel`](id_effect_jobs::JobQueue::cancel) on one job. Without one, every jobs
+  /// route is a `404` and the dashboard hides its jobs panel.
   #[cfg(feature = "jobs")]
   #[must_use]
   pub fn jobs(mut self, queue: impl id_effect_jobs::JobQueue) -> Self {
@@ -144,7 +146,10 @@ impl Console {
       .route("/health", get(health))
       .route("/log-level", get(log_level_get).put(log_level_put));
     #[cfg(feature = "jobs")]
-    let api = api.route("/jobs", get(jobs));
+    let api = api
+      .route("/jobs", get(jobs))
+      .route("/jobs/{id}/retry", axum::routing::post(job_retry))
+      .route("/jobs/{id}/cancel", axum::routing::post(job_cancel));
     let api = api
       .fallback(not_found)
       .layer(axum::middleware::map_response(no_store))
@@ -315,6 +320,68 @@ async fn jobs(State(console): Shared) -> Response {
     Ok(view) => Json(view).into_response(),
     Err(detail) => problem(StatusCode::INTERNAL_SERVER_ERROR, detail),
   }
+}
+
+#[cfg(feature = "jobs")]
+async fn job_retry(
+  State(console): Shared,
+  headers: axum::http::HeaderMap,
+  id: Result<axum::extract::Path<i64>, axum::extract::rejection::PathRejection>,
+) -> Response {
+  job_action(&console, &headers, id, crate::jobs::Action::Retry).await
+}
+
+#[cfg(feature = "jobs")]
+async fn job_cancel(
+  State(console): Shared,
+  headers: axum::http::HeaderMap,
+  id: Result<axum::extract::Path<i64>, axum::extract::rejection::PathRejection>,
+) -> Response {
+  job_action(&console, &headers, id, crate::jobs::Action::Cancel).await
+}
+
+/// `POST jobs/{id}/retry` and `POST jobs/{id}/cancel`. The request must say
+/// `Content-Type: application/json`: a cross-site HTML form cannot send that, and a cross-origin
+/// `fetch` that does needs a CORS preflight the console never grants, so another site cannot
+/// make an operator's browser retry or cancel a job.
+#[cfg(feature = "jobs")]
+async fn job_action(
+  console: &Console,
+  headers: &axum::http::HeaderMap,
+  id: Result<axum::extract::Path<i64>, axum::extract::rejection::PathRejection>,
+  action: crate::jobs::Action,
+) -> Response {
+  use crate::jobs::ActionError;
+
+  let Some(queue) = &console.jobs else {
+    return problem(StatusCode::NOT_FOUND, "no job queue registered");
+  };
+  if !is_json(headers) {
+    return problem(
+      StatusCode::UNSUPPORTED_MEDIA_TYPE,
+      "job actions need `Content-Type: application/json`",
+    );
+  }
+  let axum::extract::Path(id) = match id {
+    Ok(id) => id,
+    Err(rejection) => return problem(StatusCode::BAD_REQUEST, rejection.body_text()),
+  };
+  match crate::jobs::act(queue, id, action).await {
+    Ok(view) => Json(view).into_response(),
+    Err(ActionError::NotFound(detail)) => problem(StatusCode::NOT_FOUND, detail),
+    Err(ActionError::Conflict(detail)) => problem(StatusCode::CONFLICT, detail),
+    Err(ActionError::Failed(detail)) => problem(StatusCode::INTERNAL_SERVER_ERROR, detail),
+  }
+}
+
+/// Whether the request's media type is `application/json` (parameters ignored).
+#[cfg(feature = "jobs")]
+fn is_json(headers: &axum::http::HeaderMap) -> bool {
+  headers
+    .get(header::CONTENT_TYPE)
+    .and_then(|v| v.to_str().ok())
+    .and_then(|v| v.split(';').next())
+    .is_some_and(|media| media.trim().eq_ignore_ascii_case("application/json"))
 }
 
 async fn not_found() -> Response {

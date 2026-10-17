@@ -1,4 +1,4 @@
-//! `SmtpMailer` against an in-process SMTP stub: the envelope and data it sends, pooled
+//! `SmtpMailer` against an in-process fake SMTP server: the envelope and data it sends, pooled
 //! connection reuse, and how reply codes map to `MailError`.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,7 +12,7 @@ use id_effect_tokio::TokioRuntime;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-/// One message the stub accepted.
+/// One message the fake server accepted.
 #[derive(Clone, Debug)]
 struct Received {
   from: String,
@@ -23,24 +23,24 @@ struct Received {
 /// A minimal SMTP server: accepts every command, answers `RCPT` for `reject@…` with `550` and
 /// for `later@…` with `451`, and records each message.
 #[derive(Clone, Default)]
-struct Stub {
+struct FakeSmtpServer {
   connections: Arc<AtomicUsize>,
   received: Arc<Mutex<Vec<Received>>>,
 }
 
-impl Stub {
+impl FakeSmtpServer {
   async fn start() -> (Self, u16) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
-    let stub = Stub::default();
-    let s = stub.clone();
+    let fake = FakeSmtpServer::default();
+    let s = fake.clone();
     tokio::spawn(async move {
       while let Ok((socket, _)) = listener.accept().await {
         s.connections.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(s.clone().session(socket));
       }
     });
-    (stub, port)
+    (fake, port)
   }
 
   async fn session(self, socket: tokio::net::TcpStream) {
@@ -51,7 +51,7 @@ impl Stub {
       rcpt: Vec::new(),
       data: String::new(),
     };
-    write.write_all(b"220 stub ESMTP ready\r\n").await.unwrap();
+    write.write_all(b"220 fake ESMTP ready\r\n").await.unwrap();
     let mut line = String::new();
     loop {
       line.clear();
@@ -60,7 +60,7 @@ impl Stub {
       }
       let upper = line.to_ascii_uppercase();
       let reply: &[u8] = if upper.starts_with("EHLO") || upper.starts_with("HELO") {
-        b"250-stub greets you\r\n250 8BITMIME\r\n"
+        b"250-fake greets you\r\n250 8BITMIME\r\n"
       } else if upper.starts_with("MAIL FROM:") {
         current.from = between_angles(&line);
         b"250 2.1.0 ok\r\n"
@@ -148,7 +148,7 @@ fn send_two(port: u16, first: Message, second: Message) -> Effect<(Sent, Sent), 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn delivers_the_envelope_and_reuses_the_pooled_connection() {
-  let (stub, port) = Stub::start().await;
+  let (fake, port) = FakeSmtpServer::start().await;
   let (a, b) = run(send_two(
     port,
     message("carol@ledger.example", "First"),
@@ -156,7 +156,7 @@ async fn delivers_the_envelope_and_reuses_the_pooled_connection() {
   ))
   .await
   .expect("both accepted");
-  let received = stub.received();
+  let received = fake.received();
   assert_eq!(received.len(), 2);
   assert_eq!(received[0].from, "billing@ledger.example");
   assert_eq!(
@@ -173,7 +173,7 @@ async fn delivers_the_envelope_and_reuses_the_pooled_connection() {
   assert!(received[0].data.contains(&format!("Message-ID: {id}\r\n")));
   assert_ne!(Some(id), b.id);
   assert_eq!(
-    stub.connections.load(Ordering::SeqCst),
+    fake.connections.load(Ordering::SeqCst),
     1,
     "the second send reuses the pooled connection"
   );
@@ -181,7 +181,7 @@ async fn delivers_the_envelope_and_reuses_the_pooled_connection() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reply_codes_map_to_mail_errors() {
-  let (stub, port) = Stub::start().await;
+  let (fake, port) = FakeSmtpServer::start().await;
   let send = |to: &str| {
     deliver::<MailerEnv, _>(message(to, "x"))
       .provide_layer(SmtpMailer::layer(SmtpConfig::plaintext("127.0.0.1", port)))
@@ -194,7 +194,7 @@ async fn reply_codes_map_to_mail_errors() {
     Err(e @ MailError::Temporary { code: 451, .. }) => assert!(e.is_transient()),
     other => panic!("expected a 451 deferral, got {other:?}"),
   }
-  assert!(stub.received().is_empty());
+  assert!(fake.received().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

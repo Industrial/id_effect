@@ -16,13 +16,19 @@
 //! | `GET log-level` | the reloadable `EnvFilter` and the `EffectLogger` minimum ([`LogLevelView`]) |
 //! | `PUT log-level` | changes both without a restart ([`LogLevelChange`]) |
 //! | `GET jobs` | per-queue counts and the newest jobs of a job queue (`JobsView`, feature `jobs`) |
+//! | `POST jobs/{id}/retry` | a `dead` or `cancelled` job runs again now (`JobView`; `404` unknown id, `409` other state) |
+//! | `POST jobs/{id}/cancel` | a `scheduled` or `failed` job is cancelled (`JobView`; `404` unknown id, `409` other state) |
+//!
+//! The two `POST` routes require `Content-Type: application/json` (`415` otherwise), so a
+//! cross-site form cannot trigger them.
 //!
 //! # The dashboard
 //!
 //! The same router serves `GET /_console`: one static page (inline CSS and vanilla JavaScript,
 //! compiled in with `include_str!`, no build step and nothing loaded from another origin) that
 //! polls the API and shows the health checks, the log level with a form that changes it, the
-//! supervision trees, the job queues (when the `jobs` feature and a queue are configured), the
+//! supervision trees, the job queues (when the `jobs` feature and a queue are configured, with a
+//! retry button on dead and cancelled jobs and a cancel button on scheduled and failed ones), the
 //! live fibers and the metrics. It is behind the same guard as the API.
 //!
 //! # Security model

@@ -45,6 +45,17 @@ What `id-effect dev` does not do:
 - Ctrl-C stops `id-effect dev` and the app together (they share the terminal's process group); the app sees the interrupt like any Ctrl-C.
 - The app's stdin, stdout and stderr are the terminal's.
 
+### Live reload, precisely
+
+`id-effect dev` is id_effect's live-reload loop, and the reload is a **rebuild and restart**: save a file and, a poll interval plus the debounce plus one `cargo build` later, the new code is serving, with the same arguments and `ID_EFFECT_PROFILE=dev`. What it guarantees, and what checks it:
+
+| Behaviour | Checked by |
+|---|---|
+| An edit under a watched path rebuilds the app, stops the old process (the `stopped pid` line names it) and starts the new binary with the same arguments and profile; the old process is gone | `crates/id_effect_tool/tests/dev.rs`, `edit_triggers_rebuild_and_restart` (line 160) |
+| An edit that does not compile leaves the running app up (`build failed …; keeping the running app (pid N)`), shows the compiler's error, and the next edit that compiles restarts it | the same file, `build_error_keeps_previous_child` (line 180) |
+
+A bad edit never takes the app down: the old process is stopped only after the new build succeeded, so the only gap is the restart itself (stop, then start). In-process state (open connections, caches, fibers) does not survive the restart; nothing is patched into the running process. A change under `config/` restarts the app the same way (its `cargo build` is a no-op); to apply configuration edits without a restart, in development or production, watch the profile from inside the app with `Profiles::watch` ([Hot reload](../part3/ch16-03-config-profiles.md#hot-reload)).
+
 ## The dev container
 
 Every project `id-effect new` generates, whatever the template, has a `.devcontainer/` directory: open it in VS Code ("Reopen in Container"), GitHub Codespaces or any tool that reads the [Dev Container spec](https://containers.dev/) (`devcontainer up --workspace-folder .` with the CLI) and you get the same toolchain on every machine.

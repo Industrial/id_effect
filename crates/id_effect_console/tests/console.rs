@@ -71,7 +71,7 @@ impl Reply {
   }
 }
 
-/// One HTTP/1.1 request on a fresh connection.
+/// One HTTP/1.1 request on a fresh connection; a body is sent as JSON.
 async fn send(
   addr: SocketAddr,
   method: &str,
@@ -79,13 +79,28 @@ async fn send(
   token: Option<&str>,
   body: Option<&str>,
 ) -> Reply {
+  let content_type = body
+    .is_some_and(|b| !b.is_empty())
+    .then_some("application/json");
+  send_as(addr, method, path, token, body, content_type).await
+}
+
+/// One HTTP/1.1 request on a fresh connection, with `content_type` (if any).
+async fn send_as(
+  addr: SocketAddr,
+  method: &str,
+  path: &str,
+  token: Option<&str>,
+  body: Option<&str>,
+  content_type: Option<&str>,
+) -> Reply {
   let mut request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
   if let Some(token) = token {
     request.push_str(&format!("Authorization: Bearer {token}\r\n"));
   }
   let body = body.unwrap_or_default();
-  if !body.is_empty() {
-    request.push_str("Content-Type: application/json\r\n");
+  if let Some(content_type) = content_type {
+    request.push_str(&format!("Content-Type: {content_type}\r\n"));
   }
   request.push_str(&format!("Content-Length: {}\r\n\r\n{body}", body.len()));
   let mut stream = TcpStream::connect(addr).await.unwrap();
@@ -137,9 +152,11 @@ fn routes() -> Vec<(&'static str, &'static str, Option<&'static str>, u16)> {
     ),
     ("GET", "/_console/api/no-such-route", None, 404),
   ];
-  // Without a registered queue, `jobs` is a 404 behind the guard.
+  // Without a registered queue, every jobs route is a 404 behind the guard.
   if cfg!(feature = "jobs") {
     routes.push(("GET", "/_console/api/jobs", None, 404));
+    routes.push(("POST", "/_console/api/jobs/1/retry", Some("{}"), 404));
+    routes.push(("POST", "/_console/api/jobs/1/cancel", Some("{}"), 404));
   }
   routes
 }
@@ -237,13 +254,49 @@ async fn log_level_form_target_changes_the_level() {
 
 #[cfg(feature = "jobs")]
 mod jobs {
-  use id_effect::{Exit, WallClock};
+  use std::time::Duration;
+
+  use id_effect::{Effect, Exit, WallClock};
   use id_effect_axum::EffectExecutor;
-  use id_effect_console::{Console, JobsView};
-  use id_effect_jobs::{JobQueue, MemoryJobQueue, NewJob, Priority, Queue, RunAt};
+  use id_effect_console::{Console, JobView, JobsView};
+  use id_effect_jobs::{
+    JobError, JobFailure, JobId, JobQueue, JobStore, MemoryJobQueue, NewJob, Priority, Queue, RunAt,
+  };
   use serde_json::json;
 
-  use super::{DEVELOPER, OPERATOR, send, serve};
+  use super::{DEVELOPER, OPERATOR, send, send_as, serve};
+
+  async fn run<A: Send + 'static>(effect: Effect<A, JobError>) -> A {
+    match EffectExecutor::global().run_effect(effect).await {
+      Exit::Success(a) => a,
+      Exit::Failure(cause) => panic!("queue operation failed: {cause:?}"),
+    }
+  }
+
+  /// A queue with one job enqueued, and its id.
+  async fn one_job(max_attempts: u16) -> (MemoryJobQueue, JobId) {
+    let queue = MemoryJobQueue::new(WallClock::system());
+    let id = run(queue.enqueue_raw(NewJob {
+      max_attempts,
+      ..job("app.mail")
+    }))
+    .await
+    .id()
+    .unwrap();
+    (queue, id)
+  }
+
+  /// Claims job `id` and fails it for good: it is `dead`.
+  async fn kill(queue: &MemoryJobQueue, id: JobId) {
+    let lease = Duration::from_secs(60);
+    let claimed = run(queue.claim(&Queue::default(), "w", 1, lease)).await;
+    assert_eq!(claimed[0].id, id);
+    run(queue.fail(id, "w", &JobFailure::discard("smtp refused"), None)).await;
+  }
+
+  fn post(action: &str, id: JobId) -> String {
+    format!("/_console/api/jobs/{}/{action}", id.0)
+  }
 
   fn job(name: &str) -> NewJob {
     NewJob {
@@ -309,5 +362,161 @@ mod jobs {
     );
     let detail = answer.json()["detail"].as_str().unwrap().to_owned();
     assert!(detail.contains("queue database down"), "{detail}");
+  }
+
+  #[tokio::test(flavor = "multi_thread")]
+  async fn job_actions_are_guarded() {
+    let (queue, id) = one_job(1).await;
+    kill(&queue, id).await;
+    let addr = serve(Console::new().jobs(queue.clone())).await;
+    for action in ["retry", "cancel"] {
+      let path = post(action, id);
+      let anonymous = send(addr, "POST", &path, None, Some("{}")).await;
+      assert_eq!(anonymous.status, 401, "{path}");
+      let denied = send(addr, "POST", &path, Some(DEVELOPER), Some("{}")).await;
+      assert_eq!(denied.status, 403, "{path}");
+      assert_eq!(denied.json()["policy"], "console.operate");
+    }
+    let jobs = run(queue.list(Default::default())).await;
+    assert_eq!(
+      jobs[0].state.as_str(),
+      "dead",
+      "a denied retry changed nothing"
+    );
+  }
+
+  #[tokio::test(flavor = "multi_thread")]
+  async fn retry_makes_a_dead_job_runnable() {
+    let (queue, id) = one_job(1).await;
+    kill(&queue, id).await;
+    let addr = serve(Console::new().jobs(queue.clone())).await;
+
+    let answer = send(addr, "POST", &post("retry", id), Some(OPERATOR), Some("{}")).await;
+    assert_eq!(answer.status, 200, "{}", answer.body);
+    assert_eq!(answer.header("cache-control"), Some("no-store"));
+    let view: JobView = serde_json::from_value(answer.json()).unwrap();
+    assert_eq!(
+      (view.id, view.state.as_str(), view.attempts),
+      (id.0, "scheduled", 0)
+    );
+    assert_eq!(view.finished_at, None);
+    // A worker can claim it again.
+    let lease = Duration::from_secs(60);
+    let claimed = run(queue.claim(&Queue::default(), "w2", 1, lease)).await;
+    assert_eq!(claimed.len(), 1);
+    assert_eq!((claimed[0].id, claimed[0].attempt), (id, 1));
+
+    // Now running: neither action applies.
+    for action in ["retry", "cancel"] {
+      let conflict = send(addr, "POST", &post(action, id), Some(OPERATOR), Some("{}")).await;
+      assert_eq!(conflict.status, 409, "{action}");
+      assert_eq!(
+        conflict.header("content-type"),
+        Some("application/problem+json")
+      );
+      let detail = conflict.json()["detail"].as_str().unwrap().to_owned();
+      assert!(detail.contains("is running"), "{detail}");
+    }
+  }
+
+  #[tokio::test(flavor = "multi_thread")]
+  async fn cancel_stops_a_scheduled_job_and_retry_brings_it_back() {
+    let (queue, id) = one_job(3).await;
+    let addr = serve(Console::new().jobs(queue.clone())).await;
+
+    let early = send(addr, "POST", &post("retry", id), Some(OPERATOR), Some("{}")).await;
+    assert_eq!(early.status, 409, "a scheduled job is not retried");
+
+    let cancelled = send(
+      addr,
+      "POST",
+      &post("cancel", id),
+      Some(OPERATOR),
+      Some("{}"),
+    )
+    .await;
+    assert_eq!(cancelled.status, 200, "{}", cancelled.body);
+    assert_eq!(cancelled.json()["state"], "cancelled");
+    let lease = Duration::from_secs(60);
+    assert!(
+      run(queue.claim(&Queue::default(), "w", 1, lease))
+        .await
+        .is_empty(),
+      "a cancelled job is not claimed"
+    );
+    let again = send(
+      addr,
+      "POST",
+      &post("cancel", id),
+      Some(OPERATOR),
+      Some("{}"),
+    )
+    .await;
+    assert_eq!(again.status, 409);
+
+    let retried = send(addr, "POST", &post("retry", id), Some(OPERATOR), Some("{}")).await;
+    assert_eq!(retried.status, 200);
+    assert_eq!(retried.json()["state"], "scheduled");
+  }
+
+  #[tokio::test(flavor = "multi_thread")]
+  async fn unknown_or_malformed_ids_are_problems() {
+    let (queue, _) = one_job(3).await;
+    let addr = serve(Console::new().jobs(queue)).await;
+    for action in ["retry", "cancel"] {
+      let missing = send(
+        addr,
+        "POST",
+        &post(action, JobId(99)),
+        Some(OPERATOR),
+        Some("{}"),
+      )
+      .await;
+      assert_eq!(missing.status, 404, "{action}");
+      assert_eq!(missing.json()["detail"], "no job with id 99");
+      let path = format!("/_console/api/jobs/abc/{action}");
+      let malformed = send(addr, "POST", &path, Some(OPERATOR), Some("{}")).await;
+      assert_eq!(malformed.status, 400, "{action}");
+      assert_eq!(
+        malformed.header("content-type"),
+        Some("application/problem+json")
+      );
+    }
+  }
+
+  /// What a cross-site `<form method=post>` (or a `fetch` without a preflight) can send is
+  /// refused before the queue is touched.
+  #[tokio::test(flavor = "multi_thread")]
+  async fn job_actions_refuse_what_a_cross_site_form_can_send() {
+    let (queue, id) = one_job(3).await;
+    let addr = serve(Console::new().jobs(queue.clone())).await;
+    let path = post("cancel", id);
+    for content_type in [
+      None,
+      Some("application/x-www-form-urlencoded"),
+      Some("multipart/form-data; boundary=x"),
+      Some("text/plain"),
+    ] {
+      let refused = send_as(
+        addr,
+        "POST",
+        &path,
+        Some(OPERATOR),
+        Some("a=b"),
+        content_type,
+      )
+      .await;
+      assert_eq!(refused.status, 415, "{content_type:?}");
+      assert_eq!(
+        refused.header("content-type"),
+        Some("application/problem+json")
+      );
+    }
+    let jobs = run(queue.list(Default::default())).await;
+    assert_eq!(jobs[0].state.as_str(), "scheduled", "nothing was cancelled");
+    // The JSON content type with parameters is accepted, with or without a body.
+    let json = Some("application/json; charset=utf-8");
+    let accepted = send_as(addr, "POST", &path, Some(OPERATOR), None, json).await;
+    assert_eq!(accepted.status, 200, "{}", accepted.body);
   }
 }

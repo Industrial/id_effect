@@ -153,7 +153,8 @@ impl ConfigError {
   }
 }
 
-/// Every Figment error is redacted on the way in (see [`redact_figment`]).
+/// Every Figment error is redacted on the way in: quoted source lines and found values are
+/// dropped; the key path, file, line/column and error kind are kept.
 impl From<figment::Error> for ConfigError {
   fn from(value: figment::Error) -> Self {
     Self::Figment(redact_figment(value))

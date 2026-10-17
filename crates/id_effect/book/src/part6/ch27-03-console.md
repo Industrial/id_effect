@@ -44,7 +44,7 @@ The builder takes the supervisors to show (`supervisor(id, handle)`, nested ones
 | Health | `GET health` | the overall status and every check with its status, duration and detail |
 | Log level | `GET` / `PUT log-level` | the `EnvFilter` directive and the `EffectLogger` minimum, and a form that changes them |
 | Supervision trees | `GET supervisors` | each root supervisor's children, nested supervisors expanded, stopped children marked; unreachable supervisors with their error |
-| Jobs | `GET jobs` | per-queue counts by state and the newest 50 jobs (hidden when `jobs` answers `404`) |
+| Jobs | `GET jobs`, `POST jobs/{id}/retry` / `cancel` | per-queue counts by state and the newest 50 jobs, with a retry button on dead and cancelled jobs and a cancel button on scheduled and failed ones (hidden when `jobs` answers `404`) |
 | Fibers | `GET fibers` | every live fiber: id, parent, state, age, children and span stack |
 | Metrics | `GET metrics` | every series with its kind, tags and reading, filterable by name |
 
@@ -63,12 +63,16 @@ Every route answers JSON (`application/json`), and every error is Problem Detail
 | `GET /_console/api/log-level` | `LogLevelView { filter, logger }` |
 | `PUT /_console/api/log-level` | `LogLevelChange { level?, filter? }`, validated before anything changes |
 | `GET /_console/api/jobs` | `JobsView { queues, recent }` (feature `jobs`) |
+| `POST /_console/api/jobs/{id}/retry` | the `JobView` after `JobQueue::retry_now`: a `dead` or `cancelled` job is `scheduled` now with its attempts reset |
+| `POST /_console/api/jobs/{id}/cancel` | the `JobView` after `JobQueue::cancel`: a `scheduled` or `failed` job is `cancelled` |
 
 A `level` (`trace` … `fatal`, `none`) sets the process-wide `EffectLogger` minimum and, unless a `filter` directive is given too, the `EnvFilter` to the same level; a `filter` needs the reload handle (`Console::env_filter`). A bad level or directive is a `400` and changes nothing. The form's `PUT` carries `Content-Type: application/json`, so a cross-site page cannot send it without a CORS preflight; do not put a permissive CORS layer in front of the console.
 
 ## The jobs panel
 
-With the `jobs` feature, `Console::jobs(queue)` takes any `id_effect_jobs::JobQueue` (`PgJobQueue`, `MemoryJobQueue`). `GET jobs` then answers each queue's counts by state with its oldest runnable `run_at`, and the newest 50 jobs with their state, attempts, `run_at` and last error. Payloads are left out: they may carry personal data, and the console is for operating the queue, not reading its data. A failing queue is a `500` Problem; without a registered queue `jobs` is a `404` and the dashboard hides the panel.
+With the `jobs` feature, `Console::jobs(queue)` takes any `id_effect_jobs::JobQueue` (`PgJobQueue`, `MemoryJobQueue`). `GET jobs` then answers each queue's counts by state with its oldest runnable `run_at`, and the newest 50 jobs with their state, attempts, `run_at` and last error. Payloads are left out: they may carry personal data, and the console is for operating the queue, not reading its data. A failing queue is a `500` Problem; without a registered queue every jobs route is a `404` and the dashboard hides the panel.
+
+An operator retries a dead job or cancels a pending one from the panel: `POST jobs/{id}/retry` runs `JobQueue::retry_now` and `POST jobs/{id}/cancel` runs `JobQueue::cancel`, behind the same guard and with `Cache-Control: no-store`. An unknown id is a `404` Problem; a job in a state the action does not apply to (retrying a running job, cancelling a dead one) or a retry whose unique key another pending job holds is a `409` Problem. Both routes require `Content-Type: application/json` and answer `415` otherwise: an HTML form on another site can only send form or plain-text bodies, so it cannot make an operator's browser retry or cancel a job, and a cross-origin `fetch` with the JSON type needs a CORS preflight the console never grants.
 
 ```rust
 use id_effect::WallClock;
@@ -76,7 +80,8 @@ use id_effect_authz::{Guard, require_role};
 use id_effect_console::Console;
 use id_effect_jobs::MemoryJobQueue;
 
-// A `PgJobQueue` in production; the console only reads it (`stats`, `list`).
+// A `PgJobQueue` in production; the console reads it (`stats`, `list`) and retries or
+// cancels single jobs (`retry_now`, `cancel`).
 let queue = MemoryJobQueue::new(WallClock::system());
 let console: axum::Router = Console::new()
   .jobs(queue.clone())
