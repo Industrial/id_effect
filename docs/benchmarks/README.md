@@ -9,10 +9,11 @@ numbers that gates read are exported to JSON and committed here.
 | `gates.toml` | The D9 gates read by `scripts/bench-compare.sh` |
 | `v0.6.json`, `v0.6.machine.txt` | The v0.6 baseline and the machine it ran on (`b0-baseline-capture`) |
 | `v0.6-rerun.json`, `v0.7.json`, [`REPORT-0.7.md`](REPORT-0.7.md) | The 0.7.0 release comparison: a same-session re-run of `bench/v0.6` against 0.7.0 (`r-bench-report`) |
+| `v0.9.json`, `v0.10.json`, `v0.10-fiber-registry.json` | The 0.10.0 exit gate: `v0.9.0` (a `git archive` export) and 0.10.0 with the `fiber-registry` feature off and on, one session ([0.10 exit](#010-exit-r10-w3-kpis)) |
 | `fixtures/*.json` | Synthetic exports for `bench-compare.sh --self-test` |
 | `compile-0.8.json` | Build loop of the template app (`examples/cli-minimal`) for 0.8: cold build, incremental rebuild, boot ([Compile time](#compile-time)) |
-| `dx-kpis-0.8.json`, `dx-kpis-0.9.json` | The DX KPIs of PLAN-OF-PLANS §8 measured by `scripts/dx-kpis.sh` (K1, K4, K5; K3 from 0.9; K2 and K6 from 0.10, [Rebuild and release build](#rebuild-and-release-build-k2-k6)) |
-| `k3/invoice.patch` | The K3 "invoice" resource for the Ledger reference app ([Feature LOC (K3)](#feature-loc-k3)) |
+| `dx-kpis-0.8.json`, `dx-kpis-0.9.json`, `dx-kpis-0.10.json` | The DX KPIs of PLAN-OF-PLANS §8 measured by `scripts/dx-kpis.sh` (K1, K4, K5; K3 from 0.9; K2 and K6 from 0.10, [Rebuild and release build](#rebuild-and-release-build-k2-k6)) |
+| `k3/invoice.patch` | The K3 "invoice" resource for the Ledger reference app, with its reminder job from 0.10 ([Feature LOC (K3)](#feature-loc-k3)) |
 
 ## Gates
 
@@ -84,6 +85,33 @@ It compares `fixtures/base.json` with itself (fails on exactly the three `improv
 and with `pass.json` (passes, with a `budget` `NOISE` row), and with `fail-budget.json`, `fail-improve.json` and
 `fail-missing.json`. Each of those must fail on exactly its one broken gate.
 
+## 0.10 exit (`r10-w3-kpis`)
+
+The release gate is `bench-compare.sh` against 0.9.0 with no `budget` gate failed, with
+`id_effect`'s `fiber-registry` feature off and on. No 0.9 export was stored, so `v0.9.json` is
+`v0.9.0` (`be54134a`) benched in the same session as 0.10.0 (`c3eb42a1`): the three sides
+interleaved per bench (v0.9.0, off, on), criterion defaults, `performance` governor, 1-min load
+1.6–4.2. `bench-run.sh` has no feature switch, so the on side ran
+`cargo bench --features id_effect/fiber-registry` (`--features fiber-registry` for `id_effect`).
+
+| Comparison | `budget` (7) | `improve` (3) |
+|---|---|---|
+| `v0.9.json` → `v0.10.json` (off) | all PASS (max `coord/channel_spsc_10k` 1.06) | `spawn_join_10k` 0.84 PASS; `sleep_cpu_1k_x_1ms` 1.02, `axum_request_oneshot` 1.02 FAIL |
+| `v0.9.json` → `v0.10-fiber-registry.json` (on) | all PASS (max `coord/queue_bounded_10k` 1.13) | `sleep_cpu_1k_x_1ms` 0.94 PASS; `spawn_join_10k` 1.19, `axum_request_oneshot` 1.01 FAIL |
+| `v0.6.json` → off / on (stored baseline, other session) | all PASS (max `bench_schedule_retry_overhead` 1.30 of 2.0) | all PASS |
+
+- **Gate met:** no `budget` FAIL, off or on.
+- **`improve` against 0.9:** these gates are "must improve on v0.6" (D9); 0.9 already has the
+  improvement (`v0.6` → 0.10: 0.002, 0.002, 0.13), so a 0.9 → 0.10 ratio near 1.00 fails them by
+  construction, as a same-build comparison does ([Gates](#gates)).
+- **Off → on** (`v0.10.json` → `v0.10-fiber-registry.json` with every gated id a 1.25 budget, the
+  `r10-e6-2-fiber-registry` leaf's own check, not `gates.toml`): all within it but
+  `gate/spawn_join_10k` 1.42. That bench takes 10 samples and is bimodal on this machine (about
+  12 or 17 ms per run; 95 % CIs 9.9–17.4 ms off, 11.8–23.1 ms on). Three more interleaved off/on
+  runs of it gave 17.5 / 17.2, 19.2 / 16.7 and 12.1 / 17.7 ms (mean ratio about 1.06), so the
+  1.42 is the bimodality, not the registry. `coord/queue_bounded_10k` 1.13 and
+  `phase0/bench_env_insert_overhead` 1.09 are the largest on-side costs otherwise.
+
 ## Compile time
 
 `scripts/compile-time.sh` measures the build loop of the template app
@@ -121,10 +149,14 @@ re-measure #1 on an idle machine before relying on its margin.
 
 K3 is the number of lines it takes to add one resource to a real service: the "invoice" resource
 added to `examples/reference/ledger`, written the way the app writes its accounts (an `Entity`
-over a tenant-scoped, soft-deleted, versioned `Repository`, migration `0004` up and down, typed
-routes answering Problem+JSON, permissions and a resource policy with a guard on every route, an
-integration test on the app's harness). It is kept as `k3/invoice.patch`, a unified diff
-against `HEAD` (repository-relative paths), not as code in the app.
+over a tenant-scoped, soft-deleted, versioned `Repository`, a migration up and down (`0008` at
+0.10), typed routes answering Problem+JSON, permissions and a resource policy with a guard on
+every route, a background job, an integration test on the app's harness). The job (from 0.10) is
+the `InvoiceReminder` on the app's `id_effect_jobs` queue: issuing an invoice enqueues it in the
+same transaction (`enqueue_in`), unique per invoice, due 14 days later on the `invoices` queue;
+it is registered in the Ledger's job registry and worker and marks a still-unpaid invoice
+reminded. It is kept as `k3/invoice.patch`, a unified diff against `HEAD` (repository-relative
+paths), not as code in the app.
 
 ```bash
 bash scripts/dx-kpis.sh --skip-k1 --skip-k2 --skip-k6   # K3 (and K4, K5): the patch applies, its lines counted
@@ -137,9 +169,9 @@ git apply --check docs/benchmarks/k3/invoice.patch   # on a clean checkout of HE
 - **Categories** (paths under `examples/reference/ledger`): `migrations/**` migration;
   `tests/**` test (the new test and the existing tests the change has to update, here the
   migration versions in `tests/migrations.rs`); `src/policy.rs` policy; `src/app.rs` routes (the
-  router's `merge`); `src/lib.rs` model (`pub mod`); the resource module `src/<name>.rs` is model
-  up to its first private top-level `fn` (the first handler) and routes from there; anything
-  else is `other`.
+  router's `merge`); `src/lib.rs` model (`pub mod`); `src/jobs.rs` job (the job type, its
+  handler, registration and queue); the resource module `src/<name>.rs` is model up to its first
+  private top-level `fn` (the first handler) and routes from there; anything else is `other`.
 - **Applies to HEAD:** checked on a scratch index read from `HEAD`
   (`git apply --cached --check`), so local changes do not matter. When the Ledger changes in a way
   that breaks the patch, the script fails: refresh the patch in an export of `HEAD`
@@ -147,13 +179,19 @@ git apply --check docs/benchmarks/k3/invoice.patch   # on a clean checkout of HE
 - **`--k3-build`** exports `HEAD` into `DX_KPIS_DIR` (or a temp dir), applies the patch, runs
   `cargo build -p ledger --tests` and `cargo test -p ledger --test invoices` (`SKIP` without
   Docker, a failure with `ID_EFFECT_REQUIRE_DOCKER=1`). `K3_TARGET_DIR` reuses a target dir.
-- **Excluded:** the "job" of §8 (PLAN-OF-PLANS: model, migration, routes, auth, job, test): there
-  is no jobs battery before 0.10. The 0.10 patch adds it, so its K3 is not comparable line for
-  line; compare per category.
-- **Target:** none at 0.9 (measured, the 1.0 baseline); §8 sets −40 % against the 0.9 figure.
+- **The job:** §8 counts model, migration, routes, auth, job and test. 0.9 had no jobs battery, so
+  its patch has no job; from 0.10 it has. The totals are therefore not comparable line for line;
+  compare per category (the job adds its own `job` category plus a few lines in the others: the
+  enqueue in the `PATCH` handler, the `reminded_at` column, its test).
+- **Target:** none at 0.9 or 0.10 (measured); §8 sets −40 % against the 0.9 figure.
 
 0.9 (`dx-kpis-0.9.json`): **508** lines over 8 files: model 180, migration 17, routes 153,
 policy 30, test 128. The resource module is 330 of them (179 model, 151 handlers and routes).
+
+0.10 (`dx-kpis-0.10.json`): **632** lines over 9 files: model 183, migration 19, routes 172,
+policy 30, job 43, test 185. Without the job's own lines (job 43, and in the other categories
+the enqueue, the column and the reminder test) the resource is the 0.9 one, re-based on the 0.10
+Ledger (migration `0008`, eight migrations in `tests/migrations.rs`).
 
 ## Rebuild and release build (K2, K6)
 
@@ -179,6 +217,10 @@ K2_RUNS=5 bash scripts/dx-kpis.sh --skip-k1 --skip-k6 --out FILE   # K2 only (5 
   build has to meet with the boot included. K6 is recorded, not checked by the script; compare
   the `k6.seconds` of `dx-kpis-<release>.json` with this budget.
 - Run on an idle machine: the load average at the start and the end goes into `machine`.
+
+0.10 (`dx-kpis-0.10.json`, no `CARGO_BUILD_JOBS` cap, 1-min load 2.10 at the start): K1
+**19.9 s** (build 19.73 s; budget 180 s, re-measured idle after the loaded 67.6 s of 0.9), K2
+**0.97 s** (runs 0.96, 0.97, 1.05; budget 8 s), K6 **22.52 s** (budget 120 s).
 
 ## Spike gate (historical)
 

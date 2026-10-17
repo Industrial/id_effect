@@ -11,9 +11,9 @@
 #   K6  cold release build: `cargo build --release` of the same project in a fresh target dir.
 #       Recorded, no budget check here; the budget is in docs/benchmarks/README.md (§8).
 #   K3  feature LOC: the added non-blank lines of docs/benchmarks/k3/invoice.patch, the "invoice"
-#       resource (model, migration, routes, policy, test) added to examples/reference/ledger,
-#       per category. Measured, no target (PLAN-OF-PLANS §8: -40 % at a later release). The
-#       "job" of §8 is excluded until the jobs battery exists (0.10).
+#       resource (model, migration, routes, policy, job, test) added to examples/reference/ledger,
+#       per category. Measured, no target (PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release).
+#       The job is part of it from 0.10 (0.9 had no jobs battery): compare with 0.9 per category.
 #   K4  diagnostics: the cases of crates/id_effect/tests/ui/gallery whose first error states the
 #       fix, as recorded in the "Fix in the error" column of docs/diagnostics.md (at least K4_MIN,
 #       default 17, owner-accepted for 0.8).
@@ -68,6 +68,7 @@
 #         src/policy.rs      policy (permissions, named policies, Owned / Tenanted impls)
 #         src/app.rs         routes (the router's merge)
 #         src/lib.rs         model (the module declaration)
+#         src/jobs.rs        job (the job type, its handler, its registration and queue)
 #         other src/*.rs     the resource module: model (entity, repository, input schemas,
 #                            lookups) up to its first added private top-level `fn` (the first
 #                            handler), routes from that line on (handlers and `routes()`)
@@ -170,7 +171,7 @@ median() {
 
 # --- K3 -------------------------------------------------------------------------------------
 
-# Prints `<total> <model> <migration> <routes> <policy> <test> <other> <files>` for the unified
+# Prints `<total> <model> <migration> <routes> <policy> <test> <job> <other> <files>` for the unified
 # diff PATCH: its added non-blank lines by category (rules in the header) and the files it touches.
 k3_count() {
     awk -v app="${K3_APP}/" '
@@ -182,6 +183,7 @@ k3_count() {
             if (path == "src/policy.rs") return "policy"
             if (path == "src/app.rs") return "routes"
             if (path == "src/lib.rs") return "model"
+            if (path == "src/jobs.rs") return "job"
             if (path ~ /^src\/[^\/]+\.rs$/) {
                 if (line ~ /^fn /) handlers[path] = 1
                 return (path in handlers ? "routes" : "model")
@@ -199,8 +201,8 @@ k3_count() {
             total++
         }
         END {
-            printf "%d %d %d %d %d %d %d %d\n", total, n["model"], n["migration"], n["routes"],
-                n["policy"], n["test"], n["other"], files
+            printf "%d %d %d %d %d %d %d %d %d\n", total, n["model"], n["migration"], n["routes"],
+                n["policy"], n["test"], n["job"], n["other"], files
         }' "$1"
 }
 
@@ -488,7 +490,7 @@ emit_json() {
     local k1="$1" k4="$2" k5="$3" machine="$4" rustc="$5" rev="$6" k3="$7" k3b="$8" k1_json="null"
     local k2="${9:-}" k6="${10:-}" k2_json="null" k6_json="null" median runs
     local total new build boot fixed rows without compiled fences ignored notincl
-    local lines model migration routes policy tests other files k3b_json="null" tested outcome
+    local lines model migration routes policy tests job other files k3b_json="null" tested outcome
     if [[ -n "${k2}" ]]; then
         read -r median runs <<<"${k2}"
         k2_json="{\"seconds\": ${median}, \"budget_s\": ${K2_BUDGET_S}, \"pass\": $(json_bool "$(at_most "${median}" "${K2_BUDGET_S}")"), \"runs_s\": [${runs//,/, }], \"edit\": \"hello handler in src/lib.rs\", \"template\": \"service\", \"profile\": \"dev\", \"wrapper\": \"none\"}"
@@ -496,7 +498,7 @@ emit_json() {
     if [[ -n "${k6}" ]]; then
         k6_json="{\"seconds\": ${k6}, \"template\": \"service\", \"profile\": \"release\", \"target_dir\": \"fresh\", \"wrapper\": \"none\", \"budget\": \"docs/benchmarks/README.md (K6)\"}"
     fi
-    read -r lines model migration routes policy tests other files <<<"${k3}"
+    read -r lines model migration routes policy tests job other files <<<"${k3}"
     if [[ -n "${k3b}" ]]; then
         read -r build tested outcome <<<"${k3b}"
         k3b_json="{\"build_s\": ${build}, \"test_s\": ${tested}, \"invoice_tests\": \"${outcome}\"}"
@@ -517,7 +519,7 @@ emit_json() {
     echo "  \"machine\": ${machine},"
     echo "  \"k1\": ${k1_json},"
     echo "  \"k2\": ${k2_json},"
-    echo "  \"k3\": {\"lines\": ${lines}, \"by_category\": {\"model\": ${model}, \"migration\": ${migration}, \"routes\": ${routes}, \"policy\": ${policy}, \"test\": ${tests}, \"other\": ${other}}, \"files\": ${files}, \"patch\": \"docs/benchmarks/k3/invoice.patch\", \"applies_to_head\": true, \"excluded\": {\"job\": \"no jobs battery before 0.10\"}, \"build\": ${k3b_json}, \"target\": \"none at 0.9 (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release\"},"
+    echo "  \"k3\": {\"lines\": ${lines}, \"by_category\": {\"model\": ${model}, \"migration\": ${migration}, \"routes\": ${routes}, \"policy\": ${policy}, \"test\": ${tests}, \"job\": ${job}, \"other\": ${other}}, \"files\": ${files}, \"patch\": \"docs/benchmarks/k3/invoice.patch\", \"applies_to_head\": true, \"build\": ${k3b_json}, \"target\": \"none (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release; the job is in from 0.10, compare with 0.9 per category\"},"
     echo "  \"k4\": {\"fixed\": ${fixed}, \"cases\": ${rows}, \"min\": ${K4_MIN}, \"pass\": $(json_bool $((fixed >= K4_MIN))), \"without_fix\": [$(json_list "${without}")]},"
     echo "  \"k5\": {\"compiled\": ${compiled}, \"rust_fences\": ${fences}, \"ignored\": ${ignored}, \"not_included\": ${notincl}, \"percent\": $(percent "${compiled}" "${fences}"), \"min_percent\": ${K5_MIN_PERCENT}, \"pass\": $(json_bool "$(percent_ok "${compiled}" "${fences}" "${K5_MIN_PERCENT}")")},"
     echo "  \"k6\": ${k6_json}"
@@ -583,9 +585,11 @@ self_test() {
         "diff --git a/${K3_APP}/tests/w.rs b/${K3_APP}/tests/w.rs" "--- /dev/null" "+++ b/${K3_APP}/tests/w.rs" \
         "@@ -0,0 +1 @@" "+#[test]" "diff --git a/${K3_APP}/src/app.rs b/${K3_APP}/src/app.rs" \
         "--- a/${K3_APP}/src/app.rs" "+++ b/${K3_APP}/src/app.rs" "@@ -1 +1,2 @@" " keep" "+.merge(w)" \
+        "diff --git a/${K3_APP}/src/jobs.rs b/${K3_APP}/src/jobs.rs" "--- a/${K3_APP}/src/jobs.rs" \
+        "+++ b/${K3_APP}/src/jobs.rs" "@@ -1 +1,3 @@" " keep" "+fn remind() {}" "+" \
         "diff --git a/README.md b/README.md" "--- a/README.md" "+++ b/README.md" "@@ -1 +1,2 @@" " keep" "+doc" >"${tmp}/k3.patch"
     out="$(k3_count "${tmp}/k3.patch")"
-    [[ "${out}" == "10 2 2 3 1 1 1 6" ]] || st_fail "k3_count: want '10 2 2 3 1 1 1 6', got '${out}'" || return 1
+    [[ "${out}" == "11 2 2 3 1 1 1 1 7" ]] || st_fail "k3_count: want '11 2 2 3 1 1 1 1 7', got '${out}'" || return 1
     if k3_applies "${tmp}/k3.patch" 2>/dev/null; then
         st_fail "k3_applies accepted a patch that does not apply to HEAD" || return 1
     fi
@@ -601,20 +605,20 @@ self_test() {
 
     # The JSON, with and without K1, passing and failing.
     machine='{"cpu": "x"}'
-    out="$(emit_json "95.5 0.1 90.2 5.2" "17 20 a,b,c" "350 424 20 54" "${machine}" "rustc 1.0" "abc" "10 2 2 3 1 1 1 6" "61.5 3.2 passed")"
+    out="$(emit_json "95.5 0.1 90.2 5.2" "17 20 a,b,c" "350 424 20 54" "${machine}" "rustc 1.0" "abc" "11 2 2 3 1 1 1 1 7" "61.5 3.2 passed")"
     for want in '"k1": {"seconds": 95.5, "budget_s": 180, "pass": true, "new_s": 0.1, "build_s": 90.2,' \
-        '"k3": {"lines": 10, "by_category": {"model": 2, "migration": 2, "routes": 3, "policy": 1, "test": 1, "other": 1}, "files": 6,' \
+        '"k3": {"lines": 11, "by_category": {"model": 2, "migration": 2, "routes": 3, "policy": 1, "test": 1, "job": 1, "other": 1}, "files": 7,' \
         '"build": {"build_s": 61.5, "test_s": 3.2, "invoice_tests": "passed"},' \
         '"k4": {"fixed": 17, "cases": 20, "min": 17, "pass": true, "without_fix": ["a", "b", "c"]},' \
         '"k5": {"compiled": 350, "rust_fences": 424, "ignored": 20, "not_included": 54, "percent": 82.5, "min_percent": 80, "pass": true}' \
         '"machine": {"cpu": "x"},' '"revision": "abc",'; do
         [[ "${out}" == *"${want}"* ]] || st_fail "the JSON lacks ${want}: ${out}" || return 1
     done
-    out="$(emit_json "" "16 20 -" "1 10 0 9" "${machine}" "rustc 1.0" "abc" "1 1 0 0 0 0 0 1" "")"
+    out="$(emit_json "" "16 20 -" "1 10 0 9" "${machine}" "rustc 1.0" "abc" "1 1 0 0 0 0 0 0 1" "")"
     for want in '"k1": null,' '"build": null,' '"pass": false, "without_fix": []},' '"percent": 10.0, "min_percent": 80, "pass": false}'; do
         [[ "${out}" == *"${want}"* ]] || st_fail "the JSON lacks ${want}: ${out}" || return 1
     done
-    out="$(emit_json "200.0 0.1 195.0 4.9" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "")"
+    out="$(emit_json "200.0 0.1 195.0 4.9" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 0 1" "")"
     [[ "${out}" == *'"seconds": 200.0, "budget_s": 180, "pass": false,'* ]] || st_fail "K1 over budget passes: ${out}" || return 1
     [[ "${out}" == *'"k2": null,'* && "${out}" == *'"k6": null'$'\n''}' ]] || st_fail "skipped K2/K6 are not null: ${out}" || return 1
 
@@ -630,12 +634,12 @@ self_test() {
     if k2_edit "${tmp}/lib.rs" "${tmp}/lib2.rs" 8; then
         st_fail "k2_edit accepted a source without the handler line" || return 1
     fi
-    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "" "6.10 6.30,6.10,5.90" "212.40")"
+    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 0 1" "" "6.10 6.30,6.10,5.90" "212.40")"
     for want in '"k2": {"seconds": 6.10, "budget_s": 8, "pass": true, "runs_s": [6.30, 6.10, 5.90],' \
         '"k6": {"seconds": 212.40, "template": "service", "profile": "release", "target_dir": "fresh",'; do
         [[ "${out}" == *"${want}"* ]] || st_fail "the JSON lacks ${want}: ${out}" || return 1
     done
-    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 1" "" "8.01 8.01" "")"
+    out="$(emit_json "" "17 20 -" "9 10 1 0" "${machine}" r x "1 1 0 0 0 0 0 0 1" "" "8.01 8.01" "")"
     [[ "${out}" == *'"k2": {"seconds": 8.01, "budget_s": 8, "pass": false, "runs_s": [8.01],'* ]] ||
     st_fail "K2 over budget passes: ${out}" || return 1
     [[ "$(json_string 'a "b" \c')" == '"a \"b\" \\c"' ]] || st_fail "json_string" || return 1
@@ -800,10 +804,10 @@ else
     else
         echo "dx-kpis: K2 skipped"
     fi
-    read -r k3_lines k3_model k3_migration k3_routes k3_policy k3_test k3_other k3_files <<<"${k3}"
-    k3_detail="model ${k3_model}, migration ${k3_migration}, routes ${k3_routes}, policy ${k3_policy}, test ${k3_test}"
+    read -r k3_lines k3_model k3_migration k3_routes k3_policy k3_test k3_job k3_other k3_files <<<"${k3}"
+    k3_detail="model ${k3_model}, migration ${k3_migration}, routes ${k3_routes}, policy ${k3_policy}, job ${k3_job}, test ${k3_test}"
     ((k3_other == 0)) || k3_detail+=", other ${k3_other}"
-    k3_detail+="; ${k3_files} files; job excluded: no jobs battery before 0.10"
+    k3_detail+="; ${k3_files} files"
     if [[ -n "${k3b}" ]]; then
         read -r k3_build_s _ k3_outcome <<<"${k3b}"
         k3_detail+="; patched Ledger built in ${k3_build_s}s, invoice tests ${k3_outcome}"
