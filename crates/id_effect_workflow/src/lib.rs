@@ -1,6 +1,7 @@
 //! Durable workflows for id_effect services (ADR 0010 Amendment 7): a history journal replayed
-//! on resume, on `id_effect_sql` (Postgres), with any number of engines against one database
-//! (release 0.11.0 decisions D6 and D7).
+//! on resume, on `id_effect_sql` (Postgres), with any number of engines against one database,
+//! activities and durable timers as `id_effect_jobs` jobs, and signals (release 0.11.0 decisions
+//! D6 and D7).
 //!
 //! ```
 //! use id_effect::{Effect, Exit, Schema, succeed};
@@ -51,7 +52,7 @@
 //! # Design
 //!
 //! This section is the design the 0.11 workflow leaves build on (r11-e7-5-engine; activities,
-//! timers and signals follow in r11-e7-5-activities-timers, sagas in r11-e7-5-sagas-promote).
+//! timers and signals in r11-e7-5-activities-timers; sagas follow in r11-e7-5-sagas-promote).
 //!
 //! ## Model: journal and replay (D7)
 //!
@@ -68,22 +69,103 @@
 //! | [`ctx.step(name, effect)`](WorkflowContext::step) | runs `effect`, journals `{"ok": value}` or `{"err": message}` | returns the journaled result; `effect` does not run |
 //! | [`ctx.now()`](WorkflowContext::now) | reads the engine's [`WallClock`](id_effect::WallClock), journals it | the journaled instant |
 //! | [`ctx.random()`](WorkflowContext::random) | draws from the engine's [`Random`](id_effect::Random), journals it | the journaled value |
+//! | [`ctx.activity::<A>(input)`](WorkflowContext::activity) | enqueues a job, parks; once delivered, journals `{"ok"}` / `{"err"}` | the journaled result |
+//! | [`ctx.sleep(d)`](WorkflowContext::sleep), [`sleep_until(t)`](WorkflowContext::sleep_until) | enqueues a timer job at `run_at`, parks; once fired, journals `{"due"}` | returns at once |
+//! | [`ctx.wait_signal::<P>(name)`](WorkflowContext::wait_signal) | takes the next stored signal of `name` or parks; journals `{"number", "payload"}` | the journaled signal |
 //!
 //! Replay is keyed by `seq` and checked by kind and step name (the Temporal / Durable Task
 //! model): a call whose kind or name differs from the journaled one at its `seq`, or a body that
 //! ends with history left over, fails with [`WorkflowError::NonDeterministic`] and fails the
-//! instance. Steps are at least once: a step whose result was not journaled (crash, lease lost)
-//! runs again on resume, so its effect must be idempotent. Steps run one after another.
-//! [`VERSION`](Workflow::VERSION) is recorded on each instance; routing old instances to old
-//! code is E13.5 (0.16).
+//! instance; the divergence is sticky (every later call of the run fails with it), so a body
+//! that catches it cannot journal past it. Steps are at least once: a step whose result was
+//! not journaled (crash, lease lost) runs again on resume, so its effect must be idempotent.
+//! Calls run one after another.
+//! [`VERSION`](Workflow::VERSION) is recorded on each instance, not checked; routing old
+//! instances to old code is E13.5 (0.16).
 //!
-//! ## Schema (`migrations/0001_id_effect_workflow.up.sql`, [`migrator`])
+//! ## Waiting: park and wake
+//!
+//! An activity, a timer or a signal that has not arrived yet **parks** the run: the call fails
+//! with [`WorkflowError::Waiting`] (and so does every later call of that run), the engine sets
+//! `waiting` on the instance and frees its lease ([`WorkflowStore::wait`],
+//! [`RunOutcome::Waiting`]). A parked instance is not claimable. What it waits for arrives as a
+//! [`Completion`] ([`WorkflowStore::complete`]: an activity's result or a fired timer, keyed by
+//! `(instance, seq)`) or a signal ([`WorkflowStore::signal`]); each clears `waiting` and
+//! increments the instance's `wakeups` in the statement that stores it. The next run replays
+//! the history, reaches the waiting call at the same `seq`, finds the completion or signal and
+//! journals it there, under the lease and fenced like any append. Only the lease holder writes
+//! history; workers and senders write completions and signals.
+//!
+//! No wake-up is lost: a run reads `wakeups` when it claims the instance and parks only while
+//! it is unchanged (one fenced `UPDATE … AND wakeups = $seen`, serialised with the wake-ups on
+//! the instance row). A completion or signal that lands after the claim makes the park match
+//! nothing; the engine frees the lease instead and the instance runs again at once.
+//!
+//! ## Activities (D6)
+//!
+//! An [`Activity`] is a type with a [`NAME`](Activity::NAME), schema-encoded `Input` and
+//! `Output`, and `run(ctx, input) -> Effect<Output, JobFailure>`. The workflow side only names
+//! the type; workers get the implementation from
+//! [`WorkflowEngine::register_activity`] on their `id_effect_jobs::JobRegistry`.
+//!
+//! - **Scheduling** ([`ctx.activity`](WorkflowContext::activity) at a fresh `seq`): when no
+//!   completion is delivered for `seq`, a fenced lease renewal (a stale run schedules nothing),
+//!   then one job on [`Activity::QUEUE`] (default [`ACTIVITY_QUEUE`]) with the unique key
+//!   `<instance>#<seq>` held until the job row is pruned. Scheduling the same call again (a
+//!   crash before the park, a replay woken by an unrelated signal, two engines) inserts
+//!   nothing, so one call is one job.
+//! - **Execution**: at least once, by any `id_effect_jobs::Worker` serving the queue, on any
+//!   node. A typed failure is retried after [`Activity::retry`] (a core
+//!   [`Schedule`](id_effect::Schedule)) up to [`Activity::MAX_ATTEMPTS`]; a worker that dies
+//!   mid-run loses its job lease and another worker rescues and reruns the job.
+//! - **Delivery**: the handler records `{"ok": output}`, or `{"err": message}` once the
+//!   failure is final (a discard, the last attempt, a done schedule), as the completion of
+//!   `(instance, seq)`: `INSERT … ON CONFLICT DO NOTHING`, so a duplicate completion (a rescued
+//!   attempt that ran twice) is ignored and the first result wins. The result reaches the
+//!   history only through the next run of the instance, at `seq`.
+//! - A job that dies without a recorded result (its attempts used up by rescues of crashed
+//!   workers, or a defect on the last attempt) leaves the instance parked; retrying the job by
+//!   hand (`JobQueue::retry_now`) resumes it.
+//!
+//! ## Durable timers (D6)
+//!
+//! [`ctx.sleep(d)`](WorkflowContext::sleep) / [`sleep_until(t)`](WorkflowContext::sleep_until)
+//! at a fresh `seq` enqueue one job on [`TIMER_QUEUE`] with `run_at` the due instant (the
+//! engine's clock at the first schedule plus `d`) and the unique key `<instance>#<seq>`, and
+//! park. Workers run it once `run_at` has come on the queue's clock
+//! ([`WorkflowEngine::register_timers`]); the handler delivers `{"due": …}` as the completion.
+//! The timer lives in the job table, not in an engine, so it survives engine restarts and
+//! moves between nodes; with a test clock (`WallClock::anchored`, `jump`) waits of days
+//! complete at once.
+//!
+//! ## Signals (D6)
+//!
+//! [`WorkflowClient::signal(instance, name, payload)`](WorkflowClient::signal) stores the
+//! encoded payload in `workflow_signals` numbered by the instance's incremented `wakeups`, so
+//! numbers grow in commit order (the instance row lock serialises senders).
+//! [`ctx.wait_signal(name)`](WorkflowContext::wait_signal) takes the first signal of `name`
+//! numbered after the last one this instance consumed (known from the replayed history), so
+//! signals are received in arrival order, one per call, and a signal sent before the wait is
+//! buffered until it is taken.
+//!
+//! ## Schema (`migrations/0001_*.up.sql`, `0002_*.up.sql`, [`migrator`])
 //!
 //! - `workflow_instances (id text PK, name, version, status 'running'|'completed'|'failed',
 //!   input jsonb, output jsonb, error, lease_owner, lease_expires_at, fencing_token bigint,
 //!   created_at, updated_at)`, partial index `(name, created_at, id) WHERE status = 'running'`.
 //! - `workflow_history (instance_id → workflow_instances, seq bigint, kind, name, payload jsonb,
 //!   recorded_at, UNIQUE (instance_id, seq))`.
+//!
+//! `migrations/0002_activities_timers_signals.up.sql` adds:
+//!
+//! - `workflow_instances.waiting boolean` and `wakeups bigint`; the claim index becomes
+//!   `(name, created_at, id) WHERE status = 'running' AND NOT waiting`.
+//! - `workflow_completions (instance_id, seq, kind 'activity'|'timer', name, payload jsonb,
+//!   completed_at, PRIMARY KEY (instance_id, seq))`: one delivery per idempotency key.
+//! - `workflow_signals (instance_id, number, name, payload jsonb, received_at, PRIMARY KEY
+//!   (instance_id, number))` and an index `(instance_id, name, number)`.
+//!
+//! Activity and timer jobs live in `id_effect_jobs`' own table (its `migrator`).
 //!
 //! Times are bound from the engine's clock, never the database's `now()` (as in
 //! `id_effect_jobs`); [`migrator`] tracks its versions in `_id_effect_workflow_migrations`.
@@ -121,7 +203,11 @@
 //! [`WorkflowEngine::register`], [`start`](WorkflowEngine::start) (idempotent per id),
 //! [`status`](WorkflowEngine::status), [`result`](WorkflowEngine::result),
 //! [`instance`](WorkflowEngine::instance); drivers [`run`](WorkflowEngine::run) (forever),
-//! [`run_once`](WorkflowEngine::run_once) and [`resume`](WorkflowEngine::resume).
+//! [`run_once`](WorkflowEngine::run_once) and [`resume`](WorkflowEngine::resume). Activities and
+//! timers: [`with_job_queue`](WorkflowEngine::with_job_queue) on the engines,
+//! [`register_activity`](WorkflowEngine::register_activity) and
+//! [`register_timers`](WorkflowEngine::register_timers) on the workers' registry. Signals:
+//! [`WorkflowEngine::client`] or [`WorkflowClient`].
 //!
 //! # Names
 //!
@@ -138,23 +224,32 @@
 
 #![deny(missing_docs)]
 
+mod activity;
 mod engine;
 mod error;
 mod history;
 pub mod lease;
 mod memory;
 mod pg;
+mod signal;
+mod timer;
 mod workflow;
 
+pub use activity::{ACTIVITY_QUEUE, Activity, ActivityContext};
 pub use engine::{EngineConfig, RunOutcome, Started, WorkflowEngine};
 pub use error::WorkflowError;
 pub use history::{
-  Claimed, EventKind, Finish, HistoryEvent, InstanceRecord, NewInstance, WorkflowStatus,
-  WorkflowStore,
+  Claimed, Completion, EventKind, Finish, HistoryEvent, InstanceRecord, NewInstance, SignalRecord,
+  WorkflowStatus, WorkflowStore,
 };
+/// What activities fail with and are retried by: an activity's `run` returns a [`JobFailure`]
+/// and its [`Activity::retry`] schedule steps on it.
+pub use id_effect_jobs::JobFailure;
 pub use lease::{EngineId, Fenced, Lease};
 pub use memory::MemoryWorkflowStore;
 pub use pg::{PgWorkflowStore, migrator};
+pub use signal::WorkflowClient;
+pub use timer::TIMER_QUEUE;
 pub use workflow::{Journaled, Workflow, WorkflowContext, WorkflowId};
 
 use std::fmt;

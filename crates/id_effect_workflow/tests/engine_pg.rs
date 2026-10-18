@@ -74,7 +74,7 @@ impl Db {
         .run_on(Arc::new(db.client.clone()))
         .map_err(|e| e.to_string()),
     );
-    assert_eq!(applied, [1]);
+    assert_eq!(applied, [1, 2]);
     Some(db)
   }
 

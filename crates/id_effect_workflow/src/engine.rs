@@ -6,12 +6,18 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::{Effect, Never, Random, UtcDateTime, WallClock, fail, sleep, succeed, suspend};
+use id_effect::{
+  Effect, HList, Never, Random, UtcDateTime, WallClock, fail, sleep, succeed, suspend,
+};
+use id_effect_jobs::{JobQueue, JobRegistry};
 
 use crate::WorkflowName;
+use crate::activity::{self, Activity};
 use crate::error::WorkflowError;
 use crate::history::{Claimed, Finish, InstanceRecord, NewInstance, WorkflowStatus, WorkflowStore};
 use crate::lease::{EngineId, Fenced, Lease, later};
+use crate::signal::WorkflowClient;
+use crate::timer;
 use crate::workflow::{Workflow, WorkflowContext, WorkflowId, decode, encode};
 
 /// How an engine takes and keeps leases.
@@ -69,6 +75,9 @@ pub enum RunOutcome {
   /// The lease was lost mid-run (expired, or taken over): this engine stopped and wrote nothing
   /// more; whoever holds the lease now continues from the history.
   LeaseLost,
+  /// The run parked: it waits for an activity's result, a timer or a signal. The lease is
+  /// freed; the instance runs again once one arrives (at once when one arrived during the run).
+  Waiting,
 }
 
 type Body = Arc<
@@ -95,12 +104,19 @@ struct Registered {
 ///   (see [`crate::lease`]); an expired lease is taken over and the instance resumes from its
 ///   history on another engine.
 ///
+/// - Activities and durable timers are jobs of the `id_effect_jobs` queue given to
+///   [`with_job_queue`](Self::with_job_queue); the workers that run them get their handlers
+///   from [`register_activity`](Self::register_activity) and
+///   [`register_timers`](Self::register_timers). A run that waits for one (or for a signal,
+///   [`client`](Self::client)) parks the instance ([`RunOutcome::Waiting`]) until it arrives.
+///
 /// A run that dies (a defect) or is interrupted writes nothing more and keeps its lease until
 /// it expires; the instance then resumes, re-running only the step that was in flight.
 /// Cloning shares the registry and the store.
 #[derive(Clone)]
 pub struct WorkflowEngine {
   store: Arc<dyn WorkflowStore>,
+  jobs: Option<Arc<dyn JobQueue>>,
   registry: BTreeMap<&'static str, Arc<Registered>>,
   config: EngineConfig,
   clock: WallClock,
@@ -113,6 +129,7 @@ impl fmt::Debug for WorkflowEngine {
       .field("id", &self.config.id)
       .field("workflows", &self.registry.keys().collect::<Vec<_>>())
       .field("lease", &self.config.lease)
+      .field("job_queue", &self.jobs.is_some())
       .finish_non_exhaustive()
   }
 }
@@ -128,6 +145,7 @@ impl WorkflowEngine {
   pub fn from_arc(store: Arc<dyn WorkflowStore>) -> Self {
     Self {
       store,
+      jobs: None,
       registry: BTreeMap::new(),
       config: EngineConfig::default(),
       clock: WallClock::system(),
@@ -151,6 +169,51 @@ impl WorkflowEngine {
   pub fn with_random(mut self, random: Random) -> Self {
     self.random = random;
     self
+  }
+
+  /// Schedules activities ([`WorkflowContext::activity`]) and durable timers
+  /// ([`WorkflowContext::sleep`]) as jobs of `queue` (a `PgJobQueue` on the same database in
+  /// production). Without one those calls fail with [`WorkflowError::NoJobQueue`].
+  pub fn with_job_queue(mut self, queue: impl JobQueue) -> Self {
+    self.jobs = Some(Arc::new(queue));
+    self
+  }
+
+  /// Adds the handler of activity `A` to the workers' `registry`: a worker serving
+  /// [`A::QUEUE`](Activity::QUEUE) runs `activity` and delivers its result to the instance
+  /// through this engine's store (clock: this engine's). Fails when [`A::NAME`](Activity::NAME)
+  /// is not a valid [`WorkflowName`] or the registry already has a job of that name.
+  pub fn register_activity<A: Activity, R>(
+    &self,
+    registry: JobRegistry<R>,
+    activity: A,
+  ) -> Result<JobRegistry<R>, WorkflowError>
+  where
+    R: HList + Send + Sync + 'static,
+  {
+    activity::register(
+      registry,
+      activity,
+      Arc::clone(&self.store),
+      self.clock.clone(),
+    )
+  }
+
+  /// Adds the durable timers' handler to the workers' `registry`: a worker serving
+  /// [`TIMER_QUEUE`](crate::TIMER_QUEUE) fires due timers into this engine's store.
+  pub fn register_timers<R>(
+    &self,
+    registry: JobRegistry<R>,
+  ) -> Result<JobRegistry<R>, WorkflowError>
+  where
+    R: HList + Send + Sync + 'static,
+  {
+    timer::register(registry, Arc::clone(&self.store), self.clock.clone())
+  }
+
+  /// A [`WorkflowClient`] over this engine's store and clock (signals).
+  pub fn client(&self) -> WorkflowClient {
+    WorkflowClient::from_arc(Arc::clone(&self.store)).with_clock(self.clock.clone())
   }
 
   /// Registers `workflow` under [`Workflow::NAME`]; fails when the name is invalid or taken.
@@ -347,7 +410,11 @@ impl WorkflowEngine {
   /// Runs one claimed instance to its end or until its lease is lost.
   fn drive(&self, claimed: Claimed) -> Effect<RunOutcome, WorkflowError> {
     let Claimed {
-      lease, name, input, ..
+      lease,
+      name,
+      input,
+      wakeups,
+      ..
     } = claimed;
     let Some(registered) = self.registry.get(name.as_str()).cloned() else {
       // `resume` of an instance this engine cannot run: give the lease back.
@@ -362,11 +429,12 @@ impl WorkflowEngine {
         lease.clone(),
         history,
         Arc::clone(&engine.store),
+        engine.jobs.clone(),
         engine.clock.clone(),
         engine.random.clone(),
         engine.config.lease,
       );
-      let check = ctx.clone();
+      let (check, parked) = (ctx.clone(), ctx.clone());
       let body = (registered.run)(ctx, input)
         .flat_map(move |output| match check.leftover() {
           Some(e) => fail(e),
@@ -376,7 +444,16 @@ impl WorkflowEngine {
         .catch(|e| succeed(Err(e)));
       body
         .race_first(engine.heartbeat(lease.clone()))
-        .flat_map(move |result| engine.settle(lease, result))
+        .flat_map(move |result| {
+          // A diverged run fails and a parked run waits, whatever its body made of the error.
+          let result = match (result, parked.diverged()) {
+            (Err(WorkflowError::LeaseLost), _) => Err(WorkflowError::LeaseLost),
+            (_, Some(diverged)) => Err(diverged),
+            (_, None) if parked.is_parked() => Err(WorkflowError::Waiting),
+            (other, None) => other,
+          };
+          engine.settle(lease, wakeups, result)
+        })
     })
   }
 
@@ -409,14 +486,16 @@ impl WorkflowEngine {
   fn settle(
     &self,
     lease: Lease,
+    wakeups: i64,
     result: Result<serde_json::Value, WorkflowError>,
   ) -> Effect<RunOutcome, WorkflowError> {
     let (finish, failure) = match result {
       Ok(output) => (Finish::Completed(output), None),
       Err(WorkflowError::LeaseLost) => return succeed(RunOutcome::LeaseLost),
-      // The store failed mid-run: nothing is decided about the instance; free the lease so it
-      // resumes as soon as the store is back.
-      Err(e @ WorkflowError::Sql(_)) => {
+      Err(WorkflowError::Waiting) => return self.park(lease, wakeups),
+      // The store or the job queue failed mid-run (or there is no queue): nothing is decided
+      // about the instance; free the lease so it resumes as soon as they are back.
+      Err(e @ (WorkflowError::Sql(_) | WorkflowError::Jobs(_) | WorkflowError::NoJobQueue)) => {
         return self.release(lease).flat_map(move |()| fail(e));
       }
       Err(e) => (Finish::Failed(e.to_string()), Some(e)),
@@ -429,6 +508,24 @@ impl WorkflowEngine {
           (Fenced::Lost, _) => RunOutcome::LeaseLost,
           (Fenced::Applied, None) => RunOutcome::Completed,
           (Fenced::Applied, Some(e)) => RunOutcome::Failed(e),
+        })
+    })
+  }
+
+  /// Parks the instance until a completion or a signal arrives. When one arrived since the
+  /// claim (`wakeups` moved), the park is refused and the lease is freed instead, so the
+  /// instance runs again at once.
+  fn park(&self, lease: Lease, wakeups: i64) -> Effect<RunOutcome, WorkflowError> {
+    let store = Arc::clone(&self.store);
+    self.clock.now().flat_map(move |now| {
+      store
+        .wait(&lease, wakeups, now)
+        .flat_map(move |parked| match parked {
+          Fenced::Applied => succeed(RunOutcome::Waiting),
+          Fenced::Lost => store.release(&lease, now).map(|released| match released {
+            Fenced::Applied => RunOutcome::Waiting,
+            Fenced::Lost => RunOutcome::LeaseLost,
+          }),
         })
     })
   }

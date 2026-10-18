@@ -1,7 +1,9 @@
 //! The [`Workflow`] trait, the [`WorkflowContext`] its body journals through, and the instance
 //! id [`WorkflowId`].
 
+use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -10,9 +12,11 @@ use id_effect::{
   Effect, HasSchema, Random, Unknown, UtcDateTime, WallClock, fail, succeed, suspend,
 };
 
+use id_effect_jobs::JobQueue;
+
 use crate::error::WorkflowError;
 use crate::history::{EventKind, HistoryEvent, WorkflowStore};
-use crate::lease::{Lease, later};
+use crate::lease::{Fenced, Lease, later};
 
 /// A value a workflow journals: its input, its output and every step result. Encoded with its
 /// [`HasSchema`] schema (`#[derive(Schema)]`) and stored as JSON.
@@ -38,14 +42,24 @@ pub(crate) fn decode<A: Journaled>(
     })
 }
 
+/// `r` as an effect.
+pub(crate) fn ready<A: Send + 'static>(r: Result<A, WorkflowError>) -> Effect<A, WorkflowError> {
+  match r {
+    Ok(a) => succeed(a),
+    Err(e) => fail(e),
+  }
+}
+
 /// A durable workflow: a body that is replayed from its journal whenever an engine resumes the
 /// instance (after a restart, a crash, or a takeover by another engine).
 ///
 /// The body must be deterministic given its input and the values the [`WorkflowContext`]
-/// returns: every side effect goes through [`WorkflowContext::step`], time through
-/// [`WorkflowContext::now`] and randomness through [`WorkflowContext::random`], and steps run one
-/// after another (a step started while another is in flight gets a position that depends on
-/// scheduling). Code outside a step runs again on every replay.
+/// returns: every side effect goes through [`WorkflowContext::step`] or
+/// [`WorkflowContext::activity`], time through [`WorkflowContext::now`] and the durable timers
+/// [`WorkflowContext::sleep`] / [`sleep_until`](WorkflowContext::sleep_until), randomness through
+/// [`WorkflowContext::random`], input from outside through [`WorkflowContext::wait_signal`], and
+/// these calls run one after another (a call started while another is in flight gets a position
+/// that depends on scheduling). Code outside them runs again on every replay.
 ///
 /// [`NAME`](Self::NAME) is the registry key and the `name` column (a valid
 /// [`WorkflowName`](crate::WorkflowName)); keep it stable. [`VERSION`](Self::VERSION) is recorded
@@ -63,9 +77,9 @@ pub trait Workflow: Send + Sync + 'static {
   /// The version recorded on each instance (default `"1"`).
   const VERSION: &'static str = "1";
 
-  /// The body. Fail it with [`WorkflowError::failed`] (or let a [`WorkflowError::Step`]
-  /// propagate) to fail the instance; [`WorkflowError::LeaseLost`] stops the run without
-  /// touching the instance.
+  /// The body. Fail it with [`WorkflowError::failed`] (or let a [`WorkflowError::Step`] or
+  /// [`WorkflowError::Activity`] propagate) to fail the instance; [`WorkflowError::LeaseLost`]
+  /// stops the run without touching the instance, and [`WorkflowError::Waiting`] parks it.
   fn run(&self, ctx: WorkflowContext, input: Self::Input) -> Effect<Self::Output, WorkflowError>;
 }
 
@@ -124,7 +138,7 @@ impl fmt::Display for WorkflowId {
 }
 
 /// Where the next journal position stands relative to the history.
-enum Position {
+pub(crate) enum Position {
   /// Replaying: the history holds this payload at the position.
   Replayed(serde_json::Value),
   /// Past the history: run the work and append at `seq`.
@@ -135,28 +149,42 @@ enum Position {
 struct Replay {
   history: Vec<HistoryEvent>,
   next: usize,
+  /// Per signal name, the number of the last signal received (replayed or fresh).
+  signals: BTreeMap<String, i64>,
 }
 
-struct Inner {
-  lease: Lease,
-  store: Arc<dyn WorkflowStore>,
-  clock: WallClock,
+pub(crate) struct Inner {
+  pub(crate) lease: Lease,
+  pub(crate) store: Arc<dyn WorkflowStore>,
+  pub(crate) jobs: Option<Arc<dyn JobQueue>>,
+  pub(crate) clock: WallClock,
   random: Random,
   lease_for: Duration,
   replay: Mutex<Replay>,
+  /// Set once a call parked the run ([`WorkflowError::Waiting`]).
+  parked: AtomicBool,
+  /// The first [`WorkflowError::NonDeterministic`] of the run: it fails the instance even when
+  /// the body catches it.
+  diverged: Mutex<Option<WorkflowError>>,
 }
 
 /// What a workflow body journals through: [`step`](Self::step), [`now`](Self::now),
-/// [`random`](Self::random). Cloning shares the run's replay cursor.
+/// [`random`](Self::random), [`activity`](Self::activity), [`sleep`](Self::sleep) /
+/// [`sleep_until`](Self::sleep_until) and [`wait_signal`](Self::wait_signal). Cloning shares the
+/// run's replay cursor.
 ///
 /// Each call takes the next history position (`seq`). While the position is in the history the
 /// journaled value is returned and the work is not run again; the call must match the journaled
-/// one (same kind, same step name) or it fails with [`WorkflowError::NonDeterministic`]. Past the
+/// one (same kind, same name) or it fails with [`WorkflowError::NonDeterministic`]. Past the
 /// history the work runs and its result is appended under the run's lease, fenced: when the
 /// lease is gone the append is rejected and the call fails with [`WorkflowError::LeaseLost`].
+///
+/// An activity, a timer or a signal that has not arrived yet parks the run: the call fails with
+/// [`WorkflowError::Waiting`], so does every later call of the run, and the engine frees the
+/// instance until the result, the timer or the signal arrives.
 #[derive(Clone)]
 pub struct WorkflowContext {
-  inner: Arc<Inner>,
+  pub(crate) inner: Arc<Inner>,
 }
 
 impl fmt::Debug for WorkflowContext {
@@ -176,6 +204,7 @@ impl WorkflowContext {
     lease: Lease,
     history: Vec<HistoryEvent>,
     store: Arc<dyn WorkflowStore>,
+    jobs: Option<Arc<dyn JobQueue>>,
     clock: WallClock,
     random: Random,
     lease_for: Duration,
@@ -184,10 +213,17 @@ impl WorkflowContext {
       inner: Arc::new(Inner {
         lease,
         store,
+        jobs,
         clock,
         random,
         lease_for,
-        replay: Mutex::new(Replay { history, next: 0 }),
+        replay: Mutex::new(Replay {
+          history,
+          next: 0,
+          signals: BTreeMap::new(),
+        }),
+        parked: AtomicBool::new(false),
+        diverged: Mutex::new(None),
       }),
     }
   }
@@ -211,8 +247,58 @@ impl WorkflowContext {
     replay.next < replay.history.len()
   }
 
-  /// Takes the next position for a `kind` call named `name`.
-  fn position(&self, kind: EventKind, name: &str) -> Result<Position, WorkflowError> {
+  /// Whether a call parked the run.
+  pub(crate) fn is_parked(&self) -> bool {
+    self.inner.parked.load(Ordering::SeqCst)
+  }
+
+  /// Parks the run: this call and every later one fail with [`WorkflowError::Waiting`].
+  pub(crate) fn park<A: Send + 'static>(&self) -> Effect<A, WorkflowError> {
+    self.inner.parked.store(true, Ordering::SeqCst);
+    fail(WorkflowError::Waiting)
+  }
+
+  /// The number of the last signal `name` this run received (0: none).
+  pub(crate) fn last_signal(&self, name: &str) -> i64 {
+    self.replay().signals.get(name).copied().unwrap_or(0)
+  }
+
+  /// Notes that this run received signal `name` numbered `number`.
+  pub(crate) fn received_signal(&self, name: &str, number: i64) {
+    self.replay().signals.insert(name.to_owned(), number);
+  }
+
+  /// Records `error` (a [`WorkflowError::NonDeterministic`]) as the run's divergence, unless
+  /// one is recorded already, and returns it.
+  pub(crate) fn diverge(&self, error: WorkflowError) -> WorkflowError {
+    let mut diverged = self
+      .inner
+      .diverged
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner);
+    diverged.get_or_insert(error).clone()
+  }
+
+  /// The run's first divergence from its history, if any.
+  pub(crate) fn diverged(&self) -> Option<WorkflowError> {
+    self
+      .inner
+      .diverged
+      .lock()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone()
+  }
+
+  /// Takes the next position for a `kind` call named `name`. After a divergence every call
+  /// fails with it, and after a park with [`WorkflowError::Waiting`], so a body that catches
+  /// either can never journal past the position it stopped at.
+  pub(crate) fn position(&self, kind: EventKind, name: &str) -> Result<Position, WorkflowError> {
+    if let Some(e) = self.diverged() {
+      return Err(e);
+    }
+    if self.is_parked() {
+      return Err(WorkflowError::Waiting);
+    }
     let mut replay = self.replay();
     let index = replay.next;
     replay.next += 1;
@@ -222,11 +308,15 @@ impl WorkflowContext {
       Some(event) if event.kind == kind && event.name == name => {
         Ok(Position::Replayed(event.payload.clone()))
       }
-      Some(event) => Err(WorkflowError::NonDeterministic {
-        seq,
-        history: HistoryEvent::describe(event.kind, &event.name),
-        code: HistoryEvent::describe(kind, name),
-      }),
+      Some(event) => {
+        let error = WorkflowError::NonDeterministic {
+          seq,
+          history: HistoryEvent::describe(event.kind, &event.name),
+          code: HistoryEvent::describe(kind, name),
+        };
+        drop(replay);
+        Err(self.diverge(error))
+      }
     }
   }
 
@@ -244,7 +334,7 @@ impl WorkflowContext {
   }
 
   /// Appends `payload` at `seq` under the lease, extending it; `LeaseLost` when rejected.
-  fn record(
+  pub(crate) fn record(
     &self,
     seq: i64,
     kind: EventKind,
@@ -271,6 +361,59 @@ impl WorkflowContext {
           }
         })
     })
+  }
+
+  /// At the fresh position `seq` of a `kind` call named `name` (an activity or a timer): the
+  /// payload of the delivered [`Completion`](crate::Completion), journaled at `seq`; or, when
+  /// nothing was delivered yet, `schedule` (enqueue the job; idempotent per `(instance, seq)`)
+  /// after a fenced check that the lease is still held, and the run parks.
+  pub(crate) fn delivered(
+    &self,
+    seq: i64,
+    kind: EventKind,
+    name: String,
+    schedule: Effect<(), WorkflowError>,
+  ) -> Effect<serde_json::Value, WorkflowError> {
+    let ctx = self.clone();
+    let store = Arc::clone(&self.inner.store);
+    store
+      .completion(&self.inner.lease.instance, seq)
+      .flat_map(move |found| match found {
+        Some(done) if done.kind == kind && done.name == name => {
+          let payload = done.payload;
+          ctx
+            .record(seq, kind, name, payload.clone())
+            .map(move |()| payload)
+        }
+        Some(done) => fail(ctx.diverge(WorkflowError::NonDeterministic {
+          seq,
+          history: format!(
+            "a delivered {}",
+            HistoryEvent::describe(done.kind, &done.name)
+          ),
+          code: HistoryEvent::describe(kind, &name),
+        })),
+        None => ctx.renewed().then(schedule).flat_map(move |()| ctx.park()),
+      })
+  }
+
+  /// Extends the lease (fenced); `LeaseLost` when it is gone, so a stale run schedules nothing.
+  fn renewed(&self) -> Effect<(), WorkflowError> {
+    let inner = Arc::clone(&self.inner);
+    self.inner.clock.now().flat_map(move |now| {
+      inner
+        .store
+        .renew(&inner.lease, now, later(now, inner.lease_for))
+        .flat_map(|fenced| match fenced {
+          Fenced::Applied => succeed(()),
+          Fenced::Lost => fail(WorkflowError::LeaseLost),
+        })
+    })
+  }
+
+  /// The engine's job queue, for scheduling activities and timers.
+  pub(crate) fn jobs(&self) -> Result<Arc<dyn JobQueue>, WorkflowError> {
+    self.inner.jobs.clone().ok_or(WorkflowError::NoJobQueue)
   }
 
   /// Runs `effect` once and journals its result as the step `name`.

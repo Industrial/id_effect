@@ -9,7 +9,8 @@ use id_effect::{Effect, UtcDateTime, sync};
 
 use crate::error::WorkflowError;
 use crate::history::{
-  Claimed, Finish, HistoryEvent, InstanceRecord, NewInstance, WorkflowStatus, WorkflowStore,
+  Claimed, Completion, Finish, HistoryEvent, InstanceRecord, NewInstance, SignalRecord,
+  WorkflowStatus, WorkflowStore,
 };
 use crate::lease::{EngineId, Fenced, Lease};
 use crate::workflow::WorkflowId;
@@ -18,6 +19,8 @@ use crate::workflow::WorkflowId;
 struct State {
   instances: BTreeMap<WorkflowId, InstanceRecord>,
   history: BTreeMap<WorkflowId, Vec<HistoryEvent>>,
+  completions: BTreeMap<(WorkflowId, i64), Completion>,
+  signals: BTreeMap<WorkflowId, Vec<SignalRecord>>,
 }
 
 /// [`WorkflowStore`] in memory. Clones share the state, so two engines over clones of one store
@@ -62,9 +65,18 @@ fn holds(record: &InstanceRecord, lease: &Lease) -> bool {
     && record.lease_owner.as_ref() == Some(&lease.owner)
 }
 
-/// Whether `record` is running with a free or expired lease at `now`.
+/// Whether `record` is running, not parked, with a free or expired lease at `now`.
 fn claimable(record: &InstanceRecord, now: UtcDateTime) -> bool {
-  record.status == WorkflowStatus::Running && record.lease_expires_at.is_none_or(|at| at < now)
+  record.status == WorkflowStatus::Running
+    && !record.waiting
+    && record.lease_expires_at.is_none_or(|at| at < now)
+}
+
+/// A completion or a signal arrived: un-park the instance.
+fn wake(record: &mut InstanceRecord, now: UtcDateTime) {
+  record.wakeups += 1;
+  record.waiting = false;
+  record.updated_at = now;
 }
 
 /// Takes the lease of `record` (checked claimable).
@@ -88,6 +100,7 @@ fn take(
     name: record.name.clone(),
     version: record.version.clone(),
     input: record.input.clone(),
+    wakeups: record.wakeups,
   }
 }
 
@@ -108,6 +121,8 @@ impl WorkflowStore for MemoryWorkflowStore {
         lease_owner: None,
         lease_expires_at: None,
         fencing_token: 0,
+        waiting: false,
+        wakeups: 0,
         created_at: now,
         updated_at: now,
       };
@@ -256,6 +271,85 @@ impl WorkflowStore for MemoryWorkflowStore {
       },
     )
   }
+
+  fn wait(&self, lease: &Lease, wakeups: i64, now: UtcDateTime) -> Effect<Fenced, WorkflowError> {
+    let lease = lease.clone();
+    self.with(
+      move |state| match state.instances.get_mut(&lease.instance) {
+        Some(record) if holds(record, &lease) && record.wakeups == wakeups => {
+          record.waiting = true;
+          record.lease_owner = None;
+          record.lease_expires_at = None;
+          record.updated_at = now;
+          Fenced::Applied
+        }
+        _ => Fenced::Lost,
+      },
+    )
+  }
+
+  fn completion(&self, id: &WorkflowId, seq: i64) -> Effect<Option<Completion>, WorkflowError> {
+    let key = (id.clone(), seq);
+    self.with(move |state| state.completions.get(&key).cloned())
+  }
+
+  fn complete(&self, id: &WorkflowId, completion: Completion) -> Effect<bool, WorkflowError> {
+    let id = id.clone();
+    self.with(move |state| {
+      let key = (id, completion.seq);
+      if state.completions.contains_key(&key) {
+        return false;
+      }
+      let Some(record) = state.instances.get_mut(&key.0) else {
+        return false;
+      };
+      wake(record, completion.completed_at);
+      state.completions.insert(key, completion);
+      true
+    })
+  }
+
+  fn signal(
+    &self,
+    id: &WorkflowId,
+    name: &str,
+    payload: serde_json::Value,
+    now: UtcDateTime,
+  ) -> Effect<Option<i64>, WorkflowError> {
+    let (id, name) = (id.clone(), name.to_owned());
+    self.with(move |state| {
+      let record = state
+        .instances
+        .get_mut(&id)
+        .filter(|r| r.status == WorkflowStatus::Running)?;
+      wake(record, now);
+      let number = record.wakeups;
+      state.signals.entry(id).or_default().push(SignalRecord {
+        number,
+        name,
+        payload,
+        received_at: now,
+      });
+      Some(number)
+    })
+  }
+
+  fn next_signal(
+    &self,
+    id: &WorkflowId,
+    name: &str,
+    after: i64,
+  ) -> Effect<Option<SignalRecord>, WorkflowError> {
+    let (id, name) = (id.clone(), name.to_owned());
+    self.with(move |state| {
+      state
+        .signals
+        .get(&id)?
+        .iter()
+        .find(|s| s.name == name && s.number > after)
+        .cloned()
+    })
+  }
 }
 
 #[cfg(test)]
@@ -348,6 +442,94 @@ mod tests {
       run(store.acquire(&id, &a, t(100), t(110))).is_none(),
       "finished"
     );
+  }
+
+  #[test]
+  fn parked_instances_wake_on_completions_and_signals() {
+    let store = MemoryWorkflowStore::new();
+    let id = WorkflowId::new("i").unwrap();
+    started(&store, &id);
+    let e = EngineId::new("e");
+
+    // A wake-up between the claim and the park: the park is refused, the release is not.
+    let claimed = run(store.acquire(&id, &e, t(0), t(10))).unwrap();
+    assert_eq!(claimed.wakeups, 0);
+    assert_eq!(
+      run(store.signal(&id, "go", serde_json::json!({ "n": 1 }), t(1))),
+      Some(1)
+    );
+    assert_eq!(run(store.wait(&claimed.lease, 0, t(2))), Fenced::Lost);
+    assert_eq!(run(store.release(&claimed.lease, t(2))), Fenced::Applied);
+
+    // Parked: not claimable until a completion arrives.
+    let claimed = run(store.acquire(&id, &e, t(3), t(13))).unwrap();
+    assert_eq!(claimed.wakeups, 1);
+    assert_eq!(run(store.wait(&claimed.lease, 1, t(4))), Fenced::Applied);
+    let parked = run(store.get(&id)).unwrap();
+    assert!(parked.waiting && parked.lease_owner.is_none());
+    assert!(run(store.acquire(&id, &e, t(5), t(15))).is_none(), "parked");
+    assert!(run(store.claim("w", &e, 5, t(5), t(15))).is_empty());
+    let done = Completion {
+      seq: 1,
+      kind: EventKind::Timer,
+      name: "timer".into(),
+      payload: serde_json::json!({ "due": "x" }),
+      completed_at: t(6),
+    };
+    assert!(run(store.complete(&id, done.clone())));
+    let again = Completion {
+      payload: serde_json::json!({ "due": "y" }),
+      ..done.clone()
+    };
+    assert!(!run(store.complete(&id, again)), "one completion per seq");
+    assert_eq!(run(store.completion(&id, 1)), Some(done.clone()));
+    assert_eq!(run(store.completion(&id, 2)), None);
+    let woken = run(store.get(&id)).unwrap();
+    assert!(!woken.waiting && woken.wakeups == 2);
+    assert!(run(store.acquire(&id, &e, t(7), t(17))).is_some());
+    let missing = WorkflowId::new("missing").unwrap();
+    assert!(!run(store.complete(&missing, done)));
+    assert_eq!(
+      run(store.signal(&missing, "go", serde_json::json!({}), t(8))),
+      None
+    );
+
+    // Signals in arrival order, per name.
+    assert_eq!(
+      run(store.signal(&id, "other", serde_json::json!({}), t(8))),
+      Some(3)
+    );
+    assert_eq!(
+      run(store.signal(&id, "go", serde_json::json!({ "n": 2 }), t(9))),
+      Some(4)
+    );
+    let first = run(store.next_signal(&id, "go", 0)).unwrap();
+    assert_eq!((first.number, first.received_at), (1, t(1)));
+    assert_eq!(run(store.next_signal(&id, "go", 1)).unwrap().number, 4);
+    assert!(run(store.next_signal(&id, "go", 4)).is_none());
+    assert!(run(store.next_signal(&missing, "go", 0)).is_none());
+  }
+
+  #[test]
+  fn only_the_lease_holder_parks_an_instance() {
+    let store = MemoryWorkflowStore::new();
+    let id = WorkflowId::new("i").unwrap();
+    started(&store, &id);
+    let lease = run(store.acquire(&id, &EngineId::new("a"), t(0), t(10)))
+      .unwrap()
+      .lease;
+    let stale = Lease {
+      token: lease.token + 1,
+      ..lease.clone()
+    };
+    assert_eq!(run(store.wait(&stale, 0, t(1))), Fenced::Lost);
+    let missing = Lease {
+      instance: WorkflowId::new("missing").unwrap(),
+      ..lease.clone()
+    };
+    assert_eq!(run(store.wait(&missing, 0, t(1))), Fenced::Lost);
+    assert_eq!(run(store.wait(&lease, 0, t(1))), Fenced::Applied);
+    assert_eq!(run(store.wait(&lease, 0, t(2))), Fenced::Lost, "freed");
   }
 
   #[test]
