@@ -9,7 +9,7 @@ use std::time::Instant;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE, WWW_AUTHENTICATE};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE, COOKIE, RETRY_AFTER, WWW_AUTHENTICATE};
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
@@ -197,7 +197,7 @@ async fn invalid_bearer_tokens_are_401_at_once() {
   let f = fixture().await;
   let app = app(f.auth.clone());
   let foreign = token(
-    &JwtIssuer::hs256(b"someone else's secret")
+    &JwtIssuer::hs256(b"someone else's secret, also 32+ bytes")
       .issuer(ISSUER)
       .audience(AUDIENCE),
     AuthPrincipal::new("mallory").with_role("accountant"),
@@ -245,7 +245,10 @@ async fn api_keys_authenticate_and_bad_keys_are_401() {
   let app = app(f.auth.clone());
   let res = send(&app, "/me", &[("x-api-key", f.key.expose().to_owned())]).await;
   assert_eq!(text(res).await, "svc-billing");
-  let bad = format!("{}0", &f.key.expose()[..f.key.expose().len() - 1]);
+  // Change the last character to a different one (a fixed replacement matches it 1 time in 16).
+  let key = f.key.expose();
+  let last = if key.ends_with('0') { '1' } else { '0' };
+  let bad = format!("{}{last}", &key[..key.len() - 1]);
   let res = send(&app, "/me", &[("x-api-key", bad)]).await;
   assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
   assert_eq!(problem(res).await["scheme"], "api_key");
@@ -288,6 +291,61 @@ async fn basic_credentials_are_checked_against_the_user_store() {
   )
   .await;
   assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+/// `send` from the client address `peer` (what `into_make_service_with_connect_info` records).
+async fn send_from(app: &Router, peer: &str, headers: &[(&str, String)]) -> Response {
+  let mut req = Request::get("/me");
+  for (k, v) in headers {
+    req = req.header(*k, v);
+  }
+  let mut req = req.body(Body::empty()).unwrap();
+  let peer: std::net::SocketAddr = peer.parse().unwrap();
+  req
+    .extensions_mut()
+    .insert(axum::extract::ConnectInfo(peer));
+  app.clone().oneshot(req).await.unwrap()
+}
+
+#[tokio::test]
+async fn h5_login_throttle_backs_off() {
+  let f = fixture().await;
+  let app = app(f.auth.clone());
+  let guess = |user: &str| [("authorization", basic_header(user, "guess"))];
+  // Five free failures for carol, from one client.
+  for _ in 0..5 {
+    let res = send_from(&app, "192.0.2.1:5000", &guess("carol")).await;
+    assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+  }
+  // Then carol is locked: 429 with Retry-After, even with her real password and from
+  // another client, and no WWW-Authenticate challenge.
+  for (peer, pw) in [("192.0.2.1:5000", "guess"), ("203.0.113.9:6000", "pw")] {
+    let res = send_from(&app, peer, &[("authorization", basic_header("carol", pw))]).await;
+    assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+      res.headers()[RETRY_AFTER],
+      "1",
+      "base delay after the free attempts"
+    );
+    assert!(res.headers().get(WWW_AUTHENTICATE).is_none());
+    assert!(matches!(
+      res.extensions().get::<AuthError>(),
+      Some(AuthError::TooManyAttempts { .. })
+    ));
+    let body = problem(res).await;
+    assert_eq!(body["status"], 429);
+    assert_eq!(body["scheme"], "basic");
+  }
+  // The client that failed five times is locked for every account too.
+  let res = send_from(&app, "192.0.2.1:5000", &guess("nobody")).await;
+  assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+  // The delay doubles: after it passes, one more failure locks carol for 2 s.
+  std::thread::sleep(std::time::Duration::from_millis(1_100));
+  let res = send_from(&app, "203.0.113.9:6000", &guess("carol")).await;
+  assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+  let res = send_from(&app, "203.0.113.9:6000", &guess("carol")).await;
+  assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
+  assert_eq!(res.headers()[RETRY_AFTER], "2");
 }
 
 #[tokio::test]
@@ -374,7 +432,9 @@ async fn a_principal_installed_by_an_outer_layer_is_kept() {
 #[tokio::test]
 async fn single_scheme_constructors_and_the_principal_extension() {
   let f = fixture().await;
-  let verifier = JwtVerifier::new([JwtKey::hmac(SECRET)]);
+  let verifier = JwtVerifier::new([JwtKey::hmac(SECRET)])
+    .issuer(ISSUER)
+    .audience(AUDIENCE);
   let only_bearer = Router::new()
     .route(
       "/scheme",

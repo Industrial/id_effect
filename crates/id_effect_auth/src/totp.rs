@@ -17,8 +17,12 @@
 //!   principal's `amr` claim (RFC 8176 `otp`, `mfa`), which [`require_mfa`] (an
 //!   `id_effect_authz` claim policy) requires.
 //!
-//! Throttle verification attempts per user (a 6-digit code over three steps is guessed with
-//! probability 3·10⁻⁶ per try); this module does not count failures.
+//! A 6-digit code over three steps is guessed with probability 3·10⁻⁶ per try, so failures are
+//! counted per user: after [`DEFAULT_MAX_FAILURES`] (5) wrong codes, each less than
+//! [`DEFAULT_LOCKOUT`] (15 minutes) after the one before, [`Totp::verify`] fails with
+//! [`TotpError::Locked`] until that long has passed since the last one; a valid code clears the
+//! count. The counts live in a [`ThrottleStore`] (in memory by default, see
+//! [`Totp::with_failure_store`]).
 //!
 //! ```
 //! use std::time::Instant;
@@ -55,6 +59,13 @@ pub use totp_rs::Algorithm;
 use crate::password::{PasswordError, PasswordHash, PasswordHasher};
 use crate::principal::AuthPrincipal;
 use crate::session::{Session, SessionError, Sessions};
+use crate::throttle::{MemoryThrottleStore, ThrottleStore, elapsed};
+
+/// Default [`Totp::with_lockout`] failures: wrong codes before verification locks.
+pub const DEFAULT_MAX_FAILURES: u32 = 5;
+/// Default [`Totp::with_lockout`] window: how long a lockout lasts, and how far apart failures
+/// may be to count together.
+pub const DEFAULT_LOCKOUT: Duration = Duration::from_secs(15 * 60);
 
 /// Bytes of CSPRNG output in a secret (160 bits, RFC 4226 §4's recommendation).
 const SECRET_BYTES: usize = 20;
@@ -80,6 +91,12 @@ pub enum TotpError {
   Storage(String),
   /// Hashing or verifying a recovery code failed.
   Password(PasswordError),
+  /// Too many wrong codes for the user: verification is refused, without checking the code,
+  /// for `retry_after`.
+  Locked {
+    /// How long until the next attempt is allowed.
+    retry_after: Duration,
+  },
 }
 
 impl fmt::Display for TotpError {
@@ -89,6 +106,11 @@ impl fmt::Display for TotpError {
       Self::Random(m) => write!(f, "TOTP secret generation: {m}"),
       Self::Storage(m) => write!(f, "TOTP step storage: {m}"),
       Self::Password(e) => write!(f, "recovery code hashing: {e}"),
+      Self::Locked { retry_after } => write!(
+        f,
+        "too many wrong codes; retry in {} s",
+        crate::error::retry_after_secs(*retry_after)
+      ),
     }
   }
 }
@@ -297,12 +319,21 @@ impl TotpStepStore for MemoryTotpStepStore {
   }
 }
 
-/// TOTP enrolment and verification. Cheap to clone.
+/// Failure counting for [`Totp::verify`].
+#[derive(Clone)]
+struct Lockout {
+  failures: Arc<dyn ThrottleStore>,
+  max_failures: u32,
+  window: Duration,
+}
+
+/// TOTP enrolment and verification. Cheap to clone; clones share the failure counts.
 #[derive(Clone)]
 pub struct Totp {
   config: Arc<TotpConfig>,
   steps: Arc<dyn TotpStepStore>,
   clock: WallClock,
+  lockout: Option<Lockout>,
 }
 
 impl fmt::Debug for Totp {
@@ -315,13 +346,62 @@ impl fmt::Debug for Totp {
 }
 
 impl Totp {
-  /// TOTP with `config`, consumed steps in `steps`, on the system clock.
+  /// TOTP with `config`, consumed steps in `steps`, on the system clock, locking after
+  /// [`DEFAULT_MAX_FAILURES`] wrong codes for [`DEFAULT_LOCKOUT`] (counted in memory).
   pub fn new(config: TotpConfig, steps: impl TotpStepStore) -> Self {
     Self {
       config: Arc::new(config),
       steps: Arc::new(steps),
       clock: WallClock::system(),
+      lockout: Some(Lockout {
+        failures: Arc::new(MemoryThrottleStore::new()),
+        max_failures: DEFAULT_MAX_FAILURES,
+        window: DEFAULT_LOCKOUT,
+      }),
     }
+  }
+
+  /// The same TOTP locks a user's verification for `window` after `max_failures` wrong codes,
+  /// each less than `window` after the one before (at least one failure).
+  #[must_use]
+  pub fn with_lockout(mut self, max_failures: u32, window: Duration) -> Self {
+    let failures = match self.lockout.take() {
+      Some(l) => l.failures,
+      None => Arc::new(MemoryThrottleStore::new()),
+    };
+    self.lockout = Some(Lockout {
+      failures,
+      max_failures: max_failures.max(1),
+      window,
+    });
+    self
+  }
+
+  /// The same TOTP counts wrong codes in `store` (shared by every instance, for example)
+  /// instead of in memory.
+  #[must_use]
+  pub fn with_failure_store(mut self, store: impl ThrottleStore) -> Self {
+    let (max_failures, window) = self
+      .lockout
+      .as_ref()
+      .map_or((DEFAULT_MAX_FAILURES, DEFAULT_LOCKOUT), |l| {
+        (l.max_failures, l.window)
+      });
+    self.lockout = Some(Lockout {
+      failures: Arc::new(store),
+      max_failures,
+      window,
+    });
+    self
+  }
+
+  /// The same TOTP without the failure lockout. **Dangerous**: it re-opens unlimited guessing of
+  /// the second factor (about one success per 330,000 tries). Only for a deployment that limits
+  /// TOTP attempts in front of [`verify`](Self::verify).
+  #[must_use]
+  pub fn without_lockout_dangerous(mut self) -> Self {
+    self.lockout = None;
+    self
   }
 
   /// The same TOTP reads time from `clock` (an anchored clock follows a `TestExecutor`'s virtual
@@ -390,6 +470,10 @@ impl Totp {
   /// Check `code` for `user_id`'s `secret` at the clock's current time: valid for the current
   /// step ± [`TotpConfig::skew`], and only for a step later than the last one `user_id`
   /// consumed (which it then consumes). Spaces in `code` are ignored.
+  ///
+  /// A wrong code counts as a failure for `user_id`; a valid one clears the count. Once
+  /// `user_id` has too many (see the [module docs](self)), verification fails with
+  /// [`TotpError::Locked`] without checking the code.
   pub fn verify(
     &self,
     user_id: &str,
@@ -402,16 +486,33 @@ impl Totp {
     };
     let code: String = code.chars().filter(|c| !c.is_whitespace()).collect();
     let (steps, user_id) = (Arc::clone(&self.steps), user_id.to_owned());
+    let lockout = self.lockout.clone();
     self.clock.now().flat_map(move |now| {
-      let Some(counter) = totp.check(&code, unix_secs(now)) else {
-        return succeed(TotpVerification::Invalid);
+      let key = format!("totp:{user_id}");
+      let allowed = match &lockout {
+        Some(l) => l.check(&key, now),
+        None => succeed(()),
       };
-      steps.consume(&user_id, counter).map(|fresh| {
-        if fresh {
-          TotpVerification::Valid
-        } else {
-          TotpVerification::Replayed
-        }
+      allowed.flat_map(move |()| {
+        let checked = match totp.check(&code, unix_secs(now)) {
+          None => succeed(TotpVerification::Invalid),
+          Some(counter) => steps.consume(&user_id, counter).map(|fresh| {
+            if fresh {
+              TotpVerification::Valid
+            } else {
+              TotpVerification::Replayed
+            }
+          }),
+        };
+        checked.flat_map(move |outcome| match (lockout, outcome) {
+          (Some(l), TotpVerification::Invalid) => l.record(&key, now).map(move |()| outcome),
+          (Some(l), TotpVerification::Valid) => l
+            .failures
+            .clear(&key)
+            .map_err(storage)
+            .map(move |()| outcome),
+          _ => succeed(outcome),
+        })
       })
     })
   }
@@ -438,6 +539,35 @@ impl Totp {
           .flat_map(move |()| rotate.rotate(&id))
       })
     })
+  }
+}
+
+fn storage(e: crate::AuthError) -> TotpError {
+  TotpError::Storage(e.to_string())
+}
+
+impl Lockout {
+  /// Fails with [`TotpError::Locked`] while `key` has too many recent failures.
+  fn check(&self, key: &str, now: UtcDateTime) -> Effect<(), TotpError> {
+    let (max, window) = (self.max_failures, self.window);
+    self
+      .failures
+      .get(key)
+      .map_err(storage)
+      .flat_map(move |found| match found {
+        Some(f) if f.count >= max && elapsed(f.last, now) < window => fail(TotpError::Locked {
+          retry_after: window.saturating_sub(elapsed(f.last, now)),
+        }),
+        _ => succeed(()),
+      })
+  }
+
+  fn record(&self, key: &str, now: UtcDateTime) -> Effect<(), TotpError> {
+    self
+      .failures
+      .record_failure(key, now, self.window)
+      .map_err(storage)
+      .map(|_| ())
   }
 }
 
@@ -724,6 +854,105 @@ mod tests {
     assert_eq!(steps.last_step("u"), Some(1_800_000_000 / 30));
     assert!(!TotpVerification::Invalid.is_valid());
     assert!(format!("{steps:?}").contains("MemoryTotpStepStore"));
+  }
+
+  #[test]
+  fn h6_totp_locks_after_five_failures() {
+    let (totp, _, clock) = fixture();
+    let secret = TotpSecret::generate().unwrap();
+    let now = 1_800_000_000;
+    let wrong = |offset: i64| {
+      // A code from far outside the skew window: well-formed, never valid now.
+      totp.code_at(&secret, at(now - 3_600 + offset)).unwrap()
+    };
+    for i in 0..5 {
+      assert_eq!(
+        run(totp.verify("u", &secret, &wrong(i))),
+        Ok(TotpVerification::Invalid)
+      );
+    }
+    // Locked: even the right code is refused, and the code is not even checked.
+    let right = totp.code_at(&secret, at(now)).unwrap();
+    let Err(TotpError::Locked { retry_after }) = run(totp.verify("u", &secret, &right)) else {
+      panic!("the sixth attempt must be locked")
+    };
+    assert!(
+      retry_after <= DEFAULT_LOCKOUT && retry_after > DEFAULT_LOCKOUT - Duration::from_secs(5)
+    );
+    assert!(
+      TotpError::Locked { retry_after }
+        .to_string()
+        .contains("too many wrong codes")
+    );
+    // Other users are not affected; clones share the count.
+    assert_eq!(
+      run(totp.verify("v", &secret, &right)),
+      Ok(TotpVerification::Valid)
+    );
+    assert!(matches!(
+      run(totp.clone().verify("u", &secret, &right)),
+      Err(TotpError::Locked { .. })
+    ));
+    // The lockout ends; a valid code then clears the count.
+    clock.jump(DEFAULT_LOCKOUT);
+    let later = totp.code_at(&secret, at(now + 900)).unwrap();
+    assert_eq!(
+      run(totp.verify("u", &secret, &later)),
+      Ok(TotpVerification::Valid)
+    );
+    for i in 0..4 {
+      assert_eq!(
+        run(totp.verify("u", &secret, &wrong(i))),
+        Ok(TotpVerification::Invalid)
+      );
+    }
+    assert_eq!(
+      run(totp.verify("u", &secret, &wrong(9))),
+      Ok(TotpVerification::Invalid),
+      "the count started over after the valid code"
+    );
+  }
+
+  #[test]
+  fn lockout_can_be_tuned_moved_or_dropped() {
+    let (totp, _, _) = fixture();
+    let secret = TotpSecret::generate().unwrap();
+    let wrong = totp.code_at(&secret, at(1_000)).unwrap();
+    let strict = totp
+      .clone()
+      .with_failure_store(MemoryThrottleStore::new())
+      .with_lockout(1, Duration::from_secs(60));
+    assert_eq!(
+      run(strict.verify("u", &secret, &wrong)),
+      Ok(TotpVerification::Invalid)
+    );
+    assert!(matches!(
+      run(strict.verify("u", &secret, &wrong)),
+      Err(TotpError::Locked { .. })
+    ));
+    let open = strict.without_lockout_dangerous();
+    for _ in 0..10 {
+      assert_eq!(
+        run(open.verify("u", &secret, &wrong)),
+        Ok(TotpVerification::Invalid)
+      );
+    }
+    let back = open.with_failure_store(MemoryThrottleStore::new());
+    assert_eq!(
+      run(back.verify("u", &secret, &wrong)),
+      Ok(TotpVerification::Invalid)
+    );
+    let relocked = back
+      .without_lockout_dangerous()
+      .with_lockout(0, Duration::from_secs(60));
+    assert_eq!(
+      run(relocked.verify("u", &secret, &wrong)),
+      Ok(TotpVerification::Invalid)
+    );
+    assert!(matches!(
+      run(relocked.verify("u", &secret, &wrong)),
+      Err(TotpError::Locked { .. })
+    ));
   }
 
   #[test]

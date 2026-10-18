@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{ec_keys, rsa_keys, run};
+use common::{ISSUER, ec_keys, rsa_keys, run};
 use id_effect_auth::jwt::{EncodingKey, Jwk};
 use id_effect_auth::{Algorithm, AuthError, AuthPrincipal, JwtIssuer, JwtKey, JwtVerifier};
 use id_effect_authz::Principal;
@@ -42,16 +42,23 @@ fn rs256_tokens_verify_with_the_public_pem_and_the_published_jwk() {
     (key.kid(), key.algorithms()),
     (Some("rsa-1"), &[Algorithm::RS256][..])
   );
-  assert!(run(JwtVerifier::new([key]).verify(&token)).is_ok());
+  assert!(run(JwtVerifier::new([key]).issuer(ISSUER).verify(&token)).is_ok());
 }
 
 #[test]
 fn es256_tokens_verify_and_other_keys_are_rejected() {
   let (issuer, public_pem) = ec_keys("ec-1");
   let token = run(issuer.issue(&alice())).unwrap();
-  let verifier = JwtVerifier::new([JwtKey::ec_pem(public_pem.as_bytes()).unwrap()]);
+  let verifier = JwtVerifier::new([JwtKey::ec_pem(public_pem.as_bytes()).unwrap()]).issuer(ISSUER);
   assert_eq!(run(verifier.verify(&token)).unwrap().id(), "alice");
-  assert!(run(JwtVerifier::new([issuer.verification_key().unwrap()]).verify(&token)).is_ok());
+  assert!(
+    run(
+      JwtVerifier::new([issuer.verification_key().unwrap()])
+        .issuer(ISSUER)
+        .verify(&token)
+    )
+    .is_ok()
+  );
 
   let (other, _) = ec_keys("ec-1");
   let foreign = run(other.issue(&alice())).unwrap();
@@ -71,7 +78,7 @@ fn a_public_key_is_never_used_as_an_hmac_secret() {
       .issue(&alice()),
   )
   .unwrap();
-  let verifier = JwtVerifier::new([issuer.verification_key().unwrap()]);
+  let verifier = JwtVerifier::new([issuer.verification_key().unwrap()]).issuer(ISSUER);
   assert!(matches!(
     run(verifier.verify(&forged)),
     Err(AuthError::UnknownKey(_))
@@ -94,7 +101,7 @@ fn jwks_documents_are_parsed_with_their_kids() {
     .iter()
     .map(|k: &Jwk| JwtKey::from_jwk(k).unwrap())
     .collect();
-  let verifier = JwtVerifier::new(keys);
+  let verifier = JwtVerifier::new(keys).issuer(ISSUER);
   assert!(run(verifier.verify(&run(a.issue(&alice())).unwrap())).is_ok());
   assert!(run(verifier.verify(&run(b.issue(&alice())).unwrap())).is_ok());
   let bad_alg: Jwk = serde_json::from_value(json!({

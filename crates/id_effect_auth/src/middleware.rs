@@ -11,6 +11,11 @@
 //! | a valid credential | continues as that [`AuthPrincipal`] |
 //! | an invalid credential (bad signature, expired token, wrong password, unknown key) | **401** Problem Details with `WWW-Authenticate` challenges, at once |
 //! | a backend failure (user store, JWKS endpoint) | **503** Problem Details |
+//! | Basic credentials for an account or client address the [`LoginThrottle`](crate::LoginThrottle) holds back | **429** Problem Details with `Retry-After` |
+//!
+//! Basic credentials are throttled per account and per client address; the address is the
+//! peer's (axum's `ConnectInfo<SocketAddr>`, present when the server was started with
+//! `into_make_service_with_connect_info`).
 //!
 //! The principal is installed the way `id_effect_authz`'s guard expects it: a
 //! [`CurrentPrincipal`] request extension, the same value in [`RequestCaps`] (so effect handlers
@@ -39,12 +44,14 @@
 
 use std::fmt;
 use std::future::Future;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use axum::extract::ConnectInfo;
 use axum::response::{IntoResponse, Response};
-use http::header::{AUTHORIZATION, COOKIE, WWW_AUTHENTICATE};
+use http::header::{AUTHORIZATION, COOKIE, RETRY_AFTER, WWW_AUTHENTICATE};
 use http::request::Parts;
 use http::{HeaderName, HeaderValue, Request, StatusCode};
 use id_effect::{Cause, Effect, Exit, HNil};
@@ -57,7 +64,7 @@ use tower_service::Service;
 
 use crate::apikey::ApiKeys;
 use crate::basic::BasicAuth;
-use crate::error::AuthError;
+use crate::error::{AuthError, retry_after_secs};
 #[cfg(feature = "jwt")]
 use crate::jwt::JwtVerifier;
 use crate::principal::{AuthPrincipal, AuthScheme};
@@ -294,7 +301,11 @@ impl Authenticate {
   fn basic_check(&self, parts: &Parts) -> Option<Effect<AuthPrincipal, AuthError>> {
     let basic = self.basic.as_ref()?;
     let encoded = authorization(parts, "basic")?;
-    Some(basic.authenticate_encoded(encoded))
+    let client = parts
+      .extensions
+      .get::<ConnectInfo<SocketAddr>>()
+      .map(|ConnectInfo(peer)| peer.ip());
+    Some(basic.authenticate_encoded_from(encoded, client))
   }
 
   /// The `WWW-Authenticate` challenges of the configured schemes; the one for `failed` carries
@@ -326,14 +337,14 @@ impl Authenticate {
   }
 
   /// The response for a credential of `scheme` rejected with `error`: Problem Details with the
-  /// error's status, `WWW-Authenticate` challenges on a 401, and the [`AuthError`] as a response
-  /// extension (for logging middleware).
+  /// error's status, `WWW-Authenticate` challenges on a 401, `Retry-After` on a 429, and the
+  /// [`AuthError`] as a response extension (for logging middleware).
   pub fn reject(&self, scheme: AuthScheme, error: AuthError) -> Response {
     let status =
       StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let detail = match &error {
       AuthError::Unavailable(_) => "authentication is temporarily unavailable".to_owned(),
-      AuthError::Key(_) => "authentication is misconfigured".to_owned(),
+      AuthError::Key(_) | AuthError::Config(_) => "authentication is misconfigured".to_owned(),
       e => e.to_string(),
     };
     let mut response = Problem::new(status)
@@ -346,6 +357,12 @@ impl Authenticate {
           response.headers_mut().append(WWW_AUTHENTICATE, value);
         }
       }
+    }
+    if let AuthError::TooManyAttempts { retry_after } = &error {
+      response.headers_mut().insert(
+        RETRY_AFTER,
+        HeaderValue::from(retry_after_secs(*retry_after)),
+      );
     }
     response.extensions_mut().insert(error);
     response
