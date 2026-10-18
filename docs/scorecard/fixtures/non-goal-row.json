@@ -1,0 +1,302 @@
+{
+	"schema_version": 1,
+	"method_version": "2.2",
+	"method_doc": "../METHOD.md",
+	"competitor_snapshot": {
+		"date": "2026-10-18",
+		"assessor": "scripts/scorecard.sh --self-test fixture: valid, method 2.2 non-goal row"
+	},
+	"frameworks": [
+		{
+			"id": "id_effect",
+			"name": "id_effect",
+			"scope": "fixture"
+		},
+		{
+			"id": "a",
+			"name": "A",
+			"scope": "fixture"
+		},
+		{
+			"id": "b",
+			"name": "B",
+			"scope": "fixture"
+		},
+		{
+			"id": "c",
+			"name": "C",
+			"scope": "fixture"
+		},
+		{
+			"id": "d",
+			"name": "D",
+			"scope": "fixture"
+		},
+		{
+			"id": "e",
+			"name": "E",
+			"scope": "fixture"
+		},
+		{
+			"id": "f",
+			"name": "F",
+			"scope": "fixture"
+		},
+		{
+			"id": "g",
+			"name": "G",
+			"scope": "fixture"
+		},
+		{
+			"id": "h",
+			"name": "H",
+			"scope": "fixture"
+		},
+		{
+			"id": "i",
+			"name": "I",
+			"scope": "fixture"
+		},
+		{
+			"id": "j",
+			"name": "J",
+			"scope": "fixture"
+		}
+	],
+	"groups": [
+		{
+			"id": "core",
+			"name": "Core model",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.0
+		},
+		{
+			"id": "web",
+			"name": "Web",
+			"w_enterprise": 1.0,
+			"w_runtime": 1.0
+		}
+	],
+	"tracks": {
+		"T2": "Core runtime completeness"
+	},
+	"competitor_order": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"],
+	"rows": [
+		{
+			"id": "core.a",
+			"group": "core",
+			"name": "Row core.a",
+			"measures": "Fixture row, 4 checks: id_effect 2 (50); a 4 (100), b 3 (75), c 2 (50), d 1 (25), e 0 (1), f to j 4 (100).",
+			"competitors": [100, 75, 50, 25, 1, 100, 100, 100, 100, 100],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": {
+				"0.1.0": 50
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "core.a#1",
+					"text": "Check 1"
+				},
+				{
+					"id": "core.a#2",
+					"text": "Check 2"
+				},
+				{
+					"id": "core.a#3",
+					"text": "Check 3"
+				},
+				{
+					"id": "core.a#4",
+					"text": "Check 4"
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "production"
+					},
+					"a": "production",
+					"b": "production",
+					"c": "production",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": ["core.a#1", "core.a#2"]
+					},
+					"a": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"b": ["core.a#1", "core.a#2", "core.a#3"],
+					"c": ["core.a#1", "core.a#2"],
+					"d": ["core.a#1"],
+					"e": [],
+					"f": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"g": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"h": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"i": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"],
+					"j": ["core.a#1", "core.a#2", "core.a#3", "core.a#4"]
+				}
+			},
+			"v1": {
+				"competitors": [100, 75, 50, 25, 1, 100, 100, 100, 100, 100],
+				"id_effect": {
+					"0.1.0": 50
+				},
+				"targets": {}
+			}
+		},
+		{
+			"id": "core.b",
+			"group": "core",
+			"name": "Row core.b",
+			"measures": "Fixture non-goal row (decision L15): id_effect 0 checks (1), every competitor 4 (100). Leaves the score.",
+			"competitors": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+			"track": "T2",
+			"stance": "non-goal",
+			"non_goal": {
+				"decision": "L15"
+			},
+			"id_effect": {
+				"0.1.0": 1
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "core.b#1",
+					"text": "Check 1"
+				},
+				{
+					"id": "core.b#2",
+					"text": "Check 2"
+				},
+				{
+					"id": "core.b#3",
+					"text": "Check 3"
+				},
+				{
+					"id": "core.b#4",
+					"text": "Check 4"
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "production"
+					},
+					"a": "production",
+					"b": "production",
+					"c": "production",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": []
+					},
+					"a": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"b": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"c": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"d": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"e": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"f": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"g": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"h": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"i": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"],
+					"j": ["core.b#1", "core.b#2", "core.b#3", "core.b#4"]
+				}
+			},
+			"v1": {
+				"competitors": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
+				"id_effect": {
+					"0.1.0": 1
+				},
+				"targets": {}
+			}
+		},
+		{
+			"id": "web.c",
+			"group": "web",
+			"name": "Row web.c",
+			"measures": "Fixture row, 4 checks: id_effect 4 (100), every competitor 2 (50).",
+			"competitors": [50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
+			"track": "T2",
+			"stance": "build",
+			"id_effect": {
+				"0.1.0": 100
+			},
+			"evidence": "fixture",
+			"targets": {},
+			"checks": [
+				{
+					"id": "web.c#1",
+					"text": "Check 1"
+				},
+				{
+					"id": "web.c#2",
+					"text": "Check 2"
+				},
+				{
+					"id": "web.c#3",
+					"text": "Check 3"
+				},
+				{
+					"id": "web.c#4",
+					"text": "Check 4"
+				}
+			],
+			"v2": {
+				"level": {
+					"id_effect": {
+						"0.1.0": "production"
+					},
+					"a": "production",
+					"b": "production",
+					"c": "production",
+					"d": "production",
+					"e": "production",
+					"f": "production",
+					"g": "production",
+					"h": "production",
+					"i": "production",
+					"j": "production"
+				},
+				"met": {
+					"id_effect": {
+						"0.1.0": ["web.c#1", "web.c#2", "web.c#3", "web.c#4"]
+					},
+					"a": ["web.c#1", "web.c#2"],
+					"b": ["web.c#1", "web.c#2"],
+					"c": ["web.c#1", "web.c#2"],
+					"d": ["web.c#1", "web.c#2"],
+					"e": ["web.c#1", "web.c#2"],
+					"f": ["web.c#1", "web.c#2"],
+					"g": ["web.c#1", "web.c#2"],
+					"h": ["web.c#1", "web.c#2"],
+					"i": ["web.c#1", "web.c#2"],
+					"j": ["web.c#1", "web.c#2"]
+				}
+			},
+			"v1": {
+				"competitors": [50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
+				"id_effect": {
+					"0.1.0": 100
+				},
+				"targets": {}
+			}
+		}
+	]
+}

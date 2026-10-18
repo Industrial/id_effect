@@ -1,6 +1,6 @@
 {
 	"schema_version": 1,
-	"method_version": "2.1",
+	"method_version": "2.2",
 	"method_doc": "METHOD.md",
 	"competitor_snapshot": {
 		"date": "2026-10-14",
@@ -40,7 +40,7 @@
 		{
 			"id": "dotnet",
 			"name": ".NET",
-			"scope": "ASP.NET Core + EF Core + Aspire + Microsoft.Extensions"
+			"scope": "ASP.NET Core + EF Core + Aspire + Microsoft.Extensions + Orleans + Durable Task Framework"
 		},
 		{
 			"id": "rails",
@@ -1957,7 +1957,7 @@
 			},
 			"evidence": "id_effect_fp STM (TRef/TMap/TQueue/TSemaphore) with contention test, examples 077-086, book part4 ch12-00..04. Not used by the Ledger. #6 not met: no TSet/TArray/TPriorityQueue/TPromise/TReentrantLock.",
 			"targets": {
-				"0.11.0": 88
+				"0.11.0": 89
 			},
 			"checks": [
 				{
@@ -3715,20 +3715,20 @@
 			"group": "fault",
 			"name": "Live reload and zero-downtime upgrades",
 			"measures": "Dev auto-reload and production upgrades without dropping work.",
-			"competitors": [13, 13, 75, 38, 50, 50, 50, 38, 50, 38],
+			"competitors": [20, 20, 60, 40, 80, 100, 80, 60, 80, 60],
 			"track": "T1",
 			"stance": "partial-non-goal",
 			"id_effect": {
-				"0.6.0": 25,
-				"0.7.0": 25,
-				"0.8.0": 25,
-				"0.9.0": 25,
-				"0.10.0": 63
+				"0.6.0": 40,
+				"0.7.0": 40,
+				"0.8.0": 40,
+				"0.9.0": 40,
+				"0.10.0": 100
 			},
 			"evidence": "Graceful drain, health/readiness, documented rolling restarts, id-effect dev live reload and ProfileWatch config hot reload, with integration tests, example 071_health.rs and book part6 ch27/ch34. The CI-tested Ledger serves /health and /ready, drains on shutdown and hot-reloads its login limits (tests/limits.rs:65). Not met: #2 hot code loading, #6 code_change state migration, #7 appup/relup tooling.",
 			"targets": {
-				"0.10.0": 50,
-				"1.0.0": 50
+				"0.10.0": 80,
+				"1.0.0": 80
 			},
 			"checks": [
 				{
@@ -3737,7 +3737,10 @@
 				},
 				{
 					"id": "fault.reload#2",
-					"text": "Hot code loading in a running production system"
+					"text": "Hot code loading in a running production system",
+					"non_goal": {
+						"decision": "L8"
+					}
 				},
 				{
 					"id": "fault.reload#3",
@@ -3753,11 +3756,17 @@
 				},
 				{
 					"id": "fault.reload#6",
-					"text": "State migration between code versions (code_change)"
+					"text": "State migration between code versions (code_change)",
+					"non_goal": {
+						"decision": "L8"
+					}
 				},
 				{
 					"id": "fault.reload#7",
-					"text": "Release upgrade tooling (appup/relup)"
+					"text": "Release upgrade tooling (appup/relup)",
+					"non_goal": {
+						"decision": "L8"
+					}
 				},
 				{
 					"id": "fault.reload#8",
@@ -3818,6 +3827,7 @@
 					"dotnet": [
 						"fault.reload#1",
 						"fault.reload#3",
+						"fault.reload#4",
 						"fault.reload#5",
 						"fault.reload#8"
 					],
@@ -5541,19 +5551,19 @@
 			"group": "data",
 			"name": "Database backend breadth",
 			"measures": "Supported databases (Postgres, MySQL, SQLite, MSSQL, …) behind one API.",
-			"competitors": [63, 75, 13, 75, 100, 88, 63, 75, 75, 39],
+			"competitors": [67, 67, 17, 83, 100, 83, 83, 83, 83, 39],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
-				"0.6.0": 13,
-				"0.7.0": 13,
-				"0.8.0": 13,
-				"0.9.0": 75,
-				"0.10.0": 75
+				"0.6.0": 17,
+				"0.7.0": 17,
+				"0.8.0": 17,
+				"0.9.0": 100,
+				"0.10.0": 100
 			},
 			"evidence": "Not met: #4 and #5, because nothing in id_effect_sql/src mentions mssql, tiberius or oracle. The conformance suite covers 3 backends. The Ledger uses replica routing, tested in CI (tests/replica.rs:42). Book ch28-00/ch28-04. Level production.",
 			"targets": {
-				"0.9.0": 75
+				"0.9.0": 100
 			},
 			"checks": [
 				{
@@ -5570,11 +5580,17 @@
 				},
 				{
 					"id": "data.backends#4",
-					"text": "SQL Server supported"
+					"text": "SQL Server supported",
+					"non_goal": {
+						"decision": "L6"
+					}
 				},
 				{
 					"id": "data.backends#5",
-					"text": "Oracle supported"
+					"text": "Oracle supported",
+					"non_goal": {
+						"decision": "L6"
+					}
 				},
 				{
 					"id": "data.backends#6",
@@ -7100,7 +7116,7 @@
 			},
 			"evidence": "Only labs/id_effect_rpc, which is excluded from the workspace (Cargo.toml:4 exclude 'labs'), unpublished, and unchanged since v0.9.0 (empty git diff). The book chapters ch07-12 and ch29-00 label it labs. Level labs.",
 			"targets": {
-				"0.11.0": 88
+				"0.12.0": 88
 			},
 			"checks": [
 				{
@@ -7278,7 +7294,7 @@
 			},
 			"evidence": "Absent. A grep of crates/*/src for websocket, event-stream, graphql and Sse finds only the NotForContentType::SSE exclusion in id_effect_axum/src/middleware/compression.rs:45. There is no WebSocket, SSE, channel or presence module, and no tungstenite dependency in any crate Cargo.toml.",
 			"targets": {
-				"0.11.0": 88
+				"0.12.0": 88
 			},
 			"checks": [
 				{
@@ -7421,7 +7437,10 @@
 			"measures": "Schema-first or code-first GraphQL server integration.",
 			"competitors": [1, 88, 1, 39, 88, 39, 39, 39, 39, 1],
 			"track": "T9",
-			"stance": "integrate",
+			"stance": "non-goal",
+			"non_goal": {
+				"decision": "L15"
+			},
 			"id_effect": {
 				"0.6.0": 1,
 				"0.7.0": 1,
@@ -7430,9 +7449,7 @@
 				"0.10.0": 1
 			},
 			"evidence": "Absent: there is no async-graphql dependency and no GraphQL code in crates/ (grep finds nothing).",
-			"targets": {
-				"0.12.0": 63
-			},
+			"targets": {},
 			"checks": [
 				{
 					"id": "web.graphql#1",
@@ -7579,7 +7596,7 @@
 			"group": "web",
 			"name": "Server-side UI / frontend",
 			"measures": "Rendering HTML/UI from the framework (templates, components, live views).",
-			"competitors": [1, 1, 1, 88, 50, 100, 88, 50, 100, 88],
+			"competitors": [1, 1, 1, 83, 67, 100, 83, 67, 100, 83],
 			"track": "T9",
 			"stance": "integrate",
 			"id_effect": {
@@ -7591,7 +7608,7 @@
 			},
 			"evidence": "Absent for web views. The only templating is mail-specific: id_effect_mail/src/template.rs:1-7 Templates (minijinja, used for mail subject and bodies with layouts and partials) renders a RenderedMail, not HTTP views. There is no web templating integration, component model, live views or asset pipeline in id_effect_axum or elsewhere.",
 			"targets": {
-				"0.12.0": 50
+				"0.12.0": 67
 			},
 			"checks": [
 				{
@@ -7604,11 +7621,17 @@
 				},
 				{
 					"id": "web.ui#3",
-					"text": "Server-driven interactive views (LiveView/Blazor Server/Hotwire)"
+					"text": "Server-driven interactive views (LiveView/Blazor Server/Hotwire)",
+					"non_goal": {
+						"decision": "L7"
+					}
 				},
 				{
 					"id": "web.ui#4",
-					"text": "Asset pipeline/bundling"
+					"text": "Asset pipeline/bundling",
+					"non_goal": {
+						"decision": "L7"
+					}
 				},
 				{
 					"id": "web.ui#5",
@@ -8729,6 +8752,7 @@
 			"evidence": "Process row: production because at least one check is a committed artifact; 7/8. #7 not met: SECURITY.md:51-61 describes the GHSA/CVE process, but there is no public history of security releases or advisories.",
 			"targets": {
 				"0.8.0": 75,
+				"0.11.0": 100,
 				"1.0.0": 88
 			},
 			"checks": [
@@ -9876,7 +9900,7 @@
 			"group": "msg",
 			"name": "Background jobs and queues",
 			"measures": "Persistent jobs with retries, uniqueness, priorities, dashboard.",
-			"competitors": [25, 1, 1, 100, 38, 39, 100, 50, 100, 25],
+			"competitors": [25, 1, 1, 100, 38, 75, 100, 50, 100, 25],
 			"track": "T7",
 			"stance": "promote",
 			"id_effect": {
@@ -9938,7 +9962,7 @@
 					"otp": "absent",
 					"phoenix": "production",
 					"spring": "production",
-					"dotnet": "labs",
+					"dotnet": "production",
 					"rails": "production",
 					"django": "production",
 					"laravel": "production",
@@ -9978,11 +10002,10 @@
 					"dotnet": [
 						"msg.jobs#1",
 						"msg.jobs#2",
-						"msg.jobs#4",
+						"msg.jobs#3",
 						"msg.jobs#5",
 						"msg.jobs#6",
-						"msg.jobs#7",
-						"msg.jobs#8"
+						"msg.jobs#7"
 					],
 					"rails": [
 						"msg.jobs#1",
@@ -10016,6 +10039,9 @@
 					"msg.jobs#6": "crates/id_effect_jobs/src/worker.rs:274 queue(name, concurrency); tests conformance.rs:487 per_queue_concurrency_limit, pg_queue.rs:181 per_queue_concurrency_limit_on_pg",
 					"msg.jobs#7": "crates/id_effect_console/src/api.rs:150-152 /jobs, /jobs/{id}/retry, /jobs/{id}/cancel (src/jobs.rs); tests crates/id_effect_console/tests/console.rs:314, :389 retry_makes_a_dead_job_runnable, :423; Ledger tests/console.rs jobs panel",
 					"msg.jobs#8": "crates/id_effect_jobs/src/pg.rs:486 enqueue_in (tx); test tests/pg_worker.rs:189 enqueue_in_rolls_back_with_tx; book ch31-01-jobs.md:53 'In the caller's transaction'"
+				},
+				"notes": {
+					"dotnet": "Method 2.2 (L15): the Durable Task Framework is first-party, so orchestrations meet 6 checks at production; the Hangfire-only checks (#4 priorities, #8 transactional enqueue) drop (alignment-2.2.json)."
 				}
 			},
 			"v1": {
@@ -10034,7 +10060,7 @@
 			"group": "msg",
 			"name": "Scheduled tasks / cron",
 			"measures": "Cron expressions, single-run across a cluster, missed-run policy.",
-			"competitors": [63, 13, 13, 75, 100, 39, 75, 39, 88, 39],
+			"competitors": [63, 13, 13, 75, 100, 50, 75, 39, 88, 39],
 			"track": "T7",
 			"stance": "build",
 			"id_effect": {
@@ -10097,7 +10123,7 @@
 					"otp": "production",
 					"phoenix": "production",
 					"spring": "production",
-					"dotnet": "labs",
+					"dotnet": "production",
 					"rails": "production",
 					"django": "labs",
 					"laravel": "production",
@@ -10162,15 +10188,7 @@
 						"msg.cron#7",
 						"msg.cron#8"
 					],
-					"dotnet": [
-						"msg.cron#1",
-						"msg.cron#2",
-						"msg.cron#3",
-						"msg.cron#4",
-						"msg.cron#6",
-						"msg.cron#7",
-						"msg.cron#8"
-					],
+					"dotnet": ["msg.cron#2", "msg.cron#4", "msg.cron#6", "msg.cron#7"],
 					"rails": [
 						"msg.cron#1",
 						"msg.cron#2",
@@ -10212,6 +10230,9 @@
 					"msg.cron#5": "crates/id_effect/src/scheduling/cron_job.rs:76 OverlapPolicy, :87 MissedRunPolicy; tests tests/cron.rs:181, :206, :252, :280",
 					"msg.cron#7": "crates/id_effect/src/scheduling/cron_job.rs:272 on_success, :281 on_failure, :478 CronScheduler::history; tests tests/cron.rs:296, :334",
 					"msg.cron#8": "crates/id_effect/src/scheduling/cron_job.rs:339 CronRegistry, :436 layer"
+				},
+				"notes": {
+					"dotnet": "Method 2.2 (L15): the Durable Task Framework is first-party; eternal orchestrations meet 4 checks at production; the Quartz-only checks (#1 cron, #3 time zones, #8 declarative registration) drop (alignment-2.2.json)."
 				}
 			},
 			"v1": {
@@ -11869,7 +11890,8 @@
 			},
 			"evidence": "Process row: 7 of 8 checks are committed CI jobs/scripts. #8 not met: no CI job runs benchmarks or bench-compare (ci.yml jobs and scripts/ci-local.sh tasks :ci-format :check :clippy :test :build :docs only).",
 			"targets": {
-				"0.8.0": 88
+				"0.8.0": 88,
+				"0.11.0": 100
 			},
 			"checks": [
 				{
@@ -12987,20 +13009,20 @@
 			"group": "dx",
 			"name": "Edit-compile-run loop speed",
 			"measures": "Cold and incremental build time of a template app.",
-			"competitors": [71, 43, 71, 86, 71, 86, 86, 71, 86, 100],
+			"competitors": [83, 50, 67, 83, 83, 83, 83, 83, 83, 100],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
-				"0.6.0": 14,
-				"0.7.0": 14,
+				"0.6.0": 17,
+				"0.7.0": 17,
 				"0.8.0": 49,
 				"0.9.0": 49,
-				"0.10.0": 86
+				"0.10.0": 89
 			},
 			"evidence": "Documented (up from published): first-party watch mode `id-effect dev` with book ch34-02, the end-to-end test crates/id_effect_tool/tests/dev.rs, and a runnable invocation against generated templates; measurements published in dx-kpis-0.10.json (still not run in CI). #3 not met: ch34-02 says 'nothing is hot-swapped in a running app'.",
 			"targets": {
-				"0.8.0": 43,
-				"1.0.0": 57
+				"0.8.0": 50,
+				"1.0.0": 67
 			},
 			"checks": [
 				{
@@ -13013,7 +13035,10 @@
 				},
 				{
 					"id": "dx.compile#3",
-					"text": "Hot code reload without restarting the process"
+					"text": "Hot code reload without restarting the process",
+					"non_goal": {
+						"decision": "L8"
+					}
 				},
 				{
 					"id": "dx.compile#4",

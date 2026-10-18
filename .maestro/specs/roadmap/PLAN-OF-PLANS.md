@@ -1,6 +1,6 @@
 # id_effect Plan of Plans: 0.8 → 1.0 → Surpass
 
-Status: **approved** (2026-10-15) · Baseline: 0.7.0 (2026-10-15) · Scorecard method 2.1 (re-based 2026-10-16, §7.0)
+Status: **approved** (2026-10-15) · Baseline: 0.7.0 (2026-10-15) · Scorecard method 2.2 (re-based 2026-10-18, §7.0b; owner acceptance pending)
 (`../../../docs/scorecard/METHOD.md`) · Data: `../../../docs/scorecard/scorecard.json`
 
 Every release from 0.8.0 onward begins by reading this document (§7), picks its scope from it, and
@@ -18,19 +18,27 @@ Success is measured with numbers only:
 
 | Horizon | Enterprise index E | Rank (E) | Runtime index RT | Red rows (<40) | Best-in-class rows (≥80) | First hour (K1) |
 |---|---|---|---|---|---|---|
-| 0.7.0 baseline | 43.2 | #9 | 56.1 (#6) | 39 | 13 | not possible (no generator) |
-| 1.0.0 | ≥ 82 | #1 | ≥ 84 (#1) | ≤ 1 | ≥ 59 | ≤ 90 s |
+| 0.7.0 baseline | 43.7 | #9 | 56.5 (#6) | 37 | 13 | not possible (no generator) |
+| 1.0.0 | ≥ 86.4 | #1 | ≥ 88.4 (#1) | ≤ 1 | ≥ 63 | ≤ 90 s |
 | Surpass (1.x) | ≥ 85, and #1 on the refreshed snapshot | #1 | #1 | 0 | ≥ 70 | ≤ 60 s |
 
-All numbers are scorecard method 2.0 (checklist scores, METHOD §7). Being honest about them:
-- The plan as targeted reaches **#1 at 1.0** (E 82.1 against .NET 77.3 and Spring 73.0), but
+All numbers are scorecard method 2.2 (checklist scores, METHOD §7; non-goals left out, §3.3), from
+`scripts/scorecard.sh --version 0.7.0` and `--targets 1.0.0` (0.10.0 measured: E 76.6 #2, RT 79.5
+#1, red 11, ≥80 49), re-based
+2026-10-18 (§7.0b; owner acceptance pending, §11). Being honest about them:
+- The plan as targeted reaches **#1 at 1.0** (E 86.4 against .NET 78.8 and Spring 73.6), but
   against the competitor snapshot frozen on 2026-10-14. Competitors keep shipping, and the snapshot
   is refreshed before 1.0 (METHOD §4), so #1 at 1.0 must be re-proven on that refresh. Under the
   method 1.1 history (judgment scores) the same plan reaches only #3 (80.3, behind .NET 85.4 and
   Spring 81.1).
-- Under L15 the 1.0 row is re-based at the 0.11 kickoff (method 2.2, §7.0b): the scope before 1.0
-  grows, non-goals leave the score, and .NET gains Orleans and Durable Task. Until then the targets
-  above are the floor.
+- Method 2.2 (L15, §7.0b) moved every number: non-goal rows and checks left the score for every
+  framework (0.10.0 measured E 75.5 → 76.6), and .NET gained Orleans and the Durable Task Framework
+  (.NET E 77.3 → 78.8). Under 2.1 the 1.0 row read E ≥ 82 (82.1 planned), RT ≥ 84, ≥80 ≥ 59, and the
+  0.7.0 baseline 43.2 (#9), RT 56.1, red 39 (METHOD §5.2 history). `dx.repl#3` is not a non-goal (a
+  met check never is, METHOD §3.3), so `dx.repl` stays 75; listing it would have cost id_effect 4
+  on that row (75 → 71, 0.11.0.md D3).
+- The 1.0 row still holds the 24 row targets stored at 1.0.0; L15 moves them into 0.13–0.17 at
+  those kickoffs, which changes when the number is reached, not the number.
 - The structural gap is *Ecosystem & trust* (group score 17 at 0.7.0: community, backing,
   production track record), which code alone cannot close. That is why the Surpass horizon (§9)
   exists, and why trust work (T0) is a mandatory part of **every** release rather than its own phase.
@@ -327,20 +335,28 @@ whose target moves in that release.
 | **0.9.0** | Data & security | E1.3, E2.3 OpenAPI, E3.1–E3.4, E4.1–E4.2, E5.2–E5.5 (audit), E6.5 part 1 | 18 | 63.1 (#3) | 68.1 (#2) | ≤ 21 | Ledger reference app: CRUD + auth + migrations green |
 | **0.10.0** | Async work & operations | E1.5, E1.9, E2.6 bench CI, E4.3–E4.4, E6.2–E6.5, E7.1–E7.4 | 16 | 70.3 (#3) | 74.6 (#1) | ≤ 11 | Ledger with jobs, mail, console; K2 ≤ 8 s |
 | **0.10.1** | Security patch | E11.1 | 0 | = 0.10 measured | = 0.10 measured | = 0.10 measured | 0 open high findings except H8; a regression test per closed high; Ledger green; bench gates pass; GHSA advisories published |
-| **0.11.0** | Distribution & hardening | E2.5, E7.5, E8.1–E8.3, E11.2, E11.3, E11.4 part 1 | re-based | re-based (§7.0b) | re-based | re-based | 0 open highs; ADR 0013 accepted with an enforcement point per rule; Scorecard ≥ 7.5; Best Practices Passing; a verified attestation per crate; ≥ 8 fuzz targets |
-| **0.12.0** | One call surface | E12.1–E12.5 | re-based | re-based | re-based | re-based | Relay reference app (3-node chat + presence over HTTP/3 and WebSocket) green; `web.rpc` 100, `web.realtime` ≥ 88, `dist.tls` ≥ 88; the T12 bench gates |
-| **0.13.0** | Breadth | E1.3 admin, E3.3 part 2, E5.5 tenancy, E9.1, E9.3–E9.5 | re-based | re-based | re-based | re-based | Pipeline reference app green |
-| **0.14.0** | Sweep & promote | E13.1, E13.2 | re-based | re-based | re-based | re-based | Warden reference app green; every promoted row cites a reference-app CI test |
-| **0.15.0** | Medium items | E13.3, E13.4, E11.5 starts | re-based | re-based | re-based | re-based | AppHost brings up the Ledger and its services with one command; outside audit applied for |
-| **0.16.0** | Scale | E13.5 | re-based | re-based | re-based | re-based | split-brain and sharding chaos tests green on Relay and Warden |
-| **0.17.0** | Ergonomics & cloud | E13.6 | re-based | re-based | re-based | re-based | cold build of the `service` template < 60 s; migration diffing used by the Ledger |
+| **0.11.0** | Distribution & hardening | E2.5, E7.5, E8.1–E8.3, E11.2, E11.3, E11.4 part 1 | 12 | 79.2 (#1) | 83.7 (#1) | ≤ 9 | 0 open highs; ADR 0013 accepted with an enforcement point per rule; Scorecard ≥ 7.5; Best Practices Passing; a verified attestation per crate; ≥ 8 fuzz targets |
+| **0.12.0** | One call surface | E12.1–E12.5 | 8 | 83.9 (#1) | 86.1 (#1) | ≤ 3 | Relay reference app (3-node chat + presence over HTTP/3 and WebSocket) green; `web.rpc` 100, `web.realtime` ≥ 88, `dist.tls` ≥ 88; the T12 bench gates |
+| **0.13.0** | Breadth | E1.3 admin, E3.3 part 2, E5.5 tenancy, E9.1, E9.3–E9.5 | 0 † | 83.9 (#1) † | 86.1 (#1) † | ≤ 3 † | Pipeline reference app green |
+| **0.14.0** | Sweep & promote | E13.1, E13.2 | 0 † | 83.9 (#1) † | 86.1 (#1) † | ≤ 3 † | Warden reference app green; every promoted row cites a reference-app CI test |
+| **0.15.0** | Medium items | E13.3, E13.4, E11.5 starts | 0 † | 83.9 (#1) † | 86.1 (#1) † | ≤ 3 † | AppHost brings up the Ledger and its services with one command; outside audit applied for |
+| **0.16.0** | Scale | E13.5 | 0 † | 83.9 (#1) † | 86.1 (#1) † | ≤ 3 † | split-brain and sharding chaos tests green on Relay and Warden |
+| **0.17.0** | Ergonomics & cloud | E13.6 | 0 † | 83.9 (#1) † | 86.1 (#1) † | ≤ 3 † | cold build of the `service` template < 60 s; migration diffing used by the Ledger |
 | **0.18.0** | Consolidation (no new crates) | E10.1–E10.4, E10.6, E11.4 complete, E1.7 compile budget | 0 | ≥ 0.17 measured | ≥ 0.17 measured | ≤ 0.17 measured | No row −5 or worse; soak window passes for all four reference apps; ≥ 15 fuzz targets in CI with no open crash; ASVS L2 ≥ 90 %; K2 ≤ 5 s; K6 budget met; zero deprecation shims left |
 | **0.19.0** | Adoption & release candidate | E0.3 freeze RFC, E0.5 consumer migration, E1.6 docs complete, E10.8, E11.5 audit | 0 | ≥ 0.18 measured | ≥ 0.18 measured | ≤ 0.18 measured | API freeze RFC accepted; downstream consumers migrated; K5 = 100 %; consolidated migration guide; outside audit published with fixes; `1.0.0-rc.1` published |
-| **1.0.0** | Stability | E0.3 LTS, E0.4, E0.5 case studies, snapshot refresh | re-based (the 24 rows targeted here before L15 move earlier) | re-based (≥ 0.19 measured) | re-based | re-based | K1 ≤ 90 s, ≥ 5 public adopters, ≥ 3 maintainers; Scorecard ≥ 8.5; Best Practices Silver; ASVS L2 100 %; 0 open highs; **calendar gates:** the freeze has held ≥ 4 weeks with no accepted breaking change, and ≥ 2 adopters have run an rc in production ≥ 30 days |
+| **1.0.0** | Stability | E0.3 LTS, E0.4, E0.5 case studies, snapshot refresh | 24 (still stored at 1.0.0; L15 moves them earlier) | 86.4 (#1), and ≥ 0.19 measured | 88.4 (#1) | ≤ 1 | K1 ≤ 90 s, ≥ 5 public adopters, ≥ 3 maintainers; Scorecard ≥ 8.5; Best Practices Silver; ASVS L2 100 %; 0 open highs; **calendar gates:** the freeze has held ≥ 4 weeks with no accepted breaking change, and ≥ 2 adopters have run an rc in production ≥ 30 days |
 
-"re-based" means the 0.11 kickoff sets the number (§7.0b). Method 2.2 drops the non-goal rows and
-checks, and the .NET re-score moves the comparison, so the method 2.1 targets no longer apply.
-Until then, the method 2.1 plan stays the floor: E 73.3 at 0.11 and 82.1 at 1.0.
+The 0.11.0 to 1.0.0 cells were re-based at the 0.11 kickoff (§7.0b, method 2.2, 2026-10-18) from
+`scripts/scorecard.sh --targets <v>`; they stand once the owner accepts them (§11, step 4). Method 2.2
+drops the non-goal rows and checks and re-scores .NET with Orleans and the Durable Task Framework
+(.NET E 78.8, Spring 73.6), so the method 2.1 plan (E 78.8 at 0.11 with web.rpc/web.realtime still
+there, 82.5 at 0.12, 85.0 at 1.0; METHOD §5.2 history) no longer applies. The 0.11.0 cell is the
+committed slot of `.maestro/specs/releases/0.11.0.md` (D1: bonus rows, web.rpc/web.realtime moved to
+0.12.0, D4); it leads .NET by 0.4 E, so the exit gate's "planned − 1.0" allows a #2 finish. `dx.repl`
+stays 75: `dx.repl#3` is met, so it is not a non-goal (METHOD §3.3; 0.11.0.md D3).
+
+† No row target is stored for 0.13.0–0.17.0 yet, so the tool carries the 0.12.0 plan forward
+(METHOD §5.1). Each of those kickoffs moves its share of the 24 rows still targeted at 1.0.0.
 
 ```mermaid
 flowchart LR
@@ -383,14 +399,19 @@ acceptance) is recorded in §11. The first 0.8 leaf runs before scope selection:
 4. The owner accepts the re-based numbers before step 7.1.3 uses them.
 
 ### 7.0b One-time step at 0.11 kickoff: method 2.2 (L15)
-The first 0.11 leaf runs before scope selection:
+Steps 1–3 done 2026-10-18 in leaf `r11-m22-rebase` (METHOD §3.3, §7.4,
+`docs/scorecard/alignment-2.2.json`); step 4 (owner acceptance) is pending, see §11. The first 0.11
+leaf runs before scope selection:
 1. **Non-goals leave the score.** METHOD gains a `non-goal` status, set only by a locked decision.
    It applies to every framework alike. A non-goal row gets weight 0 and leaves its group mean and
    the indices. A non-goal check leaves its row's checklist, so that row scores
    `round(100 · met / (8 − k))` for its k non-goal checks.
    - Rows: `web.graphql` (L15).
-   - Checks: `fault.reload#2`, `#6`, `#7`, `dx.compile#3`, `dx.repl#3` (L8); `web.ui#3`, `#4` (L7);
+   - Checks: `fault.reload#2`, `#6`, `#7`, `dx.compile#3` (L8); `web.ui#3`, `#4` (L7);
      `data.backends#4`, `#5` (L6).
+   - A check id_effect already meets is never a non-goal (METHOD §3.3). `dx.repl#3` "live/hot
+     reload in dev mode" is met by `id-effect dev` (the L8 substitute), so it stays scored and
+     `dx.repl` stays 75 (0.11.0.md D3).
    - Checks Rust cannot meet (`conc.safety#8`, `obs.tracing#8`) are not decisions. They stay scored.
 2. **Widen .NET's scope** to Orleans and the Durable Task framework, both first-party Microsoft. Score
    .NET's affected rows by the third-party rule (§7.0 step 1).
@@ -507,3 +528,4 @@ snapshot.
 | 2026-10-17 | 0.9.0 exit: blind re-score measured E 67.2 (#3) against planned 64.6 (#3), RT 70.8 (#2), red 21 (target ≤ 21), leader 19; 24 rows up, 0 down. All 15 targeted rows met or beat their target except `dx.scaffold` (75, target moved to 0.10 per D1). Ledger KPI green (reference-ledger CI job); K3 = 508 lines; K1 67.6 s (loaded machine), K4 17/20, K5 94.7 %. Report `docs/scorecard/REPORT-0.9.0.md`. |
 | 2026-10-17 | Owner decision L14 (during 0.10): 1.0 is postponed. 0.13 consolidation and 0.14 adoption / release candidate are inserted after 0.12, and track T10 (E10.1–E10.8) is added. The API freeze RFC moves 0.12 → 0.14, compile budget 1.0 → 0.13, docs complete and consumer migration 1.0 → 0.14. 1.0 gains calendar gates (freeze held ≥ 4 weeks, ≥ 2 adopters on an rc in production ≥ 30 days). Versioning per crate was rejected: every crate keeps one shared version. Row targets in `scorecard.json` are unchanged. |
 | 2026-10-18 | Owner decision L15: everything buildable ships before 1.0, so 1.0 follows 0.19. The new releases:<br>- 0.10.1 security patch (T11)<br>- 0.11 distribution & hardening<br>- 0.12 one call surface (T12; absorbs E8.4 and E8.5)<br>- 0.13 breadth (E9.2 GraphQL deleted)<br>- 0.14 sweep & promote with the Warden reference app (T13)<br>- 0.15 medium items and an AppHost<br>- 0.16 scale<br>- 0.17 ergonomics & cloud<br>- 0.18 consolidation (was 0.13)<br>- 0.19 adoption & rc (was 0.14)<br>Owner answers: L6, L7 and L8 are kept; GraphQL is a non-goal, and non-goal rows and checks leave the score for every framework (D2 A); channels are a module inside `id_effect_rpc` (D3); HTTP/3 is on by default (D4); .NET is re-scored with Orleans and Durable Task. Method 2.2 and every "re-based" §6 number come at the 0.11 kickoff (§7.0b). Passkeys and the console shell move 1.0 → 0.15. Sources: five owner documents, 2026-10-17/18 (the .NET comparison, the path to 100, The id_effect Ceiling, Secure by Default, One Call Surface). |
+| 2026-10-18 | Method 2.2 re-base done (§7.0b steps 1–3, leaf `r11-m22-rebase`); **owner acceptance pending** (step 4). Non-goals leave the score for every framework (row `web.graphql`; checks `fault.reload#2 #6 #7`, `dx.compile#3`, `web.ui#3 #4`, `data.backends#4 #5`); `dx.repl#3` stays scored because id_effect meets it (rule recorded in METHOD §3.3, 0.11.0.md D3; `dx.repl` stays 75). .NET scope adds Orleans and the Durable Task Framework (`docs/scorecard/alignment-2.2.json`): .NET U/E/RT 75.1/77.3/71.1 → 75.8/77.9/71.8 after step 1 → 76.7/78.8/72.8 after step 2. id_effect, 2.1 → 2.2 (E, RT, rank E): 0.6.0 37.3 → 37.8, 46.0 → 46.5, #10; 0.7.0 43.2 → 43.7, 56.1 → 56.5, #9; 0.8.0 55.2 → 55.6, 64.4 → 64.9, #5; 0.9.0 67.2 → 68.1, 70.8 → 71.4, #3; 0.10.0 75.5 → 76.6, 78.4 → 79.5, #2 (red 12 → 11). Planned: 0.11.0 committed slot 78.0 (2.1) → 79.2 (#1, RT 83.7, red ≤ 9; .NET 78.8); 0.12.0 82.5 → 83.9 (#1); 1.0.0 85.0 → 86.4 (#1). Targets moved: `web.rpc`, `web.realtime` 0.11.0 → 0.12.0; 0.11.0 bonus `conc.stm` 89, `sec.supply` 100, `test.qa` 100; `web.graphql` targets removed; targets of the four rows with non-goal checks re-based to the same check count. §1 and §6 restated; 0.11.0.md stays `provisional: true` until the owner accepts. |

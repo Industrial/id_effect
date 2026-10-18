@@ -1,0 +1,1040 @@
+{
+	"description": "METHOD.md §7.4 and §8: the one-time method 2.2 re-base (PLAN-OF-PLANS §7.0b, decision L15). Step 1: non-goal rows and checks leave the score for every framework. Step 2: the .NET scope adds Orleans and the Durable Task Framework as first-party Microsoft; every fault, dist, conc and msg row is re-checked cell by cell. Generated once by .tmp/plan11/m22/apply.py; the scorecard's v2 levels and met lists are the source of truth. In cells, before is the method 2.1 cell, after the method 2.2 cell (both steps), and rechecked lists every check the snapshot did not credit first-party, with the evidence for the 2.2 answer.",
+	"competitor_snapshot": "2026-10-14",
+	"decided": "2026-10-18",
+	"rule": "A met check that relies on a third-party library counts at the framework's level only if the framework's own official docs recommend that library ('recommended'); otherwise ('other') the row scores the higher of: without that check at its level, or with it at the labs level (cap 39). 'not_met' checks are removed. Method 2.2: a non-goal (row or check) is set only by a locked decision and never on a check id_effect meets; Orleans and the Durable Task Framework count as first-party for .NET.",
+	"sources_fetched": [
+		"https://learn.microsoft.com/dotnet/orleans/grains/grain-versioning/deploying-new-versions-of-grains",
+		"https://learn.microsoft.com/dotnet/orleans/grains/request-scheduling",
+		"https://learn.microsoft.com/dotnet/orleans/streaming/broadcast-channel",
+		"https://learn.microsoft.com/dotnet/orleans/implementation/cluster-management",
+		"https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-singletons",
+		"https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-eternal-orchestrations",
+		"https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling",
+		"https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-instance-management",
+		"https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler-dashboard",
+		"https://github.com/microsoft/durabletask-dotnet/blob/main/src/Abstractions/TaskOptions.cs",
+		"https://github.com/microsoft/durabletask-dotnet/blob/main/src/Worker/Core/DurableTaskWorkerOptions.cs",
+		"https://github.com/microsoft/durabletask-dotnet/blob/main/src/ScheduledTasks/Models/ScheduleCreationOptions.cs",
+		"https://github.com/microsoft/durabletask-dotnet/blob/main/src/ScheduledTasks/ScheduledTasks.csproj"
+	],
+	"sources_cited_not_fetched": "Pages cited for context only (overview, observers, sub-orchestrations, streaming, TLS configuration) were not fetched on 2026-10-18; no check is credited on them.",
+	"non_goals": {
+		"rows": [
+			{
+				"row": "web.graphql",
+				"decision": "L15"
+			}
+		],
+		"checks": [
+			{
+				"check": "fault.reload#2",
+				"decision": "L8"
+			},
+			{
+				"check": "fault.reload#6",
+				"decision": "L8"
+			},
+			{
+				"check": "fault.reload#7",
+				"decision": "L8"
+			},
+			{
+				"check": "dx.compile#3",
+				"decision": "L8"
+			},
+			{
+				"check": "web.ui#3",
+				"decision": "L7"
+			},
+			{
+				"check": "web.ui#4",
+				"decision": "L7"
+			},
+			{
+				"check": "data.backends#4",
+				"decision": "L6"
+			},
+			{
+				"check": "data.backends#5",
+				"decision": "L6"
+			}
+		],
+		"not_non_goals": [
+			{
+				"check": "dx.repl#3",
+				"why": "id_effect meets it (`id-effect dev` rebuild-and-restart); a met check is never a non-goal (0.11.0.md D3)."
+			},
+			{
+				"check": "conc.safety#8",
+				"why": "A check Rust cannot meet is not a decision; stays scored."
+			},
+			{
+				"check": "obs.tracing#8",
+				"why": "A check Rust cannot meet is not a decision; stays scored."
+			}
+		],
+		"row_scores": [
+			{
+				"row": "data.backends",
+				"checks": ["data.backends#4", "data.backends#5"],
+				"competitors_before": [63, 75, 13, 75, 100, 88, 63, 75, 75, 39],
+				"competitors_after": [67, 67, 17, 83, 100, 83, 83, 83, 83, 39],
+				"id_effect_before": {
+					"0.6.0": 13,
+					"0.7.0": 13,
+					"0.8.0": 13,
+					"0.9.0": 75,
+					"0.10.0": 75
+				},
+				"id_effect_after": {
+					"0.6.0": 17,
+					"0.7.0": 17,
+					"0.8.0": 17,
+					"0.9.0": 100,
+					"0.10.0": 100
+				}
+			},
+			{
+				"row": "dx.compile",
+				"checks": ["dx.compile#3"],
+				"competitors_before": [71, 43, 71, 86, 71, 86, 86, 71, 86, 100],
+				"competitors_after": [83, 50, 67, 83, 83, 83, 83, 83, 83, 100],
+				"id_effect_before": {
+					"0.6.0": 14,
+					"0.7.0": 14,
+					"0.8.0": 49,
+					"0.9.0": 49,
+					"0.10.0": 86
+				},
+				"id_effect_after": {
+					"0.6.0": 17,
+					"0.7.0": 17,
+					"0.8.0": 49,
+					"0.9.0": 49,
+					"0.10.0": 89
+				}
+			},
+			{
+				"row": "fault.reload",
+				"checks": ["fault.reload#2", "fault.reload#6", "fault.reload#7"],
+				"competitors_before": [13, 13, 75, 38, 50, 50, 50, 38, 50, 38],
+				"competitors_after": [20, 20, 60, 40, 80, 100, 80, 60, 80, 60],
+				"id_effect_before": {
+					"0.6.0": 25,
+					"0.7.0": 25,
+					"0.8.0": 25,
+					"0.9.0": 25,
+					"0.10.0": 63
+				},
+				"id_effect_after": {
+					"0.6.0": 40,
+					"0.7.0": 40,
+					"0.8.0": 40,
+					"0.9.0": 40,
+					"0.10.0": 100
+				}
+			},
+			{
+				"row": "web.ui",
+				"checks": ["web.ui#3", "web.ui#4"],
+				"competitors_before": [1, 1, 1, 88, 50, 100, 88, 50, 100, 88],
+				"competitors_after": [1, 1, 1, 83, 67, 100, 83, 67, 100, 83],
+				"id_effect_before": {
+					"0.6.0": 1,
+					"0.7.0": 1,
+					"0.8.0": 1,
+					"0.9.0": 1,
+					"0.10.0": 1
+				},
+				"id_effect_after": {
+					"0.6.0": 1,
+					"0.7.0": 1,
+					"0.8.0": 1,
+					"0.9.0": 1,
+					"0.10.0": 1
+				}
+			}
+		]
+	},
+	"dotnet_scope": {
+		"before": "ASP.NET Core + EF Core + Aspire + Microsoft.Extensions",
+		"after": "ASP.NET Core + EF Core + Aspire + Microsoft.Extensions + Orleans + Durable Task Framework",
+		"reclassified_first_party": 33
+	},
+	"cells": [
+		{
+			"row": "conc.coordination",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"after": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.coordination#2",
+					"met": false,
+					"evidence": "Orleans broadcast channels deliver to implicitly subscribed grains through Orleans Streams in a silo, are not persistent and are not an in-process hub with per-subscriber queues (https://learn.microsoft.com/dotnet/orleans/streaming/broadcast-channel). Conservatively not met."
+				},
+				{
+					"check": "conc.coordination#8",
+					"met": false,
+					"evidence": "Orleans and Durable Task add no channel/queue primitives; System.Threading.Channels already scored. Not met."
+				}
+			]
+		},
+		{
+			"row": "conc.fibers",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 5,
+				"score": 63
+			},
+			"after": {
+				"level": "production",
+				"met": 5,
+				"score": 63
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.fibers#4",
+					"met": false,
+					"evidence": "Orleans grains are virtual actors with no parent/child lifetime (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task sub-orchestrations are not scoped to the parent by default (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-sub-orchestrations). Not met."
+				},
+				{
+					"check": "conc.fibers#6",
+					"met": false,
+					"evidence": "Orleans runs each activation turn-based on a cooperative scheduler and warns against long turns; no preemption or auto-yield (https://learn.microsoft.com/dotnet/orleans/grains/request-scheduling). Not met."
+				},
+				{
+					"check": "conc.fibers#7",
+					"met": false,
+					"evidence": "Neither the Orleans test cluster nor the Durable Task in-process test host documents a virtual-time scheduler (https://github.com/microsoft/durabletask-dotnet/tree/main/src/InProcessTestHost). Not met."
+				}
+			]
+		},
+		{
+			"row": "conc.parallel",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"after": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.parallel#4",
+					"met": false,
+					"evidence": "Durable Task worker caps (DurableTaskWorkerOptions MaximumConcurrentActivityWorkItems) bound a worker, not parallel work in process code; no memory-aware admission (https://github.com/microsoft/durabletask-dotnet/blob/main/src/Worker/Core/DurableTaskWorkerOptions.cs). Not met."
+				},
+				{
+					"check": "conc.parallel#6",
+					"met": false,
+					"evidence": "Durable fan-out/fan-in has no ambient concurrency budget inherited by combinators (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-overview). Not met."
+				}
+			]
+		},
+		{
+			"row": "conc.perf",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"after": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.perf#6",
+					"met": false,
+					"evidence": "Neither documents a per-task/connection memory footprint. Not met."
+				},
+				{
+					"check": "conc.perf#7",
+					"met": false,
+					"evidence": "Language runtime property (GC, JIT/AOT); Orleans and Durable Task do not change it. Not met."
+				}
+			]
+		},
+		{
+			"row": "conc.safety",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"after": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.safety#2",
+					"met": false,
+					"evidence": "Language property; unchanged by Orleans or Durable Task. Not met."
+				},
+				{
+					"check": "conc.safety#3",
+					"met": false,
+					"evidence": "Language property; unchanged by Orleans or Durable Task. Not met."
+				},
+				{
+					"check": "conc.safety#4",
+					"met": false,
+					"evidence": "Language property; unchanged by Orleans or Durable Task. Not met."
+				},
+				{
+					"check": "conc.safety#8",
+					"met": false,
+					"evidence": "Orleans grains share the .NET heap; activation isolation is by convention, not per-task heaps. Not met."
+				}
+			]
+		},
+		{
+			"row": "conc.stm",
+			"framework": "dotnet",
+			"before": {
+				"level": "absent",
+				"met": 0,
+				"score": 1
+			},
+			"after": {
+				"level": "absent",
+				"met": 0,
+				"score": 1
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "conc.stm#1",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#2",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#3",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#4",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#5",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#6",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#7",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				},
+				{
+					"check": "conc.stm#8",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task provides software transactional memory (grain state and orchestration history are not STM). #1-#8 not met."
+				}
+			]
+		},
+		{
+			"row": "dist.membership",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"after": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"reclassified_first_party": [
+				"dist.membership#1",
+				"dist.membership#2",
+				"dist.membership#4",
+				"dist.membership#5",
+				"dist.membership#6",
+				"dist.membership#7",
+				"dist.membership#8"
+			],
+			"rechecked": [
+				{
+					"check": "dist.membership#3",
+					"met": false,
+					"evidence": "Orleans clustering providers (Azure Table, ADO.NET, Redis, Cosmos DB, Cassandra, Kubernetes hosting) use a membership table or the Kubernetes API, not DNS records (https://learn.microsoft.com/dotnet/orleans/implementation/cluster-management). Not met."
+				}
+			]
+		},
+		{
+			"row": "dist.placement",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"after": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"reclassified_first_party": [
+				"dist.placement#1",
+				"dist.placement#2",
+				"dist.placement#4",
+				"dist.placement#5",
+				"dist.placement#6",
+				"dist.placement#7",
+				"dist.placement#8"
+			],
+			"rechecked": [
+				{
+					"check": "dist.placement#3",
+					"met": false,
+					"evidence": "Broadcast channels and streams use implicit or explicit stream subscriptions; there is no process-group join/leave/members API (https://learn.microsoft.com/dotnet/orleans/streaming/broadcast-channel). Not met."
+				}
+			]
+		},
+		{
+			"row": "dist.remote",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"after": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"reclassified_first_party": [
+				"dist.remote#1",
+				"dist.remote#2",
+				"dist.remote#3",
+				"dist.remote#4",
+				"dist.remote#7",
+				"dist.remote#8"
+			],
+			"rechecked": [
+				{
+					"check": "dist.remote#5",
+					"met": false,
+					"evidence": "Grains do not exit, so there are no cross-node monitors; IClusterMembershipService reports silo status, not process exit (https://learn.microsoft.com/dotnet/orleans/implementation/cluster-management). Not met."
+				},
+				{
+					"check": "dist.remote#6",
+					"met": false,
+					"evidence": "No cross-node links between grains. Not met."
+				}
+			]
+		},
+		{
+			"row": "dist.tls",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"after": {
+				"level": "production",
+				"met": 7,
+				"score": 88
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "dist.tls#6",
+					"met": false,
+					"evidence": "Orleans secures silo links with TLS/mTLS (Microsoft.Orleans.Connections.Security, already credited for #4); no separate challenge-response node secret (https://learn.microsoft.com/dotnet/orleans/host/configuration-guide/transport-layer-security). Not met."
+				}
+			]
+		},
+		{
+			"row": "fault.actors",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 5,
+				"score": 63
+			},
+			"after": {
+				"level": "production",
+				"met": 5,
+				"score": 63
+			},
+			"reclassified_first_party": [
+				"fault.actors#1",
+				"fault.actors#2",
+				"fault.actors#5",
+				"fault.actors#6",
+				"fault.actors#8"
+			],
+			"rechecked": [
+				{
+					"check": "fault.actors#3",
+					"met": false,
+					"evidence": "No links or exit propagation between grains (https://learn.microsoft.com/dotnet/orleans/grains). Not met."
+				},
+				{
+					"check": "fault.actors#4",
+					"met": false,
+					"evidence": "Grain observers are application callbacks, not DOWN monitors (https://learn.microsoft.com/dotnet/orleans/grains/observers). Not met."
+				},
+				{
+					"check": "fault.actors#7",
+					"met": false,
+					"evidence": "Reentrant/AlwaysInterleave/MayInterleave control interleaving of requests, not selective receive, deferral or priority (https://learn.microsoft.com/dotnet/orleans/grains/request-scheduling). Not met."
+				}
+			]
+		},
+		{
+			"row": "fault.fsm",
+			"framework": "dotnet",
+			"before": {
+				"level": "labs",
+				"met": 4,
+				"score": 39
+			},
+			"after": {
+				"level": "labs",
+				"met": 4,
+				"score": 39
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "fault.fsm#3",
+					"met": false,
+					"evidence": "No FSM library in Orleans or Durable Task; a grain or durable entity can host a hand-written state machine, which is DIY, not a met check. #3, #4, #5, #8 not met; #1, #2, #6, #7 stay Stateless (other, labs)."
+				},
+				{
+					"check": "fault.fsm#4",
+					"met": false,
+					"evidence": "No FSM library in Orleans or Durable Task; a grain or durable entity can host a hand-written state machine, which is DIY, not a met check. #3, #4, #5, #8 not met; #1, #2, #6, #7 stay Stateless (other, labs)."
+				},
+				{
+					"check": "fault.fsm#5",
+					"met": false,
+					"evidence": "No FSM library in Orleans or Durable Task; a grain or durable entity can host a hand-written state machine, which is DIY, not a met check. #3, #4, #5, #8 not met; #1, #2, #6, #7 stay Stateless (other, labs)."
+				},
+				{
+					"check": "fault.fsm#8",
+					"met": false,
+					"evidence": "No FSM library in Orleans or Durable Task; a grain or durable entity can host a hand-written state machine, which is DIY, not a met check. #3, #4, #5, #8 not met; #1, #2, #6, #7 stay Stateless (other, labs)."
+				}
+			]
+		},
+		{
+			"row": "fault.reload",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"after": {
+				"level": "production",
+				"met": 5,
+				"score": 100
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "fault.reload#2",
+					"met": false,
+					"evidence": "Non-goal check (L8); leaves the score in method 2.2."
+				},
+				{
+					"check": "fault.reload#4",
+					"met": true,
+					"evidence": "Orleans documents rolling upgrades: new silos are deployed into the running cluster, with grain interface versioning and compatibility strategies (https://learn.microsoft.com/dotnet/orleans/grains/grain-versioning/deploying-new-versions-of-grains). Met (first-party, production)."
+				},
+				{
+					"check": "fault.reload#6",
+					"met": false,
+					"evidence": "Non-goal check (L8); leaves the score in method 2.2."
+				},
+				{
+					"check": "fault.reload#7",
+					"met": false,
+					"evidence": "Non-goal check (L8); leaves the score in method 2.2."
+				}
+			]
+		},
+		{
+			"row": "fault.resilience",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"after": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"reclassified_first_party": [],
+			"rechecked": []
+		},
+		{
+			"row": "fault.schedule",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 3,
+				"score": 38
+			},
+			"after": {
+				"level": "production",
+				"met": 3,
+				"score": 38
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "fault.schedule#1",
+					"met": false,
+					"evidence": "Durable Task RetryPolicy (first interval, backoff coefficient, max interval, timeout) is a retry policy only: no schedule value shared by retry and repeat, no Fibonacci, union/intersection, andThen or cron (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling). #1, #4, #5, #6, #8 not met."
+				},
+				{
+					"check": "fault.schedule#4",
+					"met": false,
+					"evidence": "Durable Task RetryPolicy (first interval, backoff coefficient, max interval, timeout) is a retry policy only: no schedule value shared by retry and repeat, no Fibonacci, union/intersection, andThen or cron (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling). #1, #4, #5, #6, #8 not met."
+				},
+				{
+					"check": "fault.schedule#5",
+					"met": false,
+					"evidence": "Durable Task RetryPolicy (first interval, backoff coefficient, max interval, timeout) is a retry policy only: no schedule value shared by retry and repeat, no Fibonacci, union/intersection, andThen or cron (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling). #1, #4, #5, #6, #8 not met."
+				},
+				{
+					"check": "fault.schedule#6",
+					"met": false,
+					"evidence": "Durable Task RetryPolicy (first interval, backoff coefficient, max interval, timeout) is a retry policy only: no schedule value shared by retry and repeat, no Fibonacci, union/intersection, andThen or cron (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling). #1, #4, #5, #6, #8 not met."
+				},
+				{
+					"check": "fault.schedule#8",
+					"met": false,
+					"evidence": "Durable Task RetryPolicy (first interval, backoff coefficient, max interval, timeout) is a retry policy only: no schedule value shared by retry and repeat, no Fibonacci, union/intersection, andThen or cron (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling). #1, #4, #5, #6, #8 not met."
+				}
+			]
+		},
+		{
+			"row": "fault.supervision",
+			"framework": "dotnet",
+			"before": {
+				"level": "absent",
+				"met": 0,
+				"score": 1
+			},
+			"after": {
+				"level": "absent",
+				"met": 0,
+				"score": 1
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "fault.supervision#1",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#2",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#3",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#4",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#5",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#6",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#7",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				},
+				{
+					"check": "fault.supervision#8",
+					"met": false,
+					"evidence": "Orleans has no supervision trees: grains are virtual actors re-activated on the next call (https://learn.microsoft.com/dotnet/orleans/overview); Durable Task has none either. Rows #1-#8 not met."
+				}
+			]
+		},
+		{
+			"row": "fault.workflows",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"after": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"reclassified_first_party": [
+				"fault.workflows#1",
+				"fault.workflows#2",
+				"fault.workflows#3",
+				"fault.workflows#4",
+				"fault.workflows#5",
+				"fault.workflows#6",
+				"fault.workflows#7",
+				"fault.workflows#8"
+			],
+			"rechecked": []
+		},
+		{
+			"row": "msg.brokers",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"after": {
+				"level": "production",
+				"met": 8,
+				"score": 100
+			},
+			"reclassified_first_party": [],
+			"rechecked": []
+		},
+		{
+			"row": "msg.cron",
+			"framework": "dotnet",
+			"before": {
+				"level": "labs",
+				"met": 7,
+				"score": 39
+			},
+			"after": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "msg.cron#1",
+					"met": false,
+					"evidence": "No cron expressions: Microsoft.DurableTask.ScheduledTasks is preview (1.26.0-preview.2) and interval-only (ScheduleCreationOptions(scheduleId, orchestrationName, TimeSpan interval), https://github.com/microsoft/durabletask-dotnet/blob/main/src/ScheduledTasks/Models/ScheduleCreationOptions.cs). Not met (was Quartz, other; dropped)."
+				},
+				{
+					"check": "msg.cron#2",
+					"met": true,
+					"evidence": "Eternal orchestrations run periodic work with durable timers and continue-as-new (GA; https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-eternal-orchestrations). Met first-party."
+				},
+				{
+					"check": "msg.cron#3",
+					"met": false,
+					"evidence": "No time-zone/DST-aware schedules. Not met (was Quartz, other; dropped)."
+				},
+				{
+					"check": "msg.cron#4",
+					"met": true,
+					"evidence": "A fixed instance id keeps one eternal orchestration across the cluster (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-singletons; https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-eternal-orchestrations \"Start an eternal orchestration — launch and singleton patterns\"). Met first-party."
+				},
+				{
+					"check": "msg.cron#5",
+					"met": false,
+					"evidence": "No configurable overlap/missed-run policy: StartImmediatelyIfLate exists only in the preview ScheduledTasks package and covers the first run only. Not met."
+				},
+				{
+					"check": "msg.cron#6",
+					"met": true,
+					"evidence": "Eternal orchestrations are persisted and started, suspended or terminated at runtime through the instance management API, without a redeploy (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-instance-management). Met first-party."
+				},
+				{
+					"check": "msg.cron#7",
+					"met": true,
+					"evidence": "Run status and history per instance (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-instance-management) and the scheduler dashboard (https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler-dashboard). Met first-party."
+				},
+				{
+					"check": "msg.cron#8",
+					"met": false,
+					"evidence": "Registration is code; the Azure Functions TimerTrigger is outside the scope (Azure Functions is not part of the Durable Task Framework). Not met (was Quartz, other; dropped)."
+				}
+			]
+		},
+		{
+			"row": "msg.email",
+			"framework": "dotnet",
+			"before": {
+				"level": "labs",
+				"met": 2,
+				"score": 25
+			},
+			"after": {
+				"level": "labs",
+				"met": 2,
+				"score": 25
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "msg.email#2",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				},
+				{
+					"check": "msg.email#3",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				},
+				{
+					"check": "msg.email#4",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				},
+				{
+					"check": "msg.email#5",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				},
+				{
+					"check": "msg.email#6",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				},
+				{
+					"check": "msg.email#7",
+					"met": false,
+					"evidence": "Neither Orleans nor Durable Task touches email. #2-#7 not met."
+				}
+			]
+		},
+		{
+			"row": "msg.jobs",
+			"framework": "dotnet",
+			"before": {
+				"level": "labs",
+				"met": 7,
+				"score": 39
+			},
+			"after": {
+				"level": "production",
+				"met": 6,
+				"score": 75
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "msg.jobs#1",
+					"met": true,
+					"evidence": "Durable Task persists orchestration and activity state in its backend (Durable Task Scheduler, Azure Storage, MSSQL) and resumes after restarts (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-overview, https://github.com/Azure/durabletask). Met first-party (was Hangfire, other)."
+				},
+				{
+					"check": "msg.jobs#2",
+					"met": true,
+					"evidence": "RetryPolicy with first retry interval, backoff coefficient and max interval (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-error-handling); failed instances keep RuntimeStatus Failed and can be queried and restarted (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-instance-management, https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler-dashboard). Met first-party."
+				},
+				{
+					"check": "msg.jobs#3",
+					"met": true,
+					"evidence": "Instance ids dedupe starts: StartOrchestrationOptions.DedupeStatuses (https://github.com/microsoft/durabletask-dotnet/blob/main/src/Abstractions/TaskOptions.cs) and the documented singleton pattern (https://learn.microsoft.com/azure/azure-functions/durable/durable-functions-singletons; the page notes a race in the check-then-start variant). Met first-party."
+				},
+				{
+					"check": "msg.jobs#4",
+					"met": false,
+					"evidence": "No job priorities; task hubs are separate stores, not named priority queues. Not met (was Hangfire, other; dropped)."
+				},
+				{
+					"check": "msg.jobs#5",
+					"met": true,
+					"evidence": "StartOrchestrationOptions(InstanceId, StartAt) schedules a start time (https://github.com/microsoft/durabletask-dotnet/blob/main/src/Abstractions/TaskOptions.cs). Met first-party."
+				},
+				{
+					"check": "msg.jobs#6",
+					"met": true,
+					"evidence": "DurableTaskWorkerOptions.Concurrency MaximumConcurrentActivityWorkItems / MaximumConcurrentOrchestrationWorkItems cap concurrency per worker and task hub (https://github.com/microsoft/durabletask-dotnet/blob/main/src/Worker/Core/DurableTaskWorkerOptions.cs). Met first-party."
+				},
+				{
+					"check": "msg.jobs#7",
+					"met": true,
+					"evidence": "Durable Task Scheduler dashboard: inspect history and inputs/outputs, pause, resume, terminate, restart (https://learn.microsoft.com/azure/durable-task/scheduler/durable-task-scheduler-dashboard). Met first-party."
+				},
+				{
+					"check": "msg.jobs#8",
+					"met": false,
+					"evidence": "No enqueue inside the application database transaction. Not met (was Hangfire, other; dropped)."
+				}
+			]
+		},
+		{
+			"row": "msg.streams",
+			"framework": "dotnet",
+			"before": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"after": {
+				"level": "production",
+				"met": 4,
+				"score": 50
+			},
+			"reclassified_first_party": [],
+			"rechecked": [
+				{
+					"check": "msg.streams#4",
+					"met": false,
+					"evidence": "Orleans Streams deliver events to subscribers; no zip/throttle/group_by/window combinators (https://learn.microsoft.com/dotnet/orleans/streaming). #4-#7 not met."
+				},
+				{
+					"check": "msg.streams#5",
+					"met": false,
+					"evidence": "Orleans Streams deliver events to subscribers; no zip/throttle/group_by/window combinators (https://learn.microsoft.com/dotnet/orleans/streaming). #4-#7 not met."
+				},
+				{
+					"check": "msg.streams#6",
+					"met": false,
+					"evidence": "Orleans Streams deliver events to subscribers; no zip/throttle/group_by/window combinators (https://learn.microsoft.com/dotnet/orleans/streaming). #4-#7 not met."
+				},
+				{
+					"check": "msg.streams#7",
+					"met": false,
+					"evidence": "Orleans Streams deliver events to subscribers; no zip/throttle/group_by/window combinators (https://learn.microsoft.com/dotnet/orleans/streaming). #4-#7 not met."
+				}
+			]
+		}
+	],
+	"targets_rebased": [
+		{
+			"row": "data.backends",
+			"version": "0.9.0",
+			"checks": "6/8",
+			"before": 75,
+			"after": 100,
+			"checks_2_2": "6/6"
+		},
+		{
+			"row": "dx.compile",
+			"version": "0.8.0",
+			"checks": "3/7",
+			"before": 43,
+			"after": 50,
+			"checks_2_2": "3/6"
+		},
+		{
+			"row": "dx.compile",
+			"version": "1.0.0",
+			"checks": "4/7",
+			"before": 57,
+			"after": 67,
+			"checks_2_2": "4/6"
+		},
+		{
+			"row": "fault.reload",
+			"version": "0.10.0",
+			"checks": "4/8",
+			"before": 50,
+			"after": 80,
+			"checks_2_2": "4/5"
+		},
+		{
+			"row": "fault.reload",
+			"version": "1.0.0",
+			"checks": "4/8",
+			"before": 50,
+			"after": 80,
+			"checks_2_2": "4/5"
+		},
+		{
+			"row": "web.ui",
+			"version": "0.12.0",
+			"checks": "4/8",
+			"before": 50,
+			"after": 67,
+			"checks_2_2": "4/6"
+		}
+	],
+	"targets_moved": [
+		{
+			"row": "web.rpc",
+			"from": "0.11.0",
+			"to": "0.12.0",
+			"target": 88,
+			"decision": "L15 (0.11.0.md D4)"
+		},
+		{
+			"row": "web.realtime",
+			"from": "0.11.0",
+			"to": "0.12.0",
+			"target": 88,
+			"decision": "L15 (0.11.0.md D4)"
+		},
+		{
+			"row": "conc.stm",
+			"version": "0.11.0",
+			"target": 89,
+			"decision": "0.11.0.md D1 (bonus row)"
+		},
+		{
+			"row": "sec.supply",
+			"version": "0.11.0",
+			"target": 100,
+			"decision": "0.11.0.md D1 (bonus row)"
+		},
+		{
+			"row": "test.qa",
+			"version": "0.11.0",
+			"target": 100,
+			"decision": "0.11.0.md D1 (bonus row)"
+		}
+	]
+}
