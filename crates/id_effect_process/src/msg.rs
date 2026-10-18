@@ -86,6 +86,7 @@ pub enum ProcMsg<P: Process> {
 }
 
 /// Failure modes of [`crate::addr::Addr::call`].
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CallError {
   /// No reply arrived within the deadline. The request may still be
@@ -95,6 +96,8 @@ pub enum CallError {
   Down(ExitReason),
   /// The target's mailbox is closed (process dead or dying).
   MailboxClosed,
+  /// The target's mailbox is full; the request was not enqueued.
+  MailboxFull,
 }
 
 impl fmt::Display for CallError {
@@ -103,6 +106,7 @@ impl fmt::Display for CallError {
       CallError::Timeout => f.write_str("call timed out"),
       CallError::Down(r) => write!(f, "callee exited: {r}"),
       CallError::MailboxClosed => f.write_str("mailbox closed"),
+      CallError::MailboxFull => f.write_str("mailbox full"),
     }
   }
 }
@@ -110,22 +114,54 @@ impl fmt::Display for CallError {
 impl std::error::Error for CallError {}
 
 /// Failure modes of sending to a mailbox.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SendError {
-  /// The target process is dead or its mailbox rejected the message
-  /// (bounded mailbox full, or shut down).
+  /// The target process is dead or dying: its mailbox is closed.
   Rejected,
+  /// The target's mailbox holds its capacity of user messages; the message was dropped.
+  Full,
 }
 
 impl fmt::Display for SendError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      SendError::Rejected => f.write_str("message rejected: mailbox full or closed"),
+      SendError::Rejected => f.write_str("message rejected: mailbox closed"),
+      SendError::Full => f.write_str("message rejected: mailbox full"),
     }
   }
 }
 
 impl std::error::Error for SendError {}
+
+/// Failure modes of a selective receive ([`crate::ProcessCtx::receive`]).
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReceiveError {
+  /// No matching message arrived within the deadline.
+  Timeout,
+  /// The mailbox is closed: the process is being killed.
+  Closed,
+  /// A mailbox's capacity of messages was scanned without a match.
+  ScanLimit,
+  /// The context belongs to a process of another behavior than the one named.
+  BehaviorMismatch,
+}
+
+impl fmt::Display for ReceiveError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      ReceiveError::Timeout => f.write_str("receive timed out"),
+      ReceiveError::Closed => f.write_str("mailbox closed"),
+      ReceiveError::ScanLimit => {
+        f.write_str("receive scanned the mailbox capacity without a match")
+      }
+      ReceiveError::BehaviorMismatch => f.write_str("receive on a process of another behavior"),
+    }
+  }
+}
+
+impl std::error::Error for ReceiveError {}
 
 /// Failure modes of starting a child process.
 #[derive(Clone, Debug, PartialEq, Eq)]

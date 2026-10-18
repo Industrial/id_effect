@@ -21,7 +21,13 @@
 //! ## Guarantees (normative, ADR 0009)
 //!
 //! - Local send: ordered per sender→receiver pair; never lost while the
-//!   receiver is alive.
+//!   receiver is alive. Every mailbox is bounded (default
+//!   [`DEFAULT_MAILBOX_CAPACITY`] user messages, per spawn with
+//!   [`SpawnOptions`]): a send to a full mailbox fails with
+//!   [`SendError::Full`] instead of queueing. Exit signals and monitor
+//!   downs bypass the bound.
+//! - Selective receive: [`ProcessCtx::receive`] takes the first message a
+//!   matcher accepts; skipped messages stay queued in arrival order.
 //! - Monitors: exactly one `Down` delivery (crash, normal, or `noproc`).
 //! - Links: BEAM rules — trapping processes receive exits as messages;
 //!   non-trapping processes ignore `Normal`, die on abnormal reasons;
@@ -47,9 +53,9 @@ pub use addr::Addr;
 pub use cell::{MonitorSink, ProcessCell, ProcessTable};
 pub use dynamic::{DynCall, DynReply, DynamicSupervisor, DynamicSupervisorSpec, StartChildFn};
 pub use exit::ExitReason;
-pub use mailbox::{Mailbox, MailboxClosed};
-pub use msg::{CallError, Info, ProcMsg, SendError, StartError, SysMsg};
-pub use node::ProcessNode;
+pub use mailbox::{DEFAULT_MAILBOX_CAPACITY, Mailbox, MailboxClosed, OfferError};
+pub use msg::{CallError, Info, ProcMsg, ReceiveError, SendError, StartError, SysMsg};
+pub use node::{ProcessNode, SpawnOptions};
 pub use pid::{MonitorRef, NodeName, Pid};
 pub use process::{Next, Process, ProcessCtx};
 pub use supervisor::{

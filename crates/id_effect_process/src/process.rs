@@ -23,17 +23,19 @@
 //!    and the process is finalized exactly once: exit signals fan out to
 //!    links, monitors fire, and registered names are dropped.
 
+use std::any::Any;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use id_effect::{Cause, Exit, Never};
-use id_effect::{Effect, succeed, suspend, sync};
+use id_effect::{Effect, fail, succeed, suspend, sync};
 
 use crate::addr::Addr;
 use crate::cell::ProcessCell;
 use crate::exit::ExitReason;
 use crate::mailbox::Mailbox;
-use crate::msg::{Info, ProcMsg};
+use crate::msg::{Info, ProcMsg, ReceiveError};
 use crate::node::ProcessNode;
 use crate::pid::{MonitorRef, Pid};
 
@@ -113,11 +115,48 @@ pub trait Process: Sized + Send + 'static {
 pub struct ProcessCtx {
   pid: Pid,
   node: ProcessNode,
+  /// The process's own `Mailbox<ProcMsg<P>>`, type-erased (for [`ProcessCtx::receive`]).
+  mailbox: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl ProcessCtx {
   pub(crate) fn new(pid: Pid, node: ProcessNode) -> Self {
-    Self { pid, node }
+    Self {
+      pid,
+      node,
+      mailbox: None,
+    }
+  }
+
+  pub(crate) fn bind_mailbox<P: Process>(mut self, mailbox: Mailbox<ProcMsg<P>>) -> Self {
+    self.mailbox = Some(Arc::new(mailbox));
+    self
+  }
+
+  /// Selective receive (BEAM's `receive ... after`): take the first message in this process's
+  /// mailbox that `matcher` accepts, waiting up to `timeout` (on the executor clock) for one to
+  /// arrive. Every skipped message stays queued, in arrival order, for the normal loop.
+  ///
+  /// `P` is this process's behavior (`Self` inside its callbacks). The matched message is
+  /// returned as is: a matched [`ProcMsg::Call`] must be answered through its reply. The scan
+  /// covers at most the mailbox capacity ([`ReceiveError::ScanLimit`] past it); a kill fails it
+  /// with [`ReceiveError::Closed`] and the deadline with [`ReceiveError::Timeout`]. `matcher`
+  /// runs under the mailbox lock: it may only inspect the message.
+  pub fn receive<P: Process, R: Send + Sync + 'static>(
+    &self,
+    matcher: impl FnMut(&ProcMsg<P>) -> bool + Send + 'static,
+    timeout: Duration,
+  ) -> Effect<ProcMsg<P>, ReceiveError, R> {
+    match self
+      .mailbox
+      .as_ref()
+      .and_then(|m| m.downcast_ref::<Mailbox<ProcMsg<P>>>())
+    {
+      Some(mailbox) => mailbox
+        .take_matching(Box::new(matcher))
+        .timeout_fail(timeout, || ReceiveError::Timeout),
+      None => fail(ReceiveError::BehaviorMismatch),
+    }
   }
 
   /// This process's pid.

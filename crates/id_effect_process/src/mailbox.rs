@@ -1,4 +1,4 @@
-//! [`Mailbox`] — a process's unbounded, single-consumer message queue.
+//! [`Mailbox`] — a process's bounded, single-consumer message queue.
 //!
 //! Producers enqueue **synchronously** ([`Mailbox::offer_now`]): exit signals and monitor downs
 //! are delivered from plain code (link fan-out, monitor sinks, transports), so enqueueing must not
@@ -9,6 +9,16 @@
 //! The one consumer is the process loop: [`Mailbox::take`] suspends on a real waker while the
 //! mailbox is empty. An item leaves the buffer only in the poll that returns it, so an
 //! interrupted take loses nothing.
+//!
+//! ## Bound (M10)
+//!
+//! Every mailbox holds at most [`capacity`](Mailbox::capacity) user messages
+//! ([`DEFAULT_MAILBOX_CAPACITY`] unless set with [`Mailbox::with_capacity`]): a full mailbox
+//! rejects [`try_offer_now`](Mailbox::try_offer_now) with [`OfferError::Full`] instead of growing
+//! without limit, so a fast or hostile sender cannot exhaust the node's memory. System messages
+//! (exit signals, monitor downs) enter through [`offer_system_now`](Mailbox::offer_system_now),
+//! which bypasses the bound: a supervisor must learn that its child died even when the child's
+//! peers flood it. There is no unbounded mailbox.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -18,6 +28,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 
 use id_effect::{Effect, from_async, sync};
+
+use crate::msg::ReceiveError;
 
 /// A take on a mailbox that is closed and drained.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,14 +43,48 @@ impl fmt::Display for MailboxClosed {
 
 impl std::error::Error for MailboxClosed {}
 
+/// User-message capacity of a mailbox built with [`Mailbox::new`] (and of every process spawned
+/// without [`SpawnOptions`](crate::SpawnOptions)).
+pub const DEFAULT_MAILBOX_CAPACITY: usize = 10_000;
+
+/// Why [`Mailbox::try_offer_now`] refused an item (the item is dropped).
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfferError {
+  /// The mailbox holds [`capacity`](Mailbox::capacity) user messages already.
+  Full,
+  /// The mailbox is closed (its process is dead or dying).
+  Closed,
+}
+
+impl fmt::Display for OfferError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      OfferError::Full => f.write_str("mailbox full"),
+      OfferError::Closed => f.write_str("mailbox closed"),
+    }
+  }
+}
+
+impl std::error::Error for OfferError {}
+
+struct Entry<A> {
+  item: A,
+  /// Whether the item counts against the bound (`false` for system messages).
+  bounded: bool,
+}
+
 struct State<A> {
-  buf: VecDeque<A>,
+  buf: VecDeque<Entry<A>>,
+  /// Buffered items that count against `capacity`.
+  bounded_len: usize,
+  capacity: usize,
   closed: bool,
   /// The suspended consumer, if any.
   waker: Option<Waker>,
 }
 
-/// Unbounded, single-consumer mailbox. Cloning yields another handle to the same mailbox.
+/// Bounded, single-consumer mailbox. Cloning yields another handle to the same mailbox.
 pub struct Mailbox<A> {
   state: Arc<Mutex<State<A>>>,
 }
@@ -56,6 +102,7 @@ impl<A> fmt::Debug for Mailbox<A> {
     let st = self.lock();
     f.debug_struct("Mailbox")
       .field("len", &st.buf.len())
+      .field("capacity", &st.capacity)
       .field("closed", &st.closed)
       .finish()
   }
@@ -68,11 +115,18 @@ impl<A> Default for Mailbox<A> {
 }
 
 impl<A> Mailbox<A> {
-  /// An empty, open mailbox.
+  /// An empty, open mailbox bounded at [`DEFAULT_MAILBOX_CAPACITY`] user messages.
   pub fn new() -> Self {
+    Self::with_capacity(DEFAULT_MAILBOX_CAPACITY)
+  }
+
+  /// An empty, open mailbox bounded at `capacity` user messages (at least one).
+  pub fn with_capacity(capacity: usize) -> Self {
     Self {
       state: Arc::new(Mutex::new(State {
         buf: VecDeque::new(),
+        bounded_len: 0,
+        capacity: capacity.max(1),
         closed: false,
         waker: None,
       })),
@@ -83,20 +137,44 @@ impl<A> Mailbox<A> {
     self.state.lock().unwrap_or_else(PoisonError::into_inner)
   }
 
-  /// Enqueue `item` without waiting; `false` (and `item` dropped) once the mailbox is closed.
+  /// Enqueue a user message without waiting; `false` (and `item` dropped) when the mailbox is
+  /// full or closed. [`try_offer_now`](Self::try_offer_now) says which.
   pub fn offer_now(&self, item: A) -> bool {
+    self.try_offer_now(item).is_ok()
+  }
+
+  /// Enqueue a user message without waiting. Fails (and drops `item`) with
+  /// [`OfferError::Full`] when [`capacity`](Self::capacity) user messages are buffered, and with
+  /// [`OfferError::Closed`] once the mailbox is closed.
+  pub fn try_offer_now(&self, item: A) -> Result<(), OfferError> {
+    self.push(item, true)
+  }
+
+  /// Enqueue a system message (exit signal, monitor down) without waiting, bypassing the bound;
+  /// `false` (and `item` dropped) once the mailbox is closed.
+  pub fn offer_system_now(&self, item: A) -> bool {
+    self.push(item, false).is_ok()
+  }
+
+  fn push(&self, item: A, bounded: bool) -> Result<(), OfferError> {
     let waker = {
       let mut st = self.lock();
       if st.closed {
-        return false;
+        return Err(OfferError::Closed);
       }
-      st.buf.push_back(item);
+      if bounded {
+        if st.bounded_len >= st.capacity {
+          return Err(OfferError::Full);
+        }
+        st.bounded_len += 1;
+      }
+      st.buf.push_back(Entry { item, bounded });
       st.waker.take()
     };
     if let Some(w) = waker {
       w.wake();
     }
-    true
+    Ok(())
   }
 
   /// Close the mailbox to producers. Buffered items stay available to the consumer; once they
@@ -117,7 +195,12 @@ impl<A> Mailbox<A> {
     self.lock().closed
   }
 
-  /// Number of buffered items.
+  /// The most user messages this mailbox buffers at once.
+  pub fn capacity(&self) -> usize {
+    self.lock().capacity
+  }
+
+  /// Number of buffered items (system messages included).
   pub fn len(&self) -> usize {
     self.lock().buf.len()
   }
@@ -140,6 +223,35 @@ impl<A: Send + 'static> Mailbox<A> {
     let mailbox = self.clone();
     from_async(move || Take { mailbox })
   }
+
+  /// Take the first buffered item `matcher` accepts, leaving every skipped item in place (and
+  /// in arrival order); suspends until a matching item arrives.
+  ///
+  /// The scan covers at most [`capacity`](Self::capacity) items: once that many have been
+  /// skipped it fails with [`ReceiveError::ScanLimit`]. It fails with [`ReceiveError::Closed`]
+  /// as soon as the mailbox is closed (the process is being killed). `matcher` runs under the
+  /// mailbox lock: it must only inspect the item, never send to this mailbox.
+  pub(crate) fn take_matching<R: Send + Sync + 'static>(
+    &self,
+    matcher: Matcher<A>,
+  ) -> Effect<A, ReceiveError, R> {
+    let mailbox = self.clone();
+    from_async(move || TakeMatching {
+      mailbox,
+      matcher,
+      scanned: 0,
+    })
+  }
+}
+
+impl<A> State<A> {
+  fn remove(&mut self, index: usize) -> Option<A> {
+    let entry = self.buf.remove(index)?;
+    if entry.bounded {
+      self.bounded_len -= 1;
+    }
+    Some(entry.item)
+  }
 }
 
 struct Take<A> {
@@ -151,11 +263,49 @@ impl<A> Future for Take<A> {
 
   fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
     let mut st = self.mailbox.lock();
-    if let Some(item) = st.buf.pop_front() {
+    if let Some(item) = st.remove(0) {
       return Poll::Ready(Ok(item));
     }
     if st.closed {
       return Poll::Ready(Err(MailboxClosed));
+    }
+    st.waker = Some(cx.waker().clone());
+    Poll::Pending
+  }
+}
+
+/// Predicate of a selective receive.
+pub(crate) type Matcher<A> = Box<dyn FnMut(&A) -> bool + Send>;
+
+struct TakeMatching<A> {
+  mailbox: Mailbox<A>,
+  matcher: Matcher<A>,
+  /// Items at the front already rejected. Only this consumer removes items and producers only
+  /// append, so they stay rejected and in place across polls.
+  scanned: usize,
+}
+
+impl<A> Future for TakeMatching<A> {
+  type Output = Result<A, ReceiveError>;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.get_mut();
+    let mut st = this.mailbox.lock();
+    if st.closed {
+      return Poll::Ready(Err(ReceiveError::Closed));
+    }
+    while this.scanned < st.buf.len() && this.scanned < st.capacity {
+      if (this.matcher)(&st.buf[this.scanned].item) {
+        let index = this.scanned;
+        return match st.remove(index) {
+          Some(item) => Poll::Ready(Ok(item)),
+          None => Poll::Ready(Err(ReceiveError::Closed)),
+        };
+      }
+      this.scanned += 1;
+    }
+    if this.scanned >= st.capacity {
+      return Poll::Ready(Err(ReceiveError::ScanLimit));
     }
     st.waker = Some(cx.waker().clone());
     Poll::Pending
@@ -201,7 +351,10 @@ mod tests {
     let offered = rt.fork(mb.offer::<(), HNil>(7));
     exec.run_until_stalled();
     assert!(offered.is_done());
-    assert_eq!(format!("{mb:?}"), "Mailbox { len: 1, closed: false }");
+    assert_eq!(
+      format!("{mb:?}"),
+      "Mailbox { len: 1, capacity: 10000, closed: false }"
+    );
     // The first take gets the buffered item; the second suspends until the close wakes it.
     let taker = rt.fork(mb.take::<HNil>().zip(mb.take()));
     exec.run_until_stalled();

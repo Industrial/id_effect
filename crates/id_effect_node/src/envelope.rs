@@ -229,6 +229,8 @@ pub enum RemoteFault {
   Timeout,
   /// Behavior init failed.
   SpawnFailed(String),
+  /// The target's mailbox is full; the call was not enqueued.
+  MailboxFull,
 }
 
 impl std::fmt::Display for RemoteFault {
@@ -240,6 +242,7 @@ impl std::fmt::Display for RemoteFault {
       RemoteFault::Down(r) => write!(f, "down: {r:?}"),
       RemoteFault::Timeout => f.write_str("timeout"),
       RemoteFault::SpawnFailed(e) => write!(f, "spawn failed: {e}"),
+      RemoteFault::MailboxFull => f.write_str("mailbox full"),
     }
   }
 }

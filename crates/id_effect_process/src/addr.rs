@@ -6,7 +6,7 @@ use id_effect::Cause;
 use id_effect::{Deferred, Effect, fail, succeed, suspend, sync};
 
 use crate::exit::ExitReason;
-use crate::mailbox::Mailbox;
+use crate::mailbox::{Mailbox, OfferError};
 use crate::msg::{CallError, Info, ProcMsg, SendError};
 use crate::node::ProcessNode;
 use crate::pid::Pid;
@@ -15,8 +15,9 @@ use crate::process::Process;
 /// Typed handle to a process implementing behavior `P`.
 ///
 /// Cloneable; sending to a dead process fails with [`SendError::Rejected`]
-/// (send) or [`CallError`] (call) — never panics. The effects are generic
-/// over the environment `R`, so they bind inside any program.
+/// (send) or [`CallError`] (call), and sending to a full mailbox with
+/// [`SendError::Full`] or [`CallError::MailboxFull`] — never panics. The
+/// effects are generic over the environment `R`, so they bind inside any program.
 pub struct Addr<P: Process> {
   pid: Pid,
   mailbox: Mailbox<ProcMsg<P>>,
@@ -64,20 +65,18 @@ impl<P: Process> Addr<P> {
   }
 
   /// Non-effect variant of [`Addr::send`] for use from plain code
-  /// (timers, transports). Returns `false` if the mailbox is closed.
-  /// Never waits (the mailbox is unbounded).
+  /// (timers, transports). Returns `false` (and drops `msg`) if the mailbox
+  /// is closed or full. Never waits.
   pub fn send_now(&self, msg: P::Info) -> bool {
     self.mailbox.offer_now(ProcMsg::Info(Info::User(msg)))
   }
 
   fn offer<R: Send + Sync + 'static>(&self, msg: ProcMsg<P>) -> Effect<(), SendError, R> {
     let mailbox = self.mailbox.clone();
-    suspend(move || {
-      if mailbox.offer_now(msg) {
-        succeed(())
-      } else {
-        fail(SendError::Rejected)
-      }
+    suspend(move || match mailbox.try_offer_now(msg) {
+      Ok(()) => succeed(()),
+      Err(OfferError::Full) => fail(SendError::Full),
+      Err(OfferError::Closed) => fail(SendError::Rejected),
     })
   }
 
@@ -109,9 +108,12 @@ impl<P: Process> Addr<P> {
         }),
       );
 
-      if !mailbox.offer_now(ProcMsg::Call(msg, reply.clone())) {
+      if let Err(refused) = mailbox.try_offer_now(ProcMsg::Call(msg, reply.clone())) {
         node.demonitor(&pid, monitor);
-        return fail(CallError::MailboxClosed);
+        return fail(match refused {
+          OfferError::Full => CallError::MailboxFull,
+          OfferError::Closed => CallError::MailboxClosed,
+        });
       }
 
       reply
