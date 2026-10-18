@@ -165,17 +165,86 @@ impl LogBackend for CompositeLogBackend {
   }
 }
 
+/// Pushes the escape for `c` when it could end the line, forge a new one or drive a terminal
+/// (CR, LF, tab, ESC and the rest of C0, DEL, C1, the Unicode line and paragraph separators);
+/// `false` (nothing pushed) for any other character (M12).
+fn push_control_escape(out: &mut String, c: char) -> bool {
+  match c {
+    '\n' => out.push_str("\\n"),
+    '\r' => out.push_str("\\r"),
+    '\t' => out.push_str("\\t"),
+    c if c.is_control() || c == '\u{2028}' || c == '\u{2029}' => {
+      let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+    }
+    _ => return false,
+  }
+  true
+}
+
+/// Appends `s` with its control characters escaped ([`push_control_escape`]).
+fn push_escaped(out: &mut String, s: &str) {
+  for c in s.chars() {
+    if !push_control_escape(out, c) {
+      out.push(c);
+    }
+  }
+}
+
+/// Appends an annotation key with its control characters, spaces, `=`, `"` and `\` escaped as
+/// `\u{..}`: a key cannot end the field early or inject another `k=v` pair (M12).
+fn push_escaped_key(out: &mut String, key: &str) {
+  for c in key.chars() {
+    if matches!(c, ' ' | '=' | '"' | '\\') {
+      let _ = write!(out, "\\u{{{:x}}}", u32::from(c));
+    } else if !push_control_escape(out, c) {
+      out.push(c);
+    }
+  }
+}
+
+/// Appends an annotation value with its control characters escaped; a value that is empty or
+/// holds a space, `=` or `"` is written in double quotes, with `"` and `\` escaped inside (M12).
+fn push_escaped_value(out: &mut String, value: &str) {
+  if !value.is_empty() && !value.contains([' ', '=', '"']) {
+    push_escaped(out, value);
+    return;
+  }
+  out.push('"');
+  for c in value.chars() {
+    match c {
+      '"' => out.push_str("\\\""),
+      '\\' => out.push_str("\\\\"),
+      c if push_control_escape(out, c) => {}
+      c => out.push(c),
+    }
+  }
+  out.push('"');
+}
+
+/// `target: [outer > inner] message k=v …`, every part escaped so that one record stays one line
+/// and its fields stay its own (M12).
 fn format_tracing_line(rec: &LogRecord<'_>) -> String {
   let mut full = String::new();
   if let Some(target) = rec.target.as_deref() {
-    let _ = write!(&mut full, "{target}: ");
+    push_escaped(&mut full, target);
+    full.push_str(": ");
   }
   if !rec.spans.is_empty() {
-    let _ = write!(&mut full, "[{}] ", rec.spans.join(" > "));
+    full.push('[');
+    for (i, span) in rec.spans.iter().enumerate() {
+      if i > 0 {
+        full.push_str(" > ");
+      }
+      push_escaped(&mut full, span);
+    }
+    full.push_str("] ");
   }
-  full.push_str(rec.message.as_ref());
+  push_escaped(&mut full, rec.message.as_ref());
   for (k, v) in rec.annotations.iter() {
-    let _ = write!(&mut full, " {k}={v}");
+    full.push(' ');
+    push_escaped_key(&mut full, k);
+    full.push('=');
+    push_escaped_value(&mut full, v);
   }
   full
 }
@@ -305,8 +374,13 @@ impl<W: Write + Send + 'static> LogBackend for StructuredLogBackend<W> {
       write!(w, " spans={:?}", rec.spans.join(">"))
         .map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
     }
+    // Values are `Debug`-quoted (control characters escaped); keys are escaped like the tracing
+    // line's, so a key cannot inject a field (M12).
+    let mut key = String::new();
     for (k, v) in rec.annotations.iter() {
-      write!(w, " {k}={v:?}").map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
+      key.clear();
+      push_escaped_key(&mut key, k);
+      write!(w, " {key}={v:?}").map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
     }
     w.write_all(b"\n")
       .map_err(|e| EffectLoggerError::Sink(e.to_string()))?;
@@ -493,6 +567,35 @@ mod tests {
       "output: {out}"
     );
     assert_eq!(format_tracing_line(&rec), "billing::invoice: t k=v");
+  }
+
+  #[test]
+  fn tracing_line_escapes_every_part() {
+    let rec = LogRecord::new(crate::LogLevel::Info, "a\r\nb\u{1b}[2J\u{7f}\u{9b}\u{2028}")
+      .with_target("t\n")
+      .with_spans(vec!["s\t".into()])
+      .with_annotation("k ey=\"\\", "v \"q\" \\ \n");
+    assert_eq!(
+      format_tracing_line(&rec),
+      r#"t\n: [s\t] a\r\nb\u{1b}[2J\u{7f}\u{9b}\u{2028} k\u{20}ey\u{3d}\u{22}\u{5c}="v \"q\" \\ \n""#
+    );
+    let plain = LogRecord::new(crate::LogLevel::Info, "m").with_annotation("a", "");
+    assert_eq!(format_tracing_line(&plain), r#"m a="""#);
+    let bare = LogRecord::new(crate::LogLevel::Info, "m").with_annotation("path", r"C:\x");
+    assert_eq!(format_tracing_line(&bare), r"m path=C:\x");
+  }
+
+  #[test]
+  fn structured_backend_escapes_keys() {
+    let backend = StructuredLogBackend::new(Vec::<u8>::new());
+    let rec =
+      make_record(crate::LogLevel::Info, "m\nx").with_annotation("user admin=true\n", "a\u{1b}");
+    backend.emit(&rec).unwrap();
+    let out = String::from_utf8(backend.writer_arc().lock().unwrap().clone()).unwrap();
+    assert_eq!(
+      out,
+      "level=INFO message=\"m\\nx\" user\\u{20}admin\\u{3d}true\\n=\"a\\u{1b}\"\n"
+    );
   }
 
   #[test]

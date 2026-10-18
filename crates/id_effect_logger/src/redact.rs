@@ -22,12 +22,16 @@ pub const DEFAULT_REDACTION_MASK: &str = "<redacted>";
 ///
 /// Install it with [`crate::provide_redaction_policy`]; the logger applies it once per line,
 /// before the composite fans out, so every backend (tracing, JSON, structured, OTel) sees the
-/// same redacted record.
+/// same redacted record. A pipeline with no installed policy applies [`Self::recommended`]
+/// (since 0.11, ADR 0013 R3): an installed policy replaces it, so build on
+/// [`Self::recommended`] to keep those rules, or start from [`Self::empty`] to pick every rule
+/// yourself. [`Self::dangerous_none`] turns redaction off and records the opt-out in the posture
+/// registry.
 ///
 /// ```
 /// use id_effect_logger::{LogLevel, LogRecord, RedactionPolicy};
 ///
-/// let policy = RedactionPolicy::new()
+/// let policy = RedactionPolicy::empty()
 ///   .field("password")
 ///   .glob("*token*")
 ///   .secret("sk-live-42");
@@ -49,21 +53,83 @@ pub struct RedactionPolicy {
   mask: Cow<'static, str>,
 }
 
+/// Field names [`RedactionPolicy::recommended`] redacts (ASCII case-insensitive).
+const RECOMMENDED_FIELDS: &[&str] = &[
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "access_token",
+  "refresh_token",
+  "id_token",
+  "api_key",
+  "apikey",
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "session",
+  "csrf",
+  "private_key",
+  "client_secret",
+];
+
+/// Key globs [`RedactionPolicy::recommended`] redacts.
+const RECOMMENDED_GLOBS: &[&str] = &["*_token", "*_secret", "*password*"];
+
+/// [`RedactionPolicy::recommended`] since 0.11 (it was the empty policy before).
 impl Default for RedactionPolicy {
   fn default() -> Self {
-    Self::new()
+    Self::recommended()
   }
 }
 
 impl RedactionPolicy {
   /// A policy that redacts nothing, with [`DEFAULT_REDACTION_MASK`] as the mask.
+  #[deprecated(
+    since = "0.11.0",
+    note = "redacts nothing: use `RedactionPolicy::recommended()` (the pipeline default), or \
+            `RedactionPolicy::empty()` to start from no rules"
+  )]
   pub fn new() -> Self {
+    Self::empty()
+  }
+
+  /// A policy with no rules, with [`DEFAULT_REDACTION_MASK`] as the mask: the explicit start
+  /// for a policy whose every rule the caller picks. Installed as is, it redacts nothing.
+  pub fn empty() -> Self {
     Self {
       fields: Vec::new(),
       globs: Vec::new(),
       secrets: Vec::new(),
       mask: Cow::Borrowed(DEFAULT_REDACTION_MASK),
     }
+  }
+
+  /// The rules a pipeline applies when no policy is installed: the fields `password`, `passwd`,
+  /// `secret`, `token`, `access_token`, `refresh_token`, `id_token`, `api_key`, `apikey`,
+  /// `authorization`, `cookie`, `set-cookie`, `session`, `csrf`, `private_key`, `client_secret`
+  /// and the globs `*_token`, `*_secret`, `*password*` (all ASCII case-insensitive).
+  pub fn recommended() -> Self {
+    let policy = RECOMMENDED_FIELDS
+      .iter()
+      .fold(Self::empty(), |p, f| p.field(*f));
+    RECOMMENDED_GLOBS.iter().fold(policy, |p, g| p.glob(*g))
+  }
+
+  /// A policy that redacts nothing, recorded as the posture opt-out
+  /// `id_effect_logger::RedactionPolicy::dangerous_none`: installed, every field and value
+  /// reaches every backend in clear.
+  pub fn dangerous_none() -> Self {
+    ::id_effect::observability::posture::record_dangerous(
+      "id_effect_logger::RedactionPolicy::dangerous_none",
+      "log redaction is off: passwords, tokens and cookies reach every log backend (M11)",
+    );
+    Self::empty()
+  }
+
+  /// Whether the policy has no rule at all (no field, glob or secret): it redacts nothing.
+  pub fn is_empty(&self) -> bool {
+    self.fields.is_empty() && self.globs.is_empty() && self.secrets.is_empty()
   }
 
   /// Redact the value of every annotation whose key equals `name` (ASCII case-insensitive).
@@ -206,14 +272,14 @@ mod tests {
 
   #[test]
   fn untouched_record_is_borrowed() {
-    let policy = RedactionPolicy::new().field("password").secret("s3cr3t");
+    let policy = RedactionPolicy::empty().field("password").secret("s3cr3t");
     let rec = LogRecord::new(LogLevel::Info, "fine").with_annotation("user", "alice");
     assert!(matches!(policy.apply(&rec), Cow::Borrowed(_)));
   }
 
   #[test]
   fn secrets_masked_everywhere_longest_first() {
-    let policy = RedactionPolicy::new()
+    let policy = RedactionPolicy::empty()
       .secret("abc")
       .secret("abcdef")
       .secret("")
@@ -239,7 +305,7 @@ mod tests {
 
   #[test]
   fn already_masked_field_is_borrowed() {
-    let policy = RedactionPolicy::new().field("password");
+    let policy = RedactionPolicy::empty().field("password");
     let rec = LogRecord::new(LogLevel::Info, "m").with_annotation("password", "<redacted>");
     assert!(matches!(policy.apply(&rec), Cow::Borrowed(_)));
     assert!(policy.redacts_field("PASSWORD"));

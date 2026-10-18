@@ -34,7 +34,9 @@
 //! [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`], [`LogMetadataLive::layer`]) on the
 //! thread that runs the program; the installed refs are [`FiberRef`]s. The composite backend
 //! ([`provide_composite_logger`]) and the [`RedactionPolicy`] ([`provide_redaction_policy`]) are
-//! process-wide: built once at startup, they apply on every thread (since 0.10).
+//! process-wide: built once at startup, they apply on every thread (since 0.10). With no policy
+//! installed, [`RedactionPolicy::recommended`] applies (since 0.11), and the line formats escape
+//! control characters and `key=value` separators so a logged value cannot forge a line or a field.
 //!
 //! ```
 //! use std::sync::Arc;
@@ -65,8 +67,8 @@ use core::convert::Infallible;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, LazyLock};
 #[cfg(not(test))]
 use std::sync::{PoisonError, RwLock};
 use std::thread::LocalKey;
@@ -171,6 +173,19 @@ static REDACTION_POLICY: Slot<RedactionPolicy> = Slot {
   value: &TEST_REDACTION_POLICY,
 };
 
+/// [`RedactionPolicy::recommended`], applied while no policy is installed (ADR 0013 R3).
+static RECOMMENDED_REDACTION_POLICY: LazyLock<Arc<RedactionPolicy>> =
+  LazyLock::new(|| Arc::new(RedactionPolicy::recommended()));
+
+/// The [`RedactionPolicy`] the logger applies to its next line: the one installed by
+/// [`provide_redaction_policy`], or [`RedactionPolicy::recommended`] when none is. A posture
+/// check reads it (for example [`RedactionPolicy::is_empty`]) to tell whether redaction is on.
+pub fn active_redaction_policy() -> Arc<RedactionPolicy> {
+  REDACTION_POLICY
+    .get()
+    .unwrap_or_else(|| Arc::clone(&RECOMMENDED_REDACTION_POLICY))
+}
+
 /// No process-wide minimum is set (not a [`LogLevel`] discriminant).
 const GLOBAL_MIN_UNSET: u8 = 254;
 
@@ -248,15 +263,14 @@ fn current<T: Clone + Send + Sync + 'static>(
   }
 }
 
-/// Applies the installed [`RedactionPolicy`] once, then hands the record to the installed
-/// composite backend (or to `tracing` when none is installed): every backend sees the same
-/// redacted record. Both are process-wide; the locks are released before any backend runs.
+/// Applies the installed [`RedactionPolicy`] (or [`RedactionPolicy::recommended`] when none is
+/// installed) once, then hands the record to the installed composite backend (or to `tracing`
+/// when none is installed): every backend sees the same redacted record. Both are process-wide;
+/// the locks are released before any backend runs.
 fn emit_record(rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
   let policy = REDACTION_POLICY.get();
-  let rec = match policy.as_deref() {
-    Some(p) => p.apply(rec),
-    None => Cow::Borrowed(rec),
-  };
+  let policy = policy.as_deref().unwrap_or(&RECOMMENDED_REDACTION_POLICY);
+  let rec = policy.apply(rec);
   match COMPOSITE_LOG_BACKEND.get() {
     Some(comp) => comp.emit_all(&rec),
     None => LogBackend::emit(&TracingSink, &rec),

@@ -67,7 +67,7 @@ impl SharedBuf {
 fn redacted_field_never_reaches_any_backend() {
   let _serial = serial();
   let api_key = Redacted::new("sk-live-42".to_string());
-  let policy = RedactionPolicy::new()
+  let policy = RedactionPolicy::empty()
     .field("password")
     .glob("*token*")
     .redacted(&api_key);

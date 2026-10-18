@@ -77,7 +77,12 @@ case-insensitive), key patterns (`glob`, `*` and `?`), and known secret values (
 spans. Register a config `Secret<T>` with `policy.secret(key.expose())` at startup.
 `provide_redaction_policy(policy)` installs it; the logger applies it **once per line, before the
 composite fans out**, so tracing, JSON, structured and OTel backends all see the same masked
-record.
+record. With no policy installed the logger applies `RedactionPolicy::recommended()` (passwords,
+tokens, secrets, cookies, `authorization`, `session`, `csrf`, …); an installed policy replaces it,
+so extend `recommended()` or start from `RedactionPolicy::empty()`. `RedactionPolicy::dangerous_none()`
+turns redaction off and records the opt-out for the prod posture check. The tracing and structured
+line formats escape control characters (CR, LF, ANSI escapes) and the spaces and `=` in keys, so a
+logged value cannot forge a line or a field.
 
 **`SamplingBackend`** wraps any backend for overload protection: `ratio(level, r)` keeps a
 deterministic fraction of lines at that level, `rate_limit(burst, per_second)` is a token bucket
@@ -104,7 +109,7 @@ let sampled = Arc::new(
 let composite = Arc::new(CompositeLogBackend::new());
 composite.add(sampled.clone()).unwrap();
 
-let policy = RedactionPolicy::new().field("password").glob("*token*");
+let policy = RedactionPolicy::recommended().glob("*token*");
 let pipeline = LogMetadataLive::layer()
     .merge(provide_composite_logger(composite))
     .merge(provide_redaction_policy(policy));
