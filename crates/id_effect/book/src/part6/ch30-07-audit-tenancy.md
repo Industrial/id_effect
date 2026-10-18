@@ -235,6 +235,72 @@ Every layer refuses rather than guessing:
 - Another tenant's row is invisible: `find` returns `None`, `update` is `SqlError::RowNotFound` and `delete` returns `false`, so a guessed id answers 404, not 403, and does not reveal that the row exists.
 - `unscoped()` lifts the filter for one repository value (support tools, data migrations). Search for it in review.
 
+## Tenant match in policies
+
+The repository filters rows; authorization checks the resource you already hold. Since 0.11 it does so without being asked (ADR 0013 R1): a policy defined for a `Tenanted` resource (`Policies::builder().define::<Invoice>(..)`), or run on one with `check_with` / `authorize_with`, first compares the principal's tenant with the resource's. Another tenant, or a principal of none, is denied with `resource belongs to another tenant` before the policy (and any lookup it does) runs, whatever the policy says. `same_tenant()` is no longer needed in those definitions; it remains for policies you evaluate directly.
+
+Crossing tenants is a named opt-out: `policy.dangerous_cross_tenant(reason)` lets the policy decide for principals of any tenant, and records `id_effect_authz::PolicyExt::dangerous_cross_tenant` in the posture registry, so the prod profile refuses to start until the operator accepts it. It covers the policy it wraps, so it is the outermost call.
+
+The check reads the resource's `TenantScope`: a `Tenanted` type has its tenant, `()`, `str`, `String` and `Acl` have none. A resource type of no tenant says so with an empty impl, and its policies decide as before.
+
+```rust
+use id_effect::Exit;
+use id_effect::observability::posture::dangerous_opt_outs;
+use id_effect_authz::{
+    BasicPrincipal, CurrentPrincipal, Decision, Policies, PolicyExt, Rbac, TenantScope, Tenanted,
+};
+
+struct Invoice {
+    org: String,
+}
+impl Tenanted for Invoice {
+    fn tenant_id(&self) -> &str {
+        &self.org
+    }
+}
+
+/// Platform-wide, of no tenant.
+struct ExchangeRates;
+impl TenantScope for ExchangeRates {}
+
+let rbac = Rbac::builder()
+    .grant("accountant", ["invoices:read", "rates:read"])
+    .grant("support", ["invoices:read"])
+    .build();
+let policies = Policies::builder()
+    // No `same_tenant()`: the tenant match is part of every policy over `Invoice`.
+    .define::<Invoice>("invoice.read", rbac.require("invoices:read"))
+    .define::<Invoice>(
+        "invoice.support",
+        rbac.require_role("support").dangerous_cross_tenant("the support desk serves every tenant"),
+    )
+    .define::<ExchangeRates>("rates.read", rbac.require("rates:read"))
+    .build();
+
+let decide = |name: &str, who: BasicPrincipal, invoice: &Invoice| {
+    match policies.evaluate(name, &CurrentPrincipal::new(who), invoice).block_on() {
+        Exit::Success(decision) => decision,
+        other => panic!("{other:?}"),
+    }
+};
+let invoice = Invoice { org: "acme".into() };
+let ada = BasicPrincipal::new("ada").with_role("accountant").with_tenant("acme");
+let eve = BasicPrincipal::new("eve").with_role("accountant").with_tenant("globex");
+let sue = BasicPrincipal::new("sue").with_role("support").with_tenant("platform");
+
+assert_eq!(decide("invoice.read", ada, &invoice), Decision::Allow);
+let Decision::Deny(denial) = decide("invoice.read", eve.clone(), &invoice) else {
+    panic!("another tenant's accountant cannot read the invoice")
+};
+assert_eq!(denial.to_string(), "invoice.read: resource belongs to another tenant");
+assert_eq!(decide("invoice.support", sue, &invoice), Decision::Allow);
+assert!(dangerous_opt_outs().iter().any(|(id, _)| id.ends_with("dangerous_cross_tenant")));
+
+// A resource of no tenant is unaffected.
+let rates = policies.evaluate("rates.read", &CurrentPrincipal::new(eve), &ExchangeRates);
+assert_eq!(rates.block_on(), Exit::Success(Decision::Allow));
+```
+
 ## The audit trail
 
 A record is `{actor, tenant, action, entity, before, after, at}`; `at` is the database's `now()`. Each tenant has its own hash chain: record `n` stores `sha256(prev_hash ‖ record)`, and the chain's head row holds the last `(seq, hash)`. Concurrent writers in one tenant queue on the head row and never fork the chain, while different tenants don't wait on each other. Use the default `READ COMMITTED` isolation for audited writes, or wrap `REPEATABLE READ` / `SERIALIZABLE` work in `retry_serialization_failures`: under those levels a racing append fails with a serialization failure instead of waiting.

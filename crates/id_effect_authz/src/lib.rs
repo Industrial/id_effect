@@ -8,6 +8,11 @@
 //!   `area:*` wildcards ([`Rbac::require`], [`has_permission`]).
 //! - **Resources** — ownership ([`owner`]), tenant match ([`same_tenant`]) and access lists
 //!   ([`Acl`], [`acl_permits`]).
+//! - **Tenant isolation** — automatic: every policy defined for a [`Tenanted`] resource, or run
+//!   on one with [`check_with`] / [`authorize_with`], first requires the principal's tenant to be
+//!   the resource's ([`TenantScope`]); crossing tenants is the recorded opt-out
+//!   [`PolicyExt::dangerous_cross_tenant`]. Resource types of no tenant declare so with
+//!   `impl TenantScope for T {}`.
 //! - **Attributes** — claim predicates ([`claim_equals`], [`claim_contains`], [`claim`],
 //!   [`claim_matches`]).
 //! - **Named policies** — [`Policies`], a registry capability; [`authorize`] and [`check`]
@@ -70,7 +75,7 @@ pub use audit::{
 #[cfg(feature = "axum")]
 pub use guard::{AuthorizeExt, AuthorizedEndpoint, Guard, GuardService};
 pub use policy::{
-  AllOf, And, AnyOf, Authenticated, AuthzError, BoxPolicy, Constant, Decision, Denial,
+  AllOf, And, AnyOf, Authenticated, AuthzError, BoxPolicy, Constant, CrossTenant, Decision, Denial,
   EffectPolicy, Not, Or, Policy, PolicyEffect, PolicyExt, PredicatePolicy, RequireRole, all_of,
   allow_all, any_of, authenticated, authorize_with, check_with, deny_all, from_effect, predicate,
   require_any_role, require_role,
@@ -85,8 +90,8 @@ pub use rbac::{
 };
 pub use registry::{Policies, PoliciesBuilder, PoliciesEnv, authorize, check, provide_policies};
 pub use resource::{
-  Acl, AclPolicy, Grantee, HasAcl, Owned, OwnerPolicy, SameTenant, Tenanted, acl_permits, owner,
-  same_tenant,
+  Acl, AclPolicy, Grantee, HasAcl, Owned, OwnerPolicy, SameTenant, TenantScope, TenantScoped,
+  Tenanted, acl_permits, owner, same_tenant, tenant_scoped,
 };
 
 /// Compiles and runs the README's code block as a doctest.

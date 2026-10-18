@@ -1,6 +1,13 @@
 //! Resource policies: ownership ([`Owned`], [`owner`]), tenant match ([`Tenanted`],
 //! [`same_tenant`]) and access-control lists ([`Acl`], [`HasAcl`], [`acl_permits`]).
 //!
+//! Tenant isolation is automatic (ADR 0013 R1): a policy defined for a resource type
+//! ([`PoliciesBuilder::define`](crate::PoliciesBuilder::define)) or run with
+//! [`check_with`](crate::check_with) / [`authorize_with`](crate::authorize_with) first checks the
+//! resource's [`TenantScope`], so a [`Tenanted`] resource is denied to a principal of another
+//! tenant (or of none) whatever the policy says. Crossing tenants takes the named opt-out
+//! [`PolicyExt::dangerous_cross_tenant`](crate::PolicyExt::dangerous_cross_tenant).
+//!
 //! ```
 //! use id_effect::Exit;
 //! use id_effect_authz::{BasicPrincipal, CurrentPrincipal, Decision, Owned, Policy, owner};
@@ -24,9 +31,12 @@
 
 use id_effect::succeed;
 
-use crate::policy::{Decision, Policy, PolicyEffect};
+use crate::policy::{BoxPolicy, Decision, Policy, PolicyEffect, PolicyExt};
 use crate::principal::{CurrentPrincipal, Principal};
 use crate::rbac::permission_matches;
+
+/// The denial reason of a tenant mismatch.
+const OTHER_TENANT: &str = "resource belongs to another tenant";
 
 /// A resource with an owning principal.
 pub trait Owned {
@@ -38,6 +48,66 @@ pub trait Owned {
 pub trait Tenanted {
   /// The tenant id, compared with [`Principal::tenant`].
   fn tenant_id(&self) -> &str;
+}
+
+/// The tenant a resource is scoped to, checked before every named policy and every
+/// [`check_with`](crate::check_with) / [`authorize_with`](crate::authorize_with) over it.
+///
+/// Every [`Tenanted`] resource has its tenant as scope; `()`, `str`, `String` and [`Acl`] have
+/// none. A resource type of no tenant declares so with an empty impl, `impl TenantScope for
+/// Report {}`; a type cannot be both (the impls conflict).
+pub trait TenantScope {
+  /// The tenant the resource belongs to; `None` (the default) for a resource of no tenant, which
+  /// the tenant check lets through.
+  fn tenant_scope(&self) -> Option<&str> {
+    None
+  }
+}
+
+impl<T: Tenanted + ?Sized> TenantScope for T {
+  fn tenant_scope(&self) -> Option<&str> {
+    Some(self.tenant_id())
+  }
+}
+
+impl TenantScope for () {}
+impl TenantScope for str {}
+impl TenantScope for String {}
+impl TenantScope for Acl {}
+
+/// `policy` behind the tenant check: on a resource with a [`TenantScope`], principals of another
+/// tenant (or of none) are denied before `policy` runs. Named policies and
+/// [`check_with`](crate::check_with) / [`authorize_with`](crate::authorize_with) apply it
+/// themselves; use it when evaluating a policy directly.
+pub fn tenant_scoped<P>(policy: P) -> TenantScoped<P> {
+  TenantScoped(policy)
+}
+
+/// See [`tenant_scoped`].
+#[derive(Clone, Copy, Debug)]
+pub struct TenantScoped<P>(P);
+
+impl<Res: TenantScope + ?Sized, P: Policy<Res>> Policy<Res> for TenantScoped<P> {
+  fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
+    match resource.tenant_scope() {
+      Some(tenant) if principal.tenant() != Some(tenant) => succeed(Decision::deny(OTHER_TENANT)),
+      _ => self.0.evaluate(principal, resource),
+    }
+  }
+}
+
+/// `policy` as it is registered or run: behind the tenant check unless it
+/// [crosses tenants](PolicyExt::dangerous_cross_tenant).
+pub(crate) fn scoped<Res, P>(policy: P) -> BoxPolicy<Res>
+where
+  Res: TenantScope + ?Sized + 'static,
+  P: Policy<Res>,
+{
+  if policy.crosses_tenants() {
+    policy.boxed()
+  } else {
+    tenant_scoped(policy).boxed()
+  }
 }
 
 /// Allows the principal that owns the resource.
@@ -68,10 +138,7 @@ pub struct SameTenant;
 impl<Res: Tenanted + ?Sized> Policy<Res> for SameTenant {
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
     let same = principal.tenant() == Some(resource.tenant_id());
-    succeed(Decision::allow_if(
-      same,
-      "resource belongs to another tenant",
-    ))
+    succeed(Decision::allow_if(same, OTHER_TENANT))
   }
 }
 

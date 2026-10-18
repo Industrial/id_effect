@@ -7,8 +7,8 @@
 //! ```
 //! use id_effect::{Cause, Effect, Exit, HCons, HNil, hlist};
 //! use id_effect_authz::{
-//!   AuthzError, BasicPrincipal, CurrentPrincipal, Owned, Policies, PolicyExt, authorize, owner,
-//!   require_role,
+//!   AuthzError, BasicPrincipal, CurrentPrincipal, Owned, Policies, PolicyExt, TenantScope,
+//!   authorize, owner, require_role,
 //! };
 //!
 //! #[derive(Clone)]
@@ -20,6 +20,7 @@
 //!     &self.owner
 //!   }
 //! }
+//! impl TenantScope for Account {} // of no tenant
 //!
 //! let policies = Policies::builder()
 //!   .define::<Account>("account.view", owner().or(require_role("auditor")))
@@ -51,10 +52,9 @@ use std::sync::Arc;
 use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, fail, hlist, need};
 
 use crate::audit::{AuthzEvents, audited};
-use crate::policy::{
-  AuthzError, BoxPolicy, Decision, Policy, PolicyEffect, PolicyExt, into_effect,
-};
+use crate::policy::{AuthzError, BoxPolicy, Decision, Policy, PolicyEffect, into_effect};
 use crate::principal::CurrentPrincipal;
+use crate::resource::{TenantScope, scoped};
 
 struct Entry {
   resource: &'static str,
@@ -81,14 +81,15 @@ pub struct PoliciesBuilder {
 
 impl PoliciesBuilder {
   /// Defines (or redefines) the policy `name` over resources of type `Res` (`()` for rules that
-  /// look only at the principal).
+  /// look only at the principal), behind the tenant check ([`TenantScope`]) unless the policy
+  /// [crosses tenants](crate::PolicyExt::dangerous_cross_tenant).
   #[must_use]
-  pub fn define<Res: ?Sized + 'static>(
+  pub fn define<Res: TenantScope + ?Sized + 'static>(
     mut self,
     name: impl Into<String>,
     policy: impl Policy<Res>,
   ) -> Self {
-    let boxed: BoxPolicy<Res> = policy.boxed();
+    let boxed: BoxPolicy<Res> = scoped(policy);
     self.entries.insert(
       name.into(),
       Entry {
@@ -282,6 +283,7 @@ mod tests {
   use id_effect::{Cause, Exit};
 
   struct Doc;
+  impl TenantScope for Doc {}
 
   fn registry() -> Policies {
     Policies::builder()

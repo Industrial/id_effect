@@ -32,9 +32,11 @@
 use std::fmt;
 use std::sync::Arc;
 
+use id_effect::observability::posture::record_dangerous;
 use id_effect::{Effect, HList, Selector, need, succeed};
 
 use crate::principal::CurrentPrincipal;
+use crate::resource::{TenantScope, scoped};
 
 /// Why a policy denied: a human-readable reason and, when evaluated by name through
 /// [`Policies`](crate::Policies), the policy's name.
@@ -193,6 +195,12 @@ pub type PolicyEffect = Effect<Decision, AuthzError>;
 pub trait Policy<Res: ?Sized>: Send + Sync + 'static {
   /// Evaluate the policy for `principal` acting on `resource`.
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect;
+
+  /// Whether the policy opted out of the automatic tenant match
+  /// ([`PolicyExt::dangerous_cross_tenant`]); `false` for every other policy.
+  fn crosses_tenants(&self) -> bool {
+    false
+  }
 }
 
 /// A shared, type-erased policy over `Res`.
@@ -202,11 +210,19 @@ impl<Res: ?Sized, P: Policy<Res> + ?Sized> Policy<Res> for Arc<P> {
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
     (**self).evaluate(principal, resource)
   }
+
+  fn crosses_tenants(&self) -> bool {
+    (**self).crosses_tenants()
+  }
 }
 
 impl<Res: ?Sized, P: Policy<Res> + ?Sized> Policy<Res> for Box<P> {
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
     (**self).evaluate(principal, resource)
+  }
+
+  fn crosses_tenants(&self) -> bool {
+    (**self).crosses_tenants()
   }
 }
 
@@ -238,9 +254,52 @@ pub trait PolicyExt: Sized + Send + Sync + 'static {
   {
     Arc::new(self)
   }
+
+  /// This policy without the automatic tenant match: defined by name or run with
+  /// [`check_with`] / [`authorize_with`], it decides on a [`Tenanted`](crate::Tenanted) resource
+  /// for principals of any tenant. `reason` says who needs that (support tooling, a platform
+  /// operator) and is kept on the policy for review.
+  ///
+  /// A dangerous opt-out (ADR 0013 R10): the call records
+  /// `id_effect_authz::PolicyExt::dangerous_cross_tenant` in the posture registry. It applies to
+  /// the policy it wraps as a whole, so it has to be the outermost combinator.
+  fn dangerous_cross_tenant(self, reason: impl Into<String>) -> CrossTenant<Self> {
+    record_dangerous(
+      "id_effect_authz::PolicyExt::dangerous_cross_tenant",
+      "M19: a policy over tenant-scoped resources decides for principals of other tenants",
+    );
+    CrossTenant {
+      policy: self,
+      reason: reason.into(),
+    }
+  }
 }
 
 impl<P: Sized + Send + Sync + 'static> PolicyExt for P {}
+
+/// See [`PolicyExt::dangerous_cross_tenant`].
+#[derive(Clone, Debug)]
+pub struct CrossTenant<P> {
+  policy: P,
+  reason: String,
+}
+
+impl<P> CrossTenant<P> {
+  /// Why the policy crosses tenants.
+  pub fn reason(&self) -> &str {
+    &self.reason
+  }
+}
+
+impl<Res: ?Sized, P: Policy<Res>> Policy<Res> for CrossTenant<P> {
+  fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
+    self.policy.evaluate(principal, resource)
+  }
+
+  fn crosses_tenants(&self) -> bool {
+    true
+  }
+}
 
 /// See [`PolicyExt::and`].
 #[derive(Clone, Debug)]
@@ -498,13 +557,16 @@ where
   }
 }
 
-/// Evaluates `policy` for the [`CurrentPrincipal`] in `R` acting on `resource`.
+/// Evaluates `policy` for the [`CurrentPrincipal`] in `R` acting on `resource`, behind the
+/// tenant check ([`TenantScope`]) unless the policy
+/// [crosses tenants](PolicyExt::dangerous_cross_tenant).
 pub fn check_with<P, Res, R, I>(policy: P, resource: Res) -> Effect<Decision, AuthzError, R>
 where
   P: Policy<Res>,
-  Res: Send + Sync + 'static,
+  Res: TenantScope + Send + Sync + 'static,
   R: Selector<CurrentPrincipal, I> + HList,
 {
+  let policy = scoped(policy);
   need::<CurrentPrincipal>().flat_map(move |p| policy.evaluate(&p, &resource).narrow())
 }
 
@@ -513,9 +575,10 @@ where
 pub fn authorize_with<P, Res, R, I>(policy: P, resource: Res) -> Effect<(), AuthzError, R>
 where
   P: Policy<Res>,
-  Res: Send + Sync + 'static,
+  Res: TenantScope + Send + Sync + 'static,
   R: Selector<CurrentPrincipal, I> + HList,
 {
+  let policy = scoped(policy);
   need::<CurrentPrincipal>().flat_map(move |p| {
     policy
       .evaluate(&p, &resource)

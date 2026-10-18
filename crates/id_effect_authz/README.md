@@ -25,8 +25,8 @@ Authorization for id_effect services. Policies are capabilities:
 ```rust
 use id_effect::{Effect, Exit, HCons, HNil, hlist};
 use id_effect_authz::{
-  AuthzError, BasicPrincipal, CurrentPrincipal, Owned, Policies, PolicyExt, Rbac, authorize,
-  owner,
+  AuthzError, BasicPrincipal, CurrentPrincipal, Owned, Policies, PolicyExt, Rbac, TenantScope,
+  authorize, owner,
 };
 
 #[derive(Clone)]
@@ -39,6 +39,9 @@ impl Owned for Account {
     &self.owner
   }
 }
+
+// Of no tenant. A `Tenanted` resource gets the tenant match on every policy automatically.
+impl TenantScope for Account {}
 
 let rbac = Rbac::builder()
   .grant("auditor", ["account:read"])
