@@ -390,7 +390,7 @@ async fn session_pair() -> (Session, Session) {
   let listener = net.transport("b").listen("b").await.expect("bind");
   let dial = net.transport("a").connect("b").await.expect("dial");
   let accept = listener.accept().await.expect("accept");
-  let cookie = Cookie::new("mesh");
+  let cookie = Cookie::new("mesh-cookie-of-at-least-32-bytes");
   let (id_a, id_b) = (
     NodeId::from_parts("a@test", 1),
     NodeId::from_parts("b@test", 2),

@@ -34,7 +34,7 @@ pub use envelope::{
 };
 pub use fanout::{SharedGroups, fanout_cast, fanout_cast_on_node};
 pub use groups::{Dot, OrSwot, ProcessGroups};
-pub use handshake::{Cookie, HandshakeError};
+pub use handshake::{Cookie, CookieError, HandshakeError};
 pub use id::NodeId;
 pub use membership::{
   Member, Membership, MembershipError, MembershipEvent, NodeMonitors, Output, TimerWheel,
