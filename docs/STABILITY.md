@@ -47,7 +47,7 @@ rule ([docs/QUALITY_BAR.md](QUALITY_BAR.md), judgement checks).
 
 The `semver` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs
 `cargo semver-checks` for the publishable crates against the latest release on crates.io (the
-baseline is 0.9.0 during the 0.10 cycle). Crates not yet on crates.io are excluded until their
+baseline is 0.10.0 during the 0.11 cycle). Crates not yet on crates.io are excluded until their
 first release. Locally: `moon run effect:semver`.
 
 - **While a breaking 0.x minor is in development** the job is report-only (`continue-on-error`):

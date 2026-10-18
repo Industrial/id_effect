@@ -84,9 +84,9 @@ tasks:
       outputStyle: buffer-only-failure
   semver:
     description: >-
-      Run cargo semver-checks for the publishable crates against the 0.9.0 crates.io baseline (the latest release). Report-only in CI while a breaking 0.x minor is in development (see the semver job in ci.yml and docs/STABILITY.md).
+      Run cargo semver-checks for the publishable crates against the 0.10.0 crates.io baseline (the latest release). Report-only in CI while a breaking 0.x minor is in development (see the semver job in ci.yml and docs/STABILITY.md).
     command: 'cargo'
-    args: ['semver-checks', '--workspace', '--baseline-version', '0.9.0']
+    args: ['semver-checks', '--workspace', '--baseline-version', '0.10.0']
     inputs:
       - 'Cargo.toml'
       - '**/Cargo.toml'

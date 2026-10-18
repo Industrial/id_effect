@@ -4,7 +4,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use id_effect::{Cause, Effect, Exit};
+use id_effect::{Cause, Effect, Exit, from_async};
 use id_effect_mail::{
   Address, MailError, MailerEnv, Message, Sent, SmtpConfig, SmtpMailer, deliver,
 };
@@ -140,9 +140,20 @@ async fn run<A: Send + 'static>(eff: Effect<A, MailError>) -> Result<A, MailErro
   }
 }
 
+/// Pause between the two sends: lettre hands a used connection back to its pool on a spawned
+/// task, so a second send issued at once can race it and dial a new connection.
+fn pool_settle<R: Send + Sync + 'static>() -> Effect<(), MailError, R> {
+  from_async(|| async {
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    Ok(())
+  })
+}
+
 fn send_two(port: u16, first: Message, second: Message) -> Effect<(Sent, Sent), MailError> {
   deliver::<MailerEnv, _>(first)
-    .flat_map(move |a| deliver::<MailerEnv, _>(second).map(move |b| (a, b)))
+    .flat_map(move |a| {
+      pool_settle().flat_map(move |()| deliver::<MailerEnv, _>(second).map(move |b| (a, b)))
+    })
     .provide_layer(SmtpMailer::layer(SmtpConfig::plaintext("127.0.0.1", port)))
 }
 
