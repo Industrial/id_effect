@@ -4,12 +4,12 @@
 //! that is the classic deadlock; with STM each transfer reads both cells, writes both, and commits
 //! atomically, restarting if the other thread committed in between.
 //!
-//! Run: `cargo run -p id_effect_fp --example 083_stm_transfer`
+//! Run: `cargo run -p id_effect --example 083_stm_transfer`
 use std::thread;
 
 use id_effect::Effect;
+use id_effect::stm::{Stm, TRef, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{Stm, TRef, commit};
 
 #[derive(Clone, Debug, PartialEq)]
 struct Account {

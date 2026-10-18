@@ -11,18 +11,13 @@
 //!   `MutableRef` and `func` stay in `id_effect::foundation`.)
 //! - **[`mod@collections`]** — persistent collections backed by [`im`] ([`EffectHashMap`],
 //!   [`EffectVector`], …) plus mutable helpers ([`MutableList`], [`ChunkBuilder`], …).
-//! - **[`mod@stm`]** — software transactional memory ([`TRef`], [`TMap`], [`commit`], …); a
-//!   retrying transaction parks its fiber until a cell it read changes.
+//! - **[`mod@stm`]** — deprecated aliases of [`id_effect::stm`] (STM moved into core in 0.11;
+//!   removed in 0.12).
 //! - **[`mod@result`]**, **[`mod@reader`]**, **[`mod@thunk`]** — pure `Result` combinators, the
 //!   `Reader` monad and one-shot thunks (formerly in the core `kernel` module).
 //!
 //! ```rust
-//! use id_effect::Exit;
-//! use id_effect_fp::{Semigroup, TRef, commit, hash_map};
-//!
-//! let counter = commit(TRef::make(1_i32)).block_on().into_result().expect("make");
-//! commit(counter.update_stm::<(), _>(|n| n + 1)).block_on().into_result().expect("update");
-//! assert_eq!(commit(counter.read_stm::<()>()).block_on(), Exit::succeed(2));
+//! use id_effect_fp::{Semigroup, hash_map};
 //!
 //! let m = hash_map::set(&hash_map::empty(), "a", 1);
 //! assert_eq!(hash_map::get(&m, "a"), Some(&1));
@@ -74,6 +69,7 @@ pub use collections::{
   hash_set, sorted_map, sorted_set, vector,
 };
 pub use foundation::{Iso, Never, Unit};
+#[allow(deprecated)]
 pub use stm::{Outcome, Stm, TMap, TQueue, TRef, TSemaphore, Txn, atomically, commit};
 
 #[cfg(test)]

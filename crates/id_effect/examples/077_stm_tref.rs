@@ -1,7 +1,7 @@
 //! Ex 077 — `TRef` read/write inside `commit`.
 use id_effect::Effect;
+use id_effect::stm::{TRef, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{TRef, commit};
 
 fn main() {
   let stm = TRef::make(0_i32).flat_map(|cell| {

@@ -1,7 +1,7 @@
 //! Ex 078 — `atomically` is [`commit`] under the Effect.ts-style name.
 use id_effect::Effect;
+use id_effect::stm::{TRef, atomically, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{TRef, atomically, commit};
 
 fn main() {
   let stm = TRef::make(0_i32).flat_map(|cell| {

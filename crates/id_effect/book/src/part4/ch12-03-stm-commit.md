@@ -14,7 +14,7 @@ below, compose with `map` / `flat_map` / `or_else`, and execute it with `commit`
 
 ```rust
 use id_effect::{Effect, Exit};
-use id_effect_fp::{Stm, TRef, commit};
+use id_effect::stm::{Stm, TRef, commit};
 # #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 # struct InsufficientFunds;
 # fn withdraw(account: &TRef<u64>, amount: u64) -> Stm<u64, InsufficientFunds> {
@@ -42,7 +42,7 @@ with `Runtime::run`, or bind it inside `effect!` like any other effect.
 
 ```rust
 # use id_effect::Exit;
-# use id_effect_fp::{Stm, TRef, commit};
+# use id_effect::stm::{Stm, TRef, commit};
 #[derive(Clone, Debug, PartialEq)]
 struct InsufficientFunds;
 
@@ -67,7 +67,7 @@ applied; `commit` surfaces `e` as the effect's error.
 A transaction can wait until a condition holds instead of failing:
 
 ```rust
-# use id_effect_fp::{Stm, TRef};
+# use id_effect::stm::{Stm, TRef};
 /// Restarts until the balance covers `amount`.
 fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
   let acct = account.clone();
@@ -94,7 +94,7 @@ try:
 
 ```rust
 # use id_effect::Exit;
-# use id_effect_fp::{Stm, TRef, commit};
+# use id_effect::stm::{Stm, TRef, commit};
 # fn withdraw_when_available(account: &TRef<u64>, amount: u64) -> Stm<u64, ()> {
 #   let acct = account.clone();
 #   account.read_stm().flat_map(move |balance| {
@@ -115,7 +115,7 @@ Transactions compose with `flat_map`. The result commits as one unit:
 
 ```rust
 # use id_effect::{Cause, Effect, Exit};
-# use id_effect_fp::{Stm, TRef, commit};
+# use id_effect::stm::{Stm, TRef, commit};
 # fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
 #   match eff.block_on() {
 #     Exit::Success(a) => Ok(a),
@@ -148,4 +148,4 @@ run(commit(audited))?;
 If either part sees a conflict, the whole transaction restarts. If the withdrawal fails, the audit
 counter is not incremented either.
 
-Full example, including a waiter thread released by a deposit: [`crates/id_effect_fp/examples/085_stm_fail_retry.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/085_stm_fail_retry.rs) (`cargo run -p id_effect_fp --example 085_stm_fail_retry`).
+Full example, including a waiter thread released by a deposit: [`crates/id_effect/examples/085_stm_fail_retry.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/examples/085_stm_fail_retry.rs) (`cargo run -p id_effect --example 085_stm_fail_retry`).

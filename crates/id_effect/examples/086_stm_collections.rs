@@ -1,11 +1,11 @@
 //! Ex 086 — `TQueue`, `TMap`, `TSemaphore` (book: "Transactional Collections").
 //!
-//! Run: `cargo run -p id_effect_fp --example 086_stm_collections`
+//! Run: `cargo run -p id_effect --example 086_stm_collections`
 use std::thread;
 
 use id_effect::Effect;
+use id_effect::stm::{Stm, TMap, TQueue, TRef, TSemaphore, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{Stm, TMap, TQueue, TRef, TSemaphore, commit};
 
 /// `TQueue::offer` returns `false` when a bounded queue is full; `check` turns that into a retry,
 /// so this offer waits for space.

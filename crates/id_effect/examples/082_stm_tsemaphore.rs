@@ -1,18 +1,13 @@
-//! Ex 081 — `TQueue::offer` / `take` with retry on empty.
+//! Ex 082 — `TSemaphore` acquire/release in a transaction.
 use id_effect::Effect;
+use id_effect::stm::{TSemaphore, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{TQueue, commit};
 
 fn main() {
-  let stm = TQueue::bounded(4).flat_map(|q| {
-    let q1 = q.clone();
-    let q2 = q.clone();
-    q.offer(1_i32)
-      .flat_map(move |_| q1.offer(2))
-      .flat_map(move |_| q2.take::<()>())
-  });
-  assert_eq!(run(commit(stm)), Ok(1));
-  println!("081_stm_tqueue ok");
+  let stm =
+    TSemaphore::make(1).flat_map(|s| s.acquire::<()>().flat_map(move |_| s.release::<()>()));
+  run(commit(stm)).expect("commit");
+  println!("082_stm_tsemaphore ok");
 }
 
 /// Runs `eff` on the global runtime: `Ok` on success, `Err` on a typed failure.

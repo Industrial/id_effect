@@ -1,11 +1,11 @@
 //! Ex 085 — `Stm::fail`, `Stm::check` / retry, `or_else` and composition (book: "Stm and commit").
 //!
-//! Run: `cargo run -p id_effect_fp --example 085_stm_fail_retry`
+//! Run: `cargo run -p id_effect --example 085_stm_fail_retry`
 use std::thread;
 
 use id_effect::Effect;
+use id_effect::stm::{Stm, TRef, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{Stm, TRef, commit};
 
 #[derive(Clone, Debug, PartialEq)]
 struct InsufficientFunds;

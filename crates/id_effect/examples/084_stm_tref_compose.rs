@@ -1,11 +1,11 @@
 //! Ex 084 — `TRef` operations composed into one transaction (book: "TRef").
 //!
-//! Run: `cargo run -p id_effect_fp --example 084_stm_tref_compose`
+//! Run: `cargo run -p id_effect --example 084_stm_tref_compose`
 use std::thread;
 
 use id_effect::Effect;
+use id_effect::stm::{Stm, TRef, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{Stm, TRef, commit};
 
 /// Increment `counter` and add its old value to `total`, atomically.
 fn bump(counter: &TRef<i32>, total: &TRef<i32>) -> Stm<(), ()> {

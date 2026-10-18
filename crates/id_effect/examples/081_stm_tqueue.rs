@@ -1,15 +1,18 @@
-//! Ex 080 — `TMap` transactional key/value operations.
+//! Ex 081 — `TQueue::offer` / `take` with retry on empty.
 use id_effect::Effect;
+use id_effect::stm::{TQueue, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{TMap, commit};
 
 fn main() {
-  let stm = TMap::<&'static str, i32>::make().flat_map(|m| {
-    m.set("k", 10)
-      .flat_map(move |_| m.get(&"k").map(|opt| opt.expect("some")))
+  let stm = TQueue::bounded(4).flat_map(|q| {
+    let q1 = q.clone();
+    let q2 = q.clone();
+    q.offer(1_i32)
+      .flat_map(move |_| q1.offer(2))
+      .flat_map(move |_| q2.take::<()>())
   });
-  assert_eq!(run(commit(stm)), Ok(10));
-  println!("080_stm_tmap ok");
+  assert_eq!(run(commit(stm)), Ok(1));
+  println!("081_stm_tqueue ok");
 }
 
 /// Runs `eff` on the global runtime: `Ok` on success, `Err` on a typed failure.

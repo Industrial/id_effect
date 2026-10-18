@@ -16,8 +16,8 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use id_effect::Exit;
+use id_effect::stm::{Stm, TRef, commit};
 use id_effect::{Effect, FiberHandle, HNil, Runtime, TestExecutor, succeed, suspend};
-use id_effect_fp::{Stm, TRef, commit};
 
 const N: u32 = 10_000;
 

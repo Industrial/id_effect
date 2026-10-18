@@ -1,6 +1,6 @@
 # TRef — Transactional References
 
-`TRef<T>` is the fundamental mutable cell in `id_effect_fp`'s STM. It holds a value that
+`TRef<T>` is the fundamental mutable cell in `id_effect::stm`. It holds a value that
 transactions read and write.
 
 ## Creating a TRef
@@ -9,7 +9,7 @@ transactions read and write.
 committing it, then share the handle:
 
 ```rust
-use id_effect_fp::{TRef, commit};
+use id_effect::stm::{TRef, commit};
 // `run` is the Exit-to-Result helper from the chapter introduction.
 # use id_effect::{Cause, Effect, Exit};
 # fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
@@ -48,7 +48,7 @@ Sequence operations with `flat_map`; the whole chain commits atomically:
 
 ```rust
 # use id_effect::{Cause, Effect, Exit};
-# use id_effect_fp::{Stm, TRef, commit};
+# use id_effect::stm::{Stm, TRef, commit};
 # fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
 #   match eff.block_on() {
 #     Exit::Success(a) => Ok(a),
@@ -86,7 +86,7 @@ each thread or fiber; no `Arc<Mutex<_>>` is needed:
 
 ```rust
 # use id_effect::{Cause, Effect, Exit};
-# use id_effect_fp::{TRef, commit};
+# use id_effect::stm::{TRef, commit};
 # fn run<A: Send + 'static, E: Send + 'static>(eff: Effect<A, E>) -> Result<A, E> {
 #   match eff.block_on() {
 #     Exit::Success(a) => Ok(a),
@@ -107,7 +107,7 @@ for h in handles { h.join().expect("join"); }
 assert_eq!(run(commit(hits.read_stm::<()>())), Ok(2_000));
 ```
 
-Full example: [`crates/id_effect_fp/examples/084_stm_tref_compose.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_fp/examples/084_stm_tref_compose.rs) (`cargo run -p id_effect_fp --example 084_stm_tref_compose`); the minimal read/write version is `077_stm_tref`.
+Full example: [`crates/id_effect/examples/084_stm_tref_compose.rs`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect/examples/084_stm_tref_compose.rs) (`cargo run -p id_effect --example 084_stm_tref_compose`); the minimal read/write version is `077_stm_tref`.
 
 ## `TRef` vs. `Mutex<T>`
 

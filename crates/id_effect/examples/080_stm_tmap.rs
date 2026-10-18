@@ -1,13 +1,15 @@
-//! Ex 082 — `TSemaphore` acquire/release in a transaction.
+//! Ex 080 — `TMap` transactional key/value operations.
 use id_effect::Effect;
+use id_effect::stm::{TMap, commit};
 use id_effect::{Cause, Exit};
-use id_effect_fp::{TSemaphore, commit};
 
 fn main() {
-  let stm =
-    TSemaphore::make(1).flat_map(|s| s.acquire::<()>().flat_map(move |_| s.release::<()>()));
-  run(commit(stm)).expect("commit");
-  println!("082_stm_tsemaphore ok");
+  let stm = TMap::<&'static str, i32>::make().flat_map(|m| {
+    m.set("k", 10)
+      .flat_map(move |_| m.get(&"k").map(|opt| opt.expect("some")))
+  });
+  assert_eq!(run(commit(stm)), Ok(10));
+  println!("080_stm_tmap ok");
 }
 
 /// Runs `eff` on the global runtime: `Ok` on success, `Err` on a typed failure.
