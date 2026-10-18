@@ -12,7 +12,7 @@ and safe to run side by side. `id_effect_test` adds three pieces:
 
 ```toml
 [dev-dependencies]
-id_effect_test = { version = "0.9", features = ["sql", "migrate", "fixtures", "http", "contract"] }
+id_effect_test = { version = "0.10", features = ["sql", "migrate", "fixtures", "http", "contract"] }
 ```
 
 ## A database per test: rollback mode

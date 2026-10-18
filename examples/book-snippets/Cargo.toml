@@ -14,12 +14,12 @@ path = "src/lib.rs"
 
 # Every crate a book chapter may use. Doctests compile against these.
 [dependencies]
-id_effect = { path = "../../crates/id_effect", version = "0.9.0", features = [
+id_effect = { path = "../../crates/id_effect", version = "0.10.0", features = [
   "schema-serde",
   "schema-regex",
   "proptest",
 ] }
-id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.9.0", features = [
+id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.10.0", features = [
   "axum",
   "jwt",
   "jwks",
@@ -27,52 +27,52 @@ id_effect_auth = { path = "../../crates/id_effect_auth", version = "0.9.0", feat
   "pg",
   "totp",
 ] }
-id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.9.0", features = [
+id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.10.0", features = [
   "axum",
   "testing",
 ] }
-id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.9.0", features = [
+id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.10.0", features = [
   "openapi",
   "tower",
 ] }
-id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.9.0" }
-id_effect_config = { path = "../../crates/id_effect_config", version = "0.9.0", features = [
+id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.10.0" }
+id_effect_config = { path = "../../crates/id_effect_config", version = "0.10.0", features = [
   "vault",
 ] }
-id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.9.0" }
-id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.9.0" }
-id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.9.0" }
-id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.9.0", features = [
+id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.10.0" }
+id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.10.0" }
+id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.10.0" }
+id_effect_sql = { path = "../../crates/id_effect_sql", version = "0.10.0", features = [
   "pg",
   "migrate",
   "repository",
   "audit",
 ] }
-id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.9.0" }
-id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.9.0", features = [
+id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.10.0" }
+id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.10.0", features = [
   "full",
 ] }
-id_effect_node = { path = "../../crates/id_effect_node", version = "0.9.0" }
-id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.9.0" }
-id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.9.0" }
-id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.9.0" }
-id_effect_process = { path = "../../crates/id_effect_process", version = "0.9.0" }
-id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.9.0", features = [
+id_effect_node = { path = "../../crates/id_effect_node", version = "0.10.0" }
+id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.10.0" }
+id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.10.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.10.0" }
+id_effect_process = { path = "../../crates/id_effect_process", version = "0.10.0" }
+id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.10.0", features = [
   "session",
   "rate-limit",
 ] }
-id_effect_console = { path = "../../crates/id_effect_console", version = "0.9.0", features = [
+id_effect_console = { path = "../../crates/id_effect_console", version = "0.10.0", features = [
   "jobs",
 ] }
-id_effect_jobs = { path = "../../crates/id_effect_jobs", version = "0.9.0", features = [
+id_effect_jobs = { path = "../../crates/id_effect_jobs", version = "0.10.0", features = [
   "cron",
 ] }
-id_effect_messaging = { path = "../../crates/id_effect_messaging", version = "0.9.0" }
-id_effect_storage = { path = "../../crates/id_effect_storage", version = "0.9.0", features = [
+id_effect_messaging = { path = "../../crates/id_effect_messaging", version = "0.10.0" }
+id_effect_storage = { path = "../../crates/id_effect_storage", version = "0.10.0", features = [
   "s3",
 ] }
-id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.9.0" }
-id_effect_test = { path = "../../crates/id_effect_test", version = "0.9.0", features = [
+id_effect_tokio = { path = "../../crates/id_effect_tokio", version = "0.10.0" }
+id_effect_test = { path = "../../crates/id_effect_test", version = "0.10.0", features = [
   "fault",
 ] }
 tempfile = "3"

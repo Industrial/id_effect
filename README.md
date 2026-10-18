@@ -127,7 +127,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.9"
+id_effect = "0.10"
 ```
 
 ```rust

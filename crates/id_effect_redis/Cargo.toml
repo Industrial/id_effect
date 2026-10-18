@@ -28,7 +28,7 @@ rate-limit = ["dep:id_effect_axum"]
 streams = ["dep:id_effect_messaging", "redis/streams"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
+id_effect = { path = "../id_effect", version = "0.10.0" }
 # redis-rs (release spec 0.9.0 D6): tokio connections behind a reconnecting `ConnectionManager`,
 # Lua scripts for the atomic multi-key operations. 1.x needs rustc 1.88, within the workspace MSRV.
 redis = { version = "1.7.1", default-features = false, features = [
@@ -41,9 +41,9 @@ serde = "1"
 serde_json = "1"
 # `StreamExt::next` over the pub/sub message stream; already in redis-rs's async tree.
 futures-util = { version = "0.3.31", default-features = false }
-id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", optional = true }
-id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
-id_effect_messaging = { path = "../id_effect_messaging", version = "0.9.0", optional = true }
+id_effect_auth = { path = "../id_effect_auth", version = "0.10.0", optional = true }
+id_effect_axum = { path = "../id_effect_axum", version = "0.10.0", optional = true }
+id_effect_messaging = { path = "../id_effect_messaging", version = "0.10.0", optional = true }
 # Session records are keyed by the SHA-256 of the id (as `PgSessionStore` does).
 sha2 = { version = "0.10.9", optional = true }
 # `UtcDateTime`'s timestamp, stored losslessly as RFC 3339; same floor as id_effect's.

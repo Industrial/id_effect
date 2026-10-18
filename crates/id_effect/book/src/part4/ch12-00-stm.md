@@ -2,7 +2,7 @@
 
 > **Crate:** STM lives in **`id_effect_fp`**, a maintenance-tier crate with a **frozen API**
 > ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)).
-> It moved out of core `id_effect` in 0.6. Add `id_effect_fp = "0.9"` and import from
+> It moved out of core `id_effect` in 0.6. Add `id_effect_fp = "0.10"` and import from
 > `id_effect_fp` (`Stm`, `TRef`, `TQueue`, `TMap`, `TSemaphore`, `commit`, `atomically` are
 > re-exported at the crate root).
 

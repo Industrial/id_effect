@@ -40,8 +40,8 @@ fault = []
 name = "id_effect_test"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
-id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", optional = true }
+id_effect = { path = "../id_effect", version = "0.10.0" }
+id_effect_sql = { path = "../id_effect_sql", version = "0.10.0", optional = true }
 # Containers are started through testcontainers (TLS-free: local Docker socket or plain TCP).
 testcontainers = { version = "0.28", default-features = false }
 # Already in the tree through testcontainers: container inspection, ping and the reaper's
