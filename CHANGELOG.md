@@ -1,5 +1,216 @@
 # Changelog
 
+## 0.10.0 — 2026-10-18 — Async work & operations (breaking)
+
+The third release under the plan of plans: a PostgreSQL job queue with cron, a broker-agnostic
+messaging API with a transactional outbox and Redis Streams, mail with templates and delivery
+through the queue, object storage, a published event-sourcing crate, and an operator console;
+plus HTTP client defaults, tracing of outbound calls and queries, log redaction, config hot
+reload, fault injection, `id-effect dev` and `id-effect generate job`. The Ledger reference app
+uses all of it in CI. Upgrading from 0.9: see the
+[0.10 migration guide](docs/MIGRATION-0.10.md).
+
+### Added
+
+- New crates (ADR 0010 Amendment 6): `id_effect_jobs`, `id_effect_messaging`, `id_effect_mail`,
+  `id_effect_console`, `id_effect_storage` (tier `platform`; the Ledger is their CI-tested
+  consumer) and `id_effect_events`, promoted from `labs/` (tier `integration`).
+- `id_effect_jobs`: `Job` trait (payload `Schema`, `NAME`, `QUEUE`, priority, max attempts,
+  unique key, timeout, retry `Schedule`), `JobRegistry`, `JobQueue` (`enqueue`, `cancel`,
+  `retry_now`, `stats`, `list`) and `JobStore` with `PgJobQueue` and `MemoryJobQueue`.
+  `enqueue_in(&tx, …)` enqueues inside the caller's transaction; a unique-key duplicate never
+  aborts it. One `id_effect_jobs` table, shipped as `migrator()` or `ensure_schema()`.
+- `id_effect_jobs`: `Worker` claiming with `FOR UPDATE SKIP LOCKED` by priority then `run_at`,
+  per-queue concurrency, lease heartbeats and rescue of expired leases, retries replayed from the
+  job's `Schedule`, dead jobs after the last attempt, graceful drain, `JobObserver` hooks; "now"
+  comes from the app's clock. Book part6/ch31-01-jobs.md; example `010_jobs`.
+- `id_effect_jobs` feature `cron`: `enqueue_on_tick` (one job per tick, deduplicated by
+  `tick_key` across schedulers) and `CronLeader`, which runs the schedule on one node through a
+  `ClusterSingleton` over `PgAdvisoryLease` (re-exported with `NodeName` / `Pid`). Core
+  `id_effect`: additive `CronJob::new_at`, whose factory receives the fire time.
+- `id_effect_messaging`: object-safe `MessageBroker` (`publish`, `subscribe` per
+  `ConsumerGroup` with prefetch, concurrency, max deliveries, dead-letter topic and start
+  position); `Delivery` settled with `ack` / `nack(Requeue | DeadLetter)`; `Message` with id, key,
+  headers and a `Schema`-typed payload; `MessageBrokerExt::consume`, `ack_on_success`;
+  `MemoryBroker` with test helpers. Book part6/ch31-02-messaging.md.
+- `id_effect_messaging`: transactional `Outbox::stage(&tx, …)`, a `Relay` to any broker
+  (`SKIP LOCKED` claims under a lease, retries on a `Schedule`, dead rows, pruning; at-least-once)
+  and an idempotent `Inbox` deduplicating on (consumer group, message id) in the handler's
+  transaction; `PgOutbox`, `MemoryOutbox`, `MemoryInbox`, `migrator()`. Example `030_outbox_inbox`.
+- `id_effect_redis` feature `streams`: `RedisStreamsBroker`, a `MessageBroker` on Redis Streams
+  (≥ 6.2): consumer groups, `XAUTOCLAIM` redelivery, prefetch credit, requeue, dead-lettering
+  that cannot run twice. Example `030_streams`; book ch28-04.
+- `id_effect_mail`: `Message` / `MessageBuilder` (attachments, inline `cid:` parts, header
+  injection refused), the `Mailer` capability, `SmtpMailer` (lettre, rustls), `SendGridMailer`
+  (POST never retried) and `TestMailbox` with assertions; `MailError::is_transient`.
+- `id_effect_mail`: minijinja templates (`{mail}.html` / `.txt` / `.subject.txt`, layouts and
+  partials, HTML autoescaped); feature `preview` serves `/_mail/previews`; feature `jobs` adds
+  `deliver_later` / `deliver_later_in(&tx, …)` through `id_effect_jobs` (12 attempts over ~5 h,
+  permanent failures go dead at once, payloads capped at 2 MiB). Book part6/ch31-03-mail.md.
+- `id_effect_console`: guarded operator console. `Console::new()….router(guard)` is the only way
+  to get its routes; JSON API under `/_console/api` for fibers, supervisors, metrics, health and
+  the runtime log level (GET / PUT); a static dashboard page at `/_console` under a strict CSP;
+  feature `jobs` adds a jobs panel with retry / cancel actions. Book part6/ch27-03-console.md.
+- `id_effect_storage`: `ObjectStore` capability (`put`, `put_stream`, `get`, `get_stream`,
+  `head`, `exists`, `delete`, `list`, `signed_url`) with `MemoryStore`, `LocalStore` and
+  `S3Store` (feature `s3`); streaming uploads hold at most one part; HMAC `UrlSigner` for the
+  local backends; re-exports `bytes::Bytes`. Book part6/ch28-05-storage.md.
+- `id_effect_events` (published): `EventStore::append_expected` with optimistic concurrency,
+  `SqlEventJournal` over any `SqlClient` (PostgreSQL and SQLite), CQRS dispatch and projections
+  as `Effect`s, snapshots (`SnapshotStore`, `load_aggregate`), a gap-free global `position`,
+  `EventLog::read_all` and checkpointed `CatchUpSubscription`s. Book part5/ch23.
+- `id_effect_auth` feature `accounts`: registration, email verification and password reset
+  (`Accounts`, `AccountRoutes`, `PgAccountTokenStore` + migration
+  `0002_id_effect_account_tokens`); `id_effect_mail` feature `auth`: `AccountMails`. Book
+  part6/ch30-03.
+- Core `id_effect` feature `fiber-registry` (off by default): `fiber_dump()` lists every live
+  fiber with parent, children, state, age and span chain. `Schema::with_decode_unknown_all` is
+  public.
+- `id_effect_logger`: `RedactionPolicy` (`provide_redaction_policy`), `SamplingBackend` /
+  `SamplingStats`, `LogRecord::target` with `EffectLogger::log_target`, and a process-wide
+  minimum level (`set_global_minimum_log_level`).
+- `id_effect_opentelemetry`: configurable sampling (`OtelConfig::sampler`, `OtelSampler`,
+  `OTEL_TRACES_SAMPLER[_ARG]`); `TracedHttpClient` (one client span per call, `traceparent`
+  injected; `layer(inner)`); feature `sql` with `instrumented_sql_client` /
+  `instrumented_sql_layer`; a reloadable `EnvFilter` (`EnvFilterHandle`); `otel.kind` sets the
+  span kind. Book ch27-00.
+- `id_effect_platform`: `HttpClientConfig`, `RetryPolicy` / `RetryingHttpClient`,
+  `ReqwestHttpClientProvider::layer_with`, `provide_reqwest_http_client_with`,
+  `ReqwestHttpClient::with_timeouts`. Example `040_http_client_retry`.
+- `id_effect_sql`: `SqlError::ConnectionFailed` / `TlsFailed`, `SqlError::sqlstate()`,
+  `is_unique_violation()`, `SQLSTATE_UNIQUE_VIOLATION`; `InstrumentedSqlClient` emits a
+  `db.query` span per statement (no bound parameters); `SqlClient` for `Arc<T>` and `Box<T>`;
+  `PgPoolConfig::connect_options` is public; `TestSqlClient::delay_queries`.
+- `id_effect_config`: `Profiles::watch` / `watch_for` / `watch_with` return a `ProfileWatch`
+  that hot-reloads the profile files and publishes each good value through a `SubscriptionRef`.
+  Book ch16-03; example `007_watch`.
+- `id_effect_axum`: `track_in_flight(router, &host_drain)` counts requests for the drain;
+  `SecurityLayer::csrf_exempt_bearer()`.
+- `id_effect_test`: feature `fault` (`Fault`, seeded `FaultPlan` on the virtual clock; book
+  ch15-09, example `030_faults`); Mailpit and S3-compatible (SeaweedFS) containers.
+- `id_effect_tool`: `id-effect dev` (watch, rebuild, restart on success; a failed build keeps the
+  running app; `--services` starts compose services). Book ch34-02.
+- `id_effect_tool`: `id-effect generate job <name> [--queue] [--cron]` adds a job module, its
+  registration, a test and the `id_effect_jobs` dependency to a generated project; never
+  overwrites.
+- `id_effect_tool`: `id-effect new --template service` gains `--jobs` (a job registry, queue and
+  worker; Postgres-backed with `--db pg`) and `--console` (the operator console on a loopback
+  port); every template ships a `.devcontainer/`; the service's Kamal config checks `/ready` and
+  out-waits the drain. Book ch34 "Rolling restarts and drain".
+- `id_effect_kit`: features `jobs`, `jobs-cron`, `messaging`, `redis-streams`, `mail`,
+  `console`, `storage`, `storage-s3`, `http-client`, `logger`, `events` and `auth-accounts`, all
+  in `full`; `test` includes `id_effect_test/fault`; `sql` turns on the OTel SQL spans when
+  `otel` is on. Tier `platform`.
+- `examples/reference/ledger`: monthly statements (cron leader → one job per account → CSV in S3
+  → mail with an attachment or signed link), postings through outbox → Redis Streams → inbox,
+  registration / verification / password reset, `/_console` behind an operator role with TOTP,
+  CSRF protection, traced HTTP and DB calls, hot-reloaded login limits and a seeded fault plan
+  on the posting path.
+
+### Changed
+
+- **Breaking** `id_effect_logger`: `LogRecord` is `#[non_exhaustive]`; build it with
+  `LogRecord::new` and the `with_*` methods.
+- **Breaking** `id_effect_opentelemetry`: `OtelConfig` gains the `sampler` field.
+- **Breaking** `id_effect_sql`: network and TLS failures are `SqlError::ConnectionFailed` /
+  `TlsFailed` instead of `QueryFailed`; PostgreSQL errors carry `(SQLSTATE …)`; MySQL duplicate
+  keys and SQLite unique violations report `23505`.
+- **Breaking** `id_effect_sql`: the backends no longer enable sqlx's `time` feature (reverting
+  0.9); MySQL date-time parameters bind as text literals.
+- **Breaking** `id_effect_sql`: `SqlClient` is implemented for `Box<T>` and `Arc<T>`; an
+  `impl SqlClient for Box<YourClient>` of your own now conflicts with it.
+- **Breaking** `id_effect_events`: the published API differs from the labs crate (effects,
+  `append_expected`, `SqlEventJournal` over `SqlClient`, the journal's `position` column).
+- **Breaking** `id_effect_tool`: `cli::NewArgs` gains `jobs` and `console`.
+- `id_effect_platform`: the reqwest layer has a 10 s connect / 30 s total timeout and retries
+  idempotent requests (`GET` / `PUT` / `DELETE`) on connect errors, `5xx` and `429`, up to 3
+  attempts, honouring `Retry-After`.
+- `id_effect_logger`: `provide_composite_logger` and `provide_redaction_policy` are process-wide
+  (they were per thread); minimum level, annotations and spans stay per thread.
+- `id_effect_sql`: `#[from_row(schema)]` on a derived type lists every invalid column in
+  `SqlError::InvalidRow`; derived schemas report every invalid field from `decode_unknown_all`.
+- `id_effect_sql`: PostgreSQL date-times use the crate's own binary codecs; values jiff cannot
+  hold (`±infinity`, years beyond ±9999) are `SqlError::ValueOutOfRange`, never a panic.
+- `id_effect_node`: `PgAdvisoryLease::from_pool_config` applies the pool config's TLS settings
+  (it used only the URL); QUIC uses rustls on aws-lc-rs.
+- `id_effect_tool` `service` template: `/ready` turns 503 on SIGTERM and in-flight requests
+  drain; request spans come from `RequestIdLayer::span_hook` instead of a root-fiber hook.
+
+### Deprecated
+
+- Nothing new. The 0.9 deprecations (`id_effect_sql::SqlParam`, `SqlRow::new`,
+  `SqlRow::text_cells`; `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`,
+  `SchemaJsonErrorBody`) stay one more release to keep 0.10's breaking changes to the new
+  batteries; they are removed in 0.11 (MIGRATION-0.9 and the book now say so).
+
+### Removed
+
+- `labs/id_effect_jobs` (with its apalis, obix, `job` and rdkafka dependencies) and
+  `labs/id_effect_graph`; see [MIGRATION-0.10.md](docs/MIGRATION-0.10.md) for the replacements.
+- `id_effect_events`: the `es-entity` feature (`EsEntityEventStore`, `EsEntityPgBackend`, its DDL
+  helpers and providers, `dispatch_command_es_entity`), `SqlJournalBackend` /
+  `TestSqlJournalBackend`, and the `id_effect_graph`, es-entity, sqlx and tokio dependencies.
+- `id_effect_sql`: the `time` dependency and sea-query's `with-time`.
+
+### Fixed
+
+- `id_effect_node`: `ClusterSingleton::resign` clears the local pid after a lost lease;
+  `PgAdvisoryLease::try_acquire` no longer "re-acquires" after its lock session died.
+- `id_effect_proc_macro`: `#[derive(Schema)]` is hygienic (a field named `obj` or `__issues` no
+  longer shadows the decoder's locals) and reports an unsupported field type once, not three times.
+- `id_effect_tool` `service` template: `/ready` did not see the server's readiness, so it never
+  turned 503 on SIGTERM, and nothing was drained.
+- `id_effect_sql`: `InstrumentedSqlClient` forwards `begin_with` and `query_stream` (wrapping a
+  `PgSqlClient` lost server-side streaming and custom transaction options).
+- `id_effect_node`: quinn's default features pulled in rustls' `ring` provider next to aws-lc-rs,
+  so TLS configs built from the default panicked when `quic` was enabled with sqlx TLS.
+- `id_effect_messaging`: `Inbox::handler` / `MemoryInbox::handler` no longer borrow the inbox.
+- `id_effect_axum`: `trace_request` no longer holds its span entered across `.await`.
+- `id_effect_console`: the dashboard sends the CSRF token, so its log-level and job actions work
+  behind `SecurityLayer::recommended`.
+- `id_effect_test`: a container start that loses a port-publish race ("address already in use",
+  "port is already allocated") is retried with fresh ports instead of failing the test.
+
+### Security
+
+- `id_effect_logger`: the redaction policy and composite backend applied only on the thread that
+  installed them, so lines logged on server worker threads reached `tracing` unredacted; both
+  are process-wide now.
+- `id_effect_config`: config parse errors no longer quote the offending source line or values
+  (a malformed line holding a secret reached `ConfigError`, logs and
+  `ProfileWatch::last_error()`).
+- `id_effect_auth` accounts: verification and reset tokens are stored only as SHA-256 digests,
+  compared in constant time and single-use; `forgot_password` answers identically for unknown
+  addresses; a reset revokes the account's sessions. Account mails bypass the job queue, so a
+  usable token never sits in the jobs table.
+- `id_effect_console`: every route sits behind the caller's guard (including the 404 fallback);
+  job actions require `application/json`, so a cross-site form cannot trigger them; the page
+  sends `SecurityLayer`'s CSRF token.
+- `id_effect_axum`: `SecurityLayer::csrf_exempt_bearer()` skips CSRF only for requests with
+  `Authorization: Bearer` and no `Cookie` header; cookie, Basic and other schemes are still
+  checked.
+- `id_effect_mail`: SMTP / SendGrid credentials print as `<redacted>` in `Debug`.
+- `deny.toml`: 0BSD allowed (quoted_printable, via lettre).
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.10.0.md`, METHOD 2.1):
+
+| Index | 0.9.0 | 0.10.0 | Target |
+|---|---|---|---|
+| Enterprise (E) | 67.2 (#3) | 75.5 (#2) | 73.8 (#2) |
+| Runtime (RT) | 70.8 (#2) | 78.4 (#1) | 76.8 (#1) |
+| Rows < 40 | 21 | 12 | ≤ 12 |
+| Rows ≥ 80 | 38 | 47 | 44 |
+| Rows where id_effect leads | 19 | 24 | — |
+
+17 rows up, none down. Messaging & jobs 45.4 → 87.6, Observability 70.4 → 92.6; biggest rows
+`msg.jobs` 13 → 100, `msg.email` 1 → 75, `obs.console` / `msg.brokers` / `dx.repl` 25 → 75,
+`data.events` 39 → 88. Every 0.10-targeted row met or beat its target; `dx.lint` moved to 0.11
+by the D1 checkpoint. DX KPIs (`docs/benchmarks/dx-kpis-0.10.json`): K1 19.90 s, K2 0.97 s, K3
+632 lines including a background job, K4 17/20, K5 93.3 %, K6 22.52 s. Bench gates: no budget
+gate fails against 0.9.0, with `fiber-registry` off or on.
+
 ## 0.9.0 — 2026-10-17 — Data & security (breaking)
 
 The second release under the plan of plans: typed SQL with migrations, repositories, three
