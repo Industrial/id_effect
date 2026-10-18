@@ -434,14 +434,14 @@ jobs:
   # REPORT-ONLY while a breaking 0.x release is in development: 0.10 may carry intentional
   # breaks, each of which must be listed in its migration guide; the job prints them for
   # review (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI.
-  # Baseline = the latest published release (0.9.0).
+  # Baseline = the latest published release (0.10.0).
   # ──────────────────────────────────────────────────────────────────────────
   semver:
-    name: Semver checks (report-only, baseline 0.9.0)
+    name: Semver checks (report-only, baseline 0.10.0)
     runs-on: ubuntu-latest
     needs: [moon-ci]
     env:
-      SEMVER_BASELINE: 0.9.0
+      SEMVER_BASELINE: 0.10.0
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust (stable)
@@ -460,7 +460,7 @@ jobs:
         # A crate new in a release has no crates.io baseline yet: --exclude it until published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_jobs --exclude id_effect_messaging --exclude id_effect_mail --exclude id_effect_console --exclude id_effect_storage
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
