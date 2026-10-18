@@ -1,0 +1,19 @@
+[package]
+name = "security_compile_fail"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Never published (ADR 0010 Amendment 7): it holds the compile-fail cases of ADR 0013.
+publish = false
+description = "Compile-fail security cases for id_effect (ADR 0013): misuse that must not compile"
+license.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lib]
+path = "src/lib.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh (ADR 0010 Amendment 7).
+tier = "example"

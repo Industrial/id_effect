@@ -217,6 +217,34 @@ D5), as rule 5 requires. All six are tier `integration`.
   baseline, so all are excluded from the semver job until their 0.10.0 publish. No placeholder
   versions are published: each crate's first release carries its API.
 
+#### Amendment 7 (2026-10-18, for 0.11)
+
+Names the tier of the new published crate of 0.11, the STM move and the unpublished security test
+crate (release spec 0.11.0 decisions D5 and D6), as rule 5 requires. Where the table above disagrees
+with this amendment, this amendment wins.
+
+- **`id_effect_workflow` is tier `integration`.** Durable workflows on its own Postgres engine: a
+  history journal replayed on resume on `id_effect_sql`'s `SqlClient`/`SqlTransaction`, one lease
+  holder per instance with a fencing token, activities as `id_effect_jobs` jobs, durable timers
+  through `run_at`, signals, sagas, and a `MemoryWorkflowStore` for tests. It replaces
+  `labs/id_effect_workflow`, which leaf `r11-e7-5-sagas-promote` deletes; duroxide, duroxide-pg,
+  rusqlite and the `NetworkJournalStub` do not come with it. It leaves the `labs` row of the table.
+- It publishes at the last level, after `id_effect_sql` and `id_effect_jobs` (and after
+  `id_effect_mail` and `id_effect_console`), and before `id_effect_kit` and `id_effect_tool`
+  (`scripts/validate-crate-packaging.sh --print-order`). It moves to the `platform` tier of
+  ADR 0012, with no other change, when the Ledger reference app depends on it (check P of
+  `scripts/tier-conformance.sh`).
+- crates.io (checked 2026-10-18): `id_effect_workflow` is ours, last published at 0.4.0 (the
+  SQLite/duroxide step log) before it moved to labs, so 0.11.0 is its next release. It has no
+  0.10.x baseline, so it is excluded from the semver job until its 0.11.0 publish.
+- **STM moves into core.** `id_effect::stm` is an always-compiled core module (std only, no new
+  dependency); `id_effect_fp` (maintenance) keeps `id_effect_fp::stm` as a `#[deprecated]`
+  re-export for one minor release (rule 3), then drops it. This reverses the `stm` part of
+  Amendment 2; the rest of `id_effect_fp` is unchanged.
+- **`tests/security_compile_fail` is tier `example`** and `publish = false`: the compile-fail
+  security cases of ADR 0013. It is a root-workspace member outside `crates/`, so it is never in
+  the publish order, the semver job or `publish.yml`.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 
