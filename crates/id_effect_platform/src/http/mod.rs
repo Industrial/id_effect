@@ -114,6 +114,9 @@ enum BodySource {
     total: usize,
     max: usize,
   },
+  /// A live response whose `Content-Length` is over the cap: fails on the first read, before
+  /// any body byte is read.
+  TooLarge { len: usize, max: usize },
   /// Exhausted (or failed: a failed body yields no further chunks).
   Done,
 }
@@ -124,6 +127,10 @@ impl BodySource {
     let out = match self {
       Self::Chunks(q) => return Ok(q.pop_front()),
       Self::Done => return Ok(None),
+      Self::TooLarge { len, max } => Err(HttpError::BodyTooLarge {
+        len: *len,
+        max: *max,
+      }),
       Self::Reqwest { resp, total, max } => match resp.chunk().await {
         Ok(Some(bytes)) => {
           *total += bytes.len();
@@ -143,13 +150,23 @@ impl BodySource {
     *self = Self::Done;
     out
   }
+
+  /// The rest of the body in one buffer (stops at the first failed chunk).
+  async fn read_to_end(&mut self) -> Result<Vec<u8>, HttpError> {
+    let mut out = Vec::new();
+    while let Some(chunk) = self.pull().await? {
+      out.extend_from_slice(&chunk);
+    }
+    Ok(out)
+  }
 }
 
 /// A pull-based HTTP response body: successive byte chunks read on demand as effects.
 ///
 /// Reading is lazy and backpressured: a live reqwest body reads one network chunk per
 /// [`next_chunk`](Self::next_chunk), and [`collect`](Self::collect) reads to the end. The
-/// request's [`max_body_bytes`](HttpRequest::max_body_bytes) cap is enforced as chunks arrive
+/// request's [`max_body_bytes`](HttpRequest::max_body_bytes) cap is enforced as chunks arrive,
+/// and a declared `Content-Length` over it fails the first read before any byte is read
 /// ([`HttpError::BodyTooLarge`]). Until `id_effect` has a `Stream`, this is the streaming
 /// body type.
 pub struct HttpBody {
@@ -188,11 +205,7 @@ impl HttpBody {
   }
 
   fn from_reqwest(resp: ::reqwest::Response, max: usize) -> Self {
-    Self::from_source(BodySource::Reqwest {
-      resp,
-      total: 0,
-      max,
-    })
+    Self::from_source(reqwest_source(resp, max))
   }
 
   /// The next chunk, or `None` once the body is exhausted.
@@ -203,14 +216,23 @@ impl HttpBody {
 
   /// Reads the rest of the body into one buffer.
   pub fn collect(self) -> Effect<Vec<u8>, HttpError> {
-    from_async(move || async move {
-      let mut src = self.src.lock().await;
-      let mut out = Vec::new();
-      while let Some(chunk) = src.pull().await? {
-        out.extend_from_slice(&chunk);
-      }
-      Ok(out)
-    })
+    from_async(move || async move { self.src.lock().await.read_to_end().await })
+  }
+}
+
+/// The body source for `resp` under a `max`-byte cap: rejected up front when the declared
+/// `Content-Length` is over `max`, otherwise read chunk by chunk with a running total.
+fn reqwest_source(resp: ::reqwest::Response, max: usize) -> BodySource {
+  match resp.content_length() {
+    Some(declared) if declared > max as u64 => BodySource::TooLarge {
+      len: usize::try_from(declared).unwrap_or(usize::MAX),
+      max,
+    },
+    _ => BodySource::Reqwest {
+      resp,
+      total: 0,
+      max,
+    },
   }
 }
 
@@ -391,15 +413,12 @@ impl HttpClient for ReqwestHttpClient {
     from_async(move || async move {
       let max = req.max_body();
       let (resp, status, headers) = send(&client, &req).await?;
-      let bytes = resp.bytes().await.map_err(HttpError::from)?;
-      let len = bytes.len();
-      if len > max {
-        return Err(HttpError::BodyTooLarge { len, max });
-      }
+      // The cap holds while reading: never more than `max` bytes (plus one chunk) in memory.
+      let body = reqwest_source(resp, max).read_to_end().await?;
       Ok(HttpResponse {
         status,
         headers,
-        body: bytes.to_vec(),
+        body,
       })
     })
   }
