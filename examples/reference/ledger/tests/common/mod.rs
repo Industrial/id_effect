@@ -220,6 +220,14 @@ pub async fn connect(url: &str) -> Arc<dyn SqlClient> {
   Arc::new(PgSqlClient::new(pool))
 }
 
+/// `app` as the in-process client reaches it: every request from the test profile's trusted
+/// reverse proxy at 127.0.0.1 (a test sends `X-Forwarded-For` to name the client).
+pub fn behind_proxy(app: axum::Router) -> axum::Router {
+  app.layer(axum::extract::connect_info::MockConnectInfo(
+    std::net::SocketAddr::from(([127, 0, 0, 1], 40_000)),
+  ))
+}
+
 impl Ledger {
   fn start<C>(db: Arc<dyn SqlClient>, url: String, mut config: LedgerConfig, configure: C) -> Self
   where
@@ -233,7 +241,7 @@ impl Ledger {
     configure(&mut config, &mut services);
     let app = ledger::router(&config, services).expect("the app builds");
     Self {
-      client: TestClient::new(app),
+      client: TestClient::new(behind_proxy(app)),
       db,
       url,
       config,

@@ -65,6 +65,11 @@ pub struct HttpConfig {
   pub request_timeout_ms: u64,
   /// Larger bodies are answered `413`.
   pub body_limit_bytes: usize,
+  /// The reverse proxies in front of the service (CIDRs), whose `X-Forwarded-For` entries name
+  /// the client the login limit counts against; empty (the default): the connection's peer is
+  /// the client and the header is ignored.
+  #[serde(default)]
+  pub trusted_proxies: Vec<String>,
 }
 
 /// `[db]`.
@@ -149,6 +154,10 @@ pub struct AuthConfig {
   pub login_tenant_per_second: f64,
   /// Login attempts an organisation may make in a burst.
   pub login_tenant_burst: f64,
+  /// Failed password logins an account or a client address may make before each further one
+  /// waits (1 s, doubling up to 15 minutes; `id_effect_auth::LoginThrottle`).
+  #[serde(default = "default_login_free_attempts")]
+  pub login_free_attempts: u32,
   /// How often the profile file is polled for new login limits (`0`: never).
   #[serde(default)]
   pub reload_limits_secs: u64,
@@ -307,6 +316,10 @@ pub struct VaultConfig {
   pub mount: String,
   /// Configuration key → secret path (`db = "ledger/db"`).
   pub secrets: BTreeMap<String, String>,
+}
+
+fn default_login_free_attempts() -> u32 {
+  5
 }
 
 fn default_mount() -> String {

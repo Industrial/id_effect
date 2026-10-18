@@ -32,6 +32,7 @@ use tokio::task::JoinHandle;
 
 use crate::health::ReadinessState;
 use crate::server::bootstrap::{HostConfig, bootstrap_env, load_host_config};
+use crate::server::connection::{ConnectionLimits, serve_listener};
 use crate::server::shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};
 
 /// Host lifecycle failures.
@@ -172,9 +173,20 @@ pub fn socket_addr(config: &HostConfig) -> Result<SocketAddr, HostError> {
 ///
 /// On a signal, [`Host::readiness`] is marked shutting down first; the listener keeps
 /// accepting while [`Host::drain`] drains, then stops. Count the requests in it with
-/// [`track_in_flight`](crate::track_in_flight).
+/// [`track_in_flight`](crate::track_in_flight). Connections are bounded by the default
+/// [`ConnectionLimits`] and every request carries `ConnectInfo<SocketAddr>`.
 #[allow(clippy::result_large_err)]
 pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
+  serve_router_with_limits(host, app, ConnectionLimits::default()).await
+}
+
+/// [`serve_router`] within `limits`.
+#[allow(clippy::result_large_err)]
+pub async fn serve_router_with_limits(
+  host: Host,
+  app: Router,
+  limits: ConnectionLimits,
+) -> Result<(), HostError> {
   let addr = socket_addr(&host.config)?;
   let listener = tokio::net::TcpListener::bind(addr)
     .await
@@ -183,14 +195,13 @@ pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
   let drain = host.drain;
   let readiness = host.readiness;
 
-  axum::serve(listener, app)
-    .with_graceful_shutdown(async move {
-      wait_for_shutdown().await;
-      readiness.mark_shutting_down();
-      drain_with_timeout(&drain, timeout).await;
-    })
-    .await
-    .map_err(|e| HostError::Serve(e.to_string()))
+  serve_listener(listener, app, limits, async move {
+    wait_for_shutdown().await;
+    readiness.mark_shutting_down();
+    drain_with_timeout(&drain, timeout).await;
+  })
+  .await
+  .map_err(|e| HostError::Serve(e.to_string()))
 }
 
 /// A running HTTP server: the capability [`server_layer`] provides.
@@ -224,6 +235,21 @@ impl ServerHandle {
     app: Router,
     readiness: ReadinessState,
   ) -> Result<Self, HostError> {
+    Self::start_with_limits(config, app, readiness, ConnectionLimits::default()).await
+  }
+
+  /// Like [`start_with_readiness`](Self::start_with_readiness), serving connections within
+  /// `limits` instead of the default [`ConnectionLimits`].
+  ///
+  /// # Errors
+  ///
+  /// [`HostError::Serve`] when the address is invalid or cannot be bound.
+  pub async fn start_with_limits(
+    config: &HostConfig,
+    app: Router,
+    readiness: ReadinessState,
+    limits: ConnectionLimits,
+  ) -> Result<Self, HostError> {
     let addr = socket_addr(config)?;
     let listener = tokio::net::TcpListener::bind(addr)
       .await
@@ -233,11 +259,9 @@ impl ServerHandle {
       .map_err(|e| HostError::Serve(e.to_string()))?;
     let stop = Arc::new(Notify::new());
     let signal = Arc::clone(&stop);
-    let task = tokio::spawn(async move {
-      axum::serve(listener, app)
-        .with_graceful_shutdown(async move { signal.notified().await })
-        .await
-    });
+    let task = tokio::spawn(serve_listener(listener, app, limits, async move {
+      signal.notified().await;
+    }));
     Ok(Self {
       local_addr,
       shutdown_timeout: config.shutdown_timeout,
@@ -295,13 +319,24 @@ pub fn server_layer_with_readiness(
   app: Router,
   readiness: ReadinessState,
 ) -> Layer<HCons<ServerHandle, HNil>, HostError, HCons<HostConfig, HNil>> {
+  server_layer_with_limits(app, readiness, ConnectionLimits::default())
+}
+
+/// [`server_layer_with_readiness`] serving connections within `limits` (see
+/// [`ServerHandle::start_with_limits`]).
+pub fn server_layer_with_limits(
+  app: Router,
+  readiness: ReadinessState,
+  limits: ConnectionLimits,
+) -> Layer<HCons<ServerHandle, HNil>, HostError, HCons<HostConfig, HNil>> {
   Layer::acquire_release(
     move || {
       let app = app.clone();
       let readiness = readiness.clone();
+      let limits = limits.clone();
       need::<HostConfig>().flat_map(move |config| {
         from_async(move || async move {
-          ServerHandle::start_with_readiness(&config, app, readiness)
+          ServerHandle::start_with_limits(&config, app, readiness, limits)
             .await
             .map(|handle| hlist![handle])
         })
@@ -323,6 +358,14 @@ pub fn serve(app: Router) -> Effect<Infallible, HostError, HCons<HostConfig, HNi
   server_layer(app).launch()
 }
 
+/// [`serve`] within `limits` instead of the default [`ConnectionLimits`].
+pub fn serve_with_limits(
+  app: Router,
+  limits: ConnectionLimits,
+) -> Effect<Infallible, HostError, HCons<HostConfig, HNil>> {
+  server_layer_with_limits(app, ReadinessState::new(true), limits).launch()
+}
+
 /// Serves `app` until `stop` completes (then shuts the server down and returns `stop`'s value),
 /// or fails when serving fails.
 pub fn serve_until<A>(
@@ -340,6 +383,16 @@ pub fn serve_until_shutdown(
   app: Router,
 ) -> Effect<ShutdownReason, HostError, HCons<HostConfig, HNil>> {
   serve_until(app, from_async(|| async { Ok(wait_for_shutdown().await) }))
+}
+
+/// [`serve_until_shutdown`] within `limits` instead of the default [`ConnectionLimits`].
+pub fn serve_until_shutdown_with_limits(
+  app: Router,
+  limits: ConnectionLimits,
+) -> Effect<ShutdownReason, HostError, HCons<HostConfig, HNil>> {
+  serve_with_limits(app, limits)
+    .map(|never| match never {})
+    .race_first(from_async(|| async { Ok(wait_for_shutdown().await) }))
 }
 
 #[cfg(test)]

@@ -38,6 +38,15 @@ id_effect_node = { path = "../id_effect_node", version = "0.10.0", optional = tr
 axum = { version = "0.8", features = ["multipart"] }
 http-body = "1"
 http-body-util = "0.1"
+# `server::serve_listener`: the accept loop (header-read timeout, keep-alive limit, connection
+# cap, connect info); already in axum's dependency tree. 0.1.12: `TokioTimer`, auto-builder
+# `header_read_timeout` and `graceful_shutdown`.
+hyper-util = { version = "0.1.12", features = [
+  "http1",
+  "server",
+  "service",
+  "tokio",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = [
