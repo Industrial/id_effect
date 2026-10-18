@@ -11,7 +11,7 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 | `NodeId` | Wire identity: logical `name@host` plus a 128-bit boot incarnation |
 | `Cookie`, `handshake` | Mutual HMAC-SHA256 challenge/response; the cookie never crosses the wire |
 | `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited), `QuicTransport` (feature `quic`) |
-| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, protocol v1) |
+| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, protocol v2) |
 | `Membership` | SWIM membership via [`foca`], sans-io: the caller owns time and the network. `TimerWheel` drives it in tests; `NodeMonitors` fans out `NodeUp` / `NodeDown` / `Rejoined` |
 | `Mesh`, `BehaviorRegistry` | Remote spawn / cast / call / monitor / link over sessions or the in-process `MeshFabric` |
 | `ProcessGroups` / `OrSwot` | AP process groups as an ORSWOT CRDT; `fanout_cast` sends to every member |
@@ -27,7 +27,9 @@ them into a program, or run them at the edge with `block_on`.
 
 Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.
 The handshake authenticates but does not encrypt: use the QUIC transport or a trusted network
-for confidentiality.
+for confidentiality. `TcpTransport` is plaintext and logs a warning saying so. A QUIC dialer needs
+roots or pinned certificate fingerprints (`QuicConfig::with_pinned_server_cert_sha256`);
+`dangerous_accept_any_server_cert()` is the explicit opt-out.
 
 ## Feature flags
 
@@ -49,7 +51,8 @@ async fn main() {
   let net = MemoryNetwork::new();
   let a = net.transport("a");
   let b = net.transport("b");
-  let cookie = Cookie::new("cluster-secret");
+  // At least 32 bytes; shorter cookies fail every handshake.
+  let cookie = Cookie::try_new("cluster-secret-of-at-least-32-bytes").expect("long enough");
   let id_a = NodeId::fresh(&NodeName::new("a@local"));
   let id_b = NodeId::fresh(&NodeName::new("b@local"));
 

@@ -270,3 +270,112 @@ async fn logins_are_rate_limited() {
   )
   .await;
 }
+
+#[tokio::test]
+async fn h5_ledger_login_is_throttled() {
+  with_ledger(
+    |config, _| config.auth.login_free_attempts = 2,
+    |l| async move {
+      l.team("acme").await;
+      let attempt = |user: &'static str, password: &'static str, client: &'static str| {
+        l.send(
+          l.browser(
+            l.client.post_json(
+              "/auth/login",
+              &json!({"username": user, "password": password}),
+            ),
+            None,
+          )
+          .header("x-forwarded-for", client),
+        )
+      };
+      // Two free failures; the third attempt waits, even with the right password, and says
+      // how long.
+      for _ in 0..2 {
+        attempt("acme-accountant", "wrong password!", "198.51.100.1")
+          .await
+          .assert_status(StatusCode::UNAUTHORIZED);
+      }
+      let throttled = attempt("acme-accountant", PASSWORD, "198.51.100.1").await;
+      throttled.assert_status(StatusCode::TOO_MANY_REQUESTS);
+      assert!(throttled.header("retry-after").is_some());
+      // The account is locked from any address ...
+      attempt("acme-accountant", PASSWORD, "203.0.113.7")
+        .await
+        .assert_status(StatusCode::TOO_MANY_REQUESTS);
+      // ... and the address for any account; another client signs into another account.
+      attempt("acme-viewer", PASSWORD, "198.51.100.1")
+        .await
+        .assert_status(StatusCode::TOO_MANY_REQUESTS);
+      attempt("acme-viewer", PASSWORD, "203.0.113.7")
+        .await
+        .assert_status(StatusCode::OK);
+    },
+  )
+  .await;
+}
+
+#[tokio::test]
+async fn h2_ledger_ignores_spoofed_forwarded_for() {
+  let limited = |config: &mut ledger::config::LedgerConfig| {
+    config.auth.login_burst = 2.0;
+    config.auth.login_per_second = 0.01;
+  };
+  let body = json!({"username": "nobody", "password": "wrong password"});
+  // Behind the trusted proxy (the test profile's 127.0.0.1), which appends the address it saw:
+  // a client prepending made-up hops still draws from its own bucket.
+  let spoofed = body.clone();
+  with_ledger(
+    move |config, _| limited(config),
+    move |l| async move {
+      let attempt = |forwarded: &'static str| {
+        l.send(
+          l.browser(l.client.post_json("/auth/login", &spoofed), None)
+            .header("x-forwarded-for", forwarded),
+        )
+      };
+      for _ in 0..2 {
+        attempt("198.51.100.1")
+          .await
+          .assert_status(StatusCode::UNAUTHORIZED);
+      }
+      for spoof in [
+        "203.0.113.66, 198.51.100.1",
+        "10.9.9.9, 192.0.2.1, 198.51.100.1",
+      ] {
+        attempt(spoof)
+          .await
+          .assert_status(StatusCode::TOO_MANY_REQUESTS);
+      }
+      // The client the proxy reports is a client of its own.
+      attempt("192.0.2.1")
+        .await
+        .assert_status(StatusCode::UNAUTHORIZED);
+    },
+  )
+  .await;
+  // With no trusted proxy (the default) the header is ignored: every value is the same peer.
+  with_ledger(
+    move |config, _| {
+      limited(config);
+      config.http.trusted_proxies.clear();
+    },
+    move |l| async move {
+      let attempt = |forwarded: &'static str| {
+        l.send(
+          l.browser(l.client.post_json("/auth/login", &body), None)
+            .header("x-forwarded-for", forwarded),
+        )
+      };
+      for client in ["198.51.100.1", "198.51.100.2"] {
+        attempt(client)
+          .await
+          .assert_status(StatusCode::UNAUTHORIZED);
+      }
+      attempt("198.51.100.3")
+        .await
+        .assert_status(StatusCode::TOO_MANY_REQUESTS);
+    },
+  )
+  .await;
+}

@@ -18,7 +18,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 name = "id_effect_optics"
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.10.0", features = [
+id_effect = { path = "../id_effect", version = "0.10.1", features = [
   "schema-serde",
 ] }
 im = "15"

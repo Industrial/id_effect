@@ -11,6 +11,9 @@ use base64::engine::general_purpose::STANDARD;
 use id_effect::{Cause, Effect, Exit};
 use id_effect_auth::{Algorithm, AuthError, JwtIssuer};
 
+/// The `iss` the test issuers write, for verifiers to pin.
+pub const ISSUER: &str = "https://id.example.com";
+
 /// `der` as a PEM block labelled `label`.
 pub fn pem(label: &str, der: &[u8]) -> String {
   let body = STANDARD.encode(der);
@@ -25,7 +28,8 @@ pub fn pem(label: &str, der: &[u8]) -> String {
   )
 }
 
-/// A fresh RS256 issuer named `kid` (2048-bit key, PKCS#8 PEM) and its public key in PEM.
+/// A fresh RS256 issuer named `kid` (2048-bit key, PKCS#8 PEM, `iss` [`ISSUER`]) and its public
+/// key in PEM.
 pub fn rsa_keys(kid: &str) -> (JwtIssuer, String) {
   let pair = KeyPair::generate(KeySize::Rsa2048).expect("rsa keygen");
   let der: Pkcs8V1Der<'static> = pair.as_der().expect("pkcs8");
@@ -35,7 +39,8 @@ pub fn rsa_keys(kid: &str) -> (JwtIssuer, String) {
     pem("PRIVATE KEY", der.as_ref()).as_bytes(),
   )
   .expect("rsa issuer")
-  .kid(kid);
+  .kid(kid)
+  .issuer(ISSUER);
   (issuer, pem("PUBLIC KEY", public.as_ref()))
 }
 
@@ -44,7 +49,8 @@ pub fn rsa_issuer(kid: &str) -> JwtIssuer {
   rsa_keys(kid).0
 }
 
-/// A fresh ES256 issuer named `kid` (P-256 key, PKCS#8 PEM) and its public key in PEM.
+/// A fresh ES256 issuer named `kid` (P-256 key, PKCS#8 PEM, `iss` [`ISSUER`]) and its public
+/// key in PEM.
 pub fn ec_keys(kid: &str) -> (JwtIssuer, String) {
   let doc = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_FIXED_SIGNING, &SystemRandom::new())
     .expect("ec keygen");
@@ -56,7 +62,8 @@ pub fn ec_keys(kid: &str) -> (JwtIssuer, String) {
     pem("PRIVATE KEY", doc.as_ref()).as_bytes(),
   )
   .expect("ec issuer")
-  .kid(kid);
+  .kid(kid)
+  .issuer(ISSUER);
   (issuer, pem("PUBLIC KEY", public.as_ref()))
 }
 

@@ -1,4 +1,4 @@
-//! Wire protocol v1: versioned, postcard-encoded frames.
+//! Wire protocol ([`PROTOCOL_VERSION`]): versioned, postcard-encoded frames.
 //!
 //! Every frame on a connection is a [`Frame`]. The first bytes exchanged
 //! after transport connect are handshake frames; only after a successful
@@ -12,8 +12,13 @@ use serde::{Deserialize, Serialize};
 use crate::id::NodeId;
 
 /// Protocol version spoken by this build. Nodes refuse to connect across
-/// versions in v1 (no cross-version clusters — an explicit non-goal).
-pub const PROTOCOL_VERSION: u16 = 1;
+/// versions (no cross-version clusters — an explicit non-goal).
+///
+/// Version 2 (0.10.1) binds the cookie proof to the whole handshake
+/// transcript and the TLS channel and widens the nonces to 128 bits; 0.10.0
+/// nodes (version 1) and 0.10.1 nodes refuse each other with
+/// [`HandshakeError::VersionMismatch`](crate::handshake::HandshakeError::VersionMismatch).
+pub const PROTOCOL_VERSION: u16 = 2;
 
 /// Everything that can travel on a connection.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -32,6 +37,12 @@ pub enum Frame {
 
 /// Cookie-authenticated mutual handshake (HMAC-SHA256 challenge/response;
 /// BEAM's cookie scheme with a modern MAC).
+///
+/// These are the protocol v1 shapes, kept for compatibility. From protocol
+/// v2 the handshake ([`crate::handshake`]) uses its own codec with the same
+/// layout but 128-bit nonces, and its digests MAC the whole transcript; this
+/// type still decodes v2 `Hello`, `Welcome` and `Rejected` frames, but not
+/// a v2 `Challenge` or `ChallengeReply` whose nonce exceeds `u64::MAX`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum HandshakeMsg {
   /// Initiator → responder: who I am, what I speak.
@@ -170,8 +181,8 @@ mod tests {
   }
 
   #[test]
-  fn protocol_version_is_one() {
-    assert_eq!(PROTOCOL_VERSION, 1);
+  fn protocol_version_is_two() {
+    assert_eq!(PROTOCOL_VERSION, 2);
   }
 
   fn arb_frame() -> impl proptest::strategy::Strategy<Value = Frame> {

@@ -2,6 +2,10 @@
 # overrides the connection settings. Fast password hashing; no Redis or IdP unless a test adds
 # them.
 
+[http]
+# The test harness plays the reverse proxy: every in-process request comes from 127.0.0.1.
+trusted_proxies = ["127.0.0.1/32"]
+
 [db]
 password = "postgres"
 
@@ -16,6 +20,7 @@ login_per_second = 10.0
 login_burst = 100
 login_tenant_per_second = 10.0
 login_tenant_burst = 100
+login_free_attempts = 100
 # The tests reload the limits themselves.
 reload_limits_secs = 0
 

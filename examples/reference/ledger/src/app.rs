@@ -8,8 +8,9 @@ use axum::http::request::Parts;
 use id_effect::{Effect, HCons, HNil, fail, hlist};
 use id_effect_kit::auth::oidc::OidcRoutes;
 use id_effect_kit::auth::{
-  Authenticate, ClaimMapping, CookieConfig, JwtIssuer, JwtKey, JwtVerifier, OidcClient, OidcConfig,
-  PasswordHasher, PasswordParams, PgSessionStore, SessionConfig, Sessions, Totp, TotpConfig,
+  Authenticate, ClaimMapping, CookieConfig, JwtIssuer, JwtKey, JwtVerifier, LoginThrottle,
+  OidcClient, OidcConfig, PasswordHasher, PasswordParams, PgSessionStore, SessionConfig, Sessions,
+  Totp, TotpConfig,
 };
 use id_effect_kit::authz::{AuthorizeExt, AuthzEvents, CurrentPrincipal, Guard, Policies};
 use id_effect_kit::axum::CapOverrideLayer;
@@ -19,7 +20,7 @@ use id_effect_kit::axum::middleware::{
 use id_effect_kit::axum::openapi::{Info, OpenApi, OpenApiUi, openapi_router};
 use id_effect_kit::axum::route::{self, Endpoint, introspect};
 use id_effect_kit::axum::server::security::{CookieKey, CsrfToken, SecurityLayer};
-use id_effect_kit::axum::{HealthIndicator, HealthRegistry, RequestCaps};
+use id_effect_kit::axum::{ClientIp, HealthIndicator, HealthRegistry, RequestCaps, TrustedProxies};
 use id_effect_kit::config::ProfileWatch;
 use id_effect_kit::console::EnvFilterHandle;
 use id_effect_kit::jobs::PgJobQueue;
@@ -53,6 +54,9 @@ pub struct App {
   pub sessions: Sessions,
   /// Argon2id password hashing.
   pub hasher: PasswordHasher,
+  /// Backoff after failed password logins, per account and per client address (in process:
+  /// each instance counts on its own).
+  pub throttle: LoginThrottle,
   /// Signs API tokens.
   pub tokens: JwtIssuer,
   /// Checks API tokens (also used by the authentication layer).
@@ -251,6 +255,7 @@ impl App {
       reads,
       sessions,
       hasher: PasswordHasher::new(params),
+      throttle: LoginThrottle::default().free_attempts(settings.login_free_attempts),
       tokens,
       verifier,
       totp,
@@ -352,7 +357,13 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
     Some(watch) => LimitSource::Watched(watch),
     None => LimitSource::Fixed(config.auth.limits()),
   };
-  let login_limit = limits::login_limit(source, services.redis.clone(), client_address());
+  let trusted = TrustedProxies::new(&config.http.trusted_proxies)
+    .map_err(|e| StartupError::Settings(format!("http.trusted_proxies: {e}")))?;
+  let login_limit = limits::login_limit(
+    source,
+    services.redis.clone(),
+    client_address(trusted.clone()),
+  );
   let api = route::Router::<AppEnv>::new()
     .merge(auth::routes(&policies, login_limit.clone()))
     .merge(accounts::routes(&policies))
@@ -423,6 +434,10 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
       ))
       .layer(authenticate)
       .layer(CapOverrideLayer::new(tenant_hint))
+      .layer(CapOverrideLayer::new(move |parts: &Parts| {
+        // The login throttle's client address (the same one the login limit counts).
+        ClientIp::from_parts(&parts.extensions, &parts.headers, &trusted)
+      }))
       .layer(BodyLimitLayer::new(config.http.body_limit_bytes))
       .layer(TimeoutLayer::new(Duration::from_millis(
         config.http.request_timeout_ms,
@@ -460,18 +475,13 @@ fn tenant_hint(parts: &Parts) -> Option<TenantHint> {
   TenantHint::parse(value)
 }
 
-/// Who a login attempt counts against: the client address the reverse proxy in front of the
-/// service reports (`X-Forwarded-For`, first hop; the proxy must overwrite, not append to, a
-/// header the client sent), else the peer address of the connection, else one bucket shared by
-/// every client the service cannot tell apart — so the limit always applies.
-fn client_address() -> RateLimitKey {
-  RateLimitKey::from_fn(|request| {
-    let forwarded = request.headers().get("x-forwarded-for")?.to_str().ok()?;
-    let client = forwarded.split(',').next()?.trim();
-    (!client.is_empty()).then(|| format!("ip:{client}"))
-  })
-  .or(RateLimitKey::peer_ip())
-  .or(RateLimitKey::from_fn(|_| Some("unidentified".to_owned())))
+/// Who a login attempt counts against: the [`ClientIp`](id_effect_kit::axum::ClientIp) — the
+/// connection's peer or, when that is one of the `trusted` reverse proxies (`http.trusted_proxies`,
+/// none by default), the rightmost `X-Forwarded-For` entry they did not write themselves, so a
+/// client cannot pick its own bucket by sending the header — else one bucket shared by every
+/// client the service cannot tell apart, so the limit always applies.
+fn client_address(trusted: TrustedProxies) -> RateLimitKey {
+  RateLimitKey::client_ip(trusted).or(RateLimitKey::from_fn(|_| Some("unidentified".to_owned())))
 }
 
 /// `/health` and `/ready` (the latter runs `SELECT 1` on the primary).

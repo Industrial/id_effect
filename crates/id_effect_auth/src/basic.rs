@@ -6,6 +6,11 @@
 //! password. A correct password whose stored hash used older parameters is re-hashed and handed
 //! to [`UserLookup::update_password_hash`].
 //!
+//! Before any of that, a password longer than [`MAX_PASSWORD_LEN`] bytes is rejected, and a
+//! [`LoginThrottle`] (on by default) refuses attempts for an account or client address with too
+//! many recent failures with [`AuthError::TooManyAttempts`], so guessing costs time and the
+//! server's argon2 work stays bounded.
+//!
 //! ```
 //! use id_effect::{Cause, Exit};
 //! use id_effect_auth::{AuthError, BasicAuth, MemoryUsers, PasswordHasher, PasswordParams};
@@ -24,6 +29,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use base64::Engine as _;
@@ -31,8 +37,11 @@ use base64::engine::general_purpose::STANDARD;
 use id_effect::{Effect, fail, succeed, suspend};
 
 use crate::error::AuthError;
-use crate::password::{Password, PasswordError, PasswordHash, PasswordHasher, Verification};
+use crate::password::{
+  MAX_PASSWORD_LEN, Password, PasswordError, PasswordHash, PasswordHasher, Verification,
+};
 use crate::principal::{AuthPrincipal, AuthScheme};
+use crate::throttle::LoginThrottle;
 
 /// What a [`UserLookup`] knows about a user: the stored password hash and the principal the
 /// user authenticates as.
@@ -143,17 +152,20 @@ impl UserLookup for MemoryUsers {
   }
 }
 
-/// Basic-credential checking: a [`UserLookup`] and a [`PasswordHasher`]. Cheap to clone.
+/// Basic-credential checking: a [`UserLookup`], a [`PasswordHasher`] and a [`LoginThrottle`].
+/// Cheap to clone; clones share the throttle's counts.
 #[derive(Clone)]
 pub struct BasicAuth {
   users: Arc<dyn UserLookup>,
   hasher: PasswordHasher,
+  throttle: Option<LoginThrottle>,
 }
 
 impl fmt::Debug for BasicAuth {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("BasicAuth")
       .field("hasher", &self.hasher)
+      .field("throttle", &self.throttle)
       .finish_non_exhaustive()
   }
 }
@@ -163,48 +175,117 @@ fn hashing(e: PasswordError) -> AuthError {
 }
 
 impl BasicAuth {
-  /// Check users found by `users` with `hasher`.
+  /// Check users found by `users` with `hasher`, throttled by a default [`LoginThrottle`] (in
+  /// memory, per process).
   pub fn new(users: impl UserLookup, hasher: PasswordHasher) -> Self {
     Self {
       users: Arc::new(users),
       hasher,
+      throttle: Some(LoginThrottle::default()),
     }
+  }
+
+  /// The same check throttled by `throttle` instead (other delays, a shared store).
+  #[must_use]
+  pub fn with_throttle(mut self, throttle: LoginThrottle) -> Self {
+    self.throttle = Some(throttle);
+    self
+  }
+
+  /// The same check without failed-login throttling. **Dangerous**: it re-opens unlimited
+  /// online password guessing against every account, and lets a client keep the server busy
+  /// hashing. Only for a deployment that throttles failed logins in front of this check.
+  #[must_use]
+  pub fn without_throttle_dangerous(mut self) -> Self {
+    self.throttle = None;
+    self
   }
 
   /// The principal `username` authenticates as with `password` (scheme
   /// [`AuthScheme::Basic`]). An unknown user and a wrong password are both
   /// [`AuthError::InvalidCredentials`] after the same amount of hashing work; a lookup or
-  /// hashing failure is [`AuthError::Unavailable`].
+  /// hashing failure is [`AuthError::Unavailable`]. The throttle counts the attempt against the
+  /// account only; use [`authenticate_from`](Self::authenticate_from) when the client address
+  /// is known.
   pub fn authenticate(
     &self,
     username: &str,
     password: impl Into<Password>,
   ) -> Effect<AuthPrincipal, AuthError> {
-    let (this, username, password) = (self.clone(), username.to_owned(), password.into());
-    self.users.find_user(&username).flat_map(move |found| {
-      let stored = found.as_ref().map(|u| u.password_hash.clone());
+    self.authenticate_from(username, password, None)
+  }
+
+  /// [`authenticate`](Self::authenticate) for a request from `client`, which the throttle also
+  /// counts failures against. A password longer than [`MAX_PASSWORD_LEN`] bytes is
+  /// [`AuthError::Malformed`], and a throttled attempt [`AuthError::TooManyAttempts`], both
+  /// before the user is looked up or anything is hashed.
+  pub fn authenticate_from(
+    &self,
+    username: &str,
+    password: impl Into<Password>,
+    client: Option<IpAddr>,
+  ) -> Effect<AuthPrincipal, AuthError> {
+    let password = password.into();
+    if password.expose().len() > MAX_PASSWORD_LEN {
+      return fail(AuthError::Malformed(format!(
+        "the password is longer than {MAX_PASSWORD_LEN} bytes"
+      )));
+    }
+    let (this, username) = (self.clone(), username.to_owned());
+    let allowed = match &self.throttle {
+      Some(t) => t.check(&username, client),
+      None => succeed(()),
+    };
+    allowed.flat_map(move |()| {
       let users = Arc::clone(&this.users);
-      this
-        .hasher
-        .verify_or_dummy(password, stored.as_ref())
-        .map_err(hashing)
-        .flat_map(move |verification| match (verification, found) {
-          (Verification::Valid, Some(user)) => {
-            succeed(user.principal.with_scheme(AuthScheme::Basic))
-          }
-          (Verification::ValidNeedsRehash(upgraded), Some(user)) => users
-            .update_password_hash(&username, upgraded)
-            .map(move |()| user.principal.with_scheme(AuthScheme::Basic)),
-          _ => fail(AuthError::InvalidCredentials),
-        })
+      users.find_user(&username).flat_map(move |found| {
+        let stored = found.as_ref().map(|u| u.password_hash.clone());
+        let (users, throttle) = (Arc::clone(&this.users), this.throttle.clone());
+        this
+          .hasher
+          .verify_or_dummy(password, stored.as_ref())
+          .map_err(hashing)
+          .flat_map(move |verification| {
+            let principal = match (verification, found) {
+              (Verification::Valid, Some(user)) => {
+                succeed(user.principal.with_scheme(AuthScheme::Basic))
+              }
+              (Verification::ValidNeedsRehash(upgraded), Some(user)) => users
+                .update_password_hash(&username, upgraded)
+                .map(move |()| user.principal.with_scheme(AuthScheme::Basic)),
+              _ => {
+                return match throttle {
+                  Some(t) => t
+                    .record_failure(&username, client)
+                    .flat_map(|()| fail(AuthError::InvalidCredentials)),
+                  None => fail(AuthError::InvalidCredentials),
+                };
+              }
+            };
+            match throttle {
+              Some(t) => principal.flat_map(move |p| t.record_success(&username).map(move |()| p)),
+              None => principal,
+            }
+          })
+      })
     })
   }
 
   /// [`authenticate`](Self::authenticate) with the credentials of a Basic `Authorization`
   /// header's value after the scheme (see [`basic_credentials`]).
   pub fn authenticate_encoded(&self, encoded: &str) -> Effect<AuthPrincipal, AuthError> {
+    self.authenticate_encoded_from(encoded, None)
+  }
+
+  /// [`authenticate_from`](Self::authenticate_from) with the credentials of a Basic
+  /// `Authorization` header's value after the scheme.
+  pub fn authenticate_encoded_from(
+    &self,
+    encoded: &str,
+    client: Option<IpAddr>,
+  ) -> Effect<AuthPrincipal, AuthError> {
     match basic_credentials(encoded) {
-      Ok((username, password)) => self.authenticate(&username, password),
+      Ok((username, password)) => self.authenticate_from(&username, password, client),
       Err(e) => fail(e),
     }
   }
@@ -328,6 +409,116 @@ mod tests {
       hashing(PasswordError::Blocking),
       AuthError::Unavailable(PasswordError::Blocking.to_string())
     );
+  }
+
+  /// A [`UserLookup`] that counts its lookups (every lookup is followed by hashing).
+  #[derive(Clone, Default)]
+  struct Counting {
+    users: MemoryUsers,
+    lookups: Arc<std::sync::atomic::AtomicUsize>,
+  }
+
+  impl Counting {
+    fn lookups(&self) -> usize {
+      self.lookups.load(std::sync::atomic::Ordering::SeqCst)
+    }
+  }
+
+  impl UserLookup for Counting {
+    fn find_user(&self, username: &str) -> Effect<Option<UserCredentials>, AuthError> {
+      self
+        .lookups
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+      self.users.find_user(username)
+    }
+  }
+
+  #[test]
+  fn h5_throttle_checked_before_hashing() {
+    let h = hasher(8);
+    let users = Counting::default();
+    users
+      .users
+      .insert("alice", hash(&h, "pw"), AuthPrincipal::new("u1"));
+    let basic = BasicAuth::new(users.clone(), h);
+    for i in 1..=5 {
+      assert_eq!(
+        run(basic.authenticate("alice", "guess")),
+        Err(AuthError::InvalidCredentials)
+      );
+      assert_eq!(users.lookups(), i);
+    }
+    // Locked: refused before the lookup and the argon2 work behind it, even with the right
+    // password, and the lock does not grow the hashing count.
+    for pw in ["guess", "pw"] {
+      assert!(matches!(
+        run(basic.authenticate("alice", pw)),
+        Err(AuthError::TooManyAttempts { .. })
+      ));
+    }
+    assert_eq!(users.lookups(), 5, "no lookup, so no hashing, while locked");
+    // Another account is not locked by alice's failures (no client address here).
+    assert_eq!(
+      run(basic.authenticate("bob", "x")),
+      Err(AuthError::InvalidCredentials)
+    );
+    // The opt-out hashes every attempt.
+    let open = basic.clone().without_throttle_dangerous();
+    assert!(run(open.authenticate("alice", "pw")).is_ok());
+    assert!(format!("{open:?}").contains("throttle: None"));
+  }
+
+  #[test]
+  fn success_clears_the_account_and_a_custom_throttle_applies() {
+    let h = hasher(8);
+    let users = MemoryUsers::new();
+    users.insert("alice", hash(&h, "pw"), AuthPrincipal::new("u1"));
+    let ip = Some(IpAddr::from([198, 51, 100, 4]));
+    let basic = BasicAuth::new(users, h).with_throttle(LoginThrottle::default().free_attempts(2));
+    assert!(run(basic.authenticate_from("alice", "bad", ip)).is_err());
+    assert!(run(basic.authenticate_from("alice", "pw", ip)).is_ok());
+    // alice's count was cleared; the address keeps its one failure and locks at two.
+    assert!(run(basic.authenticate_from("alice", "bad", None)).is_err());
+    assert!(run(basic.authenticate_from("alice", "pw", None)).is_ok());
+    assert_eq!(
+      run(basic.authenticate_from("carol", "bad", ip)),
+      Err(AuthError::InvalidCredentials)
+    );
+    assert!(matches!(
+      run(basic.authenticate_encoded_from(
+        basic_header("dave", "x").strip_prefix("Basic ").unwrap(),
+        ip
+      )),
+      Err(AuthError::TooManyAttempts { .. })
+    ));
+  }
+
+  #[test]
+  fn l4_long_basic_password_rejected() {
+    let h = hasher(8);
+    let users = Counting::default();
+    let long = "p".repeat(MAX_PASSWORD_LEN);
+    users
+      .users
+      .insert("alice", hash(&h, &long), AuthPrincipal::new("u1"));
+    let basic = BasicAuth::new(users.clone(), h);
+    assert!(
+      run(basic.authenticate("alice", long.as_str())).is_ok(),
+      "256 bytes is fine"
+    );
+    // 129 two-byte characters: 258 bytes.
+    for too_long in [format!("{long}p"), "é".repeat(129)] {
+      assert!(matches!(
+        run(basic.authenticate("alice", too_long.as_str())),
+        Err(AuthError::Malformed(m)) if m.contains("256 bytes")
+      ));
+    }
+    let encoded = basic_header("alice", &"x".repeat(10_000));
+    assert!(matches!(
+      run(basic.authenticate_encoded(encoded.strip_prefix("Basic ").unwrap())),
+      Err(AuthError::Malformed(_))
+    ));
+    assert_eq!(users.lookups(), 1, "rejected before the lookup and hashing");
   }
 
   #[test]

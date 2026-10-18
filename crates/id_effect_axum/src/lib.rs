@@ -87,6 +87,7 @@
 
 pub mod body;
 pub mod channel_bridge;
+pub mod client_ip;
 #[cfg(feature = "cluster")]
 pub mod cluster;
 pub mod executor;
@@ -104,6 +105,7 @@ pub mod server;
 pub mod service;
 
 pub use channel_bridge::{exchange, exchange_into_response};
+pub use client_ip::{ClientIp, ClientIpRejection, InvalidTrustedProxy, TrustedProxies};
 pub use executor::{
   DropPolicy, EffectExecutor, EffectExecutorBuilder, Saturated, SaturationPolicy,
 };
@@ -131,6 +133,10 @@ pub use middleware::{
   BodyLimitLayer, CompressionLayer, RateLimitLayer, RequestId, RequestIdLayer, TimeoutLayer,
 };
 pub use middleware::{CacheControl, HttpCacheLayer};
+pub use server::{
+  ConnectionLimits, serve_listener, serve_router_with_limits, serve_until_shutdown_with_limits,
+  serve_with_limits, server_layer_with_limits,
+};
 pub use server::{StaticFiles, serve_dir};
 
 use axum::extract::State;

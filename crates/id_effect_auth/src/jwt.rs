@@ -10,10 +10,18 @@
 //!   refetches it when a token names an unknown `kid` (key rotation). A key only verifies the
 //!   algorithms of its own family, so an RSA public key can never be used as an HMAC secret;
 //! - **expectations** — accepted issuers and audiences, required claims, clock leeway (60 s by
-//!   default), and whether `exp` is required (yes by default);
+//!   default), and whether `exp` is required (yes by default). A verifier with neither an
+//!   issuer nor an audience rejects every token with [`AuthError::Config`]: it would accept
+//!   tokens minted for any service by anyone holding a key it trusts. Opt out with both
+//!   [`any_issuer_dangerous`](JwtVerifier::any_issuer_dangerous) and
+//!   [`any_audience_dangerous`](JwtVerifier::any_audience_dangerous);
 //! - a **[`ClaimMapping`]** — which claims hold the subject, roles, permissions and tenant
 //!   (`sub`, `roles`, `permissions` / `scope` / `scp` and `tenant` by default; dotted paths such
 //!   as `realm_access.roles` reach into objects).
+//!
+//! HMAC secrets shorter than [`MIN_HMAC_KEY_LEN`] (32) bytes are refused (RFC 7518 §3.2): a
+//! verifier with one rejects the tokens it would check and an issuer with one issues nothing,
+//! both with [`AuthError::Key`].
 //!
 //! ```
 //! use id_effect::{Cause, Exit};
@@ -31,7 +39,9 @@
 //! let Exit::Success(p) = verifier.verify(&token).block_on() else { panic!() };
 //! assert_eq!((p.id(), p.roles()), ("alice", &["accountant".to_owned()][..]));
 //!
-//! let other = JwtVerifier::new([JwtKey::hmac(b"another secret")]);
+//! let other = JwtVerifier::new([JwtKey::hmac(b"another 256-bit secret for HS256 tokens")])
+//!   .issuer("https://id.example.com")
+//!   .audience("ledger");
 //! let rejected = other.verify(&token).block_on();
 //! assert!(matches!(rejected, Exit::Failure(Cause::Fail(AuthError::InvalidCredentials))));
 //! ```
@@ -59,6 +69,20 @@ pub const DEFAULT_LEEWAY: Duration = Duration::from_secs(60);
 
 /// Default lifetime of an issued token.
 pub const DEFAULT_TTL: Duration = Duration::from_secs(15 * 60);
+
+/// The shortest HMAC secret a [`JwtKey`] or [`JwtIssuer`] accepts, in bytes (RFC 7518 §3.2: at
+/// least the hash output, 256 bits for HS256).
+pub const MIN_HMAC_KEY_LEN: usize = 32;
+
+/// [`AuthError::Key`] for an HMAC secret of `len` bytes, when it is too short.
+fn check_hmac_len(len: usize) -> Result<(), AuthError> {
+  if len < MIN_HMAC_KEY_LEN {
+    return Err(AuthError::Key(format!(
+      "an HMAC secret needs at least {MIN_HMAC_KEY_LEN} bytes, this one has {len}"
+    )));
+  }
+  Ok(())
+}
 
 impl From<JwtLibError> for AuthError {
   fn from(e: JwtLibError) -> Self {
@@ -116,7 +140,8 @@ impl JwtKey {
     Self::new(key, algorithms)
   }
 
-  /// An HMAC secret (HS256, HS384, HS512).
+  /// An HMAC secret (HS256, HS384, HS512). A secret shorter than [`MIN_HMAC_KEY_LEN`] bytes
+  /// makes every verification with it fail with [`AuthError::Key`].
   pub fn hmac(secret: &[u8]) -> Self {
     Self::family(DecodingKey::from_secret(secret))
   }
@@ -191,6 +216,14 @@ impl JwtKey {
 
   fn allows(&self, alg: Algorithm) -> bool {
     self.algorithms.contains(&alg)
+  }
+
+  /// [`AuthError::Key`] when this is an HMAC secret shorter than [`MIN_HMAC_KEY_LEN`].
+  fn check_strength(&self) -> Result<(), AuthError> {
+    if self.key.family() != AlgorithmFamily::Hmac {
+      return Ok(());
+    }
+    check_hmac_len(self.key.try_get_as_bytes().map_or(0, <[u8]>::len))
   }
 }
 
@@ -373,6 +406,8 @@ pub struct JwtVerifier {
   leeway: Duration,
   mapping: ClaimMapping,
   clock: WallClock,
+  any_issuer: bool,
+  any_audience: bool,
 }
 
 impl fmt::Debug for JwtVerifier {
@@ -403,6 +438,8 @@ impl JwtVerifier {
       leeway: DEFAULT_LEEWAY,
       mapping: ClaimMapping::default(),
       clock: WallClock::system(),
+      any_issuer: false,
+      any_audience: false,
     }
   }
 
@@ -426,10 +463,49 @@ impl JwtVerifier {
 
   /// Accept tokens whose `aud` contains `audience` (repeat for several). Once set, `aud` is
   /// required. Set it: without an audience a token minted for another service is accepted.
+  /// A verifier with neither an issuer nor an audience rejects every token (see
+  /// [`any_issuer_dangerous`](Self::any_issuer_dangerous)).
   #[must_use]
   pub fn audience(mut self, audience: impl Into<String>) -> Self {
     self.audiences.push(audience.into());
     self
+  }
+
+  /// Accept tokens from any issuer even though no [`issuer`](Self::issuer) is set.
+  ///
+  /// **Dangerous.** A verifier with neither an issuer nor an audience fails every verification
+  /// with [`AuthError::Config`]; calling both this and
+  /// [`any_audience_dangerous`](Self::any_audience_dangerous) re-opens the 0.10.0 behaviour:
+  /// any token signed by a trusted key is accepted, whoever minted it and for whichever service.
+  /// Only for keys that sign tokens for this service alone (a test, a single-service secret).
+  #[must_use]
+  pub fn any_issuer_dangerous(mut self) -> Self {
+    self.any_issuer = true;
+    self
+  }
+
+  /// Accept tokens for any audience even though no [`audience`](Self::audience) is set.
+  ///
+  /// **Dangerous**: see [`any_issuer_dangerous`](Self::any_issuer_dangerous); a token minted for
+  /// another service of the same issuer is accepted.
+  #[must_use]
+  pub fn any_audience_dangerous(mut self) -> Self {
+    self.any_audience = true;
+    self
+  }
+
+  /// [`AuthError::Config`] unless the verifier pins an issuer or an audience, or opted out of
+  /// both.
+  fn check_expectations(&self) -> Result<(), AuthError> {
+    let pinned = !self.issuers.is_empty() || !self.audiences.is_empty();
+    if pinned || (self.any_issuer && self.any_audience) {
+      return Ok(());
+    }
+    Err(AuthError::Config(
+      "a JwtVerifier needs an issuer or an audience (or both any_issuer_dangerous() and \
+       any_audience_dangerous())"
+        .into(),
+    ))
   }
 
   /// Only accept these algorithms (default: whatever the matching key's family allows).
@@ -477,7 +553,9 @@ impl JwtVerifier {
   /// The principal `token` stands for, or why it is rejected: [`AuthError::Malformed`] (not a
   /// JWT), [`AuthError::InvalidCredentials`] (signature, algorithm),
   /// [`AuthError::UnknownKey`], [`AuthError::Expired`], [`AuthError::NotYetValid`],
-  /// [`AuthError::InvalidClaims`]; [`AuthError::Unavailable`] when the JWKS cannot be fetched.
+  /// [`AuthError::InvalidClaims`]; [`AuthError::Unavailable`] when the JWKS cannot be fetched;
+  /// [`AuthError::Config`] when neither an issuer nor an audience is set, and
+  /// [`AuthError::Key`] for an HMAC secret that is too short.
   pub fn verify(&self, token: &str) -> Effect<AuthPrincipal, AuthError> {
     let mapping = self.mapping.clone();
     self
@@ -490,6 +568,9 @@ impl JwtVerifier {
 
   /// The verified claims of `token` (see [`verify`](Self::verify)).
   pub fn verify_claims(&self, token: &str) -> Effect<Map<String, Value>, AuthError> {
+    if let Err(e) = self.check_expectations() {
+      return fail(e);
+    }
     let header = match decode_header(token) {
       Ok(h) => h,
       Err(_) => return fail(AuthError::Malformed("not a well-formed JWT".into())),
@@ -502,6 +583,9 @@ impl JwtVerifier {
     let (this, token) = (self.clone(), token.to_owned());
     let alg = header.alg;
     self.key(header.kid, alg).flat_map(move |key| {
+      if let Err(e) = key.check_strength() {
+        return fail(e);
+      }
       let claims = match decode::<Map<String, Value>>(&token, &key.key, &this.validation(alg)) {
         Ok(data) => data.claims,
         Err(e) => return fail(AuthError::from(e)),
@@ -628,7 +712,8 @@ impl JwtIssuer {
     })
   }
 
-  /// HS256 with `secret` (use at least 32 random bytes).
+  /// HS256 with `secret` (at least [`MIN_HMAC_KEY_LEN`] random bytes: with a shorter one
+  /// [`issue`](Self::issue) fails with [`AuthError::Key`]).
   pub fn hs256(secret: &[u8]) -> Self {
     Self {
       key: EncodingKey::from_secret(secret),
@@ -726,6 +811,11 @@ impl JwtIssuer {
   /// A signed token carrying `claims`, plus `iss`, `aud`, `iat`, `exp` and `jti` unless
   /// `claims` already sets them.
   pub fn issue_claims(&self, claims: Map<String, Value>) -> Effect<String, AuthError> {
+    if self.key.family() == AlgorithmFamily::Hmac
+      && let Err(e) = check_hmac_len(self.key.as_bytes().len())
+    {
+      return fail(e);
+    }
     let this = self.clone();
     self.clock.now().flat_map(move |now| {
       let now = now.0.as_second();
@@ -830,8 +920,12 @@ mod tests {
     run(issuer.issue_claims(claims(claims_v))).unwrap()
   }
 
+  /// A verifier that pins nothing (these tests are not about `iss` / `aud`).
   fn verifier() -> JwtVerifier {
-    JwtVerifier::new([JwtKey::hmac(SECRET)]).with_clock(clock_at(1_000))
+    JwtVerifier::new([JwtKey::hmac(SECRET)])
+      .with_clock(clock_at(1_000))
+      .any_issuer_dangerous()
+      .any_audience_dangerous()
   }
 
   #[test]
@@ -867,6 +961,7 @@ mod tests {
     assert!(
       run(
         JwtVerifier::new([vk])
+          .issuer("iss-a")
           .with_clock(clock_at(1_000))
           .verify(&token)
       )
@@ -937,7 +1032,10 @@ mod tests {
       run(verifier().audience("aud-a").verify(&bare)),
       Err(AuthError::InvalidClaims(m)) if m.contains("aud")
     ));
-    let wrong = JwtVerifier::new([JwtKey::hmac(b"other")]).with_clock(clock_at(1_000));
+    let wrong = JwtVerifier::new([JwtKey::hmac(b"another secret of at least 32 bytes")])
+      .with_clock(clock_at(1_000))
+      .any_issuer_dangerous()
+      .any_audience_dangerous();
     assert_eq!(run(wrong.verify(&bare)), Err(AuthError::InvalidCredentials));
     // Flip the signature's first character (every base64url character there is significant).
     let at = bare.rfind('.').unwrap() + 1;
@@ -1058,6 +1156,79 @@ mod tests {
     let verifier = verifier().issuer("i").audience("a");
     let dbg = format!("{verifier:?}");
     assert!(dbg.contains("1 static") && dbg.contains("\"i\""), "{dbg}");
+  }
+
+  #[test]
+  fn h7_jwt_without_issuer_or_audience_is_rejected() {
+    let token = hs(json!({"sub": "a", "iss": "iss-a", "aud": "aud-a"}));
+    let lax = JwtVerifier::new([JwtKey::hmac(SECRET)]).with_clock(clock_at(1_000));
+    let Err(AuthError::Config(m)) = run(lax.verify(&token)) else {
+      panic!("a verifier pinning neither iss nor aud must not accept tokens")
+    };
+    assert!(m.contains("issuer or an audience"), "{m}");
+    assert_eq!(AuthError::Config(m).http_status(), 500);
+    // Pinning either is enough.
+    assert!(run(lax.clone().issuer("iss-a").verify(&token)).is_ok());
+    assert!(run(lax.clone().audience("aud-a").verify(&token)).is_ok());
+    // A token for another audience of the same issuer is still refused once aud is pinned.
+    assert!(matches!(
+      run(lax.audience("aud-b").verify(&token)),
+      Err(AuthError::InvalidClaims(m)) if m.contains("aud")
+    ));
+  }
+
+  #[test]
+  fn h7_dangerous_opt_out_is_explicit() {
+    let token = hs(json!({"sub": "a"}));
+    let lax = JwtVerifier::new([JwtKey::hmac(SECRET)]).with_clock(clock_at(1_000));
+    // One opt-out alone does not re-open the lax default.
+    for half in [
+      lax.clone().any_issuer_dangerous(),
+      lax.clone().any_audience_dangerous(),
+    ] {
+      assert!(matches!(
+        run(half.verify(&token)),
+        Err(AuthError::Config(_))
+      ));
+    }
+    let both = lax.any_issuer_dangerous().any_audience_dangerous();
+    assert_eq!(run(both.verify(&token)).unwrap().id(), "a");
+  }
+
+  #[test]
+  fn m15_short_hmac_key_rejected() {
+    let short = b"31 bytes, one short of HS256 ok";
+    assert_eq!(short.len(), MIN_HMAC_KEY_LEN - 1);
+    // A short secret issues nothing ...
+    let issued = run(JwtIssuer::hs256(short).issue(&AuthPrincipal::new("a")));
+    assert!(
+      matches!(&issued, Err(AuthError::Key(m)) if m.contains("at least 32 bytes")),
+      "{issued:?}"
+    );
+    let other_route = JwtIssuer::new(Algorithm::HS384, EncodingKey::from_secret(short)).unwrap();
+    assert!(matches!(
+      run(other_route.issue(&AuthPrincipal::new("a"))),
+      Err(AuthError::Key(_))
+    ));
+    // ... and verifies nothing, even a token its bytes did sign.
+    let mut header = Header::new(Algorithm::HS256);
+    header.kid = None;
+    let forged = encode(
+      &header,
+      &claims(json!({"sub": "a", "exp": 2_000})),
+      &EncodingKey::from_secret(short),
+    )
+    .unwrap();
+    let weak = JwtVerifier::new([JwtKey::hmac(short)])
+      .with_clock(clock_at(1_000))
+      .any_issuer_dangerous()
+      .any_audience_dangerous();
+    assert!(matches!(
+      run(weak.verify(&forged)),
+      Err(AuthError::Key(m)) if m.contains("has 31")
+    ));
+    // 32 bytes are accepted.
+    assert!(run(JwtIssuer::hs256(SECRET).issue(&AuthPrincipal::new("a"))).is_ok());
   }
 
   #[test]

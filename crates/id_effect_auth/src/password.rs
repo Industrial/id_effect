@@ -7,6 +7,12 @@
 //! runs as one job on the executor's blocking pool (`Executor::spawn_blocking`), never on a fiber
 //! thread.
 //!
+//! Each job holds argon2's memory (19 MiB under the OWASP parameters) while it runs, so a
+//! hasher runs at most [`max_concurrent`](PasswordHasher::max_concurrent) jobs at once (two per
+//! available CPU by default). A hash or verify that finds them all busy waits up to
+//! [`busy_timeout`](PasswordHasher::busy_timeout) (5 s) and then fails with
+//! [`PasswordError::Busy`], instead of a burst of logins claiming gigabytes.
+//!
 //! ```
 //! use id_effect::Exit;
 //! use id_effect_auth::password::{PasswordHasher, PasswordParams, Verification};
@@ -22,12 +28,29 @@
 use std::fmt;
 use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use argon2::password_hash::phc::PasswordHash as Phc;
 use argon2::{
   ARGON2ID_IDENT, Algorithm, Argon2, Params, PasswordHasher as _, PasswordVerifier as _, Version,
 };
-use id_effect::{Ctx, Effect, HCons, HList, HNil, Layer, Selector, hlist, need};
+use id_effect::{
+  Ctx, Effect, HCons, HList, HNil, Layer, Permit, Selector, Semaphore, fail, hlist, need,
+};
+
+/// The longest password the login paths hash, in bytes (`BasicAuth`) or characters (the account
+/// flows' default `max_password_len`), so a request cannot make argon2 hash megabytes.
+pub const MAX_PASSWORD_LEN: usize = 256;
+
+/// Default [`PasswordHasher::busy_timeout`].
+pub const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Default [`PasswordHasher::max_concurrent`]: two jobs per available CPU.
+fn default_max_concurrent() -> usize {
+  std::thread::available_parallelism()
+    .map_or(1, std::num::NonZero::get)
+    .saturating_mul(2)
+}
 
 /// Argon2id cost parameters: memory in KiB, iterations and lanes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -212,6 +235,9 @@ pub enum PasswordError {
   Hash(String),
   /// The blocking-pool job ended without a result (it panicked).
   Blocking,
+  /// Every hashing slot stayed busy for [`PasswordHasher::busy_timeout`]: the hasher is
+  /// overloaded (see [`PasswordHasher::max_concurrent`]).
+  Busy,
 }
 
 impl fmt::Display for PasswordError {
@@ -221,6 +247,7 @@ impl fmt::Display for PasswordError {
       Self::MalformedHash(m) => write!(f, "malformed password hash: {m}"),
       Self::Hash(m) => write!(f, "password hashing failed: {m}"),
       Self::Blocking => f.write_str("password hashing job ended without a result"),
+      Self::Busy => f.write_str("password hashing is busy; try again later"),
     }
   }
 }
@@ -249,19 +276,40 @@ where
   })
 }
 
-/// Capability: argon2id password hashing (cheap to clone; clones share the dummy hash).
+/// How many argon2 jobs may run at once, and how long a job waits for a slot.
+struct Slots {
+  semaphore: Semaphore,
+  permits: usize,
+  wait: Duration,
+}
+
+impl Slots {
+  fn new(permits: usize, wait: Duration) -> Arc<Self> {
+    let permits = permits.max(1);
+    Arc::new(Self {
+      semaphore: Semaphore::new(permits),
+      permits,
+      wait,
+    })
+  }
+}
+
+/// Capability: argon2id password hashing (cheap to clone; clones share the dummy hash and the
+/// concurrency limit).
 #[derive(Clone)]
 pub struct PasswordHasher {
   params: PasswordParams,
   argon2: Argon2<'static>,
   /// A hash under `params` that no password verifies against (built on first use).
   dummy: Arc<OnceLock<PasswordHash>>,
+  slots: Arc<Slots>,
 }
 
 impl fmt::Debug for PasswordHasher {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("PasswordHasher")
       .field("params", &self.params)
+      .field("max_concurrent", &self.slots.permits)
       .finish_non_exhaustive()
   }
 }
@@ -280,7 +328,31 @@ impl PasswordHasher {
       params,
       argon2: params.argon2(),
       dummy: Arc::new(OnceLock::new()),
+      slots: Slots::new(default_max_concurrent(), DEFAULT_BUSY_TIMEOUT),
     }
+  }
+
+  /// The same hasher runs at most `jobs` hashes and verifications at once (at least one; the
+  /// default is two per available CPU). Each job holds argon2's memory cost
+  /// ([`PasswordParams::m_cost_kib`]) while it runs. The returned hasher and its clones share a
+  /// new limit; earlier clones keep the old one.
+  #[must_use]
+  pub fn with_max_concurrent(mut self, jobs: usize) -> Self {
+    self.slots = Slots::new(jobs, self.slots.wait);
+    self
+  }
+
+  /// The same hasher waits up to `wait` for a free slot before failing with
+  /// [`PasswordError::Busy`] (default [`DEFAULT_BUSY_TIMEOUT`]). It keeps sharing the slots of
+  /// the hasher it came from.
+  #[must_use]
+  pub fn with_busy_timeout(mut self, wait: Duration) -> Self {
+    self.slots = Arc::new(Slots {
+      semaphore: self.slots.semaphore.clone(),
+      permits: self.slots.permits,
+      wait,
+    });
+    self
   }
 
   /// The parameters new hashes use.
@@ -289,13 +361,57 @@ impl PasswordHasher {
     self.params
   }
 
+  /// How many hashes and verifications run at once, at most.
+  #[inline]
+  pub fn max_concurrent(&self) -> usize {
+    self.slots.permits
+  }
+
+  /// How long a job waits for a free slot before [`PasswordError::Busy`].
+  #[inline]
+  pub fn busy_timeout(&self) -> Duration {
+    self.slots.wait
+  }
+
+  /// Runs `job` on the blocking pool once a slot is free (waiting up to the busy timeout); the
+  /// slot is held until the job finishes, even if the fiber is interrupted meanwhile.
+  fn bounded<A: Send + 'static>(
+    &self,
+    job: impl FnOnce() -> Result<A, PasswordError> + Send + 'static,
+  ) -> Effect<A, PasswordError> {
+    let slots = Arc::clone(&self.slots);
+    let run = move |permit: Permit| {
+      on_blocking_pool(
+        move || {
+          let _held = permit;
+          job()
+        },
+        || PasswordError::Blocking,
+      )
+    };
+    self
+      .slots
+      .semaphore
+      .try_acquire()
+      .flat_map(move |free| match free {
+        Some(permit) => run(permit),
+        None => {
+          slots
+            .semaphore
+            .acquire()
+            .timeout(slots.wait)
+            .flat_map(move |waited| match waited {
+              Some(permit) => run(permit),
+              None => fail(PasswordError::Busy),
+            })
+        }
+      })
+  }
+
   /// Hash `password` with a fresh random salt (on the blocking pool).
   pub fn hash(&self, password: impl Into<Password>) -> Effect<PasswordHash, PasswordError> {
     let (argon2, password) = (self.argon2.clone(), password.into());
-    on_blocking_pool(
-      move || hash_now(&argon2, &password),
-      || PasswordError::Blocking,
-    )
+    self.bounded(move || hash_now(&argon2, &password))
   }
 
   /// Check `password` against `stored` (on the blocking pool). The comparison is constant-time;
@@ -307,10 +423,7 @@ impl PasswordHasher {
     stored: &PasswordHash,
   ) -> Effect<Verification, PasswordError> {
     let (hasher, password, stored) = (self.clone(), password.into(), stored.clone());
-    on_blocking_pool(
-      move || hasher.verify_now(&password, &stored),
-      || PasswordError::Blocking,
-    )
+    self.bounded(move || hasher.verify_now(&password, &stored))
   }
 
   /// [`verify`](Self::verify) for a login whose user may not exist: with `stored = None` the
@@ -323,17 +436,14 @@ impl PasswordHasher {
     stored: Option<&PasswordHash>,
   ) -> Effect<Verification, PasswordError> {
     let (hasher, password, stored) = (self.clone(), password.into(), stored.cloned());
-    on_blocking_pool(
-      move || match stored {
-        Some(stored) => hasher.verify_now(&password, &stored),
-        None => {
-          let dummy = hasher.dummy_hash()?;
-          hasher.verify_now(&password, &dummy)?;
-          Ok(Verification::Invalid)
-        }
-      },
-      || PasswordError::Blocking,
-    )
+    self.bounded(move || match stored {
+      Some(stored) => hasher.verify_now(&password, &stored),
+      None => {
+        let dummy = hasher.dummy_hash()?;
+        hasher.verify_now(&password, &dummy)?;
+        Ok(Verification::Invalid)
+      }
+    })
   }
 
   /// `true` when `stored` is not argon2id v19 under this hasher's parameters.
@@ -637,6 +747,65 @@ mod tests {
   }
 
   #[test]
+  fn m20_hashing_is_bounded() {
+    let h = PasswordHasher::default();
+    assert_eq!(h.max_concurrent(), default_max_concurrent());
+    assert!(h.max_concurrent() >= 2);
+    assert_eq!(h.busy_timeout(), DEFAULT_BUSY_TIMEOUT);
+    assert_eq!(
+      PasswordHasher::new(fast())
+        .with_max_concurrent(0)
+        .max_concurrent(),
+      1
+    );
+
+    let h = PasswordHasher::new(fast())
+      .with_max_concurrent(1)
+      .with_busy_timeout(Duration::from_millis(50));
+    let stored = run(h.hash("pw")).unwrap();
+    // Every slot is taken (by a clone: clones share the limit).
+    let Exit::Success(Some(slot)) = h
+      .clone()
+      .slots
+      .semaphore
+      .try_acquire::<PasswordError, HNil>()
+      .block_on()
+    else {
+      panic!("the slot was free")
+    };
+    let started = Instant::now();
+    assert_eq!(run(h.hash("pw")), Err(PasswordError::Busy));
+    assert!(
+      started.elapsed() >= Duration::from_millis(50),
+      "it waited first"
+    );
+    assert_eq!(run(h.verify("pw", &stored)), Err(PasswordError::Busy));
+    assert_eq!(run(h.verify_or_dummy("pw", None)), Err(PasswordError::Busy));
+    drop(slot);
+    assert_eq!(run(h.verify("pw", &stored)), Ok(Verification::Valid));
+    assert!(format!("{h:?}").contains("max_concurrent: 1"));
+  }
+
+  #[test]
+  fn a_waiting_job_takes_the_slot_when_it_frees() {
+    let h = PasswordHasher::new(fast()).with_max_concurrent(1);
+    let Exit::Success(Some(slot)) = h
+      .slots
+      .semaphore
+      .try_acquire::<PasswordError, HNil>()
+      .block_on()
+    else {
+      panic!("the slot was free")
+    };
+    let release = std::thread::spawn(move || {
+      std::thread::sleep(Duration::from_millis(30));
+      drop(slot);
+    });
+    assert!(run(h.hash("pw")).is_ok());
+    release.join().unwrap();
+  }
+
+  #[test]
   fn a_panicking_job_is_a_blocking_error() {
     let eff = on_blocking_pool::<(), PasswordError>(|| panic!("boom"), || PasswordError::Blocking);
     assert_eq!(run(eff), Err(PasswordError::Blocking));
@@ -649,6 +818,7 @@ mod tests {
       (PasswordError::MalformedHash("x".into()), "malformed"),
       (PasswordError::Hash("salt".into()), "hashing failed"),
       (PasswordError::Blocking, "without a result"),
+      (PasswordError::Busy, "busy"),
     ] {
       assert!(e.to_string().contains(needle), "{e}");
     }
