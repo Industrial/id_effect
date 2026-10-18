@@ -17,6 +17,9 @@ pub enum RedisError {
   Command(String),
   /// A reply or a stored value did not decode to the requested type, or a value did not encode.
   Decode(String),
+  /// `clear()` on a store whose namespace is empty: its glob is every key of the database. The
+  /// explicit flush is `clear_all_dangerous()`.
+  EmptyNamespace,
 }
 
 impl fmt::Display for RedisError {
@@ -26,6 +29,9 @@ impl fmt::Display for RedisError {
       Self::Connection(m) => write!(f, "redis connection: {m}"),
       Self::Command(m) => write!(f, "redis command: {m}"),
       Self::Decode(m) => write!(f, "redis value: {m}"),
+      Self::EmptyNamespace => f.write_str(
+        "redis store: clear() with an empty namespace would delete every key (clear_all_dangerous() does)",
+      ),
     }
   }
 }
@@ -84,6 +90,10 @@ mod tests {
       (RedisError::Connection("b".into()), "redis connection: b"),
       (RedisError::Command("c".into()), "redis command: c"),
       (RedisError::Decode("d".into()), "redis value: d"),
+      (
+        RedisError::EmptyNamespace,
+        "redis store: clear() with an empty namespace would delete every key (clear_all_dangerous() does)",
+      ),
     ];
     for (e, shown) in cases {
       assert_eq!(e.to_string(), shown);

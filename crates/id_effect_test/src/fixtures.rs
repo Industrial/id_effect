@@ -52,8 +52,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use id_effect::{Effect, HList, Selector, succeed};
-use id_effect_sql::{FromRow, SqlClientService, SqlError, SqlValue, query_one_as};
+use id_effect::{Effect, HList, Selector, fail, need, succeed};
+use id_effect_sql::{FromRow, SqlClientService, SqlError, SqlValue};
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 
@@ -78,15 +78,27 @@ pub trait Fixture: Clone + fmt::Debug + Send + 'static {
   /// parameters.
   fn insert_sql(&self) -> (String, Vec<SqlValue>);
 
-  /// Inserts `self` through the `SqlClientService` in `R` and decodes the row
-  /// ([`query_one_as`] over [`insert_sql`](Self::insert_sql)). Override it to insert another
-  /// way.
+  /// Inserts `self` through the `SqlClientService` in `R` and decodes the first row
+  /// ([`SqlClient::query`](id_effect_sql::SqlClient::query) over
+  /// [`insert_sql`](Self::insert_sql); [`SqlError::RowNotFound`] when there is none). Override
+  /// it to insert another way.
   fn insert<R, I>(&self) -> Effect<Self::Row, SqlError, R>
   where
     R: Selector<SqlClientService, I> + HList,
   {
     let (sql, params) = self.insert_sql();
-    query_one_as(sql, params)
+    need::<SqlClientService>().flat_map(move |c| {
+      c.query(&sql, &params).narrow().flat_map(|rows| {
+        let row = rows
+          .first()
+          .ok_or(SqlError::RowNotFound)
+          .and_then(Self::Row::from_row);
+        match row {
+          Ok(row) => succeed(row),
+          Err(e) => fail(e),
+        }
+      })
+    })
   }
 }
 

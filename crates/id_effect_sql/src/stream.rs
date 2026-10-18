@@ -36,15 +36,13 @@ use id_effect::{Effect, HList, Selector, Stream, fail, need, succeed};
 use crate::client::{SqlClientService, TestState, lock};
 use crate::error::SqlError;
 use crate::from_row::FromRow;
+use crate::raw::Sql;
 use crate::row::SqlRow;
 use crate::value::SqlValue;
 
 /// [`SqlClient::query_stream`](crate::SqlClient::query_stream) on the [`SqlClientService`] in
 /// `R`: the client is read on the first pull.
-pub fn query_stream<R, I>(
-  sql: impl Into<String>,
-  params: Vec<SqlValue>,
-) -> Stream<SqlRow, SqlError, R>
+pub fn query_stream<R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Stream<SqlRow, SqlError, R>
 where
   R: Selector<SqlClientService, I> + HList + Send + Sync + 'static,
 {
@@ -54,7 +52,9 @@ where
   Stream::from_pull(move |n| {
     let slot = Arc::clone(&rest);
     let current: Effect<Stream<SqlRow, SqlError>, SqlError, R> = match start.take() {
-      Some((sql, params)) => need::<SqlClientService>().map(move |c| c.query_stream(&sql, &params)),
+      Some((sql, params)) => {
+        need::<SqlClientService>().map(move |c| c.query_stream(sql.as_str(), &params))
+      }
       // `from_pull` stops pulling once the inner stream ends, so the rest is always there.
       None => succeed(
         slot
@@ -78,7 +78,7 @@ where
 /// [`query_stream`] decoding every row as `T` ([`FromRow`]); a row that does not decode fails
 /// the stream with its error.
 pub fn query_stream_as<T, R, I>(
-  sql: impl Into<String>,
+  sql: impl Into<Sql>,
   params: Vec<SqlValue>,
 ) -> Stream<T, SqlError, R>
 where

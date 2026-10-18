@@ -1,0 +1,5 @@
+error[E0451]: field `_private` of struct `RawSqlCapability` is private
+ --> tests/ui/m16_raw_capability_cannot_be_forged.rs:6:36
+  |
+6 |   let _forged = RawSqlCapability { _private: () };
+  |                                    ^^^^^^^^ private field

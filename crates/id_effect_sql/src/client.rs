@@ -16,6 +16,7 @@ use id_effect::{
 };
 
 use crate::error::SqlError;
+use crate::raw::Sql;
 pub use crate::row::SqlRow;
 use crate::transaction::{
   SqlTransaction, TestSqlTransaction, TransactionOptions, begin_with_options,
@@ -191,25 +192,24 @@ where
   )
 }
 
-/// Run `sql` on the [`SqlClientService`] in `R`.
-pub fn query<R, I>(
-  sql: impl Into<String>,
-  params: Vec<SqlValue>,
-) -> Effect<Vec<SqlRow>, SqlError, R>
+/// Run `sql` on the [`SqlClientService`] in `R`. `sql` is a literal or a `const` ([`Sql`]); SQL
+/// built at run time goes through [`query_raw`](crate::query_raw).
+pub fn query<R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<Vec<SqlRow>, SqlError, R>
 where
   R: Selector<SqlClientService, I> + HList,
 {
   let sql = sql.into();
-  need::<SqlClientService>().flat_map(move |c| c.query(&sql, &params).narrow())
+  need::<SqlClientService>().flat_map(move |c| c.query(sql.as_str(), &params).narrow())
 }
 
-/// Execute `sql` on the [`SqlClientService`] in `R`.
-pub fn execute<R, I>(sql: impl Into<String>, params: Vec<SqlValue>) -> Effect<u64, SqlError, R>
+/// Execute `sql` on the [`SqlClientService`] in `R`. `sql` is a literal or a `const` ([`Sql`]);
+/// SQL built at run time goes through [`execute_raw`](crate::execute_raw).
+pub fn execute<R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<u64, SqlError, R>
 where
   R: Selector<SqlClientService, I> + HList,
 {
   let sql = sql.into();
-  need::<SqlClientService>().flat_map(move |c| c.execute(&sql, &params).narrow())
+  need::<SqlClientService>().flat_map(move |c| c.execute(sql.as_str(), &params).narrow())
 }
 
 /// In-memory scriptable client for unit tests.

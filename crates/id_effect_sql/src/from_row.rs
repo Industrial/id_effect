@@ -30,6 +30,7 @@ use id_effect::{Effect, HList, Selector, fail, succeed};
 
 use crate::client::{SqlClientService, query};
 use crate::error::SqlError;
+use crate::raw::Sql;
 use crate::row::{ColumnIndex, SqlRow};
 use crate::value::{FromSqlValue, SqlValue};
 
@@ -112,10 +113,7 @@ fn ready<A: Send + 'static, R: 'static>(r: Result<A, SqlError>) -> Effect<A, Sql
 /// [`query`] decoding every row as `T`: `query_as::<Todo, _, _>(sql, params![..])` where the
 /// return type fixes the environment, else `query_as::<Todo, SqlClientEnv, _>(..)`
 /// ([`SqlClientEnv`](crate::SqlClientEnv)).
-pub fn query_as<T, R, I>(
-  sql: impl Into<String>,
-  params: Vec<SqlValue>,
-) -> Effect<Vec<T>, SqlError, R>
+pub fn query_as<T, R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<Vec<T>, SqlError, R>
 where
   T: FromRow + Send + 'static,
   R: Selector<SqlClientService, I> + HList,
@@ -124,10 +122,7 @@ where
 }
 
 /// [`query`] decoding the first row as `T`; [`SqlError::RowNotFound`] when there is none.
-pub fn query_one_as<T, R, I>(
-  sql: impl Into<String>,
-  params: Vec<SqlValue>,
-) -> Effect<T, SqlError, R>
+pub fn query_one_as<T, R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<T, SqlError, R>
 where
   T: FromRow + Send + 'static,
   R: Selector<SqlClientService, I> + HList,
@@ -144,7 +139,7 @@ where
 
 /// [`query`] decoding the first row as `T`, or `None` when there is none.
 pub fn query_opt_as<T, R, I>(
-  sql: impl Into<String>,
+  sql: impl Into<Sql>,
   params: Vec<SqlValue>,
 ) -> Effect<Option<T>, SqlError, R>
 where

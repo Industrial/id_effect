@@ -351,7 +351,8 @@ pub(crate) fn namespaced(namespace: &str, key: &str) -> String {
   }
 }
 
-/// The glob matching every key of `namespace` (its glob characters escaped).
+/// The glob matching every key of `namespace` (its glob characters escaped): `*`, every key of
+/// the database, for the empty namespace, so a store's `clear()` refuses that one (M17).
 pub(crate) fn namespace_glob(namespace: &str) -> String {
   let mut glob = String::with_capacity(namespace.len() + 2);
   for c in namespace.chars() {

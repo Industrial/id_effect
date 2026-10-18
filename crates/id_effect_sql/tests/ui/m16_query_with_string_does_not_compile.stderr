@@ -1,0 +1,43 @@
+error[E0277]: the trait bound `Sql: From<std::string::String>` is not satisfied
+ --> tests/ui/m16_query_with_string_does_not_compile.rs:7:9
+  |
+7 |   query(format!("SELECT * FROM {table}"), vec![])
+  |   ----- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `From<std::string::String>` is not implemented for `Sql`
+  |   |
+  |   required by a bound introduced by this call
+  |
+help: the trait `From<std::string::String>` is not implemented for `Sql`
+      but trait `From<&'static str>` is implemented for it
+ --> src/raw.rs
+  |
+  | impl From<&'static str> for Sql {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  = help: for that trait implementation, expected `&'static str`, found `std::string::String`
+  = note: required for `std::string::String` to implement `Into<Sql>`
+note: required by a bound in `id_effect_sql::query`
+ --> src/client.rs
+  |
+  | pub fn query<R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<Vec<SqlRow>, SqlError, R>
+  |                              ^^^^^^^^^ required by this bound in `query`
+
+error[E0277]: the trait bound `Sql: From<std::string::String>` is not satisfied
+  --> tests/ui/m16_query_with_string_does_not_compile.rs:11:11
+   |
+11 |   execute(sql, vec![])
+   |   ------- ^^^ the trait `From<std::string::String>` is not implemented for `Sql`
+   |   |
+   |   required by a bound introduced by this call
+   |
+help: the trait `From<std::string::String>` is not implemented for `Sql`
+      but trait `From<&'static str>` is implemented for it
+  --> src/raw.rs
+   |
+   | impl From<&'static str> for Sql {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `&'static str`, found `std::string::String`
+   = note: required for `std::string::String` to implement `Into<Sql>`
+note: required by a bound in `id_effect_sql::execute`
+  --> src/client.rs
+   |
+   | pub fn execute<R, I>(sql: impl Into<Sql>, params: Vec<SqlValue>) -> Effect<u64, SqlError, R>
+   |                                ^^^^^^^^^ required by this bound in `execute`
