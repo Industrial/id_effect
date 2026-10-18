@@ -339,6 +339,10 @@ jobs:
           cargo update -p serde_repr --precise 0.1.20
           # openidconnect 4 (id_effect_auth) allows thiserror 1.0.20, too old for its error derives
           cargo update -p thiserror@1.0.20 --precise 1.0.69
+          # url / idna pull ICU crates whose zerovec resolves next to yoke 0.6 (no Yokeable impls)
+          cargo update -p yoke@0.6.0 --precise 0.7.5
+          # crc-fast 1.6 (object_store, id_effect_storage) needs crc's CRC_64_REDIS (crc >= 3.3)
+          cargo update -p crc --precise 3.3.0
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
       - name: cargo check (minimal versions, stable)
