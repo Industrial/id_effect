@@ -62,7 +62,6 @@ use crate::error::SqlError;
 use crate::from_row::{FromRow, query_as, query_one_as, query_opt_as};
 use crate::value::SqlValue;
 
-mod time_conv;
 mod value;
 
 pub use value::sql_values;

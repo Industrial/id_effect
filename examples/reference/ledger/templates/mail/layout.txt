@@ -1,0 +1,4 @@
+{% block body %}{% endblock %}
+
+--
+Ledger · https://ledger.example

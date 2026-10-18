@@ -41,6 +41,22 @@ fn install_otel_starter_exports_span_and_log_globally() {
     "expected integration log, got {logs:?}"
   );
 
+  // The global subscriber's filter changes at runtime through the guard's reload handle.
+  let filter = guard.env_filter();
+  assert_eq!(filter.with_current(|f| f.to_string()).unwrap(), "trace");
+  filter
+    .reload(tracing_subscriber::EnvFilter::new("off"))
+    .expect("reload");
+  tracing::info_span!("filtered_span").in_scope(|| {});
+  filter
+    .reload(tracing_subscriber::EnvFilter::new("trace"))
+    .expect("reload");
+  tracing::info_span!("restored_span").in_scope(|| {});
+  guard.force_flush();
+  let spans = exporters.spans.get_finished_spans().expect("spans");
+  assert!(!spans.iter().any(|s| s.name == "filtered_span"));
+  assert!(spans.iter().any(|s| s.name == "restored_span"));
+
   // Program on tokio worker fibers: spans through the guard's span hook (a FiberRef),
   // metrics through the global registry bridge.
   let rt = TokioRuntime::new_multi_thread().expect("tokio");

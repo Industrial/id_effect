@@ -15,10 +15,10 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.9.0" }
+id_effect = { path = "../id_effect", version = "0.10.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.10.0" }
 # FsmProcess behaviour (publish level 3: after id_effect_process).
-id_effect_process = { path = "../id_effect_process", version = "0.9.0" }
+id_effect_process = { path = "../id_effect_process", version = "0.10.0" }
 thiserror = "2"
 
 [package.metadata.id_effect]

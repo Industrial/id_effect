@@ -13,7 +13,7 @@ use std::str::FromStr;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, clap::ValueEnum)]
 pub enum Template {
   /// An Axum HTTP service: secure defaults, `/health`, `/ready`, `/metrics`; optional
-  /// PostgreSQL and OpenTelemetry.
+  /// PostgreSQL, OpenTelemetry, background jobs and the operator console.
   Service,
   /// A background worker: named cron jobs with run history.
   Worker,
@@ -70,12 +70,17 @@ pub enum Condition {
   Always,
   /// Only with `--db pg`.
   Pg,
+  /// Only with `--jobs`.
+  Jobs,
+  /// Only with `--console`.
+  Console,
 }
 
 /// One embedded template file.
 #[derive(Clone, Copy, Debug)]
 pub struct TemplateFile {
-  /// Directory under `templates/`: a template name or `common` (shared by every template).
+  /// Directory under `templates/`: a template name, `common` (shared by every template) or
+  /// `generate/job` (`id-effect generate job`).
   pub dir: &'static str,
   /// Path inside `dir`, as on disk (with the `.template` suffix and `_` prefixes).
   pub source: &'static str,
@@ -105,6 +110,8 @@ macro_rules! embed {
 /// Every embedded template file (`templates/<dir>/<source>`).
 pub static FILES: &[TemplateFile] = &[
   embed!("common", "Dockerfile.template"),
+  embed!("common", "_devcontainer/Dockerfile.template"),
+  embed!("common", "_devcontainer/devcontainer.json.template"),
   embed!("common", "_dockerignore.template"),
   embed!("common", "_gitignore.template"),
   embed!("common", "_github/workflows/ci.yml.template"),
@@ -116,12 +123,15 @@ pub static FILES: &[TemplateFile] = &[
   embed!("service", "src/lib.rs.template"),
   embed!("service", "src/main.rs.template"),
   embed!("service", "src/db.rs.template", Condition::Pg),
+  embed!("service", "src/jobs/mod.rs.template", Condition::Jobs),
+  embed!("service", "src/console.rs.template", Condition::Console),
   embed!(
     "service",
     "migrations/0001_init.sql.template",
     Condition::Pg
   ),
   embed!("service", "tests/http.rs.template"),
+  embed!("service", "tests/shutdown.rs.template"),
   embed!("worker", "Cargo.toml.template"),
   embed!("worker", "README.md.template"),
   embed!("worker", "compose.yaml.template"),
@@ -143,6 +153,10 @@ pub static FILES: &[TemplateFile] = &[
   embed!("cluster", "src/lib.rs.template"),
   embed!("cluster", "src/main.rs.template"),
   embed!("cluster", "tests/mesh.rs.template"),
+  // `id-effect generate job` (crate::generate), never part of a new project.
+  embed!("generate/job", "job.rs.template"),
+  embed!("generate/job", "mod.rs.template"),
+  embed!("generate/job", "schedule.rs.template"),
 ];
 
 /// The generated path of the template file `source`: the `.template` suffix is dropped and a

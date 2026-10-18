@@ -49,6 +49,15 @@ declare -A LEVEL=(
     # id_effect_axum, so it publishes after id_effect_auth.
     [id_effect_redis]=5
     [id_effect_test]=5
+    # 0.10 crates (ADR 0010 Amendment 6). events, messaging and storage build on id_effect_sql and
+    # id_effect_platform (level 2); jobs runs cron through id_effect_node (level 4); mail delivers
+    # through jobs and console sits behind id_effect_authz guards, so both follow jobs.
+    [id_effect_events]=3
+    [id_effect_messaging]=3
+    [id_effect_storage]=3
+    [id_effect_jobs]=5
+    [id_effect_mail]=5
+    [id_effect_console]=5
 )
 
 # Publish order (levels ascending; within a level, dependencies first).
@@ -57,11 +66,17 @@ declare -a ORDER=(
     id_effect
     id_effect_cli id_effect_fp id_effect_logger id_effect_optics id_effect_platform
     id_effect_process id_effect_resilience id_effect_sql id_effect_tokio
-    id_effect_config id_effect_fsm
+    id_effect_config id_effect_fsm id_effect_events id_effect_messaging id_effect_storage
     id_effect_node id_effect_axum id_effect_opentelemetry
     id_effect_authz id_effect_auth id_effect_redis id_effect_test
+    id_effect_jobs id_effect_mail id_effect_console
     id_effect_kit id_effect_tool
 )
+
+# Crates in ORDER that are still labs crates awaiting promotion into crates/ (ADR 0010 rule 2).
+# Remove the entry in the leaf that moves the crate. None pending: id_effect_events moved in
+# r10-e7-4-promote.
+declare -A PENDING_PROMOTION=()
 
 if [[ "${1:-}" == "--print-order" ]]; then
     printf '%s\n' "${ORDER[@]}"
@@ -78,6 +93,10 @@ while IFS= read -r toml; do
     fi
 done < <(find crates -mindepth 2 -maxdepth 2 -name Cargo.toml | sort)
 for crate in "${ORDER[@]}"; do
+    pending="${PENDING_PROMOTION[$crate]:-}"
+    if [[ -n "$pending" && ! -f "crates/$crate/Cargo.toml" && -f "labs/$crate/Cargo.toml" ]]; then
+        continue
+    fi
     if [[ ! -f "crates/$crate/Cargo.toml" ]]; then
         echo "ERROR: $crate is in the publish order but crates/$crate does not exist"
         exit 1

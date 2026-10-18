@@ -171,7 +171,8 @@ pub fn socket_addr(config: &HostConfig) -> Result<SocketAddr, HostError> {
 /// Run an Axum [`Router`] until SIGINT/SIGTERM with graceful connection drain.
 ///
 /// On a signal, [`Host::readiness`] is marked shutting down first; the listener keeps
-/// accepting while [`Host::drain`] drains, then stops.
+/// accepting while [`Host::drain`] drains, then stops. Count the requests in it with
+/// [`track_in_flight`](crate::track_in_flight).
 #[allow(clippy::result_large_err)]
 pub async fn serve_router(host: Host, app: Router) -> Result<(), HostError> {
   let addr = socket_addr(&host.config)?;

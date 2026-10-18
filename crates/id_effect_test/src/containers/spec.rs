@@ -1,13 +1,14 @@
 //! [`ContainerSpec`]: the generic image builder, and [`start`], which starts one and waits until
 //! it is ready.
 
+use std::future::Future;
 use std::time::Duration;
 
 use testcontainers::core::{Healthcheck, IntoContainerPort, Mount};
 use testcontainers::runners::AsyncRunner;
-use testcontainers::{ContainerRequest, GenericImage, ImageExt};
+use testcontainers::{ContainerAsync, ContainerRequest, GenericImage, ImageExt};
 
-use super::docker::{SESSION, SESSION_LABEL, ping};
+use super::docker::{ATTEMPT_LABEL, SESSION, SESSION_LABEL, attempt_id, ping, remove_attempt};
 use super::wait::ready;
 use super::{Container, ContainerError, Wait};
 
@@ -19,6 +20,13 @@ const HEALTH_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Bounds creating and starting the container (pulling a missing image is not included).
 const START_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How many more times a start that failed to publish a host port is tried, each time as a new
+/// container with fresh host ports.
+const PUBLISH_RETRIES: u32 = 4;
+
+/// The wait before the first such retry; it doubles for each next one (0.25 s up to 2 s).
+const PUBLISH_BACKOFF: Duration = Duration::from_millis(250);
 
 /// A container to start: image, environment, published ports, command, readiness. Every
 /// container port added with [`port`](Self::port) is published on a random host port, read back
@@ -183,13 +191,11 @@ impl ContainerSpec {
 pub(crate) async fn start(spec: ContainerSpec) -> Result<Container, ContainerError> {
   ping().await?;
   let image = spec.image();
-  let started = spec
-    .request()
-    .start()
+  let started = start_request(&image, || spec.request())
     .await
-    .map_err(|e| ContainerError::Start {
+    .map_err(|reason| ContainerError::Start {
       image: image.clone(),
-      reason: e.to_string(),
+      reason,
     })?;
   let id = started.id().to_owned();
   let failed = match tokio::time::timeout(spec.ready_timeout, ready(&started, &spec.waits)).await {
@@ -210,6 +216,68 @@ pub(crate) async fn start(spec: ContainerSpec) -> Result<Container, ContainerErr
     return Err(error);
   }
   Container::resolve(started, image, &spec.ports).await
+}
+
+/// Creates and starts the container `request()` describes, labelled with a fresh
+/// [`ATTEMPT_LABEL`]. A start that failed to publish a host port ([`is_port_publish_race`]) is
+/// retried as a new container, so with fresh host ports, up to [`PUBLISH_RETRIES`] times after
+/// [`PUBLISH_BACKOFF`] (doubling), each retry logged to stderr; the container Docker created for
+/// the failed attempt is removed first. Any other error is returned at once.
+pub(crate) async fn start_request(
+  image: &str,
+  request: impl Fn() -> ContainerRequest<GenericImage>,
+) -> Result<ContainerAsync<GenericImage>, String> {
+  let request = &request;
+  retry_publish_race(image, PUBLISH_BACKOFF, move || async move {
+    let attempt = attempt_id();
+    match request().with_label(ATTEMPT_LABEL, &attempt).start().await {
+      Ok(container) => Ok(container),
+      Err(e) => {
+        let reason = e.to_string();
+        if is_port_publish_race(&reason) {
+          remove_attempt(&attempt).await;
+        }
+        Err(reason)
+      }
+    }
+  })
+  .await
+}
+
+/// Runs `attempt` until it succeeds or fails with anything but a port publish race, at most
+/// [`PUBLISH_RETRIES`] more times, sleeping `backoff` (doubled each time) before each retry.
+async fn retry_publish_race<T, Fut>(
+  image: &str,
+  backoff: Duration,
+  mut attempt: impl FnMut() -> Fut,
+) -> Result<T, String>
+where
+  Fut: Future<Output = Result<T, String>>,
+{
+  let mut wait = backoff;
+  for retry in 1..=PUBLISH_RETRIES {
+    match attempt().await {
+      Err(reason) if is_port_publish_race(&reason) => {
+        eprintln!(
+          "id_effect_test: container {image} could not publish a host port ({reason}); \
+           retrying with a fresh port mapping in {wait:?} ({retry}/{PUBLISH_RETRIES})"
+        );
+        tokio::time::sleep(wait).await;
+        wait *= 2;
+      }
+      done => return done,
+    }
+  }
+  attempt().await
+}
+
+/// Whether a Docker start error is a lost race for a host port: Docker picked a free host port
+/// for a published container port, and something else bound it before the port driver
+/// (rootless: RootlessKit's `PortManager.AddPort()`; rootful: docker-proxy or the port
+/// allocator) could. A new container gets new host ports, so these are worth retrying; every
+/// other start error (unknown image, privileged port, daemon gone, timeout) is final.
+fn is_port_publish_race(reason: &str) -> bool {
+  reason.contains("address already in use") || reason.contains("port is already allocated")
 }
 
 #[cfg(test)]
@@ -244,5 +312,72 @@ mod tests {
     assert_eq!(request.labels().get("team").map(String::as_str), Some("a"));
     assert_eq!(request.cmd().count(), 3);
     assert_eq!(request.env_vars().count(), 1);
+  }
+
+  #[test]
+  fn lost_host_port_races_are_retried_and_other_start_errors_are_final() {
+    let races = [
+      // Rootless Docker (RootlessKit's port driver), as seen on the Ledger suite.
+      "failed to start container: Docker responded with status code 500: driver failed \
+       programming external connectivity on endpoint x (1f2e): RootlessKit \
+       PortManager.AddPort(): listen tcp4 0.0.0.0:32771: bind: address already in use",
+      // Rootful Docker: docker-proxy, the newer port mapper, the port allocator.
+      "Error starting userland proxy: listen tcp4 0.0.0.0:32768: bind: address already in use",
+      "failed to bind host port for 0.0.0.0:32768:172.17.0.2:6379/tcp: address already in use",
+      "Bind for 0.0.0.0:32768 failed: port is already allocated",
+    ];
+    for reason in races {
+      assert!(is_port_publish_race(reason), "{reason}");
+    }
+    let finals = [
+      "Docker responded with status code 404: No such image: redis:nope",
+      "RootlessKit PortManager.AddPort(): cannot expose privileged port 80, you can add \
+       'net.ipv4.ip_unprivileged_port_start=80' to /etc/sysctl.conf",
+      "permission denied while trying to connect to the Docker daemon socket",
+      "container startup timeout",
+      "",
+    ];
+    for reason in finals {
+      assert!(!is_port_publish_race(reason), "{reason}");
+    }
+  }
+
+  /// Drives `retry_publish_race` over a scripted sequence of attempt outcomes; returns its result
+  /// and how many attempts it made.
+  fn retried(outcomes: &[Result<u8, &str>]) -> (Result<u8, String>, usize) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+      .enable_time()
+      .build()
+      .unwrap();
+    let mut made = 0;
+    let result = runtime.block_on(retry_publish_race("x:1", Duration::from_millis(1), || {
+      let outcome = outcomes[made.min(outcomes.len() - 1)].map_err(str::to_owned);
+      made += 1;
+      async move { outcome }
+    }));
+    (result, made)
+  }
+
+  #[test]
+  fn a_lost_port_race_starts_again_until_it_succeeds() {
+    let race = Err("bind: address already in use");
+    assert_eq!(retried(&[race, race, Ok(7)]), (Ok(7), 3));
+    assert_eq!(retried(&[Ok(7)]), (Ok(7), 1));
+  }
+
+  #[test]
+  fn port_races_give_up_after_the_retries_and_other_errors_at_once() {
+    let race = "bind: address already in use";
+    let attempts = PUBLISH_RETRIES as usize + 1;
+    assert_eq!(retried(&[Err(race)]), (Err(race.to_owned()), attempts));
+    let missing = "No such image: redis:nope";
+    assert_eq!(
+      retried(&[Err(missing), Ok(7)]),
+      (Err(missing.to_owned()), 1)
+    );
+    assert_eq!(
+      retried(&[Err(race), Err(missing)]),
+      (Err(missing.to_owned()), 2)
+    );
   }
 }

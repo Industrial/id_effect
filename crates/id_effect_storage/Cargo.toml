@@ -1,0 +1,63 @@
+[package]
+name = "id_effect_storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Object storage for id_effect services: one store interface over file-system, in-memory and S3-compatible backends"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_storage"
+
+[features]
+# S3-compatible backend (AWS S3, MinIO, R2, ...) with presigned URLs (web.storage#3, #7).
+# GCS / Azure Blob need emulator tests and are 0.11 (web.storage#4).
+s3 = ["object_store/aws"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.10.0" }
+bytes = "1"
+futures-util = { version = "0.3.31", default-features = false }
+hmac = "0.12"
+# 0.14 needs Rust 1.85 (workspace MSRV 1.94); its `aws` feature uses reqwest 0.13, the major
+# id_effect_platform is on.
+object_store = { version = "0.14.2", default-features = false, features = [
+  "fs",
+] }
+percent-encoding = "2"
+sha2 = "0.10"
+tokio = { version = "1.50.0", features = ["sync"] }
+url = "2"
+
+[dev-dependencies]
+async-trait = "0.1"
+tempfile = "3"
+# tests/s3.rs (feature `s3`): the S3-compatible container, the effects run on tokio (as reqwest
+# needs), presigned URLs used over plain HTTP, and the bucket created with object_store's own
+# SigV4 signer (`S3Store` never creates buckets). Path-only: cargo publish resolves path+version
+# dev-deps on crates.io.
+id_effect_test = { path = "../id_effect_test" }
+id_effect_tokio = { path = "../id_effect_tokio" }
+object_store = { version = "0.14.2", default-features = false, features = [
+  "aws",
+] }
+reqwest = { version = "0.13", default-features = false }
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "s3"
+required-features = ["s3"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 6, ADR 0012).
+tier = "platform"

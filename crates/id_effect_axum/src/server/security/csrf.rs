@@ -102,11 +102,24 @@ impl IntoResponseParts for CsrfToken {
   }
 }
 
+/// Whether the request carries `Authorization: Bearer …` and no `Cookie` header at all: nothing
+/// a browser attaches on its own authenticates it, so another site cannot forge it. (`Basic`
+/// and other schemes do not count: browsers resend cached credentials of those cross-site.)
+fn is_bearer_only(headers: &HeaderMap) -> bool {
+  !headers.contains_key(header::COOKIE)
+    && headers
+      .get(header::AUTHORIZATION)
+      .and_then(|v| v.to_str().ok())
+      .and_then(|v| v.get(..7))
+      .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bearer "))
+}
+
 /// The CSRF part of [`SecurityLayer`](super::SecurityLayer).
 #[derive(Clone, Debug)]
 pub(crate) struct CsrfProtection {
   key: CookieKey,
   exempt: Vec<String>,
+  exempt_bearer: bool,
 }
 
 impl CsrfProtection {
@@ -114,12 +127,17 @@ impl CsrfProtection {
     Self {
       key,
       exempt: Vec::new(),
+      exempt_bearer: false,
     }
   }
 
   pub(crate) fn exempt(&mut self, prefix: String) {
     let prefix = prefix.trim_end_matches('/').to_owned();
     self.exempt.push(prefix);
+  }
+
+  pub(crate) fn exempt_bearer(&mut self) {
+    self.exempt_bearer = true;
   }
 
   fn is_exempt(&self, path: &str) -> bool {
@@ -154,11 +172,16 @@ impl CsrfProtection {
 
   /// Resolve (or issue) the session token, store it in the request extensions and check
   /// unsafe requests. Returns the request to run or the rejection, and the `Set-Cookie` value
-  /// to send when a new token was issued.
+  /// to send when a new token was issued. A bearer-only request
+  /// ([`SecurityLayer::csrf_exempt_bearer`](super::SecurityLayer::csrf_exempt_bearer)) skips all
+  /// of it: no token, no cookie, no check.
   pub(crate) async fn guard(
     &self,
     mut request: Request,
   ) -> (Result<Request, Response>, Option<HeaderValue>) {
+    if self.exempt_bearer && is_bearer_only(request.headers()) {
+      return (Ok(request), None);
+    }
     let existing = self.session_token(request.headers());
     let issued = existing.is_none();
     let token = existing.unwrap_or_else(CsrfToken::generate);
@@ -439,6 +462,91 @@ mod tests {
       axum::middleware::from_fn_with_state(CsrfConfig::new("secret"), csrf_middleware),
     );
     assert_eq!(status(app, "PATCH", None).await, StatusCode::FORBIDDEN);
+  }
+
+  /// A POST through `SecurityLayer::recommended` (bearer exemption on or off) with `headers`.
+  async fn secured_post(exempt_bearer: bool, headers: &[(header::HeaderName, &str)]) -> Response {
+    let mut layer = super::super::SecurityLayer::recommended(CookieKey::generate());
+    if exempt_bearer {
+      layer = layer.csrf_exempt_bearer();
+    }
+    let app = Router::new()
+      .route("/", post(|| async { "ok" }))
+      .layer(layer);
+    let mut req = Request::builder().method("POST").uri("/");
+    for (name, value) in headers {
+      req = req.header(name, *value);
+    }
+    app.oneshot(req.body(Body::empty()).unwrap()).await.unwrap()
+  }
+
+  #[test]
+  fn bearer_only_needs_a_bearer_scheme_and_no_cookie() {
+    let headers = |pairs: &[(header::HeaderName, &str)]| {
+      let mut map = HeaderMap::new();
+      for (name, value) in pairs {
+        map.insert(name, HeaderValue::from_str(value).unwrap());
+      }
+      map
+    };
+    assert!(is_bearer_only(&headers(&[(
+      header::AUTHORIZATION,
+      "Bearer t"
+    )])));
+    assert!(is_bearer_only(&headers(&[(
+      header::AUTHORIZATION,
+      "bearer t"
+    )])));
+    assert!(!is_bearer_only(&headers(&[(
+      header::AUTHORIZATION,
+      "Basic dTpw"
+    )])));
+    assert!(!is_bearer_only(&headers(&[(
+      header::AUTHORIZATION,
+      "Bear"
+    )])));
+    assert!(!is_bearer_only(&HeaderMap::new()));
+    assert!(!is_bearer_only(&headers(&[
+      (header::AUTHORIZATION, "Bearer t"),
+      (header::COOKIE, "session=s"),
+    ])));
+  }
+
+  #[tokio::test]
+  async fn csrf_exempt_bearer_lets_bearer_only_requests_through() {
+    let bearer = [(header::AUTHORIZATION, "Bearer api-token")];
+    // Off by default: the bearer request is checked like any other.
+    assert_eq!(
+      secured_post(false, &bearer).await.status(),
+      StatusCode::FORBIDDEN
+    );
+    let ok = secured_post(true, &bearer).await;
+    assert_eq!(ok.status(), StatusCode::OK);
+    assert!(
+      ok.headers().get(header::SET_COOKIE).is_none(),
+      "no CSRF cookie for a bearer-only client"
+    );
+  }
+
+  #[tokio::test]
+  async fn csrf_exempt_bearer_still_checks_cookie_and_basic_requests() {
+    for headers in [
+      // A cookie may be what authenticates it: forgeable, so checked.
+      vec![
+        (header::AUTHORIZATION, "Bearer api-token"),
+        (header::COOKIE, "session=s"),
+      ],
+      vec![(header::COOKIE, "session=s")],
+      // Browsers resend cached Basic credentials cross-site.
+      vec![(header::AUTHORIZATION, "Basic dTpw")],
+      vec![],
+    ] {
+      assert_eq!(
+        secured_post(true, &headers).await.status(),
+        StatusCode::FORBIDDEN,
+        "{headers:?}"
+      );
+    }
   }
 
   #[tokio::test]

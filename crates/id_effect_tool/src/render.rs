@@ -6,8 +6,8 @@
 //!   any other `{{word}}` is an error. `{{` followed by a space (`${{ github.ref }}` in a
 //!   workflow) is left alone.
 //! - A line holding only `{{#if flag}}` or `{{#if !flag}}` opens a block that a line holding only
-//!   `{{/if}}` closes; blocks nest. Flags: `pg`, `otel` and the template names (`service`,
-//!   `worker`, `cli`, `cluster`).
+//!   `{{/if}}` closes; blocks nest. Flags: `pg`, `otel`, `jobs`, `console` and the template
+//!   names (`service`, `worker`, `cli`, `cluster`).
 
 use std::path::{Path, PathBuf};
 
@@ -39,19 +39,27 @@ pub struct Options {
   pub db: Db,
   /// Export traces, metrics and logs over OTLP (`service` only).
   pub otel: bool,
+  /// Background jobs: `src/jobs/` and a worker running in the service's process (`service`
+  /// only).
+  pub jobs: bool,
+  /// The operator console on a loopback port, behind an authorization guard (`service` only).
+  pub console: bool,
   /// An id_effect checkout to build against: adds a `[patch.crates-io]` section pointing every
   /// id_effect crate the project uses at `<path>/crates/<crate>`.
   pub local_workspace: Option<PathBuf>,
 }
 
 impl Options {
-  /// `name` from `template`, with no database, no OpenTelemetry and crates.io dependencies.
+  /// `name` from `template`, with no database, no OpenTelemetry, no jobs, no console and
+  /// crates.io dependencies.
   pub fn new(name: impl Into<String>, template: Template) -> Self {
     Self {
       name: name.into(),
       template,
       db: Db::None,
       otel: false,
+      jobs: false,
+      console: false,
       local_workspace: None,
     }
   }
@@ -65,6 +73,18 @@ impl Options {
   /// Turns OpenTelemetry export on or off.
   pub fn otel(mut self, on: bool) -> Self {
     self.otel = on;
+    self
+  }
+
+  /// Turns the background jobs (and their in-process worker) on or off.
+  pub fn jobs(mut self, on: bool) -> Self {
+    self.jobs = on;
+    self
+  }
+
+  /// Turns the operator console on or off.
+  pub fn console(mut self, on: bool) -> Self {
+    self.console = on;
     self
   }
 
@@ -100,6 +120,18 @@ impl Options {
           template,
         });
       }
+      if self.jobs {
+        return Err(NewError::Unsupported {
+          option: "--jobs",
+          template,
+        });
+      }
+      if self.console {
+        return Err(NewError::Unsupported {
+          option: "--console",
+          template,
+        });
+      }
     }
     Ok(())
   }
@@ -115,6 +147,12 @@ impl Options {
         }
         if self.otel {
           features.push("otel");
+        }
+        if self.jobs {
+          features.push("jobs");
+        }
+        if self.console {
+          features.push("console");
         }
       }
       Template::Cluster => features.push("cluster"),
@@ -141,6 +179,14 @@ impl Options {
         "sql-pg" | "migrate" => &["id_effect_sql"],
         "otel" => &["id_effect_opentelemetry", "id_effect_logger"],
         "cluster" => &["id_effect_node", "id_effect_process"],
+        "jobs" => &["id_effect_jobs", "id_effect_sql"],
+        "console" => &[
+          "id_effect_console",
+          "id_effect_authz",
+          "id_effect_logger",
+          "id_effect_node",
+          "id_effect_process",
+        ],
         _ => &[],
       });
     }
@@ -153,6 +199,8 @@ impl Options {
     match flag {
       "pg" => Some(self.db == Db::Pg),
       "otel" => Some(self.otel),
+      "jobs" => Some(self.jobs),
+      "console" => Some(self.console),
       _ => flag.parse::<Template>().ok().map(|t| t == self.template),
     }
   }
@@ -161,6 +209,8 @@ impl Options {
     match file.when {
       Condition::Always => true,
       Condition::Pg => self.db == Db::Pg,
+      Condition::Jobs => self.jobs,
+      Condition::Console => self.console,
     }
   }
 }
@@ -295,6 +345,16 @@ fn patch_section(workspace: &Path, crates: &[&str]) -> Result<String, NewError> 
 
 /// Applies the `{{#if}}` / `{{/if}}` line blocks.
 fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewError> {
+  keep_lines_with(text, &|flag| options.flag(flag), label)
+}
+
+/// [`keep_lines`] with the flags `lookup` knows (`None`: an unknown flag); `id-effect generate`
+/// renders its templates with flags of its own.
+pub(crate) fn keep_lines_with(
+  text: &str,
+  lookup: &dyn Fn(&str) -> Option<bool>,
+  label: &str,
+) -> Result<String, NewError> {
   let error = |reason: String| NewError::Template {
     file: label.to_owned(),
     reason,
@@ -311,9 +371,8 @@ fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewE
         Some(flag) => (true, flag),
         None => (false, cond.trim()),
       };
-      let value = options
-        .flag(flag)
-        .ok_or_else(|| error(format!("line {}: unknown flag `{flag}`", n + 1)))?;
+      let value =
+        lookup(flag).ok_or_else(|| error(format!("line {}: unknown flag `{flag}`", n + 1)))?;
       stack.push(value != negate);
     } else if trimmed == "{{/if}}" {
       stack.pop().ok_or_else(|| {
@@ -334,7 +393,11 @@ fn keep_lines(text: &str, options: &Options, label: &str) -> Result<String, NewE
 }
 
 /// Replaces the `{{word}}` placeholders.
-fn substitute(text: &str, vars: &[(&str, &str)], label: &str) -> Result<String, NewError> {
+pub(crate) fn substitute(
+  text: &str,
+  vars: &[(&str, &str)],
+  label: &str,
+) -> Result<String, NewError> {
   let mut out = String::with_capacity(text.len());
   let mut rest = text;
   while let Some(start) = rest.find("{{") {
@@ -404,6 +467,28 @@ mod tests {
       assert_eq!(base.kit_features(), ["web"]);
       let full = base.db(Db::Pg).otel(true);
       assert_eq!(full.kit_features(), ["web", "sql-pg", "migrate", "otel"]);
+      let ops = Options::new("app", Template::Service)
+        .jobs(true)
+        .console(true);
+      assert_eq!(ops.kit_features(), ["web", "jobs", "console"]);
+    }
+
+    #[test]
+    fn jobs_and_console_patch_the_crates_they_bring() {
+      let svc = Options::new("a", Template::Service)
+        .jobs(true)
+        .console(true)
+        .workspace_crates();
+      for c in [
+        "id_effect_jobs",
+        "id_effect_sql",
+        "id_effect_console",
+        "id_effect_authz",
+      ] {
+        assert!(svc.contains(&c), "{c}");
+      }
+      let plain = Options::new("a", Template::Service).workspace_crates();
+      assert!(!plain.contains(&"id_effect_jobs") && !plain.contains(&"id_effect_console"));
     }
 
     #[test]
@@ -457,6 +542,28 @@ mod tests {
           otel,
           NewError::Unsupported {
             option: "--otel",
+            ..
+          }
+        ));
+        let jobs = Options::new("a", template)
+          .jobs(true)
+          .validate()
+          .unwrap_err();
+        assert!(matches!(
+          jobs,
+          NewError::Unsupported {
+            option: "--jobs",
+            ..
+          }
+        ));
+        let console = Options::new("a", template)
+          .console(true)
+          .validate()
+          .unwrap_err();
+        assert!(matches!(
+          console,
+          NewError::Unsupported {
+            option: "--console",
             ..
           }
         ));

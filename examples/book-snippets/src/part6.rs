@@ -53,6 +53,10 @@ struct Ch2701Metrics;
 struct Ch2702Health;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch27-03-console.md")]
+struct Ch2703Console;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-00-data.md")]
 struct Ch2800Data;
 
@@ -73,6 +77,10 @@ struct Ch2803Repositories;
 struct Ch2804Redis;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch28-05-storage.md")]
+struct Ch2805Storage;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-00-api-boundaries.md")]
 struct Ch2900ApiBoundaries;
 
@@ -83,6 +91,14 @@ struct Ch3000Application;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch31-00-async-messaging.md")]
 struct Ch3100AsyncMessaging;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch31-01-jobs.md")]
+struct Ch3101Jobs;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch31-02-messaging.md")]
+struct Ch3102Messaging;
 
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch32-00-workflow-cluster.md")]

@@ -18,18 +18,21 @@ name = "id_effect_kit"
 [features]
 default = []
 # HTTP: `kit::axum` (id_effect_axum: typed routes, Problem+JSON, middleware) and its prelude
-# items. With `authz`, also its route guards; with `redis`, the Redis rate-limit store.
+# items. With `authz`, also its route guards; with `redis`, the Redis rate-limit store; with
+# `mail`, the mail preview routes.
 web = [
   "dep:id_effect_axum",
   "id_effect_authz?/axum",
   "id_effect_redis?/rate-limit",
+  "id_effect_mail?/preview",
 ]
 # OpenAPI 3.1 from the typed routes, `/openapi.json` and `/docs` (id_effect_axum `openapi`).
 openapi = ["web", "id_effect_axum/openapi"]
 # SQL without a driver: `kit::sql` (id_effect_sql: `SqlClient`, transactions, `FromRow`,
 # `TestSqlClient`). Every `sql-*`, `migrate` and `repository` feature turns it on. With `auth`,
-# `sql-pg` also adds id_effect_auth's `PgSessionStore`.
-sql = ["dep:id_effect_sql"]
+# `sql-pg` also adds id_effect_auth's `PgSessionStore`; with `otel`,
+# `kit::otel::instrumented_sql_layer` (a `db.query` span per statement).
+sql = ["dep:id_effect_sql", "id_effect_opentelemetry?/sql"]
 # PostgreSQL: `kit::sql` with its `pg` driver (`kit::sql::pg`).
 sql-pg = ["sql", "id_effect_sql/pg", "id_effect_auth?/pg"]
 # SQLite: `kit::sql` with its `sqlite` driver (bundled libsqlite3; `kit::sql::sqlite`).
@@ -68,6 +71,49 @@ authz = ["dep:id_effect_authz"]
 redis = ["dep:id_effect_redis"]
 # Configuration from HashiCorp Vault (`kit::config::vault`).
 config-vault = ["id_effect_config/vault"]
+# Background jobs: `kit::jobs` (id_effect_jobs: the PostgreSQL queue, `MemoryJobQueue`, workers,
+# retries, `enqueue_in` the caller's transaction). With `mail`, also `deliver_later`; with
+# `console`, the console's jobs panel.
+jobs = ["dep:id_effect_jobs", "id_effect_mail?/jobs", "id_effect_console?/jobs"]
+# Cron entries that enqueue jobs, run once per cluster (`CronLeader`, `enqueue_on_tick`), on top
+# of `jobs`.
+jobs-cron = ["jobs", "id_effect_jobs/cron"]
+# Messaging: `kit::messaging` (id_effect_messaging: `MessageBroker`, the in-memory broker, the
+# transactional outbox, inbox and relay).
+messaging = ["dep:id_effect_messaging"]
+# The `MessageBroker` on Redis Streams (`kit::redis::RedisStreamsBroker`), on top of `redis` and
+# `messaging`.
+redis-streams = ["redis", "messaging", "id_effect_redis/streams"]
+# Outgoing mail: `kit::mail` (id_effect_mail: SMTP, SendGrid, minijinja templates,
+# `TestMailbox`). With `jobs`, `deliver_later`; with `web`, the preview routes.
+mail = ["dep:id_effect_mail"]
+# Operator console: `kit::console` (id_effect_console: fibers, supervisors, metrics, health and
+# the log level, behind an authz guard). Implies `web` and `authz`; with `jobs`, the jobs panel.
+console = ["web", "authz", "dep:id_effect_console"]
+# Object storage: `kit::storage` (id_effect_storage: local file system and in-memory stores,
+# signed URLs).
+storage = ["dep:id_effect_storage"]
+# Amazon S3 and S3-compatible servers (`kit::storage::S3Store`), on top of `storage`.
+storage-s3 = ["storage", "id_effect_storage/s3"]
+# Outbound HTTP: `kit::platform` (id_effect_platform: the `HttpClient` capability, the reqwest
+# client, retries). With `otel`, also `kit::otel::TracedHttpClient` (and its `layer`); with `mail`, what
+# `SendGridMailer` sends through.
+http-client = ["dep:id_effect_platform", "id_effect_opentelemetry?/platform"]
+# Structured logging: `kit::logger` (id_effect_logger: `EffectLogger`, backends, the
+# `RedactionPolicy`).
+logger = ["dep:id_effect_logger"]
+# Event sourcing: `kit::events` (id_effect_events: event store, `SqlEventJournal`, projections,
+# snapshots, checkpointed subscriptions).
+events = ["dep:id_effect_events"]
+# User accounts on top of `auth` and `mail`: id_effect_auth's `Accounts`, `AccountRoutes` and
+# `PgAccountTokenStore` (PostgreSQL), and id_effect_mail's `AccountMails` (the sign-up,
+# verification and reset mail).
+auth-accounts = [
+  "auth",
+  "mail",
+  "id_effect_auth/accounts",
+  "id_effect_mail/auth",
+]
 # Test support: `kit::test` (id_effect_test: containers, isolated PostgreSQL databases,
 # fixtures, the in-process HTTP client, OpenAPI contract checks). For tests: enable it on a
 # `[dev-dependencies]` entry of id_effect_kit, not in `[dependencies]`. Not part of `full`.
@@ -77,6 +123,7 @@ test = [
   "id_effect_test/fixtures",
   "id_effect_test/http",
   "id_effect_test/contract",
+  "id_effect_test/fault",
 ]
 # Every battery a program ships with; builds without Docker or system libraries. `test` is
 # left out: it belongs to dev-dependencies.
@@ -97,20 +144,40 @@ full = [
   "authz",
   "redis",
   "config-vault",
+  "jobs",
+  "jobs-cron",
+  "messaging",
+  "redis-streams",
+  "mail",
+  "console",
+  "storage",
+  "storage-s3",
+  "http-client",
+  "logger",
+  "events",
+  "auth-accounts",
 ]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
-id_effect_cli = { path = "../id_effect_cli", version = "0.9.0", default-features = false }
-id_effect_config = { path = "../id_effect_config", version = "0.9.0" }
-id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
-id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", optional = true }
-id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.9.0", optional = true }
-id_effect_node = { path = "../id_effect_node", version = "0.9.0", optional = true }
-id_effect_auth = { path = "../id_effect_auth", version = "0.9.0", optional = true }
-id_effect_authz = { path = "../id_effect_authz", version = "0.9.0", optional = true }
-id_effect_redis = { path = "../id_effect_redis", version = "0.9.0", optional = true }
-id_effect_test = { path = "../id_effect_test", version = "0.9.0", optional = true }
+id_effect = { path = "../id_effect", version = "0.10.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "0.10.0", default-features = false }
+id_effect_config = { path = "../id_effect_config", version = "0.10.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.10.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.10.0", optional = true }
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.10.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.10.0", optional = true }
+id_effect_auth = { path = "../id_effect_auth", version = "0.10.0", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.10.0", optional = true }
+id_effect_redis = { path = "../id_effect_redis", version = "0.10.0", optional = true }
+id_effect_test = { path = "../id_effect_test", version = "0.10.0", optional = true }
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.10.0", optional = true }
+id_effect_messaging = { path = "../id_effect_messaging", version = "0.10.0", optional = true }
+id_effect_mail = { path = "../id_effect_mail", version = "0.10.0", optional = true }
+id_effect_console = { path = "../id_effect_console", version = "0.10.0", optional = true }
+id_effect_storage = { path = "../id_effect_storage", version = "0.10.0", optional = true }
+id_effect_events = { path = "../id_effect_events", version = "0.10.0", optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.10.0", optional = true }
+id_effect_logger = { path = "../id_effect_logger", version = "0.10.0", optional = true }
 
 [dev-dependencies]
 axum = "0.8"
@@ -121,6 +188,6 @@ tower = { version = "0.5.3", features = ["util"] }
 all-features = true
 
 [package.metadata.id_effect]
-# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Integration until a reference app
-# under examples/reference/ consumes it; then platform (ADR 0010 Amendment 4, ADR 0012).
-tier = "integration"
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform (ADR 0010 Amendment 4,
+# ADR 0012): the Ledger reference app under examples/reference/ depends on it.
+tier = "platform"

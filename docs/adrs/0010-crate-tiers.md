@@ -179,6 +179,44 @@ Names the tiers of the 0.9 platform-battery crates (ADR 0012 pre-lists them; rel
   from the semver job until its first publish. Audit logging is a feature of `id_effect_sql` and
   OpenAPI a feature of `id_effect_axum`, so neither adds a crate.
 
+#### Amendment 6 (2026-10-17, for 0.10)
+
+Names the tiers of the six new published crates of 0.10 (release spec 0.10.0 decisions D2 and
+D5), as rule 5 requires. All six are tier `integration`.
+
+- **`id_effect_jobs` is tier `integration`.** Background jobs: the Postgres `SKIP LOCKED` queue on
+  `id_effect_sql` (retries with backoff on the core `Schedule`, a `dead` state, unique keys, named
+  queues and priorities, `run_at`, enqueue inside an `SqlTransaction`), workers with per-queue
+  concurrency, and cron schedules run once per cluster through `id_effect_node`. It replaces the
+  labs crate of the same name; apalis, obix, `job` and rdkafka do not come with it.
+- **`id_effect_messaging` is tier `integration`.** The broker-agnostic `MessageBroker` (publish,
+  subscribe, ack), an in-memory broker, and the transactional outbox, inbox and relay on
+  `id_effect_sql`. It is separate from `id_effect_jobs` so that `id_effect_redis`, whose `streams`
+  feature implements the broker on Redis Streams, stays off `id_effect_node`.
+- **`id_effect_mail` is tier `integration`.** Outgoing mail: SMTP over lettre, the SendGrid v3 API
+  over the HTTP client, minijinja templates, and delivery through `id_effect_jobs`.
+- **`id_effect_console` is tier `integration`.** The operator console: live fibers from the core
+  `fiber-registry` feature, jobs and queues, behind `id_effect_authz` guards.
+- **`id_effect_storage` is tier `integration`.** Object storage: one store interface over the local
+  file system, in-memory and S3-compatible backends.
+- **`id_effect_events` is tier `integration`.** Event sourcing (event store, `SqlJournal` with
+  expected-version appends, projections, snapshots, checkpointed subscriptions), promoted from
+  `labs/` under rule 2 by leaf `r10-e7-4-promote`. Until that leaf lands it is still the labs crate.
+- They publish in dependency order (`scripts/validate-crate-packaging.sh --print-order`):
+  `id_effect_events`, `id_effect_messaging` and `id_effect_storage` after `id_effect_sql` and
+  `id_effect_platform`; `id_effect_jobs` after `id_effect_node`; `id_effect_mail` after
+  `id_effect_jobs` and `id_effect_auth`; `id_effect_console` after `id_effect_jobs` and
+  `id_effect_authz`. All six publish before `id_effect_kit` and `id_effect_tool`.
+- The Ledger reference app moves `id_effect_jobs`, `id_effect_messaging`, `id_effect_mail`,
+  `id_effect_console` and `id_effect_storage` to the `platform` tier of ADR 0012 (check P of
+  `scripts/tier-conformance.sh`), with no other change. `id_effect_events` stays `integration`
+  unless the Ledger uses it.
+- crates.io (checked 2026-10-17): `id_effect_messaging`, `id_effect_mail`, `id_effect_console` and
+  `id_effect_storage` are free. `id_effect_jobs` and `id_effect_events` are ours, last published at
+  0.4.0 before they moved to labs, so 0.10.0 is their next release. None of the six has a 0.9.0
+  baseline, so all are excluded from the semver job until their 0.10.0 publish. No placeholder
+  versions are published: each crate's first release carries its API.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 

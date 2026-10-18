@@ -31,14 +31,33 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
     }
   };
 
+  // One error per unsupported field (decode, decode-all and encode codegen would each report it).
+  let unsupported = fields
+    .iter()
+    .filter(|field| !matches!(field.ty, Type::Path(_)))
+    .map(|field| syn::Error::new_spanned(&field.ty, "unsupported derive(Schema) field type"))
+    .reduce(|mut all, e| {
+      all.combine(e);
+      all
+    });
+  if let Some(error) = unsupported {
+    return error.to_compile_error().into();
+  }
+
   let mut decode_fields = Vec::new();
+  let mut decode_all_fields = Vec::new();
   let mut encode_pairs = Vec::new();
   let mut field_idents = Vec::new();
+  // Decoded values are bound to prefixed locals, never to the field names: a field named like a
+  // generated local (`__id_effect_obj`, …) must not shadow it.
+  let mut field_locals = Vec::new();
   let mut ast_fields = Vec::new();
 
-  for field in fields {
+  for (index, field) in fields.iter().enumerate() {
     let field_ident = field.ident.as_ref().expect("named field");
     field_idents.push(field_ident.clone());
+    // By position, not name: `__id_effect_field___x` would trip `non_snake_case`.
+    let field_local = format_ident!("__id_effect_field_{}", index);
 
     let wire_name = field
       .attrs
@@ -53,19 +72,40 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
       .unwrap_or_else(|| field_ident.to_string());
 
     let wire_lit = LitStr::new(&wire_name, field_ident.span());
-    let decode_expr = schema_decode_expr(&field.ty, field_ident, &wire_lit);
+    let decode_expr = schema_decode_expr(&field.ty, &field_local, &wire_lit);
     decode_fields.push(decode_expr);
+    decode_all_fields.push(schema_decode_all_expr(&field.ty, &field_local, &wire_lit));
 
     let encode_expr = schema_encode_expr(&field.ty, field_ident, &wire_lit);
     encode_pairs.push(encode_expr);
 
     ast_fields.push(schema_field_ast(&field.ty, &wire_lit));
+    field_locals.push(field_local);
   }
 
   let struct_expr = if field_idents.is_empty() {
     quote! { #ident {} }
   } else {
-    quote! { #ident { #( #field_idents ),* } }
+    quote! { #ident { #( #field_idents: #field_locals ),* } }
+  };
+
+  // `decode_unknown_all`: decode every field, collect each one's issues, build only when all
+  // fields decoded (a field local is `None` exactly when it recorded an issue).
+  let decode_all_body = if field_idents.is_empty() {
+    quote! { Ok(#struct_expr) }
+  } else {
+    quote! {
+      let mut __id_effect_issues: ::std::vec::Vec<::id_effect::schema::ParseError> = ::std::vec::Vec::new();
+      #(
+        #decode_all_fields
+      )*
+      #(
+        let Some(#field_locals) = #field_locals else {
+          return Err(::id_effect::schema::ParseErrors::new(__id_effect_issues));
+        };
+      )*
+      Ok(#struct_expr)
+    }
   };
 
   quote! {
@@ -78,9 +118,9 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
         ()
       > {
         ::id_effect::schema::Schema::make(
-          |u: ::id_effect::schema::Unknown| {
-            let obj = match u {
-              ::id_effect::schema::Unknown::Object(map) => map,
+          |__id_effect_input: ::id_effect::schema::Unknown| {
+            let __id_effect_obj = match __id_effect_input {
+              ::id_effect::schema::Unknown::Object(__id_effect_map) => __id_effect_map,
               _ => return Err(::id_effect::schema::ParseError::new("", "expected object")),
             };
             #(
@@ -88,7 +128,7 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
             )*
             Ok(#struct_expr)
           },
-          |value: Self| {
+          |__id_effect_value: Self| {
             ::id_effect::schema::Unknown::Object(
               [
                 #( #encode_pairs ),*
@@ -97,9 +137,9 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
               .collect::<::std::collections::BTreeMap<_, _>>(),
             )
           },
-          |u| {
-            let obj = match u {
-              ::id_effect::schema::Unknown::Object(map) => map,
+          |__id_effect_input| {
+            let __id_effect_obj = match __id_effect_input {
+              ::id_effect::schema::Unknown::Object(__id_effect_map) => __id_effect_map,
               _ => return Err(::id_effect::schema::ParseError::new("", "expected object")),
             };
             #(
@@ -108,6 +148,17 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
             Ok(#struct_expr)
           },
         )
+        .with_decode_unknown_all(|__id_effect_input: &::id_effect::schema::Unknown| {
+          let __id_effect_obj = match __id_effect_input {
+            ::id_effect::schema::Unknown::Object(__id_effect_map) => __id_effect_map,
+            _ => {
+              return Err(::id_effect::schema::ParseErrors::one(
+                ::id_effect::schema::ParseError::new("", "expected object"),
+              ));
+            }
+          };
+          #decode_all_body
+        })
         .with_ast(::id_effect::schema::SchemaAst::new(
           ::id_effect::schema::SchemaKind::Struct(::std::vec![ #( #ast_fields ),* ]),
         ))
@@ -137,7 +188,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = ::id_effect::schema::string::<()>()
           .decode_unknown(
-            obj.get(#wire_lit)
+            __id_effect_obj.get(#wire_lit)
               .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
           )
           .map_err(|e| e.prefix(#wire_lit))?;
@@ -147,7 +198,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = ::id_effect::schema::bool_::<()>()
           .decode_unknown(
-            obj.get(#wire_lit)
+            __id_effect_obj.get(#wire_lit)
               .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
           )
           .map_err(|e| e.prefix(#wire_lit))?;
@@ -157,7 +208,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = ::id_effect::schema::i64::<()>()
           .decode_unknown(
-            obj.get(#wire_lit)
+            __id_effect_obj.get(#wire_lit)
               .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
           )
           .map_err(|e| e.prefix(#wire_lit))?;
@@ -168,7 +219,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = #i32_schema
         .decode_unknown(
-          obj.get(#wire_lit)
+          __id_effect_obj.get(#wire_lit)
             .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
         )
         .map_err(|e| e.prefix(#wire_lit))?;
@@ -178,7 +229,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = ::id_effect::schema::f64::<()>()
           .decode_unknown(
-            obj.get(#wire_lit)
+            __id_effect_obj.get(#wire_lit)
               .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
           )
           .map_err(|e| e.prefix(#wire_lit))?;
@@ -187,12 +238,12 @@ fn schema_decode_expr(
     if last_segment_is(path, "Option")
       && let Some(inner) = extract_generic(ty, 0)
     {
-      let inner_ident = format_ident!("__opt_{}", field_ident);
+      let inner_ident = format_ident!("{}_inner", field_ident);
       let inner_decode = schema_decode_from_unknown(inner, &inner_ident, wire_lit, true);
       return quote! {
-        let #field_ident = match obj.get(#wire_lit) {
+        let #field_ident = match __id_effect_obj.get(#wire_lit) {
           None | Some(::id_effect::schema::Unknown::Null) => None,
-          Some(raw) => Some({
+          Some(__id_effect_raw) => Some({
             #inner_decode
             #inner_ident
           }),
@@ -206,7 +257,7 @@ fn schema_decode_expr(
       return quote! {
         let #field_ident = ::id_effect::schema::array(#inner_schema)
           .decode_unknown(
-            obj.get(#wire_lit)
+            __id_effect_obj.get(#wire_lit)
               .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
           )
           .map_err(|e| e.prefix(#wire_lit))?;
@@ -216,13 +267,67 @@ fn schema_decode_expr(
     return quote! {
       let #field_ident = <#ty_tokens as ::id_effect::schema::HasSchema>::schema()
         .decode_unknown(
-          obj.get(#wire_lit)
+          __id_effect_obj.get(#wire_lit)
             .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?,
         )
         .map_err(|e| e.prefix(#wire_lit))?;
     };
   }
   syn::Error::new_spanned(ty, "unsupported derive(Schema) field type").to_compile_error()
+}
+
+/// One field of the accumulating decoder: binds `field_ident` to `Some(value)`, or to `None` after
+/// pushing the field's issues (prefixed with its wire name) or a missing-field issue onto
+/// `__id_effect_issues`. `Option<T>` fields accept a missing key or `null` as `None`.
+fn schema_decode_all_expr(
+  ty: &Type,
+  field_ident: &Ident,
+  wire_lit: &LitStr,
+) -> proc_macro2::TokenStream {
+  let Type::Path(path) = ty else {
+    // Unsupported; `derive_schema` reports the error before any codegen.
+    return quote! { let #field_ident = ::std::option::Option::<#ty>::None; };
+  };
+  let decode = |schema: proc_macro2::TokenStream, ok: proc_macro2::TokenStream| {
+    quote! {
+      match #schema.decode_unknown_all(__id_effect_raw) {
+        Ok(v) => Some(#ok),
+        Err(e) => {
+          __id_effect_issues.extend(e.prefix(#wire_lit).issues);
+          None
+        }
+      }
+    }
+  };
+  if last_segment_is(path, "Option")
+    && let Some(inner) = extract_generic(ty, 0)
+  {
+    let inner_decode = decode(schema_for_type(inner), quote! { Some(v) });
+    return quote! {
+      let #field_ident = match __id_effect_obj.get(#wire_lit) {
+        None | Some(::id_effect::schema::Unknown::Null) => Some(None),
+        Some(__id_effect_raw) => #inner_decode,
+      };
+    };
+  }
+  let schema = if last_segment_is(path, "Vec")
+    && let Some(inner) = extract_generic(ty, 0)
+  {
+    let inner_schema = schema_for_type(inner);
+    quote! { ::id_effect::schema::array(#inner_schema) }
+  } else {
+    schema_for_type(ty)
+  };
+  let field_decode = decode(schema, quote! { v });
+  quote! {
+    let #field_ident = match __id_effect_obj.get(#wire_lit) {
+      Some(__id_effect_raw) => #field_decode,
+      None => {
+        __id_effect_issues.push(::id_effect::schema::ParseError::new(#wire_lit, "missing field"));
+        None
+      }
+    };
+  }
 }
 
 fn schema_decode_from_unknown(
@@ -232,10 +337,10 @@ fn schema_decode_from_unknown(
   from_var: bool,
 ) -> proc_macro2::TokenStream {
   let src = if from_var {
-    quote! { raw }
+    quote! { __id_effect_raw }
   } else {
     quote! {
-      obj.get(#wire_lit)
+      __id_effect_obj.get(#wire_lit)
         .ok_or_else(|| ::id_effect::schema::ParseError::new(#wire_lit, "missing field"))?
     }
   };
@@ -293,27 +398,27 @@ fn schema_encode_expr(
   if let Type::Path(path) = ty {
     if path.path.is_ident("String") {
       return quote! {
-        (#wire_lit.to_string(), ::id_effect::schema::Unknown::String(value.#field_ident.clone()))
+        (#wire_lit.to_string(), ::id_effect::schema::Unknown::String(__id_effect_value.#field_ident.clone()))
       };
     }
     if path.path.is_ident("bool") {
       return quote! {
-        (#wire_lit.to_string(), ::id_effect::schema::Unknown::Bool(value.#field_ident))
+        (#wire_lit.to_string(), ::id_effect::schema::Unknown::Bool(__id_effect_value.#field_ident))
       };
     }
     if path.path.is_ident("i64") {
       return quote! {
-        (#wire_lit.to_string(), ::id_effect::schema::Unknown::I64(value.#field_ident))
+        (#wire_lit.to_string(), ::id_effect::schema::Unknown::I64(__id_effect_value.#field_ident))
       };
     }
     if path.path.is_ident("i32") {
       return quote! {
-        (#wire_lit.to_string(), ::id_effect::schema::Unknown::I64(value.#field_ident as i64))
+        (#wire_lit.to_string(), ::id_effect::schema::Unknown::I64(__id_effect_value.#field_ident as i64))
       };
     }
     if path.path.is_ident("f64") {
       return quote! {
-        (#wire_lit.to_string(), ::id_effect::schema::Unknown::F64(value.#field_ident))
+        (#wire_lit.to_string(), ::id_effect::schema::Unknown::F64(__id_effect_value.#field_ident))
       };
     }
     if last_segment_is(path, "Option")
@@ -330,7 +435,7 @@ fn schema_encode_expr(
     return quote! {
       (
         #wire_lit.to_string(),
-        <#ty_tokens as ::id_effect::schema::HasSchema>::schema().encode(value.#field_ident.clone()),
+        <#ty_tokens as ::id_effect::schema::HasSchema>::schema().encode(__id_effect_value.#field_ident.clone()),
       )
     };
   }
@@ -347,7 +452,7 @@ fn schema_encode_option(
       return quote! {
         (
           #wire_lit.to_string(),
-          match &value.#field_ident {
+          match &__id_effect_value.#field_ident {
             None => ::id_effect::schema::Unknown::Null,
             Some(v) => ::id_effect::schema::Unknown::String(v.clone()),
           },
@@ -358,7 +463,7 @@ fn schema_encode_option(
       return quote! {
         (
           #wire_lit.to_string(),
-          match value.#field_ident {
+          match __id_effect_value.#field_ident {
             None => ::id_effect::schema::Unknown::Null,
             Some(v) => ::id_effect::schema::Unknown::I64(v),
           },
@@ -369,7 +474,7 @@ fn schema_encode_option(
       return quote! {
         (
           #wire_lit.to_string(),
-          match value.#field_ident {
+          match __id_effect_value.#field_ident {
             None => ::id_effect::schema::Unknown::Null,
             Some(v) => ::id_effect::schema::Unknown::I64(::std::primitive::i64::from(v)),
           },
@@ -380,7 +485,7 @@ fn schema_encode_option(
       return quote! {
         (
           #wire_lit.to_string(),
-          match value.#field_ident {
+          match __id_effect_value.#field_ident {
             None => ::id_effect::schema::Unknown::Null,
             Some(v) => ::id_effect::schema::Unknown::Bool(v),
           },
@@ -391,7 +496,7 @@ fn schema_encode_option(
       return quote! {
         (
           #wire_lit.to_string(),
-          match value.#field_ident {
+          match __id_effect_value.#field_ident {
             None => ::id_effect::schema::Unknown::Null,
             Some(v) => ::id_effect::schema::Unknown::F64(v),
           },
@@ -403,7 +508,7 @@ fn schema_encode_option(
   quote! {
     (
       #wire_lit.to_string(),
-      match &value.#field_ident {
+      match &__id_effect_value.#field_ident {
         None => ::id_effect::schema::Unknown::Null,
         Some(v) => <#inner_tokens as ::id_effect::schema::HasSchema>::schema().encode(v.clone()),
       },
@@ -459,7 +564,7 @@ fn schema_field_ast(ty: &Type, wire_lit: &LitStr) -> proc_macro2::TokenStream {
 /// via `$defs` / `$ref`.
 fn schema_ast_for_type(ty: &Type) -> proc_macro2::TokenStream {
   let Type::Path(path) = ty else {
-    // Unsupported; decode/encode codegen already reports the error.
+    // Unsupported; `derive_schema` reports the error before any codegen.
     return quote! { ::id_effect::schema::SchemaAst::any() };
   };
   if path.path.is_ident("i32") {
@@ -545,7 +650,7 @@ fn schema_encode_vec(
         (
           #wire_lit.to_string(),
           ::id_effect::schema::Unknown::Array(
-            value.#field_ident.iter().cloned().map(::id_effect::schema::Unknown::String).collect(),
+            __id_effect_value.#field_ident.iter().cloned().map(::id_effect::schema::Unknown::String).collect(),
           ),
         )
       };
@@ -555,7 +660,7 @@ fn schema_encode_vec(
         (
           #wire_lit.to_string(),
           ::id_effect::schema::Unknown::Array(
-            value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::I64).collect(),
+            __id_effect_value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::I64).collect(),
           ),
         )
       };
@@ -565,7 +670,7 @@ fn schema_encode_vec(
         (
           #wire_lit.to_string(),
           ::id_effect::schema::Unknown::Array(
-            value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::Bool).collect(),
+            __id_effect_value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::Bool).collect(),
           ),
         )
       };
@@ -575,7 +680,7 @@ fn schema_encode_vec(
         (
           #wire_lit.to_string(),
           ::id_effect::schema::Unknown::Array(
-            value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::F64).collect(),
+            __id_effect_value.#field_ident.iter().copied().map(::id_effect::schema::Unknown::F64).collect(),
           ),
         )
       };
@@ -585,7 +690,7 @@ fn schema_encode_vec(
         (
           #wire_lit.to_string(),
           ::id_effect::schema::Unknown::Array(
-            value
+            __id_effect_value
               .#field_ident
               .iter()
               .map(|n| ::id_effect::schema::Unknown::I64(::std::primitive::i64::from(*n)))
@@ -600,7 +705,7 @@ fn schema_encode_vec(
     (
       #wire_lit.to_string(),
       ::id_effect::schema::Unknown::Array(
-        value
+        __id_effect_value
           .#field_ident
           .iter()
           .cloned()

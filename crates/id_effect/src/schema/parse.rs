@@ -171,8 +171,12 @@ impl<A, I, E> Schema<A, I, E> {
     self.map_annotations(|a| a.deprecated = true)
   }
 
-  /// Replace the accumulating decoder (combinators that walk several children).
-  pub(crate) fn with_decode_unknown_all(
+  /// Replace the accumulating decoder behind [`Schema::decode_unknown_all`].
+  ///
+  /// [`Schema::make`] derives it from `decode_unknown` (at most one issue); schemas that walk
+  /// several children (combinators, `#[derive(Schema)]`) install one that keeps going. Keep it
+  /// consistent with `decode_unknown`: same success value, every issue it would report.
+  pub fn with_decode_unknown_all(
     mut self,
     f: impl Fn(&Unknown) -> Result<A, ParseErrors> + Send + Sync + 'static,
   ) -> Self {

@@ -79,3 +79,7 @@ struct Ch1504PropertyTesting;
 #[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part4/ch15-06-testing-property.md")]
 struct Ch1506TestingProperty;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part4/ch15-09-fault-injection.md")]
+struct Ch1509FaultInjection;

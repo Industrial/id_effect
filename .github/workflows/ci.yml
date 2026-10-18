@@ -31,13 +31,13 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/scorecard.sh --validate --self-test
-          for v in 0.6.0 0.7.0 0.8.0 0.9.0; do
+          for v in 0.6.0 0.7.0 0.8.0 0.9.0 0.10.0; do
             bash scripts/scorecard.sh --json "$v" | diff - "docs/scorecard/results/v$v.json"
           done
-          bash scripts/scorecard.sh --diff 0.8.0 0.9.0 --compare-targets 0.9.0
+          bash scripts/scorecard.sh --diff 0.9.0 0.10.0 --compare-targets 0.10.0
           bash scripts/scorecard.sh --method 1 --version 0.7.0
-          bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --report 0.9.0 --html --method-compare
-          git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/REPORT-0.9.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
+          bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --report 0.9.0 --report 0.10.0 --html --method-compare
+          git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/REPORT-0.9.0.md docs/scorecard/REPORT-0.10.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
       - name: Install Nix (formatters for treefmt)
         uses: cachix/install-nix-action@v31
         with:
@@ -167,7 +167,10 @@ jobs:
           CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
         run: cargo check --workspace --all-targets
   # ──────────────────────────────────────────────────────────────────────────
-  # Postgres integration: live tests for id_effect_sql `pg` and id_effect_node `pg`.
+  # Postgres integration: every live test that reads DATABASE_URL (id_effect_sql `pg`,
+  # id_effect_node `pg`, id_effect_auth `pg` / `accounts`, id_effect_jobs (+ `cron`),
+  # id_effect_messaging, id_effect_events `pg`, id_effect_mail `jobs`, id_effect_tool migrate,
+  # http_showcase). Tests sharing the one database use a schema or database of their own.
   # ID_EFFECT_REQUIRE_PG=1 turns a missing/unreachable database into a failure
   # (locally those tests print SKIP instead of silently passing).
   # ──────────────────────────────────────────────────────────────────────────
@@ -200,7 +203,7 @@ jobs:
           tool: cargo-nextest
       - name: Live Postgres tests
         run: >-
-          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg
+          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging -p id_effect_events -p id_effect_mail --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg,id_effect_auth/accounts,id_effect_jobs/cron,id_effect_events/pg,id_effect_mail/jobs
   # ──────────────────────────────────────────────────────────────────────────
   # Container integration: tests that start real services with testcontainers
   # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).
@@ -226,7 +229,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Container tests
-        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis --all-features
+        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis -p id_effect_mail -p id_effect_storage --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
   # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
@@ -249,6 +252,7 @@ jobs:
           --health-cmd "pg_isready -U ledger" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       ID_EFFECT_REQUIRE_DOCKER: '1'
+      ID_EFFECT_REQUIRE_PG: '1'
       DATABASE_URL: postgres://ledger:ledger@localhost:5432/ledger
     steps:
       - uses: actions/checkout@v7
@@ -260,6 +264,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: reference-ledger
+      # The tests start their own containers (id_effect_test, testcontainers): pull the 0.10
+      # services' pinned images up front so no test times out on a cold pull. Mailpit (mail),
+      # Redis (cache, rate limits, Redis Streams) and SeaweedFS (the statements bucket); the
+      # tags are id_effect_test's MAILPIT_TAG and S3_TAG.
+      - name: Pull the service images (Mailpit, Redis, S3)
+        run: |
+          docker pull -q axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+          docker pull -q redis:7-alpine
+          docker pull -q chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.87.27
         with:
@@ -274,7 +287,7 @@ jobs:
           cargo run -q -p id_effect_tool --bin id-effect -- migrate run
           cargo run -q -p id_effect_tool --bin id-effect -- migrate check
           cargo run -q -p id_effect_tool --bin id-effect -- migrate status
-      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC denials, Vault, Redis, replica)
+      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console)
         run: cargo nextest run -p ledger
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
@@ -286,7 +299,7 @@ jobs:
     needs: [moon-ci]
     steps:
       - uses: actions/checkout@v7
-      - name: Install system deps (OpenSSL for rdkafka)
+      - name: Install system deps (OpenSSL and CMake for the labs crates' native deps)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config cmake
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -298,12 +311,8 @@ jobs:
         uses: taiki-e/install-action@v2.87.27
         with:
           tool: cargo-nextest
-      # id_effect_jobs runs without `obix`: the `job` crate's sqlx macros are written for chrono and
-      # fail once id_effect_sql/pg (a dev-dependency) turns on sqlx `time`, which sqlx prefers.
       - name: Test labs workspace
-        run: |
-          cargo nextest run --manifest-path labs/Cargo.toml --workspace --exclude id_effect_jobs --all-features
-          cargo nextest run --manifest-path labs/Cargo.toml -p id_effect_jobs --features memory,apalis,kafka
+        run: cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Minimal-versions lock resolution (workspace-wide)
   # ──────────────────────────────────────────────────────────────────────────
@@ -330,6 +339,10 @@ jobs:
           cargo update -p serde_repr --precise 0.1.20
           # openidconnect 4 (id_effect_auth) allows thiserror 1.0.20, too old for its error derives
           cargo update -p thiserror@1.0.20 --precise 1.0.69
+          # url / idna pull ICU crates whose zerovec resolves next to yoke 0.6 (no Yokeable impls)
+          cargo update -p yoke@0.6.0 --precise 0.7.5
+          # crc-fast 1.6 (object_store, id_effect_storage) needs crc's CRC_64_REDIS (crc >= 3.3)
+          cargo update -p crc --precise 3.3.0
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
       - name: cargo check (minimal versions, stable)
@@ -400,6 +413,22 @@ jobs:
           tool: cargo-deny
       - name: cargo deny check
         run: cargo deny check
+      # D3 (0.10): id_effect_sql converts date-times itself, so neither sqlx's `time` feature nor
+      # the `time` crate may come in through id_effect_sql / id_effect_kit (with both `time` and
+      # `chrono`, sqlx's macros pick `time` for the application's own queries).
+      - name: No sqlx `time` from id_effect_sql / id_effect_kit
+        run: |
+          kit=$(cargo tree --color never -p id_effect_kit --all-features -e features -i sqlx)
+          if grep -F 'feature "time"' <<<"$kit"; then
+            echo "::error::sqlx's \`time\` feature is enabled under id_effect_kit --all-features"
+            exit 1
+          fi
+          sql=$(cargo tree --color never -p id_effect_sql --all-features -e normal -i time)
+          if grep -E '^time v' <<<"$sql"; then
+            echo "$sql"
+            echo "::error::id_effect_sql --all-features depends on the \`time\` crate"
+            exit 1
+          fi
   # ──────────────────────────────────────────────────────────────────────────
   # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
   # REPORT-ONLY while a breaking 0.x release is in development: 0.10 may carry intentional
@@ -431,7 +460,7 @@ jobs:
         # A crate new in a release has no crates.io baseline yet: --exclude it until published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
+          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE" --exclude id_effect_jobs --exclude id_effect_messaging --exclude id_effect_mail --exclude id_effect_console --exclude id_effect_storage
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────

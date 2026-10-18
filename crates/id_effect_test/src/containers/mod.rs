@@ -1,5 +1,6 @@
-//! Effect-native containers (testcontainers): PostgreSQL, MySQL, Redis, Keycloak, Vault and any
-//! image through [`ContainerSpec`], started as effect resources.
+//! Effect-native containers (testcontainers): PostgreSQL, MySQL, Redis, Keycloak, Vault, an
+//! S3-compatible store, a Mailpit SMTP server and any image through [`ContainerSpec`], started as
+//! effect resources.
 //!
 //! # Per-test containers
 //!
@@ -36,6 +37,11 @@
 //! not ready in time is removed and the start fails with [`ContainerError::NotReady`]; one that
 //! exits or turns unhealthy first, with [`ContainerError::Unready`].
 //!
+//! A start that loses the race for a random host port (`address already in use`, common under
+//! rootless Docker, or `port is already allocated`) is removed and retried as a new container
+//! with fresh host ports, a few times with a short backoff, each retry logged to stderr; any
+//! other start error fails at once with [`ContainerError::Start`].
+//!
 //! # Docker
 //!
 //! Docker is found as testcontainers finds it (`DOCKER_HOST`, `~/.testcontainers.properties`,
@@ -53,10 +59,12 @@ mod docker;
 mod error;
 mod image;
 mod keycloak;
+mod mailpit;
 mod mysql;
 mod postgres;
 mod reaper;
 mod redis;
+mod s3;
 mod shared;
 mod spec;
 mod vault;
@@ -67,11 +75,15 @@ pub use docker::{REQUIRE_DOCKER_ENV, container_exists, docker_available, require
 pub use error::ContainerError;
 pub use image::ContainerImage;
 pub use keycloak::{KEYCLOAK_PORT, KEYCLOAK_READY_TIMEOUT, Keycloak, KeycloakContainer};
+pub use mailpit::{
+  MAILPIT_API_PORT, MAILPIT_IMAGE, MAILPIT_SMTP_PORT, MAILPIT_TAG, Mailpit, MailpitContainer,
+};
 pub use mysql::{MYSQL_PORT, MySql, MySqlContainer};
 #[cfg(feature = "sql")]
 pub use postgres::PostgresSqlEnv;
 pub use postgres::{POSTGRES_PORT, Postgres, PostgresContainer};
 pub use redis::{REDIS_PORT, Redis, RedisContainer};
+pub use s3::{S3, S3_IMAGE, S3_PORT, S3_TAG, S3Container};
 pub use shared::Shared;
 pub use spec::{ContainerSpec, DEFAULT_READY_TIMEOUT};
 pub use vault::{VAULT_PORT, Vault, VaultContainer};

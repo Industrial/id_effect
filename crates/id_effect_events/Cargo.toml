@@ -1,0 +1,60 @@
+[package]
+name = "id_effect_events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Event sourcing, projections, and CQRS boundaries for id_effect programs"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["event-sourcing", "cqrs", "projection", "event-store"]
+categories = ["data-structures", "database"]
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[features]
+default = []
+# The PostgreSQL / SQLite drivers of `id_effect_sql`. `SqlEventJournal` works over any
+# `SqlClient`; these features only bring a driver (tests, examples, apps without their own).
+pg = ["id_effect_sql/pg"]
+sqlite = ["id_effect_sql/sqlite"]
+
+[dependencies]
+id_effect = { path = "../id_effect", version = "0.10.0", features = [
+  "schema-serde",
+] }
+id_effect_sql = { path = "../id_effect_sql", version = "0.10.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+id_effect_tokio = { path = "../id_effect_tokio" }
+tempfile = "3"
+tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
+
+[[test]]
+name = "sql_journal"
+required-features = ["sqlite"]
+
+[[test]]
+name = "pg_events"
+required-features = ["pg"]
+
+[[example]]
+name = "010_account"
+required-features = ["sqlite"]
+
+[[example]]
+name = "020_sqlite_journal"
+required-features = ["sqlite"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh (ADR 0010 Amendment 6).
+tier = "integration"

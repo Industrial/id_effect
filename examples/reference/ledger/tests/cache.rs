@@ -101,9 +101,9 @@ async fn the_login_limit_holds_across_instances() {
       .expect("the app builds");
       let second = TestClient::new(second);
       let body = json!({"username": "nobody", "password": "wrong password"});
+      // Both instances share the cookie key, so the browser's CSRF cookie holds on either.
       let from = |client: &TestClient<axum::Router>| {
-        client
-          .post_json("/auth/login", &body)
+        l.browser(client.post_json("/auth/login", &body), None)
           .header("x-forwarded-for", "198.51.100.9")
       };
       for _ in 0..3 {

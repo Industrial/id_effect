@@ -50,15 +50,9 @@ async fn password_login_starts_a_postgres_session() {
 
       // A second login with the same password; then logout ends that session only.
       let again = l.login("ada", None).await;
-      l.send(l.client.post("/auth/logout").header(
-        "cookie",
-        match &again {
-          As::Session(c) => c,
-          _ => unreachable!(),
-        },
-      ))
-      .await
-      .assert_status(StatusCode::NO_CONTENT);
+      l.send(l.by(&again, l.client.post("/auth/logout")))
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
       l.get("/me", &again)
         .await
         .assert_status(StatusCode::UNAUTHORIZED);
@@ -243,7 +237,7 @@ async fn logins_are_rate_limited() {
       // A burst of 3 attempts per client; the client is the address the reverse proxy reports.
       let body = json!({"username": "nobody", "password": "wrong password"});
       let attempt = |client: Option<&'static str>| {
-        let request = l.client.post_json("/auth/login", &body);
+        let request = l.browser(l.client.post_json("/auth/login", &body), None);
         l.send(match client {
           Some(client) => request.header("x-forwarded-for", client),
           None => request,

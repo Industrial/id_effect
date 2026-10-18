@@ -6,14 +6,18 @@ use id_effect::SpanHook;
 use opentelemetry::global;
 use opentelemetry::metrics::Meter;
 use opentelemetry::metrics::MeterProvider as _;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLoggerProvider};
 use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use tracing_subscriber::Registry;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::config::OtelConfig;
 use crate::error::OtelError;
 use crate::logs_bridge::{
-  sdk_logger_provider_with_in_memory_exporter, try_init_global_tracing_with_otel_logs,
+  sdk_logger_provider_with_in_memory_exporter, tracing_logs_layer_for_provider,
 };
 use crate::metrics_bridge::{
   MetricsBridge, bridge_global_metrics, sdk_meter_provider_with_in_memory_exporter,
@@ -21,7 +25,8 @@ use crate::metrics_bridge::{
 use crate::propagation::install_w3c_propagators;
 use crate::span_bridge::OtelSpanHook;
 use crate::subscriber::{
-  register_global_tracer_provider, sdk_tracer_provider_with_in_memory_exporter,
+  EnvFilterHandle, register_global_tracer_provider, reloadable_env_filter,
+  sdk_tracer_provider_with_in_memory_exporter,
 };
 
 #[cfg(feature = "otlp")]
@@ -118,13 +123,15 @@ impl From<&OtelConfig> for OtelStarterConfig {
 /// before shutdown and [`shutdown`](Self::shutdown) on graceful exit.
 ///
 /// It keeps the [`MetricsBridge`] from `MetricRegistry::global()` to the meter provider alive,
-/// and hands out the span hook ([`span_hook`](Self::span_hook)) to install around the program.
+/// hands out the span hook ([`span_hook`](Self::span_hook)) to install around the program, and
+/// the handle that changes the subscriber's `EnvFilter` at runtime ([`env_filter`](Self::env_filter)).
 #[derive(Clone)]
 pub struct OtelStarterGuard {
   providers: OtelProviders,
   service_name: String,
   meter_scope: &'static str,
   metrics: MetricsBridge,
+  env_filter: EnvFilterHandle,
 }
 
 impl OtelStarterGuard {
@@ -154,6 +161,13 @@ impl OtelStarterGuard {
     OtelSpanHook::for_provider(&self.providers.tracer, self.service_name.clone()).into_hook()
   }
 
+  /// The reload handle of the installed subscriber's `EnvFilter` (the configured
+  /// [`OtelStarterConfig::env_filter`], or every level when none was set): reloading it changes
+  /// what is traced and logged without a restart (an operator console's log-level control).
+  pub fn env_filter(&self) -> &EnvFilterHandle {
+    &self.env_filter
+  }
+
   /// Flushes pending trace, metric, and log batches.
   pub fn force_flush(&self) {
     let _ = self.providers.tracer.force_flush();
@@ -180,6 +194,10 @@ pub fn install_from_config(config: OtelConfig) -> Result<OtelStarterGuard, OtelE
 /// Installs global tracer + meter providers, W3C propagation, and a tracing subscriber with OTEL trace + log layers,
 /// then bridges `MetricRegistry::global()` to the meter provider (kept alive by the guard).
 ///
+/// The subscriber's `EnvFilter` sits behind a reload layer ([`OtelStarterGuard::env_filter`]);
+/// without [`OtelStarterConfig::env_filter`] (or with one that does not parse) it enables every
+/// level.
+///
 /// Spans are exported once the program runs under [`OtelStarterGuard::span_hook`]
 /// (`effect.with_span_hook(guard.span_hook())`).
 pub fn install_otel_starter(
@@ -189,18 +207,23 @@ pub fn install_otel_starter(
   register_global_tracer_provider(&providers.tracer);
   global::set_meter_provider(providers.meter.clone());
   install_w3c_propagators();
-  try_init_global_tracing_with_otel_logs(
-    &providers.tracer,
-    &providers.logger,
-    config.with_fmt_layer,
-    config.env_filter.as_deref(),
-  )?;
+  let (filter, env_filter) = reloadable_env_filter(config.env_filter.as_deref());
+  Registry::default()
+    .with(filter)
+    .with(
+      tracing_opentelemetry::layer()
+        .with_tracer(providers.tracer.tracer("id_effect_opentelemetry")),
+    )
+    .with(tracing_logs_layer_for_provider(&providers.logger))
+    .with(config.with_fmt_layer.then(tracing_subscriber::fmt::layer))
+    .try_init()?;
   let meter_scope = leak_meter_scope(config.service_name.clone());
   Ok(OtelStarterGuard {
     providers: providers.clone(),
     service_name: config.service_name.clone(),
     meter_scope,
     metrics: bridge_global_metrics(providers.meter.meter(meter_scope)),
+    env_filter,
   })
 }
 

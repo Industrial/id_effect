@@ -7,10 +7,12 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use id_effect::Never;
 use id_effect::{
-  Effect, HCons, HList, HNil, Layer, Selector, Stream, fail, hlist, need, succeed, suspend, sync,
+  Effect, HCons, HList, HNil, Layer, Selector, Stream, fail, hlist, need, sleep, succeed, suspend,
+  sync,
 };
 
 use crate::error::SqlError;
@@ -113,6 +115,49 @@ pub trait SqlClient: Send + Sync + 'static {
   }
 }
 
+/// A shared or boxed client is a client: every method forwards to the pointee, its overrides
+/// (`begin_with`, `query_stream`, `close`) included, so a wrapper generic over `C: SqlClient`
+/// (such as [`InstrumentedSqlClient`](crate::metrics::InstrumentedSqlClient)) wraps an
+/// `Arc<dyn SqlClient>` directly.
+macro_rules! forward_sql_client {
+  ($($pointer:ident),+) => {$(
+    impl<T: SqlClient + ?Sized> SqlClient for $pointer<T> {
+      fn connect(&self) -> Effect<(), SqlError> {
+        (**self).connect()
+      }
+
+      fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
+        (**self).query(sql, params)
+      }
+
+      fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
+        (**self).execute(sql, params)
+      }
+
+      fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+        (**self).begin()
+      }
+
+      fn begin_with(
+        &self,
+        options: TransactionOptions,
+      ) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+        (**self).begin_with(options)
+      }
+
+      fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+        (**self).query_stream(sql, params)
+      }
+
+      fn close(&self) -> Effect<(), Never> {
+        (**self).close()
+      }
+    }
+  )+};
+}
+
+forward_sql_client!(Arc, Box);
+
 /// A [`SqlClientEnv`] wrapping `client` (for `.provide_all(..)` in tests and entry points).
 #[inline]
 pub fn sql_client_env(client: impl SqlClient) -> SqlClientEnv {
@@ -183,6 +228,8 @@ pub(crate) struct TestSqlClientState {
   pub(crate) execute_rows: HashMap<String, u64>,
   pub(crate) fail_connect: bool,
   pub(crate) fail_query: Option<String>,
+  /// Latency of every [`SqlClient::query`] (a sleep on the executor clock).
+  pub(crate) query_delay: Option<Duration>,
   pub(crate) fail_commit: bool,
   pub(crate) open_transactions: usize,
   pub(crate) commits: usize,
@@ -263,6 +310,14 @@ impl TestSqlClient {
   #[inline]
   pub fn fail_queries(&self, message: impl Into<String>) {
     self.state().fail_query = Some(message.into());
+  }
+
+  /// Delay every query by `delay` before it runs (latency injection): a [`sleep`] on the
+  /// fiber's executor clock, so virtual time on a
+  /// [`TestExecutor`](id_effect::TestExecutor). `Duration::ZERO` removes the delay.
+  #[inline]
+  pub fn delay_queries(&self, delay: Duration) {
+    self.state().query_delay = (!delay.is_zero()).then_some(delay);
   }
 
   /// Force every commit to fail (the transaction is then rolled back).
@@ -347,12 +402,19 @@ impl SqlClient for TestSqlClient {
   fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
     let (inner, sql, params) = (Arc::clone(&self.inner), sql.to_string(), params.to_vec());
     suspend(move || {
-      let mut state = lock(&inner);
-      let out = state.run_query(&sql);
-      if out.is_ok() {
-        state.queries.push((sql, params));
+      let delay = lock(&inner).query_delay;
+      let run = suspend(move || {
+        let mut state = lock(&inner);
+        let out = state.run_query(&sql);
+        if out.is_ok() {
+          state.queries.push((sql, params));
+        }
+        ready(out)
+      });
+      match delay {
+        Some(d) => sleep(d).then(run),
+        None => run,
       }
-      ready(out)
     })
   }
 
@@ -399,9 +461,9 @@ impl SqlClient for TestSqlClient {
 
 #[cfg(test)]
 pub(crate) mod tests {
-  use std::sync::Arc;
+  use std::sync::{Arc, Mutex};
 
-  use id_effect::{Cause, Exit};
+  use id_effect::{Cause, Exit, Never, Stream};
   use id_effect::{Effect, fail, need, sync};
 
   use super::{
@@ -410,6 +472,7 @@ pub(crate) mod tests {
   };
   use crate::error::SqlError;
   use crate::params;
+  use crate::transaction::{SqlTransaction, TransactionOptions};
   use crate::value::SqlValue;
 
   /// Runs `eff` with `Effect::block_on`; the typed outcome as a `Result` (panics on any other cause).
@@ -485,6 +548,30 @@ pub(crate) mod tests {
       Err(SqlError::QueryFailed { .. })
     ));
     assert!(test.recorded_queries().is_empty());
+  }
+
+  #[test]
+  fn delay_queries_sleeps_on_the_executor_clock() {
+    use std::time::Duration;
+
+    use id_effect::TestExecutor;
+
+    let test = TestSqlClient::new();
+    test.script_query("SELECT 1", vec![SqlRow::default()]);
+    run(test.connect()).unwrap();
+    test.delay_queries(Duration::from_secs(30));
+    let exec = TestExecutor::new();
+    let h = test
+      .query("SELECT 1", &[])
+      .fork_root(Arc::new(exec.clone()));
+    exec.advance(Duration::from_secs(30) - Duration::from_nanos(1));
+    assert!(!h.is_done());
+    assert!(test.recorded_queries().is_empty(), "runs after the delay");
+    exec.advance(Duration::from_nanos(1));
+    assert!(h.is_done());
+    assert_eq!(test.recorded_queries().len(), 1);
+    test.delay_queries(Duration::ZERO);
+    assert_eq!(run(test.query("SELECT 1", &[])).unwrap().len(), 1);
   }
 
   #[test]
@@ -567,5 +654,108 @@ pub(crate) mod tests {
     run(body.provide_layer(provide_sql_client(test.clone()))).unwrap();
     assert!(!test.is_connected());
     assert_eq!(test.closes(), 0);
+  }
+
+  /// A client recording which [`SqlClient`] method ran, the defaulted ones (`begin_with`,
+  /// `query_stream`, `close`) included, over a [`TestSqlClient`]. `begin_with` skips the
+  /// default's `SET TRANSACTION`, as a driver's own BEGIN does.
+  #[derive(Clone, Default)]
+  pub(crate) struct Recording {
+    pub(crate) inner: TestSqlClient,
+    calls: Arc<Mutex<Vec<&'static str>>>,
+  }
+
+  impl Recording {
+    /// Over a connected [`TestSqlClient`] with two rows scripted for `SELECT n`.
+    pub(crate) fn connected() -> Self {
+      let r = Self::default();
+      run(r.inner.connect()).unwrap();
+      let row = |n: i64| SqlRow::from_pairs([("n", n)]);
+      r.inner.script_query("SELECT n", vec![row(1), row(2)]);
+      r
+    }
+
+    pub(crate) fn calls(&self) -> Vec<&'static str> {
+      self.calls.lock().unwrap().clone()
+    }
+
+    fn record(&self, method: &'static str) {
+      self.calls.lock().unwrap().push(method);
+    }
+  }
+
+  impl SqlClient for Recording {
+    fn connect(&self) -> Effect<(), SqlError> {
+      self.record("connect");
+      self.inner.connect()
+    }
+
+    fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError> {
+      self.record("query");
+      self.inner.query(sql, params)
+    }
+
+    fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError> {
+      self.record("execute");
+      self.inner.execute(sql, params)
+    }
+
+    fn begin(&self) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+      self.record("begin");
+      self.inner.begin()
+    }
+
+    fn begin_with(&self, _: TransactionOptions) -> Effect<Arc<dyn SqlTransaction>, SqlError> {
+      self.record("begin_with");
+      self.inner.begin()
+    }
+
+    fn query_stream(&self, sql: &str, params: &[SqlValue]) -> Stream<SqlRow, SqlError> {
+      self.record("query_stream");
+      self.inner.query_stream(sql, params)
+    }
+
+    fn close(&self) -> Effect<(), Never> {
+      self.record("close");
+      self.inner.close()
+    }
+  }
+
+  /// Runs every [`SqlClient`] method of `client` once.
+  fn every_method(client: impl SqlClient) {
+    run(client.connect()).unwrap();
+    run(client.query("SELECT 1", &[])).unwrap();
+    run(client.execute("DELETE FROM t", &[])).unwrap();
+    run(run(client.begin()).unwrap().commit()).unwrap();
+    let options = TransactionOptions::default();
+    run(run(client.begin_with(options)).unwrap().commit()).unwrap();
+    let rows = run(client.query_stream("SELECT n", &[]).run_collect()).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(matches!(client.close().block_on(), Exit::Success(())));
+  }
+
+  #[test]
+  fn shared_and_boxed_clients_forward_every_method() {
+    const ALL: [&str; 7] = [
+      "connect",
+      "query",
+      "execute",
+      "begin",
+      "begin_with",
+      "query_stream",
+      "close",
+    ];
+    let shared = Recording::connected();
+    every_method(Arc::new(shared.clone()) as Arc<dyn SqlClient>);
+    assert_eq!(shared.calls(), ALL);
+    let arc = Recording::connected();
+    every_method(Arc::new(arc.clone()));
+    assert_eq!(arc.calls(), ALL);
+    let boxed = Recording::connected();
+    every_method(Box::new(boxed.clone()) as Box<dyn SqlClient>);
+    assert_eq!(boxed.calls(), ALL);
+    // A decorator generic over its client wraps the shared one directly.
+    let service = SqlClientService::new(Arc::new(Recording::connected()) as Arc<dyn SqlClient>);
+    assert_eq!(run(service.query("SELECT n", &[])).unwrap().len(), 2);
   }
 }

@@ -8,9 +8,14 @@
 //! - The OpenTelemetry span's parent is the enclosing span's OpenTelemetry context, or,
 //!   for a root span, the hook's parent context ([`OtelSpanHook::with_parent`], e.g. one
 //!   extracted from W3C headers).
-//! - Its name, attributes and start / end times are the span's (executor clock).
+//! - Its name, attributes and start / end times are the span's (executor clock). The attribute
+//!   `otel.kind` (`client`, `server`, `producer` or `consumer`; anything else is `internal`)
+//!   sets the OpenTelemetry span kind instead of being exported, so crates without an
+//!   OpenTelemetry dependency can open client spans (`id_effect_sql`'s `db.query`).
 //! - Its status follows the exit: success is `Ok`, a failure or a defect is `Error`, an
-//!   interrupt leaves the status unset and sets `id_effect.interrupted = true`.
+//!   interrupt leaves the status unset and sets `id_effect.interrupted = true`. A client span
+//!   of `TracedHttpClient` (feature `platform`) answered with status `>= 400` ends as `Error`
+//!   although its effect succeeded.
 //! - The OpenTelemetry [`Context`] is kept in the span's extension slot:
 //!   [`span_otel_context`] / [`current_otel_context`] read it back (to inject W3C headers into
 //!   an outgoing request, for example).
@@ -31,22 +36,48 @@
 //! ```
 
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Instant, SystemTime};
 
 use id_effect::{Effect, ExitKind, Span, SpanHook};
-use opentelemetry::trace::{Status, TraceContextExt, Tracer, TracerProvider as _};
+use opentelemetry::trace::{SpanKind, Status, TraceContextExt, Tracer, TracerProvider as _};
 use opentelemetry::{Context, KeyValue};
 use opentelemetry_sdk::trace::{SdkTracer, SdkTracerProvider};
 
-/// The OpenTelemetry context of a bridged span (the value of its extension slot).
-#[derive(Clone)]
-struct OtelSpanContext(Context);
+/// The span attribute naming the OpenTelemetry span kind (not exported itself).
+const KIND_ATTRIBUTE: &str = "otel.kind";
+
+/// The OpenTelemetry context of a bridged span (the value of its extension slot), and the error
+/// an instrumentation recorded for it ([`mark_span_error`]).
+struct OtelSpanContext {
+  cx: Context,
+  error: OnceLock<String>,
+}
 
 /// The OpenTelemetry context of `span` (its OpenTelemetry span is active in it), when `span` was
 /// opened under an [`OtelSpanHook`].
 pub fn span_otel_context(span: &Span) -> Option<Context> {
-  span.extension::<OtelSpanContext>().map(|c| c.0.clone())
+  span.extension::<OtelSpanContext>().map(|c| c.cx.clone())
+}
+
+/// Ends the bridged `span` with status `Error(description)` even if its effect succeeds (an
+/// HTTP response of status 500 is a successful call but a failed request). The first mark wins;
+/// a no-op for a span opened without an [`OtelSpanHook`].
+#[cfg(feature = "platform")]
+pub(crate) fn mark_span_error(span: &Span, description: String) {
+  if let Some(c) = span.extension::<OtelSpanContext>() {
+    let _ = c.error.set(description);
+  }
+}
+
+fn span_kind(value: &str) -> SpanKind {
+  match value.trim().to_ascii_lowercase().as_str() {
+    "client" => SpanKind::Client,
+    "server" => SpanKind::Server,
+    "producer" => SpanKind::Producer,
+    "consumer" => SpanKind::Consumer,
+    _ => SpanKind::Internal,
+  }
 }
 
 /// The OpenTelemetry context of the running fiber's current span (an empty [`Context`] outside
@@ -133,28 +164,42 @@ where
       .parent()
       .and_then(span_otel_context)
       .unwrap_or_else(|| self.parent.clone());
+    let mut kind = SpanKind::Internal;
     let attributes: Vec<KeyValue> = span
       .attributes()
       .iter()
-      .map(|(k, v)| KeyValue::new(k.clone(), v.clone()))
+      .filter_map(|(k, v)| {
+        if k == KIND_ATTRIBUTE {
+          kind = span_kind(v);
+          return None;
+        }
+        Some(KeyValue::new(k.clone(), v.clone()))
+      })
       .collect();
     let otel = self
       .tracer
       .span_builder(span.name().to_owned())
+      .with_kind(kind)
       .with_start_time(system_time(span.start()))
       .with_attributes(attributes)
       .start_with_context(&self.tracer, &parent);
-    let _ = span.set_extension(OtelSpanContext(parent.with_span(otel)));
+    let _ = span.set_extension(OtelSpanContext {
+      cx: parent.with_span(otel),
+      error: OnceLock::new(),
+    });
   }
 
   fn on_end(&self, span: &Span, end: Instant, exit: ExitKind) {
-    let Some(OtelSpanContext(cx)) = span.extension::<OtelSpanContext>() else {
+    let Some(OtelSpanContext { cx, error }) = span.extension::<OtelSpanContext>() else {
       return;
     };
     let otel = cx.span();
+    let marked = error.get().cloned();
     match exit {
-      ExitKind::Success => otel.set_status(Status::Ok),
-      ExitKind::Failure => otel.set_status(Status::error("failure")),
+      ExitKind::Success => otel.set_status(marked.map_or(Status::Ok, Status::error)),
+      ExitKind::Failure => {
+        otel.set_status(Status::error(marked.unwrap_or_else(|| "failure".into())));
+      }
       ExitKind::Die => otel.set_status(Status::error("defect")),
       ExitKind::Interrupt => otel.set_attribute(KeyValue::new("id_effect.interrupted", true)),
     }
@@ -295,6 +340,35 @@ mod tests {
       .map(|(_, v)| v.clone())
       .expect("traceparent injected");
     assert!(traceparent.contains(&handler.span_context.span_id().to_string()));
+    let _ = provider.shutdown();
+  }
+
+  #[test]
+  fn otel_kind_attribute_sets_the_span_kind() {
+    use opentelemetry::trace::SpanKind;
+
+    let (exporter, provider, hook) = setup();
+    for (name, kind) in ["client", "SERVER", "producer", "consumer", "other"]
+      .iter()
+      .enumerate()
+    {
+      let eff: Effect<(), ()> = succeed(())
+        .with_span_attrs(format!("s{name}"), [("otel.kind", *kind), ("k", "v")])
+        .with_span_hook(hook.clone());
+      assert!(matches!(eff.block_on(), Exit::Success(())));
+    }
+    let kinds = [
+      SpanKind::Client,
+      SpanKind::Server,
+      SpanKind::Producer,
+      SpanKind::Consumer,
+      SpanKind::Internal,
+    ];
+    for (i, kind) in kinds.into_iter().enumerate() {
+      let span = finished(&exporter, &format!("s{i}"));
+      assert_eq!(span.span_kind, kind);
+      assert_eq!(span.attributes.len(), 1, "only `k` is exported");
+    }
     let _ = provider.shutdown();
   }
 

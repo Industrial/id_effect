@@ -7,9 +7,10 @@
 //! | `viewer` | `ledger:read` |
 //! | `accountant` | the viewer's, `ledger:post`, `accounts:open`, `tokens:issue` |
 //! | `owner` | the accountant's, `accounts:manage`, `users:manage`, `audit:verify`, `routes:read` |
+//! | `operator` | `console:admin` (the service's operators, outside every ledger) |
 //!
-//! Managing users also needs [`MFA`]: the direct permission a login that passed its TOTP step
-//! carries.
+//! Managing users and opening the console (`console.admin`) also need [`MFA`]: the direct
+//! permission a login that passed its TOTP step carries.
 
 use id_effect_kit::authz::{
   AuthzEvents, Owned, Policies, Policy, PolicyExt, Rbac, Tenanted, allow_all, authenticated, owner,
@@ -25,8 +26,11 @@ pub const VIEWER: &str = "viewer";
 pub const ACCOUNTANT: &str = "accountant";
 /// Runs the organisation: users, locks, closes, audits.
 pub const OWNER: &str = "owner";
-/// The roles, for input validation.
+/// The roles an owner gives, for input validation.
 pub const ROLES: [&str; 3] = [OWNER, ACCOUNTANT, VIEWER];
+/// Runs the service: the operator console (`/_console`). No role of a ledger inherits it, and
+/// no owner can give it.
+pub const OPERATOR: &str = "operator";
 
 /// The direct permission of a session that passed its second factor (TOTP).
 pub const MFA: &str = "auth:mfa";
@@ -47,6 +51,7 @@ pub fn rbac() -> Rbac {
       ],
     )
     .inherit(OWNER, ACCOUNTANT)
+    .grant(OPERATOR, ["console:admin"])
     .build()
 }
 
@@ -102,6 +107,10 @@ pub fn policies(events: AuthzEvents) -> Policies {
     )
     .define::<()>("audit.verify", rbac.require("audit:verify"))
     .define::<()>("routes.read", rbac.require("routes:read"))
+    .define::<()>(
+      "console.admin",
+      rbac.require("console:admin").and(rbac.require(MFA)),
+    )
     .define::<Account>("account.post", can_post(&rbac))
     .define::<Account>(
       "account.manage",

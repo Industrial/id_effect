@@ -146,8 +146,10 @@ impl PgPoolConfig {
     Ok(PgTlsMode::from_sqlx(self.connect_options()?.get_ssl_mode()))
   }
 
-  /// The URL's options with the explicit TLS settings applied over them.
-  fn connect_options(&self) -> Result<PgConnectOptions, PgSqlError> {
+  /// The URL's options with the explicit TLS settings applied over them: what
+  /// [`pg_pool_from_config`] connects with, for a dedicated connection outside the pool. Fails
+  /// like [`pg_pool_from_config`] on an invalid URL.
+  pub fn connect_options(&self) -> Result<PgConnectOptions, PgSqlError> {
     let mut options = PgConnectOptions::from_str(&self.url).map_err(PgSqlError::from_sqlx)?;
     if let Some(mode) = self.tls_mode {
       options = options.ssl_mode(mode.to_sqlx());
@@ -170,8 +172,8 @@ impl PgPoolConfig {
 
 /// Create a [`PgPool`] from `config` (connects eagerly). A TLS failure (the server refuses TLS
 /// under [`PgTlsMode::Require`] or stricter, or its certificate does not verify) is
-/// [`SqlError::QueryFailed`](crate::SqlError::QueryFailed) with an empty `sql` and the cause as
-/// its message.
+/// [`SqlError::TlsFailed`](crate::SqlError::TlsFailed), an unreachable server
+/// [`SqlError::ConnectionFailed`](crate::SqlError::ConnectionFailed).
 pub async fn pg_pool_from_config(config: PgPoolConfig) -> Result<PgPool, PgSqlError> {
   let options = config.connect_options()?;
   config

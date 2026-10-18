@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{As, with_ledger};
+use common::with_ledger;
 use id_effect_kit::sql::params;
 use id_effect_kit::test::http::StatusCode;
 use serde_json::{Value, json};
@@ -119,16 +119,12 @@ async fn invalid_input_answers_problem_json_with_every_issue() {
 
       let not_json = l
         .send(
-          l.client
-            .post("/accounts")
-            .header(
-              "cookie",
-              match &team.accountant {
-                As::Session(c) => c,
-                _ => unreachable!(),
-              },
-            )
-            .body("{not json", "application/json"),
+          l.by(
+            &team.accountant,
+            l.client
+              .post("/accounts")
+              .body("{not json", "application/json"),
+          ),
         )
         .await;
       not_json.assert_status(StatusCode::BAD_REQUEST);

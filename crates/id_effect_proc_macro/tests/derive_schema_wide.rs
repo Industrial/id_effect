@@ -94,3 +94,91 @@ fn wide_derive_wire_keys_and_errors() {
     .unwrap_err();
   assert_eq!(err.path, "e");
 }
+
+/// Fields named like the decoder's locals (before 0.10 the generated code bound `obj` and
+/// `__issues` itself, so a field `obj` shadowed the input map and the derive did not compile).
+#[derive(Clone, Debug, PartialEq, Schema)]
+struct Shadowing {
+  obj: i64,
+  __issues: String,
+  value: bool,
+  issues: Vec<i64>,
+  u: Option<String>,
+  map: f64,
+  raw: Option<i64>,
+  v: i32,
+  e: Vec<String>,
+  item: Leaf,
+  r#type: String,
+}
+
+#[test]
+fn derive_is_hygienic_for_fields_named_like_its_locals() {
+  let v = Shadowing {
+    obj: 1,
+    __issues: "two".into(),
+    value: true,
+    issues: vec![3, 4],
+    u: Some("five".into()),
+    map: 6.5,
+    raw: None,
+    v: 7,
+    e: vec!["eight".into()],
+    item: Leaf { id: 9 },
+    r#type: "ten".into(),
+  };
+  let s = Shadowing::schema();
+  let wire = s.encode(v.clone());
+  let Unknown::Object(obj) = &wire else {
+    panic!("expected object wire");
+  };
+  assert_eq!(obj.get("obj"), Some(&Unknown::I64(1)));
+  assert_eq!(obj.get("__issues"), Some(&Unknown::String("two".into())));
+  assert_eq!(s.decode(wire.clone()).unwrap(), v);
+  assert_eq!(s.decode_unknown(&wire).unwrap(), v);
+  assert_eq!(s.decode_unknown_all(&wire).unwrap(), v);
+
+  let Unknown::Object(mut bad) = wire else {
+    unreachable!()
+  };
+  bad.insert("obj".into(), Unknown::Bool(false));
+  bad.remove("__issues");
+  let errs = s.decode_unknown_all(&Unknown::Object(bad)).unwrap_err();
+  let paths: Vec<_> = errs.issues.iter().map(|e| e.path.as_str()).collect();
+  assert_eq!(paths, ["obj", "__issues"]);
+}
+
+#[test]
+fn derived_schema_reports_every_invalid_field() {
+  let s = Wide::schema();
+  let wire = s.encode(sample(true));
+  assert_eq!(s.decode_unknown_all(&wire).unwrap(), sample(true));
+  let Unknown::Object(mut obj) = wire else {
+    panic!("expected object wire");
+  };
+  let leaf = |id: Unknown| Unknown::Object([("id".to_string(), id)].into_iter().collect());
+
+  obj.insert("a".into(), Unknown::I64(1));
+  obj.remove("c");
+  obj.insert("d".into(), Unknown::I64(i64::MAX));
+  obj.insert("f_wire".into(), Unknown::Bool(true));
+  obj.insert("m".into(), Unknown::Array(vec![Unknown::I64(i64::MAX)]));
+  obj.insert("p".into(), leaf(Unknown::String("x".into())));
+  obj.insert(
+    "r".into(),
+    Unknown::Array(vec![leaf(Unknown::I64(3)), leaf(Unknown::Null)]),
+  );
+  let input = Unknown::Object(obj);
+
+  let errs = s.decode_unknown_all(&input).unwrap_err();
+  let paths: Vec<_> = errs.issues.iter().map(|e| e.path.as_str()).collect();
+  assert_eq!(paths, ["a", "c", "d", "f_wire", "m.0", "p.id", "r.1.id"]);
+  assert_eq!(errs.issues[1].message, "missing field");
+  assert_eq!(errs.issues[2].message, "i32 overflow");
+
+  // `decode_unknown` still stops at the first invalid field.
+  assert_eq!(s.decode_unknown(&input).unwrap_err().path, "a");
+  let errs = s.decode_unknown_all(&Unknown::Null).unwrap_err();
+  assert_eq!(errs.issues.len(), 1);
+  assert_eq!(errs.issues[0].message, "expected object");
+}

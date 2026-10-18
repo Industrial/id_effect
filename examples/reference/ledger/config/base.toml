@@ -28,6 +28,46 @@ token_ttl_minutes = 60
 # Login attempts: a bucket of `login_burst` refilled at `login_per_second`.
 login_per_second = 0.2
 login_burst = 5
+# And per organisation (the `X-Ledger-Org` a login names), all its clients together.
+login_tenant_per_second = 2.0
+login_tenant_burst = 50
+# The login limits above are re-read from this file and the profile's every N seconds (0: never).
+reload_limits_secs = 10
 # Argon2id memory cost in KiB (OWASP: 19456).
 password_memory_kib = 19456
 totp_issuer = "Ledger"
+
+[mail]
+# `memory` (kept, never sent), `smtp` or `sendgrid`.
+transport = "memory"
+from = "statements@ledger.example"
+from_name = "Ledger"
+# `<name>.subject.txt`, `<name>.txt` and `<name>.html` per mail.
+templates = "templates/mail"
+verify_url = "http://localhost:8080/verify"
+reset_url = "http://localhost:8080/reset"
+
+[storage]
+# The statements bucket; without one they are kept in memory.
+region = "us-east-1"
+
+[statements]
+# 06:00 UTC on the first of every month: the previous month's statements.
+cron = "0 0 6 1 * *"
+# A statement up to 1 MiB is attached to its mail; a larger one is a signed link.
+attach_max_bytes = 1048576
+link_ttl_hours = 168
+
+[jobs]
+# The worker, the statement cron (one instance at a time), the outbox relay and the consumers.
+run = true
+concurrency = 4
+
+[messaging]
+topic = "ledger.entry-posted"
+group = "balance-notifications"
+max_deliveries = 5
+consumer = "ledger-1"
+
+[console]
+enabled = true

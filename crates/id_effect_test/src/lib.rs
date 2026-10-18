@@ -1,10 +1,12 @@
 //! Integration-test support for id_effect programs.
 //!
 //! - **[`containers`]** — effect-native containers: [`Postgres`] (with feature `sql`, a ready
-//!   `SqlClient` via `Postgres::sql_layer`), [`MySql`], [`Redis`], [`Keycloak`], [`Vault`] and
-//!   any image through [`ContainerSpec`], as scoped layers removed when their scope closes
-//!   (also on failure and interrupt), or one per test binary with [`Shared`]; readiness waits
-//!   bounded by typed timeouts ([`ContainerError::NotReady`]); [`require_docker`] for the SKIP /
+//!   `SqlClient` via `Postgres::sql_layer`), [`MySql`], [`Redis`], [`Keycloak`], [`Vault`],
+//!   [`S3`] (S3-compatible, SeaweedFS pinned by digest), [`Mailpit`] (an SMTP server with an
+//!   HTTP API, pinned by digest) and any image through [`ContainerSpec`],
+//!   as scoped layers removed when their scope closes (also on failure and interrupt), or one
+//!   per test binary with [`Shared`]; readiness waits bounded by typed timeouts
+//!   ([`ContainerError::NotReady`]); [`require_docker`] for the SKIP /
 //!   `ID_EFFECT_REQUIRE_DOCKER=1` rule.
 //!
 //! - **`db`** (feature `sql`) — per-test database isolation: `isolated_db()` runs the test in one
@@ -19,6 +21,9 @@
 //! - **`contract`** (feature `contract`) — `Contract`: contract testing against the app's
 //!   OpenAPI document; a `TestResponse` is checked against the response schema its operation
 //!   declares for its status (`assert_conforms`), violations named by JSON pointer.
+//! - **`fault`** (feature `fault`) — fault injection: `Fault::{delay, fail, timeout}` injected
+//!   into any effect (a service double's calls), and `FaultPlan::seeded(seed)`: a reproducible
+//!   per-call fault schedule; delays run on the executor clock (virtual on a `TestExecutor`).
 //!
 //! ## Cargo features
 //!
@@ -28,6 +33,7 @@
 //! - **`fixtures`** — `fixtures` (with `sql`; proptest).
 //! - **`http`** — `http` (tower and `http` types; no axum dependency).
 //! - **`contract`** — `contract` (with `http`; the `jsonschema` validator).
+//! - **`fault`** — `fault` (no dependency beyond id_effect).
 //!
 //! Container tests run in CI's containers job with `ID_EFFECT_REQUIRE_DOCKER=1`.
 //!
@@ -42,20 +48,25 @@ pub mod containers;
 pub mod contract;
 #[cfg(feature = "sql")]
 pub mod db;
+#[cfg(feature = "fault")]
+pub mod fault;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
 #[cfg(feature = "http")]
 pub mod http;
 
 pub use containers::{
-  Container, ContainerError, ContainerImage, ContainerSpec, Keycloak, KeycloakContainer, MySql,
-  MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis, RedisContainer, Shared,
-  Vault, VaultContainer, Wait, container_exists, docker_available, require_docker,
+  Container, ContainerError, ContainerImage, ContainerSpec, Keycloak, KeycloakContainer, Mailpit,
+  MailpitContainer, MySql, MySqlContainer, Postgres, PostgresContainer, REQUIRE_DOCKER_ENV, Redis,
+  RedisContainer, S3, S3Container, Shared, Vault, VaultContainer, Wait, container_exists,
+  docker_available, require_docker,
 };
 #[cfg(feature = "contract")]
 pub use contract::{Contract, ContractError};
 #[cfg(feature = "sql")]
 pub use db::{IsolatedDatabase, TemplateDb, TransactionSqlClient, isolated_db};
+#[cfg(feature = "fault")]
+pub use fault::{Fault, FaultKind, FaultPlan};
 #[cfg(feature = "fixtures")]
 pub use fixtures::{Factory, Fixture};
 #[cfg(feature = "http")]

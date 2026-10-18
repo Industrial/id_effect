@@ -1,0 +1,4 @@
+{% extends "layouts/base.txt" %}
+{% block body %}Hello {{ user.name }},
+
+confirm your account: {{ confirm_url }}{% endblock %}

@@ -1,18 +1,19 @@
-diff --git a/examples/reference/ledger/migrations/0004_invoices.down.sql b/examples/reference/ledger/migrations/0004_invoices.down.sql
+diff --git a/examples/reference/ledger/migrations/0008_invoices.down.sql b/examples/reference/ledger/migrations/0008_invoices.down.sql
 new file mode 100644
 index 0000000..e8aea1e
 --- /dev/null
-+++ b/examples/reference/ledger/migrations/0004_invoices.down.sql
++++ b/examples/reference/ledger/migrations/0008_invoices.down.sql
 @@ -0,0 +1 @@
 +DROP TABLE invoices;
-diff --git a/examples/reference/ledger/migrations/0004_invoices.up.sql b/examples/reference/ledger/migrations/0004_invoices.up.sql
+diff --git a/examples/reference/ledger/migrations/0008_invoices.up.sql b/examples/reference/ledger/migrations/0008_invoices.up.sql
 new file mode 100644
-index 0000000..b6e4aca
+index 0000000..59617a3
 --- /dev/null
-+++ b/examples/reference/ledger/migrations/0004_invoices.up.sql
-@@ -0,0 +1,17 @@
++++ b/examples/reference/ledger/migrations/0008_invoices.up.sql
+@@ -0,0 +1,19 @@
 +-- Invoices, in minor units, booked against a receivable account of the same organisation.
-+-- `version` is the optimistic-locking column; `voided_at` is the soft delete.
++-- `version` is the optimistic-locking column; `voided_at` is the soft delete; `reminded_at` is
++-- set by the reminder job an issued invoice gets.
 +CREATE TABLE invoices (
 +  id BIGSERIAL PRIMARY KEY,
 +  org_id TEXT NOT NULL REFERENCES orgs (id),
@@ -24,25 +25,26 @@ index 0000000..b6e4aca
 +  owner_id TEXT NOT NULL,
 +  version BIGINT NOT NULL DEFAULT 1,
 +  voided_at TIMESTAMPTZ,
++  reminded_at TIMESTAMPTZ,
 +  UNIQUE (org_id, number)
 +);
 +
 +CREATE INDEX invoices_org_id ON invoices (org_id, id);
 diff --git a/examples/reference/ledger/src/app.rs b/examples/reference/ledger/src/app.rs
-index fc1cb91..afd01b1 100644
+index 1b8423f..ac4d954 100644
 --- a/examples/reference/ledger/src/app.rs
 +++ b/examples/reference/ledger/src/app.rs
-@@ -25,7 +25,7 @@ use crate::config::LedgerConfig;
- use crate::db::{self, Database};
- use crate::error::{ApiError, StartupError};
+@@ -36,7 +36,7 @@ use crate::error::{ApiError, StartupError};
+ use crate::limits::{self, LimitSource, LimitsFile, TenantHint};
+ use crate::mail::{self, Mail};
  use crate::reports::{self, BalanceCache};
--use crate::{accounts, auth, entries, policy};
-+use crate::{accounts, auth, entries, invoices, policy};
+-use crate::{accounts, auth, console, entries, jobs, notifications, policy, signup};
++use crate::{accounts, auth, console, entries, invoices, jobs, notifications, policy, signup};
  
  /// The router state: one [`App`] in a capability list, so handlers lift environment-free
  /// effects into it with `narrow()`.
-@@ -273,6 +273,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
-     .merge(auth::routes(&policies, login_limit))
+@@ -357,6 +357,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
+     .merge(auth::routes(&policies, login_limit.clone()))
      .merge(accounts::routes(&policies))
      .merge(entries::routes(&policies))
 +    .merge(invoices::routes(&policies))
@@ -51,34 +53,37 @@ index fc1cb91..afd01b1 100644
    let mut doc = OpenApi::from_router(&api)
 diff --git a/examples/reference/ledger/src/invoices.rs b/examples/reference/ledger/src/invoices.rs
 new file mode 100644
-index 0000000..c4af61b
+index 0000000..a171c42
 --- /dev/null
 +++ b/examples/reference/ledger/src/invoices.rs
-@@ -0,0 +1,352 @@
+@@ -0,0 +1,374 @@
 +//! Invoices: what an organisation bills its customers, booked against a receivable account.
 +//!
 +//! [`Invoice`] is an entity like [`Account`](crate::accounts::Account): the `Repository` scopes
 +//! every statement to the caller's organisation, hides voided invoices (`soft_delete =
 +//! "voided_at"`) and checks the `version` column on every update. An invoice moves `draft` →
 +//! `issued` → `paid`; only a draft's customer and amount change, and a paid invoice is never
-+//! voided.
++//! voided. Issuing one enqueues its [`InvoiceReminder`] in the same transaction, to run
++//! [`REMIND_AFTER`] later.
 +
 +use std::sync::Arc;
 +
 +use axum::Json;
 +use axum::http::StatusCode;
 +use id_effect::schema::{self, HasSchema, ParseError, Schema, length, minimum, pattern};
-+use id_effect::{Effect, fail, succeed};
++use id_effect::{Effect, WallClock, fail, succeed};
 +use id_effect_kit::authz::Policies;
 +use id_effect_kit::axum::RequestCaps;
 +use id_effect_kit::axum::route::{Input, Route, Router};
++use id_effect_kit::jobs::{JobError, JobOptions, RunAt, enqueue_in};
 +use id_effect_kit::sql::query_builder::Dialect;
-+use id_effect_kit::sql::{Entity, FromRow, Repository, with_transaction};
++use id_effect_kit::sql::{Entity, FromRow, Repository, SqlError, with_transaction};
 +use serde::Serialize;
 +
 +use crate::accounts::find_account;
 +use crate::app::{App, AppEnv, Caller, as_caller, guarded};
 +use crate::error::ApiError;
++use crate::jobs::{InvoiceReminder, REMIND_AFTER};
 +
 +/// One invoice. `org_id` is the tenant column the repository writes and filters by.
 +#[derive(Clone, Debug, PartialEq, Serialize, id_effect::Schema, FromRow, Entity)]
@@ -325,12 +330,31 @@ index 0000000..c4af61b
 +  as_caller(&caps, move |caller| {
 +    find_invoice(&app, &caller, id).flat_map(move |invoice| {
 +      let allowed = caller.authorize(&app.policies, "invoice.manage", &invoice);
++      // `apply` accepts `issued` only after `draft`: this change issues the invoice.
++      let issues = changes.status.as_deref() == Some("issued");
 +      allowed.flat_map(move |()| match apply(invoice, changes) {
-+        Ok(changed) => invoices_of(caller.org())
-+          .on(Arc::clone(&app.db))
-+          .update(changed)
++        Ok(changed) => {
++          let invoices = invoices_of(caller.org());
++          with_transaction(Arc::clone(&app.db), move |tx| {
++            let updated = invoices.on(Arc::clone(&tx)).update(changed);
++            updated.map_err(ApiError::from).flat_map(move |invoice| {
++              if !issues {
++                return succeed(invoice);
++              }
++              let reminder = InvoiceReminder {
++                invoice_id: invoice.id,
++              };
++              let later = JobOptions::new().run_at(RunAt::After(REMIND_AFTER));
++              enqueue_in(&tx, reminder, later, &WallClock::system())
++                .map(move |_| invoice)
++                .map_err(|e| match e {
++                  JobError::Sql(e) => ApiError::Sql(e),
++                  other => ApiError::Sql(SqlError::TransactionFailed(other.to_string())),
++                })
++            })
++          })
 +          .map(Json)
-+          .map_err(ApiError::from),
++        }
 +        Err(e) => fail(e),
 +      })
 +    })
@@ -407,20 +431,125 @@ index 0000000..c4af61b
 +        .handler_with_request_caps(void),
 +    ))
 +}
+diff --git a/examples/reference/ledger/src/jobs.rs b/examples/reference/ledger/src/jobs.rs
+index 79e985d..ca6d532 100644
+--- a/examples/reference/ledger/src/jobs.rs
++++ b/examples/reference/ledger/src/jobs.rs
+@@ -1,11 +1,12 @@
+ //! Background jobs on the PostgreSQL queue (`id_effect_jobs`, table `id_effect_jobs`): the
+-//! monthly statements and the mail they send.
++//! monthly statements, the mail they send, and the invoice reminders.
+ //!
+ //! | Job | Queue | What |
+ //! |---|---|---|
+ //! | [`StatementsDue`] | `statements`, high priority | enqueued by the statement cron for the previous month; enqueues one [`MonthlyStatement`] per open account |
+ //! | [`MonthlyStatement`] | `statements` | unique per `account@month`: renders the CSV, stores it in S3, enqueues the mail |
+ //! | `DeliverMail` (id_effect_mail) | `mail` | sends a message through the [`MailerService`] |
++//! | [`InvoiceReminder`] | `invoices` | unique per invoice, [`REMIND_AFTER`] its issue: records the reminder of an invoice still unpaid |
+ //!
+ //! The cron runs on one instance at a time ([`cron_leader`]: a [`CronLeader`] over a
+ //! [`PgAdvisoryLease`]), and its entry ([`statements_cron`]) keys each tick's job
+@@ -44,6 +45,10 @@ pub const STATEMENTS: &str = "statements";
+ pub const STATEMENTS_CRON: &str = "statements.monthly";
+ /// The cluster singleton the statement cron's leader holds.
+ pub const CRON_LOCK: &str = "ledger.cron";
++/// The queue of the invoice reminders.
++pub const INVOICES: &str = "invoices";
++/// How long after its issue an unpaid invoice is reminded.
++pub const REMIND_AFTER: Duration = Duration::from_secs(14 * 24 * 3600);
+ 
+ /// What the handlers run in: the queue (a handler enqueues follow-up jobs) and the mail
+ /// transport (`DeliverMail`).
+@@ -115,6 +120,26 @@ impl Job for MonthlyStatement {
+   }
+ }
+ 
++/// The reminder of one issued invoice, enqueued with the change that issues it.
++#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
++pub struct InvoiceReminder {
++  /// The invoice.
++  pub invoice_id: i64,
++}
++
++impl Job for InvoiceReminder {
++  const NAME: &'static str = "ledger.invoice_reminder";
++  const QUEUE: &'static str = INVOICES;
++
++  /// The invoice id, kept until the row is pruned: an invoice is issued once.
++  fn unique_key(&self) -> Option<UniqueKey> {
++    Some(UniqueKey::until_pruned(format!(
++      "invoice:{}",
++      self.invoice_id
++    )))
++  }
++}
++
+ /// What the statement handlers read and write.
+ #[derive(Clone)]
+ pub struct Statements {
+@@ -128,20 +153,25 @@ pub struct Statements {
+   pub config: StatementsConfig,
+ }
+ 
+-/// Every job type with its handler: the two statement jobs and id_effect_mail's `DeliverMail`.
++/// Every job type with its handler: the two statement jobs, the invoice reminder and
++/// id_effect_mail's `DeliverMail`.
+ pub fn registry(statements: Statements) -> Result<JobRegistry<JobEnv>, JobError> {
+   let db = Arc::clone(&statements.db);
++  let invoices = Arc::clone(&statements.db);
+   let statements = Arc::new(statements);
+   let registry = JobRegistry::new()
+     .register::<StatementsDue, JobFailure>(move |job, _ctx| fan_out(&db, job))?
+-    .register::<MonthlyStatement, JobFailure>(move |job, _ctx| Arc::clone(&statements).run(job))?;
++    .register::<MonthlyStatement, JobFailure>(move |job, _ctx| Arc::clone(&statements).run(job))?
++    .register::<InvoiceReminder, JobFailure>(move |job, _ctx| remind(&invoices, job))?;
+   register_mail_jobs(registry)
+ }
+ 
+-/// A worker for the statements and the mail queue, `concurrency` jobs of each at a time.
++/// A worker for the statements, the invoices and the mail queue, `concurrency` jobs of each at
++/// a time.
+ pub fn worker(registry: JobRegistry<JobEnv>, concurrency: u16) -> Worker<JobEnv> {
+   Worker::new(registry)
+     .queue(STATEMENTS, concurrency)
++    .queue(INVOICES, concurrency)
+     .queue(<DeliverMail as Job>::QUEUE, concurrency)
+ }
+ 
+@@ -211,6 +241,19 @@ fn fan_out(db: &Arc<dyn SqlClient>, job: StatementsDue) -> Effect<(), JobFailure
+   })
+ }
+ 
++/// The reminder: an invoice still issued (not paid, not voided) records when it was reminded;
++/// any other is done already. Rerunning it only moves `reminded_at`.
++fn remind(db: &Arc<dyn SqlClient>, job: InvoiceReminder) -> Effect<(), JobFailure, JobEnv> {
++  db.execute(
++    "UPDATE invoices SET reminded_at = now() \
++      WHERE id = $1 AND status = 'issued' AND voided_at IS NULL",
++    &params![job.invoice_id],
++  )
++  .map(|_| ())
++  .map_err(JobFailure::from)
++  .narrow()
++}
++
+ /// The account a statement is for, with its owner's address.
+ #[derive(Clone, Debug, FromRow)]
+ #[from_row(crate = id_effect_kit::sql)]
 diff --git a/examples/reference/ledger/src/lib.rs b/examples/reference/ledger/src/lib.rs
-index 2ebf84a..41aa9ac 100644
+index 2284da9..a49ff7e 100644
 --- a/examples/reference/ledger/src/lib.rs
 +++ b/examples/reference/ledger/src/lib.rs
-@@ -29,6 +29,7 @@ pub mod config;
+@@ -42,6 +42,7 @@ pub mod console;
  pub mod db;
  pub mod entries;
  pub mod error;
 +pub mod invoices;
- pub mod policy;
- pub mod reports;
- 
+ pub mod jobs;
+ pub mod limits;
+ pub mod mail;
 diff --git a/examples/reference/ledger/src/policy.rs b/examples/reference/ledger/src/policy.rs
-index 58f90d5..a5284c5 100644
+index 832d350..0943454 100644
 --- a/examples/reference/ledger/src/policy.rs
 +++ b/examples/reference/ledger/src/policy.rs
 @@ -1,11 +1,11 @@
@@ -435,9 +564,9 @@ index 58f90d5..a5284c5 100644
 -//! | `accountant` | the viewer's, `ledger:post`, `accounts:open`, `tokens:issue` |
 +//! | `accountant` | the viewer's, `ledger:post`, `accounts:open`, `invoices:write`, `tokens:issue` |
  //! | `owner` | the accountant's, `accounts:manage`, `users:manage`, `audit:verify`, `routes:read` |
+ //! | `operator` | `console:admin` (the service's operators, outside every ledger) |
  //!
- //! Managing users also needs [`MFA`]: the direct permission a login that passed its TOTP step
-@@ -18,6 +18,7 @@ use id_effect_kit::authz::{
+@@ -19,6 +19,7 @@ use id_effect_kit::authz::{
  
  use crate::accounts::Account;
  use crate::auth::ApiToken;
@@ -445,7 +574,7 @@ index 58f90d5..a5284c5 100644
  
  /// Reads the ledger.
  pub const VIEWER: &str = "viewer";
-@@ -35,7 +36,15 @@ pub const MFA: &str = "auth:mfa";
+@@ -39,7 +40,15 @@ pub const MFA: &str = "auth:mfa";
  pub fn rbac() -> Rbac {
    Rbac::builder()
      .grant(VIEWER, ["ledger:read"])
@@ -462,7 +591,7 @@ index 58f90d5..a5284c5 100644
      .inherit(ACCOUNTANT, VIEWER)
      .grant(
        OWNER,
-@@ -62,6 +71,18 @@ impl Tenanted for Account {
+@@ -67,6 +76,18 @@ impl Tenanted for Account {
    }
  }
  
@@ -481,7 +610,7 @@ index 58f90d5..a5284c5 100644
  impl Owned for ApiToken {
    fn owner_id(&self) -> &str {
      &self.owner_id
-@@ -95,6 +116,7 @@ pub fn policies(events: AuthzEvents) -> Policies {
+@@ -100,6 +121,7 @@ pub fn policies(events: AuthzEvents) -> Policies {
      .define::<()>("ledger.read", rbac.require("ledger:read"))
      .define::<()>("ledger.post", rbac.require("ledger:post"))
      .define::<()>("accounts.open", rbac.require("accounts:open"))
@@ -489,7 +618,7 @@ index 58f90d5..a5284c5 100644
      .define::<()>("tokens.issue", rbac.require("tokens:issue"))
      .define::<()>(
        "users.manage",
-@@ -110,6 +132,13 @@ pub fn policies(events: AuthzEvents) -> Policies {
+@@ -119,6 +141,13 @@ pub fn policies(events: AuthzEvents) -> Policies {
          .and(same_tenant())
          .and(owner().or(rbac.require_role(OWNER))),
      )
@@ -505,18 +634,24 @@ index 58f90d5..a5284c5 100644
      .build()
 diff --git a/examples/reference/ledger/tests/invoices.rs b/examples/reference/ledger/tests/invoices.rs
 new file mode 100644
-index 0000000..4877b65
+index 0000000..8a36a42
 --- /dev/null
 +++ b/examples/reference/ledger/tests/invoices.rs
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,193 @@
 +//! Invoices over typed routes: CRUD, the status flow, optimistic locking, voiding (a soft
-+//! delete), ownership, and the tenant filter.
++//! delete), ownership, the tenant filter, and the reminder job an issued invoice gets.
 +
 +mod common;
 +
-+use common::with_ledger;
++use std::sync::Arc;
++
++use common::{run, with_ledger};
++use id_effect_kit::mail::{MailerService, TestMailbox};
 +use id_effect_kit::sql::params;
++use id_effect_kit::storage::{MemoryStore, ObjectStorage};
 +use id_effect_kit::test::http::StatusCode;
++use ledger::jobs::{self, Statements};
++use ledger::mail::{self, Mail};
 +use serde_json::{Value, json};
 +
 +#[tokio::test]
@@ -642,60 +777,115 @@ index 0000000..4877b65
 +  )
 +  .await;
 +}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn issuing_an_invoice_schedules_its_reminder() {
++  with_ledger(
++    |_, _| {},
++    |l| async move {
++      let team = l.team("acme").await;
++      let me = &team.accountant;
++      let receivable = l.accounts("acme", "acme-accountant", 1).await[0].id;
++      let mut ids = Vec::new();
++      for number in ["INV-1", "INV-2"] {
++        let body =
++          json!({"number": number, "customer": "Globex", "account_id": receivable, "amount": 100});
++        let raised: Value = l.post("/invoices", body, me).await.json().unwrap();
++        let path = format!("/invoices/{}", raised["id"]);
++        l.patch(&path, json!({"status": "issued", "version": 1}), me)
++          .await
++          .assert_status(StatusCode::OK);
++        ids.push((raised["id"].as_i64().unwrap(), path));
++      }
++      // INV-2 is paid before its reminder is due.
++      l.patch(&ids[1].1, json!({"status": "paid", "version": 2}), me)
++        .await
++        .assert_status(StatusCode::OK);
++
++      // One reminder per issued invoice, due in two weeks.
++      let reminders = "SELECT count(*)::int8 FROM id_effect_jobs \
++        WHERE name = 'ledger.invoice_reminder' AND run_at > now() + interval '13 days'";
++      assert_eq!(l.scalar(reminders, vec![]).await, 2);
++
++      // Two weeks later: the worker reminds the unpaid invoice only.
++      l.execute("UPDATE id_effect_jobs SET run_at = now()", vec![])
++        .await;
++      let statements = Statements {
++        db: Arc::clone(&l.db),
++        storage: ObjectStorage::new(MemoryStore::new()),
++        mail: Mail {
++          mailer: MailerService::new(TestMailbox::new()),
++          templates: mail::templates(&l.config.mail).expect("templates"),
++          from: mail::sender(&l.config.mail).expect("a sender"),
++        },
++        config: l.config.statements.clone(),
++      };
++      let env = jobs::job_env(jobs::queue(&l.db), MailerService::new(TestMailbox::new()));
++      let worker = jobs::worker(jobs::registry(statements).expect("handlers"), 1);
++      run(worker.run_until_idle().provide_all(env)).await;
++      let reminded =
++        "SELECT count(*)::int8 FROM invoices WHERE id = $1 AND reminded_at IS NOT NULL";
++      assert_eq!(l.scalar(reminded, params![ids[0].0]).await, 1);
++      assert_eq!(l.scalar(reminded, params![ids[1].0]).await, 0);
++    },
++  )
++  .await;
++}
 diff --git a/examples/reference/ledger/tests/migrations.rs b/examples/reference/ledger/tests/migrations.rs
-index 7b8e75b..a13abf7 100644
+index f0b7674..5f56c47 100644
 --- a/examples/reference/ledger/tests/migrations.rs
 +++ b/examples/reference/ledger/tests/migrations.rs
-@@ -28,7 +28,7 @@ fn the_migrations_directory_is_valid() {
-     .iter()
-     .map(|m| (m.version(), m.is_reversible()))
-     .collect();
--  assert_eq!(versions, [(1, true), (2, true), (3, true)]);
-+  assert_eq!(versions, [(1, true), (2, true), (3, true), (4, true)]);
+@@ -37,7 +37,8 @@ fn the_migrations_directory_is_valid() {
+       (4, true),
+       (5, true),
+       (6, true),
+-      (7, true)
++      (7, true),
++      (8, true)
+     ]
+   );
  }
- 
- #[tokio::test]
-@@ -39,7 +39,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -50,7 +51,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
      assert_eq!(
        check().await,
        Err(MigrateError::Pending {
--        versions: vec![1, 2, 3]
-+        versions: vec![1, 2, 3, 4]
+-        versions: vec![1, 2, 3, 4, 5, 6, 7]
++        versions: vec![1, 2, 3, 4, 5, 6, 7, 8]
        })
      );
  
-@@ -50,7 +50,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -61,7 +62,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
      );
      let mut applied = [a, b].concat();
      applied.sort_unstable();
--    assert_eq!(applied, [1, 2, 3]);
-+    assert_eq!(applied, [1, 2, 3, 4]);
+-    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7]);
++    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8]);
      assert_eq!(check().await, Ok(()));
      let states: Vec<MigrationState> = outcome(migrator.status_on(Arc::clone(&db)))
        .await
-@@ -58,21 +58,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -69,21 +70,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
        .into_iter()
        .map(|s| s.state)
        .collect();
--    assert_eq!(states, [MigrationState::Applied; 3]);
-+    assert_eq!(states, [MigrationState::Applied; 4]);
+-    assert_eq!(states, [MigrationState::Applied; 7]);
++    assert_eq!(states, [MigrationState::Applied; 8]);
  
      // `id-effect migrate revert`: the last migration's down script; check sees it pending.
      assert_eq!(
        outcome(migrator.revert_on(Arc::clone(&db), 1)).await,
--      Ok(vec![3])
-+      Ok(vec![4])
+-      Ok(vec![7])
++      Ok(vec![8])
      );
      assert_eq!(
        check().await,
--      Err(MigrateError::Pending { versions: vec![3] })
-+      Err(MigrateError::Pending { versions: vec![4] })
+-      Err(MigrateError::Pending { versions: vec![7] })
++      Err(MigrateError::Pending { versions: vec![8] })
      );
      // The next start re-applies it, and nothing else.
      assert_eq!(
        run(ledger::db::migrate(Arc::clone(&db), MIGRATIONS)).await,
--      [3]
-+      [4]
+-      [7]
++      [8]
      );
      assert_eq!(check().await, Ok(()));
    })

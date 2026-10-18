@@ -6,15 +6,40 @@ use id_effect::schema::ParseError;
 
 use crate::value::{SqlType, ValueError};
 
+/// SQLSTATE of a unique (or primary key) constraint violation: what
+/// [`SqlError::is_unique_violation`] checks for, on every backend.
+pub const SQLSTATE_UNIQUE_VIOLATION: &str = "23505";
+
 /// SQL client / query failures.
 ///
 /// Non-exhaustive: match it with a wildcard arm. A `column` field names the column, or `#3` for
 /// an index into an unnamed column (`$2` for a bound parameter).
+///
+/// A server error is [`QueryFailed`](Self::QueryFailed) (or
+/// [`TransactionFailed`](Self::TransactionFailed)) whose message ends with its SQLSTATE
+/// (`"… (SQLSTATE 23505)"`), on PostgreSQL, MySQL and SQLite alike; read it with
+/// [`sqlstate`](Self::sqlstate) and [`is_unique_violation`](Self::is_unique_violation) rather
+/// than the message text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SqlError {
   /// Client is not connected (or pool unavailable).
   NotConnected,
+  /// The database could not be reached: the connection was refused, reset or timed out at the
+  /// network level (sqlx `Error::Io`). A server that answers and rejects the login is
+  /// [`QueryFailed`](Self::QueryFailed) with its SQLSTATE.
+  #[non_exhaustive]
+  ConnectionFailed {
+    /// The driver's description of the failure.
+    message: String,
+  },
+  /// TLS could not be established: the server does not offer TLS under a mode that requires it,
+  /// its certificate does not verify, or the handshake failed.
+  #[non_exhaustive]
+  TlsFailed {
+    /// The driver's description of the failure.
+    message: String,
+  },
   /// Parameterized query failed to execute.
   QueryFailed {
     /// SQL text (may be redacted in logs at higher layers).
@@ -75,6 +100,39 @@ pub enum SqlError {
 }
 
 impl SqlError {
+  /// A [`ConnectionFailed`](Self::ConnectionFailed) error.
+  pub fn connection_failed(message: impl Into<String>) -> Self {
+    SqlError::ConnectionFailed {
+      message: message.into(),
+    }
+  }
+
+  /// A [`TlsFailed`](Self::TlsFailed) error.
+  pub fn tls_failed(message: impl Into<String>) -> Self {
+    SqlError::TlsFailed {
+      message: message.into(),
+    }
+  }
+
+  /// The SQLSTATE the database reported for this error (`"23505"`, `"40001"`, …), if it is a
+  /// server error that carries one. SQLite reports a unique violation as `23505` and a busy
+  /// database as `40001`; MySQL reports a duplicate key as `23505` and a lock wait timeout as
+  /// `40001`.
+  pub fn sqlstate(&self) -> Option<&str> {
+    let message = match self {
+      SqlError::QueryFailed { message, .. } | SqlError::TransactionFailed(message) => message,
+      _ => return None,
+    };
+    let code = message.rsplit_once("(SQLSTATE ")?.1.strip_suffix(')')?;
+    (code.len() == 5 && code.bytes().all(|b| b.is_ascii_alphanumeric())).then_some(code)
+  }
+
+  /// Whether this is a unique (or primary key) constraint violation
+  /// ([`SQLSTATE_UNIQUE_VIOLATION`]): an insert or update hit a key another row already has.
+  pub fn is_unique_violation(&self) -> bool {
+    self.sqlstate() == Some(SQLSTATE_UNIQUE_VIOLATION)
+  }
+
   /// The [`SqlError`] for a [`ValueError`] decoding `column`
   /// ([`ValueError::Invalid`] becomes [`SqlError::Decode`] naming the column).
   pub fn from_value_error(column: impl Into<String>, err: ValueError) -> Self {
@@ -92,10 +150,52 @@ impl SqlError {
   }
 }
 
+/// The [`SqlError`] of a sqlx failure, the same for every backend: pool exhaustion is
+/// [`NotConnected`](SqlError::NotConnected), a network failure
+/// [`ConnectionFailed`](SqlError::ConnectionFailed), a TLS failure
+/// [`TlsFailed`](SqlError::TlsFailed) (rustls reports a failed handshake as an `InvalidData`
+/// I/O error), and anything else [`QueryFailed`](SqlError::QueryFailed) with an empty `sql`. A
+/// database error's message ends with its SQLSTATE: [`SQLSTATE_UNIQUE_VIOLATION`] for a unique
+/// violation, else whatever `sqlstate` (the backend's code mapping) returns.
+#[cfg(any(feature = "pg", feature = "mysql", feature = "sqlite"))]
+pub(crate) fn from_sqlx(
+  err: sqlx::Error,
+  sqlstate: impl FnOnce(&dyn sqlx::error::DatabaseError) -> Option<String>,
+) -> SqlError {
+  match err {
+    sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => SqlError::NotConnected,
+    sqlx::Error::Configuration(msg) => SqlError::Unsupported(msg.to_string()),
+    sqlx::Error::Tls(_) => SqlError::tls_failed(err.to_string()),
+    sqlx::Error::Io(ref io) if io.kind() == std::io::ErrorKind::InvalidData => {
+      SqlError::tls_failed(err.to_string())
+    }
+    sqlx::Error::Io(_) => SqlError::connection_failed(err.to_string()),
+    other => {
+      let code = other.as_database_error().and_then(|db| {
+        if db.is_unique_violation() {
+          Some(SQLSTATE_UNIQUE_VIOLATION.to_owned())
+        } else {
+          sqlstate(db)
+        }
+      });
+      let message = other.to_string();
+      SqlError::QueryFailed {
+        sql: String::new(),
+        message: match code {
+          Some(code) => crate::transaction::with_sqlstate(message, &code),
+          None => message,
+        },
+      }
+    }
+  }
+}
+
 impl fmt::Display for SqlError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       SqlError::NotConnected => write!(f, "sql client not connected"),
+      SqlError::ConnectionFailed { message } => write!(f, "sql connection failed: {message}"),
+      SqlError::TlsFailed { message } => write!(f, "sql tls failed: {message}"),
       SqlError::QueryFailed { sql, message } => {
         write!(f, "sql query failed ({sql}): {message}")
       }
@@ -140,8 +240,46 @@ impl std::error::Error for SqlError {}
 
 #[cfg(test)]
 mod tests {
-  use super::SqlError;
+  use super::{SQLSTATE_UNIQUE_VIOLATION, SqlError};
   use crate::value::{SqlType, ValueError};
+
+  fn failed(message: &str) -> SqlError {
+    SqlError::QueryFailed {
+      sql: "INSERT ..".into(),
+      message: message.into(),
+    }
+  }
+
+  #[test]
+  fn sqlstate_is_read_from_server_errors_only() {
+    let dup = failed("duplicate key value violates unique constraint (SQLSTATE 23505)");
+    assert_eq!(dup.sqlstate(), Some(SQLSTATE_UNIQUE_VIOLATION));
+    assert!(dup.is_unique_violation());
+    let tx = SqlError::TransactionFailed("could not serialize (SQLSTATE 40001)".into());
+    assert_eq!(tx.sqlstate(), Some("40001"));
+    assert!(!tx.is_unique_violation());
+    for no_code in [
+      failed("relation does not exist"),
+      failed("odd (SQLSTATE nope!)"),
+      failed("(SQLSTATE 23505) is not at the end"),
+    ] {
+      assert_eq!(no_code.sqlstate(), None, "{no_code}");
+    }
+    assert_eq!(SqlError::Decode("(SQLSTATE 23505)".into()).sqlstate(), None);
+    assert_eq!(SqlError::tls_failed("(SQLSTATE 23505)").sqlstate(), None);
+  }
+
+  #[test]
+  fn connection_and_tls_failures_display_their_cause() {
+    assert_eq!(
+      SqlError::connection_failed("refused").to_string(),
+      "sql connection failed: refused"
+    );
+    assert_eq!(
+      SqlError::tls_failed("server does not support TLS").to_string(),
+      "sql tls failed: server does not support TLS"
+    );
+  }
 
   #[test]
   fn display_includes_query_context() {

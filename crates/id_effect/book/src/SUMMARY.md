@@ -112,6 +112,7 @@
   - [Property Testing, Exit Assertions and Golden Files](./part4/ch15-06-testing-property.md)
   - [Containers in Tests](./part4/ch15-07-containers.md)
   - [Integration Testing](./part4/ch15-08-integration-testing.md)
+  - [Fault Injection](./part4/ch15-09-fault-injection.md)
 
 # Part V: Functional Patterns
 
@@ -148,7 +149,7 @@
 
 - [Verification and Metaprogramming](./part5/ch24-00-verification-and-macros.md)
 
-- [Events and projections (`id_effect_events`, labs)](./part5/ch23-00-events-and-projections.md)
+- [Events and projections (`id_effect_events`)](./part5/ch23-00-events-and-projections.md)
 
 # Part VI: Application Platform
 
@@ -156,11 +157,13 @@
 - [Observability and health](./part6/ch27-00-observability.md)
   - [Metrics and Prometheus](./part6/ch27-01-metrics.md)
   - [Health checks and readiness](./part6/ch27-02-health.md)
+  - [The operator console](./part6/ch27-03-console.md)
 - [Data access (`id_effect_sql`)](./part6/ch28-00-data.md)
   - [Typed SQL values and rows](./part6/ch28-01-typed-sql.md)
   - [Migrations](./part6/ch28-02-migrations.md)
   - [Query builder, entities and repositories](./part6/ch28-03-repositories.md)
   - [Redis](./part6/ch28-04-redis.md)
+  - [Object storage (`id_effect_storage`)](./part6/ch28-05-storage.md)
 - [API boundaries (`id_effect_rpc`, labs)](./part6/ch29-00-api-boundaries.md)
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
   - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)
@@ -172,10 +175,14 @@
   - [Single sign-on with OpenID Connect (`id_effect_auth`)](./part6/ch30-05-oidc.md)
   - [Two-factor authentication with TOTP (`id_effect_auth`)](./part6/ch30-06-totp.md)
   - [Tenancy and the audit log](./part6/ch30-07-audit-tenancy.md)
-- [Async messaging and jobs (labs)](./part6/ch31-00-async-messaging.md)
+- [Async messaging and jobs](./part6/ch31-00-async-messaging.md)
+  - [Background jobs (`id_effect_jobs`)](./part6/ch31-01-jobs.md)
+  - [Messaging (`id_effect_messaging`)](./part6/ch31-02-messaging.md)
+  - [Mail (`id_effect_mail`)](./part6/ch31-03-mail.md)
 - [Workflow and cluster](./part6/ch32-00-workflow-cluster.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
+  - [The dev loop](./part6/ch34-02-dev.md)
 - [AI and MCP (`id_effect_ai`, labs)](./part6/ch35-00-ai.md)
 
 # Part VII: Process Mesh

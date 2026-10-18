@@ -9,10 +9,12 @@ effectful steps, forwarded to [`tracing`](https://docs.rs/tracing) by default.
   `.narrow()` lifts a log step into a combinator chain over another environment.
 - Provide it with `.provide(EffectLogger)` (or a `Layer`) and extract it inside `effect!`
   with `~EffectLogger`, or use it directly as a value.
-- The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-  by building its `Layer`s (`provide_minimum_log_level(level)`, `LogMetadataLive::layer()`,
-  `provide_composite_logger(backend)`) on the thread that runs the program, e.g.
-  `program.provide_layer(LogMetadataLive::layer().merge(provide_composite_logger(backend)))`.
+- The pipeline is installed by building its `Layer`s (`provide_minimum_log_level(level)`,
+  `LogMetadataLive::layer()`, `provide_composite_logger(backend)`, `provide_redaction_policy(p)`),
+  e.g. `program.provide_layer(LogMetadataLive::layer().merge(provide_composite_logger(backend)))`.
+  The minimum level, annotations and spans are thread-local (built on the thread that runs the
+  program); the composite backend and the redaction policy are process-wide (since 0.10), so a
+  policy built at startup also redacts lines logged from a server's worker threads.
   `EffectLoggerLive::layer()` provides the `EffectLogger` capability itself.
 - Fiber-scoped minimum level (`with_minimum_log_level`), annotations (`annotate_logs`) and log spans
   (`with_log_span`).

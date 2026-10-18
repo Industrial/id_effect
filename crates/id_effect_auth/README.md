@@ -54,7 +54,11 @@ assert!(set_cookie.starts_with("__Host-id_session="));
 ```
 
 Feature `oidc` adds OpenID Connect login (authorization code + PKCE) and feature `totp` a TOTP
-second factor with recovery codes.
+second factor with recovery codes. Feature `accounts` adds the account flows (`Accounts`,
+`AccountRoutes`): registration, email verification and forgot / reset password, with
+single-use expiring tokens stored as SHA-256 digests (`PgAccountTokenStore`), a forgot-password
+answer that does not reveal whether the account exists, and a reset that revokes the account's
+sessions; `id_effect_mail`'s feature `auth` sends the mails (`AccountMails`).
 
 Book: [Passwords and sessions](../id_effect/book/src/part6/ch30-03-passwords-sessions.md),
 [Credentials and JWT](../id_effect/book/src/part6/ch30-04-credentials-jwt.md),

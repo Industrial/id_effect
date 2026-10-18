@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use super::error::sqlx_error;
 use super::value::{bind_query, decode_rows};
-use crate::transaction::{savepoint_sql, with_sqlstate};
+use crate::transaction::savepoint_sql;
 use crate::{SqlError, SqlRow, SqlTransaction, SqlValue};
 
 type Slot = Arc<Mutex<Option<Transaction<'static, Postgres>>>>;
@@ -43,7 +43,10 @@ impl PgSqlTransaction {
     from_async(move || async move {
       let mut guard = slot.lock().await;
       let tx = guard.as_mut().ok_or_else(already_finished)?;
-      (&mut **tx).execute(sql.as_str()).await.map_err(tx_error)?;
+      (&mut **tx)
+        .execute(sql.as_str())
+        .await
+        .map_err(sqlx_error)?;
       Ok(())
     })
   }
@@ -51,21 +54,6 @@ impl PgSqlTransaction {
 
 fn already_finished() -> SqlError {
   SqlError::TransactionFailed("transaction already finished".into())
-}
-
-/// [`sqlx_error`], with a database error's SQLSTATE appended to the message.
-pub(super) fn tx_error(err: sqlx::Error) -> SqlError {
-  let code = err
-    .as_database_error()
-    .and_then(|db| db.code())
-    .map(|code| code.into_owned());
-  match (sqlx_error(err), code) {
-    (SqlError::QueryFailed { sql, message }, Some(code)) => SqlError::QueryFailed {
-      sql,
-      message: with_sqlstate(message, &code),
-    },
-    (other, _) => other,
-  }
 }
 
 async fn take(slot: &Slot) -> Result<Transaction<'static, Postgres>, SqlError> {
@@ -81,7 +69,7 @@ impl SqlTransaction for PgSqlTransaction {
       let rows = bind_query(sqlx::query(&sql), &params)?
         .fetch_all(&mut **tx)
         .await
-        .map_err(tx_error)?;
+        .map_err(sqlx_error)?;
       decode_rows(&rows)
     })
   }
@@ -94,19 +82,19 @@ impl SqlTransaction for PgSqlTransaction {
       let result = bind_query(sqlx::query(&sql), &params)?
         .execute(&mut **tx)
         .await
-        .map_err(tx_error)?;
+        .map_err(sqlx_error)?;
       Ok(result.rows_affected())
     })
   }
 
   fn commit(&self) -> Effect<(), SqlError> {
     let slot = Arc::clone(&self.tx);
-    from_async(move || async move { take(&slot).await?.commit().await.map_err(tx_error) })
+    from_async(move || async move { take(&slot).await?.commit().await.map_err(sqlx_error) })
   }
 
   fn rollback(&self) -> Effect<(), SqlError> {
     let slot = Arc::clone(&self.tx);
-    from_async(move || async move { take(&slot).await?.rollback().await.map_err(tx_error) })
+    from_async(move || async move { take(&slot).await?.rollback().await.map_err(sqlx_error) })
   }
 
   fn create_savepoint(&self, name: &str) -> Effect<(), SqlError> {

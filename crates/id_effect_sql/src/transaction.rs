@@ -461,20 +461,11 @@ pub(crate) fn with_sqlstate(message: impl std::fmt::Display, code: &str) -> Stri
   format!("{message} (SQLSTATE {code})")
 }
 
-/// The SQLSTATE a driver reported in `err`'s message, if any.
-fn sqlstate(err: &SqlError) -> Option<&str> {
-  let message = match err {
-    SqlError::QueryFailed { message, .. } | SqlError::TransactionFailed(message) => message,
-    _ => return None,
-  };
-  message.rsplit_once("(SQLSTATE ")?.1.strip_suffix(')')
-}
-
 /// Whether `err` is a serialization failure (`40001`) or a deadlock (`40P01`): the transaction
 /// lost a conflict and running it again may succeed.
 pub fn is_serialization_failure(err: &SqlError) -> bool {
   matches!(
-    sqlstate(err),
+    err.sqlstate(),
     Some(SQLSTATE_SERIALIZATION_FAILURE | SQLSTATE_DEADLOCK_DETECTED)
   )
 }

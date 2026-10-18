@@ -18,14 +18,17 @@
 //! | `Text` | text (utf8mb4) | `CHAR`, `VARCHAR`, `*TEXT`, `ENUM`, `SET` |
 //! | `Bytes` | bytes | `BINARY`, `VARBINARY`, `*BLOB` |
 //! | `Uuid` | 16 bytes | a `BINARY(16)` column reads back as `Bytes` (`row.get::<Uuid>` takes 16 bytes) |
-//! | `Timestamp` | UTC date-time | `TIMESTAMP` (connections use the UTC session time zone) |
-//! | `DateTime` | date-time | `DATETIME` |
-//! | `Date` / `Time` | `DATE` / `TIME` | `DATE` / `TIME` within a day (a negative or ≥ 24h `TIME` is `ValueOutOfRange`) |
+//! | `Timestamp` | literal `'YYYY-MM-DD hh:mm:ss.ffffff'`, the UTC wall clock | `TIMESTAMP` (connections use the UTC session time zone) |
+//! | `DateTime` | literal `'YYYY-MM-DD hh:mm:ss.ffffff'` | `DATETIME` |
+//! | `Date` / `Time` | literal `'YYYY-MM-DD'` / `TIME` | `DATE` / `TIME` within a day (a negative or ≥ 24h `TIME` is `ValueOutOfRange`) |
 //! | `Decimal` | exact text | `DECIMAL` (trailing zeros beyond 28 digits dropped; more digits: `ValueOutOfRange`) |
 //! | `Json` | JSON text | `JSON` |
 //!
 //! Other column types (`BIT`, `GEOMETRY`) are [`SqlError::Unsupported`](crate::SqlError::Unsupported)
-//! naming the column; cast them. Declare fractional seconds to keep them: `DATETIME(6)`,
+//! naming the column; cast them. sqlx has no public parameter type for `DATE` / `DATETIME` /
+//! `TIMESTAMP`, so those bind as literals the server converts when it assigns or compares them;
+//! a bare `SELECT ?` of one reads back as `Text` (`CAST(? AS DATETIME(6))` keeps the type).
+//! Declare fractional seconds to keep them: `DATETIME(6)`,
 //! `TIMESTAMP(6)`, `TIME(6)` (without, MySQL rounds them away); sub-microsecond digits are
 //! truncated. Dates bind in years 0000-9999, but a `TIMESTAMP` column only holds 1970-01-01 to
 //! 2038-01-19 (UTC): store wider instants in `DATETIME(6)` as UTC wall-clock time. MySQL
@@ -40,7 +43,9 @@
 //! Savepoints are MySQL savepoints. A deadlock (`ER_LOCK_DEADLOCK`, 1213) is SQLSTATE `40001`,
 //! and a lock wait timeout (`ER_LOCK_WAIT_TIMEOUT`, 1205) is reported as `40001` too, so
 //! [`retry_serialization_failures`](crate::retry_serialization_failures) retries both; the
-//! message of every server error ends with its SQLSTATE (`"… (SQLSTATE 23000)"`).
+//! message of every server error ends with its SQLSTATE (`"… (SQLSTATE 22007)"`,
+//! [`SqlError::sqlstate`](crate::SqlError::sqlstate)), a duplicate key (`23000`) reported as
+//! `23505` like PostgreSQL's unique violation.
 //!
 //! ## Streaming
 //!

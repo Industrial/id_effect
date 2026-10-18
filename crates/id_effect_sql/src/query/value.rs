@@ -3,15 +3,14 @@
 
 use sea_query::{OptionEnum, Value, Values};
 
-use super::time_conv as tc;
 use crate::error::SqlError;
 use crate::value::SqlValue;
 
 /// Why one `sea_query::Value` has no [`SqlValue`].
 enum Unbridged {
-  /// The value does not fit (an unsigned above `i64::MAX`, a date jiff cannot hold).
+  /// The value does not fit (an unsigned above `i64::MAX`).
   OutOfRange(String),
-  /// The variant has no [`SqlValue`] (arrays, chrono, …).
+  /// The variant has no [`SqlValue`] (arrays, chrono, time, …).
   Unsupported(String),
 }
 
@@ -66,13 +65,7 @@ fn bridge(v: Value) -> Result<SqlValue, Unbridged> {
     Value::JiffDateTime(dt) => some(dt, |dt| SqlValue::DateTime(*dt)),
     Value::JiffDate(d) => some(d, SqlValue::Date),
     Value::JiffTime(t) => some(t, SqlValue::Time),
-    Value::TimeDateTimeWithTimeZone(t) => {
-      some_try(t, |t| tc::timestamp(t).map(SqlValue::Timestamp))?
-    }
-    Value::TimeDateTime(dt) => some_try(dt, |dt| tc::datetime(dt).map(SqlValue::DateTime))?,
-    Value::TimeDate(d) => some_try(d, |d| tc::date(d).map(SqlValue::Date))?,
-    Value::TimeTime(t) => some(t, |t| SqlValue::Time(tc::time_of_day(t))),
-    // Variants other crates' sea-query features add (arrays, chrono, bigdecimal, …).
+    // Variants other crates' sea-query features add (arrays, chrono, time, bigdecimal, …).
     #[allow(unreachable_patterns)]
     other => return Err(Unbridged::Unsupported(format!("{other:?}"))),
   })
@@ -100,8 +93,7 @@ impl TryFrom<Value> for SqlValue {
 /// | `Float`, `Double`, `String`, `Char`, `Enum`, `Bytes` | `F32`, `F64`, `Text`, `Text`, `Text` (the label), `Bytes` |
 /// | `Json`, `Uuid`, `Decimal` | `Json`, `Uuid`, `Decimal` |
 /// | `JiffTimestamp`, `JiffDateTime`, `JiffDate`, `JiffTime` | `Timestamp`, `DateTime`, `Date`, `Time` |
-/// | `TimeDateTimeWithTimeZone`, `TimeDateTime`, `TimeDate`, `TimeTime` | `Timestamp` (the instant; the offset is dropped), `DateTime`, `Date`, `Time` |
-/// | anything else (arrays, chrono, … when another crate enables them) | [`SqlError::Unsupported`] |
+/// | anything else (arrays, chrono, time, … when another crate enables them) | [`SqlError::Unsupported`] |
 ///
 /// The other way, `From<SqlValue> for sea_query::Value` maps every variant to its own (dates and
 /// times to the `Jiff*` variants, `Null` to `String(None)`), so `SqlValue → Value → SqlValue` is

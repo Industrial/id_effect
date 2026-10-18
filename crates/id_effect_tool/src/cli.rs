@@ -7,7 +7,9 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::dev::DevArgs;
 use crate::doctor::{GraphFormat, Options as DoctorOptions, doctor};
+use crate::generate::GenerateArgs;
 use crate::migrate::MigrateArgs;
 use crate::project::new_project;
 use crate::render::{Db, Options};
@@ -34,6 +36,13 @@ pub enum Command {
   /// Create, apply, list, revert and check SQL migrations (PostgreSQL). Exits 1 when `check`
   /// finds pending or changed migrations, 3 on a database error.
   Migrate(MigrateArgs),
+  /// Build and run the project's binary with ID_EFFECT_PROFILE=dev; rebuild and restart it
+  /// (SIGTERM, then kill after --grace-secs) when src/, Cargo.toml, config/ or a --watch path
+  /// changes. A failed build keeps the running app.
+  Dev(DevArgs),
+  /// Add code to a project `id-effect new` generated: `generate job <NAME>` writes a background
+  /// job (`src/jobs/<NAME>.rs`, its registration and a test). Exits 1 when it refuses.
+  Generate(GenerateArgs),
 }
 
 /// Arguments of `id-effect doctor`.
@@ -78,6 +87,12 @@ pub struct NewArgs {
   /// No OpenTelemetry export (the default).
   #[arg(long = "no-otel", overrides_with = "otel")]
   pub no_otel: bool,
+  /// Background jobs in src/jobs/, run by a worker in the service's process (`service` only).
+  #[arg(long)]
+  pub jobs: bool,
+  /// The operator console on a loopback port, behind a guard (`service` only).
+  #[arg(long)]
+  pub console: bool,
   /// Build against the id_effect checkout at PATH instead of crates.io
   /// (writes a `[patch.crates-io]` section).
   #[arg(long, value_name = "PATH")]
@@ -89,7 +104,9 @@ impl NewArgs {
   pub fn options(&self) -> Options {
     let options = Options::new(self.name.clone(), self.template)
       .db(self.db)
-      .otel(self.otel && !self.no_otel);
+      .otel(self.otel && !self.no_otel)
+      .jobs(self.jobs)
+      .console(self.console);
     match &self.local_workspace {
       Some(path) => options.local_workspace(path.clone()),
       None => options,
@@ -125,6 +142,8 @@ where
     Command::New(args) => run_new(&args, out, err),
     Command::Doctor(args) => run_doctor(&args, out),
     Command::Migrate(args) => crate::migrate::run(&args, out, err),
+    Command::Dev(args) => crate::dev::run(&args, out, err),
+    Command::Generate(args) => crate::generate::run(&args, out, err),
   }
 }
 
@@ -212,6 +231,8 @@ mod tests {
         "--db",
         "pg",
         "--otel",
+        "--jobs",
+        "--console",
         "--local-workspace",
         "/ws",
       ]);
@@ -219,6 +240,8 @@ mod tests {
       let want = Options::new("shop", Template::Service)
         .db(Db::Pg)
         .otel(true)
+        .jobs(true)
+        .console(true)
         .local_workspace("/ws");
       assert_eq!(args.options(), want);
     }

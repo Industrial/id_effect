@@ -2,6 +2,7 @@
 
 use id_effect::{Cause, Exit};
 use jiff::civil::{date, time as clock};
+#[cfg(feature = "proptest")]
 use proptest::prelude::*;
 use rust_decimal::Decimal;
 use sea_query::{
@@ -17,20 +18,11 @@ fn ts(s: &str) -> jiff::Timestamp {
   s.parse().unwrap()
 }
 
-fn utc(t: jiff::Timestamp) -> time::OffsetDateTime {
-  time::OffsetDateTime::from_unix_timestamp_nanos(t.as_nanosecond()).unwrap()
-}
-
 /// Every sea-query variant this crate enables, `Some` and `None`, with its `SqlValue`.
 fn table() -> Vec<(Value, SqlValue)> {
   let t = ts("2024-02-29T12:34:56.789012Z");
   let dt = date(2024, 2, 29).at(12, 34, 56, 789_012_000);
   let json = serde_json::json!({"a": [1, null, "x"]});
-  let odt = utc(t).to_offset(time::UtcOffset::from_hms(5, 30, 0).unwrap());
-  let pdt = time::PrimitiveDateTime::new(
-    time::Date::from_calendar_date(2024, time::Month::February, 29).unwrap(),
-    time::Time::from_hms_nano(12, 34, 56, 789_012_000).unwrap(),
-  );
   let enum_ty: sea_query::EnumTypeName = "mood".into();
   vec![
     (Value::Bool(Some(true)), SqlValue::Bool(true)),
@@ -94,20 +86,6 @@ fn table() -> Vec<(Value, SqlValue)> {
       Value::JiffTime(Some(clock(23, 59, 59, 999_999_999))),
       SqlValue::Time(clock(23, 59, 59, 999_999_999)),
     ),
-    // time: the instant is kept, the +05:30 offset dropped.
-    (
-      Value::TimeDateTimeWithTimeZone(Some(odt)),
-      SqlValue::Timestamp(t),
-    ),
-    (Value::TimeDateTime(Some(pdt)), SqlValue::DateTime(dt)),
-    (
-      Value::TimeDate(Some(pdt.date())),
-      SqlValue::Date(date(2024, 2, 29)),
-    ),
-    (
-      Value::TimeTime(Some(pdt.time())),
-      SqlValue::Time(clock(12, 34, 56, 789_012_000)),
-    ),
     (Value::Enum(OptionEnum::None(enum_ty)), SqlValue::Null),
   ]
 }
@@ -168,24 +146,6 @@ fn unsigned_beyond_i64_is_out_of_range_naming_the_parameter() {
   assert_eq!(
     sql_values(Values(vec![Value::Int(Some(1)), Value::Bool(None)])),
     Ok(vec![SqlValue::I32(1), SqlValue::Null])
-  );
-}
-
-#[test]
-fn time_instants_beyond_jiff_are_out_of_range() {
-  // time reaches 9999-12-31T23:59:59 UTC; jiff's Timestamp stops a day earlier.
-  let last = time::PrimitiveDateTime::new(
-    time::Date::from_calendar_date(9999, time::Month::December, 31).unwrap(),
-    time::Time::from_hms(23, 59, 59).unwrap(),
-  );
-  assert!(matches!(
-    SqlValue::try_from(Value::TimeDateTimeWithTimeZone(Some(last.assume_utc()))),
-    Err(SqlError::ValueOutOfRange { column, .. }) if column == "value"
-  ));
-  // The wall clock at the same moment fits.
-  assert_eq!(
-    SqlValue::try_from(Value::TimeDateTime(Some(last))),
-    Ok(SqlValue::DateTime(date(9999, 12, 31).at(23, 59, 59, 0)))
   );
 }
 
@@ -424,37 +384,6 @@ fn a_rendering_error_fails_the_effect_before_any_query() {
   )));
   assert!(failed(run(&test, execute_query(pg, &bad).map(|_| ()))));
   assert!(test.recorded_queries().is_empty() && test.recorded_executes().is_empty());
-}
-
-proptest! {
-  /// sea-query's `time` values reach the same jiff values as its jiff ones.
-  #[test]
-  fn prop_time_values_bridge_like_jiff_values(
-    secs in -62_135_596_800i64..253_402_200_000,
-    nanos in 0i32..1_000_000_000,
-    offset in -86_399i32..86_400,
-  ) {
-    let t = jiff::Timestamp::new(secs, nanos).unwrap();
-    let odt = utc(t).to_offset(time::UtcOffset::from_whole_seconds(offset).unwrap());
-    prop_assert_eq!(
-      SqlValue::try_from(Value::TimeDateTimeWithTimeZone(Some(odt))),
-      SqlValue::try_from(Value::JiffTimestamp(Some(Box::new(t))))
-    );
-    let civil = jiff::tz::Offset::UTC.to_datetime(t);
-    let pdt = time::PrimitiveDateTime::new(utc(t).date(), utc(t).time());
-    prop_assert_eq!(
-      SqlValue::try_from(Value::TimeDateTime(Some(pdt))),
-      Ok(SqlValue::DateTime(civil))
-    );
-    prop_assert_eq!(
-      SqlValue::try_from(Value::TimeDate(Some(pdt.date()))),
-      Ok(SqlValue::Date(civil.date()))
-    );
-    prop_assert_eq!(
-      SqlValue::try_from(Value::TimeTime(Some(pdt.time()))),
-      Ok(SqlValue::Time(civil.time()))
-    );
-  }
 }
 
 #[cfg(feature = "proptest")]

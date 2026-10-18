@@ -33,8 +33,6 @@ use id_effect::schema::Unknown;
 use crate::error::SqlError;
 
 mod encode;
-#[cfg(any(feature = "pg", feature = "mysql"))]
-pub(crate) mod time_conv;
 
 pub use encode::Json;
 

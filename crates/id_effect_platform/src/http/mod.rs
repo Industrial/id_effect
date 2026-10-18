@@ -4,6 +4,11 @@
 //! [`provide_reqwest_http_client`]) and [`provide_http_client`] are the [`Layer`]s that provide
 //! it ([`HttpClientEnv`]).
 //!
+//! The reqwest layer applies client-wide defaults, configured once ([`HttpClientConfig`],
+//! [`ReqwestHttpClientProvider::layer_with`]): a 10 s connect timeout, a 30 s total timeout
+//! (a request's own [`HttpRequest::timeout`] replaces it), and a [`RetryPolicy`] retrying
+//! idempotent methods on connect errors, `5xx` and `429` ([`RetryingHttpClient`]).
+//!
 //! The reqwest client needs a tokio runtime with its IO driver enabled, such as
 //! `id_effect_tokio::TokioRuntime`.
 
@@ -16,6 +21,10 @@ use id_effect::{Effect, HCons, HList, HNil, Layer, Selector, from_async, hlist, 
 use tokio::sync::Mutex;
 
 use crate::error::HttpError;
+
+pub mod retry;
+
+pub use retry::{RetryCause, RetryPolicy, RetryingHttpClient};
 
 /// HTTP verb for [`HttpRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,10 +253,84 @@ impl ReqwestHttpClient {
     Self { inner: client }
   }
 
-  /// Build with [`::reqwest::Client::new`].
+  /// Build with the default timeouts ([`HttpClientConfig::DEFAULT_CONNECT_TIMEOUT`],
+  /// [`HttpClientConfig::DEFAULT_TIMEOUT`]).
+  ///
+  /// # Panics
+  ///
+  /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
   #[inline]
   pub fn default_client() -> Self {
-    Self::new(::reqwest::Client::new())
+    Self::with_timeouts(
+      HttpClientConfig::DEFAULT_CONNECT_TIMEOUT,
+      HttpClientConfig::DEFAULT_TIMEOUT,
+    )
+  }
+
+  /// Build with a `connect` timeout and a `total` per-request timeout (a request's own
+  /// [`HttpRequest::timeout`] replaces `total`).
+  ///
+  /// # Panics
+  ///
+  /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
+  pub fn with_timeouts(connect: Duration, total: Duration) -> Self {
+    let client = ::reqwest::Client::builder()
+      .connect_timeout(connect)
+      .timeout(total)
+      .build()
+      .expect("reqwest client: TLS backend cannot be initialised");
+    Self::new(client)
+  }
+}
+
+/// Client-wide defaults for the reqwest layer, configured once for every call
+/// ([`ReqwestHttpClientProvider::layer_with`]).
+#[derive(Clone, Debug)]
+pub struct HttpClientConfig {
+  /// Timeout for establishing a connection.
+  pub connect_timeout: Duration,
+  /// Total timeout per request (a request's own [`HttpRequest::timeout`] replaces it).
+  pub timeout: Duration,
+  /// Retry policy applied to every call ([`RetryPolicy::none`] to disable).
+  pub retry: RetryPolicy,
+}
+
+impl HttpClientConfig {
+  /// Default connect timeout (10 s).
+  pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+  /// Default total request timeout (30 s).
+  pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+  /// Replaces the connect timeout.
+  #[inline]
+  pub fn with_connect_timeout(mut self, connect: Duration) -> Self {
+    self.connect_timeout = connect;
+    self
+  }
+
+  /// Replaces the total request timeout.
+  #[inline]
+  pub fn with_timeout(mut self, total: Duration) -> Self {
+    self.timeout = total;
+    self
+  }
+
+  /// Replaces the retry policy.
+  #[inline]
+  pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
+    self.retry = retry;
+    self
+  }
+}
+
+impl Default for HttpClientConfig {
+  /// Connect 10 s, total 30 s, [`RetryPolicy::default`].
+  fn default() -> Self {
+    Self {
+      connect_timeout: Self::DEFAULT_CONNECT_TIMEOUT,
+      timeout: Self::DEFAULT_TIMEOUT,
+      retry: RetryPolicy::default(),
+    }
   }
 }
 
@@ -385,9 +468,25 @@ pub fn provide_http_client<E: Send + 'static>(client: impl HttpClient) -> Layer<
 pub struct ReqwestHttpClientProvider;
 
 impl ReqwestHttpClientProvider {
-  /// The layer: a [`ReqwestHttpClient::default_client`] built once per layer build.
+  /// The layer with [`HttpClientConfig::default`]: a [`ReqwestHttpClient`] with the default
+  /// timeouts behind a [`RetryingHttpClient`] with [`RetryPolicy::default`], built once per
+  /// layer build.
   pub fn layer<E: Send + 'static>() -> Layer<HttpClientEnv, E> {
-    Layer::effect(|| sync(|| hlist![HttpClientService::new(ReqwestHttpClient::default_client())]))
+    Self::layer_with(HttpClientConfig::default())
+  }
+
+  /// The layer with `config`'s timeouts and retry policy, built once per layer build.
+  pub fn layer_with<E: Send + 'static>(config: HttpClientConfig) -> Layer<HttpClientEnv, E> {
+    Layer::effect(move || {
+      let config = config.clone();
+      sync(move || {
+        let client = ReqwestHttpClient::with_timeouts(config.connect_timeout, config.timeout);
+        hlist![HttpClientService::new(RetryingHttpClient::new(
+          client,
+          config.retry
+        ))]
+      })
+    })
   }
 }
 
@@ -395,6 +494,15 @@ impl ReqwestHttpClientProvider {
 #[inline]
 pub fn provide_reqwest_http_client<E: Send + 'static>() -> Layer<HttpClientEnv, E> {
   ReqwestHttpClientProvider::layer()
+}
+
+/// The reqwest-backed [`HttpClient`] layer with `config`
+/// ([`ReqwestHttpClientProvider::layer_with`]).
+#[inline]
+pub fn provide_reqwest_http_client_with<E: Send + 'static>(
+  config: HttpClientConfig,
+) -> Layer<HttpClientEnv, E> {
+  ReqwestHttpClientProvider::layer_with(config)
 }
 
 /// Execute using the [`HttpClientService`] in `R`.

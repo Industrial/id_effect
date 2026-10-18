@@ -38,13 +38,129 @@ lists every option.
 `.env.example` keys, the database, docker and the port, and exits `1` when a check fails;
 `--graph` also prints the app's layer graph. See [Doctor and the layer graph](./ch34-01-doctor-graph.md).
 
+## Generators: `id-effect generate job`
+
+Inside a generated project (any template; `--path DIR` points elsewhere), `generate job` adds a
+[background job](./ch31-01-jobs.md):
+
+```sh
+id-effect generate job send_report                       # enqueued on the `default` queue
+id-effect generate job nightly_digest --queue reports --cron "0 6 * * *"
+```
+
+| File | What it gets |
+|---|---|
+| `src/jobs/send_report.rs` | `SendReport`, the `#[derive(Schema)]` payload; its `Job` impl (`NAME` = `<crate>.send_report`, `QUEUE`, and `priority`, `max_attempts`, `unique_key`, `retry` spelled out at their defaults to edit); `handle`, the handler; a test that enqueues one job on a `MemoryJobQueue` and drains it with a `Worker` on virtual time |
+| `src/jobs/mod.rs` | `pub mod send_report;` and `let registry = registry.register(send_report::handle)?;` in `registry()`. Created on the first job with `JobEnv`, the handlers' environment (the queue; add the services they need) |
+| `src/lib.rs` | `pub mod jobs;` on the first job |
+| `Cargo.toml` | `id_effect_jobs` at the project's `id_effect` version; a `--local-workspace` project also gets its `[patch.crates-io]` entries |
+
+`--cron EXPR` also writes `CRON` and `cron()`, an `enqueue_on_tick` entry, adds it to
+`jobs::schedule()` and turns on `id_effect_jobs`' `cron` feature; run the schedule under a
+`CronLeader` so one node enqueues each tick. Names are snake_case, at most 24 characters, and
+must not be a keyword or turn into a type the module imports (`job` → `Job`).
+
+The generator never overwrites: an existing `src/jobs/<name>.rs` or module of that name is an
+error (exit `1`) and nothing is written. If it can't place a line safely (you rewrote
+`registry()`, or the dependency is a multi-line table), it writes the rest and prints the line
+under `Do by hand`. Running the jobs is up to the app: a `Worker::new(jobs::registry()?)` with
+the queues it serves, provided with `pg_job_queue_layer()` (or
+`job_queue_env(PgJobQueue::new(client))`); enqueue with `id_effect_jobs::enqueue`, or
+`enqueue_in` to commit the job with a transaction.
+
 ## Deploy
 
 The `service` template's `config/deploy.yml` is a [Kamal 2](https://kamal-deploy.org) config
-(service, image, servers, registry, the `/health` check of Kamal's proxy, the environment and
-secrets); the `Dockerfile` builds the release binary into `debian:bookworm-slim`. Fill in the
-image, servers and registry, put the secrets in `.kamal/secrets`, then `kamal setup` once and
-`kamal deploy` per release.
+(service, image, servers, registry, the `/ready` check of Kamal's proxy, the drain timeout, the
+environment and secrets); the `Dockerfile` builds the release binary into `debian:bookworm-slim`.
+Fill in the image, servers and registry, put the secrets in `.kamal/secrets`, then `kamal setup`
+once and `kamal deploy` per release.
+
+### Rolling restarts and drain
+
+A deploy replaces instances one at a time without dropping requests. A generated service does this
+out of the box: its `main` runs `HostBuilder::run_until_shutdown` with the project's `serve`
+(`serve_router` over the app wrapped in `track_in_flight(app, &host.drain)`, so in-flight requests
+are counted), its `HealthRegistry` built `with_readiness(host.readiness.clone())`. On SIGTERM it
+marks its readiness shutting down, so `/ready` answers `503` (`"shutting_down"`) while the listener
+keeps accepting and in-flight requests finish, for at most `SHUTDOWN_TIMEOUT_SECS` (default `30`);
+then the process exits. A hand-written host gets the same from those pieces.
+(`serve_until_shutdown` and `server_layer_with_readiness` stop accepting at once; the latter marks
+a shared `ReadinessState` the same way.) `/health` stays `200` throughout: the process is alive,
+just not taking new work. The sequence:
+
+1. The new instance starts and its `/ready` turns `200`.
+2. The old instance gets SIGTERM; its `/ready` turns `503`.
+3. The proxy or load balancer stops routing new requests to it.
+4. Its in-flight requests finish (or `SHUTDOWN_TIMEOUT_SECS` runs out).
+5. It exits.
+
+`on_sigterm_ready_turns_503_while_an_in_flight_request_completes`
+(`crates/id_effect_axum/tests/health.rs:216`) is the evidence: it sends the process SIGTERM with a
+request in flight, sees `/ready` answer `503` while that request is still open, then sees the
+request complete and the server exit. A generated project's `tests/shutdown.rs` runs the same check
+against its own `app` and `serve`.
+
+**Kamal.** The generated `config/deploy.yml` carries the settings:
+
+```yaml
+drain_timeout: 35
+
+proxy:
+  app_port: 8080
+  healthcheck:
+    path: /ready
+    interval: 1
+    timeout: 5
+
+env:
+  clear:
+    SHUTDOWN_TIMEOUT_SECS: "30"
+```
+
+`kamal deploy` boots the new container and kamal-proxy polls its `/ready` until it answers `200`
+(a `--db pg` service only does once the database check passes); the proxy then sends new requests
+there, waits up to `drain_timeout` seconds for the old container's in-flight requests, and stops
+it, which sends SIGTERM and kills it `drain_timeout` seconds later. The proxy has already moved
+traffic by the time SIGTERM arrives, so here the `503` only matters to other probes. Keep
+`drain_timeout` above `SHUTDOWN_TIMEOUT_SECS` so the service's own drain finishes before the
+kill. Run more than one server under `servers.web` (behind a load balancer) for the deploy to
+roll across hosts.
+
+**Kubernetes.** The same settings, as a Deployment:
+
+```yaml
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0      # never fewer ready pods than replicas
+      maxSurge: 1            # one new pod at a time
+  template:
+    spec:
+      terminationGracePeriodSeconds: 45   # > preStop sleep + SHUTDOWN_TIMEOUT_SECS
+      containers:
+        - name: app
+          env:
+            - name: SHUTDOWN_TIMEOUT_SECS
+              value: "30"
+          readinessProbe:
+            httpGet: { path: /ready, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 1
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+          lifecycle:
+            preStop:
+              sleep: { seconds: 5 }
+```
+
+Kubernetes removes a terminating pod from its Service endpoints at the same time as it starts the
+`preStop` hook, so the hook's short sleep lets kube-proxy and ingress controllers catch up before
+SIGTERM reaches the service. The readiness probe on `/ready` holds the rollout until the new pod is
+ready and drops a draining pod from the endpoints; the liveness probe stays on `/health`, so a
+draining pod is never restarted. `terminationGracePeriodSeconds` must cover the `preStop` sleep
+plus `SHUTDOWN_TIMEOUT_SECS`, or the kubelet's SIGKILL cuts the drain short.
 
 ## See also
 

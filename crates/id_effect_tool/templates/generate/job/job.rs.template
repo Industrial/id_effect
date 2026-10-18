@@ -1,0 +1,138 @@
+//! The `{{job}}` background job: its payload [`{{job_type}}`], its options (the [`Job`] impl)
+//! and its handler [`handle`], registered in [`super::registry`].
+//!
+//! Enqueue one with `id_effect_jobs::enqueue(job, JobOptions::default())` (or
+//! `id_effect_jobs::enqueue_in(&tx, job, opts, &clock)` to commit it with your transaction); a
+//! `Worker` serving the `{{queue}}` queue runs it.
+{{#if cron}}
+//! [`cron`] enqueues one at every fire time of [`CRON`] (registered in [`super::schedule`]).
+{{/if}}
+
+{{#if cron}}
+use id_effect::{Cron, CronError, CronJob, Effect, Schedule, Schema, ZonedDateTime, sync};
+use id_effect_jobs::{
+    Job, JobContext, JobFailure, JobQueueEnv, Priority, UniqueKey, default_retry, enqueue_on_tick,
+};
+{{/if}}
+{{#if !cron}}
+use id_effect::{Effect, Schedule, Schema, sync};
+use id_effect_jobs::{Job, JobContext, JobFailure, Priority, UniqueKey, default_retry};
+{{/if}}
+
+use super::JobEnv;
+
+/// The payload of a `{{job}}` job, stored as JSON through its schema. Keep it small (ids, not
+/// rows): a queued job whose payload no longer decodes (a field renamed or removed) is
+/// discarded.
+#[derive(Clone, Debug, PartialEq, Schema)]
+pub struct {{job_type}} {
+    /// What to work on: replace it with the job's inputs.
+    pub id: i64,
+}
+
+impl Job for {{job_type}} {
+    /// The registry key and the queue's `name` column: keep it stable across deploys (renaming
+    /// it strands the queued jobs of the old name).
+    const NAME: &'static str = "{{crate_name}}.{{job}}";
+    /// The queue it is enqueued on unless `JobOptions` says otherwise.
+    const QUEUE: &'static str = "{{queue}}";
+
+    /// Higher runs first within the queue.
+    fn priority(&self) -> Priority {
+        Priority::NORMAL
+    }
+
+    /// How many attempts before the job is `dead`.
+    fn max_attempts(&self) -> u16 {
+        20
+    }
+
+    /// `Some(UniqueKey::while_pending(key))` keeps at most one pending job per key.
+    fn unique_key(&self) -> Option<UniqueKey> {
+        None
+    }
+
+    /// The backoff between attempts: exponential from 1 s, capped at 1 h, jittered.
+    fn retry() -> Schedule<(), JobFailure> {
+        default_retry()
+    }
+}
+
+/// Runs one attempt of a `{{job}}` job. Delivery is at least once (a job whose worker died
+/// mid-run runs again), so keep it idempotent. Fail with [`JobFailure::retry`] to try again after
+/// the backoff, or [`JobFailure::discard`] when retrying cannot help.
+pub fn handle(job: {{job_type}}, ctx: JobContext) -> Effect<(), JobFailure, JobEnv> {
+    sync(move || {
+        println!(
+            "{} {} (attempt {}/{}): {}",
+            ctx.name, ctx.id, ctx.attempt, ctx.max_attempts, job.id
+        );
+    })
+}
+{{#if cron}}
+
+/// When a `{{job}}` job is enqueued: a cron expression.
+pub const CRON: &str = "{{cron}}";
+
+/// The name of the cron entry.
+pub const ENTRY: &str = "{{job}}";
+
+/// The cron entry [`ENTRY`]: enqueues [`payload`] at every fire time of [`CRON`], once per tick
+/// however many schedulers run it (`id_effect_jobs::tick_key`).
+pub fn cron() -> Result<CronJob<JobQueueEnv>, CronError> {
+    Ok(enqueue_on_tick(ENTRY, Cron::parse(CRON)?, payload))
+}
+
+/// The job a tick enqueues.
+fn payload(_tick: &ZonedDateTime) -> {{job_type}} {
+    {{job_type}} { id: 0 }
+}
+{{/if}}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use id_effect::{Executor, TestExecutor, UtcDateTime, WallClock};
+    use id_effect_jobs::{
+        DrainReport, JobOptions, JobQueueExt, MemoryJobQueue, Worker, job_queue_env,
+    };
+
+    use super::*;
+
+    /// One job enqueued on an in-memory queue, drained by a worker on virtual time.
+    #[test]
+    fn a_queued_job_runs_once_and_succeeds() {
+        let exec = TestExecutor::new();
+        let clock = WallClock::anchored(exec.now(), UtcDateTime::unsafe_make(1_800_000_000_000));
+        let store = MemoryJobQueue::new(clock);
+        let registry = crate::jobs::registry().expect("the jobs register");
+        let queue = {{job_type}}::QUEUE;
+        let worker = Worker::new(registry).queue(queue, 1);
+        let env = job_queue_env(store.clone());
+        let report = Arc::new(Mutex::new(None));
+        let out = Arc::clone(&report);
+        let job = {{job_type}} { id: 7 };
+        let program = store
+            .enqueue(job, JobOptions::default())
+            .flat_map(move |_| worker.run_until_idle().provide_all(env))
+            .map(move |drained| *out.lock().unwrap() = Some(drained));
+        let fiber = program.fork_root(Arc::new(exec.clone()));
+        exec.run_until_stalled();
+        assert!(fiber.is_done(), "the worker waits on time (a retry?)");
+        let drained = report.lock().unwrap().take().expect("the worker failed");
+        let want = DrainReport {
+            succeeded: 1,
+            ..DrainReport::default()
+        };
+        assert_eq!(drained, want);
+    }
+{{#if cron}}
+
+    #[test]
+    fn the_cron_entry_is_scheduled() {
+        assert!(cron().is_ok());
+        assert!(crate::jobs::schedule().is_ok());
+    }
+{{/if}}
+}

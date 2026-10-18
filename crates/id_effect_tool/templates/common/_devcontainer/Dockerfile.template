@@ -1,0 +1,15 @@
+# {{name}} — development container; .devcontainer/devcontainer.json builds it.
+#
+# Rust 1.99 (stable; the id_effect crates need 1.94 or newer) with rustfmt, clippy and the
+# `id-effect` command (`id-effect dev`, `id-effect doctor`, `id-effect migrate`). The base image
+# is pinned by digest, so every checkout builds against the same toolchain.
+FROM rust:1.99-bookworm@sha256:e12566d5abc17a0da741628782cdb504b68b8961f5bfcf677936bf3e8b32de29
+RUN rustup component add rustfmt clippy
+ARG ID_EFFECT_VERSION={{id_effect_version}}
+RUN cargo install id_effect_tool --version "${ID_EFFECT_VERSION}" --locked \
+    && rm -rf /usr/local/cargo/registry
+# A non-root user owning the toolchain, so files written to the workspace are not root's.
+ARG USERNAME=dev
+RUN useradd --create-home --shell /bin/bash --uid 1000 "${USERNAME}" \
+    && chown -R "${USERNAME}" /usr/local/cargo /usr/local/rustup
+USER ${USERNAME}

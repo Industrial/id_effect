@@ -105,6 +105,49 @@ assert_eq!(profiles.known_profiles().len(), 4);
 
 `Profiles::select(args, env_value)` is the pure form of the selection rules, handy in tests: `profiles.select(["--profile", "test"], None)`.
 
+## Hot reload
+
+`Profiles::watch_for::<C>(profile, every)` (or `watch(every)` for the resolved profile, `watch_with` for a custom parser) loads the profile once, exactly like `load_for`, and returns a `ProfileWatch<C>` holding the value in a `SubscriptionRef`. The initial load must succeed; after that the configuration can change under a running service:
+
+- `watch.run()` sleeps `every`, compares the modification time and length of `base.toml` and `<profile>.toml` with the previous poll and, on a change, merges every source again (files, overlays, environment) and parses the result. Fork it in the scope that owns the subscription: `scope.fork_in(watch.run())`. It polls instead of using file-system notifications, so it behaves the same on every platform and under the virtual clock of `TestExecutor`.
+- A value that parses replaces the current one and is published: `watch.subscribe(&scope)` yields a queue that receives the current value first, then every reloaded one; `watch.get()` reads the latest.
+- A change that does not parse (a TOML syntax error, a value of the wrong type) **keeps the previous value**, publishes nothing, and is reported: `reload_if_changed` fails with the `ConfigError`, `last_error()` keeps its message until the next good reload. The poll loop goes on, so a bad edit never takes the service down, and the next edit that fixes the file is picked up.
+- Only the two profile files trigger a reload. A change to an overlay or the environment alone does not; call `watch.reload()` to force one.
+
+```rust
+use std::time::Duration;
+
+use id_effect::{Effect, Exit, Never};
+use id_effect_config::{ConfigError, Profiles};
+use serde::Deserialize;
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+struct Server {
+    port: u16,
+}
+
+let dir = tempfile::tempdir().unwrap();
+std::fs::write(dir.path().join("base.toml"), "port = 3000").unwrap();
+let profiles = Profiles::new().dir(dir.path()).env_prefix("BOOK_WATCH_");
+let watch = profiles.watch_for::<Server>(profiles.profile("prod")?, Duration::from_secs(2))?;
+
+// The service forks `watch.run()` next to its subscription; here, one poll by hand.
+std::fs::write(dir.path().join("prod.toml"), "port = 8080").unwrap();
+let poll: Effect<bool, ConfigError> = watch.reload_if_changed();
+assert!(matches!(poll.block_on(), Exit::Success(true)));
+
+// A broken edit is rejected and the last good value stays.
+std::fs::write(dir.path().join("base.toml"), "port = ").unwrap();
+let poll: Effect<bool, ConfigError> = watch.reload_if_changed();
+assert!(matches!(poll.block_on(), Exit::Failure(_)));
+let current: Effect<Server, Never> = watch.get();
+assert!(matches!(current.block_on(), Exit::Success(Server { port: 8080 })));
+assert!(watch.last_error().unwrap().contains("TOML parse error"));
+# Ok::<(), ConfigError>(())
+```
+
+`cargo run -p id_effect_config --example 007_watch` runs the whole loop on a temporary directory: it subscribes, edits `dev.toml` under the running poller, prints the reloaded value, then writes a broken file and shows it rejected. The integration test `crates/id_effect_config/tests/watch.rs` checks the same two behaviours under virtual time.
+
 ## Secrets per profile
 
 Keep real secrets out of `prod.toml`. Either inject them through the environment (`APP_DB__PASSWORD`), or add a secret-manager snapshot with `Profiles::overlay(provider)`: overlays sit above the profile files and below the environment, so production reads the managed secret while a developer can still override it locally. Read them with `Config::…().secret()` so `Debug` and logs print `<redacted>` (see [Config + `Secret` from flags](./ch16-02-cli-config-secret.md)).

@@ -12,6 +12,9 @@
 //! - Pub/sub: [`publish`](RedisClient::publish), and [`subscribe`](RedisClient::subscribe) /
 //!   [`psubscribe`](RedisClient::psubscribe) as an `id_effect` [`Stream`](id_effect::Stream) of
 //!   [`RedisMessage`]s.
+//! - Feature `streams`: `RedisStreamsBroker`, id_effect_messaging's `MessageBroker` on Redis
+//!   Streams: consumer groups, ack / nack, redelivery of idle pending entries (`XAUTOCLAIM`), a
+//!   dead-letter stream after `max_deliveries`, and prefetch.
 //! - Feature `session`: `RedisSessionStore`, id_effect_auth's `SessionStore` in Redis.
 //! - Feature `rate-limit`: `RedisRateLimitStore`, id_effect_axum's `RateLimitStore`, so a rate
 //!   limit holds across every instance.
@@ -47,6 +50,8 @@ mod rate_limit;
 #[cfg(feature = "session")]
 mod session;
 mod store;
+#[cfg(feature = "streams")]
+mod streams;
 
 pub use cache::RedisCacheBackend;
 pub use client::{RedisClient, RedisConfig, RedisEnv, RedisLayer};
@@ -57,6 +62,8 @@ pub use rate_limit::RedisRateLimitStore;
 #[cfg(feature = "session")]
 pub use session::{RedisSessionStore, redis_session_store_layer};
 pub use store::{RedisHash, RedisJson, RedisKv};
+#[cfg(feature = "streams")]
+pub use streams::{RedisStreamsBroker, RedisStreamsConfig};
 
 /// The redis-rs crate this one is built on (for [`RedisClient::query`] commands and
 /// [`RedisClient::connection`]).

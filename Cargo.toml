@@ -26,6 +26,12 @@ members = [
   "crates/id_effect_authz",
   "crates/id_effect_test",
   "crates/id_effect_redis",
+  "crates/id_effect_jobs",
+  "crates/id_effect_messaging",
+  "crates/id_effect_mail",
+  "crates/id_effect_console",
+  "crates/id_effect_storage",
+  "crates/id_effect_events",
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",
@@ -33,7 +39,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 # MSRV. Verified by the CI `msrv` job; bumping it is a deliberate, CHANGELOG-noted change.
 rust-version = "1.94"

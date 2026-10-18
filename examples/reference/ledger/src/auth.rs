@@ -30,7 +30,6 @@ use id_effect_kit::auth::{
   TotpStepStore, TotpVerification, Verification,
 };
 use id_effect_kit::authz::{Policies, Principal};
-use id_effect_kit::axum::middleware::RateLimitLayer;
 use id_effect_kit::axum::route::{Input, Route, Router};
 use id_effect_kit::axum::{RequestCaps, run_with_env};
 use id_effect_kit::sql::query_builder::Dialect;
@@ -41,9 +40,10 @@ use id_effect_kit::sql::{
 use serde::Serialize;
 
 use crate::app::{App, AppEnv, Caller, as_caller, guarded};
-use crate::db;
 use crate::error::ApiError;
+use crate::limits::{LoginLimit, TenantHint};
 use crate::policy::{MFA, OWNER, ROLES};
+use crate::{db, signup};
 
 /// An API token: who issued it, for which organisation. Revoking it is a soft delete.
 #[derive(Clone, Debug, PartialEq, Serialize, id_effect::Schema, FromRow, Entity)]
@@ -70,14 +70,19 @@ pub struct ApiToken {
 #[derive(Clone, Debug, FromRow)]
 #[from_row(crate = id_effect_kit::sql)]
 struct UserRow {
-  org_id: String,
+  /// None for a registered user that is in no organisation yet.
+  org_id: Option<String>,
   username: String,
   password_hash: String,
   role: String,
   totp_secret: Option<String>,
+  /// A registered user's address (`crate::signup`).
+  email: Option<String>,
+  email_verified: bool,
 }
 
-const USER_COLUMNS: &str = "org_id, username, password_hash, role, totp_secret";
+const USER_COLUMNS: &str =
+  "org_id, username, password_hash, role, totp_secret, email, email_verified";
 
 fn find_user(db: &Arc<dyn SqlClient>, username: &str) -> Effect<Option<UserRow>, SqlError> {
   let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE username = $1");
@@ -329,17 +334,20 @@ fn sign_in(
   let sessions = app.sessions.clone();
   let me = Me {
     id: user.username.clone(),
-    org: user.org_id.clone(),
+    org: user.org_id.clone().unwrap_or_default(),
     roles: vec![user.role.clone()],
     mfa,
   };
+  let tenant = user.org_id.clone();
   app
     .sessions
     .login(user.username.clone(), presented.as_ref())
     .flat_map(move |mut session: Session| {
-      session
-        .set_attr("roles", me.roles.join(" "))
-        .set_attr("tenant", me.org.clone());
+      session.set_attr("roles", me.roles.join(" "));
+      // A user in no organisation has no tenant: every ledger route refuses it.
+      if let Some(tenant) = tenant {
+        session.set_attr("tenant", tenant);
+      }
       if mfa {
         session.set_attr("permissions", MFA);
       }
@@ -371,29 +379,28 @@ fn register(
       let app = Arc::clone(&app);
       move |hash| {
         let user = UserRow {
-          org_id: org,
+          org_id: Some(org.clone()),
           username,
           password_hash: hash.as_str().to_owned(),
           role: OWNER.to_owned(),
           totp_secret: None,
+          email: None,
+          email_verified: false,
         };
         let row = user.clone();
         with_transaction(Arc::clone(&app.db), move |tx| {
-          tx.execute(
-            "INSERT INTO orgs (id) VALUES ($1)",
-            &params![row.org_id.as_str()],
-          )
-          .flat_map(move |_| {
-            tx.execute(
-              "INSERT INTO users (org_id, username, password_hash, role) VALUES ($1, $2, $3, $4)",
-              &params![
-                row.org_id.as_str(),
-                row.username.as_str(),
-                row.password_hash.as_str(),
-                row.role.as_str()
-              ],
-            )
-          })
+          tx.execute("INSERT INTO orgs (id) VALUES ($1)", &params![org.as_str()])
+            .flat_map(move |_| {
+              tx.execute(
+                "INSERT INTO users (org_id, username, password_hash, role) VALUES ($1, $2, $3, $4)",
+                &params![
+                  org.as_str(),
+                  row.username.as_str(),
+                  row.password_hash.as_str(),
+                  row.role.as_str()
+                ],
+              )
+            })
         })
         .map_err(ApiError::from)
         .flat_map(move |_| sign_in(&app, &user, false, presented, StatusCode::CREATED))
@@ -404,11 +411,12 @@ fn register(
 
 fn login(
   env: &mut AppEnv,
-  _caps: RequestCaps,
+  caps: RequestCaps,
   input: Input<(), (), CookieHeader, Login>,
 ) -> Effect<Response, ApiError, AppEnv> {
   let app = Arc::clone(&env.0);
   let presented = presented_session(&app, &input.headers);
+  let hint = caps.get::<TenantHint>().map(|hint| hint.0.clone());
   let Login {
     username,
     password,
@@ -444,6 +452,16 @@ fn login(
               .map_err(ApiError::from),
             _ => fail(ApiError::BadCredentials("wrong username or password")),
           })
+      }
+    })
+    .flat_map(move |user| {
+      // The organisation a login names (its rate-limit bucket) must be the user's own.
+      if hint.is_some() && hint != user.org_id {
+        return fail(ApiError::BadCredentials("wrong username or password"));
+      }
+      match signup::may_sign_in(user.email.as_deref(), user.email_verified) {
+        Ok(()) => succeed(user),
+        Err(why) => fail(ApiError::BadCredentials(why)),
       }
     })
     .flat_map({
@@ -754,8 +772,9 @@ pub async fn reject_revoked_tokens(
   next.run(request).await
 }
 
-/// Sign-in routes; `login_limit` throttles `POST /orgs` and `POST /auth/login`.
-pub fn routes(policies: &Policies, login_limit: RateLimitLayer) -> Router<AppEnv> {
+/// Sign-in routes; `login_limit` throttles `POST /orgs` and `POST /auth/login`, per client and
+/// per organisation.
+pub fn routes(policies: &Policies, login_limit: LoginLimit) -> Router<AppEnv> {
   Router::new()
     .route(guarded(
       policies,
@@ -765,7 +784,7 @@ pub fn routes(policies: &Policies, login_limit: RateLimitLayer) -> Router<AppEnv
         .body::<Register>()
         .response::<Me>(StatusCode::CREATED)
         .handler_with_request_caps(register)
-        .layer(login_limit.clone()),
+        .layer(login_limit.client.clone()),
     ))
     .route(guarded(
       policies,
@@ -775,7 +794,8 @@ pub fn routes(policies: &Policies, login_limit: RateLimitLayer) -> Router<AppEnv
         .body::<Login>()
         .response::<Me>(StatusCode::OK)
         .handler_with_request_caps(login)
-        .layer(login_limit),
+        .layer(login_limit.tenant)
+        .layer(login_limit.client),
     ))
     .route(guarded(
       policies,

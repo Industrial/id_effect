@@ -230,13 +230,13 @@ impl QuicTransport {
     }
   }
 
-  /// The process default provider if one is installed, else ring. Configs
-  /// are always built with an explicit provider: rustls' implicit default
-  /// panics when both `ring` and `aws-lc-rs` are compiled in.
+  /// The process default provider if one is installed, else aws-lc-rs (the
+  /// provider the rest of the workspace compiles in). Configs are always
+  /// built with an explicit provider.
   fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     rustls::crypto::CryptoProvider::get_default()
       .cloned()
-      .unwrap_or_else(|| Arc::new(rustls::crypto::ring::default_provider()))
+      .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
   }
 
   fn client_config(&self) -> Result<ClientConfig, TransportError> {

@@ -39,16 +39,21 @@ pg = ["dep:id_effect_sql"]
 # server-side flow session, ID tokens checked over `JwksClient`, the `/auth/oidc/*` axum routes,
 # and id_effect_platform's `OAuthClient`.
 oidc = ["axum", "jwks", "dep:openidconnect", "dep:id_effect_platform"]
+# Account flows (`account` module): registration, email verification, forgot / reset password
+# with single-use expiring tokens stored as SHA-256 digests (`PgAccountTokenStore`, table
+# `id_effect_account_tokens` from `migrations/`), an `AccountNotifier` for the mails
+# (id_effect_mail's feature `auth` implements it) and the `/auth/*` axum routes.
+accounts = ["pg", "axum"]
 # TOTP second factor (`totp` module): enrolment with an `otpauth://` URI, verification with ±1
 # step of skew on the executor's clock and replay protection, argon2-hashed recovery codes, and
 # an MFA step-up marker on the session.
 totp = ["dep:totp-rs"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
-id_effect_authz = { path = "../id_effect_authz", version = "0.9.0" }
-id_effect_axum = { path = "../id_effect_axum", version = "0.9.0", optional = true }
-id_effect_sql = { path = "../id_effect_sql", version = "0.9.0", features = [
+id_effect = { path = "../id_effect", version = "0.10.0" }
+id_effect_authz = { path = "../id_effect_authz", version = "0.10.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.10.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.10.0", features = [
   "pg",
 ], optional = true }
 # `Authenticate` answers with axum responses (id_effect_axum's `Problem`); already in its tree.
@@ -96,7 +101,7 @@ tower-service = { version = "0.3.3", optional = true }
 # own: its requests go through the reqwest 0.13 client above. 4.x needs rustc 1.65.
 openidconnect = { version = "4.0.1", default-features = false, optional = true }
 # `OAuthClient` / `OAuthTokens`, the platform's OAuth capability `OidcClient` implements.
-id_effect_platform = { path = "../id_effect_platform", version = "0.9.0", features = [
+id_effect_platform = { path = "../id_effect_platform", version = "0.10.0", features = [
   "auth",
 ], optional = true }
 # totp-rs (release spec 0.9.0 D5): RFC 6238 codes and the `otpauth://` URI. No default features

@@ -11,6 +11,12 @@
 //! - **Spans** go through the span-hook `FiberRef`: install [`OtelSpanHook`] around the root
 //!   effect with `Effect::with_span_hook`, and every `Effect::with_span` becomes an
 //!   OpenTelemetry span, parented across forked fibers on any executor thread.
+//!   `TracedHttpClient` (feature `platform`) opens a client span per outbound request and sends
+//!   its W3C `traceparent`; `id_effect_sql`'s `InstrumentedSqlClient` opens a `db.query` span
+//!   per statement. Where OpenTelemetry is set up, `TracedHttpClient::layer` and
+//!   `instrumented_sql_layer` (feature `sql`) install them around the `HttpClientService` /
+//!   `SqlClientService` layers, so every call through the capability is traced.
+//!   [`OtelConfig::sampler`] picks the head sampler (`OTEL_TRACES_SAMPLER`).
 //! - **Logs**: [`OtelLogBackend`] is an `id_effect_logger` backend; `tracing` events reach OTEL
 //!   logs through the subscriber layers.
 
@@ -18,6 +24,8 @@
 #![deny(missing_docs)]
 
 mod axum;
+#[cfg(feature = "platform")]
+mod client;
 mod config;
 mod error;
 mod logs_bridge;
@@ -28,14 +36,18 @@ mod propagation;
 mod providers;
 mod shutdown;
 mod span_bridge;
+#[cfg(feature = "sql")]
+mod sql;
 mod starter;
 mod subscriber;
 mod testing;
 
 pub use axum::trace_request;
+#[cfg(feature = "platform")]
+pub use client::TracedHttpClient;
 #[cfg(feature = "config")]
 pub use config::load_otel_config;
-pub use config::{OtelConfig, OtelProtocol, config_keys};
+pub use config::{OtelConfig, OtelProtocol, OtelSampler, config_keys};
 pub use error::OtelError;
 pub use logs_bridge::{
   OtelLogBackend, otel_log_backend_for_provider, sdk_logger_provider_with_in_memory_exporter,
@@ -59,12 +71,15 @@ pub use shutdown::{
   shutdown_otel_on_signal_with_timeout,
 };
 pub use span_bridge::{OtelSpanHook, current_otel_context, span_otel_context};
+#[cfg(feature = "sql")]
+pub use sql::{instrumented_sql_client, instrumented_sql_layer};
 pub use starter::{
   OtelInMemoryExporters, OtelProviders, OtelStarterConfig, OtelStarterGuard, install_from_config,
   install_otel_starter,
 };
 pub use subscriber::{
-  register_global_tracer_provider, sdk_tracer_provider_with_in_memory_exporter,
-  trace_subscriber_for_provider, try_init_global_tracing_with_otel,
+  EnvFilterHandle, register_global_tracer_provider, reloadable_env_filter,
+  sdk_tracer_provider_with_in_memory_exporter, trace_subscriber_for_provider,
+  try_init_global_tracing_with_otel,
 };
 pub use testing::with_otel_test_harness;

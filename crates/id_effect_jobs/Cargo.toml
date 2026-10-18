@@ -1,0 +1,53 @@
+[package]
+name = "id_effect_jobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Background jobs for id_effect services: a Postgres SKIP LOCKED queue, workers, retries and cron"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_jobs"
+
+[features]
+default = []
+# Cron entries that enqueue a job per tick, led by one node: `ClusterSingleton` over
+# `PgAdvisoryLease` (id_effect_node `pg`).
+cron = ["dep:id_effect_node", "id_effect_node/pg", "dep:id_effect_process"]
+
+[dependencies]
+# `schema-serde`: job payloads go `Schema` → `Unknown` → `serde_json::Value` → `jsonb`.
+id_effect = { path = "../id_effect", version = "0.10.0", features = [
+  "schema-serde",
+] }
+# `PgJobQueue` runs on any `SqlClient`; `migrate` ships the schema as a `Migrator` with its own
+# tracking table (`migrator()`).
+id_effect_sql = { path = "../id_effect_sql", version = "0.10.0", features = [
+  "migrate",
+] }
+# Same floors as id_effect_sql (whose value types they are).
+jiff = "0.2.23"
+serde_json = "1"
+# Feature `cron`: leader election (`ClusterSingleton`, `PgAdvisoryLease`) and its holder `Pid`.
+id_effect_node = { path = "../id_effect_node", version = "0.10.0", optional = true }
+id_effect_process = { path = "../id_effect_process", version = "0.10.0", optional = true }
+
+[dev-dependencies]
+# The live PostgreSQL tests (tests/conformance.rs, pg_worker.rs, pg_queue.rs, cron_pg.rs) connect
+# with the pg driver.
+id_effect_sql = { path = "../id_effect_sql", features = ["pg", "migrate"] }
+id_effect_tokio = { path = "../id_effect_tokio" }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 6, ADR 0012).
+tier = "platform"

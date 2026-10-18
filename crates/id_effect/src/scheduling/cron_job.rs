@@ -182,7 +182,7 @@ impl From<CronParseError> for CronError {
 
 // ── jobs ────────────────────────────────────────────────────────────────────────────────────
 
-type Task<R> = Arc<dyn Fn() -> Effect<(), String, R> + Send + Sync>;
+type Task<R> = Arc<dyn Fn(ZonedDateTime) -> Effect<(), String, R> + Send + Sync>;
 type Hook<R> = Arc<dyn Fn(&CronRun) -> Effect<(), Never, R> + Send + Sync>;
 
 /// A named job: a [`Cron`] expression, the effect to run at each fire time, and its policies and
@@ -233,10 +233,21 @@ impl<R: Send + Sync + 'static> CronJob<R> {
     E: fmt::Display + Send + 'static,
     F: Fn() -> Effect<A, E, R> + Send + Sync + 'static,
   {
+    Self::new_at(name, cron, move |_| make())
+  }
+
+  /// Like [`new`](Self::new), but `make` receives the fire time being run (in the expression's
+  /// zone), e.g. to key the work by its tick.
+  pub fn new_at<A, E, F>(name: impl Into<Arc<str>>, cron: Cron, make: F) -> Self
+  where
+    A: Send + 'static,
+    E: fmt::Display + Send + 'static,
+    F: Fn(ZonedDateTime) -> Effect<A, E, R> + Send + Sync + 'static,
+  {
     Self {
       name: name.into(),
       cron,
-      task: Arc::new(move || make().map(|_| ()).map_err(|e| e.to_string())),
+      task: Arc::new(move |fire| make(fire).map(|_| ()).map_err(|e| e.to_string())),
       overlap: OverlapPolicy::default(),
       missed: MissedRunPolicy::default(),
       on_success: Vec::new(),
@@ -571,8 +582,9 @@ fn run_once<R: Send + Sync + 'static>(
 ) -> Effect<(), Never, R> {
   let task = Arc::clone(&entry.job.task);
   let end = clock.clone();
+  let at = fire.clone();
   clock.now().flat_map(move |started| {
-    suspend(move || task())
+    suspend(move || task(at))
       .exit::<Never>()
       .flat_map(move |exit| {
         end.now().flat_map(move |finished| {
@@ -608,5 +620,33 @@ fn render(cause: &Cause<String>) -> String {
     Cause::Die(d) => format!("defect: {d}"),
     Cause::Interrupt(_) => "interrupted".to_string(),
     Cause::Both(a, b) | Cause::Then(a, b) => format!("{}; {}", render(a), render(b)),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{Executor, TestExecutor};
+
+  #[test]
+  fn cron_job_new_at_receives_each_fire_time() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let s = Arc::clone(&seen);
+    let job = CronJob::new_at("tick", Cron::parse("*/15 * * * *").unwrap(), move |fire| {
+      let s = Arc::clone(&s);
+      sync::<(), &str, _>(move || s.lock().unwrap().push(fire.inner().timestamp().to_string()))
+    });
+    let registry = CronRegistry::new().with(job).unwrap();
+    let exec = TestExecutor::new();
+    let start = UtcDateTime::from_epoch_millis(1_767_225_600_000).unwrap(); // 2026-01-01T00:00Z
+    let fiber = registry
+      .run(WallClock::anchored(exec.now(), start))
+      .fork_root(Arc::new(exec.clone()));
+    exec.advance(Duration::from_secs(1800));
+    assert_eq!(
+      *seen.lock().unwrap(),
+      ["2026-01-01T00:15:00Z", "2026-01-01T00:30:00Z"]
+    );
+    fiber.interrupt_now();
   }
 }

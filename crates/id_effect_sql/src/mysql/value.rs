@@ -6,14 +6,22 @@
 //! are an error naming the column and suggesting a cast. A value that does not fit its portable
 //! type (`BIGINT UNSIGNED` beyond `i64::MAX`, a `TIME` outside a day, a zero date) is
 //! [`SqlError::ValueOutOfRange`], never a panic.
+//!
+//! Date-times are our own conversions (sqlx's `time` and `chrono` codecs are not used): `DATE`,
+//! `DATETIME` and `TIMESTAMP` decode from the binary protocol's bytes (text-protocol values are
+//! parsed too), `TIME` through sqlx's `MySqlTime`. sqlx has no public type id for `DATE` /
+//! `DATETIME` / `TIMESTAMP` parameters, so those bind as MySQL literals
+//! (`'2024-02-29 12:34:56.123456'`), which the server converts on assignment and comparison; a
+//! `TIME` binds as `TIME`.
 
 use std::sync::Arc;
 
+use jiff::civil::{Date, DateTime, Time};
 use rust_decimal::Decimal;
+use sqlx::mysql::types::{MySqlTime, MySqlTimeSign};
 use sqlx::mysql::{MySql, MySqlArguments, MySqlRow};
 use sqlx::{Column as _, Row as _, TypeInfo as _, ValueRef as _};
 
-use crate::value::time_conv;
 use crate::{SqlColumn, SqlError, SqlRow, SqlType, SqlValue};
 
 pub(super) type MySqlQuery<'q> = sqlx::query::Query<'q, MySql, MySqlArguments>;
@@ -39,20 +47,14 @@ pub(super) fn bind_query<'q>(
       SqlValue::Text(v) => query.bind(v.clone()),
       SqlValue::Bytes(v) => query.bind(v.clone()),
       SqlValue::Uuid(v) => query.bind(v.as_bytes().to_vec()),
+      // The session time zone is UTC, so a `TIMESTAMP` literal is the instant's UTC wall clock.
       SqlValue::Timestamp(v) => {
         let utc = jiff::tz::Offset::UTC.to_datetime(*v);
-        year_in_range(utc.date()).map_err(out_of_range)?;
-        query.bind(time_conv::timestamp(*v).map_err(out_of_range)?)
+        query.bind(datetime_literal(utc).map_err(out_of_range)?)
       }
-      SqlValue::DateTime(v) => {
-        year_in_range(v.date()).map_err(out_of_range)?;
-        query.bind(time_conv::datetime(*v).map_err(out_of_range)?)
-      }
-      SqlValue::Date(v) => {
-        year_in_range(*v).map_err(out_of_range)?;
-        query.bind(time_conv::date(*v).map_err(out_of_range)?)
-      }
-      SqlValue::Time(v) => query.bind(time_conv::time_of_day(*v).map_err(out_of_range)?),
+      SqlValue::DateTime(v) => query.bind(datetime_literal(*v).map_err(out_of_range)?),
+      SqlValue::Date(v) => query.bind(date_literal(*v).map_err(out_of_range)?),
+      SqlValue::Time(v) => query.bind(time_to_wire(*v).map_err(out_of_range)?),
       SqlValue::Decimal(v) => query.bind(*v),
       SqlValue::Json(v) => query.bind(sqlx::types::Json(v.clone())),
     };
@@ -61,11 +63,42 @@ pub(super) fn bind_query<'q>(
 }
 
 /// MySQL dates are in years 0000-9999 (jiff's reach back to -9999).
-fn year_in_range(d: jiff::civil::Date) -> Result<(), String> {
+fn year_in_range(d: Date) -> Result<(), String> {
   if d.year() < 0 {
     return Err(format!("{d}: MySQL dates are in years 0000-9999"));
   }
   Ok(())
+}
+
+/// A date as MySQL's literal `YYYY-MM-DD`.
+fn date_literal(d: Date) -> Result<String, String> {
+  year_in_range(d)?;
+  Ok(format!("{:04}-{:02}-{:02}", d.year(), d.month(), d.day()))
+}
+
+/// A date and time as MySQL's literal `YYYY-MM-DD hh:mm:ss.ffffff` (sub-microseconds truncated,
+/// as the binary protocol would).
+fn datetime_literal(dt: DateTime) -> Result<String, String> {
+  Ok(format!(
+    "{} {:02}:{:02}:{:02}.{:06}",
+    date_literal(dt.date())?,
+    dt.hour(),
+    dt.minute(),
+    dt.second(),
+    dt.subsec_nanosecond() / 1_000
+  ))
+}
+
+/// A time of day as a `TIME` (sub-microseconds truncated).
+fn time_to_wire(t: Time) -> Result<MySqlTime, String> {
+  MySqlTime::new(
+    MySqlTimeSign::Positive,
+    u32::from(t.hour().unsigned_abs()),
+    t.minute().unsigned_abs(),
+    t.second().unsigned_abs(),
+    t.subsec_nanosecond().unsigned_abs() / 1_000,
+  )
+  .map_err(|e| e.to_string())
 }
 
 /// How a column's non-NULL values decode.
@@ -183,12 +216,11 @@ fn decode(row: &MySqlRow, i: usize, kind: Kind, sql_type: SqlType) -> Result<Sql
       let text: &str = row.try_get_unchecked(i).map_err(err)?;
       SqlValue::Json(serde_json::from_str(text).map_err(|e| e.to_string())?)
     }
-    Kind::Timestamp => {
-      let t: time::OffsetDateTime = row.try_get_unchecked(i).map_err(err)?;
-      SqlValue::Timestamp(timestamp(t)?)
-    }
+    Kind::Timestamp => SqlValue::Timestamp(timestamp(datetime(
+      row.try_get_unchecked(i).map_err(err)?,
+    )?)?),
     Kind::DateTime => SqlValue::DateTime(datetime(row.try_get_unchecked(i).map_err(err)?)?),
-    Kind::Date => SqlValue::Date(date(row.try_get_unchecked(i).map_err(err)?)?),
+    Kind::Date => SqlValue::Date(datetime(row.try_get_unchecked(i).map_err(err)?)?.date()),
     Kind::Time => SqlValue::Time(time_of_day(row.try_get_unchecked(i).map_err(err)?)?),
     Kind::Decimal => SqlValue::Decimal(decimal(row.try_get_unchecked(i).map_err(err)?)?),
     Kind::Null => SqlValue::Null,
@@ -232,27 +264,67 @@ fn decimal(text: &str) -> Result<Decimal, String> {
 }
 
 /// A `TIMESTAMP` (read in the session's UTC time zone) as an instant.
-fn timestamp(t: time::OffsetDateTime) -> Result<jiff::Timestamp, String> {
-  jiff::Timestamp::from_nanosecond(t.unix_timestamp_nanos()).map_err(|e| e.to_string())
+fn timestamp(utc: DateTime) -> Result<jiff::Timestamp, String> {
+  jiff::tz::Offset::UTC
+    .to_timestamp(utc)
+    .map_err(|e| e.to_string())
 }
 
-fn date(d: time::Date) -> Result<jiff::civil::Date, String> {
-  let year = i16::try_from(d.year()).map_err(|e| e.to_string())?;
-  jiff::civil::Date::new(year, u8::from(d.month()) as i8, d.day() as i8).map_err(|e| e.to_string())
+/// A `DATE`, `DATETIME` or `TIMESTAMP` value's bytes as a date and time (midnight for a `DATE`).
+///
+/// Binary protocol: a length byte, then the year (`u16`, little-endian), month and day; hour,
+/// minute and second unless the time is midnight (length 4); the microseconds (`u32`,
+/// little-endian) unless they are 0 (length 7). A zero date has length 0 and reads as NULL
+/// (sqlx). Text protocol: `YYYY-MM-DD[ hh:mm:ss[.ffffff]]`. Every field is checked by jiff's
+/// fallible constructors (an invalid date such as `2024-02-30` is an error, never a panic).
+fn datetime(bytes: &[u8]) -> Result<DateTime, String> {
+  if bytes.first().is_some_and(u8::is_ascii_digit) {
+    let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+    return text
+      .replacen(' ', "T", 1)
+      .parse()
+      .map_err(|e| format!("date-time {text:?}: {e}"));
+  }
+  let wire = match bytes {
+    [len @ (4 | 7 | 11), rest @ ..] if rest.len() == usize::from(*len) => rest,
+    _ => {
+      return Err(format!(
+        "a date-time of {} bytes is not MySQL's binary format",
+        bytes.len()
+      ));
+    }
+  };
+  let year = u16::from_le_bytes([wire[0], wire[1]]);
+  let year = i16::try_from(year).map_err(|_| format!("date-time year {year} is out of range"))?;
+  let date = Date::new(year, small(wire[2])?, small(wire[3])?).map_err(|e| e.to_string())?;
+  let (hour, minute, second) = wire.get(4..7).map_or((0, 0, 0), |t| (t[0], t[1], t[2]));
+  let micros = wire
+    .get(7..11)
+    .map_or(0, |us| u32::from_le_bytes([us[0], us[1], us[2], us[3]]));
+  Ok(date.to_datetime(clock(hour, minute, second, micros)?))
 }
 
-fn time_of_day(t: time::Time) -> Result<jiff::civil::Time, String> {
-  jiff::civil::Time::new(
-    t.hour() as i8,
-    t.minute() as i8,
-    t.second() as i8,
-    t.nanosecond() as i32,
-  )
-  .map_err(|e| e.to_string())
+/// A date or time field byte as jiff's `i8` (an out-of-range field is jiff's error to report).
+fn small(field: u8) -> Result<i8, String> {
+  i8::try_from(field).map_err(|_| format!("date-time field {field} is out of range"))
 }
 
-fn datetime(dt: time::PrimitiveDateTime) -> Result<jiff::civil::DateTime, String> {
-  Ok(date(dt.date())?.to_datetime(time_of_day(dt.time())?))
+/// A wall-clock time from its fields (microsecond precision).
+fn clock(hour: u8, minute: u8, second: u8, micros: u32) -> Result<Time, String> {
+  let nanos = i32::try_from(micros)
+    .ok()
+    .filter(|_| micros < 1_000_000)
+    .ok_or_else(|| format!("{micros} microseconds is beyond a second"))?;
+  Time::new(small(hour)?, small(minute)?, small(second)?, nanos * 1_000).map_err(|e| e.to_string())
+}
+
+/// A `TIME` within a day as a time of day (negative or ≥ 24h is an error).
+fn time_of_day(t: MySqlTime) -> Result<Time, String> {
+  if !t.is_valid_time_of_day() {
+    return Err(format!("TIME {t} is not a time of day"));
+  }
+  let hour = u8::try_from(t.hours()).map_err(|e| e.to_string())?;
+  clock(hour, t.minutes(), t.seconds(), t.microseconds())
 }
 
 #[cfg(test)]
@@ -312,23 +384,95 @@ mod tests {
   }
 
   #[test]
-  fn temporals_convert_from_time_and_check_the_year() {
-    let t = time::OffsetDateTime::from_unix_timestamp_nanos(1_000_001_000).unwrap();
+  fn binary_date_times_decode_every_length() {
+    use jiff::civil::date;
+    // 2024-02-29: year 2024 = 0x07e8.
     assert_eq!(
-      timestamp(t),
+      datetime(&[4, 0xe8, 0x07, 2, 29]),
+      Ok(date(2024, 2, 29).at(0, 0, 0, 0))
+    );
+    assert_eq!(
+      datetime(&[7, 1, 0, 2, 3, 4, 5, 6]),
+      Ok(date(1, 2, 3).at(4, 5, 6, 0))
+    );
+    // 999_999 µs = 0x000f423f.
+    assert_eq!(
+      datetime(&[11, 0x0f, 0x27, 12, 31, 23, 59, 59, 0x3f, 0x42, 0x0f, 0]),
+      Ok(date(9999, 12, 31).at(23, 59, 59, 999_999_000))
+    );
+    assert_eq!(
+      datetime(b"1999-12-31 23:59:59.000007"),
+      Ok(date(1999, 12, 31).at(23, 59, 59, 7_000))
+    );
+    assert_eq!(datetime(b"0001-02-03"), Ok(date(1, 2, 3).at(0, 0, 0, 0)));
+    assert_eq!(
+      timestamp(date(1970, 1, 1).at(0, 0, 1, 1_000)),
       Ok(jiff::Timestamp::from_nanosecond(1_000_001_000).unwrap())
     );
-    let dt = time::PrimitiveDateTime::new(
-      time::Date::from_calendar_date(1, time::Month::February, 3).unwrap(),
-      time::Time::from_hms_micro(4, 5, 6, 7).unwrap(),
+  }
+
+  #[test]
+  fn malformed_date_times_are_errors_not_panics() {
+    for bytes in [
+      &[][..],
+      &[4, 0xe8, 0x07, 2],
+      &[5, 0xe8, 0x07, 2, 29, 0],
+      &[4, 0xe8, 0x07, 2, 30],
+      &[4, 0xe8, 0x07, 0, 0],
+      &[4, 0xff, 0xff, 1, 1],
+      &[4, 0x10, 0x27, 1, 1],
+      &[7, 0xe8, 0x07, 1, 1, 24, 0, 0],
+      &[7, 0xe8, 0x07, 1, 1, 200, 0, 0],
+      &[11, 0xe8, 0x07, 1, 1, 0, 0, 0, 0x40, 0x42, 0x0f, 0],
+      &[11, 0xe8, 0x07, 1, 1, 0, 0, 0, 0xff, 0xff, 0xff, 0xff],
+      b"0000-00-00 00:00:00",
+      b"2024-02-29 25:00:00",
+    ] {
+      assert!(datetime(bytes).is_err(), "{bytes:?}");
+    }
+    assert!(timestamp(jiff::civil::DateTime::MAX).is_err());
+  }
+
+  #[test]
+  fn times_of_day_decode_within_a_day_only() {
+    let t = |sign, h, m, s, us| MySqlTime::new(sign, h, m, s, us).unwrap();
+    assert_eq!(
+      time_of_day(t(MySqlTimeSign::Positive, 23, 59, 59, 999_999)),
+      Ok(jiff::civil::time(23, 59, 59, 999_999_000))
+    );
+    assert!(
+      time_of_day(t(MySqlTimeSign::Positive, 24, 0, 0, 0))
+        .unwrap_err()
+        .contains("not a time of day")
+    );
+    assert!(time_of_day(t(MySqlTimeSign::Negative, 1, 0, 0, 0)).is_err());
+  }
+
+  #[test]
+  fn date_times_bind_as_literals_and_check_the_year() {
+    use jiff::civil::{date, time};
+    assert_eq!(date_literal(date(0, 1, 2)).as_deref(), Ok("0000-01-02"));
+    assert_eq!(
+      datetime_literal(date(2024, 2, 29).at(1, 2, 3, 456_789_999)).as_deref(),
+      Ok("2024-02-29 01:02:03.456789")
     );
     assert_eq!(
-      datetime(dt),
-      Ok(jiff::civil::date(1, 2, 3).at(4, 5, 6, 7_000))
+      datetime_literal(date(9999, 12, 31).at(23, 59, 59, 0)).as_deref(),
+      Ok("9999-12-31 23:59:59.000000")
     );
-    assert!(year_in_range(jiff::civil::date(0, 1, 1)).is_ok());
+    let wire = time_to_wire(time(23, 59, 59, 999_999_999)).unwrap();
+    assert_eq!(
+      (
+        wire.hours(),
+        wire.minutes(),
+        wire.seconds(),
+        wire.microseconds()
+      ),
+      (23, 59, 59, 999_999)
+    );
+    assert!(year_in_range(date(0, 1, 1)).is_ok());
     assert!(
-      year_in_range(jiff::civil::date(-1, 1, 1))
+      datetime_literal(date(-1, 1, 1).at(0, 0, 0, 0))
         .unwrap_err()
         .contains("0000-9999")
     );

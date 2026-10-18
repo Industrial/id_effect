@@ -88,7 +88,7 @@ impl PgSessionStore {
 }
 
 /// The SQL statements of a migration file: `--` comment lines dropped, split at `;`.
-fn statements(script: &str) -> Vec<String> {
+pub(crate) fn statements(script: &str) -> Vec<String> {
   let code: String = script
     .lines()
     .filter(|line| !line.trim_start().starts_with("--"))

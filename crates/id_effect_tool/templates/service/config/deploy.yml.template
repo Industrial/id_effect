@@ -7,10 +7,18 @@ servers:
   web:
     - 192.0.2.1
 
+# Rolling deploy: kamal-proxy routes to the new container once /ready answers 200, lets the old
+# one's in-flight requests finish for up to drain_timeout seconds, then stops it (SIGTERM). The
+# service turns /ready 503 and drains for up to SHUTDOWN_TIMEOUT_SECS, so drain_timeout stays
+# above it.
+drain_timeout: 35
+
 proxy:
   app_port: 8080
   healthcheck:
-    path: /health
+    path: /ready
+    interval: 1
+    timeout: 5
 
 registry:
   server: ghcr.io
@@ -22,6 +30,7 @@ env:
   clear:
     HOST: "0.0.0.0"
     PORT: "8080"
+    SHUTDOWN_TIMEOUT_SECS: "30"
   secret:
     - COOKIE_KEY
 {{#if pg}}

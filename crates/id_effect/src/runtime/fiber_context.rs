@@ -6,6 +6,10 @@
 //! here, not in `FiberId`). The fiber-ref slots (`refs`, design A §1.3): a per-fiber map from
 //! [`FiberRef`](crate::runtime::FiberRef) id to value, copied into a child when it is
 //! forked (no thread-locals).
+//!
+//! With the `fiber-registry` feature every context lists itself in the fiber registry
+//! (`fiber_registry.rs`, read by `fiber_dump`) from build until it is marked done or dropped.
+//! The struct is the same either way; without the feature the calls do not exist.
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -87,7 +91,7 @@ impl FiberContext {
   fn with_parent(parent: Option<&Arc<Self>>, exec: Arc<dyn Executor>) -> Arc<Self> {
     let refs = parent.map(|p| p.refs_snapshot()).unwrap_or_default();
     runtime_metrics::fiber_started();
-    Arc::new(Self {
+    let ctx = Arc::new(Self {
       id: FiberId::fresh(),
       exec,
       interrupt: AtomicBool::new(false),
@@ -99,7 +103,10 @@ impl FiberContext {
       counted: AtomicBool::new(true),
       done_wakers: Mutex::new(Vec::new()),
       refs: Mutex::new(refs),
-    })
+    });
+    #[cfg(feature = "fiber-registry")]
+    super::fiber_registry::register(&ctx);
+    ctx
   }
 
   /// A copy of this fiber's ref slots. Values are shared `Arc`s and a later `set` on either
@@ -192,6 +199,12 @@ impl FiberContext {
     self.done.load(Ordering::Acquire)
   }
 
+  /// The ids of the registered, not yet complete children.
+  #[cfg(feature = "fiber-registry")]
+  pub(crate) fn child_ids(&self) -> Vec<FiberId> {
+    lock(&self.children).keys().copied().collect()
+  }
+
   pub(crate) fn add_child(&self, child: &Arc<FiberContext>) {
     lock(&self.children).insert(child.id, Arc::clone(child));
   }
@@ -210,6 +223,8 @@ impl FiberContext {
     self.done.store(true, Ordering::Release);
     if self.counted.swap(false, Ordering::Relaxed) {
       runtime_metrics::fiber_finished();
+      #[cfg(feature = "fiber-registry")]
+      super::fiber_registry::unregister(self.id);
     }
     let ws = std::mem::take(&mut *lock(&self.done_wakers));
     for w in ws {
@@ -242,6 +257,8 @@ impl Drop for FiberContext {
   fn drop(&mut self) {
     if *self.counted.get_mut() {
       runtime_metrics::fiber_finished();
+      #[cfg(feature = "fiber-registry")]
+      super::fiber_registry::unregister(self.id);
     }
   }
 }

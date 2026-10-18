@@ -153,10 +153,109 @@ impl ConfigError {
   }
 }
 
+/// Every Figment error is redacted on the way in: quoted source lines and found values are
+/// dropped; the key path, file, line/column and error kind are kept.
 impl From<figment::Error> for ConfigError {
   fn from(value: figment::Error) -> Self {
-    Self::Figment(value)
+    Self::Figment(redact_figment(value))
   }
+}
+
+/// `error` (and every error chained to it) without source text or raw values.
+///
+/// A parse error quotes the offending source line (`1 | password = …`) and a type error the
+/// value it found (`found string "…"`); either can be a secret, and the message reaches
+/// `Display`, `Debug`, `ProfileWatch::last_error` and logs.
+/// Kept: the key path, profile and source (file) metadata, line / column and the error kind.
+fn redact_figment(error: figment::Error) -> figment::Error {
+  let errors: Vec<figment::Error> = error
+    .into_iter()
+    .map(|mut e| {
+      e.kind = redact_kind(e.kind);
+      e
+    })
+    .collect();
+  // `into_iter` yields the newest error first; `chain` puts its argument in front.
+  errors
+    .into_iter()
+    .rev()
+    .reduce(|older, newer| older.chain(newer))
+    .expect("a Figment error holds at least one error")
+}
+
+fn redact_kind(kind: figment::error::Kind) -> figment::error::Kind {
+  use figment::error::Kind;
+  match kind {
+    Kind::Message(msg) => Kind::Message(redact_message(&msg)),
+    Kind::InvalidType(actual, expected) => Kind::InvalidType(redact_actual(actual), expected),
+    Kind::InvalidValue(actual, expected) => Kind::InvalidValue(redact_actual(actual), expected),
+    Kind::UnknownVariant(_, expected) => Kind::UnknownVariant(REDACTED.to_string(), expected),
+    Kind::ISizeOutOfRange(_) => Kind::Message("signed integer is out of range".to_string()),
+    Kind::USizeOutOfRange(_) => Kind::Message("unsigned integer is out of range".to_string()),
+    Kind::Unsupported(actual) => Kind::Unsupported(redact_actual(actual)),
+    Kind::UnsupportedKey(actual, need) => Kind::UnsupportedKey(redact_actual(actual), need),
+    // Field names and lengths are not values.
+    other => other,
+  }
+}
+
+/// The type of a found value, without the value.
+fn redact_actual(actual: figment::error::Actual) -> figment::error::Actual {
+  use figment::error::Actual;
+  let kind = match actual {
+    Actual::Bool(_) => "bool",
+    Actual::Unsigned(_) => "unsigned int",
+    Actual::Signed(_) => "signed int",
+    Actual::Float(_) => "float",
+    Actual::Char(_) => "char",
+    Actual::Str(_) => "string",
+    Actual::Bytes(_) => "bytes",
+    Actual::Other(_) => "value",
+    shape => return shape,
+  };
+  Actual::Other(kind.to_string())
+}
+
+/// A parser message without its source excerpt (the `N | …` / `  | ^` lines) and with every
+/// double-quoted string outside a `` `…` `` token replaced by [`REDACTED`].
+fn redact_message(msg: &str) -> String {
+  msg
+    .lines()
+    .filter(|line| {
+      !line
+        .trim_start_matches(|c: char| c.is_whitespace() || c.is_ascii_digit())
+        .starts_with('|')
+    })
+    .map(redact_quoted)
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+fn redact_quoted(line: &str) -> String {
+  let mut out = String::with_capacity(line.len());
+  let mut chars = line.chars();
+  let mut in_token = false;
+  while let Some(c) = chars.next() {
+    out.push(c);
+    match c {
+      '`' => in_token = !in_token,
+      '"' if !in_token => {
+        let mut escaped = false;
+        for c in chars.by_ref() {
+          match c {
+            _ if escaped => escaped = false,
+            '\\' => escaped = true,
+            '"' => break,
+            _ => {}
+          }
+        }
+        out.push_str(REDACTED);
+        out.push('"');
+      }
+      _ => {}
+    }
+  }
+  out
 }
 
 impl From<core::convert::Infallible> for ConfigError {
@@ -329,6 +428,52 @@ mod tests {
     }
     .redact_values();
     assert!(matches!(missing, ConfigError::Missing { ref path } if path == "KEY"));
+  }
+
+  #[test]
+  fn figment_errors_lose_source_text_and_values() {
+    use figment::error::{Actual, Kind};
+    let parse = figment::Error::from(
+      "TOML parse error at line 2, column 12\n  |\n2 | password = hunter2-s3cr3t\n  |            ^\n\
+       invalid string\nexpected `\"`, `'`"
+        .to_string(),
+    );
+    let mut typed = figment::Error::from(Kind::InvalidType(
+      Actual::Str("hunter2-s3cr3t".into()),
+      "u16".into(),
+    ));
+    typed.path = vec!["db".into(), "port".into()];
+    let chained = [
+      Kind::UnknownVariant("hunter2-s3cr3t".into(), &["a", "b"]),
+      Kind::USizeOutOfRange(424_242),
+      Kind::Message("bad value \"hunter2-s3cr3t\" for `key`".into()),
+    ]
+    .into_iter()
+    .map(figment::Error::from)
+    .fold(parse, figment::Error::chain)
+    .chain(typed);
+
+    let err = ConfigError::from(chained);
+    let shown = format!("{err}\n{err:?}");
+    for leaked in ["hunter2", "424242", "password ="] {
+      assert!(!shown.contains(leaked), "{leaked} leaked: {shown}");
+    }
+    let ConfigError::Figment(fig) = &err else {
+      panic!("still a Figment error: {err:?}")
+    };
+    assert_eq!(fig.count(), 5, "every chained error is kept");
+    assert_eq!(fig.path, ["db", "port"]);
+    let rendered = err.to_string();
+    for kept in [
+      "invalid type: found string, expected u16",
+      "TOML parse error at line 2, column 12",
+      "invalid string\nexpected `\"`, `'`",
+      "unknown variant: found `<redacted>`",
+      "unsigned integer is out of range",
+      "bad value \"<redacted>\" for `key`",
+    ] {
+      assert!(rendered.contains(kept), "{kept:?} missing: {rendered}");
+    }
   }
 
   #[test]

@@ -15,6 +15,17 @@ services:
   redis:
     image: redis:7-alpine
     ports: ['6379:6379']
+  # Every mail of the dev profile (statements, verification, reset): web UI on :8025.
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports: ['1025:1025', '8025:8025']
+  # The statements bucket: an S3 API on :8333 with the identity of `s3.json`.
+  s3:
+    image: chrislusf/seaweedfs:4.48
+    command: [server, -s3, -s3.config=/etc/seaweedfs/s3.json, -master.volumeSizeLimitMB=64]
+    volumes:
+      - ./s3.json:/etc/seaweedfs/s3.json:ro
+    ports: ['8333:8333']
   # The identity provider for `/auth/oidc/login`: realm `ledger`, client `ledger-web`, user
   # `alice` / `alice-password` (accountant of organisation `acme`).
   keycloak:

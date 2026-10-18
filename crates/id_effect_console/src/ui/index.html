@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="">
+<title>id_effect console</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --fg: #1d2330; --muted: #677085; --line: #dfe3ea;
+    --up: #1f8a4c; --degraded: #b7791f; --down: #c53030; --accent: #2b5cad;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --panel: #1c2028; --fg: #e3e7ee; --muted: #8b93a5; --line: #2c323d; --accent: #7aa2e8; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); }
+  header { display: flex; gap: 1rem; align-items: center; padding: .75rem 1.25rem; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 1.1rem; margin: 0; flex: 1; }
+  header .meta { color: var(--muted); font-size: .85rem; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(28rem, 1fr)); gap: 1rem; padding: 1rem 1.25rem; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: .75rem 1rem; min-width: 0; }
+  section.wide { grid-column: 1 / -1; }
+  section h2 { font-size: .95rem; margin: 0 0 .5rem; display: flex; gap: .5rem; align-items: baseline; }
+  section h2 .count { color: var(--muted); font-weight: normal; font-size: .85rem; }
+  .scroll { max-height: 22rem; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  th, td { text-align: left; padding: .2rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; word-break: break-all; }
+  .badge { display: inline-block; padding: 0 .45rem; border-radius: 3px; font-size: .75rem; font-weight: 600; color: #fff; background: var(--muted); }
+  .badge.up, .badge.running, .badge.succeeded { background: var(--up); }
+  .badge.degraded, .badge.interrupting, .badge.failed, .badge.scheduled { background: var(--degraded); }
+  .badge.down, .badge.dead { background: var(--down); }
+  .error { color: var(--down); }
+  .muted { color: var(--muted); }
+  ul.tree { list-style: none; margin: 0; padding-left: 1.1rem; }
+  ul.tree.root { padding-left: 0; }
+  ul.tree li { margin: .1rem 0; }
+  form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .5rem; }
+  input, select, button { font: inherit; padding: .2rem .4rem; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  input[name=filter] { flex: 1; min-width: 12rem; }
+  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  #banner { display: none; padding: .5rem 1.25rem; background: var(--down); color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>id_effect console</h1>
+  <span class="meta" id="updated">not loaded yet</span>
+  <label class="meta">refresh
+    <select id="interval">
+      <option value="1000">1 s</option>
+      <option value="2000" selected>2 s</option>
+      <option value="5000">5 s</option>
+      <option value="10000">10 s</option>
+      <option value="0">paused</option>
+    </select>
+  </label>
+</header>
+<div id="banner"></div>
+<main>
+  <section id="health">
+    <h2>Health <span class="count" data-count></span></h2>
+    <div data-body></div>
+  </section>
+  <section id="log-level">
+    <h2>Log level</h2>
+    <div data-body></div>
+    <form id="log-level-form">
+      <select name="level" aria-label="level">
+        <option value="">level</option>
+        <option>trace</option><option>debug</option><option>info</option>
+        <option>warn</option><option>error</option><option>fatal</option><option>none</option>
+      </select>
+      <input name="filter" placeholder="EnvFilter directive, e.g. info,my_app=debug" aria-label="filter">
+      <button type="submit">Apply</button>
+    </form>
+    <div data-result class="muted"></div>
+  </section>
+  <section id="supervisors">
+    <h2>Supervision trees <span class="count" data-count></span></h2>
+    <div data-body class="scroll"></div>
+  </section>
+  <section id="jobs" hidden>
+    <h2>Jobs <span class="count" data-count></span></h2>
+    <div data-body class="scroll"></div>
+    <div data-result class="muted"></div>
+  </section>
+  <section id="fibers" class="wide">
+    <h2>Fibers <span class="count" data-count></span></h2>
+    <div data-body class="scroll"></div>
+  </section>
+  <section id="metrics" class="wide">
+    <h2>Metrics <span class="count" data-count></span>
+      <input id="metric-filter" placeholder="filter by name" aria-label="filter metrics by name">
+    </h2>
+    <div data-body class="scroll"></div>
+  </section>
+</main>
+<script>
+'use strict';
+// The API sits under this page's own path, so the console works wherever the app mounts it.
+const base = location.pathname.replace(/\/+$/, '') + '/api/';
+
+async function api(route, init) {
+  const options = Object.assign(
+    { credentials: 'same-origin', cache: 'no-store', headers: { accept: 'application/json' } },
+    init || {}
+  );
+  const response = await fetch(base + route, options);
+  let body = null;
+  try { body = await response.json(); } catch (_) { body = null; }
+  return { status: response.status, ok: response.ok, body };
+}
+
+// Behind id_effect_axum's SecurityLayer the server puts the session's CSRF token in this meta tag
+// (its cookie is HttpOnly); every state-changing call echoes it in X-CSRF-Token. Empty: no layer.
+const csrf = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+// The headers of a state-changing call: a JSON body (the API requires it) and the CSRF token.
+function mutating() {
+  const headers = { 'content-type': 'application/json', accept: 'application/json' };
+  if (csrf) headers['x-csrf-token'] = csrf;
+  return headers;
+}
+
+// Builds an element; string children become text nodes, so API values never become markup.
+function el(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (key === 'class') node.className = value; else node.setAttribute(key, value);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+const badge = (text) => el('span', { class: 'badge ' + text }, text);
+const json = (value) => el('code', {}, value === undefined ? '' : JSON.stringify(value));
+const part = (id, name) => document.querySelector('#' + id + ' [data-' + name + ']');
+
+function table(headers, rows) {
+  return el('table', {},
+    el('thead', {}, el('tr', {}, headers.map((h) => el('th', {}, h)))),
+    el('tbody', {}, rows.map((cells) => el('tr', {}, cells.map((c) =>
+      c instanceof Node && c.tagName === 'TD' ? c : el('td', {}, c))))));
+}
+
+const num = (value) => el('td', { class: 'num' }, value);
+
+function problem(answer) {
+  const body = answer.body || {};
+  return el('span', { class: 'error' }, answer.status + ' ' + (body.detail || body.title || 'request failed'));
+}
+
+function age(ms) {
+  if (ms < 1000) return ms + ' ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+  if (ms < 3600000) return (ms / 60000).toFixed(1) + ' min';
+  return (ms / 3600000).toFixed(1) + ' h';
+}
+
+const render = {
+  health(report) {
+    part('health', 'count').replaceChildren(badge(report.status));
+    const checks = Object.entries(report.checks || {});
+    const rows = checks.map(([name, check]) =>
+      [name, badge(check.status), num(check.duration_ms + ' ms'), json(check.detail)]);
+    return [
+      report.reason ? el('p', { class: 'muted' }, 'reason: ' + report.reason) : null,
+      checks.length ? table(['check', 'status', 'took', 'detail'], rows)
+        : el('p', { class: 'muted' }, 'no health checks registered'),
+    ];
+  },
+
+  'log-level'(view) {
+    return el('table', {},
+      el('tr', {}, el('th', {}, 'EnvFilter'), el('td', {}, view.filter === null ? el('span', { class: 'muted' }, 'no reload handle') : el('code', {}, view.filter))),
+      el('tr', {}, el('th', {}, 'EffectLogger minimum'), el('td', {}, view.logger === null ? el('span', { class: 'muted' }, 'unset (per fiber)') : el('code', {}, view.logger))));
+  },
+
+  supervisors(view) {
+    const node = (n) => el('li', {},
+      el('strong', {}, n.id), ' ',
+      n.pid ? el('code', { class: 'muted' }, n.pid) : badge('stopped'),
+      n.children.length ? el('ul', { class: 'tree' }, n.children.map(node)) : null);
+    part('supervisors', 'count').textContent = view.roots.length + ' root(s)';
+    return [
+      view.roots.length ? el('ul', { class: 'tree root' }, view.roots.map(node))
+        : el('p', { class: 'muted' }, 'no supervisors registered'),
+      view.unreachable.length ? el('div', {}, el('h3', {}, 'Unreachable'),
+        table(['id', 'pid', 'error'], view.unreachable.map((u) => [u.id, el('code', {}, u.pid), el('span', { class: 'error' }, u.error)]))) : null,
+    ];
+  },
+
+  fibers(fibers) {
+    part('fibers', 'count').textContent = fibers.length + ' live';
+    const shown = fibers.slice(0, 500);
+    return [
+      table(['id', 'parent', 'state', 'age', 'children', 'spans'], shown.map((f) => [
+        num(f.id), f.parent === null ? el('span', { class: 'muted' }, 'root') : String(f.parent),
+        badge(f.state), num(age(f.age_ms)), num(f.children.length), el('code', {}, f.spans.join(' < ')),
+      ])),
+      fibers.length > shown.length ? el('p', { class: 'muted' }, 'showing the first ' + shown.length) : null,
+    ];
+  },
+
+  metrics(series) {
+    const needle = document.getElementById('metric-filter').value.trim();
+    const shown = series.filter((m) => m.name.includes(needle));
+    part('metrics', 'count').textContent = shown.length + ' / ' + series.length + ' series';
+    const reading = (m) => {
+      const v = m.value;
+      switch (m.kind) {
+        case 'counter': return String(v.count);
+        case 'gauge': return String(v.value);
+        case 'histogram': case 'summary':
+          return 'count ' + v.count + ', sum ' + v.sum + ', min ' + v.min + ', max ' + v.max;
+        default: return JSON.stringify(v);
+      }
+    };
+    const tags = (t) => Object.entries(t).map(([k, v]) => k + '=' + v).join(', ');
+    return table(['name', 'kind', 'tags', 'value'], shown.map((m) =>
+      [el('code', {}, m.name), m.kind, el('code', {}, tags(m.tags)), el('code', {}, reading(m))]));
+  },
+
+  jobs(view) {
+    const states = ['scheduled', 'running', 'failed', 'dead', 'succeeded', 'cancelled'];
+    part('jobs', 'count').textContent = view.queues.length + ' queue(s)';
+    return [
+      table(['queue'].concat(states, ['oldest runnable']), view.queues.map((q) =>
+        [q.queue].concat(states.map((s) => num(q.counts[s] || 0)), [q.oldest_runnable || '']))),
+      el('h3', {}, 'Recent jobs'),
+      table(['id', 'name', 'queue', 'state', 'attempts', 'run at', 'last error', ''], view.recent.map((j) => [
+        num(j.id), el('code', {}, j.name), j.queue, badge(j.state), num(j.attempts + '/' + j.max_attempts),
+        el('code', {}, j.run_at), j.last_error ? el('span', { class: 'error' }, j.last_error) : '',
+        jobAction(j),
+      ])),
+    ];
+  },
+};
+
+// Retry for a dead or cancelled job, cancel for a scheduled or failed one (JobQueue::retry_now
+// and JobQueue::cancel), sent with the mutating() headers.
+function jobAction(job) {
+  const verb = { dead: 'retry', cancelled: 'retry', scheduled: 'cancel', failed: 'cancel' }[job.state];
+  if (!verb) return '';
+  const button = el('button', { type: 'button' }, verb);
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const answer = await api('jobs/' + job.id + '/' + verb, {
+      method: 'POST',
+      headers: mutating(),
+      body: '{}',
+    });
+    part('jobs', 'result').replaceChildren(answer.ok
+      ? verb + ' job ' + job.id + ': now ' + answer.body.state : problem(answer));
+    poll();
+  });
+  return button;
+}
+
+const routes = ['health', 'log-level', 'supervisors', 'jobs', 'fibers', 'metrics'];
+const last = {};
+
+function show(route, answer) {
+  const section = document.getElementById(route);
+  if (route === 'jobs' && answer.status === 404) { section.hidden = true; return; }
+  section.hidden = false;
+  const body = part(route, 'body');
+  if (!answer.ok) { body.replaceChildren(problem(answer)); return; }
+  last[route] = answer.body;
+  body.replaceChildren(...[render[route](answer.body)].flat().filter((n) => n));
+}
+
+async function poll() {
+  const answers = await Promise.all(routes.map((route) =>
+    api(route).catch((e) => ({ status: 0, ok: false, body: { detail: String(e) } }))));
+  const denied = answers.find((a) => a.status === 401 || a.status === 403);
+  const banner = document.getElementById('banner');
+  banner.style.display = denied ? 'block' : 'none';
+  banner.textContent = denied ? 'The console guard denied this session (' + denied.status + ').' : '';
+  routes.forEach((route, i) => show(route, answers[i]));
+  document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+let timer = null;
+function schedule() {
+  clearInterval(timer);
+  const every = Number(document.getElementById('interval').value);
+  if (every > 0) timer = setInterval(poll, every);
+}
+
+document.getElementById('interval').addEventListener('change', schedule);
+document.getElementById('metric-filter').addEventListener('input', () => {
+  if (last.metrics) show('metrics', { ok: true, status: 200, body: last.metrics });
+});
+
+document.getElementById('log-level-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.target;
+  const change = {};
+  if (form.level.value) change.level = form.level.value;
+  if (form.filter.value.trim()) change.filter = form.filter.value.trim();
+  const result = part('log-level', 'result');
+  const answer = await api('log-level', {
+    method: 'PUT',
+    headers: mutating(),
+    body: JSON.stringify(change),
+  });
+  if (answer.ok) {
+    show('log-level', answer);
+    result.replaceChildren('applied');
+    form.reset();
+  } else {
+    result.replaceChildren(problem(answer));
+  }
+});
+
+poll();
+schedule();
+</script>
+</body>
+</html>

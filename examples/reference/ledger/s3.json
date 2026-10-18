@@ -1,0 +1,11 @@
+{
+	"identities": [
+		{
+			"name": "ledger",
+			"credentials": [
+				{ "accessKey": "ledger", "secretKey": "ledger-dev-secret" }
+			],
+			"actions": ["Admin", "Read", "Write", "List", "Tagging"]
+		}
+	]
+}

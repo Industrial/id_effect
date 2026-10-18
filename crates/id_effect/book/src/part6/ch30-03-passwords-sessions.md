@@ -297,4 +297,110 @@ To turn a session (or a bearer token, an API key or Basic credentials) into the 
 `id_effect_authz` guards read, use the `Authenticate` layer described in
 [Credentials and JWT](ch30-04-credentials-jwt.md).
 
+## Account flows (feature `accounts`)
+
+Registration, email verification and "forgot password" all rest on one primitive: a link that
+proves its holder reads mail at the account's address. `Accounts` (feature `accounts`, which
+enables `pg` and `axum`) runs these flows. It works over five parts:
+
+- an `AccountStore`, which you implement over your users table: `find_by_email`, `create`,
+  `set_password` and `mark_verified`. `MemoryAccountStore` is the in-memory version for tests.
+- an `AccountTokenStore` for the links' tokens. `PgAccountTokenStore` is the PostgreSQL one, and
+  `MemoryAccountTokenStore` the in-memory one.
+- an `AccountNotifier` that delivers the mails. id_effect_mail's `AccountMails` (feature `auth`)
+  is one, and `MemoryAccountNotifier` records the mails for tests.
+- the `PasswordHasher`.
+- your `Sessions`.
+
+| Method | Route (`POST`, `AccountRoutes`) | Does |
+|---|---|---|
+| `register(email, password)` | `/auth/register` → 201 | Creates an unverified account and mails a verification link. |
+| `verify_email(token)` | `/auth/verify` → 200 | Redeems the link; the address is verified. |
+| `request_verification(email)` | `/auth/verify/resend` → 202 | Sends a fresh verification link to an unverified account. |
+| `forgot_password(email)` | `/auth/password/forgot` → 202 | Sends a reset link. |
+| `reset_password(token, password)` | `/auth/password/reset` → 204 | Redeems the link, re-hashes the new password through the `PasswordHasher`, stores it and revokes **every session** of the account. |
+
+Addresses are trimmed and lower-cased before they are compared (`normalize_email`). New
+passwords must be 12 to 256 characters long by default (`AccountsConfig`). `AccountRoutes` does
+not sign anyone in, so put a rate limit in front of it.
+
+### Tokens
+
+A token reads `<id>_<secret>`: 16 hex digits of public id and 256 bits of secret from the
+operating system's CSPRNG. It follows the pattern of API keys. The table
+`id_effect_account_tokens` keeps the id, the kind (`verify_email` or `reset_password`), the
+account, the expiry and the SHA-256 digest of the secret, never the secret itself. A presented
+secret's digest is compared in constant time. The crate ships the table as
+`migrations/0002_id_effect_account_tokens.up.sql`, and `PgAccountTokenStore::ensure_schema` runs
+the same statements.
+
+- **Single use.** A token is redeemed only by the request whose `consume`
+  (`DELETE … WHERE id = $1`) removed its row. Of two requests that present the same link at once,
+  exactly one succeeds.
+- **Short-lived.** Reset links expire after 30 minutes and verification links after 24 hours
+  (`AccountsConfig::reset_ttl` / `verify_ttl`). An expired token fails with `ExpiredToken` and is
+  removed. Issuing a token replaces the account's earlier ones of the same kind.
+  `purge_expired_tokens` clears abandoned rows.
+
+### Forgot password does not reveal accounts
+
+`forgot_password` answers `()` whether or not an account has the address. Over HTTP that means
+the same status (202), headers and body for both. The two cases also cost the same work on the
+request: one account lookup and one background fiber. Storing the token and sending the mail
+happen on that fiber after the response is decided, so neither the mail transport's latency nor
+its failures can be read from the response. `request_verification` behaves the same way.
+Registration does tell a caller that an address is taken (409). Rate-limit it.
+
+### Why the mails do not go through the jobs table
+
+A reset or verification mail contains a usable token. id_effect_mail's `deliver_later` stores
+the **whole message** as the job's payload in `id_effect_jobs` until the finished job is pruned
+(7 days by default). Anyone who can read that table, or one of its backups, could take over the
+account.
+
+So `AccountMails` does not enqueue. It renders the mail from its templates (`account_verify` and
+`account_reset`) and hands it straight to the `Mailer`, on the background fiber. A transient
+failure is retried 3 times, 1 s, 2 s and 4 s apart. The plaintext token exists only in memory and
+in the sent mail; the database holds its digest. When delivery still fails, the error goes to
+`Accounts::on_background_error` (log it there), and the user asks for a new link.
+
+The cost of this choice is durability. A process that dies with a mail in flight loses that mail.
+For a credential that lives 30 minutes, losing a mail is the better failure than leaving a
+readable copy of the credential in the database.
+
+```rust,no_run
+use id_effect_auth::{
+  AccountRoutes, Accounts, MemoryAccountStore, MemorySessionStore, PasswordHasher,
+  PgAccountTokenStore, SessionConfig, Sessions,
+};
+use id_effect_mail::{AccountMails, Address, MailerService};
+use id_effect_sql::pg::PgSqlClient;
+
+fn routes(db: PgSqlClient, mailer: MailerService) -> axum::Router {
+  let mails = AccountMails::new(
+    mailer,
+    Address::parse("accounts@ledger.example").unwrap(),
+    "https://ledger.example/verify",         // the page that posts the token to /auth/verify
+    "https://ledger.example/password/reset", // and the one that posts it with the new password
+  );
+  let accounts = Accounts::new(
+    MemoryAccountStore::new(), // your `AccountStore` over the users table
+    PgAccountTokenStore::new(db),
+    mails,
+    PasswordHasher::default(),
+    Sessions::new(MemorySessionStore::new(), SessionConfig::default()), // the app's sessions
+  )
+  .on_background_error(|e| eprintln!("account mail: {e}"));
+  AccountRoutes::new(accounts).router()
+}
+```
+
+The crate's `tests/accounts.rs` covers the flows over the in-memory stores and the routes:
+`reset_token_is_single_use` (including two concurrent redemptions), `expired_token_rejected`,
+`token_stored_hashed`, `forgot_password_response_is_uniform` (identical responses, and a hanging
+mail transport does not delay them) and `reset_revokes_sessions`. With a database it also runs
+`live_postgres_account_tokens`, which checks that no row of the table contains the secret.
+id_effect_mail's `tests/auth.rs` checks that `AccountMails` has handed the mail to the `Mailer`
+by the time `notify` completes, so no queue sits in between, and which failures it retries.
+
 [PHC strings]: https://github.com/P-H-C/phc-string-format/blob/master/phc-sf-spec.md

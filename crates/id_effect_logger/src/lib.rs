@@ -30,10 +30,11 @@
 //! The environment only needs the `EffectLogger` capability (`caps!(EffectLogger)`). Provide
 //! it at the program edge with `.provide(EffectLogger)`.
 //!
-//! The thread-local pipeline (minimum level, annotations, spans, composite backend) is installed
-//! by building its [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`],
-//! [`LogMetadataLive::layer`], [`provide_composite_logger`]) on the thread that runs the program;
-//! the installed refs are [`FiberRef`]s:
+//! The thread-local pipeline (minimum level, annotations, spans) is installed by building its
+//! [`Layer`](id_effect::Layer)s ([`provide_minimum_log_level`], [`LogMetadataLive::layer`]) on the
+//! thread that runs the program; the installed refs are [`FiberRef`]s. The composite backend
+//! ([`provide_composite_logger`]) and the [`RedactionPolicy`] ([`provide_redaction_policy`]) are
+//! process-wide: built once at startup, they apply on every thread (since 0.10).
 //!
 //! ```
 //! use std::sync::Arc;
@@ -65,12 +66,17 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
+#[cfg(not(test))]
+use std::sync::{PoisonError, RwLock};
 use std::thread::LocalKey;
 
 use ::id_effect::{Effect, FiberRef, fail, succeed, suspend};
 
 mod pipeline;
 mod providers;
+mod redact;
+mod sample;
 
 pub use pipeline::{
   CompositeLogBackend, JsonLogBackend, LogBackend, LogRecord, Logger, StructuredLogBackend,
@@ -78,18 +84,17 @@ pub use pipeline::{
 };
 
 pub use providers::{
-  EffectLogComposite, EffectLogMetadata, EffectLoggerLive, LogMetadataLive,
-  provide_composite_logger, provide_minimum_log_level,
+  EffectLogComposite, EffectLogMetadata, EffectLogRedaction, EffectLoggerLive, LogMetadataLive,
+  provide_composite_logger, provide_minimum_log_level, provide_redaction_policy,
 };
+
+pub use redact::{DEFAULT_REDACTION_MASK, RedactionPolicy};
+pub use sample::{SamplingBackend, SamplingStats};
 
 use pipeline::TracingLogBackend as TracingSink;
 
 thread_local! {
   static MIN_LOG_LEVEL_FIBER_REF: RefCell<Option<FiberRef<LogLevel>>> = const { RefCell::new(None) };
-}
-
-thread_local! {
-  static COMPOSITE_LOG_BACKEND: RefCell<Option<Arc<CompositeLogBackend>>> = const { RefCell::new(None) };
 }
 
 thread_local! {
@@ -101,6 +106,104 @@ thread_local! {
   static LOG_SPAN_STACK_FIBER_REF: RefCell<Option<FiberRef<Vec<String>>>> = const { RefCell::new(None) };
 }
 
+/// A process-wide pipeline value: set from any thread, read on every thread.
+///
+/// This crate's unit tests run in parallel threads of one process (`cargo test`), so under
+/// `cfg(test)` each thread reads and writes its own value instead; the process-wide path is
+/// exercised by the integration tests (`tests/process_wide_pipeline.rs`).
+struct Slot<T: 'static> {
+  #[cfg(not(test))]
+  value: RwLock<Option<Arc<T>>>,
+  #[cfg(test)]
+  value: &'static LocalKey<RefCell<Option<Arc<T>>>>,
+}
+
+#[cfg(not(test))]
+impl<T> Slot<T> {
+  /// The current value (cloned handle); a poisoned lock still yields its value.
+  fn get(&self) -> Option<Arc<T>> {
+    self
+      .value
+      .read()
+      .unwrap_or_else(PoisonError::into_inner)
+      .clone()
+  }
+
+  /// Replaces the value.
+  fn set(&self, value: Option<Arc<T>>) {
+    *self.value.write().unwrap_or_else(PoisonError::into_inner) = value;
+  }
+}
+
+#[cfg(test)]
+impl<T> Slot<T> {
+  fn get(&self) -> Option<Arc<T>> {
+    self.value.with(|c| c.borrow().clone())
+  }
+
+  fn set(&self, value: Option<Arc<T>>) {
+    self.value.with(|c| *c.borrow_mut() = value);
+  }
+}
+
+#[cfg(test)]
+thread_local! {
+  static TEST_COMPOSITE_LOG_BACKEND: RefCell<Option<Arc<CompositeLogBackend>>> = const { RefCell::new(None) };
+  static TEST_REDACTION_POLICY: RefCell<Option<Arc<RedactionPolicy>>> = const { RefCell::new(None) };
+}
+
+/// The process-wide composite backend ([`provide_composite_logger`]): every thread emits through
+/// it, not only the one that built the layer (a server's worker threads included).
+static COMPOSITE_LOG_BACKEND: Slot<CompositeLogBackend> = Slot {
+  #[cfg(not(test))]
+  value: RwLock::new(None),
+  #[cfg(test)]
+  value: &TEST_COMPOSITE_LOG_BACKEND,
+};
+
+/// The process-wide [`RedactionPolicy`] ([`provide_redaction_policy`]). Process-wide for the same
+/// reason as [`COMPOSITE_LOG_BACKEND`]: a policy that only held on the startup thread would let
+/// secrets through from every request-handling thread.
+static REDACTION_POLICY: Slot<RedactionPolicy> = Slot {
+  #[cfg(not(test))]
+  value: RwLock::new(None),
+  #[cfg(test)]
+  value: &TEST_REDACTION_POLICY,
+};
+
+/// No process-wide minimum is set (not a [`LogLevel`] discriminant).
+const GLOBAL_MIN_UNSET: u8 = 254;
+
+/// The process-wide minimum level ([`set_global_minimum_log_level`]), as a `LogLevel`
+/// discriminant or [`GLOBAL_MIN_UNSET`].
+static GLOBAL_MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(GLOBAL_MIN_UNSET);
+
+/// Sets (`Some`) or clears (`None`) the process-wide minimum level that every [`EffectLogger`]
+/// consults, on every thread and fiber, from its next log call on.
+///
+/// While it is set it takes precedence over the fiber-local minimum of
+/// [`provide_minimum_log_level`] (and [`EffectLogger::with_minimum_log_level`]): it is the
+/// runtime override an operator console changes without a restart. Cleared, the fiber-local
+/// minimum applies again. One relaxed atomic load per log call.
+pub fn set_global_minimum_log_level(level: Option<LogLevel>) {
+  let raw = level.map_or(GLOBAL_MIN_UNSET, |l| l as u8);
+  GLOBAL_MIN_LOG_LEVEL.store(raw, Ordering::Relaxed);
+}
+
+/// The process-wide minimum level set by [`set_global_minimum_log_level`], if any.
+pub fn global_minimum_log_level() -> Option<LogLevel> {
+  match GLOBAL_MIN_LOG_LEVEL.load(Ordering::Relaxed) {
+    0 => Some(LogLevel::Trace),
+    1 => Some(LogLevel::Debug),
+    2 => Some(LogLevel::Info),
+    3 => Some(LogLevel::Warn),
+    4 => Some(LogLevel::Error),
+    5 => Some(LogLevel::Fatal),
+    255 => Some(LogLevel::None),
+    _ => None,
+  }
+}
+
 fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
   MIN_LOG_LEVEL_FIBER_REF.with(|c| {
     *c.borrow_mut() = Some(fr);
@@ -108,9 +211,11 @@ fn install_min_log_level_fiber_ref(fr: FiberRef<LogLevel>) {
 }
 
 fn install_composite_log_backend(c: Arc<CompositeLogBackend>) {
-  COMPOSITE_LOG_BACKEND.with(|cell| {
-    *cell.borrow_mut() = Some(c);
-  });
+  COMPOSITE_LOG_BACKEND.set(Some(c));
+}
+
+fn install_redaction_policy(p: Arc<RedactionPolicy>) {
+  REDACTION_POLICY.set(Some(p));
 }
 
 fn install_log_annotations_fiber_ref(fr: FiberRef<HashMap<String, String>>) {
@@ -143,12 +248,19 @@ fn current<T: Clone + Send + Sync + 'static>(
   }
 }
 
-/// Hands `rec` to the installed composite backend, or to `tracing` when none is installed.
+/// Applies the installed [`RedactionPolicy`] once, then hands the record to the installed
+/// composite backend (or to `tracing` when none is installed): every backend sees the same
+/// redacted record. Both are process-wide; the locks are released before any backend runs.
 fn emit_record(rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
-  COMPOSITE_LOG_BACKEND.with(|c| match c.borrow().as_ref() {
-    Some(comp) => comp.emit_all(rec),
-    None => LogBackend::emit(&TracingSink, rec),
-  })
+  let policy = REDACTION_POLICY.get();
+  let rec = match policy.as_deref() {
+    Some(p) => p.apply(rec),
+    None => Cow::Borrowed(rec),
+  };
+  match COMPOSITE_LOG_BACKEND.get() {
+    Some(comp) => comp.emit_all(&rec),
+    None => LogBackend::emit(&TracingSink, &rec),
+  }
 }
 
 #[cfg(test)]
@@ -160,9 +272,7 @@ fn test_clear_min_log_level_fiber_ref() {
 
 #[cfg(test)]
 fn test_clear_composite_log_backend() {
-  COMPOSITE_LOG_BACKEND.with(|c| {
-    *c.borrow_mut() = None;
-  });
+  COMPOSITE_LOG_BACKEND.set(None);
 }
 
 #[cfg(test)]
@@ -176,6 +286,7 @@ fn test_clear_all_logger_tls() {
   test_clear_min_log_level_fiber_ref();
   test_clear_composite_log_backend();
   test_clear_log_metadata_fiber_refs();
+  REDACTION_POLICY.set(None);
 }
 
 /// Log sink provided as the [`EffectLogger`] capability (`.provide(EffectLogger)` or
@@ -273,6 +384,7 @@ impl EffectLogger {
   ///
   /// When [`provide_minimum_log_level`] has been built on this thread, messages below the current
   /// fiber’s minimum [`LogLevel`] (from that [`FiberRef`]) are dropped without calling [`tracing`].
+  /// A process-wide minimum ([`set_global_minimum_log_level`]) takes precedence while it is set.
   ///
   /// `msg` may be a `&'static str`, `String`, or other `Into<Cow<'static, str>>`.
   pub fn log(
@@ -280,7 +392,25 @@ impl EffectLogger {
     level: LogLevel,
     msg: impl Into<Cow<'static, str>>,
   ) -> Effect<(), EffectLoggerError> {
-    let msg = msg.into();
+    Self::log_record(None, level, msg.into())
+  }
+
+  /// Same as [`Self::log`], with [`LogRecord::target`] set to `target` (a module or category such
+  /// as `"billing::invoice"`).
+  pub fn log_target(
+    &self,
+    target: impl Into<Cow<'static, str>>,
+    level: LogLevel,
+    msg: impl Into<Cow<'static, str>>,
+  ) -> Effect<(), EffectLoggerError> {
+    Self::log_record(Some(target.into()), level, msg.into())
+  }
+
+  fn log_record(
+    target: Option<Cow<'static, str>>,
+    level: LogLevel,
+    msg: Cow<'static, str>,
+  ) -> Effect<(), EffectLoggerError> {
     if level == LogLevel::None {
       return succeed(());
     }
@@ -288,7 +418,7 @@ impl EffectLogger {
     // installed refs are read from the running fiber.
     suspend(move || {
       current(&MIN_LOG_LEVEL_FIBER_REF).flat_map(move |min| {
-        let emit = match min {
+        let emit = match global_minimum_log_level().or(min) {
           None => true,
           Some(min) => min.allows(level),
         };
@@ -298,12 +428,10 @@ impl EffectLogger {
         current(&LOG_ANNOTATIONS_FIBER_REF)
           .zip(current(&LOG_SPAN_STACK_FIBER_REF))
           .flat_map(move |(annotations, spans)| {
-            let rec = LogRecord {
-              level,
-              message: msg,
-              annotations: annotations.unwrap_or_default(),
-              spans: spans.unwrap_or_default(),
-            };
+            let mut rec = LogRecord::new(level, msg)
+              .with_annotations(annotations.unwrap_or_default())
+              .with_spans(spans.unwrap_or_default());
+            rec.target = target;
             match emit_record(&rec) {
               Ok(()) => succeed(()),
               Err(e) => fail(e),

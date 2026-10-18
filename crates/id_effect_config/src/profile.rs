@@ -14,6 +14,10 @@
 //! prefix `APP_`, `APP_DB__PASSWORD` sets `db.password`. Missing TOML files are skipped; a file
 //! that does not parse fails [`Profiles::load`].
 //!
+//! [`Profiles::load`] reads the files once. [`Profiles::watch`] also polls them by modification
+//! time and publishes every re-parsed value to subscribers; a change that does not parse keeps
+//! the previous value (see the [`watch`](crate::watch) module).
+//!
 //! The profile itself is selected by, highest priority first: the `--profile <name>` (or
 //! `--profile=<name>`) flag, the [`PROFILE_ENV_VAR`] (`ID_EFFECT_PROFILE`) variable, then the
 //! default profile (`dev`). A name outside the declared profiles is a typed

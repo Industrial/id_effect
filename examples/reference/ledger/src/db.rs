@@ -1,10 +1,15 @@
 //! PostgreSQL: the primary, the read replicas behind a [`RoutingSqlClient`], and the migrations
 //! the service applies when it starts.
+//!
+//! Every statement runs in a `db.query` span with the operation counted and timed
+//! ([`InstrumentedSqlClient`]): under the OpenTelemetry span hook the spans are exported as
+//! client spans of the request's trace, with the statement's shape and never its parameters.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use id_effect::{Effect, Layer, fail, from_async, hlist, need, succeed};
+use id_effect_kit::sql::metrics::InstrumentedSqlClient;
 use id_effect_kit::sql::migrate::{self, MigratedEnv, MigrationsApplied};
 use id_effect_kit::sql::pg::{PgPoolConfig, PgSqlClient, pg_pool_from_config};
 use id_effect_kit::sql::{
@@ -24,8 +29,11 @@ pub struct Database {
 }
 
 impl Database {
-  /// `primary`, with reads routed to `replicas` (to the primary when the list is empty).
+  /// `primary`, with reads routed to `replicas` (to the primary when the list is empty); every
+  /// one instrumented ([module docs](self)).
   pub fn new(primary: Arc<dyn SqlClient>, replicas: Vec<Arc<dyn SqlClient>>) -> Self {
+    let primary = instrumented(primary);
+    let replicas = replicas.into_iter().map(instrumented).collect();
     let reads: Arc<dyn SqlClient> = Arc::new(RoutingSqlClient::new(Arc::clone(&primary), replicas));
     Self { primary, reads }
   }
@@ -48,6 +56,11 @@ impl Database {
       Ok(Database::new(primary, reads))
     })
   }
+}
+
+/// `client` in `db.query` spans, counted and timed (`db.system = postgresql`).
+fn instrumented(client: Arc<dyn SqlClient>) -> Arc<dyn SqlClient> {
+  Arc::new(InstrumentedSqlClient::new(client).with_db_system("postgresql"))
 }
 
 async fn open(config: PgPoolConfig) -> Result<Arc<dyn SqlClient>, StartupError> {

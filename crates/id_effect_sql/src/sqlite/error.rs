@@ -1,7 +1,7 @@
 //! Map sqlx SQLite failures into [`SqlError`](crate::SqlError).
 
 use crate::SqlError;
-use crate::transaction::{SQLSTATE_SERIALIZATION_FAILURE, with_sqlstate};
+use crate::transaction::SQLSTATE_SERIALIZATION_FAILURE;
 
 /// Driver-local error wrapper (mostly for pool construction).
 #[derive(Debug)]
@@ -20,28 +20,16 @@ fn is_busy(code: &str) -> bool {
   code.parse::<i32>().is_ok_and(|code| code & 0xff == 5)
 }
 
-/// The [`SqlError`] of a sqlx failure. A busy database is tagged SQLSTATE `40001`: like a
-/// serialization failure, the transaction lost a conflict and running it again may succeed.
+/// The [`SqlError`] of a sqlx failure ([`crate::error::from_sqlx`]). SQLite has no SQLSTATE:
+/// a unique or primary key violation is tagged `23505`, as on PostgreSQL, and a busy database
+/// `40001` (like a serialization failure, the transaction lost a conflict and running it again
+/// may succeed); other errors carry none.
 pub(crate) fn sqlite_error(err: sqlx::Error) -> SqlError {
-  match err {
-    sqlx::Error::PoolClosed | sqlx::Error::PoolTimedOut => SqlError::NotConnected,
-    sqlx::Error::Configuration(msg) => SqlError::Unsupported(msg.to_string()),
-    other => {
-      let busy = other
-        .as_database_error()
-        .and_then(|db| db.code())
-        .is_some_and(|code| is_busy(&code));
-      let message = other.to_string();
-      SqlError::QueryFailed {
-        sql: String::new(),
-        message: if busy {
-          with_sqlstate(message, SQLSTATE_SERIALIZATION_FAILURE)
-        } else {
-          message
-        },
-      }
-    }
-  }
+  crate::error::from_sqlx(err, |db| {
+    db.code()
+      .is_some_and(|code| is_busy(&code))
+      .then(|| SQLSTATE_SERIALIZATION_FAILURE.to_owned())
+  })
 }
 
 #[cfg(test)]

@@ -323,13 +323,25 @@ async fn mysql_column_types_decode_or_fail_clearly() {
   );
   drop_table(&b, "my_ts").await;
 
-  // Server errors carry their SQLSTATE: a duplicate key is 23000.
+  // Date-times bind as literals: a bare `SELECT ?` reads back as text, a cast keeps the type.
+  let local = date(2024, 2, 29).at(12, 34, 56, 123_456_789);
+  let bare = query(&b, "SELECT ? AS v", &params![local]).await;
+  assert_eq!(
+    bare[0].values(),
+    [SqlValue::Text("2024-02-29 12:34:56.123456".into())]
+  );
+  let cast = query(&b, "SELECT CAST(? AS DATETIME(6)) AS v", &params![local]).await;
+  let micros = date(2024, 2, 29).at(12, 34, 56, 123_456_000);
+  assert_eq!(cast[0].values(), [SqlValue::DateTime(micros)]);
+
+  // Server errors carry their SQLSTATE: a duplicate key (MySQL's 23000) is 23505, as on
+  // PostgreSQL.
   execute(&b, "DROP TABLE IF EXISTS my_unique", &[]).await;
   execute(&b, "CREATE TABLE my_unique (id INT PRIMARY KEY)", &[]).await;
   execute(&b, "INSERT INTO my_unique VALUES (1)", &[]).await;
   let duplicate = run(b.client().execute("INSERT INTO my_unique VALUES (1)", &[])).await;
   assert!(
-    matches!(&duplicate, Err(SqlError::QueryFailed { message, .. }) if message.ends_with("(SQLSTATE 23000)")),
+    matches!(&duplicate, Err(e @ SqlError::QueryFailed { .. }) if e.is_unique_violation()),
     "{duplicate:?}"
   );
   drop_table(&b, "my_unique").await;

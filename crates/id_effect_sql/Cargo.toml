@@ -15,25 +15,18 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
-# PostgreSQL driver (sqlx pool + PgSqlClient). `time` is the drivers' date-time type; the public
-# API speaks jiff (`value::time_conv` converts). TLS: rustls with aws-lc-rs and the Mozilla roots
-# (webpki-roots), as for MySQL; no OpenSSL.
-pg = [
-  "dep:sqlx",
-  "dep:tokio",
-  "dep:time",
-  "sqlx/postgres",
-  "sqlx/tls-rustls-aws-lc-rs",
-]
+# PostgreSQL driver (sqlx pool + PgSqlClient). Date-times bind and decode through our own codecs
+# into jiff (`pg::datetime`; sqlx's `time` / `chrono` features stay off). TLS: rustls with aws-lc-rs
+# and the Mozilla roots (webpki-roots), as for MySQL; no OpenSSL.
+pg = ["dep:sqlx", "dep:tokio", "sqlx/postgres", "sqlx/tls-rustls-aws-lc-rs"]
 # `testing::arb_sql_value`: proptest strategies over the portable `SqlValue` domain.
 proptest = ["dep:proptest", "id_effect/proptest"]
 # `migrate`: versioned migrations (tracking table, advisory lock, one transaction each). sqlx
 # supplies the source model (file naming, checksums, `sqlx::migrate!` embedding).
 migrate = ["dep:sqlx", "sqlx/migrate"]
 # `query`: build statements with sea-query and run them through `SqlClient` (values bridged to
-# `SqlValue`; no sea-query-binder, so sqlx stays independent). `time` converts sea-query's time
-# values.
-query = ["dep:sea-query", "dep:time"]
+# `SqlValue`; no sea-query-binder, so sqlx stays independent).
+query = ["dep:sea-query"]
 # SQLite driver (sqlx sqlite, bundled libsqlite3) and `SqliteSqlClient`: in-memory and file
 # databases. Date-times, uuids, decimals and JSON are stored as text (`sqlite` module docs).
 sqlite = ["dep:sqlx", "dep:tokio", "sqlx/sqlite"]
@@ -45,19 +38,14 @@ audit = ["dep:sha2"]
 # `query` stays the plain statement builder.
 repository = ["query"]
 # MySQL driver (sqlx mysql) and `MySqlSqlClient`, tested against MySQL 8. sqlx-mysql brings `rsa`
-# (RUSTSEC-2023-0071, ignored with its reason in deny.toml).
-mysql = [
-  "dep:sqlx",
-  "dep:tokio",
-  "dep:time",
-  "sqlx/mysql",
-  "sqlx/tls-rustls-aws-lc-rs",
-]
+# (RUSTSEC-2023-0071, ignored with its reason in deny.toml). Date-times convert to jiff in
+# `mysql::value` (no sqlx `time`).
+mysql = ["dep:sqlx", "dep:tokio", "sqlx/mysql", "sqlx/tls-rustls-aws-lc-rs"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.9.0" }
+id_effect = { path = "../id_effect", version = "0.10.0" }
 # `#[derive(FromRow)]`, re-exported as `id_effect_sql::FromRow`.
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.9.0" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.10.0" }
 # Value crates are unconditional: `SqlValue` has the same variants under every feature set.
 # jiff: same floor as crates/id_effect.
 jiff = "0.2.23"
@@ -65,17 +53,14 @@ uuid = { version = "1", default-features = false, features = ["std"] }
 rust_decimal = { version = "1", default-features = false, features = ["std"] }
 serde = "1"
 serde_json = "1"
-time = { version = "0.3", optional = true, default-features = false, features = [
-  "std",
-] }
 proptest = { version = "1", optional = true, default-features = false, features = [
   "std",
 ] }
-# 0.8.6: `Pool::begin_with` (transactions with a custom BEGIN statement).
+# 0.8.6: `Pool::begin_with` (transactions with a custom BEGIN statement). No `time` / `chrono`:
+# date-times are our own codecs, so apps keep sqlx's macro type choice (CI checks `time` stays off).
 sqlx = { version = "0.8.6", optional = true, default-features = false, features = [
   "runtime-tokio",
   "uuid",
-  "time",
   "rust_decimal",
   "json",
 ] }
@@ -90,7 +75,6 @@ sea-query = { version = "1.0.2", optional = true, default-features = false, feat
   "with-uuid",
   "with-rust_decimal",
   "with-jiff",
-  "with-time",
 ] }
 # Feature `audit`: the record hash chain. 0.10: the version sqlx's PostgreSQL driver uses.
 sha2 = { version = "0.10", optional = true, default-features = false }

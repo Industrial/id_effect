@@ -167,6 +167,19 @@ impl SecurityLayer {
     self
   }
 
+  /// Skip CSRF for bearer-only requests: an `Authorization: Bearer …` header and no `Cookie`
+  /// header at all. Nothing a browser attaches by itself authenticates such a request, so a
+  /// cross-site page cannot forge it; an app serving both browser sessions and API tokens keeps
+  /// one stack. A request that carries any cookie (a session, or the CSRF cookie) is still
+  /// checked, and so are `Basic` and other schemes (browsers resend those cross-site). A skipped
+  /// request gets no CSRF token or cookie (the [`CsrfToken`] extractor rejects it).
+  pub fn csrf_exempt_bearer(mut self) -> Self {
+    if let Some(csrf) = &mut self.csrf {
+      csrf.exempt_bearer();
+    }
+    self
+  }
+
   /// Switch CSRF protection off entirely (e.g. a pure bearer-token API with no cookies).
   pub fn without_csrf(mut self) -> Self {
     self.csrf = None;

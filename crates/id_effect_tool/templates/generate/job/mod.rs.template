@@ -1,0 +1,22 @@
+//! Background jobs on [`id_effect_jobs`]: a module per job type (its payload, options, handler
+//! and a test), each registered in [`registry`]. `id-effect generate job <name>` adds the module
+//! and its line.
+//!
+//! A `Worker` runs them over a `JobQueueService` (`PgJobQueue` on the app's SQL client, or
+//! `MemoryJobQueue` in tests):
+//!
+//! ```text
+//! Worker::new(jobs::registry()?).queue("default", 4).run().provide_all(job_queue_env(store))
+//! ```
+
+use id_effect_jobs::{JobError, JobQueueEnv, JobRegistry};
+
+/// The environment the handlers run in: the queue, so a handler can enqueue follow-up jobs. Add
+/// the services the handlers need here, and provide them to the worker.
+pub type JobEnv = JobQueueEnv;
+
+/// Every job type with its handler.
+pub fn registry() -> Result<JobRegistry<JobEnv>, JobError> {
+    let registry = JobRegistry::new();
+    Ok(registry)
+}

@@ -33,6 +33,12 @@
 //!   `TotpStepStore`; `RecoveryCodes`: single-use codes stored as argon2id hashes;
 //!   `Totp::step_up` marks the session after a second factor, `with_mfa_claims` and
 //!   `require_mfa` carry it to `id_effect_authz` policies.
+//! - `account` (feature `accounts`) — `Accounts`: registration, email verification and forgot /
+//!   reset password with single-use expiring tokens stored as SHA-256 digests
+//!   (`PgAccountTokenStore`), a forgot-password answer that does not reveal whether the account
+//!   exists, and a reset that revokes the account's sessions; the mails go through an
+//!   `AccountNotifier` (id_effect_mail's feature `auth`), never a job queue. `AccountRoutes`
+//!   serves them under `/auth`.
 //!
 //! [`PasswordHasher`] and [`Sessions`] are capabilities with a [`Layer`](id_effect::Layer), like
 //! the rest of the platform crates; the credential checks are cheap-to-clone values whose methods
@@ -62,6 +68,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+#[cfg(feature = "accounts")]
+pub mod account;
 pub mod apikey;
 pub mod basic;
 mod error;
@@ -79,6 +87,12 @@ pub mod session;
 #[cfg(feature = "totp")]
 pub mod totp;
 
+#[cfg(feature = "accounts")]
+pub use account::{
+  Account, AccountError, AccountMail, AccountNotifier, AccountRoutes, AccountStore, AccountToken,
+  AccountTokenStore, Accounts, AccountsConfig, MemoryAccountNotifier, MemoryAccountStore,
+  MemoryAccountTokenStore, PgAccountTokenStore, TokenKind, TokenRecord,
+};
 pub use apikey::{ApiKey, ApiKeyRecord, ApiKeyStore, ApiKeys, MemoryApiKeyStore};
 pub use basic::{
   BasicAuth, MemoryUsers, UserCredentials, UserLookup, basic_credentials, basic_header,

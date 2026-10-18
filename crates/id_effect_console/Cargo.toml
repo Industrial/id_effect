@@ -1,0 +1,64 @@
+[package]
+name = "id_effect_console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Operator console for id_effect services: live fibers, jobs and queues behind authorization guards"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_console"
+
+[features]
+# `GET /_console/api/jobs` and the dashboard's jobs panel over an `id_effect_jobs` queue.
+jobs = ["dep:id_effect_jobs"]
+
+[dependencies]
+# `fiber-registry`: the live-fiber dump behind `/_console/api/fibers`.
+id_effect = { path = "../id_effect", version = "0.10.0", features = [
+  "fiber-registry",
+] }
+id_effect_authz = { path = "../id_effect_authz", version = "0.10.0", features = [
+  "axum",
+] }
+id_effect_axum = { path = "../id_effect_axum", version = "0.10.0" }
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.10.0", optional = true }
+id_effect_logger = { path = "../id_effect_logger", version = "0.10.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.10.0" }
+id_effect_process = { path = "../id_effect_process", version = "0.10.0" }
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "registry",
+  "std",
+  "env-filter",
+] }
+
+[dev-dependencies]
+# `net` + `io-util`: tests/console.rs and the example talk HTTP/1.1 to a real socket.
+tokio = { version = "1.50.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+] }
+tower = { version = "0.5", features = ["util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+] }
+
+[package.metadata.docs.rs]
+all-features = true
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Platform: the Ledger reference
+# app (examples/reference/ledger, CI-tested) depends on it (ADR 0010 Amendment 6, ADR 0012).
+tier = "platform"
