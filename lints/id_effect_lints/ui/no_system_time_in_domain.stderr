@@ -1,0 +1,19 @@
+warning: direct time access (`SystemTime::now()` / `Utc::now()`) in domain code
+  --> $DIR/no_system_time_in_domain.rs:6:3
+   |
+LL |   SystemTime::now()
+   |   ^^^^^^^^^^^^^^^^^
+   |
+   = help: read time from the executor clock: `~UtcDateTime::now()` inside `effect!` (virtual on a `TestExecutor`)
+   = note: `#[warn(no_system_time_in_domain)]` on by default
+
+warning: direct time access (`SystemTime::now()` / `Utc::now()`) in domain code
+  --> $DIR/no_system_time_in_domain.rs:10:3
+   |
+LL |   std::time::SystemTime::now()
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: read time from the executor clock: `~UtcDateTime::now()` inside `effect!` (virtual on a `TestExecutor`)
+
+warning: 2 warnings emitted
+

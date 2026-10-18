@@ -1,0 +1,39 @@
+warning: `.map(|x| x)` on an `Effect` does nothing
+  --> $DIR/effect_map_identity.rs:22:3
+   |
+LL |   load().map(|x| x)
+   |   ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(effect_map_identity)]` on by default
+help: remove the `.map(…)` call
+   |
+LL -   load().map(|x| x)
+LL +   load()
+   |
+
+warning: `.map_err(|x| x)` on an `Effect` does nothing
+  --> $DIR/effect_map_identity.rs:26:3
+   |
+LL |   load().map_err(|e| e)
+   |   ^^^^^^^^^^^^^^^^^^^^^
+   |
+help: remove the `.map_err(…)` call
+   |
+LL -   load().map_err(|e| e)
+LL +   load()
+   |
+
+warning: `.map(|x| x)` on an `Effect` does nothing
+  --> $DIR/effect_map_identity.rs:30:3
+   |
+LL |   load().map(|n: u8| n)
+   |   ^^^^^^^^^^^^^^^^^^^^^
+   |
+help: remove the `.map(…)` call
+   |
+LL -   load().map(|n: u8| n)
+LL +   load()
+   |
+
+warning: 3 warnings emitted
+

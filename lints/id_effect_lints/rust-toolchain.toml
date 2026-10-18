@@ -1,0 +1,5 @@
+# A Dylint library links against rustc's own crates, so it builds with the nightly dylint_linting
+# was released against (dylint 6.2.0's template). Bump together with dylint_linting.
+[toolchain]
+channel = "nightly-2026-08-20"
+components = ["llvm-tools-preview", "rustc-dev", "rust-src"]

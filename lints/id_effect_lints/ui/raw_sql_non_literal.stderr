@@ -1,0 +1,43 @@
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal.rs:51:19
+   |
+LL |   let _ = c.query(&format!("SELECT * FROM {table}"), &[]);
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: bind values as parameters (`$1`, `params![…]`) and pass a literal or a `const`; SQL that really is built at run time goes through `id_effect_sql::query_raw` / `execute_raw` with a `RawSql`, which need the `RawSqlCapability` (ADR 0013 R5)
+   = note: `#[warn(raw_sql_non_literal)]` on by default
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal.rs:52:21
+   |
+LL |   let _ = c.execute(&sql, &[]);
+   |                     ^^^^
+   |
+   = help: bind values as parameters (`$1`, `params![…]`) and pass a literal or a `const`; SQL that really is built at run time goes through `id_effect_sql::query_raw` / `execute_raw` with a `RawSql`, which need the `RawSqlCapability` (ADR 0013 R5)
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal.rs:53:22
+   |
+LL |   let _ = tx.execute(table, &[]);
+   |                      ^^^^^
+   |
+   = help: bind values as parameters (`$1`, `params![…]`) and pass a literal or a `const`; SQL that really is built at run time goes through `id_effect_sql::query_raw` / `execute_raw` with a `RawSql`, which need the `RawSqlCapability` (ADR 0013 R5)
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal.rs:56:19
+   |
+LL |   let _ = c.query(reassigned, &[]);
+   |                   ^^^^^^^^^^
+   |
+   = help: bind values as parameters (`$1`, `params![…]`) and pass a literal or a `const`; SQL that really is built at run time goes through `id_effect_sql::query_raw` / `execute_raw` with a `RawSql`, which need the `RawSqlCapability` (ADR 0013 R5)
+
+warning: SQL passed to a `SqlClient` / `SqlTransaction` `&str` method is not a literal or a `const`
+  --> $DIR/raw_sql_non_literal.rs:57:33
+   |
+LL |   let _ = SqlClient::execute(c, &sql, &[]);
+   |                                 ^^^^
+   |
+   = help: bind values as parameters (`$1`, `params![…]`) and pass a literal or a `const`; SQL that really is built at run time goes through `id_effect_sql::query_raw` / `execute_raw` with a `RawSql`, which need the `RawSqlCapability` (ADR 0013 R5)
+
+warning: 5 warnings emitted
+

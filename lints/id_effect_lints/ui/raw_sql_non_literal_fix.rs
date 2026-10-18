@@ -1,0 +1,22 @@
+// run-rustfix
+// M-01, MachineApplicable case: a literal wrapped in a `String` becomes the literal itself.
+#![allow(dead_code)]
+use std::marker::PhantomData;
+
+struct Effect<X, Y, Z>(PhantomData<(X, Y, Z)>);
+struct SqlValue;
+struct SqlRow;
+struct SqlError;
+
+trait SqlClient {
+  fn query(&self, sql: &str, params: &[SqlValue]) -> Effect<Vec<SqlRow>, SqlError, ()>;
+  fn execute(&self, sql: &str, params: &[SqlValue]) -> Effect<u64, SqlError, ()>;
+}
+
+fn wrapped_literals(c: &dyn SqlClient) {
+  let _ = c.query(&"SELECT 3".to_string(), &[]);
+  let _ = c.query(&"SELECT 4".to_owned(), &[]);
+  let _ = c.execute(&String::from("DELETE FROM t"), &[]);
+}
+
+fn main() {}

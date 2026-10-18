@@ -1,0 +1,11 @@
+warning: `std::thread::spawn` used in Effect code
+  --> $DIR/no_thread_spawn.rs:5:11
+   |
+LL |   let _ = std::thread::spawn(|| {});
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `effect.fork()` and its `FiberHandle` (`join` / `interrupt`) for structured concurrency
+   = note: `#[warn(no_thread_spawn)]` on by default
+
+warning: 1 warning emitted
+

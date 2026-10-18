@@ -1,0 +1,11 @@
+warning: chained `.flat_map(…).flat_map(…)` found
+  --> $DIR/multi_step_must_use_effect_macro.rs:18:3
+   |
+LL |   step(0).flat_map(|a| step(a)).flat_map(|b| step(b))
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `effect!({ let a = ~step_a(); let b = ~step_b(a); … })` instead
+   = note: `#[warn(multi_step_must_use_effect_macro)]` on by default
+
+warning: 1 warning emitted
+

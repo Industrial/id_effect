@@ -1,0 +1,13 @@
+warning: public functions must not return `Result<T, E>`
+  --> $DIR/no_result_return_in_pub_fn.rs:4:1
+   |
+LL | / pub fn parse(s: &str) -> Result<u32, std::num::ParseIntError> {
+LL | |   s.parse()
+LL | | }
+   | |_^
+   |
+   = help: return `Effect<A, E, R>` instead; run the effect from `main` or test harnesses
+   = note: `#[warn(no_result_return_in_pub_fn)]` on by default
+
+warning: 1 warning emitted
+

@@ -1,0 +1,27 @@
+warning: `.flat_map(|x| succeed(…))` on an `Effect` is a `.map`
+  --> $DIR/effect_flat_map_succeed.rs:29:3
+   |
+LL |   load().flat_map(|n| succeed(u16::from(n) * 2))
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(effect_flat_map_succeed)]` on by default
+help: use `.map` and return the value
+   |
+LL -   load().flat_map(|n| succeed(u16::from(n) * 2))
+LL +   load().map(|n| u16::from(n) * 2)
+   |
+
+warning: `.flat_map(|x| succeed(…))` on an `Effect` is a `.map`
+  --> $DIR/effect_flat_map_succeed.rs:33:3
+   |
+LL |   load().flat_map(move |n| succeed(n + 1))
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: use `.map` and return the value
+   |
+LL -   load().flat_map(move |n| succeed(n + 1))
+LL +   load().map(move |n| n + 1)
+   |
+
+warning: 2 warnings emitted
+

@@ -1,0 +1,19 @@
+warning: `.unwrap()` used inside an Effect-returning function
+  --> $DIR/no_unwrap_inside_effect.rs:8:16
+   |
+LL |   let _n: u8 = s.parse().unwrap();
+   |                ^^^^^^^^^^^^^^^^^^
+   |
+   = help: use typed error propagation: `?`, `~sub` (widens via `From`), `.map_err(…)`, or `fail(MyError::…)`
+   = note: `#[warn(no_unwrap_inside_effect)]` on by default
+
+warning: `.expect()` used inside an Effect-returning function
+  --> $DIR/no_unwrap_inside_effect.rs:9:16
+   |
+LL |   let _m: u8 = s.parse().expect("a number");
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use typed error propagation: `?`, `~sub` (widens via `From`), `.map_err(…)`, or `fail(MyError::…)`
+
+warning: 2 warnings emitted
+

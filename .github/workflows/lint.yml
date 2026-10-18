@@ -1,0 +1,38 @@
+# Dylint lints (0.11.0.md E1.9; book appendix D): lints/id_effect_lints builds with the nightly
+# pinned in its own rust-toolchain.toml (rustup installs it) and runs over the workspace. The
+# library's UI tests (ui/, ui_test/, including the `--fix` output in *.fixed) run first.
+name: Lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  dylint:
+    name: cargo dylint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            . -> target
+            lints/id_effect_lints -> target
+      - name: Install cargo-dylint and dylint-link
+        run: cargo install --locked cargo-dylint@6.2.0 dylint-link@6.2.0
+      - name: Lint library UI tests
+        working-directory: lints/id_effect_lints
+        run: cargo test
+      - name: cargo dylint over the workspace
+        run: cargo dylint --path lints/id_effect_lints --all -- --workspace

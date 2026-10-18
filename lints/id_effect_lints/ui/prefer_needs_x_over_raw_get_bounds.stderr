@@ -1,0 +1,15 @@
+warning: Effect-returning function uses 0.6 `Get<Key, …>` bounds
+  --> $DIR/prefer_needs_x_over_raw_get_bounds.rs:11:1
+   |
+LL | / fn old_bound<R>() -> Effect<u8, (), R>
+LL | | where
+LL | |   R: Get<Key, Here>,
+...  |
+LL | | }
+   | |_^
+   |
+   = help: spell `R` with `caps!(Key, …)` and read with `~Key` / `need::<Key>()`, or bound a generic `R: Selector<Key, I>`
+   = note: `#[warn(prefer_needs_x_over_raw_get_bounds)]` on by default
+
+warning: 1 warning emitted
+

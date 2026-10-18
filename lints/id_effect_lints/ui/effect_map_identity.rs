@@ -1,0 +1,37 @@
+// run-rustfix
+// L-01: `.map(|x| x)` / `.map_err(|e| e)` on an `Effect` (MachineApplicable: removed).
+#![allow(dead_code)]
+use std::marker::PhantomData;
+
+struct Effect<X, Y, Z>(PhantomData<(X, Y, Z)>);
+
+impl<X, Y, Z> Effect<X, Y, Z> {
+  fn map<B>(self, _f: impl FnOnce(X) -> B) -> Effect<B, Y, Z> {
+    Effect(PhantomData)
+  }
+  fn map_err<Y2>(self, _f: impl FnOnce(Y) -> Y2) -> Effect<X, Y2, Z> {
+    Effect(PhantomData)
+  }
+}
+
+fn load() -> Effect<u8, String, ()> {
+  Effect(PhantomData)
+}
+
+fn identity() -> Effect<u8, String, ()> {
+  load().map(|x| x)
+}
+
+fn identity_err() -> Effect<u8, String, ()> {
+  load().map_err(|e| e)
+}
+
+fn identity_annotated() -> Effect<u8, String, ()> {
+  load().map(|n: u8| n)
+}
+
+fn not_identity() -> Effect<u8, String, ()> {
+  load().map(|x| x + 1)
+}
+
+fn main() {}

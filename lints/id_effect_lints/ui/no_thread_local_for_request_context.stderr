@@ -1,0 +1,21 @@
+warning: `thread_local!` storage found in Effect code
+  --> $DIR/no_thread_local_for_request_context.rs:9:1
+   |
+LL | static REQUEST_ID: Cell<u64> = Cell::new(0);
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `FiberRef::new(initial)` for fiber-scoped dynamic state
+   = note: `#[warn(no_thread_local_for_request_context)]` on by default
+
+warning: `thread_local!` storage found in Effect code
+  --> $DIR/no_thread_local_for_request_context.rs:11:1
+   |
+LL | / thread_local! {
+LL | |   static TENANT: Cell<u64> = const { Cell::new(0) };
+LL | | }
+   | |_^
+   |
+   = help: use `FiberRef::new(initial)` for fiber-scoped dynamic state
+
+warning: 2 warnings emitted
+

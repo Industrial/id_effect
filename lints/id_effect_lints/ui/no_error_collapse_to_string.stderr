@@ -1,0 +1,19 @@
+warning: error value collapsed to `String` at effect boundary
+  --> $DIR/no_error_collapse_to_string.rs:5:3
+   |
+LL |   Err(e.to_string())
+   |   ^^^^^^^^^^^^^^^^^^
+   |
+   = help: use a typed error variant instead of `Err(format!(…))` or `Err(e.to_string())`
+   = note: `#[warn(no_error_collapse_to_string)]` on by default
+
+warning: error value collapsed to `String` at effect boundary
+  --> $DIR/no_error_collapse_to_string.rs:9:3
+   |
+LL |   Err(format!("io: {e}"))
+   |   ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use a typed error variant instead of `Err(format!(…))` or `Err(e.to_string())`
+
+warning: 2 warnings emitted
+

@@ -1,0 +1,13 @@
+warning: Effect-returning function has generic parameters but no `where` clause
+  --> $DIR/effect_fn_requires_where_clause.rs:7:1
+   |
+LL | / fn generic<A>(_a: A) -> Effect<A, (), ()> {
+LL | |   Effect(PhantomData)
+LL | | }
+   | |_^
+   |
+   = help: add `where A: Send + 'static, E: From<…> + Send + 'static, R: Selector<Key, I> + Send + Sync + 'static`
+   = note: `#[warn(effect_fn_requires_where_clause)]` on by default
+
+warning: 1 warning emitted
+

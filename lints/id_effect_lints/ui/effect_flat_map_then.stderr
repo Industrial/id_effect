@@ -1,0 +1,15 @@
+warning: `.flat_map(move |_| next)` on an `Effect` is `.then(next)`
+  --> $DIR/effect_flat_map_then.rs:27:3
+   |
+LL |   load().flat_map(move |_| next)
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(effect_flat_map_then)]` on by default
+help: use `.then`
+   |
+LL -   load().flat_map(move |_| next)
+LL +   load().then(next)
+   |
+
+warning: 1 warning emitted
+

@@ -1,0 +1,11 @@
+warning: `block_on` / `try_block_on` called outside a binary entry point
+  --> $DIR/run_blocking_only_at_program_edge.rs:16:3
+   |
+LL |   ready().block_on();
+   |   ^^^^^^^^^^^^^^^^^^
+   |
+   = help: move this call to `main` or a dedicated runner; library functions return `Effect` (or `.await` `Runtime::run(effect)` in async code)
+   = note: `#[warn(run_blocking_only_at_program_edge)]` on by default
+
+warning: 1 warning emitted
+

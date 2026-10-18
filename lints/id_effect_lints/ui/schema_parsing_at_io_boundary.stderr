@@ -1,0 +1,11 @@
+warning: `serde_json::from_value(…).unwrap()` in domain code
+  --> $DIR/schema_parsing_at_io_boundary.rs:12:3
+   |
+LL |   serde_json::from_str(body).unwrap()
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: parse at IO boundaries using `Unknown::from_serde_json(v)` + `Schema`
+   = note: `#[warn(schema_parsing_at_io_boundary)]` on by default
+
+warning: 1 warning emitted
+

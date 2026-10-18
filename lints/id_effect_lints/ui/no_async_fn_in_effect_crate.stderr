@@ -1,0 +1,13 @@
+warning: `async fn` is forbidden in Effect.rs code
+  --> $DIR/no_async_fn_in_effect_crate.rs:4:1
+   |
+LL | / async fn bad_fetch(url: &str) -> String {
+LL | |   url.to_string()
+LL | | }
+   | |_^
+   |
+   = help: convert to `fn ... -> Effect<A, E, R>` and wrap async calls with `from_async`
+   = note: `#[warn(no_async_fn_in_effect_crate)]` on by default
+
+warning: 1 warning emitted
+

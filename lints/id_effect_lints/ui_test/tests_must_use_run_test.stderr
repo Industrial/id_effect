@@ -1,0 +1,15 @@
+warning: `block_on` used inside a test function
+  --> $DIR/tests_must_use_run_test.rs:18:3
+   |
+LL |   ready().block_on();
+   |   ^^^^^^^^^^^^^^^^^^
+   |
+   = help: run time-dependent effects on a `TestExecutor` (virtual time, `advance(d)`) for deterministic tests
+note: the lint level is defined here
+  --> $DIR/tests_must_use_run_test.rs:3:9
+   |
+LL | #![warn(tests_must_use_run_test)]
+   |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: 1 warning emitted
+

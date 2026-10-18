@@ -1,0 +1,11 @@
+warning: `.await` used outside of a `from_async` wrapper
+  --> $DIR/no_await_outside_from_async.rs:11:11
+   |
+LL |   async { std::future::ready(1u8).await + 1 }
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: wrap async calls with `from_async(move || async move { expr.await })`, or bind them with `~` inside an `effect!({ … })` body
+   = note: `#[warn(no_await_outside_from_async)]` on by default
+
+warning: 1 warning emitted
+

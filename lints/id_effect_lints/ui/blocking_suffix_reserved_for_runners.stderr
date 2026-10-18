@@ -1,0 +1,11 @@
+warning: function named `*_blocking` returns `Effect`; the name implies it runs the effect
+  --> $DIR/blocking_suffix_reserved_for_runners.rs:7:4
+   |
+LL | fn load_blocking() -> Effect<u8, (), ()> {
+   |    ^^^^^^^^^^^^^
+   |
+   = help: rename, or call `effect.block_on()` inside and return the `Exit` (or a `Result`)
+   = note: `#[warn(blocking_suffix_reserved_for_runners)]` on by default
+
+warning: 1 warning emitted
+

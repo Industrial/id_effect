@@ -1,0 +1,11 @@
+warning: `.fork()` result discarded; fiber will be untracked
+  --> $DIR/fork_must_be_joined.rs:23:3
+   |
+LL |   work().fork();
+   |   ^^^^^^^^^^^^^
+   |
+   = help: bind to a `let handle = …` and call `handle.join()` or `handle.interrupt()`
+   = note: `#[warn(fork_must_be_joined)]` on by default
+
+warning: 1 warning emitted
+

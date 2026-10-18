@@ -1,0 +1,11 @@
+warning: `exit.into_result().unwrap()` called
+  --> $DIR/run_test_result_must_be_matched.rs:19:3
+   |
+LL |   exit.into_result().unwrap()
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: match the `Exit` instead (`assert!(matches!(effect.block_on(), Exit::Success(_)))`) to distinguish a typed failure from a defect or an interrupt
+   = note: `#[warn(run_test_result_must_be_matched)]` on by default
+
+warning: 1 warning emitted
+
