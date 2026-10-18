@@ -173,18 +173,7 @@
 			"group": "core",
 			"name": "Typed success / error / requirements",
 			"measures": "Errors and dependencies are tracked in the type of a program value; missing handling is a compile error.",
-			"competitors": [
-				100,
-				88,
-				1,
-				1,
-				13,
-				1,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [100, 88, 1, 1, 13, 1, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -320,9 +309,7 @@
 					],
 					"otp": [],
 					"phoenix": [],
-					"spring": [
-						"core.typed-effect#3"
-					],
+					"spring": ["core.typed-effect#3"],
 					"dotnet": [],
 					"rails": [],
 					"django": [],
@@ -340,18 +327,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					40,
-					40,
-					35,
-					45,
-					15,
-					15,
-					15,
-					25
-				],
+				"competitors": [95, 95, 40, 40, 35, 45, 15, 15, 15, 25],
 				"id_effect": {
 					"0.6.0": 88,
 					"0.7.0": 89
@@ -366,18 +342,7 @@
 			"group": "core",
 			"name": "Typed dependency injection",
 			"measures": "Declaring, providing, overriding and scoping services, checked before run time.",
-			"competitors": [
-				75,
-				100,
-				25,
-				38,
-				88,
-				75,
-				13,
-				13,
-				50,
-				1
-			],
+			"competitors": [75, 100, 25, 38, 88, 75, 13, 13, 50, 1],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -512,15 +477,8 @@
 						"core.di#7",
 						"core.di#8"
 					],
-					"otp": [
-						"core.di#3",
-						"core.di#5"
-					],
-					"phoenix": [
-						"core.di#3",
-						"core.di#5",
-						"core.di#6"
-					],
+					"otp": ["core.di#3", "core.di#5"],
+					"phoenix": ["core.di#3", "core.di#5", "core.di#6"],
 					"spring": [
 						"core.di#1",
 						"core.di#3",
@@ -538,18 +496,9 @@
 						"core.di#6",
 						"core.di#8"
 					],
-					"rails": [
-						"core.di#6"
-					],
-					"django": [
-						"core.di#6"
-					],
-					"laravel": [
-						"core.di#1",
-						"core.di#3",
-						"core.di#4",
-						"core.di#6"
-					],
+					"rails": ["core.di#6"],
+					"django": ["core.di#6"],
+					"laravel": ["core.di#1", "core.di#3", "core.di#4", "core.di#6"],
 					"nextjs": []
 				},
 				"evidence": {
@@ -563,18 +512,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					92,
-					90,
-					30,
-					35,
-					95,
-					92,
-					30,
-					25,
-					80,
-					15
-				],
+				"competitors": [92, 90, 30, 35, 95, 92, 30, 25, 80, 15],
 				"id_effect": {
 					"0.6.0": 85,
 					"0.7.0": 89
@@ -590,18 +528,7 @@
 			"group": "core",
 			"name": "Composition ergonomics",
 			"measures": "How short and readable everyday sequential/parallel code is.",
-			"competitors": [
-				100,
-				75,
-				75,
-				88,
-				75,
-				100,
-				100,
-				75,
-				88,
-				88
-			],
+			"competitors": [100, 75, 75, 88, 75, 100, 100, 75, 88, 88],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -813,18 +740,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					88,
-					80,
-					75,
-					85,
-					75,
-					88,
-					92,
-					88,
-					90,
-					85
-				],
+				"competitors": [88, 80, 75, 85, 75, 88, 92, 88, 90, 85],
 				"id_effect": {
 					"0.6.0": 68,
 					"0.7.0": 72
@@ -840,18 +756,7 @@
 			"group": "core",
 			"name": "Failure model (Cause / Exit)",
 			"measures": "Structured failure: expected errors, defects, interruption, composition and rendering.",
-			"competitors": [
-				100,
-				100,
-				75,
-				75,
-				75,
-				88,
-				50,
-				88,
-				50,
-				75
-			],
+			"competitors": [100, 100, 75, 75, 75, 88, 50, 88, 50, 75],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -1061,18 +966,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					60,
-					55,
-					50,
-					55,
-					40,
-					40,
-					40,
-					30
-				],
+				"competitors": [95, 95, 60, 55, 50, 55, 40, 40, 40, 30],
 				"id_effect": {
 					"0.6.0": 85,
 					"0.7.0": 88
@@ -1087,18 +981,7 @@
 			"group": "core",
 			"name": "Resource safety (Scope / acquire-release)",
 			"measures": "Guaranteed release on success, failure and interruption; scoped lifetimes.",
-			"competitors": [
-				100,
-				100,
-				63,
-				75,
-				50,
-				63,
-				38,
-				25,
-				25,
-				25
-			],
+			"competitors": [100, 100, 63, 75, 50, 63, 38, 25, 25, 25],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -1263,23 +1146,10 @@
 						"core.scope#6",
 						"core.scope#8"
 					],
-					"rails": [
-						"core.scope#1",
-						"core.scope#3",
-						"core.scope#8"
-					],
-					"django": [
-						"core.scope#1",
-						"core.scope#3"
-					],
-					"laravel": [
-						"core.scope#1",
-						"core.scope#3"
-					],
-					"nextjs": [
-						"core.scope#1",
-						"core.scope#3"
-					]
+					"rails": ["core.scope#1", "core.scope#3", "core.scope#8"],
+					"django": ["core.scope#1", "core.scope#3"],
+					"laravel": ["core.scope#1", "core.scope#3"],
+					"nextjs": ["core.scope#1", "core.scope#3"]
 				},
 				"evidence": {
 					"core.scope#1": "crates/id_effect/src/kernel/resource.rs:101 acquire_use_release; tests/fibers.rs acquire_use_release_releases_once_with_the_matching_exit_kind (Success/Failure/Die/Interrupt)",
@@ -1296,18 +1166,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					75,
-					70,
-					70,
-					80,
-					50,
-					50,
-					45,
-					40
-				],
+				"competitors": [95, 95, 75, 70, 70, 80, 50, 50, 45, 40],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 88
@@ -1322,18 +1181,7 @@
 			"group": "core",
 			"name": "Interruption and cancellation",
 			"measures": "Cooperative cancellation, masking, propagation to children, finalizer semantics.",
-			"competitors": [
-				100,
-				100,
-				88,
-				88,
-				25,
-				50,
-				13,
-				50,
-				1,
-				38
-			],
+			"competitors": [100, 100, 88, 88, 25, 50, 13, 50, 1, 38],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -1483,19 +1331,14 @@
 						"core.interrupt#6",
 						"core.interrupt#7"
 					],
-					"spring": [
-						"core.interrupt#1",
-						"core.interrupt#5"
-					],
+					"spring": ["core.interrupt#1", "core.interrupt#5"],
 					"dotnet": [
 						"core.interrupt#1",
 						"core.interrupt#4",
 						"core.interrupt#5",
 						"core.interrupt#6"
 					],
-					"rails": [
-						"core.interrupt#5"
-					],
+					"rails": ["core.interrupt#5"],
 					"django": [
 						"core.interrupt#1",
 						"core.interrupt#4",
@@ -1503,11 +1346,7 @@
 						"core.interrupt#6"
 					],
 					"laravel": [],
-					"nextjs": [
-						"core.interrupt#4",
-						"core.interrupt#5",
-						"core.interrupt#6"
-					]
+					"nextjs": ["core.interrupt#4", "core.interrupt#5", "core.interrupt#6"]
 				},
 				"evidence": {
 					"core.interrupt#1": "FiberHandle::interrupt (book part3/ch09-01 table); tests/fibers.rs interrupt_stops_a_sleeping_fiber_and_runs_its_finalizer",
@@ -1523,18 +1362,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					90,
-					85,
-					45,
-					80,
-					30,
-					35,
-					25,
-					50
-				],
+				"competitors": [95, 95, 90, 85, 45, 80, 30, 35, 25, 50],
 				"id_effect": {
 					"0.6.0": 68,
 					"0.7.0": 85
@@ -1549,18 +1377,7 @@
 			"group": "core",
 			"name": "timeout / race / zip-par combinators",
 			"measures": "First-class timeout, race, parallel zip/for-each with bounded concurrency.",
-			"competitors": [
-				100,
-				100,
-				25,
-				38,
-				63,
-				50,
-				25,
-				50,
-				1,
-				25
-			],
+			"competitors": [100, 100, 25, 38, 63, 50, 25, 50, 1, 25],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -1688,15 +1505,8 @@
 						"core.race#7",
 						"core.race#8"
 					],
-					"otp": [
-						"core.race#1",
-						"core.race#2"
-					],
-					"phoenix": [
-						"core.race#1",
-						"core.race#2",
-						"core.race#7"
-					],
+					"otp": ["core.race#1", "core.race#2"],
+					"phoenix": ["core.race#1", "core.race#2", "core.race#7"],
 					"spring": [
 						"core.race#1",
 						"core.race#2",
@@ -1710,10 +1520,7 @@
 						"core.race#5",
 						"core.race#7"
 					],
-					"rails": [
-						"core.race#1",
-						"core.race#2"
-					],
+					"rails": ["core.race#1", "core.race#2"],
 					"django": [
 						"core.race#1",
 						"core.race#2",
@@ -1721,10 +1528,7 @@
 						"core.race#6"
 					],
 					"laravel": [],
-					"nextjs": [
-						"core.race#1",
-						"core.race#5"
-					]
+					"nextjs": ["core.race#1", "core.race#5"]
 				},
 				"evidence": {
 					"core.race#1": "crates/id_effect/src/race.rs:98 timeout -> Effect<Option<A>,E,R>; tests/race_timeout.rs timeout_fires_at_virtual_ten_seconds_fast",
@@ -1740,18 +1544,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					85,
-					80,
-					70,
-					85,
-					45,
-					40,
-					45,
-					55
-				],
+				"competitors": [95, 95, 85, 80, 70, 85, 45, 40, 45, 55],
 				"id_effect": {
 					"0.6.0": 9,
 					"0.7.0": 88
@@ -1766,18 +1559,7 @@
 			"group": "conc",
 			"name": "Lightweight fibers / processes",
 			"measures": "Cost and semantics of spawning, joining and supervising many concurrent tasks.",
-			"competitors": [
-				100,
-				100,
-				75,
-				75,
-				50,
-				63,
-				25,
-				50,
-				13,
-				38
-			],
+			"competitors": [100, 100, 75, 75, 50, 63, 25, 50, 13, 38],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -1847,11 +1629,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"conc.fibers#3",
-							"conc.fibers#5",
-							"conc.fibers#7"
-						],
+						"0.6.0": ["conc.fibers#3", "conc.fibers#5", "conc.fibers#7"],
 						"0.7.0": [
 							"conc.fibers#1",
 							"conc.fibers#3",
@@ -1935,24 +1713,15 @@
 						"conc.fibers#5",
 						"conc.fibers#8"
 					],
-					"rails": [
-						"conc.fibers#5",
-						"conc.fibers#8"
-					],
+					"rails": ["conc.fibers#5", "conc.fibers#8"],
 					"django": [
 						"conc.fibers#1",
 						"conc.fibers#2",
 						"conc.fibers#5",
 						"conc.fibers#8"
 					],
-					"laravel": [
-						"conc.fibers#5"
-					],
-					"nextjs": [
-						"conc.fibers#1",
-						"conc.fibers#2",
-						"conc.fibers#5"
-					]
+					"laravel": ["conc.fibers#5"],
+					"nextjs": ["conc.fibers#1", "conc.fibers#2", "conc.fibers#5"]
 				},
 				"evidence": {
 					"conc.fibers#1": "docs/benchmarks/README.md '0.10 exit': gate/spawn_join_10k about 12-17 ms per 10k fibers (about 1.2-1.7 us/task); docs/benchmarks/v0.10.json; bench crates/id_effect_tokio/benches/gate_fiber.rs",
@@ -1969,18 +1738,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					92,
-					95,
-					98,
-					96,
-					80,
-					85,
-					45,
-					40,
-					30,
-					60
-				],
+				"competitors": [92, 95, 98, 96, 80, 85, 45, 40, 30, 60],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 88
@@ -1995,18 +1753,7 @@
 			"group": "conc",
 			"name": "Coordination primitives",
 			"measures": "Queue, PubSub, Deferred, Semaphore, Ref, Latch, channels; no panics on misuse.",
-			"competitors": [
-				100,
-				100,
-				25,
-				38,
-				75,
-				75,
-				25,
-				38,
-				25,
-				25
-			],
+			"competitors": [100, 100, 25, 38, 75, 75, 25, 38, 25, 25],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -2141,10 +1888,7 @@
 						"conc.coordination#7",
 						"conc.coordination#8"
 					],
-					"otp": [
-						"conc.coordination#2",
-						"conc.coordination#5"
-					],
+					"otp": ["conc.coordination#2", "conc.coordination#5"],
 					"phoenix": [
 						"conc.coordination#2",
 						"conc.coordination#3",
@@ -2166,23 +1910,14 @@
 						"conc.coordination#6",
 						"conc.coordination#7"
 					],
-					"rails": [
-						"conc.coordination#1",
-						"conc.coordination#2"
-					],
+					"rails": ["conc.coordination#1", "conc.coordination#2"],
 					"django": [
 						"conc.coordination#3",
 						"conc.coordination#4",
 						"conc.coordination#6"
 					],
-					"laravel": [
-						"conc.coordination#2",
-						"conc.coordination#4"
-					],
-					"nextjs": [
-						"conc.coordination#2",
-						"conc.coordination#3"
-					]
+					"laravel": ["conc.coordination#2", "conc.coordination#4"],
+					"nextjs": ["conc.coordination#2", "conc.coordination#3"]
 				},
 				"evidence": {
 					"conc.coordination#1": "crates/id_effect/src/coordination/queue.rs:193 bounded, :198 unbounded, :203 dropping, :208 sliding",
@@ -2195,18 +1930,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					95,
-					70,
-					75,
-					80,
-					85,
-					40,
-					35,
-					35,
-					35
-				],
+				"competitors": [95, 95, 70, 75, 80, 85, 40, 35, 35, 35],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 85
@@ -2221,18 +1945,7 @@
 			"group": "conc",
 			"name": "Software transactional memory",
 			"measures": "Composable transactions over shared memory (TRef/TMap/TQueue) with retry/orElse.",
-			"competitors": [
-				100,
-				100,
-				25,
-				25,
-				1,
-				1,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [100, 100, 25, 25, 1, 1, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -2366,14 +2079,8 @@
 						"conc.stm#7",
 						"conc.stm#8"
 					],
-					"otp": [
-						"conc.stm#1",
-						"conc.stm#4"
-					],
-					"phoenix": [
-						"conc.stm#1",
-						"conc.stm#4"
-					],
+					"otp": ["conc.stm#1", "conc.stm#4"],
+					"phoenix": ["conc.stm#1", "conc.stm#4"],
 					"spring": [],
 					"dotnet": [],
 					"rails": [],
@@ -2395,18 +2102,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					95,
-					35,
-					30,
-					20,
-					15,
-					5,
-					5,
-					5,
-					5
-				],
+				"competitors": [85, 95, 35, 30, 20, 15, 5, 5, 5, 5],
 				"id_effect": {
 					"0.6.0": 55,
 					"0.7.0": 62
@@ -2421,18 +2117,7 @@
 			"group": "conc",
 			"name": "Parallel CPU compute",
 			"measures": "Built-in data-parallel / CPU-bound execution with admission control.",
-			"competitors": [
-				38,
-				63,
-				25,
-				38,
-				63,
-				75,
-				1,
-				1,
-				1,
-				13
-			],
+			"competitors": [38, 63, 25, 38, 63, 75, 1, 1, 1, 13],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -2558,15 +2243,8 @@
 						"conc.parallel#7",
 						"conc.parallel#8"
 					],
-					"otp": [
-						"conc.parallel#1",
-						"conc.parallel#8"
-					],
-					"phoenix": [
-						"conc.parallel#1",
-						"conc.parallel#3",
-						"conc.parallel#8"
-					],
+					"otp": ["conc.parallel#1", "conc.parallel#8"],
+					"phoenix": ["conc.parallel#1", "conc.parallel#3", "conc.parallel#8"],
 					"spring": [
 						"conc.parallel#1",
 						"conc.parallel#2",
@@ -2585,9 +2263,7 @@
 					"rails": [],
 					"django": [],
 					"laravel": [],
-					"nextjs": [
-						"conc.parallel#1"
-					]
+					"nextjs": ["conc.parallel#1"]
 				},
 				"evidence": {
 					"conc.parallel#1": "crates/id_effect/src/compute/rayon_pool.rs install_parallel on a dedicated Rayon pool (feature compute, default on: crates/id_effect/Cargo.toml:54)",
@@ -2603,18 +2279,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					35,
-					75,
-					55,
-					50,
-					80,
-					88,
-					25,
-					25,
-					20,
-					30
-				],
+				"competitors": [35, 75, 55, 50, 80, 88, 25, 25, 20, 30],
 				"id_effect": {
 					"0.6.0": 88,
 					"0.7.0": 88
@@ -2629,18 +2294,7 @@
 			"group": "conc",
 			"name": "Raw performance and footprint",
 			"measures": "Throughput, latency and memory of typical workloads.",
-			"competitors": [
-				25,
-				38,
-				38,
-				50,
-				38,
-				75,
-				13,
-				13,
-				13,
-				13
-			],
+			"competitors": [25, 38, 38, 50, 38, 75, 13, 13, 13, 13],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -2710,9 +2364,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"conc.perf#7"
-						],
+						"0.6.0": ["conc.perf#7"],
 						"0.7.0": [
 							"conc.perf#1",
 							"conc.perf#2",
@@ -2742,31 +2394,16 @@
 							"conc.perf#7"
 						]
 					},
-					"effect_ts": [
-						"conc.perf#2",
-						"conc.perf#3"
-					],
-					"zio": [
-						"conc.perf#2",
-						"conc.perf#3",
-						"conc.perf#5"
-					],
-					"otp": [
-						"conc.perf#2",
-						"conc.perf#3",
-						"conc.perf#6"
-					],
+					"effect_ts": ["conc.perf#2", "conc.perf#3"],
+					"zio": ["conc.perf#2", "conc.perf#3", "conc.perf#5"],
+					"otp": ["conc.perf#2", "conc.perf#3", "conc.perf#6"],
 					"phoenix": [
 						"conc.perf#2",
 						"conc.perf#3",
 						"conc.perf#5",
 						"conc.perf#6"
 					],
-					"spring": [
-						"conc.perf#2",
-						"conc.perf#3",
-						"conc.perf#5"
-					],
+					"spring": ["conc.perf#2", "conc.perf#3", "conc.perf#5"],
 					"dotnet": [
 						"conc.perf#1",
 						"conc.perf#2",
@@ -2775,18 +2412,10 @@
 						"conc.perf#5",
 						"conc.perf#8"
 					],
-					"rails": [
-						"conc.perf#5"
-					],
-					"django": [
-						"conc.perf#5"
-					],
-					"laravel": [
-						"conc.perf#5"
-					],
-					"nextjs": [
-						"conc.perf#3"
-					]
+					"rails": ["conc.perf#5"],
+					"django": ["conc.perf#5"],
+					"laravel": ["conc.perf#5"],
+					"nextjs": ["conc.perf#3"]
 				},
 				"evidence": {
 					"conc.perf#1": "docs/benchmarks/gates.toml read by scripts/bench-compare.sh (self-test); docs/benchmarks/README.md 'Gates' and the '0.10 exit' per-release comparison with v0.9.json/v0.10.json/v0.10-fiber-registry.json",
@@ -2800,18 +2429,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					50,
-					70,
-					60,
-					65,
-					72,
-					86,
-					35,
-					35,
-					45,
-					55
-				],
+				"competitors": [50, 70, 60, 65, 72, 86, 35, 35, 45, 55],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 89
@@ -2826,18 +2444,7 @@
 			"group": "conc",
 			"name": "Language-level safety",
 			"measures": "Memory and data-race safety guaranteed by language and library policy.",
-			"competitors": [
-				38,
-				25,
-				75,
-				75,
-				25,
-				50,
-				38,
-				25,
-				38,
-				38
-			],
+			"competitors": [38, 25, 75, 75, 25, 50, 38, 25, 38, 38],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -2949,15 +2556,8 @@
 							"conc.safety#7"
 						]
 					},
-					"effect_ts": [
-						"conc.safety#1",
-						"conc.safety#6",
-						"conc.safety#7"
-					],
-					"zio": [
-						"conc.safety#1",
-						"conc.safety#6"
-					],
+					"effect_ts": ["conc.safety#1", "conc.safety#6", "conc.safety#7"],
+					"zio": ["conc.safety#1", "conc.safety#6"],
 					"otp": [
 						"conc.safety#1",
 						"conc.safety#2",
@@ -2974,35 +2574,17 @@
 						"conc.safety#6",
 						"conc.safety#8"
 					],
-					"spring": [
-						"conc.safety#1",
-						"conc.safety#6"
-					],
+					"spring": ["conc.safety#1", "conc.safety#6"],
 					"dotnet": [
 						"conc.safety#1",
 						"conc.safety#5",
 						"conc.safety#6",
 						"conc.safety#7"
 					],
-					"rails": [
-						"conc.safety#1",
-						"conc.safety#6",
-						"conc.safety#7"
-					],
-					"django": [
-						"conc.safety#1",
-						"conc.safety#6"
-					],
-					"laravel": [
-						"conc.safety#1",
-						"conc.safety#6",
-						"conc.safety#7"
-					],
-					"nextjs": [
-						"conc.safety#1",
-						"conc.safety#6",
-						"conc.safety#7"
-					]
+					"rails": ["conc.safety#1", "conc.safety#6", "conc.safety#7"],
+					"django": ["conc.safety#1", "conc.safety#6"],
+					"laravel": ["conc.safety#1", "conc.safety#6", "conc.safety#7"],
+					"nextjs": ["conc.safety#1", "conc.safety#6", "conc.safety#7"]
 				},
 				"evidence": {
 					"conc.safety#1": "Rust safe code; crates/id_effect/Cargo.toml:13-14 [lints.rust] unsafe_code = \"forbid\"",
@@ -3019,18 +2601,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					65,
-					80,
-					75,
-					75,
-					65,
-					72,
-					35,
-					40,
-					40,
-					60
-				],
+				"competitors": [65, 80, 75, 75, 65, 72, 35, 40, 40, 60],
 				"id_effect": {
 					"0.6.0": 89,
 					"0.7.0": 89
@@ -3043,18 +2614,7 @@
 			"group": "fault",
 			"name": "Supervision trees",
 			"measures": "Restart strategies, intensity limits, dynamic children, shutdown policies.",
-			"competitors": [
-				1,
-				1,
-				100,
-				100,
-				1,
-				1,
-				1,
-				1,
-				25,
-				1
-			],
+			"competitors": [1, 1, 100, 100, 1, 1, 1, 1, 25, 1],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -3196,10 +2756,7 @@
 					"dotnet": [],
 					"rails": [],
 					"django": [],
-					"laravel": [
-						"fault.supervision#5",
-						"fault.supervision#7"
-					],
+					"laravel": ["fault.supervision#5", "fault.supervision#7"],
 					"nextjs": []
 				},
 				"evidence": {
@@ -3213,18 +2770,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					50,
-					99,
-					97,
-					35,
-					40,
-					15,
-					10,
-					30,
-					10
-				],
+				"competitors": [55, 50, 99, 97, 35, 40, 15, 10, 30, 10],
 				"id_effect": {
 					"0.6.0": 82,
 					"0.7.0": 84
@@ -3239,18 +2785,7 @@
 			"group": "fault",
 			"name": "Actor / process model",
 			"measures": "gen_server equivalent: mailboxes, call/cast/info, links, monitors, timers, selective receive.",
-			"competitors": [
-				25,
-				25,
-				100,
-				100,
-				1,
-				63,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [25, 25, 100, 100, 1, 63, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -3356,14 +2891,8 @@
 							"fault.actors#5"
 						]
 					},
-					"effect_ts": [
-						"fault.actors#1",
-						"fault.actors#2"
-					],
-					"zio": [
-						"fault.actors#1",
-						"fault.actors#2"
-					],
+					"effect_ts": ["fault.actors#1", "fault.actors#2"],
+					"zio": ["fault.actors#1", "fault.actors#2"],
 					"otp": [
 						"fault.actors#1",
 						"fault.actors#2",
@@ -3406,18 +2935,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					45,
-					45,
-					99,
-					97,
-					30,
-					65,
-					10,
-					10,
-					10,
-					5
-				],
+				"competitors": [45, 45, 99, 97, 30, 65, 10, 10, 10, 5],
 				"id_effect": {
 					"0.6.0": 74,
 					"0.7.0": 75
@@ -3432,18 +2950,7 @@
 			"group": "fault",
 			"name": "State machines (gen_statem)",
 			"measures": "Typed FSMs with state data, timeouts, postpone, enter actions, visualisation.",
-			"competitors": [
-				39,
-				1,
-				75,
-				75,
-				88,
-				39,
-				38,
-				39,
-				38,
-				39
-			],
+			"competitors": [39, 1, 75, 75, 88, 39, 38, 39, 38, 39],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -3589,22 +3096,14 @@
 						"fault.fsm#6",
 						"fault.fsm#7"
 					],
-					"rails": [
-						"fault.fsm#1",
-						"fault.fsm#2",
-						"fault.fsm#6"
-					],
+					"rails": ["fault.fsm#1", "fault.fsm#2", "fault.fsm#6"],
 					"django": [
 						"fault.fsm#1",
 						"fault.fsm#2",
 						"fault.fsm#6",
 						"fault.fsm#7"
 					],
-					"laravel": [
-						"fault.fsm#1",
-						"fault.fsm#2",
-						"fault.fsm#6"
-					],
+					"laravel": ["fault.fsm#1", "fault.fsm#2", "fault.fsm#6"],
 					"nextjs": [
 						"fault.fsm#1",
 						"fault.fsm#2",
@@ -3624,18 +3123,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					40,
-					35,
-					90,
-					85,
-					70,
-					45,
-					50,
-					40,
-					45,
-					30
-				],
+				"competitors": [40, 35, 90, 85, 70, 45, 50, 40, 45, 30],
 				"id_effect": {
 					"0.6.0": 62,
 					"0.7.0": 62
@@ -3650,18 +3138,7 @@
 			"group": "fault",
 			"name": "Resilience patterns",
 			"measures": "Circuit breaker, retry, timeout, rate limit, bulkhead, hedging, fallback as composable policies.",
-			"competitors": [
-				75,
-				75,
-				13,
-				13,
-				88,
-				100,
-				25,
-				1,
-				38,
-				1
-			],
+			"competitors": [75, 75, 13, 13, 88, 100, 25, 1, 38, 1],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -3793,12 +3270,8 @@
 						"fault.resilience#7",
 						"fault.resilience#8"
 					],
-					"otp": [
-						"fault.resilience#3"
-					],
-					"phoenix": [
-						"fault.resilience#3"
-					],
+					"otp": ["fault.resilience#3"],
+					"phoenix": ["fault.resilience#3"],
 					"spring": [
 						"fault.resilience#1",
 						"fault.resilience#2",
@@ -3818,10 +3291,7 @@
 						"fault.resilience#7",
 						"fault.resilience#8"
 					],
-					"rails": [
-						"fault.resilience#2",
-						"fault.resilience#4"
-					],
+					"rails": ["fault.resilience#2", "fault.resilience#4"],
 					"django": [],
 					"laravel": [
 						"fault.resilience#1",
@@ -3842,18 +3312,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					80,
-					80,
-					60,
-					55,
-					92,
-					95,
-					30,
-					25,
-					40,
-					20
-				],
+				"competitors": [80, 80, 60, 55, 92, 95, 30, 25, 40, 20],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 69
@@ -3868,18 +3327,7 @@
 			"group": "fault",
 			"name": "Retry / repeat schedule algebra",
 			"measures": "Composable schedules: exponential, jitter, fibonacci, union/intersect, cron.",
-			"competitors": [
-				100,
-				100,
-				1,
-				38,
-				50,
-				38,
-				50,
-				39,
-				38,
-				1
-			],
+			"competitors": [100, 100, 1, 38, 50, 38, 50, 39, 38, 1],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -4066,18 +3514,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					98,
-					40,
-					45,
-					65,
-					72,
-					45,
-					30,
-					50,
-					20
-				],
+				"competitors": [95, 98, 40, 45, 65, 72, 45, 30, 50, 20],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 83
@@ -4092,18 +3529,7 @@
 			"group": "fault",
 			"name": "Durable workflows and sagas",
 			"measures": "Persistent, resumable multi-step workflows with compensation.",
-			"competitors": [
-				39,
-				39,
-				1,
-				50,
-				50,
-				100,
-				50,
-				38,
-				38,
-				39
-			],
+			"competitors": [39, 39, 1, 50, 50, 100, 50, 38, 38, 39],
 			"track": "T7",
 			"stance": "promote",
 			"id_effect": {
@@ -4274,18 +3700,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					70,
-					45,
-					35,
-					60,
-					60,
-					78,
-					40,
-					35,
-					45,
-					55
-				],
+				"competitors": [70, 45, 35, 60, 60, 78, 40, 35, 45, 55],
 				"id_effect": {
 					"0.6.0": 30,
 					"0.7.0": 30
@@ -4300,18 +3715,7 @@
 			"group": "fault",
 			"name": "Live reload and zero-downtime upgrades",
 			"measures": "Dev auto-reload and production upgrades without dropping work.",
-			"competitors": [
-				13,
-				13,
-				75,
-				38,
-				50,
-				50,
-				50,
-				38,
-				50,
-				38
-			],
+			"competitors": [13, 13, 75, 38, 50, 50, 50, 38, 50, 38],
 			"track": "T1",
 			"stance": "partial-non-goal",
 			"id_effect": {
@@ -4382,22 +3786,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"fault.reload#3",
-							"fault.reload#8"
-						],
-						"0.7.0": [
-							"fault.reload#3",
-							"fault.reload#8"
-						],
-						"0.8.0": [
-							"fault.reload#3",
-							"fault.reload#8"
-						],
-						"0.9.0": [
-							"fault.reload#3",
-							"fault.reload#8"
-						],
+						"0.6.0": ["fault.reload#3", "fault.reload#8"],
+						"0.7.0": ["fault.reload#3", "fault.reload#8"],
+						"0.8.0": ["fault.reload#3", "fault.reload#8"],
+						"0.9.0": ["fault.reload#3", "fault.reload#8"],
 						"0.10.0": [
 							"fault.reload#1",
 							"fault.reload#3",
@@ -4406,12 +3798,8 @@
 							"fault.reload#8"
 						]
 					},
-					"effect_ts": [
-						"fault.reload#3"
-					],
-					"zio": [
-						"fault.reload#3"
-					],
+					"effect_ts": ["fault.reload#3"],
+					"zio": ["fault.reload#3"],
 					"otp": [
 						"fault.reload#2",
 						"fault.reload#3",
@@ -4420,11 +3808,7 @@
 						"fault.reload#6",
 						"fault.reload#7"
 					],
-					"phoenix": [
-						"fault.reload#1",
-						"fault.reload#2",
-						"fault.reload#3"
-					],
+					"phoenix": ["fault.reload#1", "fault.reload#2", "fault.reload#3"],
 					"spring": [
 						"fault.reload#1",
 						"fault.reload#3",
@@ -4443,22 +3827,14 @@
 						"fault.reload#4",
 						"fault.reload#8"
 					],
-					"django": [
-						"fault.reload#1",
-						"fault.reload#3",
-						"fault.reload#4"
-					],
+					"django": ["fault.reload#1", "fault.reload#3", "fault.reload#4"],
 					"laravel": [
 						"fault.reload#1",
 						"fault.reload#3",
 						"fault.reload#4",
 						"fault.reload#8"
 					],
-					"nextjs": [
-						"fault.reload#1",
-						"fault.reload#3",
-						"fault.reload#4"
-					]
+					"nextjs": ["fault.reload#1", "fault.reload#3", "fault.reload#4"]
 				},
 				"evidence": {
 					"fault.reload#1": "NEW: id-effect dev rebuild+restart on change, book part6/ch34-02-dev.md; crates/id_effect_tool/tests/dev.rs edit_triggers_rebuild_and_restart, build_error_keeps_previous_child",
@@ -4472,18 +3848,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					20,
-					20,
-					95,
-					72,
-					50,
-					55,
-					70,
-					55,
-					62,
-					80
-				],
+				"competitors": [20, 20, 95, 72, 50, 55, 70, 55, 62, 80],
 				"id_effect": {
 					"0.6.0": 15,
 					"0.7.0": 15
@@ -4499,18 +3864,7 @@
 			"group": "dist",
 			"name": "Clustering and node membership",
 			"measures": "Node identity, discovery, failure detection, authenticated join.",
-			"competitors": [
-				63,
-				50,
-				63,
-				88,
-				63,
-				88,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [63, 50, 63, 88, 63, 88, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -4684,18 +4038,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					65,
-					60,
-					92,
-					90,
-					72,
-					75,
-					15,
-					10,
-					15,
-					20
-				],
+				"competitors": [65, 60, 92, 90, 72, 75, 15, 10, 15, 20],
 				"id_effect": {
 					"0.6.0": 72,
 					"0.7.0": 72
@@ -4710,18 +4053,7 @@
 			"group": "dist",
 			"name": "Remote spawn / send / monitor",
 			"measures": "Location-transparent messaging, remote spawn, cross-node links/monitors.",
-			"competitors": [
-				63,
-				50,
-				88,
-				88,
-				38,
-				75,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [63, 50, 88, 88, 38, 75, 1, 1, 1, 1],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -4863,11 +4195,7 @@
 						"dist.remote#6",
 						"dist.remote#7"
 					],
-					"spring": [
-						"dist.remote#2",
-						"dist.remote#3",
-						"dist.remote#8"
-					],
+					"spring": ["dist.remote#2", "dist.remote#3", "dist.remote#8"],
 					"dotnet": [
 						"dist.remote#1",
 						"dist.remote#2",
@@ -4891,18 +4219,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					65,
-					55,
-					95,
-					92,
-					40,
-					70,
-					10,
-					10,
-					10,
-					5
-				],
+				"competitors": [65, 55, 95, 92, 40, 70, 10, 10, 10, 5],
 				"id_effect": {
 					"0.6.0": 70,
 					"0.7.0": 71
@@ -4917,18 +4234,7 @@
 			"group": "dist",
 			"name": "Singletons, groups and placement",
 			"measures": "Cluster singletons, process groups, global registry, sharding/placement.",
-			"competitors": [
-				63,
-				63,
-				63,
-				63,
-				38,
-				88,
-				25,
-				1,
-				25,
-				1
-			],
+			"competitors": [63, 63, 63, 63, 38, 88, 25, 1, 25, 1],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -5081,15 +4387,9 @@
 						"dist.placement#7",
 						"dist.placement#8"
 					],
-					"rails": [
-						"dist.placement#1",
-						"dist.placement#2"
-					],
+					"rails": ["dist.placement#1", "dist.placement#2"],
 					"django": [],
-					"laravel": [
-						"dist.placement#1",
-						"dist.placement#2"
-					],
+					"laravel": ["dist.placement#1", "dist.placement#2"],
 					"nextjs": []
 				},
 				"evidence": {
@@ -5102,18 +4402,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					72,
-					65,
-					72,
-					78,
-					55,
-					82,
-					10,
-					10,
-					15,
-					5
-				],
+				"competitors": [72, 65, 72, 78, 55, 82, 10, 10, 15, 5],
 				"id_effect": {
 					"0.6.0": 65,
 					"0.7.0": 66
@@ -5128,18 +4417,7 @@
 			"group": "dist",
 			"name": "Transport security",
 			"measures": "Encryption and mutual authentication between nodes.",
-			"competitors": [
-				50,
-				50,
-				75,
-				75,
-				75,
-				88,
-				38,
-				38,
-				38,
-				38
-			],
+			"competitors": [50, 50, 75, 75, 75, 88, 38, 38, 38, 38],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -5209,49 +4487,14 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"dist.tls#1",
-							"dist.tls#3",
-							"dist.tls#6",
-							"dist.tls#8"
-						],
-						"0.7.0": [
-							"dist.tls#1",
-							"dist.tls#3",
-							"dist.tls#6",
-							"dist.tls#8"
-						],
-						"0.8.0": [
-							"dist.tls#1",
-							"dist.tls#3",
-							"dist.tls#6",
-							"dist.tls#8"
-						],
-						"0.9.0": [
-							"dist.tls#1",
-							"dist.tls#3",
-							"dist.tls#6",
-							"dist.tls#8"
-						],
-						"0.10.0": [
-							"dist.tls#1",
-							"dist.tls#3",
-							"dist.tls#6",
-							"dist.tls#8"
-						]
+						"0.6.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
+						"0.7.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
+						"0.8.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
+						"0.9.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
+						"0.10.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"]
 					},
-					"effect_ts": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#4",
-						"dist.tls#5"
-					],
-					"zio": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#4",
-						"dist.tls#5"
-					],
+					"effect_ts": ["dist.tls#1", "dist.tls#3", "dist.tls#4", "dist.tls#5"],
+					"zio": ["dist.tls#1", "dist.tls#3", "dist.tls#4", "dist.tls#5"],
 					"otp": [
 						"dist.tls#1",
 						"dist.tls#3",
@@ -5285,26 +4528,10 @@
 						"dist.tls#7",
 						"dist.tls#8"
 					],
-					"rails": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#5"
-					],
-					"django": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#5"
-					],
-					"laravel": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#5"
-					],
-					"nextjs": [
-						"dist.tls#1",
-						"dist.tls#3",
-						"dist.tls#5"
-					]
+					"rails": ["dist.tls#1", "dist.tls#3", "dist.tls#5"],
+					"django": ["dist.tls#1", "dist.tls#3", "dist.tls#5"],
+					"laravel": ["dist.tls#1", "dist.tls#3", "dist.tls#5"],
+					"nextjs": ["dist.tls#1", "dist.tls#3", "dist.tls#5"]
 				},
 				"evidence": {
 					"dist.tls#1": "crates/id_effect_node/src/transport/quic.rs QuicTransport (quinn + rustls, aws-lc-rs provider at :236-240; feature quic)",
@@ -5314,18 +4541,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					60,
-					65,
-					75,
-					75,
-					85,
-					88,
-					30,
-					30,
-					30,
-					40
-				],
+				"competitors": [60, 65, 75, 75, 85, 88, 30, 30, 30, 40],
 				"id_effect": {
 					"0.6.0": 50,
 					"0.7.0": 50
@@ -5340,18 +4556,7 @@
 			"group": "data",
 			"name": "Schema / validation",
 			"measures": "Declarative decode/encode/validate with derive, refinements, error accumulation.",
-			"competitors": [
-				100,
-				88,
-				1,
-				88,
-				88,
-				88,
-				75,
-				75,
-				50,
-				100
-			],
+			"competitors": [100, 88, 1, 88, 88, 88, 75, 75, 50, 100],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -5561,18 +4766,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					97,
-					85,
-					30,
-					85,
-					80,
-					85,
-					85,
-					90,
-					92,
-					70
-				],
+				"competitors": [97, 85, 30, 85, 80, 85, 85, 90, 92, 70],
 				"id_effect": {
 					"0.6.0": 75,
 					"0.7.0": 77
@@ -5588,18 +4782,7 @@
 			"group": "data",
 			"name": "JSON Schema / OpenAPI generation",
 			"measures": "Generate JSON Schema and OpenAPI from the same schemas/routes the code uses.",
-			"competitors": [
-				88,
-				75,
-				1,
-				39,
-				39,
-				100,
-				39,
-				88,
-				39,
-				25
-			],
+			"competitors": [88, 75, 1, 39, 39, 100, 39, 88, 39, 25],
 			"track": "T4",
 			"stance": "build",
 			"id_effect": {
@@ -5764,10 +4947,7 @@
 						"data.jsonschema#4",
 						"data.jsonschema#6"
 					],
-					"nextjs": [
-						"data.jsonschema#1",
-						"data.jsonschema#6"
-					]
+					"nextjs": ["data.jsonschema#1", "data.jsonschema#6"]
 				},
 				"evidence": {
 					"data.jsonschema#1": "crates/id_effect/src/schema/json_schema_export.rs:46 to_json_schema, :51 json_schema_for; tests/schema_json_schema.rs",
@@ -5780,18 +4960,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					75,
-					10,
-					55,
-					90,
-					95,
-					45,
-					85,
-					65,
-					40
-				],
+				"competitors": [90, 75, 10, 55, 90, 95, 45, 85, 65, 40],
 				"id_effect": {
 					"0.6.0": 15,
 					"0.7.0": 15
@@ -5807,18 +4976,7 @@
 			"group": "data",
 			"name": "SQL client, pooling, transactions",
 			"measures": "Typed rows/params, pooling, transactions, savepoints, isolation, streaming.",
-			"competitors": [
-				88,
-				75,
-				1,
-				88,
-				100,
-				100,
-				88,
-				75,
-				75,
-				39
-			],
+			"competitors": [88, 75, 1, 88, 100, 100, 88, 75, 75, 39],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
@@ -5888,19 +5046,9 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"data.sql#1",
-							"data.sql#4"
-						],
-						"0.7.0": [
-							"data.sql#1",
-							"data.sql#4"
-						],
-						"0.8.0": [
-							"data.sql#1",
-							"data.sql#4",
-							"data.sql#8"
-						],
+						"0.6.0": ["data.sql#1", "data.sql#4"],
+						"0.7.0": ["data.sql#1", "data.sql#4"],
+						"0.8.0": ["data.sql#1", "data.sql#4", "data.sql#8"],
 						"0.9.0": [
 							"data.sql#1",
 							"data.sql#2",
@@ -5994,12 +5142,7 @@
 						"data.sql#7",
 						"data.sql#8"
 					],
-					"nextjs": [
-						"data.sql#1",
-						"data.sql#2",
-						"data.sql#3",
-						"data.sql#4"
-					]
+					"nextjs": ["data.sql#1", "data.sql#2", "data.sql#3", "data.sql#4"]
 				},
 				"evidence": {
 					"data.sql#1": "crates/id_effect_sql/src/pg/config.rs:89 acquire_timeout, :113 with_max_size (applied :168); tests/pg.rs:123 pg_pool_config_with_max_size",
@@ -6016,18 +5159,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					80,
-					75,
-					30,
-					92,
-					95,
-					97,
-					97,
-					95,
-					95,
-					50
-				],
+				"competitors": [80, 75, 30, 92, 95, 97, 97, 95, 95, 50],
 				"id_effect": {
 					"0.6.0": 35,
 					"0.7.0": 42
@@ -6042,18 +5174,7 @@
 			"group": "data",
 			"name": "ORM / query builder",
 			"measures": "Typed query construction, entity mapping, relations.",
-			"competitors": [
-				38,
-				38,
-				1,
-				88,
-				100,
-				100,
-				100,
-				75,
-				88,
-				39
-			],
+			"competitors": [38, 38, 1, 88, 100, 100, 100, 75, 88, 39],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
@@ -6142,16 +5263,8 @@
 							"data.orm#8"
 						]
 					},
-					"effect_ts": [
-						"data.orm#1",
-						"data.orm#2",
-						"data.orm#6"
-					],
-					"zio": [
-						"data.orm#1",
-						"data.orm#2",
-						"data.orm#6"
-					],
+					"effect_ts": ["data.orm#1", "data.orm#2", "data.orm#6"],
+					"zio": ["data.orm#1", "data.orm#2", "data.orm#6"],
 					"otp": [],
 					"phoenix": [
 						"data.orm#1",
@@ -6209,12 +5322,7 @@
 						"data.orm#7",
 						"data.orm#8"
 					],
-					"nextjs": [
-						"data.orm#1",
-						"data.orm#2",
-						"data.orm#3",
-						"data.orm#6"
-					]
+					"nextjs": ["data.orm#1", "data.orm#2", "data.orm#3", "data.orm#6"]
 				},
 				"evidence": {
 					"data.orm#1": "crates/id_effect_sql/src/repository.rs:300 Repository::new plus derive Entity; tests/repository.rs:115 derive_maps_the_struct_to_its_table; Ledger src/accounts.rs:25 (Entity)",
@@ -6225,18 +5333,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					65,
-					10,
-					92,
-					95,
-					97,
-					98,
-					97,
-					97,
-					40
-				],
+				"competitors": [55, 65, 10, 92, 95, 97, 98, 97, 97, 40],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
@@ -6252,18 +5349,7 @@
 			"group": "data",
 			"name": "Migrations",
 			"measures": "Versioned schema migrations with CLI, locking, up/down, CI check.",
-			"competitors": [
-				38,
-				39,
-				1,
-				75,
-				88,
-				100,
-				88,
-				88,
-				75,
-				39
-			],
+			"competitors": [38, 39, 1, 75, 88, 100, 88, 88, 75, 39],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
@@ -6440,18 +5526,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					65,
-					50,
-					15,
-					92,
-					85,
-					95,
-					99,
-					98,
-					97,
-					35
-				],
+				"competitors": [65, 50, 15, 92, 85, 95, 99, 98, 97, 35],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
@@ -6466,18 +5541,7 @@
 			"group": "data",
 			"name": "Database backend breadth",
 			"measures": "Supported databases (Postgres, MySQL, SQLite, MSSQL, …) behind one API.",
-			"competitors": [
-				63,
-				75,
-				13,
-				75,
-				100,
-				88,
-				63,
-				75,
-				75,
-				39
-			],
+			"competitors": [63, 75, 13, 75, 100, 88, 63, 75, 75, 39],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
@@ -6547,15 +5611,9 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"data.backends#1"
-						],
-						"0.7.0": [
-							"data.backends#1"
-						],
-						"0.8.0": [
-							"data.backends#1"
-						],
+						"0.6.0": ["data.backends#1"],
+						"0.7.0": ["data.backends#1"],
+						"0.8.0": ["data.backends#1"],
 						"0.9.0": [
 							"data.backends#1",
 							"data.backends#2",
@@ -6588,9 +5646,7 @@
 						"data.backends#5",
 						"data.backends#6"
 					],
-					"otp": [
-						"data.backends#8"
-					],
+					"otp": ["data.backends#8"],
 					"phoenix": [
 						"data.backends#1",
 						"data.backends#2",
@@ -6659,18 +5715,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					75,
-					30,
-					85,
-					97,
-					95,
-					90,
-					90,
-					90,
-					50
-				],
+				"competitors": [85, 75, 30, 85, 97, 95, 90, 90, 90, 50],
 				"id_effect": {
 					"0.6.0": 15,
 					"0.7.0": 15
@@ -6685,18 +5730,7 @@
 			"group": "data",
 			"name": "Caching (local + distributed)",
 			"measures": "In-process and distributed caches, TTL, stampede protection, invalidation.",
-			"competitors": [
-				63,
-				63,
-				13,
-				39,
-				75,
-				75,
-				63,
-				50,
-				63,
-				50
-			],
+			"competitors": [63, 63, 13, 39, 75, 75, 63, 50, 63, 50],
 			"track": "T3",
 			"stance": "build",
 			"id_effect": {
@@ -6766,11 +5800,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"data.cache#1",
-							"data.cache#3",
-							"data.cache#6"
-						],
+						"0.6.0": ["data.cache#1", "data.cache#3", "data.cache#6"],
 						"0.7.0": [
 							"data.cache#1",
 							"data.cache#3",
@@ -6818,9 +5848,7 @@
 						"data.cache#5",
 						"data.cache#6"
 					],
-					"otp": [
-						"data.cache#2"
-					],
+					"otp": ["data.cache#2"],
 					"phoenix": [
 						"data.cache#1",
 						"data.cache#2",
@@ -6886,18 +5914,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					70,
-					70,
-					80,
-					80,
-					92,
-					94,
-					92,
-					88,
-					92,
-					85
-				],
+				"competitors": [70, 70, 80, 80, 92, 94, 92, 88, 92, 85],
 				"id_effect": {
 					"0.6.0": 42,
 					"0.7.0": 60
@@ -6912,18 +5929,7 @@
 			"group": "data",
 			"name": "Event sourcing / CQRS",
 			"measures": "Event store, projections, command/query handlers, snapshots.",
-			"competitors": [
-				25,
-				25,
-				1,
-				39,
-				39,
-				39,
-				39,
-				1,
-				39,
-				1
-			],
+			"competitors": [25, 25, 1, 39, 39, 39, 39, 1, 39, 1],
 			"track": "T7",
 			"stance": "promote",
 			"id_effect": {
@@ -7031,14 +6037,8 @@
 							"data.events#8"
 						]
 					},
-					"effect_ts": [
-						"data.events#1",
-						"data.events#4"
-					],
-					"zio": [
-						"data.events#1",
-						"data.events#4"
-					],
+					"effect_ts": ["data.events#1", "data.events#4"],
+					"zio": ["data.events#1", "data.events#4"],
 					"otp": [],
 					"phoenix": [
 						"data.events#1",
@@ -7097,18 +6097,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					45,
-					40,
-					35,
-					62,
-					62,
-					65,
-					35,
-					20,
-					50,
-					15
-				],
+				"competitors": [45, 40, 35, 62, 62, 65, 35, 20, 50, 15],
 				"id_effect": {
 					"0.6.0": 25,
 					"0.7.0": 25
@@ -7123,18 +6112,7 @@
 			"group": "data",
 			"name": "Persistent collections and FP toolkit",
 			"measures": "Immutable collections, typeclasses, optics.",
-			"competitors": [
-				75,
-				88,
-				13,
-				13,
-				38,
-				13,
-				1,
-				1,
-				1,
-				1
-			],
+			"competitors": [75, 88, 13, 13, 38, 13, 1, 1, 1, 1],
 			"track": "T2",
 			"stance": "maintain",
 			"id_effect": {
@@ -7260,20 +6238,10 @@
 						"data.fp#7",
 						"data.fp#8"
 					],
-					"otp": [
-						"data.fp#1"
-					],
-					"phoenix": [
-						"data.fp#1"
-					],
-					"spring": [
-						"data.fp#1",
-						"data.fp#7",
-						"data.fp#8"
-					],
-					"dotnet": [
-						"data.fp#1"
-					],
+					"otp": ["data.fp#1"],
+					"phoenix": ["data.fp#1"],
+					"spring": ["data.fp#1", "data.fp#7", "data.fp#8"],
+					"dotnet": ["data.fp#1"],
 					"rails": [],
 					"django": [],
 					"laravel": [],
@@ -7289,18 +6257,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					90,
-					70,
-					70,
-					35,
-					50,
-					20,
-					20,
-					20,
-					30
-				],
+				"competitors": [85, 90, 70, 70, 35, 50, 20, 20, 20, 30],
 				"id_effect": {
 					"0.6.0": 72,
 					"0.7.0": 70
@@ -7313,18 +6270,7 @@
 			"group": "web",
 			"name": "HTTP server and routing",
 			"measures": "Routing, typed handlers, lifecycle, request scoping, graceful shutdown.",
-			"competitors": [
-				75,
-				88,
-				38,
-				100,
-				100,
-				100,
-				100,
-				50,
-				75,
-				88
-			],
+			"competitors": [75, 88, 38, 100, 100, 100, 100, 50, 75, 88],
 			"track": "T4",
 			"stance": "build",
 			"id_effect": {
@@ -7450,11 +6396,7 @@
 						"web.server#6",
 						"web.server#7"
 					],
-					"otp": [
-						"web.server#5",
-						"web.server#6",
-						"web.server#7"
-					],
+					"otp": ["web.server#5", "web.server#6", "web.server#7"],
 					"phoenix": [
 						"web.server#1",
 						"web.server#2",
@@ -7530,18 +6472,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					80,
-					80,
-					35,
-					95,
-					97,
-					97,
-					97,
-					92,
-					96,
-					95
-				],
+				"competitors": [80, 80, 35, 95, 97, 97, 97, 92, 96, 95],
 				"id_effect": {
 					"0.6.0": 60,
 					"0.7.0": 68
@@ -7556,18 +6487,7 @@
 			"group": "web",
 			"name": "Middleware pipeline",
 			"measures": "Composable request/response middleware with typed context.",
-			"competitors": [
-				50,
-				75,
-				1,
-				63,
-				88,
-				100,
-				75,
-				50,
-				63,
-				25
-			],
+			"competitors": [50, 75, 1, 63, 88, 100, 75, 50, 63, 25],
 			"track": "T4",
 			"stance": "build",
 			"id_effect": {
@@ -7736,10 +6656,7 @@
 						"web.middleware#6",
 						"web.middleware#7"
 					],
-					"nextjs": [
-						"web.middleware#4",
-						"web.middleware#7"
-					]
+					"nextjs": ["web.middleware#4", "web.middleware#7"]
 				},
 				"evidence": {
 					"web.middleware#1": "crates/id_effect_axum/src/service.rs:70 EffectService; tests/middleware.rs:480 layers_compose_and_rejections_carry_the_request_id",
@@ -7756,18 +6673,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					80,
-					75,
-					30,
-					92,
-					92,
-					95,
-					92,
-					88,
-					93,
-					75
-				],
+				"competitors": [80, 75, 30, 92, 92, 95, 92, 88, 93, 75],
 				"id_effect": {
 					"0.6.0": 65,
 					"0.7.0": 67
@@ -7782,18 +6688,7 @@
 			"group": "web",
 			"name": "Request validation",
 			"measures": "Schema-validated path/query/form/header/body extraction with uniform error bodies.",
-			"competitors": [
-				75,
-				75,
-				1,
-				88,
-				100,
-				100,
-				63,
-				88,
-				88,
-				38
-			],
+			"competitors": [75, 75, 1, 88, 100, 100, 63, 88, 88, 38],
 			"track": "T4",
 			"stance": "build",
 			"id_effect": {
@@ -7863,18 +6758,9 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"web.validation#1",
-							"web.validation#6"
-						],
-						"0.7.0": [
-							"web.validation#1",
-							"web.validation#6"
-						],
-						"0.8.0": [
-							"web.validation#1",
-							"web.validation#6"
-						],
+						"0.6.0": ["web.validation#1", "web.validation#6"],
+						"0.7.0": ["web.validation#1", "web.validation#6"],
+						"0.8.0": ["web.validation#1", "web.validation#6"],
 						"0.9.0": [
 							"web.validation#1",
 							"web.validation#2",
@@ -7965,11 +6851,7 @@
 						"web.validation#7",
 						"web.validation#8"
 					],
-					"nextjs": [
-						"web.validation#1",
-						"web.validation#4",
-						"web.validation#7"
-					]
+					"nextjs": ["web.validation#1", "web.validation#4", "web.validation#7"]
 				},
 				"evidence": {
 					"web.validation#1": "crates/id_effect_axum/src/route/mod.rs:81 ValidJson; tests/problem_extractors.rs:291 json_body_reports_every_issue_with_pointers",
@@ -7985,18 +6867,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					75,
-					15,
-					90,
-					90,
-					92,
-					88,
-					92,
-					95,
-					65
-				],
+				"competitors": [90, 75, 15, 90, 90, 92, 88, 92, 95, 65],
 				"id_effect": {
 					"0.6.0": 45,
 					"0.7.0": 47
@@ -8011,18 +6882,7 @@
 			"group": "web",
 			"name": "HTTP client",
 			"measures": "Typed client with timeouts, retries, tracing, pooling, streaming.",
-			"competitors": [
-				88,
-				75,
-				38,
-				63,
-				100,
-				100,
-				25,
-				39,
-				63,
-				50
-			],
+			"competitors": [88, 75, 38, 63, 100, 100, 25, 39, 63, 50],
 			"track": "T4",
 			"stance": "build",
 			"id_effect": {
@@ -8152,11 +7012,7 @@
 						"web.client#7",
 						"web.client#8"
 					],
-					"otp": [
-						"web.client#2",
-						"web.client#3",
-						"web.client#7"
-					],
+					"otp": ["web.client#2", "web.client#3", "web.client#7"],
 					"phoenix": [
 						"web.client#1",
 						"web.client#2",
@@ -8184,10 +7040,7 @@
 						"web.client#7",
 						"web.client#8"
 					],
-					"rails": [
-						"web.client#3",
-						"web.client#7"
-					],
+					"rails": ["web.client#3", "web.client#7"],
 					"django": [
 						"web.client#2",
 						"web.client#3",
@@ -8220,18 +7073,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					80,
-					50,
-					75,
-					92,
-					95,
-					55,
-					50,
-					85,
-					75
-				],
+				"competitors": [85, 80, 50, 75, 92, 95, 55, 50, 85, 75],
 				"id_effect": {
 					"0.6.0": 68,
 					"0.7.0": 68
@@ -8246,18 +7088,7 @@
 			"group": "web",
 			"name": "Typed RPC / API contracts",
 			"measures": "Shared typed contracts between client and server, codegen or derive.",
-			"competitors": [
-				75,
-				63,
-				38,
-				38,
-				100,
-				100,
-				1,
-				1,
-				1,
-				38
-			],
+			"competitors": [75, 63, 38, 38, 100, 100, 1, 1, 1, 38],
 			"track": "T8",
 			"stance": "promote",
 			"id_effect": {
@@ -8383,16 +7214,8 @@
 						"web.rpc#4",
 						"web.rpc#7"
 					],
-					"otp": [
-						"web.rpc#1",
-						"web.rpc#5",
-						"web.rpc#6"
-					],
-					"phoenix": [
-						"web.rpc#1",
-						"web.rpc#5",
-						"web.rpc#6"
-					],
+					"otp": ["web.rpc#1", "web.rpc#5", "web.rpc#6"],
+					"phoenix": ["web.rpc#1", "web.rpc#5", "web.rpc#6"],
 					"spring": [
 						"web.rpc#1",
 						"web.rpc#2",
@@ -8416,11 +7239,7 @@
 					"rails": [],
 					"django": [],
 					"laravel": [],
-					"nextjs": [
-						"web.rpc#1",
-						"web.rpc#3",
-						"web.rpc#4"
-					]
+					"nextjs": ["web.rpc#1", "web.rpc#3", "web.rpc#4"]
 				},
 				"evidence": {
 					"web.rpc#1": "labs/id_effect_rpc/src/registry.rs:57 RpcGroup",
@@ -8432,18 +7251,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					70,
-					75,
-					60,
-					80,
-					92,
-					30,
-					40,
-					35,
-					85
-				],
+				"competitors": [90, 70, 75, 60, 80, 92, 30, 40, 35, 85],
 				"id_effect": {
 					"0.6.0": 30,
 					"0.7.0": 30
@@ -8458,18 +7266,7 @@
 			"group": "web",
 			"name": "WebSockets and realtime",
 			"measures": "WebSockets/SSE, channels, presence, cluster-wide broadcast.",
-			"competitors": [
-				25,
-				25,
-				25,
-				88,
-				88,
-				88,
-				88,
-				39,
-				88,
-				13
-			],
+			"competitors": [25, 25, 25, 88, 88, 88, 88, 39, 88, 13],
 			"track": "T8",
 			"stance": "build",
 			"id_effect": {
@@ -8545,18 +7342,9 @@
 						"0.9.0": [],
 						"0.10.0": []
 					},
-					"effect_ts": [
-						"web.realtime#1",
-						"web.realtime#2"
-					],
-					"zio": [
-						"web.realtime#1",
-						"web.realtime#2"
-					],
-					"otp": [
-						"web.realtime#3",
-						"web.realtime#5"
-					],
+					"effect_ts": ["web.realtime#1", "web.realtime#2"],
+					"zio": ["web.realtime#1", "web.realtime#2"],
+					"otp": ["web.realtime#3", "web.realtime#5"],
 					"phoenix": [
 						"web.realtime#1",
 						"web.realtime#3",
@@ -8608,9 +7396,7 @@
 						"web.realtime#7",
 						"web.realtime#8"
 					],
-					"nextjs": [
-						"web.realtime#2"
-					]
+					"nextjs": ["web.realtime#2"]
 				},
 				"evidence": {},
 				"notes": {
@@ -8618,18 +7404,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					70,
-					70,
-					70,
-					99,
-					80,
-					95,
-					85,
-					70,
-					88,
-					50
-				],
+				"competitors": [70, 70, 70, 99, 80, 95, 85, 70, 88, 50],
 				"id_effect": {
 					"0.6.0": 9,
 					"0.7.0": 9
@@ -8644,18 +7419,7 @@
 			"group": "web",
 			"name": "GraphQL",
 			"measures": "Schema-first or code-first GraphQL server integration.",
-			"competitors": [
-				1,
-				88,
-				1,
-				39,
-				88,
-				39,
-				39,
-				39,
-				39,
-				1
-			],
+			"competitors": [1, 88, 1, 39, 88, 39, 39, 39, 39, 1],
 			"track": "T9",
 			"stance": "integrate",
 			"id_effect": {
@@ -8800,18 +7564,7 @@
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					30,
-					75,
-					20,
-					85,
-					90,
-					92,
-					85,
-					75,
-					80,
-					65
-				],
+				"competitors": [30, 75, 20, 85, 90, 92, 85, 75, 80, 65],
 				"id_effect": {
 					"0.6.0": 2,
 					"0.7.0": 2
@@ -8826,18 +7579,7 @@
 			"group": "web",
 			"name": "Server-side UI / frontend",
 			"measures": "Rendering HTML/UI from the framework (templates, components, live views).",
-			"competitors": [
-				1,
-				1,
-				1,
-				88,
-				50,
-				100,
-				88,
-				50,
-				100,
-				88
-			],
+			"competitors": [1, 1, 1, 88, 50, 100, 88, 50, 100, 88],
 			"track": "T9",
 			"stance": "integrate",
 			"id_effect": {
@@ -8925,12 +7667,7 @@
 						"web.ui#6",
 						"web.ui#8"
 					],
-					"spring": [
-						"web.ui#1",
-						"web.ui#5",
-						"web.ui#6",
-						"web.ui#8"
-					],
+					"spring": ["web.ui#1", "web.ui#5", "web.ui#6", "web.ui#8"],
 					"dotnet": [
 						"web.ui#1",
 						"web.ui#2",
@@ -8950,12 +7687,7 @@
 						"web.ui#7",
 						"web.ui#8"
 					],
-					"django": [
-						"web.ui#1",
-						"web.ui#5",
-						"web.ui#6",
-						"web.ui#8"
-					],
+					"django": ["web.ui#1", "web.ui#5", "web.ui#6", "web.ui#8"],
 					"laravel": [
 						"web.ui#1",
 						"web.ui#2",
@@ -8979,18 +7711,7 @@
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					25,
-					10,
-					5,
-					92,
-					50,
-					90,
-					90,
-					70,
-					92,
-					99
-				],
+				"competitors": [25, 10, 5, 92, 50, 90, 90, 70, 92, 99],
 				"id_effect": {
 					"0.6.0": 2,
 					"0.7.0": 2
@@ -9005,18 +7726,7 @@
 			"group": "web",
 			"name": "Admin / back-office UI",
 			"measures": "Generated CRUD admin over the data model.",
-			"competitors": [
-				1,
-				1,
-				1,
-				25,
-				13,
-				25,
-				39,
-				100,
-				100,
-				1
-			],
+			"competitors": [1, 1, 1, 25, 13, 25, 39, 100, 100, 1],
 			"track": "T9",
 			"stance": "build",
 			"id_effect": {
@@ -9095,17 +7805,9 @@
 					"effect_ts": [],
 					"zio": [],
 					"otp": [],
-					"phoenix": [
-						"web.admin#1",
-						"web.admin#8"
-					],
-					"spring": [
-						"web.admin#1"
-					],
-					"dotnet": [
-						"web.admin#1",
-						"web.admin#8"
-					],
+					"phoenix": ["web.admin#1", "web.admin#8"],
+					"spring": ["web.admin#1"],
+					"dotnet": ["web.admin#1", "web.admin#8"],
 					"rails": [
 						"web.admin#1",
 						"web.admin#2",
@@ -9140,18 +7842,7 @@
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					5,
-					5,
-					10,
-					65,
-					45,
-					50,
-					75,
-					99,
-					92,
-					40
-				],
+				"competitors": [5, 5, 10, 65, 45, 50, 75, 99, 92, 40],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
@@ -9166,18 +7857,7 @@
 			"group": "web",
 			"name": "File storage abstraction",
 			"measures": "Local + object storage (S3/GCS/Azure) behind one capability, uploads.",
-			"competitors": [
-				63,
-				38,
-				25,
-				38,
-				88,
-				63,
-				100,
-				100,
-				88,
-				25
-			],
+			"competitors": [63, 38, 25, 38, 88, 63, 100, 100, 88, 25],
 			"track": "T6",
 			"stance": "integrate",
 			"id_effect": {
@@ -9247,26 +7927,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"web.storage#1",
-							"web.storage#2",
-							"web.storage#8"
-						],
-						"0.7.0": [
-							"web.storage#1",
-							"web.storage#2",
-							"web.storage#8"
-						],
-						"0.8.0": [
-							"web.storage#1",
-							"web.storage#2",
-							"web.storage#8"
-						],
-						"0.9.0": [
-							"web.storage#1",
-							"web.storage#2",
-							"web.storage#8"
-						],
+						"0.6.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
+						"0.7.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
+						"0.8.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
+						"0.9.0": ["web.storage#1", "web.storage#2", "web.storage#8"],
 						"0.10.0": [
 							"web.storage#1",
 							"web.storage#2",
@@ -9283,20 +7947,9 @@
 						"web.storage#6",
 						"web.storage#8"
 					],
-					"zio": [
-						"web.storage#2",
-						"web.storage#3",
-						"web.storage#5"
-					],
-					"otp": [
-						"web.storage#2",
-						"web.storage#5"
-					],
-					"phoenix": [
-						"web.storage#2",
-						"web.storage#5",
-						"web.storage#6"
-					],
+					"zio": ["web.storage#2", "web.storage#3", "web.storage#5"],
+					"otp": ["web.storage#2", "web.storage#5"],
+					"phoenix": ["web.storage#2", "web.storage#5", "web.storage#6"],
 					"spring": [
 						"web.storage#1",
 						"web.storage#2",
@@ -9342,10 +7995,7 @@
 						"web.storage#7",
 						"web.storage#8"
 					],
-					"nextjs": [
-						"web.storage#5",
-						"web.storage#6"
-					]
+					"nextjs": ["web.storage#5", "web.storage#6"]
 				},
 				"evidence": {
 					"web.storage#1": "NEW crates/id_effect_storage/src/store.rs:164 ObjectStore trait (put/get/head/delete/exists/list), :735 ObjectStorage capability; tests/conformance.rs:320 an_application_backend_is_swappable_behind_the_capability",
@@ -9357,18 +8007,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					60,
-					50,
-					20,
-					65,
-					75,
-					85,
-					95,
-					85,
-					95,
-					60
-				],
+				"competitors": [60, 50, 20, 65, 75, 85, 95, 85, 95, 60],
 				"id_effect": {
 					"0.6.0": 25,
 					"0.7.0": 25
@@ -9383,18 +8022,7 @@
 			"group": "sec",
 			"name": "Authentication",
 			"measures": "Sessions, password hashing, JWT, OAuth2/OIDC with PKCE, passkeys.",
-			"competitors": [
-				13,
-				13,
-				13,
-				50,
-				88,
-				100,
-				39,
-				39,
-				75,
-				38
-			],
+			"competitors": [13, 13, 13, 50, 88, 100, 39, 39, 75, 38],
 			"track": "T5",
 			"stance": "build",
 			"id_effect": {
@@ -9487,15 +8115,9 @@
 							"sec.authn#8"
 						]
 					},
-					"effect_ts": [
-						"sec.authn#3"
-					],
-					"zio": [
-						"sec.authn#3"
-					],
-					"otp": [
-						"sec.authn#1"
-					],
+					"effect_ts": ["sec.authn#3"],
+					"zio": ["sec.authn#3"],
+					"otp": ["sec.authn#1"],
 					"phoenix": [
 						"sec.authn#1",
 						"sec.authn#2",
@@ -9521,12 +8143,7 @@
 						"sec.authn#7",
 						"sec.authn#8"
 					],
-					"rails": [
-						"sec.authn#1",
-						"sec.authn#2",
-						"sec.authn#3",
-						"sec.authn#8"
-					],
+					"rails": ["sec.authn#1", "sec.authn#2", "sec.authn#3", "sec.authn#8"],
 					"django": [
 						"sec.authn#1",
 						"sec.authn#2",
@@ -9541,11 +8158,7 @@
 						"sec.authn#6",
 						"sec.authn#8"
 					],
-					"nextjs": [
-						"sec.authn#2",
-						"sec.authn#4",
-						"sec.authn#5"
-					]
+					"nextjs": ["sec.authn#2", "sec.authn#4", "sec.authn#5"]
 				},
 				"evidence": {
 					"sec.authn#1": "crates/id_effect_auth/src/password.rs:254 PasswordHasher (argon2), :410 hash_password, :419 verify_password; tests crates/id_effect_auth/tests/passwords_sessions.rs",
@@ -9558,18 +8171,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					30,
-					30,
-					15,
-					85,
-					98,
-					95,
-					82,
-					92,
-					97,
-					75
-				],
+				"competitors": [30, 30, 15, 85, 98, 95, 82, 92, 97, 75],
 				"id_effect": {
 					"0.6.0": 8,
 					"0.7.0": 10
@@ -9585,18 +8187,7 @@
 			"group": "sec",
 			"name": "Authorization (RBAC / policies)",
 			"measures": "Roles, permissions, policy evaluation integrated with handlers and data.",
-			"competitors": [
-				13,
-				13,
-				1,
-				38,
-				100,
-				100,
-				39,
-				63,
-				50,
-				13
-			],
+			"competitors": [13, 13, 1, 38, 100, 100, 39, 63, 50, 13],
 			"track": "T5",
 			"stance": "build",
 			"id_effect": {
@@ -9689,18 +8280,10 @@
 							"sec.authz#8"
 						]
 					},
-					"effect_ts": [
-						"sec.authz#2"
-					],
-					"zio": [
-						"sec.authz#2"
-					],
+					"effect_ts": ["sec.authz#2"],
+					"zio": ["sec.authz#2"],
 					"otp": [],
-					"phoenix": [
-						"sec.authz#2",
-						"sec.authz#4",
-						"sec.authz#5"
-					],
+					"phoenix": ["sec.authz#2", "sec.authz#4", "sec.authz#5"],
 					"spring": [
 						"sec.authz#1",
 						"sec.authz#2",
@@ -9742,9 +8325,7 @@
 						"sec.authz#4",
 						"sec.authz#7"
 					],
-					"nextjs": [
-						"sec.authz#2"
-					]
+					"nextjs": ["sec.authz#2"]
 				},
 				"evidence": {
 					"sec.authz#1": "crates/id_effect_authz/src/rbac.rs:55 Rbac, :157 require_role (inherited); policy.rs:404 require_role; test crates/id_effect_authz/tests/policies.rs:99 roles_and_tenancy_gate_posting",
@@ -9757,18 +8338,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					20,
-					20,
-					10,
-					60,
-					95,
-					95,
-					70,
-					90,
-					92,
-					40
-				],
+				"competitors": [20, 20, 10, 60, 95, 95, 70, 90, 92, 40],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
@@ -9784,18 +8354,7 @@
 			"group": "sec",
 			"name": "Web security defaults (CSRF, CSP, CORS)",
 			"measures": "Secure-by-default headers, CSRF, CORS, CSP, cookie flags.",
-			"competitors": [
-				13,
-				38,
-				1,
-				75,
-				88,
-				75,
-				100,
-				88,
-				63,
-				50
-			],
+			"competitors": [13, 38, 1, 75, 88, 75, 100, 88, 63, 50],
 			"track": "T5",
 			"stance": "build",
 			"id_effect": {
@@ -9866,12 +8425,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"sec.web#4"
-						],
-						"0.7.0": [
-							"sec.web#4"
-						],
+						"0.6.0": ["sec.web#4"],
+						"0.7.0": ["sec.web#4"],
 						"0.8.0": [
 							"sec.web#1",
 							"sec.web#2",
@@ -9900,14 +8455,8 @@
 							"sec.web#7"
 						]
 					},
-					"effect_ts": [
-						"sec.web#3"
-					],
-					"zio": [
-						"sec.web#1",
-						"sec.web#3",
-						"sec.web#7"
-					],
+					"effect_ts": ["sec.web#3"],
+					"zio": ["sec.web#1", "sec.web#3", "sec.web#7"],
 					"otp": [],
 					"phoenix": [
 						"sec.web#1",
@@ -9960,12 +8509,7 @@
 						"sec.web#7",
 						"sec.web#8"
 					],
-					"nextjs": [
-						"sec.web#2",
-						"sec.web#4",
-						"sec.web#5",
-						"sec.web#8"
-					]
+					"nextjs": ["sec.web#2", "sec.web#4", "sec.web#5", "sec.web#8"]
 				},
 				"evidence": {
 					"sec.web#1": "crates/id_effect_axum/src/server/security/csrf.rs:43-44 tokens_match via subtle ct_eq; tests crates/id_effect_axum/tests/security.rs:130 csrf_tokens_are_random_per_session, :167 csrf_rejects_mismatched_and_forged_token",
@@ -9978,18 +8522,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					45,
-					40,
-					20,
-					92,
-					95,
-					95,
-					95,
-					97,
-					95,
-					75
-				],
+				"competitors": [45, 40, 20, 92, 95, 95, 95, 97, 95, 75],
 				"id_effect": {
 					"0.6.0": 22,
 					"0.7.0": 22
@@ -10005,18 +8538,7 @@
 			"group": "sec",
 			"name": "Config, secrets and settings",
 			"measures": "Typed config, layered sources, secret redaction, vault/KMS sources, reload.",
-			"competitors": [
-				50,
-				63,
-				25,
-				25,
-				100,
-				88,
-				25,
-				1,
-				25,
-				25
-			],
+			"competitors": [50, 63, 25, 25, 100, 88, 25, 1, 25, 25],
 			"track": "T5",
 			"stance": "build",
 			"id_effect": {
@@ -10140,14 +8662,8 @@
 						"sec.config#4",
 						"sec.config#5"
 					],
-					"otp": [
-						"sec.config#2",
-						"sec.config#8"
-					],
-					"phoenix": [
-						"sec.config#2",
-						"sec.config#6"
-					],
+					"otp": ["sec.config#2", "sec.config#8"],
+					"phoenix": ["sec.config#2", "sec.config#6"],
 					"spring": [
 						"sec.config#1",
 						"sec.config#2",
@@ -10167,19 +8683,10 @@
 						"sec.config#7",
 						"sec.config#8"
 					],
-					"rails": [
-						"sec.config#2",
-						"sec.config#6"
-					],
+					"rails": ["sec.config#2", "sec.config#6"],
 					"django": [],
-					"laravel": [
-						"sec.config#2",
-						"sec.config#6"
-					],
-					"nextjs": [
-						"sec.config#2",
-						"sec.config#6"
-					]
+					"laravel": ["sec.config#2", "sec.config#6"],
+					"nextjs": ["sec.config#2", "sec.config#6"]
 				},
 				"evidence": {
 					"sec.config#1": "crates/id_effect_config/src/config_desc.rs:107 Config<T>, :324 validate",
@@ -10193,18 +8700,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					82,
-					80,
-					50,
-					75,
-					97,
-					97,
-					88,
-					65,
-					88,
-					70
-				],
+				"competitors": [82, 80, 50, 75, 97, 97, 88, 65, 88, 70],
 				"id_effect": {
 					"0.6.0": 60,
 					"0.7.0": 66
@@ -10219,18 +8715,7 @@
 			"group": "sec",
 			"name": "Supply-chain and security process",
 			"measures": "Advisory scanning, license/ban policy, SECURITY.md, SBOM, signed releases, CVE process.",
-			"competitors": [
-				50,
-				38,
-				100,
-				50,
-				88,
-				88,
-				63,
-				50,
-				63,
-				75
-			],
+			"competitors": [50, 38, 100, 50, 88, 88, 63, 50, 63, 75],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -10302,14 +8787,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"sec.supply#1",
-							"sec.supply#2"
-						],
-						"0.7.0": [
-							"sec.supply#1",
-							"sec.supply#2"
-						],
+						"0.6.0": ["sec.supply#1", "sec.supply#2"],
+						"0.7.0": ["sec.supply#1", "sec.supply#2"],
 						"0.8.0": [
 							"sec.supply#1",
 							"sec.supply#2",
@@ -10344,11 +8823,7 @@
 						"sec.supply#4",
 						"sec.supply#6"
 					],
-					"zio": [
-						"sec.supply#1",
-						"sec.supply#2",
-						"sec.supply#6"
-					],
+					"zio": ["sec.supply#1", "sec.supply#2", "sec.supply#6"],
 					"otp": [
 						"sec.supply#1",
 						"sec.supply#2",
@@ -10426,18 +8901,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					60,
-					60,
-					60,
-					70,
-					88,
-					92,
-					85,
-					90,
-					75,
-					75
-				],
+				"competitors": [60, 60, 60, 70, 88, 92, 85, 90, 75, 75],
 				"id_effect": {
 					"0.6.0": 45,
 					"0.7.0": 45
@@ -10453,18 +8917,7 @@
 			"group": "obs",
 			"name": "Structured logging",
 			"measures": "Levels, structured fields, spans, JSON output, redaction, sampling.",
-			"competitors": [
-				63,
-				75,
-				50,
-				63,
-				63,
-				100,
-				38,
-				25,
-				38,
-				39
-			],
+			"competitors": [63, 75, 50, 63, 63, 100, 38, 25, 38, 39],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -10622,20 +9075,9 @@
 						"obs.logging#7",
 						"obs.logging#8"
 					],
-					"rails": [
-						"obs.logging#1",
-						"obs.logging#2",
-						"obs.logging#7"
-					],
-					"django": [
-						"obs.logging#1",
-						"obs.logging#6"
-					],
-					"laravel": [
-						"obs.logging#1",
-						"obs.logging#2",
-						"obs.logging#4"
-					],
+					"rails": ["obs.logging#1", "obs.logging#2", "obs.logging#7"],
+					"django": ["obs.logging#1", "obs.logging#6"],
+					"laravel": ["obs.logging#1", "obs.logging#2", "obs.logging#4"],
 					"nextjs": [
 						"obs.logging#1",
 						"obs.logging#2",
@@ -10656,18 +9098,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					85,
-					85,
-					85,
-					92,
-					95,
-					80,
-					80,
-					85,
-					60
-				],
+				"competitors": [85, 85, 85, 85, 92, 95, 80, 80, 85, 60],
 				"id_effect": {
 					"0.6.0": 75,
 					"0.7.0": 76
@@ -10682,18 +9113,7 @@
 			"group": "obs",
 			"name": "Metrics",
 			"measures": "Counters/gauges/histograms, tags, Prometheus/OTLP export, runtime metrics.",
-			"competitors": [
-				88,
-				100,
-				25,
-				75,
-				100,
-				100,
-				39,
-				39,
-				38,
-				39
-			],
+			"competitors": [88, 100, 25, 75, 100, 100, 39, 39, 38, 39],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -10763,11 +9183,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"obs.metrics#1",
-							"obs.metrics#2",
-							"obs.metrics#3"
-						],
+						"0.6.0": ["obs.metrics#1", "obs.metrics#2", "obs.metrics#3"],
 						"0.7.0": [
 							"obs.metrics#1",
 							"obs.metrics#2",
@@ -10825,10 +9241,7 @@
 						"obs.metrics#7",
 						"obs.metrics#8"
 					],
-					"otp": [
-						"obs.metrics#6",
-						"obs.metrics#8"
-					],
+					"otp": ["obs.metrics#6", "obs.metrics#8"],
 					"phoenix": [
 						"obs.metrics#1",
 						"obs.metrics#2",
@@ -10870,11 +9283,7 @@
 						"obs.metrics#5",
 						"obs.metrics#7"
 					],
-					"laravel": [
-						"obs.metrics#6",
-						"obs.metrics#7",
-						"obs.metrics#8"
-					],
+					"laravel": ["obs.metrics#6", "obs.metrics#7", "obs.metrics#8"],
 					"nextjs": [
 						"obs.metrics#1",
 						"obs.metrics#2",
@@ -10897,18 +9306,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					85,
-					70,
-					88,
-					97,
-					95,
-					55,
-					50,
-					70,
-					60
-				],
+				"competitors": [85, 85, 70, 88, 97, 95, 55, 50, 70, 60],
 				"id_effect": {
 					"0.6.0": 62,
 					"0.7.0": 70
@@ -10923,18 +9321,7 @@
 			"group": "obs",
 			"name": "Distributed tracing (OpenTelemetry)",
 			"measures": "OTLP traces/metrics/logs, propagation, auto-instrumentation.",
-			"competitors": [
-				88,
-				75,
-				39,
-				39,
-				100,
-				100,
-				39,
-				39,
-				39,
-				88
-			],
+			"competitors": [88, 75, 39, 39, 100, 100, 39, 39, 39, 88],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -11146,18 +9533,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					80,
-					75,
-					85,
-					95,
-					97,
-					70,
-					65,
-					60,
-					80
-				],
+				"competitors": [90, 80, 75, 85, 95, 97, 70, 65, 60, 80],
 				"id_effect": {
 					"0.6.0": 80,
 					"0.7.0": 84
@@ -11172,18 +9548,7 @@
 			"group": "obs",
 			"name": "Health, readiness, graceful shutdown",
 			"measures": "Liveness/readiness with dependency checks, drain, signals.",
-			"competitors": [
-				38,
-				38,
-				25,
-				38,
-				100,
-				88,
-				38,
-				39,
-				38,
-				25
-			],
+			"competitors": [38, 38, 25, 38, 100, 88, 38, 39, 38, 25],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -11297,25 +9662,10 @@
 							"obs.health#8"
 						]
 					},
-					"effect_ts": [
-						"obs.health#5",
-						"obs.health#6",
-						"obs.health#8"
-					],
-					"zio": [
-						"obs.health#5",
-						"obs.health#6",
-						"obs.health#8"
-					],
-					"otp": [
-						"obs.health#5",
-						"obs.health#8"
-					],
-					"phoenix": [
-						"obs.health#5",
-						"obs.health#6",
-						"obs.health#8"
-					],
+					"effect_ts": ["obs.health#5", "obs.health#6", "obs.health#8"],
+					"zio": ["obs.health#5", "obs.health#6", "obs.health#8"],
+					"otp": ["obs.health#5", "obs.health#8"],
+					"phoenix": ["obs.health#5", "obs.health#6", "obs.health#8"],
 					"spring": [
 						"obs.health#1",
 						"obs.health#2",
@@ -11335,11 +9685,7 @@
 						"obs.health#6",
 						"obs.health#8"
 					],
-					"rails": [
-						"obs.health#1",
-						"obs.health#5",
-						"obs.health#6"
-					],
+					"rails": ["obs.health#1", "obs.health#5", "obs.health#6"],
 					"django": [
 						"obs.health#1",
 						"obs.health#2",
@@ -11348,15 +9694,8 @@
 						"obs.health#5",
 						"obs.health#6"
 					],
-					"laravel": [
-						"obs.health#1",
-						"obs.health#5",
-						"obs.health#6"
-					],
-					"nextjs": [
-						"obs.health#5",
-						"obs.health#6"
-					]
+					"laravel": ["obs.health#1", "obs.health#5", "obs.health#6"],
+					"nextjs": ["obs.health#5", "obs.health#6"]
 				},
 				"evidence": {
 					"obs.health#1": "crates/id_effect_axum/src/health.rs:112 health(); Ledger tests/http.rs:133-136 GET /health",
@@ -11373,18 +9712,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					60,
-					60,
-					70,
-					72,
-					97,
-					97,
-					75,
-					50,
-					75,
-					55
-				],
+				"competitors": [60, 60, 70, 72, 97, 97, 75, 50, 75, 55],
 				"id_effect": {
 					"0.6.0": 69,
 					"0.7.0": 69
@@ -11399,18 +9727,7 @@
 			"group": "obs",
 			"name": "Runtime introspection and dashboards",
 			"measures": "Live view of fibers, supervisors, metrics, jobs; remote shell; profiling.",
-			"competitors": [
-				38,
-				25,
-				88,
-				88,
-				63,
-				63,
-				13,
-				13,
-				38,
-				1
-			],
+			"competitors": [38, 25, 88, 88, 63, 63, 13, 13, 38, 1],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -11481,22 +9798,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"obs.console#5",
-							"obs.console#8"
-						],
-						"0.7.0": [
-							"obs.console#5",
-							"obs.console#8"
-						],
-						"0.8.0": [
-							"obs.console#5",
-							"obs.console#8"
-						],
-						"0.9.0": [
-							"obs.console#5",
-							"obs.console#8"
-						],
+						"0.6.0": ["obs.console#5", "obs.console#8"],
+						"0.7.0": ["obs.console#5", "obs.console#8"],
+						"0.8.0": ["obs.console#5", "obs.console#8"],
+						"0.9.0": ["obs.console#5", "obs.console#8"],
 						"0.10.0": [
 							"obs.console#1",
 							"obs.console#2",
@@ -11506,15 +9811,8 @@
 							"obs.console#8"
 						]
 					},
-					"effect_ts": [
-						"obs.console#1",
-						"obs.console#3",
-						"obs.console#8"
-					],
-					"zio": [
-						"obs.console#1",
-						"obs.console#8"
-					],
+					"effect_ts": ["obs.console#1", "obs.console#3", "obs.console#8"],
+					"zio": ["obs.console#1", "obs.console#8"],
 					"otp": [
 						"obs.console#1",
 						"obs.console#2",
@@ -11547,17 +9845,9 @@
 						"obs.console#7",
 						"obs.console#8"
 					],
-					"rails": [
-						"obs.console#4"
-					],
-					"django": [
-						"obs.console#4"
-					],
-					"laravel": [
-						"obs.console#3",
-						"obs.console#4",
-						"obs.console#8"
-					],
+					"rails": ["obs.console#4"],
+					"django": ["obs.console#4"],
+					"laravel": ["obs.console#3", "obs.console#4", "obs.console#8"],
 					"nextjs": []
 				},
 				"evidence": {
@@ -11570,18 +9860,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					65,
-					55,
-					98,
-					92,
-					90,
-					92,
-					75,
-					80,
-					92,
-					70
-				],
+				"competitors": [65, 55, 98, 92, 90, 92, 75, 80, 92, 70],
 				"id_effect": {
 					"0.6.0": 22,
 					"0.7.0": 22
@@ -11597,18 +9876,7 @@
 			"group": "msg",
 			"name": "Background jobs and queues",
 			"measures": "Persistent jobs with retries, uniqueness, priorities, dashboard.",
-			"competitors": [
-				25,
-				1,
-				1,
-				100,
-				38,
-				39,
-				100,
-				50,
-				100,
-				25
-			],
+			"competitors": [25, 1, 1, 100, 38, 39, 100, 50, 100, 25],
 			"track": "T7",
 			"stance": "promote",
 			"id_effect": {
@@ -11678,18 +9946,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"msg.jobs#1"
-						],
-						"0.7.0": [
-							"msg.jobs#1"
-						],
-						"0.8.0": [
-							"msg.jobs#1"
-						],
-						"0.9.0": [
-							"msg.jobs#1"
-						],
+						"0.6.0": ["msg.jobs#1"],
+						"0.7.0": ["msg.jobs#1"],
+						"0.8.0": ["msg.jobs#1"],
+						"0.9.0": ["msg.jobs#1"],
 						"0.10.0": [
 							"msg.jobs#1",
 							"msg.jobs#2",
@@ -11701,10 +9961,7 @@
 							"msg.jobs#8"
 						]
 					},
-					"effect_ts": [
-						"msg.jobs#1",
-						"msg.jobs#5"
-					],
+					"effect_ts": ["msg.jobs#1", "msg.jobs#5"],
 					"zio": [],
 					"otp": [],
 					"phoenix": [
@@ -11717,11 +9974,7 @@
 						"msg.jobs#7",
 						"msg.jobs#8"
 					],
-					"spring": [
-						"msg.jobs#1",
-						"msg.jobs#2",
-						"msg.jobs#6"
-					],
+					"spring": ["msg.jobs#1", "msg.jobs#2", "msg.jobs#6"],
 					"dotnet": [
 						"msg.jobs#1",
 						"msg.jobs#2",
@@ -11741,12 +9994,7 @@
 						"msg.jobs#7",
 						"msg.jobs#8"
 					],
-					"django": [
-						"msg.jobs#1",
-						"msg.jobs#4",
-						"msg.jobs#5",
-						"msg.jobs#8"
-					],
+					"django": ["msg.jobs#1", "msg.jobs#4", "msg.jobs#5", "msg.jobs#8"],
 					"laravel": [
 						"msg.jobs#1",
 						"msg.jobs#2",
@@ -11757,10 +10005,7 @@
 						"msg.jobs#7",
 						"msg.jobs#8"
 					],
-					"nextjs": [
-						"msg.jobs#1",
-						"msg.jobs#2"
-					]
+					"nextjs": ["msg.jobs#1", "msg.jobs#2"]
 				},
 				"evidence": {
 					"msg.jobs#1": "NEW published crates/id_effect_jobs (workspace member Cargo.toml:29, no publish=false): src/pg.rs:257 PgJobQueue, :113 migrator; tests crates/id_effect_jobs/tests/pg_worker.rs:116 skip_locked_two_workers_never_double_run, conformance.rs:439 crashed_worker_job_is_requeued",
@@ -11774,18 +10019,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					45,
-					70,
-					92,
-					85,
-					85,
-					97,
-					72,
-					98,
-					40
-				],
+				"competitors": [55, 45, 70, 92, 85, 85, 97, 72, 98, 40],
 				"id_effect": {
 					"0.6.0": 22,
 					"0.7.0": 22
@@ -11800,18 +10034,7 @@
 			"group": "msg",
 			"name": "Scheduled tasks / cron",
 			"measures": "Cron expressions, single-run across a cluster, missed-run policy.",
-			"competitors": [
-				63,
-				13,
-				13,
-				75,
-				100,
-				39,
-				75,
-				39,
-				88,
-				39
-			],
+			"competitors": [63, 13, 13, 75, 100, 39, 75, 39, 88, 39],
 			"track": "T7",
 			"stance": "build",
 			"id_effect": {
@@ -11882,14 +10105,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"msg.cron#2",
-							"msg.cron#4"
-						],
-						"0.7.0": [
-							"msg.cron#2",
-							"msg.cron#4"
-						],
+						"0.6.0": ["msg.cron#2", "msg.cron#4"],
+						"0.7.0": ["msg.cron#2", "msg.cron#4"],
 						"0.8.0": [
 							"msg.cron#1",
 							"msg.cron#2",
@@ -11925,12 +10142,8 @@
 						"msg.cron#4",
 						"msg.cron#5"
 					],
-					"zio": [
-						"msg.cron#2"
-					],
-					"otp": [
-						"msg.cron#2"
-					],
+					"zio": ["msg.cron#2"],
+					"otp": ["msg.cron#2"],
 					"phoenix": [
 						"msg.cron#1",
 						"msg.cron#2",
@@ -12002,18 +10215,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					72,
-					60,
-					50,
-					85,
-					92,
-					80,
-					85,
-					60,
-					98,
-					50
-				],
+				"competitors": [72, 60, 50, 85, 92, 80, 85, 60, 98, 50],
 				"id_effect": {
 					"0.6.0": 30,
 					"0.7.0": 30
@@ -12029,18 +10231,7 @@
 			"group": "msg",
 			"name": "Message brokers (Kafka, AMQP, NATS, SQS)",
 			"measures": "Producer/consumer integrations with backpressure, acks, outbox.",
-			"competitors": [
-				1,
-				63,
-				39,
-				39,
-				100,
-				100,
-				39,
-				38,
-				50,
-				1
-			],
+			"competitors": [1, 63, 39, 39, 100, 100, 39, 38, 50, 1],
 			"track": "T7",
 			"stance": "integrate",
 			"id_effect": {
@@ -12110,24 +10301,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"msg.brokers#4",
-							"msg.brokers#7",
-							"msg.brokers#8"
-						],
-						"0.7.0": [
-							"msg.brokers#4",
-							"msg.brokers#7",
-							"msg.brokers#8"
-						],
-						"0.8.0": [
-							"msg.brokers#4",
-							"msg.brokers#8"
-						],
-						"0.9.0": [
-							"msg.brokers#4",
-							"msg.brokers#8"
-						],
+						"0.6.0": ["msg.brokers#4", "msg.brokers#7", "msg.brokers#8"],
+						"0.7.0": ["msg.brokers#4", "msg.brokers#7", "msg.brokers#8"],
+						"0.8.0": ["msg.brokers#4", "msg.brokers#8"],
+						"0.9.0": ["msg.brokers#4", "msg.brokers#8"],
 						"0.10.0": [
 							"msg.brokers#3",
 							"msg.brokers#4",
@@ -12185,11 +10362,7 @@
 						"msg.brokers#5",
 						"msg.brokers#6"
 					],
-					"django": [
-						"msg.brokers#2",
-						"msg.brokers#3",
-						"msg.brokers#5"
-					],
+					"django": ["msg.brokers#2", "msg.brokers#3", "msg.brokers#5"],
 					"laravel": [
 						"msg.brokers#3",
 						"msg.brokers#4",
@@ -12211,18 +10384,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					45,
-					85,
-					75,
-					82,
-					97,
-					85,
-					55,
-					50,
-					70,
-					25
-				],
+				"competitors": [45, 85, 75, 82, 97, 85, 55, 50, 70, 25],
 				"id_effect": {
 					"0.6.0": 12,
 					"0.7.0": 12
@@ -12240,18 +10402,7 @@
 			"group": "msg",
 			"name": "Stream processing",
 			"measures": "Backpressured streams with zip/merge/flat_map/throttle/debounce/group_by/windows.",
-			"competitors": [
-				100,
-				100,
-				1,
-				50,
-				100,
-				50,
-				1,
-				1,
-				38,
-				25
-			],
+			"competitors": [100, 100, 1, 50, 100, 50, 1, 1, 38, 25],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -12410,15 +10561,8 @@
 					],
 					"rails": [],
 					"django": [],
-					"laravel": [
-						"msg.streams#1",
-						"msg.streams#4",
-						"msg.streams#7"
-					],
-					"nextjs": [
-						"msg.streams#1",
-						"msg.streams#8"
-					]
+					"laravel": ["msg.streams#1", "msg.streams#4", "msg.streams#7"],
+					"nextjs": ["msg.streams#1", "msg.streams#8"]
 				},
 				"evidence": {
 					"msg.streams#1": "crates/id_effect/src/streaming/stream.rs:63 Stream<A,E,R>; Ledger src/reports.rs:230-233 CSV export via query_stream",
@@ -12435,18 +10579,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					92,
-					95,
-					55,
-					82,
-					80,
-					80,
-					20,
-					20,
-					25,
-					45
-				],
+				"competitors": [92, 95, 55, 82, 80, 80, 20, 20, 25, 45],
 				"id_effect": {
 					"0.6.0": 72,
 					"0.7.0": 74
@@ -12461,18 +10594,7 @@
 			"group": "msg",
 			"name": "Email and notifications",
 			"measures": "Mail sending, templating, previews, inbound mail, notification channels.",
-			"competitors": [
-				1,
-				1,
-				25,
-				63,
-				50,
-				25,
-				88,
-				63,
-				88,
-				38
-			],
+			"competitors": [1, 1, 25, 63, 50, 25, 88, 63, 88, 38],
 			"track": "T7",
 			"stance": "integrate",
 			"id_effect": {
@@ -12557,10 +10679,7 @@
 					},
 					"effect_ts": [],
 					"zio": [],
-					"otp": [
-						"msg.email#1",
-						"msg.email#8"
-					],
+					"otp": ["msg.email#1", "msg.email#8"],
 					"phoenix": [
 						"msg.email#1",
 						"msg.email#2",
@@ -12574,10 +10693,7 @@
 						"msg.email#6",
 						"msg.email#8"
 					],
-					"dotnet": [
-						"msg.email#1",
-						"msg.email#8"
-					],
+					"dotnet": ["msg.email#1", "msg.email#8"],
 					"rails": [
 						"msg.email#1",
 						"msg.email#2",
@@ -12603,11 +10719,7 @@
 						"msg.email#7",
 						"msg.email#8"
 					],
-					"nextjs": [
-						"msg.email#1",
-						"msg.email#2",
-						"msg.email#3"
-					]
+					"nextjs": ["msg.email#1", "msg.email#2", "msg.email#3"]
 				},
 				"evidence": {
 					"msg.email#1": "NEW published crates/id_effect_mail: src/smtp.rs SmtpMailer, src/sendgrid.rs:99 SendGridMailer; tests crates/id_effect_mail/tests/smtp.rs:150, sendgrid.rs:87-153, mailpit.rs:101 smtp_delivery_reaches_mailpit",
@@ -12619,18 +10731,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					10,
-					10,
-					20,
-					85,
-					85,
-					70,
-					97,
-					85,
-					98,
-					40
-				],
+				"competitors": [10, 10, 20, 85, 85, 70, 97, 85, 98, 40],
 				"id_effect": {
 					"0.6.0": 2,
 					"0.7.0": 2
@@ -12645,18 +10746,7 @@
 			"group": "ai",
 			"name": "LLM / AI integration",
 			"measures": "Provider-neutral LLM API, tool calling, streaming, MCP, embeddings.",
-			"competitors": [
-				88,
-				13,
-				1,
-				39,
-				100,
-				100,
-				39,
-				39,
-				75,
-				100
-			],
+			"competitors": [88, 13, 1, 39, 100, 100, 39, 39, 75, 100],
 			"track": "T9",
 			"stance": "promote",
 			"id_effect": {
@@ -12726,31 +10816,11 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"ai.llm#1",
-							"ai.llm#2",
-							"ai.llm#7"
-						],
-						"0.7.0": [
-							"ai.llm#1",
-							"ai.llm#2",
-							"ai.llm#7"
-						],
-						"0.8.0": [
-							"ai.llm#1",
-							"ai.llm#2",
-							"ai.llm#7"
-						],
-						"0.9.0": [
-							"ai.llm#1",
-							"ai.llm#2",
-							"ai.llm#7"
-						],
-						"0.10.0": [
-							"ai.llm#1",
-							"ai.llm#2",
-							"ai.llm#7"
-						]
+						"0.6.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.7.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.8.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.9.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.10.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"]
 					},
 					"effect_ts": [
 						"ai.llm#1",
@@ -12761,9 +10831,7 @@
 						"ai.llm#6",
 						"ai.llm#7"
 					],
-					"zio": [
-						"ai.llm#2"
-					],
+					"zio": ["ai.llm#2"],
 					"otp": [],
 					"phoenix": [
 						"ai.llm#1",
@@ -12792,13 +10860,7 @@
 						"ai.llm#7",
 						"ai.llm#8"
 					],
-					"rails": [
-						"ai.llm#1",
-						"ai.llm#2",
-						"ai.llm#3",
-						"ai.llm#4",
-						"ai.llm#5"
-					],
+					"rails": ["ai.llm#1", "ai.llm#2", "ai.llm#3", "ai.llm#4", "ai.llm#5"],
 					"django": [
 						"ai.llm#1",
 						"ai.llm#2",
@@ -12834,18 +10896,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					78,
-					35,
-					15,
-					50,
-					90,
-					92,
-					45,
-					40,
-					78,
-					95
-				],
+				"competitors": [78, 35, 15, 50, 90, 92, 45, 40, 78, 95],
 				"id_effect": {
 					"0.6.0": 28,
 					"0.7.0": 28
@@ -12860,18 +10911,7 @@
 			"group": "test",
 			"name": "Unit test kit and test doubles",
 			"measures": "Test runtime, layer/service mocks, assertions, snapshots.",
-			"competitors": [
-				100,
-				88,
-				50,
-				75,
-				88,
-				88,
-				88,
-				88,
-				88,
-				50
-			],
+			"competitors": [100, 88, 50, 75, 88, 88, 88, 88, 88, 50],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -13004,12 +11044,7 @@
 						"test.unit#7",
 						"test.unit#8"
 					],
-					"otp": [
-						"test.unit#1",
-						"test.unit#3",
-						"test.unit#7",
-						"test.unit#8"
-					],
+					"otp": ["test.unit#1", "test.unit#3", "test.unit#7", "test.unit#8"],
 					"phoenix": [
 						"test.unit#1",
 						"test.unit#2",
@@ -13063,12 +11098,7 @@
 						"test.unit#7",
 						"test.unit#8"
 					],
-					"nextjs": [
-						"test.unit#1",
-						"test.unit#4",
-						"test.unit#5",
-						"test.unit#8"
-					]
+					"nextjs": ["test.unit#1", "test.unit#4", "test.unit#5", "test.unit#8"]
 				},
 				"evidence": {
 					"test.unit#1": "crates/id_effect/src/testing/assert.rs:38 run_test, :48 run_test_on (TestExecutor); crates/id_effect/src/testing/test_executor.rs:222 run_until_stalled",
@@ -13084,18 +11114,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					95,
-					85,
-					92,
-					95,
-					92,
-					97,
-					92,
-					95,
-					70
-				],
+				"competitors": [90, 95, 85, 92, 95, 92, 97, 92, 95, 70],
 				"id_effect": {
 					"0.6.0": 80,
 					"0.7.0": 83
@@ -13113,18 +11132,7 @@
 			"group": "test",
 			"name": "Deterministic time and randomness",
 			"measures": "Virtual clock, seeded random, reproducible scheduling.",
-			"competitors": [
-				75,
-				75,
-				25,
-				25,
-				38,
-				63,
-				63,
-				25,
-				88,
-				38
-			],
+			"competitors": [75, 75, 25, 25, 38, 63, 63, 25, 88, 38],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -13251,14 +11259,8 @@
 						"test.determinism#5",
 						"test.determinism#6"
 					],
-					"otp": [
-						"test.determinism#4",
-						"test.determinism#8"
-					],
-					"phoenix": [
-						"test.determinism#4",
-						"test.determinism#8"
-					],
+					"otp": ["test.determinism#4", "test.determinism#8"],
+					"phoenix": ["test.determinism#4", "test.determinism#8"],
 					"spring": [
 						"test.determinism#3",
 						"test.determinism#4",
@@ -13278,10 +11280,7 @@
 						"test.determinism#6",
 						"test.determinism#8"
 					],
-					"django": [
-						"test.determinism#4",
-						"test.determinism#8"
-					],
+					"django": ["test.determinism#4", "test.determinism#8"],
 					"laravel": [
 						"test.determinism#1",
 						"test.determinism#2",
@@ -13312,18 +11311,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					95,
-					98,
-					40,
-					45,
-					62,
-					78,
-					82,
-					62,
-					85,
-					40
-				],
+				"competitors": [95, 98, 40, 45, 62, 78, 82, 62, 85, 40],
 				"id_effect": {
 					"0.6.0": 55,
 					"0.7.0": 75
@@ -13338,18 +11326,7 @@
 			"group": "test",
 			"name": "Property-based testing",
 			"measures": "Generators (incl. derived from schemas), shrinking, effect-aware properties.",
-			"competitors": [
-				100,
-				88,
-				75,
-				38,
-				39,
-				39,
-				1,
-				39,
-				1,
-				38
-			],
+			"competitors": [100, 88, 75, 38, 39, 39, 1, 39, 1, 38],
 			"track": "T2",
 			"stance": "build",
 			"id_effect": {
@@ -13494,11 +11471,7 @@
 						"test.property#6",
 						"test.property#7"
 					],
-					"phoenix": [
-						"test.property#1",
-						"test.property#3",
-						"test.property#6"
-					],
+					"phoenix": ["test.property#1", "test.property#3", "test.property#6"],
 					"spring": [
 						"test.property#2",
 						"test.property#3",
@@ -13520,11 +11493,7 @@
 						"test.property#8"
 					],
 					"laravel": [],
-					"nextjs": [
-						"test.property#3",
-						"test.property#5",
-						"test.property#6"
-					]
+					"nextjs": ["test.property#3", "test.property#5", "test.property#6"]
 				},
 				"evidence": {
 					"test.property#1": "crates/id_effect/src/testing/property/mod.rs, first-party module behind the id_effect feature proptest",
@@ -13541,18 +11510,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					90,
-					90,
-					85,
-					75,
-					50,
-					55,
-					40,
-					50,
-					30,
-					50
-				],
+				"competitors": [90, 90, 85, 75, 50, 55, 40, 50, 30, 50],
 				"id_effect": {
 					"0.6.0": 62,
 					"0.7.0": 9
@@ -13567,18 +11525,7 @@
 			"group": "test",
 			"name": "Integration and E2E testing",
 			"measures": "Containers, HTTP test client, DB fixtures, end-to-end harness.",
-			"competitors": [
-				38,
-				38,
-				25,
-				63,
-				100,
-				75,
-				75,
-				75,
-				75,
-				38
-			],
+			"competitors": [38, 38, 25, 63, 100, 75, 75, 75, 75, 38],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -13649,10 +11596,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"test.integration#1",
-							"test.integration#6"
-						],
+						"0.6.0": ["test.integration#1", "test.integration#6"],
 						"0.7.0": [
 							"test.integration#1",
 							"test.integration#6",
@@ -13692,10 +11636,7 @@
 						"test.integration#6",
 						"test.integration#7"
 					],
-					"otp": [
-						"test.integration#6",
-						"test.integration#7"
-					],
+					"otp": ["test.integration#6", "test.integration#7"],
 					"phoenix": [
 						"test.integration#1",
 						"test.integration#3",
@@ -13765,18 +11706,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					70,
-					78,
-					88,
-					97,
-					95,
-					95,
-					90,
-					95,
-					85
-				],
+				"competitors": [55, 70, 78, 88, 97, 95, 95, 90, 95, 85],
 				"id_effect": {
 					"0.6.0": 45,
 					"0.7.0": 50
@@ -13792,18 +11722,7 @@
 			"group": "test",
 			"name": "Fault injection / chaos",
 			"measures": "Injecting latency, failures, partitions at effect and network level.",
-			"competitors": [
-				13,
-				25,
-				25,
-				38,
-				39,
-				39,
-				13,
-				13,
-				13,
-				1
-			],
+			"competitors": [13, 25, 25, 38, 39, 39, 13, 13, 13, 1],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -13873,26 +11792,10 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"test.chaos#1",
-							"test.chaos#3",
-							"test.chaos#4"
-						],
-						"0.7.0": [
-							"test.chaos#1",
-							"test.chaos#3",
-							"test.chaos#4"
-						],
-						"0.8.0": [
-							"test.chaos#1",
-							"test.chaos#3",
-							"test.chaos#4"
-						],
-						"0.9.0": [
-							"test.chaos#1",
-							"test.chaos#3",
-							"test.chaos#4"
-						],
+						"0.6.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
+						"0.7.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
+						"0.8.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
+						"0.9.0": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
 						"0.10.0": [
 							"test.chaos#1",
 							"test.chaos#2",
@@ -13902,22 +11805,10 @@
 							"test.chaos#8"
 						]
 					},
-					"effect_ts": [
-						"test.chaos#1"
-					],
-					"zio": [
-						"test.chaos#1",
-						"test.chaos#4"
-					],
-					"otp": [
-						"test.chaos#3",
-						"test.chaos#4"
-					],
-					"phoenix": [
-						"test.chaos#1",
-						"test.chaos#3",
-						"test.chaos#4"
-					],
+					"effect_ts": ["test.chaos#1"],
+					"zio": ["test.chaos#1", "test.chaos#4"],
+					"otp": ["test.chaos#3", "test.chaos#4"],
+					"phoenix": ["test.chaos#1", "test.chaos#3", "test.chaos#4"],
 					"spring": [
 						"test.chaos#1",
 						"test.chaos#2",
@@ -13931,15 +11822,9 @@
 						"test.chaos#5",
 						"test.chaos#7"
 					],
-					"rails": [
-						"test.chaos#1"
-					],
-					"django": [
-						"test.chaos#1"
-					],
-					"laravel": [
-						"test.chaos#1"
-					],
+					"rails": ["test.chaos#1"],
+					"django": ["test.chaos#1"],
+					"laravel": ["test.chaos#1"],
 					"nextjs": []
 				},
 				"evidence": {
@@ -13956,18 +11841,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					40,
-					50,
-					70,
-					60,
-					52,
-					58,
-					20,
-					20,
-					20,
-					15
-				],
+				"competitors": [40, 50, 70, 60, 52, 58, 20, 20, 20, 15],
 				"id_effect": {
 					"0.6.0": 60,
 					"0.7.0": 60
@@ -13982,18 +11856,7 @@
 			"group": "test",
 			"name": "Project QA discipline",
 			"measures": "Coverage gate, OS/toolchain matrix, MSRV, minimal versions, compile-fail tests.",
-			"competitors": [
-				38,
-				38,
-				38,
-				25,
-				50,
-				75,
-				38,
-				63,
-				63,
-				75
-			],
+			"competitors": [38, 38, 38, 25, 50, 75, 38, 63, 63, 75],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -14110,31 +11973,11 @@
 							"test.qa#7"
 						]
 					},
-					"effect_ts": [
-						"test.qa#3",
-						"test.qa#6",
-						"test.qa#7"
-					],
-					"zio": [
-						"test.qa#3",
-						"test.qa#4",
-						"test.qa#6"
-					],
-					"otp": [
-						"test.qa#2",
-						"test.qa#6",
-						"test.qa#7"
-					],
-					"phoenix": [
-						"test.qa#3",
-						"test.qa#4"
-					],
-					"spring": [
-						"test.qa#2",
-						"test.qa#3",
-						"test.qa#4",
-						"test.qa#7"
-					],
+					"effect_ts": ["test.qa#3", "test.qa#6", "test.qa#7"],
+					"zio": ["test.qa#3", "test.qa#4", "test.qa#6"],
+					"otp": ["test.qa#2", "test.qa#6", "test.qa#7"],
+					"phoenix": ["test.qa#3", "test.qa#4"],
+					"spring": ["test.qa#2", "test.qa#3", "test.qa#4", "test.qa#7"],
 					"dotnet": [
 						"test.qa#2",
 						"test.qa#3",
@@ -14143,11 +11986,7 @@
 						"test.qa#7",
 						"test.qa#8"
 					],
-					"rails": [
-						"test.qa#3",
-						"test.qa#4",
-						"test.qa#7"
-					],
+					"rails": ["test.qa#3", "test.qa#4", "test.qa#7"],
 					"django": [
 						"test.qa#2",
 						"test.qa#3",
@@ -14185,18 +12024,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					85,
-					90,
-					85,
-					95,
-					95,
-					92,
-					92,
-					85,
-					85
-				],
+				"competitors": [85, 85, 90, 85, 95, 95, 92, 92, 85, 85],
 				"id_effect": {
 					"0.6.0": 88,
 					"0.7.0": 89
@@ -14211,18 +12039,7 @@
 			"group": "dx",
 			"name": "Scaffolding and generators",
 			"measures": "One command to a running project; generators for resources, jobs, migrations.",
-			"competitors": [
-				50,
-				13,
-				25,
-				75,
-				38,
-				63,
-				100,
-				25,
-				75,
-				38
-			],
+			"competitors": [50, 13, 25, 75, 38, 63, 100, 25, 75, 38],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -14327,13 +12144,8 @@
 						"dx.scaffold#6",
 						"dx.scaffold#7"
 					],
-					"zio": [
-						"dx.scaffold#1"
-					],
-					"otp": [
-						"dx.scaffold#1",
-						"dx.scaffold#6"
-					],
+					"zio": ["dx.scaffold#1"],
+					"otp": ["dx.scaffold#1", "dx.scaffold#6"],
 					"phoenix": [
 						"dx.scaffold#1",
 						"dx.scaffold#2",
@@ -14342,11 +12154,7 @@
 						"dx.scaffold#7",
 						"dx.scaffold#8"
 					],
-					"spring": [
-						"dx.scaffold#1",
-						"dx.scaffold#6",
-						"dx.scaffold#7"
-					],
+					"spring": ["dx.scaffold#1", "dx.scaffold#6", "dx.scaffold#7"],
 					"dotnet": [
 						"dx.scaffold#1",
 						"dx.scaffold#2",
@@ -14364,10 +12172,7 @@
 						"dx.scaffold#7",
 						"dx.scaffold#8"
 					],
-					"django": [
-						"dx.scaffold#1",
-						"dx.scaffold#3"
-					],
+					"django": ["dx.scaffold#1", "dx.scaffold#3"],
 					"laravel": [
 						"dx.scaffold#1",
 						"dx.scaffold#2",
@@ -14376,11 +12181,7 @@
 						"dx.scaffold#5",
 						"dx.scaffold#7"
 					],
-					"nextjs": [
-						"dx.scaffold#1",
-						"dx.scaffold#6",
-						"dx.scaffold#7"
-					]
+					"nextjs": ["dx.scaffold#1", "dx.scaffold#6", "dx.scaffold#7"]
 				},
 				"evidence": {
 					"dx.scaffold#1": "crates/id_effect_tool/src/cli.rs Command::New (`id-effect new`); tests/bin.rs; ci.yml templates job (scripts/template-smoke.sh per template)",
@@ -14393,18 +12194,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					30,
-					60,
-					95,
-					92,
-					92,
-					99,
-					85,
-					97,
-					92
-				],
+				"competitors": [55, 30, 60, 95, 92, 92, 99, 85, 97, 92],
 				"id_effect": {
 					"0.6.0": 4,
 					"0.7.0": 4
@@ -14421,18 +12211,7 @@
 			"group": "dx",
 			"name": "CLI application toolkit",
 			"measures": "Building CLIs: args, exit codes, prompts, progress, config.",
-			"competitors": [
-				88,
-				75,
-				50,
-				63,
-				100,
-				75,
-				63,
-				50,
-				100,
-				1
-			],
+			"competitors": [88, 75, 50, 63, 100, 75, 63, 50, 100, 1],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -14502,18 +12281,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"dx.cli#1",
-							"dx.cli#2",
-							"dx.cli#6",
-							"dx.cli#8"
-						],
-						"0.7.0": [
-							"dx.cli#1",
-							"dx.cli#2",
-							"dx.cli#6",
-							"dx.cli#8"
-						],
+						"0.6.0": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
+						"0.7.0": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
 						"0.8.0": [
 							"dx.cli#1",
 							"dx.cli#2",
@@ -14556,12 +12325,7 @@
 						"dx.cli#7",
 						"dx.cli#8"
 					],
-					"otp": [
-						"dx.cli#1",
-						"dx.cli#2",
-						"dx.cli#6",
-						"dx.cli#8"
-					],
+					"otp": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
 					"phoenix": [
 						"dx.cli#1",
 						"dx.cli#2",
@@ -14587,19 +12351,8 @@
 						"dx.cli#7",
 						"dx.cli#8"
 					],
-					"rails": [
-						"dx.cli#1",
-						"dx.cli#2",
-						"dx.cli#4",
-						"dx.cli#6",
-						"dx.cli#8"
-					],
-					"django": [
-						"dx.cli#1",
-						"dx.cli#2",
-						"dx.cli#6",
-						"dx.cli#8"
-					],
+					"rails": ["dx.cli#1", "dx.cli#2", "dx.cli#4", "dx.cli#6", "dx.cli#8"],
+					"django": ["dx.cli#1", "dx.cli#2", "dx.cli#6", "dx.cli#8"],
 					"laravel": [
 						"dx.cli#1",
 						"dx.cli#2",
@@ -14625,18 +12378,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					75,
-					50,
-					70,
-					70,
-					85,
-					70,
-					75,
-					88,
-					20
-				],
+				"competitors": [85, 75, 50, 70, 70, 85, 70, 75, 88, 20],
 				"id_effect": {
 					"0.6.0": 70,
 					"0.7.0": 68
@@ -14651,18 +12393,7 @@
 			"group": "dx",
 			"name": "Documentation and learning",
 			"measures": "Tutorials, guides, reference, cookbook, examples, tested snippets.",
-			"competitors": [
-				75,
-				88,
-				63,
-				88,
-				100,
-				100,
-				63,
-				75,
-				63,
-				88
-			],
+			"competitors": [75, 88, 63, 88, 100, 100, 63, 75, 63, 88],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -14874,18 +12605,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					82,
-					85,
-					92,
-					97,
-					98,
-					97,
-					98,
-					99,
-					95
-				],
+				"competitors": [85, 82, 85, 92, 97, 98, 97, 98, 99, 95],
 				"id_effect": {
 					"0.6.0": 68,
 					"0.7.0": 76
@@ -14901,18 +12621,7 @@
 			"group": "dx",
 			"name": "Compiler / IDE diagnostics",
 			"measures": "Quality of type errors, on_unimplemented hints, doctor tooling.",
-			"competitors": [
-				63,
-				63,
-				25,
-				75,
-				63,
-				75,
-				38,
-				39,
-				39,
-				50
-			],
+			"competitors": [63, 63, 25, 75, 63, 75, 38, 39, 39, 50],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -15036,10 +12745,7 @@
 						"dx.diagnostics#6",
 						"dx.diagnostics#7"
 					],
-					"otp": [
-						"dx.diagnostics#6",
-						"dx.diagnostics#7"
-					],
+					"otp": ["dx.diagnostics#6", "dx.diagnostics#7"],
 					"phoenix": [
 						"dx.diagnostics#1",
 						"dx.diagnostics#2",
@@ -15063,11 +12769,7 @@
 						"dx.diagnostics#6",
 						"dx.diagnostics#8"
 					],
-					"rails": [
-						"dx.diagnostics#4",
-						"dx.diagnostics#6",
-						"dx.diagnostics#8"
-					],
+					"rails": ["dx.diagnostics#4", "dx.diagnostics#6", "dx.diagnostics#8"],
 					"django": [
 						"dx.diagnostics#4",
 						"dx.diagnostics#5",
@@ -15100,18 +12802,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					78,
-					70,
-					60,
-					80,
-					90,
-					97,
-					70,
-					70,
-					80,
-					88
-				],
+				"competitors": [78, 70, 60, 80, 90, 97, 70, 70, 80, 88],
 				"id_effect": {
 					"0.6.0": 55,
 					"0.7.0": 60
@@ -15130,18 +12821,7 @@
 			"group": "dx",
 			"name": "Linting and static analysis",
 			"measures": "Framework-aware lints usable on stable.",
-			"competitors": [
-				100,
-				50,
-				63,
-				63,
-				50,
-				100,
-				100,
-				38,
-				39,
-				100
-			],
+			"competitors": [100, 50, 63, 63, 50, 100, 100, 38, 39, 100],
 			"track": "T1",
 			"stance": "promote",
 			"id_effect": {
@@ -15212,31 +12892,11 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"dx.lint#1",
-							"dx.lint#2",
-							"dx.lint#7"
-						],
-						"0.7.0": [
-							"dx.lint#1",
-							"dx.lint#2",
-							"dx.lint#7"
-						],
-						"0.8.0": [
-							"dx.lint#1",
-							"dx.lint#2",
-							"dx.lint#7"
-						],
-						"0.9.0": [
-							"dx.lint#1",
-							"dx.lint#2",
-							"dx.lint#7"
-						],
-						"0.10.0": [
-							"dx.lint#1",
-							"dx.lint#2",
-							"dx.lint#7"
-						]
+						"0.6.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
+						"0.7.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
+						"0.8.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
+						"0.9.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
+						"0.10.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"]
 					},
 					"effect_ts": [
 						"dx.lint#1",
@@ -15248,12 +12908,7 @@
 						"dx.lint#7",
 						"dx.lint#8"
 					],
-					"zio": [
-						"dx.lint#1",
-						"dx.lint#2",
-						"dx.lint#3",
-						"dx.lint#5"
-					],
+					"zio": ["dx.lint#1", "dx.lint#2", "dx.lint#3", "dx.lint#5"],
 					"otp": [
 						"dx.lint#1",
 						"dx.lint#2",
@@ -15268,12 +12923,7 @@
 						"dx.lint#6",
 						"dx.lint#8"
 					],
-					"spring": [
-						"dx.lint#1",
-						"dx.lint#2",
-						"dx.lint#5",
-						"dx.lint#6"
-					],
+					"spring": ["dx.lint#1", "dx.lint#2", "dx.lint#5", "dx.lint#6"],
 					"dotnet": [
 						"dx.lint#1",
 						"dx.lint#2",
@@ -15294,11 +12944,7 @@
 						"dx.lint#7",
 						"dx.lint#8"
 					],
-					"django": [
-						"dx.lint#1",
-						"dx.lint#2",
-						"dx.lint#7"
-					],
+					"django": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
 					"laravel": [
 						"dx.lint#1",
 						"dx.lint#2",
@@ -15325,18 +12971,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					78,
-					55,
-					70,
-					80,
-					85,
-					95,
-					88,
-					72,
-					82,
-					85
-				],
+				"competitors": [78, 55, 70, 80, 85, 95, 88, 72, 82, 85],
 				"id_effect": {
 					"0.6.0": 39,
 					"0.7.0": 39
@@ -15352,18 +12987,7 @@
 			"group": "dx",
 			"name": "Edit-compile-run loop speed",
 			"measures": "Cold and incremental build time of a template app.",
-			"competitors": [
-				71,
-				43,
-				71,
-				86,
-				71,
-				86,
-				86,
-				71,
-				86,
-				100
-			],
+			"competitors": [71, 43, 71, 86, 71, 86, 86, 71, 86, 100],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -15430,12 +13054,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"dx.compile#5"
-						],
-						"0.7.0": [
-							"dx.compile#5"
-						],
+						"0.6.0": ["dx.compile#5"],
+						"0.7.0": ["dx.compile#5"],
 						"0.8.0": [
 							"dx.compile#1",
 							"dx.compile#2",
@@ -15465,11 +13085,7 @@
 						"dx.compile#5",
 						"dx.compile#6"
 					],
-					"zio": [
-						"dx.compile#4",
-						"dx.compile#5",
-						"dx.compile#6"
-					],
+					"zio": ["dx.compile#4", "dx.compile#5", "dx.compile#6"],
 					"otp": [
 						"dx.compile#1",
 						"dx.compile#2",
@@ -15546,18 +13162,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					85,
-					45,
-					85,
-					92,
-					70,
-					82,
-					98,
-					95,
-					95,
-					88
-				],
+				"competitors": [85, 45, 85, 92, 70, 82, 98, 95, 95, 88],
 				"id_effect": {
 					"0.6.0": 38,
 					"0.7.0": 38
@@ -15573,18 +13178,7 @@
 			"group": "dx",
 			"name": "REPL and local dev environment",
 			"measures": "Interactive console, one-command local services, dev mode.",
-			"competitors": [
-				13,
-				1,
-				39,
-				75,
-				63,
-				75,
-				88,
-				63,
-				100,
-				50
-			],
+			"competitors": [13, 1, 39, 75, 63, 75, 88, 63, 100, 50],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -15656,13 +13250,8 @@
 					"id_effect": {
 						"0.6.0": [],
 						"0.7.0": [],
-						"0.8.0": [
-							"dx.repl#4"
-						],
-						"0.9.0": [
-							"dx.repl#4",
-							"dx.repl#7"
-						],
+						"0.8.0": ["dx.repl#4"],
+						"0.9.0": ["dx.repl#4", "dx.repl#7"],
 						"0.10.0": [
 							"dx.repl#2",
 							"dx.repl#3",
@@ -15672,16 +13261,9 @@
 							"dx.repl#8"
 						]
 					},
-					"effect_ts": [
-						"dx.repl#5"
-					],
+					"effect_ts": ["dx.repl#5"],
 					"zio": [],
-					"otp": [
-						"dx.repl#1",
-						"dx.repl#2",
-						"dx.repl#5",
-						"dx.repl#7"
-					],
+					"otp": ["dx.repl#1", "dx.repl#2", "dx.repl#5", "dx.repl#7"],
 					"phoenix": [
 						"dx.repl#1",
 						"dx.repl#2",
@@ -15731,12 +13313,7 @@
 						"dx.repl#7",
 						"dx.repl#8"
 					],
-					"nextjs": [
-						"dx.repl#2",
-						"dx.repl#3",
-						"dx.repl#5",
-						"dx.repl#7"
-					]
+					"nextjs": ["dx.repl#2", "dx.repl#3", "dx.repl#5", "dx.repl#7"]
 				},
 				"evidence": {
 					"dx.repl#2": "crates/id_effect_tool/src/dev.rs `id-effect dev` runs the binary with ID_EFFECT_PROFILE=dev (dev.rs:36-38); tests/dev.rs:166 asserts profile=dev; book part6/ch34-02-dev.md",
@@ -15752,18 +13329,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					70,
-					60,
-					95,
-					97,
-					78,
-					88,
-					97,
-					90,
-					95,
-					90
-				],
+				"competitors": [70, 60, 95, 97, 78, 88, 97, 90, 95, 90],
 				"id_effect": {
 					"0.6.0": 9,
 					"0.7.0": 9
@@ -15778,18 +13344,7 @@
 			"group": "dx",
 			"name": "Deploy and packaging",
 			"measures": "Container images, deploy recipes, release builds, k8s/Kamal.",
-			"competitors": [
-				13,
-				13,
-				38,
-				63,
-				100,
-				100,
-				75,
-				1,
-				38,
-				75
-			],
+			"competitors": [13, 13, 38, 63, 100, 100, 75, 1, 38, 75],
 			"track": "T6",
 			"stance": "build",
 			"id_effect": {
@@ -15902,17 +13457,9 @@
 							"dx.deploy#8"
 						]
 					},
-					"effect_ts": [
-						"dx.deploy#5"
-					],
-					"zio": [
-						"dx.deploy#5"
-					],
-					"otp": [
-						"dx.deploy#2",
-						"dx.deploy#5",
-						"dx.deploy#8"
-					],
+					"effect_ts": ["dx.deploy#5"],
+					"zio": ["dx.deploy#5"],
+					"otp": ["dx.deploy#2", "dx.deploy#5", "dx.deploy#8"],
 					"phoenix": [
 						"dx.deploy#1",
 						"dx.deploy#2",
@@ -15949,11 +13496,7 @@
 						"dx.deploy#7"
 					],
 					"django": [],
-					"laravel": [
-						"dx.deploy#3",
-						"dx.deploy#4",
-						"dx.deploy#7"
-					],
+					"laravel": ["dx.deploy#3", "dx.deploy#4", "dx.deploy#7"],
 					"nextjs": [
 						"dx.deploy#1",
 						"dx.deploy#2",
@@ -15977,18 +13520,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					55,
-					60,
-					85,
-					88,
-					92,
-					95,
-					95,
-					65,
-					95,
-					97
-				],
+				"competitors": [55, 60, 85, 88, 92, 95, 95, 65, 95, 97],
 				"id_effect": {
 					"0.6.0": 49,
 					"0.7.0": 49
@@ -16004,18 +13536,7 @@
 			"group": "dx",
 			"name": "Coherence: one stack, one way",
 			"measures": "One dependency, one prelude, one documented way for each concern.",
-			"competitors": [
-				75,
-				25,
-				75,
-				75,
-				75,
-				88,
-				100,
-				88,
-				100,
-				50
-			],
+			"competitors": [75, 25, 75, 75, 75, 88, 100, 88, 100, 50],
 			"track": "T1",
 			"stance": "build",
 			"id_effect": {
@@ -16086,11 +13607,7 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"dx.coherence#3",
-							"dx.coherence#4",
-							"dx.coherence#6"
-						],
+						"0.6.0": ["dx.coherence#3", "dx.coherence#4", "dx.coherence#6"],
 						"0.7.0": [
 							"dx.coherence#3",
 							"dx.coherence#4",
@@ -16136,10 +13653,7 @@
 						"dx.coherence#7",
 						"dx.coherence#8"
 					],
-					"zio": [
-						"dx.coherence#2",
-						"dx.coherence#6"
-					],
+					"zio": ["dx.coherence#2", "dx.coherence#6"],
 					"otp": [
 						"dx.coherence#1",
 						"dx.coherence#3",
@@ -16224,18 +13738,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					78,
-					62,
-					72,
-					92,
-					97,
-					98,
-					99,
-					95,
-					99,
-					85
-				],
+				"competitors": [78, 62, 72, 92, 97, 98, 99, 95, 99, 85],
 				"id_effect": {
 					"0.6.0": 30,
 					"0.7.0": 45
@@ -16251,18 +13754,7 @@
 			"group": "eco",
 			"name": "Release maturity and API stability",
 			"measures": "Semver discipline, deprecation windows, published crates, cadence.",
-			"competitors": [
-				63,
-				75,
-				88,
-				50,
-				88,
-				100,
-				75,
-				88,
-				75,
-				63
-			],
+			"competitors": [63, 75, 88, 50, 88, 100, 75, 88, 75, 63],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -16466,18 +13958,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					80,
-					85,
-					98,
-					90,
-					97,
-					97,
-					92,
-					97,
-					90,
-					75
-				],
+				"competitors": [80, 85, 98, 90, 97, 97, 92, 97, 90, 75],
 				"id_effect": {
 					"0.6.0": 18,
 					"0.7.0": 28
@@ -16493,18 +13974,7 @@
 			"group": "eco",
 			"name": "Backing and long-term support",
 			"measures": "Maintainers, governance, sponsorship, LTS policy.",
-			"competitors": [
-				75,
-				63,
-				75,
-				63,
-				88,
-				100,
-				100,
-				100,
-				63,
-				63
-			],
+			"competitors": [75, 63, 75, 63, 88, 100, 100, 100, 63, 63],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -16578,21 +14048,9 @@
 					"id_effect": {
 						"0.6.0": [],
 						"0.7.0": [],
-						"0.8.0": [
-							"eco.backing#4",
-							"eco.backing#5",
-							"eco.backing#6"
-						],
-						"0.9.0": [
-							"eco.backing#4",
-							"eco.backing#5",
-							"eco.backing#6"
-						],
-						"0.10.0": [
-							"eco.backing#4",
-							"eco.backing#5",
-							"eco.backing#6"
-						]
+						"0.8.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
+						"0.9.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
+						"0.10.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"]
 					},
 					"effect_ts": [
 						"eco.backing#1",
@@ -16685,18 +14143,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					70,
-					70,
-					92,
-					78,
-					98,
-					99,
-					90,
-					92,
-					90,
-					95
-				],
+				"competitors": [70, 70, 92, 78, 98, 99, 90, 92, 90, 95],
 				"id_effect": {
 					"0.6.0": 8,
 					"0.7.0": 8
@@ -16712,18 +14159,7 @@
 			"group": "eco",
 			"name": "Third-party ecosystem fit",
 			"measures": "Ease of using the host language's ecosystem; native integrations.",
-			"competitors": [
-				50,
-				88,
-				50,
-				63,
-				100,
-				100,
-				75,
-				63,
-				88,
-				75
-			],
+			"competitors": [50, 88, 50, 63, 100, 100, 75, 63, 88, 75],
 			"track": "T9",
 			"stance": "build",
 			"id_effect": {
@@ -16793,23 +14229,9 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"eco.fit#2",
-							"eco.fit#3",
-							"eco.fit#5"
-						],
-						"0.7.0": [
-							"eco.fit#1",
-							"eco.fit#2",
-							"eco.fit#3",
-							"eco.fit#5"
-						],
-						"0.8.0": [
-							"eco.fit#1",
-							"eco.fit#2",
-							"eco.fit#3",
-							"eco.fit#5"
-						],
+						"0.6.0": ["eco.fit#2", "eco.fit#3", "eco.fit#5"],
+						"0.7.0": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#5"],
+						"0.8.0": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#5"],
 						"0.9.0": [
 							"eco.fit#1",
 							"eco.fit#2",
@@ -16825,12 +14247,7 @@
 							"eco.fit#5"
 						]
 					},
-					"effect_ts": [
-						"eco.fit#1",
-						"eco.fit#2",
-						"eco.fit#4",
-						"eco.fit#5"
-					],
+					"effect_ts": ["eco.fit#1", "eco.fit#2", "eco.fit#4", "eco.fit#5"],
 					"zio": [
 						"eco.fit#1",
 						"eco.fit#2",
@@ -16840,12 +14257,7 @@
 						"eco.fit#6",
 						"eco.fit#7"
 					],
-					"otp": [
-						"eco.fit#1",
-						"eco.fit#2",
-						"eco.fit#3",
-						"eco.fit#8"
-					],
+					"otp": ["eco.fit#1", "eco.fit#2", "eco.fit#3", "eco.fit#8"],
 					"phoenix": [
 						"eco.fit#1",
 						"eco.fit#2",
@@ -16918,18 +14330,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					72,
-					70,
-					72,
-					82,
-					98,
-					95,
-					95,
-					95,
-					95,
-					99
-				],
+				"competitors": [72, 70, 72, 82, 98, 95, 95, 95, 95, 99],
 				"id_effect": {
 					"0.6.0": 50,
 					"0.7.0": 55
@@ -16944,18 +14345,7 @@
 			"group": "eco",
 			"name": "Community and hiring pool",
 			"measures": "Users, contributors, chat, conference presence, hireability.",
-			"competitors": [
-				38,
-				13,
-				38,
-				38,
-				88,
-				100,
-				88,
-				88,
-				88,
-				88
-			],
+			"competitors": [38, 13, 38, 38, 88, 100, 88, 88, 88, 88],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -17037,19 +14427,9 @@
 						"eco.community#4",
 						"eco.community#5"
 					],
-					"zio": [
-						"eco.community#3"
-					],
-					"otp": [
-						"eco.community#3",
-						"eco.community#4",
-						"eco.community#8"
-					],
-					"phoenix": [
-						"eco.community#1",
-						"eco.community#3",
-						"eco.community#4"
-					],
+					"zio": ["eco.community#3"],
+					"otp": ["eco.community#3", "eco.community#4", "eco.community#8"],
+					"phoenix": ["eco.community#1", "eco.community#3", "eco.community#4"],
 					"spring": [
 						"eco.community#1",
 						"eco.community#2",
@@ -17109,18 +14489,7 @@
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					40,
-					35,
-					45,
-					52,
-					99,
-					98,
-					85,
-					92,
-					90,
-					97
-				],
+				"competitors": [40, 35, 45, 52, 99, 98, 85, 92, 90, 97],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
@@ -17135,18 +14504,7 @@
 			"group": "eco",
 			"name": "Production track record",
 			"measures": "Public production users and case studies.",
-			"competitors": [
-				50,
-				63,
-				100,
-				100,
-				100,
-				100,
-				100,
-				100,
-				100,
-				100
-			],
+			"competitors": [50, 63, 100, 100, 100, 100, 100, 100, 100, 100],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -17320,18 +14678,7 @@
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					58,
-					70,
-					99,
-					88,
-					99,
-					99,
-					97,
-					96,
-					88,
-					95
-				],
+				"competitors": [58, 70, 99, 88, 99, 99, 97, 96, 88, 95],
 				"id_effect": {
 					"0.6.0": 8,
 					"0.7.0": 8
@@ -17346,18 +14693,7 @@
 			"group": "eco",
 			"name": "License and legal clarity",
 			"measures": "OSI software license, LICENSE file, contributor terms.",
-			"competitors": [
-				80,
-				80,
-				80,
-				80,
-				100,
-				100,
-				80,
-				80,
-				80,
-				80
-			],
+			"competitors": [80, 80, 80, 80, 100, 100, 80, 80, 80, 80],
 			"track": "T0",
 			"stance": "build",
 			"process": true,
@@ -17416,12 +14752,8 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"eco.license#3"
-						],
-						"0.7.0": [
-							"eco.license#3"
-						],
+						"0.6.0": ["eco.license#3"],
+						"0.7.0": ["eco.license#3"],
 						"0.8.0": [
 							"eco.license#1",
 							"eco.license#2",
@@ -17519,18 +14851,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					98,
-					98,
-					98,
-					98,
-					98,
-					98,
-					98,
-					98,
-					98,
-					98
-				],
+				"competitors": [98, 98, 98, 98, 98, 98, 98, 98, 98, 98],
 				"id_effect": {
 					"0.6.0": 8,
 					"0.7.0": 8
@@ -17545,18 +14866,7 @@
 			"group": "eco",
 			"name": "i18n / l10n",
 			"measures": "Message catalogs, pluralisation, locale negotiation, formatting.",
-			"competitors": [
-				9,
-				9,
-				1,
-				63,
-				63,
-				75,
-				75,
-				100,
-				63,
-				38
-			],
+			"competitors": [9, 9, 1, 63, 63, 75, 75, 100, 63, 38],
 			"track": "T9",
 			"stance": "integrate",
 			"id_effect": {
@@ -17632,12 +14942,8 @@
 						"0.9.0": [],
 						"0.10.0": []
 					},
-					"effect_ts": [
-						"eco.i18n#4"
-					],
-					"zio": [
-						"eco.i18n#4"
-					],
+					"effect_ts": ["eco.i18n#4"],
+					"zio": ["eco.i18n#4"],
 					"otp": [],
 					"phoenix": [
 						"eco.i18n#1",
@@ -17686,27 +14992,12 @@
 						"eco.i18n#5",
 						"eco.i18n#7"
 					],
-					"nextjs": [
-						"eco.i18n#3",
-						"eco.i18n#4",
-						"eco.i18n#8"
-					]
+					"nextjs": ["eco.i18n#3", "eco.i18n#4", "eco.i18n#8"]
 				},
 				"evidence": {}
 			},
 			"v1": {
-				"competitors": [
-					10,
-					10,
-					30,
-					85,
-					90,
-					95,
-					95,
-					97,
-					92,
-					80
-				],
+				"competitors": [10, 10, 30, 85, 90, 95, 95, 97, 92, 80],
 				"id_effect": {
 					"0.6.0": 2,
 					"0.7.0": 2
@@ -17721,18 +15012,7 @@
 			"group": "eco",
 			"name": "Multi-tenancy and audit trails",
 			"measures": "Tenant isolation patterns and tamper-evident audit logging.",
-			"competitors": [
-				13,
-				13,
-				13,
-				50,
-				63,
-				75,
-				50,
-				25,
-				39,
-				25
-			],
+			"competitors": [13, 13, 13, 50, 63, 75, 50, 25, 39, 25],
 			"track": "T5",
 			"stance": "build",
 			"id_effect": {
@@ -17803,15 +15083,9 @@
 				},
 				"met": {
 					"id_effect": {
-						"0.6.0": [
-							"eco.tenancy#2"
-						],
-						"0.7.0": [
-							"eco.tenancy#2"
-						],
-						"0.8.0": [
-							"eco.tenancy#2"
-						],
+						"0.6.0": ["eco.tenancy#2"],
+						"0.7.0": ["eco.tenancy#2"],
+						"0.8.0": ["eco.tenancy#2"],
 						"0.9.0": [
 							"eco.tenancy#1",
 							"eco.tenancy#2",
@@ -17829,15 +15103,9 @@
 							"eco.tenancy#7"
 						]
 					},
-					"effect_ts": [
-						"eco.tenancy#2"
-					],
-					"zio": [
-						"eco.tenancy#2"
-					],
-					"otp": [
-						"eco.tenancy#2"
-					],
+					"effect_ts": ["eco.tenancy#2"],
+					"zio": ["eco.tenancy#2"],
+					"otp": ["eco.tenancy#2"],
 					"phoenix": [
 						"eco.tenancy#1",
 						"eco.tenancy#2",
@@ -17865,10 +15133,7 @@
 						"eco.tenancy#7",
 						"eco.tenancy#8"
 					],
-					"django": [
-						"eco.tenancy#2",
-						"eco.tenancy#8"
-					],
+					"django": ["eco.tenancy#2", "eco.tenancy#8"],
 					"laravel": [
 						"eco.tenancy#2",
 						"eco.tenancy#3",
@@ -17876,10 +15141,7 @@
 						"eco.tenancy#7",
 						"eco.tenancy#8"
 					],
-					"nextjs": [
-						"eco.tenancy#1",
-						"eco.tenancy#2"
-					]
+					"nextjs": ["eco.tenancy#1", "eco.tenancy#2"]
 				},
 				"evidence": {
 					"eco.tenancy#1": "crates/id_effect/book/src/part6/ch30-07-audit-tenancy.md:3 'row-level tenancy with a tamper-evident audit trail', '## The data side' (:11), schema/DB-per-tenant alternatives (:338); example crates/id_effect_sql/examples/050_tenancy_audit.rs",
@@ -17891,18 +15153,7 @@
 				}
 			},
 			"v1": {
-				"competitors": [
-					10,
-					10,
-					10,
-					62,
-					75,
-					80,
-					70,
-					70,
-					75,
-					30
-				],
+				"competitors": [10, 10, 10, 62, 75, 80, 70, 70, 75, 30],
 				"id_effect": {
 					"0.6.0": 3,
 					"0.7.0": 3
