@@ -23,6 +23,7 @@ use crate::envelope::{
   ExitReasonWire, PidWire, ProcessEnvelope, RemoteFault, TraceContext, decode_envelope,
   encode_envelope,
 };
+use crate::global_registry::{self, GlobalNames, GlobalRegistry};
 use crate::id::NodeId;
 use crate::placement::{ClusterResourcePolicy, LoadReport, place};
 use crate::registry::BehaviorRegistry;
@@ -125,6 +126,8 @@ struct MeshInner {
   /// Populated by a telemetry/gossip loop (or directly in tests); read by
   /// [`Mesh::load_reports`] to feed [`crate::placement::place`].
   loads: Mutex<HashMap<String, (f32, f32)>>,
+  /// This node's replica of the cluster-wide name table ([`Mesh::global`]).
+  global_names: Mutex<GlobalNames>,
 }
 
 /// Distribution façade for one node.
@@ -149,6 +152,7 @@ impl Mesh {
         remote_monitors: Mutex::new(HashMap::new()),
         inbound_monitors: Mutex::new(HashMap::new()),
         loads: Mutex::new(HashMap::new()),
+        global_names: Mutex::new(GlobalNames::default()),
       }),
     }
   }
@@ -177,14 +181,30 @@ impl Mesh {
     &self.inner.registry
   }
 
-  /// Register a peer sender (production session path).
+  /// Cluster-wide name registry ([`GlobalRegistry`]) backed by this node's replica.
+  pub fn global(&self) -> GlobalRegistry {
+    GlobalRegistry::new(self.clone())
+  }
+
+  pub(crate) fn node_id(&self) -> &NodeId {
+    &self.inner.node_id
+  }
+
+  pub(crate) fn global_names(&self) -> &Mutex<GlobalNames> {
+    &self.inner.global_names
+  }
+
+  /// Register a peer sender (production session path). The peer is sent the global names
+  /// this node owns, if any ([`GlobalRegistry::sync_with`]).
   pub fn add_peer(&self, node_name: impl Into<String>, sender: PeerSender) {
+    let node_name = node_name.into();
     self
       .inner
       .peers
       .lock()
       .expect("peers")
-      .insert(node_name.into(), sender);
+      .insert(node_name.clone(), sender);
+    global_registry::peer_up(self, &node_name);
   }
 
   /// Notify that a peer node is down: fire our monitors on its processes
@@ -227,6 +247,7 @@ impl Mesh {
     for (pid, local) in held {
       self.inner.process.demonitor(&pid, local);
     }
+    global_registry::node_down(self, peer_name);
     self.inner.peers.lock().expect("peers").remove(peer_name);
   }
 
@@ -242,6 +263,35 @@ impl Mesh {
       return fabric.deliver_from(&self.inner.node_id, node_name, envelope);
     }
     Err(RemoteFault::NoProc)
+  }
+
+  pub(crate) fn send_envelope(
+    &self,
+    node_name: &str,
+    envelope: ProcessEnvelope,
+  ) -> Result<(), RemoteFault> {
+    self.send_to(node_name, envelope)
+  }
+
+  /// Best-effort send to every known peer (session senders and fabric members), naming this
+  /// node as the sender.
+  pub(crate) fn broadcast_to_peers(&self, envelope: ProcessEnvelope) {
+    let mut names: Vec<String> = self
+      .inner
+      .peers
+      .lock()
+      .expect("peers")
+      .keys()
+      .cloned()
+      .collect();
+    if let Some(fabric) = &self.inner.fabric {
+      names.extend(fabric.peers.lock().expect("fabric").keys().cloned());
+    }
+    names.sort();
+    names.dedup();
+    for name in names.iter().filter(|n| n.as_str() != self.node_name()) {
+      let _ = self.send_to(name, envelope.clone());
+    }
   }
 
   /// Local spawn through the registry (installs wire route).
@@ -722,6 +772,18 @@ impl Mesh {
           self.inner.process.exit(&target, ExitReason::from(&reason));
           let _ = from;
         }
+        Ok(())
+      }
+      ProcessEnvelope::GlobalRegister { claim } => {
+        global_registry::on_register(self, origin, claim);
+        Ok(())
+      }
+      ProcessEnvelope::GlobalUnregister { name, pid } => {
+        global_registry::on_unregister(self, origin, &name, &pid);
+        Ok(())
+      }
+      ProcessEnvelope::GlobalSync { claims } => {
+        global_registry::on_sync(self, origin, claims);
         Ok(())
       }
     }

@@ -11,6 +11,8 @@
 use id_effect_process::{ExitReason, NodeName, Pid};
 use serde::{Deserialize, Serialize};
 
+use crate::global_registry::NameClaim;
+
 /// Wire form of [`Pid`] (the process crate stays serde-free).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PidWire {
@@ -212,6 +214,23 @@ pub enum ProcessEnvelope {
     /// Why.
     reason: ExitReasonWire,
   },
+  /// Claim a cluster-wide name (sent by the node hosting the process).
+  GlobalRegister {
+    /// The registration.
+    claim: NameClaim,
+  },
+  /// Release a cluster-wide name held by `pid`.
+  GlobalUnregister {
+    /// The released name.
+    name: String,
+    /// The process that held it.
+    pid: PidWire,
+  },
+  /// Every name the sending node owns; replaces what the receiver held for that node.
+  GlobalSync {
+    /// The sender's claims.
+    claims: Vec<NameClaim>,
+  },
 }
 
 /// Why a remote operation failed, as data.
@@ -355,6 +374,32 @@ mod tests {
         call_id: 4,
         result: Ok(vec![1, 2, 3]),
       },
+    ];
+    for envelope in cases {
+      let bytes = encode_envelope(&envelope).expect("encode");
+      assert_eq!(decode_envelope(&bytes).expect("decode"), envelope);
+    }
+  }
+
+  #[test]
+  fn global_name_envelopes_round_trip() {
+    let claim = NameClaim {
+      name: "svc".to_string(),
+      pid: wire_pid(1),
+      owner: crate::id::NodeId::from_parts("b@host", 7),
+    };
+    let cases = vec![
+      ProcessEnvelope::GlobalRegister {
+        claim: claim.clone(),
+      },
+      ProcessEnvelope::GlobalUnregister {
+        name: "svc".to_string(),
+        pid: wire_pid(1),
+      },
+      ProcessEnvelope::GlobalSync {
+        claims: vec![claim],
+      },
+      ProcessEnvelope::GlobalSync { claims: Vec::new() },
     ];
     for envelope in cases {
       let bytes = encode_envelope(&envelope).expect("encode");

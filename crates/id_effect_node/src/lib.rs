@@ -11,6 +11,7 @@ pub mod discovery;
 pub mod dist_supervisor;
 pub mod envelope;
 pub mod fanout;
+pub mod global_registry;
 pub mod groups;
 pub mod handshake;
 pub mod id;
@@ -33,6 +34,9 @@ pub use envelope::{
   empty_trace, encode_envelope, trace_pair,
 };
 pub use fanout::{SharedGroups, fanout_cast, fanout_cast_on_node};
+pub use global_registry::{
+  GlobalNameError, GlobalRegistry, MAX_NAME_LEN, NameClaim, conflicting_name, name_conflict,
+};
 pub use groups::{Dot, OrSwot, ProcessGroups};
 pub use handshake::{Cookie, HandshakeError};
 pub use id::NodeId;
