@@ -1,0 +1,14 @@
+1--XyZ
+Content-Disposition: form-data; name="page"
+
+4
+--XyZ
+Content-Disposition: form-data; name="tag"
+
+q
+--XyZ
+Content-Disposition: form-data; name="upload"; filename="a.txt"
+Content-Type: text/plain
+
+file body
+--XyZ--

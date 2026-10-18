@@ -1,0 +1,8 @@
+target/
+artifacts/
+coverage/
+# The root ignores nested lock files; this one pins what CI fuzzes.
+!Cargo.lock
+# libFuzzer adds what it finds to corpus/<target>/; only the committed seed-* files are tracked.
+corpus/*/*
+!corpus/*/seed-*

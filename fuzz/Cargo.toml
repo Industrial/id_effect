@@ -1,0 +1,105 @@
+# cargo-fuzz targets over the public decoders (docs/security/fuzzing.md). Outside the main
+# workspace: it builds only on the nightly pinned in rust-toolchain.toml (0.11.0.md D20).
+[package]
+name = "id_effect_fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace, so the root workspace never builds it on stable.
+[workspace]
+members = ["."]
+
+[lib]
+path = "src/lib.rs"
+test = false
+doc = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+id_effect = { path = "../crates/id_effect", default-features = false, features = [
+  "schema-serde",
+] }
+id_effect_auth = { path = "../crates/id_effect_auth", features = [
+  "jwt",
+  "totp",
+] }
+id_effect_axum = { path = "../crates/id_effect_axum" }
+id_effect_config = { path = "../crates/id_effect_config" }
+axum = { version = "0.8", default-features = false, features = ["multipart"] }
+base64 = "0.22.1"
+futures = { version = "0.3", default-features = false, features = ["executor"] }
+hmac = "0.12"
+serde_json = "1"
+sha2 = "0.10.9"
+tower = { version = "0.5.3", default-features = false, features = ["util"] }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "schema_json"
+path = "fuzz_targets/schema_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_path"
+path = "fuzz_targets/route_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_query"
+path = "fuzz_targets/route_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_form"
+path = "fuzz_targets/route_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cron_parse"
+path = "fuzz_targets/cron_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_profile_toml"
+path = "fuzz_targets/config_profile_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jwt_decode"
+path = "fuzz_targets/jwt_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jwks_parse"
+path = "fuzz_targets/jwks_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "totp_otpauth"
+path = "fuzz_targets/totp_otpauth.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,3 @@
+{"alg": "HS256", "typ": "JWT", "kid": "k1"}
+---
+{"sub": "bob", "iss": "https://id.example.com", "aud": "ledger", "exp": 1, "realm_access": {}}

@@ -1,0 +1,11 @@
+host = "localhost"
+port = 3000
+[db]
+url = "postgres://localhost/app"
+pool = 4
+
+---
+port = 8080
+[db]
+pool = 16
+started = 1979-05-27T07:32:00Z

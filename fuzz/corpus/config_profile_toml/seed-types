@@ -1,0 +1,11 @@
+arr = [1, 2, 3]
+inline = { a = 1, b = "two" }
+[[servers]]
+name = "a"
+
+---
+arr = "replaced"
+[[servers]]
+name = "b"
+["quoted.key"]
+x = 1.5e3
