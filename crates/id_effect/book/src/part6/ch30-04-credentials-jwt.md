@@ -75,8 +75,12 @@ What the verifier enforces:
   token that asks for HS256 can therefore never be checked with an RSA public key used as the
   HMAC secret (the classic algorithm-confusion attack). `.algorithms([..])` narrows further.
 - **Issuer and audience.** Once `.issuer(..)` / `.audience(..)` are set, `iss` / `aud` are
-  required and must match. Always set the audience: without one, a token minted for another
-  service of the same issuer is accepted.
+  required and must match. A verifier with neither fails every token with `AuthError::Config`
+  (since 0.10.1); `.any_issuer_dangerous()` plus `.any_audience_dangerous()` turn that off.
+  Always set the audience: without one, a token minted for another service of the same issuer
+  is accepted.
+- **Key length.** An HMAC secret shorter than 32 bytes (`MIN_HMAC_KEY_LEN`) fails with
+  `AuthError::Key`, when verifying and when issuing.
 - **Time.** `exp` is required (`.require_exp(false)` relaxes it); `exp` and `nbf` honour
   `.leeway(..)`.
 - **Required claims.** `.require_claim("org.id")` rejects tokens without the claim.
@@ -95,7 +99,9 @@ use id_effect_auth::{ClaimMapping, JwtKey, JwtVerifier};
 let keycloak = ClaimMapping::default()
   .roles(["realm_access.roles", "resource_access.ledger-api.roles"])
   .tenant(Some("org"));
-let verifier = JwtVerifier::new([JwtKey::hmac(b"secret")]).claims(keycloak);
+let verifier = JwtVerifier::new([JwtKey::hmac(b"32+ random bytes from the secret store")])
+  .issuer("https://id.example.com/realms/ledger")
+  .claims(keycloak);
 # let _ = verifier;
 ```
 

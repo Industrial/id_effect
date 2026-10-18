@@ -351,3 +351,25 @@ behaviour changes the tool cannot see (process-wide logger state, HTTP defaults,
 mapping, sqlx `time`, derived-schema errors), API changes in `#[non_exhaustive]` types
 (`SqlError`), additions that can conflict with user impls (`SqlClient` for `Box` / `Arc`), and the
 labs-to-published moves of `id_effect_events` and `id_effect_jobs`.
+
+## 0.10.1: stricter security defaults
+
+0.10.1 is API-compatible with 0.10.0, but several defaults are stricter. Code that compiled keeps
+compiling; these are the runtime differences to check. Every opt-out below re-opens a finding of
+the 2026-10-18 security review, so use it only where you accept that (tests, throwaway clusters).
+
+| Area | What changes at runtime | What to do | Opt-out |
+|---|---|---|---|
+| Mesh (`id_effect_node`) | The handshake protocol is version 2: 0.10.0 and 0.10.1 nodes refuse each other with `VersionMismatch`. | Upgrade every node of a cluster together. | none |
+| Mesh, QUIC | Dialing without trusted roots or a pinned certificate fails (`QuicTransport::try_new` returns `QuicConfigError::NoServerTrust`; `QuicTransport::new` fails at dial). | Configure roots, or pin the peer's leaf certificate with `QuicConfig::with_pinned_server_cert_sha256`. | `QuicConfig::dangerous_accept_any_server_cert()` |
+| Mesh, cookie | A cookie shorter than 32 bytes is refused before the handshake starts. | Use `Cookie::try_new` with 32+ random bytes. | `Cookie::dangerous_allow_short()` |
+| Mesh, handshake | A handshake that has not finished in 5 s is dropped; frames are capped at 4 KiB until authentication. | Raise the timeout with `Cookie::with_handshake_timeout` on slow links. | none for the frame cap |
+| JWT (`id_effect_auth`) | A `JwtVerifier` with neither `.issuer(..)` nor `.audience(..)` fails every token with `AuthError::Config`. | Set the issuer and the audience your tokens carry. | `.any_issuer_dangerous()` plus `.any_audience_dangerous()` |
+| JWT, HMAC | HMAC secrets shorter than 32 bytes fail with `AuthError::Key` when verifying and issuing. | Use a secret of 32+ random bytes. | none |
+| JWKS | Only https URLs (plain http only for loopback hosts), no redirects, documents up to 1 MiB. | Point the JWKS URL at the final https location. | `allow_http_dangerous()` |
+| Basic auth | Failed logins are throttled per account and per IP (5 free, then a doubling delay up to 15 min; 429 with `Retry-After`); passwords over 256 bytes are rejected. | Nothing for most apps. Behind a proxy, see the client IP row. | `BasicAuth::without_throttle_dangerous()` |
+| TOTP | After 5 wrong codes, verification fails with `TotpError::Locked` until the lockout ends. | Show `retry_after` to the user. | `without_lockout_dangerous()` |
+| Password hashing | At most 2 × available parallelism hashes run at once; a call that waits over 5 s fails with `PasswordError::Busy` (503 in the account flows). | Tune with `PasswordHasher::with_max_concurrent` / `with_busy_timeout`. | none |
+| HTTP server (`id_effect_axum`) | Connections that send no complete headers within 10 s are closed; at most 10,000 connections; keep-alive ends after 1,000 requests per connection. | Set other values with `ConnectionLimits` and the `*_with_limits` serve functions. | `dangerous_no_header_read_timeout`, `dangerous_unlimited_connections`, `dangerous_unlimited_requests_per_connection` |
+| Client IP | Rate limits now see the socket peer. `X-Forwarded-For` counts only from a trusted proxy. | Behind a load balancer, list its addresses with `TrustedProxies` and `RateLimitKey::client_ip`, or every client shares the proxy's bucket. | none |
+| HTTP client (`id_effect_platform`) | A response with a `Content-Length` over `max_body_bytes` fails before its body is read. | Raise `max_body_bytes` for large downloads. | none |

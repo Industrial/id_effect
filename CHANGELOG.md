@@ -1,5 +1,70 @@
 # Changelog
 
+## 0.10.1 — 2026-10-18 — Security patch
+
+Closes the high-severity findings of the 2026-10-18 security review (all but H8, deny-by-default
+routing, which changes the API and lands in 0.11) and six medium and low ones. The public API is
+compatible with 0.10.0: every change is additive or a stricter default. Each stricter default has
+an explicit opt-out whose name contains `dangerous` and whose docs say what it re-opens. Upgrading:
+see "0.10.1: stricter security defaults" in the [0.10 migration guide](docs/MIGRATION-0.10.md).
+
+**Upgrade every node of a mesh cluster together**: the mesh handshake protocol moves to version 2,
+and 0.10.0 and 0.10.1 nodes refuse each other with `VersionMismatch`.
+
+### Security
+
+- `id_effect_axum` (H1): the serve functions dropped connection info, so per-IP rate limits saw no
+  peer and every client shared one bucket. Every serve path now runs on `serve_listener`, which
+  records `ConnectInfo<SocketAddr>`. New `ClientIp` extractor and `TrustedProxies`:
+  `X-Forwarded-For` is read only when the socket peer is a trusted proxy, from the right, skipping
+  trusted hops; with no trusted proxies (the default) it is never read.
+  `RateLimitKey::client_ip(TrustedProxies)` keys limits on it.
+- `id_effect_axum` (M1): `serve_listener` applies a header-read timeout (default 10 s, also for
+  idle and silent connections), a connection cap (default 10,000) and a keep-alive limit (1,000
+  requests per connection), set with `ConnectionLimits` and the new `*_with_limits` serve
+  variants. Opt-outs: `dangerous_no_header_read_timeout`, `dangerous_unlimited_connections`,
+  `dangerous_unlimited_requests_per_connection`.
+- Ledger reference app (H2, H5): its login limiter keys on `ClientIp` (config
+  `http.trusted_proxies`, empty by default) instead of trusting the first `X-Forwarded-For`
+  entry, and its password login runs `LoginThrottle` before hashing.
+- `id_effect_node` (H3): QUIC no longer accepts any server certificate by default. Dialing needs
+  trusted roots, a pinned leaf-certificate SHA-256 (`QuicConfig::with_pinned_server_cert_sha256`)
+  or the explicit `QuicConfig::dangerous_accept_any_server_cert()`. `QuicTransport::try_new`
+  reports a missing trust model as `QuicConfigError::NoServerTrust`; `QuicTransport::new` without
+  one fails at dial time. TCP logs a one-time warning that it is plaintext.
+- `id_effect_node` (H4): the handshake proof covers the whole exchange (version, role, both node
+  names and incarnations, both nonces) and, on QUIC, a TLS exporter secret, so a relayed, reflected
+  or replayed proof fails. Handshake protocol version 2.
+- `id_effect_node` (M9): handshakes time out after 5 s (`Cookie::with_handshake_timeout`), frames
+  are capped at 4 KiB until authentication, cookies shorter than 32 bytes are refused
+  (`Cookie::try_new`, `CookieError::TooShort`; opt-out `Cookie::dangerous_allow_short`), and nonces
+  are 128-bit.
+- `id_effect_auth` (H5): `LoginThrottle` (new `throttle` module) limits failed logins per account
+  and per client IP: 5 free failures, then a doubling delay up to 15 minutes. It is on by default in
+  `BasicAuth` and runs before the user lookup and before hashing; a throttled attempt is
+  `AuthError::TooManyAttempts`, 429 with `Retry-After`. Opt-out:
+  `BasicAuth::without_throttle_dangerous`.
+- `id_effect_auth` (H6): TOTP verification locks after 5 wrong codes (`TotpError::Locked`); a valid
+  code resets the count. Opt-out: `without_lockout_dangerous`.
+- `id_effect_auth` (H7): a `JwtVerifier` with neither an issuer nor an audience fails every token
+  with `AuthError::Config`. Opt-out: `any_issuer_dangerous()` plus `any_audience_dangerous()`.
+- `id_effect_auth` (M15): JWKS documents are capped at 1 MiB, fetched over https only (plain http
+  only for loopback hosts; opt-out `allow_http_dangerous`) and without following redirects. HMAC
+  secrets shorter than 32 bytes fail with `AuthError::Key`.
+- `id_effect_auth` (M20): password hashing and verification share a bounded pool (default 2 ×
+  available parallelism); a call that waits more than 5 s fails with `PasswordError::Busy`, which
+  the account flows answer with 503.
+- `id_effect_auth` (L4): `BasicAuth` rejects passwords over 256 bytes before hashing.
+- `id_effect_platform` (M2): the HTTP client rejects a declared `Content-Length` over
+  `max_body_bytes` before reading the body and stops reading a streamed body as soon as it passes
+  the cap.
+
+### Fixed
+
+- `id_effect_mail`: the SMTP connection-reuse test no longer races lettre's pool (it failed the
+  first v0.10.0 publish run).
+- `id_effect_auth`: `api_keys_authenticate_and_bad_keys_are_401` no longer fails 1 run in 16.
+
 ## 0.10.0 — 2026-10-18 — Async work & operations (breaking)
 
 The third release under the plan of plans: a PostgreSQL job queue with cron, a broker-agnostic
