@@ -8,6 +8,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 [![CI](https://github.com/Industrial/id_effect/actions/workflows/ci.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/ci.yml)
 [![Docs & Pages](https://github.com/Industrial/id_effect/actions/workflows/docs.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/docs.yml)
 [![Security Audit](https://github.com/Industrial/id_effect/actions/workflows/audit.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/audit.yml)
+[![CodeQL](https://github.com/Industrial/id_effect/actions/workflows/codeql.yml/badge.svg)](https://github.com/Industrial/id_effect/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/Industrial/id_effect/branch/main/graph/badge.svg)](https://codecov.io/gh/Industrial/id_effect)
 
 <!-- Badge row 2: crates.io -->
@@ -16,6 +17,7 @@ It is growing into a batteries-included platform ([ADR 0012](docs/adrs/0012-plat
 [![downloads](https://img.shields.io/crates/d/id_effect.svg)](https://crates.io/crates/id_effect)
 
 <!-- Badge row 3: repository health -->
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Industrial/id_effect/badge)](https://scorecard.dev/viewer/?uri=github.com/Industrial/id_effect)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/MSRV-1.94-orange.svg)](https://www.rust-lang.org)
 [![Edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
