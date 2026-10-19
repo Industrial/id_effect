@@ -187,6 +187,24 @@
   caller's span as the parent of the endpoint's `rpc.request` span, typed `MeshRpcError`;
   `MeshTransport`, the `RpcTransport` of `#[rpc::service]` clients over the mesh. Book chapter
   38.2.
+- `id_effect_rpc` transports (r12-e12-2-rpc-ws-sse, design note §5): feature `ws` serves every
+  kind over one WebSocket at `GET /rpc/ws` (`RpcServer::with_websocket(RpcWsConfig)`, on
+  `id_effect_axum`'s realtime layer; subprotocols `idrpc.json.v1` and, with `postcard`,
+  `idrpc.postcard.v1`), frames multiplexed by call id with credit backpressure both ways, a `hello`
+  frame carrying the connection's session (`transport::ws::WsSession`, bound to the principal),
+  `transport::ws::serve_socket` for an already-upgraded io. Feature `sse` serves subscriptions and
+  server streams as server-sent events on `GET /rpc/{tag}` with `Accept: text/event-stream`
+  (cursor = event id, `Last-Event-ID` resume; `RpcServer::with_sse`). `transport::frame::decode`
+  / `encode` / `validate` is the frame codec (fuzz entry point). Client: `RpcClientConfig::transport`
+  (`TransportKind::{Http, WebSocket, Sse}`), `RpcClient::subscribe` over the configured transport
+  (`RpcStream`, `CallEvent`), `client::ws::WsClient` / `WsCall`, `client::sse` (`RpcClient::sse`,
+  `SseCall`). Generated clients reach the network streams through `service::RpcTransport`:
+  `client::ws::WsClient` carries every kind, `client::sse::SseTransport` subscriptions and server
+  streams (queries and mutations over `POST /rpc`). A call refused before it ran exits with the
+  `Rejected` failure on frame transports. Every call on a WebSocket, and every SSE stream, runs
+  with the request's capabilities (an `Authenticate` layer's `CurrentPrincipal`) and a
+  `transport::ConnectionId` (one per socket; `channels::ConnectionId` is this type). Book chapter
+  33.6.
 
 ### Changed
 
@@ -211,6 +229,10 @@
   and `x-rpc: 1`. `RpcClientError::Rpc` is replaced by `Failure` (the `_tag` value) and `Refused`
   (the server's Problem). `RpcServer::endpoint` is `endpoints` (three routes); `RpcMethodEntry`
   no longer has `dispatch` (use `server::dispatch`).
+- `id_effect_rpc::RpcClientConfig` gains the public field `transport` (struct literals need
+  `transport: TransportKind::Http` or `RpcClientConfig::new`), and `RpcClientError` the variant
+  `Transport`. With feature `sse`, `GET /rpc/{tag}` with `Accept: text/event-stream` on a
+  subscription or server stream answers an event stream instead of 406 / 405.
 - `id_effect_platform::http::HttpClientConfig` gains the public fields `root_certificates` and
   (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
 - `id_effect_axum::HostConfig` gains the public fields `tls` and `http3` (struct literals need
@@ -228,6 +250,13 @@
   the granted credits and client streams over their caps are `ResourceExhausted`; a call is
   dropped when the caller cancels, its node or reply process goes down, or the endpoint exits.
   Queries are retried on a gone endpoint (3 times), mutations never.
+- RPC transports (C3, C4, C8): the WebSocket route refuses an upgrade offering no rpc subprotocol
+  (415), keeps the realtime layer's origin allowlist (empty: every browser origin refused),
+  connection caps, 64 KiB frames, message rate, heartbeats and idle timeout, and caps open calls per
+  connection (100, `RpcWsConfig::max_calls`; beyond: `ResourceExhausted { limit: "calls" }`). Each
+  call runs its procedure's guards on the upgrade (or `GET`) request head. A peer that sends past its
+  credits fails that call (`ResourceExhausted { limit: "credits" }`); undecodable frames close the
+  socket. Session ids are 128-bit random and bound to the connection's principal.
 - RPC codecs (D13, C3): an unknown codec is 415, never a JSON fallback; a procedure without a
   typed bridge refuses postcard (415). Every postcard decoder refuses input over 64 KiB before
   decoding, limits nesting to 64, bounds the elements of all sequences and maps by the input size,

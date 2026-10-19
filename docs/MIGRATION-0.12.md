@@ -224,6 +224,25 @@ after:  {"id":7,"tag":"Greeter.greet","payload":…}  →  {"id":7,"tag":…,"ex
 - Custom `RateLimitStore`s get `acquire_n` / `try_acquire_n_now` with defaults (one `acquire`
   per token, not atomic); override them to take N tokens at once.
 
+## RPC: stream transports in the client and on `GET /rpc/{tag}`
+
+`RpcClientConfig` has a new public field `transport: TransportKind` (default `Http`), so a struct
+literal that lists every field no longer compiles. `RpcClientError` has a new variant `Transport`,
+which breaks exhaustive `match`es. **Shim:** build the config with `RpcClientConfig::new(..)`
+(optionally `.with_transport(..)`), or add `transport: TransportKind::Http` to the literal; give a
+`match` a `Transport(_)` arm or a wildcard.
+
+```rust,ignore
+// before
+RpcClientConfig { base_url, dispatch_path }
+// after
+RpcClientConfig { base_url, dispatch_path, transport: TransportKind::Http }
+```
+
+With feature `sse`, `GET /rpc/{tag}` that sends `Accept: text/event-stream` for a subscription or
+server stream gets an event stream. Before, it got 406 or 405. Without that header nothing
+changes. **No shim:** a client that relied on the refusal must drop the `Accept` header.
+
 ## RPC: OpenAPI output is 3.1 (was 3.0)
 
 `id_effect_rpc::openapi` reads the service contract now. The 0.11 route-metadata emitter

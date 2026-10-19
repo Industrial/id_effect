@@ -5,10 +5,10 @@
 //! |---|---|---|---|
 //! | query | `WireCall` → `WireResult` | input body → `WireResult` | `?input=<json>`, ETag / 304 |
 //! | mutation | `WireCall` → `WireResult`, `Idempotency-Key` | input body, `Idempotency-Key` | 405 |
-//! | server stream | 400 | input body → NDJSON frames | 405 |
+//! | server stream | 400 | input body → NDJSON frames | SSE with `Accept: text/event-stream` (feature `sse`), else 405 |
 //! | client stream | 400 | NDJSON items (item and byte caps) → `WireResult` | 405 |
 //! | bidi | 426 | 426 | 426 |
-//! | subscription | 400 | 406 (SSE and WebSocket transports) | 406 |
+//! | subscription | 400 | 406 (SSE and WebSocket transports) | SSE with `Accept: text/event-stream` (feature `sse`), else 406 |
 //!
 //! Every `POST` needs a codec `Content-Type` (`application/json`; `application/x-ndjson` for a
 //! client stream) and the header `x-rpc: 1`, so a browser form or a simple cross-site request
@@ -262,7 +262,10 @@ impl Edge<'_> {
       ),
       ProcedureKind::Subscription if !envelope => (
         StatusCode::NOT_ACCEPTABLE,
-        format!("`{tag}` is a subscription: subscribe over SSE or WebSocket"),
+        format!(
+          "`{tag}` is a subscription: subscribe with `Accept: text/event-stream` (SSE) or over \
+           WebSocket"
+        ),
       ),
       kind if envelope => (
         StatusCode::BAD_REQUEST,
@@ -483,6 +486,25 @@ impl Edge<'_> {
       Ok(entry) => entry,
       Err(rejection) => return self.rejection(rejection),
     };
+    // Subscriptions and server streams as server-sent events (r12-e12-2-rpc-ws-sse).
+    #[cfg(feature = "sse")]
+    if matches!(
+      entry.kind(),
+      ProcedureKind::Subscription | ProcedureKind::ServerStream
+    ) && crate::transport::sse::accepts_event_stream(&parts.headers)
+    {
+      if let Err(rejection) = dispatch::authorize(entry, &parts).await {
+        return self.rejection(rejection);
+      }
+      let payload = match get_input(&parts) {
+        Ok(payload) => payload,
+        Err(detail) => return problem(StatusCode::BAD_REQUEST, detail, path).into_response(),
+      };
+      let kind = entry.kind();
+      let ctx = self.ctx.clone();
+      return crate::transport::sse::serve(self.server, ctx, parts, kind, tag, version, payload)
+        .await;
+    }
     if entry.kind() != ProcedureKind::Query {
       return self.wrong_kind(&tag, entry.kind(), false);
     }

@@ -127,7 +127,7 @@ pub const DEFAULT_MAX_CALLS: usize = 4096;
 /// typed codec (415) or of a kind the transport does not call (400). Members: `status`,
 /// `title`, `tag` (the procedure tag, when the refusal names it) — the shape the WebSocket
 /// transport answers.
-pub const REJECTED_TAG: &str = "Rejected";
+pub use super::REJECTED_TAG;
 
 /// Largest trace context (header bytes) a call may carry; a larger one is ignored.
 pub const MAX_TRACE_BYTES: usize = 2048;

@@ -7,7 +7,12 @@
 //! - `POST /rpc` — one `WireCall` envelope (query or mutation);
 //! - `POST /rpc/{tag}` — the input as the body: queries, mutations, server streams (NDJSON
 //!   response), client streams (NDJSON request);
-//! - `GET /rpc/{tag}?input=<json>` — queries, with an ETag and `If-None-Match` → 304.
+//! - `GET /rpc/{tag}?input=<json>` — queries, with an ETag and `If-None-Match` → 304; with
+//!   `Accept: text/event-stream`, subscriptions and server streams as server-sent events
+//!   (feature `sse`, [`crate::transport`]).
+//!
+//! `RpcServer::with_websocket` (feature `ws`) adds a fourth, `GET /rpc/ws`: every kind
+//! multiplexed on one WebSocket.
 //!
 //! ```rust
 //! use std::sync::Arc;
@@ -90,6 +95,12 @@ pub struct RpcServer {
   principal: PrincipalFn,
   /// Batch limits and parallelism (`crate::batch`, r12-e12-1-batching).
   pub(crate) batch: crate::batch::BatchConfig,
+  /// `GET {path}/ws` when set ([`RpcServer::with_websocket`]).
+  #[cfg(feature = "ws")]
+  websocket: Option<crate::transport::ws::RpcWsConfig>,
+  /// Subscriptions and server streams as server-sent events on `GET {path}/{tag}`.
+  #[cfg(feature = "sse")]
+  sse: crate::transport::sse::SseMount,
 }
 
 impl fmt::Debug for RpcServer {
@@ -121,7 +132,36 @@ impl RpcServer {
           .map(|RpcPrincipal(p)| p.clone())
       }),
       batch: crate::batch::BatchConfig::default(),
+      #[cfg(feature = "ws")]
+      websocket: None,
+      #[cfg(feature = "sse")]
+      sse: crate::transport::sse::SseMount::new(id_effect_axum::realtime::sse::SseConfig::default()),
     }
+  }
+
+  /// Also serve every procedure over WebSocket at `GET {path}/ws` (feature `ws`; see
+  /// [`crate::transport::ws`]): `config` holds the socket limits, the `Origin` allowlist (empty by
+  /// default: browser origins are refused until listed) and the per-connection call cap.
+  #[cfg(feature = "ws")]
+  #[must_use]
+  pub fn with_websocket(mut self, config: crate::transport::ws::RpcWsConfig) -> Self {
+    self.websocket = Some(config);
+    self
+  }
+
+  /// The stream settings and connection caps of the server-sent events that serve
+  /// subscriptions and server streams on `GET {path}/{tag}` with `Accept: text/event-stream`
+  /// (feature `sse`, on by default with it: [`SseConfig::default`](id_effect_axum::realtime::sse::SseConfig)).
+  #[cfg(feature = "sse")]
+  #[must_use]
+  pub fn with_sse(mut self, config: id_effect_axum::realtime::sse::SseConfig) -> Self {
+    self.sse = crate::transport::sse::SseMount::new(config);
+    self
+  }
+
+  #[cfg(feature = "sse")]
+  pub(crate) fn sse_mount(&self) -> &crate::transport::sse::SseMount {
+    &self.sse
   }
 
   /// Serve at `path` instead of `/rpc`.
@@ -237,7 +277,13 @@ impl RpcServer {
       };
       Endpoint::from_parts(info, method_router).public()
     };
-    vec![envelope, by_tag(Method::POST), by_tag(Method::GET)]
+    #[allow(unused_mut)]
+    let mut endpoints = vec![envelope, by_tag(Method::POST), by_tag(Method::GET)];
+    #[cfg(feature = "ws")]
+    if let Some(config) = self.websocket.clone() {
+      endpoints.push(crate::transport::ws::endpoint(self, config));
+    }
+    endpoints
   }
 
   /// Add the routes to `router`.

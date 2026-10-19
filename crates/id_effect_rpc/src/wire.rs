@@ -2,8 +2,8 @@
 //! envelope, the exit union, the reserved failures, stream frames, cursors and resume sessions.
 //!
 //! Every type is generic over its payload (`serde_json::Value` by default), so the JSON and
-//! postcard codecs share one shape. The HTTP dispatch path still speaks the labs format of
-//! [`crate::protocol`] until r12-e12-1-kinds moves it onto these types.
+//! postcard codecs share one shape. Every transport speaks them: the HTTP routes
+//! ([`crate::server`]) and the frame transports ([`crate::transport`]).
 //!
 //! ```rust
 //! use id_effect_rpc::wire::{CallId, Cursor, Frame, FrameKind, WireExit, WireResult};

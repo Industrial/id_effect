@@ -15,8 +15,7 @@ use crate::wire::{Cursor, InputIssue};
 
 /// The connection a call arrived on, as its transport puts it in the call's environment. The
 /// cap on topics per connection counts by it; a call without one is its own connection.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ConnectionId(pub String);
+pub use crate::transport::ConnectionId;
 
 /// The input of a join procedure: `{"topic": "room:general", "meta": {"status": "online"}}`
 /// (`meta` optional).

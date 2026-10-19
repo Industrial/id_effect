@@ -191,6 +191,7 @@
   - [Encodings: JSON and postcard](./part6/ch33-03-encodings.md)
   - [Services: `#[rpc::service]`, the client and the contract](./part6/ch33-04-service-macro.md)
   - [WebSocket and server-sent events](./part6/ch33-05-websocket-sse.md)
+  - [RPC transports: WebSocket and SSE](./part6/ch33-06-rpc-transports.md)
   - [Subscriptions over the event log](./part6/ch33-08-subscriptions.md)
   - [Channels and presence](./part6/ch33-09-channels-presence.md)
   - [Contracts as OpenAPI and AsyncAPI](./part6/ch33-10-contracts.md)
