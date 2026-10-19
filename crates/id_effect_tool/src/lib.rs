@@ -34,7 +34,7 @@
 //!
 //! [`new_project`] writes the files (refusing a non-empty destination); [`cli::run`] is the
 //! whole command line. `id-effect doctor` is [`doctor`], `id-effect migrate` [`migrate`],
-//! `id-effect dev` [`dev`], `id-effect generate job` [`generate`].
+//! `id-effect dev` [`dev`], `id-effect generate job` [`generate`], `id-effect rpc gen ts` [`rpc`].
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -47,6 +47,7 @@ pub mod generate;
 pub mod migrate;
 pub mod project;
 pub mod render;
+pub mod rpc;
 pub mod template;
 
 pub use error::NewError;

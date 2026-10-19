@@ -3030,13 +3030,18 @@ dependencies = [
 name = "id_effect_tool"
 version = "0.11.0"
 dependencies = [
+ "axum",
  "clap",
  "id_effect",
+ "id_effect_axum",
+ "id_effect_rpc",
  "id_effect_sql",
  "id_effect_tokio",
  "jiff",
+ "serde",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

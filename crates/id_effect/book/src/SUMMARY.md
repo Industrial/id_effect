@@ -197,6 +197,7 @@
   - [Subscriptions over the event log](./part6/ch33-08-subscriptions.md)
   - [Channels and presence](./part6/ch33-09-channels-presence.md)
   - [Contracts as OpenAPI and AsyncAPI](./part6/ch33-10-contracts.md)
+  - [A typed TypeScript client](./part6/ch33-11-typescript-client.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
   - [The dev loop](./part6/ch34-02-dev.md)

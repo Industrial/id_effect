@@ -190,6 +190,43 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
         run: cargo check --workspace --all-targets --locked
   # ──────────────────────────────────────────────────────────────────────────
+  # TypeScript client (D12): `id-effect rpc gen ts` against its golden output, `deno check` of
+  # the generated client and its tests, `deno test` against the test service on loopback
+  # (tests/rpc_gen_ts.rs). Deno is pinned here and in devenv.nix; no npm, no node_modules.
+  # ID_EFFECT_REQUIRE_DENO=1 turns a missing Deno into a failure (locally the tests print SKIP).
+  # ──────────────────────────────────────────────────────────────────────────
+  ts-client:
+    name: TypeScript client (Deno)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_DENO: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Deno (pinned)
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.7.9
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ts-client
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Golden output, deno check, deno test against the test server
+        run: cargo nextest run --locked -p id_effect_tool --test rpc_gen_ts
+      - name: deno check and deno test of the checked-in client (server tests ignored)
+        working-directory: crates/id_effect_tool
+        run: |
+          deno check --no-config --no-remote tests/golden/rpc/*/*.ts tests/ts/*.ts
+          deno test --no-config --no-remote --no-prompt tests/ts/
+  # ──────────────────────────────────────────────────────────────────────────
   # Postgres integration: every live test that reads DATABASE_URL (id_effect_sql `pg`,
   # id_effect_node `pg`, id_effect_auth `pg` / `accounts`, id_effect_jobs (+ `cron`),
   # id_effect_messaging, id_effect_events `pg`, id_effect_mail `jobs`, id_effect_tool migrate,

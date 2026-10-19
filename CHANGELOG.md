@@ -145,6 +145,19 @@
   deterministic names. `openapi::ContractDocs` serves `/rpc/openapi.json`, `/rpc/asyncapi.json`
   and `/rpc/_contract`, not mounted outside `dev` and `test` unless guarded (ADR 0013 R7;
   `public_dangerous` is recorded). Book chapter 33.10.
+- `id-effect rpc gen ts --contract <rpc.contract.json> --out <dir>` (web.rpc #3, web.realtime
+  #7, r12-e12-4-gen-ts): a typed TypeScript client from the service contract, plain TypeScript
+  with no runtime dependency (`client.ts`, `types.ts`, `runtime.ts`; deterministic). Types from
+  the contract: structs, tagged unions, `Option` as optional / `| null`, `Vec`, maps, newtypes as
+  branded types, dates as ISO strings, `$defs` named as the OpenAPI components; error unions
+  discriminated on `_tag`; one class per service and version. The runtime batches the queries
+  and mutations of one microtask (≤ 50 calls, 1 MiB), sends `x-rpc: 1` always and a 128-bit
+  `Idempotency-Key` with every mutation (`x-rpc-ordered: true` for more than one), streams over
+  WebTransport, then WebSocket, then SSE + POST, validates every server frame, reconnects with
+  exponential backoff and jitter, resumes server and two-way streams from their last cursor and
+  reopens subscriptions after theirs, and cancels on `AbortSignal`. Library:
+  `id_effect_tool::rpc::gen_ts::{generate, generate_to}`. Tests run under Deno (pinned 2.7.9 in
+  devenv and CI job `ts-client`). Book chapter 33.11.
 - `id_effect_rpc` batches (design note §2.2, r12-e12-1-batching): `POST /rpc` with a JSON array
   of calls answers an array of results in request order, each call failing on its own; queries
   and mutations only (other kinds and unknown tags are that call's `InvalidInput`). At most 50
