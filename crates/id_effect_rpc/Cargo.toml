@@ -38,7 +38,8 @@ sse = ["id_effect_axum/sse"]
 # `events`: subscriptions backed by an id_effect_events `EventLog` (cursor = global position).
 events = ["dep:id_effect_events"]
 # `mesh`: the same contract node to node over the process mesh (postcard always).
-mesh = ["postcard", "dep:id_effect_node"]
+# `id_effect_process` for the endpoint and reply processes (r12-e12-2-mesh-rpc).
+mesh = ["postcard", "dep:id_effect_node", "dep:id_effect_process"]
 # `channels`: topics and presence on mesh process groups, `JoinPolicy` (default deny; an adapter
 # over id_effect_authz's axum-free policies).
 # `id_effect_process` for the hub process each node runs (r12-e12-2-channels).

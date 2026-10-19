@@ -106,3 +106,5 @@ pub mod asyncapi;
 // r12-e12-2-channels: topics, presence and mesh broadcast (feature `channels`).
 #[cfg(feature = "channels")]
 pub mod channels;
+// r12-e12-2-mesh-rpc: the transports besides HTTP (`transport::mesh`, feature `mesh`).
+pub mod transport;

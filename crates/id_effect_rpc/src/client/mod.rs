@@ -6,6 +6,9 @@
 //! features `ws` / `sse`.
 
 pub mod http;
+// r12-e12-2-mesh-rpc: calls to a mesh endpoint (feature `mesh`).
+#[cfg(feature = "mesh")]
+pub mod mesh;
 
 use id_effect_axum::route::Problem;
 use serde_json::Value;

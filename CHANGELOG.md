@@ -161,6 +161,17 @@
   for another transport); `attach_session` runs a mesh over an authenticated session and
   `connect_in_memory` builds an in-memory mesh. Example `channels_chat`; book chapter 33.9.
   Feature `channels` adds the dependency `id_effect_process` (the hub is a process).
+- `id_effect_rpc` feature `mesh` (r12-e12-2-mesh-rpc): the same `RpcGroup` callable node to
+  node over the process mesh, postcard always. `transport::mesh`: `MeshRpc` per node (register
+  `MeshRpc::register_behavior` before building the `Mesh`), `MeshRpc::serve(..)` →
+  `MeshEndpoint`, one endpoint process per service under the cluster-wide name `rpc:<service>`
+  (`start`, or `child_spec` under a supervisor: a restart registers the name again);
+  `MeshPeer`, `MeshPeerGuard`. `client::mesh`: `MeshRpc::client(service)` → `MeshRpcClient`
+  with every kind as effects (`query`, `mutation`, `server_stream`, `subscribe`,
+  `client_stream`, `bidi`; `MeshStream`, `MeshSink`, `MeshReply`), credits both ways, the
+  caller's span as the parent of the endpoint's `rpc.request` span, typed `MeshRpcError`;
+  `MeshTransport`, the `RpcTransport` of `#[rpc::service]` clients over the mesh. Book chapter
+  38.2.
 
 ### Changed
 
@@ -193,6 +204,15 @@
 
 ### Security
 
+- Mesh RPC (r12-e12-2-mesh-rpc): a call runs only on an origin the receiving node verified —
+  inbound mesh traffic goes through `MeshRpc::ingress` / `MeshRpc::handle_session_frame`, which
+  stamps messages for RPC processes with the authenticated session's node under a per-node
+  256-bit key; anything else is dropped. The calling node is the principal (`MeshPeer`,
+  `RpcPrincipal("mesh:<node>")`); end-user rights never cross the hop. Calls per peer (256) and
+  per endpoint (4,096) are capped before guards run, deadlines are clamped (30 s), items beyond
+  the granted credits and client streams over their caps are `ResourceExhausted`; a call is
+  dropped when the caller cancels, its node or reply process goes down, or the endpoint exits.
+  Queries are retried on a gone endpoint (3 times), mutations never.
 - RPC codecs (D13, C3): an unknown codec is 415, never a JSON fallback; a procedure without a
   typed bridge refuses postcard (415). Every postcard decoder refuses input over 64 KiB before
   decoding, limits nesting to 64, bounds the elements of all sequences and maps by the input size,

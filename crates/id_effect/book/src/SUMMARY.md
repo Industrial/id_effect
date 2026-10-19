@@ -206,6 +206,7 @@
   - [Timers, selective receive and hibernate](./part7/ch37-01-timers-selective-receive.md)
 - [Distribution and membership](./part7/ch38-00-distribution.md)
   - [Transport security: mutual TLS](./part7/ch38-01-transport-security.md)
+  - [RPC over the mesh](./part7/ch38-02-rpc-over-the-mesh.md)
 - [Cluster groups and takeover](./part7/ch39-00-cluster-supervision.md)
   - [Cluster-wide names](./part7/ch39-01-global-registry.md)
 
