@@ -284,7 +284,31 @@ L5, M4) and the default headers gain cross-origin isolation (L2).
 
 ## Node: mesh protocol version
 
-Filled by `r11-e8-3-reliable-delivery`.
+`PROTOCOL_VERSION` is 3 (0.10.1 spoke 2, 0.10.0 spoke 1). A 0.11 node refuses a 0.10.x peer in
+the handshake with `HandshakeError::VersionMismatch` (and tells it why); there are no mixed-version
+clusters (ADR 0009 non-goal). Upgrade every node of a mesh together: stop the 0.10 nodes, start the
+0.11 ones.
+
+What the version adds, and what changes for code:
+
+- `ProcessEnvelope` gains `Reliable` and `Ack` (at-least-once, see below). An exhaustive `match`
+  over it needs arms for them (or a `_` arm).
+- `ProcessEnvelope::Cast`, `Info` and `Call` now carry the sending fiber's trace context when they
+  are sent by an effect (`Mesh::cast`, `Mesh::send`, the `*_reliable` sends, `Mesh::remote_call`).
+  The plain functions `Mesh::remote_cast` and `Mesh::remote_info` run outside any fiber and still
+  send an empty context; switch to `Mesh::cast` / `Mesh::send` to propagate traces. The default
+  propagator, `W3cTraceContext`, writes a `traceparent` from id_effect span ids and opens no
+  receiving span; give it a hook (`with_receiver_hook`) or install your own `TracePropagator`
+  (for OpenTelemetry: inject `span_otel_context`, return `OtelSpanHook::with_parent(..)`) with
+  `Mesh::with_trace_propagator`.
+- Delivery stays at-most-once by default. To opt in, send with `Mesh::send_reliable` /
+  `Mesh::cast_reliable`, or build the mesh with
+  `Mesh::with_delivery(DeliveryConfig::at_least_once())`, which makes `remote_cast`,
+  `remote_info`, `cast` and `send` reliable too. Messages may then arrive twice after a sender
+  restart: make their handlers idempotent. Register `Mesh::monitor_delivery` to learn about
+  messages given up (`DeliveryFailure::BufferFull`, `DeliveryFailure::PeerRestarted`), and
+  connect sessions with `Mesh::add_peer_node(session.peer(), sender)` instead of `add_peer` so a
+  restarted peer is recognised before anything is resent.
 
 ## Workflows: `id_effect_workflow` replaces the labs crate
 

@@ -89,12 +89,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-trait"
+version = "0.1.92"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82f6aeea286b8eb4dd3431a1be1b59d290ace00f5bfd8e2a159bc2a05e2c1667"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
+]
+
+[[package]]
 name = "atomic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89cbf775b137e9b968e67227ef7f775587cde3fd31b0d8599dbd0f598a48340"
 dependencies = [
  "bytemuck",
+]
+
+[[package]]
+name = "atomic-polyfill"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cf2bce30dfe09ef0bfaef228b9d414faaf7e563035494d7fe092dba54b300f4"
+dependencies = [
+ "critical-section",
 ]
 
 [[package]]
@@ -283,6 +303,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,6 +373,15 @@ name = "cmov"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
+
+[[package]]
+name = "cobs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
+dependencies = [
+ "thiserror",
+]
 
 [[package]]
 name = "combine"
@@ -446,6 +481,12 @@ checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "crossbeam-deque"
@@ -593,6 +634,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
+name = "embedded-io"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1a6892d9eef45c8fa6b9e0086428a2cca8491aca8f787c534a3d6d0bcb3ced"
+
+[[package]]
+name = "embedded-io"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -664,6 +717,18 @@ dependencies = [
 
 [[package]]
 name = "flume"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "nanorand",
+ "spin",
+]
+
+[[package]]
+name = "flume"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e139bc46ca777eb5efaf62df0ab8cc5fd400866427e56c68b22e414e53bd3be"
@@ -672,6 +737,18 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "spin",
+]
+
+[[package]]
+name = "foca"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f59e967f3f675997e4a4a6b99d2a75148d59d64c46211b78b4f34ebb951b273"
+dependencies = [
+ "bytes",
+ "postcard",
+ "rand 0.9.5",
+ "serde",
 ]
 
 [[package]]
@@ -825,10 +902,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c35f58762feb77d74ebe43bdbc3210f09be9fe6742234d573bacc26ed92b67"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "heapless"
+version = "0.7.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
+dependencies = [
+ "atomic-polyfill",
+ "hash32",
+ "rustc_version",
+ "serde",
+ "spin",
+ "stable_deref_trait",
+]
 
 [[package]]
 name = "hmac"
@@ -1052,9 +1152,9 @@ dependencies = [
 
 [[package]]
 name = "id_effect"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
- "flume",
+ "flume 0.12.0",
  "futures",
  "id_effect_macro",
  "id_effect_proc_macro",
@@ -1067,11 +1167,11 @@ dependencies = [
 
 [[package]]
 name = "id_effect_auth"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "argon2",
  "base64 0.22.1",
- "flume",
+ "flume 0.12.0",
  "getrandom 0.4.3",
  "id_effect",
  "id_effect_authz",
@@ -1082,11 +1182,12 @@ dependencies = [
  "sha2 0.10.9",
  "subtle",
  "totp-rs",
+ "zeroize",
 ]
 
 [[package]]
 name = "id_effect_authz"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "id_effect",
  "serde",
@@ -1095,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_axum"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1103,6 +1204,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "httpdate",
+ "hyper-util",
  "id_effect",
  "id_effect_config",
  "id_effect_platform",
@@ -1116,17 +1218,20 @@ dependencies = [
  "tower-http",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
 name = "id_effect_config"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "figment",
  "id_effect",
  "pear",
  "serde",
+ "subtle",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -1141,6 +1246,8 @@ dependencies = [
  "id_effect_auth",
  "id_effect_axum",
  "id_effect_config",
+ "id_effect_node",
+ "id_effect_process",
  "libfuzzer-sys",
  "serde_json",
  "sha2 0.10.9",
@@ -1149,11 +1256,31 @@ dependencies = [
 
 [[package]]
 name = "id_effect_macro"
-version = "0.10.0"
+version = "0.10.1"
+
+[[package]]
+name = "id_effect_node"
+version = "0.10.1"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "flume 0.11.1",
+ "foca",
+ "hmac 0.12.1",
+ "id_effect",
+ "id_effect_process",
+ "postcard",
+ "rand 0.9.5",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
 
 [[package]]
 name = "id_effect_platform"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "bytes",
  "http",
@@ -1166,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_proc_macro"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1174,8 +1301,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "id_effect_process"
+version = "0.10.1"
+dependencies = [
+ "id_effect",
+]
+
+[[package]]
 name = "id_effect_resilience"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "id_effect",
 ]
@@ -1496,6 +1630,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d"
 
 [[package]]
+name = "nanorand"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a51313c5820b0b02bd422f4b44776fbf47961755c74ce64afc73bfad10226c3"
+dependencies = [
+ "getrandom 0.2.17",
+]
+
+[[package]]
 name = "ntapi"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1653,6 +1796,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
+]
+
+[[package]]
+name = "postcard"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6764c3b5dd454e283a30e6dfe78e9b31096d9e32036b5d1eaac7a6119ccb9a24"
+dependencies = [
+ "cobs",
+ "embedded-io 0.4.0",
+ "embedded-io 0.6.1",
+ "heapless",
+ "serde",
 ]
 
 [[package]]
@@ -2595,7 +2751,19 @@ checksum = "63e71662fa4b2a2c3a26f570f037eb95bb1f85397f3cd8076caed2f026a6d100"
 dependencies = [
  "log",
  "pin-project-lite",
+ "tracing-attributes",
  "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7490cfa5ec963746568740651ac6781f701c9c5ea257c58e057f3ba8cf69e8da"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

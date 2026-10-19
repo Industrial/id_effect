@@ -54,6 +54,19 @@
   `--enforce KINDS`; `gates.toml` gains the secure-stack KPI gate
   `gate/axum_request_secure_stack / gate/axum_request_bare ≤ 1.15` (`id_effect_axum` bench
   `gate_request`). See "CI job" in `docs/benchmarks/README.md`.
+- `id_effect_node` at-least-once delivery (D19) and remote trace context (dist.remote#8):
+  at-most-once stays the default; opt in per send (`Mesh::send_reliable`, `Mesh::cast_reliable`,
+  `SendReliable::send_reliable` on an `Addr`) or per mesh (`Mesh::with_delivery(DeliveryConfig::
+  at_least_once())`). Per-peer sequence numbers, `ProcessEnvelope::Ack`, a retransmit buffer
+  bounded in messages and bytes (the oldest is dropped when full) with exponential backoff, and a
+  receiver dedup window keyed by (incarnation, seq), so a reconnect does not deliver twice;
+  messages pending when the peer restarts, or dropped from a full buffer, are reported as
+  `DeliveryFailed` to the `Mesh::monitor_delivery` monitors. `Mesh::cast`, `Mesh::send` and
+  `Mesh::remote_call` carry the sending fiber's span (`TracePropagator`, default
+  `W3cTraceContext`), and the receiver opens `mesh.call` / `mesh.cast` / `mesh.info` under it.
+  Breaking: the mesh protocol is version 3; 0.10.x nodes (versions 1 and 2) are refused with
+  `HandshakeError::VersionMismatch`. Fuzz targets `mesh_frame`, `mesh_envelope`. See "Node: mesh
+  protocol version" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 
 ## 0.10.1 — 2026-10-18 — Security patch
 

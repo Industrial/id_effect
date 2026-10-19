@@ -417,7 +417,6 @@ async fn m9_short_cookie_rejected() {
 /// version mismatch, and the older peer is told why.
 #[tokio::test]
 async fn h4_v1_peers_are_refused_with_version_mismatch() {
-  assert_eq!(PROTOCOL_VERSION, 2);
   let net = MemoryNetwork::new();
   let listener = net.transport("b").listen("b").await.expect("bind");
   let old = net.transport("a").connect("b").await.expect("dial");
@@ -438,13 +437,14 @@ async fn h4_v1_peers_are_refused_with_version_mismatch() {
     .expect("refused");
   assert!(matches!(
     err,
-    SessionError::Handshake(HandshakeError::VersionMismatch { ours: 2, theirs: 1 })
+    SessionError::Handshake(HandshakeError::VersionMismatch { ours, theirs: 1 })
+      if ours == PROTOCOL_VERSION
   ));
   let refusal = decode(&old.recv().await.expect("refusal")).expect("decode");
   assert_eq!(
     refusal,
     Frame::Handshake(HandshakeMsg::Rejected {
-      reason: "version mismatch: have 2, got 1".to_string()
+      reason: format!("version mismatch: have {PROTOCOL_VERSION}, got 1")
     })
   );
 }
