@@ -199,6 +199,7 @@
   - [Channels and presence](./part6/ch33-09-channels-presence.md)
   - [Contracts as OpenAPI and AsyncAPI](./part6/ch33-10-contracts.md)
   - [A typed TypeScript client](./part6/ch33-11-typescript-client.md)
+  - [Checking a contract for breaking changes](./part6/ch33-12-contract-check.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
   - [The dev loop](./part6/ch34-02-dev.md)

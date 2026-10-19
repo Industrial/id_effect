@@ -7,7 +7,17 @@
 //! `gen ts` writes a typed TypeScript client ([`gen_ts`]): `client.ts`, `types.ts` and
 //! `runtime.ts`, plain TypeScript with no runtime dependency. Exit codes: `0` written, `1` the
 //! contract could not be read or turned into TypeScript, or a file could not be written.
+//!
+//! ```text
+//! id-effect rpc check --contract rpc.contract.json --against v0.11.0:rpc.contract.json
+//! ```
+//!
+//! `check` classifies every change against the previous contract and fails on a breaking change
+//! within a published version ([`check`]); `--generated <dir>` also fails when the checked-in
+//! TypeScript client is stale. Exit codes: `0` passes, `1` a breaking change or a stale client,
+//! `2` a usage error or an unreadable contract.
 
+pub mod check;
 pub mod gen_ts;
 
 use std::io::Write;
@@ -31,6 +41,9 @@ pub struct RpcArgs {
 pub enum RpcCommand {
   /// Generate a client from a service contract (`gen ts`: TypeScript).
   Gen(GenArgs),
+  /// Compare a contract with the previous one (a file or `<git-ref>:<path>`) and fail on a
+  /// breaking change within a published version; `--generated` also checks the TypeScript client.
+  Check(check::CheckArgs),
 }
 
 /// Arguments of `id-effect rpc gen`.
@@ -78,5 +91,6 @@ pub fn run(args: &RpcArgs, out: &mut dyn Write, err: &mut dyn Write) -> ExitCode
         ExitCode::FAILURE
       }
     },
+    RpcCommand::Check(args) => check::run(args, out, err),
   }
 }

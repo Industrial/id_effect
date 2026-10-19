@@ -172,6 +172,18 @@
   reopens subscriptions after theirs, and cancels on `AbortSignal`. Library:
   `id_effect_tool::rpc::gen_ts::{generate, generate_to}`. Tests run under Deno (pinned 2.7.9 in
   devenv and CI job `ts-client`). Book chapter 33.11.
+- `id-effect rpc check --contract <rpc.contract.json> --against <git-ref:path | file>` (web.rpc
+  #6, r12-e12-4-rpc-check): compares a contract with the previous one per `(service, version)`
+  and classifies every change, with a reason per line. Breaking: a procedure or served version
+  removed, `kind` changed, access tightened, a required input field added, an input narrowed, an
+  output field removed or an output widened, an error variant added, `idempotent` dropped, a
+  client-stream cap lowered. Compatible: a procedure or version added, an optional input field
+  or an output field added, an error variant removed, access loosened. A breaking change in a
+  new version passes (`versioned`) while the previous version is still served. `$defs` are
+  compared structurally (a moved module is no change; names follow the OpenAPI rule). Exit `0`
+  passes, `1` breaking, `2` usage or unreadable input. `--generated <dir>` also fails when the
+  checked-in TypeScript client differs from what `rpc gen ts` writes. Library:
+  `id_effect_tool::rpc::check::{compare, read_against, stale_files}`. Book chapter 33.12.
 - `id_effect_rpc` batches (design note §2.2, r12-e12-1-batching): `POST /rpc` with a JSON array
   of calls answers an array of results in request order, each call failing on its own; queries
   and mutations only (other kinds and unknown tags are that call's `InvalidInput`). At most 50
