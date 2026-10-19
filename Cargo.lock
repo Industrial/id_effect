@@ -2818,6 +2818,7 @@ dependencies = [
  "h3-quinn",
  "http",
  "id_effect",
+ "id_effect_config",
  "id_effect_platform",
  "id_effect_tokio",
  "instant-acme",
@@ -2836,6 +2837,7 @@ dependencies = [
  "tower-service",
  "tracing",
  "wiremock",
+ "x509-parser",
 ]
 
 [[package]]

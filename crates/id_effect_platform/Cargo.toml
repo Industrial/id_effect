@@ -35,7 +35,7 @@ quic = ["tls", "dep:quinn"]
 # HTTP/3 over the QUIC endpoint (ALPN `h3`; r12-e12-3-h3-client / h3-server).
 http3 = ["quic", "dep:h3", "dep:h3-quinn"]
 # ACME TLS-ALPN-01 certificates (r12-e12-3-certs-acme).
-acme = ["tls", "dep:instant-acme"]
+acme = ["tls", "dep:instant-acme", "dep:id_effect_config", "dep:x509-parser"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.11.0", features = [
@@ -86,10 +86,16 @@ quinn = { version = "0.11.12", optional = true, default-features = false, featur
 # Exact pins: h3 is pre-1.0 and h3-quinn tracks it release by release.
 h3 = { version = "=0.0.8", optional = true }
 h3-quinn = { version = "=0.0.10", optional = true }
-instant-acme = { version = "0.8", optional = true, default-features = false, features = [
+# instant-acme's `aws-lc-rs` feature turns on its rcgen 0.14 (beside rcgen 0.13 above): the one
+# duplicate, and only under `acme`. Our own CSR and TLS-ALPN-01 certificates use rcgen 0.13.
+instant-acme = { version = "=0.8.5", optional = true, default-features = false, features = [
   "aws-lc-rs",
   "hyper-rustls",
 ] }
+# `Secret<T: Zeroize>` for the ACME account key and certificate keys.
+id_effect_config = { path = "../id_effect_config", version = "0.11.0", optional = true }
+# notBefore / notAfter and the SANs of issued certificates (renewal at two thirds).
+x509-parser = { version = "=0.18.1", optional = true, default-features = false }
 
 [dev-dependencies]
 # Self dev-dep so integration tests see `test-util` doubles.

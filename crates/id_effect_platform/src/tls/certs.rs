@@ -207,7 +207,7 @@ impl Identity {
     Arc::clone(&self.0.read().unwrap_or_else(PoisonError::into_inner))
   }
 
-  fn replace(&self, key: Arc<CertifiedKey>) {
+  pub(super) fn replace(&self, key: Arc<CertifiedKey>) {
     *self.0.write().unwrap_or_else(PoisonError::into_inner) = key;
   }
 

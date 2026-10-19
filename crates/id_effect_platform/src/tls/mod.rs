@@ -24,7 +24,10 @@
 //! assert_eq!(listen.max_early_data_size, 0);
 //! ```
 
+#[cfg(feature = "acme")]
+pub mod acme;
 mod certs;
+mod reload;
 
 pub use certs::{
   CertError, CertReloader, ClientAuth, Identity, NodeCertificate, ReloadTask, ca_bundle_from_pem,

@@ -20,6 +20,13 @@
   0.8). `tls`: certificates, CA bundles, `CertReloader`, `Identity` and the TLS 1.3 rustls configs,
   moved from `id_effect_node::transport::certs`. `quic`: `QuicEndpoint`, one UDP port routed by
   ALPN (`AlpnRouter`, `Route::h3()`, `Route::mesh(..)`), each route with its own certificate.
+- `id_effect_platform::tls`: `Identity::install` swaps the certificate of every listener holding
+  the identity (the QUIC endpoint and the TCP TLS listener) for new connections; open ones keep
+  theirs. Feature `acme` (`tls::acme`): `Acme` issues and renews certificates over ACME
+  TLS-ALPN-01 with instant-acme `=0.8.5` (`AcmeConfig`, Let's Encrypt staging by default,
+  `.production()`), answers the `acme-tls/1` challenge through `AcmeResolver` /
+  `Acme::serve_tls_alpn01` on the TCP TLS listener, renews at two thirds of the lifetime with
+  jitter (`Acme::spawn`), and reports `AcmeStats`. Book chapter 29.9.
 - `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
   shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
 - `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
@@ -51,6 +58,11 @@
 
 ### Security
 
+- ACME (ADR 0014 D8): a failed order keeps the current certificate (logged, counted in
+  `AcmeStats::failed`, retried); the account key and the certificate key are stored with mode
+  0600 in a 0700 cache directory (looser modes are tightened), held as `id_effect_config::Secret`
+  in memory and never printed; the directory must be `https://`; DNS-01, HTTP-01 and wildcard
+  names are not offered.
 - WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
   is checked against an allowlist that is empty by default (every browser origin refused, 403;
   the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);
