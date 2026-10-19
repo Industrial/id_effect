@@ -170,7 +170,7 @@ Every workspace crate declares a tier (`core`, `runtime`, `integration`, `mainte
 ---
 
 **Labs**
-Unpublished crates with no API guarantees, kept in the separate `labs/` Cargo workspace: `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`, `id_effect_workflow`. Use them via path or git dependencies; build with `--manifest-path labs/Cargo.toml`.
+Unpublished crates with no API guarantees, kept in the separate `labs/` Cargo workspace: `id_effect_rpc`, `id_effect_ai`, `id_effect_parse`, `id_effect_lint`. Use them via path or git dependencies; build with `--manifest-path labs/Cargo.toml`.
 
 ---
 

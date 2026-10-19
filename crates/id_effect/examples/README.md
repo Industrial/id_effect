@@ -31,6 +31,7 @@ the snapshot corpus, …): `016`, `040_runtime_trait`, `041`, `043`–`047`, `05
 | 077–082 | moved to `crates/id_effect_fp/examples/` | STM (`atomically`, `TRef`, `TMap`, …) — `cargo run -p id_effect_fp --example 077_stm_tref` |
 | 083–088 | `083_schema_primitive` … `088_brand_equal_hash` | `Schema`, `EffectData`, `Brand` |
 | 089–091 | `089_ensuring` … `091_scope_with` | `ensuring`, `acquire_use_release`, `Effect::scoped` finalizers (`090`–`092_algebra_*` moved to `id_effect_fp`) |
+| 087–091 | `087_stm_tset` … `091_stm_treentrant_lock` | `id_effect::stm` collections: `TSet`, `TArray`, `TPriorityQueue`, `TPromise`, `TReentrantLock` |
 | 093–096 | `093_tracing_install` … `096_tracing_snapshot` | in-process tracing buffer, `with_span` + `tracing_hook` |
 | 100–105 | `100_channel_queue` … `105_match_matcher` | `Channel`, `PubSub`, `Semaphore`, `KeyedPool`, `Cache`, `Matcher` |
 

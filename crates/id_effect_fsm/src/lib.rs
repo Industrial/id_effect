@@ -19,8 +19,8 @@
 //! `R` (an HList, or `HNil`): stepping, running and compensating are plain effect composition,
 //! so nothing here blocks a thread.
 //!
-//! Durable snapshots of a [`StateMachine`] live in the unpublished labs crate
-//! `id_effect_workflow::fsm`.
+//! For a [`StateMachine`] that survives restarts, drive it from a durable workflow of the
+//! `id_effect_workflow` crate (events as signals, each transition a journaled step).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

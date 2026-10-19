@@ -12,9 +12,10 @@ Business logic often has **explicit states** (order lifecycle, connection handsh
 - `Fsm` + `#[derive(Fsm)]` — declare the initial state and edges on an enum
 - `Interpreter` — Effect-valued transition actions; `step` / `run` return an `Effect`
 - `FsmProcess` / `FsmHandle` — host a machine in an `id_effect_process` process (events are mailbox messages)
+- `Statem` / `StatemProcess` — `gen_statem` parity: data-carrying states with a separate `Data`, state/event/generic timeouts, postpone, inserted events and replies (see [Statem behaviour](./ch19-05-statem.md))
 - `Saga` / `SagaStep` — forward steps with LIFO compensation, as one `Effect`
 - `to_mermaid` — documentation diagrams
 
 ## Durable state machines
 
-Persisting machine snapshots across restarts is labs functionality: the unpublished `id_effect_workflow::fsm` module (see [Workflow bridge](./ch19-04-workflow-bridge.md)). For multi-service orchestration, prefer an external engine (Temporal, Step Functions).
+To make a machine survive restarts, drive it from a durable workflow of the published `id_effect_workflow` crate: events arrive as signals and each transition is a journaled step (see [Workflow bridge](./ch19-04-workflow-bridge.md) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md)).

@@ -42,7 +42,8 @@ Prefer platform HTTP over a raw `reqwest::Client` in application `R` types. See 
 | ch29 | API boundaries | `id_effect_rpc` (labs, unpublished) |
 | ch30 | Application host | `id_effect_axum` + `id_effect_platform::auth` (feature `auth`) |
 | ch31 | Jobs, messaging, mail | `id_effect_jobs`, `id_effect_messaging`, `id_effect_mail` |
-| ch32, ch35 | Workflow, AI | `id_effect_workflow`, `id_effect_ai` (labs, unpublished) |
+| ch32 | Workflow | `id_effect_workflow` |
+| ch35 | AI | `id_effect_ai` (labs, unpublished) |
 
 Mission index: [docs/platform/ROADMAP.md](https://github.com/Industrial/id_effect/blob/main/docs/platform/ROADMAP.md).
 

@@ -86,6 +86,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
 | [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit; `id-effect migrate` runs SQL migrations |
+| [`id_effect_workflow`](crates/id_effect_workflow) | [![crates.io](https://img.shields.io/crates/v/id_effect_workflow.svg)](https://crates.io/crates/id_effect_workflow) | Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs |
 
 **Platform (batteries)**
 
@@ -116,7 +117,6 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
 | [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
 | [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
-| [`id_effect_workflow`](labs/id_effect_workflow) | unpublished | Durable step log with SQLite (memory) or duroxide-pg (production) resume semantics |
 
 Tiers and their quality bar: [ADR 0010](docs/adrs/0010-crate-tiers.md), [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
 <!-- crates:end -->

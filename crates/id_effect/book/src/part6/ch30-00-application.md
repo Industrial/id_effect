@@ -80,7 +80,7 @@ The `CookieKey` that signs and encrypts cookies is a capability. `CookieKey::lay
 
 `CorsConfig` builds a `tower_http` CORS layer. Allowing credentials with a wildcard origin is a build error, not a runtime panic.
 
-The 0.7 `CsrfConfig`, `csrf_middleware`, `csp_middleware` and `set_csrf_header` still compile in 0.8. They are deprecated and will be removed in 0.9. The static token compare now runs in constant time.
+`CsrfConfig` tunes the CSRF check of the layer (`SecurityLayer::csrf_config`: `form_limit`, `read_timeout`). The 0.7 static-token API (`CsrfConfig::new(token)`, `csrf_middleware`, `csp_middleware` and `set_csrf_header`) is deprecated since 0.8 and still compiles; its token compare runs in constant time.
 
 ## See also
 

@@ -16,7 +16,8 @@ compensation, and a `gen_statem`-style process behaviour (`FsmProcess`) for supe
 | `to_mermaid` / `table_to_mermaid` | Mermaid `stateDiagram-v2` export |
 | `TaggedEvent` / `event_matcher` | Bridge events/states to `HasTag` / `Matcher` |
 
-Durable FSM snapshots live in the unpublished labs crate `id_effect_workflow::fsm`.
+For a machine that survives restarts, drive it from a durable workflow of the `id_effect_workflow`
+crate (events as signals, each transition a journaled step).
 
 ## Quick example
 

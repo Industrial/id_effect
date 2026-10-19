@@ -578,6 +578,7 @@ dependencies = [
  "id_effect_jobs",
  "id_effect_kit",
  "id_effect_logger",
+ "id_effect_mail",
  "id_effect_messaging",
  "id_effect_node",
  "id_effect_opentelemetry",

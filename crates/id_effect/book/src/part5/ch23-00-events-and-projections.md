@@ -103,4 +103,4 @@ let rebuild = runner.run_all(&journal, "order-7", 1, projections_by_id);
 
 `MemoryEventStore` and `FileJournal` remain for unit tests and local experiments without a database. Runnable examples: `crates/id_effect_events/examples/`: `001_expected_version`, and with `--features sqlite` `010_account` (snapshots and a checkpointed balances projection across a restart) and `020_sqlite_journal`.
 
-See also [Async messaging](../part6/ch31-00-async-messaging.md) (outbox and obix inbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (duroxide workflow).
+See also [Async messaging](../part6/ch31-00-async-messaging.md) (outbox and obix inbox) and [Workflow and cluster](../part6/ch32-00-workflow-cluster.md) (durable workflows on `id_effect_workflow`).

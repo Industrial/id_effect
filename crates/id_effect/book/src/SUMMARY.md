@@ -52,7 +52,7 @@
   - [Logging (`id_effect_logger`)](./part2/ch07-11-logger.md)
   - [OpenTelemetry (`id_effect_opentelemetry`)](./part2/ch07-12-opentelemetry.md)
   - [RPC boundaries (`id_effect_rpc`, labs)](./part2/ch07-12-rpc-boundaries.md)
-  - [Durable workflow (`id_effect_workflow`, labs)](./part2/ch07-12-durable-workflow.md)
+  - [Durable workflow (`id_effect_workflow`)](./part2/ch07-12-durable-workflow.md)
 
 # Part III: Real Programs
 

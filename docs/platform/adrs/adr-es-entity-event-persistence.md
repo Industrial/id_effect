@@ -6,7 +6,9 @@
 > this decision leaned on went too: obix, Apalis and rdkafka left with the labs `id_effect_jobs`
 > crate; the transactional outbox and idempotent inbox are `id_effect_messaging`, the job queue
 > is `id_effect_jobs` (both on `id_effect_sql`), and `labs/id_effect_graph` was removed. Kept as
-> a record of the original decision.
+> a record of the original decision. (0.11: duroxide-pg, the third tenant of the shared pool
+> below, left with `labs/id_effect_workflow`; durable workflows are `id_effect_workflow` on
+> `id_effect_sql`.)
 
 **Status:** Superseded (0.10; was Accepted)  
 **Date:** 2026-06-17  
