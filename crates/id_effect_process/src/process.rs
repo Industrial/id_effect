@@ -490,6 +490,7 @@ mod tests {
     MonitorThenDemonitor(Pid),
     SpawnSibling,
     IsKilled,
+    Monitor(Pid),
   }
 
   impl Process for Probe {
@@ -530,6 +531,10 @@ mod tests {
             i64::from(sibling.pid() != ctx.pid() && sibling.is_alive())
           }
           ProbeCall::IsKilled => i64::from(ctx.is_killed()),
+          ProbeCall::Monitor(peer) => {
+            let _ = ctx.monitor(&peer);
+            0
+          }
         };
         (reply, Next::Continue(self))
       })
@@ -685,6 +690,218 @@ mod tests {
     assert_eq!(
       crash_reason(&Cause::<String>::Fail("e".into())),
       ExitReason::Error("\"e\"".into())
+    );
+    let fiber = id_effect::FiberId::ROOT;
+    assert_eq!(
+      crash_reason(&Cause::<String>::Interrupt(fiber)),
+      ExitReason::Interrupted
+    );
+    assert_eq!(
+      crash_reason(&Cause::both(
+        Cause::<String>::Interrupt(fiber),
+        Cause::Fail("x".into())
+      )),
+      ExitReason::Interrupted
+    );
+  }
+
+  #[test]
+  fn probe_ignores_harmless_casts_and_infos_and_counts_downs() {
+    let h = harness();
+    let probe = h.node.spawn::<Probe>((), HNil);
+    let peer = h.node.spawn::<Probe>((), HNil);
+    assert!(matches!(h.run(probe.cast(false)), Exit::Success(())));
+    assert!(matches!(h.run(probe.send(false)), Exit::Success(())));
+    h.call(&probe, ProbeCall::Monitor(peer.pid().clone()));
+    h.node.exit(peer.pid(), ExitReason::Killed);
+    h.exec.run_until_stalled();
+    assert_eq!(h.call(&probe, ProbeCall::Downs), 1);
+  }
+
+  /// Behavior that keeps every default callback (`handle_cast`, `handle_info`, `hibernate`,
+  /// `terminate`) and exercises the context operations aimed at other behaviors.
+  struct Plain;
+
+  enum PlainCall {
+    Hibernate,
+    Stop,
+    ReceiveForeign,
+    SendAfterForeign,
+    SpawnLinked,
+  }
+
+  #[derive(Clone, Debug, PartialEq)]
+  enum PlainReply {
+    Done,
+    Flag(bool),
+    Child(Pid),
+  }
+
+  impl Process for Plain {
+    type Args = ();
+    type Env = HNil;
+    type Call = PlainCall;
+    type Reply = PlainReply;
+    type Cast = ();
+    type Info = ();
+    type Error = String;
+
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      succeed(Plain)
+    }
+
+    fn handle_call(
+      self,
+      msg: PlainCall,
+      ctx: ProcessCtx,
+    ) -> Effect<(PlainReply, Next<Self>), String, HNil> {
+      match msg {
+        PlainCall::Hibernate => succeed((PlainReply::Done, Next::Hibernate(self))),
+        PlainCall::Stop => succeed((PlainReply::Done, Next::Stop(ExitReason::Normal, self))),
+        PlainCall::ReceiveForeign => ctx
+          .receive::<Probe, HNil>(|_| true, Duration::from_secs(1))
+          .exit::<String>()
+          .map(move |exit| {
+            let mismatch = matches!(
+              exit,
+              Exit::Failure(Cause::Fail(ReceiveError::BehaviorMismatch))
+            );
+            (PlainReply::Flag(mismatch), Next::Continue(self))
+          }),
+        PlainCall::SendAfterForeign => {
+          let timer = ctx.send_after::<Probe>(false, Duration::from_secs(1));
+          succeed((PlainReply::Flag(timer.is_pending()), Next::Continue(self)))
+        }
+        PlainCall::SpawnLinked => {
+          let child = ctx.spawn_link::<Plain>((), HNil);
+          succeed((PlainReply::Child(child.pid().clone()), Next::Continue(self)))
+        }
+      }
+    }
+  }
+
+  fn plain_call(h: &Harness, addr: &Addr<Plain>, msg: PlainCall) -> PlainReply {
+    match h.run(addr.call(msg, Duration::from_secs(10))) {
+      Exit::Success(r) => r,
+      Exit::Failure(c) => panic!("call failed: {c:?}"),
+    }
+  }
+
+  #[test]
+  fn default_callbacks_keep_the_process_running() {
+    let h = harness();
+    let plain = h.node.spawn::<Plain>((), HNil);
+    assert!(matches!(h.run(plain.cast(())), Exit::Success(())));
+    assert!(matches!(h.run(plain.send(())), Exit::Success(())));
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::Hibernate),
+      PlainReply::Done
+    );
+    // Still serving after the default hibernate hook.
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::ReceiveForeign),
+      PlainReply::Flag(true)
+    );
+    let exit = h.exit_watch(plain.pid());
+    assert_eq!(plain_call(&h, &plain, PlainCall::Stop), PlainReply::Done);
+    h.exec.run_until_stalled();
+    assert_eq!(exit.try_recv().expect("exit"), ExitReason::Normal);
+  }
+
+  #[test]
+  fn send_after_for_another_behavior_is_inert() {
+    let h = harness();
+    let plain = h.node.spawn::<Plain>((), HNil);
+    assert_eq!(
+      plain_call(&h, &plain, PlainCall::SendAfterForeign),
+      PlainReply::Flag(false)
+    );
+  }
+
+  #[test]
+  fn spawn_link_ties_the_child_to_its_parent() {
+    let h = harness();
+    let parent = h.node.spawn::<Plain>((), HNil);
+    let PlainReply::Child(child) = plain_call(&h, &parent, PlainCall::SpawnLinked) else {
+      panic!("expected a child pid");
+    };
+    let child_exit = h.exit_watch(&child);
+    h.node
+      .exit(parent.pid(), ExitReason::Error("parent died".into()));
+    h.exec.run_until_stalled();
+    assert_eq!(
+      child_exit.try_recv().expect("child exit"),
+      ExitReason::Error("parent died".into())
+    );
+  }
+
+  /// Behavior whose `hibernate` fails and whose `terminate` panics.
+  struct Fragile;
+
+  impl Process for Fragile {
+    type Args = ();
+    type Env = HNil;
+    type Call = bool;
+    type Reply = ();
+    type Cast = ();
+    type Info = ();
+    type Error = String;
+
+    fn init(_args: (), _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      succeed(Fragile)
+    }
+
+    /// `true` hibernates, `false` stops.
+    fn handle_call(
+      self,
+      hibernate: bool,
+      _ctx: ProcessCtx,
+    ) -> Effect<((), Next<Self>), String, HNil> {
+      if hibernate {
+        succeed(((), Next::Hibernate(self)))
+      } else {
+        succeed(((), Next::Stop(ExitReason::Shutdown, self)))
+      }
+    }
+
+    fn hibernate(self, _ctx: ProcessCtx) -> Effect<Self, String, HNil> {
+      fail("hibernate boom".to_string())
+    }
+
+    fn terminate(self, _reason: &ExitReason, _ctx: ProcessCtx) -> Effect<(), Never, HNil> {
+      panic!("terminate boom")
+    }
+  }
+
+  #[test]
+  fn failing_hibernate_crashes_the_process() {
+    let h = harness();
+    let fragile = h.node.spawn::<Fragile>((), HNil);
+    let exit = h.exit_watch(fragile.pid());
+    assert!(matches!(
+      h.run(fragile.call(true, Duration::from_secs(10))),
+      Exit::Success(())
+    ));
+    h.exec.run_until_stalled();
+    match exit.try_recv().expect("exit") {
+      ExitReason::Error(msg) => assert!(msg.contains("hibernate boom"), "{msg}"),
+      other => panic!("unexpected exit: {other:?}"),
+    }
+  }
+
+  #[test]
+  fn panicking_terminate_replaces_the_stop_reason() {
+    let h = harness();
+    let fragile = h.node.spawn::<Fragile>((), HNil);
+    let exit = h.exit_watch(fragile.pid());
+    assert!(matches!(
+      h.run(fragile.call(false, Duration::from_secs(10))),
+      Exit::Success(())
+    ));
+    h.exec.run_until_stalled();
+    assert_eq!(
+      exit.try_recv().expect("exit"),
+      ExitReason::Error("panic: terminate boom".into())
     );
   }
 }

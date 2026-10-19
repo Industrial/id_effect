@@ -186,3 +186,39 @@ impl fmt::Display for StartError {
 }
 
 impl std::error::Error for StartError {}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn error_messages_name_their_failure() {
+    assert_eq!(ReceiveError::Timeout.to_string(), "receive timed out");
+    assert_eq!(ReceiveError::Closed.to_string(), "mailbox closed");
+    assert_eq!(
+      ReceiveError::ScanLimit.to_string(),
+      "receive scanned the mailbox capacity without a match"
+    );
+    assert_eq!(
+      ReceiveError::BehaviorMismatch.to_string(),
+      "receive on a process of another behavior"
+    );
+    assert_eq!(
+      SendError::Rejected.to_string(),
+      "message rejected: mailbox closed"
+    );
+    assert_eq!(
+      SendError::Full.to_string(),
+      "message rejected: mailbox full"
+    );
+    assert_eq!(
+      StartError::Failed("nope".into()).to_string(),
+      "start failed: nope"
+    );
+    assert_eq!(
+      CallError::Down(ExitReason::Killed).to_string(),
+      "callee exited: killed"
+    );
+    assert_eq!(CallError::MailboxFull.to_string(), "mailbox full");
+  }
+}
