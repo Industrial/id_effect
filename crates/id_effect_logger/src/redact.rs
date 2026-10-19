@@ -97,17 +97,6 @@ impl RedactionPolicy {
     Self::dangerous_empty()
   }
 
-  /// A policy with no rules, with [`DEFAULT_REDACTION_MASK`] as the mask.
-  #[deprecated(
-    since = "0.11.0",
-    note = "unrecorded opt-out from the recommended rules: use \
-            `RedactionPolicy::recommended()` and add to it, or \
-            `RedactionPolicy::dangerous_empty()` (recorded in the posture registry)"
-  )]
-  pub fn empty() -> Self {
-    Self::dangerous_empty()
-  }
-
   /// A policy with no rules, with [`DEFAULT_REDACTION_MASK`] as the mask: the explicit start
   /// for a policy whose every rule the caller picks. Installed as is, it redacts nothing.
   ///
@@ -358,8 +347,8 @@ mod tests {
 
   #[test]
   #[allow(deprecated)]
-  fn deprecated_empty_records_the_same_opt_out() {
-    assert!(RedactionPolicy::empty().is_empty());
+  fn deprecated_new_records_the_same_opt_out() {
+    assert!(RedactionPolicy::new().is_empty());
     assert!(
       ::id_effect::observability::posture::dangerous_opt_outs()
         .iter()

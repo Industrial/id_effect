@@ -198,9 +198,10 @@ Logs are redacted and escaped by default (ADR 0013 R3; findings M11, M12).
   - `RedactionPolicy::dangerous_none()` to log in clear on purpose. It is recorded as the posture
     opt-out `id_effect_logger::RedactionPolicy::dangerous_none`, which the prod posture check
     rejects unless accepted.
-- **`RedactionPolicy::empty()` is deprecated** (removed in 0.12) for `dangerous_empty()`, which it
-  calls, so it records the same opt-out (and so does `new()`). Prefer
-  `RedactionPolicy::recommended()` plus your rules, which records nothing.
+- **`RedactionPolicy::new()` is deprecated** (removed in 0.12) for `dangerous_empty()`, which it
+  calls, so it records the same opt-out. Prefer `RedactionPolicy::recommended()` plus your
+  rules, which records nothing. (An `empty()` constructor existed briefly during 0.11 development
+  and was removed before release.)
 - `active_redaction_policy()` returns the policy the logger applies (installed or default), and
   `RedactionPolicy::is_empty()` says whether it has any rule.
 - **Line formats escape untrusted text.** `TracingLogBackend` writes CR, LF, tab as `\r`, `\n`,

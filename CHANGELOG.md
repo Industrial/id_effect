@@ -127,11 +127,15 @@
   (R9) and `id_effect_logger` `RedactionPolicy::dangerous_empty()` records
   `id_effect_logger::DANGEROUS_EMPTY` (M11); the prod posture probes "CSRF on" and "redaction
   policy non-empty" fail on them unless the risk is accepted. `SecurityLayer::without_csrf()`
-  and `RedactionPolicy::empty()` are deprecated shims that record the same ids (and so is
-  `RedactionPolicy::new()`); `RedactionPolicy::is_empty()` is unchanged. New
-  `SecurityLayer::csrf_enabled()` says whether the layer checks tokens, and
-  `id_effect_kit::posture::Posture::security_layer(&layer)` states the "CSRF on" probe from it
-  (`.csrf(bool)` still works).
+  and `RedactionPolicy::new()` are deprecated shims that record the same ids;
+  `RedactionPolicy::is_empty()` is unchanged. New `SecurityLayer::csrf_enabled()` says whether
+  the layer checks tokens, and `id_effect_kit::posture::Posture::security_layer(&layer)` states
+  the "CSRF on" probe from it (`.csrf(bool)` still works).
+- The unpublished `tests/security_compile_fail` crate runs 17 trybuild cases, one or more per
+  type-enforced ADR 0013 rule (unguarded routes, non-zeroizing secrets, raw SQL without the
+  capability, plaintext mesh TCP without the feature, cross-tenant access, accepted risks without
+  a reason, …), blessed on the pinned toolchain; the case → rule table is
+  `docs/security/compile-fail.md` (E11.4).
 
 ### Performance
 
