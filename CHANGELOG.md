@@ -11,6 +11,16 @@
   order; `SecurityHeaders::recommended()` adds `Cross-Origin-Opener-Policy`,
   `Cross-Origin-Resource-Policy` and a deny-list `Permissions-Policy`, each overridable. See
   "Web: CSRF masked token format" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_axum` (M5): new `middleware::LoadShedLayer` caps the requests in flight and answers
+  `503` Problem Details with `Retry-After` at once when full (no queue). Every server entry point
+  (`server_layer`, `serve*`, `serve_router*`, `ServerHandle::start*`) installs it from the new
+  `HostConfig::load_shed` (default 512 per available CPU; env `MAX_IN_FLIGHT`). Opt-out:
+  `HostConfig::dangerous_no_load_shedding()`, recorded in the posture registry.
+- `id_effect_axum` (M8): `MemoryRateLimitStore` is sharded by key hash (`shards`, default four per
+  CPU, at most 64) and each shard is an LRU list, so a lookup and an eviction are O(1) instead of
+  a scan of every key under one mutex. `DEFAULT_MAX_KEYS` stays 100,000. New provided method
+  `RateLimitStore::try_acquire_now`: the in-memory store answers inline and `RateLimitLayer`
+  skips the executor round trip for it.
 - `id_effect_node` QUIC mutual TLS (dist.tls #4 #5 #7, ADR 0013 R8): every dial presents the
   node's certificate and the listener verifies it (CA roots via `with_client_verification`, or
   `with_pinned_client_cert_sha256` / `with_pinned_peer_cert_sha256`); a peer without a client

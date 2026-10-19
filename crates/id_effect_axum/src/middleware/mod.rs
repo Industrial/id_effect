@@ -1,5 +1,5 @@
 //! First-party HTTP middleware: response compression, request ids with a per-request span,
-//! request timeouts, body-size limits and rate limiting.
+//! request timeouts, body-size limits, load shedding and rate limiting.
 //!
 //! Every layer is a tower [`Layer`](tower_layer::Layer) applied with `Router::layer`, with
 //! defaults that need no configuration. Rejections are RFC 9457 [`Problem`] responses
@@ -11,6 +11,7 @@
 //! | [`RequestIdLayer`] | keeps a valid incoming `x-request-id`, else generates one; one `http.request` span per request | — |
 //! | [`TimeoutLayer`] | 30 s; the handler's fiber is interrupted (its finalizers run) | `503` |
 //! | [`BodyLimitLayer`] | 2 MiB, checked on `Content-Length` and while the body streams | `413` |
+//! | [`LoadShedLayer`] | [`LoadShed::DEFAULT_PER_CPU`] requests in flight per CPU, no queue; installed by the server entry points | `503` + `Retry-After` |
 //! | [`RateLimitLayer`] | token bucket per client IP over [`id_effect_resilience::RateLimiter`] | `429` + `Retry-After` |
 //! | [`HttpCacheLayer`] | `Cache-Control: private, no-cache` and a body-hash `ETag` on `GET` `200`s | `304` |
 //!
@@ -49,6 +50,7 @@ use crate::route::Problem;
 pub mod compression;
 pub mod http_cache;
 pub mod limits;
+pub mod load_shed;
 pub mod rate_limit;
 pub mod request_id;
 
@@ -60,6 +62,7 @@ pub use limits::{
   BodyLimitLayer, BodyLimitService, DEFAULT_BODY_LIMIT, DEFAULT_TIMEOUT, TimeoutLayer,
   TimeoutService,
 };
+pub use load_shed::{LoadShed, LoadShedLayer, LoadShedService};
 pub use rate_limit::{
   MemoryRateLimitStore, RateLimitError, RateLimitKey, RateLimitLayer, RateLimitService,
   RateLimitStore, RateLimiter,

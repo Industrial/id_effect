@@ -72,6 +72,7 @@ async fn main() -> ExitCode {
     bind_host: config.http.host.clone(),
     bind_port: config.http.port,
     shutdown_timeout: Duration::from_secs(20),
+    ..HostConfig::default()
   };
   let program = serve_until_shutdown(app).provide(host);
   let served = EffectExecutor::global().run_effect(program).await;

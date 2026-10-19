@@ -269,6 +269,31 @@ L5, M4) and the default headers gain cross-origin isolation (L2).
   set `.cross_origin_resource_policy("cross-origin")?` (or `same-site`); each has a
   `without_*` switch, and a header the handler sets itself still wins.
 
+## Web: load shedding and `HostConfig::load_shed`
+
+Every server bounds its in-flight requests (ADR 0013 R4; findings M5, M8).
+
+- **`HostConfig` has a new public field `load_shed: LoadShed`** (`id_effect_axum::middleware`),
+  and `HostConfig` implements `Default` (`0.0.0.0:8080`, 30 s, the default `LoadShed`). A struct
+  literal without the field fails with `missing field load_shed`: add `..HostConfig::default()`
+  or `load_shed: LoadShed::default()`. `HostConfig::config()` loads it from the new optional
+  `MAX_IN_FLIGHT` (at least 1); `HostConfig::descriptor()` now yields a 4-tuple
+  `(String, i64, i64, Option<i64>)`.
+- **The server entry points answer `503` beyond the cap.** `server_layer*`, `serve*`,
+  `serve_router*` and `ServerHandle::start*` wrap the router in `LoadShedLayer`: past
+  `LoadShed::default_max_in_flight()` (512 per available CPU) a request gets `503` Problem
+  Details with `Retry-After: 1` at once, never a queue. Raise it with `LoadShed::new(n)` (or
+  `MAX_IN_FLIGHT`) for a server that legitimately holds many long requests; turn it off only
+  with `HostConfig::dangerous_no_load_shedding()`, which records the posture opt-out
+  `id_effect_axum::HostConfig::dangerous_no_load_shedding`. A router served through
+  `serve_listener` or `axum::serve` directly adds `LoadShedLayer` itself.
+- `MemoryRateLimitStore` is sharded (`shards(n)`, default four per CPU, at most 64) and evicts
+  per shard in least-recently-used order, so with more than one shard the bucket dropped is the
+  oldest of its shard, not of the whole store. `shards(1)` keeps the exact global order. Its
+  buckets are no longer `RateLimiter`s: `RateLimitLayer` checks them inline on the wall clock
+  (the new provided `RateLimitStore::try_acquire_now`), and `acquire` refills on the executor
+  clock as before. A custom `RateLimitStore` compiles unchanged.
+
 ## Node: global names (`ProcessEnvelope` gains variants)
 
 `Mesh::global()` returns the new cluster-wide name registry (`GlobalRegistry`, book chapter
