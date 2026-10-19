@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.12.0 — unreleased — One call surface
+
+### Added
+
+- `id_effect_axum` features `ws`, `sse`, `tls`, `http3` and `webtransport`, declared once
+  (tokio-tungstenite / tungstenite `=0.29.0`, the version of axum's own `ws`; h3 `=0.0.8`,
+  h3-quinn `=0.0.10`, h3-webtransport `=0.1.2`; `tls`, `http3` and `webtransport` are filled in
+  by their 0.12 leaves). `realtime::ws`: effect-native WebSocket endpoints on typed routes
+  (`ws::endpoint(..).public()` / `.guard(g)`), each socket a supervised fiber with a pull-based
+  inbound `Stream` and a `WsSender` / `Sink`; a client that goes away interrupts the handler
+  (finalizers run); `ws::serve_io` serves an already-upgraded connection. `realtime::sse`:
+  `SseEvent` with ids, validated `Last-Event-ID` resume (`SseRequest::last_event_id`),
+  heartbeats on the executor clock, `sse::endpoint`, `sse::response`, `sse::encode`.
+  `realtime::ConnectionCap` bounds open sockets and streams in total and per client IP. Examples
+  `090_ws_echo`, `091_sse_ticker`; book chapter 33.5.
+
+### Security
+
+- WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
+  is checked against an allowlist that is empty by default (every browser origin refused, 403;
+  the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);
+  `WsConfig::dangerous_any_origin` is recorded in the posture registry. Frames and messages are
+  capped at 64 KiB (close 1009), inbound messages at 100 per second per socket (close 1008),
+  sockets and SSE streams at 16 per client IP and 10 000 per endpoint (429 before the upgrade);
+  a ping every 20 s with two missed pongs closing the socket and a 300 s idle timeout (1001);
+  bounded inbox and outbox. Tests `r9_ws_upgrade_from_foreign_origin_refused`,
+  `dangerous_any_origin_is_recorded`, `r4_ws_frame_over_max_closes_1009`,
+  `r4_ws_sockets_per_ip_capped`, `heartbeat_closes_dead_connection`.
+
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 
 The secure-by-default release (ADR 0013): every finding of the 2026-10-18 security review is

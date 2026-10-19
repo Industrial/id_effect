@@ -1895,6 +1895,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "h3"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10872b55cfb02a821b69dc7cf8dc6a71d6af25eb9a79662bec4a9d016056b3be"
+dependencies = [
+ "bytes",
+ "fastrand",
+ "futures-util",
+ "http",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "h3-datagram"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d2c9f77921668673721ae40f17c729fc48b9e38a663858097cea547484fdf0f"
+dependencies = [
+ "bytes",
+ "h3",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "h3-quinn"
+version = "0.0.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b2e732c8d91a74731663ac8479ab505042fbf547b9a207213ab7fbcbfc4f8b4"
+dependencies = [
+ "bytes",
+ "futures",
+ "h3",
+ "h3-datagram",
+ "quinn",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "h3-webtransport"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d91a50fd582a5d67b1f756fba3cd9c66367ff4f23e1017c882f664d63b350a7"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "h3",
+ "h3-datagram",
+ "http",
+ "pin-project-lite",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2398,10 +2454,15 @@ dependencies = [
  "base64 0.22.1",
  "cookie",
  "criterion",
+ "futures-util",
+ "h3",
+ "h3-quinn",
+ "h3-webtransport",
  "hmac 0.12.1",
  "http-body",
  "http-body-util",
  "httpdate",
+ "hyper",
  "hyper-util",
  "id_effect",
  "id_effect_auth",
@@ -2412,18 +2473,22 @@ dependencies = [
  "id_effect_platform",
  "id_effect_resilience",
  "jsonschema",
+ "quinn",
  "rand 0.9.5",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "subtle",
  "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
  "tower",
  "tower-http",
  "tower-layer",
  "tower-service",
  "tracing",
  "trybuild",
+ "tungstenite",
 ]
 
 [[package]]
@@ -4265,6 +4330,7 @@ checksum = "4051e23e9185c255a7e33ef59cdbca87a22d359052eecd22fc6b901fb37d9d11"
 dependencies = [
  "bytes",
  "cfg_aliases",
+ "futures-io",
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
@@ -5874,6 +5940,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
+dependencies = [
+ "futures-util",
+ "log",
+ "tokio",
+ "tungstenite",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6204,6 +6282,22 @@ dependencies = [
  "target-tuple",
  "termcolor",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.9.5",
+ "sha1 0.10.7",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
