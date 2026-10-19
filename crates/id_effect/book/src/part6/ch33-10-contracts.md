@@ -28,7 +28,7 @@ let streams = asyncapi::to_json(
   &contract,
   &AsyncApiOptions::new("Todos streams", "1.0.0")
     .with_host("api.example.com")
-    .with_topic(ChannelTopic::new("lobby", json!({"type": "string"})).with_presence()),
+    .with_topic(ChannelTopic::new("lobby", "Chat.join", json!({"type": "string"}))),
 );
 assert!(http.contains("\"openapi\": \"3.1.0\""));
 assert!(streams.contains("\"asyncapi\": \"3.0.0\""));
@@ -90,8 +90,9 @@ client sends, its `send` operation what the client gets back.
 - **Server-sent events** (`sse` server): server streams and subscriptions at `GET /rpc/{tag}`,
   events `item` and `exit`. A subscription's event `id:` is its cursor; reconnecting with
   `Last-Event-ID` resumes after it.
-- **Topics**: each `ChannelTopic` adds `topic.<name>.ws` and `topic.<name>.sse` channels with the
-  published item and, with presence, the presence diff.
+- **Topics**: each `ChannelTopic` adds `topic.<name>.ws` and `topic.<name>.sse` channels: the
+  topic's join procedure (`Channels::serve_joins`, input `{"topic": <name>}`) and its
+  `joined`, `message` and `presence` events (chapter 33.9).
 
 The cursor (`c1.` and 12 base64url characters) is documented where it travels, the `cursor`
 member of `item` frames and the SSE event id, not inside the procedure's output schema.

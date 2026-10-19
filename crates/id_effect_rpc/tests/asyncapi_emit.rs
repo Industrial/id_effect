@@ -55,14 +55,18 @@ fn topics() -> AsyncApiOptions {
     .with_topic(
       ChannelTopic::new(
         "lobby",
+        "Chat.join",
         json!({ "$schema": DIALECT, "$ref": "#/$defs/chat::Message", "$defs": {
           "chat::Message": { "type": "object", "properties": { "text": { "type": "string" } } },
         }}),
       )
-      .with_description("Everyone.")
-      .with_presence(),
+      .with_description("Everyone."),
     )
-    .with_topic(ChannelTopic::new("news", json!({ "type": "string" })))
+    .with_topic(ChannelTopic::new(
+      "news",
+      "News.join",
+      json!({ "type": "string" }),
+    ))
 }
 
 fn validator() -> jsonschema::Validator {
@@ -226,8 +230,14 @@ fn asyncapi_lists_every_stream_and_channel() {
   );
   assert_eq!(messages("Todos-v1-ticks.sse", "send"), ["item", "exit"]);
   assert_eq!(messages("connection", "send"), ["hello", "pong"]);
-  assert_eq!(messages("topic.lobby.ws", "send"), ["item", "presence"]);
-  assert_eq!(messages("topic.news.ws", "send"), ["item"]);
+  assert_eq!(
+    messages("topic.lobby.ws", "send"),
+    ["joined", "message", "presence"]
+  );
+  assert_eq!(
+    messages("topic.news.sse", "send"),
+    ["joined", "message", "presence"]
+  );
 
   // Bindings: the WebSocket handshake's subprotocols; SSE is a GET with `?input=`.
   let ws = &channels["Todos-v1-ticks.ws"];
@@ -246,8 +256,20 @@ fn asyncapi_lists_every_stream_and_channel() {
     "GET"
   );
   assert_eq!(channels["Todos-v1-sum.ws"]["x-rpc-max-items"], 100);
-  assert_eq!(channels["topic.lobby.sse"]["address"], "/rpc/topic/lobby");
+  // A topic is joined through its join procedure, the topic named in the input.
+  assert_eq!(channels["topic.lobby.sse"]["address"], "/rpc/Chat.join");
+  assert_eq!(channels["topic.lobby.ws"]["address"], "Chat.join");
+  assert_eq!(
+    channels["topic.lobby.ws"]["x-rpc-input"],
+    json!({"topic": "lobby"})
+  );
   assert_eq!(channels["topic.lobby.ws"]["description"], "Everyone.");
+  let presence = &channels["topic.lobby.ws"]["messages"]["presence"]["payload"];
+  assert_eq!(presence["properties"]["leaves"]["type"], "array");
+  assert_eq!(
+    presence["properties"]["joins"]["items"]["required"],
+    json!(["key", "conn", "node", "meta"])
+  );
 
   // The cursor: on subscription items and calls (WebSocket), and the SSE event id.
   let messages = &ws["messages"];
@@ -342,9 +364,9 @@ fn asyncapi_hoists_defs_and_marks_deprecated_and_guarded_streams() {
     doc["channels"]["Chat-v1-feed.sse"]["address"],
     "/api/Chat.feed"
   );
-  // The topic's item, hoisted under the same name.
+  // The topic's message body, hoisted under the same name.
   assert_eq!(
-    doc["channels"]["topic.lobby.ws"]["messages"]["item"]["payload"],
+    doc["channels"]["topic.lobby.ws"]["messages"]["message"]["payload"]["properties"]["body"],
     json!({"$ref": "#/components/schemas/Message"})
   );
 }

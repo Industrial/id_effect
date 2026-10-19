@@ -2912,6 +2912,7 @@ dependencies = [
  "id_effect_node",
  "id_effect_opentelemetry",
  "id_effect_platform",
+ "id_effect_process",
  "id_effect_rpc_macros",
  "id_effect_test",
  "id_effect_tokio",

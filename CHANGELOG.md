@@ -148,6 +148,19 @@
   postcard result through the procedure's typed codec (`415` without `WireSchema::with_serde`,
   and for postcard server streams; batches stay JSON); `RpcClient::call_postcard`,
   `client::http::decode_postcard_response`.
+- `id_effect_rpc::channels` (feature `channels`, r12-e12-2-channels; ADR 0014 D3: a module, no
+  `id_effect_channels` crate): topics with join and leave, presence and broadcast across the
+  mesh. One hub process per node (`register_hub`, `Channels::builder().start_on_mesh(&mesh)`)
+  registered cluster-wide; a topic is a mesh `ProcessGroups` group of the interested hubs, so a
+  publish is one cast per other interested node. `Channels::join` / `serve_joins` (a
+  `subscription` procedure: input `JoinInput`, items `ChannelEvent` — `joined` snapshot, `message`,
+  `presence` diffs), `Channels::publish` (per-publisher order: duplicates and late arrivals are
+  dropped), `Presence` with per-connection metadata, heartbeat (`heartbeat`, `spawn_heartbeat`)
+  and monitor-driven cleanup when a node goes down, `ManualClock` / `SystemClock`. The cross-node
+  seam is `Backplane` (`MeshBackplane` on process groups and casts; `ChannelsBuilder::start_with`
+  for another transport); `attach_session` runs a mesh over an authenticated session and
+  `connect_in_memory` builds an in-memory mesh. Example `channels_chat`; book chapter 33.9.
+  Feature `channels` adds the dependency `id_effect_process` (the hub is a process).
 
 ### Changed
 
@@ -251,6 +264,16 @@
   handshake time (10 s); datagrams off. Opt-outs `QuicEndpointConfig::dangerous_no_retry` and
   `dangerous_raise_limits` are recorded in the posture registry. Tests
   `r4_quic_retry_on_by_default`, `r4_quic_limits_finite_by_default`.
+- Channel joins (ADR 0013 R1, ADR 0014 C11): every join, subscribe and resume goes through a
+  `JoinPolicy`; the default `DenyAllJoins` refuses everyone (`{"_tag": "Unauthenticated"}` 401 /
+  `{"_tag": "JoinDenied"}` 403, the reason only in the log); `AuthzJoin` runs an
+  `id_effect_authz` policy (no axum items) with the tenant check; `dangerous_allow_all_joins` is
+  recorded in the posture registry. Bounded by default: 10,000 members per topic, 32 topics per
+  connection, 10,000 topics per node, 1 KiB join metadata, 16 KiB messages (60 KiB at most), 256
+  buffered events per subscriber (a slower one is dropped with `Lagged`); remote members lapse
+  15 s after their node's last heartbeat. Tests `channel_join_denied_by_default_policy`,
+  `caps_bound_members_topics_and_payloads`, `slow_subscriber_is_dropped_as_lagged`,
+  `three_node_broadcast_over_quic_mtls` (mutual TLS, an unpinned node refused).
 
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 

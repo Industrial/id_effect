@@ -37,5 +37,11 @@ fn rpc_service_misuse_does_not_compile() {
     );
     return;
   }
+  // rustc lists the crate's `RpcErrorUnion` impls in `error_type_not_a_union.stderr`; feature
+  // `channels` adds one (`ChannelError`), so the snapshots hold for builds without it.
+  if cfg!(feature = "channels") {
+    eprintln!("ui: skipped with feature `channels` (snapshots are blessed without it)");
+    return;
+  }
   trybuild::TestCases::new().compile_fail("tests/ui/*.rs");
 }

@@ -103,3 +103,6 @@ pub use id_effect_rpc_macros::RpcErrorUnion;
 // r12-e12-4-openapi-asyncapi: AsyncAPI 3.0 of the stream kinds and topics (`openapi` above
 // holds OpenAPI 3.1 and the served contract documents).
 pub mod asyncapi;
+// r12-e12-2-channels: topics, presence and mesh broadcast (feature `channels`).
+#[cfg(feature = "channels")]
+pub mod channels;

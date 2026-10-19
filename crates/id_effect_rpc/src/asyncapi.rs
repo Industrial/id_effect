@@ -24,9 +24,12 @@
 //! part of the procedure's output schema. A cursor is not a capability: resuming a session needs
 //! its `SessionId`, bound to the authenticated principal (C8).
 //!
-//! **Topics.** [`ChannelTopic`]s add a channel per topic (`topic.<name>.ws`, `topic.<name>.sse`)
-//! whose messages are the published items and, with presence, the presence diffs; joining goes
-//! through the topic's `JoinPolicy` (deny by default).
+//! **Topics.** [`ChannelTopic`]s add a channel per topic (`topic.<name>.ws`, `topic.<name>.sse`).
+//! A topic is joined by calling its join subscription procedure (the address: the procedure tag on
+//! WebSocket, `GET {path}/{tag}?input={"topic":…}` on SSE) and delivers the `channels`
+//! `ChannelEvent`s: `joined`, `message` (the body is the topic's payload) and `presence`
+//! (`joins` / `leaves` lists of members); every join goes through the topic's `JoinPolicy`
+//! (deny by default).
 //!
 //! Payload schemas are the contract's JSON Schema 2020-12 schemas (`$schema` dropped, `$defs`
 //! hoisted into `components/schemas` under the names [`crate::openapi`] documents), written as
@@ -147,28 +150,31 @@ impl AsyncApiOptions {
   }
 }
 
-/// A topic of the `channels` module: subscribers receive what is published on it.
+/// A topic of the `channels` module, joined through the subscription procedure `join` that
+/// `Channels::serve_joins` registered (input `{"topic": <name>, "meta": …}`); subscribers receive
+/// a `joined` snapshot, every `message` published on the topic, and `presence` diffs.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct ChannelTopic {
   /// The topic name.
   pub name: String,
+  /// The tag of the join procedure (`Chat.join`, say).
+  pub join: String,
   /// Human-readable description.
   pub description: Option<String>,
-  /// JSON Schema of one published item.
+  /// JSON Schema of one published message body.
   pub payload: Value,
-  /// Whether subscribers also receive presence diffs.
-  pub presence: bool,
 }
 
 impl ChannelTopic {
-  /// Topic `name` carrying items of `payload` (a JSON Schema), without presence.
-  pub fn new(name: impl Into<String>, payload: Value) -> Self {
+  /// Topic `name`, joined through procedure `join`, carrying message bodies of `payload` (a
+  /// JSON Schema).
+  pub fn new(name: impl Into<String>, join: impl Into<String>, payload: Value) -> Self {
     Self {
       name: name.into(),
+      join: join.into(),
       description: None,
       payload,
-      presence: false,
     }
   }
 
@@ -176,13 +182,6 @@ impl ChannelTopic {
   #[must_use]
   pub fn with_description(mut self, description: impl Into<String>) -> Self {
     self.description = Some(description.into());
-    self
-  }
-
-  /// Subscribers also receive presence diffs.
-  #[must_use]
-  pub fn with_presence(mut self) -> Self {
-    self.presence = true;
     self
   }
 }
@@ -715,53 +714,79 @@ fn add_topic(
   operations: &mut Map<String, Value>,
 ) {
   let name = crate::openapi::ident(&topic.name);
-  let payload = c.import(&topic.payload);
-  let presence = json!({
+  let body = c.import(&topic.payload);
+  // `channels::ChannelEvent` items (`{"type": …}`) and `channels::Presence` entries.
+  let member = json!({
     "type": "object",
-    "description": "Who joined and who left since the last diff, by presence key, with each connection's metadata.",
     "properties": {
-      "joins": { "type": "object", "additionalProperties": true },
-      "leaves": { "type": "object", "additionalProperties": true },
+      "key": { "type": "string", "description": "The principal's id." },
+      "conn": { "type": "string", "description": "The joined connection." },
+      "node": { "type": "string" },
+      "meta": { "description": "The metadata the connection joined with." },
     },
+    "required": ["key", "conn", "node", "meta"],
   });
-  let mut names = vec!["item"];
-  for (transport, server, address) in [
-    ("ws", ws_ref(), json!(topic.name)),
+  let members = json!({ "type": "array", "items": member });
+  let topic_name = json!({ "const": topic.name });
+  let events = [
     (
-      "sse",
-      sse_ref(),
-      json!(format!("{prefix}/topic/{}", topic.name)),
+      "joined",
+      "The first item: this connection's entry and every member.",
+      json!({
+        "type": "object",
+        "properties": {
+          "type": { "const": "joined" }, "topic": topic_name, "me": member, "members": members,
+        },
+        "required": ["type", "topic", "me", "members"],
+      }),
     ),
+    (
+      "message",
+      "One message published on the topic, on any node.",
+      json!({
+        "type": "object",
+        "properties": {
+          "type": { "const": "message" }, "topic": topic_name, "node": { "type": "string" },
+          "from": { "type": ["string", "null"] }, "body": body,
+        },
+        "required": ["type", "topic", "node", "body"],
+      }),
+    ),
+    (
+      "presence",
+      "Connections that joined and left since the last diff.",
+      json!({
+        "type": "object",
+        "properties": {
+          "type": { "const": "presence" }, "topic": topic_name, "joins": members,
+          "leaves": members,
+        },
+        "required": ["type", "topic", "joins", "leaves"],
+      }),
+    ),
+  ];
+  let names: Vec<&str> = events.iter().map(|(n, _, _)| *n).collect();
+  // A join is a call of the subscription procedure `join` with the topic as its input.
+  for (transport, server, address) in [
+    ("ws", ws_ref(), json!(topic.join)),
+    ("sse", sse_ref(), json!(format!("{prefix}/{}", topic.join))),
   ] {
     let key = format!("topic.{name}.{transport}");
     let mut messages = Map::new();
-    messages.insert(
-      "item".to_owned(),
-      message(
-        &format!("{}.item", topic.name),
-        "One published item.",
-        payload.clone(),
-      ),
-    );
-    if topic.presence {
+    for (event, summary, payload) in &events {
       messages.insert(
-        "presence".to_owned(),
-        message(
-          &format!("{}.presence", topic.name),
-          "A presence diff.",
-          presence.clone(),
-        ),
+        (*event).to_owned(),
+        message(&format!("{}.{event}", topic.name), summary, payload.clone()),
       );
-      if names.len() == 1 {
-        names.push("presence");
-      }
     }
     let mut channel = json!({
       "address": address,
       "title": format!("Topic {}", topic.name),
       "servers": [server],
       "messages": messages,
-      "x-rpc-join": "The topic's JoinPolicy decides every join (deny by default).",
+      "x-rpc-tag": topic.join,
+      "x-rpc-input": { "topic": topic.name },
+      "x-rpc-join": "The topic's JoinPolicy decides every join and resume (deny by default).",
     });
     if let Some(description) = &topic.description {
       channel["description"] = json!(description);
@@ -795,14 +820,12 @@ mod tests {
       .with_host("example.com")
       .plain_transport()
       .with_topic(
-        ChannelTopic::new("room", json!({"type": "string"}))
-          .with_description("r")
-          .with_presence(),
+        ChannelTopic::new("room", "Chat.join", json!({"type": "string"})).with_description("r"),
       );
     assert_eq!(o.ws_path.as_deref(), Some("/socket"));
     assert!(!o.secure);
     assert_eq!(o.topics[0].description.as_deref(), Some("r"));
-    assert!(o.topics[0].presence);
+    assert_eq!(o.topics[0].join, "Chat.join");
     assert_eq!(AsyncApiOptions::default().title, "RPC");
     let doc = document(&Contract::new(), &o);
     assert_eq!(doc["servers"]["ws"]["protocol"], "ws");
@@ -810,8 +833,13 @@ mod tests {
     assert_eq!(doc["info"]["description"], "d");
     assert_eq!(
       doc["channels"]["topic.room.sse"]["address"],
-      "/api/topic/room"
+      "/api/Chat.join"
     );
-    assert!(doc["channels"]["topic.room.ws"]["messages"]["presence"].is_object());
+    let ws = &doc["channels"]["topic.room.ws"];
+    assert_eq!(ws["address"], "Chat.join");
+    assert_eq!(ws["x-rpc-input"], json!({"topic": "room"}));
+    let presence = &ws["messages"]["presence"]["payload"];
+    assert_eq!(presence["properties"]["joins"]["type"], "array");
+    assert_eq!(presence["properties"]["type"]["const"], "presence");
   }
 }
