@@ -282,3 +282,20 @@ because the choosing leaf has not chosen yet: the D12 CDP driver (`chromiumoxide
   first).
 - `protocol.rs` / `serialization.rs` (labs format) stay until kinds switches `server/http.rs` and
   `client/http.rs` to `wire`; kinds then deletes what is unused.
+
+## 10. Coordinator review (2026-10-19) — approved with one amendment
+
+Approved as the basis for r12-e12-1-kinds and the wave-2/3 leaves. `registry.rs` moves to kinds
+(§9). Amendment, binding on r12-e12-1-batching / kinds where the idempotency store lands:
+
+- **Idempotency on `.public()` mutations.** All anonymous callers share one principal, so
+  `(principal, tag, key)` would let a second client that reuses a key with the same payload read a
+  stored result that is not theirs. For a call with no authenticated principal the store keys on
+  `(anonymous, client_ip, tag, key)`, and the key must be at least 16 characters; shorter keys on a
+  public mutation are a `400` Problem `IdempotencyKeyTooShort`. Test:
+  `idempotency_replay_is_scoped_for_anonymous_callers`.
+
+Checked and kept: GET queries without `x-rpc` (side-effect free, response readable only under
+CORS), 0-RTT for queries only (C7), batch charged N tokens, deadlines clamped server-side,
+`InternalError` carries only the correlation id, sessions bound to the principal (C8), cursor
+decoder bounded at 64 bytes.
