@@ -4922,6 +4922,12 @@ dependencies = [
 [[package]]
 name = "security_compile_fail"
 version = "0.10.1"
+dependencies = [
+ "axum",
+ "id_effect_kit",
+ "serde_json",
+ "trybuild",
+]
 
 [[package]]
 name = "semver"

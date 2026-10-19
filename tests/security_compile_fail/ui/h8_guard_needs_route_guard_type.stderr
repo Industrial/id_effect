@@ -1,0 +1,18 @@
+error[E0277]: the trait bound `&str: RouteGuard` is not satisfied
+  --> ui/h8_guard_needs_route_guard_type.rs:12:58
+   |
+12 |   let _ = Router::new().route(Route::get("/admin").guard("admin").handler(hello));
+   |                                                    ----- ^^^^^^^ the trait `RouteGuard` is not implemented for `&str`
+   |                                                    |
+   |                                                    required by a bound introduced by this call
+   |
+help: the trait `RouteGuard` is implemented for `Guard`
+  --> $WORKSPACE/crates/id_effect_authz/src/guard.rs
+   |
+   | impl RouteGuard for Guard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `Route::<P, Q, H, B, A>::guard`
+  --> $WORKSPACE/crates/id_effect_axum/src/route/mod.rs
+   |
+   |   pub fn guard(mut self, guard: impl RouteGuard) -> Route<P, Q, H, B, Guarded> {
+   |                                      ^^^^^^^^^^ required by this bound in `Route::<P, Q, H, B, A>::guard`

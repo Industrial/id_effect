@@ -1,0 +1,5 @@
+error[E0451]: field `_private` of struct `RawSqlCapability` is private
+ --> ui/m16_raw_sql_capability_has_no_public_constructor.rs:6:30
+  |
+6 |   let _ = RawSqlCapability { _private: () };
+  |                              ^^^^^^^^ private field
