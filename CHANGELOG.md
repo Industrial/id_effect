@@ -22,6 +22,15 @@
   on the next message. Breaking: `Next`, `Info` and `ExitReason` are `#[non_exhaustive]`, and a
   lost cluster-wide name is `ExitReason::NameConflict(name)` instead of an `Error` string. See
   "Processes" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_fsm` `Statem` (fault.fsm #3, #4, #5): a `gen_statem`-parity behaviour next to the
+  unchanged `Fsm` trait. States may carry data (no `Copy`) and a separate `Data` travels with the
+  machine; `handle_event` returns `Transition::{Next, Keep, Stop}` with `Action::{Postpone,
+  StateTimeout, EventTimeout, GenericTimeout, Reply, NextEvent}`. Postponed events are re-delivered
+  after the next state change in arrival order, a state change cancels the state timeout, any event
+  cancels the event timeout, and the optional `on_enter` callback runs on every state change. It
+  runs as a supervised process (`StatemProcess::start` / `start_linked`, `StatemHandle::call`).
+  Book "`Statem`: gen_statem parity", example `statem_door_lock`, test
+  `crates/id_effect_fsm/tests/statem.rs`.
 - `id_effect::stm` collections (conc.stm #6): `TSet`, `TArray` (one `TRef` per element),
   `TPriorityQueue` (`take` returns the smallest element and parks while empty), `TPromise`
   (completes once; `await_` parks until completed) and `TReentrantLock` (read/write lock,

@@ -133,6 +133,7 @@
   - [Effect interpreter and FsmProcess](./part5/ch19-02-effect-interpreter.md)
   - [Sagas](./part5/ch19-03-saga-session.md)
   - [Workflow bridge (labs)](./part5/ch19-04-workflow-bridge.md)
+  - [`Statem`: gen_statem parity](./part5/ch19-05-statem.md)
 
 - [Parser Combinators](./part5/ch20-00-parser-combinators.md)
 
