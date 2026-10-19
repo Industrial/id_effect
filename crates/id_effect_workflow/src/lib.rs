@@ -1,7 +1,7 @@
 //! Durable workflows for id_effect services (ADR 0010 Amendment 7): a history journal replayed
 //! on resume, on `id_effect_sql` (Postgres), with any number of engines against one database,
-//! activities and durable timers as `id_effect_jobs` jobs, and signals (release 0.11.0 decisions
-//! D6 and D7).
+//! activities and durable timers as `id_effect_jobs` jobs, signals, and sagas whose
+//! compensations are journaled activities (release 0.11.0 decisions D6 and D7).
 //!
 //! ```
 //! use id_effect::{Effect, Exit, Schema, succeed};
@@ -51,8 +51,8 @@
 //!
 //! # Design
 //!
-//! This section is the design the 0.11 workflow leaves build on (r11-e7-5-engine; activities,
-//! timers and signals in r11-e7-5-activities-timers; sagas follow in r11-e7-5-sagas-promote).
+//! This section is the design the 0.11 workflow leaves built on (r11-e7-5-engine; activities,
+//! timers and signals in r11-e7-5-activities-timers; sagas in r11-e7-5-sagas-promote).
 //!
 //! ## Model: journal and replay (D7)
 //!
@@ -72,6 +72,7 @@
 //! | [`ctx.activity::<A>(input)`](WorkflowContext::activity) | enqueues a job, parks; once delivered, journals `{"ok"}` / `{"err"}` | the journaled result |
 //! | [`ctx.sleep(d)`](WorkflowContext::sleep), [`sleep_until(t)`](WorkflowContext::sleep_until) | enqueues a timer job at `run_at`, parks; once fired, journals `{"due"}` | returns at once |
 //! | [`ctx.wait_signal::<P>(name)`](WorkflowContext::wait_signal) | takes the next stored signal of `name` or parks; journals `{"number", "payload"}` | the journaled signal |
+//! | [`saga.compensate::<C>(input)`](Saga::compensate) | journals the step `compensate:<C::NAME>` holding `input` | registers the journaled input again |
 //!
 //! Replay is keyed by `seq` and checked by kind and step name (the Temporal / Durable Task
 //! model): a call whose kind or name differs from the journaled one at its `seq`, or a body that
@@ -148,6 +149,23 @@
 //! signals are received in arrival order, one per call, and a signal sent before the wait is
 //! buffered until it is taken.
 //!
+//! ## Sagas (fault.workflows#3)
+//!
+//! [`ctx.saga(|saga| body)`](WorkflowContext::saga) runs `body` with a [`Saga`] on which it
+//! registers compensations: [`saga.compensate::<C>(input)`](Saga::compensate), or
+//! [`saga.activity::<A, C, _>(input, undo)`](Saga::activity), which runs activity `A` and then
+//! registers `C` with `undo(&output)`. Each registration is a journaled step, so a replay
+//! registers the same compensations with the same inputs. When `body` fails with an error that
+//! fails the instance, the compensations run as activity calls ([`ctx.activity`] rules: a job
+//! each, at least once, retried, journaled), last registered first, one after another; then the
+//! saga fails with the body's error (or a [`WorkflowError::Failed`] naming it and the
+//! compensations that failed for good; the rest still run). A park, a lost lease, a divergence
+//! or a store failure compensates nothing: the run stops, and the next run replays the body's
+//! failure and the finished compensations from the history and runs the rest, so a rollback
+//! survives restarts and takeovers. `id_effect_fsm::Saga` stays the in-memory variant.
+//!
+//! [`ctx.activity`]: WorkflowContext::activity
+//!
 //! ## Schema (`migrations/0001_*.up.sql`, `0002_*.up.sql`, [`migrator`])
 //!
 //! - `workflow_instances (id text PK, name, version, status 'running'|'completed'|'failed',
@@ -207,7 +225,11 @@
 //! timers: [`with_job_queue`](WorkflowEngine::with_job_queue) on the engines,
 //! [`register_activity`](WorkflowEngine::register_activity) and
 //! [`register_timers`](WorkflowEngine::register_timers) on the workers' registry. Signals:
-//! [`WorkflowEngine::client`] or [`WorkflowClient`].
+//! [`WorkflowEngine::client`] or [`WorkflowClient`]. Sagas: [`WorkflowContext::saga`].
+//!
+//! Examples: `010_order_saga` (a saga compensating in reverse), `020_durable_timer` (a day-long
+//! timer under a test clock), both in memory; `030_signal_approval` (a signal on Postgres at
+//! `DATABASE_URL`).
 //!
 //! # Names
 //!
@@ -231,6 +253,7 @@ mod history;
 pub mod lease;
 mod memory;
 mod pg;
+mod saga;
 mod signal;
 mod timer;
 mod workflow;
@@ -248,6 +271,7 @@ pub use id_effect_jobs::JobFailure;
 pub use lease::{EngineId, Fenced, Lease};
 pub use memory::MemoryWorkflowStore;
 pub use pg::{PgWorkflowStore, migrator};
+pub use saga::Saga;
 pub use signal::WorkflowClient;
 pub use timer::TIMER_QUEUE;
 pub use workflow::{Journaled, Workflow, WorkflowContext, WorkflowId};

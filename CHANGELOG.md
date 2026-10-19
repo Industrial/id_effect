@@ -107,6 +107,16 @@
   Breaking: the mesh protocol is version 3; 0.10.x nodes (versions 1 and 2) are refused with
   `HandshakeError::VersionMismatch`. Fuzz targets `mesh_frame`, `mesh_envelope`. See "Node: mesh
   protocol version" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_workflow`, published (tier integration; fault.workflows #1 #2 #3 #4 #5 #7, level
+  documented): durable workflows journaled in Postgres on `id_effect_sql`, replayed on resume, with
+  any number of engines per database under fenced leases; activities and durable timers as
+  `id_effect_jobs` jobs; signals; and durable sagas: `WorkflowContext::saga` registers
+  compensations as journaled activities that run in reverse order, at least once, when the body
+  fails, and survive restarts (`tests/saga_pg.rs`). Book "Workflow and cluster" rewritten,
+  examples `010_order_saga`, `020_durable_timer`, `030_signal_approval`. Removed: the unpublished
+  `labs/id_effect_workflow` with its duroxide, duroxide-pg and rusqlite dependencies, the
+  `NetworkJournalStub` and the FSM bridge. See "Workflows" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
 
 ## 0.10.1 — 2026-10-18 — Security patch
 

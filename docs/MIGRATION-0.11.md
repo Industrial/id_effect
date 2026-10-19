@@ -432,6 +432,16 @@ section is for users of the unpublished `labs/id_effect_workflow`.
   `next_signal`; `InstanceRecord` gains `waiting` and `wakeups`, `Claimed` gains `wakeups`.
 - A body that catches `WorkflowError` must let `Waiting` (the run parked) and `LeaseLost` through;
   a caught `NonDeterministic` still fails the instance.
+- **Sagas**: `ctx.saga(|saga| body)` with `saga.activity::<A, C, _>(input, undo)` or
+  `saga.compensate::<C>(input)`; compensations are activities, journaled (each registration is the
+  step `compensate:<NAME>`), and run in reverse order when the body fails, across restarts.
+  `id_effect_fsm::Saga` is unchanged and stays the in-memory saga.
+- **The FSM bridge is gone** (`id_effect_workflow::fsm::{register_fsm, step_durable,
+  restore_state}`, `StepJournal`, `DurableWorkflowLog`, `DuroxideStepJournal`): drive a
+  `StateMachine` from a workflow body instead, with events as signals and each transition in a
+  `ctx.step` (book "Workflow bridge"). The labs examples `001_restart_resume` and
+  `030_durable_door_fsm` are replaced by `010_order_saga`, `020_durable_timer` and
+  `030_signal_approval` in `crates/id_effect_workflow/examples`.
 
 ## Lints: `id_effect_lints` replaces the labs crate
 
