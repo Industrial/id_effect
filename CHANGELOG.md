@@ -2,6 +2,15 @@
 
 ## 0.11.0 — Unreleased
 
+The secure-by-default release (ADR 0013): every finding of the 2026-10-18 security review is
+closed in code, each with a regression test, and every way back to the old behaviour is a named
+`dangerous_*` / `insecure_*` opt-out that records itself in the posture registry and fails the
+new prod posture check unless the risk is accepted. Also: mutual TLS on the mesh, protocol v3
+with opt-in at-least-once delivery, durable workflows (`id_effect_workflow`), STM in core,
+`Statem`, process timers and hibernate, Dylint lints, and supply-chain hardening. Upgrading from
+0.10: see the [0.11 migration guide](docs/MIGRATION-0.11.md); a 0.11 mesh node refuses 0.10.x
+peers.
+
 ### Security
 
 - `id_effect_axum` typed routes are deny by default (H8, ADR 0013 R1): `route::Router::route`
@@ -136,6 +145,87 @@
   capability, plaintext mesh TCP without the feature, cross-tenant access, accepted risks without
   a reason, …), blessed on the pinned toolchain; the case → rule table is
   `docs/security/compile-fail.md` (E11.4).
+- ADR 0013 "Secure by default" (rules R1–R10) and its hook in core:
+  `id_effect::observability::posture::record_dangerous(id, reopens)` records an opt-out once per
+  process and `dangerous_opt_outs()` lists them; every `dangerous_*` / `insecure_*` API calls it
+  and the kit's prod posture check reads it (tests `posture_is_empty_by_default`,
+  `posture_records_each_opt_out_once`).
+- `id_effect_logger` (M11, M12): with no policy installed the pipeline applies
+  `RedactionPolicy::recommended()` (16 field names and the globs `*_token`, `*_secret`,
+  `*password*`); `RedactionPolicy::dangerous_none()` turns redaction off (recorded);
+  `active_redaction_policy()` is new. `TracingLogBackend` escapes CR, LF, tab and every other
+  control character (ANSI, C1, DEL, U+2028/2029) in the message, target, spans, keys and values,
+  and quotes values with a space, `=` or `"`; the structured backend escapes keys, so a logged
+  value cannot forge a line or a field (tests `m11_default_pipeline_redacts_common_secret_fields`,
+  `m12_newline_in_message_cannot_forge_a_line`, `m12_annotation_key_cannot_inject_fields`,
+  `m12_control_and_ansi_sequences_are_escaped`). See "Logging: `RedactionPolicy::new`" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_config` and `id_effect_auth` secrets (M13, M14, L3): `Secret<T: Zeroize>` zeroizes
+  its value on drop; new `SecretString` / `SecretBytes`, the only `Secret`s with `==`, which is
+  constant time (`subtle`); `Password` zeroizes its plaintext; `Session`'s `Debug` shows attribute
+  keys, never values (tests `m13_secret_is_zeroized_on_drop`, `m13_password_is_zeroized_on_drop`,
+  `m14_session_debug_hides_attr_values_and_tokens`, `l3_secret_eq_uses_constant_time_compare`).
+  See "Config: `Secret<T: Zeroize>` and its equality" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_sql` raw SQL needs a capability (M16, D9): `query`, `execute`, `query_as`,
+  `query_one_as`, `query_opt_as`, `query_stream` and `query_stream_as` take `impl Into<Sql>`,
+  which only a `&'static str` converts to; SQL built at run time is a `RawSql` run with
+  `query_raw` / `execute_raw`, which need a `RawSqlCapability` from
+  `RawSqlCapability::layer_dangerous()` (recorded) (trybuild
+  `m16_query_with_string_does_not_compile`, `m16_query_raw_requires_capability`,
+  `m16_raw_capability_cannot_be_forged`). `id_effect_redis` (M17): `RedisKv` / `RedisHash` /
+  `RedisJson::clear()` on the empty namespace fail with `RedisError::EmptyNamespace` instead of
+  flushing the database; `clear_all_dangerous()` is the recorded flush
+  (`m17_clear_with_empty_namespace_is_an_error`, `m17_clear_only_deletes_namespace_keys`). See
+  "SQL: `Sql` and `RawSql`" and "Redis" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_authz` tenant isolation by default (M19): a policy defined for a `Tenanted` resource
+  denies a principal of another tenant, or of none, before it runs; resource types implement the
+  new `TenantScope`; `PolicyExt::dangerous_cross_tenant(reason)` is the recorded way across
+  (tests `m19_tenanted_resource_requires_tenant_match_by_default`,
+  `m19_cross_tenant_requires_named_opt_out`, `m19_untenanted_resource_unaffected`). See
+  "Authorization: tenant match by default" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_process` bounded mailboxes (M10, D17): 10,000 user messages by default
+  (`SpawnOptions::mailbox_capacity`); a full mailbox fails a send with `SendError::Full` and a call
+  with `CallError::MailboxFull`, and a remote call with `RemoteFault::MailboxFull`; exit signals
+  and monitor downs bypass the bound (tests `m10_bounded_mailbox_rejects_when_full`,
+  `m10_system_messages_bypass_bound`, `m10_remote_send_to_full_mailbox_faults`). See "Processes"
+  in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_auth` per-process login throttle recorded (H5/H6 residual): `MemoryThrottleStore`,
+  the default store of `LoginThrottle`, of `BasicAuth::new` and of `Totp::new`'s lockout, records
+  `MEMORY_THROTTLE_STORE_POSTURE` (`id_effect_auth::MemoryThrottleStore::memory_only`), so the
+  kit probe "no memory-only security state" fails on it in prod. New constructors that never
+  create it: `BasicAuth::throttled(users, hasher, throttle)` and
+  `Totp::with_stores(config, steps, failures)`; `.with_throttle(..)` / `.with_failure_store(..)`
+  after `new` still record. The Ledger counts both in `PgThrottleStore` (its migration
+  `0009_auth_failures`) and stays clean in prod (test `h5_memory_throttle_store_is_recorded`).
+- New opt-outs, each recorded in the posture registry under its own id and refused by the prod
+  posture check unless accepted: `Router::allow_unregistered_routes_dangerous`,
+  `Router::route_unchecked` (deprecated), `OpenApiUi::public_dangerous`,
+  `HostConfig::dangerous_no_load_shedding`, `SecurityLayer::dangerous_without_csrf`,
+  `RedactionPolicy::dangerous_empty`, `RedactionPolicy::dangerous_none`,
+  `RawSqlCapability::layer_dangerous`, `RedisKv` / `RedisHash` / `RedisJson::clear_all_dangerous`,
+  `PolicyExt::dangerous_cross_tenant`, `SsrfPolicy::dangerous_allow_private_networks`,
+  `ReqwestHttpClient::dangerous_unguarded`, `dangerous_provide_reqwest_client`,
+  `OidcConfig::insecure_allow_http`, `JwksClient::insecure_allow_http`,
+  `BasicAuth::dangerous_without_throttle`, `Totp::dangerous_without_lockout`,
+  `JwtVerifier::dangerous_any_issuer` / `dangerous_any_audience`,
+  `QuicConfig::dangerous_no_client_auth`, `TlsTcpConfig::dangerous_*`,
+  `TcpTransport::dangerous_plaintext` (feature `insecure-plaintext-tcp`); now recorded as well:
+  `QuicConfig::dangerous_accept_any_server_cert`, `Cookie::dangerous_allow_short`, the three
+  `ConnectionLimits::dangerous_*`, `MemoryTotpStepStore` and `MemoryThrottleStore`.
+- Supply chain (E11.3; S1–S3, S5–S7): every workflow action pinned by commit SHA, the toolchain
+  pinned (`rust-toolchain.toml`), top-level `permissions: contents: read`, Dependabot no longer
+  approves its own pull requests, `Cargo.lock` committed and CI built `--locked`, enforced by
+  `scripts/check-workflows.sh`; crates published by trusted publishing only, with SLSA Build L3
+  provenance and a CycloneDX SBOM per crate, each uploaded and published crate checked against
+  the attested digest, and releases refused without a signed tag (`docs/RELEASING.md`); DCO
+  enforced on pull requests (`dco.yml`); CodeQL for Rust and Actions and the OpenSSF Scorecard
+  workflow (`docs/security/openssf.md`); `SECURITY.md` for 0.11.x and `THREAT-MODEL.md` (STRIDE
+  per trust boundary, findings register: no finding open in code, L6 accepted).
+- Fuzzing (E11.4): `fuzz/` with cargo-fuzz targets `schema_json`, `route_path`, `route_query`,
+  `route_form`, `cron_parse`, `config_profile_toml`, `jwt_decode`, `jwks_parse`, `totp_otpauth`,
+  `mesh_frame` and `mesh_envelope`, run by ClusterFuzzLite on pull requests and nightly
+  (`docs/security/fuzzing.md`).
 
 ### Performance
 
@@ -157,6 +247,16 @@
   and combinators implement (`Constant`, `Authenticated`, `RequireRole`, `PredicatePolicy`,
   `And`/`Or`/`Not`, `CrossTenant`, `Arc`/`Box`); a guard with audit events, or
   a policy returning `None`, runs `evaluate` as before.
+- `id_effect_axum` `SecurityLayer` renders the CSP header once per policy and fills in only the
+  nonce, keys the CSRF cookie HMAC once per layer and masks the token only when it is read;
+  `id_effect_logger` reads no fiber ref that is not installed and formats no line `tracing` would
+  drop. With the two fast paths above, the secure stack of the `gate_request` bench went from
+  5.42 µs to 3.54 µs (bare 0.91 µs: +2.63 µs per request) without changing what any layer checks
+  (`docs/benchmarks/README.md`, "Secure-stack budget (0.11)").
+- The secure-stack KPI is an absolute budget, `gate/axum_request_secure_stack −
+  gate/axum_request_bare ≤ 5 µs`, gated in CI (owner decision 2026-10-19), in place of the ratio
+  ≤ 1.15, which a 0.9 µs bare request would turn into about 135 ns for every security layer; the
+  ratio is printed for information (see Added, "Bench gates in CI").
 
 ### Added
 
@@ -257,6 +357,100 @@
   (`account_closure_workflow_survives_restart`). This makes the Ledger the reference-app consumer
   of `id_effect_workflow`, now tier `platform` (ADR 0012, check P). The `reference-ledger` CI job
   runs these tests first.
+- `id_effect_node` cluster-wide names (dist.placement #5): `Mesh::global()` returns a
+  `GlobalRegistry` (`register`, `whereis`, `unregister`, `cast` / `call` by name, `sync_with`);
+  every node holds the table, only the owner registers its process, names go with the process or
+  its node, and conflicting claims after a partition heal to one owner, the loser exiting with
+  `ExitReason::NameConflict` (`tests/global_registry.rs`, example `135_global_names`, book
+  "Cluster-wide names").
+- `id_effect_process` selective receive (E8.1): `ProcessCtx::receive(matcher, timeout)` takes the
+  first matching message and leaves the skipped ones queued in order, bounded by the mailbox
+  capacity (`ReceiveError::{Timeout, ScanLimit, Closed}`); `SpawnOptions`, `Mailbox::with_capacity`,
+  `try_offer_now` and `OfferError` come with the bounded mailboxes (see Security).
+- `id_effect_lints` (E1.9): the labs lint crate is a Dylint library at `lints/id_effect_lints`,
+  run with `cargo dylint` in a CI job, every lint at warn, with the new `raw_sql_non_literal`
+  (ADR 0013 R5) and the auto-fixable `effect_map_identity`, `effect_flat_map_succeed` and
+  `effect_flat_map_then`. Its ast-grep rules load again (one rule per YAML document, plus
+  `utils/`; same ids and severities) and run in a new `ast-grep` job of the lint workflow;
+  `lints/id_effect_lints/examples/demo` is a crate both fire on. Book appendix D. See "Lints" in
+  the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- Book: "Trace context across nodes" in chapter 38 (the `TracePropagator` of the effect sends, the
+  receiving `mesh.*` spans, the OpenTelemetry recipe), "Transport security: mutual TLS",
+  "Cluster-wide names", "Every route declares its access", "Tenant match in policies",
+  "Transactional Collections", "`Statem`: gen_statem parity" and the rewritten "Workflow and
+  cluster".
+
+### Changed
+
+Every break below is in the [0.11 migration guide](docs/MIGRATION-0.11.md), with its shim or the
+reason there is none; its last section maps each `cargo semver-checks` report against 0.10.1 to
+its entry.
+
+- **Breaking** `id_effect_axum`: `Router::route` takes only an endpoint whose route is `.public()`
+  or `.guard(g)` (`Route` and `Endpoint` gain an access parameter); `RouteInfo` gains `access`;
+  `into_axum()` answers 404 to unregistered routes; `HostConfig` gains `load_shed`; the CSRF token
+  is masked (86 characters, new on every response); `OpenApiUi` mounts nothing outside `dev` /
+  `test` unless guarded, no longer derives `PartialEq` and is no longer `UnwindSafe`.
+- **Breaking** `id_effect_console`: `ConsoleConfig` is `Clone`, no longer `Copy`.
+- **Breaking** `id_effect_config`: `Secret<T>` requires `T: Zeroize`; `==` only on `SecretString` /
+  `SecretBytes`.
+- **Breaking** `id_effect_sql`: the query free functions take `impl Into<Sql>`, not
+  `impl Into<String>`.
+- **Breaking** `id_effect_redis`: `clear()` on the empty namespace fails with
+  `RedisError::EmptyNamespace`.
+- **Breaking** `id_effect_authz`: tenanted resources check the tenant first; resource types need
+  `TenantScope`.
+- **Breaking** `id_effect_logger`: no installed policy means `RedactionPolicy::recommended()`; line
+  formats escape control characters and quote values.
+- **Breaking** `id_effect_platform`: the HTTP clients refuse private destinations and follow no
+  redirect; `HttpClientConfig` gains `ssrf` and `max_redirects`.
+- **Breaking** `id_effect_auth`: OIDC requires `https` endpoints outside loopback.
+- **Breaking** `id_effect_node`: QUIC listeners require client certificates; `TcpTransport` is
+  TLS by default, no longer a unit struct or `Copy`, plaintext only with `insecure-plaintext-tcp`;
+  mesh protocol version 3 refuses 0.10.x peers; `ProcessEnvelope` gains `GlobalRegister`,
+  `GlobalUnregister`, `GlobalSync`, `Reliable` and `Ack`, `RemoteFault` gains `MailboxFull` and
+  `ExitReasonWire` gains `NameConflict`.
+- **Breaking** `id_effect_process`: `Next`, `Info`, `ExitReason`, `SendError` and `CallError` are
+  `#[non_exhaustive]`, with the new `Next::Hibernate`, `Info::Timeout`,
+  `ExitReason::NameConflict`, `SendError::Full` and `CallError::MailboxFull`; mailboxes are
+  bounded.
+- `id_effect`: STM is the core module `id_effect::stm` (D5), always compiled, same semantics.
+- `id_effect_axum`: request effects run inline on the caller's task, inside its `tracing` span
+  (see Performance).
+
+### Deprecated
+
+One-minor shims (L9), removed in 0.12; each records the same posture id as its replacement:
+
+- `id_effect_axum`: `Router::route_unchecked` (for `.public()` / `.guard(g)`),
+  `SecurityLayer::without_csrf` (for `dangerous_without_csrf`).
+- `id_effect_logger`: `RedactionPolicy::new` (for `recommended()` or `dangerous_empty()`).
+- `id_effect_auth`: `BasicAuth::without_throttle_dangerous`, `Totp::without_lockout_dangerous`,
+  `JwtVerifier::any_issuer_dangerous` / `any_audience_dangerous`, `JwksClient::allow_http_dangerous`
+  (for `dangerous_without_throttle`, `dangerous_without_lockout`, `dangerous_any_issuer` /
+  `dangerous_any_audience`, `insecure_allow_http`).
+- `id_effect_platform`: `provide_reqwest_client` and `ReqwestHttpClient::new` (for
+  `dangerous_provide_reqwest_client` / `dangerous_unguarded`, or the guarded `layer_with` /
+  `from_config`).
+- `id_effect_fp`: `stm::*` and the root STM re-exports, now aliases of `id_effect::stm`.
+- The 0.9 deprecations (`id_effect_sql::SqlParam`, `SqlRow::new`, `SqlRow::text_cells`;
+  `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody`), announced
+  for removal in 0.11, are still present and still deprecated.
+
+### Removed
+
+- `labs/id_effect_workflow` (with duroxide, duroxide-pg, rusqlite, the `NetworkJournalStub`, the
+  journal transport and the FSM bridge), replaced by the published `id_effect_workflow`.
+- `labs/id_effect_lint`, replaced by `lints/id_effect_lints`.
+- `id_effect_fp`'s own STM implementation (its paths remain as deprecated aliases).
+- The unreleased `RedactionPolicy::empty()` of early 0.11 development.
+
+### Scorecard
+
+Filled at exit from `docs/scorecard/REPORT-0.11.0.md` (blind re-score, method 2.2). Method 2.2
+itself landed at the 0.11 kickoff: non-goal rows and checks leave the score, .NET's scope adds
+Orleans and the Durable Task framework, and 0.6.0–0.10.0 were re-scored (0.10.0: E 76.6, #2;
+`docs/scorecard/REPORT-method-v2.md`).
 
 ## 0.10.1 — 2026-10-18 — Security patch
 
