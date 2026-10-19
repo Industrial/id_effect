@@ -1,0 +1,18 @@
+error[E0277]: `User` cannot cross the RPC wire: it has no Schema
+  --> tests/ui/type_without_schema.rs:13:26
+   |
+13 |   fn me(&self) -> Effect<User, Never, DynEnv>;
+   |                          ^^^^ a procedure input, output, stream item or error field
+   |
+help: the trait `HasSchema` is not implemented for `User`
+  --> tests/ui/type_without_schema.rs:5:1
+   |
+ 5 | struct User {
+   | ^^^^^^^^^^^
+   = note: derive it: `#[derive(id_effect::Schema)]` on the struct (or implement `id_effect::schema::HasSchema` with `A = Self`); `String`, `bool`, `i64`, `f64`, `()`, `Option<T>` and `Vec<T>` are built in
+   = note: required for `User` to implement `RpcSchema`
+note: required by a bound in `of`
+  --> src/service.rs
+   |
+   |   pub fn of<T: RpcSchema>() -> WireSchema<T> {
+   |                ^^^^^^^^^ required by this bound in `of`

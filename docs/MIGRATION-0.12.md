@@ -140,6 +140,21 @@ let out = client.call("Greeter.greet", input, &payload, &["name", "n"], &success
   `#[rpc::service]` (r12-e12-1-macro) generates the handler trait, client and contract instead.
 - `RpcClient` is behind the default feature `client`.
 
+With the macro, the procedures move into a trait and the group, server, client and contract are
+generated (book chapter 33.4):
+
+```rust,ignore
+#[rpc::service(version = 1)]
+trait Greeter {
+  #[query]
+  #[public]
+  fn greet(&self, input: GreetIn) -> Effect<GreetOut, Never, DynEnv>;
+}
+let app = GreeterService::server(MyGreeter).mount_default();
+let client = GreeterService::client(HttpTransport::new(RpcClient::new(url), http_client));
+let out = client.greet(input); // Effect<GreetOut, RpcCallError<Never>, R>
+```
+
 ## RPC: the 0.12 wire format, procedure kinds and typed errors
 
 The HTTP path speaks the 0.12 wire format (design note `r12-rpc-design.md`). **No shim**: one

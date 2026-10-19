@@ -1,0 +1,16 @@
+error: #[rpc::service] needs a contract version
+         help: write `#[rpc::service(version = 1)]`; versions start at 1 and are served side by side
+ --> tests/ui/missing_version.rs:4:1
+  |
+4 | #[rpc::service]
+  | ^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `rpc::service` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused imports: `DynEnv`, `Effect`, and `Never`
+ --> tests/ui/missing_version.rs:1:17
+  |
+1 | use id_effect::{DynEnv, Effect, Never};
+  |                 ^^^^^^  ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

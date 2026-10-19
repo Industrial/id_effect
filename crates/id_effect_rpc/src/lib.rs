@@ -93,3 +93,8 @@ pub use server::{RpcPrincipal, RpcServer, layer_rpc};
 
 // r12-e12-2-subscriptions: subscription sources (feature `events`: the event log).
 pub mod subscription;
+
+// `#[rpc::service]` support (r12-e12-1-macro); `service` the module and `service` the attribute
+// live in different namespaces.
+pub mod service;
+pub use id_effect_rpc_macros::RpcErrorUnion;

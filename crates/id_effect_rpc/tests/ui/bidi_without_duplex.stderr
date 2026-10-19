@@ -1,0 +1,14 @@
+error: `#[bidi]` procedure `room` does not return a `Duplex`
+         help: return `Effect<Duplex<In, Out, E>, E, DynEnv>`; `Duplex::new(|items| …)` maps the client's items to the server's
+ --> tests/ui/bidi_without_duplex.rs:8:28
+  |
+8 |   fn room(&self) -> Effect<Stream<String, Never, DynEnv>, Never, DynEnv>;
+  |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DynEnv`, `Effect`, `Never`, and `Stream`
+ --> tests/ui/bidi_without_duplex.rs:1:17
+  |
+1 | use id_effect::{DynEnv, Effect, Never, Stream};
+  |                 ^^^^^^  ^^^^^^  ^^^^^  ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

@@ -2932,9 +2932,13 @@ dependencies = [
 name = "id_effect_rpc_macros"
 version = "0.11.0"
 dependencies = [
+ "id_effect",
+ "id_effect_axum",
+ "id_effect_rpc",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+ "tokio",
 ]
 
 [[package]]

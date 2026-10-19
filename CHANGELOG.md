@@ -59,6 +59,20 @@
   `client` (default), `postcard`, `ws`, `sse`, `events`, `mesh`, `channels`, `http3`,
   `webtransport`, `test-util`. `id_effect_rpc::service` re-exports `#[rpc::service]` from
   `id_effect_rpc_macros`. Book chapter 33 "One call surface".
+- `#[rpc::service(version = N)]` (`id_effect_rpc_macros`, r12-e12-1-macro): a trait whose methods
+  carry a kind (`#[query]`, `#[mutation]`, `#[server_stream]`, `#[client_stream]`, `#[bidi]`,
+  `#[subscription]`) and an access decision (`#[public]` or `#[guard(G)]`, required — ADR 0013
+  R1) becomes the handler trait, `<Trait>Service` (`contract()`, `register`, `group`, `server`,
+  `mount`) and `<Trait>Client<T>` over any `service::RpcTransport` (`LocalTransport` for every
+  kind in-process, `HttpTransport` for queries and mutations over `POST /rpc`); calls fail with
+  `RpcCallError<E>`. `#[derive(RpcErrorUnion)]` makes an enum a typed error union
+  (`#[rpc(status = N)]`, `#[rpc(tag = "…")]`, `#[rpc(internal)]`) and refuses the reserved
+  failure tags. Versions are served side by side (`name = "…"` shares a service name). Input,
+  output and error field types are the built-ins or `#[derive(Schema)]` types
+  (`service::RpcSchema`); types that also implement serde get `WireSchema::with_serde`, so the
+  generated procedures are served over postcard; misuse fails with a `help:` line (`tests/ui`).
+  The contract snapshot `crates/id_effect_rpc/rpc.contract.json` is checked by
+  `contract_snapshot_is_current`. Book chapter 33.4.
 - `id_effect_rpc` procedure kinds (ADR 0014 §2, r12-e12-1-kinds): `Procedure::server_stream`,
   `client_stream`, `bidi`, `subscription` and `.version(n)`, `.max_items(n)`, `.max_bytes(n)`;
   `RpcGroup::{query, mutation, server_stream, client_stream, bidi, subscription}` take the

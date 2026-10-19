@@ -1,0 +1,437 @@
+{
+  "format": "id-effect.rpc.contract/1",
+  "services": [
+    {
+      "name": "Greeter",
+      "version": 1,
+      "description": "Says hello.",
+      "procedures": [
+        {
+          "name": "greet",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "error": null,
+          "description": "Greets someone."
+        }
+      ]
+    },
+    {
+      "name": "Greeter",
+      "version": 2,
+      "description": "Says hello, politely if asked.",
+      "procedures": [
+        {
+          "name": "greet",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "polite": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "polite"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "error": null,
+          "description": "Greets someone."
+        },
+        {
+          "name": "history",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": null,
+          "description": "Every greeting so far."
+        }
+      ]
+    },
+    {
+      "name": "Todos",
+      "version": 1,
+      "description": "Keeps todos.",
+      "procedures": [
+        {
+          "name": "add",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "staff"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "done": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "done"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Locked"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "TooLong"
+                  },
+                  "max": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Adds a todo (staff only).",
+          "idempotent": true
+        },
+        {
+          "name": "count",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "How many todos there are."
+        },
+        {
+          "name": "get",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "done": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "done"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Locked"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "TooLong"
+                  },
+                  "max": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "One todo by id."
+        },
+        {
+          "name": "shout",
+          "kind": "bidi",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "error": null,
+          "description": "Every line back in upper case."
+        },
+        {
+          "name": "sum",
+          "kind": "client_stream",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "The sum of the client's numbers.",
+          "max_items": 100,
+          "max_bytes": 4194304
+        },
+        {
+          "name": "ticks",
+          "kind": "subscription",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "Ticks from `from`, resumable."
+        },
+        {
+          "name": "titles",
+          "kind": "subscription",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "error": null,
+          "description": "The titles, not resumable."
+        },
+        {
+          "name": "upto",
+          "kind": "server_stream",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Locked"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "TooLong"
+                  },
+                  "max": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "1, 2, …, n; a negative n fails after the stream started."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,121 @@
+error[E0277]: `TodoError` is not an RPC error union
+  --> tests/ui/error_type_not_a_union.rs:14:44
+   |
+14 |   fn get(&self, id: i64) -> Effect<String, TodoError, DynEnv>;
+   |                                            ^^^^^^^^^ the procedure's error type
+   |
+help: the trait `RpcErrorUnion` is not implemented for `TodoError`
+  --> tests/ui/error_type_not_a_union.rs:6:1
+   |
+ 6 | enum TodoError {
+   | ^^^^^^^^^^^^^^
+   = note: derive it: `#[derive(id_effect_rpc::RpcErrorUnion)]` on an enum of unit or named-field variants, or use `id_effect::Never` for a procedure that cannot fail
+help: the following other types implement trait `RpcErrorUnion`
+  --> src/error_union.rs
+   |
+   | impl RpcErrorUnion for Never {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Infallible`
+...
+   | impl RpcErrorUnion for RpcError {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RpcError`
+   |
+  ::: src/subscription/mod.rs
+   |
+   | impl RpcErrorUnion for CursorMismatch {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `CursorMismatch`
+   = note: required for `TodoError` to implement `RpcServiceError`
+note: required by a bound in `id_effect_rpc::service::__private::assert_error`
+  --> src/service.rs
+   |
+   |   pub fn assert_error<E: RpcServiceError>() {}
+   |                          ^^^^^^^^^^^^^^^ required by this bound in `assert_error`
+
+error[E0277]: `TodoError` is not an RPC error union
+  --> tests/ui/error_type_not_a_union.rs:14:44
+   |
+14 |   fn get(&self, id: i64) -> Effect<String, TodoError, DynEnv>;
+   |                                            ^^^^^^^^^ the procedure's error type
+   |
+help: the trait `RpcErrorDecode` is not implemented for `TodoError`
+  --> tests/ui/error_type_not_a_union.rs:6:1
+   |
+ 6 | enum TodoError {
+   | ^^^^^^^^^^^^^^
+   = note: derive it: `#[derive(id_effect_rpc::RpcErrorUnion)]` on an enum of unit or named-field variants, or use `id_effect::Never` for a procedure that cannot fail
+help: the following other types implement trait `RpcErrorDecode`
+  --> src/service.rs
+   |
+   | impl RpcErrorDecode for Never {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Infallible`
+...
+   | impl RpcErrorDecode for RpcError {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RpcError`
+   = note: required for `TodoError` to implement `RpcServiceError`
+note: required by a bound in `id_effect_rpc::service::__private::assert_error`
+  --> src/service.rs
+   |
+   |   pub fn assert_error<E: RpcServiceError>() {}
+   |                          ^^^^^^^^^^^^^^^ required by this bound in `assert_error`
+
+error[E0277]: the trait bound `TodoError: RpcErrorUnion` is not satisfied
+  --> tests/ui/error_type_not_a_union.rs:10:1
+   |
+10 | #[rpc::service(version = 1)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `RpcErrorUnion` is not implemented for `TodoError`
+  --> tests/ui/error_type_not_a_union.rs:6:1
+   |
+ 6 | enum TodoError {
+   | ^^^^^^^^^^^^^^
+help: the following other types implement trait `RpcErrorUnion`
+  --> src/error_union.rs
+   |
+   | impl RpcErrorUnion for Never {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Infallible`
+...
+   | impl RpcErrorUnion for RpcError {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RpcError`
+   |
+  ::: src/subscription/mod.rs
+   |
+   | impl RpcErrorUnion for CursorMismatch {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `CursorMismatch`
+note: required by a bound in `RpcGroup::query`
+  --> src/registry.rs
+   |
+   |   pub fn query<D, I, O, E, H>(
+   |          ----- required by a bound in this associated function
+...
+   |     E: RpcErrorUnion,
+   |        ^^^^^^^^^^^^^ required by this bound in `RpcGroup::query`
+   = note: this error originates in the attribute macro `rpc::service` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `TodoError: RpcErrorDecode` is not satisfied
+  --> tests/ui/error_type_not_a_union.rs:10:1
+   |
+10 | #[rpc::service(version = 1)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `RpcErrorDecode` is not implemented for `TodoError`
+  --> tests/ui/error_type_not_a_union.rs:6:1
+   |
+ 6 | enum TodoError {
+   | ^^^^^^^^^^^^^^
+help: the following other types implement trait `RpcErrorDecode`
+  --> src/service.rs
+   |
+   | impl RpcErrorDecode for Never {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Infallible`
+...
+   | impl RpcErrorDecode for RpcError {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RpcError`
+note: required by a bound in `call_unary`
+  --> src/service.rs
+   |
+   | pub fn call_unary<T, I, O, E, R>(
+   |        ---------- required by a bound in this function
+...
+   |   E: RpcErrorDecode + Send + 'static,
+   |      ^^^^^^^^^^^^^^ required by this bound in `call_unary`
+   = note: this error originates in the attribute macro `rpc::service` (in Nightly builds, run with -Z macro-backtrace for more info)

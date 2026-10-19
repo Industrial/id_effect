@@ -1,0 +1,6 @@
+error: `InternalError` is a reserved rpc failure tag
+         help: rename the variant or give it another tag with `#[rpc(tag = "…")]`; the reserved tags are InternalError, InvalidInput, DeadlineExceeded, Cancelled, ResourceExhausted, ResumeExpired
+ --> tests/ui/reserved_error_tag.rs:7:3
+  |
+7 |   InternalError { id: String },
+  |   ^^^^^^^^^^^^^

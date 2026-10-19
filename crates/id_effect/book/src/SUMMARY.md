@@ -187,6 +187,7 @@
 - [One call surface (`id_effect_rpc`)](./part6/ch33-00-one-call-surface.md)
   - [Procedures: the six kinds, typed errors, cancellation](./part6/ch33-01-procedures.md)
   - [Encodings: JSON and postcard](./part6/ch33-03-encodings.md)
+  - [Services: `#[rpc::service]`, the client and the contract](./part6/ch33-04-service-macro.md)
   - [WebSocket and server-sent events](./part6/ch33-05-websocket-sse.md)
   - [Subscriptions over the event log](./part6/ch33-08-subscriptions.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
