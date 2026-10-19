@@ -98,3 +98,7 @@ pub mod subscription;
 // live in different namespaces.
 pub mod service;
 pub use id_effect_rpc_macros::RpcErrorUnion;
+
+// r12-e12-4-openapi-asyncapi: AsyncAPI 3.0 of the stream kinds and topics (`openapi` above
+// holds OpenAPI 3.1 and the served contract documents).
+pub mod asyncapi;

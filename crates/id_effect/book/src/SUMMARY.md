@@ -190,6 +190,7 @@
   - [Services: `#[rpc::service]`, the client and the contract](./part6/ch33-04-service-macro.md)
   - [WebSocket and server-sent events](./part6/ch33-05-websocket-sse.md)
   - [Subscriptions over the event log](./part6/ch33-08-subscriptions.md)
+  - [Contracts as OpenAPI and AsyncAPI](./part6/ch33-10-contracts.md)
 - [DX, generators, and deploy](./part6/ch34-00-dx-ship.md)
   - [Doctor and the layer graph](./part6/ch34-01-doctor-graph.md)
   - [The dev loop](./part6/ch34-02-dev.md)

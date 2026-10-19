@@ -109,6 +109,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 tower = { version = "0.5", features = ["util"] }
 # tests/ui.rs: compile-fail cases of `#[rpc::service]` (r12-e12-1-macro).
 trybuild = "1"
+# tests/{openapi_emit,asyncapi_emit}.rs validate the emitted documents against the OpenAPI 3.1
+# and AsyncAPI 3.0 meta-schemas (r12-e12-4-openapi-asyncapi). The version id_effect_axum's tests
+# already use; no default features, so no remote reference resolution.
+jsonschema = { version = "=0.59.0", default-features = false }
 
 [[example]]
 name = "010_json_greet"

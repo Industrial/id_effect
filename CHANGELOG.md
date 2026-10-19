@@ -105,9 +105,24 @@
   (`codec::TypedCodec`) and `RpcMethodEntry::codecs` (`ProcedureCodecs`) carries it: postcard
   decodes the type with serde, then the Schema's validators run as for JSON. `codec::negotiate_accept`
   picks the response codec. Book chapter 33.3.
+- `id_effect_rpc::openapi` emits **OpenAPI 3.1** from the contract (`openapi::document`,
+  `to_json`, `to_yaml`, `OpenApiOptions`; web.rpc #7, r12-e12-4-openapi-asyncapi): queries as
+  `GET ?input=` (ETag, 304) and `POST`, mutations as `POST` with `Idempotency-Key`, server streams
+  as NDJSON frames, client streams as NDJSON items, the envelope and batch route `POST /rpc` with
+  every `(tag, version)`, the `x-rpc`, `x-rpc-version` and `x-rpc-deadline-ms` headers,
+  `WireResult` responses per status and RFC 9457 Problem responses; error unions are `oneOf`
+  with a `_tag` discriminator. `id_effect_rpc::asyncapi` emits **AsyncAPI 3.0** for server and
+  client streams, two-way streams, subscriptions and `ChannelTopic`s over WebSocket (subprotocol
+  binding) and SSE, with the cursor documented. Contract `$defs` become components with
+  deterministic names. `openapi::ContractDocs` serves `/rpc/openapi.json`, `/rpc/asyncapi.json`
+  and `/rpc/_contract`, not mounted outside `dev` and `test` unless guarded (ADR 0013 R7;
+  `public_dangerous` is recorded). Book chapter 33.10.
 
 ### Changed
 
+- `id_effect_rpc::openapi` emits OpenAPI 3.1 from a `Contract` instead of 3.0 from route
+  metadata: `OpenApiSpec`, `OpenApiInfo`, `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod`,
+  `emit_openapi_json` and `emit_openapi_yaml` are removed (see the migration guide).
 - `id_effect_node::transport::certs` is a deprecated re-export of `id_effect_platform::tls` for
   one minor. The QUIC mesh requires ALPN `idm/1`: 0.11 nodes cannot join a 0.12 QUIC mesh. See
   the [0.12 migration guide](docs/MIGRATION-0.12.md).

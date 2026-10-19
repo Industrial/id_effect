@@ -189,6 +189,27 @@ after:  {"id":7,"tag":"Greeter.greet","payload":…}  →  {"id":7,"tag":…,"ex
 
 ## RPC: OpenAPI output is 3.1 (was 3.0)
 
+`id_effect_rpc::openapi` reads the service contract now. The 0.11 route-metadata emitter
+(`OpenApiSpec`, `OpenApiInfo`, `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod`,
+`emit_openapi_json`, `emit_openapi_yaml`, OpenAPI 3.0.3) is removed without a shim: it described
+hand-written route metadata, not the procedures `RpcServer` serves.
+
+```rust,ignore
+// 0.11
+let json = emit_openapi_json(&OpenApiSpec { info, service: RpcServiceDef { service, methods } })?;
+// 0.12
+let json = id_effect_rpc::openapi::to_json(&Todos::document(), &OpenApiOptions::new("Todos API", "1.0.0"));
+```
+
+- The document is OpenAPI 3.1.0 (`jsonSchemaDialect` JSON Schema 2020-12). Component names
+  change: contract types by the last segment of their Rust path, generated components with a
+  `-` (`Todos-v1-get-Result`, `error-NotFound`, `rpc-Problem`).
+- Server and client streams, two-way streams and subscriptions are described in the AsyncAPI 3.0
+  document (`id_effect_rpc::asyncapi::to_json`).
+- To serve the documents, merge `ContractDocs::new(contract).router()`. In `prod` add
+  `.guard(g)`; unguarded, the routes are not mounted (ADR 0013 R7).
+- Plain axum routes keep `id_effect_axum::openapi::OpenApi::from_router` (feature `openapi`).
+
 ## Templates: `server.http3` in the `service` template
 
 ## Semver report: each reported break and its entry

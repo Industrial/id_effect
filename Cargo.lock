@@ -2910,6 +2910,7 @@ dependencies = [
  "id_effect_rpc_macros",
  "id_effect_test",
  "id_effect_tokio",
+ "jsonschema",
  "postcard",
  "proptest",
  "rand 0.9.5",

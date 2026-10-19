@@ -20,7 +20,7 @@ routes or `Valid*` extractors of `id_effect_axum::route`, which answer RFC 9457
 
 ## OpenAPI and the contract
 
-- [`openapi::emit_openapi_json`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/openapi/index.html) — route metadata → OpenAPI 3.0
+- [`openapi::document`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/openapi/index.html) and [`asyncapi::document`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/asyncapi/index.html) — the contract → OpenAPI 3.1 and AsyncAPI 3.0 (chapter 33.10)
 - [`contract::Contract`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/contract/index.html) — the serde description of services and procedures (`rpc.contract.json`) that generated clients and `id-effect rpc check` read
 
 ## API versioning
