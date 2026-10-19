@@ -181,6 +181,32 @@ Secrets are zeroized on drop and compared in constant time (ADR 0013 R2; finding
   tokens): it shows the id prefix, the user id, the attribute keys (`attr_keys`) and the
   timestamps. Read values with `attr(key)` / `attrs()`.
 
+## Auth: shared security state and rotation at login
+
+Security state that must be shared has a persistent store (ADR 0013 R10; finding M18, the H5
+follow-up), and logging in rotates the CSRF token (R9; finding L5). Nothing breaks; a service
+with more than one instance should switch stores.
+
+- **Apply migration `0003_id_effect_auth_state`** (`crates/id_effect_auth/migrations/`) with the
+  crate's other migrations, or call `PgTotpStepStore::ensure_schema()` /
+  `PgThrottleStore::ensure_schema()` at startup (either creates both tables,
+  `id_effect_totp_steps` and `id_effect_auth_failures`).
+- **TOTP replay protection across instances:** replace
+  `Totp::new(config, MemoryTotpStepStore::new())` with
+  `Totp::new(config, PgTotpStepStore::new(client))` (features `pg` + `totp`). Creating a
+  `MemoryTotpStepStore` now records `id_effect_auth::MemoryTotpStepStore::memory_only` in the
+  posture registry, which the prod posture check reports as memory-only security state; tests
+  and single-process development keep it.
+- **Login throttle across instances:** `LoginThrottle::new(PgThrottleStore::new(client))`
+  (feature `pg`), and `Totp::with_failure_store(PgThrottleStore::new(client))` for the TOTP
+  lockout counts. Schedule `PgThrottleStore::purge_forgotten(now - forget_after)` so keys of
+  made-up account names do not accumulate.
+- **Rotate the CSRF token at login:** behind `SecurityLayer`, call
+  `sessions.login_with_csrf(user, presented, &csrf_token)` (feature `axum`) instead of
+  `sessions.login(user, presented)` and return or render the token it hands back; the layer sets
+  the new CSRF cookie, so tokens rendered before login stop validating. `login` itself is
+  unchanged (it already issues a fresh session id and removes the presented one).
+
 ## STM: `id_effect_fp::stm` moves to `id_effect::stm`
 
 Software transactional memory is a core module again (D5): `id_effect::stm` exposes `Stm`,

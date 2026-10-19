@@ -71,7 +71,8 @@ impl Sessions {
   /// Start a session for `user_id` with a fresh id. `presented` is the id the client sent with
   /// the login request, if any: it is removed, so an id planted before login (session
   /// fixation) never becomes an authenticated session. Send the result's
-  /// [`set_cookie`](Self::set_cookie).
+  /// [`set_cookie`](Self::set_cookie). Behind a CSRF layer, use `login_with_csrf` (feature
+  /// `axum`), which also rotates the CSRF token.
   pub fn login(
     &self,
     user_id: impl Into<String>,
@@ -90,6 +91,25 @@ impl Sessions {
         this.store.save(session.clone()).map(move |()| session)
       })
     })
+  }
+
+  /// [`login`](Self::login) for a browser behind `id_effect_axum`'s `SecurityLayer`: once the
+  /// session is saved under its fresh id, `csrf` (the request's
+  /// [`CsrfToken`](id_effect_axum::server::security::CsrfToken)) is rotated, so no CSRF token
+  /// rendered before login validates after it (L5). Return the new token from the handler (or
+  /// render it) along with the result's [`set_cookie`](Self::set_cookie); the layer sets the new
+  /// CSRF cookie. A failed login rotates nothing.
+  #[cfg(feature = "axum")]
+  pub fn login_with_csrf(
+    &self,
+    user_id: impl Into<String>,
+    presented: Option<&SessionId>,
+    csrf: &id_effect_axum::server::security::CsrfToken,
+  ) -> Effect<(Session, id_effect_axum::server::security::CsrfToken), SessionError> {
+    let csrf = csrf.clone();
+    self
+      .login(user_id, presented)
+      .map(move |session| (session, csrf.rotate()))
   }
 
   fn drop_presented(&self, presented: Option<&SessionId>) -> Effect<(), SessionError> {

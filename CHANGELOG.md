@@ -32,6 +32,18 @@
   recorded in the posture registry. New features `tls-tcp`, `insecure-plaintext-tcp`,
   `kubernetes`. Book "Transport security: mutual TLS", example `134_mtls_cluster`. See "Node: QUIC
   requires client certificates" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_auth` security state shared by every instance (M18, H5 follow-up, ADR 0013 R10):
+  `totp::PgTotpStepStore` (features `pg` + `totp`) records consumed TOTP steps with one atomic
+  compare-and-set upsert, so a code accepted on one instance is a replay on every other;
+  `PgThrottleStore` (feature `pg`) keeps the `LoginThrottle` and TOTP-lockout failure counts in
+  PostgreSQL (one upsert per failure, `purge_forgotten` for old keys). Both tables come from the
+  new migration `0003_id_effect_auth_state` (or either store's `ensure_schema`). Creating a
+  `MemoryTotpStepStore` now records `id_effect_auth::MemoryTotpStepStore::memory_only` in the
+  posture registry, so the prod posture check reports memory-only TOTP replay state.
+- `id_effect_auth` (L5): `Sessions::login_with_csrf` (feature `axum`) logs in under a fresh
+  session id and then rotates the request's `CsrfToken`, so no CSRF token rendered before login
+  validates after it. See "Auth: shared security state and rotation at login" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
 
 ### Added
 

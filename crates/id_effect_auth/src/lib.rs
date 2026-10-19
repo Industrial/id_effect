@@ -18,7 +18,7 @@
 //!   [`PasswordHasher::verify_or_dummy`] for unknown users.
 //! - [`throttle`] — [`LoginThrottle`]: exponential backoff after failed logins per account and
 //!   per client address, checked before hashing (on by default in [`BasicAuth`]), over a
-//!   [`ThrottleStore`].
+//!   [`ThrottleStore`]; feature `pg` adds `PgThrottleStore`, shared by every instance.
 //! - `jwt` (feature `jwt`) — `JwtVerifier` / `JwtIssuer`: HS/RS/PS/ES/EdDSA tokens with issuer,
 //!   audience, expiry and required-claim checks and a claim → roles/permissions mapping.
 //!   Feature `jwks` adds `JwksClient`: the identity provider's key set, cached and refetched
@@ -33,9 +33,9 @@
 //!   `Sessions::login`, and RP-initiated logout. Implements id_effect_platform's `OAuthClient`.
 //! - `totp` (feature `totp`) — `Totp`: RFC 6238 enrolment (160-bit secret, `otpauth://` URI)
 //!   and verification with ±1 step of skew on a `WallClock` and replay protection through a
-//!   `TotpStepStore`; `RecoveryCodes`: single-use codes stored as argon2id hashes;
-//!   `Totp::step_up` marks the session after a second factor, `with_mfa_claims` and
-//!   `require_mfa` carry it to `id_effect_authz` policies.
+//!   `TotpStepStore` (`PgTotpStepStore` with feature `pg`); `RecoveryCodes`: single-use codes
+//!   stored as argon2id hashes; `Totp::step_up` marks the session after a second factor,
+//!   `with_mfa_claims` and `require_mfa` carry it to `id_effect_authz` policies.
 //! - `account` (feature `accounts`) — `Accounts`: registration, email verification and forgot /
 //!   reset password with single-use expiring tokens stored as SHA-256 digests
 //!   (`PgAccountTokenStore`), a forgot-password answer that does not reveal whether the account
@@ -123,7 +123,11 @@ pub use session::{
 };
 #[cfg(feature = "pg")]
 pub use session::{PgSessionStore, pg_session_store_layer};
+#[cfg(feature = "pg")]
+pub use throttle::PgThrottleStore;
 pub use throttle::{Failures, LoginThrottle, MemoryThrottleStore, ThrottleStore};
+#[cfg(all(feature = "totp", feature = "pg"))]
+pub use totp::PgTotpStepStore;
 #[cfg(feature = "totp")]
 pub use totp::{
   MemoryTotpStepStore, RecoveryCodes, Totp, TotpConfig, TotpError, TotpSecret, TotpStepStore,

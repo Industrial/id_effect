@@ -48,7 +48,7 @@ pub use cookie::{CookieConfig, SameSite};
 #[cfg(feature = "axum")]
 pub use layer::{SessionLayer, SessionService};
 pub use manager::{Sessions, SessionsEnv, load_session, login, logout, revoke_all, sessions_layer};
-#[cfg(feature = "accounts")]
+#[cfg(feature = "pg")]
 pub(crate) use pg::statements;
 #[cfg(feature = "pg")]
 pub use pg::{PgSessionStore, pg_session_store_layer};

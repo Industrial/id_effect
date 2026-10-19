@@ -8,7 +8,12 @@
 //!   time under a `TestExecutor` or an anchored clock. A code is accepted for the current step
 //!   and ±[`TotpConfig::skew`] steps (one by default, RFC 6238 §5.2), and only once: the
 //!   [`TotpStepStore`] remembers the last step each user consumed, and a code for that step or
-//!   an earlier one is [`TotpVerification::Replayed`].
+//!   an earlier one is [`TotpVerification::Replayed`]. With several instances, use
+//!   `PgTotpStepStore` (features `pg` + `totp`): a code consumed on one instance is a replay on
+//!   every other. [`MemoryTotpStepStore`] is per process, and creating one records
+//!   [`MEMORY_TOTP_STEP_STORE_POSTURE`] in the posture registry
+//!   ([`id_effect::observability::posture`]) as memory-only security state, which the prod
+//!   posture check reports.
 //! - [`RecoveryCodes`] generates single-use recovery codes, shown once and stored as argon2id
 //!   hashes through [`PasswordHasher`]; [`RecoveryCodes::redeem`] checks a code against every
 //!   stored hash (no early exit) and hands back the remaining ones to store.
@@ -267,11 +272,33 @@ struct MemorySteps {
   fail: Option<String>,
 }
 
+/// The posture registry id [`MemoryTotpStepStore`] records when one is created (0.11 M18): its
+/// replay state is memory-only.
+pub const MEMORY_TOTP_STEP_STORE_POSTURE: &str = "id_effect_auth::MemoryTotpStepStore::memory_only";
+
 /// In-memory [`TotpStepStore`] for tests and single-process development. Clones share the
 /// records.
-#[derive(Clone, Default)]
+///
+/// Each instance of a service remembers only the codes it accepted itself, so behind a load
+/// balancer a code accepted on one instance is accepted again on another (M18). Creating one
+/// records [`MEMORY_TOTP_STEP_STORE_POSTURE`] in the posture registry, which the prod posture
+/// check reports as memory-only security state; use `PgTotpStepStore` there.
+#[derive(Clone)]
 pub struct MemoryTotpStepStore {
   inner: Arc<Mutex<MemorySteps>>,
+}
+
+impl Default for MemoryTotpStepStore {
+  fn default() -> Self {
+    id_effect::observability::posture::record_dangerous(
+      MEMORY_TOTP_STEP_STORE_POSTURE,
+      "M18: TOTP replay state is memory-only; a code accepted on one instance is accepted again \
+       on another",
+    );
+    Self {
+      inner: Arc::default(),
+    }
+  }
 }
 
 impl fmt::Debug for MemoryTotpStepStore {
@@ -318,6 +345,98 @@ impl TotpStepStore for MemoryTotpStepStore {
     })
   }
 }
+
+#[cfg(feature = "pg")]
+mod pg {
+  use std::fmt;
+
+  use id_effect::{Effect, fail, succeed};
+  use id_effect_sql::{SqlClient, SqlClientService, SqlError, params};
+
+  use super::{TotpError, TotpStepStore};
+  use crate::session::statements;
+
+  /// The crate's migration `migrations/0003_id_effect_auth_state.up.sql`: what
+  /// [`PgTotpStepStore::ensure_schema`] runs.
+  const SCHEMA: &str = include_str!("../migrations/0003_id_effect_auth_state.up.sql");
+
+  /// The compare-and-set: inserts the first step, or moves it forward only when `$2` is later.
+  /// The affected row count is 1 when the step was recorded, 0 when it was not later.
+  pub(super) const CONSUME: &str = "INSERT INTO id_effect_totp_steps AS s (user_id, last_step) \
+    VALUES ($1, $2) \
+    ON CONFLICT (user_id) DO UPDATE SET last_step = EXCLUDED.last_step \
+    WHERE s.last_step < EXCLUDED.last_step";
+
+  /// [`TotpStepStore`] in the PostgreSQL table `id_effect_totp_steps`, over any [`SqlClient`]
+  /// (`id_effect_sql::pg::PgSqlClient` in production): the replay state every instance shares,
+  /// so a code is accepted once across all of them (M18). Clones share the client.
+  ///
+  /// [`consume`](TotpStepStore::consume) is one statement (`INSERT … ON CONFLICT (user_id) DO
+  /// UPDATE … WHERE last_step < EXCLUDED.last_step`): of two instances consuming the same step
+  /// at once, the database lets exactly one record it.
+  ///
+  /// Create the table with the crate's `migrations/0003_id_effect_auth_state.up.sql` or with
+  /// [`ensure_schema`](Self::ensure_schema). Driver failures surface as
+  /// [`TotpError::Storage`].
+  #[derive(Clone)]
+  pub struct PgTotpStepStore {
+    client: SqlClientService,
+  }
+
+  impl fmt::Debug for PgTotpStepStore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      f.debug_struct("PgTotpStepStore")
+        .field("table", &"id_effect_totp_steps")
+        .finish_non_exhaustive()
+    }
+  }
+
+  impl PgTotpStepStore {
+    /// A store over `client`.
+    #[inline]
+    pub fn new(client: impl SqlClient) -> Self {
+      Self::from_service(SqlClientService::new(client))
+    }
+
+    /// A store over the client capability `client` (shares the client and its pool).
+    #[inline]
+    pub fn from_service(client: SqlClientService) -> Self {
+      Self { client }
+    }
+
+    /// Create the tables of `migrations/0003_id_effect_auth_state.up.sql` (this store's and
+    /// `PgThrottleStore`'s) unless they exist, one statement at a time.
+    pub fn ensure_schema(&self) -> Effect<(), TotpError> {
+      let client = self.client.clone();
+      statements(SCHEMA)
+        .into_iter()
+        .fold(succeed(()), move |done, sql| {
+          let client = client.clone();
+          done.flat_map(move |()| client.execute(&sql, &[]).map(|_| ()).map_err(storage))
+        })
+    }
+  }
+
+  fn storage(e: SqlError) -> TotpError {
+    TotpError::Storage(e.to_string())
+  }
+
+  impl TotpStepStore for PgTotpStepStore {
+    fn consume(&self, user_id: &str, step: u64) -> Effect<bool, TotpError> {
+      let Ok(step) = i64::try_from(step) else {
+        return fail(TotpError::Storage(format!("TOTP step {step} out of range")));
+      };
+      self
+        .client
+        .execute(CONSUME, &params![user_id, step])
+        .map(|n| n > 0)
+        .map_err(storage)
+    }
+  }
+}
+
+#[cfg(feature = "pg")]
+pub use pg::PgTotpStepStore;
 
 /// Failure counting for [`Totp::verify`].
 #[derive(Clone)]
@@ -1046,5 +1165,54 @@ mod tests {
     );
     assert_eq!(format!("{code:?}"), "RecoveryCode(<redacted>)");
     assert_eq!(normalize(" abcde-fghij "), "ABCDEFGHIJ");
+  }
+
+  #[test]
+  fn m18_memory_step_store_is_reported_as_memory_only() {
+    let _ = MemoryTotpStepStore::default();
+    let found = id_effect::observability::posture::dangerous_opt_outs();
+    let (_, reopens) = found
+      .iter()
+      .find(|(id, _)| *id == MEMORY_TOTP_STEP_STORE_POSTURE)
+      .expect("recorded");
+    assert!(reopens.starts_with("M18: TOTP replay state is memory-only"));
+  }
+
+  #[cfg(feature = "pg")]
+  #[test]
+  fn the_pg_step_store_consumes_with_one_compare_and_set() {
+    use id_effect_sql::{SqlClient, SqlValue, TestSqlClient};
+
+    let client = TestSqlClient::new();
+    let store = PgTotpStepStore::new(client.clone());
+    assert!(matches!(
+      run(store.consume("u", 7)),
+      Err(TotpError::Storage(_))
+    ));
+    assert!(matches!(
+      run(store.ensure_schema()),
+      Err(TotpError::Storage(_))
+    ));
+    run(client.connect()).unwrap();
+    assert_eq!(run(store.consume("u", 7)), Ok(false), "no row affected");
+    client.script_execute(pg::CONSUME, 1);
+    assert_eq!(run(store.consume("u", 8)), Ok(true));
+    let (sql, params) = &client.recorded_executes()[1];
+    assert_eq!(sql, pg::CONSUME);
+    assert_eq!(params, &[SqlValue::Text("u".into()), SqlValue::I64(8)]);
+    assert!(matches!(
+      run(store.consume("u", u64::MAX)),
+      Err(TotpError::Storage(m)) if m.contains("out of range")
+    ));
+    run(store.ensure_schema()).unwrap();
+    let ddl: Vec<String> = client
+      .recorded_executes()
+      .into_iter()
+      .skip(2)
+      .map(|(sql, _)| sql)
+      .collect();
+    assert_eq!(ddl.len(), 3, "{ddl:?}");
+    assert!(ddl[0].starts_with("CREATE TABLE IF NOT EXISTS id_effect_totp_steps"));
+    assert!(format!("{store:?}").contains("id_effect_totp_steps"));
   }
 }
