@@ -4,6 +4,16 @@
 
 ### Added
 
+- The Relay reference app (`examples/reference/relay`, the 0.12 KPI): a chat across three nodes
+  with presence, built only through `id_effect_kit`. Rooms are channels topics joined through a
+  membership policy (PostgreSQL), messages go over a two-way RPC stream and land in an event log
+  whose subscription resumes from a cursor with no gap, nodes call each other over mesh RPC on
+  the QUIC endpoint that also serves HTTP/3 and WebTransport (mutual TLS on `idm/1`, one port).
+  Clients: the generated Rust client (HTTP/1.1–2, HTTP/3, WebSocket), the generated TypeScript
+  client under Deno, and a browser page (WebTransport, falling back to WebSocket). The prod
+  posture passes with zero accepted risks; CI job `reference-relay` (also run with UDP dropped by
+  iptables, proving the TCP fallback) and `id-effect rpc check` against the last release tag.
+  `id_effect_rpc` moves to tier `platform` (ADR 0012 rule 4).
 - `id_effect_kit` features `rpc` (`kit::rpc`, `#[rpc::service]` and the RPC types in the prelude;
   with `cluster` also channels and mesh RPC, with `events` event-log subscriptions), `rpc-ws`
   (WebSocket and SSE transports), `http3` (TLS on TCP and HTTP/3 on the same port,

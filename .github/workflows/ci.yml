@@ -417,6 +417,80 @@ jobs:
           cargo nextest run --locked -p id_effect_rpc -p id_effect_rpc_macros -p relay --all-features
           cargo test --locked -p id_effect_rpc -p id_effect_rpc_macros --doc --all-features
   # ──────────────────────────────────────────────────────────────────────────
+  # Relay reference app (0.12 §6 KPI, never cut): three nodes on real QUIC and TLS on
+  # loopback, the mesh (mutual TLS, `idm/1`) on the endpoint that serves HTTP/3 and
+  # WebTransport (ADR 0014 D7), PostgreSQL in the tests' own container; the Rust client over
+  # HTTP/1.1-2, HTTP/3 and WebSocket, the generated TypeScript client under Deno, Chromium over
+  # CDP (WebTransport, then WebSocket); the prod posture with zero accepted risks; `id-effect rpc
+  # check` against the last release tag; then once more with UDP dropped by iptables, to prove
+  # the TCP fallback.
+  # ──────────────────────────────────────────────────────────────────────────
+  reference-relay:
+    name: Reference app (Relay)
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    env:
+      ID_EFFECT_REQUIRE_DOCKER: '1'
+      ID_EFFECT_REQUIRE_BROWSER: '1'
+      ID_EFFECT_REQUIRE_DENO: '1'
+      # The UDP port the second run drops (`relay_udp_blocked_falls_back_to_tcp` binds it).
+      RELAY_BLOCKED_PORT: '47443'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The release tags and the contract each shipped (`id-effect rpc check`).
+          fetch-depth: 0
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: reference-relay
+      - name: Install Deno (pinned)
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.7.9
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      # The tests start PostgreSQL with id_effect_test (postgres:17-alpine): pull it up front so
+      # no test times out on a cold pull. Chromium for the browser test is the runner's Chrome.
+      - name: Pull PostgreSQL, check Chrome
+        run: |
+          docker pull -q postgres:17-alpine
+          google-chrome --version
+      - name: Format and lints
+        run: |
+          cargo fmt -p relay --check
+          cargo clippy -p relay --all-targets --locked -- -D warnings
+      - name: Relay KPI (3 nodes over HTTP/3 and WebSocket, presence, resume, membership, browser, TypeScript, prod posture, contract)
+        run: cargo nextest run --locked -p relay
+      - name: id-effect rpc check against the last release tag
+        run: |
+          tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          contract=examples/reference/relay/rpc.contract.json
+          if [ -n "${tag}" ] && git cat-file -e "${tag}:${contract}" 2>/dev/null; then
+            against="${tag}:${contract}"
+          else
+            # The Relay's contract is new in 0.12: until a tag ships it, compare it with itself
+            # (the generated TypeScript client is still checked).
+            echo "no released ${contract} at ${tag:-no tag}: checking the client only"
+            against="${contract}"
+          fi
+          cargo run -q --locked -p id_effect_tool --bin id-effect -- rpc check \
+            --contract "${contract}" --against "${against}" \
+            --generated examples/reference/relay/web/src/rpc
+      - name: UDP blocked (iptables drops UDP to the node), TCP fallback
+        run: |
+          sudo iptables -I INPUT -p udp --dport "${RELAY_BLOCKED_PORT}" -j DROP
+          sudo ip6tables -I INPUT -p udp --dport "${RELAY_BLOCKED_PORT}" -j DROP
+          RELAY_UDP_BLOCKED_PORT="${RELAY_BLOCKED_PORT}" \
+            cargo nextest run --locked -p relay -E 'test(=relay_udp_blocked_falls_back_to_tcp)'
+  # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
   # id_effect_rpc left labs in 0.12 (ADR 0010 Amendment 8); the `rpc` job above tests it.
@@ -693,6 +767,7 @@ jobs:
       - pg-integration
       - containers-integration
       - reference-ledger
+      - reference-relay
       - rpc
       - labs
       - minimal-versions
