@@ -65,6 +65,9 @@ tower-service = "0.3.3"
 # Web hardening (`server::security`): CORS, CSRF tokens, CSP nonces/hashes, signed cookies.
 base64 = "0.22.1"
 cookie = { version = "0.18.1", features = ["signed", "private"] }
+# The CSRF cookie's signature, keyed once per layer (`cookie`'s signed-jar MAC); already in
+# cookie's dependency tree.
+hmac = "0.12.1"
 rand = "0.9"
 sha2 = "0.10.9"
 subtle = "2.6.1"

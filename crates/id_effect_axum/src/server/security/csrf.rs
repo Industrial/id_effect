@@ -18,19 +18,20 @@
 
 use std::convert::Infallible;
 use std::fmt;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, IntoResponseParts, Response, ResponseParts};
 use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use cookie::{Cookie, CookieJar, SameSite};
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
 use rand::RngCore;
+use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
 use super::cookies::{CookieKey, request_jar};
@@ -47,6 +48,19 @@ pub const CSRF_FORM_FIELD: &str = "csrf_token";
 /// Token entropy in bytes.
 const TOKEN_BYTES: usize = 32;
 
+/// A session secret.
+type Secret = [u8; TOKEN_BYTES];
+
+/// Characters of a secret in the cookie (unpadded base64url of [`TOKEN_BYTES`]).
+const SECRET_TEXT_LEN: usize = 43;
+
+/// Characters of the cookie signature (padded base64 of an HMAC-SHA256 tag).
+const SIGNATURE_TEXT_LEN: usize = 44;
+
+/// The CSRF cookie's attributes after `name=value`, as `cookie` writes them for a `Secure`,
+/// `HttpOnly`, `SameSite=Strict`, `Path=/` cookie.
+const COOKIE_ATTRIBUTES: &str = "; HttpOnly; SameSite=Strict; Secure; Path=/";
+
 /// Default largest form body read to find [`CSRF_FORM_FIELD`].
 const DEFAULT_FORM_LIMIT: usize = 64 * 1024;
 
@@ -59,10 +73,10 @@ fn tokens_match(expected: &str, submitted: &str) -> bool {
 }
 
 /// A fresh session secret from the thread-local CSPRNG.
-fn random_secret() -> Arc<[u8]> {
+fn random_secret() -> Secret {
   let mut secret = [0u8; TOKEN_BYTES];
   rand::rng().fill_bytes(&mut secret);
-  secret.into()
+  secret
 }
 
 /// `secret` masked with a fresh one-time pad: base64url(pad || pad XOR secret).
@@ -104,14 +118,14 @@ fn forbidden() -> Response {
 
 /// Where [`CsrfToken::rotate`] leaves the new secret for the layer to set in the cookie.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct Rotation(Arc<Mutex<Option<Arc<[u8]>>>>);
+pub(crate) struct Rotation(Arc<Mutex<Option<Secret>>>);
 
 impl Rotation {
-  fn set(&self, secret: Arc<[u8]>) {
+  fn set(&self, secret: Secret) {
     *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(secret);
   }
 
-  fn take(&self) -> Option<Arc<[u8]>> {
+  fn take(&self) -> Option<Secret> {
     self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
   }
 }
@@ -123,16 +137,24 @@ impl Rotation {
 /// session cookie holds the same secret. Two tokens are equal when they carry the same secret.
 #[derive(Clone)]
 pub struct CsrfToken {
-  secret: Arc<[u8]>,
-  masked: Arc<str>,
+  masked: Arc<Masked>,
   rotation: Rotation,
 }
 
+/// A token's secret and its masked text, masked on first use (a response that renders no token
+/// pays for no pad); clones share the text.
+struct Masked {
+  secret: Secret,
+  text: OnceLock<String>,
+}
+
 impl CsrfToken {
-  fn new(secret: Arc<[u8]>, rotation: Rotation) -> Self {
+  fn new(secret: Secret, rotation: Rotation) -> Self {
     Self {
-      masked: mask(&secret).into(),
-      secret,
+      masked: Arc::new(Masked {
+        secret,
+        text: OnceLock::new(),
+      }),
       rotation,
     }
   }
@@ -144,7 +166,8 @@ impl CsrfToken {
 
   /// The masked token text (base64url).
   pub fn as_str(&self) -> &str {
-    &self.masked
+    let Masked { secret, text } = &*self.masked;
+    text.get_or_init(|| mask(secret))
   }
 
   /// Issue a new secret for this session and return its token; the response sets it in the
@@ -152,14 +175,14 @@ impl CsrfToken {
   /// Call it when the session's privilege changes, at login above all.
   pub fn rotate(&self) -> CsrfToken {
     let secret = random_secret();
-    self.rotation.set(Arc::clone(&secret));
+    self.rotation.set(secret);
     Self::new(secret, self.rotation.clone())
   }
 }
 
 impl PartialEq for CsrfToken {
   fn eq(&self, other: &Self) -> bool {
-    self.secret[..].ct_eq(&other.secret[..]).into()
+    self.masked.secret.ct_eq(&other.masked.secret).into()
   }
 }
 
@@ -212,6 +235,8 @@ fn is_bearer_only(headers: &HeaderMap) -> bool {
 #[derive(Clone, Debug)]
 pub(crate) struct CsrfProtection {
   key: CookieKey,
+  /// HMAC-SHA256 keyed with `key`'s signing half, as `cookie`'s signed jar signs.
+  signer: Hmac<Sha256>,
   exempt: Vec<String>,
   exempt_bearer: bool,
   form_limit: usize,
@@ -222,14 +247,16 @@ pub(crate) struct CsrfProtection {
 /// rotated it ([`CsrfToken::rotate`]).
 #[derive(Debug, Default)]
 pub(crate) struct CookieUpdate {
-  issued: Option<Arc<[u8]>>,
+  issued: Option<Secret>,
   rotation: Option<Rotation>,
 }
 
 impl CsrfProtection {
   pub(crate) fn new(key: CookieKey) -> Self {
+    let signer = Hmac::new_from_slice(key.key().signing()).expect("HMAC takes any key length");
     Self {
       key,
+      signer,
       exempt: Vec::new(),
       exempt_bearer: false,
       form_limit: DEFAULT_FORM_LIMIT,
@@ -261,11 +288,14 @@ impl CsrfProtection {
   }
 
   /// The session secret from a correctly signed cookie, if any.
-  fn session_secret(&self, headers: &HeaderMap) -> Option<Arc<[u8]>> {
+  fn session_secret(&self, headers: &HeaderMap) -> Option<Secret> {
+    if !headers.contains_key(header::COOKIE) {
+      return None;
+    }
     let jar = request_jar(headers);
     let cookie = jar.signed(self.key.key()).get(CSRF_COOKIE)?;
     let secret = URL_SAFE_NO_PAD.decode(cookie.value()).ok()?;
-    (secret.len() == TOKEN_BYTES).then(|| secret.into())
+    Secret::try_from(secret.as_slice()).ok()
   }
 
   /// The `Set-Cookie` value for `update`, if a secret was issued or rotated.
@@ -274,17 +304,25 @@ impl CsrfProtection {
     self.set_cookie(&rotated.or(update.issued)?)
   }
 
-  fn set_cookie(&self, secret: &[u8]) -> Option<HeaderValue> {
-    let cookie = Cookie::build((CSRF_COOKIE, URL_SAFE_NO_PAD.encode(secret)))
-      .path("/")
-      .secure(true)
-      .http_only(true)
-      .same_site(SameSite::Strict)
-      .build();
-    let mut jar = CookieJar::new();
-    jar.signed_mut(self.key.key()).add(cookie);
-    let signed = jar.get(CSRF_COOKIE)?;
-    HeaderValue::from_str(&signed.to_string()).ok()
+  /// `__Host-csrf=<signed secret>` and [`COOKIE_ATTRIBUTES`], signed the way `cookie`'s signed
+  /// jar signs (`base64(HMAC-SHA256(value)) || value`, which [`Self::session_secret`] verifies)
+  /// with the HMAC keyed once in [`Self::new`], and written in one buffer.
+  fn set_cookie(&self, secret: &Secret) -> Option<HeaderValue> {
+    let mut value = [0u8; SECRET_TEXT_LEN];
+    let len = URL_SAFE_NO_PAD.encode_slice(secret, &mut value).ok()?;
+    let value = &value[..len];
+    let mut mac = self.signer.clone();
+    mac.update(value);
+    let tag = mac.finalize().into_bytes();
+    let mut text = String::with_capacity(
+      CSRF_COOKIE.len() + 1 + SIGNATURE_TEXT_LEN + len + COOKIE_ATTRIBUTES.len(),
+    );
+    text.push_str(CSRF_COOKIE);
+    text.push('=');
+    STANDARD.encode_string(tag, &mut text);
+    text.push_str(std::str::from_utf8(value).ok()?);
+    text.push_str(COOKIE_ATTRIBUTES);
+    HeaderValue::from_maybe_shared(Bytes::from(text)).ok()
   }
 
   /// Resolve (or issue) the session secret, store its masked [`CsrfToken`] in the request
@@ -305,12 +343,12 @@ impl CsrfProtection {
     let secret = existing.unwrap_or_else(random_secret);
     let rotation = Rotation::default();
     let update = CookieUpdate {
-      issued: issued.then(|| Arc::clone(&secret)),
+      issued: issued.then_some(secret),
       rotation: Some(rotation.clone()),
     };
     request
       .extensions_mut()
-      .insert(CsrfToken::new(Arc::clone(&secret), rotation));
+      .insert(CsrfToken::new(secret, rotation));
     if is_safe(request.method()) || self.is_exempt(request.uri().path()) {
       return (Ok(request), update);
     }
@@ -544,6 +582,7 @@ mod tests {
   use super::*;
   use axum::Router;
   use axum::routing::{delete, get, patch, post};
+  use cookie::{Cookie, CookieJar};
   use tower::ServiceExt;
 
   fn guarded(config: CsrfConfig) -> Router {
@@ -597,6 +636,39 @@ mod tests {
       &URL_SAFE_NO_PAD.encode(&secret[..])
     ));
     assert!(!masked_matches(&secret, "not base64!"));
+  }
+
+  #[test]
+  fn set_cookie_matches_the_cookie_crate_and_verifies() {
+    let key = CookieKey::generate();
+    let csrf = CsrfProtection::new(key.clone());
+    let secret = random_secret();
+    let value = csrf.set_cookie(&secret).unwrap();
+    // The header the `cookie` builder writes for the same cookie (signing is deterministic).
+    let cookie = Cookie::build((CSRF_COOKIE, URL_SAFE_NO_PAD.encode(secret)))
+      .path("/")
+      .secure(true)
+      .http_only(true)
+      .same_site(cookie::SameSite::Strict)
+      .build();
+    let mut jar = CookieJar::new();
+    jar.signed_mut(key.key()).add(cookie);
+    assert_eq!(value, jar.get(CSRF_COOKIE).unwrap().to_string());
+    let pair = value.to_str().unwrap().split(';').next().unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(header::COOKIE, HeaderValue::from_str(pair).unwrap());
+    assert_eq!(csrf.session_secret(&headers), Some(secret));
+  }
+
+  #[test]
+  fn token_is_masked_once_and_shared_by_clones() {
+    let token = CsrfToken::generate();
+    let clone = token.clone();
+    assert_eq!(token.as_str(), clone.as_str());
+    assert!(masked_matches(&token.masked.secret, token.as_str()));
+    let other = CsrfToken::new(token.masked.secret, Rotation::default());
+    assert_eq!(other, token);
+    assert_ne!(other.as_str(), token.as_str());
   }
 
   #[test]

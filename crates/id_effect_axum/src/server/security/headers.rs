@@ -20,6 +20,11 @@ const CORP: &str = "cross-origin-resource-policy";
 /// `Permissions-Policy`.
 const PERMISSIONS_POLICY: &str = "permissions-policy";
 
+/// [`COOP`], [`CORP`] and [`PERMISSIONS_POLICY`] as header names, built at compile time.
+const COOP_NAME: HeaderName = HeaderName::from_static(COOP);
+const CORP_NAME: HeaderName = HeaderName::from_static(CORP);
+const PERMISSIONS_POLICY_NAME: HeaderName = HeaderName::from_static(PERMISSIONS_POLICY);
+
 /// Powerful features denied to every origin by the recommended `Permissions-Policy`.
 const DENIED_FEATURES: &str = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
 
@@ -186,12 +191,9 @@ impl SecurityHeaders {
       (header::X_FRAME_OPTIONS, frame),
       (header::X_CONTENT_TYPE_OPTIONS, nosniff),
       (header::REFERRER_POLICY, self.referrer_policy.clone()),
-      (HeaderName::from_static(COOP), self.opener_policy.clone()),
-      (HeaderName::from_static(CORP), self.resource_policy.clone()),
-      (
-        HeaderName::from_static(PERMISSIONS_POLICY),
-        self.permissions_policy.clone(),
-      ),
+      (COOP_NAME, self.opener_policy.clone()),
+      (CORP_NAME, self.resource_policy.clone()),
+      (PERMISSIONS_POLICY_NAME, self.permissions_policy.clone()),
     ];
     for (name, value) in entries {
       if let Some(value) = value {

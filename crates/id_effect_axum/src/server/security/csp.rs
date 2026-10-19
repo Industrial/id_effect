@@ -4,19 +4,24 @@
 use std::fmt;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::{FromRequestParts, Request, State};
 use axum::http::request::Parts;
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use rand::RngCore;
 use sha2::{Digest, Sha256};
 
 use super::SecurityError;
 
 /// Bytes of randomness in a [`CspNonce`].
 const NONCE_BYTES: usize = 16;
+
+/// Characters in a [`CspNonce`] (unpadded base64url of [`NONCE_BYTES`]).
+const NONCE_LEN: usize = 22;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Source {
@@ -205,6 +210,38 @@ impl ContentSecurityPolicy {
     HeaderValue::from_str(&rendered.join("; ")).ok()
   }
 
+  /// The header text split at each nonce placeholder, so that joining the parts with a nonce
+  /// gives [`header_value_with_nonce`](Self::header_value_with_nonce) (`None` when empty or
+  /// invalid).
+  fn nonce_segments(&self) -> Option<Box<[Box<str>]>> {
+    if self.directives.is_empty() || self.validate().is_err() {
+      return None;
+    }
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    for (i, (name, sources)) in self.directives.iter().enumerate() {
+      if i > 0 {
+        current.push_str("; ");
+      }
+      current.push_str(name);
+      for source in sources {
+        match source {
+          Source::Literal(s) => {
+            current.push(' ');
+            current.push_str(s);
+          }
+          Source::Nonce => {
+            current.push_str(" 'nonce-");
+            segments.push(std::mem::take(&mut current).into_boxed_str());
+            current.push('\'');
+          }
+        }
+      }
+    }
+    segments.push(current.into_boxed_str());
+    Some(segments.into_boxed_slice())
+  }
+
   fn push(&mut self, name: &str, sources: impl IntoIterator<Item = Source>) {
     let index = match self.directives.iter().position(|(n, _)| n == name) {
       Some(index) => index,
@@ -235,9 +272,17 @@ fn sha256_source(content: &str) -> String {
 pub struct CspNonce(Arc<str>);
 
 impl CspNonce {
-  /// A fresh nonce (128 random bits, base64url).
+  /// A fresh nonce (128 random bits from the thread-local CSPRNG, base64url).
   pub fn generate() -> Self {
-    Self(super::random_token(NONCE_BYTES).into())
+    let mut raw = [0u8; NONCE_BYTES];
+    rand::rng().fill_bytes(&mut raw);
+    let mut text = [0u8; NONCE_LEN];
+    let len = URL_SAFE_NO_PAD
+      .encode_slice(raw, &mut text)
+      .expect("a nonce fits its buffer");
+    Self(Arc::from(
+      std::str::from_utf8(&text[..len]).expect("base64 is ASCII"),
+    ))
   }
 
   /// The nonce text.
@@ -263,6 +308,50 @@ where
       StatusCode::INTERNAL_SERVER_ERROR,
       "no CSP nonce: SecurityLayer with a nonce policy is not installed",
     ))
+  }
+}
+
+/// A [`ContentSecurityPolicy`] rendered once, for [`SecurityLayer`](super::SecurityLayer): the
+/// header value of a policy without a nonce, or the text around each nonce placeholder.
+#[derive(Clone, Debug)]
+pub(crate) enum CompiledCsp {
+  /// No nonce: the same header (none when empty or invalid) on every response.
+  Fixed(Option<HeaderValue>),
+  /// [`ContentSecurityPolicy::nonce_segments`] (`None` when invalid: a nonce, no header).
+  Nonce(Option<Box<[Box<str>]>>),
+}
+
+impl CompiledCsp {
+  pub(crate) fn new(policy: &ContentSecurityPolicy) -> Self {
+    if policy.uses_nonce() {
+      Self::Nonce(policy.nonce_segments())
+    } else {
+      Self::Fixed(policy.to_header_value())
+    }
+  }
+
+  /// [`prepare`] for the compiled policy: the header value for this request, and a fresh
+  /// [`CspNonce`] in the request extensions when the policy uses one.
+  pub(crate) fn prepare(&self, request: &mut Request) -> Option<HeaderValue> {
+    let segments = match self {
+      Self::Fixed(value) => return value.clone(),
+      Self::Nonce(segments) => segments,
+    };
+    let nonce = CspNonce::generate();
+    let value = segments.as_deref().and_then(|segments| {
+      let len = segments.iter().map(|s| s.len()).sum::<usize>()
+        + (segments.len() - 1) * nonce.as_str().len();
+      let mut text = String::with_capacity(len);
+      for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+          text.push_str(nonce.as_str());
+        }
+        text.push_str(segment);
+      }
+      HeaderValue::from_maybe_shared(Bytes::from(text)).ok()
+    });
+    request.extensions_mut().insert(nonce);
+    value
   }
 }
 
@@ -351,6 +440,51 @@ mod tests {
         .unwrap()
         .contains("nonce")
     );
+  }
+
+  #[test]
+  fn compiled_policy_renders_like_the_builder() {
+    let policies = [
+      ContentSecurityPolicy::recommended(),
+      ContentSecurityPolicy::recommended().style_nonce(),
+      ContentSecurityPolicy::new().script_nonce(),
+      ContentSecurityPolicy::new().default_src_self(),
+      ContentSecurityPolicy::new(),
+      ContentSecurityPolicy::new().directive("img-src", &["* ; x"]),
+      ContentSecurityPolicy::new()
+        .directive("img-src", &["* ; x"])
+        .script_nonce(),
+    ];
+    for policy in policies {
+      let mut request = Request::new(Body::empty());
+      let value = CompiledCsp::new(&policy).prepare(&mut request);
+      match request.extensions().get::<CspNonce>() {
+        Some(nonce) => {
+          assert!(policy.uses_nonce());
+          assert_eq!(value, policy.header_value_with_nonce(nonce), "{policy:?}");
+        }
+        None => {
+          assert!(!policy.uses_nonce());
+          assert_eq!(value, policy.to_header_value(), "{policy:?}");
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn nonce_is_url_safe_sized_and_fresh() {
+    let nonce = CspNonce::generate();
+    assert_eq!(
+      URL_SAFE_NO_PAD.decode(nonce.as_str()).unwrap().len(),
+      NONCE_BYTES
+    );
+    assert!(
+      nonce
+        .as_str()
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    );
+    assert_ne!(nonce, CspNonce::generate());
   }
 
   #[test]

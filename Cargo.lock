@@ -2398,6 +2398,7 @@ dependencies = [
  "base64 0.22.1",
  "cookie",
  "criterion",
+ "hmac 0.12.1",
  "http-body",
  "http-body-util",
  "httpdate",

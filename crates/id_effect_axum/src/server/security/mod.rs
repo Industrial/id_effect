@@ -57,6 +57,7 @@ pub use csrf::{CSRF_COOKIE, CSRF_FORM_FIELD, CSRF_HEADER, CsrfConfig, CsrfToken}
 pub use csrf::{csrf_middleware, set_csrf_header};
 pub use headers::{FrameOptions, SecurityHeaders};
 
+use csp::CompiledCsp;
 use csrf::CsrfProtection;
 
 /// A security configuration error, reported when the configuration is built (never a panic).
@@ -132,6 +133,10 @@ pub(crate) fn random_token(bytes: usize) -> String {
   URL_SAFE_NO_PAD.encode(buf)
 }
 
+/// The most headers [`SecurityLayer`] adds to a response: the CSRF cookie, CSP and the seven
+/// [`SecurityHeaders`].
+const SECURITY_RESPONSE_HEADERS: usize = 9;
+
 /// Secure-by-default tower layer: CSRF, CSP with nonce, security headers and cookie defaults.
 ///
 /// Built with [`SecurityLayer::recommended`]; every part can be replaced or switched off
@@ -140,7 +145,7 @@ pub(crate) fn random_token(bytes: usize) -> String {
 pub struct SecurityLayer {
   key: CookieKey,
   csrf: Option<CsrfProtection>,
-  csp: Option<ContentSecurityPolicy>,
+  csp: Option<CompiledCsp>,
   headers: Option<SecurityHeaders>,
   cookie_defaults: CookieDefaults,
 }
@@ -153,7 +158,7 @@ impl SecurityLayer {
     Self {
       csrf: Some(CsrfProtection::new(key.clone())),
       key,
-      csp: Some(ContentSecurityPolicy::recommended()),
+      csp: Some(CompiledCsp::new(&ContentSecurityPolicy::recommended())),
       headers: Some(SecurityHeaders::recommended()),
       cookie_defaults: CookieDefaults::recommended(),
     }
@@ -199,7 +204,7 @@ impl SecurityLayer {
   /// Use `policy` instead of the recommended CSP; it is validated here.
   pub fn csp(mut self, policy: ContentSecurityPolicy) -> Result<Self, SecurityError> {
     policy.validate()?;
-    self.csp = Some(policy);
+    self.csp = Some(CompiledCsp::new(&policy));
     Ok(self)
   }
 
@@ -239,7 +244,7 @@ impl SecurityLayer {
     let csp = self
       .csp
       .as_ref()
-      .and_then(|policy| csp::prepare(policy, &mut request));
+      .and_then(|policy| policy.prepare(&mut request));
     let (outcome, cookie_update) = match &self.csrf {
       Some(csrf) => {
         let (outcome, update) = csrf.guard(request).await;
@@ -261,6 +266,8 @@ impl SecurityLayer {
       .zip(cookie_update)
       .and_then(|(csrf, update)| csrf.cookie_header(update));
     let headers = response.headers_mut();
+    // Room for what follows (cookie, CSP, the default headers): the map grows at most once.
+    headers.reserve(SECURITY_RESPONSE_HEADERS);
     if let Some(cookie) = set_cookie {
       headers.append(header::SET_COOKIE, cookie);
     }
