@@ -52,7 +52,7 @@ With the `pg` feature, swap `sql_client_layer(test)` for `id_effect_sql::pg::PgS
 | Module | Description |
 |--------|-------------|
 | [`error`](src/error.rs) | `SqlError` |
-| [`client`](src/client.rs) | `SqlClient`, `SqlClientService`, `sql_client_layer`, `provide_sql_client`, `query`, `execute`, `TestSqlClient` (`SqlParam`, deprecated) |
+| [`client`](src/client.rs) | `SqlClient`, `SqlClientService`, `sql_client_layer`, `provide_sql_client`, `query`, `execute`, `TestSqlClient` |
 | [`value`](src/value/mod.rs) | `SqlValue`, `SqlType`, `ToSqlValue`, `FromSqlValue`, `ValueError`, `Json<T>`, `params!` |
 | [`row`](src/row.rs) | `SqlRow` (`get`, `value`, `from_pairs`), `SqlColumn`, `ColumnIndex` |
 | [`transaction`](src/transaction.rs) | `SqlTransaction`, `SqlTransactionService`, `transaction_layer`, `with_transaction` (alias `transaction_scope`), `transaction` |

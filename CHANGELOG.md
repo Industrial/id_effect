@@ -433,12 +433,15 @@ One-minor shims (L9), removed in 0.12; each records the same posture id as its r
   `dangerous_provide_reqwest_client` / `dangerous_unguarded`, or the guarded `layer_with` /
   `from_config`).
 - `id_effect_fp`: `stm::*` and the root STM re-exports, now aliases of `id_effect::stm`.
-- The 0.9 deprecations (`id_effect_sql::SqlParam`, `SqlRow::new`, `SqlRow::text_cells`;
-  `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody`), announced
-  for removal in 0.11, are still present and still deprecated.
 
 ### Removed
 
+- **Breaking** The 0.9 deprecations, as announced in 0.10 (L9): `id_effect_sql::SqlParam` (with
+  `From<SqlParam> for SqlValue` and `SqlValue == SqlParam`; use `SqlValue`, `Int` is `I64`),
+  `SqlRow::new` (use `SqlRow::from_pairs`), `SqlRow::text_cells` (use `row.get::<T>(idx)`);
+  `id_effect_axum::json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody` (use
+  `json::decode_json` or `route::ValidJson`, which answer an RFC 9457 `Problem`). See "Removed
+  (promised in 0.10)" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `labs/id_effect_workflow` (with duroxide, duroxide-pg, rusqlite, the `NetworkJournalStub`, the
   journal transport and the FSM bridge), replaced by the published `id_effect_workflow`.
 - `labs/id_effect_lint`, replaced by `lints/id_effect_lints`.

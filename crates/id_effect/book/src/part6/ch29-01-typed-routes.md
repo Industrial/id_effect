@@ -595,11 +595,10 @@ by `into_axum` / `into_parts`, are served but are not in the registry.
 ## Migrating from `decode_json_schema`
 
 `id_effect_axum::json::decode_json_schema` (0.8) stopped at the first schema error and answered
-`{"path": "a.b", "message": ".."}` as `application/json`. It is deprecated in 0.9 and will be
-removed in a later release. The 0.8 code:
+`{"path": "a.b", "message": ".."}` as `application/json`. It was deprecated in 0.9 and removed
+in 0.11. The 0.8 code (no longer compiles):
 
-```rust
-# #![allow(deprecated)]
+```rust,ignore
 use axum::body::Bytes;
 use axum::response::{IntoResponse, Response};
 use id_effect::schema::{self, Schema};
@@ -615,7 +614,6 @@ async fn create(body: Bytes) -> Response {
     Err(e) => e.into_response(),
   }
 }
-# let _ = axum::Router::<()>::new().route("/people", axum::routing::post(create));
 ```
 
 There are three replacements, from the smallest change to the most complete:

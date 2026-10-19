@@ -54,26 +54,6 @@ impl fmt::Debug for SqlClientService {
 /// The minimal typed environment holding only [`SqlClientService`].
 pub type SqlClientEnv = HCons<SqlClientService, HNil>;
 
-/// One bound parameter for a SQL statement (the 0.8 parameter type).
-///
-/// Deprecated: statements take [`SqlValue`]s. `SqlValue::from(param)` converts (`Int` becomes
-/// [`SqlValue::I64`]), and `SqlValue == SqlParam` compares through that conversion. Removed in
-/// 0.10.
-#[deprecated(since = "0.9.0", note = "use SqlValue (SqlParam::Int → SqlValue::I64)")]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SqlParam {
-  /// NULL.
-  Null,
-  /// Boolean.
-  Bool(bool),
-  /// Signed integer.
-  Int(i64),
-  /// UTF-8 text.
-  Text(String),
-  /// Raw bytes (e.g. BYTEA).
-  Bytes(Vec<u8>),
-}
-
 /// Capability: portable SQL operations as [`Effect`] values.
 pub trait SqlClient: Send + Sync + 'static {
   /// Establish connectivity (pool warm-up / health check).
@@ -505,20 +485,6 @@ pub(crate) mod tests {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].get::<i64>("id"), Ok(1));
     assert_eq!(test.recorded_queries().len(), 1);
-  }
-
-  #[test]
-  #[allow(deprecated)]
-  fn deprecated_sqlparam_still_converts_and_compares() {
-    use super::SqlParam;
-    let test = TestSqlClient::new();
-    run(test.connect()).unwrap();
-    run(test.query("Q", &[SqlParam::Int(1).into()])).unwrap();
-    assert_eq!(test.recorded_queries()[0].1, [SqlParam::Int(1)]);
-    assert_eq!(
-      SqlRow::new(vec!["1".into()]).get::<String>(0usize),
-      Ok("1".into())
-    );
   }
 
   #[test]

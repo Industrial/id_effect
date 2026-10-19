@@ -76,8 +76,6 @@ pub mod migrate;
 #[cfg(feature = "proptest")]
 pub mod testing;
 
-#[allow(deprecated)]
-pub use client::SqlParam;
 pub use client::{
   SqlClient, SqlClientEnv, SqlClientService, TestSqlClient, execute, provide_sql_client, query,
   sql_client_env, sql_client_layer,

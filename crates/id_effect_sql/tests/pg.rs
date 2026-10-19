@@ -532,15 +532,6 @@ async fn row_get_by_name_and_index() {
 }
 
 #[tokio::test]
-async fn deprecated_sqlparam_still_binds() {
-  let t = "m_sql_deprecated_param";
-  let Some(pg) = live_pg(t).await else {
-    return;
-  };
-  conformance::deprecated_sqlparam_still_binds(&pg, t).await;
-}
-
-#[tokio::test]
 async fn untyped_null_binds_into_int_text_uuid_columns() {
   let t = "m_sql_untyped_null";
   let Some(pg) = live_pg(t).await else {

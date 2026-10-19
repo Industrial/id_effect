@@ -52,7 +52,8 @@ In the order you are most likely to hit them:
     `id_effect_node`) need wildcard arms; logs are redacted by default; the CSRF token is masked;
     tenanted resources check the tenant; Redis `clear()` refuses the empty namespace; STM moves
     to `id_effect::stm`; `TcpTransport` and `ConsoleConfig` are no longer `Copy`; `OpenApiUi` is
-    no longer `UnwindSafe`.
+    no longer `UnwindSafe`; the 0.9 deprecations (`SqlParam`, `SqlRow::new` / `text_cells`,
+    `decode_json_schema`) are removed (see "Removed (promised in 0.10)").
 
 ### Deprecated in 0.11 (one-minor shims, removed in 0.12)
 
@@ -68,6 +69,23 @@ In the order you are most likely to hit them:
 | `provide_reqwest_client(client)` | `dangerous_provide_reqwest_client(client)`, or `ReqwestClientLive::layer_with(config)` | `id_effect_platform::http::reqwest::dangerous_provide_reqwest_client` |
 | `ReqwestHttpClient::new(client)` | `ReqwestHttpClient::dangerous_unguarded(client)`, or `from_config(&config)` | `id_effect_platform::http::ReqwestHttpClient::dangerous_unguarded` |
 | `id_effect_fp::stm::*`, `id_effect_fp::{Stm, TRef, …}` | `id_effect::stm::*` | none |
+
+### Removed (promised in 0.10)
+
+The 0.9 deprecations that 0.10 announced for removal in 0.11 are gone. No shim; each line is the
+whole migration:
+
+| Removed | Use instead |
+|---|---|
+| `id_effect_sql::SqlParam` (and `From<SqlParam> for SqlValue`, `SqlValue == SqlParam`) | `SqlValue`: `SqlParam::Int(n)` is `SqlValue::I64(n)`, `Null` / `Bool` / `Text` / `Bytes` keep their names; or `&params![a, b]`, `&[x.into()]` |
+| `SqlRow::new(cells)` | `SqlRow::from_pairs([("id", 1i64), ..])` (named, typed columns) |
+| `SqlRow::text_cells()` | `row.get::<T>(idx)` or `row.value(idx)` |
+| `id_effect_axum::json::decode_json_schema` | `json::decode_json` (same arguments), or the `route::ValidJson` extractor or a typed route |
+| `json::JsonSchemaError`, `json::SchemaJsonErrorBody` | `route::Problem` (RFC 9457, every issue in `errors[]` as `{in, pointer, message}`) |
+
+Clients of a `decode_json_schema` handler see `application/problem+json` with every issue instead
+of `{"path", "message"}` for the first; the table in the book's "Typed routes and validation"
+chapter ("Migrating from `decode_json_schema`") lists the differences.
 
 ## Web (`id_effect_axum`, `id_effect_console`)
 
@@ -911,8 +929,10 @@ above:
 | `id_effect_fp` | `struct_missing`, `enum_missing` | `Stm`, `TRef`, `TMap`, `TQueue`, `TSemaphore`, `Txn`, `Outcome` (now deprecated type aliases) | STM |
 | `id_effect_workflow` | `struct_missing`, `trait_missing`, `function_missing`, `module_missing`, `pub_module_level_const_missing`, `enum_missing`, `feature_missing` | the labs crate's duroxide, SQLite, journal-transport and `fsm` items | Workflows |
 | `id_effect_workflow` | `enum_marked_non_exhaustive`, `enum_variant_missing` | `WorkflowError` | Workflows |
+| `id_effect_sql` | `enum_missing`, `inherent_method_missing` | `SqlParam`, `SqlRow::new`, `SqlRow::text_cells` | Removed (promised in 0.10) |
+| `id_effect_axum` | `function_missing`, `enum_missing`, `struct_missing` | `json::decode_json_schema`, `JsonSchemaError`, `SchemaJsonErrorBody` | Removed (promised in 0.10) |
 
-The other 22 crates report no break. Several listed breaks are outside what the tool sees: trait
+The other 21 crates report no break. Several listed breaks are outside what the tool sees: trait
 bounds and removed generic impls (`Secret<T: Zeroize>`, `Secret`'s `PartialEq`), argument types
 behind `impl Into<_>` (`Sql`), new type parameters with defaults (`Route`, `Endpoint`),
 behaviour (redaction, SSRF, tenant match, mutual TLS, CSRF masking, Redis `clear`) and the wire

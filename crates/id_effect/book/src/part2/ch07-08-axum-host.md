@@ -46,7 +46,7 @@ default), so its finalizers (`ensuring`, `acquire_release`, scoped layers) run.
   `ValidJson` / `ValidForm` do the same decoding in plain axum handlers. See
   [Typed routes and validation](../part6/ch29-01-typed-routes.md).
 - **`json::decode_json`** — decode a JSON body with a `Schema`, failing with the same `Problem`
-  (it replaces the deprecated `decode_json_schema`).
+  (it replaces `decode_json_schema`, removed in 0.11).
 - **`body::{stream_body, body_stream}`** — response bodies from a `Stream<Bytes, E>` (dropping the
   body interrupts the producer), request bodies as a stream.
 - **`server`** — the server as a scoped layer: `server_layer(app)`, `serve(app)`,

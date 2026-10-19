@@ -19,7 +19,7 @@
 //! - [`span`] — `tracing` span helpers compatible with OpenTelemetry layers
 //! - [`versioning`] — API version negotiation middleware
 //!
-//! Pair with **`id_effect_axum::json`** (`decode_json_schema`, `JsonSchemaError`) for
+//! Pair with **`id_effect_axum::json`** (`decode_json`, `route::ValidJson`) for
 //! per-route JSON validation (see the mdBook *Axum host* chapter).
 
 #![forbid(unsafe_code)]
