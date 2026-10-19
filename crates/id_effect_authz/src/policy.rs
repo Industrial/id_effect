@@ -196,6 +196,15 @@ pub trait Policy<Res: ?Sized>: Send + Sync + 'static {
   /// Evaluate the policy for `principal` acting on `resource`.
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect;
 
+  /// The decision without an effect, for a policy that decides from its arguments alone:
+  /// `Some` of the decision [`evaluate`](Self::evaluate) yields, or `None` (the default) to run
+  /// [`evaluate`](Self::evaluate). A route guard (feature `axum`) without audit events tries it
+  /// first, so a pure policy decides without the effect runtime.
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    let _ = (principal, resource);
+    None
+  }
+
   /// Whether the policy opted out of the automatic tenant match
   /// ([`PolicyExt::dangerous_cross_tenant`]); `false` for every other policy.
   fn crosses_tenants(&self) -> bool {
@@ -211,6 +220,10 @@ impl<Res: ?Sized, P: Policy<Res> + ?Sized> Policy<Res> for Arc<P> {
     (**self).evaluate(principal, resource)
   }
 
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    (**self).decide_now(principal, resource)
+  }
+
   fn crosses_tenants(&self) -> bool {
     (**self).crosses_tenants()
   }
@@ -219,6 +232,10 @@ impl<Res: ?Sized, P: Policy<Res> + ?Sized> Policy<Res> for Arc<P> {
 impl<Res: ?Sized, P: Policy<Res> + ?Sized> Policy<Res> for Box<P> {
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
     (**self).evaluate(principal, resource)
+  }
+
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    (**self).decide_now(principal, resource)
   }
 
   fn crosses_tenants(&self) -> bool {
@@ -296,6 +313,10 @@ impl<Res: ?Sized, P: Policy<Res>> Policy<Res> for CrossTenant<P> {
     self.policy.evaluate(principal, resource)
   }
 
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    self.policy.decide_now(principal, resource)
+  }
+
   fn crosses_tenants(&self) -> bool {
     true
   }
@@ -316,6 +337,15 @@ impl<Res: ?Sized, A: Policy<Res>, B: Policy<Res>> Policy<Res> for And<A, B> {
         denied => succeed(denied),
       })
   }
+
+  /// Both sides decided now (in [`evaluate`](Policy::evaluate)'s order, the second first).
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    let second = self.1.decide_now(principal, resource)?;
+    Some(match self.0.decide_now(principal, resource)? {
+      Decision::Allow => second,
+      denied => denied,
+    })
+  }
 }
 
 /// See [`PolicyExt::or`].
@@ -333,6 +363,15 @@ impl<Res: ?Sized, A: Policy<Res>, B: Policy<Res>> Policy<Res> for Or<A, B> {
         Decision::Deny(_) => second,
       })
   }
+
+  /// Both sides decided now (in [`evaluate`](Policy::evaluate)'s order, the second first).
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    let second = self.1.decide_now(principal, resource)?;
+    Some(match self.0.decide_now(principal, resource)? {
+      Decision::Allow => Decision::Allow,
+      Decision::Deny(_) => second,
+    })
+  }
 }
 
 /// See [`PolicyExt::negate`].
@@ -349,6 +388,13 @@ impl<Res: ?Sized, A: Policy<Res>> Policy<Res> for Not<A> {
         Decision::Allow => Decision::deny(reason),
         Decision::Deny(_) => Decision::Allow,
       })
+  }
+
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    Some(match self.0.decide_now(principal, resource)? {
+      Decision::Allow => Decision::deny(self.1.clone()),
+      Decision::Deny(_) => Decision::Allow,
+    })
   }
 }
 
@@ -438,6 +484,10 @@ impl<Res: ?Sized> Policy<Res> for Constant {
   fn evaluate(&self, _: &CurrentPrincipal, _: &Res) -> PolicyEffect {
     succeed(self.0.clone())
   }
+
+  fn decide_now(&self, _: &CurrentPrincipal, _: &Res) -> Option<Decision> {
+    Some(self.0.clone())
+  }
 }
 
 /// Allows any authenticated principal (denies [`Anonymous`](crate::Anonymous)).
@@ -449,12 +499,23 @@ pub fn authenticated() -> Authenticated {
 #[derive(Clone, Copy, Debug)]
 pub struct Authenticated;
 
+impl Authenticated {
+  fn decision(principal: &CurrentPrincipal) -> Decision {
+    if principal.is_authenticated() {
+      Decision::Allow
+    } else {
+      Decision::deny("authentication required")
+    }
+  }
+}
+
 impl<Res: ?Sized> Policy<Res> for Authenticated {
   fn evaluate(&self, principal: &CurrentPrincipal, _: &Res) -> PolicyEffect {
-    succeed(Decision::allow_if(
-      principal.is_authenticated(),
-      "authentication required",
-    ))
+    succeed(Self::decision(principal))
+  }
+
+  fn decide_now(&self, principal: &CurrentPrincipal, _: &Res) -> Option<Decision> {
+    Some(Self::decision(principal))
   }
 }
 
@@ -473,16 +534,23 @@ pub fn require_any_role<S: Into<String>>(roles: impl IntoIterator<Item = S>) -> 
 #[derive(Clone, Debug)]
 pub struct RequireRole(Vec<String>);
 
+impl RequireRole {
+  fn decision(&self, principal: &CurrentPrincipal) -> Decision {
+    if self.0.iter().any(|r| principal.has_role(r)) {
+      Decision::Allow
+    } else {
+      Decision::deny(format!("requires role {}", self.0.join(" or ")))
+    }
+  }
+}
+
 impl<Res: ?Sized> Policy<Res> for RequireRole {
   fn evaluate(&self, principal: &CurrentPrincipal, _: &Res) -> PolicyEffect {
-    if self.0.iter().any(|r| principal.has_role(r)) {
-      succeed(Decision::Allow)
-    } else {
-      succeed(Decision::deny(format!(
-        "requires role {}",
-        self.0.join(" or ")
-      )))
-    }
+    succeed(self.decision(principal))
+  }
+
+  fn decide_now(&self, principal: &CurrentPrincipal, _: &Res) -> Option<Decision> {
+    Some(self.decision(principal))
   }
 }
 
@@ -521,6 +589,13 @@ where
 {
   fn evaluate(&self, principal: &CurrentPrincipal, resource: &Res) -> PolicyEffect {
     succeed(Decision::allow_if(
+      (self.check)(principal, resource),
+      self.reason.as_str(),
+    ))
+  }
+
+  fn decide_now(&self, principal: &CurrentPrincipal, resource: &Res) -> Option<Decision> {
+    Some(Decision::allow_if(
       (self.check)(principal, resource),
       self.reason.as_str(),
     ))
@@ -685,6 +760,45 @@ mod tests {
       Decision::deny("no policy allowed")
     );
     assert_eq!(format!("{both:?} {none:?}"), "AllOf(2) AnyOf(2)");
+  }
+
+  #[test]
+  fn pure_policies_decide_now_as_they_evaluate() {
+    let pure: Vec<BoxPolicy<()>> = vec![
+      allow_all().boxed(),
+      deny_all("closed").boxed(),
+      authenticated().boxed(),
+      require_role("accountant").boxed(),
+      require_any_role(["owner", "admin"]).boxed(),
+      predicate("never", |_: &CurrentPrincipal, _: &()| false).boxed(),
+      allow_all().and(deny_all("second")).boxed(),
+      deny_all("first").and(allow_all()).boxed(),
+      deny_all("a").or(require_role("accountant")).boxed(),
+      deny_all("a").or(deny_all("b")).boxed(),
+      require_role("accountant").negate("inverted").boxed(),
+      Box::new(deny_all("boxed")).boxed(),
+    ];
+    for who in [alice(), CurrentPrincipal::anonymous()] {
+      for policy in &pure {
+        assert_eq!(
+          policy.decide_now(&who, &()),
+          Some(decide(policy, &who)),
+          "{who:?}"
+        );
+      }
+    }
+    // A policy that has to run an effect (alone or inside a combinator) is left to `evaluate`.
+    let lookup = from_effect(|_: &CurrentPrincipal, _: &()| succeed(Decision::Allow));
+    assert_eq!(lookup.decide_now(&alice(), &()), None);
+    assert_eq!(
+      allow_all().and(lookup.clone()).decide_now(&alice(), &()),
+      None
+    );
+    assert_eq!(lookup.negate("x").decide_now(&alice(), &()), None);
+    assert_eq!(
+      all_of::<()>(vec![allow_all().boxed()]).decide_now(&alice(), &()),
+      None
+    );
   }
 
   #[test]

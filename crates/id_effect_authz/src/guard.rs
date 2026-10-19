@@ -71,6 +71,9 @@ use crate::registry::Policies;
 
 type Check = dyn Fn(&CurrentPrincipal, &Parts) -> PolicyEffect + Send + Sync;
 
+/// The policy's [`Policy::decide_now`]: its decision without the effect runtime, if it has one.
+type DecideNow = dyn Fn(&CurrentPrincipal, &Parts) -> Option<Decision> + Send + Sync;
+
 /// A route guard: a named policy evaluated for the request's principal before the handler.
 ///
 /// It is a Tower [`Layer`]; attach it with [`AuthorizeExt::authorize`] or any `.layer(..)` /
@@ -79,6 +82,7 @@ type Check = dyn Fn(&CurrentPrincipal, &Parts) -> PolicyEffect + Send + Sync;
 pub struct Guard {
   name: Arc<str>,
   check: Arc<Check>,
+  now: Arc<DecideNow>,
   events: Option<AuthzEvents>,
   expose_reason: bool,
 }
@@ -86,15 +90,21 @@ pub struct Guard {
 impl Guard {
   /// A guard named `name` evaluating `policy` (a rule over the principal only).
   pub fn new(name: impl Into<String>, policy: impl Policy<()>) -> Self {
+    let policy = Arc::new(policy);
+    let pure = Arc::clone(&policy);
     Self::from_check(name, move |principal, _| policy.evaluate(principal, &()))
+      .decide_now(move |principal, _| pure.decide_now(principal, &()))
   }
 
   /// A guard named `name` evaluating `policy` against the request head (method, URI, headers,
   /// extensions) — e.g. a tenant taken from the path.
   pub fn request(name: impl Into<String>, policy: impl Policy<Parts>) -> Self {
+    let policy = Arc::new(policy);
+    let pure = Arc::clone(&policy);
     Self::from_check(name, move |principal, parts| {
       policy.evaluate(principal, parts)
     })
+    .decide_now(move |principal, parts| pure.decide_now(principal, parts))
   }
 
   /// A guard evaluating the policy `name` of `policies` (defined over `()`). An unknown name or
@@ -115,9 +125,18 @@ impl Guard {
     Self {
       name: Arc::from(name.into()),
       check: Arc::new(check),
+      now: Arc::new(|_, _| None),
       events: None,
       expose_reason: false,
     }
+  }
+
+  fn decide_now(
+    mut self,
+    now: impl Fn(&CurrentPrincipal, &Parts) -> Option<Decision> + Send + Sync + 'static,
+  ) -> Self {
+    self.now = Arc::new(now);
+    self
   }
 
   /// Records every decision of this guard to `events` (the resource is `METHOD /path`).
@@ -150,6 +169,21 @@ impl Guard {
   /// evaluating the policy (the decision is still recorded to [`Guard::events`]).
   async fn decide_for(&self, parts: &Parts, signed_in_only: bool) -> Result<(), AuthzError> {
     let principal = principal_of(parts);
+    if self.events.is_none() {
+      // A pure policy decides here, without a fiber, as the effect below would.
+      let now = if signed_in_only && !principal.is_authenticated() {
+        Some(Decision::Deny(Denial::new("authentication required")))
+      } else {
+        (self.now)(&principal, parts)
+      };
+      if let Some(decision) = now {
+        return match decision {
+          Decision::Allow => Ok(()),
+          Decision::Deny(_) if !principal.is_authenticated() => Err(AuthzError::Unauthenticated),
+          Decision::Deny(denial) => Err(AuthzError::Denied(denial.attributed_to(&self.name))),
+        };
+      }
+    }
     let mut effect = if signed_in_only && !principal.is_authenticated() {
       id_effect::succeed(Decision::Deny(Denial::new("authentication required")))
     } else {
