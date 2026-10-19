@@ -165,4 +165,7 @@ webtransport (wave 5).
 | F46 | rpc-check | no override to retire an old version on purpose (dropping a version always fails); add `--allow-retired Service:N` | 0.13 |
 | F47 | rpc-check | classification deviates from spec wording: a narrowed output is compatible (old clients still read it); a removed input field is compatible unless unknown fields are refused — record in ch33-12 (done) and ADR 0014 at exit | r12-t0-migration-guide |
 | F27 | (update) | reassigned to coordinator follow-up leaf r12-f-client-batching (tsk-mvfohzqk-xg47t7) | r12-f-client-batching |
+| F48 | benches | axum host listener / `axum::serve` lack `TCP_NODELAY`: WS p99 41-42 ms (Nagle + delayed ACK) vs ~1 ms with it | r12-f-unary-perf |
+| F49 | benches (D5) | unary delta +3,399 ns > 3,000 ns; benches task tsk-mvfixl4d-wu25gw blocked until r12-f-unary-perf enables the gate; coordinator decision: one perf pass, budget stands; owner sees the floor at exit if unreachable | r12-f-unary-perf → unblock + ship benches |
+| F50 | benches | soak 10 min RSS 1.040 vs 1.05 limit — thin after resume (16 → 35 KiB/stream, warm-up to ~min 5, bounded); 60 s soak mark moved 10 s → 30 s. Decide at r12-w8-kpis: mark at minute 5 vs a smaller default replay window | r12-w8-kpis |
 | F21 | subscriptions | no cursor = replay from `starting_after` (default whole log), not "from now" — `EventLog` has no head read; document, or add a head read in id_effect_events | 0.13 / document in ch33-08 |
