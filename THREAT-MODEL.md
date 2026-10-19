@@ -215,10 +215,12 @@ nobody reads "closed" as "nothing left to do".
   `Router::access_layer()` (`crates/id_effect_axum/src/route/mod.rs:772`) or an `AccessLayer` over
   its typed and plain routes itself. The service template does (`AccessLayer` over
   `plain_routes()`, `crates/id_effect_tool/templates/service/src/lib.rs.template:237`).
-- **Default login throttle store.** `LoginThrottle::default()` counts in a
-  `MemoryThrottleStore`, which, unlike `MemoryTotpStepStore`, does not record itself, so the prod
-  posture check does not flag a per-process throttle. A service with more than one instance passes
-  `LoginThrottle::new(PgThrottleStore::new(..))`.
+- **Default login throttle store.** `LoginThrottle::default()`, `BasicAuth::new` and the
+  `Totp::new` lockout count failures in a `MemoryThrottleStore`, which is per process. Since
+  ddecebf0 it records `id_effect_auth::MEMORY_THROTTLE_STORE_POSTURE`, so the prod posture check
+  fails on it unless the risk is accepted (a single-instance deployment). Services with more than
+  one instance build with `LoginThrottle::new(PgThrottleStore::..)`, `BasicAuth::throttled` and
+  `Totp::with_stores`, as the Ledger does.
 - **At-least-once handlers.** Reliable mesh delivery deduplicates per sender incarnation only: a
   sender that restarts forgets what it sent, so handlers must be idempotent where a message can
   arrive twice; delivery is to the receiving node, and a message whose target is gone or whose
