@@ -24,7 +24,8 @@
 //!
 //! The document is plain serde data: adjust any [`Operation`] through [`OpenApi::operation_mut`]
 //! and serve [`OpenApi::to_json`] — or merge [`openapi_router`] ([`OpenApi::routes`]) for
-//! `/openapi.json` plus a Scalar `/docs` page with its own strict CSP (see [`ui`]). The
+//! `/openapi.json` plus a Scalar `/docs` page with its own strict CSP, mounted outside the `dev`
+//! and `test` profiles only when guarded or explicitly public (see [`ui`]). The
 //! route table itself is served by [`route::introspect`](crate::route::introspect) (`/_routes`).
 //!
 //! ```rust
@@ -87,7 +88,10 @@ pub use model::{
   ApiKeyLocation, Components, Info, MediaType, Operation, Parameter, ParameterIn, PathItem,
   RequestBody, Response, SecurityRequirement, SecurityScheme, Server, Tag,
 };
-pub use ui::{DEFAULT_SCALAR_URL, DOCS_PATH, OPENAPI_JSON_PATH, OpenApiUi, openapi_router};
+pub use ui::{
+  DEFAULT_SCALAR_INTEGRITY, DEFAULT_SCALAR_URL, DOCS_PATH, OPENAPI_JSON_PATH, OpenApiUi,
+  PROFILE_ENV, openapi_router,
+};
 
 use crate::route::{RouteInfo, RouteRegistry, Router};
 

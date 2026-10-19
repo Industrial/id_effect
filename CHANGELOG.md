@@ -31,6 +31,19 @@
   a scan of every key under one mutex. `DEFAULT_MAX_KEYS` stays 100,000. New provided method
   `RateLimitStore::try_acquire_now`: the in-memory store answers inline and `RateLimitLayer`
   skips the executor round trip for it.
+- Operator surfaces closed in prod (M6, M7, L2, M4 template; ADR 0013 R7): `id_effect_axum`
+  `OpenApiUi` loads Scalar from an exact version (`@scalar/api-reference@1.75.0`) with its SRI
+  `sha384` hash by default (`DEFAULT_SCALAR_INTEGRITY`) and mounts `/openapi.json` and `/docs`
+  outside the `dev`/`test` profiles (`OpenApiUi::profile`, else `ID_EFFECT_PROFILE`) only when
+  guarded (`OpenApiUi::guard`) or `public_dangerous()` (recorded); new
+  `metrics::guarded_metrics_router`. `id_effect_console` `ConsoleConfig` carries the allowed
+  hosts (default: the bind address) and `check_host_and_origin` answers `403` to another `Host`
+  or `Origin` (DNS rebinding); `ConsoleConfig` is no longer `Copy`. The service template guards
+  `/metrics` with a bearer `METRICS_TOKEN`, wraps `SecurityLayer` in the body-limit and timeout
+  layers, keeps the console's local operator to the `dev` profile and checks its Host and Origin
+  (`CONSOLE_ALLOWED_HOSTS`). The Ledger enables the console in `dev.toml` and `test.toml` only.
+  See "Web: `/docs`, `/metrics` and the console are closed in prod" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `id_effect_node` QUIC mutual TLS (dist.tls #4 #5 #7, ADR 0013 R8): every dial presents the
   node's certificate and the listener verifies it (CA roots via `with_client_verification`, or
   `with_pinned_client_cert_sha256` / `with_pinned_peer_cert_sha256`); a peer without a client

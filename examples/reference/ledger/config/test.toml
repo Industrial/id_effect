@@ -31,3 +31,7 @@ reload_limits_secs = 0
 [jobs]
 # The tests drive the worker, the cron, the relay and the consumers themselves.
 run = false
+
+[console]
+# The console tests open `/_console` (`base.toml` turns it off outside dev).
+enabled = true

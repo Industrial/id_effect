@@ -431,6 +431,39 @@ Every server bounds its in-flight requests (ADR 0013 R4; findings M5, M8).
   (the new provided `RateLimitStore::try_acquire_now`), and `acquire` refills on the executor
   clock as before. A custom `RateLimitStore` compiles unchanged.
 
+## Web: `/docs`, `/metrics` and the console are closed in prod
+
+Operator surfaces need a guard outside development (ADR 0013 R7; findings M6, M7, L2).
+
+- **`OpenApiUi::router` (and `openapi_router`, `OpenApi::routes`) mounts nothing outside the
+  `dev` and `test` profiles** unless the UI is guarded or explicitly public. The profile is
+  `OpenApiUi::profile(..)`, else the `ID_EFFECT_PROFILE` variable, else `dev`; an app that
+  selects its profile with `--profile` passes it: `OpenApiUi::scalar().profile(profile.as_str())`.
+  Keep the docs in prod with `.guard(g)` (any `RouteGuard`, such as an `id_effect_authz`
+  `Guard`; applies in every profile) or `.public_dangerous()`, which records the posture opt-out
+  `id_effect_axum::openapi::OpenApiUi::public_dangerous`. `OpenApiUi::is_mounted()` tells which.
+- **The Scalar bundle is pinned**: `DEFAULT_SCALAR_URL` is
+  `@scalar/api-reference@1.75.0/dist/browser/standalone.js` with the Subresource Integrity hash
+  `DEFAULT_SCALAR_INTEGRITY`, set by `OpenApiUi::scalar()`. `cdn_url(..)` with another URL drops
+  that default hash: pass the mirrored file's own with `.integrity(..)`. `OpenApiUi` no longer
+  derives `PartialEq`; it implements it (guards compare by identity).
+- **`metrics::guarded_metrics_router(guard)`** serves `/metrics` behind a `RouteGuard`. Keep
+  `metrics_router()` for an operator listener only.
+- **`ConsoleConfig` is `Clone`, no longer `Copy`**, and carries the hosts the console answers to
+  (`allow_hosts(..)`, `allowed_hosts()`, `allows_host(..)`; default: the bind address, plus
+  `localhost` on loopback). Wrap the console's routes on its own listener in
+  `config.check_host_and_origin(routes)`: a request for another `Host`, or with an `Origin`
+  outside the list (`null` included), gets `403` Problem Details before the guard runs. Code that
+  copied a `ConsoleConfig` clones it.
+- **Generated services** (`id-effect new --template service`): `/metrics` needs
+  `Authorization: Bearer $METRICS_TOKEN` (unset: every scrape is `401`); `BodyLimitLayer` and
+  `TimeoutLayer` wrap `SecurityLayer`; with `--console`, the local-operator shortcut exists only
+  when `ID_EFFECT_PROFILE` is unset or `dev` (`config/deploy.yml` sets `prod`), the console checks
+  Host and Origin against `CONSOLE_ALLOWED_HOSTS` (default: its bind address), and
+  `console::routes(.., dev)` builds it for either profile. Port an existing service by hand.
+- **The Ledger** enables `[console]` in `config/dev.toml` (and the tests' `test.toml`) only;
+  `base.toml` sets `enabled = false`, so prod has no console.
+
 ## Node: global names (`ProcessEnvelope` gains variants)
 
 `Mesh::global()` returns the new cluster-wide name registry (`GlobalRegistry`, book chapter
