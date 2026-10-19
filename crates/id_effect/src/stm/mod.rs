@@ -24,6 +24,10 @@
 //!
 //! Concurrency: all commits are serialized behind a global lock; transaction bodies record read
 //! versions and defer writes until commit succeeds.
+//!
+//! Collections built on [`TRef`]: [`TQueue`], [`TMap`], [`TSemaphore`], [`TSet`], [`TArray`] (one
+//! cell per element), [`TPriorityQueue`], [`TPromise`] and [`TReentrantLock`] (read/write lock,
+//! reentrant per fiber: each attempt knows the id of the fiber that runs [`commit`]).
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -35,7 +39,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::task::{Context, Poll, Waker};
 
-use crate::{Effect, from_async};
+use crate::{Effect, FiberId};
+
+mod tarray;
+mod tpriority_queue;
+mod tpromise;
+mod treentrant_lock;
+mod tset;
+
+pub use tarray::TArray;
+pub use tpriority_queue::TPriorityQueue;
+pub use tpromise::TPromise;
+pub use treentrant_lock::TReentrantLock;
+pub use tset::TSet;
 
 // ── locking helpers ───────────────────────────────────────────────────────────
 
@@ -149,6 +165,8 @@ pub struct Txn {
   reads: HashMap<usize, (Arc<dyn TCell>, u64)>,
   /// `TRef` identity → cell, for every cell written in this attempt.
   writes: HashMap<usize, Arc<dyn TCell>>,
+  /// The fiber running [`commit`] (the owner identity of [`TReentrantLock`]).
+  fiber: FiberId,
 }
 
 /// The rollback point of [`Stm::or_else`].
@@ -158,11 +176,12 @@ struct Checkpoint {
 }
 
 impl Txn {
-  fn new() -> Self {
+  fn new(fiber: FiberId) -> Self {
     Self {
       shadow: HashMap::new(),
       reads: HashMap::new(),
       writes: HashMap::new(),
+      fiber,
     }
   }
 
@@ -404,20 +423,23 @@ where
     }
   }
 
+  /// A fresh cell holding `initial` (outside any transaction).
+  fn new(initial: A) -> Self {
+    TRef {
+      inner: Arc::new(Inner {
+        ver: AtomicU64::new(0),
+        data: Mutex::new(initial),
+        watchers: Mutex::new(HashMap::new()),
+      }),
+    }
+  }
+
   /// Allocate a new cell (each retry creates a fresh cell unless hoisted outside `commit`).
   pub fn make(initial: A) -> Stm<TRef<A>, ()>
   where
     A: Clone,
   {
-    Stm::from_fn(move |_| {
-      Outcome::Done(TRef {
-        inner: Arc::new(Inner {
-          ver: AtomicU64::new(0),
-          data: Mutex::new(initial.clone()),
-          watchers: Mutex::new(HashMap::new()),
-        }),
-      })
-    })
+    Stm::from_fn(move |_| Outcome::Done(TRef::new(initial.clone())))
   }
 
   /// Read the current transactional or live value.
@@ -691,19 +713,22 @@ where
   E: Send + 'static,
   R: Send + Sync + 'static,
 {
-  from_async(move || async move {
-    loop {
-      let mut txn = Txn::new();
-      match stm.run_on(&mut txn) {
-        Outcome::Fail(e) => {
-          if txn.is_consistent() {
-            return Err(e);
+  Effect::from_ctx(move |ctx| {
+    let fiber = ctx.fiber().id();
+    async move {
+      loop {
+        let mut txn = Txn::new(fiber);
+        match stm.run_on(&mut txn) {
+          Outcome::Fail(e) => {
+            if txn.is_consistent() {
+              return Err(e);
+            }
           }
-        }
-        Outcome::Retry => txn.into_wait().await,
-        Outcome::Done(a) => {
-          if try_commit(txn) {
-            return Ok(a);
+          Outcome::Retry => txn.into_wait().await,
+          Outcome::Done(a) => {
+            if try_commit(txn) {
+              return Ok(a);
+            }
           }
         }
       }
@@ -986,7 +1011,7 @@ mod tests {
       // The attempt reads 0, then another commit lands before it parks: the version check in
       // `watch` sees the change and the attempt restarts instead of sleeping.
       let c = cell(0u32);
-      let mut txn = Txn::new();
+      let mut txn = Txn::new(FiberId::ROOT);
       assert_eq!(c.read_txn(&mut txn), 0);
       run_stm(c.write_stm::<()>(1)).expect("write");
       let mut wait = std::pin::pin!(txn.into_wait());

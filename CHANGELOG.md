@@ -12,6 +12,12 @@
   on the next message. Breaking: `Next`, `Info` and `ExitReason` are `#[non_exhaustive]`, and a
   lost cluster-wide name is `ExitReason::NameConflict(name)` instead of an `Error` string. See
   "Processes" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect::stm` collections (conc.stm #6): `TSet`, `TArray` (one `TRef` per element),
+  `TPriorityQueue` (`take` returns the smallest element and parks while empty), `TPromise`
+  (completes once; `await_` parks until completed) and `TReentrantLock` (read/write lock,
+  reentrant per fiber: a transaction knows the `FiberId` running `commit`). All compose with
+  `Stm::or_else` and `Stm::retry`. Book "Transactional Collections" covers all nine STM
+  structures; examples `087`–`091_stm_*`; test `crates/id_effect/tests/stm_collections.rs`.
 
 ## 0.10.1 — 2026-10-18 — Security patch
 

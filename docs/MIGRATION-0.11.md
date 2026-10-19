@@ -182,6 +182,10 @@ use id_effect::stm::{Stm, TRef, commit};
 If `id_effect_fp` was only a dependency for STM, drop it. The STM examples (`077`–`086_stm_*`) and
 the contention test moved to `crates/id_effect`: `cargo run -p id_effect --example 077_stm_tref`.
 
+New in `id_effect::stm` (additive, no migration): `TSet`, `TArray`, `TPriorityQueue`, `TPromise`
+and `TReentrantLock` (book chapter "Transactional Collections", examples `087`–`091_stm_*`). They
+exist only in core; `id_effect_fp` does not alias them.
+
 ## HTTP client: SSRF guard on by default
 
 Filled by `r11-sec-client-ssrf`.

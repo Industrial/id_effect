@@ -1,6 +1,6 @@
 # `stm` — Stratum 12: software transactional memory
 
-**Optimistic transactions** over [`TRef`](mod.rs) cells: [`Stm<A, E>`](mod.rs), [`Outcome`](mod.rs), [`commit`](mod.rs) / [`atomically`](mod.rs), plus [`TQueue`](mod.rs), [`TMap`](mod.rs), and [`TSemaphore`](mod.rs). Commits are **serialized** (global lock); a transaction restarts on conflict, and on `Outcome::Retry` its fiber **parks** on the wait lists of the `TRef`s it touched until a commit writes one of them (Effect.ts `STM.retry`). Interrupting a parked transaction deregisters it.
+**Optimistic transactions** over [`TRef`](mod.rs) cells: [`Stm<A, E>`](mod.rs), [`Outcome`](mod.rs), [`commit`](mod.rs) / [`atomically`](mod.rs), plus [`TQueue`](mod.rs), [`TMap`](mod.rs), [`TSemaphore`](mod.rs), [`TSet`](tset.rs), [`TArray`](tarray.rs), [`TPriorityQueue`](tpriority_queue.rs), [`TPromise`](tpromise.rs) and [`TReentrantLock`](treentrant_lock.rs). Commits are **serialized** (global lock); a transaction restarts on conflict, and on `Outcome::Retry` its fiber **parks** on the wait lists of the `TRef`s it touched until a commit writes one of them (Effect.ts `STM.retry`). Interrupting a parked transaction deregisters it.
 
 ## What lives here
 
@@ -9,6 +9,8 @@
 | `Stm` | Transactional program: `map`, `flat_map`, `or_else`, `retry`, `check`. |
 | `TRef<A>` | Transactional mutable cell — `read_stm`, `write_stm`, `update_stm`, `modify_stm`. |
 | `TQueue`, `TMap`, `TSemaphore` | Composite structures built on `TRef`. |
+| `TSet`, `TArray`, `TPriorityQueue`, `TPromise` | Hash set, fixed array (one `TRef` per element), min-priority queue (`take` parks while empty), write-once promise (`await_` parks until completed). |
+| `TReentrantLock` | Read/write lock, reentrant per fiber; the owner is the fiber running `commit` (`Txn` carries its `FiberId`). |
 | `commit` / `atomically` | Lift `Stm` to a 0.7-kernel `Effect` (validation, restart on conflict, waker-based retry). |
 
 ## What it is used for
