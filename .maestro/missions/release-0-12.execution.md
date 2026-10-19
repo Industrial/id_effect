@@ -168,4 +168,13 @@ webtransport (wave 5).
 | F48 | benches | axum host listener / `axum::serve` lack `TCP_NODELAY`: WS p99 41-42 ms (Nagle + delayed ACK) vs ~1 ms with it | r12-f-unary-perf |
 | F49 | benches (D5) | unary delta +3,399 ns > 3,000 ns; benches task tsk-mvfixl4d-wu25gw blocked until r12-f-unary-perf enables the gate; coordinator decision: one perf pass, budget stands; owner sees the floor at exit if unreachable | r12-f-unary-perf → unblock + ship benches |
 | F50 | benches | soak 10 min RSS 1.040 vs 1.05 limit — thin after resume (16 → 35 KiB/stream, warm-up to ~min 5, bounded); 60 s soak mark moved 10 s → 30 s. Decide at r12-w8-kpis: mark at minute 5 vs a smaller default replay window | r12-w8-kpis |
+| F51 | ledger | per-request remount workaround in `examples/reference/ledger/src/rpc.rs::mount` is obsolete after 5db2e2e4 (HTTP calls see RequestCaps) — remove | r12-t0-migration-guide (exit sweep) |
+| F52 | ledger | no public helper to lift an `Effect<_, _, ()>` into a procedure's `DynEnv` effect (pattern: `Effect::from_ctx(|ctx| async move { ctx.bind(e).await })`) | 0.13 |
+| F53 | ledger/relay | Postgres idempotency store exists twice (Ledger `PgIdempotencyStore`, Relay `relay_idempotency`); promote into id_effect_rpc / sql | 0.14 (planned stores) |
+| F54 | relay | coverage of relay 93.7 % regions (96 % target; misses = DB-fault paths, binary exits); cargo-llvm-cov needs `--disable-default-ignore-filename-regex` for examples/ | r12-w8-kpis (decide; examples are outside the workspace coverage gate) |
+| F55 | relay | kit lacks an `id_effect_process` re-export (Relay + cluster template depend on it directly) | 0.13 |
+| F56 | relay | generated Rust `HttpTransport` cannot attach headers (bearer tokens); tests wrap the HTTP client | 0.13 (with F27 follow-up) |
+| F57 | relay | a live client stream consumed with `run_for_each` stalls until a full default-size chunk arrives | 0.13 (id_effect Stream chunking; see subscriptions note on `unfold_effect`) |
+| F58 | relay | **bug**: TS `RpcStream.cursor` is the last item received incl. buffered-unread, so resuming from it can skip unread messages | r12-f-ts-cursor (coordinator fix leaf) |
+| F59 | relay | WebTransport not in the host: Relay serves h3 on its own endpoint with host h3 off (= F43); `reference-relay` CI job (iptables UDP drop, runner Chrome) unproven locally; server streams, client streams, SSE, postcard, batching and WS session resume not exercised by Relay | r12-w8-level-audit (record), 0.13 |
 | F21 | subscriptions | no cursor = replay from `starting_after` (default whole log), not "from now" — `EventLog` has no head read; document, or add a head read in id_effect_events | 0.13 / document in ch33-08 |
