@@ -4,8 +4,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::Method;
 use axum::http::request::Parts;
-use id_effect::{Effect, HCons, HNil, fail, hlist};
+use id_effect::{Effect, HCons, HNil, WallClock, fail, hlist};
 use id_effect_kit::auth::oidc::OidcRoutes;
 use id_effect_kit::auth::{
   Authenticate, ClaimMapping, CookieConfig, JwtIssuer, JwtKey, JwtVerifier, LoginThrottle,
@@ -18,26 +19,33 @@ use id_effect_kit::axum::middleware::{
   BodyLimitLayer, CompressionLayer, RateLimitKey, RequestIdLayer, TimeoutLayer,
 };
 use id_effect_kit::axum::openapi::{Info, OpenApi, OpenApiUi, openapi_router};
-use id_effect_kit::axum::route::{self, Endpoint, Guarded, introspect};
+use id_effect_kit::axum::route::{
+  self, AccessLayer, AccessReport, Endpoint, Guarded, RouteAccess, RouteInfo, RouteRegistry,
+  introspect,
+};
 use id_effect_kit::axum::server::security::{CookieKey, CsrfToken, SecurityLayer};
-use id_effect_kit::axum::{ClientIp, HealthIndicator, HealthRegistry, RequestCaps, TrustedProxies};
+use id_effect_kit::axum::{
+  ClientIp, HealthIndicator, HealthRegistry, HostConfig, RequestCaps, TrustedProxies,
+};
 use id_effect_kit::config::ProfileWatch;
 use id_effect_kit::console::EnvFilterHandle;
 use id_effect_kit::jobs::PgJobQueue;
 use id_effect_kit::mail::{MailerService, TestMailbox};
 use id_effect_kit::messaging::{MessageBroker, Topic};
+use id_effect_kit::posture::{Posture, Surface};
 use id_effect_kit::redis::{RedisClient, RedisConfig, RedisStreamsBroker, RedisStreamsConfig};
 use id_effect_kit::sql::audit::{AuditContext, AuditLog};
 use id_effect_kit::sql::{SqlClient, SqlClientService};
 use id_effect_kit::storage::{MemoryStore, ObjectStorage, S3Config, S3Store};
 
+use crate::closure::{self, Closures};
 use crate::config::{LedgerConfig, StorageConfig};
 use crate::db::{self, Database};
 use crate::error::{ApiError, StartupError};
 use crate::limits::{self, LimitSource, LimitsFile, TenantHint};
 use crate::mail::{self, Mail};
 use crate::reports::{self, BalanceCache};
-use crate::{accounts, auth, console, entries, jobs, notifications, policy, signup};
+use crate::{accounts, auth, console, entries, jobs, notifications, observability, policy, signup};
 
 /// The router state: one [`App`] in a capability list, so handlers lift environment-free
 /// effects into it with `narrow()`.
@@ -79,6 +87,8 @@ pub struct App {
   pub storage: ObjectStorage,
   /// The job queue (`id_effect_jobs` on the primary).
   pub jobs: PgJobQueue,
+  /// Account closures, a durable workflow on the primary ([`crate::closure`]).
+  pub closures: Closures,
 }
 
 /// What the service runs on, opened by [`start`] (or by a test).
@@ -245,7 +255,10 @@ impl App {
       templates: mail::templates(&config.mail)?,
       from: mail::sender(&config.mail)?,
     };
+    let closures = Closures::new(&db, WallClock::system())
+      .map_err(|e| StartupError::Settings(format!("workflows: {e}")))?;
     Ok(Self {
+      closures,
       balances: reports::balance_cache(Arc::clone(&reads), services.redis.clone()),
       jobs: jobs::queue(&db),
       topic,
@@ -345,17 +358,44 @@ pub fn as_caller<A: Send + 'static>(
   }
 }
 
-/// The whole HTTP application for `config` over `services`.
+/// The whole HTTP application for `config` over `services` ([`assemble`]'s router).
+pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router, StartupError> {
+  assemble(config, services).map(|assembled| assembled.router)
+}
+
+/// The Ledger's HTTP application and what it declares about itself: every route it serves with
+/// its access, and how its operator surfaces are served (the startup posture check, [`posture`]).
+pub struct Assembled {
+  /// The whole HTTP application.
+  pub router: axum::Router,
+  /// Every route the router serves: the typed routes, then the plain ones ([`plain_routes`]).
+  /// Any other route answers `404` ([`declared_only`]).
+  pub routes: RouteRegistry,
+  /// The console: guarded where `console.enabled` (dev, the tests), absent otherwise (prod).
+  pub console: Surface,
+  /// `/docs` and `/openapi.json`: public in `dev` and `test`, not mounted in any other profile.
+  pub docs: Surface,
+}
+
+impl Assembled {
+  /// Who may call each route ([`Assembled::routes`]); printed at startup.
+  pub fn access_report(&self) -> AccessReport {
+    AccessReport::new(self.routes.iter(), false)
+  }
+}
+
+/// The whole HTTP application for `config` over `services`, with the routes it declares.
 ///
 /// Middleware, outermost first: request id (and span), compression, timeout, body limit, the
 /// organisation a login names ([`TenantHint`]), authentication (session cookie or bearer API
-/// token), revoked-token check, and innermost the security layer
+/// token), revoked-token check, the deny-by-default access layer ([`declared_only`]: a route
+/// neither typed nor in [`plain_routes`] answers `404`), and innermost the security layer
 /// ([`SecurityLayer::recommended`]: CSRF, CSP with nonces, the security headers; see
 /// [`secured`]).
-/// Every route has a guard naming its policy; `/openapi.json`, `/docs`, `/health`, the login,
-/// account and CSRF routes (and `/_mail/previews` in dev) are `public`, `/_routes` needs
-/// `routes.read` and `/_console` `console.admin`.
-pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router, StartupError> {
+/// Every route has a guard naming its policy; `/openapi.json` and `/docs` (dev and test only),
+/// `/health`, `/ready`, the login, account and CSRF routes (and `/_mail/previews` in dev) are
+/// `public`, `/_routes` needs `routes.read` and `/_console` `console.admin`.
+pub fn assemble(config: &LedgerConfig, services: Services) -> Result<Assembled, StartupError> {
   let app = App::new(config, &services)?;
   let policies = app.policies.clone();
   let source = match services.limits.clone() {
@@ -372,6 +412,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
   let api = route::Router::<AppEnv>::new()
     .merge(auth::routes(&policies, login_limit.clone()))
     .merge(accounts::routes(&policies))
+    .merge(closure::routes(&policies))
     .merge(entries::routes(&policies))
     .merge(reports::routes(&policies));
 
@@ -389,6 +430,24 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
   let flows = signup::accounts(&app, mail::account_mails(&app.mail, &config.mail));
   let csrf = axum::Router::new().route("/auth/csrf", axum::routing::get(csrf_token));
   let health = health(&app);
+  // `/docs` and `/openapi.json` are served unguarded in `dev` and `test` only (ADR 0013 R7).
+  let ui = OpenApiUi::scalar().profile(config.profile.as_str());
+  let docs = if ui.is_mounted() {
+    Surface::Open
+  } else {
+    Surface::Absent
+  };
+  let console = if config.console.enabled {
+    Surface::Guarded
+  } else {
+    Surface::Absent
+  };
+  let mut routes = api.registry().clone();
+  routes.extend(plain_routes(
+    config,
+    docs == Surface::Open,
+    services.oidc.is_some(),
+  ));
   let mut http = api
     .with_state(hlist![app.clone()])
     .into_axum()
@@ -397,7 +456,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
     .merge(public(csrf))
     .merge(route_table);
   // The HTML pages carry inline styles and scripts: their security layer sends no CSP.
-  let mut pages = public(openapi_router(&doc, OpenApiUi::scalar()));
+  let mut pages = public(openapi_router(&doc, ui));
   if config.mail.previews {
     pages = pages.merge(public(mail::previews(&app.mail)));
   }
@@ -431,25 +490,137 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
     .realm("ledger");
   let key = CookieKey::from_base64(config.auth.cookie_key.expose())
     .map_err(|e| StartupError::Settings(format!("auth.cookie_key: {e}")))?;
-  Ok(
-    secured(http, pages, &key)
-      .layer(axum::middleware::from_fn_with_state(
-        app.clone(),
-        auth::reject_revoked_tokens,
-      ))
-      .layer(authenticate)
-      .layer(CapOverrideLayer::new(tenant_hint))
-      .layer(CapOverrideLayer::new(move |parts: &Parts| {
-        // The login throttle's client address (the same one the login limit counts).
-        ClientIp::from_parts(&parts.extensions, &parts.headers, &trusted)
-      }))
-      .layer(BodyLimitLayer::new(config.http.body_limit_bytes))
-      .layer(TimeoutLayer::new(Duration::from_millis(
-        config.http.request_timeout_ms,
-      )))
-      .layer(CompressionLayer::new())
-      .layer(RequestIdLayer::new()),
-  )
+  let router = declared_only(secured(http, pages, &key), &routes)
+    .layer(axum::middleware::from_fn_with_state(
+      app.clone(),
+      auth::reject_revoked_tokens,
+    ))
+    .layer(authenticate)
+    .layer(CapOverrideLayer::new(tenant_hint))
+    .layer(CapOverrideLayer::new(move |parts: &Parts| {
+      // The login throttle's client address (the same one the login limit counts).
+      ClientIp::from_parts(&parts.extensions, &parts.headers, &trusted)
+    }))
+    .layer(BodyLimitLayer::new(config.http.body_limit_bytes))
+    .layer(TimeoutLayer::new(Duration::from_millis(
+      config.http.request_timeout_ms,
+    )))
+    .layer(CompressionLayer::new())
+    .layer(RequestIdLayer::new());
+  Ok(Assembled {
+    router,
+    routes,
+    console,
+    docs,
+  })
+}
+
+/// `app` serving only the routes `declared` lists (method and path template): any other route
+/// merged into it answers `404` Problem Details (deny by default, finding H8). Applied after the
+/// last route, as a route layer, so it sees the matched route.
+pub fn declared_only(app: axum::Router, declared: &RouteRegistry) -> axum::Router {
+  app.route_layer(AccessLayer::new(declared.iter()))
+}
+
+/// The plain Axum routes [`assemble`] merges next to the typed ones, each with the access of the
+/// guard it sits behind there: the health checks, the account flows (`/auth/register`, …), the
+/// CSRF token and, when `docs`, `/openapi.json` and `/docs` are public; `/_routes` is guarded by
+/// `routes.read`; with `config` enabling them, the mail previews are public and the console is
+/// guarded by `console.admin`; with `oidc`, the three OpenID Connect routes are public.
+pub fn plain_routes(config: &LedgerConfig, docs: bool, oidc: bool) -> Vec<RouteInfo> {
+  let declare = |method: Method, path: &str, policy: Option<&str>| {
+    let mut info = RouteInfo::new(method, path);
+    match policy {
+      Some(policy) => {
+        info.access = RouteAccess::Guarded;
+        info.policies.push(policy.to_owned());
+      }
+      None => info.access = RouteAccess::Public,
+    }
+    info
+  };
+  let public = |method: Method, path: &str| declare(method, path, None);
+  let mut routes = vec![
+    public(Method::GET, "/health"),
+    public(Method::GET, "/ready"),
+  ];
+  for flow in [
+    "register",
+    "verify",
+    "verify/resend",
+    "password/forgot",
+    "password/reset",
+  ] {
+    routes.push(public(Method::POST, &format!("/auth/{flow}")));
+  }
+  routes.push(public(Method::GET, "/auth/csrf"));
+  routes.push(declare(Method::GET, "/_routes", Some("routes.read")));
+  if docs {
+    routes.push(public(Method::GET, "/openapi.json"));
+    routes.push(public(Method::GET, "/docs"));
+  }
+  if config.mail.previews {
+    for path in [
+      "/_mail/previews",
+      "/_mail/previews/{name}",
+      "/_mail/previews/{name}/{view}",
+    ] {
+      routes.push(public(Method::GET, path));
+    }
+  }
+  if config.console.enabled {
+    let console = |method: Method, path: &str| declare(method, path, Some("console.admin"));
+    routes.push(console(Method::GET, "/_console"));
+    for api in [
+      "fibers",
+      "supervisors",
+      "metrics",
+      "health",
+      "log-level",
+      "jobs",
+    ] {
+      routes.push(console(Method::GET, &format!("/_console/api/{api}")));
+    }
+    routes.push(console(Method::PUT, "/_console/api/log-level"));
+    for action in ["retry", "cancel"] {
+      routes.push(console(
+        Method::POST,
+        &format!("/_console/api/jobs/{{id}}/{action}"),
+      ));
+    }
+  }
+  if oidc {
+    routes.push(public(Method::GET, "/auth/oidc/login"));
+    routes.push(public(Method::GET, "/auth/oidc/callback"));
+    routes.push(public(Method::POST, "/auth/oidc/logout"));
+  }
+  routes
+}
+
+/// The server settings of `config`: its address, a 20 s drain on shutdown and the default
+/// in-flight cap (load shedding).
+pub fn host_config(config: &LedgerConfig) -> HostConfig {
+  HostConfig {
+    bind_host: config.http.host.clone(),
+    bind_port: config.http.port,
+    shutdown_timeout: Duration::from_secs(20),
+    ..HostConfig::default()
+  }
+}
+
+/// What the Ledger states about itself for the startup posture check (ADR 0013 R10), on top of
+/// `base` (the profile and the risks its configuration accepts): the console and `/docs` as
+/// `app` serves them, CSRF on ([`SecurityLayer::recommended`] in [`secured`]), no mesh, the
+/// redaction policy of `config` and the in-flight cap of [`host_config`]. `main.rs` checks it
+/// once the app is assembled and refuses to start the `prod` profile on a failed probe.
+pub fn posture(config: &LedgerConfig, app: &Assembled, base: Posture) -> Posture {
+  base
+    .console(app.console)
+    .docs(app.docs)
+    .csrf(true)
+    .no_mesh()
+    .redaction(&observability::redaction(config))
+    .host(&host_config(config))
 }
 
 /// `api` and `pages` under [`SecurityLayer::recommended`] (`pages` without a CSP: they carry

@@ -38,6 +38,8 @@ id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.10.1", fe
   "config-vault",
   "jobs",
   "jobs-cron",
+  # Account closure as a durable workflow (`src/closure.rs`).
+  "workflow",
   "messaging",
   "redis-streams",
   "mail",
@@ -88,5 +90,6 @@ tokio = { version = "1", features = [
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh. The reference app is the
-# CI-tested consumer that puts the 0.9 and 0.10 battery crates in tier `platform` (check P).
+# CI-tested consumer that puts the 0.9 and 0.10 battery crates, and id_effect_workflow (0.11),
+# in tier `platform` (check P).
 tier = "example"

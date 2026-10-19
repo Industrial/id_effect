@@ -4,15 +4,21 @@
 //! cargo run -p ledger                      # profile dev (compose.yaml)
 //! cargo run -p ledger -- --profile prod    # secrets from Vault (VAULT_TOKEN)
 //! ```
+//!
+//! Before serving, it prints who may call each route and the security posture report (ADR 0013
+//! R10); under any profile but `dev` and `test` a failed probe stops it. The Ledger accepts no
+//! risk: no profile has a `[security.accepted_risks]` table.
 
 use std::process::ExitCode;
 use std::time::Duration;
 
 use id_effect::{Cause, Effect, Exit, Never};
-use id_effect_kit::axum::{EffectExecutor, HostConfig, serve_until_shutdown};
+use id_effect_kit::axum::{EffectExecutor, serve_until_shutdown};
 use id_effect_kit::logger::provide_redaction_policy;
+use id_effect_kit::posture::Posture;
+use ledger::app::host_config;
 use ledger::config::{self, LedgerConfig};
-use ledger::{StartupError, background, limits, observability, router, start};
+use ledger::{StartupError, assemble, background, limits, observability, posture, start};
 
 /// The directory of `base.toml` and the profiles, relative to the working directory.
 const CONFIG_DIR: &str = "config";
@@ -57,6 +63,20 @@ async fn main() -> ExitCode {
     Exit::Success(tasks) => tasks,
     Exit::Failure(cause) => return fail(describe(cause)),
   };
+  let app = match assemble(&config, services) {
+    Ok(app) => app,
+    Err(e) => return fail(e),
+  };
+  eprint!("{}", app.access_report());
+  // Once everything is assembled, so every opt-out it took is in the posture registry.
+  let base = match Posture::load(&profiles) {
+    Ok(base) => base,
+    Err(e) => return fail(e),
+  };
+  match posture(&config, &app, base).check().enforce() {
+    Ok(report) => eprint!("{report}"),
+    Err(refused) => return fail(refused),
+  }
   let running: Vec<_> = tasks
     .into_iter()
     .map(|(name, task)| {
@@ -64,17 +84,7 @@ async fn main() -> ExitCode {
       tokio::spawn(EffectExecutor::global().run_effect(task))
     })
     .collect();
-  let app = match router(&config, services) {
-    Ok(app) => app,
-    Err(e) => return fail(e),
-  };
-  let host = HostConfig {
-    bind_host: config.http.host.clone(),
-    bind_port: config.http.port,
-    shutdown_timeout: Duration::from_secs(20),
-    ..HostConfig::default()
-  };
-  let program = serve_until_shutdown(app).provide(host);
+  let program = serve_until_shutdown(app.router).provide(host_config(&config));
   let served = EffectExecutor::global().run_effect(program).await;
   // Dropping a task's future interrupts its fiber: the worker drains, the cron resigns.
   for task in running {

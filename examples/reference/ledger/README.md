@@ -47,6 +47,7 @@ request ──► │ RequestId → Compression → Timeout → BodyLimit → X-
 | `src/policy.rs` | roles → permissions (`Rbac`), the named policies, `can_post(account)` |
 | `src/auth.rs` | organisations, password + TOTP login into a PostgreSQL session, API tokens (JWT bearer) and their revocation |
 | `src/accounts.rs` | accounts: a tenant-scoped, soft-deleted, optimistically locked entity over `Repository` |
+| `src/closure.rs` | account closure as a durable workflow (id_effect_workflow): freeze, an owner's approval signal, a 30-day grace timer, the final statement exported by an activity, close; a saga thaws the account on a rejection |
 | `src/entries.rs` | journal entries posted in `SERIALIZABLE` transactions (retried on conflicts), batches with a savepoint per entry, the hash-chained audit record |
 | `src/reports.rs` | balances (cached in Redis, `ETag`ged), the trial balance, the CSV export streamed from `query_stream`, `GET /audit/verify` |
 | `src/signup.rs` | registration, email verification and password reset: id_effect_auth `Accounts` / `AccountRoutes` over the `users` table |
@@ -93,7 +94,9 @@ Route::get("/accounts/{id}").path::<AccountId>().response::<Account>(StatusCode:
 | Monthly statement cron (one leader) → a job per account (unique `account@month`, queue `statements`, priority, retries) → CSV in S3 → `deliver_later` mail with the CSV attached | `jobs.rs`, `statements.rs`, `mail.rs` | `statements::*` | msg.jobs #2–#6 #8, msg.email #1 #2 #5 #8, web.storage #3 #5 #7 |
 | Posting → outbox row in the `SERIALIZABLE` transaction → relay → Redis Streams → balance notifications with inbox dedup; dead-letter stream | `notifications.rs`, `entries.rs` | `notifications::*` | msg.brokers #3 #5 #6 #7 #8 |
 | Registration, email verification, password reset; mail to Mailpit; `/_mail/previews` in dev | `signup.rs`, `mail.rs` | `signup::*` | sec.authn #8, msg.email #3 #4 |
-| `/_console`: fibers, supervisors, metrics, health, log level, jobs, behind `console.admin` | `console.rs`, `policy.rs` | `console::*` | obs.console #1 #2 #3 #6 |
+| `/_console`: fibers, supervisors, metrics, health, log level, jobs, behind `console.admin`; off in prod | `console.rs`, `policy.rs` | `console::*`, `posture::m6_ledger_console_disabled_in_prod_profile` | obs.console #1 #2 #3 #6 |
+| The prod posture check at startup (ADR 0013 R10), passed with no accepted risk; every route, typed or plain, declared public or guarded, any other one `404` | `app.rs`, `main.rs`, `config/prod.toml` | `posture::ledger_prod_posture_is_clean`, `routes::*` | sec.web, sec.authz |
+| Account closure as a durable workflow: signal, durable timer, activities on the job queue, saga compensation, across a restart | `closure.rs`, `background.rs`, `migrations/0008_workflows.up.sql` | `closure::*` | fault.workflows #2 #3 #4 #5 #7 |
 | `SecurityLayer::recommended` (CSRF, CSP, headers), per-organisation login limit (`RateLimitKey::tenant`) | `app.rs`, `limits.rs` | `security::*`, `limits::an_organisation_shares_one_login_budget_across_clients` | sec.web, eco.tenancy #7 |
 | Traced outbound HTTP (SendGrid), `db.query` spans, sampler from the environment, redacted `password` / `token` fields | `mail.rs`, `db.rs`, `observability.rs` | `observability::*` | obs.tracing #6 #7, web.client #4 #6, obs.logging #7 |
 | Login limits hot-reloaded from the profile file | `limits.rs` | `limits::login_limits_follow_the_profile_file` | fault.reload #5 |
@@ -184,6 +187,12 @@ LEDGER_VAULT__ADDR=http://localhost:8200 LEDGER_REDIS__URL=redis://localhost:637
 ```
 
 (Prod cookies are `Secure` and `__Host-` prefixed: put the service behind TLS.)
+
+Before serving, the service prints who may call each route and the security posture report;
+under `prod` a failed probe stops it. The prod profile passes with no accepted risk: no console,
+no `/docs`, CSRF on, the redaction policy on, load shedding on, outbound HTTP only to the SendGrid
+API under the SSRF guard, and no opt-out recorded (there is no `[security.accepted_risks]`
+table).
 
 ## Operating notes
 

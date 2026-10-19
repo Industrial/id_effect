@@ -245,6 +245,18 @@
   `labs/id_effect_workflow` with its duroxide, duroxide-pg and rusqlite dependencies, the
   `NetworkJournalStub` and the FSM bridge. See "Workflows" in the
   [0.11 migration guide](docs/MIGRATION-0.11.md).
+- The Ledger reference app adopts 0.11 (the Ledger KPI): `main.rs` runs the prod posture check
+  over the assembled app and the `prod` profile passes it with no accepted risk
+  (`ledger_prod_posture_is_clean`); every route, typed or plain, is declared public or guarded and
+  a route without a declaration answers 404 (`ledger_access_report_snapshot`,
+  `h8_ledger_unregistered_route_denied`); the console and `/docs` are off in prod
+  (`m6_ledger_console_disabled_in_prod_profile`); the SendGrid host is the SSRF allowlist of prod.
+  Account closure runs as a durable workflow (`POST /accounts/{id}/closure`): an owner's approval
+  signal, a 30-day grace timer, the final statement exported by an activity on the job queue, and
+  a saga compensation that unlocks the account on a rejection
+  (`account_closure_workflow_survives_restart`). This makes the Ledger the reference-app consumer
+  of `id_effect_workflow`, now tier `platform` (ADR 0012, check P). The `reference-ledger` CI job
+  runs these tests first.
 
 ## 0.10.1 — 2026-10-18 — Security patch
 

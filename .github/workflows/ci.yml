@@ -256,9 +256,12 @@ jobs:
         run: cargo nextest run --locked -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis -p id_effect_mail -p id_effect_storage --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
-  # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
-  # migrations go through `id-effect migrate run` / `check` against a service
-  # database; its tests start PostgreSQL, Redis, Vault and Keycloak containers.
+  # 0.9 batteries and id_effect_workflow in tier `platform` (ADR 0012, tier-conformance
+  # check P). Its migrations go through `id-effect migrate run` / `check` against a
+  # service database; its tests start PostgreSQL, Redis, Vault, Keycloak, Mailpit and
+  # S3 containers. The Ledger KPI (0.11): the prod posture check passes with zero
+  # accepted risks, every route is public or guarded, and account closure runs as a
+  # durable workflow.
   # ──────────────────────────────────────────────────────────────────────────
   reference-ledger:
     name: Reference app (Ledger)
@@ -312,7 +315,10 @@ jobs:
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate run
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate check
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate status
-      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console)
+      - name: Ledger KPI (prod posture, declared routes, console off in prod, durable account closure)
+        run: >-
+          cargo nextest run --locked -p ledger -E 'test(=ledger_prod_posture_is_clean) | test(=ledger_access_report_snapshot) | test(=h8_ledger_unregistered_route_denied) | test(=m6_ledger_console_disabled_in_prod_profile) | test(=account_closure_workflow_survives_restart)'
+      - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console, workflows)
         run: cargo nextest run --locked -p ledger
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).

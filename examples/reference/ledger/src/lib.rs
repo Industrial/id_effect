@@ -13,6 +13,7 @@
 //! | [`policy`] | roles, permissions and the named policies (`can_post`, ownership) |
 //! | [`auth`] | password + TOTP login into PostgreSQL sessions, API tokens (JWT bearer) |
 //! | [`accounts`] | the chart of accounts: tenant-scoped, soft-deleted, optimistically locked |
+//! | [`closure`] | account closure as a durable workflow: approval signal, 30-day grace timer, final statement, saga compensation |
 //! | [`entries`] | journal entries posted in `SERIALIZABLE` transactions, batches with savepoints |
 //! | [`reports`] | balances (Redis-cached, `ETag`ged), trial balance, CSV export, audit check |
 //! | [`signup`] | registration, email verification and password reset (id_effect_auth accounts) |
@@ -28,7 +29,9 @@
 //!
 //! `main.rs` loads the profile, opens the databases (applying `migrations/`), Redis, the mail
 //! transport, the statements bucket and the OpenID Connect provider, starts the
-//! [`background`] tasks and serves [`app::router`] until SIGINT / SIGTERM.
+//! [`background`] tasks, runs the security posture check over the assembled app
+//! ([`app::posture`]; the `prod` profile does not start on a failed probe) and serves
+//! [`app::assemble`]'s router until SIGINT / SIGTERM.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -37,6 +40,7 @@ pub mod accounts;
 pub mod app;
 pub mod auth;
 pub mod background;
+pub mod closure;
 pub mod config;
 pub mod console;
 pub mod db;
@@ -52,7 +56,7 @@ pub mod reports;
 pub mod signup;
 pub mod statements;
 
-pub use app::{App, AppEnv, Services, router, start};
+pub use app::{App, AppEnv, Assembled, Services, assemble, posture, router, start};
 pub use config::LedgerConfig;
 pub use db::Database;
 pub use error::{ApiError, StartupError};

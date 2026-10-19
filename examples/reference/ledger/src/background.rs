@@ -3,7 +3,8 @@
 //!
 //! | Task | What |
 //! |---|---|
-//! | `worker` | the `statements` and `mail` queues ([`crate::jobs`]) |
+//! | `worker` | the `statements` and `mail` queues ([`crate::jobs`]), the workflow activities and timers ([`crate::closure`]) |
+//! | `workflows` | the workflow engine: drives the account closures ([`crate::closure`]) |
 //! | `cron` | the statement cron, on the instance holding the advisory lock |
 //! | `relay` | the outbox to Redis Streams ([`crate::notifications`]) |
 //! | `notifications` | the balance-notification consumer group |
@@ -15,11 +16,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use id_effect::{Effect, Never, sleep, succeed};
+use id_effect::{Effect, Never, WallClock, sleep, succeed};
 use id_effect_kit::messaging::{ConsumerGroup, MessageBroker, SubscribeOptions, Topic};
 use id_effect_kit::sql::SqlClient;
+use id_effect_kit::workflow::{ACTIVITY_QUEUE, TIMER_QUEUE};
 
 use crate::Services;
+use crate::closure::Closures;
 use crate::config::LedgerConfig;
 use crate::error::StartupError;
 use crate::jobs::{self, Statements};
@@ -48,9 +51,18 @@ pub fn tasks(config: &LedgerConfig, services: &Services) -> Effect<Vec<Task>, St
     mail,
     config: config.statements.clone(),
   };
+  let storage = statements.storage.clone();
   let registry = match jobs::registry(statements) {
     Ok(registry) => registry,
     Err(e) => return id_effect::fail(StartupError::Settings(format!("jobs: {e}"))),
+  };
+  let closures = match Closures::new(&db, WallClock::system()) {
+    Ok(closures) => closures,
+    Err(e) => return id_effect::fail(StartupError::Settings(format!("workflows: {e}"))),
+  };
+  let registry = match closures.register(registry, &db, &storage) {
+    Ok(registry) => registry,
+    Err(e) => return id_effect::fail(StartupError::Settings(format!("workflows: {e}"))),
   };
   let cron = match jobs::statements_cron(&config.statements.cron) {
     Ok(cron) => cron,
@@ -58,9 +70,11 @@ pub fn tasks(config: &LedgerConfig, services: &Services) -> Effect<Vec<Task>, St
   };
   let env = jobs::job_env(jobs::queue(&db), services.mailer.clone());
   let worker = jobs::worker(registry, config.jobs.concurrency)
+    .queue(ACTIVITY_QUEUE, config.jobs.concurrency)
+    .queue(TIMER_QUEUE, config.jobs.concurrency)
     .run()
     .provide_all(env.clone());
-  let mut tasks: Vec<Task> = vec![("worker", worker)];
+  let mut tasks: Vec<Task> = vec![("worker", worker), ("workflows", closures.run())];
   if let Some(broker) = services.broker.clone() {
     tasks.push((
       "relay",

@@ -81,12 +81,11 @@ struct UserRow {
   email_verified: bool,
 }
 
-const USER_COLUMNS: &str =
-  "org_id, username, password_hash, role, totp_secret, email, email_verified";
+const FIND_USER: &str = "SELECT org_id, username, password_hash, role, totp_secret, email, \
+  email_verified FROM users WHERE username = $1";
 
 fn find_user(db: &Arc<dyn SqlClient>, username: &str) -> Effect<Option<UserRow>, SqlError> {
-  let sql = format!("SELECT {USER_COLUMNS} FROM users WHERE username = $1");
-  db::query_all::<UserRow>(db, &sql, params![username]).map(|rows| rows.into_iter().next())
+  db::query_all::<UserRow>(db, FIND_USER, params![username]).map(|rows| rows.into_iter().next())
 }
 
 /// TOTP replay protection in the `users` table: each user's last consumed step, raised by a

@@ -56,6 +56,10 @@ pub struct LedgerConfig {
   /// Outbound HTTP (SendGrid): the SSRF policy's allowlist; private networks refused when absent.
   #[serde(default)]
   pub outbound: SsrfPolicy,
+  /// The profile this configuration was loaded for (`dev`, `test`, `prod`); set by [`load`],
+  /// read by what differs per profile (`/docs` is served in `dev` and `test` only).
+  #[serde(skip)]
+  pub profile: String,
 }
 
 /// `[http]`.
@@ -358,8 +362,9 @@ pub fn load(
     Ok(bootstrap) => bootstrap.vault,
     Err(e) => return fail(e),
   };
+  let name = profile.as_str().to_owned();
   let Some(vault) = vault else {
-    return ready(files.extract());
+    return ready(files.extract()).map(named(name));
   };
   let auth = match vault_auth.map_or_else(VaultAuth::token_from_env, Ok) {
     Ok(auth) => auth,
@@ -380,6 +385,15 @@ pub fn load(
           .and_then(|merged| merged.extract()),
       )
     })
+    .map(named(name))
+}
+
+/// Records the profile `name` in the loaded configuration.
+fn named(name: String) -> impl FnOnce(LedgerConfig) -> LedgerConfig + Send + 'static {
+  move |config| LedgerConfig {
+    profile: name,
+    ..config
+  }
 }
 
 #[cfg(test)]

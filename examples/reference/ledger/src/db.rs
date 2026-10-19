@@ -70,10 +70,11 @@ async fn open(config: PgPoolConfig) -> Result<Arc<dyn SqlClient>, StartupError> 
   Ok(Arc::new(PgSqlClient::new(pool)))
 }
 
-/// Runs `sql` on `client` and decodes every row as `T`.
+/// Runs `sql` on `client` and decodes every row as `T`. `sql` is a literal or a `const` (values
+/// are bound as parameters), as the `raw_sql_non_literal` lint asks.
 pub fn query_all<T: FromRow + Send + 'static>(
   client: &Arc<dyn SqlClient>,
-  sql: &str,
+  sql: &'static str,
   params: Vec<SqlValue>,
 ) -> Effect<Vec<T>, SqlError> {
   client
@@ -88,7 +89,7 @@ pub fn query_all<T: FromRow + Send + 'static>(
 /// one).
 pub fn query_one<T: FromRow + Send + 'static>(
   client: &Arc<dyn SqlClient>,
-  sql: &str,
+  sql: &'static str,
   params: Vec<SqlValue>,
 ) -> Effect<T, SqlError> {
   query_all::<T>(client, sql, params).flat_map(|rows| match rows.into_iter().next() {
