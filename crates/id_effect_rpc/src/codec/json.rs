@@ -5,6 +5,9 @@ use serde::de::DeserializeOwned;
 
 use super::{Codec, CodecError, CodecId};
 
+/// The encode buffer's starting size (bytes).
+const INITIAL_CAPACITY: usize = 256;
+
 /// JSON through `serde_json`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Json;
@@ -13,7 +16,10 @@ impl Codec for Json {
   const ID: CodecId = CodecId::Json;
 
   fn encode<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, CodecError> {
-    serde_json::to_vec(value).map_err(|e| CodecError::Encode(e.to_string()))
+    // A typical result fits: no reallocation while the writer grows the buffer.
+    let mut out = Vec::with_capacity(INITIAL_CAPACITY);
+    serde_json::to_writer(&mut out, value).map_err(|e| CodecError::Encode(e.to_string()))?;
+    Ok(out)
   }
 
   fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, CodecError> {

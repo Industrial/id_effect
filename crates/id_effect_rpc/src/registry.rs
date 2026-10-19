@@ -362,7 +362,8 @@ impl fmt::Debug for RpcMethodEntry {
 /// with an access decision.
 #[derive(Clone, Default)]
 pub struct RpcGroup {
-  methods: BTreeMap<(String, u32), RpcMethodEntry>,
+  /// By tag, then version: a call looks its tag up without building a key.
+  methods: BTreeMap<String, BTreeMap<u32, RpcMethodEntry>>,
 }
 
 impl RpcGroup {
@@ -402,9 +403,8 @@ impl RpcGroup {
         .collect::<Vec<_>>()
         .join(" or ")
     );
-    let key = (tag.clone(), version);
     assert!(
-      !self.methods.contains_key(&key),
+      self.get_version(&tag, version).is_none(),
       "rpc procedure {tag:?} version {version} is registered twice"
     );
     let access = match D::ACCESS {
@@ -414,8 +414,8 @@ impl RpcGroup {
       _ => ProcedureAccess::Public {},
     };
     let handler = handler(Arc::from(tag.as_str()));
-    self.methods.insert(
-      key,
+    self.methods.entry(tag.clone()).or_default().insert(
+      version,
       RpcMethodEntry {
         tag,
         kind,
@@ -451,7 +451,11 @@ impl RpcGroup {
 
   /// Record the typed bridges of the entry just inserted at `key`.
   fn attach_codecs(&mut self, key: (String, u32), codecs: ProcedureCodecs) {
-    if let Some(entry) = self.methods.get_mut(&key) {
+    if let Some(entry) = self
+      .methods
+      .get_mut(&key.0)
+      .and_then(|versions| versions.get_mut(&key.1))
+    {
       entry.codecs = codecs;
     }
   }
@@ -693,32 +697,30 @@ impl RpcGroup {
   pub fn get(&self, tag: &str) -> Option<&RpcMethodEntry> {
     self
       .methods
-      .range((tag.to_owned(), 0)..=(tag.to_owned(), u32::MAX))
-      .next_back()
+      .get(tag)
+      .and_then(|versions| versions.last_key_value())
       .map(|(_, entry)| entry)
   }
 
   /// Version `version` of the procedure `tag`.
   pub fn get_version(&self, tag: &str, version: u32) -> Option<&RpcMethodEntry> {
-    self.methods.get(&(tag.to_owned(), version))
+    self.methods.get(tag)?.get(&version)
   }
 
   /// Every registered tag once, sorted.
   pub fn tags(&self) -> impl Iterator<Item = &str> {
-    let mut tags: Vec<&str> = self.methods.keys().map(|(tag, _)| tag.as_str()).collect();
-    tags.dedup();
-    tags.into_iter()
+    self.methods.keys().map(String::as_str)
   }
 
   /// Every registered procedure, sorted by tag, then version.
   pub fn entries(&self) -> impl Iterator<Item = &RpcMethodEntry> {
-    self.methods.values()
+    self.methods.values().flat_map(BTreeMap::values)
   }
 
   /// Number of registered procedures (each version counts).
   #[inline]
   pub fn len(&self) -> usize {
-    self.methods.len()
+    self.methods.values().map(BTreeMap::len).sum()
   }
 
   /// Whether the group has no procedures.
@@ -748,7 +750,7 @@ impl RpcGroup {
 
 impl fmt::Debug for RpcGroup {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.debug_list().entries(self.methods.values()).finish()
+    f.debug_list().entries(self.entries()).finish()
   }
 }
 

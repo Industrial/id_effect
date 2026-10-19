@@ -25,6 +25,7 @@ numbers that gates read are exported to JSON and committed here.
 | `budget` | `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`, `gate/flat_map_depth_10k`, `gate/async_bind_64` | ratio ≤ 1.25 |
 | `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 0.95 (no noise band) |
 | `delta` | `gate/axum_request_secure_stack` over `gate/axum_request_bare` | new − new ≤ 5000 ns (no noise band; [Secure-stack budget](#secure-stack-budget-011)) |
+| `delta` | `rpc/unary_json` over `rpc/axum_json_handler` | new − new ≤ 3000 ns (no noise band; [Unary budget (D5)](#unary-budget-d5)) |
 | `pair` | `rpc/batch_50` over `rpc/sequential_50` | new / new ≤ 0.20 (no noise band; [RPC gates](#rpc-gates-012)) |
 | `pair` | `h3_loss/h3_p99` over `h3_loss/h2_p99` | new / new ≤ 1.00 (noise 0.05; netem in CI, [HTTP/3 under loss](#http3-under-loss-d9)) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
@@ -40,8 +41,8 @@ numbers that gates read are exported to JSON and committed here.
   `new[id] / new[over]`. The base file is not read for them, so a pair added in a change
   is gated in that change already. From 0.12 the batch gate and the HTTP/3 gate are pairs
   (two measurements of the same stack); the self-test covers the kind with
-  `fixtures/gates-pair.toml`, and every fixture carries the four ids of the two pairs at
-  passing values.
+  `fixtures/gates-pair.toml`, and every fixture carries the four ids of the two pairs, and
+  the two of the unary delta, at passing values.
 - **Delta gates** (`kind = "delta"`, `over = "<id>"`) are an absolute difference inside one
   run: `new[id] - new[over]` in the metric's unit (ns), against `limit` in ns. The `RATIO`
   column then shows the difference (`+4650`), and the result the ratio for information
@@ -213,7 +214,7 @@ session.
 
 | Gate | Kind | Measured (median) | Limit | Headroom | Spread seen (5 runs, load 2–9) |
 |---|---|---|---|---|---|
-| `rpc/unary_json − rpc/axum_json_handler` (D5) | `delta` | 4,406 − 1,007 = **+3,399 ns** (ratio 4.38) | 3,000 ns | **none: over by 399 ns** — gate not written, owner question | +3.38 … +3.59 µs |
+| `rpc/unary_json − rpc/axum_json_handler` (D5) | `delta`, noise 0 | 2,725 − 949 = **+1,776 ns** (ratio 2.87; +3,399 ns before `r12-f-unary-perf`) | 3,000 ns | 1,224 ns | +1.75 … +1.80 µs |
 | `rpc/batch_50 / rpc/sequential_50` | `pair`, noise 0 | 180.5 µs / 1,626.9 µs = **0.111** (9.0× faster) | 0.20 | 0.089 (45 % of the limit) | 0.102 … 0.120 |
 | `gate/axum_request_secure_stack − bare` (0.11, unchanged) | `delta`, noise 0 | 3,576 − 929 = **+2,648 ns** | 5,000 ns | 2,352 ns | +2.58 … +2.65 µs (+2.88 µs at load 16, discarded) |
 | `h3_loss/h3_p99 / h3_loss/h2_p99` (D9) | `pair`, noise 0.05 | 38.5 ms / 589.0 ms = **0.065** (userspace proxies) | 1.00 | 0.935 | 0.05 (F22 spike) … 0.065 |
@@ -225,30 +226,42 @@ session.
   28.5–38.9 ms for HTTP/3 and 587–600 ms for HTTP/2, far inside the limit. On the shared CI
   runner re-run before acting on a result near a limit ([CI job](#ci-job)).
 - **`rpc/unary_postcard`** (report only): 4,465 ns, 59 ns more than JSON for this three-field
-  struct.
+  struct; 3,346 ns after `r12-f-unary-perf` (621 ns more than JSON: the typed bridge decodes the
+  postcard input to `T` and re-encodes it as the JSON value the Schema then decodes, and the
+  reverse for the output).
 
-### Unary budget (D5): measured over 3 µs
+### Unary budget (D5)
 
 `rpc/unary_json` is a `#[rpc::service]` query (`Bench.echo`, a struct of an `i64`, a `String`
 and a `bool`) called as `POST /rpc/Bench.echo` through `oneshot` on the mounted router, as the
 `gate_request` benches; `rpc/axum_json_handler` is a plain axum handler doing the same serde
-decode and encode (`Json<Item>` → `Json<Item>`). The difference is **+3.40 µs** in the clean
-run and +3.38 to +3.59 µs in every other run of the day (+3.50 µs on `82beb0f2` after
-two-way resume landed, 21:51, load 1.8–3.3; batch 0.112 there), so the D5 budget of 3 µs is missed by
-about 0.4 µs. As `r12-e12-5-benches` requires, the `delta` gate is **not** written into
-`gates.toml` and the budget is not loosened: the owner decides (release spec Open question 2)
-between trimming the per-call path (the RPC edge does correlation id, span, C5 header checks,
-deadline, guard dispatch, the effect fiber and the `WireResult` envelope per call) and another
-number. The bench and both ids are in place, so the gate is one `[[gate]]` table once decided:
+decode and encode (`Json<Item>` → `Json<Item>`). The `delta` gate (`gates.toml`, limit 3,000 ns,
+noise 0) holds since `r12-f-unary-perf`.
 
-```toml
-[[gate]]
-id = "rpc/unary_json"
-kind = "delta"
-over = "rpc/axum_json_handler"
-limit = 3000
-noise = 0
-```
+`r12-e12-5-benches` measured **+3.40 µs** (+3.38 to +3.59 µs over the day), 0.4 µs over the
+budget, and left the gate out. `r12-f-unary-perf` profiled the call (`perf record` on the bench,
+then a counting global allocator timing each stage in isolation; `v0.12.json`
+`.session.unary_perf.profile`) and removed per-call copies that check nothing:
+
+| Removed per call | Cost |
+|---|---|
+| Two `WireSchema` clones (input and output), each a deep copy of its JSON Schema `Value` (now an `Arc`) | ~690 ns, 48 allocations |
+| A copy of the decoded input `Value` before the Schema decode (`WireSchema::decode_value` takes it by value) | ~64 ns, 5 allocations |
+| String and key copies turning the encoded `Unknown` back into a `Value`; an `RpcServer` clone per request (now an `Arc`) | 4 allocations |
+| Two key `String`s per procedure lookup (`RpcGroup` is keyed by tag, then version); the JSON encode buffer growing | 2 allocations |
+
+150 allocations (21.7 KB) per call became 91 (13.7 KB); the raw handler makes 32. Every check
+stays: `x-rpc`, the codec `Content-Type`, the body cap, the procedure's guards, the deadline
+clamp and race, the Schema decode collecting every issue, `InternalError` redaction and the
+idempotency store.
+
+Five runs at load 2.4–3.2 (23:17–23:20 and 22:57–22:59, tree `a0ef408a` plus the leaf; four
+runs that ended above load 4 were discarded): +1,746, +1,773, +1,776, +1,781 and +1,805 ns,
+median **+1,776 ns** (2,725 − 949; `rpc/unary_postcard` 3,346 ns). Where the call's time goes
+now, by stage (each timed alone, ns): the router with the deny-by-default access layer
+947 (axum alone 831), the Schema decode of the input (`Value` → `Unknown` → `T`) 380, the effect
+fiber (`run_with_env`) 328, the Schema encode of the output 240, the body to a `Value` 190, the
+`WireResult` envelope 90, the correlation id 45, the deadline race 30.
 
 ### HTTP/3 under loss (D9)
 
@@ -321,7 +334,10 @@ the socket's replay buffer until the client's next credit grant):
   `axum::serve` sets `TCP_NODELAY`, so a small WebSocket frame written while the previous one is
   unacknowledged waits for the peer's delayed ACK (about 40 ms). A 300-stream, 20 s run with
   `TCP_NODELAY` on the node's sockets shows p99 1 ms (42 ms without). Recorded as a follow-up for the host, not a soak
-  failure.
+  failure. Fixed by `r12-f-unary-perf` (F48): the host's accept loop (`serve_listener`,
+  `serve_router*`, `ServerHandle`) sets `TCP_NODELAY` on every accepted socket; a 60 s soak of
+  10,000 streams then shows lag p50 / p99 / p999 0 / 1 / 1 ms (23:23, load 3.3 → 2.1, 609,831
+  heartbeats, none missing, RSS 1.020×; `v0.12.json` `.session.unary_perf.soak_60s_after_f48`).
 - 100 streams per socket also pass (1,000 streams, 20 s): opening 100 calls uses exactly the
   100-message burst of the socket's inbound rate, and the credit frames of 1 Hz streams stay
   near 6 per second, so F39 (credit frames counted against the message rate) does not bite at

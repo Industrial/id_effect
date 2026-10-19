@@ -109,6 +109,16 @@
 			"mean": 31000000,
 			"median": 31000000,
 			"std_dev": 310000
+		},
+		"rpc/unary_json": {
+			"mean": 2700,
+			"median": 2700,
+			"std_dev": 27
+		},
+		"rpc/axum_json_handler": {
+			"mean": 950,
+			"median": 950,
+			"std_dev": 10
 		}
 	}
 }

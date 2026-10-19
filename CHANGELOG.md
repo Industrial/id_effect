@@ -450,6 +450,19 @@
   `scripts/bench-run.sh` takes `package:bench:features` and `--skip`; `bench.yml` enforces
   `pair` gates, runs `h3_loss` under netem and the 10-minute soak, and a 60 s soak on every pull
   request. `docs/benchmarks/v0.11.json` and `v0.12.json`.
+- Unary RPC under the D5 budget (r12-f-unary-perf): `rpc/unary_json − rpc/axum_json_handler`
+  went from +3,399 ns to **+1,776 ns** (median of 5 runs at load below 4; 3,000 ns allowed), and
+  the D5 `delta` gate is now in `docs/benchmarks/gates.toml`. The erased handlers no longer deep
+  copy both JSON Schemas per call (`WireSchema` shares its schema behind an `Arc`), decode the
+  input without copying it first (`WireSchema::decode_value`), move the encoded output into JSON
+  instead of copying it, take the `RpcServer` by reference count, and look procedures up without
+  building key strings (`RpcGroup` keyed by tag, then version): 150 allocations per call down to
+  91. No check changed (`x-rpc`, `Content-Type`, body cap, guards, deadline clamp, Schema decode,
+  `InternalError` redaction, idempotency); the secure-stack delta stays +2.6 µs of 5.
+- `id_effect_axum`: the host's accept loop (`serve_listener`, `serve_router*`, `ServerHandle`)
+  sets `TCP_NODELAY` on every accepted TCP socket (F48), so small responses and WebSocket frames
+  no longer wait for the peer's delayed ACK: the 10,000-stream soak's heartbeat lag p99 went from
+  41 ms to 1 ms.
 
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 

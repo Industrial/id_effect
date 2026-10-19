@@ -152,11 +152,11 @@
 			"median_ci": [1360.5775100871294, 1373.6437440305635]
 		},
 		"rpc/axum_json_handler": {
-			"mean": 1004.5306780011779,
-			"median": 1006.9160422598163,
-			"std_dev": 12.22496278174632,
-			"mean_ci": [1002.1642993702386, 1006.9811385851542],
-			"median_ci": [999.4970106075217, 1009.108049931641]
+			"mean": 946.9490884438383,
+			"median": 948.6375768967874,
+			"std_dev": 13.98311716751457,
+			"mean_ci": [944.320553304737, 949.7907121335337],
+			"median_ci": [942.9473787107064, 949.8996622572474]
 		},
 		"rpc/batch_50": {
 			"mean": 182454.88042807375,
@@ -173,18 +173,18 @@
 			"median_ci": [1617777.758178603, 1651047.3043478262]
 		},
 		"rpc/unary_json": {
-			"mean": 4419.951335951819,
-			"median": 4406.225685773397,
-			"std_dev": 103.76597123995403,
-			"mean_ci": [4402.564689929745, 4442.664056691942],
-			"median_ci": [4397.033601307189, 4415.327775630703]
+			"mean": 2735.643478983758,
+			"median": 2724.9033228462913,
+			"std_dev": 59.50295967685443,
+			"mean_ci": [2725.633203566779, 2748.860615244621],
+			"median_ci": [2720.9913148479627, 2727.9695290858726]
 		},
 		"rpc/unary_postcard": {
-			"mean": 4470.982668675708,
-			"median": 4464.756309789853,
-			"std_dev": 30.086353117392953,
-			"mean_ci": [4465.604143355497, 4477.415475949075],
-			"median_ci": [4462.737838000966, 4469.832035550458]
+			"mean": 3349.5528098206837,
+			"median": 3345.8804552725483,
+			"std_dev": 29.637413865539916,
+			"mean_ci": [3343.8352002893052, 3355.3461694569064],
+			"median_ci": [3343.773020933805, 3350.1963021811353]
 		},
 		"stream/map_effect_1k": {
 			"mean": 44804.8335230833,
@@ -339,13 +339,193 @@
 				"start": 2.81,
 				"end": 2.33
 			}
+		},
+		"unary_perf": {
+			"leaf": "r12-f-unary-perf",
+			"tree": "a0ef408a (release/0.12.0) plus the r12-f-unary-perf files, benched before their commit",
+			"date": "2026-10-19",
+			"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+			"cpus": 32,
+			"governor": "performance",
+			"toolchain": {
+				"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+				"cargo": "cargo 1.99.0-nightly (59800466c 2026-07-07)"
+			},
+			"kernel": "Linux 6.18.55",
+			"rpc_benches_from": "run 4 (the median delta of 5); the other rpc ids (sequential_50, batch_50) are the r12-e12-5-benches figures",
+			"runs": [
+				{
+					"start": "22:57:21",
+					"end": "22:58:33",
+					"load_1m": {
+						"start": 2.37,
+						"end": 2.8
+					},
+					"unary_ns": 2696.1,
+					"axum_ns": 950.5,
+					"postcard_ns": 3277.5,
+					"delta_ns": 1745.6,
+					"note": "whole bench file: batch_50 / sequential_50 = 0.085"
+				},
+				{
+					"start": "22:58:48",
+					"end": "22:59:40",
+					"load_1m": {
+						"start": 2.4,
+						"end": 3.23
+					},
+					"unary_ns": 2721.1,
+					"axum_ns": 947.6,
+					"postcard_ns": 3308.7,
+					"delta_ns": 1773.4,
+					"note": "whole bench file: batch_50 / sequential_50 = 0.084"
+				},
+				{
+					"start": "23:17:35",
+					"end": "23:18:05",
+					"load_1m": {
+						"start": 2.75,
+						"end": 2.73
+					},
+					"unary_ns": 2731.8,
+					"axum_ns": 951.2,
+					"postcard_ns": 3315.0,
+					"delta_ns": 1780.6
+				},
+				{
+					"start": "23:19:41",
+					"end": "23:20:11",
+					"load_1m": {
+						"start": 2.93,
+						"end": 2.62
+					},
+					"unary_ns": 2724.9,
+					"axum_ns": 948.6,
+					"postcard_ns": 3345.9,
+					"delta_ns": 1776.3
+				},
+				{
+					"start": "23:20:15",
+					"end": "23:20:45",
+					"load_1m": {
+						"start": 2.49,
+						"end": 2.36
+					},
+					"unary_ns": 2764.0,
+					"axum_ns": 959.3,
+					"postcard_ns": 3275.0,
+					"delta_ns": 1804.7
+				}
+			],
+			"profile": {
+				"method": "perf record (flat, user space) on gate_rpc rpc/unary_json, plus a counting global allocator in a throwaway release example timing each stage in isolation (ns and allocations per call; the allocator adds ~15 %)",
+				"before": {
+					"unary": {
+						"ns": 5152,
+						"allocs": 150,
+						"bytes": 21739
+					},
+					"axum": {
+						"ns": 1154,
+						"allocs": 32,
+						"bytes": 3427
+					},
+					"perf_top": "malloc/free ~33 %, memmove 9 %, BTreeMap<String, Value> clone 4.3 % (JSON Schema copies), WireSchema clone + drop 1.5 %, RpcServer drop 1.2 %"
+				},
+				"removed": [
+					{
+						"what": "two WireSchema clones per call (input and output), each a deep copy of the JSON Schema Value",
+						"ns": 690,
+						"allocs": 48
+					},
+					{
+						"what": "copy of the decoded input Value before the Schema decode",
+						"ns": 64,
+						"allocs": 5
+					},
+					{
+						"what": "string and key copies converting the encoded Unknown back to a Value, and the RpcServer clone per request (route closures)",
+						"allocs": 4
+					},
+					{
+						"what": "two key Strings per procedure lookup, and the encode buffer growing for the WireResult",
+						"allocs": 2
+					}
+				],
+				"allocs_check": "150 -> 93 after the first four, -> 91 after the last two",
+				"after": {
+					"unary": {
+						"ns": 3317,
+						"allocs": 91,
+						"bytes": 13689
+					}
+				},
+				"floor": {
+					"router + deny-by-default access layer (axum alone 831)": 947,
+					"Schema decode of the input (Value -> Unknown -> T, every issue collected)": 380,
+					"effect fiber (run_with_env: fiber, ensuring, in-flight count)": 328,
+					"Schema encode of the output (T -> Unknown -> Value)": 240,
+					"body -> serde_json::Value": 190,
+					"WireResult envelope encode": 90,
+					"correlation id (UUID v4)": 45,
+					"deadline race (timer armed, cancel)": 30
+				}
+			},
+			"median_delta_ns": 1776.265745949504,
+			"discarded_runs": [
+				{
+					"what": "gate_rpc 22:59:45-23:00:36",
+					"why": "ended at load 4.29"
+				},
+				{
+					"what": "gate_rpc 23:14:09-23:15:05",
+					"why": "ended at load 5.32"
+				},
+				{
+					"what": "gate_rpc in-process 23:15:54-23:16:25",
+					"why": "ended at load 5.61"
+				},
+				{
+					"what": "gate_rpc in-process 23:18:10-23:18:40",
+					"why": "ended at load 5.31"
+				}
+			],
+			"secure_stack": {
+				"start": "23:21:17",
+				"end": "23:21:54",
+				"load_1m": {
+					"start": 2.01,
+					"end": 2.06
+				},
+				"bare_ns": 904.9,
+				"secure_stack_ns": 3521.1,
+				"delta_ns": 2616.3
+			},
+			"soak_60s_after_f48": {
+				"start": "23:23:09",
+				"end": "23:24:10",
+				"load_1m": {
+					"start": 3.29,
+					"end": 2.11
+				},
+				"streams": 10000,
+				"heartbeats_received": 609831,
+				"heartbeats_missing": 0,
+				"lag_ms": {
+					"p50": 0,
+					"p99": 1,
+					"p999": 1
+				},
+				"rss_growth": 1.019913467181678,
+				"note": "TCP_NODELAY on accepted sockets (F48): heartbeat lag p99 41 ms -> 1 ms"
+			}
 		}
 	},
 	"gates_0_12": {
-		"unary_delta_ns": 3399.3096435135812,
-		"unary_ratio": 4.375961352134711,
+		"unary_delta_ns": 1776.265745949504,
+		"unary_ratio": 2.8724387365721684,
 		"unary_limit_ns": 3000,
-		"unary_status": "over the D5 budget: gate not written, owner decision (release spec Open question 2)",
+		"unary_status": "within the D5 budget after r12-f-unary-perf: delta gate enabled in gates.toml",
 		"batch_over_sequential": 0.11096754359852219,
 		"batch_limit": 0.2,
 		"secure_stack_delta_ns": 2647.5960875058786,
@@ -355,7 +535,8 @@
 		"h3_noise": 0.05,
 		"h3_mode": "userspace-proxy (netem runs in bench.yml)",
 		"soak_rss_growth": 1.0399007165269518,
-		"soak_limit": 1.05
+		"soak_limit": 1.05,
+		"unary_before_ns": 3399.3096435135812
 	},
 	"h3_loss": {
 		"body_bytes": 16384,

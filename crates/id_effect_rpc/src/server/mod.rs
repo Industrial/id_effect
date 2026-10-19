@@ -254,8 +254,10 @@ impl RpcServer {
   /// deny-by-default router serves it — and each procedure's own decision (public or its
   /// guards) is enforced per call.
   pub fn endpoints(self) -> Vec<Endpoint<DynEnv, Public>> {
+    // Shared by the routes: a request takes a reference count, not a copy of the server.
+    let shared = Arc::new(self.clone());
     let envelope = {
-      let server = self.clone();
+      let server = shared.clone();
       let mut info = RouteInfo::new(Method::POST, self.path.to_string());
       info.handler = Some("id_effect_rpc::server::RpcServer");
       let method_router = post(move |State(env): State<DynEnv>, request: Request| {
@@ -264,7 +266,7 @@ impl RpcServer {
       Endpoint::from_parts(info, method_router).public()
     };
     let by_tag = |method: Method| {
-      let server = self.clone();
+      let server = shared.clone();
       let mut info = RouteInfo::new(method.clone(), self.tag_path());
       info.handler = Some("id_effect_rpc::server::RpcServer");
       let handler = move |State(env): State<DynEnv>, Path(tag): Path<String>, request: Request| {

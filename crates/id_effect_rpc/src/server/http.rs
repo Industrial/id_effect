@@ -77,7 +77,7 @@ pub(crate) enum Route {
 
 /// Serve one request.
 pub(crate) async fn handle(
-  server: RpcServer,
+  server: std::sync::Arc<RpcServer>,
   env: DynEnv,
   route: Route,
   request: Request,

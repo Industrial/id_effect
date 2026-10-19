@@ -576,7 +576,7 @@ where
       None => None,
     };
     let (stream, peer) = tokio::select! {
-      accepted = listener.accept() => match accepted {
+      accepted = accept(&listener) => match accepted {
         Ok(accepted) => accepted,
         Err(e) => {
           if !is_connection_error(&e) {
@@ -613,6 +613,16 @@ where
   drop(listener);
   close_tx.closed().await;
   Ok(())
+}
+
+/// The next connection of the accept loop, with `TCP_NODELAY` set: a response (or a WebSocket
+/// frame) smaller than a segment goes out at once instead of waiting up to 40 ms for the peer's
+/// delayed ACK (Nagle).
+async fn accept(listener: &TcpListener) -> std::io::Result<(TcpStream, SocketAddr)> {
+  let (stream, peer) = listener.accept().await?;
+  // A socket that refuses the option keeps Nagle on and is still served.
+  let _ = stream.set_nodelay(true);
+  Ok((stream, peer))
 }
 
 fn is_connection_error(e: &std::io::Error) -> bool {
@@ -972,6 +982,26 @@ mod tests {
     let transport = HostTransport::from_config(&config).unwrap();
     assert!(transport.is_tls());
     assert_eq!(transport.server_tls(), Some(&tls));
+  }
+
+  #[tokio::test]
+  async fn accepted_sockets_send_without_delay() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    // The kernel's default, which the accept loop overrides.
+    let (_, plain) = tokio::join!(TcpStream::connect(addr), listener.accept());
+    assert!(
+      !plain.unwrap().0.nodelay().unwrap(),
+      "Nagle is on by default"
+    );
+    let (client, accepted) = tokio::join!(TcpStream::connect(addr), accept(&listener));
+    let (client, (server_side, peer)) = (client.unwrap(), accepted.unwrap());
+    assert_eq!(peer, client.local_addr().unwrap());
+    assert!(
+      server_side.nodelay().unwrap(),
+      "the accept loop turns Nagle off"
+    );
+    drop(client);
   }
 
   #[test]

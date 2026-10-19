@@ -33,7 +33,7 @@ use std::task::{Context, Poll};
 use futures_util::future::{Either, select};
 use http::StatusCode;
 use id_effect::schema::data::EffectData;
-use id_effect::schema::serde_bridge::{serde_json_from_unknown, unknown_from_serde_json};
+use id_effect::schema::serde_bridge::unknown_from_serde_json;
 use id_effect::schema::{HasSchema, Schema, Unknown};
 use id_effect::{Cause, DynEnv, Effect, Exit, Stream, die, from_async, succeed};
 use serde_json::Value;
@@ -56,7 +56,7 @@ pub trait IntoWireJson {
 
 impl IntoWireJson for Unknown {
   fn into_wire_json(self) -> Value {
-    serde_json_from_unknown(&self)
+    json_from_unknown(self)
   }
 }
 
@@ -103,14 +103,18 @@ impl<T: IntoWireJson> IntoWireJson for Vec<T> {
 }
 
 type DecodeFn<T> = Arc<dyn Fn(&Value) -> Result<T, Vec<InputIssue>> + Send + Sync>;
+type DecodeOwnedFn<T> = Arc<dyn Fn(Value) -> Result<T, Vec<InputIssue>> + Send + Sync>;
 type EncodeFn<T> = Arc<dyn Fn(T) -> Result<Value, String> + Send + Sync>;
 
 /// How one input, output or item type crosses the wire: decode from JSON (every Schema issue at
 /// once), encode to JSON, and its JSON Schema for the contract.
+///
+/// Cloning is cheap (reference counts only): the erased handlers clone their schemas per call.
 pub struct WireSchema<T> {
   decode: DecodeFn<T>,
+  decode_owned: DecodeOwnedFn<T>,
   encode: EncodeFn<T>,
-  json_schema: Value,
+  json_schema: Arc<Value>,
   typed: Option<crate::codec::TypedCodec>,
 }
 
@@ -118,6 +122,7 @@ impl<T> Clone for WireSchema<T> {
   fn clone(&self) -> Self {
     Self {
       decode: self.decode.clone(),
+      decode_owned: self.decode_owned.clone(),
       encode: self.encode.clone(),
       json_schema: self.json_schema.clone(),
       typed: self.typed.clone(),
@@ -149,8 +154,16 @@ pub(crate) fn decode_with<T, I, E>(
   schema: &Schema<T, I, E>,
   value: &Value,
 ) -> Result<T, Vec<InputIssue>> {
+  decode_owned_with(schema, value.clone())
+}
+
+/// [`decode_with`] of a value the caller gives up (no copy of the input tree).
+fn decode_owned_with<T, I, E>(
+  schema: &Schema<T, I, E>,
+  value: Value,
+) -> Result<T, Vec<InputIssue>> {
   schema
-    .decode_unknown_all(&unknown_from_serde_json(value.clone()))
+    .decode_unknown_all(&unknown_from_serde_json(value))
     .map_err(|errors| {
       errors
         .issues
@@ -163,6 +176,26 @@ pub(crate) fn decode_with<T, I, E>(
     })
 }
 
+/// [`serde_json_from_unknown`](id_effect::schema::serde_bridge::serde_json_from_unknown) of a
+/// value the caller gives up: strings and keys move instead of being copied. Non-finite numbers
+/// map to `null`, as there.
+fn json_from_unknown(value: Unknown) -> Value {
+  match value {
+    Unknown::Null => Value::Null,
+    Unknown::Bool(b) => Value::Bool(b),
+    Unknown::I64(n) => Value::from(n),
+    Unknown::F64(x) => serde_json::Number::from_f64(x).map_or(Value::Null, Value::Number),
+    Unknown::String(s) => Value::String(s),
+    Unknown::Array(items) => Value::Array(items.into_iter().map(json_from_unknown).collect()),
+    Unknown::Object(map) => Value::Object(
+      map
+        .into_iter()
+        .map(|(k, v)| (k, json_from_unknown(v)))
+        .collect(),
+    ),
+  }
+}
+
 impl<T: 'static> WireSchema<T> {
   /// From any Schema whose wire type renders as JSON ([`IntoWireJson`]: `Unknown`, the
   /// primitives, `Option`, `Vec`).
@@ -171,11 +204,13 @@ impl<T: 'static> WireSchema<T> {
     I: IntoWireJson + 'static,
     E: EffectData + 'static,
   {
-    let json_schema = schema.json_schema();
+    let json_schema = Arc::new(schema.json_schema());
     let schema = Arc::new(schema);
+    let owned = schema.clone();
     let encoder = schema.clone();
     Self {
       decode: Arc::new(move |v| decode_with(&schema, v)),
+      decode_owned: Arc::new(move |v| decode_owned_with(&owned, v)),
       encode: Arc::new(move |t| Ok(encoder.encode(t).into_wire_json())),
       json_schema,
       typed: None,
@@ -198,11 +233,13 @@ impl<T: 'static> WireSchema<T> {
     I: StructWireJson + 'static,
     E: EffectData + 'static,
   {
-    let json_schema = schema.json_schema();
+    let json_schema = Arc::new(schema.json_schema());
     let schema = Arc::new(schema);
+    let owned = schema.clone();
     let encoder = schema.clone();
     Self {
       decode: Arc::new(move |v| decode_with(&schema, v)),
+      decode_owned: Arc::new(move |v| decode_owned_with(&owned, v)),
       encode: Arc::new(move |t| encoder.encode(t).to_json_object(fields)),
       json_schema,
       typed: None,
@@ -215,10 +252,13 @@ impl<T: 'static> WireSchema<T> {
     encode: impl Fn(T) -> Result<Value, String> + Send + Sync + 'static,
     json_schema: Value,
   ) -> Self {
+    let decode: DecodeFn<T> = Arc::new(decode);
+    let by_ref = decode.clone();
     Self {
-      decode: Arc::new(decode),
+      decode,
+      decode_owned: Arc::new(move |v| by_ref(&v)),
       encode: Arc::new(encode),
-      json_schema,
+      json_schema: Arc::new(json_schema),
       typed: None,
     }
   }
@@ -244,6 +284,12 @@ impl<T: 'static> WireSchema<T> {
   /// Decode `value`, collecting every issue.
   pub fn decode(&self, value: &Value) -> Result<T, Vec<InputIssue>> {
     (self.decode)(value)
+  }
+
+  /// [`WireSchema::decode`] of a value the caller gives up: a Schema-built wire schema decodes
+  /// it without copying it first (the erased handlers own their inputs).
+  pub fn decode_value(&self, value: Value) -> Result<T, Vec<InputIssue>> {
+    (self.decode_owned)(value)
   }
 
   /// Encode `value`.
@@ -600,7 +646,7 @@ where
       let next = rx.lock().await.recv().await;
       match next {
         None => Ok(None),
-        Some(value) => match schema.decode(&value) {
+        Some(value) => match schema.decode_value(value) {
           Ok(item) => Ok(Some(vec![item])),
           Err(issues) => {
             bad.report(issues);
@@ -823,27 +869,27 @@ where
   E: RpcErrorUnion,
   B: Fn(I, &mut DynEnv) -> Effect<O, E, DynEnv> + Send + Sync + 'static,
 {
-  let build = Arc::new(build);
+  // One reference count per call, not one per part.
+  let parts = Arc::new((tag, input, output, build));
   Arc::new(move |payload, ctx: CallContext| {
-    let tag = tag.clone();
-    let input = input.clone();
-    let output = output.clone();
-    let build = build.clone();
+    let parts = parts.clone();
     Box::pin(async move {
-      let value = match input.decode(&payload) {
+      let (tag, input, output, _) = &*parts;
+      let value = match input.decode_value(payload) {
         Ok(value) => value,
         Err(issues) => return CallOutcome::invalid_input(issues),
       };
       let cache = ctx.request_cache;
+      let run = parts.clone();
       let exit = id_effect_axum::run_with_env(ctx.env, move |env| {
-        let effect = build(value, env);
+        let effect = (run.3)(value, env);
         match cache {
           Some(cache) => cache.provide(effect),
           None => effect,
         }
       })
       .await;
-      outcome_from_exit(exit, &output, &tag, &ctx.correlation_id)
+      outcome_from_exit(exit, output, tag, &ctx.correlation_id)
     })
   })
 }
@@ -868,7 +914,7 @@ where
     let item = item.clone();
     let handler = handler.clone();
     Box::pin(async move {
-      let value = match input.decode(&payload) {
+      let value = match input.decode_value(payload) {
         Ok(value) => value,
         Err(issues) => return CallOutcome::invalid_input(issues),
       };
@@ -990,7 +1036,7 @@ where
     let item = item.clone();
     let handler = handler.clone();
     Box::pin(async move {
-      let value = match input.decode(&payload) {
+      let value = match input.decode_value(payload) {
         Ok(value) => value,
         Err(issues) => return CallOutcome::invalid_input(issues),
       };
@@ -1050,6 +1096,41 @@ mod tests {
     assert_eq!(text.clone().encode("x".into()).unwrap(), json!("x"));
     let raw = WireSchema::from_fns(|v: &Value| Ok(v.clone()), Ok, json!({}));
     assert_eq!(raw.decode(&json!(1)).unwrap(), json!(1));
+    assert_eq!(raw.decode_value(json!(2)).unwrap(), json!(2));
+    // An owned decode reports the same issues as a borrowed one.
+    let owned = pair.decode_value(json!({"name": 1, "n": "x"})).unwrap_err();
+    assert_eq!(owned, issues);
+    assert_eq!(
+      pair.decode_value(json!({"name": "a", "n": 2})).unwrap(),
+      ("a".to_owned(), 2)
+    );
+  }
+
+  #[test]
+  fn unknown_values_move_into_json() {
+    use id_effect::schema::serde_bridge::serde_json_from_unknown;
+    let tree = Unknown::Object(
+      [
+        ("null".to_owned(), Unknown::Null),
+        ("yes".to_owned(), Unknown::Bool(true)),
+        ("half".to_owned(), Unknown::F64(0.5)),
+        ("nan".to_owned(), Unknown::F64(f64::NAN)),
+        ("text".to_owned(), Unknown::String("t".to_owned())),
+        (
+          "list".to_owned(),
+          Unknown::Array(vec![Unknown::I64(1), Unknown::I64(-2)]),
+        ),
+      ]
+      .into_iter()
+      .collect(),
+    );
+    let expected = serde_json_from_unknown(&tree);
+    let moved = tree.into_wire_json();
+    assert_eq!(moved, expected);
+    assert_eq!(
+      moved,
+      json!({"null": null, "yes": true, "half": 0.5, "nan": null, "text": "t", "list": [1, -2]})
+    );
   }
 
   #[test]
