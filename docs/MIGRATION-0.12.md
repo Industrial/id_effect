@@ -200,6 +200,20 @@ after:  {"id":7,"tag":"Greeter.greet","payload":…}  →  {"id":7,"tag":…,"ex
   `server_stream`, `client_stream`, `bidi`, `subscription`) with `WireSchema` and a typed error
   implementing `RpcErrorUnion`.
 
+## RPC: batches, and `RpcClient::call` batches the calls of a tick
+
+- `POST /rpc` with a JSON array body is now a batch (0.12 before this answered `400`). Each
+  call needs a distinct `id`; at most 50 calls and 1 MiB (`BatchConfig`).
+- `RpcClient::call` waits for the batch window of its tick (a few executor yields) and may share
+  a request with other calls; a lone call is still a plain envelope. Use
+  `RpcClient::call_unbatched` for the 0.11 behaviour.
+- `handler::CallContext` has a new public field `request_cache`: build it with
+  `CallContext::new(..)` (and `.with_request_cache(..)`), not a struct literal.
+- Behind `RateLimitLayer`, a batch of N calls takes N tokens: raise the burst to at least the
+  largest batch you send (a batch larger than the burst is always `429`).
+- Custom `RateLimitStore`s get `acquire_n` / `try_acquire_n_now` with defaults (one `acquire`
+  per token, not atomic); override them to take N tokens at once.
+
 ## RPC: OpenAPI output is 3.1 (was 3.0)
 
 `id_effect_rpc::openapi` reads the service contract now. The 0.11 route-metadata emitter

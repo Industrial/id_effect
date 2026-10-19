@@ -130,6 +130,24 @@
   deterministic names. `openapi::ContractDocs` serves `/rpc/openapi.json`, `/rpc/asyncapi.json`
   and `/rpc/_contract`, not mounted outside `dev` and `test` unless guarded (ADR 0013 R7;
   `public_dangerous` is recorded). Book chapter 33.10.
+- `id_effect_rpc` batches (design note §2.2, r12-e12-1-batching): `POST /rpc` with a JSON array
+  of calls answers an array of results in request order, each call failing on its own; queries
+  and mutations only (other kinds and unknown tags are that call's `InvalidInput`). At most 50
+  calls and 1 MiB (`batch::BatchConfig`, `RpcServer::with_batch_config`; over is a `413` Problem
+  before any element is decoded, `wire::decode_batch` for the fuzz target); every call's guards
+  run before any call does; bounded parallelism through a compute `AdmissionController` (8 by
+  default), or in order with `x-rpc-ordered: true`; one `RequestCache` per batch, so duplicate
+  loads through a `RequestResolver` are merged; mutations keyed `<Idempotency-Key>#<call id>`.
+  `RpcClient::call` sends the calls of one tick as one batch (`call_unbatched` opts out);
+  `CallContext::with_request_cache`. `id_effect_axum`: `RateLimitLayer` leaves a
+  `middleware::rate_limit::RateLimitCharge` in the request extensions so a handler charges the
+  rest of a request's cost (`take(n)`, all or none on `MemoryRateLimitStore`; a batch of N costs
+  N tokens); `RateLimitStore::{acquire_n, try_acquire_n_now}` with defaults. Book chapter 33.2.
+  Postcard over plain HTTP (feature `postcard`): queries and mutations take a postcard call
+  envelope on `POST /rpc` and postcard input bytes on `POST /rpc/{tag}`, answered with a
+  postcard result through the procedure's typed codec (`415` without `WireSchema::with_serde`,
+  and for postcard server streams; batches stay JSON); `RpcClient::call_postcard`,
+  `client::http::decode_postcard_response`.
 
 ### Changed
 

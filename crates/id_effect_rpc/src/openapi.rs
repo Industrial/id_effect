@@ -117,8 +117,8 @@ pub const CORRELATION_HEADER: &str = "x-correlation-id";
 /// RFC 9457 Problem Details media type.
 const PROBLEM_JSON: &str = "application/problem+json";
 
-/// The header that runs a batch sequentially (design note §2.2; r12-e12-1-batching).
-const ORDERED_HEADER: &str = "x-rpc-ordered";
+// The header that runs a batch sequentially (design note §2.2; r12-e12-1-batching).
+use crate::batch::ORDERED_HEADER;
 
 /// What [`document`] writes into `info`, `servers` and the paths.
 #[derive(Debug, Clone, PartialEq, Eq)]

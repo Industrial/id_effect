@@ -9,6 +9,10 @@
 //! store that dies or is interrupted lets the request through (fail open): the limiter protects
 //! capacity, it is not an access control.
 //!
+//! A request that does the work of several pays for them: the layer records the bucket it drew
+//! from as a [`RateLimitCharge`] request extension, and the handler takes the remaining tokens
+//! with [`RateLimitCharge::take`] (`id_effect_rpc` charges a batch of N calls N tokens this way).
+//!
 //! The default key is the client IP: the connection's peer (`ConnectInfo<SocketAddr>`, which
 //! [`serve`](crate::serve) and the other server entry points record on every request, as does
 //! `into_make_service_with_connect_info::<SocketAddr>()`), falling back to one bucket shared by
@@ -72,6 +76,24 @@ pub trait RateLimitStore: Send + Sync + 'static {
   fn try_acquire_now(&self, _key: &str) -> Option<Result<(), RateLimitError>> {
     None
   }
+
+  /// Take `n` tokens from `key`'s bucket ([`RateLimitCharge::take`]: the rest of a request that
+  /// costs `n + 1`). The default takes them one at a time with [`Self::acquire`], so a refusal
+  /// can leave some taken; [`MemoryRateLimitStore`] takes all `n` or none.
+  fn acquire_n(&self, key: &str, n: u32) -> Effect<(), RateLimitError, HNil> {
+    let steps: Vec<_> = (0..n).map(|_| self.acquire(key)).collect();
+    steps
+      .into_iter()
+      .fold(id_effect::succeed(()), |done, step| {
+        done.flat_map(move |()| step)
+      })
+  }
+
+  /// [`Self::acquire_n`] without an effect (see [`Self::try_acquire_now`]); `None` (the default)
+  /// runs [`Self::acquire_n`].
+  fn try_acquire_n_now(&self, _key: &str, _n: u32) -> Option<Result<(), RateLimitError>> {
+    None
+  }
 }
 
 impl<T: RateLimitStore + ?Sized> RateLimitStore for Arc<T> {
@@ -81,6 +103,14 @@ impl<T: RateLimitStore + ?Sized> RateLimitStore for Arc<T> {
 
   fn try_acquire_now(&self, key: &str) -> Option<Result<(), RateLimitError>> {
     (**self).try_acquire_now(key)
+  }
+
+  fn acquire_n(&self, key: &str, n: u32) -> Effect<(), RateLimitError, HNil> {
+    (**self).acquire_n(key, n)
+  }
+
+  fn try_acquire_n_now(&self, key: &str, n: u32) -> Option<Result<(), RateLimitError>> {
+    (**self).try_acquire_n_now(key, n)
   }
 }
 
@@ -120,10 +150,16 @@ impl Buckets {
   /// Takes one token from `key`'s bucket at `now`, creating the bucket (full; evicting the least
   /// recently used one of its shard when that is full) if missing.
   fn take(&self, key: &str, now: Instant) -> Result<(), RateLimitError> {
+    self.take_n(key, now, 1.0)
+  }
+
+  /// Takes `n` tokens at once, or none (see [`Self::take`]).
+  #[inline]
+  fn take_n(&self, key: &str, now: Instant, n: f64) -> Result<(), RateLimitError> {
     let mut shard = lock(self.shard(key));
     if shard
       .bucket(key, self.burst)
-      .take(now, self.rate, self.burst)
+      .take(now, self.rate, self.burst, n)
     {
       Ok(())
     } else {
@@ -278,9 +314,10 @@ impl Bucket {
     }
   }
 
-  /// Refills up to `burst` at `rate` tokens per second until `now`, then takes one token;
-  /// `false` when less than one is left (as [`RateLimiter::acquire`]).
-  fn take(&mut self, now: Instant, rate: f64, burst: f64) -> bool {
+  /// Refills up to `burst` at `rate` tokens per second until `now`, then takes `n` tokens;
+  /// `false` (nothing taken) when less than `n` are left (as [`RateLimiter::acquire`] for one).
+  #[inline]
+  fn take(&mut self, now: Instant, rate: f64, burst: f64, n: f64) -> bool {
     let tokens = match self.last {
       Some(last) => {
         (self.tokens + now.saturating_duration_since(last).as_secs_f64() * rate).min(burst)
@@ -288,8 +325,8 @@ impl Bucket {
       None => self.tokens,
     };
     self.last = Some(now);
-    if tokens >= 1.0 {
-      self.tokens = tokens - 1.0;
+    if tokens >= n {
+      self.tokens = tokens - n;
       true
     } else {
       self.tokens = tokens;
@@ -405,6 +442,17 @@ impl RateLimitStore for MemoryRateLimitStore {
 
   fn try_acquire_now(&self, key: &str) -> Option<Result<(), RateLimitError>> {
     Some(self.buckets.take(key, Instant::now()))
+  }
+
+  fn acquire_n(&self, key: &str, n: u32) -> Effect<(), RateLimitError, HNil> {
+    let (buckets, key) = (Arc::clone(&self.buckets), key.to_owned());
+    Effect::from_ctx(move |ctx: Ctx<HNil>| {
+      std::future::ready(buckets.take_n(&key, ctx.fiber().executor().now(), f64::from(n)))
+    })
+  }
+
+  fn try_acquire_n_now(&self, key: &str, n: u32) -> Option<Result<(), RateLimitError>> {
+    Some(self.buckets.take_n(key, Instant::now(), f64::from(n)))
   }
 }
 
@@ -585,7 +633,7 @@ impl RateLimitLayer {
     response
   }
 
-  async fn handle<S>(self: Arc<Self>, mut inner: S, request: Request) -> Response
+  async fn handle<S>(self: Arc<Self>, mut inner: S, mut request: Request) -> Response
   where
     S: Service<Request, Error = Infallible>,
     S::Response: IntoResponse,
@@ -602,11 +650,80 @@ impl RateLimitLayer {
       if limited {
         return self.too_many(request.uri().path());
       }
+      let layer = Arc::clone(&self);
+      request
+        .extensions_mut()
+        .insert(RateLimitCharge { layer, key });
     }
     match inner.call(request).await {
       Ok(response) => response.into_response(),
       Err(never) => match never {},
     }
+  }
+}
+
+/// The bucket a request drew its token from: a request extension [`RateLimitLayer`] inserts on
+/// every request it lets through. A handler whose request does the work of several — an RPC batch
+/// of N calls is charged N tokens — takes the extra tokens with [`RateLimitCharge::take`] and
+/// answers [`RateLimitCharge::too_many`] (the layer's own `429`) when they are not there.
+///
+/// ```rust
+/// use axum::{Router, extract::Request, response::{IntoResponse, Response}, routing::post};
+/// use id_effect_axum::RateLimitLayer;
+/// use id_effect_axum::middleware::rate_limit::RateLimitCharge;
+///
+/// async fn import(request: Request) -> Response {
+///   // Five items cost five tokens: one taken by the layer, four more here.
+///   if let Some(charge) = request.extensions().get::<RateLimitCharge>() {
+///     if charge.take(4).await.is_err() {
+///       return charge.too_many(request.uri().path());
+///     }
+///   }
+///   "imported".into_response()
+/// }
+///
+/// let app: Router = Router::new()
+///   .route("/import", post(import))
+///   .layer(RateLimitLayer::per_second(10.0, 20.0));
+/// # let _ = app;
+/// ```
+#[derive(Clone, Debug)]
+pub struct RateLimitCharge {
+  layer: Arc<RateLimitLayer>,
+  key: String,
+}
+
+impl RateLimitCharge {
+  /// The bucket's key.
+  pub fn key(&self) -> &str {
+    &self.key
+  }
+
+  /// Take `n` more tokens from the request's bucket ([`RateLimitStore::acquire_n`]); `Err` when
+  /// the bucket does not hold them (a cost above the store's burst never fits). A store that dies
+  /// or is interrupted lets the request through, as the layer does.
+  pub async fn take(&self, n: u32) -> Result<(), RateLimitError> {
+    if n == 0 {
+      return Ok(());
+    }
+    let store = &self.layer.store;
+    match store.try_acquire_n_now(&self.key, n) {
+      Some(outcome) => outcome,
+      None => match self
+        .layer
+        .executor
+        .run_effect(store.acquire_n(&self.key, n))
+        .await
+      {
+        Exit::Failure(Cause::Fail(err)) => Err(err),
+        _ => Ok(()),
+      },
+    }
+  }
+
+  /// The layer's `429 Too Many Requests` Problem (with `Retry-After`) for `path`.
+  pub fn too_many(&self, path: &str) -> Response {
+    self.layer.too_many(path)
   }
 }
 
@@ -846,6 +963,110 @@ mod tests {
     assert_eq!(status(Some("globex")).await, StatusCode::OK);
     assert_eq!(status(None).await, StatusCode::OK);
     assert_eq!(store.keys(), ["global", "tenant:acme", "tenant:globex"]);
+  }
+
+  #[test]
+  fn memory_store_takes_n_tokens_or_none() {
+    let store = MemoryRateLimitStore::new(0.0, 5.0);
+    assert_eq!(store.try_acquire_n_now("k", 3), Some(Ok(())));
+    assert_eq!(store.try_acquire_n_now("k", 3), Some(Err(RateLimitError)));
+    assert!(matches!(
+      store.acquire_n("k", 2).block_on(),
+      Exit::Success(())
+    ));
+    assert!(matches!(
+      store.acquire_n("k", 1).block_on(),
+      Exit::Failure(Cause::Fail(RateLimitError))
+    ));
+    // `Arc` forwards; a store without an inline check has none for `n` either.
+    let shared = Arc::new(MemoryRateLimitStore::new(0.0, 1.0));
+    assert_eq!(shared.try_acquire_n_now("k", 2), Some(Err(RateLimitError)));
+    assert!(matches!(
+      shared.acquire_n("k", 1).block_on(),
+      Exit::Success(())
+    ));
+  }
+
+  /// A store with only the effect check: one token per `acquire` from a shared count.
+  struct Counted(Arc<std::sync::atomic::AtomicU32>);
+
+  impl RateLimitStore for Counted {
+    fn acquire(&self, _key: &str) -> Effect<(), RateLimitError, HNil> {
+      let left = Arc::clone(&self.0);
+      id_effect::from_async(move || async move {
+        let ordering = std::sync::atomic::Ordering::SeqCst;
+        let mut n = left.load(ordering);
+        loop {
+          let Some(next) = n.checked_sub(1) else {
+            return Err(RateLimitError);
+          };
+          match left.compare_exchange(n, next, ordering, ordering) {
+            Ok(_) => return Ok(()),
+            Err(now) => n = now,
+          }
+        }
+      })
+    }
+  }
+
+  #[tokio::test]
+  async fn charges_take_the_rest_of_a_request_cost() {
+    use axum::Router;
+    use axum::routing::post;
+    use tower::ServiceExt;
+
+    async fn costly(request: Request) -> Response {
+      let cost: u32 = request
+        .uri()
+        .query()
+        .and_then(|q| q.parse().ok())
+        .unwrap_or(1);
+      let Some(charge) = request.extensions().get::<RateLimitCharge>() else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+      };
+      assert_eq!(charge.key(), "global");
+      assert!(format!("{charge:?}").contains("RateLimitCharge"));
+      match charge.take(cost - 1).await {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(RateLimitError) => charge.too_many(request.uri().path()),
+      }
+    }
+
+    let tokens = Arc::new(std::sync::atomic::AtomicU32::new(4));
+    for layer in [
+      RateLimitLayer::new(MemoryRateLimitStore::new(0.0, 4.0)),
+      RateLimitLayer::new(Counted(Arc::clone(&tokens))),
+    ] {
+      let app = Router::new()
+        .route("/do", post(costly))
+        .layer(layer.key(RateLimitKey::global()));
+      let status = |cost: u32| {
+        let app = app.clone();
+        let req = Request::post(format!("/do?{cost}"))
+          .body(Body::empty())
+          .unwrap();
+        async move { app.oneshot(req).await.unwrap() }
+      };
+      assert_eq!(status(3).await.status(), StatusCode::OK); // 4 → 1
+      assert_eq!(status(1).await.status(), StatusCode::OK); // 1 → 0
+      let refused = status(1).await;
+      assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+      assert!(refused.headers().contains_key(header::RETRY_AFTER));
+    }
+    // A refused charge in the handler answers the layer's own 429.
+    let two = Arc::new(std::sync::atomic::AtomicU32::new(2));
+    for layer in [
+      RateLimitLayer::new(MemoryRateLimitStore::new(0.0, 2.0)),
+      RateLimitLayer::new(Counted(two)),
+    ] {
+      let app = Router::new()
+        .route("/do", post(costly))
+        .layer(layer.key(RateLimitKey::global()));
+      let req = Request::post("/do?3").body(Body::empty()).unwrap();
+      let refused = app.oneshot(req).await.unwrap();
+      assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+      assert!(refused.headers().contains_key(header::RETRY_AFTER));
+    }
   }
 
   #[test]

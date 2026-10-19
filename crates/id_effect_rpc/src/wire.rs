@@ -133,6 +133,8 @@ impl<P> WireCall<P> {
 /// A batch body: a JSON array of calls, each with a distinct id (r12-e12-1-batching).
 pub type Batch<P = Value> = Vec<WireCall<P>>;
 
+pub use crate::batch::{BatchError, decode_batch};
+
 /// How a call ended: `{"_tag":"Success","value":…}` or `{"_tag":"Failure","error":{"_tag":…}}`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "_tag")]

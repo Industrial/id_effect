@@ -88,6 +88,8 @@ pub struct RpcServer {
   stream_window: usize,
   idempotency: Arc<dyn IdempotencyStore>,
   principal: PrincipalFn,
+  /// Batch limits and parallelism (`crate::batch`, r12-e12-1-batching).
+  pub(crate) batch: crate::batch::BatchConfig,
 }
 
 impl fmt::Debug for RpcServer {
@@ -118,6 +120,7 @@ impl RpcServer {
           .get::<RpcPrincipal>()
           .map(|RpcPrincipal(p)| p.clone())
       }),
+      batch: crate::batch::BatchConfig::default(),
     }
   }
 

@@ -17,6 +17,13 @@
 //! malformed envelope **400**, unknown codec **415**, body over the cap **413**, a guard's
 //! refusal the guard's own response. Once a procedure ran (or its input failed decoding) the
 //! answer is a [`WireResult`] with the status of its exit.
+//!
+//! A JSON array on `POST {path}` is a batch ([`crate::batch`]; JSON only). With feature
+//! `postcard`, queries and mutations also take `application/vnd.id-effect.rpc+postcard` on
+//! `POST {path}` (a postcard call envelope) and `POST {path}/{tag}` (the input's postcard bytes),
+//! answered as a postcard result; a procedure whose schemas carry no typed codec
+//! (`WireSchema::with_serde`) answers **415**, and so does a postcard server stream (postcard
+//! streams use the multiplexed transports). Problems stay JSON.
 
 // The early-return `Err(Response)` of the edge helpers is the answer itself, built once per
 // request; boxing it would only add an allocation.
@@ -40,7 +47,7 @@ use sha2::{Digest as _, Sha256};
 use tracing::Instrument as _;
 
 use crate::cancel::{CallControl, effective_deadline, requested_deadline};
-use crate::codec::{CodecId, NDJSON, negotiate_content_type};
+use crate::codec::{CodecError, CodecId, NDJSON, negotiate_content_type};
 use crate::contract::ProcedureKind;
 use crate::correlation::{append_correlation_header, ensure_correlation_id};
 use crate::handler::{CallContext, CallOutcome, InboundSender};
@@ -311,17 +318,20 @@ impl Edge<'_> {
       Ok(bytes) => bytes,
       Err(response) => return response,
     };
-    // r12-e12-1-batching: a JSON array is a batch; it answers here until that leaf serves it.
-    if bytes.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'[') {
-      let detail = "rpc batches are not served by this server";
-      return problem(StatusCode::BAD_REQUEST, detail, path).into_response();
+    // A JSON array is a batch (design note §2.2, `crate::batch`).
+    if codec == CodecId::Json && crate::batch::is_batch(&bytes) {
+      record_request_metadata(
+        self.span,
+        Some(&self.ctx.correlation_id),
+        "POST",
+        path,
+        "rpc.batch",
+      );
+      return crate::batch::serve(self.server, &self.ctx, &parts, &bytes).await;
     }
-    let call: WireCall = match codec.decode(&bytes) {
+    let call = match decode_envelope(codec, &bytes) {
       Ok(call) => call,
-      Err(err) => {
-        let detail = format!("malformed rpc envelope: {err}");
-        return problem(StatusCode::BAD_REQUEST, detail, path).into_response();
-      }
+      Err(err) => return self.codec_problem(&err, "malformed rpc envelope"),
     };
     record_request_metadata(
       self.span,
@@ -341,7 +351,78 @@ impl Edge<'_> {
     let WireCall {
       id, tag, payload, ..
     } = call;
+    let payload = match self.input(entry, codec, payload) {
+      Ok(payload) => payload,
+      Err(response) => return response,
+    };
     self.unary(entry, &parts, codec, id, tag, payload).await
+  }
+
+  /// A codec failure as a Problem: `415` for a codec the procedure does not take, `413` over a
+  /// decoder's limit, `400` otherwise.
+  fn codec_problem(&self, err: &CodecError, what: &str) -> Response {
+    let path = self.path();
+    match err {
+      CodecError::Unsupported(_) => {
+        problem(StatusCode::UNSUPPORTED_MEDIA_TYPE, err.to_string(), path).into_response()
+      }
+      CodecError::TooLarge { .. } => {
+        problem(StatusCode::PAYLOAD_TOO_LARGE, err.to_string(), path).into_response()
+      }
+      _ => problem(StatusCode::BAD_REQUEST, format!("{what}: {err}"), path).into_response(),
+    }
+  }
+
+  /// The handler's input value of an envelope call: JSON as sent; postcard bytes through the
+  /// procedure's typed bridge (`415` without one).
+  fn input(&self, entry: &RpcMethodEntry, codec: CodecId, input: Input) -> Result<Value, Response> {
+    if !entry.codecs().supports(codec) {
+      let err = CodecError::Unsupported(format!(
+        "{} (`{}` takes it once its schemas carry a typed codec: `WireSchema::with_serde`)",
+        codec.content_type(),
+        entry.tag
+      ));
+      return Err(self.codec_problem(&err, "malformed rpc input"));
+    }
+    match input {
+      Input::Value(value) => Ok(value),
+      Input::Bytes(bytes) => entry
+        .codecs()
+        .decode_input(codec, &bytes)
+        .map_err(|err| self.codec_problem(&err, "malformed rpc input")),
+    }
+  }
+
+  /// Encode a unary call's result for `codec`: JSON as is; postcard with the procedure's output
+  /// bridge (an output over the frame cap answers `ResourceExhausted`).
+  fn encode(&self, entry: &RpcMethodEntry, codec: CodecId, result: &WireResult) -> Vec<u8> {
+    #[cfg(feature = "postcard")]
+    if codec == CodecId::Postcard {
+      use crate::codec::postcard;
+      let fallback = |failure: RpcFailure| WireExit::Failure {
+        error: crate::error_union::failure_value(&failure),
+      };
+      let exit = entry
+        .codecs()
+        .encode_exit(codec, &result.exit)
+        .unwrap_or_else(|err| {
+          tracing::error!(correlation_id = %self.ctx.correlation_id, rpc.tag = %result.tag, reason = %err, "rpc output does not encode as postcard");
+          fallback(RpcFailure::InternalError {
+            id: self.ctx.correlation_id.to_string(),
+          })
+        });
+      let encoded = postcard::encode_result(&WireResult::new(result.id, result.tag.clone(), exit));
+      return encoded.unwrap_or_else(|_| {
+        let exhausted = fallback(RpcFailure::ResourceExhausted {
+          limit: "max_frame".to_owned(),
+        });
+        postcard::encode_result(&WireResult::new(result.id, result.tag.clone(), exhausted))
+          .unwrap_or_default()
+      });
+    }
+    #[cfg(not(feature = "postcard"))]
+    let _ = entry;
+    encode_result(codec, result)
   }
 
   /// `POST {path}/{tag}`.
@@ -373,12 +454,17 @@ impl Edge<'_> {
       Ok(bytes) => bytes,
       Err(response) => return response,
     };
-    let payload: Value = match codec.decode(&bytes) {
+    // A postcard input of a server stream would answer JSON frames: postcard streams go over
+    // the multiplexed transports (records), so plain HTTP serves them as JSON only.
+    if kind == ProcedureKind::ServerStream && codec != CodecId::Json {
+      let detail = format!(
+        "`{tag}` is a server stream: over HTTP it takes application/json (postcard: WebSocket)"
+      );
+      return problem(StatusCode::UNSUPPORTED_MEDIA_TYPE, detail, path).into_response();
+    }
+    let payload = match self.input(entry, codec, Input::Bytes(bytes)) {
       Ok(payload) => payload,
-      Err(err) => {
-        let detail = format!("malformed rpc input: {err}");
-        return problem(StatusCode::BAD_REQUEST, detail, path).into_response();
-      }
+      Err(response) => return response,
     };
     match kind {
       ProcedureKind::ServerStream => self.server_stream(entry, &parts, payload),
@@ -471,7 +557,7 @@ impl Edge<'_> {
         json_response(
           status,
           codec,
-          encode_result(codec, &outcome.into_result(id, tag)),
+          self.encode(entry, codec, &outcome.into_result(id, tag)),
         )
       }
       Err(response) => response,
@@ -534,7 +620,7 @@ impl Edge<'_> {
         let mut response = json_response(
           status,
           codec,
-          encode_result(codec, &WireResult::new(id, tag, exit)),
+          self.encode(entry, codec, &WireResult::new(id, tag, exit)),
         );
         response
           .headers_mut()
@@ -572,7 +658,7 @@ impl Edge<'_> {
         json_response(
           status,
           codec,
-          encode_result(codec, &outcome.into_result(id, tag)),
+          self.encode(entry, codec, &outcome.into_result(id, tag)),
         )
       }
     }
@@ -641,6 +727,34 @@ impl Edge<'_> {
       encode_result(codec, &outcome.into_result(None, tag)),
     )
   }
+}
+
+/// An envelope call's payload before the procedure is known: a JSON value, or the bytes of a
+/// codec that is not self-describing (decoded by the procedure's typed bridge).
+enum Input {
+  Value(Value),
+  Bytes(Bytes),
+}
+
+/// Decode a `POST {path}` envelope with `codec`.
+fn decode_envelope(codec: CodecId, bytes: &[u8]) -> Result<WireCall<Input>, CodecError> {
+  #[cfg(feature = "postcard")]
+  if codec == CodecId::Postcard {
+    let call = crate::codec::postcard::decode_call(bytes)?;
+    return Ok(WireCall {
+      id: call.id,
+      tag: call.tag,
+      v: call.v,
+      payload: Input::Bytes(Bytes::from(call.payload)),
+    });
+  }
+  let call: WireCall = codec.decode(bytes)?;
+  Ok(WireCall {
+    id: call.id,
+    tag: call.tag,
+    v: call.v,
+    payload: Input::Value(call.payload),
+  })
 }
 
 /// The `input` query parameter as JSON (`null` when absent).

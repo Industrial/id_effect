@@ -269,6 +269,10 @@ pub struct CallContext {
   pub env: DynEnv,
   /// The request's correlation id.
   pub correlation_id: Arc<str>,
+  /// The [`RequestCache`](id_effect::RequestCache) a query or mutation runs with (one per
+  /// batch, so the batch's duplicate loads through a `RequestResolver` are merged); `None`:
+  /// caching as the handler sets it.
+  pub request_cache: Option<id_effect::RequestCache>,
 }
 
 impl CallContext {
@@ -277,7 +281,15 @@ impl CallContext {
     Self {
       env,
       correlation_id: correlation_id.into(),
+      request_cache: None,
     }
+  }
+
+  /// Run queries and mutations of this context with `cache` as their ambient request cache.
+  #[must_use]
+  pub fn with_request_cache(mut self, cache: id_effect::RequestCache) -> Self {
+    self.request_cache = Some(cache);
+    self
   }
 }
 
@@ -822,7 +834,15 @@ where
         Ok(value) => value,
         Err(issues) => return CallOutcome::invalid_input(issues),
       };
-      let exit = id_effect_axum::run_with_env(ctx.env, move |env| build(value, env)).await;
+      let cache = ctx.request_cache;
+      let exit = id_effect_axum::run_with_env(ctx.env, move |env| {
+        let effect = build(value, env);
+        match cache {
+          Some(cache) => cache.provide(effect),
+          None => effect,
+        }
+      })
+      .await;
       outcome_from_exit(exit, &output, &tag, &ctx.correlation_id)
     })
   })

@@ -57,6 +57,7 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
+pub mod batch;
 pub mod cancel;
 #[cfg(feature = "client")]
 pub mod client;
