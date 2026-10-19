@@ -2,15 +2,34 @@
 //! call it remotely.
 //!
 //! `NODE_NAME` names this node (default `a@localhost`).
+//!
+//! First it builds the mesh transport (TLS with mutual authentication, from `MESH_CA_PEM`,
+//! `MESH_CERT_PEM` and `MESH_KEY_PEM`; dev certificates when none is set in `dev` and `test`)
+//! and runs the security posture check (ADR 0013 R10): under the `prod` profile
+//! (`ID_EFFECT_PROFILE=prod`) missing certificates or a failed probe stop the node.
 
 use std::process::ExitCode;
 
+use id_effect_kit::config::Profiles;
 use id_effect_kit::node::MeshFabric;
+use id_effect_kit::posture::Posture;
 use id_effect_kit::prelude::{RunMainConfig, hlist, run_main};
 
-use {{crate_name}}::{node, round_trip};
+use {{crate_name}}::{mesh_certs, mesh_transport, node, posture, round_trip};
 
 fn main() -> ExitCode {
+    let stated = match Posture::load(&Profiles::new()) {
+        Ok(base) => base,
+        Err(e) => return fail(e),
+    };
+    let transport = match mesh_certs(stated.profile()).and_then(|certs| mesh_transport(&certs)) {
+        Ok(transport) => transport,
+        Err(e) => return fail(format!("mesh transport: {e}")),
+    };
+    match posture(stated, &transport).check().enforce() {
+        Ok(report) => eprint!("{report}"),
+        Err(refused) => return fail(refused),
+    }
     let name = std::env::var("NODE_NAME").unwrap_or_else(|_| "a@localhost".to_string());
     let fabric = MeshFabric::new();
     let this = node(&name, &fabric);
@@ -18,4 +37,9 @@ fn main() -> ExitCode {
     let program = round_trip(&this, "b@localhost", 42)
         .map(move |value| println!("{name}: counter on b@localhost = {value}"));
     run_main(program, hlist![], RunMainConfig::with_tracing())
+}
+
+fn fail(message: impl std::fmt::Display) -> ExitCode {
+    eprintln!("error: {message}");
+    ExitCode::FAILURE
 }

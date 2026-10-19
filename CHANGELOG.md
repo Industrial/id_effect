@@ -138,6 +138,25 @@
 
 ### Added
 
+- `id_effect_kit` prod posture check (ADR 0013 R10): new `posture` module. `Posture` takes the
+  profile, the risks its configuration accepts (`security.accepted_risks`, opt-out id → reason;
+  a blank reason does not accept) and what the app states about itself; `check()` adds the
+  posture registry and returns a `PostureReport` with nine named probes (console guarded, docs
+  closed, mesh transport encrypted, redaction policy non-empty, SSRF guard on, CSRF on, load
+  shedding on, no memory-only security state, no unaccepted opt-out). `enforce()` refuses the
+  `prod` profile (any but `dev`/`test`) on a failed probe; `dev` and `test` report. New kit
+  features `workflow` (`kit::workflow`), `mesh-mtls` (QUIC) and `kubernetes`; `cluster` now
+  enables id_effect_node's `tls-tcp`, so `TcpTransport::tls` is reachable through the kit. The
+  prelude adds `stm`, `Public`, `Guarded`, `RouteGuard` and `LoadShedLayer` (also re-exported at
+  the `id_effect_axum` root). The `service`, `worker` and `cluster` templates run the check at
+  startup; the service template declares its plain routes and applies `AccessLayer` after the
+  last route (undeclared routes answer 404) and passes the prod check as generated
+  (`template_service_passes_prod_posture`); the cluster template builds a mutual-TLS TCP mesh
+  transport from `MESH_CA_PEM` / `MESH_CERT_PEM` / `MESH_KEY_PEM`, with throwaway dev
+  certificates for `dev`/`test`. New `scripts/check-dangerous.sh` (with `--self-test`, run by the
+  lint workflow) fails when a `dangerous_*` / `insecure_*` / `*_dangerous` / `*_insecure`
+  function under `crates/` does not call `record_dangerous`. See "Kit and templates: the prod
+  posture check" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `id_effect_node` Kubernetes discovery (dist.membership #4, D18): feature `kubernetes` adds
   `discovery::KubernetesDiscovery`, a `Discovery` strategy that lists the ready addresses of a
   headless service from the in-cluster `discovery.k8s.io/v1` EndpointSlice API over rustls, with

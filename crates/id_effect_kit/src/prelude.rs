@@ -2,10 +2,10 @@
 //!
 //! | Source | Items | Feature |
 //! |---|---|---|
-//! | `id_effect` | [`Effect`], [`Exit`], [`Cause`], [`Or`], [`err!`], [`succeed`], [`fail`], [`from_async`], [`sleep`], [`Layer`], [`Schedule`], [`Schema`](struct@Schema) (type and derive), [`EffectData`], [`effect!`], [`caps`], [`hlist!`], [`need`] | always |
+//! | `id_effect` | [`Effect`], [`Exit`], [`Cause`], [`Or`], [`err!`], [`succeed`], [`fail`], [`from_async`], [`sleep`], [`Layer`], [`Schedule`], [`Schema`](struct@Schema) (type and derive), [`EffectData`], [`effect!`], [`caps`], [`hlist!`], [`need`], the [`stm`] module (`stm::TRef`, `stm::atomically`, …) | always |
 //! | `id_effect_cli` | [`run_main`], [`RunMainConfig`] | always |
 //! | `id_effect_config` | [`Secret`], [`Profiles`] | always |
-//! | `id_effect_axum` | `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`; typed routes `Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`; middleware `RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer` | `web` |
+//! | `id_effect_axum` | `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`; typed routes `Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`, their access `Public`, `Guarded`, `RouteGuard`; middleware `RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer`, `LoadShedLayer` | `web` |
 //! | `id_effect_axum::openapi` | `OpenApi`, `openapi_router` | `openapi` |
 //! | `id_effect_sql` | `SqlClientService`, `SqlError`, `SqlRow`, `FromRow` (trait and derive), `params!`, `with_transaction` | `sql` (any `sql-*`, `migrate`, `repository`) |
 //! | `id_effect_sql::migrate` | `Migrator`, `MigrateError` | `migrate` |
@@ -41,7 +41,7 @@
 
 pub use id_effect::{
   Cause, Effect, EffectData, Exit, Layer, Or, Schedule, Schema, caps, effect, err, fail,
-  from_async, hlist, need, sleep, succeed,
+  from_async, hlist, need, sleep, stm, succeed,
 };
 pub use id_effect_cli::{RunMainConfig, run_main};
 pub use id_effect_config::{Profiles, Secret};
@@ -50,11 +50,12 @@ pub use id_effect_config::{Profiles, Secret};
 pub use id_effect_axum::metrics::metrics_router;
 #[cfg(feature = "web")]
 pub use id_effect_axum::middleware::{
-  BodyLimitLayer, CompressionLayer, RequestIdLayer, TimeoutLayer,
+  BodyLimitLayer, CompressionLayer, LoadShedLayer, RequestIdLayer, TimeoutLayer,
 };
 #[cfg(feature = "web")]
 pub use id_effect_axum::route::{
-  Input, Problem, Route, Router, ValidForm, ValidHeaders, ValidJson, ValidPath, ValidQuery,
+  Guarded, Input, Problem, Public, Route, RouteGuard, Router, ValidForm, ValidHeaders, ValidJson,
+  ValidPath, ValidQuery,
 };
 #[cfg(feature = "web")]
 pub use id_effect_axum::{

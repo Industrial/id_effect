@@ -20,6 +20,10 @@ Each fire time is recorded in the scheduler's run history (`scheduler.history("c
 
 `main.rs` hands the jobs to `run_main`: the first Ctrl-C interrupts them, in-flight runs stop and the process exits `130`.
 
+## Security posture
+
+Before the jobs start, `main.rs` runs the posture check of ADR 0013 and prints the report (`posture()` in `src/lib.rs` states that the worker has no console, `/docs`, browser or mesh). `ID_EFFECT_PROFILE` picks the profile (`dev` by default). Under `prod` a failed probe stops the worker: every weakening of a default is a named `dangerous_*` / `insecure_*` call that records itself, and runs in `prod` only when `config/prod.toml` accepts it with a reason under `[security.accepted_risks]`.
+
 ## Run it elsewhere
 
 - `docker compose up --build` — the image from `Dockerfile`.

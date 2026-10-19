@@ -7,11 +7,19 @@ cargo test     # two nodes on an in-process fabric
 cargo run      # this node runs a counter on a peer and calls it
 ```
 
-- `src/lib.rs` — `Counter`, a process behavior (casts add, calls read); `node()`, a `Mesh` that can host it; `round_trip()`, a remote spawn + cast + call as one effect.
-- `src/main.rs` — starts this node (`NODE_NAME`) and a peer, runs the round trip under `run_main`.
-- `tests/mesh.rs` — remote calls between two nodes, a fault for an unknown node, the binary.
+- `src/lib.rs` — `Counter`, a process behavior (casts add, calls read); `node()`, a `Mesh` that can host it; `round_trip()`, a remote spawn + cast + call as one effect; `mesh_transport()`, the mutual-TLS transport between hosts, from the PEM files of `MeshCerts`; `posture()`, what the node states for the posture check.
+- `src/main.rs` — builds the mesh transport, runs the security posture check, starts this node (`NODE_NAME`) and a peer, runs the round trip under `run_main`.
+- `tests/mesh.rs` — remote calls between two nodes, a fault for an unknown node, a mutual-TLS session with the dev certificates, the `prod` posture check, the binary.
 
-Remote requests are at-most-once and bounded by a timeout; a node's processes are addressed by `name@host`. The nodes here share a `MeshFabric` (one process). Across hosts, connect the meshes with `id_effect_kit::node::TcpTransport` sessions (cookie handshake) and find peers with `StaticDiscovery` / `DnsDiscovery`; see the id_effect_node docs.
+Remote requests are at-most-once and bounded by a timeout; a node's processes are addressed by `name@host`. The nodes here share a `MeshFabric` (one process). Across hosts the meshes run cookie-authenticated `Session`s over `mesh_transport()`, TLS 1.3 over TCP where every node presents a certificate and verifies its peer's against the cluster CA, and find peers with `StaticDiscovery` / `DnsDiscovery` (or `KubernetesDiscovery` with the kit's `kubernetes` feature); see the id_effect_node docs. The kit's `mesh-mtls` feature adds the QUIC transport, which is always mutual TLS too.
+
+## Certificates
+
+`MESH_CA_PEM`, `MESH_CERT_PEM` and `MESH_KEY_PEM` name the cluster CA bundle, this node's chain (leaf first) and its key. Each node certificate must be valid for the TLS name `cluster` and for both server and client authentication. With none of them set, the `dev` and `test` profiles create throwaway dev certificates in the system temp dir (`dev_certificates()`; shared by the nodes of one machine); the `prod` profile refuses to start without them. There is no plaintext transport: the plaintext opt-out needs the `insecure-plaintext-tcp` feature of `id_effect_node` and fails the `prod` posture check.
+
+## Security posture
+
+Before the node starts, `main.rs` runs the posture check of ADR 0013 and prints the report (mesh transport encrypted, no console, `/docs` or browser, no recorded opt-out). `ID_EFFECT_PROFILE` picks the profile (`dev` by default). Under `prod` a failed probe stops the node; accept an opt-out with a reason under `[security.accepted_risks]` in `config/prod.toml`.
 
 ## Run it elsewhere
 

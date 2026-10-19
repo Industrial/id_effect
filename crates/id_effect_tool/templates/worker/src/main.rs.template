@@ -1,10 +1,15 @@
 //! {{name}}: run the cron jobs until Ctrl-C; in-flight runs are interrupted, then exit 130.
+//!
+//! Before the jobs start, the security posture check (ADR 0013 R10) prints its report; under
+//! the `prod` profile (`ID_EFFECT_PROFILE=prod`) a failed probe stops the worker.
 
 use std::process::ExitCode;
 
+use id_effect_kit::config::Profiles;
+use id_effect_kit::posture::Posture;
 use id_effect_kit::prelude::{RunMainConfig, hlist, run_main};
 
-use {{crate_name}}::{Stats, program, registry};
+use {{crate_name}}::{Stats, posture, program, registry};
 
 fn main() -> ExitCode {
     let jobs = match registry(&Stats::default()) {
@@ -14,6 +19,21 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The profile, the risks its config/<profile>.toml accepts and every opt-out recorded so far.
+    let report = match Posture::load(&Profiles::new()) {
+        Ok(base) => posture(base).check(),
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match report.enforce() {
+        Ok(report) => eprint!("{report}"),
+        Err(refused) => {
+            eprintln!("error: {refused}");
+            return ExitCode::FAILURE;
+        }
+    }
     for name in jobs.scheduler().job_names() {
         eprintln!("scheduled: {name}");
     }

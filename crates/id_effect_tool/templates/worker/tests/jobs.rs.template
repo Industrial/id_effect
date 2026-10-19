@@ -5,8 +5,9 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use id_effect::{CronOutcome, Executor, TestExecutor, UtcDateTime, WallClock};
+use id_effect_kit::posture::Posture;
 
-use {{crate_name}}::{Stats, registry};
+use {{crate_name}}::{Stats, posture, registry};
 
 #[test]
 fn six_hours_of_jobs_land_in_the_history() {
@@ -33,6 +34,15 @@ fn six_hours_of_jobs_land_in_the_history() {
     let heartbeat = scheduler.history("heartbeat").expect("heartbeat job");
     assert_eq!(heartbeat.len(), 100);
     assert!(heartbeat.iter().all(|run| run.is_success()));
+}
+
+/// The worker as generated passes the `prod` posture check (ADR 0013 R10).
+#[test]
+fn the_worker_passes_the_prod_posture_check() {
+    let _jobs = registry(&Stats::default()).expect("registry");
+    let report = posture(Posture::new("prod")).check();
+    assert!(report.passed(), "{report}");
+    assert!(report.enforce().is_ok());
 }
 
 #[test]

@@ -3,6 +3,14 @@
 HOST=127.0.0.1
 PORT=8080
 SHUTDOWN_TIMEOUT_SECS=30
+# The profile: dev (the default), test or prod. prod refuses to start on a failed security
+# posture probe (printed at startup); accept an opt-out with a reason under
+# [security.accepted_risks] in config/prod.toml.
+ID_EFFECT_PROFILE=dev
+# Requests in flight before the rest are answered 503 (unset: a default per CPU).
+# MAX_IN_FLIGHT=512
+# The bearer token Prometheus sends to /metrics. Unset or empty: every scrape is answered 401.
+METRICS_TOKEN=
 # Standard base64 of at least 64 random bytes: openssl rand -base64 64 | tr -d '\n'
 # Unset: a random key per start (signed cookies do not survive a restart).
 COOKIE_KEY=
@@ -16,5 +24,8 @@ OTEL_SERVICE_NAME={{name}}
 {{#if console}}
 # The operator console's port, on 127.0.0.1 only (0: any free port).
 CONSOLE_PORT=9090
+# The hosts the console answers to (comma-separated host or host:port; empty: the bind
+# address). Any other Host or Origin is answered 403.
+CONSOLE_ALLOWED_HOSTS=
 {{/if}}
 RUST_LOG=info

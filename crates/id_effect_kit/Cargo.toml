@@ -48,8 +48,22 @@ repository = ["sql", "id_effect_sql/repository"]
 audit = ["sql", "id_effect_sql/audit"]
 # OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
 otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
-# Distribution: `kit::node` (id_effect_node); with `web`, also id_effect_axum's `cluster` module.
-cluster = ["dep:id_effect_node", "id_effect_axum?/cluster"]
+# Distribution: `kit::node` (id_effect_node) with its TLS TCP transport (`TcpTransport::tls`, mutual
+# TLS from PEM files, feature `tls-tcp`); with `web`, also id_effect_axum's `cluster` module.
+cluster = [
+  "dep:id_effect_node",
+  "id_effect_node/tls-tcp",
+  "id_effect_axum?/cluster",
+]
+# The QUIC mesh transport (`kit::node::transport::quic`, always mutual TLS) next to TLS TCP, on
+# top of `cluster`.
+mesh-mtls = ["cluster", "id_effect_node/quic"]
+# Peer discovery from Kubernetes EndpointSlices (`kit::node::KubernetesDiscovery`), on top of
+# `cluster`.
+kubernetes = ["cluster", "id_effect_node/kubernetes"]
+# Durable workflows: `kit::workflow` (id_effect_workflow: journaled steps, activities as jobs,
+# durable timers, signals), on top of `sql` and `jobs`.
+workflow = ["dep:id_effect_workflow", "sql", "jobs"]
 # Authentication: `kit::auth` (id_effect_auth with its Axum middleware and JWT issue / verify:
 # passwords, sessions, API keys, `Authenticate`). Implies `web`. With `redis`, also the Redis
 # session store.
@@ -138,6 +152,9 @@ full = [
   "audit",
   "otel",
   "cluster",
+  "mesh-mtls",
+  "kubernetes",
+  "workflow",
   "auth",
   "auth-oidc",
   "auth-totp",
@@ -178,6 +195,7 @@ id_effect_storage = { path = "../id_effect_storage", version = "0.10.1", optiona
 id_effect_events = { path = "../id_effect_events", version = "0.10.1", optional = true }
 id_effect_platform = { path = "../id_effect_platform", version = "0.10.1", optional = true }
 id_effect_logger = { path = "../id_effect_logger", version = "0.10.1", optional = true }
+id_effect_workflow = { path = "../id_effect_workflow", version = "0.10.1", optional = true }
 
 [dev-dependencies]
 axum = "0.8"

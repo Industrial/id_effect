@@ -103,6 +103,39 @@ async fn l2_template_metrics_not_public() {
     assert!(body.contains(line), "{body}");
 }
 
+/// The app as generated passes the `prod` posture check (ADR 0013 R10): building it takes no
+/// opt-out, and what `posture()` states about it (CSRF on, no `/docs`, no mesh, the console
+/// guarded or absent) holds with the default in-flight cap.
+#[test]
+fn template_service_passes_prod_posture() {
+    use id_effect_kit::axum::HostConfig;
+    use id_effect_kit::posture::Posture;
+    use {{crate_name}}::posture;
+
+    let _app = test_app();
+    let stated = posture(Posture::new("prod").host(&HostConfig::default()));
+    let report = stated.check();
+    assert!(report.passed(), "{report}");
+    assert!(report.opt_outs().is_empty(), "{report}");
+    assert!(report.enforce().is_ok());
+}
+
+/// Every route the app serves declares its access (ADR 0013 R1): the typed routes and
+/// `plain_routes()` are the whole surface.
+#[tokio::test]
+async fn h8_every_template_route_declares_access() {
+    use {{crate_name}}::plain_routes;
+
+    let app = test_app();
+    for info in plain_routes() {
+        assert!(info.access.is_served(), "{} {}", info.method, info.path);
+        let (status, _, body) = call(&app, Method::GET, &info.path).await;
+        assert_ne!(status, StatusCode::NOT_FOUND, "{}: {body}", info.path);
+    }
+    let (status, _, _) = call(&app, Method::GET, "/nowhere").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
 /// A form larger than `BODY_LIMIT` is answered by the limit layer (a Problem), not by the CSRF
 /// check reading it (plain text): the limit and timeout layers wrap the security layer.
 #[tokio::test]

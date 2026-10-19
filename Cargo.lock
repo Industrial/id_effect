@@ -2552,6 +2552,7 @@ dependencies = [
  "id_effect_sql",
  "id_effect_storage",
  "id_effect_test",
+ "id_effect_workflow",
  "tokio",
  "tower",
 ]
