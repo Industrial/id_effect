@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "flume 0.12.0",
  "futures",
@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_auth"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "argon2",
  "base64 0.22.1",
@@ -1187,7 +1187,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_authz"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "id_effect",
  "serde",
@@ -1196,11 +1196,12 @@ dependencies = [
 
 [[package]]
 name = "id_effect_axum"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
  "cookie",
+ "hmac 0.12.1",
  "http-body",
  "http-body-util",
  "httpdate",
@@ -1223,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_config"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "figment",
  "id_effect",
@@ -1256,11 +1257,11 @@ dependencies = [
 
 [[package]]
 name = "id_effect_macro"
-version = "0.10.1"
+version = "0.11.0"
 
 [[package]]
 name = "id_effect_node"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1280,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_platform"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "bytes",
  "http",
@@ -1289,11 +1290,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
 name = "id_effect_proc_macro"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1302,14 +1305,14 @@ dependencies = [
 
 [[package]]
 name = "id_effect_process"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "id_effect",
 ]
 
 [[package]]
 name = "id_effect_resilience"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "id_effect",
 ]

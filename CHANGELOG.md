@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 — Unreleased
+## 0.11.0 — 2026-10-19 — Distribution & hardening
 
 The secure-by-default release (ADR 0013): every finding of the 2026-10-18 security review is
 closed in code, each with a regression test, and every way back to the old behaviour is a named
@@ -450,10 +450,28 @@ One-minor shims (L9), removed in 0.12; each records the same posture id as its r
 
 ### Scorecard
 
-Filled at exit from `docs/scorecard/REPORT-0.11.0.md` (blind re-score, method 2.2). Method 2.2
-itself landed at the 0.11 kickoff: non-goal rows and checks leave the score, .NET's scope adds
-Orleans and the Durable Task framework, and 0.6.0–0.10.0 were re-scored (0.10.0: E 76.6, #2;
-`docs/scorecard/REPORT-method-v2.md`).
+Measured by blind re-score (`docs/scorecard/REPORT-0.11.0.md`, METHOD 2.2). Method 2.2 itself
+landed at the 0.11 kickoff: non-goal rows and checks leave the score, .NET's scope adds Orleans and
+the Durable Task framework, and 0.6.0–0.10.0 were re-scored (`docs/scorecard/REPORT-method-v2.md`),
+so the 0.10.0 column below is the method 2.2 re-score:
+
+| Index | 0.10.0 | 0.11.0 | Target |
+|---|---|---|---|
+| Universal (U) | 76.6 (#2) | 79.4 (#1) | — |
+| Enterprise (E) | 76.6 (#2) | 79.2 (#1) | 79.2 (#1) |
+| Runtime (RT) | 79.5 (#1) | 83.9 (#1) | 83.7 (#1) |
+| Rows < 40 | 11 | 9 | ≤ 9 |
+| Rows ≥ 80 | 49 | 56 | 56 |
+| Rows where id_effect leads | 26 | 31 | — |
+
+11 rows up, none down; id_effect passes .NET (78.8) on E. Distribution 68.8 → 88.2, Fault
+tolerance 78.9 → 91.6; biggest rows `dist.tls` 50 → 89, `fault.workflows` and `dx.lint` 38 → 75,
+`fault.actors` and `fault.fsm` 63 → 89. Every 0.11-targeted row met its target except
+`sec.supply` (88, target 100): `sec.supply#7` needs a published GitHub Security Advisory and is
+carried over to 0.12.0. DX KPIs (`docs/benchmarks/dx-kpis-0.11.json`): K1 23.5 s, K2 1.32 s, K3
+634 lines, K4 17/20, K5 91.7 %, K6 36.4 s. Security KPIs (`docs/security/kpis-0.11.json`): 0 open
+highs, ADR 0013 10/10 rules with an enforcement point, secure stack +2696 ns over bare (budget
+5000 ns).
 
 ## 0.10.1 — 2026-10-18 — Security patch
 

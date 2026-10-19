@@ -10,7 +10,7 @@ members = ["id_effect_ai", "id_effect_parse", "id_effect_rpc"]
 
 # Keep in lockstep with the root [workspace.package].
 [workspace.package]
-version = "0.10.1"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT"

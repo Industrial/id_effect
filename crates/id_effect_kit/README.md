@@ -4,9 +4,9 @@ One front door to [`id_effect`](../id_effect): a single dependency with a featur
 
 ```toml
 [dependencies]
-id_effect_kit = { version = "0.10", features = ["web", "otel"] }
+id_effect_kit = { version = "0.11", features = ["web", "otel"] }
 # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-id_effect = "0.10"
+id_effect = "0.11"
 ```
 
 | Feature | Adds | Re-exported as |
@@ -44,7 +44,7 @@ id_effect = "0.10"
 | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client) — for `[dev-dependencies]` | `id_effect_kit::test` |
 | `full` | all of the above except `test`; builds without Docker or system libraries | |
 
-Enable `test` on a `[dev-dependencies]` entry of the kit (`id_effect_kit = { version = "0.10", features = ["test"] }`), so containers and fixtures stay out of the shipped binary.
+Enable `test` on a `[dev-dependencies]` entry of the kit (`id_effect_kit = { version = "0.11", features = ["test"] }`), so containers and fixtures stay out of the shipped binary.
 
 ## Quick start
 

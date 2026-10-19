@@ -43,9 +43,9 @@ repository = ["query"]
 mysql = ["dep:sqlx", "dep:tokio", "sqlx/mysql", "sqlx/tls-rustls-aws-lc-rs"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.10.1" }
+id_effect = { path = "../id_effect", version = "0.11.0" }
 # `#[derive(FromRow)]`, re-exported as `id_effect_sql::FromRow`.
-id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.10.1" }
+id_effect_proc_macro = { path = "../id_effect_proc_macro", version = "0.11.0" }
 # Value crates are unconditional: `SqlValue` has the same variants under every feature set.
 # jiff: same floor as crates/id_effect.
 jiff = "0.2.23"

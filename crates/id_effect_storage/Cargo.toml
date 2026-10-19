@@ -21,7 +21,7 @@ name = "id_effect_storage"
 s3 = ["object_store/aws"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.10.1" }
+id_effect = { path = "../id_effect", version = "0.11.0" }
 bytes = "1"
 futures-util = { version = "0.3.31", default-features = false }
 hmac = "0.12"

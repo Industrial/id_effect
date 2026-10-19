@@ -33,7 +33,7 @@ crates and the `examples/` are not.
 | Version | Supported |
 |---|---|
 | 0.11.x | Yes: all fixes, including security fixes |
-| 0.10.x | Security fixes only (high and critical), for 90 days after the 0.11.0 release; use 0.10.1 or later (see [Security releases](#security-releases)) |
+| 0.10.x | Security fixes only (high and critical), until 2027-01-17 (90 days after the 0.11.0 release); use 0.10.1 or later (see [Security releases](#security-releases)) |
 | 0.9.x | Security fixes only, until 2027-01-16 |
 | 0.8.x | Security fixes only, until 2027-01-15 |
 | 0.7.x | Security fixes only, until 2027-01-14 |

@@ -493,7 +493,7 @@ id-effect doctor
 id-effect doctor: /home/me/orders-api
   pass  project   package `orders-api`
   pass  rustc     rustc 1.95.0 >= id_effect MSRV 1.94; the project sets no rust-version
-  pass  versions  id_effect 0.10.1: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
+  pass  versions  id_effect 0.11.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
   pass  env       all 6 .env.example keys set (6 from .env)
   pass  database  localhost:5432 accepts TCP connections
   pass  docker    Docker version 29.8.1; Docker Compose version 5.6.0 (daemon not checked)

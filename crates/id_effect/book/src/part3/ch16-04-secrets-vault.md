@@ -4,8 +4,8 @@ Keep production secrets out of `prod.toml` and out of the process environment: r
 
 ```toml
 [dependencies]
-id_effect_config = { version = "0.10", features = ["vault"] }
-id_effect_tokio = "0.10" # Vault requests run on a tokio runtime
+id_effect_config = { version = "0.11", features = ["vault"] }
+id_effect_tokio = "0.11" # Vault requests run on a tokio runtime
 ```
 
 ## Read once, in a layer

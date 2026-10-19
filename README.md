@@ -86,7 +86,6 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
 | [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit; `id-effect migrate` runs SQL migrations |
-| [`id_effect_workflow`](crates/id_effect_workflow) | [![crates.io](https://img.shields.io/crates/v/id_effect_workflow.svg)](https://crates.io/crates/id_effect_workflow) | Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs |
 
 **Platform (batteries)**
 
@@ -102,6 +101,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, a Redis Streams message broker, sessions and rate limits |
 | [`id_effect_storage`](crates/id_effect_storage) | [![crates.io](https://img.shields.io/crates/v/id_effect_storage.svg)](https://crates.io/crates/id_effect_storage) | Object storage for id_effect services: one store interface over file-system, in-memory and S3-compatible backends |
 | [`id_effect_test`](crates/id_effect_test) | [![crates.io](https://img.shields.io/crates/v/id_effect_test.svg)](https://crates.io/crates/id_effect_test) | Integration-test support for id_effect: effect-native containers, per-test database isolation, fixtures |
+| [`id_effect_workflow`](crates/id_effect_workflow) | [![crates.io](https://img.shields.io/crates/v/id_effect_workflow.svg)](https://crates.io/crates/id_effect_workflow) | Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs |
 
 **Maintenance (frozen API)**
 
@@ -129,7 +129,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.10"
+id_effect = "0.11"
 ```
 
 ```rust
