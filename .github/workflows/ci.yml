@@ -13,6 +13,16 @@ env:
   RUST_BACKTRACE: 1
   NEXTEST_NO_TESTS: pass
   MOON_TOOLCHAIN_FORCE_GLOBALS: rust
+  # The pinned toolchain: keep equal to rust-toolchain.toml's `channel` (S1). Pinned (not stable):
+  # the trybuild suites (`crates/id_effect/tests/ui`, tests/security_compile_fail) snapshot rustc
+  # diagnostics, which change between releases. Re-bless them when bumping (see their docs).
+  RUST_TOOLCHAIN: 1.99.0
+  # Pinned moon release, downloaded and checked against its sha256 (no `curl | bash`, S1).
+  MOON_VERSION: 2.6.2
+  MOON_SHA256: 103590c2a9e0894ec09ddce8462e4aa4b3d47debdf28a7d8ae8ccb60f84f3a08
+# Least privilege (S2): every job reads the repository only; no job needs a write grant.
+permissions:
+  contents: read
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # Moon pipeline: PRs = --affected + graph relations; main = full workspace
@@ -22,11 +32,13 @@ jobs:
     name: Moon CI
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Version drift (examples/templates pin the workspace version)
         run: bash scripts/check-version-drift.sh
+      - name: Workflow policy (SHA-pinned actions, least privilege, no piped installers; S1 S2)
+        run: bash scripts/check-workflows.sh --self-test && bash scripts/check-workflows.sh
       - name: Scorecard (validate, METHOD §5.2 self-test, committed results, reports and page stable)
         run: |
           set -euo pipefail
@@ -39,7 +51,7 @@ jobs:
           bash scripts/scorecard.sh --report 0.7.0 --report 0.8.0 --report 0.9.0 --report 0.10.0 --html --method-compare
           git diff --exit-code docs/scorecard/REPORT-0.7.0.md docs/scorecard/REPORT-0.8.0.md docs/scorecard/REPORT-0.9.0.md docs/scorecard/REPORT-0.10.0.md docs/scorecard/index.html docs/scorecard/REPORT-method-v2.md
       - name: Install Nix (formatters for treefmt)
-        uses: cachix/install-nix-action@v31
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -53,26 +65,30 @@ jobs:
             nixpkgs#actionlint \
             nixpkgs#beautysh \
             nixpkgs#yamlfmt
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - name: Install Biome (treefmt formatter for JS/JSON)
         run: npm install -g @biomejs/biome
-      # Pinned (not @stable): the trybuild suite (`crates/id_effect/tests/ui`) snapshots rustc
-      # diagnostics, which change between releases. Re-bless it when bumping (see its docs).
-      - name: Install Rust (1.99.0)
-        uses: dtolnay/rust-toolchain@1.99.0
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
-      - name: Install moon
+      - name: Install moon (pinned release, sha256-checked)
         run: |
-          curl -fsSL https://moonrepo.dev/install/moon.sh | bash
+          set -euo pipefail
+          archive=moon_cli-x86_64-unknown-linux-gnu.tar.xz
+          curl -fsSLo "$RUNNER_TEMP/$archive" "https://github.com/moonrepo/moon/releases/download/v${MOON_VERSION}/$archive"
+          echo "${MOON_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          mkdir -p "$HOME/.moon/bin"
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$HOME/.moon/bin" --strip-components=1 moon_cli-x86_64-unknown-linux-gnu/moon moon_cli-x86_64-unknown-linux-gnu/moonx
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
       - name: Fetch base ref (for affected diffs)
         run: git fetch origin "${{ github.base_ref || 'main' }}"
@@ -94,23 +110,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: [moon-ci]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install system deps (OpenSSL for rdkafka)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
-      - name: Install Rust (1.99.0, same pin as moon-ci)
-        uses: dtolnay/rust-toolchain@1.99.0
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: llvm-tools-preview
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-llvm-cov and cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-llvm-cov,cargo-nextest
       - name: Generate coverage (lcov)
-        run: bash scripts/llvm-cov-nextest.sh --workspace --lcov --output-path lcov.info
+        run: bash scripts/llvm-cov-nextest.sh --workspace --locked --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: lcov.info
           fail_ci_if_error: false
@@ -129,17 +146,20 @@ jobs:
         toolchain: [stable, beta]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust (${{ matrix.toolchain }})
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: ${{ matrix.toolchain }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.toolchain }}-${{ matrix.os }}
       - name: cargo test (workspace)
-        run: cargo test --workspace --all-features
+        # RUSTUP_TOOLCHAIN overrides rust-toolchain.toml: this job tests the matrix toolchain.
+        env:
+          RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+        run: cargo test --workspace --all-features --locked
   # ──────────────────────────────────────────────────────────────────────────
   # MSRV: build the workspace on [workspace.package] rust-version (single source)
   # ──────────────────────────────────────────────────────────────────────────
@@ -148,24 +168,24 @@ jobs:
     runs-on: ubuntu-latest
     needs: [moon-ci]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Read rust-version from Cargo.toml
         id: msrv
         run: echo "version=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
       - name: Install Rust (${{ steps.msrv.outputs.version }})
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: msrv
       - name: cargo check (workspace, MSRV)
-        # No committed Cargo.lock (library workspace): resolve with the MSRV-aware
-        # resolver so dependencies compatible with rust-version are selected.
+        # The committed Cargo.lock (S5, D12) must build on rust-version: --locked fails instead of
+        # re-resolving. RUSTUP_TOOLCHAIN overrides rust-toolchain.toml.
         env:
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
-        run: cargo check --workspace --all-targets
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: cargo check --workspace --all-targets --locked
   # ──────────────────────────────────────────────────────────────────────────
   # Postgres integration: every live test that reads DATABASE_URL (id_effect_sql `pg`,
   # id_effect_node `pg`, id_effect_auth `pg` / `accounts`, id_effect_jobs (+ `cron`),
@@ -190,20 +210,22 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       ID_EFFECT_REQUIRE_PG: '1'
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: pg
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
       - name: Live Postgres tests
         run: >-
-          cargo nextest run -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging -p id_effect_events -p id_effect_mail --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg,id_effect_auth/accounts,id_effect_jobs/cron,id_effect_events/pg,id_effect_mail/jobs
+          cargo nextest run --locked -p id_effect_sql -p id_effect_node -p http_showcase -p id_effect_auth -p id_effect_authz -p id_effect_test -p id_effect_tool -p id_effect_jobs -p id_effect_messaging -p id_effect_events -p id_effect_mail -p id_effect_workflow --features id_effect_sql/pg,id_effect_sql/migrate,id_effect_sql/query,id_effect_sql/repository,id_effect_sql/audit,id_effect_node/pg,id_effect_auth/pg,id_effect_auth/accounts,id_effect_jobs/cron,id_effect_events/pg,id_effect_mail/jobs
   # ──────────────────────────────────────────────────────────────────────────
   # Container integration: tests that start real services with testcontainers
   # (id_effect_test containers, the Keycloak OIDC login, the Vault provider, Redis).
@@ -217,19 +239,21 @@ jobs:
     env:
       ID_EFFECT_REQUIRE_DOCKER: '1'
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: containers
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
       - name: Container tests
-        run: cargo nextest run -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis -p id_effect_mail -p id_effect_storage --all-features
+        run: cargo nextest run --locked -p id_effect_test -p id_effect_auth -p id_effect_config -p id_effect_sql -p id_effect_redis -p id_effect_mail -p id_effect_storage --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # Reference app: examples/reference/ledger, the CI-tested consumer that puts the
   # 0.9 batteries in tier `platform` (ADR 0012, tier-conformance check P). Its
@@ -255,13 +279,14 @@ jobs:
       ID_EFFECT_REQUIRE_PG: '1'
       DATABASE_URL: postgres://ledger:ledger@localhost:5432/ledger
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: reference-ledger
       # The tests start their own containers (id_effect_test, testcontainers): pull the 0.10
@@ -274,21 +299,21 @@ jobs:
           docker pull -q redis:7-alpine
           docker pull -q chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
       - name: Format and lints
         run: |
           cargo fmt -p ledger --check
-          cargo clippy -p ledger --all-targets -- -D warnings
+          cargo clippy -p ledger --all-targets --locked -- -D warnings
       - name: Migrations (id-effect migrate run, then check)
         working-directory: examples/reference/ledger
         run: |
-          cargo run -q -p id_effect_tool --bin id-effect -- migrate run
-          cargo run -q -p id_effect_tool --bin id-effect -- migrate check
-          cargo run -q -p id_effect_tool --bin id-effect -- migrate status
+          cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate run
+          cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate check
+          cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate status
       - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console)
-        run: cargo nextest run -p ledger
+        run: cargo nextest run --locked -p ledger
   # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
@@ -298,17 +323,19 @@ jobs:
     runs-on: ubuntu-latest
     needs: [moon-ci]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install system deps (OpenSSL and CMake for the labs crates' native deps)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config cmake
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: labs
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-nextest
       - name: Test labs workspace
@@ -321,13 +348,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: [moon-ci]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Rust (nightly for -Z minimal-versions)
-        uses: dtolnay/rust-toolchain@nightly
-      - name: Install Rust (stable for build)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: nightly
+      - name: Install Rust (pinned, rust-toolchain.toml, for the build)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # Deliberately not --locked: this job replaces the committed Cargo.lock with the minimal one.
       - name: Generate minimal versions lock
         run: |
           cargo +nightly update -Z minimal-versions
@@ -345,8 +377,8 @@ jobs:
           cargo update -p crc --precise 3.3.0
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
-      - name: cargo check (minimal versions, stable)
-        run: cargo +stable check --workspace --all-features
+      - name: cargo check (minimal versions, pinned toolchain)
+        run: cargo +"$RUST_TOOLCHAIN" check --workspace --all-features
   # ──────────────────────────────────────────────────────────────────────────
   # crates.io packaging / publish-order (same script as publish.yml)
   # Catches path+version chicken-and-egg before a tag publish fails mid-wave.
@@ -356,11 +388,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: [moon-ci]
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Validate crate packaging
         run: bash scripts/validate-crate-packaging.sh
   # ──────────────────────────────────────────────────────────────────────────
@@ -377,13 +411,14 @@ jobs:
       matrix:
         template: [service, worker, cli, cluster]
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: templates-${{ matrix.template }}
       - name: Generate, build and test the template
@@ -398,17 +433,19 @@ jobs:
           bash scripts/template-smoke.sh "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────
   # Supply-chain policy: advisories, licenses, bans, sources (deny.toml).
-  # No committed Cargo.lock, so this checks a fresh resolution.
+  # Checks the committed Cargo.lock (S5, D12).
   # ──────────────────────────────────────────────────────────────────────────
   deny:
     name: cargo deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-deny
       - name: cargo deny check
@@ -418,12 +455,12 @@ jobs:
       # `chrono`, sqlx's macros pick `time` for the application's own queries).
       - name: No sqlx `time` from id_effect_sql / id_effect_kit
         run: |
-          kit=$(cargo tree --color never -p id_effect_kit --all-features -e features -i sqlx)
+          kit=$(cargo tree --locked --color never -p id_effect_kit --all-features -e features -i sqlx)
           if grep -F 'feature "time"' <<<"$kit"; then
             echo "::error::sqlx's \`time\` feature is enabled under id_effect_kit --all-features"
             exit 1
           fi
-          sql=$(cargo tree --color never -p id_effect_sql --all-features -e normal -i time)
+          sql=$(cargo tree --locked --color never -p id_effect_sql --all-features -e normal -i time)
           if grep -E '^time v' <<<"$sql"; then
             echo "$sql"
             echo "::error::id_effect_sql --all-features depends on the \`time\` crate"
@@ -443,15 +480,17 @@ jobs:
     env:
       SEMVER_BASELINE: 0.10.0
     steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
       - name: Cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: semver
       - name: Install cargo-semver-checks
-        uses: taiki-e/install-action@v2.87.27
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-semver-checks
       - name: cargo semver-checks (publishable workspace crates)

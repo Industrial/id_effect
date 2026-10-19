@@ -1,0 +1,10 @@
+# The default toolchain for the workspace (0.11.0.md S1, S5): rustup builds every crate with it
+# unless RUSTUP_TOOLCHAIN or `cargo +<toolchain>` overrides it (the CI matrix, MSRV and
+# minimal-versions jobs do). Pinned, not stable: the trybuild suites (crates/id_effect/tests/ui,
+# tests/security_compile_fail) snapshot rustc diagnostics. Bump together with RUST_TOOLCHAIN in
+# .github/workflows/{ci,docs}.yml and re-bless those suites. fuzz/ and lints/ pin their own
+# nightlies; devenv.nix provides its own toolchain and ignores this file.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
