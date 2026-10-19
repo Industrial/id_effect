@@ -255,6 +255,19 @@ pub struct TracingLogBackend;
 
 impl LogBackend for TracingLogBackend {
   fn emit(&self, rec: &LogRecord<'_>) -> Result<(), EffectLoggerError> {
+    // The line is formatted only when some subscriber may take the level (`tracing`'s global max
+    // level hint; no subscriber means none does).
+    let wanted = match rec.level {
+      LogLevel::Trace => tracing::level_enabled!(tracing::Level::TRACE),
+      LogLevel::Debug => tracing::level_enabled!(tracing::Level::DEBUG),
+      LogLevel::Info => tracing::level_enabled!(tracing::Level::INFO),
+      LogLevel::Warn => tracing::level_enabled!(tracing::Level::WARN),
+      LogLevel::Error | LogLevel::Fatal => tracing::level_enabled!(tracing::Level::ERROR),
+      LogLevel::None => false,
+    };
+    if !wanted {
+      return Ok(());
+    }
     let line = format_tracing_line(rec);
     match rec.level {
       LogLevel::Trace => tracing::trace!("{}", line),

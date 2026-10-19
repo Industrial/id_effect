@@ -252,14 +252,20 @@ fn installed<T: Clone + Send + Sync + 'static>(
   slot.with(|c| c.borrow().clone())
 }
 
-/// The current fiber's value of the ref installed in `slot`, or `None` when nothing is installed
-/// on the running thread.
-fn current<T: Clone + Send + Sync + 'static>(
+/// `then` applied to the current fiber's value of the ref installed in `slot`, or to `None` when
+/// nothing is installed on the running thread (then without reading a fiber ref at all).
+fn with_current<T, B, F>(
   slot: &'static LocalKey<RefCell<Option<FiberRef<T>>>>,
-) -> Effect<Option<T>, EffectLoggerError> {
+  then: F,
+) -> Effect<B, EffectLoggerError>
+where
+  T: Clone + Send + Sync + 'static,
+  B: Send + 'static,
+  F: FnOnce(Option<T>) -> Effect<B, EffectLoggerError> + Send + 'static,
+{
   match installed(slot) {
-    None => succeed(None),
-    Some(fr) => fr.get().map(Some),
+    None => then(None),
+    Some(fr) => fr.get().flat_map(move |value| then(Some(value))),
   }
 }
 
@@ -431,7 +437,7 @@ impl EffectLogger {
     // The thread-locals are read when the effect runs (on the thread driving the fiber), and the
     // installed refs are read from the running fiber.
     suspend(move || {
-      current(&MIN_LOG_LEVEL_FIBER_REF).flat_map(move |min| {
+      with_current(&MIN_LOG_LEVEL_FIBER_REF, move |min| {
         let emit = match global_minimum_log_level().or(min) {
           None => true,
           Some(min) => min.allows(level),
@@ -439,9 +445,8 @@ impl EffectLogger {
         if !emit {
           return succeed(());
         }
-        current(&LOG_ANNOTATIONS_FIBER_REF)
-          .zip(current(&LOG_SPAN_STACK_FIBER_REF))
-          .flat_map(move |(annotations, spans)| {
+        with_current(&LOG_ANNOTATIONS_FIBER_REF, move |annotations| {
+          with_current(&LOG_SPAN_STACK_FIBER_REF, move |spans| {
             let mut rec = LogRecord::new(level, msg)
               .with_annotations(annotations.unwrap_or_default())
               .with_spans(spans.unwrap_or_default());
@@ -451,6 +456,7 @@ impl EffectLogger {
               Err(e) => fail(e),
             }
           })
+        })
       })
     })
   }
