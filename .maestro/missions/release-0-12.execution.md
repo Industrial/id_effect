@@ -116,4 +116,14 @@ webtransport (wave 5).
 
 ## Follow-ups recorded during the release
 
-(empty at kickoff)
+| # | From | Follow-up | Owner (default) |
+|---|---|---|---|
+| F1 | skeletons | `id_effect_rpc_macros` never published: owner registers crates.io trusted publishing before the v0.12.0 tag | owner (D15/D16 list) |
+| F2 | quic-endpoint | `templates/cluster/src/lib.rs.template` imports deprecated `kit::node::transport::certs`; move to `id_effect_platform::tls` | r12-w6-kit-template |
+| F3 | quic-endpoint | node README `transport::certs` row is stale | r12-t0-migration-guide |
+| F4 | quic-endpoint | `quic/endpoint.rs` 94.16% regions (crate total 96.4%); recheck at the workspace coverage gate | r12-w8-kpis |
+| F5 | certs-acme | rcgen 0.13 + 0.14 (and untrusted, synstructure) duplicated under `acme` only; unify platform/node/sql on rcgen 0.14 | 0.13 (dependency hygiene) |
+| F6 | certs-acme | ch29-09 not wired into `examples/book-snippets/src/part6.rs`; platform `lib.rs` feature line still says `acme` is "dependencies" | r12-e12-3-deploy-guide |
+| F7 | certs-acme | deploy-guide content list (TLS passthrough for `acme-tls/1`, TCP 443, persistent 0700 cache, one ACME per domain set, alert on `AcmeStats::failed`, no DNS-01/wildcard, C13) | r12-e12-3-deploy-guide |
+| F8 | rpc design review | anonymous idempotency scoped by client IP, key ≥ 16 chars (design note §10) | wherever the idempotency store lands (kinds/batching) |
+| F9 | 0.11 exit | `effect:docs` moon output `target/doc` ignores a custom `CARGO_TARGET_DIR` | r12-w8-kpis (CI hygiene) |
