@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::QuicError;
+use super::{CongestionControl, QuicError};
 use crate::tls::Identity;
 
 /// Posture id of [`QuicEndpointConfig::dangerous_no_retry`].
@@ -125,11 +125,18 @@ impl QuicLimits {
   }
 }
 
-/// The quinn transport config for `limits`: stream credits, idle timeout and receive windows
-/// bounded, datagrams off.
-pub fn transport_config(limits: &QuicLimits) -> Result<quinn::TransportConfig, QuicError> {
-  let idle = quinn::IdleTimeout::try_from(limits.idle_timeout)
-    .map_err(|e| QuicError::Config(format!("idle_timeout: {e}")))?;
+/// The idle timeout of `limits` as quinn takes it.
+pub(crate) fn idle_timeout(limits: &QuicLimits) -> Result<quinn::IdleTimeout, QuicError> {
+  quinn::IdleTimeout::try_from(limits.idle_timeout)
+    .map_err(|e| QuicError::Config(format!("idle_timeout: {e}")))
+}
+
+/// [`transport_config_with`] once the idle timeout is known to fit, with any controller.
+pub(crate) fn transport(
+  limits: &QuicLimits,
+  idle: quinn::IdleTimeout,
+  congestion: Arc<dyn quinn::congestion::ControllerFactory + Send + Sync>,
+) -> quinn::TransportConfig {
   let mut transport = quinn::TransportConfig::default();
   transport
     .max_concurrent_bidi_streams(quinn::VarInt::from_u32(limits.max_concurrent_bidi_streams))
@@ -137,25 +144,95 @@ pub fn transport_config(limits: &QuicLimits) -> Result<quinn::TransportConfig, Q
     .max_idle_timeout(Some(idle))
     .stream_receive_window(quinn::VarInt::from_u32(limits.stream_receive_window))
     .receive_window(quinn::VarInt::from_u32(limits.receive_window))
-    .datagram_receive_buffer_size(None);
-  Ok(transport)
+    .datagram_receive_buffer_size(None)
+    .congestion_controller_factory(congestion);
+  transport
+}
+
+/// The quinn transport config for `limits`: stream credits, idle timeout and receive windows
+/// bounded, datagrams off, CUBIC congestion control.
+pub fn transport_config(limits: &QuicLimits) -> Result<quinn::TransportConfig, QuicError> {
+  transport_config_with(limits, CongestionControl::Cubic)
+}
+
+/// [`transport_config`] with `congestion` control.
+pub fn transport_config_with(
+  limits: &QuicLimits,
+  congestion: CongestionControl,
+) -> Result<quinn::TransportConfig, QuicError> {
+  Ok(transport(
+    limits,
+    idle_timeout(limits)?,
+    congestion.factory(),
+  ))
 }
 
 /// A quinn client config from a rustls one (for example
-/// [`client_tls_config`](crate::tls::client_tls_config)) offering `alpns`, with `limits` and
-/// without 0-RTT.
+/// [`client_tls_config`](crate::tls::client_tls_config)) offering `alpns`, with `limits`, CUBIC
+/// and without 0-RTT.
 pub fn client_config(
+  tls: rustls::ClientConfig,
+  alpns: &[&[u8]],
+  limits: &QuicLimits,
+) -> Result<quinn::ClientConfig, QuicError> {
+  client_config_with(tls, alpns, limits, CongestionControl::Cubic)
+}
+
+/// [`client_config`] with `congestion` control (the HTTP/3 client uses
+/// [`CongestionControl::Bbr`], as [`Route::h3`](super::Route::h3) does).
+pub fn client_config_with(
   mut tls: rustls::ClientConfig,
   alpns: &[&[u8]],
   limits: &QuicLimits,
+  congestion: CongestionControl,
 ) -> Result<quinn::ClientConfig, QuicError> {
   tls.alpn_protocols = alpns.iter().map(|alpn| alpn.to_vec()).collect();
   tls.enable_early_data = false;
   let crypto = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
     .map_err(|e| QuicError::Config(format!("tls: {e}")))?;
   let mut config = quinn::ClientConfig::new(Arc::new(crypto));
-  config.transport_config(Arc::new(transport_config(limits)?));
+  config.transport_config(Arc::new(transport_config_with(limits, congestion)?));
   Ok(config)
+}
+
+/// The default UDP socket buffer asked for in each direction (4 MiB).
+pub const DEFAULT_SOCKET_BUFFER: usize = 4 * 1024 * 1024;
+
+/// UDP socket buffer sizes in bytes: what an endpoint asks for
+/// ([`QuicEndpointConfig::with_socket_buffers`]) or what the OS granted
+/// ([`QuicEndpoint::socket_buffers`](super::QuicEndpoint::socket_buffers)). A requested size of
+/// 0 keeps the OS default.
+///
+/// The OS caps the request (on Linux at `net.core.rmem_max` / `net.core.wmem_max`, often
+/// 208 KiB); the endpoint asks anyway and logs the granted size at `debug`, and a shortfall
+/// names the sysctl to raise. Small buffers drop datagrams under bursts, which QUIC then
+/// retransmits as loss.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SocketBuffers {
+  /// The send buffer (`SO_SNDBUF`).
+  pub send: usize,
+  /// The receive buffer (`SO_RCVBUF`).
+  pub recv: usize,
+}
+
+impl SocketBuffers {
+  /// `send` and `recv` bytes (0 keeps the OS default).
+  pub const fn new(send: usize, recv: usize) -> Self {
+    Self { send, recv }
+  }
+
+  /// Keep the OS defaults (ask for nothing).
+  pub const fn os_default() -> Self {
+    Self::new(0, 0)
+  }
+}
+
+impl Default for SocketBuffers {
+  /// [`DEFAULT_SOCKET_BUFFER`] (4 MiB) each way.
+  fn default() -> Self {
+    Self::new(DEFAULT_SOCKET_BUFFER, DEFAULT_SOCKET_BUFFER)
+  }
 }
 
 /// What a [`QuicEndpoint`](super::QuicEndpoint) presents and how it protects itself.
@@ -165,18 +242,32 @@ pub struct QuicEndpointConfig {
   limits: QuicLimits,
   retry: bool,
   raised: bool,
+  buffers: SocketBuffers,
 }
 
 impl QuicEndpointConfig {
-  /// An endpoint presenting `identity` (for routes without their own) with the default limits
-  /// and address validation on.
+  /// An endpoint presenting `identity` (for routes without their own) with the default limits,
+  /// address validation on and 4 MiB socket buffers asked for.
   pub fn new(identity: Identity) -> Self {
     Self {
       identity,
       limits: QuicLimits::default(),
       retry: true,
       raised: false,
+      buffers: SocketBuffers::default(),
     }
+  }
+
+  /// Ask for `buffers` on the UDP socket (default [`DEFAULT_SOCKET_BUFFER`] each way; best
+  /// effort, see [`SocketBuffers`]).
+  pub fn with_socket_buffers(mut self, buffers: SocketBuffers) -> Self {
+    self.buffers = buffers;
+    self
+  }
+
+  /// The socket buffers asked for.
+  pub fn socket_buffers(&self) -> SocketBuffers {
+    self.buffers
   }
 
   /// Use `limits`. Values above the defaults need [`Self::dangerous_raise_limits`]; checked

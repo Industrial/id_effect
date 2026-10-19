@@ -54,8 +54,16 @@ using HTTP/2 or HTTP/1.1 on the same port, and clients fall back by themselves.
 
 Without TLS the host serves no HTTP/3 and sends no `Alt-Svc` (browsers ignore it over plain
 HTTP); the [posture warnings](./ch29-04-tls-http2.md) say so at startup. TLS settings handed over
-ready-made (`HostTls::Provided`) carry no certificate identity QUIC can share, so that host
-serves TCP only and logs why; use certificate files, or the building block below.
+ready-made (`HostTls::Provided`) serve HTTP/3 with their identity (`ServerTls::from_identity`,
+`ServerTls::from_pem_files`, or `ServerTlsBuilder::identity` next to a resolver of your own);
+settings without one serve TCP only and the host logs why.
+
+HTTP/3 connections run BBR congestion control and mesh connections CUBIC, on one shared port too
+(`Route::h3()`, `Route::with_congestion_control`; quinn marks its BBR experimental). Under random
+loss BBR keeps the tail latency of many multiplexed responses below HTTP/2's, where CUBIC backs
+off on every lost packet. The endpoint asks for 4 MiB UDP socket buffers; on Linux raise
+`net.core.rmem_max` and `net.core.wmem_max` so the request is granted (the granted size is logged
+at `debug`).
 
 ## What clients see
 

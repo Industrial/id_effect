@@ -973,10 +973,28 @@ async fn serve_h3_refuses_an_endpoint_that_already_routes_h3() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn provided_tls_serves_tcp_only() {
+async fn provided_tls_serves_h3() {
+  // F24: settings built from an identity carry it, so the host serves HTTP/3 with it.
   let ca = Ca::new();
   let tls = ServerTls::from_identity(&ca.issue().identity()).unwrap();
   let config = local_config().with_tls(HostTls::provided(tls));
+  let handle = ServerHandle::start(&config, plain_app()).await.unwrap();
+  let addr = handle.local_addr();
+  let (status, headers, _) = tcp_get(addr, ca.roots(), "/hello").await;
+  assert_eq!(status, StatusCode::OK);
+  assert_eq!(
+    headers[header::ALT_SVC],
+    format!("h3=\":{}\"; ma=86400", addr.port()).as_str()
+  );
+  let mut h3 = h3_connect(addr, ca.roots()).await.unwrap();
+  assert_eq!(h3.get("/hello").await.unwrap().body, "hello");
+  handle.shutdown().await;
+
+  // A bare resolver carries no identity: TCP only, as before (and the host logs why).
+  let bare = ServerTls::builder(Arc::new(ca.issue().identity()))
+    .build()
+    .unwrap();
+  let config = local_config().with_tls(HostTls::provided(bare));
   let handle = ServerHandle::start(&config, plain_app()).await.unwrap();
   let (status, headers, _) = tcp_get(handle.local_addr(), ca.roots(), "/hello").await;
   assert_eq!(status, StatusCode::OK);

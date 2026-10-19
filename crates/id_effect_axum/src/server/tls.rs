@@ -42,6 +42,8 @@ pub const ALPN_HTTP11: &[u8] = b"http/1.1";
 pub struct ServerTls {
   config: Arc<rustls::ServerConfig>,
   reload: Option<Arc<ReloadTask>>,
+  /// The certificate HTTP/3 presents too (QUIC needs an [`Identity`], not a resolver).
+  identity: Option<Identity>,
 }
 
 impl std::fmt::Debug for ServerTls {
@@ -49,6 +51,7 @@ impl std::fmt::Debug for ServerTls {
     f.debug_struct("ServerTls")
       .field("alpn", &self.config.alpn_protocols)
       .field("reloading", &self.reload.is_some())
+      .field("identity", &self.identity.is_some())
       .finish_non_exhaustive()
   }
 }
@@ -64,13 +67,24 @@ impl Eq for ServerTls {}
 
 impl ServerTls {
   /// TLS 1.3 and 1.2, ALPN `h2` then `http/1.1`, presenting `identity` (a clone shares its
-  /// slot, so a [`CertReloader`] swap is used from the next handshake on).
+  /// slot, so a [`CertReloader`] swap is used from the next handshake on). The identity is
+  /// carried for HTTP/3 too ([`Self::identity`]), so a host given these settings
+  /// ([`HostTls::Provided`](crate::server::HostTls::Provided)) serves HTTP/3 with it.
   ///
   /// # Errors
   ///
   /// [`CertError::Tls`] when rustls refuses the config.
   pub fn from_identity(identity: &Identity) -> Result<Self, CertError> {
-    Self::builder(Arc::new(identity.clone())).build()
+    Self::builder(Arc::new(identity.clone()))
+      .identity(identity.clone())
+      .build()
+  }
+
+  /// The certificate identity HTTP/3 presents with these settings: set by
+  /// [`Self::from_identity`], [`Self::from_pem_files`] and [`ServerTlsBuilder::identity`];
+  /// `None` for a bare resolver or a rustls config (the host then serves TCP only).
+  pub fn identity(&self) -> Option<&Identity> {
+    self.identity.as_ref()
   }
 
   /// Reads the PEM chain and key now and, when `reload_every` is set, polls the files at that
@@ -112,6 +126,7 @@ impl ServerTls {
       tls12: true,
       extra_alpn: Vec::new(),
       hooks: Vec::new(),
+      identity: None,
     }
   }
 
@@ -124,6 +139,7 @@ impl ServerTls {
     Self {
       config: Arc::new(config),
       reload: None,
+      identity: None,
     }
   }
 
@@ -178,6 +194,7 @@ pub struct ServerTlsBuilder {
   tls12: bool,
   extra_alpn: Vec<Vec<u8>>,
   hooks: Vec<ConfigHook>,
+  identity: Option<Identity>,
 }
 
 type ConfigHook = Box<dyn FnOnce(&mut rustls::ServerConfig) + Send>;
@@ -188,11 +205,21 @@ impl std::fmt::Debug for ServerTlsBuilder {
       .field("tls12", &self.tls12)
       .field("extra_alpn", &self.extra_alpn)
       .field("hooks", &self.hooks.len())
+      .field("identity", &self.identity.is_some())
       .finish_non_exhaustive()
   }
 }
 
 impl ServerTlsBuilder {
+  /// The certificate identity HTTP/3 presents ([`ServerTls::identity`]): QUIC takes an
+  /// [`Identity`] rather than the resolver, so without one the settings serve TCP only. Give
+  /// the identity the resolver presents for ordinary handshakes (an ACME resolver's issued
+  /// certificate, say).
+  pub fn identity(mut self, identity: Identity) -> Self {
+    self.identity = Some(identity);
+    self
+  }
+
   /// Refuse TLS 1.2 clients (TLS 1.3 only).
   pub fn tls13_only(mut self) -> Self {
     self.tls12 = false;
@@ -253,7 +280,9 @@ impl ServerTlsBuilder {
       hook(&mut config);
     }
     // No 0-RTT on TCP: early data is replayable.
-    Ok(ServerTls::from_rustls_config(config))
+    let mut tls = ServerTls::from_rustls_config(config);
+    tls.identity = self.identity;
+    Ok(tls)
   }
 }
 
@@ -279,6 +308,30 @@ mod tests {
     assert_ne!(tls, ServerTls::from_identity(&identity()).unwrap());
     let debug = format!("{tls:?}");
     assert!(debug.contains("reloading: false"), "{debug}");
+  }
+
+  /// F24: settings built from an identity carry it for HTTP/3; a bare resolver does not
+  /// unless it is given one.
+  #[test]
+  fn identity_is_carried_for_http3() {
+    let identity = identity();
+    let tls = ServerTls::from_identity(&identity).unwrap();
+    assert_eq!(
+      tls.identity().map(Identity::cert_sha256),
+      Some(identity.cert_sha256())
+    );
+    assert!(format!("{tls:?}").contains("identity: true"));
+    let bare = ServerTls::builder(Arc::new(identity.clone()));
+    assert!(format!("{bare:?}").contains("identity: false"));
+    assert!(bare.build().unwrap().identity().is_none());
+    let declared = ServerTls::builder(Arc::new(identity.clone()))
+      .identity(identity.clone())
+      .build()
+      .unwrap();
+    assert!(declared.identity().is_some());
+    let platform =
+      id_effect_platform::tls::server_tls_config_with(Arc::new(identity), None).unwrap();
+    assert!(ServerTls::from_rustls_config(platform).identity().is_none());
   }
 
   #[test]
@@ -354,6 +407,10 @@ mod tests {
     );
     let fixed = ServerTls::from_pem_files(&chain, &key, None).unwrap();
     assert!(fixed.reload.is_none());
+    assert!(
+      fixed.identity().is_some(),
+      "certificate files carry their identity"
+    );
     let runtime = tokio::runtime::Builder::new_current_thread()
       .enable_all()
       .build()

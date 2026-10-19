@@ -36,6 +36,17 @@
 //!   receive windows, pending handshakes and the handshake time; datagrams are off. Raising any
 //!   limit above its default needs [`QuicEndpointConfig::dangerous_raise_limits`] (recorded).
 //!
+//! ## Transport tuning (ADR 0014 D9)
+//!
+//! - **Congestion control per route** ([`CongestionControl`]): [`Route::h3`] runs BBR, the mesh
+//!   ([`Route::mesh`], [`Route::new`]) runs CUBIC; [`Route::with_congestion_control`] changes
+//!   either. On a shared endpoint a connection starts on CUBIC and switches to its route's
+//!   algorithm as soon as the handshake has chosen the ALPN. quinn marks its BBR experimental.
+//! - **UDP socket buffers**: the endpoint asks for 4 MiB each way ([`SocketBuffers`],
+//!   [`QuicEndpointConfig::with_socket_buffers`]), best effort: the granted sizes are logged at
+//!   `debug` ([`QuicEndpoint::socket_buffers`]); on Linux raise `net.core.rmem_max` and
+//!   `net.core.wmem_max` to let the request through.
+//!
 //! ```rust
 //! # #[tokio::main(flavor = "current_thread")] async fn main() {
 //! use id_effect_platform::quic::{ClientAuthMode, QuicEndpoint, QuicEndpointConfig, Route};
@@ -56,20 +67,23 @@
 //! ```
 
 mod config;
+mod congestion;
 mod endpoint;
 mod router;
+pub(crate) mod socket;
 
+use crate::tls::CertError;
 pub use config::{
-  DANGEROUS_NO_RETRY, DANGEROUS_RAISE_LIMITS, QuicEndpointConfig, QuicLimits, client_config,
-  transport_config,
+  DANGEROUS_NO_RETRY, DANGEROUS_RAISE_LIMITS, DEFAULT_SOCKET_BUFFER, QuicEndpointConfig,
+  QuicLimits, SocketBuffers, client_config, client_config_with, transport_config,
+  transport_config_with,
 };
+pub use congestion::CongestionControl;
 pub use endpoint::{EndpointStats, QuicEndpoint};
 pub use router::{
   AlpnRoute, AlpnRouter, ClientAuthMode, ClientCertPolicy, Refusal, Route,
   has_verified_client_chain, negotiated_alpn,
 };
-
-use crate::tls::CertError;
 
 /// ALPN of HTTP/3 (RFC 9114).
 pub const ALPN_H3: &[u8] = b"h3";

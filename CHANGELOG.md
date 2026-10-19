@@ -60,6 +60,21 @@
   `http3-conformance` (h3spec, curl `--http3-only`), book chapter 29.5.
 - `id_effect_platform`: reqwest feature `http2`, so the TCP path (and the `Http3Client`
   fallback) speaks HTTP/2 to servers that offer it (F11).
+- `id_effect_platform` QUIC transport tuning (r12-f-h3-platform, ADR 0014 D9): congestion
+  control per route (`quic::CongestionControl`, `Route::with_congestion_control`,
+  `Route::congestion_control`, `AlpnRouter::congestion_control`): `Route::h3()` runs **BBR**
+  (quinn marks it experimental), the mesh (`Route::mesh`, `Route::new`) keeps CUBIC; on a shared
+  endpoint a connection switches to its route's algorithm once the handshake has chosen the
+  ALPN. `client_config_with` / `transport_config_with` take the algorithm (`client_config` stays
+  CUBIC); the `Http3Client` runs BBR. `EndpointStats::congestion_bbr` / `congestion_cubic`. UDP
+  socket buffers (F23): the endpoint and the `Http3Client` ask for 4 MiB each way
+  (`quic::SocketBuffers`, `QuicEndpointConfig::with_socket_buffers`, `DEFAULT_SOCKET_BUFFER`),
+  best effort, granted sizes logged at `debug` and reported by `QuicEndpoint::socket_buffers`
+  (raise `net.core.rmem_max` / `wmem_max` on Linux). The `Http3Client` verifies servers with
+  `rustls-platform-verifier` (=0.7.1) when no `root_certificates` are configured (F10).
+- `id_effect_axum`: `ServerTls::identity`, `ServerTlsBuilder::identity`; `HostTls::Provided`
+  settings built with `ServerTls::from_identity` / `from_pem_files` (or given an identity) serve
+  HTTP/3 too (F24).
 - `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
   `publish = false`). New modules: `contract` (the D11 serde model — services, versions,
   procedures, kinds, access decisions, input/output/error JSON Schemas — with

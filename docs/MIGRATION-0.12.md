@@ -70,8 +70,18 @@ With feature `http3`, `tls` from certificate files (`TLS_CERT_FILE` / `TLS_KEY_F
 same router over HTTP/3, and TCP responses carry `Alt-Svc: h3=":<port>"; ma=86400`. A host
 whose UDP port is taken fails to start (`HostError::Serve("bind udp …")`). **Shim:** `HTTP3=false`
 (`HostConfig::http3 = false`) restores the TCP-only 0.11 behaviour; open UDP on the firewall
-otherwise. `HostTls::Provided` settings serve TCP only (logged); use `server::serve_h3` on an
-endpoint of your own for HTTP/3 with a custom resolver.
+otherwise. `HostTls::Provided` settings serve HTTP/3 when they carry an identity
+(`ServerTls::from_identity`, `ServerTls::from_pem_files`, or `ServerTlsBuilder::identity` for a
+custom resolver); without one they serve TCP only (logged), or use `server::serve_h3` on an
+endpoint of your own.
+
+HTTP/3 connections run **BBR** congestion control (`Route::h3()`), mesh connections CUBIC (ADR
+0014 D9). quinn marks its BBR experimental; on an endpoint of your own pick per route with
+`Route::with_congestion_control(CongestionControl::Cubic)` (the axum host and `serve_h3` register
+`Route::h3()` and so run BBR). The QUIC endpoint asks for 4 MiB UDP socket buffers; on Linux
+raise `net.core.rmem_max` and `net.core.wmem_max` (for instance to 4194304) or the request is
+capped (logged at `debug`). `EndpointStats` (non-exhaustive) gains `congestion_bbr` and
+`congestion_cubic`.
 
 ## HTTP client: `HttpClientConfig::http3`
 

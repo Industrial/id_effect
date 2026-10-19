@@ -34,7 +34,10 @@ pub enum HostTls {
     reload_every: Option<Duration>,
   },
   /// Ready settings (an [`Identity`](id_effect_platform::tls::Identity) of your own, a
-  /// resolver that answers ACME challenges, ...).
+  /// resolver that answers ACME challenges, ...). HTTP/3 is served with the settings'
+  /// [`identity`](crate::server::tls::ServerTls::identity) (set by `ServerTls::from_identity`
+  /// and `ServerTls::from_pem_files`, or `ServerTlsBuilder::identity` for a resolver); settings
+  /// without one serve TCP only, and the host logs why.
   #[cfg(feature = "tls")]
   Provided(crate::server::tls::ServerTls),
 }

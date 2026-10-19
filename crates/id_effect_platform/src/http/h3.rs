@@ -27,11 +27,16 @@
 //!   any body byte is read and on the running total while reading. Retries come from the
 //!   [`RetryingHttpClient`](super::RetryingHttpClient) the layer wraps around this client.
 //!   Response header sections are capped at 64 KiB.
-//! - **TLS.** TLS 1.3 only, 0-RTT off, ALPN `h3`, the server certificate verified against the
-//!   platform CA bundle (the system bundle file: `SSL_CERT_FILE`, `NIX_SSL_CERT_FILE`, then the
-//!   usual locations of Linux, the BSDs and macOS) plus
-//!   [`HttpClientConfig::root_certificates`], **and the server name checked** against the
-//!   origin's host. With no root found, HTTP/3 is not used (every request goes over TCP).
+//! - **TLS.** TLS 1.3 only, 0-RTT off, ALPN `h3`, **the server name checked** against the
+//!   origin's host, and the server certificate verified by the platform verifier
+//!   (`rustls-platform-verifier`: the OS trust store on Windows and macOS, the system roots
+//!   elsewhere). [`HttpClientConfig::root_certificates`] override it: with roots configured
+//!   (or without a platform verifier) the certificate is verified against those roots plus the
+//!   platform CA bundle file (`SSL_CERT_FILE`, `NIX_SSL_CERT_FILE`, then the usual locations
+//!   of Linux, the BSDs and macOS). With no root found, HTTP/3 is not used (every request goes
+//!   over TCP).
+//! - **Transport.** BBR congestion control (as the server's `h3` route, ADR 0014 D9) and 4 MiB
+//!   UDP socket buffers asked for ([`SocketBuffers`](crate::quic::SocketBuffers)).
 //! - **Network changes.** An error showing that the network changed (network unreachable or
 //!   down, local address gone) clears the `Alt-Svc` cache, the negative cache and the pooled
 //!   HTTP/3 connections.
@@ -71,7 +76,8 @@ use super::{
   ReqwestHttpClient, SsrfPolicy, StreamingHttpResponse, buffered, streaming,
 };
 use crate::error::HttpError;
-use crate::quic::{ALPN_H3, QuicLimits, client_config};
+use crate::quic::socket::bind_udp;
+use crate::quic::{ALPN_H3, CongestionControl, QuicLimits, SocketBuffers, client_config_with};
 
 /// HTTP/3 settings of the client ([`HttpClientConfig::http3`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -279,13 +285,63 @@ fn platform_roots() -> rustls::RootCertStore {
     .clone()
 }
 
+/// The platform verifier (built once per process), or `None` when the platform has no roots.
+fn platform_verifier() -> Option<Arc<rustls_platform_verifier::Verifier>> {
+  static VERIFIER: OnceLock<Option<Arc<rustls_platform_verifier::Verifier>>> = OnceLock::new();
+  VERIFIER
+    .get_or_init(|| {
+      rustls_platform_verifier::Verifier::new(crate::tls::provider())
+        .ok()
+        .map(Arc::new)
+    })
+    .clone()
+}
+
 /// The quinn client config for HTTP/3 under `config`, or `None` when HTTP/3 is off or no CA
-/// root is available.
+/// root is available: the platform verifier when no roots are configured, else (and when the
+/// platform verifier cannot be built) the platform bundle plus the configured roots.
 fn quic_config(config: &HttpClientConfig) -> Option<quinn::ClientConfig> {
   if !config.http3.enabled {
     return None;
   }
-  quic_config_with(config, platform_roots())
+  quic_config_from(config, platform_verifier(), platform_roots)
+}
+
+/// [`quic_config`] with `verifier` as the platform verifier and `bundle` reading the platform
+/// bundle.
+fn quic_config_from(
+  config: &HttpClientConfig,
+  verifier: Option<Arc<rustls_platform_verifier::Verifier>>,
+  bundle: impl FnOnce() -> rustls::RootCertStore,
+) -> Option<quinn::ClientConfig> {
+  match verifier {
+    Some(verifier) if config.root_certificates.is_empty() => h3_client(
+      tls13()?
+        .dangerous()
+        .with_custom_certificate_verifier(verifier)
+        .with_no_client_auth(),
+    ),
+    _ => quic_config_with(config, bundle()),
+  }
+}
+
+/// A rustls client builder for TLS 1.3 only.
+fn tls13() -> Option<rustls::ConfigBuilder<rustls::ClientConfig, rustls::WantsVerifier>> {
+  rustls::ClientConfig::builder_with_provider(crate::tls::provider())
+    .with_protocol_versions(&[&rustls::version::TLS13])
+    .ok()
+}
+
+/// The quinn client config of `tls`: ALPN `h3`, the default limits, BBR (as the server's `h3`
+/// route), no 0-RTT.
+fn h3_client(tls: rustls::ClientConfig) -> Option<quinn::ClientConfig> {
+  client_config_with(
+    tls,
+    &[ALPN_H3],
+    &QuicLimits::default(),
+    CongestionControl::Bbr,
+  )
+  .ok()
 }
 
 /// [`quic_config`] with `roots` as the platform roots.
@@ -302,12 +358,7 @@ fn quic_config_with(
   if roots.is_empty() {
     return None;
   }
-  let tls = rustls::ClientConfig::builder_with_provider(crate::tls::provider())
-    .with_protocol_versions(&[&rustls::version::TLS13])
-    .ok()?
-    .with_root_certificates(roots)
-    .with_no_client_auth();
-  client_config(tls, &[ALPN_H3], &QuicLimits::default()).ok()
+  h3_client(tls13()?.with_root_certificates(roots).with_no_client_auth())
 }
 
 /// The HTTP/3 request for `req` (header validation happens here, before any I/O).
@@ -416,7 +467,10 @@ impl Inner {
     if let Some(endpoint) = slot {
       return Ok(endpoint.clone());
     }
-    let endpoint = quinn::Endpoint::client(bind)?;
+    // The socket asks for the endpoint's 4 MiB buffers too: responses arrive here in bursts.
+    let (socket, _) = bind_udp(bind, SocketBuffers::default())?;
+    let runtime = quinn::default_runtime().ok_or_else(|| io::Error::other("no async runtime"))?;
+    let endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, socket, runtime)?;
     *slot = Some(endpoint.clone());
     Ok(endpoint)
   }
@@ -878,6 +932,39 @@ mod tests {
     let cert = rcgen::generate_simple_self_signed(vec!["ca.test".to_string()]).expect("cert");
     let with_root = on.add_root_certificate_der(cert.cert.der().to_vec());
     assert!(quic_config_with(&with_root, rustls::RootCertStore::empty()).is_some());
+  }
+
+  /// F10: without configured roots the platform verifier is used and the bundle is not read;
+  /// configured roots (or no platform verifier) go the bundle-plus-roots way.
+  #[test]
+  fn the_platform_verifier_serves_unless_roots_are_configured() {
+    let cert = rcgen::generate_simple_self_signed(vec!["ca.test".to_string()]).expect("cert");
+    let verifier = || {
+      Some(Arc::new(
+        rustls_platform_verifier::Verifier::new_with_extra_roots(
+          [cert.cert.der().clone()],
+          crate::tls::provider(),
+        )
+        .expect("verifier"),
+      ))
+    };
+    let on = HttpClientConfig::default().http3(true);
+    assert!(quic_config_from(&on, verifier(), || panic!("the bundle is not read")).is_some());
+    let mut read = false;
+    let with_root = on
+      .clone()
+      .add_root_certificate_der(cert.cert.der().to_vec());
+    assert!(
+      quic_config_from(&with_root, verifier(), || {
+        read = true;
+        rustls::RootCertStore::empty()
+      })
+      .is_some()
+    );
+    assert!(read, "configured roots override the platform verifier");
+    assert!(quic_config_from(&on, None, rustls::RootCertStore::empty).is_none());
+    // Whatever this machine has, the process-wide verifier is built once.
+    assert_eq!(platform_verifier().is_some(), platform_verifier().is_some());
   }
 
   #[test]

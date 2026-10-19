@@ -9,7 +9,8 @@ use rustls::sign::CertifiedKey;
 use tokio::sync::mpsc;
 
 use super::{
-  ALPN_H3, ALPN_MESH, CLOSE_BUSY, CLOSE_CLIENT_CERT_REQUIRED, CLOSE_NO_ROUTE, QuicError, alpn_text,
+  ALPN_H3, ALPN_MESH, CLOSE_BUSY, CLOSE_CLIENT_CERT_REQUIRED, CLOSE_NO_ROUTE, CongestionControl,
+  QuicError, alpn_text,
 };
 use crate::tls::{self, ClientAuth, Identity};
 
@@ -32,33 +33,51 @@ pub enum ClientCertPolicy {
   },
 }
 
-/// One ALPN served by an endpoint: its certificate and its client-certificate policy.
+/// One ALPN served by an endpoint: its certificate, its client-certificate policy and the
+/// congestion control of its connections.
 #[derive(Clone, Debug)]
 pub struct Route {
   alpn: Vec<u8>,
   identity: Option<Identity>,
   policy: ClientCertPolicy,
+  congestion: CongestionControl,
 }
 
 impl Route {
-  /// A route for `alpn` presenting the endpoint's certificate and ignoring client
-  /// certificates.
+  /// A route for `alpn` presenting the endpoint's certificate, ignoring client certificates,
+  /// on CUBIC.
   pub fn new(alpn: impl Into<Vec<u8>>) -> Self {
     Self {
       alpn: alpn.into(),
       identity: None,
       policy: ClientCertPolicy::Ignore,
+      congestion: CongestionControl::Cubic,
     }
   }
 
-  /// HTTP/3 ([`ALPN_H3`]).
+  /// HTTP/3 ([`ALPN_H3`]) on [`CongestionControl::Bbr`] (ADR 0014 D9; quinn marks BBR
+  /// experimental, [`Self::with_congestion_control`] picks CUBIC back).
   pub fn h3() -> Self {
-    Self::new(ALPN_H3)
+    Self::new(ALPN_H3).with_congestion_control(CongestionControl::Bbr)
   }
 
-  /// The mesh ([`ALPN_MESH`]), requiring a client verified against `roots` and/or `pinned`.
+  /// The mesh ([`ALPN_MESH`]) on CUBIC, requiring a client verified against `roots` and/or
+  /// `pinned`.
   pub fn mesh(roots: Option<rustls::RootCertStore>, pinned: Vec<[u8; 32]>) -> Self {
     Self::new(ALPN_MESH).require_verified_client(roots, pinned)
+  }
+
+  /// Run `congestion` control on this route's connections. On an endpoint shared by several
+  /// routes the handshake starts on CUBIC and switches once the ALPN is chosen, before any
+  /// application data is sent.
+  pub fn with_congestion_control(mut self, congestion: CongestionControl) -> Self {
+    self.congestion = congestion;
+    self
+  }
+
+  /// The congestion control of this route's connections.
+  pub fn congestion_control(&self) -> CongestionControl {
+    self.congestion
   }
 
   /// Present `identity` to clients that negotiate this ALPN (a mesh certificate for the
@@ -169,6 +188,8 @@ pub(crate) struct Counters {
   pub(crate) refused_no_route: AtomicU64,
   pub(crate) refused_busy: AtomicU64,
   pub(crate) handshakes_failed: AtomicU64,
+  pub(crate) congestion_bbr: AtomicU64,
+  pub(crate) congestion_cubic: AtomicU64,
 }
 
 impl Counters {
@@ -181,6 +202,7 @@ struct Entry {
   alpn: Vec<u8>,
   identity: Option<Identity>,
   verified: bool,
+  congestion: CongestionControl,
   tx: mpsc::Sender<Delivery>,
 }
 
@@ -279,6 +301,16 @@ impl AlpnRouter {
     self.table().mode()
   }
 
+  /// The congestion control of the route for `alpn`, if it is registered.
+  pub fn congestion_control(&self, alpn: &[u8]) -> Option<CongestionControl> {
+    self
+      .table()
+      .entries
+      .iter()
+      .find(|e| e.alpn == alpn)
+      .map(|e| e.congestion)
+  }
+
   /// The rustls server config for the current routes.
   pub(crate) fn tls(&self, default: &Identity) -> Result<rustls::ServerConfig, QuicError> {
     self.table().tls(default)
@@ -321,6 +353,7 @@ impl AlpnRouter {
       alpn: route.alpn.clone(),
       identity: route.identity,
       verified,
+      congestion: route.congestion,
       tx,
     });
     if let Err(e) = table.tls(default).and_then(apply) {

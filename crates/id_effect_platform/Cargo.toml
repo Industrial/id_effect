@@ -31,9 +31,9 @@ tls = [
   "tokio/time",
 ]
 # One QUIC endpoint with ALPN routing (`quic::QuicEndpoint`, `quic::AlpnRouter`; ADR 0014 D6/D7).
-quic = ["tls", "dep:quinn"]
+quic = ["tls", "dep:quinn", "dep:quinn-proto", "dep:socket2"]
 # HTTP/3 over the QUIC endpoint (ALPN `h3`; r12-e12-3-h3-client / h3-server).
-http3 = ["quic", "dep:h3", "dep:h3-quinn"]
+http3 = ["quic", "dep:h3", "dep:h3-quinn", "dep:rustls-platform-verifier"]
 # ACME TLS-ALPN-01 certificates (r12-e12-3-certs-acme).
 acme = ["tls", "dep:instant-acme", "dep:id_effect_config", "dep:x509-parser"]
 
@@ -85,6 +85,14 @@ quinn = { version = "0.11.12", optional = true, default-features = false, featur
   "rustls-aws-lc-rs",
   "bloom",
 ] }
+# The versions quinn 0.11.12 already brings (exact pins, no second copy): quinn-proto for the
+# congestion `Controller` trait (its `RttEstimator`; per-route BBR / CUBIC, D9), socket2 for the
+# UDP socket buffers (F23).
+quinn-proto = { version = "=0.11.19", optional = true, default-features = false }
+socket2 = { version = "=0.6.5", optional = true }
+# The HTTP/3 client's server verification when no roots are configured (F10; quinn's
+# `platform-verifier` feature brings the same version).
+rustls-platform-verifier = { version = "=0.7.1", optional = true }
 # Exact pins: h3 is pre-1.0 and h3-quinn tracks it release by release.
 h3 = { version = "=0.0.8", optional = true }
 h3-quinn = { version = "=0.0.10", optional = true }

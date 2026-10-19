@@ -380,10 +380,15 @@ impl HostTransport {
   /// The certificate HTTP/3 presents (feature `http3`): the [`Identity`] the TLS listener
   /// presents too, so a reload reaches both. [`HostTransport::from_config`] sets it for
   /// certificate files ([`HostTls::Files`](crate::server::HostTls::Files)); provided TLS
-  /// settings carry no identity, and the host then serves TCP only.
+  /// settings present theirs ([`ServerTls::identity`]), and settings without one (a bare
+  /// resolver) serve TCP only.
   #[cfg(feature = "http3")]
   pub fn http3_identity(&self) -> Option<&Identity> {
-    self.http3.as_ref().map(|h3| &h3.identity)
+    self
+      .http3
+      .as_ref()
+      .map(|h3| &h3.identity)
+      .or_else(|| self.tls.as_ref().and_then(ServerTls::identity))
   }
 
   /// The TLS settings, when the transport is TLS.
@@ -801,10 +806,22 @@ mod tests {
     let polled = HostConfig::default().with_tls(cert_files(Some(Duration::from_millis(500))));
     let err = HostTransport::from_config(&polled).unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
-    // Provided settings carry no HTTP/3 identity.
+    // Provided settings built from an identity present it on HTTP/3 too (F24); a bare
+    // resolver has none.
     let provided = crate::server::tls::ServerTls::from_identity(identity).unwrap();
     let config =
       HostConfig::default().with_tls(crate::server::bootstrap::HostTls::provided(provided));
+    assert_eq!(
+      HostTransport::from_config(&config)
+        .unwrap()
+        .http3_identity()
+        .map(Identity::cert_sha256),
+      Some(identity.cert_sha256())
+    );
+    let bare = crate::server::tls::ServerTls::builder(Arc::new(identity.clone()))
+      .build()
+      .unwrap();
+    let config = HostConfig::default().with_tls(crate::server::bootstrap::HostTls::provided(bare));
     assert!(
       HostTransport::from_config(&config)
         .unwrap()
