@@ -107,18 +107,19 @@ mod quic {
 
   #[tokio::test]
   async fn h3_dangerous_accept_any_is_explicit() {
-    let server = QuicConfig::self_signed("node-b").expect("cert");
+    let client = QuicConfig::self_signed("node-a")
+      .expect("cert")
+      .dangerous_accept_any_server_cert();
+    // 0.11 mutual TLS: the listener pins the dialer's certificate.
+    let server = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(client.cert_sha256());
     let listener = QuicTransport::new(server)
       .listen("127.0.0.1:0")
       .await
       .expect("bind");
     let addr = listener.local_addr();
-    let client = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .dangerous_accept_any_server_cert(),
-    )
-    .expect("opted out");
+    let client = QuicTransport::try_new(client).expect("opted out");
     let (dialed, accepted) = tokio::join!(
       async {
         let conn = client.connect(&addr).await.expect("dial");
@@ -145,7 +146,13 @@ mod quic {
   async fn h4_relayed_proof_fails() {
     let (a, b) = (id("a@test", 1), id("b@test", 2));
 
-    let b_config = QuicConfig::self_signed("node-b").expect("cert");
+    let a_config = QuicConfig::self_signed("node-a").expect("cert");
+    let m_client_config = QuicConfig::self_signed("mitm-client").expect("cert");
+    // 0.11 mutual TLS: B has also been lured into trusting M's client
+    // certificate, so only the cookie's channel binding stands in the way.
+    let b_config = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(m_client_config.cert_sha256());
     let b_pin = b_config.cert_sha256();
     let b_listener = QuicTransport::new(b_config)
       .listen("127.0.0.1:0")
@@ -153,7 +160,9 @@ mod quic {
       .expect("bind b");
     let b_addr = b_listener.local_addr();
 
-    let m_config = QuicConfig::self_signed("mitm").expect("cert");
+    let m_config = QuicConfig::self_signed("mitm")
+      .expect("cert")
+      .with_pinned_client_cert_sha256(a_config.cert_sha256());
     let m_pin = m_config.cert_sha256();
     let m_listener = QuicTransport::new(m_config)
       .listen("127.0.0.1:0")
@@ -161,18 +170,10 @@ mod quic {
       .expect("bind m");
     let m_addr = m_listener.local_addr();
     // M trusts B properly; A has been lured into pinning M.
-    let m_dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("mitm-client")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(b_pin),
-    )
-    .expect("m dialer");
-    let a_dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(m_pin),
-    )
-    .expect("a dialer");
+    let m_dialer = QuicTransport::try_new(m_client_config.with_pinned_server_cert_sha256(b_pin))
+      .expect("m dialer");
+    let a_dialer =
+      QuicTransport::try_new(a_config.with_pinned_server_cert_sha256(m_pin)).expect("a dialer");
 
     let b_side = {
       let b = b.clone();
@@ -210,19 +211,18 @@ mod quic {
   #[tokio::test]
   async fn h4_direct_quic_handshake_succeeds() {
     let (a, b) = (id("a@test", 1), id("b@test", 2));
-    let b_config = QuicConfig::self_signed("node-b").expect("cert");
+    let a_config = QuicConfig::self_signed("node-a").expect("cert");
+    let b_config = QuicConfig::self_signed("node-b")
+      .expect("cert")
+      .with_pinned_peer_cert_sha256(a_config.cert_sha256());
     let b_pin = b_config.cert_sha256();
     let listener = QuicTransport::new(b_config)
       .listen("127.0.0.1:0")
       .await
       .expect("bind");
     let addr = listener.local_addr();
-    let dialer = QuicTransport::try_new(
-      QuicConfig::self_signed("node-a")
-        .expect("cert")
-        .with_pinned_server_cert_sha256(b_pin),
-    )
-    .expect("dialer");
+    let dialer =
+      QuicTransport::try_new(a_config.with_pinned_peer_cert_sha256(b_pin)).expect("dialer");
     let responder = {
       let b = b.clone();
       tokio::spawn(async move {

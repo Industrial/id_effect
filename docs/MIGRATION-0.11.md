@@ -210,6 +210,33 @@ exist only in core; `id_effect_fp` does not alias them.
 
 Filled by `r11-sec-client-ssrf`.
 
+## Node: QUIC requires client certificates (mutual TLS)
+
+Transports are mutually authenticated by default (ADR 0013 R8; dist.tls #4). Book chapter
+"Transport security: mutual TLS".
+
+- **A QUIC listener verifies the dialer's certificate.** Every dial presents the node's own
+  certificate; the listener refuses a peer without one, or with one it does not trust, during the
+  TLS handshake (that connection's `Listener::accept` returns `TransportError::Connect`).
+- **`listen` needs client trust**, or fails with `TransportError::Bind` naming the new
+  `QuicConfigError::NoClientTrust` (`QuicConfigError` is `#[non_exhaustive]`). Pick one:
+  - CA roots: `with_client_verification(roots)` now verifies the clients a node accepts as well as
+    the servers it dials (`with_client_cert_roots` sets other roots for clients). Configs built
+    with roots in 0.10 keep working if the node certificates chain to those roots; issue them with
+    the `clientAuth` extended key usage if they carry an EKU extension at all.
+  - Pins: replace `with_pinned_server_cert_sha256(fp)` with `with_pinned_peer_cert_sha256(fp)` and
+    pin every node's certificate on every node (or add `with_pinned_client_cert_sha256` on the
+    listener for each dialer).
+  - Opt out: `dangerous_no_client_auth()` restores the 0.10 listener; it records the posture
+    opt-out `id_effect_node::QuicConfig::dangerous_no_client_auth`.
+- `dangerous_accept_any_server_cert()` now records the posture opt-out
+  `id_effect_node::QuicConfig::dangerous_accept_any_server_cert`.
+- New: `transport::certs` (`NodeCertificate::from_pem_files` with PKCS#8, PKCS#1 and SEC1 keys,
+  `load_ca_bundle`, `CertReloader`), `QuicConfig::from_certificate` and
+  `QuicConfig::from_reloader` (a rotated certificate reaches new connections without a restart).
+- New features of `id_effect_node`, used by later 0.11 changes: `tls-tcp`,
+  `insecure-plaintext-tcp`, `kubernetes`. Its `rcgen` dependency uses aws-lc-rs instead of ring.
+
 ## Node: plaintext TCP needs the `insecure-plaintext-tcp` feature
 
 Filled by `r11-e8-3-tcp-tls`.

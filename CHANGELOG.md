@@ -11,6 +11,17 @@
   order; `SecurityHeaders::recommended()` adds `Cross-Origin-Opener-Policy`,
   `Cross-Origin-Resource-Policy` and a deny-list `Permissions-Policy`, each overridable. See
   "Web: CSRF masked token format" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_node` QUIC mutual TLS (dist.tls #4 #5 #7, ADR 0013 R8): every dial presents the
+  node's certificate and the listener verifies it (CA roots via `with_client_verification`, or
+  `with_pinned_client_cert_sha256` / `with_pinned_peer_cert_sha256`); a peer without a client
+  certificate or from another CA is refused, and `listen` without client trust fails with
+  `QuicConfigError::NoClientTrust`. New `transport::certs`: `NodeCertificate::from_pem_files`
+  (PKCS#8, PKCS#1, SEC1 keys), `load_ca_bundle`, and `CertReloader`, which polls the files so new
+  connections use a rotated certificate without a restart (`QuicConfig::from_reloader`).
+  Opt-outs `QuicConfig::dangerous_no_client_auth()` and `dangerous_accept_any_server_cert()` are
+  recorded in the posture registry. New features `tls-tcp`, `insecure-plaintext-tcp`,
+  `kubernetes`. Book "Transport security: mutual TLS", example `134_mtls_cluster`. See "Node: QUIC
+  requires client certificates" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 
 ### Added
 

@@ -4,7 +4,11 @@
 //! - [`memory::InMemoryTransport`] — first-class, deterministic, supports
 //!   scripted partitions (the chaos-test backbone).
 //! - [`tcp`] — length-delimited frames over Tokio TCP (the fallback).
-//! - `quic` (feature `quic`) — quinn + rustls (the production path).
+//! - `quic` (feature `quic`) — quinn + rustls with mutual TLS (the
+//!   production path).
+//!
+//! Certificates for the encrypted transports (PEM loading, CA bundles,
+//! reload on rotation) live in `certs` (features `quic`, `tls-tcp`).
 //!
 //! A transport moves **bytes**; framing, handshake, and semantics live
 //! above it. Connections are bidirectional byte-frame pipes.
@@ -14,6 +18,8 @@ use bytes::Bytes;
 pub mod memory;
 pub mod tcp;
 
+#[cfg(any(feature = "quic", feature = "tls-tcp"))]
+pub mod certs;
 #[cfg(feature = "quic")]
 pub mod quic;
 

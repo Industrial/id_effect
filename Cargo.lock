@@ -2614,6 +2614,9 @@ dependencies = [
  "flume 0.11.1",
  "foca",
  "hmac 0.12.1",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "id_effect",
  "id_effect_process",
  "id_effect_sql",
@@ -2625,10 +2628,12 @@ dependencies = [
  "rcgen",
  "rustls",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tracing",
 ]
 
@@ -4429,7 +4434,6 @@ checksum = "75e669e5202259b5314d1ea5397316ad400819437857b90861765f24c4cf80a2"
 dependencies = [
  "aws-lc-rs",
  "pem",
- "ring",
  "rustls-pki-types",
  "time",
  "yasna",
