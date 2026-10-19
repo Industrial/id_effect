@@ -20,8 +20,8 @@ struct Received {
   data: String,
 }
 
-/// A minimal SMTP server: accepts every command, answers `RCPT` for `reject@…` with `550` and
-/// for `later@…` with `451`, and records each message.
+/// A minimal SMTP server: accepts every command, answers `RCPT` for `reject@…` with `550`, for
+/// `auth@…` with `535` and for `later@…` with `451`, and records each message.
 #[derive(Clone, Default)]
 struct FakeSmtpServer {
   connections: Arc<AtomicUsize>,
@@ -68,6 +68,8 @@ impl FakeSmtpServer {
         let rcpt = between_angles(&line);
         if rcpt.starts_with("reject@") {
           b"550 5.1.1 no such user\r\n"
+        } else if rcpt.starts_with("auth@") {
+          b"535 5.7.8 authentication credentials invalid\r\n"
         } else if rcpt.starts_with("later@") {
           b"451 4.3.0 try again later\r\n"
         } else {
@@ -204,6 +206,10 @@ async fn reply_codes_map_to_mail_errors() {
   match run(send("later@ledger.example")).await {
     Err(e @ MailError::Temporary { code: 451, .. }) => assert!(e.is_transient()),
     other => panic!("expected a 451 deferral, got {other:?}"),
+  }
+  match run(send("auth@ledger.example")).await {
+    Err(MailError::Unauthorized(message)) => assert!(message.contains("credentials invalid")),
+    other => panic!("expected a 535 to be unauthorized, got {other:?}"),
   }
   assert!(fake.received().is_empty());
 }
