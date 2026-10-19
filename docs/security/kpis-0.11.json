@@ -1,0 +1,159 @@
+{
+	"schema": "id_effect security-kpis v1",
+	"method": "scripts/security-kpis.sh (header)",
+	"release": "0.11.0",
+	"workspace_version": "0.10.1",
+	"measured_at": "2026-10-19T08:27:35Z",
+	"revision": "28455046",
+	"offline": false,
+	"pass": true,
+	"failed": [],
+	"pending": [
+		"adr_0013_status",
+		"fuzz_open_crashes",
+		"openssf_scorecard",
+		"best_practices",
+		"slsa"
+	],
+	"kpis": {
+		"open_highs": {
+			"value": 0,
+			"target": 0,
+			"status": "pass",
+			"register": "docs/security/findings.json",
+			"findings": 41,
+			"closed": 40,
+			"accepted": 1,
+			"open": 0,
+			"problems": [],
+			"summary": "0 open highs; 41 findings: 40 closed, 1 accepted, 0 open; 0 register problems"
+		},
+		"adr_0013_enforcement": {
+			"value": 10,
+			"target": 10,
+			"rules": 10,
+			"adr": "docs/adrs/0013-secure-by-default.md",
+			"status": "pass",
+			"problems": [],
+			"summary": "10/10 rules with an enforcement point that exists"
+		},
+		"adr_0013_status": {
+			"value": "Proposed",
+			"target": "Accepted",
+			"status": "pending",
+			"reason": "owner acceptance (0.11.0 D22)",
+			"summary": "ADR 0013 status Proposed"
+		},
+		"fuzz_targets": {
+			"value": 11,
+			"target": ">= 8",
+			"targets": [
+				"config_profile_toml",
+				"cron_parse",
+				"jwks_parse",
+				"jwt_decode",
+				"mesh_envelope",
+				"mesh_frame",
+				"route_form",
+				"route_path",
+				"route_query",
+				"schema_json",
+				"totp_otpauth"
+			],
+			"problems": [],
+			"status": "pass",
+			"summary": "11 cargo-fuzz targets under ClusterFuzzLite"
+		},
+		"fuzz_open_crashes": {
+			"value": null,
+			"target": "0",
+			"status": "pending",
+			"reason": "cflite_batch.yml has not run on main yet (needs the release push)",
+			"summary": "fuzz open crashes pending: cflite_batch.yml has not run on main yet (needs the release push)"
+		},
+		"compile_fail_cases": {
+			"value": 17,
+			"target": ">= 15",
+			"problems": [],
+			"status": "pass",
+			"summary": "17 compile-fail cases in tests/security_compile_fail/ui"
+		},
+		"secure_stack": {
+			"value": 2696,
+			"unit": "ns",
+			"target": "<= 5000 ns",
+			"status": "pass",
+			"secure_stack_ns": 3608.5,
+			"bare_ns": 912.7,
+			"ratio": 3.95,
+			"ratio_note": "informational; the gate is the absolute budget (owner decision 2026-10-19, b66751f0; was <= 1.15x)",
+			"metric": "median",
+			"source": ".tmp/bench-head.json",
+			"sha": "834d93591c09923fb6f5239d4f63916793cda85f",
+			"created": "2026-10-19T07:47:25Z",
+			"machine": {
+				"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+				"cpus": "32",
+				"governor": "performance",
+				"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+				"kernel": "Linux 6.18.55"
+			},
+			"stale": false,
+			"summary": "+2696 ns secure stack over bare (913 -> 3608 ns, ratio 3.95)"
+		},
+		"check_dangerous": {
+			"value": "pass",
+			"target": "pass",
+			"status": "pass",
+			"script": "scripts/check-dangerous.sh",
+			"output": "check-dangerous: 36 dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out (27 directly, 9 by delegation)",
+			"summary": "scripts/check-dangerous.sh: check-dangerous: 36 dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out (27 directly, 9 by delegation)"
+		},
+		"check_workflows": {
+			"value": "pass",
+			"target": "pass",
+			"status": "pass",
+			"script": "scripts/check-workflows.sh",
+			"output": "check-workflows: 12 workflow(s): actions SHA-pinned, top-level permissions least privilege, no piped installers, no self-approval",
+			"summary": "scripts/check-workflows.sh: check-workflows: 12 workflow(s): actions SHA-pinned, top-level permissions least privilege, no piped installers, no self-approval"
+		},
+		"sha_pinned_actions": {
+			"value": 99,
+			"unit": "%",
+			"target": "100 % (the slsa-github-generator reusable workflow excepted)",
+			"uses": 102,
+			"sha_pinned": 101,
+			"tag_pinned_exception": 1,
+			"status": "pass",
+			"summary": "101/102 uses SHA-pinned (99 %), 1 documented exception, 0 unpinned"
+		},
+		"registry_token": {
+			"value": 0,
+			"target": 0,
+			"files": [],
+			"status": "pass",
+			"summary": "0 files under .github mention CARGO_REGISTRY_TOKEN"
+		},
+		"openssf_scorecard": {
+			"value": null,
+			"target": ">= 7.5",
+			"status": "pending",
+			"reason": "no published Scorecard result yet (scorecard.yml publishes from main: needs the release push)",
+			"summary": "OpenSSF Scorecard pending: no published Scorecard result yet (scorecard.yml publishes from main: needs the release push)"
+		},
+		"best_practices": {
+			"value": null,
+			"target": "passing",
+			"status": "pending",
+			"reason": "no bestpractices.dev project id in README.md or docs/security/openssf.md (the owner registers the project, 0.11.0 D16)",
+			"summary": "Best Practices pending: no bestpractices.dev project id in README.md or docs/security/openssf.md (the owner registers the project, 0.11.0 D16)"
+		},
+		"slsa": {
+			"value": null,
+			"target": "Build L3, 30/30 crates verified",
+			"status": "pending",
+			"reason": "id_effect_macro 0.11.0 is not on crates.io (needs the release publish; HTTP 404)",
+			"summary": "SLSA pending: id_effect_macro 0.11.0 is not on crates.io (needs the release publish; HTTP 404)"
+		}
+	}
+}

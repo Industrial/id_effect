@@ -1,0 +1,82 @@
+{
+	"schema": "id_effect dx-kpis v1",
+	"method": "scripts/dx-kpis.sh (header)",
+	"release": "0.11",
+	"measured_at": "2026-10-19T08:25:45Z",
+	"revision": "28455046+dirty",
+	"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cores": 32,
+		"mem_gib": 62,
+		"os": "Linux 6.18.55",
+		"load_avg_start": "4.15 10.82 18.38",
+		"load_avg_end": "46.13 40.84 30.05"
+	},
+	"k1": {
+		"seconds": 23.52,
+		"budget_s": 180,
+		"pass": true,
+		"new_s": 0.02,
+		"build_s": 23.48,
+		"boot_to_health_s": 0.01,
+		"template": "service",
+		"target_dir": "fresh",
+		"wrapper": "none"
+	},
+	"k2": {
+		"seconds": 1.32,
+		"budget_s": 8,
+		"pass": true,
+		"runs_s": [1.08, 1.32, 1.34],
+		"edit": "hello handler in src/lib.rs",
+		"template": "service",
+		"profile": "dev",
+		"wrapper": "none"
+	},
+	"k3": {
+		"lines": 634,
+		"by_category": {
+			"model": 183,
+			"migration": 19,
+			"routes": 174,
+			"policy": 30,
+			"test": 185,
+			"job": 43,
+			"other": 0
+		},
+		"files": 9,
+		"patch": "docs/benchmarks/k3/invoice.patch",
+		"applies_to_head": true,
+		"build": { "build_s": 478.79, "test_s": 29.82, "invoice_tests": "passed" },
+		"target": "none (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release; the job is in from 0.10, compare with 0.9 per category"
+	},
+	"k4": {
+		"fixed": 17,
+		"cases": 20,
+		"min": 17,
+		"pass": true,
+		"without_fix": [
+			"not_send_body",
+			"generic_runner_unannotated",
+			"block_on_in_async"
+		]
+	},
+	"k5": {
+		"compiled": 540,
+		"rust_fences": 589,
+		"ignored": 35,
+		"not_included": 14,
+		"percent": 91.7,
+		"min_percent": 80,
+		"pass": true
+	},
+	"k6": {
+		"seconds": 36.35,
+		"template": "service",
+		"profile": "release",
+		"target_dir": "fresh",
+		"wrapper": "none",
+		"budget": "docs/benchmarks/README.md (K6)"
+	}
+}

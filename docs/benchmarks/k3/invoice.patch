@@ -1,15 +1,15 @@
-diff --git a/examples/reference/ledger/migrations/0008_invoices.down.sql b/examples/reference/ledger/migrations/0008_invoices.down.sql
+diff --git a/examples/reference/ledger/migrations/0010_invoices.down.sql b/examples/reference/ledger/migrations/0010_invoices.down.sql
 new file mode 100644
 index 0000000..e8aea1e
 --- /dev/null
-+++ b/examples/reference/ledger/migrations/0008_invoices.down.sql
++++ b/examples/reference/ledger/migrations/0010_invoices.down.sql
 @@ -0,0 +1 @@
 +DROP TABLE invoices;
-diff --git a/examples/reference/ledger/migrations/0008_invoices.up.sql b/examples/reference/ledger/migrations/0008_invoices.up.sql
+diff --git a/examples/reference/ledger/migrations/0010_invoices.up.sql b/examples/reference/ledger/migrations/0010_invoices.up.sql
 new file mode 100644
 index 0000000..59617a3
 --- /dev/null
-+++ b/examples/reference/ledger/migrations/0008_invoices.up.sql
++++ b/examples/reference/ledger/migrations/0010_invoices.up.sql
 @@ -0,0 +1,19 @@
 +-- Invoices, in minor units, booked against a receivable account of the same organisation.
 +-- `version` is the optimistic-locking column; `voided_at` is the soft delete; `reminded_at` is
@@ -31,21 +31,23 @@ index 0000000..59617a3
 +
 +CREATE INDEX invoices_org_id ON invoices (org_id, id);
 diff --git a/examples/reference/ledger/src/app.rs b/examples/reference/ledger/src/app.rs
-index 1b8423f..ac4d954 100644
+index 5e378e2..9be3aec 100644
 --- a/examples/reference/ledger/src/app.rs
 +++ b/examples/reference/ledger/src/app.rs
-@@ -36,7 +36,7 @@ use crate::error::{ApiError, StartupError};
+@@ -45,7 +45,9 @@ use crate::error::{ApiError, StartupError};
  use crate::limits::{self, LimitSource, LimitsFile, TenantHint};
  use crate::mail::{self, Mail};
  use crate::reports::{self, BalanceCache};
--use crate::{accounts, auth, console, entries, jobs, notifications, policy, signup};
-+use crate::{accounts, auth, console, entries, invoices, jobs, notifications, policy, signup};
+-use crate::{accounts, auth, console, entries, jobs, notifications, observability, policy, signup};
++use crate::{
++  accounts, auth, console, entries, invoices, jobs, notifications, observability, policy, signup,
++};
  
  /// The router state: one [`App`] in a capability list, so handlers lift environment-free
  /// effects into it with `narrow()`.
-@@ -357,6 +357,7 @@ pub fn router(config: &LedgerConfig, services: Services) -> Result<axum::Router,
-     .merge(auth::routes(&policies, login_limit.clone()))
+@@ -417,6 +419,7 @@ pub fn assemble(config: &LedgerConfig, services: Services) -> Result<Assembled,
      .merge(accounts::routes(&policies))
+     .merge(closure::routes(&policies))
      .merge(entries::routes(&policies))
 +    .merge(invoices::routes(&policies))
      .merge(reports::routes(&policies));
@@ -537,10 +539,10 @@ index 79e985d..ca6d532 100644
  #[derive(Clone, Debug, FromRow)]
  #[from_row(crate = id_effect_kit::sql)]
 diff --git a/examples/reference/ledger/src/lib.rs b/examples/reference/ledger/src/lib.rs
-index 2284da9..a49ff7e 100644
+index 6f63867..55e7b31 100644
 --- a/examples/reference/ledger/src/lib.rs
 +++ b/examples/reference/ledger/src/lib.rs
-@@ -42,6 +42,7 @@ pub mod console;
+@@ -46,6 +46,7 @@ pub mod console;
  pub mod db;
  pub mod entries;
  pub mod error;
@@ -549,7 +551,7 @@ index 2284da9..a49ff7e 100644
  pub mod limits;
  pub mod mail;
 diff --git a/examples/reference/ledger/src/policy.rs b/examples/reference/ledger/src/policy.rs
-index 832d350..0943454 100644
+index e877252..261f9ea 100644
 --- a/examples/reference/ledger/src/policy.rs
 +++ b/examples/reference/ledger/src/policy.rs
 @@ -1,11 +1,11 @@
@@ -610,15 +612,15 @@ index 832d350..0943454 100644
  impl Owned for ApiToken {
    fn owner_id(&self) -> &str {
      &self.owner_id
-@@ -100,6 +121,7 @@ pub fn policies(events: AuthzEvents) -> Policies {
-     .define::<()>("ledger.read", rbac.require("ledger:read"))
-     .define::<()>("ledger.post", rbac.require("ledger:post"))
+@@ -102,6 +123,7 @@ pub fn policies(events: AuthzEvents) -> Policies {
      .define::<()>("accounts.open", rbac.require("accounts:open"))
+     // Approving or rejecting an account's closure (`crate::closure`).
+     .define::<()>("accounts.close", rbac.require("accounts:manage"))
 +    .define::<()>("invoices.write", rbac.require("invoices:write"))
      .define::<()>("tokens.issue", rbac.require("tokens:issue"))
      .define::<()>(
        "users.manage",
-@@ -119,6 +141,13 @@ pub fn policies(events: AuthzEvents) -> Policies {
+@@ -121,6 +143,13 @@ pub fn policies(events: AuthzEvents) -> Policies {
          .and(same_tenant())
          .and(owner().or(rbac.require_role(OWNER))),
      )
@@ -832,60 +834,60 @@ index 0000000..8a36a42
 +  .await;
 +}
 diff --git a/examples/reference/ledger/tests/migrations.rs b/examples/reference/ledger/tests/migrations.rs
-index f0b7674..5f56c47 100644
+index 170adf0..e1afb70 100644
 --- a/examples/reference/ledger/tests/migrations.rs
 +++ b/examples/reference/ledger/tests/migrations.rs
-@@ -37,7 +37,8 @@ fn the_migrations_directory_is_valid() {
-       (4, true),
-       (5, true),
+@@ -39,7 +39,8 @@ fn the_migrations_directory_is_valid() {
        (6, true),
--      (7, true)
-+      (7, true),
-+      (8, true)
+       (7, true),
+       (8, true),
+-      (9, true)
++      (9, true),
++      (10, true)
      ]
    );
  }
-@@ -50,7 +51,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -52,7 +53,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
      assert_eq!(
        check().await,
        Err(MigrateError::Pending {
--        versions: vec![1, 2, 3, 4, 5, 6, 7]
-+        versions: vec![1, 2, 3, 4, 5, 6, 7, 8]
+-        versions: vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
++        versions: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
        })
      );
  
-@@ -61,7 +62,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -63,7 +64,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
      );
      let mut applied = [a, b].concat();
      applied.sort_unstable();
--    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7]);
-+    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8]);
+-    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
++    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
      assert_eq!(check().await, Ok(()));
      let states: Vec<MigrationState> = outcome(migrator.status_on(Arc::clone(&db)))
        .await
-@@ -69,21 +70,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
+@@ -71,21 +72,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
        .into_iter()
        .map(|s| s.state)
        .collect();
--    assert_eq!(states, [MigrationState::Applied; 7]);
-+    assert_eq!(states, [MigrationState::Applied; 8]);
+-    assert_eq!(states, [MigrationState::Applied; 9]);
++    assert_eq!(states, [MigrationState::Applied; 10]);
  
      // `id-effect migrate revert`: the last migration's down script; check sees it pending.
      assert_eq!(
        outcome(migrator.revert_on(Arc::clone(&db), 1)).await,
--      Ok(vec![7])
-+      Ok(vec![8])
+-      Ok(vec![9])
++      Ok(vec![10])
      );
      assert_eq!(
        check().await,
--      Err(MigrateError::Pending { versions: vec![7] })
-+      Err(MigrateError::Pending { versions: vec![8] })
+-      Err(MigrateError::Pending { versions: vec![9] })
++      Err(MigrateError::Pending { versions: vec![10] })
      );
      // The next start re-applies it, and nothing else.
      assert_eq!(
        run(ledger::db::migrate(Arc::clone(&db), MIGRATIONS)).await,
--      [7]
-+      [8]
+-      [9]
++      [10]
      );
      assert_eq!(check().await, Ok(()));
    })
