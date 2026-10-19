@@ -33,6 +33,8 @@ pub use delivery::{
   DeliveryConfig, DeliveryFailed, DeliveryFailure, DeliveryMode, DeliveryMonitor, SendReliable,
 };
 pub use discovery::{ChainedDiscovery, Discovery, DnsDiscovery, StaticDiscovery};
+#[cfg(feature = "kubernetes")]
+pub use discovery::{KubernetesDiscovery, KubernetesError};
 pub use dist_supervisor::{DistChildSpec, DistributedSupervisor};
 pub use envelope::{
   ExitReasonWire, PidWire, ProcessEnvelope, ReliableMessage, RemoteFault, TRACEPARENT,
@@ -63,6 +65,8 @@ pub use singleton::{
 };
 pub use transport::memory::{InMemoryTransport, MemoryNetwork};
 pub use transport::tcp::TcpTransport;
+#[cfg(feature = "tls-tcp")]
+pub use transport::tls_tcp::{TlsTcpConfig, TlsTcpConfigError};
 pub use transport::{Connection, Listener, Transport, TransportError};
 pub use wire::{Frame, PROTOCOL_VERSION, WireError};
 

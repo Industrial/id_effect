@@ -26,7 +26,10 @@ Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
 `id_effect::Effect`: `Send`, interruptible, with timeouts on the executor clock. Compose
 them into a program, or run them at the edge with `block_on`.
 
-Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.
+Delivery between nodes is **at-most-once** by default, ordered per connection, and dropped on disconnect.
+Opt into **at-least-once** delivery with `Mesh::with_delivery(DeliveryConfig::at_least_once())` (or
+`Mesh::cast_reliable` / `send_reliable` per message): unacknowledged messages are buffered, resent
+on reconnect, and de-duplicated by the receiver, so handlers must be idempotent.
 
 ## Trust model
 
