@@ -88,8 +88,8 @@ mod presence;
 mod rpc;
 
 pub use backplane::{
-  Backplane, HUB_BEHAVIOR, Inbound, MeshBackplane, SessionLink, attach_session, connect_in_memory,
-  register_hub,
+  Backplane, HUB_BEHAVIOR, Inbound, MeshBackplane, SessionLink, attach_session, attach_session_rpc,
+  connect_in_memory, register_hub,
 };
 pub use clock::{ChannelClock, ManualClock, SystemClock};
 pub use hub::{

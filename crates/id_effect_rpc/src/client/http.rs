@@ -341,10 +341,12 @@ type Chunk = Vec<(usize, Arc<str>, Arc<Value>)>;
 /// A client, a URL and the calls of one request to it.
 type Outgoing = (Arc<dyn HttpClient>, Arc<str>, Chunk);
 
+/// Per client and URL while splitting: its requests so far and the bytes of the last one.
+type Group = (Arc<dyn HttpClient>, Arc<str>, Vec<Chunk>, usize);
+
 /// Split a window by client and URL, then into requests within the caps.
 fn chunks(calls: &[Pending], max_calls: usize, max_bytes: usize) -> Vec<Outgoing> {
-  // Per client and URL: its requests so far and the bytes of the last one.
-  let mut groups: Vec<(Arc<dyn HttpClient>, Arc<str>, Vec<Chunk>, usize)> = Vec::new();
+  let mut groups: Vec<Group> = Vec::new();
   for (index, call) in calls.iter().enumerate() {
     // A call's share of the array: its encoding, an id and a comma.
     let size =

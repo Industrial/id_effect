@@ -1021,6 +1021,35 @@ async fn mesh_rpc_over_an_authenticated_session() {
   ));
 }
 
+/// F33: a session attached for channels carries mesh RPC when it goes through the ingress
+/// (`attach_session_rpc`); the plain `attach_session` drops such calls as unverified, like
+/// `mesh_calls_bypassing_the_ingress_are_dropped`.
+#[cfg(feature = "channels")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mesh_rpc_over_a_channels_session_link() {
+  use id_effect_rpc::channels::attach_session_rpc;
+
+  let (a, b) = (node("a@test", 1), node("b@test", 2));
+  let (to_b, from_a) = session_pair(&a.id, &b.id).await;
+  let _links = (
+    attach_session_rpc(&a.rpc, to_b),
+    attach_session_rpc(&b.rpc, from_a),
+  );
+  let bumps = Arc::new(AtomicUsize::new(0));
+  b.rpc
+    .serve("Pc", group(&bumps, &Seen::default()), DynEnv::new())
+    .start()
+    .expect("start");
+  assert!(eventually(|| a.rpc.mesh().global().whereis("rpc:Pc").is_some()).await);
+  assert_eq!(
+    run(a.rpc.client("Pc").mutation::<_, i64, ()>("Pc.bump", &9_i64))
+      .await
+      .unwrap(),
+    10
+  );
+  assert_eq!(bumps.load(Ordering::SeqCst), 1);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mesh_rpc_setup_is_checked() {
   let id = NodeId::from_parts("a@test", 1);

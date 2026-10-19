@@ -371,6 +371,9 @@ fn scope_of(server: &RpcServer, parts: &Parts) -> Option<IdempotencyScope> {
 /// Reserve the batch's mutations under `raw_key`: replays become [`Plan::Replay`], fresh keys
 /// carry their reservation; a mismatch or a running key releases every reservation taken and
 /// answers the batch.
+// The `Err(Response)` is the batch's answer itself, as in `server/http.rs`; boxing it would only
+// add an allocation.
+#[allow(clippy::result_large_err)]
 async fn reserve(
   server: &RpcServer,
   parts: &Parts,

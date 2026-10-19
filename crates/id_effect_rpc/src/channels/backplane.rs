@@ -28,6 +28,7 @@ use tokio::sync::mpsc;
 
 use super::ChannelError;
 use super::hub::HubSink;
+use crate::transport::mesh::MeshRpc;
 
 /// The behavior name of the hub process ([`register_hub`]).
 pub const HUB_BEHAVIOR: &str = "id_effect_rpc.channels.hub";
@@ -697,10 +698,39 @@ pub async fn connect_in_memory(
 /// processes — the hubs' among them. An interim helper until the node crate runs sessions
 /// itself (a follow-up of r12-e12-2-channels).
 ///
+/// Frames go straight to [`Mesh::handle_envelope_from`], so mesh RPC calls arriving over this
+/// link are dropped as unverified; a node that also serves or calls RPC over the mesh uses
+/// [`attach_session_rpc`].
+///
 /// # Panics
 ///
 /// Outside a Tokio runtime.
 pub fn attach_session(mesh: &Mesh, session: Session) -> SessionLink {
+  let inbound = mesh.clone();
+  attach_session_via(mesh, session, move |peer, envelope| {
+    let _ = inbound.handle_envelope_from(peer, envelope);
+  })
+}
+
+/// [`attach_session`] for a node with a [`MeshRpc`]: every frame goes through
+/// [`MeshRpc::ingress`], which stamps the RPC messages with the session's verified peer, so mesh
+/// RPC and channels share one link.
+///
+/// # Panics
+///
+/// Outside a Tokio runtime.
+pub fn attach_session_rpc(rpc: &MeshRpc, session: Session) -> SessionLink {
+  let inbound = rpc.clone();
+  attach_session_via(rpc.mesh(), session, move |peer, envelope| {
+    let _ = inbound.ingress(peer, envelope);
+  })
+}
+
+fn attach_session_via(
+  mesh: &Mesh,
+  session: Session,
+  inbound: impl Fn(&NodeId, ProcessEnvelope) + Send + 'static,
+) -> SessionLink {
   let session = Arc::new(session);
   let peer = session.peer().clone();
   let (tx, mut rx) = mpsc::channel::<ProcessEnvelope>(SESSION_QUEUE);
@@ -724,9 +754,7 @@ pub fn attach_session(mesh: &Mesh, session: Session) -> SessionLink {
       loop {
         match session.recv().await {
           Ok(Frame::Data(bytes)) => match decode_envelope(&bytes) {
-            Ok(envelope) => {
-              let _ = mesh.handle_envelope_from(&peer, envelope);
-            }
+            Ok(envelope) => inbound(&peer, envelope),
             Err(e) => {
               tracing::warn!(peer = %peer.name(), error = %e, "mesh: undecodable envelope");
               break;
