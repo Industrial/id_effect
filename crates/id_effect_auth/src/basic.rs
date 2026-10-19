@@ -43,6 +43,11 @@ use crate::password::{
 use crate::principal::{AuthPrincipal, AuthScheme};
 use crate::throttle::LoginThrottle;
 
+/// Posture id of [`BasicAuth::dangerous_without_throttle`] (and the deprecated
+/// [`BasicAuth::without_throttle_dangerous`]).
+pub const DANGEROUS_WITHOUT_THROTTLE: &str =
+  "id_effect_auth::basic::BasicAuth::dangerous_without_throttle";
+
 /// What a [`UserLookup`] knows about a user: the stored password hash and the principal the
 /// user authenticates as.
 #[derive(Clone, Debug, PartialEq)]
@@ -192,13 +197,30 @@ impl BasicAuth {
     self
   }
 
-  /// The same check without failed-login throttling. **Dangerous**: it re-opens unlimited
-  /// online password guessing against every account, and lets a client keep the server busy
-  /// hashing. Only for a deployment that throttles failed logins in front of this check.
+  /// The same check without failed-login throttling. Records [`DANGEROUS_WITHOUT_THROTTLE`] in
+  /// the posture registry.
+  ///
+  /// **Dangerous**: it re-opens unlimited online password guessing against every account, and
+  /// lets a client keep the server busy hashing. Only for a deployment that throttles failed
+  /// logins in front of this check.
   #[must_use]
-  pub fn without_throttle_dangerous(mut self) -> Self {
+  pub fn dangerous_without_throttle(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_WITHOUT_THROTTLE,
+      "H5: Basic logins are not throttled, so online password guessing is unlimited",
+    );
     self.throttle = None;
     self
+  }
+
+  /// The same check without failed-login throttling.
+  #[deprecated(
+    since = "0.11.0",
+    note = "renamed to dangerous_without_throttle (ADR 0013 naming)"
+  )]
+  #[must_use]
+  pub fn without_throttle_dangerous(self) -> Self {
+    self.dangerous_without_throttle()
   }
 
   /// The principal `username` authenticates as with `password` (scheme
@@ -463,9 +485,25 @@ mod tests {
       Err(AuthError::InvalidCredentials)
     );
     // The opt-out hashes every attempt.
-    let open = basic.clone().without_throttle_dangerous();
+    let open = basic.clone().dangerous_without_throttle();
     assert!(run(open.authenticate("alice", "pw")).is_ok());
     assert!(format!("{open:?}").contains("throttle: None"));
+  }
+
+  #[test]
+  fn h5_dangerous_without_throttle_is_recorded() {
+    let basic = BasicAuth::new(MemoryUsers::new(), hasher(8));
+    #[allow(deprecated)]
+    let shim = basic.clone().without_throttle_dangerous();
+    assert!(shim.throttle.is_none());
+    let open = basic.dangerous_without_throttle();
+    assert!(open.throttle.is_none());
+    let recorded = id_effect::observability::posture::dangerous_opt_outs();
+    let (_, reopens) = recorded
+      .iter()
+      .find(|(id, _)| *id == DANGEROUS_WITHOUT_THROTTLE)
+      .expect("recorded");
+    assert!(reopens.starts_with("H5:"));
   }
 
   #[test]

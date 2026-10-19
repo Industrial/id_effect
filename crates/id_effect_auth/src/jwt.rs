@@ -13,8 +13,8 @@
 //!   default), and whether `exp` is required (yes by default). A verifier with neither an
 //!   issuer nor an audience rejects every token with [`AuthError::Config`]: it would accept
 //!   tokens minted for any service by anyone holding a key it trusts. Opt out with both
-//!   [`any_issuer_dangerous`](JwtVerifier::any_issuer_dangerous) and
-//!   [`any_audience_dangerous`](JwtVerifier::any_audience_dangerous);
+//!   [`dangerous_any_issuer`](JwtVerifier::dangerous_any_issuer) and
+//!   [`dangerous_any_audience`](JwtVerifier::dangerous_any_audience);
 //! - a **[`ClaimMapping`]** — which claims hold the subject, roles, permissions and tenant
 //!   (`sub`, `roles`, `permissions` / `scope` / `scp` and `tenant` by default; dotted paths such
 //!   as `realm_access.roles` reach into objects).
@@ -73,6 +73,14 @@ pub const DEFAULT_TTL: Duration = Duration::from_secs(15 * 60);
 /// The shortest HMAC secret a [`JwtKey`] or [`JwtIssuer`] accepts, in bytes (RFC 7518 §3.2: at
 /// least the hash output, 256 bits for HS256).
 pub const MIN_HMAC_KEY_LEN: usize = 32;
+
+/// Posture id of [`JwtVerifier::dangerous_any_issuer`] (and the deprecated
+/// [`JwtVerifier::any_issuer_dangerous`]).
+pub const DANGEROUS_ANY_ISSUER: &str = "id_effect_auth::jwt::JwtVerifier::dangerous_any_issuer";
+
+/// Posture id of [`JwtVerifier::dangerous_any_audience`] (and the deprecated
+/// [`JwtVerifier::any_audience_dangerous`]).
+pub const DANGEROUS_ANY_AUDIENCE: &str = "id_effect_auth::jwt::JwtVerifier::dangerous_any_audience";
 
 /// [`AuthError::Key`] for an HMAC secret of `len` bytes, when it is too short.
 fn check_hmac_len(len: usize) -> Result<(), AuthError> {
@@ -464,34 +472,64 @@ impl JwtVerifier {
   /// Accept tokens whose `aud` contains `audience` (repeat for several). Once set, `aud` is
   /// required. Set it: without an audience a token minted for another service is accepted.
   /// A verifier with neither an issuer nor an audience rejects every token (see
-  /// [`any_issuer_dangerous`](Self::any_issuer_dangerous)).
+  /// [`dangerous_any_issuer`](Self::dangerous_any_issuer)).
   #[must_use]
   pub fn audience(mut self, audience: impl Into<String>) -> Self {
     self.audiences.push(audience.into());
     self
   }
 
-  /// Accept tokens from any issuer even though no [`issuer`](Self::issuer) is set.
+  /// Accept tokens from any issuer even though no [`issuer`](Self::issuer) is set. Records
+  /// [`DANGEROUS_ANY_ISSUER`] in the posture registry.
   ///
   /// **Dangerous.** A verifier with neither an issuer nor an audience fails every verification
   /// with [`AuthError::Config`]; calling both this and
-  /// [`any_audience_dangerous`](Self::any_audience_dangerous) re-opens the 0.10.0 behaviour:
+  /// [`dangerous_any_audience`](Self::dangerous_any_audience) re-opens the 0.10.0 behaviour:
   /// any token signed by a trusted key is accepted, whoever minted it and for whichever service.
   /// Only for keys that sign tokens for this service alone (a test, a single-service secret).
   #[must_use]
-  pub fn any_issuer_dangerous(mut self) -> Self {
+  pub fn dangerous_any_issuer(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_ANY_ISSUER,
+      "H7: a JwtVerifier may accept tokens from any issuer",
+    );
     self.any_issuer = true;
     self
   }
 
-  /// Accept tokens for any audience even though no [`audience`](Self::audience) is set.
+  /// Accept tokens from any issuer.
+  #[deprecated(
+    since = "0.11.0",
+    note = "renamed to dangerous_any_issuer (ADR 0013 naming)"
+  )]
+  #[must_use]
+  pub fn any_issuer_dangerous(self) -> Self {
+    self.dangerous_any_issuer()
+  }
+
+  /// Accept tokens for any audience even though no [`audience`](Self::audience) is set. Records
+  /// [`DANGEROUS_ANY_AUDIENCE`] in the posture registry.
   ///
-  /// **Dangerous**: see [`any_issuer_dangerous`](Self::any_issuer_dangerous); a token minted for
+  /// **Dangerous**: see [`dangerous_any_issuer`](Self::dangerous_any_issuer); a token minted for
   /// another service of the same issuer is accepted.
   #[must_use]
-  pub fn any_audience_dangerous(mut self) -> Self {
+  pub fn dangerous_any_audience(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_ANY_AUDIENCE,
+      "H7: a JwtVerifier may accept tokens minted for any audience",
+    );
     self.any_audience = true;
     self
+  }
+
+  /// Accept tokens for any audience.
+  #[deprecated(
+    since = "0.11.0",
+    note = "renamed to dangerous_any_audience (ADR 0013 naming)"
+  )]
+  #[must_use]
+  pub fn any_audience_dangerous(self) -> Self {
+    self.dangerous_any_audience()
   }
 
   /// [`AuthError::Config`] unless the verifier pins an issuer or an audience, or opted out of
@@ -502,8 +540,8 @@ impl JwtVerifier {
       return Ok(());
     }
     Err(AuthError::Config(
-      "a JwtVerifier needs an issuer or an audience (or both any_issuer_dangerous() and \
-       any_audience_dangerous())"
+      "a JwtVerifier needs an issuer or an audience (or both dangerous_any_issuer() and \
+       dangerous_any_audience())"
         .into(),
     ))
   }
@@ -924,8 +962,8 @@ mod tests {
   fn verifier() -> JwtVerifier {
     JwtVerifier::new([JwtKey::hmac(SECRET)])
       .with_clock(clock_at(1_000))
-      .any_issuer_dangerous()
-      .any_audience_dangerous()
+      .dangerous_any_issuer()
+      .dangerous_any_audience()
   }
 
   #[test]
@@ -1034,8 +1072,8 @@ mod tests {
     ));
     let wrong = JwtVerifier::new([JwtKey::hmac(b"another secret of at least 32 bytes")])
       .with_clock(clock_at(1_000))
-      .any_issuer_dangerous()
-      .any_audience_dangerous();
+      .dangerous_any_issuer()
+      .dangerous_any_audience();
     assert_eq!(run(wrong.verify(&bare)), Err(AuthError::InvalidCredentials));
     // Flip the signature's first character (every base64url character there is significant).
     let at = bare.rfind('.').unwrap() + 1;
@@ -1183,16 +1221,34 @@ mod tests {
     let lax = JwtVerifier::new([JwtKey::hmac(SECRET)]).with_clock(clock_at(1_000));
     // One opt-out alone does not re-open the lax default.
     for half in [
-      lax.clone().any_issuer_dangerous(),
-      lax.clone().any_audience_dangerous(),
+      lax.clone().dangerous_any_issuer(),
+      lax.clone().dangerous_any_audience(),
     ] {
       assert!(matches!(
         run(half.verify(&token)),
         Err(AuthError::Config(_))
       ));
     }
-    let both = lax.any_issuer_dangerous().any_audience_dangerous();
+    let both = lax.dangerous_any_issuer().dangerous_any_audience();
     assert_eq!(run(both.verify(&token)).unwrap().id(), "a");
+  }
+
+  #[test]
+  fn h7_dangerous_any_issuer_and_audience_are_recorded() {
+    let token = hs(json!({"sub": "a"}));
+    let lax = JwtVerifier::new([JwtKey::hmac(SECRET)]).with_clock(clock_at(1_000));
+    #[allow(deprecated)]
+    let shim = lax.clone().any_issuer_dangerous().any_audience_dangerous();
+    assert_eq!(run(shim.verify(&token)).unwrap().id(), "a");
+    let _ = lax.dangerous_any_issuer().dangerous_any_audience();
+    let recorded = id_effect::observability::posture::dangerous_opt_outs();
+    for id in [DANGEROUS_ANY_ISSUER, DANGEROUS_ANY_AUDIENCE] {
+      let (_, reopens) = recorded
+        .iter()
+        .find(|(found, _)| *found == id)
+        .expect("recorded");
+      assert!(reopens.starts_with("H7:"), "{id}: {reopens}");
+    }
   }
 
   #[test]
@@ -1221,8 +1277,8 @@ mod tests {
     .unwrap();
     let weak = JwtVerifier::new([JwtKey::hmac(short)])
       .with_clock(clock_at(1_000))
-      .any_issuer_dangerous()
-      .any_audience_dangerous();
+      .dangerous_any_issuer()
+      .dangerous_any_audience();
     assert!(matches!(
       run(weak.verify(&forged)),
       Err(AuthError::Key(m)) if m.contains("has 31")

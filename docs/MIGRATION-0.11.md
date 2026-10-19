@@ -254,6 +254,17 @@ with more than one instance should switch stores.
   `sessions.login(user, presented)` and return or render the token it hands back; the layer sets
   the new CSRF cookie, so tokens rendered before login stop validating. `login` itself is
   unchanged (it already issues a fresh session id and removes the presented one).
+- **The 0.10.1 auth opt-outs are renamed to the ADR 0013 form and recorded** (L9 shims, removed
+  in 0.12): `BasicAuth::without_throttle_dangerous()` is now `dangerous_without_throttle()`,
+  `Totp::without_lockout_dangerous()` is `dangerous_without_lockout()`, and
+  `JwtVerifier::any_issuer_dangerous()` / `any_audience_dangerous()` are
+  `dangerous_any_issuer()` / `dangerous_any_audience()`. Old and new names alike record
+  `id_effect_auth::basic::BasicAuth::dangerous_without_throttle`,
+  `id_effect_auth::totp::Totp::dangerous_without_lockout`,
+  `id_effect_auth::jwt::JwtVerifier::dangerous_any_issuer` and
+  `id_effect_auth::jwt::JwtVerifier::dangerous_any_audience` (`basic::DANGEROUS_WITHOUT_THROTTLE`,
+  `totp::DANGEROUS_WITHOUT_LOCKOUT`, `jwt::DANGEROUS_ANY_ISSUER`, `jwt::DANGEROUS_ANY_AUDIENCE`)
+  in the posture registry, so the prod posture check refuses them unless the risk is accepted.
 
 ## STM: `id_effect_fp::stm` moves to `id_effect::stm`
 

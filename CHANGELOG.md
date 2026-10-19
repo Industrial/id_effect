@@ -114,6 +114,14 @@
   checked literal IPs; reqwest skips the resolver for them). `id_effect_auth`
   `JwksClient::insecure_allow_http()` replaces `allow_http_dangerous()` (now a deprecated shim)
   and records `jwks::INSECURE_ALLOW_HTTP` in the posture registry (ADR 0013 R10).
+- The 0.10.1 `id_effect_auth` opt-outs now record themselves in the posture registry (ADR 0013
+  R10), so the prod posture check refuses them unless the risk is accepted:
+  `BasicAuth::dangerous_without_throttle()` (H5, `basic::DANGEROUS_WITHOUT_THROTTLE`),
+  `Totp::dangerous_without_lockout()` (H6, `totp::DANGEROUS_WITHOUT_LOCKOUT`) and
+  `JwtVerifier::dangerous_any_issuer()` / `dangerous_any_audience()` (H7,
+  `jwt::DANGEROUS_ANY_ISSUER` / `jwt::DANGEROUS_ANY_AUDIENCE`). They replace
+  `without_throttle_dangerous()`, `without_lockout_dangerous()`, `any_issuer_dangerous()` and
+  `any_audience_dangerous()`, now deprecated shims that record the same ids.
 
 ### Performance
 

@@ -71,6 +71,9 @@ pub const DEFAULT_MAX_FAILURES: u32 = 5;
 /// Default [`Totp::with_lockout`] window: how long a lockout lasts, and how far apart failures
 /// may be to count together.
 pub const DEFAULT_LOCKOUT: Duration = Duration::from_secs(15 * 60);
+/// Posture id of [`Totp::dangerous_without_lockout`] (and the deprecated
+/// [`Totp::without_lockout_dangerous`]).
+pub const DANGEROUS_WITHOUT_LOCKOUT: &str = "id_effect_auth::totp::Totp::dangerous_without_lockout";
 
 /// Bytes of CSPRNG output in a secret (160 bits, RFC 4226 §4's recommendation).
 const SECRET_BYTES: usize = 20;
@@ -514,13 +517,31 @@ impl Totp {
     self
   }
 
-  /// The same TOTP without the failure lockout. **Dangerous**: it re-opens unlimited guessing of
-  /// the second factor (about one success per 330,000 tries). Only for a deployment that limits
-  /// TOTP attempts in front of [`verify`](Self::verify).
+  /// The same TOTP without the failure lockout. Records [`DANGEROUS_WITHOUT_LOCKOUT`] in the
+  /// posture registry.
+  ///
+  /// **Dangerous**: it re-opens unlimited guessing of the second factor (about one success per
+  /// 330,000 tries). Only for a deployment that limits TOTP attempts in front of
+  /// [`verify`](Self::verify).
   #[must_use]
-  pub fn without_lockout_dangerous(mut self) -> Self {
+  pub fn dangerous_without_lockout(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_WITHOUT_LOCKOUT,
+      "H6: TOTP verification does not lock after failures, so second-factor guessing is \
+       unlimited",
+    );
     self.lockout = None;
     self
+  }
+
+  /// The same TOTP without the failure lockout.
+  #[deprecated(
+    since = "0.11.0",
+    note = "renamed to dangerous_without_lockout (ADR 0013 naming)"
+  )]
+  #[must_use]
+  pub fn without_lockout_dangerous(self) -> Self {
+    self.dangerous_without_lockout()
   }
 
   /// The same TOTP reads time from `clock` (an anchored clock follows a `TestExecutor`'s virtual
@@ -1049,7 +1070,7 @@ mod tests {
       run(strict.verify("u", &secret, &wrong)),
       Err(TotpError::Locked { .. })
     ));
-    let open = strict.without_lockout_dangerous();
+    let open = strict.dangerous_without_lockout();
     for _ in 0..10 {
       assert_eq!(
         run(open.verify("u", &secret, &wrong)),
@@ -1062,7 +1083,7 @@ mod tests {
       Ok(TotpVerification::Invalid)
     );
     let relocked = back
-      .without_lockout_dangerous()
+      .dangerous_without_lockout()
       .with_lockout(0, Duration::from_secs(60));
     assert_eq!(
       run(relocked.verify("u", &secret, &wrong)),
@@ -1165,6 +1186,22 @@ mod tests {
     );
     assert_eq!(format!("{code:?}"), "RecoveryCode(<redacted>)");
     assert_eq!(normalize(" abcde-fghij "), "ABCDEFGHIJ");
+  }
+
+  #[test]
+  fn h6_dangerous_without_lockout_is_recorded() {
+    let (totp, _, _) = fixture();
+    #[allow(deprecated)]
+    let shim = totp.clone().without_lockout_dangerous();
+    assert!(shim.lockout.is_none());
+    let open = totp.dangerous_without_lockout();
+    assert!(open.lockout.is_none());
+    let found = id_effect::observability::posture::dangerous_opt_outs();
+    let (_, reopens) = found
+      .iter()
+      .find(|(id, _)| *id == DANGEROUS_WITHOUT_LOCKOUT)
+      .expect("recorded");
+    assert!(reopens.starts_with("H6:"));
   }
 
   #[test]
