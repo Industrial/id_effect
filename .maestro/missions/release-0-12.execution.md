@@ -135,3 +135,7 @@ webtransport (wave 5).
 | F15 | tls-h2 | RFC 8441 extended CONNECT off (browsers use h1.1 for WebSockets) | 0.13 |
 | F16 | kinds | `x-rpc: 1` now required on every POST (stricter than spec C5) and POST without Content-Type is 415 — record in MIGRATION-0.12 | r12-t0-migration-guide |
 | F17 | kinds | ch33 chapters not compiled by `book_snippets` | r12-t0-migration-guide |
+| F18 | postcard | postcard over plain HTTP answers 400 (server/http.rs decodes untyped); wire `decode_call` / `entry.codecs().decode_input` / `encode_exit` + `encode_result`, and the client | r12-e12-1-batching (reassigned by coordinator) |
+| F19 | postcard | fuzz targets: `codec::postcard::{decode_frame, decode_call, decode_result, decode_exit, split_record, decode_limited}`; seed a recursive type and a long empty-element sequence | r12-e12-5-fuzz-security |
+| F20 | postcard | macro must emit `.with_serde()` for serde types so generated services speak postcard | r12-e12-1-macro (sent) |
+| F21 | subscriptions | no cursor = replay from `starting_after` (default whole log), not "from now" — `EventLog` has no head read; document, or add a head read in id_effect_events | 0.13 / document in ch33-08 |
