@@ -92,7 +92,13 @@ criterion = "0.8.2"
 # Path-only: cargo publish resolves path+version dev-deps on crates.io.
 id_effect_platform = { path = "../id_effect_platform", features = ["auth"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util"] }
-tower = { version = "0.5.3", features = ["util"] }
+# `load-shed` + `limit`: load shedding in front of the secure-stack bench (benches/gate_request.rs).
+tower = { version = "0.5.3", features = ["util", "load-shed", "limit"] }
+# The secure-stack bench's authentication, route guard and default log redaction. Path-only, like
+# id_effect_platform above (id_effect_auth and id_effect_authz depend on this crate).
+id_effect_auth = { path = "../id_effect_auth", features = ["axum"] }
+id_effect_authz = { path = "../id_effect_authz", features = ["axum"] }
+id_effect_logger = { path = "../id_effect_logger" }
 # tests/openapi.rs validates generated documents against the OpenAPI 3.1 meta-schema (MIT;
 # no remote reference resolution needed, so no default features).
 jsonschema = { version = "0.59", default-features = false }

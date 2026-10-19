@@ -23,6 +23,7 @@ numbers that gates read are exported to JSON and committed here.
 |---|---|---|
 | `budget` | `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`, `gate/flat_map_depth_10k`, `gate/async_bind_64` | ratio ≤ 1.25 |
 | `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 0.95 (no noise band) |
+| `pair` | `gate/axum_request_secure_stack` over `gate/axum_request_bare` | new / new ≤ 1.15 (no noise band; [Secure-stack pair](#secure-stack-pair-011)) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
 
 - **Noise (Q7):** a `budget` ratio that misses its limit by at most 0.05 is reported
@@ -31,7 +32,13 @@ numbers that gates read are exported to JSON and committed here.
   noise of v0.6 (r-bench-report ruling). A same-build comparison (ratio 1.00)
   therefore FAILs the three `improve` gates and passes the rest.
 - **Presence:** every id in `gates.toml`, `report` ones included, must exist in both
-  files. A missing id is a `FAIL`.
+  files (a `pair` gate's two ids in the new one only). A missing id is a `FAIL`.
+- **Pair gates** (`kind = "pair"`, `over = "<id>"`) are a ratio inside one run:
+  `new[id] / new[over]`. The base file is not read for them, so a pair added in a change
+  is gated in that change already.
+- **`--enforce KINDS`** (comma list of `budget`, `improve`, `pair`): only those kinds'
+  missed limits `FAIL`; the others print `IGNORED`. A missing id still `FAIL`s. The CI
+  job uses `--enforce budget,pair`.
 - **Exit code:** `bench-compare.sh` exits 1 on any `FAIL` and 2 on misuse.
 - **Waivers:** a remaining violation after the one optimisation leaf Q7 allows needs
   an explicit human waiver (H2), recorded in `REPORT-0.7.md`. The gate itself is
@@ -44,7 +51,7 @@ numbers that gates read are exported to JSON and committed here.
 | `id_effect` | `phase0_baseline` | `phase0/*` |
 | `id_effect` | `gate_core` | `gate/async_bind_64`, `gate/flat_map_depth_10k`, `stream/*`, `coord/*` |
 | `id_effect_tokio` | `gate_fiber` | `gate/spawn_join_10k`, `gate/sleep_1k_x_1ms`, `gate/sleep_cpu_1k_x_1ms` (process CPU time) |
-| `id_effect_axum` | `gate_request` | `gate/axum_request_oneshot`, `gate/axum_request_caps` |
+| `id_effect_axum` | `gate_request` | `gate/axum_request_oneshot`, `gate/axum_request_caps`, `gate/axum_request_bare`, `gate/axum_request_secure_stack` |
 
 ## Workflow
 
@@ -82,8 +89,55 @@ bash scripts/bench-compare.sh --self-test
 ```
 
 It compares `fixtures/base.json` with itself (fails on exactly the three `improve` gates)
-and with `pass.json` (passes, with a `budget` `NOISE` row), and with `fail-budget.json`, `fail-improve.json` and
-`fail-missing.json`. Each of those must fail on exactly its one broken gate.
+and with `pass.json` (passes, with a `budget` `NOISE` row and the pair exactly at 1.15), and with `fail-budget.json`, `fail-improve.json`,
+`fail-missing.json`, `fail-pair.json` (pair 1.156) and `fail-pair-missing.json` (no `bare`).
+Each of those must fail on exactly its one broken gate. The `ci-*` cases repeat them with
+`--enforce budget,pair`: the identity comparison then passes with the three `improve` gates
+`IGNORED`, and the budget, pair and missing-id failures still fail. An unknown kind for
+`--enforce` exits 2.
+
+## CI job
+
+`.github/workflows/bench.yml` (E2.6, `test.qa#8`) runs on every push to `main` and on pull
+requests labelled `perf` (adding the label starts it; later pushes re-run it):
+
+1. Base = the pull request's base commit, or the previous `main` commit on a push (`HEAD^`
+   when the push has none).
+2. `bench-run.sh --ref <base> --baseline ci-base` (a `git archive` export), then
+   `bench-run.sh --baseline ci-head`, one after the other on the **same runner**, criterion
+   defaults, into one `target/criterion`.
+3. `bench-export.sh` both, then `bench-compare.sh --enforce budget,pair` against
+   `gates.toml`. A `budget` or `pair` `FAIL` (or a missing gated id) fails the job; the
+   `improve` gates ("must improve on v0.6") are printed as `IGNORED`, since a change compared
+   with its parent is near 1.00 by construction ([Gates](#gates)).
+4. The two exports and the comparison are uploaded as the artifact `bench-<sha>`.
+
+The runner is the repository variable `BENCH_RUNNER` (a dedicated self-hosted `bench` label)
+when set, otherwise `ubuntu-latest`. Shared runners are noisy: a `budget` result within the
+0.05 band is `NOISE`; re-run the job before acting on a `FAIL` near a limit. Actions are
+pinned by commit SHA and the workflow token is `contents: read`.
+
+## Secure-stack pair (0.11)
+
+The 0.11 security KPI "secure-stack overhead ≤ 1.15× the bare request bench"
+(`.maestro/specs/releases/0.11.0.md`, Risk 8) is the `pair` gate
+`gate/axum_request_secure_stack / gate/axum_request_bare ≤ 1.15`, measured inside one run.
+Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-process
+`GET /pair` (peer address `ConnectInfo`, an `x-api-key` header) to an effect handler answering
+`hello`; the secure one goes through, outermost first:
+
+| Layer | Configuration |
+|---|---|
+| `RateLimitLayer` | per client IP, a bucket that never empties in the bench |
+| load shedding | tower `load_shed` over `concurrency_limit(1024)`, `503` when full |
+| `SecurityLayer::recommended` | CSRF, CSP nonce, security headers, cookie defaults |
+| `Authenticate` (id_effect_auth) | API key over `MemoryApiKeyStore` |
+| `Guard` (id_effect_authz) | `authenticated()` on the route |
+| default log redaction | the handler writes one access line through `EffectLogger`, scrubbed by `RedactionPolicy::recommended` (no policy installed) |
+
+Every layer must let the request through: the bench asserts `200`. The stack grows as the 0.11
+security leaves land (the first-party `LoadShedLayer`, CSRF masking, the access layer);
+`r11-w3-kpis` re-measures the pair with the final stack for the release figure.
 
 ## 0.10 exit (`r10-w3-kpis`)
 

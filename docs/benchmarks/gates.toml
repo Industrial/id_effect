@@ -1,15 +1,17 @@
 # D9 benchmark gates for 0.7 against the v0.6 baseline (see README.md).
 #
 # Read by scripts/bench-compare.sh, which supports only this flat subset of TOML:
-# top-level `key = value` lines, then `[[gate]]` tables with `id`, `kind`, `limit` and an
-# optional `noise` that overrides the global band for that gate.
+# top-level `key = value` lines, then `[[gate]]` tables with `id`, `kind`, `limit`, an
+# optional `noise` that overrides the global band for that gate and, for `pair`, `over`.
 #
 # ratio = new / base on `metric` (time per iteration, so lower is better).
 #   kind = "budget"   passes when ratio <= limit
 #   kind = "improve"  passes when ratio <  limit
+#   kind = "pair"     ratio = new[id] / new[over], one run (no base); passes when ratio <= limit
 #   kind = "report"   never fails on its ratio; listed so its presence is required
 # A ratio that misses its limit by at most `noise` (absolute) is NOISE, not FAIL (Q7).
-# Every listed id must exist in both files; a missing id is a FAIL.
+# Every listed id must exist in both files (a pair's id and `over` in the new one); a missing id
+# is a FAIL.
 
 metric = "median"
 noise = 0.05
@@ -75,6 +77,17 @@ noise = 0
 id = "gate/axum_request_oneshot"
 kind = "improve"
 limit = 0.95
+noise = 0
+
+# --- secure-stack overhead (0.11 KPI, E2.6): one run, no noise band ------------------
+# The recommended production stack in front of the axum request may cost at most 15 % over
+# the same request without it (benches/gate_request.rs in id_effect_axum).
+
+[[gate]]
+id = "gate/axum_request_secure_stack"
+kind = "pair"
+over = "gate/axum_request_bare"
+limit = 1.15
 noise = 0
 
 # --- report only ---------------------------------------------------------------------

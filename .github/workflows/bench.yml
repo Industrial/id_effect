@@ -1,0 +1,69 @@
+# Bench gates (0.11.0.md E2.6, test.qa#8; docs/benchmarks/README.md "CI job"): the D9 gate
+# benches for the change's base and head, one after the other on the same runner, compared by
+# scripts/bench-compare.sh against docs/benchmarks/gates.toml. Runs on pushes to main and on pull
+# requests labelled `perf`. A `budget` or `pair` gate FAIL (including the secure-stack ratio)
+# fails the job; `improve` gates hold against v0.6, not against the previous commit, so they are
+# printed but not enforced here. The runner is the repository variable BENCH_RUNNER (a dedicated
+# `bench` label) when set, otherwise ubuntu-latest.
+name: Bench
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  bench:
+    name: bench gates (base vs head)
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ${{ vars.BENCH_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: always
+      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config jq
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-targets: false
+      - name: Resolve the base commit
+        run: |
+          base="$BASE_SHA"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          echo "bench: base $base, head $(git rev-parse HEAD)"
+          echo "BENCH_BASE=$base" >>"$GITHUB_ENV"
+      - name: Bench base
+        run: bash scripts/bench-run.sh --ref "$BENCH_BASE" --baseline ci-base
+      - name: Bench head
+        run: bash scripts/bench-run.sh --baseline ci-head
+      - name: Export
+        run: |
+          bash scripts/bench-export.sh ci-base .tmp/bench-ci-base.json
+          bash scripts/bench-export.sh ci-head .tmp/bench-ci-head.json
+      - name: Gates (budget and pair enforced)
+        run: |
+          bash scripts/bench-compare.sh --enforce budget,pair \
+            .tmp/bench-ci-base.json .tmp/bench-ci-head.json | tee .tmp/bench-compare.txt
+      - name: Upload the exports and the comparison
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-${{ github.sha }}
+          path: |
+            .tmp/bench-ci-base.json
+            .tmp/bench-ci-head.json
+            .tmp/bench-compare.txt
+          if-no-files-found: ignore

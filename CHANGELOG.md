@@ -18,6 +18,12 @@
   reentrant per fiber: a transaction knows the `FiberId` running `commit`). All compose with
   `Stm::or_else` and `Stm::retry`. Book "Transactional Collections" covers all nine STM
   structures; examples `087`–`091_stm_*`; test `crates/id_effect/tests/stm_collections.rs`.
+- Bench gates in CI (test.qa #8): `.github/workflows/bench.yml` benches base and head on one
+  runner on pushes to `main` and on pull requests labelled `perf`, and fails on a `budget` or
+  `pair` gate. `scripts/bench-compare.sh` learns `kind = "pair"` (an intra-run ratio) and
+  `--enforce KINDS`; `gates.toml` gains the secure-stack KPI gate
+  `gate/axum_request_secure_stack / gate/axum_request_bare ≤ 1.15` (`id_effect_axum` bench
+  `gate_request`). See "CI job" in `docs/benchmarks/README.md`.
 
 ## 0.10.1 — 2026-10-18 — Security patch
 
