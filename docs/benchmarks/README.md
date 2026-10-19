@@ -141,12 +141,20 @@ request takes 0.90 µs, so 1.15× would leave about 135 ns for the CSP nonce, CS
 API-key hashing, log redaction, the guard and rate limiting, which is real per-request work.
 The ratio is still printed next to the result, for information; it is not a gate.
 
-| Measured 2026-10-19 | Median |
-|---|---|
-| `gate/axum_request_bare` | 0.90 µs |
-| `gate/axum_request_secure_stack` | 5.55 µs |
-| difference (gated, ≤ 5 µs) | +4.65 µs, PASS |
-| ratio (informational) | 6.2× |
+| Measured 2026-10-19 (criterion defaults) | Before the trim | After |
+|---|---|---|
+| `gate/axum_request_bare` | 0.91 µs | 0.91 µs |
+| `gate/axum_request_secure_stack` | 5.42 µs | 3.54 µs |
+| difference (gated, ≤ 5 µs) | +4.51 µs, PASS | +2.63 µs, PASS |
+| ratio (informational) | 6.0× | 3.9× |
+
+The trim took the difference from +4.5 µs to +2.6 µs without changing what any layer checks:
+`SecurityLayer` renders the CSP header once per policy and fills in only the nonce, signs the
+CSRF cookie with an HMAC keyed once per layer and masks the token only when it is read; the
+API-key check and a pure guard policy (`authenticated()`, roles, predicates) decide inline
+instead of on a fiber (`ApiKeyStore::find_now`, `Policy::decide_now`; a store or policy that
+needs I/O still runs as an effect, and a guard with audit events always does); the logger reads
+no fiber ref that is not installed and formats no line `tracing` would drop.
 
 Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-process
 `GET /pair` (peer address `ConnectInfo`, an `x-api-key` header) to an effect handler answering
