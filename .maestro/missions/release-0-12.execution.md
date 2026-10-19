@@ -127,3 +127,7 @@ webtransport (wave 5).
 | F7 | certs-acme | deploy-guide content list (TLS passthrough for `acme-tls/1`, TCP 443, persistent 0700 cache, one ACME per domain set, alert on `AcmeStats::failed`, no DNS-01/wildcard, C13) | r12-e12-3-deploy-guide |
 | F8 | rpc design review | anonymous idempotency scoped by client IP, key ≥ 16 chars (design note §10) | wherever the idempotency store lands (kinds/batching) |
 | F9 | 0.11 exit | `effect:docs` moon output `target/doc` ignores a custom `CARGO_TARGET_DIR` | r12-w8-kpis (CI hygiene) |
+| F10 | h3-client | HTTP/3 roots come from the system CA file; add `rustls-platform-verifier =0.7.1` to platform (Windows) | r12-e12-3-h3-server (owns platform http3 wiring next) |
+| F11 | h3-client | reqwest `http2` is off in platform, so the TCP fallback is HTTP/1.1 (test `udp_blackhole_falls_back_to_h2_within_budget` exercises h1.1); turn `http2` on and keep the test name honest | r12-e12-3-h3-server |
+| F12 | h3-client | h3 transport errors surface as `HttpError::InvalidRequest("http3: …")`; add a `Transport` variant (breaking, MIGRATION-0.12) | r12-e12-5-fuzz-security or exit |
+| F13 | h3-client | h3-quinn `stop_sending` panics during an in-flight read; drop the stream instead (server too) | r12-e12-3-h3-server |

@@ -4,7 +4,7 @@
 //! by default), proves control of each domain with the `tls-alpn-01` challenge on the TLS port
 //! the application already serves, and installs the issued certificate into its [`Identity`] —
 //! the slot the QUIC endpoint and the TCP TLS listener read on every handshake, so new
-//! connections use it without a restart and open ones are not cut ([`super::reload`]). It
+//! connections use it without a restart and open ones are not cut ([`Identity::install`]). It
 //! renews at two thirds of the certificate's lifetime, minus a random jitter of up to a
 //! twentieth of it so a fleet does not renew in step. HTTP-01 and DNS-01 are not offered: the
 //! first needs port 80, the second a DNS provider integration (ADR 0014 D8).
