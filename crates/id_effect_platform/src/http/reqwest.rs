@@ -2,12 +2,24 @@
 //!
 //! For portable [`HttpClient`](crate::http::HttpClient) /
 //! [`HttpRequest`](crate::http::HttpRequest) boundaries, use the parent [`crate::http`] module
-//! (`execute`, `execute_stream`, [`ReqwestHttpClient`](crate::http::ReqwestHttpClient)).
+//! (`execute`, `execute_stream`, [`ReqwestHttpClient`]).
 //!
 //! The capabilities are [`ReqwestClient`] ([`ReqwestClientLive::layer`],
-//! [`provide_reqwest_client`]) and [`ReqwestPool`] ([`provide_reqwest_pool`]). Each helper reads
-//! its capability from the effect's `R` (`R: Selector<ReqwestClient, I>`, the index `I` is
-//! inferred).
+//! [`dangerous_provide_reqwest_client`]) and [`ReqwestPool`] ([`provide_reqwest_pool`]). Each
+//! helper reads its capability from the effect's `R` (`R: Selector<ReqwestClient, I>`, the index
+//! `I` is inferred).
+//!
+//! The clients these layers build ([`ReqwestClientLive::layer`], [`provide_reqwest_pool`], and
+//! their `_with` forms taking an [`HttpClientConfig`]) are built like
+//! [`ReqwestHttpClient::from_config`]: connect and total timeouts, no redirects followed (or up
+//! to [`HttpClientConfig::follow_redirects`], each hop checked) and the [`SsrfPolicy`] in the DNS
+//! resolver, so a host name that resolves to a loopback, private, link-local or metadata address
+//! is refused. These helpers hand you the [`reqwest::Client`] itself, so a URL with a literal IP
+//! host is not checked before it is sent (the resolver never sees it): check a URL you did not
+//! write with [`SsrfPolicy::check_url`], or use the portable client
+//! ([`execute`](crate::http::execute)), which does. A client you build yourself
+//! ([`dangerous_provide_reqwest_client`], a [`ReqwestClient`] or [`PooledClient`] you wrap) has
+//! none of this.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,14 +27,45 @@ use std::time::Duration;
 use ::id_effect::{
   Effect, HCons, HList, HNil, Layer, Pool, Selector, fail, from_async, hlist, need, succeed, sync,
 };
+use id_effect::observability::posture::record_dangerous;
 use id_effect::schema::data::EffectData;
 use id_effect::schema::{ParseError, Schema, Unknown};
 use reqwest::{Client, Error, RequestBuilder, Response};
 use serde_json::Value;
 
+#[cfg(doc)]
+use crate::http::SsrfPolicy;
+use crate::http::{HttpClientConfig, ReqwestHttpClient};
+
+/// Posture id of [`dangerous_provide_reqwest_client`] (and the deprecated
+/// [`provide_reqwest_client`]).
+pub const DANGEROUS_PROVIDE_REQWEST_CLIENT: &str =
+  "id_effect_platform::http::reqwest::dangerous_provide_reqwest_client";
+
+/// The [`reqwest::Client`] `config` describes: its timeouts, redirect limit and [`SsrfPolicy`]
+/// resolver ([`ReqwestHttpClient::from_config`]).
+fn guarded_client(config: &HttpClientConfig) -> Client {
+  ReqwestHttpClient::from_config(config).inner
+}
+
 /// Injectable [`reqwest::Client`] capability.
+///
+/// Wrapping a client yourself (`ReqwestClient(client)`) uses it as configured; build one with
+/// [`from_config`](Self::from_config) for the timeouts, redirect limit and SSRF resolver of the
+/// layers.
 #[derive(Clone, Debug)]
 pub struct ReqwestClient(pub Client);
+
+impl ReqwestClient {
+  /// A client with `config`'s timeouts, redirect limit and [`SsrfPolicy`] resolver.
+  ///
+  /// # Panics
+  ///
+  /// As [`reqwest::Client::new`]: if the TLS backend cannot be initialised.
+  pub fn from_config(config: &HttpClientConfig) -> Self {
+    Self(guarded_client(config))
+  }
+}
 
 impl std::ops::Deref for ReqwestClient {
   type Target = Client;
@@ -40,10 +83,19 @@ pub type ReqwestClientEnv = HCons<ReqwestClient, HNil>;
 pub struct PooledClient(Arc<Client>);
 
 impl PooledClient {
-  /// A pooled handle to `client`.
+  /// A pooled handle to `client`, used as configured (see [`from_config`](Self::from_config)).
   #[inline]
   pub fn new(client: Client) -> Self {
     Self(Arc::new(client))
+  }
+
+  /// A pooled client with `config`'s timeouts, redirect limit and [`SsrfPolicy`] resolver.
+  ///
+  /// # Panics
+  ///
+  /// As [`reqwest::Client::new`]: if the TLS backend cannot be initialised.
+  pub fn from_config(config: &HttpClientConfig) -> Self {
+    Self::new(guarded_client(config))
   }
 
   /// Allocation identity of the inner [`Client`] (for tests / pooling assertions).
@@ -75,33 +127,76 @@ pub type ReqwestPool = Pool<PooledClient>;
 /// The minimal typed environment holding only [`ReqwestPool`].
 pub type ReqwestPoolEnv = HCons<ReqwestPool, HNil>;
 
-/// Default [`ReqwestClient`] provider ([`reqwest::Client::new`]).
+/// Default [`ReqwestClient`] provider ([`HttpClientConfig::default`]: timeouts, no redirects,
+/// the SSRF resolver).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReqwestClientLive;
 
 impl ReqwestClientLive {
-  /// The layer: a new [`reqwest::Client`] built once per layer build.
+  /// The layer with [`HttpClientConfig::default`]: a new client built once per layer build.
   pub fn layer<E: Send + 'static>() -> Layer<ReqwestClientEnv, E> {
-    Layer::effect(|| sync(|| hlist![ReqwestClient(Client::new())]))
+    Self::layer_with(HttpClientConfig::default())
+  }
+
+  /// The layer with `config`'s timeouts, redirect limit and [`SsrfPolicy`] (its retry policy is
+  /// not used: these helpers do not retry), a new client built once per layer build.
+  pub fn layer_with<E: Send + 'static>(config: HttpClientConfig) -> Layer<ReqwestClientEnv, E> {
+    Layer::effect(move || {
+      let config = config.clone();
+      sync(move || hlist![ReqwestClient::from_config(&config)])
+    })
   }
 }
 
-/// A [`Layer`] providing `client` as the [`ReqwestClient`] capability.
+/// A [`Layer`] providing `client` as the [`ReqwestClient`] capability, used as configured.
+#[deprecated(
+  since = "0.11.0",
+  note = "the client gets no SSRF guard or redirect limit: use ReqwestClientLive::layer_with, \
+          or dangerous_provide_reqwest_client to keep your own client"
+)]
 #[inline]
 pub fn provide_reqwest_client<E: Send + 'static>(client: Client) -> Layer<ReqwestClientEnv, E> {
+  dangerous_provide_reqwest_client(client)
+}
+
+/// A [`Layer`] providing `client` as the [`ReqwestClient`] capability, used as configured: no
+/// SSRF guard, and its own redirect policy and timeouts (reqwest's defaults follow 10 redirects
+/// and never time out). Records [`DANGEROUS_PROVIDE_REQWEST_CLIENT`] in the posture registry.
+/// Prefer [`ReqwestClientLive::layer_with`].
+pub fn dangerous_provide_reqwest_client<E: Send + 'static>(
+  client: Client,
+) -> Layer<ReqwestClientEnv, E> {
+  record_dangerous(
+    DANGEROUS_PROVIDE_REQWEST_CLIENT,
+    "M3: a caller-built reqwest client without the SSRF guard, redirect limit or timeouts",
+  );
   Layer::succeed(hlist![ReqwestClient(client)])
 }
 
-/// A [`Layer`] providing a [`ReqwestPool`] of at most `capacity` checked-out clients; idle
-/// clients older than `ttl` are replaced. Each build gets a new pool.
+/// A [`Layer`] providing a [`ReqwestPool`] of at most `capacity` checked-out clients built with
+/// [`HttpClientConfig::default`]; idle clients older than `ttl` are replaced. Each build gets a
+/// new pool.
 #[inline]
 pub fn provide_reqwest_pool<E: Send + 'static>(
   capacity: usize,
   ttl: Duration,
 ) -> Layer<ReqwestPoolEnv, E> {
+  provide_reqwest_pool_with(capacity, ttl, HttpClientConfig::default())
+}
+
+/// [`provide_reqwest_pool`] with clients built from `config` (timeouts, redirect limit,
+/// [`SsrfPolicy`]).
+pub fn provide_reqwest_pool_with<E: Send + 'static>(
+  capacity: usize,
+  ttl: Duration,
+  config: HttpClientConfig,
+) -> Layer<ReqwestPoolEnv, E> {
+  let config = Arc::new(config);
   Layer::effect(move || {
+    let config = Arc::clone(&config);
     sync(move || {
-      hlist![Pool::new(capacity, || succeed(PooledClient::new(Client::new()))).with_ttl(ttl)]
+      let make = move || succeed(PooledClient::from_config(&config));
+      hlist![Pool::new(capacity, make).with_ttl(ttl)]
     })
   })
 }
@@ -439,8 +534,76 @@ mod tests {
       .build()
       .unwrap();
     let given = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(u2))
-      .provide_layer(provide_reqwest_client(client));
+      .provide_layer(dangerous_provide_reqwest_client(client));
     assert_eq!(run(given).await.unwrap(), "ok");
+    let recorded = id_effect::observability::posture::dangerous_opt_outs();
+    assert!(
+      recorded
+        .iter()
+        .any(|(id, _)| *id == DANGEROUS_PROVIDE_REQWEST_CLIENT)
+    );
+  }
+
+  /// The [`SsrfBlocked`](crate::http::SsrfBlocked) reason behind `err`, if the guard refused it.
+  fn blocked(err: &Error) -> Option<String> {
+    crate::http::ssrf::blocked_by(err).map(|b| b.to_string())
+  }
+
+  #[tokio::test]
+  async fn m3_reqwest_layers_refuse_names_resolving_to_loopback() {
+    let server = mock(
+      "GET",
+      "/named",
+      ResponseTemplate::new(200).set_body_string("ok"),
+    )
+    .await;
+    let url = format!("http://localhost:{}/named", server.address().port());
+    let (u1, u2, u3) = (url.clone(), url.clone(), url.clone());
+    let live = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(u1))
+      .provide_layer(ReqwestClientLive::layer());
+    let err = run(live).await.expect_err("blocked");
+    assert!(blocked(&err).is_some(), "{err:?}");
+
+    let pool = provide_reqwest_pool::<Error>(1, Duration::from_secs(60));
+    let pooled =
+      send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(u2)).provide_layer(pool);
+    let err = run(pooled).await.expect_err("blocked");
+    assert!(blocked(&err).is_some(), "{err:?}");
+
+    let allowed = HttpClientConfig::default().allow_hosts(["localhost"]);
+    let named = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(u3))
+      .provide_layer(ReqwestClientLive::layer_with(allowed.clone()));
+    assert_eq!(run(named).await.unwrap(), "ok");
+    let pool = provide_reqwest_pool_with::<Error>(1, Duration::from_secs(60), allowed);
+    let pooled =
+      send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(url)).provide_layer(pool);
+    assert_eq!(run(pooled).await.unwrap().status().as_u16(), 200);
+  }
+
+  #[tokio::test]
+  async fn m3_reqwest_layers_do_not_follow_redirects() {
+    let target = mock(
+      "GET",
+      "/target",
+      ResponseTemplate::new(200).set_body_string("followed"),
+    )
+    .await;
+    let server = mock(
+      "GET",
+      "/moved",
+      ResponseTemplate::new(302).insert_header("location", format!("{}/target", target.uri())),
+    )
+    .await;
+    let url = format!("{}/moved", server.uri());
+    let u2 = url.clone();
+    let live = send::<Response, Error, ReqwestClientEnv, _>(move |c| c.get(url))
+      .provide_layer(ReqwestClientLive::layer());
+    assert_eq!(run(live).await.unwrap().status().as_u16(), 302);
+    let pool = provide_reqwest_pool::<Error>(1, Duration::from_secs(60));
+    let pooled =
+      send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(u2)).provide_layer(pool);
+    assert_eq!(run(pooled).await.unwrap().status().as_u16(), 302);
+    assert!(target.received_requests().await.unwrap().is_empty());
   }
 
   #[tokio::test]
@@ -561,5 +724,9 @@ mod tests {
   fn reqwest_client_derefs_to_the_client() {
     let c = ReqwestClient(Client::new());
     assert!(c.get("https://example.com").build().is_ok());
+    let guarded = ReqwestClient::from_config(&HttpClientConfig::default());
+    assert!(guarded.get("https://example.com").build().is_ok());
+    let pooled = PooledClient::from_config(&HttpClientConfig::default());
+    assert!(pooled.get("https://example.com").build().is_ok());
   }
 }

@@ -93,6 +93,18 @@
   `HttpError::InvalidRequest` and are not retried. The Ledger reads its allowlist from
   `[outbound]`. See "HTTP client: SSRF guard on by default" in the
   [0.11 migration guide](docs/MIGRATION-0.11.md).
+- The remaining outbound clients follow M3 (ADR 0013 R6, R10): `id_effect_platform`
+  `ReqwestClientLive::layer()` and `provide_reqwest_pool` build their `reqwest::Client` from
+  `HttpClientConfig::default()` (timeouts, no redirects, the SSRF check in the DNS resolver;
+  previously `Client::new()`), with new `layer_with(config)`, `provide_reqwest_pool_with` and
+  `ReqwestClient::from_config` / `PooledClient::from_config`. Caller-built clients go in through
+  the new recorded opt-outs `dangerous_provide_reqwest_client` and
+  `ReqwestHttpClient::dangerous_unguarded`; `provide_reqwest_client` and `ReqwestHttpClient::new`
+  are deprecated shims for them. `id_effect_auth` OIDC requires `https` for the issuer and the
+  published token, user-info and JWKS endpoints (plain `http` to loopback only, or after the
+  recorded `OidcConfig::insecure_allow_http()`), adds a connect timeout
+  (`oidc::DEFAULT_CONNECT_TIMEOUT`), and pins with regression tests that a discovery or token
+  endpoint answering `302`/`307` is not followed.
 
 ### Performance
 

@@ -312,10 +312,37 @@ Breaks and what to do:
   the range check off and records `id_effect_platform::http::SsrfPolicy::dangerous_allow_private_networks`
   in the posture registry, which the prod posture check refuses unless the risk is accepted.
 
-`ReqwestHttpClient::new(reqwest::Client)` wraps your own client as is (no guard, your redirect
-policy). Behind an HTTP proxy the proxy resolves names, so only literal-IP URLs and the proxy's
-own address are checked. JWKS fetching keeps its own client and rules (https only, no redirects,
+Behind an HTTP proxy the proxy resolves names, so only literal-IP URLs and the proxy's own
+address are checked. JWKS fetching keeps its own client and rules (https only, no redirects,
 1 MiB; 0.10.1 M15).
+
+The reqwest helpers (`id_effect_platform::http::reqwest`) and caller-built clients:
+
+- **`ReqwestClientLive::layer()` and `provide_reqwest_pool(n, ttl)`** built `reqwest::Client::new()`
+  (10 redirects, no timeout, no guard). They now build from `HttpClientConfig::default()`: 10 s
+  connect / 30 s total timeouts, no redirects, and the SSRF check in the DNS resolver. Their new
+  `ReqwestClientLive::layer_with(config)` / `provide_reqwest_pool_with(n, ttl, config)` take the
+  allowlist (`allow_hosts(["localhost"])` for a local fake reached by name) and redirect limit;
+  `ReqwestClient::from_config` / `PooledClient::from_config` build one client. These helpers hand
+  out the `reqwest::Client`, so a **literal-IP** URL is not checked before it is sent: check URLs
+  you did not write with `SsrfPolicy::check_url(url)`, or move the call to `http::execute`.
+- **`provide_reqwest_client(client)` and `ReqwestHttpClient::new(client)` are deprecated** (L9
+  shims, removed in 0.12). They keep wrapping your client as is, and now record the opt-out.
+  Rename to `dangerous_provide_reqwest_client(client)` /
+  `ReqwestHttpClient::dangerous_unguarded(client)` to keep your own client (posture ids
+  `id_effect_platform::http::reqwest::dangerous_provide_reqwest_client` and
+  `id_effect_platform::http::ReqwestHttpClient::dangerous_unguarded`), or switch to
+  `ReqwestClientLive::layer_with(config)` / `ReqwestHttpClient::from_config(&config)`.
+  `ReqwestClient(client)` and `PooledClient::new(client)` still wrap a client as is (unrecorded).
+- **`id_effect_auth` OIDC** (`OidcClient::discover`): the issuer and the token, user-info and
+  JWKS endpoints the provider publishes must be `https`; plain `http` is accepted only to
+  `localhost` or a loopback address (tests, a local Keycloak) — the JWKS rule of 0.10.1. A
+  discovery document that names a plain-http endpoint fails with `OidcError::Discovery`, a
+  plain-http issuer with `OidcError::Config`. A provider reached over a trusted encrypted
+  network (a mesh with mTLS) takes `OidcConfig::insecure_allow_http()`, recorded as
+  `id_effect_auth::oidc::OidcConfig::insecure_allow_http`. Provider requests now also have a
+  connect timeout (`oidc::DEFAULT_CONNECT_TIMEOUT`, 10 s, capped by `OidcConfig::timeout`);
+  redirects stay unfollowed.
 
 ## Node: QUIC requires client certificates (mutual TLS)
 

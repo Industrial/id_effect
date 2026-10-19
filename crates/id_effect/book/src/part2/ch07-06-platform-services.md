@@ -19,7 +19,7 @@ calls in domain code.
 | `http` | `HttpClientService` (`HttpClientEnv`) | `ReqwestHttpClientProvider::layer()`, `provide_http_client(c)` | `execute`, `execute_stream` |
 | `fs` | `FileSystemService` (`FileSystemEnv`) | `LiveFileSystemProvider::layer()`, `provide_file_system(fs)` | `read`, `exists` |
 | `command` | `ProcessRuntimeService` (`ProcessRuntimeEnv`) | `TokioProcessRuntimeProvider::layer()`, `provide_process_runtime(rt)` | `spawn`, `spawn_wait`, `child_wait`, `child_kill` |
-| `http::reqwest` | `ReqwestClient`, `ReqwestPool` | `ReqwestClientLive::layer()`, `provide_reqwest_client(c)`, `provide_reqwest_pool(n, ttl)` | `send`, `text`, `bytes`, `json`, `json_schema`, … |
+| `http::reqwest` | `ReqwestClient`, `ReqwestPool` | `ReqwestClientLive::layer()` / `layer_with(config)`, `provide_reqwest_pool(n, ttl)` / `provide_reqwest_pool_with(n, ttl, config)`, `dangerous_provide_reqwest_client(c)` | `send`, `text`, `bytes`, `json`, `json_schema`, … |
 | `auth` | — | — | `SessionStore`, `OAuthClient` and memory doubles |
 | `error`, `uri` | — | — | `HttpError`, `FsError`, `ProcessError`; URI helpers |
 
@@ -94,7 +94,7 @@ The live implementations need a Tokio runtime **with its IO driver** (see
 Streaming responses (`execute_stream`) carry an `HttpBody` read on demand (`next_chunk()`,
 `collect()`, both effects) with the `max_body_bytes` cap enforced as chunks arrive.
 
-## Client defaults: timeouts and retries
+## Client defaults: timeouts, SSRF guard, redirects and retries
 
 `ReqwestHttpClientProvider::layer()` installs a client with defaults that apply to every call:
 
@@ -102,6 +102,8 @@ Streaming responses (`execute_stream`) carry an `HttpBody` read on demand (`next
 |---------|---------|
 | Connect timeout | 10 s |
 | Total timeout | 30 s (a request's own `HttpRequest::timeout` replaces it) |
+| SSRF guard | on: `http`/`https` only; no loopback, private, link-local, metadata or other internal destinations |
+| Redirects | not followed (a `3xx` is returned as is) |
 | Retried methods | GET, PUT, DELETE (idempotent); POST and PATCH are never retried unless listed |
 | Retried outcomes | connect errors, `5xx`, `429`; never `4xx`, timeouts or invalid requests |
 | Attempts | 3 in total, exponential backoff from 100 ms with jitter |
@@ -138,6 +140,61 @@ let off = HttpClientConfig::default().with_retry(RetryPolicy::none());
 
 `RetryingHttpClient::new(client, policy)` wraps any other `HttpClient` the same way. See
 `examples/040_http_client_retry.rs`.
+
+### The SSRF guard
+
+A URL often comes from someone else: a webhook target, an avatar link, a callback. The guard
+(`SsrfPolicy`, on in `HttpClientConfig::default()`) keeps such a request from reaching the
+service's own network:
+
+- The scheme must be `http` or `https`.
+- A literal-IP host is checked before the request is sent; a host name is checked by the client's
+  DNS resolver, on **every** address it resolves to (one forbidden address refuses the name), and
+  the checked addresses are the ones the connection uses, so DNS rebinding cannot swap one in.
+- Forbidden: loopback, unspecified, RFC 1918, `100.64.0.0/10`, link-local (`169.254.169.254` and
+  `fd00:ec2::254`, the cloud metadata endpoints), unique local `fc00::/7`, multicast, reserved and
+  broadcast, and the IPv4-mapped / NAT64 / 6to4 forms of those.
+- Redirects are off. `follow_redirects(max)` follows up to `max` hops and checks each one like the
+  first request.
+
+A refused request fails with `HttpError::InvalidRequest` naming the reason; it is not retried.
+Internal services the application is meant to call are listed explicitly, by name or range, and
+the policy can come from config (`allow_hosts = [..]`, `allow_cidrs = [..]` in a TOML section):
+
+```rust
+use id_effect::Layer;
+use id_effect_platform::http::{
+    HttpClientConfig, HttpClientEnv, IpCidr, ReqwestHttpClientProvider, SsrfPolicy,
+};
+# struct AppError;
+
+let config = HttpClientConfig::default()
+    .allow_hosts(["billing.internal"])
+    .allow_cidrs(["10.20.0.0/16".parse::<IpCidr>().unwrap()])
+    .follow_redirects(3);
+let http: Layer<HttpClientEnv, AppError> = ReqwestHttpClientProvider::layer_with(config);
+
+let from_config: SsrfPolicy =
+    serde_json::from_value(serde_json::json!({ "allow_hosts": ["127.0.0.1"] })).unwrap();
+let tests = HttpClientConfig::default().with_ssrf(from_config);
+# let _ = (http, tests);
+```
+
+Turning the range check off is a named, recorded opt-out:
+`HttpClientConfig::dangerous_allow_private_networks()` records itself in the posture registry
+(`id_effect::observability::posture`), and the prod posture check refuses to start while it is
+not an accepted risk. Behind an HTTP proxy (`HTTP_PROXY`) the proxy resolves host names, so the
+guard checks literal-IP URLs and the proxy's own address only.
+
+The reqwest helpers (`http::reqwest`) build their clients the same way:
+`ReqwestClientLive::layer()`, `provide_reqwest_pool(n, ttl)` and their `_with(config)` forms
+get the timeouts, the redirect limit and the resolver check. Those helpers hand you the
+`reqwest::Client` itself, so a literal-IP URL is not checked before it is sent: check a URL you
+did not write with `SsrfPolicy::check_url`, or use `execute`. A client you built yourself goes in
+through `dangerous_provide_reqwest_client(c)` or `ReqwestHttpClient::dangerous_unguarded(c)`,
+which keep its own settings (reqwest's defaults follow 10 redirects and never time out) and
+record the opt-out; the unnamed `provide_reqwest_client` and `ReqwestHttpClient::new` are
+deprecated shims for them.
 
 ## Security note (filesystem)
 

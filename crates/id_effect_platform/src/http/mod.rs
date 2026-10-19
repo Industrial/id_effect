@@ -278,11 +278,32 @@ pub struct ReqwestHttpClient {
   ssrf: Option<Arc<SsrfPolicy>>,
 }
 
+/// Posture id of [`ReqwestHttpClient::dangerous_unguarded`] (and the deprecated
+/// [`ReqwestHttpClient::new`]).
+pub const DANGEROUS_UNGUARDED_REQWEST_HTTP_CLIENT: &str =
+  "id_effect_platform::http::ReqwestHttpClient::dangerous_unguarded";
+
 impl ReqwestHttpClient {
-  /// Wrap an existing [`::reqwest::Client`], used as configured: no SSRF guard and its own
-  /// redirect policy (reqwest's default follows up to 10). Prefer [`from_config`](Self::from_config).
+  /// Wrap an existing [`::reqwest::Client`], used as configured.
+  #[deprecated(
+    since = "0.11.0",
+    note = "the client gets no SSRF guard or redirect limit: use from_config, or \
+            dangerous_unguarded to keep your own client"
+  )]
   #[inline]
   pub fn new(client: ::reqwest::Client) -> Self {
+    Self::dangerous_unguarded(client)
+  }
+
+  /// Wrap an existing [`::reqwest::Client`], used as configured: no SSRF guard, and its own
+  /// redirect policy and timeouts (reqwest's defaults follow up to 10 redirects and never time
+  /// out). Records [`DANGEROUS_UNGUARDED_REQWEST_HTTP_CLIENT`] in the posture registry. Prefer
+  /// [`from_config`](Self::from_config).
+  pub fn dangerous_unguarded(client: ::reqwest::Client) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_UNGUARDED_REQWEST_HTTP_CLIENT,
+      "M3: a caller-built reqwest client without the SSRF guard, redirect limit or timeouts",
+    );
     Self {
       inner: client,
       ssrf: None,

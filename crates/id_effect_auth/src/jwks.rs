@@ -301,22 +301,27 @@ impl JwksClient {
 fn checked_url(url: &str, allow_http: bool) -> Result<reqwest::Url, AuthError> {
   let config = |why: &str| AuthError::Config(format!("JWKS URL {url:?} {why}"));
   let parsed = reqwest::Url::parse(url).map_err(|_| config("is not a URL"))?;
-  let loopback = parsed.host_str().is_some_and(|host| {
+  match parsed.scheme() {
+    "https" => Ok(parsed),
+    "http" if is_loopback(&parsed) || allow_http => Ok(parsed),
+    "http" => Err(config(
+      "must be https (plain http only to a loopback host, or after allow_http_dangerous())",
+    )),
+    _ => Err(config("must be https")),
+  }
+}
+
+/// Whether `url`'s host is `localhost` or a loopback address (where plain `http` is allowed,
+/// for tests).
+pub(crate) fn is_loopback(url: &reqwest::Url) -> bool {
+  url.host_str().is_some_and(|host| {
     host.eq_ignore_ascii_case("localhost")
       || host
         .trim_start_matches('[')
         .trim_end_matches(']')
         .parse::<IpAddr>()
         .is_ok_and(|ip| ip.is_loopback())
-  });
-  match parsed.scheme() {
-    "https" => Ok(parsed),
-    "http" if loopback || allow_http => Ok(parsed),
-    "http" => Err(config(
-      "must be https (plain http only to a loopback host, or after allow_http_dangerous())",
-    )),
-    _ => Err(config("must be https")),
-  }
+  })
 }
 
 /// The usable signing keys of a JWKS document.

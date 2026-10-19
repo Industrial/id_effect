@@ -7,7 +7,7 @@
 | Need | Import path |
 |------|-------------|
 | Portable HTTP in `R` (`HttpClientService`) | `id_effect_platform::http::{execute, execute_stream, provide_reqwest_http_client}` |
-| Reqwest `RequestBuilder` pipelines, pools, JSON+Schema | `id_effect_platform::http::reqwest::{send, json_schema, provide_reqwest_client, …}` |
+| Reqwest `RequestBuilder` pipelines, pools, JSON+Schema | `id_effect_platform::http::reqwest::{send, json_schema, ReqwestClientLive, …}` |
 
 ## Migration steps
 
