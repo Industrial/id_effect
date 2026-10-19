@@ -3,11 +3,12 @@
 //!
 //! [`SecurityLayer::recommended`] bundles the secure defaults into one tower layer:
 //!
-//! - CSRF on: a random per-session token in a signed `__Host-` cookie, required on every
-//!   state-changing request (see [`csrf`]);
+//! - CSRF on: a random per-session secret in a signed `__Host-` cookie, rendered as a token
+//!   masked per response and required on every state-changing request (see [`csrf`]);
 //! - a nonce-based [`ContentSecurityPolicy::recommended`] policy (see [`csp`]);
 //! - [`SecurityHeaders::recommended`] (HSTS, `X-Frame-Options: DENY`, `nosniff`,
-//!   `Referrer-Policy`), each set only when the handler did not set it;
+//!   `Referrer-Policy`, COOP, CORP, `Permissions-Policy`), each set only when the handler did
+//!   not set it;
 //! - [`CookieDefaults::recommended`] and the [`CookieKey`] for the [`Cookies`] extractor.
 //!
 //! CORS is a separate layer built from [`CorsConfig`]. The [`CookieKey`] comes from an effect
@@ -51,9 +52,9 @@ pub use cors::CorsConfig;
 #[allow(deprecated)]
 pub use csp::csp_middleware;
 pub use csp::{ContentSecurityPolicy, CspNonce};
-pub use csrf::{CSRF_COOKIE, CSRF_FORM_FIELD, CSRF_HEADER, CsrfToken};
+pub use csrf::{CSRF_COOKIE, CSRF_FORM_FIELD, CSRF_HEADER, CsrfConfig, CsrfToken};
 #[allow(deprecated)]
-pub use csrf::{CsrfConfig, csrf_middleware, set_csrf_header};
+pub use csrf::{csrf_middleware, set_csrf_header};
 pub use headers::{FrameOptions, SecurityHeaders};
 
 use csrf::CsrfProtection;
@@ -180,6 +181,15 @@ impl SecurityLayer {
     self
   }
 
+  /// Use `config`'s form-body limit and read timeout for the CSRF check (default
+  /// [`CsrfConfig::recommended`]: 64 KiB, 10 s).
+  pub fn csrf_config(mut self, config: CsrfConfig) -> Self {
+    if let Some(csrf) = &mut self.csrf {
+      csrf.configure(&config);
+    }
+    self
+  }
+
   /// Switch CSRF protection off entirely (e.g. a pure bearer-token API with no cookies).
   pub fn without_csrf(mut self) -> Self {
     self.csrf = None;
@@ -230,8 +240,11 @@ impl SecurityLayer {
       .csp
       .as_ref()
       .and_then(|policy| csp::prepare(policy, &mut request));
-    let (outcome, set_cookie) = match &self.csrf {
-      Some(csrf) => csrf.guard(request).await,
+    let (outcome, cookie_update) = match &self.csrf {
+      Some(csrf) => {
+        let (outcome, update) = csrf.guard(request).await;
+        (outcome, Some(update))
+      }
       None => (Ok(request), None),
     };
     let mut response = match outcome {
@@ -241,6 +254,12 @@ impl SecurityLayer {
       },
       Err(rejection) => rejection,
     };
+    // Resolved after the handler ran: it may have rotated the token.
+    let set_cookie = self
+      .csrf
+      .as_ref()
+      .zip(cookie_update)
+      .and_then(|(csrf, update)| csrf.cookie_header(update));
     let headers = response.headers_mut();
     if let Some(cookie) = set_cookie {
       headers.append(header::SET_COOKIE, cookie);

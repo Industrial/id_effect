@@ -2,6 +2,16 @@
 
 ## 0.11.0 — Unreleased
 
+### Security
+
+- `id_effect_axum` `SecurityLayer` (L1, L2, L5, M4): the CSRF token is masked per response
+  (one-time pad, BREACH) and unmasked before the constant-time compare; `CsrfToken::rotate`
+  replaces the session secret (call it at login); the CSRF form read is bounded by
+  `CsrfConfig::form_limit` (64 KiB, was 2 MiB) and `read_timeout` (10 s) whatever the layer
+  order; `SecurityHeaders::recommended()` adds `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy` and a deny-list `Permissions-Policy`, each overridable. See
+  "Web: CSRF masked token format" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+
 ### Added
 
 - `id_effect_process` timers and hibernate (fault.actors #6, #8): `ProcessCtx::send_after` and

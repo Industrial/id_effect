@@ -1,17 +1,25 @@
 //! CSRF protection (synchronizer token in a signed cookie).
 //!
-//! Each client session gets a 32-byte CSPRNG token, stored in the signed [`CSRF_COOKIE`]
+//! Each client session gets a 32-byte CSPRNG secret, stored in the signed [`CSRF_COOKIE`]
 //! (`__Host-`, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`). Handlers read it with the
 //! [`CsrfToken`] extractor and render it into pages; the client echoes it on every
 //! state-changing request in the [`CSRF_HEADER`] header or the [`CSRF_FORM_FIELD`] field of an
-//! `application/x-www-form-urlencoded` body. The echoed value is compared with the cookie's in
-//! constant time ([`subtle::ConstantTimeEq`]). A forged or unsigned cookie never counts.
+//! `application/x-www-form-urlencoded` body.
 //!
+//! The rendered token is masked per response (BREACH): base64url of a fresh 32-byte one-time pad
+//! followed by the pad XOR the secret, so no two responses carry the same bytes. The echoed token
+//! is unmasked and compared with the cookie's secret in constant time
+//! ([`subtle::ConstantTimeEq`]). A forged or unsigned cookie never counts.
+//! [`CsrfToken::rotate`] replaces the secret (call it at login).
+//!
+//! A form body is read only for the urlencoded content type, up to [`CsrfConfig::form_limit`]
+//! bytes and within [`CsrfConfig::read_timeout`], whatever other layers wrap this one.
 //! Multipart bodies are not inspected: send the header from such forms.
 
 use std::convert::Infallible;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{FromRequestParts, Request, State};
@@ -19,7 +27,10 @@ use axum::http::request::Parts;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, IntoResponseParts, Response, ResponseParts};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cookie::{Cookie, CookieJar, SameSite};
+use rand::RngCore;
 use subtle::ConstantTimeEq;
 
 use super::cookies::{CookieKey, request_jar};
@@ -36,12 +47,48 @@ pub const CSRF_FORM_FIELD: &str = "csrf_token";
 /// Token entropy in bytes.
 const TOKEN_BYTES: usize = 32;
 
-/// Largest form body read to find [`CSRF_FORM_FIELD`] (axum's default body limit).
-const FORM_LIMIT: usize = 2 * 1024 * 1024;
+/// Default largest form body read to find [`CSRF_FORM_FIELD`].
+const DEFAULT_FORM_LIMIT: usize = 64 * 1024;
+
+/// Default time allowed to read that form body.
+const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Constant-time token equality (lengths are not secret).
 fn tokens_match(expected: &str, submitted: &str) -> bool {
   expected.as_bytes().ct_eq(submitted.as_bytes()).into()
+}
+
+/// A fresh session secret from the thread-local CSPRNG.
+fn random_secret() -> Arc<[u8]> {
+  let mut secret = [0u8; TOKEN_BYTES];
+  rand::rng().fill_bytes(&mut secret);
+  secret.into()
+}
+
+/// `secret` masked with a fresh one-time pad: base64url(pad || pad XOR secret).
+fn mask(secret: &[u8]) -> String {
+  let mut out = vec![0u8; secret.len() * 2];
+  let (pad, masked) = out.split_at_mut(secret.len());
+  rand::rng().fill_bytes(pad);
+  for ((m, p), s) in masked.iter_mut().zip(pad.iter()).zip(secret) {
+    *m = p ^ s;
+  }
+  URL_SAFE_NO_PAD.encode(out)
+}
+
+/// The secret inside a [`mask`]ed token, if it has the masked shape.
+fn unmask(token: &str) -> Option<Vec<u8>> {
+  let bytes = URL_SAFE_NO_PAD.decode(token).ok()?;
+  if bytes.len() != 2 * TOKEN_BYTES {
+    return None;
+  }
+  let (pad, masked) = bytes.split_at(TOKEN_BYTES);
+  Some(pad.iter().zip(masked).map(|(p, m)| p ^ m).collect())
+}
+
+/// Whether the submitted masked token carries `secret` (constant-time compare).
+fn masked_matches(secret: &[u8], submitted: &str) -> bool {
+  unmask(submitted).is_some_and(|candidate| candidate.as_slice().ct_eq(secret).into())
 }
 
 fn is_safe(method: &Method) -> bool {
@@ -55,21 +102,68 @@ fn forbidden() -> Response {
   (StatusCode::FORBIDDEN, "csrf token mismatch").into_response()
 }
 
-/// This session's CSRF token. Render it into forms ([`CSRF_FORM_FIELD`]) or hand it to scripts;
-/// returning it from a handler sets the [`CSRF_HEADER`] response header.
-#[derive(Clone, PartialEq, Eq)]
-pub struct CsrfToken(Arc<str>);
+/// Where [`CsrfToken::rotate`] leaves the new secret for the layer to set in the cookie.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Rotation(Arc<Mutex<Option<Arc<[u8]>>>>);
 
-impl CsrfToken {
-  fn generate() -> Self {
-    Self(super::random_token(TOKEN_BYTES).into())
+impl Rotation {
+  fn set(&self, secret: Arc<[u8]>) {
+    *self.0.lock().unwrap_or_else(PoisonError::into_inner) = Some(secret);
   }
 
-  /// The token text (base64url).
-  pub fn as_str(&self) -> &str {
-    &self.0
+  fn take(&self) -> Option<Arc<[u8]>> {
+    self.0.lock().unwrap_or_else(PoisonError::into_inner).take()
   }
 }
+
+/// This session's CSRF token. Render it into forms ([`CSRF_FORM_FIELD`]) or hand it to scripts;
+/// returning it from a handler sets the [`CSRF_HEADER`] response header.
+///
+/// The text is masked per request: it differs on every response and each one validates while the
+/// session cookie holds the same secret. Two tokens are equal when they carry the same secret.
+#[derive(Clone)]
+pub struct CsrfToken {
+  secret: Arc<[u8]>,
+  masked: Arc<str>,
+  rotation: Rotation,
+}
+
+impl CsrfToken {
+  fn new(secret: Arc<[u8]>, rotation: Rotation) -> Self {
+    Self {
+      masked: mask(&secret).into(),
+      secret,
+      rotation,
+    }
+  }
+
+  #[cfg(test)]
+  fn generate() -> Self {
+    Self::new(random_secret(), Rotation::default())
+  }
+
+  /// The masked token text (base64url).
+  pub fn as_str(&self) -> &str {
+    &self.masked
+  }
+
+  /// Issue a new secret for this session and return its token; the response sets it in the
+  /// CSRF cookie, so tokens rendered before (this one included) stop validating for the client.
+  /// Call it when the session's privilege changes, at login above all.
+  pub fn rotate(&self) -> CsrfToken {
+    let secret = random_secret();
+    self.rotation.set(Arc::clone(&secret));
+    Self::new(secret, self.rotation.clone())
+  }
+}
+
+impl PartialEq for CsrfToken {
+  fn eq(&self, other: &Self) -> bool {
+    self.secret[..].ct_eq(&other.secret[..]).into()
+  }
+}
+
+impl Eq for CsrfToken {}
 
 impl fmt::Debug for CsrfToken {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -120,6 +214,16 @@ pub(crate) struct CsrfProtection {
   key: CookieKey,
   exempt: Vec<String>,
   exempt_bearer: bool,
+  form_limit: usize,
+  read_timeout: Duration,
+}
+
+/// The CSRF cookie to send once the response is known: a newly issued secret, unless the handler
+/// rotated it ([`CsrfToken::rotate`]).
+#[derive(Debug, Default)]
+pub(crate) struct CookieUpdate {
+  issued: Option<Arc<[u8]>>,
+  rotation: Option<Rotation>,
 }
 
 impl CsrfProtection {
@@ -128,7 +232,14 @@ impl CsrfProtection {
       key,
       exempt: Vec::new(),
       exempt_bearer: false,
+      form_limit: DEFAULT_FORM_LIMIT,
+      read_timeout: DEFAULT_READ_TIMEOUT,
     }
+  }
+
+  pub(crate) fn configure(&mut self, config: &CsrfConfig) {
+    self.form_limit = config.form_limit;
+    self.read_timeout = config.read_timeout;
   }
 
   pub(crate) fn exempt(&mut self, prefix: String) {
@@ -149,16 +260,22 @@ impl CsrfProtection {
     })
   }
 
-  /// The session token from a correctly signed cookie, if any.
-  fn session_token(&self, headers: &HeaderMap) -> Option<CsrfToken> {
+  /// The session secret from a correctly signed cookie, if any.
+  fn session_secret(&self, headers: &HeaderMap) -> Option<Arc<[u8]>> {
     let jar = request_jar(headers);
     let cookie = jar.signed(self.key.key()).get(CSRF_COOKIE)?;
-    let value = cookie.value();
-    (!value.is_empty()).then(|| CsrfToken(value.into()))
+    let secret = URL_SAFE_NO_PAD.decode(cookie.value()).ok()?;
+    (secret.len() == TOKEN_BYTES).then(|| secret.into())
   }
 
-  fn set_cookie(&self, token: &CsrfToken) -> Option<HeaderValue> {
-    let cookie = Cookie::build((CSRF_COOKIE, token.as_str().to_owned()))
+  /// The `Set-Cookie` value for `update`, if a secret was issued or rotated.
+  pub(crate) fn cookie_header(&self, update: CookieUpdate) -> Option<HeaderValue> {
+    let rotated = update.rotation.as_ref().and_then(Rotation::take);
+    self.set_cookie(&rotated.or(update.issued)?)
+  }
+
+  fn set_cookie(&self, secret: &[u8]) -> Option<HeaderValue> {
+    let cookie = Cookie::build((CSRF_COOKIE, URL_SAFE_NO_PAD.encode(secret)))
       .path("/")
       .secure(true)
       .http_only(true)
@@ -170,65 +287,116 @@ impl CsrfProtection {
     HeaderValue::from_str(&signed.to_string()).ok()
   }
 
-  /// Resolve (or issue) the session token, store it in the request extensions and check
-  /// unsafe requests. Returns the request to run or the rejection, and the `Set-Cookie` value
-  /// to send when a new token was issued. A bearer-only request
+  /// Resolve (or issue) the session secret, store its masked [`CsrfToken`] in the request
+  /// extensions and check unsafe requests. Returns the request to run or the rejection, and the
+  /// cookie update to resolve into `Set-Cookie` once the response is known
+  /// ([`cookie_header`](Self::cookie_header)). A bearer-only request
   /// ([`SecurityLayer::csrf_exempt_bearer`](super::SecurityLayer::csrf_exempt_bearer)) skips all
   /// of it: no token, no cookie, no check.
   pub(crate) async fn guard(
     &self,
     mut request: Request,
-  ) -> (Result<Request, Response>, Option<HeaderValue>) {
+  ) -> (Result<Request, Response>, CookieUpdate) {
     if self.exempt_bearer && is_bearer_only(request.headers()) {
-      return (Ok(request), None);
+      return (Ok(request), CookieUpdate::default());
     }
-    let existing = self.session_token(request.headers());
+    let existing = self.session_secret(request.headers());
     let issued = existing.is_none();
-    let token = existing.unwrap_or_else(CsrfToken::generate);
-    let set_cookie = if issued {
-      self.set_cookie(&token)
-    } else {
-      None
+    let secret = existing.unwrap_or_else(random_secret);
+    let rotation = Rotation::default();
+    let update = CookieUpdate {
+      issued: issued.then(|| Arc::clone(&secret)),
+      rotation: Some(rotation.clone()),
     };
-    request.extensions_mut().insert(token.clone());
+    request
+      .extensions_mut()
+      .insert(CsrfToken::new(Arc::clone(&secret), rotation));
     if is_safe(request.method()) || self.is_exempt(request.uri().path()) {
-      return (Ok(request), set_cookie);
+      return (Ok(request), update);
     }
     if issued {
       // No valid session cookie: nothing the client sends can match.
-      return (Err(forbidden()), set_cookie);
+      return (Err(forbidden()), update);
     }
-    let (request, submitted) = submitted_token(request).await;
-    match submitted {
-      Some(submitted) if tokens_match(token.as_str(), &submitted) => (Ok(request), None),
-      _ => (Err(forbidden()), None),
+    match self.submitted_token(request).await {
+      Ok((request, Some(submitted))) if masked_matches(&secret, &submitted) => {
+        (Ok(request), update)
+      }
+      Ok(_) => (Err(forbidden()), update),
+      Err(unread) => (Err(unread.into_response()), update),
+    }
+  }
+
+  /// The token echoed in [`CSRF_HEADER`], else in a urlencoded form body's [`CSRF_FORM_FIELD`]
+  /// (the body is buffered and put back). The body is read only up to `form_limit` bytes and
+  /// within `read_timeout`; past either the request is rejected (413, 408).
+  async fn submitted_token(&self, request: Request) -> Result<(Request, Option<String>), Unread> {
+    if let Some(value) = request.headers().get(CSRF_HEADER) {
+      let value = value.to_str().ok().map(str::to_owned);
+      return Ok((request, value));
+    }
+    let is_form = request
+      .headers()
+      .get(header::CONTENT_TYPE)
+      .and_then(|v| v.to_str().ok())
+      .is_some_and(|ct| ct.starts_with("application/x-www-form-urlencoded"));
+    if !is_form {
+      return Ok((request, None));
+    }
+    let declared = request
+      .headers()
+      .get(header::CONTENT_LENGTH)
+      .and_then(|v| v.to_str().ok())
+      .and_then(|v| v.parse::<u64>().ok());
+    if declared.is_some_and(|len| len > self.form_limit as u64) {
+      return Err(Unread::TooLarge);
+    }
+    let (parts, body) = request.into_parts();
+    let read = axum::body::to_bytes(body, self.form_limit);
+    match tokio::time::timeout(self.read_timeout, read).await {
+      Ok(Ok(bytes)) => {
+        let token = form_field(&bytes, CSRF_FORM_FIELD);
+        Ok((Request::from_parts(parts, Body::from(bytes)), token))
+      }
+      Ok(Err(error)) if is_length_limit(&error) => Err(Unread::TooLarge),
+      Ok(Err(_)) => Err(Unread::Broken),
+      Err(_elapsed) => Err(Unread::TimedOut),
     }
   }
 }
 
-/// The token echoed in [`CSRF_HEADER`], else in a urlencoded form body's [`CSRF_FORM_FIELD`]
-/// (the body is buffered and put back).
-async fn submitted_token(request: Request) -> (Request, Option<String>) {
-  if let Some(value) = request.headers().get(CSRF_HEADER) {
-    let value = value.to_str().ok().map(str::to_owned);
-    return (request, value);
-  }
-  let is_form = request
-    .headers()
-    .get(header::CONTENT_TYPE)
-    .and_then(|v| v.to_str().ok())
-    .is_some_and(|ct| ct.starts_with("application/x-www-form-urlencoded"));
-  if !is_form {
-    return (request, None);
-  }
-  let (parts, body) = request.into_parts();
-  match axum::body::to_bytes(body, FORM_LIMIT).await {
-    Ok(bytes) => {
-      let token = form_field(&bytes, CSRF_FORM_FIELD);
-      (Request::from_parts(parts, Body::from(bytes)), token)
+/// Why the form body could not be read for its token.
+enum Unread {
+  /// Over `form_limit` (declared or read): 413.
+  TooLarge,
+  /// Not complete within `read_timeout`: 408.
+  TimedOut,
+  /// The transport failed: 403, as for a missing token.
+  Broken,
+}
+
+impl IntoResponse for Unread {
+  fn into_response(self) -> Response {
+    match self {
+      Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "csrf form body too large").into_response(),
+      Self::TimedOut => {
+        (StatusCode::REQUEST_TIMEOUT, "csrf form body read timed out").into_response()
+      }
+      Self::Broken => forbidden(),
     }
-    Err(_) => (Request::from_parts(parts, Body::empty()), None),
   }
+}
+
+/// Whether a body read failed on the length limit (not on the transport).
+fn is_length_limit(error: &axum::Error) -> bool {
+  let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+  while let Some(error) = source {
+    if error.is::<http_body_util::LengthLimitError>() {
+      return true;
+    }
+    source = error.source();
+  }
+  false
 }
 
 fn form_field(body: &[u8], name: &str) -> Option<String> {
@@ -260,18 +428,57 @@ fn percent_decode(raw: &[u8]) -> Option<String> {
   String::from_utf8(out).ok()
 }
 
-/// Shared static CSRF token (0.7).
-#[deprecated(
-  since = "0.8.0",
-  note = "a static shared token is not per-session; use `SecurityLayer::recommended(key)`"
-)]
+/// Limits of the CSRF check, installed with
+/// [`SecurityLayer::csrf_config`](super::SecurityLayer::csrf_config).
+///
+/// [`CsrfConfig::recommended`] (also `Default`) reads a urlencoded form body of at most 64 KiB
+/// within 10 s to find [`CSRF_FORM_FIELD`]; a larger body is rejected with 413, a slower one
+/// with 408. The deprecated [`CsrfConfig::new`] instead carries the 0.7 static token for
+/// [`csrf_middleware`].
 #[derive(Clone)]
 pub struct CsrfConfig {
   token: Arc<str>,
+  form_limit: usize,
+  read_timeout: Duration,
 }
 
-#[allow(deprecated)]
+impl Default for CsrfConfig {
+  fn default() -> Self {
+    Self::recommended()
+  }
+}
+
+impl fmt::Debug for CsrfConfig {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("CsrfConfig")
+      .field("form_limit", &self.form_limit)
+      .field("read_timeout", &self.read_timeout)
+      .finish_non_exhaustive()
+  }
+}
+
 impl CsrfConfig {
+  /// 64 KiB form limit, 10 s read timeout.
+  pub fn recommended() -> Self {
+    Self {
+      token: Arc::from(""),
+      form_limit: DEFAULT_FORM_LIMIT,
+      read_timeout: DEFAULT_READ_TIMEOUT,
+    }
+  }
+
+  /// Largest urlencoded form body read to find [`CSRF_FORM_FIELD`], in bytes.
+  pub fn form_limit(mut self, bytes: usize) -> Self {
+    self.form_limit = bytes;
+    self
+  }
+
+  /// Time allowed to read that form body.
+  pub fn read_timeout(mut self, timeout: Duration) -> Self {
+    self.read_timeout = timeout;
+    self
+  }
+
   /// Use `token` for validation on POST/PUT/PATCH/DELETE.
   #[deprecated(
     since = "0.8.0",
@@ -280,10 +487,12 @@ impl CsrfConfig {
   pub fn new(token: impl Into<Arc<str>>) -> Self {
     Self {
       token: token.into(),
+      ..Self::recommended()
     }
   }
 
-  /// Expected header value.
+  /// Expected header value of the deprecated [`csrf_middleware`] (empty unless built with
+  /// [`CsrfConfig::new`]; an empty token matches nothing).
   pub fn token(&self) -> &str {
     &self.token
   }
@@ -308,7 +517,9 @@ pub async fn csrf_middleware(
       .headers()
       .get(CSRF_HEADER)
       .and_then(|v| v.to_str().ok())
-      .is_some_and(|submitted| tokens_match(config.token(), submitted));
+      .is_some_and(|submitted| {
+        !config.token().is_empty() && tokens_match(config.token(), submitted)
+      });
     if !valid {
       return forbidden();
     }
@@ -369,6 +580,43 @@ mod tests {
     assert!(!tokens_match("abc", "abd"));
     assert!(!tokens_match("abc", "ab"));
     assert!(!tokens_match("abc", ""));
+  }
+
+  #[test]
+  fn mask_round_trips_with_a_fresh_pad() {
+    let secret = random_secret();
+    let (a, b) = (mask(&secret), mask(&secret));
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 86);
+    assert_eq!(unmask(&a).as_deref(), Some(&secret[..]));
+    assert!(masked_matches(&secret, &b));
+    assert!(!masked_matches(&random_secret(), &a));
+    // The unmasked cookie form and malformed text never match.
+    assert!(!masked_matches(
+      &secret,
+      &URL_SAFE_NO_PAD.encode(&secret[..])
+    ));
+    assert!(!masked_matches(&secret, "not base64!"));
+  }
+
+  #[test]
+  fn csrf_config_builders_set_limits() {
+    let config = CsrfConfig::default()
+      .form_limit(10)
+      .read_timeout(Duration::from_millis(5));
+    let mut csrf = CsrfProtection::new(CookieKey::generate());
+    assert_eq!(csrf.form_limit, DEFAULT_FORM_LIMIT);
+    csrf.configure(&config);
+    assert_eq!(csrf.form_limit, 10);
+    assert_eq!(csrf.read_timeout, Duration::from_millis(5));
+    assert_eq!(config.token(), "");
+    assert!(!format!("{config:?}").contains("token"));
+  }
+
+  #[tokio::test]
+  async fn csrf_middleware_with_empty_token_matches_nothing() {
+    let app = guarded(CsrfConfig::default());
+    assert_eq!(status(app, "POST", Some("")).await, StatusCode::FORBIDDEN);
   }
 
   #[test]

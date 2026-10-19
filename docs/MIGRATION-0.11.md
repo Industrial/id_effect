@@ -196,7 +196,31 @@ Filled by `r11-e8-3-tcp-tls`.
 
 ## Web: CSRF masked token format
 
-Filled by `r11-sec-csrf-headers`.
+`SecurityLayer`'s CSRF token is masked per response against BREACH (ADR 0013 R9; findings L1,
+L5, M4) and the default headers gain cross-origin isolation (L2).
+
+- **`CsrfToken::as_str()` is masked.** It is base64url of a fresh 32-byte pad followed by the pad
+  XOR the session secret: 86 characters instead of 43, and different on every response. Every
+  masked token of a session validates while its cookie holds the same secret, so render
+  `as_str()` into each page as before. Code that cached the token string, compared two
+  `as_str()` values, or checked its length must stop doing so; `CsrfToken`'s `==` compares the
+  secrets. The cookie format is unchanged, so sessions survive the upgrade, but a page rendered
+  by 0.10 (an unmasked 43-character token) is rejected with 403 after the deploy: reload it.
+- **`CsrfToken::rotate()`** issues a new secret, returns its token and makes the response set
+  the new cookie; tokens rendered before stop validating for that client. Call it at login
+  (`id_effect_auth` does).
+- **`CsrfConfig` is no longer deprecated:** `CsrfConfig::recommended()` (also `Default`) holds the
+  form-body limit (`form_limit`, default 64 KiB, was 2 MiB) and read timeout (`read_timeout`,
+  default 10 s), installed with `SecurityLayer::csrf_config`. A urlencoded body over the limit
+  is rejected with 413, a slower one with 408, whatever layers wrap `SecurityLayer`. Only the
+  0.7 constructor `CsrfConfig::new(token)` stays deprecated; the deprecated `csrf_middleware`
+  now refuses every unsafe request when the config's token is empty.
+- **`SecurityHeaders::recommended()`** adds `Cross-Origin-Opener-Policy: same-origin`,
+  `Cross-Origin-Resource-Policy: same-origin` and `Permissions-Policy: camera=(),
+  microphone=(), geolocation=(), payment=(), usb=()`. Pages that open OAuth popups set
+  `.cross_origin_opener_policy("same-origin-allow-popups")?`; assets embedded by other origins
+  set `.cross_origin_resource_policy("cross-origin")?` (or `same-site`); each has a
+  `without_*` switch, and a header the handler sets itself still wins.
 
 ## Node: global names (`ProcessEnvelope` gains variants)
 
