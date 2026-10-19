@@ -65,6 +65,19 @@
   validates after it. See "Auth: shared security state and rotation at login" in the
   [0.11 migration guide](docs/MIGRATION-0.11.md).
 
+### Performance
+
+- `id_effect_axum` `EffectExecutor` drives each request's root fiber inline, on the task polling
+  the handler (or middleware) future, instead of spawning it as a tokio task and awaiting it. An
+  effect that completes without suspending costs no spawn and no cross-thread wake-up; the fiber
+  goes to the executor only when the caller drops the future early (interrupted there under
+  `DropPolicy::Interrupt`, finalizers included, as before). A pinned
+  `EffectExecutorBuilder::runtime` still spawns onto that runtime. Every effect bridge uses it
+  (routing helpers, `execute*`, `run_with_env`, `Authenticate`, `Guard`), so in the
+  `gate_request` bench `axum_request_bare` went from 8.4 µs to 0.90 µs and
+  `axum_request_secure_stack` from 28.9 µs to 5.5 µs. Code inside a request effect now runs
+  inside the caller's `tracing` span and task, as an `async` handler does.
+
 ### Added
 
 - `id_effect_node` Kubernetes discovery (dist.membership #4, D18): feature `kubernetes` adds

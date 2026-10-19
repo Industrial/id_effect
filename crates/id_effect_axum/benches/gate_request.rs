@@ -8,7 +8,7 @@
 //!   `docs/benchmarks/gates.toml`. Both send the same request (peer address, API key) to an
 //!   effect handler answering `hello`; `secure_stack` puts the recommended production stack in
 //!   front of it:
-//!   [`RateLimitLayer`] (per client IP), load shedding over a concurrency cap,
+//!   [`RateLimitLayer`] (per client IP), [`LoadShedLayer`] (in-flight cap),
 //!   [`SecurityLayer::recommended`] (CSRF, CSP nonce, security headers, cookie defaults),
 //!   [`Authenticate`] (API key) and a route [`Guard`] (`authenticated()`), and the handler writes
 //!   one access line through the logger's default [`RedactionPolicy`]. The stack grows as the
@@ -23,7 +23,6 @@
 
 use axum::Router;
 use axum::body::Body;
-use axum::error_handling::HandleErrorLayer;
 use axum::extract::{ConnectInfo, State};
 use axum::http::{Request, StatusCode};
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -31,6 +30,7 @@ use http_body_util::BodyExt;
 use id_effect::{DynEnv, Effect, HNil, succeed};
 use id_effect_auth::{ApiKey, ApiKeys, AuthPrincipal, Authenticate, MemoryApiKeyStore};
 use id_effect_authz::{AuthorizeExt, Guard, authenticated};
+use id_effect_axum::middleware::LoadShedLayer;
 use id_effect_axum::{
   CapOverrideLayer, CookieKey, RateLimitLayer, RequestCaps, SecurityLayer,
   execute_with_request_caps, routing,
@@ -39,7 +39,7 @@ use id_effect_logger::EffectLogger;
 use std::convert::Infallible;
 use std::hint::black_box;
 use std::net::SocketAddr;
-use tower::{ServiceBuilder, ServiceExt};
+use tower::ServiceExt;
 
 #[derive(Clone)]
 struct AppState;
@@ -69,11 +69,6 @@ fn logged_hello(_env: &mut HNil) -> Effect<&'static str, StatusCode, HNil> {
     .info(ACCESS_LINE)
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
     .map(|()| "hello")
-}
-
-/// Load shedding answers an over-capacity request with `503`.
-async fn overloaded(_: axum::BoxError) -> StatusCode {
-  StatusCode::SERVICE_UNAVAILABLE
 }
 
 fn runtime() -> tokio::runtime::Runtime {
@@ -161,12 +156,7 @@ fn bench_axum_request(c: &mut Criterion) {
     )
     .layer(Authenticate::api_key(ApiKeys::new(keys, "bench")))
     .layer(SecurityLayer::recommended(CookieKey::generate()))
-    .layer(
-      ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(overloaded))
-        .load_shed()
-        .concurrency_limit(1024),
-    )
+    .layer(LoadShedLayer::new(1024))
     .layer(RateLimitLayer::per_second(1e9, 1e9))
     .with_state(HNil);
   group.bench_function("axum_request_secure_stack", |b| {

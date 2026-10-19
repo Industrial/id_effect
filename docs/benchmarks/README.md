@@ -129,7 +129,7 @@ Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-
 | Layer | Configuration |
 |---|---|
 | `RateLimitLayer` | per client IP, a bucket that never empties in the bench |
-| load shedding | tower `load_shed` over `concurrency_limit(1024)`, `503` when full |
+| `LoadShedLayer` | in-flight cap 1024, `503` when full |
 | `SecurityLayer::recommended` | CSRF, CSP nonce, security headers, cookie defaults |
 | `Authenticate` (id_effect_auth) | API key over `MemoryApiKeyStore` |
 | `Guard` (id_effect_authz) | `authenticated()` on the route |
