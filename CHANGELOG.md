@@ -64,6 +64,10 @@
   session id and then rotates the request's `CsrfToken`, so no CSRF token rendered before login
   validates after it. See "Auth: shared security state and rotation at login" in the
   [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_axum` `ConnectionLimits` (M1 follow-up, ADR 0013 R10):
+  `dangerous_no_header_read_timeout`, `dangerous_unlimited_connections` and
+  `dangerous_unlimited_requests_per_connection` are now recorded in the posture registry, under
+  the new `server::DANGEROUS_*` ids.
 
 ### Performance
 

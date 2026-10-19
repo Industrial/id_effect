@@ -42,9 +42,22 @@ use axum::response::Response;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
+use id_effect::observability::posture::record_dangerous;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use tower_service::Service;
+
+/// Posture id of [`ConnectionLimits::dangerous_no_header_read_timeout`] (ADR 0013 R10).
+pub const DANGEROUS_NO_HEADER_READ_TIMEOUT: &str =
+  "id_effect_axum::server::ConnectionLimits::dangerous_no_header_read_timeout";
+
+/// Posture id of [`ConnectionLimits::dangerous_unlimited_connections`] (ADR 0013 R10).
+pub const DANGEROUS_UNLIMITED_CONNECTIONS: &str =
+  "id_effect_axum::server::ConnectionLimits::dangerous_unlimited_connections";
+
+/// Posture id of [`ConnectionLimits::dangerous_unlimited_requests_per_connection`].
+pub const DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION: &str =
+  "id_effect_axum::server::ConnectionLimits::dangerous_unlimited_requests_per_connection";
 
 /// Per-connection limits of the server (slowloris and connection exhaustion). The defaults are
 /// on; each `dangerous_*` method turns one off.
@@ -95,9 +108,16 @@ impl ConnectionLimits {
   /// head slowly (or not at all), or by idling on keep-alive.
   ///
   /// **Re-opens slowloris** (finding M1 of the 0.10.1 security review): only for a server
-  /// behind a proxy that enforces its own timeout.
+  /// behind a proxy that enforces its own timeout. Recorded in the
+  /// [posture registry](id_effect::observability::posture) as
+  /// [`DANGEROUS_NO_HEADER_READ_TIMEOUT`].
   #[must_use]
   pub fn dangerous_no_header_read_timeout(mut self) -> Self {
+    record_dangerous(
+      DANGEROUS_NO_HEADER_READ_TIMEOUT,
+      "M1: no header-read timeout; a slow or silent client holds a connection open forever \
+       (slowloris)",
+    );
     self.header_read_timeout = None;
     self
   }
@@ -114,8 +134,15 @@ impl ConnectionLimits {
   ///
   /// **Re-opens connection exhaustion** (finding M1 of the 0.10.1 security review): a client
   /// opening sockets in a loop can run the process out of file descriptors and memory.
+  /// Recorded in the [posture registry](id_effect::observability::posture) as
+  /// [`DANGEROUS_UNLIMITED_CONNECTIONS`].
   #[must_use]
   pub fn dangerous_unlimited_connections(mut self) -> Self {
+    record_dangerous(
+      DANGEROUS_UNLIMITED_CONNECTIONS,
+      "M1: no connection cap; a client opening sockets in a loop exhausts file descriptors and \
+       memory",
+    );
     self.max_connections = None;
     self
   }
@@ -139,9 +166,16 @@ impl ConnectionLimits {
   ///
   /// **Loosens the keep-alive limit** (finding M1 of the 0.10.1 security review): one client
   /// may hold a connection, and its slot under [`Self::max_connections`], for as long as it
-  /// keeps sending requests.
+  /// keeps sending requests. Recorded in the
+  /// [posture registry](id_effect::observability::posture) as
+  /// [`DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION`].
   #[must_use]
   pub fn dangerous_unlimited_requests_per_connection(mut self) -> Self {
+    record_dangerous(
+      DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION,
+      "M1: no per-connection request limit; one keep-alive client holds its connection slot for \
+       as long as it keeps sending",
+    );
     self.max_requests_per_connection = None;
     self
   }
@@ -366,6 +400,32 @@ mod tests {
         .max_connections,
       Some(Semaphore::MAX_PERMITS)
     );
+  }
+
+  #[test]
+  fn dangerous_limits_are_recorded_in_the_posture_registry() {
+    use id_effect::observability::posture::dangerous_opt_outs;
+
+    let ids = [
+      DANGEROUS_NO_HEADER_READ_TIMEOUT,
+      DANGEROUS_UNLIMITED_CONNECTIONS,
+      DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION,
+    ];
+    let _ = ConnectionLimits::new()
+      .dangerous_no_header_read_timeout()
+      .dangerous_unlimited_connections()
+      .dangerous_unlimited_requests_per_connection();
+    let recorded = dangerous_opt_outs();
+    for id in ids {
+      let reopens = recorded
+        .iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, reopens)| *reopens);
+      assert!(
+        reopens.is_some_and(|r| r.starts_with("M1: ")),
+        "{id}: {reopens:?}"
+      );
+    }
   }
 
   #[test]
