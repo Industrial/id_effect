@@ -9,6 +9,7 @@ docker compose up -d db
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
 {{/if}}
 cargo run      # http://127.0.0.1:8080/health (variables: .env.example)
+id-effect dev  # rebuilds on change, with a dev certificate: https://localhost:8080 over HTTP/2 and HTTP/3
 ```
 
 If it does not start, `id-effect doctor` checks the toolchain, the id_effect versions, the
@@ -22,15 +23,45 @@ layer graph that `src/main.rs` registers.
 | `GET /hello/{name}` | a typed route: `{name}` (1 to 32 characters) is decoded through a schema; anything else is a `422` Problem+JSON |
 | `GET /health` | liveness: `200` while the process runs |
 | `GET /ready` | readiness: the `HealthRegistry` checks as JSON, `503` when one is down or once shutdown has started |
+| `POST /rpc`, `POST /rpc/{tag}`, `GET /rpc/{tag}?input=` | the `Greeter` RPC service (`src/rpc.rs`); its procedures declare their own access |
 | `GET /metrics` | Prometheus text: `http_server_requests_total` by method, route and status, runtime gauges; only for a scrape sending `Authorization: Bearer $METRICS_TOKEN` (unset: `401` to everyone) |
 
 Deny by default: every route declares who may call it. The typed routes say `.public()` or `.guard(..)`; the plain Axum routes (`/health`, `/ready`, `/metrics`) are declared in `plain_routes()`. `app()` applies the deny-by-default layer (`AccessLayer`) after the last route, so a route added without a declaration answers `404`; add it as a typed route or to `plain_routes()`.
 
 Every request passes through `SecurityLayer::recommended`: CSRF tokens on state-changing requests, a nonce-based CSP, HSTS / `X-Frame-Options` / `nosniff` headers and signed cookies (`COOKIE_KEY`). The middleware stack also gives each request an `x-request-id` (and a span), compresses responses, answers a request running past `REQUEST_TIMEOUT` with `503` and a body over `BODY_LIMIT` with `413`; rejections are RFC 9457 Problem+JSON (`application/problem+json`).
 
+## RPC
+
+`src/rpc.rs` declares a service with `#[rpc::service]`: each procedure has a kind (`#[query]`, `#[mutation]`, streams, subscriptions), typed input, output and errors, and an access decision (`#[public]` or `#[guard(G)]`; without one it does not compile). `app()` mounts it under `/rpc` next to the REST routes, on the same port and through the same middleware; RPC calls need no CSRF token because every RPC `POST` must carry `x-rpc: 1` and a JSON content type, which a cross-site form cannot send.
+
+```sh
+curl -s -H 'content-type: application/json' -H 'x-rpc: 1' -d '{"name":"Ada"}' http://127.0.0.1:8080/rpc/Greeter.greet
+```
+
+The contract is checked in: `rpc.contract.json` (`tests/rpc.rs` fails when it is stale; `UPDATE_GOLDEN=1 cargo test` rewrites it). A typed TypeScript client comes from it, with no runtime dependency:
+
+```sh
+id-effect rpc gen ts --contract rpc.contract.json --out web/src/rpc
+```
+
+```ts
+import { GreeterV1Client } from "./rpc/client.ts";
+const greeter = new GreeterV1Client({ url: "/rpc" });
+const answer = await greeter.greet({ name: "Ada" }); // { _tag: "Success", value: { message } }
+```
+
+CI (`rpc-contract` job) runs `id-effect rpc check` against the last release tag and fails on a breaking change; publish a new `version` of the service for one instead.
+
+## HTTP/3 and TLS
+
+HTTP/3 is on: `server.http3.enabled = true` in `config/base.toml` is the one switch. With a certificate the service serves TLS on TCP (HTTP/2 and HTTP/1.1) and HTTP/3 on UDP on the **same port**, and TCP responses carry `Alt-Svc: h3=":8080"`; clients move to HTTP/3 after a first TCP response and stay on HTTP/2 when UDP is blocked. TCP is always served.
+
+- **dev**: `id-effect dev` creates a localhost CA and a 13-day ECDSA certificate (rotated before it expires), prints how to trust the CA, and passes the certificate as `TLS_CERT_FILE` / `TLS_KEY_FILE` (and its SHA-256 as `ID_EFFECT_DEV_CERT_SHA256`, what a browser's WebTransport `serverCertificateHashes` takes). Plain `cargo run` serves plain HTTP.
+- **prod**: the posture check refuses HTTP/3 without a certificate, and refuses the dev certificate. Give it one — `TLS_CERT_FILE` / `TLS_KEY_FILE`, or `[server.tls]` in `config/prod.toml` (re-read when the files change), or ACME (TLS-ALPN-01 on the same TCP port: `id_effect_platform::tls::acme`, see the book chapter "Certificates and ACME") — and open UDP and TCP on the port. Behind a load balancer that terminates TLS, turn HTTP/3 off instead: `APP_SERVER__HTTP3__ENABLED=false` (`config/deploy.yml` does this for kamal-proxy) or `[server.http3] enabled = false`.
+
 ## Security posture
 
-`main.rs` runs the posture check of ADR 0013 before it serves and prints the report: console guarded, docs closed, mesh transport encrypted, redaction policy non-empty, SSRF guard on, CSRF on, load shedding on, no memory-only security state, no unaccepted opt-out. `ID_EFFECT_PROFILE` picks the profile (`dev` by default; `config/deploy.yml` sets `prod`). Under `prod` a failed probe stops the service. Every weakening of a default is a named `dangerous_*` / `insecure_*` call that records itself; to run one in `prod`, accept it with a reason in `config/prod.toml`:
+`main.rs` runs the posture check of ADR 0013 before it serves and prints the report: console guarded, docs closed, mesh transport encrypted, redaction policy non-empty, SSRF guard on, CSRF on, load shedding on, no memory-only security state, every procedure declared, realtime origins configured, 0-RTT off, QUIC Retry on, HTTP/3 only with TLS, no dev certificate, no unaccepted opt-out. `ID_EFFECT_PROFILE` picks the profile (`dev` by default; `config/deploy.yml` sets `prod`). Under `prod` a failed probe stops the service. Every weakening of a default is a named `dangerous_*` / `insecure_*` call that records itself; to run one in `prod`, accept it with a reason in `config/prod.toml`:
 
 ```toml
 [security.accepted_risks]
@@ -46,6 +77,8 @@ In the `prod` profile the console answers `401` to every request until you put r
 ## Layout
 
 - `src/lib.rs` — `app()`: the router, testable without a socket; `plain_routes()`: the access of its plain routes; `posture()`: what it states for the posture check; `serve()`: serves it, counting in-flight requests for the drain.
+- `src/rpc.rs` — the `Greeter` RPC service and `contract()`; `rpc.contract.json` is its snapshot.
+- `config/` — `base.toml` (`server.http3.enabled`), `dev.toml`, `prod.toml` (`[server.tls]`, `[security.accepted_risks]`); `ID_EFFECT_PROFILE` picks the profile, `APP_*` variables override keys.
 - `src/main.rs` — loads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS`, `MAX_IN_FLIGHT` and `COOKIE_KEY`, runs the posture check, serves until SIGINT / SIGTERM, then drains in-flight requests (for up to `SHUTDOWN_TIMEOUT_SECS`) while `/ready` answers `503` and new connections are still accepted.
 {{#if pg}}
 - `src/db.rs` — the PostgreSQL pool (`DATABASE_URL`), the migrations in `migrations/` applied on start (`id_effect_kit::sql::migrate::run`: tracked in `_id_effect_migrations`, one transaction each, an advisory lock across replicas), the `db` check behind `/ready`.
@@ -63,6 +96,7 @@ In the `prod` profile the console answers `401` to every request until you put r
 - `src/console.rs` — the operator console (`id_effect_kit::console`) on `127.0.0.1:CONSOLE_PORT` (default 9090): `/_console` (dashboard) and `/_console/api/*`, behind a guard requiring the `operator` role. In `dev` every request on the loopback listener has it; in any other profile nobody does, so the console answers `401` until real authentication is in front of the guard. It answers only to its own host: a `Host` or `Origin` outside `CONSOLE_ALLOWED_HOSTS` (default: the bind address) is answered `403`.
 {{/if}}
 - `tests/http.rs` — the routes, the security headers, readiness and metrics.
+- `tests/rpc.rs` — the RPC service over TCP and over HTTP/3 on one port (`template_service_serves_rpc_over_h3_and_tcp`), the HTTP/3 switch (`template_http3_disabled_by_one_flag`), the contract snapshot.
 - `tests/shutdown.rs` — SIGTERM: `/ready` turns `503` while an in-flight request completes.
 
 ## Run it elsewhere

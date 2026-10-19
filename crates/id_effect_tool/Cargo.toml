@@ -42,10 +42,22 @@ id_effect_tokio = { path = "../id_effect_tokio", version = "0.11.0" }
 id_effect_rpc = { path = "../id_effect_rpc", version = "0.11.0", default-features = false }
 # jiff: `migrate new` timestamps and `migrate status` times (same floor as id_effect_sql).
 jiff = "0.2.23"
+# `id-effect dev`: the localhost development CA and its 13-day ECDSA P-256 certificate
+# (WebTransport `serverCertificateHashes`), with the rcgen the platform issues certificates with;
+# sha2 for the certificate hash it prints.
+rcgen = { version = "=0.13.2", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
 serde_json = "1"
+sha2 = "=0.10.9"
 
 [dev-dependencies]
 tempfile = "3"
+# tests/dev_cert.rs: the kit's posture recognizes the dev certificate (C13), x509-parser reads
+# its validity and key back (path-only dev-dependency).
+id_effect_kit = { path = "../id_effect_kit" }
+x509-parser = "=0.18.1"
 # tests/rpc_gen_ts.rs: the test service the generated TypeScript client calls over HTTP,
 # WebSocket and SSE on loopback (path-only: cargo publish resolves path+version dev-deps).
 axum = "0.8"

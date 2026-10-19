@@ -105,19 +105,28 @@ async fn l2_template_metrics_not_public() {
 
 /// The app as generated passes the `prod` posture check (ADR 0013 R10): building it takes no
 /// opt-out, and what `posture()` states about it (CSRF on, no `/docs`, no mesh, the console
-/// guarded or absent) holds with the default in-flight cap.
+/// guarded or absent, every RPC procedure declared) holds with the default in-flight cap. With
+/// HTTP/3 on (the default) prod also needs a certificate; behind a load balancer HTTP/3 is off.
 #[test]
 fn template_service_passes_prod_posture() {
     use id_effect_kit::axum::HostConfig;
-    use id_effect_kit::posture::Posture;
+    use id_effect_kit::posture::{HTTP3_WITH_TLS, Posture};
     use {{crate_name}}::posture;
 
     let _app = test_app();
-    let stated = posture(Posture::new("prod").host(&HostConfig::default()));
+    let behind_a_proxy = HostConfig {
+        http3: false,
+        ..HostConfig::default()
+    };
+    let stated = posture(Posture::new("prod").host(&behind_a_proxy));
     let report = stated.check();
     assert!(report.passed(), "{report}");
     assert!(report.opt_outs().is_empty(), "{report}");
     assert!(report.enforce().is_ok());
+    // HTTP/3 on without a certificate is the one failure.
+    let report = posture(Posture::new("prod").host(&HostConfig::default())).check();
+    let failed: Vec<&str> = report.failures().map(|p| p.name).collect();
+    assert_eq!(failed, [HTTP3_WITH_TLS], "{report}");
 }
 
 /// Every route the app serves declares its access (ADR 0013 R1): the typed routes and
@@ -293,6 +302,51 @@ mod boot {
 {{#if console}}
             .env("CONSOLE_PORT", "0")
 {{/if}}
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut answer = None;
+        while answer.is_none() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+            answer = get_health(port);
+        }
+        child.kill().ok();
+        child.wait().ok();
+        let answer = answer.expect("no answer on /health within 30s");
+        assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    }
+
+    /// `prod` with HTTP/3 on and no certificate refuses to start; with the one switch off
+    /// (`APP_SERVER__HTTP3__ENABLED=false`, as behind kamal-proxy) it serves TCP.
+    #[test]
+    fn prod_needs_a_certificate_or_http3_off() {
+        let prod = |port: u16| {
+            let mut command = Command::new(BIN);
+            command
+                .env("ID_EFFECT_PROFILE", "prod")
+                .env("HOST", "127.0.0.1")
+                .env("PORT", port.to_string())
+{{#if console}}
+                .env("CONSOLE_PORT", "0")
+{{/if}}
+                .env_remove("TLS_CERT_FILE")
+                .env_remove("TLS_KEY_FILE")
+                .env_remove("APP_SERVER__HTTP3__ENABLED");
+            command
+        };
+        let refused = prod(1).output().unwrap();
+        assert!(!refused.status.success());
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert!(stderr.contains("HTTP/3 only with TLS"), "{stderr}");
+
+        let port = TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .unwrap()
+            .port();
+        let mut child = prod(port)
+            .env("APP_SERVER__HTTP3__ENABLED", "false")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

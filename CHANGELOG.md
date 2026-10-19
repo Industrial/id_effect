@@ -4,6 +4,26 @@
 
 ### Added
 
+- `id_effect_kit` features `rpc` (`kit::rpc`, `#[rpc::service]` and the RPC types in the prelude;
+  with `cluster` also channels and mesh RPC, with `events` event-log subscriptions), `rpc-ws`
+  (WebSocket and SSE transports), `http3` (TLS on TCP and HTTP/3 on the same port,
+  `kit::platform::tls`) and `webtransport`, all four in `full`; `cluster` also exposes
+  `kit::platform::tls`. Posture probes (`posture::check`): every procedure declared
+  (`Posture::rpc_group`, `rpc_service`, `access_report`), realtime origins configured
+  (`origin_policy`, `rpc_websocket`, `webtransport`), 0-RTT off (`http3_options`), QUIC Retry on,
+  HTTP/3 only with TLS and no `id-effect dev` certificate outside dev and test
+  (`Posture::host` reads the host's certificate, `tls_certificate`, `is_dev_certificate`). The
+  0.12 opt-outs land on their probes.
+- The `service` template serves a sample `#[rpc::service]` (`src/rpc.rs`, `rpc.contract.json`
+  kept current by its tests) next to the REST routes, with HTTP/3 on by default on the TCP port:
+  `server.http3.enabled` in `config/base.toml` is the one switch, TCP is always served, prod needs
+  certificate files (`TLS_CERT_FILE` / `[server.tls]`) or the switch off; its CI runs
+  `id-effect rpc check` against the last tag. `id-effect dev` creates a localhost development CA
+  and a 13-day ECDSA P-256 certificate (WebTransport `serverCertificateHashes`), rotates it before
+  it expires, prints the trust steps, passes it to the app, and refuses a non-dev profile;
+  `--cert-only` issues it for scripts, `--no-cert` skips it. `scripts/template-smoke.sh`
+  generates the service's TypeScript client and runs a round trip over TCP (Deno) and HTTP/3
+  (curl); `scripts/check-dangerous.sh --list` lists every opt-out and checks the 0.12 ones exist.
 - `id_effect_axum` features `ws`, `sse`, `tls`, `http3` and `webtransport`, declared once
   (tokio-tungstenite / tungstenite `=0.29.0`, the version of axum's own `ws`; h3 `=0.0.8`,
   h3-quinn `=0.0.10`, h3-webtransport `=0.1.2`; `tls`, `http3` and `webtransport` are filled in

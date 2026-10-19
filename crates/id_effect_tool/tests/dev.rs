@@ -87,6 +87,8 @@ impl Dev {
       .arg(dir)
       .args(extra)
       .env("CARGO_NET_OFFLINE", "true")
+      // The development certificate goes next to the fixture, not into the user's data dir.
+      .env("ID_EFFECT_DEV_CERT_DIR", dir.join(".dev-cert"))
       // Build into the fixture's own target/, not a shared one.
       .env_remove("CARGO_TARGET_DIR")
       .env_remove("ID_EFFECT_PROFILE")

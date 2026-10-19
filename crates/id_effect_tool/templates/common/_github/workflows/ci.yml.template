@@ -47,6 +47,31 @@ jobs:
       - run: id-effect migrate run
       - run: id-effect migrate check
 {{/if}}
+{{#if service}}
+  rpc-contract:
+    name: rpc contract compatible with the last release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The tags and the contract they shipped.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install id_effect_tool --version {{id_effect_version}} --locked
+      # `cargo test` keeps rpc.contract.json equal to the served contract (UPDATE_GOLDEN=1
+      # rewrites it); this compares it with the last release tag and fails on a breaking change.
+      # Without a tag, or with a tag from before rpc.contract.json existed, there is nothing to
+      # compare with (`rpc check` would exit 2), so the step is skipped.
+      - name: id-effect rpc check
+        run: |
+          tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -z "${tag}" ] || ! git cat-file -e "${tag}:rpc.contract.json" 2>/dev/null; then
+            echo "no released rpc.contract.json to compare with: skipped"
+            exit 0
+          fi
+          id-effect rpc check --contract rpc.contract.json --against "${tag}:rpc.contract.json"
+{{/if}}
   docker:
     name: docker build
     runs-on: ubuntu-latest

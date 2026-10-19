@@ -40,7 +40,8 @@ fn m4_template_limit_layers_wrap_security_layer() {
   ] {
     let lib = read(service(tmp.path(), name, args).join("src/lib.rs"));
     // `Router::layer` wraps what came before: a later layer is an outer one.
-    let security = position(&lib, ".layer(SecurityLayer::recommended(cookie_key))");
+    // (`.csrf_exempt("/rpc")` follows it: RPC needs `x-rpc` and a JSON body instead, C5.)
+    let security = position(&lib, ".layer(SecurityLayer::recommended(cookie_key)");
     let body_limit = position(&lib, ".layer(BodyLimitLayer::new(BODY_LIMIT))");
     let timeout = position(&lib, ".layer(TimeoutLayer::new(REQUEST_TIMEOUT))");
     assert!(

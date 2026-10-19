@@ -42,6 +42,10 @@
 //! | `logger` | `id_effect_logger` (`EffectLogger`, backends, `RedactionPolicy`) | `logger` |
 //! | `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots) | `events` |
 //! | `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`; `AccountMails`) | `auth`, `mail` |
+//! | `rpc` | `web` + `id_effect_rpc` (`#[rpc::service]`, `RpcServer` under `/rpc`, generated clients over HTTP; with `cluster`: channels and mesh RPC; with `events`: event-log subscriptions) | `rpc` |
+//! | `rpc-ws` | `rpc` + every kind over one WebSocket, subscriptions and server streams over SSE | `rpc::transport` |
+//! | `http3` | `web` + TLS on TCP and HTTP/3 on the same port (`HostConfig::http3`, on by default; with `rpc`: RPC over HTTP/3; with `http-client`: the HTTP/3 client) | `axum::server::h3` |
+//! | `webtransport` | `http3` + `rpc-ws` + RPC over WebTransport sessions | `rpc::transport::webtransport` |
 //! | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client); for `[dev-dependencies]` | `test` |
 //! | `full` | all of the above except `test` | |
 //!
@@ -63,7 +67,9 @@
 //!
 //! [`posture::Posture`] is the startup security check of ADR 0013 (R10): named probes (console
 //! guarded, docs closed, mesh encrypted, redaction, SSRF guard, CSRF, load shedding, no
-//! memory-only security state, no unaccepted opt-out) over what the app states and what the
+//! memory-only security state, every procedure declared, realtime origins configured, 0-RTT off,
+//! QUIC Retry on, HTTP/3 only with TLS, no `id-effect dev` certificate in prod, no unaccepted
+//! opt-out) over what the app states and what the
 //! posture registry recorded. The `prod` profile refuses to start on a failed probe; `dev` and
 //! `test` report and start.
 //!
@@ -156,8 +162,9 @@ pub use id_effect_console as console;
 pub use id_effect_storage as storage;
 
 /// Outbound HTTP ([`id_effect_platform`]): the `HttpClient` capability and the reqwest client;
-/// feature `http-client`.
-#[cfg(feature = "http-client")]
+/// feature `http-client`. With `cluster` or `http3`, its certificates (`platform::tls`:
+/// `NodeCertificate`, `load_ca_bundle`, `Identity`, `CertReloader`).
+#[cfg(any(feature = "http-client", feature = "cluster", feature = "http3"))]
 pub use id_effect_platform as platform;
 
 /// Structured logging ([`id_effect_logger`]) and its `RedactionPolicy`; feature `logger`.
@@ -172,6 +179,13 @@ pub use id_effect_events as events;
 /// as jobs, durable timers, signals; feature `workflow`.
 #[cfg(feature = "workflow")]
 pub use id_effect_workflow as workflow;
+
+/// Typed RPC ([`id_effect_rpc`]): `#[rpc::service]`, `RpcGroup`, `RpcServer`, the generated
+/// clients and their transports; feature `rpc` (WebSocket and SSE with `rpc-ws`, HTTP/3 with
+/// `http3`, WebTransport with `webtransport`). The macro's expansion names `::id_effect_rpc`, so
+/// keep that crate as a dependency next to the kit.
+#[cfg(feature = "rpc")]
+pub use id_effect_rpc as rpc;
 
 /// Test support ([`id_effect_test`]): containers, isolated databases, fixtures, the in-process
 /// HTTP client; feature `test`, meant for `[dev-dependencies]`.

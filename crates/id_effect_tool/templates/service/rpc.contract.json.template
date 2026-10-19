@@ -1,0 +1,63 @@
+{
+  "format": "id-effect.rpc.contract/1",
+  "services": [
+    {
+      "name": "Greeter",
+      "version": 1,
+      "description": "Greets callers; version 1 of the `Greeter` contract.",
+      "procedures": [
+        {
+          "name": "greet",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidName"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "A greeting for `name`; anyone may ask."
+        }
+      ]
+    }
+  ]
+}

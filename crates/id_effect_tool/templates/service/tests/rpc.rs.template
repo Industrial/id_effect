@@ -1,0 +1,241 @@
+//! The RPC service over TCP and HTTP/3 on one port, the HTTP/3 switch, and the checked-in
+//! contract.
+
+use std::net::SocketAddr;
+use std::time::Duration;
+
+use id_effect::{Effect, HNil};
+use id_effect_kit::axum::server::security::CookieKey;
+use id_effect_kit::axum::server::{HostTls, ServerTls};
+use id_effect_kit::axum::{HealthRegistry, HostConfig, ServerHandle, run_with_env};
+use id_effect_kit::config::Profiles;
+use id_effect_kit::platform::error::HttpError;
+use id_effect_kit::platform::http::{
+    Http3Client, HttpClient, HttpClientConfig, HttpClientService, HttpRequest, HttpResponse,
+    ReqwestHttpClient, StreamingHttpResponse,
+};
+use id_effect_kit::platform::tls::{Identity, NodeCertificate};
+use id_effect_kit::posture::{HTTP3_WITH_TLS, PROCEDURES_DECLARED, Posture, ProbeStatus};
+use id_effect_kit::rpc::RpcClient;
+use id_effect_kit::rpc::contract::assert_snapshot;
+use id_effect_kit::rpc::service::HttpTransport;
+use {{crate_name}}::rpc::{self, GreetError, GreetRequest, GreeterService};
+use {{crate_name}}::{app, posture, server_config};
+
+/// Runs a client call to its result.
+async fn run<A, E>(effect: Effect<A, E, HNil>) -> Result<A, String>
+where
+    A: Send + 'static,
+    E: std::fmt::Debug + Send + 'static,
+{
+    run_with_env(HNil, move |_| effect)
+        .await
+        .into_result()
+        .map_err(|cause| format!("{cause:?}"))
+}
+
+/// The address the test server binds and the certificate names (an IP, so the client dials
+/// exactly the address the UDP socket is bound to).
+const HOST: &str = "127.0.0.1";
+
+/// A self-signed certificate for [`HOST`] and the client settings that trust it.
+fn certificate() -> (NodeCertificate, HttpClientConfig) {
+    let cert = NodeCertificate::self_signed(HOST).expect("certificate");
+    let mut client = HttpClientConfig::default()
+        .add_root_certificate_der(cert.chain()[0].to_vec())
+        // The SSRF guard refuses loopback unless the host is exempt.
+        .allow_hosts([HOST])
+        .with_timeout(Duration::from_secs(10));
+    // A debug build on a busy machine may need more than the default 300 ms handshake budget.
+    client.http3.fallback_timeout = Duration::from_secs(5);
+    (cert, client)
+}
+
+/// Serves the app on a free loopback port, TLS on TCP and (when `http3`) HTTP/3 on UDP.
+async fn serve(cert: &NodeCertificate, http3: bool) -> ServerHandle {
+    let identity = Identity::from_certificate(cert).expect("identity");
+    let tls = ServerTls::from_identity(&identity).expect("tls");
+    let config = HostConfig {
+        bind_host: HOST.to_owned(),
+        bind_port: 0,
+        http3,
+        ..HostConfig::default()
+    }
+    .with_tls(HostTls::provided(tls));
+    let health = HealthRegistry::new();
+    ServerHandle::start(&config, app(&health, CookieKey::generate()))
+        .await
+        .expect("server starts")
+}
+
+/// The platform's HTTP/3 client sending every request over HTTP/3 to one port: no `Alt-Svc`
+/// lookup and no TCP fallback, so a call that succeeds went over QUIC.
+struct Http3Only {
+    client: Http3Client,
+    port: u16,
+}
+
+impl HttpClient for Http3Only {
+    fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
+        self.client.execute_h3(req, self.port)
+    }
+
+    fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
+        self.client.execute_stream(req)
+    }
+}
+
+fn url(addr: SocketAddr) -> String {
+    format!("https://{HOST}:{}", addr.port())
+}
+
+fn header<'a>(response: &'a HttpResponse, name: &str) -> Option<&'a str> {
+    response
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn template_service_serves_rpc_over_h3_and_tcp() {
+    let (cert, config) = certificate();
+    let server = serve(&cert, true).await;
+    let addr = server.local_addr();
+
+    // TCP (TLS, HTTP/2 or HTTP/1.1): the generated client, and Alt-Svc pointing at the same port.
+    let tcp = ReqwestHttpClient::from_config(&config);
+    let health = run(tcp.execute(HttpRequest::get(format!("{}/health", url(addr)))))
+        .await
+        .unwrap();
+    assert_eq!(health.status, 200);
+    let alt_svc = header(&health, "alt-svc").expect("Alt-Svc on TCP responses");
+    assert!(
+        alt_svc.contains(&format!("h3=\":{}\"", addr.port())),
+        "{alt_svc}"
+    );
+    let over_tcp = GreeterService::client(HttpTransport::new(
+        RpcClient::new(url(addr)),
+        HttpClientService::new(tcp),
+    ));
+    let greeting = run(over_tcp.greet(GreetRequest {
+        name: "tcp".to_owned(),
+    }))
+    .await
+    .unwrap();
+    assert_eq!(greeting.message, "hello, tcp");
+
+    // HTTP/3 on the same port number (UDP): the same client, the same typed errors.
+    let h3 = Http3Client::from_config(&config.clone().http3(true));
+    assert!(h3.http3_available());
+    let over_h3 = GreeterService::client(HttpTransport::new(
+        RpcClient::new(url(addr)),
+        HttpClientService::new(Http3Only {
+            client: h3,
+            port: addr.port(),
+        }),
+    ));
+    let greeting = run(over_h3.greet(GreetRequest {
+        name: "h3".to_owned(),
+    }))
+    .await
+    .unwrap();
+    assert_eq!(greeting.message, "hello, h3");
+    let refused = run_with_env(HNil, move |_| {
+        over_h3.greet(GreetRequest {
+            name: String::new(),
+        })
+    })
+    .await
+    .into_result()
+    .unwrap_err();
+    let typed = refused.fail_option().expect("a typed failure");
+    assert_eq!(typed.typed(), Some(&GreetError::InvalidName { max: 32 }));
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn template_http3_disabled_by_one_flag() {
+    // The template's own configuration turns HTTP/3 on.
+    let profiles = Profiles::new();
+    let config = profiles.load_for(profiles.profile("dev").unwrap()).unwrap();
+    assert!(server_config(&config, HostConfig::default()).unwrap().http3);
+
+    // `server.http3.enabled = false`: TCP only.
+    let dir = std::env::temp_dir().join(format!(
+        "{}-http3-off-{}",
+        env!("CARGO_PKG_NAME"),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("base.toml"), "[server.http3]\nenabled = false\n").unwrap();
+    let off = Profiles::new().dir(&dir).env_prefix("HTTP3_OFF_TEST_");
+    let config = off.load_for(off.profile("prod").unwrap()).unwrap();
+    let settings = server_config(&config, HostConfig::default()).unwrap();
+    assert!(!settings.http3);
+    // Behind a load balancer: no certificate, and the prod posture still starts.
+    let report = posture(Posture::new("prod").host(&settings)).evaluate(&[]);
+    assert_eq!(
+        report.probe(HTTP3_WITH_TLS).unwrap().status,
+        ProbeStatus::NotApplicable
+    );
+    assert!(report.enforce().is_ok());
+    // On without a certificate, prod refuses to start.
+    let on = HostConfig::default();
+    let report = posture(Posture::new("prod").host(&on)).evaluate(&[]);
+    assert_eq!(
+        report.probe(HTTP3_WITH_TLS).unwrap().status,
+        ProbeStatus::Fail
+    );
+    assert!(report.enforce().is_err());
+
+    // The certificate paths of `[server.tls]`, both or neither.
+    std::fs::write(
+        dir.join("prod.toml"),
+        "[server.tls]\ncert_file = \"/etc/tls/cert.pem\"\nkey_file = \"/etc/tls/key.pem\"\n",
+    )
+    .unwrap();
+    let config = off.load_for(off.profile("prod").unwrap()).unwrap();
+    let settings = server_config(&config, HostConfig::default()).unwrap();
+    assert_eq!(
+        settings.tls,
+        Some(HostTls::files("/etc/tls/cert.pem", "/etc/tls/key.pem"))
+    );
+    std::fs::write(
+        dir.join("prod.toml"),
+        "[server.tls]\ncert_file = \"/etc/tls/cert.pem\"\n",
+    )
+    .unwrap();
+    let config = off.load_for(off.profile("prod").unwrap()).unwrap();
+    assert!(server_config(&config, HostConfig::default()).is_err());
+
+    // Served with the flag off: TCP answers, without Alt-Svc.
+    let (cert, client) = certificate();
+    let server = serve(&cert, false).await;
+    let tcp = ReqwestHttpClient::from_config(&client);
+    let health = run(tcp.execute(HttpRequest::get(format!(
+        "{}/health",
+        url(server.local_addr())
+    ))))
+    .await
+    .unwrap();
+    assert_eq!(health.status, 200);
+    assert_eq!(header(&health, "alt-svc"), None);
+    server.shutdown().await;
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn every_procedure_is_declared() {
+    let report = posture(Posture::new("prod")).evaluate(&[]);
+    let probe = report.probe(PROCEDURES_DECLARED).unwrap();
+    assert_eq!(probe.status, ProbeStatus::Pass, "{report}");
+}
+
+/// `rpc.contract.json` is the served contract; `UPDATE_GOLDEN=1 cargo test` rewrites it, and
+/// CI's `id-effect rpc check` compares it with the last release.
+#[test]
+fn contract_snapshot_is_current() {
+    assert_snapshot(&rpc::contract(), "rpc.contract.json");
+}

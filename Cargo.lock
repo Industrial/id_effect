@@ -2792,10 +2792,12 @@ dependencies = [
  "id_effect_opentelemetry",
  "id_effect_platform",
  "id_effect_redis",
+ "id_effect_rpc",
  "id_effect_sql",
  "id_effect_storage",
  "id_effect_test",
  "id_effect_workflow",
+ "rcgen 0.13.2",
  "tokio",
  "tower",
 ]
@@ -3156,14 +3158,18 @@ dependencies = [
  "clap",
  "id_effect",
  "id_effect_axum",
+ "id_effect_kit",
  "id_effect_rpc",
  "id_effect_sql",
  "id_effect_tokio",
  "jiff",
+ "rcgen 0.13.2",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "x509-parser",
 ]
 
 [[package]]
@@ -5346,7 +5352,6 @@ name = "security_compile_fail"
 version = "0.11.0"
 dependencies = [
  "axum",
- "id_effect_axum",
  "id_effect_kit",
  "id_effect_rpc",
  "serde_json",

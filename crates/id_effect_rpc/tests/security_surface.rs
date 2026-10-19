@@ -61,10 +61,7 @@ fn declares_fn(text: &str, name: &str) -> bool {
 
 /// Ids of the Security table whose leaf lands after this one (wave 5 in parallel, wave 6); the
 /// exit gate (`r12-w8-kpis`) runs with this list empty.
-const PENDING: &[(&str, &str)] = &[(
-  "posture_prod_refuses_dev_certificate",
-  "r12-w6-kit-template",
-)];
+const PENDING: &[(&str, &str)] = &[];
 
 /// The backticked test ids of the Enforcement-point column of the Security table: snake_case
 /// with at least one `_`, not an opt-out name.

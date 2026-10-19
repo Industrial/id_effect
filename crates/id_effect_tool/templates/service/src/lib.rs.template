@@ -1,7 +1,9 @@
 //! {{name}}: an HTTP service on id_effect with secure defaults, health, readiness and metrics.
 //!
-//! [`app`] assembles the router; `main.rs` loads the configuration and [`serve`]s it until
-//! SIGINT or SIGTERM.
+//! [`app`] assembles the router: the REST routes and the [`rpc`] service under `/rpc`;
+//! `main.rs` loads the configuration and [`serve`]s it until SIGINT or SIGTERM, over TCP (HTTP/1.1
+//! and HTTP/2) and, with a certificate, HTTP/3 on the same port ([`server_config`],
+//! `server.http3.enabled`).
 
 use std::convert::Infallible;
 {{#if otel}}
@@ -13,6 +15,7 @@ use axum::Router;
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode, header};
 use axum::response::IntoResponse;
+use id_effect::DynEnv;
 use id_effect::schema::{self, HasSchema, Schema};
 {{#if !otel}}
 use id_effect::{Counter, Effect, succeed};
@@ -27,11 +30,15 @@ use id_effect_kit::axum::middleware::{
 use id_effect_kit::axum::route::{
     self, AccessLayer, GuardFuture, Input, Route, RouteAccess, RouteGuard, RouteInfo,
 };
+use id_effect_kit::axum::server::HostTls;
 use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
 use id_effect_kit::axum::{
-    HealthRegistry, Host, HostError, Problem, serve_router, track_in_flight,
+    HealthRegistry, Host, HostConfig, HostError, Problem, serve_router, track_in_flight,
 };
+use id_effect_kit::config::{ConfigError, ProfiledConfig};
 use id_effect_kit::posture::{Posture, Surface};
+
+pub mod rpc;
 
 {{#if console}}
 pub mod console;
@@ -180,7 +187,12 @@ pub fn plain_routes() -> [RouteInfo; 3] {
 /// `main.rs` passes the profile, its accepted risks and the server's in-flight cap, then
 /// refuses to start the `prod` profile on a failed probe.
 pub fn posture(posture: Posture) -> Posture {
-    let posture = posture.csrf(true).docs(Surface::Absent).no_mesh();
+    let posture = posture
+        .csrf(true)
+        .docs(Surface::Absent)
+        .no_mesh()
+        // Every RPC procedure declares public or guarded (C1).
+        .rpc_group(&rpc::GreeterService::group(rpc::Greetings));
 {{#if console}}
     posture.console(Surface::Guarded)
 {{/if}}
@@ -232,17 +244,23 @@ fn with_request_ids(
                 .path::<Name>()
                 .handler(hello),
         );
-    // Serves the typed routes and `plain_routes()` only. A plain route merged without an entry
-    // there answers 404, so keep the `route_layer` after the last route.
-    let access = AccessLayer::new(typed.routes().chain(&plain_routes()));
+    // The RPC service under `/rpc` (declared public routes; each procedure's own access
+    // decision runs per call).
+    let rpc = rpc::GreeterService::mount(route::Router::new(), rpc::Greetings);
+    // Serves the typed routes, the RPC routes and `plain_routes()` only. A plain route merged
+    // without an entry there answers 404, so keep the `route_layer` after the last route.
+    let access = AccessLayer::new(typed.routes().chain(rpc.routes()).chain(&plain_routes()));
     Router::new()
         .merge(typed.into_axum())
         .merge(guarded_metrics_router(MetricsToken::from_env()))
         .with_state(AppState::default())
+        .merge(rpc.into_axum().with_state(DynEnv::new()))
         .merge(health.routes())
         .route_layer(access)
         // Innermost first: the limits wrap the security layer, whose CSRF check reads forms.
-        .layer(SecurityLayer::recommended(cookie_key))
+        // `/rpc` needs no CSRF token: every RPC POST must carry `x-rpc: 1` and a JSON (or
+        // postcard) content type, which a cross-site form cannot send (ADR 0014 C5).
+        .layer(SecurityLayer::recommended(cookie_key).csrf_exempt(RPC_PATH))
         .layer(BodyLimitLayer::new(BODY_LIMIT))
         .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
         .layer(http_metrics_layer())
@@ -253,6 +271,74 @@ fn with_request_ids(
 {{#if otel}}
         .layer(request_ids)
 {{/if}}
+}
+
+/// Where the RPC routes are mounted.
+pub const RPC_PATH: &str = "/rpc";
+
+/// The one HTTP/3 switch (ADR 0014 D4): `server.http3.enabled` in `config/<profile>.toml`
+/// (default `true`; `APP_SERVER__HTTP3__ENABLED=false` in the environment). Off, the service
+/// serves TCP only and sends no `Alt-Svc`: for a deployment behind a load balancer that
+/// terminates TLS or HTTP/3 itself.
+pub const HTTP3_ENABLED_KEY: &str = "server.http3.enabled";
+
+/// The certificate chain (PEM) in the profile, used when `TLS_CERT_FILE` is not set.
+pub const TLS_CERT_FILE_KEY: &str = "server.tls.cert_file";
+
+/// The private key (PEM) in the profile, used when `TLS_KEY_FILE` is not set.
+pub const TLS_KEY_FILE_KEY: &str = "server.tls.key_file";
+
+/// The server settings: `host` (from `HOST`, `PORT`, `TLS_CERT_FILE`, … in the environment)
+/// with what the profile's configuration says about HTTP/3 ([`HTTP3_ENABLED_KEY`]) and, when
+/// the environment names no certificate, the certificate files ([`TLS_CERT_FILE_KEY`],
+/// [`TLS_KEY_FILE_KEY`]). TCP is always served; HTTP/3 shares its port (UDP) when it is enabled
+/// and there is a certificate. `id-effect dev` passes its development certificate in the
+/// environment, so the `dev` profile serves HTTPS and HTTP/3 out of the box.
+///
+/// # Errors
+///
+/// A value of the wrong type, or only one of the two certificate files.
+#[allow(clippy::result_large_err)]
+pub fn server_config(config: &ProfiledConfig, host: HostConfig) -> Result<HostConfig, ConfigError> {
+    let figment = config.figment();
+    let read = |key: &str| -> Result<Option<String>, ConfigError> {
+        if figment.contains(key) {
+            figment
+                .extract_inner::<String>(key)
+                .map(Some)
+                .map_err(ConfigError::from)
+        } else {
+            Ok(None)
+        }
+    };
+    let mut host = host;
+    host.http3 = if figment.contains(HTTP3_ENABLED_KEY) {
+        figment
+            .extract_inner::<bool>(HTTP3_ENABLED_KEY)
+            .map_err(ConfigError::from)?
+    } else {
+        true
+    };
+    if host.tls.is_none() {
+        match (read(TLS_CERT_FILE_KEY)?, read(TLS_KEY_FILE_KEY)?) {
+            (Some(cert), Some(key)) => host.tls = Some(HostTls::files(cert, key)),
+            (None, None) => {}
+            (cert, _) => {
+                let missing = if cert.is_none() {
+                    TLS_CERT_FILE_KEY
+                } else {
+                    TLS_KEY_FILE_KEY
+                };
+                return Err(ConfigError::Invalid {
+                    path: missing.into(),
+                    value: String::new(),
+                    reason: "set both server.tls.cert_file and server.tls.key_file, or neither"
+                        .into(),
+                });
+            }
+        }
+    }
+    Ok(host)
 }
 
 /// Serves `app` on `host` until SIGINT / SIGTERM (run it with

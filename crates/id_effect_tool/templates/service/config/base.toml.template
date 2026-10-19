@@ -1,0 +1,11 @@
+# Settings every profile shares. config/<profile>.toml (dev, test, prod; ID_EFFECT_PROFILE picks
+# one) overrides them, and APP_* variables override both: APP_SERVER__HTTP3__ENABLED=false sets
+# server.http3.enabled.
+
+[server.http3]
+# HTTP/3 next to TCP on the same port (UDP and TCP share the port number, so one firewall rule
+# covers both). TCP is always on; clients upgrade through Alt-Svc and fall back to HTTP/2 when
+# UDP is blocked. HTTP/3 needs a certificate (TLS_CERT_FILE / TLS_KEY_FILE or [server.tls]).
+# The one switch: false serves TCP only, e.g. behind a load balancer that terminates TLS or
+# HTTP/3 itself.
+enabled = true

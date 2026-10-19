@@ -1,0 +1,15 @@
+# The prod profile (ID_EFFECT_PROFILE=prod). It refuses to start on a failed posture probe, so
+# with server.http3.enabled = true (config/base.toml) it needs a certificate: TLS_CERT_FILE and
+# TLS_KEY_FILE in the environment, or the two paths below (re-read when they change). Behind a
+# load balancer that terminates TLS, turn HTTP/3 off instead:
+#
+# [server.http3]
+# enabled = false
+
+# [server.tls]
+# cert_file = "/etc/{{name}}/tls/cert.pem"
+# key_file = "/etc/{{name}}/tls/key.pem"
+
+# Opt-outs of a secure default (`dangerous_*`) accepted for this profile, each with a reason:
+# [security.accepted_risks]
+# "id_effect_axum::HostConfig::dangerous_no_load_shedding" = "the proxy caps concurrency; reviewed 2026-10"

@@ -1,0 +1,6 @@
+# The dev profile (the default). `id-effect dev` creates a localhost development certificate
+# (13 days, rotated before it expires) and passes it as TLS_CERT_FILE / TLS_KEY_FILE, so the
+# service answers https://localhost:8080 over HTTP/2 and HTTP/3. Without it (plain `cargo run`)
+# the service serves plain HTTP and the posture report says HTTP/3 has no certificate.
+#
+# The prod profile refuses that certificate (posture probe "no dev certificate").

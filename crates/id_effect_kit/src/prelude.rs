@@ -22,6 +22,13 @@
 //! | `id_effect_console` | `Console`, `ConsoleConfig` | `console` |
 //! | `id_effect_storage` | `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore`, `MemoryStore` | `storage` |
 //! | `id_effect_events` | `EventStore`, `EventStoreError`, `Projection`, `SqlEventJournal` | `events` |
+//! | `id_effect_rpc` | the crate as `rpc` (`#[rpc::service]`), `RpcErrorUnion` (trait and derive), `RpcGroup`, `RpcServer`, `RpcClient`, `Duplex`, `Subscription`, `SubscriptionItem`, `Cursor` | `rpc` |
+//!
+//! Inside `#[rpc::service]`, the procedure attributes need no import: the macro reads
+//! `#[query]`, `#[mutation]`, `#[server_stream]`, `#[client_stream]`, `#[bidi]`,
+//! `#[subscription]`, and the access decision `#[public]` or `#[guard(G)]` (C1: a procedure
+//! without one does not compile). Its expansion names `::id_effect_rpc`, so a project keeps
+//! `id_effect_rpc` as a dependency next to the kit (as it keeps `id_effect` for the derives).
 //!
 //! `Router` is the typed router of `id_effect_axum::route` (it records every route for OpenAPI
 //! and `/_routes`); an explicit `use axum::Router;` still wins over the glob. `Problem` is
@@ -124,3 +131,13 @@ pub use id_effect_storage::{LocalStore, MemoryStore, ObjectStorage, ObjectStore,
 
 #[cfg(feature = "events")]
 pub use id_effect_events::{EventStore, EventStoreError, Projection, SqlEventJournal};
+
+/// The RPC crate as `rpc`, so `#[rpc::service]` reads as in the book; feature `rpc`.
+#[cfg(feature = "rpc")]
+pub use id_effect_rpc as rpc;
+#[cfg(feature = "rpc")]
+pub use id_effect_rpc::wire::Cursor;
+#[cfg(feature = "rpc")]
+pub use id_effect_rpc::{
+  Duplex, RpcClient, RpcErrorUnion, RpcGroup, RpcServer, Subscription, SubscriptionItem,
+};

@@ -6,12 +6,17 @@ error[E0277]: the trait bound `&str: RouteGuard` is not satisfied
    |                                                    |
    |                                                    required by a bound introduced by this call
    |
-help: the trait `RouteGuard` is implemented for `Guard`
-  --> $WORKSPACE/crates/id_effect_authz/src/guard.rs
+help: the following other types implement trait `RouteGuard`
+  --> $WORKSPACE/crates/id_effect_rpc/src/transport/mesh.rs
+   |
+   | impl RouteGuard for MeshPeerGuard {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MeshPeerGuard`
+   |
+  ::: $WORKSPACE/crates/id_effect_authz/src/guard.rs
    |
    | impl RouteGuard for Guard {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^
-note: required by a bound in `Route::<P, Q, H, B, A>::guard`
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Guard`
+note: required by a bound in `id_effect_kit::prelude::Route::<P, Q, H, B, A>::guard`
   --> $WORKSPACE/crates/id_effect_axum/src/route/mod.rs
    |
    |   pub fn guard(mut self, guard: impl RouteGuard) -> Route<P, Q, H, B, Guarded> {

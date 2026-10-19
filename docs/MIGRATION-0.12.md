@@ -268,4 +268,24 @@ let json = id_effect_rpc::openapi::to_json(&Todos::document(), &OpenApiOptions::
 
 ## Templates: `server.http3` in the `service` template
 
+New projects get it; an existing 0.11 service takes it in four steps:
+
+- `Cargo.toml`: kit features `rpc` and `http3` next to `web`, and `id_effect_rpc` as a dependency
+  (the `#[rpc::service]` expansion names it).
+- `config/base.toml`: `[server.http3] enabled = true` (or `false` behind a load balancer that
+  terminates TLS; `APP_SERVER__HTTP3__ENABLED=false` in the environment does the same).
+  `src/lib.rs` `server_config()` applies it, and `[server.tls] cert_file` / `key_file` when the
+  environment names no certificate; `main.rs` sets `host.config` to that before serving.
+- The prod posture now refuses HTTP/3 without a certificate (probe "HTTP/3 only with TLS") and
+  the `id-effect dev` certificate (probe "no dev certificate", C13): give prod certificate files
+  or ACME, or turn HTTP/3 off. `config/deploy.yml` sets `APP_SERVER__HTTP3__ENABLED: "false"`
+  for kamal-proxy, which terminates TLS.
+- `id-effect dev` now issues a development certificate and passes `TLS_CERT_FILE` /
+  `TLS_KEY_FILE` to the app (`--no-cert` keeps the 0.11 behaviour), and refuses to start with
+  `ID_EFFECT_PROFILE` set to anything but `dev`.
+
+The kit posture report has six more probes (`posture::PROBES` grows from 9 to 15); code that
+matched on the list length or order updates. `kit::node::transport::certs` users (the 0.11
+`cluster` template) import `kit::platform::tls` instead (`cluster` now exposes it).
+
 ## Semver report: each reported break and its entry
