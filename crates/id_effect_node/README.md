@@ -10,8 +10,9 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 |------|------|
 | `NodeId` | Wire identity: logical `name@host` plus a 128-bit boot incarnation |
 | `Cookie`, `handshake` | Mutual HMAC-SHA256 challenge/response; the cookie never crosses the wire |
-| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited), `QuicTransport` (feature `quic`) |
-| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, protocol v2) |
+| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited; TLS 1.3 with feature `tls-tcp`), `QuicTransport` (feature `quic`) |
+| `transport::certs` | Node certificates from PEM files, CA bundles, `CertReloader` for rotation (features `quic`, `tls-tcp`) |
+| `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, `PROTOCOL_VERSION` 3) |
 | `Membership` | SWIM membership via [`foca`], sans-io: the caller owns time and the network. `TimerWheel` drives it in tests; `NodeMonitors` fans out `NodeUp` / `NodeDown` / `Rejoined` |
 | `Mesh`, `BehaviorRegistry` | Remote spawn / cast / call / monitor / link over sessions or the in-process `MeshFabric` |
 | `ProcessGroups` / `OrSwot` | AP process groups as an ORSWOT CRDT; `fanout_cast` sends to every member |
@@ -26,16 +27,37 @@ Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
 them into a program, or run them at the edge with `block_on`.
 
 Delivery between nodes is **at-most-once**, ordered per connection, and dropped on disconnect.
-The handshake authenticates but does not encrypt: use the QUIC transport or a trusted network
-for confidentiality. `TcpTransport` is plaintext and logs a warning saying so. A QUIC dialer needs
-roots or pinned certificate fingerprints (`QuicConfig::with_pinned_server_cert_sha256`);
-`dangerous_accept_any_server_cert()` is the explicit opt-out.
+
+## Trust model
+
+The network transports are encrypted and mutually authenticated by default (ADR 0013 R8). QUIC
+(`QuicConfig`) and TCP (`TcpTransport::tls` with a `TlsTcpConfig`) both run TLS 1.3 with mutual
+TLS: every node presents a certificate in both directions and verifies its peer's, against the
+cluster CA (`with_client_verification(load_ca_bundle(..)?)`) or pinned SHA-256 fingerprints
+(`with_pinned_peer_cert_sha256`). There is no default trust: without roots or pins a dialer
+refuses to dial and a listener refuses to bind. Certificates load from operator-issued PEM files
+(`NodeCertificate::from_pem_files`), and a `CertReloader` rotates them for new connections
+without a restart.
+
+On top of TLS, the cookie handshake proves cluster membership; its proof is bound to the TLS
+channel (exporter secret), so a man-in-the-middle cannot relay it. The handshake itself
+authenticates but does not encrypt.
+
+Every weakening is a named opt-out recorded in the posture registry
+(`id_effect::observability::posture`): `dangerous_accept_any_server_cert()` and
+`dangerous_no_client_auth()` on either TLS config, and `TcpTransport::dangerous_plaintext()`,
+which exists only with the feature `insecure-plaintext-tcp`: frames then cross the network
+unencrypted, and an on-path host can read, relay or inject them. `Cookie::dangerous_allow_short()`
+likewise records itself.
 
 ## Feature flags
 
 | Feature | Enables |
 |---------|---------|
-| `quic` | `transport::quic::QuicTransport` (quinn + rustls; self-signed certs via rcgen) |
+| `quic` | `transport::quic::QuicTransport` (quinn + rustls, mutual TLS) |
+| `tls-tcp` | `TcpTransport::tls` and `transport::tls_tcp::TlsTcpConfig` (tokio-rustls, mutual TLS) |
+| `insecure-plaintext-tcp` | `TcpTransport::dangerous_plaintext()` (unencrypted, recorded opt-out) |
+| `kubernetes` | Kubernetes discovery from the in-cluster API |
 | `pg` | `PgAdvisoryLease`: Postgres session advisory locks for `ClusterSingleton` |
 
 ## Quick start: two nodes over the in-memory transport

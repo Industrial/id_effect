@@ -137,6 +137,10 @@ required-features = ["quic"]
 name = "transport_tls"
 required-features = ["quic"]
 
+[[test]]
+name = "transport_tcp_tls"
+required-features = ["tls-tcp"]
+
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh
 tier = "runtime"

@@ -3,9 +3,17 @@
 //! Three implementations per ADR 0009:
 //! - [`memory::InMemoryTransport`] — first-class, deterministic, supports
 //!   scripted partitions (the chaos-test backbone).
-//! - [`tcp`] — length-delimited frames over Tokio TCP (the fallback).
+//! - [`tcp`] — length-delimited frames over Tokio TCP: `TcpTransport::tls`
+//!   (feature `tls-tcp`, TLS 1.3 with mutual auth; configured in `tls_tcp`).
 //! - `quic` (feature `quic`) — quinn + rustls with mutual TLS (the
 //!   production path).
+//!
+//! **Encrypted by default** (dist.tls#2, ADR 0013 R8): every constructor of
+//! a network transport is mutual TLS, and a transport without a way to
+//! verify its peers refuses to dial or listen. The only plaintext network
+//! path is `TcpTransport::dangerous_plaintext`, which exists only with the
+//! feature `insecure-plaintext-tcp` and records the opt-out in the posture
+//! registry ([`id_effect::observability::posture`]).
 //!
 //! Certificates for the encrypted transports (PEM loading, CA bundles,
 //! reload on rotation) live in `certs` (features `quic`, `tls-tcp`).
@@ -22,6 +30,8 @@ pub mod tcp;
 pub mod certs;
 #[cfg(feature = "quic")]
 pub mod quic;
+#[cfg(feature = "tls-tcp")]
+pub mod tls_tcp;
 
 /// Transport-level failure.
 #[derive(Debug, thiserror::Error)]

@@ -4,16 +4,16 @@
 
 use std::time::Duration;
 
-use id_effect_node::handshake::{
-  Cookie, CookieError, HandshakeError, MIN_COOKIE_BYTES, PRE_AUTH_MAX_FRAME_BYTES,
-};
+use id_effect_node::handshake::{Cookie, CookieError, HandshakeError, MIN_COOKIE_BYTES};
 use id_effect_node::id::NodeId;
 use id_effect_node::session::{Session, SessionError};
+use id_effect_node::transport::Transport;
+#[cfg(any(feature = "quic", feature = "insecure-plaintext-tcp"))]
+use id_effect_node::transport::TransportError;
 use id_effect_node::transport::memory::MemoryNetwork;
+#[cfg(feature = "insecure-plaintext-tcp")]
 use id_effect_node::transport::tcp::TcpTransport;
-use id_effect_node::transport::{Transport, TransportError};
 use id_effect_node::wire::{Frame, HandshakeMsg, PROTOCOL_VERSION, decode, encode};
-use tokio::io::AsyncWriteExt;
 
 const SECRET: &str = "a-cluster-cookie-of-at-least-32-bytes";
 
@@ -333,9 +333,17 @@ async fn m9_handshake_times_out() {
   drop(silent);
 }
 
+// Raw bytes onto the socket: the plaintext TCP opt-out.
+#[cfg(feature = "insecure-plaintext-tcp")]
 #[tokio::test]
 async fn m9_oversized_pre_auth_frame_rejected() {
-  let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+  use id_effect_node::handshake::PRE_AUTH_MAX_FRAME_BYTES;
+  use tokio::io::AsyncWriteExt;
+
+  let listener = TcpTransport::dangerous_plaintext()
+    .listen("127.0.0.1:0")
+    .await
+    .expect("bind");
   let addr = listener.local_addr();
   let (raw, accepted) = tokio::join!(tokio::net::TcpStream::connect(&addr), listener.accept());
   let mut raw = raw.expect("raw dial");
@@ -359,11 +367,13 @@ async fn m9_oversized_pre_auth_frame_rejected() {
   );
 }
 
+#[cfg(feature = "insecure-plaintext-tcp")]
 #[tokio::test]
 async fn m9_frame_cap_lifts_after_authentication() {
-  let listener = TcpTransport.listen("127.0.0.1:0").await.expect("bind");
+  let tcp = TcpTransport::dangerous_plaintext();
+  let listener = tcp.listen("127.0.0.1:0").await.expect("bind");
   let addr = listener.local_addr();
-  let (dial, accept) = tokio::join!(TcpTransport.connect(&addr), listener.accept());
+  let (dial, accept) = tokio::join!(tcp.connect(&addr), listener.accept());
   let (a, b, cookie) = (id("a@test", 1), id("b@test", 2), cookie());
   let (to_b, to_a) = tokio::join!(
     Session::initiate(dial.expect("dial"), &a, &cookie),

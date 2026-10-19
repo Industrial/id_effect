@@ -80,8 +80,20 @@ with one the operator has not accepted.
 | `QuicConfig::dangerous_accept_any_server_cert()` | `id_effect_node::QuicConfig::dangerous_accept_any_server_cert` | Any on-path host can terminate the dialer's TLS session. |
 | `QuicConfig::dangerous_no_client_auth()` | `id_effect_node::QuicConfig::dangerous_no_client_auth` | The listener accepts peers without a certificate; membership rests on the cookie alone. |
 
-TCP (`TcpTransport`) is still plaintext. TLS over TCP with the same certificates, and plaintext
-TCP only behind the `insecure-plaintext-tcp` feature, follow in a later 0.11 change.
+TCP has the same model (feature `tls-tcp`):
+
+```rust,ignore
+let tcp = TcpTransport::tls(TlsTcpConfig::from_reloader(&files).with_client_verification(roots));
+```
+
+That carries the frames in TLS 1.3 with mutual auth, with the same certificate types, the same
+trust options and opt-outs (posture ids
+`id_effect_node::TlsTcpConfig::dangerous_*`), and a channel binding for the cookie proof. Its
+listener runs TLS handshakes in the background with a timeout, so a silent peer cannot stall it.
+Plaintext TCP exists only with the feature `insecure-plaintext-tcp`, as
+`TcpTransport::dangerous_plaintext()` (posture id
+`id_effect_node::TcpTransport::dangerous_plaintext`). Tests:
+`crates/id_effect_node/tests/transport_tcp_tls.rs`.
 
 **Runnable example:** `cargo run -p id_effect_node --features quic --example 134_mtls_cluster`
 (two nodes from PEM files, a node from another CA refused, a certificate rotated under a running

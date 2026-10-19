@@ -61,7 +61,7 @@ use bytes::Bytes;
 use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, ServerConfig};
 use tokio::sync::Mutex;
 
-use super::certs::{self, CertError, CertReloader, Identity, NodeCertificate, sha256};
+use super::certs::{self, CertError, CertReloader, Identity, NodeCertificate};
 use super::{Connection, Listener, Transport, TransportError};
 use crate::handshake::CHANNEL_BINDING_LABEL;
 use crate::transport::tcp::{MAX_FRAME_BYTES, frame_within_limit};
@@ -270,178 +270,6 @@ impl QuicConfig {
   }
 }
 
-/// Accepts any server certificate; only behind
-/// [`QuicConfig::dangerous_accept_any_server_cert`]. Its signature checks
-/// are shared with [`PinnedCert`] and [`PinnedClientCert`].
-#[derive(Debug)]
-struct AcceptAnyCert(Arc<rustls::crypto::CryptoProvider>);
-
-/// Accepts only pinned leaf certificates, after the root check when roots
-/// are configured too.
-#[derive(Debug)]
-struct PinnedCert {
-  pins: Vec<[u8; 32]>,
-  roots: Option<Arc<rustls::client::WebPkiServerVerifier>>,
-  signatures: AcceptAnyCert,
-}
-
-impl rustls::client::danger::ServerCertVerifier for PinnedCert {
-  fn verify_server_cert(
-    &self,
-    end_entity: &rustls::pki_types::CertificateDer<'_>,
-    intermediates: &[rustls::pki_types::CertificateDer<'_>],
-    server_name: &rustls::pki_types::ServerName<'_>,
-    ocsp: &[u8],
-    now: rustls::pki_types::UnixTime,
-  ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-    if let Some(roots) = &self.roots {
-      roots.verify_server_cert(end_entity, intermediates, server_name, ocsp, now)?;
-    }
-    if self.pins.contains(&sha256(end_entity)) {
-      Ok(rustls::client::danger::ServerCertVerified::assertion())
-    } else {
-      Err(rustls::Error::InvalidCertificate(
-        rustls::CertificateError::ApplicationVerificationFailure,
-      ))
-    }
-  }
-
-  fn verify_tls12_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    self.signatures.verify_tls12_signature(message, cert, dss)
-  }
-
-  fn verify_tls13_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    self.signatures.verify_tls13_signature(message, cert, dss)
-  }
-
-  fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-    self.signatures.supported_verify_schemes()
-  }
-}
-
-impl rustls::client::danger::ServerCertVerifier for AcceptAnyCert {
-  fn verify_server_cert(
-    &self,
-    _end_entity: &rustls::pki_types::CertificateDer<'_>,
-    _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-    _server_name: &rustls::pki_types::ServerName<'_>,
-    _ocsp: &[u8],
-    _now: rustls::pki_types::UnixTime,
-  ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-    Ok(rustls::client::danger::ServerCertVerified::assertion())
-  }
-
-  fn verify_tls12_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    rustls::crypto::verify_tls12_signature(
-      message,
-      cert,
-      dss,
-      &self.0.signature_verification_algorithms,
-    )
-  }
-
-  fn verify_tls13_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    rustls::crypto::verify_tls13_signature(
-      message,
-      cert,
-      dss,
-      &self.0.signature_verification_algorithms,
-    )
-  }
-
-  fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-    self.0.signature_verification_algorithms.supported_schemes()
-  }
-}
-
-/// Requires a client certificate with a pinned fingerprint, after the root
-/// check when client roots are configured too.
-#[derive(Debug)]
-struct PinnedClientCert {
-  pins: Vec<[u8; 32]>,
-  roots: Option<Arc<dyn rustls::server::danger::ClientCertVerifier>>,
-  signatures: AcceptAnyCert,
-}
-
-impl rustls::server::danger::ClientCertVerifier for PinnedClientCert {
-  fn root_hint_subjects(&self) -> &[rustls::DistinguishedName] {
-    self
-      .roots
-      .as_ref()
-      .map_or(&[], |roots| roots.root_hint_subjects())
-  }
-
-  fn verify_client_cert(
-    &self,
-    end_entity: &rustls::pki_types::CertificateDer<'_>,
-    intermediates: &[rustls::pki_types::CertificateDer<'_>],
-    now: rustls::pki_types::UnixTime,
-  ) -> Result<rustls::server::danger::ClientCertVerified, rustls::Error> {
-    if let Some(roots) = &self.roots {
-      roots.verify_client_cert(end_entity, intermediates, now)?;
-    }
-    if self.pins.contains(&sha256(end_entity)) {
-      Ok(rustls::server::danger::ClientCertVerified::assertion())
-    } else {
-      Err(rustls::Error::InvalidCertificate(
-        rustls::CertificateError::ApplicationVerificationFailure,
-      ))
-    }
-  }
-
-  fn verify_tls12_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    rustls::client::danger::ServerCertVerifier::verify_tls12_signature(
-      &self.signatures,
-      message,
-      cert,
-      dss,
-    )
-  }
-
-  fn verify_tls13_signature(
-    &self,
-    message: &[u8],
-    cert: &rustls::pki_types::CertificateDer<'_>,
-    dss: &rustls::DigitallySignedStruct,
-  ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-    rustls::client::danger::ServerCertVerifier::verify_tls13_signature(
-      &self.signatures,
-      message,
-      cert,
-      dss,
-    )
-  }
-
-  fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-    rustls::client::danger::ServerCertVerifier::supported_verify_schemes(&self.signatures)
-  }
-}
-
 struct QuicConnection {
   send: Mutex<SendStream>,
   recv: Mutex<RecvStream>,
@@ -580,38 +408,11 @@ impl QuicTransport {
       .config
       .check_trust()
       .map_err(|e| TransportError::Connect(e.to_string()))?;
-    let provider = certs::provider();
-    let builder = rustls::ClientConfig::builder_with_provider(Arc::clone(&provider))
-      .with_protocol_versions(&[&rustls::version::TLS13])
-      .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
-    let builder = if !self.config.pinned.is_empty() {
-      let roots = match &self.config.roots {
-        Some(roots) => Some(
-          rustls::client::WebPkiServerVerifier::builder_with_provider(
-            Arc::new(roots.clone()),
-            Arc::clone(&provider),
-          )
-          .build()
-          .map_err(|e| TransportError::Io(format!("tls: {e}")))?,
-        ),
-        None => None,
-      };
-      builder
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(PinnedCert {
-          pins: self.config.pinned.clone(),
-          roots,
-          signatures: AcceptAnyCert(provider),
-        }))
-    } else if let Some(roots) = &self.config.roots {
-      builder.with_root_certificates(roots.clone())
-    } else {
-      builder
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(AcceptAnyCert(provider)))
-    };
-    // Mutual TLS: the dialer always presents this node's current certificate.
-    let tls = builder.with_client_cert_resolver(Arc::new(self.config.identity.clone()));
+    let tls = certs::client_tls_config(
+      &self.config.identity,
+      self.config.roots.as_ref(),
+      &self.config.pinned,
+    )?;
     let quic_tls = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
       .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
     Ok(ClientConfig::new(Arc::new(quic_tls)))
@@ -622,36 +423,12 @@ impl QuicTransport {
       .config
       .check_client_trust()
       .map_err(|e| TransportError::Bind(e.to_string()))?;
-    let provider = certs::provider();
-    let builder = rustls::ServerConfig::builder_with_provider(Arc::clone(&provider))
-      .with_protocol_versions(&[&rustls::version::TLS13])
-      .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
-    let client_roots = match &self.config.client_roots {
-      Some(roots) => Some(
-        rustls::server::WebPkiClientVerifier::builder_with_provider(
-          Arc::new(roots.clone()),
-          Arc::clone(&provider),
-        )
-        .build()
-        .map_err(|e| TransportError::Bind(format!("tls: client roots: {e}")))?,
-      ),
-      None => None,
-    };
-    let builder = if !self.config.client_pinned.is_empty() {
-      builder.with_client_cert_verifier(Arc::new(PinnedClientCert {
-        pins: self.config.client_pinned.clone(),
-        roots: client_roots,
-        signatures: AcceptAnyCert(provider),
-      }))
-    } else if let Some(verifier) = client_roots {
-      builder.with_client_cert_verifier(verifier)
-    } else {
-      // Only behind `dangerous_no_client_auth` (checked above).
-      builder.with_no_client_auth()
-    };
-    // The resolver reads the current certificate on every handshake, so a
-    // reloaded certificate reaches new connections on a running listener.
-    let tls = builder.with_cert_resolver(Arc::new(self.config.identity.clone()));
+    // Without roots or pins, only behind `dangerous_no_client_auth` (checked above).
+    let tls = certs::server_tls_config(
+      &self.config.identity,
+      self.config.client_roots.as_ref(),
+      &self.config.client_pinned,
+    )?;
     let quic_tls = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
       .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
     Ok(ServerConfig::with_crypto(Arc::new(quic_tls)))

@@ -265,7 +265,37 @@ Transports are mutually authenticated by default (ADR 0013 R8; dist.tls #4). Boo
 
 ## Node: plaintext TCP needs the `insecure-plaintext-tcp` feature
 
-Filled by `r11-e8-3-tcp-tls`.
+TCP is encrypted and mutually authenticated by default (ADR 0013 R8; dist.tls #2). `TcpTransport`
+is no longer a unit struct: the 0.10 expression `TcpTransport` (and `TcpTransport::default()`) no
+longer compiles, and without one of the features below the type has no constructor.
+
+- **Move to TLS (recommended).** Enable `tls-tcp` and build the transport from certificates, with
+  the trust options of the QUIC transport:
+
+  ```rust,ignore
+  use id_effect_node::transport::certs::{NodeCertificate, load_ca_bundle};
+  use id_effect_node::transport::tls_tcp::TlsTcpConfig;
+
+  let cert = NodeCertificate::from_pem_files("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
+  let config = TlsTcpConfig::from_certificate(&cert)?
+    .with_client_verification(load_ca_bundle("/etc/mesh/ca.pem")?);
+  let tcp = TcpTransport::try_tls(config)?; // was: TcpTransport
+  ```
+
+  Every node needs a certificate valid for the server name (`"cluster"` by default,
+  `with_server_name`) with the `serverAuth` and `clientAuth` usages, or pin each node's
+  fingerprint with `with_pinned_peer_cert_sha256`. A dial without server trust fails with
+  `TlsTcpConfigError::NoServerTrust`, a `listen` without client trust with `NoClientTrust`. Both
+  ends of a session must use TLS: a TLS node and a 0.10 plaintext node cannot connect. A refused
+  or timed-out TLS handshake is a `TransportError::Connect` from `Listener::accept`; keep
+  accepting.
+- **Keep plaintext (tests, trusted networks only).** Enable `insecure-plaintext-tcp` and replace
+  `TcpTransport` with `TcpTransport::dangerous_plaintext()`. It records the posture opt-out
+  `id_effect_node::TcpTransport::dangerous_plaintext`, so the prod posture check refuses to start
+  until the operator accepts it.
+- `TcpTransport::is_encrypted()` tells the two apart (e.g. for a posture probe).
+- `Cookie::dangerous_allow_short()` now records the posture opt-out
+  `id_effect_node::Cookie::dangerous_allow_short`.
 
 ## Web: CSRF masked token format
 

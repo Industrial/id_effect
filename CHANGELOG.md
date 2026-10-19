@@ -32,6 +32,16 @@
   recorded in the posture registry. New features `tls-tcp`, `insecure-plaintext-tcp`,
   `kubernetes`. Book "Transport security: mutual TLS", example `134_mtls_cluster`. See "Node: QUIC
   requires client certificates" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+- `id_effect_node` TCP is encrypted by default (dist.tls #2 #4, ADR 0013 R8): `TcpTransport::tls`
+  (feature `tls-tcp`) carries the frames in TLS 1.3 with mutual auth, configured by the new
+  `transport::tls_tcp::TlsTcpConfig` from the same `transport::certs` material and trust options
+  as QUIC (CA roots or pins, `from_reloader` for rotation, opt-outs recorded as
+  `id_effect_node::TlsTcpConfig::dangerous_*`), with a TLS channel binding for the cookie proof
+  and background handshakes bounded by a timeout. Plaintext TCP exists only with the feature
+  `insecure-plaintext-tcp`, as `TcpTransport::dangerous_plaintext()`, recorded in the posture
+  registry; `TcpTransport` is no longer a unit struct. `Cookie::dangerous_allow_short()` is now
+  recorded too (`id_effect_node::Cookie::dangerous_allow_short`). See "Node: plaintext TCP needs
+  the `insecure-plaintext-tcp` feature" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `id_effect_auth` security state shared by every instance (M18, H5 follow-up, ADR 0013 R10):
   `totp::PgTotpStepStore` (features `pg` + `totp`) records consumed TOTP steps with one atomic
   compare-and-set upsert, so a code accepted on one instance is a replay on every other;
