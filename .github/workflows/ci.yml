@@ -474,20 +474,27 @@ jobs:
             exit 1
           fi
   # ──────────────────────────────────────────────────────────────────────────
-  # Semver: published crates vs the crates.io baseline (docs/STABILITY.md).
-  # REPORT-ONLY while a breaking 0.x release is in development: 0.10 may carry intentional
+  # Semver: publishable crates vs the latest release tag (docs/STABILITY.md).
+  # REPORT-ONLY while a breaking 0.x release is in development: it may carry intentional
   # breaks, each of which must be listed in its migration guide; the job prints them for
   # review (PLAN-OF-PLANS §7.3 semver gate) but cannot fail CI.
-  # Baseline = the latest published release (0.10.0).
+  # Baseline = the highest release tag `vX.Y.Z` (no pre-release) not on this commit, built from
+  # git (`--baseline-rev`, as the migration guide's semver section runs it), so a crate
+  # promoted from labs/ is compared with the labs crate and no crates.io index is needed.
+  # cargo-semver-checks is pinned: each release reads only a window of rustdoc JSON format
+  # versions (0.47 cannot read Rust 1.99's; 0.51.0 is the release made for 1.99). Bump it
+  # together with RUST_TOOLCHAIN; if no release reads the pinned toolchain's format yet, run this
+  # job on the newest stable it reads instead (dtolnay/rust-toolchain with an explicit
+  # `toolchain:`), since only the rustdoc JSON is compared.
   # ──────────────────────────────────────────────────────────────────────────
   semver:
-    name: Semver checks (report-only, baseline 0.10.0)
+    name: Semver checks (report-only, baseline latest release tag)
     runs-on: ubuntu-latest
     needs: [moon-ci]
-    env:
-      SEMVER_BASELINE: 0.10.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - name: Install Rust (pinned, rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
@@ -496,17 +503,26 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: semver
-      - name: Install cargo-semver-checks
+      - name: Install cargo-semver-checks (reads Rust 1.99 rustdoc JSON)
         uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
-          tool: cargo-semver-checks
+          tool: cargo-semver-checks@0.51.0
+      - name: Baseline (latest release tag)
+        run: |
+          baseline=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --no-contains HEAD --sort=-v:refname \
+            | grep -v -- - | head -n 1)
+          if [ -z "$baseline" ]; then
+            echo "::error::no release tag vX.Y.Z below HEAD"
+            exit 1
+          fi
+          echo "Semver baseline: $baseline"
+          echo "SEMVER_BASELINE=$baseline" >> "$GITHUB_ENV"
       - name: cargo semver-checks (publishable workspace crates)
         # --workspace skips publish = false members (examples). Step-level
         # continue-on-error keeps the job (and ci-pass) green while report-only.
-        # A crate new in a release has no crates.io baseline yet: --exclude it until published.
         continue-on-error: true
         run: >-
-          cargo semver-checks --workspace --baseline-version "$SEMVER_BASELINE"
+          cargo semver-checks --workspace --baseline-rev "$SEMVER_BASELINE"
   # ──────────────────────────────────────────────────────────────────────────
   # Required status check gate
   # ──────────────────────────────────────────────────────────────────────────
