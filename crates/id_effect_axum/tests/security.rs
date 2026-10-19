@@ -552,8 +552,9 @@ async fn cookie_signed_and_private_round_trip() {
     .iter()
     .map(|v| v.to_str().unwrap().split(';').next().unwrap().to_owned())
     .collect();
+  // Exact match: random ciphertext can contain the substring "s3" by chance.
   assert!(
-    !pairs.iter().any(|p| p.contains("s3")),
+    !pairs.iter().any(|p| p == "secret=s3"),
     "private cookie is encrypted"
   );
   let read = |cookie: String| {
