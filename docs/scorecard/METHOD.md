@@ -144,8 +144,8 @@ measured indices are compared with the target indices (see PLAN-OF-PLANS §6).
 | 0.9.0 measured | 68.5 | 68.1 (#3) | 71.4 (#2) | 39 | 19 | 20 | 12 |
 | 0.10.0 measured | 76.6 | 76.6 (#2) | 79.5 (#1) | 49 | 11 | 26 | 12 |
 | 0.11.0 measured | 79.4 | 79.2 (#1) | 83.9 (#1) | 56 | 9 | 31 | 12 |
-| 0.12.0 target | 84.2 | 84.2 (#1) | 86.5 (#1) | 59 | 3 | 33 | 12 |
-| 1.0.0 target | 86.5 | 86.5 (#1) | 88.4 (#1) | 63 | 1 | 37 | 11 |
+| 0.12.0 target | 81.4 | 80.9 (#1) | 84.8 (#1) | 58 | 7 | 34 | 12 |
+| 1.0.0 target | 86.7 | 86.6 (#1) | 88.5 (#1) | 63 | 1 | 38 | 11 |
 
 Competitor indices in the same snapshot (after the §7.4 alignment and the 2.2 .NET scope):
 

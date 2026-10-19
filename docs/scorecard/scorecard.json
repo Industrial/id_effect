@@ -5517,7 +5517,7 @@
 			"evidence": "Not met: #3 (no relations or eager loading), #4 (no changeset or dirty tracking) and #7 (no persist hooks; the audit.rs AuditLog is an explicit append, not a lifecycle hook). Book part6/ch28-03-repositories.md, examples 040_repository and 050_tenancy_audit, tests/repository.rs. The Ledger uses tenant-scoped repositories, tested in CI. Level production.",
 			"targets": {
 				"0.9.0": 63,
-				"0.12.0": 88
+				"0.13.0": 88
 			},
 			"checks": [
 				{
@@ -7544,7 +7544,7 @@
 			},
 			"evidence": "Only labs/id_effect_rpc, which is excluded from the workspace (Cargo.toml:4 exclude 'labs'), unpublished, and unchanged since v0.9.0 (empty git diff). The book chapters ch07-12 and ch29-00 label it labs. Level labs.",
 			"targets": {
-				"0.12.0": 88
+				"0.12.0": 100
 			},
 			"checks": [
 				{
@@ -8052,7 +8052,7 @@
 			},
 			"evidence": "Absent for web views. The only templating is mail-specific: id_effect_mail/src/template.rs:1-7 Templates (minijinja, used for mail subject and bodies with layouts and partials) renders a RenderedMail, not HTTP views. There is no web templating integration, component model, live views or asset pipeline in id_effect_axum or elsewhere.",
 			"targets": {
-				"0.12.0": 67
+				"0.13.0": 67
 			},
 			"checks": [
 				{
@@ -8208,7 +8208,7 @@
 			},
 			"evidence": "Still only the template stub crates/id_effect_cli/templates/admin-stub, with no working model admin. id_effect_console (src/lib.rs:1-30) is an operator console (fibers, supervisors, metrics, health, log level, job retry and cancel), not CRUD admin generated from the data model, so it meets none of the checks.",
 			"targets": {
-				"0.12.0": 50
+				"0.13.0": 50
 			},
 			"checks": [
 				{
@@ -11408,7 +11408,7 @@
 			},
 			"evidence": "Only in the unpublished labs/id_effect_ai (publish = false, excluded from the workspace at Cargo.toml:4), tested in the CI labs job (ci.yml:297-315); book part6/ch35-00-ai.md -> labs (cap 39). #3 tool calling, #4 structured output, #5 embeddings and #8 agent loop not found. #6 not met: examples/mcp_server_template.rs is a hand-rolled toy JSON-RPC example, not an MCP SDK.",
 			"targets": {
-				"0.12.0": 75
+				"0.13.0": 75
 			},
 			"checks": [
 				{
@@ -15738,7 +15738,7 @@
 			},
 			"evidence": "A git grep -wi of crates/, labs/ and examples/ for i18n/l10n/locale/accept-language/fluent/gettext/plural finds only an unrelated 'Fluent builder' comment (crates/id_effect_axum/src/server/lifecycle.rs:93) and ad-hoc English plural helpers (crates/id_effect_mail/src/auth.rs:227, crates/id_effect_tool/src/doctor/mod.rs:155). No message catalogs, locale negotiation or locale formatting.",
 			"targets": {
-				"0.12.0": 63
+				"0.13.0": 63
 			},
 			"checks": [
 				{
@@ -15888,7 +15888,7 @@
 			"evidence": "Published (id_effect_sql, id_effect_axum), tested, with book chapter part6/ch30-07, runnable example 050_tenancy_audit and integration tests, and used by the Ledger app in CI job reference-ledger (ci.yml:239-290), so level is production. Not met: #4 and #8. The chapter itself says (ch30-07:338-340) 'Per-tenant connection routing is not part of 0.9' and 'Per-tenant configuration and quotas other than a request rate ... are not provided'.",
 			"targets": {
 				"0.9.0": 50,
-				"0.12.0": 75
+				"0.13.0": 75
 			},
 			"checks": [
 				{
