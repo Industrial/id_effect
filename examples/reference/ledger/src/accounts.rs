@@ -137,19 +137,107 @@ pub fn find_account(app: &App, caller: &Caller, id: i64) -> Effect<Account, ApiE
     })
 }
 
+/// The open accounts of the caller's organisation (`GET /accounts`, `Ledger.accounts`).
+pub fn list_accounts(app: &App, caller: &Caller) -> Effect<AccountList, ApiError> {
+  accounts_of(caller.org())
+    .on(Arc::clone(&app.db))
+    .find_all()
+    .map(|accounts| AccountList { accounts })
+    .map_err(ApiError::from)
+}
+
+/// Opens `new` in the caller's organisation, owned by the caller (`POST /accounts`,
+/// `Ledger.open_account`).
+pub fn open_account(app: &App, caller: &Caller, new: NewAccount) -> Effect<Account, ApiError> {
+  let account = Account {
+    id: 0,
+    org_id: caller.org().to_owned(),
+    code: new.code,
+    name: new.name,
+    kind: new.kind,
+    owner_id: caller.id().to_owned(),
+    locked: false,
+    version: 1,
+  };
+  // In a transaction: its errors carry the SQLSTATE, so a duplicate code answers 409.
+  let accounts = accounts_of(caller.org());
+  with_transaction(Arc::clone(&app.db), move |tx| {
+    accounts.on(tx).insert(account)
+  })
+  .map_err(ApiError::from)
+}
+
+/// Applies `changes` to the account `id` when `account.manage` allows the caller
+/// (`PATCH /accounts/{id}`, `Ledger.update_account`); a stale `version` is a 409.
+pub fn update_account(
+  app: Arc<App>,
+  caller: Caller,
+  id: i64,
+  changes: AccountChanges,
+) -> Effect<Account, ApiError> {
+  if let Some(name) = &changes.name
+    && !(1..=80).contains(&name.chars().count())
+  {
+    return fail(ApiError::invalid("/name", "must be 1 to 80 characters"));
+  }
+  find_account(&app, &caller, id).flat_map(move |account| {
+    let allowed = caller.authorize(&app.policies, "account.manage", &account);
+    allowed.flat_map(move |()| {
+      let changed = Account {
+        name: changes.name.unwrap_or(account.name),
+        locked: changes.locked.unwrap_or(account.locked),
+        version: changes.version,
+        ..account
+      };
+      accounts_of(caller.org())
+        .on(Arc::clone(&app.db))
+        .update(changed)
+        .map_err(ApiError::from)
+    })
+  })
+}
+
+/// The balance an account holds (sum of its postings), read on the primary.
+fn balance_on_primary(app: &App, caller: &Caller, id: i64) -> Effect<i64, ApiError> {
+  let sql = "SELECT COALESCE(SUM(amount), 0)::int8 AS balance FROM postings \
+             WHERE org_id = $1 AND account_id = $2";
+  db::query_one::<(i64,)>(&app.db, sql, params![caller.org(), id])
+    .map(|(balance,)| balance)
+    .map_err(ApiError::from)
+}
+
+/// Closes the account `id` when `account.manage` allows the caller and it holds no balance
+/// (`DELETE /accounts/{id}`, `Ledger.close_account`).
+pub fn close_account(app: Arc<App>, caller: Caller, id: i64) -> Effect<(), ApiError> {
+  find_account(&app, &caller, id).flat_map(move |account| {
+    let allowed = caller.authorize(&app.policies, "account.manage", &account);
+    allowed
+      .flat_map({
+        let (app, caller) = (Arc::clone(&app), caller.clone());
+        move |()| balance_on_primary(&app, &caller, id)
+      })
+      .flat_map(move |balance| {
+        if balance != 0 {
+          return fail(ApiError::Conflict(format!(
+            "account {id} holds a balance of {balance}; move it before closing"
+          )));
+        }
+        accounts_of(caller.org())
+          .on(Arc::clone(&app.db))
+          .delete(id)
+          .map(|_closed| ())
+          .map_err(ApiError::from)
+      })
+  })
+}
+
 fn list(
   env: &mut AppEnv,
   caps: RequestCaps,
   _: Input,
 ) -> Effect<Json<AccountList>, ApiError, AppEnv> {
   let app = Arc::clone(&env.0);
-  as_caller(&caps, move |caller| {
-    accounts_of(caller.org())
-      .on(Arc::clone(&app.db))
-      .find_all()
-      .map(|accounts| Json(AccountList { accounts }))
-      .map_err(ApiError::from)
-  })
+  as_caller(&caps, move |caller| list_accounts(&app, &caller).map(Json))
 }
 
 fn open(
@@ -160,23 +248,7 @@ fn open(
   let app = Arc::clone(&env.0);
   let new = input.body;
   as_caller(&caps, move |caller| {
-    let account = Account {
-      id: 0,
-      org_id: caller.org().to_owned(),
-      code: new.code,
-      name: new.name,
-      kind: new.kind,
-      owner_id: caller.id().to_owned(),
-      locked: false,
-      version: 1,
-    };
-    // In a transaction: its errors carry the SQLSTATE, so a duplicate code answers 409.
-    let accounts = accounts_of(caller.org());
-    with_transaction(Arc::clone(&app.db), move |tx| {
-      accounts.on(tx).insert(account)
-    })
-    .map(|account| (StatusCode::CREATED, Json(account)))
-    .map_err(ApiError::from)
+    open_account(&app, &caller, new).map(|account| (StatusCode::CREATED, Json(account)))
   })
 }
 
@@ -202,38 +274,9 @@ fn update(
     body: changes,
     ..
   } = input;
-  if let Some(name) = &changes.name
-    && !(1..=80).contains(&name.chars().count())
-  {
-    return fail(ApiError::invalid("/name", "must be 1 to 80 characters"));
-  }
   as_caller(&caps, move |caller| {
-    find_account(&app, &caller, id).flat_map(move |account| {
-      let allowed = caller.authorize(&app.policies, "account.manage", &account);
-      allowed.flat_map(move |()| {
-        let changed = Account {
-          name: changes.name.unwrap_or(account.name),
-          locked: changes.locked.unwrap_or(account.locked),
-          version: changes.version,
-          ..account
-        };
-        accounts_of(caller.org())
-          .on(Arc::clone(&app.db))
-          .update(changed)
-          .map(Json)
-          .map_err(ApiError::from)
-      })
-    })
+    update_account(app, caller, id, changes).map(Json)
   })
-}
-
-/// The balance an account holds (sum of its postings), read on the primary.
-fn balance_on_primary(app: &App, caller: &Caller, id: i64) -> Effect<i64, ApiError> {
-  let sql = "SELECT COALESCE(SUM(amount), 0)::int8 AS balance FROM postings \
-             WHERE org_id = $1 AND account_id = $2";
-  db::query_one::<(i64,)>(&app.db, sql, params![caller.org(), id])
-    .map(|(balance,)| balance)
-    .map_err(ApiError::from)
 }
 
 fn close(
@@ -244,26 +287,7 @@ fn close(
   let app = Arc::clone(&env.0);
   let id = input.path;
   as_caller(&caps, move |caller| {
-    find_account(&app, &caller, id).flat_map(move |account| {
-      let allowed = caller.authorize(&app.policies, "account.manage", &account);
-      allowed
-        .flat_map({
-          let (app, caller) = (Arc::clone(&app), caller.clone());
-          move |()| balance_on_primary(&app, &caller, id)
-        })
-        .flat_map(move |balance| {
-          if balance != 0 {
-            return fail(ApiError::Conflict(format!(
-              "account {id} holds a balance of {balance}; move it before closing"
-            )));
-          }
-          accounts_of(caller.org())
-            .on(Arc::clone(&app.db))
-            .delete(id)
-            .map(|_closed| StatusCode::NO_CONTENT)
-            .map_err(ApiError::from)
-        })
-    })
+    close_account(app, caller, id).map(|()| StatusCode::NO_CONTENT)
   })
 }
 

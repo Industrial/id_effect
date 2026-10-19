@@ -3548,6 +3548,7 @@ dependencies = [
  "axum",
  "id_effect",
  "id_effect_kit",
+ "id_effect_rpc",
  "object_store",
  "reqwest",
  "serde",

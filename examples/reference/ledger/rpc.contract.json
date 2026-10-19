@@ -1,0 +1,1778 @@
+{
+  "format": "id-effect.rpc.contract/1",
+  "services": [
+    {
+      "name": "Ledger",
+      "version": 1,
+      "description": "The Ledger's accounts and journal, version 1 of its RPC contract.",
+      "procedures": [
+        {
+          "name": "account",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "org_id": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "org_id",
+              "code",
+              "name",
+              "kind",
+              "owner_id",
+              "locked",
+              "version"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "One open account of the organisation (`GET /accounts/{id}`)."
+        },
+        {
+          "name": "accounts",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$defs": {
+              "ledger::accounts::Account": {
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "integer"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "org_id": {
+                    "type": "string"
+                  },
+                  "owner_id": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "id",
+                  "org_id",
+                  "code",
+                  "name",
+                  "kind",
+                  "owner_id",
+                  "locked",
+                  "version"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "accounts": {
+                "items": {
+                  "$ref": "#/$defs/ledger::accounts::Account"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "accounts"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "The organisation's open accounts, by id (`GET /accounts`)."
+        },
+        {
+          "name": "balance",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "account_id": {
+                "type": "integer"
+              },
+              "balance": {
+                "type": "integer"
+              },
+              "postings": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "account_id",
+              "balance",
+              "postings"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "An account's balance (`GET /accounts/{id}/balance`)."
+        },
+        {
+          "name": "close_account",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "accounts.open"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Closes an account that holds no balance; its owner or an organisation owner only\n(`DELETE /accounts/{id}`).",
+          "idempotent": true
+        },
+        {
+          "name": "entries",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "limit": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "offset": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "output": {
+            "$defs": {
+              "ledger::entries::JournalEntry": {
+                "properties": {
+                  "id": {
+                    "type": "integer"
+                  },
+                  "memo": {
+                    "type": "string"
+                  },
+                  "org_id": {
+                    "type": "string"
+                  },
+                  "posted_by": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "org_id",
+                  "memo",
+                  "posted_by"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "entries": {
+                "items": {
+                  "$ref": "#/$defs/ledger::entries::JournalEntry"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "entries"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "A page of journal entry headers, by id (`GET /entries`)."
+        },
+        {
+          "name": "entry",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$defs": {
+              "ledger::entries::Line": {
+                "properties": {
+                  "account_id": {
+                    "type": "integer"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "account_id",
+                  "amount"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "lines": {
+                "items": {
+                  "$ref": "#/$defs/ledger::entries::Line"
+                },
+                "type": "array"
+              },
+              "memo": {
+                "type": "string"
+              },
+              "posted_by": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "memo",
+              "posted_by",
+              "lines"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "One journal entry with its lines (`GET /entries/{id}`)."
+        },
+        {
+          "name": "open_account",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "accounts.open"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "code": {
+                "pattern": "^[0-9]{3,8}$",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "asset",
+                  "liability",
+                  "equity",
+                  "income",
+                  "expense"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "kind"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "org_id": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "org_id",
+              "code",
+              "name",
+              "kind",
+              "owner_id",
+              "locked",
+              "version"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Opens an account owned by the caller (`POST /accounts`).",
+          "idempotent": true
+        },
+        {
+          "name": "post_entry",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.post"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "lines": {
+                "items": {
+                  "properties": {
+                    "account_id": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "amount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "account_id",
+                    "amount"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 100,
+                "minItems": 2,
+                "type": "array"
+              },
+              "memo": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "memo",
+              "lines"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$defs": {
+              "ledger::entries::Line": {
+                "properties": {
+                  "account_id": {
+                    "type": "integer"
+                  },
+                  "amount": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "account_id",
+                  "amount"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "lines": {
+                "items": {
+                  "$ref": "#/$defs/ledger::entries::Line"
+                },
+                "type": "array"
+              },
+              "memo": {
+                "type": "string"
+              },
+              "posted_by": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "memo",
+              "posted_by",
+              "lines"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Posts a balanced journal entry (`POST /entries`); send an `Idempotency-Key` to retry it\nsafely.",
+          "idempotent": true
+        },
+        {
+          "name": "statement",
+          "kind": "server_stream",
+          "access": {
+            "guarded": {
+              "policies": [
+                "ledger.read"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "amount": {
+                "type": "integer"
+              },
+              "balance": {
+                "type": "integer"
+              },
+              "date": {
+                "type": "string"
+              },
+              "entry_id": {
+                "type": "integer"
+              },
+              "memo": {
+                "type": "string"
+              },
+              "posting_id": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "posting_id",
+              "date",
+              "entry_id",
+              "memo",
+              "amount",
+              "balance"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "An account's statement: every posting in order, each with the balance after it, read page\nby page while the client consumes it."
+        },
+        {
+          "name": "update_account",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "accounts.open"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "locked": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "version"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "org_id": {
+                "type": "string"
+              },
+              "owner_id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "org_id",
+              "code",
+              "name",
+              "kind",
+              "owner_id",
+              "locked",
+              "version"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unauthenticated"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Forbidden"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Conflict"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Invalid"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "issues": {
+                    "items": {
+                      "properties": {
+                        "message": {
+                          "type": "string"
+                        },
+                        "pointer": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pointer",
+                        "message"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail",
+                  "issues"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Unavailable"
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "detail"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Renames, locks or unlocks an account; its owner or an organisation owner only\n(`PATCH /accounts/{id}`).",
+          "idempotent": true
+        }
+      ]
+    }
+  ]
+}

@@ -24,6 +24,16 @@
   `--cert-only` issues it for scripts, `--no-cert` skips it. `scripts/template-smoke.sh`
   generates the service's TypeScript client and runs a round trip over TCP (Deno) and HTTP/3
   (curl); `scripts/check-dangerous.sh --list` lists every opt-out and checks the 0.12 ones exist.
+- The Ledger reference app serves its accounts and journal over RPC under `/rpc` next to REST
+  (r12-w7-ledger): a `#[rpc::service]` `Ledger` (queries, mutations, the `statement` server
+  stream) whose procedures call the REST routes' own functions and are guarded by the same named
+  policies; typed errors carry the REST Problem's status and detail; inputs are decoded by the
+  REST bodies' schemas. Mutation `Idempotency-Key`s are kept in PostgreSQL
+  (`PgIdempotencyStore`, migration `0010_rpc_idempotency`), so a retry replays on any instance.
+  `rpc.contract.json` and the generated TypeScript client (`web/rpc`) are checked in; the
+  `reference-ledger` CI job runs `id-effect rpc check` (generated client, last release) and the
+  TypeScript client under Deno. The Ledger serves no HTTP/3 itself (`HostConfig::http3 = false`:
+  TLS terminates at its load balancer).
 - `id_effect_axum` features `ws`, `sse`, `tls`, `http3` and `webtransport`, declared once
   (tokio-tungstenite / tungstenite `=0.29.0`, the version of axum's own `ws`; h3 `=0.0.8`,
   h3-quinn `=0.0.10`, h3-webtransport `=0.1.2`; `tls`, `http3` and `webtransport` are filled in

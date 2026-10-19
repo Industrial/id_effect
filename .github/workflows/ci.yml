@@ -320,14 +320,23 @@ jobs:
     env:
       ID_EFFECT_REQUIRE_DOCKER: '1'
       ID_EFFECT_REQUIRE_PG: '1'
+      # tests/rpc.rs runs the generated TypeScript client under Deno: fail without it.
+      ID_EFFECT_REQUIRE_DENO: '1'
       DATABASE_URL: postgres://ledger:ledger@localhost:5432/ledger
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The tags and the RPC contract they shipped (`id-effect rpc check`).
+          fetch-depth: 0
       - name: Install Rust (pinned, rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: rustfmt, clippy
+      - name: Install Deno (pinned)
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.7.9
       - name: Cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -355,9 +364,26 @@ jobs:
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate run
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate check
           cargo run -q --locked -p id_effect_tool --bin id-effect -- migrate status
-      - name: Ledger KPI (prod posture, declared routes, console off in prod, durable account closure)
+      # `cargo nextest` keeps rpc.contract.json equal to the served contract (UPDATE_GOLDEN=1
+      # rewrites it); this checks the checked-in TypeScript client (`web/rpc`) is generated from
+      # it and compares it with the last release tag, failing on a breaking change. A tag from
+      # before the Ledger's rpc.contract.json existed has nothing to compare with: skipped.
+      - name: RPC contract (id-effect rpc check, generated client, last release)
+        working-directory: examples/reference/ledger
+        run: |
+          set -euo pipefail
+          id_effect() { cargo run -q --locked -p id_effect_tool --bin id-effect -- "$@"; }
+          id_effect rpc check --contract rpc.contract.json --generated web/rpc
+          path=examples/reference/ledger/rpc.contract.json
+          tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -z "${tag}" ] || ! git cat-file -e "${tag}:${path}" 2>/dev/null; then
+            echo "no released ${path} to compare with: skipped"
+            exit 0
+          fi
+          id_effect rpc check --contract rpc.contract.json --against "${tag}:${path}"
+      - name: Ledger KPI (prod posture, declared routes and procedures, RPC beside REST, console off in prod, durable account closure)
         run: >-
-          cargo nextest run --locked -p ledger -E 'test(=ledger_prod_posture_is_clean) | test(=ledger_access_report_snapshot) | test(=h8_ledger_unregistered_route_denied) | test(=m6_ledger_console_disabled_in_prod_profile) | test(=account_closure_workflow_survives_restart)'
+          cargo nextest run --locked -p ledger -E 'test(=ledger_prod_posture_is_clean) | test(=ledger_access_report_snapshot) | test(=h8_ledger_unregistered_route_denied) | test(=m6_ledger_console_disabled_in_prod_profile) | test(=account_closure_workflow_survives_restart) | test(=ledger_rpc_procedures_all_declared) | test(=ledger_rpc_and_rest_agree) | test(=ledger_rpc_mutation_idempotent) | test(=ledger_ts_client_round_trip)'
       - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console, workflows)
         run: cargo nextest run --locked -p ledger
   # ──────────────────────────────────────────────────────────────────────────
