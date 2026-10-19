@@ -272,11 +272,6 @@ ui tests), `proptest` (resume property), `id_effect_test` with `sql` and `id_eff
 because the choosing leaf has not chosen yet: the D12 CDP driver (`chromiumoxide` or
 `headless_chrome`, r12-e12-3-webtransport), which adds its one dev-dependency line.
 
-One pending line: `http3` lists `id_effect_axum/http3` but not yet `id_effect_platform/http3`,
-because r12-e12-3-quic-endpoint had not landed the platform feature when this leaf merged. The
-first leaf that lands after it (or the coordinator) adds `"id_effect_platform/http3"` to the
-`http3` feature; nothing else in the table changes.
-
 ## 9. Ownership notes for the coordinator
 
 - `registry.rs` holds the handler storage (`RpcMethodEntry`, a boxed unary dispatch). The other five

@@ -42,10 +42,8 @@ mesh = ["postcard", "dep:id_effect_node"]
 # `channels`: topics and presence on mesh process groups, `JoinPolicy` (default deny; an adapter
 # over id_effect_authz's axum-free policies).
 channels = ["mesh", "dep:id_effect_authz"]
-# `http3`: RPC over HTTP/3 on the host's shared QUIC endpoint (server and client). The client
-# half adds `id_effect_platform/http3` here once r12-e12-3-quic-endpoint has declared that feature
-# (the one sanctioned follow-up edit of this table; design note §8).
-http3 = ["client", "id_effect_axum/http3"]
+# `http3`: RPC over HTTP/3 on the host's shared QUIC endpoint (server and client).
+http3 = ["client", "id_effect_axum/http3", "id_effect_platform/http3"]
 # `webtransport`: two-way streams and subscriptions over WebTransport sessions.
 webtransport = ["http3", "id_effect_axum/webtransport"]
 # `test-util`: the in-process transport, contract fixtures and transport test helpers.
