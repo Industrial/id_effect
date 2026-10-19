@@ -269,7 +269,7 @@ async fn recommended_layer_allows_exempt_prefix() {
 async fn without_csrf_allows_post() {
   let app = Router::new()
     .route("/", post(|| async { "posted" }))
-    .layer(SecurityLayer::recommended(key()).without_csrf());
+    .layer(SecurityLayer::recommended(key()).dangerous_without_csrf());
   let res = send(&app, post_with(None, None)).await;
   assert_eq!(res.status(), StatusCode::OK);
   assert!(res.headers().get(header::SET_COOKIE).is_none());
@@ -540,7 +540,7 @@ async fn cookie_signed_and_private_round_trip() {
         format!("{uid:?} {secret:?}")
       }),
     )
-    .layer(SecurityLayer::recommended(key()).without_csrf());
+    .layer(SecurityLayer::recommended(key()).dangerous_without_csrf());
   let res = send(
     &app,
     Request::builder().uri("/set").body(Body::empty()).unwrap(),

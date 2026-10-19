@@ -10,6 +10,9 @@ use crate::LogRecord;
 /// [`Redacted`] and `id_effect_config::Secret`.
 pub const DEFAULT_REDACTION_MASK: &str = "<redacted>";
 
+/// Posture id of [`RedactionPolicy::dangerous_empty`] (ADR 0013 R10).
+pub const DANGEROUS_EMPTY: &str = "id_effect_logger::RedactionPolicy::dangerous_empty";
+
 /// Which parts of a [`LogRecord`] must never reach a backend.
 ///
 /// - **Field names** ([`Self::field`]): an annotation whose key matches (ASCII case-insensitive)
@@ -24,14 +27,14 @@ pub const DEFAULT_REDACTION_MASK: &str = "<redacted>";
 /// before the composite fans out, so every backend (tracing, JSON, structured, OTel) sees the
 /// same redacted record. A pipeline with no installed policy applies [`Self::recommended`]
 /// (since 0.11, ADR 0013 R3): an installed policy replaces it, so build on
-/// [`Self::recommended`] to keep those rules, or start from [`Self::empty`] to pick every rule
-/// yourself. [`Self::dangerous_none`] turns redaction off and records the opt-out in the posture
-/// registry.
+/// [`Self::recommended`] to keep those rules, or start from [`Self::dangerous_empty`] to pick
+/// every rule yourself (a recorded opt-out). [`Self::dangerous_none`] turns redaction off and
+/// records the opt-out in the posture registry.
 ///
 /// ```
 /// use id_effect_logger::{LogLevel, LogRecord, RedactionPolicy};
 ///
-/// let policy = RedactionPolicy::empty()
+/// let policy = RedactionPolicy::dangerous_empty()
 ///   .field("password")
 ///   .glob("*token*")
 ///   .secret("sk-live-42");
@@ -88,15 +91,41 @@ impl RedactionPolicy {
   #[deprecated(
     since = "0.11.0",
     note = "redacts nothing: use `RedactionPolicy::recommended()` (the pipeline default), or \
-            `RedactionPolicy::empty()` to start from no rules"
+            `RedactionPolicy::dangerous_empty()` to start from no rules"
   )]
   pub fn new() -> Self {
-    Self::empty()
+    Self::dangerous_empty()
+  }
+
+  /// A policy with no rules, with [`DEFAULT_REDACTION_MASK`] as the mask.
+  #[deprecated(
+    since = "0.11.0",
+    note = "unrecorded opt-out from the recommended rules: use \
+            `RedactionPolicy::recommended()` and add to it, or \
+            `RedactionPolicy::dangerous_empty()` (recorded in the posture registry)"
+  )]
+  pub fn empty() -> Self {
+    Self::dangerous_empty()
   }
 
   /// A policy with no rules, with [`DEFAULT_REDACTION_MASK`] as the mask: the explicit start
   /// for a policy whose every rule the caller picks. Installed as is, it redacts nothing.
-  pub fn empty() -> Self {
+  ///
+  /// **Drops the recommended rules** (finding M11): a field such as `password` or
+  /// `authorization` reaches every backend in clear unless the caller adds it back. Recorded in
+  /// the [posture registry](id_effect::observability::posture) as [`DANGEROUS_EMPTY`]; build on
+  /// [`Self::recommended`] to keep its rules without an opt-out.
+  pub fn dangerous_empty() -> Self {
+    ::id_effect::observability::posture::record_dangerous(
+      DANGEROUS_EMPTY,
+      "M11: log redaction starts from no rules; secret fields the caller does not add (password, \
+       token, authorization, cookie) reach every log backend",
+    );
+    Self::no_rules()
+  }
+
+  /// No rules, unrecorded: the start of [`Self::recommended`].
+  fn no_rules() -> Self {
     Self {
       fields: Vec::new(),
       globs: Vec::new(),
@@ -112,7 +141,7 @@ impl RedactionPolicy {
   pub fn recommended() -> Self {
     let policy = RECOMMENDED_FIELDS
       .iter()
-      .fold(Self::empty(), |p, f| p.field(*f));
+      .fold(Self::no_rules(), |p, f| p.field(*f));
     RECOMMENDED_GLOBS.iter().fold(policy, |p, g| p.glob(*g))
   }
 
@@ -124,7 +153,7 @@ impl RedactionPolicy {
       "id_effect_logger::RedactionPolicy::dangerous_none",
       "log redaction is off: passwords, tokens and cookies reach every log backend (M11)",
     );
-    Self::empty()
+    Self::no_rules()
   }
 
   /// Whether the policy has no rule at all (no field, glob or secret): it redacts nothing.
@@ -272,14 +301,16 @@ mod tests {
 
   #[test]
   fn untouched_record_is_borrowed() {
-    let policy = RedactionPolicy::empty().field("password").secret("s3cr3t");
+    let policy = RedactionPolicy::dangerous_empty()
+      .field("password")
+      .secret("s3cr3t");
     let rec = LogRecord::new(LogLevel::Info, "fine").with_annotation("user", "alice");
     assert!(matches!(policy.apply(&rec), Cow::Borrowed(_)));
   }
 
   #[test]
   fn secrets_masked_everywhere_longest_first() {
-    let policy = RedactionPolicy::empty()
+    let policy = RedactionPolicy::dangerous_empty()
       .secret("abc")
       .secret("abcdef")
       .secret("")
@@ -305,10 +336,34 @@ mod tests {
 
   #[test]
   fn already_masked_field_is_borrowed() {
-    let policy = RedactionPolicy::empty().field("password");
+    let policy = RedactionPolicy::dangerous_empty().field("password");
     let rec = LogRecord::new(LogLevel::Info, "m").with_annotation("password", "<redacted>");
     assert!(matches!(policy.apply(&rec), Cow::Borrowed(_)));
     assert!(policy.redacts_field("PASSWORD"));
     assert!(!policy.redacts_field("user"));
+  }
+
+  #[test]
+  fn redaction_opt_out_is_recorded() {
+    let policy = RedactionPolicy::dangerous_empty();
+    assert!(policy.is_empty());
+    let recorded = ::id_effect::observability::posture::dangerous_opt_outs();
+    assert!(
+      recorded
+        .iter()
+        .any(|(id, reopens)| *id == DANGEROUS_EMPTY && reopens.contains("M11")),
+      "{recorded:?}"
+    );
+  }
+
+  #[test]
+  #[allow(deprecated)]
+  fn deprecated_empty_records_the_same_opt_out() {
+    assert!(RedactionPolicy::empty().is_empty());
+    assert!(
+      ::id_effect::observability::posture::dangerous_opt_outs()
+        .iter()
+        .any(|(id, _)| *id == DANGEROUS_EMPTY)
+    );
   }
 }

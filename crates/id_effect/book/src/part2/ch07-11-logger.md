@@ -79,8 +79,9 @@ spans. Register a config `Secret<T>` with `policy.secret(key.expose())` at start
 composite fans out**, so tracing, JSON, structured and OTel backends all see the same masked
 record. With no policy installed the logger applies `RedactionPolicy::recommended()` (passwords,
 tokens, secrets, cookies, `authorization`, `session`, `csrf`, …); an installed policy replaces it,
-so extend `recommended()` or start from `RedactionPolicy::empty()`. `RedactionPolicy::dangerous_none()`
-turns redaction off and records the opt-out for the prod posture check. The tracing and structured
+so extend `recommended()` or start from `RedactionPolicy::dangerous_empty()`.
+`RedactionPolicy::dangerous_empty()` (no rules to start from) and `RedactionPolicy::dangerous_none()`
+(redaction off) record the opt-out for the prod posture check. The tracing and structured
 line formats escape control characters (CR, LF, ANSI escapes) and the spaces and `=` in keys, so a
 logged value cannot forge a line or a field.
 

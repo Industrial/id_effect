@@ -149,8 +149,13 @@ fn m11_empty_policy_is_explicit() {
     .with_annotation("password", "hunter2")
     .with_annotation("access_token", "tok");
 
-  // The empty policy redacts nothing, and says so in its name; the deprecated `new` is it.
-  for policy in [RedactionPolicy::empty(), RedactionPolicy::new()] {
+  // The empty policy redacts nothing, and says so in its name; the deprecated `new` and
+  // `empty` are it.
+  for policy in [
+    RedactionPolicy::dangerous_empty(),
+    RedactionPolicy::empty(),
+    RedactionPolicy::new(),
+  ] {
     assert!(policy.is_empty());
     let out = policy.apply(&rec);
     assert_eq!(out.annotations["password"], "hunter2");

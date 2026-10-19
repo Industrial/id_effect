@@ -90,7 +90,7 @@ pub use providers::{
   provide_composite_logger, provide_minimum_log_level, provide_redaction_policy,
 };
 
-pub use redact::{DEFAULT_REDACTION_MASK, RedactionPolicy};
+pub use redact::{DANGEROUS_EMPTY, DEFAULT_REDACTION_MASK, RedactionPolicy};
 pub use sample::{SamplingBackend, SamplingStats};
 
 use pipeline::TracingLogBackend as TracingSink;

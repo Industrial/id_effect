@@ -191,10 +191,16 @@ Logs are redacted and escaped by default (ADR 0013 R3; findings M11, M12).
   rules; replace it with:
   - `RedactionPolicy::recommended().field(..)…` to keep the default rules and add yours (an
     installed policy replaces the default, it does not extend it);
-  - `RedactionPolicy::empty().field(..)…` to pick every rule yourself (the exact old behaviour);
+  - `RedactionPolicy::dangerous_empty().field(..)…` to pick every rule yourself (the exact old
+    behaviour). It is recorded as the posture opt-out `id_effect_logger::DANGEROUS_EMPTY`
+    (`id_effect_logger::RedactionPolicy::dangerous_empty`), which the prod posture check
+    rejects unless accepted;
   - `RedactionPolicy::dangerous_none()` to log in clear on purpose. It is recorded as the posture
     opt-out `id_effect_logger::RedactionPolicy::dangerous_none`, which the prod posture check
     rejects unless accepted.
+- **`RedactionPolicy::empty()` is deprecated** (removed in 0.12) for `dangerous_empty()`, which it
+  calls, so it records the same opt-out (and so does `new()`). Prefer
+  `RedactionPolicy::recommended()` plus your rules, which records nothing.
 - `active_redaction_policy()` returns the policy the logger applies (installed or default), and
   `RedactionPolicy::is_empty()` says whether it has any rule.
 - **Line formats escape untrusted text.** `TracingLogBackend` writes CR, LF, tab as `\r`, `\n`,
@@ -450,6 +456,14 @@ L5, M4) and the default headers gain cross-origin isolation (L2).
   `.cross_origin_opener_policy("same-origin-allow-popups")?`; assets embedded by other origins
   set `.cross_origin_resource_policy("cross-origin")?` (or `same-site`); each has a
   `without_*` switch, and a header the handler sets itself still wins.
+- **`SecurityLayer::without_csrf()` is deprecated** (removed in 0.12) for
+  `SecurityLayer::dangerous_without_csrf()`. Both switch CSRF off and record the posture opt-out
+  `server::security::DANGEROUS_WITHOUT_CSRF`
+  (`id_effect_axum::server::security::SecurityLayer::dangerous_without_csrf`), which the prod
+  posture check rejects unless accepted. An app that also serves bearer tokens can keep CSRF for
+  cookie requests with `csrf_exempt_bearer()` instead. `SecurityLayer::csrf_enabled()` says
+  whether the layer checks tokens; `id_effect_kit` `Posture::security_layer(&layer)` states the
+  "CSRF on" probe from it in place of `.csrf(bool)`.
 
 ## Web: load shedding and `HostConfig::load_shed`
 
@@ -627,6 +641,22 @@ of the labs crate.
   (fixed by `cargo dylint --fix`), and `raw_sql_non_literal` (see "SQL: `Sql` and `RawSql`").
 - The ast-grep rules moved unchanged: `ast-grep scan --config lints/id_effect_lints/sgconfig.yml`.
 
+## Auth and authz: optional synchronous fast paths
+
+`id_effect_auth::ApiKeyStore` gains `find_now` and `id_effect_authz::Policy` gains `decide_now`,
+both with a default body returning `None`. Nothing changes for a custom store or policy that
+ignores them: `Authenticate` runs `find`, and a route guard runs `evaluate`, as in 0.10.
+
+- A store that looks keys up without I/O (an in-process map) can implement
+  `find_now(&self, id) -> Option<Result<Option<ApiKeyRecord>, AuthError>>` and return
+  `Some(outcome)`; `Authenticate` then checks the key inline, without the effect runtime.
+- A policy that decides from its arguments alone can implement
+  `decide_now(&self, principal, resource) -> Option<Decision>` and return `Some` of the decision
+  `evaluate` would yield; a guard without audit events then decides without a fiber.
+
+Return `None` whenever the answer needs I/O, and keep the two paths in agreement: a fast path
+that decides differently from `find`/`evaluate` is a bug.
+
 ## Kit and templates: the prod posture check
 
 `id_effect_kit` gains the startup posture check of ADR 0013 R10 and new features; the
@@ -634,11 +664,12 @@ of the labs crate.
 
 - **New `id_effect_kit::posture`.** `Posture::load(&Profiles::new())` reads the profile and the
   accepted risks of its configuration; the app states what it serves (`.console(Surface::…)`,
-  `.docs(Surface::…)`, `.csrf(bool)`, `.host(&HostConfig)`, `.tcp_transport(&transport)` or
-  `.no_mesh()`, …); `.check()` adds every opt-out the posture registry recorded and returns a
-  `PostureReport` with nine named probes. `report.enforce()` is an error under `prod` (any
-  profile but `dev` and `test`) when a probe failed; call it before serving and exit on the
-  error. An opt-out runs in `prod` only when the profile's TOML lists it with a reason:
+  `.docs(Surface::…)`, `.security_layer(&layer)` or `.csrf(bool)`, `.host(&HostConfig)`,
+  `.tcp_transport(&transport)` or `.no_mesh()`, …); `.check()` adds every opt-out the posture
+  registry recorded and returns a `PostureReport` with nine named probes. `report.enforce()` is
+  an error under `prod` (any profile but `dev` and `test`) when a probe failed; call it before
+  serving and exit on the error. An opt-out runs in `prod` only when the profile's TOML lists
+  it with a reason:
 
   ```toml
   [security.accepted_risks]

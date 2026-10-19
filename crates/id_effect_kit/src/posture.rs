@@ -11,9 +11,9 @@
 //! | [`CONSOLE_GUARDED`] | the app states its console is [`Surface::Open`] |
 //! | [`DOCS_CLOSED`] | `/docs` is [`Surface::Open`], or `OpenApiUi::public_dangerous` was taken |
 //! | [`MESH_ENCRYPTED`] | the mesh transport is plaintext, or an `id_effect_node` opt-out was taken (plaintext TCP, unverified servers or clients, a short cookie) |
-//! | [`REDACTION_ON`] | the log redaction policy is empty, or `RedactionPolicy::dangerous_none` was taken |
+//! | [`REDACTION_ON`] | the log redaction policy is empty, or `RedactionPolicy::dangerous_none` or `dangerous_empty` was taken |
 //! | [`SSRF_ON`] | an `id_effect_platform::http` opt-out (private networks, an unguarded client) or an `id_effect_auth` `insecure_allow_http` (OIDC, JWKS) was taken |
-//! | [`CSRF_ON`] | the app states CSRF protection is off |
+//! | [`CSRF_ON`] | the app states CSRF protection is off, or `SecurityLayer::dangerous_without_csrf` was taken |
 //! | [`LOAD_SHEDDING_ON`] | the server has no in-flight cap, `HostConfig::dangerous_no_load_shedding` or a `ConnectionLimits::dangerous_*` opt-out was taken |
 //! | [`NO_MEMORY_ONLY_STATE`] | security state that must be shared lives in one process (an id ending in `::memory_only`, e.g. `MemoryTotpStepStore`) |
 //! | [`NO_UNACCEPTED_OPT_OUT`] | any recorded opt-out is not in `security.accepted_risks` with a reason |
@@ -342,7 +342,8 @@ impl Posture {
   }
 
   /// Whether the app's `SecurityLayer` checks CSRF tokens ([`CSRF_ON`]): `true` for
-  /// `SecurityLayer::recommended`, `false` after `without_csrf`.
+  /// `SecurityLayer::recommended`, `false` after `dangerous_without_csrf`. With the `web`
+  /// feature, [`security_layer`](Self::security_layer) reads it from the layer itself.
   pub fn csrf(mut self, on: bool) -> Self {
     self.csrf = Some(if on {
       Stated::Pass("SecurityLayer checks a CSRF token on every state-changing request".to_owned())
@@ -350,6 +351,12 @@ impl Posture {
       Stated::Fail("CSRF protection is off".to_owned())
     });
     self
+  }
+
+  /// [`csrf`](Self::csrf) from the app's `SecurityLayer` (`SecurityLayer::csrf_enabled`).
+  #[cfg(feature = "web")]
+  pub fn security_layer(self, layer: &id_effect_axum::server::security::SecurityLayer) -> Self {
+    self.csrf(layer.csrf_enabled())
   }
 
   /// The app serves no browser: no cookies, no forms ([`CSRF_ON`] is not applicable).

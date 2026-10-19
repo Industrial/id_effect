@@ -137,6 +137,10 @@ pub(crate) fn random_token(bytes: usize) -> String {
 /// [`SecurityHeaders`].
 const SECURITY_RESPONSE_HEADERS: usize = 9;
 
+/// Posture id of [`SecurityLayer::dangerous_without_csrf`] (ADR 0013 R10).
+pub const DANGEROUS_WITHOUT_CSRF: &str =
+  "id_effect_axum::server::security::SecurityLayer::dangerous_without_csrf";
+
 /// Secure-by-default tower layer: CSRF, CSP with nonce, security headers and cookie defaults.
 ///
 /// Built with [`SecurityLayer::recommended`]; every part can be replaced or switched off
@@ -196,9 +200,36 @@ impl SecurityLayer {
   }
 
   /// Switch CSRF protection off entirely (e.g. a pure bearer-token API with no cookies).
-  pub fn without_csrf(mut self) -> Self {
+  #[deprecated(
+    since = "0.11.0",
+    note = "unrecorded opt-out: use `SecurityLayer::dangerous_without_csrf()` (recorded in the \
+            posture registry), or `csrf_exempt_bearer()` for a bearer-token API"
+  )]
+  pub fn without_csrf(self) -> Self {
+    self.dangerous_without_csrf()
+  }
+
+  /// Switch CSRF protection off entirely (e.g. a pure bearer-token API with no cookies).
+  ///
+  /// **Re-opens cross-site request forgery** (ADR 0013 R9): a cross-site page can submit any
+  /// state-changing request the browser attaches cookies to. For an app that also serves bearer
+  /// tokens, [`Self::csrf_exempt_bearer`] keeps the check for cookie requests. Recorded in the
+  /// [posture registry](id_effect::observability::posture) as [`DANGEROUS_WITHOUT_CSRF`].
+  pub fn dangerous_without_csrf(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      DANGEROUS_WITHOUT_CSRF,
+      "R9: CSRF protection is off; a cross-site page can forge any state-changing request a \
+       browser sends with cookies",
+    );
     self.csrf = None;
     self
+  }
+
+  /// Whether the layer checks a CSRF token on state-changing requests: `true` for
+  /// [`Self::recommended`], `false` after [`Self::dangerous_without_csrf`]. Exempt prefixes
+  /// ([`Self::csrf_exempt`], [`Self::csrf_exempt_bearer`]) leave it on.
+  pub fn csrf_enabled(&self) -> bool {
+    self.csrf.is_some()
   }
 
   /// Use `policy` instead of the recommended CSP; it is validated here.
@@ -364,8 +395,41 @@ mod tests {
   #[test]
   fn without_csrf_drops_exemptions() {
     let layer = SecurityLayer::recommended(CookieKey::generate())
-      .without_csrf()
+      .dangerous_without_csrf()
       .csrf_exempt("/hooks");
     assert!(layer.csrf.is_none());
+  }
+
+  #[test]
+  fn csrf_enabled_reports_the_csrf_check() {
+    let layer = SecurityLayer::recommended(CookieKey::generate());
+    assert!(layer.csrf_enabled());
+    let layer = layer.csrf_exempt("/hooks").csrf_exempt_bearer();
+    assert!(layer.csrf_enabled());
+    assert!(!layer.dangerous_without_csrf().csrf_enabled());
+  }
+
+  #[test]
+  fn csrf_opt_out_is_recorded() {
+    let _ = SecurityLayer::recommended(CookieKey::generate()).dangerous_without_csrf();
+    let recorded = id_effect::observability::posture::dangerous_opt_outs();
+    assert!(
+      recorded
+        .iter()
+        .any(|(id, reopens)| *id == DANGEROUS_WITHOUT_CSRF && reopens.contains("CSRF")),
+      "{recorded:?}"
+    );
+  }
+
+  #[test]
+  #[allow(deprecated)]
+  fn deprecated_without_csrf_records_the_same_opt_out() {
+    let layer = SecurityLayer::recommended(CookieKey::generate()).without_csrf();
+    assert!(!layer.csrf_enabled());
+    assert!(
+      id_effect::observability::posture::dangerous_opt_outs()
+        .iter()
+        .any(|(id, _)| *id == DANGEROUS_WITHOUT_CSRF)
+    );
   }
 }

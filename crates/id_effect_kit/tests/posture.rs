@@ -237,6 +237,11 @@ fn battery_opt_outs_fail_their_probes() {
       REDACTION_ON,
       "id_effect_logger::RedactionPolicy::dangerous_none",
     ),
+    (REDACTION_ON, id_effect_kit::logger::DANGEROUS_EMPTY),
+    (
+      CSRF_ON,
+      id_effect_kit::axum::server::security::DANGEROUS_WITHOUT_CSRF,
+    ),
   ];
   for (probe, id) in cases {
     let report = Posture::new("prod").evaluate(&[(id, "reopens")]);
@@ -258,4 +263,18 @@ fn battery_opt_outs_fail_their_probes() {
     report.probe(REDACTION_ON).unwrap().status,
     ProbeStatus::Pass
   );
+}
+
+/// The CSRF probe reads the layer's own state, not an app-stated flag.
+#[cfg(feature = "web")]
+#[test]
+fn csrf_probe_reads_the_security_layer() {
+  use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
+
+  let layer = SecurityLayer::recommended(CookieKey::generate());
+  let report = Posture::new("prod").security_layer(&layer).evaluate(&[]);
+  assert_eq!(report.probe(CSRF_ON).unwrap().status, ProbeStatus::Pass);
+  let layer = layer.dangerous_without_csrf();
+  let report = Posture::new("prod").security_layer(&layer).evaluate(&[]);
+  assert_eq!(report.probe(CSRF_ON).unwrap().status, ProbeStatus::Fail);
 }

@@ -122,6 +122,16 @@
   `jwt::DANGEROUS_ANY_ISSUER` / `jwt::DANGEROUS_ANY_AUDIENCE`). They replace
   `without_throttle_dangerous()`, `without_lockout_dangerous()`, `any_issuer_dangerous()` and
   `any_audience_dangerous()`, now deprecated shims that record the same ids.
+- The CSRF and redaction opt-outs record themselves (ADR 0013 R10): `id_effect_axum`
+  `SecurityLayer::dangerous_without_csrf()` records `server::security::DANGEROUS_WITHOUT_CSRF`
+  (R9) and `id_effect_logger` `RedactionPolicy::dangerous_empty()` records
+  `id_effect_logger::DANGEROUS_EMPTY` (M11); the prod posture probes "CSRF on" and "redaction
+  policy non-empty" fail on them unless the risk is accepted. `SecurityLayer::without_csrf()`
+  and `RedactionPolicy::empty()` are deprecated shims that record the same ids (and so is
+  `RedactionPolicy::new()`); `RedactionPolicy::is_empty()` is unchanged. New
+  `SecurityLayer::csrf_enabled()` says whether the layer checks tokens, and
+  `id_effect_kit::posture::Posture::security_layer(&layer)` states the "CSRF on" probe from it
+  (`.csrf(bool)` still works).
 
 ### Performance
 
@@ -135,9 +145,21 @@
   `gate_request` bench `axum_request_bare` went from 8.4 µs to 0.90 µs and
   `axum_request_secure_stack` from 28.9 µs to 5.5 µs. Code inside a request effect now runs
   inside the caller's `tracing` span and task, as an `async` handler does.
+- `id_effect_auth` `Authenticate` checks an API key from an in-process store without the effect
+  runtime: the new `ApiKeyStore::find_now` (default `None`) is a synchronous fast path that
+  `MemoryApiKeyStore` implements; a store returning `None` runs `find` as before.
+- `id_effect_authz` route guards decide a pure policy without a fiber: the new
+  `Policy::decide_now` (default `None`) is a synchronous fast path that the built-in policies
+  and combinators implement (`Constant`, `Authenticated`, `RequireRole`, `PredicatePolicy`,
+  `And`/`Or`/`Not`, `CrossTenant`, `Arc`/`Box`); a guard with audit events, or
+  a policy returning `None`, runs `evaluate` as before.
 
 ### Added
 
+- Optional synchronous fast paths for custom implementors: `id_effect_auth`
+  `ApiKeyStore::find_now` and `id_effect_authz` `Policy::decide_now`, both defaulting to `None`
+  (see Performance). Existing implementations compile and behave as before; see "Auth and
+  authz: optional synchronous fast paths" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `id_effect_kit` prod posture check (ADR 0013 R10): new `posture` module. `Posture` takes the
   profile, the risks its configuration accepts (`security.accepted_risks`, opt-out id → reason;
   a blank reason does not accept) and what the app states about itself; `check()` adds the
