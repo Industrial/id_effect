@@ -18,7 +18,7 @@ use id_effect_kit::axum::middleware::{
   BodyLimitLayer, CompressionLayer, RateLimitKey, RequestIdLayer, TimeoutLayer,
 };
 use id_effect_kit::axum::openapi::{Info, OpenApi, OpenApiUi, openapi_router};
-use id_effect_kit::axum::route::{self, Endpoint, introspect};
+use id_effect_kit::axum::route::{self, Endpoint, Guarded, introspect};
 use id_effect_kit::axum::server::security::{CookieKey, CsrfToken, SecurityLayer};
 use id_effect_kit::axum::{ClientIp, HealthIndicator, HealthRegistry, RequestCaps, TrustedProxies};
 use id_effect_kit::config::ProfileWatch;
@@ -323,8 +323,13 @@ impl Caller {
 }
 
 /// `endpoint` behind a guard evaluating the registry policy `name` before the handler runs
-/// (401 for an anonymous caller, 403 for a denied one). Every route of the app has one.
-pub fn guarded(policies: &Policies, name: &str, endpoint: Endpoint<AppEnv>) -> Endpoint<AppEnv> {
+/// (401 for an anonymous caller, 403 for a denied one). Every typed route of the app has one,
+/// except the public sign-in routes.
+pub fn guarded(
+  policies: &Policies,
+  name: &str,
+  endpoint: Endpoint<AppEnv>,
+) -> Endpoint<AppEnv, Guarded> {
   endpoint.authorize(Guard::named(policies, name)).into()
 }
 

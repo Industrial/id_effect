@@ -122,9 +122,14 @@ fn with_request_ids(
     request_ids: RequestIdLayer,
 ) -> Router {
 {{/if}}
-    // Typed routes are registered (method, path, schemas) for OpenAPI and route listings.
-    let typed =
-        route::Router::new().route(Route::get("/hello/{name}").path::<Name>().handler(hello));
+    // Typed routes are registered (method, path, access, schemas) for OpenAPI and route
+    // listings. Each declares who may call it: `.public()` here, `.guard(..)` for the rest.
+    let typed = route::Router::new().route(
+        Route::get("/hello/{name}")
+            .public()
+            .path::<Name>()
+            .handler(hello),
+    );
     Router::new()
         .route("/", routing::get(index))
         .merge(typed.into_axum())

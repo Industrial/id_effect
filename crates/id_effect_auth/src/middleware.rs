@@ -7,7 +7,7 @@
 //!
 //! | Request | Outcome |
 //! |---|---|
-//! | no credential of a configured scheme (or an expired session) | continues as [`Anonymous`](id_effect_authz::Anonymous); the route guard decides (401 when it needs a login) |
+//! | no credential of a configured scheme (or an expired session) | continues as [`Anonymous`](id_effect_authz::Anonymous): it reaches **public** typed routes only; a guarded typed route answers 401 (see below) |
 //! | a valid credential | continues as that [`AuthPrincipal`] |
 //! | an invalid credential (bad signature, expired token, wrong password, unknown key) | **401** Problem Details with `WWW-Authenticate` challenges, at once |
 //! | a backend failure (user store, JWKS endpoint) | **503** Problem Details |
@@ -22,6 +22,11 @@
 //! run with `execute_with_request_caps` can `need::<CurrentPrincipal>()`), and the
 //! [`AuthPrincipal`] itself as an extension (`Extension<AuthPrincipal>`). Add `Authenticate`
 //! with `Router::layer`, outside the per-route guards.
+//!
+//! Continuing as `Anonymous` does not open anything: every typed route declares its access
+//! (`id_effect_axum::route::Route::public` or `Route::guard`), a typed route's guard answers the
+//! anonymous principal **401** before its policy runs, and a route that declares neither does not
+//! compile. A request without credentials therefore reaches only the routes declared public.
 //!
 //! ```
 //! # #[cfg(feature = "jwt")] {

@@ -2420,6 +2420,8 @@ dependencies = [
  "tower-http",
  "tower-layer",
  "tower-service",
+ "tracing",
+ "trybuild",
 ]
 
 [[package]]

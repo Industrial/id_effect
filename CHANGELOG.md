@@ -4,6 +4,16 @@
 
 ### Security
 
+- `id_effect_axum` typed routes are deny by default (H8, ADR 0013 R1): `route::Router::route`
+  only compiles for an endpoint whose route declared `.public()` or `.guard(g)` (new
+  `RouteGuard` trait, implemented by `id_effect_authz::Guard`, which on a typed route answers 401
+  to the anonymous principal before its policy). `RouteInfo::access` records the decision,
+  OpenAPI documents public operations with `security: []`, `Router::access_report()` lists the
+  public routes and `into_axum()` logs it at startup and installs a deny-by-default layer that
+  answers 404 Problem Details for unregistered routes (`Router::merge_axum`; opt-out
+  `allow_unregistered_routes_dangerous()`, recorded). `Router::route_unchecked` is the deprecated
+  one-minor shim, recorded in the posture registry. See "Routing: every route is public or
+  guarded (H8)" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
 - `id_effect_axum` `SecurityLayer` (L1, L2, L5, M4): the CSRF token is masked per response
   (one-time pad, BREACH) and unmasked before the constant-time compare; `CsrfToken::rotate`
   replaces the session secret (call it at login); the CSRF form read is bounded by

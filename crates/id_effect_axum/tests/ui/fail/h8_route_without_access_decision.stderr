@@ -1,0 +1,22 @@
+error[E0277]: the route has no access decision
+  --> tests/ui/fail/h8_route_without_access_decision.rs:12:31
+   |
+12 |   let _ = Router::new().route(Route::get("/hello").handler(hello));
+   |                         ----- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this endpoint is neither public nor guarded
+   |                         |
+   |                         required by a bound introduced by this call
+   |
+   = help: the trait `Decided` is not implemented for `id_effect_axum::route::Undecided`
+   = note: call `.public()` or `.guard(g)` on the route (or `.authorize(guard)` on the endpoint) before `Router::route`
+help: the following other types implement trait `Decided`
+  --> src/route/access.rs
+   |
+   | impl Decided for Public {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^ `id_effect_axum::route::Public`
+   | impl Decided for Guarded {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^ `id_effect_axum::route::Guarded`
+note: required by a bound in `Router::<S>::route`
+  --> src/route/mod.rs
+   |
+   |   pub fn route<A: Decided>(self, endpoint: Endpoint<S, A>) -> Self {
+   |                   ^^^^^^^ required by this bound in `Router::<S>::route`

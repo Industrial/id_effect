@@ -14,9 +14,14 @@
 //! Plain Axum handlers get the same decoding per part from the [`extract`] extractors
 //! ([`ValidPath`], [`ValidQuery`], [`ValidHeaders`], [`ValidJson`], [`ValidForm`]).
 //!
+//! Every route declares who may call it before a [`Router`] accepts it (deny by default, see
+//! [`access`]): [`Route::public`] for anyone, anonymous callers included, or [`Route::guard`]
+//! for a [`RouteGuard`] that decides first. A route with neither does not compile.
+//!
 //! A [`Router`] wraps an [`axum::Router`] and records each route's [`RouteInfo`] (method, path
-//! template, [`SchemaRef`] per part) for OpenAPI generation and route listings. The existing
-//! [`crate::routing`] helpers are unchanged and can be mixed in through [`Router::into_axum`].
+//! template, access, [`SchemaRef`] per part) for OpenAPI generation and route listings. The
+//! existing [`crate::routing`] helpers are unchanged and can be mixed in through
+//! [`Router::into_axum`].
 //!
 //! ```rust
 //! use axum::http::StatusCode;
@@ -45,17 +50,20 @@
 //!
 //! let router = Router::new().route(
 //!   Route::get("/accounts/{id}")
+//!     .public()
 //!     .path::<AccountId>()
 //!     .response::<AccountId>(StatusCode::OK)
 //!     .handler(show),
 //! );
 //! let info = router.routes().next().unwrap();
 //! assert_eq!(info.path, "/accounts/{id}");
+//! assert_eq!(router.access_report().public, ["GET /accounts/{id}"]);
 //! assert!(info.path_params.is_some());
 //! let app: axum::Router = router.with_state(App).into_axum();
 //! # let _ = app;
 //! ```
 
+pub mod access;
 mod decode;
 pub mod extract;
 #[cfg(feature = "openapi")]
@@ -77,10 +85,15 @@ use id_effect::schema::{HasSchema, ParseError, ParseErrors, Schema, Unknown};
 
 use crate::request_caps::RequestCaps;
 
+pub use access::{
+  Access, AccessLayer, AccessReport, AccessService, Decided, GuardFuture, Guarded, Public,
+  RouteGuard, Undecided,
+};
+use access::{GuardLayer, Guards};
 pub use decode::RouteRejection;
 pub use extract::{ValidForm, ValidHeaders, ValidJson, ValidPath, ValidQuery};
 pub use problem::{Issue, Location, PROBLEM_JSON, Problem};
-pub use registry::{BodyKind, ResponseInfo, RouteInfo, RouteRegistry, SchemaRef};
+pub use registry::{BodyKind, ResponseInfo, RouteAccess, RouteInfo, RouteRegistry, SchemaRef};
 
 mod sealed {
   pub trait Sealed {}
@@ -195,14 +208,20 @@ pub(crate) struct Parts<P, Q, H, B> {
   pub(crate) body_kind: BodyKind,
 }
 
-/// Builder for one typed route; finish it with [`Route::handler`].
+/// Builder for one typed route; decide its access with [`Route::public`] or [`Route::guard`]
+/// and finish it with [`Route::handler`].
+///
+/// `A` is the access state: [`Undecided`] until one of the two is called, then [`Public`] or
+/// [`Guarded`]; [`Router::route`] only accepts the endpoint of a decided route.
 #[derive(Clone, Debug)]
 #[must_use = "a route does nothing until `.handler(f)` is added to a `Router`"]
-pub struct Route<P = Undeclared, Q = Undeclared, H = Undeclared, B = Undeclared> {
+pub struct Route<P = Undeclared, Q = Undeclared, H = Undeclared, B = Undeclared, A = Undecided> {
   method: Method,
   template: String,
   parts: Parts<P, Q, H, B>,
   responses: Vec<ResponseInfo>,
+  guards: Guards,
+  access: PhantomData<A>,
 }
 
 impl Route {
@@ -219,6 +238,8 @@ impl Route {
         body_kind: BodyKind::Json,
       },
       responses: Vec::new(),
+      guards: Guards::default(),
+      access: PhantomData,
     }
   }
 
@@ -248,10 +269,40 @@ impl Route {
   }
 }
 
-impl<P, Q, H, B> Route<P, Q, H, B> {
+impl<P, Q, H, B> Route<P, Q, H, B, Undecided> {
+  /// Anyone may call this route, anonymous callers included. Listed by
+  /// [`Router::access_report`] and documented with no security requirement.
+  pub fn public(self) -> Route<P, Q, H, B, Public> {
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: self.parts,
+      responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
+    }
+  }
+}
+
+impl<P, Q, H, B, A> Route<P, Q, H, B, A> {
+  /// Evaluate `guard` before the handler (repeatable; each later guard wraps the earlier ones,
+  /// outermost last). Its [`policy`](RouteGuard::policy) is recorded in
+  /// [`RouteInfo::policies`]. On a public route it makes the route guarded.
+  pub fn guard(mut self, guard: impl RouteGuard) -> Route<P, Q, H, B, Guarded> {
+    self.guards.0.push(Arc::new(guard));
+    Route {
+      method: self.method,
+      template: self.template,
+      parts: self.parts,
+      responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
+    }
+  }
+
   /// Declare the path parameters as `T`: a struct schema keyed by parameter name, or any scalar
   /// schema when the template has exactly one parameter.
-  pub fn path<T>(self) -> Route<Declared<T>, Q, H, B>
+  pub fn path<T>(self) -> Route<Declared<T>, Q, H, B, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -274,12 +325,14 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         body_kind,
       },
       responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
     }
   }
 
   /// Declare the query string as `T` (a struct or record schema; an array field collects
   /// repeated keys and is `[]` when the key is absent, a nullable field is `null` when absent).
-  pub fn query<T>(self) -> Route<P, Declared<T>, H, B>
+  pub fn query<T>(self) -> Route<P, Declared<T>, H, B, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -302,12 +355,14 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         body_kind,
       },
       responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
     }
   }
 
   /// Declare request headers as `T` (a struct schema whose field names are header names, matched
   /// case-insensitively).
-  pub fn headers<T>(self) -> Route<P, Q, Declared<T>, B>
+  pub fn headers<T>(self) -> Route<P, Q, Declared<T>, B, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -330,12 +385,14 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         body_kind,
       },
       responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
     }
   }
 
   /// Declare the JSON request body as `T` (the `Content-Type` is not checked; a body that is not
   /// JSON answers **400**).
-  pub fn body<T>(self) -> Route<P, Q, H, Declared<T>>
+  pub fn body<T>(self) -> Route<P, Q, H, Declared<T>, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -346,7 +403,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
   /// Declare a form request body as `T`, decoded like [`Route::query`]: the fields of an
   /// `application/x-www-form-urlencoded` body, or the text fields of a `multipart/form-data` body
   /// (file fields are skipped). Another content type keeps Axum's `415` rejection.
-  pub fn form<T>(self) -> Route<P, Q, H, Declared<T>>
+  pub fn form<T>(self) -> Route<P, Q, H, Declared<T>, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -354,7 +411,7 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
     self.with_body(BodyKind::Form)
   }
 
-  fn with_body<T>(self, body_kind: BodyKind) -> Route<P, Q, H, Declared<T>>
+  fn with_body<T>(self, body_kind: BodyKind) -> Route<P, Q, H, Declared<T>, A>
   where
     T: HasSchema + 'static,
     T::A: Send,
@@ -376,6 +433,8 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
         body_kind,
       },
       responses: self.responses,
+      guards: self.guards,
+      access: PhantomData,
     }
   }
 
@@ -393,12 +452,13 @@ impl<P, Q, H, B> Route<P, Q, H, B> {
 /// Boxed future of a typed handler.
 type HandlerFuture = Pin<Box<dyn Future<Output = Response> + Send>>;
 
-impl<P, Q, H, B> Route<P, Q, H, B>
+impl<P, Q, H, B, A> Route<P, Q, H, B, A>
 where
   P: RoutePart,
   Q: RoutePart,
   H: RoutePart,
   B: RoutePart,
+  A: Access,
 {
   /// Everything this route declares.
   pub fn info(&self) -> RouteInfo {
@@ -409,6 +469,8 @@ where
     info.body = self.parts.body.schema().cloned();
     info.body_kind = self.parts.body_kind;
     info.responses = self.responses.clone();
+    info.policies = self.guards.policies().collect();
+    info.access = A::ACCESS;
     info
   }
 
@@ -422,12 +484,12 @@ where
   /// # Panics
   ///
   /// If Axum cannot route the method (an extension method such as `PROPFIND`).
-  pub fn handler<S, A, E, F>(self, f: F) -> Endpoint<S>
+  pub fn handler<S, T, E, F>(self, f: F) -> Endpoint<S, A>
   where
     S: Clone + Send + Sync + 'static,
-    A: IntoResponse + Send + 'static,
+    T: IntoResponse + Send + 'static,
     E: IntoResponse + Send + 'static,
-    F: Fn(&mut S, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+    F: Fn(&mut S, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<T, E, S>
       + Clone
       + Send
       + Sync
@@ -447,12 +509,12 @@ where
   /// # Panics
   ///
   /// If Axum cannot route the method (an extension method such as `PROPFIND`).
-  pub fn handler_with_request_caps<S, A, E, F>(self, f: F) -> Endpoint<S>
+  pub fn handler_with_request_caps<S, T, E, F>(self, f: F) -> Endpoint<S, A>
   where
     S: Clone + Send + Sync + 'static,
-    A: IntoResponse + Send + 'static,
+    T: IntoResponse + Send + 'static,
     E: IntoResponse + Send + 'static,
-    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<T, E, S>
       + Clone
       + Send
       + Sync
@@ -462,12 +524,12 @@ where
   }
 
   /// The endpoint running `f` (named `handler` in the [`RouteInfo`]) for each decoded request.
-  fn endpoint<S, A, E, F>(self, handler: &'static str, f: F) -> Endpoint<S>
+  fn endpoint<S, T, E, F>(self, handler: &'static str, f: F) -> Endpoint<S, A>
   where
     S: Clone + Send + Sync + 'static,
-    A: IntoResponse + Send + 'static,
+    T: IntoResponse + Send + 'static,
     E: IntoResponse + Send + 'static,
-    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<A, E, S>
+    F: Fn(&mut S, RequestCaps, Input<P::Value, Q::Value, H::Value, B::Value>) -> Effect<T, E, S>
       + Clone
       + Send
       + Sync
@@ -478,7 +540,8 @@ where
     let filter = MethodFilter::try_from(self.method.clone())
       .unwrap_or_else(|e| panic!("typed route {} {}: {e}", self.method, self.template));
     let parts = Arc::new(self.parts);
-    let method_router = axum::routing::on(filter, move |State(env): State<S>, req: Request| {
+    let guards = self.guards;
+    let mut method_router = axum::routing::on(filter, move |State(env): State<S>, req: Request| {
       let parts = Arc::clone(&parts);
       let f = f.clone();
       Box::pin(async move {
@@ -495,21 +558,29 @@ where
         }
       }) as HandlerFuture
     });
+    for guard in guards.0 {
+      method_router = method_router.layer(GuardLayer(guard));
+    }
     Endpoint {
       info,
       method_router,
+      access: PhantomData,
     }
   }
 }
 
 /// A finished typed route: its [`RouteInfo`] and the Axum [`MethodRouter`] serving it.
+///
+/// `A` is the route's access state ([`Undecided`], [`Public`] or [`Guarded`]);
+/// [`Router::route`] accepts only a decided endpoint.
 #[must_use = "add the endpoint to a `Router`"]
-pub struct Endpoint<S = ()> {
+pub struct Endpoint<S = (), A = Undecided> {
   info: RouteInfo,
   method_router: MethodRouter<S>,
+  access: PhantomData<A>,
 }
 
-impl<S> Endpoint<S> {
+impl<S, A> Endpoint<S, A> {
   /// What the route declares.
   pub fn info(&self) -> &RouteInfo {
     &self.info
@@ -519,18 +590,46 @@ impl<S> Endpoint<S> {
   pub fn into_parts(self) -> (RouteInfo, MethodRouter<S>) {
     (self.info, self.method_router)
   }
+}
 
-  /// Reassemble an endpoint from [`Endpoint::into_parts`] (e.g. after wrapping the method router
-  /// or recording [`RouteInfo::policies`]).
-  pub fn from_parts(info: RouteInfo, method_router: MethodRouter<S>) -> Self {
+impl<S> Endpoint<S, Undecided> {
+  /// Reassemble an endpoint from [`Endpoint::into_parts`] (e.g. after wrapping the method router),
+  /// or make one from a plain Axum `method_router` and a [`RouteInfo::new`]. The endpoint is
+  /// [`Undecided`] whatever `info.access` says: decide again with [`Endpoint::public`] or
+  /// [`Endpoint::guard`].
+  pub fn from_parts(mut info: RouteInfo, method_router: MethodRouter<S>) -> Self {
+    info.access = RouteAccess::Undecided;
     Self {
       info,
       method_router,
+      access: PhantomData,
+    }
+  }
+
+  /// Anyone may call this endpoint, anonymous callers included (like [`Route::public`]).
+  pub fn public(mut self) -> Endpoint<S, Public> {
+    self.info.access = RouteAccess::Public;
+    Endpoint {
+      info: self.info,
+      method_router: self.method_router,
+      access: PhantomData,
     }
   }
 }
 
-impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
+impl<S: Clone + Send + Sync + 'static, A> Endpoint<S, A> {
+  /// Evaluate `guard` before the handler and any layer added so far (like [`Route::guard`]):
+  /// its policy is appended to [`RouteInfo::policies`] and the endpoint becomes [`Guarded`].
+  pub fn guard(mut self, guard: impl RouteGuard) -> Endpoint<S, Guarded> {
+    self.info.policies.push(guard.policy().to_owned());
+    self.info.access = RouteAccess::Guarded;
+    Endpoint {
+      info: self.info,
+      method_router: self.method_router.layer(GuardLayer(Arc::new(guard))),
+      access: PhantomData,
+    }
+  }
+
   /// Wrap the handler in `layer` (see [`MethodRouter::layer`]); the [`RouteInfo`] is unchanged.
   pub fn layer<L>(self, layer: L) -> Self
   where
@@ -544,15 +643,29 @@ impl<S: Clone + Send + Sync + 'static> Endpoint<S> {
     Self {
       info: self.info,
       method_router: self.method_router.layer(layer),
+      access: PhantomData,
     }
   }
 }
 
-/// An [`axum::Router`] that records the [`RouteInfo`] of every typed route added to it.
+impl<S, A> std::fmt::Debug for Endpoint<S, A> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Endpoint")
+      .field("method", &self.info.method)
+      .field("path", &self.info.path)
+      .field("access", &self.info.access)
+      .field("policies", &self.info.policies)
+      .finish()
+  }
+}
+
+/// An [`axum::Router`] that records the [`RouteInfo`] of every typed route added to it, and
+/// serves only routes that declare their access (see [`access`]).
 #[must_use]
 pub struct Router<S = ()> {
   inner: axum::Router<S>,
   registry: RouteRegistry,
+  allow_unregistered: bool,
 }
 
 impl<S: Clone + Send + Sync + 'static> Default for Router<S> {
@@ -567,18 +680,49 @@ impl<S: Clone + Send + Sync + 'static> Router<S> {
     Self {
       inner: axum::Router::new(),
       registry: RouteRegistry::new(),
+      allow_unregistered: false,
     }
   }
 
   /// Mount `endpoint` at its path and register its [`RouteInfo`]. Several methods may share a
   /// path.
   ///
+  /// Only a [`Decided`] endpoint compiles: call [`Route::public`] or [`Route::guard`] (or
+  /// `.authorize(guard)` from `id_effect_authz`) first.
+  ///
   /// # Panics
   ///
   /// Like [`axum::Router::route`]: when the method is already routed at that path, or the path is
   /// not a valid template.
-  pub fn route(mut self, endpoint: Endpoint<S>) -> Self {
-    let (info, method_router) = endpoint.into_parts();
+  pub fn route<A: Decided>(self, endpoint: Endpoint<S, A>) -> Self {
+    self.mount(endpoint.info, endpoint.method_router)
+  }
+
+  /// Mount `endpoint` without an access decision: the 0.10 behaviour, which serves every caller,
+  /// anonymous ones included. An undecided endpoint is recorded as [`RouteAccess::Unchecked`]
+  /// and the opt-out `id_effect_axum::route::Router::route_unchecked` in the
+  /// [posture registry](id_effect::observability::posture). Removed in 0.12.
+  ///
+  /// # Panics
+  ///
+  /// Like [`Router::route`].
+  #[deprecated(
+    since = "0.11.0",
+    note = "declare access with `Route::public()` or `Route::guard(..)` and use `Router::route`; `route_unchecked` is removed in 0.12"
+  )]
+  pub fn route_unchecked<A: Access>(self, endpoint: Endpoint<S, A>) -> Self {
+    let mut info = endpoint.info;
+    if info.access == RouteAccess::Undecided {
+      id_effect::observability::posture::record_dangerous(
+        "id_effect_axum::route::Router::route_unchecked",
+        "H8: a typed route serves every caller, anonymous ones included, without an access decision",
+      );
+      info.access = RouteAccess::Unchecked;
+    }
+    self.mount(info, endpoint.method_router)
+  }
+
+  fn mount(mut self, info: RouteInfo, method_router: MethodRouter<S>) -> Self {
     self.inner = self.inner.route(&info.path, method_router);
     self.registry.register(info);
     self
@@ -588,7 +732,45 @@ impl<S: Clone + Send + Sync + 'static> Router<S> {
   pub fn merge(mut self, other: Router<S>) -> Self {
     self.inner = self.inner.merge(other.inner);
     self.registry.extend(other.registry);
+    self.allow_unregistered |= other.allow_unregistered;
     self
+  }
+
+  /// Merge the plain Axum router `other` (see [`axum::Router::merge`]). Its routes declare no
+  /// access, so they answer **404** Problem Details once [`Router::into_axum`] installs the
+  /// deny-by-default layer — unless this router
+  /// [allows unregistered routes](Router::allow_unregistered_routes_dangerous). To serve a plain
+  /// handler, make it an endpoint and decide:
+  /// `Endpoint::from_parts(RouteInfo::new(method, path), method_router).public()`.
+  pub fn merge_axum(mut self, other: axum::Router<S>) -> Self {
+    self.inner = self.inner.merge(other);
+    self
+  }
+
+  /// Serve routes merged with [`Router::merge_axum`] although they declare no access: turns the
+  /// deny-by-default layer off. Records the opt-out
+  /// `id_effect_axum::route::Router::allow_unregistered_routes_dangerous` in the
+  /// [posture registry](id_effect::observability::posture).
+  pub fn allow_unregistered_routes_dangerous(mut self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      "id_effect_axum::route::Router::allow_unregistered_routes_dangerous",
+      "H8: plain routes without an access decision are served to every caller",
+    );
+    self.allow_unregistered = true;
+    self
+  }
+
+  /// Who may call each route: public routes, guarded routes with their policies, unchecked
+  /// routes and whether unregistered routes are allowed. [`Router::into_axum`] logs it
+  /// (`tracing`, target `id_effect_axum::route::access`).
+  pub fn access_report(&self) -> AccessReport {
+    AccessReport::new(&self.registry, self.allow_unregistered)
+  }
+
+  /// The deny-by-default layer for this router's routes (see [`AccessLayer`]); add it last with
+  /// `route_layer` to cover plain routes merged onto [`Router::into_axum`]'s result.
+  pub fn access_layer(&self) -> AccessLayer {
+    AccessLayer::new(&self.registry)
   }
 
   /// Every registered route, in registration order.
@@ -609,17 +791,35 @@ impl<S: Clone + Send + Sync + 'static> Router<S> {
     Router {
       inner: self.inner.with_state(state),
       registry: self.registry,
+      allow_unregistered: self.allow_unregistered,
     }
   }
 
-  /// The underlying Axum router and the registry.
+  /// The Axum router, with the deny-by-default layer installed, and the registry.
   pub fn into_parts(self) -> (axum::Router<S>, RouteRegistry) {
-    (self.inner, self.registry)
+    let inner = self.deny_unregistered();
+    (inner, self.registry)
   }
 
-  /// The underlying Axum router (add plain routes, layers, or serve it).
+  /// The Axum router (add plain routes, layers, or serve it), with the deny-by-default
+  /// [`AccessLayer`] on every route merged so far: a route that is not a registered public or
+  /// guarded typed route answers **404** Problem Details, unless
+  /// [`Router::allow_unregistered_routes_dangerous`] was taken. Logs the
+  /// [`access_report`](Router::access_report).
+  ///
+  /// Routes added to the returned router are outside the layer; add
+  /// [`Router::access_layer`] last to cover them.
   pub fn into_axum(self) -> axum::Router<S> {
-    self.inner
+    self.deny_unregistered()
+  }
+
+  fn deny_unregistered(&self) -> axum::Router<S> {
+    self.access_report().log();
+    if self.allow_unregistered || !self.inner.has_routes() {
+      self.inner.clone()
+    } else {
+      self.inner.clone().route_layer(self.access_layer())
+    }
   }
 }
 
@@ -672,13 +872,15 @@ mod tests {
         .insert("x-layered", axum::http::HeaderValue::from_static("1"));
       res
     });
-    let endpoint = Route::get("/x").handler(ok).layer(stamp);
-    let (mut info, method_router) = endpoint.into_parts();
-    info.policies.push("staff".to_owned());
+    let endpoint = Route::get("/x").public().handler(ok).layer(stamp);
+    assert_eq!(endpoint.info().access, RouteAccess::Public);
+    let (info, method_router) = endpoint.into_parts();
+    // A reassembled endpoint decides again.
     let endpoint = Endpoint::from_parts(info, method_router);
-    assert_eq!(endpoint.info().policies, ["staff"]);
-    let router = Router::new().route(endpoint);
-    assert_eq!(router.routes().next().unwrap().policies, ["staff"]);
+    assert_eq!(endpoint.info().access, RouteAccess::Undecided);
+    assert!(format!("{endpoint:?}").contains("Undecided"));
+    let router = Router::new().route(endpoint.public());
+    assert_eq!(router.routes().next().unwrap().access, RouteAccess::Public);
     let req = axum::http::Request::get("/x")
       .body(axum::body::Body::empty())
       .unwrap();
@@ -703,6 +905,7 @@ mod tests {
     }
 
     let endpoint = Route::get("/ids/{id}")
+      .public()
       .path::<Id>()
       .handler_with_request_caps(whoami);
     assert!(endpoint.info().handler.unwrap().contains("whoami"));

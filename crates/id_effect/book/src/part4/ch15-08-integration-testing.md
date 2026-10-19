@@ -334,7 +334,11 @@ fn show(_: &mut (), input: Input<i64>) -> Effect<Json<Account>, std::convert::In
 }
 
 let routes = Router::<()>::new().route(
-  Route::get("/accounts/{id}").path::<AccountId>().response::<Account>(Status::OK).handler(show),
+  Route::get("/accounts/{id}")
+    .public()
+    .path::<AccountId>()
+    .response::<Account>(Status::OK)
+    .handler(show),
 );
 let contract = Contract::new(OpenApi::from_router(&routes).to_json());
 let (app, _) = routes.with_state::<()>(()).into_parts();

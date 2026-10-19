@@ -256,9 +256,14 @@ async fn path_param_violation_is_422_problem() {
 
   // On a typed route as well.
   let typed: axum::Router = Router::new()
-    .route(Route::get("/accounts/{id}").path::<AccountId>().handler(
-      |_: &mut (), input: Input<i64>| succeed::<_, Infallible, ()>(format!("id={}", input.path)),
-    ))
+    .route(
+      Route::get("/accounts/{id}")
+        .public()
+        .path::<AccountId>()
+        .handler(|_: &mut (), input: Input<i64>| {
+          succeed::<_, Infallible, ()>(format!("id={}", input.path))
+        }),
+    )
     .into_axum();
   let (status, ct, body) = send(&typed, get_req("/accounts/1.5")).await;
   let p = problem(StatusCode::UNPROCESSABLE_ENTITY, &ct, body);
@@ -367,7 +372,7 @@ async fn missing_required_header_is_422() {
   );
 
   let typed: axum::Router = Router::new()
-    .route(Route::get("/tenant").headers::<Tenant>().handler(
+    .route(Route::get("/tenant").public().headers::<Tenant>().handler(
       |_: &mut (), input: Input<(), (), (i64, String)>| {
         succeed::<_, Infallible, ()>(input.headers.1)
       },
@@ -389,7 +394,12 @@ fn signup(_: &mut (), input: Input<(), (), (), (String, i64)>) -> Effect<String,
 #[tokio::test]
 async fn form_fields_validated() {
   let typed: axum::Router = Router::new()
-    .route(Route::post("/signup").form::<Signup>().handler(signup))
+    .route(
+      Route::post("/signup")
+        .public()
+        .form::<Signup>()
+        .handler(signup),
+    )
     .into_axum();
   for app in [plain_app(), typed] {
     let form = "application/x-www-form-urlencoded";
@@ -454,6 +464,7 @@ fn create(
 async fn query_and_body_errors_reported_together() {
   let router = Router::new().route(
     Route::post("/orgs/{org}/signups")
+      .public()
       .path::<Created>()
       .query::<Paging>()
       .body::<Signup>()

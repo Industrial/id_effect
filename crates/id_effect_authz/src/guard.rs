@@ -15,6 +15,16 @@
 //! The authentication layer must therefore run **before** (outside) the guard: add it with
 //! `Router::layer` and the guard per route.
 //!
+//! # Typed routes: anonymous callers reach public routes only
+//!
+//! [`Guard`] is an [`id_effect_axum::route::RouteGuard`], so a typed route takes it with
+//! `Route::guard(guard)` (or `.authorize(guard)` on the endpoint), and the router accepts no
+//! route without a decision (ADR 0013 R1). On a typed route the guard answers **401** to the
+//! anonymous principal before its policy runs, even a policy such as
+//! [`allow_all`](crate::allow_all): a route anonymous callers may use is declared
+//! `Route::public()`. As a plain Tower layer (`MethodRouter::authorize`, `.layer(guard)`) the
+//! guard evaluates its policy for every principal, as before.
+//!
 //! # Answers
 //!
 //! Allowed requests reach the handler unchanged. A denial answers per
@@ -48,14 +58,14 @@ use axum::http::{HeaderValue, Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::MethodRouter;
 use id_effect::{Cause, Exit, fail};
-use id_effect_axum::route::{Endpoint, RouteInfo, RouteRegistry};
+use id_effect_axum::route::{Endpoint, GuardFuture, Guarded, RouteGuard, RouteInfo, RouteRegistry};
 use id_effect_axum::{EffectExecutor, RequestCaps};
 use serde_json::json;
 use tower_layer::Layer;
 use tower_service::Service;
 
 use crate::audit::{AuthzEvents, audited};
-use crate::policy::{AuthzError, Decision, Policy, PolicyEffect};
+use crate::policy::{AuthzError, Decision, Denial, Policy, PolicyEffect};
 use crate::principal::CurrentPrincipal;
 use crate::registry::Policies;
 
@@ -133,8 +143,18 @@ impl Guard {
   /// Decides for the request head `parts`: `Ok(())` when allowed, otherwise the error to answer
   /// with.
   pub async fn decide(&self, parts: &Parts) -> Result<(), AuthzError> {
+    self.decide_for(parts, false).await
+  }
+
+  /// [`decide`](Guard::decide); with `signed_in_only` the anonymous principal is denied without
+  /// evaluating the policy (the decision is still recorded to [`Guard::events`]).
+  async fn decide_for(&self, parts: &Parts, signed_in_only: bool) -> Result<(), AuthzError> {
     let principal = principal_of(parts);
-    let mut effect = (self.check)(&principal, parts);
+    let mut effect = if signed_in_only && !principal.is_authenticated() {
+      id_effect::succeed(Decision::Deny(Denial::new("authentication required")))
+    } else {
+      (self.check)(&principal, parts)
+    };
     if let Some(events) = &self.events {
       let resource = format!("{} {}", parts.method, parts.uri.path());
       effect = audited(effect, events, &principal, &self.name, &resource);
@@ -153,6 +173,25 @@ impl Guard {
   /// The response for `error` raised by this guard.
   pub fn reject(&self, error: AuthzError) -> Response {
     problem(error, Some(&self.name), self.expose_reason)
+  }
+}
+
+/// The guard of a typed route (`Route::guard`, `.authorize(..)` on an endpoint): the anonymous
+/// principal is denied (**401**) without evaluating the policy, a decision recorded like any
+/// other; any other principal is [decided](Guard::decide) and a denial answered with
+/// [`Guard::reject`].
+impl RouteGuard for Guard {
+  fn policy(&self) -> &str {
+    &self.name
+  }
+
+  fn check<'a>(&'a self, parts: &'a Parts) -> GuardFuture<'a> {
+    Box::pin(async move {
+      self
+        .decide_for(parts, true)
+        .await
+        .map_err(|error| self.reject(error))
+    })
   }
 }
 
@@ -294,26 +333,25 @@ impl<S: Clone + Send + Sync + 'static> AuthorizeExt for MethodRouter<S> {
   }
 }
 
-impl<S: Clone + Send + Sync + 'static> AuthorizeExt for Endpoint<S> {
+/// Guards a typed endpoint of any access state: the endpoint becomes
+/// [`Guarded`] (see [`Endpoint::guard`]).
+impl<S: Clone + Send + Sync + 'static, A> AuthorizeExt for Endpoint<S, A> {
   type Output = AuthorizedEndpoint<S>;
 
   fn authorize(self, guard: Guard) -> AuthorizedEndpoint<S> {
-    let (info, method_router) = self.into_parts();
     AuthorizedEndpoint {
-      info,
-      method_router,
+      endpoint: self.guard(guard),
     }
-    .authorize(guard)
   }
 }
 
 impl<S: Clone + Send + Sync + 'static> AuthorizeExt for AuthorizedEndpoint<S> {
   type Output = AuthorizedEndpoint<S>;
 
-  fn authorize(mut self, guard: Guard) -> AuthorizedEndpoint<S> {
-    self.info.policies.push(guard.name().to_owned());
-    self.method_router = self.method_router.layer(guard);
-    self
+  fn authorize(self, guard: Guard) -> AuthorizedEndpoint<S> {
+    AuthorizedEndpoint {
+      endpoint: self.endpoint.guard(guard),
+    }
   }
 }
 
@@ -325,29 +363,29 @@ impl<S: Clone + Send + Sync + 'static> AuthorizeExt for AuthorizedEndpoint<S> {
 /// [`RouteRegistry`] complete) or take [`AuthorizedEndpoint::into_parts`].
 #[must_use = "mount the endpoint on a router"]
 pub struct AuthorizedEndpoint<S = ()> {
-  info: RouteInfo,
-  method_router: MethodRouter<S>,
+  endpoint: Endpoint<S, Guarded>,
 }
 
 impl<S: Clone + Send + Sync + 'static> AuthorizedEndpoint<S> {
   /// What the route declares.
   pub fn info(&self) -> &RouteInfo {
-    &self.info
+    self.endpoint.info()
   }
 
   /// The guards' policy names, outermost last ([`RouteInfo::policies`]).
   pub fn policies(&self) -> &[String] {
-    &self.info.policies
+    &self.endpoint.info().policies
   }
 
-  /// The guarded route as a typed [`Endpoint`], for [`id_effect_axum::route::Router::route`].
-  pub fn into_endpoint(self) -> Endpoint<S> {
-    Endpoint::from_parts(self.info, self.method_router)
+  /// The guarded route as a typed, [`Guarded`] [`Endpoint`], for
+  /// [`id_effect_axum::route::Router::route`].
+  pub fn into_endpoint(self) -> Endpoint<S, Guarded> {
+    self.endpoint
   }
 
   /// The declaration and the guarded method router.
   pub fn into_parts(self) -> (RouteInfo, MethodRouter<S>) {
-    (self.info, self.method_router)
+    self.endpoint.into_parts()
   }
 
   /// Route the endpoint on `router` at its path and record its [`RouteInfo`] in `registry`
@@ -357,13 +395,14 @@ impl<S: Clone + Send + Sync + 'static> AuthorizedEndpoint<S> {
   ///
   /// Like [`axum::Router::route`]: when the method is already routed at that path.
   pub fn mount(self, router: axum::Router<S>, registry: &mut RouteRegistry) -> axum::Router<S> {
-    let router = router.route(&self.info.path, self.method_router);
-    registry.register(self.info);
+    let (info, method_router) = self.into_parts();
+    let router = router.route(&info.path, method_router);
+    registry.register(info);
     router
   }
 }
 
-impl<S: Clone + Send + Sync + 'static> From<AuthorizedEndpoint<S>> for Endpoint<S> {
+impl<S: Clone + Send + Sync + 'static> From<AuthorizedEndpoint<S>> for Endpoint<S, Guarded> {
   fn from(endpoint: AuthorizedEndpoint<S>) -> Self {
     endpoint.into_endpoint()
   }
@@ -371,10 +410,11 @@ impl<S: Clone + Send + Sync + 'static> From<AuthorizedEndpoint<S>> for Endpoint<
 
 impl<S> fmt::Debug for AuthorizedEndpoint<S> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let info = self.endpoint.info();
     f.debug_struct("AuthorizedEndpoint")
-      .field("method", &self.info.method)
-      .field("path", &self.info.path)
-      .field("policies", &self.info.policies)
+      .field("method", &info.method)
+      .field("path", &info.path)
+      .field("policies", &info.policies)
       .finish()
   }
 }
@@ -470,6 +510,79 @@ mod tests {
     let plain = Route::get("/open")
       .handler(|_: &mut (), _: Input| id_effect::succeed::<_, Infallible, ()>("open"));
     assert!(plain.info().policies.is_empty());
+    let guarded = Route::get("/books")
+      .guard(Guard::new("books.read", allow_all()))
+      .handler(|_: &mut (), _: Input| id_effect::succeed::<_, Infallible, ()>("books"));
+    assert_eq!(guarded.info().policies, ["books.read"]);
+  }
+
+  #[tokio::test]
+  async fn h8_anonymous_reaches_only_public_routes() {
+    use id_effect_axum::route::{Input, Route, Router};
+    use tower::ServiceExt;
+
+    fn ok(_: &mut (), _: Input) -> id_effect::Effect<&'static str, Infallible, ()> {
+      id_effect::succeed("ok")
+    }
+
+    // `x-user` stands in for an authentication layer: it records alice; without it the request
+    // continues as the anonymous principal.
+    let signed_in = id_effect_axum::CapOverrideLayer::new(|parts: &Parts| {
+      parts.headers.get("x-user").map(|_| alice())
+    });
+    let app = Router::new()
+      .route(Route::get("/public").public().handler(ok))
+      // A policy admitting everyone still does not admit the anonymous principal.
+      .route(
+        Route::get("/open")
+          .guard(Guard::new("open", allow_all()))
+          .handler(ok),
+      )
+      .route(
+        Route::get("/edit")
+          .handler(ok)
+          .authorize(Guard::new("edit", require_role("editor")))
+          .into_endpoint(),
+      )
+      .into_axum()
+      .route("/plain", axum::routing::get(|| async { "plain" }))
+      .layer(signed_in);
+    let call = |uri: &str, user: bool| {
+      let mut req = Request::get(uri);
+      if user {
+        req = req.header("x-user", "alice");
+      }
+      app
+        .clone()
+        .oneshot(req.body(axum::body::Body::empty()).expect("request"))
+    };
+
+    assert_eq!(
+      call("/public", false).await.unwrap().status(),
+      StatusCode::OK
+    );
+    for uri in ["/open", "/edit"] {
+      let res = call(uri, false).await.unwrap();
+      assert_eq!(res.status(), StatusCode::UNAUTHORIZED, "{uri}");
+      assert_eq!(
+        res.headers()[header::CONTENT_TYPE],
+        "application/problem+json"
+      );
+      assert_eq!(
+        res.extensions().get::<AuthzError>(),
+        Some(&AuthzError::Unauthenticated)
+      );
+      assert_eq!(
+        call(uri, true).await.unwrap().status(),
+        StatusCode::OK,
+        "{uri}"
+      );
+    }
+    // Plain routes merged after `into_axum` are outside the typed router's decision.
+    assert_eq!(
+      call("/plain", false).await.unwrap().status(),
+      StatusCode::OK
+    );
   }
 
   #[test]

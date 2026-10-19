@@ -12,7 +12,55 @@ Each 0.11 change fills the matching section below.
 
 ## Routing: every route is public or guarded (H8)
 
-Filled by `r11-sec-h8-routing`.
+Deny by default: every typed route declares who may call it (ADR 0013 R1; finding H8, decision
+D8). Book chapter "Typed routes and validation", section "Every route declares its access".
+
+- **`route::Router::route` only accepts a decided endpoint.** `Route`, `Endpoint` gain an access
+  type parameter (`Route<P, Q, H, B, A = Undecided>`, `Endpoint<S, A = Undecided>`); call
+  `.public()` (anyone, anonymous callers included) or `.guard(g)` (any `RouteGuard`) on the
+  route, or `.public()` / `.guard(g)` / `.authorize(guard)` on the endpoint. Without one the call
+  fails with `the route has no access decision`:
+
+  ```rust,ignore
+  // 0.10
+  Router::new().route(Route::get("/accounts/{id}").path::<AccountId>().handler(show))
+  // 0.11
+  Router::new().route(Route::get("/accounts/{id}").public().path::<AccountId>().handler(show))
+  Router::new().route(Route::get("/accounts/{id}").guard(Guard::new("accounts.read", policy)).path::<AccountId>().handler(show))
+  ```
+
+  Code that names the types keeps compiling where the defaults fit; a function returning a
+  guarded endpoint now returns `Endpoint<S, Guarded>` (`AuthorizedEndpoint::into_endpoint` and
+  `Endpoint::from(authorized)` do).
+- **`RouteGuard`** (`id_effect_axum::route`) is the guard trait: `policy()` names it in
+  `RouteInfo::policies` and OpenAPI, `check(&Parts)` lets the request through or answers it.
+  `id_effect_authz::Guard` implements it.
+- **On a typed route an `id_effect_authz::Guard` answers 401 to the anonymous principal before
+  its policy runs**, even a policy that admits everyone (`allow_all()`, a registry policy named
+  `"public"`). A typed route anonymous callers use (sign-up, login) is `.public()`. As a plain
+  Tower layer (`MethodRouter::authorize`, `.layer(guard)`) the guard is unchanged.
+- **`RouteInfo` has a new field `access: RouteAccess`** (`Undecided`, `Public`, `Guarded`,
+  `Unchecked`; `#[non_exhaustive]`) and compares it in `==`. `RouteInfo::new` is `Undecided`;
+  `Endpoint::from_parts` always yields an undecided endpoint, so decide again after
+  reassembling one. The `/_routes` table (`RouteEntry`) gains `access`.
+- **`into_axum()` and `into_parts()` install a deny-by-default layer**: a request whose matched
+  route is not a registered public, guarded or unchecked typed route answers **404** Problem
+  Details. That affects plain axum routes merged into the typed router with the new
+  `Router::merge_axum`; turn a plain handler into a decided endpoint
+  (`Endpoint::from_parts(RouteInfo::new(method, path), method_router).public()`) or opt out with
+  `Router::allow_unregistered_routes_dangerous()`, which records the posture opt-out
+  `id_effect_axum::route::Router::allow_unregistered_routes_dangerous`. Routes merged onto the
+  returned `axum::Router` are outside the layer; add `Router::access_layer()` last
+  (`.route_layer(access)`) to cover them.
+- **`Router::access_report()`** lists the public routes, the guarded routes with their policies
+  and any opt-out; `into_axum()` logs it at startup (`tracing`, target
+  `id_effect_axum::route::access`; a warning when an opt-out is present).
+- **OpenAPI**: a public operation has `security: []` (no authentication); guarded operations are
+  unchanged.
+- **Shim (removed in 0.12):** `Router::route_unchecked(endpoint)` is `#[deprecated]` and routes an
+  undecided endpoint the 0.10 way (served to everyone). It records it as `RouteAccess::Unchecked`
+  and the posture opt-out `id_effect_axum::route::Router::route_unchecked`, which the prod
+  posture check rejects unless accepted.
 
 ## SQL: `Sql` and `RawSql`
 

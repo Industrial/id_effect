@@ -817,30 +817,29 @@ pub async fn reject_revoked_tokens(
 }
 
 /// Sign-in routes; `login_limit` throttles `POST /orgs` and `POST /auth/login`, per client and
-/// per organisation.
+/// per organisation. Those two are public (anonymous callers sign up and sign in); every other
+/// route names its policy.
 pub fn routes(policies: &Policies, login_limit: LoginLimit) -> Router<AppEnv> {
   Router::new()
-    .route(guarded(
-      policies,
-      "public",
+    .route(
       Route::post("/orgs")
+        .public()
         .headers::<CookieHeader>()
         .body::<Register>()
         .response::<Me>(StatusCode::CREATED)
         .handler_with_request_caps(register)
         .layer(login_limit.client.clone()),
-    ))
-    .route(guarded(
-      policies,
-      "public",
+    )
+    .route(
       Route::post("/auth/login")
+        .public()
         .headers::<CookieHeader>()
         .body::<Login>()
         .response::<Me>(StatusCode::OK)
         .handler_with_request_caps(login)
         .layer(login_limit.tenant)
         .layer(login_limit.client),
-    ))
+    )
     .route(guarded(
       policies,
       "signed_in",

@@ -81,6 +81,9 @@ tower-http = { version = "0.6.8", default-features = false, features = [
 httpdate = "1.0.3"
 # `middleware::RateLimitLayer`: token buckets on the effect runtime.
 id_effect_resilience = { path = "../id_effect_resilience", version = "0.10.1" }
+# `route::Router::into_axum` logs the access report (public routes, opt-outs) at startup;
+# already in axum's dependency tree.
+tracing = "0.1"
 
 [[bench]]
 name = "gate_request"
@@ -102,6 +105,8 @@ id_effect_logger = { path = "../id_effect_logger" }
 # tests/openapi.rs validates generated documents against the OpenAPI 3.1 meta-schema (MIT;
 # no remote reference resolution needed, so no default features).
 jsonschema = { version = "0.59", default-features = false }
+# tests/ui.rs: compile-fail cases (H8: a route without an access decision does not compile).
+trybuild = "1"
 
 [[example]]
 name = "050_tower_effect_service"

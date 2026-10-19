@@ -87,12 +87,14 @@ fn show(_: &mut (), input: Input<i64>) -> Effect<String, Infallible, ()> {
 let router = Router::new()
   .route(
     Route::post("/accounts")
+      .public()
       .body::<NewAccount>()
       .response::<NewAccount>(StatusCode::CREATED)
       .handler(create),
   )
   .route(
     Route::get("/accounts/{id}")
+      .public()
       .path::<AccountId>()
       .response::<NewAccount>(StatusCode::OK)
       .handler(show),
@@ -111,6 +113,7 @@ let create = &json["paths"]["/accounts"]["post"];
 assert_eq!(create["summary"], "Open an account");
 assert!(create["responses"]["422"].is_object()); // the validation problem
 assert!(create["responses"]["400"].is_object()); // a body that is not JSON
+assert_eq!(create["security"], serde_json::json!([])); // declared public: no authentication
 
 let show = &json["paths"]["/accounts/{id}"]["get"];
 assert_eq!(show["parameters"][0]["in"], "path");
@@ -121,14 +124,15 @@ assert_eq!(show["parameters"][0]["schema"]["minimum"], 1);
 
 Declare your authentication once (`.bearer_jwt("bearer")`, `.cookie_session("session",
 "id_session")`, `.openid_connect("oidc", discovery_url)`) and every route guarded with
-`.authorize(..)` from `id_effect_authz` requires it, with its policy names listed. Guarded routes
-also document `401` and `403`.
+`.guard(..)` (or `.authorize(..)` from `id_effect_authz`) requires it, with its policy names
+listed. Guarded routes also document `401` and `403`; a route declared `.public()` has an empty
+`security` list, OpenAPI's "no authentication".
 
 ```rust
 use std::convert::Infallible;
 
 use id_effect::{Effect, succeed};
-use id_effect_authz::guard::{AuthorizeExt, Guard};
+use id_effect_authz::guard::Guard;
 use id_effect_authz::require_role;
 use id_effect_axum::openapi::OpenApi;
 use id_effect_axum::route::{Input, Route, Router};
@@ -140,9 +144,8 @@ fn close(_: &mut (), _: Input) -> Effect<&'static str, Infallible, ()> {
 
 let router = Router::new().route(
   Route::post("/ledger/close")
-    .handler(close)
-    .authorize(Guard::new("ledger.close", require_role("controller")))
-    .into(),
+    .guard(Guard::new("ledger.close", require_role("controller")))
+    .handler(close),
 );
 
 let json = OpenApi::from_router(&router).bearer_jwt("bearer").to_json();
@@ -292,6 +295,7 @@ fn show(_: &mut (), input: Input<i64>) -> Effect<String, Infallible, ()> {
 
 let router = Router::new().route(
   Route::get("/accounts/{id}")
+    .public()
     .path::<AccountId>()
     .response::<AccountId>(StatusCode::OK)
     .handler(show),
