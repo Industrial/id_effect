@@ -29,6 +29,14 @@
   jitter (`Acme::spawn`), and reports `AcmeStats`. Book chapter 29.9.
 - `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
   shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
+- `id_effect_platform` HTTP/3 client (feature `http3`, opt-in with `HttpClientConfig::http3(true)`):
+  `http::Http3Client` on `h3` + `h3-quinn` over its own quinn endpoint (never reqwest's HTTP/3),
+  upgrading an `https` origin after its `Alt-Svc: h3` (`http::alt_svc::AltSvcCache`: max-age
+  honoured, 256 entries LRU, same-host alternatives only), with TCP fallback when the handshake
+  does not complete within 300 ms and a 5-minute negative cache per origin (`Http3Config`);
+  pooled connections; `Http3Client::execute_h3` for HTTP/3 without fallback.
+  `HttpClientConfig::root_certificates` / `add_root_certificate_der` trusts extra CA roots on
+  TCP and HTTP/3. Book chapter 29.8.
 - `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
   `publish = false`). New modules: `contract` (the D11 serde model — services, versions,
   procedures, kinds, access decisions, input/output/error JSON Schemas — with
@@ -55,6 +63,8 @@
   `RpcClientError::Rpc` carries the `RpcEnvelope`. The `codegen` module (trait source strings) is
   removed; its route metadata types moved to `openapi`. `RpcClient` is behind the default
   `client` feature.
+- `id_effect_platform::http::HttpClientConfig` gains the public fields `root_certificates` and
+  (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
 
 ### Security
 
@@ -63,6 +73,13 @@
   0600 in a 0700 cache directory (looser modes are tightened), held as `id_effect_config::Secret`
   in memory and never printed; the directory must be `https://`; DNS-01, HTTP-01 and wildcard
   names are not offered.
+- HTTP/3 client (ADR 0014 C15): the 0.11 SSRF policy checks the URL and every resolved address
+  before a UDP packet is sent, and the connection uses the checked address; the total timeout
+  covers the whole exchange and the body cap holds on a declared `Content-Length` and while
+  reading; TLS 1.3 only, 0-RTT off, the server name verified against the platform CA bundle; an
+  `Alt-Svc` naming another host is ignored; a `POST` or `PATCH` that may have reached the server
+  is not resent over TCP. A test fails the build if reqwest's unstable HTTP/3 cfg appears in a
+  manifest, source, workflow or Nix file.
 - WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
   is checked against an allowlist that is empty by default (every browser origin refused, 403;
   the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);

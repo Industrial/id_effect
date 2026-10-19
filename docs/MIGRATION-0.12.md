@@ -44,6 +44,24 @@ Also public now: `tls::Identity` (the swappable certificate a listener presents)
 
 ## HTTP client: `HttpClientConfig::http3`
 
+`HttpClientConfig` gains two public fields: `root_certificates` (extra CA roots, DER, trusted on
+TCP and HTTP/3) and, with the platform feature `http3`, `http3` (`Http3Config`). A struct literal
+that names every field no longer compiles.
+
+**Shim:** none needed for the builder style. Build the config from its default and the `with_*`
+methods, or end a literal with `..HttpClientConfig::default()`:
+
+```rust,ignore
+// before
+let config = HttpClientConfig { connect_timeout, timeout, retry, ssrf, max_redirects };
+// after
+let config = HttpClientConfig { connect_timeout, timeout, retry, ssrf, max_redirects, ..HttpClientConfig::default() };
+```
+
+HTTP/3 is off for the client by default. `HttpClientConfig::default().http3(true)` makes
+`ReqwestHttpClientProvider::layer_with` build an `Http3Client` (book chapter 29.8); without it
+nothing changes.
+
 ## Node: the QUIC mesh requires ALPN `idm/1`
 
 `QuicTransport` now runs on an `id_effect_platform::quic::QuicEndpoint` and offers and requires

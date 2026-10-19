@@ -12,6 +12,11 @@
 //! only; every resolved address is checked) and no redirects followed
 //! ([`HttpClientConfig::follow_redirects`] opts in, each hop re-checked).
 //!
+//! With the `http3` feature, `HttpClientConfig::http3` opts the layer into HTTP/3: an
+//! `https` origin that advertised `Alt-Svc: h3` is called over QUIC (`Http3Client`, built on
+//! `h3` + `h3-quinn`, never reqwest's own HTTP/3), with the TCP client as the fallback and the
+//! same SSRF guard, timeouts, retries and body caps.
+//!
 //! The reqwest client needs a tokio runtime with its IO driver enabled, such as
 //! `id_effect_tokio::TokioRuntime`.
 
@@ -25,9 +30,17 @@ use tokio::sync::Mutex;
 
 use crate::error::HttpError;
 
+#[cfg(feature = "http3")]
+pub mod alt_svc;
+#[cfg(feature = "http3")]
+pub mod h3;
 pub mod retry;
 pub mod ssrf;
 
+#[cfg(feature = "http3")]
+pub use self::h3::{Http3Client, Http3Config};
+#[cfg(feature = "http3")]
+pub use alt_svc::{AltSvcCache, Origin};
 pub use retry::{RetryCause, RetryPolicy, RetryingHttpClient};
 pub use ssrf::{IpCidr, SsrfBlocked, SsrfPolicy};
 
@@ -119,6 +132,10 @@ enum BodySource {
     total: usize,
     max: usize,
   },
+  /// A live HTTP/3 response stream, read frame by frame with a running size cap and the
+  /// request's deadline.
+  #[cfg(feature = "http3")]
+  H3(Box<self::h3::H3Body>),
   /// A live response whose `Content-Length` is over the cap: fails on the first read, before
   /// any body byte is read.
   TooLarge { len: usize, max: usize },
@@ -150,6 +167,11 @@ impl BodySource {
         }
         Ok(None) => Ok(None),
         Err(e) => Err(HttpError::from(e)),
+      },
+      #[cfg(feature = "http3")]
+      Self::H3(body) => match body.pull().await {
+        Ok(Some(chunk)) => return Ok(Some(chunk)),
+        other => other,
       },
     };
     *self = Self::Done;
@@ -207,10 +229,6 @@ impl HttpBody {
   #[inline]
   pub fn from_bytes(body: &[u8], chunk_size: usize) -> Self {
     Self::from_chunks(body.chunks(chunk_size.max(1)).map(<[u8]>::to_vec))
-  }
-
-  fn from_reqwest(resp: ::reqwest::Response, max: usize) -> Self {
-    Self::from_source(reqwest_source(resp, max))
   }
 
   /// The next chunk, or `None` once the body is exhausted.
@@ -337,14 +355,22 @@ impl ReqwestHttpClient {
 
   /// Build with `config`'s timeouts, [`SsrfPolicy`] (checked on the URL, on every literal-IP
   /// destination by the client's connector, on every resolved address by its DNS resolver, and
-  /// on every redirect hop) and redirect limit.
+  /// on every redirect hop), redirect limit and extra
+  /// [`root_certificates`](HttpClientConfig::root_certificates).
   ///
   /// # Panics
   ///
   /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
   pub fn from_config(config: &HttpClientConfig) -> Self {
     let ssrf = Arc::new(config.ssrf.clone());
+    // With the rustls backend `from_der` only stores the bytes (it cannot fail); the
+    // certificates are parsed by `build` below.
+    let roots = config
+      .root_certificates
+      .iter()
+      .filter_map(|der| ::reqwest::Certificate::from_der(der).ok());
     let client = ::reqwest::Client::builder()
+      .tls_certs_merge(roots)
       .connect_timeout(config.connect_timeout)
       .timeout(config.timeout)
       .dns_resolver(ssrf::GuardedResolver::new(Arc::clone(&ssrf)))
@@ -377,6 +403,12 @@ pub struct HttpClientConfig {
   /// Redirects followed per request, each hop re-checked against [`ssrf`](Self::ssrf); 0 (the
   /// default) returns a `3xx` response as is.
   pub max_redirects: usize,
+  /// Extra CA roots (DER certificates) trusted for `https` on top of the platform roots, on
+  /// TCP and on HTTP/3 ([`add_root_certificate_der`](Self::add_root_certificate_der)).
+  pub root_certificates: Vec<Vec<u8>>,
+  /// HTTP/3 settings (feature `http3`; off by default, [`http3`](Self::http3)).
+  #[cfg(feature = "http3")]
+  pub http3: Http3Config,
 }
 
 impl HttpClientConfig {
@@ -442,11 +474,29 @@ impl HttpClientConfig {
     self.ssrf = self.ssrf.dangerous_allow_private_networks();
     self
   }
+
+  /// Trusts the CA certificate `der` (DER) for `https`, in addition to the platform roots (a
+  /// private CA). The certificate is parsed when the client is built.
+  pub fn add_root_certificate_der(mut self, der: impl Into<Vec<u8>>) -> Self {
+    self.root_certificates.push(der.into());
+    self
+  }
+
+  /// Turns HTTP/3 on or off for the client (feature `http3`; off by default). On, the layer
+  /// builds an [`Http3Client`]: an `https` origin that advertised `Alt-Svc: h3` is called over
+  /// QUIC, falling back to TCP when the handshake does not complete within
+  /// [`Http3Config::fallback_timeout`] (300 ms), with a negative cache
+  /// ([`Http3Config::negative_ttl`], 5 minutes) per origin.
+  #[cfg(feature = "http3")]
+  pub fn http3(mut self, on: bool) -> Self {
+    self.http3.enabled = on;
+    self
+  }
 }
 
 impl Default for HttpClientConfig {
   /// Connect 10 s, total 30 s, [`RetryPolicy::default`], [`SsrfPolicy::default`] (guard on, no
-  /// exemption), no redirects followed.
+  /// exemption), no redirects followed, the platform roots only, HTTP/3 off.
   fn default() -> Self {
     Self {
       connect_timeout: Self::DEFAULT_CONNECT_TIMEOUT,
@@ -454,6 +504,9 @@ impl Default for HttpClientConfig {
       retry: RetryPolicy::default(),
       ssrf: SsrfPolicy::default(),
       max_redirects: 0,
+      root_certificates: Vec::new(),
+      #[cfg(feature = "http3")]
+      http3: Http3Config::default(),
     }
   }
 }
@@ -524,35 +577,50 @@ async fn send(
   Ok((resp, status, headers))
 }
 
+impl ReqwestHttpClient {
+  /// Sends `req` and returns the status, headers and the capped body source.
+  async fn open(
+    &self,
+    req: &HttpRequest,
+  ) -> Result<(u16, Vec<(String, String)>, BodySource), HttpError> {
+    let max = req.max_body();
+    let (resp, status, headers) = send(&self.inner, self.ssrf.as_deref(), req).await?;
+    Ok((status, headers, reqwest_source(resp, max)))
+  }
+}
+
+/// A buffered response from an opened one. The cap holds while reading: never more than the
+/// cap (plus one chunk) in memory.
+async fn buffered(
+  (status, headers, mut body): (u16, Vec<(String, String)>, BodySource),
+) -> Result<HttpResponse, HttpError> {
+  Ok(HttpResponse {
+    status,
+    headers,
+    body: body.read_to_end().await?,
+  })
+}
+
+/// A streaming response from an opened one.
+fn streaming(
+  (status, headers, body): (u16, Vec<(String, String)>, BodySource),
+) -> StreamingHttpResponse {
+  StreamingHttpResponse {
+    status,
+    headers,
+    body: HttpBody::from_source(body),
+  }
+}
+
 impl HttpClient for ReqwestHttpClient {
   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
-    let client = self.inner.clone();
-    let ssrf = self.ssrf.clone();
-    from_async(move || async move {
-      let max = req.max_body();
-      let (resp, status, headers) = send(&client, ssrf.as_deref(), &req).await?;
-      // The cap holds while reading: never more than `max` bytes (plus one chunk) in memory.
-      let body = reqwest_source(resp, max).read_to_end().await?;
-      Ok(HttpResponse {
-        status,
-        headers,
-        body,
-      })
-    })
+    let client = self.clone();
+    from_async(move || async move { buffered(client.open(&req).await?).await })
   }
 
   fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
-    let client = self.inner.clone();
-    let ssrf = self.ssrf.clone();
-    from_async(move || async move {
-      let max = req.max_body();
-      let (resp, status, headers) = send(&client, ssrf.as_deref(), &req).await?;
-      Ok(StreamingHttpResponse {
-        status,
-        headers,
-        body: HttpBody::from_reqwest(resp, max),
-      })
-    })
+    let client = self.clone();
+    from_async(move || async move { Ok(streaming(client.open(&req).await?)) })
   }
 }
 
@@ -619,6 +687,14 @@ impl ReqwestHttpClientProvider {
     Layer::effect(move || {
       let config = config.clone();
       sync(move || {
+        #[cfg(feature = "http3")]
+        if config.http3.enabled {
+          let client = Http3Client::from_config(&config);
+          return hlist![HttpClientService::new(RetryingHttpClient::new(
+            client,
+            config.retry
+          ))];
+        }
         let client = ReqwestHttpClient::from_config(&config);
         hlist![HttpClientService::new(RetryingHttpClient::new(
           client,
