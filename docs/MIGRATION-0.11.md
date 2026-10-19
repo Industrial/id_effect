@@ -77,7 +77,7 @@ Resources scoped to a tenant require the tenant match (ADR 0013 R1; finding M19)
 - `Policy` has a new provided method `crosses_tenants()` (default `false`); implementations need
   no change.
 
-## Processes: `Next`, `Info` and `SendError`
+## Processes: `Next`, `Info`, `ExitReason` and `SendError`
 
 Every process mailbox is bounded now (ADR 0013 R4; finding M10, decision D17).
 

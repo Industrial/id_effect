@@ -44,7 +44,7 @@ each side) and every node applies the same rule:
 3. remaining ties fall to the lowest pid.
 
 The losing node drops its claim and sends the losing process an exit signal whose reason is
-`name_conflict(name)` (`ExitReason::Error("NameConflict: <name>")`; `conflicting_name(&reason)`
+`name_conflict(name)` (`ExitReason::NameConflict(name)`; `conflicting_name(&reason)`
 recognises it). It is an ordinary trappable exit: a process that traps exits keeps running
 without the name, and a supervisor sees an abnormal exit.
 

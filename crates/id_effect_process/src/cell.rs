@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use id_effect::Deferred;
 use id_effect::Never;
@@ -25,6 +26,7 @@ use id_effect::Never;
 use crate::exit::ExitReason;
 use crate::msg::SysMsg;
 use crate::pid::{MonitorRef, Pid};
+use crate::timer::Timers;
 
 /// Callback fired when a monitored process exits. Public so distribution
 /// layers can register wire-forwarding monitors.
@@ -65,6 +67,10 @@ pub struct ProcessCell {
   exited: Deferred<ExitReason, Never>,
   /// Names registered for this pid (cleaned up at finalization).
   registered_names: Mutex<Vec<String>>,
+  /// Pending `send_after` timers; cancelled at finalization.
+  timers: Timers,
+  /// [`ProcessCtx::set_idle_timeout`](crate::ProcessCtx::set_idle_timeout), read by the loop.
+  idle_timeout: Mutex<Option<Duration>>,
 }
 
 impl ProcessCell {
@@ -85,7 +91,27 @@ impl ProcessCell {
       }),
       exited: Deferred::new(),
       registered_names: Mutex::new(Vec::new()),
+      timers: Timers::new(),
+      idle_timeout: Mutex::new(None),
     }
+  }
+
+  pub(crate) fn timers(&self) -> &Timers {
+    &self.timers
+  }
+
+  pub(crate) fn set_idle_timeout(&self, after: Option<Duration>) {
+    *self
+      .idle_timeout
+      .lock()
+      .expect("idle_timeout mutex poisoned") = after;
+  }
+
+  pub(crate) fn idle_timeout(&self) -> Option<Duration> {
+    *self
+      .idle_timeout
+      .lock()
+      .expect("idle_timeout mutex poisoned")
   }
 
   /// This process's pid.
@@ -198,6 +224,8 @@ impl ProcessCell {
     &self,
     reason: &ExitReason,
   ) -> (Vec<Pid>, Vec<(MonitorRef, MonitorSink)>, Vec<String>) {
+    // Timers die with the process: none fires after this.
+    self.timers.cancel_all();
     let links = {
       let mut state = self.links.lock().expect("links mutex poisoned");
       state.done = Some(reason.clone());

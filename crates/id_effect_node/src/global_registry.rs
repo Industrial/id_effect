@@ -40,17 +40,16 @@ use crate::mesh::Mesh;
 /// Longest accepted global name, in bytes.
 pub const MAX_NAME_LEN: usize = 255;
 
-const NAME_CONFLICT: &str = "NameConflict: ";
-
-/// The exit reason a process receives when it loses `name` to a conflicting registration.
+/// The exit reason a process receives when it loses `name` to a conflicting registration
+/// ([`ExitReason::NameConflict`]).
 pub fn name_conflict(name: &str) -> ExitReason {
-  ExitReason::Error(format!("{NAME_CONFLICT}{name}"))
+  ExitReason::NameConflict(name.to_string())
 }
 
 /// The name a [`name_conflict`] exit reason is about, or `None` for any other reason.
 pub fn conflicting_name(reason: &ExitReason) -> Option<&str> {
   match reason {
-    ExitReason::Error(text) => text.strip_prefix(NAME_CONFLICT),
+    ExitReason::NameConflict(name) => Some(name),
     _ => None,
   }
 }
@@ -573,11 +572,20 @@ mod tests {
   fn name_conflict_reason_round_trips() {
     let reason = name_conflict("svc");
     assert_eq!(conflicting_name(&reason), Some("svc"));
+    assert_eq!(reason, ExitReason::NameConflict("svc".to_string()));
+    assert!(reason.is_abnormal());
     assert_eq!(conflicting_name(&ExitReason::Killed), None);
     assert_eq!(
-      conflicting_name(&ExitReason::Error("boom".to_string())),
-      None
+      conflicting_name(&ExitReason::Error("NameConflict: svc".to_string())),
+      None,
+      "only the variant names a conflict"
     );
+    let wire = crate::envelope::ExitReasonWire::from(&reason);
+    assert_eq!(
+      wire,
+      crate::envelope::ExitReasonWire::NameConflict("svc".to_string())
+    );
+    assert_eq!(ExitReason::from(&wire), reason);
   }
 
   #[test]

@@ -57,6 +57,8 @@ impl Process for Gated {
       Info::User(n) => self.log.push(n),
       Info::Down { .. } => self.log.push(-1),
       Info::Exit { .. } => self.log.push(-2),
+      // `Info` is non-exhaustive; no idle timeout is set here.
+      _ => {}
     }
     succeed(Next::Continue(self))
   }

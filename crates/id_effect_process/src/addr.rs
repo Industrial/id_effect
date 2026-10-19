@@ -11,6 +11,7 @@ use crate::msg::{CallError, Info, ProcMsg, SendError};
 use crate::node::ProcessNode;
 use crate::pid::Pid;
 use crate::process::Process;
+use crate::timer::{self, TimerRef};
 
 /// Typed handle to a process implementing behavior `P`.
 ///
@@ -69,6 +70,23 @@ impl<P: Process> Addr<P> {
   /// is closed or full. Never waits.
   pub fn send_now(&self, msg: P::Info) -> bool {
     self.mailbox.offer_now(ProcMsg::Info(Info::User(msg)))
+  }
+
+  /// Deliver `msg` to `handle_info` (as [`Info::User`]) after `after` on the target node's
+  /// executor clock: [`ProcessCtx::send_after`](crate::ProcessCtx::send_after) for callers
+  /// outside the process. The timer dies with the target (a dead target yields an inert timer)
+  /// and its message counts against the mailbox bound when it fires. Cancel with
+  /// [`TimerRef::cancel`].
+  pub fn send_after(&self, msg: P::Info, after: Duration) -> TimerRef {
+    let mailbox = self.mailbox.clone();
+    timer::start(
+      &self.node,
+      &self.pid,
+      after,
+      Box::new(move || {
+        let _ = mailbox.offer_now(ProcMsg::Info(Info::User(msg)));
+      }),
+    )
   }
 
   fn offer<R: Send + Sync + 'static>(&self, msg: ProcMsg<P>) -> Effect<(), SendError, R> {

@@ -10,6 +10,9 @@ use id_effect::Cause;
 
 /// Why a process exited. This is the payload of link exit signals and
 /// monitor `Down` notifications.
+///
+/// `#[non_exhaustive]`: a `match` needs a wildcard arm, so later reasons are additive.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExitReason {
   /// Graceful completion. Does **not** kill linked processes.
@@ -27,6 +30,9 @@ pub enum ExitReason {
   NoProc,
   /// The node hosting the process became unreachable (distribution layer).
   NoConnection,
+  /// The process lost the cluster-wide name it carries to a conflicting registration
+  /// (BEAM's `{global_name_conflict, Name}`). Abnormal and trappable.
+  NameConflict(String),
 }
 
 impl ExitReason {
@@ -68,6 +74,7 @@ impl fmt::Display for ExitReason {
       ExitReason::Interrupted => f.write_str("interrupted"),
       ExitReason::NoProc => f.write_str("noproc"),
       ExitReason::NoConnection => f.write_str("noconnection"),
+      ExitReason::NameConflict(name) => write!(f, "name conflict: {name}"),
     }
   }
 }

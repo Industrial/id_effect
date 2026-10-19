@@ -21,7 +21,14 @@
 //! 4. On every exit path — including an interrupt of the process fiber —
 //!    the mailbox is closed (later sends fail with `SendError::Rejected`)
 //!    and the process is finalized exactly once: exit signals fan out to
-//!    links, monitors fire, and registered names are dropped.
+//!    links, monitors fire, registered names are dropped and pending
+//!    timers are cancelled.
+//! 5. With an idle timeout set ([`ProcessCtx::set_idle_timeout`]), a wait
+//!    for the next message that lasts the timeout dispatches
+//!    [`Info::Timeout`] instead; the next wait without a message in between
+//!    has no deadline (one timeout per idle period).
+//! 6. [`Next::Hibernate`] runs [`Process::hibernate`], releases the
+//!    mailbox buffer and waits for the next message like `Continue`.
 
 use std::any::Any;
 use std::fmt::Debug;
@@ -38,13 +45,21 @@ use crate::mailbox::Mailbox;
 use crate::msg::{Info, ProcMsg, ReceiveError};
 use crate::node::ProcessNode;
 use crate::pid::{MonitorRef, Pid};
+use crate::timer::{self, TimerRef};
 
 /// Continue-or-stop decision returned by behavior callbacks.
+///
+/// `#[non_exhaustive]`: a `match` needs a wildcard arm, so later decisions are additive.
+#[non_exhaustive]
 pub enum Next<P> {
   /// Keep processing messages with the new state.
   Continue(P),
   /// Stop with `reason`; `terminate` runs with the final state.
   Stop(ExitReason, P),
+  /// Keep the new state but shed memory while idle (BEAM's `hibernate`): the loop runs
+  /// [`Process::hibernate`], releases the mailbox buffer
+  /// ([`Mailbox::shrink_to_fit`]) and resumes on the next message.
+  Hibernate(P),
 }
 
 /// An OTP-style behavior: GenServer-shaped, effect-native.
@@ -97,6 +112,14 @@ pub trait Process: Sized + Send + 'static {
   ) -> Effect<Next<Self>, Self::Error, Self::Env> {
     let _ = (msg, ctx);
     succeed(Next::Continue(self))
+  }
+
+  /// Hibernation hook, run when a callback returns [`Next::Hibernate`] and before the mailbox
+  /// buffer is released: compact the state here (drop caches, shrink collections). A failure
+  /// crashes the process like a handler failure. Default: keep the state as is.
+  fn hibernate(self, ctx: ProcessCtx) -> Effect<Self, Self::Error, Self::Env> {
+    let _ = ctx;
+    succeed(self)
   }
 
   /// Graceful-cleanup hook. Runs on [`Next::Stop`] and on cooperative
@@ -156,6 +179,55 @@ impl ProcessCtx {
         .take_matching(Box::new(matcher))
         .timeout_fail(timeout, || ReceiveError::Timeout),
       None => fail(ReceiveError::BehaviorMismatch),
+    }
+  }
+
+  /// Deliver `msg` to this process's `handle_info` (as [`Info::User`]) after `after` on the
+  /// executor clock (BEAM's `erlang:send_after/3`). `P` is this process's behavior (`Self`
+  /// inside its callbacks); for another behavior the timer is inert and never delivers.
+  ///
+  /// The timer dies with the process. The message counts against the mailbox bound when it
+  /// fires: a full mailbox drops it (D17). Cancel with [`cancel_timer`](Self::cancel_timer).
+  pub fn send_after<P: Process>(&self, msg: P::Info, after: Duration) -> TimerRef {
+    match self
+      .mailbox
+      .as_ref()
+      .and_then(|m| m.downcast_ref::<Mailbox<ProcMsg<P>>>())
+    {
+      Some(mailbox) => {
+        let mailbox = mailbox.clone();
+        timer::start(
+          &self.node,
+          &self.pid,
+          after,
+          Box::new(move || {
+            let _ = mailbox.offer_now(ProcMsg::Info(Info::User(msg)));
+          }),
+        )
+      }
+      None => TimerRef::inert(),
+    }
+  }
+
+  /// Cancel a timer (BEAM's `erlang:cancel_timer/1`). `true` means its message will never be
+  /// delivered; `false` that it already fired or was cancelled.
+  pub fn cancel_timer(&self, timer: TimerRef) -> bool {
+    timer.cancel()
+  }
+
+  /// Deliver [`Info::Timeout`] when this process waits `after` (executor clock) for its next
+  /// message: once per idle period, re-armed by the next message. Replaces an earlier setting;
+  /// applies from the next wait.
+  pub fn set_idle_timeout(&self, after: Duration) {
+    if let Some(cell) = self.node.table().lookup(&self.pid) {
+      cell.set_idle_timeout(Some(after));
+    }
+  }
+
+  /// Remove the idle timeout set with [`set_idle_timeout`](Self::set_idle_timeout).
+  pub fn clear_idle_timeout(&self) {
+    if let Some(cell) = self.node.table().lookup(&self.pid) {
+      cell.set_idle_timeout(None);
     }
   }
 
@@ -251,6 +323,8 @@ struct Looper<P: Process> {
   ctx: ProcessCtx,
   mailbox: Mailbox<ProcMsg<P>>,
   cell: Option<Arc<ProcessCell>>,
+  /// Whether the next wait honours the idle timeout (`false` right after an `Info::Timeout`).
+  idle_armed: bool,
 }
 
 impl<P: Process> Looper<P> {
@@ -277,24 +351,57 @@ fn step<P: Process>(state: P, lp: Looper<P>) -> Step<P> {
   if let Some(r) = lp.killed() {
     return terminate(state, r, lp.ctx);
   }
-  lp.mailbox
-    .take()
-    .exit::<Never>()
-    .flat_map(move |exit| match exit {
-      Exit::Success(msg) => dispatch(state, msg, lp),
-      // Closed: either a kill (reason recorded) or a graceful stop.
-      Exit::Failure(Cause::Fail(_)) => {
-        let r = lp.killed().unwrap_or(ExitReason::Normal);
-        terminate(state, r, lp.ctx)
-      }
-      Exit::Failure(cause) => terminate(state, crash_reason(&cause), lp.ctx),
-    })
+  let idle = match &lp.cell {
+    Some(cell) if lp.idle_armed => cell.idle_timeout(),
+    _ => None,
+  };
+  let next = match idle {
+    Some(after) => {
+      let deadline = lp.ctx.node().runtime().executor().sleep(after);
+      lp.mailbox.take_or_idle(deadline)
+    }
+    None => lp.mailbox.take().map(Some),
+  };
+  next.exit::<Never>().flat_map(move |exit| match exit {
+    Exit::Success(Some(msg)) => dispatch(
+      state,
+      msg,
+      Looper {
+        idle_armed: true,
+        ..lp
+      },
+    ),
+    Exit::Success(None) => dispatch(
+      state,
+      ProcMsg::Info(Info::Timeout),
+      Looper {
+        idle_armed: false,
+        ..lp
+      },
+    ),
+    // Closed: either a kill (reason recorded) or a graceful stop.
+    Exit::Failure(Cause::Fail(_)) => {
+      let r = lp.killed().unwrap_or(ExitReason::Normal);
+      terminate(state, r, lp.ctx)
+    }
+    Exit::Failure(cause) => terminate(state, crash_reason(&cause), lp.ctx),
+  })
 }
 
 fn proceed<P: Process>(outcome: Result<Next<P>, ExitReason>, lp: Looper<P>) -> Step<P> {
   match outcome {
     Ok(Next::Continue(s)) => step(s, lp),
     Ok(Next::Stop(r, s)) => terminate(s, r, lp.ctx),
+    Ok(Next::Hibernate(s)) => {
+      let ctx = lp.ctx.clone();
+      guarded(move || P::hibernate(s, ctx)).flat_map(move |r| match r {
+        Ok(s) => {
+          lp.mailbox.shrink_to_fit();
+          step(s, lp)
+        }
+        Err(crash) => succeed(crash),
+      })
+    }
     Err(crash) => succeed(crash),
   }
 }
@@ -334,6 +441,7 @@ pub(crate) fn process_loop<P: Process>(
     ctx: ctx.clone(),
     mailbox: mailbox.clone(),
     cell: node.table().lookup(&pid),
+    idle_armed: true,
   };
   let outcome: Arc<Mutex<Option<ExitReason>>> = Arc::new(Mutex::new(None));
   let slot = Arc::clone(&outcome);

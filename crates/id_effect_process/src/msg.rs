@@ -36,6 +36,9 @@ pub enum SysMsg {
 }
 
 /// Out-of-band message passed to [`crate::process::Process::handle_info`].
+///
+/// `#[non_exhaustive]`: a `match` needs a wildcard arm, so later notifications are additive.
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub enum Info<I> {
   /// A linked process exited and this process traps exits.
@@ -56,6 +59,10 @@ pub enum Info<I> {
   },
   /// A plain user message (BEAM's bare `send`).
   User(I),
+  /// The idle timeout set with [`crate::ProcessCtx::set_idle_timeout`] passed with no message
+  /// (gen_server's `timeout`). Delivered once per idle period; it never enters the mailbox, so
+  /// a full mailbox cannot hold it back.
+  Timeout,
 }
 
 impl<I> From<SysMsg> for Info<I> {

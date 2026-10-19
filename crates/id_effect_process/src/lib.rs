@@ -28,6 +28,13 @@
 //!   downs bypass the bound.
 //! - Selective receive: [`ProcessCtx::receive`] takes the first message a
 //!   matcher accepts; skipped messages stay queued in arrival order.
+//! - Timers: [`ProcessCtx::send_after`] / [`Addr::send_after`] deliver a
+//!   message after a delay on the executor clock; [`TimerRef::cancel`]
+//!   returning `true` means it is never delivered, and a process's timers
+//!   die with it. [`ProcessCtx::set_idle_timeout`] delivers
+//!   [`Info::Timeout`] once per idle period.
+//! - Hibernate: [`Next::Hibernate`] releases the mailbox buffer (after the
+//!   optional [`Process::hibernate`] hook) and resumes on the next message.
 //! - Monitors: exactly one `Down` delivery (crash, normal, or `noproc`).
 //! - Links: BEAM rules — trapping processes receive exits as messages;
 //!   non-trapping processes ignore `Normal`, die on abnormal reasons;
@@ -48,6 +55,7 @@ pub mod node;
 pub mod pid;
 pub mod process;
 pub mod supervisor;
+pub mod timer;
 
 pub use addr::Addr;
 pub use cell::{MonitorSink, ProcessCell, ProcessTable};
@@ -62,6 +70,7 @@ pub use supervisor::{
   ChildKind, ChildSpec, RestartPolicy, ShutdownPolicy, StartFn, Strategy, SupCall, SupError,
   SupReply, SupervisorHandle, SupervisorProcess, SupervisorSpec,
 };
+pub use timer::TimerRef;
 
 /// Compiles and runs the README examples as doctests.
 #[cfg(doctest)]

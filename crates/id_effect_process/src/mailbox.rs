@@ -209,6 +209,18 @@ impl<A> Mailbox<A> {
   pub fn is_empty(&self) -> bool {
     self.len() == 0
   }
+
+  /// Items the buffer has room for before it reallocates (at least [`len`](Self::len)).
+  pub fn allocated(&self) -> usize {
+    self.lock().buf.capacity()
+  }
+
+  /// Release the buffer memory the buffered items do not use (a burst leaves the buffer at its
+  /// peak size). Buffered items stay, in order. [`Next::Hibernate`](crate::Next::Hibernate) runs
+  /// it.
+  pub fn shrink_to_fit(&self) {
+    self.lock().buf.shrink_to_fit();
+  }
 }
 
 impl<A: Send + 'static> Mailbox<A> {
@@ -222,6 +234,17 @@ impl<A: Send + 'static> Mailbox<A> {
   pub fn take<R: Send + Sync + 'static>(&self) -> Effect<A, MailboxClosed, R> {
     let mailbox = self.clone();
     from_async(move || Take { mailbox })
+  }
+
+  /// Take the next item, or `None` once `idle` completes with the mailbox still empty (the
+  /// process loop's idle timeout). One future polls both, so no item is taken and then lost to
+  /// the deadline: an item that arrives after `idle` fired stays buffered.
+  pub(crate) fn take_or_idle<R: Send + Sync + 'static>(
+    &self,
+    idle: Pin<Box<dyn Future<Output = ()> + Send>>,
+  ) -> Effect<Option<A>, MailboxClosed, R> {
+    let mailbox = self.clone();
+    from_async(move || TakeOrIdle { mailbox, idle })
   }
 
   /// Take the first buffered item `matcher` accepts, leaving every skipped item in place (and
@@ -271,6 +294,30 @@ impl<A> Future for Take<A> {
     }
     st.waker = Some(cx.waker().clone());
     Poll::Pending
+  }
+}
+
+struct TakeOrIdle<A> {
+  mailbox: Mailbox<A>,
+  idle: Pin<Box<dyn Future<Output = ()> + Send>>,
+}
+
+impl<A> Future for TakeOrIdle<A> {
+  type Output = Result<Option<A>, MailboxClosed>;
+
+  fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    let this = self.get_mut();
+    {
+      let mut st = this.mailbox.lock();
+      if let Some(item) = st.remove(0) {
+        return Poll::Ready(Ok(Some(item)));
+      }
+      if st.closed {
+        return Poll::Ready(Err(MailboxClosed));
+      }
+      st.waker = Some(cx.waker().clone());
+    }
+    this.idle.as_mut().poll(cx).map(|()| Ok(None))
   }
 }
 

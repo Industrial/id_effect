@@ -221,7 +221,8 @@ impl Process for Trapper {
       match msg {
         Info::Exit { from, reason } => self.seen_exits.push((from, reason)),
         Info::Down { pid, reason, .. } => self.seen_downs.push((pid, reason)),
-        Info::User(()) => {}
+        // `Info` is non-exhaustive: user messages and timeouts are ignored.
+        _ => {}
       }
       Next::Continue(self)
     })

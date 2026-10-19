@@ -189,6 +189,7 @@
 
 - [Process Mesh overview](./part7/ch36-00-process-mesh.md)
 - [Processes and supervision](./part7/ch37-00-processes-supervision.md)
+  - [Timers, selective receive and hibernate](./part7/ch37-01-timers-selective-receive.md)
 - [Distribution and membership](./part7/ch38-00-distribution.md)
 - [Cluster groups and takeover](./part7/ch39-00-cluster-supervision.md)
   - [Cluster-wide names](./part7/ch39-01-global-registry.md)

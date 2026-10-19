@@ -58,6 +58,8 @@ pub enum ExitReasonWire {
   NoProc,
   /// Hosting node unreachable.
   NoConnection,
+  /// Lost a cluster-wide name to a conflicting registration.
+  NameConflict(String),
 }
 
 impl From<&ExitReason> for ExitReasonWire {
@@ -70,6 +72,10 @@ impl From<&ExitReason> for ExitReasonWire {
       ExitReason::Interrupted => Self::Interrupted,
       ExitReason::NoProc => Self::NoProc,
       ExitReason::NoConnection => Self::NoConnection,
+      ExitReason::NameConflict(name) => Self::NameConflict(name.clone()),
+      // `ExitReason` is non-exhaustive: a reason this wire version cannot name travels as its
+      // rendering, still abnormal.
+      other => Self::Error(other.to_string()),
     }
   }
 }
@@ -84,6 +90,7 @@ impl From<&ExitReasonWire> for ExitReason {
       ExitReasonWire::Interrupted => Self::Interrupted,
       ExitReasonWire::NoProc => Self::NoProc,
       ExitReasonWire::NoConnection => Self::NoConnection,
+      ExitReasonWire::NameConflict(name) => Self::NameConflict(name.clone()),
     }
   }
 }
@@ -433,6 +440,7 @@ mod tests {
       ExitReason::Interrupted,
       ExitReason::NoProc,
       ExitReason::NoConnection,
+      ExitReason::NameConflict("svc".to_string()),
     ];
     for reason in reasons {
       let wire = ExitReasonWire::from(&reason);

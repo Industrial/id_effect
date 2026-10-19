@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 — Unreleased
+
+### Added
+
+- `id_effect_process` timers and hibernate (fault.actors #6, #8): `ProcessCtx::send_after` and
+  `Addr::send_after` return a `TimerRef`; `cancel_timer` / `TimerRef::cancel` returning `true`
+  means the message is never delivered. Timers run on the executor clock and die with their
+  process. `ProcessCtx::set_idle_timeout` delivers the new `Info::Timeout` once per idle period;
+  `Next::Hibernate` runs the new `Process::hibernate` hook, releases the mailbox buffer and resumes
+  on the next message. Breaking: `Next`, `Info` and `ExitReason` are `#[non_exhaustive]`, and a
+  lost cluster-wide name is `ExitReason::NameConflict(name)` instead of an `Error` string. See
+  "Processes" in the [0.11 migration guide](docs/MIGRATION-0.11.md).
+
 ## 0.10.1 — 2026-10-18 — Security patch
 
 Closes the high-severity findings of the 2026-10-18 security review (all but H8, deny-by-default
