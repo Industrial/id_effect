@@ -20,6 +20,8 @@ the public API only, and checks a documented property besides "does not panic".
 | `jwt_decode` | `JwtVerifier::verify`: header, signature, claims, claim mapping (`id_effect_auth`, feature `jwt`) | an unsigned fuzzed token is never accepted |
 | `jwks_parse` | a JWKS document through `Jwk` and `JwtKey::from_jwk`, as `JwksClient` reads one (`id_effect_auth`) | usable keys verify tokens of every family without panicking |
 | `totp_otpauth` | base32 secret, `otpauth://` URI label and typed code (`id_effect_auth`, feature `totp`) | base32 round-trips; the URI carries the secret; the current code verifies once, then is a replay |
+| `mesh_frame` | mesh wire frames, `wire::decode` (protocol v3), and the process envelope inside a data frame (`id_effect_node`) | a decoded frame re-encodes to bytes that decode to the same frame; so does the envelope |
+| `mesh_envelope` | `decode_envelope`, then `Mesh::handle_envelope_from` on a fresh node: dispatch, the at-least-once dedup window and acks (`id_effect_node`) | a decoded envelope round-trips; a reliable message unwraps to the matching at-most-once envelope |
 
 Two inputs need a format the fuzzer can reach:
 
@@ -56,11 +58,12 @@ the rest is your local corpus.
 
 - **`.github/workflows/cflite_pr.yml`** runs on pull requests that touch `crates/`, `fuzz/`,
   `.clusterfuzzlite/` or `Cargo.lock`. It builds the targets with AddressSanitizer and fuzzes
-  them for 5 minutes each (`fuzz-seconds` is split across the targets: raise it by 300 for each
-  target you add), starting from the stored corpus. A crash the base branch does not have fails
-  the job.
-- **`.github/workflows/cflite_batch.yml`** runs nightly (and on demand): 10 minutes per target,
-  then corpus pruning. The corpus is stored as workflow artifacts, which the next batch and the
+  them for 5 minutes each (`fuzz-seconds: 3300` for the 11 targets; it is split across the
+  targets, so raise it by 300 for each target you add), starting from the stored corpus. A crash
+  the base branch does not have fails the job.
+- **`.github/workflows/cflite_batch.yml`** runs nightly (and on demand): 10 minutes per target
+  (`fuzz-seconds: 6600`; raise it by 600 per added target, and the job's `timeout-minutes` with
+  it), then corpus pruning. The corpus is stored as workflow artifacts, which the next batch and the
   PR job download.
 - `.clusterfuzzlite/Dockerfile` builds on `base-builder-rust` (pinned by digest) with the pinned
   nightly; `.clusterfuzzlite/build.sh` copies every `cargo fuzz list` target to `$OUT` with its

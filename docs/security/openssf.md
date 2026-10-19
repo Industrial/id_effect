@@ -59,7 +59,7 @@ can do.
 | Contributors | Low | 3 | 3 | Contributors from 1 organisation. | Contributors from more organisations; not under the project's control. |
 | Dangerous-Workflow | Critical | 10 | 10 | No `pull_request_target` or `workflow_run` checkout of untrusted code, no script injection. | Nothing. |
 | Dependency-Update-Tool | High | 10 | 10 | [`.github/dependabot.yml`](../../.github/dependabot.yml) (Cargo and Actions, weekly). | Nothing. |
-| Fuzzing | Medium | 0 | 10 | ClusterFuzzLite and nine cargo-fuzz targets ([`docs/security/fuzzing.md`](fuzzing.md), `.clusterfuzzlite/`, `fuzz/fuzz_targets/`); measured 10 with `scorecard --local` on the 0.11 tree. | r11-fuzz-ci merged to `main`. |
+| Fuzzing | Medium | 0 | 10 | ClusterFuzzLite and eleven cargo-fuzz targets ([`docs/security/fuzzing.md`](fuzzing.md), `.clusterfuzzlite/`, `fuzz/fuzz_targets/`); measured 10 with `scorecard --local` on the 0.11 tree. | r11-fuzz-ci merged to `main`. |
 | License | Low | 10 | 10 | [`LICENSE`](../../LICENSE), MIT (OSI). | Nothing. |
 | Maintained | High | 10 | 10 | 19 commits in the last 90 days. | Keep at least one commit a week. |
 | Packaging | Medium | -1 | -1 | Scorecard does not recognise `cargo publish` as a packaging workflow, so the check is inconclusive and left out of the aggregate. | Nothing (no effect on the score). |
@@ -225,7 +225,7 @@ project site: `https://industrial.github.io/id_effect/`.
 | `static_analysis_common_vulnerabilities` | SUGGESTED | Met | CodeQL's security queries for Rust and Actions. |
 | `static_analysis_fixed` | MUST | Met at the 0.11.0 exit | The exit gate needs no open high or critical CodeQL alert (0.11.0 release spec, S4). The first local run found only test and example fixtures (Rust) and missing workflow permissions fixed by two 0.11 leaves (Actions); see "First CodeQL run". Answer once the run on GitHub is triaged. |
 | `static_analysis_often` | SUGGESTED | Met | CodeQL on every push and PR and weekly; Clippy on every PR. |
-| `dynamic_analysis` | SUGGESTED | Met | Nine cargo-fuzz targets, ClusterFuzzLite on PRs and nightly ([`fuzzing.md`](fuzzing.md), `.github/workflows/cflite_pr.yml`, `cflite_batch.yml`). |
+| `dynamic_analysis` | SUGGESTED | Met | Eleven cargo-fuzz targets, ClusterFuzzLite on PRs and nightly ([`fuzzing.md`](fuzzing.md), `.github/workflows/cflite_pr.yml`, `cflite_batch.yml`). |
 | `dynamic_analysis_unsafe` | SUGGESTED | Met | Rust with no `unsafe` block in `crates/*/src` and `#![forbid(unsafe_code)]` in most crate roots; the fuzzers run under AddressSanitizer (`cflite_pr.yml`, `sanitizer: address`). |
 | `dynamic_analysis_enable_assertions` | SUGGESTED | Met | The fuzz targets assert documented properties besides "no panic" and build with debug assertions (`cargo fuzz build -O --debug-assertions` in `.clusterfuzzlite/build.sh`). |
 | `dynamic_analysis_fixed` | MUST | Met (Attest) | No open fuzzing crash at the time of drafting; a crash fails the PR job (`cflite_pr.yml`). The owner re-checks before submitting. |

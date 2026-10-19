@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Accepted, amended 2026-10-19 (see [Amendment 1](#amendment-1-2026-10-19-opt-in-at-least-once-remote-send)):
+opt-in at-least-once remote send.
 
 ## Context
 
@@ -135,6 +136,7 @@ Intensity  { max_restarts, within }   // measured on the injected Clock
 |-----------|-----------|
 | Local send | Ordered per sender→receiver pair; never lost while receiver alive |
 | Remote send | At-most-once; ordered per pair per connection epoch; dropped on disconnect |
+| Remote send, reliable (opt-in; [Amendment 1](#amendment-1-2026-10-19-opt-in-at-least-once-remote-send)) | At-least-once to the receiving node, deduplicated per sender incarnation; a retransmitted message can arrive after later ones |
 | Monitor | Exactly one `Down` (crash, normal, or `noconnection`) |
 | Link | Exit propagation or trapped message; `noconnection` on node loss |
 | Group registry (AP) | Eventually consistent; duplicate/gap windows during partition; merge on heal |
@@ -199,3 +201,34 @@ Intensity  { max_restarts, within }   // measured on the injected Clock
 | 3 | Remote processes: envelope + Schema boundary, BehaviorRegistry, remote spawn/send/call/links/monitors, groups (AP), singleton (CP), OTel propagation |
 | 4 | DistributedSupervisor takeover; cluster telemetry aggregation; placement scoring; real ScaleOut; cluster stream fan-out; cross-node backpressure |
 | 5 | Axum control plane; chaos suite; soak benchmarks; Book Part VII; examples 130–133 |
+
+## Amendment 1 (2026-10-19, opt-in at-least-once remote send)
+
+Release 0.11.0 (decision D19, be6af99d) adds an opt-in at-least-once mode for remote casts and
+bare sends. The "Remote send" row above stays the default and is unchanged; the "Exactly-once
+messaging" non-goal stands (durable work still goes through `id_effect_jobs` or an outbox).
+Details are in the `id_effect_node::delivery` module docs (`crates/id_effect_node/src/delivery.rs`).
+
+- **Opt-in.** Per message with `Mesh::cast_reliable` / `Mesh::send_reliable` (or
+  `SendReliable::send_reliable` on an `Addr`), or per mesh with
+  `Mesh::with_delivery(DeliveryConfig::at_least_once())`, which makes every remote cast and send
+  reliable. Calls, spawns, monitors and links keep their own semantics.
+- **Sender.** Per-peer sequence numbers; a reliable message stays in a retransmit buffer bounded in
+  count and bytes until the peer acknowledges it, and is resent on reconnect and on a backoff
+  timer. A full buffer drops its oldest message and reports `DeliveryFailure::BufferFull`;
+  messages pending when the peer comes back with a new incarnation fail with
+  `DeliveryFailure::PeerRestarted`. Failures reach `Mesh::monitor_delivery` monitors.
+- **Receiver.** A dedup window per sending node, keyed by (sender incarnation, sequence number),
+  delivers each message once; retransmissions are acknowledged again but not delivered again.
+  Messages are delivered as they arrive, not put back into sequence order.
+- **What is guaranteed.** Delivery to the receiving node's process layer. A message whose target
+  no longer exists, or whose target's mailbox is full (dropped and counted in
+  `BehaviorRegistry::dropped_full`, as for an at-most-once cast), is still acknowledged. A
+  reliable frame from an unknown sender is delivered at-most-once. A sender that restarts forgets
+  what it sent, so handlers must be idempotent where a message can arrive twice.
+- **Wire.** `ProcessEnvelope::{Reliable, Ack}` and remote trace context on casts, sends and calls
+  raise the protocol to version 3; 0.10.x nodes are refused with `VersionMismatch`.
+
+| Primitive | Guarantee |
+|-----------|-----------|
+| Remote send, reliable (opt-in) | At-least-once to the receiving node while the sender lives; deduplicated per sender incarnation; a retransmitted message can arrive after later ones; a full target mailbox drops the message (counted) and acknowledges it; a full retransmit buffer drops the oldest message (`BufferFull`); pending messages fail on a peer restart (`PeerRestarted`) |

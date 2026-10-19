@@ -41,8 +41,8 @@ jobs:
         uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          # Split evenly across the targets: 5 minutes each for the 9 in fuzz/ (D20). Add 300 per
+          # Split evenly across the targets: 5 minutes each for the 11 in fuzz/ (D20). Add 300 per
           # target added to fuzz/Cargo.toml.
-          fuzz-seconds: 2700
+          fuzz-seconds: 3300
           mode: code-change
           sanitizer: ${{ matrix.sanitizer }}

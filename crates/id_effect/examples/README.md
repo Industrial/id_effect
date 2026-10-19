@@ -9,8 +9,8 @@ Every example runs on the 0.7 kernel (`Effect<A, E = Never, R = HNil>`, run at t
 `Effect::block_on`, or awaited with `Runtime::run`). Numbers that were dropped with the 0.6 kernel
 (`ThreadSleepRuntime`, `CancellationToken`, `TestClock`, `run_test`, `#[named]` provider variants,
 the snapshot corpus, …): `016`, `040_runtime_trait`, `041`, `043`–`047`, `050`, `053`, `056`–`059`,
-`076`, `092`, `097`–`099` and `150`. The replacements for what they showed are in
-[`docs/MIGRATION-0.7.md`](../../../docs/MIGRATION-0.7.md) §16.
+`092`, `097`–`099` and `150` (`076` is reused by `076_stream_zip_time_group`). The replacements
+for what they showed are in [`docs/MIGRATION-0.7.md`](../../../docs/MIGRATION-0.7.md) §16.
 
 ## Spine (`id_effect` crate, 001–105)
 
@@ -27,8 +27,9 @@ the snapshot corpus, …): `016`, `040_runtime_trait`, `041`, `043`–`047`, `05
 | 042 | `042_effectful_config_provider.rs` | an effectful `Layer` |
 | 048–051 | `048_run_fork_join` … `051_fiber_ref` | `fork` / `join`, `all`, `FiberRef` |
 | 052–055 | `052_schedule_repeat_n` … `055_schedule_exhausted` | `Effect::repeat` / `Effect::retry` with `Schedule` |
-| 060–075 | `060_stream_range` … `075_backpressure_decision`, `071_stream_map_serial` | `Stream`, channels, broadcast, backpressure |
-| 077–082 | moved to `crates/id_effect_fp/examples/` | STM (`atomically`, `TRef`, `TMap`, …) — `cargo run -p id_effect_fp --example 077_stm_tref` |
+| 060–076 | `060_stream_range` … `076_stream_zip_time_group`, `071_stream_map_serial` | `Stream`, channels, broadcast, backpressure, `zip` / `throttle` / `debounce` / `group_by` |
+| 077–082 | `077_stm_tref` … `082_stm_tsemaphore` | `id_effect::stm`: `TRef` in `commit`, `atomically`, contention and restart, `TMap`, `TQueue`, `TSemaphore` |
+| 083–086 | `083_stm_transfer` … `086_stm_collections` | the book's STM chapters: a bank transfer, composed `TRef` operations, `Stm::fail` / `check` / `or_else`, collections |
 | 083–088 | `083_schema_primitive` … `088_brand_equal_hash` | `Schema`, `EffectData`, `Brand` |
 | 089–091 | `089_ensuring` … `091_scope_with` | `ensuring`, `acquire_use_release`, `Effect::scoped` finalizers (`090`–`092_algebra_*` moved to `id_effect_fp`) |
 | 087–091 | `087_stm_tset` … `091_stm_treentrant_lock` | `id_effect::stm` collections: `TSet`, `TArray`, `TPriorityQueue`, `TPromise`, `TReentrantLock` |

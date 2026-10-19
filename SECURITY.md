@@ -65,8 +65,8 @@ For a confirmed vulnerability:
 ## Security releases
 
 Public history of releases that fix vulnerabilities. Finding ids (H high, M medium, L low) are
-those of the 2026-10-18 security review; [THREAT-MODEL.md](THREAT-MODEL.md) tracks every finding,
-including the ones still open.
+those of the 2026-10-18 security review; [THREAT-MODEL.md](THREAT-MODEL.md) tracks every finding
+and its status (closed with its commit, or accepted with its reason).
 
 ### 0.10.1 (2026-10-18)
 
@@ -100,10 +100,32 @@ GHSA id and link when the advisory is published (step 3 of "Advisory publication
   RustSec advisories, the license allow-list, banned crates and allowed sources. Every ignored
   advisory carries a written reason in `deny.toml`.
 - `cargo audit` runs daily ([.github/workflows/audit.yml](.github/workflows/audit.yml)).
-- From 0.8.0, each release attaches a CycloneDX SBOM per crate (`<crate>-<version>.cdx.json`) and the
-  published `.crate` files to the GitHub release, with build provenance attestations. Verify a
-  downloaded crate with:
+- CI is pinned: every action by full commit SHA, the toolchain by version, `Cargo.lock` committed
+  and builds `--locked`; workflows run with read-only default permissions
+  (`scripts/check-workflows.sh` enforces this). Pull requests need a DCO sign-off
+  ([CONTRIBUTING.md](CONTRIBUTING.md)).
+- From 0.11.0 a release is a **signed annotated tag**; the publish workflow
+  ([.github/workflows/publish.yml](.github/workflows/publish.yml),
+  [docs/RELEASING.md](docs/RELEASING.md)) refuses a lightweight or unverified one. It packages
+  every crate with `cargo package --locked`, writes one CycloneDX SBOM per crate, and signs
+  **SLSA Build L3** provenance over those `.crate` and `.cdx.json` files with the
+  [slsa-github-generator](https://github.com/slsa-framework/slsa-github-generator) (keyless,
+  Sigstore). It publishes the same files to crates.io with **trusted publishing** (a short-lived
+  OIDC-exchanged token; no workflow reads a stored registry token), checks each upload against
+  its attested sha256, then downloads every crate from crates.io and runs `slsa-verifier` on it
+  before it creates the GitHub Release. The release carries the `.crate` files, the SBOMs
+  (`<crate>-<version>.cdx.json`) and the provenance (`id_effect-<version>.intoto.jsonl`). Verify a
+  crate yourself with:
 
   ```bash
-  gh attestation verify id_effect-<version>.crate -R Industrial/id_effect
+  curl -fsSLO https://static.crates.io/crates/id_effect/id_effect-<version>.crate
+  gh release download v<version> -R Industrial/id_effect -p 'id_effect-<version>.intoto.jsonl'
+  slsa-verifier verify-artifact id_effect-<version>.crate \
+    --provenance-path id_effect-<version>.intoto.jsonl \
+    --source-uri github.com/Industrial/id_effect --source-tag v<version>
   ```
+
+  Releases 0.8.0 to 0.10.x carry GitHub build provenance attestations instead (verify those with
+  `gh attestation verify <crate>-<version>.crate -R Industrial/id_effect`); they attest crates
+  re-downloaded from crates.io, not the files CI built (finding S5,
+  [THREAT-MODEL.md](THREAT-MODEL.md)).

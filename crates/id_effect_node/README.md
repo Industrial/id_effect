@@ -15,10 +15,11 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 | `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, `PROTOCOL_VERSION` 3) |
 | `Membership` | SWIM membership via [`foca`], sans-io: the caller owns time and the network. `TimerWheel` drives it in tests; `NodeMonitors` fans out `NodeUp` / `NodeDown` / `Rejoined` |
 | `Mesh`, `BehaviorRegistry` | Remote spawn / cast / call / monitor / link over sessions or the in-process `MeshFabric` |
+| `GlobalRegistry` | Cluster-wide process names (BEAM's `global`): a replica on every node, claims broadcast by the owner, released when the process exits or its node goes down |
 | `ProcessGroups` / `OrSwot` | AP process groups as an ORSWOT CRDT; `fanout_cast` sends to every member |
 | `DistributedSupervisor` | Places children by load telemetry and re-places them when their host goes down |
 | `ClusterSingleton` | At most one holder cluster-wide. `MemoryLease` for single-process tests; `PgAdvisoryLease` (feature `pg`) for production |
-| `Discovery` | Join candidates: `StaticDiscovery`, `DnsDiscovery`, `ChainedDiscovery` |
+| `Discovery` | Join candidates: `StaticDiscovery`, `DnsDiscovery`, `ChainedDiscovery`; `KubernetesDiscovery` (feature `kubernetes`) reads a headless service's EndpointSlices from the API server |
 | `control` | Serializable cluster status / admin DTOs (mounted by `id_effect_axum`) |
 
 Everything that waits for an answer — `Mesh::remote_spawn` / `remote_call`,
@@ -29,7 +30,10 @@ them into a program, or run them at the edge with `block_on`.
 Delivery between nodes is **at-most-once** by default, ordered per connection, and dropped on disconnect.
 Opt into **at-least-once** delivery with `Mesh::with_delivery(DeliveryConfig::at_least_once())` (or
 `Mesh::cast_reliable` / `send_reliable` per message): unacknowledged messages are buffered, resent
-on reconnect, and de-duplicated by the receiver, so handlers must be idempotent.
+on reconnect, and de-duplicated by the receiver, so handlers must be idempotent. A retransmitted
+message can arrive after later ones, and a message to a full mailbox is dropped (counted in
+`BehaviorRegistry::dropped_full`) and still acknowledged (ADR 0009, Amendment 1; `delivery` module
+docs). Casts, sends and calls carry the sender's trace context (`TracePropagator`, W3C by default).
 
 ## Trust model
 
@@ -103,7 +107,8 @@ async fn main() {
 ```
 
 For process-level distribution (remote spawn, cast, call, monitors, takeover) see the examples:
-`131_two_node_cluster`, `132_distributed_supervisor_failover` and `133_cluster_stream_fanout`.
+`131_two_node_cluster`, `132_distributed_supervisor_failover`, `133_cluster_stream_fanout`,
+`134_mtls_cluster` (feature `quic`) and `135_global_names`.
 
 ## Stability
 
