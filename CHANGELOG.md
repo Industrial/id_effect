@@ -205,6 +205,16 @@
   with the request's capabilities (an `Authenticate` layer's `CurrentPrincipal`) and a
   `transport::ConnectionId` (one per socket; `channels::ConnectionId` is this type). Book chapter
   33.6.
+- `id_effect_rpc` two-way streams with backpressure and resume (r12-e12-2-bidi-resume, web.rpc#4):
+  `Duplex` over WebSocket with credits in both directions (a stream's memory is bounded by the
+  window). Server streams and two-way streams on a WebSocket are resumable: their `item`s carry
+  `Cursor::sequence(n)` and stay in a per-session replay buffer until credited; a dropped socket
+  detaches them, and a `resume` on a new socket replays after each call's cursor (answered by a
+  `hello` naming the connection's session) or exits the call `ResumeExpired`. Module `resume`:
+  `ResumeConfig` (1,024 messages / 1 MiB / 30 s per session, 1,024 detached sessions),
+  `ResumeStore`, `ResumeStats`, `ResumeError`, `TestClock`, the bounded decoders
+  `decode_cursor` and `decode_resume` (fuzz targets). `RpcWsConfig::resume`, `resume_stats`,
+  `release_expired_sessions`. Book chapter 33.7.
 
 ### Changed
 
@@ -241,6 +251,14 @@
 
 ### Security
 
+- RPC resume (r12-e12-2-bidi-resume): a resume session is 128 random bits bound to the
+  connection's principal; a resume under another principal is refused like an expired buffer
+  (`ResumeExpired`, indistinguishable from an unknown session) and counted. A cursor is not a
+  capability: every resumed call runs its procedure's guards again on the new connection. Every
+  replay buffer and the set of detached sessions are bounded; a detached session is released
+  after the retention and its calls are interrupted. `Rejected` joins the reserved failure tags
+  (`RpcFailure::RESERVED_TAGS`): a user error variant can no longer claim it (refused by
+  `#[derive(RpcErrorUnion)]`, `InternalError` at run time).
 - Mesh RPC (r12-e12-2-mesh-rpc): a call runs only on an origin the receiving node verified —
   inbound mesh traffic goes through `MeshRpc::ingress` / `MeshRpc::handle_session_frame`, which
   stamps messages for RPC processes with the authenticated session's node under a per-node

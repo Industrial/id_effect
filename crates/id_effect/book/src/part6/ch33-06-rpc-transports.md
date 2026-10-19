@@ -91,14 +91,14 @@ call with `ResourceExhausted { limit: "credits" }`.
 
 Queries, mutations and client streams run under the server's deadline cap (30 s by default). The
 other streams run until they end, until they are cancelled, or until the socket closes. Closing
-the socket interrupts every call still open on it.
+the socket interrupts every call still open on it, except server streams and two-way streams,
+which wait for a resume (next chapter).
 
 ### Sessions
 
 Every connection gets a session: 128 random bits bound to the connection's principal (C8),
-announced in `hello`. Resuming two-way streams after a reconnect is the topic of the next
-chapter (two-way streams and resume). Until then a `resume` frame answers every call it names
-with `ResumeExpired`.
+announced in `hello`. Resuming streams after a reconnect is the topic of the next chapter
+([two-way streams and resume](./ch33-07-two-way-streams.md)).
 
 ## Events next to POST
 

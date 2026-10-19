@@ -1289,6 +1289,13 @@ pub(crate) fn reserved_schema(tag: &str) -> Value {
       json!({ "limit": { "type": "string", "description": "Which limit." } }),
     ),
     "DeadlineExceeded" => ("The server-capped deadline expired.", json!({})),
+    "Rejected" => (
+      "A frame transport refused the call before it ran: an unknown procedure or a guard.",
+      json!({
+        "status": { "type": "integer", "description": "The HTTP status the refusal would have." },
+        "title": { "type": "string" },
+      }),
+    ),
     "Cancelled" => (
       "The client cancelled or disconnected (status 499, only logged).",
       json!({}),

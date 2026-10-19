@@ -108,3 +108,5 @@ pub mod asyncapi;
 pub mod channels;
 // r12-e12-2-mesh-rpc: the transports besides HTTP (`transport::mesh`, feature `mesh`).
 pub mod transport;
+// r12-e12-2-bidi-resume: resume sessions, replay buffers, cursor and resume decoders.
+pub mod resume;

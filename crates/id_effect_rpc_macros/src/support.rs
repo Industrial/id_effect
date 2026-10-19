@@ -6,13 +6,14 @@ use syn::spanned::Spanned;
 use syn::{Attribute, Expr, ExprLit, GenericArgument, Lit, Meta, PathArguments, Type};
 
 /// The reserved failure tags of the 0.12 design note §4 (`id_effect_rpc::wire::RpcFailure`).
-pub(crate) const RESERVED_TAGS: [&str; 6] = [
+pub(crate) const RESERVED_TAGS: [&str; 7] = [
   "InternalError",
   "InvalidInput",
   "DeadlineExceeded",
   "Cancelled",
   "ResourceExhausted",
   "ResumeExpired",
+  "Rejected",
 ];
 
 /// An error whose message ends with a `help:` line (K4: the first error states the fix).

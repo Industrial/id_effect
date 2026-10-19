@@ -467,9 +467,11 @@ async fn ws_frame_decode_rejects_unknown_kind() {
   send(&mut sink, json!({"id": 0, "kind": "pong"})).await;
   let session = "AAAAAAAAAAAAAAAAAAAAAA";
   let resume = json!({"id": 0, "kind": "resume", "payload": {"session": session, "calls": [
-    {"id": 5, "cursor": Cursor::sequence(1).to_string()}, {"id": 0, "cursor": Cursor::sequence(1).to_string()}
+    {"id": 5, "cursor": Cursor::sequence(1).to_string()}
   ]}});
   send(&mut sink, resume).await;
+  // A resume is answered with the connection's session (its own: this one is unknown).
+  assert_eq!(next_json(&mut stream).await.unwrap()["kind"], "hello");
   let expired = next_json(&mut stream).await.unwrap();
   assert_eq!(expired["id"], 5);
   assert_eq!(expired["payload"]["error"]["_tag"], "ResumeExpired");
@@ -1233,6 +1235,7 @@ async fn postcard_frames_over_websocket() {
     .send(Message::Binary(encode_frame(&resume).unwrap().into()))
     .await
     .unwrap();
+  assert_eq!(next().await.kind, FrameKind::Hello);
   let expired = next().await;
   assert_eq!(expired.id, id(9));
   let WireExit::Failure { error } = exit_of(expired) else {

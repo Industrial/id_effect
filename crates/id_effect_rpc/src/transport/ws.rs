@@ -53,16 +53,36 @@
 //! **Protocol violations** close the socket (1000): an undecodable frame ([`super::frame::decode`]),
 //! a `call` on an id already open, a client-sent `exit` or `hello`.
 //!
-//! **Sessions.** Every connection gets a [`WsSession`]: a 128-bit random [`SessionId`] bound to
-//! the connection's principal ([`RpcServer::with_principal`]). Until two-way resume lands
-//! (r12-e12-2-bidi-resume) nothing is buffered, so a `resume` answers every call it names with
-//! `ResumeExpired`.
+//! **Sessions and resume** ([`crate::resume`]). Every connection gets a session: a 128-bit
+//! random [`SessionId`] (in `hello`) bound to the connection's principal
+//! ([`RpcServer::with_principal`]). Server streams and two-way streams are resumable: their
+//! `item`s carry a [`Cursor::sequence`] and stay in the session's replay buffer until the client
+//! credits them ([`RpcWsConfig::resume`]: 1,024 messages / 1 MiB / 30 s by default). When the
+//! socket drops, those calls keep running detached (their producers stop at the credit window)
+//! for the retention period. A client reconnects and, before opening any call, sends
+//! `resume {session, calls: [{id, cursor}]}` (cursor `c1.` of sequence 0 when it saw no item):
+//!
+//! 1. The server answers with a new `hello` naming the connection's session from then on: the
+//!    resumed one, or this connection's own when the resume was refused (an unknown session,
+//!    another principal — counted — or a `resume` after a call was opened).
+//! 2. Per call: the procedure's guards run again on this connection's request (a refusal exits
+//!    `Rejected`); then the frames after the cursor are replayed in order (the `exit` too, if the
+//!    call ended meanwhile), or the call exits `ResumeExpired` when the buffer no longer holds
+//!    them — the client restarts that stream.
+//! 3. Credits continue across the reconnect: the items at or before the cursor count as
+//!    credited (the client drops its uncredited count for them), and a two-way call's send
+//!    window restarts at the first `credit` frame after the resume (absolute, not added); the
+//!    client sends no item for it before that frame. Client items in flight when the socket
+//!    dropped are not replayed (input is at most once across a reconnect).
+//!
+//! Queries, mutations, client streams and subscriptions are not resumable: they are
+//! interrupted with the socket (a subscription resumes from its event cursor in a new `call`).
 
 use std::collections::HashMap;
 use std::future::{Future, poll_fn};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::Poll;
 
 use axum::extract::Request;
@@ -78,7 +98,7 @@ use id_effect_axum::realtime::ws::{self as realtime, WsConfig, WsMessage, WsSock
 use id_effect_axum::route::{Endpoint, Problem, Public};
 use id_effect_axum::{EffectExecutor, RequestCaps};
 use serde_json::Value;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc, oneshot, watch};
 
 use super::{copy_head, frame, rejection_outcome};
 use crate::cancel::{CallControl, CancelHandle, cancel_pair};
@@ -87,11 +107,12 @@ use crate::contract::ProcedureKind;
 use crate::correlation::ensure_correlation_id;
 use crate::handler::{BoxCall, CallContext, CallOutcome, InboundSender};
 use crate::kinds::{CallFrames, exit_frame};
+use crate::resume::{Attachment, ResumeConfig, ResumeStats, ResumeStore, Session};
 use crate::server::RpcServer;
 use crate::server::dispatch::{self, Rejection};
 use crate::wire::{
   CallId, Cursor, Frame, FrameFlags, FrameKind, Hello, INITIAL_CREDITS, MAX_FRAME_BYTES, Resume,
-  RpcFailure, SessionId,
+  ResumeCall, RpcFailure, SessionId,
 };
 
 /// The WebSocket route, below the server's path: `GET {path}/ws`.
@@ -108,6 +129,9 @@ const OUTBOX: usize = 64;
 
 const TARGET: &str = "id_effect_rpc::transport::ws";
 
+/// Numbers the connections ([`Conn::serial`]).
+static SERIAL: AtomicU64 = AtomicU64::new(1);
+
 const SEC_WEBSOCKET_PROTOCOL: HeaderName = HeaderName::from_static("sec-websocket-protocol");
 
 /// Settings of the WebSocket transport; [`Default`] is the secure default.
@@ -116,6 +140,8 @@ pub struct RpcWsConfig {
   socket: WsConfig,
   max_calls: usize,
   window: u32,
+  /// Shared by every clone, so the endpoint's connections share their sessions.
+  resume: ResumeStore<WsCall>,
 }
 
 impl Default for RpcWsConfig {
@@ -124,6 +150,7 @@ impl Default for RpcWsConfig {
       socket: WsConfig::default(),
       max_calls: DEFAULT_MAX_CALLS,
       window: INITIAL_CREDITS,
+      resume: ResumeStore::new(ResumeConfig::default()),
     }
   }
 }
@@ -170,10 +197,35 @@ impl RpcWsConfig {
   pub fn credit_window(&self) -> u32 {
     self.window
   }
+
+  /// The replay buffers' and sessions' bounds (default [`ResumeConfig::default`]: 1,024
+  /// messages / 1 MiB / 30 s per session, 1,024 detached sessions). Starts a new, empty session
+  /// store shared by the clones of the returned config.
+  #[must_use]
+  pub fn resume(mut self, config: ResumeConfig) -> Self {
+    self.resume = ResumeStore::new(config);
+    self
+  }
+
+  /// The resume bounds.
+  pub fn resume_config(&self) -> &ResumeConfig {
+    self.resume.config()
+  }
+
+  /// What the session store holds, and the resumes it refused.
+  pub fn resume_stats(&self) -> ResumeStats {
+    self.resume.stats()
+  }
+
+  /// Release the sessions detached for the retention period (a timer does this too); returns
+  /// how many.
+  pub fn release_expired_sessions(&self) -> usize {
+    self.resume.release_expired()
+  }
 }
 
 /// The resume session of one connection: a 128-bit random id bound to the principal that opened
-/// it (C8). r12-e12-2-bidi-resume adds its replay buffer.
+/// it (C8). The connection's replay buffer is a [`crate::resume::Session`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WsSession {
   id: SessionId,
@@ -336,8 +388,31 @@ async fn connection(
     })
   }));
   let (out_tx, mut out_rx) = mpsc::channel::<WsMessage>(OUTBOX);
+  // Resumable calls outlive the connection and hold its outbox: once the connection loop ends,
+  // the writer sends what is queued and stops, so their sends fail and they detach.
+  let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
   let writer = async move {
-    while let Some(msg) = out_rx.recv().await {
+    let mut stopped = false;
+    loop {
+      let msg = if stopped {
+        out_rx.try_recv().ok()
+      } else {
+        let next = poll_fn(|cx| {
+          if let Poll::Ready(msg) = out_rx.poll_recv(cx) {
+            return Poll::Ready(Some(msg));
+          }
+          Pin::new(&mut stop_rx).poll(cx).map(|_| None)
+        })
+        .await;
+        match next {
+          Some(msg) => msg,
+          None => {
+            stopped = true;
+            out_rx.try_recv().ok()
+          }
+        }
+      };
+      let Some(msg) = msg else { break };
       let sent = EffectExecutor::global()
         .run_effect(sender.send::<HNil>(msg))
         .await;
@@ -346,18 +421,24 @@ async fn connection(
       }
     }
   };
-  let session = WsSession::new(shared.server.principal_of(&head));
+  let attachment = shared.config.resume.open(shared.server.principal_of(&head));
   let conn = Conn {
     cid: ensure_correlation_id(&head.headers),
     head: Arc::new(head),
     env,
     out: Outbox { tx: out_tx, codec },
-    session,
+    attachment,
+    fresh: true,
+    serial: SERIAL.fetch_add(1, Ordering::Relaxed),
     calls: HashMap::new(),
     running: FuturesUnordered::new(),
     shared,
   };
-  let work = futures_util::future::join(conn.run(in_rx), writer);
+  let run = async move {
+    conn.run(in_rx).await;
+    let _ = stop_tx.send(());
+  };
+  let work = futures_util::future::join(run, writer);
   if let Either::Right((_, work)) = select(Box::pin(work), Box::pin(reader)).await {
     // The socket's inbound side ended: the calls see it, finish, and the writer drains.
     work.await;
@@ -392,6 +473,17 @@ impl Outbox {
   /// Queue a call's frame: JSON frames are text messages; postcard frames are binary, their
   /// payload through the procedure's typed bridge (`codecs`).
   async fn send_with(&self, frame: &Frame, codecs: &ProcedureCodecs) -> Result<(), SendError> {
+    let msg = self.encode(frame, codecs)?;
+    self.push(msg).await
+  }
+
+  /// Queue an encoded frame.
+  async fn push(&self, msg: WsMessage) -> Result<(), SendError> {
+    self.tx.send(msg).await.map_err(|_| SendError::Closed)
+  }
+
+  /// Encode a frame with this connection's codec.
+  fn encode(&self, frame: &Frame, codecs: &ProcedureCodecs) -> Result<WsMessage, SendError> {
     let msg = match self.codec {
       CodecId::Json => {
         let bytes = frame::encode(frame, CodecId::Json).map_err(|_| SendError::TooLarge)?;
@@ -407,14 +499,41 @@ impl Outbox {
     };
     #[cfg(not(feature = "postcard"))]
     let _ = codecs;
-    self.tx.send(msg).await.map_err(|_| SendError::Closed)
+    Ok(msg)
   }
 }
 
-/// One open call, as the connection loop routes frames to it.
+/// The connection a resumable call currently sends on (`None`: detached).
+type Sink = Arc<tokio::sync::Mutex<Option<Outbox>>>;
+
+/// What a session holds of a resumable call, for a resume on another connection.
+#[derive(Clone)]
+struct WsCall {
+  open: Open,
+  tag: String,
+  v: Option<u32>,
+  sink: Sink,
+  done: watch::Receiver<bool>,
+}
+
+/// A resumable call's session and sink.
+struct Resumable {
+  session: Arc<Session<WsCall>>,
+  sink: Sink,
+}
+
+/// Resolves to `id` once a spawned call's task is done (or gone).
+async fn wait_done(mut done: watch::Receiver<bool>, id: CallId) -> CallId {
+  let _ = done.wait_for(|done| *done).await;
+  id
+}
+
+/// One open call, as the connection loop routes frames to it (shared with the session for a
+/// resumable call).
+#[derive(Clone)]
 struct Open {
   /// Where client items go (client streams and two-way streams, until the input ends).
-  inbound: Option<mpsc::Sender<Value>>,
+  inbound: Arc<Mutex<Option<mpsc::Sender<Value>>>>,
   /// Items the client may still send.
   in_credits: Arc<AtomicU32>,
   /// Items the server may still send.
@@ -423,16 +542,27 @@ struct Open {
   /// A failure that replaces the call's own exit (credit overrun).
   failure: Arc<OnceLock<RpcFailure>>,
   /// The procedure's typed bridges (a binary codec decodes its items through them).
-  #[cfg_attr(not(feature = "postcard"), allow(dead_code))]
   codecs: ProcedureCodecs,
+  /// A server stream or two-way stream: buffered in the session, credits acknowledge items.
+  resumable: bool,
+  /// The connection the call is on ([`Conn::serial`]): a resume moves it, and credits still in
+  /// flight on the connection it left are ignored (the resume counted them).
+  owner: Arc<AtomicU64>,
 }
 
 impl Open {
-  fn stop(&mut self, failure: Option<RpcFailure>) {
+  fn end_input(&self) {
+    *self
+      .inbound
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+  }
+
+  fn stop(&self, failure: Option<RpcFailure>) {
     if let Some(failure) = failure {
       let _ = self.failure.set(failure);
     }
-    self.inbound = None;
+    self.end_input();
     self.cancel.cancel();
     self.out_credits.close();
   }
@@ -452,7 +582,12 @@ struct Conn {
   head: Arc<Parts>,
   cid: String,
   out: Outbox,
-  session: WsSession,
+  /// The connection's session (the resumed one after a `resume`).
+  attachment: Attachment<WsCall>,
+  /// No call opened and no `resume` yet: a `resume` may still adopt a session.
+  fresh: bool,
+  /// This connection among the process's connections.
+  serial: u64,
   calls: HashMap<CallId, Open>,
   running: Running,
 }
@@ -489,7 +624,7 @@ impl Conn {
   async fn hello(&mut self) -> Result<(), SendError> {
     let max_frame = self.shared.config.socket.max_message().min(MAX_FRAME_BYTES);
     let hello = Hello {
-      session: self.session.id(),
+      session: self.attachment.session().id(),
       codec: self.out.codec.subprotocol().to_owned(),
       max_frame: u32::try_from(max_frame).unwrap_or(u32::MAX),
       window: self.shared.config.window,
@@ -606,20 +741,27 @@ impl Conn {
       FrameKind::Call => return self.open_call(frame).await,
       FrameKind::Item => self.item(frame),
       FrameKind::End => {
-        if let Some(open) = self.calls.get_mut(&id) {
-          open.inbound = None;
+        if let Some(open) = self.calls.get(&id) {
+          open.end_input();
         }
       }
       FrameKind::Cancel => {
-        if let Some(open) = self.calls.get_mut(&id) {
+        if let Some(open) = self.calls.get(&id) {
           open.stop(None);
         }
       }
       FrameKind::Credit => {
         if let Some(open) = self.calls.get(&id) {
-          let granted = frame.credits.unwrap_or(0) as usize;
-          let room = MAX_GRANTED.saturating_sub(open.out_credits.available_permits());
-          open.out_credits.add_permits(granted.min(room));
+          let granted = u64::from(frame.credits.unwrap_or(0));
+          // The client has that many more items: they leave the replay buffer. A grant still in
+          // flight on a connection the call has left was counted by the resume.
+          let counts = !open.resumable
+            || self.attachment.session().ack(id, granted, || {
+              open.owner.load(Ordering::Acquire) == self.serial
+            });
+          if counts {
+            grant_out(&open.out_credits, granted);
+          }
         }
       }
       FrameKind::Ping => {
@@ -638,12 +780,17 @@ impl Conn {
   }
 
   fn item(&mut self, frame: Frame) {
-    let Some(open) = self.calls.get_mut(&frame.id) else {
+    let Some(open) = self.calls.get(&frame.id) else {
       // An item for a call that already ended: the client has not seen the exit yet.
       return;
     };
     let end = frame.flags.contains(FrameFlags::END);
-    if let Some(tx) = &open.inbound {
+    let tx = open
+      .inbound
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .clone();
+    if let Some(tx) = tx {
       if open.in_credits.load(Ordering::Acquire) == 0 {
         let limit = "credits".to_owned();
         return open.stop(Some(RpcFailure::ResourceExhausted { limit }));
@@ -655,7 +802,7 @@ impl Conn {
       }
     }
     if end {
-      open.inbound = None;
+      open.end_input();
     }
   }
 
@@ -693,15 +840,24 @@ impl Conn {
     ) {
       control = control.with_deadline(server.max_deadline());
     }
+    self.fresh = false;
+    // Server streams and two-way streams outlive a dropped socket, so they run on their own
+    // task (when there is a runtime to spawn on).
+    let resumable = matches!(
+      kind,
+      Some(ProcedureKind::ServerStream | ProcedureKind::Bidi)
+    ) && tokio::runtime::Handle::try_current().is_ok();
     let open = Open {
-      inbound,
+      inbound: Arc::new(Mutex::new(inbound)),
       in_credits: Arc::new(AtomicU32::new(window)),
       out_credits: Arc::new(Semaphore::new(window as usize)),
       cancel,
       failure: Arc::new(OnceLock::new()),
       codecs: codecs.clone(),
+      resumable,
+      owner: Arc::new(AtomicU64::new(self.serial)),
     };
-    let task = CallTask {
+    let mut task = CallTask {
       server: server.clone(),
       head: Arc::clone(&self.head),
       ctx: CallContext::new(self.env.clone(), format!("{}-{}", self.cid, id.get())),
@@ -719,26 +875,164 @@ impl Conn {
       inbound: inbound_rx,
       failure: Arc::clone(&open.failure),
       codecs,
+      resumable: None,
     };
+    if !resumable {
+      self.calls.insert(id, open);
+      self.running.push(Box::pin(task.run()));
+      return Ok(());
+    }
+    let session = Arc::clone(self.attachment.session());
+    let sink: Sink = Arc::new(tokio::sync::Mutex::new(Some(self.out.clone())));
+    let (done_tx, done) = watch::channel(false);
+    session.insert(
+      id,
+      WsCall {
+        open: open.clone(),
+        tag: task.tag.clone(),
+        v: task.v,
+        sink: Arc::clone(&sink),
+        done: done.clone(),
+      },
+    );
+    task.resumable = Some(Resumable {
+      session: Arc::clone(&session),
+      sink,
+    });
+    let handle = tokio::spawn(async move {
+      task.run().await;
+      done_tx.send_replace(true);
+    });
+    session.set_abort(id, handle.abort_handle());
     self.calls.insert(id, open);
-    self.running.push(Box::pin(task.run()));
+    self.running.push(Box::pin(wait_done(done, id)));
     Ok(())
   }
 
-  /// r12-e12-2-bidi-resume replaces this: replay each call from the session's buffer when
-  /// `resume.session` is a live session of this connection's principal. Nothing is buffered yet,
-  /// so every call named is expired.
-  async fn resume(&mut self, frame: Frame) -> Result<(), String> {
-    let resume: Resume = serde_json::from_value(frame.payload.unwrap_or_default())
-      .map_err(|err| format!("malformed resume: {err}"))?;
+  /// A call's `exit` is `ResumeExpired`.
+  // `&mut`: the running calls are `Send` but not `Sync`.
+  async fn expire(&mut self, id: CallId) {
+    self.shared.config.resume.count_expired();
     let expired = CallOutcome::failure(RpcFailure::ResumeExpired);
+    let _ = self.out.send(&exit_frame(id, &expired)).await;
+  }
+
+  /// `resume`: adopt the session when this connection is fresh and its principal is the
+  /// session's, answer a `hello` naming the connection's session, then resume or expire each
+  /// call named.
+  async fn resume(&mut self, frame: Frame) -> Result<(), String> {
+    let payload = frame.payload.unwrap_or_default();
+    let resume = crate::resume::decode_resume(&payload).map_err(|err| err.to_string())?;
+    let adopted = if self.fresh {
+      let principal = self.attachment.session().principal();
+      self
+        .shared
+        .config
+        .resume
+        .adopt(resume.session, principal)
+        .ok()
+    } else {
+      None
+    };
+    self.fresh = false;
+    let resumed = adopted.is_some();
+    if let Some(attachment) = adopted {
+      // This connection's own (empty) session goes with the old attachment.
+      self.attachment = attachment;
+    }
+    let _ = self.hello().await;
     for call in resume.calls {
-      if call.id != CallId::CONNECTION && !self.calls.contains_key(&call.id) {
-        let _ = self.out.send(&exit_frame(call.id, &expired)).await;
+      if self.calls.contains_key(&call.id) {
+        // Opened on this connection before the resume: not this resume's to answer.
+        continue;
+      }
+      if resumed {
+        self.resume_call(call).await;
+      } else {
+        self.expire(call.id).await;
       }
     }
     Ok(())
   }
+
+  /// Resume one call of the adopted session: guards again, then the replay after its cursor.
+  async fn resume_call(&mut self, call: ResumeCall) {
+    let id = call.id;
+    let session = Arc::clone(self.attachment.session());
+    let Some(held) = session.ext(id) else {
+      return self.expire(id).await;
+    };
+    if self.calls.len() >= self.shared.config.max_calls {
+      session.remove(id);
+      let limit = "calls".to_owned();
+      let outcome = CallOutcome::failure(RpcFailure::ResourceExhausted { limit });
+      let _ = self.out.send(&exit_frame(id, &outcome)).await;
+      return;
+    }
+    // A cursor is not a capability: the procedure's guards decide again, on this request.
+    let group = self.shared.server.group();
+    let allowed = match dispatch::resolve(group, &held.tag, held.v) {
+      Ok(entry) => dispatch::authorize(entry, &self.head).await,
+      Err(rejection) => Err(rejection),
+    };
+    if let Err(rejection) = allowed {
+      session.remove(id);
+      let _ = self
+        .out
+        .send(&exit_frame(id, &rejection_outcome(&rejection)))
+        .await;
+      return;
+    }
+    // Under the call's sink: its task sends nothing until the replay is out and the sink moved.
+    let mut sink = held.sink.lock().await;
+    let serial = self.serial;
+    let claim = || held.open.owner.store(serial, Ordering::Release);
+    let Ok(replay) = session.replay(id, call.cursor, claim) else {
+      drop(sink);
+      session.remove(id);
+      return self.expire(id).await;
+    };
+    for frame in &replay.frames {
+      match self.out.send_with(frame, &held.open.codecs).await {
+        Ok(()) => {}
+        Err(SendError::Closed) => return,
+        Err(SendError::TooLarge | SendError::Encode) => {
+          // This connection's codec cannot carry a buffered frame.
+          drop(sink);
+          session.remove(id);
+          let internal = CallOutcome::internal(&format!("{}-{}", self.cid, id.get()));
+          let _ = self.out.send(&exit_frame(id, &internal)).await;
+          return;
+        }
+      }
+    }
+    // The items up to the cursor arrived: they count as credited.
+    grant_out(&held.open.out_credits, replay.credited);
+    let accepting = held
+      .open
+      .inbound
+      .lock()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+      .is_some();
+    let window = held.open.in_credits.load(Ordering::Acquire);
+    if accepting && window > 0 {
+      // A two-way call's send window restarts here (absolute).
+      let _ = self.out.send(&Frame::credit(id, window)).await;
+    }
+    *sink = Some(self.out.clone());
+    drop(sink);
+    self.calls.insert(id, held.open.clone());
+    self
+      .running
+      .push(Box::pin(wait_done(held.done.clone(), id)));
+  }
+}
+
+/// Grant `credits` more outbound items, clamped to [`MAX_GRANTED`] held at once.
+fn grant_out(credits: &Semaphore, granted: u64) {
+  let room = MAX_GRANTED.saturating_sub(credits.available_permits());
+  let granted = usize::try_from(granted).unwrap_or(usize::MAX);
+  credits.add_permits(granted.min(room));
 }
 
 /// A started call, whatever its kind.
@@ -768,6 +1062,8 @@ struct CallTask {
   inbound: Option<mpsc::Receiver<Value>>,
   failure: Arc<OnceLock<RpcFailure>>,
   codecs: ProcedureCodecs,
+  /// A resumable call: its frames go through the session's buffer and the current sink.
+  resumable: Option<Resumable>,
 }
 
 impl CallTask {
@@ -840,6 +1136,9 @@ impl CallTask {
       Some(failure) => exit_frame(self.id, &CallOutcome::failure(failure.clone())),
       None => exit,
     };
+    if let Some(resumable) = &self.resumable {
+      return self.send_exit_resumable(resumable, exit).await;
+    }
     if let Err(SendError::TooLarge | SendError::Encode) =
       self.out.send_with(&exit, &self.codecs).await
     {
@@ -861,7 +1160,11 @@ impl CallTask {
         return self.finish(CallOutcome::success(Value::Null)).await;
       };
       permit.forget();
-      match self.out.send_with(&frame, &self.codecs).await {
+      let sent = match &self.resumable {
+        None => self.out.send_with(&frame, &self.codecs).await,
+        Some(resumable) => self.send_item_resumable(resumable, frame).await,
+      };
+      match sent {
         Ok(()) => {}
         Err(SendError::Closed) => return,
         Err(err) => {
@@ -894,12 +1197,96 @@ impl CallTask {
       }
       taken += 1;
       if taken >= batch {
-        self.in_credits.fetch_add(taken, Ordering::AcqRel);
-        if self.out.send(&Frame::credit(self.id, taken)).await.is_err() {
+        if !self.grant(taken).await {
           return;
         }
         taken = 0;
       }
+    }
+  }
+
+  /// Grant the client `n` more items; `false` when the socket is gone (a resumable call keeps
+  /// counting while detached: a resume restarts the client's window from the count).
+  async fn grant(&self, n: u32) -> bool {
+    let credit = Frame::credit(self.id, n);
+    let Some(resumable) = &self.resumable else {
+      self.in_credits.fetch_add(n, Ordering::AcqRel);
+      return self.out.send(&credit).await.is_ok();
+    };
+    // Counted under the sink, so a resume's absolute window and this grant never overlap.
+    let mut sink = resumable.sink.lock().await;
+    self.in_credits.fetch_add(n, Ordering::AcqRel);
+    if let Some(out) = sink.as_ref()
+      && out.send(&credit).await.is_err()
+    {
+      *sink = None;
+    }
+    true
+  }
+
+  /// Number, buffer and (when attached) send one item of a resumable call. `Closed` only when
+  /// the session released the call.
+  async fn send_item_resumable(
+    &self,
+    resumable: &Resumable,
+    frame: Frame,
+  ) -> Result<(), SendError> {
+    let mut sink = resumable.sink.lock().await;
+    let codecs = &self.codecs;
+    let encoded = resumable
+      .session
+      .record_item(self.id, frame, |frame| match sink.as_ref() {
+        Some(out) => out.encode(frame, codecs).map(|msg| {
+          let len = msg.as_bytes().len();
+          (Some(msg), len)
+        }),
+        // Detached: measured as JSON, encoded again for whichever connection resumes it.
+        None => frame::encode(frame, CodecId::Json)
+          .map(|bytes| (None, bytes.len()))
+          .map_err(|_| SendError::TooLarge),
+      });
+    match encoded {
+      None => Err(SendError::Closed),
+      Some(Err(err)) => Err(err),
+      Some(Ok(msg)) => {
+        if let (Some(out), Some(msg)) = (sink.as_ref(), msg)
+          && out.push(msg).await.is_err()
+        {
+          *sink = None;
+        }
+        Ok(())
+      }
+    }
+  }
+
+  /// Buffer and (when attached) send a resumable call's `exit`; one the codec cannot carry
+  /// becomes `InternalError`.
+  async fn send_exit_resumable(&self, resumable: &Resumable, exit: Frame) {
+    let mut sink = resumable.sink.lock().await;
+    let internal = || exit_frame(self.id, &CallOutcome::internal(&self.ctx.correlation_id));
+    let (exit, msg) = match sink.as_ref() {
+      Some(out) => match out.encode(&exit, &self.codecs) {
+        Ok(msg) => (exit, Some(msg)),
+        Err(_) => {
+          let exit = internal();
+          let msg = out.encode(&exit, &ProcedureCodecs::default()).ok();
+          (exit, msg)
+        }
+      },
+      None if frame::encode(&exit, CodecId::Json).is_ok() => (exit, None),
+      None => (internal(), None),
+    };
+    let bytes = match &msg {
+      Some(msg) => msg.as_bytes().len(),
+      None => frame::encode(&exit, CodecId::Json).map_or(0, |bytes| bytes.len()),
+    };
+    if !resumable.session.record_exit(self.id, exit, bytes) {
+      return;
+    }
+    if let (Some(out), Some(msg)) = (sink.as_ref(), msg)
+      && out.push(msg).await.is_err()
+    {
+      *sink = None;
     }
   }
 }
@@ -917,6 +1304,22 @@ mod tests {
     let config = RpcWsConfig::default().socket(socket);
     assert_eq!(config.socket_config().message_rate(), 7);
     assert_eq!(config.calls_limit(), DEFAULT_MAX_CALLS);
+  }
+
+  #[test]
+  fn resume_bounds_are_configured_and_shared_by_clones() {
+    let config = RpcWsConfig::new();
+    assert_eq!(config.resume_config().messages_limit(), 1024);
+    let config = config.resume(ResumeConfig::new().max_bytes(4096));
+    let clone = config.clone();
+    assert_eq!(clone.resume_config().bytes_limit(), 4096);
+    assert_eq!(clone.resume_stats(), ResumeStats::default());
+    assert_eq!(config.release_expired_sessions(), 0);
+    let held = config.resume.open(None);
+    assert_eq!(clone.resume_stats().sessions, 1);
+    drop(held);
+    assert_eq!(clone.resume_stats().sessions, 0);
+    assert!(format!("{config:?}").contains("ResumeStore"));
   }
 
   #[test]

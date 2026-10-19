@@ -219,14 +219,16 @@ pub enum RpcFailure {
 }
 
 impl RpcFailure {
-  /// The `_tag`s user error variants may not use.
-  pub const RESERVED_TAGS: [&'static str; 6] = [
+  /// The `_tag`s user error variants may not use: the six failures above, and `Rejected` (a
+  /// frame transport's answer for a call refused before it ran, `transport::REJECTED_TAG`).
+  pub const RESERVED_TAGS: [&'static str; 7] = [
     "InternalError",
     "InvalidInput",
     "DeadlineExceeded",
     "Cancelled",
     "ResourceExhausted",
     "ResumeExpired",
+    "Rejected",
   ];
 
   /// Whether `tag` is reserved.
