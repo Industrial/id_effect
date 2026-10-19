@@ -1,11 +1,10 @@
 [package]
-publish = false
 name = "id_effect_rpc"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity)"
+description = "Typed RPC for id_effect: procedures with access decisions, a serde contract, HTTP dispatch and a Rust client (ADR 0014)"
 repository.workspace = true
 readme = "README.md"
 
@@ -16,29 +15,102 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 [lib]
 name = "id_effect_rpc"
 
+# Every 0.12 feature is declared here once (r12-e12-1-promote), so the wave 2–5 leaves add
+# modules behind them without editing this file. The design note
+# .maestro/specs/releases/0.12/r12-rpc-design.md §8 says which leaf fills which feature.
+[features]
+default = ["client"]
+# `client`: `RpcClient` over id_effect_platform's `HttpClientService` (batching adds same-tick
+# batches in `client::http`).
+client = ["dep:id_effect_platform"]
+# `postcard`: the binary codec negotiated per connection (D13; r12-e12-1-postcard).
+postcard = ["dep:postcard"]
+# `ws`: every kind over WebSocket frames, server (`transport::ws`, on id_effect_axum's realtime
+# layer) and client (`client::ws`, tokio-tungstenite at the pin axum's realtime layer uses).
+ws = [
+  "id_effect_axum/ws",
+  "dep:tokio-tungstenite",
+  "dep:tungstenite",
+  "futures-util/sink",
+]
+# `sse`: subscriptions and server streams over server-sent events (`transport::sse`, `client::sse`).
+sse = ["id_effect_axum/sse"]
+# `events`: subscriptions backed by an id_effect_events `EventLog` (cursor = global position).
+events = ["dep:id_effect_events"]
+# `mesh`: the same contract node to node over the process mesh (postcard always).
+mesh = ["postcard", "dep:id_effect_node"]
+# `channels`: topics and presence on mesh process groups, `JoinPolicy` (default deny; an adapter
+# over id_effect_authz's axum-free policies).
+channels = ["mesh", "dep:id_effect_authz"]
+# `http3`: RPC over HTTP/3 on the host's shared QUIC endpoint (server and client). The client
+# half adds `id_effect_platform/http3` here once r12-e12-3-quic-endpoint has declared that feature
+# (the one sanctioned follow-up edit of this table; design note §8).
+http3 = ["client", "id_effect_axum/http3"]
+# `webtransport`: two-way streams and subscriptions over WebTransport sessions.
+webtransport = ["http3", "id_effect_axum/webtransport"]
+# `test-util`: the in-process transport, contract fixtures and transport test helpers.
+test-util = []
+
 [dependencies]
-axum = { version = "0.8", features = ["json"] }
+axum = { version = "0.8", features = ["json", "query"] }
+# Base64url (no padding) for cursors and resume session ids (`wire`); already in axum's tree.
+base64 = "0.22.1"
+# Streams: NDJSON bodies, the frame sinks of the WebSocket transport. Same pin as id_effect_axum.
+futures-util = { version = "=0.3.34", default-features = false, features = [
+  "std",
+] }
 http = "1"
+http-body-util = "0.1"
 id_effect = { path = "../id_effect", version = "0.11.0", features = [
   "schema-serde",
 ] }
 id_effect_axum = { path = "../id_effect_axum", version = "0.11.0" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.11.0" }
+# `#[rpc::service]` (re-exported as `id_effect_rpc::service`).
+id_effect_rpc_macros = { path = "../id_effect_rpc_macros", version = "0.11.0" }
+# 128-bit resume session ids (`wire::SessionId`); already in id_effect_axum's tree.
+rand = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+# ETags of query results (r12-e12-1-kinds); already in id_effect_axum's tree.
+sha2 = "0.10.9"
 thiserror = "2"
+# Deadlines, cancellation and stream channels of the call kinds.
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
+# Optional dependencies of the features above.
+id_effect_authz = { path = "../id_effect_authz", version = "0.11.0", optional = true }
+id_effect_events = { path = "../id_effect_events", version = "0.11.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.11.0", optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.11.0", optional = true }
+postcard = { version = "1.1.3", optional = true, default-features = false, features = [
+  "use-std",
+] }
+tokio-tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
+  "connect",
+  "handshake",
+] }
+tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
+  "handshake",
+] }
 
 [dev-dependencies]
+# Path-only dev-dependencies (cargo publish resolves path+version dev-deps on crates.io).
+id_effect_events = { path = "../id_effect_events", features = ["pg"] }
 id_effect_opentelemetry = { path = "../id_effect_opentelemetry" }
+id_effect_platform = { path = "../id_effect_platform", features = [
+  "test-util",
+] }
+id_effect_test = { path = "../id_effect_test", features = ["sql"] }
 id_effect_tokio = { path = "../id_effect_tokio" }
-syn = { version = "2", features = ["full"] }
-http-body-util = "0.1"
+# tests/resume_property.rs (r12-e12-2-bidi-resume).
+proptest = "1"
 rstest = "0.26"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 tower = { version = "0.5", features = ["util"] }
+# tests/ui.rs: compile-fail cases of `#[rpc::service]` (r12-e12-1-macro).
+trybuild = "1"
 
 [[example]]
 name = "010_json_greet"
@@ -50,7 +122,6 @@ path = "examples/020_rpc_tracing.rs"
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Moved out of labs in 0.12
-# (Amendment 8). Transitional `merge` (no bar, publish = false) until r12-e12-1-promote, which
-# sets `integration` once the crate passes that bar (codegen.rs is still the D3 spike); it moves
-# to `platform` when the Relay depends on it.
-tier = "merge"
+# (Amendment 8) and promoted to `integration` by r12-e12-1-promote; it moves to `platform` when
+# the Relay reference app depends on it (check P, r12-w7-relay).
+tier = "integration"

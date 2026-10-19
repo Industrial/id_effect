@@ -87,10 +87,8 @@ declare -a ORDER=(
 
 # Crates in ORDER that still await promotion (ADR 0010 rule 2): either still under labs/, or
 # already moved into crates/ but `publish = false` until the promoting leaf. Remove the entry in
-# that leaf. id_effect_rpc moved in r12-t0-skeletons; r12-e12-1-promote makes it publishable.
-declare -A PENDING_PROMOTION=(
-    [id_effect_rpc]=r12-e12-1-promote
-)
+# that leaf (id_effect_rpc: moved in r12-t0-skeletons, publishable since r12-e12-1-promote).
+declare -A PENDING_PROMOTION=()
 
 if [[ "${1:-}" == "--print-order" ]]; then
     printf '%s\n' "${ORDER[@]}"

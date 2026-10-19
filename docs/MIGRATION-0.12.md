@@ -69,6 +69,36 @@ each); a refused attempt still surfaces as `TransportError::Connect` from `Liste
 
 ## RPC: labs `RpcGroup::register` becomes `#[rpc::service]`
 
+`id_effect_rpc` left `labs/` and is published (tier `integration`). Depend on it from crates.io or
+the workspace path `crates/id_effect_rpc` instead of `labs/id_effect_rpc`.
+
+The low-level `RpcGroup` now requires an access decision per procedure (ADR 0014 C1). **No shim**:
+an undecided procedure would be an open endpoint, which is what the rule removes.
+
+```rust,ignore
+// before (labs)
+group.register("greet", payload, &["name", "n"], success, &["message", "n"], handler);
+let app = RpcServer::new(group).mount_default();
+let out = client.call("greet", input, &payload, &["name", "n"], &success, &["message", "n"]);
+// after
+group.register(Procedure::query("Greeter.greet").public(), payload, success, &["message", "n"], handler);
+// or: Procedure::mutation("Greeter.reset").guard(staff_guard)
+let app = RpcServer::new(group).mount_default(); // or RpcServer::new(group).mount(typed_router)
+let out = client.call("Greeter.greet", input, &payload, &["name", "n"], &success);
+```
+
+- The input field names of `register` and the output field names of `RpcClient::call` are gone
+  (they were never read).
+- `RpcServer::mount_dispatch(axum::Router, path)` is replaced by `RpcServer::with_path(path)` and
+  `mount(id_effect_axum::route::Router)`; `layer_rpc` takes the typed router. A plain
+  `axum::Router` gets the route through `RpcServer::router().into_axum()` or `mount_default()`.
+- An unknown tag and a malformed envelope answer `application/problem+json` (404 / 400) instead
+  of the `RpcEnvelope`; `RpcClientError::Rpc` carries the whole `RpcEnvelope` (was its message).
+- `id_effect_rpc::codegen` is removed (`emit_service_trait` emitted source strings); its
+  `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod` moved to `id_effect_rpc::openapi`.
+  `#[rpc::service]` (r12-e12-1-macro) generates the handler trait, client and contract instead.
+- `RpcClient` is behind the default feature `client`.
+
 ## RPC: OpenAPI output is 3.1 (was 3.0)
 
 ## Templates: `server.http3` in the `service` template

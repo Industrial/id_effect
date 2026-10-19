@@ -3,7 +3,7 @@
 //! Run (from repo root):
 //!
 //! ```bash
-//! cargo run -p id_effect_rpc --features examples --example 010_json_greet
+//! cargo run -p id_effect_rpc --example 010_json_greet
 //! ```
 
 use std::sync::Arc;

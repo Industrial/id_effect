@@ -22,12 +22,32 @@
   ALPN (`AlpnRouter`, `Route::h3()`, `Route::mesh(..)`), each route with its own certificate.
 - `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
   shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
+- `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
+  `publish = false`). New modules: `contract` (the D11 serde model — services, versions,
+  procedures, kinds, access decisions, input/output/error JSON Schemas — with
+  `Contract::to_json_pretty` / `from_json` and the `assert_snapshot` golden for
+  `rpc.contract.json`, `UPDATE_GOLDEN=1`), `wire` (the 0.12 call envelope, `_tag` exit union,
+  reserved failures such as `InternalError { id }`, stream frames, `c1.` cursors and 128-bit
+  resume session ids), `codec` (`Codec`, `CodecId`, JSON, content-type and WebSocket subprotocol
+  negotiation), `server::dispatch` (transport-independent dispatch with per-procedure guards),
+  `Procedure` and `RpcGroup::service_contract`. Every 0.12 RPC feature is declared once:
+  `client` (default), `postcard`, `ws`, `sse`, `events`, `mesh`, `channels`, `http3`,
+  `webtransport`, `test-util`. `id_effect_rpc::service` re-exports `#[rpc::service]` from
+  `id_effect_rpc_macros`. Book chapter 33 "One call surface".
 
 ### Changed
 
 - `id_effect_node::transport::certs` is a deprecated re-export of `id_effect_platform::tls` for
   one minor. The QUIC mesh requires ALPN `idm/1`: 0.11 nodes cannot join a 0.12 QUIC mesh. See
   the [0.12 migration guide](docs/MIGRATION-0.12.md).
+- `id_effect_rpc`: `RpcGroup::register` takes a `Procedure` with an access decision
+  (`Procedure::query(tag).public()` / `.guard(g)`) and no longer takes input field names; tags
+  are validated and registered once. `RpcServer` mounts `POST /rpc` as a declared route of
+  `id_effect_axum::route::Router` (`mount`, `router`, `endpoint`; `layer_rpc` takes the typed
+  router) and caps bodies (1 MiB default). `RpcClient::call` no longer takes output field names;
+  `RpcClientError::Rpc` carries the `RpcEnvelope`. The `codegen` module (trait source strings) is
+  removed; its route metadata types moved to `openapi`. `RpcClient` is behind the default
+  `client` feature.
 
 ### Security
 
@@ -48,6 +68,11 @@
   `idm_without_client_cert_refused_on_shared_endpoint`,
   `idm_cert_from_other_ca_refused_on_shared_endpoint`; the 0.11 mutual-TLS tests run on both
   shapes.
+- RPC access (ADR 0014 C1, finding H8 at the call surface): a procedure without `.public()` or
+  `.guard(g)` does not register (compile error); its guards run on the request head before the
+  input is decoded; an unknown tag answers 404 Problem Details; the `/rpc` mount sits behind the
+  deny-by-default router. Over-cap bodies are 413 and unknown codecs 415 Problems. Tests
+  `rpc_unregistered_tag_is_404_problem`, `rpc_group_requires_access_decision`.
 - QUIC endpoint defaults (ADR 0013 R4, R8): address validation (Retry) on, 0-RTT off, finite
   stream credits, idle timeout, UDP payload, receive windows, pending handshakes (256) and
   handshake time (10 s); datagrams off. Opt-outs `QuicEndpointConfig::dangerous_no_retry` and

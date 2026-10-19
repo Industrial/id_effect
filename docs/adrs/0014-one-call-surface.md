@@ -22,7 +22,7 @@ At 0.11.0 id_effect has three ways to call a service and none of them is the pla
 
 - **REST + OpenAPI** (`id_effect_axum` typed routes and its OpenAPI output). Good for public APIs,
   but the client is hand-written and nothing types a stream, a batch or a subscription.
-- **Labs RPC** (`labs/id_effect_rpc`, 2,141 lines, `publish = false`): tagged JSON over
+- **Labs RPC** (`crates/id_effect_rpc`, 2,141 lines, `publish = false`): tagged JSON over
   `POST /rpc`, field-name lists, NDJSON server streams, OpenAPI 3.0 output. No macro, no client
   derived from a contract, one transport, no batching, no two-way streams, no binary encoding, no
   access decision per procedure, no cancellation contract. Scorecard `web.rpc` 39 (level labs).

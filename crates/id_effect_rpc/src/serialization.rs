@@ -233,6 +233,69 @@ mod tests {
   }
 
   #[test]
+  fn wire_requests_and_responses_decode_and_encode() {
+    let req = decode_wire_request(br#"{"tag":"A.b","payload":1}"#).unwrap();
+    assert_eq!(req.tag, "A.b");
+    let err = decode_wire_request(b"{").unwrap_err();
+    assert!(matches!(err, RpcSerializationError::Json(_)));
+    let bytes = encode_wire_response(&success_json("A.b", serde_json::json!(2))).unwrap();
+    assert!(String::from_utf8(bytes).unwrap().contains("\"success\":2"));
+    let wire = rpc_error_to_wire("A.b", RpcError::not_found("x"));
+    assert!(matches!(wire, RpcWireResponse::Failure { .. }));
+  }
+
+  #[test]
+  fn serialization_errors_become_invalid_argument() {
+    let cases = [
+      RpcSerializationError::Json("j".into()),
+      RpcSerializationError::Schema {
+        path: "a".into(),
+        message: "m".into(),
+      },
+      RpcSerializationError::Protocol("p".into()),
+    ];
+    let messages: Vec<String> = cases
+      .into_iter()
+      .map(|e| {
+        assert!(!e.to_string().is_empty());
+        let err = serialization_to_rpc_error(e);
+        assert_eq!(err.envelope().code, crate::RpcErrorCode::InvalidArgument);
+        err.envelope().message.clone()
+      })
+      .collect();
+    assert_eq!(messages, ["j", "a: m", "p"]);
+  }
+
+  #[test]
+  fn struct_wire_json_maps_tuples_to_named_fields() {
+    assert_eq!(().to_json_object(&[]).unwrap(), serde_json::json!({}));
+    assert!(().to_json_object(&["x"]).is_err());
+    assert_eq!(
+      "v".to_owned().to_json_object(&["x"]).unwrap(),
+      serde_json::json!({"x": "v"})
+    );
+    assert!("v".to_owned().to_json_object(&[]).is_err());
+    assert!((1, 2).to_json_object(&["a"]).is_err());
+    assert_eq!(
+      (1, "b", true).to_json_object(&["a", "b", "c"]).unwrap(),
+      serde_json::json!({"a": 1, "b": "b", "c": true})
+    );
+    assert!((1, 2, 3).to_json_object(&["a", "b"]).is_err());
+    let s = schema::struct_(
+      "message",
+      schema::string::<()>(),
+      "count",
+      schema::i64::<()>(),
+    );
+    let wire = success_wire("A.b", &s, &["message", "count"], ("m".to_owned(), 1)).unwrap();
+    assert!(matches!(wire, RpcWireResponse::Success { .. }));
+    let err = success_wire("A.b", &s, &["message"], ("m".to_owned(), 1)).unwrap_err();
+    assert!(matches!(err, RpcSerializationError::Json(_)));
+    let ok = validate_success_json(&s, &serde_json::json!({"message": "m", "count": 2})).unwrap();
+    assert_eq!(ok.1, 2);
+  }
+
+  #[test]
   fn encode_struct_fields_round_trip() {
     let s = schema::struct_(
       "message",

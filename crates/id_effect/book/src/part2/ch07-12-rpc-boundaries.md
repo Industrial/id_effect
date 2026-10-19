@@ -2,8 +2,11 @@
 
 Effect.ts [`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) ties **Schema**, **Layer**,
 and **HTTP** so typed contracts cross process boundaries. In Rust there is no single blessed stack;
-this chapter documents **patterns** and the crate **`id_effect_rpc`** (`crates/id_effect_rpc`,
-unpublished) for **RPC-shaped HTTP** on top of **`id_effect_axum`** and **`id_effect::schema`**.
+this chapter documents **patterns** and the crate **`id_effect_rpc`** (`crates/id_effect_rpc`, tier
+`integration` since 0.12) for **RPC-shaped HTTP** on top of **`id_effect_axum`** and
+**`id_effect::schema`**. Since 0.12 RPC is id_effect's first-party call surface (ADR 0014); the
+whole picture — procedure kinds, the contract, transports — is
+[One call surface](../part6/ch33-00-one-call-surface.md).
 
 ## Choosing a wire stack (tonic, tarpc, HTTP+JSON)
 
@@ -36,43 +39,46 @@ Use **`id_effect_rpc::span::rpc_request_span`** for a stable **`rpc.request`** s
 subscriber with an **OpenTelemetry** layer ([OpenTelemetry](./ch07-12-opentelemetry.md)), these
 fields map cleanly to semantic conventions without `id_effect_rpc` depending on OTEL crates.
 
-## Labs crate: `id_effect_rpc`
+## The crate: `id_effect_rpc`
 
 | Piece | Role |
 |-------|------|
+| **`Procedure` / `RpcGroup`** | tagged procedures, each `public()` or `guard(g)` (an undecided one does not compile); handlers `Fn(A, &mut DynEnv) -> Effect<B, RpcError, DynEnv>` |
+| **`RpcServer`** | `POST /rpc` as a declared typed route of `id_effect_axum::route::Router`; per-call guards; unknown tag → 404 Problem |
+| **`RpcClient`** | `call(..)` → an `Effect` over any `R` containing `HttpClientService` (feature `client`) |
+| **`contract`, `wire`, `codec`** | the serde service contract, the 0.12 wire envelope and frames, JSON codec and negotiation |
 | **`RpcError` / `RpcEnvelope`** | JSON body + HTTP status + `IntoResponse` for Axum |
-| **`RpcGroup` / `RpcServer`** | typed handlers `Fn(A, &mut DynEnv) -> Effect<B, RpcError, DynEnv>`, dispatched at `POST /rpc` on a `Router<DynEnv>` |
-| **`RpcClient`** | `call(..)` → an `Effect` over any `R` containing `HttpClientService` |
-| **`correlation`** | `x-correlation-id` read, generate, append |
-| **`span`** | `tracing` helpers for RPC-shaped requests |
-| **`codegen`, `openapi`, `versioning`, `stream`** | trait stubs, OpenAPI emission, version negotiation, NDJSON streams |
+| **`correlation`, `span`** | `x-correlation-id` and `tracing` helpers for RPC-shaped requests |
+| **`openapi`, `versioning`, `stream`** | OpenAPI 3.0 emission, version negotiation, NDJSON stream chunks |
 
 Each handler's effect runs as one request fiber (`id_effect_axum::run_with_env`). A typed
 `RpcError` becomes a failure envelope; a defect or interrupt becomes `RpcError::internal` (HTTP 500,
 the panic message is not sent).
 
-<!-- ignore: id_effect_rpc is an unpublished labs crate outside the workspace; fragment of example 010_json_greet -->
+<!-- ignore: id_effect_rpc is not a book_snippets dependency; fragment of the crate's own doc examples -->
 ```rust,ignore
 use id_effect::{DynEnv, succeed};
 use id_effect_platform::http::{ReqwestHttpClient, http_client_env};
+use id_effect_rpc::{Procedure, RpcClient, RpcGroup, RpcServer};
 
-group.register("greet", payload, &["name", "n"], success, &["message", "n"],
+let mut group = RpcGroup::new();
+group.register(Procedure::query("Greeter.greet").public(), payload, success, &["message", "n"],
     |(name, n), _env: &mut DynEnv| succeed((format!("Hello, {name}!"), n)));
 let app = RpcServer::new(group).mount_default().with_state(DynEnv::new());
 
-let out = client
-    .call("greet", input, &p, &pf, &s, &sf)
+let out = RpcClient::new("http://127.0.0.1:8080")
+    .call("Greeter.greet", input, &payload_schema, &["name", "n"], &success_schema)
     .provide_all(http_client_env(ReqwestHttpClient::default_client()))
     .block_on() // or TokioRuntime::current()?.run(..).await in async code
     .into_result()?;
 ```
 
-API index: `cargo doc --manifest-path labs/Cargo.toml -p id_effect_rpc --open`.
+API index: `cargo doc -p id_effect_rpc --open`.
 
 ## Example: Axum + Schema + `RpcError`
 
 ```bash
-cargo run --manifest-path labs/Cargo.toml -p id_effect_rpc --features examples --example 010_json_greet
+cargo run -p id_effect_rpc --example 010_json_greet
 ```
 
 It accepts `POST /greet` with JSON `{"name": string, "enthusiasm": i64}`, validates with

@@ -1,33 +1,62 @@
-//! RPC-style HTTP helpers for [`id_effect`](https://docs.rs/id_effect) Axum hosts — **Phase D**
-//! (`@effect/rpc`-shaped boundaries).
+//! Typed RPC for [`id_effect`](https://docs.rs/id_effect): the first-party call surface of
+//! ADR 0014 ("One call surface").
 //!
-//! ## Full stack (D3)
+//! A service is a set of tagged procedures. Each procedure has a kind (query, mutation, server
+//! stream, client stream, two-way stream, subscription), input and output schemas, typed errors,
+//! and an access decision — public or guarded — without which it does not register (C1). The
+//! [`contract`] describes the services for generated clients and compatibility checks; the
+//! [`wire`] types and [`codec`]s fix what crosses the network.
 //!
-//! - [`protocol`] — tagged wire request/response types
-//! - [`serialization`] — JSON + [`id_effect::schema`] encode/decode
-//! - [`registry`] — [`RpcGroup`] of typed handlers
-//! - [`server`] — [`RpcServer`] Axum dispatch (`POST /rpc`)
-//! - [`client`] — [`RpcClient`] remote calls via [`id_effect_platform::http::HttpClient`]
-//! - [`stream`] — NDJSON stream RPC responses
+//! ```rust
+//! use std::sync::Arc;
+//! use id_effect::{DynEnv, schema, succeed};
+//! use id_effect_rpc::{Procedure, RpcGroup, RpcServer};
 //!
-//! ## Edge helpers (D2)
+//! let mut group = RpcGroup::new();
+//! group.register(
+//!   Procedure::query("Greeter.greet").public(),
+//!   Arc::new(schema::string::<()>()),
+//!   Arc::new(schema::string::<()>()),
+//!   &["message"],
+//!   |name, _env| succeed(format!("Hello, {name}!")),
+//! );
+//! let contract = group.service_contract("Greeter", 1);
+//! assert_eq!(contract.procedures[0].name, "greet");
+//! let app: axum::Router = RpcServer::new(group).mount_default().with_state(DynEnv::new());
+//! # let _ = app;
+//! ```
 //!
-//! - [`RpcError`] — JSON envelope + status + [`IntoResponse`](axum::response::IntoResponse)
-//! - [`correlation`] — `x-correlation-id` propagation
-//! - [`codegen`] — service metadata and Rust trait stub emission
-//! - [`openapi`] — OpenAPI 3.0 JSON/YAML emission from route metadata
-//! - [`span`] — `tracing` span helpers compatible with OpenTelemetry layers
-//! - [`versioning`] — API version negotiation middleware
+//! ## Modules
 //!
-//! Pair with **`id_effect_axum::json`** (`decode_json`, `route::ValidJson`) for
-//! per-route JSON validation (see the mdBook *Axum host* chapter).
+//! - [`contract`] — the serde contract model and its golden snapshot (D11)
+//! - [`wire`] — call envelope, exit union, reserved failures, frames, cursors, sessions
+//! - [`codec`] — the [`Codec`](codec::Codec) trait, JSON, negotiation (D13)
+//! - [`registry`] — [`Procedure`] (access typestate) and [`RpcGroup`]
+//! - [`server`] — [`RpcServer`]: the `/rpc` mount as a declared typed route, [`server::dispatch`]
+//! - [`client`] — [`RpcClient`] (feature `client`, default)
+//! - [`protocol`], [`serialization`], [`stream`] — the labs tagged-JSON format the HTTP path still
+//!   speaks until the 0.12 kinds move it onto [`wire`]
+//! - [`correlation`], [`span`], [`versioning`], [`openapi`], [`RpcError`] — edge helpers
+//!
+//! `#[rpc::service]` ([`service`], re-exported from `id_effect_rpc_macros`) declares a service on a
+//! trait. The wire and contract formats are specified in the 0.12 design note
+//! (`.maestro/specs/releases/0.12/r12-rpc-design.md`).
+//!
+//! Later 0.12 modules are added below, one `pub mod` / `pub use` line each.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![allow(clippy::missing_panics_doc)]
 
+/// The README's examples run as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
+#[cfg(feature = "client")]
 pub mod client;
-pub mod codegen;
+pub mod codec;
+pub mod contract;
 pub mod correlation;
 mod envelope;
 pub mod error;
@@ -39,10 +68,14 @@ pub mod server;
 pub mod span;
 pub mod stream;
 pub mod versioning;
+pub mod wire;
 
+#[cfg(feature = "client")]
 pub use client::{RpcClient, RpcClientConfig, RpcClientError};
+pub use contract::{Contract, ProcedureAccess, ProcedureContract, ProcedureKind, ServiceContract};
 pub use envelope::{RpcEnvelope, RpcErrorCode};
 pub use error::RpcError;
+pub use id_effect_rpc_macros::service;
 pub use protocol::{RPC_DISPATCH_PATH, RpcWireRequest, RpcWireResponse};
-pub use registry::{RpcGroup, RpcMethodEntry};
+pub use registry::{Procedure, RpcGroup, RpcMethodEntry};
 pub use server::{RpcServer, layer_rpc};

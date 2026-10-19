@@ -1,13 +1,67 @@
-//! OpenAPI 3.0 document emission from RPC / HTTP route metadata.
+//! OpenAPI 3.0 document emission from HTTP route metadata.
 //!
-//! Build an [`OpenApiSpec`] from [`crate::codegen::RpcServiceDef`], then call
-//! [`emit_openapi_json`] or [`emit_openapi_yaml`].
+//! Describe HTTP-shaped operations with [`RpcServiceDef`], build an [`OpenApiSpec`], then call
+//! [`emit_openapi_json`] or [`emit_openapi_yaml`]. The contract-driven OpenAPI 3.1 and AsyncAPI
+//! export of 0.12 (r12-e12-4-openapi-asyncapi) reads [`crate::contract::Contract`] instead.
 
 use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
-use crate::codegen::{RpcHttpMethod, RpcMethodDef, RpcServiceDef};
+/// HTTP verb of an operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RpcHttpMethod {
+  /// GET
+  Get,
+  /// POST
+  Post,
+  /// PUT
+  Put,
+  /// DELETE
+  Delete,
+  /// PATCH
+  Patch,
+}
+
+impl RpcHttpMethod {
+  /// Uppercase method name (`GET`, `POST`, …).
+  #[inline]
+  pub fn as_str(self) -> &'static str {
+    match self {
+      Self::Get => "GET",
+      Self::Post => "POST",
+      Self::Put => "PUT",
+      Self::Delete => "DELETE",
+      Self::Patch => "PATCH",
+    }
+  }
+}
+
+/// Metadata for one operation (one route + handler).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RpcMethodDef {
+  /// Stable operation id (OpenAPI `operationId`).
+  pub operation: String,
+  /// Route path (e.g. `/greet`).
+  pub path: String,
+  /// HTTP method.
+  pub method: RpcHttpMethod,
+  /// Optional short description.
+  pub summary: Option<String>,
+  /// Request payload type name (when the route accepts a body).
+  pub request_type: Option<String>,
+  /// Success response type name.
+  pub response_type: Option<String>,
+}
+
+/// Operations exposed as one logical service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RpcServiceDef {
+  /// Service name (PascalCase recommended).
+  pub service: String,
+  /// Operations belonging to this service.
+  pub methods: Vec<RpcMethodDef>,
+}
 
 /// Top-level OpenAPI info block.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,7 +198,52 @@ fn schema_ref(type_name: Option<&str>, schemas: &mut BTreeMap<String, Value>) ->
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::codegen::RpcHttpMethod;
+
+  #[test]
+  fn every_method_has_a_name_and_a_key() {
+    let all = [
+      RpcHttpMethod::Get,
+      RpcHttpMethod::Post,
+      RpcHttpMethod::Put,
+      RpcHttpMethod::Delete,
+      RpcHttpMethod::Patch,
+    ];
+    let names: Vec<_> = all.iter().map(|m| m.as_str()).collect();
+    assert_eq!(names, ["GET", "POST", "PUT", "DELETE", "PATCH"]);
+    for method in all {
+      assert_eq!(http_method_key(method), method.as_str().to_lowercase());
+    }
+  }
+
+  #[test]
+  fn operations_without_types_have_inline_object_schemas() {
+    let spec = OpenApiSpec {
+      info: OpenApiInfo {
+        title: "Ping".to_owned(),
+        version: "1".to_owned(),
+      },
+      service: RpcServiceDef {
+        service: "Ping".to_owned(),
+        methods: vec![RpcMethodDef {
+          operation: "ping".to_owned(),
+          path: "/ping".to_owned(),
+          method: RpcHttpMethod::Get,
+          summary: None,
+          request_type: None,
+          response_type: None,
+        }],
+      },
+    };
+    let v: Value = serde_json::from_str(&emit_openapi_json(&spec).unwrap()).unwrap();
+    let op = &v["paths"]["/ping"]["get"];
+    assert!(op.get("requestBody").is_none());
+    assert!(op.get("summary").is_none());
+    assert_eq!(
+      op["responses"]["200"]["content"]["application/json"]["schema"]["type"],
+      "object"
+    );
+    assert_eq!(v["components"], json!({}));
+  }
 
   fn greet_spec() -> OpenApiSpec {
     OpenApiSpec {

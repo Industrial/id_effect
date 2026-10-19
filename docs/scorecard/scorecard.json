@@ -7695,12 +7695,12 @@
 					"nextjs": ["web.rpc#1", "web.rpc#3", "web.rpc#4"]
 				},
 				"evidence": {
-					"web.rpc#1": "labs/id_effect_rpc/src/registry.rs:57 RpcGroup",
-					"web.rpc#2": "labs/id_effect_rpc/src/client.rs:84 call (payload/success schemas)",
-					"web.rpc#4": "labs/id_effect_rpc/src/stream.rs:15 encode_stream_chunk",
-					"web.rpc#6": "labs/id_effect_rpc/src/versioning.rs:23 VersionConfig",
-					"web.rpc#7": "labs/id_effect_rpc/src/openapi.rs:31 emit_openapi_json",
-					"web.rpc#8": "labs/id_effect_rpc/src/span.rs:10 rpc_request_span"
+					"web.rpc#1": "crates/id_effect_rpc/src/registry.rs:267 RpcGroup",
+					"web.rpc#2": "crates/id_effect_rpc/src/client/http.rs:16 call (payload/success schemas)",
+					"web.rpc#4": "crates/id_effect_rpc/src/stream.rs:15 encode_stream_chunk",
+					"web.rpc#6": "crates/id_effect_rpc/src/versioning.rs:23 VersionConfig",
+					"web.rpc#7": "crates/id_effect_rpc/src/openapi.rs:85 emit_openapi_json",
+					"web.rpc#8": "crates/id_effect_rpc/src/span.rs:10 rpc_request_span"
 				}
 			},
 			"v1": {

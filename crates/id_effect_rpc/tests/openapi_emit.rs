@@ -1,7 +1,8 @@
 //! Integration test: OpenAPI emission matches checked-in fixture.
 
-use id_effect_rpc::codegen::{RpcHttpMethod, RpcMethodDef, RpcServiceDef};
-use id_effect_rpc::openapi::{OpenApiInfo, OpenApiSpec, emit_openapi_json};
+use id_effect_rpc::openapi::{
+  OpenApiInfo, OpenApiSpec, RpcHttpMethod, RpcMethodDef, RpcServiceDef, emit_openapi_json,
+};
 use serde_json::Value;
 
 fn greet_spec() -> OpenApiSpec {

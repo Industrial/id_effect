@@ -33,7 +33,10 @@ projects:
   id_effect_process: crates/id_effect_process
   id_effect_node: crates/id_effect_node
   id_effect_workflow: crates/id_effect_workflow
+  id_effect_rpc: crates/id_effect_rpc
+  id_effect_rpc_macros: crates/id_effect_rpc_macros
   ledger: examples/reference/ledger
+  relay: examples/reference/relay
 vcs:
   defaultBranch: main
   provider: github
