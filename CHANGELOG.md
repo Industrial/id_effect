@@ -58,6 +58,20 @@
   (connections, header timeout, requests per connection, QUIC stream credits); the client IP is
   the QUIC peer under the trusted-proxy rules; 0-RTT is off. Example `092_http3`, CI job
   `http3-conformance` (h3spec, curl `--http3-only`), book chapter 29.5.
+- WebTransport (r12-e12-3-webtransport, h3-webtransport `=0.1.2`). `id_effect_axum` feature
+  `webtransport`: `server::webtransport::endpoint` is a typed `CONNECT` route whose sessions
+  take their HTTP/3 connection over (`Http3Options::webtransport`, on the endpoint's one `h3`
+  route), `WebTransportConfig` (Origin allowlist, `SessionCap`), `quic_limits` (QUIC datagrams
+  on), and `server::webtransport::client`, a minimal Rust WebTransport client.
+  `realtime::ws::WsSocket::from_channels` lets another transport carry a socket's messages.
+  `id_effect_platform`: `QuicLimits::datagram_receive_buffer` / `with_datagrams` (off by
+  default). `id_effect_rpc` feature `webtransport` (now implies `ws` and `postcard`):
+  `transport::webtransport` serves every kind on `CONNECT {path}/wt`, one QUIC stream per call,
+  u32-BE length-prefixed records, a control stream for `hello` / `ping` / `resume`, the
+  WebSocket transport's credits, guards and resume store. Browser test (D12) with
+  `headless_chrome =1.0.22` behind `ID_EFFECT_REQUIRE_BROWSER=1`; book chapter 29.6. The
+  generated TypeScript client opens its WebTransport control stream with a `ping` and queues a
+  call's frames until its stream is open.
 - `id_effect_platform`: reqwest feature `http2`, so the TCP path (and the `Http3Client`
   fallback) speaks HTTP/2 to servers that offer it (F11).
 - `id_effect_platform` QUIC transport tuning (r12-f-h3-platform, ADR 0014 D9): congestion
@@ -321,6 +335,12 @@
   address through the trusted-proxy rules; 0-RTT is off (the `Http3Options` opt-out
   `dangerous_allow_zero_rtt_for_queries` is recorded and admits safe methods only); an h3 stream
   is never `stop_sending`'d while a read is in flight (F13: it is dropped).
+- WebTransport (ADR 0013 R4 R9; ADR 0014 C3 C4): the CONNECT's `Origin` is checked against an
+  allowlist that is empty by default (403); sessions are capped at 10,000 per endpoint and 16
+  per client IP (429), one per connection; streams per session are the QUIC credits; a length
+  prefix over 64 KiB, a second control stream or a frame for another call on a call's stream
+  closes the session; a `ping` every 20 s and two silent intervals close it; calls run their
+  guards on the CONNECT's head, and resume stays bound to the principal.
 - WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
   is checked against an allowlist that is empty by default (every browser origin refused, 403;
   the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);

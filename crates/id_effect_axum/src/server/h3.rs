@@ -84,7 +84,7 @@ use http_body::Frame;
 use http_body_util::BodyExt;
 use id_effect::observability::posture::record_dangerous;
 use id_effect_platform::quic::{QuicEndpoint, QuicEndpointConfig, QuicLimits, Route};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use tower_service::Service;
 
 use crate::server::bootstrap::HostConfig;
@@ -101,16 +101,38 @@ pub const MAX_FIELD_SECTION_SIZE: u64 = 64 * 1024;
 /// header timeout (`H3_NO_ERROR`: nothing was lost).
 const H3_NO_ERROR: u32 = 0x100;
 
-type Connection = ::h3::server::Connection<h3_quinn::Connection, Bytes>;
+pub(crate) type Connection = ::h3::server::Connection<h3_quinn::Connection, Bytes>;
 type Resolver = RequestResolver<h3_quinn::Connection, Bytes>;
-type SendHalf = RequestStream<h3_quinn::SendStream<Bytes>, Bytes>;
+pub(crate) type SendHalf = RequestStream<h3_quinn::SendStream<Bytes>, Bytes>;
 type RecvHalf = RequestStream<h3_quinn::RecvStream, Bytes>;
+/// A request stream before it is split (what a WebTransport session takes over).
+pub(crate) type FullStream = RequestStream<h3_quinn::BidiStream<Bytes>, Bytes>;
+
+/// What a request task hands its connection when a WebTransport session takes it over
+/// (r12-e12-3-webtransport); nothing without the feature.
+#[cfg(feature = "webtransport")]
+pub(crate) type Handoff = crate::server::webtransport::Handoff;
+#[cfg(not(feature = "webtransport"))]
+pub(crate) type Handoff = std::convert::Infallible;
+
+/// The next hand-off, or never (no WebTransport on this connection).
+async fn next_handoff(handoffs: &mut Option<mpsc::Receiver<Handoff>>) -> Handoff {
+  match handoffs {
+    Some(rx) => match rx.recv().await {
+      Some(handoff) => handoff,
+      None => std::future::pending().await,
+    },
+    None => std::future::pending().await,
+  }
+}
 
 /// HTTP/3 settings beyond the [`ConnectionLimits`]: off by default, each a `dangerous_*`
 /// opt-out.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Http3Options {
   zero_rtt_for_queries: bool,
+  #[cfg(feature = "webtransport")]
+  webtransport: bool,
 }
 
 impl Http3Options {
@@ -141,6 +163,32 @@ impl Http3Options {
   /// Whether 0-RTT is admitted for safe methods.
   pub fn zero_rtt_for_queries(&self) -> bool {
     self.zero_rtt_for_queries
+  }
+
+  /// Serve WebTransport sessions (feature `webtransport`): the connections advertise extended
+  /// CONNECT, HTTP/3 datagrams and one WebTransport session each, and a WebTransport CONNECT
+  /// that a [`webtransport::endpoint`](crate::server::webtransport::endpoint) route accepts
+  /// takes its connection over. Off by default. The endpoint needs QUIC datagrams
+  /// ([`webtransport::quic_limits`](crate::server::webtransport::quic_limits)).
+  #[cfg(feature = "webtransport")]
+  #[must_use]
+  pub fn webtransport(mut self) -> Self {
+    self.webtransport = true;
+    self
+  }
+
+  /// Whether WebTransport sessions are served.
+  #[cfg(feature = "webtransport")]
+  pub fn webtransport_enabled(&self) -> bool {
+    self.webtransport
+  }
+
+  /// Whether the connections advertise and accept WebTransport.
+  fn serves_webtransport(&self) -> bool {
+    #[cfg(feature = "webtransport")]
+    return self.webtransport;
+    #[cfg(not(feature = "webtransport"))]
+    false
   }
 
   /// Whether a request with `method` may be served from 0-RTT early data: only with
@@ -227,6 +275,7 @@ where
       limits: Arc::clone(&limits),
       signal: signal_tx.clone(),
       held: (close_rx.clone(), permit),
+      webtransport: options.serves_webtransport(),
     };
     tokio::spawn(task.run());
   }
@@ -243,6 +292,8 @@ struct ConnectionTask {
   limits: Arc<ConnectionLimits>,
   signal: watch::Sender<()>,
   held: (watch::Receiver<()>, Option<OwnedSemaphorePermit>),
+  /// Advertise WebTransport, and let a session take the connection over.
+  webtransport: bool,
 }
 
 impl ConnectionTask {
@@ -253,14 +304,31 @@ impl ConnectionTask {
       limits,
       signal,
       held,
+      webtransport,
     } = self;
     // Released when the connection is done, whichever way.
     let _held = held;
     let peer = conn.remote_address();
-    let built = ::h3::server::builder()
-      .max_field_section_size(MAX_FIELD_SECTION_SIZE)
+    let mut builder = ::h3::server::builder();
+    builder.max_field_section_size(MAX_FIELD_SECTION_SIZE);
+    if webtransport {
+      builder
+        .enable_webtransport(true)
+        .enable_extended_connect(true)
+        .enable_datagram(true)
+        .max_webtransport_sessions(1);
+    }
+    let built = builder
       .build::<_, Bytes>(h3_quinn::Connection::new(conn.clone()))
       .await;
+    // A request task whose CONNECT a WebTransport route accepted hands the stream back here:
+    // the session takes the connection over (one per connection).
+    let (handoff_tx, mut handoffs) = if webtransport {
+      let (tx, rx) = mpsc::channel::<Handoff>(1);
+      (Some(tx), Some(rx))
+    } else {
+      (None, None)
+    };
     let Ok(mut h3) = built else {
       return;
     };
@@ -284,6 +352,7 @@ impl ConnectionTask {
               app: app.clone(),
               peer,
               header_timeout,
+              handoff: handoff_tx.clone(),
             };
             requests.spawn(request.run());
             if !draining && max_requests.is_some_and(|max| served >= max) {
@@ -298,6 +367,11 @@ impl ConnectionTask {
           if draining && requests.is_empty() {
             break;
           }
+        }
+        handoff = next_handoff(&mut handoffs) => {
+          // The open requests carry on by themselves.
+          requests.detach_all();
+          return take_over(h3, conn, handoff, app, peer, signal).await;
         }
         () = &mut first, if armed => {
           conn.close(H3_NO_ERROR.into(), b"no request within the header timeout");
@@ -318,6 +392,31 @@ impl ConnectionTask {
   }
 }
 
+/// A WebTransport session takes the connection over until it ends (or the server shuts down).
+#[cfg(feature = "webtransport")]
+async fn take_over(
+  h3: Connection,
+  conn: quinn::Connection,
+  handoff: Handoff,
+  app: Router,
+  peer: SocketAddr,
+  signal: watch::Sender<()>,
+) {
+  crate::server::webtransport::drive(h3, conn, handoff, app, peer, signal).await;
+}
+
+#[cfg(not(feature = "webtransport"))]
+async fn take_over(
+  _: Connection,
+  _: quinn::Connection,
+  handoff: Handoff,
+  _: Router,
+  _: SocketAddr,
+  _: watch::Sender<()>,
+) {
+  match handoff {}
+}
+
 /// How long a drained connection waits for the client to close before the server does.
 const GOAWAY_GRACE: Duration = Duration::from_secs(1);
 
@@ -333,12 +432,21 @@ struct RequestTask {
   app: Router,
   peer: SocketAddr,
   header_timeout: Option<Duration>,
+  /// Where a WebTransport CONNECT goes once its route accepted it (WebTransport on).
+  handoff: Option<mpsc::Sender<Handoff>>,
 }
 
 impl RequestTask {
   async fn run(self) {
-    let resolve = self.resolver.resolve_request();
-    let resolved = match self.header_timeout {
+    let Self {
+      resolver,
+      app,
+      peer,
+      header_timeout,
+      handoff,
+    } = self;
+    let resolve = resolver.resolve_request();
+    let resolved = match header_timeout {
       Some(timeout) => tokio::time::timeout(timeout, resolve).await.ok(),
       None => Some(resolve.await),
     };
@@ -347,24 +455,42 @@ impl RequestTask {
     let Some(Ok((head, stream))) = resolved else {
       return;
     };
-    let (send, recv) = stream.split();
-    let head_only = head.method() == Method::HEAD;
-    let body = Arc::new(Mutex::new(BodyState {
-      stream: recv,
-      data_done: false,
-      done: false,
-    }));
-    let mut request = head.map(|()| {
-      Body::new(H3Body {
-        state: Arc::clone(&body),
-      })
-    });
-    request.extensions_mut().insert(ConnectInfo(self.peer));
-    let mut app = self.app;
-    let Ok(response) = app.call(request).await;
-    let _ = respond(send, response, head_only).await;
-    finish_request_body(body).await;
+    #[cfg(feature = "webtransport")]
+    if let Some(handoff) = handoff
+      && crate::server::webtransport::is_connect(&head)
+    {
+      return crate::server::webtransport::serve_connect(head, stream, app, peer, handoff).await;
+    }
+    #[cfg(not(feature = "webtransport"))]
+    let _ = handoff;
+    serve_request(head, stream, app, peer).await;
   }
+}
+
+/// Serves one resolved request through `app`: the response, then the rest of an unread body.
+pub(crate) async fn serve_request(
+  head: axum::http::Request<()>,
+  stream: FullStream,
+  app: Router,
+  peer: SocketAddr,
+) {
+  let (send, recv) = stream.split();
+  let head_only = head.method() == Method::HEAD;
+  let body = Arc::new(Mutex::new(BodyState {
+    stream: recv,
+    data_done: false,
+    done: false,
+  }));
+  let mut request = head.map(|()| {
+    Body::new(H3Body {
+      state: Arc::clone(&body),
+    })
+  });
+  request.extensions_mut().insert(ConnectInfo(peer));
+  let mut app = app;
+  let Ok(response) = app.call(request).await;
+  let _ = respond(send, response, head_only).await;
+  finish_request_body(body).await;
 }
 
 /// Most a client may still send of an unread request body once the response is out.
@@ -411,7 +537,7 @@ const CONNECTION_SPECIFIC: [header::HeaderName; 5] = [
 
 /// Sends `response` on `send`: the head, the body frames (none for `HEAD`), trailers, finish.
 /// A body that fails mid-way resets the stream (`H3_INTERNAL_ERROR`).
-async fn respond(
+pub(crate) async fn respond(
   mut send: SendHalf,
   response: Response<Body>,
   head_only: bool,

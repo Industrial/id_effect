@@ -78,6 +78,8 @@ pub use config::{
   QuicLimits, SocketBuffers, client_config, client_config_with, transport_config,
   transport_config_with,
 };
+// r12-e12-3-webtransport: QUIC datagrams on for endpoints that serve WebTransport.
+pub use config::{DEFAULT_DATAGRAM_RECEIVE_BUFFER, MAX_DATAGRAM_RECEIVE_BUFFER};
 pub use congestion::CongestionControl;
 pub use endpoint::{EndpointStats, QuicEndpoint};
 pub use router::{

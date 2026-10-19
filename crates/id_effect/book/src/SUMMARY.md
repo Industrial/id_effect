@@ -171,6 +171,7 @@
   - [Middleware, static files and HTTP caching](./part6/ch29-03-middleware.md)
   - [Serving HTTPS and HTTP/2 from the app](./part6/ch29-04-tls-http2.md)
   - [Serving HTTP/3 from the app](./part6/ch29-05-http3.md)
+  - [WebTransport: RPC streams over HTTP/3](./part6/ch29-06-webtransport.md)
   - [The HTTP/3 client](./part6/ch29-08-http3-client.md)
   - [Certificates that rotate themselves: reload and ACME](./part6/ch29-09-certificates-acme.md)
   - [Deploying HTTP/3: load balancers, direct-to-app, Kamal and Helm](./part6/ch29-07-http3-deployment.md)

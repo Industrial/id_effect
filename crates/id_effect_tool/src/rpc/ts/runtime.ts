@@ -801,8 +801,12 @@ async function openWebTransport(options: WebTransportOptions, events: ChannelEve
   const session = new Ctor(options.url, init);
   await session.ready;
   const control = await session.createBidirectionalStream();
-  const writers = new Map<number, WritableStreamDefaultWriter<Uint8Array>>();
+  // A call's writer once its stream is open: frames sent meanwhile wait for it, in order.
+  const writers = new Map<number, Promise<WritableStreamDefaultWriter<Uint8Array>>>();
   const controlWriter = control.writable.getWriter();
+  // The server learns of a stream from its first record, and answers `hello` on the stream whose
+  // first record is a connection frame: open the control stream with a `ping`.
+  void controlWriter.write(record(JSON.stringify({ id: 0, kind: "ping", flags: 0 })));
   let closed = false;
   const close = () => {
     if (closed) return;
@@ -818,16 +822,21 @@ async function openWebTransport(options: WebTransportOptions, events: ChannelEve
     send: (frame, text) => {
       const bytes = record(text);
       if (frame.kind === "call") {
-        void session.createBidirectionalStream().then((stream) => {
+        const opened = session.createBidirectionalStream().then((stream) => {
           const writer = stream.writable.getWriter();
-          writers.set(frame.id, writer);
           void read(stream.readable).finally(() => writers.delete(frame.id));
-          return writer.write(bytes);
-        }).catch(() => session.close({ closeCode: 1 }));
+          void writer.write(bytes).catch(() => session.close({ closeCode: 1 }));
+          return writer;
+        });
+        writers.set(frame.id, opened);
+        opened.catch(() => session.close({ closeCode: 1 }));
         return;
       }
-      const writer = frame.id === 0 ? controlWriter : writers.get(frame.id) ?? controlWriter;
-      void writer.write(bytes).catch(() => session.close({ closeCode: 1 }));
+      const writer = frame.id === 0 ? undefined : writers.get(frame.id);
+      const written = writer
+        ? writer.then((w) => w.write(bytes))
+        : controlWriter.write(bytes);
+      void written.catch(() => session.close({ closeCode: 1 }));
     },
     close: () => session.close({ closeCode: 0 }),
   };

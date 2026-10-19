@@ -61,16 +61,10 @@ fn declares_fn(text: &str, name: &str) -> bool {
 
 /// Ids of the Security table whose leaf lands after this one (wave 5 in parallel, wave 6); the
 /// exit gate (`r12-w8-kpis`) runs with this list empty.
-const PENDING: &[(&str, &str)] = &[
-  (
-    "r9_webtransport_connect_from_foreign_origin_refused",
-    "r12-e12-3-webtransport",
-  ),
-  (
-    "posture_prod_refuses_dev_certificate",
-    "r12-w6-kit-template",
-  ),
-];
+const PENDING: &[(&str, &str)] = &[(
+  "posture_prod_refuses_dev_certificate",
+  "r12-w6-kit-template",
+)];
 
 /// The backticked test ids of the Enforcement-point column of the Security table: snake_case
 /// with at least one `_`, not an opt-out name.
@@ -186,6 +180,11 @@ const OPT_OUTS: &[(&str, &str, &str)] = &[
     "id_effect_axum::server::ConnectionLimits::dangerous_unlimited_concurrent_streams",
   ),
   (
+    "id_effect_axum/src/server/webtransport.rs",
+    "dangerous_any_origin",
+    "id_effect_axum::realtime::origin::OriginPolicy::dangerous_any_origin",
+  ),
+  (
     "id_effect_axum/src/server/h3.rs",
     "dangerous_allow_zero_rtt_for_queries",
     "id_effect_axum::server::h3::Http3Options::dangerous_allow_zero_rtt_for_queries",
@@ -221,6 +220,7 @@ const SCANNED: &[&str] = &[
   "id_effect_axum/src/realtime",
   "id_effect_axum/src/server/h3.rs",
   "id_effect_axum/src/server/alt_svc.rs",
+  "id_effect_axum/src/server/webtransport.rs",
 ];
 
 /// `fn` names of the opt-out family (`dangerous_*`, `insecure_*`, `*_dangerous`,
@@ -343,6 +343,9 @@ fn every_0_12_opt_out_is_listed_and_recorded() {
   let _ = OriginPolicy::dangerous_any_origin();
   check("dangerous_any_origin");
   let _ = WsConfig::default().dangerous_any_origin();
+  #[cfg(feature = "webtransport")]
+  let _ =
+    id_effect_axum::server::webtransport::WebTransportConfig::default().dangerous_any_origin();
   let _ = ConnectionLimits::default().dangerous_no_tls_handshake_timeout();
   check("dangerous_no_tls_handshake_timeout");
   let _ = ConnectionLimits::default().dangerous_unlimited_concurrent_streams();

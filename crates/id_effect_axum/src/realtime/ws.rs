@@ -417,6 +417,24 @@ pub struct WsSocket {
 }
 
 impl WsSocket {
+  /// A socket whose messages another transport carries (r12-e12-3-webtransport: the frames of
+  /// a WebTransport session's streams): `inbox` yields what the peer sent and ends when the
+  /// peer is gone; `outbox` takes what the handler sends. No WebSocket framing, limits or
+  /// heartbeats apply: they are the carrying transport's.
+  pub fn from_channels(
+    inbox: mpsc::Receiver<WsMessage>,
+    outbox: mpsc::Sender<WsMessage>,
+    protocol: Option<String>,
+    client_ip: Option<IpAddr>,
+  ) -> Self {
+    Self {
+      rx: inbox,
+      sender: WsSender { tx: outbox },
+      protocol,
+      client_ip,
+    }
+  }
+
   /// The selected subprotocol (see [`WsConfig::protocols`]).
   pub fn protocol(&self) -> Option<&str> {
     self.protocol.as_deref()

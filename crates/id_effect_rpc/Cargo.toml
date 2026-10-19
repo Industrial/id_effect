@@ -47,7 +47,9 @@ channels = ["mesh", "dep:id_effect_authz", "dep:id_effect_process"]
 # `http3`: RPC over HTTP/3 on the host's shared QUIC endpoint (server and client).
 http3 = ["client", "id_effect_axum/http3", "id_effect_platform/http3"]
 # `webtransport`: two-way streams and subscriptions over WebTransport sessions.
-webtransport = ["http3", "id_effect_axum/webtransport"]
+# Implies `ws` (the connection logic and `RpcWsConfig` are shared) and `postcard` (the u32-BE
+# length-prefixed records of each stream, `codec::postcard::{split_record, encode_record}`).
+webtransport = ["http3", "ws", "postcard", "id_effect_axum/webtransport"]
 # `test-util`: the in-process transport, contract fixtures and transport test helpers.
 test-util = []
 
@@ -110,6 +112,9 @@ id_effect_tokio = { path = "../id_effect_tokio" }
 # tests/resume_property.rs (r12-e12-2-bidi-resume).
 proptest = "1"
 rstest = "0.26"
+# tests/browser.rs (D12, r12-e12-3-webtransport): Chromium over CDP. headless_chrome, not
+# chromiumoxide: its tungstenite (=0.29.0) is the tree's one; default `offline` (no fetching).
+headless_chrome = "=1.0.22"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
 tower = { version = "0.5", features = ["util"] }
 # tests/ui.rs: compile-fail cases of `#[rpc::service]` (r12-e12-1-macro).

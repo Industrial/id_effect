@@ -40,7 +40,18 @@ pub struct QuicLimits {
   pub handshake_timeout: Duration,
   /// Connections a route holds for its handler before refusing more (default 64).
   pub route_backlog: usize,
+  /// Bytes of incoming QUIC datagrams (RFC 9221) buffered per connection before the oldest are
+  /// dropped; `None` (the default) turns datagrams off. WebTransport asks for them (HTTP/3
+  /// datagrams need the transport parameter): see [`QuicLimits::with_datagrams`]. At most
+  /// [`MAX_DATAGRAM_RECEIVE_BUFFER`] without [`QuicEndpointConfig::dangerous_raise_limits`].
+  pub datagram_receive_buffer: Option<u32>,
 }
+
+/// The datagram receive buffer [`QuicLimits::with_datagrams`] asks for (64 KiB).
+pub const DEFAULT_DATAGRAM_RECEIVE_BUFFER: u32 = 64 * 1024;
+
+/// The largest datagram receive buffer without raised limits (1 MiB).
+pub const MAX_DATAGRAM_RECEIVE_BUFFER: u32 = 1024 * 1024;
 
 impl Default for QuicLimits {
   fn default() -> Self {
@@ -54,11 +65,23 @@ impl Default for QuicLimits {
       max_pending_handshakes: 256,
       handshake_timeout: Duration::from_secs(10),
       route_backlog: 64,
+      datagram_receive_buffer: None,
     }
   }
 }
 
 impl QuicLimits {
+  /// These limits with QUIC datagrams on: [`DEFAULT_DATAGRAM_RECEIVE_BUFFER`] bytes buffered
+  /// per connection. The setting is the endpoint's (the transport parameters are sent before
+  /// the ALPN picks a route), so ask for it only on an endpoint whose `h3` route serves
+  /// WebTransport; the other routes' connections never read datagrams and drop them once the
+  /// buffer is full.
+  #[must_use]
+  pub fn with_datagrams(mut self) -> Self {
+    self.datagram_receive_buffer = Some(DEFAULT_DATAGRAM_RECEIVE_BUFFER);
+    self
+  }
+
   /// The name of the first limit above `ceiling`.
   fn above(&self, ceiling: &Self) -> Option<&'static str> {
     [
@@ -92,6 +115,12 @@ impl QuicLimits {
         self.handshake_timeout > ceiling.handshake_timeout,
       ),
       ("route_backlog", self.route_backlog > ceiling.route_backlog),
+      (
+        "datagram_receive_buffer",
+        self
+          .datagram_receive_buffer
+          .is_some_and(|n| n > MAX_DATAGRAM_RECEIVE_BUFFER),
+      ),
     ]
     .into_iter()
     .find_map(|(name, above)| above.then_some(name))
@@ -144,13 +173,14 @@ pub(crate) fn transport(
     .max_idle_timeout(Some(idle))
     .stream_receive_window(quinn::VarInt::from_u32(limits.stream_receive_window))
     .receive_window(quinn::VarInt::from_u32(limits.receive_window))
-    .datagram_receive_buffer_size(None)
+    .datagram_receive_buffer_size(limits.datagram_receive_buffer.map(|n| n as usize))
     .congestion_controller_factory(congestion);
   transport
 }
 
 /// The quinn transport config for `limits`: stream credits, idle timeout and receive windows
-/// bounded, datagrams off, CUBIC congestion control.
+/// bounded, datagrams off unless [`QuicLimits::datagram_receive_buffer`] asks, CUBIC
+/// congestion control.
 pub fn transport_config(limits: &QuicLimits) -> Result<quinn::TransportConfig, QuicError> {
   transport_config_with(limits, CongestionControl::Cubic)
 }
@@ -406,6 +436,24 @@ mod tests {
   fn identity() -> Identity {
     Identity::from_certificate(&crate::tls::NodeCertificate::self_signed("x").expect("cert"))
       .expect("identity")
+  }
+
+  #[test]
+  fn datagrams_are_off_by_default_and_bounded_when_asked_for() {
+    let limits = QuicLimits::default();
+    assert_eq!(limits.datagram_receive_buffer, None);
+    let on = limits.clone().with_datagrams();
+    assert_eq!(
+      on.datagram_receive_buffer,
+      Some(DEFAULT_DATAGRAM_RECEIVE_BUFFER)
+    );
+    assert_eq!(on.above(&limits), None);
+    assert!(transport_config(&on).is_ok());
+    let big = QuicLimits {
+      datagram_receive_buffer: Some(MAX_DATAGRAM_RECEIVE_BUFFER + 1),
+      ..QuicLimits::default()
+    };
+    assert_eq!(big.above(&limits), Some("datagram_receive_buffer"));
   }
 
   #[test]

@@ -9,6 +9,7 @@
 //! | [`frame`] | — | the frame codec ([`frame::decode`], [`frame::encode`]) every frame transport shares |
 //! | `ws` | `ws` | `GET {path}/ws`: one WebSocket, many calls multiplexed by call id, credit backpressure |
 //! | `sse` | `sse` | `GET {path}/{tag}` with `Accept: text/event-stream`: subscriptions and server streams |
+//! | `webtransport` | `webtransport` | `CONNECT {path}/wt` on HTTP/3: the WebSocket transport's connection logic, one QUIC stream per call |
 //!
 //! The per-connection limits of the WebSocket and SSE transports (connections per client IP and
 //! per endpoint, frame size, message rate, heartbeats, idle timeout) are those of
@@ -30,6 +31,9 @@ pub mod frame;
 pub mod sse;
 #[cfg(feature = "ws")]
 pub mod ws;
+// r12-e12-3-webtransport: every kind over WebTransport sessions, one QUIC stream per call.
+#[cfg(feature = "webtransport")]
+pub mod webtransport;
 
 use axum::http::StatusCode;
 use serde_json::{Value, json};

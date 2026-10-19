@@ -12,6 +12,9 @@ pub mod shutdown;
 pub mod static_files;
 #[cfg(feature = "tls")]
 pub mod tls;
+// r12-e12-3-webtransport: WebTransport sessions on the HTTP/3 adapter.
+#[cfg(feature = "webtransport")]
+pub mod webtransport;
 
 pub use alt_svc::AltSvcLayer;
 pub use bootstrap::{
