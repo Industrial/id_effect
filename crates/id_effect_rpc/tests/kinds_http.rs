@@ -151,6 +151,51 @@ fn get(uri: &str) -> Request<Body> {
   Request::get(uri).body(Body::empty()).unwrap()
 }
 
+/// A capability an authentication layer puts on the request.
+struct Caller(&'static str);
+
+/// Procedures over plain HTTP see the request's capabilities over the route state, as the
+/// WebSocket, SSE and WebTransport transports give their calls (the `CurrentPrincipal` an
+/// `Authenticate` layer inserts reaches the handler).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_calls_see_the_request_capabilities() {
+  let mut group = RpcGroup::new();
+  group.query(
+    Procedure::query("Me.who").public(),
+    int(),
+    text(),
+    |_: i64, env: &mut DynEnv| match env.try_get::<Caller>() {
+      Ok(caller) => succeed::<_, Never, DynEnv>(caller.0.to_owned()),
+      Err(_) => succeed("anonymous".to_owned()),
+    },
+  );
+  let app = RpcServer::new(group)
+    .router()
+    .with_state(DynEnv::new())
+    .into_axum()
+    .layer(MockConnectInfo(SocketAddr::from(([127, 0, 0, 1], 9))));
+  let anonymous = send(&app, post_json("/rpc/Me.who", "0")).await;
+  assert_eq!(anonymous.json()["exit"]["value"], "anonymous");
+
+  let authenticated = app.layer(axum::middleware::from_fn(
+    |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
+      let mut caps = id_effect_axum::RequestCaps::new();
+      caps.insert(Caller("ada"));
+      req.extensions_mut().insert(caps);
+      next.run(req).await
+    },
+  ));
+  for req in [
+    post_json("/rpc/Me.who", "0"),
+    post_json("/rpc", r#"{"tag":"Me.who","payload":0}"#),
+    get("/rpc/Me.who?input=0"),
+  ] {
+    let reply = send(&authenticated, req).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.json());
+    assert_eq!(reply.json()["exit"]["value"], "ada");
+  }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn query_get_returns_etag_and_304() {
   let Fixture { app, .. } = fixture();

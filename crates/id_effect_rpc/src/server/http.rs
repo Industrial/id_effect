@@ -41,7 +41,7 @@ use futures_util::StreamExt as _;
 use futures_util::future::{Either, select};
 use id_effect::DynEnv;
 use id_effect_axum::route::Problem;
-use id_effect_axum::{ClientIp, TrustedProxies};
+use id_effect_axum::{ClientIp, RequestCaps, TrustedProxies};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 use tracing::Instrument as _;
@@ -97,6 +97,12 @@ pub(crate) async fn handle(
     operation,
   );
   let (parts, body) = request.into_parts();
+  // The request's capabilities (`CurrentPrincipal` from `Authenticate`, …) over the route state,
+  // as the WebSocket, SSE and WebTransport transports give their calls.
+  let env = match parts.extensions.get::<RequestCaps>() {
+    Some(caps) => caps.overlay(&env),
+    None => env,
+  };
   let edge = Edge {
     server: &server,
     ctx: CallContext::new(env, cid.as_str()),
