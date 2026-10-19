@@ -192,20 +192,8 @@ kpi_open_highs() {
     for id in "${EXPECTED_IDS[@]}"; do
         [[ "${seen}" == *" ${id} "* ]] || problems+=("${id}: missing from the register")
     done
-    while IFS=$'\t' read -r id kind value; do
-        case "${kind}" in
-            test) code_has_word "${root}" "${value}" || problems+=("${id}: regression test ${value} not found in the code") ;;
-            gate) [[ -e "${root}/${value}" ]] || problems+=("${id}: gate ${value} does not exist") ;;
-            commit)
-                if is_git "${root}"; then
-                    git -C "${root}" cat-file -e "${value}^{commit}" 2>/dev/null ||
-                        problems+=("${id}: commit ${value} unknown to git")
-                fi
-                ;;
-            untested) problems+=("${id}: closed without a regression test or gate") ;;
-            unreasoned) problems+=("${id}: accepted without a reason (note)") ;;
-        esac
-    done < <(jq -r '
+    local checks
+    read -r -d '' checks <<'JQ' || true
         .findings[] | . as $f
         | (((.tests // [])[] | [$f.id, "test", .]),
            ((.gates // [])[] | [$f.id, "gate", .]),
@@ -214,9 +202,23 @@ kpi_open_highs() {
             then [$f.id, "untested", "-"] else empty end),
            (if .status == "accepted" and ((.note // "") == "")
             then [$f.id, "unreasoned", "-"] else empty end))
-        | @tsv' "${file}")
+        | @tsv
+JQ
+    while IFS=$'\t' read -r id kind value; do
+        case "${kind}" in
+            test) code_has_word "${root}" "${value}" || problems+=("${id}: regression test ${value} not found in the code") ;;
+            gate) [[ -e "${root}/${value}" ]] || problems+=("${id}: gate ${value} does not exist") ;;
+            commit)
+                if is_git "${root}" && ! git -C "${root}" cat-file -e "${value}^{commit}" 2>/dev/null; then
+                    problems+=("${id}: commit ${value} unknown to git")
+                fi
+                ;;
+            untested) problems+=("${id}: closed without a regression test or gate") ;;
+            unreasoned) problems+=("${id}: accepted without a reason (note)") ;;
+        esac
+    done < <(jq -r "${checks}" "${file}")
     jq -n --argjson v "${open_highs}" --argjson n "${n}" --argjson closed "${closed}" \
-        --argjson accepted "${accepted}" --argjson open "${open}" --arg f "${file#"${root}"/}" '
+    --argjson accepted "${accepted}" --argjson open "${open}" --arg f "${file#"${root}"/}" '
         $ARGS.positional as $p
         | {value: $v, target: 0,
            status: (if $v == 0 and ($p | length) == 0 then "pass" else "fail" end),
@@ -292,7 +294,7 @@ kpi_fuzz_targets() {
         [[ -f "${root}/.github/workflows/${f}" ]] || problems+=(".github/workflows/${f} missing")
     done
     grep -q 'cargo fuzz list' "${root}/.clusterfuzzlite/build.sh" 2>/dev/null ||
-        problems+=(".clusterfuzzlite/build.sh does not build every target (cargo fuzz list)")
+    problems+=(".clusterfuzzlite/build.sh does not build every target (cargo fuzz list)")
     ((${#unlisted[@]} == 0)) || problems+=("not a [[bin]] of fuzz/Cargo.toml: ${unlisted[*]}")
     jq -n --argjson min "${FUZZ_MIN}" --arg listed "${listed[*]}" '
         $ARGS.positional as $p
@@ -333,11 +335,11 @@ kpi_secure_stack() {
     # Stale: the crates or the lock file changed between the benched commit and HEAD.
     sha="$(jq -r '.sha // empty' "${bench}" 2>/dev/null || true)"
     if is_git "${root}" && [[ -n "${sha}" ]] &&
-        ! git -C "${root}" diff --quiet "${sha}" HEAD -- crates Cargo.toml Cargo.lock 2>/dev/null; then
+    ! git -C "${root}" diff --quiet "${sha}" HEAD -- crates Cargo.toml Cargo.lock 2>/dev/null; then
         stale=true
     fi
     jq --arg s "${SECURE_ID}" --arg b "${BARE_ID}" --argjson limit "${DELTA_LIMIT_NS}" \
-        --arg src "${bench#"${root}"/}" --argjson stale "${stale}" '
+    --arg src "${bench#"${root}"/}" --argjson stale "${stale}" '
         .benches[$s].median as $sv
         | .benches[$b].median as $bv
         | if ($sv == null or $bv == null) then
@@ -380,7 +382,7 @@ kpi_sha_pinned_actions() {
             v = $0
             sub(/^[ \t]*(-[ \t]+)?uses[ \t]*:[ \t]*/, "", v)
             sub(/[ \t]+#.*$/, "", v)
-            gsub(/["\047]/, "", v)
+            gsub(/[\042\047]/, "", v)
             sub(/[ \t\r]+$/, "", v)
             if (v ~ /^\.\.?\//) next
             total++
@@ -543,7 +545,7 @@ kpi_slsa() {
     fi
     jq -n --argjson n "${#crates[@]}" --argjson pub "${published}" --arg verify "${verify}" \
         --arg run "${run_id}" --arg prov "id_effect-${version}.intoto.jsonl" --arg assets "${assets}" \
-        --arg target "${target}" '
+    --arg target "${target}" '
         $ARGS.positional as $missing
         | ($assets | split("\n") | index($prov) != null) as $has_prov
         | (if $verify == "success" and $has_prov then $pub else 0 end) as $verified
@@ -573,7 +575,7 @@ report() {
     local root="$1" version="$2" bench="$3" tmp="$4" adr="$1/docs/adrs/0013-secure-by-default.md" revision="" k
     local order=(open_highs adr_0013_enforcement adr_0013_status fuzz_targets fuzz_open_crashes
         compile_fail_cases secure_stack check_dangerous check_workflows sha_pinned_actions
-        registry_token openssf_scorecard best_practices slsa)
+    registry_token openssf_scorecard best_practices slsa)
     if is_git "${root}"; then
         revision="$(git -C "${root}" rev-parse --short=8 HEAD 2>/dev/null || true)"
     fi
@@ -595,7 +597,7 @@ report() {
         jq --arg k "${k}" '{($k): .}' "${tmp}/${k}.json"
     done | jq -s --arg release "${version}" --arg revision "${revision}" \
         --arg wsv "$(workspace_version "${root}")" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        --argjson offline "${OFFLINE}" '
+    --argjson offline "${OFFLINE}" '
         add as $kpis
         | {schema: "id_effect security-kpis v1", method: "scripts/security-kpis.sh (header)",
            release: $release, workspace_version: $wsv, measured_at: $at, revision: $revision,
