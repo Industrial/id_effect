@@ -1,40 +1,35 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # J-01  No println! / eprintln! in Effect-returning functions
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-no-println-in-effect
-  language: Rust
-  severity: warning
-  message: |
-    `println!` / `eprintln!` in Effect-returning code is an unstructured side
-    effect that bypasses the effect channel and breaks testability.
-  note: |
-    BAD:
-      fn load() -> Effect<Data, LoadError> {
-          effect!({ println!("loading…"); … })
-      }
-    GOOD: use structured spans / tracing hooks:
-      fn load() -> Effect<Data, LoadError> {
-          effect!({ … }).with_span("load")
-      }
-  rule:
-    all:
-      - any:
-          - pattern: println!($$$)
-          - pattern: eprintln!($$$)
-          - pattern: print!($$$)
-          - pattern: eprint!($$$)
-      - inside:
-          kind: function_item
-          has:
-            kind: type_identifier
-            regex: "^Effect$"
+id: id_effect-no-println-in-effect
+language: Rust
+severity: warning
+message: |
+  `println!` / `eprintln!` in Effect-returning code is an unstructured side
+  effect that bypasses the effect channel and breaks testability.
+note: |
+  BAD:
+    fn load() -> Effect<Data, LoadError> {
+        effect!({ println!("loading…"); … })
+    }
+  GOOD: use structured spans / tracing hooks:
+    fn load() -> Effect<Data, LoadError> {
+        effect!({ … }).with_span("load")
+    }
+rule:
+  all:
+    - kind: macro_invocation
+      has:
+        field: macro
+        regex: "^e?print(ln)?$"
+    - inside:
+        kind: function_item
+        has:
+          field: return_type
+          regex: '^(\w+::)*Effect<'
+        stopBy: end
+    # Allow in tests
+    - not:
+        inside:
+          matches: test-scope
           stopBy: end
-      # Allow in tests
-      - not:
-          inside:
-            kind: function_item
-            has:
-              kind: attribute_item
-              any:
-                - pattern: "#[test]"
-                - pattern: "#[tokio::test]"

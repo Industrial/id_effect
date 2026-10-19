@@ -40,6 +40,9 @@ get a literal, a `const`, or `Sql::as_str()`).
 The ast-grep rules in `rules/` (`sgconfig.yml`) cover the same ground without nightly:
 `ast-grep scan --config lints/id_effect_lints/sgconfig.yml`.
 
+`examples/demo` is a small crate that trips both: `cd examples/demo && cargo dylint --all`, or
+`ast-grep scan -c ../../sgconfig.yml .` from the same directory. CI checks each finding.
+
 ## Developing
 
 ```bash

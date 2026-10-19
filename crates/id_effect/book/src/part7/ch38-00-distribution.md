@@ -67,6 +67,75 @@ On `NodeDown`, remote monitors receive `ExitReason::NoConnection`.
 
 **Runnable example:** `cargo run -p id_effect_node --example 131_two_node_cluster`.
 
+## Trace context across nodes
+
+The effect sends (`Mesh::cast`, `Mesh::send`, `cast_reliable`, `send_reliable` and
+`Mesh::remote_call`) carry the sending fiber's current span in the message's `TraceContext`, a
+list of W3C-style header pairs. A `TracePropagator` writes it on the way out (`inject`) and, on
+the receiving node, chooses the span hook the handling span is opened under (`receiver_hook`).
+That span is `mesh.call` (`otel.kind = server`) around an inbound call, and `mesh.cast` or
+`mesh.info` (`otel.kind = consumer`) for a cast or an info, recorded once the message is in the
+mailbox. Each has the attributes `mesh.from` (the sending node) and `mesh.parent` (the carried
+`traceparent`).
+
+The default propagator, `W3cTraceContext`, writes a `traceparent` from id_effect's own span ids
+(`traceparent_of`) and opens no receiving spans until it is given a hook:
+
+```rust
+use std::sync::Arc;
+use id_effect::SpanHook;
+use id_effect_node::{Mesh, W3cTraceContext};
+# fn wire(mesh: Mesh, hook: Arc<dyn SpanHook>) -> Mesh {
+mesh.with_trace_propagator(Arc::new(W3cTraceContext::new().with_receiver_hook(hook)))
+# }
+```
+
+`remote_cast` and `remote_info` are the exception: plain functions that run outside any fiber,
+they send an empty trace context, and the receiver opens no span for the message. An effect send
+made outside any span carries none either. Use `Mesh::cast` / `Mesh::send` inside the traced
+effect to keep the trace.
+
+With OpenTelemetry, propagate the OpenTelemetry context instead, so the receiving span is a
+child of the sender's in the exported trace: inject `span_otel_context(span)` with
+`inject_trace_context_into_headers`, and open the receiving span under an `OtelSpanHook` whose
+parent is the extracted context. Both helpers use the global text-map propagator
+(`install_w3c_propagators`), and both nodes need the same `TracePropagator`.
+
+```rust
+use std::sync::Arc;
+use id_effect::{Span, SpanHook};
+use id_effect_node::{Mesh, TraceContext, TracePropagator};
+use id_effect_opentelemetry::{
+  OtelSpanHook, extract_trace_context_from_headers, inject_trace_context_into_headers,
+  span_otel_context,
+};
+use opentelemetry::Context;
+use opentelemetry_sdk::trace::SdkTracerProvider;
+
+struct OtelPropagator {
+  provider: SdkTracerProvider,
+}
+
+impl TracePropagator for OtelPropagator {
+  fn inject(&self, span: &Span, carrier: &mut TraceContext) {
+    if let Some(cx) = span_otel_context(span) {
+      inject_trace_context_into_headers(&cx, carrier);
+    }
+  }
+
+  fn receiver_hook(&self, carrier: &TraceContext) -> Option<Arc<dyn SpanHook>> {
+    let parent = extract_trace_context_from_headers(&Context::new(), carrier);
+    let hook = OtelSpanHook::for_provider(&self.provider, "mesh").with_parent(parent);
+    Some(hook.into_hook())
+  }
+}
+
+# fn wire(mesh: Mesh, provider: SdkTracerProvider) -> Mesh {
+id_effect_opentelemetry::install_w3c_propagators();
+mesh.with_trace_propagator(Arc::new(OtelPropagator { provider }))
+# }
+```
+
 ## Finding peers
 
 A joining node asks a `Discovery` strategy where to announce itself; an empty

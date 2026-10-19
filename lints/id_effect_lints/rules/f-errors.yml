@@ -1,99 +1,95 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # F-01  No nested Result<Result<_,_>,_> in public APIs
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-no-nested-result
-  language: Rust
-  severity: error
-  message: |
-    `Result<Result<_, _>, _>` in public API creates ambiguous success/failure
-    semantics. Use `Or<E1, E2>` or a flat error sum type.
-  note: |
-    BAD:  pub fn parse(…) -> Result<Result<Value, ParseError>, IoError> { … }
-    GOOD: pub fn parse(…) -> Effect<Value, Or<ParseError, IoError>> { … }
-  rule:
-    pattern: Result<Result<$OK, $INNER_ERR>, $OUTER_ERR>
+id: id_effect-no-nested-result
+language: Rust
+severity: error
+message: |
+  `Result<Result<_, _>, _>` in public API creates ambiguous success/failure
+  semantics. Use `Or<E1, E2>` or a flat error sum type.
+note: |
+  BAD:  pub fn parse(…) -> Result<Result<Value, ParseError>, IoError> { … }
+  GOOD: pub fn parse(…) -> Effect<Value, Or<ParseError, IoError>> { … }
+rule:
+  kind: generic_type
+  regex: '^(\w+::)*Result<\s*(\w+::)*Result<'
+---
 # ──────────────────────────────────────────────────────────────────────────────
 # F-02  No Err(format!()) / Err(e.to_string()) – typed errors only
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-no-error-collapse-to-string
-  language: Rust
-  severity: warning
-  message: |
-    Collapsing typed errors to `String` loses structure.
-    Use typed error variants and `From` impls for ergonomic propagation.
-  note: |
-    BAD:  return Err(format!("db error: {e}"));
-    GOOD: return Err(DbError::QueryFailed(e));
-  rule:
-    any:
-      - pattern: Err(format!($$$))
-      - pattern: Err($ERR.to_string())
-      - pattern: fail(format!($$$))
+id: id_effect-no-error-collapse-to-string
+language: Rust
+severity: warning
+message: |
+  Collapsing typed errors to `String` loses structure.
+  Use typed error variants and `From` impls for ergonomic propagation.
+note: |
+  BAD:  return Err(format!("db error: {e}"));
+  GOOD: return Err(DbError::QueryFailed(e));
+rule:
+  any:
+    - pattern: Err(format!($$$))
+    - pattern: Err($ERR.to_string())
+    - pattern: fail(format!($$$))
+---
 # ──────────────────────────────────────────────────────────────────────────────
 # F-03  No .unwrap() / .expect() in Effect-returning functions
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-no-unwrap-in-effect
-  language: Rust
-  severity: error
-  message: |
-    `.unwrap()` / `.expect(…)` in an Effect-returning function will panic
-    instead of propagating failures through the effect channel.
-  note: |
-    BAD:  fn parse_config() -> Effect<Config, Infallible> {
-              effect!({ serde_json::from_str(&s).unwrap() })
-          }
-    GOOD: fn parse_config() -> Effect<Config, ParseError> {
-              effect!({ serde_json::from_str(&s)? })
-          }
-  rule:
-    all:
-      - any:
-          - pattern: $RECV.unwrap()
-          - pattern: $RECV.expect($MSG)
-      - inside:
-          kind: function_item
-          has:
-            kind: type_identifier
-            regex: "^Effect$"
+id: id_effect-no-unwrap-in-effect
+language: Rust
+severity: error
+message: |
+  `.unwrap()` / `.expect(…)` in an Effect-returning function will panic
+  instead of propagating failures through the effect channel.
+note: |
+  BAD:  fn parse_config() -> Effect<Config, Infallible> {
+            effect!({ serde_json::from_str(&s).unwrap() })
+        }
+  GOOD: fn parse_config() -> Effect<Config, ParseError> {
+            effect!({ serde_json::from_str(&s)? })
+        }
+rule:
+  all:
+    - any:
+        - pattern: $RECV.unwrap()
+        - pattern: $RECV.expect($MSG)
+    - inside:
+        kind: function_item
+        has:
+          field: return_type
+          regex: '^(\w+::)*Effect<'
+        stopBy: end
+    # Skip test functions – unwrap in tests is fine as an assertion shorthand.
+    - not:
+        inside:
+          matches: test-scope
           stopBy: end
-      # Skip test functions – unwrap in tests is fine as an assertion shorthand.
-      - not:
-          inside:
-            kind: function_item
-            has:
-              kind: attribute_item
-              any:
-                - pattern: "#[test]"
-                - pattern: "#[tokio::test]"
+---
 # ──────────────────────────────────────────────────────────────────────────────
 # F-04  No panic! / unreachable! / todo! in Effect-returning functions
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-no-panic-in-effect
-  language: Rust
-  severity: warning
-  message: |
-    `panic!` / `unreachable!` / `todo!` in an Effect-returning function bypasses
-    the effect failure channel.
-  note: |
-    BAD:  fn load() -> Effect<Data, LoadError> { effect!({ panic!("not implemented") }) }
-    GOOD: fn load() -> Effect<Data, LoadError> { fail(LoadError::NotImplemented) }
-  rule:
-    all:
-      - any:
-          - pattern: panic!($$$)
-          - pattern: unreachable!($$$)
-          - pattern: todo!($$$)
-      - inside:
-          kind: function_item
-          has:
-            kind: type_identifier
-            regex: "^Effect$"
+id: id_effect-no-panic-in-effect
+language: Rust
+severity: warning
+message: |
+  `panic!` / `unreachable!` / `todo!` in an Effect-returning function bypasses
+  the effect failure channel.
+note: |
+  BAD:  fn load() -> Effect<Data, LoadError> { effect!({ panic!("not implemented") }) }
+  GOOD: fn load() -> Effect<Data, LoadError> { fail(LoadError::NotImplemented) }
+rule:
+  all:
+    - kind: macro_invocation
+      has:
+        field: macro
+        regex: "^(panic|unreachable|todo)$"
+    - inside:
+        kind: function_item
+        has:
+          field: return_type
+          regex: '^(\w+::)*Effect<'
+        stopBy: end
+    - not:
+        inside:
+          matches: test-scope
           stopBy: end
-      - not:
-          inside:
-            kind: function_item
-            has:
-              kind: attribute_item
-              any:
-                - pattern: "#[test]"
-                - pattern: "#[tokio::test]"

@@ -1,22 +1,30 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # B-01  Chains of 2+ .flat_map should use effect! macro
 # ──────────────────────────────────────────────────────────────────────────────
-- id: id_effect-multi-step-use-effect-macro
-  language: Rust
-  severity: warning
-  message: |
-    Chains of 2+ `.flat_map(…)` calls should use `effect!({ ~… })` do-notation.
-  note: |
-    BAD:
-      step_a().flat_map(|a| step_b(a).flat_map(|b| step_c(a, b)))
-    GOOD:
-      effect!({
-          let a = ~step_a();
-          let b = ~step_b(a);
-          ~step_c(a, b)
-      })
-  rule:
-    pattern: $RECV.flat_map($$$).flat_map($$$)
+id: id_effect-multi-step-use-effect-macro
+language: Rust
+severity: warning
+message: |
+  Chains of 2+ `.flat_map(…)` calls should use `effect!({ ~… })` do-notation.
+note: |
+  BAD:
+    step_a().flat_map(|a| step_b(a).flat_map(|b| step_c(a, b)))
+  GOOD:
+    effect!({
+        let a = ~step_a();
+        let b = ~step_b(a);
+        ~step_c(a, b)
+    })
+rule:
+  pattern: $RECV.flat_map($$$).flat_map($$$)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# B-02  One effect! per top-level Effect-returning function
+# (Enforced by convention; the macro calls themselves are hard to count in
+#  ast-grep since they are opaque after expansion.)
+# ──────────────────────────────────────────────────────────────────────────────
+# Skipped: requires counting top-level macro invocations – use Dylint instead.
+---
 # ──────────────────────────────────────────────────────────────────────────────
 # B-04  The prefix ~operator must only appear inside effect!({ })
 # (This is already a compile error if the macro is not in scope, but we flag
@@ -24,25 +32,17 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Note: ast-grep cannot match the `~expr` unary operator directly because it is
 # parsed as an `unary_expression` node. Rule below is a best-effort pattern.
-- id: id_effect-postfix-tilde-outside-effect-macro
-  # ──────────────────────────────────────────────────────────────────────────────
-  # B-02  One effect! per top-level Effect-returning function
-  # (Enforced by convention; the macro calls themselves are hard to count in
-  #  ast-grep since they are opaque after expansion.  The rule below flags the
-  #  *absence* of any effect! call in a multi-step fn body as a warning.)
-  # ──────────────────────────────────────────────────────────────────────────────
-  # Skipped: requires counting top-level macro invocations – use Dylint instead.
-
-  language: Rust
-  severity: error
-  message: |
-    The `~` (bind) operator is only valid inside `effect!({ … })` / `effect_local!({ … })`.
-  note: |
-    BAD:  fn foo() -> Effect<…> { ~some_effect() }
-    GOOD: fn foo() -> Effect<…> { effect!({ ~some_effect() }) }
-  rule:
-    all:
-      - pattern: fn $NAME($$$) -> Effect<$$$> { $$$PREFIX ~ $EXPR $$$SUFFIX }
-      # Exclude bodies that start with `effect!`
-      - not:
-          pattern: fn $NAME($$$) -> Effect<$$$> { effect!({ $$$INNER }) }
+id: id_effect-postfix-tilde-outside-effect-macro
+language: Rust
+severity: error
+message: |
+  The `~` (bind) operator is only valid inside `effect!({ … })` / `effect_local!({ … })`.
+note: |
+  BAD:  fn foo() -> Effect<…> { ~some_effect() }
+  GOOD: fn foo() -> Effect<…> { effect!({ ~some_effect() }) }
+rule:
+  all:
+    - pattern: fn $NAME($$$) -> Effect<$$$> { $$$PREFIX ~ $EXPR $$$SUFFIX }
+    # Exclude bodies that start with `effect!`
+    - not:
+        pattern: fn $NAME($$$) -> Effect<$$$> { effect!({ $$$INNER }) }

@@ -1,3 +1,7 @@
+# `ast-grep scan -c lints/id_effect_lints/sgconfig.yml [PATH]`: no nightly, no build. One rule per
+# YAML document in rules/; utils/ holds the shared `test-fn` / `test-scope` matchers.
 ruleDirs:
   - rules
+utilDirs:
+  - utils
 testConfigs: []

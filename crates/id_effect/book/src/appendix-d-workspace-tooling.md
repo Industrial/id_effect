@@ -93,12 +93,34 @@ parsing. Two later categories:
   `String` (`&"…".to_string()`) is fixed automatically.
 
 The ast-grep rules in `lints/id_effect_lints/rules/` cover the same ground without a nightly
-toolchain: `ast-grep scan --config lints/id_effect_lints/sgconfig.yml`.
+toolchain: `ast-grep scan --config lints/id_effect_lints/sgconfig.yml`. Their severities are
+ast-grep's (`error`, `warning`, `hint`), so a scan that finds an `error` rule exits non-zero;
+`--warning` reports everything without failing.
+
+### A runnable example
+
+[`lints/id_effect_lints/examples/demo`](https://github.com/Industrial/id_effect/tree/main/lints/id_effect_lints/examples/demo)
+is a dependency-free crate that trips a handful of lints: a `pub fn` returning `Result`, an
+`.unwrap()` in an `Effect`-returning function, `SystemTime::now()`, an `Rc<RefCell<_>>`, a
+`std::thread::spawn` and SQL built with `format!`. Its `Cargo.toml` names the library by path, so
+both tools run from its directory:
+
+```bash
+cd lints/id_effect_lints/examples/demo
+cargo dylint --all                      # no_result_return_in_pub_fn, …, raw_sql_non_literal
+ast-grep scan -c ../../sgconfig.yml .   # the same findings, except raw_sql_non_literal
+```
+
+`raw_sql_non_literal` is Dylint-only: it needs the type of the SQL argument, which a syntax
+match cannot see.
 
 ### In this repository
 
 `.github/workflows/lint.yml` runs `cargo dylint --path lints/id_effect_lints --all -- --workspace`
-on every push and pull request. Work on the library itself from its directory:
+on every push and pull request, then fails unless each of the demo crate's lints fires. Its
+`ast-grep` job installs a pinned, checksum-verified ast-grep, checks that the rules load and fire
+on the demo crate, and reports the workspace's findings per rule in the job summary. Work on the
+library itself from its directory:
 `cd lints/id_effect_lints && cargo test` runs the UI tests (rustup picks the pinned nightly; the
 `.fixed` files check what `--fix` produces).
 

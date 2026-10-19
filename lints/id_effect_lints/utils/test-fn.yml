@@ -1,0 +1,15 @@
+# A `#[test]` / `#[tokio::test]` function. Attributes are the function's preceding siblings in
+# tree-sitter-rust, so look back over the attribute (and comment) run.
+id: test-fn
+language: Rust
+rule:
+  kind: function_item
+  follows:
+    kind: attribute_item
+    regex: '^#\[(tokio::)?test\b'
+    stopBy:
+      not:
+        any:
+          - kind: attribute_item
+          - kind: line_comment
+          - kind: block_comment

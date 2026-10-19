@@ -9,8 +9,9 @@ documentation = "https://github.com/Industrial/id_effect/tree/main/lints/id_effe
 readme = "README.md"
 keywords = ["effect", "lint", "dylint", "clippy"]
 categories = ["development-tools"]
-# The UI tests and the ast-grep rules stay in the repository; the tarball is the library.
-exclude = ["ui", "ui_test", "rules", "sgconfig.yml"]
+# The UI tests, the demo crate and the ast-grep rules stay in the repository; the tarball is the
+# library.
+exclude = ["ui", "ui_test", "examples", "rules", "utils", "sgconfig.yml"]
 
 [lib]
 crate-type = ["cdylib"]
