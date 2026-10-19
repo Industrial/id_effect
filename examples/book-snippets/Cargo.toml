@@ -34,6 +34,7 @@ id_effect_authz = { path = "../../crates/id_effect_authz", version = "0.11.0", f
 id_effect_axum = { path = "../../crates/id_effect_axum", version = "0.11.0", features = [
   "openapi",
   "tower",
+  "http3",
 ] }
 id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.11.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.11.0", features = [
@@ -55,7 +56,10 @@ id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.11.0", featu
 id_effect_node = { path = "../../crates/id_effect_node", version = "0.11.0" }
 id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.11.0" }
 id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.11.0" }
-id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.11.0" }
+id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.11.0", features = [
+  "quic",
+  "acme",
+] }
 id_effect_process = { path = "../../crates/id_effect_process", version = "0.11.0" }
 id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.11.0", features = [
   "session",

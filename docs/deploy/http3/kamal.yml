@@ -1,0 +1,53 @@
+# Kamal 2: an id_effect service serving HTTP/3 straight to the app (topology b of book
+# chapter 29.7, crates/id_effect/book/src/part6/ch29-07-http3-deployment.md).
+#
+# kamal-proxy forwards TCP only, so the web role runs without it and the container publishes
+# 443/tcp and 443/udp on the host itself. The app binds the same port number inside the
+# container: the host advertises `Alt-Svc: h3=":<PORT>"`, so the port must not be remapped.
+#
+# Host prerequisites (Kamal does not manage kernel settings; set them when you provision the
+# host, e.g. cloud-init or /etc/sysctl.d/90-quic.conf, then `sysctl --system`):
+#   net.core.rmem_max = 4194304
+#   net.core.wmem_max = 4194304
+# These are host-kernel sysctls; Docker refuses them as `--sysctl` on a container.
+# Firewall: allow 443/tcp and 443/udp from anywhere (ACME validates over 443/tcp from
+# unpublished addresses).
+service: app
+image: example/app
+servers:
+  web:
+    hosts:
+      - 192.0.2.10
+    # No kamal-proxy: it cannot forward UDP.
+    proxy: false
+    options:
+      # TCP and UDP on the same port number, 1:1.
+      publish:
+        - "443:443/tcp"
+        - "443:443/udp"
+      # Readiness over TCP (the image needs curl; -k because the certificate names the public
+      # domain, not 127.0.0.1).
+      health-cmd: "curl -fsk https://127.0.0.1:443/ready"
+      health-interval: 10s
+# Two containers cannot hold host port 443 at once, so a host has a short gap while its
+# container is replaced: boot one host at a time so the others keep serving.
+boot:
+  limit: 1
+  wait: 10
+env:
+  clear:
+    HOST: 0.0.0.0
+    PORT: "443"
+    # HTTP/3 is on by default with TLS; "false" turns off the UDP bind and Alt-Svc together.
+    HTTP3: "true"
+# ACME state (account, key.pem, cert.pem): persistent, on the host, writable by the app's
+# user only. Create it on the host with `install -d -m 0700 -o <uid> /var/lib/app/acme`.
+# One directory per host; never share it between hosts or containers.
+volumes:
+  - "/var/lib/app/acme:/var/lib/app/acme"
+registry:
+  username: example
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+builder:
+  arch: amd64

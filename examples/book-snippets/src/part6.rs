@@ -21,6 +21,14 @@ struct Ch2902OpenApi;
 struct Ch2903Middleware;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-07-http3-deployment.md")]
+struct Ch2907Http3Deployment;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-09-certificates-acme.md")]
+struct Ch2909CertificatesAcme;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-02-authorization.md")]
 struct Ch3002Authorization;
 

@@ -1,0 +1,131 @@
+# Helm values for an id_effect service serving HTTP/3 straight to the app (topology b of book
+# chapter 29.7, crates/id_effect/book/src/part6/ch29-07-http3-deployment.md).
+#
+# The keys follow the common `helm create` chart layout; each block maps onto the Kubernetes
+# field named in its comment, so the chart's templates can pass it through unchanged
+# (README.md lists the template hooks this needs).
+#
+# The rule that shapes every block: TCP and UDP on the same port number, never remapped. The
+# host advertises `Alt-Svc: h3=":<PORT>"` with the port it bound, so PORT, containerPort,
+# targetPort and the Service port are all 443.
+# In-app ACME (TLS-ALPN-01): one replica per domain set. Every replica would order its own
+# certificate, and the validator may reach a replica that did not place the order. For more
+# replicas give the certificate to cert-manager (TLS_CERT_FILE / TLS_KEY_FILE) or the balancer.
+replicaCount: 1
+image:
+  repository: example/app
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+# Deployment .spec.strategy: the ACME volume is ReadWriteOnce, so the old pod releases it first.
+strategy:
+  type: Recreate
+# Container env.
+env:
+  - name: HOST
+    value: "0.0.0.0"
+  - name: PORT
+    value: "443"
+  # On by default with TLS; "false" turns off the UDP bind and Alt-Svc together (use it
+  # behind a balancer that terminates HTTP/3).
+  - name: HTTP3
+    value: "true"
+# Container .ports: one port number, both protocols.
+containerPorts:
+  - name: https
+    containerPort: 443
+    protocol: TCP
+  - name: h3
+    containerPort: 443
+    protocol: UDP
+# Pod .spec.securityContext.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+  sysctls:
+    # Safe sysctl (allowed by every kubelet since Kubernetes 1.22): a non-root process may
+    # bind 443.
+    - name: net.ipv4.ip_unprivileged_port_start
+      value: "0"
+      # The UDP buffer sysctls are NOT safe sysctls. A pod may set them only when the kubelet
+      # allows them (`--allowed-unsafe-sysctls='net.core.*'`, or `allowedUnsafeSysctls` in the
+      # KubeletConfiguration) and the node kernel scopes them to the pod's network namespace;
+      # otherwise the pod is rejected with SysctlForbidden. Uncomment only on such nodes, and
+      # prefer `nodeTuning` below.
+      # - name: net.core.rmem_max
+      #   value: "4194304"
+      # - name: net.core.wmem_max
+      #   value: "4194304"
+# Container .securityContext.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+# Node-level alternative for the UDP buffers (works on any cluster): a privileged DaemonSet
+# that sets the host sysctls, rendered by the chart when enabled. Equivalent: a sysctl.d file
+# in the node image, or the cloud's node pool kubelet/linux config (GKE linuxConfig.sysctls,
+# AKS linuxOSConfig.sysctls, EKS launch-template user data).
+nodeTuning:
+  enabled: true
+  image: busybox:1.36.1
+  sysctls:
+    net.core.rmem_max: "4194304"
+    net.core.wmem_max: "4194304"
+# Service .spec. A LoadBalancer with TCP and UDP on one port needs Kubernetes 1.26+
+# (MixedProtocolLBService) and a cloud balancer that supports it (e.g. AWS NLB, GKE,
+# AKS). It must pass TLS through (layer 4): ACME's acme-tls/1 handshake has to reach the app.
+service:
+  type: LoadBalancer
+  # Keeps the client address (ClientIp, per-IP limits) and sends a QUIC flow to one node
+  # without SNAT.
+  externalTrafficPolicy: Local
+  ports:
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+    - name: h3
+      port: 443
+      targetPort: 443
+      protocol: UDP
+# NetworkPolicy .spec (ports are the pod's): HTTPS and HTTP/3 from anywhere. ACME validators
+# connect from unpublished addresses, so 443/tcp cannot be narrowed to known clients.
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        - ipBlock:
+            cidr: ::/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 443
+          protocol: UDP
+# Probes over TCP (HTTPS); the UDP side is the same process and router.
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 443
+    scheme: HTTPS
+  periodSeconds: 10
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 443
+    scheme: HTTPS
+  periodSeconds: 20
+# ACME state (account, key.pem, cert.pem) on a persistent volume. It is mounted one level
+# above the directory given to AcmeConfig::new ("/var/lib/app/acme"), so Acme creates that
+# directory itself with mode 0700 and its files with 0600; fsGroup above makes the volume
+# writable for the app's user. One volume per replica, never shared.
+persistence:
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
+  size: 64Mi
+  mountPath: /var/lib/app
