@@ -20,18 +20,18 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Request, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use id_effect::schema::{self, HasSchema, ParseError, Schema, length, one_of, pattern};
 use id_effect::{Effect, Exit, HNil, fail, succeed};
 use id_effect_kit::auth::{
-  AuthPrincipal, AuthScheme, PasswordHash, Session, SessionId, TotpError, TotpSecret,
+  AuthError, AuthPrincipal, AuthScheme, PasswordHash, Session, SessionId, TotpError, TotpSecret,
   TotpStepStore, TotpVerification, Verification,
 };
 use id_effect_kit::authz::{Policies, Principal};
 use id_effect_kit::axum::route::{Input, Route, Router};
-use id_effect_kit::axum::{RequestCaps, run_with_env};
+use id_effect_kit::axum::{ClientIp, RequestCaps, run_with_env};
 use id_effect_kit::sql::query_builder::Dialect;
 use id_effect_kit::sql::query_builder::sea_query::{Expr, ExprTrait};
 use id_effect_kit::sql::{
@@ -417,15 +417,26 @@ fn login(
   let app = Arc::clone(&env.0);
   let presented = presented_session(&app, &input.headers);
   let hint = caps.get::<TenantHint>().map(|hint| hint.0.clone());
+  let client = caps.get::<ClientIp>().map(|ip| ip.0);
   let Login {
     username,
     password,
     totp,
   } = input.body;
-  find_user(&app.db, &username)
+  let throttle = app.throttle.clone();
+  let account = username.clone();
+  // Throttled before the user is looked up or a password hashed (H5).
+  throttle
+    .check(&username, client)
     .map_err(ApiError::from)
     .flat_map({
       let app = Arc::clone(&app);
+      move |()| find_user(&app.db, &username).map_err(ApiError::from)
+    })
+    .flat_map({
+      let app = Arc::clone(&app);
+      let throttle = throttle.clone();
+      let account = account.clone();
       move |user| {
         let stored = match user
           .as_ref()
@@ -450,7 +461,11 @@ fn login(
               )
               .map(move |_| user)
               .map_err(ApiError::from),
-            _ => fail(ApiError::BadCredentials("wrong username or password")),
+            // A wrong password or an unknown user counts against the account and the address.
+            _ => throttle
+              .record_failure(&account, client)
+              .map_err(ApiError::from)
+              .flat_map(|()| fail(ApiError::BadCredentials("wrong username or password"))),
           })
       }
     })
@@ -469,7 +484,36 @@ fn login(
       move |user| second_factor(&app, user, totp)
     })
     .flat_map(move |(user, mfa)| sign_in(&app, &user, mfa, presented, StatusCode::OK))
+    .flat_map(move |response| {
+      throttle
+        .record_success(&account)
+        .map_err(ApiError::from)
+        .map(move |()| response)
+    })
+    .catch(|e| match e {
+      ApiError::Auth(AuthError::TooManyAttempts { retry_after }) => {
+        succeed(too_many_attempts(retry_after))
+      }
+      e => fail(e),
+    })
     .narrow()
+}
+
+/// A throttled login: `429` with `Retry-After` in whole seconds (at least 1), as
+/// id_effect_auth's middleware answers [`AuthError::TooManyAttempts`].
+fn too_many_attempts(retry_after: std::time::Duration) -> Response {
+  // `Ord::max`: sea_query's `ExprTrait` (imported here) has a `max` too.
+  let secs = Ord::max(
+    retry_after
+      .as_secs()
+      .saturating_add(u64::from(retry_after.subsec_nanos() > 0)),
+    1,
+  );
+  let mut response = ApiError::Auth(AuthError::TooManyAttempts { retry_after }).into_response();
+  response
+    .headers_mut()
+    .insert(header::RETRY_AFTER, HeaderValue::from(secs));
+  response
 }
 
 /// The TOTP step of a login: none before enrolment; afterwards a valid, unused code is required.

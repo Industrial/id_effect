@@ -76,7 +76,7 @@ async fn cookie_handshake_authenticates_both_sides() {
   let net = MemoryNetwork::new();
   let a = net.transport("a");
   let b = net.transport("b");
-  let cookie = Cookie::new("monster");
+  let cookie = Cookie::new("monster-cookie-of-at-least-32-bytes");
 
   let id_a = node_id("a@test");
   let id_b = node_id("b@test");
@@ -115,14 +115,22 @@ async fn wrong_cookie_is_rejected() {
   let dial = a.connect("b").await.expect("dial");
   let accept = listener.accept().await.expect("accept");
 
-  let wrong = Cookie::new("wrong");
-  let right = Cookie::new("right");
+  let wrong = Cookie::new("wrong-cookie-of-at-least-32-bytes");
+  let right = Cookie::new("right-cookie-of-at-least-32-bytes");
   let (initiator, responder) = tokio::join!(
     Session::initiate(dial, &id_a, &wrong),
     Session::respond(accept, &id_b, &right),
   );
   assert!(initiator.is_err(), "initiator must fail");
-  assert!(responder.is_err(), "responder must fail");
+  assert!(
+    matches!(
+      responder,
+      Err(id_effect_node::SessionError::Handshake(
+        id_effect_node::HandshakeError::BadCookie
+      ))
+    ),
+    "responder must fail on the proof"
+  );
 }
 
 #[tokio::test]
@@ -130,7 +138,7 @@ async fn tcp_transport_round_trips_authenticated_frames() {
   let tcp = TcpTransport;
   let listener = tcp.listen("127.0.0.1:0").await.expect("bind");
   let addr = listener.local_addr();
-  let cookie = Cookie::new("tcp-secret");
+  let cookie = Cookie::new("tcp-secret-of-at-least-thirty-two-bytes");
 
   let id_a = node_id("a@tcp");
   let id_b = node_id("b@tcp");

@@ -9,9 +9,12 @@
 //! lets the request through (fail open): the limiter protects capacity, it is not an access
 //! control.
 //!
-//! The default key is the client IP (`ConnectInfo<SocketAddr>`, present when the app is served
-//! with `into_make_service_with_connect_info::<SocketAddr>()`), falling back to one bucket shared
-//! by every request without it. Per-tenant limits key by the request's tenant with
+//! The default key is the client IP: the connection's peer (`ConnectInfo<SocketAddr>`, which
+//! [`serve`](crate::serve) and the other server entry points record on every request, as does
+//! `into_make_service_with_connect_info::<SocketAddr>()`), falling back to one bucket shared by
+//! every request without it. Behind reverse proxies, key by [`RateLimitKey::client_ip`] with the
+//! [`TrustedProxies`] in front of the service: `X-Forwarded-For` is read from the right, so a
+//! client cannot pick its own bucket. Per-tenant limits key by the request's tenant with
 //! [`RateLimitKey::tenant`] (read from a [`RequestCaps`] value or a request extension the
 //! authentication layer recorded). Key by principal with [`RateLimitKey::from_fn`]:
 //!
@@ -38,14 +41,13 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
-use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use axum::extract::{ConnectInfo, Request};
+use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use id_effect::{Cause, Effect, Exit, HNil};
@@ -55,6 +57,7 @@ use tower_service::Service;
 pub use id_effect_resilience::{RateLimitError, RateLimiter};
 
 use super::problem_response;
+use crate::client_ip::{ClientIp, TrustedProxies};
 use crate::executor::EffectExecutor;
 use crate::request_caps::RequestCaps;
 
@@ -173,19 +176,23 @@ impl RateLimitKey {
     Self(Arc::new(f))
   }
 
-  /// `ip:<client ip>` from `ConnectInfo<SocketAddr>`; `None` when the app is not served with
-  /// connect info.
+  /// `ip:<peer ip>` from `ConnectInfo<SocketAddr>` (the [`ClientIp`] with no trusted proxy);
+  /// `None` when the app is not served with connect info.
   pub fn peer_ip() -> Self {
-    Self::from_fn(|req| {
-      req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ConnectInfo(addr)| format!("ip:{}", addr.ip()))
+    Self::client_ip(TrustedProxies::none())
+  }
+
+  /// `ip:<client ip>`: the [`ClientIp`] behind `trusted` proxies (the peer, or the rightmost
+  /// `X-Forwarded-For` entry that is not a trusted proxy); `None` when the app is not served
+  /// with connect info.
+  pub fn client_ip(trusted: TrustedProxies) -> Self {
+    Self::from_fn(move |req| {
+      ClientIp::from_parts(req.extensions(), req.headers(), &trusted).map(|ip| format!("ip:{ip}"))
     })
   }
 
-  /// `header:<name>:<value>` from request header `name` (e.g. an API key, or `x-forwarded-for`
-  /// behind a trusted proxy); `None` when the header is absent.
+  /// `header:<name>:<value>` from request header `name` (e.g. an API key; for client addresses
+  /// behind a proxy use [`Self::client_ip`]); `None` when the header is absent.
   pub fn header(name: HeaderName) -> Self {
     Self::from_fn(move |req| {
       let value = req.headers().get(&name)?;
@@ -389,8 +396,11 @@ where
 
 #[cfg(test)]
 mod tests {
+  use std::net::SocketAddr;
+
   use super::*;
   use axum::body::Body;
+  use axum::extract::ConnectInfo;
 
   fn request() -> Request {
     Request::builder().uri("/").body(Body::empty()).unwrap()

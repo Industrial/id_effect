@@ -16,6 +16,9 @@
 //!   found by public id and compared in constant time.
 //! - [`basic`] — [`BasicAuth`]: username and password against a [`UserLookup`], with
 //!   [`PasswordHasher::verify_or_dummy`] for unknown users.
+//! - [`throttle`] — [`LoginThrottle`]: exponential backoff after failed logins per account and
+//!   per client address, checked before hashing (on by default in [`BasicAuth`]), over a
+//!   [`ThrottleStore`].
 //! - `jwt` (feature `jwt`) — `JwtVerifier` / `JwtIssuer`: HS/RS/PS/ES/EdDSA tokens with issuer,
 //!   audience, expiry and required-claim checks and a claim → roles/permissions mapping.
 //!   Feature `jwks` adds `JwksClient`: the identity provider's key set, cached and refetched
@@ -84,6 +87,7 @@ pub mod oidc;
 pub mod password;
 pub mod principal;
 pub mod session;
+pub mod throttle;
 #[cfg(feature = "totp")]
 pub mod totp;
 
@@ -107,8 +111,8 @@ pub use middleware::{Authenticate, AuthenticateService};
 #[cfg(feature = "oidc")]
 pub use oidc::{OidcClient, OidcConfig, OidcError, OidcRoutes};
 pub use password::{
-  Password, PasswordError, PasswordHash, PasswordHasher, PasswordHasherEnv, PasswordParams,
-  Verification,
+  MAX_PASSWORD_LEN, Password, PasswordError, PasswordHash, PasswordHasher, PasswordHasherEnv,
+  PasswordParams, Verification,
 };
 pub use principal::{AuthPrincipal, AuthScheme};
 #[cfg(feature = "axum")]
@@ -119,6 +123,7 @@ pub use session::{
 };
 #[cfg(feature = "pg")]
 pub use session::{PgSessionStore, pg_session_store_layer};
+pub use throttle::{Failures, LoginThrottle, MemoryThrottleStore, ThrottleStore};
 #[cfg(feature = "totp")]
 pub use totp::{
   MemoryTotpStepStore, RecoveryCodes, Totp, TotpConfig, TotpError, TotpSecret, TotpStepStore,

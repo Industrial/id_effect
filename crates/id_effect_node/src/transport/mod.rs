@@ -56,6 +56,23 @@ pub trait Connection: Send + Sync {
   async fn close(&self);
   /// Address of the remote end, for diagnostics.
   fn peer_addr(&self) -> String;
+  /// Cap the size of frames `recv` accepts, in bytes. Transports that read
+  /// length-prefixed frames off the network enforce it before allocating;
+  /// the handshake lowers it to
+  /// [`PRE_AUTH_MAX_FRAME_BYTES`](crate::handshake::PRE_AUTH_MAX_FRAME_BYTES)
+  /// until the peer has authenticated. The default ignores it (in-process
+  /// transports never allocate on a peer's behalf).
+  fn set_max_frame_bytes(&self, max: u32) {
+    let _ = max;
+  }
+  /// A 32-byte secret only the two ends of this connection share: the TLS
+  /// exporter for [`CHANNEL_BINDING_LABEL`](crate::handshake::CHANNEL_BINDING_LABEL).
+  /// The handshake mixes it into the cookie proof so a proof cannot be
+  /// relayed onto another channel. `None` (the default) for transports
+  /// without a secure channel.
+  fn channel_binding(&self) -> Option<[u8; 32]> {
+    None
+  }
 }
 
 /// Accepts inbound connections on a bound address.

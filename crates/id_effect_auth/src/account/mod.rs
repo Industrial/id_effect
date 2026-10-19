@@ -130,7 +130,7 @@ impl Default for AccountsConfig {
       verify_ttl: Duration::from_secs(24 * 60 * 60),
       reset_ttl: Duration::from_secs(30 * 60),
       min_password_len: 12,
-      max_password_len: 256,
+      max_password_len: crate::password::MAX_PASSWORD_LEN,
     }
   }
 }
@@ -211,13 +211,16 @@ pub enum AccountError {
 
 impl AccountError {
   /// 422 for an invalid address or password, 409 for a taken address, 400 for a rejected token,
-  /// 503 for a store, session or mail outage, 500 otherwise.
+  /// 503 for a store, session or mail outage or a busy password hasher, 500 otherwise.
   pub fn http_status(&self) -> u16 {
     match self {
       Self::InvalidEmail | Self::WeakPassword(_) => 422,
       Self::EmailTaken => 409,
       Self::InvalidToken | Self::ExpiredToken => 400,
-      Self::Storage(_) | Self::Session(_) | Self::Notify(_) => 503,
+      Self::Storage(_)
+      | Self::Session(_)
+      | Self::Notify(_)
+      | Self::Password(crate::password::PasswordError::Busy) => 503,
       Self::Password(_) | Self::Random(_) => 500,
     }
   }

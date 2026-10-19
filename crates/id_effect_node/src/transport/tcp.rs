@@ -3,8 +3,15 @@
 //! Frame layout: 4-byte big-endian length prefix + payload. Max frame
 //! size is enforced on read so a corrupt/hostile peer cannot force an
 //! unbounded allocation.
+//!
+//! **Plaintext.** TCP frames cross the network unencrypted, and nothing at
+//! the transport level authenticates the peer: the cookie handshake proves
+//! cluster membership, but an on-path attacker can read every frame and
+//! relay or inject traffic. The first dial or bind logs a warning saying
+//! so. Use the QUIC transport (feature `quic`) or a trusted network.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Once};
 
 use bytes::Bytes;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -18,10 +25,26 @@ use super::{Connection, Listener, Transport, TransportError};
 /// protocol violation — bulk data belongs in streams/blob stores.
 pub const MAX_FRAME_BYTES: u32 = 16 * 1024 * 1024;
 
+static PLAINTEXT_WARNING: Once = Once::new();
+
+/// Log, once per process, that this transport neither encrypts nor
+/// authenticates at the transport level.
+fn warn_plaintext() {
+  PLAINTEXT_WARNING.call_once(|| {
+    tracing::warn!(
+      "TcpTransport is unencrypted and unauthenticated at the transport level: \
+       frames cross the network in plaintext and an on-path attacker can read, \
+       relay or inject them; use the QUIC transport or a trusted network"
+    );
+  });
+}
+
 struct TcpConnection {
   read: Arc<Mutex<OwnedReadHalf>>,
   write: Arc<Mutex<OwnedWriteHalf>>,
   peer: String,
+  /// Largest frame `recv` accepts (see `Connection::set_max_frame_bytes`).
+  max_frame: AtomicU32,
 }
 
 impl TcpConnection {
@@ -35,6 +58,7 @@ impl TcpConnection {
       read: Arc::new(Mutex::new(read)),
       write: Arc::new(Mutex::new(write)),
       peer,
+      max_frame: AtomicU32::new(MAX_FRAME_BYTES),
     }
   }
 }
@@ -62,11 +86,7 @@ impl Connection for TcpConnection {
       .await
       .map_err(|_| TransportError::Closed)?;
     let len = u32::from_be_bytes(len_buf);
-    if len > MAX_FRAME_BYTES {
-      return Err(TransportError::Io(
-        "peer frame exceeds MAX_FRAME_BYTES".to_string(),
-      ));
-    }
+    frame_within_limit(len, self.max_frame.load(Ordering::Acquire))?;
     let mut payload = vec![0u8; len as usize];
     read
       .read_exact(&mut payload)
@@ -82,6 +102,27 @@ impl Connection for TcpConnection {
 
   fn peer_addr(&self) -> String {
     self.peer.clone()
+  }
+
+  fn set_max_frame_bytes(&self, max: u32) {
+    self
+      .max_frame
+      .store(max.min(MAX_FRAME_BYTES), Ordering::Release);
+  }
+}
+
+/// Refuse a peer's length prefix over `limit` before allocating for it.
+pub(crate) fn frame_within_limit(len: u32, limit: u32) -> Result<(), TransportError> {
+  if len <= limit {
+    Ok(())
+  } else if limit >= MAX_FRAME_BYTES {
+    Err(TransportError::Io(
+      "peer frame exceeds MAX_FRAME_BYTES".to_string(),
+    ))
+  } else {
+    Err(TransportError::Io(format!(
+      "peer frame of {len} bytes exceeds the {limit}-byte limit before authentication"
+    )))
   }
 }
 
@@ -111,6 +152,7 @@ pub struct TcpTransport;
 #[async_trait::async_trait]
 impl Transport for TcpTransport {
   async fn connect(&self, addr: &str) -> Result<Box<dyn Connection>, TransportError> {
+    warn_plaintext();
     let stream = TcpStream::connect(addr)
       .await
       .map_err(|e| TransportError::Connect(e.to_string()))?;
@@ -119,6 +161,7 @@ impl Transport for TcpTransport {
   }
 
   async fn listen(&self, addr: &str) -> Result<Box<dyn Listener>, TransportError> {
+    warn_plaintext();
     let listener = TokioTcpListener::bind(addr)
       .await
       .map_err(|e| TransportError::Bind(e.to_string()))?;
@@ -218,6 +261,44 @@ mod tests {
       .expect("write prefix");
     assert!(matches!(
       accepted.recv().await,
+      Err(TransportError::Io(m)) if m.contains("MAX_FRAME_BYTES")
+    ));
+  }
+
+  #[tokio::test]
+  async fn lowered_frame_limit_is_enforced_and_can_be_lifted() {
+    let (dial, accepted) = connected().await;
+    accepted.set_max_frame_bytes(8);
+    dial
+      .send(Bytes::from_static(b"12345678"))
+      .await
+      .expect("send");
+    assert_eq!(
+      accepted.recv().await.expect("at the limit"),
+      Bytes::from_static(b"12345678")
+    );
+    dial
+      .send(Bytes::from_static(b"123456789"))
+      .await
+      .expect("send");
+    assert!(matches!(
+      accepted.recv().await,
+      Err(TransportError::Io(m)) if m.contains("9 bytes exceeds the 8-byte limit")
+    ));
+    let (dial, accepted) = connected().await;
+    accepted.set_max_frame_bytes(8);
+    accepted.set_max_frame_bytes(u32::MAX);
+    let big = Bytes::from(vec![7u8; 64 * 1024]);
+    let (sent, got) = tokio::join!(dial.send(big.clone()), accepted.recv());
+    sent.expect("send");
+    assert_eq!(got.expect("lifted, clamped to MAX_FRAME_BYTES"), big);
+  }
+
+  #[test]
+  fn frame_limit_messages_name_the_limit() {
+    assert!(frame_within_limit(MAX_FRAME_BYTES, MAX_FRAME_BYTES).is_ok());
+    assert!(matches!(
+      frame_within_limit(MAX_FRAME_BYTES + 1, MAX_FRAME_BYTES),
       Err(TransportError::Io(m)) if m.contains("MAX_FRAME_BYTES")
     ));
   }

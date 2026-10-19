@@ -6,7 +6,7 @@ mod common;
 use std::fmt;
 use std::time::Duration;
 
-use common::{ec_issuer, rsa_issuer};
+use common::{ISSUER, ec_issuer, rsa_issuer};
 use id_effect::{Cause, Effect, Exit};
 use id_effect_auth::{AuthError, AuthPrincipal, JwksClient, JwtIssuer, JwtVerifier};
 use id_effect_authz::Principal;
@@ -65,7 +65,7 @@ async fn rotated_kid_is_accepted_after_refresh() {
   let new = ec_issuer("2026-07");
   publish(&server, &[&old]).await;
   let jwks = client(&server);
-  let verifier = JwtVerifier::jwks(jwks.clone());
+  let verifier = JwtVerifier::jwks(jwks.clone()).issuer(ISSUER);
 
   let p = run(verifier.verify(&token(&old).await)).await.unwrap();
   assert_eq!((p.id(), p.roles()), ("alice", &["viewer".to_owned()][..]));
@@ -99,7 +99,7 @@ async fn unknown_kids_are_rate_limited() {
   let known = rsa_issuer("k1");
   publish(&server, &[&known]).await;
   let jwks = client(&server).min_refresh_interval(Duration::from_secs(3600));
-  let verifier = JwtVerifier::jwks(jwks.clone());
+  let verifier = JwtVerifier::jwks(jwks.clone()).issuer(ISSUER);
   run(verifier.verify(&token(&known).await)).await.unwrap();
   let forged = token(&rsa_issuer("made-up")).await;
   for _ in 0..5 {
@@ -121,7 +121,7 @@ async fn concurrent_misses_share_one_fetch() {
   let issuer = ec_issuer("k1");
   publish(&server, &[&issuer]).await;
   let jwks = client(&server);
-  let verifier = JwtVerifier::jwks(jwks.clone());
+  let verifier = JwtVerifier::jwks(jwks.clone()).issuer(ISSUER);
   let token = token(&issuer).await;
   let checks = (0..8).map(|_| {
     let (v, t) = (verifier.clone(), token.clone());
@@ -138,7 +138,7 @@ async fn an_unreachable_provider_is_unavailable_until_it_recovers() {
   let server = MockServer::start().await;
   let issuer = rsa_issuer("k1");
   outage(&server).await;
-  let verifier = JwtVerifier::jwks(client(&server));
+  let verifier = JwtVerifier::jwks(client(&server)).issuer(ISSUER);
   let t = token(&issuer).await;
   let err = run(verifier.verify(&t)).await.unwrap_err();
   assert!(
@@ -148,7 +148,8 @@ async fn an_unreachable_provider_is_unavailable_until_it_recovers() {
   assert_eq!(err.http_status(), 503);
 
   // Rate-limited while the last fetch failed: still unavailable, not "unknown key".
-  let limited = JwtVerifier::jwks(client(&server).min_refresh_interval(Duration::from_secs(3600)));
+  let limited = JwtVerifier::jwks(client(&server).min_refresh_interval(Duration::from_secs(3600)))
+    .issuer(ISSUER);
   assert!(run(limited.verify(&t)).await.is_err());
   assert!(matches!(
     run(limited.verify(&t)).await,
@@ -166,7 +167,7 @@ async fn cached_keys_keep_serving_when_a_refresh_fails() {
   publish(&server, &[&issuer]).await;
   // Every lookup finds the cache stale and tries to refresh.
   let jwks = client(&server).max_age(Duration::ZERO);
-  let verifier = JwtVerifier::jwks(jwks.clone());
+  let verifier = JwtVerifier::jwks(jwks.clone()).issuer(ISSUER);
   let t = token(&issuer).await;
   run(verifier.verify(&t)).await.unwrap();
   outage(&server).await;
@@ -176,6 +177,62 @@ async fn cached_keys_keep_serving_when_a_refresh_fails() {
     run(jwks.refresh()).await,
     Err(AuthError::Unavailable(_))
   ));
+}
+
+#[tokio::test]
+async fn m15_jwks_body_capped() {
+  let server = MockServer::start().await;
+  let issuer = rsa_issuer("k1");
+  // A valid document padded past 1 MiB: refused, whatever it holds.
+  let pad = "x".repeat(id_effect_auth::jwks::MAX_BODY_BYTES);
+  let doc = json!({ "keys": [issuer.jwk().expect("jwk")], "pad": pad });
+  Mock::given(method("GET"))
+    .and(path("/certs"))
+    .respond_with(ResponseTemplate::new(200).set_body_json(doc))
+    .mount(&server)
+    .await;
+  let jwks = client(&server);
+  let err = run(jwks.refresh()).await.unwrap_err();
+  assert!(
+    matches!(&err, AuthError::Unavailable(m) if m.contains("larger than 1048576 bytes")),
+    "{err:?}"
+  );
+  assert!(jwks.cached_keys().is_empty());
+  // The same keys in a document of ordinary size are read.
+  publish(&server, &[&issuer]).await;
+  assert_eq!(run(jwks.refresh()).await, Ok(1));
+}
+
+#[tokio::test]
+async fn m15_jwks_redirects_and_plain_http_are_refused() {
+  let server = MockServer::start().await;
+  let issuer = rsa_issuer("k1");
+  publish(&server, &[&issuer]).await;
+  Mock::given(method("GET"))
+    .and(path("/moved"))
+    .respond_with(
+      ResponseTemplate::new(302).insert_header("location", format!("{}/certs", server.uri())),
+    )
+    .mount(&server)
+    .await;
+  let moved = JwksClient::new(format!("{}/moved", server.uri()));
+  let err = run(moved.refresh()).await.unwrap_err();
+  assert!(
+    matches!(&err, AuthError::Unavailable(m) if m.contains("302")),
+    "a redirect is not followed: {err:?}"
+  );
+  // A non-loopback http URL is a configuration error, before any request.
+  let plain = JwksClient::new("http://id.example.com/certs");
+  let verifier = JwtVerifier::jwks(plain.clone()).issuer(ISSUER);
+  let err = run(verifier.verify(&token(&issuer).await))
+    .await
+    .unwrap_err();
+  assert!(
+    matches!(&err, AuthError::Config(m) if m.contains("must be https")),
+    "{err:?}"
+  );
+  assert_eq!(err.http_status(), 500);
+  assert_eq!(plain.fetch_count(), 1);
 }
 
 #[tokio::test]

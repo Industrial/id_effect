@@ -299,8 +299,8 @@ fn entity_derives_through_the_kit_path() {
 #[test]
 fn jwts_round_trip_and_feed_authenticate() {
   let secret = b"a 256-bit secret for HS256 tokens";
-  let issuer = JwtIssuer::hs256(secret);
-  let verifier = JwtVerifier::new([JwtKey::hmac(secret)]);
+  let issuer = JwtIssuer::hs256(secret).issuer("https://id.example.com");
+  let verifier = JwtVerifier::new([JwtKey::hmac(secret)]).issuer("https://id.example.com");
   let alice = AuthPrincipal::new("alice").with_role("accountant");
   let Exit::Success(token) = issuer.issue(&alice).block_on() else {
     panic!("issue failed")

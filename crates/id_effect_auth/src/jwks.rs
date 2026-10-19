@@ -17,6 +17,11 @@
 //! Keys of types jsonwebtoken does not support and keys marked `"use": "enc"` are skipped.
 //! Requests go through reqwest with rustls and need a tokio runtime (an axum server has one).
 //!
+//! The key set decides which tokens are trusted, so the fetch is strict: the URL must be
+//! `https` (plain `http` only to a loopback host, for tests, or after
+//! [`allow_http_dangerous`](JwksClient::allow_http_dangerous)), redirects are not followed, and
+//! a body larger than [`MAX_BODY_BYTES`] (1 MiB) is refused while it is read.
+//!
 //! ```no_run
 //! use std::time::Duration;
 //! use id_effect_auth::{JwksClient, JwtVerifier};
@@ -30,6 +35,7 @@
 //! ```
 
 use std::fmt;
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
@@ -47,6 +53,8 @@ pub const DEFAULT_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(15 * 60);
 /// Default [`JwksClient::timeout`].
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
+/// The largest JWKS document a [`JwksClient`] reads, in bytes.
+pub const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug)]
 struct Config {
@@ -54,6 +62,7 @@ struct Config {
   min_refresh: Duration,
   max_age: Duration,
   timeout: Duration,
+  allow_http: bool,
 }
 
 #[derive(Default)]
@@ -100,9 +109,21 @@ impl JwksClient {
         min_refresh: DEFAULT_MIN_REFRESH_INTERVAL,
         max_age: DEFAULT_MAX_AGE,
         timeout: DEFAULT_TIMEOUT,
+        allow_http: false,
       }),
       shared: Arc::new(Shared::default()),
     }
+  }
+
+  /// Fetch over plain `http` from any host, not only loopback ones.
+  ///
+  /// **Dangerous**: anyone on the network path can then swap the key set and have the verifier
+  /// accept tokens they signed. Only for a provider reached over a network that is itself
+  /// trusted and encrypted (a service mesh with mTLS, for example).
+  #[must_use]
+  pub fn allow_http_dangerous(mut self) -> Self {
+    Arc::make_mut(&mut self.config).allow_http = true;
+    self
   }
 
   /// Refetch at most once per `interval` (rate limit against unknown `kid`s).
@@ -231,18 +252,20 @@ impl JwksClient {
 
   async fn fetch(&self) -> Result<Vec<JwtKey>, AuthError> {
     let unavailable = |what: String| AuthError::Unavailable(format!("JWKS {what}"));
+    let url = checked_url(&self.config.url, self.config.allow_http)?;
     let client = match self.shared.http.get() {
       Some(c) => c.clone(),
       None => {
         let built = Client::builder()
           .timeout(self.config.timeout)
+          .redirect(reqwest::redirect::Policy::none())
           .build()
           .map_err(|e| unavailable(format!("client: {e}")))?;
         self.shared.http.get_or_init(|| built).clone()
       }
     };
-    let response = client
-      .get(&self.config.url)
+    let mut response = client
+      .get(url)
       .header(reqwest::header::ACCEPT, "application/json")
       .send()
       .await
@@ -251,11 +274,48 @@ impl JwksClient {
     if !status.is_success() {
       return Err(unavailable(format!("endpoint answered {status}")));
     }
-    let body = response
-      .bytes()
+    let too_large = || unavailable(format!("body is larger than {MAX_BODY_BYTES} bytes"));
+    if response
+      .content_length()
+      .is_some_and(|n| n > MAX_BODY_BYTES as u64)
+    {
+      return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+      .chunk()
       .await
-      .map_err(|e| unavailable(format!("body: {e}")))?;
+      .map_err(|e| unavailable(format!("body: {e}")))?
+    {
+      if body.len() + chunk.len() > MAX_BODY_BYTES {
+        return Err(too_large());
+      }
+      body.extend_from_slice(&chunk);
+    }
     parse_jwks(&body).map_err(unavailable)
+  }
+}
+
+/// `url` parsed, when it is `https`, or `http` to a loopback host (or any host with
+/// `allow_http`); [`AuthError::Config`] otherwise.
+fn checked_url(url: &str, allow_http: bool) -> Result<reqwest::Url, AuthError> {
+  let config = |why: &str| AuthError::Config(format!("JWKS URL {url:?} {why}"));
+  let parsed = reqwest::Url::parse(url).map_err(|_| config("is not a URL"))?;
+  let loopback = parsed.host_str().is_some_and(|host| {
+    host.eq_ignore_ascii_case("localhost")
+      || host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
+  });
+  match parsed.scheme() {
+    "https" => Ok(parsed),
+    "http" if loopback || allow_http => Ok(parsed),
+    "http" => Err(config(
+      "must be https (plain http only to a loopback host, or after allow_http_dangerous())",
+    )),
+    _ => Err(config("must be https")),
   }
 }
 
@@ -294,6 +354,37 @@ mod tests {
     assert_eq!(keys[0].kid(), Some("h"));
     assert!(parse_jwks(b"nope").unwrap_err().contains("not JSON"));
     assert!(parse_jwks(b"{}").unwrap_err().contains("keys"));
+  }
+
+  #[test]
+  fn m15_jwks_requires_https() {
+    for ok in [
+      "https://id.example.com/certs",
+      "http://localhost:8080/certs",
+      "http://LOCALHOST/certs",
+      "http://127.0.0.1:9/certs",
+      "http://127.8.9.10/certs",
+      "http://[::1]:8080/certs",
+    ] {
+      assert!(checked_url(ok, false).is_ok(), "{ok}");
+    }
+    for bad in [
+      "http://id.example.com/certs",
+      "http://10.0.0.1/certs",
+      "http://localhost.example.com/certs",
+      "ftp://id.example.com/certs",
+      "file:///etc/jwks.json",
+      "not a url",
+    ] {
+      assert!(
+        matches!(checked_url(bad, false), Err(AuthError::Config(_))),
+        "{bad}"
+      );
+    }
+    assert!(checked_url("http://id.example.com/certs", true).is_ok());
+    assert!(checked_url("ftp://id.example.com/certs", true).is_err());
+    let lax = JwksClient::new("http://keycloak:8080/certs").allow_http_dangerous();
+    assert!(lax.config.allow_http);
   }
 
   #[test]
