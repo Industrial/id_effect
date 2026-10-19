@@ -131,3 +131,7 @@ webtransport (wave 5).
 | F11 | h3-client | reqwest `http2` is off in platform, so the TCP fallback is HTTP/1.1 (test `udp_blackhole_falls_back_to_h2_within_budget` exercises h1.1); turn `http2` on and keep the test name honest | r12-e12-3-h3-server |
 | F12 | h3-client | h3 transport errors surface as `HttpError::InvalidRequest("http3: …")`; add a `Transport` variant (breaking, MIGRATION-0.12) | r12-e12-5-fuzz-security or exit |
 | F13 | h3-client | h3-quinn `stop_sending` panics during an in-flight read; drop the stream instead (server too) | r12-e12-3-h3-server |
+| F14 | tls-h2 | HTTP/2 idle-connection loosening has no `dangerous_*` opt-out because hyper exposes no h2 idle timeout; idle live h2 is bounded by the connection cap and dead-peer pings only. Revisit when hyper adds it; document in THREAT-MODEL | r12-e12-5-fuzz-security (threat model) |
+| F15 | tls-h2 | RFC 8441 extended CONNECT off (browsers use h1.1 for WebSockets) | 0.13 |
+| F16 | kinds | `x-rpc: 1` now required on every POST (stricter than spec C5) and POST without Content-Type is 415 — record in MIGRATION-0.12 | r12-t0-migration-guide |
+| F17 | kinds | ch33 chapters not compiled by `book_snippets` | r12-t0-migration-guide |
