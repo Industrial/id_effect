@@ -129,10 +129,12 @@
   structures; examples `087`–`091_stm_*`; test `crates/id_effect/tests/stm_collections.rs`.
 - Bench gates in CI (test.qa #8): `.github/workflows/bench.yml` benches base and head on one
   runner on pushes to `main` and on pull requests labelled `perf`, and fails on a `budget` or
-  `pair` gate. `scripts/bench-compare.sh` learns `kind = "pair"` (an intra-run ratio) and
-  `--enforce KINDS`; `gates.toml` gains the secure-stack KPI gate
-  `gate/axum_request_secure_stack / gate/axum_request_bare ≤ 1.15` (`id_effect_axum` bench
-  `gate_request`). See "CI job" in `docs/benchmarks/README.md`.
+  `delta` gate. `scripts/bench-compare.sh` learns `kind = "pair"` (an intra-run ratio),
+  `kind = "delta"` (an intra-run difference in ns) and `--enforce KINDS`; `gates.toml` gains the
+  secure-stack KPI gate `gate/axum_request_secure_stack − gate/axum_request_bare ≤ 5000 ns`
+  (`id_effect_axum` bench `gate_request`): an absolute budget of 5 µs per request (owner
+  decision 2026-10-19) instead of the ratio ≤ 1.15, which is now printed for information only.
+  See "CI job" and "Secure-stack budget" in `docs/benchmarks/README.md`.
 - `id_effect_node` at-least-once delivery (D19) and remote trace context (dist.remote#8):
   at-most-once stays the default; opt in per send (`Mesh::send_reliable`, `Mesh::cast_reliable`,
   `SendReliable::send_reliable` on an `Addr`) or per mesh (`Mesh::with_delivery(DeliveryConfig::

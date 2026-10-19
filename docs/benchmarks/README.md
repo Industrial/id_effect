@@ -23,7 +23,7 @@ numbers that gates read are exported to JSON and committed here.
 |---|---|---|
 | `budget` | `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`, `gate/flat_map_depth_10k`, `gate/async_bind_64` | ratio ≤ 1.25 |
 | `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 0.95 (no noise band) |
-| `pair` | `gate/axum_request_secure_stack` over `gate/axum_request_bare` | new / new ≤ 1.15 (no noise band; [Secure-stack pair](#secure-stack-pair-011)) |
+| `delta` | `gate/axum_request_secure_stack` over `gate/axum_request_bare` | new − new ≤ 5000 ns (no noise band; [Secure-stack budget](#secure-stack-budget-011)) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
 
 - **Noise (Q7):** a `budget` ratio that misses its limit by at most 0.05 is reported
@@ -32,13 +32,19 @@ numbers that gates read are exported to JSON and committed here.
   noise of v0.6 (r-bench-report ruling). A same-build comparison (ratio 1.00)
   therefore FAILs the three `improve` gates and passes the rest.
 - **Presence:** every id in `gates.toml`, `report` ones included, must exist in both
-  files (a `pair` gate's two ids in the new one only). A missing id is a `FAIL`.
+  files (a `pair` or `delta` gate's two ids in the new one only). A missing id is a `FAIL`.
 - **Pair gates** (`kind = "pair"`, `over = "<id>"`) are a ratio inside one run:
   `new[id] / new[over]`. The base file is not read for them, so a pair added in a change
-  is gated in that change already.
-- **`--enforce KINDS`** (comma list of `budget`, `improve`, `pair`): only those kinds'
-  missed limits `FAIL`; the others print `IGNORED`. A missing id still `FAIL`s. The CI
-  job uses `--enforce budget,pair`.
+  is gated in that change already. No shipped gate uses `pair` since 0.11; the self-test
+  keeps it covered with `fixtures/gates-pair.toml`.
+- **Delta gates** (`kind = "delta"`, `over = "<id>"`) are an absolute difference inside one
+  run: `new[id] - new[over]` in the metric's unit (ns), against `limit` in ns. The `RATIO`
+  column then shows the difference (`+4650`), and the result the ratio for information
+  (`PASS (ratio 6.17)`). The global 0.05 band does not apply; only a `noise` set on the gate
+  (in ns) does.
+- **`--enforce KINDS`** (comma list of `budget`, `improve`, `pair`, `delta`): only those
+  kinds' missed limits `FAIL`; the others print `IGNORED`. A missing id still `FAIL`s. The CI
+  job uses `--enforce budget,delta`.
 - **Exit code:** `bench-compare.sh` exits 1 on any `FAIL` and 2 on misuse.
 - **Waivers:** a remaining violation after the one optimisation leaf Q7 allows needs
   an explicit human waiver (H2), recorded in `REPORT-0.7.md`. The gate itself is
@@ -89,12 +95,17 @@ bash scripts/bench-compare.sh --self-test
 ```
 
 It compares `fixtures/base.json` with itself (fails on exactly the three `improve` gates)
-and with `pass.json` (passes, with a `budget` `NOISE` row and the pair exactly at 1.15), and with `fail-budget.json`, `fail-improve.json`,
-`fail-missing.json`, `fail-pair.json` (pair 1.156) and `fail-pair-missing.json` (no `bare`).
+and with `pass.json` (passes, with a `budget` `NOISE` row and the secure stack +2400 ns over
+`bare`), and with `fail-budget.json`, `fail-improve.json`, `fail-missing.json`,
+`fail-delta.json` (+5001 ns, 1 ns over the budget) and `fail-pair-missing.json` (no `bare`).
 Each of those must fail on exactly its one broken gate. The `ci-*` cases repeat them with
-`--enforce budget,pair`: the identity comparison then passes with the three `improve` gates
-`IGNORED`, and the budget, pair and missing-id failures still fail. An unknown kind for
-`--enforce` exits 2.
+`--enforce budget,delta`: the identity comparison then passes with the three `improve` gates
+`IGNORED`, the budget, delta and missing-id failures still fail, and `fail-delta.json` with
+`--enforce budget` passes with the delta `IGNORED`. The `pair-*` cases run
+`fixtures/gates-pair.toml` (the old `secure_stack / bare ≤ 1.15` pair): `pass.json` exactly at
+1.15 passes, `fail-pair.json` (1.156) and `fail-pair-missing.json` fail, and `fail-pair.json`
+with `--enforce budget,delta` passes with the pair `IGNORED`. An unknown kind for `--enforce`
+exits 2.
 
 ## CI job
 
@@ -106,8 +117,8 @@ requests labelled `perf` (adding the label starts it; later pushes re-run it):
 2. `bench-run.sh --ref <base> --baseline ci-base` (a `git archive` export), then
    `bench-run.sh --baseline ci-head`, one after the other on the **same runner**, criterion
    defaults, into one `target/criterion`.
-3. `bench-export.sh` both, then `bench-compare.sh --enforce budget,pair` against
-   `gates.toml`. A `budget` or `pair` `FAIL` (or a missing gated id) fails the job; the
+3. `bench-export.sh` both, then `bench-compare.sh --enforce budget,delta` against
+   `gates.toml`. A `budget` or `delta` `FAIL` (or a missing gated id) fails the job; the
    `improve` gates ("must improve on v0.6") are printed as `IGNORED`, since a change compared
    with its parent is near 1.00 by construction ([Gates](#gates)).
 4. The two exports and the comparison are uploaded as the artifact `bench-<sha>`.
@@ -117,11 +128,26 @@ when set, otherwise `ubuntu-latest`. Shared runners are noisy: a `budget` result
 0.05 band is `NOISE`; re-run the job before acting on a `FAIL` near a limit. Actions are
 pinned by commit SHA and the workflow token is `contents: read`.
 
-## Secure-stack pair (0.11)
+## Secure-stack budget (0.11)
 
-The 0.11 security KPI "secure-stack overhead ≤ 1.15× the bare request bench"
-(`.maestro/specs/releases/0.11.0.md`, Risk 8) is the `pair` gate
-`gate/axum_request_secure_stack / gate/axum_request_bare ≤ 1.15`, measured inside one run.
+The 0.11 security KPI "secure-stack overhead ≤ 5 µs per request over the bare request bench"
+(`.maestro/specs/releases/0.11.0.md`, Risk 8) is the `delta` gate
+`gate/axum_request_secure_stack − gate/axum_request_bare ≤ 5000 ns`, measured inside one run
+(same run, same runner).
+
+The KPI was `secure_stack / bare ≤ 1.15` until the owner replaced it with this absolute budget
+(owner decision 2026-10-19). Since `bf7be935` (inline request fibers) a bare in-process
+request takes 0.90 µs, so 1.15× would leave about 135 ns for the CSP nonce, CSRF masking,
+API-key hashing, log redaction, the guard and rate limiting, which is real per-request work.
+The ratio is still printed next to the result, for information; it is not a gate.
+
+| Measured 2026-10-19 | Median |
+|---|---|
+| `gate/axum_request_bare` | 0.90 µs |
+| `gate/axum_request_secure_stack` | 5.55 µs |
+| difference (gated, ≤ 5 µs) | +4.65 µs, PASS |
+| ratio (informational) | 6.2× |
+
 Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-process
 `GET /pair` (peer address `ConnectInfo`, an `x-api-key` header) to an effect handler answering
 `hello`; the secure one goes through, outermost first:
@@ -137,7 +163,7 @@ Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-
 
 Every layer must let the request through: the bench asserts `200`. The stack grows as the 0.11
 security leaves land (the first-party `LoadShedLayer`, CSRF masking, the access layer);
-`r11-w3-kpis` re-measures the pair with the final stack for the release figure.
+`r11-w3-kpis` re-measures both benches with the final stack for the release figure.
 
 ## 0.10 exit (`r10-w3-kpis`)
 

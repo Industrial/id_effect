@@ -4,7 +4,7 @@
 //! - `gate/axum_request_caps`: the same round trip through [`CapOverrideLayer`] and
 //!   [`execute_with_request_caps`], so the per-request capability overlay is on the path.
 //! - `gate/axum_request_bare` and `gate/axum_request_secure_stack` (0.11, E2.6): the pair behind
-//!   the secure-stack KPI, a `kind = "pair"` gate `secure_stack / bare ≤ 1.15` in
+//!   the secure-stack KPI, a `kind = "delta"` gate `secure_stack − bare ≤ 5000 ns` in
 //!   `docs/benchmarks/gates.toml`. Both send the same request (peer address, API key) to an
 //!   effect handler answering `hello`; `secure_stack` puts the recommended production stack in
 //!   front of it:

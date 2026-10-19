@@ -4,10 +4,11 @@
 # Usage: bash scripts/bench-compare.sh [--gates FILE] [--enforce KINDS] BASE.json NEW.json
 #        bash scripts/bench-compare.sh --self-test
 # BASE/NEW are written by scripts/bench-export.sh. ratio = NEW / BASE on the gates' `metric`;
-# a `pair` gate's ratio is NEW[id] / NEW[over], within the new run (BASE is not read for it).
-# --enforce KINDS  comma list of gate kinds (budget, improve, pair) whose FAIL counts; a missed
-#                  limit of another kind prints IGNORED (CI: base and head of one change, where
-#                  `improve` gates against v0.6 cannot hold). A missing id always FAILs.
+# a `pair` gate's ratio is NEW[id] / NEW[over] and a `delta` gate's difference NEW[id] - NEW[over]
+# (the metric's unit, ns), both within the new run (BASE is not read for them).
+# --enforce KINDS  comma list of gate kinds (budget, improve, pair, delta) whose FAIL counts; a
+#                  missed limit of another kind prints IGNORED (CI: base and head of one change,
+#                  where `improve` gates against v0.6 cannot hold). A missing id always FAILs.
 # Prints one row per gate, then report-only rows for unlisted ids present in both files.
 # Exits 1 on any FAIL (limit missed by more than `noise`, or a listed id missing), 2 on misuse.
 # Requires: jq, awk.
@@ -25,7 +26,7 @@ done
 
 # Flatten the gates.toml subset to "metric\t<m>", "noise\t<n>" and
 # "gate\t<id>\t<kind>\t<limit>\t<noise>\t<over>" (a gate's own `noise` overrides the global one;
-# `over` is a pair gate's denominator id; - = unset).
+# `over` is a pair gate's denominator or a delta gate's subtrahend id; - = unset).
 parse_gates() {
     awk '
         function val(s) { sub(/^[^=]*=[[:space:]]*/, "", s); sub(/[[:space:]]*#.*$/, "", s); gsub(/"/, "", s); return s }
@@ -57,7 +58,7 @@ compare() {
     done
     [[ -n "$enforce" ]] && IFS=, read -ra kinds <<<"$enforce"
     for kind in "${kinds[@]}"; do
-        [[ "$kind" =~ ^(budget|improve|pair)$ ]] || { echo "bench-compare: --enforce: unknown kind: $kind" >&2; exit 2; }
+        [[ "$kind" =~ ^(budget|improve|pair|delta)$ ]] || { echo "bench-compare: --enforce: unknown kind: $kind" >&2; exit 2; }
     done
     spec="$(parse_gates "$gates")" || exit 2
     metric="$(awk -F'\t' '$1 == "metric" { print $2 }' <<<"$spec")"
@@ -82,9 +83,9 @@ compare() {
             printf "%-38s %-8s %-6s %-7s %s\n", "ID", "KIND", "LIMIT", "RATIO", "RESULT"
             for (i = 1; i <= n; i++) {
                 id = ids[i]; kind = kinds[i]; limit = limits[i]; over = overs[i]
-                if (kind == "pair") {
-                    # Intra-run ratio: both ids from the new export only.
-                    if (over == "-" || over == "") { row(id, kind, limit, "-", "FAIL (bad gate: pair needs over)"); continue }
+                if (kind == "pair" || kind == "delta") {
+                    # Intra-run ratio or difference: both ids from the new export only.
+                    if (over == "-" || over == "") { row(id, kind, limit, "-", "FAIL (bad gate: " kind " needs over)"); continue }
                     if (!num(cur[id]) || !num(cur[over])) {
                         row(id, kind, limit, "-", "FAIL (missing in new: " (!num(cur[id]) ? id : over) ")")
                         continue
@@ -97,17 +98,24 @@ compare() {
                     }
                     r = cur[id] / base[id]
                 }
-                rs = sprintf("%.3f", r)
+                rs = sprintf("%.3f", r); info = ""
                 if (kind == "report") { row(id, kind, limit, rs, "REPORT"); continue }
-                if (kind != "budget" && kind != "improve" && kind != "pair" || limit == "-") {
+                if (kind != "budget" && kind != "improve" && kind != "pair" && kind != "delta" || limit == "-") {
                     row(id, kind, limit, rs, "FAIL (bad gate)"); continue
                 }
                 band = (noises[i] != "" && noises[i] != "-") ? noises[i] + 0 : noise
+                if (kind == "delta") {
+                    # Gated on the difference (RATIO column: new[id] - new[over]); the ratio is
+                    # printed for information only. The global ratio band does not apply, only a
+                    # `noise` set on the gate (same unit).
+                    info = sprintf(" (ratio %.2f)", r); r = cur[id] - cur[over]; rs = sprintf("%+.0f", r)
+                    band = (noises[i] != "" && noises[i] != "-") ? noises[i] + 0 : 0
+                }
                 ok = kind == "improve" ? r < limit + 0 : r <= limit + 0
-                if (ok) row(id, kind, limit, rs, "PASS")
-                else if (band > 0 && r <= limit + band) row(id, kind, limit, rs, "NOISE (within " band ")")
-                else if (enforce != "" && !(kind in enforced)) row(id, kind, limit, rs, "IGNORED (" kind " not enforced)")
-                else row(id, kind, limit, rs, "FAIL")
+                if (ok) row(id, kind, limit, rs, "PASS" info)
+                else if (band > 0 && r <= limit + band) row(id, kind, limit, rs, "NOISE (within " band ")" info)
+                else if (enforce != "" && !(kind in enforced)) row(id, kind, limit, rs, "IGNORED (" kind " not enforced)" info)
+                else row(id, kind, limit, rs, "FAIL" info)
             }
             for (j = 1; j <= m; j++) {
                 id = order[j]
@@ -123,11 +131,13 @@ compare() {
 self_test() {
     local failed=0
     # name, new fixture, expected exit code, ids expected to FAIL (- for none),
-    # --enforce kinds (- for all), ids expected IGNORED (- for none)
-    while read -r name file want fail_id enforce ignore_id; do
+    # --enforce kinds (- for all), ids expected IGNORED (- for none),
+    # gates file in fixtures/ (omitted: gates.toml)
+    while read -r name file want fail_id enforce ignore_id gates; do
         [[ "$enforce" == - ]] && enforce=""
+        gates="${gates:+$FIXTURES/$gates}"
         set +e
-        out="$(compare "$GATES" "$FIXTURES/base.json" "$FIXTURES/$file" "$enforce" 2>&1)"
+        out="$(compare "${gates:-$GATES}" "$FIXTURES/base.json" "$FIXTURES/$file" "$enforce" 2>&1)"
         got=$?
         set -e
         fail_rows="$(awk '$5 == "FAIL" { print $1 }' <<<"$out" | paste -sd, -)"
@@ -145,12 +155,17 @@ pass pass.json 0 - - -
 fail-budget fail-budget.json 1 gate/async_bind_64 - -
 fail-improve fail-improve.json 1 gate/axum_request_oneshot - -
 fail-missing fail-missing.json 1 gate/sleep_cpu_1k_x_1ms - -
-fail-pair fail-pair.json 1 gate/axum_request_secure_stack - -
-fail-pair-missing fail-pair-missing.json 1 gate/axum_request_secure_stack - -
-ci-identity base.json 0 - budget,pair gate/spawn_join_10k,gate/sleep_cpu_1k_x_1ms,gate/axum_request_oneshot
-ci-fail-budget fail-budget.json 1 gate/async_bind_64 budget,pair -
-ci-fail-pair fail-pair.json 1 gate/axum_request_secure_stack budget,pair -
-ci-fail-missing fail-missing.json 1 gate/sleep_cpu_1k_x_1ms budget,pair -
+fail-delta fail-delta.json 1 gate/axum_request_secure_stack - -
+fail-delta-missing fail-pair-missing.json 1 gate/axum_request_secure_stack - -
+ci-identity base.json 0 - budget,delta gate/spawn_join_10k,gate/sleep_cpu_1k_x_1ms,gate/axum_request_oneshot
+ci-fail-budget fail-budget.json 1 gate/async_bind_64 budget,delta -
+ci-fail-delta fail-delta.json 1 gate/axum_request_secure_stack budget,delta -
+ci-ignored-delta fail-delta.json 0 - budget gate/axum_request_secure_stack
+ci-fail-missing fail-missing.json 1 gate/sleep_cpu_1k_x_1ms budget,delta -
+pair-pass pass.json 0 - - - gates-pair.toml
+pair-fail fail-pair.json 1 gate/axum_request_secure_stack - - gates-pair.toml
+pair-missing fail-pair-missing.json 1 gate/axum_request_secure_stack - - gates-pair.toml
+pair-ignored fail-pair.json 0 - budget,delta gate/axum_request_secure_stack gates-pair.toml
 EOF
     # Misuse: an unknown kind for --enforce exits 2.
     set +e

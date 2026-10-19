@@ -112,7 +112,8 @@ Negative:
   bounded mailboxes, no implicit redirects). Each needs an L9 shim and a `docs/MIGRATION-0.11.md`
   entry, and existing users have to declare access or take a named opt-out.
 - The secure stack costs something per request (load shedding, redaction, escaping, SSRF
-  resolution checks). The bench gate's secure-stack ratio bounds it; it is not zero.
+  resolution checks). The bench gate's secure-stack budget (at most 5 µs per request over the
+  bare request, owner decision 2026-10-19) bounds it; it is not zero.
 - The registry is process-wide state in the core crate. It is small and append-only, but it is
   global, and tests that record into it share it within one process.
 - The posture check is only as good as the recording. `scripts/check-dangerous.sh` catches

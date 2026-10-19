@@ -1,10 +1,10 @@
 # Bench gates (0.11.0.md E2.6, test.qa#8; docs/benchmarks/README.md "CI job"): the D9 gate
 # benches for the change's base and head, one after the other on the same runner, compared by
 # scripts/bench-compare.sh against docs/benchmarks/gates.toml. Runs on pushes to main and on pull
-# requests labelled `perf`. A `budget` or `pair` gate FAIL (including the secure-stack ratio)
-# fails the job; `improve` gates hold against v0.6, not against the previous commit, so they are
-# printed but not enforced here. The runner is the repository variable BENCH_RUNNER (a dedicated
-# `bench` label) when set, otherwise ubuntu-latest.
+# requests labelled `perf`. A `budget` or `delta` gate FAIL (including the secure-stack budget of
+# +5 us over the bare request) fails the job; `improve` gates hold against v0.6, not against the
+# previous commit, so they are printed but not enforced here. The runner is the repository
+# variable BENCH_RUNNER (a dedicated `bench` label) when set, otherwise ubuntu-latest.
 name: Bench
 on:
   push:
@@ -53,9 +53,9 @@ jobs:
         run: |
           bash scripts/bench-export.sh ci-base .tmp/bench-ci-base.json
           bash scripts/bench-export.sh ci-head .tmp/bench-ci-head.json
-      - name: Gates (budget and pair enforced)
+      - name: Gates (budget and delta enforced)
         run: |
-          bash scripts/bench-compare.sh --enforce budget,pair \
+          bash scripts/bench-compare.sh --enforce budget,delta \
             .tmp/bench-ci-base.json .tmp/bench-ci-head.json | tee .tmp/bench-compare.txt
       - name: Upload the exports and the comparison
         if: always()
