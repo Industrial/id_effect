@@ -179,4 +179,101 @@ mod tests {
     assert!(jobs.to_string().starts_with("workflow job queue: "));
     assert!(!WorkflowError::Waiting.is_lease_lost());
   }
+
+  #[test]
+  fn every_variant_displays_its_fields() {
+    let cases = [
+      (
+        WorkflowError::Sql(SqlError::NotConnected),
+        format!("workflow store: {}", SqlError::NotConnected),
+      ),
+      (
+        WorkflowError::NotFound("order-1".into()),
+        "no workflow instance `order-1`".to_owned(),
+      ),
+      (
+        WorkflowError::UnknownWorkflow("orders".into()),
+        "no workflow `orders` is registered".to_owned(),
+      ),
+      (
+        WorkflowError::DuplicateWorkflow("orders".into()),
+        "workflow `orders` is already registered".to_owned(),
+      ),
+      (
+        WorkflowError::InvalidName(WorkflowNameError::Empty),
+        "invalid workflow name: workflow name is empty".to_owned(),
+      ),
+      (
+        WorkflowError::InvalidId("it is empty".into()),
+        "invalid workflow instance id: it is empty".to_owned(),
+      ),
+      (
+        WorkflowError::IdInUse {
+          id: "x".into(),
+          workflow: "probe".into(),
+        },
+        "workflow instance `x` already exists as `probe`".to_owned(),
+      ),
+      (
+        WorkflowError::NonDeterministic {
+          seq: 3,
+          history: "step a".into(),
+          code: "now".into(),
+        },
+        "nondeterministic replay at history seq 3: the history holds step a, the code asked for now"
+          .to_owned(),
+      ),
+      (
+        WorkflowError::Decode {
+          what: "input".into(),
+          message: "missing field n".into(),
+        },
+        "input does not decode: missing field n".to_owned(),
+      ),
+      (
+        WorkflowError::Step {
+          step: "charge".into(),
+          message: "card declined".into(),
+        },
+        "step `charge` failed: card declined".to_owned(),
+      ),
+      (
+        WorkflowError::failed("gave up"),
+        "workflow failed: gave up".to_owned(),
+      ),
+      (
+        WorkflowError::LeaseLost,
+        "the workflow instance's lease was lost".to_owned(),
+      ),
+    ];
+    for (error, expected) in cases {
+      assert_eq!(error.to_string(), expected, "{error:?}");
+    }
+  }
+
+  #[test]
+  fn conversions_wrap_their_source_and_classify_lease_loss() {
+    let sql = WorkflowError::from(SqlError::Decode("bad row".into()));
+    assert_eq!(sql, WorkflowError::Sql(SqlError::Decode("bad row".into())));
+    assert!(sql.to_string().starts_with("workflow store: "));
+
+    let name = WorkflowError::from(WorkflowNameError::InvalidChar { ch: ' ', index: 3 });
+    assert_eq!(
+      name,
+      WorkflowError::InvalidName(WorkflowNameError::InvalidChar { ch: ' ', index: 3 })
+    );
+    assert!(name.to_string().contains("' ' at byte 3"));
+
+    assert_eq!(
+      WorkflowError::failed(String::from("x")),
+      WorkflowError::Failed("x".into())
+    );
+    assert!(WorkflowError::LeaseLost.is_lease_lost());
+    assert!(!WorkflowError::failed("x").is_lease_lost());
+
+    // A plain `std::error::Error` with no source (the wrapped error is in the message).
+    let boxed: Box<dyn std::error::Error> = Box::new(WorkflowError::LeaseLost);
+    assert!(boxed.source().is_none());
+    assert_eq!(boxed.to_string(), WorkflowError::LeaseLost.to_string());
+  }
 }
