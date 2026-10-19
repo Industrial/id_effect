@@ -24,7 +24,7 @@
 | `@effect/platform` | HTTP, FS, process | **Phase A** — `crates/id_effect_platform` (`http`, `fs`, `command`, `uri`, opt-in `auth`) | |
 | `@effect/opentelemetry` | OTEL | **Phase B** — `crates/id_effect_opentelemetry` (`OtelSpanHook`, `bridge_metrics`) + mdBook `part2/ch07-12-opentelemetry.md` | |
 | `@effect/sql` | Database | **Phase C** — `crates/id_effect_sql` (`SqlClient`, `with_transaction`; Postgres in `id_effect_sql::pg`, feature `pg`) | |
-| `@effect/rpc` | RPC | **Phase D** — `labs/id_effect_rpc` (unpublished) | |
+| `@effect/rpc` | RPC | **Phase D** — `crates/id_effect_rpc` (unpublished until 0.12.0) | |
 | `@effect/cli` | CLI | **Phase E** — `crates/id_effect_cli` (`run_main`, exit-code mapping); template `examples/cli-minimal` | |
 | Supervision | Fiber supervision | `crates/id_effect/src/coordination/supervisor.rs` (`Supervisor`, `SupervisorPolicy`, `supervised`), `crates/id_effect_process` (OTP trees), mdBook §9.5 | Reviewed |
 | Cluster / workflow | Distributed | **Phase G** — `crates/id_effect_node` (Process Mesh), `crates/id_effect_workflow` (durable workflows on Postgres, 0.11) | |

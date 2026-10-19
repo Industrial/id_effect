@@ -1,0 +1,30 @@
+[package]
+name = "id_effect_rpc_macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Procedural macros for id_effect_rpc: `#[rpc::service]` services with typed procedures, clients and contracts"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+[lib]
+name = "id_effect_rpc_macros"
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+
+[[example]]
+name = "010_service_attribute"
+path = "examples/010_service_attribute.rs"
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 8) — checked by scripts/tier-conformance.sh
+tier = "integration"

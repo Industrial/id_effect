@@ -52,7 +52,7 @@ let app = router.layer(middleware::from_fn(trace_request));
 
 To parent a handler's effect spans under the incoming trace, start its hook from the headers: `OtelSpanHook::for_provider(..).with_parent(extract_trace_context_from_headers(..))`. The middleware enters its span only while the rest of the stack is being polled (`Instrument`), so tasks that run on the same thread while a handler waits never inherit it.
 
-Pair with [`id_effect_rpc::span`](https://github.com/Industrial/id_effect/blob/main/labs/id_effect_rpc/src/span.rs) helpers for RPC-shaped routes (`id_effect_rpc` is an unpublished labs crate; see [API boundaries](./ch29-00-api-boundaries.md)).
+Pair with [`id_effect_rpc::span`](https://github.com/Industrial/id_effect/blob/main/crates/id_effect_rpc/src/span.rs) helpers for RPC-shaped routes (`id_effect_rpc` is unpublished until 0.12.0; see [API boundaries](./ch29-00-api-boundaries.md)).
 
 ## Outbound calls, database spans and sampling
 

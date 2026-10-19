@@ -3,10 +3,11 @@
 # `labs` job:
 #   cargo nextest run --manifest-path labs/Cargo.toml --workspace --all-features
 # id_effect_workflow left labs in 0.11: it is the published crates/id_effect_workflow.
+# id_effect_rpc left labs in 0.12 (ADR 0010 Amendment 8): it is crates/id_effect_rpc.
 [workspace]
 resolver = "2"
-exclude = ["id_effect_lint"]                                   # nightly-only Dylint crate; builds standalone
-members = ["id_effect_ai", "id_effect_parse", "id_effect_rpc"]
+exclude = ["id_effect_lint"]                  # nightly-only Dylint crate; builds standalone
+members = ["id_effect_ai", "id_effect_parse"]
 
 # Keep in lockstep with the root [workspace.package].
 [workspace.package]

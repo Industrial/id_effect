@@ -1,8 +1,8 @@
 # API boundaries
 
 > **Labs crate — unpublished, no API guarantees ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)).**
-> `id_effect_rpc` lives in [`labs/id_effect_rpc`](https://github.com/Industrial/id_effect/tree/main/labs/id_effect_rpc).
-> Use it via a path or git dependency on `labs/`; it is not on crates.io, so the `docs.rs` links
+> `id_effect_rpc` lives in [`crates/id_effect_rpc`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_rpc).
+> Use it via a path or git dependency on `crates/id_effect_rpc`; it is not on crates.io, so the `docs.rs` links
 > below point at the last published (0.4) documentation.
 
 `id_effect_rpc` implements Phase D RPC-shaped HTTP boundaries: correlation ids, JSON error envelopes, OpenAPI emission, codegen stubs, API versioning, and tracing helpers.

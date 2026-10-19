@@ -2750,6 +2750,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "id_effect_rpc"
+version = "0.11.0"
+dependencies = [
+ "axum",
+ "http",
+ "http-body-util",
+ "id_effect",
+ "id_effect_axum",
+ "id_effect_opentelemetry",
+ "id_effect_platform",
+ "id_effect_tokio",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "syn 2.0.119",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "id_effect_rpc_macros"
+version = "0.11.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "id_effect_sql"
 version = "0.11.0"
 dependencies = [
@@ -4562,6 +4595,13 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
+name = "relay"
+version = "0.11.0"
+dependencies = [
+ "id_effect_kit",
+]
 
 [[package]]
 name = "reqwest"

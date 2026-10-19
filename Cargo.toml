@@ -33,10 +33,14 @@ members = [
   "crates/id_effect_storage",
   "crates/id_effect_events",
   "crates/id_effect_workflow",
+  # 0.12 (ADR 0010 Amendment 8): RPC moved out of labs, and its macro crate.
+  "crates/id_effect_rpc",
+  "crates/id_effect_rpc_macros",
   "examples/book-snippets",
   "examples/cli-minimal",
   "examples/http-showcase",
   "examples/reference/ledger",
+  "examples/reference/relay",
   # Compile-fail security cases (ADR 0010 Amendment 7); publish = false.
   "tests/security_compile_fail",
 ]

@@ -1,0 +1,27 @@
+[package]
+name = "relay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "id_effect reference app: a 3-node chat with presence over two-way RPC, channels and the mesh, built through id_effect_kit"
+readme = "README.md"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[[bin]]
+name = "relay"
+path = "src/main.rs"
+
+[dependencies]
+# Every id_effect battery comes through the kit, one feature each. r12-w7-relay turns on the
+# `rpc`, `rpc-ws`, `http3` and `cluster` features once r12-w6-kit-template adds them.
+id_effect_kit = { path = "../../../crates/id_effect_kit", version = "0.11.0" }
+
+[package.metadata.id_effect]
+# ADR 0010 crate tier (Amendment 8) — checked by scripts/tier-conformance.sh. The Relay is the
+# CI-tested consumer that moves id_effect_rpc to tier `platform` (check P).
+tier = "example"

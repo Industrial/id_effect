@@ -2,7 +2,7 @@
 
 Effect.ts [`@effect/rpc`](https://effect-ts.github.io/effect/docs/rpc) ties **Schema**, **Layer**,
 and **HTTP** so typed contracts cross process boundaries. In Rust there is no single blessed stack;
-this chapter documents **patterns** and the labs crate **`id_effect_rpc`** (`labs/id_effect_rpc`,
+this chapter documents **patterns** and the crate **`id_effect_rpc`** (`crates/id_effect_rpc`,
 unpublished) for **RPC-shaped HTTP** on top of **`id_effect_axum`** and **`id_effect::schema`**.
 
 ## Choosing a wire stack (tonic, tarpc, HTTP+JSON)

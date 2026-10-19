@@ -324,8 +324,39 @@ jobs:
       - name: Ledger tests (CRUD, sessions, JWT, OIDC + PKCE, RBAC, Vault, Redis, replica, jobs, outbox, mail, S3, console, workflows)
         run: cargo nextest run --locked -p ledger
   # ──────────────────────────────────────────────────────────────────────────
+  # RPC (0.12, ADR 0010 Amendment 8): id_effect_rpc (moved out of labs), id_effect_rpc_macros
+  # and the Relay reference app, all features. They are not moon projects yet, so this job is
+  # what runs their clippy and tests on every PR (the workspace jobs build them too).
+  # ──────────────────────────────────────────────────────────────────────────
+  rpc:
+    name: RPC crates
+    runs-on: ubuntu-latest
+    needs: [moon-ci]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: rpc
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: cargo-nextest
+      - name: Clippy
+        run: cargo clippy --locked -p id_effect_rpc -p id_effect_rpc_macros -p relay --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: |
+          cargo nextest run --locked -p id_effect_rpc -p id_effect_rpc_macros -p relay --all-features
+          cargo test --locked -p id_effect_rpc -p id_effect_rpc_macros --doc --all-features
+  # ──────────────────────────────────────────────────────────────────────────
   # Labs: unpublished crates in the separate labs/ workspace (ADR 0010 Amendment 1).
   # No API guarantees, but they must keep building and passing against core.
+  # id_effect_rpc left labs in 0.12 (ADR 0010 Amendment 8); the `rpc` job above tests it.
   # No system packages: since 0.11 (bundled SQLite and duroxide left with the workflow crate) no
   # labs crate links OpenSSL, and aws-lc-sys (rustls via reqwest) builds without the cmake
   # binary on Linux, as in the main-workspace jobs.
@@ -540,6 +571,7 @@ jobs:
       - pg-integration
       - containers-integration
       - reference-ledger
+      - rpc
       - labs
       - minimal-versions
       - validate-packaging
