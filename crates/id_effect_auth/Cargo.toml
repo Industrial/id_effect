@@ -66,6 +66,8 @@ base64 = "0.22.1"
 # API keys are stored as SHA-256 digests of 256-bit random secrets and compared in constant time.
 sha2 = "0.10.9"
 subtle = "2.6.1"
+# `Password` wipes its plaintext on drop.
+zeroize = "1.9.1"
 # jsonwebtoken (release spec 0.9.0 D5) on aws-lc-rs: the provider rustls already brings in, and
 # no `rsa` crate (RUSTSEC-2023-0071). 11.x needs rustc 1.88, within the workspace MSRV.
 jsonwebtoken = { version = "11.1.0", default-features = false, features = [

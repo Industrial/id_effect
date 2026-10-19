@@ -2370,6 +2370,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "wiremock",
+ "zeroize",
 ]
 
 [[package]]
@@ -2444,12 +2445,14 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "subtle",
  "temp-env",
  "tempfile",
  "testcontainers",
  "tokio",
  "url",
  "wiremock",
+ "zeroize",
 ]
 
 [[package]]

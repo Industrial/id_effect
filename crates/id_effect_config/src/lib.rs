@@ -116,7 +116,7 @@ pub use providers::{
   EnvConfigProviderLive, provide_config_provider, provide_env_config_provider,
   provide_figment_config_provider,
 };
-pub use secret::Secret;
+pub use secret::{Secret, SecretBytes, SecretString};
 #[cfg(feature = "vault")]
 pub use vault::{VaultAuth, VaultProvider, VaultSettings};
 #[cfg(all(feature = "toml", feature = "env"))]

@@ -159,7 +159,27 @@ Logs are redacted and escaped by default (ADR 0013 R3; findings M11, M12).
 
 ## Config: `Secret<T: Zeroize>` and its equality
 
-Filled by `r11-sec-secrets`.
+Secrets are zeroized on drop and compared in constant time (ADR 0013 R2; findings M13, L3).
+
+- **`Secret<T>` requires `T: zeroize::Zeroize`** and overwrites its value when dropped. `String`,
+  `Vec<u8>`, the integers and byte arrays implement it; `Secret<String>`, `Secret<Vec<u8>>` and
+  every value loaded by `Config::…().secret()` or `VaultProvider::secret` compile unchanged. A
+  `Secret<&str>` or a `Secret` of your own type now fails with `the trait bound T: Zeroize is not
+  satisfied`: hold an owned `String`, or implement `Zeroize` (or `#[derive(Zeroize)]` with
+  zeroize's `derive` feature). Generic code over `Secret<T>` adds the `T: Zeroize` bound;
+  `Config::<T>::secret` and `VaultProvider::secret::<T>` carry it too. `into_inner()` hands the
+  value to the caller, who then owns wiping it.
+- **New aliases** `SecretString` (`Secret<String>`) and `SecretBytes` (`Secret<Vec<u8>>`).
+- **Equality exists only on `SecretString` and `SecretBytes`** and uses
+  `subtle::ConstantTimeEq` (a length difference still returns early). The generic
+  `impl<T: PartialEq> PartialEq for Secret<T>` is removed, so `==` on, say, `Secret<u64>` no
+  longer compiles: compare `a.expose() == b.expose()` where timing does not matter, or keep the
+  value as a string or bytes.
+- `id_effect_auth::Password` zeroizes its plaintext on drop (it implements `Zeroize` and
+  `ZeroizeOnDrop`); its API is unchanged.
+- `id_effect_auth::Session`'s `Debug` no longer prints attribute values (they can hold OIDC
+  tokens): it shows the id prefix, the user id, the attribute keys (`attr_keys`) and the
+  timestamps. Read values with `attr(key)` / `attrs()`.
 
 ## STM: `id_effect_fp::stm` moves to `id_effect::stm`
 

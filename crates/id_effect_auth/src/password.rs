@@ -37,6 +37,7 @@ use argon2::{
 use id_effect::{
   Ctx, Effect, HCons, HList, HNil, Layer, Permit, Selector, Semaphore, fail, hlist, need,
 };
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// The longest password the login paths hash, in bytes (`BasicAuth`) or characters (the account
 /// flows' default `max_password_len`), so a request cannot make argon2 hash megabytes.
@@ -117,9 +118,23 @@ impl Default for PasswordParams {
   }
 }
 
-/// A plaintext password. `Debug` never shows it.
+/// A plaintext password. `Debug` never shows it, and it is overwritten with zeroes on drop.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Password(String);
+
+impl Zeroize for Password {
+  fn zeroize(&mut self) {
+    self.0.zeroize();
+  }
+}
+
+impl Drop for Password {
+  fn drop(&mut self) {
+    self.zeroize();
+  }
+}
+
+impl ZeroizeOnDrop for Password {}
 
 impl Password {
   /// Wrap `plaintext`.
@@ -683,6 +698,16 @@ mod tests {
     assert_eq!(format!("{p:?}"), "Password(<redacted>)");
     assert_eq!(p.expose(), "hunter2");
     assert_eq!(Password::from("x"), Password::new("x"));
+  }
+
+  #[test]
+  fn m13_password_is_zeroized_on_drop() {
+    fn zeroized_on_drop<T: ZeroizeOnDrop>() {}
+    zeroized_on_drop::<Password>();
+    // `Drop` runs exactly this: the plaintext is wiped in place.
+    let mut p = Password::new("hunter2");
+    p.zeroize();
+    assert_eq!(p.expose(), "");
   }
 
   #[test]
