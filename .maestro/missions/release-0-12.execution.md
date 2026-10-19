@@ -159,4 +159,10 @@ webtransport (wave 5).
 | F40 | rpc-ws-sse | Rust `WsClient` is JSON-only over plain `ws://` (`wss://` via `WsClient::over`); add a TLS connector + postcard | r12-w6-kit-template or 0.13 |
 | F41 | fuzz-security | `security_surface.rs` `PENDING`: `r9_webtransport_connect_from_foreign_origin_refused` (webtransport, sent) and `posture_prod_refuses_dev_certificate` (kit-template); list must be empty at exit | r12-e12-3-webtransport, r12-w6-kit-template, exit check |
 | F42 | fuzz-security | `r10_zero_rtt_on_mutation` only proves the sole opt-out admits safe methods (no per-procedure 0-RTT API); `security_compile_fail` depends on rpc/axum directly until kit gains `rpc`/`http3` features — move the cases to kit | r12-w6-kit-template |
+| F43 | webtransport | host entry points (`ServerHandle`, `serve_router`) keep WebTransport off; only `serve_h3` + `Http3Options::webtransport()` on a `webtransport::quic_limits` endpoint serves it — wire it into the host | r12-w6-kit-template (offered) or 0.13 |
+| F44 | webtransport | axum `tests/http3.rs` timing tests fail under load ≈ 17 (10/11 alone); same as F37 | r12-w8-kpis (CI stability, with F37) |
+| F45 | webtransport | no Deno WebTransport test of the TS client (browser test covers the Rust/JS page path) | 0.13 |
+| F46 | rpc-check | no override to retire an old version on purpose (dropping a version always fails); add `--allow-retired Service:N` | 0.13 |
+| F47 | rpc-check | classification deviates from spec wording: a narrowed output is compatible (old clients still read it); a removed input field is compatible unless unknown fields are refused — record in ch33-12 (done) and ADR 0014 at exit | r12-t0-migration-guide |
+| F27 | (update) | reassigned to coordinator follow-up leaf r12-f-client-batching (tsk-mvfohzqk-xg47t7) | r12-f-client-batching |
 | F21 | subscriptions | no cursor = replay from `starting_after` (default whole log), not "from now" — `EventLog` has no head read; document, or add a head read in id_effect_events | 0.13 / document in ch33-08 |
