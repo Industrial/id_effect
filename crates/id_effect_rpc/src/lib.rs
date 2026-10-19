@@ -31,11 +31,15 @@
 //! - [`contract`] — the serde contract model and its golden snapshot (D11)
 //! - [`wire`] — call envelope, exit union, reserved failures, frames, cursors, sessions
 //! - [`codec`] — the [`Codec`](codec::Codec) trait, JSON, negotiation (D13)
-//! - [`registry`] — [`Procedure`] (access typestate) and [`RpcGroup`]
-//! - [`server`] — [`RpcServer`]: the `/rpc` mount as a declared typed route, [`server::dispatch`]
+//! - [`registry`] — [`Procedure`] (access typestate, kind, version) and [`RpcGroup`]
+//! - [`handler`] — the handler shapes of the six kinds and their erased, transport-independent
+//!   form; [`kinds`] — [`Duplex`](kinds::Duplex), [`Subscription`](kinds::Subscription), the
+//!   frames of a running call, the in-process transport (feature `test-util`)
+//! - [`error_union`] — typed error unions `{"_tag": …}`; [`cancel`] — deadlines and cancellation;
+//!   [`idempotency`] — `Idempotency-Key` replay for mutations
+//! - [`server`] — [`RpcServer`]: the `/rpc` routes as declared typed routes, [`server::dispatch`]
 //! - [`client`] — [`RpcClient`] (feature `client`, default)
-//! - [`protocol`], [`serialization`], [`stream`] — the labs tagged-JSON format the HTTP path still
-//!   speaks until the 0.12 kinds move it onto [`wire`]
+//! - [`protocol`], [`serialization`] — the dispatch path constant, tuple-Schema bridging
 //! - [`correlation`], [`span`], [`versioning`], [`openapi`], [`RpcError`] — edge helpers
 //!
 //! `#[rpc::service]` ([`service`], re-exported from `id_effect_rpc_macros`) declares a service on a
@@ -53,6 +57,7 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
+pub mod cancel;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod codec;
@@ -60,13 +65,16 @@ pub mod contract;
 pub mod correlation;
 mod envelope;
 pub mod error;
+pub mod error_union;
+pub mod handler;
+pub mod idempotency;
+pub mod kinds;
 pub mod openapi;
 pub mod protocol;
 pub mod registry;
 pub mod serialization;
 pub mod server;
 pub mod span;
-pub mod stream;
 pub mod versioning;
 pub mod wire;
 
@@ -75,7 +83,10 @@ pub use client::{RpcClient, RpcClientConfig, RpcClientError};
 pub use contract::{Contract, ProcedureAccess, ProcedureContract, ProcedureKind, ServiceContract};
 pub use envelope::{RpcEnvelope, RpcErrorCode};
 pub use error::RpcError;
+pub use error_union::{RpcErrorStatus, RpcErrorUnion};
+pub use handler::WireSchema;
 pub use id_effect_rpc_macros::service;
-pub use protocol::{RPC_DISPATCH_PATH, RpcWireRequest, RpcWireResponse};
+pub use kinds::{Duplex, Subscription, SubscriptionItem};
+pub use protocol::RPC_DISPATCH_PATH;
 pub use registry::{Procedure, RpcGroup, RpcMethodEntry};
-pub use server::{RpcServer, layer_rpc};
+pub use server::{RpcPrincipal, RpcServer, layer_rpc};

@@ -28,15 +28,18 @@ let contract = group.service_contract("Greeter", 1);
 let app: axum::Router = RpcServer::new(group).mount_default().with_state(DynEnv::new());
 ```
 
-Wire format of `POST /rpc` (the 0.12 envelope of [`wire`](src/wire.rs) replaces it as the call
-kinds land):
+Wire format of `POST /rpc` (the [`wire`](src/wire.rs) envelope; every `POST` sends
+`Content-Type: application/json` and `x-rpc: 1`):
 
 ```json
-{"tag":"Greeter.greet","payload":{"name":"Ada","enthusiasm":3}}
-{"kind":"success","tag":"Greeter.greet","success":{"message":"Hello, Ada!","count":3}}
+{"id":7,"tag":"Greeter.greet","payload":{"name":"Ada","enthusiasm":3}}
+{"id":7,"tag":"Greeter.greet","exit":{"_tag":"Success","value":{"message":"Hello, Ada!","count":3}}}
 ```
 
-An unknown tag answers `404` `application/problem+json`; a guard's refusal is the guard's response.
+Queries are also served at `GET /rpc/{tag}?input=<json>` (ETag, `If-None-Match` → 304), every
+query, mutation and stream at `POST /rpc/{tag}`. A typed error is `{"_tag":"Failure","error":{"_tag":…}}`;
+a defect is `InternalError` with the correlation id only. An unknown tag answers `404`
+`application/problem+json`; a guard's refusal is the guard's response.
 
 ## Modules
 
@@ -45,10 +48,12 @@ An unknown tag answers `404` `application/problem+json`; a guard's refusal is th
 | [`contract`](src/contract.rs) | Service contract model (serde), `assert_snapshot` golden for `rpc.contract.json` |
 | [`wire`](src/wire.rs) | Call envelope, exit union, reserved failures, frames, cursors, resume sessions |
 | [`codec`](src/codec/mod.rs) | `Codec` trait, JSON, content-type and subprotocol negotiation |
-| [`registry`](src/registry.rs) | `Procedure` (access typestate) and `RpcGroup` |
-| [`server`](src/server/mod.rs) | `RpcServer`: `/rpc` as a declared typed route, transport-independent `dispatch` |
+| [`registry`](src/registry.rs) | `Procedure` (access typestate, kind, version) and `RpcGroup` |
+| [`handler`](src/handler.rs), [`kinds`](src/kinds.rs) | Handler shapes of the six kinds, `Duplex`, `Subscription`, call frames, in-process transport |
+| [`error_union`](src/error_union.rs), [`cancel`](src/cancel.rs), [`idempotency`](src/idempotency.rs) | Typed error unions, deadlines and cancellation, `Idempotency-Key` replay |
+| [`server`](src/server/mod.rs) | `RpcServer`: `/rpc` routes as declared typed routes, transport-independent `dispatch` |
 | [`client`](src/client/mod.rs) | `RpcClient` over `HttpClientService` (feature `client`, default) |
-| `protocol`, `serialization`, `stream` | Tagged JSON wire format, Schema bridging, NDJSON chunks |
+| `protocol`, `serialization` | The dispatch path, tuple-Schema bridging |
 | `error`, `correlation`, `span`, `versioning`, `openapi` | Edge helpers: `RpcError`, `x-correlation-id`, tracing, API versions, OpenAPI 3.0 |
 
 ## Features

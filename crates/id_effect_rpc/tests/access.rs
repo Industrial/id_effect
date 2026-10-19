@@ -62,7 +62,8 @@ async fn call(tag: &str, staff: bool) -> (StatusCode, Option<String>, serde_json
   let mut req = Request::builder()
     .method("POST")
     .uri("/rpc")
-    .header("content-type", "application/json");
+    .header("content-type", "application/json")
+    .header("x-rpc", "1");
   if staff {
     req = req.header("x-staff", "yes");
   }
@@ -93,7 +94,7 @@ async fn rpc_unregistered_tag_is_404_problem() {
 
   let (status, _, body) = call("Greeter.greet", false).await;
   assert_eq!(status, StatusCode::OK);
-  assert_eq!(body["success"]["message"], "Hello, Ada!");
+  assert_eq!(body["exit"]["value"]["message"], "Hello, Ada!");
 }
 
 /// `Wrap::<A>::decided()` is the inherent `true` method only when `A: Decided`; otherwise the
@@ -142,7 +143,7 @@ async fn rpc_group_requires_access_decision() {
   assert_eq!(status, StatusCode::FORBIDDEN);
   let (status, _, body) = call("Greeter.reset", true).await;
   assert_eq!(status, StatusCode::OK);
-  assert_eq!(body["success"]["message"], "reset");
+  assert_eq!(body["exit"]["value"]["message"], "reset");
 
   // The `/rpc` mount itself is a declared route of the deny-by-default router.
   let router: Router<DynEnv> = RpcServer::new(group()).router();

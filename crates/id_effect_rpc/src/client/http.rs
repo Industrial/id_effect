@@ -1,18 +1,24 @@
-//! `POST /rpc` calls through id_effect_platform's [`HttpClientService`].
+//! `POST /rpc` calls through id_effect_platform's [`HttpClientService`], in the 0.12 wire
+//! format: a [`WireCall`] envelope out, a [`WireResult`] (or a Problem) back.
 
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
 use id_effect::{Effect, HList, Selector, fail, need};
+use id_effect_axum::route::Problem;
 use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
 
 use super::{RPC_HEADER, RpcClient, RpcClientError};
-use crate::envelope::RpcEnvelope;
-use crate::protocol::{RpcWireRequest, RpcWireResponse};
-use crate::serialization::{StructWireJson, encode_struct_fields, validate_success_json};
+use crate::serialization::{
+  RpcSerializationError, StructWireJson, decode_payload, encode_struct_fields,
+};
+use crate::wire::{WireCall, WireExit, WireResult};
 
 impl RpcClient {
   /// Call the procedure `tag` with a schema-encoded `payload` (`payload_fields` names the
   /// members of the encoded object) and decode its output with `success_schema`.
+  ///
+  /// A typed or reserved failure is [`RpcClientError::Failure`] (the `{"_tag": …}` value); a
+  /// refusal before the procedure ran is [`RpcClientError::Refused`] with the server's Problem.
   pub fn call<A, IA, EA, B, IB, EB, R, I>(
     &self,
     tag: impl Into<String>,
@@ -34,10 +40,7 @@ impl RpcClient {
       Ok(v) => v,
       Err(e) => return fail(RpcClientError::Serialization(e)),
     };
-    let wire = RpcWireRequest {
-      tag: tag.into(),
-      payload,
-    };
+    let wire = WireCall::new(tag, payload);
     // A tag and a `serde_json::Value` always serialize.
     let body = serde_json::to_vec(&wire).unwrap_or_default();
     let success_schema = success_schema.clone();
@@ -67,9 +70,10 @@ impl RpcClient {
   }
 }
 
-/// Decode a response: the success payload against `schema`, a failure envelope (wrapped in the
-/// wire response or bare) as [`RpcClientError::Rpc`], anything else by status.
-fn decode_response<B, IB, EB>(
+/// Decode a response: a [`WireResult`] (success against `schema`, failure as
+/// [`RpcClientError::Failure`]), a Problem as [`RpcClientError::Refused`], anything else by
+/// status.
+pub fn decode_response<B, IB, EB>(
   schema: &Schema<B, IB, EB>,
   status: u16,
   body: &[u8],
@@ -79,23 +83,23 @@ where
   IB: 'static,
   EB: EffectData + 'static,
 {
-  if let Ok(wire) = serde_json::from_slice::<RpcWireResponse>(body) {
-    return match wire {
-      RpcWireResponse::Success { success, .. } => {
-        validate_success_json(schema, &success).map_err(RpcClientError::Serialization)
+  if let Ok(result) = serde_json::from_slice::<WireResult>(body) {
+    return match result.exit {
+      WireExit::Success { value } => {
+        decode_payload(schema, &value).map_err(RpcClientError::Serialization)
       }
-      RpcWireResponse::Failure { failure, .. } => Err(RpcClientError::Rpc(failure)),
+      WireExit::Failure { error } => Err(RpcClientError::Failure(error)),
     };
   }
-  if let Ok(envelope) = serde_json::from_slice::<RpcEnvelope>(body) {
-    return Err(RpcClientError::Rpc(envelope));
+  if let Ok(problem) = serde_json::from_slice::<Problem>(body) {
+    return Err(RpcClientError::Refused(Box::new(problem)));
   }
   if status != 200 {
     return Err(RpcClientError::UnexpectedStatus(status));
   }
   Err(RpcClientError::Serialization(
-    crate::serialization::RpcSerializationError::Protocol(format!(
-      "a 200 response that is not an rpc response ({} bytes)",
+    RpcSerializationError::Protocol(format!(
+      "a 200 response that is not an rpc result ({} bytes)",
       body.len()
     )),
   ))
@@ -104,7 +108,6 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::envelope::RpcErrorCode;
   use id_effect::hlist;
   use id_effect::schema;
   use id_effect_platform::http::{HttpClient, HttpResponse};
@@ -174,12 +177,9 @@ mod tests {
   }
 
   #[test]
-  fn call_posts_tagged_json_to_dispatch_url() {
-    let wire = RpcWireResponse::success(
-      "Greeter.greet",
-      serde_json::json!({"message": "Hello!", "count": 1}),
-    );
-    let (out, mock) = call_with(200, serde_json::to_vec(&wire).unwrap());
+  fn call_posts_a_wire_call_to_the_dispatch_url() {
+    let body = br#"{"tag":"Greeter.greet","exit":{"_tag":"Success","value":{"message":"Hello!","count":1}}}"#;
+    let (out, mock) = call_with(200, body.to_vec());
     assert_eq!(out.expect("call").0, "Hello!");
     let req = mock.last.lock().unwrap().clone().unwrap();
     assert_eq!(req.url, "http://127.0.0.1:8080/rpc");
@@ -193,27 +193,22 @@ mod tests {
 
   #[test]
   fn failures_decode_by_shape_then_status() {
-    let envelope = RpcEnvelope {
-      code: RpcErrorCode::NotFound,
-      message: "nope".into(),
-      correlation_id: None,
-      details: None,
-    };
-    let wire = RpcWireResponse::failure("Greeter.greet", envelope.clone());
-    let (out, _) = call_with(404, serde_json::to_vec(&wire).unwrap());
-    assert!(matches!(out, Err(RpcClientError::Rpc(e)) if e == envelope));
-
-    let (out, _) = call_with(400, serde_json::to_vec(&envelope).unwrap());
-    assert!(matches!(out, Err(RpcClientError::Rpc(e)) if e.code == RpcErrorCode::NotFound));
+    let failure = br#"{"tag":"Greeter.greet","exit":{"_tag":"Failure","error":{"_tag":"NotFound","message":"nope"}}}"#;
+    let (out, _) = call_with(404, failure.to_vec());
+    let err = out.unwrap_err();
+    assert_eq!(err.failure_tag(), Some("NotFound"));
 
     let (out, _) = call_with(404, br#"{"status":404,"title":"Not Found"}"#.to_vec());
-    assert!(matches!(out, Err(RpcClientError::UnexpectedStatus(404))));
+    assert!(matches!(out, Err(RpcClientError::Refused(p)) if p.status.as_u16() == 404));
+
+    let (out, _) = call_with(502, b"bad gateway".to_vec());
+    assert!(matches!(out, Err(RpcClientError::UnexpectedStatus(502))));
 
     let (out, _) = call_with(200, b"not json".to_vec());
     assert!(matches!(out, Err(RpcClientError::Serialization(_))));
 
-    let bad_success = RpcWireResponse::success("Greeter.greet", serde_json::json!({"message": 1}));
-    let (out, _) = call_with(200, serde_json::to_vec(&bad_success).unwrap());
+    let bad = br#"{"tag":"Greeter.greet","exit":{"_tag":"Success","value":{"message":1}}}"#;
+    let (out, _) = call_with(200, bad.to_vec());
     assert!(matches!(out, Err(RpcClientError::Serialization(_))));
   }
 

@@ -140,6 +140,38 @@ let out = client.call("Greeter.greet", input, &payload, &["name", "n"], &success
   `#[rpc::service]` (r12-e12-1-macro) generates the handler trait, client and contract instead.
 - `RpcClient` is behind the default feature `client`.
 
+## RPC: the 0.12 wire format, procedure kinds and typed errors
+
+The HTTP path speaks the 0.12 wire format (design note `r12-rpc-design.md`). **No shim**: one
+server cannot answer both formats on the same route, and the 0.11 format was labs-only.
+
+```text
+before: {"tag":"Greeter.greet","payload":…}  →  {"kind":"success","tag":…,"success":…}
+after:  {"id":7,"tag":"Greeter.greet","payload":…}  →  {"id":7,"tag":…,"exit":{"_tag":"Success","value":…}}
+        failure: {"exit":{"_tag":"Failure","error":{"_tag":"NotFound","message":"…"}}}
+```
+
+- Every `POST` must send `Content-Type: application/json` and `x-rpc: 1` (`RpcClient` does);
+  without them the server answers 415 / 403 Problem Details. `GET /rpc/{tag}?input=<json>` serves
+  queries without either.
+- `RpcWireRequest`, `RpcWireResponse`, `id_effect_rpc::stream` and the `serialization` helpers
+  `decode_wire_request`, `encode_wire_response`, `rpc_error_to_wire`, `success_wire`,
+  `success_json`, `serialization_to_rpc_error`, `validate_success_json` are removed: use
+  `wire::{WireCall, WireResult, WireExit, Frame}`.
+- `RpcClientError::Rpc(RpcEnvelope)` is replaced by `RpcClientError::Failure(serde_json::Value)`
+  (the `{"_tag": …}` error; `failure_tag()`, `reserved()`) and `RpcClientError::Refused(Problem)`.
+- `RpcError` handlers keep working through `RpcGroup::register`; their errors are the union
+  `InvalidArgument | NotFound | AlreadyExists | Unauthenticated` with a `message`.
+  `RpcError::internal(..)` and every defect answer `InternalError { id }` (the correlation id):
+  the message is logged, never sent.
+- A payload that fails its Schema is `422` `InvalidInput { issues }` (every issue, JSON Pointer
+  paths), no longer `400` `invalid_argument`.
+- `RpcServer::endpoint()` is `endpoints()` (`POST /rpc`, `POST /rpc/{tag}`, `GET /rpc/{tag}`);
+  `RpcMethodEntry::dispatch` is gone — call `server::dispatch::{dispatch, open, start_*}`.
+- New procedures use the per-kind registration methods (`RpcGroup::query`, `mutation`,
+  `server_stream`, `client_stream`, `bidi`, `subscription`) with `WireSchema` and a typed error
+  implementing `RpcErrorUnion`.
+
 ## RPC: OpenAPI output is 3.1 (was 3.0)
 
 ## Templates: `server.http3` in the `service` template

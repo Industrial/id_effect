@@ -7,14 +7,17 @@
 
 pub mod http;
 
-use crate::envelope::RpcEnvelope;
+use id_effect_axum::route::Problem;
+use serde_json::Value;
+
 use crate::protocol::RPC_DISPATCH_PATH;
 use crate::serialization::RpcSerializationError;
+use crate::wire::RpcFailure;
 
-/// Header every first-party client sends on calls (`x-rpc: 1`, ADR 0014 C5).
-pub const RPC_HEADER: &str = "x-rpc";
+pub use crate::server::RPC_HEADER;
 
-/// Client-side RPC failures: the wire, the transport, or the remote procedure's failure.
+/// Client-side RPC failures: the wire, the transport, the server's refusal, or the remote
+/// procedure's failure.
 #[derive(Debug, thiserror::Error)]
 pub enum RpcClientError {
   /// Wire encode/decode or schema validation failed.
@@ -23,13 +26,45 @@ pub enum RpcClientError {
   /// Platform HTTP transport error.
   #[error("http: {0}")]
   Http(#[from] id_effect_platform::error::HttpError),
-  /// The remote procedure failed with this envelope.
-  #[error("rpc {code:?}: {message}", code = .0.code, message = .0.message)]
-  Rpc(RpcEnvelope),
-  /// The server refused the call before running it (a Problem: unknown procedure, guard,
-  /// codec, size), or answered with an unexpected status.
+  /// The procedure ran and failed: its typed error (`{"_tag": …}`, a member of the procedure's
+  /// error union) or a reserved failure ([`RpcClientError::reserved`]).
+  #[error("rpc failure {}", failure_tag(.0))]
+  Failure(Value),
+  /// The server refused the call before running it: an RFC 9457 Problem (unknown procedure,
+  /// guard, codec, size).
+  #[error("refused {}: {}", .0.status.as_u16(), .0.detail.as_deref().unwrap_or(&.0.title))]
+  Refused(Box<Problem>),
+  /// Any other response.
   #[error("unexpected status {0}")]
   UnexpectedStatus(u16),
+}
+
+fn failure_tag(error: &Value) -> &str {
+  error
+    .get("_tag")
+    .and_then(Value::as_str)
+    .unwrap_or("(untagged)")
+}
+
+impl RpcClientError {
+  /// The `_tag` of a [`RpcClientError::Failure`].
+  pub fn failure_tag(&self) -> Option<&str> {
+    match self {
+      Self::Failure(error) => Some(failure_tag(error)),
+      _ => None,
+    }
+  }
+
+  /// The reserved failure (`InternalError`, `InvalidInput`, …) of a
+  /// [`RpcClientError::Failure`], if it is one.
+  pub fn reserved(&self) -> Option<RpcFailure> {
+    match self {
+      Self::Failure(error) if RpcFailure::is_reserved(failure_tag(error)) => {
+        serde_json::from_value(error.clone()).ok()
+      }
+      _ => None,
+    }
+  }
 }
 
 /// Configuration for [`RpcClient`].
@@ -92,7 +127,7 @@ impl RpcClient {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::envelope::RpcErrorCode;
+  use axum::http::StatusCode;
 
   #[test]
   fn urls_join_base_and_path() {
@@ -107,13 +142,23 @@ mod tests {
 
   #[test]
   fn errors_display_their_cause() {
-    let rpc = RpcClientError::Rpc(RpcEnvelope {
-      code: RpcErrorCode::NotFound,
-      message: "no user".into(),
-      correlation_id: None,
-      details: None,
-    });
-    assert_eq!(rpc.to_string(), "rpc NotFound: no user");
+    let rpc = RpcClientError::Failure(serde_json::json!({"_tag": "NotFound"}));
+    assert_eq!(rpc.to_string(), "rpc failure NotFound");
+    assert_eq!(rpc.failure_tag(), Some("NotFound"));
+    assert!(rpc.reserved().is_none());
+    let reserved = RpcClientError::Failure(serde_json::json!({"_tag": "DeadlineExceeded"}));
+    assert_eq!(reserved.reserved(), Some(RpcFailure::DeadlineExceeded));
+    let untagged = RpcClientError::Failure(serde_json::json!(1));
+    assert_eq!(untagged.to_string(), "rpc failure (untagged)");
+    assert!(untagged.reserved().is_none());
+    let refused = RpcClientError::Refused(Box::new(Problem::new(StatusCode::FORBIDDEN)));
+    assert_eq!(refused.to_string(), "refused 403: Forbidden");
+    assert!(refused.failure_tag().is_none() && refused.reserved().is_none());
+    let detailed = Problem::new(StatusCode::NOT_FOUND).with_detail("unknown rpc procedure");
+    assert_eq!(
+      RpcClientError::Refused(Box::new(detailed)).to_string(),
+      "refused 404: unknown rpc procedure"
+    );
     assert_eq!(
       RpcClientError::UnexpectedStatus(404).to_string(),
       "unexpected status 404"

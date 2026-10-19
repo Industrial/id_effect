@@ -1,4 +1,5 @@
-//! JSON serialization and [`id_effect::schema`] bridging for RPC wire messages.
+//! [`id_effect::schema`] bridging for tuple Schemas: decode a JSON payload, encode a tuple as a
+//! named JSON object ([`StructWireJson`]). The wire messages themselves are [`crate::wire`].
 
 use id_effect::schema::Schema;
 use id_effect::schema::data::EffectData;
@@ -6,9 +7,6 @@ use id_effect::schema::serde_bridge::unknown_from_serde_json;
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
-
-use crate::RpcError;
-use crate::protocol::{RpcWireRequest, RpcWireResponse};
 
 /// Serialization or schema validation failure at the RPC boundary.
 #[derive(Debug, Error, PartialEq)]
@@ -35,17 +33,7 @@ impl From<serde_json::Error> for RpcSerializationError {
   }
 }
 
-/// RPC serialization helper.
-pub fn decode_wire_request(bytes: &[u8]) -> Result<RpcWireRequest, RpcSerializationError> {
-  Ok(serde_json::from_slice(bytes)?)
-}
-
-/// RPC serialization helper.
-pub fn encode_wire_response(response: &RpcWireResponse) -> Result<Vec<u8>, RpcSerializationError> {
-  Ok(serde_json::to_vec(response)?)
-}
-
-/// RPC serialization helper.
+/// Decode `payload` with `schema` (first issue only).
 pub fn decode_payload<A, I, E>(
   schema: &Schema<A, I, E>,
   payload: &Value,
@@ -64,7 +52,7 @@ where
     })
 }
 
-/// RPC serialization helper.
+/// Encode `value` with `schema` as an object named by `field_names`.
 pub fn encode_struct_fields<A, I, E>(
   schema: &Schema<A, I, E>,
   field_names: &[&str],
@@ -80,57 +68,6 @@ where
     .encode(value)
     .to_json_object(field_names)
     .map_err(RpcSerializationError::Json)
-}
-
-/// RPC serialization helper.
-pub fn validate_success_json<A, I, E>(
-  schema: &Schema<A, I, E>,
-  success: &Value,
-) -> Result<A, RpcSerializationError>
-where
-  E: EffectData + 'static,
-  A: 'static,
-  I: 'static,
-{
-  decode_payload(schema, success)
-}
-
-/// RPC serialization helper.
-pub fn serialization_to_rpc_error(err: RpcSerializationError) -> RpcError {
-  match err {
-    RpcSerializationError::Json(msg) => RpcError::invalid_argument(msg),
-    RpcSerializationError::Schema { path, message } => {
-      RpcError::invalid_argument(format!("{path}: {message}"))
-    }
-    RpcSerializationError::Protocol(msg) => RpcError::invalid_argument(msg),
-  }
-}
-
-/// RPC serialization helper.
-pub fn rpc_error_to_wire(tag: &str, err: RpcError) -> RpcWireResponse {
-  RpcWireResponse::failure(tag, err.envelope().clone())
-}
-
-/// RPC serialization helper.
-pub fn success_wire<A, I, E>(
-  tag: &str,
-  schema: &Schema<A, I, E>,
-  field_names: &[&str],
-  value: A,
-) -> Result<RpcWireResponse, RpcSerializationError>
-where
-  E: EffectData + 'static,
-  A: 'static,
-  I: 'static,
-  I: StructWireJson,
-{
-  let success = encode_struct_fields(schema, field_names, value)?;
-  Ok(RpcWireResponse::success(tag, success))
-}
-
-/// RPC serialization helper.
-pub fn success_json(tag: &str, value: Value) -> RpcWireResponse {
-  RpcWireResponse::success(tag, value)
 }
 
 fn json_object(fields: &[(&str, serde_json::Value)]) -> Value {
@@ -230,22 +167,12 @@ mod tests {
     let (name, n) = decode_payload(&s, &payload).expect("ok");
     assert_eq!(name, "Ada");
     assert_eq!(n, 2);
+    let err = decode_payload(&s, &serde_json::json!({"name": 1})).unwrap_err();
+    assert!(matches!(err, RpcSerializationError::Schema { .. }));
   }
 
   #[test]
-  fn wire_requests_and_responses_decode_and_encode() {
-    let req = decode_wire_request(br#"{"tag":"A.b","payload":1}"#).unwrap();
-    assert_eq!(req.tag, "A.b");
-    let err = decode_wire_request(b"{").unwrap_err();
-    assert!(matches!(err, RpcSerializationError::Json(_)));
-    let bytes = encode_wire_response(&success_json("A.b", serde_json::json!(2))).unwrap();
-    assert!(String::from_utf8(bytes).unwrap().contains("\"success\":2"));
-    let wire = rpc_error_to_wire("A.b", RpcError::not_found("x"));
-    assert!(matches!(wire, RpcWireResponse::Failure { .. }));
-  }
-
-  #[test]
-  fn serialization_errors_become_invalid_argument() {
+  fn errors_display() {
     let cases = [
       RpcSerializationError::Json("j".into()),
       RpcSerializationError::Schema {
@@ -254,16 +181,11 @@ mod tests {
       },
       RpcSerializationError::Protocol("p".into()),
     ];
-    let messages: Vec<String> = cases
-      .into_iter()
-      .map(|e| {
-        assert!(!e.to_string().is_empty());
-        let err = serialization_to_rpc_error(e);
-        assert_eq!(err.envelope().code, crate::RpcErrorCode::InvalidArgument);
-        err.envelope().message.clone()
-      })
-      .collect();
-    assert_eq!(messages, ["j", "a: m", "p"]);
+    for e in cases {
+      assert!(!e.to_string().is_empty());
+    }
+    let from: RpcSerializationError = serde_json::from_str::<u8>("x").unwrap_err().into();
+    assert!(matches!(from, RpcSerializationError::Json(_)));
   }
 
   #[test]
@@ -281,18 +203,6 @@ mod tests {
       serde_json::json!({"a": 1, "b": "b", "c": true})
     );
     assert!((1, 2, 3).to_json_object(&["a", "b"]).is_err());
-    let s = schema::struct_(
-      "message",
-      schema::string::<()>(),
-      "count",
-      schema::i64::<()>(),
-    );
-    let wire = success_wire("A.b", &s, &["message", "count"], ("m".to_owned(), 1)).unwrap();
-    assert!(matches!(wire, RpcWireResponse::Success { .. }));
-    let err = success_wire("A.b", &s, &["message"], ("m".to_owned(), 1)).unwrap_err();
-    assert!(matches!(err, RpcSerializationError::Json(_)));
-    let ok = validate_success_json(&s, &serde_json::json!({"message": "m", "count": 2})).unwrap();
-    assert_eq!(ok.1, 2);
   }
 
   #[test]
@@ -306,5 +216,6 @@ mod tests {
     let json =
       encode_struct_fields(&s, &["message", "count"], ("hi".to_owned(), 3)).expect("encode");
     assert_eq!(json, serde_json::json!({"message": "hi", "count": 3}));
+    assert!(encode_struct_fields(&s, &["message"], ("hi".to_owned(), 3)).is_err());
   }
 }

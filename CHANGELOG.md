@@ -59,6 +59,21 @@
   `client` (default), `postcard`, `ws`, `sse`, `events`, `mesh`, `channels`, `http3`,
   `webtransport`, `test-util`. `id_effect_rpc::service` re-exports `#[rpc::service]` from
   `id_effect_rpc_macros`. Book chapter 33 "One call surface".
+- `id_effect_rpc` procedure kinds (ADR 0014 §2, r12-e12-1-kinds): `Procedure::server_stream`,
+  `client_stream`, `bidi`, `subscription` and `.version(n)`, `.max_items(n)`, `.max_bytes(n)`;
+  `RpcGroup::{query, mutation, server_stream, client_stream, bidi, subscription}` take the
+  handler shapes of the new `handler` module (`QueryHandler`, `MutationHandler`,
+  `ServerStreamHandler`, `ClientStreamHandler`, `BidiHandler`, `SubscriptionHandler`, each a
+  method returning an `Effect`) and `WireSchema` (from any `Schema`, `WireSchema::of::<T>()`).
+  `kinds`: `Duplex`, `Subscription`, `SubscriptionItem`, `CallFrames`, and the in-process
+  transport `InProcess` (feature `test-util`). `error_union`: typed error unions
+  (`RpcErrorUnion`, `RpcErrorStatus`). `cancel`: per-call deadlines (`x-rpc-deadline-ms`, capped
+  by `RpcServer::with_max_deadline`, 30 s default) and cancel signals. `idempotency`:
+  `IdempotencyStore` and the bounded `MemoryIdempotencyStore` (24 h, 100,000 keys, D14).
+  `server::dispatch`: `open` and `start_*` for every kind, the seam of every transport. HTTP:
+  `GET /rpc/{tag}?input=` for queries with ETag / 304, `POST /rpc/{tag}` for every unary and
+  stream kind (NDJSON server streams, NDJSON client streams with item and byte caps). Book
+  chapter 33.1.
 
 ### Changed
 
@@ -73,6 +88,13 @@
   `RpcClientError::Rpc` carries the `RpcEnvelope`. The `codegen` module (trait source strings) is
   removed; its route metadata types moved to `openapi`. `RpcClient` is behind the default
   `client` feature.
+- `id_effect_rpc` speaks the 0.12 wire format on HTTP (`WireCall` in, `WireResult` with a `_tag`
+  exit out); the labs `RpcWireRequest` / `RpcWireResponse`, the `stream` module and the
+  serialization helpers built on them are removed. A typed failure answers its error's status, a
+  Schema failure 422 `InvalidInput` with every issue. Every `POST` needs a codec `Content-Type`
+  and `x-rpc: 1`. `RpcClientError::Rpc` is replaced by `Failure` (the `_tag` value) and `Refused`
+  (the server's Problem). `RpcServer::endpoint` is `endpoints` (three routes); `RpcMethodEntry`
+  no longer has `dispatch` (use `server::dispatch`).
 - `id_effect_platform::http::HttpClientConfig` gains the public fields `root_certificates` and
   (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
 - `id_effect_axum::HostConfig` gains the public fields `tls` and `http3` (struct literals need
@@ -122,6 +144,17 @@
   input is decoded; an unknown tag answers 404 Problem Details; the `/rpc` mount sits behind the
   deny-by-default router. Over-cap bodies are 413 and unknown codecs 415 Problems. Tests
   `rpc_unregistered_tag_is_404_problem`, `rpc_group_requires_access_decision`.
+- RPC calls (ADR 0014 C5, C10; ADR 0013 R3, R4, R9): every `POST` needs `application/json` (or
+  the stream's NDJSON) and `x-rpc: 1` (415 / 403 otherwise), so a form or a simple cross-site
+  request cannot call a procedure; a defect, a panic or an error that claims a reserved tag
+  answers `InternalError { id }` with the correlation id only (the cause is logged); a client
+  disconnect or an expired deadline interrupts the handler fiber and runs its finalizers; client
+  streams are capped (10,000 items and 4 MiB by default, 64 KiB per line); `Idempotency-Key`
+  results are scoped by principal, and for anonymous callers by client IP with keys of at least
+  16 characters. Tests `r9_rpc_mutation_without_custom_header_refused`,
+  `r9_rpc_form_content_type_refused`, `defect_becomes_internal_error_without_message`,
+  `client_disconnect_interrupts_handler_and_runs_finalizers`, `deadline_capped_by_server_max`,
+  `client_stream_over_cap_rejected`, `idempotency_replay_is_scoped_for_anonymous_callers`.
 - QUIC endpoint defaults (ADR 0013 R4, R8): address validation (Retry) on, 0-RTT off, finite
   stream credits, idle timeout, UDP payload, receive windows, pending handshakes (256) and
   handshake time (10 s); datagrams off. Opt-outs `QuicEndpointConfig::dangerous_no_retry` and
