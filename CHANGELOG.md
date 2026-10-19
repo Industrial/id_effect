@@ -68,6 +68,18 @@
   `dangerous_no_header_read_timeout`, `dangerous_unlimited_connections` and
   `dangerous_unlimited_requests_per_connection` are now recorded in the posture registry, under
   the new `server::DANGEROUS_*` ids.
+- `id_effect_platform` HTTP client SSRF guard (M3, ADR 0013 R6): `HttpClientConfig::default()`
+  (and so `ReqwestHttpClientProvider::layer()`, `ReqwestHttpClient::default_client()`,
+  `with_timeouts` and the new `from_config`) carries an `http::SsrfPolicy` that refuses
+  loopback, private, CGNAT, link-local (cloud metadata), unique-local, multicast, reserved and
+  IPv4-mapped destinations, on literal-IP URLs and on every address a host name resolves to (a
+  custom reqwest DNS resolver, so DNS rebinding is covered); schemes other than http/https are
+  refused. Redirects are no longer followed; `follow_redirects(max)` opts in and re-checks every
+  hop. Exemptions `allow_hosts` / `allow_cidrs` (`IpCidr`), deserializable from config; opt-out
+  `dangerous_allow_private_networks()`, recorded in the posture registry. Refusals are
+  `HttpError::InvalidRequest` and are not retried. The Ledger reads its allowlist from
+  `[outbound]`. See "HTTP client: SSRF guard on by default" in the
+  [0.11 migration guide](docs/MIGRATION-0.11.md).
 
 ### Performance
 

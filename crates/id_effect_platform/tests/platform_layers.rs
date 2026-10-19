@@ -5,7 +5,7 @@ mod common;
 
 use std::path::PathBuf;
 
-use common::run;
+use common::{local_config, run};
 use id_effect::{Effect, HCons, HNil, Layer};
 use id_effect_platform::command::{
   CommandSpec, ProcessRuntimeService, TokioProcessRuntimeProvider, spawn_wait,
@@ -34,7 +34,7 @@ type PlatformEnv =
 
 fn platform() -> Layer<PlatformEnv, AppError> {
   LiveFileSystemProvider::layer()
-    .merge(ReqwestHttpClientProvider::layer())
+    .merge(ReqwestHttpClientProvider::layer_with(local_config()))
     .merge(TokioProcessRuntimeProvider::layer())
 }
 

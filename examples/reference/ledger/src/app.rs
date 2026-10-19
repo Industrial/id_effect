@@ -139,7 +139,7 @@ fn denials_to_stderr() -> AuthzEvents {
 pub fn start(config: &LedgerConfig) -> Effect<Services, StartupError> {
   let migrations = config.db.migrations.clone();
   let redis = config.redis.url.clone();
-  let mailer = match mail::mailer(&config.mail, mail::http_client()) {
+  let mailer = match mail::mailer(&config.mail, mail::http_client(&config.outbound)) {
     Ok(mailer) => mailer,
     Err(e) => return fail(e),
   };

@@ -43,11 +43,13 @@ async fn sendgrid_mail_goes_out_in_a_traced_client_span() {
     .expect(1)
     .mount(&sendgrid)
     .await;
-  let mut config = test_config().await.mail;
+  let ledger_config = test_config().await;
+  let mut config = ledger_config.mail.clone();
   config.transport = MailTransport::Sendgrid;
   config.sendgrid_api_key = Some(id_effect_kit::config::Secret::new("SG.test-key".to_owned()));
   config.sendgrid_base_url = Some(sendgrid.uri());
-  let mailer = mail::mailer(&config, mail::http_client()).expect("the SendGrid transport");
+  let http = mail::http_client(&ledger_config.outbound);
+  let mailer = mail::mailer(&config, http).expect("the SendGrid transport");
 
   install_w3c_propagators();
   let exporters = OtelInMemoryExporters::default();

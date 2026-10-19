@@ -6,7 +6,7 @@ use id_effect_mail::{
   Address, Attachment, InlinePart, MailError, Mailbox, MailerEnv, Message, SendGridConfig,
   SendGridMailer, Sent, deliver,
 };
-use id_effect_platform::http::ReqwestHttpClientProvider;
+use id_effect_platform::http::{HttpClientConfig, ReqwestHttpClientProvider};
 use id_effect_tokio::TokioRuntime;
 use serde_json::json;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -35,11 +35,17 @@ fn message() -> Message {
     .unwrap()
 }
 
+/// The default client config, the local fake on 127.0.0.1 exempt from the SSRF guard.
+fn local() -> HttpClientConfig {
+  HttpClientConfig::default().allow_hosts(["127.0.0.1"])
+}
+
 /// Sends `message()` through the reqwest-backed client (default timeouts and retry policy).
 fn send(server: &MockServer) -> Effect<Sent, MailError> {
   let config = SendGridConfig::new(KEY).base_url(server.uri());
-  deliver::<MailerEnv, _>(message())
-    .provide_layer(ReqwestHttpClientProvider::layer().provide_to(SendGridMailer::layer(config)))
+  deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  )
 }
 
 async fn run<A: Send + 'static>(eff: Effect<A, MailError>) -> Result<A, MailError> {
@@ -152,7 +158,8 @@ async fn rate_limiting_is_temporary() {
 #[tokio::test]
 async fn an_unreachable_api_is_a_transport_error() {
   let config = SendGridConfig::new(KEY).base_url("http://127.0.0.1:1");
-  let program = deliver::<MailerEnv, _>(message())
-    .provide_layer(ReqwestHttpClientProvider::layer().provide_to(SendGridMailer::layer(config)));
+  let program = deliver::<MailerEnv, _>(message()).provide_layer(
+    ReqwestHttpClientProvider::layer_with(local()).provide_to(SendGridMailer::layer(config)),
+  );
   assert!(matches!(run(program).await, Err(MailError::Transport(_))));
 }

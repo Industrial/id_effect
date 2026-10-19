@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use id_effect::{Effect, HNil, fail, succeed};
 use id_effect_kit::config::{ConfigError, Profile, Profiles, Secret, VaultAuth, VaultSettings};
+use id_effect_kit::platform::http::SsrfPolicy;
 use serde::Deserialize;
 
 /// Prefix of the environment variables merged last.
@@ -52,6 +53,9 @@ pub struct LedgerConfig {
   /// The operator console at `/_console`.
   #[serde(default)]
   pub console: ConsoleConfig,
+  /// Outbound HTTP (SendGrid): the SSRF policy's allowlist; private networks refused when absent.
+  #[serde(default)]
+  pub outbound: SsrfPolicy,
 }
 
 /// `[http]`.

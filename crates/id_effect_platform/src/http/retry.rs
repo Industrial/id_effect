@@ -415,8 +415,9 @@ mod tests {
     }
 
     let calls = Arc::new(AtomicU32::new(0));
+    let local = crate::http::HttpClientConfig::default().allow_hosts(["127.0.0.1"]);
     let inner = Counting(
-      crate::http::ReqwestHttpClient::default_client(),
+      crate::http::ReqwestHttpClient::from_config(&local),
       Arc::clone(&calls),
     );
     let client = RetryingHttpClient::new(inner, immediate(2));

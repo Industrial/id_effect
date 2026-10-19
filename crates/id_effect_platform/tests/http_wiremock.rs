@@ -1,6 +1,6 @@
 mod common;
 
-use common::run;
+use common::{local_config, run};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
   HttpClientEnv, HttpRequest, ReqwestHttpClientProvider, execute, response_body_stream,
@@ -19,7 +19,7 @@ async fn execute_hits_mock_server() {
 
   let url = format!("{}/hello", server.uri());
   let program = execute::<HttpClientEnv, _>(HttpRequest::get(url))
-    .provide_layer(ReqwestHttpClientProvider::layer());
+    .provide_layer(ReqwestHttpClientProvider::layer_with(local_config()));
   let res = run(program).await.expect("http ok");
   assert_eq!(res.status, 200);
   assert_eq!(res.body, b"ok");

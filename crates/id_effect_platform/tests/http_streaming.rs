@@ -2,10 +2,10 @@
 
 mod common;
 
-use common::run;
+use common::{local_config, run};
 use id_effect_platform::error::HttpError;
 use id_effect_platform::http::{
-  HttpClientEnv, HttpMethod, HttpRequest, execute_stream, provide_reqwest_http_client,
+  HttpClientEnv, HttpMethod, HttpRequest, execute_stream, provide_reqwest_http_client_with,
 };
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -22,7 +22,7 @@ async fn execute_stream_reads_chunked_body() {
 
   let url = format!("{}/stream", server.uri());
   let program = execute_stream::<HttpClientEnv, _>(HttpRequest::get(url))
-    .provide_layer(provide_reqwest_http_client());
+    .provide_layer(provide_reqwest_http_client_with(local_config()));
   let streamed = run(program).await.expect("stream ok");
   assert_eq!(streamed.status, 200);
 
@@ -41,7 +41,7 @@ async fn execute_stream_reads_chunk_by_chunk() {
 
   let url = format!("{}/pull", server.uri());
   let program = execute_stream::<HttpClientEnv, _>(HttpRequest::get(url))
-    .provide_layer(provide_reqwest_http_client());
+    .provide_layer(provide_reqwest_http_client_with(local_config()));
   let streamed = run(program).await.expect("stream ok");
   let mut got = Vec::new();
   while let Some(chunk) = run(streamed.body.next_chunk()).await.expect("chunk") {
@@ -68,8 +68,8 @@ async fn execute_stream_rejects_body_larger_than_max() {
     timeout: None,
     max_body_bytes: Some(8),
   };
-  let program =
-    execute_stream::<HttpClientEnv, _>(req).provide_layer(provide_reqwest_http_client());
+  let program = execute_stream::<HttpClientEnv, _>(req)
+    .provide_layer(provide_reqwest_http_client_with(local_config()));
   let streamed = run(program).await.expect("headers ok");
   let err = run(streamed.body.collect()).await.expect_err("body cap");
   assert!(matches!(err, HttpError::BodyTooLarge { .. }));

@@ -282,7 +282,40 @@ exist only in core; `id_effect_fp` does not alias them.
 
 ## HTTP client: SSRF guard on by default
 
-Filled by `r11-sec-client-ssrf`.
+Outbound requests are guarded (ADR 0013 R6; finding M3, decision D10). Every client
+`id_effect_platform` builds — `ReqwestHttpClientProvider::layer()` / `layer_with(config)`,
+`ReqwestHttpClient::default_client()`, `with_timeouts` and the new `from_config` — now:
+
+- **refuses private destinations:** loopback, unspecified, RFC 1918, `100.64.0.0/10`,
+  link-local (`169.254.0.0/16`, `fe80::/10`, so cloud metadata `169.254.169.254` and
+  `fd00:ec2::254`), unique local `fc00::/7`, multicast, reserved/broadcast, and every
+  IPv4-mapped or IPv4-compatible IPv6 form. A literal-IP URL is checked before sending; a host
+  name is checked by the client's DNS resolver on every address it resolves to (one forbidden
+  address refuses the name), so DNS rebinding cannot slip a private address in. The refusal is
+  `HttpError::InvalidRequest("blocked by the SSRF policy: …")`, which is not retried.
+- **accepts `http` and `https` only.**
+- **follows no redirect:** a `3xx` comes back as the response (reqwest followed up to 10 before).
+
+Breaks and what to do:
+
+- **Calls to internal services and local fakes fail.** Allowlist them, ideally from config:
+  `HttpClientConfig::default().allow_hosts(["sendgrid.internal"])`, `.allow_cidrs([..])`
+  (`IpCidr` parses `"10.20.0.0/16"`), or deserialize a `SsrfPolicy` (`allow_hosts`,
+  `allow_cidrs`) from a config section and pass it with `.with_ssrf(policy)`. Tests against
+  wiremock use `allow_hosts(["127.0.0.1"])` (wiremock binds loopback). A listed name skips the
+  address check; listing a name does not open its literal address.
+- **Code relying on redirects:** `HttpClientConfig::default().follow_redirects(max)` follows up
+  to `max` hops and checks each hop's URL and resolved addresses like the first request.
+- **Struct literals of `HttpClientConfig`** need the new fields `ssrf` and `max_redirects` (or
+  `..HttpClientConfig::default()`).
+- **No guard at all** (a trusted internal network): `.dangerous_allow_private_networks()` turns
+  the range check off and records `id_effect_platform::http::SsrfPolicy::dangerous_allow_private_networks`
+  in the posture registry, which the prod posture check refuses unless the risk is accepted.
+
+`ReqwestHttpClient::new(reqwest::Client)` wraps your own client as is (no guard, your redirect
+policy). Behind an HTTP proxy the proxy resolves names, so only literal-IP URLs and the proxy's
+own address are checked. JWKS fetching keeps its own client and rules (https only, no redirects,
+1 MiB; 0.10.1 M15).
 
 ## Node: QUIC requires client certificates (mutual TLS)
 

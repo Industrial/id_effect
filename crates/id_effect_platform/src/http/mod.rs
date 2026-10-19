@@ -6,8 +6,11 @@
 //!
 //! The reqwest layer applies client-wide defaults, configured once ([`HttpClientConfig`],
 //! [`ReqwestHttpClientProvider::layer_with`]): a 10 s connect timeout, a 30 s total timeout
-//! (a request's own [`HttpRequest::timeout`] replaces it), and a [`RetryPolicy`] retrying
-//! idempotent methods on connect errors, `5xx` and `429` ([`RetryingHttpClient`]).
+//! (a request's own [`HttpRequest::timeout`] replaces it), a [`RetryPolicy`] retrying
+//! idempotent methods on connect errors, `5xx` and `429` ([`RetryingHttpClient`]), the SSRF guard
+//! ([`SsrfPolicy`]: no loopback, private, link-local or metadata destinations, `http`/`https`
+//! only; every resolved address is checked) and no redirects followed
+//! ([`HttpClientConfig::follow_redirects`] opts in, each hop re-checked).
 //!
 //! The reqwest client needs a tokio runtime with its IO driver enabled, such as
 //! `id_effect_tokio::TokioRuntime`.
@@ -23,8 +26,10 @@ use tokio::sync::Mutex;
 use crate::error::HttpError;
 
 pub mod retry;
+pub mod ssrf;
 
 pub use retry::{RetryCause, RetryPolicy, RetryingHttpClient};
+pub use ssrf::{IpCidr, SsrfBlocked, SsrfPolicy};
 
 /// HTTP verb for [`HttpRequest`].
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -263,45 +268,74 @@ pub trait HttpClient: Send + Sync + 'static {
 }
 
 /// [`::reqwest::Client`]-backed [`HttpClient`].
+///
+/// A client built here ([`from_config`](Self::from_config), [`default_client`](Self::default_client),
+/// [`with_timeouts`](Self::with_timeouts)) enforces its config's [`SsrfPolicy`] and redirect
+/// limit; a request it refuses fails with [`HttpError::InvalidRequest`] naming the policy.
 #[derive(Clone, Debug)]
 pub struct ReqwestHttpClient {
   inner: ::reqwest::Client,
+  ssrf: Option<Arc<SsrfPolicy>>,
 }
 
 impl ReqwestHttpClient {
-  /// Wrap an existing [`::reqwest::Client`].
+  /// Wrap an existing [`::reqwest::Client`], used as configured: no SSRF guard and its own
+  /// redirect policy (reqwest's default follows up to 10). Prefer [`from_config`](Self::from_config).
   #[inline]
   pub fn new(client: ::reqwest::Client) -> Self {
-    Self { inner: client }
+    Self {
+      inner: client,
+      ssrf: None,
+    }
   }
 
-  /// Build with the default timeouts ([`HttpClientConfig::DEFAULT_CONNECT_TIMEOUT`],
-  /// [`HttpClientConfig::DEFAULT_TIMEOUT`]).
+  /// Build with [`HttpClientConfig::default`]'s timeouts, SSRF guard and redirect limit (the
+  /// config's retry policy is the layer's, [`RetryingHttpClient`]).
   ///
   /// # Panics
   ///
   /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
   #[inline]
   pub fn default_client() -> Self {
-    Self::with_timeouts(
-      HttpClientConfig::DEFAULT_CONNECT_TIMEOUT,
-      HttpClientConfig::DEFAULT_TIMEOUT,
-    )
+    Self::from_config(&HttpClientConfig::default())
   }
 
   /// Build with a `connect` timeout and a `total` per-request timeout (a request's own
-  /// [`HttpRequest::timeout`] replaces `total`).
+  /// [`HttpRequest::timeout`] replaces `total`), and the default SSRF guard and redirect limit.
   ///
   /// # Panics
   ///
   /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
   pub fn with_timeouts(connect: Duration, total: Duration) -> Self {
+    Self::from_config(
+      &HttpClientConfig::default()
+        .with_connect_timeout(connect)
+        .with_timeout(total),
+    )
+  }
+
+  /// Build with `config`'s timeouts, [`SsrfPolicy`] (checked on the URL, on every resolved
+  /// address by the client's DNS resolver, and on every redirect hop) and redirect limit.
+  ///
+  /// # Panics
+  ///
+  /// As [`::reqwest::Client::new`]: if the TLS backend cannot be initialised.
+  pub fn from_config(config: &HttpClientConfig) -> Self {
+    let ssrf = Arc::new(config.ssrf.clone());
     let client = ::reqwest::Client::builder()
-      .connect_timeout(connect)
-      .timeout(total)
+      .connect_timeout(config.connect_timeout)
+      .timeout(config.timeout)
+      .dns_resolver(ssrf::GuardedResolver::new(Arc::clone(&ssrf)))
+      .redirect(ssrf::redirect_policy(
+        Arc::clone(&ssrf),
+        config.max_redirects,
+      ))
       .build()
       .expect("reqwest client: TLS backend cannot be initialised");
-    Self::new(client)
+    Self {
+      inner: client,
+      ssrf: Some(ssrf),
+    }
   }
 }
 
@@ -315,6 +349,11 @@ pub struct HttpClientConfig {
   pub timeout: Duration,
   /// Retry policy applied to every call ([`RetryPolicy::none`] to disable).
   pub retry: RetryPolicy,
+  /// The SSRF guard: which destinations requests may reach (on by default, [`SsrfPolicy`]).
+  pub ssrf: SsrfPolicy,
+  /// Redirects followed per request, each hop re-checked against [`ssrf`](Self::ssrf); 0 (the
+  /// default) returns a `3xx` response as is.
+  pub max_redirects: usize,
 }
 
 impl HttpClientConfig {
@@ -343,15 +382,55 @@ impl HttpClientConfig {
     self.retry = retry;
     self
   }
+
+  /// Replaces the SSRF policy (one read from config, for instance).
+  #[inline]
+  pub fn with_ssrf(mut self, ssrf: SsrfPolicy) -> Self {
+    self.ssrf = ssrf;
+    self
+  }
+
+  /// Exempts `hosts` from the SSRF range check ([`SsrfPolicy::allow_hosts`]).
+  pub fn allow_hosts<I, S>(mut self, hosts: I) -> Self
+  where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+  {
+    self.ssrf = self.ssrf.allow_hosts(hosts);
+    self
+  }
+
+  /// Exempts the ranges `cidrs` from the SSRF range check ([`SsrfPolicy::allow_cidrs`]).
+  pub fn allow_cidrs(mut self, cidrs: impl IntoIterator<Item = IpCidr>) -> Self {
+    self.ssrf = self.ssrf.allow_cidrs(cidrs);
+    self
+  }
+
+  /// Follows up to `max` redirects per request, checking every hop against the SSRF policy.
+  #[inline]
+  pub fn follow_redirects(mut self, max: usize) -> Self {
+    self.max_redirects = max;
+    self
+  }
+
+  /// Turns the SSRF range check off ([`SsrfPolicy::dangerous_allow_private_networks`], recorded
+  /// in the posture registry).
+  pub fn dangerous_allow_private_networks(mut self) -> Self {
+    self.ssrf = self.ssrf.dangerous_allow_private_networks();
+    self
+  }
 }
 
 impl Default for HttpClientConfig {
-  /// Connect 10 s, total 30 s, [`RetryPolicy::default`].
+  /// Connect 10 s, total 30 s, [`RetryPolicy::default`], [`SsrfPolicy::default`] (guard on, no
+  /// exemption), no redirects followed.
   fn default() -> Self {
     Self {
       connect_timeout: Self::DEFAULT_CONNECT_TIMEOUT,
       timeout: Self::DEFAULT_TIMEOUT,
       retry: RetryPolicy::default(),
+      ssrf: SsrfPolicy::default(),
+      max_redirects: 0,
     }
   }
 }
@@ -385,15 +464,30 @@ fn reqwest_request(
   Ok(rb)
 }
 
-/// Sends `req` and returns the response with its status and readable headers.
+/// A failed send as an [`HttpError`]: [`HttpError::InvalidRequest`] when the SSRF policy refused
+/// it (in the resolver or on a redirect hop), else [`HttpError::Reqwest`].
+fn send_error(e: ::reqwest::Error) -> HttpError {
+  match ssrf::blocked_by(&e) {
+    Some(blocked) => HttpError::InvalidRequest(blocked.to_string()),
+    None => HttpError::from(e),
+  }
+}
+
+/// Sends `req` (after `ssrf`'s URL check) and returns the response with its status and readable
+/// headers.
 async fn send(
   client: &::reqwest::Client,
+  ssrf: Option<&SsrfPolicy>,
   req: &HttpRequest,
 ) -> Result<(::reqwest::Response, u16, Vec<(String, String)>), HttpError> {
-  let resp = reqwest_request(client, req)?
-    .send()
-    .await
-    .map_err(HttpError::from)?;
+  let rb = reqwest_request(client, req)?;
+  // An unparsable URL is left to reqwest, which fails the send with its own error.
+  if let (Some(policy), Ok(url)) = (ssrf, ::reqwest::Url::parse(&req.url)) {
+    policy
+      .check_parsed(&url)
+      .map_err(|blocked| HttpError::InvalidRequest(blocked.to_string()))?;
+  }
+  let resp = rb.send().await.map_err(send_error)?;
   let status = resp.status().as_u16();
   let headers = resp
     .headers()
@@ -410,9 +504,10 @@ async fn send(
 impl HttpClient for ReqwestHttpClient {
   fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
     let client = self.inner.clone();
+    let ssrf = self.ssrf.clone();
     from_async(move || async move {
       let max = req.max_body();
-      let (resp, status, headers) = send(&client, &req).await?;
+      let (resp, status, headers) = send(&client, ssrf.as_deref(), &req).await?;
       // The cap holds while reading: never more than `max` bytes (plus one chunk) in memory.
       let body = reqwest_source(resp, max).read_to_end().await?;
       Ok(HttpResponse {
@@ -425,9 +520,10 @@ impl HttpClient for ReqwestHttpClient {
 
   fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
     let client = self.inner.clone();
+    let ssrf = self.ssrf.clone();
     from_async(move || async move {
       let max = req.max_body();
-      let (resp, status, headers) = send(&client, &req).await?;
+      let (resp, status, headers) = send(&client, ssrf.as_deref(), &req).await?;
       Ok(StreamingHttpResponse {
         status,
         headers,
@@ -488,18 +584,19 @@ pub struct ReqwestHttpClientProvider;
 
 impl ReqwestHttpClientProvider {
   /// The layer with [`HttpClientConfig::default`]: a [`ReqwestHttpClient`] with the default
-  /// timeouts behind a [`RetryingHttpClient`] with [`RetryPolicy::default`], built once per
-  /// layer build.
+  /// timeouts, SSRF guard and no redirects, behind a [`RetryingHttpClient`] with
+  /// [`RetryPolicy::default`], built once per layer build.
   pub fn layer<E: Send + 'static>() -> Layer<HttpClientEnv, E> {
     Self::layer_with(HttpClientConfig::default())
   }
 
-  /// The layer with `config`'s timeouts and retry policy, built once per layer build.
+  /// The layer with `config`'s timeouts, SSRF policy, redirect limit and retry policy, built once
+  /// per layer build.
   pub fn layer_with<E: Send + 'static>(config: HttpClientConfig) -> Layer<HttpClientEnv, E> {
     Layer::effect(move || {
       let config = config.clone();
       sync(move || {
-        let client = ReqwestHttpClient::with_timeouts(config.connect_timeout, config.timeout);
+        let client = ReqwestHttpClient::from_config(&config);
         hlist![HttpClientService::new(RetryingHttpClient::new(
           client,
           config.retry

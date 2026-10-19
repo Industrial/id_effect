@@ -17,7 +17,9 @@ use id_effect_kit::mail::{
   SmtpConfig, SmtpMailer, Templates, TestMailbox,
 };
 use id_effect_kit::otel::TracedHttpClient;
-use id_effect_kit::platform::http::{HttpClientService, ReqwestHttpClient, RetryPolicy};
+use id_effect_kit::platform::http::{
+  HttpClientConfig, HttpClientService, ReqwestHttpClient, RetryPolicy, SsrfPolicy,
+};
 use serde_json::json;
 
 use crate::config::{MailConfig, MailTransport};
@@ -63,10 +65,10 @@ pub fn mailer(config: &MailConfig, http: HttpClientService) -> Result<MailerServ
 }
 
 /// The outbound HTTP client: every call in a client span carrying the W3C `traceparent`, with
-/// the default retry inside the span (each attempt an event on it).
-pub fn http_client() -> HttpClientService {
+/// the default retry inside the span (each attempt an event on it), under `ssrf` (`[outbound]`).
+pub fn http_client(ssrf: &SsrfPolicy) -> HttpClientService {
   HttpClientService::new(TracedHttpClient::with_retry(
-    ReqwestHttpClient::default_client(),
+    ReqwestHttpClient::from_config(&HttpClientConfig::default().with_ssrf(ssrf.clone())),
     RetryPolicy::default(),
   ))
 }
