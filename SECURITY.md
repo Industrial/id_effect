@@ -32,7 +32,8 @@ crates and the `examples/` are not.
 
 | Version | Supported |
 |---|---|
-| 0.10.x | Yes: all fixes, including security fixes |
+| 0.11.x | Yes: all fixes, including security fixes |
+| 0.10.x | Security fixes only (high and critical), for 90 days after the 0.11.0 release; use 0.10.1 or later (see [Security releases](#security-releases)) |
 | 0.9.x | Security fixes only, until 2027-01-16 |
 | 0.8.x | Security fixes only, until 2027-01-15 |
 | 0.7.x | Security fixes only, until 2027-01-14 |
@@ -60,6 +61,38 @@ For a confirmed vulnerability:
    so `cargo audit` and `cargo deny` users are warned, referencing the GHSA (and CVE).
 5. The CHANGELOG entry for the patch release names the advisory. Affected versions may be
    yanked from crates.io if they are dangerous to keep using.
+
+## Security releases
+
+Public history of releases that fix vulnerabilities. Finding ids (H high, M medium, L low) are
+those of the 2026-10-18 security review; [THREAT-MODEL.md](THREAT-MODEL.md) tracks every finding,
+including the ones still open.
+
+### 0.10.1 (2026-10-18)
+
+Upgrade from 0.10.0 to 0.10.1 ([CHANGELOG](CHANGELOG.md), "0.10.1 — Security patch"; migration:
+"0.10.1: stricter security defaults" in [docs/MIGRATION-0.10.md](docs/MIGRATION-0.10.md)). Every
+node of a mesh cluster must be upgraded together (handshake protocol version 2).
+
+| Finding | Crate | Severity | Issue fixed | Advisory |
+|---|---|---|---|---|
+| H1 | `id_effect_axum` | High | Serve functions dropped the peer address, so per-IP rate limits shared one bucket. | pending |
+| H2 | Ledger reference app | High | The login limiter trusted the first `X-Forwarded-For` entry. | not a published crate |
+| H3 | `id_effect_node` | High | QUIC accepted any server certificate. | pending |
+| H4 | `id_effect_node` | High | The handshake proof could be relayed, reflected or replayed. | pending |
+| H5 | `id_effect_auth` | High | No login throttle on password login. | pending |
+| H6 | `id_effect_auth` | High | No TOTP lockout after wrong codes. | pending |
+| H7 | `id_effect_auth` | High | A `JwtVerifier` without issuer or audience accepted any token. | pending |
+| M1 | `id_effect_axum` | Medium | No header-read timeout, connection cap or keep-alive limit. | pending |
+| M2 | `id_effect_platform` | Medium | The HTTP client read a body past `max_body_bytes`. | pending |
+| M9 | `id_effect_node` | Medium | No handshake timeout or pre-authentication frame cap; short cookies accepted. | pending |
+| M15 | `id_effect_auth` | Medium | JWKS fetch was unbounded, followed redirects and allowed plain http; short HMAC keys accepted. | pending |
+| M20 | `id_effect_auth` | Medium | Password hashing was unbounded. | pending |
+| L4 | `id_effect_auth` | Low | `BasicAuth` hashed passwords of any length. | pending |
+
+"pending": as of 2026-10-19 no GitHub Security Advisory for 0.10.1 is published
+([advisories](https://github.com/Industrial/id_effect/security/advisories)). Each row gets its
+GHSA id and link when the advisory is published (step 3 of "Advisory publication").
 
 ## Supply chain
 
