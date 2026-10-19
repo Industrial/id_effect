@@ -187,6 +187,32 @@ fn an_unreadable_directory_exits_1_before_connecting() {
   assert!(err.contains("cannot read migration directory"), "{err}");
 }
 
+#[test]
+fn revert_json_with_table_and_lock_options_reports_an_unreachable_database() {
+  let tmp = tempfile::tempdir().unwrap();
+  let url = "postgres://u:hunter2@127.0.0.1:1/app";
+  let (code, out, err) = migrate(&[
+    "revert",
+    "--count",
+    "2",
+    "--json",
+    "--table",
+    "audit.schema_versions",
+    "--lock-timeout",
+    "5",
+    "--dir",
+    s(tmp.path()),
+    "--database-url",
+    url,
+  ]);
+  assert_eq!(code, ExitCode::from(3));
+  assert!(err.is_empty(), "{err}");
+  assert!(!out.contains("hunter2"), "{out}");
+  let value = json(&out);
+  assert_eq!(value["ok"], false);
+  assert_eq!(value["error"]["kind"], "database");
+}
+
 // ---- live PostgreSQL ---------------------------------------------------------------------------
 
 fn pg_required() -> bool {
