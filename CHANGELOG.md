@@ -105,6 +105,15 @@
   recorded `OidcConfig::insecure_allow_http()`), adds a connect timeout
   (`oidc::DEFAULT_CONNECT_TIMEOUT`), and pins with regression tests that a discovery or token
   endpoint answering `302`/`307` is not followed.
+- The SSRF guard now also covers literal-IP URLs on the `reqwest::Client` the
+  `id_effect_platform::http::reqwest` helpers hand out (M3): every client
+  `ReqwestHttpClient::from_config` builds (and so `ReqwestClientLive::layer`,
+  `provide_reqwest_pool`, `ReqwestClient::from_config`, `PooledClient::from_config`) checks the
+  destination in its connector, so `http://169.254.169.254/` or `http://[::1]/` is refused before
+  connecting unless `allow_cidrs` / `allow_hosts` list it (previously only `http::execute`
+  checked literal IPs; reqwest skips the resolver for them). `id_effect_auth`
+  `JwksClient::insecure_allow_http()` replaces `allow_http_dangerous()` (now a deprecated shim)
+  and records `jwks::INSECURE_ALLOW_HTTP` in the posture registry (ADR 0013 R10).
 
 ### Performance
 

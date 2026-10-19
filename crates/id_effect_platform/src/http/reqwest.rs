@@ -12,14 +12,13 @@
 //! The clients these layers build ([`ReqwestClientLive::layer`], [`provide_reqwest_pool`], and
 //! their `_with` forms taking an [`HttpClientConfig`]) are built like
 //! [`ReqwestHttpClient::from_config`]: connect and total timeouts, no redirects followed (or up
-//! to [`HttpClientConfig::follow_redirects`], each hop checked) and the [`SsrfPolicy`] in the DNS
-//! resolver, so a host name that resolves to a loopback, private, link-local or metadata address
-//! is refused. These helpers hand you the [`reqwest::Client`] itself, so a URL with a literal IP
-//! host is not checked before it is sent (the resolver never sees it): check a URL you did not
-//! write with [`SsrfPolicy::check_url`], or use the portable client
-//! ([`execute`](crate::http::execute)), which does. A client you build yourself
-//! ([`dangerous_provide_reqwest_client`], a [`ReqwestClient`] or [`PooledClient`] you wrap) has
-//! none of this.
+//! to [`HttpClientConfig::follow_redirects`], each hop checked) and the [`SsrfPolicy`] in the
+//! client's connector and DNS resolver: a literal-IP URL in a loopback, private, link-local or
+//! metadata range (`http://169.254.169.254/`, `http://[::1]/`) is refused before the client
+//! connects, and so is a host name that resolves to one. The refusal is a [`reqwest::Error`]
+//! whose source chain holds the [`SsrfBlocked`](crate::http::SsrfBlocked) naming the range. A
+//! client you build yourself ([`dangerous_provide_reqwest_client`], a [`ReqwestClient`] or
+//! [`PooledClient`] you wrap) has none of this.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -43,7 +42,7 @@ pub const DANGEROUS_PROVIDE_REQWEST_CLIENT: &str =
   "id_effect_platform::http::reqwest::dangerous_provide_reqwest_client";
 
 /// The [`reqwest::Client`] `config` describes: its timeouts, redirect limit and [`SsrfPolicy`]
-/// resolver ([`ReqwestHttpClient::from_config`]).
+/// connector and resolver ([`ReqwestHttpClient::from_config`]).
 fn guarded_client(config: &HttpClientConfig) -> Client {
   ReqwestHttpClient::from_config(config).inner
 }
@@ -527,7 +526,7 @@ mod tests {
     let url = format!("{}/layer", server.uri());
     let u2 = url.clone();
     let live = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(url))
-      .provide_layer(ReqwestClientLive::layer());
+      .provide_layer(ReqwestClientLive::layer_with(local()));
     assert_eq!(run(live).await.unwrap(), "ok");
     let client = Client::builder()
       .timeout(Duration::from_secs(30))
@@ -547,6 +546,79 @@ mod tests {
   /// The [`SsrfBlocked`](crate::http::SsrfBlocked) reason behind `err`, if the guard refused it.
   fn blocked(err: &Error) -> Option<String> {
     crate::http::ssrf::blocked_by(err).map(|b| b.to_string())
+  }
+
+  /// The default config with the local mock server (127.0.0.1) exempt from the SSRF guard.
+  fn local() -> HttpClientConfig {
+    HttpClientConfig::default().allow_hosts(["127.0.0.1"])
+  }
+
+  /// Asserts that every guarded helper refuses `url` before connecting: the layer, the pool,
+  /// `ReqwestClient::from_config`, `PooledClient::from_config` and `ReqwestHttpClient`'s client.
+  async fn assert_helpers_refuse(url: &str, range: &str) {
+    let config = HttpClientConfig::default();
+    let (u1, u2) = (url.to_owned(), url.to_owned());
+    let live = send::<Response, Error, ReqwestClientEnv, _>(move |c| c.get(u1))
+      .provide_layer(ReqwestClientLive::layer());
+    let pool = provide_reqwest_pool::<Error>(1, Duration::from_secs(60));
+    let pooled =
+      send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(u2)).provide_layer(pool);
+    let mut errors = vec![
+      run(live).await.expect_err("layer"),
+      run(pooled).await.expect_err("pool"),
+    ];
+    for client in [
+      ReqwestClient::from_config(&config).0,
+      (*PooledClient::from_config(&config)).clone(),
+      ReqwestHttpClient::from_config(&config).inner,
+    ] {
+      errors.push(client.get(url).send().await.expect_err("client"));
+    }
+    for err in errors {
+      let reason = blocked(&err).unwrap_or_else(|| panic!("not blocked: {err:?}"));
+      assert!(reason.contains(range), "{reason}");
+    }
+  }
+
+  #[tokio::test]
+  async fn m3_reqwest_helpers_refuse_literal_metadata_ip() {
+    assert_helpers_refuse("http://169.254.169.254/latest/meta-data/", "169.254.0.0/16").await;
+  }
+
+  #[tokio::test]
+  async fn m3_reqwest_helpers_refuse_literal_ipv6_loopback() {
+    assert_helpers_refuse("http://[::1]:1/", "::1/128 (loopback)").await;
+  }
+
+  #[tokio::test]
+  async fn m3_reqwest_helpers_allow_an_allowlisted_literal_ip() {
+    let server = mock(
+      "GET",
+      "/literal",
+      ResponseTemplate::new(200).set_body_string("ok"),
+    )
+    .await;
+    let url = format!("{}/literal", server.uri());
+    let refused = text::<String, Error, ReqwestClientEnv, _>({
+      let url = url.clone();
+      move |c| c.get(url)
+    })
+    .provide_layer(ReqwestClientLive::layer());
+    let err = run(refused).await.expect_err("127.0.0.1 is loopback");
+    assert!(
+      blocked(&err).is_some_and(|r| r.contains("loopback")),
+      "{err:?}"
+    );
+
+    let allowed = HttpClientConfig::default().allow_cidrs(["127.0.0.0/8".parse().unwrap()]);
+    let u2 = url.clone();
+    let live = text::<String, Error, ReqwestClientEnv, _>(move |c| c.get(u2))
+      .provide_layer(ReqwestClientLive::layer_with(allowed.clone()));
+    assert_eq!(run(live).await.unwrap(), "ok");
+    let pool = provide_reqwest_pool_with::<Error>(1, Duration::from_secs(60), allowed);
+    let pooled =
+      send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(url)).provide_layer(pool);
+    assert_eq!(run(pooled).await.unwrap().status().as_u16(), 200);
   }
 
   #[tokio::test]
@@ -597,9 +669,9 @@ mod tests {
     let url = format!("{}/moved", server.uri());
     let u2 = url.clone();
     let live = send::<Response, Error, ReqwestClientEnv, _>(move |c| c.get(url))
-      .provide_layer(ReqwestClientLive::layer());
+      .provide_layer(ReqwestClientLive::layer_with(local()));
     assert_eq!(run(live).await.unwrap().status().as_u16(), 302);
-    let pool = provide_reqwest_pool::<Error>(1, Duration::from_secs(60));
+    let pool = provide_reqwest_pool_with::<Error>(1, Duration::from_secs(60), local());
     let pooled =
       send_pooled::<Response, Error, ReqwestPoolEnv, _>(move |c| c.get(u2)).provide_layer(pool);
     assert_eq!(run(pooled).await.unwrap().status().as_u16(), 302);
@@ -615,7 +687,8 @@ mod tests {
     )
     .await;
     let url = format!("{}/pooled", server.uri());
-    let env = match run(provide_reqwest_pool::<Error>(1, Duration::from_secs(60)).build()).await {
+    let layer = provide_reqwest_pool_with::<Error>(1, Duration::from_secs(60), local());
+    let env = match run(layer.build()).await {
       Ok(env) => env,
       Err(e) => panic!("pool layer: {e:?}"),
     };

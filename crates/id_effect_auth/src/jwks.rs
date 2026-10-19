@@ -19,7 +19,7 @@
 //!
 //! The key set decides which tokens are trusted, so the fetch is strict: the URL must be
 //! `https` (plain `http` only to a loopback host, for tests, or after
-//! [`allow_http_dangerous`](JwksClient::allow_http_dangerous)), redirects are not followed, and
+//! [`insecure_allow_http`](JwksClient::insecure_allow_http)), redirects are not followed, and
 //! a body larger than [`MAX_BODY_BYTES`] (1 MiB) is refused while it is read.
 //!
 //! ```no_run
@@ -55,6 +55,9 @@ pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(15 * 60);
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// The largest JWKS document a [`JwksClient`] reads, in bytes.
 pub const MAX_BODY_BYTES: usize = 1024 * 1024;
+/// Posture id of [`JwksClient::insecure_allow_http`] (and the deprecated
+/// [`JwksClient::allow_http_dangerous`]).
+pub const INSECURE_ALLOW_HTTP: &str = "id_effect_auth::jwks::JwksClient::insecure_allow_http";
 
 #[derive(Clone, Debug)]
 struct Config {
@@ -115,13 +118,34 @@ impl JwksClient {
     }
   }
 
-  /// Fetch over plain `http` from any host, not only loopback ones.
+  /// Fetch over plain `http` from any host, not only loopback ones. Records
+  /// [`INSECURE_ALLOW_HTTP`] in the posture registry.
   ///
-  /// **Dangerous**: anyone on the network path can then swap the key set and have the verifier
+  /// **Insecure**: anyone on the network path can then swap the key set and have the verifier
   /// accept tokens they signed. Only for a provider reached over a network that is itself
   /// trusted and encrypted (a service mesh with mTLS, for example).
   #[must_use]
-  pub fn allow_http_dangerous(mut self) -> Self {
+  pub fn insecure_allow_http(self) -> Self {
+    id_effect::observability::posture::record_dangerous(
+      INSECURE_ALLOW_HTTP,
+      "M15: the JWKS key set may be fetched over plain http from any host",
+    );
+    self.with_http_allowed()
+  }
+
+  /// Fetch over plain `http` from any host.
+  #[deprecated(
+    since = "0.11.0",
+    note = "renamed to insecure_allow_http (ADR 0013 naming)"
+  )]
+  #[must_use]
+  pub fn allow_http_dangerous(self) -> Self {
+    self.insecure_allow_http()
+  }
+
+  /// Plain `http` allowed, unrecorded: for `OidcConfig::insecure_allow_http`, which records its
+  /// own id.
+  pub(crate) fn with_http_allowed(mut self) -> Self {
     Arc::make_mut(&mut self.config).allow_http = true;
     self
   }
@@ -305,7 +329,7 @@ fn checked_url(url: &str, allow_http: bool) -> Result<reqwest::Url, AuthError> {
     "https" => Ok(parsed),
     "http" if is_loopback(&parsed) || allow_http => Ok(parsed),
     "http" => Err(config(
-      "must be https (plain http only to a loopback host, or after allow_http_dangerous())",
+      "must be https (plain http only to a loopback host, or after insecure_allow_http())",
     )),
     _ => Err(config("must be https")),
   }
@@ -388,8 +412,19 @@ mod tests {
     }
     assert!(checked_url("http://id.example.com/certs", true).is_ok());
     assert!(checked_url("ftp://id.example.com/certs", true).is_err());
-    let lax = JwksClient::new("http://keycloak:8080/certs").allow_http_dangerous();
+    let lax = JwksClient::new("http://keycloak:8080/certs").insecure_allow_http();
     assert!(lax.config.allow_http);
+  }
+
+  #[test]
+  fn m15_jwks_insecure_allow_http_is_recorded() {
+    #[allow(deprecated)]
+    let shim = JwksClient::new("http://keycloak:8080/certs").allow_http_dangerous();
+    assert!(shim.config.allow_http);
+    let lax = JwksClient::new("http://keycloak:8080/certs").insecure_allow_http();
+    assert!(lax.config.allow_http);
+    let recorded = id_effect::observability::posture::dangerous_opt_outs();
+    assert!(recorded.iter().any(|(id, _)| *id == INSECURE_ALLOW_HTTP));
   }
 
   #[test]

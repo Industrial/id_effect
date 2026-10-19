@@ -3,14 +3,18 @@
 //!
 //! [`HttpClientConfig::default`](super::HttpClientConfig::default) turns it on. Before a request
 //! is sent the client checks its URL: the scheme is `http` or `https`, and a literal-IP host is
-//! not in a forbidden range. A host name goes through the client's DNS resolver, which checks
-//! **every** address the name resolves to and refuses the name if any of them is forbidden; the
-//! addresses checked are the ones the connection uses, so DNS rebinding cannot swap in a private
-//! address after the check. Forbidden ([`forbidden_range`]): loopback, unspecified, RFC 1918,
-//! carrier-grade NAT `100.64.0.0/10`, link-local `169.254.0.0/16` and `fe80::/10` (cloud metadata
-//! `169.254.169.254`, `fd00:ec2::254`), unique local `fc00::/7`, multicast, reserved and
-//! broadcast, and every IPv4-mapped / IPv4-compatible IPv6 form (NAT64 and 6to4 forms of a
-//! forbidden IPv4 address too).
+//! not in a forbidden range. Every connection a guarded client opens is checked too, so the
+//! `reqwest::Client` itself (the [`reqwest`](super::reqwest) helpers hand it out) is guarded:
+//! its connector refuses a literal-IP destination in a forbidden range before connecting
+//! (reqwest connects to a literal IP without asking the resolver), and a host name goes through
+//! the client's DNS resolver, which checks **every** address the name resolves to and refuses
+//! the name if any of them is forbidden; the addresses checked are the ones the connection uses,
+//! so DNS rebinding cannot swap in a private address after the check. Forbidden
+//! ([`forbidden_range`]): loopback, unspecified, RFC 1918, carrier-grade NAT `100.64.0.0/10`,
+//! link-local `169.254.0.0/16` and `fe80::/10` (cloud metadata `169.254.169.254`,
+//! `fd00:ec2::254`), unique local `fc00::/7`, multicast, reserved and broadcast, and every
+//! IPv4-mapped / IPv4-compatible IPv6 form (NAT64 and 6to4 forms of a forbidden IPv4 address
+//! too).
 //!
 //! Exemptions come from config: [`SsrfPolicy::allow_hosts`] (a host name or literal IP, matched
 //! exactly and case-insensitively; a listed name's addresses are not checked) and
@@ -30,7 +34,8 @@
 //! [`HttpClientConfig::follow_redirects`](super::HttpClientConfig::follow_redirects) allows them,
 //! and then every hop is checked like the first request. Behind an HTTP proxy
 //! (`HTTP_PROXY` / `HTTPS_PROXY`) the proxy resolves host names, so the guard checks literal-IP
-//! URLs and the proxy's own address only.
+//! destinations (refused before the proxy is contacted) and a proxy named by host name (through
+//! the resolver) only; a proxy configured as a literal IP is used as given.
 
 use std::fmt;
 use std::future::Future;
@@ -39,6 +44,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use ::reqwest::Url;
 use ::reqwest::dns::{Addrs, Name, Resolve, Resolving};
@@ -299,7 +305,11 @@ impl SsrfPolicy {
         "scheme `{scheme}` is not http or https"
       )));
     }
-    let host = url.host_str().unwrap_or_default();
+    self.check_host(url.host_str().unwrap_or_default())
+  }
+
+  /// Checks a URL's `host`: a literal IP's range (a host name is checked when it resolves).
+  fn check_host(&self, host: &str) -> Result<(), SsrfBlocked> {
     if self.private_networks || self.host_allowed(host) {
       return Ok(());
     }
@@ -364,6 +374,84 @@ impl Resolve for GuardedResolver {
   }
 }
 
+/// The error type of reqwest's connector services.
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+/// The client's connector layer ([`::reqwest::ClientBuilder::connector_layer`]): refuses a
+/// connection to a literal-IP destination in a forbidden range before it is opened. reqwest
+/// connects to a literal IP without asking the resolver; a host name passes here and is checked
+/// by [`GuardedResolver`] (not resolved twice). The layer sees the request's destination, never
+/// a proxy's address: proxying happens below it.
+#[derive(Clone)]
+pub(super) struct GuardedConnectLayer {
+  policy: Arc<SsrfPolicy>,
+}
+
+impl GuardedConnectLayer {
+  pub(super) fn new(policy: Arc<SsrfPolicy>) -> Self {
+    Self { policy }
+  }
+}
+
+impl<S> tower_layer::Layer<S> for GuardedConnectLayer {
+  type Service = GuardedConnect<S>;
+
+  fn layer(&self, inner: S) -> Self::Service {
+    GuardedConnect {
+      policy: Arc::clone(&self.policy),
+      inner,
+    }
+  }
+}
+
+/// The connector service of [`GuardedConnectLayer`].
+#[derive(Clone)]
+pub(super) struct GuardedConnect<S> {
+  policy: Arc<SsrfPolicy>,
+  inner: S,
+}
+
+/// The host of the destination reqwest hands its connector layers. Its type keeps the URI
+/// private and shows it only through `Debug` (`Unnameable(http://169.254.169.254/)`), so the
+/// host is read from there; `None` when it cannot be, and the connection is then refused.
+fn destination_host(dst: &str) -> Option<String> {
+  let uri = dst
+    .strip_prefix("Unnameable(")
+    .and_then(|rest| rest.strip_suffix(')'))
+    .unwrap_or(dst);
+  let uri: http::Uri = uri.parse().ok()?;
+  uri.host().map(str::to_owned)
+}
+
+impl<S, Dst> tower_service::Service<Dst> for GuardedConnect<S>
+where
+  S: tower_service::Service<Dst, Error = BoxError>,
+  S::Response: Send + 'static,
+  S::Future: Send + 'static,
+  Dst: fmt::Debug,
+{
+  type Response = S::Response;
+  type Error = BoxError;
+  type Future = Pin<Box<dyn Future<Output = Result<S::Response, BoxError>> + Send>>;
+
+  fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), BoxError>> {
+    self.inner.poll_ready(cx)
+  }
+
+  fn call(&mut self, dst: Dst) -> Self::Future {
+    let checked = match destination_host(&format!("{dst:?}")) {
+      Some(host) => self.policy.check_host(&host),
+      None => Err(SsrfBlocked::new(format!(
+        "cannot read the destination of {dst:?}"
+      ))),
+    };
+    match checked {
+      Ok(()) => Box::pin(self.inner.call(dst)),
+      Err(blocked) => Box::pin(std::future::ready(Err(BoxError::from(blocked)))),
+    }
+  }
+}
+
 /// The redirect policy: none when `max` is 0, else up to `max` hops, each checked against
 /// `policy` ([`SsrfPolicy::check_parsed`]; a host name is checked again when it resolves).
 pub(super) fn redirect_policy(policy: Arc<SsrfPolicy>, max: usize) -> ::reqwest::redirect::Policy {
@@ -382,7 +470,8 @@ pub(super) fn redirect_policy(policy: Arc<SsrfPolicy>, max: usize) -> ::reqwest:
   })
 }
 
-/// The [`SsrfBlocked`] behind a failed send (the resolver's or a redirect hop's), if any.
+/// The [`SsrfBlocked`] behind a failed send (the connector's, the resolver's or a redirect
+/// hop's), if any.
 pub(super) fn blocked_by(err: &::reqwest::Error) -> Option<SsrfBlocked> {
   let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(err);
   while let Some(e) = cause {
@@ -517,6 +606,28 @@ mod tests {
       &["10.0.0.1"],
     );
     assert_eq!(resolve(&allowed, "rebind.example").await.unwrap().len(), 1);
+  }
+
+  #[test]
+  fn connector_reads_the_destination_host() {
+    let host = |dst: &str| destination_host(dst);
+    assert_eq!(
+      host("Unnameable(http://169.254.169.254/)").as_deref(),
+      Some("169.254.169.254")
+    );
+    assert_eq!(
+      host("Unnameable(https://[::1]:8443/)").as_deref(),
+      Some("[::1]")
+    );
+    assert_eq!(
+      host("http://example.com:80/").as_deref(),
+      Some("example.com")
+    );
+    assert_eq!(host("Unnameable(/no-host)"), None);
+    let policy = SsrfPolicy::new();
+    assert!(policy.check_host("[::1]").is_err());
+    assert!(policy.check_host("169.254.169.254").is_err());
+    assert!(policy.check_host("example.com").is_ok());
   }
 
   #[tokio::test]

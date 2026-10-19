@@ -335,8 +335,9 @@ impl ReqwestHttpClient {
     )
   }
 
-  /// Build with `config`'s timeouts, [`SsrfPolicy`] (checked on the URL, on every resolved
-  /// address by the client's DNS resolver, and on every redirect hop) and redirect limit.
+  /// Build with `config`'s timeouts, [`SsrfPolicy`] (checked on the URL, on every literal-IP
+  /// destination by the client's connector, on every resolved address by its DNS resolver, and
+  /// on every redirect hop) and redirect limit.
   ///
   /// # Panics
   ///
@@ -347,6 +348,7 @@ impl ReqwestHttpClient {
       .connect_timeout(config.connect_timeout)
       .timeout(config.timeout)
       .dns_resolver(ssrf::GuardedResolver::new(Arc::clone(&ssrf)))
+      .connector_layer(ssrf::GuardedConnectLayer::new(Arc::clone(&ssrf)))
       .redirect(ssrf::redirect_policy(
         Arc::clone(&ssrf),
         config.max_redirects,
@@ -486,7 +488,7 @@ fn reqwest_request(
 }
 
 /// A failed send as an [`HttpError`]: [`HttpError::InvalidRequest`] when the SSRF policy refused
-/// it (in the resolver or on a redirect hop), else [`HttpError::Reqwest`].
+/// it (in the connector, the resolver or on a redirect hop), else [`HttpError::Reqwest`].
 fn send_error(e: ::reqwest::Error) -> HttpError {
   match ssrf::blocked_by(&e) {
     Some(blocked) => HttpError::InvalidRequest(blocked.to_string()),

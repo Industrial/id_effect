@@ -609,7 +609,7 @@ impl OidcClient {
       jwks = jwks.min_refresh_interval(interval);
     }
     if config.allow_http {
-      jwks = jwks.allow_http_dangerous();
+      jwks = jwks.with_http_allowed();
     }
     let verifier = JwtVerifier::jwks(jwks.clone())
       .issuer(issuer.clone())

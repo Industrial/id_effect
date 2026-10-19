@@ -289,9 +289,11 @@ Outbound requests are guarded (ADR 0013 R6; finding M3, decision D10). Every cli
 - **refuses private destinations:** loopback, unspecified, RFC 1918, `100.64.0.0/10`,
   link-local (`169.254.0.0/16`, `fe80::/10`, so cloud metadata `169.254.169.254` and
   `fd00:ec2::254`), unique local `fc00::/7`, multicast, reserved/broadcast, and every
-  IPv4-mapped or IPv4-compatible IPv6 form. A literal-IP URL is checked before sending; a host
-  name is checked by the client's DNS resolver on every address it resolves to (one forbidden
-  address refuses the name), so DNS rebinding cannot slip a private address in. The refusal is
+  IPv4-mapped or IPv4-compatible IPv6 form. A literal-IP URL is checked before sending and again
+  by the client's connector (so `http://169.254.169.254/` and `http://[::1]/` are refused on the
+  bare `reqwest::Client` too); a host name is checked by the client's DNS resolver on every
+  address it resolves to (one forbidden address refuses the name), so DNS rebinding cannot slip
+  a private address in. The refusal is
   `HttpError::InvalidRequest("blocked by the SSRF policy: …")`, which is not retried.
 - **accepts `http` and `https` only.**
 - **follows no redirect:** a `3xx` comes back as the response (reqwest followed up to 10 before).
@@ -312,20 +314,21 @@ Breaks and what to do:
   the range check off and records `id_effect_platform::http::SsrfPolicy::dangerous_allow_private_networks`
   in the posture registry, which the prod posture check refuses unless the risk is accepted.
 
-Behind an HTTP proxy the proxy resolves names, so only literal-IP URLs and the proxy's own
-address are checked. JWKS fetching keeps its own client and rules (https only, no redirects,
+Behind an HTTP proxy the proxy resolves names, so only literal-IP URLs (refused before the proxy
+is contacted) and a proxy given by host name are checked; a proxy configured as a literal IP is
+used as given. JWKS fetching keeps its own client and rules (https only, no redirects,
 1 MiB; 0.10.1 M15).
 
 The reqwest helpers (`id_effect_platform::http::reqwest`) and caller-built clients:
 
 - **`ReqwestClientLive::layer()` and `provide_reqwest_pool(n, ttl)`** built `reqwest::Client::new()`
   (10 redirects, no timeout, no guard). They now build from `HttpClientConfig::default()`: 10 s
-  connect / 30 s total timeouts, no redirects, and the SSRF check in the DNS resolver. Their new
-  `ReqwestClientLive::layer_with(config)` / `provide_reqwest_pool_with(n, ttl, config)` take the
-  allowlist (`allow_hosts(["localhost"])` for a local fake reached by name) and redirect limit;
-  `ReqwestClient::from_config` / `PooledClient::from_config` build one client. These helpers hand
-  out the `reqwest::Client`, so a **literal-IP** URL is not checked before it is sent: check URLs
-  you did not write with `SsrfPolicy::check_url(url)`, or move the call to `http::execute`.
+  connect / 30 s total timeouts, no redirects, and the SSRF check in the client's connector
+  (literal IPs) and DNS resolver (names). Their new `ReqwestClientLive::layer_with(config)` /
+  `provide_reqwest_pool_with(n, ttl, config)` take the allowlist (`allow_hosts(["127.0.0.1"])`
+  for wiremock, `allow_hosts(["localhost"])` for a local fake reached by name) and redirect
+  limit; `ReqwestClient::from_config` / `PooledClient::from_config` build one client. A refused
+  request fails with a `reqwest::Error` whose source chain holds the `SsrfBlocked`.
 - **`provide_reqwest_client(client)` and `ReqwestHttpClient::new(client)` are deprecated** (L9
   shims, removed in 0.12). They keep wrapping your client as is, and now record the opt-out.
   Rename to `dangerous_provide_reqwest_client(client)` /
@@ -343,6 +346,10 @@ The reqwest helpers (`id_effect_platform::http::reqwest`) and caller-built clien
   `id_effect_auth::oidc::OidcConfig::insecure_allow_http`. Provider requests now also have a
   connect timeout (`oidc::DEFAULT_CONNECT_TIMEOUT`, 10 s, capped by `OidcConfig::timeout`);
   redirects stay unfollowed.
+- **`JwksClient::allow_http_dangerous()` is deprecated** (L9 shim, removed in 0.12): rename to
+  `JwksClient::insecure_allow_http()`. Both now record
+  `id_effect_auth::jwks::JwksClient::insecure_allow_http` (`jwks::INSECURE_ALLOW_HTTP`) in the
+  posture registry, so the prod posture check refuses it unless the risk is accepted.
 
 ## Node: QUIC requires client certificates (mutual TLS)
 

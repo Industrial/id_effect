@@ -148,9 +148,10 @@ A URL often comes from someone else: a webhook target, an avatar link, a callbac
 service's own network:
 
 - The scheme must be `http` or `https`.
-- A literal-IP host is checked before the request is sent; a host name is checked by the client's
-  DNS resolver, on **every** address it resolves to (one forbidden address refuses the name), and
-  the checked addresses are the ones the connection uses, so DNS rebinding cannot swap one in.
+- A literal-IP host is checked before the client connects (`http://169.254.169.254/`,
+  `http://[::1]/` are refused); a host name is checked by the client's DNS resolver, on
+  **every** address it resolves to (one forbidden address refuses the name), and the checked
+  addresses are the ones the connection uses, so DNS rebinding cannot swap one in.
 - Forbidden: loopback, unspecified, RFC 1918, `100.64.0.0/10`, link-local (`169.254.169.254` and
   `fd00:ec2::254`, the cloud metadata endpoints), unique local `fc00::/7`, multicast, reserved and
   broadcast, and the IPv4-mapped / NAT64 / 6to4 forms of those.
@@ -184,13 +185,15 @@ Turning the range check off is a named, recorded opt-out:
 `HttpClientConfig::dangerous_allow_private_networks()` records itself in the posture registry
 (`id_effect::observability::posture`), and the prod posture check refuses to start while it is
 not an accepted risk. Behind an HTTP proxy (`HTTP_PROXY`) the proxy resolves host names, so the
-guard checks literal-IP URLs and the proxy's own address only.
+guard checks literal-IP URLs (refused before the proxy is contacted) and a proxy given by host
+name only; a proxy configured as a literal IP is used as given.
 
 The reqwest helpers (`http::reqwest`) build their clients the same way:
 `ReqwestClientLive::layer()`, `provide_reqwest_pool(n, ttl)` and their `_with(config)` forms
-get the timeouts, the redirect limit and the resolver check. Those helpers hand you the
-`reqwest::Client` itself, so a literal-IP URL is not checked before it is sent: check a URL you
-did not write with `SsrfPolicy::check_url`, or use `execute`. A client you built yourself goes in
+get the timeouts, the redirect limit and the SSRF check, which lives in the `reqwest::Client`
+they hand you (its connector refuses a forbidden literal IP, its resolver a forbidden name), so a
+request you send on it directly is guarded too; the refusal is a `reqwest::Error` whose source is
+the `SsrfBlocked`. A client you built yourself goes in
 through `dangerous_provide_reqwest_client(c)` or `ReqwestHttpClient::dangerous_unguarded(c)`,
 which keep its own settings (reqwest's defaults follow 10 redirects and never time out) and
 record the opt-out; the unnamed `provide_reqwest_client` and `ReqwestHttpClient::new` are

@@ -2692,6 +2692,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tower-layer",
+ "tower-service",
  "wiremock",
 ]
 
