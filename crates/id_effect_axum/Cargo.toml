@@ -38,12 +38,17 @@ ws = [
 ]
 # Server-sent events with event ids, `Last-Event-ID` resume and heartbeats (`realtime::sse`).
 sse = []
-# TLS and HTTP/2 serving (r12-e12-3-tls-h2).
-# `id_effect_platform/tls` and `/quic` join `tls` and `http3` once r12-e12-3-quic-endpoint has
-# declared them in the platform crate.
-tls = ["dep:tokio-rustls", "hyper-util/http2"]
+# TLS and HTTP/2 serving (`server::tls`, r12-e12-3-tls-h2): TLS 1.3/1.2 on TCP, ALPN `h2` and
+# `http/1.1`, the certificate from the platform `tls` identity (reloaded for new connections).
+tls = ["dep:tokio-rustls", "hyper-util/http2", "id_effect_platform/tls"]
 # HTTP/3 serving on the shared QUIC endpoint (r12-e12-3-h3-server).
-http3 = ["tls", "dep:h3", "dep:h3-quinn", "dep:quinn"]
+http3 = [
+  "tls",
+  "dep:h3",
+  "dep:h3-quinn",
+  "dep:quinn",
+  "id_effect_platform/quic",
+]
 # WebTransport sessions over HTTP/3 (r12-e12-3-webtransport).
 webtransport = ["http3", "dep:h3-webtransport", "h3-quinn/datagram"]
 
@@ -168,6 +173,21 @@ tokio-tungstenite = { version = "=0.29.0", default-features = false, features = 
 ] }
 futures-util = { version = "=0.3.34", default-features = false, features = [
   "sink",
+] }
+# tests/tls_h2.rs: a TLS client (same pins as the `tls` feature), HTTP/1.1 and HTTP/2 client
+# connections, and a test CA issuing the server certificates (the platform's rcgen).
+tokio-rustls = { version = "=0.26.6", default-features = false, features = [
+  "logging",
+  "tls12",
+] }
+hyper = { version = "=1.12.0", default-features = false, features = [
+  "client",
+  "http1",
+  "http2",
+] }
+rcgen = { version = "=0.13.2", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
 ] }
 
 [[example]]

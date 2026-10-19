@@ -42,6 +42,29 @@ Also public now: `tls::Identity` (the swappable certificate a listener presents)
 
 ## Axum: TLS and HTTP/3 server configuration fields
 
+`HostConfig` has two new public fields: `tls: Option<HostTls>` (default `None`: plain HTTP, as in
+0.11) and `http3: bool` (default `true`; it only has an effect with feature `http3`). A struct
+literal that lists every field no longer compiles. **Shim:** end the literal with
+`..HostConfig::default()`, which keeps 0.11's behaviour. `HostConfig::config()` also reads
+`TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_RELOAD_SECS` and `HTTP3`; setting only one of the two TLS
+files is a config error.
+
+```rust,ignore
+// before
+HostConfig { bind_host, bind_port, shutdown_timeout, load_shed }
+// after
+HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, ..HostConfig::default() }
+```
+
+`ConnectionLimits` gained `tls_handshake_timeout` (10 s) and `max_concurrent_streams` (100,
+HTTP/2) with their `dangerous_*` opt-outs; its fields are private, so no code breaks. One
+behaviour change: `max_requests_per_connection` now also ends an HTTP/2 connection (a `GOAWAY`
+after the n-th request; the streams already open finish). In 0.11 the HTTP/2 path existed only
+through feature unification and had no limit.
+
+With `tls` set, a binary built without the axum feature `tls` refuses to start (0.11 had no TLS
+field, so nothing breaks; this guards against serving plain HTTP by accident).
+
 ## HTTP client: `HttpClientConfig::http3`
 
 `HttpClientConfig` gains two public fields: `root_certificates` (extra CA roots, DER, trusted on

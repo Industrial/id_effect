@@ -113,6 +113,7 @@ fn local(load_shed: LoadShed) -> Layer<HCons<HostConfig, HNil>, HostError> {
     bind_port: 0,
     shutdown_timeout: Duration::from_secs(5),
     load_shed,
+    ..HostConfig::default()
   }])
 }
 

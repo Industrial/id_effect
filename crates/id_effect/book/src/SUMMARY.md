@@ -169,6 +169,7 @@
   - [Typed routes and validation](./part6/ch29-01-typed-routes.md)
   - [OpenAPI, API docs and the route table](./part6/ch29-02-openapi.md)
   - [Middleware, static files and HTTP caching](./part6/ch29-03-middleware.md)
+  - [Serving HTTPS and HTTP/2 from the app](./part6/ch29-04-tls-http2.md)
   - [The HTTP/3 client](./part6/ch29-08-http3-client.md)
   - [Certificates that rotate themselves: reload and ACME](./part6/ch29-09-certificates-acme.md)
 - [Application host](./part6/ch30-00-application.md)

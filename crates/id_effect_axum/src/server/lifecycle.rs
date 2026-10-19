@@ -32,7 +32,7 @@ use tokio::task::JoinHandle;
 
 use crate::health::ReadinessState;
 use crate::server::bootstrap::{HostConfig, bootstrap_env, load_host_config};
-use crate::server::connection::{ConnectionLimits, serve_listener};
+use crate::server::connection::{ConnectionLimits, HostTransport, serve_host_listener};
 use crate::server::shutdown::{HostDrain, ShutdownReason, drain_with_timeout, wait_for_shutdown};
 
 /// Host lifecycle failures.
@@ -189,6 +189,8 @@ pub async fn serve_router_with_limits(
   limits: ConnectionLimits,
 ) -> Result<(), HostError> {
   let addr = socket_addr(&host.config)?;
+  let transport =
+    HostTransport::from_config(&host.config).map_err(|e| HostError::Serve(e.to_string()))?;
   let listener = tokio::net::TcpListener::bind(addr)
     .await
     .map_err(|e| HostError::Serve(e.to_string()))?;
@@ -197,7 +199,7 @@ pub async fn serve_router_with_limits(
   let drain = host.drain;
   let readiness = host.readiness;
 
-  serve_listener(listener, app, limits, async move {
+  serve_host_listener(listener, app, limits, transport, async move {
     wait_for_shutdown().await;
     readiness.mark_shutting_down();
     drain_with_timeout(&drain, timeout).await;
@@ -254,6 +256,8 @@ impl ServerHandle {
     limits: ConnectionLimits,
   ) -> Result<Self, HostError> {
     let addr = socket_addr(config)?;
+    let transport =
+      HostTransport::from_config(config).map_err(|e| HostError::Serve(format!("tls: {e}")))?;
     let listener = tokio::net::TcpListener::bind(addr)
       .await
       .map_err(|e| HostError::Serve(format!("bind {addr}: {e}")))?;
@@ -263,9 +267,15 @@ impl ServerHandle {
     let app = config.load_shed.install(app);
     let stop = Arc::new(Notify::new());
     let signal = Arc::clone(&stop);
-    let task = tokio::spawn(serve_listener(listener, app, limits, async move {
-      signal.notified().await;
-    }));
+    let task = tokio::spawn(serve_host_listener(
+      listener,
+      app,
+      limits,
+      transport,
+      async move {
+        signal.notified().await;
+      },
+    ));
     Ok(Self {
       local_addr,
       shutdown_timeout: config.shutdown_timeout,

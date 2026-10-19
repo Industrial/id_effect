@@ -29,6 +29,16 @@
   jitter (`Acme::spawn`), and reports `AcmeStats`. Book chapter 29.9.
 - `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
   shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
+- `id_effect_axum` feature `tls` (ADR 0014 D10): TLS 1.3 and 1.2 on TCP with ALPN `h2` and
+  `http/1.1` (`server::tls::ServerTls`, from a platform `Identity`, PEM files polled for
+  rotation, any rustls resolver via `ServerTls::builder` with `.tls13_only()`, `.alpn(..)` and
+  `.configure(..)` (the hook for `Acme::serve_tls_alpn01`), or `ServerTls::from_rustls_config`;
+  connections that negotiate another ALPN, such as `acme-tls/1`, are closed after the
+  handshake); HTTP/2 through hyper-util's auto builder. `HostConfig::tls` (`HostTls`;
+  `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_RELOAD_SECS`) makes every host entry point serve TLS;
+  `server::serve_tls_listener` and `serve_host_listener` / `HostTransport` serve a listener
+  directly. A reloaded certificate is used for new connections without a restart.
+  `HostConfig::http3` (`HTTP3`, default on) and `HostConfig::posture_warnings`. Book chapter 29.4.
 - `id_effect_platform` HTTP/3 client (feature `http3`, opt-in with `HttpClientConfig::http3(true)`):
   `http::Http3Client` on `h3` + `h3-quinn` over its own quinn endpoint (never reqwest's HTTP/3),
   upgrading an `https` origin after its `Alt-Svc: h3` (`http::alt_svc::AltSvcCache`: max-age
@@ -65,9 +75,19 @@
   `client` feature.
 - `id_effect_platform::http::HttpClientConfig` gains the public fields `root_certificates` and
   (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
+- `id_effect_axum::HostConfig` gains the public fields `tls` and `http3` (struct literals need
+  `..HostConfig::default()`); `ConnectionLimits::max_requests_per_connection` also applies to
+  HTTP/2 (a `GOAWAY` after the n-th request).
 
 ### Security
 
+- TLS listener defaults (ADR 0013 R4; ADR 0014 D10, C3): a TLS handshake must finish within 10 s
+  (`ConnectionLimits::tls_handshake_timeout`; `dangerous_no_tls_handshake_timeout` is recorded),
+  handshakes count against the connection cap, HTTP/2 allows 100 concurrent streams per
+  connection (`max_concurrent_streams`; `dangerous_unlimited_concurrent_streams` is recorded) and
+  pings dead peers, 0-RTT is off, and plain HTTP is not answered on the TLS port. A `HostConfig`
+  with `tls` set refuses to start when the crate is built without feature `tls` instead of
+  serving plain HTTP; HTTP/3 enabled without TLS is a posture warning (`warn` in prod).
 - ACME (ADR 0014 D8): a failed order keeps the current certificate (logged, counted in
   `AcmeStats::failed`, retried); the account key and the certificate key are stored with mode
   0600 in a 0700 cache directory (looser modes are tightened), held as `id_effect_config::Secret`

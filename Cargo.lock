@@ -2539,6 +2539,7 @@ dependencies = [
  "jsonschema",
  "quinn",
  "rand 0.9.5",
+ "rcgen 0.13.2",
  "serde",
  "serde_json",
  "sha2 0.10.9",
