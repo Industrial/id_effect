@@ -280,6 +280,122 @@ mod tests {
     assert_eq!(time_to_wire(time(0, 0, 0, 1_999)), Ok(1));
   }
 
+  #[test]
+  fn saturate_clamps_beyond_i64() {
+    assert_eq!(saturate(i128::from(i64::MAX) + 1), i64::MAX);
+    assert_eq!(saturate(i128::from(i64::MIN) - 1), i64::MIN);
+    assert_eq!(saturate(-42), -42);
+  }
+
+  /// `value` encoded into a fresh buffer: whether it is NULL (or the error), and the bytes.
+  fn encoded<T: for<'q> Encode<'q, Postgres>>(value: &T) -> (Result<bool, String>, Vec<u8>) {
+    let mut buf = PgArgumentBuffer::default();
+    let result = value
+      .encode_by_ref(&mut buf)
+      .map(|is_null| matches!(is_null, IsNull::Yes))
+      .map_err(|e| e.to_string());
+    (result, buf.to_vec())
+  }
+
+  fn oid_of<T: sqlx::Type<Postgres>>() -> Option<Oid> {
+    T::type_info().oid()
+  }
+
+  #[test]
+  fn codecs_declare_their_oids_and_sizes() {
+    assert_eq!(oid_of::<PgTimestamp>(), Some(Oid(1184)));
+    assert_eq!(oid_of::<PgDateTime>(), Some(Oid(1114)));
+    assert_eq!(oid_of::<PgDate>(), Some(Oid(1082)));
+    assert_eq!(oid_of::<PgTime>(), Some(Oid(1083)));
+    let epoch = date(2000, 1, 1);
+    assert_eq!(PgTimestamp(jiff::Timestamp::UNIX_EPOCH).size_hint(), 8);
+    assert_eq!(PgDateTime(epoch.at(0, 0, 0, 0)).size_hint(), 8);
+    assert_eq!(PgDate(epoch).size_hint(), 4);
+    assert_eq!(PgTime(Time::midnight()).size_hint(), 8);
+  }
+
+  #[test]
+  fn codecs_encode_the_big_endian_wire_integer() {
+    let ts = "2000-01-01T00:00:01Z".parse::<jiff::Timestamp>().unwrap();
+    let (result, bytes) = encoded(&PgTimestamp(ts));
+    assert_eq!(result, Ok(false));
+    assert_eq!(bytes, 1_000_000i64.to_be_bytes());
+
+    let (result, bytes) = encoded(&PgDateTime(date(1999, 12, 31).at(23, 59, 59, 999_999_000)));
+    assert_eq!(result, Ok(false));
+    assert_eq!(bytes, (-1i64).to_be_bytes());
+
+    let (result, bytes) = encoded(&PgDate(date(2000, 1, 2)));
+    assert_eq!(result, Ok(false));
+    assert_eq!(bytes, 1i32.to_be_bytes());
+
+    let (result, bytes) = encoded(&PgTime(time(0, 0, 1, 0)));
+    assert_eq!(result, Ok(false));
+    assert_eq!(bytes, 1_000_000i64.to_be_bytes());
+  }
+
+  #[test]
+  fn encoding_before_pg_earliest_fails_without_writing() {
+    let (result, bytes) = encoded(&PgTimestamp(jiff::Timestamp::MIN));
+    assert!(result.unwrap_err().contains("4714-11-24"));
+    assert!(bytes.is_empty());
+    let (result, _) = encoded(&PgDateTime(DateTime::MIN));
+    assert!(result.unwrap_err().contains("earliest"));
+    let (result, _) = encoded(&PgDate(Date::MIN));
+    assert!(result.unwrap_err().contains("earliest date"));
+  }
+
+  #[test]
+  fn checked_wrappers_accept_values_in_range() {
+    let ts = "2024-02-29T12:34:56Z".parse::<jiff::Timestamp>().unwrap();
+    assert_eq!(PgTimestamp::checked(ts).map(|w| w.0), Ok(ts));
+    let dt = date(2024, 2, 29).at(12, 34, 56, 0);
+    assert_eq!(PgDateTime::checked(dt).map(|w| w.0), Ok(dt));
+    assert_eq!(
+      PgDate::checked(date(2024, 2, 29)).map(|w| w.0),
+      Ok(date(2024, 2, 29))
+    );
+    assert!(
+      PgDateTime::checked(DateTime::MIN)
+        .err()
+        .is_some_and(|e| e.contains("BC"))
+    );
+  }
+
+  #[test]
+  fn wire_round_trips_at_jiff_edges() {
+    let max = datetime_micros(DateTime::MAX);
+    assert_eq!(datetime_from_wire(max).map(datetime_micros), Ok(max));
+    assert!(datetime_from_wire(max + 1).unwrap_err().contains("beyond"));
+    let ts_max = timestamp_micros(jiff::Timestamp::MAX);
+    assert_eq!(
+      timestamp_from_wire(ts_max).map(timestamp_micros),
+      Ok(ts_max)
+    );
+    let days = date_days(Date::MAX);
+    let days = i32::try_from(days).unwrap();
+    assert_eq!(date_from_wire(days), Ok(Date::MAX));
+    assert!(date_from_wire(days + 1).unwrap_err().contains("beyond"));
+    assert!(date_from_wire(-5_000_000).unwrap_err().contains("beyond"));
+    assert_eq!(
+      time_to_wire(time(23, 59, 59, 999_999_999)),
+      Ok(DAY_MICROS - 1)
+    );
+    assert_eq!(
+      time_from_wire(DAY_MICROS - 1),
+      Ok(time(23, 59, 59, 999_999_000))
+    );
+    assert!(
+      representable("date", 3i64, (i64::MIN, i64::MAX), (0, 2))
+        .unwrap_err()
+        .contains("date 3 on the wire")
+    );
+    assert_eq!(
+      representable("date", 2i64, (i64::MIN, i64::MAX), (0, 2)),
+      Ok(())
+    );
+  }
+
   /// Runs `eff` on tokio (sqlx needs its IO driver).
   async fn run<A: Send + 'static>(eff: Effect<A, SqlError>) -> Result<A, SqlError> {
     match TokioRuntime::current().expect("tokio").run(eff).await {

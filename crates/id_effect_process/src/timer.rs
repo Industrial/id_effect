@@ -224,3 +224,35 @@ impl Future for TimerTask {
     Poll::Ready(())
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn timer_ref_debug_and_identity() {
+    let pending = TimerRef::with_state(PENDING);
+    let rendered = format!("{pending:?}");
+    assert!(rendered.contains("TimerRef"), "{rendered}");
+    assert!(rendered.contains("pending: true"), "{rendered}");
+    assert_eq!(pending, pending.clone());
+    let other = TimerRef::inert();
+    assert_ne!(pending, other);
+    assert!(format!("{other:?}").contains("pending: false"));
+  }
+
+  #[test]
+  fn finalized_timers_refuse_new_timers_and_cancel_owned_ones() {
+    let timers = Timers::new();
+    let owned = TimerRef::with_state(PENDING);
+    assert!(timers.add(&owned));
+    timers.cancel_all();
+    assert!(!owned.is_pending());
+    let late = TimerRef::with_state(PENDING);
+    assert!(!timers.add(&late));
+    // Removing from a finalized set is a no-op.
+    timers.remove(late.id);
+    assert!(late.cancel());
+    assert!(!late.cancel());
+  }
+}

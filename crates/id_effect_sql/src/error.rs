@@ -341,4 +341,36 @@ mod tests {
       "sql column `#3` not found"
     );
   }
+
+  #[test]
+  fn display_row_level_variants() {
+    use id_effect::schema::ParseError;
+
+    let invalid = SqlError::InvalidRow {
+      issues: vec![
+        ParseError::new("", "expected object"),
+        ParseError::new("age", "expected i64"),
+      ],
+    };
+    assert_eq!(
+      invalid.to_string(),
+      "sql row invalid: expected object; age: expected i64"
+    );
+    assert_eq!(
+      SqlError::InvalidRow { issues: vec![] }.to_string(),
+      "sql row invalid"
+    );
+    assert_eq!(
+      SqlError::RowNotFound.to_string(),
+      "sql query returned no row"
+    );
+    assert_eq!(
+      SqlError::StaleVersion {
+        entity: "Todo".into(),
+        id: "7".into(),
+      }
+      .to_string(),
+      "sql stale version: Todo 7 was changed by another writer"
+    );
+  }
 }

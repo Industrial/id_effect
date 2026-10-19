@@ -1075,4 +1075,172 @@ mod tests {
         .contains("pub fn schedule()")
     );
   }
+
+  mod failures {
+    use std::error::Error as _;
+
+    use super::*;
+
+    const CARGO: &str =
+      "[package]\nname = \"orders-api\"\n\n[dependencies]\nid_effect = \"0.9.0\"\n";
+
+    fn project(cargo: &str, lib: Option<&str>) -> tempfile::TempDir {
+      let tmp = tempfile::tempdir().unwrap();
+      fs::write(tmp.path().join("Cargo.toml"), cargo).unwrap();
+      if let Some(lib) = lib {
+        fs::create_dir_all(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/lib.rs"), lib).unwrap();
+      }
+      tmp
+    }
+
+    #[test]
+    fn a_project_without_id_effect_or_a_library_is_refused() {
+      let plain = project(
+        "[package]\nname = \"p\"\n\n[dependencies]\nserde = \"1\"\n",
+        None,
+      );
+      let err = generate_job(plain.path(), "send", "default", None).unwrap_err();
+      assert!(
+        matches!(
+          err,
+          GenerateError::NotAProject {
+            reason: "Cargo.toml does not depend on id_effect",
+            ..
+          }
+        ),
+        "{err}"
+      );
+      assert!(err.to_string().contains("is not an id_effect project"));
+      let no_lib = project(CARGO, None);
+      assert!(matches!(
+        generate_job(no_lib.path(), "send", "default", None),
+        Err(GenerateError::NotAProject {
+          reason: "no src/lib.rs",
+          ..
+        })
+      ));
+    }
+
+    #[test]
+    fn a_jobs_path_that_is_a_file_fails_with_io() {
+      let tmp = project(CARGO, Some("pub fn f() {}\n"));
+      fs::write(tmp.path().join("src/jobs"), "not a directory").unwrap();
+      let err = generate_job(tmp.path(), "send", "default", None).unwrap_err();
+      let GenerateError::Io { path, .. } = &err else {
+        panic!("expected an io error, got {err}");
+      };
+      assert!(path.ends_with("src/jobs"), "{}", path.display());
+      assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn an_existing_schedule_without_ok_is_left_to_the_user() {
+      let tmp = project(CARGO, Some("pub mod jobs;\n"));
+      let jobs = "pub fn registry() -> R {\n    let registry = new();\n    Ok(registry)\n}\n\npub fn schedule() -> S {\n    build()\n}\n";
+      fs::create_dir_all(tmp.path().join("src/jobs")).unwrap();
+      fs::write(tmp.path().join("src/jobs/mod.rs"), jobs).unwrap();
+      let report = generate_job(tmp.path(), "nightly", "default", Some("0 6 * * *")).unwrap();
+      assert!(
+        report
+          .by_hand
+          .iter()
+          .any(|l| l.contains("nightly::cron()") && l.contains("schedule()")),
+        "{:?}",
+        report.by_hand
+      );
+      let written = fs::read_to_string(tmp.path().join("src/jobs/mod.rs")).unwrap();
+      assert_eq!(written.matches("pub fn schedule(").count(), 1, "{written}");
+      assert!(written.contains("registry.register(nightly::handle)"));
+      assert_eq!(report.job_name, "orders_api.nightly");
+    }
+
+    #[test]
+    fn long_queues_and_unknown_templates_are_errors() {
+      assert!(matches!(
+        validate_queue(&"q".repeat(65)),
+        Err(GenerateError::InvalidQueue {
+          reason: "it is longer than 64 characters",
+          ..
+        })
+      ));
+      let err = render("missing.template", false, &[]).unwrap_err();
+      assert_eq!(
+        err.to_string(),
+        "template generate/job/missing.template: not embedded"
+      );
+      assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn file_helpers_report_the_failing_path() {
+      let tmp = tempfile::tempdir().unwrap();
+      let missing = tmp.path().join("missing.rs");
+      assert!(matches!(read(&missing), Err(GenerateError::Io { .. })));
+      assert!(matches!(
+        write(tmp.path(), "x"),
+        Err(GenerateError::Io { .. })
+      ));
+      let existing = tmp.path().join("there.rs");
+      fs::write(&existing, "").unwrap();
+      let err = write_new(&existing, "x").unwrap_err();
+      assert!(err.to_string().starts_with(&existing.display().to_string()));
+    }
+
+    #[test]
+    fn new_errors_convert_into_generate_errors() {
+      let template = GenerateError::from(NewError::Template {
+        file: "f".into(),
+        reason: "r".into(),
+      });
+      assert!(matches!(template, GenerateError::Template { ref file, .. } if file == "f"));
+      let io = GenerateError::from(NewError::Io {
+        path: PathBuf::from("/p"),
+        source: io::Error::other("disk"),
+      });
+      assert_eq!(io.to_string(), "/p: disk");
+      let other = GenerateError::from(NewError::Exists(PathBuf::from("/d")));
+      let GenerateError::Template { file, reason } = other else {
+        panic!("folded into a template error");
+      };
+      assert_eq!(file, "generate/job");
+      assert!(reason.contains("/d"), "{reason}");
+    }
+
+    #[test]
+    fn insert_mod_terminates_an_unterminated_last_line() {
+      assert_eq!(insert_mod("mod a;", "z"), "mod a;\npub mod z;\n");
+    }
+
+    #[test]
+    fn versions_are_read_from_tables_too() {
+      assert_eq!(
+        version_of("id_effect = { version = \"0.9.1\", default-features = false }"),
+        Some("0.9.1")
+      );
+      assert_eq!(version_of("id_effect = { path = \"../x\" }"), None);
+      assert_eq!(version_of("id_effect"), None);
+    }
+
+    #[test]
+    fn missing_dependency_table_and_unpatchable_workspace_go_by_hand() {
+      let mut by_hand = Vec::new();
+      let (_, what) = add_jobs_dependency("[package]\nname = \"p\"\n", false, &mut by_hand);
+      assert!(what.is_empty());
+      assert_eq!(
+        by_hand,
+        ["Cargo.toml: add `id_effect_jobs = \"".to_owned()
+          + ID_EFFECT_VERSION
+          + "\"` under [dependencies]"]
+      );
+      let cargo = "[dependencies]\nid_effect = \"0.9\"\n\n[patch.crates-io]\nid_effect = { git = \"https://example.invalid/id_effect\" }\n";
+      let mut by_hand = Vec::new();
+      add_jobs_dependency(cargo, false, &mut by_hand);
+      assert_eq!(by_hand.len(), 1, "{by_hand:?}");
+      assert!(
+        by_hand[0].starts_with("Cargo.toml: patch id_effect_jobs"),
+        "{by_hand:?}"
+      );
+    }
+  }
 }
