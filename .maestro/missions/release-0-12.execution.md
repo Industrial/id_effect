@@ -157,4 +157,6 @@ webtransport (wave 5).
 | F38 | rpc-ws-sse | `Rejected` exit tag not in `RpcFailure::RESERVED_TAGS` (a user variant could claim it) | r12-e12-2-bidi-resume (assigned, owns wire.rs hunk) |
 | F39 | rpc-ws-sse | realtime 100 msg/s per socket counts credit frames too, throttling fast client streams; consider not counting `credit`/`ping` or a per-RPC default | r12-e12-5-benches (soak) / 0.13 |
 | F40 | rpc-ws-sse | Rust `WsClient` is JSON-only over plain `ws://` (`wss://` via `WsClient::over`); add a TLS connector + postcard | r12-w6-kit-template or 0.13 |
+| F41 | fuzz-security | `security_surface.rs` `PENDING`: `r9_webtransport_connect_from_foreign_origin_refused` (webtransport, sent) and `posture_prod_refuses_dev_certificate` (kit-template); list must be empty at exit | r12-e12-3-webtransport, r12-w6-kit-template, exit check |
+| F42 | fuzz-security | `r10_zero_rtt_on_mutation` only proves the sole opt-out admits safe methods (no per-procedure 0-RTT API); `security_compile_fail` depends on rpc/axum directly until kit gains `rpc`/`http3` features — move the cases to kit | r12-w6-kit-template |
 | F21 | subscriptions | no cursor = replay from `starting_after` (default whole log), not "from now" — `EventLog` has no head read; document, or add a head read in id_effect_events | 0.13 / document in ch33-08 |

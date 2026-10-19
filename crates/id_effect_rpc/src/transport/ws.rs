@@ -111,7 +111,7 @@ use crate::resume::{Attachment, ResumeConfig, ResumeStats, ResumeStore, Session}
 use crate::server::RpcServer;
 use crate::server::dispatch::{self, Rejection};
 use crate::wire::{
-  CallId, Cursor, Frame, FrameFlags, FrameKind, Hello, INITIAL_CREDITS, MAX_FRAME_BYTES, Resume,
+  CallId, Cursor, Frame, FrameFlags, FrameKind, Hello, INITIAL_CREDITS, MAX_FRAME_BYTES,
   ResumeCall, RpcFailure, SessionId,
 };
 
@@ -665,7 +665,7 @@ impl Conn {
     let group = self.shared.server.group();
     let decoded = match (kind, payload) {
       (FrameKind::Resume, Some(bytes)) => Some(
-        Postcard::decode::<Resume>(&bytes)
+        Postcard::decode::<crate::wire::Resume>(&bytes)
           .map(|resume| serde_json::to_value(resume).unwrap_or_default()),
       ),
       (FrameKind::Call, Some(bytes)) => {
