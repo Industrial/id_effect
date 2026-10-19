@@ -90,3 +90,6 @@ pub use kinds::{Duplex, Subscription, SubscriptionItem};
 pub use protocol::RPC_DISPATCH_PATH;
 pub use registry::{Procedure, RpcGroup, RpcMethodEntry};
 pub use server::{RpcPrincipal, RpcServer, layer_rpc};
+
+// r12-e12-2-subscriptions: subscription sources (feature `events`: the event log).
+pub mod subscription;

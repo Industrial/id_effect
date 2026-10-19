@@ -74,6 +74,15 @@
   `GET /rpc/{tag}?input=` for queries with ETag / 304, `POST /rpc/{tag}` for every unary and
   stream kind (NDJSON server streams, NDJSON client streams with item and byte caps). Book
   chapter 33.1.
+- `id_effect_rpc::subscription` (r12-e12-2-subscriptions): `TailConfig` (read batch 1–1,000,
+  poll interval 10 ms–60 s, clamped), `position_after` and the typed `CursorMismatch` failure
+  (`{"_tag": "CursorMismatch"}`, 400). Feature `events`: `subscription::events::EventSubscription`
+  serves an `id_effect_events` `EventLog` as a resumable subscription — the cursor is the global
+  position (`Cursor::events`), a call replays from it and then tails the log in one loop (no gap
+  or duplicate at the hand-over or on resume), a projection filters events, a slow subscriber is
+  lagged (pull-based, at most the window plus one batch in memory), interrupting the call
+  releases the reader (`open_readers`), and a failed read is `InternalError { id }`. Book chapter
+  33.8.
 
 ### Changed
 
