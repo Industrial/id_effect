@@ -10,8 +10,8 @@ use id_effect::{Effect, HCons, HNil, WallClock, fail, hlist};
 use id_effect_kit::auth::oidc::OidcRoutes;
 use id_effect_kit::auth::{
   Authenticate, ClaimMapping, CookieConfig, JwtIssuer, JwtKey, JwtVerifier, LoginThrottle,
-  OidcClient, OidcConfig, PasswordHasher, PasswordParams, PgSessionStore, SessionConfig, Sessions,
-  Totp, TotpConfig,
+  OidcClient, OidcConfig, PasswordHasher, PasswordParams, PgSessionStore, PgThrottleStore,
+  SessionConfig, Sessions, Totp, TotpConfig,
 };
 use id_effect_kit::authz::{AuthorizeExt, AuthzEvents, CurrentPrincipal, Guard, Policies};
 use id_effect_kit::axum::CapOverrideLayer;
@@ -62,8 +62,8 @@ pub struct App {
   pub sessions: Sessions,
   /// Argon2id password hashing.
   pub hasher: PasswordHasher,
-  /// Backoff after failed password logins, per account and per client address (in process:
-  /// each instance counts on its own).
+  /// Backoff after failed password logins, per account and per client address (counted in
+  /// PostgreSQL: every instance sees every failure).
   pub throttle: LoginThrottle,
   /// Signs API tokens.
   pub tokens: JwtIssuer,
@@ -245,9 +245,12 @@ impl App {
       .issuer(settings.jwt_issuer.clone())
       .audience(settings.jwt_audience.clone())
       .require_claim("jti");
-    let totp = Totp::new(
+    // Failed logins and wrong TOTP codes counted on the primary, shared by every instance.
+    let failures = PgThrottleStore::from_service(SqlClientService(Arc::clone(&db)));
+    let totp = Totp::with_stores(
       TotpConfig::new(settings.totp_issuer.clone()),
       auth::UserTotpSteps::new(Arc::clone(&db)),
+      failures.clone(),
     );
     let (topic, _group) = notifications::names(&config.messaging)?;
     let mail = Mail {
@@ -268,7 +271,7 @@ impl App {
       reads,
       sessions,
       hasher: PasswordHasher::new(params),
-      throttle: LoginThrottle::default().free_attempts(settings.login_free_attempts),
+      throttle: LoginThrottle::new(failures).free_attempts(settings.login_free_attempts),
       tokens,
       verifier,
       totp,

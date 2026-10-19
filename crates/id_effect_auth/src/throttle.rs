@@ -16,9 +16,10 @@
 //! without a new one.
 //!
 //! The counts live in a [`ThrottleStore`]. [`MemoryThrottleStore`] (the default) counts per
-//! process; several instances behind a load balancer each count on their own until a shared
-//! store is plugged in: `PgThrottleStore` (feature `pg`) keeps them in PostgreSQL, so every
-//! instance sees every failure. [`BasicAuth`](crate::BasicAuth) throttles with a default
+//! process and records [`MEMORY_THROTTLE_STORE_POSTURE`] in the posture registry; several
+//! instances behind a load balancer each count on their own until a shared store is plugged in:
+//! `PgThrottleStore` (feature `pg`) keeps them in PostgreSQL, so every instance sees every
+//! failure. [`BasicAuth`](crate::BasicAuth) throttles with a default
 //! `LoginThrottle`; an application's own login calls [`check`](LoginThrottle::check) before
 //! hashing and [`record_failure`](LoginThrottle::record_failure) /
 //! [`record_success`](LoginThrottle::record_success) after.
@@ -97,12 +98,35 @@ pub trait ThrottleStore: Send + Sync + 'static {
 /// Above this many keys, [`MemoryThrottleStore`] drops forgotten ones on the next failure.
 const MEMORY_PRUNE_AT: usize = 10_000;
 
+/// The posture registry id [`MemoryThrottleStore`] records when one is created (0.11 H5, H6):
+/// its failure counts are memory-only.
+pub const MEMORY_THROTTLE_STORE_POSTURE: &str = "id_effect_auth::MemoryThrottleStore::memory_only";
+
 /// In-memory [`ThrottleStore`] (per process). Clones share the counts. Keys whose failures are
 /// forgotten are pruned as the store grows, so a spray of made-up names cannot grow it without
 /// bound.
-#[derive(Clone, Default)]
+///
+/// Each instance of a service counts only the failures it saw itself, so behind a load balancer
+/// N instances allow N budgets of guesses (H5, H6). Creating one (as [`LoginThrottle::default`],
+/// [`BasicAuth::new`](crate::BasicAuth::new) and `Totp::new` do) records
+/// [`MEMORY_THROTTLE_STORE_POSTURE`] in the posture registry, which the prod posture check
+/// reports as memory-only security state; use `PgThrottleStore` there.
+#[derive(Clone)]
 pub struct MemoryThrottleStore {
   inner: Arc<Mutex<HashMap<String, Failures>>>,
+}
+
+impl Default for MemoryThrottleStore {
+  fn default() -> Self {
+    id_effect::observability::posture::record_dangerous(
+      MEMORY_THROTTLE_STORE_POSTURE,
+      "H5, H6: login and TOTP failure counts are memory-only; each instance allows its own \
+       budget of guesses",
+    );
+    Self {
+      inner: Arc::default(),
+    }
+  }
 }
 
 impl fmt::Debug for MemoryThrottleStore {
@@ -546,6 +570,18 @@ mod tests {
     assert_eq!(s.state().len(), 1, "forgotten keys were pruned");
     assert!(format!("{s:?}").contains("keys: 1"));
     assert_eq!(elapsed(at(5), at(1)), Duration::ZERO);
+  }
+
+  #[test]
+  fn h5_memory_throttle_store_is_recorded() {
+    let _ = LoginThrottle::default();
+    let found = id_effect::observability::posture::dangerous_opt_outs();
+    let (_, reopens) = found
+      .iter()
+      .find(|(id, _)| *id == MEMORY_THROTTLE_STORE_POSTURE)
+      .expect("recorded");
+    assert!(reopens.starts_with("H5, H6: login and TOTP failure counts are memory-only"));
+    assert!(MEMORY_THROTTLE_STORE_POSTURE.ends_with("::memory_only"));
   }
 
   #[test]

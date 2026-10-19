@@ -125,7 +125,9 @@ pub use session::{
 pub use session::{PgSessionStore, pg_session_store_layer};
 #[cfg(feature = "pg")]
 pub use throttle::PgThrottleStore;
-pub use throttle::{Failures, LoginThrottle, MemoryThrottleStore, ThrottleStore};
+pub use throttle::{
+  Failures, LoginThrottle, MEMORY_THROTTLE_STORE_POSTURE, MemoryThrottleStore, ThrottleStore,
+};
 #[cfg(all(feature = "totp", feature = "pg"))]
 pub use totp::PgTotpStepStore;
 #[cfg(feature = "totp")]

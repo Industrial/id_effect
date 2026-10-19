@@ -234,6 +234,9 @@ with this amendment, this amendment wins.
   (`scripts/validate-crate-packaging.sh --print-order`). It moves to the `platform` tier of
   ADR 0012, with no other change, when the Ledger reference app depends on it (check P of
   `scripts/tier-conformance.sh`).
+  - *Note (2026-10-19):* that happened in 0.11 — the Ledger runs account closure as a durable
+    workflow on it — so `id_effect_workflow` is now tier `platform` (ADR 0012 rule 4). The
+    first bullet of this amendment records the tier it entered with.
 - crates.io (checked 2026-10-18): `id_effect_workflow` is ours, last published at 0.4.0 (the
   SQLite/duroxide step log) before it moved to labs, so 0.11.0 is its next release. It has no
   0.10.x baseline, so it is excluded from the semver job until its 0.11.0 publish.

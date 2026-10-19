@@ -234,6 +234,10 @@ fn battery_opt_outs_fail_their_probes() {
       id_effect_kit::auth::totp::MEMORY_TOTP_STEP_STORE_POSTURE,
     ),
     (
+      NO_MEMORY_ONLY_STATE,
+      id_effect_kit::auth::MEMORY_THROTTLE_STORE_POSTURE,
+    ),
+    (
       REDACTION_ON,
       "id_effect_logger::RedactionPolicy::dangerous_none",
     ),

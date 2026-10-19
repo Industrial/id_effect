@@ -181,12 +181,25 @@ fn hashing(e: PasswordError) -> AuthError {
 
 impl BasicAuth {
   /// Check users found by `users` with `hasher`, throttled by a default [`LoginThrottle`] (in
-  /// memory, per process).
+  /// memory, per process: it records
+  /// [`MEMORY_THROTTLE_STORE_POSTURE`](crate::MEMORY_THROTTLE_STORE_POSTURE), even when
+  /// [`with_throttle`](Self::with_throttle) replaces it; see [`throttled`](Self::throttled)).
   pub fn new(users: impl UserLookup, hasher: PasswordHasher) -> Self {
+    Self::throttled(users, hasher, LoginThrottle::default())
+  }
+
+  /// Check users found by `users` with `hasher`, throttled by `throttle` (a shared store, for
+  /// example): no default in-memory store is created, so a `throttle` over a shared store
+  /// records nothing in the posture registry.
+  pub fn throttled(
+    users: impl UserLookup,
+    hasher: PasswordHasher,
+    throttle: LoginThrottle,
+  ) -> Self {
     Self {
       users: Arc::new(users),
       hasher,
-      throttle: Some(LoginThrottle::default()),
+      throttle: Some(throttle),
     }
   }
 

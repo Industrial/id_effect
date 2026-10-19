@@ -38,7 +38,8 @@ fn the_migrations_directory_is_valid() {
       (5, true),
       (6, true),
       (7, true),
-      (8, true)
+      (8, true),
+      (9, true)
     ]
   );
 }
@@ -51,7 +52,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
     assert_eq!(
       check().await,
       Err(MigrateError::Pending {
-        versions: vec![1, 2, 3, 4, 5, 6, 7, 8]
+        versions: vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
       })
     );
 
@@ -62,7 +63,7 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
     );
     let mut applied = [a, b].concat();
     applied.sort_unstable();
-    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert_eq!(applied, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     assert_eq!(check().await, Ok(()));
     let states: Vec<MigrationState> = outcome(migrator.status_on(Arc::clone(&db)))
       .await
@@ -70,21 +71,21 @@ async fn start_up_migrates_once_and_reverts_on_demand() {
       .into_iter()
       .map(|s| s.state)
       .collect();
-    assert_eq!(states, [MigrationState::Applied; 8]);
+    assert_eq!(states, [MigrationState::Applied; 9]);
 
     // `id-effect migrate revert`: the last migration's down script; check sees it pending.
     assert_eq!(
       outcome(migrator.revert_on(Arc::clone(&db), 1)).await,
-      Ok(vec![8])
+      Ok(vec![9])
     );
     assert_eq!(
       check().await,
-      Err(MigrateError::Pending { versions: vec![8] })
+      Err(MigrateError::Pending { versions: vec![9] })
     );
     // The next start re-applies it, and nothing else.
     assert_eq!(
       run(ledger::db::migrate(Arc::clone(&db), MIGRATIONS)).await,
-      [8]
+      [9]
     );
     assert_eq!(check().await, Ok(()));
   })

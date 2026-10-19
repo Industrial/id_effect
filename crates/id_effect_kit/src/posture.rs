@@ -15,7 +15,7 @@
 //! | [`SSRF_ON`] | an `id_effect_platform::http` opt-out (private networks, an unguarded client) or an `id_effect_auth` `insecure_allow_http` (OIDC, JWKS) was taken |
 //! | [`CSRF_ON`] | the app states CSRF protection is off, or `SecurityLayer::dangerous_without_csrf` was taken |
 //! | [`LOAD_SHEDDING_ON`] | the server has no in-flight cap, `HostConfig::dangerous_no_load_shedding` or a `ConnectionLimits::dangerous_*` opt-out was taken |
-//! | [`NO_MEMORY_ONLY_STATE`] | security state that must be shared lives in one process (an id ending in `::memory_only`, e.g. `MemoryTotpStepStore`) |
+//! | [`NO_MEMORY_ONLY_STATE`] | security state that must be shared lives in one process (an id ending in `::memory_only`, e.g. `MemoryTotpStepStore`, `MemoryThrottleStore`) |
 //! | [`NO_UNACCEPTED_OPT_OUT`] | any recorded opt-out is not in `security.accepted_risks` with a reason |
 //!
 //! An opt-out the operator accepted — listed under [`ACCEPTED_RISKS_KEY`] in the profile's
@@ -700,6 +700,10 @@ mod tests {
       (
         NO_MEMORY_ONLY_STATE,
         "id_effect_auth::MemoryTotpStepStore::memory_only",
+      ),
+      (
+        NO_MEMORY_ONLY_STATE,
+        "id_effect_auth::MemoryThrottleStore::memory_only",
       ),
     ];
     for (probe, id) in cases {

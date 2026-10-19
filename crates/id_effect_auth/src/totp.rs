@@ -469,14 +469,29 @@ impl fmt::Debug for Totp {
 
 impl Totp {
   /// TOTP with `config`, consumed steps in `steps`, on the system clock, locking after
-  /// [`DEFAULT_MAX_FAILURES`] wrong codes for [`DEFAULT_LOCKOUT`] (counted in memory).
+  /// [`DEFAULT_MAX_FAILURES`] wrong codes for [`DEFAULT_LOCKOUT`] (counted in memory: it records
+  /// [`MEMORY_THROTTLE_STORE_POSTURE`](crate::MEMORY_THROTTLE_STORE_POSTURE), even when
+  /// [`with_failure_store`](Self::with_failure_store) replaces the store; see
+  /// [`with_stores`](Self::with_stores)).
   pub fn new(config: TotpConfig, steps: impl TotpStepStore) -> Self {
+    Self::with_stores(config, steps, MemoryThrottleStore::new())
+  }
+
+  /// TOTP with `config`, consumed steps in `steps` and wrong codes counted in `failures` (shared
+  /// by every instance, for example), on the system clock, locking after
+  /// [`DEFAULT_MAX_FAILURES`] wrong codes for [`DEFAULT_LOCKOUT`]. No default in-memory store is
+  /// created, so shared stores record nothing in the posture registry.
+  pub fn with_stores(
+    config: TotpConfig,
+    steps: impl TotpStepStore,
+    failures: impl ThrottleStore,
+  ) -> Self {
     Self {
       config: Arc::new(config),
       steps: Arc::new(steps),
       clock: WallClock::system(),
       lockout: Some(Lockout {
-        failures: Arc::new(MemoryThrottleStore::new()),
+        failures: Arc::new(failures),
         max_failures: DEFAULT_MAX_FAILURES,
         window: DEFAULT_LOCKOUT,
       }),
