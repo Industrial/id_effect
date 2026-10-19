@@ -94,6 +94,26 @@
 			"mean": 100,
 			"median": 100,
 			"std_dev": 1
+		},
+		"rpc/sequential_50": {
+			"mean": 1700000,
+			"median": 1700000,
+			"std_dev": 17000
+		},
+		"rpc/batch_50": {
+			"mean": 187000,
+			"median": 187000,
+			"std_dev": 1900
+		},
+		"h3_loss/h2_p99": {
+			"mean": 600000000,
+			"median": 600000000,
+			"std_dev": 6000000
+		},
+		"h3_loss/h3_p99": {
+			"mean": 31000000,
+			"median": 31000000,
+			"std_dev": 310000
 		}
 	}
 }

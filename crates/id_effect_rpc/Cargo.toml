@@ -115,7 +115,12 @@ rstest = "0.26"
 # tests/browser.rs (D12, r12-e12-3-webtransport): Chromium over CDP. headless_chrome, not
 # chromiumoxide: its tungstenite (=0.29.0) is the tree's one; default `offline` (no fetching).
 headless_chrome = "=1.0.22"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "net",
+  "io-util",
+] }
 tower = { version = "0.5", features = ["util"] }
 # tests/ui.rs: compile-fail cases of `#[rpc::service]` (r12-e12-1-macro).
 trybuild = "1"
@@ -123,6 +128,29 @@ trybuild = "1"
 # and AsyncAPI 3.0 meta-schemas (r12-e12-4-openapi-asyncapi). The version id_effect_axum's tests
 # already use; no default features, so no remote reference resolution.
 jsonschema = { version = "=0.59.0", default-features = false }
+# benches/{gate_rpc,h3_loss}.rs (r12-e12-5-benches): criterion, the loopback HTTP/1.1 and HTTP/2
+# clients, and the HTTP/3 client on the platform's QUIC client config. Every version is the one
+# already in the tree (id_effect_axum, id_effect_platform).
+criterion = "0.8.2"
+hyper = { version = "=1.12.0", default-features = false, features = [
+  "client",
+  "http1",
+  "http2",
+] }
+hyper-util = { version = "0.1.12", features = ["tokio"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = [
+  "logging",
+  "tls12",
+] }
+quinn = { version = "=0.11.12", default-features = false, features = [
+  "log",
+  "runtime-tokio",
+  "rustls-aws-lc-rs",
+] }
+h3 = "=0.0.8"
+h3-quinn = "=0.0.10"
+bytes = "=1.12.1"
+socket2 = "=0.6.5"
 
 [[example]]
 name = "010_json_greet"
@@ -131,6 +159,24 @@ path = "examples/010_json_greet.rs"
 [[example]]
 name = "020_rpc_tracing"
 path = "examples/020_rpc_tracing.rs"
+
+# 10,000 concurrent WebSocket server streams with heartbeats, RSS sampled (r12-e12-5-benches).
+[[example]]
+name = "streams_soak"
+path = "examples/streams_soak.rs"
+required-features = ["ws"]
+
+# T12 gates: unary delta, batch pair (docs/benchmarks/gates.toml).
+[[bench]]
+name = "gate_rpc"
+harness = false
+required-features = ["postcard"]
+
+# D9: HTTP/3 vs HTTP/2 p99 under 1 % loss + 5 ms (netem in bench.yml, userspace proxies locally).
+[[bench]]
+name = "h3_loss"
+harness = false
+required-features = ["http3"]
 
 [package.metadata.id_effect]
 # ADR 0010 crate tier — checked by scripts/tier-conformance.sh. Moved out of labs in 0.12

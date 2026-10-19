@@ -1,10 +1,14 @@
-# Bench gates (0.11.0.md E2.6, test.qa#8; docs/benchmarks/README.md "CI job"): the D9 gate
-# benches for the change's base and head, one after the other on the same runner, compared by
-# scripts/bench-compare.sh against docs/benchmarks/gates.toml. Runs on pushes to main and on pull
-# requests labelled `perf`. A `budget` or `delta` gate FAIL (including the secure-stack budget of
-# +5 us over the bare request) fails the job; `improve` gates hold against v0.6, not against the
-# previous commit, so they are printed but not enforced here. The runner is the repository
-# variable BENCH_RUNNER (a dedicated `bench` label) when set, otherwise ubuntu-latest.
+# Bench gates (0.11.0.md E2.6, test.qa#8; 0.12 T12, r12-e12-5-benches; docs/benchmarks/README.md
+# "CI job"): the D9 gate benches for the change's base and head, one after the other on the same
+# runner, compared by scripts/bench-compare.sh against docs/benchmarks/gates.toml. Runs on pushes
+# to main and on pull requests labelled `perf`. A `budget`, `delta` or `pair` gate FAIL (the
+# secure-stack budget of +5 us over the bare request, the unary RPC budget, the batch pair, and
+# HTTP/3 vs HTTP/2 p99 under netem) fails the job; `improve` gates hold against v0.6, not against
+# the previous commit, so they are printed but not enforced here. The HTTP/3 bench runs for the
+# head only, alone, with `tc netem` on loopback (sudo on the runner, owner step D16). The
+# 10-minute stream soak runs beside it; its 60 s variant runs on every pull request. The runner
+# is the repository variable BENCH_RUNNER (a dedicated `bench` label) when set, otherwise
+# ubuntu-latest.
 name: Bench
 on:
   push:
@@ -46,16 +50,31 @@ jobs:
           echo "bench: base $base, head $(git rev-parse HEAD)"
           echo "BENCH_BASE=$base" >>"$GITHUB_ENV"
       - name: Bench base
-        run: bash scripts/bench-run.sh --ref "$BENCH_BASE" --baseline ci-base
+        run: bash scripts/bench-run.sh --ref "$BENCH_BASE" --baseline ci-base --skip id_effect_rpc:h3_loss
       - name: Bench head
-        run: bash scripts/bench-run.sh --baseline ci-head
+        run: bash scripts/bench-run.sh --baseline ci-head --skip id_effect_rpc:h3_loss
+      # D9: loss 1 % and delay 5 ms on every loopback packet, each direction (RTT 10 ms). The
+      # loopback MTU drops to 1500 and TSO/GSO/GRO go off, so TCP sends MSS-sized packets and
+      # netem drops 1 % of packets, not 1 % of 64 KiB super-segments. The qdisc is removed even
+      # when the bench fails.
+      - name: HTTP/3 vs HTTP/2 under netem (head)
+        run: |
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
+          sudo modprobe sch_netem || true
+          sudo ip link set dev lo mtu 1500
+          sudo ethtool -K lo tso off gso off gro off || true
+          sudo tc qdisc add dev lo root netem loss 1% delay 5ms limit 100000
+          trap 'sudo tc qdisc del dev lo root || true; sudo ip link set dev lo mtu 65536' EXIT
+          tc qdisc show dev lo
+          H3_LOSS_NETEM=1 bash scripts/bench-run.sh --baseline ci-head --only id_effect_rpc:h3_loss
       - name: Export
         run: |
           bash scripts/bench-export.sh ci-base .tmp/bench-ci-base.json
           bash scripts/bench-export.sh ci-head .tmp/bench-ci-head.json
-      - name: Gates (budget and delta enforced)
+          cp target/criterion/h3_loss/summary-ci-head.json .tmp/h3-loss-ci-head.json || true
+      - name: Gates (budget, delta and pair enforced)
         run: |
-          bash scripts/bench-compare.sh --enforce budget,delta \
+          bash scripts/bench-compare.sh --enforce budget,delta,pair \
             .tmp/bench-ci-base.json .tmp/bench-ci-head.json | tee .tmp/bench-compare.txt
       - name: Upload the exports and the comparison
         if: always()
@@ -66,4 +85,56 @@ jobs:
             .tmp/bench-ci-base.json
             .tmp/bench-ci-head.json
             .tmp/bench-compare.txt
+            .tmp/h3-loss-ci-head.json
           if-no-files-found: ignore
+  # T12 soak: 10,000 concurrent WebSocket server streams on one node, heartbeats every second;
+  # fails when a heartbeat is missing or the node's RSS at minute 10 exceeds 1.05 x minute 1.
+  soak:
+    name: stream soak (10,000 streams, 10 min)
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ${{ vars.BENCH_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Soak
+        run: |
+          ulimit -n 65536 || ulimit -n "$(ulimit -Hn)"
+          mkdir -p .tmp
+          cargo run --release -p id_effect_rpc --features ws --example streams_soak -- \
+            --streams 10000 --minutes 10 --out .tmp/soak.json
+      - name: Upload the soak result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: soak-${{ github.sha }}
+          path: .tmp/soak.json
+          if-no-files-found: ignore
+  # The same soak for 60 s on every pull request (the RSS mark is then at 30 s).
+  soak-60s:
+    name: stream soak (10,000 streams, 60 s)
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Soak
+        run: |
+          ulimit -n 65536 || ulimit -n "$(ulimit -Hn)"
+          cargo run --release -p id_effect_rpc --features ws --example streams_soak -- \
+            --streams 10000 --seconds 60

@@ -10,6 +10,7 @@ numbers that gates read are exported to JSON and committed here.
 | `v0.6.json`, `v0.6.machine.txt` | The v0.6 baseline and the machine it ran on (`b0-baseline-capture`) |
 | `v0.6-rerun.json`, `v0.7.json`, [`REPORT-0.7.md`](REPORT-0.7.md) | The 0.7.0 release comparison: a same-session re-run of `bench/v0.6` against 0.7.0 (`r-bench-report`) |
 | `v0.9.json`, `v0.10.json`, `v0.10-fiber-registry.json` | The 0.10.0 exit gate: `v0.9.0` (a `git archive` export) and 0.10.0 with the `fiber-registry` feature off and on, one session ([0.10 exit](#010-exit-r10-w3-kpis)) |
+| `v0.11.json`, `v0.12.json` | The 0.12 bench gates: the 0.11.0 tree (`release/0.11.0`, a `git archive` export) and 0.12, one session; `v0.12.json` also carries the load, CPU and toolchain of every run, the HTTP/3 trials and the soak ([RPC gates](#rpc-gates-012)) |
 | `fixtures/*.json` | Synthetic exports for `bench-compare.sh --self-test` |
 | `compile-0.8.json` | Build loop of the template app (`examples/cli-minimal`) for 0.8: cold build, incremental rebuild, boot ([Compile time](#compile-time)) |
 | `dx-kpis-0.8.json`, `dx-kpis-0.9.json`, `dx-kpis-0.10.json` | The DX KPIs of PLAN-OF-PLANS §8 measured by `scripts/dx-kpis.sh` (K1, K4, K5; K3 from 0.9; K2 and K6 from 0.10, [Rebuild and release build](#rebuild-and-release-build-k2-k6)) |
@@ -24,6 +25,8 @@ numbers that gates read are exported to JSON and committed here.
 | `budget` | `phase0/bench_effect_map_chain`, `phase0/bench_effect_flat_map_chain`, `gate/flat_map_depth_10k`, `gate/async_bind_64` | ratio ≤ 1.25 |
 | `improve` | `gate/spawn_join_10k`, `gate/sleep_cpu_1k_x_1ms`, `gate/axum_request_oneshot` | ratio < 0.95 (no noise band) |
 | `delta` | `gate/axum_request_secure_stack` over `gate/axum_request_bare` | new − new ≤ 5000 ns (no noise band; [Secure-stack budget](#secure-stack-budget-011)) |
+| `pair` | `rpc/batch_50` over `rpc/sequential_50` | new / new ≤ 0.20 (no noise band; [RPC gates](#rpc-gates-012)) |
+| `pair` | `h3_loss/h3_p99` over `h3_loss/h2_p99` | new / new ≤ 1.00 (noise 0.05; netem in CI, [HTTP/3 under loss](#http3-under-loss-d9)) |
 | `report` | every other listed or exported bench | always (ratio is printed) |
 
 - **Noise (Q7):** a `budget` ratio that misses its limit by at most 0.05 is reported
@@ -35,8 +38,10 @@ numbers that gates read are exported to JSON and committed here.
   files (a `pair` or `delta` gate's two ids in the new one only). A missing id is a `FAIL`.
 - **Pair gates** (`kind = "pair"`, `over = "<id>"`) are a ratio inside one run:
   `new[id] / new[over]`. The base file is not read for them, so a pair added in a change
-  is gated in that change already. No shipped gate uses `pair` since 0.11; the self-test
-  keeps it covered with `fixtures/gates-pair.toml`.
+  is gated in that change already. From 0.12 the batch gate and the HTTP/3 gate are pairs
+  (two measurements of the same stack); the self-test covers the kind with
+  `fixtures/gates-pair.toml`, and every fixture carries the four ids of the two pairs at
+  passing values.
 - **Delta gates** (`kind = "delta"`, `over = "<id>"`) are an absolute difference inside one
   run: `new[id] - new[over]` in the metric's unit (ns), against `limit` in ns. The `RATIO`
   column then shows the difference (`+4650`), and the result the ratio for information
@@ -58,6 +63,13 @@ numbers that gates read are exported to JSON and committed here.
 | `id_effect` | `gate_core` | `gate/async_bind_64`, `gate/flat_map_depth_10k`, `stream/*`, `coord/*` |
 | `id_effect_tokio` | `gate_fiber` | `gate/spawn_join_10k`, `gate/sleep_1k_x_1ms`, `gate/sleep_cpu_1k_x_1ms` (process CPU time) |
 | `id_effect_axum` | `gate_request` | `gate/axum_request_oneshot`, `gate/axum_request_caps`, `gate/axum_request_bare`, `gate/axum_request_secure_stack` |
+| `id_effect_rpc` (feature `postcard`) | `gate_rpc` | `rpc/unary_json`, `rpc/axum_json_handler`, `rpc/unary_postcard`, `rpc/sequential_50`, `rpc/batch_50` |
+| `id_effect_rpc` (feature `http3`) | `h3_loss` (no criterion harness; writes criterion estimates) | `h3_loss/h2_p99`, `h3_loss/h3_p99`, `h3_loss/h2_p50`, `h3_loss/h3_p50` |
+
+`scripts/bench-run.sh` lists each bench as `package:bench[:features]` and passes the features to
+`cargo bench`. The 10,000-stream soak is an example, not a bench:
+`cargo run --release -p id_effect_rpc --features ws --example streams_soak -- --streams 10000 --minutes 10`
+([Stream soak](#stream-soak-t12)).
 
 ## Workflow
 
@@ -117,11 +129,22 @@ requests labelled `perf` (adding the label starts it; later pushes re-run it):
 2. `bench-run.sh --ref <base> --baseline ci-base` (a `git archive` export), then
    `bench-run.sh --baseline ci-head`, one after the other on the **same runner**, criterion
    defaults, into one `target/criterion`.
-3. `bench-export.sh` both, then `bench-compare.sh --enforce budget,delta` against
-   `gates.toml`. A `budget` or `delta` `FAIL` (or a missing gated id) fails the job; the
-   `improve` gates ("must improve on v0.6") are printed as `IGNORED`, since a change compared
-   with its parent is near 1.00 by construction ([Gates](#gates)).
-4. The two exports and the comparison are uploaded as the artifact `bench-<sha>`.
+   Both runs leave out `h3_loss` (`--skip id_effect_rpc:h3_loss`).
+3. HTTP/3 under loss, head only: the step puts `tc netem loss 1% delay 5ms limit 100000` on
+   `lo` (with `sudo`; the loopback MTU set to 1500 and TSO/GSO/GRO off first, so netem sees
+   MSS-sized TCP packets), runs `H3_LOSS_NETEM=1 bench-run.sh --baseline ci-head --only
+   id_effect_rpc:h3_loss`, and removes the qdisc on exit. Nothing else runs under netem.
+4. `bench-export.sh` both, then `bench-compare.sh --enforce budget,delta,pair` against
+   `gates.toml`. A `budget`, `delta` or `pair` `FAIL` (or a missing gated id) fails the job;
+   the `improve` gates ("must improve on v0.6") are printed as `IGNORED`, since a change
+   compared with its parent is near 1.00 by construction ([Gates](#gates)). The pair gates read
+   the head export only, so a base without the RPC benches is fine.
+5. The two exports, the comparison and the HTTP/3 trials are uploaded as the artifact
+   `bench-<sha>`.
+
+Two more jobs run the [stream soak](#stream-soak-t12): `soak` (10 minutes, beside the bench job:
+pushes to `main` and `perf` pull requests; the result JSON is the artifact `soak-<sha>`) and
+`soak-60s` (60 s on every pull request).
 
 The runner is the repository variable `BENCH_RUNNER` (a dedicated self-hosted `bench` label)
 when set, otherwise `ubuntu-latest`. Shared runners are noisy: a `budget` result within the
@@ -172,6 +195,154 @@ Both benches (`crates/id_effect_axum/benches/gate_request.rs`) send the same in-
 Every layer must let the request through: the bench asserts `200`. The stack grows as the 0.11
 security leaves land (the first-party `LoadShedLayer`, CSRF masking, the access layer);
 `r11-w3-kpis` re-measures both benches with the final stack for the release figure.
+
+## RPC gates (0.12)
+
+The T12 gates of `.maestro/specs/releases/0.12.0.md` (`r12-e12-5-benches`). Ratios are kept only
+between two measurements of the same stack (batch against sequential, HTTP/3 against HTTP/2);
+where a ratio is ill-posed the budget is absolute (the unary RPC delta, D5; the secure-stack
+delta, 0.11).
+
+Measured 2026-10-19 on the reference machine (AMD Ryzen 9 7950X, 32 threads, `performance`
+governor, `rustc 1.99.0-nightly (af3d95584 2026-07-09)`, Linux 6.18.55), shared with two to
+three other agents. Every final number comes from a bench file started at a 1-minute load
+average below 3.5 and finished below 4 (polled; each run's window and load are in
+`v0.12.json` `.session.runs`); runs that crossed 4 were thrown away and repeated. The benches ran
+on `5d9119d5` plus this leaf's files, the gated soak on `82beb0f2` (two-way resume) plus them; the base is `release/0.11.0` (`037dffc4`), in the same
+session.
+
+| Gate | Kind | Measured (median) | Limit | Headroom | Spread seen (5 runs, load 2–9) |
+|---|---|---|---|---|---|
+| `rpc/unary_json − rpc/axum_json_handler` (D5) | `delta` | 4,406 − 1,007 = **+3,399 ns** (ratio 4.38) | 3,000 ns | **none: over by 399 ns** — gate not written, owner question | +3.38 … +3.59 µs |
+| `rpc/batch_50 / rpc/sequential_50` | `pair`, noise 0 | 180.5 µs / 1,626.9 µs = **0.111** (9.0× faster) | 0.20 | 0.089 (45 % of the limit) | 0.102 … 0.120 |
+| `gate/axum_request_secure_stack − bare` (0.11, unchanged) | `delta`, noise 0 | 3,576 − 929 = **+2,648 ns** | 5,000 ns | 2,352 ns | +2.58 … +2.65 µs (+2.88 µs at load 16, discarded) |
+| `h3_loss/h3_p99 / h3_loss/h2_p99` (D9) | `pair`, noise 0.05 | 38.5 ms / 589.0 ms = **0.065** (userspace proxies) | 1.00 | 0.935 | 0.05 (F22 spike) … 0.065 |
+
+- **Noise headroom.** The batch pair has no noise band and sits at about half its limit; its
+  worst run (0.120, under load 9) is still 40 % below. The secure-stack delta keeps 2.35 µs of
+  its 5 µs, about ten times the run-to-run spread. The HTTP/3 pair carries the global 0.05 band
+  because each trial's p99 is one quantile of 12,800 samples; locally its trials spread
+  28.5–38.9 ms for HTTP/3 and 587–600 ms for HTTP/2, far inside the limit. On the shared CI
+  runner re-run before acting on a result near a limit ([CI job](#ci-job)).
+- **`rpc/unary_postcard`** (report only): 4,465 ns, 59 ns more than JSON for this three-field
+  struct.
+
+### Unary budget (D5): measured over 3 µs
+
+`rpc/unary_json` is a `#[rpc::service]` query (`Bench.echo`, a struct of an `i64`, a `String`
+and a `bool`) called as `POST /rpc/Bench.echo` through `oneshot` on the mounted router, as the
+`gate_request` benches; `rpc/axum_json_handler` is a plain axum handler doing the same serde
+decode and encode (`Json<Item>` → `Json<Item>`). The difference is **+3.40 µs** in the clean
+run and +3.38 to +3.59 µs in every other run of the day (+3.50 µs on `82beb0f2` after
+two-way resume landed, 21:51, load 1.8–3.3; batch 0.112 there), so the D5 budget of 3 µs is missed by
+about 0.4 µs. As `r12-e12-5-benches` requires, the `delta` gate is **not** written into
+`gates.toml` and the budget is not loosened: the owner decides (release spec Open question 2)
+between trimming the per-call path (the RPC edge does correlation id, span, C5 header checks,
+deadline, guard dispatch, the effect fiber and the `WireResult` envelope per call) and another
+number. The bench and both ids are in place, so the gate is one `[[gate]]` table once decided:
+
+```toml
+[[gate]]
+id = "rpc/unary_json"
+kind = "delta"
+over = "rpc/axum_json_handler"
+limit = 3000
+noise = 0
+```
+
+### HTTP/3 under loss (D9)
+
+`benches/h3_loss.rs`: 64 multiplexed `GET`s of 16 KiB on one connection per round, 200 rounds
+after 10 warm-up rounds, 3 trials alternating HTTP/2 and HTTP/3 on fresh connections; a sample
+is one request's latency, the gated figure the median over trials of each trial's p99. The
+server is the shipped host (`ServerHandle` with TLS: HTTP/2 on TCP, HTTP/3 on the same UDP port
+through the platform `h3` route, BBR by default); the clients are hyper's HTTP/2 client and `h3`
+on the platform HTTP/3 client config (BBR, 4 MiB socket buffers).
+
+- **CI (the gate):** `bench.yml` runs it under real `tc netem loss 1% delay 5ms` on `lo`
+  (`H3_LOSS_NETEM=1`, [CI job](#ci-job)). Locally `sudo` is blocked, so this design has **not
+  been run here**; the first CI run on the bench runner (owner step D16) is the first netem
+  figure. Two caveats of netem on loopback, both documented in the job: the MTU (65,536 on `lo`)
+  and TSO/GSO would let one "packet" carry 64 KiB of TCP, so the job sets MTU 1500 and turns
+  them off; quinn's UDP GSO still hands netem batches of datagrams as one packet, so HTTP/3's
+  losses come in bursts (harsher for HTTP/3, not kinder).
+- **Locally:** userspace proxies (the D9 spike's, F22): a UDP proxy drops 1 % of datagrams per
+  direction and delays the rest 5 ms; a TCP proxy delays MSS-sized segments 5 ms and models a
+  lost one as a fast retransmit 12.5 ms later with head-of-line blocking and a 0.7 window cut
+  (generous to TCP: no RTO, ACK loss free).
+
+| 2026-10-19, userspace proxies, load 2.4–3.3 | p50 | p99 (median of 3) | trials p99 |
+|---|---|---|---|
+| HTTP/2 over TLS | 245 ms | 589.0 ms | 599.7, 589.0, 587.1 ms |
+| HTTP/3, BBR (shipped) | 15.7 ms | 38.5 ms | 38.5, 28.5, 38.9 ms |
+| h3 / h2 | | **0.065** | |
+
+No UDP receive-buffer drops in any trial. BBR wins clearly in the model, and BBR does not react
+to random loss by design, so it is expected to hold under netem; the gate therefore stays an
+enforced `pair`. Should the netem job show HTTP/3 losing, D9 makes the gate report-only
+(`kind = "report"`, both ids listed) and F36 applies: a congestion-control switch in
+`Http3Options` so operators can fall back to Cubic without code (the axum host registers
+`Route::h3()`, BBR, unconditionally today).
+
+### Stream soak (T12)
+
+`examples/streams_soak.rs` (feature `ws`): a child process serves one node (the host's
+`serve_listener` with default `ConnectionLimits`, an `RpcServer` with the default
+`RpcWsConfig`); the parent opens 10,000 `Soak.beats` server streams, 50 per socket on 200
+sockets spread over source addresses `127.0.0.2`… so no address passes the 16-sockets-per-IP
+default, and each stream gets `{seq, at_ms}` every second. The node's `VmRSS` is sampled every
+30 s. Pass: every stream received every heartbeat due (no gap, duplicate or early end) and
+RSS at the end ≤ 1.05 × RSS at minute 1.
+
+The gated run is on `82beb0f2` (two-way resume landed: every resumable stream's items stay in
+the socket's replay buffer until the client's next credit grant):
+
+| 2026-10-19, 10,000 streams, 10 min (21:38:32–21:48:32), tree `82beb0f2` | Value |
+|---|---|
+| heartbeats received / missing / out of order / streams ended early | 6,009,790 / 0 / 0 / 0 |
+| node RSS at minute 1 → minute 10 | 341,648 → 355,280 KiB (**1.040×**, limit 1.05; peak 357,176 at 8.5 min) |
+| node RSS once all streams were open (0.1 s) / at 30 s | 202,628 / 330,496 KiB |
+| heartbeat lag p50 / p99 | 0 ms / 41 ms |
+| 1-minute load | 3.93 at the start, 1.4–6.5 during |
+
+| Same soak before two-way resume (tree `5d9119d5`, 20:53:55–21:03:55, load 1.8–4.5 for 7 min, then 13–17) | Value |
+|---|---|
+| heartbeats received / missing | 6,009,795 / 0 |
+| node RSS at minute 1 → minute 10 | 181,996 → 180,600 KiB (0.992×) |
+
+- **Thin headroom (1.040 of 1.05).** With the resume replay buffers the node holds about 35 KiB
+  per stream instead of 16 KiB, and RSS keeps climbing slowly until about minute 5 (345 MB at
+  minute 1.5, 356 MB at minute 5, flat after). The buffers are bounded (per session 1,024
+  frames, 1 MiB, 30 s; `resume::ResumeConfig`), so this is warm-up, not a leak, but a minute-1
+  mark sits inside it. The gate passes; a 10-minute CI run on a noisier runner could cross 1.05.
+  Moving the mark to minute 5 or lowering the replay window are owner/coordinator choices (the
+  minute-1 mark is the T12 KPI's wording), not changed here.
+- The 42 ms p99 lag is Nagle's algorithm meeting delayed ACKs: neither the host listener nor
+  `axum::serve` sets `TCP_NODELAY`, so a small WebSocket frame written while the previous one is
+  unacknowledged waits for the peer's delayed ACK (about 40 ms). A 300-stream, 20 s run with
+  `TCP_NODELAY` on the node's sockets shows p99 1 ms (42 ms without). Recorded as a follow-up for the host, not a soak
+  failure.
+- 100 streams per socket also pass (1,000 streams, 20 s): opening 100 calls uses exactly the
+  100-message burst of the socket's inbound rate, and the credit frames of 1 Hz streams stay
+  near 6 per second, so F39 (credit frames counted against the message rate) does not bite at
+  this rate.
+- The 60 s variant (`--seconds 60`, RSS mark at 30 s, after the first credit grants) runs on
+  every pull request; on `82beb0f2` 30 s → 60 s is 1.034× (330,496 → 341,648 KiB in the 10-minute
+  run; 332,804 → 344,000 KiB in a 60 s run at load 20–30). With the old 10 s mark it failed
+  (1.167×) by construction, so the mark moved. The 10-minute run is the `soak` job in
+  `bench.yml`.
+
+### 0.12 against 0.11.0
+
+`bash scripts/bench-compare.sh docs/benchmarks/v0.11.json docs/benchmarks/v0.12.json`: no
+`budget`, `delta` or `pair` gate fails. The three `improve` gates fail against 0.11 by
+construction (they are "must improve on v0.6"; 0.11 already has the improvement), as at the
+0.10 exit; against `v0.6.json` all three pass (0.002, 0.002, 0.014).
+
+| Comparison | `budget` (7) | `delta` / `pair` | `improve` (3) |
+|---|---|---|---|
+| `v0.11.json` → `v0.12.json` | all PASS (max `bench_schedule_retry_overhead` 1.004; `channel_spsc_10k` 0.86) | secure stack +2,648 ns PASS, batch 0.111 PASS, h3 0.065 PASS | 0.96, 1.02, 1.02 FAIL (by construction) |
+| `v0.6.json` → `v0.12.json` | all PASS (max `bench_schedule_retry_overhead` 1.31 of 2.0) | as above | all PASS |
 
 ## 0.10 exit (`r10-w3-kpis`)
 

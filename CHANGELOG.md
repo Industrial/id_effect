@@ -415,6 +415,22 @@
   idle connections, F14). The `#[rpc::service]` UI suite now also runs with feature `channels`
   (F31: `ChannelError`'s `RpcErrorUnion` impl is `#[diagnostic::do_not_recommend]`).
 
+### Performance
+
+- T12 bench gates (r12-e12-5-benches, `docs/benchmarks/README.md` "RPC gates (0.12)"):
+  `id_effect_rpc` benches `gate_rpc` (`rpc/unary_json`, `rpc/axum_json_handler`,
+  `rpc/unary_postcard`, `rpc/sequential_50`, `rpc/batch_50`) and `h3_loss` (HTTP/3 vs HTTP/2 p99
+  of 64 multiplexed 16 KiB responses under 1 % loss + 5 ms), example `streams_soak` (10,000
+  WebSocket server streams on one node, heartbeats, RSS). New `pair` gates: a 50-call batch at
+  most 0.20 of 50 sequential calls (measured 0.111), HTTP/3 p99 at most HTTP/2 p99 (0.065 with
+  the userspace loss proxies; `tc netem` in `bench.yml`). The secure-stack budget is unchanged
+  (+2,648 ns of 5,000). The unary RPC delta measured +3,399 ns over a raw axum JSON handler,
+  over the 3 µs of D5, so its gate waits for the owner. Soak: 6,009,790 heartbeats, none
+  missing, node RSS 1.040× between minute 1 and minute 10 (resume replay buffers warming up).
+  `scripts/bench-run.sh` takes `package:bench:features` and `--skip`; `bench.yml` enforces
+  `pair` gates, runs `h3_loss` under netem and the 10-minute soak, and a 60 s soak on every pull
+  request. `docs/benchmarks/v0.11.json` and `v0.12.json`.
+
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 
 The secure-by-default release (ADR 0013): every finding of the 2026-10-18 security review is

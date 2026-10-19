@@ -2,7 +2,7 @@
 # Run the D9 gate benches and save them as a named criterion baseline.
 #
 # Usage: bash scripts/bench-run.sh [--src DIR | --ref REF] [--baseline NAME] [--target-dir DIR]
-#                                  [--only PKG:BENCH]... [-- CRITERION_ARGS...]
+#                                  [--only PKG:BENCH]... [--skip PKG:BENCH]... [-- CRITERION_ARGS...]
 #   --src DIR         workspace to bench (default: this checkout)
 #   --ref REF         `git archive REF` into .tmp/bench-<NAME> and bench that (no worktree);
 #                     NAME is REF without a leading bench/, so --ref bench/v0.6 benches
@@ -10,6 +10,8 @@
 #   --baseline NAME   criterion baseline name (default: head, or the NAME derived from REF)
 #   --target-dir DIR  shared CARGO_TARGET_DIR (default: ./target), so every baseline lands in
 #                     one target/criterion for scripts/bench-export.sh
+#   --only PKG:BENCH  run only this bench (repeatable; its features are the list's)
+#   --skip PKG:BENCH  leave this bench out (repeatable; CI runs h3_loss on its own, under netem)
 # Records the benched SHA in <target>/criterion/.bench-run/<NAME>.sha for bench-export.sh.
 # Requires: cargo, git, tar.
 set -euo pipefail
@@ -17,18 +19,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# package:bench pairs; every gates.toml id lives in one of these.
+# package:bench[:features] entries; every gates.toml id lives in one of these. A bench the
+# benched tree does not have (an older --ref) is skipped with a warning.
 GATE_BENCHES=(
     id_effect:phase0_baseline
     id_effect:gate_core
     id_effect_tokio:gate_fiber
     id_effect_axum:gate_request
+    id_effect_rpc:gate_rpc:postcard
+    id_effect_rpc:h3_loss:http3
 )
 
-usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 
 src="" ref="" baseline="" target="${CARGO_TARGET_DIR:-$ROOT/target}"
-only=()
+only=() skip=()
 while (($#)); do
     case "$1" in
         --src) src="${2:?--src needs a directory}"; shift 2 ;;
@@ -36,6 +41,7 @@ while (($#)); do
         --baseline) baseline="${2:?--baseline needs a name}"; shift 2 ;;
         --target-dir) target="${2:?--target-dir needs a directory}"; shift 2 ;;
         --only) only+=("${2:?--only needs PKG:BENCH}"); shift 2 ;;
+        --skip) skip+=("${2:?--skip needs PKG:BENCH}"); shift 2 ;;
         --) shift; break ;;
         -h | --help) usage ;;
         *) echo "bench-run: unknown argument: $1" >&2; usage ;;
@@ -74,18 +80,36 @@ governor="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/nul
 mkdir -p "$target"
 target="$(cd "$target" && pwd)"
 export CARGO_TARGET_DIR="$target"
-((${#only[@]})) && GATE_BENCHES=("${only[@]}")
+
+# The selected entries, with their features from GATE_BENCHES.
+selected=()
+for entry in "${GATE_BENCHES[@]}"; do
+    key="${entry%:*}"
+    [[ "$entry" == *:*:* ]] || key="$entry"
+    if ((${#only[@]})); then
+        keep=0
+        for o in "${only[@]}"; do [[ "$o" == "$key" ]] && keep=1; done
+        ((keep)) || continue
+    fi
+    for s in "${skip[@]}"; do [[ "$s" == "$key" ]] && continue 2; done
+    selected+=("$entry")
+done
+for o in "${only[@]}"; do
+    known=0
+    for entry in "${GATE_BENCHES[@]}"; do [[ "$entry" == "$o" || "$entry" == "$o":* ]] && known=1; done
+    ((known)) || selected+=("$o")
+done
 
 echo "bench-run: baseline '$baseline' from ${src} @ ${sha:0:12} into $target/criterion"
-for pair in "${GATE_BENCHES[@]}"; do
-    pkg="${pair%%:*}" bench="${pair#*:}"
+for entry in "${selected[@]}"; do
+    IFS=: read -r pkg bench features <<<"$entry"
     if [[ ! -f "$src/crates/$pkg/benches/$bench.rs" ]]; then
         echo "bench-run: warning: $pkg has no bench $bench in $src, skipped" >&2
         continue
     fi
-    echo "bench-run: $pkg --bench $bench"
-    cargo bench --manifest-path "$src/Cargo.toml" -p "$pkg" --bench "$bench" -- \
-        --save-baseline "$baseline" --noplot "$@"
+    echo "bench-run: $pkg --bench $bench${features:+ --features $features}"
+    cargo bench --manifest-path "$src/Cargo.toml" -p "$pkg" ${features:+--features "$features"} \
+        --bench "$bench" -- --save-baseline "$baseline" --noplot "$@"
 done
 
 mkdir -p "$target/criterion/.bench-run"

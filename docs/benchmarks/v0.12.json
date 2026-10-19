@@ -1,0 +1,489 @@
+{
+	"schema": 1,
+	"baseline": "v0.12",
+	"sha": "5d9119d50ba6cb75aad35db66c43330cb907c6e3",
+	"created": "2026-10-19T18:33:42Z",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": "32",
+		"governor": "performance",
+		"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+		"kernel": "Linux 6.18.55"
+	},
+	"benches": {
+		"coord/channel_spsc_10k": {
+			"mean": 875586.2439634032,
+			"median": 842127.8731617647,
+			"std_dev": 143034.29447023038,
+			"mean_ci": [852755.5060033648, 907449.1703922071],
+			"median_ci": [830929.3181818181, 852559.4263480392]
+		},
+		"coord/queue_bounded_10k": {
+			"mean": 787937.1988953644,
+			"median": 781979.5396640827,
+			"std_dev": 62406.62772869652,
+			"mean_ci": [776012.9135161235, 800412.2427586222],
+			"median_ci": [756625.6673319328, 805791.3275862068]
+		},
+		"gate/async_bind_64": {
+			"mean": 1418.239265536002,
+			"median": 1418.2290583605018,
+			"std_dev": 11.086187352245762,
+			"mean_ci": [1416.117037691467, 1420.514304119494],
+			"median_ci": [1415.6878759100982, 1419.8116059379217]
+		},
+		"gate/axum_request_bare": {
+			"mean": 931.3916774767841,
+			"median": 928.6905600565436,
+			"std_dev": 8.138749570448832,
+			"mean_ci": [929.8737005789036, 933.042365671737],
+			"median_ci": [927.3383580763863, 931.7023723723723]
+		},
+		"gate/axum_request_caps": {
+			"mean": 1210.9887727762125,
+			"median": 1214.0758397271952,
+			"std_dev": 20.62410931191601,
+			"mean_ci": [1207.0844666089513, 1215.1673196122006],
+			"median_ci": [1207.8745280521332, 1216.6871790117734]
+		},
+		"gate/axum_request_oneshot": {
+			"mean": 779.4381492176117,
+			"median": 781.3031323426471,
+			"std_dev": 8.70048524816464,
+			"mean_ci": [777.7529092967644, 781.1699081755036],
+			"median_ci": [778.0268094679186, 782.3683542697627]
+		},
+		"gate/axum_request_secure_stack": {
+			"mean": 3578.39535220933,
+			"median": 3576.2866475624223,
+			"std_dev": 15.566671600024813,
+			"mean_ci": [3575.4643585201184, 3581.5176035915592],
+			"median_ci": [3572.8507326007325, 3580.5084706959706]
+		},
+		"gate/flat_map_depth_10k": {
+			"mean": 196076.40099952155,
+			"median": 196171.45362903224,
+			"std_dev": 1932.389205589955,
+			"mean_ci": [195702.58532242253, 196462.43408519207],
+			"median_ci": [195945.85714285716, 196368.62962962964]
+		},
+		"gate/sleep_1k_x_1ms": {
+			"mean": 3236974.7525641024,
+			"median": 3213794.5096153845,
+			"std_dev": 47637.74019904813,
+			"mean_ci": [3211043.927564102, 3266891.938605769],
+			"median_ci": [3203132.705128205, 3276148.5]
+		},
+		"gate/sleep_cpu_1k_x_1ms": {
+			"mean": 12465699.299999999,
+			"median": 12491540.209150326,
+			"std_dev": 145652.83833458714,
+			"mean_ci": [12378244.043137254, 12549961.198039215],
+			"median_ci": [12352986.918300655, 12550414.990196079]
+		},
+		"gate/spawn_join_10k": {
+			"mean": 15980437.436666667,
+			"median": 16226702.7,
+			"std_dev": 1903915.2160340098,
+			"mean_ci": [14857042.473333335, 17040450.769916665],
+			"median_ci": [15034804.2, 17630238.299999997]
+		},
+		"h3_loss/h2_p50": {
+			"mean": 248397215.66666666,
+			"median": 245022008.0,
+			"std_dev": 4900851.425226324,
+			"mean_ci": [244842349.0, 255327290.0],
+			"median_ci": [244842349.0, 255327290.0]
+		},
+		"h3_loss/h2_p99": {
+			"mean": 591932595.0,
+			"median": 589011659.0,
+			"std_dev": 5552031.503128262,
+			"mean_ci": [587081274.0, 599704852.0],
+			"median_ci": [587081274.0, 599704852.0]
+		},
+		"h3_loss/h3_p50": {
+			"mean": 15569541.0,
+			"median": 15713955.0,
+			"std_dev": 307092.3947782925,
+			"mean_ci": [15142627.0, 15852041.0],
+			"median_ci": [15142627.0, 15852041.0]
+		},
+		"h3_loss/h3_p99": {
+			"mean": 35338878.666666664,
+			"median": 38536634.0,
+			"std_dev": 4807117.939128761,
+			"mean_ci": [28544489.0, 38935513.0],
+			"median_ci": [28544489.0, 38935513.0]
+		},
+		"phase0/bench_effect_flat_map_chain": {
+			"mean": 53.689829808186715,
+			"median": 53.52825434310263,
+			"std_dev": 0.5974804470505379,
+			"mean_ci": [53.58695646460134, 53.817286171387074],
+			"median_ci": [53.46335070005868, 53.61622459202471]
+		},
+		"phase0/bench_effect_map_chain": {
+			"mean": 53.39754851999181,
+			"median": 53.269862044479865,
+			"std_dev": 0.6000050454677291,
+			"mean_ci": [53.29252033316067, 53.5274659059433],
+			"median_ci": [53.182311502082996, 53.41277929756179]
+		},
+		"phase0/bench_env_insert_overhead": {
+			"mean": 33.6266800137193,
+			"median": 33.59836144336735,
+			"std_dev": 0.3166496693009788,
+			"mean_ci": [33.56675425525866, 33.691053375497795],
+			"median_ci": [33.519608023137074, 33.64192119936801]
+		},
+		"phase0/bench_schedule_retry_overhead": {
+			"mean": 137.1892818684619,
+			"median": 137.0697391683775,
+			"std_dev": 1.2031934633063137,
+			"mean_ci": [136.95421751467515, 137.4252632879645],
+			"median_ci": [136.87884148069446, 137.5164602646082]
+		},
+		"phase0/bench_stream_throughput_collect": {
+			"mean": 1373.3621952019882,
+			"median": 1368.5006453644646,
+			"std_dev": 24.20544676272075,
+			"mean_ci": [1368.653777190179, 1378.1368471616393],
+			"median_ci": [1360.5775100871294, 1373.6437440305635]
+		},
+		"rpc/axum_json_handler": {
+			"mean": 1004.5306780011779,
+			"median": 1006.9160422598163,
+			"std_dev": 12.22496278174632,
+			"mean_ci": [1002.1642993702386, 1006.9811385851542],
+			"median_ci": [999.4970106075217, 1009.108049931641]
+		},
+		"rpc/batch_50": {
+			"mean": 182454.88042807375,
+			"median": 180536.97196969698,
+			"std_dev": 7557.018976186863,
+			"mean_ci": [181092.36348483086, 184056.3250875242],
+			"median_ci": [179957.14814814815, 181155.48214285713]
+		},
+		"rpc/sequential_50": {
+			"mean": 1654889.7637381738,
+			"median": 1626934.9227272728,
+			"std_dev": 90386.29562098435,
+			"mean_ci": [1637769.6351085438, 1672944.9080750851],
+			"median_ci": [1617777.758178603, 1651047.3043478262]
+		},
+		"rpc/unary_json": {
+			"mean": 4419.951335951819,
+			"median": 4406.225685773397,
+			"std_dev": 103.76597123995403,
+			"mean_ci": [4402.564689929745, 4442.664056691942],
+			"median_ci": [4397.033601307189, 4415.327775630703]
+		},
+		"rpc/unary_postcard": {
+			"mean": 4470.982668675708,
+			"median": 4464.756309789853,
+			"std_dev": 30.086353117392953,
+			"mean_ci": [4465.604143355497, 4477.415475949075],
+			"median_ci": [4462.737838000966, 4469.832035550458]
+		},
+		"stream/map_effect_1k": {
+			"mean": 44804.8335230833,
+			"median": 44714.30417628345,
+			"std_dev": 366.2565983365872,
+			"mean_ci": [44736.69434252083, 44880.33778398024],
+			"median_ci": [44663.44438621097, 44771.03517342452]
+		},
+		"stream/pull_map_10k": {
+			"mean": 9867.161845389615,
+			"median": 9861.867641936607,
+			"std_dev": 64.2192935065899,
+			"mean_ci": [9855.651039389206, 9880.557483540519],
+			"median_ci": [9850.868686868687, 9868.531085502917]
+		}
+	},
+	"session": {
+		"date": "2026-10-19",
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cpus": 32,
+		"governor": "performance",
+		"toolchain": {
+			"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+			"cargo": "cargo 1.99.0-nightly (59800466c 2026-07-07)"
+		},
+		"kernel": "Linux 6.18.55",
+		"tree": "5d9119d5 (release/0.12.0) plus the r12-e12-5-benches files, benched before their commit",
+		"machine_note": "shared with 2-3 other agents; each bench file started at a 1-minute load average below 3.5 (polled) and a run that ended at 4 or more was repeated",
+		"runs": [
+			{
+				"bench": "id_effect:phase0_baseline",
+				"start": "20:09:20",
+				"end": "20:10:00",
+				"load_1m": {
+					"start": 2.21,
+					"samples": [2.41, 2.66]
+				}
+			},
+			{
+				"bench": "id_effect_axum:gate_request",
+				"start": "20:23:30",
+				"end": "20:24:08",
+				"load_1m": {
+					"start": 3.38,
+					"end": 2.81
+				}
+			},
+			{
+				"bench": "id_effect_tokio:gate_fiber",
+				"start": "20:24:08",
+				"end": "20:24:35",
+				"load_1m": {
+					"start": 2.81,
+					"end": 2.51
+				}
+			},
+			{
+				"bench": "id_effect:gate_core",
+				"start": "20:24:35",
+				"end": "20:25:42",
+				"load_1m": {
+					"start": 2.51,
+					"end": 2.92
+				}
+			},
+			{
+				"bench": "id_effect_rpc:gate_rpc:postcard",
+				"start": "20:26:22",
+				"end": "20:27:16",
+				"load_1m": {
+					"start": 2.19,
+					"end": 2.5
+				}
+			},
+			{
+				"bench": "id_effect_rpc:h3_loss:http3",
+				"mode": "userspace-proxy",
+				"start": "20:27:38",
+				"end": "20:33:12",
+				"load_1m": {
+					"start": 2.38,
+					"end": 2.51,
+					"max_sample": 3.26
+				}
+			},
+			{
+				"bench": "examples/streams_soak --streams 10000 --minutes 10 (gated: `soak`)",
+				"tree": "82beb0f2 (two-way resume) plus the leaf files",
+				"start": "21:38:32",
+				"end": "21:48:32",
+				"load_1m": {
+					"start": 3.93,
+					"range": [1.39, 6.51]
+				}
+			},
+			{
+				"bench": "examples/streams_soak --streams 10000 --minutes 10 (before two-way resume: `soak_before_resume`)",
+				"tree": "5d9119d5 plus the leaf files",
+				"start": "20:53:55",
+				"end": "21:03:55",
+				"load_1m": {
+					"start": 3.72,
+					"range_to_minute_7": [1.8, 4.5],
+					"last_3_minutes": [13.3, 17.0]
+				}
+			}
+		],
+		"discarded_runs": [
+			{
+				"what": "full head run 20:01-20:05",
+				"why": "load 4.6-10"
+			},
+			{
+				"what": "full head run 20:09-20:13 (all but phase0_baseline)",
+				"why": "load rose to 6-9 during gate_fiber, gate_request, gate_rpc"
+			},
+			{
+				"what": "gate_rpc 20:14:22-20:15:13",
+				"why": "ended at load 4.02"
+			},
+			{
+				"what": "gate_request 20:20:26-20:21:06",
+				"why": "load 16"
+			}
+		],
+		"repeats": {
+			"unary_delta_ns": {
+				"runs": [3379, 3441, 3409, 3588, 3399],
+				"loads": [
+					"4.9 (quick, 10 samples)",
+					"4.7",
+					"6",
+					"3.1-4.0",
+					"2.2-2.5 (final)"
+				]
+			},
+			"batch_over_sequential": {
+				"runs": [0.102, 0.12, 0.108, 0.11, 0.111]
+			},
+			"secure_stack_delta_ns": {
+				"runs": [2582, 2645, 2649, 2648],
+				"note": "the first is the v0.11 tree; +2,877 at load 16 discarded"
+			}
+		},
+		"base": {
+			"file": "v0.11.json",
+			"ref": "release/0.11.0",
+			"sha": "037dffc40018bd9f04646a06b308ff4a51d25c0e",
+			"start": "19:51:07",
+			"end": "19:54:02",
+			"load_1m": {
+				"start": 2.81,
+				"end": 2.33
+			}
+		}
+	},
+	"gates_0_12": {
+		"unary_delta_ns": 3399.3096435135812,
+		"unary_ratio": 4.375961352134711,
+		"unary_limit_ns": 3000,
+		"unary_status": "over the D5 budget: gate not written, owner decision (release spec Open question 2)",
+		"batch_over_sequential": 0.11096754359852219,
+		"batch_limit": 0.2,
+		"secure_stack_delta_ns": 2647.5960875058786,
+		"secure_stack_limit_ns": 5000,
+		"h3_over_h2_p99": 0.06542592733295964,
+		"h3_limit": 1.0,
+		"h3_noise": 0.05,
+		"h3_mode": "userspace-proxy (netem runs in bench.yml)",
+		"soak_rss_growth": 1.0399007165269518,
+		"soak_limit": 1.05
+	},
+	"h3_loss": {
+		"body_bytes": 16384,
+		"delay_ms": 5.0,
+		"h3_congestion_control": "bbr (Route::h3 default)",
+		"loss": 0.01,
+		"mode": "userspace-proxy",
+		"ratio_h3_over_h2_p99": 0.06542592733295964,
+		"rounds": 200,
+		"streams": 64,
+		"tcp_penalty_ms": 12.5,
+		"trials_ns": {
+			"h2_p50": [255327290.0, 245022008.0, 244842349.0],
+			"h2_p99": [599704852.0, 589011659.0, 587081274.0],
+			"h3_p50": [15713955.0, 15142627.0, 15852041.0],
+			"h3_p99": [38536634.0, 28544489.0, 38935513.0]
+		},
+		"udp_rcvbuf_drops": [0, 0, 0],
+		"warmup": 10
+	},
+	"soak": {
+		"duration_s": 600.0,
+		"errors": [],
+		"heartbeats_missing": 0,
+		"heartbeats_out_of_order": 0,
+		"heartbeats_received": 6009790,
+		"interval_ms": 1000,
+		"lag_ms": {
+			"p50": 0,
+			"p99": 41,
+			"p999": 42
+		},
+		"open_s": 0.125954518,
+		"pass": {
+			"all": true,
+			"heartbeats": true,
+			"rss": true
+		},
+		"per_socket": 50,
+		"rss_kib": {
+			"at_mark": 341648,
+			"end": 355280,
+			"growth": 1.0399007165269518,
+			"mark_s": 60.0,
+			"peak": 357176,
+			"samples": [
+				[2e-8, 202628],
+				[30.00033093, 330496],
+				[60.000448669, 341648],
+				[90.000337037, 344928],
+				[120.000388464, 346900],
+				[150.000497034, 349924],
+				[180.000867959, 351624],
+				[210.000218397, 352076],
+				[240.000639899, 351320],
+				[270.000238375, 355196],
+				[300.000463544, 356240],
+				[330.000625674, 355736],
+				[360.000780227, 354692],
+				[390.000492314, 354228],
+				[420.000895589, 354460],
+				[450.001004355, 354196],
+				[480.000738728, 354176],
+				[510.000450535, 357176],
+				[540.000219072, 355416],
+				[570.000215095, 355384],
+				[600.000378123, 355280]
+			]
+		},
+		"sockets": 200,
+		"streams": 10000,
+		"streams_ended_early": 0,
+		"streams_open": 10000,
+		"streams_short": 0
+	},
+	"soak_before_resume": {
+		"duration_s": 600.0,
+		"errors": [],
+		"heartbeats_missing": 0,
+		"heartbeats_out_of_order": 0,
+		"heartbeats_received": 6009795,
+		"interval_ms": 1000,
+		"lag_ms": {
+			"p50": 0,
+			"p99": 42,
+			"p999": 42
+		},
+		"open_s": 0.10631596,
+		"pass": {
+			"all": true,
+			"heartbeats": true,
+			"rss": true
+		},
+		"per_socket": 50,
+		"rss_kib": {
+			"at_mark": 181996,
+			"end": 180600,
+			"growth": 0.9923295017472912,
+			"mark_s": 60.0,
+			"peak": 182768,
+			"samples": [
+				[2e-8, 163768],
+				[30.000301671, 166420],
+				[60.000705916, 181996],
+				[90.000079938, 182116],
+				[120.000637267, 182272],
+				[150.000907751, 182360],
+				[180.000589804, 182420],
+				[210.000253348, 182476],
+				[240.000169156, 182536],
+				[270.000087306, 182556],
+				[300.000076815, 182584],
+				[330.00025644, 182636],
+				[360.000304531, 182688],
+				[390.000072903, 182724],
+				[420.000701351, 182748],
+				[450.000644155, 182768],
+				[480.000375771, 180572],
+				[510.000529489, 180588],
+				[540.000406532, 180624],
+				[570.00035105, 180576],
+				[600.000076791, 180600]
+			]
+		},
+		"sockets": 200,
+		"streams": 10000,
+		"streams_ended_early": 0,
+		"streams_open": 10000,
+		"streams_short": 0
+	}
+}
