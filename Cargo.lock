@@ -5218,7 +5218,9 @@ name = "security_compile_fail"
 version = "0.11.0"
 dependencies = [
  "axum",
+ "id_effect_axum",
  "id_effect_kit",
+ "id_effect_rpc",
  "serde_json",
  "trybuild",
 ]

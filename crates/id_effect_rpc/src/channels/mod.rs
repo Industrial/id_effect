@@ -343,6 +343,9 @@ impl RpcErrorStatus for ChannelError {
   }
 }
 
+// Kept out of rustc's "other types implement `RpcErrorUnion`" list, so the UI snapshot
+// `tests/ui/error_type_not_a_union.stderr` is the same with and without `channels` (F31).
+#[diagnostic::do_not_recommend]
 impl RpcErrorUnion for ChannelError {
   fn to_wire(&self) -> Value {
     json!({"_tag": self.tag()})

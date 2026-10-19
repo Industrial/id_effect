@@ -28,14 +28,20 @@ id_effect_auth = { path = "../crates/id_effect_auth", features = [
   "jwt",
   "totp",
 ] }
-id_effect_axum = { path = "../crates/id_effect_axum" }
+# `sse`: `realtime::sse::LastEventId` (sse_last_event_id).
+id_effect_axum = { path = "../crates/id_effect_axum", features = ["sse"] }
 id_effect_config = { path = "../crates/id_effect_config" }
 id_effect_node = { path = "../crates/id_effect_node" }
 id_effect_process = { path = "../crates/id_effect_process" }
+# The rpc decoders (0.12): wire envelopes and batches, frames, resume, and the postcard codec.
+id_effect_rpc = { path = "../crates/id_effect_rpc", default-features = false, features = [
+  "postcard",
+] }
 axum = { version = "0.8", default-features = false, features = ["multipart"] }
 base64 = "0.22.1"
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 hmac = "0.12"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10.9"
 tower = { version = "0.5.3", default-features = false, features = ["util"] }
@@ -116,6 +122,48 @@ bench = false
 [[bin]]
 name = "mesh_envelope"
 path = "fuzz_targets/mesh_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_wire_request"
+path = "fuzz_targets/rpc_wire_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_batch"
+path = "fuzz_targets/rpc_batch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_postcard_frame"
+path = "fuzz_targets/rpc_postcard_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_duplex_frame"
+path = "fuzz_targets/rpc_duplex_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_resume_cursor"
+path = "fuzz_targets/rpc_resume_cursor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sse_last_event_id"
+path = "fuzz_targets/sse_last_event_id.rs"
 test = false
 doc = false
 bench = false

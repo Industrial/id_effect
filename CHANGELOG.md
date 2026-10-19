@@ -356,6 +356,19 @@
   15 s after their node's last heartbeat. Tests `channel_join_denied_by_default_policy`,
   `caps_bound_members_topics_and_payloads`, `slow_subscriber_is_dropped_as_lagged`,
   `three_node_broadcast_over_quic_mtls` (mutual TLS, an unpinned node refused).
+- Call-surface proof (r12-e12-5-fuzz-security): six new cargo-fuzz targets with seed corpora,
+  `rpc_wire_request`, `rpc_batch`, `rpc_postcard_frame` (every postcard decoder, a recursive type
+  and a 2^40-element `Vec<()>` among the seeds), `rpc_duplex_frame` (`transport::frame::decode`,
+  JSON and postcard, resume payloads), `rpc_resume_cursor` and `sse_last_event_id` (17 targets;
+  the ClusterFuzzLite PR and batch budgets grow so each target keeps 5 and 10 minutes).
+  Compile-fail cases `r1_rpc_procedure_without_access_decision` and `r10_zero_rtt_on_mutation`
+  (19 cases).
+  `id_effect_rpc/tests/security_surface.rs` fails when a test the release spec's Security table
+  names is missing, lists every 0.12 `dangerous_*` opt-out and checks each records itself, and runs
+  the Origin, `x-rpc`, batch-cap, batch-refusal (`x-rpc-batch-index`) and call-cap cases against
+  one server. THREAT-MODEL.md gains the call-surface boundary B9 and its residual risks (HTTP/2
+  idle connections, F14). The `#[rpc::service]` UI suite now also runs with feature `channels`
+  (F31: `ChannelError`'s `RpcErrorUnion` impl is `#[diagnostic::do_not_recommend]`).
 
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 

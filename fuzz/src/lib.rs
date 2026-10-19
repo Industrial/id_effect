@@ -65,6 +65,25 @@ impl HasSchema for Search {
   }
 }
 
+/// A recursive procedure type for the postcard decoder's nesting bound (`rpc_postcard_frame`).
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum Tree {
+  /// A leaf with a value.
+  Leaf(u8),
+  /// An inner node.
+  Node(Vec<Tree>),
+}
+
+impl Tree {
+  /// The number of `Node` levels on the deepest path (a leaf is 0).
+  pub fn depth(&self) -> usize {
+    match self {
+      Self::Leaf(_) => 0,
+      Self::Node(children) => 1 + children.iter().map(Self::depth).max().unwrap_or(0),
+    }
+  }
+}
+
 /// Any string keys and values (a record schema).
 pub struct Labels;
 

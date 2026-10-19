@@ -22,13 +22,27 @@ the public API only, and checks a documented property besides "does not panic".
 | `totp_otpauth` | base32 secret, `otpauth://` URI label and typed code (`id_effect_auth`, feature `totp`) | base32 round-trips; the URI carries the secret; the current code verifies once, then is a replay |
 | `mesh_frame` | mesh wire frames, `wire::decode` (protocol v3), and the process envelope inside a data frame (`id_effect_node`) | a decoded frame re-encodes to bytes that decode to the same frame; so does the envelope |
 | `mesh_envelope` | `decode_envelope`, then `Mesh::handle_envelope_from` on a fresh node: dispatch, the at-least-once dedup window and acks (`id_effect_node`) | a decoded envelope round-trips; a reliable message unwraps to the matching at-most-once envelope |
+| `rpc_wire_request` | the JSON envelopes of `POST /rpc`: `WireCall` (as the server decodes it, `CodecId::Json`), `WireResult` and `WireExit` (`id_effect_rpc`, 0.12) | a decoded call keeps its id, tag and version through a round trip; an exit keeps success or failure |
+| `rpc_batch` | `wire::decode_batch(bytes, max_calls, max_bytes)`, the batch body of `POST /rpc`, with fuzzed caps and with the server defaults (`id_effect_rpc`) | an accepted batch is non-empty, within both caps, every call has an id and no id repeats; a body over a cap gets that cap's error |
+| `rpc_postcard_frame` | the postcard codec (`id_effect_rpc`, feature `postcard`): `decode_frame`, `decode_call`, `decode_result`, `decode_exit`, `split_record`, and `decode_limited` on a recursive type and on `Vec<()>` | frames and calls round-trip; records make progress within the 64 KiB cap; nesting stays within `MAX_DEPTH`; zero-sized elements stay within the input's element budget |
+| `rpc_duplex_frame` | `transport::frame::decode`, the frame boundary shared by WebSocket and WebTransport: the `idrpc.json.v1` path, and the `idrpc.postcard.v1` path the server takes (`decode_frame` + `frame::validate`); a `resume` frame's payload through `resume::decode_resume` (`id_effect_rpc`) | a decoded frame is valid and keeps its envelope through a round trip (when the re-encoding fits the cap) |
+| `rpc_resume_cursor` | `resume::decode_cursor` on text and `resume::decode_resume` on a JSON payload (`id_effect_rpc`) | a cursor is a sequence cursor of at most 64 bytes with one spelling; an accepted resume has at most 1,024 distinct call ids, none 0, each with a sequence cursor |
+| `sse_last_event_id` | `LastEventId::parse` (`id_effect_axum`, feature `sse`), then `wire::Cursor::decode` as the RPC SSE transport does | an accepted id is at most 256 bytes of UTF-8 without CR, LF or NUL and unchanged; a cursor from it re-spells to it |
 
-Two inputs need a format the fuzzer can reach:
+Some inputs need a format the fuzzer can reach:
 
 - `config_profile_toml`, `jwt_decode`: a `\n---\n` line splits the input into two documents (the
   two TOML files; the JWT header and claims, which the target base64url-encodes and signs with
   the verifier's HS256 secret, so the claims checks see fuzzed JSON behind a valid signature).
 - `route_query`, `route_form`: the first byte picks the content type and the schema.
+- `rpc_postcard_frame`: the first byte picks the decoder (byte % 7, in the order of the table
+  row); `rpc_duplex_frame`: the first byte picks the codec (even JSON, odd postcard);
+  `rpc_batch`: the first two bytes pick the call cap (`1..=64`) and the byte cap (× 256).
+
+The 0.12 seeds (`fuzz/corpus/rpc_*`, `sse_last_event_id`) include, besides valid inputs, the
+shapes the bounds exist for: a 500-deep recursive value and a sequence of 2^40 empty elements
+(`rpc_postcard_frame`), a record prefix over the cap, a 2,000-element batch of empty arrays,
+duplicate and zero call ids in a resume, a padded cursor, and a `Last-Event-ID` with CR LF.
 
 `JwksClient` fetches over HTTP and its parser is private, so `jwks_parse` drives the public steps
 that parser is made of. id_effect_auth builds `otpauth` URIs but parses none, so `totp_otpauth`
@@ -58,11 +72,11 @@ the rest is your local corpus.
 
 - **`.github/workflows/cflite_pr.yml`** runs on pull requests that touch `crates/`, `fuzz/`,
   `.clusterfuzzlite/` or `Cargo.lock`. It builds the targets with AddressSanitizer and fuzzes
-  them for 5 minutes each (`fuzz-seconds: 3300` for the 11 targets; it is split across the
+  them for 5 minutes each (`fuzz-seconds: 5100` for the 17 targets; it is split across the
   targets, so raise it by 300 for each target you add), starting from the stored corpus. A crash
   the base branch does not have fails the job.
 - **`.github/workflows/cflite_batch.yml`** runs nightly (and on demand): 10 minutes per target
-  (`fuzz-seconds: 6600`; raise it by 600 per added target, and the job's `timeout-minutes` with
+  (`fuzz-seconds: 10200`; raise it by 600 per added target, and the job's `timeout-minutes` with
   it), then corpus pruning. The corpus is stored as workflow artifacts, which the next batch and the
   PR job download.
 - `.clusterfuzzlite/Dockerfile` builds on `base-builder-rust` (pinned by digest) with the pinned

@@ -14,8 +14,8 @@ use std::path::Path;
 /// The `rustc -V` prefix the `.stderr` snapshots were blessed with (= CI's pin).
 const BLESSED_RUSTC: &str = "rustc 1.99.0";
 
-/// The exit gate of 0.11.0: at least this many cases.
-const MIN_CASES: usize = 15;
+/// The exit gate of 0.12.0: at least this many cases (0.11.0's 17 and the two rpc cases).
+const MIN_CASES: usize = 19;
 
 fn rustc_version() -> String {
   let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
@@ -64,7 +64,7 @@ fn every_case_is_listed_with_its_rule() {
   let cases = cases();
   assert!(
     cases.len() >= MIN_CASES,
-    "{} compile-fail cases, the 0.11 gate needs at least {MIN_CASES}",
+    "{} compile-fail cases, the 0.12 gate needs at least {MIN_CASES}",
     cases.len()
   );
   let doc_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/security/compile-fail.md");
