@@ -83,6 +83,14 @@
   lagged (pull-based, at most the window plus one batch in memory), interrupting the call
   releases the reader (`open_readers`), and a failed read is `InternalError { id }`. Book chapter
   33.8.
+- `id_effect_rpc` feature `postcard` (r12-e12-1-postcard, D13; postcard `=1.1.3`):
+  `CodecId::Postcard` (`application/vnd.id-effect.rpc+postcard`, `idrpc.postcard.v1`) and
+  `codec::postcard` — the postcard `Frame` (fixed `FrameKind` indices 0–9), call, result and exit
+  envelopes, u32 big-endian length-prefixed records, and the transport bridges
+  `decode_client_payload` / `encode_server_frame`. `WireSchema::with_serde` adds a typed bridge
+  (`codec::TypedCodec`) and `RpcMethodEntry::codecs` (`ProcedureCodecs`) carries it: postcard
+  decodes the type with serde, then the Schema's validators run as for JSON. `codec::negotiate_accept`
+  picks the response codec. Book chapter 33.3.
 
 ### Changed
 
@@ -112,6 +120,11 @@
 
 ### Security
 
+- RPC codecs (D13, C3): an unknown codec is 415, never a JSON fallback; a procedure without a
+  typed bridge refuses postcard (415). Every postcard decoder refuses input over 64 KiB before
+  decoding, limits nesting to 64, bounds the elements of all sequences and maps by the input size,
+  never preallocates past the input, and refuses trailing bytes, unknown frame kinds, reserved
+  flag bits and invalid tags (`codec::postcard::decode_frame` is the fuzz entry point).
 - TLS listener defaults (ADR 0013 R4; ADR 0014 D10, C3): a TLS handshake must finish within 10 s
   (`ConnectionLimits::tls_handshake_timeout`; `dangerous_no_tls_handshake_timeout` is recorded),
   handshakes count against the connection cap, HTTP/2 allows 100 concurrent streams per

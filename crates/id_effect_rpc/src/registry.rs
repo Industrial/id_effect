@@ -69,6 +69,7 @@ pub use id_effect_axum::route::{Access, Decided, Guarded, Public, RouteGuard, Un
 use serde_json::Value;
 
 use crate::RpcError;
+use crate::codec::ProcedureCodecs;
 use crate::contract::{ProcedureAccess, ProcedureContract, ProcedureKind, ServiceContract};
 use crate::error_union::RpcErrorUnion;
 use crate::handler::{
@@ -272,6 +273,7 @@ pub struct RpcMethodEntry {
   max_bytes: u64,
   limits_declared: bool,
   handler: ErasedHandler,
+  codecs: ProcedureCodecs,
 }
 
 impl RpcMethodEntry {
@@ -314,6 +316,13 @@ impl RpcMethodEntry {
   /// The erased handler every transport drives (see [`crate::server::dispatch`]).
   pub fn handler(&self) -> &ErasedHandler {
     &self.handler
+  }
+
+  /// The typed codec bridges of the input and output schemas (empty unless both were built
+  /// with [`WireSchema::with_serde`]): what a transport uses for a codec that is not
+  /// self-describing, such as postcard.
+  pub fn codecs(&self) -> &ProcedureCodecs {
+    &self.codecs
   }
 
   /// The procedure's contract entry, named `name`.
@@ -421,8 +430,30 @@ impl RpcGroup {
         max_items: max_items.unwrap_or(DEFAULT_MAX_STREAM_ITEMS),
         max_bytes: max_bytes.unwrap_or(DEFAULT_MAX_STREAM_BYTES),
         handler,
+        codecs: ProcedureCodecs::default(),
       },
     );
+  }
+
+  /// The registry key of `procedure` and the typed bridges of its two schemas.
+  fn typed_codecs<D, I: 'static, O: 'static>(
+    procedure: &Procedure<D>,
+    input: &WireSchema<I>,
+    output: &WireSchema<O>,
+  ) -> ((String, u32), ProcedureCodecs) {
+    let codecs = ProcedureCodecs::new(
+      procedure.kind,
+      input.typed_codec().cloned(),
+      output.typed_codec().cloned(),
+    );
+    ((procedure.tag.clone(), procedure.version), codecs)
+  }
+
+  /// Record the typed bridges of the entry just inserted at `key`.
+  fn attach_codecs(&mut self, key: (String, u32), codecs: ProcedureCodecs) {
+    if let Some(entry) = self.methods.get_mut(&key) {
+      entry.codecs = codecs;
+    }
   }
 
   /// Register a query or mutation from tuple Schemas, with the labs [`RpcError`] as its error
@@ -491,6 +522,7 @@ impl RpcGroup {
     H: QueryHandler<I, O, E>,
   {
     let schemas = (input.json_schema().clone(), output.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &input, &output);
     self.insert(
       procedure,
       &[ProcedureKind::Query],
@@ -507,6 +539,7 @@ impl RpcGroup {
         ))
       },
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// Register a mutation.
@@ -524,6 +557,7 @@ impl RpcGroup {
     H: MutationHandler<I, O, E>,
   {
     let schemas = (input.json_schema().clone(), output.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &input, &output);
     self.insert(
       procedure,
       &[ProcedureKind::Mutation],
@@ -540,6 +574,7 @@ impl RpcGroup {
         ))
       },
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// Register a server stream (`item` describes one output item).
@@ -557,6 +592,7 @@ impl RpcGroup {
     H: ServerStreamHandler<I, O, E>,
   {
     let schemas = (input.json_schema().clone(), item.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &input, &item);
     self.insert(
       procedure,
       &[ProcedureKind::ServerStream],
@@ -566,6 +602,7 @@ impl RpcGroup {
       E::union_schema(),
       move |tag| ErasedHandler::ServerStream(erase_server_stream(tag, input, item, handler)),
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// Register a client stream (`item` describes one input item).
@@ -583,6 +620,7 @@ impl RpcGroup {
     H: ClientStreamHandler<I, O, E>,
   {
     let schemas = (item.json_schema().clone(), output.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &item, &output);
     self.insert(
       procedure,
       &[ProcedureKind::ClientStream],
@@ -592,6 +630,7 @@ impl RpcGroup {
       E::union_schema(),
       move |tag| ErasedHandler::ClientStream(erase_client_stream(tag, item, output, handler)),
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// Register a two-way stream (`input` and `output` describe one item each way).
@@ -609,6 +648,7 @@ impl RpcGroup {
     H: BidiHandler<I, O, E>,
   {
     let schemas = (input.json_schema().clone(), output.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &input, &output);
     self.insert(
       procedure,
       &[ProcedureKind::Bidi],
@@ -618,6 +658,7 @@ impl RpcGroup {
       E::union_schema(),
       move |tag| ErasedHandler::Bidi(erase_bidi(tag, input, output, handler)),
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// Register a subscription (`item` describes one item).
@@ -635,6 +676,7 @@ impl RpcGroup {
     H: SubscriptionHandler<I, O, E>,
   {
     let schemas = (input.json_schema().clone(), item.json_schema().clone());
+    let (key, codecs) = Self::typed_codecs(&procedure, &input, &item);
     self.insert(
       procedure,
       &[ProcedureKind::Subscription],
@@ -644,6 +686,7 @@ impl RpcGroup {
       E::union_schema(),
       move |tag| ErasedHandler::Subscription(erase_subscription(tag, input, item, handler)),
     );
+    self.attach_codecs(key, codecs);
   }
 
   /// The newest version of the procedure `tag`.

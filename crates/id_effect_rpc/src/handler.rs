@@ -111,6 +111,7 @@ pub struct WireSchema<T> {
   decode: DecodeFn<T>,
   encode: EncodeFn<T>,
   json_schema: Value,
+  typed: Option<crate::codec::TypedCodec>,
 }
 
 impl<T> Clone for WireSchema<T> {
@@ -119,6 +120,7 @@ impl<T> Clone for WireSchema<T> {
       decode: self.decode.clone(),
       encode: self.encode.clone(),
       json_schema: self.json_schema.clone(),
+      typed: self.typed.clone(),
     }
   }
 }
@@ -176,6 +178,7 @@ impl<T: 'static> WireSchema<T> {
       decode: Arc::new(move |v| decode_with(&schema, v)),
       encode: Arc::new(move |t| Ok(encoder.encode(t).into_wire_json())),
       json_schema,
+      typed: None,
     }
   }
 
@@ -202,6 +205,7 @@ impl<T: 'static> WireSchema<T> {
       decode: Arc::new(move |v| decode_with(&schema, v)),
       encode: Arc::new(move |t| encoder.encode(t).to_json_object(fields)),
       json_schema,
+      typed: None,
     }
   }
 
@@ -215,7 +219,26 @@ impl<T: 'static> WireSchema<T> {
       decode: Arc::new(decode),
       encode: Arc::new(encode),
       json_schema,
+      typed: None,
     }
+  }
+
+  /// Also carry `T` through serde, so codecs that are not self-describing (postcard) can
+  /// decode and encode it ([`TypedCodec`](crate::codec::TypedCodec)). The Schema still
+  /// validates what such a codec decodes. `T`'s serde form is its binary wire form.
+  #[must_use]
+  pub fn with_serde(mut self) -> Self
+  where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+  {
+    self.typed = None;
+    self.typed = Some(crate::codec::TypedCodec::of(&self));
+    self
+  }
+
+  /// The typed bridge ([`WireSchema::with_serde`]), if any.
+  pub fn typed_codec(&self) -> Option<&crate::codec::TypedCodec> {
+    self.typed.as_ref()
   }
 
   /// Decode `value`, collecting every issue.
