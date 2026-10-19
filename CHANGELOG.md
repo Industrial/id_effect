@@ -47,6 +47,19 @@
   pooled connections; `Http3Client::execute_h3` for HTTP/3 without fallback.
   `HttpClientConfig::root_certificates` / `add_root_certificate_der` trusts extra CA roots on
   TCP and HTTP/3. Book chapter 29.8.
+- `id_effect_axum` feature `http3` (r12-e12-3-h3-server): `server::h3` feeds `h3` + `h3-quinn`
+  requests from the platform `QuicEndpoint` (ALPN `h3`) into the same axum `Router` as a tower
+  `Service`, so typed routes, middleware, guards and RPC endpoints work over HTTP/3 unchanged
+  (`serve_h3`, `quic_limits`, `Http3Options`). With TLS from certificate files and
+  `HostConfig::http3` on (the default), every host entry point binds UDP on the TCP port number
+  with the same certificate (reloads reach both), adds `Alt-Svc: h3=":<port>"; ma=86400` to TCP
+  responses (`server::alt_svc::AltSvcLayer`) and drains both listeners on shutdown (`GOAWAY` on
+  HTTP/3); `HTTP3=false` turns HTTP/3 and `Alt-Svc` off. The `ConnectionLimits` apply to HTTP/3
+  (connections, header timeout, requests per connection, QUIC stream credits); the client IP is
+  the QUIC peer under the trusted-proxy rules; 0-RTT is off. Example `092_http3`, CI job
+  `http3-conformance` (h3spec, curl `--http3-only`), book chapter 29.5.
+- `id_effect_platform`: reqwest feature `http2`, so the TCP path (and the `Http3Client`
+  fallback) speaks HTTP/2 to servers that offer it (F11).
 - `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
   `publish = false`). New modules: `contract` (the D11 serde model — services, versions,
   procedures, kinds, access decisions, input/output/error JSON Schemas — with
@@ -173,6 +186,15 @@
   `Alt-Svc` naming another host is ignored; a `POST` or `PATCH` that may have reached the server
   is not resent over TCP. A test fails the build if reqwest's unstable HTTP/3 cfg appears in a
   manifest, source, workflow or Nix file.
+- HTTP/3 server (ADR 0013 R1 R4 R10; ADR 0014 C3): the TCP `ConnectionLimits` bound HTTP/3 too
+  (an HTTP/3 connection pool the size of `max_connections`, the header-read timeout on the first
+  request and on every request's header section, `GOAWAY` after `max_requests_per_connection`,
+  QUIC stream credits at `max_concurrent_streams` capped at the endpoint ceiling of 100, the TLS
+  handshake timeout on the QUIC handshake); request header sections are capped at 64 KiB;
+  connection-specific response headers are dropped; the client IP comes from the QUIC peer
+  address through the trusted-proxy rules; 0-RTT is off (the `Http3Options` opt-out
+  `dangerous_allow_zero_rtt_for_queries` is recorded and admits safe methods only); an h3 stream
+  is never `stop_sending`'d while a read is in flight (F13: it is dropped).
 - WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
   is checked against an allowlist that is empty by default (every browser origin refused, 403;
   the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);

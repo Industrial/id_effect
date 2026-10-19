@@ -56,6 +56,8 @@ use tower_service::Service;
 use crate::server::bootstrap::HostConfig;
 #[cfg(feature = "tls")]
 use crate::server::tls::{Negotiated, ServerTls};
+#[cfg(feature = "http3")]
+use id_effect_platform::tls::{CertReloader, Identity, ReloadTask};
 
 /// Posture id of [`ConnectionLimits::dangerous_no_tls_handshake_timeout`] (ADR 0013 R10).
 pub const DANGEROUS_NO_TLS_HANDSHAKE_TIMEOUT: &str =
@@ -261,6 +263,36 @@ impl ConnectionLimits {
     self
   }
 
+  /// The header-read timeout in force (`None`: off).
+  #[cfg_attr(not(feature = "http3"), allow(dead_code))]
+  pub(crate) fn header_read_timeout_limit(&self) -> Option<Duration> {
+    self.header_read_timeout
+  }
+
+  /// The connection cap in force (`None`: unlimited).
+  #[cfg_attr(not(feature = "http3"), allow(dead_code))]
+  pub(crate) fn connections_limit(&self) -> Option<usize> {
+    self.max_connections
+  }
+
+  /// The per-connection request limit in force (`None`: unlimited).
+  #[cfg_attr(not(feature = "http3"), allow(dead_code))]
+  pub(crate) fn requests_per_connection_limit(&self) -> Option<usize> {
+    self.max_requests_per_connection
+  }
+
+  /// The TLS handshake timeout in force (`None`: off).
+  #[cfg_attr(not(feature = "http3"), allow(dead_code))]
+  pub(crate) fn tls_handshake_timeout_limit(&self) -> Option<Duration> {
+    self.tls_handshake_timeout
+  }
+
+  /// The concurrent-stream cap in force (`None`: unlimited).
+  #[cfg_attr(not(feature = "http3"), allow(dead_code))]
+  pub(crate) fn concurrent_streams_limit(&self) -> Option<u32> {
+    self.max_concurrent_streams
+  }
+
   /// The hyper-util builder of one connection speaking `protocol`.
   fn builder(&self, protocol: Protocol) -> Builder<TokioExecutor> {
     let mut builder = Builder::new(TokioExecutor::new());
@@ -306,7 +338,28 @@ enum Protocol {
 pub struct HostTransport {
   #[cfg(feature = "tls")]
   tls: Option<ServerTls>,
+  #[cfg(feature = "http3")]
+  http3: Option<Http3Identity>,
 }
+
+/// The certificate the HTTP/3 listener presents, and the file polling that keeps it current.
+#[cfg(feature = "http3")]
+#[derive(Clone, Debug)]
+struct Http3Identity {
+  identity: Identity,
+  _reload: Option<Arc<ReloadTask>>,
+}
+
+/// Two are equal when they present the same certificate now.
+#[cfg(feature = "http3")]
+impl PartialEq for Http3Identity {
+  fn eq(&self, other: &Self) -> bool {
+    self.identity.cert_sha256() == other.identity.cert_sha256()
+  }
+}
+
+#[cfg(feature = "http3")]
+impl Eq for Http3Identity {}
 
 impl HostTransport {
   /// Plain HTTP on TCP.
@@ -316,8 +369,21 @@ impl HostTransport {
 
   /// TLS on TCP with `tls`.
   #[cfg(feature = "tls")]
+  #[allow(clippy::needless_update)] // the update fills `http3` with feature `http3`
   pub fn tls(tls: ServerTls) -> Self {
-    Self { tls: Some(tls) }
+    Self {
+      tls: Some(tls),
+      ..Self::default()
+    }
+  }
+
+  /// The certificate HTTP/3 presents (feature `http3`): the [`Identity`] the TLS listener
+  /// presents too, so a reload reaches both. [`HostTransport::from_config`] sets it for
+  /// certificate files ([`HostTls::Files`](crate::server::HostTls::Files)); provided TLS
+  /// settings carry no identity, and the host then serves TCP only.
+  #[cfg(feature = "http3")]
+  pub fn http3_identity(&self) -> Option<&Identity> {
+    self.http3.as_ref().map(|h3| &h3.identity)
   }
 
   /// The TLS settings, when the transport is TLS.
@@ -370,11 +436,55 @@ fn log_posture(config: &HostConfig, prod: bool) -> usize {
 }
 
 #[cfg(feature = "tls")]
+fn invalid_tls(e: id_effect_platform::tls::CertError) -> std::io::Error {
+  std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+}
+
+#[cfg(all(feature = "tls", not(feature = "http3")))]
 fn tls_transport(tls: &crate::server::bootstrap::HostTls) -> std::io::Result<HostTransport> {
   tls
     .server_tls()
     .map(HostTransport::tls)
-    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+    .map_err(invalid_tls)
+}
+
+/// With HTTP/3, certificate files are loaded into one [`Identity`] that both listeners present
+/// (and that the file polling swaps for both); provided settings serve TCP only.
+#[cfg(feature = "http3")]
+fn tls_transport(tls: &crate::server::bootstrap::HostTls) -> std::io::Result<HostTransport> {
+  use crate::server::bootstrap::HostTls;
+  let HostTls::Files {
+    cert_file,
+    key_file,
+    reload_every,
+  } = tls
+  else {
+    return tls
+      .server_tls()
+      .map(HostTransport::tls)
+      .map_err(invalid_tls);
+  };
+  let reloader = Arc::new(CertReloader::new(cert_file, key_file).map_err(invalid_tls)?);
+  let reload = match reload_every {
+    Some(every) => {
+      if tokio::runtime::Handle::try_current().is_err() {
+        return Err(invalid_tls(id_effect_platform::tls::CertError::Tls(
+          "certificate polling needs a Tokio runtime".to_owned(),
+        )));
+      }
+      Some(Arc::new(reloader.spawn_polling(*every)))
+    }
+    None => None,
+  };
+  let identity = reloader.identity();
+  let server = ServerTls::from_identity(&identity).map_err(invalid_tls)?;
+  Ok(HostTransport {
+    tls: Some(server),
+    http3: Some(Http3Identity {
+      identity,
+      _reload: reload,
+    }),
+  })
 }
 
 #[cfg(not(feature = "tls"))]
@@ -654,6 +764,54 @@ where
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Certificate files in a fresh directory, as `HostTls::Files` polled every `reload`.
+  #[cfg(feature = "http3")]
+  fn cert_files(reload: Option<Duration>) -> crate::server::bootstrap::HostTls {
+    let ck = rcgen::generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+    let dir = std::env::temp_dir().join(format!(
+      "id-effect-conn-{}-{}",
+      std::process::id(),
+      reload.map_or(0, |d| d.as_millis())
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (chain, key) = (dir.join("chain.pem"), dir.join("key.pem"));
+    std::fs::write(&chain, ck.cert.pem()).unwrap();
+    std::fs::write(&key, ck.key_pair.serialize_pem()).unwrap();
+    crate::server::bootstrap::HostTls::Files {
+      cert_file: chain,
+      key_file: key,
+      reload_every: reload,
+    }
+  }
+
+  #[cfg(feature = "http3")]
+  #[test]
+  fn certificate_files_give_tls_and_http3_one_identity() {
+    let config = HostConfig::default().with_tls(cert_files(None));
+    let transport = HostTransport::from_config(&config).unwrap();
+    let identity = transport.http3_identity().expect("an HTTP/3 identity");
+    assert_eq!(transport, transport.clone());
+    assert_ne!(transport, HostTransport::plain());
+    // TCP presents the same slot: the fingerprints agree.
+    let tcp = transport.server_tls().unwrap();
+    assert!(Arc::strong_count(tcp.rustls_config()) >= 1);
+    assert_eq!(identity.cert_sha256(), identity.clone().cert_sha256());
+    // Polling needs a Tokio runtime; outside one the transport is refused, not built half.
+    let polled = HostConfig::default().with_tls(cert_files(Some(Duration::from_millis(500))));
+    let err = HostTransport::from_config(&polled).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    // Provided settings carry no HTTP/3 identity.
+    let provided = crate::server::tls::ServerTls::from_identity(identity).unwrap();
+    let config =
+      HostConfig::default().with_tls(crate::server::bootstrap::HostTls::provided(provided));
+    assert!(
+      HostTransport::from_config(&config)
+        .unwrap()
+        .http3_identity()
+        .is_none()
+    );
+  }
 
   #[test]
   fn limits_default_on_and_clamp() {

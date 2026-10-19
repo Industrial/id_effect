@@ -27,7 +27,8 @@ use axum::Router;
 use id_effect::{Cause, Exit};
 use id_effect::{Effect, HCons, HNil, Layer, from_async, hlist, need};
 use id_effect_config::{ConfigEnv, ConfigError};
-use tokio::sync::Notify;
+use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::health::ReadinessState;
@@ -194,18 +195,92 @@ pub async fn serve_router_with_limits(
   let listener = tokio::net::TcpListener::bind(addr)
     .await
     .map_err(|e| HostError::Serve(e.to_string()))?;
+  let local_addr = listener
+    .local_addr()
+    .map_err(|e| HostError::Serve(e.to_string()))?;
+  let http3 = bind_http3(&host.config, &transport, local_addr, &limits)?;
   let timeout = host.config.shutdown_timeout;
   let app = host.config.load_shed.install(app);
   let drain = host.drain;
   let readiness = host.readiness;
-
-  serve_host_listener(listener, app, limits, transport, async move {
+  let (stop, stopped) = watch::channel(false);
+  tokio::spawn(async move {
     wait_for_shutdown().await;
     readiness.mark_shutting_down();
     drain_with_timeout(&drain, timeout).await;
-  })
-  .await
-  .map_err(|e| HostError::Serve(e.to_string()))
+    let _ = stop.send(true);
+  });
+
+  serve_listeners(listener, app, limits, transport, http3, stopped)
+    .await
+    .map_err(|e| HostError::Serve(e.to_string()))
+}
+
+/// The HTTP/3 side of a host: `Some` endpoint when it serves HTTP/3 (feature `http3`).
+#[cfg(feature = "http3")]
+type Http3Side = Option<crate::server::h3::HostHttp3>;
+#[cfg(not(feature = "http3"))]
+type Http3Side = Option<Infallible>;
+
+/// Binds UDP on the TCP port when the host serves HTTP/3 ([`HostConfig::http3`], TLS with an
+/// HTTP/3 identity).
+#[allow(clippy::result_large_err)]
+fn bind_http3(
+  config: &HostConfig,
+  transport: &HostTransport,
+  tcp: SocketAddr,
+  limits: &ConnectionLimits,
+) -> Result<Http3Side, HostError> {
+  #[cfg(feature = "http3")]
+  let side = crate::server::h3::HostHttp3::bind(config, transport, tcp, limits)
+    .map_err(|e| HostError::Serve(format!("bind udp {tcp}: {e}")))?;
+  #[cfg(not(feature = "http3"))]
+  let side = {
+    let _ = (config, transport, tcp, limits);
+    None
+  };
+  Ok(side)
+}
+
+/// Resolves once `stop` turns `true`; never when its sender is dropped without (a dropped
+/// [`ServerHandle`] leaves its server running, as before HTTP/3).
+async fn stopped(mut stop: watch::Receiver<bool>) {
+  if stop.wait_for(|stopped| *stopped).await.is_err() {
+    std::future::pending::<()>().await;
+  }
+}
+
+/// Serves `app` on the TCP `listener` and, when bound, over HTTP/3 (TCP responses then carry
+/// `Alt-Svc`), until `stop`; returns once both have drained.
+async fn serve_listeners(
+  listener: TcpListener,
+  app: Router,
+  limits: ConnectionLimits,
+  transport: HostTransport,
+  http3: Http3Side,
+  stop: watch::Receiver<bool>,
+) -> std::io::Result<()> {
+  #[cfg(feature = "http3")]
+  if let Some(h3) = http3 {
+    let tcp_app = app
+      .clone()
+      .layer(crate::server::alt_svc::AltSvcLayer::h3(h3.port()));
+    let tcp = serve_host_listener(
+      listener,
+      tcp_app,
+      limits.clone(),
+      transport,
+      stopped(stop.clone()),
+    );
+    let udp = h3.serve(app, limits, stopped(stop));
+    let (tcp, udp) = tokio::join!(tcp, udp);
+    return tcp.and(udp);
+  }
+  #[cfg(not(feature = "http3"))]
+  if let Some(never) = http3 {
+    match never {}
+  }
+  serve_host_listener(listener, app, limits, transport, stopped(stop)).await
 }
 
 /// A running HTTP server: the capability [`server_layer`] provides.
@@ -214,7 +289,7 @@ pub struct ServerHandle {
   local_addr: SocketAddr,
   shutdown_timeout: Duration,
   readiness: ReadinessState,
-  stop: Arc<Notify>,
+  stop: watch::Sender<bool>,
   task: Mutex<Option<JoinHandle<std::io::Result<()>>>>,
 }
 
@@ -264,17 +339,11 @@ impl ServerHandle {
     let local_addr = listener
       .local_addr()
       .map_err(|e| HostError::Serve(e.to_string()))?;
+    let http3 = bind_http3(config, &transport, local_addr, &limits)?;
     let app = config.load_shed.install(app);
-    let stop = Arc::new(Notify::new());
-    let signal = Arc::clone(&stop);
-    let task = tokio::spawn(serve_host_listener(
-      listener,
-      app,
-      limits,
-      transport,
-      async move {
-        signal.notified().await;
-      },
+    let (stop, stopped) = watch::channel(false);
+    let task = tokio::spawn(serve_listeners(
+      listener, app, limits, transport, http3, stopped,
     ));
     Ok(Self {
       local_addr,
@@ -300,7 +369,7 @@ impl ServerHandle {
   /// Idempotent.
   pub async fn shutdown(&self) {
     self.readiness.mark_shutting_down();
-    self.stop.notify_one();
+    self.stop.send_replace(true);
     let task = self
       .task
       .lock()
@@ -516,6 +585,23 @@ mod tests {
     assert!(response.starts_with("HTTP/1.1 200"), "{response}");
     // Released with the scope: the listener is gone.
     assert!(get(addr, "/health").await.is_err());
+  }
+
+  #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+  async fn a_dropped_handle_keeps_serving() {
+    let config = HostConfig {
+      bind_host: "127.0.0.1".into(),
+      bind_port: 0,
+      ..HostConfig::default()
+    };
+    let handle = ServerHandle::start(&config, crate::health_router())
+      .await
+      .unwrap();
+    let addr = handle.local_addr();
+    drop(handle);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let response = get(addr, "/health").await.unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
   }
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

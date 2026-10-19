@@ -473,6 +473,65 @@ jobs:
           if [ "$TEMPLATE" = service ]; then args+=(--docker); fi
           bash scripts/template-smoke.sh "${args[@]}"
   # ──────────────────────────────────────────────────────────────────────────
+  # HTTP/3 conformance (r12-e12-3-h3-server): example 092 serves TLS on TCP and HTTP/3 on UDP
+  # (one port, self-signed `localhost`); h3spec (QUIC/HTTP/3 error cases, release binary checked
+  # against its sha256) and curl --http3-only (quiche build, image pinned by digest) talk to it.
+  # ──────────────────────────────────────────────────────────────────────────
+  http3-conformance:
+    name: HTTP/3 conformance (h3spec, curl --http3)
+    runs-on: ubuntu-latest
+    env:
+      H3SPEC_VERSION: v0.1.14
+      H3SPEC_SHA256: 7f2e3232715a3f6ff5212d408b2a3e74d6aa3ca06f96efca9a4e5dc55f3c6860
+      # alpine/curl-http3 8.11.0 (BoringSSL + quiche; `Features: HTTP3`).
+      CURL_HTTP3_IMAGE: alpine/curl-http3:8.11.0@sha256:b0cb55696adcaf5714958926a28ce78a5fa72f6a4aa8df2ec5b72f1cde8038e3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Rust (pinned, rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: http3-conformance
+      - name: Build example 092 and run its self-test (TCP + Alt-Svc, then HTTP/3)
+        run: |
+          cargo build --locked -p id_effect_axum --features http3 --example 092_http3
+          target/debug/examples/092_http3 --self-test
+      - name: Download h3spec (sha256-checked)
+        run: |
+          curl -fsSL -o h3spec \
+            "https://github.com/kazu-yamamoto/h3spec/releases/download/${H3SPEC_VERSION}/h3spec-linux-x86_64"
+          echo "${H3SPEC_SHA256}  h3spec" | sha256sum -c -
+          chmod +x h3spec
+      - name: Start example 092 on 127.0.0.1:8443
+        run: |
+          PORT=8443 target/debug/examples/092_http3 > server.log 2>&1 &
+          for _ in $(seq 1 50); do
+            if grep -q serving server.log; then exit 0; fi
+            sleep 0.2
+          done
+          cat server.log
+          exit 1
+      - name: h3spec
+        run: ./h3spec 127.0.0.1 8443 --no-validate
+      - name: curl --http3-only and the Alt-Svc upgrade
+        run: |
+          set -euo pipefail
+          curl3() {
+            docker run --rm --network host "$CURL_HTTP3_IMAGE" \
+              curl -sSfk --resolve localhost:8443:127.0.0.1 "$@"
+          }
+          test "$(curl3 --http3-only https://localhost:8443/version)" = "HTTP/3.0"
+          curl3 --http2 -D - -o /dev/null https://localhost:8443/version \
+            | grep -i '^alt-svc: h3=":8443"; ma=86400'
+          test "$(curl3 --http3-only -I -o /dev/null -w '%{http_code} %{http_version}' \
+            https://localhost:8443/hello)" = "200 3"
+      - name: Server log
+        if: always()
+        run: cat server.log || true
+  # ──────────────────────────────────────────────────────────────────────────
   # Supply-chain policy: advisories, licenses, bans, sources (deny.toml).
   # Checks the committed Cargo.lock (S5, D12).
   # ──────────────────────────────────────────────────────────────────────────

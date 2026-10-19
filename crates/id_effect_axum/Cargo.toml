@@ -47,6 +47,7 @@ http3 = [
   "dep:h3",
   "dep:h3-quinn",
   "dep:quinn",
+  "dep:bytes",
   "id_effect_platform/quic",
 ]
 # WebTransport sessions over HTTP/3 (r12-e12-3-webtransport).
@@ -143,6 +144,9 @@ quinn = { version = "=0.11.12", optional = true, default-features = false, featu
 h3 = { version = "=0.0.8", optional = true }
 h3-quinn = { version = "=0.0.10", optional = true }
 h3-webtransport = { version = "=0.1.2", optional = true }
+# Feature `http3` (r12-e12-3-h3-server): `Buf` for the h3 request body chunks; the version
+# already in the tree (axum, h3, quinn).
+bytes = { version = "=1.12.1", optional = true }
 
 [[bench]]
 name = "gate_request"
@@ -209,6 +213,10 @@ required-features = ["ws"]
 [[example]]
 name = "091_sse_ticker"
 required-features = ["sse"]
+
+[[example]]
+name = "092_http3"
+required-features = ["http3"]
 
 [[test]]
 name = "ws"

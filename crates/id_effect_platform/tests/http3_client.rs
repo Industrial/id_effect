@@ -293,18 +293,70 @@ async fn alt_svc_upgrades_next_request_to_h3() {
   assert!(format!("{client:?}").contains("alt_svc_entries: 1"));
 }
 
+/// An HTTP/2-over-TLS origin (ALPN `h2` only) answering `tcp` with an `Alt-Svc` header; records
+/// when each request arrived and its HTTP version.
+struct H2Origin {
+  addr: SocketAddr,
+  requests: Arc<Mutex<Vec<(Instant, http::Version)>>>,
+}
+
+impl H2Origin {
+  async fn start(identity: &Identity, alt_svc: String) -> Self {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+      .await
+      .expect("bind tcp");
+    let addr = listener.local_addr().expect("addr");
+    let mut tls = server_tls_config(identity, None, &[]).expect("tls");
+    tls.alpn_protocols = vec![b"h2".to_vec()];
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(tls));
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let seen = Arc::clone(&requests);
+    tokio::spawn(async move {
+      while let Ok((stream, _)) = listener.accept().await {
+        let (acceptor, seen, alt_svc) = (acceptor.clone(), Arc::clone(&seen), alt_svc.clone());
+        tokio::spawn(async move {
+          let Ok(tls) = acceptor.accept(stream).await else {
+            return;
+          };
+          let service = hyper::service::service_fn(move |req: http::Request<_>| {
+            seen
+              .lock()
+              .expect("requests")
+              .push((Instant::now(), req.version()));
+            let response = http::Response::builder()
+              .header("alt-svc", alt_svc.as_str())
+              .body(http_body_util::Full::new(Bytes::from_static(b"tcp")))
+              .expect("response");
+            async move { Ok::<_, std::convert::Infallible>(response) }
+          });
+          let _ = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(hyper_util::rt::TokioIo::new(tls), service)
+            .await;
+        });
+      }
+    });
+    Self { addr, requests }
+  }
+
+  fn port(&self) -> u16 {
+    self.addr.port()
+  }
+
+  fn requests(&self) -> Vec<(Instant, http::Version)> {
+    self.requests.lock().expect("requests").clone()
+  }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn udp_blackhole_falls_back_to_h2_within_budget() {
   let ca = Ca::new();
   // A UDP port that never answers.
   let blackhole = UdpSocket::bind("127.0.0.1:0").expect("bind udp");
-  let tcp = TcpOrigin::start(
+  let tcp = H2Origin::start(
     &ca.identity("127.0.0.1"),
-    Some(format!(
-      "h3=\":{}\"",
-      blackhole.local_addr().expect("addr").port()
-    )),
-  );
+    format!("h3=\":{}\"", blackhole.local_addr().expect("addr").port()),
+  )
+  .await;
   let client = Http3Client::from_config(&local(&ca));
   assert_eq!(
     get(&client, url(tcp.port(), "/")).await.expect("first"),
@@ -317,9 +369,14 @@ async fn udp_blackhole_falls_back_to_h2_within_budget() {
     b"tcp"
   );
   let elapsed = started.elapsed();
-  let accepts = tcp.accepts();
-  assert_eq!(accepts.len(), 2);
-  let delay = accepts[1].duration_since(started);
+  let requests = tcp.requests();
+  assert_eq!(requests.len(), 2);
+  // The TCP path is HTTP/2 (reqwest `http2`, ALPN `h2`), both times.
+  assert!(
+    requests.iter().all(|(_, v)| *v == http::Version::HTTP_2),
+    "{requests:?}"
+  );
+  let delay = requests[1].0.duration_since(started);
   assert!(
     delay >= Duration::from_millis(290),
     "HTTP/3 was tried first ({delay:?})"

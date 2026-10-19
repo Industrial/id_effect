@@ -65,6 +65,14 @@ through feature unification and had no limit.
 With `tls` set, a binary built without the axum feature `tls` refuses to start (0.11 had no TLS
 field, so nothing breaks; this guards against serving plain HTTP by accident).
 
+With feature `http3`, `tls` from certificate files (`TLS_CERT_FILE` / `TLS_KEY_FILE`) and
+`http3` left on, the host entry points also bind **UDP on the TCP port number** and serve the
+same router over HTTP/3, and TCP responses carry `Alt-Svc: h3=":<port>"; ma=86400`. A host
+whose UDP port is taken fails to start (`HostError::Serve("bind udp …")`). **Shim:** `HTTP3=false`
+(`HostConfig::http3 = false`) restores the TCP-only 0.11 behaviour; open UDP on the firewall
+otherwise. `HostTls::Provided` settings serve TCP only (logged); use `server::serve_h3` on an
+endpoint of your own for HTTP/3 with a custom resolver.
+
 ## HTTP client: `HttpClientConfig::http3`
 
 `HttpClientConfig` gains two public fields: `root_certificates` (extra CA roots, DER, trusted on
@@ -84,6 +92,11 @@ let config = HttpClientConfig { connect_timeout, timeout, retry, ssrf, max_redir
 HTTP/3 is off for the client by default. `HttpClientConfig::default().http3(true)` makes
 `ReqwestHttpClientProvider::layer_with` build an `Http3Client` (book chapter 29.8); without it
 nothing changes.
+
+Behaviour change: the platform HTTP client (reqwest, and the TCP path of `Http3Client`) now
+negotiates **HTTP/2** by ALPN with `https` servers that offer it (reqwest feature `http2`); 0.11
+spoke HTTP/1.1 only. Plain `http://` stays HTTP/1.1. No shim is needed; a server that
+misbehaves on HTTP/2 can be pinned to HTTP/1.1 by not offering `h2` in its ALPN.
 
 ## Node: the QUIC mesh requires ALPN `idm/1`
 

@@ -1,8 +1,11 @@
 //! Application server shell: config bootstrap, the server as a scoped layer, lifecycle, security
 //! middleware, shutdown.
 
+pub mod alt_svc;
 pub mod bootstrap;
 pub mod connection;
+#[cfg(feature = "http3")]
+pub mod h3;
 pub mod lifecycle;
 pub mod security;
 pub mod shutdown;
@@ -10,6 +13,7 @@ pub mod static_files;
 #[cfg(feature = "tls")]
 pub mod tls;
 
+pub use alt_svc::AltSvcLayer;
 pub use bootstrap::{
   HTTP3_WITHOUT_TLS_WARNING, HostConfig, HostTls, bootstrap_env, load_host_config,
   provide_host_config_env,
@@ -21,6 +25,8 @@ pub use connection::{
   DANGEROUS_UNLIMITED_CONCURRENT_STREAMS, DANGEROUS_UNLIMITED_CONNECTIONS,
   DANGEROUS_UNLIMITED_REQUESTS_PER_CONNECTION, HostTransport, serve_host_listener, serve_listener,
 };
+#[cfg(feature = "http3")]
+pub use h3::{DANGEROUS_ALLOW_ZERO_RTT_FOR_QUERIES, Http3Options, quic_limits, serve_h3};
 pub use lifecycle::{
   Host, HostBuilder, HostError, ServerHandle, serve, serve_router, serve_router_with_limits,
   serve_until, serve_until_shutdown, serve_until_shutdown_with_limits, serve_with_limits,
