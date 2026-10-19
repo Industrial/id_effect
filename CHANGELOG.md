@@ -35,6 +35,14 @@
 
 ### Added
 
+- `id_effect_node` Kubernetes discovery (dist.membership #4, D18): feature `kubernetes` adds
+  `discovery::KubernetesDiscovery`, a `Discovery` strategy that lists the ready addresses of a
+  headless service from the in-cluster `discovery.k8s.io/v1` EndpointSlice API over rustls, with
+  its own HTTP/1.1 client (no kube-rs). The API server is verified against the service-account CA
+  (no opt-out); the bearer token is re-read from the mount on every listing and the namespace
+  comes from its file. Not-ready and terminating endpoints are skipped; `endpoints()` returns a
+  `KubernetesError`, `candidates()` answers empty so `ChainedDiscovery` can fall through to DNS.
+  Book "Finding peers" in "Nodes, membership, and remote processes".
 - `id_effect_process` timers and hibernate (fault.actors #6, #8): `ProcessCtx::send_after` and
   `Addr::send_after` return a `TimerRef`; `cancel_timer` / `TimerRef::cancel` returning `true`
   means the message is never delivered. Timers run on the executor clock and die with their

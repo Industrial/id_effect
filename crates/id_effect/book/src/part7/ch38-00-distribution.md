@@ -66,3 +66,50 @@ scorer instead of naming a node directly.
 On `NodeDown`, remote monitors receive `ExitReason::NoConnection`.
 
 **Runnable example:** `cargo run -p id_effect_node --example 131_two_node_cluster`.
+
+## Finding peers
+
+A joining node asks a `Discovery` strategy where to announce itself; an empty
+answer means it is the first node and forms the cluster. `StaticDiscovery`
+holds a fixed list, `DnsDiscovery` resolves one `host:port` to many peers, and
+`ChainedDiscovery` tries strategies in order until one answers.
+
+In Kubernetes, feature `kubernetes` adds `KubernetesDiscovery`, which asks the
+API server for the ready endpoints of a headless service instead of trusting
+DNS. It reads the `discovery.k8s.io/v1` EndpointSlices of the service with its
+own small HTTP/1.1 client (no kube-rs) over rustls, and verifies the API server
+against the cluster CA; there is no option to skip that check. The
+service-account mount (`/var/run/secrets/kubernetes.io/serviceaccount`)
+supplies the CA, the namespace, and the bearer token, which is re-read on every
+listing because projected tokens rotate.
+
+```rust,ignore
+use id_effect_node::discovery::{ChainedDiscovery, Discovery, DnsDiscovery, KubernetesDiscovery};
+
+// API server from KUBERNETES_SERVICE_HOST/PORT; "mesh" is the headless
+// service, 4369 the mesh port announced to on every address.
+let k8s = KubernetesDiscovery::in_cluster("mesh", 4369)?;
+let discovery = ChainedDiscovery::new(vec![
+  Box::new(k8s),
+  Box::new(DnsDiscovery::new("mesh.team-a.svc.cluster.local:4369")),
+]);
+let peers = discovery.candidates().await;
+```
+
+Endpoints with `ready: false` or `terminating: true` are skipped (an unset
+`ready` counts as ready, as the API documents), and the addresses come back
+sorted so every node sees the same order. `candidates()` logs a failure and
+answers empty, which lets a chain fall through to DNS;
+`KubernetesDiscovery::endpoints()` returns the `KubernetesError` instead (`Tls`
+for an untrusted API certificate, `Status(401)` or `Status(403)` for a token
+or RBAC problem). The service account needs `list` on `endpointslices`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: mesh-discovery }
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list"]
+```
