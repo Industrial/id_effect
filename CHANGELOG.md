@@ -15,6 +15,19 @@
   heartbeats on the executor clock, `sse::endpoint`, `sse::response`, `sse::encode`.
   `realtime::ConnectionCap` bounds open sockets and streams in total and per client IP. Examples
   `090_ws_echo`, `091_sse_ticker`; book chapter 33.5.
+- `id_effect_platform` features `tls`, `quic`, `http3` and `acme`, declared once (ADR 0014 D6;
+  rustls 0.23.46+, quinn 0.11.12+ on aws-lc-rs, h3 `=0.0.8`, h3-quinn `=0.0.10`, instant-acme
+  0.8). `tls`: certificates, CA bundles, `CertReloader`, `Identity` and the TLS 1.3 rustls configs,
+  moved from `id_effect_node::transport::certs`. `quic`: `QuicEndpoint`, one UDP port routed by
+  ALPN (`AlpnRouter`, `Route::h3()`, `Route::mesh(..)`), each route with its own certificate.
+- `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
+  shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
+
+### Changed
+
+- `id_effect_node::transport::certs` is a deprecated re-export of `id_effect_platform::tls` for
+  one minor. The QUIC mesh requires ALPN `idm/1`: 0.11 nodes cannot join a 0.12 QUIC mesh. See
+  the [0.12 migration guide](docs/MIGRATION-0.12.md).
 
 ### Security
 
@@ -28,6 +41,18 @@
   bounded inbox and outbox. Tests `r9_ws_upgrade_from_foreign_origin_refused`,
   `dangerous_any_origin_is_recorded`, `r4_ws_frame_over_max_closes_1009`,
   `r4_ws_sockets_per_ip_capped`, `heartbeat_closes_dead_connection`.
+- Shared QUIC endpoint (ADR 0014 D7): with `h3` and `idm/1` on one port the handshake requests
+  client certificates as optional with no CA hints and still verifies a presented one against
+  the cluster trust; the `idm/1` route closes every connection without a verified client chain
+  before any frame of it is read (`CLOSE_CLIENT_CERT_REQUIRED`). Tests
+  `idm_without_client_cert_refused_on_shared_endpoint`,
+  `idm_cert_from_other_ca_refused_on_shared_endpoint`; the 0.11 mutual-TLS tests run on both
+  shapes.
+- QUIC endpoint defaults (ADR 0013 R4, R8): address validation (Retry) on, 0-RTT off, finite
+  stream credits, idle timeout, UDP payload, receive windows, pending handshakes (256) and
+  handshake time (10 s); datagrams off. Opt-outs `QuicEndpointConfig::dangerous_no_retry` and
+  `dangerous_raise_limits` are recorded in the posture registry. Tests
+  `r4_quic_retry_on_by_default`, `r4_quic_limits_finite_by_default`.
 
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 

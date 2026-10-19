@@ -18,8 +18,9 @@ the server name every node dials (`"cluster"` by default, or set one with
 key, and the CA bundle.
 
 ```rust,ignore
-use id_effect_node::transport::certs::{NodeCertificate, load_ca_bundle};
 use id_effect_node::transport::quic::{QuicConfig, QuicTransport};
+// Since 0.12 (`id_effect_node::transport::certs` is a deprecated re-export for one minor).
+use id_effect_platform::tls::{NodeCertificate, load_ca_bundle};
 
 let roots = load_ca_bundle("/etc/mesh/ca.pem")?;
 let cert = NodeCertificate::from_pem_files("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
@@ -56,7 +57,7 @@ polls; there is no filesystem watcher.
 
 ```rust,ignore
 use std::{sync::Arc, time::Duration};
-use id_effect_node::transport::certs::CertReloader;
+use id_effect_platform::tls::CertReloader;
 
 let files = Arc::new(CertReloader::new("/etc/mesh/node.crt", "/etc/mesh/node.key")?);
 let _polling = files.spawn_polling(Duration::from_secs(30)); // stops when dropped
@@ -94,6 +95,56 @@ Plaintext TCP exists only with the feature `insecure-plaintext-tcp`, as
 `TcpTransport::dangerous_plaintext()` (posture id
 `id_effect_node::TcpTransport::dangerous_plaintext`). Tests:
 `crates/id_effect_node/tests/transport_tcp_tls.rs`.
+
+## Shared endpoint
+
+Since 0.12 the mesh speaks ALPN `idm/1` and runs on an `id_effect_platform::quic::QuicEndpoint`:
+one UDP socket that routes connections by ALPN, with QUIC address validation (Retry) on, 0-RTT
+off, and finite stream, window, idle and handshake limits (`QuicLimits`; raising one is
+`QuicEndpointConfig::dangerous_raise_limits`, turning Retry off is `dangerous_no_retry`, both
+recorded in the posture registry). A peer that offers no ALPN, or another one, fails the
+handshake, so a 0.11 node cannot join a 0.12 QUIC mesh.
+
+A node that also serves HTTP/3 can put both on **one port**:
+
+```rust,ignore
+use id_effect_node::transport::quic::{QuicSettings, QuicTransport};
+use id_effect_platform::quic::{QuicEndpoint, QuicEndpointConfig, Route};
+use id_effect_platform::tls::Identity;
+
+let endpoint = QuicEndpoint::bind("0.0.0.0:443".parse()?, QuicEndpointConfig::new(public_identity))?;
+let h3 = endpoint.register(Route::h3())?; // handed to the HTTP/3 server
+let settings = QuicSettings::default(); // the `quic` config section; `mesh_port` unset
+let (transport, listen_on) = settings.mesh_transport(mesh_config, &endpoint);
+let listener = transport.listen(&listen_on).await?; // registers `idm/1` on the same port
+```
+
+rustls picks the client-certificate rule per endpoint, before the ALPN is known, so on the
+shared port mutual TLS cannot be a handshake rule for `idm/1` alone (ADR 0014 D7). Instead:
+
+- the handshake **requests** a client certificate as optional, with **no CA hints**;
+- a certificate that is sent is still verified against the cluster CA (or pins), and one from
+  another CA fails the handshake;
+- the `idm/1` route **closes every connection without a verified client chain before any frame
+  of it is read** (application close code `CLOSE_CLIENT_CERT_REQUIRED`, `0x1d7`); the mesh
+  listener reports it as `TransportError::Connect` and never sees the connection;
+- `h3` ignores client certificates, and each route presents its own certificate (the mesh one
+  for `"cluster"`, the public one for browsers).
+
+Browsers with installed client certificates may show a certificate picker on the shared port. To
+keep handshake-level mutual TLS, set `quic.mesh_port`: the mesh then gets its own endpoint (only
+`idm/1`, client certificates required in the handshake), exactly as in 0.11.
+
+```toml
+[quic]
+mesh_port = 4370
+```
+
+Tests: `crates/id_effect_node/tests/shared_endpoint.rs`
+(`idm_without_client_cert_refused_on_shared_endpoint`,
+`idm_cert_from_other_ca_refused_on_shared_endpoint`, `alpn_routes_h3_and_idm`,
+`mesh_port_splits_endpoint`); the 0.11 mutual-TLS tests in `transport_tls.rs` run on both shapes;
+the endpoint itself in `crates/id_effect_platform/tests/quic_endpoint.rs`.
 
 **Runnable example:** `cargo run -p id_effect_node --features quic --example 134_mtls_cluster`
 (two nodes from PEM files, a node from another CA refused, a certificate rotated under a running

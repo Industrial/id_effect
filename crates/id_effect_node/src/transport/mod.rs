@@ -6,7 +6,8 @@
 //! - [`tcp`] — length-delimited frames over Tokio TCP: `TcpTransport::tls`
 //!   (feature `tls-tcp`, TLS 1.3 with mutual auth; configured in `tls_tcp`).
 //! - `quic` (feature `quic`) — quinn + rustls with mutual TLS (the
-//!   production path).
+//!   production path), ALPN `idm/1`, on its own `id_effect_platform` QUIC
+//!   endpoint or on one shared with HTTP/3 (ADR 0014 D6/D7).
 //!
 //! **Encrypted by default** (dist.tls#2, ADR 0013 R8): every constructor of
 //! a network transport is mutual TLS, and a transport without a way to
@@ -16,7 +17,8 @@
 //! registry ([`id_effect::observability::posture`]).
 //!
 //! Certificates for the encrypted transports (PEM loading, CA bundles,
-//! reload on rotation) live in `certs` (features `quic`, `tls-tcp`).
+//! reload on rotation) live in `id_effect_platform::tls` since 0.12; `certs`
+//! (features `quic`, `tls-tcp`) is a deprecated re-export for one minor.
 //!
 //! A transport moves **bytes**; framing, handshake, and semantics live
 //! above it. Connections are bidirectional byte-frame pipes.
@@ -27,11 +29,72 @@ pub mod memory;
 pub mod tcp;
 
 #[cfg(any(feature = "quic", feature = "tls-tcp"))]
+#[deprecated(since = "0.12.0", note = "use id_effect_platform::tls")]
 pub mod certs;
 #[cfg(feature = "quic")]
 pub mod quic;
+// tls_tcp still reaches the moved certificate code through the deprecated path.
 #[cfg(feature = "tls-tcp")]
+#[allow(deprecated)]
 pub mod tls_tcp;
+
+/// The rustls configs of `tls_tcp` (from `id_effect_platform::tls`) with the
+/// transport error type; reached through `certs` as before 0.12.
+#[cfg(feature = "tls-tcp")]
+mod tls_configs {
+  pub(crate) use id_effect_platform::tls::Identity;
+  use id_effect_platform::tls::{self, CertError};
+
+  use super::TransportError;
+
+  /// TLS errors as the transports report them: unusable client roots fail the bind.
+  fn transport_error(e: CertError) -> TransportError {
+    match e {
+      CertError::ClientRoots(_) => TransportError::Bind(e.to_string()),
+      other => TransportError::Io(other.to_string()),
+    }
+  }
+
+  /// See [`id_effect_platform::tls::client_tls_config`].
+  pub(crate) fn client_tls_config(
+    identity: &Identity,
+    roots: Option<&rustls::RootCertStore>,
+    pinned: &[[u8; 32]],
+  ) -> Result<rustls::ClientConfig, TransportError> {
+    tls::client_tls_config(identity, roots, pinned).map_err(transport_error)
+  }
+
+  /// See [`id_effect_platform::tls::server_tls_config`].
+  pub(crate) fn server_tls_config(
+    identity: &Identity,
+    client_roots: Option<&rustls::RootCertStore>,
+    client_pinned: &[[u8; 32]],
+  ) -> Result<rustls::ServerConfig, TransportError> {
+    tls::server_tls_config(identity, client_roots, client_pinned).map_err(transport_error)
+  }
+
+  #[cfg(test)]
+  mod tests {
+    use super::*;
+
+    #[test]
+    fn unusable_client_roots_fail_the_bind() {
+      let identity = Identity::from_certificate(
+        &id_effect_platform::tls::NodeCertificate::self_signed("node").expect("cert"),
+      )
+      .expect("identity");
+      let empty = rustls::RootCertStore::empty();
+      assert!(matches!(
+        server_tls_config(&identity, Some(&empty), &[]),
+        Err(TransportError::Bind(m)) if m.starts_with("tls: client roots")
+      ));
+      assert!(matches!(
+        client_tls_config(&identity, Some(&empty), &[[0; 32]]),
+        Err(TransportError::Io(m)) if m.starts_with("tls: ")
+      ));
+    }
+  }
+}
 
 /// Transport-level failure.
 #[derive(Debug, thiserror::Error)]

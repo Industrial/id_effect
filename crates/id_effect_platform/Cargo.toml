@@ -15,10 +15,27 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
+default = []
 # Session store + OAuth client capability traits (web-framework material; opt-in since 0.6).
 auth = []
 # In-memory test doubles (`MemoryOAuthClient`) for downstream tests.
 test-util = ["auth"]
+# Certificates, CA bundles, reload on rotation, rustls client/server configs (`tls`; ADR 0014 D6,
+# moved from id_effect_node::transport::certs).
+tls = [
+  "dep:rustls",
+  "dep:rcgen",
+  "dep:sha2",
+  "dep:thiserror",
+  "dep:tracing",
+  "tokio/time",
+]
+# One QUIC endpoint with ALPN routing (`quic::QuicEndpoint`, `quic::AlpnRouter`; ADR 0014 D6/D7).
+quic = ["tls", "dep:quinn"]
+# HTTP/3 over the QUIC endpoint (ALPN `h3`; r12-e12-3-h3-client / h3-server).
+http3 = ["quic", "dep:h3", "dep:h3-quinn"]
+# ACME TLS-ALPN-01 certificates (r12-e12-3-certs-acme).
+acme = ["tls", "dep:instant-acme"]
 
 [dependencies]
 id_effect = { path = "../id_effect", version = "0.11.0", features = [
@@ -46,6 +63,34 @@ tokio = { version = "1.50.0", features = [
   "sync",
 ] }
 
+# Features `tls` / `quic` / `http3` / `acme`, declared once here (ADR 0014 D6). Floors carry
+# security fixes (quinn-proto >= 0.11.18 via quinn 0.11.12: RUSTSEC-2026-0338..0342; rustls
+# 0.23.46: RUSTSEC-2026-0285, RUSTSEC-2026-0346..0349). aws-lc-rs everywhere, not ring: sqlx,
+# reqwest and jsonwebtoken use aws-lc-rs, and with both providers compiled in rustls cannot pick a
+# process default. One quinn and one rustls in `cargo tree -d`.
+rustls = { version = "0.23.46", optional = true }
+rcgen = { version = "0.13", optional = true, default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
+sha2 = { version = "0.10", optional = true }
+thiserror = { version = "2", optional = true }
+tracing = { version = "0.1", optional = true }
+quinn = { version = "0.11.12", optional = true, default-features = false, features = [
+  "log",
+  "platform-verifier",
+  "runtime-tokio",
+  "rustls-aws-lc-rs",
+  "bloom",
+] }
+# Exact pins: h3 is pre-1.0 and h3-quinn tracks it release by release.
+h3 = { version = "=0.0.8", optional = true }
+h3-quinn = { version = "=0.0.10", optional = true }
+instant-acme = { version = "0.8", optional = true, default-features = false, features = [
+  "aws-lc-rs",
+  "hyper-rustls",
+] }
+
 [dev-dependencies]
 # Self dev-dep so integration tests see `test-util` doubles.
 id_effect_platform = { path = ".", features = ["test-util"] }
@@ -54,6 +99,11 @@ rstest = "0.26"
 tempfile = "3"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 wiremock = "0.6"
+
+# rcgen (test CAs), rustls and quinn come with the feature.
+[[test]]
+name = "quic_endpoint"
+required-features = ["quic"]
 
 [package.metadata.docs.rs]
 all-features = true
