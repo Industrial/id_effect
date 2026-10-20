@@ -2,6 +2,17 @@
 
 ## 0.12.0 — unreleased — One call surface
 
+RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six
+procedure kinds, typed error unions, `#[rpc::service]` (the new `id_effect_rpc_macros`), batches,
+subscriptions, two-way streams with resume, channels and presence, and the same contract over
+HTTP, WebSocket, SSE, WebTransport and the process mesh; `id-effect rpc gen ts` and
+`id-effect rpc check` work from the checked-in contract. REST + OpenAPI stays the public API
+style, now with OpenAPI 3.1 and AsyncAPI 3.0 from the contract. HTTP/3 is a standard transport
+in the host and the platform client, with TCP (TLS, HTTP/2) always on and one flag to turn it
+off; the mesh shares the platform QUIC endpoint by ALPN. The Relay reference app (3 nodes, chat
+and presence over HTTP/3, WebTransport and WebSocket) and RPC in the Ledger exercise it. Upgrade
+with [MIGRATION-0.12.md](docs/MIGRATION-0.12.md).
+
 ### Added
 
 - The Relay reference app (`examples/reference/relay`, the 0.12 KPI): a chat across three nodes
@@ -344,9 +355,77 @@
   (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
 - `id_effect_axum::HostConfig` gains the public fields `tls` and `http3` (struct literals need
   `..HostConfig::default()`); `ConnectionLimits::max_requests_per_connection` also applies to
-  HTTP/2 (a `GOAWAY` after the n-th request).
+  HTTP/2 (a `GOAWAY` after the n-th request). `HostConfig` (through `HostTls::Provided`) and
+  `id_effect_node`'s `QuicTransport` are no longer `UnwindSafe` / `RefUnwindSafe`.
+- `id_effect_tool::dev::DevArgs` gains the public fields `cert_dir`, `no_cert` and `cert_only`
+  (`id-effect dev` issues a development certificate).
+- `x-rpc: 1` is required on **every** RPC `POST` (queries, batches and streams too, with or
+  without a cookie: stricter than ADR 0014 C5), and a `POST` without a `Content-Type` answers
+  `415` (F16).
+- `id-effect rpc check` classifies a narrowed output and a removed input field (unless unknown
+  fields are refused) as compatible; ADR 0014 §9 records the classification (F47).
+- The 10,000-stream soak gates RSS growth from minute 5 (half the run, at most 300 s) instead of
+  minute 1; the minute-1 figure is still reported (`rss_kib.at_minute_1`), and
+  `scripts/security-kpis.sh` gates the minute-5 figure (F50, F60).
+- The Ledger mounts its RPC routes once: the per-request remount that gave each call the
+  request's capabilities is gone now that the HTTP transport lays them over the route state
+  itself (5db2e2e4, F51); a map-request layer adds the policy registry and the idempotency scope.
+- The book's chapters 33.0–33.12 and 38.1 compile as doctests (`examples/book-snippets`, F17);
+  every former `rust,ignore` block in them compiles (a few are compiled but not run because they
+  need a server), and `WireSchema::of::<T>()` in chapter 33.7 is corrected to
+  `WireSchema::<T>::of()`.
+
+### Deprecated
+
+- `id_effect_node::transport::certs` (and `kit::node::transport::certs`): use
+  `id_effect_platform::tls` (`kit::platform::tls`), the same types. Removed in 0.13.
+
+### Removed
+
+- From the labs `id_effect_rpc`: the `stream` and `codegen` modules, `RpcWireRequest`,
+  `RpcWireResponse`, the `serialization` helpers, `RpcMethodEntry::dispatch`,
+  `RpcServer::mount_dispatch`, `RpcClientError::Rpc`, and the OpenAPI 3.0 emitter (`OpenApiSpec`,
+  `OpenApiInfo`, `emit_openapi_json`, `emit_openapi_yaml`). Replacements in the migration guide.
+- `labs/id_effect_rpc` (moved to `crates/id_effect_rpc`). No GraphQL surface existed, so none is
+  removed (ADR 0014: GraphQL is a non-goal).
 
 ### Security
+
+- Call-surface defaults (ADR 0014 §14, each with its enforcement point):
+  - C1 every procedure declares its access (`#[public]` / `#[guard(G)]`, typestate on
+    `RpcGroup`); an unknown tag is a `404` Problem (`r1_rpc_procedure_without_access_decision`,
+    `rpc_unregistered_tag_is_404_problem`).
+  - C2 a batch is at most 50 calls and 1 MiB and costs N rate-limit tokens
+    (`r4_batch_over_limit_rejected_413`, `r4_batch_charges_n_rate_limit_tokens`).
+  - C3 streams per connection, 64 KiB frames, message rate, idle timeout and heartbeats are
+    bounded, and QUIC credits and idle timeout are finite (`r4_ws_streams_per_connection_capped`,
+    `r4_ws_frame_over_max_closes_1009`, `r4_quic_limits_finite_by_default`).
+  - C4 `Origin` is checked on every WebSocket upgrade and WebTransport CONNECT; an empty allowlist
+    refuses every browser origin; `dangerous_any_origin` is recorded
+    (`r9_ws_upgrade_from_foreign_origin_refused`,
+    `r9_webtransport_connect_from_foreign_origin_refused`).
+  - C5 RPC `POST`s need a codec `Content-Type` and `x-rpc` (all of them, F16)
+    (`r9_rpc_mutation_without_custom_header_refused`, `r9_rpc_form_content_type_refused`).
+  - C6 QUIC address validation (Retry) is on (`r4_quic_retry_on_by_default`, posture probe).
+  - C7 0-RTT is off; `dangerous_allow_zero_rtt_for_queries` admits only queries and is recorded
+    (`r10_zero_rtt_on_mutation`, `zero_rtt_off_by_default`).
+  - C8 resume sessions are 128 random bits bound to the principal
+    (`resume_under_another_principal_refused`).
+  - C9 hostile payloads: Schema decode at the boundary, caps before buffering, a fuzz target on
+    every new decoder.
+  - C10 a defect is `InternalError { id }` with the correlation id only
+    (`defect_becomes_internal_error_without_message`).
+  - C11 channel joins go through a `JoinPolicy` that denies by default
+    (`channel_join_denied_by_default_policy`).
+  - C12 the OpenAPI, AsyncAPI and contract documents are closed in prod unless guarded
+    (`r7_rpc_docs_closed_in_prod`).
+  - C13 the prod profile refuses the `id-effect dev` certificate
+    (`posture_prod_refuses_dev_certificate`).
+  - C14 on the shared QUIC endpoint `idm/1` refuses a connection without a verified client chain
+    before reading a frame (`idm_without_client_cert_refused_on_shared_endpoint`,
+    `idm_cert_from_other_ca_refused_on_shared_endpoint`).
+  - C15 the HTTP/3 client keeps the SSRF policy, timeouts and body caps and never uses
+    `reqwest_unstable` (`h3_path_enforces_ssrf_policy`, `h3_body_cap_enforced`).
 
 - RPC resume (r12-e12-2-bidi-resume): a resume session is 128 random bits bound to the
   connection's principal; a resume under another principal is refused like an expired buffer
@@ -484,7 +563,8 @@
   the userspace loss proxies; `tc netem` in `bench.yml`). The secure-stack budget is unchanged
   (+2,648 ns of 5,000). The unary RPC delta measured +3,399 ns over a raw axum JSON handler,
   over the 3 µs of D5, so its gate waits for the owner. Soak: 6,009,790 heartbeats, none
-  missing, node RSS 1.040× between minute 1 and minute 10 (resume replay buffers warming up).
+  missing, node RSS 1.040× between minute 1 and minute 10 (resume replay buffers warming up)
+  and 0.997× from minute 5, the gated mark since F60.
   `scripts/bench-run.sh` takes `package:bench:features` and `--skip`; `bench.yml` enforces
   `pair` gates, runs `h3_loss` under netem and the 10-minute soak, and a 60 s soak on every pull
   request. `docs/benchmarks/v0.11.json` and `v0.12.json`.
@@ -501,6 +581,52 @@
   sets `TCP_NODELAY` on every accepted TCP socket (F48), so small responses and WebSocket frames
   no longer wait for the peer's delayed ACK: the 10,000-stream soak's heartbeat lag p99 went from
   41 ms to 1 ms.
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.12.0.md`, METHOD 2.2, competitor snapshot
+2026-10-14):
+
+| Index | 0.11.0 | 0.12.0 | Target |
+|---|---|---|---|
+| Universal (U) | 79.4 (#1) | 82.3 (#1) | — |
+| Enterprise (E) | 79.2 (#1) | 81.5 (#1) | 80.9 (#1) |
+| Runtime (RT) | 83.9 (#1) | 85.9 (#1) | 84.8 (#1) |
+| Rows < 40 | 9 | 7 | ≤ 7 |
+| Rows ≥ 80 | 56 | 59 | — |
+| Rows where id_effect leads | 31 | 37 | — |
+
+7 rows up, none down; Web & API 54.8 → 73.9. `web.rpc` 39 → 100 (labs → production: the Ledger
+and the Relay), `web.realtime` 1 → 100 (absent → production: the Relay), `dist.tls` 89 → 100 (the
+Relay's mesh on mutual-TLS QUIC), `web.server` and `data.jsonschema` 88 → 100 (TLS + HTTP/2 in
+the host; `id-effect rpc gen ts`), `conc.perf` 63 → 88 (per-stream memory, published p99),
+`fault.actors` 89 → 100; `dist.remote`, `dist.placement` and `data.events` reach production at
+the same score. Every production level rests on the `reference-relay` and `reference-ledger` jobs
+going green on the tag. One miss, carried over again: `sec.supply` 88 (target 100), because
+`sec.supply#7` needs a published GitHub Security Advisory (none yet; publication is release
+automation); new target 0.13.0. DX KPIs (`docs/benchmarks/dx-kpis-0.12.json`, HTTP/3 on in the
+template): K1 22.2 s, K2 1.40 s, K3 634 lines, K4 17/20, K5 86.3 %, K6 33.2 s. Security KPIs
+(`docs/security/kpis-0.12.json`): 0 open highs, ADR 0013 10/10 rules with an enforcement point, 17
+fuzz targets (6 new), 19 compile-fail cases, secure stack +2,648 ns over bare (budget 5,000 ns),
+46 opt-outs recorded, every Security-table test green, the four T12 bench gates pass (unary
++1,776 ns, batch 0.111, h3/h2 p99 0.065, soak RSS 0.997× after minute 5).
+
+### Owner steps
+
+Not done by the release automation; each is the owner's (release spec D15/D16, earlier
+decisions still open):
+
+- **Register crates.io trusted publishing for `id_effect_rpc_macros` before pushing the
+  `v0.12.0` tag.** The crate has never been published, so `publish.yml` (trusted publishing only,
+  no registry token) cannot publish it, and `id_effect_rpc` (already on crates.io) depends on it,
+  so the whole publish wave stops at `id_effect_rpc_macros` without it.
+- Accept ADR 0014 "One call surface" (D15); it stays Proposed until then, and the exit gate needs
+  Accepted. Review the defaults of D1–D14 and the six open questions of the release spec.
+- Allow `sudo tc` (netem) on the bench runner (D16) so `bench.yml` measures `h3_loss` under real
+  loss and runs the 10-minute soak; the recorded h3/h2 figure uses userspace loss proxies.
+- Register the project for the OpenSSF Best Practices badge (0.11 D16, still pending).
+- Accept ADR 0013 (0.11 D22, still Proposed).
+- Publish the GitHub Security Advisories of 0.10.1 (`sec.supply#7`, carried over to 0.13.0).
 
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 

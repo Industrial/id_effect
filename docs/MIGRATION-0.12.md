@@ -12,10 +12,47 @@ in [STABILITY.md](STABILITY.md).
 0.12 is the "one call surface" release (ADR 0014): RPC is the first-party call surface, REST +
 OpenAPI stays the public API style, and HTTP/3 is a standard transport with TCP fallback.
 
-> Status: skeleton (leaf `r12-t0-skeletons`). One heading per planned break; each leaf that ships
-> the break fills in its section, and leaf `r12-t0-migration-guide` completes the guide.
+The guide is complete against `cargo semver-checks` 0.50.0 run on every publishable crate,
+`release/0.11.0` against the 0.12.0 release candidate (the last section maps each reported break
+to its entry). There was no GraphQL surface in 0.11 (no crate, module or feature), so 0.12 removes
+none; ADR 0014 records GraphQL as a non-goal.
 
 ## Upgrade checklist
+
+Ordered by how likely a 0.11 application is to hit it.
+
+1. **RPC clients and scripts send `x-rpc: 1` and a JSON content type on every `POST`** (RPC:
+   the 0.12 wire format). A `POST` to `/rpc` without `x-rpc: 1` is `403`, without a
+   `Content-Type` (or with another one) `415`. `RpcClient`, the generated Rust and TypeScript
+   clients and `curl` examples in the book send both.
+2. **Struct literals of `HostConfig`, `HttpClientConfig`, `RpcClientConfig` or `DevArgs`** no
+   longer compile (each gained public fields): end the first two with `..Default::default()`,
+   build an `RpcClientConfig` with `RpcClientConfig::new(..)`, and add the three new `DevArgs`
+   fields.
+3. **`id_effect_node::transport::certs` imports** move to `id_effect_platform::tls` (deprecated
+   re-export, removed in 0.13).
+4. **A QUIC mesh upgrades all nodes together**: 0.12 nodes require ALPN `idm/1` and refuse 0.11
+   nodes. TLS-TCP meshes are unaffected.
+5. **HTTP/3 binds UDP on the TCP port** when the host has TLS from certificate files and feature
+   `http3`; open UDP on the firewall or set `HTTP3=false`.
+6. **Labs `id_effect_rpc` users** depend on the published crate and port `RpcGroup::register` /
+   `RpcClient::call` to the 0.12 signatures, or to `#[rpc::service]`.
+7. **Exhaustive `match`es on `RpcClientError`** get the new variants or a wildcard.
+8. **Code that relied on `UnwindSafe` / `RefUnwindSafe`** for `HostConfig` or `QuicTransport`
+   (`catch_unwind` across them) wraps them in `AssertUnwindSafe`.
+9. **Generated OpenAPI consumers** read OpenAPI 3.1 (component names changed).
+10. **The 10,000-stream soak** (`streams_soak`, bench job) gates RSS growth from minute 5, not
+    minute 1.
+
+## Deprecated for one minor (removed in 0.13)
+
+| Deprecated | Use instead | Since |
+|---|---|---|
+| `id_effect_node::transport::certs::{NodeCertificate, CertReloader, ReloadTask, CertError, load_ca_bundle, ca_bundle_from_pem}` | `id_effect_platform::tls::…` (the same types) | 0.12.0 |
+| `kit::node::transport::certs` | `kit::platform::tls` | 0.12.0 |
+
+Every other break has no deprecated path; each section below gives its shim (most often
+`..Default::default()` or a builder) or says why there is none.
 
 ## Node: `transport::certs` moved to `id_effect_platform::tls`
 
@@ -40,6 +77,16 @@ Also public now: `tls::Identity` (the swappable certificate a listener presents)
 `ClientAuth::{Required, Optional}`, `provider` and `sha256`. `CertError` gained the variants
 `Tls` and `ClientRoots` (it is `#[non_exhaustive]`).
 
+`cargo semver-checks` reports the six items as removed from `id_effect_node::transport::certs`
+(`struct_missing`, `enum_missing`, `function_missing`) because it does not follow re-exports of
+another crate's items; the old paths still compile (test
+`deprecated_node_certs_path_still_compiles` in `crates/id_effect_node/tests/shared_endpoint.rs`),
+with a deprecation warning.
+
+`QuicTransport` is no longer `UnwindSafe` / `RefUnwindSafe`: it holds the platform
+`QuicEndpoint` (quinn and rustls state behind locks). **No shim**; code that moves a transport
+into `std::panic::catch_unwind` wraps it in `AssertUnwindSafe`.
+
 ## Axum: TLS and HTTP/3 server configuration fields
 
 `HostConfig` has two new public fields: `tls: Option<HostTls>` (default `None`: plain HTTP, as in
@@ -55,6 +102,10 @@ HostConfig { bind_host, bind_port, shutdown_timeout, load_shed }
 // after
 HostConfig { bind_host, bind_port, shutdown_timeout, load_shed, ..HostConfig::default() }
 ```
+
+`HostConfig` is no longer `UnwindSafe` / `RefUnwindSafe`, because `HostTls::Provided` holds a
+`ServerTls` (an `Arc<rustls::ServerConfig>`, whose certificate resolver is an `Arc<dyn …>`). **No shim**: a `catch_unwind` that
+captures a `HostConfig` wraps it in `AssertUnwindSafe`.
 
 `ConnectionLimits` gained `tls_handshake_timeout` (10 s) and `max_concurrent_streams` (100,
 HTTP/2) with their `dangerous_*` opt-outs; its fields are private, so no code breaks. One
@@ -80,8 +131,9 @@ HTTP/3 connections run **BBR** congestion control (`Route::h3()`), mesh connecti
 `Route::with_congestion_control(CongestionControl::Cubic)` (the axum host and `serve_h3` register
 `Route::h3()` and so run BBR). The QUIC endpoint asks for 4 MiB UDP socket buffers; on Linux
 raise `net.core.rmem_max` and `net.core.wmem_max` (for instance to 4194304) or the request is
-capped (logged at `debug`). `EndpointStats` (non-exhaustive) gains `congestion_bbr` and
-`congestion_cubic`.
+capped (logged at `debug`). `QuicEndpoint::stats()` returns `EndpointStats`, new in 0.12 and
+`#[non_exhaustive]`: read its fields, never build one (it gained `congestion_bbr` and
+`congestion_cubic` during 0.12, and later fields do not break readers). Nothing in 0.11 had it.
 
 ## HTTP client: `HttpClientConfig::http3`
 
@@ -189,8 +241,14 @@ after:  {"id":7,"tag":"Greeter.greet","payload":…}  →  {"id":7,"tag":…,"ex
         failure: {"exit":{"_tag":"Failure","error":{"_tag":"NotFound","message":"…"}}}
 ```
 
-- Every `POST` must send `Content-Type: application/json` and `x-rpc: 1` (`RpcClient` does);
-  without them the server answers 415 / 403 Problem Details. `GET /rpc/{tag}?input=<json>` serves
+- Every `POST` must send `Content-Type: application/json` (NDJSON for a client stream) and
+  `x-rpc: 1` (`RpcClient` and the generated clients do). This is stricter than ADR 0014 rule C5,
+  which asks for both on cookie-authenticated mutations: it applies to **every** `POST`, with
+  or without a cookie — queries,
+  batches, streams — because one route serves them all and a cross-site form can reach any of
+  them. A `POST` without `x-rpc: 1` answers `403`; one **without a `Content-Type`**, or with
+  another one, answers `415` (Problem Details). `curl` scripts add
+  `-H 'content-type: application/json' -H 'x-rpc: 1'`. `GET /rpc/{tag}?input=<json>` serves
   queries without either.
 - `RpcWireRequest`, `RpcWireResponse`, `id_effect_rpc::stream` and the `serialization` helpers
   `decode_wire_request`, `encode_wire_response`, `rpc_error_to_wire`, `success_wire`,
@@ -288,4 +346,58 @@ The kit posture report has six more probes (`posture::PROBES` grows from 9 to 15
 matched on the list length or order updates. `kit::node::transport::certs` users (the 0.11
 `cluster` template) import `kit::platform::tls` instead (`cluster` now exposes it).
 
+## Tool: `id-effect dev` certificates and `id-effect rpc`
+
+`id_effect_tool::dev::DevArgs` (the arguments of `id-effect dev`, public for embedding the
+command) gained three public fields: `cert_dir`, `no_cert` and `cert_only`. A struct literal
+that lists every field no longer compiles. **Shim:** add `cert_dir: None, no_cert: true,
+cert_only: false` to keep the 0.11 behaviour (no development certificate), or `no_cert: false`
+to get one; parsing the command line with clap needs no change.
+
+`id-effect rpc check` (new) refuses a breaking change to a published contract version. How it
+classifies a change is in ADR 0014 §9 and book chapter 33.12. Two rules differ from a naive
+reading of "narrower is breaking", on purpose (F47): **a narrowed output is compatible** (old
+clients still read every value the new server sends), and **a removed input field is compatible
+unless the input refuses unknown fields** (`additionalProperties: false`), because the server then
+ignores what an old client still sends. A breaking change in a new contract version, with the old
+one still served, is reported as `versioned` and passes. No shim: it is a new check; run it in CI
+against your last release tag (chapter 33.12, "In CI").
+
+## Performance gates
+
+The 10,000-stream soak (`crates/id_effect_rpc/examples/streams_soak.rs`, the `soak` job of
+`bench.yml`) now gates RSS growth from **minute 5** (half the run, at most 300 s; 30 s of the 60 s
+variant) instead of minute 1: the resume replay buffers warm up for about five minutes, bounded
+(F50/F60). The minute-1 figure is still reported (`rss_kib.at_minute_1`,
+`growth_since_minute_1`; `scripts/security-kpis.sh` `rss_growth_minute_1`). A dashboard or
+script that read `rss_kib.mark_s == 60` reads `mark_s` instead.
+
 ## Semver report: each reported break and its entry
+
+`cargo semver-checks` 0.50.0 (rustdoc JSON of Rust 1.98.1; 0.50 cannot read the pinned 1.99's
+format, and only the rustdoc JSON is compared), `--workspace --baseline-rev release/0.11.0`
+(`037dffc4`), and `-p id_effect_rpc --baseline-root` the 0.11 `labs/` workspace for the moved
+crate. 31 publishable crates: 30 checked (`id_effect_rpc_macros` is new and has no baseline),
+25 without a break. Breaks in 5 crates, every one listed above:
+
+| Crate | Lint | Items | Entry |
+|---|---|---|---|
+| id_effect_axum | `constructible_struct_adds_field` | `HostConfig.tls`, `HostConfig.http3` | Axum: TLS and HTTP/3 server configuration fields |
+| id_effect_axum | `auto_trait_impl_removed` | `HostConfig` no longer `UnwindSafe` / `RefUnwindSafe` | same section |
+| id_effect_platform | `constructible_struct_adds_field` | `HttpClientConfig.root_certificates`, `HttpClientConfig.http3` | HTTP client: `HttpClientConfig::http3` |
+| id_effect_node | `struct_missing`, `enum_missing`, `function_missing` | `transport::certs::{NodeCertificate, CertReloader, ReloadTask, CertError, load_ca_bundle, ca_bundle_from_pem}` (re-exported, deprecated; the tool does not follow cross-crate re-exports) | Node: `transport::certs` moved |
+| id_effect_node | `auto_trait_impl_removed` | `QuicTransport` no longer `UnwindSafe` / `RefUnwindSafe` | same section |
+| id_effect_rpc (vs labs 0.11) | `module_missing` | `stream`, `codegen` | RPC: labs `RpcGroup::register`…; RPC: the 0.12 wire format |
+| id_effect_rpc | `struct_missing` | `RpcWireRequest`, `stream::RpcStreamChunk`, `openapi::{OpenApiSpec, OpenApiInfo}`, `codegen::{RpcServiceDef, RpcMethodDef}` | the 0.12 wire format; OpenAPI output is 3.1 |
+| id_effect_rpc | `enum_missing` | `RpcWireResponse`, `codegen::RpcHttpMethod` | same |
+| id_effect_rpc | `function_missing` | `serialization::{decode_wire_request, encode_wire_response, rpc_error_to_wire, success_wire, success_json, serialization_to_rpc_error, validate_success_json}`, `stream::encode_stream_chunk`, `openapi::{emit_openapi_json, emit_openapi_yaml}`, `codegen::emit_service_trait` | same |
+| id_effect_rpc | `inherent_method_missing` | `RpcMethodEntry::dispatch`, `RpcServer::mount_dispatch` | labs `RpcGroup::register`; the 0.12 wire format |
+| id_effect_rpc | `method_parameter_count_changed`, `method_requires_different_generic_type_params` | `RpcGroup::register`, `RpcClient::call` | labs `RpcGroup::register` |
+| id_effect_rpc | `enum_variant_added`, `enum_variant_missing` | `RpcClientError::{Failure, Refused, Transport}` added, `RpcClientError::Rpc` removed | the 0.12 wire format; stream transports |
+| id_effect_rpc | `constructible_struct_adds_field` | `RpcClientConfig.transport` | RPC: stream transports |
+| id_effect_tool | `constructible_struct_adds_field` | `DevArgs.{cert_dir, no_cert, cert_only}` | Tool: `id-effect dev` certificates |
+
+Unlisted breaks: none. Not reported but listed because they change behaviour or are new public
+surface within 0.12: `CallContext::request_cache` (batches), `x-rpc` on every `POST` and `415`
+without a content type (F16), HTTP/2 on the platform client, the QUIC ALPN `idm/1`, the posture
+probes, OpenAPI 3.1 output, `EndpointStats`, and the soak mark.
