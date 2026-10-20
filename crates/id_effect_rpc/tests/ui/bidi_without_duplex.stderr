@@ -3,7 +3,7 @@ error: `#[bidi]` procedure `room` does not return a `Duplex`
  --> tests/ui/bidi_without_duplex.rs:8:28
   |
 8 |   fn room(&self) -> Effect<Stream<String, Never, DynEnv>, Never, DynEnv>;
-  |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |                            ^^^^^^
 
 warning: unused imports: `DynEnv`, `Effect`, `Never`, and `Stream`
  --> tests/ui/bidi_without_duplex.rs:1:17

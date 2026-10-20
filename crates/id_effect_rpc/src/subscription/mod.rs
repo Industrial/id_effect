@@ -3,8 +3,8 @@
 //! A subscription is a resumable stream: every item carries the [`Cursor`] a client resumes
 //! after. This module holds what every source shares — the bounded tail configuration
 //! ([`TailConfig`]) and the cursor check ([`position_after`], [`CursorMismatch`]) — and, behind
-//! feature `events`, [`events`]: a subscription over an `id_effect_events` `EventLog` whose
-//! cursor is the log's global position (`Cursor::events(pos)`).
+//! feature `events`, the `events` module: a subscription over an `id_effect_events` `EventLog`
+//! whose cursor is the log's global position (`Cursor::events(pos)`).
 //!
 //! Rules every source follows:
 //!

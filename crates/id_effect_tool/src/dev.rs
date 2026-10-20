@@ -578,6 +578,13 @@ impl Watcher {
 /// printed hash) for `localhost`, `127.0.0.1` and `::1`. Every subject and issuer names
 /// [`DEV_CERTIFICATE_ORGANIZATION`], which the kit's posture check refuses in the prod profile
 /// (`id_effect_kit::posture::NO_DEV_CERTIFICATE`, C13).
+///
+/// [`CA_FILE`]: cert::CA_FILE
+/// [`CA_KEY_FILE`]: cert::CA_KEY_FILE
+/// [`CERT_FILE`]: cert::CERT_FILE
+/// [`KEY_FILE`]: cert::KEY_FILE
+/// [`META_FILE`]: cert::META_FILE
+/// [`DEV_CERTIFICATE_ORGANIZATION`]: cert::DEV_CERTIFICATE_ORGANIZATION
 pub mod cert {
   use std::fs;
   use std::io::Write;

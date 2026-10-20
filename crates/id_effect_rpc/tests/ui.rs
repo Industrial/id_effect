@@ -15,8 +15,10 @@
 //! [`BLESSED_RUSTC`] and the suite only runs there (`UI_FORCE=1` runs it anyway). Re-bless with
 //! `TRYBUILD=overwrite cargo test -p id_effect_rpc --test ui`.
 
-/// The `rustc -V` prefix the `.stderr` snapshots were blessed with (= CI's pin).
-const BLESSED_RUSTC: &str = "rustc 1.99.0";
+/// The `rustc -V` prefix the `.stderr` snapshots were blessed with (= CI's pin). The trailing
+/// ` (` keeps `rustc 1.99.0-nightly` (devenv) out: the snapshots blessed there lacked the `^^^`
+/// span markers that 1.99.0 prints for `bidi_without_duplex` and `two_kinds_on_one_method`.
+const BLESSED_RUSTC: &str = "rustc 1.99.0 (";
 
 fn rustc_version() -> String {
   let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());

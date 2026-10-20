@@ -3,7 +3,7 @@ error: procedure `greet` has two kinds (`#[query]` and `#[mutation]`)
  --> tests/ui/two_kinds_on_one_method.rs:7:3
   |
 7 |   #[mutation]
-  |   ^^^^^^^^^^^
+  |   ^
 
 warning: unused imports: `DynEnv`, `Effect`, and `Never`
  --> tests/ui/two_kinds_on_one_method.rs:1:17

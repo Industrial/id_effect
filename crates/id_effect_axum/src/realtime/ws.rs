@@ -5,7 +5,7 @@
 //! Each accepted socket runs as its own supervised fiber:
 //!
 //! - the handler gets a [`WsSocket`]: a pull-based [`Stream`] of inbound [`WsMessage`]s and a
-//!   [`WsSender`] (also a [`Sink`](id_effect::Sink)) for outbound ones, both bounded;
+//!   [`WsSender`] (also a [`Sink`]) for outbound ones, both bounded;
 //! - the handler runs as a child fiber of the socket's fiber, beside the connection driver that
 //!   owns the wire (frames, pings, timers, limits);
 //! - when the client goes away (or a limit or timer closes the socket) the handler is

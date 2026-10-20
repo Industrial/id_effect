@@ -7,7 +7,7 @@
 //! - [`CallFrames`] turns a running stream call into its [`Frame`]s — `item`… then one `exit` —
 //!   for any transport that writes frames (NDJSON here; WebSocket, SSE and WebTransport later).
 //!   Dropping it drops the call, which interrupts the handler fiber and runs its finalizers.
-//! - [`InProcess`] (feature `test-util`) calls every kind of an [`RpcGroup`](crate::RpcGroup)
+//! - `InProcess` (feature `test-util`) calls every kind of an [`RpcGroup`](crate::RpcGroup)
 //!   without a network, through the same dispatch (guards included) as the real transports.
 //!
 //! ```rust

@@ -478,7 +478,7 @@ pub struct Mounted {
 /// Each call runs with the request's capabilities (its principal) in its environment, as the
 /// REST handlers do: the HTTP transport of `id_effect_rpc` lays them over the route state. Each
 /// request also carries the policy registry the guards read and the request's principal
-/// (`<org>/<id>`) as the [`RpcPrincipal`] its idempotency keys are scoped by ([`scope_call`]).
+/// (`<org>/<id>`) as the [`RpcPrincipal`] its idempotency keys are scoped by (`scope_call`).
 pub fn mount(app: Arc<App>, policies: &Policies) -> Mounted {
   let store = PgIdempotencyStore::new(Arc::clone(&app.db));
   let server = LedgerService::server(Procedures::new(app)).with_idempotency_store(store);

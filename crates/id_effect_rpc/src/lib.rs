@@ -33,8 +33,8 @@
 //! - [`codec`] — the [`Codec`](codec::Codec) trait, JSON, negotiation (D13)
 //! - [`registry`] — [`Procedure`] (access typestate, kind, version) and [`RpcGroup`]
 //! - [`handler`] — the handler shapes of the six kinds and their erased, transport-independent
-//!   form; [`kinds`] — [`Duplex`](kinds::Duplex), [`Subscription`](kinds::Subscription), the
-//!   frames of a running call, the in-process transport (feature `test-util`)
+//!   form; [`kinds`] — [`Duplex`], [`Subscription`], the frames of a running call, the
+//!   in-process transport (feature `test-util`)
 //! - [`error_union`] — typed error unions `{"_tag": …}`; [`cancel`] — deadlines and cancellation;
 //!   [`idempotency`] — `Idempotency-Key` replay for mutations
 //! - [`server`] — [`RpcServer`]: the `/rpc` routes as declared typed routes, [`server::dispatch`]
@@ -42,9 +42,9 @@
 //! - [`protocol`], [`serialization`] — the dispatch path constant, tuple-Schema bridging
 //! - [`correlation`], [`span`], [`versioning`], [`openapi`], [`RpcError`] — edge helpers
 //!
-//! `#[rpc::service]` ([`service`], re-exported from `id_effect_rpc_macros`) declares a service on a
-//! trait. The wire and contract formats are specified in the 0.12 design note
-//! (`.maestro/specs/releases/0.12/r12-rpc-design.md`).
+//! `#[rpc::service]` ([`service`](macro@service), re-exported from `id_effect_rpc_macros`)
+//! declares a service on a trait. The wire and contract formats are specified in the 0.12
+//! design note (`.maestro/specs/releases/0.12/r12-rpc-design.md`).
 //!
 //! Later 0.12 modules are added below, one `pub mod` / `pub use` line each.
 

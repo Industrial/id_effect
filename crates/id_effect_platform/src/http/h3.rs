@@ -36,7 +36,7 @@
 //!   of Linux, the BSDs and macOS). With no root found, HTTP/3 is not used (every request goes
 //!   over TCP).
 //! - **Transport.** BBR congestion control (as the server's `h3` route, ADR 0014 D9) and 4 MiB
-//!   UDP socket buffers asked for ([`SocketBuffers`](crate::quic::SocketBuffers)).
+//!   UDP socket buffers asked for ([`SocketBuffers`]).
 //! - **Network changes.** An error showing that the network changed (network unreachable or
 //!   down, local address gone) clears the `Alt-Svc` cache, the negative cache and the pooled
 //!   HTTP/3 connections.

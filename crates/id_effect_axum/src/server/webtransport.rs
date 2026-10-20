@@ -11,10 +11,11 @@
 //! bidirectional streams reach the handler ([`WebTransportSession::accept_bi`]), and plain HTTP/3
 //! requests that still arrive on the connection are served by the router as before.
 //!
-//! Turn it on with [`Http3Options::webtransport`] on an endpoint whose limits carry QUIC
-//! datagrams ([`quic_limits`]): HTTP/3 datagrams are negotiated per connection and need the
-//! transport parameter. The session hook rides the endpoint's one `h3` route: no route of its
-//! own is registered.
+//! Turn it on with
+//! [`Http3Options::webtransport`](crate::server::h3::Http3Options::webtransport) on an endpoint
+//! whose limits carry QUIC datagrams ([`quic_limits`]): HTTP/3 datagrams are negotiated per
+//! connection and need the transport parameter. The session hook rides the endpoint's one `h3`
+//! route: no route of its own is registered.
 //!
 //! ## Limits (ADR 0013 R4)
 //!

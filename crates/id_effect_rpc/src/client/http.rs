@@ -2,7 +2,7 @@
 //! format: a [`WireCall`] envelope out, a [`WireResult`] (or a Problem) back.
 //!
 //! [`RpcClient::call`] batches: the calls a program makes in the same tick — the children of
-//! one [`all`](id_effect::all), for example — go out as one batch request (design note §2.2),
+//! one [`all`], for example — go out as one batch request (design note §2.2),
 //! through an `id_effect` [`RequestResolver`] and its batch window (bounded: at most 64 yields
 //! of the executor). A window's calls are split by client and URL, then into requests of at
 //! most [`CLIENT_BATCH_MAX_CALLS`] calls and [`CLIENT_BATCH_MAX_BYTES`] bytes; a request with a
