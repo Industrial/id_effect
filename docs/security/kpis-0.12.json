@@ -1,0 +1,262 @@
+{
+	"schema": "id_effect security-kpis v1",
+	"method": "scripts/security-kpis.sh (header)",
+	"release": "0.12.0",
+	"workspace_version": "0.11.0",
+	"measured_at": "2026-10-20T03:22:35Z",
+	"revision": "65edc30f",
+	"offline": false,
+	"pass": true,
+	"failed": [],
+	"pending": [
+		"adr_0013_status",
+		"fuzz_open_crashes",
+		"openssf_scorecard",
+		"best_practices",
+		"slsa"
+	],
+	"kpis": {
+		"open_highs": {
+			"value": 0,
+			"target": 0,
+			"status": "pass",
+			"register": "docs/security/findings.json",
+			"findings": 41,
+			"closed": 40,
+			"accepted": 1,
+			"open": 0,
+			"problems": [],
+			"summary": "0 open highs; 41 findings: 40 closed, 1 accepted, 0 open; 0 register problems"
+		},
+		"adr_0013_enforcement": {
+			"value": 10,
+			"target": 10,
+			"rules": 10,
+			"adr": "docs/adrs/0013-secure-by-default.md",
+			"status": "pass",
+			"problems": [],
+			"summary": "10/10 rules with an enforcement point that exists"
+		},
+		"adr_0013_status": {
+			"value": "Proposed",
+			"target": "Accepted",
+			"status": "pending",
+			"reason": "owner acceptance (0.11.0 D22)",
+			"summary": "ADR 0013 status Proposed"
+		},
+		"fuzz_targets": {
+			"value": 17,
+			"target": ">= 13 (>= 5 new)",
+			"targets": [
+				"config_profile_toml",
+				"cron_parse",
+				"jwks_parse",
+				"jwt_decode",
+				"mesh_envelope",
+				"mesh_frame",
+				"route_form",
+				"route_path",
+				"route_query",
+				"rpc_batch",
+				"rpc_duplex_frame",
+				"rpc_postcard_frame",
+				"rpc_resume_cursor",
+				"rpc_wire_request",
+				"schema_json",
+				"sse_last_event_id",
+				"totp_otpauth"
+			],
+			"problems": [],
+			"baseline": "docs/security/kpis-0.11.json",
+			"new": [
+				"rpc_batch",
+				"rpc_duplex_frame",
+				"rpc_postcard_frame",
+				"rpc_resume_cursor",
+				"rpc_wire_request",
+				"sse_last_event_id"
+			],
+			"new_count": 6,
+			"new_min": 5,
+			"status": "pass",
+			"summary": "17 cargo-fuzz targets under ClusterFuzzLite, 6 new: rpc_batch rpc_duplex_frame rpc_postcard_frame rpc_resume_cursor rpc_wire_request sse_last_event_id"
+		},
+		"fuzz_open_crashes": {
+			"value": null,
+			"target": "0",
+			"status": "pending",
+			"reason": "cflite_batch.yml has not run on main yet (needs the release push)",
+			"summary": "fuzz open crashes pending: cflite_batch.yml has not run on main yet (needs the release push)"
+		},
+		"compile_fail_cases": {
+			"value": 19,
+			"target": ">= 19, including r1_rpc_procedure_without_access_decision r10_zero_rtt_on_mutation",
+			"problems": [],
+			"required": [
+				"r1_rpc_procedure_without_access_decision",
+				"r10_zero_rtt_on_mutation"
+			],
+			"status": "pass",
+			"summary": "19 compile-fail cases in tests/security_compile_fail/ui"
+		},
+		"secure_stack": {
+			"value": 2648,
+			"unit": "ns",
+			"target": "<= 5000 ns",
+			"status": "pass",
+			"secure_stack_ns": 3576.3,
+			"bare_ns": 928.7,
+			"ratio": 3.85,
+			"ratio_note": "informational; the gate is the absolute budget (owner decision 2026-10-19, b66751f0; was <= 1.15x)",
+			"metric": "median",
+			"source": "docs/benchmarks/v0.12.json",
+			"sha": "5d9119d50ba6cb75aad35db66c43330cb907c6e3",
+			"created": "2026-10-19T18:33:42Z",
+			"machine": {
+				"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+				"cpus": "32",
+				"governor": "performance",
+				"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+				"kernel": "Linux 6.18.55"
+			},
+			"stale": true,
+			"summary": "+2648 ns secure stack over bare (929 -> 3576 ns, ratio 3.85)"
+		},
+		"check_dangerous": {
+			"value": "pass",
+			"target": "pass",
+			"status": "pass",
+			"script": "scripts/check-dangerous.sh",
+			"output": "check-dangerous: 46 dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out (35 directly, 11 by delegation)",
+			"summary": "scripts/check-dangerous.sh: check-dangerous: 46 dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out (35 directly, 11 by delegation)"
+		},
+		"check_workflows": {
+			"value": "pass",
+			"target": "pass",
+			"status": "pass",
+			"script": "scripts/check-workflows.sh",
+			"output": "check-workflows: 12 workflow(s): actions SHA-pinned, top-level permissions least privilege, no piped installers, no self-approval",
+			"summary": "scripts/check-workflows.sh: check-workflows: 12 workflow(s): actions SHA-pinned, top-level permissions least privilege, no piped installers, no self-approval"
+		},
+		"sha_pinned_actions": {
+			"value": 99.2,
+			"unit": "%",
+			"target": "100 % (the slsa-github-generator reusable workflow excepted)",
+			"uses": 125,
+			"sha_pinned": 124,
+			"tag_pinned_exception": 1,
+			"status": "pass",
+			"summary": "124/125 uses SHA-pinned (99.2 %), 1 documented exception, 0 unpinned"
+		},
+		"registry_token": {
+			"value": 0,
+			"target": 0,
+			"files": [],
+			"status": "pass",
+			"summary": "0 files under .github mention CARGO_REGISTRY_TOKEN"
+		},
+		"openssf_scorecard": {
+			"value": null,
+			"target": ">= 7.5",
+			"status": "pending",
+			"reason": "no published Scorecard result yet (scorecard.yml publishes from main: needs the release push)",
+			"summary": "OpenSSF Scorecard pending: no published Scorecard result yet (scorecard.yml publishes from main: needs the release push)"
+		},
+		"best_practices": {
+			"value": null,
+			"target": "passing",
+			"status": "pending",
+			"reason": "no bestpractices.dev project id in README.md or docs/security/openssf.md (the owner registers the project, 0.11.0 D16)",
+			"summary": "Best Practices pending: no bestpractices.dev project id in README.md or docs/security/openssf.md (the owner registers the project, 0.11.0 D16)"
+		},
+		"slsa": {
+			"value": null,
+			"target": "Build L3, 32/32 crates verified",
+			"status": "pending",
+			"reason": "id_effect_macro 0.12.0 is not on crates.io (needs the release publish; HTTP 404)",
+			"summary": "SLSA pending: id_effect_macro 0.12.0 is not on crates.io (needs the release publish; HTTP 404)"
+		},
+		"security_table": {
+			"value": "green",
+			"target": "every Security-table test green",
+			"spec": ".maestro/specs/releases/0.12.0.md",
+			"names": 20,
+			"tests": [
+				"rpc_unregistered_tag_is_404_problem",
+				"r4_batch_over_limit_rejected_413",
+				"r4_batch_charges_n_rate_limit_tokens",
+				"r4_ws_streams_per_connection_capped",
+				"r4_ws_frame_over_max_closes_1009",
+				"r4_quic_limits_finite_by_default",
+				"r9_ws_upgrade_from_foreign_origin_refused",
+				"r9_webtransport_connect_from_foreign_origin_refused",
+				"r9_rpc_mutation_without_custom_header_refused",
+				"r9_rpc_form_content_type_refused",
+				"r4_quic_retry_on_by_default",
+				"zero_rtt_off_by_default",
+				"resume_under_another_principal_refused",
+				"defect_becomes_internal_error_without_message",
+				"channel_join_denied_by_default_policy",
+				"r7_rpc_docs_closed_in_prod",
+				"posture_prod_refuses_dev_certificate"
+			],
+			"compile_fail_cases": [
+				"r1_rpc_procedure_without_access_decision",
+				"r10_zero_rtt_on_mutation"
+			],
+			"other_points": ["dangerous_any_origin"],
+			"listed": 17,
+			"run": "green",
+			"problems": [],
+			"status": "pass",
+			"summary": "20 names in the Security table: 17 tests, 2 compile-fail cases, 1 other points; tests and compile-fail suite green"
+		},
+		"t12_benches": {
+			"unary_delta_ns": {
+				"value": 1776,
+				"limit": 3000,
+				"pass": true,
+				"ratio": 2.87,
+				"before_ns": 3399
+			},
+			"batch_over_sequential": {
+				"value": 0.111,
+				"limit": 0.2,
+				"pass": true,
+				"speedup": 9
+			},
+			"h3_over_h2_p99": {
+				"value": 0.065,
+				"limit": 1.0,
+				"pass": true,
+				"mode": "userspace-proxy (netem runs in bench.yml)"
+			},
+			"soak": {
+				"streams": 10000,
+				"duration_s": 600.0,
+				"rss_growth": 1.04,
+				"limit": 1.05,
+				"mark_s": 60.0,
+				"rss_at_mark_kib": 341648,
+				"rss_end_kib": 355280,
+				"rss_peak_kib": 357176,
+				"rss_at_300s_kib": 356240,
+				"rss_growth_after_300s": 0.997,
+				"heartbeats_received": 6009790,
+				"heartbeats_missing": 0,
+				"heartbeats_out_of_order": 0,
+				"streams_short": 0,
+				"streams_ended_early": 0,
+				"pass": true
+			},
+			"value": 4,
+			"target": "4/4 T12 gates",
+			"source": "docs/benchmarks/v0.12.json",
+			"sha": "5d9119d50ba6cb75aad35db66c43330cb907c6e3",
+			"created": "2026-10-19T18:33:42Z",
+			"failed": [],
+			"status": "pass",
+			"summary": "unary +1776 ns, batch 0.111 of sequential, h3/h2 p99 0.065, soak 10000 streams RSS 1.04x (0.997x after 300 s), 0 heartbeats missing"
+		}
+	}
+}

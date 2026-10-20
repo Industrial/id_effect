@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
-# Compute the security KPIs of a release (0.11.0.md, security_kpis and the exit gate "Security
-# KPIs") and record them in docs/security/kpis-<major>.<minor>.json.
+# Compute the security KPIs of a release (0.11.0.md and 0.12.0.md, security_kpis and the exit
+# gate "Security KPIs") and record them in docs/security/kpis-<major>.<minor>.json.
+#
+# Release targets (configure_release; another release is misuse until it has a case there):
+#   0.11  fuzz targets >= 8, compile-fail cases >= 15.
+#   0.12  fuzz targets >= 13 with >= 5 not in docs/security/kpis-0.11.json; compile-fail cases
+#         >= 0.11's count + 2, r1_rpc_procedure_without_access_decision and
+#         r10_zero_rtt_on_mutation among them; the Security table of
+#         .maestro/specs/releases/0.12.0.md (security_table) and the T12 bench gates of
+#         docs/benchmarks/v0.12.json (t12_benches).
 #
 # Local KPIs (computed from the checkout; a miss is a FAIL):
 #   open_highs           findings of docs/security/findings.json with severity high and status
@@ -21,12 +29,34 @@
 #   fuzz_targets         fuzz/fuzz_targets/*.rs that fuzz/Cargo.toml declares as a [[bin]] (so
 #                        `cargo fuzz list`, which .clusterfuzzlite/build.sh builds, lists them),
 #                        with .github/workflows/cflite_pr.yml and cflite_batch.yml present
-#                        (target >= 8).
+#                        (target >= 8; 0.12: >= 13, and >= 5 of them `new`, not among the
+#                        `targets` of the previous release's kpis JSON).
 #   compile_fail_cases   tests/security_compile_fail/ui/*.rs with a .stderr next to them
-#                        (target >= 15).
+#                        (target >= 15; 0.12: >= the previous release's value + 2, and every
+#                        `required` case there).
+#   security_table       (0.12) the "## Security" table of the release spec: every backticked name
+#                        of its "Enforcement point" column exists, as a compile-fail case, an
+#                        opt-out (dangerous_* / insecure_*, such as dangerous_any_origin: a word
+#                        in the code; check_dangerous checks it records itself), or a `fn <name>`
+#                        test; then the tests run green: `cargo nextest run --workspace
+#                        --all-features` on exactly those tests (each must be listed by
+#                        `cargo nextest list` under that filter, so a name compiled out by a
+#                        feature FAILs), and `cargo nextest run -p security_compile_fail` for the
+#                        cases (without --all-features: r8_plaintext_tcp_without_feature needs
+#                        id_effect_node's insecure-plaintext-tcp off). SECURITY_KPIS_RUN_TESTS=0
+#                        or --no-run-tests checks existence only and reports the run "not
+#                        measured".
+#   t12_benches          (0.12) the T12 gates recorded in docs/benchmarks/v0.12.json
+#                        (`gates_0_12`, `soak`): unary delta <= 3000 ns, 50-call batch over 50
+#                        sequential <= 0.20, HTTP/3 p99 over HTTP/2 p99 under loss <= 1.00, the
+#                        10-minute soak of 10,000 streams with RSS end/mark <= 1.05 and every
+#                        heartbeat delivered in order (0 missing, 0 out of order, 0 streams short
+#                        or ended early). The soak's RSS after minute 5 (end over the sample at
+#                        300 s) is recorded too (0.12 F50).
 #   secure_stack         gate/axum_request_secure_stack - gate/axum_request_bare (median, ns) from
 #                        the bench export SECURITY_KPIS_BENCH (default .tmp/bench-head.json, written
-#                        by scripts/bench-run.sh + scripts/bench-export.sh); target <= 5000 ns, the
+#                        by scripts/bench-run.sh + scripts/bench-export.sh; 0.12 without that file:
+#                        docs/benchmarks/v0.12.json, the T12 run); target <= 5000 ns, the
 #                        owner decision of 2026-10-19 (b66751f0; was ratio <= 1.15). The ratio is
 #                        recorded for information. No export, or one without both ids: "not
 #                        measured" (reported, not a FAIL).
@@ -57,12 +87,14 @@
 #                        on every crate downloaded from crates.io) and the release carrying
 #                        id_effect-<VERSION>.intoto.jsonl. Verified = published when it is green.
 #
-# Usage: bash scripts/security-kpis.sh [--out FILE] [--offline] [VERSION]
+# Usage: bash scripts/security-kpis.sh [--out FILE] [--offline] [--no-run-tests] [VERSION]
 #        bash scripts/security-kpis.sh --self-test
 #   VERSION     the release, X.Y.Z (default: the workspace version in Cargo.toml)
 #   --out FILE  where to write the JSON (default docs/security/kpis-<X.Y>.json)
 #   --offline   do not query GitHub or crates.io: every online KPI is pending
 #               (also SECURITY_KPIS_OFFLINE=1)
+#   --no-run-tests  security_table checks that its tests exist but does not run them
+#               (also SECURITY_KPIS_RUN_TESTS=0); the run is "not measured"
 #   --self-test runs the kpi_* and s3_* cases below against fixtures in a temporary directory
 #               (offline, no network).
 # Environment: SECURITY_KPIS_BENCH (bench export), SECURITY_KPIS_REPO (default
@@ -70,7 +102,8 @@
 # Output: one `security-kpis: <kpi> <summary> (target ...) pass|FAIL|pending|not measured` line
 # per KPI, then the JSON file (formatted with biome when it is on PATH). Exit status: 0 when no
 # KPI FAILed (pending and not measured do not fail), 1 on a FAIL, 2 on misuse.
-# Requires: bash >= 4.4, jq, git, awk, grep, find; curl and gh for the online KPIs.
+# Requires: bash >= 4.4, jq, git, awk, grep, find; curl and gh for the online KPIs; cargo with
+# cargo-nextest for the security_table run (cargo's environment: CARGO_TARGET_DIR and the rest).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -80,6 +113,17 @@ UA="id_effect security-kpis (https://github.com/Industrial/id_effect)"
 DELTA_LIMIT_NS=5000
 FUZZ_MIN=8
 COMPILE_FAIL_MIN=15
+# Set per release by configure_release (the 0.11 values above are the defaults).
+FUZZ_NEW_MIN=0
+BASELINE=""
+REQUIRED_CASES=()
+SECURITY_SPEC=""
+T12_BENCH=""
+RUN_TABLE_TESTS="${SECURITY_KPIS_RUN_TESTS:-1}"
+UNARY_LIMIT_NS=3000
+BATCH_LIMIT=0.20
+H3_LIMIT=1.00
+SOAK_LIMIT=1.05
 SCORECARD_MIN=7.5
 SECURE_ID="gate/axum_request_secure_stack"
 BARE_ID="gate/axum_request_bare"
@@ -164,6 +208,26 @@ workspace_version() {
     awk '/^\[workspace\.package\]/ { s = 1; next }
         /^\[/ { s = 0 }
         s && /^version *=/ { gsub(/[" ]/, ""); sub(/^version=/, ""); print; exit }' "$1/Cargo.toml" 2>/dev/null || true
+}
+
+# The targets of release X.Y (header, "Release targets") for the checkout ROOT.
+configure_release() {
+    local root="$1" release="$2" base
+    case "${release}" in
+        0.11) ;;
+        0.12)
+            FUZZ_MIN=13
+            FUZZ_NEW_MIN=5
+            BASELINE="${root}/docs/security/kpis-0.11.json"
+            base="$(jq -er '.kpis.compile_fail_cases.value' "${BASELINE}" 2>/dev/null)" ||
+            die "no compile_fail_cases.value in ${BASELINE#"${root}"/} (the 0.12 baseline)"
+            COMPILE_FAIL_MIN=$((base + 2))
+            REQUIRED_CASES=(r1_rpc_procedure_without_access_decision r10_zero_rtt_on_mutation)
+            SECURITY_SPEC="${root}/.maestro/specs/releases/0.12.0.md"
+            T12_BENCH="${root}/docs/benchmarks/v0.12.json"
+            ;;
+        *) die "no KPI targets for release ${release} (add a case to configure_release)" ;;
+    esac
 }
 
 # --- local KPIs: each prints one JSON object with at least `status`, `target` and `summary` --
@@ -278,8 +342,16 @@ kpi_adr_status() {
          summary: "ADR 0013 status \(if $w == "" then "unknown" else $w end)"}'
 }
 
+# The fuzz targets of ROOT; with BASELINE (a kpis JSON of the previous release), the ones not in
+# its fuzz_targets.targets are `new` and at least FUZZ_NEW_MIN of them are needed.
 kpi_fuzz_targets() {
-    local root="$1" f name listed=() unlisted=() problems=()
+    local root="$1" baseline="${2:-}" f name listed=() unlisted=() problems=() base="[]"
+    if [[ -n "${baseline}" ]]; then
+        base="$(jq -ce '.kpis.fuzz_targets.targets | arrays' "${baseline}" 2>/dev/null)" || {
+            base="[]"
+            problems+=("no fuzz_targets.targets in the baseline ${baseline#"${root}"/}")
+        }
+    fi
     shopt -s nullglob
     for f in "${root}"/fuzz/fuzz_targets/*.rs; do
         name="$(basename "${f}" .rs)"
@@ -296,12 +368,18 @@ kpi_fuzz_targets() {
     grep -q 'cargo fuzz list' "${root}/.clusterfuzzlite/build.sh" 2>/dev/null ||
     problems+=(".clusterfuzzlite/build.sh does not build every target (cargo fuzz list)")
     ((${#unlisted[@]} == 0)) || problems+=("not a [[bin]] of fuzz/Cargo.toml: ${unlisted[*]}")
-    jq -n --argjson min "${FUZZ_MIN}" --arg listed "${listed[*]}" '
+    jq -n --argjson min "${FUZZ_MIN}" --argjson new_min "${FUZZ_NEW_MIN}" --arg listed "${listed[*]}" \
+    --argjson base "${base}" --arg baseline "${baseline#"${root}"/}" '
         $ARGS.positional as $p
         | ($listed | split(" ") | map(select(. != ""))) as $t
-        | {value: ($t | length), target: ">= \($min)", targets: $t, problems: $p,
-           status: (if ($t | length) >= $min and ($p | length) == 0 then "pass" else "fail" end),
-           summary: "\($t | length) cargo-fuzz targets under ClusterFuzzLite"}' --args "${problems[@]}"
+        | ($t - $base) as $new
+        | {value: ($t | length),
+           target: (">= \($min)" + (if $new_min > 0 then " (>= \($new_min) new)" else "" end)),
+           targets: $t, problems: $p}
+        + (if $baseline == "" then {} else {baseline: $baseline, new: $new, new_count: ($new | length), new_min: $new_min} end)
+        + {status: (if ($t | length) >= $min and ($new | length) >= $new_min and ($p | length) == 0 then "pass" else "fail" end),
+           summary: ("\($t | length) cargo-fuzz targets under ClusterFuzzLite"
+             + (if $baseline == "" then "" else ", \($new | length) new: \($new | join(" "))" end))}' --args "${problems[@]}"
 }
 
 kpi_compile_fail_cases() {
@@ -315,11 +393,171 @@ kpi_compile_fail_cases() {
         fi
     done
     shopt -u nullglob
-    jq -n --argjson v "${n}" --argjson min "${COMPILE_FAIL_MIN}" '
+    for f in "${REQUIRED_CASES[@]}"; do
+        [[ -f "${root}/tests/security_compile_fail/ui/${f}.rs" ]] || problems+=("required case ${f} missing")
+    done
+    jq -n --argjson v "${n}" --argjson min "${COMPILE_FAIL_MIN}" --arg required "${REQUIRED_CASES[*]}" '
         $ARGS.positional as $p
-        | {value: $v, target: ">= \($min)", problems: $p,
-           status: (if $v >= $min and ($p | length) == 0 then "pass" else "fail" end),
+        | ($required | split(" ") | map(select(. != ""))) as $r
+        | {value: $v, target: (">= \($min)" + (if ($r | length) > 0 then ", including \($r | join(" "))" else "" end)),
+           problems: $p}
+        + (if ($r | length) > 0 then {required: $r} else {} end)
+        + {status: (if $v >= $min and ($p | length) == 0 then "pass" else "fail" end),
            summary: "\($v) compile-fail cases in tests/security_compile_fail/ui"}' --args "${problems[@]}"
+}
+
+# --- security_table (0.12) ------------------------------------------------------------------
+
+# Prints `<threat>\t<name>` for every backticked name in the "Enforcement point" column (the
+# fourth) of the table under "## Security" of the release spec SPEC.
+security_table_names() {
+    awk -F'|' '/^## Security/ { s = 1; next } s && /^## / { exit }
+        s && /^\| / && $2 !~ /^ *Threat *$/ { print $2 "\t" $5 }' "$1" |
+    while IFS=$'\t' read -r threat cell; do
+        threat="$(sed -E 's/^ +| +$//g' <<<"${threat}")"
+        grep -o "${BT}[^${BT}]*${BT}" <<<"${cell}" | tr -d "${BT}" |
+        grep -E '^[A-Za-z_][A-Za-z0-9_]*$' | awk -v t="${threat}" '{ print t "\t" $0 }' || true
+    done
+}
+
+# Succeeds when the code under ROOT defines `fn NAME`.
+code_has_fn() {
+    local root="$1" name="$2" dirs=()
+    mapfile -t dirs < <(code_dirs "${root}")
+    ((${#dirs[@]})) || return 1
+    if is_git "${root}"; then
+        git -C "${root}" grep -qE --untracked -e "fn ${name}\b" -- "${dirs[@]}"
+    else
+        (cd "${root}" && grep -rqE --exclude-dir=target -e "fn ${name}\b" -- "${dirs[@]}")
+    fi
+}
+
+# The nextest filterset of exactly the tests NAME.. (a test's full name is NAME or ends in ::NAME).
+tests_filter() {
+    local IFS='|'
+    printf 'test(/(^|::)(%s)$/)' "$*"
+}
+
+# The cargo calls of the run, one function each so the self-test can stand in for them. Every
+# one runs in ROOT and writes its output to LOG.
+# table_list ROOT LOG FILTER: prints the names of the tests FILTER selects (--all-features).
+table_list() {
+    (cd "$1" && cargo nextest list --workspace --all-features -E "$3" --message-format json 2>"$2") |
+    jq -r '."rust-suites"[] | .testcases | to_entries[]
+        | select(.value."filter-match".status == "matches") | .key'
+}
+
+# table_run ROOT LOG FILTER: runs the tests FILTER selects (--all-features).
+table_run() {
+    (cd "$1" && cargo nextest run --workspace --all-features --no-fail-fast -E "$3") >"$2" 2>&1
+}
+
+# cases_run ROOT LOG: runs the compile-fail suite (its own features; see the header).
+cases_run() {
+    (cd "$1" && cargo nextest run -p security_compile_fail --no-fail-fast) >"$2" 2>&1
+}
+
+# The Security table of SPEC: every name exists; then (RUN_TABLE_TESTS=1) its tests and the
+# compile-fail suite run green. Logs go to TMP.
+kpi_security_table() {
+    local root="$1" spec="$2" tmp="$3" threat name rows=0 problems=() tests=() cases=() points=()
+    local listed=() failed=() run="not run" ran=0 t found
+    if [[ ! -f "${spec}" ]]; then
+        jq -n --arg f "${spec#"${root}"/}" '{value: null, target: "every Security-table test green",
+            status: "fail", summary: "\($f) missing", problems: ["\($f) missing"]}'
+        return
+    fi
+    while IFS=$'\t' read -r threat name; do
+        rows=$((rows + 1))
+        if [[ -f "${root}/tests/security_compile_fail/ui/${name}.rs" ]]; then
+            cases+=("${name}")
+        elif [[ "${name}" =~ ^(dangerous|insecure)_ ]] && code_has_word "${root}" "${name}"; then
+            points+=("${name}")
+        elif code_has_fn "${root}" "${name}"; then
+            tests+=("${name}")
+        else
+            problems+=("${threat}: ${name} not found in the code")
+        fi
+    done < <(security_table_names "${spec}")
+    ((rows > 0)) || problems+=("no enforcement point names in the Security table of ${spec#"${root}"/}")
+    if ((RUN_TABLE_TESTS)) && ((${#problems[@]} == 0)); then
+        run="green"
+        ran=1
+        if ((${#tests[@]})); then
+            mapfile -t listed < <(table_list "${root}" "${tmp}/table-list.log" "$(tests_filter "${tests[@]}")" || true)
+            for t in "${tests[@]}"; do
+                found=0
+                for name in "${listed[@]}"; do
+                    [[ "${name}" != "${t}" && "${name}" != *"::${t}" ]] || found=1
+                done
+                ((found)) || problems+=("${t}: not a test of the --all-features workspace build (cargo nextest list)")
+            done
+            if ! table_run "${root}" "${tmp}/table-run.log" "$(tests_filter "${tests[@]}")"; then
+                run="failed"
+                mapfile -t failed < <(grep -E '^ +(FAIL|TIMEOUT|SIGSEGV|SIGABRT) ' "${tmp}/table-run.log" | awk '{ print $NF }' | sort -u || true)
+                problems+=("the Security-table tests failed: ${failed[*]:-see cargo nextest run}")
+            fi
+        fi
+        if ((${#cases[@]})) && ! cases_run "${root}" "${tmp}/cases-run.log"; then
+            run="failed"
+            problems+=("the compile-fail suite (cargo nextest run -p security_compile_fail) failed")
+        fi
+    fi
+    jq -n --argjson rows "${rows}" --arg tests "${tests[*]}" --arg cases "${cases[*]}" \
+        --arg points "${points[*]}" --arg run "${run}" --argjson ran "${ran}" --argjson listed "${#listed[@]}" \
+    --arg spec "${spec#"${root}"/}" '
+        def words: split(" ") | map(select(. != ""));
+        $ARGS.positional as $p
+        | ($tests | words) as $t | ($cases | words) as $c | ($points | words) as $o
+        | {value: (if $ran == 1 then $run else null end), target: "every Security-table test green",
+           spec: $spec, names: $rows, tests: $t, compile_fail_cases: $c, other_points: $o,
+           listed: $listed, run: $run, problems: $p,
+           status: (if ($p | length) > 0 then "fail" elif $ran == 1 then "pass" else "not measured" end),
+           summary: ("\($rows) names in the Security table: \($t | length) tests, \($c | length) compile-fail cases, \($o | length) other points"
+             + (if ($p | length) > 0 then "; \($p | length) problems"
+                elif $ran == 1 then "; tests and compile-fail suite green"
+                else "; all exist, run not measured (--no-run-tests)" end))}' --args "${problems[@]}"
+}
+
+# --- t12_benches (0.12) ---------------------------------------------------------------------
+
+# The T12 gates of the bench record BENCH (docs/benchmarks/v0.12.json).
+kpi_t12_benches() {
+    local root="$1" bench="$2"
+    if [[ ! -f "${bench}" ]]; then
+        jq -n --arg b "${bench#"${root}"/}" '{value: null, target: "every T12 gate", status: "fail",
+            summary: "\($b) missing", problems: ["\($b) missing"]}'
+        return
+    fi
+    jq --arg src "${bench#"${root}"/}" --argjson unary "${UNARY_LIMIT_NS}" --argjson batch "${BATCH_LIMIT}" \
+    --argjson h3 "${H3_LIMIT}" --argjson soak "${SOAK_LIMIT}" '
+        def r(n): if . == null then null else (. * n | round) / n end;
+        .gates_0_12 as $g | .soak as $s
+        | ([$s.rss_kib.samples[]? | select(.[0] >= 300)] | first | .[1]) as $m5
+        | {unary_delta_ns: {value: ($g.unary_delta_ns | r(1)), limit: $unary,
+                            pass: ($g.unary_delta_ns != null and $g.unary_delta_ns <= $unary),
+                            ratio: ($g.unary_ratio | r(100)), before_ns: ($g.unary_before_ns | r(1))},
+           batch_over_sequential: {value: ($g.batch_over_sequential | r(1000)), limit: $batch,
+                                   pass: ($g.batch_over_sequential != null and $g.batch_over_sequential <= $batch),
+                                   speedup: (if ($g.batch_over_sequential // 0) > 0 then (1 / $g.batch_over_sequential | r(10)) else null end)},
+           h3_over_h2_p99: {value: ($g.h3_over_h2_p99 | r(1000)), limit: $h3,
+                            pass: ($g.h3_over_h2_p99 != null and $g.h3_over_h2_p99 <= $h3), mode: $g.h3_mode},
+           soak: {streams: $s.streams, duration_s: $s.duration_s, rss_growth: ($s.rss_kib.growth | r(1000)),
+                  limit: $soak, mark_s: $s.rss_kib.mark_s, rss_at_mark_kib: $s.rss_kib.at_mark,
+                  rss_end_kib: $s.rss_kib.end, rss_peak_kib: $s.rss_kib.peak,
+                  rss_at_300s_kib: $m5,
+                  rss_growth_after_300s: (if ($m5 // 0) > 0 and $s.rss_kib.end != null then ($s.rss_kib.end / $m5 | r(1000)) else null end),
+                  heartbeats_received: $s.heartbeats_received, heartbeats_missing: $s.heartbeats_missing,
+                  heartbeats_out_of_order: $s.heartbeats_out_of_order, streams_short: $s.streams_short,
+                  streams_ended_early: $s.streams_ended_early,
+                  pass: ($s.streams >= 10000 and $s.duration_s >= 600 and $s.rss_kib.growth != null and $s.rss_kib.growth <= $soak
+                         and $s.heartbeats_missing == 0 and $s.heartbeats_out_of_order == 0
+                         and $s.streams_short == 0 and $s.streams_ended_early == 0)}} as $k
+        | ([$k | to_entries[] | select(.value.pass != true) | .key]) as $failed
+        | $k + {value: (4 - ($failed | length)), target: "4/4 T12 gates", source: $src, sha: .sha,
+                created: .created, failed: $failed,
+                status: (if ($failed | length) == 0 then "pass" else "fail" end),
+                summary: "unary +\($k.unary_delta_ns.value) ns, batch \($k.batch_over_sequential.value) of sequential, h3/h2 p99 \($k.h3_over_h2_p99.value), soak \($k.soak.streams) streams RSS \($k.soak.rss_growth)x (\($k.soak.rss_growth_after_300s)x after 300 s), \($k.soak.heartbeats_missing) heartbeats missing"}' "${bench}"
 }
 
 # The secure-stack overhead from the bench export BENCH (a path; shown relative to ROOT).
@@ -576,13 +814,21 @@ report() {
     local order=(open_highs adr_0013_enforcement adr_0013_status fuzz_targets fuzz_open_crashes
         compile_fail_cases secure_stack check_dangerous check_workflows sha_pinned_actions
     registry_token openssf_scorecard best_practices slsa)
+    if [[ -n "${SECURITY_SPEC}" ]]; then
+        order+=(security_table)
+        kpi_security_table "${root}" "${SECURITY_SPEC}" "${tmp}" >"${tmp}/security_table.json"
+    fi
+    if [[ -n "${T12_BENCH}" ]]; then
+        order+=(t12_benches)
+        kpi_t12_benches "${root}" "${T12_BENCH}" >"${tmp}/t12_benches.json"
+    fi
     if is_git "${root}"; then
         revision="$(git -C "${root}" rev-parse --short=8 HEAD 2>/dev/null || true)"
     fi
     kpi_open_highs "${root}" "${root}/docs/security/findings.json" >"${tmp}/open_highs.json"
     kpi_adr_enforcement "${root}" "${adr}" >"${tmp}/adr_0013_enforcement.json"
     kpi_adr_status "${adr}" >"${tmp}/adr_0013_status.json"
-    kpi_fuzz_targets "${root}" >"${tmp}/fuzz_targets.json"
+    kpi_fuzz_targets "${root}" "${BASELINE}" >"${tmp}/fuzz_targets.json"
     kpi_fuzz_open_crashes >"${tmp}/fuzz_open_crashes.json"
     kpi_compile_fail_cases "${root}" >"${tmp}/compile_fail_cases.json"
     kpi_secure_stack "${root}" "${bench}" >"${tmp}/secure_stack.json"
@@ -803,6 +1049,95 @@ YML
     s3_no_registry_token_in_workflows "${fx}" >"${tmp}/r.json"
     expect s3_no_registry_token_in_workflows "${tmp}/r.json" '.status == "fail" and .files == [".github/workflows/c.yml"]'
 
+    # ── kpi_fuzz_targets_new (0.12) ──────────────────────────────────────────────────────────
+    jq -n '{kpis: {fuzz_targets: {targets: ["alpha"]}}}' >"${tmp}/base.json"
+    FUZZ_MIN=2 FUZZ_NEW_MIN=1 kpi_fuzz_targets "${fx}" "${tmp}/base.json" >"${tmp}/f.json"
+    expect kpi_fuzz_targets_new "${tmp}/f.json" '.status == "pass" and .new == ["beta"] and .new_count == 1 and .target == ">= 2 (>= 1 new)"'
+    FUZZ_MIN=2 FUZZ_NEW_MIN=2 kpi_fuzz_targets "${fx}" "${tmp}/base.json" >"${tmp}/f.json"
+    expect kpi_fuzz_targets_new "${tmp}/f.json" '.status == "fail" and .value == 2 and .new_count == 1'
+    echo '{}' >"${tmp}/base.json"
+    FUZZ_MIN=2 kpi_fuzz_targets "${fx}" "${tmp}/base.json" >"${tmp}/f.json"
+    expect kpi_fuzz_targets_new "${tmp}/f.json" '.status == "fail" and (.problems[0] | test("no fuzz_targets.targets in the baseline"))'
+
+    # ── kpi_compile_fail_required (0.12) ─────────────────────────────────────────────────────
+    REQUIRED_CASES=(one three)
+    COMPILE_FAIL_MIN=3 kpi_compile_fail_cases "${fx}" >"${tmp}/c.json"
+    expect kpi_compile_fail_required "${tmp}/c.json" '.status == "pass" and .required == ["one", "three"]'
+    REQUIRED_CASES=(one four)
+    COMPILE_FAIL_MIN=3 kpi_compile_fail_cases "${fx}" >"${tmp}/c.json"
+    expect kpi_compile_fail_required "${tmp}/c.json" '.status == "fail" and .problems == ["required case four missing"]'
+    REQUIRED_CASES=()
+
+    # ── kpi_security_table (0.12) ────────────────────────────────────────────────────────────
+    # spec CELL: a release spec whose Security table has the rows below and one with CELL.
+    spec() {
+        printf '# Spec\n\n## Security\n\n| Threat | Default | ADR 0013 rule | Enforcement point (mechanical) | Leaf |\n|---|---|---|---|---|\n'
+        printf '| A / B | d | R1 | compile-fail %sthree%s; runtime %szz1_fixture_regression_case%s | l |\n' "${BT}" "${BT}" "${BT}" "${BT}"
+        printf '| C | d | R9 | %sdangerous_zz_opt_out%s recorded; posture probe "x"; %s/rpc/x%s closed | l |\n' "${BT}" "${BT}" "${BT}" "${BT}"
+        printf '| D | d | R4 | %s | l |\n\n## Epics\n\n| E | d | R | %szz9_no_such_case%s | l |\n' "$1" "${BT}" "${BT}"
+    }
+    printf 'pub fn dangerous_zz_opt_out() {}\n' >"${fx}/crates/demo/src/opt.rs"
+    # The stand-ins for cargo: LISTED is what `nextest list` prints, RUN_OK and CASES_OK the exits;
+    # each call is logged to calls (table_list runs in a process substitution).
+    local LISTED=(demo::zz2_family_one) RUN_OK=0 CASES_OK=0
+    : >"${tmp}/calls"
+    table_list() {
+        echo "list:$3" >>"${tmp}/calls"
+        printf '%s\n' "${LISTED[@]}"
+    }
+    table_run() {
+        echo run >>"${tmp}/calls"
+        if ((RUN_OK)); then return 0; fi
+        printf '        FAIL [   0.004s] demo::cases zz2_family_one\n' >"$2"
+        return 100
+    }
+    cases_run() {
+        echo cases >>"${tmp}/calls"
+        ((CASES_OK))
+    }
+    spec "${BT}zz2_family_one${BT}" >"${tmp}/spec.md"
+    RUN_TABLE_TESTS=0 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table "${tmp}/t.json" '.status == "not measured" and .names == 4 and .tests == ["zz1_fixture_regression_case", "zz2_family_one"] and .compile_fail_cases == ["three"] and .other_points == ["dangerous_zz_opt_out"] and .problems == []'
+    [[ ! -s "${tmp}/calls" ]] || st_fail kpi_security_table "--no-run-tests still ran cargo: $(<"${tmp}/calls")" || return 1
+    RUN_TABLE_TESTS=1 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table "${tmp}/t.json" '.status == "fail" and .run == "failed" and .problems == ["zz1_fixture_regression_case: not a test of the --all-features workspace build (cargo nextest list)", "the Security-table tests failed: zz2_family_one", "the compile-fail suite (cargo nextest run -p security_compile_fail) failed"]'
+    [[ "$(<"${tmp}/calls")" == $'list:test(/(^|::)(zz1_fixture_regression_case|zz2_family_one)$/)\nrun\ncases' ]] ||
+    st_fail kpi_security_table "cargo calls: $(<"${tmp}/calls")" || return 1
+    LISTED=(demo::cases::zz1_fixture_regression_case zz2_family_one)
+    RUN_OK=1 CASES_OK=1
+    RUN_TABLE_TESTS=1 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table "${tmp}/t.json" '.status == "pass" and .value == "green" and .listed == 2'
+    : >"${tmp}/calls"
+    spec "${BT}zz9_no_such_case${BT}" >"${tmp}/spec.md"
+    RUN_TABLE_TESTS=1 kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table "${tmp}/t.json" '.status == "fail" and .problems == ["D: zz9_no_such_case not found in the code"]'
+    [[ ! -s "${tmp}/calls" ]] || st_fail kpi_security_table "ran cargo although a name is missing: $(<"${tmp}/calls")" || return 1
+    printf '# Spec\n\n## Security\n\nNo table.\n' >"${tmp}/spec.md"
+    kpi_security_table "${fx}" "${tmp}/spec.md" "${tmp}" >"${tmp}/t.json"
+    expect kpi_security_table "${tmp}/t.json" '.status == "fail" and .names == 0'
+
+    # ── kpi_t12_benches (0.12) ───────────────────────────────────────────────────────────────
+    t12() {
+        jq -n '{sha: "abc", created: "t",
+            gates_0_12: {unary_delta_ns: 1776.3, unary_ratio: 2.87, unary_before_ns: 3399.3,
+                         batch_over_sequential: 0.111, h3_over_h2_p99: 0.065, h3_mode: "proxy"},
+            soak: {streams: 10000, duration_s: 600, heartbeats_received: 6009790, heartbeats_missing: 0,
+                   heartbeats_out_of_order: 0, streams_short: 0, streams_ended_early: 0,
+                   rss_kib: {mark_s: 60, at_mark: 341648, end: 355280, peak: 357176, growth: 1.0399,
+                             samples: [[60, 341648], [299.9, 356000], [300.0004, 356240], [600, 355280]]}}}' | jq "$1"
+    }
+    t12 . >"${tmp}/b.json"
+    kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "pass" and .value == 4 and .unary_delta_ns.value == 1776 and .batch_over_sequential.speedup == 9 and .soak.rss_growth == 1.04 and .soak.rss_at_300s_kib == 356240 and .soak.rss_growth_after_300s == 0.997'
+    t12 '.soak.heartbeats_missing = 1 | .gates_0_12.batch_over_sequential = 0.21' >"${tmp}/b.json"
+    kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == 2 and .failed == ["batch_over_sequential", "soak"]'
+    t12 'del(.gates_0_12.unary_delta_ns) | del(.soak.rss_kib.growth) | .gates_0_12.h3_over_h2_p99 = 1.01' >"${tmp}/b.json"
+    kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == 1 and .failed == ["unary_delta_ns", "h3_over_h2_p99", "soak"]'
+    kpi_t12_benches "${fx}" "${tmp}/no-such.json" >"${tmp}/k.json"
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == null'
+
     # ── kpi_online_pending_offline ───────────────────────────────────────────────────────────
     kpi_scorecard "${tmp}" >"${tmp}/n.json"
     expect kpi_online_pending_offline "${tmp}/n.json" '.status == "pending" and .reason == "offline" and .value == null'
@@ -823,7 +1158,7 @@ YML
     fi
     pass=$((pass + 1))
 
-    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_online_pending_offline)"
+    echo "security-kpis: self-test passed (${pass} checks: kpi_open_highs_counts_open_highs, kpi_register_complete, kpi_register_tests_exist, kpi_adr_rule_enforcement_exists, kpi_fuzz_targets_counted, kpi_compile_fail_cases_counted, kpi_secure_stack_delta, kpi_sha_pinned_actions, s3_no_registry_token_in_workflows, kpi_fuzz_targets_new, kpi_compile_fail_required, kpi_security_table, kpi_t12_benches, kpi_online_pending_offline)"
 }
 
 # --- main ------------------------------------------------------------------------------------
@@ -847,6 +1182,10 @@ while (($#)); do
             OFFLINE=1
             shift
             ;;
+        --no-run-tests)
+            RUN_TABLE_TESTS=0
+            shift
+            ;;
         -h | --help)
             usage
             exit 0
@@ -863,7 +1202,13 @@ version="${version:-$(workspace_version "${ROOT}")}"
 [[ "${version}" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]] || die "VERSION must be X.Y.Z, got '${version}'"
 out="${out:-${ROOT}/docs/security/kpis-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.json}"
 [[ "${OFFLINE}" == 1 ]] || OFFLINE=0
-bench="$(realpath -m "${SECURITY_KPIS_BENCH:-${ROOT}/.tmp/bench-head.json}")"
+[[ "${RUN_TABLE_TESTS}" == 0 ]] || RUN_TABLE_TESTS=1
+configure_release "${ROOT}" "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+bench="${SECURITY_KPIS_BENCH:-${ROOT}/.tmp/bench-head.json}"
+if [[ -z "${SECURITY_KPIS_BENCH:-}" && ! -f "${bench}" && -n "${T12_BENCH}" ]]; then
+    bench="${T12_BENCH}"
+fi
+bench="$(realpath -m "${bench}")"
 
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT

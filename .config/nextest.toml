@@ -7,7 +7,19 @@
 
 [test-groups]
 trybuild = { max-threads = 1 }
+# The HTTP/3 integration tests (0.12 F37, F44) wait on QUIC handshakes and time connection limits,
+# header timeouts and the client's 300 ms fallback to TCP; run beside the rest of the parallel
+# suite (load ~17 on 32 threads) they missed those waits (axum `tests/http3.rs`; platform
+# `tests/http3_client.rs` fell back to TCP in alt_svc_upgrades_next_request_to_h3). One at a
+# time, each holding two of nextest's threads (their tokio runtimes have two workers or more), so
+# the suite cannot starve them.
+http3 = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = 'package(id_effect) & binary(ui)'
 test-group = 'trybuild'
+
+[[profile.default.overrides]]
+filter = '(package(id_effect_axum) & binary(http3)) | (package(id_effect_platform) & binary(http3_client))'
+test-group = 'http3'
+threads-required = 2
