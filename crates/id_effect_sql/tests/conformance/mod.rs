@@ -592,8 +592,18 @@ pub async fn dropped_streams_release_their_connections(b: &impl Backend) {
     .expect("rows");
     drop(rest);
   }
-  // Every pooled connection would be held by now if a dropped stream kept its own.
-  let rows = query(b, "SELECT 1 AS n", &[]).await;
+  // Every pooled connection would be held by now if a dropped stream kept its own. A released
+  // one can still be busy: MySQL hands it back only after the server has sent the rest of the
+  // result (up to 100,000 rows here), which on a slow runner outlasts one pool acquire. So the
+  // query may wait for the drains, bounded; a leaked connection never comes back.
+  let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+  let rows = loop {
+    match run(client.query("SELECT 1 AS n", &[])).await {
+      Ok(rows) => break rows,
+      Err(SqlError::NotConnected) if std::time::Instant::now() < deadline => {}
+      Err(e) => panic!("SELECT 1 AS n after the dropped streams: {e}"),
+    }
+  };
   assert_eq!(ns(&rows), [1]);
 }
 
