@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "book_snippets"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "bytes",
@@ -897,7 +897,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "cli_minimal"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "clap",
  "id_effect",
@@ -2292,7 +2292,7 @@ checksum = "9171a2ea8a68358193d15dd5d70c1c10a2afc3e7e4c5bc92bc9f025cebd7359c"
 
 [[package]]
 name = "http_showcase"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "id_effect",
@@ -2552,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "criterion",
  "flume 0.12.0",
@@ -2574,7 +2574,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_auth"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -2610,7 +2610,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_authz"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "http-body-util",
@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_axum"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2673,7 +2673,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_cli"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "clap",
  "clap_complete",
@@ -2684,7 +2684,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_config"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "dotenvy",
  "figment",
@@ -2706,7 +2706,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_console"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "id_effect",
@@ -2726,7 +2726,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_events"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_sql",
@@ -2741,7 +2741,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_fp"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "im",
@@ -2752,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_fsm"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_proc_macro",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_jobs"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_node",
@@ -2775,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_kit"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "id_effect",
@@ -2806,7 +2806,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_logger"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "rstest",
@@ -2819,14 +2819,14 @@ dependencies = [
 
 [[package]]
 name = "id_effect_macro"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
 ]
 
 [[package]]
 name = "id_effect_mail"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_messaging"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_sql",
@@ -2859,7 +2859,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_node"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2892,7 +2892,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_opentelemetry"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "http",
@@ -2917,7 +2917,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_optics"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "im",
@@ -2929,7 +2929,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_platform"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "bytes",
  "h3",
@@ -2967,7 +2967,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_proc_macro"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_optics",
@@ -2978,7 +2978,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_process"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "pollster 0.4.0",
@@ -2987,7 +2987,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_redis"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "futures-util",
@@ -3008,7 +3008,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_resilience"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "rstest",
@@ -3017,7 +3017,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_rpc"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3066,7 +3066,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_rpc_macros"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_axum",
@@ -3079,7 +3079,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_sql"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_proc_macro",
@@ -3101,7 +3101,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_storage"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3121,7 +3121,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_test"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "bollard",
@@ -3144,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_tokio"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "cpu-time",
  "criterion",
@@ -3154,7 +3154,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_tool"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "clap",
@@ -3176,7 +3176,7 @@ dependencies = [
 
 [[package]]
 name = "id_effect_workflow"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "id_effect",
  "id_effect_jobs",
@@ -3545,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "ledger"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "id_effect",
@@ -4979,7 +4979,7 @@ checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "relay"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "headless_chrome",
@@ -5363,7 +5363,7 @@ dependencies = [
 
 [[package]]
 name = "security_compile_fail"
-version = "0.11.0"
+version = "0.12.0"
 dependencies = [
  "axum",
  "id_effect_kit",

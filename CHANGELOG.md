@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.0 — unreleased — One call surface
+## 0.12.0 — 2026-10-20 — One call surface
 
 RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six
 procedure kinds, typed error unions, `#[rpc::service]` (the new `id_effect_rpc_macros`), batches,

@@ -47,8 +47,8 @@ kubernetes = [
 pg = ["dep:id_effect_sql", "id_effect_sql/pg", "dep:sqlx"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.11.0" }
-id_effect_process = { path = "../id_effect_process", version = "0.11.0" }
+id_effect = { path = "../id_effect", version = "0.12.0" }
+id_effect_process = { path = "../id_effect_process", version = "0.12.0" }
 async-trait = "0.1"
 bytes = "1"
 flume = "0.11"
@@ -82,7 +82,7 @@ quinn = { version = "0.11.12", optional = true, default-features = false, featur
 rustls = { version = "0.23.46", optional = true }
 # Certificates, rustls configs and the QUIC endpoint (features `quic`, `tls-tcp`). Platform never
 # depends on node, so there is no cycle.
-id_effect_platform = { path = "../id_effect_platform", version = "0.11.0", default-features = false, optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.12.0", default-features = false, optional = true }
 # Features `tls-tcp` and `kubernetes`: TLS over Tokio TCP, without a second crypto provider.
 tokio-rustls = { version = "0.26.6", optional = true, default-features = false, features = [
   "logging",
@@ -100,7 +100,7 @@ http-body-util = { version = "0.1", optional = true }
 serde_json = { version = "1", optional = true }
 
 # Postgres advisory-lock lease backend (feature `pg`).
-id_effect_sql = { path = "../id_effect_sql", version = "0.11.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.12.0", optional = true }
 sqlx = { version = "0.8", default-features = false, features = [
   "runtime-tokio",
   "postgres",

@@ -6,7 +6,7 @@
 - **`repository`** (includes `query`): `#[derive(Entity)]` maps a struct to a table, and `Repository<T>` runs its CRUD statements with optimistic locking and global filters (soft delete, tenant, custom scopes).
 
 ```toml
-id_effect_sql = { version = "0.11", features = ["pg", "repository"] }
+id_effect_sql = { version = "0.12", features = ["pg", "repository"] }
 ```
 
 ## The query builder (feature `query`)
