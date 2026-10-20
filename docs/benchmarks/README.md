@@ -305,7 +305,11 @@ enforced `pair`. Should the netem job show HTTP/3 losing, D9 makes the gate repo
 sockets spread over source addresses `127.0.0.2`… so no address passes the 16-sockets-per-IP
 default, and each stream gets `{seq, at_ms}` every second. The node's `VmRSS` is sampled every
 30 s. Pass: every stream received every heartbeat due (no gap, duplicate or early end) and
-RSS at the end ≤ 1.05 × RSS at minute 1.
+RSS at the end ≤ 1.05 × RSS at minute 5 (half a shorter run: 30 s of the 60 s variant). Since
+0.12.0 (F60) the mark is minute 5, after the replay buffers' warm-up below; the RSS at minute 1
+and the growth since then are still reported (`rss_kib.at_minute_1`,
+`rss_kib.growth_since_minute_1`; `scripts/security-kpis.sh` reports `rss_growth_minute_1` and
+gates the minute-5 figure, read from the samples for runs recorded with the old minute-1 mark).
 
 The gated run is on `82beb0f2` (two-way resume landed: every resumable stream's items stay in
 the socket's replay buffer until the client's next credit grant):
@@ -328,8 +332,9 @@ the socket's replay buffer until the client's next credit grant):
   minute 1.5, 356 MB at minute 5, flat after). The buffers are bounded (per session 1,024
   frames, 1 MiB, 30 s; `resume::ResumeConfig`), so this is warm-up, not a leak, but a minute-1
   mark sits inside it. The gate passes; a 10-minute CI run on a noisier runner could cross 1.05.
-  Moving the mark to minute 5 or lowering the replay window are owner/coordinator choices (the
-  minute-1 mark is the T12 KPI's wording), not changed here.
+  Decided at r12-w8-kpis (F50/F60): the mark moved to minute 5 (this run: 356,240 → 355,280 KiB,
+  **0.997×**) rather than shrinking the replay window, which would weaken resume; the minute-1
+  figure (1.040×) stays in the report.
 - The 42 ms p99 lag is Nagle's algorithm meeting delayed ACKs: neither the host listener nor
   `axum::serve` sets `TCP_NODELAY`, so a small WebSocket frame written while the previous one is
   unacknowledged waits for the peer's delayed ACK (about 40 ms). A 300-stream, 20 s run with

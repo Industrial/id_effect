@@ -159,6 +159,22 @@ The macro generates `Service::contract() -> Contract`. A golden test
 `id-effect rpc check` read that JSON; the CLI has no compile step. `rpc check` fails on a breaking
 change to a published contract version; versions are served side by side.
 
+**Classification (recorded at the 0.12.0 exit, F47).** A procedure is compared only with the same
+service and version. Inputs flow from old clients, so the new server must accept everything it
+accepted; outputs flow to old clients, so it may only send what they can read. Breaking: a
+procedure or a served version removed, `kind` changed, access tightened, a required input field
+added or an optional one made required, an input narrowed (a type, value or alternative removed,
+a bound tightened, unknown fields refused), an output field removed or made optional, an output
+widened, an error variant added, `idempotent` dropped, a `max_items`/`max_bytes` cap lowered, and
+any other schema keyword changed (both directions). A breaking change in a *new* version, with the
+old one still served, is `versioned` and passes. Two cases deviate from the release spec's
+wording, on purpose: **a narrowed output is compatible** (an old client still reads every value
+the new server sends), and **a removed input field is compatible** unless the input refuses
+unknown fields (`additionalProperties: false`), because the server then ignores what an old client
+still sends; with unknown fields refused it is breaking. Descriptions and `$defs` key names never
+count (definitions are compared structurally through `$ref`). The full table, with examples, is
+book chapter 33.12; the implementation is `id_effect_tool::rpc::check::compare`.
+
 ### 10. Encodings (D13)
 
 JSON by default. postcard is negotiated per connection (`application/vnd.id-effect.rpc+postcard`,

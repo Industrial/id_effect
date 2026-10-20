@@ -21,11 +21,13 @@
 //!
 //! **Pass** when, at the end, every stream has received every heartbeat due (no gap, no
 //! duplicate, no early exit, at most one heartbeat in flight) and the RSS at the end is at most
-//! 1.05 × the RSS at the mark: minute 1 of a run of at least 2 minutes, else half the run (30 s
-//! of 60 s). The mark comes after the warm-up: each socket's resume replay buffer holds every
-//! heartbeat until the client's next credit grant (half a window, 16 heartbeats), so the node's
-//! RSS climbs for the first tens of seconds before it is flat. Exits 1 on a failure; `--out FILE`
-//! also writes the result as JSON.
+//! 1.05 × the RSS at the mark: half the run, at most minute 5 (minute 5 of the 10-minute soak,
+//! 30 s of 60 s). The mark comes after the warm-up: each socket's resume replay buffer holds
+//! every heartbeat until the client's next credit grant (half a window, 16 heartbeats), so the
+//! node's RSS climbs for the first minutes, bounded, before it is flat (0.12: 1.040 × from
+//! minute 1, 0.997 × from minute 5 over 10 minutes). The RSS at minute 1 and the growth since
+//! then are still reported (`rss_kib.at_minute_1`, `growth_since_minute_1`), not gated. Exits 1
+//! on a failure; `--out FILE` also writes the result as JSON.
 
 use std::io::{BufRead as _, BufReader, Read as _};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -45,6 +47,12 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 
 /// The secure default per client IP (`id_effect_axum::realtime::ws::DEFAULT_MAX_SOCKETS_PER_IP`).
 const SOCKETS_PER_IP: usize = 16;
+
+/// The RSS mark of a run of 10 minutes or more: minute 5, after the replay buffers' warm-up.
+const MARK: Duration = Duration::from_secs(300);
+
+/// Minute 1, whose RSS is reported beside the mark (not gated).
+const MINUTE_1: Duration = Duration::from_secs(60);
 
 /// Command-line settings.
 #[derive(Clone, Debug)]
@@ -361,21 +369,22 @@ async fn run(args: Args) -> bool {
     rss_kib(pid)
   );
 
-  // Sample the node's RSS from the moment every stream is open.
-  let mark = if args.duration >= Duration::from_secs(120) {
-    Duration::from_secs(60)
-  } else {
-    args.duration / 2
-  };
+  // Sample the node's RSS from the moment every stream is open. The mark is minute 5 (half of
+  // the 10-minute soak), or half a shorter run; minute 1 is reported beside it.
+  let mark = (args.duration / 2).min(MARK);
   let start = Instant::now();
   let mut samples: Vec<(f64, u64)> = Vec::new();
   let mut mark_rss = None;
+  let mut minute1_rss = None;
   loop {
     let t = start.elapsed();
     let rss = rss_kib(pid).unwrap_or(0);
     samples.push((t.as_secs_f64(), rss));
     if mark_rss.is_none() && t >= mark {
       mark_rss = Some(rss);
+    }
+    if minute1_rss.is_none() && t >= MINUTE_1 && args.duration > MINUTE_1 {
+      minute1_rss = Some(rss);
     }
     let ended = beats
       .iter()
@@ -394,6 +403,9 @@ async fn run(args: Args) -> bool {
     let mut next = (args.sample_every * samples.len() as u32).min(args.duration);
     if mark_rss.is_none() && mark < next {
       next = mark;
+    }
+    if minute1_rss.is_none() && args.duration > MINUTE_1 && MINUTE_1 < next {
+      next = MINUTE_1;
     }
     tokio::time::sleep_until(tokio::time::Instant::from_std(start + next)).await;
   }
@@ -420,6 +432,8 @@ async fn run(args: Args) -> bool {
   let end_rss = samples.last().map_or(0, |s| s.1);
   let mark_rss = mark_rss.unwrap_or(end_rss);
   let growth = end_rss as f64 / mark_rss.max(1) as f64;
+  // Reported only: the growth since minute 1 includes the replay buffers' warm-up.
+  let growth_minute1 = minute1_rss.map(|m1| end_rss as f64 / m1.max(1) as f64);
   let heartbeats_ok =
     errors.is_empty() && beats.len() == args.streams && missing == 0 && bad == 0 && ended == 0;
   let rss_ok = end_rss > 0 && growth <= 1.05;
@@ -440,7 +454,8 @@ async fn run(args: Args) -> bool {
     "streams_ended_early": ended,
     "lag_ms": {"p50": lag.quantile(0.50), "p99": lag.quantile(0.99), "p999": lag.quantile(0.999)},
     "rss_kib": {"mark_s": mark.as_secs_f64(), "at_mark": mark_rss, "end": end_rss, "peak": peak,
-      "growth": growth, "samples": samples.iter().map(|(t, r)| json!([t, r])).collect::<Vec<Value>>()},
+      "growth": growth, "at_minute_1": minute1_rss, "growth_since_minute_1": growth_minute1,
+      "samples": samples.iter().map(|(t, r)| json!([t, r])).collect::<Vec<Value>>()},
     "errors": errors,
     "pass": {"heartbeats": heartbeats_ok, "rss": rss_ok, "all": pass},
   });
@@ -453,6 +468,11 @@ async fn run(args: Args) -> bool {
     beats.len(),
     mark.as_secs_f64()
   );
+  if let (Some(m1), Some(g1)) = (minute1_rss, growth_minute1) {
+    println!(
+      "streams_soak: since minute 1 (reported, not gated): {m1} KiB -> {end_rss} KiB ({g1:.3}x)"
+    );
+  }
   let pretty = serde_json::to_string_pretty(&result).unwrap_or_default();
   if let Some(out) = &args.out
     && let Err(e) = std::fs::write(out, pretty)

@@ -2,14 +2,27 @@
 
 A two-way stream (`bidi`) takes a stream in and gives a stream out, on one call:
 
-```rust,ignore
+```rust
 use id_effect::{DynEnv, Never, succeed};
 use id_effect_rpc::{Duplex, Procedure, RpcGroup, WireSchema};
+# use id_effect_axum::route::{GuardFuture, RouteGuard};
+# /// Any route guard; a real one checks the session.
+# struct SignedIn;
+# impl RouteGuard for SignedIn {
+#   fn policy(&self) -> &str { "signed-in" }
+#   fn check<'a>(&'a self, _parts: &'a axum::http::request::Parts) -> GuardFuture<'a> {
+#     Box::pin(async { Ok(()) })
+#   }
+# }
+# #[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+# struct Message { text: String }
+# fn moderate(m: Message) -> Message { m }
+# let mut group = RpcGroup::new();
 
 group.bidi(
   Procedure::bidi("Chat.room").guard(SignedIn),
-  WireSchema::of::<Message>(),
-  WireSchema::of::<Message>(),
+  WireSchema::<Message>::of(),
+  WireSchema::<Message>::of(),
   |_env: &mut DynEnv| {
     succeed::<_, Never, _>(Duplex::new(|incoming| incoming.map(moderate)))
   },
@@ -103,7 +116,7 @@ whether the session exists. The server counts these refusals
 
 ## Bounds
 
-```rust,ignore
+```rust
 use std::time::Duration;
 use id_effect_rpc::resume::ResumeConfig;
 use id_effect_rpc::transport::ws::RpcWsConfig;
@@ -115,6 +128,7 @@ let config = RpcWsConfig::default().resume(
     .retention(Duration::from_secs(30))
     .max_detached(1024),           // sessions waiting for a resume
 );
+# let _ = config;
 ```
 
 These are the defaults. The oldest frames go first when a session is over a bound, and nothing
@@ -131,15 +145,21 @@ new `call` (chapter 33.8).
 
 `resume::TestClock` stands in for time, so retention is deterministic:
 
-```rust,ignore
+```rust
 use std::time::Duration;
 use id_effect_rpc::resume::{ResumeConfig, TestClock};
+# use id_effect_rpc::transport::ws::RpcWsConfig;
+# fn main() {}
+# // Compiled, not run: the elided step needs a served socket (the crate's resume tests do it).
+# #[allow(dead_code)]
+# fn retention() {
 
 let clock = TestClock::new();
 let config = RpcWsConfig::default().resume(ResumeConfig::new().clock(clock.clone()));
 // … connect, open a stream, drop the socket …
 clock.advance(Duration::from_secs(30));
 assert_eq!(config.release_expired_sessions(), 1);
+# }
 ```
 
 `resume::decode_cursor` and `resume::decode_resume` are the decoders of what a client sends.

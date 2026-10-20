@@ -49,10 +49,12 @@
 #   t12_benches          (0.12) the T12 gates recorded in docs/benchmarks/v0.12.json
 #                        (`gates_0_12`, `soak`): unary delta <= 3000 ns, 50-call batch over 50
 #                        sequential <= 0.20, HTTP/3 p99 over HTTP/2 p99 under loss <= 1.00, the
-#                        10-minute soak of 10,000 streams with RSS end/mark <= 1.05 and every
+#                        10-minute soak of 10,000 streams with RSS end/minute 5 <= 1.05 and every
 #                        heartbeat delivered in order (0 missing, 0 out of order, 0 streams short
-#                        or ended early). The soak's RSS after minute 5 (end over the sample at
-#                        300 s) is recorded too (0.12 F50).
+#                        or ended early). The mark is minute 5 (0.12 F50/F60): the example's own
+#                        mark when it is at 300 s or later, else the first sample at 300 s or
+#                        later. The growth since minute 1 is reported, not gated
+#                        (`rss_growth_minute_1`).
 #   secure_stack         gate/axum_request_secure_stack - gate/axum_request_bare (median, ns) from
 #                        the bench export SECURITY_KPIS_BENCH (default .tmp/bench-head.json, written
 #                        by scripts/bench-run.sh + scripts/bench-export.sh; 0.12 without that file:
@@ -534,6 +536,13 @@ kpi_t12_benches() {
         def r(n): if . == null then null else (. * n | round) / n end;
         .gates_0_12 as $g | .soak as $s
         | ([$s.rss_kib.samples[]? | select(.[0] >= 300)] | first | .[1]) as $m5
+        | ([$s.rss_kib.samples[]? | select(.[0] >= 60)] | first | .[1]) as $m1
+        | (if ($s.rss_kib.mark_s // 0) >= 300 then $s.rss_kib.growth
+           elif ($m5 // 0) > 0 and $s.rss_kib.end != null then $s.rss_kib.end / $m5
+           else null end) as $gated
+        | (if $s.rss_kib.mark_s == 60 then $s.rss_kib.growth
+           elif ($m1 // 0) > 0 and $s.rss_kib.end != null then $s.rss_kib.end / $m1
+           else null end) as $growth1
         | {unary_delta_ns: {value: ($g.unary_delta_ns | r(1)), limit: $unary,
                             pass: ($g.unary_delta_ns != null and $g.unary_delta_ns <= $unary),
                             ratio: ($g.unary_ratio | r(100)), before_ns: ($g.unary_before_ns | r(1))},
@@ -542,7 +551,8 @@ kpi_t12_benches() {
                                    speedup: (if ($g.batch_over_sequential // 0) > 0 then (1 / $g.batch_over_sequential | r(10)) else null end)},
            h3_over_h2_p99: {value: ($g.h3_over_h2_p99 | r(1000)), limit: $h3,
                             pass: ($g.h3_over_h2_p99 != null and $g.h3_over_h2_p99 <= $h3), mode: $g.h3_mode},
-           soak: {streams: $s.streams, duration_s: $s.duration_s, rss_growth: ($s.rss_kib.growth | r(1000)),
+           soak: {streams: $s.streams, duration_s: $s.duration_s, rss_growth: ($gated | r(1000)),
+                  rss_growth_minute_1: ($growth1 | r(1000)),
                   limit: $soak, mark_s: $s.rss_kib.mark_s, rss_at_mark_kib: $s.rss_kib.at_mark,
                   rss_end_kib: $s.rss_kib.end, rss_peak_kib: $s.rss_kib.peak,
                   rss_at_300s_kib: $m5,
@@ -550,14 +560,14 @@ kpi_t12_benches() {
                   heartbeats_received: $s.heartbeats_received, heartbeats_missing: $s.heartbeats_missing,
                   heartbeats_out_of_order: $s.heartbeats_out_of_order, streams_short: $s.streams_short,
                   streams_ended_early: $s.streams_ended_early,
-                  pass: ($s.streams >= 10000 and $s.duration_s >= 600 and $s.rss_kib.growth != null and $s.rss_kib.growth <= $soak
+                  pass: ($s.streams >= 10000 and $s.duration_s >= 600 and $gated != null and $gated <= $soak
                          and $s.heartbeats_missing == 0 and $s.heartbeats_out_of_order == 0
                          and $s.streams_short == 0 and $s.streams_ended_early == 0)}} as $k
         | ([$k | to_entries[] | select(.value.pass != true) | .key]) as $failed
         | $k + {value: (4 - ($failed | length)), target: "4/4 T12 gates", source: $src, sha: .sha,
                 created: .created, failed: $failed,
                 status: (if ($failed | length) == 0 then "pass" else "fail" end),
-                summary: "unary +\($k.unary_delta_ns.value) ns, batch \($k.batch_over_sequential.value) of sequential, h3/h2 p99 \($k.h3_over_h2_p99.value), soak \($k.soak.streams) streams RSS \($k.soak.rss_growth)x (\($k.soak.rss_growth_after_300s)x after 300 s), \($k.soak.heartbeats_missing) heartbeats missing"}' "${bench}"
+                summary: "unary +\($k.unary_delta_ns.value) ns, batch \($k.batch_over_sequential.value) of sequential, h3/h2 p99 \($k.h3_over_h2_p99.value), soak \($k.soak.streams) streams RSS \($k.soak.rss_growth)x after minute 5 (\($k.soak.rss_growth_minute_1)x after minute 1, reported), \($k.soak.heartbeats_missing) heartbeats missing"}' "${bench}"
 }
 
 # The secure-stack overhead from the bench export BENCH (a path; shown relative to ROOT).
@@ -1128,11 +1138,16 @@ YML
     }
     t12 . >"${tmp}/b.json"
     kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
-    expect kpi_t12_benches "${tmp}/k.json" '.status == "pass" and .value == 4 and .unary_delta_ns.value == 1776 and .batch_over_sequential.speedup == 9 and .soak.rss_growth == 1.04 and .soak.rss_at_300s_kib == 356240 and .soak.rss_growth_after_300s == 0.997'
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "pass" and .value == 4 and .unary_delta_ns.value == 1776 and .batch_over_sequential.speedup == 9 and .soak.rss_growth == 0.997 and .soak.rss_growth_minute_1 == 1.04 and .soak.rss_at_300s_kib == 356240 and .soak.rss_growth_after_300s == 0.997'
+    # a run marked at minute 5 by the example (F60): its own growth is the gate
+    t12 '.soak.rss_kib = {mark_s: 300, at_mark: 330000, end: 349800, peak: 350000, growth: 1.06, at_minute_1: 320000,
+         samples: [[60, 320000], [300, 330000], [600, 349800]]}' >"${tmp}/b.json"
+    kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
+    expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .failed == ["soak"] and .soak.rss_growth == 1.06 and .soak.rss_growth_minute_1 == 1.093'
     t12 '.soak.heartbeats_missing = 1 | .gates_0_12.batch_over_sequential = 0.21' >"${tmp}/b.json"
     kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
     expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == 2 and .failed == ["batch_over_sequential", "soak"]'
-    t12 'del(.gates_0_12.unary_delta_ns) | del(.soak.rss_kib.growth) | .gates_0_12.h3_over_h2_p99 = 1.01' >"${tmp}/b.json"
+    t12 'del(.gates_0_12.unary_delta_ns) | del(.soak.rss_kib.samples) | .gates_0_12.h3_over_h2_p99 = 1.01' >"${tmp}/b.json"
     kpi_t12_benches "${fx}" "${tmp}/b.json" >"${tmp}/k.json"
     expect kpi_t12_benches "${tmp}/k.json" '.status == "fail" and .value == 1 and .failed == ["unary_delta_ns", "h3_over_h2_p99", "soak"]'
     kpi_t12_benches "${fx}" "${tmp}/no-such.json" >"${tmp}/k.json"

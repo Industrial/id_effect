@@ -114,10 +114,16 @@ multiplexed transport receives a `cancel` frame, the call's future is dropped. T
 handler fiber, and its finalizers run — `ensuring`, `acquire_use_release` and scoped layers clean
 up exactly as they would on any other interrupt:
 
-```rust,ignore
+```rust
+# use std::time::Duration;
+# use id_effect::{Effect, Never, sleep, sync};
+# fn started() {}
+# fn release_the_lock() {}
+# let _handler: Effect<(), Never, ()> =
 sync(|| started())
   .flat_map(|()| sleep(Duration::from_secs(3600)))
   .ensuring(sync(|| release_the_lock())) // runs when the client goes away
+# ;
 ```
 
 ## Idempotent mutations

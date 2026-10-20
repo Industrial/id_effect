@@ -17,15 +17,20 @@ the server name every node dials (`"cluster"` by default, or set one with
 `QuicConfig::with_server_name`). Ship three files per node: the chain (leaf first), the private
 key, and the CA bundle.
 
-```rust,ignore
+```rust
 use id_effect_node::transport::quic::{QuicConfig, QuicTransport};
 // Since 0.12 (`id_effect_node::transport::certs` is a deprecated re-export for one minor).
 use id_effect_platform::tls::{NodeCertificate, load_ca_bundle};
 
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<QuicTransport, Box<dyn std::error::Error>> {
 let roots = load_ca_bundle("/etc/mesh/ca.pem")?;
 let cert = NodeCertificate::from_pem_files("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
 let config = QuicConfig::from_certificate(&cert)?.with_client_verification(roots);
 let transport = QuicTransport::try_new(config)?;
+# Ok(transport)
+# }
 ```
 
 `from_pem_files` reads PKCS#8 (`PRIVATE KEY`), PKCS#1 (`RSA PRIVATE KEY`) and SEC1
@@ -55,13 +60,21 @@ must pass.
 `CertReloader` loads the chain and key files and swaps them when their contents change. It
 polls; there is no filesystem watcher.
 
-```rust,ignore
+```rust
 use std::{sync::Arc, time::Duration};
 use id_effect_platform::tls::CertReloader;
+# use id_effect_node::transport::quic::QuicConfig;
 
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<(), Box<dyn std::error::Error>> {
+# let roots = id_effect_platform::tls::load_ca_bundle("/etc/mesh/ca.pem")?;
 let files = Arc::new(CertReloader::new("/etc/mesh/node.crt", "/etc/mesh/node.key")?);
 let _polling = files.spawn_polling(Duration::from_secs(30)); // stops when dropped
 let config = QuicConfig::from_reloader(&files).with_client_verification(roots);
+# let _ = config;
+# Ok(())
+# }
 ```
 
 Every new connection, dialed or accepted, presents the certificate the reloader holds at that
@@ -83,8 +96,17 @@ with one the operator has not accepted.
 
 TCP has the same model (feature `tls-tcp`):
 
-```rust,ignore
+```rust
+# use id_effect_node::transport::{tcp::TcpTransport, tls_tcp::TlsTcpConfig};
+# use id_effect_platform::tls::{CertReloader, load_ca_bundle};
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<TcpTransport, Box<dyn std::error::Error>> {
+# let files = CertReloader::new("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
+# let roots = load_ca_bundle("/etc/mesh/ca.pem")?;
 let tcp = TcpTransport::tls(TlsTcpConfig::from_reloader(&files).with_client_verification(roots));
+# Ok(tcp)
+# }
 ```
 
 That carries the frames in TLS 1.3 with mutual auth, with the same certificate types, the same
@@ -107,16 +129,23 @@ handshake, so a 0.11 node cannot join a 0.12 QUIC mesh.
 
 A node that also serves HTTP/3 can put both on **one port**:
 
-```rust,ignore
+```rust
 use id_effect_node::transport::quic::{QuicSettings, QuicTransport};
 use id_effect_platform::quic::{QuicEndpoint, QuicEndpointConfig, Route};
 use id_effect_platform::tls::Identity;
+# use id_effect_node::transport::{Transport as _, quic::QuicConfig};
 
+# fn main() {}
+# #[allow(dead_code)]
+# async fn node(public_identity: Identity, mesh_config: QuicConfig) -> Result<(), Box<dyn std::error::Error>> {
 let endpoint = QuicEndpoint::bind("0.0.0.0:443".parse()?, QuicEndpointConfig::new(public_identity))?;
 let h3 = endpoint.register(Route::h3())?; // handed to the HTTP/3 server
 let settings = QuicSettings::default(); // the `quic` config section; `mesh_port` unset
 let (transport, listen_on) = settings.mesh_transport(mesh_config, &endpoint);
 let listener = transport.listen(&listen_on).await?; // registers `idm/1` on the same port
+# let _ = (h3, listener, QuicTransport::new);
+# Ok(())
+# }
 ```
 
 rustls picks the client-certificate rule per endpoint, before the ALPN is known, so on the

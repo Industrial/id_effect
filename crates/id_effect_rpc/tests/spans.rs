@@ -26,6 +26,11 @@ use tracing::{Event, Metadata, Subscriber};
 struct Captured {
   name: &'static str,
   fields: HashMap<String, String>,
+  // Read by the WebSocket, SSE and WebTransport tests only.
+  #[cfg_attr(
+    not(any(all(feature = "ws", feature = "client"), feature = "sse")),
+    allow(dead_code)
+  )]
   parent: Option<u64>,
 }
 
@@ -122,6 +127,7 @@ fn requests(tag: &str, transport: &str) -> Vec<Captured> {
     .collect()
 }
 
+#[cfg(any(all(feature = "ws", feature = "client"), feature = "sse"))]
 fn span(id: u64) -> Captured {
   SPANS.spans.lock().unwrap()[&id].clone()
 }

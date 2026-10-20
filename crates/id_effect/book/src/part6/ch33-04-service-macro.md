@@ -135,7 +135,56 @@ union, `Failure(RpcFailure)` for a reserved failure, `Transport(..)` when the ca
 the procedure (a guard's 403, an unknown version's 404). Streams come back as `Stream`s,
 subscription items with the cursor to resume after, and a two-way call as a sender and a stream:
 
-```rust,ignore
+```rust
+# use id_effect::{DynEnv, Effect, Never, Stream, fail, succeed};
+# use id_effect_rpc as rpc;
+# use rpc::kinds::Duplex;
+# #[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+# struct Todo {
+#   id: i64,
+#   title: String,
+# }
+# #[derive(Debug, PartialEq, rpc::RpcErrorUnion)]
+# enum TodoError {
+#   #[rpc(status = 404)]
+#   NotFound { id: i64 },
+#   #[rpc(status = 409)]
+#   Locked,
+# }
+# /// Keeps todos.
+# #[rpc::service(version = 1)]
+# trait Todos {
+#   /// One todo by id.
+#   #[query]
+#   #[public]
+#   fn get(&self, id: i64) -> Effect<Todo, TodoError, DynEnv>;
+#   /// 1, 2, …, n.
+#   #[server_stream]
+#   #[public]
+#   fn upto(&self, n: i64) -> Effect<Stream<i64, Never, DynEnv>, Never, DynEnv>;
+#   /// Every line back in upper case.
+#   #[bidi]
+#   #[public]
+#   fn shout(&self) -> Effect<Duplex<String, String, Never>, Never, DynEnv>;
+# }
+# struct Store;
+# impl Todos for Store {
+#   fn get(&self, id: i64) -> Effect<Todo, TodoError, DynEnv> {
+#     match id {
+#       1 => succeed(Todo { id, title: "milk".into() }),
+#       2 => fail(TodoError::Locked),
+#       _ => fail(TodoError::NotFound { id }),
+#     }
+#   }
+#   fn upto(&self, n: i64) -> Effect<Stream<i64, Never, DynEnv>, Never, DynEnv> {
+#     succeed(Stream::from_iterable(1..=n))
+#   }
+#   fn shout(&self) -> Effect<Duplex<String, String, Never>, Never, DynEnv> {
+#     succeed(Duplex::new(|lines: Stream<String, Never, DynEnv>| {
+#       lines.map(|s| s.to_uppercase())
+#     }))
+#   }
+# }
 use id_effect_rpc::service::LocalTransport;
 
 let client = TodosService::client(LocalTransport::new(TodosService::group(Store), DynEnv::new()));
@@ -144,6 +193,9 @@ let numbers = client.upto(3).flat_map(|s| s.run_collect());       // [1, 2, 3]
 let shouted = client.shout().flat_map(|(tx, lines)| {
   tx.send("hi".to_owned()).map(move |()| drop(tx)).flat_map(move |()| lines.run_collect())
 });                                                               // ["HI"]
+# let _: Effect<_, _, ()> = todo;
+# let _: Effect<_, _, ()> = numbers;
+# let _: Effect<_, _, ()> = shouted;
 ```
 
 Two transports ship with the macro: `LocalTransport` calls a group in the same process through
@@ -158,7 +210,17 @@ stream kinds.
 procedure's kind, access decision, input/output/error JSON Schemas and doc comment. Check it in,
 so a change to the API is a change to a reviewed file:
 
-```rust,ignore
+```rust
+# use id_effect::{DynEnv, Effect};
+# use id_effect_rpc as rpc;
+# /// Keeps todos.
+# #[rpc::service(version = 1)]
+# trait Todos {
+#   /// One number.
+#   #[query]
+#   #[public]
+#   fn get(&self, id: i64) -> Effect<i64, id_effect::Never, DynEnv>;
+# }
 use id_effect_rpc::contract::assert_snapshot;
 use id_effect_rpc::service::RpcService;
 
@@ -166,6 +228,8 @@ use id_effect_rpc::service::RpcService;
 fn contract_snapshot_is_current() {
   assert_snapshot(&TodosService::document(), "rpc.contract.json");
 }
+# // `#[test]` bodies are not compiled outside `cargo test`; type-check the same call here.
+# let _check = || assert_snapshot(&TodosService::document(), "rpc.contract.json");
 ```
 
 `UPDATE_GOLDEN=1 cargo test` rewrites the file. `id-effect rpc gen ts` and `id-effect rpc check`
@@ -177,12 +241,31 @@ A version is a trait. To change a procedure incompatibly, declare the next versi
 service name and serve both; a client names its version on every call (`v`), so old clients keep
 working:
 
-```rust,ignore
+```rust
+# use id_effect::{DynEnv, Effect, Never, succeed};
+# use id_effect_rpc::{self as rpc, RpcGroup};
 #[rpc::service(version = 1, name = "Greeter")]
-trait GreeterV1 { /* … */ }
+trait GreeterV1 { /* … */
+#   /// Greets by name.
+#   #[query]
+#   #[public]
+#   fn greet(&self, name: String) -> Effect<String, Never, DynEnv>;
+}
 
 #[rpc::service(version = 2, name = "Greeter")]
-trait GreeterV2 { /* … */ }
+trait GreeterV2 { /* … */
+#   /// Greets by name, politely.
+#   #[query]
+#   #[public]
+#   fn greet(&self, name: String) -> Effect<String, Never, DynEnv>;
+}
+# struct Hello;
+# impl GreeterV1 for Hello {
+#   fn greet(&self, name: String) -> Effect<String, Never, DynEnv> { succeed(format!("Hi {name}")) }
+# }
+# impl GreeterV2 for Hello {
+#   fn greet(&self, name: String) -> Effect<String, Never, DynEnv> { succeed(format!("Hello, {name}.")) }
+# }
 
 let mut group = RpcGroup::new();
 GreeterV1Service::register(&mut group, Hello);

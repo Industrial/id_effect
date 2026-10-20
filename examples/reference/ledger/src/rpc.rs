@@ -28,8 +28,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
-use axum::response::{IntoResponse, Response};
-use axum::routing::{MethodRouter, any};
+use axum::response::IntoResponse;
+use axum::routing::MethodRouter;
 use id_effect::schema::serde_bridge::unknown_from_serde_json;
 use id_effect::schema::{HasSchema, Schema};
 use id_effect::{Ctx, DynEnv, Effect, Stream, succeed};
@@ -43,7 +43,7 @@ use id_effect_kit::rpc::contract::Contract;
 use id_effect_kit::rpc::service::RpcSchema;
 use id_effect_kit::rpc::wire::InputIssue;
 use serde_json::{Value, json};
-use tower::ServiceExt as _;
+use tower::util::MapRequestLayer;
 
 use crate::accounts::{self, Account, AccountChanges, AccountList, NewAccount};
 use crate::app::{App, Caller};
@@ -476,10 +476,9 @@ pub struct Mounted {
 /// `policies`.
 ///
 /// Each call runs with the request's capabilities (its principal) in its environment, as the
-/// REST handlers do. The HTTP transport of `id_effect_rpc` 0.12 runs a call with the route's
-/// state alone, so each RPC route is given its state per request here (the capabilities laid
-/// over an empty environment), and the request's principal (`<org>/<id>`) is recorded as the
-/// [`RpcPrincipal`] its idempotency keys are scoped by.
+/// REST handlers do: the HTTP transport of `id_effect_rpc` lays them over the route state. Each
+/// request also carries the policy registry the guards read and the request's principal
+/// (`<org>/<id>`) as the [`RpcPrincipal`] its idempotency keys are scoped by ([`scope_call`]).
 pub fn mount(app: Arc<App>, policies: &Policies) -> Mounted {
   let store = PgIdempotencyStore::new(Arc::clone(&app.db));
   let server = LedgerService::server(Procedures::new(app)).with_idempotency_store(store);
@@ -494,39 +493,37 @@ pub fn mount(app: Arc<App>, policies: &Policies) -> Mounted {
     }
     routes.push(info);
   }
+  let policies = policies.clone();
   let router = paths
     .into_iter()
     .fold(axum::Router::new(), |router, (path, methods)| {
-      let policies = policies.clone();
-      let handler = move |request: Request| call(methods.clone(), policies.clone(), request);
-      router.route(&path, any(handler))
-    });
+      router.route(&path, methods.with_state(DynEnv::new()))
+    })
+    .layer(MapRequestLayer::new(move |request| {
+      scope_call(&policies, request)
+    }));
   Mounted { router, routes }
 }
 
-/// Serves `request` with `methods`, its environment the request's capabilities.
-async fn call(methods: MethodRouter<DynEnv>, policies: Policies, mut request: Request) -> Response {
-  let caps = request
+/// Adds what an RPC call reads from its request: the policy registry of the [`Policy`] guards,
+/// and the authenticated principal as the [`RpcPrincipal`] its idempotency keys are scoped by.
+fn scope_call(policies: &Policies, mut request: Request) -> Request {
+  let scope = request
     .extensions()
     .get::<RequestCaps>()
-    .cloned()
-    .unwrap_or_default();
-  if let Some(principal) = caps
-    .get::<CurrentPrincipal>()
+    .and_then(|caps| caps.get::<CurrentPrincipal>())
     .filter(|p| p.is_authenticated())
-  {
-    let scope = match principal.tenant() {
+    .map(|principal| match principal.tenant() {
       Some(org) => format!("{org}/{}", principal.id()),
       None => principal.id().to_owned(),
-    };
+    });
+  if let Some(scope) = scope {
     request.extensions_mut().insert(RpcPrincipal(scope));
   }
-  request.extensions_mut().insert(RpcPolicies(policies));
-  let env = caps.overlay(&DynEnv::new());
-  match methods.with_state(env).oneshot(request).await {
-    Ok(response) => response,
-    Err(never) => match never {},
-  }
+  request
+    .extensions_mut()
+    .insert(RpcPolicies(policies.clone()));
+  request
 }
 
 #[cfg(test)]

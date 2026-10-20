@@ -29,8 +29,7 @@ rule C1, the same rule as typed routes). An unknown tag answers `404` Problem De
 are part of the contract (`{"_tag": "NotFound", …}`); a defect reaches the client as
 `InternalError { id }` with only the correlation id.
 
-<!-- ignore: id_effect_rpc is not a book_snippets dependency; the same example runs as the crate's doctest -->
-```rust,ignore
+```rust
 use std::sync::Arc;
 use id_effect::{DynEnv, schema, succeed};
 use id_effect_rpc::{Procedure, RpcGroup, RpcServer};
@@ -45,6 +44,7 @@ group.register(
 );
 let contract = group.service_contract("Greeter", 1); // what clients are generated from
 let app: axum::Router = RpcServer::new(group).mount_default().with_state(DynEnv::new());
+# let _ = (contract, app);
 ```
 
 `RpcServer` mounts `POST /rpc` as a declared route of `id_effect_axum::route::Router`, so it lives

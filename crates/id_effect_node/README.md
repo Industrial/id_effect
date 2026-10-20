@@ -10,8 +10,8 @@ a cluster and lets processes spawn, message, call, link and monitor each other a
 |------|------|
 | `NodeId` | Wire identity: logical `name@host` plus a 128-bit boot incarnation |
 | `Cookie`, `handshake` | Mutual HMAC-SHA256 challenge/response; the cookie never crosses the wire |
-| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited; TLS 1.3 with feature `tls-tcp`), `QuicTransport` (feature `quic`) |
-| `transport::certs` | Node certificates from PEM files, CA bundles, `CertReloader` for rotation (features `quic`, `tls-tcp`) |
+| `Transport` / `Connection` / `Listener` | Byte-frame pipes. `InMemoryTransport` (deterministic, scripted partitions), `TcpTransport` (length-delimited; TLS 1.3 with feature `tls-tcp`), `QuicTransport` (feature `quic`; ALPN `idm/1` on an `id_effect_platform::quic` endpoint of its own or shared with HTTP/3) |
+| `transport::certs` | Deprecated since 0.12, removed in 0.13: re-exports `id_effect_platform::tls` (`NodeCertificate` from PEM files, CA bundles, `CertReloader` for rotation), which the QUIC and TLS-TCP transports use (features `quic`, `tls-tcp`; see `docs/MIGRATION-0.12.md`) |
 | `Session` | An authenticated, framed connection to one peer (`wire::Frame`, postcard, `PROTOCOL_VERSION` 3) |
 | `Membership` | SWIM membership via [`foca`], sans-io: the caller owns time and the network. `TimerWheel` drives it in tests; `NodeMonitors` fans out `NodeUp` / `NodeDown` / `Rejoined` |
 | `Mesh`, `BehaviorRegistry` | Remote spawn / cast / call / monitor / link over sessions or the in-process `MeshFabric` |

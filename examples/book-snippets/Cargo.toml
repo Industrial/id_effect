@@ -40,6 +40,7 @@ id_effect_cli = { path = "../../crates/id_effect_cli", version = "0.11.0" }
 id_effect_config = { path = "../../crates/id_effect_config", version = "0.11.0", features = [
   "vault",
 ] }
+id_effect_events = { path = "../../crates/id_effect_events", version = "0.11.0" }
 id_effect_fp = { path = "../../crates/id_effect_fp", version = "0.11.0" }
 id_effect_logger = { path = "../../crates/id_effect_logger", version = "0.11.0" }
 id_effect_resilience = { path = "../../crates/id_effect_resilience", version = "0.11.0" }
@@ -53,7 +54,10 @@ id_effect_fsm = { path = "../../crates/id_effect_fsm", version = "0.11.0" }
 id_effect_kit = { path = "../../crates/id_effect_kit", version = "0.11.0", features = [
   "full",
 ] }
-id_effect_node = { path = "../../crates/id_effect_node", version = "0.11.0" }
+id_effect_node = { path = "../../crates/id_effect_node", version = "0.11.0", features = [
+  "quic",
+  "tls-tcp",
+] }
 id_effect_opentelemetry = { path = "../../crates/id_effect_opentelemetry", version = "0.11.0" }
 id_effect_optics = { path = "../../crates/id_effect_optics", version = "0.11.0" }
 id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.11.0", features = [
@@ -61,6 +65,15 @@ id_effect_platform = { path = "../../crates/id_effect_platform", version = "0.11
   "acme",
 ] }
 id_effect_process = { path = "../../crates/id_effect_process", version = "0.11.0" }
+id_effect_rpc = { path = "../../crates/id_effect_rpc", version = "0.11.0", features = [
+  "ws",
+  "sse",
+  "events",
+  "channels",
+  "http3",
+  "webtransport",
+  "test-util",
+] }
 id_effect_redis = { path = "../../crates/id_effect_redis", version = "0.11.0", features = [
   "session",
   "rate-limit",

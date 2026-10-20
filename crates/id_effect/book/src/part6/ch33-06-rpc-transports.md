@@ -16,15 +16,20 @@ the 64 KiB frame cap, message rate, heartbeats and the idle timeout.
 
 ## Serving
 
-```rust,ignore
+```rust
 use id_effect_axum::realtime::ws::WsConfig;
 use id_effect_rpc::transport::ws::RpcWsConfig;
 use id_effect_rpc::RpcServer;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let group = id_effect_rpc::RpcGroup::new();
 
 let socket = WsConfig::default().allowed_origins(["https://app.example.com"])?;
 let router = RpcServer::new(group)
   .with_websocket(RpcWsConfig::default().socket(socket).max_calls(100))
   .router();
+# let _ = router;
+# Ok(())
+# }
 ```
 
 `with_websocket` adds `GET /rpc/ws`. The route itself is public, and every call runs its own
@@ -129,21 +134,34 @@ the request, even though it cannot read the answer.
 
 `RpcClientConfig::transport` picks the stream transport, and `RpcClient::subscribe` uses it:
 
-```rust,ignore
+```rust
 use id_effect_rpc::client::{CallEvent, RpcClient, TransportKind};
+# use serde_json::json;
 
 let client = RpcClient::new("https://api.example.com").with_transport(TransportKind::Sse);
 let stream = client.subscribe("Chat.room", json!({"room": "a"}), None); // Effect<RpcStream, …>
 // stream.next() yields CallEvent::Item { value, cursor } … then CallEvent::Exit(result)
+# use id_effect::{HCons, HNil};
+# let _: id_effect::Effect<_, _, HCons<id_effect_platform::http::HttpClientService, HNil>> = stream;
+# let _ = |e: CallEvent| matches!(e, CallEvent::Item { .. });
 ```
 
 To multiplex calls on one socket, use `client::ws::WsClient` directly:
 
-```rust,ignore
+```rust
+# use id_effect_rpc::client::ws::WsClient;
+# use serde_json::json;
+# fn main() {}
+# // Compiled, not run: it needs a server on 127.0.0.1:8080.
+# #[allow(dead_code)]
+# async fn calls() -> Result<(), Box<dyn std::error::Error>> {
 let ws = WsClient::connect("ws://127.0.0.1:8080/rpc/ws").await?;
 let greeting = ws.call("Greeter.greet", json!("Ada")).await?;
 let mut feed = ws.open("Feed.watch", json!("a"), None).await?;
 while let Some(event) = feed.next().await { /* … */ }
+# let _ = greeting;
+# Ok(())
+# }
 ```
 
 Reading items grants the server credits. Dropping a `WsCall` cancels it on the server.
