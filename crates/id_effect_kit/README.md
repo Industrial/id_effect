@@ -4,9 +4,9 @@ One front door to [`id_effect`](../id_effect): a single dependency with a featur
 
 ```toml
 [dependencies]
-id_effect_kit = { version = "0.11", features = ["web", "otel"] }
+id_effect_kit = { version = "0.12", features = ["web", "otel"] }
 # The derive and `effect!` macros expand to `::id_effect::` paths; keep the core crate too.
-id_effect = "0.11"
+id_effect = "0.12"
 ```
 
 | Feature | Adds | Re-exported as |
@@ -41,10 +41,14 @@ id_effect = "0.11"
 | `logger` | `id_effect_logger` (`EffectLogger`, backends, `RedactionPolicy`) | `id_effect_kit::logger` |
 | `events` | `id_effect_events` (event store, `SqlEventJournal`, projections, snapshots, subscriptions) | `id_effect_kit::events` |
 | `auth-accounts` | `auth` + `mail` + user accounts (`Accounts`, `AccountRoutes`, `PgAccountTokenStore`) and `AccountMails`, their sign-up, verification and reset mail | `id_effect_kit::{auth, mail}` |
+| `rpc` | `web` + `id_effect_rpc` (`#[rpc::service]`, `RpcServer` under `/rpc`, generated clients over HTTP; with `cluster`: channels and mesh RPC; with `events`: event-log subscriptions). Keep `id_effect_rpc` as a dependency too: the macro names it | `id_effect_kit::rpc` |
+| `rpc-ws` | `rpc` + every kind over one WebSocket (resume), subscriptions and server streams over SSE | `id_effect_kit::rpc::transport` |
+| `http3` | `web` + TLS on TCP and HTTP/3 on the same port (`HostConfig::http3`, on by default), `platform::tls`; with `rpc`: RPC over HTTP/3; with `http-client`: the HTTP/3 client | `id_effect_kit::axum::server::h3` |
+| `webtransport` | `http3` + `rpc-ws` + RPC over WebTransport sessions | `id_effect_kit::rpc::transport::webtransport` |
 | `test` | `id_effect_test` (containers, isolated databases, fixtures, HTTP client) — for `[dev-dependencies]` | `id_effect_kit::test` |
 | `full` | all of the above except `test`; builds without Docker or system libraries | |
 
-Enable `test` on a `[dev-dependencies]` entry of the kit (`id_effect_kit = { version = "0.11", features = ["test"] }`), so containers and fixtures stay out of the shipped binary.
+Enable `test` on a `[dev-dependencies]` entry of the kit (`id_effect_kit = { version = "0.12", features = ["test"] }`), so containers and fixtures stay out of the shipped binary.
 
 ## Quick start
 
@@ -79,7 +83,7 @@ fn main() -> ExitCode {
 }
 ```
 
-The prelude always holds the `stm` module (`stm::TRef`, `stm::atomically`, …). The per-feature prelude items: `web` adds `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`, the typed routes (`Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`) with their access (`Public`, `Guarded`, `RouteGuard`) and the middleware (`RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer`, `LoadShedLayer`); `openapi` adds `OpenApi` and `openapi_router`; `sql` adds `SqlClientService`, `SqlError`, `SqlRow`, `FromRow`, `params!` and `with_transaction`; `migrate` adds `Migrator` and `MigrateError`; `repository` adds `Entity` and `Repository`; `otel` adds `OtelConfig` and `install_from_config`; `auth` adds `Authenticate`, `AuthPrincipal`, `AuthError`, `Sessions`, `SessionLayer`, `PasswordHasher`, `JwtIssuer`, `JwtVerifier` and `JwtKey`; `authz` adds `Policies`, `Policy`, `Principal`, `AuthzError`, `CurrentPrincipal`, `authorize`, `require_role` (and `AuthorizeExt` with `web`); `redis` adds `RedisClient` and `RedisConfig`; `jobs` adds `Job`, `JobContext`, `JobError`, `JobFailure`, `JobOptions`, `JobQueue`, `JobQueueExt`, `JobRegistry`, `Worker` and `WorkerConfig` (`jobs-cron` also `CronLeader`); `messaging` adds `MessageBroker`, `MessageBrokerExt`, `BrokerError`, `Delivery`, `Outbox` and `Relay`; `redis-streams` adds `RedisStreamsBroker`; `mail` adds `Mailer`, `MailError`, `Mailbox` and `Templates` (and `deliver_later` with `jobs`); `console` adds `Console` and `ConsoleConfig`; `storage` adds `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore` and `MemoryStore`; `events` adds `EventStore`, `EventStoreError`, `Projection` and `SqlEventJournal`. `Profiles` (config profiles) is always there. Through the kit alone, point the `FromRow` / `Entity` derives at the re-export with `#[from_row(crate = id_effect_kit::sql)]` / `#[entity(crate = id_effect_kit::sql, …)]`.
+The prelude always holds the `stm` module (`stm::TRef`, `stm::atomically`, …). The per-feature prelude items: `web` adds `EffectExecutor`, `execute`, `routing`, `serve_until_shutdown`, `SecurityLayer`, `health_router`, `readiness_router`, `observability_routes`, `metrics_router`, the typed routes (`Route`, `Router`, `Input`, `Problem`, `ValidPath`, `ValidQuery`, `ValidHeaders`, `ValidJson`, `ValidForm`) with their access (`Public`, `Guarded`, `RouteGuard`) and the middleware (`RequestIdLayer`, `TimeoutLayer`, `BodyLimitLayer`, `CompressionLayer`, `LoadShedLayer`); `openapi` adds `OpenApi` and `openapi_router`; `sql` adds `SqlClientService`, `SqlError`, `SqlRow`, `FromRow`, `params!` and `with_transaction`; `migrate` adds `Migrator` and `MigrateError`; `repository` adds `Entity` and `Repository`; `otel` adds `OtelConfig` and `install_from_config`; `auth` adds `Authenticate`, `AuthPrincipal`, `AuthError`, `Sessions`, `SessionLayer`, `PasswordHasher`, `JwtIssuer`, `JwtVerifier` and `JwtKey`; `authz` adds `Policies`, `Policy`, `Principal`, `AuthzError`, `CurrentPrincipal`, `authorize`, `require_role` (and `AuthorizeExt` with `web`); `redis` adds `RedisClient` and `RedisConfig`; `jobs` adds `Job`, `JobContext`, `JobError`, `JobFailure`, `JobOptions`, `JobQueue`, `JobQueueExt`, `JobRegistry`, `Worker` and `WorkerConfig` (`jobs-cron` also `CronLeader`); `messaging` adds `MessageBroker`, `MessageBrokerExt`, `BrokerError`, `Delivery`, `Outbox` and `Relay`; `redis-streams` adds `RedisStreamsBroker`; `mail` adds `Mailer`, `MailError`, `Mailbox` and `Templates` (and `deliver_later` with `jobs`); `console` adds `Console` and `ConsoleConfig`; `storage` adds `ObjectStore`, `ObjectStorage`, `StorageError`, `LocalStore` and `MemoryStore`; `events` adds `EventStore`, `EventStoreError`, `Projection` and `SqlEventJournal`; `rpc` adds the crate as `rpc` (so `#[rpc::service]` works; the procedure attributes need no import), `RpcErrorUnion`, `RpcGroup`, `RpcServer`, `RpcClient`, `Duplex`, `Subscription`, `SubscriptionItem` and `Cursor`. `Profiles` (config profiles) is always there. Through the kit alone, point the `FromRow` / `Entity` derives at the re-export with `#[from_row(crate = id_effect_kit::sql)]` / `#[entity(crate = id_effect_kit::sql, …)]`.
 
 ## Security posture at startup
 

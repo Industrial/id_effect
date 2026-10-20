@@ -49,11 +49,45 @@ audit = ["sql", "id_effect_sql/audit"]
 # OpenTelemetry export: `kit::otel` (id_effect_opentelemetry, OTLP on, config loading on).
 otel = ["dep:id_effect_opentelemetry", "id_effect_opentelemetry/config"]
 # Distribution: `kit::node` (id_effect_node) with its TLS TCP transport (`TcpTransport::tls`, mutual
-# TLS from PEM files, feature `tls-tcp`); with `web`, also id_effect_axum's `cluster` module.
+# TLS from PEM files, feature `tls-tcp`) and the certificates of `kit::platform::tls`; with `web`,
+# also id_effect_axum's `cluster` module.
 cluster = [
   "dep:id_effect_node",
   "id_effect_node/tls-tcp",
   "id_effect_axum?/cluster",
+  "dep:id_effect_platform",
+  "id_effect_platform/tls",
+  "id_effect_rpc?/channels",
+  "id_effect_rpc?/mesh",
+]
+# RPC (ADR 0014): `kit::rpc` (id_effect_rpc: `#[rpc::service]`, `RpcGroup`, `RpcServer` under
+# `/rpc`, the generated clients and their HTTP transport) and its prelude items, on top of `web`.
+# The `#[rpc::service]` expansion names `::id_effect_rpc`: keep that crate as a dependency too.
+# With `cluster`, also channels and mesh RPC (`id_effect_rpc/channels`, `id_effect_rpc/mesh`);
+# with `events`, subscriptions backed by an event log; with `http3`, RPC over HTTP/3.
+rpc = ["web", "dep:id_effect_rpc", "id_effect_rpc/client"]
+# Every RPC kind over one WebSocket (`GET /rpc/ws`, resume across reconnects) and subscriptions
+# and server streams over server-sent events, client and server, on top of `rpc`.
+rpc-ws = ["rpc", "id_effect_rpc/ws", "id_effect_rpc/sse"]
+# HTTP/3 (ADR 0014 D4): id_effect_axum's TLS on TCP and HTTP/3 on the same port
+# (`HostConfig::http3`, on by default; `Alt-Svc` on TCP responses) and `kit::platform::tls`, on
+# top of `web`. With `rpc`, RPC over HTTP/3; with `http-client`, the platform HTTP/3 client
+# (`HttpClientConfig::http3`).
+http3 = [
+  "web",
+  "id_effect_axum/http3",
+  "dep:id_effect_platform",
+  "id_effect_platform/tls",
+  "id_effect_rpc?/http3",
+  "id_effect_platform?/http3",
+]
+# WebTransport sessions carrying RPC two-way streams and subscriptions (with resume), on top of
+# `http3` and `rpc-ws`.
+webtransport = [
+  "http3",
+  "rpc-ws",
+  "id_effect_axum/webtransport",
+  "id_effect_rpc/webtransport",
 ]
 # The QUIC mesh transport (`kit::node::transport::quic`, always mutual TLS) next to TLS TCP, on
 # top of `cluster`.
@@ -118,7 +152,7 @@ http-client = ["dep:id_effect_platform", "id_effect_opentelemetry?/platform"]
 logger = ["dep:id_effect_logger"]
 # Event sourcing: `kit::events` (id_effect_events: event store, `SqlEventJournal`, projections,
 # snapshots, checkpointed subscriptions).
-events = ["dep:id_effect_events"]
+events = ["dep:id_effect_events", "id_effect_rpc?/events"]
 # User accounts on top of `auth` and `mail`: id_effect_auth's `Accounts`, `AccountRoutes` and
 # `PgAccountTokenStore` (PostgreSQL), and id_effect_mail's `AccountMails` (the sign-up,
 # verification and reset mail).
@@ -173,32 +207,43 @@ full = [
   "logger",
   "events",
   "auth-accounts",
+  "rpc",
+  "rpc-ws",
+  "http3",
+  "webtransport",
 ]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.11.0" }
-id_effect_cli = { path = "../id_effect_cli", version = "0.11.0", default-features = false }
-id_effect_config = { path = "../id_effect_config", version = "0.11.0" }
-id_effect_axum = { path = "../id_effect_axum", version = "0.11.0", optional = true }
-id_effect_sql = { path = "../id_effect_sql", version = "0.11.0", optional = true }
-id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.11.0", optional = true }
-id_effect_node = { path = "../id_effect_node", version = "0.11.0", optional = true }
-id_effect_auth = { path = "../id_effect_auth", version = "0.11.0", optional = true }
-id_effect_authz = { path = "../id_effect_authz", version = "0.11.0", optional = true }
-id_effect_redis = { path = "../id_effect_redis", version = "0.11.0", optional = true }
-id_effect_test = { path = "../id_effect_test", version = "0.11.0", optional = true }
-id_effect_jobs = { path = "../id_effect_jobs", version = "0.11.0", optional = true }
-id_effect_messaging = { path = "../id_effect_messaging", version = "0.11.0", optional = true }
-id_effect_mail = { path = "../id_effect_mail", version = "0.11.0", optional = true }
-id_effect_console = { path = "../id_effect_console", version = "0.11.0", optional = true }
-id_effect_storage = { path = "../id_effect_storage", version = "0.11.0", optional = true }
-id_effect_events = { path = "../id_effect_events", version = "0.11.0", optional = true }
-id_effect_platform = { path = "../id_effect_platform", version = "0.11.0", optional = true }
-id_effect_logger = { path = "../id_effect_logger", version = "0.11.0", optional = true }
-id_effect_workflow = { path = "../id_effect_workflow", version = "0.11.0", optional = true }
+id_effect = { path = "../id_effect", version = "0.12.0" }
+id_effect_cli = { path = "../id_effect_cli", version = "0.12.0", default-features = false }
+id_effect_config = { path = "../id_effect_config", version = "0.12.0" }
+id_effect_axum = { path = "../id_effect_axum", version = "0.12.0", optional = true }
+id_effect_sql = { path = "../id_effect_sql", version = "0.12.0", optional = true }
+id_effect_opentelemetry = { path = "../id_effect_opentelemetry", version = "0.12.0", optional = true }
+id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
+id_effect_auth = { path = "../id_effect_auth", version = "0.12.0", optional = true }
+id_effect_authz = { path = "../id_effect_authz", version = "0.12.0", optional = true }
+id_effect_redis = { path = "../id_effect_redis", version = "0.12.0", optional = true }
+id_effect_test = { path = "../id_effect_test", version = "0.12.0", optional = true }
+id_effect_jobs = { path = "../id_effect_jobs", version = "0.12.0", optional = true }
+id_effect_messaging = { path = "../id_effect_messaging", version = "0.12.0", optional = true }
+id_effect_mail = { path = "../id_effect_mail", version = "0.12.0", optional = true }
+id_effect_console = { path = "../id_effect_console", version = "0.12.0", optional = true }
+id_effect_storage = { path = "../id_effect_storage", version = "0.12.0", optional = true }
+id_effect_events = { path = "../id_effect_events", version = "0.12.0", optional = true }
+id_effect_platform = { path = "../id_effect_platform", version = "0.12.0", optional = true }
+id_effect_logger = { path = "../id_effect_logger", version = "0.12.0", optional = true }
+id_effect_workflow = { path = "../id_effect_workflow", version = "0.12.0", optional = true }
+id_effect_rpc = { path = "../id_effect_rpc", version = "0.12.0", optional = true, default-features = false }
 
 [dev-dependencies]
 axum = "0.8.9"
+# tests/posture.rs: a certificate carrying the `id-effect dev` organization (C13), with the
+# same rcgen the platform issues certificates with.
+rcgen = { version = "=0.13.2", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 tower = { version = "0.5.3", features = ["util"] }
 

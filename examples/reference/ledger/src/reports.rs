@@ -24,7 +24,7 @@ use id_effect_kit::sql::{FromRow, SqlClient, SqlError, params};
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::{AccountId, find_account};
-use crate::app::{App, AppEnv, as_caller, guarded};
+use crate::app::{App, AppEnv, Caller, as_caller, guarded};
 use crate::db;
 use crate::error::ApiError;
 
@@ -155,13 +155,65 @@ fn balance(
 ) -> Effect<Json<Balance>, ApiError, AppEnv> {
   let app = Arc::clone(&env.0);
   as_caller(&caps, move |caller| {
-    let key = BalanceKey {
-      org: caller.org().to_owned(),
-      account: input.path,
-    };
-    find_account(&app, &caller, input.path)
-      .flat_map(move |_account| app.balances.get(key).map(Json).map_err(ApiError::from))
+    account_balance(app, &caller, input.path).map(Json)
   })
+}
+
+/// The balance of the caller's account `id`, from the cache (`GET /accounts/{id}/balance`,
+/// `Ledger.balance`); `404` for an account of another organisation.
+pub fn account_balance(app: Arc<App>, caller: &Caller, id: i64) -> Effect<Balance, ApiError> {
+  let key = BalanceKey {
+    org: caller.org().to_owned(),
+    account: id,
+  };
+  find_account(&app, caller, id)
+    .flat_map(move |_account| app.balances.get(key).map_err(ApiError::from))
+}
+
+/// One posting of an account's statement ([`statement_page`]), with the balance after it.
+#[derive(Clone, Debug, PartialEq, Serialize, id_effect::Schema, FromRow)]
+#[from_row(crate = id_effect_kit::sql)]
+pub struct StatementLine {
+  /// The posting (its position in the statement: ascending).
+  pub posting_id: i64,
+  /// When its entry was posted, `YYYY-MM-DD` (UTC).
+  pub date: String,
+  /// The journal entry.
+  pub entry_id: i64,
+  /// The entry's memo.
+  pub memo: String,
+  /// Minor units, debit positive.
+  pub amount: i64,
+  /// The account's balance after this posting.
+  pub balance: i64,
+}
+
+/// How many postings one statement read returns.
+pub const STATEMENT_PAGE: i64 = 200;
+
+/// The postings of the caller's account `account` after the posting `after` (`0`: from the
+/// first), at most [`STATEMENT_PAGE`], each with the running balance (`Ledger.statement` streams
+/// them page by page). Read on the primary, so a statement includes what was just posted.
+pub fn statement_page(
+  app: &App,
+  caller: &Caller,
+  account: i64,
+  after: i64,
+) -> Effect<Vec<StatementLine>, ApiError> {
+  let sql = "SELECT posting_id, date, entry_id, memo, amount, balance FROM ( \
+               SELECT p.id AS posting_id, \
+                 to_char(e.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date, \
+                 e.id AS entry_id, e.memo, p.amount, \
+                 (SUM(p.amount) OVER (ORDER BY p.id))::int8 AS balance \
+               FROM postings p JOIN journal_entries e ON e.id = p.entry_id \
+               WHERE p.org_id = $1 AND p.account_id = $2) lines \
+             WHERE posting_id > $3 ORDER BY posting_id LIMIT $4";
+  db::query_all::<StatementLine>(
+    &app.db,
+    sql,
+    params![caller.org(), account, after, STATEMENT_PAGE],
+  )
+  .map_err(ApiError::from)
 }
 
 fn trial_balance(

@@ -92,6 +92,8 @@ in {
     yamlfmt
     mdbook
     ast-grep
+    # D12: the generated TypeScript client's tests (`deno check`, `deno test`; CI pins 2.7.9).
+    deno
     rustStable
   ];
 

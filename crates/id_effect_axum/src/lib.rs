@@ -97,6 +97,8 @@ pub mod metrics;
 pub mod middleware;
 #[cfg(feature = "openapi")]
 pub mod openapi;
+#[cfg(any(feature = "ws", feature = "sse", feature = "webtransport"))]
+pub mod realtime;
 pub mod request_caps;
 pub mod route;
 pub mod routing;

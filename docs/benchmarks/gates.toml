@@ -96,6 +96,38 @@ over = "gate/axum_request_bare"
 limit = 5000
 noise = 0
 
+# --- RPC (0.12 T12, r12-e12-5-benches): one run, ratios only between two measurements of the
+# same stack (README "RPC gates (0.12)") ----------------------------------------------------
+
+# D5: a `#[rpc::service]` query may cost at most 3 us (3000 ns) per call over a raw axum handler
+# doing the same serde JSON decode and encode, in process (benches/gate_rpc.rs). Absolute, as the
+# secure-stack budget: the raw handler is about 1 us.
+[[gate]]
+id = "rpc/unary_json"
+kind = "delta"
+over = "rpc/axum_json_handler"
+limit = 3000
+noise = 0
+
+# 50 calls in one batch must be at least 5x faster than the same 50 calls awaited one after the
+# other, over one loopback HTTP/1.1 keep-alive connection (benches/gate_rpc.rs).
+[[gate]]
+id = "rpc/batch_50"
+kind = "pair"
+over = "rpc/sequential_50"
+limit = 0.20
+noise = 0
+
+# D9: HTTP/3 p99 at most HTTP/2 p99 under 1 % loss + 5 ms, 64 multiplexed 16 KiB responses on
+# one connection, the shipped host (BBR on the h3 route). Measured under `tc netem` in
+# bench.yml (benches/h3_loss.rs).
+[[gate]]
+id = "h3_loss/h3_p99"
+kind = "pair"
+over = "h3_loss/h2_p99"
+limit = 1.00
+noise = 0.05
+
 # --- report only ---------------------------------------------------------------------
 
 [[gate]]

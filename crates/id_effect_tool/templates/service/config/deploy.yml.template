@@ -30,6 +30,10 @@ env:
   clear:
     # Not `dev`: no local-operator shortcut on the console, no dev-only surfaces.
     ID_EFFECT_PROFILE: "prod"
+    # kamal-proxy terminates TLS and forwards HTTP/1.1, so the service serves TCP only. To serve
+    # HTTP/3 directly, publish UDP and TCP 443, drop this line and give the service a
+    # certificate (TLS_CERT_FILE / TLS_KEY_FILE or [server.tls] in config/prod.toml).
+    APP_SERVER__HTTP3__ENABLED: "false"
     HOST: "0.0.0.0"
     PORT: "8080"
     SHUTDOWN_TIMEOUT_SECS: "30"

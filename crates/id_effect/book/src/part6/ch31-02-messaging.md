@@ -3,7 +3,7 @@
 `id_effect_messaging` publishes what happened — `order.placed`, `invoice.paid` — to topics that any number of consumer groups read. It defines the broker-agnostic `MessageBroker`, ships `MemoryBroker` for tests and single-process services, and makes publishing reliable on PostgreSQL with a transactional outbox, a relay and an idempotent inbox.
 
 ```toml
-id_effect_messaging = "0.11"
+id_effect_messaging = "0.12"
 ```
 
 ## Topics, messages and consumer groups

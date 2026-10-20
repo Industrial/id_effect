@@ -141,7 +141,8 @@ impl Options {
     let mut features = Vec::new();
     match self.template {
       Template::Service => {
-        features.push("web");
+        // RPC next to the REST routes, HTTP/3 on by default (ADR 0014 D4).
+        features.extend(["web", "rpc", "http3"]);
         if self.db == Db::Pg {
           features.extend(["sql-pg", "migrate"]);
         }
@@ -178,7 +179,8 @@ impl Options {
         "web" => &["id_effect_axum", "id_effect_platform"][..],
         "sql-pg" | "migrate" => &["id_effect_sql"],
         "otel" => &["id_effect_opentelemetry", "id_effect_logger"],
-        "cluster" => &["id_effect_node", "id_effect_process"],
+        "cluster" => &["id_effect_node", "id_effect_platform", "id_effect_process"],
+        "rpc" => &["id_effect_rpc", "id_effect_rpc_macros"],
         "jobs" => &["id_effect_jobs", "id_effect_sql"],
         "console" => &[
           "id_effect_console",
@@ -464,13 +466,19 @@ mod tests {
     #[test]
     fn service_features_follow_the_options() {
       let base = Options::new("app", Template::Service);
-      assert_eq!(base.kit_features(), ["web"]);
+      assert_eq!(base.kit_features(), ["web", "rpc", "http3"]);
       let full = base.db(Db::Pg).otel(true);
-      assert_eq!(full.kit_features(), ["web", "sql-pg", "migrate", "otel"]);
+      assert_eq!(
+        full.kit_features(),
+        ["web", "rpc", "http3", "sql-pg", "migrate", "otel"]
+      );
       let ops = Options::new("app", Template::Service)
         .jobs(true)
         .console(true);
-      assert_eq!(ops.kit_features(), ["web", "jobs", "console"]);
+      assert_eq!(
+        ops.kit_features(),
+        ["web", "rpc", "http3", "jobs", "console"]
+      );
     }
 
     #[test]

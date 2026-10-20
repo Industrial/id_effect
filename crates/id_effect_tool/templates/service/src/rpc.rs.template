@@ -1,0 +1,66 @@
+//! The service's RPC surface (ADR 0014): a `#[rpc::service]` served under `/rpc` next to the
+//! REST routes, over HTTP/1.1, HTTP/2 and HTTP/3 on the same port.
+//!
+//! Every procedure declares who may call it — `#[public]` or `#[guard(G)]` — or it does not
+//! compile. The contract (`Greeter::contract()`) is checked in as `rpc.contract.json`
+//! (`tests/rpc.rs` keeps it current: `UPDATE_GOLDEN=1 cargo test`), and the TypeScript client is
+//! generated from it: `id-effect rpc gen ts --contract rpc.contract.json --out web/src/rpc`.
+
+use id_effect::{DynEnv, Effect, fail, succeed};
+use id_effect_kit::rpc;
+use id_effect_kit::rpc::contract::Contract;
+
+/// The input of [`Greeter::greet`].
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+pub struct GreetRequest {
+    /// Who to greet (1 to 32 characters after trimming).
+    pub name: String,
+}
+
+/// The answer of [`Greeter::greet`].
+#[derive(Clone, Debug, PartialEq, id_effect::Schema)]
+pub struct Greeting {
+    /// The greeting.
+    pub message: String,
+}
+
+/// The typed errors of [`Greeter::greet`]: part of the contract, decoded by every client.
+#[derive(Debug, PartialEq, rpc::RpcErrorUnion)]
+pub enum GreetError {
+    /// The name is empty or longer than 32 characters.
+    #[rpc(status = 422)]
+    InvalidName {
+        /// The longest name accepted.
+        max: i64,
+    },
+}
+
+/// Greets callers; version 1 of the `Greeter` contract.
+#[rpc::service(version = 1)]
+pub trait Greeter {
+    /// A greeting for `name`; anyone may ask.
+    #[query]
+    #[public]
+    fn greet(&self, request: GreetRequest) -> Effect<Greeting, GreetError, DynEnv>;
+}
+
+/// The handlers of [`Greeter`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Greetings;
+
+impl Greeter for Greetings {
+    fn greet(&self, request: GreetRequest) -> Effect<Greeting, GreetError, DynEnv> {
+        let name = request.name.trim();
+        if name.is_empty() || name.chars().count() > 32 {
+            return fail(GreetError::InvalidName { max: 32 });
+        }
+        succeed(Greeting {
+            message: format!("hello, {name}"),
+        })
+    }
+}
+
+/// Every RPC service this app serves, as one contract document (`rpc.contract.json`).
+pub fn contract() -> Contract {
+    Contract::new().with_service(GreeterService::contract())
+}

@@ -1,0 +1,494 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 4891ec45..97af69c9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -242,6 +242,12 @@
+   postcard result through the procedure's typed codec (`415` without `WireSchema::with_serde`,
+   and for postcard server streams; batches stay JSON); `RpcClient::call_postcard`,
+   `client::http::decode_postcard_response`.
++- `id_effect_rpc` generated clients batch over HTTP (r12-f-client-batching, F27): the calls a
++  `#[rpc::service]` client makes over `HttpTransport` in the same tick go out as one batch, by
++  the rules of `RpcClient::call` (at most 50 calls / 1 MiB per request; a call alone is a plain
++  envelope), each call carrying its service version `v`. `RpcTransport::unary_effect`, a
++  defaulted hook the generated client runs from the caller's fiber (the default awaits `unary`;
++  `HttpTransport` overrides it); `HttpTransport`'s `unary` still sends one call on its own.
+ - `id_effect_rpc::channels` (feature `channels`, r12-e12-2-channels; ADR 0014 D3: a module, no
+   `id_effect_channels` crate): topics with join and leave, presence and broadcast across the
+   mesh. One hub process per node (`register_hub`, `Channels::builder().start_on_mesh(&mesh)`)
+diff --git a/crates/id_effect_rpc/src/client/http.rs b/crates/id_effect_rpc/src/client/http.rs
+index 1e34158d..9a8a0324 100644
+--- a/crates/id_effect_rpc/src/client/http.rs
++++ b/crates/id_effect_rpc/src/client/http.rs
+@@ -9,16 +9,18 @@
+ //! single call is a plain envelope. Every call gets its own result, decoded with its own
+ //! schema. [`RpcClient::call_unbatched`] opts a call out: it is sent at once, on its own.
+ 
++use std::any::{Any, TypeId};
++use std::collections::HashMap;
+ use std::convert::Infallible;
+ use std::hash::{Hash, Hasher};
+ use std::sync::atomic::{AtomicU64, Ordering};
+-use std::sync::{Arc, OnceLock};
++use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+ 
+ use id_effect::schema::Schema;
+ use id_effect::schema::data::EffectData;
+ use id_effect::{
+   BatchResults, Concurrency, Effect, Exit, HList, HNil, Request, RequestResolver, Selector, all,
+-  fail, need, succeed,
++  fail, from_async, need, succeed,
+ };
+ use id_effect_axum::route::Problem;
+ use id_effect_platform::error::HttpError;
+@@ -29,6 +31,7 @@ use super::{RPC_HEADER, RpcClient, RpcClientError};
+ use crate::serialization::{
+   RpcSerializationError, StructWireJson, decode_payload, encode_struct_fields,
+ };
++use crate::service::TransportError;
+ use crate::wire::{CallId, MAX_BATCH_BYTES, MAX_BATCH_CALLS, WireCall, WireExit, WireResult};
+ 
+ /// Most calls the client puts in one batch request (the server default).
+@@ -76,6 +79,7 @@ impl RpcClient {
+         url,
+         client: client.0.clone(),
+         tag,
++        version: None,
+         payload: Arc::new(payload),
+       };
+       // Every call is distinct (its `seq`): a request cache would only fill up.
+@@ -90,6 +94,34 @@ impl RpcClient {
+     })
+   }
+ 
++  /// Call `tag` of service version `version` with an encoded `payload` through `http`, in the
++  /// batch window of the calling fiber like [`call`](Self::call): the generated clients over
++  /// [`HttpTransport`](crate::service::HttpTransport) go through here, each batched call
++  /// carrying its `v`. The exit is left undecoded.
++  pub(crate) fn call_value<R: Send + Sync + 'static>(
++    &self,
++    http: &HttpClientService,
++    tag: String,
++    version: u32,
++    payload: Value,
++  ) -> Effect<WireExit, TransportError, R> {
++    let pending = Pending {
++      seq: NEXT_SEQ.fetch_add(1, Ordering::Relaxed),
++      url: Arc::from(self.config().url()),
++      client: http.0.clone(),
++      tag: Arc::from(tag),
++      version: Some(version),
++      payload: Arc::new(payload),
++    };
++    id_effect::request(pending, &batcher_in::<R>())
++      .with_request_caching(false)
++      .map_err(|never: Infallible| match never {})
++      .flat_map(|answer| match answer.into_transport() {
++        Ok(exit) => succeed(exit),
++        Err(e) => fail(e),
++      })
++  }
++
+   /// Call `tag` over postcard (feature `postcard`, design note §7): `payload` and the output
+   /// cross the wire as postcard bytes of their serde form, which the server reads with the
+   /// procedure's typed codec (`WireSchema::with_serde`); `A` and `B` serialize like the
+@@ -292,6 +324,23 @@ impl Answer {
+       Self::Http(err) => Err(RpcClientError::Http(err)),
+     }
+   }
++
++  /// The exit, or why the transport did not deliver it (as `HttpTransport::unary` reads it).
++  fn into_transport(self) -> Result<WireExit, TransportError> {
++    match self {
++      Self::Exit(exit) => Ok(exit),
++      Self::Refused(problem) => Err(TransportError::Refused {
++        status: problem.status.as_u16(),
++        problem: Some(problem),
++      }),
++      Self::Status(status) => Err(TransportError::Refused {
++        status,
++        problem: None,
++      }),
++      Self::Protocol(why) => Err(TransportError::Protocol(why)),
++      Self::Http(err) => Err(TransportError::Io(err.to_string())),
++    }
++  }
+ }
+ 
+ static NEXT_SEQ: AtomicU64 = AtomicU64::new(0);
+@@ -303,6 +352,8 @@ struct Pending {
+   url: Arc<str>,
+   client: Arc<dyn HttpClient>,
+   tag: Arc<str>,
++  /// The service version (`v`), sent when set.
++  version: Option<u32>,
+   payload: Arc<Value>,
+ }
+ 
+@@ -335,8 +386,39 @@ fn batcher() -> &'static RequestResolver<Pending> {
+   })
+ }
+ 
+-/// One request's calls: their index in the window, tag and payload.
+-type Chunk = Vec<(usize, Arc<str>, Arc<Value>)>;
++/// The batch window of [`RpcClient::call_value`] for callers in the environment `R` (a
++/// request joins the window of its own fiber, so the resolver is typed by the caller's env).
++fn batcher_in<R: Send + Sync + 'static>() -> RequestResolver<Pending, R> {
++  type Batchers = Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>;
++  static BATCHERS: OnceLock<Batchers> = OnceLock::new();
++  let fresh = || {
++    RequestResolver::<Pending, R>::make_batched(|calls| {
++      let n = calls.len();
++      let window = send_window(calls, CLIENT_BATCH_MAX_CALLS, CLIENT_BATCH_MAX_BYTES);
++      // The window's requests need no env: run them as their own root, under any `R`.
++      from_async(move || async move {
++        Ok(
++          match id_effect_axum::run_with_env(HNil, move |_| window).await {
++            Exit::Success(answers) => answers,
++            Exit::Failure(_) => vec![Ok(Answer::Protocol(NO_RESULT.to_owned())); n],
++          },
++        )
++      })
++    })
++  };
++  let mut batchers = BATCHERS
++    .get_or_init(Mutex::default)
++    .lock()
++    .unwrap_or_else(PoisonError::into_inner);
++  batchers
++    .entry(TypeId::of::<RequestResolver<Pending, R>>())
++    .or_insert_with(|| Box::new(fresh()))
++    .downcast_ref::<RequestResolver<Pending, R>>()
++    .map_or_else(fresh, Clone::clone)
++}
++
++/// One request's calls: their index in the window, tag, version and payload.
++type Chunk = Vec<(usize, Arc<str>, Option<u32>, Arc<Value>)>;
+ 
+ /// A client, a URL and the calls of one request to it.
+ type Outgoing = (Arc<dyn HttpClient>, Arc<str>, Chunk);
+@@ -349,8 +431,9 @@ fn chunks(calls: &[Pending], max_calls: usize, max_bytes: usize) -> Vec<Outgoing
+   let mut groups: Vec<Group> = Vec::new();
+   for (index, call) in calls.iter().enumerate() {
+     // A call's share of the array: its encoding, an id and a comma.
+-    let size =
+-      serde_json::to_vec(&WireCall::new(&*call.tag, &*call.payload)).map_or(0, |v| v.len()) + 16;
++    let size = serde_json::to_vec(&wire_call(&call.tag, call.version, &call.payload))
++      .map_or(0, |v| v.len())
++      + 16;
+     let at = match groups
+       .iter()
+       .position(|(client, url, ..)| Arc::ptr_eq(client, &call.client) && *url == call.url)
+@@ -371,7 +454,7 @@ fn chunks(calls: &[Pending], max_calls: usize, max_bytes: usize) -> Vec<Outgoing
+     }
+     *bytes += size;
+     if let Some(chunk) = requests.last_mut() {
+-      chunk.push((index, call.tag.clone(), call.payload.clone()));
++      chunk.push((index, call.tag.clone(), call.version, call.payload.clone()));
+     }
+   }
+   groups
+@@ -426,6 +509,15 @@ fn exits_by_position(results: Vec<WireResult>, len: usize) -> Vec<Answer> {
+     .collect()
+ }
+ 
++/// The envelope of one call, with its `v` when it has one.
++fn wire_call<'a>(tag: &'a str, version: Option<u32>, payload: &'a Value) -> WireCall<&'a Value> {
++  let call = WireCall::new(tag, payload);
++  match version {
++    Some(v) => call.with_version(v),
++    None => call,
++  }
++}
++
+ /// Send one request: a plain envelope for one call, a batch array for more.
+ fn send_chunk(
+   client: &dyn HttpClient,
+@@ -434,14 +526,14 @@ fn send_chunk(
+ ) -> Effect<Vec<(usize, Answer)>, Infallible, HNil> {
+   let single = chunk.len() == 1;
+   let encoded = if single {
+-    let (_, tag, payload) = &chunk[0];
+-    serde_json::to_vec(&WireCall::new(&**tag, &**payload))
++    let (_, tag, version, payload) = &chunk[0];
++    serde_json::to_vec(&wire_call(tag, *version, payload))
+   } else {
+     let calls: Vec<WireCall<&Value>> = chunk
+       .iter()
+       .zip(1_u64..)
+-      .map(|((_, tag, payload), id)| {
+-        let call = WireCall::new(&**tag, &**payload);
++      .map(|((_, tag, version, payload), id)| {
++        let call = wire_call(tag, *version, payload);
+         // At most a few thousand calls: far below 2^53.
+         match CallId::new(id) {
+           Ok(id) => call.with_id(id),
+@@ -628,6 +720,7 @@ mod tests {
+       url: Arc::from(url),
+       client: client.clone() as Arc<dyn HttpClient>,
+       tag: Arc::from("A.b"),
++      version: None,
+       payload: Arc::new(Value::String(text.to_owned())),
+     }
+   }
+@@ -662,7 +755,7 @@ mod tests {
+   fn answers(status: u16, body: &[u8], n: usize) -> Vec<(usize, Answer)> {
+     let client = mock(status, body);
+     let chunk: Chunk = (0..n)
+-      .map(|i| (i + 10, Arc::from("A.b"), Arc::new(Value::from(i))))
++      .map(|i| (i + 10, Arc::from("A.b"), None, Arc::new(Value::from(i))))
+       .collect();
+     let out = send_chunk(&*client, "http://h/rpc".to_owned(), chunk)
+       .block_on()
+@@ -683,6 +776,55 @@ mod tests {
+     out.ok().unwrap()
+   }
+ 
++  #[test]
++  fn answers_read_as_transport_results() {
++    let exit = Answer::of_response(200, br#"{"tag":"A.b","exit":{"_tag":"Success","value":1}}"#);
++    assert!(matches!(
++      exit.into_transport(),
++      Ok(WireExit::Success { .. })
++    ));
++    let problem = Answer::of_response(429, br#"{"status":429,"title":"Too Many Requests"}"#);
++    assert!(matches!(
++      problem.into_transport(),
++      Err(TransportError::Refused {
++        status: 429,
++        problem: Some(_)
++      })
++    ));
++    assert!(matches!(
++      Answer::Status(502).into_transport(),
++      Err(TransportError::Refused {
++        status: 502,
++        problem: None
++      })
++    ));
++    assert!(matches!(
++      Answer::Protocol(NO_RESULT.to_owned()).into_transport(),
++      Err(TransportError::Protocol(_))
++    ));
++    let http = Answer::Http(HttpError::InvalidRequest("no".to_owned()));
++    assert!(matches!(http.into_transport(), Err(TransportError::Io(_))));
++  }
++
++  #[test]
++  fn versioned_calls_carry_v_alone_and_batched() {
++    let client = mock(200, b"[]");
++    let chunk: Chunk = vec![
++      (0, Arc::from("A.b"), Some(2), Arc::new(Value::Null)),
++      (1, Arc::from("A.c"), None, Arc::new(Value::Null)),
++    ];
++    let _ = send_chunk(&*client, "http://h/rpc".to_owned(), chunk).block_on();
++    let req = client.last.lock().unwrap().clone().unwrap();
++    let sent: Value = serde_json::from_slice(req.body.as_deref().unwrap()).unwrap();
++    assert_eq!(sent[0]["v"], 2);
++    assert!(sent[1].get("v").is_none());
++    let one: Chunk = vec![(0, Arc::from("A.b"), Some(3), Arc::new(Value::Null))];
++    let _ = send_chunk(&*client, "http://h/rpc".to_owned(), one).block_on();
++    let req = client.last.lock().unwrap().clone().unwrap();
++    let sent: Value = serde_json::from_slice(req.body.as_deref().unwrap()).unwrap();
++    assert_eq!(sent["v"], 3);
++  }
++
+   #[test]
+   fn batch_responses_map_by_id_and_refusals_reach_every_call() {
+     let ok = br#"[{"id":2,"tag":"A.b","exit":{"_tag":"Success","value":"two"}},{"id":9,"tag":"A.b","exit":{"_tag":"Success","value":"x"}},{"tag":"A.b","exit":{"_tag":"Success","value":"x"}},{"id":1,"tag":"A.b","exit":{"_tag":"Failure","error":{"_tag":"Nope"}}}]"#;
+@@ -734,7 +876,7 @@ mod tests {
+ 
+   #[test]
+   fn transport_failures_reach_every_call_of_the_window() {
+-    let chunk: Chunk = vec![(0, Arc::from("A.b"), Arc::new(Value::Null)); 2];
++    let chunk: Chunk = vec![(0, Arc::from("A.b"), None, Arc::new(Value::Null)); 2];
+     let out = send_chunk(&Broken, "http://h".to_owned(), chunk)
+       .block_on()
+       .into_result()
+diff --git a/crates/id_effect_rpc/src/service.rs b/crates/id_effect_rpc/src/service.rs
+index 1bcde7b4..c7f5731e 100644
+--- a/crates/id_effect_rpc/src/service.rs
++++ b/crates/id_effect_rpc/src/service.rs
+@@ -77,7 +77,7 @@ use futures_util::future::{Either, select};
+ use http::HeaderMap;
+ use http::request::Parts;
+ use id_effect::schema::HasSchema;
+-use id_effect::{DynEnv, Effect, Never, Stream, fail, from_async};
++use id_effect::{DynEnv, Effect, Never, Stream, fail, from_async, succeed};
+ use id_effect_axum::route::Problem;
+ use serde_json::Value;
+ use tokio::sync::mpsc;
+@@ -451,6 +451,17 @@ pub trait RpcTransport: Clone + Send + Sync + 'static {
+   /// A query or mutation.
+   fn unary(&self, call: TransportCall) -> BoxFuture<Result<WireExit, TransportError>>;
+ 
++  /// [`unary`](Self::unary) as an effect of the calling fiber (what the generated client runs).
++  /// The default awaits `unary`; [`HttpTransport`] overrides it so that the calls a program
++  /// makes in the same tick join one batch window and go out as one request.
++  fn unary_effect<R: Send + Sync + 'static>(
++    &self,
++    call: TransportCall,
++  ) -> Effect<WireExit, TransportError, R> {
++    let this = self.clone();
++    from_async(move || this.unary(call))
++  }
++
+   /// A server stream.
+   fn server_stream(&self, call: TransportCall) -> BoxFuture<Result<FrameStream, TransportError>> {
+     unsupported(call.kind)
+@@ -699,7 +710,7 @@ pub use http_transport::HttpTransport;
+ 
+ #[cfg(feature = "client")]
+ mod http_transport {
+-  use id_effect::{Exit, HNil};
++  use id_effect::{Effect, Exit, HNil};
+   use id_effect_axum::route::Problem;
+   use id_effect_platform::http::{HttpClientService, HttpMethod, HttpRequest};
+ 
+@@ -708,8 +719,13 @@ mod http_transport {
+   use crate::wire::{WireCall, WireExit, WireResult};
+ 
+   /// Queries and mutations over `POST /rpc` (the [`WireCall`] envelope, `v` = the service
+-  /// version) through id_effect_platform's HTTP client. The stream kinds go over the WebSocket
+-  /// and SSE transports.
++  /// version) through id_effect_platform's HTTP client. The calls a generated client makes in
++  /// the same tick go out as one batch request, by the rules of
++  /// [`RpcClient::call`](crate::client::RpcClient::call) (at most
++  /// [`CLIENT_BATCH_MAX_CALLS`](crate::client::http::CLIENT_BATCH_MAX_CALLS) calls and
++  /// [`CLIENT_BATCH_MAX_BYTES`](crate::client::http::CLIENT_BATCH_MAX_BYTES) bytes; a call alone
++  /// is a plain envelope); [`RpcTransport::unary`] sends one at once, on its own. The stream
++  /// kinds go over the WebSocket and SSE transports.
+   #[derive(Clone)]
+   pub struct HttpTransport {
+     client: RpcClient,
+@@ -754,6 +770,15 @@ mod http_transport {
+   }
+ 
+   impl RpcTransport for HttpTransport {
++    fn unary_effect<R: Send + Sync + 'static>(
++      &self,
++      call: TransportCall,
++    ) -> Effect<WireExit, TransportError, R> {
++      self
++        .client
++        .call_value(&self.http, call.tag, call.version, call.payload)
++    }
++
+     fn unary(&self, call: TransportCall) -> BoxFuture<Result<WireExit, TransportError>> {
+       let wire = WireCall::new(call.tag, call.payload).with_version(call.version);
+       // A tag and a `serde_json::Value` always serialize.
+@@ -820,11 +845,13 @@ where
+     Err(why) => return fail(RpcCallError::Encode(why)),
+   };
+   let call = transport_call(tag, version, kind, payload);
+-  let transport = transport.clone();
+-  from_async(move || async move {
+-    let exit = transport.unary(call).await?;
+-    exit_output(exit, &output)
+-  })
++  transport
++    .unary_effect(call)
++    .map_err(RpcCallError::Transport)
++    .flat_map(move |exit| match exit_output(exit, &output) {
++      Ok(o) => succeed(o),
++      Err(e) => fail(e),
++    })
+ }
+ 
+ /// The decoded items of `frames` with their cursors; the `exit` frame ends the stream or fails
+diff --git a/crates/id_effect_rpc/tests/service_macro.rs b/crates/id_effect_rpc/tests/service_macro.rs
+index b715d2bf..5dba4843 100644
+--- a/crates/id_effect_rpc/tests/service_macro.rs
++++ b/crates/id_effect_rpc/tests/service_macro.rs
+@@ -596,6 +596,92 @@ async fn http_transport_carries_queries_and_mutations() {
+   assert!(err.to_string().contains("connection refused"));
+ }
+ 
++/// [`AxumHttp`] that keeps every request body it sends.
++struct Recording {
++  inner: AxumHttp,
++  bodies: Arc<std::sync::Mutex<Vec<Value>>>,
++}
++
++impl HttpClient for Recording {
++  fn execute(&self, req: HttpRequest) -> Effect<HttpResponse, HttpError> {
++    let body = serde_json::from_slice(req.body.as_deref().unwrap_or_default()).expect("json");
++    self.bodies.lock().unwrap().push(body);
++    self.inner.execute(req)
++  }
++
++  fn execute_stream(&self, req: HttpRequest) -> Effect<StreamingHttpResponse, HttpError> {
++    self.inner.execute_stream(req)
++  }
++}
++
++fn recorded() -> (
++  TodosClient<HttpTransport>,
++  Arc<std::sync::Mutex<Vec<Value>>>,
++) {
++  let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
++  let router = TodosService::mount(id_effect_axum::route::Router::new(), Store::default());
++  let app: axum::Router = router.with_state(DynEnv::new()).into_axum();
++  let app = app.layer(axum::middleware::from_fn(
++    |mut req: axum::extract::Request, next: axum::middleware::Next| async move {
++      req
++        .headers_mut()
++        .insert("x-staff", HeaderValue::from_static("yes"));
++      next.run(req).await
++    },
++  ));
++  let http = Recording {
++    inner: AxumHttp { app, down: false },
++    bodies: bodies.clone(),
++  };
++  let transport = HttpTransport::new(
++    RpcClient::new("http://rpc.test"),
++    HttpClientService::new(http),
++  );
++  (TodosService::client(transport), bodies)
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn generated_client_batches_same_tick_calls() {
++  let (client, bodies) = recorded();
++  let both = id_effect::all(
++    vec![
++      client.get(1).map(|t| t.title),
++      client.add(NewTodo { title: "z".into() }).map(|t| t.title),
++    ],
++    id_effect::Concurrency::Unbounded,
++  );
++  assert_eq!(run(both).await.unwrap(), ["milk", "z"]);
++  let sent = bodies.lock().unwrap().clone();
++  assert_eq!(sent.len(), 1, "one request: {sent:?}");
++  let calls = sent[0].as_array().expect("a batch array");
++  let mut tags: Vec<_> = calls
++    .iter()
++    .map(|c| (c["tag"].to_string(), c["v"].clone()))
++    .collect();
++  tags.sort_by(|a, b| a.0.cmp(&b.0));
++  assert_eq!(
++    tags,
++    [
++      ("\"Todos.add\"".to_owned(), json!(1)),
++      ("\"Todos.get\"".to_owned(), json!(1))
++    ]
++  );
++}
++
++#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
++async fn generated_client_lone_call_is_plain_envelope() {
++  let (client, bodies) = recorded();
++  assert_eq!(
++    run(client.get(8)).await.unwrap_err().typed(),
++    Some(&TodoError::NotFound { id: 8 })
++  );
++  let sent = bodies.lock().unwrap().clone();
++  assert_eq!(sent.len(), 1);
++  assert_eq!(sent[0]["tag"], "Todos.get");
++  assert_eq!(sent[0]["v"], 1);
++  assert_eq!(sent[0]["payload"], 8);
++}
++
+ // ---------------------------------------------------------------------------------------------
+ // Wire faults on the client side
+ // ---------------------------------------------------------------------------------------------

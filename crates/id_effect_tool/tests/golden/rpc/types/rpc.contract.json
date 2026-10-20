@@ -1,0 +1,295 @@
+{
+	"format": "id-effect.rpc.contract/1",
+	"services": [
+		{
+			"name": "Kitchen-Sink",
+			"version": 3,
+			"procedures": [
+				{
+					"name": "every_shape",
+					"kind": "query",
+					"access": {
+						"guarded": {
+							"policies": ["staff", "audited"]
+						}
+					},
+					"input": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "object",
+						"description": "All of them.\nOn two lines, with a */ inside.",
+						"properties": {
+							"brand": {
+								"$ref": "#/$defs/shop::UserId"
+							},
+							"count": {
+								"$ref": "#/$defs/shop::Count"
+							},
+							"when": {
+								"$ref": "#/$defs/shop::Instant"
+							},
+							"day": {
+								"$ref": "#/$defs/shop::Day"
+							},
+							"color": {
+								"enum": ["red", "green", 1, null]
+							},
+							"fixed": {
+								"const": "v1"
+							},
+							"pair": {
+								"type": "array",
+								"prefixItems": [
+									{
+										"type": "integer"
+									},
+									{
+										"type": "string"
+									}
+								],
+								"items": false,
+								"minItems": 2,
+								"maxItems": 2
+							},
+							"scores": {
+								"type": "object",
+								"additionalProperties": {
+									"type": "number"
+								}
+							},
+							"a_item": {
+								"$ref": "#/$defs/a::Item"
+							},
+							"b_item": {
+								"$ref": "#/$defs/b::Item"
+							},
+							"tree": {
+								"$ref": "#/$defs/shop::Tree"
+							},
+							"kw": {
+								"$ref": "#/$defs/m::type"
+							},
+							"both": {
+								"allOf": [
+									{
+										"$ref": "#/$defs/a::Item"
+									},
+									{
+										"type": "object",
+										"properties": {
+											"extra": {
+												"type": "boolean"
+											}
+										}
+									}
+								]
+							},
+							"open": {
+								"type": "object",
+								"properties": {
+									"known": {
+										"type": "string"
+									}
+								},
+								"additionalProperties": {
+									"type": "string"
+								}
+							},
+							"x-dashed": {
+								"type": ["string", "null"],
+								"description": "A dashed name."
+							},
+							"anything": {},
+							"nums": {
+								"type": "array",
+								"items": {
+									"anyOf": [
+										{
+											"type": "integer"
+										},
+										{
+											"type": "null"
+										}
+									]
+								}
+							}
+						},
+						"required": [
+							"brand",
+							"count",
+							"when",
+							"color",
+							"pair",
+							"scores",
+							"a_item",
+							"b_item",
+							"tree",
+							"kw",
+							"both",
+							"open",
+							"nums"
+						],
+						"$defs": {
+							"shop::UserId": {
+								"type": "string",
+								"minLength": 1,
+								"description": "A user."
+							},
+							"shop::Count": {
+								"type": "integer",
+								"minimum": 0
+							},
+							"shop::Instant": {
+								"type": "string",
+								"format": "date-time"
+							},
+							"shop::Day": {
+								"type": "string",
+								"format": "date"
+							},
+							"a::Item": {
+								"type": "object",
+								"properties": {
+									"a": {
+										"type": "string"
+									}
+								},
+								"required": ["a"]
+							},
+							"b::Item": {
+								"type": "object",
+								"properties": {
+									"b": {
+										"type": "integer"
+									}
+								},
+								"required": ["b"]
+							},
+							"shop::Tree": {
+								"type": "object",
+								"properties": {
+									"label": {
+										"type": "string"
+									},
+									"children": {
+										"type": "array",
+										"items": {
+											"$ref": "#/$defs/shop::Tree"
+										}
+									}
+								},
+								"required": ["label", "children"]
+							},
+							"m::type": {
+								"type": "object",
+								"properties": {
+									"page": {
+										"$ref": "#/$defs/x::Page"
+									}
+								}
+							},
+							"x::Page": {
+								"type": "object",
+								"properties": {
+									"size": {
+										"type": "integer"
+									}
+								},
+								"required": ["size"]
+							}
+						}
+					},
+					"output": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "boolean"
+					},
+					"error": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"_tag": {
+										"const": "Denied"
+									},
+									"reason": {
+										"type": "string"
+									}
+								},
+								"required": ["_tag", "reason"]
+							},
+							{
+								"type": "object",
+								"properties": {
+									"_tag": {
+										"const": "Busy"
+									},
+									"retry_after": {
+										"anyOf": [
+											{
+												"type": "integer"
+											},
+											{
+												"type": "null"
+											}
+										]
+									}
+								},
+								"required": ["_tag"]
+							}
+						]
+					},
+					"description": "Takes every schema shape."
+				},
+				{
+					"name": "page",
+					"kind": "server_stream",
+					"access": {
+						"public": {}
+					},
+					"input": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "null"
+					},
+					"output": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"$ref": "#/$defs/x::Page",
+						"$defs": {
+							"x::Page": {
+								"type": "object",
+								"properties": {
+									"size": {
+										"type": "integer"
+									},
+									"cursor": {
+										"type": "string"
+									}
+								},
+								"required": ["size", "cursor"]
+							}
+						}
+					},
+					"error": null,
+					"description": "Pages of another build's `x::Page`.",
+					"deprecated": true
+				},
+				{
+					"name": "upload",
+					"kind": "client_stream",
+					"access": {
+						"public": {}
+					},
+					"input": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "string"
+					},
+					"output": {
+						"$schema": "https://json-schema.org/draft/2020-12/schema",
+						"type": "integer"
+					},
+					"error": null,
+					"max_items": 10,
+					"max_bytes": 1024
+				}
+			]
+		}
+	]
+}

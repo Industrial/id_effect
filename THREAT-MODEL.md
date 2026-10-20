@@ -9,7 +9,10 @@ reason).
 
 Status is as of `release/0.11.0` at 6c0053aa (the 0.11 exit sweep, 2026-10-19; first written at
 0f615124). Each release re-checks every row
-(see [Maintenance](#maintenance)). To report a vulnerability, follow [SECURITY.md](SECURITY.md).
+(see [Maintenance](#maintenance)). The call surface of 0.12 (B9: RPC over HTTP, WebSocket, SSE,
+HTTP/3, WebTransport and the mesh; the shared QUIC endpoint; ACME) is as of `release/0.12.0` at
+the r12-e12-5-fuzz-security leaf (2026-10-19), against ADR 0014's rules C1–C15. To report a
+vulnerability, follow [SECURITY.md](SECURITY.md).
 
 ## Scope and method
 
@@ -57,6 +60,7 @@ registry.
 | B6 | Data: SQL, Redis, secrets and logs | Query text and values, stored data, log readers | `id_effect_sql`, `id_effect_redis`, `id_effect_config` (`secret.rs`), `id_effect_logger` |
 | B7 | Outbound HTTP | The URLs a service is asked to call and the servers it calls | `id_effect_platform` (`http/**`), `id_effect_mail` (SendGrid), `id_effect_auth` (JWKS, OIDC discovery) |
 | B8 | Supply chain | Contributors, dependencies, CI, the registry | `.github/workflows/**`, `deny.toml`, `Cargo.lock`, the publish workflow |
+| B9 | Call surface (0.12) | Every RPC envelope, batch, frame, cursor and `Last-Event-ID` a client or peer sends; the QUIC datagrams of the shared endpoint | `id_effect_rpc` (`server/**`, `batch.rs`, `codec/**`, `transport/**`, `resume.rs`, `idempotency.rs`, `channels/**`), `id_effect_axum` (`realtime/**`, `server/h3.rs`, `server/tls.rs`), `id_effect_platform` (`quic/**`, `tls/**`) |
 
 ADR 0009 ("Process mesh", non-goals) fixes one assumption that bounds B4: the cookie boundary
 assumes a **trusted cluster**. Members that hold the cookie are trusted; the mesh does not defend
@@ -167,6 +171,44 @@ RUSTSEC-2026-0248 unmaintained) with `bitmaps` and `sized-chunks` through it, us
 `id_effect_node`; `unsafe-libyaml` via `serde_yaml` ← `figment` ← `id_effect_config`. Each is open
 debt until the dependency is replaced.
 
+## B9 — Call surface (0.12)
+
+[ADR 0014](docs/adrs/0014-one-call-surface.md) makes RPC the first-party call surface. Its
+assets are the procedures a service exposes (and what they read and change), the principal each
+call runs as, resume sessions and their replay buffers, the idempotency store, channel topics and
+presence, and the endpoint's capacity. Its entry points are `POST /rpc` (one call or a batch),
+`GET /rpc/{tag}` (queries, SSE streams), `GET /rpc/ws` (every kind over WebSocket frames), HTTP/3
+on the shared QUIC endpoint (the same `Router`), WebTransport sessions, and mesh RPC between
+nodes. Every row below is one of ADR 0014's rules C1–C15 or a follow-up of the 0.12 plan (F*n*);
+the call-surface proof is `crates/id_effect_rpc/tests/security_surface.rs`, which fails when a
+test the release spec's Security table names disappears, when a 0.12 `dangerous_*` opt-out is
+unlisted or not recorded, and runs the Origin, `x-rpc`, batch and call-cap cases against one
+server.
+
+| STRIDE | Threat | Mitigation | Rule | Test or gate | Status |
+|---|---|---|---|---|---|
+| E | A procedure nobody decided about serves anonymous callers. | `#[rpc::service]` refuses a procedure without `#[public]` or `#[guard(G)]` at compile time; the low-level `RpcGroup` takes only `Procedure`s in the decided typestate (as H8 routes); an unknown tag is a 404 Problem (C1). | R1 | compile-fail `r1_rpc_procedure_without_access_decision` (`tests/security_compile_fail`); `rpc_unregistered_tag_is_404_problem`, `rpc_group_requires_access_decision` (`crates/id_effect_rpc/tests/access.rs`) | mitigated |
+| T | Cross-site request forgery on a cookie-authenticated `POST` (a form or a `fetch` without preflight). | Every `POST` to the RPC surface, single call or batch, needs `x-rpc: 1` (a custom header no form can send and a cross-origin `fetch` cannot add without a CORS preflight) and `Content-Type: application/json` or the postcard media type; a form content type is refused; the 0.11 CSRF layer still applies (C5). | R9 | `r9_rpc_mutation_without_custom_header_refused`, `r9_rpc_form_content_type_refused` (`tests/kinds_http.rs`); `cross_crate_cases_against_one_server` (`tests/security_surface.rs`) | mitigated |
+| E | One refused call hides in a batch beside calls that run (F28). | Every call's guards run, outermost first, before any call of the batch runs; a refusal answers the **whole** batch with the guard's own response and `x-rpc-batch-index: <i>` naming the refused call, so no call of a batch runs beside a refused one (`crates/id_effect_rpc/src/batch.rs`). | R1 | `batch_results_in_request_order_each_fails_alone` (`tests/batching.rs`); `cross_crate_cases_against_one_server` | mitigated |
+| D | Batch amplification: one request, many calls. | At most 50 calls and 1 MiB per batch, both checked before any element is decoded (`wire::decode_batch` counts first, 413 Problem); a batch of N calls costs N rate-limit tokens; calls run with bounded parallelism through the server's admission controller (C2). | R4 | `r4_batch_over_limit_rejected_413`, `r4_batch_charges_n_rate_limit_tokens` (`tests/batching.rs`); fuzz target `rpc_batch` | mitigated |
+| T, R | An anonymous caller replays or poisons another anonymous caller's idempotency key. | Keys are scoped `(principal, tag@version, key)`; all anonymous callers share one principal, so their keys are also scoped by client IP (through the 0.10.1 trusted-proxy rules) and must be at least 16 characters; a key reused with another payload, or still running, is a 409; the store is bounded (24 h, 100,000 keys) (D14, `crates/id_effect_rpc/src/idempotency.rs`). | R4 | `idempotency_replay_is_scoped_for_anonymous_callers`, `mutation_idempotency_key_replays_result` (`tests/kinds_http.rs`), `batch_mutations_keep_idempotency_key_semantics` (`tests/batching.rs`) | mitigated (residual: shared NAT, below) |
+| S | Cross-site WebSocket hijacking: a page on another site opens a socket with the user's cookies. | `Origin` is checked on every WebSocket upgrade (and WebTransport CONNECT) against an allowlist; the default list is empty and refuses every browser origin (a look-alike suffix is foreign); the dev profile allows the local origins by configuration; `dangerous_any_origin` is recorded (C4). | R9, R10 | `r9_ws_upgrade_from_foreign_origin_refused`, `dangerous_any_origin_is_recorded` (`crates/id_effect_axum/tests/ws.rs`); `r9_webtransport_connect_from_foreign_origin_refused` (r12-e12-3-webtransport); `cross_crate_cases_against_one_server` | mitigated |
+| D | Stream and connection exhaustion over WebSocket and SSE. | At most 100 open calls per connection (`ResourceExhausted{calls}`), 64 KiB frames (close 1009), a message rate per socket, idle timeout and heartbeats, credit windows of 32 both ways (sending past credits fails the call), SSE streams capped per client (C3). | R4 | `r4_ws_streams_per_connection_capped`, `r4_ws_frame_over_max_closes_1009`, `sse_streams_are_capped_per_client`; `cross_crate_cases_against_one_server` | mitigated |
+| S, E | Resume hijack: another client adopts a session and reads its streams. | Session ids are 128 random bits; a resume is adopted only as the first thing on a connection and only when the connection's principal is the session's; another principal gets `ResumeExpired`, the same answer as an unknown session (counted and warned); every resumed call runs its guards again; detached sessions are released after retention (30 s) and buffers are bounded (1,024 messages, 1 MiB) (C8). | R1, R4 | `resume_under_another_principal_refused`, `resumed_calls_run_their_guards_again`, `resume_after_buffer_overrun_is_expired` (`tests/resume_property.rs`); fuzz target `rpc_resume_cursor` | mitigated |
+| T, D | Hostile payloads: deep nesting, huge length prefixes, zero-sized element floods, malformed cursors and `Last-Event-ID`s. | Schema decode at the boundary; size caps before buffering; the postcard decoder refuses input over 64 KiB before decoding, limits nesting to 64 and the elements of all sequences to a budget proportional to the input's size (zero-sized elements included), never preallocates from a length prefix and refuses trailing bytes; cursors are at most 64 bytes with one spelling; `Last-Event-ID` at most 256 bytes without CR, LF or NUL, and must decode as a cursor (400 otherwise) (C9). | R4 | fuzz targets `rpc_wire_request`, `rpc_batch`, `rpc_postcard_frame`, `rpc_duplex_frame`, `rpc_resume_cursor`, `sse_last_event_id` ([docs/security/fuzzing.md](docs/security/fuzzing.md)); `unknown_codec_is_415` (`tests/codec.rs`) | mitigated |
+| I | Error leakage: a defect's message or a backtrace reaches the client. | Typed errors are the contract; a defect becomes `InternalError { id }` with the correlation id only (C10). | R3 | `defect_becomes_internal_error_without_message` (`tests/errors.rs`) | mitigated |
+| E | Anyone joins any channel topic and reads its broadcasts and presence. | Joining goes through a `JoinPolicy`; the default denies; `dangerous_allow_all_joins` is recorded (C11). | R1, R10 | `channel_join_denied_by_default_policy` (`tests/channels_three_nodes.rs`) | mitigated |
+| I | The contract documents map the attack surface for anonymous callers. | `/rpc/openapi.json`, `/rpc/asyncapi.json` and `/rpc/_contract` are closed in prod unless guarded; `ContractDocs::public_dangerous` is recorded (C12). | R7, R10 | `r7_rpc_docs_closed_in_prod` | mitigated |
+| S | Mesh RPC from an unverified origin: a message that did not come through an authenticated session runs a procedure as some node. | `MeshRpc::ingress` (the receiving side of the mesh connections) stamps every message for an RPC process with the node of the authenticated session, under a 256-bit key that never leaves the node; a message that bypassed the ingress or forged a stamp is dropped; the verified node is the call's principal (`mesh:<node>`), and nothing of the calling node's own callers crosses (`crates/id_effect_rpc/src/transport/mesh.rs`). F33: channels session links (`channels::attach_session_rpc`) and in-memory links now pump through the ingress, so mesh RPC works over them; `attach_session` alone still drops RPC calls as unverified (fails closed) (123f0431). | R1, R8 | `mesh_calls_bypassing_the_ingress_are_dropped`, `mesh_guards_see_the_calling_node_not_its_users`, `mesh_rpc_over_an_authenticated_session`, `mesh_rpc_over_a_channels_session_link` (`tests/mesh_rpc.rs`) | mitigated (F33 closed 123f0431) |
+| S | A host that is not a cluster member reaches the mesh on the shared QUIC endpoint (one UDP port for `h3` and `idm/1`), where the handshake cannot require a client certificate (D7). | When both ALPNs share an endpoint, the server requests a client certificate as optional with no CA hints; a presented certificate is still verified against the cluster CA in the handshake; the `idm/1` route **refuses any connection without a verified client chain before reading a frame**; `h3` ignores client certificates; `quic.mesh_port` splits the mesh onto its own endpoint with handshake-level mutual TLS (C14). | R8 | `idm_without_client_cert_refused_on_shared_endpoint`, `idm_cert_from_other_ca_refused_on_shared_endpoint`, `mesh_port_splits_endpoint` (`crates/id_effect_node/tests/shared_endpoint.rs`), `required_route_refuses_unverified_clients_before_the_handler` (`crates/id_effect_platform/tests/quic_endpoint.rs`) | mitigated (residual: weaker shape, below) |
+| D, S | QUIC amplification and spoofed sources; an endpoint held open by one peer. | Address validation (Retry) on, with quinn's anti-amplification limit; finite stream credits, windows, handshake and idle timeouts and a bounded backlog of pending handshakes; `dangerous_no_retry` and `dangerous_raise_limits` are recorded (C3, C6). | R4, R8, R10 | `r4_quic_retry_on_by_default`, `r4_quic_limits_finite_by_default`, `pending_handshakes_are_bounded_and_timed_out` (`crates/id_effect_platform/tests/quic_endpoint.rs`); posture probe "quic retry on" (r12-w6-kit-template) | mitigated |
+| T | 0-RTT replay: early data captured and replayed runs a mutation twice. | 0-RTT is off: the endpoint accepts no early data and hands connections over only after the handshake. `Http3Options::dangerous_allow_zero_rtt_for_queries` (recorded) admits early requests with safe methods only (`GET`, `HEAD`, `OPTIONS`: RPC queries); no opt-out exists for mutations (C7). | R1, R10 | compile-fail `r10_zero_rtt_on_mutation`; `zero_rtt_off_by_default` (`crates/id_effect_axum/tests/http3.rs`), `zero_rtt_is_refused` (`quic_endpoint.rs`); `every_0_12_opt_out_is_listed_and_recorded` (`security_surface.rs`) | mitigated |
+| D, S | HTTP/3 bypasses the TCP edge: limits, client IP, guards. | The h3 adapter serves the same axum `Router`, so every route, middleware, guard and RPC endpoint applies unchanged; request limits mirror `ConnectionLimits` (connection cap, header timeout, requests per connection, concurrent streams, 64 KiB header sections); the client IP is the QUIC peer address through the 0.10.1 trusted-proxy rules. | R1, R4 | `h3_serves_typed_routes_unchanged`, `h3_middleware_and_guards_apply`, `h3_client_ip_from_quic_peer`, `h3_connection_cap_holds_further_connections`, `h3_header_timeout_closes_silent_connections_and_streams` (`crates/id_effect_axum/tests/http3.rs`); CI job `http3-conformance` | mitigated |
+| S, D | WebTransport sessions (r12-e12-3-webtransport): cross-site sessions, held-open sessions, oversized records. | The CONNECT is a typed route; its `Origin` is checked against the same `OriginPolicy` (empty by default: 403); sessions are capped (10,000 per endpoint, 16 per client IP, one per connection); QUIC datagrams stay off unless the endpoint serving WebTransport asks (`webtransport::quic_limits`, 64 KiB, at most 1 MiB without `dangerous_raise_limits`); calls share the WebSocket transport's limits, guards and principal-bound resume store; records over 64 KiB are refused from the length prefix; a ping heartbeat closes silent sessions. | R4, R9 | `r9_webtransport_connect_from_foreign_origin_refused`, `streams_that_break_the_rules_close_the_session`, `the_heartbeat_pings_and_closes_silent_sessions` (`crates/id_effect_rpc/tests/transport_webtransport.rs`) | mitigated |
+| D | TLS and HTTP/2 on TCP (D10): slow handshakes, stream floods. | The 0.11 connection limits apply to TLS and HTTP/2: a TLS handshake timeout and a concurrent-stream cap, each with a recorded opt-out (`dangerous_no_tls_handshake_timeout`, `dangerous_unlimited_concurrent_streams`); an HTTP/2 connection goes away after the per-connection request cap. HTTP/2 idle connections: see F14 below. | R4, R10 | `tls_handshake_timeout_closes_slow_client`, `h2_concurrent_streams_capped`, `h2_connection_goes_away_after_max_requests` (`crates/id_effect_axum/tests/tls_h2.rs`) | mitigated (residual F14) |
+| S, T, I | ACME (D8): a forged challenge answer, a leaked account key, an outage on a failed renewal. | TLS-ALPN-01 only (`acme-tls/1` answered by the rustls resolver on the TCP TLS listener; a connection that negotiated it is closed right after the handshake); account credentials and the certificate key in a 0700 cache directory with mode 0600 (looser modes tightened at start), held as `Secret` in memory, never in `Debug` or logs; renewal at two thirds of the lifetime with jitter; a failed order keeps the current certificate. | R2, R4, R8 | `acme_issues_and_renews_against_pebble`, `acme_reuses_valid_authorizations_against_pebble`, `acme_failure_against_pebble_keeps_current_cert` (`crates/id_effect_platform/tests/acme_pebble.rs`, pinned Pebble container) | mitigated |
+| E | The `id-effect dev` certificate reaches production. | The prod profile refuses it (C13). | R10 | `posture_prod_refuses_dev_certificate` (r12-w6-kit-template) | open (wave 6) |
+
 ## Accepted risks
 
 ### L6 — rsa 0.9 (RUSTSEC-2023-0071, Marvin attack)
@@ -225,6 +267,35 @@ nobody reads "closed" as "nothing left to do".
   sender that restarts forgets what it sent, so handlers must be idempotent where a message can
   arrive twice; delivery is to the receiving node, and a message whose target is gone or whose
   mailbox is full is dropped (counted) and still acknowledged (ADR 0009, Amendment 1).
+- **HTTP/2 idle connections (F14).** hyper exposes no HTTP/2 idle-connection timeout, so there is
+  no `dangerous_*` opt-out to loosen one either: an idle but live HTTP/2 connection (one that
+  answers pings) is bounded only by the connection cap (`ConnectionLimits`, 10,000 by default),
+  the per-connection request cap and the dead-peer keep-alive pings, which close a peer that
+  stopped answering. A client can therefore hold up to the connection cap of idle HTTP/2
+  connections open. Revisit when hyper adds an idle timeout (then add it with its opt-out);
+  meanwhile deployments that face the internet keep the connection cap and a per-IP limit in
+  front, or terminate HTTP/2 at a load balancer with an idle timeout.
+- **Mutual TLS after the handshake on the shared QUIC endpoint (D7).** On the shared shape the
+  `idm/1` route checks the client chain before reading any frame, not the handshake itself; a
+  non-member completes a QUIC handshake (bounded by the handshake limits) before it is refused,
+  and browsers with installed client certificates may show a picker. `quic.mesh_port` restores
+  handshake-level mutual TLS.
+- **0-RTT opt-out not yet on the wire.** `dangerous_allow_zero_rtt_for_queries` is recorded and
+  decides by method, but the platform endpoint does not offer early data yet, so the opt-out
+  changes nothing until it does; when it does, only handlers that are idempotent and reveal
+  nothing a replay could exploit may sit behind safe methods.
+- **Anonymous idempotency behind a shared address.** Anonymous callers' keys are scoped by client
+  IP; callers behind one NAT or proxy (without `TrustedProxies`) share that scope, so one of them
+  who learns another's key (16 characters or more) can read the stored result. Authenticate
+  callers of mutations whose results matter, or use unguessable keys.
+- **Two-way stream input across a reconnect.** Client items in flight when a socket drops are
+  not replayed: input is at most once across a resume (ch33.7); applications that need exactly
+  once make the handler idempotent.
+- **Server streams over SSE are served on `GET`.** They must not change state (an SSE `GET`
+  carries no `x-rpc` header and is re-run with its guards on every reconnect).
+- **`channels::attach_session` without RPC.** It drops mesh RPC calls as unverified (fails
+  closed); a node that serves mesh RPC over a channels session link attaches it with
+  `attach_session_rpc` (F33).
 - **Owner actions (D15).** Trusted publisher on every crate, deletion of `CARGO_REGISTRY_TOKEN`
   after the first trusted publish (S3), a registered tag-signing key and "require signed commits"
   on protected branches (S6) are repository settings the owner does; status in

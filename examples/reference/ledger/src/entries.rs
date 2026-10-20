@@ -536,12 +536,46 @@ fn list(
 ) -> Effect<Json<EntryList>, ApiError, AppEnv> {
   let app = Arc::clone(&env.0);
   as_caller(&caps, move |caller| {
-    repository::<JournalEntry>(caller.org())
-      .on(Arc::clone(&app.db))
-      .find_page(Expr::col("id").gt(0), input.query)
-      .map(|entries| Json(EntryList { entries }))
-      .map_err(ApiError::from)
+    list_entries(&app, &caller, input.query).map(Json)
   })
+}
+
+/// The entry headers of the caller's organisation in `page`, by id (`GET /entries`,
+/// `Ledger.entries`).
+pub fn list_entries(app: &App, caller: &Caller, page: Page) -> Effect<EntryList, ApiError> {
+  repository::<JournalEntry>(caller.org())
+    .on(Arc::clone(&app.db))
+    .find_page(Expr::col("id").gt(0), page)
+    .map(|entries| EntryList { entries })
+    .map_err(ApiError::from)
+}
+
+/// The entry `id` of the caller's organisation with its lines; `404` for any other
+/// (`GET /entries/{id}`, `Ledger.entry`).
+pub fn find_entry(app: &App, caller: &Caller, id: i64) -> Effect<PostedEntry, ApiError> {
+  let lines = repository::<Posting>(caller.org())
+    .on(Arc::clone(&app.db))
+    .find_by(Expr::col("entry_id").eq(id));
+  repository::<JournalEntry>(caller.org())
+    .on(Arc::clone(&app.db))
+    .find(id)
+    .zip(lines)
+    .map_err(ApiError::from)
+    .flat_map(|(header, lines)| match header {
+      None => fail(ApiError::NotFound("journal entry")),
+      Some(header) => succeed(PostedEntry {
+        id: header.id,
+        memo: header.memo,
+        posted_by: header.posted_by,
+        lines: lines
+          .into_iter()
+          .map(|p| Line {
+            account_id: p.account_id,
+            amount: p.amount,
+          })
+          .collect(),
+      }),
+    })
 }
 
 fn show(
@@ -551,31 +585,7 @@ fn show(
 ) -> Effect<Json<PostedEntry>, ApiError, AppEnv> {
   let app = Arc::clone(&env.0);
   let id = input.path;
-  as_caller(&caps, move |caller| {
-    let lines = repository::<Posting>(caller.org())
-      .on(Arc::clone(&app.db))
-      .find_by(Expr::col("entry_id").eq(id));
-    repository::<JournalEntry>(caller.org())
-      .on(Arc::clone(&app.db))
-      .find(id)
-      .zip(lines)
-      .map_err(ApiError::from)
-      .flat_map(|(header, lines)| match header {
-        None => fail(ApiError::NotFound("journal entry")),
-        Some(header) => succeed(Json(PostedEntry {
-          id: header.id,
-          memo: header.memo,
-          posted_by: header.posted_by,
-          lines: lines
-            .into_iter()
-            .map(|p| Line {
-              account_id: p.account_id,
-              amount: p.amount,
-            })
-            .collect(),
-        })),
-      })
-  })
+  as_caller(&caps, move |caller| find_entry(&app, &caller, id).map(Json))
 }
 
 /// `/entries` routes.

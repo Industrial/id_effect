@@ -1,7 +1,7 @@
-error[E0599]: no method named `public` found for struct `id_effect_kit::prelude::Route<Undeclared, Undeclared, Undeclared, Undeclared, id_effect_kit::prelude::Guarded>` in the current scope
+error[E0599]: no method named `public` found for struct `id_effect_kit::prelude::Route<id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::prelude::Guarded>` in the current scope
   --> ui/h8_public_and_guard_together.rs:26:65
    |
 26 |   let _ = Router::new().route(Route::get("/admin").guard(Admin).public().handler(hello));
-   |                                                                 ^^^^^^ method not found in `id_effect_kit::prelude::Route<Undeclared, Undeclared, Undeclared, Undeclared, id_effect_kit::prelude::Guarded>`
+   |                                                                 ^^^^^^ method not found in `id_effect_kit::prelude::Route<id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::id_effect_axum::route::Undeclared, id_effect_kit::prelude::Guarded>`
    |
    = note: the method was found for `id_effect_kit::prelude::Route<P, Q, H, B>`

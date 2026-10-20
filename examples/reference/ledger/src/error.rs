@@ -109,26 +109,81 @@ fn problem(status: StatusCode, detail: impl Into<String>) -> Response {
   Problem::new(status).with_detail(detail).into_response()
 }
 
-fn sql_response(err: &SqlError) -> Response {
+/// What a database failure means to the client: its status and the detail it is told.
+fn sql_meaning(err: &SqlError) -> (StatusCode, &'static str) {
   match err {
-    SqlError::RowNotFound => problem(StatusCode::NOT_FOUND, "not found"),
-    SqlError::StaleVersion { .. } => problem(
+    SqlError::RowNotFound => (StatusCode::NOT_FOUND, "not found"),
+    SqlError::StaleVersion { .. } => (
       StatusCode::CONFLICT,
       "changed by another request since it was read; reload it and retry",
     ),
     other => match sqlstate(other) {
-      Some("23505") => problem(StatusCode::CONFLICT, "already exists"),
-      Some("23503") => problem(
+      Some("23505") => (StatusCode::CONFLICT, "already exists"),
+      Some("23503") => (
         StatusCode::UNPROCESSABLE_ENTITY,
         "refers to something that does not exist",
       ),
-      Some("23514") => problem(StatusCode::UNPROCESSABLE_ENTITY, "violates a ledger rule"),
-      Some("40001" | "40P01") => problem(
+      Some("23514") => (StatusCode::UNPROCESSABLE_ENTITY, "violates a ledger rule"),
+      Some("40001" | "40P01") => (
         StatusCode::CONFLICT,
         "lost a conflict with concurrent postings; retry",
       ),
-      _ => problem(StatusCode::INTERNAL_SERVER_ERROR, "database error"),
+      _ => (StatusCode::INTERNAL_SERVER_ERROR, "database error"),
     },
+  }
+}
+
+fn sql_response(err: &SqlError) -> Response {
+  let (status, detail) = sql_meaning(err);
+  problem(status, detail)
+}
+
+impl ApiError {
+  /// The status and the `detail` of the Problem this error answers with (`into_response`): what
+  /// the RPC surface reports as its typed error ([`crate::rpc::LedgerError`]). A server fault
+  /// says only `internal error` (or `database error`).
+  pub fn status_detail(&self) -> (StatusCode, String) {
+    let status =
+      |code: u16| StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    match self {
+      Self::Unauthenticated => (StatusCode::UNAUTHORIZED, "sign in first".to_owned()),
+      Self::NoTenant => (
+        StatusCode::FORBIDDEN,
+        "the principal belongs to no organisation".to_owned(),
+      ),
+      Self::Authz(e) => {
+        let detail = match e {
+          AuthzError::Unauthenticated => "authentication required",
+          AuthzError::Denied(_) => "access denied",
+          _ => "authorization could not be evaluated",
+        };
+        (status(e.http_status()), detail.to_owned())
+      }
+      Self::BadCredentials(why) => (StatusCode::UNAUTHORIZED, (*why).to_owned()),
+      Self::Invalid(p) => (p.status, p.detail.clone().unwrap_or_default()),
+      Self::NotFound(what) => (StatusCode::NOT_FOUND, format!("no such {what}")),
+      Self::Conflict(why) => (StatusCode::CONFLICT, why.clone()),
+      Self::Sql(e) => {
+        let (status, detail) = sql_meaning(e);
+        (status, detail.to_owned())
+      }
+      Self::Session(_) => (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "sessions unavailable".to_owned(),
+      ),
+      Self::Auth(e) => (status(e.http_status()), e.to_string()),
+      Self::Workflow(WorkflowError::NotFound(_)) => {
+        (StatusCode::NOT_FOUND, "no such closure".to_owned())
+      }
+      Self::Workflow(WorkflowError::Sql(_) | WorkflowError::Jobs(_)) => (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "workflows unavailable".to_owned(),
+      ),
+      Self::Password(_) | Self::Totp(_) | Self::Workflow(_) => (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal error".to_owned(),
+      ),
+    }
   }
 }
 
@@ -262,6 +317,7 @@ mod tests {
       (failed("other"), StatusCode::INTERNAL_SERVER_ERROR),
     ];
     for (err, expected) in cases {
+      assert_eq!(ApiError::Sql(err.clone()).status_detail().0, expected);
       assert_eq!(status(ApiError::Sql(err)), expected);
     }
   }
@@ -293,9 +349,22 @@ mod tests {
     ];
     for (err, expected) in cases {
       assert!(!err.to_string().is_empty());
+      // The RPC surface reports what the Problem says.
+      assert_eq!(err.status_detail().0, expected, "{err}");
       let res = err.into_response();
       assert_eq!(res.status(), expected);
       assert_eq!(res.headers()["content-type"], "application/problem+json");
+    }
+    // Token and workflow failures: the RPC surface reports the status the Problem has.
+    for err in [
+      ApiError::Auth(AuthError::Expired),
+      ApiError::Workflow(WorkflowError::NotFound("closure-1".into())),
+      ApiError::Workflow(WorkflowError::Sql(SqlError::RowNotFound)),
+      ApiError::Workflow(WorkflowError::NoJobQueue),
+    ] {
+      let (status, detail) = err.status_detail();
+      assert!(!detail.is_empty());
+      assert_eq!(status, err.into_response().status());
     }
     let startup = StartupError::from(SqlError::RowNotFound);
     assert!(startup.to_string().starts_with("database: "));

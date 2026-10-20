@@ -84,6 +84,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_events`](crates/id_effect_events) | [![crates.io](https://img.shields.io/crates/v/id_effect_events.svg)](https://crates.io/crates/id_effect_events) | Event sourcing, projections, and CQRS boundaries for id_effect programs |
 | [`id_effect_opentelemetry`](crates/id_effect_opentelemetry) | [![crates.io](https://img.shields.io/crates/v/id_effect_opentelemetry.svg)](https://crates.io/crates/id_effect_opentelemetry) | OpenTelemetry tracing, metrics and logs integration for id_effect (OTLP export, propagation) |
 | [`id_effect_platform`](crates/id_effect_platform) | [![crates.io](https://img.shields.io/crates/v/id_effect_platform.svg)](https://crates.io/crates/id_effect_platform) | Platform capability traits (HTTP, FS, subprocess commands) for id_effect — @effect/platform-style boundaries |
+| [`id_effect_rpc_macros`](crates/id_effect_rpc_macros) | [![crates.io](https://img.shields.io/crates/v/id_effect_rpc_macros.svg)](https://crates.io/crates/id_effect_rpc_macros) | Procedural macros for id_effect_rpc: `#[rpc::service]` services with typed procedures, clients and contracts |
 | [`id_effect_sql`](crates/id_effect_sql) | [![crates.io](https://img.shields.io/crates/v/id_effect_sql.svg)](https://crates.io/crates/id_effect_sql) | Driver-agnostic SQL client traits for id_effect — @effect/sql-style boundaries |
 | [`id_effect_tool`](crates/id_effect_tool) | [![crates.io](https://img.shields.io/crates/v/id_effect_tool.svg)](https://crates.io/crates/id_effect_tool) | The `id-effect` command: `id-effect new` scaffolds a service, worker, CLI or cluster node on id_effect_kit; `id-effect migrate` runs SQL migrations |
 
@@ -99,6 +100,7 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 | [`id_effect_mail`](crates/id_effect_mail) | [![crates.io](https://img.shields.io/crates/v/id_effect_mail.svg)](https://crates.io/crates/id_effect_mail) | Outgoing mail for id_effect services: SMTP, the SendGrid API, templates and delivery through jobs |
 | [`id_effect_messaging`](crates/id_effect_messaging) | [![crates.io](https://img.shields.io/crates/v/id_effect_messaging.svg)](https://crates.io/crates/id_effect_messaging) | Messaging for id_effect services: a broker-agnostic MessageBroker, in-memory broker, outbox, inbox and relay |
 | [`id_effect_redis`](crates/id_effect_redis) | [![crates.io](https://img.shields.io/crates/v/id_effect_redis.svg)](https://crates.io/crates/id_effect_redis) | Redis for id_effect services: pooled client layer, typed key-value, hash and JSON stores, a Cache backend, pub/sub streams, a Redis Streams message broker, sessions and rate limits |
+| [`id_effect_rpc`](crates/id_effect_rpc) | [![crates.io](https://img.shields.io/crates/v/id_effect_rpc.svg)](https://crates.io/crates/id_effect_rpc) | Typed RPC for id_effect: procedures with access decisions, a serde contract, HTTP dispatch and a Rust client (ADR 0014) |
 | [`id_effect_storage`](crates/id_effect_storage) | [![crates.io](https://img.shields.io/crates/v/id_effect_storage.svg)](https://crates.io/crates/id_effect_storage) | Object storage for id_effect services: one store interface over file-system, in-memory and S3-compatible backends |
 | [`id_effect_test`](crates/id_effect_test) | [![crates.io](https://img.shields.io/crates/v/id_effect_test.svg)](https://crates.io/crates/id_effect_test) | Integration-test support for id_effect: effect-native containers, per-test database isolation, fixtures |
 | [`id_effect_workflow`](crates/id_effect_workflow) | [![crates.io](https://img.shields.io/crates/v/id_effect_workflow.svg)](https://crates.io/crates/id_effect_workflow) | Durable workflows for id_effect services: journaled steps replayed on resume, on id_effect_sql and id_effect_jobs |
@@ -116,7 +118,6 @@ The core crate runs effects as fibers on a pluggable executor (a multi-thread `T
 |-------|---------|-------------|
 | [`id_effect_ai`](labs/id_effect_ai) | unpublished | Vendor-neutral LLM client traits and streaming for id_effect |
 | [`id_effect_parse`](labs/id_effect_parse) | unpublished | Parser combinators, pretty printing, invertible codecs, and value diffs for id_effect |
-| [`id_effect_rpc`](labs/id_effect_rpc) | unpublished | RPC client/server stack and HTTP boundary helpers for id_effect (@effect/rpc parity) |
 
 Tiers and their quality bar: [ADR 0010](docs/adrs/0010-crate-tiers.md), [docs/QUALITY_BAR.md](docs/QUALITY_BAR.md).
 <!-- crates:end -->
@@ -129,7 +130,7 @@ Add the crate:
 
 ```toml
 [dependencies]
-id_effect = "0.11"
+id_effect = "0.12"
 ```
 
 ```rust
@@ -224,8 +225,8 @@ devenv shell -- pre-push
 #    keep labs/Cargo.toml in lockstep) and move CHANGELOG "Unreleased" under the version.
 # 2. bash scripts/validate-crate-packaging.sh   # publish order + packaging check
 # 3. Merge, then tag the merge commit with a signed annotated tag; CI publishes in dependency order
-git tag -s v0.11.0 -m "v0.11.0"
-git push origin v0.11.0
+git tag -s v0.12.0 -m "v0.12.0"
+git push origin v0.12.0
 ```
 
 The publish order has one source: `scripts/validate-crate-packaging.sh --print-order`. Labs crates are never published.

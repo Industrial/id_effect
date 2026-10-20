@@ -248,6 +248,49 @@ with this amendment, this amendment wins.
   security cases of ADR 0013. It is a root-workspace member outside `crates/`, so it is never in
   the publish order, the semver job or `publish.yml`.
 
+#### Amendment 8 (2026-10-19, for 0.12)
+
+Names the tiers of the two published RPC crates of 0.12, the Relay reference app and the move of
+the TLS certificate code into `id_effect_platform` (release spec 0.12.0 decisions D3 and D6,
+ADR 0014 "One call surface"), as rule 5 requires. Where the table above disagrees with this
+amendment, this amendment wins.
+
+- **`id_effect_rpc` leaves the `labs` row and enters tier `integration`.** RPC is the first-party
+  call surface (ADR 0014): typed procedures over HTTP, WebSocket and HTTP/3, batching, two-way
+  streams with resume cursors, and channels as its `id_effect_rpc::channels` module (there is no
+  separate channels crate). GraphQL is not built (a non-goal since scorecard method 2.2). The
+  crate moved with its history (`git mv labs/id_effect_rpc crates/id_effect_rpc`, leaf
+  `r12-t0-skeletons`) and is a root-workspace member. Until leaf `r12-e12-1-promote` brings it to
+  the integration bar it stays `publish = false` in the transitional `merge` tier (no bar; the
+  `labs` tier is for crates under `labs/` only), listed in `PENDING_PROMOTION` of
+  `scripts/validate-crate-packaging.sh`; that leaf sets `integration`, makes it publishable and
+  removes the entry. It moves to the `platform` tier of ADR 0012, with no other change, when the
+  Relay reference app depends on it (check P of `scripts/tier-conformance.sh`).
+- **`id_effect_rpc_macros` is tier `integration`.** The `#[rpc::service]` proc-macro crate
+  (procedure kinds, access decisions, the generated client and contract). It is a separate crate
+  because a proc-macro crate cannot export runtime items; `id_effect_rpc` re-exports it.
+- They publish in dependency order (`scripts/validate-crate-packaging.sh --print-order`):
+  `id_effect_rpc_macros` with the other macro crates (it depends on no workspace crate), and
+  `id_effect_rpc` after `id_effect_axum`, `id_effect_platform`, `id_effect_node` and
+  `id_effect_events` (and the other level-5 crates), before `id_effect_kit` and `id_effect_tool`.
+- **`id_effect_platform` gains the features `tls`, `quic`, `http3` and `acme`** (leaves of E12.3):
+  rustls configuration and certificate loading/reloading, the one QUIC endpoint shared by HTTP/3
+  and the mesh (ALPN routing), the HTTP/3 client, and TLS-ALPN-01 certificates. No tier change.
+- **The node certificate code moves into `id_effect_platform::tls`.**
+  `crates/id_effect_node/src/transport/certs.rs` (`NodeCertificate`, `CertReloader`, `Identity`,
+  the client and server TLS configs) moves there, so the axum TLS/HTTP/3 server, the HTTP/3 client
+  and the mesh share one implementation. `id_effect_node::transport::certs` keeps a
+  `#[deprecated]` re-export for one minor release (rule 3, L9), then drops it.
+- **`examples/reference/relay` is tier `example`** and `publish = false`: the 0.12 reference app
+  (3-node chat with presence over two-way RPC, channels and the mesh, over HTTP/3 and WebSocket).
+  It depends on `id_effect_kit` only, like the Ledger.
+- crates.io (checked 2026-10-19, generic User-Agent): `id_effect_rpc` is ours, last published at
+  0.4.0 before it moved to labs, so its promoted release is its next one. `id_effect_rpc_macros`
+  is free; like any never-published crate it needs its crates.io trusted-publisher setup before
+  `publish.yml` can release it (docs/RELEASING.md). Neither has a 0.11.x baseline, so both are
+  excluded from the semver job until their first 0.12 publish. No placeholder versions are
+  published: each crate's first release carries its API.
+
 The requirements for each tier are in [`docs/QUALITY_BAR.md`](../QUALITY_BAR.md).
 `scripts/tier-conformance.sh` checks them.
 

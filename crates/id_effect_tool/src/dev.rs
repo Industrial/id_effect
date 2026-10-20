@@ -3,8 +3,18 @@
 //!
 //! ```text
 //! id-effect dev [--path DIR] [--package NAME] [--bin NAME] [--watch PATH]... [--services]
-//!               [--poll-ms MS] [--debounce-ms MS] [--grace-secs SECS] [-- APP ARGS...]
+//!               [--poll-ms MS] [--debounce-ms MS] [--grace-secs SECS] [--cert-dir DIR]
+//!               [--no-cert] [-- APP ARGS...]
 //! ```
+//!
+//! First it makes sure the development certificate exists ([`cert`]): a localhost CA (created
+//! once; the trust steps are printed then) and a 13-day ECDSA P-256 certificate it signs,
+//! reissued when less than four days are left. The app gets `TLS_CERT_FILE` and `TLS_KEY_FILE`
+//! pointing at it (unless it has its own `TLS_CERT_FILE`), so the `service` template serves
+//! HTTPS and HTTP/3 on its port out of the box, and [`cert::SHA256_ENV_VAR`] for WebTransport's
+//! `serverCertificateHashes`. `--no-cert` skips it. `id-effect dev` runs the `dev` profile only:
+//! with `ID_EFFECT_PROFILE` set to anything else it refuses to start, and the kit's posture check
+//! refuses the certificate under prod (ADR 0014 C13).
 //!
 //! The watcher polls modification times (no `notify`, release 0.10 D4) of `src/`, `Cargo.toml`,
 //! `config/` and every `--watch PATH` under DIR, every `--poll-ms`; it skips `target`, hidden
@@ -74,6 +84,18 @@ pub struct DevArgs {
   /// First run `docker compose up -d` in DIR (when it has a compose file).
   #[arg(long)]
   pub services: bool,
+  /// Where the development CA and certificate live (default: `$ID_EFFECT_DEV_CERT_DIR`, else
+  /// `$XDG_DATA_HOME/id-effect/dev-cert`, else `~/.local/share/id-effect/dev-cert`).
+  #[arg(long, value_name = "DIR")]
+  pub cert_dir: Option<PathBuf>,
+  /// Do not issue the development certificate (the app then serves plain HTTP unless it has
+  /// its own `TLS_CERT_FILE`).
+  #[arg(long)]
+  pub no_cert: bool,
+  /// Only issue (or rotate) the development certificate, print its files and exit: for scripts
+  /// and CI that start the app themselves.
+  #[arg(long, conflicts_with = "no_cert")]
+  pub cert_only: bool,
   /// Arguments passed to the app (after `--`).
   #[arg(last = true, value_name = "APP ARGS")]
   pub app_args: Vec<String>,
@@ -82,6 +104,15 @@ pub struct DevArgs {
 /// Runs `id-effect dev` until it is interrupted; returns (exit `1`, the reason on `err`) only
 /// when it cannot start. Its own messages go to `out`, prefixed `id-effect dev: `.
 pub fn run(args: &DevArgs, out: &mut dyn Write, err: &mut dyn Write) -> ExitCode {
+  if args.cert_only {
+    return match cert_only(args, out) {
+      Ok(()) => ExitCode::SUCCESS,
+      Err(reason) => {
+        let _ = writeln!(err, "error: {reason}");
+        ExitCode::FAILURE
+      }
+    };
+  }
   match dev(args, out) {
     Ok(never) => match never {},
     Err(reason) => {
@@ -96,9 +127,11 @@ fn dev(args: &DevArgs, out: &mut dyn Write) -> Result<Infallible, String> {
   if !dir.join("Cargo.toml").is_file() {
     return Err(format!("no Cargo.toml in {}", dir.display()));
   }
+  refuse_other_profiles(std::env::var(PROFILE_ENV_VAR).ok().as_deref())?;
   if args.services {
     services(dir, out)?;
   }
+  let tls_env = dev_certificate(args, std::env::var_os("TLS_CERT_FILE").is_some(), out)?;
   let roots = roots(dir, &args.watch);
   let mut watcher = Watcher::new(roots.clone(), Duration::from_millis(args.debounce_ms));
   let watched: Vec<String> = roots.iter().map(|r| relative(dir, r)).collect();
@@ -108,7 +141,7 @@ fn dev(args: &DevArgs, out: &mut dyn Write) -> Result<Infallible, String> {
   );
   let grace = Duration::from_secs(args.grace_secs);
   let mut app = None;
-  rebuild(args, out, &mut app, grace)?;
+  rebuild(args, out, &mut app, grace, &tls_env)?;
   loop {
     thread::sleep(Duration::from_millis(args.poll_ms));
     if let Some(child) = &mut app
@@ -126,7 +159,7 @@ fn dev(args: &DevArgs, out: &mut dyn Write) -> Result<Infallible, String> {
     if let Some(changed) = watcher.poll(Instant::now()) {
       let names: Vec<String> = changed.iter().map(|p| relative(dir, p)).collect();
       say(out, &format!("changed {}; rebuilding", names.join(", ")));
-      rebuild(args, out, &mut app, grace)?;
+      rebuild(args, out, &mut app, grace, &tls_env)?;
     }
   }
 }
@@ -201,6 +234,7 @@ fn rebuild(
   out: &mut dyn Write,
   app: &mut Option<Child>,
   grace: Duration,
+  env: &[(String, String)],
 ) -> Result<(), String> {
   say(out, "cargo build");
   let exe = match build(args)? {
@@ -231,7 +265,7 @@ fn rebuild(
       Err(e) => say(out, &format!("stopping pid {pid}: {e}")),
     }
   }
-  match start(&args.path, &exe, &args.app_args) {
+  match start(&args.path, &exe, &args.app_args, env) {
     Ok(child) => {
       say(
         out,
@@ -332,11 +366,17 @@ fn pick(bins: Vec<(String, PathBuf)>, bin: Option<&str>) -> Result<PathBuf, Stri
 }
 
 /// Starts `exe app_args` in `dir` with [`PROFILE_ENV_VAR`]`=`[`PROFILE`], on the terminal.
-fn start(dir: &Path, exe: &Path, app_args: &[String]) -> io::Result<Child> {
+fn start(
+  dir: &Path,
+  exe: &Path,
+  app_args: &[String],
+  env: &[(String, String)],
+) -> io::Result<Child> {
   Command::new(exe)
     .args(app_args)
     .current_dir(dir)
     .env(PROFILE_ENV_VAR, PROFILE)
+    .envs(env.iter().map(|(k, v)| (k, v)))
     .spawn()
 }
 
@@ -519,6 +559,444 @@ impl Watcher {
     let changed = diff(&self.last, &next);
     self.last = next;
     self.debounce.observe(changed, now)
+  }
+}
+
+/// The development certificate of `id-effect dev` (ADR 0014 D8): a localhost CA and a 13-day
+/// ECDSA P-256 certificate it signs, kept in one directory and reissued before it expires.
+///
+/// | File | What |
+/// |---|---|
+/// | [`CA_FILE`] | the CA certificate (PEM): trust it once, in the system or browser store |
+/// | [`CA_KEY_FILE`] | the CA's private key (mode `0600`) |
+/// | [`CERT_FILE`] | the localhost chain (leaf, then the CA), what `TLS_CERT_FILE` points at |
+/// | [`KEY_FILE`] | the leaf's private key (mode `0600`), what `TLS_KEY_FILE` points at |
+/// | [`META_FILE`] | expiry times and the leaf's SHA-256 (JSON) |
+///
+/// The leaf is valid for 13 days (≤ 14, ECDSA P-256: what WebTransport's
+/// `serverCertificateHashes` accepts, so a browser can call the app over HTTP/3 with only the
+/// printed hash) for `localhost`, `127.0.0.1` and `::1`. Every subject and issuer names
+/// [`DEV_CERTIFICATE_ORGANIZATION`], which the kit's posture check refuses in the prod profile
+/// (`id_effect_kit::posture::NO_DEV_CERTIFICATE`, C13).
+///
+/// [`CA_FILE`]: cert::CA_FILE
+/// [`CA_KEY_FILE`]: cert::CA_KEY_FILE
+/// [`CERT_FILE`]: cert::CERT_FILE
+/// [`KEY_FILE`]: cert::KEY_FILE
+/// [`META_FILE`]: cert::META_FILE
+/// [`DEV_CERTIFICATE_ORGANIZATION`]: cert::DEV_CERTIFICATE_ORGANIZATION
+pub mod cert {
+  use std::fs;
+  use std::io::Write;
+  use std::path::{Path, PathBuf};
+  use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+  use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, DistinguishedName, DnType,
+    ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+  };
+  use serde_json::{Value, json};
+  use sha2::{Digest, Sha256};
+
+  /// The organization of every certificate issued here; the same string as
+  /// `id_effect_kit::posture::DEV_CERTIFICATE_ORGANIZATION`.
+  pub const DEV_CERTIFICATE_ORGANIZATION: &str =
+    "id-effect development certificate (never for production)";
+  /// The variable naming the certificate directory (default [`default_dir`]).
+  pub const DIR_ENV_VAR: &str = "ID_EFFECT_DEV_CERT_DIR";
+  /// The variable the app gets holding the leaf's SHA-256 (hex), for WebTransport's
+  /// `serverCertificateHashes`.
+  pub const SHA256_ENV_VAR: &str = "ID_EFFECT_DEV_CERT_SHA256";
+  /// The CA certificate.
+  pub const CA_FILE: &str = "ca.pem";
+  /// The CA key.
+  pub const CA_KEY_FILE: &str = "ca-key.pem";
+  /// The localhost chain.
+  pub const CERT_FILE: &str = "cert.pem";
+  /// The localhost key.
+  pub const KEY_FILE: &str = "key.pem";
+  /// The metadata.
+  pub const META_FILE: &str = "dev-cert.json";
+  /// The names the leaf is valid for.
+  pub const NAMES: [&str; 3] = ["localhost", "127.0.0.1", "::1"];
+  /// The leaf's validity: 13 days (WebTransport hashes allow at most 14).
+  pub const LEAF_DAYS: i64 = 13;
+  /// The CA's validity: one year.
+  pub const CA_DAYS: i64 = 365;
+  /// The leaf is reissued when less than this is left (about a third of its life).
+  pub const LEAF_RENEW_BEFORE: Duration = Duration::from_secs(4 * 24 * 3600);
+  /// The CA is replaced when less than this is left (it then has to be trusted again).
+  pub const CA_RENEW_BEFORE: Duration = Duration::from_secs(30 * 24 * 3600);
+
+  /// What [`ensure`] left in the directory.
+  #[derive(Clone, Debug, PartialEq, Eq)]
+  pub struct DevCertificate {
+    /// The directory.
+    pub dir: PathBuf,
+    /// [`CA_FILE`] in it.
+    pub ca: PathBuf,
+    /// [`CERT_FILE`] in it.
+    pub cert: PathBuf,
+    /// [`KEY_FILE`] in it.
+    pub key: PathBuf,
+    /// The leaf's SHA-256 (of its DER).
+    pub sha256: [u8; 32],
+    /// When the leaf expires (seconds since the Unix epoch).
+    pub not_after: u64,
+    /// When the CA expires (seconds since the Unix epoch).
+    pub ca_not_after: u64,
+    /// What this call did.
+    pub action: Action,
+  }
+
+  /// What [`ensure`] did.
+  #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+  pub enum Action {
+    /// Kept the current certificate.
+    Kept,
+    /// Issued a new leaf from the existing CA (first run with that CA's files, or rotation).
+    Renewed,
+    /// Created a new CA (trust it) and a leaf.
+    Created,
+  }
+
+  impl DevCertificate {
+    /// The leaf's SHA-256 as lower-case hex.
+    pub fn sha256_hex(&self) -> String {
+      self.sha256.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// How to trust the CA, in a few lines.
+    pub fn trust_instructions(&self) -> String {
+      let ca = self.ca.display();
+      format!(
+        "trust the development CA once (then https://localhost works without warnings):\n  \
+         Linux:   sudo cp {ca} /usr/local/share/ca-certificates/id-effect-dev.crt && sudo update-ca-certificates\n  \
+         NixOS:   security.pki.certificateFiles = [ {ca} ];\n  \
+         macOS:   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain {ca}\n  \
+         Windows: certutil -addstore -f ROOT {ca}\n  \
+         Firefox: Settings > Certificates > Import {ca}\n\
+         WebTransport (serverCertificateHashes, no trust needed): sha-256 {}",
+        self.sha256_hex()
+      )
+    }
+  }
+
+  /// The default directory: `$ID_EFFECT_DEV_CERT_DIR`, else `$XDG_DATA_HOME/id-effect/dev-cert`,
+  /// else `$HOME/.local/share/id-effect/dev-cert`, else one under the system temp dir.
+  pub fn default_dir() -> PathBuf {
+    default_dir_from(|name| std::env::var_os(name))
+  }
+
+  /// [`default_dir`] with the variables read through `lookup`.
+  pub fn default_dir_from(lookup: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
+    let var = |name: &str| lookup(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+    if let Some(dir) = var(DIR_ENV_VAR) {
+      return dir;
+    }
+    let data = var("XDG_DATA_HOME").or_else(|| var("HOME").map(|h| h.join(".local/share")));
+    data
+      .unwrap_or_else(std::env::temp_dir)
+      .join("id-effect")
+      .join("dev-cert")
+  }
+
+  /// Makes sure `dir` holds a CA and a leaf valid for at least [`LEAF_RENEW_BEFORE`] after
+  /// `now`: keeps them, issues a new leaf from the CA, or creates both.
+  ///
+  /// # Errors
+  ///
+  /// A file that cannot be written or a CA key that does not parse.
+  pub fn ensure(dir: &Path, now: SystemTime) -> Result<DevCertificate, String> {
+    let now_secs = now
+      .duration_since(UNIX_EPOCH)
+      .map_err(|_| "the clock is before 1970".to_owned())?
+      .as_secs();
+    fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let meta = read_meta(dir);
+    let present = |name: &str| dir.join(name).is_file();
+    let ca_ok = meta.as_ref().is_some_and(|m| {
+      m.ca_not_after > now_secs + CA_RENEW_BEFORE.as_secs()
+        && present(CA_FILE)
+        && present(CA_KEY_FILE)
+    });
+    let leaf_ok = ca_ok
+      && meta.as_ref().is_some_and(|m| {
+        m.not_after > now_secs + LEAF_RENEW_BEFORE.as_secs()
+          && present(CERT_FILE)
+          && present(KEY_FILE)
+      });
+    if let (true, Some(meta)) = (leaf_ok, &meta) {
+      return Ok(described(dir, meta, Action::Kept));
+    }
+    let (ca_key, ca_not_after, action) = match (ca_ok, &meta) {
+      (true, Some(meta)) => {
+        let pem =
+          fs::read_to_string(dir.join(CA_KEY_FILE)).map_err(|e| format!("{CA_KEY_FILE}: {e}"))?;
+        let key = KeyPair::from_pem(&pem).map_err(|e| format!("{CA_KEY_FILE}: {e}"))?;
+        (key, meta.ca_not_after, Action::Renewed)
+      }
+      _ => {
+        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|e| e.to_string())?;
+        (key, day(now_secs, CA_DAYS)?.1, Action::Created)
+      }
+    };
+    let ca_start = if action == Action::Created {
+      now_secs
+    } else {
+      ca_not_after - days(CA_DAYS)
+    };
+    let ca = ca_certificate(&ca_key, ca_start)?;
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|e| e.to_string())?;
+    let (leaf, not_after) = leaf_certificate(&leaf_key, &ca, &ca_key, now_secs)?;
+    if action == Action::Created {
+      write(&dir.join(CA_FILE), ca.pem().as_bytes(), false)?;
+      write(
+        &dir.join(CA_KEY_FILE),
+        ca_key.serialize_pem().as_bytes(),
+        true,
+      )?;
+    }
+    let ca_pem = fs::read_to_string(dir.join(CA_FILE)).map_err(|e| format!("{CA_FILE}: {e}"))?;
+    write(
+      &dir.join(CERT_FILE),
+      format!("{}{ca_pem}", leaf.pem()).as_bytes(),
+      false,
+    )?;
+    write(
+      &dir.join(KEY_FILE),
+      leaf_key.serialize_pem().as_bytes(),
+      true,
+    )?;
+    let meta = Meta {
+      not_after,
+      ca_not_after,
+      sha256: Sha256::digest(leaf.der()).into(),
+    };
+    write(&dir.join(META_FILE), meta.to_json().as_bytes(), false)?;
+    Ok(described(dir, &meta, action))
+  }
+
+  fn days(n: i64) -> u64 {
+    n.unsigned_abs() * 24 * 3600
+  }
+
+  /// Midnight UTC of the day `secs` falls in, plus `plus_days`: `(year, month, day)` for
+  /// `rcgen::date_time_ymd`, and its seconds since the epoch.
+  fn day(secs: u64, plus_days: i64) -> Result<((i32, u8, u8), u64), String> {
+    let secs = i64::try_from(secs).map_err(|e| e.to_string())?;
+    let date = jiff::Timestamp::from_second(secs)
+      .map_err(|e| e.to_string())?
+      .to_zoned(jiff::tz::TimeZone::UTC)
+      .date()
+      .checked_add(jiff::Span::new().days(plus_days))
+      .map_err(|e| e.to_string())?;
+    let midnight = date
+      .to_zoned(jiff::tz::TimeZone::UTC)
+      .map_err(|e| e.to_string())?
+      .timestamp()
+      .as_second();
+    let at = (
+      i32::from(date.year()),
+      u8::try_from(date.month()).map_err(|e| e.to_string())?,
+      u8::try_from(date.day()).map_err(|e| e.to_string())?,
+    );
+    Ok((at, u64::try_from(midnight).map_err(|e| e.to_string())?))
+  }
+
+  fn names(common_name: &str) -> DistinguishedName {
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, common_name);
+    dn.push(DnType::OrganizationName, DEV_CERTIFICATE_ORGANIZATION);
+    dn
+  }
+
+  /// The CA (re)built on `key`: the same name and key sign leaves the stored CA certificate
+  /// verifies.
+  fn ca_certificate(key: &KeyPair, start: u64) -> Result<Certificate, String> {
+    let mut params = CertificateParams::default();
+    params.distinguished_name = names("id-effect development CA");
+    params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
+    params.key_usages = vec![
+      KeyUsagePurpose::KeyCertSign,
+      KeyUsagePurpose::CrlSign,
+      KeyUsagePurpose::DigitalSignature,
+    ];
+    let ((y, m, d), _) = day(start, 0)?;
+    params.not_before = rcgen::date_time_ymd(y, m, d);
+    let ((y, m, d), _) = day(start, CA_DAYS)?;
+    params.not_after = rcgen::date_time_ymd(y, m, d);
+    params.self_signed(key).map_err(|e| e.to_string())
+  }
+
+  fn leaf_certificate(
+    key: &KeyPair,
+    ca: &Certificate,
+    ca_key: &KeyPair,
+    now: u64,
+  ) -> Result<(Certificate, u64), String> {
+    let mut params =
+      CertificateParams::new(NAMES.map(str::to_owned).to_vec()).map_err(|e| e.to_string())?;
+    params.distinguished_name = names("localhost");
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    params.use_authority_key_identifier_extension = true;
+    let ((y, m, d), _) = day(now, 0)?;
+    params.not_before = rcgen::date_time_ymd(y, m, d);
+    let ((y, m, d), not_after_secs) = day(now, LEAF_DAYS)?;
+    params.not_after = rcgen::date_time_ymd(y, m, d);
+    let leaf = params
+      .signed_by(key, ca, ca_key)
+      .map_err(|e| e.to_string())?;
+    Ok((leaf, not_after_secs))
+  }
+
+  fn write(path: &Path, bytes: &[u8], private: bool) -> Result<(), String> {
+    let fail = |e: std::io::Error| format!("{}: {e}", path.display());
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    if private {
+      use std::os::unix::fs::OpenOptionsExt;
+      options.mode(0o600);
+    }
+    #[cfg(not(unix))]
+    let _ = private;
+    let mut file = options.open(path).map_err(fail)?;
+    file.write_all(bytes).map_err(fail)
+  }
+
+  /// [`META_FILE`]'s contents.
+  #[derive(Clone, Debug, PartialEq, Eq)]
+  struct Meta {
+    not_after: u64,
+    ca_not_after: u64,
+    sha256: [u8; 32],
+  }
+
+  impl Meta {
+    fn to_json(&self) -> String {
+      let hex: String = self.sha256.iter().map(|b| format!("{b:02x}")).collect();
+      let value = json!({
+        "not_after": self.not_after,
+        "ca_not_after": self.ca_not_after,
+        "sha256": hex,
+      });
+      format!("{value:#}\n")
+    }
+  }
+
+  fn read_meta(dir: &Path) -> Option<Meta> {
+    let text = fs::read_to_string(dir.join(META_FILE)).ok()?;
+    let value: Value = serde_json::from_str(&text).ok()?;
+    let hex = value["sha256"].as_str()?;
+    let mut sha256 = [0u8; 32];
+    if hex.len() != 64 {
+      return None;
+    }
+    for (i, byte) in sha256.iter_mut().enumerate() {
+      *byte = u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok()?;
+    }
+    Some(Meta {
+      not_after: value["not_after"].as_u64()?,
+      ca_not_after: value["ca_not_after"].as_u64()?,
+      sha256,
+    })
+  }
+
+  fn described(dir: &Path, meta: &Meta, action: Action) -> DevCertificate {
+    DevCertificate {
+      dir: dir.to_path_buf(),
+      ca: dir.join(CA_FILE),
+      cert: dir.join(CERT_FILE),
+      key: dir.join(KEY_FILE),
+      sha256: meta.sha256,
+      not_after: meta.not_after,
+      ca_not_after: meta.ca_not_after,
+      action,
+    }
+  }
+}
+
+/// `--cert-dir` / `--no-cert`: issues (or keeps) the dev certificate and returns the variables
+/// the app gets (`TLS_CERT_FILE`, `TLS_KEY_FILE`, [`cert::SHA256_ENV_VAR`]); the app's own
+/// `TLS_CERT_FILE` wins. Prints the trust steps when a CA was created.
+fn dev_certificate(
+  args: &DevArgs,
+  own_certificate: bool,
+  out: &mut dyn Write,
+) -> Result<Vec<(String, String)>, String> {
+  if args.no_cert {
+    return Ok(Vec::new());
+  }
+  let dir = args.cert_dir.clone().unwrap_or_else(cert::default_dir);
+  let issued = cert::ensure(&dir, SystemTime::now())?;
+  let until = jiff::Timestamp::from_second(i64::try_from(issued.not_after).unwrap_or(i64::MAX))
+    .map(|t| t.to_string())
+    .unwrap_or_default();
+  let what = match issued.action {
+    cert::Action::Kept => "using",
+    cert::Action::Renewed => "issued a new",
+    cert::Action::Created => "created a development CA and",
+  };
+  say(
+    out,
+    &format!(
+      "{what} dev certificate {} (localhost, valid until {until}, sha-256 {})",
+      issued.cert.display(),
+      issued.sha256_hex()
+    ),
+  );
+  if issued.action == cert::Action::Created {
+    say(out, &issued.trust_instructions());
+  }
+  if own_certificate {
+    say(
+      out,
+      "TLS_CERT_FILE is set; the app keeps its own certificate",
+    );
+    return Ok(Vec::new());
+  }
+  Ok(vec![
+    (
+      "TLS_CERT_FILE".to_owned(),
+      issued.cert.display().to_string(),
+    ),
+    ("TLS_KEY_FILE".to_owned(), issued.key.display().to_string()),
+    (cert::SHA256_ENV_VAR.to_owned(), issued.sha256_hex()),
+  ])
+}
+
+/// `--cert-only`: the certificate, then `TLS_CERT_FILE=…`, `TLS_KEY_FILE=…`, the hash and the CA
+/// as `NAME=value` lines on `out` (after the `id-effect dev:` messages).
+fn cert_only(args: &DevArgs, out: &mut dyn Write) -> Result<(), String> {
+  refuse_other_profiles(std::env::var(PROFILE_ENV_VAR).ok().as_deref())?;
+  let dir = args.cert_dir.clone().unwrap_or_else(cert::default_dir);
+  let issued = cert::ensure(&dir, SystemTime::now())?;
+  if issued.action == cert::Action::Created {
+    say(out, &issued.trust_instructions());
+  }
+  let lines = [
+    ("TLS_CERT_FILE", issued.cert.display().to_string()),
+    ("TLS_KEY_FILE", issued.key.display().to_string()),
+    (cert::SHA256_ENV_VAR, issued.sha256_hex()),
+    ("ID_EFFECT_DEV_CA_FILE", issued.ca.display().to_string()),
+  ];
+  for (name, value) in lines {
+    let _ = writeln!(out, "{name}={value}");
+  }
+  Ok(())
+}
+
+/// `id-effect dev` runs the `dev` profile only: a production profile in the environment is a
+/// mistake (the dev certificate must never reach it, C13).
+fn refuse_other_profiles(profile: Option<&str>) -> Result<(), String> {
+  match profile.map(str::trim) {
+    None | Some("" | PROFILE) => Ok(()),
+    Some(other) => Err(format!(
+      "{PROFILE_ENV_VAR}={other}: id-effect dev runs the {PROFILE} profile only (its development \
+       certificate is refused outside dev and test); unset {PROFILE_ENV_VAR}"
+    )),
   }
 }
 
@@ -888,6 +1366,9 @@ mod tests {
         debounce_ms: 0,
         grace_secs: 5,
         services: false,
+        cert_dir: None,
+        no_cert: true,
+        cert_only: false,
         app_args: Vec::new(),
       }
     }
@@ -910,7 +1391,7 @@ mod tests {
       let pid = running.id();
       let mut app = Some(running);
       let mut out = Vec::new();
-      let result = rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO);
+      let result = rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO, &[]);
       assert_eq!(result, Ok(()));
       let out = text(out);
       assert!(out.contains("id-effect dev: cargo build\n"), "{out}");
@@ -930,7 +1411,7 @@ mod tests {
       let mut app = None;
       let mut out = Vec::new();
       assert_eq!(
-        rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO),
+        rebuild(&args(tmp.path()), &mut out, &mut app, Duration::ZERO, &[]),
         Ok(())
       );
       let out = text(out);
@@ -964,7 +1445,7 @@ mod tests {
       let mut app = Some(stubborn);
       let mut out = Vec::new();
       assert_eq!(
-        rebuild(&dev_args, &mut out, &mut app, Duration::ZERO),
+        rebuild(&dev_args, &mut out, &mut app, Duration::ZERO, &[]),
         Ok(())
       );
       let first = text(std::mem::take(&mut out));
@@ -985,7 +1466,7 @@ mod tests {
 
       // The built app honours SIGTERM: it is stopped, then started again.
       assert_eq!(
-        rebuild(&dev_args, &mut out, &mut app, Duration::from_secs(10)),
+        rebuild(&dev_args, &mut out, &mut app, Duration::from_secs(10), &[]),
         Ok(())
       );
       let second = text(out);
@@ -1002,12 +1483,110 @@ mod tests {
     fn a_missing_executable_cannot_start() {
       let tmp = tempfile::tempdir().unwrap();
       let missing = tmp.path().join("no-such-app");
-      assert!(start(tmp.path(), &missing, &[]).is_err());
+      assert!(start(tmp.path(), &missing, &[], &[]).is_err());
       assert_eq!(relative(tmp.path(), &missing), "no-such-app");
       assert_eq!(
         relative(Path::new("/elsewhere"), &missing),
         missing.display().to_string()
       );
+    }
+  }
+
+  mod certificate {
+    use super::*;
+
+    fn dev_args(extra: &[&str]) -> DevArgs {
+      let argv = ["id-effect", "dev"]
+        .into_iter()
+        .chain(extra.iter().copied());
+      let CliCommand::Dev(args) = Cli::try_parse_from(argv).unwrap().command else {
+        panic!("not `dev`");
+      };
+      args
+    }
+
+    #[test]
+    fn the_app_gets_the_certificate_files_and_hash() {
+      let tmp = tempfile::tempdir().unwrap();
+      let dir = tmp.path().join("certs");
+      let args = dev_args(&["--cert-dir", dir.to_str().unwrap()]);
+      let mut out = Vec::new();
+      let env = dev_certificate(&args, false, &mut out).unwrap();
+      let text = String::from_utf8(out).unwrap();
+      assert!(text.contains("created a development CA"), "{text}");
+      assert!(text.contains("trust the development CA once"), "{text}");
+      let names: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+      assert_eq!(
+        names,
+        ["TLS_CERT_FILE", "TLS_KEY_FILE", cert::SHA256_ENV_VAR]
+      );
+      assert_eq!(env[0].1, dir.join(cert::CERT_FILE).display().to_string());
+      assert_eq!(env[2].1.len(), 64);
+      // A second start keeps it and prints no trust steps; the app's own certificate wins.
+      let mut out = Vec::new();
+      assert_eq!(dev_certificate(&args, true, &mut out).unwrap(), Vec::new());
+      let text = String::from_utf8(out).unwrap();
+      assert!(text.contains("using dev certificate"), "{text}");
+      assert!(text.contains("the app keeps its own certificate"), "{text}");
+      assert!(!text.contains("trust the development CA"), "{text}");
+      // Close to its end, the next start issues a new one.
+      let meta = dir.join(cert::META_FILE);
+      let text = fs::read_to_string(&meta).unwrap();
+      let value: Value = serde_json::from_str(&text).unwrap();
+      let soon = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + 3600;
+      let rewritten = text.replace(&value["not_after"].to_string(), &soon.to_string());
+      fs::write(&meta, rewritten).unwrap();
+      let mut out = Vec::new();
+      dev_certificate(&args, false, &mut out).unwrap();
+      let text = String::from_utf8(out).unwrap();
+      assert!(text.contains("issued a new dev certificate"), "{text}");
+      // A leaf close to its end is reissued.
+      let later = SystemTime::now() + Duration::from_secs(10 * 24 * 3600);
+      assert_eq!(
+        cert::ensure(&dir, later).unwrap().action,
+        cert::Action::Renewed
+      );
+    }
+
+    #[test]
+    fn no_cert_issues_nothing() {
+      let tmp = tempfile::tempdir().unwrap();
+      let dir = tmp.path().join("certs");
+      let args = dev_args(&["--no-cert", "--cert-dir", dir.to_str().unwrap()]);
+      assert!(args.no_cert);
+      assert_eq!(
+        dev_certificate(&args, false, &mut Vec::new()).unwrap(),
+        Vec::new()
+      );
+      assert!(!dir.exists());
+      assert!(dev_args(&[]).cert_dir.is_none());
+    }
+
+    #[test]
+    fn an_unwritable_directory_is_an_error() {
+      let tmp = tempfile::tempdir().unwrap();
+      let file = tmp.path().join("a-file");
+      fs::write(&file, "x").unwrap();
+      let args = dev_args(&["--cert-dir", file.to_str().unwrap()]);
+      assert!(dev_certificate(&args, false, &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn only_the_dev_profile_runs() {
+      assert!(refuse_other_profiles(None).is_ok());
+      assert!(refuse_other_profiles(Some("dev")).is_ok());
+      assert!(refuse_other_profiles(Some(" ")).is_ok());
+      for profile in ["prod", "test", "staging"] {
+        let err = refuse_other_profiles(Some(profile)).unwrap_err();
+        assert!(
+          err.contains(&format!("{PROFILE_ENV_VAR}={profile}")),
+          "{err}"
+        );
+      }
     }
   }
 }

@@ -26,14 +26,40 @@ tower = ["dep:tower"]
 # OpenAPI 3.1 documents generated from typed routes (`openapi` module), the opt-in
 # `/openapi.json` + Scalar `/docs` router and the `/_routes` table (`route::introspect`).
 openapi = []
+# Realtime (0.12, declared once here for every 0.12 leaf; r12-e12-2-axum-ws-sse).
+# Effect-native WebSocket endpoints (`realtime::ws`): typed routes, an Origin allowlist, bounded
+# frames, message rate and sockets per client IP, heartbeats and an idle timeout. tungstenite is
+# the version axum 0.8.9's own `ws` feature uses, so the tree keeps one tungstenite.
+ws = [
+  "dep:tokio-tungstenite",
+  "dep:tungstenite",
+  "dep:futures-util",
+  "dep:hyper",
+]
+# Server-sent events with event ids, `Last-Event-ID` resume and heartbeats (`realtime::sse`).
+sse = []
+# TLS and HTTP/2 serving (`server::tls`, r12-e12-3-tls-h2): TLS 1.3/1.2 on TCP, ALPN `h2` and
+# `http/1.1`, the certificate from the platform `tls` identity (reloaded for new connections).
+tls = ["dep:tokio-rustls", "hyper-util/http2", "id_effect_platform/tls"]
+# HTTP/3 serving on the shared QUIC endpoint (r12-e12-3-h3-server).
+http3 = [
+  "tls",
+  "dep:h3",
+  "dep:h3-quinn",
+  "dep:quinn",
+  "dep:bytes",
+  "id_effect_platform/quic",
+]
+# WebTransport sessions over HTTP/3 (r12-e12-3-webtransport).
+webtransport = ["http3", "dep:h3-webtransport", "h3-quinn/datagram"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.11.0", features = [
+id_effect = { path = "../id_effect", version = "0.12.0", features = [
   "schema-serde",
 ] }
-id_effect_config = { path = "../id_effect_config", version = "0.11.0" }
-id_effect_platform = { path = "../id_effect_platform", version = "0.11.0" }
-id_effect_node = { path = "../id_effect_node", version = "0.11.0", optional = true }
+id_effect_config = { path = "../id_effect_config", version = "0.12.0" }
+id_effect_platform = { path = "../id_effect_platform", version = "0.12.0" }
+id_effect_node = { path = "../id_effect_node", version = "0.12.0", optional = true }
 # `multipart`: typed routes and `ValidForm` read the text fields of `multipart/form-data` bodies.
 axum = { version = "0.8.9", features = ["multipart"] }
 http-body = "1"
@@ -83,10 +109,44 @@ tower-http = { version = "0.6.8", default-features = false, features = [
 # `HTTP-date` validators (`Last-Modified` / `If-Modified-Since`); already in tower-http's `fs` tree.
 httpdate = "1.0.3"
 # `middleware::RateLimitLayer`: token buckets on the effect runtime.
-id_effect_resilience = { path = "../id_effect_resilience", version = "0.11.0" }
+id_effect_resilience = { path = "../id_effect_resilience", version = "0.12.0" }
 # `route::Router::into_axum` logs the access report (public routes, opt-outs) at startup;
 # already in axum's dependency tree.
 tracing = "0.1"
+# Feature `ws` (exact pins, r12-e12-2-axum-ws-sse). The upgrade is hyper's (`hyper::upgrade::on`),
+# the framing tungstenite's over the upgraded connection; `handshake` only for
+# `derive_accept_key` (sha1 + base64 of the client key). Same versions as axum's `ws` feature.
+tokio-tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
+  "handshake",
+] }
+tungstenite = { version = "=0.29.0", optional = true, default-features = false, features = [
+  "handshake",
+] }
+futures-util = { version = "=0.3.34", optional = true, default-features = false, features = [
+  "sink",
+] }
+hyper = { version = "=1.12.0", optional = true, default-features = false, features = [
+  "http1",
+  "server",
+] }
+# Features `tls`, `http3`, `webtransport` (declared here once for r12-e12-3-tls-h2,
+# r12-e12-3-h3-server and r12-e12-3-webtransport; exact pins). aws-lc-rs only, as
+# id_effect_node: no second rustls provider.
+tokio-rustls = { version = "=0.26.6", optional = true, default-features = false, features = [
+  "logging",
+  "tls12",
+] }
+quinn = { version = "=0.11.12", optional = true, default-features = false, features = [
+  "log",
+  "runtime-tokio",
+  "rustls-aws-lc-rs",
+] }
+h3 = { version = "=0.0.8", optional = true }
+h3-quinn = { version = "=0.0.10", optional = true }
+h3-webtransport = { version = "=0.1.2", optional = true }
+# Feature `http3` (r12-e12-3-h3-server): `Buf` for the h3 request body chunks; the version
+# already in the tree (axum, h3, quinn).
+bytes = { version = "=1.12.1", optional = true }
 
 [[bench]]
 name = "gate_request"
@@ -110,6 +170,29 @@ id_effect_logger = { path = "../id_effect_logger" }
 jsonschema = { version = "0.59", default-features = false }
 # tests/ui.rs: compile-fail cases (H8: a route without an access decision does not compile).
 trybuild = "1"
+# tests/ws.rs and example 090: a WebSocket client (same pin as the `ws` feature).
+tokio-tungstenite = { version = "=0.29.0", default-features = false, features = [
+  "connect",
+  "handshake",
+] }
+futures-util = { version = "=0.3.34", default-features = false, features = [
+  "sink",
+] }
+# tests/tls_h2.rs: a TLS client (same pins as the `tls` feature), HTTP/1.1 and HTTP/2 client
+# connections, and a test CA issuing the server certificates (the platform's rcgen).
+tokio-rustls = { version = "=0.26.6", default-features = false, features = [
+  "logging",
+  "tls12",
+] }
+hyper = { version = "=1.12.0", default-features = false, features = [
+  "client",
+  "http1",
+  "http2",
+] }
+rcgen = { version = "=0.13.2", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
 
 [[example]]
 name = "050_tower_effect_service"
@@ -122,6 +205,26 @@ required-features = ["tower"]
 [[example]]
 name = "085_openapi"
 required-features = ["openapi"]
+
+[[example]]
+name = "090_ws_echo"
+required-features = ["ws"]
+
+[[example]]
+name = "091_sse_ticker"
+required-features = ["sse"]
+
+[[example]]
+name = "092_http3"
+required-features = ["http3"]
+
+[[test]]
+name = "ws"
+required-features = ["ws"]
+
+[[test]]
+name = "sse"
+required-features = ["sse"]
 
 [package.metadata.docs.rs]
 all-features = true

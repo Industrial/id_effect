@@ -840,12 +840,13 @@ self_test() {
 | 0.9.0 measured | 68.5 | 68.1 (#3) | 71.4 (#2) | 39 | 19 | 20 | 12 |
 | 0.10.0 measured | 76.6 | 76.6 (#2) | 79.5 (#1) | 49 | 11 | 26 | 12 |
 | 0.11.0 measured | 79.4 | 79.2 (#1) | 83.9 (#1) | 56 | 9 | 31 | 12 |
-| 0.12.0 target | 84.2 | 84.2 (#1) | 86.5 (#1) | 59 | 3 | 33 | 12 |
-| 1.0.0 target | 86.5 | 86.5 (#1) | 88.4 (#1) | 63 | 1 | 37 | 11 |
+| 0.12.0 measured | 82.3 | 81.5 (#1) | 85.9 (#1) | 59 | 7 | 37 | 12 |
+| 0.13.0 target | 85.4 | 85.2 (#1) | 87.8 (#1) | 60 | 3 | 38 | 11 |
+| 1.0.0 target | 87.4 | 87.2 (#1) | 89.2 (#1) | 63 | 1 | 41 | 0 |
 EOF
     got="$(id_rows "$file" version:0.6.0 version:0.7.0)"
     got+=$'\n'"$(id_rows "$file" version:0.8.0 version:0.9.0 version:0.10.0 version:0.11.0)"
-    got+=$'\n'"$(id_rows "$file" targets:0.12.0 targets:1.0.0)"
+    got+=$'\n'"$(id_rows "$file" version:0.12.0 targets:0.13.0 targets:1.0.0)"
     expect "METHOD §5.2 version table" "$want" "$got"
 
     read -r -d '' want <<'EOF' || true

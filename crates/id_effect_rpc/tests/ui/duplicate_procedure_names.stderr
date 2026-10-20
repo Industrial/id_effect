@@ -1,0 +1,14 @@
+error: two procedures are named `greet`
+         help: procedure names are unique within a service; rename one with `#[query(name = "…")]`
+  --> tests/ui/duplicate_procedure_names.rs:12:6
+   |
+12 |   fn greet_twice(&self, name: String) -> Effect<String, Never, DynEnv>;
+   |      ^^^^^^^^^^^
+
+warning: unused imports: `DynEnv`, `Effect`, and `Never`
+ --> tests/ui/duplicate_procedure_names.rs:1:17
+  |
+1 | use id_effect::{DynEnv, Effect, Never};
+  |                 ^^^^^^  ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

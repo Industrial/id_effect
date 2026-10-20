@@ -17,12 +17,12 @@ name = "id_effect_messaging"
 
 [dependencies]
 # `schema-serde`: typed payloads go `Schema` → `Unknown` → `serde_json::Value` → JSON bytes.
-id_effect = { path = "../id_effect", version = "0.11.0", features = [
+id_effect = { path = "../id_effect", version = "0.12.0", features = [
   "schema-serde",
 ] }
 # The outbox and inbox tables run on any `SqlClient`; `migrate` ships their schema as a
 # `Migrator` with its own tracking table (`migrator()`).
-id_effect_sql = { path = "../id_effect_sql", version = "0.11.0", features = [
+id_effect_sql = { path = "../id_effect_sql", version = "0.12.0", features = [
   "migrate",
 ] }
 # Same floor as id_effect_sql (whose timestamp type it is).

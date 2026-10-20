@@ -1,0 +1,159 @@
+{
+	"schema": "id_effect dx-kpis v1",
+	"method": "scripts/dx-kpis.sh (header); this file is `DX_KPIS_RELEASE=0.12 bash scripts/dx-kpis.sh` (K1, K3, K4, K5), with K2 and K6 from runs that started below a 1-minute load of 4 (below), and the http3 and node deltas of release spec Risk 9 / 10",
+	"release": "0.12",
+	"measured_at": "2026-10-20T04:23:46Z",
+	"revision": "4f514379+dirty",
+	"rustc": "rustc 1.99.0-nightly (af3d95584 2026-07-09)",
+	"machine": {
+		"cpu": "AMD Ryzen 9 7950X 16-Core Processor",
+		"cores": 32,
+		"mem_gib": 62,
+		"os": "Linux 6.18.55",
+		"load_note": "shared with other agents: every recorded figure was taken with the 1-minute load average below 4 (polled every 5 s), recorded as load_avg_start (1, 5, 15 min) per KPI; the other_runs show the spread on this machine"
+	},
+	"k1": {
+		"seconds": 22.22,
+		"budget_s": 180,
+		"pass": true,
+		"new_s": 0.01,
+		"build_s": 22.18,
+		"boot_to_health_s": 0.02,
+		"template": "service",
+		"target_dir": "fresh",
+		"wrapper": "none",
+		"load_avg_start": "1.77 4.05 7.11",
+		"http3": true,
+		"other_runs": [
+			{
+				"seconds": 37.32,
+				"load_avg_start": "2.79 4.43 7.85"
+			},
+			{
+				"seconds": 50.11,
+				"load_avg_start": "4.06 6.42 15.34",
+				"note": "another agent compiled id_effect_platform at the same time"
+			}
+		],
+		"vs_0_11": {
+			"seconds": 23.52,
+			"note": "0.11 template: kit feature web only; 0.12: web, rpc, http3"
+		}
+	},
+	"k2": {
+		"seconds": 1.4,
+		"budget_s": 8,
+		"pass": true,
+		"runs_s": [1.4, 1.4, 1.39],
+		"edit": "hello handler in src/lib.rs",
+		"template": "service",
+		"profile": "dev",
+		"wrapper": "none",
+		"http3": true,
+		"load_avg_start": "2.33 4.29 6.42",
+		"method_note": "dx-kpis.sh k2_measure on the kept project of the gate run, each run started below load 4 (the gate run itself: 1.39 s, runs 1.39, 1.44, 1.38, at a load of 4.29 raised by its own warm-up build)",
+		"vs_0_11": {
+			"seconds": 1.32
+		}
+	},
+	"k3": {
+		"lines": 634,
+		"by_category": {
+			"model": 183,
+			"migration": 19,
+			"routes": 174,
+			"policy": 30,
+			"test": 185,
+			"job": 43,
+			"other": 0
+		},
+		"files": 9,
+		"patch": "docs/benchmarks/k3/invoice.patch",
+		"applies_to_head": true,
+		"build": null,
+		"target": "none (measured); PLAN-OF-PLANS §8: -40 % vs 0.9 at a later release; the job is in from 0.10, compare with 0.9 per category",
+		"build_note": "--k3-build not run for 0.12; the patch is rebased onto the 0.12 Ledger (migration 0010 -> 0011 after 0010_rpc_idempotency, lib.rs context) and applies to HEAD"
+	},
+	"k4": {
+		"fixed": 17,
+		"cases": 20,
+		"min": 17,
+		"pass": true,
+		"without_fix": [
+			"not_send_body",
+			"generic_runner_unannotated",
+			"block_on_in_async"
+		]
+	},
+	"k5": {
+		"compiled": 547,
+		"rust_fences": 634,
+		"ignored": 58,
+		"not_included": 29,
+		"percent": 86.3,
+		"min_percent": 80,
+		"pass": true
+	},
+	"k6": {
+		"seconds": 33.21,
+		"template": "service",
+		"profile": "release",
+		"target_dir": "fresh",
+		"wrapper": "none",
+		"budget": "docs/benchmarks/README.md (K6)",
+		"budget_s": 120,
+		"pass": true,
+		"http3": true,
+		"load_avg_start": "3.87 4.57 6.93",
+		"other_runs": [
+			{
+				"seconds": 30.69,
+				"load_avg_start": "4.11 4.36 7.06",
+				"note": "the gate run, right after its K2 runs"
+			},
+			{
+				"seconds": 39.34,
+				"load_avg_start": "3.85 6.62 11.55"
+			}
+		],
+		"vs_0_11": {
+			"seconds": 36.35
+		}
+	},
+	"k6_http3_delta": {
+		"feature": "id_effect_kit http3 (on in the service template)",
+		"method": "the K6 project with \"http3\" removed from its id_effect_kit features, `cargo build --release` into an empty target dir right after the K6 run, timed once, started below load 4",
+		"with_http3_s": 33.21,
+		"without_http3_s": 26.83,
+		"delta_s": 6.38,
+		"load_avg_start_without": "3.80 4.89 6.85",
+		"release_rlibs_with": 233,
+		"release_rlibs_without": 210,
+		"earlier_pair": {
+			"with_http3_s": 39.34,
+			"without_http3_s": 35.55,
+			"delta_s": 3.79
+		},
+		"note": "K6 stays far inside its 120 s budget with HTTP/3 on; quinn, h3, h3-quinn and aws-lc are in the build without http3 too (the rpc client), the http3 feature adds 23 crates"
+	},
+	"node_quic_platform_delta": {
+		"risk": "0.12.0.md Risk 9 (D6: the node TLS features pull id_effect_platform)",
+		"method": "`cargo build --release -p id_effect_node --features F` into an empty target dir, timed once each, at release/0.11.0 (037dffc4) and at this revision, same toolchain, each started below load 4",
+		"quic": {
+			"s_0_11": 25.99,
+			"s_0_12": 34.13,
+			"delta_s": 8.14,
+			"rlibs_0_11": 120,
+			"rlibs_0_12": 183
+		},
+		"tls_tcp": {
+			"s_0_11": 20.74,
+			"s_0_12": 23.9,
+			"delta_s": 3.16,
+			"rlibs_0_11": 100,
+			"rlibs_0_12": 165
+		},
+		"pulled_in": ["id_effect_platform", "reqwest", "hyper"],
+		"note": "reported, no budget; Open question 3 (a small id_effect_quic crate) would keep reqwest and hyper out of mesh-only builds"
+	}
+}

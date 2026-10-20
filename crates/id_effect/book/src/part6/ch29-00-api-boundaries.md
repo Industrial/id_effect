@@ -1,11 +1,16 @@
 # API boundaries
 
-> **Labs crate — unpublished, no API guarantees ([ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)).**
-> `id_effect_rpc` lives in [`labs/id_effect_rpc`](https://github.com/Industrial/id_effect/tree/main/labs/id_effect_rpc).
-> Use it via a path or git dependency on `labs/`; it is not on crates.io, so the `docs.rs` links
-> below point at the last published (0.4) documentation.
+> `id_effect_rpc` lives in [`crates/id_effect_rpc`](https://github.com/Industrial/id_effect/tree/main/crates/id_effect_rpc)
+> and is published with the workspace from 0.12 (tier `integration`,
+> [ADR 0010](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0010-crate-tiers.md)
+> Amendment 8). It is the first-party call surface of
+> [ADR 0014](https://github.com/Industrial/id_effect/blob/main/docs/adrs/0014-one-call-surface.md):
+> see [One call surface](./ch33-00-one-call-surface.md) for procedures, the contract and the
+> transports.
 
-`id_effect_rpc` implements Phase D RPC-shaped HTTP boundaries: correlation ids, JSON error envelopes, OpenAPI emission, codegen stubs, API versioning, and tracing helpers.
+Besides the RPC server and client, `id_effect_rpc` carries the HTTP boundary helpers this chapter
+covers: correlation ids, JSON error envelopes, OpenAPI emission, API versioning, and tracing helpers.
+REST + OpenAPI over typed routes stays the recommended style for public, third-party APIs.
 
 ## Correlation and errors
 
@@ -13,16 +18,16 @@ Use [`ensure_correlation_id`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc
 routes or `Valid*` extractors of `id_effect_axum::route`, which answer RFC 9457
 `application/problem+json` errors: see [Typed routes and validation](./ch29-01-typed-routes.md).
 
-## OpenAPI and codegen
+## OpenAPI and the contract
 
-- [`openapi::emit_openapi_json`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/openapi/index.html) — route metadata → OpenAPI 3
-- [`codegen::emit_service_trait`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/codegen/index.html) — D3 trait stub generation
+- [`openapi::document`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/openapi/index.html) and [`asyncapi::document`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/asyncapi/index.html) — the contract → OpenAPI 3.1 and AsyncAPI 3.0 (chapter 33.10)
+- [`contract::Contract`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/contract/index.html) — the serde description of services and procedures (`rpc.contract.json`) that generated clients and `id-effect rpc check` read
 
 ## API versioning
 
 [`versioning::negotiate_api_version`](https://docs.rs/id_effect_rpc/latest/id_effect_rpc/versioning/fn.negotiate_api_version.html) resolves version from `Accept-Version` or `/vN/` path prefix:
 
-<!-- ignore: labs crate id_effect_rpc is outside the workspace, not a book_snippets dependency -->
+<!-- ignore: id_effect_rpc is not a book_snippets dependency -->
 ```rust,ignore
 use id_effect_rpc::versioning::{ApiVersion, VersionConfig, negotiate_api_version};
 
@@ -33,7 +38,7 @@ let app = router.layer(axum::middleware::from_fn_with_state(cfg, negotiate_api_v
 ## RPC tracing example
 
 ```bash
-cargo run --manifest-path labs/Cargo.toml -p id_effect_rpc --example 020_rpc_tracing
+cargo run -p id_effect_rpc --example 020_rpc_tracing
 ```
 
 Spans use stable field names consumable by `id_effect_opentelemetry` layers.

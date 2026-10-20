@@ -16,6 +16,8 @@
 //! | [`closure`] | account closure as a durable workflow: approval signal, 30-day grace timer, final statement, saga compensation |
 //! | [`entries`] | journal entries posted in `SERIALIZABLE` transactions, batches with savepoints |
 //! | [`reports`] | balances (Redis-cached, `ETag`ged), trial balance, CSV export, audit check |
+//! | [`rpc`] | the accounts and journal over RPC under `/rpc` (ADR 0014), beside REST |
+//! | [`idempotency`] | the RPC mutations' `Idempotency-Key`s in PostgreSQL |
 //! | [`signup`] | registration, email verification and password reset (id_effect_auth accounts) |
 //! | [`limits`] | per-client and per-organisation login limits, reloaded from the profile file |
 //! | [`notifications`] | postings announced through the outbox and Redis Streams; balance notifications with inbox dedup |
@@ -46,6 +48,7 @@ pub mod console;
 pub mod db;
 pub mod entries;
 pub mod error;
+pub mod idempotency;
 pub mod jobs;
 pub mod limits;
 pub mod mail;
@@ -53,6 +56,7 @@ pub mod notifications;
 pub mod observability;
 pub mod policy;
 pub mod reports;
+pub mod rpc;
 pub mod signup;
 pub mod statements;
 

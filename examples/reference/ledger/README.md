@@ -102,6 +102,14 @@ Route::get("/accounts/{id}").path::<AccountId>().response::<Account>(StatusCode:
 | Login limits hot-reloaded from the profile file | `limits.rs` | `limits::login_limits_follow_the_profile_file` | fault.reload #5 |
 | A seeded fault plan (SQL latency, lost conflicts) on the posting path; the retry policy posts every entry once | `entries.rs` | `faults::*` | test.chaos #2 #7 |
 | `id-effect dev`: rebuild and restart on change, `compose.yaml` services | this README | — | dx.repl #2 #3 |
+| The accounts and journal over RPC under `/rpc` beside REST (ADR 0014): a `#[rpc::service]` calling the REST routes' functions behind the same policies, mutation `Idempotency-Key`s in PostgreSQL, a statement server stream; `rpc.contract.json` and the TypeScript client `web/rpc` checked in, `id-effect rpc check` in CI | `rpc.rs`, `idempotency.rs`, `web/rpc/` | `rpc::*` (Rust client; TypeScript client under Deno, `tests/ts/`) | web.rpc |
+
+Regenerate the TypeScript client after a contract change (`UPDATE_GOLDEN=1 cargo nextest run -p
+ledger --test rpc` rewrites `rpc.contract.json`):
+
+```bash
+id-effect rpc gen ts --contract rpc.contract.json --out web/rpc
+```
 
 `replica::reports_read_from_the_replica` runs the "replica" as a second, independent PostgreSQL
 container with the same schema and seed rows — not streaming replication. The test copies rows

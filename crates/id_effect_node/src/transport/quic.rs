@@ -5,6 +5,23 @@
 //! same layout as the TCP transport). Multiplexed per-process-pair
 //! streams are a wire-compatible upgrade reserved for a later phase.
 //!
+//! ## Endpoint and ALPN
+//!
+//! The mesh speaks ALPN [`ALPN_MESH`] (`idm/1`) and runs on an
+//! [`id_effect_platform::quic::QuicEndpoint`] (address validation on, 0-RTT
+//! off, finite stream, window and idle limits). A peer that offers no or
+//! another ALPN fails the handshake, so a 0.11 node cannot join. Two shapes:
+//!
+//! - **Own endpoint** ([`QuicTransport::new`] / [`QuicTransport::try_new`]):
+//!   [`Transport::listen`] binds an endpoint that serves only `idm/1`, with
+//!   handshake-level mutual TLS (the 0.11 behaviour; `quic.mesh_port`).
+//! - **Shared endpoint** ([`QuicTransport::on_endpoint`]): the mesh registers
+//!   `idm/1` on an endpoint that also serves HTTP/3 on the same UDP port.
+//!   The handshake then requests client certificates as optional (no CA
+//!   hints) and still verifies one that is sent; the `idm/1` route closes a
+//!   connection without a verified client chain before any frame of it is
+//!   read (ADR 0014 D7). [`QuicSettings`] picks the shape from config.
+//!
 //! ## Trust model: mutual TLS
 //!
 //! Every node presents a certificate (a [`NodeCertificate`]: operator-issued
@@ -14,7 +31,7 @@
 //!
 //! - **CA roots**: [`QuicConfig::with_client_verification`] verifies servers
 //!   dialed and clients accepted against the cluster CA (load a bundle with
-//!   [`certs::load_ca_bundle`]);
+//!   [`id_effect_platform::tls::load_ca_bundle`]);
 //!   [`QuicConfig::with_client_cert_roots`] sets a separate CA for clients.
 //! - **Pinned fingerprints**: [`QuicConfig::with_pinned_peer_cert_sha256`]
 //!   accepts only peers whose leaf certificate has one of the given SHA-256
@@ -54,14 +71,20 @@
 //! connection, dialed or accepted, presents the new certificate. Listeners
 //! keep running; open connections keep the certificate they started with.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use bytes::Bytes;
-use quinn::{ClientConfig, Endpoint, RecvStream, SendStream, ServerConfig};
+use id_effect_platform::quic::{
+  AlpnRoute, QuicEndpoint, QuicEndpointConfig, QuicError, QuicLimits, Route, client_config,
+};
+use id_effect_platform::tls::{self as certs, CertError, CertReloader, Identity, NodeCertificate};
+use quinn::{Endpoint, RecvStream, SendStream};
 use tokio::sync::Mutex;
 
-use super::certs::{self, CertError, CertReloader, Identity, NodeCertificate};
+pub use id_effect_platform::quic::ALPN_MESH;
+
 use super::{Connection, Listener, Transport, TransportError};
 use crate::handshake::CHANNEL_BINDING_LABEL;
 use crate::transport::tcp::{MAX_FRAME_BYTES, frame_within_limit};
@@ -350,23 +373,38 @@ impl Connection for QuicConnection {
   }
 }
 
+/// The `idm/1` route of an endpoint: connections that passed the route's
+/// client-certificate policy. A refused attempt (failed handshake, no verified
+/// client chain) is a [`TransportError::Connect`]; keep accepting.
 struct QuicListener {
-  endpoint: Endpoint,
+  route: AlpnRoute,
+  /// Keeps the endpoint accepting while the listener lives.
+  endpoint: QuicEndpoint,
   addr: String,
 }
 
 #[async_trait::async_trait]
 impl Listener for QuicListener {
   async fn accept(&self) -> Result<Box<dyn Connection>, TransportError> {
-    let incoming = self.endpoint.accept().await.ok_or(TransportError::Closed)?;
-    let conn = incoming
-      .await
-      .map_err(|e| TransportError::Connect(e.to_string()))?;
-    let (send, recv) = conn
-      .accept_bi()
-      .await
-      .map_err(|e| TransportError::Connect(e.to_string()))?;
-    Ok(Box::new(QuicConnection::new(send, recv, conn)))
+    let conn = match self.route.accept().await {
+      None => return Err(TransportError::Closed),
+      Some(Err(refused)) => return Err(TransportError::Connect(refused.to_string())),
+      Some(Ok(conn)) => conn,
+    };
+    // A peer that completes the handshake but opens no stream cannot hold the
+    // accept loop longer than a handshake may take.
+    let opened =
+      tokio::time::timeout(self.endpoint.limits().handshake_timeout, conn.accept_bi()).await;
+    match opened {
+      Ok(Ok((send, recv))) => Ok(Box::new(QuicConnection::new(send, recv, conn))),
+      Ok(Err(e)) => Err(TransportError::Connect(e.to_string())),
+      Err(_) => {
+        conn.close(0u32.into(), b"no stream");
+        Err(TransportError::Connect(
+          "quic: the peer opened no stream in time".to_string(),
+        ))
+      }
+    }
   }
 
   fn local_addr(&self) -> String {
@@ -375,13 +413,17 @@ impl Listener for QuicListener {
 }
 
 /// QUIC transport (quinn + rustls). See the module docs for the trust
-/// model.
+/// model and the two endpoint shapes.
 pub struct QuicTransport {
   config: Arc<QuicConfig>,
+  /// The shared endpoint ([`QuicTransport::on_endpoint`]); `None` binds an
+  /// own endpoint per listener and dials from a fresh client socket.
+  endpoint: Option<QuicEndpoint>,
 }
 
 impl QuicTransport {
-  /// Transport from certificate material, without checking it.
+  /// Transport from certificate material, without checking it. It listens on
+  /// an own endpoint that serves only `idm/1`, with handshake-level mutual TLS.
   ///
   /// A config with no server trust (no roots, no pins, no
   /// [`QuicConfig::dangerous_accept_any_server_cert`]) can still listen, but
@@ -392,6 +434,7 @@ impl QuicTransport {
   pub fn new(config: QuicConfig) -> Self {
     Self {
       config: Arc::new(config),
+      endpoint: None,
     }
   }
 
@@ -403,7 +446,21 @@ impl QuicTransport {
     Ok(Self::new(config))
   }
 
-  fn client_config(&self) -> Result<ClientConfig, TransportError> {
+  /// The mesh on a shared endpoint (ADR 0014 D7): [`Transport::listen`]
+  /// registers the `idm/1` route on `endpoint` (the address it is given is
+  /// ignored; the listener reports the endpoint's), and dials leave from the
+  /// endpoint's socket. The route presents this config's certificate and
+  /// refuses, before any frame is read, every connection whose client chain
+  /// the handshake did not verify against this config's client trust. The
+  /// trust checks of [`QuicTransport::new`] apply.
+  pub fn on_endpoint(config: QuicConfig, endpoint: &QuicEndpoint) -> Self {
+    Self {
+      config: Arc::new(config),
+      endpoint: Some(endpoint.clone()),
+    }
+  }
+
+  fn client_config(&self, limits: &QuicLimits) -> Result<quinn::ClientConfig, TransportError> {
     self
       .config
       .check_trust()
@@ -412,48 +469,68 @@ impl QuicTransport {
       &self.config.identity,
       self.config.roots.as_ref(),
       &self.config.pinned,
-    )?;
-    let quic_tls = quinn::crypto::rustls::QuicClientConfig::try_from(tls)
-      .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
-    Ok(ClientConfig::new(Arc::new(quic_tls)))
+    )
+    .map_err(|e| TransportError::Io(e.to_string()))?;
+    client_config(tls, &[ALPN_MESH], limits).map_err(|e| TransportError::Io(e.to_string()))
   }
 
-  fn server_config(&self) -> Result<ServerConfig, TransportError> {
+  /// The `idm/1` route: verified clients only, unless the config opted out
+  /// with `dangerous_no_client_auth` and has no client trust.
+  fn mesh_route(&self) -> Result<Route, TransportError> {
     self
       .config
       .check_client_trust()
       .map_err(|e| TransportError::Bind(e.to_string()))?;
-    // Without roots or pins, only behind `dangerous_no_client_auth` (checked above).
-    let tls = certs::server_tls_config(
-      &self.config.identity,
-      self.config.client_roots.as_ref(),
-      &self.config.client_pinned,
-    )?;
-    let quic_tls = quinn::crypto::rustls::QuicServerConfig::try_from(tls)
-      .map_err(|e| TransportError::Io(format!("tls: {e}")))?;
-    Ok(ServerConfig::with_crypto(Arc::new(quic_tls)))
+    let route = Route::new(ALPN_MESH).with_identity(self.config.identity.clone());
+    if self.config.client_roots.is_none() && self.config.client_pinned.is_empty() {
+      // Only behind `dangerous_no_client_auth` (checked above).
+      return Ok(route);
+    }
+    Ok(route.require_verified_client(
+      self.config.client_roots.clone(),
+      self.config.client_pinned.clone(),
+    ))
   }
+}
+
+fn bind_error(e: QuicError) -> TransportError {
+  TransportError::Bind(e.to_string())
 }
 
 #[async_trait::async_trait]
 impl Transport for QuicTransport {
   async fn connect(&self, addr: &str) -> Result<Box<dyn Connection>, TransportError> {
-    let remote: std::net::SocketAddr = addr
+    let remote: SocketAddr = addr
       .parse()
       .map_err(|e| TransportError::Connect(format!("bad addr {addr}: {e}")))?;
-    let bind: std::net::SocketAddr = if remote.is_ipv6() {
-      "[::]:0".parse().expect("valid")
-    } else {
-      "0.0.0.0:0".parse().expect("valid")
+    let conn = match &self.endpoint {
+      Some(endpoint) => endpoint
+        .connect(
+          remote,
+          &self.config.server_name,
+          self.client_config(endpoint.limits())?,
+        )
+        .await
+        .map_err(|e| TransportError::Connect(e.to_string()))?,
+      None => {
+        let bind: SocketAddr = if remote.is_ipv6() {
+          "[::]:0".parse().expect("valid")
+        } else {
+          "0.0.0.0:0".parse().expect("valid")
+        };
+        let endpoint =
+          Endpoint::client(bind).map_err(|e| TransportError::Connect(e.to_string()))?;
+        endpoint
+          .connect_with(
+            self.client_config(&QuicLimits::default())?,
+            remote,
+            &self.config.server_name,
+          )
+          .map_err(|e| TransportError::Connect(e.to_string()))?
+          .await
+          .map_err(|e| TransportError::Connect(e.to_string()))?
+      }
     };
-    let mut endpoint =
-      Endpoint::client(bind).map_err(|e| TransportError::Connect(e.to_string()))?;
-    endpoint.set_default_client_config(self.client_config()?);
-    let conn = endpoint
-      .connect(remote, &self.config.server_name)
-      .map_err(|e| TransportError::Connect(e.to_string()))?
-      .await
-      .map_err(|e| TransportError::Connect(e.to_string()))?;
     let (send, recv) = conn
       .open_bi()
       .await
@@ -462,19 +539,56 @@ impl Transport for QuicTransport {
   }
 
   async fn listen(&self, addr: &str) -> Result<Box<dyn Listener>, TransportError> {
-    let bind: std::net::SocketAddr = addr
-      .parse()
-      .map_err(|e| TransportError::Bind(format!("bad addr {addr}: {e}")))?;
-    let endpoint = Endpoint::server(self.server_config()?, bind)
-      .map_err(|e| TransportError::Bind(e.to_string()))?;
-    let local = endpoint
-      .local_addr()
-      .map(|a| a.to_string())
-      .unwrap_or_else(|_| addr.to_string());
+    let route = self.mesh_route()?;
+    let endpoint = match &self.endpoint {
+      Some(endpoint) => endpoint.clone(),
+      None => {
+        let bind: SocketAddr = addr
+          .parse()
+          .map_err(|e| TransportError::Bind(format!("bad addr {addr}: {e}")))?;
+        QuicEndpoint::bind(bind, QuicEndpointConfig::new(self.config.identity.clone()))
+          .map_err(bind_error)?
+      }
+    };
+    let route = endpoint.register(route).map_err(bind_error)?;
     Ok(Box::new(QuicListener {
+      route,
+      addr: endpoint.local_addr().to_string(),
       endpoint,
-      addr: local,
     }))
+  }
+}
+
+/// The `quic` section of a node's config.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct QuicSettings {
+  /// `quic.mesh_port`: serve the mesh on its own UDP port, with
+  /// handshake-level mutual TLS, instead of on the endpoint shared with
+  /// HTTP/3 (ADR 0014 D7). `Some(0)` picks an ephemeral port.
+  pub mesh_port: Option<u16>,
+}
+
+impl QuicSettings {
+  /// The mesh transport for these settings and the address to
+  /// [`listen`](Transport::listen) on: the `shared` endpoint by default, or
+  /// with `mesh_port` an own endpoint on the shared endpoint's IP and that
+  /// port.
+  pub fn mesh_transport(
+    &self,
+    config: QuicConfig,
+    shared: &QuicEndpoint,
+  ) -> (QuicTransport, String) {
+    match self.mesh_port {
+      None => (
+        QuicTransport::on_endpoint(config, shared),
+        shared.local_addr().to_string(),
+      ),
+      Some(port) => (
+        QuicTransport::new(config),
+        SocketAddr::new(shared.local_addr().ip(), port).to_string(),
+      ),
+    }
   }
 }
 

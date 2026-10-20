@@ -23,7 +23,13 @@ id_effect_kit = { path = "../../crates/id_effect_kit", features = [
   "cluster",
   "authz",
   "logger",
+  "rpc",
+  "http3",
 ] }
+# The 0.12 call-surface cases go through the kit (`kit::rpc`, `kit::axum::server::h3`); the
+# `#[rpc::service]` expansion names `::id_effect_rpc`, so an app keeps that crate as well
+# (r1_rpc_procedure_without_access_decision).
+id_effect_rpc = { path = "../../crates/id_effect_rpc" }
 # `http::request::Parts` for the route guards of the H8 cases.
 axum = "0.8"
 # secret_is_not_serialize.

@@ -294,10 +294,16 @@ impl Caller {
   /// The caller of the request whose capabilities are `caps`: 401 without a principal, 403
   /// for a principal of no organisation (fail closed: nothing runs unscoped).
   pub fn of(caps: &RequestCaps) -> Result<Self, ApiError> {
-    let principal = caps
-      .get::<CurrentPrincipal>()
-      .map(|p| CurrentPrincipal::clone(&p))
+    Self::new(caps.get::<CurrentPrincipal>().as_deref())
+  }
+
+  /// The caller `principal` (the one the authentication layer recorded): 401 without one or for
+  /// the anonymous one, 403 for a principal of no organisation. RPC procedures find it in their
+  /// environment ([`crate::rpc`]).
+  pub fn new(principal: Option<&CurrentPrincipal>) -> Result<Self, ApiError> {
+    let principal = principal
       .filter(|p| p.is_authenticated())
+      .cloned()
       .ok_or(ApiError::Unauthenticated)?;
     let org = principal.tenant().ok_or(ApiError::NoTenant)?.to_owned();
     Ok(Self { principal, org })
@@ -445,7 +451,10 @@ pub fn assemble(config: &LedgerConfig, services: Services) -> Result<Assembled, 
   } else {
     Surface::Absent
   };
+  // The accounts and journal over RPC, beside REST (`crate::rpc`).
+  let rpc = crate::rpc::mount(Arc::new(app.clone()), &policies);
   let mut routes = api.registry().clone();
+  routes.extend(rpc.routes);
   routes.extend(plain_routes(
     config,
     docs == Surface::Open,
@@ -454,6 +463,7 @@ pub fn assemble(config: &LedgerConfig, services: Services) -> Result<Assembled, 
   let mut http = api
     .with_state(hlist![app.clone()])
     .into_axum()
+    .merge(rpc.router)
     .merge(public(health.clone().routes()))
     .merge(public(signup::routes(flows).layer(login_limit.client)))
     .merge(public(csrf))
@@ -601,12 +611,14 @@ pub fn plain_routes(config: &LedgerConfig, docs: bool, oidc: bool) -> Vec<RouteI
 }
 
 /// The server settings of `config`: its address, a 20 s drain on shutdown and the default
-/// in-flight cap (load shedding).
+/// in-flight cap (load shedding). Plain HTTP on TCP only: the Ledger runs behind a load balancer
+/// that terminates TLS (and HTTP/3), so it serves no HTTP/3 of its own.
 pub fn host_config(config: &LedgerConfig) -> HostConfig {
   HostConfig {
     bind_host: config.http.host.clone(),
     bind_port: config.http.port,
     shutdown_timeout: Duration::from_secs(20),
+    http3: false,
     ..HostConfig::default()
   }
 }
@@ -624,6 +636,9 @@ pub fn posture(config: &LedgerConfig, app: &Assembled, base: Posture) -> Posture
     .no_mesh()
     .redaction(&observability::redaction(config))
     .host(&host_config(config))
+    // Every RPC procedure declares its access (C1); `/rpc` itself is in the access report.
+    .rpc_service(&crate::rpc::LedgerService::contract())
+    .access_report(&app.access_report())
 }
 
 /// `api` and `pages` under [`SecurityLayer::recommended`] (`pages` without a CSP: they carry
@@ -636,7 +651,11 @@ pub fn posture(config: &LedgerConfig, app: &Assembled, base: Posture) -> Posture
 /// cannot forge it.
 pub fn secured(api: axum::Router, pages: axum::Router, key: &CookieKey) -> axum::Router {
   let layer = |csp: bool| {
-    let layer = SecurityLayer::recommended(key.clone()).csrf_exempt_bearer();
+    // `/rpc` needs no CSRF token: an RPC POST carries `x-rpc: 1` and a JSON content type, which
+    // a cross-site form cannot send (ADR 0014 C5).
+    let layer = SecurityLayer::recommended(key.clone())
+      .csrf_exempt_bearer()
+      .csrf_exempt(crate::rpc::RPC_PATH);
     if csp { layer } else { layer.without_csp() }
   };
   api.layer(layer(true)).merge(pages.layer(layer(false)))

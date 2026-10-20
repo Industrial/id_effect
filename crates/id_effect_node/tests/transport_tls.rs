@@ -9,16 +9,28 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use id_effect::observability::posture::dangerous_opt_outs;
-use id_effect_node::transport::certs::{
-  CertError, CertReloader, NodeCertificate, ca_bundle_from_pem, load_ca_bundle,
-};
 use id_effect_node::transport::quic::{
-  DANGEROUS_ACCEPT_ANY_SERVER_CERT, DANGEROUS_NO_CLIENT_AUTH, QuicConfig, QuicTransport,
+  ALPN_MESH, DANGEROUS_ACCEPT_ANY_SERVER_CERT, DANGEROUS_NO_CLIENT_AUTH, QuicConfig, QuicTransport,
 };
 use id_effect_node::transport::{Transport, TransportError};
+use id_effect_platform::quic::{ClientAuthMode, QuicEndpoint, QuicEndpointConfig, Route};
+use id_effect_platform::tls::{
+  CertError, CertReloader, Identity, NodeCertificate, ca_bundle_from_pem, load_ca_bundle,
+};
 use tokio::sync::mpsc;
 
 const WAIT: Duration = Duration::from_secs(5);
+
+/// Where the listener runs (ADR 0014 D7): its own endpoint with handshake-level mutual TLS
+/// (`quic.mesh_port`), or the endpoint shared with HTTP/3, where client certificates are
+/// optional in the handshake and required by the `idm/1` route. Every test runs on both.
+#[derive(Clone, Copy, Debug)]
+enum Shape {
+  Own,
+  Shared,
+}
+
+const SHAPES: [Shape; 2] = [Shape::Own, Shape::Shared];
 
 /// A throwaway certificate authority.
 struct Ca {
@@ -177,14 +189,42 @@ fn node(leaf: &Leaf, trust: &Ca) -> QuicConfig {
 
 /// Listen with `config` and echo one frame per connection. Each accept
 /// result (`Err` = the TLS handshake was refused) goes to the receiver.
-async fn echo_server(config: QuicConfig) -> (String, mpsc::UnboundedReceiver<Result<(), String>>) {
-  let listener = QuicTransport::new(config)
-    .listen("127.0.0.1:0")
-    .await
-    .expect("bind");
+async fn echo_server(
+  shape: Shape,
+  config: QuicConfig,
+) -> (String, mpsc::UnboundedReceiver<Result<(), String>>) {
+  let (listener, h3) = match shape {
+    Shape::Own => (
+      QuicTransport::new(config)
+        .listen("127.0.0.1:0")
+        .await
+        .expect("bind"),
+      None,
+    ),
+    Shape::Shared => {
+      // The endpoint presents a public certificate for h3; idm/1 presents the node's.
+      let public = NodeCertificate::self_signed("localhost").expect("cert");
+      let endpoint = QuicEndpoint::bind(
+        "127.0.0.1:0".parse().expect("addr"),
+        QuicEndpointConfig::new(Identity::from_certificate(&public).expect("identity")),
+      )
+      .expect("endpoint");
+      let h3 = endpoint.register(Route::h3()).expect("h3");
+      let listener = QuicTransport::on_endpoint(config, &endpoint)
+        .listen("")
+        .await
+        .expect("idm/1");
+      assert_eq!(
+        endpoint.router().client_auth_mode(),
+        ClientAuthMode::Optional
+      );
+      (listener, Some(h3))
+    }
+  };
   let addr = listener.local_addr();
   let (tx, rx) = mpsc::unbounded_channel();
   tokio::spawn(async move {
+    let _h3 = h3;
     loop {
       match listener.accept().await {
         Ok(conn) => {
@@ -238,8 +278,14 @@ async fn next_accept(rx: &mut mpsc::UnboundedReceiver<Result<(), String>>) -> Re
 
 #[tokio::test]
 async fn mtls_round_trip_with_ca_issued_certificates() {
+  for shape in SHAPES {
+    mtls_round_trip_on(shape).await;
+  }
+}
+
+async fn mtls_round_trip_on(shape: Shape) {
   let ca = Ca::new("mesh ca");
-  let (addr, mut accepted) = echo_server(node(&ca.issue(), &ca)).await;
+  let (addr, mut accepted) = echo_server(shape, node(&ca.issue(), &ca)).await;
   round_trip(node(&ca.issue(), &ca), &addr)
     .await
     .expect("both sides trust the CA");
@@ -250,15 +296,23 @@ async fn mtls_round_trip_with_ca_issued_certificates() {
 /// client trusting the server's CA) is refused by the listener.
 #[tokio::test]
 async fn mtls_rejects_peer_without_client_cert() {
+  for shape in SHAPES {
+    rejects_peer_without_client_cert_on(shape).await;
+  }
+}
+
+async fn rejects_peer_without_client_cert_on(shape: Shape) {
   let ca = Ca::new("mesh ca");
-  let (addr, mut accepted) = echo_server(node(&ca.issue(), &ca)).await;
+  let (addr, mut accepted) = echo_server(shape, node(&ca.issue(), &ca)).await;
 
   let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-  let tls = rustls::ClientConfig::builder_with_provider(provider)
+  let mut tls = rustls::ClientConfig::builder_with_provider(provider)
     .with_protocol_versions(&[&rustls::version::TLS13])
     .expect("tls13")
     .with_root_certificates(ca.roots())
     .with_no_client_auth();
+  // The mesh ALPN, so only the missing certificate can fail.
+  tls.alpn_protocols = vec![ALPN_MESH.to_vec()];
   let quic = quinn::crypto::rustls::QuicClientConfig::try_from(tls).expect("quic tls");
   let mut endpoint =
     quinn::Endpoint::client("127.0.0.1:0".parse().expect("addr")).expect("endpoint");
@@ -300,8 +354,14 @@ async fn mtls_rejects_peer_without_client_cert() {
 /// dist.tls#4: a certificate from another CA is refused in both directions.
 #[tokio::test]
 async fn mtls_rejects_cert_from_other_ca() {
+  for shape in SHAPES {
+    rejects_cert_from_other_ca_on(shape).await;
+  }
+}
+
+async fn rejects_cert_from_other_ca_on(shape: Shape) {
   let (ca, other) = (Ca::new("mesh ca"), Ca::new("other ca"));
-  let (addr, mut accepted) = echo_server(node(&ca.issue(), &ca)).await;
+  let (addr, mut accepted) = echo_server(shape, node(&ca.issue(), &ca)).await;
 
   // A client with a certificate the listener does not trust (it trusts the
   // listener, so only client auth can fail).
@@ -310,7 +370,7 @@ async fn mtls_rejects_cert_from_other_ca() {
   assert!(next_accept(&mut accepted).await.is_err());
 
   // A listener with a certificate the dialer does not trust.
-  let (rogue_addr, mut rogue_accepted) = echo_server(node(&other.issue(), &ca)).await;
+  let (rogue_addr, mut rogue_accepted) = echo_server(shape, node(&other.issue(), &ca)).await;
   let err = round_trip(node(&ca.issue(), &ca), &rogue_addr)
     .await
     .expect_err("dialer verified the server");
@@ -322,6 +382,12 @@ async fn mtls_rejects_cert_from_other_ca() {
 /// bundle; each key format completes a mutual-TLS round trip.
 #[tokio::test]
 async fn pem_chain_and_key_load() {
+  for shape in SHAPES {
+    pem_chain_and_key_load_on(shape).await;
+  }
+}
+
+async fn pem_chain_and_key_load_on(shape: Shape) {
   let ca = Ca::new("mesh ca");
   let dir = temp_dir("pem");
   let bundle = dir.join("ca.pem");
@@ -345,7 +411,7 @@ async fn pem_chain_and_key_load() {
     pem("EC PRIVATE KEY", &unwrap_pkcs8(&ec_key.serialize_der())),
   );
 
-  let (addr, mut accepted) = echo_server(node(&ca.issue(), &ca)).await;
+  let (addr, mut accepted) = echo_server(shape, node(&ca.issue(), &ca)).await;
   for (format, leaf) in [("pkcs8", &pkcs8), ("pkcs1", &pkcs1), ("sec1", &sec1)] {
     let (chain_path, key_path) = (
       dir.join(format!("{format}.crt")),
@@ -387,6 +453,12 @@ async fn pem_chain_and_key_load() {
 /// certificate. The dialers pin the leaf to see which one is presented.
 #[tokio::test]
 async fn rotated_cert_used_for_new_connections() {
+  for shape in SHAPES {
+    rotated_cert_on(shape).await;
+  }
+}
+
+async fn rotated_cert_on(shape: Shape) {
   let ca = Ca::new("mesh ca");
   let dir = temp_dir("rotate");
   let (chain_path, key_path) = (dir.join("node.crt"), dir.join("node.key"));
@@ -399,7 +471,7 @@ async fn rotated_cert_used_for_new_connections() {
   assert!(!reloader.reload_if_changed().expect("unchanged"));
   let polling = reloader.spawn_polling(Duration::from_millis(20));
   let server = QuicConfig::from_reloader(&reloader).with_client_verification(ca.roots());
-  let (addr, mut accepted) = echo_server(server).await;
+  let (addr, mut accepted) = echo_server(shape, server).await;
 
   let pinned = |sha: [u8; 32]| node(&ca.issue(), &ca).with_pinned_server_cert_sha256(sha);
   round_trip(pinned(old.sha256), &addr)

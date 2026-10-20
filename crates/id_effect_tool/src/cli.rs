@@ -13,6 +13,7 @@ use crate::generate::GenerateArgs;
 use crate::migrate::MigrateArgs;
 use crate::project::new_project;
 use crate::render::{Db, Options};
+use crate::rpc::RpcArgs;
 use crate::template::Template;
 
 /// `id-effect`: the id_effect project tool.
@@ -43,6 +44,9 @@ pub enum Command {
   /// Add code to a project `id-effect new` generated: `generate job <NAME>` writes a background
   /// job (`src/jobs/<NAME>.rs`, its registration and a test). Exits 1 when it refuses.
   Generate(GenerateArgs),
+  /// Work with `id_effect_rpc` service contracts: `rpc gen ts --contract <FILE> --out <DIR>`
+  /// writes a typed TypeScript client. Exits 1 when the contract cannot be read or generated.
+  Rpc(RpcArgs),
 }
 
 /// Arguments of `id-effect doctor`.
@@ -144,6 +148,7 @@ where
     Command::Migrate(args) => crate::migrate::run(&args, out, err),
     Command::Dev(args) => crate::dev::run(&args, out, err),
     Command::Generate(args) => crate::generate::run(&args, out, err),
+    Command::Rpc(args) => crate::rpc::run(&args, out, err),
   }
 }
 

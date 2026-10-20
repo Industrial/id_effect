@@ -15,6 +15,12 @@
 //! - `auth` (off by default since 0.6) — session store and OAuth client capability traits
 //!   (`auth` module). This is web-framework material and will move to a web crate.
 //! - `test-util` (implies `auth`) — in-memory test doubles such as `MemoryOAuthClient`.
+//! - `tls` — certificates, CA bundles, reload on rotation and rustls configs (`tls` module).
+//! - `quic` (implies `tls`) — one QUIC endpoint with ALPN routing (`quic` module, ADR 0014 D6/D7).
+//! - `http3` (implies `quic`) — the HTTP/3 client (`http::Http3Client`,
+//!   `HttpClientConfig::http3`).
+//! - `acme` (implies `tls`) — certificates issued and renewed over ACME TLS-ALPN-01
+//!   (`tls::acme`, ADR 0014 D8).
 //!
 //! ## Example (HTTP capability with a test double)
 //!
@@ -63,6 +69,11 @@ pub mod error;
 pub mod fs;
 pub mod http;
 pub mod uri;
+
+#[cfg(feature = "quic")]
+pub mod quic;
+#[cfg(feature = "tls")]
+pub mod tls;
 
 #[cfg(feature = "test-util")]
 pub use auth::MemoryOAuthClient;

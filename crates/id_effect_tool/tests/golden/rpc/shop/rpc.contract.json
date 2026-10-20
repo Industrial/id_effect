@@ -1,0 +1,692 @@
+{
+  "format": "id-effect.rpc.contract/1",
+  "services": [
+    {
+      "name": "Shop",
+      "version": 1,
+      "description": "A small shop: the TypeScript client's test service.",
+      "procedures": [
+        {
+          "name": "countdown",
+          "kind": "server_stream",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "UnknownOrder"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "SoldOut"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "`n`, `n - 1`, …, `1`; a negative `n` fails after one item."
+        },
+        {
+          "name": "order",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$defs": {
+              "rpc_gen_ts::OrderId": {
+                "description": "An order id.",
+                "pattern": "^o-[0-9]+$",
+                "type": "string"
+              },
+              "rpc_gen_ts::Status": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Open"
+                      }
+                    },
+                    "required": [
+                      "_tag"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Shipped"
+                      },
+                      "tracking": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "_tag",
+                      "tracking"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "rpc_gen_ts::Timestamp": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/rpc_gen_ts::OrderId"
+              },
+              "lines": {
+                "additionalProperties": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placed_at": {
+                "$ref": "#/$defs/rpc_gen_ts::Timestamp"
+              },
+              "status": {
+                "$ref": "#/$defs/rpc_gen_ts::Status"
+              }
+            },
+            "required": [
+              "id",
+              "placed_at",
+              "lines",
+              "status"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "UnknownOrder"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "SoldOut"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "One order by id (`o-1` exists)."
+        },
+        {
+          "name": "place",
+          "kind": "mutation",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$defs": {
+              "rpc_gen_ts::OrderId": {
+                "description": "An order id.",
+                "pattern": "^o-[0-9]+$",
+                "type": "string"
+              },
+              "rpc_gen_ts::Status": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Open"
+                      }
+                    },
+                    "required": [
+                      "_tag"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Shipped"
+                      },
+                      "tracking": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "_tag",
+                      "tracking"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "rpc_gen_ts::Timestamp": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/rpc_gen_ts::OrderId"
+              },
+              "lines": {
+                "additionalProperties": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placed_at": {
+                "$ref": "#/$defs/rpc_gen_ts::Timestamp"
+              },
+              "status": {
+                "$ref": "#/$defs/rpc_gen_ts::Status"
+              }
+            },
+            "required": [
+              "id",
+              "placed_at",
+              "lines",
+              "status"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$defs": {
+              "rpc_gen_ts::OrderId": {
+                "description": "An order id.",
+                "pattern": "^o-[0-9]+$",
+                "type": "string"
+              },
+              "rpc_gen_ts::Status": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Open"
+                      }
+                    },
+                    "required": [
+                      "_tag"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "properties": {
+                      "_tag": {
+                        "const": "Shipped"
+                      },
+                      "tracking": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "_tag",
+                      "tracking"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "rpc_gen_ts::Timestamp": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/rpc_gen_ts::OrderId"
+              },
+              "lines": {
+                "additionalProperties": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placed_at": {
+                "$ref": "#/$defs/rpc_gen_ts::Timestamp"
+              },
+              "status": {
+                "$ref": "#/$defs/rpc_gen_ts::Status"
+              }
+            },
+            "required": [
+              "id",
+              "placed_at",
+              "lines",
+              "status"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "UnknownOrder"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "SoldOut"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Places an order; anyone may, and an `Idempotency-Key` replays it.",
+          "idempotent": true
+        },
+        {
+          "name": "product",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$defs": {
+              "rpc_gen_ts::Price": {
+                "properties": {
+                  "cents": {
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cents",
+                  "currency"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "price": {
+                "$ref": "#/$defs/rpc_gen_ts::Price"
+              },
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "price",
+              "tags"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "UnknownOrder"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "SoldOut"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "One product by id."
+        },
+        {
+          "name": "restock",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "staff"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotFound"
+                  },
+                  "id": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "UnknownOrder"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "SoldOut"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Restocks a product (staff only).",
+          "idempotent": true
+        },
+        {
+          "name": "shout",
+          "kind": "bidi",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "error": null,
+          "description": "Every line back in upper case."
+        },
+        {
+          "name": "sleep",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "Answers `ms` after `ms` milliseconds."
+        },
+        {
+          "name": "ticks",
+          "kind": "subscription",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "Five ticks from `from`, resumable by cursor."
+        },
+        {
+          "name": "total",
+          "kind": "client_stream",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "integer"
+          },
+          "error": null,
+          "description": "The sum of the client's numbers.",
+          "max_items": 1000,
+          "max_bytes": 4194304
+        }
+      ]
+    },
+    {
+      "name": "Shop",
+      "version": 2,
+      "description": "The shop's second version, served beside the first.",
+      "procedures": [
+        {
+          "name": "names",
+          "kind": "query",
+          "access": {
+            "public": {}
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": null,
+          "description": "Every product name."
+        }
+      ]
+    }
+  ]
+}

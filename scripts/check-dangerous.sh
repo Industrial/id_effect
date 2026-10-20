@@ -11,8 +11,13 @@
 # functions in EXEMPT below (readers of the registry, not opt-outs). Strings and `//` comments
 # are ignored when matching braces and calls.
 #
-# Usage: bash scripts/check-dangerous.sh [--self-test] [DIR...]
+# REQUIRED lists the opt-outs a release introduced (ADR 0014 §14: "every dangerous_* API
+# introduced here ... is listed by scripts/check-dangerous.sh"); with no DIR, each must still
+# exist under crates/ and record itself, so renaming or dropping one updates this list.
+#
+# Usage: bash scripts/check-dangerous.sh [--self-test] [--list] [DIR...]
 #   no DIR: crates/. --self-test runs the cases below against fixtures in a temporary directory.
+#   --list prints every checked opt-out (`found <file>:<line>: fn <name>`).
 # Requires: bash, find, a POSIX awk (AWK=… picks another; gawk, mawk and busybox awk all work).
 set -euo pipefail
 
@@ -23,6 +28,21 @@ EXEMPT=(
     # The registry itself: the hook, and the list of recorded opt-outs.
     "crates/id_effect/src/observability/posture.rs:record_dangerous"
     "crates/id_effect/src/observability/posture.rs:dangerous_opt_outs"
+)
+
+# `path:function` of the opt-outs 0.12 introduced (ADR 0014 C4, C6, C7, C11, C12; the TLS and
+# QUIC limits). Each is also a posture probe input (id_effect_kit::posture).
+REQUIRED=(
+    "crates/id_effect_axum/src/realtime/origin.rs:dangerous_any_origin"
+    "crates/id_effect_axum/src/realtime/ws.rs:dangerous_any_origin"
+    "crates/id_effect_axum/src/server/webtransport.rs:dangerous_any_origin"
+    "crates/id_effect_axum/src/server/h3.rs:dangerous_allow_zero_rtt_for_queries"
+    "crates/id_effect_axum/src/server/connection.rs:dangerous_no_tls_handshake_timeout"
+    "crates/id_effect_axum/src/server/connection.rs:dangerous_unlimited_concurrent_streams"
+    "crates/id_effect_platform/src/quic/config.rs:dangerous_no_retry"
+    "crates/id_effect_platform/src/quic/config.rs:dangerous_raise_limits"
+    "crates/id_effect_rpc/src/channels/policy.rs:dangerous_allow_all_joins"
+    "crates/id_effect_rpc/src/openapi.rs:public_dangerous"
 )
 
 # Reads every file given; prints `file:line: problem` and `checked <n> <direct> <delegated>`.
@@ -71,13 +91,16 @@ function braces(code,    i, c, d) {
     }
     return d
 }
+function found() {
+    printf "found %s:%d: fn %s\n", fn_file, fn_line, fn_name
+}
 function finish(    body) {
     body = fn_body
     # The function's own name is not a delegation.
     sub("fn[ \t]+" fn_name, "", body)
     checked++
-    if (body ~ /record_dangerous[ \t]*\(/) direct++
-    else if (body ~ /(dangerous|insecure)_[A-Za-z0-9_]*[ \t]*(::<[^>]*>)?[ \t]*\(/ || body ~ /[A-Za-z0-9]_(dangerous|insecure)[ \t]*(::<[^>]*>)?[ \t]*\(/) delegated++
+    if (body ~ /record_dangerous[ \t]*\(/) { direct++; found() }
+    else if (body ~ /(dangerous|insecure)_[A-Za-z0-9_]*[ \t]*(::<[^>]*>)?[ \t]*\(/ || body ~ /[A-Za-z0-9]_(dangerous|insecure)[ \t]*(::<[^>]*>)?[ \t]*\(/) { delegated++; found() }
     else { printf "%s:%d: fn %s does not call record_dangerous (ADR 0013 R10)\n", fn_file, fn_line, fn_name; bad++ }
     in_fn = 0
 }
@@ -300,19 +323,40 @@ if [[ "${1:-}" == "--self-test" ]]; then
     exit 0
 fi
 
+list=0
+if [[ "${1:-}" == "--list" ]]; then
+    list=1
+    shift
+fi
 dirs=("$@")
+required=0
 if ((${#dirs[@]} == 0)); then
     # Relative, so the problems read `crates/<crate>/src/…:line`.
     cd "$ROOT"
     dirs=(crates)
+    required=1
 fi
 
 status=0
 out="$(check_dirs "${dirs[@]}")" || status=1
-grep -v '^checked ' <<<"$out" || true
+grep -v -e '^checked ' -e '^found ' <<<"$out" || true
+if ((list)); then
+    grep '^found ' <<<"$out" || true
+fi
 read -r _ checked direct delegated < <(grep '^checked ' <<<"$out")
 if ((status != 0)); then
     echo "check-dangerous: opt-outs above do not record themselves (ADR 0013 R10)" >&2
     exit 1
+fi
+if ((required)); then
+    missing=0
+    for entry in "${REQUIRED[@]}"; do
+        if ! grep -q -- "^found ${entry%%:*}:[0-9]*: fn ${entry#*:}\$" <<<"$out"; then
+            echo "check-dangerous: ${entry} is listed in REQUIRED but not found (renamed or removed?)" >&2
+            missing=1
+        fi
+    done
+    ((missing == 0)) || exit 1
+    echo "check-dangerous: the ${#REQUIRED[@]} opt-outs of REQUIRED (0.12) exist and record themselves"
 fi
 echo "check-dangerous: $checked dangerous_*/insecure_*/*_dangerous/*_insecure functions record their opt-out ($direct directly, $delegated by delegation)"

@@ -17,6 +17,11 @@ excludes = [
   ".maestro/**",
   # Vendored, checksummed test fixtures: keep byte-for-byte (sha256 in the fixture README).
   "crates/id_effect_axum/tests/fixtures/openapi/*.json",
+  # RPC contract snapshots are compared byte-for-byte with Contract::to_json_pretty output.
+  "crates/id_effect_rpc/*.contract.json",
+  "**/rpc.contract.json",
+  # The AsyncAPI 3.0 schema, vendored unchanged (source and sha256 in tests/asyncapi_emit.rs).
+  "crates/id_effect_rpc/tests/fixtures/asyncapi-3.0.schema.json",
   ".cursor/agency-agents/**",
   ".cursor/microsoft-rust-training/**",
   ".cursor/vendor/**",

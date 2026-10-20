@@ -1,0 +1,14 @@
+error: procedure `wipe` has no access decision
+         help: add `#[public]` to let anyone call it, or `#[guard(G)]` to run a guard first; procedures deny by default (ADR 0013 R1)
+ --> tests/ui/procedure_without_access_decision.rs:8:6
+  |
+8 |   fn wipe(&self, all: bool) -> Effect<(), Never, DynEnv>;
+  |      ^^^^
+
+warning: unused imports: `DynEnv`, `Effect`, and `Never`
+ --> tests/ui/procedure_without_access_decision.rs:2:17
+  |
+2 | use id_effect::{DynEnv, Effect, Never};
+  |                 ^^^^^^  ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

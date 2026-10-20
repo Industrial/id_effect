@@ -21,6 +21,66 @@ struct Ch2902OpenApi;
 struct Ch2903Middleware;
 
 #[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-07-http3-deployment.md")]
+struct Ch2907Http3Deployment;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch29-09-certificates-acme.md")]
+struct Ch2909CertificatesAcme;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-00-one-call-surface.md")]
+struct Ch3300OneCallSurface;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-01-procedures.md")]
+struct Ch3301Procedures;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-02-batching.md")]
+struct Ch3302Batching;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-03-encodings.md")]
+struct Ch3303Encodings;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-04-service-macro.md")]
+struct Ch3304ServiceMacro;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-05-websocket-sse.md")]
+struct Ch3305WebsocketSse;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-06-rpc-transports.md")]
+struct Ch3306RpcTransports;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-07-two-way-streams.md")]
+struct Ch3307TwoWayStreams;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-08-subscriptions.md")]
+struct Ch3308Subscriptions;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-09-channels-presence.md")]
+struct Ch3309ChannelsPresence;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-10-contracts.md")]
+struct Ch3310Contracts;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-11-typescript-client.md")]
+struct Ch3311TypescriptClient;
+
+#[cfg(doctest)]
+#[doc = include_str!("../../../crates/id_effect/book/src/part6/ch33-12-contract-check.md")]
+struct Ch3312ContractCheck;
+
+#[cfg(doctest)]
 #[doc = include_str!("../../../crates/id_effect/book/src/part6/ch30-02-authorization.md")]
 struct Ch3002Authorization;
 

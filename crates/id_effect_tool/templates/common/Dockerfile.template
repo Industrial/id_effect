@@ -12,6 +12,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --uid 10001 app
 COPY --from=builder /app/target/release/{{name}} /usr/local/bin/{{name}}
+{{#if service}}
+# The profiles (config/base.toml: server.http3.enabled, config/prod.toml: [server.tls]).
+WORKDIR /app
+COPY --from=builder /app/config ./config
+{{/if}}
 {{#if pg}}
 # Applied on start from ./migrations (src/db.rs).
 WORKDIR /app

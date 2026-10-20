@@ -182,7 +182,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Effect<A,E,R> with trybuild fail and gallery suites, book part1 ch01-03, examples 001-018. Used by the CI-tested Ledger (ci.yml reference-ledger job, cargo nextest -p ledger): src/main.rs:27 Effect<LedgerConfig, StartupError>, src/db.rs:108 need::<MigrationsApplied>. #5 not met: no catchTag-style combinator; book part3/ch08-03-recovery.md lists only catch/map_err/exit.",
 			"targets": {
@@ -230,7 +231,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -290,6 +292,15 @@
 							"core.typed-effect#8"
 						],
 						"0.11.0": [
+							"core.typed-effect#1",
+							"core.typed-effect#2",
+							"core.typed-effect#3",
+							"core.typed-effect#4",
+							"core.typed-effect#6",
+							"core.typed-effect#7",
+							"core.typed-effect#8"
+						],
+						"0.12.0": [
 							"core.typed-effect#1",
 							"core.typed-effect#2",
 							"core.typed-effect#3",
@@ -362,7 +373,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Layer succeed/effect/scoped/acquire_release/fresh/merge/provide_to with UI and layer tests, book part2 ch06-07. Ledger: src/db.rs:108-110 need + Layer::succeed + provide_layer/provide_merge, tests/common/mod.rs:154-174, CI job reference-ledger. #8 not met: crates/id_effect_kit/src/graph.rs LayerGraph renders text/DOT (book part6/ch34-01-doctor-graph.md, tests/graph.rs) and reports missing needs, but has no cycle detection.",
 			"targets": {
@@ -411,7 +423,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -472,6 +485,15 @@
 							"core.di#7"
 						],
 						"0.11.0": [
+							"core.di#1",
+							"core.di#2",
+							"core.di#3",
+							"core.di#4",
+							"core.di#5",
+							"core.di#6",
+							"core.di#7"
+						],
+						"0.12.0": [
 							"core.di#1",
 							"core.di#2",
 							"core.di#3",
@@ -559,7 +581,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Book part1 ch03, examples 006-010/054, tests join_binds.rs/race_timeout.rs. The Ledger does not use effect! (no match in examples/reference/ledger), so not production. #7 met since 0.11: the first-party Dylint lints (lints/id_effect_lints, published with the tag) run over the workspace on every pull request (.github/workflows/lint.yml:42). #6 not met: Rust signatures need explicit Effect<A,E,R> annotations (generic_runner_unannotated UI case).",
 			"targets": {
@@ -608,7 +631,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -661,6 +685,15 @@
 							"core.ergonomics#8"
 						],
 						"0.11.0": [
+							"core.ergonomics#1",
+							"core.ergonomics#2",
+							"core.ergonomics#3",
+							"core.ergonomics#4",
+							"core.ergonomics#5",
+							"core.ergonomics#7",
+							"core.ergonomics#8"
+						],
+						"0.12.0": [
 							"core.ergonomics#1",
 							"core.ergonomics#2",
 							"core.ergonomics#3",
@@ -799,7 +832,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "failure/{cause,exit,pretty}.rs, tests/panic.rs, book part3 ch08-01..03, examples 017-018. Used by the CI-tested Ledger: src/main.rs:94-98 describe(Cause<StartupError>), tests/common/mod.rs:178 Exit::Failure(Cause::Die(defect)). #7 not met: Defect carries message + payload only, no stack or span trace.",
 			"targets": {
@@ -847,7 +881,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -905,6 +940,15 @@
 							"core.cause#8"
 						],
 						"0.11.0": [
+							"core.cause#1",
+							"core.cause#2",
+							"core.cause#3",
+							"core.cause#4",
+							"core.cause#5",
+							"core.cause#6",
+							"core.cause#8"
+						],
+						"0.12.0": [
 							"core.cause#1",
 							"core.cause#2",
 							"core.cause#3",
@@ -1035,7 +1079,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "kernel/resource.rs, scope/scope.rs, resource/pool.rs with tests fibers.rs/scope.rs/resource.rs/layer_scoped.rs, book part3 ch10-00..04, examples 089_ensuring/090_acquire_release/091_scope_with/103_pool. The Ledger uses the bracket through id_effect_sql with_transaction_options (src/entries.rs:36), exercised by tests/entries.rs and tests/faults.rs postings_survive_sql_latency_and_lost_conflicts in the CI reference-ledger job.",
 			"targets": {
@@ -1083,7 +1128,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1145,6 +1191,16 @@
 							"core.scope#8"
 						],
 						"0.11.0": [
+							"core.scope#1",
+							"core.scope#2",
+							"core.scope#3",
+							"core.scope#4",
+							"core.scope#5",
+							"core.scope#6",
+							"core.scope#7",
+							"core.scope#8"
+						],
+						"0.12.0": [
 							"core.scope#1",
 							"core.scope#2",
 							"core.scope#3",
@@ -1247,7 +1303,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Masks, structured child interruption, race/timeout loser semantics; tests fibers.rs/race_timeout.rs; book part3/ch09-03-cancellation.md. Upgraded to production: the CI-tested Ledger's request timeout (src/app.rs:427 TimeoutLayer) interrupts the handler fiber (crates/id_effect_axum/src/middleware/limits.rs:4-7, DropPolicy::Interrupt), tested by ledger tests/http.rs:166 slow_requests_time_out; src/main.rs:78 aborts background fibers on shutdown. #6 not met: no on_interrupt/on_cancel hook (only emulation via acquire_use_release ExitKind).",
 			"targets": {
@@ -1295,7 +1352,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1352,6 +1410,15 @@
 							"core.interrupt#8"
 						],
 						"0.11.0": [
+							"core.interrupt#1",
+							"core.interrupt#2",
+							"core.interrupt#3",
+							"core.interrupt#4",
+							"core.interrupt#5",
+							"core.interrupt#7",
+							"core.interrupt#8"
+						],
+						"0.12.0": [
 							"core.interrupt#1",
 							"core.interrupt#2",
 							"core.interrupt#3",
@@ -1454,7 +1521,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "race.rs/par.rs with tests race_timeout.rs, par.rs and fibers.rs, book part3 ch09, example 049_fiber_all.rs. The Ledger does not call Effect::race/timeout/zip_par directly (its HTTP timeout is the axum TimeoutLayer), so documented. #8 not met: race_with (race.rs:135) is a private fn; no public race_with/disconnect.",
 			"targets": {
@@ -1502,7 +1570,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1555,6 +1624,15 @@
 							"core.race#7"
 						],
 						"0.11.0": [
+							"core.race#1",
+							"core.race#2",
+							"core.race#3",
+							"core.race#4",
+							"core.race#5",
+							"core.race#6",
+							"core.race#7"
+						],
+						"0.12.0": [
 							"core.race#1",
 							"core.race#2",
 							"core.race#3",
@@ -1647,7 +1725,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Fiber runtime fork/fork_daemon/join/interrupt with tests/fibers.rs, book part3 ch09-01/02, examples 048-049, spawn+join benchmark in docs/benchmarks. Upgraded to production: the CI-tested Ledger runs on fibers and exposes the live fiber dump through its console (examples/reference/ledger/src/console.rs:1, tests/console.rs). #2 not met: no 1M idle-fiber measurement or documented claim found.",
 			"targets": {
@@ -1695,7 +1774,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1745,6 +1825,15 @@
 							"conc.fibers#8"
 						],
 						"0.11.0": [
+							"conc.fibers#1",
+							"conc.fibers#3",
+							"conc.fibers#4",
+							"conc.fibers#5",
+							"conc.fibers#6",
+							"conc.fibers#7",
+							"conc.fibers#8"
+						],
+						"0.12.0": [
 							"conc.fibers#1",
 							"conc.fibers#3",
 							"conc.fibers#4",
@@ -1852,7 +1941,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "coordination/* with tests coordination*.rs, examples 100-102, book part3 ch09-ch10. The Ledger does not use these primitives directly, so documented. #8 not met: zero capacity is clamped (queue.rs:194 capacity.max(1)) and closed queues return values, but there is no misuse/no-panic guarantee or test across the primitives (e.g. Semaphore::acquire_n above total permits just waits).",
 			"targets": {
@@ -1900,7 +1990,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -1960,6 +2051,15 @@
 							"conc.coordination#7"
 						],
 						"0.11.0": [
+							"conc.coordination#1",
+							"conc.coordination#2",
+							"conc.coordination#3",
+							"conc.coordination#4",
+							"conc.coordination#5",
+							"conc.coordination#6",
+							"conc.coordination#7"
+						],
+						"0.12.0": [
 							"conc.coordination#1",
 							"conc.coordination#2",
 							"conc.coordination#3",
@@ -2055,7 +2155,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 89
 			},
 			"evidence": "STM moved into core in 0.11: id_effect::stm (crates/id_effect/src/stm/, lib.rs:121; id_effect_fp::stm keeps deprecated aliases, crates/id_effect_fp/src/lib.rs:14,73). TRef, TMap, TQueue and TSemaphore plus the 0.11 collections TSet, TArray, TPriorityQueue, TPromise and TReentrantLock; contention tests crates/id_effect/tests/stm_contention.rs and stm_collections.rs; examples 077-091; book part4 ch12-00..04 (ch12-04-collections.md). Not used by the Ledger, so the level is documented (cap 89). 8/8.",
 			"targets": {
@@ -2103,7 +2204,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2162,6 +2264,16 @@
 							"conc.stm#8"
 						],
 						"0.11.0": [
+							"conc.stm#1",
+							"conc.stm#2",
+							"conc.stm#3",
+							"conc.stm#4",
+							"conc.stm#5",
+							"conc.stm#6",
+							"conc.stm#7",
+							"conc.stm#8"
+						],
+						"0.12.0": [
 							"conc.stm#1",
 							"conc.stm#2",
 							"conc.stm#3",
@@ -2240,7 +2352,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "compute/* fabric, admission, governor with tests fabric.rs and compute_adaptive.rs, examples 120-122, book part3/ch12-00-compute-fabric.md. Not used by the Ledger. #8 not met: only AdmissionController::waiting() (admission.rs:66) and host CPU/mem telemetry; no exported pool-utilisation metrics (queue depth, active workers).",
 			"targets": {
@@ -2288,7 +2401,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2347,6 +2461,15 @@
 							"conc.parallel#7"
 						],
 						"0.11.0": [
+							"conc.parallel#1",
+							"conc.parallel#2",
+							"conc.parallel#3",
+							"conc.parallel#4",
+							"conc.parallel#5",
+							"conc.parallel#6",
+							"conc.parallel#7"
+						],
+						"0.12.0": [
 							"conc.parallel#1",
 							"conc.parallel#2",
 							"conc.parallel#3",
@@ -2428,9 +2551,10 @@
 				"0.8.0": 63,
 				"0.9.0": 63,
 				"0.10.0": 63,
-				"0.11.0": 63
+				"0.11.0": 63,
+				"0.12.0": 88
 			},
-			"evidence": "Criterion gate benches, gates.toml, bench-compare.sh, docs/benchmarks/README.md with the 0.10 exit comparison. Level kept at documented to match 0.9; note that the coverage is docs/benchmarks rather than a book chapter, so a strict reading would give tested. Not met: #5 no independent cross-framework listing, #6 no per-task memory footprint measurement, #8 no published p99 under load.",
+			"evidence": "Criterion gate benches, gates.toml, bench-compare.sh, docs/benchmarks/README.md with v0.12.json. New in 0.12: the 10,000-stream soak (crates/id_effect_rpc/examples/streams_soak.rs) measures node RSS and documents about 35 KiB per stream (README.md:330-331), and p99 latency under load is published: HTTP/2 vs HTTP/3 p50/p99 under loss (benches/h3_loss.rs, README.md:287-291) and heartbeat-lag p50/p99/p999 across 10,000 concurrent streams (README.md:322, :344). Level kept at documented (benchmark docs, not a book chapter). Not met: #5 no independent cross-framework listing. Caveat: the netem h3_loss CI gate has never run (README.md:275-277); the published figures are local runs.",
 			"targets": {
 				"1.0.0": 88
 			},
@@ -2476,7 +2600,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2526,6 +2651,15 @@
 							"conc.perf#3",
 							"conc.perf#4",
 							"conc.perf#7"
+						],
+						"0.12.0": [
+							"conc.perf#1",
+							"conc.perf#2",
+							"conc.perf#3",
+							"conc.perf#4",
+							"conc.perf#6",
+							"conc.perf#7",
+							"conc.perf#8"
 						]
 					},
 					"effect_ts": ["conc.perf#2", "conc.perf#3"],
@@ -2556,7 +2690,9 @@
 					"conc.perf#2": "docs/benchmarks/README.md 0.10 exit: gate/spawn_join_10k about 12-17 ms per 10k (about 1.2-1.7 us per task)",
 					"conc.perf#3": "crates/id_effect_tokio/benches/gate_fiber.rs gate/sleep_cpu_1k_x_1ms (process CPU time); 0.10 ratio 1.02 vs 0.9, 0.002 vs v0.6",
 					"conc.perf#4": "crates/id_effect_axum/benches/gate_request.rs gate/axum_request_oneshot (about 7 us at 0.9; 0.10 ratio 1.02)",
-					"conc.perf#7": "Rust AOT native, no GC; [lints.rust] unsafe_code = forbid (crates/id_effect/Cargo.toml:14)"
+					"conc.perf#6": "crates/id_effect_rpc/examples/streams_soak.rs (VmRSS of the node over 10,000 streams); docs/benchmarks/README.md:317-321, :330-331 'about 35 KiB per stream'; docs/benchmarks/v0.12.json",
+					"conc.perf#7": "Rust AOT native, no GC; [lints.rust] unsafe_code = forbid (crates/id_effect/Cargo.toml:14)",
+					"conc.perf#8": "crates/id_effect_rpc/benches/h3_loss.rs (64 multiplexed requests per round, p50/p99); docs/benchmarks/README.md:287-291 p99 table, :322 and :344 soak heartbeat lag p99 under 10,000 streams; bench.yml soak and h3_loss jobs"
 				},
 				"notes": {
 					"id_effect": "v1 scored micro-bench speed-ups; v2 also needs TechEmpower presence, memory-per-task and p99 data, none published (0.6.0 also had no committed bench suite: 1 of 8)."
@@ -2587,7 +2723,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "forbid(unsafe_code), Send UI tests, panic boundary, cargo audit and cargo deny in CI. The CI-tested Ledger applies the same policy (examples/reference/ledger/Cargo.toml:10-11; ci.yml reference-ledger job runs clippy -D warnings and cargo nextest -p ledger). #8 not met: tasks share the heap (Arc-shared state).",
 			"targets": {},
@@ -2633,7 +2770,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -2692,6 +2830,15 @@
 							"conc.safety#7"
 						],
 						"0.11.0": [
+							"conc.safety#1",
+							"conc.safety#2",
+							"conc.safety#3",
+							"conc.safety#4",
+							"conc.safety#5",
+							"conc.safety#6",
+							"conc.safety#7"
+						],
+						"0.12.0": [
 							"conc.safety#1",
 							"conc.safety#2",
 							"conc.safety#3",
@@ -2768,7 +2915,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "id_effect_process supervisor/dynamic with tests supervision_contracts.rs and supervision_trees.rs, examples 130_process_tree.rs and 154_cookbook_supervised_daemon.rs, book part7/ch37-00 and cookbook ch40-04. The Ledger starts no supervisor (it only shows the console's supervisors panel), so documented. #8 not met: no significant children/auto_shutdown/max_children (dynamic.rs:25-34 spec has none).",
 			"targets": {
@@ -2816,7 +2964,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -2877,6 +3026,15 @@
 							"fault.supervision#7"
 						],
 						"0.11.0": [
+							"fault.supervision#1",
+							"fault.supervision#2",
+							"fault.supervision#3",
+							"fault.supervision#4",
+							"fault.supervision#5",
+							"fault.supervision#6",
+							"fault.supervision#7"
+						],
+						"0.12.0": [
 							"fault.supervision#1",
 							"fault.supervision#2",
 							"fault.supervision#3",
@@ -2950,9 +3108,10 @@
 				"0.8.0": 63,
 				"0.9.0": 63,
 				"0.10.0": 63,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 100
 			},
-			"evidence": "id_effect_process Addr/Node/ProcessCtx with tests process_contracts.rs and process_semantics.rs, book part7 ch37. New in 0.11: send_after timers and idle timeouts, selective receive with a timeout, and Next::Hibernate (tests/timers.rs, selective_receive.rs; examples send_after_timers.rs, hibernate.rs; book part7/ch37-01-timers-selective-receive.md). Not used by the Ledger, so the level is documented (cap 89). 8/8.",
+			"evidence": "id_effect_process Addr/Node/ProcessCtx with tests process_contracts.rs, process_semantics.rs, timers.rs, selective_receive.rs; book part7 ch37 and ch37-01. Production: the CI-tested Relay builds a ProcessNode and BehaviorRegistry (examples/reference/relay/src/node.rs:239-243) and runs its channels hub as a process (crates/id_effect_rpc/src/channels/backplane.rs:155 impl Process for HubProcess, :178 handle_cast) with remote monitors; tests/chat.rs in ci.yml reference-relay. 8/8. The Relay uses actors indirectly through the channels hub, not its own behaviours. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -2998,7 +3157,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "production"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -3049,6 +3209,16 @@
 							"fault.actors#5"
 						],
 						"0.11.0": [
+							"fault.actors#1",
+							"fault.actors#2",
+							"fault.actors#3",
+							"fault.actors#4",
+							"fault.actors#5",
+							"fault.actors#6",
+							"fault.actors#7",
+							"fault.actors#8"
+						],
+						"0.12.0": [
 							"fault.actors#1",
 							"fault.actors#2",
 							"fault.actors#3",
@@ -3130,7 +3300,8 @@
 				"0.8.0": 63,
 				"0.9.0": 63,
 				"0.10.0": 63,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 89
 			},
 			"evidence": "id_effect_fsm machine/interpreter/visualize/behaviour, and new in 0.11 the Statem behaviour with gen_statem parity (crates/id_effect_fsm/src/statem.rs: data-carrying states, state/event/generic timeouts, postpone). Book part5 ch19-00..05 (ch19-05-statem.md), examples door_fsm.rs, supervised_traffic_light.rs, statem_door_lock.rs; tests tests/statem.rs, fsm_process.rs, derive_fsm.rs. Not used by the Ledger, so the level is documented (cap 89). 8/8.",
 			"targets": {
@@ -3178,7 +3349,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "labs",
 					"zio": "absent",
@@ -3229,6 +3401,16 @@
 							"fault.fsm#8"
 						],
 						"0.11.0": [
+							"fault.fsm#1",
+							"fault.fsm#2",
+							"fault.fsm#3",
+							"fault.fsm#4",
+							"fault.fsm#5",
+							"fault.fsm#6",
+							"fault.fsm#7",
+							"fault.fsm#8"
+						],
+						"0.12.0": [
 							"fault.fsm#1",
 							"fault.fsm#2",
 							"fault.fsm#3",
@@ -3333,7 +3515,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "id_effect_resilience with tests/pipeline.rs, examples 010/020/030, book part5 ch21-00/01. Ledger: login rate limit via id_effect_axum RateLimitLayer over id_effect_resilience (crates/id_effect_axum/src/middleware/rate_limit.rs:7,55; ledger src/limits.rs:170), tested by ledger tests/limits.rs an_organisation_shares_one_login_budget_across_clients and login_limits_follow_the_profile_file (429), plus retrying traced HTTP (src/mail.rs:68) in the CI reference-ledger job.",
 			"targets": {
@@ -3381,7 +3564,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3442,6 +3626,16 @@
 							"fault.resilience#8"
 						],
 						"0.11.0": [
+							"fault.resilience#1",
+							"fault.resilience#2",
+							"fault.resilience#3",
+							"fault.resilience#4",
+							"fault.resilience#5",
+							"fault.resilience#6",
+							"fault.resilience#7",
+							"fault.resilience#8"
+						],
+						"0.12.0": [
 							"fault.resilience#1",
 							"fault.resilience#2",
 							"fault.resilience#3",
@@ -3534,7 +3728,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "scheduling/{schedule,cron,cron_job}.rs with tests schedule.rs and cron.rs, examples 052-055 and 123, book part3 ch11-00..05. Ledger: src/entries.rs:258-260 Schedule::exponential(..).intersect(Schedule::recurs(10)) for serialization retries, src/jobs.rs:111-112 exponential.union(spaced); tested by ledger tests/faults.rs postings_survive_sql_latency_and_lost_conflicts (seeded fault plan) and tests/entries.rs in the CI job.",
 			"targets": {
@@ -3582,7 +3777,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -3643,6 +3839,16 @@
 							"fault.schedule#8"
 						],
 						"0.11.0": [
+							"fault.schedule#1",
+							"fault.schedule#2",
+							"fault.schedule#3",
+							"fault.schedule#4",
+							"fault.schedule#5",
+							"fault.schedule#6",
+							"fault.schedule#7",
+							"fault.schedule#8"
+						],
+						"0.12.0": [
 							"fault.schedule#1",
 							"fault.schedule#2",
 							"fault.schedule#3",
@@ -3748,7 +3954,8 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 38,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Promoted in 0.11: the published crate crates/id_effect_workflow (tier platform, Cargo.toml:48; publish order scripts/validate-crate-packaging.sh:64,76; the labs workflow crate is removed): journal and replay over a Postgres store, durable timers, signals, and activities on id_effect_jobs workers. Book part6/ch32-00-workflow-cluster.md; examples 010_order_saga, 020_durable_timer, 030_signal_approval; integration tests tests/replay.rs, engine_pg.rs, saga_pg.rs, timers_pg.rs, signals_pg.rs and activities_pg.rs (PG in CI). Production: the CI-tested Ledger runs account closure as a durable workflow (examples/reference/ledger/src/closure.rs; tests/closure.rs:109 account_closure_workflow_survives_restart; ci.yml:318-321 reference-ledger). Not met: #6, because the instance version is recorded but not routed (workflow.rs:66-67, E13.5), and #8, because the engine reads one instance by id (engine.rs:291 instance, :296 status) and nothing lists or queries running instances.",
 			"targets": {
@@ -3796,7 +4003,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "labs",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -3837,6 +4045,14 @@
 							"fault.workflows#3"
 						],
 						"0.11.0": [
+							"fault.workflows#1",
+							"fault.workflows#2",
+							"fault.workflows#3",
+							"fault.workflows#4",
+							"fault.workflows#5",
+							"fault.workflows#7"
+						],
+						"0.12.0": [
 							"fault.workflows#1",
 							"fault.workflows#2",
 							"fault.workflows#3",
@@ -3947,7 +4163,8 @@
 				"0.8.0": 40,
 				"0.9.0": 40,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Graceful drain, health/readiness, documented rolling restarts, id-effect dev live reload and ProfileWatch config hot reload, with integration tests, example 071_health.rs and book part6 ch27/ch34. The CI-tested Ledger serves /health and /ready, drains on shutdown and hot-reloads its login limits (tests/limits.rs:65). Not met: #2 hot code loading, #6 code_change state migration, #7 appup/relup tooling.",
 			"targets": {
@@ -4005,7 +4222,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4032,6 +4250,13 @@
 							"fault.reload#8"
 						],
 						"0.11.0": [
+							"fault.reload#1",
+							"fault.reload#3",
+							"fault.reload#4",
+							"fault.reload#5",
+							"fault.reload#8"
+						],
+						"0.12.0": [
 							"fault.reload#1",
 							"fault.reload#3",
 							"fault.reload#4",
@@ -4115,9 +4340,10 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "New in 0.11: Kubernetes EndpointSlice discovery (feature kubernetes; crates/id_effect_node/src/discovery.rs:190 KubernetesDiscovery, no kube-rs) with tests/discovery_kubernetes.rs against an in-process fake API and book part7/ch38-00-distribution.md:146-172. Book ch38-00, examples crates/id_effect_node/examples/131-135, integration tests tests/membership_swim.rs and chaos_partition.rs. The Ledger does not depend on id_effect_node, so the level is documented. #8 not met: no quorum or downing strategy (singleton.rs:3 only notes the singleton is unavailable without quorum).",
+			"evidence": "Kubernetes EndpointSlice discovery (crates/id_effect_node/src/discovery.rs:190 KubernetesDiscovery) with tests/discovery_kubernetes.rs, book part7/ch38-00-distribution.md, examples 131-135, tests membership_swim.rs and chaos_partition.rs. Level documented: the Ledger does not depend on id_effect_node, and the Relay (new in 0.12) uses the mesh with NodeId::fresh incarnations (examples/reference/relay/src/node.rs:238) but joins its peers from its own RELAY_PEERS list (examples/reference/relay/src/main.rs:84-90, RelayNode::connect) and detects node loss through the channels heartbeat and remote monitors, not through id_effect_node discovery or SWIM. #8 not met: no quorum or downing strategy.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -4163,7 +4389,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4219,6 +4446,15 @@
 							"dist.membership#7"
 						],
 						"0.11.0": [
+							"dist.membership#1",
+							"dist.membership#2",
+							"dist.membership#3",
+							"dist.membership#4",
+							"dist.membership#5",
+							"dist.membership#6",
+							"dist.membership#7"
+						],
+						"0.12.0": [
 							"dist.membership#1",
 							"dist.membership#2",
 							"dist.membership#3",
@@ -4316,9 +4552,10 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "New in 0.11 (protocol v3): at-least-once delivery (tests/reliable_delivery.rs) and trace context on every remote message: Mesh::with_trace_propagator (mesh.rs:194, default W3cTraceContext) carries the sending fiber's span (book part7/ch38-00-distribution.md:73-127; tests/reliable_delivery.rs:428 remote_call_carries_trace_context). Book ch38, example 131_two_node_cluster, tests/remote_processes.rs and mesh_routing.rs. Not used by the Ledger, so the level is documented. #7 not met: nodes refuse to connect across protocol versions (wire.rs:14-27, PROTOCOL_VERSION 3; tests/reliable_delivery.rs:475 version_mismatch_refused).",
+			"evidence": "Protocol v3: at-least-once delivery (tests/reliable_delivery.rs) and trace context on remote messages (mesh.rs:194). Book ch38-00 and new ch38-02-rpc-over-the-mesh.md, example 131_two_node_cluster, tests remote_processes.rs, mesh_routing.rs; the same RPC contract node to node (crates/id_effect_rpc/src/transport/mesh.rs:329 MeshRpc; tests mesh_rpc.rs). Production: the CI-tested Relay's channels hubs cast to and monitor each other across nodes (crates/id_effect_rpc/src/channels/backplane.rs:311 mesh.remote_cast, :470 remote_monitor) with DeliveryConfig::at_least_once (examples/reference/relay/src/node.rs:242-243) and it calls RelayPeer.status over mesh RPC (node.rs:261; tests/chat.rs relay_presence_converges_after_node_loss). #7 not met: nodes still refuse other protocol versions (wire.rs:27 PROTOCOL_VERSION 3). CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -4364,7 +4601,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4427,6 +4665,15 @@
 							"dist.remote#5",
 							"dist.remote#6",
 							"dist.remote#8"
+						],
+						"0.12.0": [
+							"dist.remote#1",
+							"dist.remote#2",
+							"dist.remote#3",
+							"dist.remote#4",
+							"dist.remote#5",
+							"dist.remote#6",
+							"dist.remote#8"
 						]
 					},
 					"effect_ts": [
@@ -4476,10 +4723,10 @@
 				},
 				"evidence": {
 					"dist.remote#1": "crates/id_effect_node/src/envelope.rs PidWire (node, id, incarnation) and to_pid",
-					"dist.remote#2": "crates/id_effect_node/src/mesh.rs:474 remote_cast; tests/remote_processes.rs:90 remote_spawn_cast_call_round_trip",
-					"dist.remote#3": "crates/id_effect_node/src/mesh.rs:628 remote_call with timeout; book ch38-00-distribution.md:50",
+					"dist.remote#2": "crates/id_effect_node/src/mesh.rs:474 remote_cast; used by crates/id_effect_rpc/src/channels/backplane.rs:311 (Relay)",
+					"dist.remote#3": "crates/id_effect_rpc/src/transport/mesh.rs:329 MeshRpc; tests mesh_rpc.rs mesh_unary_and_stream_round_trip (:339), mesh_node_down_fails_calls_with_a_typed_error (:809); Relay examples/reference/relay/src/node.rs:261 rpc.serve(peer_service)",
 					"dist.remote#4": "crates/id_effect_node/src/mesh.rs:378 remote_spawn of a registered behavior (registry.rs:150 register); tests/remote_processes.rs:90, :136 unknown_behavior_is_rejected",
-					"dist.remote#5": "crates/id_effect_node/src/mesh.rs:671 remote_monitor; tests/remote_processes.rs:111 remote_monitor_fires_noconnection_on_peer_down; tests/mesh_routing.rs:226",
+					"dist.remote#5": "crates/id_effect_node/src/mesh.rs:671 remote_monitor; used by channels backplane.rs:470 (node loss drops a hub's members); Relay tests/chat.rs relay_presence_converges_after_node_loss (:240)",
 					"dist.remote#6": "crates/id_effect_node/src/envelope.rs:334 ProcessEnvelope::Link / :348 ExitSignal; handling at mesh.rs:945-968; tests mesh.rs:1539-1589",
 					"dist.remote#8": "NEW 0.11: crates/id_effect_node/src/mesh.rs:194 with_trace_propagator (default W3cTraceContext, :170), :569-575 the running fiber's span as a TraceContext on cast and call; crates/id_effect_node/tests/reliable_delivery.rs:428 remote_call_carries_trace_context; book ch38-00:73 'Trace context across nodes'"
 				}
@@ -4509,9 +4756,10 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "New in 0.11: a cluster-wide process name registry, GlobalRegistry (crates/id_effect_node/src/global_registry.rs:143; Mesh::global, mesh.rs:228), with BEAM global semantics and conflict resolution after a heal (tests/global_registry.rs, example 135_global_names.rs, book part7/ch39-01-global-registry.md). Book ch39-00-cluster-supervision.md, examples 132/133/135, tests/dist_supervision.rs and singleton_pg.rs. Not used by the Ledger, so the level is documented. #6 not met: no key-based sharding or rebalancing beyond the RebalanceRequest DTO (control.rs:48).",
+			"evidence": "GlobalRegistry (crates/id_effect_node/src/global_registry.rs:143; Mesh::global, mesh.rs:228) and process groups (groups.rs:126 ProcessGroups), book ch39-00/ch39-01, examples 132/133/135, tests dist_supervision.rs, singleton_pg.rs, global_registry.rs. Production: the CI-tested Relay's channels backplane registers each node's hub under a cluster-wide name (crates/id_effect_rpc/src/channels/backplane.rs:283 global().register_addr) and keeps topics as ProcessGroups broadcast to every member node (backplane.rs:195, :273, :519); Relay tests/chat.rs relay_three_nodes_chat_over_websocket and relay_presence_converges_after_node_loss. #6 not met: no key-based sharding or rebalancing beyond the RebalanceRequest DTO (control.rs:48). CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -4557,7 +4805,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4620,6 +4869,15 @@
 							"dist.placement#5",
 							"dist.placement#7",
 							"dist.placement#8"
+						],
+						"0.12.0": [
+							"dist.placement#1",
+							"dist.placement#2",
+							"dist.placement#3",
+							"dist.placement#4",
+							"dist.placement#5",
+							"dist.placement#7",
+							"dist.placement#8"
 						]
 					},
 					"effect_ts": [
@@ -4672,9 +4930,9 @@
 				"evidence": {
 					"dist.placement#1": "crates/id_effect_node/src/singleton.rs:181 ClusterSingleton (try_become :207, heartbeat :216, resign :223, is_holder :232); book ch39-00-cluster-supervision.md:6",
 					"dist.placement#2": "crates/id_effect_node/src/singleton.rs:339 PgAdvisoryLease (:392 connect, :401 from_pool_config); tests/singleton_pg.rs:129 pg_advisory_lease_enforces_single_holder, :160 dropping_the_holder_session_fails_over; run in the CI pg-integration job with ID_EFFECT_REQUIRE_PG=1 (.github/workflows/ci.yml:177-206)",
-					"dist.placement#3": "crates/id_effect_node/src/groups.rs ProcessGroups join/leave/members (OrSwot CRDT); tests/cluster_registry.rs:66 groups_join_leave_members",
-					"dist.placement#4": "crates/id_effect_node/src/fanout.rs:15 fanout_cast; tests/cluster_registry.rs:95 fanout_cast_reaches_all_group_members; example 133_cluster_stream_fanout",
-					"dist.placement#5": "NEW 0.11: crates/id_effect_node/src/global_registry.rs:143 GlobalRegistry, :157 register, :259 unregister, :288 whereis; crates/id_effect_node/tests/global_registry.rs:139 global_name_resolves_from_every_node, :298 conflicting_registration_after_heal_keeps_one; example 135_global_names.rs; book part7/ch39-01-global-registry.md",
+					"dist.placement#3": "crates/id_effect_node/src/groups.rs:126 ProcessGroups; used by channels backplane.rs:195/:273 in the Relay",
+					"dist.placement#4": "fan-out to a topic's group across nodes: crates/id_effect_rpc/src/channels/backplane.rs:519; tests channels_three_nodes.rs three_node_broadcast_over_quic_mtls (:295)",
+					"dist.placement#5": "crates/id_effect_node/src/global_registry.rs:143 GlobalRegistry; used by backplane.rs:244 whereis, :283 register_addr (Relay)",
 					"dist.placement#7": "crates/id_effect_node/src/dist_supervisor.rs on_membership re-places children on NodeDown; tests/dist_supervision.rs:118 takeover_replaces_child_on_node_down; example 132",
 					"dist.placement#8": "crates/id_effect_node/src/placement.rs:187 place, :42 ClusterResourcePolicy, :80 LoadReport; mesh.rs:457 remote_spawn_placed; tests/dist_supervision.rs:138 placement_picks_least_loaded_node"
 				}
@@ -4704,9 +4962,10 @@
 				"0.8.0": 50,
 				"0.9.0": 50,
 				"0.10.0": 50,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 100
 			},
-			"evidence": "New in 0.11: mutual TLS 1.3 by default over QUIC and TCP (feature tls-tcp), PEM certificates and CA bundles (transport/certs.rs), certificate reload without restart (CertReloader), and plaintext TCP only behind the insecure-plaintext-tcp feature (TcpTransport::dangerous_plaintext, recorded in the posture registry). Book part7/ch38-01-transport-security.md; example crates/id_effect_node/examples/134_mtls_cluster.rs; integration tests tests/transport_tls.rs, transport_tcp_tls.rs and mesh_security.rs. The Ledger does not use id_effect_node, so the level is documented (cap 89). 8/8.",
+			"evidence": "Mutual TLS 1.3 by default over QUIC and TCP (feature tls-tcp); in 0.12 the certificates moved to id_effect_platform::tls (crates/id_effect_platform/src/tls/certs.rs:74 NodeCertificate, :603 CertReloader; id_effect_node/src/transport/certs.rs:9 re-exports) and the mesh shares the platform QUIC endpoint by ALPN (tests id_effect_node/tests/shared_endpoint.rs, platform tests/tls_reload.rs). Book part7/ch38-01-transport-security.md; example crates/id_effect_node/examples/134_mtls_cluster.rs; integration tests transport_tls.rs, transport_tcp_tls.rs, mesh_security.rs, shared_endpoint.rs. Production: the CI-tested Relay runs its 3-node mesh over QUIC with mutual TLS and pinned certificates plus the cookie handshake (examples/reference/relay/src/node.rs:115-120 MeshTls::quic_config, :393 Session::initiate; tests/edges.rs:128 relay_refuses_a_mesh_peer_it_does_not_pin; ci.yml reference-relay:428). 8/8. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.11.0": 88
 			},
@@ -4752,7 +5011,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "tested",
 						"0.10.0": "tested",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4773,6 +5033,16 @@
 						"0.9.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
 						"0.10.0": ["dist.tls#1", "dist.tls#3", "dist.tls#6", "dist.tls#8"],
 						"0.11.0": [
+							"dist.tls#1",
+							"dist.tls#2",
+							"dist.tls#3",
+							"dist.tls#4",
+							"dist.tls#5",
+							"dist.tls#6",
+							"dist.tls#7",
+							"dist.tls#8"
+						],
+						"0.12.0": [
 							"dist.tls#1",
 							"dist.tls#2",
 							"dist.tls#3",
@@ -4824,14 +5094,14 @@
 					"nextjs": ["dist.tls#1", "dist.tls#3", "dist.tls#5"]
 				},
 				"evidence": {
-					"dist.tls#1": "crates/id_effect_node/src/transport/quic.rs:379 QuicTransport (quinn + rustls, TLS 1.3; feature quic); crates/id_effect_node/src/transport/tcp.rs:181 TcpTransport::tls (feature tls-tcp)",
-					"dist.tls#2": "NEW 0.11: crates/id_effect_node/Cargo.toml:20 default = [] (no plaintext transport by default); crates/id_effect_node/src/transport/tcp.rs:205 dangerous_plaintext exists only with feature insecure-plaintext-tcp (book ch38-01:93-95; compile-fail case r8_plaintext_tcp_without_feature in tests/security_compile_fail); a QuicConfig without server trust is refused (crates/id_effect_node/tests/mesh_security.rs:85 NoServerTrust)",
-					"dist.tls#3": "crates/id_effect_node/src/transport/quic.rs:246 with_client_verification(RootCertStore), :262 with_server_name; crates/id_effect_node/src/transport/certs.rs:159 ca_bundle_from_pem, :174 load_ca_bundle; crates/id_effect_node/tests/transport_tls.rs:302 mtls_rejects_cert_from_other_ca",
-					"dist.tls#4": "NEW 0.11: crates/id_effect_node/src/transport/certs.rs:291 WebPkiClientVerifier (client certificates required by default); crates/id_effect_node/tests/transport_tls.rs:240 mtls_round_trip_with_ca_issued_certificates, :252 mtls_rejects_peer_without_client_cert; tests/transport_tcp_tls.rs; example 134_mtls_cluster.rs",
-					"dist.tls#5": "NEW 0.11: crates/id_effect_node/src/transport/certs.rs:117 from_pem, :129 from_pem_files; crates/id_effect_node/tests/transport_tls.rs:324 pem_chain_and_key_load; book ch38-01 'Certificates from PEM files'",
-					"dist.tls#6": "crates/id_effect_node/src/handshake.rs HMAC over the peer nonce, bound to the TLS channel (handshake.rs:6-15, :50 exporter label; the cookie never goes on the wire); crates/id_effect_node/tests/transport_handshake.rs:76 cookie_handshake_authenticates_both_sides",
-					"dist.tls#7": "NEW 0.11: crates/id_effect_node/src/transport/certs.rs:496 CertReloader, :539 reload_if_changed, :557 spawn_polling; crates/id_effect_node/src/transport/quic.rs:138 from_reloader; crates/id_effect_node/tests/transport_tls.rs:389 rotated_cert_used_for_new_connections",
-					"dist.tls#8": "crates/id_effect_node/src/transport/quic.rs:8 '## Trust model: mutual TLS' rustdoc; book part7/ch38-01-transport-security.md (the dangerous opt-outs and their posture ids, :80-95)"
+					"dist.tls#1": "crates/id_effect_node/src/transport/quic.rs:417 QuicTransport (on own or shared id_effect_platform QuicEndpoint, ALPN idm/1); transport/tcp.rs:181 TcpTransport::tls; tests transport_tls.rs mtls_round_trip_with_ca_issued_certificates (both shapes), transport_tcp_tls.rs tcp_tls_mutual_auth_round_trip, shared_endpoint.rs alpn_routes_h3_and_idm",
+					"dist.tls#2": "crates/id_effect_node/Cargo.toml:20 default = []; transport/tcp.rs:205 dangerous_plaintext (feature insecure-plaintext-tcp); tests mesh_security.rs quic::h3_quic_without_roots_is_a_config_error, transport_tcp_tls.rs plaintext_tcp_opt_out_is_recorded, security_compile_fail security_misuse_does_not_compile (ui/r8_plaintext_tcp_without_feature.rs), shared_endpoint.rs no_client_auth_mesh_takes_anonymous_peers_on_shared_endpoint (opt-out dangerous_no_client_auth)",
+					"dist.tls#3": "crates/id_effect_node/src/transport/quic.rs:269 with_client_verification, :285 with_server_name; crates/id_effect_platform/src/tls/certs.rs:169 ca_bundle_from_pem, :184 load_ca_bundle; tests transport_tls.rs mtls_rejects_cert_from_other_ca (both shapes), shared_endpoint.rs idm_cert_from_other_ca_refused_on_shared_endpoint, transport_tcp_tls.rs tcp_tls_rejects_untrusted_peer",
+					"dist.tls#4": "crates/id_effect_platform/src/tls/certs.rs:306 client_cert_verifier (WebPkiClientVerifier); idm/1 route refuses unverified chains before any frame (crates/id_effect_platform/src/quic/router.rs); tests transport_tls.rs mtls_rejects_peer_without_client_cert (both shapes), shared_endpoint.rs idm_without_client_cert_refused_on_shared_endpoint, mesh_port_splits_endpoint, quic_endpoint.rs required_route_refuses_unverified_clients_before_the_handler, relay edges.rs relay_refuses_a_mesh_peer_it_does_not_pin; example 134_mtls_cluster",
+					"dist.tls#5": "crates/id_effect_platform/src/tls/certs.rs:127 NodeCertificate::from_pem, :139 from_pem_files (re-exported, deprecated, at id_effect_node::transport::certs); tests transport_tls.rs pem_chain_and_key_load, shared_endpoint.rs deprecated_node_certs_path_still_compiles; book ch38-01, ch29-09",
+					"dist.tls#6": "crates/id_effect_node/src/handshake.rs:50 channel-binding exporter label (HMAC over the peer nonce, cookie never sent); tests transport_handshake.rs cookie_handshake_authenticates_both_sides, mesh_security.rs quic::h4_relayed_proof_fails, quic::h4_direct_quic_handshake_succeeds",
+					"dist.tls#7": "crates/id_effect_platform/src/tls/certs.rs:603 CertReloader, :646 reload_if_changed, :664 spawn_polling; crates/id_effect_node/src/transport/quic.rs:161 from_reloader; ACME crates/id_effect_platform/src/tls/acme.rs; tests transport_tls.rs rotated_cert_used_for_new_connections, transport_tcp_tls.rs tcp_tls_rotated_cert_used_for_new_connections, tls_reload.rs quic::reload_swaps_identity_on_endpoint_and_tcp, quic::existing_connections_survive_reload, acme_pebble.rs acme_issues_and_renews_against_pebble; book ch29-09",
+					"dist.tls#8": "crates/id_effect_node/src/transport/quic.rs:25 '## Trust model: mutual TLS'; book part7/ch38-01-transport-security.md (opt-outs, '## Shared endpoint' :99-146); tests transport_tls.rs dangerous_accept_any_server_cert_is_recorded_in_posture, mesh_security.rs quic::h3_dangerous_accept_any_is_explicit"
 				}
 			},
 			"v1": {
@@ -4859,7 +5129,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part4/ch14-00-schema.md (and ch14-02/03), examples crates/id_effect/examples/083-088, tests/schema_*.rs. The Ledger, CI-tested in the reference-ledger job (ci.yml:239-291), derives Schema on its route inputs and outputs and tests 422 responses (tests/accounts.rs:90). Level production.",
 			"targets": {
@@ -4908,7 +5179,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -4970,6 +5242,16 @@
 							"data.schema#8"
 						],
 						"0.11.0": [
+							"data.schema#1",
+							"data.schema#2",
+							"data.schema#3",
+							"data.schema#4",
+							"data.schema#5",
+							"data.schema#6",
+							"data.schema#7",
+							"data.schema#8"
+						],
+						"0.12.0": [
 							"data.schema#1",
 							"data.schema#2",
 							"data.schema#3",
@@ -5097,9 +5379,10 @@
 				"0.8.0": 38,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 100
 			},
-			"evidence": "Not met: #8, because there is no client SDK generator in id_effect_tool, id_effect_cli or id_effect_axum. Book part6/ch29-02-openapi.md, example crates/id_effect_axum/examples/085_openapi.rs, tests/openapi*.rs. The Ledger serves /openapi.json and /docs and has contract tests in CI (tests/http.rs:13,46). Level production.",
+			"evidence": "Book part6/ch29-02-openapi.md, example crates/id_effect_axum/examples/085_openapi.rs, tests/openapi*.rs. The Ledger serves /openapi.json and /docs and has contract tests in CI (examples/reference/ledger/tests/http.rs:13,46). New in 0.12 (#8): `id-effect rpc gen ts` generates a typed TypeScript client from the RPC contract (crates/id_effect_tool/src/rpc/gen_ts.rs:144), golden- and round-trip-tested, and the Ledger's tests run its generated client (tests/rpc.rs:636 ledger_ts_client_round_trip). Level production, 8/8. Caveat: the generator reads the RPC contract (rpc.contract.json), not the OpenAPI document of REST routes.",
 			"targets": {
 				"0.8.0": 50,
 				"0.9.0": 88
@@ -5146,7 +5429,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5194,6 +5478,16 @@
 							"data.jsonschema#5",
 							"data.jsonschema#6",
 							"data.jsonschema#7"
+						],
+						"0.12.0": [
+							"data.jsonschema#1",
+							"data.jsonschema#2",
+							"data.jsonschema#3",
+							"data.jsonschema#4",
+							"data.jsonschema#5",
+							"data.jsonschema#6",
+							"data.jsonschema#7",
+							"data.jsonschema#8"
 						]
 					},
 					"effect_ts": [
@@ -5273,7 +5567,8 @@
 					"data.jsonschema#4": "crates/id_effect_axum/tests/openapi.rs:369 component_schemas_are_the_schemas_the_extractors_decode_with; Ledger tests/http.rs:46 responses_conform_to_the_openapi_document",
 					"data.jsonschema#5": "crates/id_effect/src/schema/parse.rs:154 describe, :170 deprecated, exported by json_schema_export.rs annotations",
 					"data.jsonschema#6": "crates/id_effect/src/schema/json_schema_export.rs constraints (minLength/pattern/enum/minimum); Ledger tests/http.rs:13 asserts the enum",
-					"data.jsonschema#7": "crates/id_effect_axum/src/openapi/mod.rs:215 security_scheme, :236 bearer_jwt, :242 cookie_session, :248 openid_connect; tests/openapi.rs:534 security_schemes_are_declared_and_required_by_guarded_operations"
+					"data.jsonschema#7": "crates/id_effect_axum/src/openapi/mod.rs:215 security_scheme, :236 bearer_jwt, :242 cookie_session, :248 openid_connect; tests/openapi.rs:534 security_schemes_are_declared_and_required_by_guarded_operations",
+					"data.jsonschema#8": "crates/id_effect_tool/src/rpc/gen_ts.rs:144 generate, :120 generate_to (cli.rs:49 Rpc); tests id_effect_tool/tests/rpc_gen_ts.rs gen_ts_golden_output (:383), generated_client_round_trip_against_test_server (:637); Ledger tests/rpc.rs ledger_ts_client_round_trip (:636); book part6/ch33-11-typescript-client.md"
 				}
 			},
 			"v1": {
@@ -5302,7 +5597,8 @@
 				"0.8.0": 38,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part6/ch28-00-data.md and ch28-01-typed-sql.md, examples crates/id_effect_sql/examples/010,020, live PG tests in the CI pg-integration job. The Ledger uses SERIALIZABLE transactions, savepoints, streaming and DB spans, tested in reference-ledger. Level production.",
 			"targets": {
@@ -5350,7 +5646,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5389,6 +5686,16 @@
 							"data.sql#8"
 						],
 						"0.11.0": [
+							"data.sql#1",
+							"data.sql#2",
+							"data.sql#3",
+							"data.sql#4",
+							"data.sql#5",
+							"data.sql#6",
+							"data.sql#7",
+							"data.sql#8"
+						],
+						"0.12.0": [
 							"data.sql#1",
 							"data.sql#2",
 							"data.sql#3",
@@ -5512,12 +5819,13 @@
 				"0.8.0": 1,
 				"0.9.0": 63,
 				"0.10.0": 63,
-				"0.11.0": 63
+				"0.11.0": 63,
+				"0.12.0": 63
 			},
 			"evidence": "Not met: #3 (no relations or eager loading), #4 (no changeset or dirty tracking) and #7 (no persist hooks; the audit.rs AuditLog is an explicit append, not a lifecycle hook). Book part6/ch28-03-repositories.md, examples 040_repository and 050_tenancy_audit, tests/repository.rs. The Ledger uses tenant-scoped repositories, tested in CI. Level production.",
 			"targets": {
 				"0.9.0": 63,
-				"0.12.0": 88
+				"0.13.0": 88
 			},
 			"checks": [
 				{
@@ -5561,7 +5869,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5594,6 +5903,13 @@
 							"data.orm#8"
 						],
 						"0.11.0": [
+							"data.orm#1",
+							"data.orm#2",
+							"data.orm#5",
+							"data.orm#6",
+							"data.orm#8"
+						],
+						"0.12.0": [
 							"data.orm#1",
 							"data.orm#2",
 							"data.orm#5",
@@ -5696,7 +6012,8 @@
 				"0.8.0": 1,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Not met: #7, because id_effect_tool/src/migrate has only new.rs and report.rs and nothing generates a migration from a schema diff. Book part6/ch28-02-migrations.md, example crates/id_effect_sql/examples/030_migrate.rs, live PG tests. The CI reference-ledger job runs migrate run/check/status. Level production.",
 			"targets": {
@@ -5744,7 +6061,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "labs",
@@ -5781,6 +6099,15 @@
 							"data.migrations#8"
 						],
 						"0.11.0": [
+							"data.migrations#1",
+							"data.migrations#2",
+							"data.migrations#3",
+							"data.migrations#4",
+							"data.migrations#5",
+							"data.migrations#6",
+							"data.migrations#8"
+						],
+						"0.12.0": [
 							"data.migrations#1",
 							"data.migrations#2",
 							"data.migrations#3",
@@ -5867,11 +6194,11 @@
 				"evidence": {
 					"data.migrations#1": "crates/id_effect_sql/src/migrate.rs Migrator (tracking table, checksums); crates/id_effect_sql/tests/migrate.rs:339 the_layer_migrates_at_startup",
 					"data.migrations#2": "crates/id_effect_tool/src/migrate/new.rs (id-effect migrate new); crates/id_effect_tool/tests/migrate.rs:53 new_numbers_after_the_directory",
-					"data.migrations#3": "crates/id_effect_tool/tests/migrate.rs:308 run_status_check_and_revert_round_trip; .github/workflows/ci.yml:284-289 migrate run/check/status on the Ledger",
-					"data.migrations#4": "crates/id_effect_sql/tests/migrate.rs:222 down_reverts_last; Ledger tests/migrations.rs:46 start_up_migrates_once_and_reverts_on_demand",
+					"data.migrations#3": "crates/id_effect_tool/tests/migrate.rs:334 run_status_check_and_revert_round_trip; .github/workflows/ci.yml:284-289 migrate run/check/status on the Ledger",
+					"data.migrations#4": "crates/id_effect_sql/tests/migrate.rs:222 down_reverts_last; Ledger tests/migrations.rs:49 start_up_migrates_once_and_reverts_on_demand",
 					"data.migrations#5": "crates/id_effect_sql/tests/migrate.rs:132 concurrent_runs_apply_once, :311 a_held_lock_times_out; crates/id_effect_tool/tests/migrate.rs:486",
 					"data.migrations#6": "crates/id_effect_sql/tests/migrate.rs:173 failed_migration_rolls_back_and_stops",
-					"data.migrations#8": "crates/id_effect_tool/tests/migrate.rs:409 check_fails_on_drift_and_on_a_missing_migration; ci.yml:288 'id-effect migrate check'"
+					"data.migrations#8": "crates/id_effect_tool/tests/migrate.rs:435 check_fails_on_drift_and_on_a_missing_migration; ci.yml:288 'id-effect migrate check'"
 				}
 			},
 			"v1": {
@@ -5899,7 +6226,8 @@
 				"0.8.0": 17,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Not met: #4 and #5, because nothing in id_effect_sql/src mentions mssql, tiberius or oracle. The conformance suite covers 3 backends. The Ledger uses replica routing, tested in CI (tests/replica.rs:42). Book ch28-00/ch28-04. Level production.",
 			"targets": {
@@ -5953,7 +6281,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -5988,6 +6317,14 @@
 							"data.backends#8"
 						],
 						"0.11.0": [
+							"data.backends#1",
+							"data.backends#2",
+							"data.backends#3",
+							"data.backends#6",
+							"data.backends#7",
+							"data.backends#8"
+						],
+						"0.12.0": [
 							"data.backends#1",
 							"data.backends#2",
 							"data.backends#3",
@@ -6104,7 +6441,8 @@
 				"0.8.0": 63,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Not met: #8, because neither resource/cache.rs nor id_effect_redis/cache.rs has a two-level cache or cross-node invalidation. Book part6/ch28-04-redis.md, example crates/id_effect/examples/104_cache.rs. The Ledger caches balances in Redis with ETags, tested in CI. Level production.",
 			"targets": {
@@ -6152,7 +6490,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6201,6 +6540,15 @@
 							"data.cache#7"
 						],
 						"0.11.0": [
+							"data.cache#1",
+							"data.cache#2",
+							"data.cache#3",
+							"data.cache#4",
+							"data.cache#5",
+							"data.cache#6",
+							"data.cache#7"
+						],
+						"0.12.0": [
 							"data.cache#1",
 							"data.cache#2",
 							"data.cache#3",
@@ -6314,9 +6662,10 @@
 				"0.8.0": 39,
 				"0.9.0": 39,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "New in 0.10: id_effect_events moved from labs/ to the published workspace crate crates/id_effect_events, with a kit feature 'events' (id_effect_kit/Cargo.toml:107). Covered by book part5/ch23-00-events-and-projections.md, runnable examples crates/id_effect_events/examples/001_expected_version.rs, 010_account.rs and 020_sqlite_journal.rs, and integration tests tests/pg_events.rs and sql_journal.rs (PG in CI). Not met: #7, because EventEnvelope.version is the stream version (envelope.rs:17-18) and there is no upcasting. The Ledger does not use it, so the level is documented.",
+			"evidence": "Published crate crates/id_effect_events; book part5/ch23-00-events-and-projections.md, examples 001_expected_version.rs, 010_account.rs, 020_sqlite_journal.rs, integration tests pg_events.rs, sql_journal.rs. New in 0.12: RPC subscriptions over the event log with resumable cursors (crates/id_effect_rpc/src/subscription/events.rs:86 EventSubscription; tests subscription_events.rs). Production: the CI-tested Relay keeps room history in a PostgreSQL SqlEventJournal (examples/reference/relay/src/rooms.rs:66 Journal = SqlEventJournal<Posted>) tailed by EventSubscription (src/handlers.rs:44), tested by tests/chat.rs relay_resume_after_client_reconnect_no_gaps (:301) with PostgreSQL in a container (ci.yml reference-relay). Not met: #7, because EventEnvelope.version is the stream version and there is no upcasting. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.10.0": 75
 			},
@@ -6362,7 +6711,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "production"
 					},
 					"effect_ts": "labs",
 					"zio": "labs",
@@ -6415,6 +6765,15 @@
 							"data.events#8"
 						],
 						"0.11.0": [
+							"data.events#1",
+							"data.events#2",
+							"data.events#3",
+							"data.events#4",
+							"data.events#5",
+							"data.events#6",
+							"data.events#8"
+						],
+						"0.12.0": [
 							"data.events#1",
 							"data.events#2",
 							"data.events#3",
@@ -6476,11 +6835,11 @@
 				"evidence": {
 					"data.events#1": "crates/id_effect_events/src/event_store.rs:30 EventStore (per-stream versions), StoredEvent",
 					"data.events#2": "crates/id_effect_events/src/event_store.rs:40 append_expected -> error.rs:21 EventStoreError::VersionConflict; tests/pg_events.rs:70 expected_version_conflict, :88 pg_concurrent_appends_at_one_version_have_one_winner",
-					"data.events#3": "crates/id_effect_events/src/sql_journal.rs:61 SqlEventJournal over SqlClient (PG/SQLite); tests/pg_events.rs:62 pg_round_trip (CI pg-integration, ci.yml:206 id_effect_events/pg); tests/sql_journal.rs:85 sqlite_file_journal_survives_reopen",
+					"data.events#3": "crates/id_effect_events/src/sql_journal.rs:61 SqlEventJournal; Relay src/rooms.rs:66; tests id_effect_rpc/tests/subscription_events.rs pg_subscription_resume_has_no_gap_or_duplicate (:480)",
 					"data.events#4": "crates/id_effect_events/src/projection.rs:9 Projection, run_projection; projection_runner.rs ProjectionRunner",
 					"data.events#5": "crates/id_effect_events/src/cqrs.rs:12 CommandHandler, :20 QueryHandler, dispatch_command; tests/pg_events.rs:78 pg_dispatch_over_journal",
 					"data.events#6": "crates/id_effect_events/src/snapshot.rs:38 SnapshotStore, :60 load_aggregate, SqlSnapshotStore; tests/pg_events.rs:124 aggregate_loads_from_snapshot_plus_tail",
-					"data.events#8": "crates/id_effect_events/src/subscription.rs:233 CatchUpSubscription, :53 CheckpointStore, :39 EventLog; tests/pg_events.rs:132 subscription_resumes_from_checkpoint, tests/sql_journal.rs:52 sqlite_subscription_resumes_after_reopen"
+					"data.events#8": "crates/id_effect_rpc/src/subscription/events.rs:86 EventSubscription (cursor catch-up then tail); Relay tests/chat.rs relay_resume_after_client_reconnect_no_gaps (:301)"
 				}
 			},
 			"v1": {
@@ -6508,7 +6867,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "No changes since v0.9.0 (git diff is empty for id_effect_fp and id_effect_optics). Not met: #7 and #8, because no Validation or NonEmpty type is found in id_effect or id_effect_fp. Book part5 (ch17 functional patterns, ch18-00-optics.md), examples in both crates, tests in id_effect_fp/tests. The Ledger does not use it, so the level is documented.",
 			"targets": {},
@@ -6554,7 +6914,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6610,6 +6971,14 @@
 							"data.fp#6"
 						],
 						"0.11.0": [
+							"data.fp#1",
+							"data.fp#2",
+							"data.fp#3",
+							"data.fp#4",
+							"data.fp#5",
+							"data.fp#6"
+						],
+						"0.12.0": [
 							"data.fp#1",
 							"data.fp#2",
 							"data.fp#3",
@@ -6676,9 +7045,10 @@
 				"0.8.0": 63,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 100
 			},
-			"evidence": "Not met: #6, because there is no rustls or HTTP/2 configuration in id_effect_axum src or Cargo.toml. Book ch07/ch29-00..03, examples crates/id_effect_axum/examples/010-091, tests/. The Ledger is built on id_effect_axum and tested in CI. Level production.",
+			"evidence": "Book ch07/ch29-00..03 plus new ch29-04-tls-http2.md and ch29-05-http3.md, examples crates/id_effect_axum/examples/010-092 (092_http3.rs), tests/. New in 0.12 (#6): TLS 1.3/1.2 with ALPN h2/http1.1 in the framework host (crates/id_effect_axum/src/server/tls.rs:42 ServerTls, :34 ALPN_H2; HostConfig::with_tls, server/bootstrap.rs:25 HostTls) with HTTP/2 stream and request limits, plus HTTP/3 on the same port (server/h3.rs:229 serve_h3). The Ledger is built on id_effect_axum and tested in CI, and the Relay serves TLS, HTTP/2 and HTTP/3 (examples/reference/relay/src/node.rs:273-281). Level production, 8/8.",
 			"targets": {
 				"0.9.0": 88
 			},
@@ -6724,7 +7094,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -6783,6 +7154,16 @@
 							"web.server#3",
 							"web.server#4",
 							"web.server#5",
+							"web.server#7",
+							"web.server#8"
+						],
+						"0.12.0": [
+							"web.server#1",
+							"web.server#2",
+							"web.server#3",
+							"web.server#4",
+							"web.server#5",
+							"web.server#6",
 							"web.server#7",
 							"web.server#8"
 						]
@@ -6875,6 +7256,7 @@
 					"web.server#3": "crates/id_effect_axum/src/request_caps.rs:68 RequestCaps; Ledger tests/authz.rs",
 					"web.server#4": "crates/id_effect_axum/src/server/shutdown.rs:102 track_in_flight, :140 drain_with_timeout",
 					"web.server#5": "crates/id_effect_axum/src/lib.rs:194 HandlerDefect; test lib.rs:319 a_panicking_handler_is_a_defect_answered_with_500; service.rs:520",
+					"web.server#6": "crates/id_effect_axum/src/server/tls.rs:42 ServerTls (TLS 1.3/1.2, ALPN h2), bootstrap.rs:25 HostTls; tests tls_h2.rs tls_h2_round_trip (:218), h2_concurrent_streams_capped (:385), http3.rs h3_serves_typed_routes_unchanged (:480); book part6/ch29-04-tls-http2.md",
 					"web.server#7": "crates/id_effect_axum/src/server/static_files.rs:54 serve_dir; tests/static_cache.rs:311 preconditions_and_ranges",
 					"web.server#8": "crates/id_effect_axum/src/route/introspect.rs:137 route_table, :230 routes_router; Ledger tests/authz.rs every_route_names_its_policy"
 				}
@@ -6904,7 +7286,8 @@
 				"0.8.0": 50,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part6/ch29-03-middleware.md, examples 090_middleware and 091_middleware_layers, tests/middleware.rs and security.rs. The Ledger's middleware stack is tested in CI (tests/http.rs and security.rs). Level production.",
 			"targets": {
@@ -6952,7 +7335,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7004,6 +7388,16 @@
 							"web.middleware#8"
 						],
 						"0.11.0": [
+							"web.middleware#1",
+							"web.middleware#2",
+							"web.middleware#3",
+							"web.middleware#4",
+							"web.middleware#5",
+							"web.middleware#6",
+							"web.middleware#7",
+							"web.middleware#8"
+						],
+						"0.12.0": [
 							"web.middleware#1",
 							"web.middleware#2",
 							"web.middleware#3",
@@ -7084,7 +7478,7 @@
 					"web.middleware#3": "crates/id_effect_axum/src/server/security/cors.rs:27 CorsConfig; tests/security.rs:327 cors_preflight_allows_listed_origin",
 					"web.middleware#4": "crates/id_effect_axum/src/middleware/compression.rs:52 CompressionLayer; Ledger tests/http.rs:127 request_ids_compression_and_the_body_limit",
 					"web.middleware#5": "crates/id_effect_axum/src/middleware/request_id.rs:113 RequestIdLayer (plus an http.request span)",
-					"web.middleware#6": "crates/id_effect_axum/src/middleware/rate_limit.rs:511 RateLimitLayer; tests/middleware.rs:386 rate_limit_answers_429_per_client_ip; Ledger tests/cache.rs:81 the_login_limit_holds_across_instances",
+					"web.middleware#6": "crates/id_effect_axum/src/middleware/rate_limit.rs:559 RateLimitLayer; tests/middleware.rs:386 rate_limit_answers_429_per_client_ip; Ledger tests/cache.rs:81 the_login_limit_holds_across_instances",
 					"web.middleware#7": "crates/id_effect_axum/src/server/security/csrf.rs:545 csrf_middleware, headers.rs:49 SecurityHeaders, mod.rs:139 SecurityLayer; tests/security.rs; Ledger tests/security.rs",
 					"web.middleware#8": "crates/id_effect_axum/src/middleware/limits.rs:53 TimeoutLayer, :138 BodyLimitLayer; Ledger tests/http.rs:166 slow_requests_time_out"
 				},
@@ -7117,7 +7511,8 @@
 				"0.8.0": 25,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Not met: #8, because nothing in id_effect_axum/src matches i18n, localize or translate. Book part6/ch29-01-typed-routes.md, example 080_typed_routes, tests/problem_extractors.rs. The Ledger uses typed routes throughout, tested in CI. Level production.",
 			"targets": {
@@ -7165,7 +7560,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7202,6 +7598,15 @@
 							"web.validation#7"
 						],
 						"0.11.0": [
+							"web.validation#1",
+							"web.validation#2",
+							"web.validation#3",
+							"web.validation#4",
+							"web.validation#5",
+							"web.validation#6",
+							"web.validation#7"
+						],
+						"0.12.0": [
 							"web.validation#1",
 							"web.validation#2",
 							"web.validation#3",
@@ -7322,7 +7727,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Up from 0.9: client-level RetryPolicy (#4) and TracedHttpClient span plus traceparent (#6) are new in 0.10. Book ch07-06/07-07 and ch27-00, examples crates/id_effect_platform/examples/010-040, tests/http_*.rs. The Ledger's SendGrid mailer uses HttpClientService over TracedHttpClient::with_retry(RetryPolicy::default()) (examples/reference/ledger/src/mail.rs:67-70), tested in CI by tests/observability.rs:36. Level production.",
 			"targets": {
@@ -7370,7 +7776,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7428,6 +7835,16 @@
 							"web.client#8"
 						],
 						"0.11.0": [
+							"web.client#1",
+							"web.client#2",
+							"web.client#3",
+							"web.client#4",
+							"web.client#5",
+							"web.client#6",
+							"web.client#7",
+							"web.client#8"
+						],
+						"0.12.0": [
 							"web.client#1",
 							"web.client#2",
 							"web.client#3",
@@ -7505,13 +7922,13 @@
 					]
 				},
 				"evidence": {
-					"web.client#1": "crates/id_effect_platform/src/http/mod.rs:262 HttpClient trait, :561 HttpClientService; typed HttpError",
+					"web.client#1": "crates/id_effect_platform/src/http/mod.rs:280 HttpClient trait, :629 HttpClientService; typed HttpError",
 					"web.client#2": "crates/id_effect_platform/src/http/reqwest.rs:82 PooledClient, :179 provide_reqwest_pool",
 					"web.client#3": "crates/id_effect_platform/src/http/mod.rs HttpClientConfig (10 s connect, 30 s total defaults) plus HttpRequest.timeout per request (:56); tests/http_retry.rs:118 default_timeout_applies",
 					"web.client#4": "NEW crates/id_effect_platform/src/http/retry.rs:1-17 RetryingHttpClient/RetryPolicy configured once for the client (idempotent methods, 5xx/429, Retry-After); tests/http_retry.rs:29,52,77; example 040_http_client_retry.rs; book ch07-06-platform-services.md",
 					"web.client#5": "crates/id_effect_resilience/src/circuit_breaker.rs:43 CircuitBreaker; tests/pipeline.rs",
 					"web.client#6": "crates/id_effect_opentelemetry/src/client.rs:1-2,:96 TracedHttpClient (a client span per call plus W3C traceparent injection), :132 with_retry; book ch27-00-observability.md; Ledger tests/observability.rs:36 sendgrid_mail_goes_out_in_a_traced_client_span asserts traceparent and the parent span",
-					"web.client#7": "crates/id_effect_platform/src/http/mod.rs:246 StreamingHttpResponse; tests/http_streaming.rs",
+					"web.client#7": "crates/id_effect_platform/src/http/mod.rs:264 StreamingHttpResponse; tests/http_streaming.rs",
 					"web.client#8": "crates/id_effect_platform/src/http/reqwest.rs:280 json_schema (decode error with a path); tests/http_wiremock.rs"
 				}
 			},
@@ -7540,11 +7957,12 @@
 				"0.8.0": 39,
 				"0.9.0": 39,
 				"0.10.0": 39,
-				"0.11.0": 39
+				"0.11.0": 39,
+				"0.12.0": 100
 			},
-			"evidence": "Only labs/id_effect_rpc, which is excluded from the workspace (Cargo.toml:4 exclude 'labs'), unpublished, and unchanged since v0.9.0 (empty git diff). The book chapters ch07-12 and ch29-00 label it labs. Level labs.",
+			"evidence": "Promoted out of labs in 0.12: the published workspace crates crates/id_effect_rpc (Cargo.toml:37, tier platform, crates/id_effect_rpc/Cargo.toml:186; publish order scripts/validate-crate-packaging.sh:71) and id_effect_rpc_macros (#[rpc::service], crates/id_effect_rpc_macros/src/lib.rs:59). Six procedure kinds, typed error unions, a generated Rust client and `id-effect rpc gen ts`, HTTP, WebSocket, SSE, WebTransport and mesh transports, JSON and postcard, OpenAPI 3.1/AsyncAPI 3.0, `id-effect rpc check`. Book part6 ch33-00..12 and part7/ch38-02-rpc-over-the-mesh.md; examples crates/id_effect_rpc/examples/010_json_greet.rs, 020_rpc_tracing.rs, channels_chat.rs, crates/id_effect_rpc_macros/examples/010_service_attribute.rs; integration tests crates/id_effect_rpc/tests/*. Production: the Ledger serves accounts and journal over RPC (examples/reference/ledger/src/rpc.rs:278 #[rpc::service(version = 1)] pub trait Ledger; tests/rpc.rs:50 ledger_rpc_procedures_all_declared, ledger_rpc_and_rest_agree, ledger_ts_client_round_trip in ci.yml reference-ledger:386) and the Relay is built on it (examples/reference/relay/src/api.rs:186; tests/chat.rs, ci.yml reference-relay:428). 8/8. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
-				"0.12.0": 88
+				"0.12.0": 100
 			},
 			"checks": [
 				{
@@ -7588,7 +8006,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "labs",
-						"0.11.0": "labs"
+						"0.11.0": "labs",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7650,6 +8069,16 @@
 							"web.rpc#6",
 							"web.rpc#7",
 							"web.rpc#8"
+						],
+						"0.12.0": [
+							"web.rpc#1",
+							"web.rpc#2",
+							"web.rpc#3",
+							"web.rpc#4",
+							"web.rpc#5",
+							"web.rpc#6",
+							"web.rpc#7",
+							"web.rpc#8"
 						]
 					},
 					"effect_ts": [
@@ -7695,12 +8124,14 @@
 					"nextjs": ["web.rpc#1", "web.rpc#3", "web.rpc#4"]
 				},
 				"evidence": {
-					"web.rpc#1": "labs/id_effect_rpc/src/registry.rs:57 RpcGroup",
-					"web.rpc#2": "labs/id_effect_rpc/src/client.rs:84 call (payload/success schemas)",
-					"web.rpc#4": "labs/id_effect_rpc/src/stream.rs:15 encode_stream_chunk",
-					"web.rpc#6": "labs/id_effect_rpc/src/versioning.rs:23 VersionConfig",
-					"web.rpc#7": "labs/id_effect_rpc/src/openapi.rs:31 emit_openapi_json",
-					"web.rpc#8": "labs/id_effect_rpc/src/span.rs:10 rpc_request_span"
+					"web.rpc#1": "crates/id_effect_rpc_macros/src/lib.rs:59 #[rpc::service]; crates/id_effect_rpc/src/contract.rs:244 Contract; registry.rs:364 RpcGroup; tests service_macro.rs contract_snapshot_is_current, contract.rs contract_json_round_trips, relay contract.rs relay_contract_check_passes, ledger rpc.rs ledger_rpc_contract_snapshot_is_current; book ch33-04, ch33-10",
+					"web.rpc#2": "crates/id_effect_rpc/src/handler.rs:113 WireSchema, src/error_union.rs; tests errors.rs typed_error_reaches_client_as_tagged_union, service_macro.rs typed_errors_cross_as_their_union_members, codec.rs postcard::postcard_payload_still_runs_schema_refinements, relay edges.rs relay_refuses_invalid_input; book ch33-01",
+					"web.rpc#3": "crates/id_effect_rpc/src/client/mod.rs:220 RpcClient (generated by #[rpc::service]); crates/id_effect_tool/src/rpc/gen_ts.rs:144 generate (TypeScript); tests service_macro.rs generated_client_round_trip_every_kind, id_effect_tool rpc_gen_ts.rs generated_client_round_trip_against_test_server, relay_typescript_client_round_trip, ledger_ts_client_round_trip; book ch33-11",
+					"web.rpc#4": "crates/id_effect_rpc/src/kinds.rs (server_stream, client_stream, bidi, subscription); tests kinds_http.rs server_stream_answers_ndjson_frames, bidi.rs bidi_backpressure_bounds_memory, transport_ws.rs every_kind_over_websocket, ledger_rpc_statement_streams_every_posting; book ch33-07",
+					"web.rpc#5": "HTTP (server/http.rs), WebSocket (transport/ws.rs:144 RpcWsConfig), WebTransport (transport/webtransport.rs:282 serve), SSE (transport/sse.rs), mesh (transport/mesh.rs), postcard (codec/postcard.rs); tests every_kind_over_websocket, webtransport_bidi_round_trip, postcard_frames_over_websocket, mesh_unary_and_stream_round_trip, relay_three_nodes_chat_over_http3, relay_three_nodes_chat_over_websocket; book ch33-06, ch33-03",
+					"web.rpc#6": "#[rpc::service] version (service_macro.rs service_versions_served_side_by_side); crates/id_effect_tool/src/rpc/check.rs:357 compare (id_effect_tool rpc_check.rs breaking_change_with_version_bump_passes; relay_contract_check_passes); crates/id_effect_rpc/src/versioning.rs:23 VersionConfig; book ch33-12",
+					"web.rpc#7": "crates/id_effect_rpc/src/openapi.rs:180 document (OpenAPI 3.1), src/asyncapi.rs:191 document (AsyncAPI 3.0); tests openapi_emit.rs openapi_31_validates_against_meta_schema, asyncapi_emit.rs asyncapi_30_validates; book ch33-10",
+					"web.rpc#8": "crates/id_effect_rpc/src/server/http.rs handle (span rpc.request per HTTP call), src/batch.rs:567 (rpc.call per batch item), src/transport/mesh.rs:1316 (rpc.request with trace context); test mesh_rpc.rs mesh_call_carries_trace_context; example 020_rpc_tracing; per-call rpc.request on WS/WT (crates/id_effect_rpc/src/transport/ws.rs open_call, under rpc.connection) and SSE (transport/sse.rs serve), span.rs rpc_call_span; tests spans.rs http_call_emits_rpc_request_span, ws_call_emits_rpc_request_span, sse_call_emits_rpc_request_span, webtransport_call_emits_rpc_request_span (4f514379)"
 				}
 			},
 			"v1": {
@@ -7728,9 +8159,10 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 100
 			},
-			"evidence": "Absent. A grep of crates/*/src for websocket, event-stream, graphql and Sse finds only the NotForContentType::SSE exclusion in id_effect_axum/src/middleware/compression.rs:45. There is no WebSocket, SSE, channel or presence module, and no tungstenite dependency in any crate Cargo.toml.",
+			"evidence": "New in 0.12: first-party WebSocket and SSE endpoints in id_effect_axum (crates/id_effect_axum/src/realtime/ws.rs:1045 endpoint, sse.rs:446 endpoint; examples crates/id_effect_axum/examples/090_ws_echo.rs, 091_sse_ticker.rs; tests tests/ws.rs, sse.rs), and channels with presence on the mesh in id_effect_rpc (crates/id_effect_rpc/src/channels/hub.rs:183 Channels, backplane.rs, presence.rs:18; tests channels_three_nodes.rs, presence.rs; example channels_chat.rs); generated TypeScript client with reconnect and resume. Book part6/ch33-05-websocket-sse.md and ch33-09-channels-presence.md. Production: the CI-tested Relay is a 3-node chat with presence over WebSocket, WebTransport and HTTP/3 (examples/reference/relay/src/node.rs:246 Channels::builder().start_on_mesh; tests/chat.rs relay_three_nodes_chat_over_websocket, relay_presence_converges_after_node_loss, relay_join_denied_without_membership; ci.yml reference-relay:428). 8/8. CI caveat: the release/0.12.0 branch has no GitHub Actions run (gh run list shows none), so the reference-relay, rpc and ts-client jobs and the new Ledger RPC tests in reference-ledger have never run in CI.",
 			"targets": {
 				"0.12.0": 88
 			},
@@ -7776,7 +8208,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -7796,7 +8229,17 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": [
+							"web.realtime#1",
+							"web.realtime#2",
+							"web.realtime#3",
+							"web.realtime#4",
+							"web.realtime#5",
+							"web.realtime#6",
+							"web.realtime#7",
+							"web.realtime#8"
+						]
 					},
 					"effect_ts": ["web.realtime#1", "web.realtime#2"],
 					"zio": ["web.realtime#1", "web.realtime#2"],
@@ -7854,7 +8297,16 @@
 					],
 					"nextjs": ["web.realtime#2"]
 				},
-				"evidence": {},
+				"evidence": {
+					"web.realtime#1": "crates/id_effect_axum/src/realtime/ws.rs:1045 endpoint; crates/id_effect_rpc/src/transport/ws.rs; tests axum ws.rs ws_round_trip_under_test_clock, rpc transport_ws.rs every_kind_over_websocket, relay_three_nodes_chat_over_websocket; book ch33-05; example axum 090_ws_echo",
+					"web.realtime#2": "crates/id_effect_axum/src/realtime/sse.rs:446 endpoint; crates/id_effect_rpc/src/transport/sse.rs, client/sse.rs; tests axum sse.rs sse_resumes_from_last_event_id, rpc transport_sse.rs subscription_over_sse, generated_clients_stream_over_sse; book ch33-05; example axum 091_sse_ticker (crate tests only, not used by Relay)",
+					"web.realtime#3": "crates/id_effect_rpc/src/channels/hub.rs:183 Channels, :343 join; tests channels_three_nodes.rs leave_stops_delivery, three_node_broadcast_under_test_clock; Relay rooms (examples/reference/relay/src/rooms.rs); book ch33-09; example channels_chat",
+					"web.realtime#4": "crates/id_effect_rpc/src/channels/presence.rs:18 Presence; tests presence.rs presence_converges_after_node_down, relay chat.rs relay_presence_converges_after_node_loss; book ch33-09",
+					"web.realtime#5": "crates/id_effect_rpc/src/channels/backplane.rs:722 attach_session_rpc (mesh process groups); tests channels_three_nodes.rs three_node_broadcast_over_quic_mtls, relay_three_nodes_chat_over_http3; book ch33-09",
+					"web.realtime#6": "crates/id_effect_rpc/src/channels/policy.rs:43 JoinPolicy (default deny); guarded upgrade routes; tests axum ws.rs guarded_ws_route_authenticates_on_connect, channels_three_nodes.rs channel_join_denied_by_default_policy, presence.rs join_procedure_runs_the_policy_with_the_call_principal, relay_join_denied_without_membership; book ch33-09",
+					"web.realtime#7": "TypeScript client from id-effect rpc gen ts (crates/id_effect_tool/tests/golden/rpc/shop/runtime.ts: reconnect with backoff, resume frame, cursor of the last item consumed — e47b35f4); Rust WsClient / SSE / WebTransport resume (crates/id_effect_rpc/src/resume.rs); tests id_effect_tool rpc_gen_ts.rs generated_client_resumes_after_reconnect, tests/ts/resume.test.ts resume_does_not_skip_buffered_unread_items, transport_webtransport.rs webtransport_resume_after_session_loss, transport_sse.rs the_sse_client_reads_resumes_and_reports_refusals, relay_resume_after_client_reconnect_no_gaps; book ch33-11",
+					"web.realtime#8": "crates/id_effect_axum/src/realtime/ws.rs:193 heartbeat; crates/id_effect_rpc/src/transport/webtransport.rs:175 heartbeat; channels/hub.rs:494 spawn_heartbeat; tests axum ws.rs heartbeat_closes_dead_connection, presence.rs presence_lapses_without_heartbeat_under_test_clock, transport_webtransport.rs the_heartbeat_pings_and_closes_silent_sessions; book ch33-05"
+				},
 				"notes": {
 					"id_effect": "Nothing realtime in the published crates (body.rs stream_body is generic streaming, not SSE or WebSocket); v1 25 already exceeds the §3.2 absent cap of 9."
 				}
@@ -7887,7 +8339,8 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "Absent: there is no async-graphql dependency and no GraphQL code in crates/ (grep finds nothing).",
 			"targets": {},
@@ -7933,7 +8386,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "absent"
 					},
 					"effect_ts": "labs",
 					"zio": "production",
@@ -7953,7 +8407,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": [],
 					"zio": [
@@ -8048,11 +8503,12 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "Absent for web views. The only templating is mail-specific: id_effect_mail/src/template.rs:1-7 Templates (minijinja, used for mail subject and bodies with layouts and partials) renders a RenderedMail, not HTTP views. There is no web templating integration, component model, live views or asset pipeline in id_effect_axum or elsewhere.",
 			"targets": {
-				"0.12.0": 67
+				"0.13.0": 67
 			},
 			"checks": [
 				{
@@ -8102,7 +8558,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "absent"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -8122,7 +8579,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": [],
 					"zio": [],
@@ -8204,11 +8662,12 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "Still only the template stub crates/id_effect_cli/templates/admin-stub, with no working model admin. id_effect_console (src/lib.rs:1-30) is an operator console (fibers, supervisors, metrics, health, log level, job retry and cancel), not CRUD admin generated from the data model, so it meets none of the checks.",
 			"targets": {
-				"0.12.0": 50
+				"0.13.0": 50
 			},
 			"checks": [
 				{
@@ -8252,7 +8711,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "labs",
-						"0.11.0": "labs"
+						"0.11.0": "labs",
+						"0.12.0": "labs"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -8272,7 +8732,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": [],
 					"zio": [],
@@ -8338,7 +8799,8 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "New in 0.10: the published crate id_effect_storage. Covered by book part6/ch28-05-storage.md, examples crates/id_effect_storage/examples/010_object_keys.rs and 020_storage.rs, and tests/conformance.rs and s3.rs (CI). The Ledger stores statements in S3 with signed URLs (src/jobs.rs:352-358), tested in CI by tests/statements.rs:29 against SeaweedFS. Not met: #4 (no GCS or Azure backend) and #6, because the axum form decoder skips file fields (route/decode.rs:255,272) and there is no upload extractor. Level production.",
 			"targets": {
@@ -8386,7 +8848,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "tested",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8414,6 +8877,14 @@
 							"web.storage#8"
 						],
 						"0.11.0": [
+							"web.storage#1",
+							"web.storage#2",
+							"web.storage#3",
+							"web.storage#5",
+							"web.storage#7",
+							"web.storage#8"
+						],
+						"0.12.0": [
 							"web.storage#1",
 							"web.storage#2",
 							"web.storage#3",
@@ -8513,7 +8984,8 @@
 				"0.8.0": 1,
 				"0.9.0": 75,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Published id_effect_auth; book crates/id_effect/book/src/part6/ch30-03..ch30-06; examples crates/id_effect_auth/examples/005_passwords_sessions.rs, 010_login.rs; integration tests crates/id_effect_auth/tests/*; used by the CI-tested Ledger (ci.yml:239-291, tests/authn.rs, oidc.rs, signup.rs) -> production. #7 not met: no WebAuthn or passkey code anywhere in crates/id_effect_auth.",
 			"targets": {
@@ -8563,7 +9035,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8599,6 +9072,15 @@
 							"sec.authn#8"
 						],
 						"0.11.0": [
+							"sec.authn#1",
+							"sec.authn#2",
+							"sec.authn#3",
+							"sec.authn#4",
+							"sec.authn#5",
+							"sec.authn#6",
+							"sec.authn#8"
+						],
+						"0.12.0": [
 							"sec.authn#1",
 							"sec.authn#2",
 							"sec.authn#3",
@@ -8689,7 +9171,8 @@
 				"0.8.0": 1,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Published id_effect_authz plus tenant-scoped id_effect_sql repositories; book part6/ch30-02-authorization.md; examples crates/id_effect_authz/examples/010_policies.rs, 020_route_guards.rs; integration tests crates/id_effect_authz/tests/guards.rs, policies.rs; Ledger tests/authz.rs, accounts.rs in CI -> production. #7 not met: id_effect_authz has no template or view helpers.",
 			"targets": {
@@ -8738,7 +9221,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8775,6 +9259,15 @@
 							"sec.authz#8"
 						],
 						"0.11.0": [
+							"sec.authz#1",
+							"sec.authz#2",
+							"sec.authz#3",
+							"sec.authz#4",
+							"sec.authz#5",
+							"sec.authz#6",
+							"sec.authz#8"
+						],
+						"0.12.0": [
 							"sec.authz#1",
 							"sec.authz#2",
 							"sec.authz#3",
@@ -8867,7 +9360,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Book part6/ch30-00-application.md; example crates/id_effect_axum/examples/040_app_host.rs; integration test crates/id_effect_axum/tests/security.rs. Raised to production in 0.10: the Ledger now mounts SecurityLayer::recommended(..).csrf_exempt_bearer() (examples/reference/ledger/src/app.rs:443-448), and tests/security.rs:12 and :35 check it in CI. #8 not met: auto-escaping exists only for mail templates (crates/id_effect_mail/src/template.rs:9), and there is no first-party web view or template rendering.",
 			"targets": {
@@ -8916,7 +9410,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -8961,6 +9456,15 @@
 							"sec.web#7"
 						],
 						"0.11.0": [
+							"sec.web#1",
+							"sec.web#2",
+							"sec.web#3",
+							"sec.web#4",
+							"sec.web#5",
+							"sec.web#6",
+							"sec.web#7"
+						],
+						"0.12.0": [
 							"sec.web#1",
 							"sec.web#2",
 							"sec.web#3",
@@ -9062,7 +9566,8 @@
 				"0.8.0": 63,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part2/ch07-10-config.md, part3/ch16-03-config-profiles.md, ch16-04-secrets-vault.md; examples crates/id_effect_config/examples/006_profiles.rs, 050_vault.rs, 007_watch.rs; integration tests crates/id_effect_config/tests/*; the Ledger loads its profiles and Vault config in CI (tests/config.rs) -> production, 8/8.",
 			"targets": {
@@ -9110,7 +9615,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9166,6 +9672,16 @@
 							"sec.config#8"
 						],
 						"0.11.0": [
+							"sec.config#1",
+							"sec.config#2",
+							"sec.config#3",
+							"sec.config#4",
+							"sec.config#5",
+							"sec.config#6",
+							"sec.config#7",
+							"sec.config#8"
+						],
+						"0.12.0": [
 							"sec.config#1",
 							"sec.config#2",
 							"sec.config#3",
@@ -9252,13 +9768,15 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "Process row: production because at least one check is a committed artifact; 7/8. Refreshed for 0.11: SHA-pinned actions and least-privilege workflows (scripts/check-workflows.sh), crates.io trusted publishing, SLSA Build L3 provenance from the slsa-github-generator over the built .crate files (publish.yml:176-247), DCO and signed tags. #7 not met: SECURITY.md describes the GHSA/CVE process ('Advisory publication', :53) and lists 0.10.1 under 'Security releases', but every advisory there is 'pending': no GitHub Security Advisory is published (repository advisories: 0 on 2026-10-19; docs/security/openssf.md:166). Carried over to 0.12.0 (target 100).",
+			"evidence": "Process row: production because at least one check is a committed artifact; 7/8. SHA-pinned actions and least-privilege workflows (scripts/check-workflows.sh), crates.io trusted publishing, SLSA Build L3 provenance over the built .crate files (publish.yml), CycloneDX SBOMs, DCO and signed tags; the 0.12 security KPIs (docs/security/kpis-0.12.json). #7 not met: SECURITY.md describes the GHSA/CVE process and lists 0.10.1 under 'Security releases' with every advisory 'pending'; the repository has no published GitHub Security Advisory (0 on 2026-10-20, publication is done by automation after the release). Carried over to 0.13.0 (target 100).",
 			"targets": {
 				"0.8.0": 75,
 				"0.11.0": 100,
 				"0.12.0": 100,
+				"0.13.0": 100,
 				"1.0.0": 88
 			},
 			"checks": [
@@ -9303,7 +9821,8 @@
 						"0.8.0": "production",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9348,6 +9867,15 @@
 							"sec.supply#8"
 						],
 						"0.11.0": [
+							"sec.supply#1",
+							"sec.supply#2",
+							"sec.supply#3",
+							"sec.supply#4",
+							"sec.supply#5",
+							"sec.supply#6",
+							"sec.supply#8"
+						],
+						"0.12.0": [
 							"sec.supply#1",
 							"sec.supply#2",
 							"sec.supply#3",
@@ -9466,7 +9994,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Published id_effect_logger and id_effect_opentelemetry; book part2/ch07-11-logger.md, ch07-12-opentelemetry.md; examples crates/id_effect_logger/examples/*.rs; integration tests crates/id_effect_logger/tests/pipeline.rs, process_wide_pipeline.rs, global_minimum_level.rs. Raised to production: the CI-tested Ledger installs the redaction policy (src/main.rs:39) and tests it (tests/observability.rs), and changes the log level at runtime (tests/console.rs). 8/8.",
 			"targets": {
@@ -9514,7 +10043,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9572,6 +10102,16 @@
 							"obs.logging#8"
 						],
 						"0.11.0": [
+							"obs.logging#1",
+							"obs.logging#2",
+							"obs.logging#3",
+							"obs.logging#4",
+							"obs.logging#5",
+							"obs.logging#6",
+							"obs.logging#7",
+							"obs.logging#8"
+						],
+						"0.12.0": [
 							"obs.logging#1",
 							"obs.logging#2",
 							"obs.logging#3",
@@ -9674,7 +10214,8 @@
 				"0.8.0": 89,
 				"0.9.0": 89,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part6/ch27-01-metrics.md; example crates/id_effect_axum/examples/070_metrics.rs; integration tests crates/id_effect_axum/tests/metrics.rs, crates/id_effect/tests/metrics.rs. Raised to production: the CI-tested Ledger wraps its DB in InstrumentedSqlClient (src/db.rs:63), and tests/console.rs asserts /_console/api/metrics shows db_client_operations_total. 8/8.",
 			"targets": {
@@ -9722,7 +10263,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9776,6 +10318,16 @@
 							"obs.metrics#8"
 						],
 						"0.11.0": [
+							"obs.metrics#1",
+							"obs.metrics#2",
+							"obs.metrics#3",
+							"obs.metrics#4",
+							"obs.metrics#5",
+							"obs.metrics#6",
+							"obs.metrics#7",
+							"obs.metrics#8"
+						],
+						"0.12.0": [
 							"obs.metrics#1",
 							"obs.metrics#2",
 							"obs.metrics#3",
@@ -9894,7 +10446,8 @@
 				"0.8.0": 63,
 				"0.9.0": 63,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Book part2/ch07-12-opentelemetry.md, part6/ch27-00-observability.md; examples crates/id_effect_opentelemetry/examples/otel_minimal.rs, otel_production.rs; integration tests crates/id_effect_opentelemetry/tests/starter_install.rs, db_query_span.rs. Raised to production: the CI-tested Ledger installs OTel (src/main.rs:35) and tests client, DB and sampler tracing (tests/observability.rs). #8 not met: no zero-code or agent auto-instrumentation.",
 			"targets": {
@@ -9942,7 +10495,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -9994,6 +10548,15 @@
 							"obs.tracing#7"
 						],
 						"0.11.0": [
+							"obs.tracing#1",
+							"obs.tracing#2",
+							"obs.tracing#3",
+							"obs.tracing#4",
+							"obs.tracing#5",
+							"obs.tracing#6",
+							"obs.tracing#7"
+						],
+						"0.12.0": [
 							"obs.tracing#1",
 							"obs.tracing#2",
 							"obs.tracing#3",
@@ -10132,7 +10695,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part6/ch27-02-health.md; example crates/id_effect_axum/examples/071_health.rs; integration test crates/id_effect_axum/tests/health.rs; the CI-tested Ledger mounts HealthRegistry (src/app.rs:375-379, :478) and its tests hit /health (tests/http.rs:133) -> production, 8/8.",
 			"targets": {
@@ -10180,7 +10744,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10247,6 +10812,16 @@
 							"obs.health#6",
 							"obs.health#7",
 							"obs.health#8"
+						],
+						"0.12.0": [
+							"obs.health#1",
+							"obs.health#2",
+							"obs.health#3",
+							"obs.health#4",
+							"obs.health#5",
+							"obs.health#6",
+							"obs.health#7",
+							"obs.health#8"
 						]
 					},
 					"effect_ts": ["obs.health#5", "obs.health#6", "obs.health#8"],
@@ -10292,7 +10867,7 @@
 					"obs.health#5": "crates/id_effect_axum/src/server/shutdown.rs:119 wait_for_shutdown (SIGTERM/Ctrl+C); test tests/health.rs:216 on_sigterm_ready_turns_503_while_an_in_flight_request_completes",
 					"obs.health#6": "crates/id_effect_axum/src/server/shutdown.rs:140 drain_with_timeout; test tests/health.rs:216 (in-flight /slow completes)",
 					"obs.health#7": "crates/id_effect_axum/src/server/lifecycle.rs:149,189,264 mark_shutting_down; tests tests/health.rs:192, :216",
-					"obs.health#8": "crates/id_effect_axum/src/server/lifecycle.rs:315 server_layer (scoped Layer)"
+					"obs.health#8": "crates/id_effect_axum/src/server/lifecycle.rs:394 server_layer (scoped Layer)"
 				},
 				"notes": {
 					"id_effect": "0.6.0 meets 4 of 8: no aggregated per-dependency indicators, built-in integration checks, readiness flip on shutdown or ordered teardown."
@@ -10323,7 +10898,8 @@
 				"0.8.0": 25,
 				"0.9.0": 25,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "New published crate id_effect_console; book part6/ch27-03-console.md; examples crates/id_effect_console/examples/010_bind.rs, 020_console.rs; integration tests crates/id_effect_console/tests/api.rs, console.rs, csrf.rs; the CI-tested Ledger mounts it (src/console.rs) and tests it (tests/console.rs: only_an_operator_with_a_second_factor_opens_the_console) -> production. #4 not met: no REPL or remote shell. #7 not met: no CPU or heap profiling; the fiber dump lists span names, not stack traces, and is already counted under #1.",
 			"targets": {
@@ -10372,7 +10948,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "tested",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10400,6 +10977,14 @@
 							"obs.console#8"
 						],
 						"0.11.0": [
+							"obs.console#1",
+							"obs.console#2",
+							"obs.console#3",
+							"obs.console#5",
+							"obs.console#6",
+							"obs.console#8"
+						],
+						"0.12.0": [
 							"obs.console#1",
 							"obs.console#2",
 							"obs.console#3",
@@ -10482,7 +11067,8 @@
 				"0.8.0": 13,
 				"0.9.0": 13,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Moved from labs to the published crate crates/id_effect_jobs; book part6/ch31-01-jobs.md (ch31-00 now calls it a published integration-tier crate); example crates/id_effect_jobs/examples/010_jobs.rs; integration tests crates/id_effect_jobs/tests/* (live PG in ci.yml:206); the CI-tested Ledger runs its jobs (src/jobs.rs; tests/statements.rs:163 a_statement_that_cannot_be_stored_is_retried; tests/console.rs) -> production, 8/8.",
 			"targets": {
@@ -10530,7 +11116,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "absent",
@@ -10560,6 +11147,16 @@
 							"msg.jobs#8"
 						],
 						"0.11.0": [
+							"msg.jobs#1",
+							"msg.jobs#2",
+							"msg.jobs#3",
+							"msg.jobs#4",
+							"msg.jobs#5",
+							"msg.jobs#6",
+							"msg.jobs#7",
+							"msg.jobs#8"
+						],
+						"0.12.0": [
 							"msg.jobs#1",
 							"msg.jobs#2",
 							"msg.jobs#3",
@@ -10654,7 +11251,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Book part3/ch11-05-cron.md and part6/ch31-01-jobs.md#Cron; examples crates/id_effect/examples/123_cron_jobs.rs, crates/id_effect_jobs/examples/010_jobs.rs; integration tests crates/id_effect/tests/cron.rs, crates/id_effect_jobs/tests/cron_pg.rs. Raised to production: the CI-tested Ledger runs CronRegistry plus CronLeader (src/jobs.rs:150-171), tested by tests/statements.rs:29 the_statement_cron_mails_every_account_its_csv_once. #6 not met: CronScheduler (cron_job.rs:459-492) only reads; it cannot add or remove schedules at runtime.",
 			"targets": {
@@ -10703,7 +11301,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -10748,6 +11347,15 @@
 							"msg.cron#8"
 						],
 						"0.11.0": [
+							"msg.cron#1",
+							"msg.cron#2",
+							"msg.cron#3",
+							"msg.cron#4",
+							"msg.cron#5",
+							"msg.cron#7",
+							"msg.cron#8"
+						],
+						"0.12.0": [
 							"msg.cron#1",
 							"msg.cron#2",
 							"msg.cron#3",
@@ -10857,7 +11465,8 @@
 				"0.8.0": 25,
 				"0.9.0": 25,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Moved from labs to the published crates id_effect_messaging and id_effect_redis (feature streams); book part6/ch31-02-messaging.md; examples crates/id_effect_messaging/examples/010_topics.rs, 020_memory_broker.rs, 030_outbox_inbox.rs; integration tests crates/id_effect_messaging/tests/pg_outbox.rs, crates/id_effect_redis/tests/streams.rs; the CI-tested Ledger uses outbox -> Redis Streams -> inbox (src/notifications.rs; tests/notifications.rs:56, :166) -> production. #1 and #2 not met: no Kafka or AMQP adapter in any published crate (Kafka appears only in a doc comment, broker.rs:39).",
 			"targets": {
@@ -10905,7 +11514,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "absent",
 					"zio": "production",
@@ -10933,6 +11543,14 @@
 							"msg.brokers#8"
 						],
 						"0.11.0": [
+							"msg.brokers#3",
+							"msg.brokers#4",
+							"msg.brokers#5",
+							"msg.brokers#6",
+							"msg.brokers#7",
+							"msg.brokers#8"
+						],
+						"0.12.0": [
 							"msg.brokers#3",
 							"msg.brokers#4",
 							"msg.brokers#5",
@@ -11038,7 +11656,8 @@
 				"0.8.0": 89,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Book part4/ch13-* and part5/ch22-*; example crates/id_effect/examples/076_stream_zip_time_group.rs; integration tests crates/id_effect/tests/stream_zip_time_group.rs, stream_ops.rs; the CI-tested Ledger streams its CSV export through Stream (src/reports.rs:223-239) -> production, 8/8.",
 			"targets": {
@@ -11086,7 +11705,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11145,6 +11765,16 @@
 							"msg.streams#8"
 						],
 						"0.11.0": [
+							"msg.streams#1",
+							"msg.streams#2",
+							"msg.streams#3",
+							"msg.streams#4",
+							"msg.streams#5",
+							"msg.streams#6",
+							"msg.streams#7",
+							"msg.streams#8"
+						],
+						"0.12.0": [
 							"msg.streams#1",
 							"msg.streams#2",
 							"msg.streams#3",
@@ -11242,7 +11872,8 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Was absent in 0.9; now the published crate id_effect_mail (Cargo.toml:31); book part6/ch31-03-mail.md; examples crates/id_effect_mail/examples/010_mail.rs, 020_templates.rs; integration tests crates/id_effect_mail/tests/* (PG and container CI jobs); the CI-tested Ledger sends mail through it with Mailpit in CI (src/mail.rs; tests/statements.rs:29, tests/signup.rs, tests/observability.rs SendGrid) -> production. #6 not met: no inbound mail. #7 not met: no SMS, Slack, push or database notification channel abstraction.",
 			"targets": {
@@ -11290,7 +11921,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -11318,6 +11950,14 @@
 							"msg.email#8"
 						],
 						"0.11.0": [
+							"msg.email#1",
+							"msg.email#2",
+							"msg.email#3",
+							"msg.email#4",
+							"msg.email#5",
+							"msg.email#8"
+						],
+						"0.12.0": [
 							"msg.email#1",
 							"msg.email#2",
 							"msg.email#3",
@@ -11404,11 +12044,12 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 38,
-				"0.11.0": 38
+				"0.11.0": 38,
+				"0.12.0": 38
 			},
 			"evidence": "Only in the unpublished labs/id_effect_ai (publish = false, excluded from the workspace at Cargo.toml:4), tested in the CI labs job (ci.yml:297-315); book part6/ch35-00-ai.md -> labs (cap 39). #3 tool calling, #4 structured output, #5 embeddings and #8 agent loop not found. #6 not met: examples/mcp_server_template.rs is a hand-rolled toy JSON-RPC example, not an MCP SDK.",
 			"targets": {
-				"0.12.0": 75
+				"0.13.0": 75
 			},
 			"checks": [
 				{
@@ -11452,7 +12093,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "labs",
-						"0.11.0": "labs"
+						"0.11.0": "labs",
+						"0.12.0": "labs"
 					},
 					"effect_ts": "production",
 					"zio": "labs",
@@ -11472,7 +12114,8 @@
 						"0.8.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
 						"0.9.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
 						"0.10.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
-						"0.11.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"]
+						"0.11.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"],
+						"0.12.0": ["ai.llm#1", "ai.llm#2", "ai.llm#7"]
 					},
 					"effect_ts": [
 						"ai.llm#1",
@@ -11572,7 +12215,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Production: first-party testing module (run_test, Exit assertions, golden files), in-memory doubles, book part4 ch15; the Ledger's CI tests (examples/reference/ledger/tests/common/mod.rs) swap layers and services. #4 not met: ch15-03 says 'no mocking framework'.",
 			"targets": {
@@ -11620,7 +12264,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11679,6 +12324,15 @@
 							"test.unit#8"
 						],
 						"0.11.0": [
+							"test.unit#1",
+							"test.unit#2",
+							"test.unit#3",
+							"test.unit#5",
+							"test.unit#6",
+							"test.unit#7",
+							"test.unit#8"
+						],
+						"0.12.0": [
 							"test.unit#1",
 							"test.unit#2",
 							"test.unit#3",
@@ -11804,7 +12458,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Documented: book ch11-04, ch15-02, ch15-05, cookbook ch40-01, tests/interleavings.rs. Not production: git grep finds no TestExecutor/TestRandom/Random::seeded in examples/reference/ledger. #8 not met: no seeded test-order shuffle in CI.",
 			"targets": {
@@ -11852,7 +12507,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -11908,6 +12564,15 @@
 							"test.determinism#7"
 						],
 						"0.11.0": [
+							"test.determinism#1",
+							"test.determinism#2",
+							"test.determinism#3",
+							"test.determinism#4",
+							"test.determinism#5",
+							"test.determinism#6",
+							"test.determinism#7"
+						],
+						"0.12.0": [
 							"test.determinism#1",
 							"test.determinism#2",
 							"test.determinism#3",
@@ -12009,7 +12674,8 @@
 				"0.8.0": 89,
 				"0.9.0": 89,
 				"0.10.0": 89,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 89
 			},
 			"evidence": "Documented: book ch15-04/06, example crates/id_effect/examples/110_property_testing.rs, tests/testing_property.rs (+ golden files). Not production: the Ledger has no property tests (only Factory::seeded fixture generation, common/mod.rs:395).",
 			"targets": {
@@ -12060,7 +12726,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12120,6 +12787,16 @@
 							"test.property#8"
 						],
 						"0.11.0": [
+							"test.property#1",
+							"test.property#2",
+							"test.property#3",
+							"test.property#4",
+							"test.property#5",
+							"test.property#6",
+							"test.property#7",
+							"test.property#8"
+						],
+						"0.12.0": [
 							"test.property#1",
 							"test.property#2",
 							"test.property#3",
@@ -12220,9 +12897,10 @@
 				"0.8.0": 38,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "Production: id_effect_test (book ch15-07/08, examples 010_containers/020_isolated_db, tests/*), used throughout the CI-tested Ledger. #5 not met: no browser/E2E driver anywhere (git grep for playwright/webdriver/fantoccini finds nothing).",
+			"evidence": "Production: id_effect_test (book ch15-07/08, examples 010_containers/020_isolated_db, tests/*), used throughout the CI-tested Ledger and Relay. #5 not met: the only browser tests are the framework's and the Relay's own (crates/id_effect_rpc/tests/browser.rs:287 browser_prefers_webtransport_then_websocket, examples/reference/relay/tests/browser.rs:69 relay_browser_chat_round_trip, driving Chromium with the headless_chrome dev-dependency; book ch29-06-webtransport.md:134-151 describes that test). There is no browser/E2E helper in id_effect_test and no guide for testing an app in a browser.",
 			"targets": {
 				"0.9.0": 75,
 				"0.10.0": 88
@@ -12269,7 +12947,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12314,6 +12993,15 @@
 							"test.integration#8"
 						],
 						"0.11.0": [
+							"test.integration#1",
+							"test.integration#2",
+							"test.integration#3",
+							"test.integration#4",
+							"test.integration#6",
+							"test.integration#7",
+							"test.integration#8"
+						],
+						"0.12.0": [
 							"test.integration#1",
 							"test.integration#2",
 							"test.integration#3",
@@ -12428,7 +13116,8 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Production (new in 0.10): id_effect_test feature fault, book ch15-09, example crates/id_effect_test/examples/030_faults.rs, tests/faults.rs; the Ledger's examples/reference/ledger/tests/faults.rs:56-117 runs a seeded FaultPlan (delay + 40001 conflicts) against the posting path in CI reference-ledger. #5 and #6 not met: ch15-09:444-448 says there is no runtime toggle and no toxiproxy-style proxy.",
 			"targets": {
@@ -12476,7 +13165,8 @@
 						"0.8.0": "tested",
 						"0.9.0": "tested",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12504,6 +13194,14 @@
 							"test.chaos#8"
 						],
 						"0.11.0": [
+							"test.chaos#1",
+							"test.chaos#2",
+							"test.chaos#3",
+							"test.chaos#4",
+							"test.chaos#7",
+							"test.chaos#8"
+						],
+						"0.12.0": [
 							"test.chaos#1",
 							"test.chaos#2",
 							"test.chaos#3",
@@ -12573,7 +13271,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Process row: 8 of 8 checks are committed CI jobs or scripts. New in 0.11: #8, the Bench workflow (.github/workflows/bench.yml:22-59) benches the base and the head commit and fails on a budget or delta gate (scripts/bench-compare.sh --enforce budget,delta against docs/benchmarks/gates.toml, including the secure-stack +5 µs budget).",
 			"targets": {
@@ -12622,7 +13321,8 @@
 						"0.8.0": "production",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12683,6 +13383,16 @@
 							"test.qa#7"
 						],
 						"0.11.0": [
+							"test.qa#1",
+							"test.qa#2",
+							"test.qa#3",
+							"test.qa#4",
+							"test.qa#5",
+							"test.qa#6",
+							"test.qa#7",
+							"test.qa#8"
+						],
+						"0.12.0": [
 							"test.qa#1",
 							"test.qa#2",
 							"test.qa#3",
@@ -12769,7 +13479,8 @@
 				"0.8.0": 63,
 				"0.9.0": 75,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Documented: published id_effect_tool, book part6/ch34-00 + tutorial-zero-to-production.md, tests/bin.rs, tests/generate.rs, CI template matrix. Not production: the Ledger is not generated by the tool. #2 not met: the only generator is `generate job`; there is no resource/CRUD generator.",
 			"targets": {
@@ -12819,7 +13530,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -12861,6 +13573,15 @@
 							"dx.scaffold#8"
 						],
 						"0.11.0": [
+							"dx.scaffold#1",
+							"dx.scaffold#3",
+							"dx.scaffold#4",
+							"dx.scaffold#5",
+							"dx.scaffold#6",
+							"dx.scaffold#7",
+							"dx.scaffold#8"
+						],
+						"0.12.0": [
 							"dx.scaffold#1",
 							"dx.scaffold#3",
 							"dx.scaffold#4",
@@ -12952,7 +13673,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Documented: book ch16-00..04 + cookbook ch40-03, examples/cli-minimal with tests, crates/id_effect_cli/tests/cli_probe_exit.rs. Not production: the Ledger's main.rs does not use id_effect_cli. #4/#5 not met: id_effect_cli/src only has completions.rs, exit_code.rs, run.rs (no prompts or progress).",
 			"targets": {
@@ -13000,7 +13722,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -13042,6 +13765,14 @@
 							"dx.cli#8"
 						],
 						"0.11.0": [
+							"dx.cli#1",
+							"dx.cli#2",
+							"dx.cli#3",
+							"dx.cli#6",
+							"dx.cli#7",
+							"dx.cli#8"
+						],
+						"0.12.0": [
 							"dx.cli#1",
 							"dx.cli#2",
 							"dx.cli#3",
@@ -13144,7 +13875,8 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
 			"evidence": "Documented: book + tutorial + cookbook, snippets compiled as doctests, migration guide per release. #7 not met: .github/workflows/docs.yml deploys a single unversioned Pages site from main.",
 			"targets": {
@@ -13193,7 +13925,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -13250,6 +13983,15 @@
 							"dx.docs#8"
 						],
 						"0.11.0": [
+							"dx.docs#1",
+							"dx.docs#2",
+							"dx.docs#3",
+							"dx.docs#4",
+							"dx.docs#5",
+							"dx.docs#6",
+							"dx.docs#8"
+						],
+						"0.12.0": [
 							"dx.docs#1",
 							"dx.docs#2",
 							"dx.docs#3",
@@ -13383,7 +14125,8 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Documented: book ch34-01, docs/diagnostics.md, trybuild ui suite, tool tests/doctor.rs. Not production: the Ledger CI does not run doctor. #6 (IDE plugin) and #8 (dev error page) not found in crates/.",
 			"targets": {
@@ -13432,7 +14175,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -13486,6 +14230,14 @@
 							"dx.diagnostics#7"
 						],
 						"0.11.0": [
+							"dx.diagnostics#1",
+							"dx.diagnostics#2",
+							"dx.diagnostics#3",
+							"dx.diagnostics#4",
+							"dx.diagnostics#5",
+							"dx.diagnostics#7"
+						],
+						"0.12.0": [
 							"dx.diagnostics#1",
 							"dx.diagnostics#2",
 							"dx.diagnostics#3",
@@ -13593,7 +14345,8 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 38,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Promoted in 0.11 (E1.9): the Dylint library lints/id_effect_lints (version 0.11.0, tier integration; replaces labs/id_effect_lint), packaged, attested and published by the tag's publish workflow (.github/workflows/publish.yml:324-337) and installable from the tag through [workspace.metadata.dylint] (book appendix-d-workspace-tooling.md:31-49). Its UI tests (ui/*.rs + .stderr, .fixed for the auto-fixed lints) run in CI (lint.yml:39-40), cargo dylint runs over the workspace (lint.yml:42), and the runnable demo crate lints/id_effect_lints/examples/demo must trip every lint (lint.yml:43-50); the ast-grep rules run on the stable toolchain in the lint.yml ast-grep job. Level documented. Not met: #6, because no IDE or rust-analyzer setup is shipped or documented, and #8, because the id_effect_tool templates do not enable the lints (no dylint metadata under crates/id_effect_tool/templates).",
 			"targets": {
@@ -13642,7 +14395,8 @@
 						"0.8.0": "labs",
 						"0.9.0": "labs",
 						"0.10.0": "labs",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -13663,6 +14417,14 @@
 						"0.9.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
 						"0.10.0": ["dx.lint#1", "dx.lint#2", "dx.lint#7"],
 						"0.11.0": [
+							"dx.lint#1",
+							"dx.lint#2",
+							"dx.lint#3",
+							"dx.lint#4",
+							"dx.lint#5",
+							"dx.lint#7"
+						],
+						"0.12.0": [
 							"dx.lint#1",
 							"dx.lint#2",
 							"dx.lint#3",
@@ -13772,7 +14534,8 @@
 				"0.8.0": 49,
 				"0.9.0": 49,
 				"0.10.0": 89,
-				"0.11.0": 89
+				"0.11.0": 89,
+				"0.12.0": 89
 			},
 			"evidence": "Documented (up from published): first-party watch mode `id-effect dev` with book ch34-02, the end-to-end test crates/id_effect_tool/tests/dev.rs, and a runnable invocation against generated templates; measurements published in dx-kpis-0.10.json (still not run in CI). #3 not met: ch34-02 says 'nothing is hot-swapped in a running app'.",
 			"targets": {
@@ -13820,7 +14583,8 @@
 						"0.8.0": "published",
 						"0.9.0": "published",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -13859,6 +14623,14 @@
 							"dx.compile#7"
 						],
 						"0.11.0": [
+							"dx.compile#1",
+							"dx.compile#2",
+							"dx.compile#4",
+							"dx.compile#5",
+							"dx.compile#6",
+							"dx.compile#7"
+						],
+						"0.12.0": [
 							"dx.compile#1",
 							"dx.compile#2",
 							"dx.compile#4",
@@ -13976,7 +14748,8 @@
 				"0.8.0": 13,
 				"0.9.0": 25,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Production: config profiles and the operator console are used and CI-tested by the Ledger (tests/config.rs, tests/console.rs); new in 0.10: `id-effect dev` (book ch34-02, tests/dev.rs) and devcontainers. #1 (REPL) and #6 (seed command) not met: git grep -i seed finds nothing in id_effect_tool src/templates. #3 counts only as restart-based live reload; #5 has no request/trace/log views.",
 			"targets": {
@@ -14024,7 +14797,8 @@
 						"0.8.0": "published",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "absent",
@@ -14052,6 +14826,14 @@
 							"dx.repl#8"
 						],
 						"0.11.0": [
+							"dx.repl#2",
+							"dx.repl#3",
+							"dx.repl#4",
+							"dx.repl#5",
+							"dx.repl#7",
+							"dx.repl#8"
+						],
+						"0.12.0": [
 							"dx.repl#2",
 							"dx.repl#3",
 							"dx.repl#4",
@@ -14152,9 +14934,10 @@
 				"0.8.0": 88,
 				"0.9.0": 88,
 				"0.10.0": 88,
-				"0.11.0": 88
+				"0.11.0": 88,
+				"0.12.0": 88
 			},
-			"evidence": "Documented: book ch34-00 + tutorial, generated Dockerfile/Kamal built in the CI templates job, axum health/drain tests. Not production: the Ledger has no Dockerfile or deploy config (git ls-files). #6 not met: Kubernetes appears only as an untested YAML snippet in ch34-00; no manifests, Helm chart or operator are shipped.",
+			"evidence": "Documented: book ch34-00 + tutorial, generated Dockerfile/Kamal built in the CI templates job, axum health/drain tests; new in 0.12 the HTTP/3 deployment guide (book part6/ch29-07-http3-deployment.md) with docs/deploy/http3/kamal.yml and helm-values.yaml. Not production: neither the Ledger nor the Relay has a Dockerfile or deploy config. #6 not met: docs/deploy/http3/helm-values.yaml is an untested values file for a generic `helm create` chart; no chart, manifests or operator are shipped or tested.",
 			"targets": {
 				"0.8.0": 63,
 				"0.10.0": 88
@@ -14201,7 +14984,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "documented",
 						"0.10.0": "documented",
-						"0.11.0": "documented"
+						"0.11.0": "documented",
+						"0.12.0": "documented"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -14258,6 +15042,15 @@
 							"dx.deploy#8"
 						],
 						"0.11.0": [
+							"dx.deploy#1",
+							"dx.deploy#2",
+							"dx.deploy#3",
+							"dx.deploy#4",
+							"dx.deploy#5",
+							"dx.deploy#7",
+							"dx.deploy#8"
+						],
+						"0.12.0": [
 							"dx.deploy#1",
 							"dx.deploy#2",
 							"dx.deploy#3",
@@ -14355,7 +15148,8 @@
 				"0.8.0": 88,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
 			"evidence": "Production: umbrella id_effect_kit with prelude, lockstep workspace version, one Effect/Exit model; the CI-tested Ledger is built through the kit. Caveat: the Ledger also depends directly on tower (for the CSRF bypass) and on axum/tokio/serde.",
 			"targets": {
@@ -14404,7 +15198,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -14457,6 +15252,16 @@
 							"dx.coherence#8"
 						],
 						"0.11.0": [
+							"dx.coherence#1",
+							"dx.coherence#2",
+							"dx.coherence#3",
+							"dx.coherence#4",
+							"dx.coherence#5",
+							"dx.coherence#6",
+							"dx.coherence#7",
+							"dx.coherence#8"
+						],
+						"0.12.0": [
 							"dx.coherence#1",
 							"dx.coherence#2",
 							"dx.coherence#3",
@@ -14586,9 +15391,10 @@
 				"0.8.0": 75,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
-			"evidence": "Process row: 6 of 8 checks are committed artifacts, so level is production. Missing: #1 (workspace is still version 0.9.0, Cargo.toml:42, pre-1.0 with breaks every minor) and #4 (GOVERNANCE.md:60-77 ties releases to the internal roadmap, no published dates or cadence). CHANGELOG.md has no 0.10 section yet at HEAD; MIGRATION-0.10.md exists.",
+			"evidence": "Process row: 6 of 8 checks are committed artifacts, so level is production. Missing: #1, pre-1.0 (the workspace version is 0.12.0, Cargo.toml:49, with breaking changes marked feat! and listed in docs/MIGRATION-0.12.md) and #4 (GOVERNANCE.md ties releases to the internal roadmap; no published dates or cadence). CHANGELOG.md has a 0.12.0 section and docs/MIGRATION-0.12.md maps every cargo semver-checks break.",
 			"targets": {
 				"0.8.0": 50,
 				"1.0.0": 88
@@ -14635,7 +15441,8 @@
 						"0.8.0": "production",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -14687,6 +15494,14 @@
 							"eco.stability#8"
 						],
 						"0.11.0": [
+							"eco.stability#2",
+							"eco.stability#3",
+							"eco.stability#5",
+							"eco.stability#6",
+							"eco.stability#7",
+							"eco.stability#8"
+						],
+						"0.12.0": [
 							"eco.stability#2",
 							"eco.stability#3",
 							"eco.stability#5",
@@ -14816,7 +15631,8 @@
 				"0.8.0": 38,
 				"0.9.0": 38,
 				"0.10.0": 38,
-				"0.11.0": 38
+				"0.11.0": 38,
+				"0.12.0": 38
 			},
 			"evidence": "Process row: 3 of 8 checks are committed, so level is production. GOVERNANCE.md:9-12 says plainly there is one maintainer with merge rights. No second organisation, sponsor, foundation, commercial support or funding channel: no FUNDING.yml in .github/ (CODEOWNERS, dependabot.yml, scripts, workflows), and a grep of README, CONTRIBUTING and GOVERNANCE for sponsor/funding finds nothing.",
 			"targets": {
@@ -14865,7 +15681,8 @@
 						"0.8.0": "production",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -14885,7 +15702,8 @@
 						"0.8.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
 						"0.9.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
 						"0.10.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
-						"0.11.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"]
+						"0.11.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"],
+						"0.12.0": ["eco.backing#4", "eco.backing#5", "eco.backing#6"]
 					},
 					"effect_ts": [
 						"eco.backing#1",
@@ -15003,7 +15821,8 @@
 				"0.8.0": 50,
 				"0.9.0": 63,
 				"0.10.0": 63,
-				"0.11.0": 63
+				"0.11.0": 63,
+				"0.12.0": 63
 			},
 			"evidence": "Published, tested and documented integrations (book chapters, crate examples, crate tests) for Tokio, axum/tower, PG/MySQL/SQLite (+Redis) and tracing/OTel, used by the Ledger app in CI job reference-ledger (ci.yml:239-290, in ci-pass), so level is production. Not met: #6, because the only real broker is Redis Streams (crates/id_effect_redis/src/streams.rs:333 'impl MessageBroker for RedisStreamsBroker'); the other impl is the in-memory MemoryBroker (crates/id_effect_messaging/src/memory.rs:372), and there is no Kafka/NATS/AMQP. Not met: #7, because the only cloud integration is S3Store, a generic S3-protocol store (crates/id_effect_storage/src/s3.rs:1), with no GCP/Azure/AWS SDK integrations, which is too thin to count as cloud-provider integrations. Not met: #8, no third-party package count.",
 			"targets": {
@@ -15051,7 +15870,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -15084,6 +15904,13 @@
 							"eco.fit#5"
 						],
 						"0.11.0": [
+							"eco.fit#1",
+							"eco.fit#2",
+							"eco.fit#3",
+							"eco.fit#4",
+							"eco.fit#5"
+						],
+						"0.12.0": [
 							"eco.fit#1",
 							"eco.fit#2",
 							"eco.fit#3",
@@ -15199,7 +16026,8 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "Process row with no committed artifact for any check. A grep of README.md, CONTRIBUTING.md, GOVERNANCE.md, docs/STABILITY.md and book SUMMARY.md for discord/zulip/matrix/gitter/discussions/forum finds nothing. No conference, training, download, job or Stack Overflow signals in the repo.",
 			"targets": {
@@ -15247,7 +16075,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -15267,7 +16096,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": [
 						"eco.community#3",
@@ -15361,7 +16191,8 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "Process row with no check met. git ls-files has no ADOPTERS/SHOWCASE/case-study file (examples/http-showcase is a demo app, not an adopters page). There is no production operations guide on tuning, scaling and monitoring: book part6/ch34-00-dx-ship.md has only 'Deploy' (:71) and 'Rolling restarts and drain' (:79), and tutorial-zero-to-production.md covers Docker and deploy config (:522, :537). SECURITY.md:51-60 describes the advisory process but no advisory history is published.",
 			"targets": {
@@ -15409,7 +16240,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "absent"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -15429,7 +16261,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": [
 						"eco.production#1",
@@ -15553,9 +16386,10 @@
 				"0.8.0": 100,
 				"0.9.0": 100,
 				"0.10.0": 100,
-				"0.11.0": 100
+				"0.11.0": 100,
+				"0.12.0": 100
 			},
-			"evidence": "Process row with all 5 checks committed: MIT LICENSE at the root, a license field in all 29 crate manifests, and a DCO requirement in CONTRIBUTING.md. Level is production.",
+			"evidence": "Process row with all 5 checks committed: MIT LICENSE at the root, a license field (license.workspace = true) in all 32 crate manifests under crates/ including the new id_effect_rpc and id_effect_rpc_macros, and a DCO requirement in CONTRIBUTING.md. Level is production.",
 			"targets": {
 				"0.8.0": 100
 			},
@@ -15589,7 +16423,8 @@
 						"0.8.0": "production",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -15628,6 +16463,13 @@
 							"eco.license#5"
 						],
 						"0.11.0": [
+							"eco.license#1",
+							"eco.license#2",
+							"eco.license#3",
+							"eco.license#4",
+							"eco.license#5"
+						],
+						"0.12.0": [
 							"eco.license#1",
 							"eco.license#2",
 							"eco.license#3",
@@ -15701,7 +16543,7 @@
 				"evidence": {
 					"eco.license#1": "LICENSE:1 'MIT License' (OSI-approved)",
 					"eco.license#2": "LICENSE is tracked at the repo root (git ls-files LICENSE)",
-					"eco.license#3": "Cargo.toml:46 license = \"MIT\"; every one of the 29 crates/*/Cargo.toml has a license line (license.workspace = true, e.g. crates/id_effect_messaging/Cargo.toml:7); a scan found none missing",
+					"eco.license#3": "license field in all 32 crates/*/Cargo.toml (none missing), including crates/id_effect_rpc/Cargo.toml and crates/id_effect_rpc_macros/Cargo.toml",
 					"eco.license#4": "CONTRIBUTING.md:12 '## Developer Certificate of Origin (DCO)', :14 'Every commit must be signed off', :23-24 'Pull requests with commits lacking a sign-off are not merged'",
 					"eco.license#5": "LICENSE:1 MIT (permissive); CONTRIBUTING.md:9-10 contributions are licensed under MIT"
 				},
@@ -15734,11 +16576,12 @@
 				"0.8.0": 1,
 				"0.9.0": 1,
 				"0.10.0": 1,
-				"0.11.0": 1
+				"0.11.0": 1,
+				"0.12.0": 1
 			},
 			"evidence": "A git grep -wi of crates/, labs/ and examples/ for i18n/l10n/locale/accept-language/fluent/gettext/plural finds only an unrelated 'Fluent builder' comment (crates/id_effect_axum/src/server/lifecycle.rs:93) and ad-hoc English plural helpers (crates/id_effect_mail/src/auth.rs:227, crates/id_effect_tool/src/doctor/mod.rs:155). No message catalogs, locale negotiation or locale formatting.",
 			"targets": {
-				"0.12.0": 63
+				"0.13.0": 63
 			},
 			"checks": [
 				{
@@ -15782,7 +16625,8 @@
 						"0.8.0": "absent",
 						"0.9.0": "absent",
 						"0.10.0": "absent",
-						"0.11.0": "absent"
+						"0.11.0": "absent",
+						"0.12.0": "absent"
 					},
 					"effect_ts": "absent",
 					"zio": "absent",
@@ -15802,7 +16646,8 @@
 						"0.8.0": [],
 						"0.9.0": [],
 						"0.10.0": [],
-						"0.11.0": []
+						"0.11.0": [],
+						"0.12.0": []
 					},
 					"effect_ts": ["eco.i18n#4"],
 					"zio": ["eco.i18n#4"],
@@ -15883,12 +16728,13 @@
 				"0.8.0": 13,
 				"0.9.0": 75,
 				"0.10.0": 75,
-				"0.11.0": 75
+				"0.11.0": 75,
+				"0.12.0": 75
 			},
 			"evidence": "Published (id_effect_sql, id_effect_axum), tested, with book chapter part6/ch30-07, runnable example 050_tenancy_audit and integration tests, and used by the Ledger app in CI job reference-ledger (ci.yml:239-290), so level is production. Not met: #4 and #8. The chapter itself says (ch30-07:338-340) 'Per-tenant connection routing is not part of 0.9' and 'Per-tenant configuration and quotas other than a request rate ... are not provided'.",
 			"targets": {
 				"0.9.0": 50,
-				"0.12.0": 75
+				"0.13.0": 75
 			},
 			"checks": [
 				{
@@ -15932,7 +16778,8 @@
 						"0.8.0": "documented",
 						"0.9.0": "production",
 						"0.10.0": "production",
-						"0.11.0": "production"
+						"0.11.0": "production",
+						"0.12.0": "production"
 					},
 					"effect_ts": "production",
 					"zio": "production",
@@ -15967,6 +16814,14 @@
 							"eco.tenancy#7"
 						],
 						"0.11.0": [
+							"eco.tenancy#1",
+							"eco.tenancy#2",
+							"eco.tenancy#3",
+							"eco.tenancy#5",
+							"eco.tenancy#6",
+							"eco.tenancy#7"
+						],
+						"0.12.0": [
 							"eco.tenancy#1",
 							"eco.tenancy#2",
 							"eco.tenancy#3",
@@ -16021,7 +16876,7 @@
 					"eco.tenancy#3": "crates/id_effect_sql/src/repository.rs:310 for_current_tenant and :320 with_tenant; crates/id_effect_sql/tests/repository.rs:709/849 tenant_filter_scopes_every_query (SQLite and PG); Ledger examples/reference/ledger/tests/accounts.rs:137 organisations_never_see_each_other",
 					"eco.tenancy#5": "crates/id_effect_sql/src/audit.rs:588 pub fn record; crates/id_effect_sql/tests/audit.rs:259 audit_rolls_back_with_tx; Ledger tests/entries.rs:12 posting_is_double_entry_and_audited",
 					"eco.tenancy#6": "crates/id_effect_sql/src/audit.rs:599 pub fn verify_chain (per-tenant hash chain); crates/id_effect_sql/tests/audit.rs:177 tampered_row_breaks_chain; Ledger tests/entries.rs:206 an_edited_audit_record_is_detected",
-					"eco.tenancy#7": "crates/id_effect_axum/src/middleware/rate_limit.rs:469 RateLimitKey::tenant; tests :784 tenant_keys_read_request_caps_then_extensions and :809 each_tenant_has_its_own_bucket; book ch30-07 '## Per-tenant rate limits' (:269); Ledger src/limits.rs:7-8 per-organisation login limit keyed by RateLimitKey::tenant"
+					"eco.tenancy#7": "crates/id_effect_axum/src/middleware/rate_limit.rs:517 RateLimitKey::tenant; tests :901 tenant_keys_read_request_caps_then_extensions and :926 each_tenant_has_its_own_bucket; book ch30-07 '## Per-tenant rate limits' (:269); Ledger src/limits.rs:7-8 per-organisation login limit keyed by RateLimitKey::tenant"
 				}
 			},
 			"v1": {

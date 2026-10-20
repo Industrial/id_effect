@@ -35,6 +35,11 @@ async fn ledger_access_report_snapshot() {
       let public = [
         "POST /orgs",
         "POST /auth/login",
+        // The RPC routes: public at the route level, every procedure guarded (`tests/rpc.rs`,
+        // `ledger_rpc_procedures_all_declared`).
+        "POST /rpc",
+        "POST /rpc/{tag}",
+        "GET /rpc/{tag}",
         "GET /health",
         "GET /ready",
         "POST /auth/register",
@@ -74,7 +79,7 @@ async fn ledger_access_report_snapshot() {
       prod.profile = "prod".to_owned();
       prod.console.enabled = false;
       let report = access_report(&prod, &l);
-      assert_eq!(report.public, &public[..10], "{report}");
+      assert_eq!(report.public, &public[..13], "{report}");
       assert!(
         report
           .guarded

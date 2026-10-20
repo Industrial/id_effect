@@ -15,22 +15,41 @@ unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 
 [features]
+default = []
 # Session store + OAuth client capability traits (web-framework material; opt-in since 0.6).
 auth = []
 # In-memory test doubles (`MemoryOAuthClient`) for downstream tests.
 test-util = ["auth"]
+# Certificates, CA bundles, reload on rotation, rustls client/server configs (`tls`; ADR 0014 D6,
+# moved from id_effect_node::transport::certs).
+tls = [
+  "dep:rustls",
+  "dep:rcgen",
+  "dep:sha2",
+  "dep:thiserror",
+  "dep:tracing",
+  "tokio/time",
+]
+# One QUIC endpoint with ALPN routing (`quic::QuicEndpoint`, `quic::AlpnRouter`; ADR 0014 D6/D7).
+quic = ["tls", "dep:quinn", "dep:quinn-proto", "dep:socket2"]
+# HTTP/3 over the QUIC endpoint (ALPN `h3`; r12-e12-3-h3-client / h3-server).
+http3 = ["quic", "dep:h3", "dep:h3-quinn", "dep:rustls-platform-verifier"]
+# ACME TLS-ALPN-01 certificates (r12-e12-3-certs-acme).
+acme = ["tls", "dep:instant-acme", "dep:id_effect_config", "dep:x509-parser"]
 
 [dependencies]
-id_effect = { path = "../id_effect", version = "0.11.0", features = [
+id_effect = { path = "../id_effect", version = "0.12.0", features = [
   "schema-serde",
 ] }
 bytes = { version = "1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 http = { version = "1" }
+# `http2`: the TCP path (and the HTTP/3 client's TCP fallback) negotiates HTTP/2 by ALPN (F11).
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "gzip",
+  "http2",
   "rustls",
 ] }
 # The SSRF guard's connector layer (`reqwest::ClientBuilder::connector_layer`).
@@ -46,6 +65,48 @@ tokio = { version = "1.50.0", features = [
   "sync",
 ] }
 
+# Features `tls` / `quic` / `http3` / `acme`, declared once here (ADR 0014 D6). Floors carry
+# security fixes (quinn-proto >= 0.11.18 via quinn 0.11.12: RUSTSEC-2026-0338..0342; rustls
+# 0.23.46: RUSTSEC-2026-0285, RUSTSEC-2026-0346..0349). aws-lc-rs everywhere, not ring: sqlx,
+# reqwest and jsonwebtoken use aws-lc-rs, and with both providers compiled in rustls cannot pick a
+# process default. One quinn and one rustls in `cargo tree -d`.
+rustls = { version = "0.23.46", optional = true }
+rcgen = { version = "0.13", optional = true, default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
+sha2 = { version = "0.10", optional = true }
+thiserror = { version = "2", optional = true }
+tracing = { version = "0.1", optional = true }
+quinn = { version = "0.11.12", optional = true, default-features = false, features = [
+  "log",
+  "platform-verifier",
+  "runtime-tokio",
+  "rustls-aws-lc-rs",
+  "bloom",
+] }
+# The versions quinn 0.11.12 already brings (exact pins, no second copy): quinn-proto for the
+# congestion `Controller` trait (its `RttEstimator`; per-route BBR / CUBIC, D9), socket2 for the
+# UDP socket buffers (F23).
+quinn-proto = { version = "=0.11.19", optional = true, default-features = false }
+socket2 = { version = "=0.6.5", optional = true }
+# The HTTP/3 client's server verification when no roots are configured (F10; quinn's
+# `platform-verifier` feature brings the same version).
+rustls-platform-verifier = { version = "=0.7.1", optional = true }
+# Exact pins: h3 is pre-1.0 and h3-quinn tracks it release by release.
+h3 = { version = "=0.0.8", optional = true }
+h3-quinn = { version = "=0.0.10", optional = true }
+# instant-acme's `aws-lc-rs` feature turns on its rcgen 0.14 (beside rcgen 0.13 above): the one
+# duplicate, and only under `acme`. Our own CSR and TLS-ALPN-01 certificates use rcgen 0.13.
+instant-acme = { version = "=0.8.5", optional = true, default-features = false, features = [
+  "aws-lc-rs",
+  "hyper-rustls",
+] }
+# `Secret<T: Zeroize>` for the ACME account key and certificate keys.
+id_effect_config = { path = "../id_effect_config", version = "0.12.0", optional = true }
+# notBefore / notAfter and the SANs of issued certificates (renewal at two thirds).
+x509-parser = { version = "=0.18.1", optional = true, default-features = false }
+
 [dev-dependencies]
 # Self dev-dep so integration tests see `test-util` doubles.
 id_effect_platform = { path = ".", features = ["test-util"] }
@@ -54,6 +115,25 @@ rstest = "0.26"
 tempfile = "3"
 tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread"] }
 wiremock = "0.6"
+# tests/http3_client.rs: an HTTP/2-over-TLS origin for the fallback test (F11); the versions
+# already in the tree.
+hyper = { version = "=1.12.0", default-features = false, features = [
+  "server",
+  "http2",
+] }
+hyper-util = { version = "=0.1.21", default-features = false, features = [
+  "tokio",
+] }
+http-body-util = "=0.1.5"
+tokio-rustls = { version = "=0.26.6", default-features = false, features = [
+  "logging",
+  "tls12",
+] }
+
+# rcgen (test CAs), rustls and quinn come with the feature.
+[[test]]
+name = "quic_endpoint"
+required-features = ["quic"]
 
 [package.metadata.docs.rs]
 all-features = true

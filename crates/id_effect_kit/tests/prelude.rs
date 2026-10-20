@@ -471,6 +471,46 @@ fn event_store_types_are_reachable() {
   let _ = id_effect_kit::events::SQL_EVENT_JOURNAL_DDL;
 }
 
+/// `#[rpc::service]` through the prelude's `rpc`; the procedure attributes need no import.
+#[cfg(feature = "rpc")]
+mod rpc_service {
+  use id_effect_kit::id_effect::{DynEnv, Never};
+  use id_effect_kit::prelude::*;
+
+  /// Echoes text.
+  #[rpc::service(version = 1)]
+  pub trait Echo {
+    /// The text back.
+    #[query]
+    #[public]
+    fn echo(&self, text: String) -> Effect<String, Never, DynEnv>;
+  }
+
+  pub struct Echoes;
+
+  impl Echo for Echoes {
+    fn echo(&self, text: String) -> Effect<String, Never, DynEnv> {
+      succeed(text)
+    }
+  }
+
+  #[test]
+  fn rpc_service_macro_and_types_through_the_prelude() {
+    let contract = EchoService::contract();
+    assert_eq!(contract.name, "Echo");
+    assert_eq!(contract.procedures[0].name, "echo");
+    let group: RpcGroup = EchoService::group(Echoes);
+    assert_eq!(group.len(), 1);
+    let server: RpcServer = RpcServer::new(group);
+    assert_eq!(server.path(), "/rpc");
+    let _ = RpcClient::new("http://127.0.0.1:1");
+    assert_eq!(Cursor::sequence(0).position, 0);
+    assert!(std::any::type_name::<Duplex<i64, i64, Never>>().contains("Duplex"));
+    assert!(std::any::type_name::<Subscription<i64, Never>>().contains("Subscription"));
+    assert!(std::any::type_name::<SubscriptionItem<i64>>().contains("SubscriptionItem"));
+  }
+}
+
 #[cfg(feature = "test")]
 #[test]
 fn test_crate_is_reachable() {

@@ -3,7 +3,7 @@
 `id_effect_mail` sends a service's outgoing mail — sign-up confirmations, password resets, invoices — through SMTP or the SendGrid API, renders it from templates shared by the HTML and text bodies, and shows every mail in the browser while you write it.
 
 ```toml
-id_effect_mail = { version = "0.11", features = ["preview"] }  # `preview` only for the preview router
+id_effect_mail = { version = "0.12", features = ["preview"] }  # `preview` only for the preview router
 ```
 
 ## Messages and transports
@@ -23,7 +23,7 @@ A refused send is a `MailError` that says whether a later attempt may succeed (`
 A request handler should not wait on an SMTP server, and a greylisting provider should not cost a customer their invoice. With feature `jobs`, mail goes out through the background job queue of `id_effect_jobs` instead:
 
 ```toml
-id_effect_mail = { version = "0.11", features = ["jobs"] }
+id_effect_mail = { version = "0.12", features = ["jobs"] }
 ```
 
 | Call | Does |

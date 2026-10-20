@@ -9,13 +9,19 @@
 //! | Probe | Fails when |
 //! |---|---|
 //! | [`CONSOLE_GUARDED`] | the app states its console is [`Surface::Open`] |
-//! | [`DOCS_CLOSED`] | `/docs` is [`Surface::Open`], or `OpenApiUi::public_dangerous` was taken |
+//! | [`DOCS_CLOSED`] | `/docs` is [`Surface::Open`], or `OpenApiUi::public_dangerous` or `ContractDocs::public_dangerous` (the RPC documents, C12) was taken |
 //! | [`MESH_ENCRYPTED`] | the mesh transport is plaintext, or an `id_effect_node` opt-out was taken (plaintext TCP, unverified servers or clients, a short cookie) |
 //! | [`REDACTION_ON`] | the log redaction policy is empty, or `RedactionPolicy::dangerous_none` or `dangerous_empty` was taken |
 //! | [`SSRF_ON`] | an `id_effect_platform::http` opt-out (private networks, an unguarded client) or an `id_effect_auth` `insecure_allow_http` (OIDC, JWKS) was taken |
 //! | [`CSRF_ON`] | the app states CSRF protection is off, or `SecurityLayer::dangerous_without_csrf` was taken |
-//! | [`LOAD_SHEDDING_ON`] | the server has no in-flight cap, `HostConfig::dangerous_no_load_shedding` or a `ConnectionLimits::dangerous_*` opt-out was taken |
+//! | [`LOAD_SHEDDING_ON`] | the server has no in-flight cap, `HostConfig::dangerous_no_load_shedding`, a `ConnectionLimits::dangerous_*` opt-out or `QuicEndpointConfig::dangerous_raise_limits` was taken |
 //! | [`NO_MEMORY_ONLY_STATE`] | security state that must be shared lives in one process (an id ending in `::memory_only`, e.g. `MemoryTotpStepStore`, `MemoryThrottleStore`) |
+//! | [`PROCEDURES_DECLARED`] | a stated RPC procedure or route has no access decision (C1: `route_unchecked`), or `channels::dangerous_allow_all_joins` was taken |
+//! | [`REALTIME_ORIGINS_SET`] | a stated WebSocket / WebTransport origin allowlist admits any origin or is empty, or `OriginPolicy::dangerous_any_origin` was taken (C4) |
+//! | [`ZERO_RTT_OFF`] | the app states HTTP/3 0-RTT is admitted, or `Http3Options::dangerous_allow_zero_rtt_for_queries` was taken (C7) |
+//! | [`QUIC_RETRY_ON`] | the app states QUIC address validation is off, or `QuicEndpointConfig::dangerous_no_retry` was taken (C6) |
+//! | [`HTTP3_WITH_TLS`] | the host enables HTTP/3 without a TLS certificate (`HostConfig::posture_warnings`) |
+//! | [`NO_DEV_CERTIFICATE`] | outside `dev` and `test`, the served certificate is the `id-effect dev` certificate ([`is_dev_certificate`], C13) |
 //! | [`NO_UNACCEPTED_OPT_OUT`] | any recorded opt-out is not in `security.accepted_risks` with a reason |
 //!
 //! An opt-out the operator accepted — listed under [`ACCEPTED_RISKS_KEY`] in the profile's
@@ -82,11 +88,23 @@ pub const CSRF_ON: &str = "CSRF on";
 pub const LOAD_SHEDDING_ON: &str = "load shedding on";
 /// Probe: security state that must be shared across instances is not memory-only.
 pub const NO_MEMORY_ONLY_STATE: &str = "no memory-only security state";
+/// Probe: every RPC procedure (and typed route) declares public or guarded (ADR 0014 C1).
+pub const PROCEDURES_DECLARED: &str = "every procedure declared";
+/// Probe: WebSocket and WebTransport upgrades check `Origin` against a non-empty allowlist (C4).
+pub const REALTIME_ORIGINS_SET: &str = "realtime origins configured";
+/// Probe: HTTP/3 0-RTT early data is refused (C7).
+pub const ZERO_RTT_OFF: &str = "0-RTT off";
+/// Probe: the QUIC endpoint validates client addresses with Retry (C6).
+pub const QUIC_RETRY_ON: &str = "quic retry on";
+/// Probe: HTTP/3 is served only with a TLS certificate.
+pub const HTTP3_WITH_TLS: &str = "HTTP/3 only with TLS";
+/// Probe: outside `dev` and `test`, the served certificate is not the `id-effect dev` one (C13).
+pub const NO_DEV_CERTIFICATE: &str = "no dev certificate";
 /// Probe: every recorded opt-out is an accepted risk with a reason.
 pub const NO_UNACCEPTED_OPT_OUT: &str = "no unaccepted opt-out";
 
 /// Every probe, in report order.
-pub const PROBES: [&str; 9] = [
+pub const PROBES: [&str; 15] = [
   CONSOLE_GUARDED,
   DOCS_CLOSED,
   MESH_ENCRYPTED,
@@ -95,8 +113,38 @@ pub const PROBES: [&str; 9] = [
   CSRF_ON,
   LOAD_SHEDDING_ON,
   NO_MEMORY_ONLY_STATE,
+  PROCEDURES_DECLARED,
+  REALTIME_ORIGINS_SET,
+  ZERO_RTT_OFF,
+  QUIC_RETRY_ON,
+  HTTP3_WITH_TLS,
+  NO_DEV_CERTIFICATE,
   NO_UNACCEPTED_OPT_OUT,
 ];
+
+/// The organization (`O=`) of the subject and issuer of every certificate `id-effect dev` issues
+/// (its CA and its localhost certificate): what [`is_dev_certificate`] looks for.
+pub const DEV_CERTIFICATE_ORGANIZATION: &str =
+  "id-effect development certificate (never for production)";
+
+/// Whether the DER certificate `der` was issued by `id-effect dev` (its subject or issuer names
+/// [`DEV_CERTIFICATE_ORGANIZATION`]). The prod profile refuses to serve one ([`NO_DEV_CERTIFICATE`],
+/// ADR 0014 C13).
+pub fn is_dev_certificate(der: &[u8]) -> bool {
+  let marker = DEV_CERTIFICATE_ORGANIZATION.as_bytes();
+  der.windows(marker.len()).any(|window| window == marker)
+}
+
+/// The access a served procedure or route declares ([`Posture::procedures`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeclaredAccess {
+  /// Anyone may call it (`#[public]`, `.public()`).
+  Public,
+  /// Guards decide first (`#[guard(G)]`, `.guard(g)`).
+  Guarded,
+  /// No decision: served to every caller (the deprecated `route_unchecked`).
+  Undeclared,
+}
 
 /// What a failed probe does to startup.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -256,6 +304,20 @@ pub struct Posture {
   redaction: Option<Stated>,
   csrf: Option<Stated>,
   load_shedding: Option<Stated>,
+  procedures: Option<Vec<(String, DeclaredAccess)>>,
+  origins: Option<Vec<OriginStatement>>,
+  zero_rtt: Option<Stated>,
+  quic_retry: Option<Stated>,
+  http3: Option<Stated>,
+  certificate: Option<Stated>,
+}
+
+/// One origin allowlist the app states ([`Posture::realtime_origins`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OriginStatement {
+  what: String,
+  any: bool,
+  allowed: usize,
 }
 
 impl Posture {
@@ -271,6 +333,12 @@ impl Posture {
       redaction: None,
       csrf: None,
       load_shedding: None,
+      procedures: None,
+      origins: None,
+      zero_rtt: None,
+      quic_retry: None,
+      http3: None,
+      certificate: None,
     }
   }
 
@@ -376,10 +444,218 @@ impl Posture {
     self
   }
 
-  /// [`max_in_flight`](Self::max_in_flight) from the server's `HostConfig`.
+  /// What the server's `HostConfig` states: its in-flight cap ([`max_in_flight`](Self::max_in_flight));
+  /// with feature `http3`, also whether HTTP/3 has a certificate ([`HTTP3_WITH_TLS`]) and which
+  /// certificate the host serves ([`NO_DEV_CERTIFICATE`]; PEM files are read now).
   #[cfg(feature = "web")]
   pub fn host(self, config: &id_effect_axum::HostConfig) -> Self {
-    self.max_in_flight(config.load_shed.max_in_flight())
+    let posture = self.max_in_flight(config.load_shed.max_in_flight());
+    #[cfg(feature = "http3")]
+    let posture = posture
+      .http3(config.http3, config.tls.is_some())
+      .host_certificate(config.tls.as_ref());
+    posture
+  }
+
+  /// The certificate of `tls` ([`NO_DEV_CERTIFICATE`]): the leaf of the PEM chain, or of the
+  /// provided settings' identity. A resolver without an identity (ACME) states nothing; a chain
+  /// that cannot be read fails the probe.
+  #[cfg(feature = "http3")]
+  fn host_certificate(self, tls: Option<&id_effect_axum::server::HostTls>) -> Self {
+    use id_effect_axum::server::{HostTls, ServerTls};
+    let settings = match tls {
+      None => return self,
+      Some(HostTls::Files {
+        cert_file,
+        key_file,
+        ..
+      }) => ServerTls::from_pem_files(cert_file.clone(), key_file.clone(), None),
+      Some(other) => other.server_tls(),
+    };
+    match settings {
+      Ok(settings) => {
+        let leaf = settings
+          .identity()
+          .and_then(|identity| identity.current().cert.first().cloned());
+        match leaf {
+          Some(leaf) => self.tls_certificate(leaf.as_ref()),
+          None => self,
+        }
+      }
+      Err(e) => self.certificate_unreadable(&e.to_string()),
+    }
+  }
+
+  #[cfg(feature = "http3")]
+  fn certificate_unreadable(mut self, why: &str) -> Self {
+    self.certificate = Some(Stated::Fail(format!(
+      "the TLS certificate cannot be read: {why}"
+    )));
+    self
+  }
+
+  /// The certificate the server presents, DER ([`NO_DEV_CERTIFICATE`]): the `id-effect dev`
+  /// certificate ([`is_dev_certificate`]) passes in `dev` and `test` and fails in every other
+  /// profile (C13).
+  pub fn tls_certificate(mut self, der: &[u8]) -> Self {
+    let dev = is_dev_certificate(der);
+    self.certificate = Some(match (dev, Enforcement::for_profile(&self.profile)) {
+      (false, _) => {
+        Stated::Pass("the TLS certificate is not an id-effect dev certificate".to_owned())
+      }
+      (true, Enforcement::Report) => Stated::Pass(format!(
+        "the id-effect dev certificate, allowed in the {} profile only",
+        self.profile
+      )),
+      (true, Enforcement::Refuse) => Stated::Fail(
+        "the TLS certificate is the id-effect dev certificate: use certificate files or ACME"
+          .to_owned(),
+      ),
+    });
+    self
+  }
+
+  /// Whether HTTP/3 is on and whether the host has TLS ([`HTTP3_WITH_TLS`]).
+  pub fn http3(mut self, enabled: bool, tls: bool) -> Self {
+    self.http3 = Some(match (enabled, tls) {
+      (false, _) => Stated::Absent("HTTP/3 is off (server.http3.enabled = false)".to_owned()),
+      (true, true) => {
+        Stated::Pass("HTTP/3 on the TCP port, with the host's certificate".to_owned())
+      }
+      (true, false) => Stated::Fail(
+        "HTTP/3 is enabled without TLS: set certificate files (or ACME), or turn it off behind a \
+         load balancer (server.http3.enabled = false)"
+          .to_owned(),
+      ),
+    });
+    self
+  }
+
+  /// Whether HTTP/3 admits 0-RTT early data ([`ZERO_RTT_OFF`]).
+  pub fn zero_rtt(mut self, admitted: bool) -> Self {
+    self.zero_rtt = Some(if admitted {
+      Stated::Fail("HTTP/3 0-RTT early data is admitted: it can be replayed".to_owned())
+    } else {
+      Stated::Pass("HTTP/3 refuses 0-RTT early data".to_owned())
+    });
+    self
+  }
+
+  /// [`zero_rtt`](Self::zero_rtt) from the host's `Http3Options`.
+  #[cfg(feature = "http3")]
+  pub fn http3_options(self, options: &id_effect_axum::server::Http3Options) -> Self {
+    self.zero_rtt(options.zero_rtt_for_queries())
+  }
+
+  /// Whether the QUIC endpoint validates client addresses with Retry ([`QUIC_RETRY_ON`];
+  /// `QuicEndpointConfig::retry`).
+  pub fn quic_retry(mut self, on: bool) -> Self {
+    self.quic_retry = Some(if on {
+      Stated::Pass("the QUIC endpoint validates client addresses (Retry)".to_owned())
+    } else {
+      Stated::Fail("the QUIC endpoint accepts unvalidated client addresses".to_owned())
+    });
+    self
+  }
+
+  /// The procedures (or routes) the app serves and the access each declares
+  /// ([`PROCEDURES_DECLARED`]); repeated calls add to the list.
+  pub fn procedures<I, S>(mut self, procedures: I) -> Self
+  where
+    I: IntoIterator<Item = (S, DeclaredAccess)>,
+    S: Into<String>,
+  {
+    self.procedures.get_or_insert_with(Vec::new).extend(
+      procedures
+        .into_iter()
+        .map(|(tag, access)| (tag.into(), access)),
+    );
+    self
+  }
+
+  /// [`procedures`](Self::procedures) from a typed router's `AccessReport`: its public and
+  /// guarded routes, and the ones added with the deprecated `route_unchecked` (undeclared).
+  #[cfg(feature = "web")]
+  pub fn access_report(self, report: &id_effect_axum::route::AccessReport) -> Self {
+    let public = report
+      .public
+      .iter()
+      .map(|r| (r.clone(), DeclaredAccess::Public));
+    let guarded = report
+      .guarded
+      .iter()
+      .map(|(r, _)| (r.clone(), DeclaredAccess::Guarded));
+    let unchecked = report
+      .unchecked
+      .iter()
+      .map(|r| (r.clone(), DeclaredAccess::Undeclared));
+    self.procedures(public.chain(guarded).chain(unchecked))
+  }
+
+  /// [`procedures`](Self::procedures) from an RPC group (every registered procedure).
+  #[cfg(feature = "rpc")]
+  pub fn rpc_group(self, group: &id_effect_rpc::RpcGroup) -> Self {
+    let entries: Vec<(String, DeclaredAccess)> = group
+      .entries()
+      .map(|e| (format!("{}@{}", e.tag(), e.version()), declared(e.access())))
+      .collect();
+    self.procedures(entries)
+  }
+
+  /// [`procedures`](Self::procedures) from a service contract (`<Trait>Service::contract()`).
+  #[cfg(feature = "rpc")]
+  pub fn rpc_service(self, service: &id_effect_rpc::ServiceContract) -> Self {
+    let entries: Vec<(String, DeclaredAccess)> = service
+      .procedures
+      .iter()
+      .map(|p| {
+        (
+          format!("{}.{}@{}", service.name, p.name, service.version),
+          declared(&p.access),
+        )
+      })
+      .collect();
+    self.procedures(entries)
+  }
+
+  /// An origin allowlist of a WebSocket or WebTransport endpoint (`what` names it in the
+  /// report): whether it admits any origin and how many entries it lists
+  /// ([`REALTIME_ORIGINS_SET`]); repeated calls add to the list.
+  pub fn realtime_origins(mut self, what: impl Into<String>, any: bool, allowed: usize) -> Self {
+    self
+      .origins
+      .get_or_insert_with(Vec::new)
+      .push(OriginStatement {
+        what: what.into(),
+        any,
+        allowed,
+      });
+    self
+  }
+
+  /// [`realtime_origins`](Self::realtime_origins) from an `OriginPolicy`.
+  #[cfg(feature = "rpc-ws")]
+  pub fn origin_policy(
+    self,
+    what: impl Into<String>,
+    policy: &id_effect_axum::realtime::origin::OriginPolicy,
+  ) -> Self {
+    self.realtime_origins(what, policy.is_any(), policy.entries().len())
+  }
+
+  /// The origin allowlist of the RPC WebSocket (`RpcServer::with_websocket`).
+  #[cfg(feature = "rpc-ws")]
+  pub fn rpc_websocket(self, config: &id_effect_rpc::transport::ws::RpcWsConfig) -> Self {
+    self.origin_policy("the RPC WebSocket", config.socket_config().origin_policy())
+  }
+
+  /// The origin allowlist of a WebTransport endpoint.
+  #[cfg(feature = "webtransport")]
+  pub fn webtransport(
+    self,
+    config: &id_effect_axum::server::webtransport::WebTransportConfig,
+  ) -> Self {
+    self.origin_policy("WebTransport", config.origin_policy())
   }
 
   /// The profile checked.
@@ -404,19 +680,27 @@ impl Posture {
         accepted: self.accepted.reason(id).map(str::to_owned),
       })
       .collect();
+    let procedures = self.procedures.as_deref().map(procedures_stated);
+    let origins = self.origins.as_deref().map(origins_stated);
     let stated = [
-      (CONSOLE_GUARDED, &self.console),
-      (DOCS_CLOSED, &self.docs),
-      (MESH_ENCRYPTED, &self.mesh),
-      (REDACTION_ON, &self.redaction),
-      (SSRF_ON, &None),
-      (CSRF_ON, &self.csrf),
-      (LOAD_SHEDDING_ON, &self.load_shedding),
-      (NO_MEMORY_ONLY_STATE, &None),
+      (CONSOLE_GUARDED, self.console.as_ref()),
+      (DOCS_CLOSED, self.docs.as_ref()),
+      (MESH_ENCRYPTED, self.mesh.as_ref()),
+      (REDACTION_ON, self.redaction.as_ref()),
+      (SSRF_ON, None),
+      (CSRF_ON, self.csrf.as_ref()),
+      (LOAD_SHEDDING_ON, self.load_shedding.as_ref()),
+      (NO_MEMORY_ONLY_STATE, None),
+      (PROCEDURES_DECLARED, procedures.as_ref()),
+      (REALTIME_ORIGINS_SET, origins.as_ref()),
+      (ZERO_RTT_OFF, self.zero_rtt.as_ref()),
+      (QUIC_RETRY_ON, self.quic_retry.as_ref()),
+      (HTTP3_WITH_TLS, self.http3.as_ref()),
+      (NO_DEV_CERTIFICATE, self.certificate.as_ref()),
     ];
     let mut probes: Vec<Probe> = stated
       .into_iter()
-      .map(|(name, stated)| self.probe(name, stated.as_ref(), &opt_outs))
+      .map(|(name, stated)| self.probe(name, stated, &opt_outs))
       .collect();
     probes.push(self.unaccepted_probe(&opt_outs));
     PostureReport {
@@ -504,6 +788,67 @@ fn surface_stated(what: &str, surface: Surface) -> Stated {
   }
 }
 
+#[cfg(feature = "rpc")]
+fn declared(access: &id_effect_rpc::ProcedureAccess) -> DeclaredAccess {
+  if access.is_public() {
+    DeclaredAccess::Public
+  } else {
+    DeclaredAccess::Guarded
+  }
+}
+
+fn procedures_stated(procedures: &[(String, DeclaredAccess)]) -> Stated {
+  if procedures.is_empty() {
+    return Stated::Absent("no procedure served".to_owned());
+  }
+  let count = |access| procedures.iter().filter(|(_, a)| *a == access).count();
+  let undeclared: Vec<&str> = procedures
+    .iter()
+    .filter(|(_, a)| *a == DeclaredAccess::Undeclared)
+    .map(|(tag, _)| tag.as_str())
+    .collect();
+  if undeclared.is_empty() {
+    Stated::Pass(format!(
+      "{} procedures, each declared: {} public, {} guarded",
+      procedures.len(),
+      count(DeclaredAccess::Public),
+      count(DeclaredAccess::Guarded)
+    ))
+  } else {
+    Stated::Fail(format!(
+      "served without an access decision: {}",
+      undeclared.join(", ")
+    ))
+  }
+}
+
+/// The verdict over the stated allowlists (at least one: [`Posture::realtime_origins`] adds).
+fn origins_stated(origins: &[OriginStatement]) -> Stated {
+  let mut failed = Vec::new();
+  for origin in origins {
+    if origin.any {
+      failed.push(format!("{} admits every origin", origin.what));
+    } else if origin.allowed == 0 {
+      failed.push(format!(
+        "{} lists no origin (browsers are refused; configure the allowlist)",
+        origin.what
+      ));
+    }
+  }
+  if failed.is_empty() {
+    let listed: Vec<String> = origins
+      .iter()
+      .map(|o| format!("{}: {} origins", o.what, o.allowed))
+      .collect();
+    Stated::Pass(format!(
+      "Origin is checked against an allowlist ({})",
+      listed.join(", ")
+    ))
+  } else {
+    Stated::Fail(failed.join("; "))
+  }
+}
+
 fn ids(opt_outs: &[&OptOut]) -> String {
   opt_outs
     .iter()
@@ -525,6 +870,19 @@ fn default_verdict(name: &str) -> (ProbeStatus, String) {
       ProbeStatus::NotApplicable,
       "no browser surface stated".to_owned(),
     ),
+    PROCEDURES_DECLARED => (
+      ProbeStatus::NotApplicable,
+      "no procedures stated".to_owned(),
+    ),
+    REALTIME_ORIGINS_SET => (
+      ProbeStatus::NotApplicable,
+      "no WebSocket or WebTransport endpoint stated".to_owned(),
+    ),
+    HTTP3_WITH_TLS => (ProbeStatus::NotApplicable, "no HTTP/3 stated".to_owned()),
+    NO_DEV_CERTIFICATE => (
+      ProbeStatus::NotApplicable,
+      "no TLS certificate stated".to_owned(),
+    ),
     _ => (
       ProbeStatus::Pass,
       "no opt-out recorded; the default is on".to_owned(),
@@ -536,7 +894,9 @@ fn default_verdict(name: &str) -> (ProbeStatus, String) {
 fn covers(name: &str, id: &str) -> bool {
   match name {
     CONSOLE_GUARDED => id.starts_with("id_effect_console::"),
-    DOCS_CLOSED => id.starts_with("id_effect_axum::openapi::"),
+    DOCS_CLOSED => {
+      id.starts_with("id_effect_axum::openapi::") || id.starts_with("id_effect_rpc::openapi::")
+    }
     MESH_ENCRYPTED => id.starts_with("id_effect_node::"),
     REDACTION_ON => id.starts_with("id_effect_logger::RedactionPolicy::"),
     SSRF_ON => {
@@ -547,8 +907,18 @@ fn covers(name: &str, id: &str) -> bool {
     LOAD_SHEDDING_ON => {
       id == "id_effect_axum::HostConfig::dangerous_no_load_shedding"
         || id.starts_with("id_effect_axum::server::ConnectionLimits::")
+        || id == "id_effect_platform::QuicEndpointConfig::dangerous_raise_limits"
     }
     NO_MEMORY_ONLY_STATE => id.ends_with("::memory_only"),
+    PROCEDURES_DECLARED => {
+      id == "id_effect_rpc::channels::dangerous_allow_all_joins"
+        || id == "id_effect_axum::route::Router::route_unchecked"
+        || id == "id_effect_axum::route::Router::allow_unregistered_routes_dangerous"
+    }
+    REALTIME_ORIGINS_SET => id.ends_with("::dangerous_any_origin"),
+    ZERO_RTT_OFF => id.ends_with("::dangerous_allow_zero_rtt_for_queries"),
+    QUIC_RETRY_ON => id == "id_effect_platform::QuicEndpointConfig::dangerous_no_retry",
+    HTTP3_WITH_TLS | NO_DEV_CERTIFICATE => false,
     _ => true,
   }
 }
@@ -704,6 +1074,34 @@ mod tests {
       (
         NO_MEMORY_ONLY_STATE,
         "id_effect_auth::MemoryThrottleStore::memory_only",
+      ),
+      (
+        DOCS_CLOSED,
+        "id_effect_rpc::openapi::ContractDocs::public_dangerous",
+      ),
+      (
+        LOAD_SHEDDING_ON,
+        "id_effect_platform::QuicEndpointConfig::dangerous_raise_limits",
+      ),
+      (
+        PROCEDURES_DECLARED,
+        "id_effect_rpc::channels::dangerous_allow_all_joins",
+      ),
+      (
+        PROCEDURES_DECLARED,
+        "id_effect_axum::route::Router::route_unchecked",
+      ),
+      (
+        REALTIME_ORIGINS_SET,
+        "id_effect_axum::realtime::origin::OriginPolicy::dangerous_any_origin",
+      ),
+      (
+        ZERO_RTT_OFF,
+        "id_effect_axum::server::h3::Http3Options::dangerous_allow_zero_rtt_for_queries",
+      ),
+      (
+        QUIC_RETRY_ON,
+        "id_effect_platform::QuicEndpointConfig::dangerous_no_retry",
       ),
     ];
     for (probe, id) in cases {

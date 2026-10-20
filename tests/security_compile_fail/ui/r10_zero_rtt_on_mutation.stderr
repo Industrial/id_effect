@@ -1,0 +1,11 @@
+error[E0599]: no method named `dangerous_allow_zero_rtt_for_mutations` found for struct `Http3Options` in the current scope
+ --> ui/r10_zero_rtt_on_mutation.rs:7:31
+  |
+7 |   let _ = Http3Options::new().dangerous_allow_zero_rtt_for_mutations();
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: there is a method `dangerous_allow_zero_rtt_for_queries` with a similar name
+  |
+7 -   let _ = Http3Options::new().dangerous_allow_zero_rtt_for_mutations();
+7 +   let _ = Http3Options::new().dangerous_allow_zero_rtt_for_queries();
+  |

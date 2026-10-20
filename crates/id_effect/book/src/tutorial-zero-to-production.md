@@ -29,7 +29,7 @@ cd orders-api
 ```
 
 ```text
-Created service project `orders-api` in orders-api (12 files).
+Created service project `orders-api` in orders-api (21 files).
 
 Next:
   cd orders-api
@@ -37,14 +37,18 @@ Next:
   cargo run
 ```
 
-The project depends on one front door, `id_effect_kit` (feature `web`), plus `id_effect` for the
-macros:
+The project depends on one front door, `id_effect_kit` (features `web`, `rpc`, `http3`), plus
+`id_effect` and `id_effect_rpc` for the macros:
 
 | File | What |
 |---|---|
-| `src/lib.rs` | `app()`: the router (`/`, the typed `/hello/{name}`, health, metrics) and its middleware, testable without a socket |
-| `src/main.rs` | reads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS`, `COOKIE_KEY`; serves until SIGINT / SIGTERM |
+| `src/lib.rs` | `app()`: the router (`/`, the typed `/hello/{name}`, health, metrics, the RPC service under `/rpc`) and its middleware, testable without a socket; `server_config()`: the HTTP/3 switch and the certificate |
+| `src/rpc.rs` | a `#[rpc::service]` (`Greeter`) next to the REST routes |
+| `rpc.contract.json` | the RPC contract, kept current by `tests/rpc.rs` |
+| `src/main.rs` | reads `HOST`, `PORT`, `SHUTDOWN_TIMEOUT_SECS`, `COOKIE_KEY`, `TLS_CERT_FILE`, `TLS_KEY_FILE` and the profile; runs the posture check; serves until SIGINT / SIGTERM |
+| `config/base.toml`, `dev.toml`, `prod.toml` | the profiles: `server.http3.enabled`, `[server.tls]`, accepted risks |
 | `tests/http.rs` | the routes in process, plus one test that boots the binary |
+| `tests/rpc.rs` | the RPC service over TCP and HTTP/3 on one port, the HTTP/3 switch, the contract |
 | `Dockerfile`, `.dockerignore` | a multi-stage release image |
 | `compose.yaml` | the image and the services it needs |
 | `config/deploy.yml` | a [Kamal](https://kamal-deploy.org) deploy config |
@@ -89,6 +93,61 @@ span per request), `CompressionLayer` (when the client accepts it), `SecurityLay
 and a `BodyLimitLayer` of `BODY_LIMIT` (2 MiB, then `413`)
 ([Typed routes](./part6/ch29-01-typed-routes.md), [middleware](./part6/ch29-03-middleware.md)).
 Stop it with Ctrl-C: it drains in-flight requests first.
+
+### RPC next to the routes
+
+`src/rpc.rs` declares a service the same way a trait is declared; every procedure says who may
+call it (`#[public]` or `#[guard(G)]`), or it does not compile:
+
+```text
+#[rpc::service(version = 1)]
+pub trait Greeter {
+    #[query]
+    #[public]
+    fn greet(&self, request: GreetRequest) -> Effect<Greeting, GreetError, DynEnv>;
+}
+```
+
+`app()` mounts it under `/rpc`, on the same port and through the same middleware as the routes:
+
+```sh
+curl -s -H 'content-type: application/json' -H 'x-rpc: 1' -d '{"name":"ada"}' \
+  http://127.0.0.1:8080/rpc/Greeter.greet
+id-effect rpc gen ts --contract rpc.contract.json --out web/src/rpc   # a typed TypeScript client
+```
+
+### HTTPS and HTTP/3 with `id-effect dev`
+
+HTTP/3 is on in the template. It needs a certificate, which `cargo run` does not have, so the
+service above answered plain HTTP. `id-effect dev` gives it one:
+
+```sh
+id-effect dev
+```
+
+```text
+id-effect dev: created a development CA and dev certificate ~/.local/share/id-effect/dev-cert/cert.pem (localhost, valid until …, sha-256 …)
+id-effect dev: trust the development CA once (then https://localhost works without warnings):
+  …
+id-effect dev: started target/debug/orders-api (pid …, ID_EFFECT_PROFILE=dev)
+```
+
+It creates a localhost CA (once; it prints how to trust it) and a 13-day ECDSA certificate that it
+rotates before it expires, passes it to the app as `TLS_CERT_FILE` / `TLS_KEY_FILE`, and rebuilds
+and restarts the app when a file changes. Now the service serves TLS on TCP (HTTP/2 and HTTP/1.1)
+and HTTP/3 on UDP, **on the same port**:
+
+```sh
+curl -sI https://localhost:8080/health | grep -i alt-svc   # alt-svc: h3=":8080"; ma=86400
+curl --http3-only -s https://localhost:8080/health          # the same answer over QUIC
+```
+
+Clients find HTTP/3 through `Alt-Svc` on a TCP response and fall back to HTTP/2 when UDP is
+blocked; TCP is always served. One switch turns HTTP/3 off, `server.http3.enabled` in
+`config/base.toml` (or `APP_SERVER__HTTP3__ENABLED=false`): for a deployment behind a load balancer
+that terminates TLS. The prod profile refuses the development certificate (the posture probe "no
+dev certificate"), and refuses HTTP/3 without any certificate, so prod needs certificate files,
+ACME, or the switch off ([HTTP/3 deployment](./part6/ch29-07-http3-deployment.md), [certificates and ACME](./part6/ch29-09-certificates-acme.md)).
 
 ## 4. A route with a typed error and a capability
 
@@ -493,7 +552,7 @@ id-effect doctor
 id-effect doctor: /home/me/orders-api
   pass  project   package `orders-api`
   pass  rustc     rustc 1.95.0 >= id_effect MSRV 1.94; the project sets no rust-version
-  pass  versions  id_effect 0.11.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
+  pass  versions  id_effect 0.12.0: id_effect, id_effect_axum, id_effect_cli, id_effect_config, id_effect_kit, …
   pass  env       all 6 .env.example keys set (6 from .env)
   pass  database  localhost:5432 accepts TCP connections
   pass  docker    Docker version 29.8.1; Docker Compose version 5.6.0 (daemon not checked)
@@ -570,6 +629,8 @@ registry:
 
 env:
   clear:
+    ID_EFFECT_PROFILE: "prod"
+    APP_SERVER__HTTP3__ENABLED: "false"   # kamal-proxy terminates TLS
     HOST: "0.0.0.0"
     PORT: "8080"
     SHUTDOWN_TIMEOUT_SECS: "30"
@@ -577,6 +638,11 @@ env:
     - COOKIE_KEY
     - DATABASE_URL
 ```
+
+`kamal-proxy` terminates TLS and forwards HTTP/1.1, so the service turns HTTP/3 off with its one
+switch; the prod posture check would otherwise refuse HTTP/3 without a certificate. To serve
+HTTP/3 straight from the app instead, publish UDP and TCP 443, drop that line and give the service
+a certificate (`TLS_CERT_FILE` / `TLS_KEY_FILE` or `[server.tls]` in `config/prod.toml`).
 
 The secrets come from `.kamal/secrets`; `COOKIE_KEY` is standard base64 of at least 64 random
 bytes (`openssl rand -base64 64 | tr -d '\n'`), so signed cookies survive restarts and span

@@ -10,11 +10,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use id_effect::{Effect, Never, fail, succeed, sync};
-use id_effect_kit::node::transport::certs::{NodeCertificate, load_ca_bundle};
 use id_effect_kit::node::transport::tls_tcp::DEFAULT_SERVER_NAME;
 use id_effect_kit::node::{
     BehaviorRegistry, Mesh, MeshFabric, NodeId, RemoteFault, TcpTransport, TlsTcpConfig,
 };
+use id_effect_kit::platform::tls::{NodeCertificate, load_ca_bundle};
 use id_effect_kit::posture::{Enforcement, Posture, Surface};
 use id_effect_process::{Next, NodeName, Process, ProcessCtx, ProcessNode};
 use rcgen::{

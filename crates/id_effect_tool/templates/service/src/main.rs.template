@@ -47,10 +47,10 @@ use {{crate_name}}::db::Database;
 use {{crate_name}}::jobs;
 {{/if}}
 {{#if !otel}}
-use {{crate_name}}::{app, posture, serve};
+use {{crate_name}}::{app, posture, serve, server_config};
 {{/if}}
 {{#if otel}}
-use {{crate_name}}::{posture, serve, traced_app};
+use {{crate_name}}::{posture, serve, server_config, traced_app};
 {{/if}}
 
 #[tokio::main]
@@ -70,11 +70,23 @@ async fn main() -> ExitCode {
     // The security posture (ADR 0013 R10): the profile and the risks its configuration accepts,
     // what the app states about itself, the server's in-flight cap (`MAX_IN_FLIGHT`) and every
     // opt-out recorded so far. `prod` does not start on a failed probe; `dev` and `test` report.
-    let host_settings = match HostConfig::config().load(&EnvConfigProvider::from_env()) {
+    // HTTP/3 on the TCP port unless `server.http3.enabled = false` (config/<profile>.toml), with
+    // the certificate from TLS_CERT_FILE / TLS_KEY_FILE (`id-effect dev` sets them) or
+    // `[server.tls]`.
+    let profiles = Profiles::new();
+    let config = match profiles.load() {
+        Ok(config) => config,
+        Err(e) => return fail(e),
+    };
+    let from_env = match HostConfig::config().load(&EnvConfigProvider::from_env()) {
         Ok(settings) => settings,
         Err(e) => return fail(e),
     };
-    let stated = match Posture::load(&Profiles::new()) {
+    let host_settings = match server_config(&config, from_env) {
+        Ok(settings) => settings,
+        Err(e) => return fail(e),
+    };
+    let stated = match Posture::load(&profiles) {
         Ok(base) => posture(base.host(&host_settings)),
         Err(e) => return fail(e),
     };
@@ -156,7 +168,9 @@ async fn main() -> ExitCode {
     let span_hook = telemetry.span_hook();
 {{/if}}
     let served = HostBuilder::new()
-        .run_until_shutdown(move |host| {
+        .run_until_shutdown(move |mut host| {
+            // The settings the posture check saw: the environment and the profile.
+            host.config = host_settings;
             // `/ready` reports the host's readiness, which the shutdown signal marks down.
             let health = health.with_readiness(host.readiness.clone());
 {{#if !otel}}

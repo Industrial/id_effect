@@ -1,0 +1,6 @@
+error: `Rejected` is a reserved rpc failure tag
+         help: rename the variant or give it another tag with `#[rpc(tag = "…")]`; the reserved tags are InternalError, InvalidInput, DeadlineExceeded, Cancelled, ResourceExhausted, ResumeExpired, Rejected
+ --> tests/ui/reserved_rejected_tag.rs:9:15
+  |
+9 |   #[rpc(tag = "Rejected")]
+  |               ^^^^^^^^^^

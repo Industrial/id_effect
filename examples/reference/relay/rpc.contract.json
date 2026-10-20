@@ -1,0 +1,1235 @@
+{
+  "format": "id-effect.rpc.contract/1",
+  "services": [
+    {
+      "name": "Relay",
+      "version": 1,
+      "description": "A chat across nodes: rooms with members, live presence, messages over a two-way stream and\na resumable history. Version 1 of the `Relay` contract.",
+      "procedures": [
+        {
+          "name": "chat",
+          "kind": "bidi",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "text"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "room",
+              "seq"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Posts messages: one acknowledgement per message, in order, once it is stored and\npublished to every node."
+        },
+        {
+          "name": "cluster",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$defs": {
+              "relay::api::NodeStatus": {
+                "properties": {
+                  "node": {
+                    "type": "string"
+                  },
+                  "rooms": {
+                    "items": {
+                      "$ref": "#/$defs/relay::api::RoomCount"
+                    },
+                    "type": "array"
+                  },
+                  "up": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "node",
+                  "up",
+                  "rooms"
+                ],
+                "type": "object"
+              },
+              "relay::api::RoomCount": {
+                "properties": {
+                  "present": {
+                    "type": "integer"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "room",
+                  "present"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "nodes": {
+                "items": {
+                  "$ref": "#/$defs/relay::api::NodeStatus"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "nodes"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "The nodes this node knows and the rooms present on each, asked over the mesh."
+        },
+        {
+          "name": "create_room",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Creates the room `room` with the caller as its first member.",
+          "idempotent": true
+        },
+        {
+          "name": "history",
+          "kind": "subscription",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "node": {
+                "type": "string"
+              },
+              "room": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "seq",
+              "from",
+              "node",
+              "text"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Every message of a room from the start (or after `after`), then each new one: resume with\nthe cursor of the last message seen and nothing is missed or repeated. Members only."
+        },
+        {
+          "name": "invite",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "user": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "user"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Adds a user to a room the caller is a member of.",
+          "idempotent": true
+        },
+        {
+          "name": "join",
+          "kind": "subscription",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "status"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$defs": {
+              "relay::api::ChatMessage": {
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "node": {
+                    "type": "string"
+                  },
+                  "room": {
+                    "type": "string"
+                  },
+                  "seq": {
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "room",
+                  "seq",
+                  "from",
+                  "node",
+                  "text"
+                ],
+                "type": "object"
+              },
+              "relay::api::Member": {
+                "properties": {
+                  "conn": {
+                    "type": "string"
+                  },
+                  "node": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "user": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "user",
+                  "conn",
+                  "node",
+                  "status"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "joins": {
+                "items": {
+                  "$ref": "#/$defs/relay::api::Member"
+                },
+                "type": "array"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "leaves": {
+                "items": {
+                  "$ref": "#/$defs/relay::api::Member"
+                },
+                "type": "array"
+              },
+              "members": {
+                "items": {
+                  "$ref": "#/$defs/relay::api::Member"
+                },
+                "type": "array"
+              },
+              "message": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/relay::api::ChatMessage"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "room": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "room",
+              "members",
+              "joins",
+              "leaves"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Enters a room the caller is a member of: who is there, then every message and every\narrival and departure, on any node, until the call ends. Members only."
+        },
+        {
+          "name": "send",
+          "kind": "mutation",
+          "access": {
+            "guarded": {
+              "policies": [
+                "relay.user"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "text"
+            ],
+            "type": "object"
+          },
+          "output": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "room": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "room",
+              "seq"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "Posts one message (for clients without a stream transport).",
+          "idempotent": true
+        }
+      ]
+    },
+    {
+      "name": "RelayPeer",
+      "version": 1,
+      "description": "What one node asks another over the mesh (mesh RPC, postcard): callable by verified nodes\nonly, never by end users. Version 1 of the `RelayPeer` contract.",
+      "procedures": [
+        {
+          "name": "status",
+          "kind": "query",
+          "access": {
+            "guarded": {
+              "policies": [
+                "mesh-peer"
+              ]
+            }
+          },
+          "input": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "null"
+          },
+          "output": {
+            "$defs": {
+              "relay::api::RoomCount": {
+                "properties": {
+                  "present": {
+                    "type": "integer"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "room",
+                  "present"
+                ],
+                "type": "object"
+              }
+            },
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "rooms": {
+                "items": {
+                  "$ref": "#/$defs/relay::api::RoomCount"
+                },
+                "type": "array"
+              },
+              "up": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "node",
+              "up",
+              "rooms"
+            ],
+            "type": "object"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidRoom"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidText"
+                  },
+                  "max": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "max"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "NotAMember"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "RoomExists"
+                  },
+                  "room": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "_tag",
+                  "room"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Lagged"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "InvalidCursor"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "_tag": {
+                    "const": "Busy"
+                  }
+                },
+                "required": [
+                  "_tag"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "description": "This node's rooms with connections."
+        }
+      ]
+    }
+  ]
+}

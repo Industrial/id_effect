@@ -17,14 +17,20 @@ the server name every node dials (`"cluster"` by default, or set one with
 `QuicConfig::with_server_name`). Ship three files per node: the chain (leaf first), the private
 key, and the CA bundle.
 
-```rust,ignore
-use id_effect_node::transport::certs::{NodeCertificate, load_ca_bundle};
+```rust
 use id_effect_node::transport::quic::{QuicConfig, QuicTransport};
+// Since 0.12 (`id_effect_node::transport::certs` is a deprecated re-export for one minor).
+use id_effect_platform::tls::{NodeCertificate, load_ca_bundle};
 
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<QuicTransport, Box<dyn std::error::Error>> {
 let roots = load_ca_bundle("/etc/mesh/ca.pem")?;
 let cert = NodeCertificate::from_pem_files("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
 let config = QuicConfig::from_certificate(&cert)?.with_client_verification(roots);
 let transport = QuicTransport::try_new(config)?;
+# Ok(transport)
+# }
 ```
 
 `from_pem_files` reads PKCS#8 (`PRIVATE KEY`), PKCS#1 (`RSA PRIVATE KEY`) and SEC1
@@ -54,13 +60,21 @@ must pass.
 `CertReloader` loads the chain and key files and swaps them when their contents change. It
 polls; there is no filesystem watcher.
 
-```rust,ignore
+```rust
 use std::{sync::Arc, time::Duration};
-use id_effect_node::transport::certs::CertReloader;
+use id_effect_platform::tls::CertReloader;
+# use id_effect_node::transport::quic::QuicConfig;
 
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<(), Box<dyn std::error::Error>> {
+# let roots = id_effect_platform::tls::load_ca_bundle("/etc/mesh/ca.pem")?;
 let files = Arc::new(CertReloader::new("/etc/mesh/node.crt", "/etc/mesh/node.key")?);
 let _polling = files.spawn_polling(Duration::from_secs(30)); // stops when dropped
 let config = QuicConfig::from_reloader(&files).with_client_verification(roots);
+# let _ = config;
+# Ok(())
+# }
 ```
 
 Every new connection, dialed or accepted, presents the certificate the reloader holds at that
@@ -82,8 +96,17 @@ with one the operator has not accepted.
 
 TCP has the same model (feature `tls-tcp`):
 
-```rust,ignore
+```rust
+# use id_effect_node::transport::{tcp::TcpTransport, tls_tcp::TlsTcpConfig};
+# use id_effect_platform::tls::{CertReloader, load_ca_bundle};
+# fn main() {}
+# #[allow(dead_code)]
+# fn node() -> Result<TcpTransport, Box<dyn std::error::Error>> {
+# let files = CertReloader::new("/etc/mesh/node.crt", "/etc/mesh/node.key")?;
+# let roots = load_ca_bundle("/etc/mesh/ca.pem")?;
 let tcp = TcpTransport::tls(TlsTcpConfig::from_reloader(&files).with_client_verification(roots));
+# Ok(tcp)
+# }
 ```
 
 That carries the frames in TLS 1.3 with mutual auth, with the same certificate types, the same
@@ -94,6 +117,63 @@ Plaintext TCP exists only with the feature `insecure-plaintext-tcp`, as
 `TcpTransport::dangerous_plaintext()` (posture id
 `id_effect_node::TcpTransport::dangerous_plaintext`). Tests:
 `crates/id_effect_node/tests/transport_tcp_tls.rs`.
+
+## Shared endpoint
+
+Since 0.12 the mesh speaks ALPN `idm/1` and runs on an `id_effect_platform::quic::QuicEndpoint`:
+one UDP socket that routes connections by ALPN, with QUIC address validation (Retry) on, 0-RTT
+off, and finite stream, window, idle and handshake limits (`QuicLimits`; raising one is
+`QuicEndpointConfig::dangerous_raise_limits`, turning Retry off is `dangerous_no_retry`, both
+recorded in the posture registry). A peer that offers no ALPN, or another one, fails the
+handshake, so a 0.11 node cannot join a 0.12 QUIC mesh.
+
+A node that also serves HTTP/3 can put both on **one port**:
+
+```rust
+use id_effect_node::transport::quic::{QuicSettings, QuicTransport};
+use id_effect_platform::quic::{QuicEndpoint, QuicEndpointConfig, Route};
+use id_effect_platform::tls::Identity;
+# use id_effect_node::transport::{Transport as _, quic::QuicConfig};
+
+# fn main() {}
+# #[allow(dead_code)]
+# async fn node(public_identity: Identity, mesh_config: QuicConfig) -> Result<(), Box<dyn std::error::Error>> {
+let endpoint = QuicEndpoint::bind("0.0.0.0:443".parse()?, QuicEndpointConfig::new(public_identity))?;
+let h3 = endpoint.register(Route::h3())?; // handed to the HTTP/3 server
+let settings = QuicSettings::default(); // the `quic` config section; `mesh_port` unset
+let (transport, listen_on) = settings.mesh_transport(mesh_config, &endpoint);
+let listener = transport.listen(&listen_on).await?; // registers `idm/1` on the same port
+# let _ = (h3, listener, QuicTransport::new);
+# Ok(())
+# }
+```
+
+rustls picks the client-certificate rule per endpoint, before the ALPN is known, so on the
+shared port mutual TLS cannot be a handshake rule for `idm/1` alone (ADR 0014 D7). Instead:
+
+- the handshake **requests** a client certificate as optional, with **no CA hints**;
+- a certificate that is sent is still verified against the cluster CA (or pins), and one from
+  another CA fails the handshake;
+- the `idm/1` route **closes every connection without a verified client chain before any frame
+  of it is read** (application close code `CLOSE_CLIENT_CERT_REQUIRED`, `0x1d7`); the mesh
+  listener reports it as `TransportError::Connect` and never sees the connection;
+- `h3` ignores client certificates, and each route presents its own certificate (the mesh one
+  for `"cluster"`, the public one for browsers).
+
+Browsers with installed client certificates may show a certificate picker on the shared port. To
+keep handshake-level mutual TLS, set `quic.mesh_port`: the mesh then gets its own endpoint (only
+`idm/1`, client certificates required in the handshake), exactly as in 0.11.
+
+```toml
+[quic]
+mesh_port = 4370
+```
+
+Tests: `crates/id_effect_node/tests/shared_endpoint.rs`
+(`idm_without_client_cert_refused_on_shared_endpoint`,
+`idm_cert_from_other_ca_refused_on_shared_endpoint`, `alpn_routes_h3_and_idm`,
+`mesh_port_splits_endpoint`); the 0.11 mutual-TLS tests in `transport_tls.rs` run on both shapes;
+the endpoint itself in `crates/id_effect_platform/tests/quic_endpoint.rs`.
 
 **Runnable example:** `cargo run -p id_effect_node --features quic --example 134_mtls_cluster`
 (two nodes from PEM files, a node from another CA refused, a certificate rotated under a running

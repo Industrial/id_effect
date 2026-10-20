@@ -9,6 +9,12 @@
 # `service` covers four variants: the default (`--db none --no-otel`, whose tests boot the binary
 # with nothing else running), `--db pg --otel` (built, linted and tested without a database),
 # `--jobs --console` (booted like the default) and `--db pg --otel --jobs --console`.
+# The default `service` also gets its TypeScript client (`id-effect rpc gen ts`, checked with
+# `deno check`) and a round trip against the running binary: the binary is started with the
+# `id-effect dev --cert-only` development certificate, `Alt-Svc` must name its port, a Deno
+# script calls `Greeter.greet` through the generated client over TCP (TLS), and curl calls it
+# over HTTP/3 on the same port (`--http3-only`). Without `deno`, or a curl without HTTP/3, that
+# part is skipped with a message (SMOKE_REQUIRE_ROUND_TRIP=1 fails instead).
 # Before the checks, `id-effect generate job send_report` adds a job to `service` and
 # `service-jobs-console` (into the src/jobs/ that `--jobs` generated) and (with
 # `--queue reports --cron`) to `worker`; its test must pass.
@@ -29,7 +35,8 @@
 #
 # Output: `template-smoke: <variant> ok (build <s>s, clippy <s>s, test <s>s)` per variant and
 # `template-smoke: docker ok (build <s>s)`. Exit status: 0 ok, 1 a check failed, 2 misuse.
-# Requires: bash >= 4, cargo (with rustfmt and clippy), git, GNU date; --docker: docker, curl.
+# Requires: bash >= 4, cargo (with rustfmt and clippy), git, GNU date, curl; for the round trip
+# deno and a curl with HTTP/3; --docker: docker.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -146,6 +153,111 @@ check_variant() {
     )
 }
 
+# Prints a free TCP port on 127.0.0.1 (UDP on the same number is checked by the server's bind).
+free_port() {
+    local port
+    for _ in $(seq 1 50); do
+        port=$((20000 + RANDOM % 40000))
+        if ! (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; then
+            echo "${port}"
+            return 0
+        fi
+    done
+    fail "no free port found"
+}
+
+# Skips (or, with SMOKE_REQUIRE_ROUND_TRIP=1, fails) the round trip for want of a tool.
+round_trip_unavailable() {
+    if [[ "${SMOKE_REQUIRE_ROUND_TRIP:-0}" == 1 ]]; then
+        fail "round trip: $*"
+    fi
+    echo "template-smoke: round trip skipped: $*" >&2
+}
+
+# The generated service's TypeScript client and a round trip over TCP and HTTP/3 against its
+# binary, started with the development certificate.
+check_round_trip() {
+    local label="$1" dest="${SMOKE_DIR}/$1" exe certs port base pid="" answer="" headers h3 i
+    local TLS_CERT_FILE="" TLS_KEY_FILE="" ID_EFFECT_DEV_CA_FILE=""
+    exe="${CARGO_TARGET_DIR_SMOKE}/debug/smoke-${label}"
+    [[ -x "${exe}" ]] || fail "${label}: no binary at ${exe}"
+    "${BIN}" rpc gen ts --contract "${dest}/rpc.contract.json" --out "${dest}/web/src/rpc" ||
+    fail "${label}: id-effect rpc gen ts"
+    [[ -f "${dest}/web/src/rpc/client.ts" ]] || fail "${label}: no generated client.ts"
+    if ! command -v deno >/dev/null; then
+        round_trip_unavailable "deno is not on PATH"
+        return 0
+    fi
+    cat >"${dest}/web/round_trip.ts" <<'TS'
+// template-smoke: `deno run round_trip.ts <rpc url>` calls Greeter.greet through the generated client.
+import { GreeterV1Client } from "./src/rpc/client.ts";
+
+const greeter = new GreeterV1Client({ url: Deno.args[0] });
+const answer = await greeter.greet({ name: "deno" });
+if (answer._tag !== "Success" || answer.value.message !== "hello, deno") {
+    console.error(JSON.stringify(answer));
+    Deno.exit(1);
+}
+const refused = await greeter.greet({ name: "" });
+if (refused._tag !== "Failure" || JSON.stringify(refused).indexOf("InvalidName") < 0) {
+    console.error(JSON.stringify(refused));
+    Deno.exit(1);
+}
+console.log(answer.value.message);
+TS
+    export DENO_DIR="${SMOKE_DIR}/deno" DENO_NO_UPDATE_CHECK=1 NO_COLOR=1
+    deno check --no-config "${dest}/web/round_trip.ts" >&2 || fail "${label}: deno check"
+
+    certs="$("${BIN}" dev --cert-only --cert-dir "${SMOKE_DIR}/dev-cert")" ||
+    fail "${label}: id-effect dev --cert-only"
+    TLS_CERT_FILE="$(sed -n 's/^TLS_CERT_FILE=//p' <<<"${certs}")"
+    TLS_KEY_FILE="$(sed -n 's/^TLS_KEY_FILE=//p' <<<"${certs}")"
+    ID_EFFECT_DEV_CA_FILE="$(sed -n 's/^ID_EFFECT_DEV_CA_FILE=//p' <<<"${certs}")"
+    port="$(free_port)"
+    base="https://127.0.0.1:${port}"
+    (
+        cd "${dest}"
+        exec env -u ID_EFFECT_PROFILE HOST=127.0.0.1 PORT="${port}" \
+            TLS_CERT_FILE="${TLS_CERT_FILE}" TLS_KEY_FILE="${TLS_KEY_FILE}" "${exe}"
+    ) >"${dest}/serve.log" 2>&1 &
+    pid=$!
+    for i in $(seq 1 100); do
+        answer="$(curl -fsS --cacert "${ID_EFFECT_DEV_CA_FILE}" "${base}/health" 2>/dev/null || true)"
+        [[ -z "${answer}" ]] || break
+        sleep 0.1
+    done
+    if [[ -z "${answer}" ]]; then
+        kill "${pid}" 2>/dev/null || true
+        cat "${dest}/serve.log" >&2
+        fail "${label}: no answer on ${base}/health after ${i} tries"
+    fi
+    headers="$(curl -fsS -o /dev/null -D - --cacert "${ID_EFFECT_DEV_CA_FILE}" "${base}/health")"
+    if ! grep -qi "^alt-svc: h3=\":${port}\"" <<<"${headers}"; then
+        kill "${pid}" 2>/dev/null || true
+        fail "${label}: no Alt-Svc h3 on port ${port} in: ${headers}"
+    fi
+    if ! deno run --no-config --no-remote --no-prompt --allow-net="127.0.0.1:${port}" \
+        --cert "${ID_EFFECT_DEV_CA_FILE}" "${dest}/web/round_trip.ts" "${base}/rpc" >&2; then
+        kill "${pid}" 2>/dev/null || true
+        fail "${label}: the Deno round trip over TCP failed"
+    fi
+    if curl -V | grep -q 'HTTP3'; then
+        h3="$(curl -fsS --http3-only --cacert "${ID_EFFECT_DEV_CA_FILE}" \
+            -H 'content-type: application/json' -H 'x-rpc: 1' -d '{"name":"h3"}' \
+            "${base}/rpc/Greeter.greet" 2>&1 || true)"
+        if [[ "${h3}" != *'hello, h3'* ]]; then
+            kill "${pid}" 2>/dev/null || true
+            cat "${dest}/serve.log" >&2
+            fail "${label}: the HTTP/3 round trip failed: ${h3}"
+        fi
+    else
+        round_trip_unavailable "curl has no HTTP/3"
+    fi
+    kill -TERM "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+    echo "template-smoke: ${label} round trip ok (TypeScript client over TCP, HTTP/3 on port ${port})"
+}
+
 # Builds the default service as a Docker image and probes /health in a container. The image has
 # no access to the checkout, so the crates are copied into the build context as _ws/ and the
 # [patch.crates-io] paths rewritten relative to it.
@@ -189,6 +301,7 @@ check_docker() {
 for template in "${templates[@]}"; do
     check_variant "${template}" --template "${template}"
     if [[ "${template}" == service ]]; then
+        check_round_trip service
         check_variant service-pg-otel --template service --db pg --otel
         check_variant service-jobs-console --template service --jobs --console
         check_variant service-pg-otel-jobs-console --template service --db pg --otel --jobs --console

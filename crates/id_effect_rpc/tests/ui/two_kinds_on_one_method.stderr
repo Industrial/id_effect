@@ -1,0 +1,14 @@
+error: procedure `greet` has two kinds (`#[query]` and `#[mutation]`)
+         help: keep one: a procedure has exactly one kind
+ --> tests/ui/two_kinds_on_one_method.rs:7:3
+  |
+7 |   #[mutation]
+  |   ^
+
+warning: unused imports: `DynEnv`, `Effect`, and `Never`
+ --> tests/ui/two_kinds_on_one_method.rs:1:17
+  |
+1 | use id_effect::{DynEnv, Effect, Never};
+  |                 ^^^^^^  ^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

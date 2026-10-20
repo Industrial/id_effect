@@ -1,0 +1,54 @@
+# https://moonrepo.dev/docs/config/project
+# The Relay reference app (3-node chat over two-way RPC, channels and the mesh). Its multi-node
+# integration tests run in the `reference-relay` CI job (r12-w7-relay).
+language: 'rust'
+layer: 'application'
+tasks:
+  check:
+    deps: ['effect:ci-format', '^:check']
+    command: [cargo, check, -p, relay, --all-targets]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  clippy:
+    deps: ['effect:ci-format', '^:clippy', '~:check']
+    command: [cargo, clippy, -p, relay, --all-targets, --, -D, warnings]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  lint:
+    description: 'Alias for ~:clippy (format-gated)'
+    deps: ['effect:ci-format', '~:clippy']
+    command: 'bash'
+    args: ['-c', ':']
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  test:
+    deps: ['effect:ci-format', '^:test', '~:clippy']
+    command: [cargo, nextest, run, -p, relay]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure
+  build:
+    deps: ['effect:ci-format', '^:build', '~:test']
+    command: [cargo, build, -p, relay, --all-targets]
+    inputs:
+      - 'Cargo.toml'
+      - 'src/**/*.rs'
+      - 'tests/**/*.rs'
+    options:
+      cache: true
+      outputStyle: buffer-only-failure

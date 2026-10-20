@@ -1,5 +1,633 @@
 # Changelog
 
+## 0.12.0 — 2026-10-20 — One call surface
+
+RPC becomes the first-party call surface (ADR 0014): `id_effect_rpc` leaves `labs/` with six
+procedure kinds, typed error unions, `#[rpc::service]` (the new `id_effect_rpc_macros`), batches,
+subscriptions, two-way streams with resume, channels and presence, and the same contract over
+HTTP, WebSocket, SSE, WebTransport and the process mesh; `id-effect rpc gen ts` and
+`id-effect rpc check` work from the checked-in contract. REST + OpenAPI stays the public API
+style, now with OpenAPI 3.1 and AsyncAPI 3.0 from the contract. HTTP/3 is a standard transport
+in the host and the platform client, with TCP (TLS, HTTP/2) always on and one flag to turn it
+off; the mesh shares the platform QUIC endpoint by ALPN. The Relay reference app (3 nodes, chat
+and presence over HTTP/3, WebTransport and WebSocket) and RPC in the Ledger exercise it. Upgrade
+with [MIGRATION-0.12.md](docs/MIGRATION-0.12.md).
+
+### Added
+
+- The Relay reference app (`examples/reference/relay`, the 0.12 KPI): a chat across three nodes
+  with presence, built only through `id_effect_kit`. Rooms are channels topics joined through a
+  membership policy (PostgreSQL), messages go over a two-way RPC stream and land in an event log
+  whose subscription resumes from a cursor with no gap, nodes call each other over mesh RPC on
+  the QUIC endpoint that also serves HTTP/3 and WebTransport (mutual TLS on `idm/1`, one port).
+  Clients: the generated Rust client (HTTP/1.1–2, HTTP/3, WebSocket), the generated TypeScript
+  client under Deno, and a browser page (WebTransport, falling back to WebSocket). The prod
+  posture passes with zero accepted risks; CI job `reference-relay` (also run with UDP dropped by
+  iptables, proving the TCP fallback) and `id-effect rpc check` against the last release tag.
+  `id_effect_rpc` moves to tier `platform` (ADR 0012 rule 4).
+- `id_effect_kit` features `rpc` (`kit::rpc`, `#[rpc::service]` and the RPC types in the prelude;
+  with `cluster` also channels and mesh RPC, with `events` event-log subscriptions), `rpc-ws`
+  (WebSocket and SSE transports), `http3` (TLS on TCP and HTTP/3 on the same port,
+  `kit::platform::tls`) and `webtransport`, all four in `full`; `cluster` also exposes
+  `kit::platform::tls`. Posture probes (`posture::check`): every procedure declared
+  (`Posture::rpc_group`, `rpc_service`, `access_report`), realtime origins configured
+  (`origin_policy`, `rpc_websocket`, `webtransport`), 0-RTT off (`http3_options`), QUIC Retry on,
+  HTTP/3 only with TLS and no `id-effect dev` certificate outside dev and test
+  (`Posture::host` reads the host's certificate, `tls_certificate`, `is_dev_certificate`). The
+  0.12 opt-outs land on their probes.
+- The `service` template serves a sample `#[rpc::service]` (`src/rpc.rs`, `rpc.contract.json`
+  kept current by its tests) next to the REST routes, with HTTP/3 on by default on the TCP port:
+  `server.http3.enabled` in `config/base.toml` is the one switch, TCP is always served, prod needs
+  certificate files (`TLS_CERT_FILE` / `[server.tls]`) or the switch off; its CI runs
+  `id-effect rpc check` against the last tag. `id-effect dev` creates a localhost development CA
+  and a 13-day ECDSA P-256 certificate (WebTransport `serverCertificateHashes`), rotates it before
+  it expires, prints the trust steps, passes it to the app, and refuses a non-dev profile;
+  `--cert-only` issues it for scripts, `--no-cert` skips it. `scripts/template-smoke.sh`
+  generates the service's TypeScript client and runs a round trip over TCP (Deno) and HTTP/3
+  (curl); `scripts/check-dangerous.sh --list` lists every opt-out and checks the 0.12 ones exist.
+- The Ledger reference app serves its accounts and journal over RPC under `/rpc` next to REST
+  (r12-w7-ledger): a `#[rpc::service]` `Ledger` (queries, mutations, the `statement` server
+  stream) whose procedures call the REST routes' own functions and are guarded by the same named
+  policies; typed errors carry the REST Problem's status and detail; inputs are decoded by the
+  REST bodies' schemas. Mutation `Idempotency-Key`s are kept in PostgreSQL
+  (`PgIdempotencyStore`, migration `0010_rpc_idempotency`), so a retry replays on any instance.
+  `rpc.contract.json` and the generated TypeScript client (`web/rpc`) are checked in; the
+  `reference-ledger` CI job runs `id-effect rpc check` (generated client, last release) and the
+  TypeScript client under Deno. The Ledger serves no HTTP/3 itself (`HostConfig::http3 = false`:
+  TLS terminates at its load balancer).
+- `id_effect_axum` features `ws`, `sse`, `tls`, `http3` and `webtransport`, declared once
+  (tokio-tungstenite / tungstenite `=0.29.0`, the version of axum's own `ws`; h3 `=0.0.8`,
+  h3-quinn `=0.0.10`, h3-webtransport `=0.1.2`; `tls`, `http3` and `webtransport` are filled in
+  by their 0.12 leaves). `realtime::ws`: effect-native WebSocket endpoints on typed routes
+  (`ws::endpoint(..).public()` / `.guard(g)`), each socket a supervised fiber with a pull-based
+  inbound `Stream` and a `WsSender` / `Sink`; a client that goes away interrupts the handler
+  (finalizers run); `ws::serve_io` serves an already-upgraded connection. `realtime::sse`:
+  `SseEvent` with ids, validated `Last-Event-ID` resume (`SseRequest::last_event_id`),
+  heartbeats on the executor clock, `sse::endpoint`, `sse::response`, `sse::encode`.
+  `realtime::ConnectionCap` bounds open sockets and streams in total and per client IP. Examples
+  `090_ws_echo`, `091_sse_ticker`; book chapter 33.5.
+- `id_effect_platform` features `tls`, `quic`, `http3` and `acme`, declared once (ADR 0014 D6;
+  rustls 0.23.46+, quinn 0.11.12+ on aws-lc-rs, h3 `=0.0.8`, h3-quinn `=0.0.10`, instant-acme
+  0.8). `tls`: certificates, CA bundles, `CertReloader`, `Identity` and the TLS 1.3 rustls configs,
+  moved from `id_effect_node::transport::certs`. `quic`: `QuicEndpoint`, one UDP port routed by
+  ALPN (`AlpnRouter`, `Route::h3()`, `Route::mesh(..)`), each route with its own certificate.
+- `id_effect_platform::tls`: `Identity::install` swaps the certificate of every listener holding
+  the identity (the QUIC endpoint and the TCP TLS listener) for new connections; open ones keep
+  theirs. Feature `acme` (`tls::acme`): `Acme` issues and renews certificates over ACME
+  TLS-ALPN-01 with instant-acme `=0.8.5` (`AcmeConfig`, Let's Encrypt staging by default,
+  `.production()`), answers the `acme-tls/1` challenge through `AcmeResolver` /
+  `Acme::serve_tls_alpn01` on the TCP TLS listener, renews at two thirds of the lifetime with
+  jitter (`Acme::spawn`), and reports `AcmeStats`. Book chapter 29.9.
+- `id_effect_node`: `QuicTransport::on_endpoint` puts the mesh (ALPN `idm/1`) on a QUIC endpoint
+  shared with HTTP/3; `QuicSettings::mesh_port` (`quic.mesh_port`) keeps it on its own port.
+- `id_effect_axum` feature `tls` (ADR 0014 D10): TLS 1.3 and 1.2 on TCP with ALPN `h2` and
+  `http/1.1` (`server::tls::ServerTls`, from a platform `Identity`, PEM files polled for
+  rotation, any rustls resolver via `ServerTls::builder` with `.tls13_only()`, `.alpn(..)` and
+  `.configure(..)` (the hook for `Acme::serve_tls_alpn01`), or `ServerTls::from_rustls_config`;
+  connections that negotiate another ALPN, such as `acme-tls/1`, are closed after the
+  handshake); HTTP/2 through hyper-util's auto builder. `HostConfig::tls` (`HostTls`;
+  `TLS_CERT_FILE`, `TLS_KEY_FILE`, `TLS_RELOAD_SECS`) makes every host entry point serve TLS;
+  `server::serve_tls_listener` and `serve_host_listener` / `HostTransport` serve a listener
+  directly. A reloaded certificate is used for new connections without a restart.
+  `HostConfig::http3` (`HTTP3`, default on) and `HostConfig::posture_warnings`. Book chapter 29.4.
+- `id_effect_platform` HTTP/3 client (feature `http3`, opt-in with `HttpClientConfig::http3(true)`):
+  `http::Http3Client` on `h3` + `h3-quinn` over its own quinn endpoint (never reqwest's HTTP/3),
+  upgrading an `https` origin after its `Alt-Svc: h3` (`http::alt_svc::AltSvcCache`: max-age
+  honoured, 256 entries LRU, same-host alternatives only), with TCP fallback when the handshake
+  does not complete within 300 ms and a 5-minute negative cache per origin (`Http3Config`);
+  pooled connections; `Http3Client::execute_h3` for HTTP/3 without fallback.
+  `HttpClientConfig::root_certificates` / `add_root_certificate_der` trusts extra CA roots on
+  TCP and HTTP/3. Book chapter 29.8.
+- `id_effect_axum` feature `http3` (r12-e12-3-h3-server): `server::h3` feeds `h3` + `h3-quinn`
+  requests from the platform `QuicEndpoint` (ALPN `h3`) into the same axum `Router` as a tower
+  `Service`, so typed routes, middleware, guards and RPC endpoints work over HTTP/3 unchanged
+  (`serve_h3`, `quic_limits`, `Http3Options`). With TLS from certificate files and
+  `HostConfig::http3` on (the default), every host entry point binds UDP on the TCP port number
+  with the same certificate (reloads reach both), adds `Alt-Svc: h3=":<port>"; ma=86400` to TCP
+  responses (`server::alt_svc::AltSvcLayer`) and drains both listeners on shutdown (`GOAWAY` on
+  HTTP/3); `HTTP3=false` turns HTTP/3 and `Alt-Svc` off. The `ConnectionLimits` apply to HTTP/3
+  (connections, header timeout, requests per connection, QUIC stream credits); the client IP is
+  the QUIC peer under the trusted-proxy rules; 0-RTT is off. Example `092_http3`, CI job
+  `http3-conformance` (h3spec, curl `--http3-only`), book chapter 29.5.
+- WebTransport (r12-e12-3-webtransport, h3-webtransport `=0.1.2`). `id_effect_axum` feature
+  `webtransport`: `server::webtransport::endpoint` is a typed `CONNECT` route whose sessions
+  take their HTTP/3 connection over (`Http3Options::webtransport`, on the endpoint's one `h3`
+  route), `WebTransportConfig` (Origin allowlist, `SessionCap`), `quic_limits` (QUIC datagrams
+  on), and `server::webtransport::client`, a minimal Rust WebTransport client.
+  `realtime::ws::WsSocket::from_channels` lets another transport carry a socket's messages.
+  `id_effect_platform`: `QuicLimits::datagram_receive_buffer` / `with_datagrams` (off by
+  default). `id_effect_rpc` feature `webtransport` (now implies `ws` and `postcard`):
+  `transport::webtransport` serves every kind on `CONNECT {path}/wt`, one QUIC stream per call,
+  u32-BE length-prefixed records, a control stream for `hello` / `ping` / `resume`, the
+  WebSocket transport's credits, guards and resume store. Browser test (D12) with
+  `headless_chrome =1.0.22` behind `ID_EFFECT_REQUIRE_BROWSER=1`; book chapter 29.6. The
+  generated TypeScript client opens its WebTransport control stream with a `ping` and queues a
+  call's frames until its stream is open.
+- `id_effect_platform`: reqwest feature `http2`, so the TCP path (and the `Http3Client`
+  fallback) speaks HTTP/2 to servers that offer it (F11).
+- `id_effect_platform` QUIC transport tuning (r12-f-h3-platform, ADR 0014 D9): congestion
+  control per route (`quic::CongestionControl`, `Route::with_congestion_control`,
+  `Route::congestion_control`, `AlpnRouter::congestion_control`): `Route::h3()` runs **BBR**
+  (quinn marks it experimental), the mesh (`Route::mesh`, `Route::new`) keeps CUBIC; on a shared
+  endpoint a connection switches to its route's algorithm once the handshake has chosen the
+  ALPN. `client_config_with` / `transport_config_with` take the algorithm (`client_config` stays
+  CUBIC); the `Http3Client` runs BBR. `EndpointStats::congestion_bbr` / `congestion_cubic`. UDP
+  socket buffers (F23): the endpoint and the `Http3Client` ask for 4 MiB each way
+  (`quic::SocketBuffers`, `QuicEndpointConfig::with_socket_buffers`, `DEFAULT_SOCKET_BUFFER`),
+  best effort, granted sizes logged at `debug` and reported by `QuicEndpoint::socket_buffers`
+  (raise `net.core.rmem_max` / `wmem_max` on Linux). The `Http3Client` verifies servers with
+  `rustls-platform-verifier` (=0.7.1) when no `root_certificates` are configured (F10).
+- `id_effect_axum`: `ServerTls::identity`, `ServerTlsBuilder::identity`; `HostTls::Provided`
+  settings built with `ServerTls::from_identity` / `from_pem_files` (or given an identity) serve
+  HTTP/3 too (F24).
+- `id_effect_rpc` is a published crate (tier `integration`, ADR 0010 Amendment 8; no longer
+  `publish = false`). New modules: `contract` (the D11 serde model — services, versions,
+  procedures, kinds, access decisions, input/output/error JSON Schemas — with
+  `Contract::to_json_pretty` / `from_json` and the `assert_snapshot` golden for
+  `rpc.contract.json`, `UPDATE_GOLDEN=1`), `wire` (the 0.12 call envelope, `_tag` exit union,
+  reserved failures such as `InternalError { id }`, stream frames, `c1.` cursors and 128-bit
+  resume session ids), `codec` (`Codec`, `CodecId`, JSON, content-type and WebSocket subprotocol
+  negotiation), `server::dispatch` (transport-independent dispatch with per-procedure guards),
+  `Procedure` and `RpcGroup::service_contract`. Every 0.12 RPC feature is declared once:
+  `client` (default), `postcard`, `ws`, `sse`, `events`, `mesh`, `channels`, `http3`,
+  `webtransport`, `test-util`. `id_effect_rpc::service` re-exports `#[rpc::service]` from
+  `id_effect_rpc_macros`. Book chapter 33 "One call surface".
+- `#[rpc::service(version = N)]` (`id_effect_rpc_macros`, r12-e12-1-macro): a trait whose methods
+  carry a kind (`#[query]`, `#[mutation]`, `#[server_stream]`, `#[client_stream]`, `#[bidi]`,
+  `#[subscription]`) and an access decision (`#[public]` or `#[guard(G)]`, required — ADR 0013
+  R1) becomes the handler trait, `<Trait>Service` (`contract()`, `register`, `group`, `server`,
+  `mount`) and `<Trait>Client<T>` over any `service::RpcTransport` (`LocalTransport` for every
+  kind in-process, `HttpTransport` for queries and mutations over `POST /rpc`); calls fail with
+  `RpcCallError<E>`. `#[derive(RpcErrorUnion)]` makes an enum a typed error union
+  (`#[rpc(status = N)]`, `#[rpc(tag = "…")]`, `#[rpc(internal)]`) and refuses the reserved
+  failure tags. Versions are served side by side (`name = "…"` shares a service name). Input,
+  output and error field types are the built-ins or `#[derive(Schema)]` types
+  (`service::RpcSchema`); types that also implement serde get `WireSchema::with_serde`, so the
+  generated procedures are served over postcard; misuse fails with a `help:` line (`tests/ui`).
+  The contract snapshot `crates/id_effect_rpc/rpc.contract.json` is checked by
+  `contract_snapshot_is_current`. Book chapter 33.4.
+- `id_effect_rpc` procedure kinds (ADR 0014 §2, r12-e12-1-kinds): `Procedure::server_stream`,
+  `client_stream`, `bidi`, `subscription` and `.version(n)`, `.max_items(n)`, `.max_bytes(n)`;
+  `RpcGroup::{query, mutation, server_stream, client_stream, bidi, subscription}` take the
+  handler shapes of the new `handler` module (`QueryHandler`, `MutationHandler`,
+  `ServerStreamHandler`, `ClientStreamHandler`, `BidiHandler`, `SubscriptionHandler`, each a
+  method returning an `Effect`) and `WireSchema` (from any `Schema`, `WireSchema::of::<T>()`).
+  `kinds`: `Duplex`, `Subscription`, `SubscriptionItem`, `CallFrames`, and the in-process
+  transport `InProcess` (feature `test-util`). `error_union`: typed error unions
+  (`RpcErrorUnion`, `RpcErrorStatus`). `cancel`: per-call deadlines (`x-rpc-deadline-ms`, capped
+  by `RpcServer::with_max_deadline`, 30 s default) and cancel signals. `idempotency`:
+  `IdempotencyStore` and the bounded `MemoryIdempotencyStore` (24 h, 100,000 keys, D14).
+  `server::dispatch`: `open` and `start_*` for every kind, the seam of every transport. HTTP:
+  `GET /rpc/{tag}?input=` for queries with ETag / 304, `POST /rpc/{tag}` for every unary and
+  stream kind (NDJSON server streams, NDJSON client streams with item and byte caps). Book
+  chapter 33.1.
+- `id_effect_rpc::subscription` (r12-e12-2-subscriptions): `TailConfig` (read batch 1–1,000,
+  poll interval 10 ms–60 s, clamped), `position_after` and the typed `CursorMismatch` failure
+  (`{"_tag": "CursorMismatch"}`, 400). Feature `events`: `subscription::events::EventSubscription`
+  serves an `id_effect_events` `EventLog` as a resumable subscription — the cursor is the global
+  position (`Cursor::events`), a call replays from it and then tails the log in one loop (no gap
+  or duplicate at the hand-over or on resume), a projection filters events, a slow subscriber is
+  lagged (pull-based, at most the window plus one batch in memory), interrupting the call
+  releases the reader (`open_readers`), and a failed read is `InternalError { id }`. Book chapter
+  33.8.
+- `id_effect_rpc` feature `postcard` (r12-e12-1-postcard, D13; postcard `=1.1.3`):
+  `CodecId::Postcard` (`application/vnd.id-effect.rpc+postcard`, `idrpc.postcard.v1`) and
+  `codec::postcard` — the postcard `Frame` (fixed `FrameKind` indices 0–9), call, result and exit
+  envelopes, u32 big-endian length-prefixed records, and the transport bridges
+  `decode_client_payload` / `encode_server_frame`. `WireSchema::with_serde` adds a typed bridge
+  (`codec::TypedCodec`) and `RpcMethodEntry::codecs` (`ProcedureCodecs`) carries it: postcard
+  decodes the type with serde, then the Schema's validators run as for JSON. `codec::negotiate_accept`
+  picks the response codec. Book chapter 33.3.
+- `id_effect_rpc::openapi` emits **OpenAPI 3.1** from the contract (`openapi::document`,
+  `to_json`, `to_yaml`, `OpenApiOptions`; web.rpc #7, r12-e12-4-openapi-asyncapi): queries as
+  `GET ?input=` (ETag, 304) and `POST`, mutations as `POST` with `Idempotency-Key`, server streams
+  as NDJSON frames, client streams as NDJSON items, the envelope and batch route `POST /rpc` with
+  every `(tag, version)`, the `x-rpc`, `x-rpc-version` and `x-rpc-deadline-ms` headers,
+  `WireResult` responses per status and RFC 9457 Problem responses; error unions are `oneOf`
+  with a `_tag` discriminator. `id_effect_rpc::asyncapi` emits **AsyncAPI 3.0** for server and
+  client streams, two-way streams, subscriptions and `ChannelTopic`s over WebSocket (subprotocol
+  binding) and SSE, with the cursor documented. Contract `$defs` become components with
+  deterministic names. `openapi::ContractDocs` serves `/rpc/openapi.json`, `/rpc/asyncapi.json`
+  and `/rpc/_contract`, not mounted outside `dev` and `test` unless guarded (ADR 0013 R7;
+  `public_dangerous` is recorded). Book chapter 33.10.
+- `id-effect rpc gen ts --contract <rpc.contract.json> --out <dir>` (web.rpc #3, web.realtime
+  #7, r12-e12-4-gen-ts): a typed TypeScript client from the service contract, plain TypeScript
+  with no runtime dependency (`client.ts`, `types.ts`, `runtime.ts`; deterministic). Types from
+  the contract: structs, tagged unions, `Option` as optional / `| null`, `Vec`, maps, newtypes as
+  branded types, dates as ISO strings, `$defs` named as the OpenAPI components; error unions
+  discriminated on `_tag`; one class per service and version. The runtime batches the queries
+  and mutations of one microtask (≤ 50 calls, 1 MiB), sends `x-rpc: 1` always and a 128-bit
+  `Idempotency-Key` with every mutation (`x-rpc-ordered: true` for more than one), streams over
+  WebTransport, then WebSocket, then SSE + POST, validates every server frame, reconnects with
+  exponential backoff and jitter, resumes server and two-way streams from their last cursor and
+  reopens subscriptions after theirs, and cancels on `AbortSignal`. Library:
+  `id_effect_tool::rpc::gen_ts::{generate, generate_to}`. Tests run under Deno (pinned 2.7.9 in
+  devenv and CI job `ts-client`). Book chapter 33.11.
+- `id-effect rpc check --contract <rpc.contract.json> --against <git-ref:path | file>` (web.rpc
+  #6, r12-e12-4-rpc-check): compares a contract with the previous one per `(service, version)`
+  and classifies every change, with a reason per line. Breaking: a procedure or served version
+  removed, `kind` changed, access tightened, a required input field added, an input narrowed, an
+  output field removed or an output widened, an error variant added, `idempotent` dropped, a
+  client-stream cap lowered. Compatible: a procedure or version added, an optional input field
+  or an output field added, an error variant removed, access loosened. A breaking change in a
+  new version passes (`versioned`) while the previous version is still served. `$defs` are
+  compared structurally (a moved module is no change; names follow the OpenAPI rule). Exit `0`
+  passes, `1` breaking, `2` usage or unreadable input. `--generated <dir>` also fails when the
+  checked-in TypeScript client differs from what `rpc gen ts` writes. Library:
+  `id_effect_tool::rpc::check::{compare, read_against, stale_files}`. Book chapter 33.12.
+- `id_effect_rpc` batches (design note §2.2, r12-e12-1-batching): `POST /rpc` with a JSON array
+  of calls answers an array of results in request order, each call failing on its own; queries
+  and mutations only (other kinds and unknown tags are that call's `InvalidInput`). At most 50
+  calls and 1 MiB (`batch::BatchConfig`, `RpcServer::with_batch_config`; over is a `413` Problem
+  before any element is decoded, `wire::decode_batch` for the fuzz target); every call's guards
+  run before any call does; bounded parallelism through a compute `AdmissionController` (8 by
+  default), or in order with `x-rpc-ordered: true`; one `RequestCache` per batch, so duplicate
+  loads through a `RequestResolver` are merged; mutations keyed `<Idempotency-Key>#<call id>`.
+  `RpcClient::call` sends the calls of one tick as one batch (`call_unbatched` opts out);
+  `CallContext::with_request_cache`. `id_effect_axum`: `RateLimitLayer` leaves a
+  `middleware::rate_limit::RateLimitCharge` in the request extensions so a handler charges the
+  rest of a request's cost (`take(n)`, all or none on `MemoryRateLimitStore`; a batch of N costs
+  N tokens); `RateLimitStore::{acquire_n, try_acquire_n_now}` with defaults. Book chapter 33.2.
+  Postcard over plain HTTP (feature `postcard`): queries and mutations take a postcard call
+  envelope on `POST /rpc` and postcard input bytes on `POST /rpc/{tag}`, answered with a
+  postcard result through the procedure's typed codec (`415` without `WireSchema::with_serde`,
+  and for postcard server streams; batches stay JSON); `RpcClient::call_postcard`,
+  `client::http::decode_postcard_response`.
+- `id_effect_rpc::channels` (feature `channels`, r12-e12-2-channels; ADR 0014 D3: a module, no
+  `id_effect_channels` crate): topics with join and leave, presence and broadcast across the
+  mesh. One hub process per node (`register_hub`, `Channels::builder().start_on_mesh(&mesh)`)
+  registered cluster-wide; a topic is a mesh `ProcessGroups` group of the interested hubs, so a
+  publish is one cast per other interested node. `Channels::join` / `serve_joins` (a
+  `subscription` procedure: input `JoinInput`, items `ChannelEvent` — `joined` snapshot, `message`,
+  `presence` diffs), `Channels::publish` (per-publisher order: duplicates and late arrivals are
+  dropped), `Presence` with per-connection metadata, heartbeat (`heartbeat`, `spawn_heartbeat`)
+  and monitor-driven cleanup when a node goes down, `ManualClock` / `SystemClock`. The cross-node
+  seam is `Backplane` (`MeshBackplane` on process groups and casts; `ChannelsBuilder::start_with`
+  for another transport); `attach_session` runs a mesh over an authenticated session and
+  `connect_in_memory` builds an in-memory mesh. Example `channels_chat`; book chapter 33.9.
+  Feature `channels` adds the dependency `id_effect_process` (the hub is a process).
+- `id_effect_rpc` feature `mesh` (r12-e12-2-mesh-rpc): the same `RpcGroup` callable node to
+  node over the process mesh, postcard always. `transport::mesh`: `MeshRpc` per node (register
+  `MeshRpc::register_behavior` before building the `Mesh`), `MeshRpc::serve(..)` →
+  `MeshEndpoint`, one endpoint process per service under the cluster-wide name `rpc:<service>`
+  (`start`, or `child_spec` under a supervisor: a restart registers the name again);
+  `MeshPeer`, `MeshPeerGuard`. `client::mesh`: `MeshRpc::client(service)` → `MeshRpcClient`
+  with every kind as effects (`query`, `mutation`, `server_stream`, `subscribe`,
+  `client_stream`, `bidi`; `MeshStream`, `MeshSink`, `MeshReply`), credits both ways, the
+  caller's span as the parent of the endpoint's `rpc.request` span, typed `MeshRpcError`;
+  `MeshTransport`, the `RpcTransport` of `#[rpc::service]` clients over the mesh. Book chapter
+  38.2.
+- `id_effect_rpc` transports (r12-e12-2-rpc-ws-sse, design note §5): feature `ws` serves every
+  kind over one WebSocket at `GET /rpc/ws` (`RpcServer::with_websocket(RpcWsConfig)`, on
+  `id_effect_axum`'s realtime layer; subprotocols `idrpc.json.v1` and, with `postcard`,
+  `idrpc.postcard.v1`), frames multiplexed by call id with credit backpressure both ways, a `hello`
+  frame carrying the connection's session (`transport::ws::WsSession`, bound to the principal),
+  `transport::ws::serve_socket` for an already-upgraded io. Feature `sse` serves subscriptions and
+  server streams as server-sent events on `GET /rpc/{tag}` with `Accept: text/event-stream`
+  (cursor = event id, `Last-Event-ID` resume; `RpcServer::with_sse`). `transport::frame::decode`
+  / `encode` / `validate` is the frame codec (fuzz entry point). Client: `RpcClientConfig::transport`
+  (`TransportKind::{Http, WebSocket, Sse}`), `RpcClient::subscribe` over the configured transport
+  (`RpcStream`, `CallEvent`), `client::ws::WsClient` / `WsCall`, `client::sse` (`RpcClient::sse`,
+  `SseCall`). Generated clients reach the network streams through `service::RpcTransport`:
+  `client::ws::WsClient` carries every kind, `client::sse::SseTransport` subscriptions and server
+  streams (queries and mutations over `POST /rpc`). A call refused before it ran exits with the
+  `Rejected` failure on frame transports. Every call on a WebSocket, and every SSE stream, runs
+  with the request's capabilities (an `Authenticate` layer's `CurrentPrincipal`) and a
+  `transport::ConnectionId` (one per socket; `channels::ConnectionId` is this type). Book chapter
+  33.6.
+- `id_effect_rpc` two-way streams with backpressure and resume (r12-e12-2-bidi-resume, web.rpc#4):
+  `Duplex` over WebSocket with credits in both directions (a stream's memory is bounded by the
+  window). Server streams and two-way streams on a WebSocket are resumable: their `item`s carry
+  `Cursor::sequence(n)` and stay in a per-session replay buffer until credited; a dropped socket
+  detaches them, and a `resume` on a new socket replays after each call's cursor (answered by a
+  `hello` naming the connection's session) or exits the call `ResumeExpired`. Module `resume`:
+  `ResumeConfig` (1,024 messages / 1 MiB / 30 s per session, 1,024 detached sessions),
+  `ResumeStore`, `ResumeStats`, `ResumeError`, `TestClock`, the bounded decoders
+  `decode_cursor` and `decode_resume` (fuzz targets). `RpcWsConfig::resume`, `resume_stats`,
+  `release_expired_sessions`. Book chapter 33.7.
+
+### Changed
+
+- The generated TypeScript client resumes from the last item the caller read (r12-f-ts-cursor,
+  F58): `RpcStream.cursor` and every resume the runtime sends (the WebSocket and WebTransport
+  `resume`, SSE `Last-Event-ID`, the subscription's new `call`) are the cursor of the last item
+  taken from the iterator, no longer of the last item received. Items received but not read when
+  the connection drops are delivered again after the resume, once and in order; a refused resume
+  still yields them before `ResumeExpired`. Credits are unchanged (one per item read). The
+  checked-in Ledger and Relay clients are regenerated.
+- Every `id_effect_rpc` call opens one `rpc.request` span on every transport (r12-f-rpc-spans,
+  web.rpc#8): over WebSocket and WebTransport per call (fields `rpc.system`, `rpc.service`,
+  `rpc.method`, `rpc.operation`, `rpc.transport`, `correlation.id`), a child of the connection's
+  new `rpc.connection` span; over SSE per stream, a child of the `GET`'s HTTP span. The HTTP
+  span gains `rpc.system`, `rpc.transport = "http"`, and `rpc.service` / `rpc.method` from the
+  tag. `span::rpc_call_span`, `span::rpc_connection_span`, `span::RPC_SYSTEM`.
+- The Relay's pages send `connect-src 'self'` plus `NodeConfig::connect_src` /
+  `RELAY_CONNECT_SRC` (default none): CSP matches scheme, host and port, so a page pointed at a
+  WebTransport or WebSocket endpoint on another port or host (`#wt=`) was refused by the CSP
+  and fell back to WebSocket. The browser test now fails when the first page falls back or when
+  the CSP refuses any URL (`securitypolicyviolation`), so its fallback page fails on the network.
+- `id_effect_rpc::openapi` emits OpenAPI 3.1 from a `Contract` instead of 3.0 from route
+  metadata: `OpenApiSpec`, `OpenApiInfo`, `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod`,
+  `emit_openapi_json` and `emit_openapi_yaml` are removed (see the migration guide).
+- `id_effect_node::transport::certs` is a deprecated re-export of `id_effect_platform::tls` for
+  one minor. The QUIC mesh requires ALPN `idm/1`: 0.11 nodes cannot join a 0.12 QUIC mesh. See
+  the [0.12 migration guide](docs/MIGRATION-0.12.md).
+- `id_effect_rpc`: `RpcGroup::register` takes a `Procedure` with an access decision
+  (`Procedure::query(tag).public()` / `.guard(g)`) and no longer takes input field names; tags
+  are validated and registered once. `RpcServer` mounts `POST /rpc` as a declared route of
+  `id_effect_axum::route::Router` (`mount`, `router`, `endpoint`; `layer_rpc` takes the typed
+  router) and caps bodies (1 MiB default). `RpcClient::call` no longer takes output field names;
+  `RpcClientError::Rpc` carries the `RpcEnvelope`. The `codegen` module (trait source strings) is
+  removed; its route metadata types moved to `openapi`. `RpcClient` is behind the default
+  `client` feature.
+- `id_effect_rpc` speaks the 0.12 wire format on HTTP (`WireCall` in, `WireResult` with a `_tag`
+  exit out); the labs `RpcWireRequest` / `RpcWireResponse`, the `stream` module and the
+  serialization helpers built on them are removed. A typed failure answers its error's status, a
+  Schema failure 422 `InvalidInput` with every issue. Every `POST` needs a codec `Content-Type`
+  and `x-rpc: 1`. `RpcClientError::Rpc` is replaced by `Failure` (the `_tag` value) and `Refused`
+  (the server's Problem). `RpcServer::endpoint` is `endpoints` (three routes); `RpcMethodEntry`
+  no longer has `dispatch` (use `server::dispatch`).
+- `id_effect_rpc::RpcClientConfig` gains the public field `transport` (struct literals need
+  `transport: TransportKind::Http` or `RpcClientConfig::new`), and `RpcClientError` the variant
+  `Transport`. With feature `sse`, `GET /rpc/{tag}` with `Accept: text/event-stream` on a
+  subscription or server stream answers an event stream instead of 406 / 405.
+- `id_effect_platform::http::HttpClientConfig` gains the public fields `root_certificates` and
+  (feature `http3`) `http3`: struct literals need `..HttpClientConfig::default()`.
+- `id_effect_axum::HostConfig` gains the public fields `tls` and `http3` (struct literals need
+  `..HostConfig::default()`); `ConnectionLimits::max_requests_per_connection` also applies to
+  HTTP/2 (a `GOAWAY` after the n-th request). `HostConfig` (through `HostTls::Provided`) and
+  `id_effect_node`'s `QuicTransport` are no longer `UnwindSafe` / `RefUnwindSafe`.
+- `id_effect_tool::dev::DevArgs` gains the public fields `cert_dir`, `no_cert` and `cert_only`
+  (`id-effect dev` issues a development certificate).
+- `x-rpc: 1` is required on **every** RPC `POST` (queries, batches and streams too, with or
+  without a cookie: stricter than ADR 0014 C5), and a `POST` without a `Content-Type` answers
+  `415` (F16).
+- `id-effect rpc check` classifies a narrowed output and a removed input field (unless unknown
+  fields are refused) as compatible; ADR 0014 §9 records the classification (F47).
+- The 10,000-stream soak gates RSS growth from minute 5 (half the run, at most 300 s) instead of
+  minute 1; the minute-1 figure is still reported (`rss_kib.at_minute_1`), and
+  `scripts/security-kpis.sh` gates the minute-5 figure (F50, F60).
+- The Ledger mounts its RPC routes once: the per-request remount that gave each call the
+  request's capabilities is gone now that the HTTP transport lays them over the route state
+  itself (5db2e2e4, F51); a map-request layer adds the policy registry and the idempotency scope.
+- The book's chapters 33.0–33.12 and 38.1 compile as doctests (`examples/book-snippets`, F17);
+  every former `rust,ignore` block in them compiles (a few are compiled but not run because they
+  need a server), and `WireSchema::of::<T>()` in chapter 33.7 is corrected to
+  `WireSchema::<T>::of()`.
+
+### Deprecated
+
+- `id_effect_node::transport::certs` (and `kit::node::transport::certs`): use
+  `id_effect_platform::tls` (`kit::platform::tls`), the same types. Removed in 0.13.
+
+### Removed
+
+- From the labs `id_effect_rpc`: the `stream` and `codegen` modules, `RpcWireRequest`,
+  `RpcWireResponse`, the `serialization` helpers, `RpcMethodEntry::dispatch`,
+  `RpcServer::mount_dispatch`, `RpcClientError::Rpc`, and the OpenAPI 3.0 emitter (`OpenApiSpec`,
+  `OpenApiInfo`, `emit_openapi_json`, `emit_openapi_yaml`). Replacements in the migration guide.
+- `labs/id_effect_rpc` (moved to `crates/id_effect_rpc`). No GraphQL surface existed, so none is
+  removed (ADR 0014: GraphQL is a non-goal).
+
+### Security
+
+- Call-surface defaults (ADR 0014 §14, each with its enforcement point):
+  - C1 every procedure declares its access (`#[public]` / `#[guard(G)]`, typestate on
+    `RpcGroup`); an unknown tag is a `404` Problem (`r1_rpc_procedure_without_access_decision`,
+    `rpc_unregistered_tag_is_404_problem`).
+  - C2 a batch is at most 50 calls and 1 MiB and costs N rate-limit tokens
+    (`r4_batch_over_limit_rejected_413`, `r4_batch_charges_n_rate_limit_tokens`).
+  - C3 streams per connection, 64 KiB frames, message rate, idle timeout and heartbeats are
+    bounded, and QUIC credits and idle timeout are finite (`r4_ws_streams_per_connection_capped`,
+    `r4_ws_frame_over_max_closes_1009`, `r4_quic_limits_finite_by_default`).
+  - C4 `Origin` is checked on every WebSocket upgrade and WebTransport CONNECT; an empty allowlist
+    refuses every browser origin; `dangerous_any_origin` is recorded
+    (`r9_ws_upgrade_from_foreign_origin_refused`,
+    `r9_webtransport_connect_from_foreign_origin_refused`).
+  - C5 RPC `POST`s need a codec `Content-Type` and `x-rpc` (all of them, F16)
+    (`r9_rpc_mutation_without_custom_header_refused`, `r9_rpc_form_content_type_refused`).
+  - C6 QUIC address validation (Retry) is on (`r4_quic_retry_on_by_default`, posture probe).
+  - C7 0-RTT is off; `dangerous_allow_zero_rtt_for_queries` admits only queries and is recorded
+    (`r10_zero_rtt_on_mutation`, `zero_rtt_off_by_default`).
+  - C8 resume sessions are 128 random bits bound to the principal
+    (`resume_under_another_principal_refused`).
+  - C9 hostile payloads: Schema decode at the boundary, caps before buffering, a fuzz target on
+    every new decoder.
+  - C10 a defect is `InternalError { id }` with the correlation id only
+    (`defect_becomes_internal_error_without_message`).
+  - C11 channel joins go through a `JoinPolicy` that denies by default
+    (`channel_join_denied_by_default_policy`).
+  - C12 the OpenAPI, AsyncAPI and contract documents are closed in prod unless guarded
+    (`r7_rpc_docs_closed_in_prod`).
+  - C13 the prod profile refuses the `id-effect dev` certificate
+    (`posture_prod_refuses_dev_certificate`).
+  - C14 on the shared QUIC endpoint `idm/1` refuses a connection without a verified client chain
+    before reading a frame (`idm_without_client_cert_refused_on_shared_endpoint`,
+    `idm_cert_from_other_ca_refused_on_shared_endpoint`).
+  - C15 the HTTP/3 client keeps the SSRF policy, timeouts and body caps and never uses
+    `reqwest_unstable` (`h3_path_enforces_ssrf_policy`, `h3_body_cap_enforced`).
+
+- RPC resume (r12-e12-2-bidi-resume): a resume session is 128 random bits bound to the
+  connection's principal; a resume under another principal is refused like an expired buffer
+  (`ResumeExpired`, indistinguishable from an unknown session) and counted. A cursor is not a
+  capability: every resumed call runs its procedure's guards again on the new connection. Every
+  replay buffer and the set of detached sessions are bounded; a detached session is released
+  after the retention and its calls are interrupted. `Rejected` joins the reserved failure tags
+  (`RpcFailure::RESERVED_TAGS`): a user error variant can no longer claim it (refused by
+  `#[derive(RpcErrorUnion)]`, `InternalError` at run time).
+- Mesh RPC (r12-e12-2-mesh-rpc): a call runs only on an origin the receiving node verified —
+  inbound mesh traffic goes through `MeshRpc::ingress` / `MeshRpc::handle_session_frame`, which
+  stamps messages for RPC processes with the authenticated session's node under a per-node
+  256-bit key; anything else is dropped. The calling node is the principal (`MeshPeer`,
+  `RpcPrincipal("mesh:<node>")`); end-user rights never cross the hop. Calls per peer (256) and
+  per endpoint (4,096) are capped before guards run, deadlines are clamped (30 s), items beyond
+  the granted credits and client streams over their caps are `ResourceExhausted`; a call is
+  dropped when the caller cancels, its node or reply process goes down, or the endpoint exits.
+  Queries are retried on a gone endpoint (3 times), mutations never.
+- RPC transports (C3, C4, C8): the WebSocket route refuses an upgrade offering no rpc subprotocol
+  (415), keeps the realtime layer's origin allowlist (empty: every browser origin refused),
+  connection caps, 64 KiB frames, message rate, heartbeats and idle timeout, and caps open calls per
+  connection (100, `RpcWsConfig::max_calls`; beyond: `ResourceExhausted { limit: "calls" }`). Each
+  call runs its procedure's guards on the upgrade (or `GET`) request head. A peer that sends past its
+  credits fails that call (`ResourceExhausted { limit: "credits" }`); undecodable frames close the
+  socket. Session ids are 128-bit random and bound to the connection's principal.
+- RPC codecs (D13, C3): an unknown codec is 415, never a JSON fallback; a procedure without a
+  typed bridge refuses postcard (415). Every postcard decoder refuses input over 64 KiB before
+  decoding, limits nesting to 64, bounds the elements of all sequences and maps by the input size,
+  never preallocates past the input, and refuses trailing bytes, unknown frame kinds, reserved
+  flag bits and invalid tags (`codec::postcard::decode_frame` is the fuzz entry point).
+- TLS listener defaults (ADR 0013 R4; ADR 0014 D10, C3): a TLS handshake must finish within 10 s
+  (`ConnectionLimits::tls_handshake_timeout`; `dangerous_no_tls_handshake_timeout` is recorded),
+  handshakes count against the connection cap, HTTP/2 allows 100 concurrent streams per
+  connection (`max_concurrent_streams`; `dangerous_unlimited_concurrent_streams` is recorded) and
+  pings dead peers, 0-RTT is off, and plain HTTP is not answered on the TLS port. A `HostConfig`
+  with `tls` set refuses to start when the crate is built without feature `tls` instead of
+  serving plain HTTP; HTTP/3 enabled without TLS is a posture warning (`warn` in prod).
+- ACME (ADR 0014 D8): a failed order keeps the current certificate (logged, counted in
+  `AcmeStats::failed`, retried); the account key and the certificate key are stored with mode
+  0600 in a 0700 cache directory (looser modes are tightened), held as `id_effect_config::Secret`
+  in memory and never printed; the directory must be `https://`; DNS-01, HTTP-01 and wildcard
+  names are not offered.
+- HTTP/3 client (ADR 0014 C15): the 0.11 SSRF policy checks the URL and every resolved address
+  before a UDP packet is sent, and the connection uses the checked address; the total timeout
+  covers the whole exchange and the body cap holds on a declared `Content-Length` and while
+  reading; TLS 1.3 only, 0-RTT off, the server name verified against the platform CA bundle; an
+  `Alt-Svc` naming another host is ignored; a `POST` or `PATCH` that may have reached the server
+  is not resent over TCP. A test fails the build if reqwest's unstable HTTP/3 cfg appears in a
+  manifest, source, workflow or Nix file.
+- HTTP/3 server (ADR 0013 R1 R4 R10; ADR 0014 C3): the TCP `ConnectionLimits` bound HTTP/3 too
+  (an HTTP/3 connection pool the size of `max_connections`, the header-read timeout on the first
+  request and on every request's header section, `GOAWAY` after `max_requests_per_connection`,
+  QUIC stream credits at `max_concurrent_streams` capped at the endpoint ceiling of 100, the TLS
+  handshake timeout on the QUIC handshake); request header sections are capped at 64 KiB;
+  connection-specific response headers are dropped; the client IP comes from the QUIC peer
+  address through the trusted-proxy rules; 0-RTT is off (the `Http3Options` opt-out
+  `dangerous_allow_zero_rtt_for_queries` is recorded and admits safe methods only); an h3 stream
+  is never `stop_sending`'d while a read is in flight (F13: it is dropped).
+- WebTransport (ADR 0013 R4 R9; ADR 0014 C3 C4): the CONNECT's `Origin` is checked against an
+  allowlist that is empty by default (403); sessions are capped at 10,000 per endpoint and 16
+  per client IP (429), one per connection; streams per session are the QUIC credits; a length
+  prefix over 64 KiB, a second control stream or a frame for another call on a call's stream
+  closes the session; a `ping` every 20 s and two silent intervals close it; calls run their
+  guards on the CONNECT's head, and resume stays bound to the principal.
+- WebSocket and SSE defaults (ADR 0013 R4, R9; ADR 0014 C3, C4): the `Origin` of every upgrade
+  is checked against an allowlist that is empty by default (every browser origin refused, 403;
+  the dev profile allows `realtime::origin::DEV_ORIGINS` by configuration);
+  `WsConfig::dangerous_any_origin` is recorded in the posture registry. Frames and messages are
+  capped at 64 KiB (close 1009), inbound messages at 100 per second per socket (close 1008),
+  sockets and SSE streams at 16 per client IP and 10 000 per endpoint (429 before the upgrade);
+  a ping every 20 s with two missed pongs closing the socket and a 300 s idle timeout (1001);
+  bounded inbox and outbox. Tests `r9_ws_upgrade_from_foreign_origin_refused`,
+  `dangerous_any_origin_is_recorded`, `r4_ws_frame_over_max_closes_1009`,
+  `r4_ws_sockets_per_ip_capped`, `heartbeat_closes_dead_connection`.
+- Shared QUIC endpoint (ADR 0014 D7): with `h3` and `idm/1` on one port the handshake requests
+  client certificates as optional with no CA hints and still verifies a presented one against
+  the cluster trust; the `idm/1` route closes every connection without a verified client chain
+  before any frame of it is read (`CLOSE_CLIENT_CERT_REQUIRED`). Tests
+  `idm_without_client_cert_refused_on_shared_endpoint`,
+  `idm_cert_from_other_ca_refused_on_shared_endpoint`; the 0.11 mutual-TLS tests run on both
+  shapes.
+- RPC access (ADR 0014 C1, finding H8 at the call surface): a procedure without `.public()` or
+  `.guard(g)` does not register (compile error); its guards run on the request head before the
+  input is decoded; an unknown tag answers 404 Problem Details; the `/rpc` mount sits behind the
+  deny-by-default router. Over-cap bodies are 413 and unknown codecs 415 Problems. Tests
+  `rpc_unregistered_tag_is_404_problem`, `rpc_group_requires_access_decision`.
+- RPC calls (ADR 0014 C5, C10; ADR 0013 R3, R4, R9): every `POST` needs `application/json` (or
+  the stream's NDJSON) and `x-rpc: 1` (415 / 403 otherwise), so a form or a simple cross-site
+  request cannot call a procedure; a defect, a panic or an error that claims a reserved tag
+  answers `InternalError { id }` with the correlation id only (the cause is logged); a client
+  disconnect or an expired deadline interrupts the handler fiber and runs its finalizers; client
+  streams are capped (10,000 items and 4 MiB by default, 64 KiB per line); `Idempotency-Key`
+  results are scoped by principal, and for anonymous callers by client IP with keys of at least
+  16 characters. Tests `r9_rpc_mutation_without_custom_header_refused`,
+  `r9_rpc_form_content_type_refused`, `defect_becomes_internal_error_without_message`,
+  `client_disconnect_interrupts_handler_and_runs_finalizers`, `deadline_capped_by_server_max`,
+  `client_stream_over_cap_rejected`, `idempotency_replay_is_scoped_for_anonymous_callers`.
+- QUIC endpoint defaults (ADR 0013 R4, R8): address validation (Retry) on, 0-RTT off, finite
+  stream credits, idle timeout, UDP payload, receive windows, pending handshakes (256) and
+  handshake time (10 s); datagrams off. Opt-outs `QuicEndpointConfig::dangerous_no_retry` and
+  `dangerous_raise_limits` are recorded in the posture registry. Tests
+  `r4_quic_retry_on_by_default`, `r4_quic_limits_finite_by_default`.
+- Channel joins (ADR 0013 R1, ADR 0014 C11): every join, subscribe and resume goes through a
+  `JoinPolicy`; the default `DenyAllJoins` refuses everyone (`{"_tag": "Unauthenticated"}` 401 /
+  `{"_tag": "JoinDenied"}` 403, the reason only in the log); `AuthzJoin` runs an
+  `id_effect_authz` policy (no axum items) with the tenant check; `dangerous_allow_all_joins` is
+  recorded in the posture registry. Bounded by default: 10,000 members per topic, 32 topics per
+  connection, 10,000 topics per node, 1 KiB join metadata, 16 KiB messages (60 KiB at most), 256
+  buffered events per subscriber (a slower one is dropped with `Lagged`); remote members lapse
+  15 s after their node's last heartbeat. Tests `channel_join_denied_by_default_policy`,
+  `caps_bound_members_topics_and_payloads`, `slow_subscriber_is_dropped_as_lagged`,
+  `three_node_broadcast_over_quic_mtls` (mutual TLS, an unpinned node refused).
+- Call-surface proof (r12-e12-5-fuzz-security): six new cargo-fuzz targets with seed corpora,
+  `rpc_wire_request`, `rpc_batch`, `rpc_postcard_frame` (every postcard decoder, a recursive type
+  and a 2^40-element `Vec<()>` among the seeds), `rpc_duplex_frame` (`transport::frame::decode`,
+  JSON and postcard, resume payloads), `rpc_resume_cursor` and `sse_last_event_id` (17 targets;
+  the ClusterFuzzLite PR and batch budgets grow so each target keeps 5 and 10 minutes).
+  Compile-fail cases `r1_rpc_procedure_without_access_decision` and `r10_zero_rtt_on_mutation`
+  (19 cases).
+  `id_effect_rpc/tests/security_surface.rs` fails when a test the release spec's Security table
+  names is missing, lists every 0.12 `dangerous_*` opt-out and checks each records itself, and runs
+  the Origin, `x-rpc`, batch-cap, batch-refusal (`x-rpc-batch-index`) and call-cap cases against
+  one server. THREAT-MODEL.md gains the call-surface boundary B9 and its residual risks (HTTP/2
+  idle connections, F14). The `#[rpc::service]` UI suite now also runs with feature `channels`
+  (F31: `ChannelError`'s `RpcErrorUnion` impl is `#[diagnostic::do_not_recommend]`).
+
+### Performance
+
+- T12 bench gates (r12-e12-5-benches, `docs/benchmarks/README.md` "RPC gates (0.12)"):
+  `id_effect_rpc` benches `gate_rpc` (`rpc/unary_json`, `rpc/axum_json_handler`,
+  `rpc/unary_postcard`, `rpc/sequential_50`, `rpc/batch_50`) and `h3_loss` (HTTP/3 vs HTTP/2 p99
+  of 64 multiplexed 16 KiB responses under 1 % loss + 5 ms), example `streams_soak` (10,000
+  WebSocket server streams on one node, heartbeats, RSS). New `pair` gates: a 50-call batch at
+  most 0.20 of 50 sequential calls (measured 0.111), HTTP/3 p99 at most HTTP/2 p99 (0.065 with
+  the userspace loss proxies; `tc netem` in `bench.yml`). The secure-stack budget is unchanged
+  (+2,648 ns of 5,000). The unary RPC delta measured +3,399 ns over a raw axum JSON handler,
+  over the 3 µs of D5, so its gate waits for the owner. Soak: 6,009,790 heartbeats, none
+  missing, node RSS 1.040× between minute 1 and minute 10 (resume replay buffers warming up)
+  and 0.997× from minute 5, the gated mark since F60.
+  `scripts/bench-run.sh` takes `package:bench:features` and `--skip`; `bench.yml` enforces
+  `pair` gates, runs `h3_loss` under netem and the 10-minute soak, and a 60 s soak on every pull
+  request. `docs/benchmarks/v0.11.json` and `v0.12.json`.
+- Unary RPC under the D5 budget (r12-f-unary-perf): `rpc/unary_json − rpc/axum_json_handler`
+  went from +3,399 ns to **+1,776 ns** (median of 5 runs at load below 4; 3,000 ns allowed), and
+  the D5 `delta` gate is now in `docs/benchmarks/gates.toml`. The erased handlers no longer deep
+  copy both JSON Schemas per call (`WireSchema` shares its schema behind an `Arc`), decode the
+  input without copying it first (`WireSchema::decode_value`), move the encoded output into JSON
+  instead of copying it, take the `RpcServer` by reference count, and look procedures up without
+  building key strings (`RpcGroup` keyed by tag, then version): 150 allocations per call down to
+  91. No check changed (`x-rpc`, `Content-Type`, body cap, guards, deadline clamp, Schema decode,
+  `InternalError` redaction, idempotency); the secure-stack delta stays +2.6 µs of 5.
+- `id_effect_axum`: the host's accept loop (`serve_listener`, `serve_router*`, `ServerHandle`)
+  sets `TCP_NODELAY` on every accepted TCP socket (F48), so small responses and WebSocket frames
+  no longer wait for the peer's delayed ACK: the 10,000-stream soak's heartbeat lag p99 went from
+  41 ms to 1 ms.
+
+### Scorecard
+
+Measured by blind re-score (`docs/scorecard/REPORT-0.12.0.md`, METHOD 2.2, competitor snapshot
+2026-10-14):
+
+| Index | 0.11.0 | 0.12.0 | Target |
+|---|---|---|---|
+| Universal (U) | 79.4 (#1) | 82.3 (#1) | — |
+| Enterprise (E) | 79.2 (#1) | 81.5 (#1) | 80.9 (#1) |
+| Runtime (RT) | 83.9 (#1) | 85.9 (#1) | 84.8 (#1) |
+| Rows < 40 | 9 | 7 | ≤ 7 |
+| Rows ≥ 80 | 56 | 59 | — |
+| Rows where id_effect leads | 31 | 37 | — |
+
+7 rows up, none down; Web & API 54.8 → 73.9. `web.rpc` 39 → 100 (labs → production: the Ledger
+and the Relay), `web.realtime` 1 → 100 (absent → production: the Relay), `dist.tls` 89 → 100 (the
+Relay's mesh on mutual-TLS QUIC), `web.server` and `data.jsonschema` 88 → 100 (TLS + HTTP/2 in
+the host; `id-effect rpc gen ts`), `conc.perf` 63 → 88 (per-stream memory, published p99),
+`fault.actors` 89 → 100; `dist.remote`, `dist.placement` and `data.events` reach production at
+the same score. Every production level rests on the `reference-relay` and `reference-ledger` jobs
+going green on the tag. One miss, carried over again: `sec.supply` 88 (target 100), because
+`sec.supply#7` needs a published GitHub Security Advisory (none yet; publication is release
+automation); new target 0.13.0. DX KPIs (`docs/benchmarks/dx-kpis-0.12.json`, HTTP/3 on in the
+template): K1 22.2 s, K2 1.40 s, K3 634 lines, K4 17/20, K5 86.3 %, K6 33.2 s. Security KPIs
+(`docs/security/kpis-0.12.json`): 0 open highs, ADR 0013 10/10 rules with an enforcement point, 17
+fuzz targets (6 new), 19 compile-fail cases, secure stack +2,648 ns over bare (budget 5,000 ns),
+46 opt-outs recorded, every Security-table test green, the four T12 bench gates pass (unary
++1,776 ns, batch 0.111, h3/h2 p99 0.065, soak RSS 0.997× after minute 5).
+
+### Owner steps
+
+Not done by the release automation; each is the owner's (release spec D15/D16, earlier
+decisions still open):
+
+- **Register crates.io trusted publishing for `id_effect_rpc_macros` before pushing the
+  `v0.12.0` tag.** The crate has never been published, so `publish.yml` (trusted publishing only,
+  no registry token) cannot publish it, and `id_effect_rpc` (already on crates.io) depends on it,
+  so the whole publish wave stops at `id_effect_rpc_macros` without it.
+- Accept ADR 0014 "One call surface" (D15); it stays Proposed until then, and the exit gate needs
+  Accepted. Review the defaults of D1–D14 and the six open questions of the release spec.
+- Allow `sudo tc` (netem) on the bench runner (D16) so `bench.yml` measures `h3_loss` under real
+  loss and runs the 10-minute soak; the recorded h3/h2 figure uses userspace loss proxies.
+- Register the project for the OpenSSF Best Practices badge (0.11 D16, still pending).
+- Accept ADR 0013 (0.11 D22, still Proposed).
+- Publish the GitHub Security Advisories of 0.10.1 (`sec.supply#7`, carried over to 0.13.0).
+
 ## 0.11.0 — 2026-10-19 — Distribution & hardening
 
 The secure-by-default release (ADR 0013): every finding of the 2026-10-18 security review is
