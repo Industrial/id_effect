@@ -196,7 +196,8 @@ fn race_all_returns_the_first_success() {
       after(HOUR, 9),
       fail_after(5 * MS, 2),
       after(30 * MS, 7),
-      after(60 * MS, 8),
+      // Well apart: on real time a loaded runner can stall 30 ms (seen on macOS CI: 60 ms won).
+      after(1_000 * MS, 8),
     ]);
     assert_eq!(success(d, d.run(eff)), 7, "{d:?}");
   });
