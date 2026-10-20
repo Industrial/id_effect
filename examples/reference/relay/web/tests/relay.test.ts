@@ -89,7 +89,8 @@ Deno.test({
 			texts.join("|") === "hello from rust|hello from deno",
 			JSON.stringify(texts),
 		);
-		// `cursor` is the last item the stream received: resume after both, once a third is in.
+		// `cursor` is the last item consumed (read from the iterator, not merely received): resume
+		// after both, once a third is in.
 		const cursor = history.cursor;
 		assert(typeof cursor === "string", "a cursor");
 		history.cancel();

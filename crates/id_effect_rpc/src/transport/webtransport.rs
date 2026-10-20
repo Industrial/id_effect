@@ -116,6 +116,9 @@ const INBOX: usize = 16;
 /// Frames the connection logic queues for the streams.
 const OUTBOX: usize = 64;
 
+/// `rpc.transport` of this transport's spans.
+const TRANSPORT: &str = "webtransport";
+
 /// `H3_NO_ERROR`.
 const CLOSE_OK: u32 = 0x100;
 
@@ -577,8 +580,15 @@ async fn serve_session(
     session.client_ip(),
   );
   let head = Parts::clone(&head);
-  let conn =
-    ws::serve_socket::<id_effect::HNil>(&shared.server, &config.rpc, env, head, codec, socket);
+  let conn = ws::serve_socket_on::<id_effect::HNil>(
+    &shared.server,
+    &config.rpc,
+    env,
+    head,
+    codec,
+    socket,
+    TRANSPORT,
+  );
   let mut conn = std::pin::pin!(EffectExecutor::global().run_effect(conn));
   let tasks = Arc::new(Mutex::new(JoinSet::new()));
   tasks

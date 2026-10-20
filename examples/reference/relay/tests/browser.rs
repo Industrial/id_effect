@@ -2,7 +2,9 @@
 //! the node serves joins a room, posts over a two-way stream and sees a message posted on
 //! another node — over WebTransport (the `id-effect dev` certificate: ECDSA, 13 days, pinned
 //! with `serverCertificateHashes`), and with nothing answering on the WebTransport port, over
-//! the RPC WebSocket.
+//! the RPC WebSocket. The first page failing over to WebSocket fails the test, and so does any
+//! URL the page's CSP refuses (the second page's WebTransport port is in the node's
+//! `connect_src`: it must fail on the network, not on the CSP).
 //!
 //! Runs only with `ID_EFFECT_REQUIRE_BROWSER=1` (then a missing Chromium fails the test, it never
 //! skips); without it the test returns at once. It also needs Docker (PostgreSQL).
@@ -75,12 +77,21 @@ async fn relay_browser_chat_round_trip() {
   let dir = std::env::temp_dir().join(format!("relay-browser-cert-{}", std::process::id()));
   let dev = id_effect_tool::dev::cert::ensure(&dir, std::time::SystemTime::now()).unwrap();
   let certificate = NodeCertificate::from_pem_files(&dev.cert, &dev.key).unwrap();
+  // Nothing answers on this port: the second page's WebTransport URL. The pages' CSP admits it
+  // (CSP matches scheme, host and port), so the attempt fails on the network, not on the CSP.
+  let dead_udp = std::net::UdpSocket::bind((common::HOST, 0)).unwrap();
+  let dead_wt = format!(
+    "https://{}:{}",
+    common::HOST,
+    dead_udp.local_addr().unwrap().port()
+  );
   let c = cluster(
     db,
     Options {
       nodes: 2,
       certificate: Some(certificate),
       origins: vec![ORIGIN.to_owned()],
+      connect_src: vec![dead_wt.clone()],
       ..Options::default()
     },
   )
@@ -98,7 +109,6 @@ async fn relay_browser_chat_round_trip() {
   let bob = c.http(1, "bob").await;
 
   let token = c.token("ada").await;
-  let dead_udp = std::net::UdpSocket::bind((common::HOST, 0)).unwrap();
   let page = |text: &str, expect: &str, wt: Option<String>| {
     let mut url = format!(
       "{}/#token={token}&room=general&text={}&expect={}&hash={}",
@@ -120,10 +130,7 @@ async fn relay_browser_chat_round_trip() {
     page(
       "from chromium again",
       "from bob again",
-      Some(format!(
-        "https://127.0.0.1:{}/rpc/wt",
-        dead_udp.local_addr().unwrap().port()
-      )),
+      Some(format!("{dead_wt}/rpc/wt")),
     ),
   ];
 
@@ -175,11 +182,31 @@ async fn relay_browser_chat_round_trip() {
     assert!(froms.contains(&("ada", "a@relay")), "{report}");
     assert!(froms.contains(&("bob", "b@relay")), "{report}");
   }
+  // The first page must not have fallen back: any WebTransport failure there fails the test.
+  assert!(
+    reports[0]["why"].is_null(),
+    "the first page fell back to WebSocket: {}",
+    reports[0]
+  );
   assert!(
     reports[1]["why"].as_str().is_some(),
     "the second page tried WebTransport first: {}",
     reports[1]
   );
+  // It fell back because nothing answered, not because the page's CSP refused the URL.
+  for report in &reports {
+    let why = report["why"].as_str().unwrap_or_default();
+    assert!(
+      !why.contains("Content Security Policy"),
+      "the CSP refused the WebTransport URL: {report}"
+    );
+    assert_eq!(
+      report["violations"],
+      serde_json::json!([]),
+      "the CSP refused a URL: {report}"
+    );
+  }
+  drop(dead_udp);
   c.shutdown().await;
   let _ = std::fs::remove_dir_all(dir);
 }

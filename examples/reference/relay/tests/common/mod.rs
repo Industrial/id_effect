@@ -140,6 +140,8 @@ pub struct Options {
   pub certificate: Option<NodeCertificate>,
   /// The web client origins (default: [`APP_ORIGIN`]).
   pub origins: Vec<String>,
+  /// Extra CSP `connect-src` sources of the pages (default none).
+  pub connect_src: Vec<String>,
   /// The port each node binds (0: a free one).
   pub port: u16,
   /// Advertise this UDP port in `Alt-Svc` instead of the node's own.
@@ -152,6 +154,7 @@ impl Default for Options {
       nodes: 3,
       certificate: None,
       origins: vec![APP_ORIGIN.to_owned()],
+      connect_src: Vec::new(),
       port: 0,
       advertise_h3_port: None,
     }
@@ -211,6 +214,7 @@ pub fn node_config(
     mesh,
     cookie: Cookie::new("relay-test-mesh-cookie-of-at-least-32-bytes"),
     origins: options.origins.clone(),
+    connect_src: options.connect_src.clone(),
     keys: keys(),
     db: Arc::clone(db),
     cookie_key: CookieKey::generate(),

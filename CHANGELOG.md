@@ -304,6 +304,17 @@
   the connection drops are delivered again after the resume, once and in order; a refused resume
   still yields them before `ResumeExpired`. Credits are unchanged (one per item read). The
   checked-in Ledger and Relay clients are regenerated.
+- Every `id_effect_rpc` call opens one `rpc.request` span on every transport (r12-f-rpc-spans,
+  web.rpc#8): over WebSocket and WebTransport per call (fields `rpc.system`, `rpc.service`,
+  `rpc.method`, `rpc.operation`, `rpc.transport`, `correlation.id`), a child of the connection's
+  new `rpc.connection` span; over SSE per stream, a child of the `GET`'s HTTP span. The HTTP
+  span gains `rpc.system`, `rpc.transport = "http"`, and `rpc.service` / `rpc.method` from the
+  tag. `span::rpc_call_span`, `span::rpc_connection_span`, `span::RPC_SYSTEM`.
+- The Relay's pages send `connect-src 'self'` plus `NodeConfig::connect_src` /
+  `RELAY_CONNECT_SRC` (default none): CSP matches scheme, host and port, so a page pointed at a
+  WebTransport or WebSocket endpoint on another port or host (`#wt=`) was refused by the CSP
+  and fell back to WebSocket. The browser test now fails when the first page falls back or when
+  the CSP refuses any URL (`securitypolicyviolation`), so its fallback page fails on the network.
 - `id_effect_rpc::openapi` emits OpenAPI 3.1 from a `Contract` instead of 3.0 from route
   metadata: `OpenApiSpec`, `OpenApiInfo`, `RpcServiceDef`, `RpcMethodDef`, `RpcHttpMethod`,
   `emit_openapi_json` and `emit_openapi_yaml` are removed (see the migration guide).

@@ -99,6 +99,7 @@ use id_effect_axum::route::{Endpoint, Problem, Public};
 use id_effect_axum::{EffectExecutor, RequestCaps};
 use serde_json::Value;
 use tokio::sync::{Semaphore, mpsc, oneshot, watch};
+use tracing::Instrument as _;
 
 use super::{copy_head, frame, rejection_outcome};
 use crate::cancel::{CallControl, CancelHandle, cancel_pair};
@@ -110,6 +111,7 @@ use crate::kinds::{CallFrames, exit_frame};
 use crate::resume::{Attachment, ResumeConfig, ResumeStats, ResumeStore, Session};
 use crate::server::RpcServer;
 use crate::server::dispatch::{self, Rejection};
+use crate::span::{rpc_call_span, rpc_connection_span};
 use crate::wire::{
   CallId, Cursor, Frame, FrameFlags, FrameKind, Hello, INITIAL_CREDITS, MAX_FRAME_BYTES,
   ResumeCall, RpcFailure, SessionId,
@@ -128,6 +130,9 @@ const MAX_GRANTED: usize = 1 << 20;
 const OUTBOX: usize = 64;
 
 const TARGET: &str = "id_effect_rpc::transport::ws";
+
+/// `rpc.transport` of this transport's spans.
+const TRANSPORT: &str = "websocket";
 
 /// Numbers the connections ([`Conn::serial`]).
 static SERIAL: AtomicU64 = AtomicU64::new(1);
@@ -258,6 +263,8 @@ struct UpgradeHead(Parts);
 struct Shared {
   server: RpcServer,
   config: RpcWsConfig,
+  /// `rpc.transport` of the connection's and calls' spans.
+  transport: &'static str,
 }
 
 /// The subprotocols this build serves, in preference order.
@@ -310,7 +317,11 @@ async fn admit(request: Request, next: Next) -> Response {
 pub fn endpoint(server: RpcServer, config: RpcWsConfig) -> Endpoint<DynEnv, Public> {
   let path = format!("{}{PATH}", server.path().trim_end_matches('/'));
   let socket = config.socket.clone().protocols(subprotocols());
-  let shared = Arc::new(Shared { server, config });
+  let shared = Arc::new(Shared {
+    server,
+    config,
+    transport: TRANSPORT,
+  });
   let handler = move |env: &mut DynEnv, caps: RequestCaps, socket: WsSocket| {
     let head = caps
       .get::<UpgradeHead>()
@@ -345,9 +356,27 @@ pub fn serve_socket<R>(
 where
   R: Send + Sync + 'static,
 {
+  serve_socket_on(server, config, env, head, codec, socket, TRANSPORT)
+}
+
+/// [`serve_socket`] for another transport carrying the same frames (`rpc.transport` of its
+/// spans: `webtransport`).
+pub(crate) fn serve_socket_on<R>(
+  server: &RpcServer,
+  config: &RpcWsConfig,
+  env: DynEnv,
+  head: Parts,
+  codec: CodecId,
+  socket: WsSocket,
+  transport: &'static str,
+) -> Effect<(), Never, R>
+where
+  R: Send + Sync + 'static,
+{
   let shared = Arc::new(Shared {
     server: server.clone(),
     config: config.clone(),
+    transport,
   });
   serve(shared, env, head, codec, socket)
 }
@@ -422,8 +451,11 @@ async fn connection(
     }
   };
   let attachment = shared.config.resume.open(shared.server.principal_of(&head));
+  let cid = ensure_correlation_id(&head.headers);
+  let span = rpc_connection_span(shared.transport, &cid);
   let conn = Conn {
-    cid: ensure_correlation_id(&head.headers),
+    cid,
+    span: span.clone(),
     head: Arc::new(head),
     env,
     out: Outbox { tx: out_tx, codec },
@@ -437,7 +469,8 @@ async fn connection(
   let run = async move {
     conn.run(in_rx).await;
     let _ = stop_tx.send(());
-  };
+  }
+  .instrument(span);
   let work = futures_util::future::join(run, writer);
   if let Either::Right((_, work)) = select(Box::pin(work), Box::pin(reader)).await {
     // The socket's inbound side ended: the calls see it, finish, and the writer drains.
@@ -581,6 +614,8 @@ struct Conn {
   env: DynEnv,
   head: Arc<Parts>,
   cid: String,
+  /// The connection's span (`rpc.connection`), the parent of its calls' `rpc.request` spans.
+  span: tracing::Span,
   out: Outbox,
   /// The connection's session (the resumed one after a `resume`).
   attachment: Attachment<WsCall>,
@@ -877,9 +912,15 @@ impl Conn {
       codecs,
       resumable: None,
     };
+    let span = rpc_call_span(
+      Some(&self.span),
+      self.shared.transport,
+      &task.tag,
+      &task.ctx.correlation_id,
+    );
     if !resumable {
       self.calls.insert(id, open);
-      self.running.push(Box::pin(task.run()));
+      self.running.push(Box::pin(task.run().instrument(span)));
       return Ok(());
     }
     let session = Arc::clone(self.attachment.session());
@@ -899,10 +940,13 @@ impl Conn {
       session: Arc::clone(&session),
       sink,
     });
-    let handle = tokio::spawn(async move {
-      task.run().await;
-      done_tx.send_replace(true);
-    });
+    let handle = tokio::spawn(
+      async move {
+        task.run().await;
+        done_tx.send_replace(true);
+      }
+      .instrument(span),
+    );
     session.set_abort(id, handle.abort_handle());
     self.calls.insert(id, open);
     self.running.push(Box::pin(wait_done(done, id)));

@@ -21,7 +21,7 @@ use id_effect::DynEnv;
 use id_effect_kit::axum::realtime::ws::WsConfig;
 use id_effect_kit::axum::route::{self, AccessLayer, RouteAccess, RouteInfo};
 use id_effect_kit::axum::server::h3::{Http3Options, serve_h3};
-use id_effect_kit::axum::server::security::{CookieKey, SecurityLayer};
+use id_effect_kit::axum::server::security::{ContentSecurityPolicy, CookieKey, SecurityLayer};
 use id_effect_kit::axum::server::webtransport::{self as wt, WebTransportConfig};
 use id_effect_kit::axum::server::{AltSvcLayer, ConnectionLimits, HostTls, ServerTls};
 use id_effect_kit::axum::{
@@ -139,6 +139,12 @@ pub struct NodeConfig {
   /// The origins whose pages may open the RPC WebSocket and WebTransport sessions (the web
   /// client's origin); none: browsers are refused.
   pub origins: Vec<String>,
+  /// Sources the web client's CSP `connect-src` admits beside `'self'` (the node's own origin:
+  /// its HTTPS, WebSocket and WebTransport URLs, one port for TCP and UDP). List the WebTransport
+  /// and WebSocket origins of anything else the page is pointed at with `#wt=` / `#ws=` (another
+  /// node, a UDP load balancer on another port: `https://chat.example:4433`): CSP matches scheme,
+  /// host and port, so the browser refuses any other. None by default.
+  pub connect_src: Vec<String>,
   /// How bearer tokens are verified.
   pub keys: TokenKeys,
   /// The database: rooms, members and history.
@@ -161,6 +167,7 @@ impl std::fmt::Debug for NodeConfig {
       .field("name", &self.name)
       .field("bind", &self.bind)
       .field("origins", &self.origins)
+      .field("connect_src", &self.connect_src)
       .finish_non_exhaustive()
   }
 }
@@ -571,6 +578,10 @@ fn app(
   // `POST /rpc`, `POST|GET /rpc/{tag}`, `GET /rpc/ws`, `CONNECT /rpc/wt`.
   let rpc = server.mount(route::Router::new()).route(wt_route);
   let access = AccessLayer::new(rpc.routes().chain(&plain_routes()));
+  let security = SecurityLayer::recommended(config.cookie_key.clone())
+    .csrf_exempt(RPC_PATH)
+    .csp(content_security_policy(&config.connect_src))
+    .map_err(|e| start_error("connect_src", e))?;
   let router = axum::Router::new()
     .merge(rpc.with_state(DynEnv::new()).into_axum())
     .route("/", axum::routing::get(index))
@@ -579,11 +590,20 @@ fn app(
     .route_layer(access)
     .layer(config.keys.layer())
     .layer(axum::middleware::from_fn(token_from_query))
-    .layer(SecurityLayer::recommended(config.cookie_key.clone()).csrf_exempt(RPC_PATH))
+    .layer(security)
     .layer(BodyLimitLayer::new(BODY_LIMIT))
     .layer(TimeoutLayer::new(REQUEST_TIMEOUT))
     .layer(RequestIdLayer::new());
   Ok((router, ws, session))
+}
+
+/// The pages' CSP: [`ContentSecurityPolicy::recommended`] with `connect-src 'self'` and the
+/// configured `connect_src` sources (the WebTransport and WebSocket URLs the web client may be
+/// pointed at besides the node's own origin).
+pub fn content_security_policy(connect_src: &[String]) -> ContentSecurityPolicy {
+  let mut sources = vec!["'self'"];
+  sources.extend(connect_src.iter().map(String::as_str));
+  ContentSecurityPolicy::recommended().connect_src(&sources)
 }
 
 async fn index() -> impl IntoResponse {

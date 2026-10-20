@@ -45,6 +45,7 @@ use id_effect_axum::realtime::sse::{
 };
 use id_effect_axum::route::Problem;
 use serde_json::Value;
+use tracing::Instrument as _;
 
 use crate::cancel::CallControl;
 use crate::contract::ProcedureKind;
@@ -52,10 +53,14 @@ use crate::handler::CallContext;
 use crate::kinds::CallFrames;
 use crate::server::RpcServer;
 use crate::server::dispatch;
+use crate::span::rpc_call_span;
 use crate::wire::{CallId, Cursor, Frame, FrameKind};
 
 /// The media type of an event stream.
 pub const EVENT_STREAM: &str = "text/event-stream";
+
+/// `rpc.transport` of this transport's spans.
+const TRANSPORT: &str = "sse";
 
 /// Whether the request asks for an event stream (`Accept: text/event-stream`).
 pub fn accepts_event_stream(headers: &HeaderMap) -> bool {
@@ -92,6 +97,8 @@ struct Target {
   version: Option<u32>,
   payload: Value,
   correlation_id: Arc<str>,
+  /// The call's `rpc.request` span (transport `sse`), a child of the `GET`'s HTTP span.
+  span: tracing::Span,
 }
 
 /// Serve the call as an event stream (the route already resolved `tag` and ran its guards).
@@ -109,7 +116,10 @@ pub(crate) async fn serve(
     .get::<RequestCaps>()
     .cloned()
     .unwrap_or_default();
+  // A child of the current span: the `GET`'s HTTP `rpc.request`.
+  let span = rpc_call_span(None, TRANSPORT, &tag, &ctx.correlation_id);
   caps.insert(Target {
+    span,
     server: server.clone(),
     kind,
     tag,
@@ -154,7 +164,8 @@ fn open(
   let mut env = caps.overlay(env);
   env.insert_arc(Arc::new(super::ConnectionId::fresh()));
   let ctx = CallContext::new(env, Arc::clone(&target.correlation_id));
-  let started =
+  let span = target.span.clone();
+  let started = span.in_scope(|| {
     dispatch::resolve(target.server.group(), &target.tag, target.version).and_then(|entry| {
       let id = CallId::new(1).unwrap_or(CallId::CONNECTION);
       let (payload, window) = (target.payload.clone(), target.server.stream_window());
@@ -165,21 +176,26 @@ fn open(
         }
         _ => dispatch::start_server_stream(entry, id, payload, ctx, control, window),
       }
-    });
+    })
+  });
   match started {
-    Ok(frames) => succeed(events(frames)),
+    Ok(frames) => succeed(events(frames, span)),
     Err(rejection) => fail(bad_request(&format!("{rejection:?}"))),
   }
 }
 
-/// The frames of a call as events: `item`s, then the `exit`.
-fn events(frames: CallFrames) -> Stream<SseEvent, std::io::Error> {
+/// The frames of a call as events: `item`s, then the `exit`, each pulled in the call's `span`.
+fn events(frames: CallFrames, span: tracing::Span) -> Stream<SseEvent, std::io::Error> {
   let frames = Arc::new(tokio::sync::Mutex::new(frames));
   Stream::from_pull(move |_max| {
     let frames = Arc::clone(&frames);
-    from_async(move || async move {
-      let next = frames.lock().await.next().await;
-      Ok(next.map(|frame| vec![event(&frame)]))
+    let span = span.clone();
+    from_async(move || {
+      async move {
+        let next = frames.lock().await.next().await;
+        Ok(next.map(|frame| vec![event(&frame)]))
+      }
+      .instrument(span)
     })
   })
 }

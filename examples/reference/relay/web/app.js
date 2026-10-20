@@ -18,6 +18,11 @@ const report = (window.__relay = {
 	state: "starting",
 	members: [],
 	messages: [],
+	// What the page's CSP refused (a WebTransport or WebSocket URL it does not admit).
+	violations: [],
+});
+document.addEventListener("securitypolicyviolation", (event) => {
+	report.violations.push(`${event.effectiveDirective} ${event.blockedURI}`);
 });
 
 function show(text) {

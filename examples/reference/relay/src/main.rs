@@ -69,6 +69,7 @@ async fn run() -> Result<(), String> {
     },
     cookie: Cookie::new(settings.mesh_cookie.clone()),
     origins: settings.origins.clone(),
+    connect_src: settings.connect_src.clone(),
     keys,
     db,
     cookie_key: cookie_key()?,

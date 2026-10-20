@@ -11,6 +11,7 @@
 //! | `RELAY_MESH_TRUSTED` | comma-separated SHA-256 (hex) of every node's mesh certificate (required) |
 //! | `RELAY_MESH_COOKIE` | the mesh's shared cookie, at least 32 bytes (required) |
 //! | `RELAY_ORIGINS` | comma-separated origins of the web client (default none: browsers refused) |
+//! | `RELAY_CONNECT_SRC` | comma-separated CSP `connect-src` sources beside `'self'`: WebTransport / WebSocket origins on another host or port (default none) |
 //! | `RELAY_TOKEN_SECRET`, `RELAY_TOKEN_ISSUER` | how bearer tokens are verified (HS256, required) |
 //! | `RELAY_DATABASE_URL` | PostgreSQL (required) |
 
@@ -38,6 +39,8 @@ pub struct Settings {
   pub mesh_cookie: String,
   /// `RELAY_ORIGINS`.
   pub origins: Vec<String>,
+  /// `RELAY_CONNECT_SRC`.
+  pub connect_src: Vec<String>,
   /// `RELAY_TOKEN_SECRET`.
   pub token_secret: String,
   /// `RELAY_TOKEN_ISSUER`.
@@ -53,6 +56,7 @@ impl std::fmt::Debug for Settings {
       .field("bind", &self.bind)
       .field("peers", &self.peers)
       .field("origins", &self.origins)
+      .field("connect_src", &self.connect_src)
       .finish_non_exhaustive()
   }
 }
@@ -116,6 +120,7 @@ impl Settings {
       mesh_trusted,
       mesh_cookie: required("RELAY_MESH_COOKIE")?,
       origins: list("RELAY_ORIGINS"),
+      connect_src: list("RELAY_CONNECT_SRC"),
       token_secret: required("RELAY_TOKEN_SECRET")?,
       token_issuer: required("RELAY_TOKEN_ISSUER")?,
       database_url: required("RELAY_DATABASE_URL")?,
@@ -157,6 +162,7 @@ mod tests {
       ),
       ("RELAY_MESH_COOKIE", "c".repeat(32)),
       ("RELAY_ORIGINS", "https://chat.example".to_owned()),
+      ("RELAY_CONNECT_SRC", "https://chat.example:4433".to_owned()),
       ("RELAY_TOKEN_SECRET", "s".repeat(32)),
       ("RELAY_TOKEN_ISSUER", "https://id.example".to_owned()),
       ("RELAY_DATABASE_URL", "postgres://relay@db/relay".to_owned()),
@@ -175,6 +181,7 @@ mod tests {
     assert_eq!(settings.peers.len(), 2);
     assert_eq!(settings.mesh_trusted[0], [0xab; 32]);
     assert_eq!(settings.origins, ["https://chat.example"]);
+    assert_eq!(settings.connect_src, ["https://chat.example:4433"]);
     assert!(!format!("{settings:?}").contains("postgres://"));
   }
 
