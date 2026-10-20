@@ -561,18 +561,22 @@ jobs:
       - name: Generate minimal versions lock
         run: |
           cargo +nightly update -Z minimal-versions
-          # minimal-versions resolves crc32fast 1.1.x whose build.rs needs modern semver
-          cargo update -p crc32fast@1.1.0 --precise 1.4.2
-          cargo update -p semver@1.0.0 --precise 1.0.20
-          cargo update -p async-trait --precise 0.1.89
-          # bollard-stubs (testcontainers) allows serde_repr 0.1.0, which needs an older syn/quote
-          cargo update -p serde_repr --precise 0.1.20
-          # openidconnect 4 (id_effect_auth) allows thiserror 1.0.20, too old for its error derives
-          cargo update -p thiserror@1.0.20 --precise 1.0.69
-          # url / idna pull ICU crates whose zerovec resolves next to yoke 0.6 (no Yokeable impls)
-          cargo update -p yoke@0.6.0 --precise 0.7.5
-          # crc-fast 1.6 (object_store, id_effect_storage) needs crc's CRC_64_REDIS (crc >= 3.3)
-          cargo update -p crc --precise 3.3.0
+          # Raise the floors minimal-versions picks too low. Each pin applies only while the graph
+          # still resolves that package ID (`cargo update -p` errors on one the lockfile does not
+          # hold, and 0.12's dependencies already raise crc32fast past 1.1.0):
+          # - crc32fast 1.1.x: its build.rs needs modern semver (semver 1.0.0 is too old as well)
+          # - serde_repr 0.1.0 (bollard-stubs, testcontainers) needs an older syn/quote
+          # - thiserror 1.0.20 (openidconnect 4, id_effect_auth) is too old for its error derives
+          # - yoke 0.6 sits next to zerovec from url / idna's ICU crates (no Yokeable impls)
+          # - crc < 3.3: crc-fast 1.6 (object_store, id_effect_storage) needs CRC_64_REDIS
+          for pin in crc32fast@1.1.0=1.4.2 semver@1.0.0=1.0.20 async-trait=0.1.89 \
+            serde_repr=0.1.20 thiserror@1.0.20=1.0.69 yoke@0.6.0=0.7.5 crc=3.3.0; do
+            if cargo pkgid "${pin%%=*}" >/dev/null 2>&1; then
+              cargo update -p "${pin%%=*}" --precise "${pin#*=}"
+            else
+              echo "minimal-versions pin ${pin%%=*}: not in the graph, skipped"
+            fi
+          done
           # (openssl/openssl-sys/metrics pins removed in 0.6: those crates now only appear in the
           # unpublished labs/ workspace, which this job does not build.)
       - name: cargo check (minimal versions, pinned toolchain)
