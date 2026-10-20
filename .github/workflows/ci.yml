@@ -206,7 +206,7 @@ jobs:
       - name: cargo nextest (workspace)
         env:
           RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
-        run: cargo nextest run --workspace --all-features --locked
+        run: cargo nextest run --workspace --all-features --locked --no-fail-fast
       - name: cargo test --doc (workspace)
         env:
           RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}

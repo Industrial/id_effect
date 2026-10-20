@@ -229,17 +229,14 @@ struct Case {
 /// Run `case`: call, read items, drop the socket at each cut, resume from the last cursor,
 /// until the exit. Returns the items seen.
 async fn run_case(addr: SocketAddr, case: &Case) -> Vec<i64> {
-  let mut client = Client::connect(addr, &[]).await;
-  let session = client.session.clone();
-  if case.bidi {
-    client
-      .send(json!({"id": 1, "kind": "call", "tag": "Echo.hundred", "payload": null}))
-      .await;
+  let call = if case.bidi {
+    json!({"id": 1, "kind": "call", "tag": "Echo.hundred", "payload": null})
   } else {
-    client
-      .send(json!({"id": 1, "kind": "call", "tag": "Count.up", "payload": case.n}))
-      .await;
-  }
+    json!({"id": 1, "kind": "call", "tag": "Count.up", "payload": case.n})
+  };
+  let mut client = Client::connect(addr, &[]).await;
+  let mut session = client.session.clone();
+  client.send(call.clone()).await;
   let mut cuts = case.cuts.clone();
   cuts.sort_unstable();
   let mut cuts = cuts.into_iter().peekable();
@@ -251,6 +248,21 @@ async fn run_case(addr: SocketAddr, case: &Case) -> Vec<i64> {
       drop(client);
       client = Client::connect(addr, &[]).await;
       let now = client.resume(&session, &[(1, cursor)]).await;
+      if got.is_empty() && now != session {
+        // Dropped before the server read the `call` (at-most-once for frames in flight): the
+        // session held no call and went with its connection, so the resume is refused and the
+        // call expires; the client starts it again, as the generated clients do.
+        let expired = client.next().await.expect("the expired call");
+        assert_eq!(expired["kind"], "exit", "{expired}");
+        assert_eq!(
+          expired["payload"]["error"]["_tag"], "ResumeExpired",
+          "{expired}"
+        );
+        session = now;
+        client.send(call.clone()).await;
+        pending = 0;
+        continue;
+      }
       assert_eq!(now, session, "the resumed session carries on");
       // The items up to the cursor count as credited: nothing left to grant for them.
       pending = 0;
