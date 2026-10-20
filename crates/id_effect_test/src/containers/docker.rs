@@ -139,12 +139,21 @@ fn block_on_docker<T: Send + 'static>(
 }
 
 /// Pings the Docker daemon testcontainers is configured for (`DOCKER_HOST`,
-/// `~/.testcontainers.properties`, the default socket).
+/// `~/.testcontainers.properties`, the default socket), and checks it runs Linux containers:
+/// every image here is a Linux image, so a daemon in Windows-container mode (GitHub's Windows
+/// runners) counts as no Docker.
 pub(crate) async fn ping() -> Result<(), ContainerError> {
   let reason = match docker_client_instance().await {
     Err(e) => e.to_string(),
     Ok(docker) => match tokio::time::timeout(PING_TIMEOUT, docker.ping()).await {
-      Ok(Ok(_)) => return Ok(()),
+      Ok(Ok(_)) => match tokio::time::timeout(PING_TIMEOUT, docker.info()).await {
+        Ok(Ok(info)) => match info.os_type.as_deref() {
+          Some("linux") | None => return Ok(()),
+          Some(other) => format!("the daemon runs {other} containers; the test images are Linux"),
+        },
+        Ok(Err(e)) => e.to_string(),
+        Err(_) => format!("no answer to `docker info` within {PING_TIMEOUT:?}"),
+      },
       Ok(Err(e)) => e.to_string(),
       Err(_) => format!("no answer to a ping within {PING_TIMEOUT:?}"),
     },

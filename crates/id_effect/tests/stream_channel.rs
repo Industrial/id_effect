@@ -445,6 +445,9 @@ fn fold_channel_consume_stream_propagates_upstream_failure() {
   );
 }
 
+// Counts whole 64-item chunks of 1 ms sleeps in 300 ms; Windows' ~15.6 ms timer tick breaks that
+// arithmetic, so the timing check runs elsewhere.
+#[cfg(not(windows))]
 #[test]
 fn fold_channel_consume_stream_stops_when_interrupted() {
   let ch = FoldChannel::from_fold(0_u64, |acc, _x: u64| acc + 1);

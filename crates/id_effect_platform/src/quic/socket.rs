@@ -99,10 +99,14 @@ mod tests {
     assert!(granted.send >= small.send, "{granted:?}");
     assert!(granted.recv >= small.recv, "{granted:?}");
 
-    let huge = SocketBuffers::new(1 << 30, 1 << 30);
-    let (_socket, granted) = bind_udp(local(), huge).expect("bind");
-    assert!(granted.recv > 0 && granted.recv < huge.recv, "{granted:?}");
-    assert!(granted.send > 0 && granted.send < huge.send, "{granted:?}");
+    // A cap to fall short of exists on Unix (net.core.*mem_max); Windows grants the request.
+    #[cfg(unix)]
+    {
+      let huge = SocketBuffers::new(1 << 30, 1 << 30);
+      let (_socket, granted) = bind_udp(local(), huge).expect("bind");
+      assert!(granted.recv > 0 && granted.recv < huge.recv, "{granted:?}");
+      assert!(granted.send > 0 && granted.send < huge.send, "{granted:?}");
+    }
 
     // Asking for nothing keeps the OS default.
     let (_socket, granted) = bind_udp(local(), SocketBuffers::os_default()).expect("bind");
