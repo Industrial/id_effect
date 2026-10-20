@@ -125,6 +125,11 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     needs: [moon-ci]
+    env:
+      # Coverage reads the __llvm_covmap sections, not DWARF; without debuginfo the instrumented
+      # test and example binaries fit the runner (at 0.12 they filled 111 GB free).
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - name: Free runner disk (preinstalled SDKs the build never uses)
         run: |
