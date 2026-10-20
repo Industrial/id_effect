@@ -49,7 +49,7 @@ minijinja = { version = "2", features = ["loader"] }
 # Template contexts are any `Serialize` value.
 serde = "1"
 # Feature `preview`: the preview router (routing and extractors only).
-axum = { version = "0.8", default-features = false, optional = true }
+axum = { version = "0.8.9", default-features = false, optional = true }
 # Feature `jobs`: the queue the `DeliverMail` job runs on (mail depends on jobs, never the
 # reverse), and the `SqlTransaction` `deliver_later_in` enqueues with.
 id_effect_jobs = { path = "../id_effect_jobs", version = "0.11.0", optional = true }

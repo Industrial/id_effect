@@ -79,7 +79,7 @@ tokio = { version = "1.50.0", features = ["macros", "rt-multi-thread", "time"] }
 # tests/db.rs, tests/fixtures.rs, examples/020_isolated_db.rs: container-free SQLite databases.
 id_effect_sql = { path = "../id_effect_sql", features = ["sqlite"] }
 # tests/http.rs and the `http` docs: an axum router under the test client.
-axum = { version = "0.8", default-features = false, features = ["json"] }
+axum = { version = "0.8.9", default-features = false, features = ["json"] }
 serde_json = "1"
 # tests/http.rs: hand-written services (a failing one, a failing body).
 tower = "0.5.3"

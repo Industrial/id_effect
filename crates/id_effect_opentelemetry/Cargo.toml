@@ -69,7 +69,7 @@ tokio = { version = "1.50.0", default-features = false, features = [
   "rt",
   "signal",
 ] }
-axum = { version = "0.8" }
+axum = { version = "0.8.9" }
 http = "1"
 
 [dev-dependencies]

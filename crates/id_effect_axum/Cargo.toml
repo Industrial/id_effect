@@ -35,7 +35,7 @@ id_effect_config = { path = "../id_effect_config", version = "0.11.0" }
 id_effect_platform = { path = "../id_effect_platform", version = "0.11.0" }
 id_effect_node = { path = "../id_effect_node", version = "0.11.0", optional = true }
 # `multipart`: typed routes and `ValidForm` read the text fields of `multipart/form-data` bodies.
-axum = { version = "0.8", features = ["multipart"] }
+axum = { version = "0.8.9", features = ["multipart"] }
 http-body = "1"
 http-body-util = "0.1"
 # `server::serve_listener`: the accept loop (header-read timeout, keep-alive limit, connection
